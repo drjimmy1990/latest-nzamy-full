@@ -6,7 +6,7 @@ import Link from "next/link";
 import {
   BookOpen, Check, ArrowLeft, ArrowRight, MagnifyingGlass,
   Bell, Lock, Scales, Gavel, Buildings, ShieldCheck,
-  Lightning, Star, FileText, Crown, Users, Gift,
+  Lightning, Star, FileText, Users, Gift,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import InvitationModal from "@/components/InvitationModal";
@@ -32,7 +32,6 @@ const txt = {
     plansSub: "اختر الخطة المناسبة — يُراجع طلبك ويُفعَّل الاشتراك بعد الموافقة.",
     monthly: "شهري",
     yearly: "سنوي (وفّر ١٦٪)",
-    popular: "الأكثر طلباً",
     subscribe: "اشترك الآن",
     exploreFree: "تصفح المجاني",
     perMonth: "/شهر",
@@ -53,7 +52,7 @@ const txt = {
           "بدون سوابق قضائية",
         ],
         cta: "ابدأ مجاناً",
-        popular: false,
+        featured: false,
       },
       {
         id: "lib-q1",
@@ -70,14 +69,14 @@ const txt = {
           "دعم البريد الإلكتروني",
         ],
         cta: "اشترك الآن",
-        popular: false,
+        featured: false,
       },
       {
         id: "lib-q2",
         name: "نصف سنوي (٦ أشهر)",
         price: "٥٥٠ ﷼ / ٦ أشهر",
         priceYearly: "٥٥٠ ﷼ / ٦ أشهر",
-        desc: "الخطة الأكثر طلباً للمحترفين والمستشارين",
+        desc: "يضيف السوابق والمبادئ القضائية والبحث بالمواد والبنود",
         icon: Scales,
         color: "from-[#C8A762] to-amber-600",
         features: [
@@ -87,7 +86,7 @@ const txt = {
           "دعم عبر واتساب",
         ],
         cta: "اشترك الآن",
-        popular: true,
+        featured: true,
       },
       {
         id: "lib-annual",
@@ -104,7 +103,7 @@ const txt = {
           "دعم واتساب أولوية + مدير حساب مخصص",
         ],
         cta: "اشترك الآن",
-        popular: false,
+        featured: false,
       },
     ],
     faqTitle: "أسئلة شائعة",
@@ -130,7 +129,6 @@ const txt = {
     plansSub: "Choose the plan that fits — your request is reviewed and activated once approved.",
     monthly: "Monthly",
     yearly: "Yearly (Save 16%)",
-    popular: "Most Popular",
     subscribe: "Subscribe Now",
     exploreFree: "Browse Free",
     perMonth: "/mo",
@@ -151,7 +149,7 @@ const txt = {
           "No judicial precedents",
         ],
         cta: "Start Free",
-        popular: false,
+        featured: false,
       },
       {
         id: "lib-q1",
@@ -168,14 +166,14 @@ const txt = {
           "Email support",
         ],
         cta: "Subscribe Now",
-        popular: false,
+        featured: false,
       },
       {
         id: "lib-q2",
         name: "Semi-Annual (6 Months)",
         price: "SAR 550 / 6 Months",
         priceYearly: "SAR 550 / 6 Months",
-        desc: "Most popular for professional advisors",
+        desc: "Adds judicial precedents, principles and article-level search",
         icon: Scales,
         color: "from-[#C8A762] to-amber-600",
         features: [
@@ -185,7 +183,7 @@ const txt = {
           "WhatsApp support",
         ],
         cta: "Subscribe Now",
-        popular: true,
+        featured: true,
       },
       {
         id: "lib-annual",
@@ -202,7 +200,7 @@ const txt = {
           "Priority WhatsApp & account manager",
         ],
         cta: "Subscribe Now",
-        popular: false,
+        featured: false,
       },
     ],
     faqTitle: "Frequently Asked Questions",
@@ -356,7 +354,7 @@ export default function LawsSubscribePage() {
                 variants={fadeUp} initial="hidden" animate="show" custom={i + 6}
                 whileHover={{ y: -4, transition: { type: "spring", stiffness: 200, damping: 20 } }}
                 className={`relative rounded-2xl border p-6 transition-all ${
-                  plan.popular
+                  plan.featured
                     ? isDark
                       ? "bg-gradient-to-b from-[#C8A762]/10 to-zinc-900/80 border-[#C8A762]/30 ring-1 ring-[#C8A762]/20"
                       : "bg-gradient-to-b from-amber-50/80 to-white border-[#C8A762]/40 ring-1 ring-[#C8A762]/20 shadow-lg"
@@ -365,11 +363,12 @@ export default function LawsSubscribePage() {
                       : "bg-white border-zinc-100 hover:border-zinc-200 shadow-sm"
                 }`}
               >
-                {plan.popular && (
-                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 inline-flex items-center gap-1 bg-[#C8A762] text-[#0B3D2E] text-[10px] font-bold px-3 py-1 rounded-full shadow-md">
-                    <Crown size={10} weight="fill" /> {t.popular}
-                  </span>
-                )}
+                {/* No «الأكثر طلباً» badge (owner, Q164, 2026-10-03): no
+                    subscription data supports a popularity claim. The card
+                    keeps its `featured` emphasis styling. OPEN (owner
+                    decision): the same flag still shows struck-through "was"
+                    prices below (٦٠٠ / ٢,٤٠٠ ﷼) that no real price list backs
+                    — a reference-price claim of the same class. */}
 
                 <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${plan.color} flex items-center justify-center mb-4 shadow`}>
                   <Icon size={20} weight="fill" className="text-white" />
@@ -379,7 +378,7 @@ export default function LawsSubscribePage() {
                 <p className={`text-[12px] mb-4 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{plan.desc}</p>
 
                 <div className="flex items-baseline gap-1.5 mb-5 flex-wrap">
-                  {plan.popular ? (
+                  {plan.featured ? (
                     <>
                       <span className="text-sm line-through text-red-500 mr-1 ml-1 font-semibold">
                         {yearly ? (isAr ? "٢,٤٠٠ ﷼ / سنة" : "SAR 2,400 / Year") : (isAr ? "٦٠٠ ﷼ / ٣ أشهر" : "SAR 600 / 3 Months")}
@@ -405,7 +404,7 @@ export default function LawsSubscribePage() {
                 <div className="space-y-2.5 mb-6">
                   {plan.features.map((f, fi) => (
                     <div key={fi} className="flex items-start gap-2">
-                      <Check size={13} weight="bold" className={`mt-0.5 shrink-0 ${plan.popular ? "text-[#C8A762]" : isDark ? "text-emerald-500" : "text-emerald-600"}`} />
+                      <Check size={13} weight="bold" className={`mt-0.5 shrink-0 ${plan.featured ? "text-[#C8A762]" : isDark ? "text-emerald-500" : "text-emerald-600"}`} />
                       <span className={`text-[12px] leading-snug ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{f}</span>
                     </div>
                   ))}
@@ -415,7 +414,7 @@ export default function LawsSubscribePage() {
                   whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
                   onClick={() => handleSubscribe(plan.id)}
                   className={`w-full py-2.5 rounded-xl text-[13px] font-bold transition-all ${
-                    plan.popular
+                    plan.featured
                       ? "bg-[#0B3D2E] text-[#C8A762] shadow-md hover:bg-[#155e41]"
                       : isDark
                         ? "bg-white/[0.06] text-zinc-300 hover:bg-white/[0.1] border border-white/[0.06]"

@@ -34,11 +34,11 @@ export default function LawyerDashboardLayout({
         <SharedSidebar />
 
         {/* Main content — offset for sidebar on desktop, bottom padding on mobile for hamburger */}
-        <main className="lg:mr-64 pt-[60px] lg:pt-0 min-h-[100dvh] pb-20 lg:pb-0">
+        <div className="print-main lg:mr-64 pt-[calc(env(safe-area-inset-top)+60px)] lg:pt-0 min-h-[100dvh] pb-20 lg:pb-0">
           <div className="p-4 md:p-6">
             {children}
           </div>
-        </main>
+        </div>
 
           </div>
     </UserTypeGuard>

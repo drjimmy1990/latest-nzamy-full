@@ -6,7 +6,14 @@
 
 "use client";
 
-import { apiGet, isSupabaseMode } from "@/lib/services/api";
+// Relative + explicit `.ts`, not the "@/" alias — the house convention for a
+// module whose decision function must be reachable from `node --test`, which
+// cannot resolve the alias outside the Next.js bundler (the reason is written
+// out in profileEntityFields.ts's header). `./api.ts` itself imports only
+// ../runtimeMode.ts, so nothing framework-bound is pulled in behind it.
+// serviceOrders.ts:20 already imports `./api.ts` this way.
+import { apiGet, isSupabaseMode } from "./api.ts";
+import { listFailed, listOk, type ListRead } from "./listRead.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -62,16 +69,47 @@ const DEMO_SUMMARY: DashboardSummary = {
   unreadNotifications: 0,
 };
 
-// ─── Service function ─────────────────────────────────────────────────────────
+// ─── The read ─────────────────────────────────────────────────────────────────
+//
+// WHAT USED TO BE HERE AND WHY IT COULD NOT STAY. getDashboardSummary() ended
+// in `catch { return { ...DEMO_SUMMARY } }`, so a failed request arrived at
+// /dashboard/client as a fully-formed object — `activeCases: []`,
+// `nextAppointment: null`, `subscription: { plan: "free", name: "مجانية" }` —
+// and the page drew it as fact: «قضاياي» vanished for a client who has cases,
+// and no signal reached the page to tell "you have nothing" from "we could not
+// read it". That is the exact defect src/lib/services/listRead.ts was written
+// to end, so the summary is now carried in the same three-state read the
+// documents card on that same page already uses.
+//
+// ListRead<T> IS A LIST TYPE AND A SUMMARY IS ONE OBJECT — reused on purpose.
+// The page gets listViewState()/itemsOf() unchanged and one spelling of
+// «تعذّرت القراءة» instead of a second, private one; the read carries either
+// exactly one summary or no items at all, never a fixture.
 
-export async function getDashboardSummary(): Promise<DashboardSummary> {
+/**
+ * The decision, with no I/O in it: what a response body means.
+ *
+ * A body that is not a plain object is not an empty dashboard — it is an
+ * error payload, a string, or `null`, and rendering any of those as a summary
+ * is how the fixture got drawn in the first place.
+ */
+export function summaryReadFrom(body: unknown): ListRead<DashboardSummary> {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return listFailed<DashboardSummary>();
+  }
+  return listOk([body as DashboardSummary]);
+}
+
+export async function getDashboardSummary(): Promise<ListRead<DashboardSummary>> {
+  // Demo mode is not a failure: the fixture IS the answer when there is no
+  // backend to ask. It is only a lie when it stands in for one that failed.
   if (!isSupabaseMode) {
-    return { ...DEMO_SUMMARY };
+    return listOk([{ ...DEMO_SUMMARY }]);
   }
 
   try {
-    return await apiGet<DashboardSummary>("/api/v1/dashboard/summary");
+    return summaryReadFrom(await apiGet<DashboardSummary>("/api/v1/dashboard/summary"));
   } catch {
-    return { ...DEMO_SUMMARY };
+    return listFailed<DashboardSummary>();
   }
 }

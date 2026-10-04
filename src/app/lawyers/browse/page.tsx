@@ -375,9 +375,11 @@ function LawyerCard({ lawyer, delay, isRTL, isDark }: {
         <div className="p-5 flex-1 relative z-20 flex flex-col">
           {/* Avatar + name row */}
           <div className="flex items-start gap-3.5 mb-4">
-            {/* A plain <img>: avatar_url is user-supplied and next.config only
-                allowlists *.supabase.co, so next/image would throw on an
-                unlisted host. Falls back to initials, then to an icon. */}
+            {/* A plain <img>: avatar_url is user-supplied and can be any host,
+                while next.config only allowlists the configured Supabase
+                Storage host(s) (see supabaseStorageRemotePattern() there), so
+                next/image would throw on an unlisted host. Falls back to
+                initials, then to an icon. */}
             {lawyer.avatar && !avatarBroken ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img

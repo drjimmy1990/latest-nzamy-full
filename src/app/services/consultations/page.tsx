@@ -56,7 +56,8 @@ const consultationTypes = {
       currency: "ر.س",
       desc: "جلسة استشارية مباشرة مع محامٍ معتمد عبر الصوت أو الفيديو — ٤٥ دقيقة كاملة وتقرير مكتوب بعد الجلسة",
       features: ["٤٥ دقيقة مع محامٍ معتمد", "صوت أو فيديو حسب اختيارك", "تقرير مكتوب بعد الجلسة", "متابعة مجانية ٢٤ ساعة"],
-      badge: "الأكثر طلبًا",
+      // No «الأكثر طلبًا» badge (owner, Q164): no booking data supports it.
+      badge: null,
       color: "from-royal/10 to-royal/5",
       border: "border-royal/20",
       accent: "text-royal",
@@ -97,7 +98,7 @@ const consultationTypes = {
       currency: "SAR",
       desc: "Live consultation session with a certified lawyer via voice or video — 45 full minutes with a written report after the session",
       features: ["45 min with certified lawyer", "Voice or video, your choice", "Written report after session", "Free 24-hour follow-up"],
-      badge: "Most Popular",
+      badge: null,
       color: "from-royal/10 to-royal/5",
       border: "border-royal/20",
       accent: "text-royal",
@@ -391,11 +392,9 @@ export default function ConsultationsPage() {
                     : "border-gray-100 bg-white"
                 }`}
               >
-                {i === 0 && (
-                  <div className="absolute -top-3 start-1/2 -translate-x-1/2 bg-royal text-white text-xs font-bold px-3 py-1 rounded-full whitespace-nowrap">
-                    {isRTL ? "الأكثر طلبًا" : "Most Popular"}
-                  </div>
-                )}
+                {/* No «الأكثر طلبًا» pill (owner, Q164, 2026-10-03): no
+                    booking data supports a popularity claim. The first card
+                    keeps its ring emphasis, which claims nothing. */}
                 <item.icon size={28} className={`${item.accent} mb-4`} weight="duotone" />
                 <h3 className={`text-lg font-bold mb-1 ${isDark ? "text-white" : "text-gray-900"}`}>{item.title}</h3>
                 <div className="flex items-end gap-1 my-4">

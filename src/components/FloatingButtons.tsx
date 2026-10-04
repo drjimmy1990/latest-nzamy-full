@@ -415,26 +415,36 @@ function isLegalItemDetailPage(pathname: string | null): boolean {
   return false;
 }
 
-/**
- * The one surface the support FAB must not render on.
+/** Dashboard actions must remain unobstructed by the public support/order FAB. */
+const FAB_SUPPRESSED_PREFIXES = ["/dashboard"] as const;
+
+/*
+ * Auth routes, added 2026-09-16 for owner-ledger item ١٦٨.
  *
- * The first draft of this fix suppressed it across `/dashboard`, `/settings`
- * and `/ai` — every authenticated screen. That was wrong, and the call graph
- * is what said so: `FloatingButtons → CreateClient` is a real execution flow.
- * The widget is not a marketing badge on a signed-in screen; `WhatsAppWidget`
- * takes `isLoggedIn`, skips the account-type step for a known user, greets them
- * by name, and can open a service request. Hiding it product-wide would have
- * deleted an ordering path to fix a stacking bug.
+ * Kept SEPARATE from the list above, and applied as a `lg:` visibility class
+ * rather than an early return, because the two cases are not the same problem.
+ * Dashboard actions must stay unobstructed at any width, so the component is
+ * not mounted there at all. On an auth screen the button is only
+ * a problem at phone width, where it lands squarely on top of the «سجّل مجاناً»
+ * link that /login exists to surface — at desktop width it sits in empty
+ * margin and harms nothing. Suppressing it outright would have changed the
+ * desktop site to fix a phone bug.
  *
- * So the suppression is one route subtree — the ADMIN console — and it is there
- * for a reason positioning cannot fix: `/dashboard/admin` is staff-facing, a
- * "request a legal service" CTA has no audience on it, and shot 07 shows the
- * button physically covering a user row's «تحقق» button and its overflow menu.
- *
- * The other complaints in the owner's screenshots are about STACKING, not
- * presence, and are fixed by the z-index below rather than by deletion.
+ * `/auth` covers the OAuth callback subtree.
  */
-const FAB_SUPPRESSED_PREFIXES = ["/dashboard/admin"] as const;
+const FAB_MOBILE_SUPPRESSED_PREFIXES = [
+  "/login",
+  "/register",
+  "/forgot-password",
+  "/auth",
+] as const;
+
+export function isFabMobileSuppressedPath(pathname: string | null): boolean {
+  if (!pathname) return false;
+  return FAB_MOBILE_SUPPRESSED_PREFIXES.some(
+    (p) => pathname === p || pathname.startsWith(p + "/"),
+  );
+}
 
 export function isFabSuppressedPath(pathname: string | null): boolean {
   if (!pathname) return false;
@@ -445,9 +455,43 @@ export function isFabSuppressedPath(pathname: string | null): boolean {
   );
 }
 
+/*
+ * Routes whose page already carries its own in-page report control, added
+ * 2026-09-28 for the owner's law-reader screenshots.
+ *
+ * The law reader renders «أبلغ عن خطأ في هذه المادة» next to each article
+ * (ReportArticleIssueButton, src/app/laws/[slug]/page.tsx). The orange «!»
+ * mini-FAB duplicated it, covered the research sidebar's tools on desktop
+ * (ResearchWorkspace's «مسح كل التظليلات»), and on a phone was one of three
+ * buttons stacked over the article text. Owner decision: no report FAB on the
+ * reader. Only the report FAB is dropped here — WhatsApp keeps its own rules.
+ * Precedent and book pages have no in-page control, so they keep the FAB —
+ * and so do royal orders (/laws/orders/*), whose page has no in-page button.
+ */
+const REPORT_FAB_SUPPRESSED_PREFIXES = ["/laws"] as const;
+const REPORT_FAB_KEPT_PREFIXES = ["/laws/orders"] as const;
+
+export function isReportFabSuppressedPath(pathname: string | null): boolean {
+  if (!pathname) return false;
+  const under = (p: string) => pathname === p || pathname.startsWith(p + "/");
+  if (REPORT_FAB_KEPT_PREFIXES.some(under)) return false;
+  return REPORT_FAB_SUPPRESSED_PREFIXES.some(under);
+}
+
+/*
+ * Every FAB in this file sits 1.25rem above the bottom edge PLUS the iOS home
+ * indicator inset (owner decision 2026-09-28: "bottom-5 with the safe-area
+ * offset"). An inline style rather than a class: the old `bottom-20
+ * md:bottom-6 … safe-bottom` pair added the inset as padding-bottom on the
+ * container, which grew the hit area instead of lifting the button, and the
+ * phone-only 5rem lift put the stack in the middle of the reading column.
+ */
+const FAB_BOTTOM_STYLE = { bottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))" } as const;
+
 // ─── Floating Buttons ────────────────────────────────────────────────────────
 // Single WhatsApp FAB + optional Report mini-FAB stacked above it.
-// Pass reportConfig to show the orange Report button (library pages only).
+// Pass reportConfig to show the orange Report button (library pages without
+// their own in-page report control — see isReportFabSuppressedPath).
 
 export default function FloatingButtons({ reportConfig: propReportConfig, cartCount: propCartCount, onCartClick: propOnCartClick }: FloatingButtonsProps = {}) {
   const pathname = usePathname();
@@ -457,15 +501,14 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
   // Check if current page is a specific detailed legal item
   const isItemDetail = isLegalItemDetailPage(pathname);
 
-  // Dynamically calculate reportConfig based on pathname ONLY when inside a specific legal item page
+  // Dynamically calculate reportConfig based on pathname ONLY when inside a
+  // specific legal item page — and never on the law reader (/laws/*), whose
+  // page has its own per-article report button (isReportFabSuppressedPath).
   let reportConfig: ReportConfig | undefined = propReportConfig;
-  if (!reportConfig && isItemDetail) {
+  if (!reportConfig && isItemDetail && !isReportFabSuppressedPath(pathname)) {
     if (pathname.startsWith("/laws/orders/")) {
       const slug = pathname.substring("/laws/orders/".length);
       if (slug) reportConfig = { pageSlug: "order-" + slug, pageType: "order" };
-    } else if (pathname.startsWith("/laws/")) {
-      const slug = pathname.substring("/laws/".length);
-      if (slug) reportConfig = { pageSlug: slug, pageType: "law" };
     } else if (pathname.startsWith("/precedents/judgment/")) {
       const slug = pathname.substring("/precedents/judgment/".length);
       if (slug) reportConfig = { pageSlug: "judgment-" + slug, pageType: "precedent" };
@@ -496,7 +539,6 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
   const { category: autoCategory, isLoggedIn, loading: categoryLoading } = useAutoCategory();
   const rootRef = useRef<HTMLDivElement>(null);
 
-  const [isPrimaryInstance, setIsPrimaryInstance] = useState(true);
   const [waOpen,     setWaOpen]     = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [aiModeActive, setAiModeActive] = useState(false);
@@ -536,22 +578,6 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
   }, []);
   useEffect(() => { setAiModeActive(false); }, [pathname]);
 
-  useEffect(() => {
-    const refreshPrimaryInstance = () => {
-      const isInsideMain = rootRef.current ? document.getElementById("main-content")?.contains(rootRef.current) : false;
-      if (isInsideMain) {
-        setIsPrimaryInstance(true);
-      } else {
-        const hasLocalInstance = document.querySelector('#main-content [data-nzamy-floating-root="true"]') !== null;
-        setIsPrimaryInstance(!hasLocalInstance);
-      }
-    };
-    refreshPrimaryInstance();
-    const observer = new MutationObserver(refreshPrimaryInstance);
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, []);
-
   const waBtnSide   = isRTL ? "left-6" : "right-6";
   const waPanelSide = isRTL ? "left-6" : "right-6";
   const panelBottom = "bottom-24 md:bottom-20";
@@ -575,7 +601,7 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
 
 
   return (
-    <div ref={rootRef} data-nzamy-floating-root="true" className={`${isPrimaryInstance && !aiModeActive ? "" : "hidden"} print:hidden`}>
+    <div ref={rootRef} data-nzamy-floating-root="true" className={`${aiModeActive ? "hidden" : ""} print:hidden`}>
       {/* WhatsApp Panel — hidden for admins (owner-edits), and withheld while the
           session is still resolving, so a logged-in user can never be shown the
           guest category chooser first (main). */}
@@ -608,7 +634,7 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
           is matrix row 168's complaint in its most severe form.
           40 is above page content and below every overlay, which is the only
           band a persistent FAB belongs in. */}
-      <div className={`fixed bottom-20 md:bottom-6 ${waBtnSide} z-40 flex flex-col items-center gap-2.5 print:hidden safe-bottom`}>
+      <div style={FAB_BOTTOM_STYLE} className={`fixed ${waBtnSide} z-40 ${isFabMobileSuppressedPath(pathname) ? "hidden lg:flex" : "flex"} flex-col items-center gap-2.5 print:hidden`}>
 
         {/* ── Orange Report mini-FAB (only on library pages) ── */}
         {reportConfig && (
@@ -683,7 +709,7 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
 
       {/* ── Floating Draft Cart FAB (Restricted to legal item detail pages) ── */}
       {showDraftFab && (
-        <div className={`fixed bottom-20 md:bottom-6 ${isRTL ? "left-[88px]" : "right-[88px]"} z-40 print:hidden safe-bottom`}>
+        <div style={FAB_BOTTOM_STYLE} className={`fixed ${isRTL ? "left-[88px]" : "right-[88px]"} z-40 print:hidden`}>
           <div className="relative group">
             {/* Tooltip */}
             <div className="absolute -top-10 left-1/2 -translate-x-1/2 whitespace-nowrap px-2.5 py-1.5 rounded-lg bg-zinc-900 text-white text-[11px] font-bold shadow-lg border border-white/10 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-10">

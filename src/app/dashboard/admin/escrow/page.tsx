@@ -109,7 +109,11 @@ export default function EscrowPage() {
 
       {/* Table */}
       <div className={`${card} overflow-hidden`}>
-        <table className="w-full text-right">
+        {/* overflow-hidden on the card keeps its rounded corners; the table
+            needs its own x-scroller or 8-9 columns are simply cut off on a
+            phone with no way to reach them. */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-right">
           <thead><tr className={`border-b ${isDark?"border-white/[0.06]":"border-slate-100"}`}>
             {["العملية","الطالب","المزود","الخدمة","المبلغ","الحالة","التاريخ","إجراء"].map(h=>(
               <th key={h} className={`px-4 py-3 text-[10px] font-bold uppercase ${isDark?"text-zinc-600":"text-slate-400"}`}>{h}</th>
@@ -153,6 +157,7 @@ export default function EscrowPage() {
             })}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

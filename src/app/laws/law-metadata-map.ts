@@ -101,6 +101,14 @@ export function getLawMeta(slug: string): LawMetaEntry {
     "companies":                  "companies-law",
     "labor":                      "labor-law",
     "product-safety-law-1446":    "product-safety-law-1446",
+    // ── Real corpus slugs (self-hosted library, 2026-09-25) → MAP keys ─────
+    // LIB-12: "civil-procedure-law" and "evidence-law" are old-corpus slugs
+    // that no longer exist in library.laws. The MAP keys stay as they are;
+    // these rows make the real law pages pick up the same static entries.
+    "sharia-pleading-law-qadha-edition": "civil-procedure-law",
+    "evidence-law-qadha-edition":        "evidence-law",
+    // labor-law is likewise gone; labor-law-qadha is the real labor law page.
+    "labor-law-qadha":                   "labor-law",
   };
 
   // 1. حاول الحل عبر خريطة الـ slugs الشاملة
@@ -119,15 +127,18 @@ export function getLawMeta(slug: string): LawMetaEntry {
     return {
       related_systems: [
         { title: "نظام المعاملات المدنية", slug: "civil-transactions-law", type: "law" },
-        { title: "نظام المرافعات الشرعية", slug: "civil-procedure-law", type: "law" },
-        { title: "نظام الإثبات", slug: "evidence-law", type: "law" }
+        { title: "نظام المرافعات الشرعية", slug: "sharia-pleading-law-qadha-edition", type: "law" },
+        { title: "نظام الإثبات", slug: "evidence-law-qadha-edition", type: "law" }
       ]
     };
   }
   if (slug.startsWith("labor-principles") || slug === "prec-03") {
     return {
       related_systems: [
-        { title: "نظام العمل", slug: "labor-law", type: "law" }
+        // labor-law (2026-09-25): dead on self-hosted, no row at that slug.
+        // Real slug: labor-law-qadha (نظام العمل، active) — exists on both
+        // self-hosted and the current cloud DB.
+        { title: "نظام العمل", slug: "labor-law-qadha", type: "law" }
       ]
     };
   }
@@ -135,14 +146,20 @@ export function getLawMeta(slug: string): LawMetaEntry {
     return {
       related_systems: [
         { title: "نظام ضريبة الدخل", slug: "income-tax-law", type: "law" },
-        { title: "نظام ضريبة القيمة المضافة", slug: "vat-law", type: "law" }
+        // vat-law (2026-09-25): dead on self-hosted. Real slug:
+        // value-added-tax-law (نظام ضريبة القيمة المضافة ولائحته التنفيذية،
+        // active) — self-hosted only, NOT on the cloud DB yet.
+        { title: "نظام ضريبة القيمة المضافة", slug: "value-added-tax-law", type: "law" }
       ]
     };
   }
   if (slug.startsWith("customs-")) {
     return {
       related_systems: [
-        { title: "نظام الجمارك الموحد لدول مجلس التعاون", slug: "customs-law", type: "law" }
+        // customs-law (2026-09-25): dead on self-hosted. Real slug:
+        // gcc-unified-customs-law (نظام الجمارك الموحد ولائحته التنفيذية،
+        // active) — self-hosted only, NOT on the cloud DB yet.
+        { title: "نظام الجمارك الموحد لدول مجلس التعاون", slug: "gcc-unified-customs-law", type: "law" }
       ]
     };
   }
@@ -164,15 +181,23 @@ export function getLawMeta(slug: string): LawMetaEntry {
   if (slug === "insurance-1438" || slug === "insurance-principles") {
     return {
       related_systems: [
-        { title: "نظام مراقبة شركات التأمين التعاوني", slug: "cooperative-insurance-law", type: "law" }
+        // cooperative-insurance-law (2026-09-25): dead on self-hosted. Real
+        // slug: cooperative-insurance-companies-control-law (active) — exists
+        // on both self-hosted and the current cloud DB.
+        { title: "نظام مراقبة شركات التأمين التعاوني", slug: "cooperative-insurance-companies-control-law", type: "law" }
       ]
     };
   }
   if (slug.startsWith("admin-supreme") || slug === "prec-05") {
     return {
       related_systems: [
-        { title: "نظام ديوان المظالم", slug: "court-of-grievances-law", type: "law" },
-        { title: "نظام المرافعات أمام ديوان المظالم", slug: "administrative-procedures-law", type: "law" }
+        // court-of-grievances-law / administrative-procedures-law (2026-09-25):
+        // both dead on self-hosted. Real slugs: grievance-board-law (نظام ديوان
+        // المظالم) and grievance-board-litigation-law (نظام المرافعات أمام
+        // ديوان المظالم), both active — both exist on self-hosted and the
+        // current cloud DB.
+        { title: "نظام ديوان المظالم", slug: "grievance-board-law", type: "law" },
+        { title: "نظام المرافعات أمام ديوان المظالم", slug: "grievance-board-litigation-law", type: "law" }
       ]
     };
   }
@@ -186,7 +211,10 @@ export function getLawMeta(slug: string): LawMetaEntry {
   if (slug === "prec-04") {
     return {
       related_systems: [
-        { title: "نظام الإجراءات الجزائية", slug: "procedures-law", type: "law" }
+        // procedures-law (2026-09-25): dead on self-hosted. Real slug:
+        // criminal-procedure-law (نظام الإجراءات الجزائية، active) — exists
+        // on both self-hosted and the current cloud DB.
+        { title: "نظام الإجراءات الجزائية", slug: "criminal-procedure-law", type: "law" }
       ]
     };
   }
@@ -201,50 +229,60 @@ export function getLawMeta(slug: string): LawMetaEntry {
   return {};
 }
 
+/** The slice of the /api/library/laws/[slug] response this module reads. */
+export interface LawDetailForMeta {
+  issuanceDecree?: unknown;
+  issuanceDate?: unknown;
+  source?: unknown;
+  paywall?: { totalArticles?: unknown } | null;
+  chapters?: unknown;
+  regulationInstruments?: unknown;
+  regulationInstrumentsLocked?: unknown;
+}
+
 /**
- * fetchLawMetadata(slug)
+ * lawMetaFromDetail(slug, data)
  * ──────────────────────────────────────────────────────────────────────
- * Async version that queries the DB first (via /api/library/laws/[slug]),
- * mapping DB columns to LawMetaEntry fields. Falls back to the static
- * LAW_METADATA_MAP if the API returns nothing or fails.
+ * Merges the static LAW_METADATA_MAP entry with the fields of the law-detail
+ * response the page ALREADY holds. LIB-17 (2026-09-25): this replaced
+ * fetchLawMetadata(), which fetched the whole law a second time just to count
+ * its articles — for the largest law that was two ~700 KB downloads per view.
+ *
+ * `total_articles` comes from `paywall.totalArticles`, the server's own count
+ * of every article row. Counting `chapters[].articles` instead would under-count
+ * whenever the route cannot place an article under a chapter.
+ *
+ * `has_executive_reg` must also look at what the paywall withheld: the API
+ * emits `regulations` only for UNLOCKED articles, so for a guest a law with a
+ * regulation otherwise read as having none.
  */
-export async function fetchLawMetadata(slug: string): Promise<LawMetaEntry> {
-  let normSlug = slug;
-  if (slug === "civil-transactions") normSlug = "civil-transactions-law";
-  else if (slug === "civil-procedure") normSlug = "civil-procedure-law";
-  else if (slug === "evidence") normSlug = "evidence-law";
+export function lawMetaFromDetail(slug: string, data: LawDetailForMeta | null | undefined): LawMetaEntry {
+  const staticMeta = getLawMeta(slug);
+  if (!data || typeof data !== "object") return staticMeta;
 
-  try {
-    const res = await fetch(`/api/library/laws/${encodeURIComponent(normSlug)}`);
-    if (!res.ok) throw new Error(`API ${res.status}`);
-    const data = await res.json();
+  const dbMeta: LawMetaEntry = {};
+  if (typeof data.issuanceDecree === "string" && data.issuanceDecree) dbMeta.issuanceDecree = data.issuanceDecree;
+  if (typeof data.issuanceDate === "string" && data.issuanceDate) dbMeta.issuanceDate = data.issuanceDate;
+  if (typeof data.source === "string" && data.source) dbMeta.boe_url = data.source;
 
-    const dbMeta: LawMetaEntry = {};
-
-    if (data.issuanceDecree) dbMeta.issuanceDecree = data.issuanceDecree;
-    if (data.issuanceDate)   dbMeta.issuanceDate = data.issuanceDate;
-    if (data.source)         dbMeta.boe_url = data.source;
-
-    if (data.chapters && Array.isArray(data.chapters)) {
-      let totalArticles = 0;
-      let hasExecReg = false;
-      for (const ch of data.chapters) {
-        if (ch.articles) {
-          totalArticles += ch.articles.length;
-          for (const a of ch.articles) {
-            if (a.regulations && a.regulations.length > 0) hasExecReg = true;
-          }
-        }
-      }
-      if (totalArticles > 0) dbMeta.total_articles = totalArticles;
-      dbMeta.has_executive_reg = hasExecReg;
+  let counted = 0;
+  let hasExecReg = false;
+  const chapters = Array.isArray(data.chapters) ? data.chapters : [];
+  for (const ch of chapters as { articles?: { regulations?: unknown[] }[] }[]) {
+    for (const a of ch?.articles ?? []) {
+      counted++;
+      if (Array.isArray(a?.regulations) && a.regulations.length > 0) hasExecReg = true;
     }
-
-    const staticMeta = getLawMeta(slug);
-    return { ...staticMeta, ...dbMeta };
-  } catch {
-    return getLawMeta(slug);
   }
+  if (Array.isArray(data.regulationInstruments) && data.regulationInstruments.length > 0) hasExecReg = true;
+  if (typeof data.regulationInstrumentsLocked === "number" && data.regulationInstrumentsLocked > 0) hasExecReg = true;
+
+  const serverTotal = data.paywall?.totalArticles;
+  const total = typeof serverTotal === "number" && serverTotal > 0 ? serverTotal : counted;
+  if (total > 0) dbMeta.total_articles = total;
+  if (Array.isArray(data.chapters)) dbMeta.has_executive_reg = hasExecReg;
+
+  return { ...staticMeta, ...dbMeta };
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -263,8 +301,11 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
     law_status: "active",
     related_systems: [
       { title: "نظام المعاملات المدنية", slug: "civil-transactions-law", type: "law" },
-      { title: "نظام المرافعات الشرعية", slug: "civil-procedure-law", type: "law" },
-      { title: "نظام الإجراءات الجزائية", slug: "procedures-law", type: "law" }
+      { title: "نظام المرافعات الشرعية", slug: "sharia-pleading-law-qadha-edition", type: "law" },
+      // procedures-law (2026-09-25): dead on self-hosted. Real slug:
+      // criminal-procedure-law (active) — exists on both self-hosted and the
+      // current cloud DB.
+      { title: "نظام الإجراءات الجزائية", slug: "criminal-procedure-law", type: "law" }
     ],
     related_principles: [
       { title: "المبادئ القضائية في الإثبات", slug: "evidence-principles", type: "precedent" }
@@ -277,12 +318,15 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
     section_name: "الإجرائي والقضائي",
     issuing_authority: "مجلس الوزراء",
     has_executive_reg: true,
-    total_articles: 314,
     law_status: "active",
     related_systems: [
-      { title: "نظام الإثبات", slug: "evidence-law", type: "law" },
+      { title: "نظام الإثبات", slug: "evidence-law-qadha-edition", type: "law" },
       { title: "نظام المعاملات المدنية", slug: "civil-transactions-law", type: "law" },
-      { title: "نظام التنفيذ", slug: "execution-law", type: "law" }
+      // execution-law (2026-09-25): dead on self-hosted. Of the two real
+      // "نظام التنفيذ" rows, execution-law-1447h is REPEALED and
+      // execution-law-qadha-edition is ACTIVE — the active one is the law in
+      // force. Self-hosted only; not yet on the cloud DB.
+      { title: "نظام التنفيذ", slug: "execution-law-qadha-edition", type: "law" }
     ],
     related_principles: [
       { title: "مبادئ المرافعات الشرعية", slug: "civil-procedure-principles", type: "precedent" }
@@ -411,8 +455,8 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
     has_executive_reg: false,
     law_status: "active",
     related_systems: [
-      { title: "نظام الإثبات", slug: "evidence-law", type: "law" },
-      { title: "نظام المرافعات الشرعية", slug: "civil-procedure-law", type: "law" },
+      { title: "نظام الإثبات", slug: "evidence-law-qadha-edition", type: "law" },
+      { title: "نظام المرافعات الشرعية", slug: "sharia-pleading-law-qadha-edition", type: "law" },
       { title: "نظام الشركات", slug: "companies-law", type: "law" }
     ],
     related_principles: [
@@ -436,7 +480,10 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
     regulation_articles: 125,
     law_status: "active",
     related_systems: [
-      { title: "نظام السجل التجاري", slug: "commercial-register-law", type: "law" },
+      // commercial-register-law (2026-09-25): dead on self-hosted. Real slug:
+      // new-commercial-register-law (نظام السجل التجاري الجديد، active,
+      // 1446هـ) — exists on both self-hosted and the current cloud DB.
+      { title: "نظام السجل التجاري", slug: "new-commercial-register-law", type: "law" },
       { title: "نظام الإفلاس", slug: "bankruptcy-law", type: "law" },
       { title: "نظام السوق المالية", slug: "capital-market-law", type: "law" },
       { title: "نظام المعاملات المدنية", slug: "civil-transactions-law", type: "law" }
@@ -549,8 +596,12 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
   // ━━━ المبادئ القضائية (98) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   "admin-supreme-1442-part1": {
     related_systems: [
-      { title: "نظام ديوان المظالم", slug: "court-of-grievances-law", type: "law" },
-      { title: "نظام المرافعات أمام ديوان المظالم", slug: "administrative-procedures-law", type: "law" }
+      // court-of-grievances-law / administrative-procedures-law (2026-09-25):
+      // both dead on self-hosted; real slugs grievance-board-law and
+      // grievance-board-litigation-law (both active, both on self-hosted and
+      // the current cloud DB) — see the note by the first occurrence above.
+      { title: "نظام ديوان المظالم", slug: "grievance-board-law", type: "law" },
+      { title: "نظام المرافعات أمام ديوان المظالم", slug: "grievance-board-litigation-law", type: "law" }
     ],
     related_principles: [
       { title: "مبادئ ديوان المظالم لعام 1443هـ - ج1", slug: "admin-supreme-1443-part1", type: "precedent" }
@@ -559,8 +610,8 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
 
   "admin-supreme-1443-part1": {
     related_systems: [
-      { title: "نظام ديوان المظالم", slug: "court-of-grievances-law", type: "law" },
-      { title: "نظام المرافعات أمام ديوان المظالم", slug: "administrative-procedures-law", type: "law" }
+      { title: "نظام ديوان المظالم", slug: "grievance-board-law", type: "law" },
+      { title: "نظام المرافعات أمام ديوان المظالم", slug: "grievance-board-litigation-law", type: "law" }
     ],
     related_principles: [
       { title: "مبادئ ديوان المظالم لعام 1442هـ - ج1", slug: "admin-supreme-1442-part1", type: "precedent" }
@@ -574,7 +625,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
     law_status: "active",
     related_systems: [
       { title: "نظام المعاملات المدنية", slug: "civil-transactions-law", type: "law" },
-      { title: "نظام الإثبات", slug: "evidence-law", type: "law" }
+      { title: "نظام الإثبات", slug: "evidence-law-qadha-edition", type: "law" }
     ],
     related_principles: [
       { title: "المبادئ القضائية في الإثبات", slug: "evidence-principles", type: "precedent" }
@@ -589,7 +640,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
     law_status: "active",
     related_systems: [
       { title: "نظام المعاملات المدنية", slug: "civil-transactions-law", type: "law" },
-      { title: "نظام الإثبات", slug: "evidence-law", type: "law" }
+      { title: "نظام الإثبات", slug: "evidence-law-qadha-edition", type: "law" }
     ],
     related_principles: [
       { title: "المبادئ القضائية في الإثبات", slug: "evidence-principles", type: "precedent" }
@@ -604,7 +655,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
     law_status: "active",
     related_systems: [
       { title: "نظام المعاملات المدنية", slug: "civil-transactions-law", type: "law" },
-      { title: "نظام الإثبات", slug: "evidence-law", type: "law" }
+      { title: "نظام الإثبات", slug: "evidence-law-qadha-edition", type: "law" }
     ],
     related_principles: [
       { title: "المبادئ القضائية في الإثبات", slug: "evidence-principles", type: "precedent" }
@@ -618,7 +669,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
     law_status: "active",
     related_systems: [
       { title: "نظام المعاملات المدنية", slug: "civil-transactions-law", type: "law" },
-      { title: "نظام المرافعات الشرعية", slug: "civil-procedure-law", type: "law" }
+      { title: "نظام المرافعات الشرعية", slug: "sharia-pleading-law-qadha-edition", type: "law" }
     ],
     related_principles: [
       { title: "مبادئ المرافعات الشرعية", slug: "civil-procedure-principles", type: "precedent" }
@@ -632,7 +683,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
     law_status: "active",
     related_systems: [
       { title: "نظام المعاملات المدنية", slug: "civil-transactions-law", type: "law" },
-      { title: "نظام المرافعات الشرعية", slug: "civil-procedure-law", type: "law" }
+      { title: "نظام المرافعات الشرعية", slug: "sharia-pleading-law-qadha-edition", type: "law" }
     ],
     related_principles: [
       { title: "مبادئ المرافعات الشرعية", slug: "civil-procedure-principles", type: "precedent" }
@@ -644,9 +695,11 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
     section_name: "الرياضة والشباب",
     issuing_authority: "مجلس الوزراء",
     law_status: "active",
-    related_systems: [
-      { title: "نظام نادي الفروسية", slug: "equestrian-club-law", type: "law" }
-    ]
+    // equestrian-club-law (2026-09-25): dead on self-hosted, and no confident
+    // real match — the only "نظام نادي الفروسية"-adjacent row on self-hosted
+    // is a REPEALED, differently-scoped "إنشاء الهيئة العليا لأندية الفروسية"
+    // (supreme commission for equestrian clubs). Link removed rather than
+    // pointed at a 404 or a law that is not actually this one.
   } as LawMetaEntry,
 
   "64bb9b3c-4c52-464a-b356-b1e9008cffc3": {
@@ -655,7 +708,9 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
     issuing_authority: "الملك",
     law_status: "active",
     related_systems: [
-      { title: "نظام العمل", slug: "labor-law", type: "law" }
+      // labor-law (2026-09-25): dead on self-hosted. Real slug: labor-law-qadha
+      // (active) — on both self-hosted and the current cloud DB.
+      { title: "نظام العمل", slug: "labor-law-qadha", type: "law" }
     ]
   } as LawMetaEntry,
 
@@ -672,7 +727,11 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
     total_articles: 26,
     law_status: "active",
     related_systems: [
-      { title: "نظام مؤسسة النقد العربي السعودي", slug: "sama-law", type: "law" }
+      // sama-law (2026-09-25): dead on self-hosted, and the literal SAMA law
+      // itself (saudi-arabian-monetary-agency-law) is REPEALED there. Its
+      // successor in force is saudi-central-bank-law (نظام البنك المركزي
+      // السعودي، active) — self-hosted only, not yet on the cloud DB.
+      { title: "نظام البنك المركزي السعودي", slug: "saudi-central-bank-law", type: "law" }
     ],
   } as LawMetaEntry,
 
@@ -711,7 +770,11 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
     total_articles: 180,
     law_status: "active",
     related_systems: [
-      { title: "نظام الطيران المدني", slug: "law-civil-aviation", type: "law" }
+      // law-civil-aviation (2026-09-25): this MAP key is itself unreachable
+      // (no self-hosted row at that slug) and the related_systems entry was a
+      // self-link. Real corpus slug: law-aviation (نظام الطيران المدني، active)
+      // — self-hosted only, not yet on the cloud DB.
+      { title: "نظام الطيران المدني", slug: "law-aviation", type: "law" }
     ],
   } as LawMetaEntry,
 
@@ -761,7 +824,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
     total_articles: 58,
     law_status: "active",
     related_systems: [
-      { title: "نظام المرافعات الشرعية", slug: "civil-procedure-law", type: "law" }
+      { title: "نظام المرافعات الشرعية", slug: "sharia-pleading-law-qadha-edition", type: "law" }
     ],
   } as LawMetaEntry,
 
@@ -807,7 +870,7 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
     total_articles: 222,
     law_status: "active",
     related_systems: [
-      { title: "نظام الإثبات", slug: "evidence-law", type: "law" }
+      { title: "نظام الإثبات", slug: "evidence-law-qadha-edition", type: "law" }
     ],
   } as LawMetaEntry,
 
@@ -961,7 +1024,12 @@ export const LAW_METADATA_MAP: Record<string, LawMetaEntry> = {
     total_articles: 1,
     law_status: "active",
     related_systems: [
-      { title: "نظام ديوان المظالم", slug: "administrative-procedures-law", type: "law" }
+      // This entry's title says "نظام ديوان المظالم" (Board of Grievances Law)
+      // but its slug pointed at administrative-procedures-law — a DIFFERENT
+      // law (نظام المرافعات أمام ديوان المظالم) and, separately, dead on
+      // self-hosted. Corrected to the slug that actually matches this title:
+      // grievance-board-law (active) — on both self-hosted and the cloud DB.
+      { title: "نظام ديوان المظالم", slug: "grievance-board-law", type: "law" }
     ],
   } as LawMetaEntry,
 

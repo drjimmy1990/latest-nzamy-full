@@ -18,12 +18,14 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { resolveCorpusScope, assertCorpusScopeContract, type CorpusScopeDecision } from "./corpus-scope";
+const corpusScopeDecisions: CorpusScopeDecision[] = [];
 import { slugifyArabic as sharedSlugify } from "./lib/slug";
 import { parseFrontmatter } from "./lib/frontmatter";
 import { applyExclusions, formatExclusionSummary } from "./lib/exclusions";
 import { buildEntityIndexFromCategoryInput, resolveCrossDomain } from "./lib/entity-prescan";
-import { filterMeta } from "./manifest";
-import { writeParseReport, printCapped } from "./lib/report";
+import { filterMeta, assertManifestLoadable } from "./manifest";
+import { writeParseReport, printCapped, bindParseReportToOutput } from "./lib/report";
 import { classifyInstrument, type InstrumentType } from "./lib/instrument";
 
 /** Documents whose instrument could not be determined — counted, never guessed. */
@@ -53,6 +55,8 @@ export interface DecreeArticle {
 }
 
 export interface ParsedDecree {
+  corpus_scope: "public_corpus";
+  corpus_scope_provenance: CorpusScopeDecision;
   id: string;
   slug: string;
   title: string;
@@ -96,6 +100,7 @@ export interface DecreesParserOutput {
   total_decrees: number;
   total_articles: number;
   decrees: ParsedDecree[];
+  corpus_scope_decisions: CorpusScopeDecision[];
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -134,6 +139,9 @@ function parseUnifiedIndex(filePath: string): ParsedDecree[] {
   const decrees: ParsedDecree[] = [];
 
   for (const [uuid, entry] of Object.entries(index)) {
+    const scopeDecision = resolveCorpusScope(entry, `${filePath}#${uuid}`, JSON.stringify(entry));
+    corpusScopeDecisions.push(scopeDecision);
+    if (scopeDecision.corpus_scope !== "public_corpus") continue;
     const title = String(entry.title || "");
     const rawArticles = (entry.articles || []) as string[];
 
@@ -163,6 +171,8 @@ function parseUnifiedIndex(filePath: string): ParsedDecree[] {
     const slug = String(entry.id || uuid);
 
     decrees.push({
+      corpus_scope: "public_corpus",
+      corpus_scope_provenance: scopeDecision,
       id: uuid,
       slug,
       title,
@@ -210,6 +220,9 @@ function parseCircularMd(filePath: string): ParsedDecree | null {
   console.log(`  📄 Parsing circular markdown: ${path.basename(filePath)}`);
   const raw = fs.readFileSync(filePath, "utf-8");
   const { meta, body } = parseYamlFrontmatter(raw, filePath);
+  const scopeDecision = resolveCorpusScope(meta, filePath, raw);
+  corpusScopeDecisions.push(scopeDecision);
+  if (scopeDecision.corpus_scope !== "public_corpus") return null;
 
   const fileId = path.basename(filePath, ".md");
   const title = String(meta.title || fileId);
@@ -268,6 +281,8 @@ function parseCircularMd(filePath: string): ParsedDecree | null {
   }
 
   return {
+    corpus_scope: "public_corpus",
+    corpus_scope_provenance: scopeDecision,
     id: fileId,
     slug: slugifyArabic(title) || fileId,
     title,
@@ -302,6 +317,12 @@ function parseCircularMd(filePath: string): ParsedDecree | null {
 // ══════════════════════════════════════════════════════════════════════════════
 
 export function parseDecrees(inputPath: string, reportDir?: string): DecreesParserOutput {
+  assertManifestLoadable();
+  assertCorpusScopeContract();
+  corpusScopeDecisions.length = 0;
+  unknownInstruments.length = 0;
+  frontmatterWarnings.length = 0;
+  for (const key of Object.keys(schemaVersionCounts)) delete schemaVersionCounts[key];
   const resolvedPath = path.resolve(inputPath);
   const stats = fs.statSync(resolvedPath);
   const allDecrees: ParsedDecree[] = [];
@@ -512,6 +533,8 @@ export function parseDecrees(inputPath: string, reportDir?: string): DecreesPars
         crossDomainVerified: decreeCrossDomainVerified.length,
         unverifiedSupersededTags: decreeUnverifiedSupersededTags.length,
         failed: failedFiles.length,
+        corpusScopeBlocked: corpusScopeDecisions.filter(d => d.corpus_scope === "pending_review" || d.corpus_scope === "mixed_requires_separation").length,
+        corpusScopeInstitutional: corpusScopeDecisions.filter(d => d.corpus_scope === "institutional_reference").length,
         schemaVersionVariants: Object.keys(schemaVersionCounts).length,
       },
       schemaVersionCounts,
@@ -520,12 +543,18 @@ export function parseDecrees(inputPath: string, reportDir?: string): DecreesPars
       identityCollisions: idCollisions.map(([key, members]) => ({ key, members })),
       failed: failedFiles,
       notes: {
+        corpusScopeDecisions,
         supersededDuplicateSkipped: decreeSupersededDuplicateSkipped,
         crossDomainVerified: decreeCrossDomainVerified,
         unverifiedSupersededTags: decreeUnverifiedSupersededTags,
       },
     });
     if (p) console.log(`\n📄 Full parse report: ${p}`);
+  }
+
+  if (corpusScopeDecisions.some(d => d.corpus_scope === "pending_review" || d.corpus_scope === "mixed_requires_separation")) {
+    process.exitCode = 1;
+    throw new Error("Decree parse rejected: unresolved corpus_scope; inspect parse-report-decrees.json.");
   }
 
   // Rule ق-3: a run that lost documents or would corrupt identity must not exit 0.
@@ -551,6 +580,7 @@ export function parseDecrees(inputPath: string, reportDir?: string): DecreesPars
     total_decrees: cleanedDecrees.length,
     total_articles: totalArticles,
     decrees: cleanedDecrees as ParsedDecree[],
+    corpus_scope_decisions: corpusScopeDecisions.slice(),
   };
 }
 
@@ -577,5 +607,6 @@ if (require.main === module) {
   fs.mkdirSync(path.resolve(outputDir), { recursive: true });
   const outFile = path.join(path.resolve(outputDir), "decrees.json");
   fs.writeFileSync(outFile, JSON.stringify(result, null, 2), "utf-8");
+  bindParseReportToOutput(outputDir, "decrees", outFile);
   console.log(`📁 Output written to: ${outFile}`);
 }

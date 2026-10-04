@@ -1,5 +1,7 @@
 # دليل البذرة السريع — Library Seed Guide
 
+> 🔴 **حاجز 2026-09-18:** أوامر البذر/المسح الحي ومسارات Windows في هذا الدليل تاريخية وغير معتمدة لهذه الحزمة. `library:reseed:wipe` يفشل قبل clear؛ `library:reseed` أصبح parse + dry seed مع `--input` و`--output` جديد خارج الشجرة. لا تُشغّل `library:seed` أو `library:clear --live` اعتمادًا على أمثلة أدناه. ابدأ من README جذر ZIP الحالي؛ فحص DB/Staging يحتاج خطة ونسخة احتياطية منفصلتين.
+
 > هذا دليل مختصر وواضح. للتفاصيل الكاملة → [README.md](./README.md)
 
 ---

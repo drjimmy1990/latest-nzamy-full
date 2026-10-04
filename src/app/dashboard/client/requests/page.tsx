@@ -9,7 +9,9 @@ import {
   ArrowClockwise, ArrowLeft, Plus, MagnifyingGlass, Storefront,
   Users, CalendarCheck, X, Copy, Check, DownloadSimple,
   NotePencil, Scales, Lightbulb, Warning, Info, ArrowSquareOut, Star,
+  FileMagnifyingGlass,
 } from "@phosphor-icons/react";
+import { isBriefReviewOrder, BRIEF_REVIEW_SHORT_LABEL_AR } from "@/lib/services/briefReviewOrder";
 import { useUser } from "@/hooks/useUser";
 import { useTheme } from "@/components/ThemeProvider";
 import {
@@ -101,7 +103,18 @@ const UNKNOWN_TYPE_CFG: TypeConfig = {
   color: "text-gray-600 bg-gray-100 dark:bg-white/5 dark:text-gray-300",
 };
 
-function typeCfg(type: WorkflowRequest["type"]): TypeConfig {
+// «مراجعة وتدقيق مذكرة» (/ai/brief-check) is stored with type `ai_draft` —
+// an existing CHECK value — so keying on `type` alone would label it
+// «صياغة مذكرة». `metadata.service` is what tells the two apart, and it is
+// asked first.
+const BRIEF_REVIEW_TYPE_CFG: TypeConfig = {
+  label: BRIEF_REVIEW_SHORT_LABEL_AR,
+  icon: FileMagnifyingGlass,
+  color: "text-cyan-600 bg-cyan-50 dark:bg-cyan-900/20 dark:text-cyan-400",
+};
+
+function typeCfg(type: WorkflowRequest["type"], metadata?: WorkflowRequest["metadata"]): TypeConfig {
+  if (isBriefReviewOrder(metadata)) return BRIEF_REVIEW_TYPE_CFG;
   return TYPE_CFG[type] ?? UNKNOWN_TYPE_CFG;
 }
 
@@ -165,7 +178,7 @@ function RequestCard({
   cancelling: boolean;
 }) {
   const status = statusCfg(req.status);
-  const type   = typeCfg(req.type);
+  const type   = typeCfg(req.type, req.metadata);
   const CatIcon    = type.icon;
   const StatusIcon = status.Icon;
 
@@ -284,7 +297,7 @@ function RequestDetailModal({ req, onClose, onCancel, reviewableEntry, onReviewe
   if (!req) return null;
 
   const status = statusCfg(req.status);
-  const type = typeCfg(req.type);
+  const type = typeCfg(req.type, req.metadata);
   const CatIcon = type.icon;
   const premium = isPremiumServiceOrder(req);
 

@@ -37,15 +37,19 @@ export const FOLDER_COLORS = [
   { id: "teal",     hex: "#14b8a6", label: "تركواز", labelEn: "Teal" },
 ];
 
+// Slugs below were re-pointed 2026-09-25 (LIB-04 pass) from the old-corpus
+// literal names to the real self-hosted slugs, verified against
+// auth.nezamy.sa REST. "civil-procedure" is left as-is: /laws/civil-procedure
+// is its own 308 redirect (LIB-12) to sharia-pleading-law-qadha-edition.
 export const DEFAULT_LAWS: LawRef[] = [
-  { slug: "civil-procedure",     title: "نظام المرافعات الشرعية",     titleEn: "Civil Procedure Law",      catId: "SA-00", type: "law" },
-  { slug: "evidence-law",        title: "نظام الإثبات",               titleEn: "Evidence Law",             catId: "SA-00", type: "law" },
-  { slug: "execution-law",       title: "نظام التنفيذ",               titleEn: "Execution Law",            catId: "SA-00", type: "law" },
-  { slug: "civil-transactions",  title: "نظام المعاملات المدنية",     titleEn: "Civil Transactions Law",   catId: "SA-03", type: "law" },
-  { slug: "labor-law",           title: "نظام العمل",                 titleEn: "Labor Law",                catId: "SA-06", type: "law" },
-  { slug: "companies-law",       title: "نظام الشركات",               titleEn: "Companies Law",            catId: "SA-04", type: "law" },
-  { slug: "commercial-court",    title: "نظام المحاكم التجارية",      titleEn: "Commercial Courts Law",    catId: "SA-04", type: "law" },
-  { slug: "personal-status",     title: "نظام الأحوال الشخصية",       titleEn: "Personal Status Law",      catId: "SA-03", type: "law" },
+  { slug: "civil-procedure",             title: "نظام المرافعات الشرعية",     titleEn: "Civil Procedure Law",      catId: "SA-00", type: "law" },
+  { slug: "evidence-law-qadha-edition",  title: "نظام الإثبات",               titleEn: "Evidence Law",             catId: "SA-00", type: "law" },
+  { slug: "execution-law-qadha-edition", title: "نظام التنفيذ",               titleEn: "Execution Law",            catId: "SA-00", type: "law" },
+  { slug: "civil-transactions-law",      title: "نظام المعاملات المدنية",     titleEn: "Civil Transactions Law",   catId: "SA-03", type: "law" },
+  { slug: "labor-law-qadha",             title: "نظام العمل",                 titleEn: "Labor Law",                catId: "SA-06", type: "law" },
+  { slug: "companies-law",               title: "نظام الشركات",               titleEn: "Companies Law",            catId: "SA-04", type: "law" },
+  { slug: "commercial-courts-law",       title: "نظام المحاكم التجارية",      titleEn: "Commercial Courts Law",    catId: "SA-04", type: "law" },
+  { slug: "personal-status-law",         title: "نظام الأحوال الشخصية",       titleEn: "Personal Status Law",      catId: "SA-03", type: "law" },
 ];
 
 export const DEMO_FOLDERS: SmartFolder[] = [
@@ -67,9 +71,12 @@ export const DEMO_FOLDERS: SmartFolder[] = [
     icon: "book",
     isDefault: false,
     laws: [
-      { slug: "real-estate-brokerage", title: "نظام الوساطة العقارية", titleEn: "Real Estate Brokerage Law", catId: "SA-07", type: "law" },
-      { slug: "registered-lease",      title: "نظام إيجار",             titleEn: "Ejar Law",                 catId: "SA-07", type: "law" },
-      { slug: "real-estate-registry",  title: "نظام التسجيل العيني للعقار", titleEn: "Real Estate Registry Law", catId: "SA-07", type: "law" },
+      { slug: "real-estate-brokerage-law",       title: "نظام الوساطة العقارية", titleEn: "Real Estate Brokerage Law", catId: "SA-07", type: "law" },
+      // registered-lease (نظام إيجار / "Ejar Law", 2026-09-25): removed — no
+      // standalone "نظام إيجار" system exists on self-hosted; Ejar is run
+      // through ministerial decisions/circulars, not its own نظام, so there is
+      // no confident real-slug match to point this at instead of a 404.
+      { slug: "real-estate-title-registration-law", title: "نظام التسجيل العيني للعقار", titleEn: "Real Estate Registry Law", catId: "SA-07", type: "law" },
     ],
     lastModified: Date.now()
   },
@@ -81,8 +88,8 @@ export const DEMO_FOLDERS: SmartFolder[] = [
     icon: "pin",
     isDefault: false,
     laws: [
-      { slug: "arbitration-law",  title: "نظام التحكيم",                 titleEn: "Arbitration Law",          catId: "SA-28", type: "law" },
-      { slug: "enforcement-law",  title: "نظام التنفيذ أمام ديوان المظالم", titleEn: "BOG Enforcement Law",    catId: "SA-28", type: "law" },
+      { slug: "arbitration-law",                title: "نظام التحكيم",                 titleEn: "Arbitration Law",          catId: "SA-28", type: "law" },
+      { slug: "grievance-board-enforcement-law", title: "نظام التنفيذ أمام ديوان المظالم", titleEn: "BOG Enforcement Law",    catId: "SA-28", type: "law" },
     ],
     lastModified: Date.now()
   },
@@ -90,33 +97,29 @@ export const DEMO_FOLDERS: SmartFolder[] = [
 
 export const ALL_LIBRARY_DOCS: LibraryDoc[] = [
   { slug: "companies-law", title: "نظام الشركات", titleEn: "Companies Law", catId: "SA-04", type: "law" },
-  { slug: "commercial-court", title: "نظام المحاكم التجارية", titleEn: "Commercial Courts Law", catId: "SA-04", type: "law" },
+  { slug: "commercial-courts-law", title: "نظام المحاكم التجارية", titleEn: "Commercial Courts Law", catId: "SA-04", type: "law" },
   { slug: "civil-procedure", title: "نظام المرافعات الشرعية", titleEn: "Civil Procedure Law", catId: "SA-00", type: "law" },
-  { slug: "evidence-law", title: "نظام الإثبات", titleEn: "Evidence Law", catId: "SA-00", type: "law" },
-  { slug: "execution-law", title: "نظام التنفيذ", titleEn: "Execution Law", catId: "SA-00", type: "law" },
-  { slug: "civil-transactions", title: "نظام المعاملات المدنية", titleEn: "Civil Transactions Law", catId: "SA-03", type: "law" },
-  { slug: "labor-law", title: "نظام العمل", titleEn: "Labor Law", catId: "SA-06", type: "law" },
-  { slug: "personal-status", title: "نظام الأحوال الشخصية", titleEn: "Personal Status Law", catId: "SA-03", type: "law" },
-  { slug: "real-estate-brokerage", title: "نظام الوساطة العقارية", titleEn: "Real Estate Brokerage Law", catId: "SA-07", type: "law" },
-  { slug: "registered-lease", title: "نظام إيجار", titleEn: "Ejar Law", catId: "SA-07", type: "law" },
-  { slug: "real-estate-registry", title: "نظام التسجيل العيني للعقار", titleEn: "Real Estate Registry Law", catId: "SA-07", type: "law" },
+  { slug: "evidence-law-qadha-edition", title: "نظام الإثبات", titleEn: "Evidence Law", catId: "SA-00", type: "law" },
+  { slug: "execution-law-qadha-edition", title: "نظام التنفيذ", titleEn: "Execution Law", catId: "SA-00", type: "law" },
+  { slug: "civil-transactions-law", title: "نظام المعاملات المدنية", titleEn: "Civil Transactions Law", catId: "SA-03", type: "law" },
+  { slug: "labor-law-qadha", title: "نظام العمل", titleEn: "Labor Law", catId: "SA-06", type: "law" },
+  { slug: "personal-status-law", title: "نظام الأحوال الشخصية", titleEn: "Personal Status Law", catId: "SA-03", type: "law" },
+  { slug: "real-estate-brokerage-law", title: "نظام الوساطة العقارية", titleEn: "Real Estate Brokerage Law", catId: "SA-07", type: "law" },
+  // registered-lease (Ejar Law) removed — see DEMO_FOLDERS note above; no
+  // confident self-hosted match.
+  { slug: "real-estate-title-registration-law", title: "نظام التسجيل العيني للعقار", titleEn: "Real Estate Registry Law", catId: "SA-07", type: "law" },
   { slug: "arbitration-law", title: "نظام التحكيم", titleEn: "Arbitration Law", catId: "SA-28", type: "law" },
-  { slug: "enforcement-law", title: "نظام التنفيذ أمام ديوان المظالم", titleEn: "BOG Enforcement Law", catId: "SA-28", type: "law" },
-  { slug: "rawd-al-murbi", title: "الروض المربع بشرح زاد المستقنع", titleEn: "Al-Rawd Al-Murbi", catId: "SA-00", type: "book" },
-  { slug: "sources-of-right-1", title: "مصادر الحق في الفقه الإسلامي", titleEn: "Sources of Right", catId: "SA-00", type: "book" },
-  { slug: "ord-sama-01", title: "تعميم البنك المركزي بشأن الجاهزية للمدفوعات الإلكترونية", titleEn: "SAMA e-Payment circular", catId: "SA-08", type: "order" },
-  { slug: "ord-ncnp-01", title: "تعميم المركز الوطني لتنمية القطاع غير الربحي بشأن حملات التبرع", titleEn: "NCNP Ramadan charity circular", catId: "SA-10", type: "order" },
-  { slug: "ord-01", title: "الموافقة على نظام الشركات المحدث", titleEn: "Royal Decree for Companies Law", catId: "SA-04", type: "order" },
-  { slug: "ord-02", title: "الموافقة على نظام ضريبة القيمة المضافة", titleEn: "Cabinet Order for VAT Law", catId: "SA-09", type: "order" },
-  { slug: "ord-03", title: "تعميم بشأن ضوابط إنهاء عقود العمالة المنزلية", titleEn: "MOL Circular for Domestic Labor", catId: "SA-06", type: "order" },
-  { slug: "ord-04", title: "نظام حماية البيانات الشخصية", titleEn: "Personal Data Protection Law", catId: "SA-12", type: "order" },
-  { slug: "ord-05", title: "تعميم بشأن ضوابط الإعلانات العقارية الإلكترونية", titleEn: "REGA Circular for Real Estate Ads", catId: "SA-07", type: "order" },
-  { slug: "ord-06", title: "قرار بشأن ضوابط منصات التجارة الإلكترونية", titleEn: "Cabinet Order for E-commerce Platforms", catId: "SA-04", type: "order" },
-  { slug: "prec-moj-01", title: "عدم قبول طلب النقض لعدم التأسيس على محال الاعتراض (المادة 88 من نظام المحاكم التجارية)", titleEn: "Supreme Court Commercial Judgment - Art 88", catId: "SA-04", type: "precedent" },
-  { slug: "prec-01", title: "عقد التوريد والخدمات اللوجستية", titleEn: "Commercial precedent 1", catId: "SA-04", type: "precedent" },
-  { slug: "prec-02", title: "صورية العقود والشركات", titleEn: "Commercial precedent 2", catId: "SA-04", type: "precedent" },
-  { slug: "prec-03", title: "الفصل التعسفي والتعويض عنه", titleEn: "Labor precedent 1", catId: "SA-06", type: "precedent" },
-  { slug: "prec-04", title: "جرائم المعلوماتية والابتزاز", titleEn: "Criminal precedent 1", catId: "SA-01", type: "precedent" },
-  { slug: "prec-05", title: "القرار الإداري الفردي", titleEn: "Administrative precedent 1", catId: "SA-02", type: "precedent" },
-  { slug: "prec-06", title: "الملكية العقارية والتسجيل العيني", titleEn: "Real Estate precedent 1", catId: "SA-07", type: "precedent" }
+  { slug: "grievance-board-enforcement-law", title: "نظام التنفيذ أمام ديوان المظالم", titleEn: "BOG Enforcement Law", catId: "SA-28", type: "law" },
+  // Non-law entries resolved 2026-09-25 against self-hosted (auth.nezamy.sa).
+  // Books use feqh_books.id, the key /api/library/books/[slug] reads; the two
+  // old demo ids (rawd-al-murbi, sources-of-right-1) exist in no table.
+  { slug: "الروض المربع شرح زاد المستقنع", title: "الروض المربع شرح زاد المستقنع", titleEn: "Al-Rawd Al-Murbi", catId: "SA-00", type: "book" },
+  { slug: "مصادر الحق في الفقه الإسلامي - الجزء الأول", title: "مصادر الحق في الفقه الإسلامي — الجزء 1", titleEn: "Sources of Right, vol. 1", catId: "SA-00", type: "book" },
+  // Removed, no confident match: the eight demo orders (ord-sama-01,
+  // ord-ncnp-01, ord-01..ord-06) — decrees_circulars.id is a uuid, and no row
+  // matches their titles (the companies-law and VAT approval decrees, the SAMA
+  // e-payment, NCNP donation, domestic-labour, REGA ads and e-commerce
+  // circulars are not in the table); and the seven demo precedents
+  // (prec-moj-01, prec-01..prec-06), which name topics, not
+  // judicial_collections rows. Each linked to a not-found or unavailable page.
 ];

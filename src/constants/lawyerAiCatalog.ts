@@ -35,6 +35,16 @@ export interface LawyerAiTool {
   betaStatus: LawyerAiBetaStatus;
   sidebarPlacement: LawyerAiSidebarPlacement;
   adminPricingKey: string;
+  /**
+   * The page behind `href` renders DashboardComingSoon — it has no backend
+   * yet. The tool KEEPS its row here (its permission, its point cost and its
+   * admin pricing key are all real and the page must stay reachable to say
+   * «قريباً»), but `getLawyerAiBadge` refuses to price it on the hub: a
+   * «١٠٠ نقطة» pill over a page that cannot answer is the same false promise
+   * a «جديد» nav badge is, which is what src/lib/services/navComingSoon.test.ts
+   * exists to stop.
+   */
+  comingSoon?: true;
 }
 
 export const LAWYER_AI_TOOLS: readonly LawyerAiTool[] = [
@@ -81,8 +91,12 @@ export const LAWYER_AI_TOOLS: readonly LawyerAiTool[] = [
   {
     permission: "ai:brief-check",
     href: "/ai/brief-check",
-    titleAr: "فاحص المذكرات",
-    titleEn: "Brief Auditor",
+    // Was «فاحص المذكرات» / "Brief Auditor" — the name of an automatic
+    // checker that never existed (the page showed five fixed findings after a
+    // timer). /ai/brief-check now places an order the TEAM fulfils (owner
+    // decision Q77), under the owner's own name for the service.
+    titleAr: "مراجعة وتدقيق مذكرة",
+    titleEn: "Brief Review",
     pointCost: 0,
     betaStatus: "beta-free",
     sidebarPlacement: "hub-only",
@@ -197,6 +211,12 @@ export const LAWYER_AI_TOOLS: readonly LawyerAiTool[] = [
     betaStatus: "priced",
     sidebarPlacement: "more-tools",
     adminPricingKey: "lawyer.ai.direction_support",
+    // UAT-LIVE-AI-001 — every نص/سابقة this page returned was a module
+    // constant; it now renders DashboardComingSoon. The row stays so the
+    // permission keeps existing (without it `ai/layout.tsx` would refuse the
+    // lawyer the «قريباً» page itself) and so the admin pricing screen keeps
+    // its key — only the hub badge stops claiming a price.
+    comingSoon: true,
   },
   {
     permission: "ai:legal-translate",
@@ -243,8 +263,12 @@ export const LAWYER_AI_TOOLS: readonly LawyerAiTool[] = [
     href: "/ai/monitor",
     titleAr: "راصد التشريعات",
     titleEn: "Law Monitor",
-    pointCost: 10,
-    betaStatus: "priced",
+    // Free (2026-10-04): /ai/monitor is a live library feed that charges
+    // nothing, so the hub's old «10 نقطة» pill priced a tool with no price.
+    // pointCost is display-only — no route debits it — so this changes the
+    // badge to «مجاني» and nothing else.
+    pointCost: 0,
+    betaStatus: "free",
     sidebarPlacement: "core",
     adminPricingKey: "lawyer.ai.monitor",
   },
@@ -277,6 +301,9 @@ export const LAWYER_AI_TOOL_BY_PERMISSION = Object.fromEntries(
 ) as Record<LawyerAiPermission, LawyerAiTool>;
 
 export function getLawyerAiBadge(tool: LawyerAiTool, lang: "ar" | "en") {
+  // Checked FIRST, before any price: a tool with no working page is not
+  // "100 points", it is not available. See `comingSoon` on LawyerAiTool.
+  if (tool.comingSoon) return lang === "ar" ? "قريباً" : "Coming soon";
   if (tool.betaStatus === "beta-free") return lang === "ar" ? "بيتا مجاني" : "Beta free";
   if (tool.betaStatus === "free") return lang === "ar" ? "مجاني" : "Free";
   return lang === "ar" ? `${tool.pointCost} نقطة` : `${tool.pointCost} pts`;

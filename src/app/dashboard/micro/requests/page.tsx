@@ -28,6 +28,7 @@ import {
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import { listClientWorkflowRequestsPage } from "@/lib/clientWorkflowRepository";
+import { isBriefReviewOrder, BRIEF_REVIEW_SHORT_LABEL_AR } from "@/lib/services/briefReviewOrder";
 import type { WorkflowRequest, WorkflowRequestStatus } from "@/lib/workflowStore";
 import { listOk, listFailed, listViewState, itemsOf, type ListRead } from "@/lib/services/listRead";
 import { orderReference } from "@/lib/services/orderReference";
@@ -84,7 +85,10 @@ const TYPE_LABEL: Record<WorkflowRequest["type"], string> = {
   ai_legal_opinion: "رأي قانوني",
 };
 
-function typeLabel(type: WorkflowRequest["type"]): string {
+// A memo review (/ai/brief-check) is stored as `ai_draft`; only
+// `metadata.service` tells it from a drafting order, so it is asked first.
+function typeLabel(type: WorkflowRequest["type"], metadata?: WorkflowRequest["metadata"]): string {
+  if (isBriefReviewOrder(metadata)) return BRIEF_REVIEW_SHORT_LABEL_AR;
   return TYPE_LABEL[type] ?? "طلب";
 }
 
@@ -285,7 +289,7 @@ export default function MicroRequestsPage() {
                             {status.label}
                           </span>
                           <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${isDark ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-500"}`}>
-                            {typeLabel(req.type)}
+                            {typeLabel(req.type, req.metadata)}
                           </span>
                         </div>
                         <p className={`text-[15px] font-bold leading-snug ${isDark ? "text-white" : "text-zinc-800"}`}>{req.title}</p>
@@ -364,7 +368,7 @@ export default function MicroRequestsPage() {
                 )}
                 <div className="grid grid-cols-2 gap-3">
                   {[
-                    { label: "النوع", val: typeLabel(selected.type) },
+                    { label: "النوع", val: typeLabel(selected.type, selected.metadata) },
                     { label: "الحالة", val: STATUS_STYLE[selected.status].label },
                     { label: "تاريخ الطلب", val: fmtDate(selected.createdAt) },
                     { label: "الرسوم", val: selected.payment.amount > 0 ? `${toArabicDigits(selected.payment.amount.toLocaleString("en-US"))} ر.س` : "بدون رسوم" },

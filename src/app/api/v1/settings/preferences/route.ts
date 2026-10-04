@@ -7,7 +7,9 @@ import { preferencesDbErrorResponse } from "./_shared";
  * PATCH /api/v1/settings/preferences — Phase 6 (preferencesService.ts).
  * ─────────────────────────────────────────────────────────
  * Body: a partial object whose keys are a subset of PREFERENCE_KEYS
- * (readingActivity, recentSessions, dashboardMode) — any other key is a 400.
+ * (readingActivity, recentSessions, dashboardMode, quickTools) — any other
+ * key is a 400. quickTools must be 3..8 unique ids from LAWYER_QUICK_TOOLS
+ * (src/lib/lawyerQuickTools.ts).
  * Every key present is validated (src/lib/services/preferencesMerge.ts),
  * then shallow-merged over the caller's existing `user_settings.preferences`
  * WITHOUT touching sibling keys the merge module does not model — most

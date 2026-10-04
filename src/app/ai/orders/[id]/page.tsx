@@ -20,6 +20,7 @@ import { buildWhatsAppHref } from "@/components/floating/whatsappWorkflow";
 import { buildWhatsAppMessage } from "@/lib/services/whatsappRequestMessage";
 import { CATEGORY_LABELS } from "@/components/floating/roleContext";
 import { SERVICE_TITLE_AR } from "@/lib/services/orderIntake";
+import { isBriefReviewOrder, BRIEF_REVIEW_TITLE_AR } from "@/lib/services/briefReviewOrder";
 import { OrderTimeline } from "./_components/OrderTimeline";
 import { OrderSummary } from "./_components/OrderSummary";
 import { OrderActions } from "./_components/OrderActions";
@@ -169,12 +170,18 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   // fell back to that same free text when absent; the fallback here is
   // SERVICE_TITLE_AR (orderIntake.ts), which is keyed off metadata.service
   // and never client-authored.
+  // «مراجعة وتدقيق مذكرة» (/ai/brief-check) is not one of the four ServiceKeys
+  // SERVICE_TITLE_AR knows, so it is resolved before that lookup; the final
+  // fallback keeps a service outside both from printing «undefined».
+  const serviceTitle =
+    order.metadata?.serviceTitleAr
+    ?? (isBriefReviewOrder(order.metadata) ? BRIEF_REVIEW_TITLE_AR : undefined)
+    ?? (order.metadata?.service ? SERVICE_TITLE_AR[order.metadata.service] : undefined)
+    ?? "طلب خدمة";
   const supportHref = buildWhatsAppHref(
     buildWhatsAppMessage({
       intro: "مرحباً فريق نظامي، أحتاج مساعدة بخصوص طلبي.",
-      serviceTitle:
-        order.metadata?.serviceTitleAr
-        ?? (order.metadata?.service ? SERVICE_TITLE_AR[order.metadata.service] : "طلب خدمة"),
+      serviceTitle,
       actor: { name: user.name, categoryLabel: CATEGORY_LABELS[user.userType ?? "guest"] ?? "زائر" },
       sourcePath: `/ai/orders/${order.id}`,
       outcome: { kind: "recorded", reference: orderReference(order.id) },
@@ -202,7 +209,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
         <h1 className={`text-xl font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>{order.title}</h1>
         <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-          {order.metadata?.serviceTitleAr} · الحالة: {s.label}
+          {serviceTitle} · الحالة: {s.label}
         </p>
       </div>
 

@@ -123,7 +123,7 @@ export default function AIShowcase() {
           >
             <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-gold/20 bg-gold/5 px-4 py-1.5">
               <Sparkle size={14} weight="fill" className="text-gold" />
-              <span className="text-xs font-bold text-gold-dark">{isAr ? "نظامي AI MAX" : "Nezamy AI MAX"}</span>
+              <span className="text-xs font-bold text-gold-dark">{isAr ? "نظامي AI" : "Nezamy AI"}</span>
             </div>
 
             <h2 className={`font-brand text-3xl font-extrabold tracking-tight md:text-5xl leading-tight ${isDark ? "text-white" : "text-royal"}`}>

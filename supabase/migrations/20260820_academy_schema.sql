@@ -105,5 +105,5 @@ create policy "Public verify certificates" on academy.certificates for select us
 create policy "Service role manage certificates" on academy.certificates for all using (true);
 
 -- Public view aliases in public schema if needed
-create or replace view public.academy_questions as select * from academy.questions;
-create or replace view public.academy_quizzes as select * from academy.quizzes;
+create or replace view public.academy_questions with (security_invoker = true) as select * from academy.questions;  -- security_invoker: Supabase lint security_definer_view (see 20260922_04)
+create or replace view public.academy_quizzes with (security_invoker = true) as select * from academy.quizzes;  -- security_invoker: Supabase lint security_definer_view (see 20260922_04)

@@ -18,7 +18,7 @@ export default function LetterDrafterPage() {
     : "bg-white border border-zinc-200 rounded-[2rem] shadow-lg";
 
   return (
-    <div className={`min-h-screen ${isDark ? "bg-[#0d1117] text-zinc-100" : "bg-slate-50 text-zinc-900"}`} dir="rtl">
+    <div className={`min-h-[100dvh] ${isDark ? "bg-[#0d1117] text-zinc-100" : "bg-slate-50 text-zinc-900"}`} dir="rtl">
       {/* ── Topbar breadcrumb ── */}
       <div className={`sticky top-0 z-40 border-b px-6 py-4 flex items-center gap-3 text-[13px] backdrop-blur-xl font-bold ${isDark ? "bg-[#0d1117]/80 border-white/10 text-zinc-400" : "bg-white/80 border-slate-200 text-slate-500"}`}>
         <Link href="/dashboard/client" className={`transition-colors ${isDark ? "hover:text-white" : "hover:text-zinc-900"}`}>لوحة التحكم</Link>

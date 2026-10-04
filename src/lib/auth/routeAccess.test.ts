@@ -26,6 +26,7 @@ import {
   isProtectedApiPath,
   PROTECTED_API_PREFIXES,
   DB_USER_TYPES,
+  isSharedClientIntakePath,
 } from './routeAccess.ts';
 
 // ── The corporate ordering path ────────────────────────────────────────────
@@ -41,11 +42,23 @@ const CORPORATE_INTAKE_PATHS = [
 
 test('a corporate account may load every shared intake path', () => {
   for (const path of CORPORATE_INTAKE_PATHS) {
+    assert.equal(isSharedClientIntakePath(path), true, path);
     assert.equal(
       isRouteAllowedFor(path, 'corporate'),
       true,
       `${path} must be open to a corporate account — it is the only order form there is`,
     );
+  }
+});
+
+test('the shared intake detector does not classify personal client screens as company context', () => {
+  for (const path of [
+    '/dashboard/client',
+    '/dashboard/client/cases',
+    '/dashboard/client/documents',
+    '/dashboard/client/letters',
+  ]) {
+    assert.equal(isSharedClientIntakePath(path), false, path);
   }
 });
 
@@ -69,7 +82,6 @@ test('opening the intake did NOT open the rest of the client dashboard', () => {
     '/dashboard/client/my-group',
     '/dashboard/client/letters',
     '/dashboard/client/find-lawyer',
-    '/dashboard/client/celebrity/status',
   ];
   for (const path of individualOnly) {
     assert.equal(

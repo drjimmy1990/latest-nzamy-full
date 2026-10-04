@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsOnboarding } from "./onboardingGate.ts";
+import { hasValidSaudiMobile } from "../services/saudiMobile.ts";
 
 test("a fresh Google user needs onboarding", () => {
   assert.equal(
@@ -56,6 +57,49 @@ test("a completed individual WITHOUT a phone still needs it — WhatsApp has no 
     needsOnboarding({ userType: "individual", onboardingCompleted: true, hasPhone: false }),
     true,
   );
+});
+
+// UAT-REG-002 / appendix 03 §5. The gate takes `hasPhone` as a boolean, so the
+// defect was never here — it was in how src/proxy.ts computed it:
+// `(profile?.phone ?? "").trim() !== ""`, a presence test that a row holding
+// `letters-and-email@example.test` passes. These two cases pin the CALLER's
+// contract: whatever the proxy passes must be the answer to "can we dial
+// this?", and `hasValidSaudiMobile` is the function that answers it.
+test("the caller's hasPhone must be format-aware: a malformed number is still gated", () => {
+  for (const stored of [
+    "letters-and-email@example.test",
+    "abc@example.com",
+    "   ",
+    "0112345678",
+    "051234567",
+    "+201012345678",
+  ]) {
+    assert.equal(hasValidSaudiMobile(stored), false, stored);
+    assert.equal(
+      needsOnboarding({
+        userType: "individual",
+        onboardingCompleted: true,
+        hasPhone: hasValidSaudiMobile(stored),
+      }),
+      true,
+      stored,
+    );
+  }
+});
+
+test("the caller's hasPhone accepts every form the registration screens allow", () => {
+  for (const stored of ["+966512345678", "0512345678", "00966512345678", "٠٥١٢٣٤٥٦٧٨"]) {
+    assert.equal(hasValidSaudiMobile(stored), true, stored);
+    assert.equal(
+      needsOnboarding({
+        userType: "individual",
+        onboardingCompleted: true,
+        hasPhone: hasValidSaudiMobile(stored),
+      }),
+      false,
+      stored,
+    );
+  }
 });
 
 test("only the boolean `true` counts as completed", () => {

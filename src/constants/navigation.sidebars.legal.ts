@@ -14,8 +14,7 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
     title: "الجلسات والقضايا", titleEn: "Hearings & Cases",
     collapsible: false,
     items: [
-      { label: "الجلسات والمواعيد",    labelEn: "Hearings & Appointments",       href: "/dashboard/lawyer/hearings",  icon: "CalendarCheck" },
-      { label: "رادار المهل",         labelEn: "Deadline Radar", href: "/dashboard/lawyer/deadlines", icon: "Timer" },
+      { label: "الجلسات والمهل القضائية", labelEn: "Hearings & Deadlines", href: "/dashboard/lawyer/hearings", icon: "CalendarCheck" },
       { label: "جميع القضايا",       labelEn: "All Cases",      href: "/dashboard/lawyer/cases",     icon: "Gavel" },
       { label: "مهامي",              labelEn: "My Tasks",       href: "/dashboard/lawyer/tasks",     icon: "CheckSquare" },
       { label: "سجل النشاط",        labelEn: "Activity Log",   href: "/dashboard/lawyer/activity",  icon: "ClockCounterClockwise" },
@@ -60,10 +59,13 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
   {
     title: "العقود والمستندات", titleEn: "Contracts & Docs",
     collapsible: true,
-    defaultOpen: false,
+    defaultOpen: true,
     items: [
       { label: "مدير العقود",    labelEn: "Contracts",       href: "/dashboard/lawyer/contracts", icon: "FileText" },
       { label: "المستندات",      labelEn: "Documents",        href: "/dashboard/lawyer/documents", icon: "FolderOpen" },
+      // badge «قريباً» — /ai/vault renders DashboardComingSoon (its mock
+      // documents and mock lawyer card were removed, owner decision 28 Sep).
+      { label: "الخزنة",         labelEn: "The Vault",        href: "/ai/vault",                    icon: "Vault", badge: "قريباً" },
       // «الأرشيف الموحّد» stood here. An earlier round downgraded its badge
       // from «جديد» to «قريباً» — honest about the pill, but the entry still
       // spent a line of the sidebar on a 12-line DashboardComingSoon template.
@@ -88,14 +90,17 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
   {
     title: "أدوات إضافية", titleEn: "More Tools",
     collapsible: true,
-    defaultOpen: false,
+    defaultOpen: true,
     items: [
       // ١: مهام يومية متكررة
       { label: "المرشد القضائي",    labelEn: "Court Guide",       href: "/ai/procedures",       icon: "MapTrifold" },
       { label: "الحاسبة القانونية",  labelEn: "Legal Calculator",  href: "/ai/fee-calculator",   icon: "Calculator" },
       { label: "منقح ناجز",          labelEn: "Najiz Optimizer",   href: "/ai/najiz-optimizer",  icon: "Broom" },
       // ٢: دوري أو عند الحاجة
-      { label: "داعم الاتجاه",      labelEn: "Direction Support",  href: "/ai/direction-support", icon: "Compass",       badge: "جديد", divider: true },
+      // UAT-LIVE-AI-001 — badge «جديد» → «قريباً»: /ai/direction-support renders
+      // DashboardComingSoon now (its results were module constants), and a nav
+      // entry is a promise about the page under it.
+      { label: "داعم الاتجاه",      labelEn: "Direction Support",  href: "/ai/direction-support", icon: "Compass",       badge: "قريباً", divider: true },
       { label: "المترجم القانوني",  labelEn: "Legal Translator",  href: "/ai/legal-translate",  icon: "Translate",     badge: "جديد" },
       { label: "المفرّغ الذكي",      labelEn: "Transcriber",       href: "/ai/transcriber",      icon: "Microphone" },
       { label: "المقارن الذكي",      labelEn: "Smart Comparator",  href: "/ai/compare",          icon: "ArrowsLeftRight", badge: "جديد" },
@@ -178,8 +183,7 @@ export const LAWYER_SIDEBAR_LITE: SidebarGroup[] = [
   {
     title: "الجلسات والقضايا", titleEn: "Hearings & Cases",
     items: [
-      { label: "الجلسات والمواعيد", labelEn: "Hearings & Appointments",  href: "/dashboard/lawyer/hearings", icon: "CalendarCheck" },
-      { label: "رادار المهل",       labelEn: "Deadline Radar", href: "/dashboard/lawyer/deadlines", icon: "Timer" },
+      { label: "الجلسات والمهل القضائية", labelEn: "Hearings & Deadlines", href: "/dashboard/lawyer/hearings", icon: "CalendarCheck" },
       { label: "جميع القضايا",   labelEn: "All Cases", href: "/dashboard/lawyer/cases",    icon: "Gavel" },
       { label: "مهامي",          labelEn: "My Tasks",  href: "/dashboard/lawyer/tasks",    icon: "CheckSquare" },
     ],
@@ -334,7 +338,8 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     collapsible: true,
     defaultOpen: false,
     items: [
-      { label: "داعم الاتجاه",      labelEn: "Direction Support",  href: "/ai/direction-support", icon: "Compass",         badge: "جديد" },
+      // badge «جديد» → «قريباً» — same reason as the lawyer sidebar above.
+      { label: "داعم الاتجاه",      labelEn: "Direction Support",  href: "/ai/direction-support", icon: "Compass",         badge: "قريباً" },
       { label: "المترجم القانوني",  labelEn: "Legal Translator",   href: "/ai/legal-translate",   icon: "Translate",       badge: "جديد" },
       { label: "المفرّغ الذكي",      labelEn: "Transcriber",        href: "/ai/transcriber",       icon: "Microphone" },
       { label: "المقارن الذكي",      labelEn: "Smart Comparator",   href: "/ai/compare",           icon: "ArrowsLeftRight", badge: "جديد" },

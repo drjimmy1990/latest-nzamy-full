@@ -12,7 +12,6 @@ import {
   Check,
   ArrowLeft,
   ArrowRight,
-  Star,
   Briefcase,
   ShieldCheck,
   CalendarBlank,
@@ -223,11 +222,9 @@ export default function ProPage() {
                   : isDark ? "border-white/10 bg-dark-card" : "border-slate-200 bg-white"
                 }`}
               >
-                {plan.highlight && (
-                  <span className="absolute -top-3 start-1/2 -translate-x-1/2 rounded-full bg-gold px-4 py-1 text-xs font-bold text-royal">
-                    {isRTL ? "الأكثر شعبية" : "Most Popular"}
-                  </span>
-                )}
+                {/* No «الأكثر شعبية» badge (owner, Q164, 2026-10-03): no
+                    subscription data supports a popularity claim. The card
+                    keeps its emphasis styling, which claims nothing. */}
                 <h3 className={`text-xl font-bold ${plan.highlight ? "text-white" : isDark ? "text-white" : "text-slate-900"}`}>
                   {isRTL ? plan.name.ar : plan.name.en}
                 </h3>
@@ -262,35 +259,14 @@ export default function ProPage() {
         </div>
       </section>
 
-      {/* ── Testimonials ── */}
-      <section className={`py-20 ${isDark ? "bg-dark-bg" : "bg-slate-50"}`}>
-        <div className="mx-auto max-w-5xl px-4">
-          <h2 className={`mb-10 text-center text-2xl font-bold ${isDark ? "text-white" : "text-slate-900"}`}>
-            {isRTL ? "ماذا يقول المحامون" : "What Lawyers Say"}
-          </h2>
-          <div className="grid gap-6 md:grid-cols-3">
-            {[
-              { name: isRTL ? "المحامي أحمد الغامدي" : "Lawyer Ahmed Al-Ghamdi", role: isRTL ? "محامٍ مدني — الرياض" : "Civil Lawyer — Riyadh", text: isRTL ? "وفّر عليّ نظامي Pro ساعات يومياً في إدارة الملفات والفواتير. الآن أركز على القضايا." : "Nezamy Pro saves me hours daily on file management and billing. Now I focus on cases." },
-              { name: isRTL ? "المستشارة ليلى الزهراني" : "Counselor Layla Al-Zahrani", role: isRTL ? "مستشارة قانونية — جدة" : "Legal Counsel — Jeddah", text: isRTL ? "مكتبة القوالب وذكاء الصياغة غيّرا طريقة عملي تماماً." : "The template library and drafting AI completely changed how I work." },
-              { name: isRTL ? "الأستاذ خالد المطيري" : "Prof. Khaled Al-Mutairi", role: isRTL ? "شريك — مكتب المطيري للمحاماة" : "Partner — Al-Mutairi Law Firm", text: isRTL ? "أفضل استثمار في إدارة المكتب. الفريق أصبح أكثر إنتاجية بنسبة ٤٠٪." : "Best investment in office management. The team is 40% more productive." },
-            ].map((t, i) => (
-              <div key={i} className={`rounded-2xl border p-6 ${isDark ? "border-white/10 bg-dark-card" : "border-slate-200 bg-white"}`}>
-                <div className="flex gap-0.5">
-                  {Array.from({ length: 5 }).map((_, s) => <Star key={s} size={14} weight="fill" className="text-gold" />)}
-                </div>
-                <p className={`mt-3 text-sm leading-relaxed ${isDark ? "text-gray-300" : "text-slate-600"}`}>"{t.text}"</p>
-                <div className="mt-4">
-                  <p className={`font-semibold ${isDark ? "text-white" : "text-slate-900"}`}>{t.name}</p>
-                  <p className={`text-xs ${isDark ? "text-gray-400" : "text-slate-500"}`}>{t.role}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* ── Testimonials — removed (T28-18) ──
+          Three named lawyers («أحمد الغامدي», «ليلى الزهراني», «خالد المطيري»),
+          five stars each and «أكثر إنتاجية بنسبة ٤٠٪» — none of them real: no
+          reviews exist behind them. Removed rather than replaced; the page reads
+          features → pricing → FAQ. */}
 
       {/* ── FAQ ── */}
-      <section className={`py-20 ${isDark ? "bg-[#0e1218]" : "bg-white"}`}>
+      <section className={`py-20 ${isDark ? "bg-dark-bg" : "bg-slate-50"}`}>
         <div className="mx-auto max-w-3xl px-4">
           <h2 className={`mb-8 text-center text-2xl font-bold ${isDark ? "text-white" : "text-slate-900"}`}>
             {isRTL ? "أسئلة شائعة" : "FAQ"}

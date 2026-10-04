@@ -1,9 +1,15 @@
 "use client";
 
+import { useState } from "react";
 import {
-  Stack, BookOpen, Scroll, CalendarBlank, Buildings, Tag, FolderSimple, Lock, Crown
+  Stack, BookOpen, Scroll, CalendarBlank, Buildings, Tag, FolderSimple, Lock, Crown, CaretDown
 } from "@phosphor-icons/react";
 import type { LawSystem, LawArticle } from "../data";
+import { lawStatusPresentation } from "../law-status";
+import { OfficialMetaLockedRow } from "../components/OfficialMetaLockedRow";
+import { gazetteIssueLabel, urlHostname, type LawOfficialMeta } from "./_official-meta";
+import { buildChapterTree } from "./_chapter-tree";
+import { jumpToReaderAnchor } from "./_reader-anchors";
 
 // ك-13: نفس دمج regulations[]→{ref,text} المستعمل بـpage.tsx — يحافظ على
 // سلوك عرض الشارة/الاسم المدموج بلا تغيير، بمصدر بيانات جديد فقط.
@@ -11,7 +17,7 @@ function getMergedReg(a: LawArticle): { ref: string; text: string } | null {
   if (!a.regulations || a.regulations.length === 0) return null;
   const distinctRefs = Array.from(new Set(a.regulations.map((r) => r.ref || "").filter(Boolean)));
   return {
-    ref: distinctRefs.join(", "),
+    ref: distinctRefs.join("، "),
     text: a.regulations.map((r) => r.text || "").join("\n\n"),
   };
 }
@@ -34,6 +40,15 @@ interface SidebarPanelProps {
   userType: string | null;
   mode?: "identity" | "index" | "all";
   viewMode?: "all" | "law" | "regulation";
+  /** T28-22/26: lock flag, official URL and Umm al-Qura issue from the detail API. */
+  officialMeta?: LawOfficialMeta;
+  /**
+   * Set while the reader shows the flat «التشريعات الفرعية» view: the DOM id
+   * of the regulation card a نظام article's entry jumps to (that view renders
+   * no نظام article, so its id is not on the page). Entries without a card in
+   * the current view are not listed. See _reader-anchors.ts.
+   */
+  regulationAnchorFor?: (articleId: string) => string | undefined;
 }
 
 export default function SidebarPanel({
@@ -53,12 +68,98 @@ export default function SidebarPanel({
   setShowPaywall,
   userType,
   mode = "all",
-  viewMode = "all"
+  viewMode = "all",
+  officialMeta,
+  regulationAnchorFor,
 }: SidebarPanelProps) {
   const muted = isDark ? "text-zinc-500" : "text-slate-400";
+  // Two-level contents: level-1 groups the reader has folded (by chapter id).
+  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(() => new Set());
+  const toggleGroup = (key: string) =>
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  /**
+   * Jump to an article (or to the element standing in for it) — the heading
+   * lands just below the fixed bar (scroll-margin on the target, block:start).
+   */
+  const jumpTo = (articleId: string, anchorId?: string) => {
+    jumpToReaderAnchor(isScrolling, anchorId ?? articleId);
+    setActiveId(articleId);
+  };
+  const tocTitle = (title: string) => title.replace("الباب الأول: ", "").replace("الفصل الثاني: ", "");
+  // T28-22: for a non-subscriber the API withholds the issuance data. The
+  // hand-written law-metadata-map still carries a decree for a few dozen laws
+  // (lawMeta.issuanceDecree / regulation_decree / latestAmendmentDecree), so
+  // those are suppressed too — otherwise the lock would hold for most laws and
+  // leak for the mapped ones.
+  const metaLocked = officialMeta?.locked === true;
+  const issuanceDecree = metaLocked ? "" : (law.issuanceDecree || lawMeta.issuanceDecree || "");
   const border = isDark ? "border-white/[0.07]" : "border-slate-200";
   const card = `rounded-2xl border ${isDark ? "bg-zinc-900" : "bg-white shadow-sm"}`;
   const textStart = isRTL ? "text-right" : "text-left";
+  // `0 && …` would print a literal 0 for a law with no articles (an unpublished-text
+  // notice, 2026-10-04) — render the row only for a positive count.
+  const articleCount = Number(lawMeta.total_articles) || law.chapters?.flatMap(c => c.articles).length || 0;
+
+  const renderLawStatus = () => {
+    const status = lawStatusPresentation(law.law_status);
+    const dotColor = status.tone === "effective" ? "bg-emerald-500"
+      : status.tone === "repealed" ? "bg-red-500"
+      : status.tone === "caution" ? "bg-amber-500" : "bg-slate-400";
+    const textColor = status.tone === "effective" ? (isDark ? "text-emerald-400" : "text-emerald-600")
+      : status.tone === "repealed" ? "text-red-500"
+      : status.tone === "caution" ? "text-amber-500" : (isDark ? "text-zinc-400" : "text-slate-500");
+    return (
+      <div className="flex items-start gap-1.5 pt-1" data-law-status={law.law_status ?? "status_undeclared"}>
+        <span className={`w-1.5 h-1.5 mt-1 rounded-full flex-shrink-0 ${dotColor}`} />
+        <span className={`text-[9px] font-bold ${textColor}`}>{isRTL ? status.labelAr : status.labelEn}</span>
+      </div>
+    );
+  };
+
+  const renderParentLaw = () => {
+    const sourceName = String(law.parentLaw || "").trim();
+    const resolvedName = String(law.parentLawLink?.title || "").trim();
+    const displayName = sourceName || resolvedName;
+    const enablingArticle = String(law.enablingArticle || "").trim();
+    if (!displayName && !enablingArticle) return null;
+
+    const nameNode = displayName && law.parentLawLink?.slug ? (
+      <a
+        href={`/laws/${encodeURIComponent(law.parentLawLink.slug)}`}
+        className="font-bold text-[#C8A762] hover:underline"
+      >
+        {displayName}
+      </a>
+    ) : displayName ? (
+      <span className={`font-semibold ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{displayName}</span>
+    ) : null;
+
+    return (
+      <div
+        className="flex gap-1.5 items-start border-t border-dashed border-slate-100 dark:border-white/[0.05] pt-2.5 mt-2.5"
+        data-parent-law-id={law.parentLawId || undefined}
+      >
+        <Stack size={10} className="mt-0.5 flex-shrink-0 text-[#C8A762]" />
+        <div className="min-w-0">
+          <p className={`text-[8px] uppercase tracking-wider ${muted}`}>
+            {isRTL ? "ينفّذ النظام / الأداة الأصلية" : "Implements parent instrument"}
+          </p>
+          {nameNode && <p className="text-[10px] leading-tight break-words">{nameNode}</p>}
+          {enablingArticle && (
+            <p className={`text-[9px] leading-tight mt-1 ${muted}`}>
+              {isRTL ? `استناداً إلى ${enablingArticle}` : `Enabled by ${enablingArticle}`}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   const renderValue = (val: string) => {
     const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
@@ -95,7 +196,7 @@ export default function SidebarPanel({
 
   const getFieldIcon = (key: string) => {
     if (key.includes("نوع") || key.includes("تصنيف") || key.includes("التصنيف")) return <Tag size={10} className={muted} />;
-    if (key.includes("حالة") || key.includes("سريان") || key.includes("نفاذ")) return <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1 flex-shrink-0" />;
+    if (key.includes("حالة") || key.includes("سريان") || key.includes("نفاذ")) return <span className="w-1.5 h-1.5 rounded-full bg-slate-400 mt-1 flex-shrink-0" />;
     if (key.includes("أداة") || key.includes("مرسوم") || key.includes("قرار") || key.includes("أمر")) return <Scroll size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />;
     if (key.includes("تاريخ") || key.includes("نشر") || key.includes("إصدار")) return <CalendarBlank size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />;
     if (key.includes("مصدر") || key.includes("بوابة") || key.includes("رابط")) return <BookOpen size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />;
@@ -172,6 +273,9 @@ export default function SidebarPanel({
               );
             })()}
 
+            {renderParentLaw()}
+            {renderLawStatus()}
+
             {/* زر حفظ في مجلداتي */}
             <div className="border-t border-dashed border-slate-100 dark:border-white/[0.05] pt-2.5 mt-2.5">
               <button
@@ -222,20 +326,20 @@ export default function SidebarPanel({
                   <span className="text-[9px] font-black text-[#C8A762]">{isRTL ? "تفاصيل النظام" : "Law Details"}</span>
                 </div>
                 
-                {(law.issuanceDecree || lawMeta.issuanceDecree) && (
+                {issuanceDecree && (
                   <div className="flex gap-1.5 items-start">
                     <Scroll size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
                     <div>
                       <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{isRTL ? "أداة الإصدار" : "Issuance"}</p>
-                      <p className={`text-[10px] font-semibold leading-tight ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{law.issuanceDecree || lawMeta.issuanceDecree}</p>
+                      <p className={`text-[10px] font-semibold leading-tight ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{issuanceDecree}</p>
                     </div>
                   </div>
                 )}
-                
-                {(lawMeta.total_articles || law.chapters?.flatMap(c => c.articles).length) && (
+
+                {articleCount > 0 && (
                   <div className="flex items-center justify-between text-[9px] mt-1">
                     <span className={muted}>{isRTL ? "عدد مواد النظام" : "Law Articles"}</span>
-                    <span className={`text-[10px] font-black ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{lawMeta.total_articles || law.chapters?.flatMap(c => c.articles).length}</span>
+                    <span className={`text-[10px] font-black ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{articleCount}</span>
                   </div>
                 )}
               </div>
@@ -247,7 +351,7 @@ export default function SidebarPanel({
                   <span className="text-[9px] font-black text-[#C8A762]">{isRTL ? "تفاصيل اللائحة التنفيذية" : "Regulation Details"}</span>
                 </div>
                 
-                {lawMeta.regulation_decree && (
+                {!metaLocked && lawMeta.regulation_decree && (
                   <div className="flex gap-1.5 items-start">
                     <Scroll size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
                     <div>
@@ -267,26 +371,31 @@ export default function SidebarPanel({
             </>
           ) : (
             <>
-              {(law.issuanceDecree || lawMeta.issuanceDecree) && (
+              {issuanceDecree && (
                 <div className="flex gap-1.5 items-start">
                   <Scroll size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
                   <div>
                     <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{isRTL ? "أداة الإصدار" : "Issuance"}</p>
-                    <p className={`text-[10px] font-semibold leading-tight ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{law.issuanceDecree || lawMeta.issuanceDecree}</p>
+                    <p className={`text-[10px] font-semibold leading-tight ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{issuanceDecree}</p>
                   </div>
                 </div>
               )}
-              {(lawMeta.total_articles || law.chapters?.flatMap(c => c.articles).length) && (
+              {articleCount > 0 && (
                 <div className="flex items-center justify-between text-[9px]">
                   <span className={muted}>{isRTL ? "عدد المواد" : "Articles"}</span>
-                  <span className={`text-[10px] font-black ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{lawMeta.total_articles || law.chapters?.flatMap(c => c.articles).length}</span>
+                  <span className={`text-[10px] font-black ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{articleCount}</span>
                 </div>
               )}
             </>
           )}
 
           {/* الحقول العامة المشتركة */}
-          {lawMeta.latestAmendmentDecree && (
+          {/* T28-22: one row stands in for every withheld issuance field
+              (أداة الإصدار، آخر تعديل، المصدر) — no blank labels. */}
+          {metaLocked && (
+            <OfficialMetaLockedRow isDark={isDark} onUnlock={() => setShowPaywall(true)} className="w-full" />
+          )}
+          {!metaLocked && lawMeta.latestAmendmentDecree && (
             <div className="flex gap-1.5 items-start">
               <CalendarBlank size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
               <div>
@@ -304,33 +413,81 @@ export default function SidebarPanel({
               </div>
             </div>
           )}
-          {law.source && (
+          {!metaLocked && law.source && (
             <div className="flex gap-1.5 items-start">
               <Tag size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
-              <div>
+              <div className="min-w-0">
                 <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{isRTL ? "المصدر" : "Source"}</p>
-                <p className={`text-[10px] leading-tight ${muted}`}>{law.source}</p>
+                {/* A real link that wraps inside the card: the raw URL used to
+                    run past the card edge as plain text (owner test 2026-09-28, T28-07). */}
+                {/^https?:\/\//i.test(law.source) ? (
+                  <a
+                    href={law.source}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    dir="ltr"
+                    className={`block text-[10px] leading-tight break-all underline decoration-dotted ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
+                  >
+                    {(() => { try { return new URL(law.source).hostname; } catch { return law.source; } })()}
+                  </a>
+                ) : (
+                  <p className={`text-[10px] leading-tight break-words ${muted}`}>{law.source}</p>
+                )}
               </div>
             </div>
           )}
 
-          {/* حالة النظام — من law.law_status (البيانات الحية)، لا lawMeta
-              (خريطة ثابتة تُدرِج "active" يدوياً على كل الأنظمة الستين تقريباً
-              — راجع ك-02، 2026-08-23) */}
-          <div className="flex items-center gap-1.5 pt-1">
-            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-              (law.law_status ?? "active") === "active" ? "bg-emerald-500" :
-              law.law_status === "repealed" ? "bg-red-500" : "bg-amber-500"
-            }`} />
-            <span className={`text-[9px] font-bold ${
-              (law.law_status ?? "active") === "active" ? (isDark ? "text-emerald-400" : "text-emerald-600") :
-              law.law_status === "repealed" ? "text-red-500" : "text-amber-500"
-            }`}>
-              {(law.law_status ?? "active") === "active" ? (isRTL ? "ساري" : "Active") :
-               law.law_status === "repealed" ? (isRTL ? "ملغى" : "Repealed") :
-               (isRTL ? "معلّق" : "Suspended")}
-            </span>
-          </div>
+          {/* T28-26: the official page, only as the server sent it (http/https),
+              and not repeated when it is the same link as «المصدر» above. */}
+          {!metaLocked && officialMeta?.officialSourceUrl && officialMeta.officialSourceUrl !== law.source && (
+            <div className="flex gap-1.5 items-start">
+              <BookOpen size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
+              <div className="min-w-0">
+                <p className={`text-[8px] uppercase tracking-wider ${muted}`}>المصدر الرسمي</p>
+                <a
+                  href={officialMeta.officialSourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  dir="ltr"
+                  className={`block text-[10px] leading-tight break-all underline decoration-dotted ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
+                >
+                  {urlHostname(officialMeta.officialSourceUrl)}
+                </a>
+              </div>
+            </div>
+          )}
+
+          {/* T28-26: the Umm al-Qura issue — rendered only when the API names
+              one, linked only when it sent the issue's own URL. */}
+          {!metaLocked && officialMeta?.gazette && (
+            <div className="flex gap-1.5 items-start">
+              <CalendarBlank size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
+              <div className="min-w-0">
+                <p className={`text-[8px] uppercase tracking-wider ${muted}`}>النشر في الجريدة الرسمية</p>
+                <p className={`text-[10px] font-semibold leading-tight break-words ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>
+                  {officialMeta.gazette.url ? (
+                    <a
+                      href={officialMeta.gazette.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`underline decoration-dotted ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
+                    >
+                      {gazetteIssueLabel(officialMeta.gazette)}
+                    </a>
+                  ) : (
+                    gazetteIssueLabel(officialMeta.gazette)
+                  )}
+                  {officialMeta.gazette.publicationDate && (
+                    <span className={`font-normal ${muted}`}>{` · ${officialMeta.gazette.publicationDate}`}</span>
+                  )}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* حالة الأداة من البيانات الحية، لا خريطة lawMeta اليدوية. */}
+          {renderParentLaw()}
+          {renderLawStatus()}
 
           <div className="border-t border-dashed border-slate-100 dark:border-white/[0.05] pt-2.5 mt-2.5">
             <button
@@ -364,10 +521,7 @@ export default function SidebarPanel({
             onKeyDown={e => {
               if (e.key === "Enter" && filteredArticles?.length) {
                 const a = filteredArticles[0];
-                isScrolling.current = true;
-                setActiveId(a.id);
-                document.getElementById(a.id)?.scrollIntoView({ behavior: "smooth", block: "center" });
-                setTimeout(() => { isScrolling.current = false; }, 1000);
+                jumpTo(a.id, regulationAnchorFor?.(a.id));
                 setJumpQuery("");
               }
             }}
@@ -389,7 +543,10 @@ export default function SidebarPanel({
             (() => {
               const regArticles = law.chapters
                 .flatMap(ch => ch.articles)
-                .filter(a => a.regulations && a.regulations.length > 0);
+                .filter(a => a.regulations && a.regulations.length > 0)
+                // Flat view: only entries that have a card on the page (the
+                // instrument filter can hide the rest), so every click lands.
+                .filter(a => !regulationAnchorFor || !!regulationAnchorFor(a.id));
               const visibleRegArts = filteredArticles
                 ? regArticles.filter(a => filteredArticles.some(f => f.id === a.id))
                 : regArticles;
@@ -404,10 +561,9 @@ export default function SidebarPanel({
                   <button
                     key={a.id}
                     onClick={() => {
-                      isScrolling.current = true;
-                      setActiveId(a.id);
-                      document.getElementById(a.id)?.scrollIntoView({ behavior: "smooth", block: "center" });
-                      setTimeout(() => { isScrolling.current = false; }, 1000);
+                      // The flat view renders regulation cards, not this نظام
+                      // article: jump to its first card (_reader-anchors.ts).
+                      jumpTo(a.id, regulationAnchorFor?.(a.id));
                       setJumpQuery("");
                     }}
                     className={`w-full ${textStart} flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] transition ${
@@ -417,7 +573,11 @@ export default function SidebarPanel({
                     } ${a.status === "repealed" ? "line-through opacity-50" : ""}`}
                   >
                     {!a.free && <Lock size={9} className="flex-shrink-0" />}
-                    <span className="truncate flex-1 font-medium">{getMergedReg(a)?.ref}</span>
+                    {/* The article the regulation hangs off, not the regulation's
+                        name: that name is the same on every row, so the list read
+                        «اللائحة التنفيذية لنظام العمل» thirty times (owner test
+                        2026-09-28, T28-06). The name stays in the tooltip. */}
+                    <span className="truncate flex-1 font-medium" title={getMergedReg(a)?.ref}>{a.num}</span>
                     {hasRegInCart && <span className="w-1.5 h-1.5 rounded-full bg-[#C8A762] flex-shrink-0" />}
                   </button>
                 );
@@ -431,10 +591,7 @@ export default function SidebarPanel({
               <button
                 key={a.id}
                 onClick={() => {
-                  isScrolling.current = true;
-                  setActiveId(a.id);
-                  document.getElementById(a.id)?.scrollIntoView({ behavior: "smooth", block: "center" });
-                  setTimeout(() => { isScrolling.current = false; }, 1000);
+                  jumpTo(a.id, regulationAnchorFor?.(a.id));
                   setJumpQuery("");
                 }}
                 className={`w-full ${textStart} flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] transition ${
@@ -450,38 +607,82 @@ export default function SidebarPanel({
               </button>
             ))
           ) : (
-            /* وضع عادي — شجرة الأبواب */
-            law.chapters.map((ch, ci) => (
-              <div key={ci}>
-                <p className={`text-[9px] font-bold px-2 py-1 ${muted}`}>{ch.title.replace("الباب الأول: ", "").replace("الفصل الثاني: ", "")}</p>
-                {ch.articles.map(a => (
+            /* وضع عادي — شجرة الأبواب. Two-level chapters (2026-10-04): a
+               level-1 heading groups the level-2 chapters under it; with no
+               level data every node is a plain chapter, rendered exactly as
+               before (_chapter-tree.ts). */
+            buildChapterTree(law.chapters).map((node) => {
+              const renderArticleEntry = (a: LawArticle) => (
+                <button
+                  key={a.id}
+                  onClick={() => jumpTo(a.id)}
+                  className={`w-full ${textStart} flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] transition ${
+                    activeId === a.id
+                      ? isDark ? "bg-[#0B3D2E] text-[#C8A762]" : "bg-[#0B3D2E]/10 text-[#0B3D2E]"
+                      : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-700"
+                  } ${a.status === "repealed" ? "line-through opacity-50" : ""}`}
+                >
+                  {!a.free && <Lock size={9} className="flex-shrink-0" />}
+                  <span className="truncate flex-1">{a.num}</span>
+                  {!!(a.regulations && a.regulations.length > 0) && (
+                    <span title={isRTL ? "يحتوي لائحة تنفيذية" : "Has executive regulation"}
+                      className={`text-[8px] flex-shrink-0 px-1 rounded font-black ${
+                        activeId === a.id ? "text-[#C8A762]/70" : isDark ? "text-zinc-500" : "text-slate-400"
+                      }`}>ل</span>
+                  )}
+                  {cartMap.has(a.id) && <span className="w-1.5 h-1.5 rounded-full bg-[#C8A762] flex-shrink-0" />}
+                </button>
+              );
+
+              if (node.children.length === 0) {
+                const ch = node.chapter;
+                return (
+                  <div key={node.index}>
+                    <p className={`text-[9px] font-bold px-2 py-1 ${muted}`}>{tocTitle(ch.title)}</p>
+                    {ch.articles.map(renderArticleEntry)}
+                  </div>
+                );
+              }
+
+              const groupKey = node.chapter.id || `#${node.index}`;
+              const collapsed = collapsedGroups.has(groupKey);
+              return (
+                <div key={node.index}>
                   <button
-                    key={a.id}
-                    onClick={() => {
-                      isScrolling.current = true;
-                      setActiveId(a.id);
-                      document.getElementById(a.id)?.scrollIntoView({ behavior: "smooth", block: "center" });
-                      setTimeout(() => { isScrolling.current = false; }, 1000);
+                    type="button"
+                    aria-expanded={!collapsed}
+                    onClick={(e) => {
+                      // Folding is not navigation: keep the phone index sheet open.
+                      e.stopPropagation();
+                      toggleGroup(groupKey);
                     }}
-                    className={`w-full ${textStart} flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] transition ${
-                      activeId === a.id
-                        ? isDark ? "bg-[#0B3D2E] text-[#C8A762]" : "bg-[#0B3D2E]/10 text-[#0B3D2E]"
-                        : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-700"
-                    } ${a.status === "repealed" ? "line-through opacity-50" : ""}`}
+                    className={`w-full ${textStart} flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-black transition ${
+                      isDark ? "text-zinc-300 hover:bg-white/[0.04]" : "text-slate-600 hover:bg-slate-50"
+                    }`}
                   >
-                    {!a.free && <Lock size={9} className="flex-shrink-0" />}
-                    <span className="truncate flex-1">{a.num}</span>
-                    {!!(a.regulations && a.regulations.length > 0) && (
-                      <span title={isRTL ? "يحتوي لائحة تنفيذية" : "Has executive regulation"}
-                        className={`text-[8px] flex-shrink-0 px-1 rounded font-black ${
-                          activeId === a.id ? "text-[#C8A762]/70" : isDark ? "text-zinc-500" : "text-slate-400"
-                        }`}>ل</span>
-                    )}
-                    {cartMap.has(a.id) && <span className="w-1.5 h-1.5 rounded-full bg-[#C8A762] flex-shrink-0" />}
+                    <CaretDown
+                      size={9}
+                      weight="bold"
+                      className={`flex-shrink-0 transition-transform ${collapsed ? (isRTL ? "rotate-90" : "-rotate-90") : ""}`}
+                    />
+                    <span className="truncate flex-1">{tocTitle(node.chapter.title)}</span>
                   </button>
-                ))}
-              </div>
-            ))
+                  {!collapsed && (
+                    <>
+                      {node.chapter.articles.map(renderArticleEntry)}
+                      <div className={`ms-2 ps-1.5 border-s ${isDark ? "border-white/[0.06]" : "border-slate-200"}`}>
+                        {node.children.map((child) => (
+                          <div key={child.index}>
+                            <p className={`text-[9px] font-bold px-2 py-1 ${muted}`}>{tocTitle(child.chapter.title)}</p>
+                            {child.chapter.articles.map(renderArticleEntry)}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
       </div>

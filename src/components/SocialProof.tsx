@@ -1,52 +1,10 @@
 "use client";
 
-import { motion, useMotionValue, useTransform, animate } from "framer-motion";
-import { memo, useEffect, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import { Star, Quotes, Buildings, Bank, Briefcase, Cube, Hexagon, Globe } from "@phosphor-icons/react";
 import { useTheme } from "./ThemeProvider";
-
-const AnimatedCounter = memo(function AnimatedCounter({
-  target,
-  suffix = "",
-  prefix = "",
-  locale = "ar-SA",
-}: {
-  target: number;
-  suffix?: string;
-  prefix?: string;
-  locale?: string;
-}) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const [inView, setInView] = useState(false);
-  const count = useMotionValue(0);
-  const rounded = useTransform(count, (v) => Math.round(v));
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) setInView(true); },
-      { threshold: 0.5 }
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
-
-  useEffect(() => {
-    if (!inView) return;
-    const ctrl = animate(count, target, { duration: 2, ease: [0.16, 1, 0.3, 1] });
-    return ctrl.stop;
-  }, [inView, count, target]);
-
-  useEffect(() => {
-    const unsub = rounded.on("change", (v) => {
-      if (ref.current) ref.current.textContent = `${prefix}${v.toLocaleString(locale)}${suffix}`;
-    });
-    return unsub;
-  }, [rounded, prefix, suffix, locale]);
-
-  return <span ref={ref}>{prefix}0{suffix}</span>;
-});
+import { LIBRARY_STAT_KEYS, LIBRARY_STAT_LABELS, formatLibraryCount } from "@/lib/library/libraryStats";
+import { useLibraryStats } from "@/lib/library/useLibraryStats";
 
 // ─── LogoMarquee — DELETED, with the «٣٢,٠٠٠» line above it ──────────────────
 //
@@ -106,27 +64,24 @@ export default function SocialProof() {
    *   «٩٩٪ رضا العملاء»              0 consultations, and no reviews table
    *
    * These are the first numbers a visitor reads, and every one of them was
-   * false by three orders of magnitude. The library, by contrast, is real and
-   * took months: the figures below are the same ones LegalLibraryBanner.tsx
-   * publishes, each re-checkable with one query, and each written as a FLOOR so
-   * it stays true as the library grows instead of going stale the first time
-   * anyone seeds a row.
+   * false by three orders of magnitude. The library, by contrast, is real.
    *
-   *   select count(*) from library.laws;              -- 386
-   *   select count(*) from library.articles;          -- 13,436
-   *   select count(*) from library.principles;        -- 17,940
-   *   select count(*) from library.decrees_circulars; --  2,078
-   *
-   * `exact` turns the animated count-up off for the floors: a counter that
-   * spins up to «١٣٬٠٠٠» and stops reads as a precise total, and these are not
-   * totals. 386 keeps the animation because it IS exact.
+   * 2026-09-25: the figures are no longer literals. The same code runs against
+   * the cloud project (386 laws) and the self-hosted one (5,901), so any
+   * constant is false on one of them. They are counted live from whichever
+   * database the site runs on (GET /api/library/stats, cached ~24h) and shown
+   * as floors by src/lib/library/libraryStats.ts. While loading, a neutral
+   * placeholder; if the count fails, this section is not rendered at all —
+   * never a fallback number that could be false. Floors do not animate: a
+   * count-up that lands on a round number reads as an exact total.
    */
-  const stats = [
-    { value: 386, suffix: "", exact: true, label: isAr ? "نظاماً ولائحة" : "Laws & Regulations" },
-    { value: 13000, suffix: "+", exact: false, label: isAr ? "مادة نظامية" : "Statute Articles" },
-    { value: 17000, suffix: "+", exact: false, label: isAr ? "مبدأ قضائي" : "Judicial Principles" },
-    { value: 2000, suffix: "+", exact: false, label: isAr ? "قرار وتعميم" : "Decrees & Circulars" },
-  ];
+  const library = useLibraryStats();
+  if (library.status === "error") return null;
+  const stats = LIBRARY_STAT_KEYS.map((key) => ({
+    key,
+    value: library.status === "ready" ? formatLibraryCount(library.stats[key], isAr ? "ar" : "en") : null,
+    label: isAr ? LIBRARY_STAT_LABELS[key].ar : LIBRARY_STAT_LABELS[key].en,
+  })).filter((s) => library.status === "loading" || s.value !== null);
 
   return (
     <section id="platform-numbers" className="relative py-24 md:py-32 bg-surface dark:bg-dark-bg">
@@ -144,7 +99,7 @@ export default function SocialProof() {
           <div className="grid grid-cols-2 gap-4 sm:gap-8 md:grid-cols-4 md:gap-0 md:divide-x md:divide-x-reverse md:divide-slate-100 dark:md:divide-white/10">
             {stats.map((stat, i) => (
               <motion.div
-                key={stat.label}
+                key={stat.key}
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
@@ -152,9 +107,12 @@ export default function SocialProof() {
                 className="text-center"
               >
                 <div className={`font-brand text-2xl sm:text-3xl md:text-5xl font-extrabold ${isDark ? "text-emerald-400" : "text-royal"}`}>
-                  {stat.exact
-                    ? <AnimatedCounter target={stat.value} suffix={stat.suffix} locale={isAr ? "ar-SA" : "en-US"} />
-                    : `${stat.value.toLocaleString(isAr ? "ar-SA" : "en-US")}${stat.suffix}`}
+                  {stat.value ?? (
+                    <span
+                      aria-hidden
+                      className={`inline-block h-[0.8em] w-24 rounded-lg align-middle animate-pulse ${isDark ? "bg-white/10" : "bg-slate-200"}`}
+                    />
+                  )}
                 </div>
                 <div className={`mt-3 text-sm font-semibold ${isDark ? "text-gray-400" : "text-ink-muted"}`}>{stat.label}</div>
               </motion.div>

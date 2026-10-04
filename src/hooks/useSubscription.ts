@@ -23,12 +23,19 @@ import { TIER_RANK, FEATURE_GATES, resolveFeatureAccess } from "@/hooks/featureA
 // SubscriptionGuard.tsx (still is — that copy is CRITICAL risk to touch, see
 // its own file); every NEW caller should read from here instead of adding a
 // third copy.
+//
+// `max` shows the SAME name as `pro`. The owner (Q163, 2026-10-03): there is
+// no «الماكس» plan. `max` stays a tier KEY — rank 4 in TIER_RANK, existing
+// rows and demo accounts carry it, and entitlement logic is unchanged — it
+// just never reaches a user as a plan name of its own. No FEATURE_GATES entry
+// requires `max`, so «رقِّ إلى الاحترافية» is never shown to someone already
+// holding a tier labelled «الاحترافية».
 export const TIER_LABELS_AR: Record<UserTier, string> = {
   free:       "المجانية",
   shield:     "التأمين القانوني",
   ai:         "نظامي AI",
   pro:        "الاحترافية",
-  max:        "الماكس",
+  max:        "الاحترافية",
   corp:       "حوكمة الشركات",
   enterprise: "الشركات المتكاملة",
 };

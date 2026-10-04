@@ -36,16 +36,6 @@ export default function InvitationModal({ open, onClose }: InvitationModalProps)
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
 
-  // Every time this modal surfaces codes to the user, re-sync them
-  // server-side (best-effort, idempotent). Covers codes generated while the
-  // visitor was still a guest — this retries once they're logged in.
-  useEffect(() => {
-    if (open && invitations.length > 0) {
-      syncInvitationCodes(invitations.map((inv) => inv.code));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-
   if (!open) return null;
 
   function handleClose() {
@@ -94,7 +84,7 @@ export default function InvitationModal({ open, onClose }: InvitationModalProps)
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.92, opacity: 0, y: 20 }}
             transition={{ type: "spring", stiffness: 280, damping: 28 }}
-            className={`fixed inset-x-4 top-1/2 -translate-y-1/2 z-50 rounded-3xl max-w-md mx-auto overflow-hidden ${
+            className={`fixed inset-x-4 top-1/2 -translate-y-1/2 z-50 rounded-3xl max-w-md mx-auto max-h-[85dvh] overflow-y-auto overscroll-contain ${
               isDark ? "bg-zinc-900 border border-white/[0.06]" : "bg-white border border-zinc-100 shadow-2xl"
             }`}
             dir="rtl"

@@ -14,6 +14,7 @@ import { FOLDER_COLORS, DEFAULT_LAWS, DEMO_FOLDERS, ALL_LIBRARY_DOCS } from "./S
 import FolderCard, { FolderIcon, ColorPicker } from "./FolderCard";
 import CreateFolderInline from "./CreateFolderInline";
 import { useUser } from "@/hooks/useUser";
+import { useNoSessionCookie } from "./useNoSessionCookie";
 // The DB↔frontend mapper lives in its own plain-.ts module now — a pure
 // helper, shared with FolderSelectionModal.tsx, and unit-tested on its own
 // (see smartFolderApiMapper.test.ts). This file cannot host it and stay
@@ -53,6 +54,12 @@ export default function SmartFolders({
 }) {
   const user = useUser();
   const isAuthenticated = user.isLoggedIn;
+  // Load nothing until the session has settled: while useUser is still
+  // loading, isLoggedIn reads false, and a signed-in reader was first shown
+  // this browser's GUEST folders. A visitor with no session cookie at all is
+  // a guest for certain and does not wait (see sessionCookie.ts).
+  const noSessionCookie = useNoSessionCookie();
+  const authPending = user.loading && !noSessionCookie;
 
   const [folders, setFolders] = useState<SmartFolder[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -118,10 +125,11 @@ export default function SmartFolders({
   }, [isAuthenticated]);
 
   useEffect(() => {
+    setIsMounted(true);
+    if (authPending) return;
     loadFolders();
     setExpandedId("default-daily");
-    setIsMounted(true);
-  }, [loadFolders]);
+  }, [loadFolders, authPending]);
 
   // Listen to external folder state changes to sync dynamically
   useEffect(() => {
@@ -560,7 +568,7 @@ export default function SmartFolders({
                 {isRTL ? "مجلداتي" : "My Folders"}
               </h3>
               <p className={`text-[11px] ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-                {isLoading
+                {isLoading || authPending
                   ? (isRTL ? "جاري التحميل..." : "Loading...")
                   : isRTL
                     ? `${folders.length} مجلد · ${folders.reduce((acc, f) => acc + f.laws.length, 0)} مادة`
@@ -589,7 +597,7 @@ export default function SmartFolders({
               fits a couple of folders before it needs to scroll. */}
           <div className={`pt-4 space-y-2 transition-all duration-300 ${isExpandedView ? "" : "max-h-[420px] overflow-y-auto pr-1 custom-scrollbar"}`}>
             {/* Loading skeleton */}
-            {isLoading && folders.length === 0 && (
+            {(isLoading || authPending) && folders.length === 0 && (
               <div className="space-y-2">
                 {[1, 2, 3].map(i => (
                   <div
@@ -622,7 +630,7 @@ export default function SmartFolders({
             </AnimatePresence>
 
             {/* Empty state */}
-            {folders.length === 0 && !isCreating && !isLoading && (
+            {folders.length === 0 && !isCreating && !isLoading && !authPending && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}

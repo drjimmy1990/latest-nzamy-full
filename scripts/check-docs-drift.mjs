@@ -22,7 +22,8 @@
  * من "مئات الاستشهادات" إلى "الاستشهادات المشبوهة فقط" في ثوانٍ.
  *
  * الاستخدام:
- *   node scripts/check-docs-drift.mjs [--docs <مسار مجلد الوثائق>] [--json]
+ *   node scripts/check-docs-drift.mjs --docs <مسار مجلد الوثائق> [--json]
+ *   أو عيّن NZAMY_DOCS_ROOT صراحةً؛ لا مسار Windows مفترض.
  *
  * القيمة العملية: شغّله بعد أي تعديل كبير على scripts/parsers أو src/app/laws
  * أو قبل تسليم أي وثيقة لمبرمج جديد — ثوانٍ بدل ساعات.
@@ -41,9 +42,11 @@ const docsArgIdx = args.indexOf("--docs");
 const DOCS_ROOT =
   docsArgIdx !== -1 && args[docsArgIdx + 1]
     ? path.resolve(args[docsArgIdx + 1])
-    : path.resolve(
-        "D:\\Data\\Data\\antigravity ai\\تجارب\\Raw_Vault\\00_عقل_القوانين\\13_دليل_المبرمج"
-      );
+    : process.env.NZAMY_DOCS_ROOT ? path.resolve(process.env.NZAMY_DOCS_ROOT) : null;
+if (!DOCS_ROOT || !fs.existsSync(DOCS_ROOT) || !fs.statSync(DOCS_ROOT).isDirectory()) {
+  console.error("✗ حدّد --docs <مجلد الوثائق> أو NZAMY_DOCS_ROOT؛ لا يُستخدم مسار Windows افتراضي ولا يُقبل مجلد مفقود.");
+  process.exit(2);
+}
 
 // ── إعدادات المسح ─────────────────────────────────────────────────────
 const SKIP_DIR_NAMES = new Set(["node_modules", ".git", ".next", "dist", "build"]);

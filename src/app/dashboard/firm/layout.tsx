@@ -293,7 +293,7 @@ export default function FirmDashboardLayout({
         <div className="min-h-[100dvh] bg-surface dark:bg-dark-bg" dir={isAr ? "rtl" : "ltr"} suppressHydrationWarning>
         <SharedSidebar />
 
-        <main className="lg:mr-64 pt-[60px] lg:pt-0 min-h-[100dvh]">
+        <div className="print-main lg:mr-64 pt-[calc(env(safe-area-inset-top)+60px)] lg:pt-0 min-h-[100dvh]">
           {/* ── Role Switcher Bar ── */}
           <div className={`flex items-center justify-between px-4 md:px-6 pt-4 pb-0`}>
             {/* Role selector dropdown */}
@@ -418,7 +418,7 @@ export default function FirmDashboardLayout({
               {children}
             </EntityRouteGuard>
           </div>
-        </main>
+        </div>
 
               </div>
     </FirmRoleContext.Provider>

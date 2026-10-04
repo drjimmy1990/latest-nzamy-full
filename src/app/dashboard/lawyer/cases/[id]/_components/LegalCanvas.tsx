@@ -524,7 +524,7 @@ export default function LegalCanvas({ isDark }: LegalCanvasProps) {
           )}
         </AnimatePresence>
 
-        <div className={`absolute inset-0 transition-all ${selectedNode ? "left-72" : ""}`}>
+        <div className={`nz-density-reset absolute inset-0 transition-all ${selectedNode ? "left-72" : ""}`}>
           {ctxMenu && (
             <ContextMenu
               menu={ctxMenu}

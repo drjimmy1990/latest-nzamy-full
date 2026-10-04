@@ -70,6 +70,7 @@ import {
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
+import { BETA_MONOPOLY_MODE } from "@/lib/betaConfig";
 import {
   getPublicLawyerProfile,
   type PublicLawyerProfile,
@@ -88,7 +89,17 @@ import type { Review, ReviewStats } from "@/lib/services/reviewsService";
 
 const GOLD = "#C8A762";
 const GREEN = "#0B3D2E";
-const DIRECTORY_HREF = "/lawyers/browse";
+/**
+ * During the single-firm beta (BETA_MONOPOLY_MODE) this page is reachable
+ * only by the link a lawyer shares himself (owner, Q151): the directory stays
+ * closed — /lawyers/browse redirects to the firm's intake — so nothing here
+ * points at it, and booking THIS lawyer (the Phase-7 marketplace half) stays
+ * parked with the rest of the marketplace. The server gate in ./layout.tsx
+ * has already 404'd anything that is not a published profile.
+ */
+const DIRECTORY_OPEN = !BETA_MONOPOLY_MODE;
+const BOOKING_OPEN = !BETA_MONOPOLY_MODE;
+const DIRECTORY_HREF = DIRECTORY_OPEN ? "/lawyers/browse" : "/";
 
 /**
  * The route response (src/app/api/v1/lawyers/[id]/route.ts, R2) promotes five
@@ -262,7 +273,9 @@ export default function LawyerProfilePage() {
       }`}
     >
       <ArrowLeft size={15} className={isRTL ? "rotate-180" : ""} />
-      {isRTL ? "العودة إلى دليل المحامين" : "Back to the lawyer directory"}
+      {DIRECTORY_OPEN
+        ? (isRTL ? "العودة إلى دليل المحامين" : "Back to the lawyer directory")
+        : (isRTL ? "الصفحة الرئيسية لنظامي" : "Nzamy home")}
     </Link>
   );
 
@@ -355,7 +368,9 @@ export default function LawyerProfilePage() {
             </h1>
             <p className={`text-sm max-w-md mx-auto leading-relaxed mb-7 ${muted}`}>
               {isRTL
-                ? "قد يكون الرابط غير صحيح، أو أن هذا الملف غير معروض في دليل المحامين حالياً."
+                ? (DIRECTORY_OPEN
+                  ? "قد يكون الرابط غير صحيح، أو أن هذا الملف غير معروض في دليل المحامين حالياً."
+                  : "قد يكون الرابط غير صحيح، أو أن هذا الملف غير منشور حالياً.")
                 : "The link may be incorrect, or this profile is not currently listed in the directory."}
             </p>
             <Link
@@ -363,7 +378,9 @@ export default function LawyerProfilePage() {
               className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-[#0B3D2E] text-white text-sm font-semibold hover:bg-[#0a3328] transition"
             >
               <ArrowLeft size={16} className={isRTL ? "rotate-180" : ""} />
-              {isRTL ? "تصفّح دليل المحامين" : "Browse the directory"}
+              {DIRECTORY_OPEN
+                ? (isRTL ? "تصفّح دليل المحامين" : "Browse the directory")
+                : (isRTL ? "الصفحة الرئيسية لنظامي" : "Nzamy home")}
             </Link>
           </motion.section>
         )}
@@ -420,7 +437,9 @@ export default function LawyerProfilePage() {
           const bio = (isRTL ? text(lp?.bio_ar) ?? text(lp?.bio_en) : text(lp?.bio_en) ?? text(lp?.bio_ar));
           const bar = text(lp?.bar_association);
           const licence = text(lp?.license_number);
-          const rate = typeof lp?.hourly_rate === "number" && lp.hourly_rate > 0 ? lp.hourly_rate : null;
+          // Hidden during the beta (owner Q168 default, 2026-10-04): the page
+          // opened for profile sharing, and a public price is the owner's call.
+          const rate = BOOKING_OPEN && typeof lp?.hourly_rate === "number" && lp.hourly_rate > 0 ? lp.hourly_rate : null;
           const accepting = lp?.is_accepting_clients === true;
           const memberSince = p.created_at ? membershipYear(p.created_at, isRTL) : null;
 
@@ -478,9 +497,11 @@ export default function LawyerProfilePage() {
 
                 <div className="flex flex-col sm:flex-row gap-6 items-start">
                   {/* Avatar. A plain <img> rather than next/image: avatar_url is
-                      user-supplied and next.config only allowlists *.supabase.co,
-                      so an unlisted host would throw at runtime. Falls back to
-                      initials, and again to an icon when there is no name. */}
+                      user-supplied and can be any host, while next.config only
+                      allowlists the configured Supabase Storage host(s) (see
+                      supabaseStorageRemotePattern() there), so an unlisted host
+                      would throw at runtime. Falls back to initials, and again
+                      to an icon when there is no name. */}
                   <div className="flex-shrink-0">
                     {avatar && brokenAvatar !== avatar ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -593,7 +614,7 @@ export default function LawyerProfilePage() {
                       A logged-out visitor is sent to /login first (proxy.ts), a
                       normal gate rather than a broken control; that is called
                       out in the caption below so nobody is surprised. */}
-                  {accepting && (
+                  {accepting && BOOKING_OPEN && (
                     <div className="print:hidden flex flex-col gap-2 w-full sm:w-56 flex-shrink-0">
                       <motion.a
                         href={`/dashboard/client/consultation/new?lawyer=${encodeURIComponent(p.id)}`}
@@ -848,12 +869,14 @@ export default function LawyerProfilePage() {
                               </span>
                             )}
                           </div>
-                          <Link
-                            href={`/dashboard/client/consultation/new?lawyer=${encodeURIComponent(s.lawyerUserId)}&service=${encodeURIComponent(s.id)}`}
-                            className="print:hidden mt-1 inline-flex items-center justify-center px-4 py-2 rounded-lg bg-[#0B3D2E] text-white text-xs font-semibold hover:bg-[#0a3328] transition"
-                          >
-                            اطلب هذه الخدمة
-                          </Link>
+                          {BOOKING_OPEN && (
+                            <Link
+                              href={`/dashboard/client/consultation/new?lawyer=${encodeURIComponent(s.lawyerUserId)}&service=${encodeURIComponent(s.id)}`}
+                              className="print:hidden mt-1 inline-flex items-center justify-center px-4 py-2 rounded-lg bg-[#0B3D2E] text-white text-xs font-semibold hover:bg-[#0a3328] transition"
+                            >
+                              اطلب هذه الخدمة
+                            </Link>
+                          )}
                         </div>
                       );
                     })}

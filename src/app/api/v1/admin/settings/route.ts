@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 
 /** Allowlisted setting keys that admins can modify */
 const ALLOWED_SETTINGS_KEYS = [
@@ -36,6 +37,26 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, (value: unknown) => string | nul
     }
     return null;
   },
+  payments_gateway: (value) => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return 'قيمة payments_gateway يجب أن تكون كائناً بالشكل: {"status":"disabled","provider":null}';
+    }
+
+    const { status, provider } = value as { status?: unknown; provider?: unknown };
+    if (status === "disabled" && (provider === null || provider === undefined)) {
+      return null;
+    }
+
+    const deploymentEnvironment = process.env.NZAMY_DEPLOYMENT_ENV?.toLowerCase();
+    const stubAllowed =
+      process.env.NZAMY_ALLOW_STUB_PAYMENTS === "true" &&
+      (deploymentEnvironment === "local" || deploymentEnvironment === "staging");
+    if (status === "test" && provider === "stub" && stubAllowed) {
+      return null;
+    }
+
+    return "بوابة الدفع مغلقة افتراضياً؛ test/stub يتطلب بيئة local أو staging وإذن خادمي صريح، وlive غير مدعوم بعد";
+  },
 };
 
 /**
@@ -53,7 +74,8 @@ export async function GET() {
     error: authError,
   } = await supabase.auth.getUser();
 
-  if (authError || !user) {
+  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+  if (!user) {
     return NextResponse.json(
       { error: "غير مصرح — يرجى تسجيل الدخول" },
       { status: 401 },
@@ -120,7 +142,8 @@ export async function PATCH(request: NextRequest) {
     error: authError,
   } = await supabase.auth.getUser();
 
-  if (authError || !user) {
+  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+  if (!user) {
     return NextResponse.json(
       { error: "غير مصرح — يرجى تسجيل الدخول" },
       { status: 401 },

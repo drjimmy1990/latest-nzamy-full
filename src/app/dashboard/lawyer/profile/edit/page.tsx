@@ -551,7 +551,23 @@ export default function LawyerProfileEditPage() {
           is live — see that state's own comment. Hidden, not disabled: an
           editable field that silently cannot save is worse than one that is
           not there yet.
+
+          WP-4 G7 — but hidden SILENTLY was its own problem. A lawyer on a
+          database that never got 20260907 opened this form, found no رابط and
+          no مؤهلات, and had nothing to tell him whether the fields had been
+          removed, were still being built, or were missing because of his
+          deploy. The line below names the cause and the fix, once, where the
+          sections would have been. Gated on `loaded` too: `newFieldsAvailable`
+          is also false before the first read answers and whenever the read
+          fails or finds no professional row — all three of which already have
+          their own banner above, and none of which is a missing migration.
         */}
+        {loaded && !newFieldsAvailable && (
+          <p className={`text-[11px] leading-relaxed rounded-xl border p-3 ${isDark ? "border-amber-500/20 bg-amber-900/10 text-zinc-400" : "border-amber-200 bg-amber-50 text-amber-700/80"}`}>
+            حقول الملف المهني (الرابط، النبذة، المؤهلات) تحتاج تشغيل ترحيل 20260907 على هذه القاعدة.
+          </p>
+        )}
+
         {newFieldsAvailable && <>
         <div>
           <label className={label}>سطر تعريفي</label>
@@ -617,6 +633,8 @@ export default function LawyerProfileEditPage() {
             <input value={form.bar_association} onChange={(e) => set("bar_association", e.target.value)} className={input} placeholder="الهيئة السعودية للمحامين" /></div>
         </div>
 
+        {/* Second half of the same Phase-7 gate — the notice for a database
+            without 20260907 is rendered once, above, not repeated here. */}
         {newFieldsAvailable && <>
         <div>
           <div className="flex items-center justify-between mb-1">
@@ -698,8 +716,9 @@ export default function LawyerProfileEditPage() {
             • verification_status is deliberately excluded from the PATCH
               allowlist (self-verification would be a trust-badge bypass); only
               the admin verification endpoint can set it.
-            • /lawyers is redirected away entirely while BETA_MONOPOLY_MODE is
-              on, so the directory is not a live page for anyone right now.
+            • while BETA_MONOPOLY_MODE is on the directory (/lawyers,
+              /lawyers/browse) redirects away; a PUBLISHED profile still opens
+              at /lawyers/[slug] through the link the lawyer shares (owner Q151).
           The beta clause is behind the flag so this stops being displayed the
           day the flag is turned off.
         */}
@@ -718,7 +737,7 @@ export default function LawyerProfileEditPage() {
                 )}
               </li>
               {BETA_MONOPOLY_MODE && (
-                <li>• دليل المحامين العام غير مُفعَّل خلال مرحلة التجربة الحالية، فلا يظهر فيه أي محامٍ بعد — حتى الموثّقين.</li>
+                <li>• خلال مرحلة التجربة لا يُفتح دليل المحامين للتصفّح؛ ملفك المنشور يصل إليه من تشاركه معه الرابط أو رمز QR من زر «مشاركة» في ملفك.</li>
               )}
             </ul>
           </div>

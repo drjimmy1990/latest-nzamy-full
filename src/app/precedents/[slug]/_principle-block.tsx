@@ -1,7 +1,12 @@
 "use client";
 
-import { FileText, Copy, Check, Plus, Minus } from "@phosphor-icons/react";
+import { FileText, Copy, Check, Plus, Minus, Lock } from "@phosphor-icons/react";
 import { JudicialPrincipleItem } from "@/app/laws/data";
+
+/** The API marks a principle past the free first N as locked (text cut at 150 chars, no paragraphs or details). */
+type MaybeLocked = JudicialPrincipleItem & { locked?: boolean; lockedMessage?: string };
+
+const DEFAULT_LOCKED_MESSAGE = "يُعرض جزء من هذا المبدأ فقط؛ النص الكامل متاح لمشتركي Pro أو أعلى.";
 
 interface PrincipleBlockProps {
   p: JudicialPrincipleItem;
@@ -21,6 +26,8 @@ interface PrincipleBlockProps {
   cleanTextOfRef: (text: string) => string;
   card: string;
   fontClass: string;
+  /** Briefly true when a catalogue link (#<principle id>) brought the reader here. */
+  isLinkTarget?: boolean;
 }
 
 export default function PrincipleBlock({
@@ -40,9 +47,12 @@ export default function PrincipleBlock({
   isReferenceText,
   cleanTextOfRef,
   card,
-  fontClass
+  fontClass,
+  isLinkTarget = false,
 }: PrincipleBlockProps) {
   const isHighlighted = activePrincipleId === p.id;
+  const lock = p as MaybeLocked;
+  const isLocked = lock.locked === true;
   const mainParas = p.paragraphs?.filter(para => !isReferenceText(para.text)) || [];
   const hasParas = mainParas.length > 0;
 
@@ -58,8 +68,12 @@ export default function PrincipleBlock({
   return (
     <div
       id={p.id}
+      // Clears the fixed navbar when the page scrolls a linked principle into view.
+      style={{ scrollMarginTop: "calc(8rem + env(safe-area-inset-top, 0px))" }}
       className={`nzamy-reader-block ${card} p-6 md:p-8 transition-all duration-300 ${
-        isHighlighted ? "ring-1 ring-[#C8A762] shadow-md" : ""
+        isLinkTarget
+          ? `ring-4 ring-[#C8A762]/70 shadow-lg shadow-[#C8A762]/20`
+          : isHighlighted ? "ring-1 ring-[#C8A762] shadow-md" : ""
       }`}
     >
       {/* Principle Card Metadata Header */}
@@ -136,6 +150,17 @@ export default function PrincipleBlock({
           <p className="whitespace-pre-line">{cleanTextOfRef(p.text)}</p>
         )}
       </div>
+
+      {/* Paywall: the text above is cut short for this viewer — say so, as the book reader does. */}
+      {isLocked && (
+        <div
+          role="note"
+          className="mt-4 flex items-center gap-2 px-4 py-3 rounded-xl border border-amber-500/20 bg-amber-500/[0.05] text-xs font-bold text-amber-700 dark:text-amber-400"
+        >
+          <Lock size={14} weight="fill" className="flex-shrink-0" />
+          <span>{lock.lockedMessage?.trim() || DEFAULT_LOCKED_MESSAGE}</span>
+        </div>
+      )}
 
       {/* Reference Citation Footer */}
       {(() => {

@@ -28,7 +28,7 @@ import { nullIfForbidden, filterMeta } from "./manifest";
 import { slugifyArabic as sharedSlugify } from "./lib/slug";
 import { parseFrontmatter } from "./lib/frontmatter";
 import { applyExclusions, formatExclusionSummary } from "./lib/exclusions";
-import { writeParseReport, printCapped } from "./lib/report";
+import { writeParseReport, printCapped, bindParseReportToOutput } from "./lib/report";
 import { classifyCourt, type JudicialTrack } from "./lib/court";
 
 /** Collected per run so YAML problems are reported, never swallowed. */
@@ -76,6 +76,13 @@ export interface ParsedPrinciple {
   classification_keywords: string[];
   sub_principles: SubPrinciple[];
   details: PrincipleDetail;
+  /**
+   * Source content from a <details> block that has no <summary>.  It stays
+   * separate from the display text and from the named facts/reasons/ruling
+   * fields: the parser must preserve it without manufacturing a label or
+   * deciding that locked material is safe to render.
+   */
+  unparsed_details?: string;
   free: boolean;
 }
 
@@ -248,6 +255,31 @@ function extractDetails(text: string): PrincipleDetail {
   return details;
 }
 
+/**
+ * Preserve unnamed disclosure content without assigning it a legal meaning.
+ *
+ * The named-details parser above deliberately continues to own every block
+ * with a <summary>.  This narrow companion only captures blocks that do not
+ * have one, leaving them out of `text`, `facts`, `reasons`, and `ruling` until
+ * an authorised presentation/entitlement decision is made elsewhere.
+ */
+function extractUnnamedDetails(text: string): string | undefined {
+  const contents: string[] = [];
+  const detailsRe = /<details>([\s\S]*?)<\/details>/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = detailsRe.exec(text)) !== null) {
+    // The title may be preceded by legacy whitespace/text. Any <summary>
+    // anywhere in this fold remains a named-details pattern and must stay on
+    // the pre-existing extraction path rather than entering this fallback.
+    if (/<summary\b/.test(match[1])) continue;
+    const content = match[1].trim();
+    if (content) contents.push(content);
+  }
+
+  return contents.length > 0 ? contents.join("\n\n") : undefined;
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // Safe identity derivation
 // ══════════════════════════════════════════════════════════════════════════════
@@ -319,6 +351,10 @@ function parsePrincipleCollection(filePath: string): ParsedPrincipleCollection |
 
     // Extract details from <details> blocks
     const details = extractDetails(principleBody);
+    // A title-less disclosure is not safe to classify as facts/reasons/ruling,
+    // but deleting it loses source content. Keep it retrievable in its own
+    // field and do not add a fabricated summary.
+    const unparsedDetails = extractUnnamedDetails(principleBody);
 
     // Extract classification keywords from brackets in the text
     const keywords: string[] = [];
@@ -353,6 +389,7 @@ function parsePrincipleCollection(filePath: string): ParsedPrincipleCollection |
       classification_keywords: keywords,
       sub_principles: subPrinciples,
       details,
+      unparsed_details: unparsedDetails,
       free: pMeta.free !== false,
     });
   }
@@ -856,5 +893,6 @@ if (require.main === module) {
   fs.mkdirSync(path.resolve(outputDir), { recursive: true });
   const outFile = path.join(path.resolve(outputDir), "precedents.json");
   fs.writeFileSync(outFile, JSON.stringify(result, null, 2), "utf-8");
+  bindParseReportToOutput(outputDir, "precedents", outFile);
   console.log(`📁 Output written to: ${outFile}`);
 }

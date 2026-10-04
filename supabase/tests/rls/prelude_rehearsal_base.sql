@@ -1,0 +1,46 @@
+-- ============================================================
+-- prelude_rehearsal_base.sql — chain step for rehearse-staging-order.sh
+--
+-- NOT a migration. It never ships and it is never applied to a real database.
+--
+-- WHY THIS FILE EXISTS INSTEAD OF prelude_profiles_phone.sql
+--   The rehearsal has to stand up the profiles chain the way the live database
+--   actually holds it, so it runs `prelude_profiles_rls_chain.sql`, which
+--   *drops* the `public.profiles` stub (`drop table if exists public.profiles
+--   cascade`) and lets the REAL `20260603_phase1_001_profiles.sql` create the
+--   live shape — phone, display_name_en, country_code, metadata, created_at and
+--   updated_at included (20260603_phase1_001_profiles.sql:30-54).
+--
+--   `prelude_profiles_phone.sql` assumes the opposite: that the four-column
+--   stub survives, so it `alter table public.profiles add column if not
+--   exists …` and drops the three `lawyer_profiles` policies stubs.sql creates
+--   under the real names. Run here it would either abort with 42P01 (profiles
+--   was dropped) or, if moved after 20260603_phase1_001, silently DROP three
+--   real policies that nothing would re-create. The two preludes genuinely
+--   conflict, and neither may be edited — several branches share them — so the
+--   rehearsal carries its own base instead.
+--
+--   Everything prelude_profiles_phone.sql adds is therefore already supplied by
+--   the real migration here. The ONE piece it supplies that the rehearsal's
+--   base chain still lacks is `public.user_settings`, which is carried below.
+--
+-- WHAT IS HERE AND WHY
+--   public.user_settings — the live database has it from
+--   20260603_phase1_004_community_features.sql, which is NOT in the rehearsal's
+--   base chain (the chain carries only the migrations the plan §3 order
+--   actually depends on). `handle_new_user()` inserts one row into it for EVERY
+--   user type (20260827_signup_contact_fields.sql:258), so without the table
+--   every `insert into auth.users` — including the two malformed-phone fixture
+--   rows the rehearsal seeds so 20260921_04 has real work — aborts with 42P01.
+--
+-- Chain position (rehearse-staging-order.sh):
+--   stubs.sql
+--   prelude_profiles_rls_chain.sql
+--   prelude_entity_rls_chain.sql
+--   prelude_rehearsal_base.sql      ← here, before the first real migration
+--   20260603_phase1_001_profiles.sql …
+-- ============================================================
+
+create table if not exists public.user_settings (
+  user_id uuid primary key references auth.users(id) on delete cascade
+);

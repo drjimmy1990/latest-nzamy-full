@@ -23,7 +23,14 @@
  * keeps its own copy of preferencesService.ts's shapes instead of importing
  * it). The route wires the real functions in; this module only needs their
  * signatures.
+ *
+ * `./saudiMobile.ts` IS imported directly (relative, with the extension, the
+ * same way src/lib/auth/serviceRequestEntityScope.ts imports
+ * `./routeAccess.ts`) because it is a sibling with no framework imports of
+ * its own, so `node --test` resolves it without the bundler.
  */
+
+import { normalizeSaudiMobile, saudiMobileMessage } from "./saudiMobile.ts";
 
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -83,10 +90,32 @@ export type EntitySettingsPatchValidation =
   | { ok: false; error: string };
 
 /**
+ * The shape an e-mail must have to be stored in the bag. Deliberately the
+ * same three-part expression the registration forms use — one `@`, a dot in
+ * the domain, no whitespace — and deliberately NOT an RFC-5322 attempt: the
+ * point is to refuse the free text that used to get through, not to be the
+ * arbiter of address validity.
+ */
+export const ENTITY_SETTINGS_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
  * Validates an `entitySettings` PATCH body: every key must match
  * ENTITY_SETTINGS_KEY_RE, and every value must be a string (≤ 500 chars), a
  * finite number, or null. An empty object validates to an empty patch — the
  * route decides whether an empty patch is worth a DB round trip.
+ *
+ * Two keys carry a FORMAT on top of that, for every entity type (WP-6 B-1;
+ * until now the bag accepted any string for both, which is how an e-mail
+ * address could be stored as a firm's phone number):
+ *   • `phone` — a Saudi mobile, normalised to E.164 (`+9665XXXXXXXX`) by
+ *     `normalizeSaudiMobile`, so the value the bag holds matches what
+ *     `profiles.phone` holds after 20260921_04. `null` still clears it; an
+ *     all-whitespace string is treated as a clear rather than as a rejection,
+ *     because the tab sends a trimmed "" only when the user emptied the field
+ *     — and that arrives here as `null` already.
+ *   • `email` — ENTITY_SETTINGS_EMAIL_RE.
+ * The refusal message for `phone` is `saudiMobileMessage`'s, so the user is
+ * told WHICH of the four things is wrong rather than «غير صحيح».
  */
 export function validateEntitySettingsPatch(value: unknown): EntitySettingsPatchValidation {
   if (!isPlainObject(value)) return { ok: false, error: "بيانات إعدادات الكيان يجب أن تكون كائناً." };
@@ -106,7 +135,26 @@ export function validateEntitySettingsPatch(value: unknown): EntitySettingsPatch
       if (v.length > MAX_ENTITY_SETTINGS_VALUE_LENGTH) {
         return { ok: false, error: `قيمة حقل «${key}» تتجاوز الحد المسموح (${MAX_ENTITY_SETTINGS_VALUE_LENGTH} حرفاً).` };
       }
-      patch[key] = v;
+      if (key === "phone") {
+        if (v.trim() === "") {
+          patch[key] = null;
+        } else {
+          const mobile = normalizeSaudiMobile(v);
+          if (!mobile.ok) return { ok: false, error: saudiMobileMessage(mobile) };
+          patch[key] = mobile.e164;
+        }
+      } else if (key === "email") {
+        const trimmed = v.trim();
+        if (trimmed === "") {
+          patch[key] = null;
+        } else if (!ENTITY_SETTINGS_EMAIL_RE.test(trimmed)) {
+          return { ok: false, error: "البريد الإلكتروني غير صالح." };
+        } else {
+          patch[key] = trimmed;
+        }
+      } else {
+        patch[key] = v;
+      }
     } else {
       return { ok: false, error: `قيمة حقل «${key}» يجب أن تكون نصاً أو رقماً أو فارغة.` };
     }
@@ -145,7 +193,18 @@ export interface BusinessProfilePatch {
   cr_number?: string | null;
   legal_rep_name?: string | null;
   legal_rep_capacity?: string | null;
+  service_model?: string;
+  has_legal_dept?: boolean;
 }
+
+/**
+ * `business_profiles.service_model` CHECK values
+ * (20260603_phase1_002_entities.sql:231-232). Duplicated here as a runtime
+ * array for the same reason `firm/members/route.ts` keeps `FIRM_ROLE_VALUES`:
+ * a validator that guards a DB CHECK needs the values at runtime, not only at
+ * compile time.
+ */
+export const SERVICE_MODEL_VALUES: readonly string[] = ["internal", "external", "hybrid"];
 
 export type BusinessProfileValidation =
   | { ok: true; patch: BusinessProfilePatch }
@@ -159,9 +218,15 @@ export type BusinessProfileValidation =
  * unknown key.
  *
  * `company_name_ar` is NOT NULL in the database (no default once a row
- * exists), so — unlike the other three, which are nullable — an empty
- * string here is refused rather than silently clearing the column; the
- * route omits the key entirely when the caller's input trims to empty.
+ * exists), so — unlike the nullable ones — an empty string here is refused
+ * rather than silently clearing the column; the route omits the key entirely
+ * when the caller's input trims to empty.
+ *
+ * `service_model` and `has_legal_dept` (WP-6 B-4) are also NOT NULL, both
+ * with a default, so NEITHER accepts null: clearing them is not a thing the
+ * column allows. `service_model` is CHECK-constrained, which is why an
+ * unrecognised value is a 400 here rather than a 23514 from Postgres — the
+ * user gets Arabic, not a constraint name.
  */
 export function validateBusinessProfilePatch(
   value: unknown,
@@ -213,6 +278,22 @@ export function validateBusinessProfilePatch(
       }
       patch.legal_rep_name = trimmed || null;
     }
+  }
+
+  if ("service_model" in value) {
+    const raw = value.service_model;
+    if (typeof raw !== "string" || !SERVICE_MODEL_VALUES.includes(raw)) {
+      return { ok: false, error: "نموذج العمل القانوني غير صالح." };
+    }
+    patch.service_model = raw;
+  }
+
+  if ("has_legal_dept" in value) {
+    const raw = value.has_legal_dept;
+    if (typeof raw !== "boolean") {
+      return { ok: false, error: "قيمة «لدى الشركة إدارة قانونية داخلية» يجب أن تكون صح أو خطأ." };
+    }
+    patch.has_legal_dept = raw;
   }
 
   if ("legal_rep_capacity" in value) {

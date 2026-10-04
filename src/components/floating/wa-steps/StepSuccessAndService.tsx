@@ -56,11 +56,13 @@ export function StepCustomerService({ isDark, onReset, whatsappHref }: CustomerS
 
       <motion.a
         variants={staggerItemVariants}
-        href="tel:+966560655552"
+        href={whatsappHref}
+        target="_blank"
+        rel="noopener noreferrer"
         className={`w-full flex items-center justify-center gap-2 py-3.5 rounded-[1.25rem] border-2 text-[13px] font-bold active:scale-[0.98] transition-all ${isDark ? "border-white/10 bg-white/[0.02] text-white hover:bg-white/[0.06]" : "border-gray-200/70 bg-white text-gray-800 hover:bg-gray-50"}`}
-        aria-label="اتصل بنا على الرقم +966 56 065 5552"
+        aria-label="تواصل معنا عبر واتساب"
       >
-        <Headset size={20} weight="fill" /> اتصل بنا
+        <Headset size={20} weight="fill" /> دعم واتساب
       </motion.a>
 
       {/* The same sentence the outcome step carries, for the same reason: this

@@ -30,7 +30,8 @@
  *      تُستبعَد صراحة (القاعدة المُلزِمة، ب-111 تحديث 2026-08-16).
  *
  * الاستخدام:
- *   npx tsx scripts/check-frontmatter-contract-drift.ts [--json] [--input <مسار>]
+ *   npx tsx scripts/check-frontmatter-contract-drift.ts --input <مجلد أنظمة ولوائح> [--json]
+ *   أو عيّن NZAMY_LIBRARY_LAWS صراحةً؛ لا مسار Windows مفترض.
  */
 
 import fs from "node:fs";
@@ -43,7 +44,11 @@ const inputArgIdx = args.indexOf("--input");
 const INPUT_ROOT =
   inputArgIdx !== -1 && args[inputArgIdx + 1]
     ? path.resolve(args[inputArgIdx + 1])
-    : "D:\\Data\\Data\\antigravity ai\\تجارب\\Raw_Vault\\01_المكتبة_القانونية\\أنظمة ولوائح";
+    : process.env.NZAMY_LIBRARY_LAWS ? path.resolve(process.env.NZAMY_LIBRARY_LAWS) : null;
+if (!INPUT_ROOT || !fs.existsSync(INPUT_ROOT) || !fs.statSync(INPUT_ROOT).isDirectory()) {
+  console.error("✗ حدّد --input <مجلد أنظمة ولوائح> أو NZAMY_LIBRARY_LAWS؛ لا يُستخدم مسار Windows افتراضي ولا يُقبل مجلد مفقود.");
+  process.exit(2);
+}
 
 // «غير مصنف» مستبعد بقرار قائم — محجوز لدورة عمل لاحقة (راجع الذاكرة التشغيلية).
 // مجلدات الأرشيف/النسخ الاحتياطية مستبعدة لأنها ليست ملفات حية بالمكتبة.

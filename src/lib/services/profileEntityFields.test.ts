@@ -10,6 +10,7 @@ import {
   mergeEntitySettings,
   validateBusinessProfilePatch,
 } from "./profileEntityFields.ts";
+import { saudiMobileMessage } from "./saudiMobile.ts";
 
 // ── nationality / office_address ────────────────────────────────────────────
 
@@ -185,4 +186,99 @@ test("businessProfile: an unknown top-level key is ignored, not refused", () => 
 test("businessProfile: not an object is refused", () => {
   assert.equal(validateBusinessProfilePatch(null, normalizeCr, isCapacity).ok, false);
   assert.equal(validateBusinessProfilePatch("x", normalizeCr, isCapacity).ok, false);
+});
+
+// ── entitySettings: phone / email formats (WP-6 B-1) ────────────────────────
+
+test("entitySettings: the bag's phone is normalised to E.164, whatever shape it was typed in", () => {
+  for (const raw of ["0512345678", "512345678", "+966 51 234 5678", "٠٥١٢٣٤٥٦٧٨", "00966512345678"]) {
+    const v = validateEntitySettingsPatch({ phone: raw });
+    assert.equal(v.ok, true, raw);
+    if (v.ok) assert.equal(v.patch.phone, "+966512345678", raw);
+  }
+});
+
+test("entitySettings: a phone that is not a Saudi mobile is refused with its OWN reason", () => {
+  const cases: [string, string][] = [
+    ["920001234", saudiMobileMessage({ ok: false, reason: "prefix" })],
+    ["1950", saudiMobileMessage({ ok: false, reason: "prefix" })],
+    ["info@example.sa", saudiMobileMessage({ ok: false, reason: "letters" })],
+    ["05123456789", saudiMobileMessage({ ok: false, reason: "length" })],
+  ];
+  for (const [raw, expected] of cases) {
+    const v = validateEntitySettingsPatch({ phone: raw });
+    assert.equal(v.ok, false, raw);
+    if (!v.ok) assert.equal(v.error, expected, raw);
+  }
+});
+
+test("entitySettings: clearing the phone stays possible — null and whitespace both clear", () => {
+  for (const raw of [null, "", "   "]) {
+    const v = validateEntitySettingsPatch({ phone: raw });
+    assert.equal(v.ok, true, String(raw));
+    if (v.ok) assert.equal(v.patch.phone, null, String(raw));
+  }
+});
+
+test("entitySettings: the bag's email must look like an address", () => {
+  for (const raw of ["info@nezamy.sa", "a.b+c@sub.domain.example"]) {
+    const v = validateEntitySettingsPatch({ email: raw });
+    assert.equal(v.ok, true, raw);
+    if (v.ok) assert.equal(v.patch.email, raw);
+  }
+  for (const raw of ["info", "info@", "@nezamy.sa", "info@nezamy", "a b@c.sa"]) {
+    const v = validateEntitySettingsPatch({ email: raw });
+    assert.equal(v.ok, false, raw);
+    if (!v.ok) assert.ok(/[؀-ۿ]/.test(v.error), raw);
+  }
+  const cleared = validateEntitySettingsPatch({ email: "  " });
+  assert.equal(cleared.ok, true);
+  if (cleared.ok) assert.equal(cleared.patch.email, null);
+});
+
+test("entitySettings: the format rules touch only `phone` and `email` — other keys stay free text", () => {
+  const v = validateEntitySettingsPatch({ address: "حي الملقا، 1950", website: "https://nezamy.sa" });
+  assert.equal(v.ok, true);
+  if (v.ok) {
+    assert.equal(v.patch.address, "حي الملقا، 1950");
+    assert.equal(v.patch.website, "https://nezamy.sa");
+  }
+});
+
+// ── businessProfile: service_model / has_legal_dept (WP-6 B-4) ──────────────
+
+test("businessProfile: service_model accepts exactly the three CHECK values", () => {
+  for (const model of ["internal", "external", "hybrid"]) {
+    const v = validateBusinessProfilePatch({ service_model: model }, normalizeCr, isCapacity);
+    assert.equal(v.ok, true, model);
+    if (v.ok) assert.equal(v.patch.service_model, model);
+  }
+});
+
+test("businessProfile: an unrecognised service_model is an Arabic 400, not a Postgres 23514", () => {
+  for (const bad of ["outsourced", "", "INTERNAL", 1, null, true]) {
+    const v = validateBusinessProfilePatch({ service_model: bad }, normalizeCr, isCapacity);
+    assert.equal(v.ok, false, String(bad));
+    if (!v.ok) assert.ok(/[؀-ۿ]/.test(v.error), String(bad));
+  }
+});
+
+test("businessProfile: has_legal_dept is a real boolean — the column is NOT NULL", () => {
+  for (const value of [true, false]) {
+    const v = validateBusinessProfilePatch({ has_legal_dept: value }, normalizeCr, isCapacity);
+    assert.equal(v.ok, true, String(value));
+    if (v.ok) assert.equal(v.patch.has_legal_dept, value);
+  }
+  for (const bad of ["true", "", 1, 0, null]) {
+    assert.equal(
+      validateBusinessProfilePatch({ has_legal_dept: bad }, normalizeCr, isCapacity).ok,
+      false,
+      String(bad),
+    );
+  }
+});
+
+test("businessProfile: neither new column can be cleared — both are NOT NULL with a default", () => {
+  assert.equal(validateBusinessProfilePatch({ service_model: null }, normalizeCr, isCapacity).ok, false);
+  assert.equal(validateBusinessProfilePatch({ has_legal_dept: null }, normalizeCr, isCapacity).ok, false);
 });

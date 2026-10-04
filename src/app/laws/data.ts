@@ -1,9 +1,31 @@
 // ─── Types ────────────────────────────────────────────────────────────────────
-export type ArticleStatus = "active" | "repealed" | "amended" | "suspended";
+export type ArticleStatus =
+  | "active"
+  | "repealed"
+  | "amended"
+  | "suspended"
+  | "added"
+  | "merged"
+  | "status_undeclared";
+
+/** A reader-facing notice only; it does not infer a lifecycle or repeal date. */
+export function articleStatusNotice(status: ArticleStatus, isRTL: boolean): string | null {
+  return status === "status_undeclared"
+    ? isRTL ? "لم يُتحقّق من الحالة" : "Status not verified"
+    : null;
+}
+
+/** Historical-text toggle is exclusively for an explicit repeal status. */
+export function isRepealedArticleStatus(status: ArticleStatus): boolean {
+  return status === "repealed";
+}
 
 export interface AmendmentEntry {
-  date: string;
-  source: string;
+  date: string | null;
+  source: string | null;
+  /** T28-22: true when the amending instrument and its date are withheld
+   *  from a non-subscriber (the API sends them as null). */
+  sourceLocked?: boolean;
   summary: string;
   fullText: string;
 }
@@ -51,7 +73,7 @@ export interface LawArticle {
   /** Numeric article number as the source states it. */
   number?: number | string | null;
   /** The source's own written locator, e.g. "السادسة والأربعون". */
-  numberText?: string;
+  numberText?: string | null;
   title: string;
   status: ArticleStatus;
   free: boolean;
@@ -82,6 +104,17 @@ export interface LawArticle {
 export interface LawChapter {
   title: string;
   articles: LawArticle[];
+  /**
+   * Two-level chapters (2026-10-04, migration 20261004_02). All optional: the
+   * detail API sends them once it carries library.chapters.id / level /
+   * parent_chapter_id; a chapter without them renders exactly as the flat list
+   * always did (see [slug]/_chapter-tree.ts).
+   */
+  id?: string;
+  /** 1 = top-level heading («الباب»), 2 = a chapter under the level-1 heading before it. */
+  level?: 1 | 2;
+  /** For level 2: the id of its level-1 chapter; null/absent = shown as a top-level chapter. */
+  parentChapterId?: string | null;
 }
 
 export interface LawAppendix {
@@ -109,7 +142,17 @@ export type LawDocumentType =
   | "ملحق"
   | "ضوابط التنفيذ";
 
-export type LawStatus = "active" | "repealed" | "suspended" | "partially_amended";
+/** Document-level lifecycle/archival status, distinct from ArticleStatus. */
+export type LawStatus =
+  | "active"
+  | "partially_active"
+  | "deferred_effective"
+  | "issued_publication_unverified"
+  | "suspended"
+  | "repealed"
+  | "superseded_duplicate"
+  | "merged_into_parent"
+  | "status_undeclared";
 
 export interface LawSystem {
   // ── الحقول الأساسية الحالية ──
@@ -124,7 +167,16 @@ export interface LawSystem {
   chapters: LawChapter[];
   regulationPreamble?: string;   // نص ديباجة اللائحة
   regulationInstruments?: RegulationInstrument[]; // العرض المسطَّح "اللائحة وحدها"
+  /** F13 — regulation articles withheld by the paywall */
+  regulationInstrumentsLocked?: number;
   appendices?: LawAppendix[];    // جداول/ملاحق مستوى الوثيقة (اختياري — أنظمة قليلة فقط)
+  /** Registry identity of the parent instrument, not a BOE law_guid. */
+  parentLawId?: string;
+  /** Verbatim display name stated by the secondary instrument itself. */
+  parentLaw?: string;
+  enablingArticle?: string;
+  /** Present only when the API resolved one safe, unambiguous parent row. */
+  parentLawLink?: { slug: string; title: string } | null;
 
   /**
    * The document's kind exactly as the source states it, straight from

@@ -22,7 +22,7 @@ export default function InvestigationFormsPage() {
   const inp = `w-full rounded-xl border px-4 py-3 text-sm outline-none resize-none transition ${isDark ? "bg-[#0c0f12] border-[#2d3748] text-gray-200 placeholder:text-gray-600 focus:border-indigo-500" : "bg-white border-gray-200 text-gray-800 placeholder:text-gray-400 focus:border-indigo-500"}`;
   const DRAFT = `النموذج: ${selected}\n\nبسم الله الرحمن الرحيم\nالمملكة العربية السعودية — النيابة العامة\n\nتاريخ: …/…/١٤٤٦ هـ\nالرقم المرجعي: NP-…\n\n[بيانات القضية وتفاصيلها]\n${details}\n\n[الجهة المختصة تملأ هذا الجزء]\n\nالمحقق: _______________ التوقيع: _______________`;
   return (
-    <div className={`${bg} min-h-screen`} dir="rtl">
+    <div className={`${bg} min-h-[100dvh]`} dir="rtl">
       <div className="max-w-3xl mx-auto p-4 md:p-8 space-y-6">
         <div className="flex items-center gap-3">
           <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${isDark ? "bg-rose-500/10" : "bg-rose-50"}`}><ClipboardText size={22} weight="duotone" className={isDark ? "text-rose-400" : "text-rose-600"} /></div>

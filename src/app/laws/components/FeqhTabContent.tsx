@@ -1,13 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useSubscription } from "@/hooks/useSubscription";
 import { Lock, Sparkle, ArrowRight, CaretLeft, CaretRight } from "@phosphor-icons/react";
 import { type FeqhBookDemo } from "../demo-data-access";
 import { FEQH_TYPES, type FeqhType } from "@/constants/lawsLibraryData";
+import { toCatalogueCards } from "@/lib/library/bookVolumes";
 import { EmptyState } from "./ListItems";
+import { ResultsSkeleton } from "./ResultsSkeleton";
 
 interface FeqhTabContentProps {
   isDark: boolean;
@@ -23,6 +25,10 @@ interface FeqhTabContentProps {
   setShowPaywall: (show: boolean) => void;
   activeCat: string;
   q: string;
+  /** A search request is in flight: skeleton cards, not «لا توجد نتائج». */
+  resultsPending?: boolean;
+  /** The search failed (its error is shown above): no empty state. */
+  searchFailed?: boolean;
 }
 
 export function FeqhTabContent({
@@ -39,6 +45,8 @@ export function FeqhTabContent({
   setShowPaywall,
   activeCat,
   q,
+  resultsPending = false,
+  searchFailed = false,
 }: FeqhTabContentProps) {
   const [page, setPage] = useState(1);
   const { can } = useSubscription();
@@ -53,9 +61,11 @@ export function FeqhTabContent({
     setLastFilterState(prevFilterState);
   }
 
-  const totalItems = filteredFeqhBooks.length;
+  // One card per multi-volume series (T28-24); pages count cards, not volume rows.
+  const cards = useMemo(() => toCatalogueCards(filteredFeqhBooks), [filteredFeqhBooks]);
+  const totalItems = cards.length;
   const maxPages = Math.ceil(totalItems / itemsPerPage);
-  const displayedBooks = filteredFeqhBooks.slice((page - 1) * itemsPerPage, page * itemsPerPage);
+  const displayedCards = cards.slice((page - 1) * itemsPerPage, page * itemsPerPage);
 
   const getPageNumbers = () => {
     const pages: (number | string)[] = [];
@@ -166,13 +176,15 @@ export function FeqhTabContent({
         )}
       </div>
 
-      {displayedBooks.length > 0 ? (
+      {resultsPending ? (
+        <ResultsSkeleton isDark={isDark} layoutMode={layoutMode} label="جارٍ البحث" />
+      ) : displayedCards.length > 0 ? (
         <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" : "space-y-4"}>
-          {displayedBooks.map((book) => {
+          {displayedCards.map(({ key: cardKey, book, title: cardTitle, volumesLabel }) => {
             const isBookFree = book.free || hasLibraryAccess;
             return (
               <motion.div
-                key={book.id}
+                key={cardKey}
                 layout
                 className={`group relative rounded-2xl border p-5 transition-all duration-300 hover:shadow-lg ${
                   isDark
@@ -226,7 +238,7 @@ export function FeqhTabContent({
                           {book.categoryLabel}
                         </span>
                         <h3 className={`text-[13.5px] font-black group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>
-                          {book.title}
+                          {cardTitle}
                         </h3>
                         <p className="text-[10px] text-amber-600 dark:text-[#C8A762] font-semibold mt-1">{book.author}</p>
                       </div>
@@ -239,13 +251,15 @@ export function FeqhTabContent({
                     </div>
                     <p className={`text-xs line-clamp-3 leading-relaxed mb-5 ${muted}`}>{book.desc}</p>
                     <div className="pt-4 border-t border-dashed dark:border-white/5 border-slate-100 flex flex-col gap-3">
-                      <div className="flex justify-between text-[11px]">
-                        <span className={muted}>{isRTL ? "المجلدات / الصفحات" : "Volumes / Pages"}</span>
-                        <span className={`font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{book.volCount}</span>
-                      </div>
+                      {volumesLabel && (
+                        <div className="flex justify-between text-[11px]">
+                          <span className={muted}>{isRTL ? "عدد المجلدات" : "Volumes"}</span>
+                          <span className={`font-bold ${isDark ? "text-gray-300" : "text-gray-800"}`}>{volumesLabel}</span>
+                        </div>
+                      )}
                       <div className="flex justify-between text-[11px]">
                         <span className={muted}>{isRTL ? "نوع المرجع" : "Type"}</span>
-                        <span className={`font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>
+                        <span className={`font-bold ${isDark ? "text-gray-300" : "text-gray-800"}`}>
                           {book.type === "sharia"
                             ? (isRTL ? "شرعي إسلامي" : "Islamic Law")
                             : book.type === "comparative"
@@ -303,21 +317,23 @@ export function FeqhTabContent({
                         )}
                       </div>
                       <h3 className={`text-base font-black mb-1 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>
-                        {book.title}
+                        {cardTitle}
                       </h3>
                       <p className="text-[11px] text-amber-600 dark:text-[#C8A762] font-semibold mb-2">{book.author}</p>
                       <p className={`text-xs line-clamp-2 leading-relaxed ${muted}`}>{book.desc}</p>
                     </div>
 
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-8 md:shrink-0">
-                      <div className={`grid grid-cols-2 gap-4 p-4 rounded-xl border min-w-[220px] ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"}`}>
-                        <div className="flex flex-col">
-                          <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "المجلدات" : "Volumes"}</span>
-                          <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{book.volCount}</span>
-                        </div>
+                      <div className={`grid ${volumesLabel ? "grid-cols-2" : "grid-cols-1"} gap-4 p-4 rounded-xl border min-w-[220px] ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"}`}>
+                        {volumesLabel && (
+                          <div className="flex flex-col">
+                            <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "المجلدات" : "Volumes"}</span>
+                            <span className={`text-sm font-bold ${isDark ? "text-gray-300" : "text-gray-800"}`}>{volumesLabel}</span>
+                          </div>
+                        )}
                         <div className="flex flex-col">
                           <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "نوع المرجع" : "Type"}</span>
-                          <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>
+                          <span className={`text-sm font-bold ${isDark ? "text-gray-300" : "text-gray-800"}`}>
                             {book.type === "sharia" ? (isRTL ? "شرعي" : "Sharia") : book.type === "comparative" ? (isRTL ? "مقارن" : "Comparative") : (isRTL ? "وضعي" : "Positive")}
                           </span>
                         </div>
@@ -336,7 +352,7 @@ export function FeqhTabContent({
             </motion.div>
           ); })}
         </div>
-      ) : (
+      ) : searchFailed ? null : (
         <EmptyState
           type="no-results"
           catId={activeCat}
@@ -347,7 +363,7 @@ export function FeqhTabContent({
       )}
 
       {/* Pagination controls */}
-      {maxPages > 1 && (
+      {!resultsPending && maxPages > 1 && (
         <div className={`flex items-center justify-center gap-2 mt-8 pt-6 border-t ${
           isDark ? "border-[#2d3748]/50" : "border-gray-100"
         }`} dir={isRTL ? "rtl" : "ltr"}>

@@ -18,10 +18,17 @@ import {
   ArrowLeft,
   Globe,
   User,
+  Users,
 } from "@phosphor-icons/react";
 import { ClientType, Step } from "../types";
 import { clientTypes } from "../data";
 import { LEGAL_REP_CAPACITIES, crNumberHint } from "./_corporateIdentity";
+import { normalizeSaudiMobile, sanitizePhoneDigits, saudiMobileMessage } from "@/lib/services/saudiMobile";
+
+// UAT-REG-001 — same regex the page-level canNext() and
+// register/provider/page.tsx:222 use, so the inline hint and the «التالي»
+// button never disagree.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function StepIndicator({ step, total }: { step: Step; total: number }) {
   return (
@@ -133,6 +140,13 @@ export function Step2({
   const isGov = clientType === "government";
   const isNGO = clientType === "ngo";
   const inputCls = "w-full rounded-xl border border-slate-200 bg-white py-3 px-4 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-royal focus:ring-2 focus:ring-royal/10 transition-all dark:border-white/10 dark:bg-dark-card dark:placeholder:text-gray-600 dark:focus:border-gold dark:focus:ring-gold/10";
+  // UAT-REG-001 — «التالي» was merely disabled, with nothing on screen saying
+  // why. Same pattern as register/provider/components/Steps.tsx:276,305-315.
+  const emailTouched = Boolean(data.email);
+  const emailValid = EMAIL_RE.test((data.email || "").trim());
+  const phoneTouched = Boolean(data.phone);
+  const phoneResult = normalizeSaudiMobile(data.phone);
+  const phoneValid = phoneResult.ok;
   const GOV_ROLES = isAr
     ? [{ v: "judge", l: "قاضٍ" }, { v: "prosecutor", l: "عضو نيابة" }, { v: "officer", l: "ضابط" }, { v: "gov_counsel", l: "مستشار قانوني" }]
     : [{ v: "judge", l: "Judge" }, { v: "prosecutor", l: "Prosecutor" }, { v: "officer", l: "Officer" }, { v: "gov_counsel", l: "Legal Counsel" }];
@@ -333,12 +347,19 @@ export function Step2({
             <input
               type="email"
               dir="ltr"
+              autoComplete="email"
               placeholder="example@email.com"
               value={data.email || ""}
               onChange={(e) => onChange("email", e.target.value)}
-              className={`${inputCls} ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"}`}
+              aria-invalid={emailTouched && !emailValid}
+              className={`${inputCls} ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"} ${emailTouched && !emailValid ? "border-red-400 dark:border-red-500/60" : ""}`}
             />
           </div>
+          <p className={`mt-1.5 text-xs ${emailTouched && !emailValid ? "text-red-600 dark:text-red-400" : "text-ink-faint dark:text-gray-500"}`}>
+            {emailTouched && !emailValid
+              ? (isAr ? "البريد الإلكتروني غير صحيح — مثال: name@example.com" : "Invalid email address — e.g. name@example.com")
+              : (isAr ? "يُستخدم لتسجيل الدخول وإشعارات الحساب" : "Used to sign in and for account notices")}
+          </p>
         </div>
         <div>
           <label className="mb-1.5 block text-sm font-medium text-ink dark:text-gray-300">
@@ -348,13 +369,21 @@ export function Step2({
             <Phone size={18} className={`absolute top-1/2 -translate-y-1/2 text-ink-faint dark:text-gray-500 pointer-events-none ${isAr ? "right-3.5" : "left-3.5"}`} />
             <input
               type="tel"
+              inputMode="numeric"
+              autoComplete="tel"
               dir="ltr"
               placeholder="05XXXXXXXX"
               value={data.phone || ""}
-              onChange={(e) => onChange("phone", e.target.value)}
-              className={`${inputCls} ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"}`}
+              onChange={(e) => onChange("phone", sanitizePhoneDigits(e.target.value))}
+              aria-invalid={phoneTouched && !phoneValid}
+              className={`${inputCls} ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"} ${phoneTouched && !phoneValid ? "border-red-400 dark:border-red-500/60" : ""}`}
             />
           </div>
+          <p className={`mt-1.5 text-xs ${phoneTouched && !phoneValid ? "text-red-600 dark:text-red-400" : "text-ink-faint dark:text-gray-500"}`}>
+            {phoneTouched && !phoneValid
+              ? (isAr ? saudiMobileMessage(phoneResult) : "Invalid mobile number — e.g. 0512345678")
+              : (isAr ? "أرقام فقط، ويُحفظ بصيغة دولية صحيحة" : "Digits only; stored in valid international format")}
+          </p>
         </div>
         {/* Country */}
         <div>
@@ -546,7 +575,15 @@ export function Step3({
 }
 
 // Step 4: Success
-export function Step4({ isAr, clientType }: { isAr: boolean; clientType: ClientType }) {
+export function Step4({
+  isAr,
+  clientType,
+  intendedPlan,
+}: {
+  isAr: boolean;
+  clientType: ClientType;
+  intendedPlan?: string | null;
+}) {
   const typeLabel = {
     individual: isAr ? "فرد" : "Individual",
     company: isAr ? "شركة" : "Company",
@@ -588,6 +625,48 @@ export function Step4({ isAr, clientType }: { isAr: boolean; clientType: ClientT
       </p>
 
       <div className="mt-8 space-y-3">
+        {intendedPlan === "shield" && (
+          <motion.a
+            href="/dashboard/client"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex items-center gap-4 rounded-2xl border-2 border-royal bg-royal/5 p-4 text-start transition-all hover:bg-royal/10 dark:bg-royal/20"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-royal text-gold">
+              <Shield size={22} weight="duotone" />
+            </span>
+            <div className="flex-1">
+              <div className="text-sm font-bold text-royal dark:text-gold">
+                {isAr ? "إتمام تفعيل التأمين القانوني الفردي" : "Complete Legal Shield Activation"}
+              </div>
+              <div className="text-xs text-ink-muted dark:text-gray-400">
+                {isAr ? "٣٦٥ ر.س/سنة (عرض التأسيس ٢٩٦ ر.س) — استشارات وخصم ١٥٪" : "365 SAR/yr (Founder 296 SAR) — Consultations & 15% discount"}
+              </div>
+            </div>
+            <ArrowLeft size={16} className="text-royal dark:text-gold" />
+          </motion.a>
+        )}
+        {intendedPlan === "group" && (
+          <motion.a
+            href="/dashboard/client/my-group?action=create"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex items-center gap-4 rounded-2xl border-2 border-amber-500 bg-amber-500/5 p-4 text-start transition-all hover:bg-amber-500/10 dark:bg-amber-500/20"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-600 text-white">
+              <Users size={22} weight="duotone" />
+            </span>
+            <div className="flex-1">
+              <div className="text-sm font-bold text-amber-700 dark:text-amber-400">
+                {isAr ? "إنشاء وتفعيل مجموعة التأمين (الرَّبع)" : "Create & Activate Group Shield"}
+              </div>
+              <div className="text-xs text-ink-muted dark:text-gray-400">
+                {isAr ? "يبدأ من ٧٥٠ ر.س لـ ٣ أفراد — ٥ استشارات مرئية/عضو وخصم ٢٥٪" : "From 750 SAR for 3 members — 5 video consults & 25% discount"}
+              </div>
+            </div>
+            <ArrowLeft size={16} className="text-amber-700 dark:text-amber-400" />
+          </motion.a>
+        )}
         {[
           { icon: Star, labelAr: "انتقل إلى لوحة التحكم", labelEn: "Go to Dashboard", href: dashboardHref },
           { icon: Scales, labelAr: "احجز استشارتك الأولى", labelEn: "Book your first consultation", href: "/services/consultations" },

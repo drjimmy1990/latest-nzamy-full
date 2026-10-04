@@ -40,6 +40,18 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// T28-21 (migration 20260929_01): the article text tables are server-only —
+// the anon key holds no privilege on them. They are read with the service key
+// here, exactly as the Next routes read them. Without the key those checks are
+// skipped with a warning instead of reporting a false "empty table".
+const SERVER_ONLY_TABLES = new Set(['articles', 'article_regulations', 'article_amendments']);
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const serverOnly = SUPABASE_SERVICE_ROLE_KEY
+  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    })
+  : null;
+
 interface CheckResult {
   name: string;
   status: 'pass' | 'fail' | 'warn';
@@ -55,10 +67,17 @@ function check(name: string, status: 'pass' | 'fail' | 'warn', message: string) 
 }
 
 async function checkTableCount(tableName: string): Promise<number> {
-  const { count, error } = await supabase
+  const client = SERVER_ONLY_TABLES.has(tableName) ? serverOnly : supabase;
+  if (!client) {
+    check(`Table: ${tableName}`, 'warn', 'skipped — server-only table, SUPABASE_SERVICE_ROLE_KEY not set');
+    return 0;
+  }
+  // Count on the key column: after 20261004_01 the anon key may read only some
+  // columns of laws / judicial_collections / principles, and `*` is refused.
+  const { count, error } = await client
     .schema('library')
     .from(tableName)
-    .select('*', { count: 'exact', head: true });
+    .select(tableName === 'laws' ? 'slug' : 'id', { count: 'exact', head: true });
   
   if (error) {
     check(`Table: ${tableName}`, 'fail', `Error: ${error.message}`);
@@ -114,7 +133,7 @@ async function main() {
   // 2. Table counts
   console.log('\n📊 Table Row Counts:');
   const tables = [
-    'laws', 'chapters', 'articles', 'article_amendments',
+    'laws', 'chapters', 'articles', 'article_amendments', 'article_regulations',
     'decrees_circulars', 'decree_pages',
     'judicial_collections', 'principles', 'principle_paragraphs',
     'feqh_books', 'feqh_chapters', 'feqh_sections', 'feqh_blocks',
@@ -126,6 +145,18 @@ async function main() {
     totalRows += await checkTableCount(table);
   }
   console.log(`\n   Total rows across all tables: ${totalRows.toLocaleString()}`);
+
+  // 2b. The article text is closed to the public anon key (20260929_01).
+  console.log('\n🔒 Article text lock (T28-21):');
+  const { error: anonArticlesError } = await supabase
+    .schema('library')
+    .from('articles')
+    .select('id', { head: true, count: 'exact' });
+  if (anonArticlesError) {
+    check('Anon key on library.articles', 'pass', `refused (${anonArticlesError.code ?? anonArticlesError.message}) — text is server-only`);
+  } else {
+    check('Anon key on library.articles', 'warn', 'still readable with the anon key — apply 20260929_01_library_text_server_only.sql after the code deploy');
+  }
 
   // 3. API endpoints
   console.log('\n🌐 API Endpoints:');
@@ -140,13 +171,15 @@ async function main() {
 
   // 4. Arabic FTS test
   console.log('\n🔤 Arabic Search Tests:');
-  // Test that الإثبات matches الاثبات
-  const { data: ftsData, error: ftsError } = await supabase
-    .schema('library')
-    .from('articles')
-    .select('id, text')
-    .ilike('text', '%الاثبات%')
-    .limit(1);
+  // Test that الإثبات matches الاثبات (library.articles is server-only: service key)
+  const { data: ftsData, error: ftsError } = serverOnly
+    ? await serverOnly
+        .schema('library')
+        .from('articles')
+        .select('id')
+        .ilike('text', '%الاثبات%')
+        .limit(1)
+    : { data: null, error: { message: 'skipped — SUPABASE_SERVICE_ROLE_KEY not set (library.articles is server-only)' } };
 
   if (ftsError) {
     check('Arabic FTS', 'warn', `FTS query error: ${ftsError.message}`);

@@ -16,7 +16,7 @@ interface Props {
 }
 
 const PAYMENT_METHODS = [
-  { label: "مدى", sub: "بطاقة مصرفية سعودية", icon: Bank, val: "mada", border: "border-green-200 dark:border-green-800/40", badge: "bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400", badgeLabel: "الأكثر شيوعاً" },
+  { label: "مدى", sub: "بطاقة مصرفية سعودية", icon: Bank, val: "mada", border: "border-green-200 dark:border-green-800/40", badge: "bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400", badgeLabel: "الشبكة الوطنية" }, // was «الأكثر شيوعاً» — a ranking claim (owner, Q164)
   { label: "Visa / Mastercard", sub: "بطاقة ائتمانية دولية", icon: CreditCard, val: "visa", border: "border-blue-200 dark:border-blue-800/40", badge: "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400", badgeLabel: "دولي" },
   { label: "STC Pay", sub: "محفظة STC", icon: DeviceMobile, val: "stc", border: "border-purple-200 dark:border-purple-800/40", badge: "bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400", badgeLabel: "محلي" },
   { label: "Apple Pay", sub: "محفظة Apple", icon: AppleLogo, val: "apple", border: "border-gray-200 dark:border-white/10", badge: "bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-gray-300", badgeLabel: "سريع" },

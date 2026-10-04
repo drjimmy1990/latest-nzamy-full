@@ -1,0 +1,36 @@
+-- Chain step (NOT a migration) for entity_members_no_recursion.test.sql.
+--
+-- Runs as the first "migration" in the chain, before the real
+-- 20260616_entities_setup_and_rls_fix.sql.
+--
+-- WHY THE CHAIN STARTS AT 20260616 AND NOT AT 20260603_phase1_002_entities.sql
+--   20260603_phase1_002_entities.sql cannot be applied to any database that
+--   does not already hold all eight entity tables: it creates
+--   `firm_profiles` + its policies first (`"firm_profiles: members can read
+--   their firm"`, :79-88, selects from `public.firm_members`) and only creates
+--   `firm_members` 30 lines later (:118) — and the same inversion repeats for
+--   business (:259 vs :298), government (:436 vs :475) and ngo (:606 vs :645).
+--   Loading it here stops at `42P01 relation "public.firm_members" does not
+--   exist`. That ordering bug is precisely what
+--   20260616_entities_setup_and_rls_fix.sql's own header says it fixes
+--   ("Creates all 8 entity/membership tables FIRST, then applies all RLS
+--   policies … AFTER all tables exist"), and 20260616 re-creates every one of
+--   20260603_phase1_002's entity policies verbatim after dropping them by name
+--   (:277-342), so the end state the chain reproduces is identical.
+--
+-- WHY THE STUB FIRM TABLES ARE DROPPED
+--   stubs.sql:33-58 stubs `public.firm_profiles` and `public.firm_members`
+--   with a reduced column set and the pre-fix 20260616 policies. 20260616 uses
+--   `create table if not exists`, so the stub shapes would survive (no
+--   `verification_status`, no `unique(firm_id,user_id)`, no `updated_at` on
+--   firm_profiles). Dropping them here makes the firm pair as real as the other
+--   six tables — including the recursive policy pair this test must reproduce.
+--
+--   CASCADE only drops the foreign keys pointing at them (case_stages.firm_id,
+--   hearings.firm_id); those stub tables stay and this test does not use those
+--   columns. public.can_access_case_row() survives: a `language sql` body in
+--   string form records no dependency on the tables it names and resolves the
+--   new firm_members at call time.
+
+drop table if exists public.firm_members  cascade;
+drop table if exists public.firm_profiles cascade;

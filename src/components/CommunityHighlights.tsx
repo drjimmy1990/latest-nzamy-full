@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { memo, useState, useEffect } from "react";
+import { memo } from "react";
 import {
   ChatTeardropDots,
   BookOpen,
@@ -13,6 +13,8 @@ import {
   TrendUp,
 } from "@phosphor-icons/react";
 import { useTheme } from "./ThemeProvider";
+import { LIBRARY_STAT_KEYS, LIBRARY_STAT_LABELS, formatLibraryCount } from "@/lib/library/libraryStats";
+import { useLibraryStats } from "@/lib/library/useLibraryStats";
 
 // ─── MOCK_QUESTIONS · MOCK_ARTICLES · MOCK_LAWYERS — ALL THREE DELETED ───────
 //
@@ -45,16 +47,15 @@ import { useTheme } from "./ThemeProvider";
 // page, in a different component. Fixing one and leaving the other is exactly
 // the failure the shape rule exists to prevent, so both went in one pass.
 //
-// WHAT REPLACED THEM. The legal library is real and took months to build, so
-// the counters below are its size — the same floors LegalLibraryBanner.tsx
-// publishes, each re-checkable with one query, each written as a floor so it
-// stays true as the library grows rather than going stale the first time anyone
-// seeds a row:
-//
-//   select count(*) from library.laws;               -- 386
-//   select count(*) from library.articles;           -- 13,436
-//   select count(*) from library.principles;         -- 17,940
-//   select count(*) from library.decrees_circulars;  --  2,078
+// WHAT REPLACED THEM. The legal library is real, so the counters below are its
+// size. 2026-09-25: they are no longer literals — the same code runs against the
+// cloud project (386 laws) and the self-hosted one (5,901 rows of every
+// instrument type), so any constant is false on one of them. They are counted
+// live from whichever database the site runs on (GET /api/library/stats, cached
+// ~24h), shown as floors with the labels in src/lib/library/libraryStats.ts
+// (library.laws is «وثيقة نظامية», not «نظام ولائحة»: only 593 of its 5,901
+// self-hosted rows are «نظام»). While loading: a neutral placeholder. If the
+// count fails: no numbers at all, only the link to the library.
 //
 // The blog is ALSO real and has a CMS behind it, but pointing this rail at
 // published posts is a data fetch with an owner and a contract, not a hole to
@@ -72,46 +73,27 @@ const PRACTICE_AREAS = [
   { ar: "عقاري", en: "Real Estate" },
 ] as const;
 
-/** The library's real size. See the note above for the query behind each. */
-const LIBRARY_STATS = [
-  { value: 386, suffix: "", ar: "نظاماً ولائحة", en: "Laws & Regulations" },
-  { value: 13000, suffix: "+", ar: "مادة نظامية", en: "Statute Articles" },
-  { value: 17000, suffix: "+", ar: "مبدأ قضائي", en: "Judicial Principles" },
-  { value: 2000, suffix: "+", ar: "قرار وتعميم", en: "Decrees & Circulars" },
-] as const;
-
 // ─── Stat Counter ─────────────────────────────────────────────────────────────
 
+/** A floor, printed as-is. Floors do not animate: a counter that spins up to a
+ *  round number and stops reads as a precise total, and a floor is not one.
+ *  `value` null = still loading → neutral placeholder, no number. */
 const StatCounter = memo(function StatCounter({
-  value, suffix, label, isDark, animate,
+  value, label, isDark,
 }: {
-  value: number;
-  suffix: string;
+  value: string | null;
   label: string;
   isDark: boolean;
-  /** Floors do not animate. A counter that spins up to «١٣٬٠٠٠» and stops reads
-   *  as a precise total, and a floor is not a total. Only the exact figure
-   *  (386) counts up. */
-  animate: boolean;
 }) {
-  const [count, setCount] = useState(animate ? 0 : value);
-
-  useEffect(() => {
-    if (!animate) return;
-    let start = 0;
-    const step = Math.max(1, Math.ceil(value / 60));
-    const timer = setInterval(() => {
-      start += step;
-      if (start >= value) { setCount(value); clearInterval(timer); }
-      else setCount(start);
-    }, 16);
-    return () => clearInterval(timer);
-  }, [value, animate]);
-
   return (
     <div className="text-center">
       <p className={`text-2xl font-extrabold font-mono ${isDark ? "text-white" : "text-[#0B3D2E]"}`}>
-        {count.toLocaleString("ar-EG")}{suffix}
+        {value ?? (
+          <span
+            aria-hidden
+            className={`inline-block h-[0.8em] w-16 rounded-md align-middle animate-pulse ${isDark ? "bg-white/10" : "bg-slate-200"}`}
+          />
+        )}
       </p>
       <p className={`text-xs mt-1 ${isDark ? "text-gray-400" : "text-gray-500"}`}>{label}</p>
     </div>
@@ -126,6 +108,14 @@ export default function CommunityHighlights() {
   const isDark = theme === "dark";
 
   const ArrowIcon = isAr ? ArrowLeft : ArrowRight;
+  const library = useLibraryStats();
+  const libraryStats = library.status === "error"
+    ? []
+    : LIBRARY_STAT_KEYS.map((key) => ({
+        key,
+        value: library.status === "ready" ? formatLibraryCount(library.stats[key], isAr ? "ar" : "en") : null,
+        label: isAr ? LIBRARY_STAT_LABELS[key].ar : LIBRARY_STAT_LABELS[key].en,
+      })).filter((s) => library.status === "loading" || s.value !== null);
 
   const card = isDark
     ? "border-white/10 bg-dark-card"
@@ -251,24 +241,21 @@ export default function CommunityHighlights() {
             <div className="flex items-center gap-2 mb-6">
               <TrendUp size={18} weight="fill" className="text-[#C8A762]" />
               <h3 className={`text-sm font-bold ${isDark ? "text-white" : "text-gray-700"}`}>
-                {isAr ? "المكتبة بالأرقام" : "The Library in Numbers"}
+                {libraryStats.length > 0
+                  ? (isAr ? "المكتبة بالأرقام" : "The Library in Numbers")
+                  : (isAr ? "المكتبة القانونية" : "The Legal Library")}
               </h3>
             </div>
-            <div className="grid grid-cols-2 gap-4 sm:gap-6">
-              {LIBRARY_STATS.map((s) => (
-                <StatCounter
-                  key={s.en}
-                  value={s.value}
-                  suffix={s.suffix}
-                  label={isAr ? s.ar : s.en}
-                  isDark={isDark}
-                  animate={s.suffix === ""}
-                />
-              ))}
-            </div>
+            {libraryStats.length > 0 && (
+              <div className="grid grid-cols-2 gap-4 sm:gap-6" aria-busy={library.status === "loading"}>
+                {libraryStats.map((s) => (
+                  <StatCounter key={s.key} value={s.value} label={s.label} isDark={isDark} />
+                ))}
+              </div>
+            )}
             <a
               href="/laws"
-              className={`mt-6 inline-flex items-center gap-1.5 text-xs font-semibold transition-all hover:gap-2.5 ${isDark ? "text-emerald-400" : "text-[#0B3D2E]"}`}
+              className={`${libraryStats.length > 0 ? "mt-6" : "mt-0"} inline-flex items-center gap-1.5 text-xs font-semibold transition-all hover:gap-2.5 ${isDark ? "text-emerald-400" : "text-[#0B3D2E]"}`}
             >
               {isAr ? "تصفّح المكتبة" : "Browse the Library"}
               <ArrowIcon size={14} weight="bold" />

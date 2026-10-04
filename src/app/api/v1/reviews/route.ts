@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { assertRole } from "@/lib/auth/assertRole";
 import { offPlatformContactIssue } from "@/lib/services/contactSanitizer";
 import { recordNotification } from "@/lib/notify";
+import { redactAnonymousReview, requestIdsForEnrichment } from "./_redact";
 
 /**
  * /api/v1/reviews — Phase 7, item 192 (see supabase/migrations/
@@ -48,17 +49,21 @@ export const REVIEW_SELECT =
   "id, reviewer_id, reviewee_id, request_id, rating, title, body, is_anonymous, response, response_at, created_at";
 
 function toReviewDto(row: ReviewRow, reviewerName: string | null, serviceTitleAr: string | null) {
+  // One rule for all three identity-bearing fields (./_redact.ts). It used to
+  // be spelled out here for `reviewerName` and `requestId` only, with this very
+  // comment claiming `serviceTitleAr` «is resolved by the caller off
+  // row.request_id directly, so it is unaffected by hiding the id here» — true,
+  // and precisely the defect: the caller resolved it for anonymous rows too and
+  // the panel printed «الخدمة: …» under «عميل», which on a small caseload names
+  // the reviewer as surely as the id would have.
+  const redacted = redactAnonymousReview(row, reviewerName, serviceTitleAr);
   return {
     id: row.id,
     lawyerUserId: row.reviewee_id,
-    reviewerName: row.is_anonymous ? null : reviewerName,
+    reviewerName: redacted.reviewerName,
     isAnonymous: row.is_anonymous,
-    // Withheld on anonymous reviews for the same reason reviewerName is:
-    // the reviewee can look this id up in service_requests to de-anonymize
-    // the reviewer. serviceTitleAr is resolved by the caller off row.request_id
-    // directly, so it is unaffected by hiding the id here.
-    requestId: row.is_anonymous ? null : row.request_id,
-    serviceTitleAr,
+    requestId: redacted.requestId,
+    serviceTitleAr: redacted.serviceTitleAr,
     rating: row.rating,
     title: row.title,
     body: row.body,
@@ -80,7 +85,9 @@ export async function enrichReviews(rows: ReviewRow[]) {
   if (rows.length === 0) return [];
 
   const reviewerIds = [...new Set(rows.filter((r) => !r.is_anonymous).map((r) => r.reviewer_id))];
-  const requestIds = [...new Set(rows.filter((r): r is ReviewRow & { request_id: string } => !!r.request_id).map((r) => r.request_id))];
+  // Anonymous rows are excluded here, not only in the DTO: their titles are
+  // never needed, so they are never read out of `service_requests` at all.
+  const requestIds = requestIdsForEnrichment(rows);
 
   const nameMap = new Map<string, string | null>();
   const titleMap = new Map<string, string | null>();

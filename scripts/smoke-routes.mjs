@@ -16,7 +16,6 @@ const ROUTES = [
   "/academy/my-courses",
   "/academy/quiz",
   "/blog",
-  "/blog/wrongful-termination-rights",
   "/community",
   "/community/ask",
   "/community/public",

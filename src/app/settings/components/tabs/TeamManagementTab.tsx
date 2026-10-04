@@ -13,21 +13,33 @@
  * be an invitation). "Change role" / "suspend" / "remove" menu actions did
  * the same: `setLocalMessage` and nothing else.
  *
- * A real roster exists for exactly one account type: `public.firm_members`
- * (Phase 2, migration 20260903_phase2_clients_and_firm_membership.sql),
- * read and written through `/api/v1/firm/members` — see
- * `@/lib/services/firmMembersService` and the full management surface at
- * `src/app/dashboard/firm/team/page.tsx`. So this tab now does exactly two
- * things for a firm account: reads that same roster (name, role, status)
- * and links out to the real team page for anything that changes it —
- * inviting, changing a role, suspending, removing. It does not duplicate
- * that page's write surface; duplicating it here would be a second place
- * for the same roster to drift out of sync.
+ * A real roster exists for TWO account types:
+ *   • firm      → `public.firm_members` (Phase 2, migration
+ *     20260903_phase2_clients_and_firm_membership.sql), through
+ *     `/api/v1/firm/members` and `@/lib/services/firmMembersService`;
+ *     management surface at `src/app/dashboard/firm/team/page.tsx`.
+ *   • corporate → `public.business_members` (20260603_phase1_002_entities.sql),
+ *     through `/api/v1/business/members` and
+ *     `@/lib/services/businessMembersService` (WP-6 B-5); management surface
+ *     at `src/app/dashboard/business/team/page.tsx`.
  *
- * Every other account type this tab could render for (lawyer, corporate,
- * government, ngo — see `getSettingsRolePolicy`'s `visibleTabs`) has no
- * comparable members table, so it gets the honest empty state instead of a
- * second invented roster.
+ * So this tab does exactly two things for either: reads that roster (name,
+ * role, status) and links out to the real team page for anything that changes
+ * it — inviting, changing a role, suspending, removing. It does not duplicate
+ * that page's write surface; duplicating it here would be a second place for
+ * the same roster to drift out of sync.
+ *
+ * ── WHAT THIS FILE USED TO SAY, AND WHY IT WAS WRONG ──────────────────────
+ * Until WP-6 B-5 the panel below told a corporate account «لا يوجد لهذا النوع
+ * من الحسابات جدول أعضاء مماثل بعد». `public.business_members` has existed
+ * since 20260603 with nine roles and four statuses; what did not exist was
+ * any code that wrote it — the audit's own words, «factually wrong about the
+ * schema but correct about the code». Now that the API exists, the sentence is
+ * wrong twice over, so it is gone rather than softened.
+ *
+ * Every other account type this tab could render for (lawyer, government, ngo
+ * — see `getSettingsRolePolicy`'s `visibleTabs`) has no comparable members
+ * table, so it gets the honest empty state instead of an invented roster.
  *
  * ── SEAT MATH ────────────────────────────────────────────────────────────
  * The old tab computed `usedSeats` / `seatsFull` against
@@ -50,10 +62,13 @@ import {
   type FirmMember,
   type FirmMemberStatus,
 } from "@/lib/services/firmMembersService";
+import { getBusinessMembers, type BusinessMember } from "@/lib/services/businessMembersService";
+import { BUSINESS_ROLE_LABEL } from "@/lib/auth/businessMembershipAccess";
 import { itemsOf, listViewState, type ListRead } from "@/lib/services/listRead";
 import { EmptyPanel, SectionTitle } from "./_shared";
 
-const TEAM_PAGE_HREF = "/dashboard/firm/team";
+const FIRM_TEAM_PAGE_HREF = "/dashboard/firm/team";
+const BUSINESS_TEAM_PAGE_HREF = "/dashboard/business/team";
 
 const STATUS_STYLE: Record<FirmMemberStatus, { label: string; color: string }> = {
   active: { label: "نشط", color: "text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/20" },
@@ -73,24 +88,72 @@ function formatDate(iso: string | null | undefined): string {
   }
 }
 
+/**
+ * One row shape for both rosters, so the list below is written once.
+ *
+ * `displayName` is `string | null` because either roster's name lookup can
+ * fail — «we could not read this name» is a different fact from «this person
+ * has no name», and the list says so rather than printing a dash for both.
+ */
+interface RosterRow {
+  id: string;
+  displayName: string | null;
+  email: string | null;
+  roleLabel: string;
+  status: FirmMemberStatus;
+  isOwner: boolean;
+  date: string | null;
+}
+
+function firmRow(m: FirmMember): RosterRow {
+  return {
+    id: m.id,
+    displayName: m.displayName,
+    email: m.email,
+    roleLabel: FIRM_ROLE_LABEL[m.role],
+    status: m.status,
+    isOwner: m.isOwner,
+    date: m.acceptedAt ?? m.createdAt,
+  };
+}
+
+function businessRow(m: BusinessMember): RosterRow {
+  return {
+    id: m.id,
+    displayName: m.displayName,
+    email: m.email,
+    roleLabel: BUSINESS_ROLE_LABEL[m.role],
+    status: m.status,
+    isOwner: m.isOwner,
+    date: m.acceptedAt ?? m.createdAt,
+  };
+}
+
 export function TeamManagementTab() {
   const { userType, loading: userLoading } = useUser();
   const isFirm = userType === "firm";
+  const isCorporate = userType === "corporate";
+  const hasRoster = isFirm || isCorporate;
 
   const [membersLoading, setMembersLoading] = useState(true);
-  const [read, setRead] = useState<ListRead<FirmMember> | null>(null);
+  const [read, setRead] = useState<ListRead<RosterRow> | null>(null);
 
   const load = useCallback(async () => {
     setMembersLoading(true);
-    const result = await getFirmMembers();
-    setRead(result);
+    if (isCorporate) {
+      const { list } = await getBusinessMembers();
+      setRead(list.ok ? { ...list, items: list.items.map(businessRow) } : list);
+    } else {
+      const result = await getFirmMembers();
+      setRead(result.ok ? { ...result, items: result.items.map(firmRow) } : result);
+    }
     setMembersLoading(false);
-  }, []);
+  }, [isCorporate]);
 
   useEffect(() => {
-    if (userLoading || !isFirm) return;
+    if (userLoading || !hasRoster) return;
     load();
-  }, [userLoading, isFirm, load]);
+  }, [userLoading, hasRoster, load]);
 
   // The role is not known yet — do not decide between the real roster and
   // the "not available for this account" panel on a `userType` that has not
@@ -103,13 +166,13 @@ export function TeamManagementTab() {
     );
   }
 
-  if (!isFirm) {
+  if (!hasRoster) {
     return (
       <div className="space-y-6">
         <EmptyPanel
           icon={<UsersThree size={26} />}
           title="إدارة الفريق غير متاحة لهذا النوع من الحسابات"
-          description="فريق حقيقي مُدار من هذه الصفحة موجود حالياً فقط لحسابات مكاتب المحاماة (جدول أعضاء المكتب public.firm_members). لا يوجد لهذا النوع من الحسابات جدول أعضاء مماثل بعد، فلا تعرض هذه الصفحة قائمة مختلقة بدلاً منه."
+          description="فريق حقيقي مُدار من هذه الصفحة موجود حالياً لحسابات مكاتب المحاماة (جدول أعضاء المكتب public.firm_members) وحسابات الشركات (public.business_members). لا يوجد لهذا النوع من الحسابات جدول أعضاء مماثل بعد، فلا تعرض هذه الصفحة قائمة مختلقة بدلاً منه."
         />
       </div>
     );
@@ -124,18 +187,21 @@ export function TeamManagementTab() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <SectionTitle>
-              فريق المكتب{viewState === "ready" ? ` (${members.length})` : ""}
+              {isCorporate ? "فريق الشركة" : "فريق المكتب"}
+              {viewState === "ready" ? ` (${members.length})` : ""}
             </SectionTitle>
             <p className="text-xs leading-6 text-zinc-500 dark:text-zinc-400">
-              هذه القائمة قراءة من فريق المكتب الفعلي. دعوة عضو جديد وتغيير الأدوار وتعليق الحسابات وحذف الأعضاء كلها من صفحة الفريق.
+              {isCorporate
+                ? "هذه القائمة قراءة من أعضاء الشركة الفعليين. إضافة عضو وتغيير الأدوار وتعليق العضوية وإزالة الأعضاء كلها من صفحة الفريق، ومتاحة لمالك الحساب فقط."
+                : "هذه القائمة قراءة من فريق المكتب الفعلي. دعوة عضو جديد وتغيير الأدوار وتعليق الحسابات وحذف الأعضاء كلها من صفحة الفريق."}
             </p>
           </div>
           <Link
-            href={TEAM_PAGE_HREF}
+            href={isCorporate ? BUSINESS_TEAM_PAGE_HREF : FIRM_TEAM_PAGE_HREF}
             className="inline-flex flex-shrink-0 items-center gap-2 rounded-xl bg-royal px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_14px_-4px_rgba(11,61,46,0.4)] transition-colors hover:bg-royal/90"
           >
             <ArrowSquareOut size={16} />
-            فتح صفحة الفريق لدعوة عضو
+            {isCorporate ? "فتح صفحة الفريق لإضافة عضو" : "فتح صفحة الفريق لدعوة عضو"}
           </Link>
         </div>
       </div>
@@ -147,14 +213,14 @@ export function TeamManagementTab() {
       ) : viewState === "unreadable" ? (
         <EmptyPanel
           icon={<UsersThree size={26} />}
-          title="تعذّر تحميل فريق المكتب"
+          title={isCorporate ? "تعذّر تحميل فريق الشركة" : "تعذّر تحميل فريق المكتب"}
           description="حدث خطأ أثناء قراءة أعضاء الفريق. أعد فتح هذه الصفحة، أو راجع صفحة الفريق مباشرة."
         />
       ) : viewState === "empty" ? (
         <EmptyPanel
           icon={<UsersThree size={26} />}
           title="لا يوجد أعضاء في الفريق بعد"
-          description="لم يُضَف أي عضو إلى مكتبك حتى الآن. أضف أول عضو من صفحة الفريق."
+          description={isCorporate ? "لم يُضَف أي عضو إلى شركتك حتى الآن. أضف أول عضو من صفحة الفريق." : "لم يُضَف أي عضو إلى مكتبك حتى الآن. أضف أول عضو من صفحة الفريق."}
         />
       ) : (
         <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white dark:border-white/[0.06] dark:bg-dark-card">
@@ -166,13 +232,16 @@ export function TeamManagementTab() {
                 className="flex items-center gap-4 border-b border-gray-100 px-5 py-4 last:border-0 dark:border-white/[0.04]"
               >
                 <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#0B3D2E] to-emerald-700 text-sm font-bold text-white">
-                  {member.displayName.trim().charAt(0) || "؟"}
+                  {(member.displayName ?? "").trim().charAt(0) || "؟"}
                 </div>
 
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className="truncate text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-                      {member.displayName}
+                    {/* null means the joined `profiles` row was not readable
+                        (business rosters read it with the caller's own RLS
+                        client), which is not the same as an empty name. */}
+                    <p className={`truncate text-sm font-semibold ${member.displayName ? "text-zinc-800 dark:text-zinc-200" : "text-zinc-400 dark:text-zinc-500"}`}>
+                      {member.displayName ?? "الاسم غير متاح"}
                     </p>
                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${status.color}`}>
                       {status.label}
@@ -182,14 +251,14 @@ export function TeamManagementTab() {
                     )}
                   </div>
                   <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
-                    {FIRM_ROLE_LABEL[member.role]}
+                    {member.roleLabel}
                     {member.email ? ` — ${member.email}` : ""}
                   </p>
                 </div>
 
                 <div className="hidden items-center gap-1.5 text-xs text-zinc-400 dark:text-zinc-500 sm:flex">
                   <Clock size={12} />
-                  {member.acceptedAt ? formatDate(member.acceptedAt) : formatDate(member.createdAt)}
+                  {formatDate(member.date)}
                 </div>
               </div>
             );

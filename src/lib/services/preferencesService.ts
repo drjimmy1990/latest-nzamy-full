@@ -1,7 +1,8 @@
 /**
  * preferencesService.ts — small per-user state that used to live in
  * localStorage and now rides in public.user_settings.preferences (jsonb):
- * reading activity counters, recently opened laws. (Phase 6.)
+ * reading activity counters, recently opened laws, the lawyer dashboard's
+ * quick tools. (Phase 6; quickTools T28-30.)
  * ─────────────────────────────────────────────────────────
  *   GET   /api/v1/settings              — the existing envelope, now carrying `preferences`
  *   PATCH /api/v1/settings/preferences  — shallow-merges the given keys
@@ -40,9 +41,16 @@ export interface UserPreferences {
   recentSessions?: RecentSession[];
   /** «light» / «full» dashboard density — mirrors *_profiles.display_mode; kept here for roles without one */
   dashboardMode?: "light" | "full";
+  /**
+   * Lawyer dashboard «أدوات نظامي — وصول سريع» (T28-30): 3..8 unique ids from
+   * LAWYER_QUICK_TOOLS (src/lib/lawyerQuickTools.ts). Read it through
+   * `resolveQuickToolIds`, which drops ids the registry no longer knows.
+   */
+  quickTools?: string[];
 }
 
-export const PREFERENCE_KEYS = ["readingActivity", "recentSessions", "dashboardMode"] as const;
+// Mirrored in preferencesMerge.ts (the route's validator) — change both.
+export const PREFERENCE_KEYS = ["readingActivity", "recentSessions", "dashboardMode", "quickTools"] as const;
 
 export async function getPreferences(): Promise<UserPreferences | null> {
   if (!isSupabaseMode) return null;

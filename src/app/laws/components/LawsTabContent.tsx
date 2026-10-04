@@ -16,6 +16,12 @@ import {
 } from "@phosphor-icons/react";
 import { LAW_DOC_TYPES, type DocSubType, getDocAnchorPrefix } from "@/constants/lawsLibraryData";
 import { LEGAL_TAXONOMY } from "@/constants/taxonomies";
+import { SECTION_30 } from "../lawsIndexFacets";
+import { type SearchSection, SECTION_DEGRADED_NOTICE, SEARCH_SECTION_LABELS_AR } from "../searchCounts";
+import { articleStatusNotice } from "../data";
+import { isRepealedLawStatus } from "../law-status";
+import { OfficialMetaLockedRow } from "./OfficialMetaLockedRow";
+import { ResultsSkeleton } from "./ResultsSkeleton";
 import {
   PrincipleCard,
   PrincipleRow,
@@ -25,6 +31,26 @@ import {
   OrderCard,
   EmptyState,
 } from "./ListItems";
+
+/**
+ * The label for a law card's section id, resolved the way the /laws chips
+ * are: LEGAL_TAXONOMY, plus SECTION_30 (103 laws), which that list lacks.
+ */
+function lawCategoryLabel(id: string): { label: string; labelEn: string } | null {
+  return LEGAL_TAXONOMY.find(c => c.id === id) ?? (id === SECTION_30.id ? SECTION_30 : null);
+}
+
+/** A search section that failed to read: a notice, never «0 نتيجة». */
+function DegradedSectionNotice({ section, isDark }: { section: SearchSection; isDark: boolean }) {
+  return (
+    <div role="status" className={`mb-8 rounded-xl border px-4 py-3 text-sm font-medium ${
+      isDark ? "bg-amber-950/20 border-amber-500/30 text-amber-200" : "bg-amber-50 border-amber-200 text-amber-900"
+    }`}>
+      <span className="font-bold">{SEARCH_SECTION_LABELS_AR[section]}: </span>
+      {SECTION_DEGRADED_NOTICE}
+    </div>
+  );
+}
 
 interface LawsTabContentProps {
   isDark: boolean;
@@ -47,13 +73,23 @@ interface LawsTabContentProps {
   catHasContent: (catId: string) => boolean;
   activeCat: string;
   hasResults: (type: any) => boolean;
-  precSort: "relevance" | "year-desc" | "year-asc" | "date-desc";
-  setPrecSort: (sort: "relevance" | "year-desc" | "year-asc" | "date-desc") => void;
+  // أقسام تعذّر البحث فيها (section=all degrades): تُعرض كتنبيه لا كـ«0 نتيجة»
+  searchDegraded?: SearchSection[];
+  // عدد نتائج كل قسم من واجهة البحث («١٠٤» أو «أكثر من ١٬٠٠٠»)؛ غيابه = عدد الصفوف المعروضة
+  searchCountLabels?: Partial<Record<SearchSection, string>>;
+  // نص زر «عرض كل النتائج» لكل قسم؛ «كل» فقط حين يمكن الوصول إلى كل النتائج
+  searchViewAllLabels?: Partial<Record<SearchSection, string>>;
   // فلتر النوع الفرعي لأنظمة ولوائح
   docSubType: DocSubType;
   setDocSubType: (type: DocSubType) => void;
   // اشتراك المكتبة — يفتح كل محتوى أنظمة ولوائح
   librarySubscribed?: boolean;
+  // T28-22: بيانات الإصدار الرسمية محجوبة عن غير المشترك (علم من /api/library/init)
+  officialMetaLocked?: boolean;
+  // طلب البحث لم يكتمل بعد: هياكل نابضة بدل البطاقات وبدل «لا توجد نتائج»
+  resultsPending?: boolean;
+  // فشل طلب البحث: رسالة الخطأ تُعرض فوق؛ لا «لا توجد نتائج» تحتها
+  searchFailed?: boolean;
 }
 
 export function LawsTabContent({
@@ -77,16 +113,28 @@ export function LawsTabContent({
   catHasContent,
   activeCat,
   hasResults,
-  precSort,
-  setPrecSort,
+  searchDegraded = [],
+  searchCountLabels = {},
+  searchViewAllLabels = {},
   docSubType,
   setDocSubType,
   librarySubscribed = false,
+  officialMetaLocked = false,
+  resultsPending = false,
+  searchFailed = false,
 }: LawsTabContentProps) {
   const router = useRouter();
   const [expandedDesc, setExpandedDesc] = useState<Record<string, boolean>>({});
   const { can } = useSubscription();
   const hasLibraryAccess = can("library-full-access");
+
+  if (resultsPending) {
+    return (
+      <motion.div key="laws-section-pending" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+        <ResultsSkeleton isDark={isDark} layoutMode={layoutMode} label="جارٍ البحث" />
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div
@@ -95,43 +143,13 @@ export function LawsTabContent({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 8 }}
     >
-      {/* Sorting Bar */}
-      <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 p-4 rounded-2xl border ${
-        isDark ? "bg-[#161b22]/50 border-[#2d3748]/50" : "bg-gray-50/50 border-gray-200/60"
-      }`}>
-        <div className="flex items-center gap-2">
-          <span className={`text-xs font-bold ${isDark ? "text-gray-400" : "text-gray-600"}`}>
-            {isRTL ? "ترتيب النتائج:" : "Sort results by:"}
-          </span>
-          <div className="flex flex-wrap gap-1.5">
-            {[
-              { id: "relevance", labelAr: "مدى المطابقة (الافتراضي)", labelEn: "Relevance" },
-              { id: "year-desc", labelAr: "الأحدث إصداراً/تحديثاً", labelEn: "Newest" },
-              { id: "year-asc", labelAr: "الأقدم إصداراً/تحديثاً", labelEn: "Oldest" }
-            ].map((opt) => {
-              const isSelected = precSort === opt.id || (opt.id === "year-desc" && precSort === "date-desc");
-              return (
-                <button
-                  key={opt.id}
-                  onClick={() => setPrecSort(opt.id as any)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 ${
-                    isSelected
-                      ? isDark
-                        ? "bg-[#C8A762]/10 border border-[#C8A762] text-[#C8A762]"
-                        : "bg-[#0B3D2E] text-white border border-[#0B3D2E] shadow-sm"
-                      : isDark
-                      ? "border border-white/5 bg-white/5 text-gray-400 hover:text-white hover:bg-white/10"
-                      : "border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-800"
-                  }`}
-                >
-                  {isRTL ? opt.labelAr : opt.labelEn}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
+      {/* No sort bar: laws arrive server-ordered by section, title, slug. A
+          «الأحدث/الأقدم» order needs a normalized issue date — issue_date_hijri
+          is free text in 14 formats, 1,279 of 5,901 blank («الأقدم» page 1 was
+          50/50 undated; «الأحدث» led with «17/3/1447هـ» and «1473-13-36»). */}
+      {(activeType === "all" || activeType === "laws") && searchDegraded.includes("laws") && (
+        <DegradedSectionNotice section="laws" isDark={isDark} />
+      )}
 
       {/* Laws grid */}
       {(activeType === "all" || activeType === "laws") && filteredLaws.length > 0 && (
@@ -141,7 +159,7 @@ export function LawsTabContent({
               <BookOpen size={13} />
               {isRTL ? "الأنظمة واللوائح" : "Laws & Regulations"}
               <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${isDark ? "bg-white/5 text-gray-400" : "bg-gray-100 text-gray-500"}`}>
-                {filteredLaws.length}
+                {searchCountLabels.laws ?? filteredLaws.length}
               </span>
             </p>
           )}
@@ -149,68 +167,104 @@ export function LawsTabContent({
             <AnimatePresence mode="popLayout">
               {filteredLaws.map((sys, idx) => {
                 const isUnlocked = sys.free || hasLibraryAccess;
+                // API search rows describe an article; never substitute the parent law status here.
+                const searchArticleStatusNotice = sys._isSearchResult && sys.articleStatus === "status_undeclared"
+                  ? articleStatusNotice(sys.articleStatus, isRTL)
+                  : null;
+                // T28-23: the LAW's own status. A catalogue row carries it from
+                // /api/library/init; a search row carries the parent law's
+                // status from `meta.lawStatus` (page.tsx) — never the article's
+                // status, which stays in `articleStatus`. Owner test 2026-10-01:
+                // a repealed law found by search must look repealed too.
+                const isRepealedLaw = isRepealedLawStatus(sys.status);
+                // T28-22: one locked row replaces the instrument and «صدر:» lines.
+                const showLockedMeta = officialMetaLocked && !sys._isSearchResult;
+                // Owner test 2026-10-01: red text, red frame and the badge mark a
+                // repealed law; the title is no longer struck through.
+                const titleClass = isRepealedLaw
+                  ? isDark ? "text-red-200" : "text-red-900"
+                  : isDark ? "text-white" : "text-gray-900";
+                // Owner decision ١٦٠: a law the viewer has not unlocked is an open
+                // card — name, category chips and keywords — that opens the law
+                // page, where the first articles are free. No blur, no paywall
+                // click. The API already withholds a locked row's description
+                // and official metadata; a locked search hit's snippet is not
+                // shown either, so the card says nothing the catalogue locks.
+                const keywords: string[] = Array.isArray(sys.keywords)
+                  ? sys.keywords.filter((k: unknown): k is string => typeof k === "string" && k.trim().length > 0)
+                  : [];
+                const openLaw = () =>
+                  router.push(`/laws/${sys.slug}${getDocAnchorPrefix(docSubType) ? `?fromType=${encodeURIComponent(docSubType)}` : ""}`);
+                const freePreviewHint = (
+                  <span className={`px-2 py-0.5 text-[9px] font-bold rounded-lg flex items-center gap-1 border ${
+                    isDark ? "bg-[#C8A762]/10 border-[#C8A762]/25 text-[#C8A762]" : "bg-amber-50 border-amber-200 text-amber-800"
+                  }`}>
+                    <BookOpen size={9} weight="fill" />
+                    {isRTL ? "المواد الأولى مجاناً" : "First articles free"}
+                  </span>
+                );
+                const keywordChips = keywords.map((k) => (
+                  <span key={`kw-${k}`} className={`text-[8.5px] font-bold px-1.5 py-0.5 rounded border ${
+                    isDark ? "bg-purple-950/30 border-purple-500/20 text-purple-300" : "bg-purple-50 border-purple-200 text-purple-700"
+                  }`}>
+                    #{k}
+                  </span>
+                ));
+                const repealedBadge = (
+                  <span className={`px-2 py-0.5 text-[10px] font-black rounded-lg border ${
+                    isDark ? "bg-red-950/50 border-red-500/40 text-red-300" : "bg-red-50 border-red-300 text-red-700"
+                  }`}>
+                    ⛔ ملغى وغير سارٍ
+                  </span>
+                );
+                const repealedNote = (
+                  <p className={`text-[10.5px] font-semibold mb-2 ${isDark ? "text-red-300/90" : "text-red-700"}`}>
+                    يُعرض للأرشيف وللوقائع السابقة لإلغائه
+                  </p>
+                );
                 return (
                 <motion.div
                   key={sys.id}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.05 }}
+                  transition={{ delay: Math.min(idx, 10) * 0.05 }}
                   onClick={(e) => {
                     const target = e.target as HTMLElement;
                     if (target.closest("button") || target.closest("a") || target.closest(".clickable-badge")) {
                       return;
                     }
-                    if (!isUnlocked) {
-                      setShowPaywall(true);
-                    } else {
-                      router.push(`/laws/${sys.slug}${getDocAnchorPrefix(docSubType) ? `?fromType=${encodeURIComponent(docSubType)}` : ""}`);
-                    }
+                    openLaw();
                   }}
-                  className={`group relative rounded-2xl border p-5 transition-all ${
-                    isUnlocked
-                      ? `hover:border-[#0B3D2E]/40 cursor-pointer ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`
-                      : `${isDark ? "bg-[#161b22]/60 border-[#2d3748]/60" : "bg-gray-50 border-gray-200/80"}`
+                  className={`group relative rounded-2xl border p-5 transition-all cursor-pointer ${
+                    isRepealedLaw
+                      ? `hover:border-red-500 ${isDark ? "bg-red-950/20 border-red-500/40" : "bg-red-50/60 border-red-300"}`
+                      : `hover:border-[#0B3D2E]/40 ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`
                   }`}
                 >
-                  {!isUnlocked && (
-                    <div
-                      className={`absolute inset-0 rounded-2xl ${isDark ? "bg-[#0c0f12]/30" : "bg-white/30"} backdrop-blur-[1px] z-10 flex items-center justify-center cursor-pointer`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setShowPaywall(true);
-                      }}
-                    >
-                      <div className={`rounded-2xl border px-4 py-2 flex items-center gap-2 ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"} shadow-lg`}>
-                        <Lock size={16} color="#C8A762" weight="fill" />
-                        <span className={`text-xs font-bold ${isDark ? "text-gray-300" : "text-gray-700"}`}>
-                          {isRTL ? "يتطلب اشتراكاً" : "Requires Subscription"}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
                   {layoutMode === "grid" ? (
-                    <div className={!isUnlocked ? "opacity-40 filter blur-[2px] h-full flex flex-col items-center text-center" : "h-full flex flex-col items-center text-center"}>
+                    <div className="h-full flex flex-col items-center text-center">
                       <div className="flex items-center justify-between w-full mb-3 text-xs">
                         <span className={`px-2 py-0.5 text-[10px] font-bold rounded-lg ${isDark ? "bg-white/5 text-gray-400" : "bg-gray-100 text-gray-500"}`}>
                           {isRTL ? "مُحدّث" : "Updated"}
                         </span>
-                        {isUnlocked && (
+                        {isRepealedLaw && repealedBadge}
+                        {isUnlocked ? (
                           <span className="px-2 py-0.5 text-[9px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
                             <Sparkle size={9} weight="fill" />
                             {librarySubscribed && !sys.free ? (isRTL ? "مكتبة" : "SUBSCRIBED") : (isRTL ? "متاح" : "FREE")}
                           </span>
-                        )}
+                        ) : freePreviewHint}
                       </div>
-                      
-                      <h3 className={`text-base font-black mb-2 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>
+
+                      <h3 className={`text-base font-black mb-2 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${titleClass}`}>
                         {isRTL ? sys.title : sys.titleEn}
                       </h3>
+                      {isRepealedLaw && repealedNote}
 
                       {/* Rich Metadata Section */}
                       <div className="flex flex-wrap justify-center gap-1 mb-2.5">
                         {sys.cat && (() => {
-                          const catObj = LEGAL_TAXONOMY.find(c => c.id === sys.cat);
+                          const catObj = lawCategoryLabel(sys.cat);
                           if (!catObj) return null;
                           return (
                             <span className={`text-[8.5px] font-bold px-1.5 py-0.5 rounded ${isDark ? "bg-white/5 text-gray-400 border border-white/[0.04]" : "bg-gray-100 text-gray-600 border border-gray-200"}`}>
@@ -218,7 +272,7 @@ export function LawsTabContent({
                             </span>
                           );
                         })()}
-                        {sys.doc_type && (
+                        {sys.doc_type && !(sys.sub_types ?? []).includes(sys.doc_type) && (
                           <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                             {sys.doc_type}
                           </span>
@@ -231,11 +285,8 @@ export function LawsTabContent({
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
-                                if (!isUnlocked) {
-                                  setShowPaywall(true);
-                                } else {
-                                  router.push(`/laws/${sys.slug}?viewMode=${isReg ? "regulation" : "appendix"}`);
-                                }
+                                // The law page gates what is locked (decision ١٦٠).
+                                router.push(`/laws/${sys.slug}?viewMode=${isReg ? "regulation" : "appendix"}`);
                               }}
                               className="clickable-badge cursor-pointer hover:bg-blue-500/20 transition-colors text-[8.5px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20"
                             >
@@ -243,10 +294,16 @@ export function LawsTabContent({
                             </span>
                           );
                         })}
+                        {searchArticleStatusNotice && (
+                          <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20">
+                            {isRTL ? `حالة المادة: ${searchArticleStatusNotice}` : `Article status: ${searchArticleStatusNotice}`}
+                          </span>
+                        )}
+                        {keywordChips}
                       </div>
 
-                      {/* Expandable Abstract Description */}
-                      {(() => {
+                      {/* Expandable Abstract Description — unlocked laws only */}
+                      {isUnlocked && (() => {
                         const description = isRTL ? sys.desc : sys.descEn || sys.desc;
                         const isExpanded = !!expandedDesc[sys.id];
                         const isLong = description && description.length > 100;
@@ -272,53 +329,64 @@ export function LawsTabContent({
 
                       {/* Inline Compact Articles/Chapters Summary */}
                       <div className={`flex flex-wrap items-center justify-center gap-x-3 gap-y-1 mb-4 py-1.5 px-3 rounded-lg text-[10px] font-bold text-center ${isDark ? "bg-white/[0.03] text-gray-400" : "bg-gray-50 text-gray-600"}`}>
-                        <span>{isRTL ? `المواد: ${sys.articlesCount}` : `Articles: ${sys.articlesCount}`}</span>
-                        <span className="w-1 h-1 rounded-full bg-gray-400 opacity-50" />
-                        <span>{isRTL ? `الأبواب: ${sys.chaptersCount}` : `Chapters: ${sys.chaptersCount}`}</span>
-                        {sys.issuing_instrument && (
+                        {/* Counts render only when known (owner test 2026-09-28, T28-05):
+                            «الأبواب» is not in the catalogue payload, and a search hit is
+                            an article, not a law — the «0» shown there was a made-up value. */}
+                        {sys.articlesCount > 0 && (
+                          <span>{isRTL ? `المواد: ${sys.articlesCount}` : `Articles: ${sys.articlesCount}`}</span>
+                        )}
+                        {sys.articlesCount > 0 && sys.chaptersCount > 0 && <span className="w-1 h-1 rounded-full bg-gray-400 opacity-50" />}
+                        {sys.chaptersCount > 0 && (
+                          <span>{isRTL ? `الأبواب: ${sys.chaptersCount}` : `Chapters: ${sys.chaptersCount}`}</span>
+                        )}
+                        {sys.issuing_instrument && !showLockedMeta && (
                           <>
-                            <span className="w-1 h-1 rounded-full bg-gray-400 opacity-50" />
+                            {(sys.articlesCount > 0 || sys.chaptersCount > 0) && <span className="w-1 h-1 rounded-full bg-gray-400 opacity-50" />}
                             <span className="truncate max-w-[120px]">{sys.issuing_instrument.split(" وتاريخ ")[0]}</span>
                           </>
                         )}
                       </div>
 
-                      <div className="flex items-center justify-between w-full mt-auto pt-2 border-t border-dashed border-gray-200 dark:border-white/[0.04]">
+                      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 w-full mt-auto pt-2 border-t border-dashed border-gray-200 dark:border-white/[0.04]">
                         <span className={`text-[11px] flex items-center gap-1 font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
                           {isRTL ? "تصفح النظام" : "Browse System"}
                           <ArrowRight size={12} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
                         </span>
-                        {sys.lastUpdated && (
+                        {showLockedMeta ? (
+                          <OfficialMetaLockedRow isDark={isDark} onUnlock={() => setShowPaywall(true)} />
+                        ) : sys.lastUpdated && sys.lastUpdated !== "—" && (
                           <span className={`text-[10px] ${muted}`}>
-                            {isRTL ? `تحديث: ${sys.lastUpdated}` : `Updated: ${sys.lastUpdated}`}
+                            {isRTL ? `صدر: ${sys.lastUpdated}` : `Issued: ${sys.lastUpdated}`}
                           </span>
                         )}
                       </div>
                     </div>
                   ) : (
-                    <div className={`${!isUnlocked ? "opacity-40 filter blur-[2px]" : ""} flex flex-col sm:flex-row sm:items-center gap-3`}>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                       {/* Left: Text info */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                           <span className={`px-2 py-0.5 text-[10px] font-bold rounded-md ${isDark ? "bg-white/5 text-gray-300" : "bg-gray-100 text-gray-600"}`}>
                             {isRTL ? "مُحدَّث" : "Updated"}
                           </span>
-                          {isUnlocked && (
+                          {isUnlocked ? (
                             <span className="px-2 py-0.5 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-md flex items-center gap-1">
                               <Sparkle size={9} weight="fill" />
                               {librarySubscribed && !sys.free ? (isRTL ? "مكتبة" : "SUBSCRIBED") : (isRTL ? "متاح" : "FREE")}
                             </span>
-                          )}
+                          ) : freePreviewHint}
+                          {isRepealedLaw && repealedBadge}
                         </div>
 
-                        <h3 className={`text-sm font-black mb-1.5 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>
+                        <h3 className={`text-sm font-black mb-1.5 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${titleClass}`}>
                           {isRTL ? sys.title : sys.titleEn}
                         </h3>
+                        {isRepealedLaw && repealedNote}
 
                         {/* Badges */}
                         <div className="flex flex-wrap gap-1 mb-1.5">
                           {sys.cat && (() => {
-                            const catObj = LEGAL_TAXONOMY.find(c => c.id === sys.cat);
+                            const catObj = lawCategoryLabel(sys.cat);
                             if (!catObj) return null;
                             return (
                               <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${isDark ? "bg-white/5 text-gray-400 border border-white/[0.04]" : "bg-gray-100 text-gray-600 border border-gray-200"}`}>
@@ -326,7 +394,7 @@ export function LawsTabContent({
                               </span>
                             );
                           })()}
-                          {sys.doc_type && (
+                          {sys.doc_type && !(sys.sub_types ?? []).includes(sys.doc_type) && (
                             <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                               {sys.doc_type}
                             </span>
@@ -339,11 +407,8 @@ export function LawsTabContent({
                                 onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
-                                  if (!isUnlocked) {
-                                    setShowPaywall(true);
-                                  } else {
-                                    router.push(`/laws/${sys.slug}?viewMode=${isReg ? "regulation" : "appendix"}`);
-                                  }
+                                  // The law page gates what is locked (decision ١٦٠).
+                                  router.push(`/laws/${sys.slug}?viewMode=${isReg ? "regulation" : "appendix"}`);
                                 }}
                                 className="clickable-badge cursor-pointer hover:bg-blue-500/25 transition-colors text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20"
                               >
@@ -351,15 +416,21 @@ export function LawsTabContent({
                               </span>
                             );
                           })}
-                          {sys.issuing_instrument && (
+                          {searchArticleStatusNotice && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20">
+                              {isRTL ? `حالة المادة: ${searchArticleStatusNotice}` : `Article status: ${searchArticleStatusNotice}`}
+                            </span>
+                          )}
+                          {sys.issuing_instrument && !showLockedMeta && (
                             <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${isDark ? "bg-[#C8A762]/10 border-[#C8A762]/20 text-[#C8A762]" : "bg-amber-50 border-amber-200 text-amber-800"}`}>
                               {sys.issuing_instrument}
                             </span>
                           )}
+                          {keywordChips}
                         </div>
 
-                        {/* Short Description */}
-                        {(() => {
+                        {/* Short Description — unlocked laws only */}
+                        {isUnlocked && (() => {
                           const description = isRTL ? sys.desc : sys.descEn || sys.desc;
                           const isExpanded = !!expandedDesc[sys.id];
                           const isLong = description && description.length > 100;
@@ -386,24 +457,32 @@ export function LawsTabContent({
 
                       {/* Right: Stats + CTA */}
                       <div className="flex items-center gap-3 sm:shrink-0">
-                        <div className={`grid grid-cols-2 gap-3 px-3 py-2 rounded-lg border ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/60"}`}>
+                        {(sys.articlesCount > 0 || sys.chaptersCount > 0) && (
+                        <div className={`grid ${sys.articlesCount > 0 && sys.chaptersCount > 0 ? "grid-cols-2" : "grid-cols-1"} gap-3 px-3 py-2 rounded-lg border ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/60"}`}>
+                          {sys.articlesCount > 0 && (
                           <div className="flex flex-col items-center">
                             <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "المواد" : "Articles"}</span>
-                            <span className={`text-sm font-black ${isDark ? "text-gray-200" : "text-gray-800"}`}>{sys.articlesCount}</span>
+                            <span className={`text-sm font-black ${isDark ? "text-gray-300" : "text-gray-800"}`}>{sys.articlesCount}</span>
                           </div>
+                          )}
+                          {sys.chaptersCount > 0 && (
                           <div className="flex flex-col items-center">
                             <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "الأبواب" : "Chapters"}</span>
-                            <span className={`text-sm font-black ${isDark ? "text-gray-200" : "text-gray-800"}`}>{sys.chaptersCount}</span>
+                            <span className={`text-sm font-black ${isDark ? "text-gray-300" : "text-gray-800"}`}>{sys.chaptersCount}</span>
                           </div>
+                          )}
                         </div>
+                        )}
                         <div className="flex flex-col justify-center gap-1">
                           <span className={`text-[11px] flex items-center gap-1 font-bold whitespace-nowrap ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
                             {isRTL ? "تصفح النظام" : "Browse"}
                             <ArrowRight size={12} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
                           </span>
-                          {sys.lastUpdated && (
+                          {showLockedMeta ? (
+                            <OfficialMetaLockedRow isDark={isDark} onUnlock={() => setShowPaywall(true)} textSize="text-[9px]" />
+                          ) : sys.lastUpdated && sys.lastUpdated !== "—" && (
                             <span className={`text-[9px] ${muted} whitespace-nowrap`}>
-                              {isRTL ? `آخر تعديل: ${sys.lastUpdated}` : `Updated: ${sys.lastUpdated}`}
+                              {isRTL ? `صدر: ${sys.lastUpdated}` : `Issued: ${sys.lastUpdated}`}
                             </span>
                           )}
                         </div>
@@ -615,6 +694,10 @@ export function LawsTabContent({
         </div>
       )}
 
+      {activeType === "all" && searchDegraded.includes("precedents") && (
+        <DegradedSectionNotice section="precedents" isDark={isDark} />
+      )}
+
       {/* "all" mode: also show principles + orders below */}
       {activeType === "all" && filteredPrinciples.length > 0 && (
         <div className="mb-8">
@@ -622,7 +705,7 @@ export function LawsTabContent({
             <Scales size={13} />
             {isRTL ? "أبرز المبادئ القضائية" : "Featured Principles"}
             <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-700"}`}>
-              {filteredPrinciples.length}
+              {searchCountLabels.precedents ?? filteredPrinciples.length}
             </span>
           </p>
           <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" : "space-y-3"}>
@@ -641,7 +724,7 @@ export function LawsTabContent({
               onClick={() => setActiveType("precedents")}
               className={`text-sm font-bold flex items-center gap-1.5 ${isDark ? "text-[#C8A762] hover:text-[#C8A762]/80" : "text-[#0B3D2E] hover:text-[#0a3328]"} transition-colors`}
             >
-              {isRTL ? `عرض كل ${filteredPrinciples.length} مبدأ` : `View all ${filteredPrinciples.length} principles`}
+              {searchViewAllLabels.precedents ? searchViewAllLabels.precedents : isRTL ? `عرض كل ${filteredPrinciples.length} مبدأ` : `View all ${filteredPrinciples.length} principles`}
               <ArrowRight size={14} className={isRTL ? "rotate-180" : ""} />
             </button>
           )}
@@ -702,6 +785,10 @@ export function LawsTabContent({
         </div>
       )}
 
+      {activeType === "all" && searchDegraded.includes("feqh") && (
+        <DegradedSectionNotice section="feqh" isDark={isDark} />
+      )}
+
       {/* "all" mode: show Feqh books preview */}
       {activeType === "all" && filteredFeqhBooks.length > 0 && (
         <div className="mb-8">
@@ -709,7 +796,7 @@ export function LawsTabContent({
             <BookOpen size={13} />
             {isRTL ? "الفقه والمراجع" : "Fiqh & References"}
             <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-700"}`}>
-              {filteredFeqhBooks.length}
+              {searchCountLabels.feqh ?? filteredFeqhBooks.length}
             </span>
           </p>
           <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-4" : "flex flex-col gap-4 mb-4"}>
@@ -871,11 +958,15 @@ export function LawsTabContent({
               onClick={() => setActiveType("feqh")}
               className={`text-sm font-bold flex items-center gap-1.5 mb-8 ${isDark ? "text-[#C8A762] hover:text-[#C8A762]/80" : "text-[#0B3D2E] hover:text-[#0a3328]"} transition-colors`}
             >
-              {isRTL ? `عرض كل ${filteredFeqhBooks.length} كتب ومراجع` : `View all ${filteredFeqhBooks.length} books`}
+              {searchViewAllLabels.feqh ? searchViewAllLabels.feqh : isRTL ? `عرض كل ${filteredFeqhBooks.length} كتب ومراجع` : `View all ${filteredFeqhBooks.length} books`}
               <ArrowRight size={14} className={isRTL ? "rotate-180" : ""} />
             </button>
           )}
         </div>
+      )}
+
+      {activeType === "all" && searchDegraded.includes("orders") && (
+        <DegradedSectionNotice section="orders" isDark={isDark} />
       )}
 
       {/* orders list in 'all' view */}
@@ -885,7 +976,7 @@ export function LawsTabContent({
             <Scroll size={13} />
             {isRTL ? "أحدث الأوامر والتعاميم" : "Latest Orders & Circulars"}
             <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${isDark ? "bg-white/5 text-gray-400" : "bg-gray-100 text-gray-500"}`}>
-              {filteredOrders.length}
+              {searchCountLabels.orders ?? filteredOrders.length}
             </span>
           </p>
           <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" : "space-y-3"}>
@@ -920,7 +1011,7 @@ export function LawsTabContent({
               onClick={() => setActiveType("orders")}
               className={`text-sm font-bold flex items-center gap-1.5 mt-4 ${isDark ? "text-gray-300 hover:text-white" : "text-gray-600 hover:text-gray-900"} transition-colors`}
             >
-              {isRTL ? `عرض كل ${filteredOrders.length} أوامر وتعاميم` : `View all ${filteredOrders.length} orders`}
+              {searchViewAllLabels.orders ? searchViewAllLabels.orders : isRTL ? `عرض كل ${filteredOrders.length} أوامر وتعاميم` : `View all ${filteredOrders.length} orders`}
               <ArrowRight size={14} className={isRTL ? "rotate-180" : ""} />
             </button>
           )}
@@ -928,7 +1019,19 @@ export function LawsTabContent({
       )}
 
       {/* Empty states */}
-      {!hasResults(activeType) && (
+      {/* Some sections failed and the rest found nothing: say so for the rest,
+          so the failure notice is not read as "nothing was searched". */}
+      {activeType === "all" && !hasResults(activeType) && searchDegraded.length > 0 && (
+        <p role="status" className={`mb-8 rounded-xl border px-4 py-3 text-sm font-medium ${
+          isDark ? "bg-[#161b22] border-[#2d3748] text-gray-300" : "bg-white border-gray-200 text-gray-700"
+        }`}>
+          {`لا توجد نتائج تطابق بحثك في: ${(["laws", "precedents", "orders", "feqh"] as SearchSection[])
+            .filter(k => !searchDegraded.includes(k))
+            .map(k => SEARCH_SECTION_LABELS_AR[k])
+            .join("، ")}`}
+        </p>
+      )}
+      {!hasResults(activeType) && searchDegraded.length === 0 && !searchFailed && (
         <EmptyState
           type={catHasContent(activeCat) ? "no-results" : "coming-soon"}
           catId={activeCat}

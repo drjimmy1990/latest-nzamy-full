@@ -9,16 +9,36 @@ import {
   Gavel, Sparkle
 } from "@phosphor-icons/react";
 import { markdownBoldToSafeHtml } from "@/utils/sanitize";
-import type { LawArticle, JudicialPrinciple, JudicialPrecedent } from "../data";
+import { articleStatusNotice, isRepealedArticleStatus, type LawArticle, type JudicialPrinciple, type JudicialPrecedent } from "../data";
 import { buildCitation } from "./_citation";
+import { splitAmendedLabelLine, splitAmendedMarker } from "./_amended-marker";
+import { READER_SCROLL_MARGIN_TOP } from "./_reader-anchors";
+import { OfficialMetaLockedRow } from "../components/OfficialMetaLockedRow";
 import { useSubscription } from "@/hooks/useSubscription";
+
+/**
+ * «معدّلة» badge for a heading the source marked `[معدّلة]` (see
+ * _amended-marker.ts). A label only: the regulation text carries no amendment
+ * history, so there is nothing to open.
+ */
+function AmendedBadge({ isDark }: { isDark: boolean }) {
+  return (
+    <span
+      className={`inline-flex items-center align-middle ms-2 px-2 py-0.5 rounded-full border text-[10px] font-bold leading-none ${
+        isDark ? "bg-amber-500/15 text-amber-300 border-amber-400/30" : "bg-amber-50 text-amber-700 border-amber-300"
+      }`}
+    >
+      معدّلة
+    </span>
+  );
+}
 
 // ك-13: نفس دمج regulations[]→{ref,text} المستعمل بـpage.tsx/_sidebar.tsx.
 function getMergedReg(a: LawArticle): { ref: string; text: string } | null {
   if (!a.regulations || a.regulations.length === 0) return null;
   const distinctRefs = Array.from(new Set(a.regulations.map((r) => r.ref || "").filter(Boolean)));
   return {
-    ref: distinctRefs.join(", "),
+    ref: distinctRefs.join("، "),
     text: a.regulations.map((r) => r.text || "").join("\n\n"),
   };
 }
@@ -91,10 +111,13 @@ function parseMarkdownContent(text: string): ParseBlock[] {
         continue;
       }
 
-      // ─── Headings: ###, ##, ####
-      const headingMatch = trimmed.match(/^(#{2,4})\s+(.+)$/);
+      // ─── Headings: # … ###### — clamped to the three rendered levels.
+      // A single «#» used to fall through and print as «# عنوان» (owner
+      // test 2026-09-28, executive-regulations-health-profession preamble).
+      const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
       if (headingMatch) {
-        blocks.push({ type: "heading", text: headingMatch[2], level: headingMatch[1].length });
+        const level = Math.min(4, Math.max(2, headingMatch[1].length));
+        blocks.push({ type: "heading", text: headingMatch[2], level });
         continue;
       }
 
@@ -217,7 +240,17 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]" }: { 
             4: "text-[12px] font-bold mt-2 mb-1",
           };
           const cls = headingStyles[block.level ?? 3] ?? "text-[13px] font-bold";
-          const html = markdownBoldToSafeHtml(block.text || "");
+          // «المادة (5/3): `[معدّلة]`» → the heading without the token + a badge.
+          const marker = splitAmendedMarker(block.text || "");
+          const html = markdownBoldToSafeHtml(marker.text);
+          if (marker.amended) {
+            return (
+              <p key={index} className={`${cls} ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>
+                <span dangerouslySetInnerHTML={{ __html: html }} />
+                <AmendedBadge isDark={isDark} />
+              </p>
+            );
+          }
           return (
             <p key={index} className={`${cls} ${isDark ? "text-zinc-100" : "text-zinc-800"}`}
                dangerouslySetInnerHTML={{ __html: html }} />
@@ -234,6 +267,16 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]" }: { 
         // ─── Blockquote (مواد اللائحة في وضع "عرض الكل")
         if (block.type === "blockquote") {
           if (!block.text) return <div key={index} className="h-1" />;
+          const labelMarker = splitAmendedLabelLine(block.text);
+          if (labelMarker.amended) {
+            return (
+              <p key={index}
+                 className={`${fontClass} leading-relaxed ${listIndent} border-r-2 pr-3 border-[#C8A762]/40 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+                <span dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(labelMarker.text) }} />
+                <AmendedBadge isDark={isDark} />
+              </p>
+            );
+          }
           const html = markdownBoldToSafeHtml(block.text);
           return (
             <p key={index}
@@ -264,8 +307,18 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]" }: { 
         }
         
         const line = block.text || "";
+        // A bold label line «**المادة (1/7): [معدّلة]** …» gets the same badge.
+        const lineMarker = splitAmendedLabelLine(line);
+        if (lineMarker.amended) {
+          return (
+            <p key={index} className={`${fontClass} leading-relaxed ${muted}`}>
+              <span dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(lineMarker.text) }} />
+              <AmendedBadge isDark={isDark} />
+            </p>
+          );
+        }
         const html = markdownBoldToSafeHtml(line);
-        
+
         if (line.startsWith("أ-") || line.startsWith("ب-") || line.startsWith("ج-") ||
             line.startsWith("د-") || line.startsWith("هـ-")) {
           return <p key={index} className={`${fontClass} leading-relaxed ${listIndent} ${muted}`} dangerouslySetInnerHTML={{ __html: html }} />;
@@ -299,7 +352,9 @@ if (typeof document !== "undefined") {
   });
 }
 
-function getSelectedTextWithin(containerId: string, fallbackText?: string): string {
+// Exported for the reader's report dialog (T28-28), which quotes the reader's
+// highlight inside the active article the same way the copy buttons do.
+export function getSelectedTextWithin(containerId: string, fallbackText?: string): string {
   if (typeof window === "undefined") return "";
   const container = document.getElementById(containerId);
   if (!container) return "";
@@ -523,8 +578,9 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
   const [showRepealed,   setShowRepealed]   = useState(false);
   const [copied, setCopied]                 = useState(false);
   const [copiedReg, setCopiedReg]           = useState(false);
-  const isRepealed  = article.status === "repealed";
+  const isRepealed  = isRepealedArticleStatus(article.status);
   const isAmended   = article.status === "amended";
+  const statusNotice = articleStatusNotice(article.status, isRTL);
   const mergedReg   = getMergedReg(article);
     const { can }     = useSubscription();
   const hasLibraryAccess = can("library-full-access");
@@ -577,6 +633,8 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
         docTitle: lawName,
         docType: lawType,
         regulationRef: mergedReg.ref,
+        // The fallback when `ref` is the regulation's name, not its article.
+        regulationNum: article.regulations?.[0]?.regNum ?? null,
       },
       isRTL,
     );
@@ -638,6 +696,8 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
   return (
     <motion.div
       layout id={article.id}
+      // A contents-list jump lands the card's heading just below the fixed bar.
+      style={{ scrollMarginTop: READER_SCROLL_MARGIN_TOP }}
       onClick={() => onActive(article.id)}
       className={`nzamy-reader-block rounded-2xl border shadow-sm overflow-hidden cursor-pointer transition-colors
         ${isDark ? "bg-zinc-900" : "bg-white"}
@@ -680,6 +740,18 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
         {isAmended && (
           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 border border-amber-400/25 flex-shrink-0">
             ✏️ {isRTL ? "معدَّلة" : "Amended"}
+          </span>
+        )}
+        {statusNotice && (
+          <span
+            title={isRTL ? "لا يعني هذا أن المادة سارية أو ملغاة" : "This does not mean the article is active or repealed"}
+            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex-shrink-0 ${
+              isDark
+                ? "bg-slate-500/15 text-slate-300 border-slate-400/25"
+                : "bg-slate-100 text-slate-700 border-slate-300"
+            }`}
+          >
+            ؟ {statusNotice}
           </span>
         )}
         {isLocked   && <Lock size={12} className={`flex-shrink-0 ${isDark ? "text-zinc-600" : "text-slate-400"}`} />}
@@ -821,8 +893,14 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                   {article.amendments.map((amend, i) => (
                     <div key={i} className={`p-3 rounded-xl border ${isDark ? "border-amber-700/10 bg-amber-900/5" : "border-amber-200 bg-amber-50/60"}`}>
                       <div className="flex gap-2 mb-1">
-                        <span className={`text-[10px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>{amend.source}</span>
-                        <span className={`text-[10px] ${isDark ? "text-zinc-400" : "text-slate-400"}`}>{amend.date}</span>
+                        {amend.sourceLocked ? (
+                          <span className={`text-[10px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>🔒 أداة التعديل وتاريخه متاحان للمشتركين</span>
+                        ) : (
+                          <>
+                            <span className={`text-[10px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>{amend.source}</span>
+                            <span className={`text-[10px] ${isDark ? "text-zinc-400" : "text-slate-400"}`}>{amend.date}</span>
+                          </>
+                        )}
                       </div>
                       <p className={`text-[11px] mb-2 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{amend.summary}</p>
                       <p className={`text-[12px] leading-relaxed pt-2 border-t ${isDark ? "border-amber-700/15 text-zinc-400" : "border-amber-200 text-zinc-600"}`}>{amend.fullText}</p>
@@ -934,22 +1012,39 @@ export function PreambleBlock({
   isDark,
   isRTL = true,
   viewMode = "all",
+  locked = false,
+  onUnlock,
 }: {
   text?: string;
   regulationPreamble?: string;
   isDark: boolean;
   isRTL?: boolean;
   viewMode?: "all" | "law" | "regulation";
+  /** T28-22: the API withheld the preamble from a non-subscriber. */
+  locked?: boolean;
+  onUnlock?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const textStart = isRTL ? "text-right" : "text-left";
+
+  const label = isRTL ? "الديباجة" : "Preamble";
+
+  // The preamble opens with the decree card, so it is a subscriber feature:
+  // one closed row that leads to the same paywall as the other locked rows.
+  if (locked) {
+    return (
+      <div className={`rounded-2xl border print:hidden flex flex-wrap items-center gap-3 px-4 py-3 ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}>
+        <BookOpen size={14} className="text-[#C8A762] flex-shrink-0" weight="duotone" />
+        <span className={`text-[12px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{label}</span>
+        {onUnlock && <OfficialMetaLockedRow isDark={isDark} onUnlock={onUnlock} textSize="text-[11px]" />}
+      </div>
+    );
+  }
 
   const hasText = viewMode !== "regulation" && text && !isPreambleEmpty(text);
   const hasReg = viewMode !== "law" && regulationPreamble && !isPreambleEmpty(regulationPreamble);
 
   if (!hasText && !hasReg) return null;
-
-  const label = isRTL ? "الديباجة" : "Preamble";
 
   return (
     <div className={`rounded-2xl border overflow-hidden print:hidden ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}>

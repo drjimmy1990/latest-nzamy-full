@@ -1,13 +1,44 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getLibraryAccessForUser } from "@/lib/access-control";
 import { libraryGate } from "@/lib/library-gate";
+import { isFreeLibraryItem } from "@/lib/library-item-access";
+import { selectAllPages } from "@/lib/supabase/selectAllPages";
+import { EXEC_REGULATION_TYPE, toSectionCode } from "@/app/laws/lawsIndexFacets";
+import { maskListOfficialFields, TIER_SHAPED_CACHE_CONTROL } from "@/app/api/library/laws/[slug]/_official-meta";
+
+/**
+ * Card columns only (LIB-16). `select('*')` shipped every list row's `fts`
+ * tsvector, `preamble` and — for collections — a `metadata` blob: 612 KB for
+ * the first paint at limit=50, 2.8 MB at limit=200. Each list below names
+ * what /laws (src/app/laws/page.tsx lawsList/ordersList/booksList/
+ * collectionsList) and /laws/feqh-preview actually read.
+ *
+ * issuing_instrument / issue_date_hijri are column-locked for the anon key
+ * (migration 20261004_01), so the laws section is read with the service role
+ * and masked per tier below. The other sections stay on the request client
+ * (the principles and collections lists name allow-list columns only).
+ */
+const LAW_LIST_COLUMNS =
+  "slug, title, title_en, description, type, section_code, section_name, issuing_instrument, issue_date_hijri, total_articles, status, has_merged_regulation";
+const DECREE_LIST_COLUMNS =
+  "id, title, type, issuer, ref, date, summary_brief, category, hashtags, instrument_ar";
+const BOOK_LIST_COLUMNS =
+  "id, title, author, school, type, category, description, investigator, total_volumes, total_pages";
+const COLLECTION_LIST_COLUMNS =
+  "id, title, court, year_hijri, part, source_id, track, description, ruling_count, free, progress, series_id";
+
+/** The whole collections list is read at once; this is only a runaway guard. */
+const COLLECTIONS_MAX_ROWS = 5_000;
+const MAX_TYPE_FILTER_LENGTH = 60;
 
 export async function GET(request: Request) {
   const gate = await libraryGate();
   if (gate) return gate;
 
   const supabase = await createClient();
+  // The laws section only (see the column note above LAW_LIST_COLUMNS).
+  const serverOnly = await createServiceClient();
 
   // Bounded reads: the front-end mounts this once on load, so cap each table
   // to a sane page size instead of `select('*')` (unbounded table scan).
@@ -19,6 +50,19 @@ export async function GET(request: Request) {
   const section = searchParams.get("section"); // optional: load only one section
   const from = (page - 1) * limit;
   const to = from + limit - 1;
+
+  // ── Laws filters (LIB-03): the /laws chips and doc-type row filter here, on
+  // the whole table, instead of over the pages already in the browser.
+  // ?section_code accepts the stored code ('06', '6') or the UI id ('SA-06').
+  const rawSectionCode = searchParams.get("section_code");
+  const lawSectionCode = rawSectionCode ? toSectionCode(rawSectionCode) : null;
+  if (rawSectionCode && !lawSectionCode) {
+    return NextResponse.json({ error: "رمز القسم غير صالح" }, { status: 400 });
+  }
+  const lawType = (searchParams.get("type") || "").trim();
+  if (lawType.length > MAX_TYPE_FILTER_LENGTH) {
+    return NextResponse.json({ error: "نوع الوثيقة غير صالح" }, { status: 400 });
+  }
 
   // ── Paywall: read optional session + library access (guests → free tier).
   // Free users get metadata + a `locked` flag (body fields stripped); pro+ and
@@ -32,7 +76,6 @@ export async function GET(request: Request) {
     userId = null;
   }
   const { hasFullAccess, whitelistedSlugs, freeItemsByType } = await getLibraryAccessForUser(userId);
-  const freeItems = (type: string): string[] => (freeItemsByType[type] as string[]) ?? [];
 
   // Strip large body fields from a locked row so the list never leaks paid text.
   const stripFields = (row: Record<string, unknown>, fields: string[]) => {
@@ -63,16 +106,24 @@ export async function GET(request: Request) {
      * needed a marker: an unread section has no known size, and «٠ نظام» is a
      * claim about the library rather than about the read.
      */
+    // `shape` adds the section's filters and a deterministic order whose last
+    // key is unique (LIB-16): offset pages over an unordered select may repeat
+    // or skip rows between «تحميل المزيد» clicks.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    type Shape = (q: any) => any;
     const fetchSection = async (
       table: string,
       selectClause: string,
-      sectionName: string
+      sectionName: string,
+      shape: Shape,
+      client: typeof supabase | typeof serverOnly = supabase
     ) => {
-      const { data, count, error } = await supabase
-        .schema("library")
-        .from(table)
-        .select(selectClause, { count: "exact" })
-        .range(from, to);
+      const { data, count, error } = await shape(
+        client
+          .schema("library")
+          .from(table)
+          .select(selectClause, { count: "exact" })
+      ).range(from, to);
 
       if (error) {
         console.error(`[Library Init API] ${sectionName} error:`, error);
@@ -126,46 +177,94 @@ export async function GET(request: Request) {
       notRequested: true,
     });
 
+    /**
+     * Collections are read WHOLE (LIB-08): the index had no «تحميل المزيد» for
+     * them, so 159 of 209 were unreachable. The list is small (card columns
+     * only, no `metadata`), and a second load-more button beside the
+     * principles one would be ambiguous. selectAllPages walks past PostgREST's
+     * 1,000-row cap should the table ever grow that far. Page 2+ returns an
+     * empty page so an old client's load-more cannot duplicate rows.
+     */
+    const fetchAllCollections = async () => {
+      if (page > 1) {
+        return { data: [] as unknown[], total: null, hasMore: false, page, limit, degraded: false };
+      }
+      const { data, error } = await selectAllPages<Record<string, unknown>>(
+        (f, t) =>
+          supabase
+            .schema("library")
+            .from("judicial_collections")
+            .select(COLLECTION_LIST_COLUMNS)
+            .order("title")
+            .order("id")
+            .range(f, t) as unknown as PromiseLike<{ data: Record<string, unknown>[] | null; error: { message: string } | null }>,
+        { pageSize: 1000, maxRows: COLLECTIONS_MAX_ROWS }
+      );
+      if (error) {
+        console.error("[Library Init API] collections error:", error);
+        return { data: [] as unknown[], total: null, hasMore: false, page, limit, degraded: true };
+      }
+      return { data: data as unknown[], total: data.length, hasMore: false, page, limit: data.length, degraded: false };
+    };
+
     const [laws, decrees, principles, books, collections] = await Promise.all([
       shouldFetch("laws")
-        ? fetchSection("laws", "*", "laws")
+        ? fetchSection("laws", LAW_LIST_COLUMNS, "laws", (q) => {
+            let out = q;
+            if (lawSectionCode) out = out.eq("section_code", lawSectionCode);
+            if (lawType) {
+              // The executive-regulation filter also lists laws that carry a
+              // merged regulation (the page's sub_types rule). The `.or()`
+              // string is a fixed literal — user input only ever reaches `.eq`.
+              out = lawType === EXEC_REGULATION_TYPE
+                ? out.or(`type.eq."${EXEC_REGULATION_TYPE}",has_merged_regulation.is.true`)
+                : out.eq("type", lawType);
+            }
+            // Browse order mirrors the chip order: section, then title.
+            return out.order("section_code").order("title").order("slug");
+          }, serverOnly)
         : Promise.resolve(emptySection()),
       shouldFetch("decrees")
-        ? fetchSection("decrees_circulars", "*", "decrees")
+        ? fetchSection("decrees_circulars", DECREE_LIST_COLUMNS, "decrees", (q) => q.order("id"))
         : Promise.resolve(emptySection()),
       shouldFetch("principles")
         ? fetchSection(
             "principles",
             `id, principle_number, issuing_body, text, session_date, decision_number, year_hijri,
              judicial_collections ( id, title, court, track, source_id )`,
-            "principles"
+            "principles",
+            (q) => q.order("id")
           )
         : Promise.resolve(emptySection()),
       shouldFetch("books")
-        ? fetchSection("feqh_books", "*", "books")
+        ? fetchSection("feqh_books", BOOK_LIST_COLUMNS, "books", (q) => q.order("title").order("id"))
         : Promise.resolve(emptySection()),
       shouldFetch("collections")
-        ? fetchSection("judicial_collections", "*", "collections")
+        ? fetchAllCollections()
         : Promise.resolve(emptySection()),
     ]);
 
     // ── Apply paywall per row (add free/locked; strip body fields for locked) ──
+    // T28-22 (owner decision): the issuing decree and its date are for
+    // subscribers (tier pro+, never the whitelist — the same rule as the law
+    // page). A non-subscriber's rows carry null there; `status` stays.
     const lawsRows = laws.data as unknown as Record<string, unknown>[];
     laws.data = lawsRows.map((row) => {
       const slug = row.slug as string;
-      const isFree = hasFullAccess || whitelistedSlugs.includes(slug) || freeItems("laws").includes(slug);
-      return { ...(isFree ? row : stripFields({ ...row }, ["preamble", "description", "article_status_summary"])), free: isFree, locked: !isFree };
+      const isFree = isFreeLibraryItem({ contentType: "laws", itemId: slug, hasFullAccess, freeItemsByType, whitelistedLawSlugs: whitelistedSlugs });
+      const shaped = isFree ? row : stripFields({ ...row }, ["preamble", "description", "article_status_summary"]);
+      return { ...maskListOfficialFields(shaped, hasFullAccess), free: isFree, locked: !isFree };
     }) as any;
 
     const decreesRows = decrees.data as unknown as Record<string, unknown>[];
     decrees.data = decreesRows.map((row) => {
-      const isFree = hasFullAccess || freeItems("decrees").includes(row.id as string);
+      const isFree = hasFullAccess || ((freeItemsByType.decrees as string[]) ?? []).includes(row.id as string);
       return { ...(isFree ? row : stripFields({ ...row }, ["summary_brief", "content", "text"])), free: isFree, locked: !isFree };
     }) as any;
 
     const principlesRows = principles.data as unknown as Record<string, unknown>[];
     principles.data = principlesRows.map((row) => {
-      const isFree = hasFullAccess || freeItems("precedents").includes(row.id as string);
+      const isFree = isFreeLibraryItem({ contentType: "principles", itemId: row.id as string, hasFullAccess, freeItemsByType, whitelistedLawSlugs: whitelistedSlugs });
       const out = isFree ? { ...row } : stripFields({ ...row }, ["text"]);
       return { ...out, free: isFree, locked: !isFree };
     }) as any;
@@ -175,15 +274,23 @@ export async function GET(request: Request) {
     books.data = (books.data as unknown as Record<string, unknown>[]).map((row) => ({ ...row, free: true, locked: false })) as any;
     collections.data = (collections.data as unknown as Record<string, unknown>[]).map((row) => ({ ...row, free: true, locked: false })) as any;
 
-    return NextResponse.json({
-      laws,
-      decrees,
-      principles,
-      books,
-      collections,
-    });
-  } catch (error: any) {
+    return NextResponse.json(
+      {
+        laws,
+        decrees,
+        principles,
+        books,
+        collections,
+        // T28-22: true when laws[].issuing_instrument / issue_date_hijri were
+        // withheld from this viewer (non-subscriber), so the page can say
+        // «للمشتركين» instead of «—».
+        officialMetaLocked: !hasFullAccess,
+      },
+      // Tier-shaped (paywall + official metadata): never from a shared cache.
+      { headers: { "Cache-Control": TIER_SHAPED_CACHE_CONTROL } },
+    );
+  } catch (error) {
     console.error("[Library Init API] Error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: "تعذّر تحميل المكتبة القانونية" }, { status: 500 });
   }
 }

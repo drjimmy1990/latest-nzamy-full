@@ -30,6 +30,7 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { createClient } from "@/lib/supabase/client";
+import { normalizeSaudiMobile, saudiMobileMessage } from "@/lib/services/saudiMobile";
 import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
 import {
   buildNotificationPreferences,
@@ -226,39 +227,6 @@ function notifCopy(cat: NotifCategory, userType: UserType, isAr: boolean) {
   // `getWizardCategories` can return is listed above, and a new one showing its
   // Arabic label in English mode is a far smaller failure than a blank row.
   return en ? { label: en.label, desc: en.desc } : { label: cat.label, desc: cat.description };
-}
-
-// ── Phone ─────────────────────────────────────────────────────────────────────
-
-/**
- * Arabic-Indic (٠١٢…) and Extended Arabic-Indic (۰۱۲…) digits → ASCII, so a
- * number typed on an Arabic keyboard is not rejected as malformed.
- */
-function toAsciiDigits(value: string): string {
-  return value.replace(/[\u0660-\u0669\u06f0-\u06f9]/g, (d) => {
-    const code = d.charCodeAt(0);
-    const base = code >= 0x06f0 ? 0x06f0 : 0x0660;
-    return String(code - base);
-  });
-}
-
-/**
- * A Saudi mobile in E.164 (`+9665XXXXXXXX`), or `null` when the input is not
- * one. Accepts `05…`, `5…`, `966…`, `00966…` and `+966…`, with spaces, dashes
- * and Arabic-Indic digits.
- *
- * NOTE: this is a deliberate duplicate of the same function in
- * src/app/api/v1/profile/route.ts. The server is what actually guards the
- * column; this copy exists so the wizard can refuse before it submits, and the
- * two must stay identical. If a third caller appears, extract them into one
- * module.
- */
-function normalizeSaudiMobile(raw: string): string | null {
-  let v = toAsciiDigits(raw).replace(/[\s()\u200e\u200f-]/g, "");
-  if (v.startsWith("00966")) v = `+${v.slice(2)}`;
-  else if (v.startsWith("966")) v = `+${v}`;
-  else if (/^0?5\d{8}$/.test(v)) v = `+966${v.replace(/^0/, "")}`;
-  return /^\+9665\d{8}$/.test(v) ? v : null;
 }
 
 // ── Errors ────────────────────────────────────────────────────────────────────
@@ -528,7 +496,8 @@ function S3({
   const isLegal = userType === "lawyer" || userType === "firm";
   const inputCls = "w-full rounded-xl border border-slate-200 bg-white py-3 px-4 text-sm text-ink outline-none focus:border-royal focus:ring-2 focus:ring-royal/10 transition-all dark:border-white/10 dark:bg-dark-card dark:focus:border-gold dark:focus:ring-gold/10";
   const phoneTouched = phone.trim().length > 0;
-  const phoneValid = normalizeSaudiMobile(phone) !== null;
+  const phoneResult = normalizeSaudiMobile(phone);
+  const phoneValid = phoneResult.ok;
   return (
     <motion.div key="s3" initial={{ opacity: 0, x: 28 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -28 }} transition={{ type: "spring", stiffness: 280, damping: 26 }}>
       <h2 className="font-brand text-2xl font-bold text-ink mb-1">
@@ -567,7 +536,7 @@ function S3({
           <p className={`mt-1.5 text-xs ${phoneTouched && !phoneValid ? "text-red-600 dark:text-red-400" : "text-ink-faint dark:text-gray-500"}`}>
             {phoneTouched && !phoneValid
               ? (isAr
-                  ? "رقم الجوال غير صحيح. أدخل رقم جوال سعودي يبدأ بـ 05 — مثال: 0512345678"
+                  ? saudiMobileMessage(phoneResult)
                   : "Invalid number. Enter a Saudi mobile starting with 05 — e.g. 0512345678")
               : (isAr
                   ? "رقم جوال سعودي — مثال: 0512345678"
@@ -889,7 +858,7 @@ export default function OnboardingPage() {
     // The phone is required, and required means the step does not advance
     // without it: profiles.phone is the only number the outbound notification
     // payload can carry, and all 16 live accounts have none.
-    if (step === 3) return city.length > 0 && normalizeSaudiMobile(phone) !== null;
+    if (step === 3) return city.length > 0 && normalizeSaudiMobile(phone).ok;
     return true;
   };
 
@@ -925,11 +894,12 @@ export default function OnboardingPage() {
     // Demo mode has no session and no database; the wizard is a preview there.
     if (!isSupabaseMode) return true;
 
-    const normalizedPhone = normalizeSaudiMobile(phone);
-    if (!normalizedPhone) {
-      setSaveError("رقم الجوال غير صحيح. أدخل رقم جوال سعودي يبدأ بـ 05 — مثال: 0512345678");
+    const phoneParsed = normalizeSaudiMobile(phone);
+    if (!phoneParsed.ok) {
+      setSaveError(saudiMobileMessage(phoneParsed));
       return false;
     }
+    const normalizedPhone = phoneParsed.e164;
 
     setSaving(true);
     setSaveError(null);

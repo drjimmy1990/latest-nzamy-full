@@ -37,6 +37,10 @@
  * the screen exactly as written, which the dictionary miss-fallback in
  * valueLabelAr() gives it for free.
  */
+// Relative `.ts` specifier, not `@/…`: `node --test` imports this file and
+// resolves neither the alias nor an extension-less path.
+import { LEGAL_TAXONOMY } from "../../constants/taxonomies.ts";
+
 export const INTAKE_VALUE_AR: Record<string, string> = {
   // ─── plain keys ────────────────────────────────────────────────────────────
   // The only three values whose Arabic is identical under every field that
@@ -139,11 +143,22 @@ export const INTAKE_VALUE_AR: Record<string, string> = {
   "contractType:other": "أخرى",
 
   // ─── المحاكي الشامل (wargaming) ────────────────────────────────────────────
-  // src/app/ai/wargaming/page.tsx:63-65 (CASE_ROLES)
+  // src/app/ai/wargaming/page.tsx:67-69 (CASE_ROLES)
   "role:plaintiff": "مدّعٍ / موكلي مدّعٍ",
   "role:defendant": "مدّعى عليه / دفاع",
   "role:advisor": "مستشار / محكّم / مراجع",
-  // src/app/ai/wargaming/page.tsx:69-76 (CASE_AREAS)
+  // The specialty picker (src/app/ai/wargaming/page.tsx, CASE_AREAS) offers
+  // the platform's 31 sections, stored by their SA-xx id, plus «أخرى» (owner
+  // test 28-9, T28-32). The 31 labels are DERIVED from LEGAL_TAXONOMY — the
+  // very list the picker renders — rather than copied, so a renamed section
+  // cannot drift between the client's picker and the team's brief. «أخرى»
+  // carries the client's own wording in the sibling `areaOther` field.
+  ...Object.fromEntries(LEGAL_TAXONOMY.map((c) => [`area:${c.id}`, c.label])),
+  "area:other": "أخرى",
+  // The picker's PREVIOUS eight ids (CASE_AREAS before 2026-09-28). Retired
+  // from the picker, KEPT here on purpose: orders placed before the switch
+  // still carry them, and valueLabelAr falls back to the raw id — deleting
+  // these would print «labor» in English on every one of those orders.
   "area:labor": "نظام العمل",
   "area:commercial": "تجاري وشركات",
   "area:civil": "مدني",
@@ -152,7 +167,7 @@ export const INTAKE_VALUE_AR: Record<string, string> = {
   "area:real-estate": "عقاري",
   "area:arbitration": "تحكيم / وساطة",
   "area:admin": "إداري",
-  // src/app/ai/wargaming/page.tsx:56-59 (SIM_TARGETS). `targets` is a
+  // src/app/ai/wargaming/page.tsx:60-63 (SIM_TARGETS). `targets` is a
   // string[], so these resolve through the array branch of renderValue with
   // the parent key "targets".
   "targets:opponent": "محاكاة الخصم",
@@ -408,16 +423,22 @@ export const INTAKE_LABELS: Record<string, string> = {
   // wargaming (المحاكي الشامل)
   role: "الصفة في القضية",
   area: "التخصص القانوني",
+  // Set only when area === "other" (orderIntake.wargaming.ts) — the specialty
+  // in the client's own words, shown exactly as typed.
+  areaOther: "التخصص كما كتبه العميل",
+  // «مراجعة وتدقيق مذكرة» (briefReviewOrder.ts): what the client asked for —
+  // a gap report or a full revision, stored as the Arabic label.
+  reviewScope: "المطلوب",
   caseSummary: "ملخص القضية",
   targets: "أهداف المحاكاة",
   memoText: "نص المذكرة",
   // The subset of uploaded documents the client tagged as the memo being
-  // critiqued (orderIntake.wargaming.ts:35). What is stored is a list of
+  // critiqued (orderIntake.wargaming.ts:48). What is stored is a list of
   // document numbers, not file names, and the label says exactly that rather
   // than promising a file list this row does not carry — the files themselves
   // are listed under مرفقاتك further down the same card. The wizard's own
   // wording for the thing is "المذكرة المراد نقضها"
-  // (src/app/ai/wargaming/page.tsx:648).
+  // (src/app/ai/wargaming/page.tsx:694).
   memoAttachmentIds: "أرقام مستندات المذكرة المراد نقضها",
   // ── Client + corporate intake (owner's ruling, 26 August) ──────────────────
   // Three surfaces now write a generic intake instead of one of the four AI

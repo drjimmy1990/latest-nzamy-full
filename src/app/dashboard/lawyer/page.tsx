@@ -6,7 +6,7 @@ import { useUser } from "@/hooks/useUser";
 import { useTheme } from "@/components/ThemeProvider";
 import {
   Scales, Gavel, CheckCircle, Clock,
-  CaretLeft, Robot, PencilSimple,
+  CaretLeft, PencilSimple,
   CalendarCheck, Lightning,
   Warning, ArrowClockwise, Plus,
   Flag, Storefront,
@@ -16,6 +16,7 @@ import HijriDateWidget from "@/components/HijriDateWidget";
 import Link from "next/link";
 import { LawyerDashboardSkeleton } from "@/components/ui";
 import { OnboardingBanner } from "@/components/OnboardingBanner";
+import PendingInvitationsBanner from "@/components/dashboard/PendingInvitationsBanner";
 
 // ─── Subscription tiers — REMOVED ─────────────────────────────────────────────
 //
@@ -52,16 +53,20 @@ import { OnboardingBanner } from "@/components/OnboardingBanner";
 // Local imports
 import AddCaseModal from "./_components/AddCaseModal";
 import AddTaskModal from "./_components/AddTaskModal";
-import { AI_QUICK, ACTIVITY_TYPE_CONFIG } from "./_data/mockData";
+import QuickToolsCustomizer, { QUICK_TOOL_ICONS } from "./_components/QuickToolsCustomizer";
+import { ACTIVITY_TYPE_CONFIG } from "./_data/mockData";
+import { DEFAULT_QUICK_TOOLS, resolveQuickToolIds, quickToolsFor } from "@/lib/lawyerQuickTools";
+import { getPreferences } from "@/lib/services/preferencesService";
 import {
   getLawyerDashboardSummary,
   type LawyerDashboardSummary,
   type LawyerDashboardHearing,
 } from "@/lib/services/lawyerDashboardService";
-import { isSupabaseMode } from "@/lib/services/api";
+import { apiGet, isSupabaseMode } from "@/lib/services/api";
+import { profileShareState, type ProfileShareState } from "./_components/profileShareTargets";
+import ShareProfileModal from "./_components/ShareProfileModal";
 import { describeRequestEvent, type ActivityBadge } from "@/lib/events";
 import { orderReference } from "@/lib/services/orderReference";
-import { BETA_MONOPOLY_MODE } from "@/lib/betaConfig";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -198,47 +203,6 @@ function shortRequestRef(requestId: string | undefined): string {
   return requestId ? `طلب ${orderReference(requestId)}` : "—";
 }
 
-/**
- * Copy `text` to the clipboard, reporting whether it actually landed there.
- *
- * Two tiers, because `navigator.clipboard` is unavailable on insecure origins
- * (plain http, which is how the dashboard is reached on the office LAN) and
- * rejects outright when the permission is denied. The textarea +
- * `execCommand("copy")` tier still works in those cases; it is deprecated but
- * not removed, and it returns a boolean we must honour rather than assume.
- *
- * The caller shows a success tick ONLY on `true` — a silent failure that still
- * ticked would send the lawyer off to paste an empty clipboard.
- */
-async function copyToClipboard(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    // Insecure origin, denied permission, or an unfocused document — fall through.
-  }
-  try {
-    const field = document.createElement("textarea");
-    field.value = text;
-    field.setAttribute("readonly", "");
-    // Off-screen rather than hidden: `display:none` / `visibility:hidden`
-    // elements cannot be selected, so the copy would silently do nothing.
-    field.style.position = "fixed";
-    field.style.top = "-1000px";
-    field.style.opacity = "0";
-    document.body.appendChild(field);
-    field.select();
-    field.setSelectionRange(0, text.length);
-    const copied = document.execCommand("copy");
-    document.body.removeChild(field);
-    return copied;
-  } catch {
-    return false;
-  }
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function LawyerDashboardPage() {
@@ -256,10 +220,28 @@ export default function LawyerDashboardPage() {
   // own arrives as a `null` field inside `dashboardData` instead. Neither may
   // ever be rendered as an empty practice — see the comment on the fetch below.
   const [loadError, setLoadError] = useState<string | null>(null);
-  // idle → the button; copied → the tick; manual → both copy tiers failed, so
-  // the URL is shown in a selectable field for the lawyer to copy by hand.
-  const [shareState, setShareState] = useState<"idle" | "copied" | "manual">("idle");
-  const [profileUrl, setProfileUrl] = useState("");
+  // What ShareProfileModal shows while open, null when closed (T28-29b): the
+  // link + QR of a published profile, or why there is none (owner Q151).
+  const [shareState, setShareState] = useState<ProfileShareState | null>(null);
+  // «أدوات نظامي — وصول سريع» (T28-30): the lawyer's saved tools from
+  // user_settings.preferences.quickTools. `null` while that read is in flight
+  // (supabase mode only) so the grid never shows the defaults first and then
+  // swaps them; demo mode starts on the defaults, having nothing to read.
+  const [quickToolIds, setQuickToolIds] = useState<string[] | null>(() =>
+    isSupabaseMode ? null : [...DEFAULT_QUICK_TOOLS],
+  );
+  const [showQuickToolsCustomizer, setShowQuickToolsCustomizer] = useState(false);
+  // The `lawyer_profiles` fields the share modal needs (slug, verification,
+  // visibility), read once from GET /api/v1/profile. Until that read answers,
+  // the button stays off (`shareReady`), so the modal never answers early.
+  const [shareReady, setShareReady] = useState(false);
+  const [shareInput, setShareInput] = useState({
+    slug: "",
+    hasRoleProfile: false,
+    roleProfileReadFailed: false,
+    verificationStatus: null as string | null,
+    marketplaceVisible: false,
+  });
 
   // Fetch real dashboard data, and re-fetch whenever a workflow item is
   // added/changed (the add-case / add-task modals dispatch nzamy-workflow-updated).
@@ -304,71 +286,78 @@ export default function LawyerDashboardPage() {
     return () => window.removeEventListener("nzamy-workflow-updated", handler);
   }, [loadSummary]);
 
-  // ─── Public profile link ──────────────────────────────────────────────────
+  // ─── Public profile link (WP-4 G4; owner Q151, 2026-10-03) ────────────────
   //
-  // The public profile lives at /lawyers/[slug], but `[slug]` is a misnomer:
-  // there is no slug column on `profiles` or on `lawyer_profiles`, and every
-  // real call site addresses that page by the profile id — the client's
-  // find-lawyer list links `/lawyers/${l.id}`, and the route behind it,
-  // /api/v1/lawyers/[id], filters `profiles.id`. So the per-user value is
-  // `useUser().userId` (= profiles.id = auth user id), NOT a name-shaped slug.
-  //
-  // Two conditions have to hold before the link is safe to hand out, and BOTH
-  // are currently false for at least some sessions:
-  //   1. There is a signed-in id at all. Guests and every demo account resolve
-  //      to a session with no `userId`, so there is nothing per-user to link.
-  //   2. The public directory is open. Under BETA_MONOPOLY_MODE the whole
-  //      /lawyers subtree redirects to /services/lawyers (see
-  //      src/app/lawyers/layout.tsx), so the copied link would land the
-  //      recipient on the firm's intake page instead of this lawyer.
-  //
-  // ⚠️ A third condition is not — and cannot be — gated from here, and it is
-  // the one that would bite first. This paragraph used to read: «the profile
-  // page itself never reads its route segment; it renders a module-level mock,
-  // so every id shows the same fabricated lawyer». That was true when it was
-  // written and is FALSE NOW — src/app/lawyers/[slug]/page.tsx was rebuilt: it
-  // reads `params.slug`, treats it as the profiles.id it actually is, fetches
-  // the real advocate, and has its own loading / not-found / error states. The
-  // fabricated lawyer is gone. Do not re-add that warning.
-  //
-  // What stands in its place is a DATA condition, not a code one. That page is
-  // served by /api/v1/lawyers/[id], which requires BOTH
-  // `lawyer_profiles.verification_status = 'verified'` AND
-  // `marketplace_visible = true`. In production every lawyer row is still
-  // «pending» with marketplace_visible false, so that route 404s for every one
-  // of them today. Flipping BETA_MONOPOLY_MODE on its own would therefore turn
-  // this button into a link to a «not found» page — the lawyer's own profile,
-  // publicly missing, handed to their client. Verification has to land before
-  // that flip, or with it.
-  //
-  // The gate is the compile-time const, not a runtime flag: the admin features
-  // screen lists BETA_MONOPOLY_MODE but holds it in a local array with no
-  // persistence, and no platform_settings row backs it — its own teardown note
-  // says removal «لا تتم من الواجهة فقط».
-  const canShareProfile = Boolean(userId) && !BETA_MONOPOLY_MODE;
-  // Monopoly mode is tested FIRST because it is the reason that applies to
-  // everyone today. Ordering it after the id check would tell a demo lawyer —
-  // which is how this dashboard is actually tested, demo sessions carry no
-  // `userId` — to «sign in» while they are already signed in.
-  const shareDisabledReason = BETA_MONOPOLY_MODE
-    ? "صفحة الملف العام غير متاحة حالياً — دليل المحامين غير مفتوح للنشر بعد"
+  // The owner keeps the lawyers DIRECTORY closed but lets each lawyer share
+  // their OWN profile. /lawyers/[slug] renders only a published profile
+  // (verification_status = 'verified' AND marketplace_visible), so this button
+  // opens the same modal as /dashboard/lawyer/profile's «مشاركة», fed by
+  // `profileShareState` (profileShareTargets.ts): link + QR when published,
+  // the reason when not, nothing asserted when the record could not be read.
+  // Signed out / demo sessions carry no user id, so the button stays off; it
+  // also waits for the profile read below to settle.
+  const canShareProfile = Boolean(userId) && shareReady;
+  const shareDisabledReason = userId
+    ? "جارٍ التحقق من حالة ملفك المهني…"
     : "سجّل الدخول بحسابك المهني لمشاركة رابط ملفك العام";
 
-  const handleShareProfile = useCallback(async () => {
-    if (!canShareProfile) return;
-    const url = `${window.location.origin}/lawyers/${userId}`;
-    setProfileUrl(url);
-    // No tick unless the copy is confirmed; otherwise fall back to manual.
-    setShareState((await copyToClipboard(url)) ? "copied" : "manual");
-  }, [canShareProfile, userId]);
-
-  // Let the «تم نسخ الرابط ✓» state lapse on its own, and cancel the timer on
-  // unmount so it cannot fire against a gone component.
+  // One read of GET /api/v1/profile for the fields `profileShareState` needs.
+  // No banner on failure: the modal then says the record could not be read.
   useEffect(() => {
-    if (shareState !== "copied") return;
-    const timer = window.setTimeout(() => setShareState("idle"), 2500);
-    return () => window.clearTimeout(timer);
-  }, [shareState]);
+    if (!isSupabaseMode || !userId || userType !== "lawyer") return;
+    let cancelled = false;
+    apiGet<{
+      roleProfile?: { slug?: string | null; verification_status?: string | null; marketplace_visible?: boolean | null } | null;
+      roleProfileReadFailed?: boolean;
+    }>("/api/v1/profile")
+      .then((res) => {
+        if (cancelled) return;
+        const r = res.roleProfile ?? null;
+        setShareInput({
+          slug: r?.slug?.trim() || "",
+          hasRoleProfile: r != null,
+          roleProfileReadFailed: res.roleProfileReadFailed === true,
+          verificationStatus: r?.verification_status ?? null,
+          marketplaceVisible: r?.marketplace_visible === true,
+        });
+        setShareReady(true);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        console.warn("[lawyer dashboard] public profile record unavailable:", err);
+        setShareInput((prev) => ({ ...prev, roleProfileReadFailed: true }));
+        setShareReady(true);
+      });
+    return () => { cancelled = true; };
+  }, [userId, userType]);
+
+  // Opens ShareProfileModal (T28-29b) with the published / unpublished state.
+  const handleShareProfile = useCallback(() => {
+    if (!canShareProfile || !userId) return;
+    setShareState(profileShareState({ origin: window.location.origin, userId, ...shareInput }));
+  }, [canShareProfile, userId, shareInput]);
+  const closeShareModal = useCallback(() => setShareState(null), []);
+
+  // One read of the saved quick tools. getPreferences() answers null on a
+  // failed read (and {} for an account that never saved) — both fall back to
+  // the defaults; a failure here is not worth a banner on a dashboard whose
+  // real data has its own. resolveQuickToolIds drops ids the registry no
+  // longer knows, so a stale choice can never render a dead tile.
+  useEffect(() => {
+    if (!isSupabaseMode) return;
+    let cancelled = false;
+    getPreferences()
+      .then((prefs) => {
+        if (!cancelled) setQuickToolIds(resolveQuickToolIds(prefs?.quickTools));
+      })
+      // getPreferences catches its own errors today; this keeps a future
+      // change from leaving the grid on its placeholders forever.
+      .catch(() => {
+        if (!cancelled) setQuickToolIds([...DEFAULT_QUICK_TOOLS]);
+      });
+    return () => { cancelled = true; };
+  }, []);
+  const quickTools = useMemo(() => (quickToolIds ? quickToolsFor(quickToolIds) : null), [quickToolIds]);
 
   // ─── Derived tier — REMOVED ───────────────────────────────────────────────
   // `deriveLawyerTier()` translated `useUser().tier` into the four-plan
@@ -601,6 +590,13 @@ export default function LawyerDashboardPage() {
   return (
     <div className="max-w-[1400px] mx-auto space-y-5" dir="rtl">
 
+      {/* Review A5/F03 — an invitation to a company or firm roster is the
+          one thing that must be answered before anything else on this page
+          is true: until it is accepted the inviting entity sees none of
+          this person's work, and after it is accepted it sees some of it.
+          Renders nothing at all when there is no invitation. */}
+      <PendingInvitationsBanner />
+
       {/* ── Onboarding Welcome (first-visit only) ── */}
       <OnboardingBanner role="lawyer" name={name} isDark={isDark} />
 
@@ -630,23 +626,22 @@ export default function LawyerDashboardPage() {
               explanation of why this button is greyed out. */}
           <span
             className="inline-flex"
-            title={canShareProfile ? "انسخ رابط ملفك المهني العام وشاركه مع موكليك" : shareDisabledReason}
+            title={canShareProfile ? "شارك رابط ملفك المهني العام مع موكليك" : shareDisabledReason}
           >
             <button
               type="button"
               onClick={handleShareProfile}
               disabled={!canShareProfile}
               aria-label={canShareProfile ? "مشاركة ملفي المهني" : shareDisabledReason}
+              aria-haspopup="dialog"
               className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border transition-colors ${
                 !canShareProfile
                   ? `opacity-50 cursor-not-allowed ${isDark ? "border-white/[0.08] text-zinc-500" : "border-slate-200 text-slate-400"}`
-                  : shareState === "copied"
-                    ? "border-emerald-500 bg-emerald-500/10 text-emerald-600 cursor-pointer"
-                    : `cursor-pointer ${isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`
+                  : `cursor-pointer ${isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`
               }`}
             >
               <ShareNetwork size={16} weight="duotone" />
-              {shareState === "copied" ? "تم نسخ الرابط ✓" : "مشاركة ملفي المهني 🔗"}
+              مشاركة ملفي المهني 🔗
             </button>
           </span>
           {/* The graph lives on the case detail page (?tab=graph), so this is a
@@ -695,43 +690,10 @@ export default function LawyerDashboardPage() {
         </div>
       </div>
 
-      {/* ── Manual copy fallback ── */}
-      {/* Last resort: neither the Clipboard API nor execCommand worked, so the
-          link is put on screen in a selectable field. Deliberately no tick —
-          nothing has been copied yet. */}
-      {shareState === "manual" && (
-        <motion.div
-          initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
-          className={`rounded-2xl p-4 border flex flex-wrap items-center gap-3 ${
-            isDark ? "border-white/[0.08] bg-zinc-900/60" : "border-slate-200 bg-white"
-          }`}
-        >
-          <div className="flex-1 min-w-[220px]">
-            <p className={`text-[13px] font-bold mb-1.5 ${isDark ? "text-zinc-200" : "text-slate-800"}`}>
-              تعذّر النسخ تلقائياً — انسخ الرابط يدوياً
-            </p>
-            <input
-              type="text"
-              dir="ltr"
-              readOnly
-              value={profileUrl}
-              onFocus={(e) => e.currentTarget.select()}
-              className={`w-full rounded-xl border px-3 py-2 text-[12px] font-mono text-left ${
-                isDark ? "border-white/10 bg-black/20 text-zinc-300" : "border-slate-200 bg-slate-50 text-slate-600"
-              }`}
-            />
-          </div>
-          <button
-            type="button"
-            onClick={() => setShareState("idle")}
-            className={`shrink-0 rounded-xl px-4 py-2 text-xs font-bold transition-colors cursor-pointer ${
-              isDark ? "text-zinc-400 hover:bg-white/5" : "text-slate-500 hover:bg-slate-100"
-            }`}
-          >
-            إغلاق
-          </button>
-        </motion.div>
-      )}
+      {/* ── Manual copy fallback — MOVED ──
+          The «تعذّر النسخ تلقائياً — انسخ الرابط يدوياً» panel lived here. The
+          link now sits in ShareProfileModal's read-only field, which is
+          selected with the same message when both clipboard tiers fail. */}
 
       {/* ── Read-failure banner ── */}
       {/* The single most important element on this page when it appears. Six
@@ -1302,42 +1264,62 @@ export default function LawyerDashboardPage() {
         </div>
       </div>
 
-      {/* ── AI Quick Access ── */}
+      {/* ── Quick tools (T28-30) ──
+          Was «أدوات نظامي AI — وصول سريع», six fixed AI tiles from the AI_QUICK
+          constant — one of them a «قريباً» page (/ai/direction-support) and one
+          a page built on literals (/ai/secretary). Now the lawyer's own 3..8
+          tools, office and AI, from LAWYER_QUICK_TOOLS (src/lib/
+          lawyerQuickTools.ts, which only lists real pages), saved in
+          user_settings.preferences.quickTools; the owner's four by default.
+          «إجراءات سريعة» above is unchanged.
+          The «محجوب / متاح في الاحترافي ↑» padlock tile that used to sit here
+          stays gone: no tool has a plan check behind it (see the top of this
+          file). */}
       <div className={`${card} p-5`}>
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between gap-2 mb-4">
           <div className="flex items-center gap-2">
-            <Robot size={14} className="text-[#C8A762]" weight="duotone" />
-            <span className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-              أدوات نظامي AI — وصول سريع
+            <Lightning size={14} className="text-[#C8A762]" weight="duotone" />
+            <span className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+              أدوات نظامي — وصول سريع
             </span>
           </div>
-          <Link href="/ai" className={`text-xs font-semibold text-royal hover:underline`}>عرض الكل</Link>
+          <div className="flex items-center gap-3">
+            <Link href="/ai" className="text-xs font-semibold text-royal hover:underline">كل أدوات الذكاء الاصطناعي</Link>
+            <button
+              type="button"
+              onClick={() => setShowQuickToolsCustomizer(true)}
+              disabled={!quickTools}
+              aria-haspopup="dialog"
+              className={`flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-bold transition-colors ${
+                !quickTools
+                  ? isDark ? "border-white/[0.06] text-zinc-600 cursor-not-allowed" : "border-slate-100 text-slate-300 cursor-not-allowed"
+                  : isDark ? "border-white/[0.1] text-zinc-300 hover:bg-white/5 cursor-pointer" : "border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer"
+              }`}
+            >
+              <PencilSimple size={12} /> تخصيص
+            </button>
+          </div>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-          {/* The «محجوب / متاح في الاحترافي ↑» tile that used to replace
-              الصائغ القانوني and محترف العقود here is gone: neither tool has a
-              plan check behind it, so the padlock turned two working tools away
-              from the lawyers who own them — while the header of this same page
-              linked to /ai/draft with no gate at all. See the top of this file. */}
-          {AI_QUICK.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Link key={item.href} href={item.href}
-                className={`group relative flex flex-col items-center gap-2 px-4 py-4 rounded-xl border text-center transition-all hover:scale-[1.02] ${isDark ? "border-white/[0.06] bg-white/[0.02] hover:bg-[#0B3D2E]/15 hover:border-[#C8A762]/20" : "border-slate-100 hover:border-royal/20 hover:bg-royal/[0.02]"}`}
-              >
-                {item.badge && (
-                  <span className={`absolute -top-1.5 -left-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${item.hot ? "bg-royal text-white" : "bg-amber-500/20 text-amber-600 border border-amber-500/30"}`}>
-                    {item.badge}
-                  </span>
-                )}
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${isDark ? "bg-white/[0.04] group-hover:bg-[#0B3D2E]/30" : "bg-royal/5 group-hover:bg-royal/10"}`}>
-                  <Icon size={20} weight="duotone" className="text-royal" />
-                </div>
-                <span className={`text-[13px] font-semibold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>{item.label}</span>
-                <span className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{item.desc}</span>
-              </Link>
-            );
-          })}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+          {!quickTools
+            // Reading the saved choice — neutral placeholders, no tool names.
+            ? [0, 1, 2, 3].map((i) => (
+                <div key={i} aria-hidden="true" className={`h-[112px] rounded-xl animate-pulse ${isDark ? "bg-white/[0.04]" : "bg-slate-100"}`} />
+              ))
+            : quickTools.map((tool) => {
+                const Icon = QUICK_TOOL_ICONS[tool.icon];
+                return (
+                  <Link key={tool.id} href={tool.href}
+                    className={`group relative flex flex-col items-center gap-2 px-4 py-4 rounded-xl border text-center transition-all hover:scale-[1.02] ${isDark ? "border-white/[0.06] bg-white/[0.02] hover:bg-[#0B3D2E]/15 hover:border-[#C8A762]/20" : "border-slate-100 hover:border-royal/20 hover:bg-royal/[0.02]"}`}
+                  >
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${isDark ? "bg-white/[0.04] group-hover:bg-[#0B3D2E]/30" : "bg-royal/5 group-hover:bg-royal/10"}`}>
+                      <Icon size={20} weight="duotone" className={isDark ? "text-[#C8A762]" : "text-royal"} />
+                    </div>
+                    <span className={`text-[13px] font-semibold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>{tool.label}</span>
+                    <span className={`text-[10px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{tool.desc}</span>
+                  </Link>
+                );
+              })}
         </div>
       </div>
 
@@ -1378,6 +1360,25 @@ export default function LawyerDashboardPage() {
           />
         )}
         {showAddTask && <AddTaskModal onClose={() => setShowAddTask(false)} isDark={isDark} />}
+        {showQuickToolsCustomizer && quickToolIds && (
+          <QuickToolsCustomizer
+            key="quick-tools"
+            isDark={isDark}
+            currentIds={quickToolIds}
+            canSave={isSupabaseMode}
+            onClose={() => setShowQuickToolsCustomizer(false)}
+            onSaved={setQuickToolIds}
+          />
+        )}
+        {shareState && (
+          <ShareProfileModal
+            key="share-profile"
+            onClose={closeShareModal}
+            isDark={isDark}
+            state={shareState}
+            lawyerName={name ?? ""}
+          />
+        )}
       </AnimatePresence>
 
     </div>

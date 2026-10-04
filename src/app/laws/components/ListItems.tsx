@@ -1,13 +1,46 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Scales, Gavel, Scroll, CheckCircle, Clock, BookOpen, MagnifyingGlass, ArrowsClockwise
+  Scales, Gavel, Scroll, CheckCircle, BookOpen, MagnifyingGlass, ArrowsClockwise
 } from "@phosphor-icons/react";
 import * as PhosphorIcons from "@phosphor-icons/react";
 import { type DemoPrinciple, type DemoPrecedent, type DemoOrder } from "../demo-data-access";
 import { LEGAL_TAXONOMY } from "@/constants/taxonomies";
+import { SECTION_30 } from "../lawsIndexFacets";
+import { principleYear } from "../principleCardFields";
+import { principleHref } from "../principleLink";
+
+/**
+ * A catalogue principle row. `collectionId` is set by /laws for database rows
+ * (init + search) and makes the card open the principle in its collection;
+ * demo rows have none and stay plain cards.
+ */
+type CataloguePrinciple = DemoPrinciple & { collectionId?: string };
+
+/** «مبدأ رقم (N)» from the row's real number; a tamyeez report keeps «تقرير رقم». */
+function principleIdLabel(p: CataloguePrinciple, isRTL: boolean): string {
+  if (p.sourceId === "tamyeez" && p.reportNum) return `${isRTL ? "تقرير رقم" : "Report No."} (${p.reportNum})`;
+  if (p.principleNum) return `${isRTL ? "مبدأ رقم" : "Principle No."} (${p.principleNum})`;
+  return "";
+}
+
+/**
+ * The whole card is the link (a stretched <Link> under the content), and the
+ * copy button sits above it — a button nested inside an <a> is invalid HTML
+ * and its click would still navigate.
+ */
+function PrincipleCardLink({ href, label }: { href: string; label: string }) {
+  return (
+    <Link
+      href={href}
+      aria-label={label}
+      className="absolute inset-0 z-0 rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#C8A762]"
+    />
+  );
+}
 
 export function highlightText(text: string, q: string, isDark: boolean) {
   if (!text) return "";
@@ -123,23 +156,23 @@ export const ISSUER_MAP: Record<string, { ar: string; en: string }> = {
 };
 
 // ─── PrincipleRow ───────────────────────────────────────────────────────────────
-export function PrincipleRow({ p, isDark, idx, isRTL = true, q = "" }: { p: DemoPrinciple; isDark: boolean; idx: number; isRTL?: boolean; q?: string }) {
+export function PrincipleRow({ p, isDark, idx, isRTL = true, q = "" }: { p: CataloguePrinciple; isDark: boolean; idx: number; isRTL?: boolean; q?: string }) {
   const [copied, setCopied] = useState(false);
 
   // تحديد بادئة المُعرِّف: "مبدأ رقم" أو "تقرير رقم" (للتمييز)
   const isTamyeez  = p.sourceId === "tamyeez";
-  const idLabel    = isTamyeez
-    ? (p.reportNum ? `${isRTL ? "تقرير رقم" : "Report No."} (${p.reportNum})` : "")
-    : (p.principleNum ? `${isRTL ? "مبدأ رقم" : "Principle No."} (${p.principleNum})` : "");
+  const idLabel    = principleIdLabel(p, isRTL);
+  const href       = principleHref(p.collectionId, p.id);
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
       transition={{ delay: idx * 0.04 }}
-      className={`rounded-2xl border p-4 transition-all ${isDark ? "bg-[#161b22] border-[#2d3748] hover:border-[#C8A762]/30" : "bg-white border-gray-200 hover:border-amber-200"}`}
+      className={`relative rounded-2xl border p-4 transition-all ${href ? "cursor-pointer" : ""} ${isDark ? "bg-[#161b22] border-[#2d3748] hover:border-[#C8A762]/30" : "bg-white border-gray-200 hover:border-amber-200"}`}
       dir={isRTL ? "rtl" : "ltr"}
     >
-      <div className="flex items-start gap-3">
+      {href && <PrincipleCardLink href={href} label={idLabel ? `${idLabel} — فتح في مجموعته` : "فتح المبدأ في مجموعته"} />}
+      <div className={`flex items-start gap-3 ${href ? "relative z-[1] pointer-events-none" : ""}`}>
         <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-[#C8A762]/10" : "bg-amber-50"}`}>
           <Scales size={16} className={isDark ? "text-[#C8A762]" : "text-amber-700"} weight="duotone" />
         </div>
@@ -175,8 +208,10 @@ export function PrincipleRow({ p, isDark, idx, isRTL = true, q = "" }: { p: Demo
 
             {/* زر النسخ */}
             <button
-              onClick={() => { navigator.clipboard.writeText(`${p.ref}\n\n"${p.text}"`); setCopied(true); setTimeout(() => setCopied(false), 1600); }}
-              className={`p-1.5 rounded-lg transition flex-shrink-0 ${isDark ? "hover:bg-white/[0.06] text-gray-600" : "hover:bg-slate-100 text-slate-400"}`}
+              type="button"
+              aria-label="نسخ المبدأ"
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigator.clipboard.writeText(`${p.ref}\n\n"${p.text}"`); setCopied(true); setTimeout(() => setCopied(false), 1600); }}
+              className={`pointer-events-auto p-1.5 rounded-lg transition flex-shrink-0 ${isDark ? "hover:bg-white/[0.06] text-gray-600" : "hover:bg-slate-100 text-slate-400"}`}
             >
               {copied ? <CheckCircle size={13} className="text-emerald-500" /> : <PhosphorIcons.Copy size={13} />}
             </button>
@@ -193,7 +228,7 @@ export function PrincipleRow({ p, isDark, idx, isRTL = true, q = "" }: { p: Demo
             {p.page && <span>{isRTL ? "ص" : "p."} {p.page}</span>}
             {p.caseNum && !isTamyeez && <span>{isRTL ? "رقم القرار" : "Decision No."}: {p.caseNum}</span>}
             {isTamyeez && p.caseNum && <span>{isRTL ? "رقم القرار" : "Decision No."}: {p.caseNum}</span>}
-            <span>{p.year}{isRTL ? "هـ" : " AH"}</span>
+            {principleYear(p.year, p.ref) && <span>{principleYear(p.year, p.ref)}{isRTL ? "هـ" : " AH"}</span>}
           </div>
 
         </div>
@@ -509,9 +544,13 @@ export function EmptyState({ type, catId, isDark, isRTL, hasSearch }: {
   isRTL: boolean;
   hasSearch: boolean;
 }) {
-  const catInfo = LEGAL_TAXONOMY.find(c => c.id === catId);
-  const CatIcon = catInfo ? (PhosphorIcons as Record<string, unknown>)[catInfo.iconName || "BookOpen"] as typeof BookOpen : BookOpen;
+  // SA-30 is not in LEGAL_TAXONOMY; resolve it the way the /laws chips do.
+  const catInfo: { label: string; labelEn: string; iconName?: string } | undefined =
+    LEGAL_TAXONOMY.find(c => c.id === catId) ?? (catId === SECTION_30.id ? SECTION_30 : undefined);
+  const CatIcon = catInfo ? ((PhosphorIcons as Record<string, unknown>)[catInfo.iconName || "BookOpen"] as typeof BookOpen || BookOpen) : BookOpen;
 
+  // "coming-soon" is kept as a type for its callers, but it no longer promises
+  // content: a section that holds nothing says so, with its count of 0.
   if (type === "coming-soon") {
     return (
       <motion.div
@@ -521,17 +560,13 @@ export function EmptyState({ type, catId, isDark, isRTL, hasSearch }: {
         <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 ${isDark ? "bg-[#C8A762]/10" : "bg-[#0B3D2E]/5"}`}>
           <CatIcon size={28} className={isDark ? "text-[#C8A762]/70" : "text-[#0B3D2E]/50"} weight="duotone" />
         </div>
-        <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold mb-3 ${isDark ? "bg-amber-900/20 text-amber-400 border border-amber-700/20" : "bg-amber-50 text-amber-700 border border-amber-200"}`}>
-          <Clock size={12} weight="fill" />
-          {isRTL ? "قيد الإعداد" : "In Progress"}
-        </div>
         <p className={`text-base font-black mb-2 ${isDark ? "text-white" : "text-gray-900"}`}>
           {catInfo ? (isRTL ? catInfo.label : catInfo.labelEn) : (isRTL ? "هذا القسم" : "This section")}
         </p>
         <p className={`text-sm max-w-sm mx-auto leading-relaxed ${isDark ? "text-gray-500" : "text-gray-400"}`}>
           {isRTL
-            ? "يُضاف محتوى هذا القسم تباعاً — ستتوفر الأنظمة والمبادئ المرتبطة قريباً."
-            : "Content for this section is being added progressively and will be available soon."}
+            ? "لا توجد عناصر في هذا القسم حالياً (٠)."
+            : "This section has no items (0)."}
         </p>
         {catInfo && (
           <p className={`text-[11px] mt-3 font-semibold ${isDark ? "text-gray-600" : "text-slate-400"}`}>
@@ -560,21 +595,22 @@ export function EmptyState({ type, catId, isDark, isRTL, hasSearch }: {
 }
 
 // ─── PrincipleCard ───────────────────────────────────────────────────────────────
-export function PrincipleCard({ p, isDark, idx, isRTL = true, q = "" }: { p: DemoPrinciple; isDark: boolean; idx: number; isRTL?: boolean; q?: string }) {
+export function PrincipleCard({ p, isDark, idx, isRTL = true, q = "" }: { p: CataloguePrinciple; isDark: boolean; idx: number; isRTL?: boolean; q?: string }) {
   const [copied, setCopied] = useState(false);
-  const isTamyeez  = p.sourceId === "tamyeez";
-  const idLabel    = isTamyeez
-    ? (p.reportNum ? `${isRTL ? "تقرير رقم" : "Report No."} (${p.reportNum})` : "")
-    : (p.principleNum ? `${isRTL ? "مبدأ رقم" : "Principle No."} (${p.principleNum})` : "");
+  const idLabel    = principleIdLabel(p, isRTL);
+  const href       = principleHref(p.collectionId, p.id);
+  // Above the stretched link; clicks fall through to it except on the copy button.
+  const layer      = href ? "relative z-[1] pointer-events-none" : "";
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
       transition={{ delay: idx * 0.04 }}
-      className={`rounded-2xl border p-5 transition-all flex flex-col justify-between min-h-[240px] ${isDark ? "bg-[#161b22] border-[#2d3748] hover:border-[#C8A762]/30" : "bg-white border-gray-200 hover:border-amber-200"}`}
+      className={`relative rounded-2xl border p-5 transition-all flex flex-col justify-between min-h-[240px] ${href ? "cursor-pointer" : ""} ${isDark ? "bg-[#161b22] border-[#2d3748] hover:border-[#C8A762]/30" : "bg-white border-gray-200 hover:border-amber-200"}`}
       dir={isRTL ? "rtl" : "ltr"}
     >
-      <div>
+      {href && <PrincipleCardLink href={href} label={idLabel ? `${idLabel} — فتح في مجموعته` : "فتح المبدأ في مجموعته"} />}
+      <div className={layer}>
         <div className="flex items-center justify-between gap-2 mb-3">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-800"}`}>
@@ -589,8 +625,10 @@ export function PrincipleCard({ p, isDark, idx, isRTL = true, q = "" }: { p: Dem
             )}
           </div>
           <button
-            onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`${p.ref}\n\n"${p.text}"`); setCopied(true); setTimeout(() => setCopied(false), 1600); }}
-            className={`p-1.5 rounded-lg transition flex-shrink-0 ${isDark ? "hover:bg-white/[0.06] text-gray-600" : "hover:bg-slate-100 text-slate-400"}`}
+            type="button"
+            aria-label="نسخ المبدأ"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigator.clipboard.writeText(`${p.ref}\n\n"${p.text}"`); setCopied(true); setTimeout(() => setCopied(false), 1600); }}
+            className={`pointer-events-auto p-1.5 rounded-lg transition flex-shrink-0 ${isDark ? "hover:bg-white/[0.06] text-gray-600" : "hover:bg-slate-100 text-slate-400"}`}
           >
             {copied ? <CheckCircle size={13} className="text-emerald-500" /> : <PhosphorIcons.Copy size={13} />}
           </button>
@@ -601,7 +639,7 @@ export function PrincipleCard({ p, isDark, idx, isRTL = true, q = "" }: { p: Dem
         </p>
       </div>
 
-      <div className="pt-3 border-t border-slate-100 dark:border-white/[0.04]">
+      <div className={`pt-3 border-t border-slate-100 dark:border-white/[0.04] ${layer}`}>
         {idLabel && (
           <div className="mb-2">
             <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
@@ -614,7 +652,7 @@ export function PrincipleCard({ p, isDark, idx, isRTL = true, q = "" }: { p: Dem
         <div className={`flex flex-wrap items-center gap-x-2 text-[9px] font-mono ${isDark ? "text-gray-600" : "text-slate-400"}`}>
           <span>{p.ref}</span>
           {p.page && <span>{isRTL ? "ص" : "p."} {p.page}</span>}
-          <span>{p.year}{isRTL ? "هـ" : " AH"}</span>
+          {principleYear(p.year, p.ref) && <span>{principleYear(p.year, p.ref)}{isRTL ? "هـ" : " AH"}</span>}
         </div>
       </div>
     </motion.div>

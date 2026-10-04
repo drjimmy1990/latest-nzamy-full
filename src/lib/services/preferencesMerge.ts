@@ -23,9 +23,15 @@
  * FIRM_ROLE_VALUES-style runtime copy instead of importing a "use client"
  * module's constant. If PREFERENCE_KEYS ever changes, change it in both
  * places.
+ *
+ * `quickTools` (T28-30) is validated against the registry in
+ * src/lib/lawyerQuickTools.ts — imported relatively below; that module has no
+ * imports of its own, so `node --test` loads it as-is.
  */
 
-export const PREFERENCE_KEYS = ["readingActivity", "recentSessions", "dashboardMode"] as const;
+import { validateQuickToolIds } from "../lawyerQuickTools.ts";
+
+export const PREFERENCE_KEYS = ["readingActivity", "recentSessions", "dashboardMode", "quickTools"] as const;
 
 export interface ReadingActivity {
   lawsThisWeek: number;
@@ -50,6 +56,8 @@ export interface UserPreferences {
   readingActivity?: ReadingActivity;
   recentSessions?: RecentSession[];
   dashboardMode?: "light" | "full";
+  /** lawyer dashboard «وصول سريع» — 3..8 unique ids from LAWYER_QUICK_TOOLS */
+  quickTools?: string[];
 }
 
 const READING_ACTIVITY_NUMBER_KEYS = ["lawsThisWeek", "lawsThisMonth", "articles", "principles", "feqhPages"] as const;
@@ -174,6 +182,12 @@ export function validatePreferencesPatch(body: unknown): PreferencesValidation {
     patch.dashboardMode = dashboardMode;
   }
 
+  if ("quickTools" in body) {
+    const result = validateQuickToolIds(body.quickTools);
+    if (!Array.isArray(result)) return { ok: false, error: result.error };
+    patch.quickTools = result;
+  }
+
   return { ok: true, patch };
 }
 
@@ -187,4 +201,45 @@ export function mergePreferences(
   patch: Partial<UserPreferences>,
 ): Record<string, unknown> {
   return { ...(existing ?? {}), ...patch };
+}
+
+export type PutPreferencesMerge =
+  | { ok: true; merged: Record<string, unknown> }
+  | { ok: false; error: string };
+
+/**
+ * The `preferences` a PUT /api/v1/settings stores (src/app/api/v1/settings/
+ * route.ts). That PUT used to write the body's object over the whole jsonb
+ * column, so a tab that loaded the row, sat open, and saved later wiped every
+ * key written elsewhere in between — e.g. `quickTools` saved from the lawyer
+ * dashboard vanished on the next «حفظ» in the notifications tab.
+ *
+ * Now:
+ *   • the incoming object is shallow-merged over the stored one — a key the
+ *     body does not mention is left as it is;
+ *   • the PATCH-owned keys (PREFERENCE_KEYS) are DROPPED from the incoming
+ *     object. They have one writer — PATCH /api/v1/settings/preferences, which
+ *     validates them — and a PUT that carries them is only ever echoing back
+ *     what it read earlier (every PUT caller builds on the object it loaded),
+ *     so honouring them would let a stale echo revert a newer value. It also
+ *     keeps unvalidated `quickTools`/`readingActivity` out of the column.
+ *
+ * No PUT caller relies on deleting a key (NotificationsTab and the onboarding
+ * wizard both carry every key through; SecurityTab and PrivacyTab send no
+ * `preferences` at all), so losing "replace" semantics removes nothing.
+ */
+export function mergePutPreferences(
+  existing: Record<string, unknown> | null | undefined,
+  incoming: unknown,
+): PutPreferencesMerge {
+  if (!isPlainObject(incoming)) {
+    return { ok: false, error: "التفضيلات يجب أن تكون كائناً صالحاً." };
+  }
+  const patchOwned = new Set<string>(PREFERENCE_KEYS);
+  const rest: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(incoming)) {
+    if (!patchOwned.has(key)) rest[key] = value;
+  }
+  const base = isPlainObject(existing) ? existing : {};
+  return { ok: true, merged: { ...base, ...rest } };
 }

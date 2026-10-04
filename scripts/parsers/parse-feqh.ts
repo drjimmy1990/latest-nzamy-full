@@ -26,7 +26,7 @@ import * as path from "path";
 import { slugifyArabic as sharedSlugify } from "./lib/slug";
 import { parseFrontmatter } from "./lib/frontmatter";
 import { applyExclusions, formatExclusionSummary } from "./lib/exclusions";
-import { writeParseReport, printCapped } from "./lib/report";
+import { writeParseReport, printCapped, bindParseReportToOutput } from "./lib/report";
 import { parseLocator } from "./lib/feqh-locator";
 import { filterMeta } from "./manifest";
 
@@ -730,5 +730,6 @@ if (require.main === module) {
   fs.mkdirSync(path.resolve(outputDir), { recursive: true });
   const outFile = path.join(path.resolve(outputDir), "feqh.json");
   fs.writeFileSync(outFile, JSON.stringify(result, null, 2), "utf-8");
+  bindParseReportToOutput(outputDir, "feqh", outFile);
   console.log(`📁 Output written to: ${outFile}`);
 }

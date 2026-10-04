@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (authError || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   // B4 — referrals columns are referrer_id, referee_id, commission_amount, and
   // status in ('pending','contacted','converted','expired','cancelled'). The

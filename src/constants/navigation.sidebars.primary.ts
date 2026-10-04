@@ -99,30 +99,6 @@ export const INDIVIDUAL_SIDEBAR: SidebarGroup[] = [
     ],
   },
 
-  // ④ Celebrity Layer — يظهر فقط للمشاهير المُرقّين
-  {
-    title: "سفير نظامي ⭐", titleEn: "Nzamy Ambassador",
-    collapsible: true,
-    defaultOpen: true,
-    gateKey: "celebrity",
-    items: [
-      // ── قريباً, because the PAGE says قريباً ──────────────────────────────
-      // Six nav rows pointed at a page rendering DashboardComingSoon while
-      // promising something else in the badge slot. Two were actively wrong
-      // rather than merely silent:
-      //
-      //   «ربعي»            badged «نشط»  — ACTIVE, over a coming-soon page
-      //   «لوحة الإحصائيات» badged «جديد» — NEW, over a coming-soon page
-      //
-      // …and four carried no badge at all, so the nav read as a working feature
-      // until you clicked it. The matrix already ordered exactly this for two
-      // other unfinished pages (rows 126 and 134); these are the ones that fix
-      // did not reach. A nav entry is a promise about the page under it.
-      { label: "لوحة الإحصائيات",  labelEn: "Analytics",     href: "/dashboard/client/celebrity/status",    icon: "ChartLine", badge: "قريباً" },
-      { label: "إحالاتي وعمولاتي", labelEn: "Referrals",     href: "/dashboard/client/celebrity/referrals", icon: "Gift", badge: "قريباً" },
-      { label: "رمز الإحالة",       labelEn: "Referral Code", href: "/dashboard/client/celebrity/code",      icon: "QrCode", badge: "قريباً" },
-    ],
-  },
 
   // ⑤ الذيل — محفظة + مجتمع + إعدادات
   {
@@ -221,16 +197,7 @@ export const ADMIN_SIDEBAR: SidebarGroup[] = [
       { label: "مركز التقارير",        labelEn: "Reports Center",  href: "/dashboard/admin/reports",                icon: "ChartBar",               badge: "جديد" },
     ],
   },
-  {
-    title: "سفراء نظامي", titleEn: "Ambassadors",
-    collapsible: true,
-    defaultOpen: false,
-    items: [
-      { label: "كل السفراء",        labelEn: "All Ambassadors",  href: "/dashboard/admin/celebrities",             icon: "Star" },
-      { label: "ترقية مستخدم",      labelEn: "Upgrade User",     href: "/dashboard/admin/celebrities/upgrade",     icon: "UserCirclePlus", badge: "جديد" },
-      { label: "تقرير الإحالات",    labelEn: "Referrals Report", href: "/dashboard/admin/celebrities/referrals",   icon: "ChartBar" },
-    ],
-  },
+
   {
     title: "المحتوى", titleEn: "Content",
     items: [

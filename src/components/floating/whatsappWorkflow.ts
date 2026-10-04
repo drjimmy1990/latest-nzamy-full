@@ -20,7 +20,10 @@ import {
   type WhatsAppOutcome,
 } from "@/lib/services/whatsappRequestMessage";
 
-export const NZAMY_WHATSAPP_NUMBER = "966560655552";
+/** The only approved platform contact channel. Keep this value in sync with
+ * NEXT_PUBLIC_NZAMY_WHATSAPP_NUMBER; no phone/tel CTA is supported. */
+export const NZAMY_WHATSAPP_NUMBER =
+  process.env.NEXT_PUBLIC_NZAMY_WHATSAPP_NUMBER ?? "966560655552";
 
 /**
  * WHAT CHANGED HERE, AND WHY

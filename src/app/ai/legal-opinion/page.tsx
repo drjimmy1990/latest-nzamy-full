@@ -496,7 +496,7 @@ export default function AILegalOpinionPage() {
               <textarea
                 value={question}
                 onChange={e => setQuestion(e.target.value)}
-                placeholder="اسأل المستشار ماكس باختصار هنا..."
+                placeholder="اسأل المستشار القانوني باختصار هنا..."
                 className={`w-full bg-transparent resize-none outline-none text-[13px] h-12 py-1 ${
                   isDark ? "text-white placeholder:text-zinc-600" : "text-slate-800 placeholder:text-slate-400"
                 }`}

@@ -52,11 +52,16 @@ export interface RouteAccessRule {
  *                    consultations, so withholding it would leave a company
  *                    able to order documents but not to speak to anyone
  */
-const CLIENT_INTAKE_PREFIXES = [
+export const CLIENT_INTAKE_PREFIXES = [
   "/dashboard/client/services",
   "/dashboard/client/requests",
   "/dashboard/client/consultation",
 ] as const;
+
+/** True only for the client-prefixed forms that are deliberately shared by companies. */
+export function isSharedClientIntakePath(pathname: string): boolean {
+  return CLIENT_INTAKE_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
 
 export const ROUTE_ACCESS: readonly RouteAccessRule[] = [
   { prefix: "/dashboard/lawyer", allowedTypes: ["lawyer"] },

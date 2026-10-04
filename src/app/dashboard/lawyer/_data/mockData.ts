@@ -1,8 +1,7 @@
 import {
   Scales, Money, Gavel, Briefcase,
-  Robot, PencilSimple, ChartLine, Sword,
+  Robot,
   MagnifyingGlass, Warning, Bell, Lightning, CheckCircle,
-  FileText, Headset, Compass,
 } from "@phosphor-icons/react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -49,15 +48,6 @@ export interface ActivityItem {
   category: "ai" | "manual" | "system";
 }
 
-export interface AiQuickItem {
-  href: string;
-  label: string;
-  icon: React.ElementType;
-  desc: string;
-  badge?: string;   // e.g. "الأكثر استخداماً"
-  hot?: boolean;
-}
-
 export interface Deadline {
   label: string;
   date: string;
@@ -89,7 +79,7 @@ export const RECENT_CASES: RecentCase[] = [
 ];
 
 export const ACTIVITY_TIMELINE: ActivityItem[] = [
-  { id: 1, time: "منذ ١٠ دقائق", action: "المستشار ماكس: تحليل القضية وتحضير استراتيجية الدفوع",   type: "ai",      caseRef: "قضية عمالية ٤٥٦٧",    category: "ai" },
+  { id: 1, time: "منذ ١٠ دقائق", action: "المستشار القانوني: تحليل القضية وتحضير استراتيجية الدفوع",   type: "ai",      caseRef: "قضية عمالية ٤٥٦٧",    category: "ai" },
   { id: 2, time: "منذ ٤٥ دقيقة", action: "تم استلام مذكرة رد من الخصم عبر منصة ناجز",              type: "warning", caseRef: "نزاع تجاري — الأفق",  category: "manual" },
   { id: 3, time: "منذ ساعة",      action: "محترف العقود: صياغة عقد شراكة مع إضافات حماية الملكية", type: "ai",      caseRef: "عقد شراكة — النور",   category: "ai" },
   { id: 4, time: "منذ ٣ ساعات",   action: "حُدِّد موعد جلسة جديد (عن بعد)",                        type: "info",    caseRef: "استئناف العقار ٢١٣",  category: "system" },
@@ -99,14 +89,11 @@ export const ACTIVITY_TIMELINE: ActivityItem[] = [
   { id: 8, time: "منذ ٣ أيام",    action: "تذكير: اقتراب موعد الطعن ورفع المستندات",                type: "urgent",  caseRef: "استئناف حكم تعويض",  category: "system" },
 ];
 
-export const AI_QUICK: AiQuickItem[] = [
-  { href: "/ai/draft",               label: "الصائغ القانوني",   icon: PencilSimple, desc: "مذكرات + لوائح",          badge: "الأكثر استخداماً", hot: true },
-  { href: "/ai/contracts",           label: "محترف العقود",      icon: FileText,     desc: "صياغة + مراجعة العقود" },
-  { href: "/ai/direction-support",   label: "داعم الاتجاه",      icon: Compass,      desc: "نصوص نظامية داعمة",      badge: "جديد" },
-  { href: "/ai/wargaming",           label: "محاكي الخصم",       icon: Sword,        desc: "محاكاة المرافعة" },
-  { href: "/ai/analyze-strength",   label: "محلل قوة الموقف",  icon: ChartLine,    desc: "تحليل فرص النجاح" },
-  { href: "/ai/secretary",           label: "السكرتير الذكي",    icon: Headset,      desc: "تقارير + جدول يومي" },
-];
+// `AI_QUICK` — REMOVED (T28-30). The dashboard's quick-access grid now renders
+// the lawyer's own saved tools from LAWYER_QUICK_TOOLS in
+// src/lib/lawyerQuickTools.ts, which lists only real pages — this constant
+// carried a «قريباً» tile (/ai/direction-support) and one over a page built on
+// literals (/ai/secretary). It had no other importer.
 
 export const UPCOMING_DEADLINES: Deadline[] = [
   { label: "موعد الطعن بالاستئناف", date: "٨ أبريل",  daysLeft: 2, severity: "urgent" },

@@ -120,7 +120,7 @@ export default function ContractDrafterPage() {
   const steps = mode === "review" ? REVIEW_STEPS : DRAFT_STEPS;
 
   return (
-    <div className={`min-h-screen transition-colors duration-300 ${isDark ? "bg-[#111418] text-white" : "bg-zinc-50/50 text-zinc-900"}`} dir={isRTL ? "rtl" : "ltr"}>
+    <div className={`min-h-[100dvh] transition-colors duration-300 ${isDark ? "bg-[#111418] text-white" : "bg-zinc-50/50 text-zinc-900"}`} dir={isRTL ? "rtl" : "ltr"}>
       <Navbar />
 
       {/* ── Hero ──────────────────────────────────────────────────────────── */}

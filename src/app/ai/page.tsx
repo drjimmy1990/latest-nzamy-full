@@ -24,6 +24,8 @@ import {
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
+import { formatLibraryCount } from "@/lib/library/libraryStats";
+import { useLibraryStats } from "@/lib/library/useLibraryStats";
 import Link from "next/link";
 import { useUser, UserPermission } from "@/hooks/useUser";
 import { LAWYER_AI_TOOLS, getLawyerAiBadge, type LawyerAiTool } from "@/constants/lawyerAiCatalog";
@@ -68,11 +70,13 @@ const chatDemo = [
 
 const techPillars = [
   { icon: Brain, titleAr: "النماذج اللغوية المتقدمة", titleEn: "Advanced Language Models", descAr: "نماذج AI مدرّبة خصيصاً على النصوص القانونية السعودية والعربية لتحقيق أعلى دقة ممكنة.", descEn: "AI models specifically trained on Saudi and Arabic legal texts for maximum accuracy." },
-  // «أكثر من ٥٠٠٠ نظام … محدّث بشكل دوري وآني» كان خطأً في شقّيه: العدد الحقيقي
-  // ٣٨٦ نظاماً ولائحة (انظر التعليق في src/components/LegalLibraryBanner.tsx)،
-  // ولا شيء يراقب صدور التشريعات — المكتبة تُحمَّل ببرنامج تعبئة.
-  // الأرقام أدناه أرضياتٌ محسوبة من جداول library، فلا تستبدلها بتقدير.
-  { icon: Database, titleAr: "قاعدة الأنظمة السعودية", titleEn: "Saudi Law Database", descAr: "٣٨٦ نظاماً ولائحة و١٣٬٠٠٠+ مادة و١٧٬٠٠٠+ مبدأ قضائي، بحثٌ بالنص الكامل فيها جميعاً.", descEn: "386 Saudi laws and regulations, 13,000+ articles and 17,000+ judicial principles, all full-text searchable." },
+  // «أكثر من ٥٠٠٠ نظام … محدّث بشكل دوري وآني» كان خطأً في شقّيه وقتها (كانت
+  // المكتبة ٣٨٦ وثيقة)، ولا شيء يراقب صدور التشريعات — المكتبة تُحمَّل ببرنامج
+  // تعبئة. لا رقم مكتوباً هنا (٢٠٢٦-٠٩-٢٥): الشيفرة نفسها تعمل على قاعدة السحابة
+  // وعلى الخادم الذاتي، فالأعداد تُقرأ حيّةً من GET /api/library/stats وتُعرض
+  // أرضياتٍ (withLibraryCounts أدناه)، والنص أدناه بلا أرقام يظهر أثناء التحميل
+  // وعند الفشل. لا تستبدله بتقدير.
+  { icon: Database, titleAr: "قاعدة الأنظمة السعودية", titleEn: "Saudi Law Database", descAr: "الأنظمة واللوائح ومَوادّها والمبادئ القضائية، بحثٌ بالنص الكامل فيها جميعاً.", descEn: "Saudi laws, regulations, their articles and judicial principles, all full-text searchable.", withLibraryCounts: true },
   { icon: UserCheck, titleAr: "مراجعة المحامين المرخّصين", titleEn: "Licensed Lawyer Review", descAr: "كل مخرجات AI تمر بمرحلة تحقق إضافية من محامين سعوديين مرخّصين لضمان الدقة والموثوقية.", descEn: "All AI outputs pass through an additional verification stage by licensed Saudi lawyers to ensure accuracy and reliability." },
 ];
 
@@ -118,6 +122,17 @@ export function AiLandingPage() {
   const currentQuery = isRTL ? typingQueries[queryIndex].ar : typingQueries[queryIndex].en;
   const typedText = useTypingEffect(currentQuery, 35);
 
+  // Live library floors for the Database pillar; number-free text until then.
+  const library = useLibraryStats();
+  const libLaws = library.status === "ready" ? formatLibraryCount(library.stats.laws, isRTL ? "ar" : "en") : null;
+  const libArticles = library.status === "ready" ? formatLibraryCount(library.stats.articles, isRTL ? "ar" : "en") : null;
+  const libPrinciples = library.status === "ready" ? formatLibraryCount(library.stats.principles, isRTL ? "ar" : "en") : null;
+  const libraryPillarDesc = libLaws && libArticles && libPrinciples
+    ? (isRTL
+        ? `${libLaws} وثيقة نظامية و${libArticles} مادة و${libPrinciples} مبدأ قضائي، بحثٌ بالنص الكامل فيها جميعاً.`
+        : `${libLaws} legal instruments, ${libArticles} articles and ${libPrinciples} judicial principles, all full-text searchable.`)
+    : null;
+
   // Cycle query every 4s after typing finishes
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -127,7 +142,7 @@ export function AiLandingPage() {
   }, [queryIndex]);
 
   return (
-    <div className={`min-h-screen ${isDark ? "bg-dark-bg" : "bg-slate-50"}`} dir={isRTL ? "rtl" : "ltr"}>
+    <div className={`min-h-[100dvh] ${isDark ? "bg-dark-bg" : "bg-slate-50"}`} dir={isRTL ? "rtl" : "ltr"}>
       <Navbar />
 
       {/* ── 1. Hero ──────────────────────────────────────────────────────────── */}
@@ -413,7 +428,7 @@ export function AiLandingPage() {
                     {isRTL ? pillar.titleAr : pillar.titleEn}
                   </h3>
                   <p className={`text-sm leading-relaxed ${isDark ? "text-gray-400" : "text-slate-500"}`}>
-                    {isRTL ? pillar.descAr : pillar.descEn}
+                    {(pillar.withLibraryCounts && libraryPillarDesc) || (isRTL ? pillar.descAr : pillar.descEn)}
                   </p>
                 </motion.div>
               );
@@ -542,26 +557,29 @@ const LEGACY_AI_TOOLS: AiToolCard[] = [
   { id: "ai:consult", href: "/ai/consult", titleAr: "المستشار الذكي", titleEn: "AI Advisor", icon: ChatCircleDots, descAr: "إجابات فورية لاستفساراتك القانونية", descEn: "Instant answers to your questions" },
   { id: "ai:analyze", href: "/ai/analyze", titleAr: "فاحص المستندات والقضايا", titleEn: "Case & Doc Analyzer", icon: MagnifyingGlass, descAr: "تقييم قضيتك أو فحص وثيقتك مع توصية فورية", descEn: "Evaluate your case or check your document with instant recommendation" },
   { id: "ai:legal-opinion", href: "/ai/legal-opinion", titleAr: "الرأي الفصل", titleEn: "Al-Ra'y Al-Fasl", icon: Brain, descAr: "رأي · دراسة · بحث قانوني · عناية واجبة — متعدد الوكلاء", descEn: "Opinion · Study · Research · Due Diligence — Multi-Agent", badge: "PRO" },
-  { id: "ai:brief-check", href: "/ai/brief-check", titleAr: "فاحص المذكرات", titleEn: "Brief Auditor", icon: FileMagnifyingGlass, descAr: "يكشف المواد الملغاة والسوابق الناقصة والثغرات المنطقية في مذكرتك", descEn: "Detects repealed articles, missing precedents & logical gaps in your brief" },
+  { id: "ai:brief-check", href: "/ai/brief-check", titleAr: "مراجعة وتدقيق مذكرة", titleEn: "Brief Review", icon: FileMagnifyingGlass, descAr: "ارفع مذكرتك ويراجعها فريق نظامي: تقرير بالثغرات أو تنقيح كامل", descEn: "Upload your brief for review by the Nezamy team: a gaps report or a full revision" },
   { id: "ai:procedures", href: "/ai/procedures", titleAr: "المرشد القضائي", titleEn: "Court Guide", icon: UserCheck, descAr: "توجيهك للإجراءات الصحيحة أمام المحاكم", descEn: "Guide to court procedures" },
   { id: "ai:communicate", href: "/ai/communicate", titleAr: "المتحدث الذكي", titleEn: "Smart Communicator", icon: Envelope, descAr: "AI يكتب رسائلك وإيميلاتك بالأسلوب المناسب", descEn: "AI writes your messages and emails in the right tone" },
   { id: "ai:assistant", href: "/ai/assistant", titleAr: "المساعد المتقدم", titleEn: "Advanced Assistant", icon: Robot, descAr: "مساعد قانوني شخصي دائم عبر محادثة ذكية مطولة", descEn: "Persistent personal legal assistant through smart chat" },
   // Corporate specific
   { id: "ai:corp:compliance", href: "/ai/corp/compliance", titleAr: "مراقب الامتثال", titleEn: "Compliance", icon: Database, descAr: "فحص وتأكيد مراعاة الشركة للأنظمة", descEn: "Check company regulatory compliance" },
   { id: "ai:tracker", href: "/ai/tracker", titleAr: "المُعقّب الذكي", titleEn: "AI Agent", icon: Sparkle, descAr: "وكيل AI لمتابعة المعاملات آلياً", descEn: "Agent to follow up on transactions", badge: "جديد" },
-  { id: "ai:monitor", href: "/ai/monitor", titleAr: "راصد التشريعات", titleEn: "Law Monitor", icon: Database, descAr: "تنبيهات فورية بأي تعديلات في الأنظمة", descEn: "Instant law change alerts" }
+  { id: "ai:monitor", href: "/ai/monitor", titleAr: "راصد التشريعات", titleEn: "Law Monitor", icon: Database, descAr: "الأنظمة قيد النفاذ والنافذة حديثاً وأحدث الإصدارات من المكتبة", descEn: "Upcoming, newly in-force and latest laws from the library" }
 ];
 
+// Renamed by the owner (Q154): «القضاء والتشريع المقارن». The page renders
+// DashboardComingSoon in both its tabs, so the card says «قريباً» and promises
+// nothing live — it used to read «بحث حي» over a timer-driven mock.
 const GLOBAL_RESEARCH_CARD: AiToolCard = {
-  id: null, // متاح لكل المستخدمين المسجّلين (بحث حي دولي)
+  id: null,
   href: "/ai/global",
-  titleAr: "نظامي عالمي",
-  titleEn: "Nezamy Global",
+  titleAr: "القضاء والتشريع المقارن",
+  titleEn: "Comparative Law",
   icon: Globe,
-  descAr: "اسأل عن قانون أي دولة — بحث حي في المصادر الرسمية + مصادر موثّقة + مقياس ثقة + تحويل لمحامٍ محلي",
-  descEn: "Ask about any country's law — live research, cited sources, confidence score & local lawyer referral",
-  badgeAr: "بحث حي",
-  badgeEn: "Live",
+  descAr: "السوابق القضائية الدولية والتشريعات المقارنة — قيد الإعداد والربط الدولي",
+  descEn: "International precedents and comparative legislation — in preparation",
+  badgeAr: "قريباً",
+  badgeEn: "Soon",
 };
 
 const AI_TOOLS: AiToolCard[] = [
@@ -603,16 +621,15 @@ function AiHubDashboard() {
       if (user.country === "SA" && (user.userType === "lawyer" || user.userType === "firm")) return true;
       return false;
     }
-    if (t.href === "/ai/consult") {
-      if (user.country && user.country !== "SA" && user.userType === "individual") return false;
-      return true;
-    }
+    // /ai/consult is open to everyone again, non-Saudi individuals included
+    // (owner Q172 default, 2026-10-04): /ai/global is coming-soon, not a substitute.
+    if (t.href === "/ai/consult") return true;
     if (!t.id) return true;
     return user.permissions.includes(t.id as UserPermission);
   });
 
   return (
-    <div className={`p-6 md:p-10 max-w-[1200px] mx-auto min-h-screen`} dir={isRTL ? "rtl" : "ltr"}>
+    <div className={`p-6 md:p-10 max-w-[1200px] mx-auto min-h-[100dvh]`} dir={isRTL ? "rtl" : "ltr"}>
       <div className="mb-10 text-center">
         <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="mx-auto w-16 h-16 bg-[#C8A762]/10 text-[#C8A762] rounded-2xl flex items-center justify-center mb-4">
           <Brain size={32} weight="fill" />

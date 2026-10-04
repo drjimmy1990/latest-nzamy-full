@@ -12,6 +12,8 @@
  * Markers handled:
  *   <!-- ARTICLE_START {JSON} -->  …  <!-- ARTICLE_END -->
  *   <!-- CHAPTER_START {JSON} -->  …  <!-- CHAPTER_END -->
+ *       optional "level": 1|2 (absent → 1); markers stay flat, a level-2
+ *       chapter follows its level-1 heading (see resolveChapterParents)
  *   <!-- REGULATION {JSON} -->
  *   <!-- AMENDMENT  {JSON} -->
  *
@@ -23,6 +25,8 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { resolveCorpusScope, assertCorpusScopeContract, type CorpusScopeDecision } from "./corpus-scope";
+const corpusScopeDecisions: CorpusScopeDecision[] = [];
 import {
   normalizeType,
   normalizeStatus,
@@ -31,13 +35,14 @@ import {
   filterMeta,
   assertManifestLoadable,
   getRejectedEnumValues,
+  clearRejectedEnumValues,
 } from "./manifest";
 import { parseFrontmatter } from "./lib/frontmatter";
 import { slugifyArabic as sharedSlugify, findSlugCollisions } from "./lib/slug";
 import { applyExclusions, formatExclusionSummary } from "./lib/exclusions";
 import { buildEntityIndexFromCategoryInput, resolveCrossDomain } from "./lib/entity-prescan";
 import { extractArticleHistory, stripDetails, stripArticleHeading, unwrapLiveAnnexes } from "./lib/article-history";
-import { writeParseReport, printCapped } from "./lib/report";
+import { writeParseReport, printCapped, bindParseReportToOutput } from "./lib/report";
 
 /** Collected across a whole run so YAML problems are reported, never swallowed. */
 const frontmatterWarnings: string[] = [];
@@ -151,6 +156,22 @@ const syntheticWholeDocumentArticles: string[] = [];
  * Codex). Collected and gates the exit code like the other invariants.
  */
 const malformedAnchorFiles: string[] = [];
+/**
+ * Two-level chapters (2026-10-04): a CHAPTER_START whose `level` is not 1/2
+ * (clamped or ignored), and a level-2 chapter with no level-1 chapter before it
+ * in the same part of the file (kept, with no parent — never guessed).
+ * Informational: recorded in the report, does NOT gate the exit code (a markup
+ * slip in one heading must not block the whole library).
+ */
+const chapterLevelDiagnostics: string[] = [];
+/**
+ * `text_availability: official_text_unpublished` documents: the ones whose
+ * notice was kept as `description` instead of a synthetic «الصفحة 1» article,
+ * and the ones whose flag disagrees with what the file holds (anchors present,
+ * or a positive total_articles) — those are parsed exactly as before.
+ * Informational, never gating.
+ */
+const unpublishedTextNotices: string[] = [];
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -165,11 +186,33 @@ export type ArticleStatus =
   | "repealed"
   | "suspended"
   | "added"
-  | "merged";
+  | "merged"
+  // The source may explicitly say nothing about an article's lifecycle. This
+  // is a declared absence, not evidence that the article is active.
+  | "status_undeclared";
+
+/** Internal parse provenance used only to preserve storage identity on reseed. */
+export type ArticleStatusProvenance = "explicit" | "missing" | "synthetic_parent_legacy";
 
 const KNOWN_ARTICLE_STATUSES: readonly string[] = [
-  "active", "amended", "repealed", "suspended", "added", "merged",
+  "active", "amended", "repealed", "suspended", "added", "merged", "status_undeclared",
 ];
+
+/**
+ * Article lifecycle is independent from the parent law's lifecycle. Missing
+ * or blank article evidence is an explicit unknown, never evidence of active
+ * status; a nonblank token outside the documented contract still fails closed.
+ */
+export function resolveArticleStatus(rawValue: unknown): ArticleStatus {
+  const rawStatus = rawValue == null ? "" : String(rawValue).trim();
+  if (rawStatus === "") return "status_undeclared";
+  if (!KNOWN_ARTICLE_STATUSES.includes(rawStatus)) {
+    throw new Error(
+      `unknown article status "${rawStatus}". Known: ${KNOWN_ARTICLE_STATUSES.join(", ")}`,
+    );
+  }
+  return rawStatus as ArticleStatus;
+}
 
 export interface AmendmentEntry {
   date: string;
@@ -199,10 +242,16 @@ export interface ExecutiveRegulation {
 }
 
 export interface ParsedArticle {
+  /** Absolute UTF-16 marker offset in the parsed body; used only for ordering. */
+  source_index?: number;
   number: number;
   number_text: string;
   title: string;
   status: ArticleStatus;
+  /** Never seeded as a DB column: distinguishes a real sentinel from absence. */
+  status_provenance: ArticleStatusProvenance;
+  /** The lifecycle token used by pre-57 identity construction, not display state. */
+  status_legacy_identity: ArticleStatus;
   text: string;
   /**
    * The article's superseded wording, recovered from its `<details>` block.
@@ -249,13 +298,37 @@ export interface ParsedArticle {
   instrument?: string;
 }
 
+/** Heading depth of a chapter: 1 = «الباب»/«الفصل», 2 = «الفصل»/«الفرع» under it. */
+export type ChapterLevel = 1 | 2;
+
 export interface ParsedChapter {
+  /** Absolute UTF-16 chapter-marker offset in the parsed body; used only for ordering. */
+  source_index?: number;
   number: number;
   title: string;
+  /**
+   * Read from the CHAPTER_START marker's own `"level"` (owner-approved
+   * 2026-10-04, «الفصول بمستويين معتمد»). Absent → 1, so every file written
+   * before the library adds the field parses exactly as before plus `level: 1`.
+   * Markers stay FLAT in the source: a level-2 chapter is a sibling marker that
+   * follows its level-1 heading, never nested inside it.
+   */
+  level: ChapterLevel;
+  /**
+   * source_index of the level-1 chapter this level-2 chapter sits under: the
+   * last level-1 chapter before it in the same part of the file (main text, or
+   * one ATTACHED_REGULATION block). Absent for level 1, and absent for a
+   * level-2 chapter with no such heading — reported, never guessed. The key is
+   * only ever set when there is a parent (an explicit `undefined` would make
+   * the parse output differ from a file without levels).
+   */
+  parent_source_index?: number;
   articles: ParsedArticle[];
 }
 
 export interface ParsedLaw {
+  corpus_scope: "public_corpus";
+  corpus_scope_provenance: CorpusScopeDecision;
   id: string;
   slug: string;
   title: string;
@@ -273,6 +346,12 @@ export interface ParsedLaw {
   preamble: string;
   regulation_preamble: string;
   law_status: string;
+  /**
+   * Canonical source/registry status before mapping to the narrower DB CHECK.
+   * Internal only: archival states may be valid source metadata but must never
+   * reach `library.laws.status` as seedable rows.
+   */
+  sourceStatus: string;
   source: string;
   boe_url: string;
   // New (manifest v1.2) fields — emitted via alias resolution below.
@@ -298,6 +377,11 @@ export interface ParsedLaw {
   /** Structured per-status article counts, e.g. {"active":40,"repealed":3}. DB column is jsonb. */
   article_status_summary: Record<string, unknown> | null;
   law_guid: string;
+  /** Stable library-registry identity. Distinct from the official BOE law_guid. */
+  instrument_id: string;
+  parent_law_id: string;
+  parent_law: string;
+  enabling_article: string;
   variant: "boe" | "qadha";
   chapters: ParsedChapter[];
   metadata: Record<string, unknown>;
@@ -331,6 +415,15 @@ export interface ParsedLaw {
    */
   needsHumanReview: boolean;
   reviewReason: string;
+  /**
+   * Set only for a document whose frontmatter says
+   * `text_availability: official_text_unpublished` and that carries no
+   * ARTICLE_START at all: its body is a notice («لم يُنشر النص الرسمي…»), not
+   * an article, so it is kept here instead of being wrapped as «الصفحة 1».
+   * seed-library.ts already writes `law.description` to library.laws.description
+   * (an existing column), so no schema change is involved.
+   */
+  description?: string;
 }
 
 export interface LawsParserOutput {
@@ -339,6 +432,7 @@ export interface LawsParserOutput {
   total_files: number;
   total_articles: number;
   laws: ParsedLaw[];
+  corpus_scope_decisions: CorpusScopeDecision[];
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -449,13 +543,140 @@ function extractPreamble(body: string): string {
   return body.slice(0, firstMarker).trim();
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Two-level chapters (owner-approved 2026-10-04)
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * The `level` of a CHAPTER_START marker. Absent/null/"" → 1 (every file written
+ * before the field existed). A number or numeric string is truncated and
+ * clamped to 1..2; anything else (text, boolean, object) is ignored → 1. A
+ * value that had to be clamped or ignored comes back with `problem` set so the
+ * caller can report it.
+ */
+export function resolveChapterLevel(raw: unknown): { level: ChapterLevel; problem?: string } {
+  if (raw === undefined || raw === null || (typeof raw === "string" && raw.trim() === "")) {
+    return { level: 1 };
+  }
+  const n = typeof raw === "number"
+    ? raw
+    : typeof raw === "string" && /^\s*[0-9٠-٩]+(\.[0-9]+)?\s*$/.test(raw)
+      ? Number(normalizeDigits(raw.trim()))
+      : NaN;
+  if (!Number.isFinite(n)) {
+    return { level: 1, problem: `level ${JSON.stringify(raw)} is not a number — read as 1` };
+  }
+  const whole = Math.trunc(n);
+  if (whole <= 1) {
+    return whole === 1 && n === 1 ? { level: 1 } : { level: 1, problem: `level ${JSON.stringify(raw)} clamped to 1` };
+  }
+  if (whole >= 2) {
+    return whole === 2 && n === 2 ? { level: 2 } : { level: 2, problem: `level ${JSON.stringify(raw)} clamped to 2` };
+  }
+  return { level: 1 };
+}
+
+/**
+ * Offsets of the part boundaries inside a law file: every
+ * `<!-- ATTACHED_REGULATION {…} -->` and `<!-- ATTACHED_REGULATION_END -->`.
+ *
+ * Measured on the owner corpus (2026-10-04): there is no REGULATION_START or
+ * PART marker anywhere. A regulation that carries its own chapter series is
+ * wrapped in ATTACHED_REGULATION … ATTACHED_REGULATION_END (36 blocks; e.g.
+ * نظام القضاء holds «لائحة التفتيش القضائي» and «اللائحة المنظمة لأعمال أعوان
+ * القضاء», each with its own «الباب الأول/الفصل الأول» series). The inline
+ * `<!-- REGULATION {…} -->` … `<!-- REGULATION_END -->` pairs only wrap
+ * regulation text inside an article and never contain chapters, so they are
+ * not boundaries.
+ */
+export function findChapterPartBoundaries(body: string): number[] {
+  const offsets: number[] = [];
+  // `\b` after REGULATION does not match before `_END` (`_` is a word char),
+  // so the first alternative is the opening marker only.
+  const re = /<!--\s*ATTACHED_REGULATION(?:\b|_END\b)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body)) !== null) offsets.push(m.index);
+  return offsets;
+}
+
+/**
+ * The level-1 parent of every level-2 chapter, by source position.
+ *
+ * A level-2 chapter's parent is the last level-1 chapter before it in the SAME
+ * part: a part ends at every ATTACHED_REGULATION boundary (opening or closing),
+ * so a chapter inside a merged regulation never attaches to a heading of the
+ * main law, and the main law after a regulation block never attaches to a
+ * heading inside it. `number` is never used for identity (it is 0 on thousands
+ * of chapters). A level-2 chapter with no level-1 chapter before it in its
+ * part gets no parent and a `problem` — the caller reports it.
+ *
+ * @param chapters in source order, each with its marker offset
+ * @param boundaries from findChapterPartBoundaries
+ */
+export function resolveChapterParents(
+  chapters: ReadonlyArray<{ source_index?: number; level: ChapterLevel; title: string }>,
+  boundaries: readonly number[],
+): Array<{ parent_source_index?: number; problem?: string }> {
+  const partOf = (index: number) => {
+    let part = 0;
+    for (const b of boundaries) if (b < index) part++;
+    return part;
+  };
+  let lastLevel1: { part: number; source_index: number } | null = null;
+  return chapters.map((chapter) => {
+    if (typeof chapter.source_index !== "number") {
+      return chapter.level === 2
+        ? { problem: `level-2 chapter "${chapter.title}" has no source position — no parent recorded` }
+        : {};
+    }
+    const part = partOf(chapter.source_index);
+    if (chapter.level === 1) {
+      lastLevel1 = { part, source_index: chapter.source_index };
+      return {};
+    }
+    if (lastLevel1 && lastLevel1.part === part && lastLevel1.source_index < chapter.source_index) {
+      return { parent_source_index: lastLevel1.source_index };
+    }
+    return {
+      problem: `level-2 chapter "${chapter.title}" has no level-1 chapter before it in the same part ` +
+        `(${part === 0 ? "main text" : `part ${part} — an ATTACHED_REGULATION boundary precedes it`}) — kept without a parent`,
+    };
+  });
+}
+
+/**
+ * `text_availability: official_text_unpublished` plus no positive
+ * `total_articles`: the document says its official text is not published, so
+ * its body is a notice. Only consulted for a body with NO article anchors at
+ * all (ب-138: a frontmatter count alone once deleted real text — the absence of
+ * any ARTICLE_START is what makes this safe).
+ */
+export function declaresUnpublishedOfficialText(meta: Record<string, unknown>): boolean {
+  if (String(meta.text_availability ?? "").trim() !== "official_text_unpublished") return false;
+  const declared = meta.total_articles;
+  if (declared === undefined || declared === null || String(declared).trim() === "") return true;
+  return Number(declared) === 0;
+}
+
+/** The notice text of an unpublished-text document: comments, blockquote marks and the identity card removed. */
+export function unpublishedNoticeText(body: string): string {
+  const cleaned = body
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/^>\s?/gm, "");
+  return stripIdentityCardBoilerplate(cleaned).trim();
+}
+
 function parseSingleLaw(filePath: string): ParsedLaw | null {
   // Normalise line endings at read time. 1,331 of 1,533 delivered files use
   // CRLF, and JS regex treats \r as a line terminator that `.` will not match —
   // so `/^###?\s+.*\n/m` never fired on them and the article's heading was left
   // embedded in its text. Normalising once here fixes every downstream pattern.
-  const raw = fs.readFileSync(filePath, "utf-8").replace(/\r\n/g, "\n");
+  const sourceText = fs.readFileSync(filePath, "utf-8");
+  const raw = sourceText.replace(/\r\n/g, "\n");
   const { meta, body } = parseYamlFrontmatter(raw, filePath);
+  const scopeDecision = resolveCorpusScope(meta, filePath, sourceText);
+  corpusScopeDecisions.push(scopeDecision);
+  if (scopeDecision.corpus_scope !== "public_corpus") return null;
 
   // ب-134: `gate_zero_status: "مستبعد — غير تشريعي"` is an established,
   // already-used convention (first seen on LAW-20-0237, "الدليل التنظيمي
@@ -501,7 +722,14 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
   // the whole repo). Seeded as plain metadata; see ParsedLaw's doc comment
   // for why this does not exclude the file or gate the exit code.
   const needsHumanReview = meta.needs_human_review === true || String(meta.needs_human_review ?? "").trim() === "true";
-  const reviewReason = String(meta.review_reason ?? "").trim();
+  const sourceReviewReason = typeof meta.review_reason === "string" ? meta.review_reason.trim() : "";
+  const typeReviewReason = typeof meta.type_review_reason === "string" ? meta.type_review_reason.trim() : "";
+  // Keep an existing content/OCR review reason and the independent type
+  // classification reason in the internal seed report. If the source's only
+  // review reason is the type reason, do not repeat the same sentence twice.
+  const reviewReason = [sourceReviewReason, typeReviewReason]
+    .filter((value, index, values) => value && values.indexOf(value) === index)
+    .join("\n\n");
 
   const schemaVersionKey = String(meta.schema_version ?? "").trim() || "(missing)";
   schemaVersionCounts[schemaVersionKey] = (schemaVersionCounts[schemaVersionKey] || 0) + 1;
@@ -525,8 +753,13 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
   const hasChapters = chapterRe.test(body);
   chapterRe.lastIndex = 0;
 
+  // Set only for an unpublished-text notice (see declaresUnpublishedOfficialText).
+  let unpublishedNotice = "";
+  let unpublishedHandled = false;
+
   if (!hasChapters) {
     let articles = parseArticlesInBlock(body, "", 0, path.basename(filePath));
+    let keepEmptyChapter = true;
     if (articles.length === 0) {
       const hasArticleStart = /<!--\s*ARTICLE_START\b/.test(body);
       const hasArticleEnd = /<!--\s*ARTICLE_END\s*-->/.test(body);
@@ -537,7 +770,18 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
       // duplicate that content under a second identity instead of leaving
       // the redirect as the pointer it was designed to be.
       const isRedirectStub = meta.note_type === "redirect";
-      if (!hasArticleStart && !hasArticleEnd && !isRedirectStub) {
+      if (!hasArticleStart && !hasArticleEnd && !isRedirectStub && declaresUnpublishedOfficialText(meta)) {
+        // The document states its official text is not published and holds no
+        // article anchor: the body is a notice, not «الصفحة 1». Kept as the
+        // law's description; no article, no empty untitled chapter row.
+        unpublishedNotice = unpublishedNoticeText(body);
+        unpublishedHandled = true;
+        keepEmptyChapter = false;
+        unpublishedTextNotices.push(
+          `${path.basename(filePath)} :: official_text_unpublished — notice kept as description ` +
+            `(${unpublishedNotice.length} chars), no article emitted`,
+        );
+      } else if (!hasArticleStart && !hasArticleEnd && !isRedirectStub) {
         const wrapped = wrapAsWholeDocumentArticle(body, meta);
         const synthetic = parseArticlesInBlock(wrapped, "", 0, path.basename(filePath));
         if (synthetic.length === 1 && hasMeaningfulContent(synthetic[0].text)) {
@@ -548,17 +792,33 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
         malformedAnchorFiles.push(path.basename(filePath));
       }
     }
-    chapters.push({ number: 0, title: "", articles });
+    if (keepEmptyChapter) chapters.push({ source_index: 0, number: 0, title: "", level: 1, articles });
   } else {
     while ((chapterMatch = chapterRe.exec(body)) !== null) {
       const chapterMeta = safeJsonParse(chapterMatch[1], `chapter in ${slug}`);
       const chapterBody = chapterMatch[2];
       const chapterNum = Number(chapterMeta?.number || chapters.length + 1);
       const chapterTitle = String(chapterMeta?.title || `الباب ${chapterNum}`);
+      const { level, problem } = resolveChapterLevel(chapterMeta?.level);
+      if (problem) {
+        chapterLevelDiagnostics.push(`${path.basename(filePath)} :: chapter "${chapterTitle}" — ${problem}`);
+      }
 
-      const articles = parseArticlesInBlock(chapterBody, chapterTitle, chapterNum, path.basename(filePath));
-      chapters.push({ number: chapterNum, title: chapterTitle, articles });
+      const chapterBodyOffset = chapterMatch.index + chapterMatch[0].indexOf("-->") + 3;
+      const articles = parseArticlesInBlock(
+        chapterBody, chapterTitle, chapterNum, path.basename(filePath), chapterBodyOffset,
+      );
+      chapters.push({ source_index: chapterMatch.index, number: chapterNum, title: chapterTitle, level, articles });
     }
+
+    // Level-2 → level-1 links, by source position within one part of the file.
+    // A level-1 chapter with no articles (a pure container heading) is still
+    // emitted above — it is what its level-2 chapters point at.
+    const parents = resolveChapterParents(chapters, findChapterPartBoundaries(body));
+    parents.forEach((link, ci) => {
+      if (link.parent_source_index !== undefined) chapters[ci].parent_source_index = link.parent_source_index;
+      if (link.problem) chapterLevelDiagnostics.push(`${path.basename(filePath)} :: ${link.problem}`);
+    });
   }
 
   // Also parse articles outside chapters (if some articles are outside chapter markers)
@@ -569,11 +829,21 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
     outsideBody = outsideBody.replace(chapterBlockRe, "");
     const orphanArticles = parseArticlesInBlock(outsideBody, "__orphan__", -1);
     if (orphanArticles.length > 0) {
-      chapters.push({ number: -1, title: "__orphan__", articles: orphanArticles });
+      chapters.push({ number: -1, title: "__orphan__", level: 1, articles: orphanArticles });
     }
   }
 
   const totalArticles = chapters.reduce((sum, ch) => sum + ch.articles.length, 0);
+
+  // The unpublished flag on a file that is NOT a bare notice (it has article
+  // anchors, chapters, or a positive total_articles) is left to a human: the
+  // file is parsed exactly as before and the disagreement is listed.
+  if (!unpublishedHandled && String(meta.text_availability ?? "").trim() === "official_text_unpublished") {
+    unpublishedTextNotices.push(
+      `${path.basename(filePath)} :: text_availability=official_text_unpublished but ${totalArticles} article(s) ` +
+        `parsed (total_articles=${JSON.stringify(meta.total_articles ?? null)}) — parsed as before, flag needs review`,
+    );
+  }
 
   // ك-03 (2026-08-23): the preamble is the one per-FILE (not per-article) text
   // blob, and never went through either <details> pass — a live-annex block
@@ -596,9 +866,16 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
   // ── Field resolution (manifest v1.2 keys with legacy aliases) ────────────
   // The new content uses issue_date_hijri / boe_source_url / has_merged_regulation
   // / status; older files used issuance_date / boe_url / has_executive_reg / law_status.
-  // Resolve both; enforce enums + type_normalization_map from the manifest.
-  const issue_date_hijri = nullIfForbidden(meta.issue_date_hijri ?? meta.issuance_date) || "";
-  const issue_date_gregorian = nullIfForbidden(meta.issue_date_gregorian) || "";
+  // A small NCAR-derived group uses date_issued_hijri/date_issued_gregorian.
+  // Resolve populated canonical keys first, then the source aliases; never
+  // invent a date if none was declared. Enforce enum/type rules separately.
+  const issue_date_hijri = nullIfForbidden(meta.issue_date_hijri)
+    || nullIfForbidden(meta.date_issued_hijri)
+    || nullIfForbidden(meta.issuance_date)
+    || "";
+  const issue_date_gregorian = nullIfForbidden(meta.issue_date_gregorian)
+    || nullIfForbidden(meta.date_issued_gregorian)
+    || "";
   // ك-12: kept as genuine `null` (not `|| ""`) when absent — the manifest's own
   // schema for these four fields (schema_manifest.json:522-544) types them
   // `date_hijri|null`/`date|null`/`string|null` specifically so "not computed"
@@ -625,12 +902,52 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
     meta.latest_update && typeof meta.latest_update === "object"
       ? (meta.latest_update as Record<string, unknown>)
       : null;
-  const law_guid = nullIfForbidden(meta.law_guid ?? meta.id) || "";
+  // BOE law_guid and the library registry id are different namespaces. The
+  // old `law_guid ?? id` fallback copied LAW-* registry ids into the BOE
+  // column whenever law_guid was absent, defeating that distinction. Keep
+  // the official column empty unless the source actually supplies it; the
+  // separate instrument_id below carries the stable registry identity.
+  const law_guid = nullIfForbidden(meta.law_guid) || "";
+  // The registry identity is a different namespace from BOE's UUID-like
+  // law_guid. Parent links explicitly point to INSTRUMENTS_REGISTRY.json
+  // instrument_id values. `document_id` is deliberately excluded: NCAR uses
+  // it as a source-document/attachment identifier, so several distinct legal
+  // documents may share one value (and legacy files use the placeholder
+  // UPDATE__). Treating it as an entity identity caused 45 false collision
+  // failures on the 2026-09-19 full-corpus probe.
+  const instrument_id = nullIfForbidden(meta.instrument_id)
+    || nullIfForbidden(meta.id)
+    || nullIfForbidden(meta.system_id)
+    || "";
+  const sourceIdentity = law_guid || instrument_id || slug;
+  const legacyMetadata = meta.metadata && typeof meta.metadata === "object"
+    ? meta.metadata as Record<string, unknown>
+    : {};
+  const legacyRelationships = meta.relationships && typeof meta.relationships === "object"
+    ? meta.relationships as Record<string, unknown>
+    : {};
+  const parent_law_id = nullIfForbidden(meta.parent_law_id)
+    || nullIfForbidden(legacyMetadata.parent_law_id)
+    || nullIfForbidden(legacyRelationships.parent_law_id)
+    || "";
+  const parent_law = nullIfForbidden(meta.parent_law)
+    || nullIfForbidden(meta.parent_law_title)
+    || nullIfForbidden(legacyMetadata.parent_law)
+    || nullIfForbidden(legacyRelationships.parent_law)
+    || "";
+  const enabling_article = nullIfForbidden(meta.enabling_article)
+    || nullIfForbidden(legacyMetadata.enabling_article)
+    || nullIfForbidden(legacyRelationships.enabling_article)
+    || "";
   // ب-133-c: fold known non-legal-status synonyms ("superseded", "amended")
   // to their real enum equivalent before validation — same idiom as
   // normalizeType below, mirrored for status. See normalizeStatus's doc
   // comment in manifest.ts for why each mapping is safe.
-  const statusRaw = normalizeStatus(nullIfForbidden(meta.status ?? meta.law_status)) || "active";
+  // Absence or an unrecognised source assertion cannot prove legal effect.
+  // Keep the internal sentinel in the row; validateEnum still records every
+  // nonblank out-of-contract source value and blocks the live preflight.
+  const statusRaw = normalizeStatus(nullIfForbidden(meta.status ?? meta.law_status));
+  const sourceStatus = validateEnum("status", statusRaw, "status_undeclared", filePath);
   const typeCanonical = normalizeType(meta.type);
   // section_code in files is "00".."30" / "97".."99" (zero-padded). An unquoted
   // YAML `00` becomes int 0 → normalize back to a 2-digit string before validating.
@@ -643,7 +960,9 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
   );
 
   const returned: ParsedLaw = {
-    id: law_guid || slug,
+    corpus_scope: "public_corpus",
+    corpus_scope_provenance: scopeDecision,
+    id: sourceIdentity,
     slug,
     title,
     title_en: (meta.title_en as string) || "",
@@ -661,7 +980,13 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
     regulation_decree: (meta.regulation_decree as string) || "",
     preamble: preambleText,
     regulation_preamble: regulationPreamble,
-    law_status: validateEnum("status", statusRaw, "active", filePath), // seeder maps → status column
+    // Final DB-domain validation is intentionally deferred until after the
+    // verified archival/duplicate exclusion passes. A source status can be
+    // contract-valid yet illegal in the DB (superseded_duplicate or
+    // merged_into_parent); validating only the surviving rows prevents both
+    // silent DB corruption and false failures for correctly excluded files.
+    law_status: sourceStatus,
+    sourceStatus,
     source: (meta.source as string) || "",
     boe_url: boe_source_url, // legacy alias kept for the seeder
     issue_date_hijri,
@@ -677,6 +1002,10 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
     article_status_summary,
     latest_update,
     law_guid,
+    instrument_id,
+    parent_law_id,
+    parent_law,
+    enabling_article,
     variant,
     chapters,
     metadata: meta,
@@ -684,6 +1013,7 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
     supersededBy,
     needsHumanReview,
     reviewReason,
+    ...(unpublishedNotice ? { description: unpublishedNotice } : {}),
   };
 
   // ب-135: measure coverage against the SAME `chapters` this function is
@@ -723,12 +1053,20 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
  * mislabelled as a real article).
  */
 function wrapAsWholeDocumentArticle(body: string, meta: Record<string, unknown>): string {
-  const rawStatus = String(meta.status ?? meta.law_status ?? "active");
+  // Before 57 this synthetic ARTICLE_START borrowed the parent status solely
+  // because the old identity builder needed a token. Keep that token as hidden
+  // provenance for ID continuity, but do not use it as the article's status.
+  const parentLegacy = String(meta.status ?? meta.law_status ?? "active").trim();
+  const legacyIdentity = KNOWN_ARTICLE_STATUSES.includes(parentLegacy) ? parentLegacy : "active";
   const anchorMeta: Record<string, unknown> = {
     number: "1",
     number_text: "الصفحة 1",
     title: String(meta.title || ""),
-    status: KNOWN_ARTICLE_STATUSES.includes(rawStatus) ? rawStatus : "active",
+    // A whole-document synthetic article has no article-level lifecycle
+    // anchor. Do not borrow the parent law status as evidence for it.
+    status: "status_undeclared",
+    __parser_status_provenance: "synthetic_parent_legacy",
+    __parser_legacy_status_identity: legacyIdentity,
     free: meta.free !== false,
   };
   if (meta.instrument) anchorMeta.instrument = String(meta.instrument);
@@ -840,9 +1178,15 @@ function parseArticlesInBlock(
   chapterTitle: string,
   chapterNumber: number,
   /** Source file, used only to make diagnostics actionable. */
-  sourceLabel = "<unknown>"
+  sourceLabel = "<unknown>",
+  /** Absolute offset of this block inside the parsed body, used only for ordering. */
+  blockOffset = 0,
 ): ParsedArticle[] {
   const articles: ParsedArticle[] = [];
+  // `latent_recovered` is source metadata for a recovery boundary, not part of
+  // ParsedArticle's public/seed contract. Keep it out of emitted JSON while
+  // retaining exactly the local evidence needed below.
+  const latentRecoveredArticles = new WeakSet<ParsedArticle>();
   const articleRe =
     /<!--\s*ARTICLE_START\s+(.*?)\s*-->([\s\S]*?)<!--\s*ARTICLE_END\s*-->/g;
   let match: RegExpExecArray | null;
@@ -952,16 +1296,21 @@ function parseArticlesInBlock(
     const numberText = String(artMeta.number_text || artMeta.number || "");
     const artTitle = String(artMeta.title || "");
 
-    const rawStatus = String(artMeta.status || "active");
-    if (!KNOWN_ARTICLE_STATUSES.includes(rawStatus)) {
-      // Defaulting an unknown lifecycle state to "active" would publish an
-      // article as current law on nothing but a guess.
-      throw new Error(
-        `unknown article status "${rawStatus}" (article ${numberText || number}). ` +
-          `Known: ${KNOWN_ARTICLE_STATUSES.join(", ")}`,
-      );
+    let status: ArticleStatus;
+    try {
+      status = resolveArticleStatus(artMeta.status);
+    } catch (error) {
+      throw new Error(`${(error as Error).message} (article ${numberText || number}).`);
     }
-    const status = rawStatus as ArticleStatus;
+    const rawArticleStatus = artMeta.status == null ? "" : String(artMeta.status).trim();
+    const syntheticLegacy = artMeta.__parser_legacy_status_identity;
+    const isSynthetic = artMeta.__parser_status_provenance === "synthetic_parent_legacy";
+    const statusProvenance: ArticleStatusProvenance = isSynthetic
+      ? "synthetic_parent_legacy"
+      : rawArticleStatus === "" ? "missing" : "explicit";
+    const legacyStatusIdentity = isSynthetic
+      ? resolveArticleStatus(syntheticLegacy)
+      : statusProvenance === "missing" ? "active" : status;
 
     // ── Recover historical text BEFORE anything is stripped ───────────────
     // The superseded wording lives inside <details>. It must be pulled out
@@ -1072,11 +1421,14 @@ function parseArticlesInBlock(
       }
     }
 
-    articles.push({
+    const parsedArticle: ParsedArticle = {
+      source_index: blockOffset + match.index,
       number,
       number_text: numberText,
       title: artTitle,
       status,
+      status_provenance: statusProvenance,
+      status_legacy_identity: legacyStatusIdentity,
       text: cleanText,
       original_text: primaryHistory,
       unparsed_details: history.unparsed.length ? history.unparsed.join("\n\n") : undefined,
@@ -1092,10 +1444,52 @@ function parseArticlesInBlock(
       amendments,
       free: artMeta.free !== false,
       instrument: artMeta.instrument ? String(artMeta.instrument) : undefined,
-    });
+    };
+    if (artMeta.latent_recovered === true) latentRecoveredArticles.add(parsedArticle);
+    articles.push(parsedArticle);
   }
 
-  return articles;
+  // A narrow source convention used by the five families audited in 15/26:
+  // an empty REGULATION anchor ends an ordinary article, followed immediately
+  // by a same-numbered ARTICLE_START explicitly marked `latent_recovered`.
+  // The following body is the secondary instrument's text, not a second system
+  // article. Without this transfer the parser emits an empty regulation row
+  // and wrongly exposes the latent body as a نظام/null article.
+  //
+  // Do not infer this from matching numbers alone. Recovery requires all of:
+  // (1) an empty regulation body, (2) the immediate next article carrying the
+  // source's literal `latent_recovered: true`, and (3) an exactly matching
+  // normalized number. The next article is suppressed only after one and only
+  // one such regulation accepts its nonempty text. Thus ordinary independent
+  // regulation articles (including the 83 audited nonempty cases) and every
+  // regulation preamble remain untouched.
+  const suppressedLatentArticles = new Set<ParsedArticle>();
+  const regulationOwners = new Map<ParsedArticle, ParsedArticle>();
+  for (let i = 0; i + 1 < articles.length; i++) {
+    const parent = articles[i];
+    const owner = regulationOwners.get(parent) ?? parent;
+    const latent = articles[i + 1];
+    if (!latentRecoveredArticles.has(latent) || !latent.text.trim()) continue;
+
+    const latentNumber = normalizeDigits(String(latent.number)).trim();
+    const matchingEmptyRegulations = owner.regulations.filter((regulation) =>
+      !regulation.text.trim() &&
+      normalizeDigits(String(regulation.regNum ?? "")).trim() === latentNumber,
+    );
+    if (matchingEmptyRegulations.length !== 1) continue;
+
+    matchingEmptyRegulations[0].text = latent.text;
+    suppressedLatentArticles.add(latent);
+    // A sequence can contain another empty REGULATION anchor inside the latent
+    // article (15 → 16, for example). Its relationship belongs to the same
+    // last real system article, so promote it before the next loop iteration.
+    // The shared objects are emitted once because the latent article itself is
+    // suppressed at return.
+    owner.regulations.push(...latent.regulations);
+    regulationOwners.set(latent, owner);
+  }
+
+  return articles.filter((article) => !suppressedLatentArticles.has(article));
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1108,6 +1502,19 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
   // inside the loop, the catch swallowed it per file, and the run printed
   // "Parsed 0 laws" and exited 0 — a total failure that looked like success.
   assertManifestLoadable();
+  assertCorpusScopeContract();
+  clearRejectedEnumValues();
+  corpusScopeDecisions.length = 0;
+  // Diagnostics were historically module-level collectors. Without resetting
+  // them, a later call in the same process inherits earlier warnings and can
+  // fail (or report inflated counts) for an unrelated input.
+  for (const bucket of [
+    frontmatterWarnings, emptyArticles, verifiedEmptyArticles,
+    orphanRegulationAnchors, supersededDuplicateSkipped, gateZeroExcluded,
+    lowCoverageFiles, syntheticWholeDocumentArticles, malformedAnchorFiles,
+    chapterLevelDiagnostics, unpublishedTextNotices,
+  ]) bucket.length = 0;
+  for (const version of Object.keys(schemaVersionCounts)) delete schemaVersionCounts[version];
 
   const stats = fs.statSync(inputPath);
   const files: string[] = [];
@@ -1349,10 +1756,10 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
   // "laws" is "slug", not "id" — two different slugs become two different
   // rows, each a full copy of the same law under a different URL.
   //
-  // `law.id` already resolves to `law_guid || slug` (see parseSingleLaw
-  // above), so grouping by `id` and keeping only groups whose members do NOT
-  // all share one slug is exactly "same real identity, different slug" — the
-  // one axis findSlugCollisions cannot see by construction.
+  // `law.id` resolves to law_guid, then the source document id when an
+  // explicit empty GUID is present, then slug. A shared id under distinct
+  // slugs is therefore an entity-collision candidate and must be checked,
+  // not silently treated as proof of one real-world instrument.
   //
   // Deliberately a separate pass from the ب-133 block above, not merged into
   // it: a shared `id` here is a different kind of evidence than a shared
@@ -1433,6 +1840,20 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
     for (const line of unverifiedEntityCollisions) console.error(`   • ${line}`);
   }
 
+  // ── Source status → DB status boundary ─────────────────────────────────────
+  // The source contract deliberately includes archival bookkeeping states,
+  // while `library.laws.status` has a narrower CHECK. Validate only the rows
+  // that survived the verified exclusion passes above; any archival state that
+  // remains is an unresolved publishing error and must fail closed.
+  for (const law of laws) {
+    law.law_status = validateEnum(
+      "db_law_status",
+      law.sourceStatus,
+      "status_undeclared",
+      lawSourceFile.get(law),
+    );
+  }
+
   // ── Rejected enum values (ب-112) ────────────────────────────────────────────
   // A rejection here means some file's raw `type`/`status`/`section_code` isn't
   // in the manifest's enum and silently fell back (e.g. every "أمر سامي"/"قرار"
@@ -1501,9 +1922,22 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
     "🛑 malformed ARTICLE_START/END (unmatched — not a genuine zero-anchor document)",
     malformedAnchorFiles,
   );
+  printCapped(
+    "⚠️  chapter level problem(s) — level clamped/ignored, or a level-2 chapter with no level-1 heading before it (kept, no parent)",
+    chapterLevelDiagnostics,
+  );
+  printCapped(
+    "ℹ️  official_text_unpublished document(s) — notice kept as description, or flag disagreeing with the file",
+    unpublishedTextNotices,
+  );
 
   if (failed.length > 0) {
     console.error(`\n🛑 ${failed.length} file(s) failed to parse and are MISSING from the output.`);
+  }
+  if (rejectedEnumSummary.length > 0) {
+    console.error(
+      `\n🛑 ${rejectedEnumSummary.length} rejected enum value(s): the fallback type/status in the diagnostic output is not a legal classification.`,
+    );
   }
 
   // Complete, uncapped record — the console preview above is truncated on purpose.
@@ -1532,13 +1966,18 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
         entityCollisionsExcluded: entityToDrop.size,
         unverifiedEntityCollisions: unverifiedEntityCollisions.length,
         gateZeroExcluded: gateZeroExcluded.length,
+        corpusScopeBlocked: corpusScopeDecisions.filter(d => d.corpus_scope === "pending_review" || d.corpus_scope === "mixed_requires_separation").length,
+        corpusScopeInstitutional: corpusScopeDecisions.filter(d => d.corpus_scope === "institutional_reference").length,
         lowCoverageFiles: lowCoverageFiles.length,
+        chapterLevelDiagnostics: chapterLevelDiagnostics.length,
+        unpublishedTextNotices: unpublishedTextNotices.length,
       },
       excluded: excludedList,
       frontmatterWarnings,
       rejectedEnumValues: rejectedEnumSummary,
       schemaVersionCounts,
       notes: {
+        corpusScopeDecisions,
         emptyArticles,
         verifiedEmptyArticles,
         orphanRegulationAnchors,
@@ -1550,6 +1989,8 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
         lowCoverageFiles,
         unverifiedSupersededTags,
         unverifiedEntityCollisions,
+        chapterLevelDiagnostics,
+        unpublishedTextNotices,
       },
       identityCollisions: collisions.map((c) => ({ key: c.slug, members: c.sources })),
       failed: failed.map((f) => `${f.file}: ${f.error}`),
@@ -1562,8 +2003,10 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
   // (0 articles → 1), not a problem; malformedAnchorFiles is, since an
   // unmatched anchor is exactly the corruption case the fallback must not mask.
   if (
+    corpusScopeDecisions.some(d => d.corpus_scope === "pending_review" || d.corpus_scope === "mixed_requires_separation") ||
     collisions.length > 0 ||
     failed.length > 0 ||
+    rejectedEnumSummary.length > 0 ||
     orphanRegulationAnchors.length > 0 ||
     malformedAnchorFiles.length > 0 ||
     unverifiedSupersededTags.length > 0 ||
@@ -1571,7 +2014,9 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
   ) {
     console.error(
       `\n✗ Parse completed with unrecoverable problems ` +
-        `(${collisions.length} collision(s), ${failed.length} failed file(s), ` +
+        `(${corpusScopeDecisions.filter(d => d.corpus_scope === "pending_review" || d.corpus_scope === "mixed_requires_separation").length} unresolved corpus_scope decision(s), ` +
+        `${collisions.length} collision(s), ${failed.length} failed file(s), ` +
+        `${rejectedEnumSummary.length} rejected enum value(s), ` +
         `${orphanRegulationAnchors.length} orphan REGULATION anchor(s), ` +
         `${malformedAnchorFiles.length} malformed anchor file(s), ` +
         `${unverifiedSupersededTags.length} unverified superseded_duplicate tag(s), ` +
@@ -1579,13 +2024,21 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
         `Refusing to report success.`,
     );
     process.exitCode = 1;
+    // The exported parser is also called directly by tools/tests. Returning a
+    // partial object with fallback classifications would let such callers
+    // bypass the CLI's laws.json gate and feed the seeder corrupted rows.
+    throw new Error("Law parse rejected: inspect parse-report-laws.json before any seed.");
   }
 
   // isSupersededDuplicate is bookkeeping for the exclusion logic above, not a
   // documented output field — strip it so laws.json/the seeder contract stay
   // exactly as documented (no undeclared field for a future reader to wonder
   // about).
-  const cleanedLaws = laws.map(({ isSupersededDuplicate: _unused, ...rest }) => rest);
+  const cleanedLaws = laws.map(({
+    isSupersededDuplicate: _unused,
+    sourceStatus: _sourceStatus,
+    ...rest
+  }) => rest);
 
   return {
     type: "laws",
@@ -1593,6 +2046,7 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
     total_files: files.length,
     total_articles: totalArticles,
     laws: cleanedLaws as ParsedLaw[],
+    corpus_scope_decisions: corpusScopeDecisions.slice(),
   };
 }
 
@@ -1613,11 +2067,24 @@ if (require.main === module) {
     process.exit(1);
   }
 
-  const result = parseLaws(path.resolve(inputPath), outputDir);
+  let result: LawsParserOutput | undefined;
+  try {
+    result = parseLaws(path.resolve(inputPath), outputDir);
+  } catch (error) {
+    console.error(`🛑 ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+  }
 
-  // Write output
-  fs.mkdirSync(path.resolve(outputDir), { recursive: true });
   const outFile = path.join(path.resolve(outputDir), "laws.json");
-  fs.writeFileSync(outFile, JSON.stringify(result, null, 2), "utf-8");
-  console.log(`📁 Output written to: ${outFile}`);
+  if (!result || process.exitCode) {
+    // A diagnostic result can contain fallback `type: نظام` for a rejected
+    // source enum. Do not materialize it as a seedable laws.json after a
+    // failed run. The parse report above preserves the trace for triage.
+    console.error(`🛑 Refusing to write laws.json after failed parse. Ignore any pre-existing output at: ${outFile}`);
+  } else {
+    fs.mkdirSync(path.resolve(outputDir), { recursive: true });
+    fs.writeFileSync(outFile, JSON.stringify(result, null, 2), "utf-8");
+    bindParseReportToOutput(outputDir, "laws", outFile);
+    console.log(`📁 Output written to: ${outFile}`);
+  }
 }

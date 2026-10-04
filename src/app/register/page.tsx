@@ -33,7 +33,8 @@ const t = {
     seekerTitle: "طالب خدمة",
     seekerDesc: "احصل على خدمات قانونية متكاملة من محامين معتمدين وخبراء قانونيين",
     seekerCta: "سجّل كطالب خدمة",
-    seekerBadge: "الأكثر شيوعاً",
+    // لا وسم «الأكثر شيوعاً» على بطاقة طالب الخدمة (قرار المالك ق١٦٤،
+    // ٢٠٢٦-١٠-٠٣): لا توجد بيانات تسجيل تسند ادّعاء الشعبية.
     providerTitle: "مقدّم خدمة",
     // لا تكتب هنا «آلاف العملاء»: عدد الحسابات في الإنتاج ١٨.
     providerDesc: "انضم إلى شبكة المحترفين القانونيين واعرض خدماتك على طالبي الخدمة داخل المنصة",
@@ -71,7 +72,6 @@ const t = {
     seekerTitle: "Service Seeker",
     seekerDesc: "Get comprehensive legal services from certified lawyers and legal experts",
     seekerCta: "Register as Service Seeker",
-    seekerBadge: "Most Popular",
     providerTitle: "Service Provider",
     providerDesc: "Join our network of legal professionals and offer your services to clients on the platform",
     providerCta: "Register as Service Provider",
@@ -117,7 +117,9 @@ function TypeCard({ type, txt, isAr, isHovered, onHover, href, index }: CardProp
   const title = isSeeker ? txt.seekerTitle : txt.providerTitle;
   const desc = isSeeker ? txt.seekerDesc : txt.providerDesc;
   const cta = isSeeker ? txt.seekerCta : txt.providerCta;
-  const badge = isSeeker ? txt.seekerBadge : txt.providerBadge;
+  // Only the provider card carries an (audience) badge; the seeker card's
+  // «الأكثر شيوعاً» claim was removed (owner, Q164).
+  const badge = isSeeker ? null : txt.providerBadge;
   const subTypes = isSeeker ? txt.seekerSubTypes : txt.providerSubTypes;
   const subIcons = isSeeker ? seekerSubIcons : providerSubIcons;
   const feats = isSeeker ? txt.seekerFeats : txt.providerFeats;
@@ -180,16 +182,12 @@ function TypeCard({ type, txt, isAr, isHovered, onHover, href, index }: CardProp
               <MainIcon weight="duotone" size={30} />
             </motion.div>
 
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
-                isSeeker
-                  ? "bg-royal/8 dark:bg-royal/15 text-royal dark:text-emerald-400"
-                  : "bg-gold/10 dark:bg-gold/15 text-gold-dark dark:text-gold-light"
-              }`}
-            >
-              <Star weight="fill" size={10} />
-              {badge}
-            </span>
+            {badge && (
+              <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold bg-gold/10 dark:bg-gold/15 text-gold-dark dark:text-gold-light">
+                <Star weight="fill" size={10} />
+                {badge}
+              </span>
+            )}
           </div>
 
           {/* Title & description */}
@@ -274,7 +272,7 @@ export default function RegisterPage() {
         initial={{ opacity: 0, y: -16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="sticky top-0 z-40 border-b border-slate-200/60 dark:border-dark-border bg-white/80 dark:bg-dark-card/80 backdrop-blur-lg"
+        className="safe-top sticky top-0 z-40 border-b border-slate-200/60 dark:border-dark-border bg-white/80 dark:bg-dark-card/80 backdrop-blur-lg"
       >
         <div className="mx-auto max-w-5xl px-5 py-3.5 flex items-center justify-between">
           {/* Logo */}

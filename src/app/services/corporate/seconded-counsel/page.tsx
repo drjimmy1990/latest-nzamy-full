@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Briefcase, Check, Star, CalendarBlank, Buildings,
   Scales, Shield, FileText, Users, Phone, ChatCircleDots,
-  ArrowLeft, Sparkle, Clock, Money, Trophy, Brain,
+  ArrowLeft, Clock, Money, Trophy, Brain,
   GraduationCap, CheckCircle,
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
@@ -231,11 +231,9 @@ export default function SecondedCounselPage() {
                         : `${cardBg} ${border}`
                   }`}
                 >
-                  {plan.highlight && (
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 flex items-center gap-1 px-3 py-1 bg-[#C8A762] text-[#0B3D2E] rounded-full text-[10px] font-bold">
-                      <Sparkle size={10} weight="fill" /> الأكثر طلباً
-                    </div>
-                  )}
+                  {/* No «الأكثر طلباً» badge (owner, Q164, 2026-10-03): no
+                      subscription data supports a popularity claim. The card
+                      keeps its `highlight` styling, which claims nothing. */}
 
                   <div className="mb-4">
                     <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${plan.highlight ? "bg-white/10 text-white/80" : isDark ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-500"}`}>

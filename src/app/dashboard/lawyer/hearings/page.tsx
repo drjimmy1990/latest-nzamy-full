@@ -3,6 +3,8 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { LawyerDeadlinesPanel } from "../deadlines/page";
 import {
   CalendarCheck, Clock, MapPin, Gavel, Plus, Warning,
   CheckCircle, FileText, Buildings, Receipt,
@@ -862,6 +864,8 @@ function CalendarView({events,isDark,onAddOnDate}:{events:CalEvent[];isDark:bool
 export default function LawyerHearingsPage() {
   const {isDark} = useTheme();
   const user = useUser();
+  const searchParams = useSearchParams();
+  const workspaceTab = searchParams.get("tab") === "deadlines" ? "deadlines" : "hearings";
   // The rows exactly as fetched. `events` below is this list with `dateSort`
   // re-derived against the current local day — see `todayKey`.
   const [rawEvents, setRawEvents] = useState<CalEvent[]>([]);
@@ -1044,6 +1048,27 @@ export default function LawyerHearingsPage() {
 
   return (
     <div className="max-w-[1100px] mx-auto space-y-5" dir="rtl">
+      <nav
+        aria-label="الجلسات والمهل القضائية"
+        className={`grid grid-cols-2 gap-1 rounded-2xl border p-1 ${isDark ? "border-white/[0.06] bg-zinc-900/70" : "border-slate-200 bg-slate-50"}`}
+      >
+        <Link
+          href="/dashboard/lawyer/hearings"
+          aria-current={workspaceTab === "hearings" ? "page" : undefined}
+          className={`rounded-xl px-4 py-2.5 text-center text-[13px] font-bold transition ${workspaceTab === "hearings" ? "bg-[#0B3D2E] text-white shadow-sm" : isDark ? "text-zinc-400 hover:bg-white/[0.05]" : "text-slate-500 hover:bg-white"}`}
+        >
+          الجلسات والمواعيد
+        </Link>
+        <Link
+          href="/dashboard/lawyer/hearings?tab=deadlines"
+          aria-current={workspaceTab === "deadlines" ? "page" : undefined}
+          className={`rounded-xl px-4 py-2.5 text-center text-[13px] font-bold transition ${workspaceTab === "deadlines" ? "bg-[#0B3D2E] text-white shadow-sm" : isDark ? "text-zinc-400 hover:bg-white/[0.05]" : "text-slate-500 hover:bg-white"}`}
+        >
+          رادار المهل النظامية
+        </Link>
+      </nav>
+
+      {workspaceTab === "deadlines" ? <LawyerDeadlinesPanel /> : <>
 
       {/* Read state. The old banner here said «بيانات تجريبية / لا توجد جلسات
           قادمة» for BOTH a genuinely empty diary and a query that failed —
@@ -1289,6 +1314,7 @@ export default function LawyerHearingsPage() {
       <AnimatePresence>
         {showAddHearing && <AddHearingModal onClose={() => { setShowAddHearing(false); setAddHearingDate(null); }} isDark={isDark} user={{ userId: user.userId, name: user.name, userType: user.userType, tier: user.tier }} initialDate={addHearingDate ?? undefined} />}
       </AnimatePresence>
+      </>}
     </div>
   );
 }

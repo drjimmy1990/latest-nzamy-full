@@ -4,11 +4,11 @@ import { useState, useCallback, useEffect, useRef, useMemo, Suspense } from "rea
 import { useParams, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowRight, ArrowUp, Crown, Stack, Check, Copy, BookOpen, Bookmark, Scales, Printer
+  ArrowRight, ArrowUp, Crown, Stack, Check, Copy, BookOpen, Bookmark, Scales, Printer,
+  ListBullets, X, Lock, Prohibit, Info
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import FloatingButtons from "@/components/FloatingButtons";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import { useUser } from "@/hooks/useUser";
@@ -16,8 +16,12 @@ import { isSupabaseMode } from "@/lib/services/api";
 import { getPreferences, patchPreferences, type RecentSession } from "@/lib/services/preferencesService";
 import { recordLawOpened, type ReadingActivity } from "@/lib/services/readingActivityStats";
 import { PrintWatermark } from "@/app/laws/components/PrintWatermark";
-import type { LawArticle, LawSystem } from "../data";
-import { getLawMeta, fetchLawMetadata, SECTION_COLORS } from "../law-metadata-map";
+import type { LawArticle, LawChapter, LawSystem } from "../data";
+import { isRepealedLawStatus, lawStatusForDetail } from "../law-status";
+import { EMPTY_OFFICIAL_META, parseOfficialMeta, type LawOfficialMeta } from "./_official-meta";
+import { getSelectedTextWithin } from "./_article-components";
+import { OfficialMetaLockedRow } from "../components/OfficialMetaLockedRow";
+import { getLawMeta, lawMetaFromDetail, SECTION_COLORS } from "../law-metadata-map";
 import type { LawMetaEntry } from "../law-metadata-map";
 import { PaywallModal } from "../components/PaywallModal";
 import { useDraftCart } from "@/hooks/useDraftCart";
@@ -34,6 +38,8 @@ import {
 } from "./_components";
 import FolderSelectionModal from "@/components/laws/FolderSelectionModal";
 import SidebarPanel from "./_sidebar";
+import { buildChapterTree } from "./_chapter-tree";
+import { READER_SCROLL_MARGIN_TOP, buildRegulationAnchors, regulationCardId } from "./_reader-anchors";
 import { ResearchWorkspace } from "@/components/ResearchWorkspace";
 import { apiSlug } from '@/utils/apiSlug';
 
@@ -54,18 +60,19 @@ function LawSystemPageContent() {
   const params = useParams();
   const slug = (params?.slug as string) ?? "companies-law";
 
+  // LIB-17 (2026-09-25): derived from the ONE law-detail response in loadLaw
+  // below. A separate fetchLawMetadata() effect used to download the whole law
+  // a second time just to count its articles.
   const [lawMeta, setLawMeta] = useState<LawMetaEntry>(() => getLawMeta(slug));
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchLawMetadata(slug).then(meta => {
-      if (!cancelled) setLawMeta(meta);
-    });
-    return () => { cancelled = true; };
-  }, [slug]);
 
   const [showPaywall, setShowPaywall] = useState(false);
   const [showCart,    setShowCart]    = useState(false);
+  /* The article index and the quick-jump search live in an `aside` that is
+     `hidden lg:block` with no mobile counterpart, so a phone reader — the
+     commonest way anyone reads a law — lost the only means of navigating
+     between articles. This opens the same panel as a bottom sheet below
+     lg; the desktop aside is untouched. */
+  const [showIndexSheet, setShowIndexSheet] = useState(false);
   const [activeId,    setActiveId]    = useState<string>("art-1");
   const [explainArticle, setExplainArticle] = useState<LawArticle | null>(null);
   // Starts empty. This used to default to the bundled COMPANIES_LAW, which meant
@@ -80,7 +87,21 @@ function LawSystemPageContent() {
   // back to its own default when this is still null (loading, or the fetch
   // failed before setting it).
   const [libraryFreeLimit, setLibraryFreeLimit] = useState<number | null>(null);
-  const [loadError, setLoadError] = useState(false);
+  // T28-22/23/26: official-publication fields (lock flag, official URL, Umm
+  // al-Qura issue, the law that replaced a repealed one). Held beside `law`
+  // rather than inside it — the LawSystem mapping below is a shared whitelist.
+  const [officialMeta, setOfficialMeta] = useState<LawOfficialMeta>(EMPTY_OFFICIAL_META);
+  // T28-22: the API withholds the preamble (it opens with the decree card)
+  // from a non-subscriber and says so here.
+  const [preambleLocked, setPreambleLocked] = useState(false);
+  // A document whose official text is not published has no articles, only a
+  // notice (parser: text_availability official_text_unpublished → the law's
+  // description). The API sends it as `notice`; shown without an article number.
+  const [lawNotice, setLawNotice] = useState("");
+  // "not-found" = the API answered 404; "failed" = any other failure (a 500
+  // from a failed query, a network error). They get different copy: telling a
+  // reader a law does not exist when we merely failed to load it is wrong.
+  const [loadError, setLoadError] = useState<false | "not-found" | "failed">(false);
   const [loading, setLoading] = useState(true);
   const [jumpQuery,  setJumpQuery]  = useState("");  // بحث سريع للمواد
   const [fontSize,        setFontSize]        = useState<"normal"|"large"|"xlarge">("normal"); // حجم الخط
@@ -110,11 +131,27 @@ function LawSystemPageContent() {
     }
   }, [searchParams]);
 
+  // The view-mode switcher is hidden for a law with nothing to switch to
+  // (T28-09). A catalogue chip can still arrive with ?viewMode=regulation or
+  // appendix; with the switcher gone that would leave an empty list and no
+  // way back, so such a law always shows «عرض الكل» (independent review m3).
+  const hasViewModeChoices = !!law && (
+    law.chapters.some(ch => ch.articles.some(a => a.regulations && a.regulations.length > 0)) ||
+    (law.regulationInstrumentsLocked ?? 0) > 0 ||
+    (law.appendices?.length ?? 0) > 0
+  );
+  useEffect(() => {
+    if (law && !hasViewModeChoices && viewMode !== "all") setViewMode("all");
+  }, [law, hasViewModeChoices, viewMode]);
+
   // Cart: global, backed by localStorage via useDraftCart
   const { cart, setCart } = useDraftCart();
 
     // ── Dynamic slug loading (API-backed) ──────────────────────────────────
   useEffect(() => {
+    // A slow response for the PREVIOUS slug must not overwrite this one's
+    // law/meta after a client-side navigation.
+    let cancelled = false;
     async function loadLaw() {
       // NOTE: `companies-law` used to short-circuit to the bundled COMPANIES_LAW
       // constant here, BEFORE the fetch — so the reader never asked the database
@@ -132,17 +169,29 @@ function LawSystemPageContent() {
       try {
         setLoadError(false);
         setLoading(true);
+        // Reset to the static entry for THIS slug first, so a law that fails
+        // to load never shows the previous law's metadata.
+        setLawMeta(getLawMeta(slug));
+        setOfficialMeta(EMPTY_OFFICIAL_META);
+        setPreambleLocked(false);
+        setLawNotice("");
         const res = await fetch(`/api/library/laws/${apiSlug(slug)}`);
+        if (cancelled) return;
         if (!res.ok) {
-          console.warn(`[LawReader] Law "${slug}" not found in API (${res.status})`);
-          setLoadError(true);
+          console.warn(`[LawReader] Law "${slug}" failed to load from the API (${res.status})`);
+          setLoadError(res.status === 404 ? "not-found" : "failed");
           setLoading(false);
           return;
         }
         const data = await res.json();
+        if (cancelled) return;
+        setLawMeta(lawMetaFromDetail(slug, data));
         setLibraryFreeLimit(
           typeof data?.paywall?.freeLimit === "number" ? data.paywall.freeLimit : null,
         );
+        setOfficialMeta(parseOfficialMeta(data));
+        setPreambleLocked(data?.preambleLocked === true);
+        setLawNotice(typeof data?.notice === "string" ? data.notice.trim() : "");
         // Transform API response to match LawSystem interface
         setLaw({
           id: data.id || data.slug,
@@ -156,10 +205,21 @@ function LawSystemPageContent() {
           // ك-02 (2026-08-23): whitelist mapping — omitting a field here
           // silently discards it (see the `originalText` note below this
           // block from an earlier incident of the same kind).
-          law_status: data.law_status || 'active',
+          law_status: lawStatusForDetail(data.law_status),
+          parentLawId: data.parentLawId || '',
+          parentLaw: data.parentLaw || '',
+          enablingArticle: data.enablingArticle || '',
+          parentLawLink: data.parentLawLink && typeof data.parentLawLink.slug === 'string'
+            ? { slug: data.parentLawLink.slug, title: data.parentLawLink.title || data.parentLaw || '' }
+            : null,
           preamble: data.preamble || '',
-          chapters: (data.chapters || []).map((ch: { title: string; articles: LawArticle[] }) => ({
+          chapters: (data.chapters || []).map((ch: { title: string; articles: LawArticle[]; id?: unknown; level?: unknown; parentChapterId?: unknown }) => ({
             title: ch.title,
+            // Two-level chapters (migration 20261004_02): carried only when the
+            // API sends them; without them the chapter renders as it always did.
+            ...(typeof ch.id === 'string' && ch.id ? { id: ch.id } : {}),
+            ...(ch.level === 1 || ch.level === 2 ? { level: ch.level } : {}),
+            ...(typeof ch.parentChapterId === 'string' && ch.parentChapterId ? { parentChapterId: ch.parentChapterId } : {}),
             articles: (ch.articles || []).map((a: LawArticle) => ({
               id: a.id,
               num: a.num,
@@ -168,7 +228,10 @@ function LawSystemPageContent() {
               number: a.number,
               numberText: a.numberText,
               title: a.title || '',
-              status: a.status || 'active',
+              // Detail API already normalizes article status. Keep this client
+              // boundary fail-closed as well: a malformed empty payload must
+              // not render as evidence that the article is active.
+              status: a.status || 'status_undeclared',
               free: a.free ?? true,
               text: a.text || '',
               // This mapping is a whitelist: anything omitted here is silently
@@ -189,15 +252,22 @@ function LawSystemPageContent() {
           appendices: data.appendices || null,
           regulationPreamble: data.regulationPreamble || '',
           regulationInstruments: data.regulationInstruments || [],
+          // F13: how many regulation articles the server withheld from the flat
+          // view because their نظام article is behind the paywall. This mapping
+          // is a whitelist — omitting it here would silently discard the only
+          // signal that the «اللائحة وحدها» tab is showing less than the law has.
+          regulationInstrumentsLocked: data.regulationInstrumentsLocked || 0,
         } as LawSystem);
       } catch (err) {
+        if (cancelled) return;
         console.error('[LawReader] Failed to load law:', err);
-        setLoadError(true);
+        setLoadError("failed");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
     loadLaw();
+    return () => { cancelled = true; };
   }, [slug]);
 
   // ── Load server-side preferences once (signed-in users only) ────────────
@@ -260,6 +330,7 @@ function LawSystemPageContent() {
       titleEn: law.titleEn || law.title,
       catId: lawMeta.section_code ? `SA-${lawMeta.section_code}` : "SA-00",
       type: "law",
+      openedAt: new Date().toISOString(),
     };
     if (isLoggedIn && isSupabaseMode) {
       const filtered = (serverRecentSessions ?? []).filter(s => !(s.slug === slug && s.type === "law"));
@@ -323,7 +394,7 @@ function LawSystemPageContent() {
       new Set(art.regulations.map((r: any) => String(r.ref || "")).filter(Boolean)),
     );
     return {
-      ref: distinctRefs.join(", "),
+      ref: distinctRefs.join("، "),
       text: art.regulations.map((r: any) => String(r.text || "")).join("\n\n"),
     };
   };
@@ -422,7 +493,29 @@ function LawSystemPageContent() {
     return isRTL ? "التشريعات الفرعية" : "Sub-legislation";
   }, [availableRegNames, isRTL]);
 
+  // ── The flat «التشريعات الفرعية» view (law.regulationInstruments) renders
+  // regulation cards, not نظام articles. Its cards carry ids, and each نظام
+  // article maps to the first card of its own rows, so the contents list can
+  // jump there (owner report 2026-10-03; _reader-anchors.ts). The instrument
+  // filter is applied: a hidden card is not an anchor.
+  const flatRegulationView = !!law && viewMode === "regulation" &&
+    ((law.regulationInstruments?.length ?? 0) > 0 || (law.regulationInstrumentsLocked ?? 0) > 0);
+  const regulationAnchors = useMemo(
+    () => buildRegulationAnchors(
+      law?.regulationInstruments ?? [],
+      law ? law.chapters.flatMap(ch => ch.articles) : [],
+      selectedRegName,
+    ),
+    [law, selectedRegName],
+  );
+  const regulationAnchorFor = useCallback(
+    (articleId: string) => regulationAnchors.anchorByArticleId.get(articleId),
+    [regulationAnchors],
+  );
+
   // ــ Intersection Observer: تحديث activeId عند السكرول تلقائياً ــــــــــــــــــ
+  // Re-run on a view switch: the article cards are mounted per view, so the
+  // elements observed for the previous view are gone.
   useEffect(() => {
     if (!law) return;
     const ids = law.chapters.flatMap(ch => ch.articles.map(a => a.id));
@@ -441,7 +534,25 @@ function LawSystemPageContent() {
       return obs;
     });
     return () => observers.forEach(o => o?.disconnect());
-  }, [law]);
+  }, [law, viewMode]);
+
+  // Same for the flat regulation view: a visible card marks its نظام article active.
+  useEffect(() => {
+    if (!law || !flatRegulationView) return;
+    const observers = Array.from(regulationAnchors.articleIdByCardId.entries()).map(([cardId, articleId]) => {
+      const el = document.getElementById(cardId);
+      if (!el) return null;
+      const obs = new IntersectionObserver(
+        ([entry]) => {
+          if (entry.isIntersecting && !isScrolling.current) setActiveId(articleId);
+        },
+        { rootMargin: "-20% 0px -60% 0px", threshold: 0 }
+      );
+      obs.observe(el);
+      return obs;
+    });
+    return () => observers.forEach(o => o?.disconnect());
+  }, [law, flatRegulationView, regulationAnchors]);
 
   const sectionColors = SECTION_COLORS[lawMeta.section_code ?? "00"];
 
@@ -562,14 +673,14 @@ function LawSystemPageContent() {
     return (
       <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>
         <Navbar />
-        <main className="flex-1 max-w-[1280px] mx-auto w-full px-3 py-8 pt-32 pb-24 flex items-center justify-center">
+        <div className="print-main flex-1 max-w-[1280px] mx-auto w-full px-3 py-8 pt-32 pb-24 flex items-center justify-center">
           <div className="flex flex-col items-center gap-4 text-center">
             <div className="w-12 h-12 rounded-full border-4 border-t-[#0B3D2E] border-slate-200 dark:border-white/10 animate-spin" />
             <p className={`text-sm font-bold ${isDark ? "text-gray-400" : "text-gray-600"}`}>
               {isRTL ? "جاري تحميل تفاصيل التشريع..." : "Loading law details..."}
             </p>
           </div>
-        </main>
+        </div>
         <Footer />
       </div>
     );
@@ -584,20 +695,31 @@ function LawSystemPageContent() {
     return (
       <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>
         <Navbar />
-        <main className="flex-1 max-w-[1280px] mx-auto w-full px-3 py-8 pt-32 pb-24 flex items-center justify-center">
+        <div className="print-main flex-1 max-w-[1280px] mx-auto w-full px-3 py-8 pt-32 pb-24 flex items-center justify-center">
           <div className="flex flex-col items-center gap-4 text-center max-w-md p-6 rounded-2xl border border-red-500/20 bg-red-500/5">
             <Scales size={48} className="text-red-500" />
-            <h2 className="text-lg font-black">{isRTL ? "عذراً، لم نتمكن من العثور على هذا التشريع" : "Law Not Found"}</h2>
-            <p className={`text-sm ${isDark ? "text-gray-400" : "text-gray-600"}`}>
-              {isRTL 
-                ? "قد يكون الرابط غير صحيح، أو أن الوثيقة لم ترفع بعد. يمكنك العودة إلى الفهرس الرئيسي والبحث من جديد." 
-                : "The requested document might not be available or the link is incorrect."}
-            </p>
+            {loadError === "failed" ? (
+              <>
+                <h2 className="text-lg font-black">تعذّر تحميل هذا التشريع</h2>
+                <p className={`text-sm ${isDark ? "text-gray-400" : "text-gray-600"}`}>
+                  حدث خطأ أثناء تحميل نص النظام من المكتبة. حدّث الصفحة بعد قليل، أو عد إلى الفهرس الرئيسي.
+                </p>
+              </>
+            ) : (
+              <>
+                <h2 className="text-lg font-black">{isRTL ? "عذراً، لم نتمكن من العثور على هذا التشريع" : "Law Not Found"}</h2>
+                <p className={`text-sm ${isDark ? "text-gray-400" : "text-gray-600"}`}>
+                  {isRTL
+                    ? "قد يكون الرابط غير صحيح، أو أن الوثيقة لم ترفع بعد. يمكنك العودة إلى الفهرس الرئيسي والبحث من جديد."
+                    : "The requested document might not be available or the link is incorrect."}
+                </p>
+              </>
+            )}
             <Link href="/laws" className="px-4 py-2 rounded-xl text-xs font-bold bg-[#0B3D2E] text-white hover:opacity-90 transition">
               {isRTL ? "العودة إلى المكتبة القانونية" : "Back to Legal Library"}
             </Link>
           </div>
-        </main>
+        </div>
         <Footer />
       </div>
     );
@@ -607,7 +729,7 @@ function LawSystemPageContent() {
     <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>
       <Navbar />
 
-      <main className="flex-1 max-w-[1280px] mx-auto w-full px-3 py-8 pt-32 pb-24">
+      <div className="print-main flex-1 max-w-[1280px] mx-auto w-full px-3 py-8 pt-32 pb-24">
 
         <div className="h-6" />
 
@@ -621,7 +743,13 @@ function LawSystemPageContent() {
           <div className="flex flex-wrap items-start gap-3 justify-between">
             <div>
               <h1 className={`text-xl font-black mb-0.5 ${isDark ? "text-white" : "text-zinc-900"}`}>{lawTitle}</h1>
-              <p className={`text-[12px] ${muted}`}>{law.issuanceDecree}</p>
+              {/* T28-22: withheld for a non-subscriber → one locked row; simply
+                  empty → nothing (this used to render an empty line). */}
+              {officialMeta.locked ? (
+                <OfficialMetaLockedRow isDark={isDark} onUnlock={() => setShowPaywall(true)} textSize="text-[11px]" />
+              ) : law.issuanceDecree ? (
+                <p className={`text-[12px] ${muted}`}>{law.issuanceDecree}</p>
+              ) : null}
             </div>
             <div className="flex gap-2 print:hidden">
                 <button
@@ -655,6 +783,38 @@ function LawSystemPageContent() {
             </div>
           </div>
         </div>
+
+        {/* T28-23: a repealed law stays readable — it decides facts that
+            happened before its repeal — but it must say so before any article.
+            The way forward is offered only when the API names the law that
+            replaced it; no replacement is ever guessed. */}
+        {isRepealedLawStatus(law.law_status) && (
+          <div
+            role="note"
+            className={`mb-5 flex flex-col gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between ${
+              isDark ? "border-red-500/40 bg-red-950/30" : "border-red-300 bg-red-50"
+            }`}
+          >
+            <div className="flex items-start gap-2.5">
+              <Prohibit size={20} weight="fill" className="mt-0.5 shrink-0 text-red-500" />
+              <div>
+                <p className={`text-sm font-black ${isDark ? "text-red-300" : "text-red-700"}`}>هذا التشريع ملغى وغير سارٍ</p>
+                <p className={`mt-0.5 text-[12px] leading-relaxed ${isDark ? "text-red-300/80" : "text-red-800/80"}`}>
+                  يُعرض نصّه للأرشيف ولحسم الوقائع السابقة لتاريخ إلغائه.
+                </p>
+              </div>
+            </div>
+            {officialMeta.replacedBy && (
+              <Link
+                href={`/laws/${encodeURIComponent(officialMeta.replacedBy.slug)}`}
+                title={officialMeta.replacedBy.title || undefined}
+                className="inline-flex shrink-0 items-center justify-center rounded-xl bg-red-600 px-3.5 py-2 text-[12px] font-bold text-white transition hover:bg-red-700 print:hidden"
+              >
+                الانتقال إلى النظام الساري ←
+              </Link>
+            )}
+          </div>
+        )}
 
         {/* ــ شريط وضع القراءة وحجم الخط والعودة ــ */}
         <div className={`relative z-45 flex flex-wrap items-center justify-between gap-4 mb-3 print:hidden ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
@@ -704,7 +864,13 @@ function LawSystemPageContent() {
 
             <ReportArticleIssueButton
               lawSlug={slug}
-              articleRef={activeArticle ? `${activeArticle.num} — ${lawTitle}` : lawTitle}
+              // The article's display label only (T28-28): «num — lawTitle»
+              // passed the server's 100-char limit on long titles → 400. The
+              // law is already on the row as lawSlug.
+              articleRef={activeArticle?.num ?? ""}
+              // The reader's highlight inside the active article, read at the
+              // moment the dialog opens (optional; the reader can remove it).
+              captureHighlight={() => (activeArticle ? getSelectedTextWithin(activeArticle.id) : "")}
               isDark={isDark}
               isRTL={isRTL}
               disabled={!activeArticle}
@@ -717,7 +883,7 @@ function LawSystemPageContent() {
 
           {/* RIGHT COLUMN: Identity Panel AND Index Panel */}
           {!isReadingMode && (
-            <aside className="hidden lg:block lg:col-span-3 sticky top-6 z-40 space-y-3 print:hidden max-h-[calc(100vh-2rem)] overflow-y-auto" style={{ overscrollBehavior: 'auto' }}>
+            <aside className="hidden lg:block lg:col-span-3 sticky top-28 z-30 space-y-3 print:hidden max-h-[calc(100vh-8rem)] overflow-y-auto" style={{ overscrollBehavior: 'auto' }}>
               {/* Identity Card */}
               <SidebarPanel
                 isDark={isDark}
@@ -737,6 +903,7 @@ function LawSystemPageContent() {
                 userType={userType}
                 mode="identity"
                 viewMode={viewMode as any}
+                officialMeta={officialMeta}
               />
               {/* Index Panel */}
               <SidebarPanel
@@ -757,14 +924,18 @@ function LawSystemPageContent() {
                 userType={userType}
                 mode="index"
                 viewMode={viewMode as any}
+                regulationAnchorFor={flatRegulationView ? regulationAnchorFor : undefined}
               />
             </aside>
           )}
 
           {/* CENTER COLUMN: Articles list */}
           <div className={`nzamy-reader-container col-span-12 min-w-0 space-y-4 ${isReadingMode ? "max-w-3xl mx-auto w-full" : "lg:col-span-6"}`}>
-            {/* View Mode Switcher (Tabs) */}
-            {!isReadingMode && (
+            {/* View Mode Switcher (Tabs) — only when there is something to switch
+                to. A law with no regulation (unlocked or withheld) and no
+                appendix showed «عرض الكل | النظام فقط», two buttons that render
+                the same list (owner test 2026-09-28, T28-09). */}
+            {!isReadingMode && hasViewModeChoices && (
               <div className={`flex items-center gap-1.5 p-1 rounded-xl border ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"} w-fit mb-4 print:hidden`}>
                 <button
                   onClick={() => setViewMode("all")}
@@ -786,7 +957,13 @@ function LawSystemPageContent() {
                 >
                   {isRTL ? "النظام فقط" : "Law Only"}
                 </button>
-                {law.chapters.some(ch => ch.articles.some(a => a.regulations && a.regulations.length > 0)) && (
+                {/* F13: `a.regulations` is emitted by the API for UNLOCKED articles
+                    only, so a law whose every regulation-bearing article sits past
+                    the free limit would lose the tab itself — not just its content.
+                    The withheld count keeps the entry point (and the upgrade
+                    affordance behind it) reachable. */}
+                {(law.chapters.some(ch => ch.articles.some(a => a.regulations && a.regulations.length > 0)) ||
+                  (law.regulationInstrumentsLocked ?? 0) > 0) && (
                   <button
                     onClick={() => setViewMode("regulation")}
                     className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
@@ -817,10 +994,26 @@ function LawSystemPageContent() {
             <PreambleBlock
               text={law.preamble}
               regulationPreamble={(law as any).regulationPreamble}
+              locked={preambleLocked}
+              onUnlock={() => setShowPaywall(true)}
             isDark={isDark}
               isRTL={isRTL}
               viewMode={viewMode as any}
             />
+
+            {/* Official text not published: the document's own notice, with no
+                article number (it was a synthetic «الصفحة 1» before). */}
+            {lawNotice && allArticles.length === 0 && (
+              <div
+                role="note"
+                className={`rounded-2xl border p-4 flex items-start gap-2.5 ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}
+              >
+                <Info size={18} weight="duotone" className="mt-0.5 flex-shrink-0 text-[#C8A762]" />
+                <div className="min-w-0 flex-1">
+                  <MD text={lawNotice} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
+                </div>
+              </div>
+            )}
 
             {viewMode === "appendix" ? (
               <div className="space-y-4">
@@ -838,7 +1031,9 @@ function LawSystemPageContent() {
                   </div>
                 ))}
               </div>
-            ) : viewMode === "regulation" && (law as any).regulationInstruments?.length > 0 ? (
+            ) : viewMode === "regulation" &&
+                ((law as any).regulationInstruments?.length > 0 ||
+                 (law.regulationInstrumentsLocked ?? 0) > 0) ? (
               // ── العرض المسطَّح الجديد "اللائحة وحدها" ──────────────────────
               // مبني من law.regulationInstruments (محسوب مسبقاً من الخادم:
               // مجمَّع بـref، مرتَّب بـsort_key، ومُستبعَد منه is_secondary_display)
@@ -846,13 +1041,20 @@ function LawSystemPageContent() {
               // راجع 00_عقل_القوانين/13_دليل_المبرمج/02_عقد_اللوائح_المدمجة_والبذر.md §1-3-د.
               <div className="space-y-4">
                 {(() => {
-                  const instruments = (law as any).regulationInstruments as Array<{
+                  // `?? []` because this branch now also opens when the list is
+                  // empty and every instrument was withheld by the paywall (F13).
+                  const instruments = ((law as any).regulationInstruments ?? []) as Array<{
                     ref: string;
                     articles: { regNum: string | null; text: string; status: string; systemArticleNumber: string | null }[];
                   }>;
                   const visible = selectedRegName
                     ? instruments.filter((i) => i.ref === selectedRegName)
                     : instruments;
+                  // F13: the server omits (never truncates) the regulation
+                  // articles hanging under a locked نظام article, so this tab
+                  // would otherwise silently shrink — or come up empty for a
+                  // law whose every regulation sits past the free limit.
+                  const lockedRegCount = law.regulationInstrumentsLocked ?? 0;
 
                   return (
                     <>
@@ -883,18 +1085,54 @@ function LawSystemPageContent() {
                           ))}
                         </div>
                       )}
-                      {visible.map((inst) => (
-                        <div key={inst.ref} className="space-y-3">
-                          {inst.articles.map((a, i) => (
-                            <div
-                              key={`${inst.ref}-${a.regNum ?? i}`}
-                              className={`rounded-xl border p-4 ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}
-                            >
-                              <MD text={a.text} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
-                            </div>
-                          ))}
+                      {visible.map((inst) => {
+                        // Ids from the position in the FULL list, so the
+                        // instrument filter never renumbers them (_reader-anchors.ts).
+                        const instIndex = instruments.indexOf(inst);
+                        return (
+                          <div key={inst.ref} className="space-y-3">
+                            {inst.articles.map((a, i) => {
+                              const cardId = regulationCardId(instIndex, i);
+                              const isActiveCard = regulationAnchors.articleIdByCardId.get(cardId) === activeId;
+                              return (
+                                <div
+                                  key={`${inst.ref}-${a.regNum ?? i}`}
+                                  id={cardId}
+                                  // A contents-list jump lands the card just below the fixed bar.
+                                  style={{ scrollMarginTop: READER_SCROLL_MARGIN_TOP }}
+                                  className={`rounded-xl border p-4 ${isDark ? "bg-zinc-900" : "bg-white shadow-sm"} ${
+                                    isActiveCard
+                                      ? isDark ? "border-[#C8A762]/50" : "border-amber-400"
+                                      : isDark ? "border-white/[0.07]" : "border-slate-200"
+                                  }`}
+                                >
+                                  <MD text={a.text} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                      {lockedRegCount > 0 && (
+                        <div className={`rounded-xl border p-5 text-center space-y-2.5 ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}>
+                          <p className={`text-[12px] font-bold leading-relaxed ${isDark ? "text-zinc-300" : "text-slate-600"}`}>
+                            {isRTL
+                              // The number is law-wide, not per-instrument, so
+                              // the copy says "في هذا النظام" and never "هنا":
+                              // the chips above can be filtering this list to a
+                              // single ref while the withheld articles belong to
+                              // another one.
+                              ? `${lockedRegCount} من مواد اللوائح في هذا النظام لا تظهر لأن المواد النظامية التابعة لها خارج المعاينة المجانية`
+                              : `${lockedRegCount} regulation article(s) in this law are hidden: the law articles they belong to are outside the free preview`}
+                          </p>
+                          <button
+                            onClick={() => setShowPaywall(true)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0B3D2E] text-white text-[11px] font-bold shadow"
+                          >
+                            <Lock size={11} /> {isRTL ? "اشترك للوصول" : "Subscribe to access"}
+                          </button>
                         </div>
-                      ))}
+                      )}
                     </>
                   );
                 })()}
@@ -1107,54 +1345,89 @@ function LawSystemPageContent() {
                 })()}
               </div>
             ) : (
-              law.chapters.map((ch, ci) => {
-                const visibleArts = filteredArticles
+              (() => {
+                const visibleArticlesOf = (ch: LawChapter) => filteredArticles
                   ? ch.articles.filter(a => filteredArticles.some(f => f.id === a.id))
                   : ch.articles;
-                
-                const displayedArts = visibleArts;
-
-                if (displayedArts.length === 0) return null;
-                return (
-                  <div key={ci} className="space-y-3">
-                    {!filteredArticles && (
-                      <div className="flex items-center gap-3 py-1">
-                        <div className={`h-px flex-1 ${isDark ? "bg-white/[0.06]" : "bg-slate-200"}`} />
-                        <span className={`text-[11px] font-bold px-3 py-1 rounded-full border ${isDark ? "border-white/[0.07] text-zinc-400 bg-zinc-800/60" : "border-slate-200 text-slate-500 bg-slate-50"}`}>{ch.title}</span>
-                        <div className={`h-px flex-1 ${isDark ? "bg-white/[0.06]" : "bg-slate-200"}`} />
-                      </div>
-                    )}
-                    {displayedArts.map(article => (
-                      <ArticleBlock
-                        key={article.id}
-                        article={article}
-                        lawName={lawTitle}
-                        lawType={law.documentType}
-                        isDark={isDark}
-                        entry={cartMap.get(article.id)}
-                        onAddArticle={addArticle}
-                        onRemoveArticle={removeArticle}
-                        onAddExecReg={addExecReg}
-                        onRemoveExecReg={removeExecReg}
-                        onActive={setActiveId}
-                        isActive={activeId === article.id}
-                        showPaywall={() => setShowPaywall(true)}
-                        onExplain={(a) => setExplainArticle(a)}
-                        isRTL={isRTL}
-                        fontClass={fontClass}
-                        isReadingMode={isReadingMode}
-                        viewMode={viewMode}
-                      />
-                    ))}
+                const renderArticle = (article: LawArticle) => (
+                  <ArticleBlock
+                    key={article.id}
+                    article={article}
+                    lawName={lawTitle}
+                    lawType={law.documentType}
+                    isDark={isDark}
+                    entry={cartMap.get(article.id)}
+                    onAddArticle={addArticle}
+                    onRemoveArticle={removeArticle}
+                    onAddExecReg={addExecReg}
+                    onRemoveExecReg={removeExecReg}
+                    onActive={setActiveId}
+                    isActive={activeId === article.id}
+                    showPaywall={() => setShowPaywall(true)}
+                    onExplain={(a) => setExplainArticle(a)}
+                    isRTL={isRTL}
+                    fontClass={fontClass}
+                    isReadingMode={isReadingMode}
+                    viewMode={viewMode}
+                  />
+                );
+                const chapterPill = (title: string) => (
+                  <div className="flex items-center gap-3 py-1">
+                    <div className={`h-px flex-1 ${isDark ? "bg-white/[0.06]" : "bg-slate-200"}`} />
+                    <span className={`text-[11px] font-bold px-3 py-1 rounded-full border ${isDark ? "border-white/[0.07] text-zinc-400 bg-zinc-800/60" : "border-slate-200 text-slate-500 bg-slate-50"}`}>{title}</span>
+                    <div className={`h-px flex-1 ${isDark ? "bg-white/[0.06]" : "bg-slate-200"}`} />
                   </div>
                 );
-              })
+
+                // Two-level chapters (2026-10-04): a level-1 heading shows ONCE,
+                // above its level-2 chapters. Without level data every node is a
+                // plain chapter and renders exactly as before (_chapter-tree.ts).
+                return buildChapterTree(law.chapters).map((node) => {
+                  if (node.children.length === 0) {
+                    const ch = node.chapter;
+                    const displayedArts = visibleArticlesOf(ch);
+                    if (displayedArts.length === 0) return null;
+                    return (
+                      <div key={node.index} className="space-y-3">
+                        {!filteredArticles && chapterPill(ch.title)}
+                        {displayedArts.map(renderArticle)}
+                      </div>
+                    );
+                  }
+
+                  // A group: hidden only when neither the heading nor any of its
+                  // chapters has an article to show — a level-1 heading with no
+                  // articles of its own still heads its children.
+                  const ownArts = visibleArticlesOf(node.chapter);
+                  const children = node.children.map((child) => ({ ...child, arts: visibleArticlesOf(child.chapter) }));
+                  if (ownArts.length === 0 && children.every((child) => child.arts.length === 0)) return null;
+                  return (
+                    <div key={node.index} className="space-y-3">
+                      {!filteredArticles && (
+                        <div className="flex items-center gap-3 pt-3 pb-1">
+                          <span className={`text-[12px] font-black px-3.5 py-1.5 rounded-xl border ${isDark ? "border-[#C8A762]/25 text-[#C8A762] bg-[#0B3D2E]/40" : "border-[#0B3D2E]/15 text-[#0B3D2E] bg-[#0B3D2E]/5"}`}>
+                            {node.chapter.title}
+                          </span>
+                          <div className={`h-px flex-1 ${isDark ? "bg-[#C8A762]/15" : "bg-[#0B3D2E]/15"}`} />
+                        </div>
+                      )}
+                      {ownArts.map(renderArticle)}
+                      {children.map((child) => child.arts.length === 0 ? null : (
+                        <div key={child.index} className="space-y-3">
+                          {!filteredArticles && chapterPill(child.chapter.title)}
+                          {child.arts.map(renderArticle)}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                });
+              })()
             )}
           </div>
 
           {/* LEFT COLUMN: AI Tools and related documents */}
           {!isReadingMode && (
-            <aside className="hidden lg:block lg:col-span-3 sticky top-6 z-40 space-y-3 print:hidden max-h-[calc(100vh-2rem)] overflow-y-auto" style={{ overscrollBehavior: 'auto' }}>
+            <aside className="hidden lg:block lg:col-span-3 sticky top-28 z-30 space-y-3 print:hidden max-h-[calc(100vh-8rem)] overflow-y-auto" style={{ overscrollBehavior: 'auto' }}>
               <button
                 onClick={() => setShowCommunity(true)}
                 className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl border text-[11px] font-semibold transition ${
@@ -1232,15 +1505,93 @@ function LawSystemPageContent() {
           )}
 
         </div>
-      </main>
+      </div>
 
       <Footer />
 
-      <FloatingButtons
-        reportConfig={{ pageSlug: slug, pageType: "law" }}
-        cartCount={cart.length}
-        onCartClick={() => setShowCart(true)}
-      />
+      {/* The global <FloatingButtons /> in app/layout.tsx already covers this
+          page: it derives the same reportConfig from the pathname
+          (FloatingButtons.tsx:489-496), reads the same shared useDraftCart, and
+          owns its own DraftDrawer. A second instance here rendered a second FAB
+          and was hidden after paint by a MutationObserver watching the whole
+          document — both copies were visible until it ran. Removing the cause
+          removes the workaround. */}
+
+      {/* ── Mobile article index — the phone counterpart of the lg-only aside ──
+          Renders the SAME SidebarPanel, in the same two modes, so the index and
+          the quick-jump search stay one implementation. lg:hidden throughout:
+          the desktop reader keeps its sticky sidebar exactly as before. */}
+      {!isReadingMode && (
+        <button
+          type="button"
+          onClick={() => setShowIndexSheet(true)}
+          aria-label={isRTL ? "فهرس المواد والبحث" : "Article index and search"}
+          // Middle of the phone FAB column (see ResearchWorkspace's stack note).
+          style={{ bottom: "calc(5rem + env(safe-area-inset-bottom, 0px))" }}
+          className={`lg:hidden fixed ${isRTL ? "right-6" : "left-6"} z-40 flex h-14 w-14 items-center justify-center rounded-2xl shadow-lg print:hidden ${isDark ? "bg-zinc-800 text-white border border-white/10" : "bg-white text-[#0B3D2E] border border-slate-200"}`}
+        >
+          <ListBullets size={22} weight="bold" />
+        </button>
+      )}
+
+      <AnimatePresence>
+        {showIndexSheet && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setShowIndexSheet(false)}
+              className="lg:hidden fixed inset-0 z-[10000] bg-black/50 backdrop-blur-[2px] print:hidden"
+            />
+            <motion.div
+              initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+              transition={{ type: "spring", stiffness: 320, damping: 32 }}
+              className={`lg:hidden fixed inset-x-0 bottom-0 z-[10001] max-h-[85dvh] overflow-y-auto overscroll-contain rounded-t-3xl safe-bottom print:hidden ${isDark ? "bg-zinc-950" : "bg-white"}`}
+              dir={isRTL ? "rtl" : "ltr"}
+            >
+              <div className={`sticky top-0 z-10 flex items-center justify-between px-4 py-3 border-b ${isDark ? "bg-zinc-950 border-white/10" : "bg-white border-slate-200"}`}>
+                <span className={`text-sm font-bold ${isDark ? "text-white" : "text-[#0B3D2E]"}`}>
+                  {isRTL ? "فهرس المواد" : "Article index"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowIndexSheet(false)}
+                  aria-label={isRTL ? "إغلاق" : "Close"}
+                  className={`flex h-11 w-11 items-center justify-center rounded-xl ${isDark ? "text-zinc-400 hover:bg-white/10" : "text-slate-500 hover:bg-slate-100"}`}
+                >
+                  <X size={18} weight="bold" />
+                </button>
+              </div>
+              <div
+                className="p-3 space-y-3"
+                /* Choosing an article should take you to it, not leave the sheet
+                   covering the text you just jumped to. */
+                onClick={(e) => {
+                  if ((e.target as HTMLElement).closest("a,button")) setShowIndexSheet(false);
+                }}
+              >
+                <SidebarPanel
+                  isDark={isDark} isRTL={isRTL} law={law} lawMeta={lawMeta}
+                  sectionColors={sectionColors} activeId={activeId} setActiveId={setActiveId}
+                  jumpQuery={jumpQuery} setJumpQuery={setJumpQuery}
+                  filteredArticles={filteredArticles} cartMap={cartMap} isScrolling={isScrolling}
+                  setShowFolderModal={setShowFolderModal} setShowPaywall={setShowPaywall}
+                  userType={userType} mode="identity" viewMode={viewMode as any}
+                  officialMeta={officialMeta}
+                />
+                <SidebarPanel
+                  isDark={isDark} isRTL={isRTL} law={law} lawMeta={lawMeta}
+                  sectionColors={sectionColors} activeId={activeId} setActiveId={setActiveId}
+                  jumpQuery={jumpQuery} setJumpQuery={setJumpQuery}
+                  filteredArticles={filteredArticles} cartMap={cartMap} isScrolling={isScrolling}
+                  setShowFolderModal={setShowFolderModal} setShowPaywall={setShowPaywall}
+                  userType={userType} mode="index" viewMode={viewMode as any}
+                  regulationAnchorFor={flatRegulationView ? regulationAnchorFor : undefined}
+                />
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {showCart && (
@@ -1293,7 +1644,10 @@ function LawSystemPageContent() {
             whileHover={{ scale: 1.1, y: -2 }}
             whileTap={{ scale: 0.92 }}
             onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-            className={`fixed z-[9999] bottom-20 md:bottom-6 ${isRTL ? "right-6" : "left-6"} w-12 h-12 rounded-full flex items-center justify-center border transition-all duration-300 print:hidden ${
+            // Bottom of the FAB column, above the safe-area inset; z-40 like
+            // the other FABs (it was z-[9999] and covered modals).
+            style={{ bottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))" }}
+            className={`fixed z-40 ${isRTL ? "right-6" : "left-6"} w-12 h-12 rounded-full flex items-center justify-center border transition-all duration-300 print:hidden ${
               isDark
                 ? "bg-[#0B3D2E] border-[#C8A762]/60 text-[#C8A762] hover:bg-[#082d22] hover:border-[#C8A762] shadow-[0_8px_20px_rgba(200,167,98,0.25)]"
                 : "bg-[#0B3D2E] border-[#C8A762] text-[#C8A762] hover:bg-[#082d22] shadow-[0_8px_20px_rgba(11,61,46,0.35)]"

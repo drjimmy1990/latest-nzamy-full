@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { useState } from "react";
+import { normalizeSaudiMobile, sanitizePhoneDigits, saudiMobileMessage } from "@/lib/services/saudiMobile";
 import {
   Check,
   EnvelopeSimple,
@@ -271,6 +272,9 @@ export function Step2({ isAr, providerType, data, onChange, selectedSpecs, setSe
 // ─── Step 3: Account & documents ─────────────────────────────────────────────
 export function Step3({ isAr, data, onChange }: { isAr: boolean; data: Record<string, string>; onChange: (k: string, v: string) => void }) {
   const [show, setShow] = useState(false);
+  const phoneTouched = Boolean(data.phone);
+  const phoneResult = normalizeSaudiMobile(data.phone);
+  const phoneValid = phoneResult.ok;
 
   return (
     <motion.div initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} transition={{ type: "spring", stiffness: 300, damping: 28 }}>
@@ -292,8 +296,23 @@ export function Step3({ isAr, data, onChange }: { isAr: boolean; data: Record<st
           <label className="mb-1.5 block text-sm font-medium text-ink dark:text-gray-300">{isAr ? "رقم الجوال" : "Phone Number"}</label>
           <div className="relative">
             <Phone size={18} className={`absolute top-1/2 -translate-y-1/2 text-ink-faint dark:text-gray-500 pointer-events-none ${isAr ? "right-3.5" : "left-3.5"}`} />
-            <input type="tel" dir="ltr" placeholder="05XXXXXXXX" value={data.phone || ""} onChange={e => onChange("phone", e.target.value)} className={`${inputBase} ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"}`} />
+            <input
+              type="tel"
+              inputMode="numeric"
+              autoComplete="tel"
+              dir="ltr"
+              placeholder="05XXXXXXXX"
+              value={data.phone || ""}
+              onChange={(e) => onChange("phone", sanitizePhoneDigits(e.target.value))}
+              aria-invalid={phoneTouched && !phoneValid}
+              className={`${inputBase} ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"} ${phoneTouched && !phoneValid ? "border-red-400 dark:border-red-500/60" : ""}`}
+            />
           </div>
+          <p className={`mt-1.5 text-xs ${phoneTouched && !phoneValid ? "text-red-600 dark:text-red-400" : "text-ink-faint dark:text-gray-500"}`}>
+            {phoneTouched && !phoneValid
+              ? (isAr ? saudiMobileMessage(phoneResult) : "Invalid mobile number — e.g. 0512345678")
+              : (isAr ? "أرقام فقط، ويُحفظ بصيغة دولية صحيحة" : "Digits only; stored in valid international format")}
+          </p>
         </div>
         <div>
           <label className="mb-1.5 block text-sm font-medium text-ink dark:text-gray-300">{isAr ? "كلمة المرور" : "Password"}</label>
@@ -371,11 +390,9 @@ export function Step4({ isAr, selectedPlan, onSelect }: { isAr: boolean; selecte
                   : "border-slate-200/70 bg-white hover:border-slate-300 dark:border-white/10 dark:bg-dark-card"
               }`}
             >
-              {plan.highlighted && !isActive && (
-                <span className="absolute top-3 end-3 rounded-full bg-gold px-2 py-0.5 text-[10px] font-bold text-white">
-                  {isAr ? "الأكثر طلباً" : "Most Popular"}
-                </span>
-              )}
+              {/* No «الأكثر طلباً» badge on the highlighted plan (owner, Q164,
+                  2026-10-03): no subscription data supports a popularity
+                  claim. `highlighted` still drives the active-state styling. */}
               {isActive && !plan.highlighted && (
                 <span className="absolute top-3 end-3 flex h-5 w-5 items-center justify-center rounded-full bg-royal">
                   <Check size={11} weight="bold" className="text-white" />

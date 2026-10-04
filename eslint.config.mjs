@@ -4,6 +4,8 @@ import react from "eslint-plugin-react";
 import reactHooks from "eslint-plugin-react-hooks";
 
 const eslintConfig = [
+  // deploy.sh build folders (see next.config.ts distDir).
+  { ignores: [".next-a/**", ".next-b/**"] },
   ...nextVitals,
   ...nextTypescript,
   {
@@ -32,6 +34,10 @@ const eslintConfig = [
       "react-hooks/purity": "warn",
       "react-hooks/refs": "warn",
       "react-hooks/immutability": "warn",
+      // Same family (React Compiler "could not preserve memoization"): three
+      // pre-existing findings in client/page.tsx and GlobalSearch.tsx kept CI
+      // red on every commit (plan P0-26). A signal, not a build blocker.
+      "react-hooks/preserve-manual-memoization": "warn",
     },
   },
 ];

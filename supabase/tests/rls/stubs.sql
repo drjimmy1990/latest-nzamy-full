@@ -7,6 +7,17 @@ create table auth.users (id uuid primary key);
 create or replace function auth.uid() returns uuid
 language sql stable as $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
 
+-- 20260603_phase1_001:12 — every migration that adds an updated_at trigger
+-- expects this to already exist (20260603_phase1_002 and 20260616 re-create it
+-- with `create or replace`; 20260603_phase1_003 only references it).
+create or replace function public.handle_updated_at()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
 create table public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   user_type text not null,
@@ -277,11 +288,72 @@ create policy "participants read attachments" on public.attachments for select
 create policy "participants insert attachments" on public.attachments for insert
   with check (exists (select 1 from public.service_requests sr where sr.id = attachments.request_id and sr.requester_user_id = auth.uid()));
 
--- A non-superuser role: RLS does NOT apply to superusers, so every test
--- below would silently pass as postgres.
-create role app_user login;
-grant usage on schema public, auth to app_user;
-grant all on all tables in schema public to app_user;
-grant all on all sequences in schema public to app_user;
-alter default privileges for role postgres in schema public grant all on tables to app_user;
-alter default privileges for role postgres in schema public grant all on sequences to app_user;
+-- 20260616 admin_audit_events + notifications (minimal shapes; 20260616
+-- PART 6 and 20260617 ISSUE 3 create policies on both, so a chain that loads
+-- those real migrations stops here without them).
+create table public.admin_audit_events (
+  id bigserial primary key,
+  actor_id uuid references public.profiles(id) on delete set null,
+  action text not null default '',
+  target_type text not null default '',
+  target_id text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+alter table public.admin_audit_events enable row level security;
+
+create table public.notifications (
+  id bigserial primary key,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  kind text not null default 'system',
+  title text not null default '',
+  body text not null default '',
+  read_at timestamptz,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+alter table public.notifications enable row level security;
+
+-- Roles.
+--   * app_user — a non-superuser: RLS does NOT apply to superusers, so every
+--     test below would silently pass as postgres.
+--   * anon / authenticated / service_role — the roles every Supabase project
+--     ships with. A migration that writes `to authenticated` or
+--     `revoke … from anon` (20260921_01, 20260921_02) cannot even parse on a
+--     database that lacks them, so the harness must provide them too. Table
+--     privileges mirror Supabase's defaults: anon and authenticated are
+--     granted everything and RLS is the only gate.
+--   Roles are cluster-wide, and run-local.sh reuses one cluster across runs
+--   (only the database is thrown away), so creation is idempotent here.
+do $$
+begin
+  if not exists (select 1 from pg_roles where rolname = 'anon') then
+    create role anon nologin noinherit;
+  end if;
+  if not exists (select 1 from pg_roles where rolname = 'authenticated') then
+    create role authenticated nologin noinherit;
+  end if;
+  if not exists (select 1 from pg_roles where rolname = 'service_role') then
+    create role service_role nologin noinherit bypassrls;
+  end if;
+  if not exists (select 1 from pg_roles where rolname = 'app_user') then
+    create role app_user login;
+  end if;
+end $$;
+
+grant usage on schema public, auth to app_user, anon, authenticated, service_role;
+grant all on all tables in schema public to app_user, anon, authenticated, service_role;
+grant all on all sequences in schema public to app_user, anon, authenticated, service_role;
+alter default privileges for role postgres in schema public
+  grant all on tables to app_user, anon, authenticated, service_role;
+alter default privileges for role postgres in schema public
+  grant all on sequences to app_user, anon, authenticated, service_role;
+
+-- A signed-in PostgREST request runs as `authenticated`. app_user stands in for
+-- it in every test, so a policy written `to authenticated` must apply to it.
+do $$
+begin
+  if not pg_has_role('app_user', 'authenticated', 'MEMBER') then
+    grant authenticated to app_user;
+  end if;
+end $$;

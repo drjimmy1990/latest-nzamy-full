@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { buildWebhookPayload } from "@/lib/n8n/payload";
 import { dispatchToN8n } from "@/lib/n8n/dispatch";
 import { RequestEvent, type RequestEventName } from "@/lib/events";
+import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 
 /**
  * POST /api/v1/n8n/trigger
@@ -23,7 +24,8 @@ export async function POST(request: NextRequest) {
     error: authError,
   } = await supabase.auth.getUser();
 
-  if (authError || !user) {
+  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+  if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

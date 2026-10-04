@@ -6,10 +6,11 @@ import { useRouter } from "next/navigation";
 import BetaReviewGate from "@/components/BetaReviewGate";
 import {
   PaperPlaneTilt, Microphone, Robot, User,
-  Lightning, Books, Paperclip,
+  Lightning, Books,
   MagicWand, Warning, Copy, ThumbsUp, ThumbsDown,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { VoiceInput } from "@/components/ui/VoiceInput";
 import { useUser } from "@/hooks/useUser";
 import EscalationFlow from "@/components/EscalationFlow";
 import AdvisoryTemplateNotice from "@/components/ai/AdvisoryTemplateNotice";
@@ -174,7 +175,7 @@ export default function AIConsultPage() {
     {
       id: "sys-1",
       role: "system",
-      text: "جلسة استشارة جديدة · نظامي AI MAX · مارس ٢٠٢٦",
+      text: "جلسة استشارة جديدة · نظامي AI",
       time: "",
     },
   ]);
@@ -236,7 +237,21 @@ export default function AIConsultPage() {
   if (userType === "lawyer") return null;
 
   return (
-    <div className={`flex flex-col h-[100dvh] md:h-[100dvh] ${bg}`} dir={isRTL ? "rtl" : "ltr"}>
+    /* AILayout wraps this page in a dashboard layout whose <main> carries
+       pt-[calc(env(safe-area-inset-top)+60px)] for the mobile header, plus an
+       inner p-4 (md:p-6). A flat 100dvh therefore started ~76px down the
+       screen and ran that much past the bottom, carrying the composer — send,
+       mic, attach — off the visible area entirely with no way to scroll to it.
+       Each breakpoint now subtracts exactly what its own layout added.
+       lg: is left as it was: there the header is hidden (lg:pt-0), and
+       changing desktop is not in scope for a phone bug. */
+    <div
+      className={`flex flex-col ${bg}
+        h-[calc(100dvh-env(safe-area-inset-top)-60px-2rem)]
+        md:h-[calc(100dvh-env(safe-area-inset-top)-60px-3rem)]
+        lg:h-[100dvh]`}
+      dir={isRTL ? "rtl" : "ltr"}
+    >
 
       {/* ── Header ────────────────────────────────────────────────────────────── */}
       <div className={`flex-shrink-0 flex items-center justify-between px-5 py-3.5 border-b ${isDark ? "border-white/[0.06]" : "border-zinc-200"}`}>
@@ -372,10 +387,11 @@ export default function AIConsultPage() {
       {/* ── Input ─────────────────────────────────────────────────────────────── */}
       <div className={`flex-shrink-0 border-t px-4 pb-4 pt-3 ${isDark ? "border-white/[0.06]" : "border-zinc-200"}`}>
         <div className={`flex items-end gap-2 rounded-2xl border px-3 py-2 ${isDark ? "border-white/[0.08] bg-zinc-900/80 focus-within:border-[#C8A762]/40" : "border-zinc-200 bg-white focus-within:border-[#0B3D2E]/40 shadow-sm"}`}>
-          <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
-            className={`flex-shrink-0 p-1 ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-zinc-400 hover:text-zinc-600"}`}>
-            <Paperclip size={17} />
-          </motion.button>
+          {/* The paperclip that used to sit here had no onClick and no upload
+              path behind it on this route — a dead affordance of exactly the
+              kind the owner ledger flags elsewhere. Removed rather than left
+              looking usable; it comes back when there is something to attach
+              to. */}
 
           <textarea
             ref={textareaRef}
@@ -388,10 +404,18 @@ export default function AIConsultPage() {
             style={{ maxHeight: "140px" }}
           />
 
-          <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
-            className={`flex-shrink-0 p-1 ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-zinc-400 hover:text-zinc-600"}`}>
-            <Microphone size={17} />
-          </motion.button>
+          {/* Was a Microphone glyph with no handler. VoiceInput is the real
+              component behind dictation in 23 other places in this codebase,
+              and it returns null where SpeechRecognition is unavailable — so
+              inside the Capacitor WebView the control disappears instead of
+              pretending to listen. */}
+          <div className="flex-shrink-0">
+            <VoiceInput
+              onTranscript={(text) => setInput((prev) => (prev ? prev + " " + text : text))}
+              lang={isRTL ? "ar-SA" : "en-US"}
+              compact
+            />
+          </div>
 
           <motion.button
             whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}

@@ -17,21 +17,22 @@ import {
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
+import { LIBRARY_STAT_LABELS, formatLibraryCount } from "@/lib/library/libraryStats";
+import { useLibraryStats } from "@/lib/library/useLibraryStats";
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
 // أُزيلت هنا ثلاث "إحصاءات" مُختلَقة: «٣٠٠+ محامٍ ومستشار» (عدد المحامين
 // المنشورين في الدليل صفر)، «١٥ ألف+ طلب استشارة»، «١٣ منطقة مغطاة».
 // ما بقي محسوبٌ فعلاً: سنة الإطلاق كما ترويها فقرة «كيف بدأت قصتنا» أدناه،
-// وأعداد المكتبة القانونية — وهي أرضيات معدودة من جداول library ومطابقة لما
-// يعرضه src/components/LegalLibraryBanner.tsx.
+// وأعداد المكتبة القانونية. هذه الأعداد لا تُكتب هنا حرفياً (٢٠٢٦-٠٩-٢٥): الشيفرة
+// نفسها تعمل على قاعدة السحابة (٣٨٦ وثيقة) وعلى الخادم الذاتي (٥٬٩٠١)، فأي رقم
+// ثابت خاطئ على إحداهما. تُقرأ من GET /api/library/stats (عدٌّ فعلي، مخزّن ~٢٤
+// ساعة) وتُعرض أرضياتٍ بقواعد src/lib/library/libraryStats.ts، كما في
+// LegalLibraryBanner.tsx. أثناء التحميل عنصر نائب بلا رقم، وعند الفشل تُحذف.
 // لا تُعِد رقماً هنا ما لم يكن محسوباً من بيانات حقيقية.
-const counterStats = [
-  { valueAr: "٢٠٢٥", valueEn: "2025", labelAr: "الإطلاق الرسمي", labelEn: "Official Launch" },
-  { valueAr: "٣٨٦", valueEn: "386", labelAr: "نظاماً ولائحة في المكتبة", labelEn: "Laws in the Library" },
-  { valueAr: "١٣٬٠٠٠+", valueEn: "13,000+", labelAr: "مادة نظامية", labelEn: "Legal Articles" },
-  { valueAr: "١٧٬٠٠٠+", valueEn: "17,000+", labelAr: "مبدأ قضائي", labelEn: "Judicial Principles" },
-];
+const launchStat = { valueAr: "٢٠٢٥", valueEn: "2025", labelAr: "الإطلاق الرسمي", labelEn: "Official Launch" };
+const LIBRARY_COUNTER_KEYS = ["laws", "articles", "principles"] as const;
 
 const values = [
   {
@@ -121,6 +122,17 @@ export default function AboutPage() {
   const { lang, theme } = useTheme();
   const isRTL = lang === "ar";
   const isDark = theme === "dark";
+  const library = useLibraryStats();
+  // null value = still loading → placeholder. A failed count drops the tile.
+  const counterStats: { value: string | null; label: string }[] = [
+    { value: isRTL ? launchStat.valueAr : launchStat.valueEn, label: isRTL ? launchStat.labelAr : launchStat.labelEn },
+    ...(library.status === "error"
+      ? []
+      : LIBRARY_COUNTER_KEYS.map((key) => ({
+          value: library.status === "ready" ? formatLibraryCount(library.stats[key], isRTL ? "ar" : "en") : null,
+          label: isRTL ? LIBRARY_STAT_LABELS[key].ar : LIBRARY_STAT_LABELS[key].en,
+        })).filter((s) => library.status === "loading" || s.value !== null)),
+  ];
 
   return (
     <div className={`min-h-screen ${isDark ? "bg-dark-bg" : "bg-slate-50"} overflow-x-hidden`} dir={isRTL ? "rtl" : "ltr"}>
@@ -178,10 +190,14 @@ export default function AboutPage() {
                 }`}
               >
                 <div className={`font-brand mb-1 text-3xl font-bold md:text-4xl ${isDark ? "text-white" : "text-[#0B3D2E]"}`}>
-                  <AnimatedCounter end={isRTL ? stat.valueAr : stat.valueEn} />
+                  {stat.value !== null ? (
+                    <AnimatedCounter end={stat.value} />
+                  ) : (
+                    <span aria-hidden className={`inline-block h-[0.8em] w-20 rounded-lg align-middle animate-pulse ${isDark ? "bg-white/10" : "bg-slate-200"}`} />
+                  )}
                 </div>
                 <div className={`text-sm ${isDark ? "text-gray-400" : "text-slate-500"}`}>
-                  {isRTL ? stat.labelAr : stat.labelEn}
+                  {stat.label}
                 </div>
               </motion.div>
             ))}

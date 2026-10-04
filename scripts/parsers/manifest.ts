@@ -10,11 +10,14 @@
  */
 import * as fs from "fs";
 import * as path from "path";
+import * as crypto from "crypto";
 
 interface Manifest {
   enums: {
     type: string[];
     status: string[];
+    db_law_status: string[];
+    corpus_scope: string[];
     section_code: string[];
   };
   type_normalization_map: Record<string, string>;
@@ -30,6 +33,7 @@ interface Manifest {
 }
 
 let cached: Manifest | null = null;
+let loadedPath: string | null = null;
 
 function resolveManifestPath(): string {
   // ب-112: SCHEMA_MANIFEST_PATH had top priority in `candidates` but no
@@ -94,7 +98,7 @@ export function getManifest(): Manifest {
   // validate every value to its fallback — every law "غير_مصنف", every status
   // "active" — which looks like a successful parse and is far worse than a
   // hard failure. Check the shape once, here, rather than trusting it downstream.
-  for (const key of ["type", "status", "section_code"] as const) {
+  for (const key of ["type", "status", "db_law_status", "section_code", "corpus_scope"] as const) {
     const list = parsed?.enums?.[key];
     if (!Array.isArray(list) || list.length === 0) {
       throw new Error(
@@ -125,6 +129,7 @@ export function getManifest(): Manifest {
     );
   }
   cached = parsed;
+  loadedPath = p;
   // ب-112 item 2: print what actually loaded, every run — the cheapest possible
   // guard against a silent version drift going unnoticed for weeks again.
   console.log(`📄 schema_manifest.json v${parsed.manifest_version} loaded from ${p}`);
@@ -142,9 +147,22 @@ export function assertManifestLoadable(): void {
   getManifest();
 }
 
+/** Exact-byte provenance for parser reports. A version label alone is not a contract. */
+export function getManifestProvenance(): { version: string; sha256: string } {
+  const manifest = getManifest();
+  const manifestPath = loadedPath;
+  if (!manifestPath) throw new Error("Loaded manifest has no provenance path.");
+  return {
+    version: String(manifest.manifest_version),
+    sha256: crypto.createHash("sha256").update(fs.readFileSync(manifestPath)).digest("hex"),
+  };
+}
+
 // ── Enums ────────────────────────────────────────────────────────────────────
 export const TYPE_ENUM = (): string[] => getManifest().enums.type;
 export const STATUS_ENUM = (): string[] => getManifest().enums.status;
+/** Values that the real `library.laws.status` CHECK constraint accepts. */
+export const DB_LAW_STATUS_ENUM = (): string[] => getManifest().enums.db_law_status;
 export const SECTION_CODE_ENUM = (): string[] => getManifest().enums.section_code;
 
 // ب-112: a rejected enum value used to fall back to its default with zero
@@ -158,17 +176,36 @@ export function getRejectedEnumValues(): ReadonlyArray<{ enumName: string; value
   return rejectedEnumValues;
 }
 
+/** Each exported parser invocation is an independent run, even in one process. */
+export function clearRejectedEnumValues(): void {
+  rejectedEnumValues.length = 0;
+}
+
 /** Validate a value against an enum; return fallback if not present.
  *  Pass `filePath` so a rejection can be traced back to its source file. */
 export function validateEnum(
-  enumName: "type" | "status" | "section_code",
+  enumName: "type" | "status" | "db_law_status" | "section_code",
   value: unknown,
   fallback: string,
   filePath?: string,
 ): string {
-  const list = enumName === "type" ? TYPE_ENUM() : enumName === "status" ? STATUS_ENUM() : SECTION_CODE_ENUM();
+  const list = enumName === "type"
+    ? TYPE_ENUM()
+    : enumName === "status"
+      ? STATUS_ENUM()
+      : enumName === "db_law_status"
+        ? DB_LAW_STATUS_ENUM()
+        : SECTION_CODE_ENUM();
   const v = value == null ? "" : String(value).trim();
-  if (!v) return fallback;
+  if (!v) {
+    // A missing legal document type is not evidence that the document is a
+    // law. Keep the fallback only in the diagnostic object; the caller must
+    // reject the run before emitting seedable rows.
+    if (enumName === "type") {
+      rejectedEnumValues.push({ enumName, value: "(missing)", file: filePath });
+    }
+    return fallback;
+  }
   if (list.includes(v)) return v;
   rejectedEnumValues.push({ enumName, value: v, file: filePath });
   return fallback;
@@ -180,7 +217,7 @@ export function validateEnum(
  *  enum validator later defaults them). */
 export function normalizeType(raw: unknown): string {
   const v = raw == null ? "" : String(raw).trim();
-  if (!v) return "نظام";
+  if (!v) return "";
   const map = getManifest().type_normalization_map || {};
   // Direct map hit (skip _-prefixed keys).
   if (map[v] && !v.startsWith("_")) return map[v];
@@ -283,5 +320,10 @@ export function isInternalField(key: string): boolean {
     "extraction_method", "verification_status", "source_images",
     "last_page_extracted", "last_ruling_extracted", "investigator",
   ];
-  return list.includes(key);
+  // editorial_notes and its siblings (editorial_notes_dates, added by the
+  // library 2026-10-03) are internal by contract 1.6 and nothing downstream
+  // reads them — drop them here, whatever the manifest copy lists.
+  // (needs_human_review/review_reason stay readable for the parsers' own
+  // diagnostics; the seeders strip them from every public row.)
+  return list.includes(key) || /^editorial_notes/.test(key);
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 
 /**
  * GET /api/v1/drafts/cart — Get user's draft cart articles
@@ -12,7 +13,8 @@ export async function GET() {
     error: authError,
   } = await supabase.auth.getUser();
 
-  if (authError || !user) {
+  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+  if (!user) {
     // Anonymous users have no server cart — return an empty 200 instead of 401
     // so the public /laws page (DraftDrawer) doesn't spam 401s on every mount.
     return NextResponse.json({ data: { user_id: null, items: [] } });
@@ -22,7 +24,7 @@ export async function GET() {
     .from("law_draft_carts")
     .select("*")
     .eq("user_id", user.id)
-    .order("saved_at", { ascending: false });
+    .order("created_at", { ascending: false });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -46,7 +48,8 @@ export async function PUT(request: NextRequest) {
     error: authError,
   } = await supabase.auth.getUser();
 
-  if (authError || !user) {
+  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+  if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -89,7 +92,7 @@ export async function PUT(request: NextRequest) {
     .from("law_draft_carts")
     .select("*")
     .eq("user_id", user.id)
-    .order("saved_at", { ascending: false });
+    .order("created_at", { ascending: false });
 
   return NextResponse.json({
     data: { user_id: user.id, items: data ?? [] },

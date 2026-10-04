@@ -171,9 +171,11 @@ export function validateFeatureRequestPatch(body: FeatureRequestPatchBody): Feat
 // ─── library_issue_reports: POST body ──────────────────────────────────────
 
 const LAW_SLUG_MAX = 200;
-const ARTICLE_REF_MAX = 100;
-const ISSUE_DESCRIPTION_MIN = 5;
-const ISSUE_DESCRIPTION_MAX = 2000;
+// Exported so the reader's report dialog (src/components/laws/reportIssuePayload.ts)
+// composes a body inside the same bounds instead of learning them from a 400.
+export const ARTICLE_REF_MAX = 100;
+export const ISSUE_DESCRIPTION_MIN = 5;
+export const ISSUE_DESCRIPTION_MAX = 2000;
 
 export interface LibraryIssueReportInputBody {
   lawSlug?: unknown;

@@ -145,12 +145,16 @@ export default function FeqhPreviewPage() {
     let cancelled = false;
     async function loadBook() {
       try {
-        // Step 1: Fetch available books from /api/library/init
-        const initRes = await fetch("/api/library/init");
+        // Step 1: the first book from /api/library/init. Only the books section,
+        // one row: the route answers each section as an envelope
+        // { data, total, hasMore, degraded }, not a bare array.
+        const initRes = await fetch("/api/library/init?section=books&limit=1");
         if (!initRes.ok) throw new Error("init failed");
         const initData = await initRes.json();
-        const books = initData.books as { id: string; title: string; author: string; school: string; investigator?: string; publisher?: string }[];
-        if (!books || books.length === 0) throw new Error("no books");
+        const booksSection = initData?.books as { data?: { id: string; title: string; author: string; school: string; investigator?: string; publisher?: string }[]; degraded?: boolean } | undefined;
+        if (!booksSection || booksSection.degraded) throw new Error("books unavailable");
+        const books = Array.isArray(booksSection.data) ? booksSection.data : [];
+        if (books.length === 0) throw new Error("no books");
 
         // Step 2: Fetch full content for the first book
         const firstBook = books[0];

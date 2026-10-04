@@ -41,7 +41,7 @@ const footerLinksAr = {
   "للمحامين": [
     { label: "نظامي ERP", href: "/erp" },
     { label: "المكتبة القانونية", href: "/erp/library" },
-    { label: "نظامي AI MAX", href: "/ai#max" },
+    { label: "نظامي AI", href: "/ai#max" },
     // «سوق المهنيين» is appended below, and only when the marketplace is
     // actually offered. Advertising it from every page while the route
     // redirects away is a link the footer cannot honour.
@@ -74,7 +74,7 @@ const footerLinksEn = {
   "For Lawyers": [
     { label: "Nezamy ERP", href: "/erp" },
     { label: "Legal Library", href: "/erp/library" },
-    { label: "Nezamy AI MAX", href: "/ai#max" },
+    { label: "Nezamy AI", href: "/ai#max" },
   ],
 };
 

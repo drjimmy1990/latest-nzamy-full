@@ -2,23 +2,19 @@
 /**
  * check-schema-manifest-drift.mjs
  * ──────────────────────────────────────────────────────────────────────
- * مرقاب انجراف هاشي (Hash Drift Monitor) — لتزامن schema_manifest.json الثلاثي.
+ * Fail-closed hash guard for the operational and governing schema manifests.
  *
- * المشكلة التي يحلّها: schema_manifest.json له 3 نسخ يجب أن تبقى متطابقة
- * بايتياً (قاعدة دائمة أُقرَّت 2026-08-23): النسخة التشغيلية (يقرؤها الكود
- * الحي)، النسخة الحاكمة (المرجع بعقل القوانين)، ونسخة مهارة السيو. أي
- * تعديل يطال واحدة منها بلا تزامن الثلاث يخلق انجرافاً صامتاً — لا أداة
- * كانت تكتشفه آلياً قبل هذا السكربت (ك-05، بند #5، 2026-08-24).
+ * Compare the manifest actually read by the parsers with the governing copy.
+ * A developer ZIP has spec/10_... beside web/; a source checkout can pass
+ * --vault-root or --canonical. The optional SEO copy is checked when supplied
+ * or present, but its absence from a portable ZIP is not concealed as a
+ * failure of the two-copy contract. This tool never chooses a winner by mtime,
+ * never rewrites a manifest, and exits nonzero if required copies differ.
  *
- * ما يفعله: يحسب SHA256 للنسخ الثلاث المعروفة، يقارنها، ويقرر PASS/FAIL.
- * لا يصلح الانجراف تلقائياً — فقط يكتشفه ويقرّر أي نسخة الأحدث (mtime)
- * لمساعدة المراجعة البشرية/الوكيل على تحديد اتجاه المزامنة الصحيح.
- *
- * الاستخدام:
  *   node scripts/check-schema-manifest-drift.mjs [--json]
- *
- * القيمة العملية: شغّله بعد أي تعديل على schema_manifest.json بأي نسخة،
- * أو دورياً كبوابة صحة سريعة قبل أي حملة استخراج/بذر كبرى.
+ *   node scripts/check-schema-manifest-drift.mjs --vault-root <Raw_Vault>
+ *   node scripts/check-schema-manifest-drift.mjs --canonical <manifest.json>
+ *   node scripts/check-schema-manifest-drift.mjs --canonical <manifest.json> --seo-copy <manifest.json>
  */
 
 import fs from "node:fs";
@@ -28,40 +24,49 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
-const VAULT_ROOT = path.resolve(
-  "D:\\Data\\Data\\antigravity ai\\تجارب\\Raw_Vault"
-);
-
 const args = process.argv.slice(2);
 const jsonMode = args.includes("--json");
+function optionValue(name) {
+  const index = args.indexOf(name);
+  if (index < 0) return null;
+  const value = args[index + 1];
+  if (!value || value.startsWith("--")) {
+    throw new Error(`${name} requires a path`);
+  }
+  return path.resolve(value);
+}
 
-// ── النسخ الثلاث المعتمدة (قاعدة 2026-08-23) ──────────────────────────
+const vaultRoot = optionValue("--vault-root") ||
+  (process.env.NZAMY_VAULT_ROOT ? path.resolve(process.env.NZAMY_VAULT_ROOT) : null);
+const explicitCanonical = optionValue("--canonical");
+if (explicitCanonical && vaultRoot) {
+  throw new Error("Choose --canonical or --vault-root, not both");
+}
+const packagedCanonical = path.resolve(REPO_ROOT, "..", "spec", "10_عقد_الاسكيما_والبذرة", "schema_manifest.json");
+const governingCanonical = explicitCanonical || (vaultRoot
+  ? path.join(vaultRoot, "00_عقل_القوانين", "10_عقد_الاسكيما_والبذرة", "schema_manifest.json")
+  : packagedCanonical);
+const operationalPath = path.join(REPO_ROOT, "scripts", "parsers", "schema_manifest.json");
+if (path.resolve(governingCanonical) === path.resolve(operationalPath) ||
+    (fs.existsSync(governingCanonical) && fs.existsSync(operationalPath) &&
+     fs.realpathSync(governingCanonical) === fs.realpathSync(operationalPath))) {
+  throw new Error("The governing and operational paths must be different files; self-comparison cannot prove alignment");
+}
+const explicitSeo = optionValue("--seo-copy");
+const vaultSeo = vaultRoot && path.join(vaultRoot, ".agents", "skills", "legal-library-seo", "references", "schema_manifest.json");
+const seoPath = explicitSeo || (vaultSeo && fs.existsSync(vaultSeo) ? vaultSeo : null);
+
 const COPIES = [
   {
     label: "التشغيلية (يقرؤها الكود الحي)",
-    path: path.join(REPO_ROOT, "scripts", "parsers", "schema_manifest.json"),
+    path: operationalPath,
   },
   {
     label: "الحاكمة (عقل القوانين، المرجع)",
-    path: path.join(
-      VAULT_ROOT,
-      "00_عقل_القوانين",
-      "10_عقد_الاسكيما_والبذرة",
-      "schema_manifest.json"
-    ),
-  },
-  {
-    label: "السيو (مهارة legal-library-seo)",
-    path: path.join(
-      VAULT_ROOT,
-      ".agents",
-      "skills",
-      "legal-library-seo",
-      "references",
-      "schema_manifest.json"
-    ),
+    path: governingCanonical,
   },
 ];
+if (seoPath) COPIES.push({ label: "السيو (إن أُرفقت)", path: seoPath });
 
 function sha256(filePath) {
   const buf = fs.readFileSync(filePath);
@@ -92,7 +97,7 @@ if (jsonMode) {
   console.log(JSON.stringify({ drifted, results }, null, 2));
 } else {
   console.log("═".repeat(70));
-  console.log("مرقاب انجراف هاشي — schema_manifest.json (ثلاث نسخ)");
+  console.log("مرقاب انجراف هاشي — schema_manifest.json (التشغيلية والحاكمة)");
   console.log("═".repeat(70));
 
   for (const r of results) {
@@ -107,7 +112,7 @@ if (jsonMode) {
 
   console.log();
   if (!drifted) {
-    console.log(`✅ متطابقة تماماً — هاش واحد عبر النسخ الثلاث: ${present[0].hash}`);
+    console.log(`✅ متطابقة بايتياً — SHA256: ${present[0].hash}`);
   } else {
     console.log("🔴 انجراف مكتشَف!");
     if (missing.length > 0) {
@@ -122,11 +127,9 @@ if (jsonMode) {
       for (const [hash, group] of Object.entries(byHash)) {
         console.log(`   • ${hash} ← ${group.map((g) => g.label).join("، ")}`);
       }
-      const newest = present.reduce((a, b) => (a.mtime > b.mtime ? a : b));
-      console.log(`   الأحدث تعديلاً (مرشَّح كمصدر الحقيقة، يحتاج تأكيداً بشرياً): ${newest.label} (${newest.mtime})`);
     }
-    console.log("\n   الإجراء المطلوب: زامن الثلاث يدوياً (نسخ الأحدث/الصحيح فوق الباقي)");
-    console.log("   ثم أعد تشغيل هذا السكربت للتأكد من PASS قبل أي بذر/استخراج.");
+    console.log("\n   الإجراء المطلوب: صالِح العقد الحاكم والتشغيلي دلالياً قبل مزامنتهما؛ لا تنسخ حسب mtime.");
+    console.log("   ثم أعد تشغيل هذا السكربت قبل أي بذر أو تسليم نهائي.");
   }
   console.log("═".repeat(70));
 }

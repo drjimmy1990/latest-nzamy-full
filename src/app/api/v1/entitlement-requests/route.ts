@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 
 /**
  * POST /api/v1/entitlement-requests — an authenticated user asks for a paid
@@ -18,7 +19,8 @@ export async function POST(request: NextRequest) {
     data: { user },
     error: authError,
   } = await supabase.auth.getUser();
-  if (authError || !user) {
+  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+  if (!user) {
     return NextResponse.json({ error: "غير مصرح — يرجى تسجيل الدخول" }, { status: 401 });
   }
 
@@ -61,7 +63,8 @@ export async function GET() {
     data: { user },
     error: authError,
   } = await supabase.auth.getUser();
-  if (authError || !user) {
+  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+  if (!user) {
     return NextResponse.json({ error: "غير مصرح — يرجى تسجيل الدخول" }, { status: 401 });
   }
 

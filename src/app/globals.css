@@ -348,8 +348,16 @@ html[dir="rtl"] .text-left {
     display: none !important;
   }
 
-  /* Reset layout margins for full-width print */
-  main {
+  /* Reset layout margins for full-width print.
+     `.print-main` is here because the inner <main> elements this rule was
+     written for became <div>s: the root layout already wraps every page in
+     <main id="main-content">, so a second one inside it produced nested
+     landmarks that VoiceOver and TalkBack cannot navigate. Renaming the tag
+     alone would have silently unhooked them from this reset and left the
+     pt-32 / pt-[60px] clearance in printed output — on exactly the pages that
+     call window.print(): a law article, a lawyer profile, a consultation. */
+  main,
+  .print-main {
     margin: 0 !important;
     padding: 0 !important;
     max-width: 100% !important;
@@ -405,5 +413,204 @@ html[dir="rtl"] .text-left {
 @supports (padding: env(safe-area-inset-top)) {
   .safe-top { padding-top: env(safe-area-inset-top); }
   .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+}
+
+/* ─── Arabic heading metrics ──────────────────────────────────────────────
+   Cairo and IBM Plex Sans Arabic carry far deeper descenders (ي ج ح خ ع غ م
+   ن ق س ص) and higher ascenders than the Latin faces Tailwind's scale was
+   tuned for. `leading-none` (line-height: 1) therefore clips the glyph, which
+   is what cut the tails off "الذكي" / "القانوني" / "أنت…" on the live site.
+
+   These rules restore a safe minimum for *headings in RTL only*. The selector
+   is (0,2,1) so it outranks the (0,1,0) utility without !important, and it is
+   scoped to h1–h3 so numeric readouts (font-mono counters, KPI tiles) and the
+   small badges that legitimately want leading-none are untouched. LTR/English
+   keeps Tailwind's original metrics.
+
+   DELIBERATELY CAPPED AT 1023px (below Tailwind's `lg`). The same clipping is
+   present on desktop — a 72px hero heading on a 72px line box clips exactly as
+   a 36px one does — but raising the line box there grows the hero by ~76px and
+   reflows a layout that was signed off as-is. The desktop fix is a separate,
+   visible design change and is not smuggled in under a mobile bug fix. */
+/* `screen` is load-bearing, not decoration. A print viewport is sized to the
+   paper — roughly 794px for A4 at 96dpi — so a bare `(max-width: 1023px)`
+   matches while printing and would have pushed this phone-only line-height
+   onto every printed law article and lawyer profile. Caught in council review
+   by Antigravity; the media type is what keeps the fix on screens. */
+@media screen and (max-width: 1023px) {
+  [dir="rtl"] :is(h1, h2, h3).leading-none,
+  [dir="rtl"] :is(h1, h2, h3) .leading-none,
+  [dir="rtl"] :is(h1, h2, h3).leading-tight,
+  [dir="rtl"] :is(h1, h2, h3) .leading-tight {
+    line-height: 1.35;
+  }
+
+  /* Arabic is a cursive, connected script: negative tracking crowds the joins
+     and reads as a rendering fault. Neutralise it on RTL headings only — Latin
+     headings and any English toggle keep the designed tightening. */
+  [dir="rtl"] :is(h1, h2, h3):is(.tracking-tighter, .tracking-tight),
+  [dir="rtl"] :is(h1, h2, h3) :is(.tracking-tighter, .tracking-tight) {
+    letter-spacing: normal;
+  }
+}
+
+/* ─── iOS input zoom guard ────────────────────────────────────────────────
+   Mobile Safari and WKWebView zoom the whole page when a focused text field
+   computes below 16px, and never zoom back out — the login fields are
+   `text-sm` (14px), so tapping "البريد الإلكتروني" shifted the entire layout.
+   Raise only text-entry controls, only on touch phones, so the desktop design
+   is untouched. Checkboxes, radios and buttons are excluded: they carry no
+   text cursor and are not zoom triggers. */
+@media screen and (hover: none) and (pointer: coarse) and (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* ─── Display density (T28-31) ────────────────────────────────────────────
+   <html data-density="100|85|75"> is written before first paint by
+   themeInitScript (src/app/layout.tsx) from localStorage, and kept in step by
+   ThemeProvider. Valid values and the storage rule: src/lib/density.ts.
+
+   75 IS THE DEFAULT (owner, Q153, 2026-10-03): every desktop visitor who has
+   not picked a size in Settings gets the rules below. The only control is in
+   Settings → الملف الشخصي; there is no toggle in the sidebars any more.
+
+   WHY `zoom` AND NOT THE ROOT FONT-SIZE. Most text here is fixed-px Tailwind
+   (`text-[11px]`, `text-[13px]`), which a root font-size does not touch; the
+   owner's "75%/85%" is what browser zoom does, and CSS `zoom` on the root is
+   the in-page equivalent: every length — text, padding, icons, the w-64
+   sidebar and the lg:mr-64 offset beside it — shrinks together.
+
+   DESKTOP WITH A MOUSE ONLY. The media query below must match
+   DENSITY_MEDIA_QUERY in density.ts. Phones and tablets stay at 100%: their
+   text inputs have to compute to 16px or iOS Safari zooms the whole page on
+   focus (the guard just above), and that guard stops at 767px, so a zoomed
+   iPad in landscape (1024–1366px, pointer: coarse) is excluded here instead.
+   `screen` keeps printed pages out, as in the heading rule above.
+
+   With data-density="100", or no attribute at all, NOTHING below applies —
+   the page is exactly what it was before the toggle existed. */
+:root {
+  --density-scale: 1;
+}
+
+@media screen and (min-width: 1024px) and (hover: hover) and (pointer: fine) {
+  html[data-density="85"] {
+    --density-scale: 0.85;
+    zoom: 0.85;
+  }
+  html[data-density="75"] {
+    --density-scale: 0.75;
+    zoom: 0.75;
+  }
+
+  /* Pointer-driven canvases (the case graph, the ReactFlow case canvas) turn
+     clientX/clientY and movementX into CSS positions. Under a zoomed root
+     those visual pixels are zoomed a second time and the dragged node drifts
+     away from the cursor. Such a canvas carries .nz-density-reset: a counter-
+     zoom that brings its subtree back to an effective 100%, so pointer maths
+     and drawing agree again. Zoom compounds: 0.85 × (1/0.85) = 1. */
+  html[data-density="85"] .nz-density-reset {
+    zoom: 1.1764706;
+  }
+  html[data-density="75"] .nz-density-reset {
+    zoom: 1.3333333;
+  }
+
+  /* ── Viewport-height compensation ──────────────────────────────────────
+     Under a zoomed root a `100vh` box is drawn at 100vh × zoom — 85% of the
+     window — so full-height shells stopped short and left a band of page
+     background under them (the admin console, the consultation room, the AI
+     chat). Each rule divides ONLY the viewport term by the scale, so after the
+     zoom it is the full window again; a fixed offset beside it (`- 4rem`, a
+     header's height) stays zoomed, in step with the header it stands for.
+
+     THE CASCADE TRAP. These rules are unlayered, so they beat every Tailwind
+     utility — responsive variants included. A base class is therefore only
+     compensated on elements that carry NO variant for the same property
+     (`:not([class*=":min-h-"])` etc.); where a variant exists, the variant
+     class itself is compensated instead (`lg:h-[100dvh]` on /ai/consult,
+     `md:h-[82vh]` in the law reader's AI tab).
+
+     Covered — every pattern of this kind in src/ as of 2026-09-28, plus the
+     ones re-checked on 2026-10-04 when 75 became the default:
+       min-h-screen (120 uses), min-h-[100dvh] (74), h-[100dvh] (6),
+       lg:h-[100dvh] (1), h-[calc(100vh-4rem)] (4), h-[calc(100vh-76px)] (1),
+       max-h-[calc(100vh-8rem)] (2, the law reader's sticky rails),
+       max-h-[calc(100vh-7rem)] (1, the blog's sticky rail), and the dialog
+       caps max-h-[80|85|90|92vh], max-h-[80|85dvh], h-[90dvh], md:h-[82vh];
+       since 2026-10-04 also max-h-[70vh] (two dialog bodies), max-h-[75dvh]
+       (the article-report dialog), max-h-[60vh] (the dashboard search
+       palette's results, the book reader's chapter list) and h-[70vh] (the
+       business case graph canvas) — at 75% each of those came out at barely
+       half the window.
+     Not covered, on purpose: the partial `min-h-[40–80vh]` of empty and
+     loading states — a shorter placeholder is harmless — the short
+     `max-h-[40|45|50vh]` lists inside dialogs and rails, and the few
+     `max-w-[90vw]`-style width caps, which only make a box narrower. */
+  html:is([data-density="85"], [data-density="75"]) .min-h-screen:not([class*=":min-h-"]) {
+    min-height: calc(100vh / var(--density-scale));
+  }
+  html:is([data-density="85"], [data-density="75"]) .min-h-\[100dvh\]:not([class*=":min-h-"]) {
+    min-height: calc(100dvh / var(--density-scale));
+  }
+  html:is([data-density="85"], [data-density="75"]) .h-\[100dvh\]:not([class*=":h-"]),
+  html:is([data-density="85"], [data-density="75"]) .lg\:h-\[100dvh\] {
+    height: calc(100dvh / var(--density-scale));
+  }
+  html:is([data-density="85"], [data-density="75"]) .h-\[calc\(100vh-4rem\)\]:not([class*=":h-"]) {
+    height: calc(100vh / var(--density-scale) - 4rem);
+  }
+  html:is([data-density="85"], [data-density="75"]) .h-\[calc\(100vh-76px\)\]:not([class*=":h-"]) {
+    height: calc(100vh / var(--density-scale) - 76px);
+  }
+  html:is([data-density="85"], [data-density="75"]) .max-h-\[calc\(100vh-8rem\)\]:not([class*=":max-h-"]) {
+    max-height: calc(100vh / var(--density-scale) - 8rem);
+  }
+  html:is([data-density="85"], [data-density="75"]) .max-h-\[calc\(100vh-7rem\)\]:not([class*=":max-h-"]) {
+    max-height: calc(100vh / var(--density-scale) - 7rem);
+  }
+
+  /* Dialog caps: without these a modal only starts scrolling sooner, but the
+     same division keeps it the size it was designed at. */
+  html:is([data-density="85"], [data-density="75"]) .max-h-\[80vh\]:not([class*=":max-h-"]) {
+    max-height: calc(80vh / var(--density-scale));
+  }
+  html:is([data-density="85"], [data-density="75"]) .max-h-\[85vh\]:not([class*=":max-h-"]) {
+    max-height: calc(85vh / var(--density-scale));
+  }
+  html:is([data-density="85"], [data-density="75"]) .max-h-\[90vh\]:not([class*=":max-h-"]) {
+    max-height: calc(90vh / var(--density-scale));
+  }
+  html:is([data-density="85"], [data-density="75"]) .max-h-\[92vh\]:not([class*=":max-h-"]) {
+    max-height: calc(92vh / var(--density-scale));
+  }
+  html:is([data-density="85"], [data-density="75"]) .max-h-\[80dvh\]:not([class*=":max-h-"]) {
+    max-height: calc(80dvh / var(--density-scale));
+  }
+  html:is([data-density="85"], [data-density="75"]) .max-h-\[85dvh\]:not([class*=":max-h-"]) {
+    max-height: calc(85dvh / var(--density-scale));
+  }
+  html:is([data-density="85"], [data-density="75"]) .h-\[90dvh\]:not([class*=":h-"]) {
+    height: calc(90dvh / var(--density-scale));
+  }
+  html:is([data-density="85"], [data-density="75"]) .md\:h-\[82vh\] {
+    height: calc(82vh / var(--density-scale));
+  }
+  html:is([data-density="85"], [data-density="75"]) .max-h-\[70vh\]:not([class*=":max-h-"]) {
+    max-height: calc(70vh / var(--density-scale));
+  }
+  html:is([data-density="85"], [data-density="75"]) .max-h-\[75dvh\]:not([class*=":max-h-"]) {
+    max-height: calc(75dvh / var(--density-scale));
+  }
+  html:is([data-density="85"], [data-density="75"]) .max-h-\[60vh\]:not([class*=":max-h-"]) {
+    max-height: calc(60vh / var(--density-scale));
+  }
+  html:is([data-density="85"], [data-density="75"]) .h-\[70vh\]:not([class*=":h-"]) {
+    height: calc(70vh / var(--density-scale));
+  }
 }
 

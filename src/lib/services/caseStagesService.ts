@@ -1,7 +1,8 @@
 /**
  * caseStagesService.ts
  * ─────────────────────────────────────────────────────────
- * Typed client for /api/v1/lawyer/case-stages/[caseId] (Phase 1,
+ * Typed client for /api/v1/lawyer/case-stages/[caseId] and the bulk
+ * /api/v1/lawyer/case-stages (latest stage per case, T28-29a) (Phase 1,
  * public.case_stages) — درجات التقاضي.
  */
 
@@ -9,6 +10,7 @@
 
 import { apiGet, apiMutate } from "@/lib/services/api";
 import type { UiDegree } from "@/lib/services/caseStageVocabulary";
+import { CASE_STAGES_BULK_MAX_IDS } from "@/lib/caseStageBuckets";
 
 export interface CaseStage {
   id: string;
@@ -31,6 +33,42 @@ export async function getCaseStages(caseId: string): Promise<{ items: CaseStage[
   const res = await apiGet<{ data: CaseStage[]; total: number }>(`/api/v1/lawyer/case-stages/${encodeURIComponent(caseId)}`);
   const items = res?.data ?? [];
   return { items, total: res?.total ?? items.length };
+}
+
+/** One case's latest stage, from the bulk GET /api/v1/lawyer/case-stages. */
+export interface LatestCaseStage {
+  caseId: string;
+  stageId: string;
+  degree: UiDegree;
+  outcome: string | null;
+  /** the stage's opened_on, null when not recorded */
+  stageDate: string | null;
+  closedOn: string | null;
+}
+
+/**
+ * The latest stage of each of `caseIds` (T28-29a). Cases with no stage row
+ * are absent from the result. The ids are sent in chunks of
+ * CASE_STAGES_BULK_MAX_IDS because they travel in the query string (see that
+ * constant). Throws if any chunk fails — the caller must not render a partial
+ * picture as if it were whole.
+ */
+export async function getLatestCaseStages(caseIds: readonly string[]): Promise<LatestCaseStage[]> {
+  const unique = [...new Set(caseIds)];
+  if (unique.length === 0) return [];
+  const chunks: string[][] = [];
+  for (let i = 0; i < unique.length; i += CASE_STAGES_BULK_MAX_IDS) {
+    chunks.push(unique.slice(i, i + CASE_STAGES_BULK_MAX_IDS));
+  }
+  const pages = await Promise.all(chunks.map((chunk) =>
+    apiGet<{ data?: LatestCaseStage[]; total?: number; truncated?: boolean }>("/api/v1/lawyer/case-stages", { caseIds: chunk.join(",") }),
+  ));
+  // A read the server cut short would leave whole cases without a row, and
+  // the page would count them as «لم تُسجَّل مرحلة» — treat it as a failure.
+  if (pages.some((page) => page?.truncated === true)) {
+    throw new Error("قراءة مراحل القضايا غير مكتملة.");
+  }
+  return pages.flatMap((page) => page?.data ?? []);
 }
 
 export async function addCaseStage(caseId: string, input: {

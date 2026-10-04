@@ -40,7 +40,7 @@ const services = [
     icon: FileText,
     title: 'عقود التعاون والرعايات',
     desc: 'مراجعة وصياغة عقود Collab & Brand Deal بشروط عادلة وواضحة',
-    tag: 'الأكثر طلباً',
+    // لا وسم «الأكثر طلباً» (قرار المالك ق١٦٤): لا بيانات طلبات تسنده.
   },
   {
     icon: ShieldCheck,
@@ -153,7 +153,9 @@ export default function CreatorsServicePage() {
                   <div className="w-10 h-10 rounded-xl bg-royal/8 flex items-center justify-center group-hover:bg-royal/15 transition-colors">
                     <s.icon size={20} className="text-royal" />
                   </div>
-                  <span className="text-[10px] px-2 py-0.5 bg-gold/10 text-gold-dark rounded-full font-medium">{s.tag}</span>
+                  {s.tag && (
+                    <span className="text-[10px] px-2 py-0.5 bg-gold/10 text-gold-dark rounded-full font-medium">{s.tag}</span>
+                  )}
                 </div>
                 <div>
                   <h3 className="font-semibold text-ink text-sm mb-1.5">{s.title}</h3>

@@ -20,6 +20,7 @@ import {
   CaretDown,
   LinkSimple,
   Headset,
+  WhatsappLogo,
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -279,8 +280,9 @@ export default function ErpPage() {
               {isRTL ? "طلب عرض تجريبي" : "Request a Demo"}
               <Arrow size={18} />
             </Link>
-            <a href="tel:+966555979607" className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-8 py-4 font-semibold text-white backdrop-blur transition hover:bg-white/20">
-              {isRTL ? "اتصل بفريق المبيعات" : "Call Sales Team"}
+            <a href="https://wa.me/966560655552" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-8 py-4 font-semibold text-white backdrop-blur transition hover:bg-white/20">
+              <WhatsappLogo size={18} weight="fill" />
+              {isRTL ? "تواصل مع فريق المبيعات عبر واتساب" : "Message Sales on WhatsApp"}
             </a>
           </div>
         </div>

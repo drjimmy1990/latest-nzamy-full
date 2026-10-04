@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { CaretLeft, CaretRight } from "@phosphor-icons/react";
 import { type DemoOrder } from "../demo-data-access";
 import { OrderCard, OrderRow, EmptyState } from "./ListItems";
+import { ResultsSkeleton } from "./ResultsSkeleton";
 
 interface OrdersTabContentProps {
   isDark: boolean;
@@ -20,6 +21,10 @@ interface OrdersTabContentProps {
   catHasContent: (catId: string) => boolean;
   q: string;
   setSelectedHashtag: (tag: string | null) => void;
+  /** A search request is in flight: skeleton cards, not «لا توجد نتائج». */
+  resultsPending?: boolean;
+  /** The search failed (its error is shown above): no empty state. */
+  searchFailed?: boolean;
 }
 
 export function OrdersTabContent({
@@ -35,6 +40,8 @@ export function OrdersTabContent({
   catHasContent,
   q,
   setSelectedHashtag,
+  resultsPending = false,
+  searchFailed = false,
 }: OrdersTabContentProps) {
   const router = useRouter();
   const [page, setPage] = useState(1);
@@ -91,7 +98,9 @@ export function OrdersTabContent({
         </div>
       </div>
 
-      {displayedOrders.length > 0 ? (
+      {resultsPending ? (
+        <ResultsSkeleton isDark={isDark} layoutMode={layoutMode} label="جارٍ البحث" />
+      ) : displayedOrders.length > 0 ? (
         <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" : "space-y-3"}>
           <AnimatePresence mode="popLayout">
             {displayedOrders.map((o, idx) =>
@@ -119,7 +128,7 @@ export function OrdersTabContent({
             )}
           </AnimatePresence>
         </div>
-      ) : (
+      ) : searchFailed ? null : (
         <EmptyState
           type={catHasContent(activeCat) ? "no-results" : "coming-soon"}
           catId={activeCat}
@@ -130,7 +139,7 @@ export function OrdersTabContent({
       )}
 
       {/* Pagination controls */}
-      {maxPages > 1 && (
+      {!resultsPending && maxPages > 1 && (
         <div className={`flex items-center justify-center gap-2 mt-8 pt-6 border-t ${
           isDark ? "border-[#2d3748]/50" : "border-gray-100"
         }`} dir={isRTL ? "rtl" : "ltr"}>

@@ -1,15 +1,17 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   NotePencil, Highlighter, CaretDown, CaretUp, ArrowSquareOut, Trash,
-  Microphone, List, SquaresFour, Warning, SpinnerGap, ArrowClockwise
+  Microphone, List, SquaresFour, Warning, ArrowClockwise, SignIn
 } from "@phosphor-icons/react";
 import { useUser } from "@/hooks/useUser";
 import { isSupabaseMode } from "@/lib/services/api";
 import { getMyArticleNotes, deleteArticleNote, type ArticleNote } from "@/lib/services/articleNotesService";
 import { listViewState, type ListRead } from "@/lib/services/listRead";
+import { useNoSessionCookie } from "./useNoSessionCookie";
 
 interface NoteEntry {
   pageId: string;
@@ -24,14 +26,25 @@ type Tab = "all" | "highlights" | "notes";
 type ViewMode = "flat" | "grouped";
 
 function getCleanDocumentName(pageId: string): string {
+  // 2026-09-25: the old-corpus literal slugs below ("labor-law", "evidence-law", …)
+  // 404 on self-hosted, but a guest's browser may still hold a note saved under
+  // one of them from before the reseed — those keys stay for that display-name
+  // lookup. The real self-hosted slugs are added alongside them so a note saved
+  // going forward gets the same clean name.
   const map: Record<string, string> = {
     "companies-law": "نظام الشركات",
     "labor-law": "نظام العمل",
+    "labor-law-qadha": "نظام العمل",
     "civil-procedure": "نظام المرافعات الشرعية",
+    "sharia-pleading-law-qadha-edition": "نظام المرافعات الشرعية ولائحته التنفيذية",
     "criminal-procedure": "نظام الإجراءات الجزائية",
+    "criminal-procedure-law": "نظام الإجراءات الجزائية",
     "commercial-court": "نظام المحاكم التجارية",
+    "commercial-courts-law": "نظام المحاكم التجارية ولوائحه التنفيذية",
     "civil-transactions": "نظام المعاملات المدنية",
+    "civil-transactions-law": "نظام المعاملات المدنية",
     "evidence-law": "نظام الإثبات",
+    "evidence-law-qadha-edition": "نظام الإثبات",
   };
   
   let cleanId = pageId;
@@ -113,6 +126,14 @@ export function MyNotesSection({ isDark, isRTL = true }: { isDark: boolean; isRT
   const { isLoggedIn, loading: authLoading } = useUser();
   const signedIn = isLoggedIn && isSupabaseMode;
 
+  // Owner test 2026-10-01: a signed-out visitor saw this panel load forever.
+  // A guest has nothing to fetch, so with no session cookie at all the panel
+  // does not wait on useUser().loading — it shows the guest state at once.
+  // With a cookie (possibly expired) it waits for useUser as before.
+  const noSessionCookie = useNoSessionCookie();
+  const authPending = authLoading && !noSessionCookie;
+  const isGuest = !isLoggedIn && !authPending;
+
   const [tab, setTab] = useState<Tab>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("flat");
   const [selectedDoc, setSelectedDoc] = useState<string | null>(null);
@@ -136,13 +157,13 @@ export function MyNotesSection({ isDark, isRTL = true }: { isDark: boolean; isRT
   }, []);
 
   useEffect(() => {
-    if (authLoading) return; // wait for the session to settle before deciding guest vs. signed-in
+    if (authPending) return; // wait for the session to settle before deciding guest vs. signed-in
     if (!signedIn) { setLoading(false); return; }
     void loadServerNotes();
-  }, [authLoading, signedIn, loadServerNotes]);
+  }, [authPending, signedIn, loadServerNotes]);
 
   useEffect(() => {
-    if (authLoading) return;
+    if (authPending) return;
     if (signedIn) return; // server path above owns `entries` for a signed-in reader
 
     const pageIds = new Set<string>();
@@ -179,7 +200,7 @@ export function MyNotesSection({ isDark, isRTL = true }: { isDark: boolean; isRT
     });
 
     setEntries(found);
-  }, [authLoading, signedIn]);
+  }, [authPending, signedIn]);
 
   const deleteEntry = (pageId: string) => {
     if (signedIn) {
@@ -203,9 +224,8 @@ export function MyNotesSection({ isDark, isRTL = true }: { isDark: boolean; isRT
     }
   };
 
-  // Guest reads are a synchronous local scan — always "ready", never "loading"/"unreadable",
-  // matching this component's pre-Phase-6 behaviour exactly.
-  const viewState = authLoading ? "loading" : signedIn ? listViewState(loading, noteRead) : "ready";
+  // Guest reads are a synchronous local scan — always "ready", never "loading"/"unreadable".
+  const viewState = authPending ? "loading" : signedIn ? listViewState(loading, noteRead) : "ready";
 
   // Get unique documents list for filter chips
   const uniqueDocs = Array.from(new Set(entries.map(e => e.pageId))).map(pageId => ({
@@ -382,6 +402,8 @@ export function MyNotesSection({ isDark, isRTL = true }: { isDark: boolean; isRT
                 ? (isRTL ? "تعذّرت القراءة" : "Could not read")
                 : entries.length > 0
                 ? (isRTL ? `${entries.length} نظام به ملاحظات` : `${entries.length} laws with notes`)
+                : isGuest
+                ? (isRTL ? "سجّل الدخول لحفظها في حسابك" : "Sign in to keep them in your account")
                 : (isRTL ? "لا توجد ملاحظات بعد" : "No notes yet")}
             </p>
           </div>
@@ -397,7 +419,8 @@ export function MyNotesSection({ isDark, isRTL = true }: { isDark: boolean; isRT
             exit={{ height: 0, opacity: 0 }}
             className="overflow-hidden"
           >
-            {/* Filter controls row */}
+            {/* Filter controls row — nothing to filter for a guest with no local notes */}
+            {!(isGuest && entries.length === 0) && (
             <div className={`flex flex-col gap-2.5 px-5 pb-3.5 border-b ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
               {/* Type Filters & Layout Toggle */}
               <div className="flex items-center justify-between gap-3">
@@ -461,16 +484,43 @@ export function MyNotesSection({ isDark, isRTL = true }: { isDark: boolean; isRT
                 </div>
               )}
             </div>
+            )}
 
             {/* Content list — four separate states: loading / unreadable / genuinely
                 empty / the list. «لا يوجد» and «لم نستطع القراءة» are not the same
                 claim — a signed-in reader whose read failed must never be told they
-                have no notes when the truth is we simply could not check. */}
+                have no notes when the truth is we simply could not check. A guest
+                fetches nothing: a sign-in prompt, then any notes this browser
+                holds (law pages still save a guest's notes locally). */}
             <div className="px-5 py-3 space-y-2 max-h-72 overflow-y-auto">
+              {isGuest && (
+                <div className={`rounded-xl border px-3.5 py-3 text-center ${isDark ? "border-indigo-500/20 bg-indigo-500/[0.06]" : "border-indigo-100 bg-indigo-50/60"}`}>
+                  <p className={`text-[12px] font-black ${isDark ? "text-zinc-200" : "text-slate-800"}`}>
+                    {isRTL ? "سجّل الدخول لحفظ ملاحظاتك وتحديداتك" : "Sign in to keep your notes and highlights"}
+                  </p>
+                  <p className={`mt-1 text-[11px] leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+                    {isRTL ? "ما تكتبه أو تحدّده على مواد الأنظمة يُحفظ في حسابك ويظهر هنا." : "What you note or highlight on law articles is saved to your account and listed here."}
+                  </p>
+                  <Link
+                    href="/login?from=/laws"
+                    className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-[#0B3D2E] px-3.5 py-1.5 text-[11px] font-bold text-white transition hover:bg-[#0a3328]"
+                  >
+                    <SignIn size={13} weight="bold" className={isRTL ? "-scale-x-100" : ""} />
+                    {isRTL ? "تسجيل الدخول" : "Sign in"}
+                  </Link>
+                  {entries.length > 0 && (
+                    <p className={`mt-2 text-[10px] font-bold ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+                      {isRTL ? "الملاحظات أدناه محفوظة في هذا المتصفح فقط." : "The notes below are saved in this browser only."}
+                    </p>
+                  )}
+                </div>
+              )}
               {viewState === "loading" ? (
-                <div className={`flex items-center justify-center gap-2 py-8 text-[12px] ${muted}`}>
-                  <SpinnerGap size={16} className="animate-spin" />
-                  {isRTL ? "جارٍ تحميل ملاحظاتك..." : "Loading your notes…"}
+                <div role="status" aria-busy="true" className="space-y-2 py-1">
+                  <span className="sr-only">{isRTL ? "جارٍ تحميل ملاحظاتك" : "Loading your notes"}</span>
+                  {[0, 1, 2].map(i => (
+                    <div key={i} className={`h-12 rounded-xl animate-pulse ${isDark ? "bg-white/[0.04]" : "bg-slate-100"}`} />
+                  ))}
                 </div>
               ) : viewState === "unreadable" ? (
                 <div className="flex flex-col items-center gap-2 py-8 text-center">
@@ -491,7 +541,7 @@ export function MyNotesSection({ isDark, isRTL = true }: { isDark: boolean; isRT
                     <ArrowClockwise size={12} weight="bold" /> {isRTL ? "إعادة المحاولة" : "Retry"}
                   </button>
                 </div>
-              ) : filtered.length === 0 ? (
+              ) : isGuest && entries.length === 0 ? null : filtered.length === 0 ? (
                 <div className={`text-center py-6 text-[12px] ${muted}`}>
                   {isRTL ? "لا يوجد شيء هنا بعد" : "Nothing here yet"}
                 </div>

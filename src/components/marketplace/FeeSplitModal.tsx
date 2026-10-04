@@ -34,7 +34,7 @@ export function FeeSplitModal({
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.92, opacity: 0, y: 20 }}
         transition={{ type: "spring", stiffness: 280, damping: 24 }}
-        className={`w-full max-w-md rounded-3xl p-6 shadow-2xl ${
+        className={`w-full max-w-md max-h-[85dvh] overflow-y-auto overscroll-contain rounded-3xl p-6 shadow-2xl ${
           isDark ? "bg-zinc-900 border border-white/[0.08]" : "bg-white border border-zinc-200"
         }`}
       >

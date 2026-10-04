@@ -98,7 +98,7 @@ export function PaywallModal({ isOpen, onClose, isRTL, isDark, freeLimit }: {
         className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
         <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
           onClick={e => e.stopPropagation()}
-          className={`w-full max-w-2xl rounded-3xl border shadow-2xl overflow-hidden ${isDark ? "bg-[#0c0f12] border-[#2d3748]" : "bg-white border-gray-200"}`}>
+          className={`w-full max-w-2xl max-h-[85dvh] overflow-y-auto overscroll-contain rounded-3xl border shadow-2xl ${isDark ? "bg-[#0c0f12] border-[#2d3748]" : "bg-white border-gray-200"}`}>
           <div className="relative bg-gradient-to-br from-[#0B3D2E] to-[#0a3328] p-8 text-white text-center">
             <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-[#C8A762] to-transparent opacity-60" />
             <Crown size={40} color="#C8A762" weight="fill" className="mx-auto mb-3" />
@@ -424,21 +424,18 @@ export function AdvancedSearchModal({
               ))}
             </div>
 
-            {/* General Search — س-01 (2026-08-24): the +//-/""/'*' operator
-                toolbar that used to sit here is removed. The backend calls
-                Postgres `plainto_tsquery` (`type: 'plain'` in search/route.ts),
-                which treats the whole query as a plain bag of AND-ed words and
-                silently ignores/strips every one of those symbols — so "-"
-                never excluded anything, it behaved as AND, the opposite of
-                what its own tooltip promised. Restoring real operator support
-                is tracked separately (س-03, needs a safe query parser before
-                any operator syntax is exposed again — see the search RFC). */}
+            {/* General Search — س-03 (2026-09-19): the backend now uses the
+                strict parser and raw tsquery transport. Keep the compact help
+                text in sync with normalizeArabic.ts; malformed expressions are
+                rejected instead of having their operators stripped. */}
             <div>
               <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
                 <span className={`text-[9.5px] font-bold ${mut}`}>{isRTL ? "بحث عام في كافة النصوص" : "General Search"}</span>
                 <div className={`h-3 w-px ${isDark ? "bg-white/10" : "bg-gray-300"}`} />
                 <span className={`text-[9.5px] ${mut}`}>
-                  {isRTL ? "كلمات أو عبارة بسيطة — بلا معاملات بحث حالياً" : "Plain words or a phrase — no search operators yet"}
+                  {isRTL
+                    ? 'مسافة أو + للجمع، / للبدائل، - للاستبعاد، "" لعبارة، * لنهاية الكلمة'
+                    : 'Space or + for AND, / for OR, - to exclude, "" for a phrase, trailing * for prefix'}
                 </span>
               </div>
               <input ref={searchRef} type="text"

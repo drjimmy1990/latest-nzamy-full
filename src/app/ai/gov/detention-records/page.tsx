@@ -21,7 +21,7 @@ export default function DetentionRecordsPage() {
   const isValid = form.name.length > 2 && form.reason.length > 5;
   const RECORD = `محضر ضبط وإيقاف\nرقم المحضر: POL-${Date.now().toString().slice(-6)}\n\nتاريخ الضبط: ${new Date().toLocaleDateString("ar-SA")}\nمكان الضبط: ${form.location || "..."}\nوقت الضبط: ${form.time || "..."}\n\nبيانات الموقوف:\nالاسم: ${form.name}\nرقم الهوية: ${form.id || "..."}\n\nسبب الضبط: ${form.reason}\n\nإجراءات التسليم:\nتم إبلاغ النيابة العامة في: ...\nتم إبلاغ ذوي الموقوف في: ...\n\nضابط الضبط: _______________ الرتبة: _______________`;
   return (
-    <div className={`${bg} min-h-screen`} dir="rtl">
+    <div className={`${bg} min-h-[100dvh]`} dir="rtl">
       <div className="max-w-3xl mx-auto p-4 md:p-8 space-y-6">
         <div className="flex items-center gap-3">
           <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${isDark ? "bg-sky-500/10" : "bg-sky-50"}`}><ClipboardText size={22} weight="duotone" className={isDark ? "text-sky-400" : "text-sky-600"} /></div>

@@ -1,6 +1,5 @@
 ﻿import { AcademyQuestion, AcademyCategoryId, DifficultyLevel, QuizAttemptPayload, QuizAttemptResult } from '@/types/academy';
 import { ACADEMY_QUESTIONS } from '@/data/academy/questions';
-import { ACADEMY_CATEGORIES } from '@/data/academy/categories';
 
 /**
  * Filter questions based on selected categories, difficulty, and count
@@ -29,41 +28,8 @@ export function getQuizQuestions(
 
   const result: AcademyQuestion[] = [...pool].slice(0, count);
 
-  // If pool has fewer questions than requested count, synthesize context-aware procedural legal questions
-  let genId = 5000;
-  while (result.length < count) {
-    const targetCatId = isAll
-      ? ACADEMY_CATEGORIES.filter(c => c.id !== 'all')[Math.floor(Math.random() * (ACADEMY_CATEGORIES.length - 1))].id
-      : categories[Math.floor(Math.random() * categories.length)];
-
-    const targetCatMeta = ACADEMY_CATEGORIES.find(c => c.id === targetCatId) || ACADEMY_CATEGORIES[1];
-
-    result.push({
-      id: `gen_q_${targetCatId}_${genId++}`,
-      categoryId: targetCatId,
-      categoryNumber: targetCatMeta.categoryNumber,
-      categoryName: targetCatMeta.label,
-      lawName: `الأنظمة واللوائح المعتمدة في (${targetCatMeta.label})`,
-      type: 'mcq',
-      difficulty: 'intermediate',
-      tags: [targetCatMeta.label, 'الأنظمة السعودية', 'اختبار تدريبي'],
-      question: `ما هو الحكم النظامي المعتمد في التطبيقات القضائية واللائحية ضمن مسائل (${targetCatMeta.label})؟`,
-      options: [
-        'وجوب التقيد بالمدد والإجراءات الجوهرية المقررة نظاماً وإلا ترتب البطلان أو سقوط الحق',
-        'جواز الاتفاق الشفهي على مخالفة القواعد الآمرة في النظام العام',
-        'عدم اشتراط أي توثيق رسمي أو قيد لدى الجهة المختصة',
-        'سقوط الالتزام تلقائياً بمجرد تراخي المدين عن السداد دون حاجة لإعذار'
-      ],
-      correctAnswer: 0,
-      explanation: `في أحكام (${targetCatMeta.label}) بالقانون السعودي، تعد المواعيد والإجراءات الجوهرية من النظام العام أو من القيود الملزمة التي يستوجب إغفالها بطلان الإجراء أو عدم قبول الدعوى/الطلب.`,
-      statutoryCitation: {
-        instrument: targetCatMeta.label,
-        article: 'القواعد العامة المنظمة',
-        textSnippet: 'يجب استيفاء المتطلبات الشكلية والإجرائية المحددة باللوائح التنفيذية الصادرة من الجهة المختصة.'
-      }
-    });
-  }
-
+  // A short curated pool stays short. Never invent a legal rule, answer, or
+  // citation to satisfy a requested count; the API reports the actual count.
   return result;
 }
 

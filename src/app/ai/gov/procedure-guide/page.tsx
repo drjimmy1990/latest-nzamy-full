@@ -35,7 +35,7 @@ export default function ProcedureGuidePage() {
       ].join("\n")
     : "";
   return (
-    <div className={`${bg} min-h-screen`} dir="rtl">
+    <div className={`${bg} min-h-[100dvh]`} dir="rtl">
       <div className="max-w-3xl mx-auto p-4 md:p-8 space-y-6">
         <div className="flex items-center gap-3">
           <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${isDark ? "bg-sky-500/10" : "bg-sky-50"}`}><ListBullets size={22} weight="duotone" className={isDark ? "text-sky-400" : "text-sky-600"} /></div>

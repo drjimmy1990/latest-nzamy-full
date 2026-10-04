@@ -10,7 +10,6 @@ import {
   ChartBar,
   Plus,
   Minus,
-  Lightning,
   CheckCircle,
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
@@ -289,14 +288,9 @@ export default function TrackingPage() {
                   tier.highlight ? "shadow-2xl scale-[1.02] ring-2 ring-[#0B3D2E]/20 dark:ring-[#C8A762]/20" : ""
                 }`}
               >
-                {tier.highlight && (
-                  <div className="absolute -top-4 start-1/2 -translate-x-1/2">
-                    <span className="bg-[#0B3D2E] text-white text-xs font-bold px-4 py-1.5 rounded-full flex items-center gap-1.5 whitespace-nowrap">
-                      <Lightning size={12} weight="fill" />
-                      {isRTL ? "الأكثر شيوعاً" : "Most Popular"}
-                    </span>
-                  </div>
-                )}
+                {/* No «الأكثر شيوعاً» badge (owner, Q164, 2026-10-03): no
+                    order data supports a popularity claim. The tier keeps
+                    its `highlight` styling, which claims nothing. */}
 
                 <div className="mb-6">
                   <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">

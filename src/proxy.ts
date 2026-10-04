@@ -10,6 +10,13 @@ import {
 // this file imports next/server, so nothing could import it to make a claim
 // about who is allowed where. See routeAccess.test.ts for what is pinned.
 import { routeAccessRuleFor, isProtectedApiPath } from "@/lib/auth/routeAccess";
+// Gate 2 asks this which membership table (if any) can additionally open a
+// path. Pure — it imports routeAccess and nothing else — so it is safe in the
+// edge bundle, and it is the SAME function the browser guard's membership
+// arms read, which is what keeps the two gates from drifting apart.
+import { entityMembershipKindForPath } from "@/lib/auth/entityMembership";
+import { resolveAuthOutcome, AUTH_UNAVAILABLE_AR } from "@/lib/auth/resolveAuthOutcome";
+import { isSupabaseMode, isDemoMode } from "@/lib/runtimeMode";
 import {
   RateLimiter,
   resolveClientIp,
@@ -19,7 +26,10 @@ import {
 import {
   isStrictRateLimitedRoute,
   isGeneralRateLimitedApiPath,
+  isLibraryReadRateLimitedRoute,
+  libraryReadClientKey,
 } from "@/lib/rateLimitRoutes";
+import { hasValidSaudiMobile } from "@/lib/services/saudiMobile";
 
 // ─── Rate limiting (owner item ١٧٢) ─────────────────────────────────────────
 //
@@ -47,6 +57,11 @@ const rateLimiter = new RateLimiter();
 
 const STRICT_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 10 };
 const GENERAL_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 120 };
+// Law reader GETs + search POSTs + autocomplete GETs (article text, service
+// role). Search and autocomplete both fire on a debounced keystroke, so a fast
+// researcher can reach ~2 a second while typing; 300 a minute per visitor is
+// above a person and well below a scraper walking thousands of laws.
+const LIBRARY_READ_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 300 };
 
 // The actual route tables (which paths/methods match which bucket) live in
 // src/lib/rateLimitRoutes.ts, pure and tested on their own — see that file's
@@ -77,8 +92,9 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
     const method = req.method.toUpperCase();
     const isStrictMatch = isStrictRateLimitedRoute(method, pathname);
     const isGeneralMatch = isGeneralRateLimitedApiPath(method, pathname);
+    const isLibraryReadMatch = isLibraryReadRateLimitedRoute(method, pathname);
 
-    if (!isStrictMatch && !isGeneralMatch) return null;
+    if (!isStrictMatch && !isGeneralMatch && !isLibraryReadMatch) return null;
 
     const ip = resolveClientIp((name) => req.headers.get(name));
 
@@ -89,6 +105,12 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
 
     if (isGeneralMatch) {
       const decision = rateLimiter.check("general", ip, GENERAL_RATE_LIMIT);
+      if (!decision.allowed) return rateLimitResponse(decision);
+    }
+
+    if (isLibraryReadMatch) {
+      const key = libraryReadClientKey((name) => req.headers.get(name), ip);
+      const decision = rateLimiter.check("library-read", key, LIBRARY_READ_RATE_LIMIT);
       if (!decision.allowed) return rateLimitResponse(decision);
     }
 
@@ -109,6 +131,7 @@ const PROTECTED = [
   "/ai/report-generator",
   "/ai/tracker",
   "/ai/draft",
+  "/ai/direction-support",
   "/ai/contracts",
   "/ai/wargaming",
   "/settings",
@@ -127,8 +150,27 @@ const REDIRECTS: Record<string, string> = {
 };
 
 // ─── Backend mode check ────────────────────────────────────────────────────────
-const BACKEND_MODE = process.env.NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND ?? "demo";
-const isSupabaseMode = BACKEND_MODE === "supabase";
+// Was `process.env.NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND ?? "demo"` — one of five
+// independent copies of that default. An unset variable therefore sent this
+// file down the legacy cookie-name branch at the bottom, which looks for
+// `nzamy_session` / `nzamy_demo_role`; a real Supabase login sets
+// `sb-<ref>-auth-token*`, so every signed-in user was redirected to
+// `/login?from=<path>` — the exact string in the UAT evidence. See
+// docs/audits/2026-09-20-profiles-uat/02-auth-session-audit.md hypothesis H2.
+// src/lib/runtimeMode.ts is now the only derivation: unset ⇒ "supabase",
+// "demo" only outside production, anything else throws at module load.
+
+// The edge runtime does not run src/instrumentation.ts (`register()` fires only
+// where NEXT_RUNTIME === "nodejs"), so without this line a misconfigured
+// production deploy would reach this file with no startup assertion having run
+// at all. Module scope: it throws when the first request loads the proxy, not
+// silently on the thousandth.
+if (process.env.NODE_ENV === "production" && !isSupabaseMode) {
+  throw new Error(
+    '[proxy] NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND must resolve to "supabase" in production — ' +
+      "refusing to serve the legacy cookie-name auth branch.",
+  );
+}
 
 export default async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -170,7 +212,22 @@ export default async function proxy(req: NextRequest) {
     );
     const {
       data: { user },
+      error: authError,
     } = await supabase.auth.getUser();
+
+    // getUser() is a network round trip. Collapsing its transport failures into
+    // `!user` is what turned an egress/TLS fault into a 401 across the app
+    // (UAT-LIVE-SESSION-001): 503 says "ask again", 401 says "you are signed
+    // out", and only one of those is true here.
+    if (resolveAuthOutcome(user, authError) === "unavailable") {
+      console.error("[auth] getUser transport failure (API branch)", {
+        pathname,
+        name: authError?.name,
+        status: authError?.status,
+        message: authError?.message,
+      });
+      return NextResponse.json({ error: AUTH_UNAVAILABLE_AR }, { status: 503 });
+    }
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     return apiResponse;
   }
@@ -242,7 +299,26 @@ export default async function proxy(req: NextRequest) {
 
   // ─── Supabase Mode: Real auth ──────────────────────────────────────────────
   if (isSupabaseMode) {
-    let supabaseResponse = NextResponse.next({ request: req });
+    // Next gives a server layout no way to ask which URL it is rendering, so
+    // the pathname is stamped on the REQUEST here and read back with
+    // `headers()` in src/components/auth/ServerSessionGate.tsx — that is how
+    // /dashboard and /settings build `?from=<path>` when they redirect an
+    // anonymous visitor to /login. Only PROTECTED pages reach this line, so no
+    // public request carries it.
+    //
+    // `nextWithPathname()` replaces the bare `NextResponse.next({ request: req })`
+    // this branch used at three points. It is the same forward: `{ request: req }`
+    // reads `req.headers`, and `req.cookies.set()` in `setAll` below updates
+    // that same Cookie header, so building `new Headers(req.headers)` at the
+    // moment of the call captures exactly the cookies the old form did. The
+    // @supabase/ssr double-write pattern itself is untouched.
+    const nextWithPathname = () => {
+      const requestHeaders = new Headers(req.headers);
+      requestHeaders.set("x-nzamy-pathname", pathname);
+      return NextResponse.next({ request: { headers: requestHeaders } });
+    };
+
+    let supabaseResponse = nextWithPathname();
 
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -256,7 +332,7 @@ export default async function proxy(req: NextRequest) {
             cookiesToSet.forEach(({ name, value }) =>
               req.cookies.set(name, value),
             );
-            supabaseResponse = NextResponse.next({ request: req });
+            supabaseResponse = nextWithPathname();
             cookiesToSet.forEach(({ name, value, options }) =>
               supabaseResponse.cookies.set(name, value, options),
             );
@@ -268,7 +344,32 @@ export default async function proxy(req: NextRequest) {
     // Refresh the session token
     const {
       data: { user },
+      error: authError,
     } = await supabase.auth.getUser();
+
+    // The session check never completed — a TLS/DNS/egress fault, not a
+    // statement about this visitor. Signing a real user out over a dropped
+    // packet is the defect this branch exists to stop, and it is the same
+    // fail-open choice already made for the `profiles` read below (see the
+    // long note above `if (profileError) return supabaseResponse;`) — except
+    // that this one is LOGGED, and it marks the response so a downstream
+    // server component can say so rather than guess.
+    //
+    // What it does not weaken: nothing downstream trusts this pass-through.
+    // The /dashboard and /settings server gates re-run getUser() on their own
+    // request, assertRole()/requireAdmin() re-read `profiles` on theirs, and
+    // RLS is what actually keeps one account's rows away from another.
+    if (resolveAuthOutcome(user, authError) === "unavailable") {
+      console.error("[auth] getUser transport failure (page branch)", {
+        pathname,
+        name: authError?.name,
+        status: authError?.status,
+        message: authError?.message,
+      });
+      const degraded = nextWithPathname();
+      degraded.headers.set("x-nzamy-auth", "unavailable");
+      return degraded;
+    }
 
     // Not authenticated → redirect to login
     if (!user) {
@@ -324,11 +425,11 @@ export default async function proxy(req: NextRequest) {
     //
     // What the PAGE path offers is weaker than "a UserTypeGuard is in the
     // layout", and the difference is the whole point of writing it down:
-    //   - <UserTypeGuard> is PRESENT in seven of the nine dashboard layouts —
-    //     admin, firm, business, micro, provider, government, ngo. It is absent
-    //     from src/app/dashboard/lawyer/layout.tsx and
-    //     src/app/dashboard/client/layout.tsx, which carry no type check at
-    //     all, so on this branch any signed-in user reaches those two shells.
+    //   - <UserTypeGuard> is PRESENT in all nine dashboard layouts — admin,
+    //     firm, business, micro, provider, government, ngo, and (since the
+    //     2026-09-05 role-guard batch) src/app/dashboard/lawyer/layout.tsx and
+    //     src/app/dashboard/client/layout.tsx as well — so no dashboard shell
+    //     is reached unguarded on this branch.
     //   - Where it is present it REFUSES only when its own profiles read
     //     succeeds. That read is useUser's (src/hooks/useUser.ts:533-553) — a
     //     separate request from the one that just failed here, so it frequently
@@ -406,9 +507,10 @@ export default async function proxy(req: NextRequest) {
       needsOnboarding({
         userType: profile?.user_type,
         onboardingCompleted: profile?.onboarding_completed,
-        // Trimmed, not merely truthy: a phone of "" or "   " is exactly as
-        // unreachable as a NULL one.
-        hasPhone: (profile?.phone ?? "").trim() !== "",
+        // Format-aware, not merely non-blank: "" and "   " are unreachable,
+        // and so is `letters-and-email@example.test`, which is what the row
+        // the UAT wrote actually held. UAT-REG-002 / appendix 03 §5.
+        hasPhone: hasValidSaudiMobile(profile?.phone),
       })
     ) {
       const url = req.nextUrl.clone();
@@ -453,6 +555,121 @@ export default async function proxy(req: NextRequest) {
       !isAdmin &&
       (knownType === null || !(rbacRule.allowedTypes as readonly string[]).includes(knownType))
     ) {
+      // ─── The second key: an ACCEPTED membership ──────────────────────────
+      // Review 2026-09-21 B3 / F08.
+      //
+      // Reached ONLY after the allowedTypes comparison above has already
+      // failed, so nobody who belongs here by type pays a round trip for it:
+      // an `individual` on /dashboard/client, a `lawyer` on /dashboard/lawyer,
+      // a `corporate` on /dashboard/business never enter this branch at all.
+      //
+      // That includes every ENTITY OWNER, and it is worth deriving rather than
+      // trusting, because an owner lookup here would otherwise be the obvious
+      // missing half. A `business_profiles` row is created only for
+      // `user_type = 'corporate'` and a `firm_profiles` row only for `'firm'`:
+      // by `handle_new_user` at signup
+      // (supabase/migrations/20260716_security_hardening.sql:58-75), and by
+      // `sectorRowValuesFor` (src/lib/auth/accountTypeClaim.ts:435-446) when a
+      // Google account claims its type afterwards. ROUTE_ACCESS gives
+      // /dashboard/business exactly `["corporate"]` and /dashboard/firm exactly
+      // `["firm"]` (src/lib/auth/routeAccess.ts:68, :78), so an owner is
+      // admitted by the comparison above and never reaches this line. There is
+      // a second, independent reason no owner branch is needed: every owner
+      // ALSO holds an `active` row in the matching members table, written by a
+      // trigger on the profiles row it belongs to —
+      // `ensure_business_owner_membership`
+      // (supabase/migrations/20260914_entity_memberships_and_business_requests.sql:21-41,
+      // with a backfill of the rows that predate it at :43-48) and
+      // `ensure_firm_owner_membership`
+      // (supabase/migrations/20260903_phase2_clients_and_firm_membership.sql:249-266)
+      // — so the read below would admit an owner even if the type check
+      // somehow had not.
+      //
+      // WHAT THIS EXISTS TO FIX. A5/F03 turned an invitation into a real
+      // consent decision: POST /api/v1/{business,firm}/members now writes
+      // `status = 'invited'`, and the invited person accepts at POST
+      // /api/v1/me/invitations/{kind}/{id}/accept. An `individual` or a
+      // `lawyer` who accepts becomes an ACTIVE member of a company or a firm
+      // while their own profiles.user_type stays exactly what it was —
+      // membership is additive and nothing in this app rewrites that column
+      // (it cannot: trg_lock_user_type). The browser already understood that:
+      // UserTypeGuard asks `isAllowedByTypeOrMembership`
+      // (src/components/dashboard/UserTypeGuard.tsx:68-75). The edge did not,
+      // so it redirected the accepted member away BEFORE the page — and
+      // therefore before that guard — ever rendered. The invitation could be
+      // accepted and still lead nowhere, which is the whole of F08.
+      //
+      // WHICH PATHS. `entityMembershipKindForPath`
+      // (src/lib/auth/entityMembership.ts:20-25) is the same table the browser
+      // guard's membership arms read, which is why it is imported rather than
+      // re-spelled here. /dashboard/firm → firm, /dashboard/business →
+      // business, and the three shared client-intake prefixes → business,
+      // because their rule admits `corporate` (routeAccess.ts:72-75) and
+      // `isAllowedByTypeOrMembership` opens anything admitting `corporate` to a
+      // business member. Every other prefix answers null and stays governed by
+      // profiles.user_type alone, exactly as before. Pinned, path by path, in
+      // src/proxy.membership.test.ts.
+      //
+      // HOW IT IS READ. One RLS-scoped read on the client already built above —
+      // never a service client, which this file does not have and must not
+      // acquire. The row is reached through the own-row disjunct
+      // `user_id = auth.uid()` of "<x>_members: own row, co-member, owner or
+      // admin can read"
+      // (supabase/migrations/20260921_03_entity_rls_recursion_fix.sql:285,
+      // :353) — the same arm GET /api/v1/me/invitations relies on. The
+      // `status = 'active'` filter is what every other membership reader in the
+      // repo applies (useUser, resolveActiveEntityIds, is_active_business_member),
+      // so a row still parked at `invited` — an invitation NOT yet accepted —
+      // opens nothing here either.
+      //
+      // This adds no redirect target, so the no-loop derivation below is
+      // untouched: the block either passes the request through or falls into
+      // exactly the redirect that was already there.
+      const membershipKind = entityMembershipKindForPath(pathname);
+      if (membershipKind) {
+        const { data: membership, error: membershipError } = await supabase
+          .from(membershipKind === "firm" ? "firm_members" : "business_members")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("status", "active")
+          .limit(1)
+          .maybeSingle();
+
+        // The read itself failed — a blip, PostgREST, RLS. Same choice and the
+        // same reason as `if (profileError) return supabaseResponse;` (:478):
+        // we have learned nothing, so this middleware decides nothing. Stated
+        // rather than assumed, because it is a fail-open on a branch that by
+        // definition cannot tell a real member from a stranger while the read
+        // is down. What stands behind it is not nothing: all three layouts this
+        // block can pass into carry a <UserTypeGuard> that asks
+        // `isAllowedByTypeOrMembership` on its OWN membership read — a separate
+        // request from the one that just failed here, so it frequently does
+        // succeed — and RLS is what actually keeps one entity's rows away from
+        // another either way. Verified rather than inherited, because the note
+        // above :478 has gone stale on exactly this point: it says the client
+        // and lawyer layouts carry no guard, and both now do
+        // (src/app/dashboard/client/layout.tsx:35 guards
+        // ["individual","corporate","admin"], lawyer/layout.tsx:31 guards
+        // ["lawyer","firm","provider","admin"]). Correcting that note is not
+        // this block's job; leaning on its stale half would have been this
+        // block's mistake.
+        // Logged, unlike :478, because unlike that one this read has a table
+        // and a kind worth naming in the log.
+        if (membershipError) {
+          console.error("[rbac] membership lookup failed (page branch)", {
+            pathname,
+            kind: membershipKind,
+            code: membershipError.code,
+            message: membershipError.message,
+          });
+          return supabaseResponse;
+        }
+
+        // An accepted membership. Additive: it opens the entity dashboard the
+        // path asked about and changes nothing else about this account.
+        if (membership) return supabaseResponse;
+      }
+
       const url = req.nextUrl.clone();
       // A type outside the CHECK-constraint vocabulary (or a missing row) is
       // not an authorization for anything, so it goes to the fallback rather
@@ -483,6 +700,17 @@ export default async function proxy(req: NextRequest) {
   }
 
   // ─── Demo Mode: Cookie-based auth (legacy) ────────────────────────────────
+  //
+  // Reachable ONLY when runtimeMode resolved an explicit "demo" outside
+  // production (isDemoMode). Before, it was the fall-through for "the env var
+  // is not exactly 'supabase'", which an unset variable satisfied — and since
+  // it recognises only `nzamy_session` / `nzamy_demo_role`, never the
+  // `sb-<ref>-auth-token*` cookies a real login writes, it bounced genuinely
+  // signed-in users to /login (UAT-LIVE-SESSION-001, hypothesis H2). The
+  // Supabase path above is now the default and the only production path; the
+  // guard below makes that structural rather than conventional.
+  if (!isDemoMode) return NextResponse.next();
+
   const isAuthenticated =
     req.cookies.has("nzamy_session") || req.cookies.has("nzamy_demo_role");
 

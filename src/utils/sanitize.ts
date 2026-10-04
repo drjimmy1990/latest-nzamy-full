@@ -51,6 +51,10 @@ export function sanitizeRichHtml(html: string): string {
  */
 export function markdownBoldToSafeHtml(text: string): string {
   let html = text;
+  // Inline code marks: `text` → text. The corpus uses them around status
+  // words («`[ملغاة]`») and they rendered as literal backticks (owner test
+  // 2026-09-28). Legal text has no code, so the marks are dropped.
+  html = html.replace(/`([^`\n]+)`/g, "$1");
   // Bold: **text**
   html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
   // Italic: *text* (but not ** which is bold)

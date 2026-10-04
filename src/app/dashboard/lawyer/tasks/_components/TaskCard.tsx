@@ -83,14 +83,26 @@ export function TaskCard({
 
   return (
     <>
+      {/* Native HTML5 drag lives on this plain wrapper, not on the motion.div
+          (T28-15). framer-motion treats onDragStart/onDragEnd as ITS OWN
+          gesture props (motion's validMotionProps) and never forwards them
+          to the DOM, so on the motion.div the handler never ran and dragId
+          stayed null in every browser. Firefox additionally refuses to start
+          a drag unless dataTransfer carries data. */}
+      <div
+        draggable={draggable}
+        onDragStart={draggable ? (e) => {
+          e.dataTransfer.setData("text/plain", task.id);
+          e.dataTransfer.effectAllowed = "move";
+          onDragStart?.(task.id);
+        } : undefined}
+        onDragEnd={draggable ? onDragEnd : undefined}
+      >
       <motion.div
         layout
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, height: 0, marginBottom: 0 }}
-        draggable={draggable}
-        onDragStart={() => onDragStart?.(task.id)}
-        onDragEnd={onDragEnd}
         className={`group rounded-2xl border px-4 py-3.5 transition-all hover:shadow-md ${isDone ? "opacity-55" : ""}
           ${isDark
             ? "bg-zinc-900/70 border-white/[0.06] hover:border-white/10"
@@ -232,6 +244,7 @@ export function TaskCard({
           </div>
         )}
       </motion.div>
+      </div>
 
       {/* ── Edit Modal ── */}
       <AnimatePresence>

@@ -24,6 +24,7 @@
  */
 
 import { gregorianFromHijri, hijriAvailable, hijriLabelAr, hijriPartsOf } from "./hijri.ts";
+import { saudiCalendarDate } from "./enactmentCountdown.ts";
 
 /** JS getDay(): 0 = Sunday … 5 = Friday, 6 = Saturday. */
 export const WEEKEND_DAYS: ReadonlySet<number> = new Set([5, 6]);
@@ -71,11 +72,18 @@ export function addDays(d: Date, n: number): Date {
   return out;
 }
 
-/** Whole days from `today` to `dueDate` (negative when overdue). */
+/**
+ * Whole days from `today` to `dueDate` (negative when overdue), counted on the
+ * SAUDI calendar day `today` falls on. The server and the cron run in UTC:
+ * with the local getters, 21:00–24:00 UTC (already the next day in Riyadh)
+ * counted one day too many — a reminder 3 days out went out as "3d" instead of
+ * "1d"… (plan P0-26; deadlineReminders.test.ts failed under TZ=UTC).
+ */
 export function daysUntil(dueDate: string, today: Date = new Date()): number | null {
   const due = parseIsoDate(dueDate);
   if (!due) return null;
-  const t = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const [y, m, d] = saudiCalendarDate(today).split("-").map(Number);
+  const t = new Date(y, m - 1, d);
   return Math.round((due.getTime() - t.getTime()) / 86_400_000);
 }
 

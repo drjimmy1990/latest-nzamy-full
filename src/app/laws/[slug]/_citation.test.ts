@@ -160,6 +160,81 @@ test("the executive-regulation form is preserved", () => {
   assert.ok(c.plain.includes("المادة (الثالثة)"), c.plain);
 });
 
+// ── Dirty number_text (owner test 2026-09-28) ────────────────────────────────
+
+test("markdown heading marks and the trailing colon never reach the citation", () => {
+  const c = buildCitation(
+    { docTitle: "نظام العمل", docType: "نظام", numberText: "### المادة (1):", displayNum: "المادة (1)" },
+    true,
+  );
+  assert.equal(c.kind, "article");
+  assert.ok(!c.plain.includes("#"), `heading marks leaked: ${c.plain}`);
+  assert.ok(c.plain.startsWith("المادة (1) من نظام (نظام العمل)"), c.plain);
+  assert.equal(c.plain.split("المادة").length - 1, 1, `doubled noun: ${c.plain}`);
+});
+
+test("an instrument name in number_text falls back to the display label", () => {
+  const c = buildCitation(
+    {
+      docTitle: "نظام العمل",
+      docType: "نظام",
+      numberText: "اللائحة التنفيذية لنظام العمل",
+      displayNum: "المادة 5",
+    },
+    true,
+  );
+  assert.equal(c.kind, "article");
+  assert.ok(c.plain.startsWith("المادة (5) من نظام (نظام العمل)"), c.plain);
+  assert.ok(!c.plain.includes("(اللائحة"), `a name inside the locator: ${c.plain}`);
+});
+
+test("a name in both number_text and the display label cites the document, not «المادة (name)»", () => {
+  const c = buildCitation(
+    {
+      docTitle: "نظام العمل",
+      docType: "نظام",
+      numberText: "لائحة عمال الخدمة المنزلية ومن في حكمهم:",
+      displayNum: "لائحة عمال الخدمة المنزلية ومن في حكمهم",
+    },
+    true,
+  );
+  assert.equal(c.kind, "document");
+  assert.ok(!c.plain.includes("المادة"), c.plain);
+  assert.ok(c.plain.startsWith("من نظام (نظام العمل)"), c.plain);
+});
+
+test("a null number_text uses the display label", () => {
+  const c = buildCitation(
+    { docTitle: "نظام العمل", docType: "نظام", numberText: null, displayNum: "المادة السادسة" },
+    true,
+  );
+  assert.ok(c.plain.includes("المادة (السادسة)"), c.plain);
+});
+
+test("a regulation ref that is the regulation's name falls back to reg_num", () => {
+  const c = buildCitation(
+    {
+      docTitle: "نظام العمل ولوائحه التنفيذية",
+      docType: "نظام",
+      regulationRef: "اللائحة التنفيذية لنظام العمل",
+      regulationNum: "5",
+    },
+    true,
+  );
+  assert.equal(c.kind, "regulation");
+  assert.ok(c.plain.startsWith("المادة (5) من اللائحة التنفيذية لنظام (نظام العمل)"), c.plain);
+});
+
+test("a regulation ref that is a name, with no reg_num, cites the regulation itself", () => {
+  const c = buildCitation(
+    { docTitle: "نظام العمل", docType: "نظام", regulationRef: "اللائحة التنفيذية لنظام العمل:" },
+    true,
+  );
+  assert.equal(c.kind, "regulation");
+  assert.ok(!c.plain.includes("المادة"), c.plain);
+  assert.ok(c.plain.startsWith("من اللائحة التنفيذية لنظام (نظام العمل)"), c.plain);
+});
+
 // ── Shape guarantees ─────────────────────────────────────────────────────────
 
 test("html is the plain form in bold, and neither ends in whitespace", () => {
@@ -167,6 +242,7 @@ test("html is the plain form in bold, and neither ends in whitespace", () => {
     { docTitle: "نظام العمل", docType: "نظام", numberText: "الأولى" },
     { docTitle: "دليل", docType: "دليل إرشادي", numberText: "الصفحة 9" },
     { docTitle: "وثيقة" },
+    { docTitle: "نظام العمل", docType: "نظام", regulationRef: "اللائحة التنفيذية لنظام العمل" },
   ]) {
     for (const rtl of [true, false]) {
       const c = buildCitation(s, rtl);
@@ -175,6 +251,20 @@ test("html is the plain form in bold, and neither ends in whitespace", () => {
       assert.ok(!/\s{2,}/.test(c.plain), `double space: "${c.plain}"`);
     }
   }
+});
+
+// ── Ordinal-led headings (2026-10-04) ──────────────────────────────────────────
+
+test("a long heading that opens with an item ordinal is cited by the ordinal alone", () => {
+  // «ثالثًا- الأمانة العامة…» (tanween before the alef) used to fall back to «المادة 52»;
+  // it is now the article label, but the citation must not carry the whole heading.
+  const heading = "ثالثًا- الأمانة العامة للغرف التجارية الصناعية وتنظيم أعمالها وتحديد اختصاصاتها";
+  const c = buildCitation({ docTitle: "نظام الغرف التجارية", docType: "نظام", numberText: heading, displayNum: heading }, true);
+  assert.equal(c.kind, "article");
+  assert.equal(c.plain, "المادة (ثالثًا) من نظام (نظام الغرف التجارية) ونصه:");
+  // A short ordinal is cited exactly as before.
+  const short = buildCitation({ docTitle: "نظام الغرف التجارية", docType: "نظام", numberText: "ثالثاً" }, true);
+  assert.equal(short.plain, "المادة (ثالثاً) من نظام (نظام الغرف التجارية) ونصه:");
 });
 
 console.log(`✔ _citation: ${passed} tests passed`);

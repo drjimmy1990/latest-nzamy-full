@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Eye,
@@ -23,13 +24,15 @@ import {
   Info,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { LIBRARY_STAT_LABELS, formatLibraryCount } from "@/lib/library/libraryStats";
+import { useLibraryStats } from "@/lib/library/useLibraryStats";
 import { authenticateTest, TEST_ACCOUNTS, TEST_PASSWORD } from "@/lib/test-credentials";
 import { setDemoSession, useUser } from "@/hooks/useUser";
 import { getDashboardRoute } from "@/constants/navigation";
+import { isDbUserType } from "@/lib/auth/userTypes";
 import { createClient } from "@/lib/supabase/client";
-import { isDemoUiEnabled } from "@/lib/runtimeMode";
-
-const BACKEND_MODE = process.env.NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND ?? "demo";
+import { isDemoUiEnabled, BACKEND_MODE } from "@/lib/runtimeMode";
+import { saudiMobileOrNull } from "@/lib/services/saudiMobile";
 
 const t = {
   ar: {
@@ -59,11 +62,9 @@ const t = {
     feat3: "محامون معتمدون ومختارون بعناية",
     // «٣٧٠+ خدمة قانونية» was deleted from /services/individuals in an
     // earlier wave for being unsupported by the catalog it counted; the login
-    // screen kept its own copy. Replaced with the legal library's real size —
-    // the same floor LegalLibraryBanner.tsx publishes, checkable with
-    // `select count(*) from library.laws`.
-    stat1Label: "نظاماً ولائحة",
-    stat1Value: "٣٨٦",
+    // screen kept its own copy. Its slot now shows the legal library's real
+    // size — NOT a literal (the same code runs on the cloud DB with 386 rows
+    // and on self-hosted with 5,901): see `libraryStat` in LoginPage below.
     stat2Label: "دعم متواصل",
     stat2Value: "٢٤/٧",
     stat3Label: "آمن ومشفّر",
@@ -95,8 +96,6 @@ const t = {
     feat1: "Advanced AI legal assistance",
     feat2: "Full data security & encryption",
     feat3: "Verified & vetted lawyers",
-    stat1Label: "Legal Services",
-    stat1Value: "370+",
     stat2Label: "Support",
     stat2Value: "24/7",
     stat3Label: "Secure",
@@ -112,7 +111,6 @@ const features = [
 ];
 
 const stats = [
-  { valueKey: "stat1Value", labelKey: "stat1Label" },
   { valueKey: "stat2Value", labelKey: "stat2Label" },
   { valueKey: "stat3Value", labelKey: "stat3Label" },
 ];
@@ -146,6 +144,21 @@ export default function LoginPage() {
   const txt = isAr ? t.ar : t.en;
   const dir = isAr ? "rtl" : "ltr";
 
+  // Live floor of library.laws (GET /api/library/stats). null value = still
+  // loading → placeholder; a failed count drops the tile — never a literal.
+  const library = useLibraryStats();
+  const libraryLaws = library.status === "ready" ? formatLibraryCount(library.stats.laws, isAr ? "ar" : "en") : null;
+  const libraryStat = library.status === "loading" || libraryLaws
+    ? { value: libraryLaws, label: isAr ? LIBRARY_STAT_LABELS.laws.ar : LIBRARY_STAT_LABELS.laws.en }
+    : null;
+  const statTiles: { value: string | null; label: string }[] = [
+    ...(libraryStat ? [libraryStat] : []),
+    ...stats.map((s) => ({
+      value: String(txt[s.valueKey as keyof typeof txt]),
+      label: String(txt[s.labelKey as keyof typeof txt]),
+    })),
+  ];
+
   const router = useRouter();
   const user = useUser();
   const [inputMode, setInputMode] = useState<"email" | "phone">("email");
@@ -175,29 +188,84 @@ export default function LoginPage() {
     try {
       // ── Supabase Mode: Real authentication ──────────────────────────────────
       if (BACKEND_MODE === "supabase") {
+        const phone = inputMode === "phone" ? saudiMobileOrNull(identifier) : null;
+        const credentials = inputMode === "email"
+          ? { email: identifier.trim(), password: password.trim() }
+          : phone
+            ? { phone, password: password.trim() }
+            : null;
+        if (!credentials) {
+          setError(isAr ? "أدخل رقم جوال سعودي صحيح" : "Enter a valid Saudi mobile number");
+          return;
+        }
         const supabase = createClient();
-        const { data, error: authError } = await supabase.auth.signInWithPassword({
-          ...(inputMode === "email"
-            ? { email: identifier.trim() }
-            : { phone: identifier.trim() }),
-          password: password.trim(),
-        });
+        const { data, error: authError } = await supabase.auth.signInWithPassword(credentials);
 
         if (authError || !data.user) {
           setError(isAr ? "بيانات الدخول غير صحيحة" : "Invalid credentials");
           return;
         }
 
-        // Fetch the user_type from the profiles table as the source of truth
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("user_type")
-          .eq("id", data.user.id)
-          .single();
+        // ── Handshake: does the SERVER see this session? ──────────────────
+        //
+        // signInWithPassword succeeded in the BROWSER. That is not the same as
+        // the server having accepted the cookies, and the old code never
+        // checked: it read `profiles` with the browser client and called
+        // `router.push(dest)` — a client-side transition, so the first thing
+        // that ever asked the server was a page that then bounced the user to
+        // /login. GET /api/v1/auth/session asks the server directly, with this
+        // request's own cookies, and answers 200 / 401 / 503.
+        // (docs/audits/2026-09-20-profiles-uat/02-auth-session-audit.md §4, H3.)
+        const handshake = await fetch("/api/v1/auth/session", {
+          credentials: "same-origin",
+          cache: "no-store",
+        });
 
-        const userType = profile?.user_type ?? data.user.user_metadata?.user_type ?? "individual";
-        const dest = getDashboardRoute(userType);
-        router.push(dest);
+        if (handshake.status === 503) {
+          setError(
+            isAr
+              ? "تعذّر تأكيد الجلسة مع الخادم — تحقق من الاتصال ثم أعد المحاولة"
+              : "Could not confirm the session with the server — check your connection and try again",
+          );
+          return;
+        }
+
+        if (!handshake.ok) {
+          // 401: the browser holds a session the server will not accept. Log the
+          // cookie NAMES only — never a value — so the shape of the failure is
+          // visible without putting a token in a console or a bug report.
+          console.warn(
+            "[login] server did not accept the session; cookie names present:",
+            document.cookie
+              .split(";")
+              .map((c) => c.split("=")[0].trim())
+              .filter(Boolean),
+          );
+          setError(
+            isAr
+              ? "تم تسجيل الدخول لكن الخادم لم يستلم الجلسة — أعد المحاولة، وإن تكرر ذلك أبلغ الدعم"
+              : "Signed in, but the server did not receive the session — try again, and report it to support if it persists",
+          );
+          return;
+        }
+
+        // The server's own answer is the source of truth for the destination:
+        // it read `profiles` through the RLS client and reports `null` rather
+        // than guessing a type (see src/lib/auth/sessionResponse.ts). This used to be
+        // `profile?.user_type ?? "individual"`, which sent a lawyer whose row
+        // could not be read to the CLIENT dashboard — the same demotion
+        // UAT-LIVE-AI-001 is about. A signed-in account with no usable type has
+        // an incomplete profile, and /onboarding is where that belongs.
+        const session = (await handshake.json()) as { userType?: string | null };
+        const dest =
+          typeof session.userType === "string" && isDbUserType(session.userType)
+            ? getDashboardRoute(session.userType)
+            : "/onboarding";
+
+        // A FULL document load, not router.push: the next request has to reach
+        // the server carrying the cookies so SSR and src/proxy.ts see the same
+        // session the handshake just confirmed.
+        window.location.assign(dest);
         return;
       }
 
@@ -292,8 +360,8 @@ export default function LoginPage() {
             className="relative z-10 flex items-center justify-between"
           >
             <a href="/" className="flex items-center gap-3 group">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-white backdrop-blur-sm border border-white/20 group-hover:bg-white/20 transition-colors">
-                <Scales weight="bold" size={22} />
+              <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl border border-white/20 bg-white/10 p-1 text-white backdrop-blur-sm transition-colors group-hover:bg-white/20">
+                <Image src="/logo.png" alt={txt.logo} width={44} height={44} className="h-full w-full object-contain" priority />
               </div>
               <span className="font-brand text-2xl font-bold tracking-tight text-white">
                 {txt.logo}
@@ -370,18 +438,18 @@ export default function LoginPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.4 }}
-            className="relative z-10 grid grid-cols-3 gap-4"
+            className={`relative z-10 grid gap-4 ${statTiles.length === 3 ? "grid-cols-3" : "grid-cols-2"}`}
           >
-            {stats.map((stat, i) => (
+            {statTiles.map((stat, i) => (
               <div
                 key={i}
                 className="rounded-2xl border border-white/15 bg-white/5 backdrop-blur-sm p-4 text-center"
               >
                 <div className="font-brand text-2xl font-bold text-gold mb-1">
-                  {txt[stat.valueKey as keyof typeof txt]}
+                  {stat.value ?? <span aria-hidden className="inline-block h-[0.8em] w-14 rounded-md align-middle animate-pulse bg-white/10" />}
                 </div>
                 <div className="text-white/60 text-xs font-medium">
-                  {txt[stat.labelKey as keyof typeof txt]}
+                  {stat.label}
                 </div>
               </div>
             ))}
@@ -395,10 +463,10 @@ export default function LoginPage() {
         {/* ── RIGHT FORM PANEL ── */}
         <div className="flex flex-1 flex-col min-h-screen">
           {/* Mobile header */}
-          <div className="flex items-center justify-between px-5 py-4 md:hidden border-b border-slate-200 dark:border-dark-border">
+          <div className="safe-top flex items-center justify-between px-5 py-4 md:hidden border-b border-slate-200 dark:border-dark-border">
             <a href="/" className="flex items-center gap-2.5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-royal text-white">
-                <Scales weight="bold" size={18} />
+              <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl bg-royal p-1 text-white">
+                <Image src="/logo.png" alt={txt.logo} width={36} height={36} className="h-full w-full object-contain" priority />
               </div>
               <span className="font-brand text-xl font-bold text-royal">{txt.logo}</span>
             </a>
@@ -518,6 +586,14 @@ export default function LoginPage() {
                       onChange={(e) => setIdentifier(e.target.value)}
                       placeholder={inputMode === "email" ? txt.emailPlaceholder : txt.phonePlaceholder}
                       dir={inputMode === "phone" ? "ltr" : dir}
+                      // Without these the phone tab still opens a full QWERTY
+                      // keyboard on iOS, and password managers cannot see the
+                      // field at all.
+                      autoComplete={inputMode === "email" ? "email" : "tel"}
+                      inputMode={inputMode === "email" ? "email" : "tel"}
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
                       className={`w-full rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card py-3 text-sm text-ink placeholder:text-ink-faint dark:placeholder:text-gray-600 outline-none focus:border-royal dark:focus:border-gold focus:ring-2 focus:ring-royal/10 dark:focus:ring-gold/10 transition-all ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"}`}
                     />
                   </div>
@@ -545,6 +621,10 @@ export default function LoginPage() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder={txt.passwordPlaceholder}
+                      autoComplete="current-password"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
                       className={`w-full rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card py-3 text-sm text-ink placeholder:text-ink-faint dark:placeholder:text-gray-600 outline-none focus:border-royal dark:focus:border-gold focus:ring-2 focus:ring-royal/10 dark:focus:ring-gold/10 transition-all ${isAr ? "pr-10 pl-10" : "pl-10 pr-10"}`}
                     />
                     <button
@@ -624,7 +704,8 @@ export default function LoginPage() {
                 </div>
               </motion.div>
 
-              {/* Google button */}
+              {/* Google button: only render it when this environment has an auth backend. */}
+              {BACKEND_MODE === "supabase" && (
               <motion.div variants={itemVariants} className="mb-6">
                 <motion.button
                   whileHover={{ scale: 1.015, boxShadow: "0 4px 20px -4px rgba(0,0,0,0.12)" }}
@@ -637,6 +718,7 @@ export default function LoginPage() {
                   <span>{txt.google}</span>
                 </motion.button>
               </motion.div>
+              )}
 
               {/* Register link */}
               <motion.div variants={itemVariants} className="text-center">

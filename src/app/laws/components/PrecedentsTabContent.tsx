@@ -21,6 +21,7 @@ import {
   PrecedentRow,
   EmptyState,
 } from "./ListItems";
+import { ResultsSkeleton } from "./ResultsSkeleton";
 
 interface PrecedentsTabContentProps {
   isDark: boolean;
@@ -45,6 +46,16 @@ interface PrecedentsTabContentProps {
   setPrecPage: (page: number) => void;
   precSort: "relevance" | "year-desc" | "year-asc" | "date-desc";
   setPrecSort: (sort: "relevance" | "year-desc" | "year-asc" | "date-desc") => void;
+  /**
+   * While a search is active: the API's principles count («١٠٤» or «أكثر من
+   * ١٬٠٠٠», SEARCH COUNTS CONTRACT). The rows here are only the pages loaded so
+   * far, so their length is not the section count. undefined = browse mode.
+   */
+  searchCountLabel?: string;
+  /** A search request is in flight: skeleton cards, not «لا توجد نتائج». */
+  resultsPending?: boolean;
+  /** The search failed (its error is shown above): no empty state. */
+  searchFailed?: boolean;
 }
 
 export function PrecedentsTabContent({
@@ -70,6 +81,9 @@ export function PrecedentsTabContent({
   setPrecPage,
   precSort,
   setPrecSort,
+  searchCountLabel,
+  resultsPending = false,
+  searchFailed = false,
 }: PrecedentsTabContentProps) {
   const router = useRouter();
   const { can } = useSubscription();
@@ -319,6 +333,7 @@ export function PrecedentsTabContent({
             return isRTL ? (
               <span>
                 عرض النتائج <strong className="text-[#C8A762]">{from}-{to}</strong> من أصل <strong className="text-[#C8A762]">{total}</strong>
+                {searchCountLabel !== undefined && <> محمّلة — إجمالي نتائج البحث <strong className="text-[#C8A762]">{searchCountLabel}</strong></>}
               </span>
             ) : (
               <span>
@@ -329,6 +344,9 @@ export function PrecedentsTabContent({
         </div>
       </div>
 
+      {resultsPending ? (
+        <ResultsSkeleton isDark={isDark} layoutMode={layoutMode} count={3} label="جارٍ البحث" />
+      ) : (<>
       {/* Judicial Collections Grid */}
       {precMode !== "precedents" && filteredCollections.length > 0 && (
         <div className="mb-8">
@@ -540,7 +558,7 @@ export function PrecedentsTabContent({
             <Scales size={13} />
             {isRTL ? "المبادئ القضائية" : "Judicial Principles"}
             <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-700"}`}>
-              {filteredPrinciples.length}
+              {searchCountLabel ?? filteredPrinciples.length}
             </span>
           </p>
           <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" : "space-y-3"}>
@@ -599,8 +617,8 @@ export function PrecedentsTabContent({
         </div>
       )}
 
-      {/* Empty state */}
-      {filteredPrinciples.length === 0 && filteredPrecedents.length === 0 && (
+      {/* Empty state — only for a settled read, never for a failed search */}
+      {filteredPrinciples.length === 0 && filteredPrecedents.length === 0 && !searchFailed && (
         <EmptyState
           type="no-results"
           catId={activeCat}
@@ -683,6 +701,7 @@ export function PrecedentsTabContent({
           </button>
         </div>
       )}
+      </>)}
     </motion.div>
   );
 }

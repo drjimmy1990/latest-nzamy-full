@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# A deliberately tiny Docker stand-in for run.fail_closed.test.sh.
+# It never contacts Docker or Postgres.  It emulates psql's dangerous default:
+# an SQL error in a script is reported but exits 0 unless ON_ERROR_STOP is set.
+set -euo pipefail
+command="${1:-}"
+shift || true
+
+case "$command" in
+  run|cp|rm) exit 0 ;;
+  exec)
+    args=" $* "
+    [[ "$args" == *" pg_isready "* ]] && exit 0
+    [[ "$args" == *" psql "* ]] || exit 0
+
+    if [[ "${FAKE_DOCKER_FAIL_STAGE:-}" == "migration" && "$args" == *" /tmp/mig1.sql "* ]]; then
+      echo 'ERROR: synthetic migration failure' >&2
+      exit 42
+    fi
+    if [[ "${FAKE_DOCKER_FAIL_STAGE:-}" == "test" && "$args" == *" /tmp/test.sql "* ]]; then
+      echo 'ERROR: synthetic RLS assertion failure' >&2
+      [[ "$args" == *" -v ON_ERROR_STOP=1 "* ]] && exit 43
+      echo 'FAKE psql: ON_ERROR_STOP is missing; psql would continue' >&2
+      exit 0
+    fi
+    if [[ "$args" != *" -v ON_ERROR_STOP=1 "* ]]; then
+      echo 'FAKE psql: ON_ERROR_STOP is missing; psql would continue' >&2
+      exit 0
+    fi
+    echo 'FAKE psql: ON_ERROR_STOP=1 observed'
+    exit 0
+    ;;
+  *)
+    echo "unexpected fake docker command: $command" >&2
+    exit 64
+    ;;
+esac

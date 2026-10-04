@@ -99,7 +99,7 @@ export function NajizOptimizerModal({ isDark, initialText, onClose }: NajizOptim
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <motion.div initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 10 }} 
-        className={`relative w-full max-w-4xl rounded-2xl border shadow-2xl overflow-hidden flex flex-col h-[90vh] ${isDark ? "border-white/[0.1] bg-zinc-950" : "border-slate-200 bg-zinc-50"}`}>
+        className={`relative w-full max-w-4xl rounded-2xl border shadow-2xl overflow-hidden flex flex-col h-[90dvh] ${isDark ? "border-white/[0.1] bg-zinc-950" : "border-slate-200 bg-zinc-50"}`}>
         
         {/* Header */}
         <div className={`flex items-center justify-between border-b px-5 py-4 ${isDark ? "border-white/[0.06] bg-zinc-900" : "border-slate-200 bg-white"}`}>

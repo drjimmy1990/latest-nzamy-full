@@ -7,6 +7,8 @@ import assert from "node:assert/strict";
 import {
   isStrictRateLimitedRoute,
   isGeneralRateLimitedApiPath,
+  isLibraryReadRateLimitedRoute,
+  libraryReadClientKey,
 } from "./rateLimitRoutes.ts";
 
 // ─── isStrictRateLimitedRoute ────────────────────────────────────────────────
@@ -76,4 +78,31 @@ test("isGeneralRateLimitedApiPath: the four strict-bucket routes also qualify fo
   // header. A strict-matched request is checked against BOTH buckets.
   assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/contact"), true);
   assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/share/abc123/verify"), true);
+});
+
+// ─── isLibraryReadRateLimitedRoute ───────────────────────────────────────────
+
+test("isLibraryReadRateLimitedRoute: search (POST) and the two article-text GET routes match", () => {
+  // search/route.ts exports only POST — a GET-only rule would never fire on it.
+  assert.equal(isLibraryReadRateLimitedRoute("POST", "/api/library/search"), true);
+  assert.equal(isLibraryReadRateLimitedRoute("GET", "/api/library/autocomplete"), true);
+  assert.equal(isLibraryReadRateLimitedRoute("GET", "/api/library/laws/labor-law"), true);
+  assert.equal(isLibraryReadRateLimitedRoute("GET", "/api/library/laws/%D9%86%D8%B8%D8%A7%D9%85"), true);
+});
+
+test("isLibraryReadRateLimitedRoute: other methods and other library routes do not", () => {
+  assert.equal(isLibraryReadRateLimitedRoute("GET", "/api/library/search"), false);
+  assert.equal(isLibraryReadRateLimitedRoute("POST", "/api/library/laws/labor-law"), false);
+  assert.equal(isLibraryReadRateLimitedRoute("GET", "/api/library/init"), false);
+  assert.equal(isLibraryReadRateLimitedRoute("GET", "/api/library/laws/a/b"), false);
+  assert.equal(isLibraryReadRateLimitedRoute("GET", "/api/library/books/x"), false);
+  assert.equal(isLibraryReadRateLimitedRoute("GET", "/api/library/searchx"), false);
+});
+
+test("libraryReadClientKey: Cloudflare's visitor address wins; otherwise the proxy's resolved IP", () => {
+  const h = (m: Record<string, string>) => (n: string) => m[n] ?? null;
+  assert.equal(libraryReadClientKey(h({ "cf-connecting-ip": " 203.0.113.9 " }), "172.70.1.1"), "203.0.113.9");
+  assert.equal(libraryReadClientKey(h({}), "172.70.1.1"), "172.70.1.1");
+  assert.equal(libraryReadClientKey(h({ "cf-connecting-ip": "  " }), "172.70.1.1"), "172.70.1.1");
+  assert.equal(libraryReadClientKey(h({ "cf-connecting-ip": "x".repeat(200) }), "f").length, 64);
 });

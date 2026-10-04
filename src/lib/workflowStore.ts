@@ -77,6 +77,8 @@ export type WorkflowRequest = {
   status: WorkflowRequestStatus;
   payment: WorkflowPayment;
   sourcePath: string;
+  /** Optional entity context; the API accepts the kind but resolves the id itself. */
+  entityScope?: "firm" | "business";
   /**
    * Scalars OR one level of nesting. It was scalars-only, which silently made
    * `metadata.intake` — the object EVERY fulfilment brief is rendered from

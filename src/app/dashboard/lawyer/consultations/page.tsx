@@ -24,6 +24,8 @@ import { listViewState, itemsOf, type ListRead } from "@/lib/services/listRead";
 import { toArabicDigits } from "@/lib/services/arabicCount";
 import { formatGregorianAr } from "../_components/DeadlineCard";
 import ConsultationActionModal, { type ConsultationAction } from "../_components/consultations/ConsultationActionModal";
+import { saudiCalendarDate } from "@/lib/services/enactmentCountdown";
+import { bookingDateError } from "./_bookingDate";
 
 /**
  * Lawyer «الاستشارات» — on the real lifecycle (Phase 3,
@@ -116,7 +118,20 @@ function localYMD(iso: string): string | null {
 
 // ─── Booking Modal ──────────────────────────────────────────────────────────
 
-function BookingModal({ isDark, onClose, lawyerUserId }: { isDark: boolean; onClose: () => void; lawyerUserId?: string }) {
+function BookingModal({ isDark, onClose, lawyerUserId, sessionLoading = false }: {
+  isDark: boolean;
+  onClose: () => void;
+  lawyerUserId?: string;
+  /** useUser().loading — while true, a missing lawyerUserId means "not read yet", not "no session". */
+  sessionLoading?: boolean;
+}) {
+  // Saudi civil date, read in the browser after mount — never a module-level
+  // `new Date()` or an SSR-rendered value (the modal can be server-rendered
+  // open via ?book=1, and a cached HTML `min` would be a stale day; see the
+  // SSR cached-date trap). Until it is set, `min` is simply absent and
+  // handleConfirm re-checks against a fresh date anyway.
+  const [todayYMD, setTodayYMD] = useState("");
+  useEffect(() => { setTodayYMD(saudiCalendarDate()); }, []);
   const [step, setStep] = useState<BookingStep>("type");
   const [consultType, setConsultType] = useState("");
   const [mode, setMode] = useState<ConsultationMode | "">("");
@@ -190,13 +205,24 @@ function BookingModal({ isDark, onClose, lawyerUserId }: { isDark: boolean; onCl
     : !clientName.trim()
       ? "اكتب اسم العميل للمتابعة."
       : null;
+  const dateError = bookingDateError(date, todayYMD);
+  // T28-13: the confirm step used to be clickable before useUser() had
+  // resolved, so an early click hit the «تعذّر التحقق من الجلسة» refusal in
+  // handleConfirm although the session was fine — it just had not loaded yet.
+  // While it is loading the button waits instead; only a session that has
+  // finished loading with no user id still reaches that refusal.
   const blockedReason =
     step === "type" ? missingLabel
       : step === "mode" ? (!mode ? "اختر طريقة الاستشارة للمتابعة." : null)
-        : step === "confirm" ? (!consultType || !clientName.trim() || !mode
-          ? "ارجع وأكمل نوع الاستشارة واسم العميل وطريقة الاستشارة."
-          : null)
-          : null;
+        : step === "datetime" ? dateError
+          : step === "confirm" ? (!consultType || !clientName.trim() || !mode
+            ? "ارجع وأكمل نوع الاستشارة واسم العميل وطريقة الاستشارة."
+            : dateError
+              ? dateError
+              : sessionLoading && !lawyerUserId
+                ? "جارٍ التحقق من جلستك…"
+                : null)
+            : null;
 
   const handleConfirm = async () => {
     setError(null);
@@ -206,6 +232,8 @@ function BookingModal({ isDark, onClose, lawyerUserId }: { isDark: boolean; onCl
       if (!consultLabel || !clientName.trim() || !mode) {
         throw new Error("أكمل نوع الاستشارة واسم العميل وطريقة الاستشارة قبل التأكيد.");
       }
+      const pastDate = bookingDateError(date, saudiCalendarDate());
+      if (pastDate) throw new Error(pastDate);
 
       const pickedClient = selectedClientId ? clientCards.find((c) => c.id === selectedClientId) ?? null : null;
       // When a card is picked, carry its contact details into `requester` —
@@ -399,7 +427,7 @@ function BookingModal({ isDark, onClose, lawyerUserId }: { isDark: boolean; onCl
                 <div className="space-y-3">
                   <div>
                     <label className={labelCls}>التاريخ</label>
-                    <input type="date" value={date} onChange={e => setDate(e.target.value)} className={inputCls} />
+                    <input type="date" value={date} min={todayYMD || undefined} onChange={e => setDate(e.target.value)} className={inputCls} />
                   </div>
                   <div>
                     <label className={labelCls}>الوقت</label>
@@ -702,7 +730,7 @@ export default function ConsultationsPage() {
 
       {/* Booking modal */}
       <AnimatePresence>
-        {showBooking && <BookingModal isDark={isDark} onClose={() => setShowBooking(false)} lawyerUserId={user.userId} />}
+        {showBooking && <BookingModal isDark={isDark} onClose={() => setShowBooking(false)} lawyerUserId={user.userId} sessionLoading={user.loading} />}
       </AnimatePresence>
 
       {/* Header */}

@@ -6,7 +6,16 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const rawCategories = searchParams.get('categories') || 'all';
-    const count = parseInt(searchParams.get('count') || '5', 10);
+    // `count` reaches a `while (result.length < count)` loop in questionsStore,
+    // so an unbounded value is a CPU/memory amplifier on a public, unauthenticated
+    // route: ?count=1000000 builds a million objects before responding. Clamped,
+    // and NaN falls back to the default rather than looping on a comparison that
+    // is never true.
+    const MAX_QUESTIONS = 50;
+    const rawCount = parseInt(searchParams.get('count') || '5', 10);
+    const count = Number.isFinite(rawCount)
+      ? Math.min(Math.max(rawCount, 1), MAX_QUESTIONS)
+      : 5;
     const difficulty = (searchParams.get('difficulty') || undefined) as DifficultyLevel | undefined;
 
     const categories = rawCategories.split(',').map(s => s.trim()) as AcademyCategoryId[];

@@ -32,6 +32,7 @@ import {
   itemsOf,
   type ListRead,
 } from "@/lib/services/listRead";
+import PendingInvitationsBanner from "@/components/dashboard/PendingInvitationsBanner";
 
 /**
  * نظرة عامة على المنشأة — /dashboard/business.
@@ -302,6 +303,17 @@ export default function BusinessOverviewPage() {
       className={`p-5 md:p-8 space-y-6 max-w-[1100px] mx-auto ${isDark ? "text-zinc-100" : "text-zinc-900"}`}
       dir="rtl"
     >
+      {/* Review A5/F03 — mounted here for the same reason it is mounted on
+          /dashboard/client: the account reading this page can be invited to a
+          roster that is NOT its own. A `corporate` account owns THIS company
+          and is sent here by dashboardPathFor, and another company (or a law
+          firm) may still invite it to their roster — an invitation it could
+          only ever have answered on a screen it actually lands on. Without
+          this line the invitation is written, listed by
+          GET /api/v1/me/invitations, and shown to nobody.
+          Renders nothing at all when there is no invitation. */}
+      <PendingInvitationsBanner />
+
       {/* ── Header + the one action this page exists for ─────────────────── */}
       <motion.div
         variants={fadeUp}

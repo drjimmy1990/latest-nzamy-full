@@ -1,6 +1,7 @@
 import { MetadataRoute } from "next";
 import { BETA_MONOPOLY_MODE } from "@/lib/betaConfig";
 import { createServiceClient } from "@/lib/supabase/server";
+import { selectAllPages } from "@/lib/supabase/selectAllPages";
 
 const BASE_URL = "https://nezamy.sa";
 
@@ -31,7 +32,11 @@ const publicRoutes: SitemapRoute[] = [
   { url: "/lawyers", priority: 0.85, changeFrequency: "weekly" },
   { url: "/lawyers/browse", priority: 0.8, changeFrequency: "weekly" },
   { url: "/laws", priority: 0.85, changeFrequency: "monthly" },
-  { url: "/laws/civil-procedure", priority: 0.7, changeFrequency: "monthly" },
+  // /laws/civil-procedure is NOT listed: it is a 308 alias (see
+  // src/app/laws/civil-procedure/route.ts), and a sitemap must list final
+  // URLs. The law itself is resolved from the database below
+  // (getCivilProcedureLawEntry), because its slug differs between the cloud
+  // project and the self-hosted instance.
   { url: "/laws/companies-law", priority: 0.7, changeFrequency: "monthly" },
   { url: "/login", priority: 0.6, changeFrequency: "yearly" },
   { url: "/marketplace", priority: 0.8, changeFrequency: "weekly" },
@@ -97,6 +102,7 @@ const publicRoutes: SitemapRoute[] = [
 ];
 
 interface PublishedArticleRow {
+  id: string;
   slug: string;
   updated_at: string | null;
   published_at: string | null;
@@ -109,18 +115,42 @@ interface PublishedArticleRow {
  * 'published'). Never throws — any Supabase error/exception is caught and
  * results in an empty list, so the sitemap always renders (falls back to
  * just the static `/blog` entry above) instead of 500ing.
+ *
+ * LIB-14: the old unranged `.select()` relied on PostgREST's implicit
+ * max-rows cap (1000 on self-hosted) to stop it, which was fine at 614
+ * published rows but would have silently dropped entries the day the blog
+ * passed 1,000 — a sitemap that stops advertising real, published pages with
+ * no error anywhere. selectAllPages() walks it in windows instead, ordered by
+ * `slug` with the primary key `id` as the unique tiebreaker selectAllPages
+ * requires, so pages can never overlap or skip a row.
+ *
+ * A window failing partway through still returns the rows read before the
+ * failure, but this function discards them and returns [] on ANY error,
+ * matching the "never throws, empty list on failure" contract above: a
+ * sitemap missing its SECOND half (whichever half a mid-scan timeout landed
+ * on) is a worse, silently-inconsistent failure than falling back to just
+ * the static `/blog` entry.
  */
 async function getBlogSitemapEntries(): Promise<MetadataRoute.Sitemap> {
   try {
     const supabase = await createServiceClient();
-    const { data, error } = await supabase
-      .from("articles")
-      .select("slug, updated_at, published_at, date_modified")
-      .eq("status", "published");
+    const { data, error } = await selectAllPages<PublishedArticleRow>((from, to) =>
+      supabase
+        .from("articles")
+        .select("id, slug, updated_at, published_at, date_modified")
+        .eq("status", "published")
+        .order("slug")
+        .order("id")
+        .range(from, to)
+    );
 
-    if (error || !data) return [];
+    if (error) {
+      console.error("[sitemap] blog article fetch failed:", error.message);
+      return [];
+    }
+    if (!data) return [];
 
-    return (data as PublishedArticleRow[])
+    return data
       .filter((row) => Boolean(row.slug))
       .map((row) => ({
         url: `${BASE_URL}/blog/${row.slug}`,
@@ -130,6 +160,46 @@ async function getBlogSitemapEntries(): Promise<MetadataRoute.Sitemap> {
       }));
   } catch (err) {
     console.error("[sitemap] blog article fetch failed:", err);
+    return [];
+  }
+}
+
+/**
+ * «نظام المرافعات الشرعية ولائحته التنفيذية» under whichever slug the
+ * database this deployment points at uses (checked 2026-09-25):
+ *   self-hosted: sharia-pleading-law-qadha-edition (243 articles)
+ *   cloud:       ndham-almrafaat-alshrayh-jmayh-qda (314 articles)
+ * Listed in preference order; the first slug that exists wins. On any error,
+ * or if neither exists, nothing is listed — never a URL that would 404.
+ */
+const CIVIL_PROCEDURE_LAW_SLUGS = [
+  "sharia-pleading-law-qadha-edition",
+  "ndham-almrafaat-alshrayh-jmayh-qda",
+] as const;
+
+async function getCivilProcedureLawEntry(today: string): Promise<MetadataRoute.Sitemap> {
+  try {
+    const supabase = await createServiceClient();
+    const { data, error } = await supabase
+      .schema("library")
+      .from("laws")
+      .select("slug")
+      .in("slug", [...CIVIL_PROCEDURE_LAW_SLUGS]);
+    if (error) {
+      console.error("[sitemap] civil-procedure law lookup failed:", error.message);
+      return [];
+    }
+    const found = new Set((data ?? []).map((row: { slug: string }) => row.slug));
+    const slug = CIVIL_PROCEDURE_LAW_SLUGS.find((s) => found.has(s));
+    if (!slug) return [];
+    return [{
+      url: `${BASE_URL}/laws/${slug}`,
+      lastModified: today,
+      changeFrequency: "monthly",
+      priority: 0.7,
+    }];
+  } catch (err) {
+    console.error("[sitemap] civil-procedure law lookup failed:", err);
     return [];
   }
 }
@@ -149,7 +219,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority,
   }));
 
-  const blogEntries = await getBlogSitemapEntries();
+  const [lawEntries, blogEntries] = await Promise.all([
+    getCivilProcedureLawEntry(today),
+    getBlogSitemapEntries(),
+  ]);
 
-  return [...staticEntries, ...blogEntries];
+  return [...staticEntries, ...lawEntries, ...blogEntries];
 }

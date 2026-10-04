@@ -3,10 +3,11 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import {
-  Bank, Phone, Envelope, MapPin, Clock, MagnifyingGlass,
+  Bank, Phone, MapPin, Clock, MagnifyingGlass,
   CaretDown, CaretUp, Buildings, Scales, FileText,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { CircuitEmail, CircuitsSampleNotice, UnverifiedBadge, isVerifiedCircuit } from "@/app/ai/procedures/_data";
 
 // ─── Types & Data ─────────────────────────────────────────────────────────────
 
@@ -24,6 +25,10 @@ interface CircuitEntry {
   }[];
 }
 
+// ⚠️ تنبيه صارم موجه للمبرمج (قرار المالك المعتمد):
+// المصفوفة CIRCUITS أدناه هي مجرد عينة تجريبية أولية (٨ جهات فقط).
+// الدليل المعتمد الكامل يحتوي على ٢,١٩٢ دائرة قضائية مع إيميلاتها وأرقامها واختصاصاتها،
+// ويلزم توريده كاملاً من الأرشيف وتفريغه في قاعدة البيانات وربطه بالواجهة بدلاً من البيانات الثابتة.
 const CIRCUITS: CircuitEntry[] = [
   {
     id: "c1", name: "المحكمة التجارية بالرياض", city: "الرياض", type: "محكمة",
@@ -139,25 +144,29 @@ function CircuitCard({ circuit, isDark, card }: { circuit: CircuitEntry; isDark:
           className={`border-t ${isDark ? "border-white/[0.04]" : "border-slate-100"} divide-y ${isDark ? "divide-white/[0.04]" : "divide-slate-50"}`}>
           {circuit.departments.map((dept, i) => (
             <div key={i} className="p-4 ps-5">
-              <p className={`text-[12px] font-bold mb-2 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{dept.name}</p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{dept.name}</p>
+                {!isVerifiedCircuit(dept) && <UnverifiedBadge />}
+              </div>
+              {/* Full address, copy with a toast, mailto kept (owner test 28-9, T28-33) */}
+              <div className="mb-2">
+                <CircuitEmail email={dept.email} isDark={isDark} verified={isVerifiedCircuit(dept)} />
+              </div>
+              {/* Phone and hours only for a verified entry — the sample ones were never sourced. */}
+              {isVerifiedCircuit(dept) && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div className="flex items-center gap-2">
                   <Phone size={12} className="text-emerald-500 shrink-0" />
-                  <a href={`tel:${dept.phone}`} className={`text-[11px] font-mono hover:text-emerald-500 transition-colors ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
+                  <span dir="ltr" className={`text-[11px] font-mono ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
                     {dept.phone}
-                  </a>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Envelope size={12} className="text-blue-500 shrink-0" />
-                  <a href={`mailto:${dept.email}`} className={`text-[11px] break-all hover:text-blue-500 transition-colors ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
-                    {dept.email}
-                  </a>
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Clock size={12} className={isDark ? "text-zinc-500 shrink-0" : "text-slate-400 shrink-0"} />
                   <span className={`text-[11px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>{dept.hours}</span>
                 </div>
               </div>
+              )}
               {dept.notes && (
                 <p className={`mt-2 text-[10px] px-2.5 py-1 rounded-lg border inline-block ${isDark ? "bg-amber-500/8 border-amber-500/15 text-amber-400" : "bg-amber-50 border-amber-100 text-amber-700"}`}>
                   ⚠ {dept.notes}
@@ -205,6 +214,12 @@ export default function CircuitsEmailsPage() {
           أرقام وإيميلات الدوائر القضائية والهيئات — قابل للبحث والتصفية
         </p>
       </motion.div>
+
+      {/* The programmer-facing «تنبيه صارم موجه للمبرمج» box that sat here is
+          replaced by the user-facing sample notice (owner test 28-9, T28-33);
+          the instruction to supply the full 2,192-circuit directory stays in
+          the comment above CIRCUITS. */}
+      <CircuitsSampleNotice isDark={isDark} />
 
       {/* Search + Filters */}
       <div className={`${card} p-4 space-y-3`}>

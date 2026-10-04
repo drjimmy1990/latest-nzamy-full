@@ -5,15 +5,17 @@ import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { BookOpen, X, ArrowLeft, ArrowRight, Star, MagnifyingGlass } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { LIBRARY_STAT_LABELS, formatLibraryCount, type LibraryStatKey } from "@/lib/library/libraryStats";
+import { useLibraryStats } from "@/lib/library/useLibraryStats";
 
 // ─── Bilingual text ───────────────────────────────────────────────────────────
 //
-// EVERY NUMBER BELOW WAS COUNTED, on 2026-08-27, against the production
-// `library` schema. What was here before was not:
+// What was here before 2026-08-27, and why each claim went:
 //
-//   «٥,٠٠٠+ نظام ولائحة سعودية»   — the real figure is 386. The 5,000 appears to
-//                                    have been a guess at the article count, and
-//                                    even that was low by 8,000.
+//   «٥,٠٠٠+ نظام ولائحة سعودية»   — counted nothing: the cloud library then held
+//                                    386 rows. (The self-hosted one holds 5,901,
+//                                    of which only 593 are «نظام» — the rest are
+//                                    لائحة تنفيذية, قرار, اتفاقية, مرسوم, تعميم …)
 //   «بحث ذكي بالذكاء الاصطناعي»   — /laws search is Postgres full-text search
 //                                    (see LIBRARY_FTS_CONFIG in
 //                                    src/utils/normalizeArabic). No model runs.
@@ -21,59 +23,44 @@ import { useTheme } from "@/components/ThemeProvider";
 //     جديدة» / «تحديث يومي»          library is loaded by a seeding script.
 //   «٢٧ قسم قانوني»               — no such division exists in the schema.
 //
-// The counts are written as FLOORS («+», rounded DOWN to a round number) on
-// purpose. An exact figure printed in a component goes stale the first time
-// anyone seeds a row, and then this banner is lying again in the other
-// direction. A floor stays true as the library grows and is re-checkable with
-// one query per table:
-//
-//   select count(*) from library.laws;               -- 386     → «٣٨٦»
-//   select count(*) from library.articles;           -- 13,436  → «١٣٬٠٠٠+»
-//   select count(*) from library.principles;         -- 17,940  → «١٧٬٠٠٠+»
-//   select count(*) from library.decrees_circulars;  --  2,078  → «٢٬٠٠٠+»
-//
-// 386 is exact rather than a floor because it is small enough that a floor
-// would read as evasive, and it is the headline number.
+// NO NUMBER IS WRITTEN HERE (2026-09-25). The same code runs against the cloud
+// project (386 laws) and the self-hosted one (5,901), so any literal is false on
+// one of them. The counts are read live from whichever database the site runs on
+// (GET /api/library/stats, cached ~24h) and printed as FLOORS with the labels in
+// src/lib/library/libraryStats.ts. Until they load, and if they fail, the banner
+// uses the number-free wording below — never a fallback figure.
 const txt = {
   ar: {
     badge: "اشتراك منفصل",
     title: "المكتبة القانونية",
-    subtitle: "٣٨٦ نظاماً ولائحة و١٣٬٠٠٠+ مادة — بحث بالنص الكامل",
+    subtitle: "الأنظمة واللوائح ومَوادّها — بحث بالنص الكامل",
+    subtitleWithCounts: (laws: string, articles: string) => `${laws} وثيقة نظامية و${articles} مادة — بحث بالنص الكامل`,
     features: [
       "بحث بالنص الكامل في الأنظمة واللوائح ومَوادّها",
-      "١٧٬٠٠٠+ مبدأ قضائي، و٢٬٠٠٠+ قرار وتعميم",
+      "مبادئ قضائية وقرارات وتعاميم",
       "تصفية حسب الجهة والتاريخ والموضوع",
     ],
+    featureWithCounts: (principles: string, decrees: string) => `${principles} مبدأ قضائي، و${decrees} قرار وتعميم`,
     price: "٤٩ ﷼/شهر",
     pricePeriod: "أو ٤٩٠ ﷼/سنة",
     cta: "تفاصيل الاشتراك",
     explore: "تصفح المكتبة",
-    stat1: "٣٨٦",
-    stat1Label: "نظام ولائحة",
-    stat2: "١٣٬٠٠٠+",
-    stat2Label: "مادة",
-    stat3: "١٧٬٠٠٠+",
-    stat3Label: "مبدأ قضائي",
   },
   en: {
     badge: "Separate Subscription",
     title: "Legal Library",
-    subtitle: "386 Saudi laws & regulations, 13,000+ articles — full-text search",
+    subtitle: "Saudi laws, regulations and their articles — full-text search",
+    subtitleWithCounts: (laws: string, articles: string) => `${laws} legal instruments, ${articles} articles — full-text search`,
     features: [
       "Full-text search across laws, regulations and their articles",
-      "17,000+ judicial principles and 2,000+ decrees & circulars",
+      "Judicial principles, decrees and circulars",
       "Filter by authority, date, and subject",
     ],
+    featureWithCounts: (principles: string, decrees: string) => `${principles} judicial principles and ${decrees} decrees & circulars`,
     price: "SAR 49/mo",
     pricePeriod: "or SAR 490/year",
     cta: "Subscription details",
     explore: "Browse Library",
-    stat1: "386",
-    stat1Label: "Laws & Regulations",
-    stat2: "13,000+",
-    stat2Label: "Articles",
-    stat3: "17,000+",
-    stat3Label: "Judicial Principles",
   },
 };
 
@@ -92,6 +79,24 @@ export default function LegalLibraryBanner({
   const dir = isAr ? "rtl" : "ltr";
   const [dismissed, setDismissed] = useState(false);
   const Arrow = isAr ? ArrowLeft : ArrowRight;
+  const library = useLibraryStats();
+  const fmt = (key: LibraryStatKey) =>
+    library.status === "ready" ? formatLibraryCount(library.stats[key], isAr ? "ar" : "en") : null;
+  const laws = fmt("laws");
+  const articles = fmt("articles");
+  const principles = fmt("principles");
+  const decrees = fmt("decrees");
+  const subtitle = laws && articles ? t.subtitleWithCounts(laws, articles) : t.subtitle;
+  const features = principles && decrees
+    ? [t.features[0], t.featureWithCounts(principles, decrees), t.features[2]]
+    : t.features;
+  // Mini stats: placeholders while loading, the floors once loaded, nothing on
+  // failure (and a table too small to floor is left out rather than «٠+»).
+  const miniStats = library.status === "error"
+    ? []
+    : (["laws", "articles", "principles"] as const)
+        .map((key) => ({ key, val: fmt(key), label: isAr ? LIBRARY_STAT_LABELS[key].ar : LIBRARY_STAT_LABELS[key].en }))
+        .filter((s) => library.status === "loading" || s.val !== null);
 
   if (dismissed) return null;
 
@@ -112,7 +117,7 @@ export default function LegalLibraryBanner({
         </div>
         <div className="flex-1 min-w-0">
           <p className={`text-[12px] font-bold ${isDark ? "text-indigo-300" : "text-indigo-700"}`}>
-            📚 {t.title} — {t.subtitle}
+            📚 {t.title} — {subtitle}
           </p>
         </div>
         <Link
@@ -168,12 +173,12 @@ export default function LegalLibraryBanner({
               📚 {t.title}
             </h3>
             <p className={`text-sm mb-4 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
-              {t.subtitle}
+              {subtitle}
             </p>
 
             {/* Features */}
             <div className="space-y-2 mb-5">
-              {t.features.map((f, i) => (
+              {features.map((f, i) => (
                 <div key={i} className="flex items-start gap-2">
                   <MagnifyingGlass size={12} weight="duotone" className={`mt-0.5 shrink-0 ${isDark ? "text-indigo-400" : "text-indigo-600"}`} />
                   <span className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-600"}`}>{f}</span>
@@ -209,18 +214,20 @@ export default function LegalLibraryBanner({
             </div>
 
             {/* Mini stats */}
-            <div className="space-y-2.5">
-              {[
-                { val: t.stat1, label: t.stat1Label },
-                { val: t.stat2, label: t.stat2Label },
-                { val: t.stat3, label: t.stat3Label },
-              ].map((s, i) => (
-                <div key={i} className={`flex items-center justify-between py-1.5 border-b last:border-0 ${isDark ? "border-white/[0.04]" : "border-slate-100"}`}>
-                  <span className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{s.label}</span>
-                  <span className={`text-[12px] font-bold ${isDark ? "text-indigo-400" : "text-indigo-700"}`}>{s.val}</span>
-                </div>
-              ))}
-            </div>
+            {miniStats.length > 0 && (
+              <div className="space-y-2.5" aria-busy={library.status === "loading"}>
+                {miniStats.map((s) => (
+                  <div key={s.key} className={`flex items-center justify-between py-1.5 border-b last:border-0 ${isDark ? "border-white/[0.04]" : "border-slate-100"}`}>
+                    <span className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{s.label}</span>
+                    {s.val ? (
+                      <span className={`text-[12px] font-bold ${isDark ? "text-indigo-400" : "text-indigo-700"}`}>{s.val}</span>
+                    ) : (
+                      <span aria-hidden className={`inline-block h-3 w-12 rounded animate-pulse ${isDark ? "bg-white/10" : "bg-slate-100"}`} />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>

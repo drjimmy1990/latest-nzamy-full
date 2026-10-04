@@ -13,10 +13,10 @@ import Image from "next/image";
  * min-h-[100dvh]"><div class="p-4 md:p-6">` — the sidebar and the header are
  * already on screen and already painted by the time this appears.
  *
- * It was written as if it were the whole screen: `min-h-screen` plus an opaque
+ * It was written as if it were the whole screen: `min-h-[100dvh]` plus an opaque
  * `bg-zinc-50 dark:bg-zinc-950`. Both are wrong in that slot.
  *
- *   • `min-h-screen` inside a container that is already `min-h-[100dvh]` and
+ *   • `min-h-[100dvh]` inside a container that is already `min-h-[100dvh]` and
  *     offset 60px adds a second viewport of height, so the page grows a
  *     scrollbar and the spinner sits below the fold rather than centred.
  *   • The opaque background is a different colour from the layout's own

@@ -58,6 +58,7 @@ import {
   type LawyerTaskStatus,
 } from "@/lib/services/lawyerTasksService";
 import { urgentCaseTasks, nextOpenDeadline } from "@/lib/services/caseOverviewCockpit";
+import { isBriefReviewOrder, BRIEF_REVIEW_SHORT_LABEL_AR } from "@/lib/services/briefReviewOrder";
 import {
   getCaseNotes,
   addCaseNote,
@@ -1065,7 +1066,11 @@ export default function CaseDetailPage() {
                 {statusConf.label}
               </span>
               <span className={`text-[11px] px-2 py-1 rounded-lg ${isDark ? "bg-white/[0.04] text-zinc-500" : "bg-slate-100 text-slate-400"}`}>
-                {CASE_TYPE_LABELS[caseData.type] ?? caseData.type}
+                {/* A memo review (/ai/brief-check) is stored as `ai_draft`;
+                    only metadata.service tells it from a drafting order. */}
+                {isBriefReviewOrder(caseData.metadata)
+                  ? BRIEF_REVIEW_SHORT_LABEL_AR
+                  : CASE_TYPE_LABELS[caseData.type] ?? caseData.type}
               </span>
               <span className={`text-[11px] font-mono ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
                 {referenceNo}

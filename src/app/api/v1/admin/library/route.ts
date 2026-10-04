@@ -1,6 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/access-control";
 import { createServiceClient } from "@/lib/supabase/server";
+import {
+  parseLibraryListParams,
+  computeTotalPages,
+  planLibraryWindows,
+  isRangeNotSatisfiable,
+  toIlikeSubstring,
+  LIBRARY_TABLE_KEYS,
+  type LibraryTableKey,
+} from "./query-params";
+
+/**
+ * Per-table read spec for the admin list. `key` is the primary key: the
+ * deterministic, unique order for .range() paging and the narrow column the
+ * head count selects. `searchColumn` is where the search box's substring
+ * match applies.
+ */
+const TABLES: Record<LibraryTableKey, { from: string; key: string; columns: string; searchColumn: string }> = {
+  laws: {
+    from: "laws",
+    key: "slug",
+    columns: "slug, title, type, section_name, issuing_body, status, total_articles, issue_date_hijri",
+    searchColumn: "title",
+  },
+  decrees: { from: "decrees_circulars", key: "id", columns: "id, title, issuer, date", searchColumn: "title" },
+  principles: { from: "principles", key: "id", columns: "id, text, issuing_body, session_date", searchColumn: "text" },
+  feqh: { from: "feqh_books", key: "id", columns: "id, title, author", searchColumn: "title" },
+};
 
 export async function GET(request: NextRequest) {
   // 1. Auth check
@@ -16,6 +43,16 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const search = searchParams.get("search")?.trim() || "";
   const category = searchParams.get("category")?.trim() || "";
+
+  // LIB-15: page/limit bound every select with .range() so it can never hit
+  // PostgREST's silent 1000-row cap (laws alone is 5,901 rows; decrees 3,318;
+  // principles 18,983 — all three used to be truncated with no error).
+  // Parsing/clamping lives in ./query-params.ts so it has a node:test
+  // regression test without a network call.
+  const { page, limit, offset } = parseLibraryListParams(
+    searchParams.get("page"),
+    searchParams.get("limit"),
+  );
 
   const adminClient = await createServiceClient();
 
@@ -34,90 +71,102 @@ export async function GET(request: NextRequest) {
   };
   const cat = category ? CATEGORY_MAP[category] : null;
 
-  // Determine which tables to fetch from based on category filter
-  const fetchLaws = !cat || cat.table === "laws";
-  const fetchDecrees = !cat || cat.table === "decrees";
-  const fetchPrinciples = !cat || cat.table === "principles";
-  const fetchFeqh = !cat || cat.table === "feqh";
+  // Which tables this request covers: all four in «الكل», one with a category.
+  const activeTables = LIBRARY_TABLE_KEYS.filter((t) => !cat || cat.table === t);
+
+  // ONE search rule for every table: a case-insensitive substring match on the
+  // table's title/text column. Round 1 switched principles to full-text search
+  // on the `simple` config, which cannot see a word behind an attached prefix
+  // (ال/بال/وال): «تعويض» found 1,693 principles instead of 3,159.
+  const pattern = search ? toIlikeSubstring(search) : null;
+
+  // Every filtered query for a table is built here, so the head count and the
+  // ranged read below can never disagree about which rows match.
+  const buildQuery = (table: LibraryTableKey, columns: string, options?: { count: "exact"; head: true }): any => {
+    const spec = TABLES[table];
+    let q: any = adminClient.schema("library").from(spec.from).select(columns, options);
+    if (pattern) q = q.ilike(spec.searchColumn, pattern);
+    // Map the UI category label to a section_name/title keyword so law
+    // categories actually return rows (section_name is e.g. "القسم العمالي",
+    // not the UI label "أنظمة العمل").
+    if (table === "laws" && cat?.lawKeyword) {
+      q = q.or(`section_name.ilike.%${cat.lawKeyword}%,title.ilike.%${cat.lawKeyword}%`);
+    }
+    return q;
+  };
 
   try {
-    const queries: PromiseLike<any>[] = [];
-
-    // Setup query slots corresponding to tables
-    if (fetchLaws) {
-      let q = adminClient
-        .schema("library")
-        .from("laws")
-        .select("slug, title, type, section_name, issuing_body, status, total_articles, issue_date_hijri");
-      if (search) {
-        q = q.ilike("title", `%${search}%`);
-      }
-      // Map the UI category label to a section_name/title keyword so law
-      // categories actually return rows (section_name is e.g. "القسم العمالي",
-      // not the UI label "أنظمة العمل").
-      if (cat?.lawKeyword) {
-        q = q.or(`section_name.ilike.%${cat.lawKeyword}%,title.ilike.%${cat.lawKeyword}%`);
-      }
-      queries.push(q.then(res => ({ type: "law", data: res.data || [], error: res.error })));
-    } else {
-      queries.push(Promise.resolve({ type: "law", data: [], error: null }));
-    }
-
-    if (fetchDecrees) {
-      let q = adminClient
-        .schema("library")
-        .from("decrees_circulars")
-        .select("id, title, issuer, date");
-      if (search) {
-        q = q.ilike("title", `%${search}%`);
-      }
-      queries.push(q.then(res => ({ type: "decree", data: res.data || [], error: res.error })));
-    } else {
-      queries.push(Promise.resolve({ type: "decree", data: [], error: null }));
-    }
-
-    if (fetchPrinciples) {
-      let q = adminClient
-        .schema("library")
-        .from("principles")
-        .select("id, text, issuing_body, session_date");
-      if (search) {
-        q = q.ilike("text", `%${search}%`);
-      }
-      queries.push(q.then(res => ({ type: "principle", data: res.data || [], error: res.error })));
-    } else {
-      queries.push(Promise.resolve({ type: "principle", data: [], error: null }));
-    }
-
-    if (fetchFeqh) {
-      let q = adminClient
-        .schema("library")
-        .from("feqh_books")
-        .select("id, title, author");
-      if (search) {
-        q = q.ilike("title", `%${search}%`);
-      }
-      queries.push(q.then(res => ({ type: "feqh", data: res.data || [], error: res.error })));
-    } else {
-      queries.push(Promise.resolve({ type: "feqh", data: [], error: null }));
-    }
-
-    const results = await Promise.all(queries);
-
-    // Check for errors
-    for (const res of results) {
-      if (res.error) {
-        return NextResponse.json({ error: res.error.message }, { status: 500 });
+    // 1. Head counts first (no rows), one per active table, with the same
+    //    filters as the read. These are the true per-table totals.
+    const countResults = await Promise.all(
+      activeTables.map(async (table) => {
+        const res = await buildQuery(table, TABLES[table].key, { count: "exact", head: true });
+        return { table, count: res.count, error: res.error };
+      }),
+    );
+    for (const res of countResults) {
+      if (res.error || typeof res.count !== "number") {
+        console.error("[admin/library] GET count error:", res.table, res.error?.message ?? "count missing");
+        return NextResponse.json(
+          { error: "حدث خطأ أثناء جلب سجلات المكتبة" },
+          { status: 500 },
+        );
       }
     }
+    const activeCounts: Partial<Record<LibraryTableKey, number>> = {};
+    for (const res of countResults) activeCounts[res.table] = res.count as number;
+
+    // 2. Range only the tables that still have rows at this offset (see
+    //    planLibraryWindows). In «الكل» mode the same page/limit window is
+    //    applied to each table independently — there is no single key to page
+    //    a combined heterogeneous view by — so page 5 shows rows 201–250 of
+    //    laws, decrees and principles and nothing from feqh_books (185 rows).
+    const windows = planLibraryWindows(activeCounts, offset, limit);
+    const readResults = await Promise.all(
+      windows.map(async (w) => {
+        const res = await buildQuery(w.table, TABLES[w.table].columns)
+          .order(TABLES[w.table].key)
+          .range(w.from, w.to);
+        return { table: w.table, data: (res.data ?? []) as any[], error: res.error };
+      }),
+    );
+
+    // A query error must not become an empty 200 — the admin would read that
+    // as "no records" instead of "the read failed". The one exception is
+    // PGRST103: rows deleted between the count and the read leave the window
+    // past the end, which is an empty window, not a failure.
+    const rowsByTable: Partial<Record<LibraryTableKey, any[]>> = {};
+    for (const res of readResults) {
+      if (res.error && !isRangeNotSatisfiable(res.error)) {
+        console.error("[admin/library] GET query error:", res.table, res.error.message);
+        return NextResponse.json(
+          { error: "حدث خطأ أثناء جلب سجلات المكتبة" },
+          { status: 500 },
+        );
+      }
+      rowsByTable[res.table] = res.error ? [] : res.data;
+    }
+
+    const counts = {
+      laws: activeCounts.laws ?? 0,
+      decrees: activeCounts.decrees ?? 0,
+      principles: activeCounts.principles ?? 0,
+      feqh: activeCounts.feqh ?? 0,
+    };
+    const total = counts.laws + counts.decrees + counts.principles + counts.feqh;
+    // See computeTotalPages' doc comment: in "الكل" mode the same window is
+    // requested from all four tables independently, so the number of pages
+    // reachable is bounded by the LARGEST table being fetched, not by
+    // ceil(total / limit).
+    const pages = computeTotalPages(Object.values(counts), limit);
 
     // Map and transform results
     const entries: any[] = [];
 
-    const lawsRes = results.find(r => r.type === "law")?.data || [];
-    const decreesRes = results.find(r => r.type === "decree")?.data || [];
-    const principlesRes = results.find(r => r.type === "principle")?.data || [];
-    const feqhRes = results.find(r => r.type === "feqh")?.data || [];
+    const lawsRes = rowsByTable.laws ?? [];
+    const decreesRes = rowsByTable.decrees ?? [];
+    const principlesRes = rowsByTable.principles ?? [];
+    const feqhRes = rowsByTable.feqh ?? [];
 
     lawsRes.forEach((item: any) => {
       entries.push({
@@ -212,9 +261,18 @@ export async function GET(request: NextRequest) {
       feqh: [],
     };
 
+    // {data, total} — the list envelope convention every other admin/list
+    // route uses. `total` is the true combined row count from count:"exact"
+    // (not entries.length, which is just this page's size). `pages` is what
+    // the client should paginate against (see computeTotalPages); `counts`
+    // is the per-table breakdown `total` was summed from, for debugging.
     return NextResponse.json({
-      entries,
-      total: entries.length,
+      data: entries,
+      total,
+      pages,
+      counts,
+      page,
+      limit,
       freeItems,
     });
 

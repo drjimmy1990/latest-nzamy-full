@@ -377,3 +377,8 @@ export default function LawyerDeadlinesPage() {
     </div>
   );
 }
+
+/** Embedded by the unified hearings/deadlines workspace. */
+export function LawyerDeadlinesPanel() {
+  return <LawyerDeadlinesPage />;
+}

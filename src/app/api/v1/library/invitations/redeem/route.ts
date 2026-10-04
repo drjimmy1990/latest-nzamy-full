@@ -23,6 +23,19 @@ import { libraryInvitationDbErrorResponse } from "../_shared";
  * UI (src/lib/invitationStore.ts, entirely client-side/localStorage) never
  * promised a specific length for this admin-code flow, so 30 days is the
  * documented fallback.
+ *
+ * ── Why this route does NOT pass `replaceActive` (review 2026-09-21 A3/C01) ──
+ * grantEntitlement skips a plan grant that would downgrade the user. Overriding
+ * that here would re-create the very bug the review found, through a second
+ * door: a 30-day "pro" code would cancel a live "max" subscription. So the
+ * grant is allowed to skip, and the slot this route already burned off
+ * `current_uses` is given BACK with the same compare-and-swap the failed-grant
+ * path uses (refundClaimedUse below) — the code stays spendable for the day the
+ * better plan lapses. The answer is a 400 with an Arabic message, the same
+ * shape every other rejection here takes, because the alternative (200 with the
+ * EXISTING subscription in `tier`/`until`) would make
+ * src/lib/services/libraryInvitationDisplay.ts print «فُعّلت باقة … حتى …» over
+ * a grant that never happened.
  */
 const REDEEM_TIER: ServerTier = "pro";
 const REDEEM_DURATION_DAYS = 30;
@@ -122,6 +135,34 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  /**
+   * Give the claimed use back. This is a compare-and-swap, not a blind SET: it
+   * only writes `current_uses - 1` if the counter still holds exactly the value
+   * this claim advanced it to. If a concurrent redeemer has since claimed
+   * another slot (or run its own refund), `current_uses` has already moved past
+   * `claimed.current_uses` and this update matches 0 rows — it silently no-ops
+   * instead of clobbering someone else's legitimate use back down. Worst case
+   * with the CAS guard: one refund is lost (self-correcting, bounded by
+   * max_uses). Without it, the failure mode was unbounded — an unconditional
+   * decrement could erase another redeemer's grant and let the code exceed
+   * max_uses entirely.
+   */
+  async function refundClaimedUse(claim: { id: string; current_uses: number }) {
+    const { error } = await admin
+      .schema("library")
+      .from("invitations")
+      .update({ current_uses: claim.current_uses - 1 })
+      .eq("id", claim.id)
+      .eq("current_uses", claim.current_uses);
+    if (error) {
+      console.error(
+        "[library/invitations/redeem] refund of the claimed use failed:",
+        error.message,
+        error.code,
+      );
+    }
+  }
+
   const grant = await grantEntitlement({
     userId,
     action: "plan",
@@ -132,31 +173,24 @@ export async function POST(request: NextRequest) {
   });
 
   if (!grant.ok) {
-    // Don't burn the invitation on a failed grant — give the use back. This is
-    // a second CAS, not a blind SET: it only writes `current_uses - 1` if the
-    // counter still holds exactly the value this claim advanced it to. If a
-    // concurrent redeemer has since claimed another slot (or run its own
-    // rollback), `current_uses` has already moved past `claimed.current_uses`
-    // and this update matches 0 rows — it silently no-ops instead of
-    // clobbering someone else's legitimate use back down. Worst case with the
-    // CAS guard: this one grant-failure eats one use (self-correcting, bounded
-    // by max_uses). Without it, the failure mode was unbounded — an
-    // unconditional decrement could erase another redeemer's grant and let
-    // the code exceed max_uses entirely.
-    const { error: rollbackError } = await admin
-      .schema("library")
-      .from("invitations")
-      .update({ current_uses: claimed.current_uses - 1 })
-      .eq("id", claimed.id)
-      .eq("current_uses", claimed.current_uses);
-    if (rollbackError) {
-      console.error(
-        "[library/invitations/redeem] rollback after failed grant also failed:",
-        rollbackError.message,
-        rollbackError.code,
-      );
-    }
+    // Don't burn the invitation on a failed grant — give the use back.
+    await refundClaimedUse(claimed);
     return NextResponse.json({ error: grant.error || "تعذّر تفعيل الاشتراك" }, { status: 500 });
+  }
+
+  if (grant.alreadyEntitled) {
+    // Nothing was written: the account already holds an equal-or-better plan,
+    // and grantEntitlement refused to trade it for this 30-day "pro" window.
+    // Don't burn the invitation for a subscription the user did not receive —
+    // the same refund the failure path takes, so the code can be spent later.
+    await refundClaimedUse(claimed);
+    return NextResponse.json(
+      {
+        error:
+          "حسابك يحمل بالفعل باقة مماثلة أو أعلى. لم يُستهلك كود الدعوة، ويمكنك استخدامه بعد انتهاء اشتراكك الحالي.",
+      },
+      { status: 400 },
+    );
   }
 
   const subscription = (grant.detail as { subscription?: { tier?: string; current_period_end?: string } })

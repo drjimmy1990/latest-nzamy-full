@@ -6,9 +6,10 @@ import {
   Handshake, UsersThree, ChartLineUp,
   Link as LinkIcon, Copy, Check,
   MagnifyingGlass, CaretDown, Plus,
-  Money, ArrowRight, ArrowLeft
+  Money, ArrowRight, ArrowLeft, Warning
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { useUser } from "@/hooks/useUser";
 
 // ─── Types & Mock Data ────────────────────────────────────────────────────────
 
@@ -42,6 +43,7 @@ const STATUS_COLORS: Record<ReferralStatus, string> = {
 
 export default function FirmReferralsPage() {
   const { isDark } = useTheme();
+  const user = useUser();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<ReferralStatus | "الكل">("الكل");
   const [copiedLink, setCopiedLink] = useState(false);
@@ -57,8 +59,18 @@ export default function FirmReferralsPage() {
 
   const totalCommissions = MOCK_REFERRALS.reduce((sum, r) => sum + r.commission, 0);
 
+  const firmCode = user.firmMembership?.entityId
+    ? `firm-${user.firmMembership.entityId.slice(0, 8)}`
+    : user.userId
+      ? `firm-${user.userId.slice(0, 8)}`
+      : "firm-partner";
+
+  const referralUrl = typeof window !== "undefined"
+    ? `${window.location.origin}/ref/${firmCode}`
+    : `https://nezamy.sa/ref/${firmCode}`;
+
   const handleCopyLink = () => {
-    navigator.clipboard.writeText("https://nzamy.com/ref/firm-alufuq");
+    navigator.clipboard.writeText(referralUrl);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
   };
@@ -115,7 +127,7 @@ export default function FirmReferralsPage() {
             <div className={`flex-1 flex items-center gap-2 px-4 py-2.5 rounded-xl border ${isDark ? "bg-zinc-800 border-white/[0.05]" : "bg-slate-50 border-slate-200"}`}>
               <LinkIcon size={16} className={isDark ? "text-zinc-500" : "text-slate-400"} />
               <p className={`text-[13px] font-mono select-all ${isDark ? "text-zinc-300" : "text-slate-700"}`} dir="ltr">
-                https://nzamy.com/ref/firm-alufuq
+                {referralUrl}
               </p>
             </div>
             <button onClick={handleCopyLink} className={`px-4 py-2.5 rounded-xl text-[12px] font-bold transition-colors flex items-center gap-2 ${
@@ -125,6 +137,21 @@ export default function FirmReferralsPage() {
             </button>
           </div>
           <p className={`text-[10px] mt-2 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>أي عميل يسجل عبر هذا الرابط ويطلب خدمة سيتم ربطه تلقائياً كإحالة لصالح مكتبكم.</p>
+        </div>
+      </div>
+
+      {/* تنبيه حالة نظام الأفيليت والإحالات للمكتب */}
+      <div className={`p-4 rounded-2xl border flex items-start gap-3 ${
+        isDark ? "bg-amber-950/20 border-amber-800/30 text-amber-300" : "bg-amber-50 border-amber-200 text-amber-900"
+      }`}>
+        <Warning size={20} className="text-amber-500 shrink-0 mt-0.5" weight="duotone" />
+        <div className="space-y-1 text-[12px] leading-relaxed">
+          <p className="font-bold">
+            برنامج التسويق بالعمولة والشراكات (Affiliate & Referrals):
+          </p>
+          <p className={isDark ? "text-amber-300/80" : "text-amber-800/90"}>
+            رابط الإحالة أعلاه ديناميكي وخاص بمكتبكم ومربوط بالمنظومة. سجل العمليات والعمولات أدناه نموذج توضيحي بانتظار اكتمال ربط محرك الأفيليت المركزي وتتبع مسارات التسجيل وسداد العمليات على الخادم.
+          </p>
         </div>
       </div>
 
