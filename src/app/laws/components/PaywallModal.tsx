@@ -33,40 +33,42 @@ export const FREE_LIMIT = 5;
 // وتظهر في /pricing ضمن باقات المحامي — لا تظهر هنا.
 export const PLANS = [
   {
-    id: "texts",
-    name: "نصوص الأنظمة", nameEn: "Law Texts",
-    price: "٢٩", priceEn: "29", period: "شهرياً", periodEn: "/month",
-    desc: "كامل نصوص الأنظمة ولوائحها التنفيذية", descEn: "Full access to all law & regulation texts",
+    id: "lib-quarterly",
+    name: "المكتبة القانونية — ربع سنوي", nameEn: "Legal Library — Quarterly",
+    price: "١٬٥٠٠", priceEn: "1,500", period: "٣ أشهر", periodEn: "/ 3 months",
+    desc: "وصول كامل للأنظمة واللوائح والمبادئ القضائية لمدة ٣ أشهر", descEn: "Full access to laws, regulations and judicial principles for 3 months",
     features: [
-      "الوصول لكل مواد الأنظمة",
-      "اللوائح التنفيذية المرتبطة",
-      "تحديثات نصوص الأنظمة",
+      "الوصول الكامل لمواد الأنظمة واللوائح",
+      "محرك البحث الذكي والفهرسة الدقيقة",
+      "تحديثات يومية فور صدور التشريعات",
+      "وضع التركيز للقراءة وحفظ المفضلة",
     ],
     featuresEn: [
-      "Access all law articles",
-      "Linked executive regulations",
-      "Law text updates",
+      "Full access to all law articles & regulations",
+      "AI-powered search & precise indexing",
+      "Daily updates upon statutory issuance",
+      "Focus reading mode & bookmarks",
     ],
     highlight: false,
   },
   {
-    id: "full",
-    name: "النصوص + المبادئ والسوابق", nameEn: "Texts + Judicial Research",
-    price: "٧٩", priceEn: "79", period: "شهرياً", periodEn: "/month",
-    desc: "النصوص الكاملة + المبادئ القضائية المستقرة + السوابق", descEn: "Full texts + settled judicial principles + precedents",
+    id: "lib-annual",
+    name: "المكتبة القانونية — سنوي", nameEn: "Legal Library — Annual",
+    price: "٥٬٠٠٠", priceEn: "5,000", period: "سنوياً", periodEn: "/ year",
+    desc: "الاشتراك المعتمد الكامل لـ ١٢ شهراً — ٥٬٠٠٠ ر.س/سنة مع تصدير PDF وإضافة AI", descEn: "Canonical full annual access for 12 months with PDF export & AI Add-on eligibility",
     features: [
-      "كل مزايا خطة النصوص",
-      "المبادئ القضائية المستقرة",
-      "السوابق القضائية الكاملة",
-      "ربط الأنظمة بأحكامها القضائية",
-      "تحديثات يومية بالأحكام الجديدة",
+      "وصول كامل وغير محدود لـ +٥٬٠٠٠ نظام ولائحة ومبدأ قضائي",
+      "تصدير نصوص ومواد الأنظمة بصيغة PDF",
+      "إشعارات التعديلات التشريعية وتتبع التحديثات فوراً",
+      "إمكانية تفعيل إضافة باحث الذكاء الاصطناعي (٢٬٥٠٠ ر.س/سنة)",
+      "دعم فني ذو أولوية عبر واتساب المخصص",
     ],
     featuresEn: [
-      "Everything in Texts plan",
-      "Settled judicial principles",
-      "Full judicial precedents",
-      "Laws cross-linked with rulings",
-      "Daily updates with new judgments",
+      "Unlimited access to 5,000+ laws, regulations & principles",
+      "Export law articles as official PDF documents",
+      "Instant amendment alerts & legislative tracking",
+      "Eligible for AI Legal Researcher Add-on (2,500 SAR/year)",
+      "Priority WhatsApp technical support",
     ],
     highlight: true,
   },
@@ -140,7 +142,7 @@ export function PaywallModal({ isOpen, onClose, isRTL, isDark, freeLimit }: {
                     </li>
                   ))}
                 </ul>
-                <Link href={`/pricing?plan=${plan.id}`}
+                <Link href={`/laws/subscribe?plan=${plan.id}`}
                   className={`block text-center py-2.5 rounded-xl text-sm font-bold transition ${plan.highlight ? "bg-[#C8A762] text-[#0B3D2E] hover:opacity-90" : "bg-[#0B3D2E] text-white hover:bg-[#0a3328]"}`}>
                   {isRTL ? "اشترك الآن" : "Subscribe Now"}
                 </Link>

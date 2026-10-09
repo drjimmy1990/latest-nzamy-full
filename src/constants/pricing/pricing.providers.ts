@@ -45,6 +45,32 @@ export const plansProviders: { ar: Plan[]; en: Plan[] } = {
         support: ["عمولة المنصة: ٥٪ فقط", "واتساب VIP أولوية قصوى"],
       },
     },
+    {
+      id: "consultant-independent", name: "مستشار مستقل", badge: "المادة ١٨",
+      priceMonthly: "١٩٩", priceYearly: "١٬٩٩٠", periodMonthly: "ر.س / شهر", periodYearly: "ر.س / سنة",
+      desc: "مخصص للمستشارين القانونيين المستقلين لدراسة الأنظمة وصياغة العقود — لا تشمل الترافع القضائي لغير المرخصين.",
+      target: "المستشارون القانونيون المستقلون", cta: "اشترك الآن",
+      ctaHref: "/register/provider?type=consultant&plan=independent", highlighted: false, color: "border-purple-300",
+      commissionPct: 5,
+      features: {
+        ai: ["بحث ذكي غير محدود في الأنظمة واللوائح والمبادئ", "أدوات الصائغ الآلي ومحترف العقود للاستشارات", "توليد المذكرات الاستشارية والآراء النظامية", null],
+        platform: ["إدارة العملاء والملفات الاستشارية والتقويم", "ملف مهني موثق في سوق المستشارين", "🚫 حظر ميزات الترافع والتمثيل بالمحاكم (م ١٨)", null],
+        support: ["عمولة المنصة: ٥٪ فقط", "دعم فني عبر واتساب"],
+      },
+    },
+    {
+      id: "consultant-independent", name: "Independent Consultant", badge: "Article 18",
+      priceMonthly: "199", priceYearly: "1,990", periodMonthly: "SAR / month", periodYearly: "SAR / year",
+      desc: "Tailored for independent legal consultants for statutory research & advisory — excludes court litigation under Article 18.",
+      target: "Independent Legal Consultants", cta: "Subscribe Now",
+      ctaHref: "/register/provider?type=consultant&plan=independent", highlighted: false, color: "border-purple-300",
+      commissionPct: 5,
+      features: {
+        ai: ["Unlimited smart search in laws & principles", "Drafter & contract analyzer tools for advisory", "Legal opinion & memo generation", null],
+        platform: ["Client advisory management & calendar", "Verified consultant profile in marketplace", "🚫 Court representation gated (Art. 18)", null],
+        support: ["Platform commission: 5% only", "WhatsApp support"],
+      },
+    },
   ],
   en: [
     {

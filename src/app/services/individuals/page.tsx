@@ -25,6 +25,8 @@ import { useTheme } from "@/components/ThemeProvider";
 
 import { services, faqs } from "@/constants/servicesData";
 import { ServiceCard, FAQItem } from "@/components/services/ServiceComponents";
+import { INDIVIDUALS_PYRAMID_PLANS } from "@/lib/pricing/plans";
+import { Warning, UsersThree, Sparkle } from "@phosphor-icons/react";
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -32,6 +34,7 @@ export default function IndividualsPage() {
   const { lang } = useTheme();
   const isAr = lang === "ar";
   const [selectedService, setSelectedService] = useState<string | null>(null);
+  const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
   const serviceList = isAr ? services.ar : services.en;
   const faqList = isAr ? faqs.ar : faqs.en;
   const selected = serviceList.find((s) => s.id === selectedService) ?? null;
@@ -274,6 +277,157 @@ export default function IndividualsPage() {
                 </motion.div>
               )}
             </AnimatePresence>
+          </div>
+        </section>
+
+        
+        {/* ── Pricing Pyramid (هرم باقات الأفراد المعتمد) ──────────────────── */}
+        <section className="py-16 md:py-24 border-t border-slate-200/40 dark:border-white/5">
+          <div className="mx-auto max-w-[1400px] px-4">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              className="mb-12 text-center"
+            >
+              <span className="text-sm font-bold text-gold-dark">
+                {isAr ? "هرم باقات الأفراد المعتمد" : "Individual Pricing Pyramid"}
+              </span>
+              <h2 className="font-brand mt-2 text-3xl font-extrabold tracking-tight text-royal dark:text-white md:text-4xl">
+                {isAr ? "حماية قانونية متكاملة تناسب كل مرحلة" : "Comprehensive Legal Protection for Every Need"}
+              </h2>
+              <p className="mx-auto mt-3 max-w-[65ch] text-sm text-ink-muted dark:text-gray-400">
+                {isAr
+                  ? "اختر المستوى المناسب لاحتياجك من الاستشارة الذكية الفورية حتى التمثيل القضائي المتكامل أمام المحاكم."
+                  : "Choose the level that suits your needs from 24/7 AI advisory to full court litigation representation."}
+              </p>
+
+              {/* Billing Toggle */}
+              <div className="mt-8 inline-flex items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1.5 dark:border-white/10 dark:bg-dark-card shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => setBillingCycle("monthly")}
+                  className={`px-5 py-2 rounded-xl text-xs font-bold transition-all ${
+                    billingCycle === "monthly"
+                      ? "bg-royal text-white shadow-sm"
+                      : "text-ink-muted hover:text-ink dark:text-gray-400"
+                  }`}
+                >
+                  {isAr ? "الدفع الشهري" : "Monthly Billing"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBillingCycle("yearly")}
+                  className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold transition-all ${
+                    billingCycle === "yearly"
+                      ? "bg-royal text-white shadow-sm"
+                      : "text-ink-muted hover:text-ink dark:text-gray-400"
+                  }`}
+                >
+                  <span>{isAr ? "الدفع السنوي" : "Yearly Billing"}</span>
+                  <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
+                    {isAr ? "وفر شهرين" : "Save 2 Mo"}
+                  </span>
+                </button>
+              </div>
+            </motion.div>
+
+            {/* Pyramid Grid */}
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+              {Object.values(INDIVIDUALS_PYRAMID_PLANS).map((plan, idx) => {
+                const isYearly = billingCycle === "yearly";
+                const price = isYearly ? plan.priceYearly : plan.priceMonthly;
+                const period = isYearly
+                  ? isAr ? plan.periodYearlyAr : plan.periodYearlyEn
+                  : isAr ? plan.periodMonthlyAr : plan.periodMonthlyEn;
+
+                return (
+                  <motion.div
+                    key={plan.id}
+                    initial={{ opacity: 0, y: 25 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: idx * 0.1 }}
+                    className={`relative flex flex-col justify-between rounded-[2rem] border p-6 transition-all ${
+                      plan.highlighted
+                        ? "border-royal/40 bg-white dark:bg-dark-card shadow-[0_8px_30px_-6px_rgba(11,61,46,0.15)] ring-2 ring-royal/20"
+                        : "border-slate-200/60 bg-white/80 dark:border-white/10 dark:bg-dark-card/80 hover:border-slate-300"
+                    }`}
+                  >
+                    <div>
+                      {/* Badge */}
+                      {plan.badgeAr && (
+                        <div className="mb-4">
+                          <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-bold border ${
+                            plan.requiresUnderwriting
+                              ? "bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-400"
+                              : plan.highlighted
+                              ? "bg-royal/10 border-royal/30 text-royal dark:text-gold"
+                              : "bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-700 dark:text-zinc-300"
+                          }`}>
+                            {plan.requiresUnderwriting && <Warning size={12} weight="fill" />}
+                            {isAr ? plan.badgeAr : plan.badgeEn}
+                          </span>
+                        </div>
+                      )}
+
+                      <h3 className="font-brand text-lg font-bold text-ink dark:text-white">
+                        {isAr ? plan.nameAr : plan.nameEn}
+                      </h3>
+                      <p className="mt-1 text-xs text-ink-muted dark:text-gray-400 leading-relaxed min-h-[38px]">
+                        {isAr ? plan.descAr : plan.descEn}
+                      </p>
+
+                      {/* Price */}
+                      <div className="my-5 pb-5 border-b border-slate-100 dark:border-white/10">
+                        <div className="flex items-baseline gap-1">
+                          <span className="font-brand text-3xl font-extrabold text-royal dark:text-gold">
+                            {price.toLocaleString(isAr ? "ar-SA" : "en-US")}
+                          </span>
+                          <span className="text-xs text-ink-muted dark:text-gray-400 font-medium">
+                            {period}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Underwriting Alert for Litigation */}
+                      {plan.requiresUnderwriting && (
+                        <div className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/5 p-2.5 text-[11px] text-amber-700 dark:text-amber-400 leading-relaxed">
+                          <strong>{isAr ? "تنبيه اكتتاب:" : "Underwriting Notice:"}</strong>{" "}
+                          {isAr
+                            ? "تخضع القضايا للتحقق المهني ودراسة الأهلية وخلو النزاع من التعارض قبل التفعيل."
+                            : "Cases undergo strict intake qualification and conflict checks before activation."}
+                        </div>
+                      )}
+
+                      {/* Features */}
+                      <ul className="space-y-2.5 mb-6 text-xs text-ink-muted dark:text-gray-300">
+                        {(isAr ? plan.featuresAr : plan.featuresEn).map((feat, fIdx) => (
+                          <li key={fIdx} className="flex items-start gap-2">
+                            <Check size={14} weight="bold" className="text-emerald-500 shrink-0 mt-0.5" />
+                            <span>{feat}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    {/* CTA */}
+                    <motion.a
+                      href={plan.ctaHref}
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      className={`w-full text-center py-3 rounded-xl text-xs font-bold transition-all ${
+                        plan.highlighted
+                          ? "bg-royal text-white shadow-md hover:bg-royal/90"
+                          : "bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+                      }`}
+                    >
+                      {isAr ? plan.ctaTextAr : plan.ctaTextEn}
+                    </motion.a>
+                  </motion.div>
+                );
+              })}
+            </div>
           </div>
         </section>
 
