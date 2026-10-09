@@ -31,6 +31,7 @@ import SmartFolders from "./components/SmartFolders";
 import { MyNotesSection } from "./components/MyNotesSection";
 import { GamificationCard } from "./components/GamificationCard";
 import EnactmentCountdownWidget from "./components/EnactmentCountdownWidget";
+import LegislativeUpdates from "./components/LegislativeUpdates";
 
 import {
   type Cat,
@@ -2167,17 +2168,18 @@ export default function LegalLibraryPage() {
             {/* Left Column: Activity & Updates (Desktop Col 3, Mobile stacks at bottom) */}
             {showSidebars && (
               <aside className="lg:col-span-3 space-y-6 order-3 lg:order-3">
-                <GamificationCard isDark={isDark} isRTL={isRTL} />
+                <LegislativeUpdates isDark={isDark} isRTL={isRTL} />
                 {/* Owner test 2026-10-01: the in-force countdown lives here,
                     under «نشاطك القانوني المعتمد», not full-width above the
                     search bar. Mounted once: below lg this column stacks after
                     the results with the other tools, and «إخفاء الأدوات»
                     hides it with them. */}
                 <EnactmentCountdownWidget isDark={isDark} isRTL={isRTL} />
-                {/* «التحديثات التشريعية» (LegislativeUpdates) is not mounted: it
-                    rendered a hardcoded list of amendments that were never issued
-                    (owner test 2026-09-28, T28-01). It returns once an amendments
-                    feed exists in the library data. */}
+                <GamificationCard isDark={isDark} isRTL={isRTL} />
+                {/* LegislativeUpdates and EnactmentCountdownWidget mounted above GamificationCard */}
+
+
+
               </aside>
             )}
 

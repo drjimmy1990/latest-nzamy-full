@@ -13,6 +13,7 @@ import {
   Gavel,
   Scales,
   Scroll,
+  MagnifyingGlass,
 } from "@phosphor-icons/react";
 import { LAW_DOC_TYPES, type DocSubType, getDocAnchorPrefix } from "@/constants/lawsLibraryData";
 import { LEGAL_TAXONOMY } from "@/constants/taxonomies";
@@ -50,6 +51,113 @@ function DegradedSectionNotice({ section, isDark }: { section: SearchSection; is
       {SECTION_DEGRADED_NOTICE}
     </div>
   );
+}
+
+export interface SearchLoadingStateProps {
+  isDark: boolean;
+  isRTL?: boolean;
+  layoutMode?: "grid" | "list";
+  query?: string;
+}
+
+export function SearchLoadingSkeleton({
+  isDark,
+  isRTL = true,
+  layoutMode = "grid",
+  query = "",
+}: SearchLoadingStateProps) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      className="col-span-full py-6 space-y-6 w-full"
+      dir={isRTL ? "rtl" : "ltr"}
+    >
+      {/* Search Pulse Hub Banner */}
+      <div
+        className={`p-6 sm:p-8 rounded-3xl border flex flex-col items-center justify-center text-center relative overflow-hidden transition-all duration-300 ${
+          isDark
+            ? "bg-[#161b22]/90 border-[#2d3748] shadow-lg shadow-black/20"
+            : "bg-white/95 border-gray-200/90 shadow-sm"
+        }`}
+      >
+        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#C8A762]/10 to-transparent animate-pulse pointer-events-none" />
+
+        <div className="relative mb-4 flex items-center justify-center">
+          <div className="w-14 h-14 rounded-2xl bg-[#0B3D2E]/10 dark:bg-[#C8A762]/15 flex items-center justify-center text-[#0B3D2E] dark:text-[#C8A762] shadow-inner">
+            <MagnifyingGlass
+              size={30}
+              weight="duotone"
+              className="animate-spin"
+              style={{ animationDuration: "2.5s" }}
+            />
+          </div>
+          <div className="absolute -inset-1.5 rounded-2xl border-2 border-[#0B3D2E]/20 dark:border-[#C8A762]/30 animate-ping opacity-25 pointer-events-none" />
+        </div>
+
+        <div className="space-y-1.5 z-10 max-w-md">
+          <h3 className={`text-base sm:text-lg font-black ${isDark ? "text-white" : "text-gray-900"}`}>
+            {isRTL
+              ? `جاري البحث في قاعدة البيانات والأنظمة${query ? ` عن «${query}»` : ""}...`
+              : `Searching database & legal library${query ? ` for "${query}"` : ""}...`}
+          </h3>
+          <p className={`text-xs sm:text-sm leading-relaxed ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+            {isRTL
+              ? "لحظات ويتم جلب نتائج الاستعلام والمطابقة التشريعية المعتمدة من السجل المركزي"
+              : "Retrieving verified statutory matches and official gazette instruments"}
+          </p>
+        </div>
+
+        <div className="mt-4 flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-[#0B3D2E] dark:bg-[#C8A762] animate-bounce" style={{ animationDelay: "0ms" }} />
+          <span className="w-2 h-2 rounded-full bg-[#0B3D2E] dark:bg-[#C8A762] animate-bounce" style={{ animationDelay: "150ms" }} />
+          <span className="w-2 h-2 rounded-full bg-[#0B3D2E] dark:bg-[#C8A762] animate-bounce" style={{ animationDelay: "300ms" }} />
+        </div>
+      </div>
+
+      {/* Responsive Skeleton Pulse Cards */}
+      <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" : "flex flex-col gap-4"}>
+        {[1, 2, 3, 4, 5, 6].map((idx) => (
+          <div
+            key={idx}
+            className={`p-5 rounded-2xl border animate-pulse ${
+              isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"
+            } space-y-3.5 shadow-xs`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="h-4 w-24 bg-gray-200 dark:bg-white/10 rounded-lg" />
+              <div className="h-4 w-12 bg-gray-200 dark:bg-white/10 rounded-lg" />
+            </div>
+            <div className="h-5 w-4/5 bg-gray-200 dark:bg-white/10 rounded-lg" />
+            <div className="space-y-2">
+              <div className="h-3 w-full bg-gray-100 dark:bg-white/5 rounded" />
+              <div className="h-3 w-2/3 bg-gray-100 dark:bg-white/5 rounded" />
+            </div>
+            <div className="pt-3 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between">
+              <div className="h-3 w-20 bg-gray-200 dark:bg-white/10 rounded" />
+              <div className="h-3 w-16 bg-gray-200 dark:bg-white/10 rounded" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+
+export function shouldShowEmptyState({
+  isLoading,
+  hasSearched,
+  resultsCount,
+}: {
+  isLoading: boolean;
+  hasSearched: boolean;
+  resultsCount: number;
+}): boolean {
+  if (isLoading) return false;
+  if (!hasSearched) return false;
+  return resultsCount === 0;
 }
 
 interface LawsTabContentProps {
@@ -131,7 +239,7 @@ export function LawsTabContent({
   if (resultsPending) {
     return (
       <motion.div key="laws-section-pending" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-        <ResultsSkeleton isDark={isDark} layoutMode={layoutMode} label="جارٍ البحث" />
+        <SearchLoadingSkeleton isDark={isDark} isRTL={isRTL} layoutMode={layoutMode} query={q} />
       </motion.div>
     );
   }
@@ -1031,13 +1139,13 @@ export function LawsTabContent({
             .join("، ")}`}
         </p>
       )}
-      {!hasResults(activeType) && searchDegraded.length === 0 && !searchFailed && (
+      {((Boolean(q && q.trim().length >= 2) ? shouldShowEmptyState({ isLoading: Boolean(resultsPending), hasSearched: true, resultsCount: hasResults(activeType) ? 1 : 0 }) : (!resultsPending && !hasResults(activeType))) && searchDegraded.length === 0 && !searchFailed) && (
         <EmptyState
           type={catHasContent(activeCat) ? "no-results" : "coming-soon"}
           catId={activeCat}
           isDark={isDark}
           isRTL={isRTL}
-          hasSearch={!!q}
+          hasSearch={Boolean(q && q.trim().length >= 2)}
         />
       )}
     </motion.div>

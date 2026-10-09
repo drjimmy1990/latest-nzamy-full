@@ -569,8 +569,8 @@ export default function SidebarPanel({
                     className={`w-full ${textStart} flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] transition ${
                       activeId === a.id
                         ? isDark ? "bg-[#C8A762]/20 text-[#C8A762] font-bold" : "bg-amber-100 text-amber-800 font-bold"
-                        : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-700"
-                    } ${a.status === "repealed" ? "line-through opacity-50" : ""}`}
+                        : a.status === "repealed" ? (isDark ? "text-red-400 hover:text-red-300 font-medium" : "text-red-600 hover:text-red-700 font-medium") : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-700"
+                    }`}
                   >
                     {!a.free && <Lock size={9} className="flex-shrink-0" />}
                     {/* The article the regulation hangs off, not the regulation's
@@ -578,6 +578,7 @@ export default function SidebarPanel({
                         «اللائحة التنفيذية لنظام العمل» thirty times (owner test
                         2026-09-28, T28-06). The name stays in the tooltip. */}
                     <span className="truncate flex-1 font-medium" title={getMergedReg(a)?.ref}>{a.num}</span>
+                    {a.status === "repealed" && <span className="text-[8px] flex-shrink-0 px-1 py-0.5 rounded font-black text-red-600 dark:text-red-400 bg-red-500/10 border border-red-500/20">{isRTL ? "ملغى" : "Repealed"}</span>}
                     {hasRegInCart && <span className="w-1.5 h-1.5 rounded-full bg-[#C8A762] flex-shrink-0" />}
                   </button>
                 );
@@ -597,11 +598,12 @@ export default function SidebarPanel({
                 className={`w-full ${textStart} flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] transition ${
                   activeId === a.id
                     ? isDark ? "bg-[#0B3D2E] text-[#C8A762]" : "bg-[#0B3D2E]/10 text-[#0B3D2E]"
-                    : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-700"
-                } ${a.status === "repealed" ? "line-through opacity-50" : ""}`}
+                    : a.status === "repealed" ? (isDark ? "text-red-400 hover:text-red-300 font-medium" : "text-red-600 hover:text-red-700 font-medium") : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-700"
+                }`}
               >
                 {!a.free && <Lock size={9} className="flex-shrink-0" />}
                 <span className="truncate flex-1">{a.num}</span>
+                {a.status === "repealed" && <span className="text-[8px] flex-shrink-0 px-1 py-0.5 rounded font-black text-red-600 dark:text-red-400 bg-red-500/10 border border-red-500/20">{isRTL ? "ملغى" : "Repealed"}</span>}
                 {!!(a.regulations && a.regulations.length > 0) && <span className={`text-[8px] flex-shrink-0 px-1 rounded font-black ${activeId === a.id ? "text-[#C8A762]/70" : isDark ? "text-zinc-500" : "text-slate-400"}`}>ل</span>}
                 {cartMap.has(a.id) && <span className="w-1.5 h-1.5 rounded-full bg-[#C8A762] flex-shrink-0" />}
               </button>
@@ -619,11 +621,12 @@ export default function SidebarPanel({
                   className={`w-full ${textStart} flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] transition ${
                     activeId === a.id
                       ? isDark ? "bg-[#0B3D2E] text-[#C8A762]" : "bg-[#0B3D2E]/10 text-[#0B3D2E]"
-                      : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-700"
-                  } ${a.status === "repealed" ? "line-through opacity-50" : ""}`}
+                      : a.status === "repealed" ? (isDark ? "text-red-400 hover:text-red-300 font-medium" : "text-red-600 hover:text-red-700 font-medium") : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-700"
+                  }`}
                 >
                   {!a.free && <Lock size={9} className="flex-shrink-0" />}
                   <span className="truncate flex-1">{a.num}</span>
+                  {a.status === "repealed" && <span className="text-[8px] flex-shrink-0 px-1 py-0.5 rounded font-black text-red-600 dark:text-red-400 bg-red-500/10 border border-red-500/20">{isRTL ? "ملغى" : "Repealed"}</span>}
                   {!!(a.regulations && a.regulations.length > 0) && (
                     <span title={isRTL ? "يحتوي لائحة تنفيذية" : "Has executive regulation"}
                       className={`text-[8px] flex-shrink-0 px-1 rounded font-black ${

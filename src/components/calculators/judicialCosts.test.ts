@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   APPEAL_COST_CAP_SAR,
+  FIRST_INSTANCE_COST_CAP_SAR,
   JUDICIAL_COSTS_ESTIMATE_LABEL,
   MONETARY_CLAIM_RATE,
   estimateJudicialCosts,
@@ -10,18 +11,28 @@ import {
 
 const both = { includeFirstInstance: true, includeAppeal: true };
 
-test("the constants are the owner's rule (Q149): 5% and a 10,000 SAR appeal cap", () => {
+test("the constants are the statutory caps and owner's rule (Decision #167): 5%, 1,000,000 SAR first instance cap, and 10,000 SAR appeal cap", () => {
   assert.equal(MONETARY_CLAIM_RATE, 0.05);
+  assert.equal(FIRST_INSTANCE_COST_CAP_SAR, 1_000_000);
   assert.equal(APPEAL_COST_CAP_SAR, 10_000);
   assert.equal(JUDICIAL_COSTS_ESTIMATE_LABEL, "تقديرية استرشادية");
 });
 
-test("first instance is 5% of the claim, with no cap of our own invention", () => {
+test("first instance is 5% of the claim, capped at 1,000,000 SAR (Owner Decision #167)", () => {
   const small = estimateJudicialCosts({ claimAmountSar: 40_000, includeFirstInstance: true, includeAppeal: false })!;
   assert.deepEqual(small.lines.map((l) => [l.id, l.amountSar]), [["first-instance", 2_000]]);
+  assert.equal(small.lines[0].capped, false);
+
   const large = estimateJudicialCosts({ claimAmountSar: 50_000_000, includeFirstInstance: true, includeAppeal: false })!;
-  assert.equal(large.totalSar, 2_500_000);
-  assert.equal(large.lines[0].capped, false);
+  assert.equal(large.totalSar, 1_000_000);
+  assert.equal(large.lines[0].amountSar, FIRST_INSTANCE_COST_CAP_SAR);
+  assert.equal(large.lines[0].capped, true);
+});
+
+test("first instance exactly at the cap (20,000,000 → 1,000,000) is not reported as capped", () => {
+  const r = estimateJudicialCosts({ claimAmountSar: 20_000_000, includeFirstInstance: true, includeAppeal: false })!;
+  assert.equal(r.lines[0].amountSar, 1_000_000);
+  assert.equal(r.lines[0].capped, false);
 });
 
 test("an appeal is 5% of the amount below the cap", () => {
@@ -47,6 +58,14 @@ test("both stages add up, in order", () => {
   const r = estimateJudicialCosts({ claimAmountSar: 1_000_000, ...both })!;
   assert.deepEqual(r.lines.map((l) => l.amountSar), [50_000, 10_000]);
   assert.equal(r.totalSar, 60_000);
+});
+
+test("both stages capped for 50,000,000 SAR claim", () => {
+  const r = estimateJudicialCosts({ claimAmountSar: 50_000_000, ...both })!;
+  assert.deepEqual(r.lines.map((l) => l.amountSar), [1_000_000, 10_000]);
+  assert.equal(r.lines[0].capped, true);
+  assert.equal(r.lines[1].capped, true);
+  assert.equal(r.totalSar, 1_010_000);
 });
 
 test("figures are whole riyals", () => {

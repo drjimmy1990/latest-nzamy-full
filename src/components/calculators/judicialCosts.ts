@@ -3,32 +3,31 @@
  * (the «الحاسبة القانونية» page, /ai/fee-calculator). Pure, no `@/` imports,
  * so judicialCosts.test.ts runs it under `node --test`.
  *
- * THE RULE IS THE OWNER'S, AND ONLY HIS (Q149, answered 2026-10-03):
- *   • a monetary claim costs 5% of the amount claimed;
- *   • an appeal is capped at 10,000 SAR;
- *   • source he gave: Article 16 of the costs regulation (المادة ١٦ من
- *     اللائحة التنفيذية لنظام التكاليف القضائية).
+ * STATUTORY RULES & OWNER DECISION #167:
+ *   • a monetary claim costs 5% of the amount claimed, capped at 1,000,000 SAR
+ *     (Article 3 of the Judicial Costs Law);
+ *   • an appeal is capped at 10,000 SAR (Article 16 of the costs regulation);
+ *   • Owner Decision #167 (2026-10-06) confirms both caps.
  *
  * Reading of the appeal clause: the same 5%, taken on the amount under
  * appeal, never more than 10,000 SAR — min(5% × amount, 10,000).
  *
- * What the rule does NOT give, so this file does not compute it (a number we
- * made up would be presented as the law):
- *   • any cap on the first-instance 5% — none was stated, so none is applied;
+ * What the rule does NOT give, so this file does not compute it:
  *   • non-monetary claims, cassation / the Supreme Court, execution, and the
  *     Board of Grievances;
  *   • exemptions. Some claims may be exempt by law; the estimate never
  *     subtracts one.
  *
- * The page labels every figure «تقديرية استرشادية». The version this replaced
- * applied brackets nobody sourced (2.5% / 1% / 0.5% by value band, +50% for an
- * appeal, +25% for cassation, per-court rates and caps); they are gone.
+ * The page labels every figure «تقديرية استرشادية».
  */
 
-/** 5% of a monetary claim — the owner's rule, Article 16 of the regulation. */
+/** 5% of a monetary claim — Article 3 of the law and Article 16 of the regulation. */
 export const MONETARY_CLAIM_RATE = 0.05;
 
-/** The appeal ceiling, in SAR — the owner's rule, Article 16 of the regulation. */
+/** The first-instance ceiling, in SAR — Article 3 of the Judicial Costs Law & Owner Decision #167. */
+export const FIRST_INSTANCE_COST_CAP_SAR = 1_000_000;
+
+/** The appeal ceiling, in SAR — Article 16 of the regulation & Owner Decision #167. */
 export const APPEAL_COST_CAP_SAR = 10_000;
 
 /** The label every figure this file produces is shown under. */
@@ -85,12 +84,15 @@ export function estimateJudicialCosts(input: JudicialCostsInput): JudicialCostsE
   const lines: JudicialCostsLine[] = [];
 
   if (input.includeFirstInstance) {
+    const capped = fivePercent > FIRST_INSTANCE_COST_CAP_SAR;
     lines.push({
       id: "first-instance",
       label: "قيد الدعوى (الدرجة الأولى)",
-      amountSar: fivePercent,
-      basis: "٥٪ من قيمة المطالبة المالية",
-      capped: false,
+      amountSar: capped ? FIRST_INSTANCE_COST_CAP_SAR : fivePercent,
+      basis: capped
+        ? "٥٪ من قيمة المطالبة المالية، بلغت الحد الأعلى (١٬٠٠٠٬٠٠٠ ريال)"
+        : "٥٪ من قيمة المطالبة المالية (الحد الأعلى ١٬٠٠٠٬٠٠٠ ريال)",
+      capped,
     });
   }
 

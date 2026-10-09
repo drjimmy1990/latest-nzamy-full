@@ -498,11 +498,11 @@ html[dir="rtl"] .text-left {
 }
 
 @media screen and (min-width: 1024px) and (hover: hover) and (pointer: fine) {
-  html[data-density="85"] {
+  html:is([data-density="85"], [data-display-zoom="85"]) {
     --density-scale: 0.85;
     zoom: 0.85;
   }
-  html[data-density="75"] {
+  html:is([data-density="75"], [data-display-zoom="75"]) {
     --density-scale: 0.75;
     zoom: 0.75;
   }
@@ -611,6 +611,59 @@ html[dir="rtl"] .text-left {
   }
   html:is([data-density="85"], [data-density="75"]) .h-\[70vh\]:not([class*=":h-"]) {
     height: calc(70vh / var(--density-scale));
+  }
+}
+
+/* Anti-compounding rule: body must never apply nested zoom */
+body {
+  zoom: normal !important;
+}
+
+/* High-DPI and Retina text rendering stability at 75% */
+@media screen and (min-resolution: 2dppx) {
+  html:is([data-density="75"], [data-display-zoom="75"]) body,
+  html:is([data-density="85"], [data-display-zoom="85"]) body {
+    -webkit-font-smoothing: subpixel-antialiased;
+    text-rendering: optimizeLegibility;
+  }
+}
+
+/* Fallback for legacy browsers without native CSS zoom */
+@supports not (zoom: 0.75) {
+  /* RTL (Arabic default) */
+  html[dir="rtl"]:is([data-density="75"], [data-display-zoom="75"]) body {
+    transform: scale(0.75);
+    transform-origin: top right;
+    width: 133.333%;
+    height: 133.333%;
+  }
+  html[dir="rtl"]:is([data-density="85"], [data-display-zoom="85"]) body {
+    transform: scale(0.85);
+    transform-origin: top right;
+    width: 117.647%;
+    height: 117.647%;
+  }
+
+  /* LTR (English / internationalization) */
+  html[dir="ltr"]:is([data-density="75"], [data-display-zoom="75"]) body,
+  html:not([dir="rtl"]):is([data-density="75"], [data-display-zoom="75"]) body {
+    transform: scale(0.75);
+    transform-origin: top left;
+    width: 133.333%;
+    height: 133.333%;
+  }
+  html[dir="ltr"]:is([data-density="85"], [data-display-zoom="85"]) body,
+  html:not([dir="rtl"]):is([data-density="85"], [data-display-zoom="85"]) body {
+    transform: scale(0.85);
+    transform-origin: top left;
+    width: 117.647%;
+    height: 117.647%;
+  }
+
+  html:is([data-density="100"], [data-display-zoom="100"]) body {
+    transform: none;
+    width: 100%;
+    height: 100%;
   }
 }
 

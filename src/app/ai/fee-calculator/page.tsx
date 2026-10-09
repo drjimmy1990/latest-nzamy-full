@@ -94,7 +94,7 @@ const TABS: { id: Tab; label: string; icon: React.ElementType; desc: string }[] 
   { id: "lawyer_fees",   label: "أتعاب المحامي",     icon: Calculator,       desc: "تقدير أتعاب التمثيل القانوني" },
   // «التكاليف القضائية», the regulation's own term; the owner's rule (Q149)
   // and the «تقديرية استرشادية» label live in components/calculators.
-  { id: "court_fees",   label: "التكاليف القضائية", icon: Buildings,        desc: "تقديرية استرشادية — ٥٪ من المطالبة المالية، والاستئناف بحد أعلى ١٠٬٠٠٠ ريال" },
+  { id: "court_fees",   label: "التكاليف القضائية", icon: Buildings,        desc: "تقديرية استرشادية — ٥٪ بحد أقصى مليون ريال للدرجة الأولى، والاستئناف بحد أقصى ١٠٬٠٠٠ ريال" },
   { id: "labor_rights", label: "مستحقات العمل",     icon: Users,            desc: "حسابات نهاية الخدمة والإشعار" },
   { id: "deadlines",    label: "المواعيد القانونية", icon: CalendarBlank,    desc: "احسب مواعيد الاعتراض والتقادم" },
   { id: "date_convert", label: "تحويل التاريخ",      icon: ArrowsLeftRight,  desc: "هجري ↔ ميلادي بدقة" },

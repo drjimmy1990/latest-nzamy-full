@@ -12,24 +12,81 @@ import { markdownBoldToSafeHtml } from "@/utils/sanitize";
 import { articleStatusNotice, isRepealedArticleStatus, type LawArticle, type JudicialPrinciple, type JudicialPrecedent } from "../data";
 import { buildCitation } from "./_citation";
 import { splitAmendedLabelLine, splitAmendedMarker } from "./_amended-marker";
+import { splitNumberedItem } from "./_numbered-item";
 import { READER_SCROLL_MARGIN_TOP } from "./_reader-anchors";
 import { OfficialMetaLockedRow } from "../components/OfficialMetaLockedRow";
 import { useSubscription } from "@/hooks/useSubscription";
 
 /**
- * «معدّلة» badge for a heading the source marked `[معدّلة]` (see
- * _amended-marker.ts). A label only: the regulation text carries no amendment
- * history, so there is nothing to open.
+ * «معدّلة» badge with amber styling and pulse indicator (Rule 5).
  */
-function AmendedBadge({ isDark }: { isDark: boolean }) {
+export function AmendedBadge({
+  isDark = false,
+  text = "معدَّلة",
+  className = "",
+}: {
+  isDark?: boolean;
+  text?: string;
+  className?: string;
+}) {
   return (
     <span
-      className={`inline-flex items-center align-middle ms-2 px-2 py-0.5 rounded-full border text-[10px] font-bold leading-none ${
-        isDark ? "bg-amber-500/15 text-amber-300 border-amber-400/30" : "bg-amber-50 text-amber-700 border-amber-300"
+      className={`inline-flex items-center gap-1 align-middle ms-2 px-2.5 py-0.5 rounded-full text-[10px] font-bold leading-none border shadow-xs select-none flex-shrink-0 ${
+        isDark
+          ? "bg-amber-500/15 text-amber-300 border-amber-400/30"
+          : "bg-amber-500/10 text-amber-700 border-amber-500/25"
+      } ${className}`}
+    >
+      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+      <span>✏️ ${text}</span>
+    </span>
+  );
+}
+
+/**
+ * Collapsible toggle details for amended articles showing amendment notice/history (Rule 5).
+ */
+export function AmendedToggleDetails({
+  summary = "📜 النص قبل التعديل وتفاصيل قرار/مرسوم التعديل",
+  children,
+  decreeRef,
+  isDark = false,
+  defaultOpen = false,
+}: {
+  summary?: string;
+  children: React.ReactNode;
+  decreeRef?: string;
+  isDark?: boolean;
+  defaultOpen?: boolean;
+}) {
+  return (
+    <details
+      open={defaultOpen}
+      className={`my-3 rounded-xl border transition-all overflow-hidden shadow-xs ${
+        isDark
+          ? "border-amber-800/40 bg-amber-950/20 text-amber-100"
+          : "border-amber-200/90 bg-amber-50/60 text-amber-950"
       }`}
     >
-      معدّلة
-    </span>
+      <summary className="px-4 py-2.5 font-bold cursor-pointer hover:bg-amber-100/40 dark:hover:bg-amber-900/30 text-xs flex items-center justify-between select-none transition-colors">
+        <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300">
+          <ClockCounterClockwise size={13} className={isDark ? "text-amber-400" : "text-amber-600"} weight="bold" />
+          <span>${summary}</span>
+        </div>
+        {decreeRef ? (
+          <span className="text-[10px] px-2 py-0.5 rounded bg-amber-200/50 dark:bg-amber-900/50 text-amber-900 dark:text-amber-200 font-mono font-bold">
+            ${decreeRef}
+          </span>
+        ) : (
+          <span className="text-[9.5px] px-2 py-0.5 rounded bg-amber-200/40 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 font-mono font-bold">
+            سابق
+          </span>
+        )}
+      </summary>
+      <div className="px-4 py-3 border-t border-dashed border-amber-200/60 dark:border-amber-800/40 text-[11.5px] leading-relaxed bg-white/60 dark:bg-zinc-900/60 space-y-2">
+        {children}
+      </div>
+    </details>
   );
 }
 
@@ -49,6 +106,7 @@ interface ParseBlock {
   summary?: string;
   content?: string;
   level?: number; // للعناوين: 2=##, 3=###, 4=####
+  number?: string; // num-list-item: the printed item number (موجز-29-أ)
 }
 
 function parseMarkdownContent(text: string): ParseBlock[] {
@@ -64,6 +122,13 @@ function parseMarkdownContent(text: string): ParseBlock[] {
     const trimmed = line.trim();
     
     if (trimmed.includes("<details>") || trimmed.includes("<details ")) {
+      if (inDetails) {
+        blocks.push({
+          type: "details",
+          summary: currentSummary || "📜 النص قبل التعديل وتفاصيل قرار/مرسوم التعديل",
+          content: currentContentLines.join("\n"),
+        });
+      }
       inDetails = true;
       currentSummary = "";
       currentContentLines = [];
@@ -75,17 +140,17 @@ function parseMarkdownContent(text: string): ParseBlock[] {
         inDetails = false;
         blocks.push({
           type: "details",
-          summary: currentSummary || "الإصدارات السابقة",
+          summary: currentSummary || "📜 النص قبل التعديل وتفاصيل قرار/مرسوم التعديل",
           content: currentContentLines.join("\n")
         });
         continue;
       }
       
       if (trimmed.startsWith("<summary>") && trimmed.includes("</summary>")) {
-        currentSummary = trimmed.replace("<summary>", "").replace("</summary>", "");
+        currentSummary = trimmed.replace("<summary>", "").replace("</summary>", "").trim();
         continue;
       } else if (trimmed.startsWith("<summary>")) {
-        currentSummary = trimmed.replace("<summary>", "");
+        currentSummary = trimmed.replace("<summary>", "").trim();
         continue;
       }
       
@@ -140,9 +205,11 @@ function parseMarkdownContent(text: string): ParseBlock[] {
         continue;
       }
 
-      // ─── Ordered (numbered) list items: 1. text or ١. text
-      if (/^\d+\.\s+/.test(trimmed) || /^[١-٩]\.\s+/.test(trimmed)) {
-        blocks.push({ type: "num-list-item", text: trimmed.replace(/^\d+\.\s+|^[١-٩]\.\s+/, "") });
+      // ─── Ordered (numbered) list items: 1. / 1\. / ١. — the printed number
+      // is kept and shown (موجز-29-أ: it used to be stripped and never rendered).
+      const numbered = splitNumberedItem(trimmed);
+      if (numbered) {
+        blocks.push({ type: "num-list-item", number: numbered.number, text: numbered.text });
         continue;
       }
 
@@ -152,6 +219,15 @@ function parseMarkdownContent(text: string): ParseBlock[] {
         text: line
       });
     }
+  }
+
+  // 🛡️ معالجة الحالات الحدية: إذا انتهى النص وكان داخل <details> غير مغلقة
+  if (inDetails && currentContentLines.length > 0) {
+    blocks.push({
+      type: "details",
+      summary: currentSummary || "📜 النص قبل التعديل وتفاصيل قرار/مرسوم التعديل",
+      content: currentContentLines.join("\n"),
+    });
   }
   
   return blocks;
@@ -200,24 +276,15 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]" }: { 
       {blocks.map((block, index) => {
         if (block.type === "details") {
           return (
-            <details
+            <AmendedToggleDetails
               key={index}
-              className={`my-3 rounded-xl border transition-all ${
-                isDark
-                  ? "border-amber-900/35 bg-amber-950/10 text-amber-200"
-                  : "border-amber-100 bg-amber-50/50 text-amber-900"
-              }`}
+              summary={block.summary}
+              isDark={isDark}
             >
-              <summary className="px-4 py-2.5 font-black cursor-pointer hover:underline text-[12px] flex items-center gap-1.5 select-none">
-                <ClockCounterClockwise size={12} className={isDark ? "text-amber-400" : "text-amber-600"} />
-                <span>{block.summary}</span>
-              </summary>
-              <div className="px-4 pb-3 pt-1.5 border-t border-dashed border-amber-200/20 text-[12px] leading-relaxed">
-                <MD text={block.content || ""} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
-              </div>
-            </details>
+              <MD text={block.content || ""} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
+            </AmendedToggleDetails>
           );
-         }
+        }
 
         // ─── Table
         if (block.type === ("table" as any)) {
@@ -301,6 +368,7 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]" }: { 
           const html = markdownBoldToSafeHtml(block.text || "");
           return (
             <div key={index} className={`flex gap-2 ${listIndent}`}>
+              <span className={`${fontClass} leading-relaxed font-bold tabular-nums shrink-0 ${muted}`}>{block.number}.</span>
               <p className={`${fontClass} leading-relaxed ${muted}`} dangerouslySetInnerHTML={{ __html: html }} />
             </div>
           );
@@ -654,8 +722,8 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
     ? "bg-[#C8A762] text-[#0B3D2E] font-black"
     : isRepealed
       ? isDark
-        ? "bg-red-900/40 text-red-400 border border-red-700/40 line-through"
-        : "bg-red-50 text-red-600 border border-red-200 line-through"
+        ? "bg-red-900/40 text-red-400 border border-red-700/40"
+        : "bg-red-50 text-red-600 border border-red-200"
       : isAmended
         ? isDark
           ? "bg-amber-900/40 text-amber-300 border border-amber-700/40"
@@ -714,7 +782,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
         </span>
         <p className={`flex-1 text-[12px] font-bold truncate ${
           isRepealed
-            ? "line-through text-red-500 dark:text-red-400"
+            ? isDark ? "text-red-400" : "text-red-600"
             : isAmended
               ? isDark ? "text-amber-200" : "text-amber-800"
               : isDark ? "text-zinc-200" : "text-zinc-700"

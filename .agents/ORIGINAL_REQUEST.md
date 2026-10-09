@@ -243,3 +243,52 @@ Integrity mode: development
 - [ ] `DOCUMENTATION_INDEX.md` is updated with no broken relative file links.
 - [ ] The priority list, remaining work, and status files are updated accurately to reflect the completed library sprint and blog CMS work.
 
+
+
+## Follow-up — 2026-10-09T15:24:52Z
+
+The user requested a full agent team: "فريق وكلاء متكامل (Full Team)".
+
+Audit, verify, and implement the non-database UI/UX, reader formatting, calculator logic, and schema contract fixes provided in the owner delivery package (`C:\Users\LOQ\Downloads\حزمة_تسليم_المبرمج_محدثة_2026-10-09`) on the `owner-edits` branch of `nzamy-website`, ensuring all code modifications are clean, verified, and free of regression without altering database schemas or executing destructive data migrations.
+
+Working directory: d:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website
+Integrity mode: development
+
+## Requirements
+
+### R1. Library Search & Visual Presentation Fixes
+- Eliminate the typographic strikethrough (`line-through`) styling on repealed laws across `LawCard` and detail components, replacing it with clear status badges (`⛔ ملغى وغير سارٍ`) and container borders to maintain Arabic text legibility.
+- Prevent premature "no results" flashing during library searches by ensuring empty states render only after search execution completes and loading states terminate (`!isLoading && hasSearched && results.length === 0`), displaying skeleton placeholders during pending fetches.
+- Relocate the legislation countdown widget from the top search bar area to the left sidebar under legislative updates, keeping the primary search area focused and uncluttered.
+- Remove redundant sidebar zoom buttons and standardize the compact 75% display density via clean CSS rules.
+
+### R2. Reader Navigation, Legal Numbering & Calculator Logic
+- Resolve sublegislation table-of-contents (TOC) link navigation by aligning DOM anchor IDs and compensating for fixed header height using `scroll-margin-top`.
+- Fix the legal reader component to preserve and display clause numbers (e.g. "1.", "2.", "3.") accurately rather than stripping or mangling backslashed numbers (refer to patch 20 in the delivery package `06_تحديث_المكتبة_والقبول_2026-10-09/01_رقع_كلود/حزمة_المبرمج_2026-10-08/patches/20_موجز29أ_أرقام_البنود_في_القارئ.patch`).
+- Update the judicial court fee calculator logic (`court-fees.ts`) to enforce the statutory caps: a 5% rate capped at 1,000,000 SAR for first-instance courts, and a fixed maximum of 10,000 SAR for appeal courts.
+- Support collapsible `<details>` displays for amended articles showing amendment notices and historical text context without corrupting regular article views.
+
+### R3. Quality Assurance, Contract Consistency & Branch Safety
+- Resolve duplicate keys (`law_lifecycle_status`, `superseded_by`) in the parser schema manifest (`scripts/parsers/schema_manifest.json`) (refer to patch 01 in the delivery package) to guarantee JSON parser conformity.
+- Perform all work exclusively on the `owner-edits` branch. Do not execute destructive table wipes (`TRUNCATE CASCADE` or `library:clear`) and do not apply unverified database schema modifications.
+- Ensure all modified and added TypeScript/React code compiles cleanly with zero type errors (`npx tsc --noEmit`) and passes existing automated test suites.
+
+## Acceptance Criteria
+
+### Visual & Search UI
+- [ ] No repealed law title or text has a CSS `line-through` rule applied in `LawCard` or reader views.
+- [ ] Initiating a library search displays animated loading skeletons and never displays an empty state banner before HTTP/data fetching completes.
+- [ ] The legislation countdown widget is positioned inside the left sidebar and not above the search input bar on `/laws`.
+- [ ] Manual zoom buttons in the navigation sidebar are removed, and compact layout rules apply gracefully.
+
+### Reader & Calculator Verification
+- [ ] Clicking headings in the sublegislation right-hand TOC scrolls the viewport directly to the target element without being obscured by the fixed header.
+- [ ] Clause numbering ("N.") renders visibly and correctly in legal document readers.
+- [ ] Court fee calculation tests confirm that a first-instance claim of 50,000,000 SAR yields exactly 1,000,000 SAR in fees, and an appeal fee does not exceed 10,000 SAR.
+- [ ] Amended articles display an amber indicator badge with an expandable toggle revealing the prior text/notice.
+
+### Code Quality & Contract Validation
+- [ ] `scripts/parsers/schema_manifest.json` contains no duplicate object keys and passes JSON linting without syntax warnings.
+- [ ] `git branch` confirms execution occurs strictly on `owner-edits`.
+- [ ] `npx tsc --noEmit` exits with status code 0 (zero TypeScript errors across the project).
+- [ ] Existing automated unit tests (`npm test` or equivalent suite) execute with zero failures.

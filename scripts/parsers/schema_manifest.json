@@ -4,7 +4,7 @@
   "corpus_scope_policy": {
     "version": "20260919_report145_v1",
     "ambiguous_registry_file": "corpus-scope-registry.json",
-    "ambiguous_registry_sha256": "8157cd1cd543878bd313f609255364dd0a4b0ce0abdeefb4c18c8c119af2213a",
+    "ambiguous_registry_sha256": "ccd1059aad7d5549d64d8af7bd67311b8f18c5336340ac1a67c6a1f96807fbdb",
     "non_ambiguous_default": "public_corpus",
     "transition_rule": "Only sources outside the pinned review inventory with no explicit scope key and no gate_zero_status may inherit public_corpus, with manifest_non_ambiguous provenance. No frontmatter defaults or title-keyword legal decisions.",
     "review_rule": "Inventory membership requires an explicit source/registry scope. Explicit null/unknown, conflicting decisions and gate_zero_status require review; pending_review and mixed_requires_separation block output. institutional_reference is excluded with source provenance.",
@@ -657,7 +657,7 @@
     "status": {
       "t": "enum:status",
       "req": true,
-      "note": "حقل بذرة دائماً؛ عرضه في البطاقة المرئية للأنظمة/اللوائح فقط (ق-11). ⚠️ قيمة خارج enums.status **تنطوي بصمت إلى \"active\"** — أي أن كتابة قيمة غير معتمدة هنا تُنتج ادّعاءً كاذباً بسريان الأداة لا خطأ ظاهراً. قيمة جديدة تحتاج إضافة رسمية للـenum أو مدخلاً في status_normalization_map؛ لا تُخترع قيمة ولا تُترك للانطواء (راجع changelog_1.8)."
+      "note": "حقل بذرة دائماً؛ عرضه في البطاقة المرئية للأنظمة/اللوائح فقط (ق-11). ⚠️ قيمة خارج enums.status **تنطوي بصمت إلى \"active\"** — أي أن كتابة قيمة غير معتمدة هنا تُنتج ادّعاءً كاذباً بسريان الأداة لا خطأ ظاهراً. قيمة جديدة تحتاج إضافة رسمية للـenum أو مدخلاً في status_normalization_map؛ لا تُخترع قيمة ولا تُترك للانطواء (راجع changelog_1.8). | تصحيح 2026-09-27 (ج73-و): منذ 2026-09-07 يطوي المحلّل الحي (nzamy_working_20260907/scripts/parsers/parse-laws.ts:937-973) القيمة الغائبة والقيمة الخارجة عن العقد إلى «status_undeclared» (تعرضها الواجهة «لم يُتحقَّق من الحالة») لا إلى «active»، وتُسجَّل الخارجة في rejectedEnumValues. فعبارة «تنطوي بصمت إلى active» أعلاه تصف سلوكاً سابقاً. المقيس اليوم: unverified في 153 ملفاً وpossibly_superseded في 1 — لا تُعرض سارية، لكنها ضجيج في تقرير المحلّل."
     },
     "law_lifecycle_status": {
       "t": "string|null",
@@ -668,16 +668,6 @@
       "t": "string|null",
       "req": false,
       "note": "اسم الأداة الخلَف + أداة إصدارها، يُملأ فقط عند إلغاء كامل موثَّق بدليل نصي من متن الأداة الخلَف أو مصدر رسمي حي (مثال: 'نظام إدارة النفايات (قرار مجلس الوزراء رقم 11 وتاريخ 2/1/1443هـ)') — لا اجتهاد. أُضيف توثيقاً للواقع الفعلي (تدقيق القسم 26، 2026-07-21). **استعمال ثانٍ مُرساة آلياً (v1.8):** حين تكون status = superseded_duplicate يُملأ هذا الحقل بمؤشِّر **بنيوي** للناجي — معرِّف أداة (`LAW-14-0132`) أو مسار ملف نسبةً للمستودع — لأن parse-laws.ts يفحصه فعلياً ليُثبِت وجود الناجي قبل إسقاط النسخة المكرّرة. الصيغة النثرية أعلاه تبقى صحيحة لحالات الإلغاء، لكنها غير قابلة للفحص الآلي في حالة التكرار."
-    },
-    "law_lifecycle_status": {
-      "t": "string|null",
-      "req": false,
-      "note": "نص وصفي مختصر لدورة حياة الأداة عند إلغاء كامل/استبدال (مثال: 'ملغى — مُستبدَل بالكامل') — مكمّل لحقل status (enum) لا بديل عنه. رُصد مستخدَماً فعلياً في 20+ ملفاً عبر المكتبة (حملة شارات دورة الحياة 2026-07-17/19) لكنه كان غائباً عن هذا العقد — أُضيف توثيقاً للواقع الفعلي (تدقيق القسم 26، 2026-07-21)."
-    },
-    "superseded_by": {
-      "t": "string|null",
-      "req": false,
-      "note": "اسم الأداة الخلَف + أداة إصدارها، يُملأ فقط عند إلغاء كامل موثَّق بدليل نصي من متن الأداة الخلَف أو مصدر رسمي حي (مثال: 'نظام إدارة النفايات (قرار مجلس الوزراء رقم 11 وتاريخ 2/1/1443هـ)') — لا اجتهاد. أُضيف توثيقاً للواقع الفعلي (تدقيق القسم 26، 2026-07-21)."
     },
     "section_code": {
       "t": "enum:section_code",
