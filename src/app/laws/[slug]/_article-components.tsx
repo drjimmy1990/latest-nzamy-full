@@ -498,10 +498,10 @@ function PrincipleCard({ p, isDark, inCart, onToggle, locked, onLock, isRTL = tr
           <p className={`text-[10px] ${isDark ? "text-zinc-400" : "text-slate-400"}`}>{p.ref}</p>
         </div>
         <div className="flex gap-1">
-          <button onClick={handleCopy} className={`p-2 rounded-lg transition ${isDark ? "hover:bg-white/[0.06] text-zinc-600" : "hover:bg-slate-200 text-slate-400"}`}>
+          <button onClick={handleCopy} aria-label={isRTL ? "نسخ المبدأ" : "Copy principle"} className={`p-2 rounded-lg transition ${isDark ? "hover:bg-white/[0.08] text-zinc-400 hover:text-zinc-200" : "hover:bg-slate-200 text-slate-600 hover:text-slate-800"}`}>
             {copied ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
           </button>
-          <button onClick={locked ? onLock : onToggle} className={`p-2 rounded-lg transition ${inCart ? isDark ? "bg-red-900/20 text-red-400" : "bg-red-50 text-red-500" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}>
+          <button onClick={locked ? onLock : onToggle} aria-label={inCart ? (isRTL ? "إزالة من السلة" : "Remove from cart") : (isRTL ? "إضافة إلى السلة" : "Add to cart")} className={`p-2 rounded-lg transition ${inCart ? isDark ? "bg-red-900/20 text-red-400" : "bg-red-50 text-red-500" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}>
             {inCart ? <Minus size={11} /> : <Plus size={11} />}
           </button>
         </div>
@@ -531,10 +531,10 @@ function PrecedentCard({ pr, isDark, inCart, onToggle, locked, onLock, isRTL = t
           <p className={`text-[10px] ${isDark ? "text-zinc-400" : "text-slate-400"}`}>{pr.caseNum} · {pr.year}</p>
         </div>
         <div className="flex gap-1">
-          <button onClick={handleCopy} className={`p-2 rounded-lg transition ${isDark ? "hover:bg-white/[0.06] text-zinc-600" : "hover:bg-slate-200 text-slate-400"}`}>
+          <button onClick={handleCopy} aria-label={isRTL ? "نسخ السابقة القضائية" : "Copy precedent"} className={`p-2 rounded-lg transition ${isDark ? "hover:bg-white/[0.08] text-zinc-400 hover:text-zinc-200" : "hover:bg-slate-200 text-slate-600 hover:text-slate-800"}`}>
             {copied ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
           </button>
-          <button onClick={locked ? onLock : onToggle} className={`p-2 rounded-lg transition ${inCart ? isDark ? "bg-red-900/20 text-red-400" : "bg-red-50 text-red-500" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}>
+          <button onClick={locked ? onLock : onToggle} aria-label={inCart ? (isRTL ? "إزالة من السلة" : "Remove from cart") : (isRTL ? "إضافة إلى السلة" : "Add to cart")} className={`p-2 rounded-lg transition ${inCart ? isDark ? "bg-red-900/20 text-red-400" : "bg-red-50 text-red-500" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}>
             {inCart ? <Minus size={11} /> : <Plus size={11} />}
           </button>
         </div>
@@ -555,7 +555,7 @@ export function RightPanel({ article, isDark, cart, onTogglePrinciple, onToggleP
   isRTL?: boolean;
 }) {
   const border = isDark ? "border-white/[0.07]" : "border-slate-200";
-  const muted  = isDark ? "text-zinc-500" : "text-slate-400";
+  const muted  = isDark ? "text-zinc-400" : "text-slate-600";
   const card   = `rounded-2xl border ${isDark ? "bg-zinc-900" : "bg-white shadow-sm"}`;
 
   if (!article) return (

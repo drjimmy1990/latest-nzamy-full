@@ -629,7 +629,7 @@ function LawSystemPageContent() {
 
   const clearAll = useCallback(() => setCart([]), [setCart]);
 
-  const muted  = isDark ? "text-zinc-500" : "text-slate-400";
+  const muted  = isDark ? "text-zinc-400" : "text-slate-600";
   const border = isDark ? "border-white/[0.07]" : "border-slate-200";
   const card   = `rounded-2xl border ${isDark ? "bg-zinc-900" : "bg-white shadow-sm"}`;
   const lawTitle = (isRTL ? law?.title : law?.titleEn) ?? "";
@@ -817,7 +817,7 @@ function LawSystemPageContent() {
         )}
 
         {/* ــ شريط وضع القراءة وحجم الخط والعودة ــ */}
-        <div className={`relative z-45 flex flex-wrap items-center justify-between gap-4 mb-3 print:hidden ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+        <div className={`relative z-45 flex flex-wrap items-center justify-between gap-4 mb-3 print:hidden ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
           <Link
             href="/laws"
             className={`inline-flex items-center gap-2 text-xs font-bold transition-all ${
@@ -857,7 +857,7 @@ function LawSystemPageContent() {
                       : isDark ? "border-white/[0.06] hover:border-white/[0.12]" : "border-slate-200 hover:border-slate-300"
                   }`}
                 >
-                  {size === "normal" ? (isRTL ? "عادي" : "A") : size === "large" ? (isRTL ? "كبير" : "A+") : (isRTL ? "ضغم" : "A++")}
+                  {size === "normal" ? (isRTL ? "عادي" : "A") : size === "large" ? (isRTL ? "كبير" : "A+") : (isRTL ? "ضخم" : "A++")}
                 </button>
               ))}
             </div>

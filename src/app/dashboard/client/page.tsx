@@ -791,7 +791,7 @@ export default function ClientDashboard() {
               not exist. A list that may be short is the lesser failure. */}
           <Link href="/dashboard/client/consultation" className="block">
             <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-              className="w-full flex items-center justify-center gap-1.5 bg-royal/10 text-royal text-[12px] font-bold py-2.5 rounded-xl transition-colors hover:bg-royal/20 cursor-pointer"
+              className="w-full flex items-center justify-center gap-1.5 bg-royal/10 dark:bg-emerald-500/15 text-royal dark:text-emerald-400 text-[12px] font-bold py-2.5 rounded-xl transition-colors hover:bg-royal/20 dark:hover:bg-emerald-500/25 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold"
             >
               <CalendarBlank size={13} /> كل المواعيد
             </motion.div>
@@ -816,7 +816,7 @@ export default function ClientDashboard() {
           </div>
           <Link href="/dashboard/client/services" className="block w-full">
             <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-              className="w-full flex items-center justify-center gap-1.5 bg-royal/10 text-royal text-[12px] font-bold py-2.5 rounded-xl transition-colors hover:bg-royal/20 cursor-pointer"
+              className="w-full flex items-center justify-center gap-1.5 bg-royal/10 dark:bg-emerald-500/15 text-royal dark:text-emerald-400 text-[12px] font-bold py-2.5 rounded-xl transition-colors hover:bg-royal/20 dark:hover:bg-emerald-500/25 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold"
             >
               <Headset size={13} /> احجز استشارة
             </motion.div>
@@ -830,7 +830,7 @@ export default function ClientDashboard() {
       <motion.div variants={fadeUp} initial="hidden" animate="show" custom={2}>
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <Gavel size={17} weight="fill" className="text-royal" />
+            <Gavel size={17} weight="fill" className="text-royal dark:text-emerald-400" />
             <h2 className={`font-bold text-[16px] ${isDark ? "text-white" : "text-zinc-800"}`}>قضاياي</h2>
             {/* The total, not the length of the capped list rendered below it.
                 «عرض الكل» is how the client reaches the rest. */}
@@ -838,7 +838,7 @@ export default function ClientDashboard() {
               {toArabicDigits(ACTIVE_TOTAL)} نشطة
             </span>
           </div>
-          <Link href="/dashboard/client/cases" className="flex items-center gap-1 text-royal text-[12px] font-medium hover:underline">
+          <Link href="/dashboard/client/cases" className="flex items-center gap-1 text-royal dark:text-emerald-400 text-[12px] font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold rounded">
             عرض الكل <ArrowLeft size={12} />
           </Link>
         </div>
@@ -1003,7 +1003,7 @@ export default function ClientDashboard() {
               <FolderOpen size={16} weight="fill" className="text-blue-500" />
               <h3 className={`font-bold text-[14px] ${isDark ? "text-white" : "text-zinc-800"}`}>مستنداتي</h3>
             </div>
-            <Link href="/dashboard/client/documents" className="text-xs text-royal hover:underline flex items-center gap-0.5">
+            <Link href="/dashboard/client/documents" className="text-xs text-royal dark:text-emerald-400 hover:underline flex items-center gap-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold rounded">
               الكل <ArrowLeft size={11} />
             </Link>
           </div>
@@ -1052,7 +1052,7 @@ export default function ClientDashboard() {
                 <p className={`text-[13px] font-medium ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
                   لا توجد مستندات بعد
                 </p>
-                <Link href="/dashboard/client/documents" className="mt-1 inline-block text-[11px] text-royal hover:underline">
+                <Link href="/dashboard/client/documents" className="mt-1 inline-block text-[11px] text-royal dark:text-emerald-400 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold rounded">
                   ارفع أول مستند
                 </Link>
               </div>
@@ -1204,7 +1204,7 @@ export default function ClientDashboard() {
                 <p className={`text-[10px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>أحدث الأسئلة المطروحة</p>
               </div>
             </div>
-            <Link href="/community" className="text-xs text-royal hover:underline flex items-center gap-0.5">
+            <Link href="/community" className="text-xs text-royal dark:text-emerald-400 hover:underline flex items-center gap-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold rounded">
               الكل <ArrowLeft size={11} />
             </Link>
           </div>
@@ -1314,10 +1314,10 @@ export default function ClientDashboard() {
               <button
                 key={q}
                 onClick={() => setAiInput(q)}
-                className={`text-[11px] px-3 py-1.5 rounded-full border transition-colors ${
+                className={`text-[11px] px-3 py-1.5 rounded-full border cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold ${
                   isDark
-                    ? "border-white/[0.08] text-zinc-500 hover:border-royal/40 hover:text-royal"
-                    : "border-zinc-200 text-zinc-400 hover:border-royal/40 hover:text-royal"
+                    ? "border-white/[0.08] text-zinc-300 hover:border-gold/40 hover:text-gold"
+                    : "border-zinc-200 text-zinc-600 hover:border-royal/40 hover:text-royal"
                 }`}
               >
                 {q}

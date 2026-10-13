@@ -102,8 +102,12 @@ export default function FAQ() {
                 }`}
               >
                 <button
+                  type="button"
                   onClick={() => toggleFAQ(index)}
-                  className="flex w-full items-center justify-between p-4 sm:p-6 text-start"
+                  aria-expanded={isOpen}
+                  aria-controls={`faq-answer-${index}`}
+                  id={`faq-question-${index}`}
+                  className="flex w-full items-center justify-between p-4 sm:p-6 text-start cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal/40 dark:focus-visible:ring-emerald-500/40 rounded-2xl"
                 >
                   <span className={`text-base font-bold md:text-lg ${
                     isOpen 
@@ -123,6 +127,9 @@ export default function FAQ() {
                 <AnimatePresence>
                   {isOpen && (
                     <motion.div
+                      id={`faq-answer-${index}`}
+                      role="region"
+                      aria-labelledby={`faq-question-${index}`}
                       initial={{ height: 0, opacity: 0 }}
                       animate={{ height: "auto", opacity: 1 }}
                       exit={{ height: 0, opacity: 0 }}

@@ -26,7 +26,7 @@ export default function Input({
           htmlFor={inputId}
           className={[
             "block text-sm font-semibold mb-1.5",
-            isDark ? "text-gray-200" : "text-gray-700",
+            isDark ? "text-gray-200" : "text-gray-700 dark:text-zinc-200",
           ].join(" ")}
         >
           {label}
@@ -38,8 +38,8 @@ export default function Input({
           "rounded-xl px-4 py-3 border text-sm outline-none transition-colors",
           fullWidth ? "w-full" : "",
           isDark
-            ? "bg-[#161b22] border-white/10 text-white focus:border-[#C8A762]"
-            : "bg-white border-gray-200 text-gray-800 focus:border-[#0B3D2E] focus:ring-2 focus:ring-[#0B3D2E]/10",
+            ? "bg-[#161b22] border-white/10 text-white focus:border-[#C8A762] focus-visible:ring-2 focus-visible:ring-gold"
+            : "bg-white dark:bg-[#161b22] border-gray-200 dark:border-white/10 text-gray-800 dark:text-zinc-100 focus:border-[#0B3D2E] dark:focus:border-gold focus:ring-2 focus:ring-[#0B3D2E]/10 dark:focus:ring-gold/20 focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold",
           error
             ? "border-red-400 focus:border-red-400"
             : "",

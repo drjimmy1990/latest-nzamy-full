@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { motion, useMotionValue, useTransform, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Play, Scales, ShieldCheck, Brain, Buildings, LockKey, CheckCircle, X } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowRight, Play, Scales, ShieldCheck, Brain, Buildings, LockKey, CheckCircle, X } from "@phosphor-icons/react";
 import { useTheme } from "./ThemeProvider";
 import Link from "next/link";
 
@@ -39,7 +39,7 @@ function AnimatedStat({ value, label, delay }: { value: string; label: string; d
       transition={{ type: "spring", stiffness: 100, damping: 20, delay }}
       className="text-center"
     >
-      <div className="font-brand text-2xl font-bold text-royal md:text-3xl">{value}</div>
+      <div className="font-brand text-2xl font-bold text-royal dark:text-white md:text-3xl">{value}</div>
       <div className="mt-1 text-xs text-ink-muted md:text-sm">{label}</div>
     </motion.div>
   );
@@ -185,12 +185,12 @@ export default function Hero() {
                 transition={{ duration: 2, repeat: Infinity }}
                 className="h-2 w-2 rounded-full bg-gold"
               />
-              <span className="text-xs font-medium text-gold-dark">
+              <span className="text-xs font-medium text-[#7A5B20] dark:text-gold">
                 {isAr ? "المنصة القانونية الأولى في المملكة" : "The First Legal Platform in Saudi Arabia"}
               </span>
             </motion.div>
 
-            <h1 className="font-brand text-4xl font-extrabold leading-none tracking-tighter text-royal md:text-6xl lg:text-7xl">
+            <h1 className="font-brand text-4xl font-extrabold leading-tight tracking-normal text-royal dark:text-white md:text-6xl md:tracking-tight lg:text-7xl">
               <span className="block">{isAr ? "شريكك" : "Your Smart"}</span>
               <span className="block">{isAr ? "القانوني" : "Legal"}</span>
               <span className="relative inline-block">
@@ -217,14 +217,22 @@ export default function Hero() {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                className="group inline-flex items-center gap-2 rounded-2xl bg-royal px-7 py-4 text-sm font-semibold text-white shadow-[0_8px_32px_-8px_rgba(11,61,46,0.5)] transition-shadow hover:shadow-[0_12px_40px_-8px_rgba(11,61,46,0.6)] w-full justify-center sm:w-auto"
+                className="group inline-flex items-center gap-2 rounded-2xl bg-royal px-7 py-4 text-sm font-semibold text-white shadow-[0_8px_32px_-8px_rgba(11,61,46,0.5)] transition-shadow hover:shadow-[0_12px_40px_-8px_rgba(11,61,46,0.6)] w-full justify-center sm:w-auto cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold"
               >
                 {isAr ? "اطلب خدمة فورية" : "Get Started Now"}
-                <ArrowLeft
-                  size={18}
-                  weight="bold"
-                  className="transition-transform group-hover:-translate-x-1"
-                />
+                {isAr ? (
+                  <ArrowLeft
+                    size={18}
+                    weight="bold"
+                    className="transition-transform group-hover:-translate-x-1"
+                  />
+                ) : (
+                  <ArrowRight
+                    size={18}
+                    weight="bold"
+                    className="transition-transform group-hover:translate-x-1"
+                  />
+                )}
               </motion.a>
 
               <motion.button
@@ -232,7 +240,7 @@ export default function Hero() {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                className={`inline-flex items-center gap-3 rounded-2xl border px-6 py-4 text-sm font-medium shadow-sm transition-all hover:border-royal/20 w-full justify-center sm:w-auto ${isDark ? "border-white/10 bg-white/5 text-gray-200 hover:text-emerald-400" : "border-slate-200 bg-white text-ink-muted hover:text-royal"}`}
+                className={`inline-flex items-center gap-3 rounded-2xl border px-6 py-4 text-sm font-medium shadow-sm transition-all hover:border-royal/20 w-full justify-center sm:w-auto cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold ${isDark ? "border-white/10 bg-white/5 text-gray-200 hover:text-emerald-400" : "border-slate-200 bg-white text-ink-muted hover:text-royal"}`}
               >
                 <span className="flex h-8 w-8 items-center justify-center rounded-full bg-royal/5 dark:bg-emerald-500/10">
                   <Play size={16} weight="fill" className="text-royal dark:text-emerald-400" />
@@ -302,8 +310,8 @@ export default function Hero() {
                 {/* Service cards — clickable shortcuts */}
                 <div className="grid grid-cols-3 gap-2 sm:gap-3">
                   {[
-                    { icon: Scales, label: isAr ? "استشارة" : "Consult", color: "bg-royal/5 text-royal", href: "/services/consultations" },
-                    { icon: ShieldCheck, label: isAr ? "عقود" : "Contracts", color: "bg-gold/10 text-gold-dark", href: "/services/contracts" },
+                    { icon: Scales, label: isAr ? "استشارة" : "Consult", color: "bg-royal/5 text-royal dark:bg-emerald-500/10 dark:text-emerald-400", href: "/services/consultations" },
+                    { icon: ShieldCheck, label: isAr ? "عقود" : "Contracts", color: "bg-gold/10 text-[#7A5B20] dark:text-gold", href: "/services/contracts" },
                     { icon: Brain, label: isAr ? "AI تحليل" : "AI Analysis", color: "bg-emerald-50 text-emerald-600", href: "/ai" },
                   ].map((item, i) => (
                     <motion.div
@@ -314,7 +322,7 @@ export default function Hero() {
                     >
                       <Link
                         href={item.href}
-                        className="flex flex-col items-center gap-2 rounded-2xl border border-slate-100 p-4 transition-all hover:border-royal/20 hover:shadow-md hover:-translate-y-0.5 active:scale-95 dark:border-white/10 dark:hover:border-white/20 cursor-pointer"
+                        className="flex flex-col items-center gap-2 rounded-2xl border border-slate-100 p-4 transition-all hover:border-royal/20 hover:shadow-md hover:-translate-y-0.5 active:scale-95 dark:border-white/10 dark:hover:border-white/20 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold"
                       >
                         <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${item.color} transition-transform group-hover:scale-110`}>
                           <item.icon size={20} weight="duotone" />

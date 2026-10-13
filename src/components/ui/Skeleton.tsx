@@ -45,8 +45,8 @@ export function TableSkeleton({ rows = 4 }: { rows?: number }) {
     <div className="space-y-0">
       {/* header */}
       <div className="flex gap-4 pb-3 border-b border-slate-100 dark:border-white/[0.06]">
-        {[40, 16, 14, 14, 16].map((w, i) => (
-          <Shimmer key={i} className={`h-3 w-${w}`} />
+        {(["w-40", "w-16", "w-14", "w-14", "w-16"] as const).map((widthClass, i) => (
+          <Shimmer key={i} className={`h-3 ${widthClass}`} />
         ))}
       </div>
       {/* rows */}

@@ -291,7 +291,7 @@ export default function SharedSidebar() {
           <button
             onClick={() => setMobileOpen(true)}
             aria-label={isAr ? "القائمة الرئيسية" : "Main menu"}
-            className={`p-2 rounded-xl transition-colors ${
+            className={`p-2 rounded-xl cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold ${
               isDark
                 ? "text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.05]"
                 : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
@@ -306,7 +306,7 @@ export default function SharedSidebar() {
       <aside
         className={`
           hidden lg:flex flex-col w-64 fixed top-0 bottom-0 ${isAr ? "right-0" : "left-0"} z-40
-          border-${isAr ? "l" : "r"}
+          ${isAr ? "border-l" : "border-r"}
           ${isDark
             ? "bg-zinc-950 border-white/[0.06]"
             : "bg-white border-slate-100 shadow-[2px_0_20px_-8px_rgba(0,0,0,0.06)]"

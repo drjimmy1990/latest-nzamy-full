@@ -117,7 +117,7 @@ export default function Footer() {
                 href="/register"
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
-                className="inline-flex items-center gap-2 rounded-2xl bg-white px-8 py-4 text-sm font-bold text-royal shadow-[0_4px_16px_-4px_rgba(0,0,0,0.15)] w-full justify-center sm:w-auto"
+                className="inline-flex items-center gap-2 rounded-2xl bg-white px-8 py-4 text-sm font-bold text-royal shadow-[0_4px_16px_-4px_rgba(0,0,0,0.15)] w-full justify-center sm:w-auto cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
               >
                 {isAr ? "سجّل مجاناً" : "Sign Up Free"}
                 {isAr ? <ArrowLeft size={16} weight="bold" /> : <ArrowRight size={16} weight="bold" />}
@@ -136,7 +136,7 @@ export default function Footer() {
                   <li key={link.label}>
                     <a
                       href={link.href}
-                      className="inline-block py-1 text-sm text-ink-muted transition-colors hover:text-royal"
+                      className="inline-block py-1 text-sm text-ink-muted transition-colors hover:text-royal dark:hover:text-[#C8A762] cursor-pointer rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal/40 dark:focus-visible:ring-gold/40"
                     >
                       {link.label}
                     </a>
@@ -153,10 +153,10 @@ export default function Footer() {
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-royal text-white">
               <Scales weight="bold" size={16} />
             </div>
-            <span className="font-brand text-sm font-bold text-royal">{isAr ? "نظامي" : "Nezamy"}</span>
-            <span className="text-xs text-ink-faint">nezamy.sa</span>
+            <span className="font-brand text-sm font-bold text-royal dark:text-white">{isAr ? "نظامي" : "Nezamy"}</span>
+            <span className="text-xs text-ink-faint dark:text-zinc-400">nezamy.sa</span>
           </div>
-          <p className="text-xs text-ink-faint">
+          <p className="text-xs text-ink-faint dark:text-zinc-400">
             {isAr
               ? `جميع الحقوق محفوظة لشركة نظامي للمحاماة ${new Date().getFullYear()}`
               : `All rights reserved. Nezamy Law Firm ${new Date().getFullYear()}`}

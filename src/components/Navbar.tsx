@@ -330,11 +330,11 @@ export default function Navbar() {
       className="fixed top-0 right-0 left-0 z-50 safe-top"
     >
       <div className="mx-auto max-w-[1400px] px-4 pt-4">
-        <div className="rounded-[1.25rem] border border-white/60 bg-white/80 px-6 py-3 shadow-[0_8px_32px_-8px_rgba(11,61,46,0.08)] backdrop-blur-xl dark:border-white/10 dark:bg-dark-card/90">
+        <div className="rounded-[1.25rem] border border-slate-200/70 bg-white/85 px-6 py-3 shadow-[0_8px_32px_-8px_rgba(11,61,46,0.08)] backdrop-blur-xl dark:border-white/10 dark:bg-dark-card/90">
           <div className="flex items-center justify-between">
 
             {/* ── Logo ── */}
-            <motion.a href="/?noredirect=true" className="flex items-center gap-3" whileHover={{ scale: 1.02 }}>
+            <motion.a href="/?noredirect=true" className="flex items-center gap-3 cursor-pointer" whileHover={{ scale: 1.02 }}>
               <motion.div
                 animate={{ rotateY: [0, 360] }}
                 transition={{ duration: 6, repeat: Infinity, ease: "linear", repeatDelay: 2 }}
@@ -353,7 +353,7 @@ export default function Navbar() {
                   <Scales weight="bold" size={22} />
                 </div>
               </motion.div>
-              <span className="font-brand text-xl font-bold tracking-tight text-royal dark:text-white">
+              <span className="font-brand text-xl font-bold ltr:tracking-tight rtl:tracking-normal text-royal dark:text-white">
                 {isAr ? "نظامي" : "Nezamy"}
               </span>
             </motion.a>
@@ -407,7 +407,7 @@ export default function Navbar() {
               <button
                 onClick={toggleLang}
                 aria-label={isAr ? "تغيير اللغة" : "Toggle language"}
-                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/50 text-ink-muted transition-colors hover:bg-royal/5 hover:text-royal dark:border-white/10"
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/50 text-ink-muted transition-colors hover:bg-royal/5 hover:text-royal dark:border-white/10 dark:hover:text-white dark:hover:bg-white/5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold"
               >
                 <Globe size={18} weight="duotone" />
               </button>
@@ -416,7 +416,7 @@ export default function Navbar() {
               <button
                 onClick={toggleTheme}
                 aria-label={isAr ? "تغيير المظهر" : "Toggle theme"}
-                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/50 text-ink-muted transition-colors hover:bg-royal/5 hover:text-royal dark:border-white/10"
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/50 text-ink-muted transition-colors hover:bg-royal/5 hover:text-royal dark:border-white/10 dark:hover:text-white dark:hover:bg-white/5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold"
               >
                 {theme === "light" ? <Moon size={18} weight="duotone" /> : <Sun size={18} weight="duotone" />}
               </button>
@@ -501,7 +501,7 @@ export default function Navbar() {
                 onClick={() => setMobileOpen(!mobileOpen)}
                 aria-label={isAr ? (mobileOpen ? "إغلاق القائمة" : "فتح القائمة") : (mobileOpen ? "Close menu" : "Open menu")}
                 aria-expanded={mobileOpen}
-                className="flex h-10 w-10 items-center justify-center rounded-xl text-ink-muted transition-colors hover:bg-royal/5 hover:text-royal dark:text-zinc-400"
+                className="flex h-10 w-10 items-center justify-center rounded-xl text-ink-muted transition-colors hover:bg-royal/5 hover:text-royal dark:text-zinc-300 dark:hover:text-white dark:hover:bg-white/5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold"
               >
                 {mobileOpen ? <X size={22} /> : <List size={22} />}
               </button>
@@ -541,7 +541,7 @@ export default function Navbar() {
                         <a
                           key={link.label}
                           href={link.href}
-                          className="block rounded-xl px-4 py-3 text-sm font-medium text-ink-muted transition-colors hover:bg-royal/5 hover:text-royal dark:text-zinc-400 dark:hover:text-white"
+                          className="block rounded-xl px-4 py-3 text-sm font-medium text-ink-muted transition-colors hover:bg-royal/5 hover:text-royal dark:text-zinc-300 dark:hover:text-white cursor-pointer"
                         >
                           {isAr ? link.label : link.labelEn}
                         </a>
@@ -557,7 +557,7 @@ export default function Navbar() {
                           /* min-h-[44px] is Apple's minimum touch target; the
                              plain <a> rows above compute to 44px from py-3 plus
                              the text line box, and this keeps parity. */
-                          className="flex w-full min-h-[44px] items-center justify-between rounded-xl px-4 py-3 text-sm font-medium text-ink-muted transition-colors hover:bg-royal/5 hover:text-royal dark:text-zinc-400 dark:hover:text-white"
+                          className="flex w-full min-h-[44px] items-center justify-between rounded-xl px-4 py-3 text-sm font-medium text-ink-muted transition-colors hover:bg-royal/5 hover:text-royal dark:text-zinc-300 dark:hover:text-white cursor-pointer"
                         >
                           <span>{isAr ? link.label : link.labelEn}</span>
                           <CaretDown
@@ -574,7 +574,7 @@ export default function Navbar() {
                             {!isPlaceholder && (
                               <a
                                 href={link.href}
-                                className="block min-h-[44px] rounded-xl px-4 py-2.5 text-[13px] font-medium text-ink-muted/80 hover:bg-royal/5 hover:text-royal dark:text-zinc-500 dark:hover:text-white"
+                                className="block min-h-[44px] rounded-xl px-4 py-2.5 text-[13px] font-medium text-ink-muted/80 hover:bg-royal/5 hover:text-royal dark:text-zinc-300 dark:hover:text-white cursor-pointer"
                               >
                                 {isAr ? `عرض الكل — ${link.label}` : `View all — ${link.labelEn}`}
                               </a>
@@ -583,7 +583,7 @@ export default function Navbar() {
                               <a
                                 key={child.label}
                                 href={child.href}
-                                className="flex min-h-[44px] items-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-medium text-ink-muted/80 transition-colors hover:bg-royal/5 hover:text-royal dark:text-zinc-500 dark:hover:text-white"
+                                className="flex min-h-[44px] items-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-medium text-ink-muted/80 transition-colors hover:bg-royal/5 hover:text-royal dark:text-zinc-300 dark:hover:text-white cursor-pointer"
                               >
                                 <span>{isAr ? child.label : child.labelEn}</span>
                                 {child.badge && (

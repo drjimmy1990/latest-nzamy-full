@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { User, Buildings, Bank, Handshake, Scales, ArrowLeft } from "@phosphor-icons/react";
+import { User, Buildings, Bank, Handshake, Scales, ArrowLeft, ArrowRight } from "@phosphor-icons/react";
 import { useTheme } from "./ThemeProvider";
 
 const userTypes = [
@@ -13,7 +13,7 @@ const userTypes = [
     descEn: "Consultations, contracts, litigation",
     href: "/register/client",
     gradient: "from-royal/5 to-royal/10",
-    iconBg: "bg-royal/10 text-royal",
+    iconBg: "bg-royal/10 text-royal dark:bg-emerald-500/15 dark:text-emerald-400",
   },
   {
     icon: Buildings,
@@ -23,7 +23,7 @@ const userTypes = [
     descEn: "Risk management, legal team, compliance",
     href: "/register/client",
     gradient: "from-gold/5 to-gold/10",
-    iconBg: "bg-gold/10 text-gold-dark",
+    iconBg: "bg-gold/10 text-[#7A5B20] dark:text-gold dark:bg-gold/15",
   },
   {
     icon: Bank,
@@ -33,7 +33,7 @@ const userTypes = [
     descEn: "Compliance, tenders, procurement contracts",
     href: "/register/client",
     gradient: "from-emerald-50 to-emerald-100/50",
-    iconBg: "bg-emerald-100 text-emerald-700",
+    iconBg: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400",
   },
   {
     icon: Handshake,
@@ -43,7 +43,7 @@ const userTypes = [
     descEn: "Governance, donations, licensing",
     href: "/register/client",
     gradient: "from-sky-50 to-sky-100/50",
-    iconBg: "bg-sky-100 text-sky-700",
+    iconBg: "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300",
   },
 ];
 
@@ -62,8 +62,8 @@ export default function UserTypeSelector() {
           transition={{ type: "spring", stiffness: 100, damping: 20 }}
           className="mb-16"
         >
-          <span className="text-sm font-medium text-gold-dark">{isAr ? "ابدأ الآن" : "Get Started"}</span>
-          <h2 className="font-brand mt-2 text-3xl font-bold tracking-tight text-royal md:text-5xl">
+          <span className="text-sm font-medium text-[#7A5B20] dark:text-gold">{isAr ? "ابدأ الآن" : "Get Started"}</span>
+          <h2 className="font-brand mt-2 text-3xl font-bold tracking-tight text-royal dark:text-white md:text-5xl">
             {isAr ? "أنت..." : "You are..."}
           </h2>
           <p className="mt-4 max-w-[50ch] text-base text-ink-muted">
@@ -88,20 +88,20 @@ export default function UserTypeSelector() {
               }}
               whileHover={{ y: -4 }}
               whileTap={{ scale: 0.98, y: -1 }}
-              className={`group relative overflow-hidden rounded-[2rem] border border-slate-200/50 bg-gradient-to-bl ${type.gradient} p-6 transition-shadow hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.07)] sm:p-8 md:p-10`}
+              className={`group relative overflow-hidden rounded-[2rem] border border-slate-200/50 dark:border-white/10 bg-gradient-to-bl ${type.gradient} dark:bg-dark-card p-6 transition-shadow hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.07)] sm:p-8 md:p-10 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold`}
             >
               <div className="flex items-start justify-between">
                 <div>
                   <span className={`inline-flex h-14 w-14 items-center justify-center rounded-2xl ${type.iconBg}`}>
                     <type.icon size={28} weight="duotone" />
                   </span>
-                  <h3 className="font-brand mt-5 text-xl font-bold text-ink md:text-2xl">
+                  <h3 className="font-brand mt-5 text-xl font-bold text-ink dark:text-white md:text-2xl">
                     {isAr ? type.labelAr : type.labelEn}
                   </h3>
                   <p className="mt-2 text-sm text-ink-muted">{isAr ? type.descAr : type.descEn}</p>
                 </div>
                 <span className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-ink-faint transition-all group-hover:border-royal/20 group-hover:bg-royal group-hover:text-white dark:border-white/10 dark:bg-dark-card">
-                  <ArrowLeft size={16} weight="bold" />
+                  {isAr ? <ArrowLeft size={16} weight="bold" /> : <ArrowRight size={16} weight="bold" />}
                 </span>
               </div>
             </motion.a>
@@ -114,15 +114,15 @@ export default function UserTypeSelector() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ delay: 0.5, type: "spring", stiffness: 100, damping: 20 }}
-          className="mt-8 rounded-[2rem] border border-royal/10 bg-royal/[0.03] p-8 md:p-10"
+          className="mt-8 rounded-[2rem] border border-royal/10 dark:border-white/10 bg-royal/[0.03] dark:bg-dark-card p-8 md:p-10"
         >
           <div className="flex flex-col items-start justify-between gap-6 md:flex-row md:items-center">
             <div className="flex items-center gap-5">
-              <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-royal/10 text-royal">
+              <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-royal/10 text-royal dark:bg-emerald-500/15 dark:text-emerald-400">
                 <Scales size={28} weight="duotone" />
               </span>
               <div>
-                <h3 className="font-brand text-lg font-bold text-royal md:text-xl">
+                <h3 className="font-brand text-lg font-bold text-royal dark:text-white md:text-xl">
                   {isAr ? "أنت محامي أو مقدم خدمة؟" : "Are you a lawyer or service provider?"}
                 </h3>
                 <p className="mt-1 text-sm text-ink-muted">
@@ -134,10 +134,10 @@ export default function UserTypeSelector() {
               href="/join"
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-royal px-6 py-3 text-sm font-semibold text-white shadow-[0_4px_16px_-4px_rgba(11,61,46,0.4)] min-h-[44px] w-full sm:w-auto"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-royal px-6 py-3 text-sm font-semibold text-white shadow-[0_4px_16px_-4px_rgba(11,61,46,0.4)] min-h-[44px] w-full sm:w-auto cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold"
             >
               {isAr ? "انضم لنظامي برو" : "Join Nezamy Pro"}
-              <ArrowLeft size={16} weight="bold" />
+              {isAr ? <ArrowLeft size={16} weight="bold" /> : <ArrowRight size={16} weight="bold" />}
             </motion.a>
           </div>
         </motion.div>

@@ -157,13 +157,13 @@ export default function ServicesBento() {
 
   const services = {
     individual: [
-      { icon: ChatCircleDots, label: isAr ? "استشارات قانونية" : "Consultations", desc: isAr ? "صوتية، مرئية، حضورية، أو بالذكاء الاصطناعي" : "Voice, video, in-person, or AI-powered", href: "/services/consultations", color: "text-royal bg-royal/10" },
+      { icon: ChatCircleDots, label: isAr ? "استشارات قانونية" : "Consultations", desc: isAr ? "صوتية، مرئية، حضورية، أو بالذكاء الاصطناعي" : "Voice, video, in-person, or AI-powered", href: "/services/consultations", color: "text-royal bg-royal/10 dark:text-emerald-400 dark:bg-emerald-950/40" },
       { icon: Scales, label: isAr ? "تمثيل قضائي" : "Litigation", desc: isAr ? "ترافع أمام المحاكم بكل درجاتها" : "Court representation at all levels", href: "/services/cases", color: "text-emerald-600 bg-emerald-500/10" },
       { icon: FileText, label: isAr ? "مراجعة عقود" : "Contracts", desc: isAr ? "تحليل وصياغة عقودك الخاصة" : "Analyze and draft personal contracts", href: "/services/contracts", color: "text-amber-500 bg-amber-500/10" },
       { icon: Stamp, label: isAr ? "توثيق رسمي" : "Notarization", desc: isAr ? "توثيق الوكالات والمحررات الرسمية" : "Official document notarization", href: "/services/notary", color: "text-slate-600 bg-slate-500/10" },
     ],
     business: [
-      { icon: Buildings, label: isAr ? "تأسيس شركات" : "Company Form.", desc: isAr ? "تأسيس الشركـات وهيكلتها قانونياً" : "Company formation and legal structuring", href: "/services/corporate", color: "text-royal bg-royal/10" },
+      { icon: Buildings, label: isAr ? "تأسيس شركات" : "Company Form.", desc: isAr ? "تأسيس الشركـات وهيكلتها قانونياً" : "Company formation and legal structuring", href: "/services/corporate", color: "text-royal bg-royal/10 dark:text-emerald-400 dark:bg-emerald-950/40" },
       { icon: FileText, label: isAr ? "عقود تجارية" : "Commercial Contracts", desc: isAr ? "صياغة عقود الموردين والمقاولات" : "Drafting supplier and construction contracts", href: "/services/contracts", color: "text-emerald-600 bg-emerald-500/10" },
       { icon: WarningCircle, label: isAr ? "قضايا عمالية" : "Labor Disputes", desc: isAr ? "تمثيل في نزاعات مكتب العمل" : "Representation in labor office disputes", href: "/services/labor", color: "text-amber-500 bg-amber-500/10" },
       { icon: Money, label: isAr ? "تحصيل ديون" : "Debt Collection", desc: isAr ? "تحصيل الديون التجارية المتأخرة" : "Collection of commercial debts", href: "/services/collection", color: "text-rose-500 bg-rose-500/10" },
@@ -211,9 +211,9 @@ export default function ServicesBento() {
               aria-selected={activeTab === "individual"}
               aria-controls="services-individual-panel"
               onClick={() => setActiveTab("individual")}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2.5 min-h-[44px] sm:px-5 text-sm font-semibold transition-all ${
+              className={`flex items-center gap-2 rounded-xl px-4 py-2.5 min-h-[44px] sm:px-5 text-sm font-semibold transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold ${
                 activeTab === "individual"
-                  ? "bg-white text-royal shadow-sm dark:bg-royal dark:text-emerald-400"
+                  ? "bg-white text-royal shadow-sm dark:bg-emerald-950/60 dark:text-emerald-300 dark:border dark:border-emerald-500/30"
                   : "text-ink-muted hover:text-ink dark:text-gray-400 dark:hover:text-gray-200"
               }`}
             >
@@ -225,9 +225,9 @@ export default function ServicesBento() {
               aria-selected={activeTab === "business"}
               aria-controls="services-business-panel"
               onClick={() => setActiveTab("business")}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2.5 min-h-[44px] sm:px-5 text-sm font-semibold transition-all ${
+              className={`flex items-center gap-2 rounded-xl px-4 py-2.5 min-h-[44px] sm:px-5 text-sm font-semibold transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold ${
                 activeTab === "business"
-                  ? "bg-white text-royal shadow-sm dark:bg-royal dark:text-emerald-400"
+                  ? "bg-white text-royal shadow-sm dark:bg-emerald-950/60 dark:text-emerald-300 dark:border dark:border-emerald-500/30"
                   : "text-ink-muted hover:text-ink dark:text-gray-400 dark:hover:text-gray-200"
               }`}
             >
@@ -304,7 +304,7 @@ export default function ServicesBento() {
                   damping: 20,
                   delay: i * 0.05,
                 }}
-                className={`group flex flex-col justify-between rounded-[2rem] border transition-all hover:-translate-y-1 hover:shadow-xl dark:shadow-none p-5 sm:p-8 md:p-10 ${
+                className={`group flex flex-col justify-between rounded-[2rem] border transition-all hover:-translate-y-1 hover:shadow-xl dark:shadow-none p-5 sm:p-8 md:p-10 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold ${
                   isDark
                     ? "border-white/10 bg-dark-card hover:border-white/20"
                     : "border-slate-200/50 bg-white hover:border-royal/20"

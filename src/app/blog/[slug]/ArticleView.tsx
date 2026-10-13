@@ -352,17 +352,18 @@ export default function ArticleView({
                     const shareTitle = isRTL ? article.title : article.titleEn;
                     const shareUrl = typeof window !== "undefined" ? window.location.href : "";
                     const targets = [
-                      { Icon: WhatsappLogo, color: "#25d366", href: `https://wa.me/?text=${encodeURIComponent(`${shareTitle} ${shareUrl}`)}` },
-                      { Icon: XLogo, color: isDark ? "#e7e9ea" : "#0f1419", href: `https://x.com/intent/post?text=${encodeURIComponent(shareTitle)}&url=${encodeURIComponent(shareUrl)}` },
-                      { Icon: FacebookLogo, color: "#1877f2", href: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}` },
+                      { name: isRTL ? "مشاركة عبر واتساب" : "Share on WhatsApp", Icon: WhatsappLogo, color: "#25d366", href: `https://wa.me/?text=${encodeURIComponent(`${shareTitle} ${shareUrl}`)}` },
+                      { name: isRTL ? "مشاركة عبر منصة إكس" : "Share on X", Icon: XLogo, color: isDark ? "#e7e9ea" : "#0f1419", href: `https://x.com/intent/post?text=${encodeURIComponent(shareTitle)}&url=${encodeURIComponent(shareUrl)}` },
+                      { name: isRTL ? "مشاركة عبر فيسبوك" : "Share on Facebook", Icon: FacebookLogo, color: "#1877f2", href: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}` },
                     ];
-                    return targets.map(({ Icon, color, href }, i) => (
+                    return targets.map(({ name, Icon, color, href }, i) => (
                       <a
                         key={i}
                         href={href}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition ${isDark ? "hover:bg-white/10" : "hover:bg-gray-100"}`}
+                        aria-label={name}
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold ${isDark ? "hover:bg-white/10" : "hover:bg-gray-100"}`}
                       >
                         <Icon size={17} color={color} weight="fill" />
                       </a>

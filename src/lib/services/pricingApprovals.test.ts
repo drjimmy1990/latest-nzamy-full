@@ -22,16 +22,20 @@ test("library subscription buttons point to live routes", () => {
   assert.equal((library.match(/\/contact\?type=firm-library/g) ?? []).length, 6);
 });
 
-test("pay-per-work is visible and described as per-service pricing", () => {
-  assert.equal((individuals.match(/isBetaHidden: false/g) ?? []).length, 2);
-  assert.equal((individuals.match(/isBetaHidden: true/g) ?? []).length, 4);
+test("individual pricing pyramid includes approved plans and per-service pricing", () => {
+  assert.equal((individuals.match(/isBetaHidden: false/g) ?? []).length, 10);
+  assert.match(individuals, /id: "pay-per-piece"/);
+  assert.match(individuals, /id: "ind-ai"/);
+  assert.match(individuals, /id: "ind-preventive"/);
+  assert.match(individuals, /id: "ind-litigation"/);
+  assert.match(individuals, /id: "ind-family"/);
   assert.match(individuals, /priceMonthly: "حسب الخدمة"/);
   assert.match(individuals, /priceYearly: "بدون اشتراك"/);
 });
 
-test("unapproved individual subscription and group offers stay hidden", () => {
-  assert.match(individuals, /id: "shield",\s+isBetaHidden: true/);
-  assert.match(individuals, /id: "group",\s+isBetaHidden: true/);
+test("retired shield and group plans are removed", () => {
+  assert.doesNotMatch(individuals, /id: "shield"/);
+  assert.doesNotMatch(individuals, /id: "group"/);
 });
 
 test("provider registration no longer sells the retired monthly AI plans", () => {

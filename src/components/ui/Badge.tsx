@@ -13,7 +13,7 @@ interface BadgeProps {
 const variantClasses: Record<BadgeVariant, string> = {
   green:
     "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400",
-  gold: "bg-[#C8A762]/15 text-[#C8A762]",
+  gold: "bg-[#C8A762]/15 text-[#7A5B20] dark:text-[#C8A762] dark:bg-[#C8A762]/20",
   red: "bg-red-100 text-red-600 dark:bg-red-500/15 dark:text-red-400",
   gray: "bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-400",
   blue: "bg-blue-100 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400",

@@ -18,13 +18,13 @@ interface ButtonProps {
 }
 
 const variantClasses: Record<Variant, string> = {
-  primary: "bg-[#0B3D2E] text-white hover:bg-[#0a3328]",
+  primary: "bg-[#0B3D2E] text-white hover:bg-[#0a3328] dark:bg-royal dark:hover:bg-royal-light",
   secondary:
-    "border border-[#0B3D2E]/30 text-[#0B3D2E] hover:bg-[#0B3D2E]/5 dark:border-white/20 dark:text-white",
+    "border border-[#0B3D2E]/30 text-[#0B3D2E] hover:bg-[#0B3D2E]/5 dark:border-white/20 dark:text-zinc-100 dark:hover:bg-white/10 dark:hover:border-white/30",
   ghost:
-    "text-[#0B3D2E] hover:bg-[#0B3D2E]/5 dark:text-gray-300 dark:hover:bg-white/5",
+    "text-[#0B3D2E] hover:bg-[#0B3D2E]/5 dark:text-zinc-300 dark:hover:text-white dark:hover:bg-white/5",
   danger: "bg-red-600 text-white hover:bg-red-700",
-  gold: "bg-[#C8A762] text-[#0B3D2E] hover:bg-[#b8974f] font-bold",
+  gold: "bg-[#C8A762] text-[#0B3D2E] hover:bg-[#b8974f] font-bold dark:bg-gold dark:text-[#0B3D2E] dark:hover:bg-gold-light",
 };
 
 const sizeClasses: Record<Size, string> = {
@@ -53,7 +53,7 @@ export default function Button({
       whileHover={{ scale: isInert ? 1 : 1.02 }}
       whileTap={{ scale: isInert ? 1 : 0.98 }}
       className={[
-        "inline-flex items-center justify-center gap-2 font-semibold transition-colors focus:outline-none",
+        "inline-flex items-center justify-center gap-2 font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#0c0f12]",
         variantClasses[variant],
         sizeClasses[size],
         fullWidth ? "w-full" : "",
@@ -70,7 +70,7 @@ export default function Button({
             className="inline-block h-4 w-4 rounded-full border-2 border-current border-t-transparent animate-spin"
             aria-hidden="true"
           />
-          <span>جارٍ التحميل...</span>
+          <span>{children || "جارٍ التحميل..."}</span>
         </>
       ) : (
         children

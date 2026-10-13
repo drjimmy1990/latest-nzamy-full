@@ -69,6 +69,16 @@
   .dark ::-webkit-scrollbar-thumb {
     background: rgba(200, 167, 98, 0.2);
   }
+
+  /* Universal Accessible Keyboard Focus Rings */
+  :focus-visible {
+    outline: 2px solid #0B3D2E;
+    outline-offset: 2px;
+  }
+  .dark :focus-visible {
+    outline: 2px solid #C8A762;
+    outline-offset: 2px;
+  }
 }
 
 /*
@@ -152,6 +162,21 @@
   --color-sky-100: rgba(14, 165, 233, 0.15);
 }
 
+/* ── Global Dark-Mode Rescue: text-royal on dark surfaces ──
+   In dark mode, text-royal (#0B3D2E) has a ~1.4:1 contrast failure on dark backgrounds.
+   Unless explicitly situated on a white/light surface, redirect text-royal to high-contrast emerald or white.
+*/
+.dark :not(.bg-white, .bg-white *, [data-light-surface], [data-light-surface] *) > .text-royal,
+.dark .text-royal:not(.bg-white *, [data-light-surface] *) {
+  color: #34d399; /* Emerald-400: >= 8.6:1 contrast on dark surfaces */
+}
+
+/* Dark mode hover rescue: hover:text-royal turning dark on black */
+.dark :not(.bg-white, .bg-white *, [data-light-surface], [data-light-surface] *) > .hover\:text-royal:hover,
+.dark .hover\:text-royal:not(.bg-white *, [data-light-surface] *):hover {
+  color: #C8A762 !important; /* Gold: >= 6.9:1 contrast */
+}
+
 /* Dark-mode contrast rescue:
    Keep semantic white usable for text, icons, borders, and subtle overlays.
    Surfaces should be darkened with explicit dark:bg-* utilities instead of
@@ -170,13 +195,18 @@
   color: rgba(248, 250, 252, 0.7) !important;
 }
 .dark .text-white\/60 {
-  color: rgba(248, 250, 252, 0.6) !important;
+  color: rgba(248, 250, 252, 0.75) !important;
 }
 .dark .text-white\/50 {
-  color: rgba(248, 250, 252, 0.5) !important;
+  color: rgba(248, 250, 252, 0.70) !important;
 }
 .dark .text-white\/40 {
-  color: rgba(248, 250, 252, 0.4) !important;
+  color: rgba(248, 250, 252, 0.65) !important;
+}
+
+/* Dark-mode zinc-500 rescue (used as muted copy, currently 3.46:1) */
+.dark .text-zinc-500 {
+  color: #a1a1aa !important; /* zinc-400: 7.36:1 contrast */
 }
 .dark .border-white\/5,
 .dark .border-white\/\[0\.05\] {

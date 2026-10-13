@@ -218,7 +218,8 @@ function ReportDrawer({
               </div>
               <button
                 onClick={onClose}
-                className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-zinc-100 text-zinc-500"}`}
+                aria-label={isRTL ? "إغلاق" : "Close"}
+                className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-zinc-100 text-zinc-500"}`}
               >
                 <X size={16} />
               </button>
@@ -658,7 +659,7 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
                 whileTap={{ scale: 0.92 }}
                 onClick={() => { setReportOpen(true); setWaOpen(false); }}
                 aria-label={isRTL ? "أبلغ عن مشكلة في المكتبة" : "Report a library issue"}
-                className={`w-11 h-11 rounded-full flex items-center justify-center transition-all shadow-lg ${
+                className={`w-11 h-11 rounded-full flex items-center justify-center transition-all shadow-lg cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 ${
                   isDark
                     ? "bg-orange-950/80 border border-orange-500/30 hover:bg-orange-900/90 hover:border-orange-500/50 shadow-orange-500/10"
                     : "bg-orange-50 border border-orange-200 hover:bg-orange-100 hover:border-orange-300 shadow-orange-200/60"
@@ -693,7 +694,7 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
 
             <button
               onClick={() => { waOpen ? closeWa() : openWa(); setReportOpen(false); }}
-              className={`relative w-14 h-14 rounded-full shadow-[0_8px_20px_rgba(37,211,102,0.3)] flex items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95
+              className={`relative w-14 h-14 rounded-full shadow-[0_8px_20px_rgba(37,211,102,0.3)] flex items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#25D366]
                 ${waOpen
                   ? "bg-[#25D366] dark:bg-[#1fad55] ring-2 ring-white ring-offset-2"
                   : "bg-[#25D366] hover:bg-[#1ebe5d] dark:bg-[#1fad55] dark:hover:bg-[#1a9e4d]"
@@ -720,7 +721,7 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={handleCartClick}
-              className="relative w-14 h-14 rounded-full bg-[#0B3D2E] hover:bg-[#082d22] text-[#C8A762] shadow-[0_8px_20px_rgba(11,61,46,0.3)] flex items-center justify-center border border-white/10 transition-all duration-300 hover:scale-105 active:scale-95"
+              className="relative w-14 h-14 rounded-full bg-royal hover:bg-royal-dark text-gold shadow-[0_8px_20px_rgba(11,61,46,0.3)] flex items-center justify-center border border-white/10 transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-gold"
               aria-label={isRTL ? "المسودة" : "Draft"}
             >
               <Stack size={26} weight="fill" />
