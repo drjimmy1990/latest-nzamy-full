@@ -9,6 +9,7 @@ import {
   resolveStoredDensity,
   type Density,
 } from "@/lib/density";
+import { syncNativeStatusBar } from "@/lib/mobile/nativeBridge";
 
 type Theme = "light" | "dark";
 type Lang = "ar" | "en";
@@ -74,6 +75,7 @@ function syncDocument(theme: Theme, lang: Lang) {
   document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
   document.documentElement.lang = lang;
   document.documentElement.style.colorScheme = theme;
+  void syncNativeStatusBar(theme);
 }
 
 // The attribute globals.css keys the zoom on. themeInitScript (layout.tsx)

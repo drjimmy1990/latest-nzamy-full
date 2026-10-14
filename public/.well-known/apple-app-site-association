@@ -1,0 +1,35 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appIDs": ["TEAM_ID.sa.nezamy.app"],
+        "components": [
+          {
+            "/": "/auth/callback*",
+            "comment": "OAuth callback return to Nzamy iOS app"
+          },
+          {
+            "/": "/onboarding*",
+            "comment": "Onboarding flow in Nzamy iOS app"
+          },
+          {
+            "/": "/dashboard/*",
+            "comment": "Authenticated dashboards in Nzamy iOS app"
+          },
+          {
+            "/": "/laws/*",
+            "comment": "Legal library deep links"
+          },
+          {
+            "/": "/ai/*",
+            "comment": "AI legal services deep links"
+          }
+        ]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": ["TEAM_ID.sa.nezamy.app"]
+  }
+}
