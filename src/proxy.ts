@@ -192,6 +192,15 @@ export default async function proxy(req: NextRequest) {
   // 1b. Protect sensitive API prefixes with a middleware-level JSON 401 when the
   //     session is missing (defense-in-depth on top of the handler assertRole()).
   if (isSupabaseMode && isProtectedApiPath(pathname)) {
+    const authHeader = req.headers.get("authorization");
+    let bearerToken: string | null = null;
+    if (authHeader && authHeader.trim().toLowerCase().startsWith("bearer ")) {
+      const token = authHeader.trim().slice(7).trim();
+      if (token.length > 0) {
+        bearerToken = token;
+      }
+    }
+
     const apiResponse = NextResponse.next({ request: req });
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -208,12 +217,23 @@ export default async function proxy(req: NextRequest) {
             );
           },
         },
+        ...(authHeader && bearerToken
+          ? {
+              global: {
+                headers: {
+                  Authorization: authHeader,
+                },
+              },
+            }
+          : {}),
       },
     );
     const {
       data: { user },
       error: authError,
-    } = await supabase.auth.getUser();
+    } = await (bearerToken
+      ? supabase.auth.getUser(bearerToken)
+      : supabase.auth.getUser());
 
     // getUser() is a network round trip. Collapsing its transport failures into
     // `!user` is what turned an egress/TLS fault into a 401 across the app
