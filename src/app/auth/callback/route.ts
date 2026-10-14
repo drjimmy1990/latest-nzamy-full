@@ -49,8 +49,19 @@ import {
  * Google Cloud and the provider is enabled in Supabase. This file decides
  * routing only; it does not enable or configure any provider.
  */
+function redirectRelative(path: string): NextResponse {
+  // Keep Location relative (valid per RFC 9110 §15.4, same pattern as
+  // src/app/laws/civil-procedure/route.ts) so running `next start -p 3055`
+  // behind Nginx (`X-Forwarded-Proto: https`) never leaks the internal upstream
+  // origin (`https://localhost:3055`) that Next.js puts into `request.url`.
+  return new NextResponse(null, {
+    status: 307,
+    headers: { Location: path },
+  });
+}
+
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url);
+  const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
 
   // `next` is an explicit landing override. No call-site sets it today — the
@@ -60,10 +71,9 @@ export async function GET(request: Request) {
   // for an account type this app does not recognise, which the NOT NULL CHECK
   // on profiles.user_type (supabase/migrations/20260603_phase1_001_profiles.sql:32-35)
   // does not currently permit. It is validated anyway because it arrives in
-  // the URL: it is interpolated after `origin`, so an absolute value such as
-  // "https://elsewhere.example" would build a string that is not a URL at all
-  // and NextResponse.redirect would throw — a 500 rather than a redirect —
-  // while "//elsewhere.example" and its "/\" variant would leave this site.
+  // the URL: an absolute value such as "https://elsewhere.example" or a
+  // protocol-relative "//elsewhere.example" (or its "/\" variant) would leave
+  // this site if placed into the Location header unchecked.
   const nextParam = searchParams.get("next");
   const next =
     nextParam &&
@@ -134,7 +144,7 @@ export async function GET(request: Request) {
             hasPhone,
           })
         ) {
-          return NextResponse.redirect(`${origin}/onboarding`);
+          return redirectRelative("/onboarding");
         }
 
         // `dashboardPathFor` always returns a string, so it can never fall
@@ -143,7 +153,7 @@ export async function GET(request: Request) {
         const redirectTo = isDbUserType(userType)
           ? dashboardPathFor(userType)
           : next;
-        return NextResponse.redirect(`${origin}${redirectTo}`);
+        return redirectRelative(redirectTo);
       }
     }
   }
@@ -157,5 +167,5 @@ export async function GET(request: Request) {
   // nothing and the person sees an ordinary sign-in page with no explanation
   // of what went wrong. The parameter is kept so that whoever fixes /login has
   // something to read.
-  return NextResponse.redirect(`${origin}/login?error=auth_callback_failed`);
+  return redirectRelative("/login?error=auth_callback_failed");
 }
