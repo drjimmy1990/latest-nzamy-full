@@ -82,7 +82,7 @@ export default function FirmWalletPage() {
           </div>
           <div className="relative z-10 mb-6">
             <h2 className="text-4xl font-black font-mono tracking-tight flex items-end gap-2">
-              ١٢٥,٤٥٠ <span className="text-[16px] text-emerald-200/70 mb-1.5">ريال</span>
+              ١٢٥,٤٥٠ <span className="text-[16px] text-emerald-200/70 mb-1.5">ر.س</span>
             </h2>
           </div>
           <div className="flex items-center gap-3 relative z-10">
@@ -104,7 +104,7 @@ export default function FirmWalletPage() {
             <div>
               <p className={`text-[11px] font-bold ${isDark ? "text-zinc-400" : "text-slate-500"}`}>رصيد معلق (تحت التسوية)</p>
               <p className={`text-[20px] font-black font-mono mt-0.5 ${isDark ? "text-white" : "text-slate-800"}`}>
-                ٣٤,٠٠٠ <span className={`text-[12px] font-sans ${isDark ? "text-zinc-500" : "text-slate-400"}`}>ريال</span>
+                ٣٤,٠٠٠ <span className={`text-[12px] font-sans ${isDark ? "text-zinc-500" : "text-slate-400"}`}>ر.س</span>
               </p>
             </div>
           </div>
@@ -163,7 +163,7 @@ export default function FirmWalletPage() {
                 <p className={`text-[14px] font-black font-mono ${
                   t.amount > 0 ? "text-emerald-500" : isDark ? "text-white" : "text-slate-800"
                 }`} dir="ltr">
-                  {t.amount > 0 ? "+" : ""}{t.amount.toLocaleString()} ﷼
+                  {t.amount > 0 ? "+" : ""}{t.amount.toLocaleString()} ر.س
                 </p>
               </div>
             </div>

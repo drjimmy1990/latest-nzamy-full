@@ -555,7 +555,7 @@ export default function ClientCaseDetailPage({ params }: { params: { id: string 
         </div>
         <div className={`flex justify-between text-[12px] mb-2 ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
           <span>إجمالي الأتعاب</span>
-          <span className="font-black font-mono">{data.fee.total.toLocaleString()} ريال</span>
+          <span className="font-black font-mono">{data.fee.total.toLocaleString()} ر.س</span>
         </div>
         <div className={`h-2 rounded-full overflow-hidden mb-1 ${isDark ? "bg-zinc-800" : "bg-slate-100"}`}>
           <motion.div className="h-full rounded-full bg-emerald-500"

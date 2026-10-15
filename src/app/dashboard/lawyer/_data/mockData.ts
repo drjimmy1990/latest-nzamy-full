@@ -61,7 +61,7 @@ export const STATS: Stat[] = [
   { label: "القضايا النشطة",      value: "14",        icon: Scales,    color: "text-royal",       bg: "bg-royal/8",        trend: "+٢",   trendLabel: "هذا الشهر",  up: true },
   { label: "الاستشارات المعلقة",  value: "5",         icon: Briefcase, color: "text-amber-500",   bg: "bg-amber-500/8",    trend: "٥",    trendLabel: "تحتاج رد",   up: false },
   { label: "الجلسات القادمة",     value: "3",         icon: Gavel,     color: "text-blue-500",    bg: "bg-blue-500/8",     trend: "خلال", trendLabel: "٧ أيام",     up: true },
-  { label: "الإيرادات المتوقعة",  value: "٤٥,٠٠٠ ﷼", icon: Money,     color: "text-emerald-500", bg: "bg-emerald-500/8",  trend: "+١٢%", trendLabel: "عن السابق",  up: true },
+  { label: "الإيرادات المتوقعة",  value: "٤٥,٠٠٠ ر.س", icon: Money,     color: "text-emerald-500", bg: "bg-emerald-500/8",  trend: "+١٢%", trendLabel: "عن السابق",  up: true },
 ];
 
 export const TASKS: Task[] = [

@@ -128,29 +128,29 @@ export default function FirmFeesPage() {
 
   const stats: Stat[] = [
     {
-      label: "إجمالي الإيرادات (الشهر)", value: "١٤٥,٨٣٠ ﷼", trend: "+١١.٧٪", trendUp: true,
+      label: "إجمالي الإيرادات (الشهر)", value: "١٤٥,٨٣٠ ر.س", trend: "+١١.٧٪", trendUp: true,
       icon: Wallet, color: "text-emerald-500", bg: isDark ? "bg-emerald-500/10" : "bg-emerald-50",
     },
     {
-      label: "فواتير مستحقة", value: "٣٢,٤٠٠ ﷼", trend: "٤ فواتير", trendUp: false,
+      label: "فواتير مستحقة", value: "٣٢,٤٠٠ ر.س", trend: "٤ فواتير", trendUp: false,
       icon: Clock, color: "text-amber-500", bg: isDark ? "bg-amber-500/10" : "bg-amber-50",
     },
     {
-      label: "تم تحصيله اليوم", value: "٨,١٥٠ ﷼", trend: "+٢.٣٪", trendUp: true,
+      label: "تم تحصيله اليوم", value: "٨,١٥٠ ر.س", trend: "+٢.٣٪", trendUp: true,
       icon: TrendUp, color: "text-sky-500", bg: isDark ? "bg-sky-500/10" : "bg-sky-50",
     },
     {
-      label: "متوسط قيمة القضية", value: "٢٣,٧٠٠ ﷼", trend: "ثابت", trendUp: true,
+      label: "متوسط قيمة القضية", value: "٢٣,٧٠٠ ر.س", trend: "ثابت", trendUp: true,
       icon: ChartLineUp, color: "text-violet-500", bg: isDark ? "bg-violet-500/10" : "bg-violet-50",
     },
   ];
 
   const invoices: Invoice[] = [
-    { id: "INV-2026-089", client: "شركة الأفق للتجارة",           amount: "١٥,٠٠٠ ﷼", date: "٢٢ أبريل", status: "paid" },
-    { id: "INV-2026-088", client: "مؤسسة الرواد الاستشارية",      amount: "٨,٥٠٠ ﷼",  date: "٢٠ أبريل", status: "pending" },
-    { id: "INV-2026-087", client: "خالد بن سليمان العبدالله",     amount: "٤,٢٠٠ ﷼",  date: "١٥ أبريل", status: "overdue" },
-    { id: "INV-2026-086", client: "مجموعة السعد القابضة",         amount: "٢٢,٠٠٠ ﷼", date: "١٠ أبريل", status: "paid" },
-    { id: "INV-2026-085", client: "عبدالرحمن بن ماجد الزهراني",  amount: "٦,٩٠٠ ﷼",  date: "٠٥ أبريل", status: "paid" },
+    { id: "INV-2026-089", client: "شركة الأفق للتجارة",           amount: "١٥,٠٠٠ ر.س", date: "٢٢ أبريل", status: "paid" },
+    { id: "INV-2026-088", client: "مؤسسة الرواد الاستشارية",      amount: "٨,٥٠٠ ر.س",  date: "٢٠ أبريل", status: "pending" },
+    { id: "INV-2026-087", client: "خالد بن سليمان العبدالله",     amount: "٤,٢٠٠ ر.س",  date: "١٥ أبريل", status: "overdue" },
+    { id: "INV-2026-086", client: "مجموعة السعد القابضة",         amount: "٢٢,٠٠٠ ر.س", date: "١٠ أبريل", status: "paid" },
+    { id: "INV-2026-085", client: "عبدالرحمن بن ماجد الزهراني",  amount: "٦,٩٠٠ ر.س",  date: "٠٥ أبريل", status: "paid" },
   ];
 
   const paymentMethods = [

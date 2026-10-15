@@ -105,16 +105,16 @@ export default function AdminSubscriptionsPage() {
           إدارة الاشتراكات والتسعير
         </h1>
         <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-          {totalUsers} مشترك نشط · MRR: {totalMRR.toLocaleString()} ﷼ · ARR: {totalARR.toLocaleString()} ﷼
+          {totalUsers} مشترك نشط · MRR: {totalMRR.toLocaleString()} ر.س · ARR: {totalARR.toLocaleString()} ر.س
         </p>
       </motion.div>
 
       {/* Top KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: "إجمالي MRR",  value: `${totalMRR.toLocaleString()} ﷼`, icon: CurrencyCircleDollar, color: "text-emerald-500", bg: "bg-emerald-500/8", trend: "+12% هذا الشهر" },
+          { label: "إجمالي MRR",  value: `${totalMRR.toLocaleString()} ر.س`, icon: CurrencyCircleDollar, color: "text-emerald-500", bg: "bg-emerald-500/8", trend: "+12% هذا الشهر" },
           { label: "مشتركون",     value: totalUsers,                        icon: Users,               color: "text-royal",       bg: "bg-royal/8",       trend: "+٥ هذا الأسبوع" },
-          { label: "متوسط ARPU", value: `${Math.round(totalMRR / (totalUsers - 42))} ﷼`, icon: ChartLine, color: "text-violet-500", bg: "bg-violet-500/8", trend: null },
+          { label: "متوسط ARPU", value: `${Math.round(totalMRR / (totalUsers - 42))} ر.س`, icon: ChartLine, color: "text-violet-500", bg: "bg-violet-500/8", trend: null },
           { label: "معدل الإلغاء", value: "٦.٢%",                          icon: TrendDown,           color: "text-red-500",     bg: "bg-red-500/8",     trend: "↓ تحسن" },
         ].map((k, i) => {
           const Icon = k.icon;
@@ -177,7 +177,7 @@ export default function AdminSubscriptionsPage() {
                   <div>
                     <p className={`text-[14px] font-black ${plan.color}`}>{plan.name}</p>
                     <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                      {plan.price > 0 ? `${plan.price} ﷼/شهر` : "مجاني"}
+                      {plan.price > 0 ? `${plan.price} ر.س/شهر` : "مجاني"}
                     </p>
                   </div>
                 </div>
@@ -196,7 +196,7 @@ export default function AdminSubscriptionsPage() {
               {/* Stats row */}
               <div className={`flex items-center justify-between text-[11px] mb-4 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
                 <span>{userPct}% من المستخدمين</span>
-                <span className="font-bold text-emerald-500">{plan.mrr > 0 ? `${plan.mrr.toLocaleString()} ﷼ MRR` : "—"}</span>
+                <span className="font-bold text-emerald-500">{plan.mrr > 0 ? `${plan.mrr.toLocaleString()} ر.س MRR` : "—"}</span>
                 <span className={plan.churnRate > 10 ? "text-red-400" : "text-emerald-400"}>
                   %{plan.churnRate} churn
                 </span>

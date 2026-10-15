@@ -42,8 +42,8 @@ const txt = {
       {
         id: "free",
         name: "مجاني",
-        price: "0 ﷼",
-        priceYearly: "0 ﷼",
+        price: "0 ر.س",
+        priceYearly: "0 ر.س",
         desc: "تصفح محدود للأنظمة الأساسية",
         icon: BookOpen,
         color: "from-zinc-600 to-zinc-500",
@@ -59,8 +59,8 @@ const txt = {
       {
         id: "lib-q1",
         name: "ربع سنوي (٣ أشهر)",
-        price: "١٬٥٠٠ ﷼ / ٣ أشهر",
-        priceYearly: "١٬٥٠٠ ﷼ / ٣ أشهر",
+        price: "١٬٥٠٠ ر.س / ٣ أشهر",
+        priceYearly: "١٬٥٠٠ ر.س / ٣ أشهر",
         desc: "وصول كامل للمكتبة والبحث بالذكاء الاصطناعي",
         icon: MagnifyingGlass,
         color: "from-[#0B3D2E] to-emerald-600",
@@ -76,8 +76,8 @@ const txt = {
       {
         id: "lib-q2",
         name: "نصف سنوي (٦ أشهر)",
-        price: "٢٬٧٥٠ ﷼ / ٦ أشهر",
-        priceYearly: "٢٬٧٥٠ ﷼ / ٦ أشهر",
+        price: "٢٬٧٥٠ ر.س / ٦ أشهر",
+        priceYearly: "٢٬٧٥٠ ر.س / ٦ أشهر",
         desc: "يضيف السوابق والمبادئ القضائية والبحث بالمواد والبنود",
         icon: Scales,
         color: "from-[#C8A762] to-amber-600",
@@ -93,8 +93,8 @@ const txt = {
       {
         id: "lib-annual",
         name: "سنوي (١٢ شهر)",
-        price: "٥٬٠٠٠ ﷼ / سنة",
-        priceYearly: "٥٬٠٠٠ ﷼ / سنة",
+        price: "٥٬٠٠٠ ر.س / سنة",
+        priceYearly: "٥٬٠٠٠ ر.س / سنة",
         desc: "اشتراك لمدة ١٢ شهراً للاستخدام المستمر",
         icon: Buildings,
         color: "from-purple-700 to-purple-500",

@@ -332,7 +332,7 @@ export default function ClientsPage() {
           ];
           if (outstanding !== null) {
             cells.push({
-              v: outstanding > 0 ? outstanding.toLocaleString() + " ﷼" : "مسدَّدة",
+              v: outstanding > 0 ? outstanding.toLocaleString() + " ر.س" : "مسدَّدة",
               label: "متبقٍّ",
               c: outstanding > 0 ? "text-red-500" : "text-emerald-500",
             });
@@ -409,7 +409,7 @@ export default function ClientsPage() {
                     <div className={`flex items-center justify-between text-[10px] mb-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
                       <span>الأتعاب المسددة</span>
                       <span>
-                        {(client.feePaidSar as number).toLocaleString()} / {(client.feeTotalSar as number).toLocaleString()} ﷼
+                        {(client.feePaidSar as number).toLocaleString()} / {(client.feeTotalSar as number).toLocaleString()} ر.س
                       </span>
                     </div>
                     <div className={`h-1.5 rounded-full overflow-hidden ${isDark ? "bg-white/[0.06]" : "bg-slate-100"}`}>

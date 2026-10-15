@@ -410,7 +410,7 @@ export default function ArbitratorDashboard() {
             </div>
             <div className="flex-1 text-center md:text-start">
               <h3 className={`text-base font-bold mb-1 ${isDark ? "text-white" : "text-slate-800"}`}>
-                ترقّ لمحكّم مميز — ١٩٩ ﷼/شهر
+                ترقّ لمحكّم مميز — ١٩٩ ر.س/شهر
               </h3>
               <div className="flex flex-wrap justify-center md:justify-start gap-3 mt-2">
                 {[

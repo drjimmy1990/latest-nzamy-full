@@ -592,7 +592,7 @@ export default function ServiceRequestWizard({
                       {/* Budget Range */}
                       <div>
                         <label className={`block text-sm font-bold mb-1 ${heading}`}>
-                          {isRTL ? "الميزانية المتوقعة (ريال سعودي)" : "Expected Budget (SAR)"}
+                          {isRTL ? "الميزانية المتوقعة (ر.س)" : "Expected Budget (SAR)"}
                         </label>
                         <p className={`text-[11px] mb-4 ${muted}`}>{isRTL ? "حدد النطاق الذي يناسبك — سيظهر للمحامين كمؤشر" : "Set your comfortable range — visible to lawyers as a guide"}</p>
 

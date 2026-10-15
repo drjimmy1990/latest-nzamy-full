@@ -105,7 +105,7 @@ export default function FirmReferralsPage() {
             <p className={`text-[11px] font-bold ${isDark ? "text-zinc-400" : "text-slate-500"}`}>إجمالي العمولات المكتسبة</p>
           </div>
           <p className={`text-[24px] font-black font-mono mt-1 ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>
-            {totalCommissions.toLocaleString()} <span className="text-[12px] font-sans">ريال</span>
+            {totalCommissions.toLocaleString()} <span className="text-[12px] font-sans">ر.س</span>
           </p>
         </div>
 
@@ -205,7 +205,7 @@ export default function FirmReferralsPage() {
                   <td className={`p-4 text-[12px] ${isDark ? "text-zinc-400" : "text-slate-600"}`}>{ref.date}</td>
                   <td className="p-4">
                     <p className={`text-[13px] font-black font-mono ${ref.commission > 0 ? "text-emerald-500" : isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                      {ref.commission.toLocaleString()} ﷼
+                      {ref.commission.toLocaleString()} ر.س
                     </p>
                   </td>
                   <td className="p-4">

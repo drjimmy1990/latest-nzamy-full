@@ -235,7 +235,7 @@ export default function GovernancePage() {
                   </div>
                   <div className={`rounded-xl p-3 text-[12px] leading-relaxed ${isDark ? "bg-white/[0.03] text-zinc-300" : "bg-zinc-50 text-zinc-600"}`}>
                     <p className="font-bold mb-1">🏛️ نظامي — تصعيد تلقائي</p>
-                    <p>عقد شراكة بقيمة ٣,٥٠٠,٠٠٠ ﷼ مع شركة الأفق — لم تتم المراجعة خلال ٥ أيام.</p>
+                    <p>عقد شراكة بقيمة ٣,٥٠٠,٠٠٠ ر.س مع شركة الأفق — لم تتم المراجعة خلال ٥ أيام.</p>
                     <p className="text-[#C8A762] font-bold mt-2">📎 اضغط هنا للمراجعة والاعتماد</p>
                   </div>
                 </div>

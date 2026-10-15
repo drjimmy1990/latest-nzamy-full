@@ -210,7 +210,7 @@ export default function AdminEntitlementsPage() {
 
               {/* Wallet grant */}
               <div className="rounded-xl border border-white/[0.06] p-4">
-                <p className="mb-2 flex items-center gap-2 text-[13px] font-bold text-white"><Wallet size={15} className="text-[#C8A762]" /> إيداع في المحفظة (ريال)</p>
+                <p className="mb-2 flex items-center gap-2 text-[13px] font-bold text-white"><Wallet size={15} className="text-[#C8A762]" /> إيداع في المحفظة (ر.س)</p>
                 <div className="flex gap-2">
                   <input type="number" value={walletAmount} onChange={(e) => setWalletAmount(Number(e.target.value))}
                     className="flex-1 rounded-lg bg-white/[0.04] border border-white/[0.08] px-3 py-2 text-[12px] text-white focus:outline-none" />

@@ -125,7 +125,7 @@ export default function ClientDetailsPage() {
           </div>
           <div>
             <p className={`text-[11px] font-bold mb-1 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>إجمالي المفوتر</p>
-            <p className={`text-[20px] font-black font-mono ${isDark ? "text-white" : "text-slate-800"}`}>{CLIENT_DATA.totalBilled.toLocaleString()} <span className="text-[12px] font-sans font-normal">ريال</span></p>
+            <p className={`text-[20px] font-black font-mono ${isDark ? "text-white" : "text-slate-800"}`}>{CLIENT_DATA.totalBilled.toLocaleString()} <span className="text-[12px] font-sans font-normal">ر.س</span></p>
           </div>
         </div>
         <div className={`${card} p-5 flex items-center gap-4`}>
@@ -185,7 +185,7 @@ export default function ClientDetailsPage() {
               {CLIENT_DATA.invoices.map(inv => (
                 <div key={inv.id} className={`p-3 rounded-xl border flex items-center justify-between ${isDark ? "bg-white/[0.02] border-white/[0.04]" : "bg-slate-50 border-slate-100"}`}>
                   <div>
-                    <p className={`text-[14px] font-black font-mono mb-1 ${isDark ? "text-white" : "text-slate-800"}`}>{inv.amount.toLocaleString()} ﷼</p>
+                    <p className={`text-[14px] font-black font-mono mb-1 ${isDark ? "text-white" : "text-slate-800"}`}>{inv.amount.toLocaleString()} ر.س</p>
                     <p className={`text-[11px] font-mono ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{inv.id} • {inv.date}</p>
                   </div>
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${

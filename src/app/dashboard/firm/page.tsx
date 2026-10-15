@@ -22,7 +22,7 @@ const STATS = [
   { labelAr: "القضايا النشطة",      labelEn: "Active Cases",    value: "38",          icon: Gavel,         color: "text-royal",      bg: "bg-royal/8",         trendAr: "+5 هذا الشهر",   trendEn: "+5 this month",     requiresFinancials: false },
   { labelAr: "أعضاء الفريق",        labelEn: "Team Members",   value: "12",          icon: UsersThree,    color: "text-blue-500",   bg: "bg-blue-500/8",      trendAr: "٢ متدرب",        trendEn: "2 trainees",        requiresFinancials: false },
   { labelAr: "الجلسات هذا الأسبوع", labelEn: "Hearings This Week", value: "7",      icon: CalendarCheck, color: "text-amber-500",  bg: "bg-amber-500/8",     trendAr: "غداً: ٣ جلسات", trendEn: "Tomorrow: 3",      requiresFinancials: false },
-  { labelAr: "الإيرادات الشهرية",   labelEn: "Monthly Revenue", value: "١٨٠,٠٠٠ ﷼", icon: Money,        color: "text-emerald-500", bg: "bg-emerald-500/8",   trendAr: "+١٨% عن الشهر",  trendEn: "+18% vs last month", requiresFinancials: true },
+  { labelAr: "الإيرادات الشهرية",   labelEn: "Monthly Revenue", value: "١٨٠,٠٠٠ ر.س", icon: Money,        color: "text-emerald-500", bg: "bg-emerald-500/8",   trendAr: "+١٨% عن الشهر",  trendEn: "+18% vs last month", requiresFinancials: true },
 ];
 
 const URGENT_ITEMS = [

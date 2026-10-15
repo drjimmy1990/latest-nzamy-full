@@ -286,8 +286,8 @@ export default function HealthCheckPage() {
                     transition={{ delay: i * 0.08 }}
                     className={`grid grid-cols-4 gap-0 items-center p-4 border-b last:border-0 ${isDark ? "border-white/[0.04]" : "border-slate-50"}`}>
                     <span className={`text-[13px] font-medium ${tp}`}>{t.docs}</span>
-                    <span className={`text-center text-[14px] font-bold font-mono ${tp}`}>{t.standalone} <span className={`text-[10px] font-normal ${ts}`}>﷼</span></span>
-                    <span className="text-center text-[14px] font-bold font-mono text-[#C8A762]">{t.subscriber} <span className="text-[10px] font-normal text-[#C8A762]/60">﷼</span></span>
+                    <span className={`text-center text-[14px] font-bold font-mono ${tp}`}>{t.standalone} <span className={`text-[10px] font-normal ${ts}`}>ر.س</span></span>
+                    <span className="text-center text-[14px] font-bold font-mono text-[#C8A762]">{t.subscriber} <span className="text-[10px] font-normal text-[#C8A762]/60">ر.س</span></span>
                     <span className={`text-center text-[10px] px-2 py-0.5 rounded-full mx-auto ${isDark ? "bg-white/[0.06] text-zinc-400" : "bg-slate-100 text-slate-500"}`}>{t.tag}</span>
                   </motion.div>
                 ))}

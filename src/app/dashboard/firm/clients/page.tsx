@@ -269,7 +269,7 @@ export default function FirmClientsPage() {
               <span className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
                 {outstanding !== null
                   ? outstanding > 0
-                    ? <span className="text-red-500 font-semibold">متبقٍّ {outstanding.toLocaleString()} ﷼</span>
+                    ? <span className="text-red-500 font-semibold">متبقٍّ {outstanding.toLocaleString()} ر.س</span>
                     : <span className="text-emerald-500 font-semibold">الأتعاب مسدَّدة</span>
                   : "لا أتعاب مسجّلة"}
               </span>

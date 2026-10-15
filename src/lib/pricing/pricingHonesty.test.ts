@@ -87,9 +87,29 @@ test("no invented discount: the 50% launch claim and the made-up «was» prices 
   // /laws/subscribe struck through ٦٠٠ / ٢,٤٠٠ ﷼ above the real price.
   const subscribe = code("app/laws/subscribe/page.tsx");
   assert.doesNotMatch(subscribe, /line-through/);
-  assert.doesNotMatch(subscribe, /٦٠٠ ﷼|٢,٤٠٠ ﷼|SAR 600|SAR 2,400/);
+  assert.doesNotMatch(subscribe, /٦٠٠ (?:﷼|ر\.س)|٢,٤٠٠ (?:﷼|ر\.س)|SAR 600|SAR 2,400/);
   // …and a «وفّر ١٦٪» toggle over plans whose price never changes with it.
   assert.doesNotMatch(subscribe, /وفّر|وفر|Save \d/);
+});
+
+test("Q131: prices are written «ر.س» — no «﷼» symbol, no «ريال» unit and no «ر.س.» on a price surface", () => {
+  for (const path of PRICING_SURFACES) {
+    const text = code(path);
+    assert.doesNotMatch(text, /﷼/, `${path}: «﷼» instead of «ر.س»`);
+    assert.doesNotMatch(text, /ريال/, `${path}: «ريال» instead of «ر.س»`);
+    assert.doesNotMatch(text, /ر\.س\./, `${path}: «ر.س.» instead of «ر.س»`);
+  }
+  // Price surfaces outside the pricing pages that used to print «﷼».
+  for (const path of [
+    "components/LegalLibraryBanner.tsx",
+    "components/EscalationFlow.tsx",
+    "app/services/business/company-formation/page.tsx",
+    "app/services/business/trademark/page.tsx",
+    "app/dashboard/lawyer/finance/page.tsx",
+    "app/dashboard/admin/subscriptions/page.tsx",
+  ]) {
+    assert.doesNotMatch(code(path), /﷼/, `${path}: «﷼» instead of «ر.س»`);
+  }
 });
 
 test("no percentage saving that the prices do not produce", () => {

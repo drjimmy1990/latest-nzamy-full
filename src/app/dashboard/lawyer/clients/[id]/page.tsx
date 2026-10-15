@@ -779,11 +779,11 @@ export default function ClientDetailPage() {
                 </select>
               </div>
               <div>
-                <label className={labelCls}>إجمالي الأتعاب (﷼)</label>
+                <label className={labelCls}>إجمالي الأتعاب (ر.س)</label>
                 <input value={editFeeTotal} onChange={e => setEditFeeTotal(e.target.value)} className={inputCls} placeholder="بلا تغيير" inputMode="decimal" />
               </div>
               <div>
-                <label className={labelCls}>المبلغ المسدّد (﷼)</label>
+                <label className={labelCls}>المبلغ المسدّد (ر.س)</label>
                 <input value={editFeePaid} onChange={e => setEditFeePaid(e.target.value)} className={inputCls} placeholder="بلا تغيير" inputMode="decimal" />
               </div>
               <div className="sm:col-span-2">
@@ -859,9 +859,9 @@ export default function ClientDetailPage() {
           ...(hasFees ? [{
             icon: CurrencyCircleDollar,
             label: "إجمالي الأتعاب",
-            value: `${(client.feeTotalSar as number).toLocaleString()} ﷼`,
+            value: `${(client.feeTotalSar as number).toLocaleString()} ر.س`,
             color: (outstanding ?? 0) > 0 ? "text-red-500" : "text-emerald-500",
-            sub: (outstanding ?? 0) > 0 ? `متبقي ${(outstanding as number).toLocaleString()} ﷼` : "مسدّدة بالكامل",
+            sub: (outstanding ?? 0) > 0 ? `متبقي ${(outstanding as number).toLocaleString()} ر.س` : "مسدّدة بالكامل",
           }] : []),
         ].map((kpi, i) => (
           <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 + i * 0.04 }}
@@ -1002,15 +1002,15 @@ export default function ClientDetailPage() {
                 <div className="flex items-end justify-between mb-2">
                   <div>
                     <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>إجمالي الأتعاب</p>
-                    <p className={`text-base font-black ${isDark ? "text-white" : "text-slate-800"}`}>{(client.feeTotalSar as number).toLocaleString()} <span className="text-[10px] font-normal">﷼</span></p>
+                    <p className={`text-base font-black ${isDark ? "text-white" : "text-slate-800"}`}>{(client.feeTotalSar as number).toLocaleString()} <span className="text-[10px] font-normal">ر.س</span></p>
                   </div>
                   <div className="text-left">
                     <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>مسدّد</p>
-                    <p className={`text-base font-black ${isDark ? "text-white" : "text-slate-800"}`}>{(client.feePaidSar ?? 0).toLocaleString()} <span className="text-[10px] font-normal">﷼</span></p>
+                    <p className={`text-base font-black ${isDark ? "text-white" : "text-slate-800"}`}>{(client.feePaidSar ?? 0).toLocaleString()} <span className="text-[10px] font-normal">ر.س</span></p>
                   </div>
                 </div>
                 {(outstanding ?? 0) > 0 && (
-                  <p className="text-[12px] font-bold text-red-500 mb-2">متبقٍ: {(outstanding as number).toLocaleString()} ﷼</p>
+                  <p className="text-[12px] font-bold text-red-500 mb-2">متبقٍ: {(outstanding as number).toLocaleString()} ر.س</p>
                 )}
                 {payPct !== null && (
                   <div className={`h-3 rounded-full overflow-hidden ${isDark ? "bg-white/[0.06]" : "bg-slate-100"}`}>

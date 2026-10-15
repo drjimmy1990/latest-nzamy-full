@@ -119,7 +119,7 @@ export default function OrderChatPage({ params }: { params: Promise<{ id: string
         <div className="flex items-center gap-2 shrink-0">
           {/* Escrow badge */}
           <div className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border ${isDark ? "border-[#C8A762]/30 bg-[#C8A762]/8 text-[#C8A762]" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
-            <Money size={12} /> {order.budget.toLocaleString("ar-SA")} ﷼ محجوز
+            <Money size={12} /> {order.budget.toLocaleString("ar-SA")} ر.س محجوز
           </div>
           <motion.button onClick={() => setShowApproveModal(true)}
             whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }}
@@ -282,7 +282,7 @@ export default function OrderChatPage({ params }: { params: Promise<{ id: string
             <p className={`text-[10px] font-bold uppercase tracking-wider mb-3 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>حساب الضمان (Escrow)</p>
             <div className={`rounded-xl p-3 mb-3 ${isDark ? "bg-[#C8A762]/8 border border-[#C8A762]/20" : "bg-amber-50 border border-amber-200/50"}`}>
               <p className={`text-[11px] mb-1 ${isDark ? "text-[#C8A762]/70" : "text-amber-600/70"}`}>محجوز بانتظار الاعتماد</p>
-              <p className="text-xl font-bold font-mono text-[#C8A762]">{order.budget.toLocaleString("ar-SA")} ﷼</p>
+              <p className="text-xl font-bold font-mono text-[#C8A762]">{order.budget.toLocaleString("ar-SA")} ر.س</p>
             </div>
             <div className={`flex items-center gap-1.5 text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
               <Clock size={12} /> يستحق التسليم: {order.deadline}
@@ -313,7 +313,7 @@ export default function OrderChatPage({ params }: { params: Promise<{ id: string
                 </div>
                 <h3 className={`text-lg font-bold ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>اعتماد الخدمة وإطلاق الضمان</h3>
                 <p className={`text-[12px] mt-1 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-                  بالاعتماد، سيُحوَّل مبلغ <strong className="text-emerald-500">{order.budget.toLocaleString("ar")} ﷼</strong> من حساب الضمان إلى {order.providerName}.
+                  بالاعتماد، سيُحوَّل مبلغ <strong className="text-emerald-500">{order.budget.toLocaleString("ar")} ر.س</strong> من حساب الضمان إلى {order.providerName}.
                 </p>
               </div>
               <div className={`flex items-start gap-2 p-3 rounded-xl mb-4 ${isDark ? "bg-amber-500/8 border border-amber-500/20" : "bg-amber-50 border border-amber-200"}`}>

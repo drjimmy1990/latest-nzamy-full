@@ -163,7 +163,7 @@ export default function FirmBrandingPage() {
         <div className="grid grid-cols-2 gap-3">
           {[
             { type: "subdomain" as const, label: "Subdomain مجاني", desc: `${subdomain}.nzamy.com`, tag: "مجاني" },
-            { type: "custom" as const, label: "دومين خاص", desc: customDomain, tag: "٧,٩٩٩ ﷼/سنة" },
+            { type: "custom" as const, label: "دومين خاص", desc: customDomain, tag: "٧,٩٩٩ ر.س/سنة" },
           ].map(opt => (
             <button key={opt.type} onClick={() => setDomainType(opt.type)}
               className={`rounded-xl border p-4 text-start transition-all ${

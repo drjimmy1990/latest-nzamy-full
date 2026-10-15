@@ -44,13 +44,13 @@ const CASE_TYPES: { id: CaseType; label: string; Icon: React.ElementType }[] = [
 const spring = { type: "spring" as const, stiffness: 320, damping: 26 };
 
 const FEE_RANGES: Record<CaseType, { min: number; max: number; label: string }> = {
-  labor:       { min: 3000,  max: 25000,  label: "٣,٠٠٠ – ٢٥,٠٠٠ ريال" },
-  commercial:  { min: 8000,  max: 100000, label: "٨,٠٠٠ – ١٠٠,٠٠٠ ريال" },
-  civil:       { min: 4000,  max: 40000,  label: "٤,٠٠٠ – ٤٠,٠٠٠ ريال" },
-  criminal:    { min: 10000, max: 80000,  label: "١٠,٠٠٠ – ٨٠,٠٠٠ ريال" },
-  family:      { min: 3500,  max: 20000,  label: "٣,٥٠٠ – ٢٠,٠٠٠ ريال" },
-  real_estate: { min: 5000,  max: 60000,  label: "٥,٠٠٠ – ٦٠,٠٠٠ ريال" },
-  admin:       { min: 6000,  max: 50000,  label: "٦,٠٠٠ – ٥٠,٠٠٠ ريال" },
+  labor:       { min: 3000,  max: 25000,  label: "٣,٠٠٠ – ٢٥,٠٠٠ ر.س" },
+  commercial:  { min: 8000,  max: 100000, label: "٨,٠٠٠ – ١٠٠,٠٠٠ ر.س" },
+  civil:       { min: 4000,  max: 40000,  label: "٤,٠٠٠ – ٤٠,٠٠٠ ر.س" },
+  criminal:    { min: 10000, max: 80000,  label: "١٠,٠٠٠ – ٨٠,٠٠٠ ر.س" },
+  family:      { min: 3500,  max: 20000,  label: "٣,٥٠٠ – ٢٠,٠٠٠ ر.س" },
+  real_estate: { min: 5000,  max: 60000,  label: "٥,٠٠٠ – ٦٠,٠٠٠ ر.س" },
+  admin:       { min: 6000,  max: 50000,  label: "٦,٠٠٠ – ٥٠,٠٠٠ ر.س" },
 };
 
 function calculateFee(inputs: FeeInputs) {

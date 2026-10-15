@@ -111,7 +111,7 @@ export default function BusinessReportsPage() {
           { label: "إجمالي القضايا", value: "٣٠", sub: "هذا الربع", icon: Scales, color: "text-[#0B3D2E]", trend: +11 },
           { label: "معدل الإنجاز", value: "٧٩٪", sub: "٢٣ من ٣٠", icon: ChartBar, color: "text-emerald-600", trend: +5 },
           { label: "متوسط الحل", value: "٢٤ يوم", sub: "عبر كل الأقسام", icon: Clock, color: "text-blue-600", trend: -8 },
-          { label: "إجمالي الأتعاب", value: "١١٧,٤٠٠", sub: "ريال سعودي", icon: CurrencyDollar, color: "text-[#C8A762]", trend: +18 },
+          { label: "إجمالي الأتعاب", value: "١١٧,٤٠٠", sub: "ر.س", icon: CurrencyDollar, color: "text-[#C8A762]", trend: +18 },
         ].map((kpi, i) => {
           const Icon = kpi.icon;
           const isUp = kpi.trend > 0;

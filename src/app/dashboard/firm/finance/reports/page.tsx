@@ -186,11 +186,11 @@ function FeesReport({ isDark, card }: { isDark: boolean; card: string }) {
       <div className="grid grid-cols-3 gap-3">
         <div className={`${card} p-4 text-center`}>
           <p className={`text-[11px] mb-1 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>إجمالي الأتعاب</p>
-          <p className={`text-lg font-bold font-mono ${isDark ? "text-white" : "text-slate-800"}`}>{fmt(totalFees)} <span className="text-xs font-normal">﷼</span></p>
+          <p className={`text-lg font-bold font-mono ${isDark ? "text-white" : "text-slate-800"}`}>{fmt(totalFees)} <span className="text-xs font-normal">ر.س</span></p>
         </div>
         <div className={`${card} p-4 text-center`}>
           <p className={`text-[11px] mb-1 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>المحصّل</p>
-          <p className="text-lg font-bold font-mono text-emerald-500">{fmt(totalCollected)} <span className="text-xs font-normal">﷼</span></p>
+          <p className="text-lg font-bold font-mono text-emerald-500">{fmt(totalCollected)} <span className="text-xs font-normal">ر.س</span></p>
         </div>
         <div className={`${card} p-4 text-center`}>
           <p className={`text-[11px] mb-1 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>نسبة التحصيل</p>
@@ -259,7 +259,7 @@ function VATReport({ isDark, card }: { isDark: boolean; card: string }) {
           </div>
           <div className={`px-3 py-1.5 rounded-xl text-center ${isDark ? "bg-[#C8A762]/10" : "bg-amber-50"}`}>
             <p className={`text-[10px] ${isDark ? "text-[#C8A762]/70" : "text-amber-600/70"}`}>المستحق (YTD)</p>
-            <p className="text-sm font-bold font-mono text-[#C8A762]">{fmt(totalNet)} ﷼</p>
+            <p className="text-sm font-bold font-mono text-[#C8A762]">{fmt(totalNet)} ر.س</p>
           </div>
         </div>
 
@@ -343,7 +343,7 @@ function AgingReport({ isDark, card }: { isDark: boolean; card: string }) {
                 <div className={`w-3 h-3 rounded-full ${b.color}`} />
                 <span className={`text-[11px] font-medium ${isDark ? "text-zinc-400" : "text-slate-500"}`}>{b.label}</span>
               </div>
-              <p className={`text-lg font-bold font-mono ${isDark ? "text-white" : "text-slate-800"}`}>{fmt(b.amount)} <span className="text-xs font-normal">﷼</span></p>
+              <p className={`text-lg font-bold font-mono ${isDark ? "text-white" : "text-slate-800"}`}>{fmt(b.amount)} <span className="text-xs font-normal">ر.س</span></p>
               <p className={`text-[10px] mt-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{b.count} {b.count > 1 ? "فواتير" : "فاتورة"}</p>
             </motion.div>
           ))}
@@ -394,7 +394,7 @@ function ProjectionsReport({ isDark, card }: { isDark: boolean; card: string }) 
           <TrendUp size={14} className="text-emerald-500 flex-shrink-0 mt-0.5" />
           <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
             <strong className={isDark ? "text-zinc-200" : "text-slate-700"}>التوقع: </strong>
-            إذا استمر معدل النمو الحالي، ستصل الإيرادات السنوية إلى ~٢.٨ مليون ﷼ بنهاية ١٤٤٦هـ، بزيادة ١٨٪ عن العام الماضي.
+            إذا استمر معدل النمو الحالي، ستصل الإيرادات السنوية إلى ~٢.٨ مليون ر.س بنهاية ١٤٤٦هـ، بزيادة ١٨٪ عن العام الماضي.
           </p>
         </div>
       </div>

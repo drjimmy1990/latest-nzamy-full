@@ -17,7 +17,7 @@ import { useTheme } from "@/components/ThemeProvider";
 const KPIS = [
   { label: "متوسط وقت الحل",    value: "٤.٢ شهر",    trend: "-٠.٨", up: true,  color: "text-blue-500",    bg: "bg-blue-500/10",    icon: CalendarCheck,sub: "من تقديم إلى حكم" },
   { label: "رضا الموكلين",       value: "٤.٧/٥",      trend: "+٠.٢", up: true,  color: "text-amber-500",   bg: "bg-amber-500/10",   icon: Users,       sub: "استناداً لـ ٨٦ تقييم" },
-  { label: "الإيراد لكل قضية",  value: "٣٢,٠٠٠ ﷼",  trend: "+١٢%", up: true,  color: "text-purple-500",  bg: "bg-purple-500/10",  icon: Money,       sub: "متوسط أتعاب قضية واحدة" },
+  { label: "الإيراد لكل قضية",  value: "٣٢,٠٠٠ ر.س",  trend: "+١٢%", up: true,  color: "text-purple-500",  bg: "bg-purple-500/10",  icon: Money,       sub: "متوسط أتعاب قضية واحدة" },
 ];
 
 const CASE_TYPES = [

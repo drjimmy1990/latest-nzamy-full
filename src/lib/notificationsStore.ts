@@ -61,7 +61,7 @@ const SEED: Notification[] = [
     id: "n3",
     type: "payment",
     title: "تم استلام الدفعة",
-    body: "تم إيداع ١٢٬٠٠٠ ﷼ في محفظتك من طلب الاستشارة #C-2048",
+    body: "تم إيداع ١٢٬٠٠٠ ر.س في محفظتك من طلب الاستشارة #C-2048",
     href: "/dashboard/lawyer/finance",
     time: "منذ ساعة",
     read: false,

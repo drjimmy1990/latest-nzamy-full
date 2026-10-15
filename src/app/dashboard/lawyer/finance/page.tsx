@@ -373,7 +373,7 @@ export default function FinancePage() {
         return;
       }
       if (collectedNow > remaining) {
-        setCollectError(`المبلغ يتجاوز المتبقي على الفاتورة (${remaining.toLocaleString()} ﷼).`);
+        setCollectError(`المبلغ يتجاوز المتبقي على الفاتورة (${remaining.toLocaleString()} ر.س).`);
         return;
       }
     }
@@ -669,7 +669,7 @@ export default function FinancePage() {
                             <DonutChart segments={feeSegments} centerPct={collectedPct} centerLabel="محصّل" />
                           ) : (
                             <p className="text-[11px] text-center text-slate-400 dark:text-zinc-500 leading-relaxed">
-                              لا توجد مبالغ لعرضها — كل الفواتير المسجلة قيمتها ٠ ﷼.
+                              لا توجد مبالغ لعرضها — كل الفواتير المسجلة قيمتها ٠ ر.س.
                             </p>
                           )}
                         </div>
@@ -709,7 +709,7 @@ export default function FinancePage() {
                             </div>
                             <p className="text-[11px] font-bold text-slate-400 dark:text-zinc-500 mb-1">{k.label}</p>
                             <p className="text-xl font-black font-mono tracking-tight text-slate-800 dark:text-zinc-100">
-                              {k.value.toLocaleString()} <span className="text-xs font-normal font-sans">﷼</span>
+                              {k.value.toLocaleString()} <span className="text-xs font-normal font-sans">ر.س</span>
                             </p>
                             {k.pct && (
                               <span className={`inline-block text-[9px] font-black px-2 py-0.5 rounded-full mt-2 ${k.bg} ${k.color}`}>
@@ -726,7 +726,7 @@ export default function FinancePage() {
                     <div className={`${cardCls} p-6 space-y-4`}>
                       <div className="space-y-1">
                         <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>توزيع الأتعاب حسب طبيعة السداد</p>
-                        <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>نِسَب من إجمالي الأتعاب المفوترة ({totalAll.toLocaleString()} ﷼)</p>
+                        <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>نِسَب من إجمالي الأتعاب المفوترة ({totalAll.toLocaleString()} ر.س)</p>
                       </div>
                       <div className="space-y-4 pt-2">
                         {[
@@ -740,7 +740,7 @@ export default function FinancePage() {
                             <div key={row.label} className="space-y-1.5">
                               <div className={`flex items-center justify-between text-[11px] ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
                                 <span className="font-bold">{row.label}</span>
-                                <span className="font-mono font-bold text-slate-800 dark:text-zinc-200">{row.value.toLocaleString()} ﷼ ({pct}%)</span>
+                                <span className="font-mono font-bold text-slate-800 dark:text-zinc-200">{row.value.toLocaleString()} ر.س ({pct}%)</span>
                               </div>
                               <div className={`h-2 rounded-full overflow-hidden ${isDark ? "bg-white/[0.04]" : "bg-slate-100"}`}>
                                 <motion.div
@@ -774,7 +774,7 @@ export default function FinancePage() {
                           <div className="space-y-0.5">
                             <p className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-slate-800"}`}>مستحقات متأخرة معلقة</p>
                             <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                              متبقٍ على فواتير متأخرة بقيمة <strong className="font-mono text-xs">{overdueRemainder.toLocaleString()} ﷼</strong>. متابعة العميل تتم خارج المنصة — لا تُرسل المنصة تذكيرات سداد.
+                              متبقٍ على فواتير متأخرة بقيمة <strong className="font-mono text-xs">{overdueRemainder.toLocaleString()} ر.س</strong>. متابعة العميل تتم خارج المنصة — لا تُرسل المنصة تذكيرات سداد.
                             </p>
                           </div>
                         </div>
@@ -908,8 +908,8 @@ export default function FinancePage() {
                                     {inv.status === "partial" && (
                                       <div className="pt-2 max-w-md">
                                         <div className={`flex justify-between text-[9px] mb-1 font-bold ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                                          <span>محصّل: {inv.paidAmount.toLocaleString()} ﷼</span>
-                                          <span>متبقي: {(inv.totalFee - inv.paidAmount).toLocaleString()} ﷼</span>
+                                          <span>محصّل: {inv.paidAmount.toLocaleString()} ر.س</span>
+                                          <span>متبقي: {(inv.totalFee - inv.paidAmount).toLocaleString()} ر.س</span>
                                         </div>
                                         <div className={`h-1.5 rounded-full overflow-hidden ${isDark ? "bg-white/[0.04]" : "bg-slate-100"}`}>
                                           <div className="h-full rounded-full bg-blue-500" style={{ width: `${payPct}%` }} />
@@ -920,7 +920,7 @@ export default function FinancePage() {
                                 </div>
                                 <div className="flex sm:flex-col items-end justify-between sm:justify-start w-full sm:w-auto border-t sm:border-0 pt-3 sm:pt-0 mt-2 sm:mt-0 flex-shrink-0">
                                   <p className="text-[17px] font-black font-mono tracking-tight text-slate-800 dark:text-zinc-100">
-                                    {inv.totalFee.toLocaleString()} <span className="text-xs font-normal font-sans">﷼</span>
+                                    {inv.totalFee.toLocaleString()} <span className="text-xs font-normal font-sans">ر.س</span>
                                   </p>
                                   {inv.status === "partial" && <span className="text-[10px] font-black text-blue-500 mt-1">{payPct}% محصّل</span>}
                                   {isCollectable(inv) && (
@@ -1017,7 +1017,7 @@ export default function FinancePage() {
                             </div>
                           </div>
                           <p className={`text-[15px] font-black font-mono flex-shrink-0 ${cfg.color}`}>
-                            {cfg.sign}{Number(t.amount || 0).toLocaleString()} <span className="text-xs font-normal font-sans">﷼</span>
+                            {cfg.sign}{Number(t.amount || 0).toLocaleString()} <span className="text-xs font-normal font-sans">ر.س</span>
                           </p>
                         </div>
                       );
@@ -1070,7 +1070,7 @@ export default function FinancePage() {
                       ].map(row => (
                         <div key={row.label} className={`flex items-center justify-between py-2.5 ${row.indent ? "ps-5 border-dashed" : ""} border-b ${isDark ? "border-white/[0.03]" : "border-slate-50"} ${row.highlight ? "bg-emerald-500/[0.02] dark:bg-emerald-500/[0.04] px-2 rounded-xl" : ""}`}>
                           <span className={`text-[12px] ${row.highlight ? "font-bold text-emerald-500" : row.muted ? isDark ? "text-zinc-500" : "text-slate-400" : isDark ? "text-zinc-300" : "text-slate-700"}`}>{row.label}</span>
-                          <span className={`font-mono text-[12px] font-black ${row.highlight ? "text-emerald-500" : row.muted ? isDark ? "text-zinc-500" : "text-slate-400" : isDark ? "text-zinc-200" : "text-slate-700"}`}>{row.value.toLocaleString()} ﷼</span>
+                          <span className={`font-mono text-[12px] font-black ${row.highlight ? "text-emerald-500" : row.muted ? isDark ? "text-zinc-500" : "text-slate-400" : isDark ? "text-zinc-200" : "text-slate-700"}`}>{row.value.toLocaleString()} ر.س</span>
                         </div>
                       ))}
                     </div>
@@ -1203,7 +1203,7 @@ export default function FinancePage() {
                     {/* حقل الوصف وقيمة الأتعاب في سطر واحد */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-1.5">
-                        <label className="block text-[11px] font-bold text-slate-500 dark:text-zinc-400">قيمة الأتعاب المقررة (﷼):</label>
+                        <label className="block text-[11px] font-bold text-slate-500 dark:text-zinc-400">قيمة الأتعاب المقررة (ر.س):</label>
                         <input
                           required
                           type="number"
@@ -1340,17 +1340,17 @@ export default function FinancePage() {
                     </div>
                     <div className={`flex items-center justify-between text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
                       <span>إجمالي الفاتورة</span>
-                      <span className="font-mono font-bold text-slate-700 dark:text-zinc-300">{totalFee.toLocaleString()} ﷼</span>
+                      <span className="font-mono font-bold text-slate-700 dark:text-zinc-300">{totalFee.toLocaleString()} ر.س</span>
                     </div>
                     {alreadyCollected > 0 && (
                       <div className={`flex items-center justify-between text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
                         <span>محصّل سابقاً</span>
-                        <span className="font-mono font-bold text-blue-500">{alreadyCollected.toLocaleString()} ﷼</span>
+                        <span className="font-mono font-bold text-blue-500">{alreadyCollected.toLocaleString()} ر.س</span>
                       </div>
                     )}
                     <div className="flex items-center justify-between text-[11px] font-bold">
                       <span className={isDark ? "text-zinc-400" : "text-slate-600"}>المتبقي للتحصيل</span>
-                      <span className="font-mono font-black text-emerald-500">{remaining.toLocaleString()} ﷼</span>
+                      <span className="font-mono font-black text-emerald-500">{remaining.toLocaleString()} ر.س</span>
                     </div>
                   </div>
 
@@ -1385,7 +1385,7 @@ export default function FinancePage() {
                   {/* المبلغ المستلم الآن (اختياري) */}
                   <div className="space-y-1.5">
                     <label className="block text-[11px] font-bold text-slate-500 dark:text-zinc-400">
-                      المبلغ المستلم الآن (﷼) — اتركه فارغاً لتحصيل المتبقي كاملاً:
+                      المبلغ المستلم الآن (ر.س) — اتركه فارغاً لتحصيل المتبقي كاملاً:
                     </label>
                     <input
                       type="number"

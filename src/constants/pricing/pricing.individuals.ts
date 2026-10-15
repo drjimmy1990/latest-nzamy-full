@@ -48,7 +48,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       id: "ind-ai",
       isBetaHidden: false,
       name: "الباقة الذكية (AI الذاتي)",
-      badge: "ريال وربع يومياً",
+      badge: "١٫٢٥ ر.س يومياً",
       bonusLabel: "وفر شهرين عند الدفع السنوي",
       priceMonthly: "٣٩",
       priceYearly: "٣٩٠",

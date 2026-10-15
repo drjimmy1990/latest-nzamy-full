@@ -205,7 +205,7 @@ export default function MicroBusinessPage() {
         <div className="flex items-center gap-2 mb-1">
           <Storefront size={20} weight="duotone" className="text-[#C8A762]" />
           <h1 className={`text-xl font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>المساعد القانوني للمنشآت الصغيرة</h1>
-          <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-0.5 text-[10px] font-bold text-emerald-400">٢٥٠ ريال</span>
+          <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-0.5 text-[10px] font-bold text-emerald-400">٢٥٠ ر.س</span>
         </div>
         <p className={`text-[13px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
           عقود · إنذارات · ردود شكاوى — بدون تعقيد قانوني · ٣ خطوات فقط

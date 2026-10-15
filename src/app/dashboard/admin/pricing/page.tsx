@@ -341,7 +341,7 @@ export default function PricingPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
           <div className={`p-3 rounded-xl ${isDark ? "bg-white/[0.03] text-zinc-300" : "bg-slate-50 text-slate-600"}`}>مصدر الإنتاج القادم: `admin_pricing_catalog` أو Pricing API.</div>
           <div className={`p-3 rounded-xl ${isDark ? "bg-white/[0.03] text-zinc-300" : "bg-slate-50 text-slate-600"}`}>Beta locks تزال عند live حسب `BETA_TEARDOWN_REGISTRY.md`.</div>
-          <div className={`p-3 rounded-xl ${isDark ? "bg-white/[0.03] text-zinc-300" : "bg-slate-50 text-slate-600"}`}>إجمالي قيم الكتالوج المحلي: {totalCatalogValue.toLocaleString("ar-SA")} ر.س.</div>
+          <div className={`p-3 rounded-xl ${isDark ? "bg-white/[0.03] text-zinc-300" : "bg-slate-50 text-slate-600"}`}>إجمالي قيم الكتالوج المحلي: {totalCatalogValue.toLocaleString("ar-SA")} ر.س</div>
         </div>
       </div>
     </div>

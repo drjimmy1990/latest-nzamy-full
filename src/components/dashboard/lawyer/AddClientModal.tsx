@@ -386,7 +386,7 @@ export default function AddClientModal({ isDark, onClose, onCreated }: {
             {step === 1 && (
               <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-3">
                 <div>
-                  <label className={`text-[10px] font-bold uppercase tracking-wider mb-1 block ${labelCls}`}>إجمالي الأتعاب (ريال، اختياري)</label>
+                  <label className={`text-[10px] font-bold uppercase tracking-wider mb-1 block ${labelCls}`}>إجمالي الأتعاب (ر.س، اختياري)</label>
                   {/* Placeholder was "0", which showed a greyed-out zero in an
                       empty box — the field reading as though it would save 0.
                       It no longer saves anything at all when left blank. */}
@@ -394,7 +394,7 @@ export default function AddClientModal({ isDark, onClose, onCreated }: {
                     className={`w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none transition ${inputCls}`} />
                 </div>
                 <div>
-                  <label className={`text-[10px] font-bold uppercase tracking-wider mb-1 block ${labelCls}`}>المدفوع مقدمًا (ريال، اختياري)</label>
+                  <label className={`text-[10px] font-bold uppercase tracking-wider mb-1 block ${labelCls}`}>المدفوع مقدمًا (ر.س، اختياري)</label>
                   <input type="number" value={paid} onChange={e => setPaid(e.target.value)} placeholder="اختياري"
                     className={`w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none transition ${inputCls}`} />
                 </div>

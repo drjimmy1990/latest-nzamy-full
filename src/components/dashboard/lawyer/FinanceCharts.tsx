@@ -266,7 +266,7 @@ export function DonutChart({
                  onMouseLeave={() => setHoveredData(null)}>
               <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 transition-all ${isHovered ? 'scale-125' : ''}`} style={{ backgroundColor: s.color, boxShadow: isHovered ? `0 0 8px ${s.color}60` : 'none' }} />
               <span className={`text-[11px] font-semibold transition-opacity ${isHovered ? 'opacity-100' : 'opacity-70'}`}>{s.label}</span>
-              <span className={`font-black tracking-tight text-[11px] ms-auto ps-3 transition-transform ${isHovered ? 'scale-105 origin-left' : ''}`} style={{color: isHovered ? s.color : 'inherit'}}>{s.value.toLocaleString()} ﷼</span>
+              <span className={`font-black tracking-tight text-[11px] ms-auto ps-3 transition-transform ${isHovered ? 'scale-105 origin-left' : ''}`} style={{color: isHovered ? s.color : 'inherit'}}>{s.value.toLocaleString()} ر.س</span>
             </div>
           );
         })}

@@ -143,7 +143,7 @@ export const INDIVIDUALS_PYRAMID_PLANS: Record<string, PricingPlan> = {
     periodYearlyAr: "ر.س / سنة (شهرين مجاناً)",
     periodMonthlyEn: "SAR / month",
     periodYearlyEn: "SAR / year",
-    badgeAr: "ريال وربع يومياً",
+    badgeAr: "١٫٢٥ ر.س يومياً",
     badgeEn: "Affordable",
     descAr: "مستشارك القانوني الذكي على مدار الساعة — إجابات نظامية فورية وصياغة خطابات وإنذارات",
     descEn: "Your 24/7 AI legal assistant — instant statutory answers and draft notices",

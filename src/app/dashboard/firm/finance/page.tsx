@@ -11,10 +11,10 @@ import { useTheme } from "@/components/ThemeProvider";
 // ─── Mock Data ─────────────────────────────────────────────────────────────────
 
 const KPIS = [
-  { label: "الإيرادات الشهرية",   value: "١٨٠,٠٠٠",  unit: "﷼", trend: "+١٨%",  up: true,  color: "text-emerald-500", bg: "bg-emerald-500/10",  icon: Money },
-  { label: "الفواتير المعلقة",    value: "٣٢,٥٠٠",   unit: "﷼", trend: "٤ فاتورة", up: false, color: "text-amber-500",  bg: "bg-amber-500/10",    icon: Clock },
-  { label: "الأتعاب المحصّلة",    value: "١٤٧,٥٠٠",  unit: "﷼", trend: "+٢٢%",  up: true,  color: "text-royal",      bg: "bg-royal/10",         icon: ChartLine },
-  { label: "المصروفات",            value: "٢١,٢٠٠",   unit: "﷼", trend: "-٥%",   up: true,  color: "text-purple-500", bg: "bg-purple-500/10",   icon: Receipt },
+  { label: "الإيرادات الشهرية",   value: "١٨٠,٠٠٠",  unit: "ر.س", trend: "+١٨%",  up: true,  color: "text-emerald-500", bg: "bg-emerald-500/10",  icon: Money },
+  { label: "الفواتير المعلقة",    value: "٣٢,٥٠٠",   unit: "ر.س", trend: "٤ فاتورة", up: false, color: "text-amber-500",  bg: "bg-amber-500/10",    icon: Clock },
+  { label: "الأتعاب المحصّلة",    value: "١٤٧,٥٠٠",  unit: "ر.س", trend: "+٢٢%",  up: true,  color: "text-royal",      bg: "bg-royal/10",         icon: ChartLine },
+  { label: "المصروفات",            value: "٢١,٢٠٠",   unit: "ر.س", trend: "-٥%",   up: true,  color: "text-purple-500", bg: "bg-purple-500/10",   icon: Receipt },
 ];
 
 interface Invoice {
@@ -27,12 +27,12 @@ interface Invoice {
 }
 
 const MOCK_INVOICES: Invoice[] = [
-  { id: "INV-2024-041", client: "شركة الأفق للتجارة",  amount: "٤٥,٠٠٠ ﷼", date: "١ أبريل ٢٠٢٤",   status: "paid",    service: "تمثيل قانوني — الاستئناف" },
-  { id: "INV-2024-040", client: "أحمد الزاهد",          amount: "٨,٥٠٠ ﷼",  date: "٢٨ مارس ٢٠٢٤",  status: "pending", service: "استشارة وإعداد لائحة" },
-  { id: "INV-2024-039", client: "شركة الإبداع التقني",  amount: "١٥,٠٠٠ ﷼", date: "٢٥ مارس ٢٠٢٤",  status: "paid",    service: "صياغة محضر تأسيس" },
-  { id: "INV-2024-038", client: "مجموعة الذهبي",        amount: "٢٤,٠٠٠ ﷼", date: "٢٠ مارس ٢٠٢٤",  status: "overdue", service: "عقد بناء ومتابعة" },
-  { id: "INV-2024-037", client: "سارة الدوسري",          amount: "٩,٠٠٠ ﷼",  date: "١٥ مارس ٢٠٢٤",  status: "paid",    service: "تمثيل في محكمة الاستئناف" },
-  { id: "INV-2024-036", client: "خالد القحطاني",         amount: "١٢,٠٠٠ ﷼", date: "١٠ مارس ٢٠٢٤",  status: "pending", service: "قضية عمالية — صلح واتفاق" },
+  { id: "INV-2024-041", client: "شركة الأفق للتجارة",  amount: "٤٥,٠٠٠ ر.س", date: "١ أبريل ٢٠٢٤",   status: "paid",    service: "تمثيل قانوني — الاستئناف" },
+  { id: "INV-2024-040", client: "أحمد الزاهد",          amount: "٨,٥٠٠ ر.س",  date: "٢٨ مارس ٢٠٢٤",  status: "pending", service: "استشارة وإعداد لائحة" },
+  { id: "INV-2024-039", client: "شركة الإبداع التقني",  amount: "١٥,٠٠٠ ر.س", date: "٢٥ مارس ٢٠٢٤",  status: "paid",    service: "صياغة محضر تأسيس" },
+  { id: "INV-2024-038", client: "مجموعة الذهبي",        amount: "٢٤,٠٠٠ ر.س", date: "٢٠ مارس ٢٠٢٤",  status: "overdue", service: "عقد بناء ومتابعة" },
+  { id: "INV-2024-037", client: "سارة الدوسري",          amount: "٩,٠٠٠ ر.س",  date: "١٥ مارس ٢٠٢٤",  status: "paid",    service: "تمثيل في محكمة الاستئناف" },
+  { id: "INV-2024-036", client: "خالد القحطاني",         amount: "١٢,٠٠٠ ر.س", date: "١٠ مارس ٢٠٢٤",  status: "pending", service: "قضية عمالية — صلح واتفاق" },
 ];
 
 const STATUS_STYLE: Record<Invoice["status"], { label: string; color: string; icon: React.ElementType }> = {
@@ -182,7 +182,7 @@ export default function FirmFinancePage() {
               <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-500"}`}>تحليل العوائد (آخر ٧ أشهر)</p>
             </div>
             <span className={`text-xs font-semibold px-3 py-1.5 rounded-full ${isDark ? "bg-white/5 text-zinc-400" : "bg-slate-100 text-slate-500"}`}>
-              بالألف ريال
+              بالألف ر.س
             </span>
           </div>
           
@@ -231,7 +231,7 @@ export default function FirmFinancePage() {
                   <span className={`font-semibold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>{s.label}</span>
                   <div className="flex items-center gap-2">
                     <span className={`font-mono font-bold text-lg ${isDark ? "text-white" : "text-slate-900"}`}>{s.value}</span>
-                    <span className={`text-xs ${isDark ? "text-zinc-500" : "text-slate-400"}`}>﷼</span>
+                    <span className={`text-xs ${isDark ? "text-zinc-500" : "text-slate-400"}`}>ر.س</span>
                   </div>
                 </div>
                 <div className={`h-3 rounded-full overflow-hidden ${isDark ? "bg-white/5" : "bg-slate-100"}`}>

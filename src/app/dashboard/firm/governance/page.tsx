@@ -59,9 +59,9 @@ const MOCK_RULES: ApprovalRule[] = [
 ];
 
 function fmtValue(n: number): string {
-  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M ﷼`;
-  if (n >= 1000) return `${(n / 1000).toFixed(0)}k ﷼`;
-  return `${n} ﷼`;
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M ر.س`;
+  if (n >= 1000) return `${(n / 1000).toFixed(0)}k ر.س`;
+  return `${n} ر.س`;
 }
 
 const APPROVER_COLORS: Record<EscalationAction, string> = {
@@ -220,7 +220,7 @@ function FirmGovernanceInner() {
           {[
             { label: "قواعد نشطة", value: rules.filter(r => r.active).length.toString(), icon: ShieldCheck, color: "text-emerald-500", bg: "bg-emerald-500/8" },
             { label: "أنواع عقود مغطاة", value: [...new Set(rules.map(r => r.contractType))].length.toString(), icon: FileText, color: "text-blue-500", bg: "bg-blue-500/8" },
-            { label: "أعلى عتبة مالية", value: "٥M+ ﷼", icon: Money, color: "text-[#C8A762]", bg: "bg-[#C8A762]/8" },
+            { label: "أعلى عتبة مالية", value: "٥M+ ر.س", icon: Money, color: "text-[#C8A762]", bg: "bg-[#C8A762]/8" },
             { label: "متوسط مدة المراجعة", value: `${Math.round(rules.reduce((s, r) => s + r.reviewDays, 0) / rules.length)} أيام`, icon: Clock, color: "text-purple-500", bg: "bg-purple-500/8" },
           ].map((s, i) => {
             const Icon = s.icon;
@@ -247,9 +247,9 @@ function FirmGovernanceInner() {
           </h2>
           <div className="space-y-3">
             {[
-              { range: "أقل من ٥٠٠,٠٠٠ ﷼", pct: 20, label: "الشريك المسؤول", days: 5, color: "bg-blue-500" },
-              { range: "٥٠٠,٠٠٠ — ٥,٠٠٠,٠٠٠ ﷼", pct: 60, label: "الشريك + مجلس الشركاء", days: 10, color: "bg-amber-500" },
-              { range: "أكثر من ٥,٠٠٠,٠٠٠ ﷼", pct: 100, label: "رئيس المكتب + مجلس الشركاء", days: 14, color: "bg-red-500" },
+              { range: "أقل من ٥٠٠,٠٠٠ ر.س", pct: 20, label: "الشريك المسؤول", days: 5, color: "bg-blue-500" },
+              { range: "٥٠٠,٠٠٠ — ٥,٠٠٠,٠٠٠ ر.س", pct: 60, label: "الشريك + مجلس الشركاء", days: 10, color: "bg-amber-500" },
+              { range: "أكثر من ٥,٠٠٠,٠٠٠ ر.س", pct: 100, label: "رئيس المكتب + مجلس الشركاء", days: 14, color: "bg-red-500" },
             ].map((row, i) => (
               <div key={i} className="flex items-center gap-3">
                 <div className={`w-52 shrink-0 text-[11px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>{row.range}</div>

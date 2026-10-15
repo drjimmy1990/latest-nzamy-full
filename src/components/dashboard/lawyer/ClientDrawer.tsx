@@ -237,18 +237,18 @@ export default function ClientDrawer({ client, isDark, onClose }: { client: Lawy
               <p className={`text-[11px] font-black uppercase tracking-wider mb-3 ${panelTitle}`}>الأتعاب المتفق عليها</p>
               <div className="flex items-center justify-between mb-2">
                 <span className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>إجمالي الأتعاب</span>
-                <span className={`font-bold text-[13px] ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{(client.feeTotalSar as number).toLocaleString()} ﷼</span>
+                <span className={`font-bold text-[13px] ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{(client.feeTotalSar as number).toLocaleString()} ر.س</span>
               </div>
               {hasPaid && (
                 <div className="flex items-center justify-between mb-2">
                   <span className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>المسدَّد</span>
-                  <span className="font-bold text-[13px] text-emerald-500">{(client.feePaidSar as number).toLocaleString()} ﷼</span>
+                  <span className="font-bold text-[13px] text-emerald-500">{(client.feePaidSar as number).toLocaleString()} ر.س</span>
                 </div>
               )}
               {outstanding !== null && outstanding > 0 && (
                 <div className="flex items-center justify-between">
                   <span className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>المتبقٍّ</span>
-                  <span className="font-bold text-[13px] text-red-500">{outstanding.toLocaleString()} ﷼</span>
+                  <span className="font-bold text-[13px] text-red-500">{outstanding.toLocaleString()} ر.س</span>
                 </div>
               )}
               {hasPaid && (client.feeTotalSar as number) > 0 && (

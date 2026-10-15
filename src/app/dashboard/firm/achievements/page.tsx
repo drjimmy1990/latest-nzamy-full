@@ -67,9 +67,9 @@ const LEVELS = [
 
 const REWARDS = [
   { name: "يوم إجازة إضافي", xpCost: 2000, icon: "🌴", claimed: false },
-  { name: "بطاقة هدية ٥٠٠ ﷼", xpCost: 3000, icon: "🎁", claimed: false },
+  { name: "بطاقة هدية ٥٠٠ ر.س", xpCost: 3000, icon: "🎁", claimed: false },
   { name: "حضور مؤتمر قانوني", xpCost: 5000, icon: "🎓", claimed: false },
-  { name: "BONUS ١,٠٠٠ ﷼", xpCost: 8000, icon: "💰", claimed: true },
+  { name: "BONUS ١,٠٠٠ ر.س", xpCost: 8000, icon: "💰", claimed: true },
   { name: "لقب شريك مبتدئ", xpCost: 25000, icon: "👑", claimed: false },
 ];
 

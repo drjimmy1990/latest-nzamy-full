@@ -388,7 +388,7 @@ export default function LawyerDashboardPage() {
       // overstate the court diary. The COUNT, not the length of the (capped)
       // list in the card beside it.
       { label: "المواعيد القادمة", value: dashboardData.upcomingHearingsCount === null ? null : String(dashboardData.upcomingHearingsCount), icon: Gavel, color: "text-blue-500", bg: "bg-blue-500/8", sub: "قادمة" },
-      { label: "الإيرادات", value: revenue === null ? null : `${revenue.toLocaleString("ar-SA")} ﷼`, icon: Money, color: "text-emerald-500", bg: "bg-emerald-500/8", sub: "هذا الشهر" },
+      { label: "الإيرادات", value: revenue === null ? null : `${revenue.toLocaleString("ar-SA")} ر.س`, icon: Money, color: "text-emerald-500", bg: "bg-emerald-500/8", sub: "هذا الشهر" },
     ];
   }, [dashboardData]);
 
