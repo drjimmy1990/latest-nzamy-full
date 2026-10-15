@@ -1,5 +1,6 @@
 "use client";
 
+import { memo, useMemo } from "react";
 import { FileText, Copy, Check, Plus, Minus, Lock } from "@phosphor-icons/react";
 import { JudicialPrincipleItem } from "@/app/laws/data";
 import { cleanPrincipleText, principleParagraphs } from "./_principle-text";
@@ -7,9 +8,12 @@ import { cleanPrincipleText, principleParagraphs } from "./_principle-text";
 /**
  * Principle text as paragraphs: no raw Markdown marks, and a ruling split on
  * its own sentence and line breaks instead of one block (_principle-text.ts).
+ * Memoised: a search loads every principle of a collection (up to 2,323, some
+ * fields over 25k characters), and a block re-renders when the active
+ * principle changes on scroll.
  */
-function Paragraphs({ text, className }: { text: string | null | undefined; className?: string }) {
-  const paragraphs = principleParagraphs(text);
+const Paragraphs = memo(function Paragraphs({ text, className }: { text: string | null | undefined; className?: string }) {
+  const paragraphs = useMemo(() => principleParagraphs(text), [text]);
   if (paragraphs.length === 0) return null;
   return (
     <div className="space-y-2">
@@ -18,7 +22,7 @@ function Paragraphs({ text, className }: { text: string | null | undefined; clas
       ))}
     </div>
   );
-}
+});
 
 /** The API marks a principle past the free first N as locked (text cut at 150 chars, no paragraphs or details). */
 type MaybeLocked = JudicialPrincipleItem & { locked?: boolean; lockedMessage?: string };
@@ -70,18 +74,22 @@ export default function PrincipleBlock({
   const isHighlighted = activePrincipleId === p.id;
   const lock = p as MaybeLocked;
   const isLocked = lock.locked === true;
-  // Reference lines are recognised on the RAW text («**الجهة:**»); the marks
-  // are removed only for display.
-  const mainParas = p.paragraphs?.filter(para => !isReferenceText(para.text) && cleanPrincipleText(para.text) !== "") || [];
-  const hasParas = mainParas.length > 0;
-
-  const details = {
+  // Cleaned once per principle, not on every render.
+  const nonEmptyParas = useMemo(
+    () => p.paragraphs?.filter(para => cleanPrincipleText(para.text) !== "") ?? [],
+    [p],
+  );
+  const details = useMemo(() => ({
     ruling_basis: cleanPrincipleText(p.details?.ruling_basis),
     grounds: cleanPrincipleText(p.details?.['الحيثيات_والقرار']),
     facts: cleanPrincipleText(p.details?.facts),
     reasons: cleanPrincipleText(p.details?.reasons),
     ruling: cleanPrincipleText(p.details?.ruling),
-  };
+  }), [p]);
+  // Reference lines are recognised on the RAW text («**الجهة:**»); the marks
+  // are removed only for display.
+  const mainParas = nonEmptyParas.filter(para => !isReferenceText(para.text));
+  const hasParas = mainParas.length > 0;
   const hasDetails = Object.values(details).some(Boolean);
 
   return (
