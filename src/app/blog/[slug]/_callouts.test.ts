@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { classifyBlockquote, CALLOUT_CLASSES, CALLOUT_LABELS } from "./_callouts.ts";
+import { classifyBlockquote, CALLOUT_CLASSES, CALLOUT_LABELS, QUOTE_LABEL } from "./_callouts.ts";
 
 test("GitHub alerts: IMPORTANT/NOTE are royal-green notes, WARNING amber, CAUTION red", () => {
   assert.deepEqual(classifyBlockquote(["[!IMPORTANT]", "**نص** مهم"]), { kind: "important", label: "هام", body: ["**نص** مهم"] });
@@ -46,6 +46,16 @@ test("a statute quote becomes «السند النظامي», its text kept verba
   assert.deepEqual(classifyBlockquote(['*"يجوز للخصم أن يطلب في الحالات الآتية:\r']), {
     kind: "legal", label: "السند النظامي", body: ['"يجوز للخصم أن يطلب في الحالات الآتية:'],
   });
+});
+
+test("«السند النظامي» only when the introducing line names a statute; other quotes get a neutral heading", () => {
+  const q = ['*"إن العقوبة بالمال سائغة في الشريعة."*'];
+  assert.equal(classifyBlockquote(q, "وقد نصت **المادة التاسعة** من نظام التنفيذ على:")?.label, "السند النظامي");
+  assert.equal(classifyBlockquote(q, "وقد نص **الأمر السامي رقم (645/م ب)** على ما يلي:")?.label, "السند النظامي");
+  assert.equal(classifyBlockquote(q, "وكما نص ابن تيمية في كتابه *الطرق الحكمية*:")?.label, QUOTE_LABEL);
+  assert.equal(classifyBlockquote(q, "وقد عرفت وثيقة سدايا **المدير التنفيذي للبيانات** بالآتي:")?.label, QUOTE_LABEL);
+  assert.equal(classifyBlockquote(q, "")?.label, QUOTE_LABEL, "a quote at the top of the article names nothing");
+  assert.equal(classifyBlockquote(q, "وكما نص ابن تيمية:")?.kind, "legal", "same card, honest heading");
 });
 
 test("anything else stays a plain quote — promos included", () => {

@@ -66,13 +66,25 @@ const EMOJI: Record<string, CalloutKind> = {
 /** Promotional blocks that quote the firm's own name are not legal texts. */
 const PROMO_RE = /nezamy\.sa|نظامي للمحاماة/;
 
+/**
+ * The sentence that introduces a quote says what is being quoted. In the
+ * corpus 1,497 of 1,518 quotes follow a statute or regulation cue («نصت
+ * المادة …», «… من نظام …», «الأمر السامي …», «البند …»); the rest quote a
+ * fiqh book, a SDAIA guideline or an ethics principle — not «السند النظامي».
+ */
+const LEGAL_CUE_RE = /المادة|مادة|نظام|لائحة|نصت|تنص|الأمر السامي|أمر سام|البند|القرار|قرار|المرسوم|مرسوم/;
+
+/** Heading for a verbatim quote whose introduction names no statute. */
+export const QUOTE_LABEL = "نص مقتبس";
+
 const clean = (line: string) => line.replace(/\r$/, "");
 
 /**
  * Classify one blockquote, given its lines with the leading `>` already
- * removed. `null` means "render as a plain quote".
+ * removed, and — when the renderer has it — the nearest non-blank line before
+ * the quote. `null` means "render as a plain quote".
  */
-export function classifyBlockquote(rawLines: string[]): Callout | null {
+export function classifyBlockquote(rawLines: string[], intro?: string): Callout | null {
   const lines = rawLines.map(clean);
   if (lines.length === 0) return null;
   const first = lines[0].trim();
@@ -107,7 +119,8 @@ export function classifyBlockquote(rawLines: string[]): Callout | null {
     text = text.trim();
   }
   if (/^["«“]/.test(text) && !PROMO_RE.test(text)) {
-    return { kind: "legal", label: CALLOUT_LABELS.legal, body: text.split("\n") };
+    const label = intro === undefined || LEGAL_CUE_RE.test(intro) ? CALLOUT_LABELS.legal : QUOTE_LABEL;
+    return { kind: "legal", label, body: text.split("\n") };
   }
 
   return null;

@@ -134,7 +134,10 @@ function RenderContent({ md, isDark, toc }: { md: string; isDark: boolean; toc: 
         quoteLines.push(lines[j].replace(/^>\s?/, ""));
         j++;
       }
-      const callout = classifyBlockquote(quoteLines);
+      // The sentence that introduces the quote decides «السند النظامي» vs «نص مقتبس».
+      let prev = i - 1;
+      while (prev >= 0 && lines[prev].trim() === "") prev--;
+      const callout = classifyBlockquote(quoteLines, prev >= 0 ? lines[prev] : "");
       if (callout) {
         i = j;
         const Icon = CALLOUT_ICONS[callout.kind];
