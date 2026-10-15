@@ -14,6 +14,12 @@ type LibraryClient = Awaited<ReturnType<typeof createClient>>;
  * ى‑ي folded (normalizeSearch), harakat and tatweel ignored, every query word
  * present in the title. A multi-volume series is one hit (bookVolumes), the
  * way the catalogue shows it; its slug is the first volume in reading order.
+ *
+ * Author search (owner package 10-06, gap analysis §4: «السنهوري» found his
+ * principles, never his books): a book also matches when every query word is
+ * in its AUTHOR, or each word is in the title or the author («الوسيط
+ * السنهوري»). Title matches rank first. Matching stays in JS over the rows
+ * already read, so no query text ever reaches a PostgREST filter.
  */
 
 export interface BookTitleHit {
@@ -49,6 +55,19 @@ function rank(title: string, phrase: string): number {
   return 3; // every word present, not as one phrase
 }
 
+/**
+ * Score of one book for the query words, lower first; null when it does not
+ * match. 0–3: every word in the title (rank). 4: every word in the author.
+ * 5: every word in the title or the author.
+ */
+function score(title: string, author: string, words: readonly string[], phrase: string): number | null {
+  if (words.every((w) => title.includes(w))) return rank(title, phrase);
+  if (author === '') return null;
+  if (words.every((w) => author.includes(w))) return 4;
+  if (words.every((w) => title.includes(w) || author.includes(w))) return 5;
+  return null;
+}
+
 export function matchBookTitles(rows: readonly VolumeRow[], rawQuery: string, max = 5): BookTitleHit[] {
   const words = queryWords(rawQuery);
   if (words.length === 0 || max <= 0) return [];
@@ -57,19 +76,20 @@ export function matchBookTitles(rows: readonly VolumeRow[], rawQuery: string, ma
   const scored: Array<{ hit: BookTitleHit; score: number; order: number }> = [];
   groupBookVolumes(rows).forEach((entry, order) => {
     const title = entry.kind === 'series' ? entry.title : entry.book.title;
-    const folded = fold(title);
-    if (!words.every((w) => folded.includes(w))) return;
+    const author = String((entry.kind === 'series' ? entry.author : entry.book.author) ?? '').trim();
+    const matched = score(fold(title), fold(author), words, phrase);
+    if (matched === null) return;
     const first = entry.kind === 'series' ? entry.volumes[0] : entry.book;
     const count = entry.kind === 'series' ? entry.count : 1;
     scored.push({
       hit: {
         slug: first.id,
         title: title.trim(),
-        author: String((entry.kind === 'series' ? entry.author : entry.book.author) ?? '').trim(),
+        author,
         volumeCount: count,
         volumesLabel: count > 1 ? volumesCountLabel(count) : null,
       },
-      score: rank(folded, phrase),
+      score: matched,
       order,
     });
   });

@@ -11,6 +11,14 @@ import { toCatalogueCards } from "@/lib/library/bookVolumes";
 import { EmptyState } from "./ListItems";
 import { ResultsSkeleton } from "./ResultsSkeleton";
 
+/** A card field worth a line: not empty, and not the «—» placeholder. */
+function hasText(value: unknown): value is string {
+  return typeof value === "string" && value.trim() !== "" && value.trim() !== "—";
+}
+
+/** The catalogue writes «—» for a book with no known author; the card then leaves the line out. */
+const hasAuthor = hasText;
+
 interface FeqhTabContentProps {
   isDark: boolean;
   isRTL: boolean;
@@ -222,6 +230,7 @@ export function FeqhTabContent({
                     <div className={!isBookFree ? "opacity-40 filter blur-[2px]" : ""}>
                       <div className="flex justify-between items-start gap-4 mb-4">
                       <div className="flex-1">
+                        {book.categoryLabel && (
                         <span className={`inline-block px-2.5 py-0.5 text-[9px] font-bold rounded-md mb-2 ${
                           book.type === "sharia"
                             ? isDark
@@ -237,10 +246,13 @@ export function FeqhTabContent({
                         }`}>
                           {book.categoryLabel}
                         </span>
+                        )}
                         <h3 className={`text-[13.5px] font-black group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>
                           {cardTitle}
                         </h3>
-                        <p className="text-[10px] text-amber-600 dark:text-[#C8A762] font-semibold mt-1">{book.author}</p>
+                        {hasAuthor(book.author) && (
+                          <p className="text-[10px] text-amber-600 dark:text-[#C8A762] font-semibold mt-1">{book.author}</p>
+                        )}
                       </div>
                       {book.free && (
                         <span className="px-2 py-0.5 text-[9px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-md flex items-center gap-1">
@@ -257,6 +269,7 @@ export function FeqhTabContent({
                           <span className={`font-bold ${isDark ? "text-gray-300" : "text-gray-800"}`}>{volumesLabel}</span>
                         </div>
                       )}
+                      {book.type && (
                       <div className="flex justify-between text-[11px]">
                         <span className={muted}>{isRTL ? "نوع المرجع" : "Type"}</span>
                         <span className={`font-bold ${isDark ? "text-gray-300" : "text-gray-800"}`}>
@@ -267,6 +280,7 @@ export function FeqhTabContent({
                             : (isRTL ? "قانوني وضعي" : "Positive Law")}
                         </span>
                       </div>
+                      )}
                     </div>
 
                     {/* Progress bar for logged-in users and free/started books */}
@@ -287,13 +301,14 @@ export function FeqhTabContent({
                         {isRTL ? "قراءة وتصفح المرجع" : "Read Reference"}
                         <ArrowRight size={14} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
                       </span>
-                      <span className={`text-[10px] ${muted}`}>{book.lastUpdated}</span>
+                      {hasText(book.lastUpdated) && <span className={`text-[10px] ${muted}`}>{book.lastUpdated}</span>}
                     </div>
                   </div>
                 ) : (
                   <div className={`${!isBookFree ? "opacity-40 filter blur-[2px]" : ""} flex flex-col md:flex-row md:items-center justify-between gap-5`}>
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2 flex-wrap">
+                        {book.categoryLabel && (
                         <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg ${
                           book.type === "sharia"
                             ? isDark
@@ -309,6 +324,7 @@ export function FeqhTabContent({
                         }`}>
                           {book.categoryLabel}
                         </span>
+                        )}
                         {isBookFree && (
                           <span className="px-2 py-1 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
                             <Sparkle size={10} weight="fill" />
@@ -319,31 +335,37 @@ export function FeqhTabContent({
                       <h3 className={`text-base font-black mb-1 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>
                         {cardTitle}
                       </h3>
-                      <p className="text-[11px] text-amber-600 dark:text-[#C8A762] font-semibold mb-2">{book.author}</p>
+                      {hasAuthor(book.author) && (
+                        <p className="text-[11px] text-amber-600 dark:text-[#C8A762] font-semibold mb-2">{book.author}</p>
+                      )}
                       <p className={`text-xs line-clamp-2 leading-relaxed ${muted}`}>{book.desc}</p>
                     </div>
 
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-8 md:shrink-0">
-                      <div className={`grid ${volumesLabel ? "grid-cols-2" : "grid-cols-1"} gap-4 p-4 rounded-xl border min-w-[220px] ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"}`}>
+                      {(volumesLabel || book.type) && (
+                      <div className={`grid ${volumesLabel && book.type ? "grid-cols-2" : "grid-cols-1"} gap-4 p-4 rounded-xl border min-w-[220px] ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"}`}>
                         {volumesLabel && (
                           <div className="flex flex-col">
                             <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "المجلدات" : "Volumes"}</span>
                             <span className={`text-sm font-bold ${isDark ? "text-gray-300" : "text-gray-800"}`}>{volumesLabel}</span>
                           </div>
                         )}
+                        {book.type && (
                         <div className="flex flex-col">
                           <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "نوع المرجع" : "Type"}</span>
                           <span className={`text-sm font-bold ${isDark ? "text-gray-300" : "text-gray-800"}`}>
                             {book.type === "sharia" ? (isRTL ? "شرعي" : "Sharia") : book.type === "comparative" ? (isRTL ? "مقارن" : "Comparative") : (isRTL ? "وضعي" : "Positive")}
                           </span>
                         </div>
+                        )}
                       </div>
+                      )}
                       <div className="flex flex-col justify-center gap-2 sm:min-w-[130px]">
                         <span className={`text-xs flex items-center gap-1 font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
                           {isRTL ? "تصفح المرجع" : "Browse Reference"}
                           <ArrowRight size={14} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
                         </span>
-                        <span className={`text-[10px] ${muted}`}>{book.lastUpdated}</span>
+                        {hasText(book.lastUpdated) && <span className={`text-[10px] ${muted}`}>{book.lastUpdated}</span>}
                       </div>
                     </div>
                   </div>

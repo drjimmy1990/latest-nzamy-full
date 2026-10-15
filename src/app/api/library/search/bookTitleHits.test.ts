@@ -26,9 +26,37 @@ test("hamza and harakat do not matter", () => {
   assert.equal(matchBookTitles(rows, "الاقناع")[0]?.slug, "kashaf");
 });
 
-test("every word must be in the title; order of words is free", () => {
+test("every word must be in the book's title or author; order of words is free", () => {
   assert.equal(matchBookTitles(rows, "الموقعين إعلام")[0]?.slug, "elam-1");
+  // «إعلام» is one book's title word and «البهوتي» another book's author: no book carries both.
   assert.deepEqual(matchBookTitles(rows, "إعلام البهوتي"), []);
+});
+
+test("an author's name finds his books (owner package 10-06: «السنهوري»)", () => {
+  const sanhuri = [
+    ...rows,
+    { id: "wasit-1", title: "الوسيط في شرح القانون المدني — الجزء 1", author: "عبد الرزاق السنهوري", total_volumes: 1 },
+    { id: "wasit-2", title: "الوسيط في شرح القانون المدني — الجزء 2", author: "عبد الرزاق السنهوري", total_volumes: 2 },
+  ];
+  const hits = matchBookTitles(sanhuri, "السنهوري");
+  assert.deepEqual(hits.map((h) => h.slug), ["masader", "wasit-1"]);
+  // The series is still one card, with its author.
+  assert.equal(hits[1].title, "الوسيط في شرح القانون المدني");
+  assert.equal(hits[1].volumeCount, 2);
+  assert.equal(hits[1].author, "عبد الرزاق السنهوري");
+  // Spelling folds as for titles; a full name works too.
+  assert.equal(matchBookTitles(rows, "البهوتى")[0]?.slug, "kashaf");
+  assert.equal(matchBookTitles(sanhuri, "عبد الرزاق السنهوري")[0]?.slug, "wasit-1");
+  // Title words and the author together narrow to that book.
+  assert.deepEqual(matchBookTitles(sanhuri, "الوسيط السنهوري").map((h) => h.slug), ["wasit-1"]);
+});
+
+test("a title match ranks before an author match", () => {
+  const mixed = [
+    { id: "by-ibn-qayyim", title: "زاد المعاد", author: "ابن القيم", total_volumes: 1 },
+    { id: "about-ibn-qayyim", title: "ابن القيم وأثره في الفقه", author: "باحث معاصر", total_volumes: 1 },
+  ];
+  assert.deepEqual(matchBookTitles(mixed, "ابن القيم").map((h) => h.slug), ["about-ibn-qayyim", "by-ibn-qayyim"]);
 });
 
 test("a phrase match ranks before a scattered-words match", () => {

@@ -399,6 +399,8 @@ export async function POST(request: Request) {
             meta: {
               kind: 'article',
               lawTitle: law?.title,
+              // The label alone, for a card that lists hits under their law.
+              articleLabel: articleLabel || null,
               articleNumber: r.number,
               status: r.status,
               lawSlug: r.law_slug,
@@ -585,9 +587,10 @@ export async function POST(request: Request) {
           `, { count: 'estimated', head })
           .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG });
 
-        // Books whose TITLE carries the query lead page 1 (a passage search
-        // alone never surfaced «إعلام الموقعين» itself). Page 1 only: they
-        // are a header, not counted rows (see the return below).
+        // Books whose TITLE or AUTHOR carries the query lead page 1 (a
+        // passage search alone never surfaced «إعلام الموقعين» itself, nor
+        // «السنهوري»'s books). Page 1 only: they are a header, not counted
+        // rows (see the return below).
         const [res, titleBooks] = await Promise.all([
           feqhQuery()
             .order('id')
@@ -631,6 +634,8 @@ export async function POST(request: Request) {
             meta: {
               bookTitle: book?.title,
               bookSlug: book?.id,
+              // Already selected for the join; the card shows the real author.
+              author: typeof book?.author === 'string' && book.author.trim() ? book.author.trim() : null,
               chapter: chapter?.title,
               page: r.page_number,
               volume: r.volume_number,

@@ -6,8 +6,10 @@
  * figure appears.
  *
  * The arithmetic lives in ./judicialCosts.ts and is the owner's rule only
- * (Q149, 2026-10-03): 5% of a monetary claim, an appeal capped at 10,000 SAR,
- * per Article 16 of the costs regulation. This screen used to pick a court and
+ * (Q149, 2026-10-03; Q167, 2026-10-06): 5% of a monetary claim capped at
+ * 1,000,000 SAR, and per request an appeal capped at 10,000, cassation at
+ * 7,000 and reconsideration at 10,000 SAR (Articles 3 and 7 of the Judicial
+ * Costs Law). This screen used to pick a court and
  * a case type and then apply value bands, per-court rates, stage surcharges
  * and exemption notes that no source backed; all of that is gone rather than
  * re-labelled, and what the rule does not cover is said in plain words below
@@ -27,16 +29,18 @@ import {
   type JudicialCostsEstimate,
 } from "./judicialCosts";
 
-type Stage = "first" | "appeal";
+type Stage = "first" | "appeal" | "cassation" | "reconsideration";
 
 const STAGES: { id: Stage; label: string }[] = [
   { id: "first", label: "قيد الدعوى (الدرجة الأولى)" },
   { id: "appeal", label: "الاستئناف" },
+  { id: "cassation", label: "النقض" },
+  { id: "reconsideration", label: "التماس إعادة النظر" },
 ];
 
 /** What the rule does not cover — said, not computed. */
 const NOT_COVERED =
-  "لا يشمل هذا التقدير: الدعاوى غير المالية، والنقض أمام المحكمة العليا، ومحكمة التنفيذ، وديوان المظالم. وقد تُعفى بعض الدعاوى من التكاليف القضائية نظاماً، ولا يحتسب هذا التقدير أي إعفاء.";
+  "لا يشمل هذا التقدير: الدعاوى غير المالية، ومحكمة التنفيذ، وديوان المظالم. وقد تُعفى بعض الدعاوى من التكاليف القضائية نظاماً، ولا يحتسب هذا التقدير أي إعفاء.";
 
 const sar = (n: number) => `${n.toLocaleString("ar-SA-u-nu-latn")} ر.س`;
 
@@ -68,6 +72,8 @@ export default function CalcCourtFees() {
             claimAmountSar: parsed,
             includeFirstInstance: stages.includes("first"),
             includeAppeal: stages.includes("appeal"),
+            includeCassation: stages.includes("cassation"),
+            includeReconsideration: stages.includes("reconsideration"),
           }),
     );
     setDone(true);
@@ -82,7 +88,7 @@ export default function CalcCourtFees() {
         <Info size={15} weight="duotone" className="flex-shrink-0 mt-0.5 text-[#C8A762]" />
         <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-300" : "text-amber-800"}`}>
           <strong>حاسبة {JUDICIAL_COSTS_ESTIMATE_LABEL}.</strong>{" "}
-          تحتسب ٥٪ من قيمة المطالبة المالية بحد أقصى مليون (١٬٠٠٠٬٠٠٠) ريال للدرجة الأولى، وتكاليف الاستئناف بحد أقصى ١٠٬٠٠٠ ريال، وفقاً لنظام التكاليف القضائية ولائحته التنفيذية.
+          تحتسب ٥٪ من قيمة المطالبة المالية بحد أقصى مليون (١٬٠٠٠٬٠٠٠) ريال للدرجة الأولى، وتكاليف الاستئناف بحد أقصى ١٠٬٠٠٠ ريال، والنقض بحد أقصى ٧٬٠٠٠ ريال، والتماس إعادة النظر بحد أقصى ١٠٬٠٠٠ ريال، وفقاً لنظام التكاليف القضائية ولائحته التنفيذية.
         </p>
       </div>
 

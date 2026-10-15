@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { normalizeArabic } from "@/utils/normalizeArabic";
 import { stripMarkdownMarks } from "@/lib/text/stripMarkdownMarks";
+import { groupLawSearchCards } from "./lawSearchGroups";
 import { courtBadge } from "./principleCardFields";
 import { realPrincipleNumber } from "./principleLink";
 import {
@@ -1096,6 +1097,10 @@ export default function LegalLibraryPage() {
         // `meta.status` above. Until the search API sends it, this is '' and
         // a repealed law found by search still shows as a normal card.
         status: typeof r.meta?.lawStatus === 'string' ? r.meta.lawStatus : '',
+        // Grouping keys (lawSearchGroups.ts): one card per law.
+        hitKind: r.meta?.kind,
+        lawTitle: r.meta?.lawTitle,
+        articleLabel: r.meta?.articleLabel,
         _isSearchResult: true,
       }))
     : lawsList.filter(s => {
@@ -1105,6 +1110,11 @@ export default function LegalLibraryPage() {
         const inQ   = !nq || normalizeArabic(s.title).includes(nq) || normalizeArabic(s.desc).includes(nq);
         return inCat && inDoc && inQ;
       });
+
+  // A search lists one card per law with its matching articles (owner
+  // package 10-06). Grouping runs over every loaded hit, so counts, paging
+  // and the per-hit lock stay the API's; see lawSearchGroups.ts.
+  const lawCards = isSearchActive ? groupLawSearchCards(filteredLaws) : filteredLaws;
 
   // ─── Filter: Principles ───────────────────────────────────────────────────────
   const filteredPrinciples = isSearchActive
@@ -1195,23 +1205,33 @@ export default function LegalLibraryPage() {
 
   // ─── Filter: Feqh Books ──────────────────────────────────────────────────────
   const filteredFeqhBooks = isSearchActive
-    ? (searchResults?.feqh ?? []).map((r: any) => ({
+    ? (searchResults?.feqh ?? []).map((r: any) => {
+        const slug = r.meta?.bookSlug || r.id;
+        // The catalogue's own card for this book, when loaded: its type and
+        // category are what the catalogue shows. A hit whose book is not in
+        // the loaded catalogue shows no type rather than a guessed one.
+        const known = booksList.find((b: any) => b.slug === slug);
+        return {
         id: String(r.id),
-        slug: r.meta?.bookSlug || r.id,
+        slug,
         title: r.title,
-        // A book-title hit (meta.kind 'book') carries its author and series size.
-        author: r.meta?.kind === 'book' ? (r.meta?.author || '—') : '—',
-        type: 'sharia',
-        category: 'sharuh',
-        categoryLabel: '',
+        // A book-title hit and a passage hit both carry the book's author;
+        // none known → empty, and the card leaves the line out.
+        author: (typeof r.meta?.author === 'string' && r.meta.author.trim()) || (known?.author !== '—' && known?.author) || '',
+        type: known?.type ?? '',
+        category: known?.category ?? '',
+        categoryLabel: known?.categoryLabel ?? '',
         desc: stripMarkdownMarks(r.snippet),
         free: true,
-        progress: 100,
+        // No per-book reading progress is tracked (as for the catalogue,
+        // T28-05): the constant 100 rendered «نسبة التحصيل 100%».
+        progress: 0,
         volCount: r.meta?.volumeCount || 1,
         searchVolumesLabel: r.meta?.volumesLabel ?? null,
-        lastUpdated: '—',
+        lastUpdated: '',
         _isSearchResult: true,
-      }))
+        };
+      })
     : booksList.filter(book => {
         const matchesCatTab = activeCat === "all" || matchesFeqhCategory(book, activeCat);
         if (activeType === "feqh") {
@@ -2019,7 +2039,7 @@ export default function LegalLibraryPage() {
                           layoutMode={layoutMode}
                           isLoggedIn={isLoggedIn}
                           q={q}
-                          filteredLaws={filteredLaws}
+                          filteredLaws={lawCards}
                           filteredFeqhBooks={filteredFeqhBooks}
                           filteredCollections={filteredCollections}
                           filteredPrinciples={filteredPrinciples}

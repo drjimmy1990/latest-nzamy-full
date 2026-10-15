@@ -1,7 +1,28 @@
 "use client";
 
+import { memo, useMemo } from "react";
 import { FileText, Copy, Check, Plus, Minus, Lock } from "@phosphor-icons/react";
 import { JudicialPrincipleItem } from "@/app/laws/data";
+import { cleanPrincipleText, principleParagraphs } from "./_principle-text";
+
+/**
+ * Principle text as paragraphs: no raw Markdown marks, and a ruling split on
+ * its own sentence and line breaks instead of one block (_principle-text.ts).
+ * Memoised: a search loads every principle of a collection (up to 2,323, some
+ * fields over 25k characters), and a block re-renders when the active
+ * principle changes on scroll.
+ */
+const Paragraphs = memo(function Paragraphs({ text, className }: { text: string | null | undefined; className?: string }) {
+  const paragraphs = useMemo(() => principleParagraphs(text), [text]);
+  if (paragraphs.length === 0) return null;
+  return (
+    <div className="space-y-2">
+      {paragraphs.map((para, i) => (
+        <p key={i} className={className}>{para}</p>
+      ))}
+    </div>
+  );
+});
 
 /** The API marks a principle past the free first N as locked (text cut at 150 chars, no paragraphs or details). */
 type MaybeLocked = JudicialPrincipleItem & { locked?: boolean; lockedMessage?: string };
@@ -53,17 +74,23 @@ export default function PrincipleBlock({
   const isHighlighted = activePrincipleId === p.id;
   const lock = p as MaybeLocked;
   const isLocked = lock.locked === true;
-  const mainParas = p.paragraphs?.filter(para => !isReferenceText(para.text)) || [];
-  const hasParas = mainParas.length > 0;
-
-  const hasDetails = !!(
-    p.details &&
-    (p.details.ruling_basis?.trim() ||
-     p.details.facts?.trim() ||
-     p.details.reasons?.trim() ||
-     p.details.ruling?.trim() ||
-     p.details['الحيثيات_والقرار']?.trim())
+  // Cleaned once per principle, not on every render.
+  const nonEmptyParas = useMemo(
+    () => p.paragraphs?.filter(para => cleanPrincipleText(para.text) !== "") ?? [],
+    [p],
   );
+  const details = useMemo(() => ({
+    ruling_basis: cleanPrincipleText(p.details?.ruling_basis),
+    grounds: cleanPrincipleText(p.details?.['الحيثيات_والقرار']),
+    facts: cleanPrincipleText(p.details?.facts),
+    reasons: cleanPrincipleText(p.details?.reasons),
+    ruling: cleanPrincipleText(p.details?.ruling),
+  }), [p]);
+  // Reference lines are recognised on the RAW text («**الجهة:**»); the marks
+  // are removed only for display.
+  const mainParas = nonEmptyParas.filter(para => !isReferenceText(para.text));
+  const hasParas = mainParas.length > 0;
+  const hasDetails = Object.values(details).some(Boolean);
 
   return (
     <div
@@ -142,12 +169,12 @@ export default function PrincipleBlock({
                     {para.letter}ـ
                   </span>
                 )}
-                <p className="whitespace-pre-line">{para.text}</p>
+                <Paragraphs text={para.text} />
               </div>
             );
           })
         ) : (
-          <p className="whitespace-pre-line">{cleanTextOfRef(p.text)}</p>
+          <Paragraphs text={cleanTextOfRef(p.text)} />
         )}
       </div>
 
@@ -166,7 +193,8 @@ export default function PrincipleBlock({
       {(() => {
         const rawRef = getReferenceForPrinciple(p);
         if (!rawRef) return null;
-        const cleanRef = rawRef.replace(/^\*\*?المرجع:\*\*?\s*/, "").replace(/^المرجع:\s*/, "");
+        const cleanRef = cleanPrincipleText(rawRef.replace(/^\*\*?المرجع:\*\*?\s*/, "").replace(/^المرجع:\s*/, ""));
+        if (!cleanRef) return null;
         return (
           <div className="mt-4 pt-3 border-t border-dashed border-slate-100 dark:border-white/[0.05]">
             <p className="text-[10px] text-slate-400 dark:text-zinc-500 leading-relaxed">
@@ -186,68 +214,68 @@ export default function PrincipleBlock({
               <span className="transition group-open:rotate-180">🔽</span>
             </summary>
             <div className="border-t border-slate-200 dark:border-white/5 divide-y divide-slate-100 dark:divide-white/5">
-              {p.details?.ruling_basis && (
+              {details.ruling_basis && (
                 <div className="p-4">
                   <p className={`text-[9px] font-black uppercase tracking-wider mb-2 flex items-center gap-1.5 ${
                     isDark ? "text-amber-500/70" : "text-amber-700"
                   }`}>
                     📌 {isRTL ? "مستند الحكم" : "Ruling Basis"}
                   </p>
-                  <p className={`text-[11px] leading-relaxed text-justify ${
+                  <Paragraphs text={p.details?.ruling_basis} className={`text-[11px] leading-relaxed text-justify ${
                     isDark ? "text-zinc-300" : "text-slate-700"
-                  }`}>{p.details.ruling_basis}</p>
+                  }`} />
                 </div>
               )}
 
-              {p.details?.['الحيثيات_والقرار'] && (
+              {details.grounds && (
                 <div className="p-4">
                   <p className={`text-[9px] font-black uppercase tracking-wider mb-2 flex items-center gap-1.5 ${
                     isDark ? "text-blue-400" : "text-blue-700"
                   }`}>
                     ⚖️ {isRTL ? "الحيثيات والقرار" : "Grounds & Decision"}
                   </p>
-                  <p className={`text-[11px] leading-relaxed text-justify ${
+                  <Paragraphs text={p.details?.['الحيثيات_والقرار']} className={`text-[11px] leading-relaxed text-justify ${
                     isDark ? "text-zinc-300" : "text-slate-700"
-                  }`}>{p.details['الحيثيات_والقرار']}</p>
+                  }`} />
                 </div>
               )}
 
-              {p.details?.facts && (
+              {details.facts && (
                 <div className="p-4">
                   <p className={`text-[9px] font-black uppercase tracking-wider mb-2 flex items-center gap-1.5 ${
                     isDark ? "text-slate-400" : "text-slate-600"
                   }`}>
                     🔍 {isRTL ? "وقائع الدعوى" : "Facts of the Case"}
                   </p>
-                  <p className={`text-[11px] leading-relaxed text-justify ${
+                  <Paragraphs text={p.details?.facts} className={`text-[11px] leading-relaxed text-justify ${
                     isDark ? "text-zinc-300" : "text-slate-700"
-                  }`}>{p.details.facts}</p>
+                  }`} />
                 </div>
               )}
 
-              {p.details?.reasons && (
+              {details.reasons && (
                 <div className="p-4">
                   <p className={`text-[9px] font-black uppercase tracking-wider mb-2 flex items-center gap-1.5 ${
                     isDark ? "text-purple-400" : "text-purple-700"
                   }`}>
                     📝 {isRTL ? "أسباب الحكم" : "Reasons"}
                   </p>
-                  <p className={`text-[11px] leading-relaxed text-justify ${
+                  <Paragraphs text={p.details?.reasons} className={`text-[11px] leading-relaxed text-justify ${
                     isDark ? "text-zinc-300" : "text-slate-700"
-                  }`}>{p.details.reasons}</p>
+                  }`} />
                 </div>
               )}
 
-              {p.details?.ruling && (
+              {details.ruling && (
                 <div className={`p-4 ${isDark ? "bg-[#0B3D2E]/10" : "bg-[#0B3D2E]/5"}`}>
                   <p className={`text-[9px] font-black uppercase tracking-wider mb-2 flex items-center gap-1.5 ${
                     isDark ? "text-emerald-400" : "text-[#0B3D2E]"
                   }`}>
                     🏛️ {isRTL ? "منطوق الحكم النهائي" : "Final Ruling"}
                   </p>
-                  <p className={`text-[11px] leading-relaxed text-justify font-bold ${
+                  <Paragraphs text={p.details?.ruling} className={`text-[11px] leading-relaxed text-justify font-bold ${
                     isDark ? "text-zinc-200" : "text-slate-800"
-                  }`}>{p.details.ruling}</p>
+                  }`} />
                 </div>
               )}
             </div>

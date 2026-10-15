@@ -18,7 +18,8 @@ import {
 import { LAW_DOC_TYPES, type DocSubType, getDocAnchorPrefix } from "@/constants/lawsLibraryData";
 import { LEGAL_TAXONOMY } from "@/constants/taxonomies";
 import { SECTION_30 } from "../lawsIndexFacets";
-import { type SearchSection, SECTION_DEGRADED_NOTICE, SEARCH_SECTION_LABELS_AR } from "../searchCounts";
+import { type SearchSection, SECTION_DEGRADED_NOTICE, SEARCH_SECTION_LABELS_AR, formatArabicNumber } from "../searchCounts";
+import type { MatchedArticle } from "../lawSearchGroups";
 import { articleStatusNotice } from "../data";
 import { isRepealedLawStatus } from "../law-status";
 import { OfficialMetaLockedRow } from "./OfficialMetaLockedRow";
@@ -330,6 +331,44 @@ export function LawsTabContent({
                     يُعرض للأرشيف وللوقائع السابقة لإلغائه
                   </p>
                 );
+                // A search card lists the law's matching articles (owner package
+                // 10-06; page.tsx groups the hits with lawSearchGroups.ts). A
+                // locked hit shows its article label only, never its text. The
+                // «+N» counts loaded hits only, never the law's total.
+                const matchedArticles: MatchedArticle[] = sys._isSearchResult && Array.isArray(sys.matchedArticles) ? sys.matchedArticles : [];
+                const moreMatched: number = typeof sys.moreMatchedArticles === "number" ? sys.moreMatchedArticles : 0;
+                const matchedArticlesList = matchedArticles.length > 0 ? (
+                  <div className={`w-full text-start mb-3 rounded-lg border px-3 py-2 ${isDark ? "border-white/[0.06] bg-white/[0.02]" : "border-gray-100 bg-gray-50/60"}`}>
+                    <p className={`text-[10px] font-bold mb-1.5 ${muted}`}>{isRTL ? "المواد المطابقة" : "Matching articles"}</p>
+                    <ul className="space-y-1.5">
+                      {matchedArticles.map((a) => {
+                        const articleNotice = a.status === "status_undeclared" ? articleStatusNotice(a.status, isRTL) : null;
+                        return (
+                          <li key={a.id} className="text-[11px] leading-relaxed">
+                            <span className={`font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
+                              {a.label || (isRTL ? "مادة مطابقة" : "Matching article")}
+                            </span>
+                            {articleNotice && (
+                              <span className="ms-1.5 text-[9px] font-bold px-1 py-0.5 rounded bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20">
+                                {isRTL ? `حالة المادة: ${articleNotice}` : `Article status: ${articleNotice}`}
+                              </span>
+                            )}
+                            {isUnlocked && a.snippet && (
+                              <span className={`block line-clamp-2 ${muted}`}>{a.snippet}</span>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    {moreMatched > 0 && (
+                      <p className={`text-[10px] mt-1.5 ${muted}`}>
+                        {isRTL
+                          ? `و${formatArabicNumber(moreMatched)} من المواد المطابقة الأخرى ضمن النتائج المحمّلة`
+                          : `+${moreMatched} more matching articles among the loaded results`}
+                      </p>
+                    )}
+                  </div>
+                ) : null;
                 return (
                 <motion.div
                   key={sys.id}
@@ -434,6 +473,8 @@ export function LawsTabContent({
                           </p>
                         );
                       })()}
+
+                      {matchedArticlesList}
 
                       {/* Inline Compact Articles/Chapters Summary */}
                       <div className={`flex flex-wrap items-center justify-center gap-x-3 gap-y-1 mb-4 py-1.5 px-3 rounded-lg text-[10px] font-bold text-center ${isDark ? "bg-white/[0.03] text-gray-400" : "bg-gray-50 text-gray-600"}`}>
@@ -561,6 +602,7 @@ export function LawsTabContent({
                             </p>
                           );
                         })()}
+                        {matchedArticlesList && <div className="mt-2">{matchedArticlesList}</div>}
                       </div>
 
                       {/* Right: Stats + CTA */}
@@ -950,6 +992,7 @@ export function LawsTabContent({
                     <div className="flex flex-col flex-1 justify-between">
                       <div className={!book.free ? "opacity-40 filter blur-[2px]" : ""}>
                         <div className="flex items-center justify-between mb-4">
+                          {book.categoryLabel && (
                           <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg ${
                             book.type === "sharia"
                               ? isDark
@@ -965,6 +1008,7 @@ export function LawsTabContent({
                           }`}>
                             {book.categoryLabel}
                           </span>
+                          )}
                           {book.free && (
                             <span className="px-2 py-1 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
                               <Sparkle size={10} weight="fill" />
@@ -976,21 +1020,25 @@ export function LawsTabContent({
                         <h3 className={`text-base font-black mb-1 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>
                           {book.title}
                         </h3>
-                        <p className="text-[11px] text-amber-600 dark:text-[#C8A762] font-semibold mb-2">{book.author}</p>
+                        {book.author && book.author !== "—" && (
+                          <p className="text-[11px] text-amber-600 dark:text-[#C8A762] font-semibold mb-2">{book.author}</p>
+                        )}
                         <p className={`text-xs mb-5 line-clamp-2 leading-relaxed ${muted}`}>{book.desc}</p>
                       </div>
 
-                      <div className={`grid grid-cols-2 gap-3 mb-4 p-2.5 rounded-xl border ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"} ${!book.free ? "opacity-40 filter blur-[2px]" : ""}`}>
+                      <div className={`grid ${book.type ? "grid-cols-2" : "grid-cols-1"} gap-3 mb-4 p-2.5 rounded-xl border ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"} ${!book.free ? "opacity-40 filter blur-[2px]" : ""}`}>
                         <div className="flex flex-col">
                           <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "المجلدات" : "Volumes"}</span>
-                          <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{book.volCount}</span>
+                          <span className={`text-sm font-bold ${isDark ? "text-gray-300" : "text-gray-800"}`}>{book.volCount}</span>
                         </div>
+                        {book.type && (
                         <div className="flex flex-col">
                           <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "نوع المرجع" : "Type"}</span>
-                          <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>
+                          <span className={`text-sm font-bold ${isDark ? "text-gray-300" : "text-gray-800"}`}>
                             {book.type === "sharia" ? (isRTL ? "شرعي" : "Sharia") : book.type === "comparative" ? (isRTL ? "مقارن" : "Comparative") : (isRTL ? "وضعي" : "Positive")}
                           </span>
                         </div>
+                        )}
                       </div>
 
                       <div className={`flex items-center justify-between mt-auto ${!book.free ? "opacity-40 filter blur-[2px]" : ""}`}>
@@ -998,13 +1046,14 @@ export function LawsTabContent({
                           {isRTL ? "تصفح المرجع" : "Browse Reference"}
                           <ArrowRight size={14} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
                         </span>
-                        <span className={`text-[10px] ${muted}`}>{book.lastUpdated}</span>
+                        {book.lastUpdated && book.lastUpdated !== "—" && <span className={`text-[10px] ${muted}`}>{book.lastUpdated}</span>}
                       </div>
                     </div>
                   ) : (
                     <div className={`${!book.free ? "opacity-40 filter blur-[2px]" : ""} flex flex-col md:flex-row md:items-center justify-between gap-5`}>
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
+                          {book.categoryLabel && (
                           <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg ${
                             book.type === "sharia"
                               ? isDark
@@ -1020,6 +1069,7 @@ export function LawsTabContent({
                           }`}>
                             {book.categoryLabel}
                           </span>
+                          )}
                           {book.free && (
                             <span className="px-2 py-1 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
                               <Sparkle size={10} weight="fill" />
@@ -1030,29 +1080,33 @@ export function LawsTabContent({
                         <h3 className={`text-base font-black mb-1 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>
                           {book.title}
                         </h3>
-                        <p className="text-[11px] text-amber-600 dark:text-[#C8A762] font-semibold mb-2">{book.author}</p>
+                        {book.author && book.author !== "—" && (
+                          <p className="text-[11px] text-amber-600 dark:text-[#C8A762] font-semibold mb-2">{book.author}</p>
+                        )}
                         <p className={`text-xs line-clamp-2 leading-relaxed ${muted}`}>{book.desc}</p>
                       </div>
 
                       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-8 md:shrink-0">
-                        <div className={`grid grid-cols-2 gap-4 p-4 rounded-xl border min-w-[220px] ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"}`}>
+                        <div className={`grid ${book.type ? "grid-cols-2" : "grid-cols-1"} gap-4 p-4 rounded-xl border min-w-[220px] ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"}`}>
                           <div className="flex flex-col">
                             <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "المجلدات" : "Volumes"}</span>
-                            <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{book.volCount}</span>
+                            <span className={`text-sm font-bold ${isDark ? "text-gray-300" : "text-gray-800"}`}>{book.volCount}</span>
                           </div>
+                          {book.type && (
                           <div className="flex flex-col">
                             <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "نوع المرجع" : "Type"}</span>
-                            <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>
+                            <span className={`text-sm font-bold ${isDark ? "text-gray-300" : "text-gray-800"}`}>
                               {book.type === "sharia" ? (isRTL ? "شرعي" : "Sharia") : book.type === "comparative" ? (isRTL ? "مقارن" : "Comparative") : (isRTL ? "وضعي" : "Positive")}
                             </span>
                           </div>
+                          )}
                         </div>
                         <div className="flex flex-col justify-center gap-2 sm:min-w-[130px]">
                           <span className={`text-xs flex items-center gap-1 font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
                             {isRTL ? "تصفح المرجع" : "Browse Reference"}
                             <ArrowRight size={14} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
                           </span>
-                          <span className={`text-[10px] ${muted}`}>{book.lastUpdated}</span>
+                          {book.lastUpdated && book.lastUpdated !== "—" && <span className={`text-[10px] ${muted}`}>{book.lastUpdated}</span>}
                         </div>
                       </div>
                     </div>
