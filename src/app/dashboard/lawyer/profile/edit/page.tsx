@@ -33,6 +33,9 @@ type Form = {
   marketplace_visible: boolean;
   is_accepting_clients: boolean;
   show_contact: boolean;
+  // Owner decision ١٦٨: the rate is hidden from the public profile unless the
+  // lawyer turns this on (lawyer_profiles.show_hourly_rate, 20261016_05).
+  show_hourly_rate: boolean;
   // Phase 7 (items 128 · 130 · 133) — contracts in lawyerProfileFields.ts.
   slug: string;
   headline_ar: string;
@@ -42,7 +45,7 @@ type Form = {
 };
 
 /** The three boolean fields, narrowed so the toggle list needs no casts. */
-type BooleanFormKey = "marketplace_visible" | "is_accepting_clients" | "show_contact";
+type BooleanFormKey = "marketplace_visible" | "is_accepting_clients" | "show_contact" | "show_hourly_rate";
 
 // lawyer_profiles.headline_ar's own limit (src/app/api/v1/profile/route.ts
 // MAX_HEADLINE_LENGTH) — not exported from there, so mirrored here for the
@@ -80,6 +83,7 @@ const EMPTY: Form = {
   bio_ar: "", specialties: "", years_experience: "", hourly_rate: "",
   license_number: "", bar_association: "", city: "",
   marketplace_visible: false, is_accepting_clients: true, show_contact: false,
+  show_hourly_rate: false,
   slug: "", headline_ar: "", education: [], courts: [], languages: ["ar"],
 };
 
@@ -102,6 +106,7 @@ type ProfileApiResponse = {
     license_number?: string | null; bar_association?: string | null;
     city?: string | null; marketplace_visible?: boolean | null;
     is_accepting_clients?: boolean | null; show_contact?: boolean | null;
+    show_hourly_rate?: boolean | null;
     verification_status?: VerificationStatus | null;
     // Phase 7 — same columns PATCH /api/v1/profile allowlists.
     slug?: string | null; headline_ar?: string | null;
@@ -217,6 +222,10 @@ export default function LawyerProfileEditPage() {
    * stop saving right along with the new ones.
    */
   const [newFieldsAvailable, setNewFieldsAvailable] = useState(false);
+  // lawyer_profiles.show_hourly_rate (owner decision ١٦٨, migration
+  // 20261016_05). Shown and sent only once the GET proves the column exists —
+  // the same deploy-order guard as `newFieldsAvailable`.
+  const [rateToggleAvailable, setRateToggleAvailable] = useState(false);
   // Distinguishes "this slug is already taken" (a 409 discovered only by
   // trying to save — a race with another lawyer's save, not something the
   // client-side format check in `slugErr` below can ever catch) from every
@@ -281,6 +290,7 @@ export default function LawyerProfileEditPage() {
           marketplace_visible: r.marketplace_visible ?? false,
           is_accepting_clients: r.is_accepting_clients ?? true,
           show_contact: r.show_contact ?? false,
+          show_hourly_rate: r.show_hourly_rate ?? false,
           slug: r.slug ?? "",
           headline_ar: r.headline_ar ?? "",
           education: sanitizeEducation(r.education),
@@ -296,6 +306,8 @@ export default function LawyerProfileEditPage() {
         // separates a migrated row (slug present, null or not) from one read
         // off a table that never got the migration (key absent entirely).
         setNewFieldsAvailable("slug" in r);
+        // Same rule for the rate switch (20261016_05): key presence.
+        setRateToggleAvailable("show_hourly_rate" in r);
         setBlocked(null);
         setLoaded(true);
       } else {
@@ -388,6 +400,7 @@ export default function LawyerProfileEditPage() {
         is_accepting_clients: form.is_accepting_clients,
         show_contact: form.show_contact,
       };
+      if (rateToggleAvailable) body.show_hourly_rate = form.show_hourly_rate;
       // Phase 7 columns — keys exactly as PATCH /api/v1/profile allowlists
       // them (src/app/api/v1/profile/route.ts lawyerFields) — included ONLY
       // once the migration that adds them is confirmed live (see
@@ -478,6 +491,13 @@ export default function LawyerProfileEditPage() {
       label: "إظهار بيانات التواصل في الدليل العام",
       hint: "يشمل رقم الجوال والبريد المسجّلين في حسابك.",
     },
+    ...(rateToggleAvailable
+      ? [{
+          key: "show_hourly_rate" as const,
+          label: "إظهار سعر الاستشارة / الساعة في الملف العام",
+          hint: "مخفي افتراضياً. لا يظهر سعرك للزوار ما لم تفعّل هذا الخيار.",
+        }]
+      : []),
   ];
 
   if (loading) return <div className="max-w-2xl mx-auto p-10 text-center" dir="rtl"><SpinnerGap size={24} className="animate-spin mx-auto text-zinc-400" /></div>;

@@ -50,6 +50,9 @@ interface RoleProfileFields {
   marketplace_visible?: boolean | null;
   is_accepting_clients?: boolean | null;
   show_contact?: boolean | null;
+  // Owner decision ١٦٨ — migration 20261016_05. Absent from the GET until that
+  // migration runs; the switch is shown and sent only when the key is present.
+  show_hourly_rate?: boolean | null;
   specialties?: string[] | null;
   hourly_rate?: number | null;
 }
@@ -91,6 +94,9 @@ export function ProfessionTab() {
   const [marketplaceVisible, setMarketplaceVisible] = useState(false);
   const [acceptingClients, setAcceptingClients] = useState(true);
   const [showContact, setShowContact] = useState(false);
+  // null = the column does not exist yet (20261016_05 not applied): no switch,
+  // nothing sent — sending an unknown column fails the whole PATCH.
+  const [showHourlyRate, setShowHourlyRate] = useState<boolean | null>(null);
   const [hourlyRate, setHourlyRate] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
 
@@ -112,6 +118,7 @@ export function ProfessionTab() {
         setMarketplaceVisible(r.marketplace_visible ?? false);
         setAcceptingClients(r.is_accepting_clients ?? true);
         setShowContact(r.show_contact ?? false);
+        setShowHourlyRate("show_hourly_rate" in r ? r.show_hourly_rate === true : null);
         setHourlyRate(r.hourly_rate != null ? String(r.hourly_rate) : "");
         setSelected(r.specialties ?? []);
         setBlocked(null);
@@ -144,6 +151,7 @@ export function ProfessionTab() {
         show_contact: showContact,
         specialties: selected,
         hourly_rate: hourlyRate.trim() ? Number(hourlyRate) : null,
+        ...(showHourlyRate === null ? {} : { show_hourly_rate: showHourlyRate }),
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -225,6 +233,14 @@ export function ProfessionTab() {
             checked={showContact}
             onChange={() => setShowContact((v) => !v)}
           />
+          {showHourlyRate !== null && (
+            <ToggleRow
+              label="إظهار سعر الاستشارة / الساعة في ملفي العام"
+              description="مخفي افتراضياً. لا يظهر سعرك للزوار ما لم تفعّل هذا الخيار."
+              checked={showHourlyRate}
+              onChange={() => setShowHourlyRate((v) => !v)}
+            />
+          )}
         </div>
       </div>
 

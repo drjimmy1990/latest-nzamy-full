@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
+import { withholdHiddenRate } from "@/lib/lawyers/publicRate";
 
 /**
  * GET /api/v1/lawyers — List verified lawyers (public)
@@ -68,7 +69,7 @@ export async function GET(request: NextRequest) {
     .from("profiles")
     .select(
       "id, display_name, display_name_en, avatar_url, city, user_type, " +
-      "lawyer_profiles!inner(user_id, slug, specialties, years_experience, hourly_rate, " +
+      "lawyer_profiles!inner(user_id, slug, specialties, years_experience, hourly_rate, show_hourly_rate, " +
       "bio_ar, bio_en, verification_status, is_accepting_clients, marketplace_visible, " +
       "show_contact, bar_association, license_number)",
       { count: "exact" },
@@ -93,7 +94,11 @@ export async function GET(request: NextRequest) {
   // Sorting
   switch (sort) {
     case "price":
-      query = query.order("hourly_rate", {
+      // Owner decision ١٦٨: only rates the lawyer chose to show take part in a
+      // price sort — ordering by a hidden rate would still reveal it.
+      query = query
+        .eq("lawyer_profiles.show_hourly_rate", true)
+        .order("hourly_rate", {
         ascending: true,
         referencedTable: "lawyer_profiles",
       });
@@ -157,6 +162,8 @@ export async function GET(request: NextRequest) {
     if (lp && lp.show_contact !== true) {
       delete lp.license_number;
     }
+    // Owner decision ١٦٨: the rate only when the lawyer chose to show it.
+    withholdHiddenRate(lp);
     // Phase 7 (item 130 · 192): promote slug + review stats to the row's top
     // level so a screen reads `lawyer.slug` / `lawyer.reviewStats` the same
     // way here and on GET /api/v1/lawyers/[id] — never buried one level

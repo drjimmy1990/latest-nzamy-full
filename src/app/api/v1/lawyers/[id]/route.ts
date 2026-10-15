@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
+import { withholdHiddenRate } from "@/lib/lawyers/publicRate";
 import type { LawyerService } from "@/lib/services/lawyerServicesService";
 import type { Review, ReviewStats } from "@/lib/services/reviewsService";
 import type { EducationEntry } from "@/lib/services/lawyerProfileFields";
@@ -54,7 +55,7 @@ import { redactAnonymousReview, requestIdsForEnrichment } from "../../reviews/_r
  */
 const PUBLIC_COLUMNS =
   "id, display_name, display_name_en, avatar_url, city, country_code, created_at, " +
-  "lawyer_profiles!inner(user_id, slug, specialties, years_experience, hourly_rate, " +
+  "lawyer_profiles!inner(user_id, slug, specialties, years_experience, hourly_rate, show_hourly_rate, " +
   "bio_ar, bio_en, headline_ar, education, courts, languages, bar_association, license_number, " +
   "verification_status, is_accepting_clients, marketplace_visible, show_contact)";
 
@@ -227,6 +228,8 @@ export async function GET(
     delete lp.license_number;
     delete lp.bar_association;
   }
+  // Owner decision ١٦٨: the rate only when the lawyer chose to show it.
+  withholdHiddenRate(lp);
 
   // R2: promote the new profile-detail columns to the top level. The rest of
   // this response stays raw-column-shaped (`display_name`, `bio_ar`, …) as it

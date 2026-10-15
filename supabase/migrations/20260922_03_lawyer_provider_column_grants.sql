@@ -247,6 +247,12 @@
 --   — which re-opens A6/F04 in full, on all seven tables.
 -- =============================================================================
 
+-- NOT AFTER 20261016_05_lawyer_show_hourly_rate.sql WITHOUT RE-RUNNING IT
+--   20261016_05 (owner decision ١٦٨) grants authenticated UPDATE on
+--   lawyer_profiles.show_hourly_rate. Re-running this file revokes UPDATE and
+--   re-grants the list below, which lacks it: re-run 20261016_05 afterwards.
+-- =============================================================================
+
 begin;
 
 -- ── 1. lawyer_profiles ──────────────────────────────────────────────────────

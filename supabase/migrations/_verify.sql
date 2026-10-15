@@ -684,7 +684,9 @@ BEGIN
              'license_number','bar_association','city','marketplace_visible',
              'is_accepting_clients','show_contact','slug','education','courts',
              'languages','headline_ar','license_issued_on','office_address',
-             'display_mode','updated_at']::text[],
+             'display_mode','updated_at',
+             -- 20261016_05 (owner decision ١٦٨); checked in (b) only once the column exists
+             'show_hourly_rate']::text[],
        ARRAY['verification_status','credit_balance','credit_package','credit_expiry',
              'free_briefs_remaining','active_roles','metadata','user_id']::text[],
        'lawyers update own profile'),
@@ -749,6 +751,10 @@ BEGIN
     --     PATCH /api/v1/profile and PATCH /api/v1/settings/preferences would
     --     start answering an Arabic 500 on a 42501.
     FOREACH c IN ARRAY spec.allowed LOOP
+      CONTINUE WHEN c = 'show_hourly_rate'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                 WHERE table_schema = 'public' AND table_name = spec.tbl
+                                   AND column_name = c);
       IF NOT has_column_privilege('authenticated', 'public.' || spec.tbl, c, 'UPDATE') THEN
         RAISE EXCEPTION '_verify: authenticated LOST UPDATE on public.%.% — its write path would 500 (over-revoked, or a column renamed under 20260922_03)', spec.tbl, c;
       END IF;
