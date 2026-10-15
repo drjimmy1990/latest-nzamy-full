@@ -32,7 +32,6 @@ import {
   CATEGORIES,
   ALL_QUESTIONS,
   sortAnswers,
-  TOP_CONTRIBUTORS,
 } from "@/constants/communityData";
 import { type FeedQuestion, toFeedQuestion, filterAndSortFeed } from "./_feedView";
 import { useTheme } from "@/components/ThemeProvider";
@@ -51,6 +50,13 @@ import { listOk, listViewState, itemsOf, type ListRead } from "@/lib/services/li
 
 /** The route's own default page size (api/v1/community/posts/route.ts:24). */
 const PAGE_SIZE = 20;
+
+/** GET /api/v1/community/contributors — see that route for who is counted and listed. */
+interface Contributor {
+  name: string;
+  slug: string | null;
+  answers: number;
+}
 
 const arNum = (n: number) => n.toLocaleString("ar-SA");
 
@@ -112,6 +118,26 @@ export default function CommunityPage() {
   useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => { void loadPosts(); }, [loadPosts]);
+
+  // «أكثر المجيبين» — real counts from the API, or no widget at all. A failed
+  // or partial (`degraded`) read leaves it hidden: a ranking computed from
+  // part of the answers is not a smaller truth, it is a wrong one.
+  const [contributors, setContributors] = useState<Contributor[]>([]);
+  useEffect(() => {
+    if (!isSupabaseMode) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/v1/community/contributors", { cache: "no-store" });
+        if (!res.ok) return;
+        const json = (await res.json()) as { data?: Contributor[]; degraded?: boolean };
+        if (!cancelled && !json.degraded && Array.isArray(json.data)) setContributors(json.data);
+      } catch {
+        /* widget stays hidden */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Land a signed-in lawyer/firm account on "مجتمع المحامين" instead of the
   // guest default. Gated on `user.loading` so this never fires against the
@@ -363,26 +389,37 @@ export default function CommunityPage() {
               </div>
             </div>
 
-            {/* Top Contributors */}
-            <div className={`${card} p-4`}>
-              <p className={`text-xs font-bold mb-3 uppercase tracking-wider ${muted}`}>أكثر المجيبين</p>
-              <div className="space-y-3">
-                {TOP_CONTRIBUTORS.map((l, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#0B3D2E] to-[#1a5c44] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                      {l.name.charAt(3)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-xs font-semibold truncate ${isDark ? "text-gray-200" : "text-gray-800"}`}>{l.name}</p>
-                      <div className="flex items-center gap-1">
-                        <Star size={10} weight="fill" className="text-[#C8A762]" />
-                        <span className={`text-[10px] ${muted} truncate`}>{l.rating} تقييم — {l.specialty}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+            {/* Top Contributors — real answer counts of lawyers whose profile is
+                public (api/v1/community/contributors). Hidden when there are none
+                or the read failed; it used to print three invented lawyers. */}
+            {contributors.length > 0 && (
+              <div className={`${card} p-4`}>
+                <p className={`text-xs font-bold mb-3 uppercase tracking-wider ${muted}`}>أكثر المحامين إجابةً</p>
+                <div className="space-y-3">
+                  {contributors.map((l) => {
+                    const initial = l.name.replace(/^(?:أ\.|د\.|م\.)\s*/, "").trim().charAt(0) || "؟";
+                    const row = (
+                      <>
+                        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#0B3D2E] to-[#1a5c44] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                          {initial}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-xs font-semibold truncate ${isDark ? "text-zinc-200" : "text-gray-800"}`}>{l.name}</p>
+                          <span className={`text-[10px] ${muted}`}>{arNum(l.answers)} إجابة</span>
+                        </div>
+                      </>
+                    );
+                    return l.slug ? (
+                      <Link key={`${l.slug}-${l.name}`} href={`/lawyers/${encodeURIComponent(l.slug)}`} className="flex items-center gap-2 hover:opacity-80 transition">
+                        {row}
+                      </Link>
+                    ) : (
+                      <div key={l.name} className="flex items-center gap-2">{row}</div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Ranking rules info */}
             <div className={`${card} p-4`}>
