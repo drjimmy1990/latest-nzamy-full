@@ -13,6 +13,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import PrincipleBlock from "./_principle-block";
 import IdentityPanel from "./_identity-panel";
+import { cleanPrincipleText } from "./_principle-text";
 import { PrintWatermark } from "@/app/laws/components/PrintWatermark";
 
 // ─── Global Features ─────────────────────────────────────────────────────────
@@ -37,12 +38,6 @@ function getSelectedTextWithin(containerId: string): string {
     return selectedText;
   }
   return "";
-}
-
-function stripMd(s: string): string {
-  return s
-    .replace(/\*\*([^*]+)\*\*/g, "$1")
-    .replace(/__([^_]+)__/g,   "$1");
 }
 
 // ─── Interfaces ─────────────────────────────────────────────────────────────
@@ -136,11 +131,12 @@ export default function JudicialPrinciplesPage() {
 
   const getReferenceForPrinciple = (p: JudicialPrincipleItem) => {
     if (!p) return "";
+    // Found on the raw text («**المرجع:**»), returned without the marks.
     const refPara = p.paragraphs?.find(para => isReferenceText(para.text));
-    if (refPara) return refPara.text;
+    if (refPara) return cleanPrincipleText(refPara.text);
     const refLine = p.text?.split("\n").find(line => isReferenceText(line));
-    if (refLine) return refLine;
-    if (p.reference) return p.reference;
+    if (refLine) return cleanPrincipleText(refLine);
+    if (p.reference) return cleanPrincipleText(p.reference);
     const court = getCourtOrIssuer(p);
     return `${isRTL ? "مبدأ رقم" : "Principle #"} (${p.number})، صادر عن (${court})${p.decision_number ? ` ذي الرقم (${p.decision_number})` : ""}${p.session_date ? ` بتاريخ ${p.session_date}` : ""}${collection?.title ? ` - المنشور في (${collection.title})` : ""}${collection?.part ? `، الجزء (${collection.part})` : ""}`;
   };
@@ -185,7 +181,7 @@ export default function JudicialPrinciplesPage() {
 
   const getOrCreateEntry = (p: JudicialPrincipleItem) => {
     const mainParas = p.paragraphs?.filter(para => !isReferenceText(para.text)) || [];
-    const mainText = mainParas.length > 0 ? mainParas.map(para => para.text).join("\n") : cleanTextOfRef(p.text);
+    const mainText = cleanPrincipleText(mainParas.length > 0 ? mainParas.map(para => para.text).join("\n") : cleanTextOfRef(p.text));
     const refText = getReferenceForPrinciple(p);
     return {
       articleId: p.id,
@@ -611,8 +607,10 @@ export default function JudicialPrinciplesPage() {
           : `<b>Principle #${p.number}${decisionSuffixEn} issued by (${court}):</b>`);
 
     const refText = getReferenceForPrinciple(p);
-    const plain = `${prefixPlain}\n“${stripMd(textBlock)}”\n\nالمرجعية: ${refText}`;
-    const html  = `${prefixHtml}<br>“${textBlock.replace(/\n/g, "<br>")}”<br><br><i>المرجعية: ${refText}</i>`;
+    // The same mark-free text the reader shows (_principle-text.ts), in both formats.
+    const cleanBlock = cleanPrincipleText(textBlock);
+    const plain = `${prefixPlain}\n“${cleanBlock}”\n\nالمرجعية: ${refText}`;
+    const html  = `${prefixHtml}<br>“${cleanBlock.replace(/\n/g, "<br>")}”<br><br><i>المرجعية: ${refText}</i>`;
 
     try {
       const full = `<html><body><p dir="rtl" style="font-family:'Arial';font-size:14pt;line-height:1.8">${html}</p></body></html>`;
