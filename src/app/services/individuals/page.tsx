@@ -105,8 +105,8 @@ export default function IndividualsPage() {
                 </h1>
                 <p className="mt-6 max-w-[50ch] text-base leading-relaxed text-ink-muted dark:text-gray-400 md:text-lg">
                   {isAr
-                    ? "٦ خدمات قانونية متكاملة — من الاستشارة الفورية إلى التمثيل القضائي — بأسعار شفافة وضمان مالي كامل."
-                    : "6 comprehensive legal services — from instant consultation to court representation — with transparent pricing and full financial guarantee."}
+                    ? "٦ خدمات قانونية متكاملة — من الاستشارة الفورية إلى التمثيل القضائي — بأسعار شفافة."
+                    : "6 comprehensive legal services — from instant consultation to court representation — with transparent pricing."}
                 </p>
 
                 {/*
@@ -120,7 +120,7 @@ export default function IndividualsPage() {
                   {[
                     { titleAr: "سعر معروف مسبقاً", titleEn: "Price Up Front", subAr: "تعرف التكلفة قبل الطلب", subEn: "Know the cost before you order" },
                     { titleAr: "متابعة داخل المنصة", titleEn: "Tracked In-Platform", subAr: "حالة طلبك ومستنداتك في مكان واحد", subEn: "Your request and files in one place" },
-                    { titleAr: "أتعاب عند الإنجاز", titleEn: "Fees on Delivery", subAr: "لا تُصرف إلا بعد تسليم الخدمة", subEn: "Released only after the service is delivered" },
+                    { titleAr: "اتفاق واضح على الأتعاب", titleEn: "Clear Fee Agreement", subAr: "تُسدَّد مباشرةً لمقدم الخدمة", subEn: "Paid directly to the provider" },
                   ].map((stat, i) => (
                     <motion.div
                       key={i}
@@ -167,8 +167,10 @@ export default function IndividualsPage() {
                 transition={{ type: "spring", stiffness: 60, damping: 20, delay: 0.2 }}
                 className="grid grid-cols-2 gap-4"
               >
+                {/* No «ضمان مالي كامل — لا تُصرف الأتعاب قبل الإنجاز» badge
+                    (owner Q3/Q28): fees are paid outside the platform, which
+                    holds nothing — there is no release to guarantee. */}
                 {[
-                  { icon: ShieldCheck, label: isAr ? "ضمان مالي كامل" : "Full Financial Guarantee", desc: isAr ? "لا تُصرف الأتعاب قبل الإنجاز" : "Fees are not released before delivery", color: "text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10" },
                   { icon: Brain, label: isAr ? "ذكاء اصطناعي قانوني" : "Legal AI", desc: isAr ? "مدرّب على الأنظمة السعودية" : "Trained on Saudi law", color: "text-royal bg-royal/5 dark:bg-royal/20" },
                   { icon: Star, label: isAr ? "محامون موثّقون" : "Verified Lawyers", desc: isAr ? "معتمدون من وزارة العدل" : "Ministry of Justice certified", color: "text-gold-dark bg-gold/10" },
                   { icon: Clock, label: isAr ? "استجابة فورية" : "Instant Response", desc: isAr ? "خلال ١٥ دقيقة أو أقل" : "Within 15 minutes or less", color: "text-blue-600 bg-blue-50 dark:bg-blue-500/10" },

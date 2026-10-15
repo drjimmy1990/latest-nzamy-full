@@ -125,6 +125,20 @@ test("Q3/Q28: no Escrow promise on plans, provider pricing or the firm wallet", 
   }
 });
 
+test("Q3/Q28: no page says the platform holds fees and releases them on delivery", () => {
+  // Escrow by function, without the word: «لا تُصرف إلا بعد الإنجاز»,
+  // «تُسدَّد عبر المنصة», "released to the lawyer", «ضمان مالي كامل».
+  const holding = /تُصرف|صرف الأتعاب عبر المنصة|تُسدَّد الأتعاب عبر|عبر قنوات الدفع المعتمدة|ضمان مالي كامل|released|paid through the platform|financial guarantee/i;
+  for (const path of [
+    "app/services/individuals/page.tsx",
+    "app/services/business/page.tsx",
+    "app/services/legal-representation/page.tsx",
+    "app/pro/page.tsx",
+  ]) {
+    assert.doesNotMatch(code(path), holding, `${path} still describes the platform holding fees`);
+  }
+});
+
 test("Q28: the refund policy states the 14-day digital-plan rule", () => {
   const refund = code("app/refund-policy/page.tsx");
   assert.ok(

@@ -128,10 +128,8 @@ export default function BusinessPage() {
                       <div className="mt-0.5 text-[11px] leading-relaxed text-ink-muted dark:text-gray-400">{metric.desc}</div>
                     </motion.div>
                   ))}
-                  <div className="mt-4 flex items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 dark:border-emerald-500/20 dark:bg-emerald-500/10">
-                    <ShieldCheck size={16} weight="fill" className="text-emerald-600" />
-                    <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400">{isAr ? "أتعابك لا تُصرف إلا بعد الإنجاز" : "Fees are released only after delivery"}</span>
-                  </div>
+                  {/* No «أتعابك لا تُصرف إلا بعد الإنجاز» strip (owner Q3/Q28):
+                      fees are paid outside the platform, which holds nothing. */}
                 </div>
               </motion.div>
             </div>
