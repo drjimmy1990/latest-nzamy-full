@@ -2,9 +2,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   APPEAL_COST_CAP_SAR,
+  CASSATION_COST_CAP_SAR,
   FIRST_INSTANCE_COST_CAP_SAR,
   JUDICIAL_COSTS_ESTIMATE_LABEL,
   MONETARY_CLAIM_RATE,
+  RECONSIDERATION_COST_CAP_SAR,
   estimateJudicialCosts,
   parseClaimAmount,
 } from "./judicialCosts.ts";
@@ -78,6 +80,69 @@ test("nothing to estimate → null, never a zero that reads as «exempt»", () =
     assert.equal(estimateJudicialCosts({ claimAmountSar, ...both }), null, String(claimAmountSar));
   }
   assert.equal(estimateJudicialCosts({ claimAmountSar: 1000, includeFirstInstance: false, includeAppeal: false }), null);
+});
+
+test("Owner Decision #167: cassation is capped at 7,000 SAR and reconsideration at 10,000 SAR", () => {
+  assert.equal(CASSATION_COST_CAP_SAR, 7_000);
+  assert.equal(RECONSIDERATION_COST_CAP_SAR, 10_000);
+});
+
+test("cassation is 5% below its cap; exactly at the cap (140,000 → 7,000) is not reported as capped", () => {
+  const below = estimateJudicialCosts({ claimAmountSar: 100_000, includeFirstInstance: false, includeAppeal: false, includeCassation: true })!;
+  assert.deepEqual(below.lines.map((l) => [l.id, l.amountSar, l.capped]), [["cassation", 5_000, false]]);
+  assert.equal(below.lines[0].label, "طلب النقض");
+
+  const at = estimateJudicialCosts({ claimAmountSar: 140_000, includeFirstInstance: false, includeAppeal: false, includeCassation: true })!;
+  assert.equal(at.lines[0].amountSar, 7_000);
+  assert.equal(at.lines[0].capped, false);
+});
+
+test("cassation never exceeds 7,000 SAR", () => {
+  const r = estimateJudicialCosts({ claimAmountSar: 1_000_000, includeFirstInstance: false, includeAppeal: false, includeCassation: true })!;
+  assert.equal(r.lines[0].amountSar, CASSATION_COST_CAP_SAR);
+  assert.equal(r.lines[0].capped, true);
+  assert.match(r.lines[0].basis, /٧٬٠٠٠/);
+});
+
+test("reconsideration is 5% below its cap and never exceeds 10,000 SAR", () => {
+  const below = estimateJudicialCosts({ claimAmountSar: 150_000, includeFirstInstance: false, includeAppeal: false, includeReconsideration: true })!;
+  assert.deepEqual(below.lines.map((l) => [l.id, l.amountSar, l.capped]), [["reconsideration", 7_500, false]]);
+  assert.equal(below.lines[0].label, "طلب التماس إعادة النظر");
+
+  const at = estimateJudicialCosts({ claimAmountSar: 200_000, includeFirstInstance: false, includeAppeal: false, includeReconsideration: true })!;
+  assert.equal(at.lines[0].amountSar, 10_000);
+  assert.equal(at.lines[0].capped, false);
+
+  const over = estimateJudicialCosts({ claimAmountSar: 5_000_000, includeFirstInstance: false, includeAppeal: false, includeReconsideration: true })!;
+  assert.equal(over.lines[0].amountSar, RECONSIDERATION_COST_CAP_SAR);
+  assert.equal(over.lines[0].capped, true);
+});
+
+test("all four lines come in court order and add up", () => {
+  const r = estimateJudicialCosts({
+    claimAmountSar: 50_000_000,
+    includeFirstInstance: true,
+    includeAppeal: true,
+    includeCassation: true,
+    includeReconsideration: true,
+  })!;
+  assert.deepEqual(r.lines.map((l) => [l.id, l.amountSar]), [
+    ["first-instance", 1_000_000],
+    ["appeal", 10_000],
+    ["cassation", 7_000],
+    ["reconsideration", 10_000],
+  ]);
+  assert.equal(r.totalSar, 1_027_000);
+  assert.ok(r.lines.every((l) => l.capped));
+});
+
+test("a request picked alone is enough to estimate; none picked is still null", () => {
+  assert.notEqual(estimateJudicialCosts({ claimAmountSar: 1000, includeFirstInstance: false, includeAppeal: false, includeCassation: true }), null);
+  assert.notEqual(estimateJudicialCosts({ claimAmountSar: 1000, includeFirstInstance: false, includeAppeal: false, includeReconsideration: true }), null);
+  assert.equal(
+    estimateJudicialCosts({ claimAmountSar: 1000, includeFirstInstance: false, includeAppeal: false, includeCassation: false, includeReconsideration: false }),
+    null,
+  );
 });
 
 test("parseClaimAmount reads Western and Arabic-Indic digits with separators", () => {
