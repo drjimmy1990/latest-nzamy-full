@@ -11,6 +11,7 @@ import { lawyerServicesTable } from "@/constants/pricing/pricing.lawyers";
 import { useUser } from "@/hooks/useUser";
 import { requestEntitlement } from "@/lib/services/entitlementService";
 import { referencePriceFor } from "@/lib/pricing/priceDisplay";
+import { planEntitlementRequest } from "@/lib/pricing/planRequest";
 
 interface PricingCardsProps {
   planList: Plan[];
@@ -440,7 +441,8 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
   function handleSubscribe(plan: Plan): boolean {
     if (!isLoggedIn) return false;
     if (!isSubscribeCta(plan.ctaHref)) return false; // e.g. Contact Sales — let it navigate
-    void requestEntitlement({ kind: "plan", requested_ref: plan.name }).then((res) => {
+    // requested_ref = Plan.id (the name rides in `note`) — see planEntitlementRequest.
+    void requestEntitlement(planEntitlementRequest(plan, { libraryMode })).then((res) => {
       setToast(
         res.ok
           ? { ok: true, msg: "تم إرسال طلبك للمراجعة" }

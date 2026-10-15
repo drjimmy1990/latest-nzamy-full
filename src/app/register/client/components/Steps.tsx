@@ -18,12 +18,13 @@ import {
   ArrowLeft,
   Globe,
   User,
-  Users,
 } from "@phosphor-icons/react";
 import { ClientType, Step } from "../types";
 import { clientTypes } from "../data";
 import { LEGAL_REP_CAPACITIES, crNumberHint } from "./_corporateIdentity";
 import { normalizeSaudiMobile, sanitizePhoneDigits, saudiMobileMessage } from "@/lib/services/saudiMobile";
+import { requestEntitlement } from "@/lib/services/entitlementService";
+import { planEntitlementRequest } from "@/lib/pricing/planRequest";
 
 // UAT-REG-001 — same regex the page-level canNext() and
 // register/provider/page.tsx:222 use, so the inline hint and the «التالي»
@@ -574,15 +575,82 @@ export function Step3({
   );
 }
 
+// The plan the visitor clicked «اشترك» on before signing up (/pricing →
+// /register/client?plan=<Plan.id>). There is no payment gateway: a plan is an
+// entitlement request the admin reviews — the same request PricingCards sends
+// for a signed-in user. It is sent only when the user presses the button here.
+function PlanRequestCard({
+  plan,
+  canRequestNow,
+}: {
+  plan: { id: string; name: string };
+  canRequestNow: boolean;
+}) {
+  const [state, setState] = useState<
+    { status: "idle" } | { status: "sending" } | { status: "sent" } | { status: "failed"; error: string }
+  >({ status: "idle" });
+
+  async function send() {
+    setState({ status: "sending" });
+    const res = await requestEntitlement(planEntitlementRequest(plan));
+    setState(res.ok ? { status: "sent" } : { status: "failed", error: res.error ?? "تعذّر إرسال الطلب" });
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="rounded-2xl border-2 border-royal bg-royal/5 p-4 text-start dark:bg-royal/20"
+    >
+      <div className="text-sm font-bold text-royal dark:text-gold">طلب الاشتراك في «{plan.name}»</div>
+      {!canRequestNow ? (
+        // signUp returned no session (email confirmation): a request now
+        // would be refused, so say how to finish instead.
+        <p className="mt-1.5 text-xs leading-relaxed text-ink-muted dark:text-gray-400">
+          أكّد بريدك الإلكتروني ثم سجّل الدخول، واطلب الباقة من{" "}
+          <a href="/pricing" className="font-semibold text-royal underline dark:text-gold">صفحة الأسعار</a>
+          {" "}— يُفعَّل الاشتراك بعد مراجعة الطلب.
+        </p>
+      ) : state.status === "sent" ? (
+        <p className="mt-1.5 text-xs leading-relaxed text-ink-muted dark:text-gray-400">
+          تم إرسال طلبك للمراجعة، ويُفعَّل الاشتراك بعد الموافقة عليه.
+        </p>
+      ) : (
+        <>
+          <p className="mt-1.5 text-xs leading-relaxed text-ink-muted dark:text-gray-400">
+            لا يتم الدفع عبر المنصة: يُرسَل طلبك للمراجعة ويُفعَّل الاشتراك بعد الموافقة عليه.
+          </p>
+          {state.status === "failed" && (
+            <p className="mt-1.5 text-xs font-semibold text-red-600 dark:text-red-400">{state.error}</p>
+          )}
+          <button
+            type="button"
+            onClick={() => void send()}
+            disabled={state.status === "sending"}
+            className="mt-3 inline-flex items-center gap-2 rounded-xl bg-royal px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-royal-light disabled:opacity-50"
+          >
+            {state.status === "sending" ? "جارٍ الإرسال…" : state.status === "failed" ? "أعد المحاولة" : "أرسل طلب الاشتراك"}
+            <ArrowLeft size={14} />
+          </button>
+        </>
+      )}
+    </motion.div>
+  );
+}
+
 // Step 4: Success
 export function Step4({
   isAr,
   clientType,
-  intendedPlan,
+  requestedPlan,
+  canRequestNow = false,
 }: {
   isAr: boolean;
   clientType: ClientType;
-  intendedPlan?: string | null;
+  /** Resolved by resolveRequestedPlan (src/lib/pricing/planRequest.ts); null when none. */
+  requestedPlan?: { id: string; name: string } | null;
+  /** signUp returned a session, so an entitlement request can be sent now. */
+  canRequestNow?: boolean;
 }) {
   const typeLabel = {
     individual: isAr ? "فرد" : "Individual",
@@ -625,48 +693,11 @@ export function Step4({
       </p>
 
       <div className="mt-8 space-y-3">
-        {intendedPlan === "shield" && (
-          <motion.a
-            href="/dashboard/client"
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex items-center gap-4 rounded-2xl border-2 border-royal bg-royal/5 p-4 text-start transition-all hover:bg-royal/10 dark:bg-royal/20"
-          >
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-royal text-gold">
-              <Shield size={22} weight="duotone" />
-            </span>
-            <div className="flex-1">
-              <div className="text-sm font-bold text-royal dark:text-gold">
-                {isAr ? "إتمام تفعيل التأمين القانوني الفردي" : "Complete Legal Shield Activation"}
-              </div>
-              <div className="text-xs text-ink-muted dark:text-gray-400">
-                {isAr ? "٣٦٥ ر.س/سنة (عرض التأسيس ٢٩٦ ر.س) — استشارات وخصم ١٥٪" : "365 SAR/yr (Founder 296 SAR) — Consultations & 15% discount"}
-              </div>
-            </div>
-            <ArrowLeft size={16} className="text-royal dark:text-gold" />
-          </motion.a>
-        )}
-        {intendedPlan === "group" && (
-          <motion.a
-            href="/dashboard/client/my-group?action=create"
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex items-center gap-4 rounded-2xl border-2 border-amber-500 bg-amber-500/5 p-4 text-start transition-all hover:bg-amber-500/10 dark:bg-amber-500/20"
-          >
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-600 text-white">
-              <Users size={22} weight="duotone" />
-            </span>
-            <div className="flex-1">
-              <div className="text-sm font-bold text-amber-700 dark:text-amber-400">
-                {isAr ? "إنشاء وتفعيل مجموعة التأمين (الرَّبع)" : "Create & Activate Group Shield"}
-              </div>
-              <div className="text-xs text-ink-muted dark:text-gray-400">
-                {isAr ? "يبدأ من ٧٥٠ ر.س لـ ٣ أفراد — ٥ استشارات مرئية/عضو وخصم ٢٥٪" : "From 750 SAR for 3 members — 5 video consults & 25% discount"}
-              </div>
-            </div>
-            <ArrowLeft size={16} className="text-amber-700 dark:text-amber-400" />
-          </motion.a>
-        )}
+        {/* The retired «shield» (٣٦٥ / «عرض التأسيس ٢٩٦») and «group» (٧٥٠)
+            cards that sat here are gone: neither plan is sold any more
+            (pricingApprovals.test.ts), and the micro CTA's old `plan=shield`
+            would have shown a micro signup the individual founder offer. */}
+        {requestedPlan && <PlanRequestCard plan={requestedPlan} canRequestNow={canRequestNow} />}
         {[
           { icon: Star, labelAr: "انتقل إلى لوحة التحكم", labelEn: "Go to Dashboard", href: dashboardHref },
           { icon: Scales, labelAr: "احجز استشارتك الأولى", labelEn: "Book your first consultation", href: "/services/consultations" },

@@ -18,7 +18,7 @@
  */
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 function src(path: string): string {
   return readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
@@ -131,6 +131,28 @@ test("Q28: the refund policy states the 14-day digital-plan rule", () => {
     "the owner's Q28 sentence is missing from /refund-policy",
   );
   assert.match(refund, /refundable within 14 days, unless AI points have been consumed/);
+});
+
+test("checkout: the pay-per-piece CTA points at a client page that exists", () => {
+  const individuals = code("constants/pricing/pricing.individuals.ts");
+  assert.doesNotMatch(individuals, /\/dashboard\/client\/draft/);
+  assert.equal((individuals.match(/ctaHref: "\/dashboard\/client\/services"/g) ?? []).length, 2);
+  assert.ok(existsSync(new URL("../../app/dashboard/client/services/page.tsx", import.meta.url)));
+});
+
+test("checkout: /pricing asks for a plan by id, not by its display name", () => {
+  const cards = code("components/pricing/PricingCards.tsx");
+  assert.doesNotMatch(cards, /requested_ref:\s*plan\.name/);
+  assert.match(cards, /requestEntitlement\(planEntitlementRequest\(plan, \{ libraryMode \}\)\)/);
+});
+
+test("checkout: client signup keeps ?plan= and no longer offers the retired shield/group plans", () => {
+  const page = code("app/register/client/page.tsx");
+  assert.match(page, /params\.get\("plan"\)/);
+  assert.match(page, /requestedPlan=\{/);
+  const steps = code("app/register/client/components/Steps.tsx");
+  assert.doesNotMatch(steps, /عرض التأسيس|Founder 296|٧٥٠ ر\.س/);
+  assert.match(steps, /requestEntitlement\(planEntitlementRequest\(plan\)\)/);
 });
 
 test("the comment stripper keeps string content that merely contains '//'", () => {

@@ -21,7 +21,9 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       desc: "صياغة مذكرات، عقود، وترافع قضائي متخصص — ادفع فقط عند الحاجة دون أي التزام سنوي",
       target: "أفراد",
       cta: "اطلب خدمة الآن",
-      ctaHref: "/dashboard/client/draft",
+      // The client's «اطلب خدمة جديدة» catalogue (sidebar). It used to point
+      // at /dashboard/client/draft, a route that does not exist.
+      ctaHref: "/dashboard/client/services",
       highlighted: false,
       color: "border-slate-300",
       isBetaHidden: false,
@@ -195,7 +197,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       desc: "Drafting briefs, contracts, and court representation — on-demand legal services without subscription commitments",
       target: "Individuals",
       cta: "Request Service",
-      ctaHref: "/dashboard/client/draft",
+      ctaHref: "/dashboard/client/services",
       highlighted: false,
       color: "border-slate-300",
       isBetaHidden: false,

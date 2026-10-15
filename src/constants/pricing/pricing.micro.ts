@@ -34,7 +34,7 @@ export const plansMicro: { ar: Plan[]; en: Plan[] } = {
       periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
       desc: "ضامنك القانوني طول العام — للموظفين، العقود، المخالفات، والمنافسات",
       target: "منشآت صغيرة", cta: "احمِ منشأتك الآن",
-      ctaHref: "/register/client?type=micro&plan=shield",
+      ctaHref: "/register/client?type=micro&plan=micro-shield",
       highlighted: true, color: "border-royal/20",
       features: {
         ai: [
@@ -76,7 +76,7 @@ export const plansMicro: { ar: Plan[]; en: Plan[] } = {
       periodMonthly: "SAR / year", periodYearly: "SAR / year",
       desc: "Your legal guardian all year — for employees, contracts, fines & disputes",
       target: "Small Business", cta: "Protect Your Business",
-      ctaHref: "/register/client?type=micro&plan=shield",
+      ctaHref: "/register/client?type=micro&plan=micro-shield",
       highlighted: true, color: "border-royal/20",
       features: {
         ai: [
