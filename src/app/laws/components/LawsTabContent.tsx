@@ -992,6 +992,7 @@ export function LawsTabContent({
                     <div className="flex flex-col flex-1 justify-between">
                       <div className={!book.free ? "opacity-40 filter blur-[2px]" : ""}>
                         <div className="flex items-center justify-between mb-4">
+                          {book.categoryLabel && (
                           <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg ${
                             book.type === "sharia"
                               ? isDark
@@ -1007,6 +1008,7 @@ export function LawsTabContent({
                           }`}>
                             {book.categoryLabel}
                           </span>
+                          )}
                           {book.free && (
                             <span className="px-2 py-1 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
                               <Sparkle size={10} weight="fill" />
@@ -1018,21 +1020,25 @@ export function LawsTabContent({
                         <h3 className={`text-base font-black mb-1 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>
                           {book.title}
                         </h3>
-                        <p className="text-[11px] text-amber-600 dark:text-[#C8A762] font-semibold mb-2">{book.author}</p>
+                        {book.author && book.author !== "—" && (
+                          <p className="text-[11px] text-amber-600 dark:text-[#C8A762] font-semibold mb-2">{book.author}</p>
+                        )}
                         <p className={`text-xs mb-5 line-clamp-2 leading-relaxed ${muted}`}>{book.desc}</p>
                       </div>
 
-                      <div className={`grid grid-cols-2 gap-3 mb-4 p-2.5 rounded-xl border ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"} ${!book.free ? "opacity-40 filter blur-[2px]" : ""}`}>
+                      <div className={`grid ${book.type ? "grid-cols-2" : "grid-cols-1"} gap-3 mb-4 p-2.5 rounded-xl border ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"} ${!book.free ? "opacity-40 filter blur-[2px]" : ""}`}>
                         <div className="flex flex-col">
                           <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "المجلدات" : "Volumes"}</span>
-                          <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{book.volCount}</span>
+                          <span className={`text-sm font-bold ${isDark ? "text-gray-300" : "text-gray-800"}`}>{book.volCount}</span>
                         </div>
+                        {book.type && (
                         <div className="flex flex-col">
                           <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "نوع المرجع" : "Type"}</span>
-                          <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>
+                          <span className={`text-sm font-bold ${isDark ? "text-gray-300" : "text-gray-800"}`}>
                             {book.type === "sharia" ? (isRTL ? "شرعي" : "Sharia") : book.type === "comparative" ? (isRTL ? "مقارن" : "Comparative") : (isRTL ? "وضعي" : "Positive")}
                           </span>
                         </div>
+                        )}
                       </div>
 
                       <div className={`flex items-center justify-between mt-auto ${!book.free ? "opacity-40 filter blur-[2px]" : ""}`}>
@@ -1040,13 +1046,14 @@ export function LawsTabContent({
                           {isRTL ? "تصفح المرجع" : "Browse Reference"}
                           <ArrowRight size={14} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
                         </span>
-                        <span className={`text-[10px] ${muted}`}>{book.lastUpdated}</span>
+                        {book.lastUpdated && book.lastUpdated !== "—" && <span className={`text-[10px] ${muted}`}>{book.lastUpdated}</span>}
                       </div>
                     </div>
                   ) : (
                     <div className={`${!book.free ? "opacity-40 filter blur-[2px]" : ""} flex flex-col md:flex-row md:items-center justify-between gap-5`}>
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
+                          {book.categoryLabel && (
                           <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg ${
                             book.type === "sharia"
                               ? isDark
@@ -1062,6 +1069,7 @@ export function LawsTabContent({
                           }`}>
                             {book.categoryLabel}
                           </span>
+                          )}
                           {book.free && (
                             <span className="px-2 py-1 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
                               <Sparkle size={10} weight="fill" />
@@ -1072,29 +1080,33 @@ export function LawsTabContent({
                         <h3 className={`text-base font-black mb-1 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>
                           {book.title}
                         </h3>
-                        <p className="text-[11px] text-amber-600 dark:text-[#C8A762] font-semibold mb-2">{book.author}</p>
+                        {book.author && book.author !== "—" && (
+                          <p className="text-[11px] text-amber-600 dark:text-[#C8A762] font-semibold mb-2">{book.author}</p>
+                        )}
                         <p className={`text-xs line-clamp-2 leading-relaxed ${muted}`}>{book.desc}</p>
                       </div>
 
                       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-8 md:shrink-0">
-                        <div className={`grid grid-cols-2 gap-4 p-4 rounded-xl border min-w-[220px] ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"}`}>
+                        <div className={`grid ${book.type ? "grid-cols-2" : "grid-cols-1"} gap-4 p-4 rounded-xl border min-w-[220px] ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"}`}>
                           <div className="flex flex-col">
                             <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "المجلدات" : "Volumes"}</span>
-                            <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{book.volCount}</span>
+                            <span className={`text-sm font-bold ${isDark ? "text-gray-300" : "text-gray-800"}`}>{book.volCount}</span>
                           </div>
+                          {book.type && (
                           <div className="flex flex-col">
                             <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "نوع المرجع" : "Type"}</span>
-                            <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>
+                            <span className={`text-sm font-bold ${isDark ? "text-gray-300" : "text-gray-800"}`}>
                               {book.type === "sharia" ? (isRTL ? "شرعي" : "Sharia") : book.type === "comparative" ? (isRTL ? "مقارن" : "Comparative") : (isRTL ? "وضعي" : "Positive")}
                             </span>
                           </div>
+                          )}
                         </div>
                         <div className="flex flex-col justify-center gap-2 sm:min-w-[130px]">
                           <span className={`text-xs flex items-center gap-1 font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
                             {isRTL ? "تصفح المرجع" : "Browse Reference"}
                             <ArrowRight size={14} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
                           </span>
-                          <span className={`text-[10px] ${muted}`}>{book.lastUpdated}</span>
+                          {book.lastUpdated && book.lastUpdated !== "—" && <span className={`text-[10px] ${muted}`}>{book.lastUpdated}</span>}
                         </div>
                       </div>
                     </div>

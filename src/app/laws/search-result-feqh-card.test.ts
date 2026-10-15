@@ -38,6 +38,18 @@ test("the fiqh card hides author, date, category and type when there is nothing 
   assert.match(cardSource, /isLoggedIn && book\.progress > 0 &&/);
 });
 
+test("the «all» view's fiqh cards (LawsTabContent) hide the same empty fields", () => {
+  const allView = readFileSync(new URL("./components/LawsTabContent.tsx", import.meta.url), "utf8");
+  const start = allView.indexOf("filteredFeqhBooks.slice(0, 3).map(");
+  assert.ok(start >= 0, "all-view fiqh cards not found");
+  const feqhCards = allView.slice(start);
+  assert.equal((feqhCards.match(/\{book\.categoryLabel && \(/g) || []).length, 2, "pill hidden without a label, both layouts");
+  assert.equal((feqhCards.match(/\{book\.author && book\.author !== "—" && \(/g) || []).length, 2);
+  assert.equal((feqhCards.match(/\{book\.type && \(/g) || []).length, 2, "no «وضعي» for an unknown type");
+  assert.equal((feqhCards.match(/\{book\.lastUpdated && book\.lastUpdated !== "—" && <span/g) || []).length, 2);
+  assert.doesNotMatch(feqhCards.slice(0, feqhCards.indexOf("filteredFeqhBooks.length > 3")), /text-gray-200/, "gray-200 is a dark-mode surface, not text");
+});
+
 test("a fiqh passage hit carries its book's author from the columns already selected", () => {
   const start = routeSource.indexOf("const runFeqh = async");
   const end = routeSource.indexOf("const runners:", start);
