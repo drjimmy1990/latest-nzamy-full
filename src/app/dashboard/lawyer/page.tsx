@@ -12,7 +12,6 @@ import {
   Flag, Storefront,
   Timer, Folder, Money, Briefcase, ShareNetwork, Graph, MapPin,
 } from "@phosphor-icons/react";
-import HijriDateWidget from "@/components/HijriDateWidget";
 import Link from "next/link";
 import { LawyerDashboardSkeleton } from "@/components/ui";
 import { OnboardingBanner } from "@/components/OnboardingBanner";
@@ -621,7 +620,6 @@ export default function LawyerDashboardPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <HijriDateWidget />
           {/* The title sits on the wrapper, not the button: a disabled control
               swallows pointer events in several browsers, and with it the only
               explanation of why this button is greyed out. */}
