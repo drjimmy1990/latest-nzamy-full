@@ -32,6 +32,10 @@ export function buildCartRows(userId: string, items: unknown): BuiltCartRows {
   if (items.length > MAX_CART_ITEMS) return { ok: false, error: `the cart holds at most ${MAX_CART_ITEMS} articles` };
 
   const rows: CartRow[] = [];
+  // One row per article: the upsert key is (user_id, law_slug, article_number),
+  // and one statement cannot touch the same key twice. The first occurrence
+  // keeps its place; a later duplicate is dropped.
+  const seen = new Set<string>();
   for (const [i, raw] of items.entries()) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ok: false, error: `item ${i} is not an object` };
     const item = raw as Record<string, unknown>;
@@ -54,7 +58,10 @@ export function buildCartRows(userId: string, items: unknown): BuiltCartRows {
       payload = item.payload as Record<string, unknown>;
     }
 
-    rows.push({ user_id: userId, law_slug: slug, article_number: num, position: i, payload });
+    const key = `${slug}\u0000${num}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rows.push({ user_id: userId, law_slug: slug, article_number: num, position: rows.length, payload });
   }
   return { ok: true, rows };
 }

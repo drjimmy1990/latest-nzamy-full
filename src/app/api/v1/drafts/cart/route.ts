@@ -46,13 +46,15 @@ export async function GET() {
  * which older clients send, is ignored — the column does not exist; the title
  * travels inside `payload`.)
  *
- * SAFE REPLACE. The new rows are inserted FIRST and the previous rows are
- * deleted only after that succeeded, by id. This route used to delete the
- * whole cart, ignore that delete's result, and then insert — so when the
- * insert failed (it always did: it wrote the missing `article_title` column,
- * 42703 on production 2026-10-16) the user's cart was simply gone. Now a
- * failed insert leaves the old cart untouched, and a failed cleanup removes
- * the rows just inserted so the cart is never doubled.
+ * SAFE REPLACE. The table has UNIQUE (user_id, law_slug, article_number)
+ * (production schema 2026-10-10), so the new rows are UPSERTED on that key —
+ * an article already in the cart keeps its row and gets its new payload and
+ * position — and only then are the rows the new cart no longer holds deleted.
+ * This route used to delete the whole cart, ignore that delete's result, and
+ * then insert, so when the insert failed (it always did: it wrote the missing
+ * `article_title` column, 42703 on production 2026-10-16) the user's cart was
+ * simply gone. Now a failed upsert leaves the old cart untouched, and a failed
+ * cleanup leaves the new items plus some old ones — never fewer.
  */
 export async function PUT(request: NextRequest) {
   const supabase = await createClient();
@@ -78,44 +80,27 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: built.error }, { status: 400 });
   }
 
-  // What the cart holds now — removed below only once the new rows are in.
-  const { data: previous, error: previousError } = await supabase
-    .from("law_draft_carts")
-    .select("id")
-    .eq("user_id", user.id);
-  if (previousError) {
-    console.error("[drafts/cart PUT] reading the current cart failed:", previousError.message, previousError.code);
-    return NextResponse.json({ error: "تعذّر حفظ السلة" }, { status: 500 });
-  }
-  const previousIds = (previous ?? []).map((r) => r.id as string);
-
-  let insertedIds: string[] = [];
+  let keptIds: string[] = [];
   if (built.rows.length > 0) {
-    const { data: inserted, error: insertError } = await supabase
+    const { data: saved, error: saveError } = await supabase
       .from("law_draft_carts")
-      .insert(built.rows)
+      .upsert(built.rows, { onConflict: "user_id,law_slug,article_number" })
       .select("id");
-    if (insertError) {
-      console.error("[drafts/cart PUT] insert failed:", insertError.message, insertError.code);
+    if (saveError) {
+      console.error("[drafts/cart PUT] upsert failed:", saveError.message, saveError.code);
       return NextResponse.json({ error: "تعذّر حفظ السلة" }, { status: 500 });
     }
-    insertedIds = (inserted ?? []).map((r) => r.id as string);
+    keptIds = (saved ?? []).map((r) => r.id as string);
   }
 
-  if (previousIds.length > 0) {
-    const { error: deleteError } = await supabase
-      .from("law_draft_carts")
-      .delete()
-      .eq("user_id", user.id)
-      .in("id", previousIds);
-    if (deleteError) {
-      console.error("[drafts/cart PUT] removing the previous cart failed:", deleteError.message, deleteError.code);
-      // Undo the insert so the cart is the old one, not old + new.
-      if (insertedIds.length > 0) {
-        await supabase.from("law_draft_carts").delete().eq("user_id", user.id).in("id", insertedIds);
-      }
-      return NextResponse.json({ error: "تعذّر حفظ السلة" }, { status: 500 });
-    }
+  // Everything the new cart does not hold. The ids come from the database, so
+  // the `in` list carries no user input.
+  let removal = supabase.from("law_draft_carts").delete().eq("user_id", user.id);
+  if (keptIds.length > 0) removal = removal.not("id", "in", `(${keptIds.join(",")})`);
+  const { error: deleteError } = await removal;
+  if (deleteError) {
+    console.error("[drafts/cart PUT] removing dropped items failed:", deleteError.message, deleteError.code);
+    return NextResponse.json({ error: "تعذّر حفظ السلة" }, { status: 500 });
   }
 
   // Return updated cart
