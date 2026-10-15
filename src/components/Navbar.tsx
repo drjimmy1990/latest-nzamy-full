@@ -224,7 +224,8 @@ function AvatarDropdown({
         { href: dashboardHref,  icon: Layout,   label: isAr ? "لوحة التحكم"     : "Dashboard" },
         { href: "/settings",    icon: GearSix,  label: isAr ? "الملف الشخصي"   : "My Account" },
         { href: "/pricing",     icon: ChartBar, label: isAr ? "الاشتراك والباقة" : "Plan & Billing" },
-        { href: "/notifications", icon: Bell,   label: isAr ? "الإشعارات"       : "Notifications" },
+        // No «الإشعارات» row: the bell beside this menu is the one entry point,
+        // and its own footer links to /notifications.
       ].map(({ href, icon: Icon, label }) => (
         <Link
           key={href} href={href} onClick={onClose}
@@ -330,7 +331,7 @@ export default function Navbar() {
       className="fixed top-0 right-0 left-0 z-50 safe-top"
     >
       <div className="mx-auto max-w-[1400px] px-4 pt-4">
-        <div className="rounded-[1.25rem] border border-slate-200/70 bg-white/85 px-6 py-3 shadow-[0_8px_32px_-8px_rgba(11,61,46,0.08)] backdrop-blur-xl dark:border-white/10 dark:bg-dark-card/90">
+        <div className="rounded-[1.25rem] border border-slate-200/70 bg-white/85 px-6 py-3 lg:px-4 xl:px-6 shadow-[0_8px_32px_-8px_rgba(11,61,46,0.08)] backdrop-blur-xl dark:border-white/10 dark:bg-dark-card/90">
           <div className="flex items-center justify-between">
 
             {/* ── Logo ── */}
@@ -358,8 +359,14 @@ export default function Navbar() {
               </span>
             </motion.a>
 
-            {/* ── Desktop Links ── */}
-            <div className="hidden items-center gap-1 xl:flex">
+            {/* ── Desktop Links ──
+                The desktop layout starts at `lg` (1024px); it used to start at
+                `xl` (1280px), which gave every laptop the phone menu. Between
+                lg and xl the links are tighter (px-2, gap-0.5), never wrap
+                (whitespace-nowrap), and the avatar drops its «أهلاً، …» text —
+                so seven Arabic links and the controls fit in 1024px even at
+                100% display density (the 75% default leaves ~1365 CSS px). */}
+            <div className="hidden items-center gap-0.5 lg:flex xl:gap-1">
               {ACTIVE_NAV.map((link) => (
                 <div
                   key={link.label}
@@ -369,7 +376,21 @@ export default function Navbar() {
                 >
                   <a
                     href={link.href}
-                    className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium text-ink-muted transition-colors hover:bg-royal/5 hover:text-royal dark:text-zinc-400 dark:hover:text-white dark:hover:bg-white/5"
+                    /* A touch screen at lg+ (an iPad in landscape) never fires
+                       mouseenter, and a menu parent's href is a "#…"
+                       placeholder — so a tap opens the menu instead of jumping
+                       to an anchor that does not exist. Open-only: with a mouse
+                       the hover has already opened it, and a toggle here would
+                       close it again on click. */
+                    onClick={(e) => {
+                      if (link.children && link.href.startsWith("#")) {
+                        e.preventDefault();
+                        setActiveDropdown(link.label);
+                      }
+                    }}
+                    aria-haspopup={link.children ? "menu" : undefined}
+                    aria-expanded={link.children ? activeDropdown === link.label : undefined}
+                    className="flex items-center gap-1 whitespace-nowrap rounded-lg px-2 py-2 text-sm font-medium text-ink-muted transition-colors hover:bg-royal/5 hover:text-royal dark:text-zinc-400 dark:hover:text-white dark:hover:bg-white/5 xl:px-3"
                   >
                     {isAr ? link.label : link.labelEn}
                     {link.children && (
@@ -392,7 +413,7 @@ export default function Navbar() {
             </div>
 
             {/* ── Right Controls ── */}
-            <div className="hidden items-center gap-2 xl:flex">
+            <div className="hidden items-center gap-1.5 lg:flex xl:gap-2">
 
               {/* The static "SA" + flag badge that used to sit here duplicated
                   the language toggle right beside it — both read as locale
@@ -433,12 +454,15 @@ export default function Navbar() {
                   <div className="relative" onClick={(e) => e.stopPropagation()}>
                     <button
                       onClick={() => setAvatarOpen((o) => !o)}
+                      aria-label={isAr ? "قائمة الحساب" : "Account menu"}
                       className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200/60 hover:border-royal/30 hover:bg-royal/5 dark:border-white/10 dark:hover:border-white/30 dark:hover:bg-white/5 transition-all"
                     >
                       <div className="w-7 h-7 rounded-lg bg-royal flex items-center justify-center text-white text-xs font-bold">
                         {name?.charAt(0) ?? "م"}
                       </div>
-                      <div className="flex flex-col">
+                      {/* Name text from xl up; between lg and xl the initial
+                          alone carries the button (the name is in the menu). */}
+                      <div className="hidden flex-col xl:flex">
                         <span className="text-sm font-medium text-ink dark:text-white max-w-[140px] truncate leading-tight">
                           {isAr ? `أهلاً، ${name}` : `Hi, ${name}`}
                         </span>
@@ -474,13 +498,13 @@ export default function Navbar() {
                       ٢٣٧). */}
                   <a
                     href="/login"
-                    className="rounded-lg border border-slate-200/50 px-4 py-2 text-sm font-medium text-ink-muted transition-colors hover:bg-royal/5 hover:text-royal dark:border-white/10 dark:text-zinc-400 dark:hover:text-white"
+                    className="whitespace-nowrap rounded-lg border border-slate-200/50 px-4 py-2 text-sm font-medium text-ink-muted transition-colors hover:bg-royal/5 hover:text-royal dark:border-white/10 dark:text-zinc-400 dark:hover:text-white lg:px-3 xl:px-4"
                   >
                     {isAr ? "دخول" : "Login"}
                   </a>
                   <MagneticButton
                     href="/register"
-                    className="inline-flex rounded-xl bg-royal px-5 py-2.5 text-sm font-semibold text-white shadow-[0_4px_16px_-4px_rgba(11,61,46,0.4)] transition-all hover:bg-royal-light hover:shadow-[0_8px_24px_-4px_rgba(11,61,46,0.5)]"
+                    className="inline-flex whitespace-nowrap rounded-xl bg-royal px-5 py-2.5 text-sm font-semibold text-white lg:px-4 xl:px-5 shadow-[0_4px_16px_-4px_rgba(11,61,46,0.4)] transition-all hover:bg-royal-light hover:shadow-[0_8px_24px_-4px_rgba(11,61,46,0.5)]"
                   >
                     {isAr ? "سجّل مجاناً" : "Sign Up Free"}
                   </MagneticButton>
@@ -489,7 +513,7 @@ export default function Navbar() {
             </div>
 
             {/* ── Mobile controls ── */}
-            <div className="flex items-center gap-2 xl:hidden">
+            <div className="flex items-center gap-2 lg:hidden">
               {isLoggedIn && <NotificationsBell isAr={isAr} />}
               <button onClick={toggleTheme} aria-label={isAr ? "تغيير المظهر" : "Toggle theme"} className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted dark:text-zinc-400">
                 {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
@@ -516,7 +540,7 @@ export default function Navbar() {
                 animate={{ height: "auto", opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
                 transition={{ type: "spring", stiffness: 200, damping: 25 }}
-                className="overflow-hidden xl:hidden"
+                className="overflow-hidden lg:hidden"
               >
                 <div className="border-t border-slate-100 pt-4 pb-2 dark:border-white/10">
                   {/* This list used to render `link.href` for EVERY entry and
@@ -627,9 +651,8 @@ export default function Navbar() {
                               </span>
                             )}
                           </div>
-                          <div className="ms-auto flex items-center">
-                            <NotificationsBell isAr={isAr} />
-                          </div>
+                          {/* No second bell here: the top bar above this drawer
+                              already carries the one for this layout. */}
                         </div>
 
                         {/* Navigation Links for parity */}
@@ -654,13 +677,6 @@ export default function Navbar() {
                           >
                             <ChartBar size={16} weight="duotone" />
                             {isAr ? "الاشتراك والباقة" : "Plan & Billing"}
-                          </Link>
-                          <Link
-                            href="/notifications"
-                            className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-ink-muted hover:bg-royal/5 hover:text-royal dark:text-zinc-400 dark:hover:text-white dark:hover:bg-white/5 transition-colors"
-                          >
-                            <Bell size={16} weight="duotone" />
-                            {isAr ? "الإشعارات" : "Notifications"}
                           </Link>
                         </div>
 
