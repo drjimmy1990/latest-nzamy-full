@@ -576,9 +576,10 @@ export async function POST(request: Request) {
           `, { count: 'estimated', head })
           .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG });
 
-        // Books whose TITLE carries the query lead page 1 (a passage search
-        // alone never surfaced «إعلام الموقعين» itself). Page 1 only: they
-        // are a header, not counted rows (see the return below).
+        // Books whose TITLE or AUTHOR carries the query lead page 1 (a
+        // passage search alone never surfaced «إعلام الموقعين» itself, nor
+        // «السنهوري»'s books). Page 1 only: they are a header, not counted
+        // rows (see the return below).
         const [res, titleBooks] = await Promise.all([
           feqhQuery()
             .order('id')
