@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { needsOnboarding } from "@/lib/auth/onboardingGate";
+import { safeLocalPath } from "@/lib/auth/safeLocalPath";
 import {
   FALLBACK_DASHBOARD_PATH,
   dashboardPathFor,
@@ -73,15 +74,11 @@ export async function GET(request: Request) {
   // does not currently permit. It is validated anyway because it arrives in
   // the URL: an absolute value such as "https://elsewhere.example" or a
   // protocol-relative "//elsewhere.example" (or its "/\" variant) would leave
-  // this site if placed into the Location header unchecked.
-  const nextParam = searchParams.get("next");
-  const next =
-    nextParam &&
-    nextParam.startsWith("/") &&
-    !nextParam.startsWith("//") &&
-    !nextParam.startsWith("/\\")
-      ? nextParam
-      : FALLBACK_DASHBOARD_PATH;
+  // this site if placed into the Location header unchecked. Browsers also strip
+  // tabs/newlines before resolving, so "/\t/evil.example" (?next=/%09/evil.example)
+  // would land off-site too: src/lib/auth/safeLocalPath.ts refuses control
+  // characters and backslashes and checks the result stays same-origin.
+  const next = safeLocalPath(searchParams.get("next"), FALLBACK_DASHBOARD_PATH);
 
   if (code) {
     const cookieStore = await cookies();

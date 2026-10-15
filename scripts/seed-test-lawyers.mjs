@@ -8,7 +8,8 @@
  * Usage:
  *   node scripts/seed-test-lawyers.mjs                # dry-run (preview only)
  *   node scripts/seed-test-lawyers.mjs --execute      # creates the accounts
- *   node scripts/seed-test-lawyers.mjs --execute --password="CustomPassword123!"
+ *   SEED_LAWYER_PASSWORD='<16+ random characters>' node scripts/seed-test-lawyers.mjs --execute
+ *   (--password=… also works, but it stays in the shell history)
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -69,7 +70,18 @@ if (pwArg) {
   customPassword = process.env.SEED_LAWYER_PASSWORD.trim();
 }
 
-const DEFAULT_PASSWORD = customPassword || "NezamyLawyer2026!";
+// No built-in password. The default that used to sit here was public in this
+// repo, so the 10 accounts it created on 2026-10-06 could be signed into by
+// anyone reading it. --execute now needs SEED_LAWYER_PASSWORD (or --password=).
+if (customPassword !== null && customPassword.length < 16) {
+  console.error("❌ The password must be at least 16 characters. Nothing was changed.");
+  process.exit(2);
+}
+if (EXECUTE && !customPassword) {
+  console.error("❌ --execute needs a password: SEED_LAWYER_PASSWORD='<16+ characters>' (or --password=). Nothing was changed.");
+  process.exit(2);
+}
+const SEED_PASSWORD = customPassword ?? "(not set — dry run)";
 
 // ─── 10 Diverse Saudi Lawyer Profiles ────────────────────────────────────────
 const LAWYERS_DATA = [
@@ -186,7 +198,7 @@ async function run() {
   console.log("══════════════════════════════════════════════════════════════════════════════");
   console.log(`  نظامي — إنشاء / تحديث 10 حسابات محامين اختبارية`);
   console.log(`  Target: ${HOST} | Mode: ${EXECUTE ? "EXECUTE (Applying changes)" : "DRY-RUN (Preview only)"}`);
-  console.log(`  Password for all 10 accounts: ${DEFAULT_PASSWORD}`);
+  console.log(`  Password: not printed — written only to outputs/test-accounts/lawyers-10-credentials.md (git-ignored)`);
   console.log("══════════════════════════════════════════════════════════════════════════════\n");
 
   // 1. Fetch existing auth users
@@ -207,9 +219,9 @@ async function run() {
     console.log(`\n👨‍⚖️ [${lawyer.num}/10] ${email} — ${lawyer.nameAr}`);
 
     if (!EXECUTE) {
-      console.log(`   [DRY-RUN] Will ${existing ? "update existing user" : "create new user"} with password: ${DEFAULT_PASSWORD}`);
+      console.log(`   [DRY-RUN] Will ${existing ? "update existing user" : "create new user"}`);
       console.log(`   [DRY-RUN] Tier: pro (lawyer-pro) | Verified: YES | Visible: YES | License: ${lawyer.license}`);
-      summary.push({ email, password: DEFAULT_PASSWORD, name: lawyer.nameAr, status: existing ? "Will Update" : "Will Create" });
+      summary.push({ email, password: SEED_PASSWORD, name: lawyer.nameAr, status: existing ? "Will Update" : "Will Create" });
       continue;
     }
 
@@ -217,7 +229,7 @@ async function run() {
     if (!existing) {
       const { data: newUser, error: createErr } = await supabase.auth.admin.createUser({
         email,
-        password: DEFAULT_PASSWORD,
+        password: SEED_PASSWORD,
         email_confirm: true,
         user_metadata: {
           user_type: "lawyer",
@@ -236,7 +248,7 @@ async function run() {
       console.log(`   ✓ Auth user created (ID: ${userId})`);
     } else {
       const { error: updateErr } = await supabase.auth.admin.updateUserById(userId, {
-        password: DEFAULT_PASSWORD,
+        password: SEED_PASSWORD,
         email_confirm: true,
         user_metadata: {
           ...existing.user_metadata,
@@ -320,7 +332,7 @@ async function run() {
 
     summary.push({
       email,
-      password: DEFAULT_PASSWORD,
+      password: SEED_PASSWORD,
       name: lawyer.nameAr,
       status: "Ready",
       license: lawyer.license,
@@ -341,17 +353,21 @@ async function run() {
 
   LAWYERS_DATA.forEach((l, idx) => {
     const email = `lawyer${l.num}@nezamy.sa`;
-    mdContent += `| ${l.num} | \`${email}\` | \`${DEFAULT_PASSWORD}\` | ${l.nameAr} | ${l.specialties.join("، ")} | \`${l.license}\` |\n`;
+    mdContent += `| ${l.num} | \`${email}\` | \`${SEED_PASSWORD}\` | ${l.nameAr} | ${l.specialties.join("، ")} | \`${l.license}\` |\n`;
   });
 
   mdContent += `\n> **ملاحظة:** جميع الحسابات موثقة (Verified)، ذات باقة برو نشطة (Pro)، وظاهرة في دليل وسوق المحامين.\n`;
 
-  fs.writeFileSync(credentialsPath, mdContent, "utf-8");
-  console.log(`\n📄 Credentials saved to: outputs/test-accounts/lawyers-10-credentials.md`);
+  // Only a real run writes the list: a dry run would otherwise overwrite the
+  // current credentials with the "(not set)" placeholder.
+  if (EXECUTE) {
+    fs.writeFileSync(credentialsPath, mdContent, "utf-8");
+    console.log(`\n📄 Credentials saved to: outputs/test-accounts/lawyers-10-credentials.md`);
+  }
 
   if (!EXECUTE) {
     console.log(`\n💡 To execute and create these accounts on ${HOST}, run:`);
-    console.log(`   node scripts/seed-test-lawyers.mjs --execute\n`);
+    console.log(`   SEED_LAWYER_PASSWORD='<16+ characters>' node scripts/seed-test-lawyers.mjs --execute\n`);
   }
 }
 
