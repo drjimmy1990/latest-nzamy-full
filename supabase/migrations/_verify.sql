@@ -944,6 +944,9 @@ BEGIN
         'effective_date_hijri', 'effective_date_gregorian',
         'supersedes_law_slug', 'instrument_id', 'parent_law_id', 'parent_law', 'enabling_article',
         'fts', 'created_at', 'updated_at']),
+      -- library.principles below is 20261004_01's list; once 20261016_01's
+      -- marker is on library.principles the narrower list in the 20261016_01
+      -- section at the end applies instead, and this row is skipped.
       ('library.judicial_collections', ARRAY[
         'id', 'title', 'court', 'year_hijri', 'part', 'source_id', 'series_id', 'track', 'description',
         'ruling_count', 'free', 'progress', 'created_at', 'updated_at']),
@@ -954,6 +957,9 @@ BEGIN
         'fts', 'created_at', 'updated_at'])
     ) AS v(tbl, allowed)
   LOOP
+    CONTINUE WHEN spec.tbl = 'library.principles'
+              AND coalesce(obj_description('library.principles'::regclass, 'pg_class'), '')
+                    ILIKE '%text server-only since 20261016_01%';
     FOREACH r IN ARRAY ARRAY['anon', 'authenticated']
     LOOP
       IF has_table_privilege(r, spec.tbl, 'SELECT') THEN
@@ -1035,4 +1041,91 @@ BEGIN
     RAISE EXCEPTION '_verify: two-level chapters (20261004_02) —%', missing;
   END IF;
   RAISE NOTICE '_verify: 20261004_02 OK — chapter levels valid, parents stay inside their law';
+END $$;
+
+
+-- ====================================================================
+-- 2026-10-16 — 20261016_01_library_principles_text_lock.sql (owner decision ١٧١)
+-- ====================================================================
+-- A principle's text, ruling basis, facts, reasons, ruling and `fts`, and every
+-- principle_paragraphs row, are server-only: the API roles read the catalogue
+-- columns below and nothing else. Keyed on the marker comment on
+-- library.principles, so a deploy that runs this file BEFORE the migration is
+-- applied still passes (code first, then migration).
+-- The allow-list here MUST match the migration's grant list.
+SELECT '20261016_01 marker on library.principles (principle text server-only)' AS check,
+       coalesce(obj_description('library.principles'::regclass, 'pg_class'), '')
+         ILIKE '%text server-only since 20261016_01%' AS present;
+
+DO $$
+DECLARE
+  spec    record;
+  r       text;
+  col     text;
+  missing text := '';
+BEGIN
+  IF coalesce(obj_description('library.principles'::regclass, 'pg_class'), '')
+       NOT ILIKE '%text server-only since 20261016_01%' THEN
+    RAISE NOTICE '_verify: 20261016_01 is not applied yet — principle text and paragraphs are still anon-readable (the pre-lock posture; apply it after the code deploy)';
+    RETURN;
+  END IF;
+
+  FOR spec IN
+    SELECT * FROM (VALUES
+      ('library.principles', ARRAY[
+        'id', 'collection_id', 'principle_number', 'issuing_body', 'session_date',
+        'decision_number', 'reference', 'year_hijri', 'order_index',
+        'classification_keywords', 'hashtags', 'is_redacted', 'created_at', 'updated_at'])
+    ) AS v(tbl, allowed)
+  LOOP
+    FOREACH r IN ARRAY ARRAY['anon', 'authenticated']
+    LOOP
+      IF has_table_privilege(r, spec.tbl, 'SELECT') THEN
+        missing := missing || format(' %s holds table-level SELECT on %s (was 20261004_01, 20260922_01 §3 or the self-host schema re-applied?);', r, spec.tbl);
+      END IF;
+      FOREACH col IN ARRAY spec.allowed
+      LOOP
+        IF NOT has_column_privilege(r, spec.tbl, col, 'SELECT') THEN
+          missing := missing || format(' %s cannot read public column %s.%s;', r, spec.tbl, col);
+        END IF;
+      END LOOP;
+      FOR col IN
+        SELECT att.attname::text
+          FROM pg_attribute att
+         WHERE att.attrelid = spec.tbl::regclass
+           AND att.attnum > 0
+           AND NOT att.attisdropped
+      LOOP
+        IF NOT (col = ANY (spec.allowed)) AND has_column_privilege(r, spec.tbl, col, 'SELECT') THEN
+          missing := missing || format(' %s can read locked column %s.%s (20261004_01 re-run? re-run 20261016_01);', r, spec.tbl, col);
+        END IF;
+      END LOOP;
+      IF has_any_column_privilege(r, 'library.principle_paragraphs', 'SELECT') THEN
+        missing := missing || format(' %s can SELECT library.principle_paragraphs;', r);
+      END IF;
+    END LOOP;
+  END LOOP;
+
+  IF NOT has_table_privilege('service_role', 'library.principles', 'SELECT')
+     OR NOT has_table_privilege('service_role', 'library.principle_paragraphs', 'SELECT') THEN
+    missing := missing || ' service_role cannot read principles / principle_paragraphs (every precedent page would 500);';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_policies
+              WHERE schemaname = 'library' AND tablename = 'principle_paragraphs'
+                AND cmd IN ('SELECT', 'ALL')
+                AND roles && ARRAY['anon', 'authenticated', 'public']::name[]) THEN
+    missing := missing || ' a public read policy is back on library.principle_paragraphs;';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies
+                  WHERE schemaname = 'library' AND tablename = 'principles'
+                    AND cmd IN ('SELECT', 'ALL')
+                    AND roles && ARRAY['anon', 'public']::name[]) THEN
+    missing := missing || ' no read policy for anon on library.principles (every guest catalogue read returns 0 rows);';
+  END IF;
+
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: the principle text lock is broken —%', missing;
+  END IF;
+
+  RAISE NOTICE '_verify: 20261016_01 OK — principle text, judgment, fts and paragraphs are server-only; the catalogue columns stay public';
 END $$;

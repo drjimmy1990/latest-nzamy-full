@@ -21,13 +21,16 @@ test("every library.articles read (page, head count, ranked RPC, by-id refetch) 
   assert.match(routeSource, /await serverOnly\s*\.schema\('library'\)\s*\.rpc\(RANKED_RPC,/);
   // The head-count fallback goes through the same builder, so it moves with it.
   assert.match(routeSource, /lawQuery\(false, true\)\.abortSignal\(signal\)/);
-  // The other sections — and the law title lookups — stay on the request
-  // client: 20261004_01 keeps fts and the columns they read on the anon
-  // allow-list, so a public search stays under anon's statement_timeout.
+  // Decrees, fiqh and the law title lookups stay on the request client:
+  // 20261004_01 keeps fts and the columns they read on the anon allow-list, so
+  // a public search stays under anon's statement_timeout. Principles moved to
+  // the service role with 20261016_01 (their text and fts are server-only).
   assert.match(routeSource, /fetchLawTitleHitsChecked\(supabase, \{/);
-  for (const table of ["principles", "decrees_circulars", "feqh_blocks"]) {
+  for (const table of ["decrees_circulars", "feqh_blocks"]) {
     assert.match(routeSource, new RegExp(String.raw`supabase\s*\.schema\('library'\)\s*\.from\('${table}'\)`));
   }
+  assert.match(routeSource, /serverOnly\s*\.schema\('library'\)\s*\.from\('principles'\)/);
+  assert.doesNotMatch(routeSource, /supabase\s*\.schema\('library'\)\s*\.from\('principles'\)/);
 });
 
 test("no article text leaves the route except as a capped snippet", () => {
@@ -59,10 +62,12 @@ test("autocomplete counts library.articles with the service role and never selec
   assert.match(auto, /\.select\('id', \{ count: 'estimated', head: true \}\)/);
   // No other articles read in autocomplete.
   assert.equal((auto.match(/'articles'/g) ?? []).length, 1);
-  // The other three counts stay on the request client (default argument).
-  for (const t of ["principles", "decrees_circulars", "feqh_blocks"]) {
+  // Decrees and fiqh count on the request client (default argument);
+  // principles on the service role since 20261016_01.
+  for (const t of ["decrees_circulars", "feqh_blocks"]) {
     assert.match(auto, new RegExp(String.raw`count\('${t}'\),`));
   }
+  assert.match(auto, /count\('principles', serverOnly\),/);
 });
 
 test("the tier-shaped 200 is private, no-store", () => {

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { checkLibraryAccess, getLibraryAccessForUser } from '@/lib/access-control';
 import { libraryGate } from '@/lib/library-gate';
 import { isFreeLibraryItem } from '@/lib/library-item-access';
@@ -19,6 +19,12 @@ import { isPrincipleLocked, planPrincipleWindow } from './_window';
  *     it has everything (it loads more on scroll, and all of it on search).
  * The paywall is enforced per principle by its GLOBAL index (offset + i), so a
  * later window never re-unlocks the free first N.
+ *
+ * Owner decision ١٧١ (migration 20261016_01): a principle's text, ruling basis,
+ * facts, reasons and ruling, its `fts`, and every principle_paragraphs row are
+ * SERVER-ONLY — the anon key holds no privilege on them. The window below is
+ * read with the service role, and this route's masking (150 characters of a
+ * locked principle, no paragraphs, no details) is the paywall.
  */
 export async function GET(
   request: Request,
@@ -69,8 +75,10 @@ export async function GET(
     const freeLimit = probe.freeLimit; // -1 = unlimited (whitelisted or Pro+)
 
     // Fetch one window of principles with paragraphs. Explicit columns: `*`
-    // dragged the fts tsvector along for every row.
-    const principlesQuery = await supabase
+    // dragged the fts tsvector along for every row. Service role: the text
+    // columns and principle_paragraphs are server-only since 20261016_01.
+    const serverOnly = await createServiceClient();
+    const principlesQuery = await serverOnly
       .schema('library')
       .from('principles')
       .select(`
@@ -89,7 +97,7 @@ export async function GET(
     if (principlesQuery.error) {
       // PGRST103 = offset past the end: an empty window, not a failure.
       if (principlesQuery.error.code === 'PGRST103') {
-        const head = await supabase
+        const head = await serverOnly
           .schema('library')
           .from('principles')
           .select('id', { count: 'exact', head: true })

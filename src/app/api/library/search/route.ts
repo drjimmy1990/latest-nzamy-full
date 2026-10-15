@@ -160,10 +160,13 @@ export async function POST(request: Request) {
     // anon key holds no privilege on it. Every articles read below (the page,
     // its head count, the ranked RPC, the by-id refetch) uses this client; the
     // snippet cap below (snippetLen) is then the only thing a caller sees of
-    // the text. Everything else (laws, principles, decrees, feqh) stays on the
-    // request client: migration 20261004_01 keeps `fts` and every column read
-    // below on the anon allow-list, so those public searches stay under anon's
-    // statement_timeout.
+    // the text. Principles too, since owner decision ١٧١ (migration
+    // 20261016_01): their text columns and `fts` (built from that text) are
+    // server-only, so the precedents section filters and reads through this
+    // client and a caller sees only the capped snippet. Everything else (laws,
+    // decrees, feqh) stays on the request client: migration 20261004_01 keeps
+    // `fts` and every column read below on the anon allow-list, so those
+    // public searches stay under anon's statement_timeout.
     const serverOnly = await createServiceClient();
     const offset = (page - 1) * limit;
 
@@ -445,7 +448,7 @@ export async function POST(request: Request) {
       const signal = AbortSignal.timeout(SECTION_BUDGET_MS);
       try {
         const precQuery = (head = false) => {
-          let q = supabase
+          let q = serverOnly
             .schema('library')
             .from('principles')
             .select(`
@@ -475,7 +478,13 @@ export async function POST(request: Request) {
             id: r.id,
             section: 'precedents',
             title: `مبدأ رقم ${r.principle_number} — ${r.issuing_body}`,
-            snippet: truncateWithHighlight(r.text as string, parsed.plainTerms, snippetLen(isFree)),
+            // A locked hit is centred on nothing (the principle's opening), as
+            // for articles: a query must not slide the window across paid text.
+            snippet: truncateWithHighlight(
+              (r.text as string) || '',
+              isFree ? parsed.plainTerms : [],
+              snippetLen(isFree),
+            ),
             locked: !isFree,
             meta: {
               court: (r.judicial_collections as Record<string, unknown>)?.court,

@@ -172,6 +172,12 @@
 --   the fourth the marker on library.laws may be gone, and _verify.sql only
 --   reports 20261004_01 as "not applied" — re-run this file.
 --
+-- NOT AFTER 20261016_01_library_principles_text_lock.sql
+--   20261016_01 (owner decision ١٧١) narrows the principles allow-list below:
+--   text, ruling_basis, facts, reasons, ruling and fts become server-only.
+--   Re-running THIS file after it re-grants them to anon. If you must re-run
+--   it, re-run 20261016_01 right after; _verify.sql raises until you do.
+--
 -- A NOTE ON REVOKE
 --   REVOKE removes only grants whose grantor is the object owner (a
 --   superuser's REVOKE acts as the owner). A grant recorded under another

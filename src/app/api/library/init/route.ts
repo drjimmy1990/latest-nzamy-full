@@ -227,13 +227,16 @@ export async function GET(request: Request) {
       shouldFetch("decrees")
         ? fetchSection("decrees_circulars", DECREE_LIST_COLUMNS, "decrees", (q) => q.order("id"))
         : Promise.resolve(emptySection()),
+      // Service role: principles.text is server-only since 20261016_01 (owner
+      // decision ١٧١); the paywall block below strips it from locked rows.
       shouldFetch("principles")
         ? fetchSection(
             "principles",
             `id, principle_number, issuing_body, text, session_date, decision_number, year_hijri,
              judicial_collections ( id, title, court, track, source_id )`,
             "principles",
-            (q) => q.order("id")
+            (q) => q.order("id"),
+            serverOnly
           )
         : Promise.resolve(emptySection()),
       shouldFetch("books")
