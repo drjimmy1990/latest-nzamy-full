@@ -75,7 +75,7 @@ const sections = {
       icon: Lock,
       title: "خصوصية محادثاتك",
       color: "bg-emerald-50 text-emerald-700",
-      body: "الاتصال بالمنصة مؤمَّن عبر TLS، والبيانات مخزَّنة لدى مزوّد البنية التحتية مع تشفير على مستوى القرص، وعزل صفوف (RLS) يمنع حساباً آخر من قراءة محادثاتك. ولا توجد طبقة تشفير طرف-لطرف. ومعالجة طلباتك في ذكاء نظامي تمر عبر خدمات معالجة خارجية، لذلك لا نستطيع أن نعدك بأن محتوى محادثتك لا يغادر المنصة. أما التحكم في حفظ سجل المحادثات فهو غير متاح حالياً.",
+      body: "الاتصال بالمنصة مؤمَّن عبر TLS، وعزل صفوف (RLS) يمنع حساباً آخر من قراءة محادثاتك. ولا توجد طبقة تشفير طرف-لطرف. ومعالجة طلباتك في ذكاء نظامي تمر عبر خدمات معالجة خارجية، لذلك لا نستطيع أن نعدك بأن محتوى محادثتك لا يغادر المنصة. أما التحكم في حفظ سجل المحادثات فهو غير متاح حالياً.",
     },
     {
       icon: Warning,
@@ -113,7 +113,7 @@ const sections = {
       icon: Lock,
       title: "Privacy of Your Conversations",
       color: "bg-emerald-50 text-emerald-700",
-      body: "Traffic is secured with TLS, data is stored at our infrastructure provider with disk-level encryption at rest, and row-level security (RLS) prevents another account from reading your conversations. There is no end-to-end encryption. Nezamy AI requests are handled through external processing services, so we cannot promise your conversation content never leaves the platform. Control over chat-history retention is not available yet.",
+      body: "Traffic is secured with TLS, and row-level security (RLS) prevents another account from reading your conversations. There is no end-to-end encryption. Nezamy AI requests are handled through external processing services, so we cannot promise your conversation content never leaves the platform. Control over chat-history retention is not available yet.",
     },
     {
       icon: Warning,

@@ -115,7 +115,7 @@ export default function ErpPage() {
                 codebase talks to Najiz, the Bar Association, ZATCA or the Ministry
                 of Commerce; the integration section below now says «قيد التطوير». */}
             {[
-              { icon: ShieldCheck, label: isRTL ? "متوافق مع PDPL" : "PDPL Compliant" },
+              { icon: ShieldCheck, label: isRTL ? "نلتزم بنظام حماية البيانات الشخصية" : "We abide by the PDPL" },
               { icon: Headset, label: isRTL ? "دعم أحد–خميس ٨ص–١٠م" : "Support Sun–Thu 8am–10pm" },
             ].map((badge, i) => (
               <div key={i} className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/70 backdrop-blur">

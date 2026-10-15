@@ -57,14 +57,15 @@ const sections = {
     },
     {
       id: "user-rights",
-      title: "٥. حقوق صاحب البيانات (نظام PDPL)",
+      title: "٥. حقوقك وفق نظام حماية البيانات الشخصية",
       content: [
         "**حق الاطلاع**: يحق لك طلب نسخة من بياناتك الشخصية المحتجزة لدينا.",
         "**حق التصحيح**: يحق لك تصحيح أي بيانات غير دقيقة أو ناقصة.",
         "**حق الحذف**: يحق لك طلب حذف بياناتك في حدود ما يسمح به القانون.",
         "**حق الاعتراض**: يحق لك الاعتراض على معالجة بياناتك لأغراض التسويق في أي وقت.",
         "**حق النقل**: يحق لك طلب الحصول على بياناتك في صيغة إلكترونية قابلة للنقل.",
-        "لممارسة أي من هذه الحقوق، تواصل معنا عبر: privacy@nezamy.sa",
+        "**حق الرجوع عن الموافقة**: يحق لك الرجوع عن موافقتك على معالجة بياناتك متى كانت الموافقة هي أساس المعالجة.",
+        "**كيف تقدّم طلبك**: أرسل طلبك إلى privacy@nezamy.sa من البريد المسجّل في حسابك، مع تحديد الحق الذي تطلبه، وقد نطلب ما يثبت هويتك قبل تنفيذه.",
       ],
     },
     {
@@ -81,10 +82,9 @@ const sections = {
       id: "security",
       title: "٧. أمان البيانات",
       content: [
-        "تُنقَل جميع البيانات عبر اتصال مشفّر باستخدام TLS 1.3، وتُخزَّن على بنية تحتية سحابية يوفّر مزوّدها تشفيراً على مستوى الأقراص.",
+        "تُنقَل جميع البيانات بينك وبين المنصة عبر اتصال مشفّر (TLS).",
         "تعزل سياسات الأمان على مستوى الصف (RLS) داخل قاعدة البيانات سجلات كل حساب عن غيره، فلا يقرأ حساب بيانات حساب آخر.",
-        "نُجري اختبارات اختراق دورية ونراجع سياسات الأمان بشكل ربعي.",
-        "في حال حدوث اختراق يؤثر على بياناتك، سنُخطرك خلال ٧٢ ساعة وفق متطلبات نظام PDPL.",
+        "إذا وقع تسرّب يمس بياناتك الشخصية، نُبلغ الجهة المختصة ونُخطرك وفق ما يقتضيه نظام حماية البيانات الشخصية ولوائحه.",
         "الوصول للبيانات محدود بمبدأ الحد الأدنى من الصلاحيات — لا يصل أي موظف للبيانات إلا بالقدر اللازم لعمله.",
       ],
     },
@@ -92,9 +92,8 @@ const sections = {
       id: "transfer",
       title: "٨. نقل البيانات خارج المملكة",
       content: [
-        "نبذل جهداً لتخزين بيانات المستخدمين السعوديين داخل المملكة وفق متطلبات السيادة الرقمية.",
-        "في حال الضرورة التقنية لنقل بيانات خارج المملكة، يتم ذلك وفق اتفاقيات تعاقدية تضمن نفس مستوى الحماية.",
-        "لا تُنقل البيانات الحساسة (مستندات الهوية، التفاصيل القانونية) خارج نطاق المملكة.",
+        "قد تُعالَج بعض البيانات لدى مزوّدي خدمات تقنية، ومنها خدمات معالجة طلبات الذكاء الاصطناعي، وقد تقع خوادمهم خارج المملكة.",
+        "أي نقل لبيانات شخصية إلى خارج المملكة يتم وفق الضوابط التي يحددها نظام حماية البيانات الشخصية ولوائحه.",
       ],
     },
     {
@@ -153,14 +152,15 @@ const sections = {
     },
     {
       id: "user-rights",
-      title: "5. Data Subject Rights (PDPL)",
+      title: "5. Your Rights under the Personal Data Protection Law",
       content: [
         "**Right of Access**: You have the right to request a copy of your personal data held by us.",
         "**Right of Correction**: You have the right to correct any inaccurate or incomplete data.",
         "**Right of Deletion**: You have the right to request deletion of your data within the limits permitted by law.",
         "**Right to Object**: You have the right to object to processing your data for marketing purposes at any time.",
         "**Right of Portability**: You have the right to request your data in a portable electronic format.",
-        "To exercise any of these rights, contact us at: privacy@nezamy.sa",
+        "**Right to Withdraw Consent**: You may withdraw your consent to the processing of your data wherever consent is its basis.",
+        "**How to Make a Request**: Email privacy@nezamy.sa from the address registered on your account, naming the right you are exercising; we may ask for proof of identity before acting on it.",
       ],
     },
     {
@@ -177,10 +177,9 @@ const sections = {
       id: "security",
       title: "7. Data Security",
       content: [
-        "All data is transmitted over an encrypted TLS 1.3 connection and stored on cloud infrastructure whose provider encrypts the underlying disks.",
+        "All data between you and the platform travels over an encrypted connection (TLS).",
         "Row-level security (RLS) policies inside the database isolate each account's records, so no account can read another account's data.",
-        "We conduct regular penetration tests and review security policies quarterly.",
-        "In case of a breach affecting your data, we will notify you within 72 hours per PDPL requirements.",
+        "If a breach affects your personal data, we report it to the competent authority and notify you as the Personal Data Protection Law and its regulations require.",
         "Data access is limited by the principle of least privilege — no employee accesses data beyond what's needed for their role.",
       ],
     },
@@ -188,9 +187,8 @@ const sections = {
       id: "transfer",
       title: "8. Data Transfer Outside the Kingdom",
       content: [
-        "We make every effort to store Saudi users' data within the Kingdom per digital sovereignty requirements.",
-        "If technical necessity requires data transfer outside the Kingdom, it occurs under contractual agreements ensuring the same protection level.",
-        "Sensitive data (identity documents, legal details) is never transferred outside the Kingdom.",
+        "Some data may be processed by technical service providers, including the services that process AI requests, whose servers may be located outside the Kingdom.",
+        "Any transfer of personal data outside the Kingdom follows the controls set by the Personal Data Protection Law and its implementing regulations.",
       ],
     },
     {
@@ -214,7 +212,7 @@ export default function PrivacyPage() {
   const highlights = [
     { icon: UserCircle, title: isRTL ? "نجمع بإذنك فقط" : "We Collect With Consent Only", color: "bg-royal/10 text-royal" },
     { icon: Lock, title: isRTL ? "لا نبيع بياناتك أبداً" : "We Never Sell Your Data", color: "bg-red-500/10 text-red-500" },
-    { icon: ShieldCheck, title: isRTL ? "اتصال مشفّر TLS 1.3" : "TLS 1.3 Encrypted Connection", color: "bg-emerald-500/10 text-emerald-500" },
+    { icon: ShieldCheck, title: isRTL ? "اتصال مشفّر (TLS)" : "Encrypted Connection (TLS)", color: "bg-emerald-500/10 text-emerald-500" },
     { icon: Trash, title: isRTL ? "حق الحذف محمي" : "Right to Delete Protected", color: "bg-amber-500/10 text-amber-500" },
   ];
 
@@ -233,11 +231,11 @@ export default function PrivacyPage() {
               {isRTL ? "سياسة الخصوصية" : "Privacy Policy"}
             </h1>
             <p className={`mt-3 text-sm ${isDark ? "text-gray-400" : "text-slate-500"}`}>
-              {isRTL ? "آخر تحديث: ١ يناير ٢٠٢٥" : "Last updated: January 1, 2025"}
+              {isRTL ? "آخر تحديث: ١٦ أكتوبر ٢٠٢٦" : "Last updated: October 16, 2026"}
             </p>
             <div className={`mx-auto mt-3 inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium ${isDark ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
               <ShieldCheck size={14} weight="fill" />
-              {isRTL ? "متوافق مع نظام حماية البيانات الشخصية (PDPL)" : "Compliant with Personal Data Protection Law (PDPL)"}
+              {isRTL ? "نلتزم بأحكام نظام حماية البيانات الشخصية" : "We abide by the Personal Data Protection Law (PDPL)"}
             </div>
           </motion.div>
         </div>

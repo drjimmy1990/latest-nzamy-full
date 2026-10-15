@@ -182,9 +182,9 @@ const faqData: FAQItem[] = [
     questionAr: "كيف تُحمى بياناتي الشخصية؟",
     questionEn: "How is my personal data protected?",
     answerAr:
-      "تُنقَل بياناتك عبر اتصال مشفّر (TLS)، وتُخزَّن على بنية تحتية سحابية يوفّر مزوّدها تشفيراً على مستوى الأقراص، مع عزل سجلات كل حساب عن غيره عبر سياسات RLS. نلتزم بنظام حماية البيانات الشخصية السعودي (PDPL) ولا نشارك بياناتك مع أطراف ثالثة دون إذنك.",
+      "تُنقَل بياناتك عبر اتصال مشفّر (TLS)، مع عزل سجلات كل حساب عن غيره عبر سياسات RLS. نلتزم بنظام حماية البيانات الشخصية السعودي (PDPL) ولا نشارك بياناتك مع أطراف ثالثة دون إذنك.",
     answerEn:
-      "Your data travels over an encrypted TLS connection and is stored on cloud infrastructure whose provider encrypts the underlying disks, with each account's records isolated by row-level security (RLS) policies. We comply with the Saudi Personal Data Protection Law (PDPL) and do not share your data with third parties without your consent.",
+      "Your data travels over an encrypted TLS connection, with each account's records isolated by row-level security (RLS) policies. We comply with the Saudi Personal Data Protection Law (PDPL) and do not share your data with third parties without your consent.",
   },
   {
     id: 19,

@@ -6,12 +6,8 @@ import Link from 'next/link';
 import {
   ShieldCheck,
   Lock,
-  Database,
   Eye,
-  ClockCountdown,
-  SealCheck,
   ArrowLeft,
-  Key,
   GitBranch,
   FileText,
 } from '@phosphor-icons/react';
@@ -31,23 +27,26 @@ const FadeUp = ({ children, delay = 0 }: { children: React.ReactNode; delay?: nu
   );
 };
 
+// Owner decision Q2 (2026-10-06): «يُصاغ في سياسة الخصوصية نص متوافق مع نظام
+// حماية البيانات الشخصية السعودي دون ادعاء غير متحقق». Each line below is
+// something the platform does today. Removed because nobody verified them:
+// «السيرفرات في المملكة / KSA Hosted» (the owner's default for Q2 forbids a
+// hosting-region claim), «متوافقة بالكامل» with PDPL, disk-level encryption
+// at rest, the ISO 27001 / «PDPL متوافق» / «ZATCA Ready» chips (no
+// certificate, no ZATCA or PDPL integration — settings ComplianceTab says
+// so), «2FA» (no second factor exists in the code), «نسخ احتياطية كل 6
+// ساعات … 30 نسخة», «مراقبة أمنية على مدار الساعة» and «Bug Bounty متاح».
 const pillars = [
   {
     icon: Lock,
-    title: 'تشفير النقل وعزل البيانات',
-    desc: 'كل اتصال بالمنصة مشفّر عبر TLS 1.3، وتُخزَّن البيانات على بنية تحتية سحابية يوفّر مزوّدها تشفيراً على مستوى الأقراص. وتعزل سياسات الأمان على مستوى الصف (RLS) سجلات كل حساب عن غيره داخل قاعدة البيانات.',
-    badge: 'TLS 1.3 · RLS',
+    title: 'تشفير الاتصال وعزل البيانات',
+    desc: 'كل اتصال بالمنصة مشفّر عبر TLS، وتعزل سياسات الأمان على مستوى الصف (RLS) سجلات كل حساب عن غيره داخل قاعدة البيانات.',
+    badge: 'TLS · RLS',
   },
   {
-    icon: Database,
-    title: 'السيرفرات في المملكة',
-    desc: 'بياناتك تُخزَّن حصرياً على خوادم موجودة داخل المملكة العربية السعودية متوافقة مع متطلبات هيئة الاتصالات وتقنية المعلومات.',
-    badge: 'KSA Hosted',
-  },
-  {
-    icon: SealCheck,
-    title: 'توافق نظام حماية البيانات (PDPL)',
-    desc: 'المنصة متوافقة بالكامل مع نظام حماية البيانات الشخصية السعودي الصادر بالمرسوم الملكي رقم م/19.',
+    icon: ShieldCheck,
+    title: 'الالتزام بنظام حماية البيانات الشخصية',
+    desc: 'نلتزم بأحكام نظام حماية البيانات الشخصية الصادر بالمرسوم الملكي رقم م/19، ونمكّنك من ممارسة حقوقك المبيّنة في سياسة الخصوصية.',
     badge: 'PDPL',
   },
   {
@@ -56,25 +55,11 @@ const pillars = [
     desc: 'لا نبيع بياناتك ولا نشاركها مع أي طرف ثالث لأغراض تسويقية. بياناتك تُستخدم فقط لتقديم الخدمة.',
     badge: 'No Sell',
   },
-  {
-    icon: Key,
-    title: 'التحقق الثنائي (2FA)',
-    desc: 'طبقة إضافية من الحماية على كل حساب — OTP عبر الجوال أو تطبيق المصادقة.',
-    badge: '2FA',
-  },
-  {
-    icon: ClockCountdown,
-    title: 'نسخ احتياطية تلقائية',
-    desc: 'يتم نسخ كل البيانات احتياطياً كل 6 ساعات مع الاحتفاظ بـ 30 نسخة — لا خطر لفقدان ملفاتك.',
-    badge: 'Auto Backup',
-  },
 ];
 
 const certifications = [
-  { name: 'ISO 27001', desc: 'أمن المعلومات' },
-  { name: 'PDPL متوافق', desc: 'حماية البيانات الشخصية' },
-  { name: 'ZATCA Ready', desc: 'فوترة إلكترونية' },
-  { name: 'TLS 1.3', desc: 'بروتوكول النقل الآمن' },
+  { name: 'TLS', desc: 'تشفير الاتصال' },
+  { name: 'RLS', desc: 'عزل سجلات كل حساب' },
 ];
 
 export default function SecurityPage() {
@@ -126,8 +111,8 @@ export default function SecurityPage() {
                 <ShieldCheck size={40} className="text-gold" weight="fill" />
               </motion.div>
               <div className="text-center">
-                <p className="text-white font-bold text-xl mb-1">حماية شاملة ٢٤/٧</p>
-                <p className="text-white/60 text-sm">مراقبة أمنية على مدار الساعة</p>
+                <p className="text-white font-bold text-xl mb-1">حماية بياناتك</p>
+                <p className="text-white/60 text-sm">ما تطبّقه المنصة اليوم</p>
               </div>
               <div className="grid grid-cols-2 gap-3 w-full">
                 {certifications.map((c, i) => (
@@ -152,7 +137,7 @@ export default function SecurityPage() {
       <section className="max-w-[1400px] mx-auto px-6 md:px-10 mt-24">
         <FadeUp>
           <h2 className="text-2xl font-bold text-ink mb-10" style={{ fontFamily: 'var(--font-brand)' }}>
-            ستة طبقات لحماية بياناتك
+            كيف نحمي بياناتك
           </h2>
         </FadeUp>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -187,7 +172,7 @@ export default function SecurityPage() {
                 {[
                   { icon: Eye, title: 'حق الوصول', desc: 'احصل على نسخة كاملة من بياناتك في أي وقت' },
                   { icon: FileText, title: 'حق التصحيح', desc: 'طلب تصحيح أي بيانات غير دقيقة فوراً' },
-                  { icon: GitBranch, title: 'حق المحو', desc: 'طلب حذف بياناتك بشكل كامل ونهائي' },
+                  { icon: GitBranch, title: 'حق المحو', desc: 'طلب حذف بياناتك في حدود ما يسمح به النظام' },
                 ].map((r, i) => (
                   <div key={r.title} className="flex items-start gap-4 p-4 rounded-xl border border-slate-100 hover:border-royal/20 transition-colors">
                     <div className="w-9 h-9 rounded-xl bg-royal/8 flex items-center justify-center flex-shrink-0">
@@ -208,7 +193,6 @@ export default function SecurityPage() {
                   {[
                     { label: 'إيميل الأمان', value: 'security@nzamy.sa' },
                     { label: 'وقت الاستجابة', value: 'خلال ٢٤ ساعة' },
-                    { label: 'برنامج الثغرات', value: 'Bug Bounty متاح' },
                   ].map((item) => (
                     <div key={item.label} className="flex justify-between py-2 border-b border-slate-200 last:border-0 text-sm">
                       <span className="text-ink-muted">{item.label}</span>

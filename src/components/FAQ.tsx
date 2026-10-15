@@ -20,7 +20,7 @@ const faqsAr = [
   },
   {
     q: "هل بياناتي وعقودي محمية؟",
-    a: "يُرفَع كل ملف وتُنقل كل بياناتك عبر اتصال مشفّر (TLS)، وتُخزَّن على بنية تحتية سحابية يوفّر مزوّدها تشفيراً على مستوى الأقراص، مع عزل ملفات كل حساب عن غيره داخل قاعدة البيانات. وتخضع لسرية تامة ومطابقة لأنظمة حماية البيانات في المملكة."
+    a: "يُرفَع كل ملف وتُنقل كل بياناتك عبر اتصال مشفّر (TLS)، مع عزل ملفات كل حساب عن غيره داخل قاعدة البيانات، ونلتزم بأحكام نظام حماية البيانات الشخصية في المملكة."
   },
   {
     q: "كيف أختار المحامي المناسب لقضيتي؟",
@@ -47,7 +47,7 @@ const faqsEn = [
   },
   {
     q: "Are my data and contracts secure?",
-    a: "Every upload and page request travels over an encrypted TLS connection, and your data is stored on cloud infrastructure whose provider encrypts the underlying disks, with each account's files isolated at the database row level. It is held in strict confidence and complies with Saudi data protection and privacy regulations."
+    a: "Every upload and page request travels over an encrypted TLS connection, with each account's files isolated at the database row level, and we abide by the Saudi Personal Data Protection Law."
   },
   {
     q: "How to choose the right lawyer?",

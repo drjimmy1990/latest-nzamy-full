@@ -148,14 +148,14 @@ const steps = {
 const faqs = {
   ar: [
     { q: "كيف تتم الاستشارة الفورية؟", a: "بعد الدفع مباشرةً يتم تحويلك لغرفة دردشة/صوت/فيديو مع أول محامٍ متاح من التخصص المطلوب. ولأن قائمة المحامين لا تزال قيد التجهيز، لا يمكننا حالياً تحديد وقت انتظار متوقع." },
-    { q: "هل الاستشارة سرية؟", a: "نعم، تلتزم المنصة بسرية المعلومات القانونية بموجب النظام السعودي. وتقنياً: الاتصال مؤمَّن عبر TLS، والبيانات مخزَّنة لدى مزوّد البنية التحتية مع تشفير على مستوى القرص، وعزل صفوف (RLS) يمنع حساباً آخر من قراءة محادثاتك. ولا توجد طبقة تشفير طرف-لطرف (E2E)." },
+    { q: "هل الاستشارة سرية؟", a: "نعم، تلتزم المنصة بسرية المعلومات القانونية بموجب النظام السعودي. وتقنياً: الاتصال مؤمَّن عبر TLS، وعزل صفوف (RLS) يمنع حساباً آخر من قراءة محادثاتك. ولا توجد طبقة تشفير طرف-لطرف (E2E)." },
     { q: "ما الفرق بين الاستشارة الفورية والمجدولة؟", a: "الفورية تربطك بأول محامٍ متاح خلال دقائق لمدة ٣٠ دقيقة. المجدولة تتيح لك اختيار محامٍ بعينه وتحديد وقت يناسبك لمدة ٦٠ دقيقة." },
     { q: "هل يمكن استرداد المبلغ إذا لم أكن راضيًا؟", a: "نعم، نضمن الرضا الكامل. إذا لم تكن راضيًا عن الاستشارة يمكنك طلب استرداد كامل خلال ٢٤ ساعة من انتهاء الجلسة." },
     { q: "هل ذكاء نظامي يغني عن المحامي؟", a: "ذكاء نظامي أداة مساعدة ممتازة للاستفسارات العامة والمعلوماتية، لكن للقضايا المعقدة والتمثيل القضائي لا بديل عن المتابعة بواسطة محامٍ مرخص ومتمرس." },
   ],
   en: [
     { q: "How does an instant consultation work?", a: "After payment you are immediately connected to a voice/video/chat room with the first available lawyer in the requested specialty. Because the lawyer roster is still being onboarded, we cannot quote an expected wait time yet." },
-    { q: "Is the consultation confidential?", a: "Yes — the platform complies with Saudi legal confidentiality requirements. Technically: traffic is secured with TLS, data is stored at our infrastructure provider with disk-level encryption at rest, and row-level security (RLS) prevents another account from reading your conversations. There is no end-to-end (E2E) encryption." },
+    { q: "Is the consultation confidential?", a: "Yes — the platform complies with Saudi legal confidentiality requirements. Technically: traffic is secured with TLS, and row-level security (RLS) prevents another account from reading your conversations. There is no end-to-end (E2E) encryption." },
     { q: "What is the difference between instant and scheduled?", a: "Instant connects you with the first available lawyer in minutes for 30 minutes. Scheduled lets you choose a specific lawyer and a time that suits you for 60 minutes." },
     { q: "Can I get a refund if I am not satisfied?", a: "Yes, we guarantee full satisfaction. If you are not satisfied with the consultation you can request a full refund within 24 hours of session completion." },
     { q: "Does Nezamy AI replace a lawyer?", a: "Nezamy AI is an excellent aid for general and informational queries, but for complex cases and court representation there is no substitute for follow-up by a licensed, experienced lawyer." },
