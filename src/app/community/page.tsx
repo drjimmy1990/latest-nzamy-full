@@ -538,10 +538,17 @@ export default function CommunityPage() {
                   <div className="w-20 h-20 rounded-3xl bg-white border border-slate-200 shadow-sm flex items-center justify-center mb-5 dark:bg-zinc-800 dark:border-white/10">
                     <Scales size={36} color="#C8A762" weight="duotone" />
                   </div>
-                  <p className={`text-lg font-black tracking-tight mb-2 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>لم يعثر على أسئلة</p>
-                  <p className={`text-sm mb-6 ${muted}`}>جرب البحث بكلمات مختلفة أو طرح سؤال جديد</p>
-                  <Link href="/community/ask" className="inline-flex items-center gap-2 px-6 py-3 bg-[#0B3D2E] text-white text-sm font-bold rounded-xl hover:bg-[#0a3328] shadow-md transition-all active:scale-[0.98]">
-                    اطرح أول سؤال
+                  {/* The lawyers tab lists only what RLS lets this reader see —
+                      today their own lawyers-only posts (see the posts route) —
+                      so «جرب البحث بكلمات مختلفة» would misdescribe it. */}
+                  <p className={`text-lg font-black tracking-tight mb-2 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>
+                    {tab === "lawyers" ? "لا توجد نقاشات ظاهرة لك هنا بعد" : "لم يعثر على أسئلة"}
+                  </p>
+                  <p className={`text-sm mb-6 ${muted}`}>
+                    {tab === "lawyers" ? "ابدأ أول موضوع في مجتمع المحامين." : "جرب البحث بكلمات مختلفة أو طرح سؤال جديد"}
+                  </p>
+                  <Link href={tab === "lawyers" ? "/community/ask?tab=lawyers" : "/community/ask"} className="inline-flex items-center gap-2 px-6 py-3 bg-[#0B3D2E] text-white text-sm font-bold rounded-xl hover:bg-[#0a3328] shadow-md transition-all active:scale-[0.98]">
+                    {tab === "lawyers" ? "اطرح موضوعاً" : "اطرح أول سؤال"}
                   </Link>
                 </div>
               ) : (
