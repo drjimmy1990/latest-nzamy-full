@@ -5,6 +5,7 @@ import {
   Clock, Eye, Share, BookmarkSimple, ArrowRight,
   Newspaper, ChatCircle, SealCheck, Scales,
   FacebookLogo, XLogo, WhatsappLogo, ArrowLeft,
+  Info, Lightbulb, Warning, WarningOctagon,
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -13,14 +14,19 @@ import Link from "next/link";
 import Image from "next/image";
 import { markdownBoldToSafeHtml } from "@/utils/sanitize";
 import type { PlatformBlogArticle } from "@/constants/platformContent";
+import { classifyBlockquote, CALLOUT_CLASSES, type CalloutKind } from "./_callouts";
 
-// ─── Markdown renderer (lightweight + GFM alerts) ────────────────────────────
-const ALERT_TYPES: Record<string, { label: string; cls: string }> = {
-  WARNING: { label: "تحذير", cls: "border-amber-400/40 bg-amber-400/10 text-amber-700 dark:text-amber-300" },
-  IMPORTANT: { label: "هام", cls: "border-red-400/40 bg-red-400/10 text-red-700 dark:text-red-300" },
-  NOTE: { label: "ملاحظة", cls: "border-sky-400/40 bg-sky-400/10 text-sky-700 dark:text-sky-300" },
-  TIP: { label: "نصيحة", cls: "border-emerald-400/40 bg-emerald-400/10 text-emerald-700 dark:text-emerald-300" },
-  CAUTION: { label: "احذر", cls: "border-orange-400/40 bg-orange-400/10 text-orange-700 dark:text-orange-300" },
+// ─── Markdown renderer (lightweight + callouts) ──────────────────────────────
+// Which blockquote is a note, a warning or a quoted statute — and its colours
+// (owner Q132–134: notes royal green/emerald, warnings amber/red, statutes in
+// a «السند النظامي» card) — live in ./_callouts.ts.
+const CALLOUT_ICONS: Record<CalloutKind, typeof Info> = {
+  important: Info,
+  note: Info,
+  tip: Lightbulb,
+  warning: Warning,
+  critical: WarningOctagon,
+  legal: Scales,
 };
 
 /** Convert heading text to a URL-safe anchor ID (works with Arabic text). */
@@ -117,25 +123,56 @@ function RenderContent({ md, isDark, toc }: { md: string; isDark: boolean; toc: 
     }
 
     const line = lines[i];
-    const alertMatch = /^>\s*\[!(WARNING|IMPORTANT|NOTE|TIP|CAUTION)\]/.exec(line);
-    if (alertMatch) {
-      const type = alertMatch[1];
-      const body: string[] = [];
-      i++;
-      while (i < lines.length && /^>\s?/.test(lines[i])) {
-        body.push(lines[i].replace(/^>\s?/, ""));
-        i++;
+
+    // Callouts: GitHub alerts, emoji-led notes/warnings and verbatim statute
+    // quotes (./_callouts.ts). Any other quote falls through to the plain
+    // blockquote branch below, untouched.
+    if (/^>(\s|\[!)/.test(line)) {
+      const quoteLines: string[] = [];
+      let j = i;
+      while (j < lines.length && /^>\s?/.test(lines[j])) {
+        quoteLines.push(lines[j].replace(/^>\s?/, ""));
+        j++;
       }
-      const a = ALERT_TYPES[type];
-      out.push(
-        <div key={key++} className={`rounded-xl border ps-4 pe-3 py-3 my-3 text-sm leading-relaxed ${a.cls}`}>
-          <p className="font-bold mb-1 flex items-center gap-1.5"><Scales size={14} weight="fill" /> {a.label}</p>
-          {body.map((b, j) => (
-            <p key={j} className="mb-1" dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(b) }} />
-          ))}
-        </div>,
-      );
-      continue;
+      const callout = classifyBlockquote(quoteLines);
+      if (callout) {
+        i = j;
+        const Icon = CALLOUT_ICONS[callout.kind];
+        const body = callout.body.map((b) => b.replace(/\r$/, "")).filter((b) => b.trim() !== "");
+        if (callout.kind === "legal" && callout.label) {
+          // The statute's words, verbatim — not italic, one block.
+          out.push(
+            <figure key={key++} className={`rounded-xl border ps-4 pe-3 py-3 my-4 text-sm leading-relaxed ${CALLOUT_CLASSES.legal}`}>
+              <figcaption className={`font-bold mb-1.5 flex items-center gap-1.5 ${isDark ? "text-[#C8A762]" : "text-royal"}`}>
+                <Scales size={15} weight="fill" /> {callout.label}
+              </figcaption>
+              <blockquote dangerouslySetInnerHTML={{ __html: body.map((b) => markdownBoldToSafeHtml(b)).join("<br>") }} />
+            </figure>,
+          );
+        } else if (!callout.label) {
+          // A block that names its own heading (⚖️ «مرجعية المقال»).
+          out.push(
+            <div key={key++} className={`rounded-xl border ps-4 pe-3 py-3 my-3 text-sm leading-relaxed flex items-start gap-2 ${CALLOUT_CLASSES[callout.kind]}`}>
+              <Icon size={15} weight="fill" className="mt-0.5 shrink-0 text-[#C8A762]" />
+              <div>
+                {body.map((b, k) => (
+                  <p key={k} className="mb-1" dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(b) }} />
+                ))}
+              </div>
+            </div>,
+          );
+        } else {
+          out.push(
+            <div key={key++} className={`rounded-xl border ps-4 pe-3 py-3 my-3 text-sm leading-relaxed ${CALLOUT_CLASSES[callout.kind]}`}>
+              <p className="font-bold mb-1 flex items-center gap-1.5"><Icon size={14} weight="fill" /> {callout.label}</p>
+              {body.map((b, k) => (
+                <p key={k} className="mb-1" dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(b) }} />
+              ))}
+            </div>,
+          );
+        }
+        continue;
+      }
     }
 
     // Horizontal rule
