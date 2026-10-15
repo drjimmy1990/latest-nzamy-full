@@ -12,6 +12,13 @@
  * from it; _verify.sql and the RLS harness test must carry the same lists.
  * The routes import next/server and "@/…" aliases, so (like the other route
  * contracts in this folder) this reads their source.
+ *
+ * Migration 20261016_01 (owner decision ١٧١) narrows library.principles
+ * further — text, ruling_basis, facts, reasons, ruling and fts become
+ * server-only — and makes library.principle_paragraphs server-only like the
+ * article tables. The principles allow-list is therefore parsed from
+ * 20261016_01 (the one in force); 20261004_01's own list is still checked
+ * against its _verify.sql section and harness.
  */
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -24,8 +31,13 @@ const repo = path.resolve(here, "../../../..");
 const read = (rel: string) => readFileSync(path.join(repo, rel), "utf8");
 
 const MIGRATION = read("supabase/migrations/20261004_01_library_column_lock.sql");
+const PRINCIPLES_MIGRATION = read("supabase/migrations/20261016_01_library_principles_text_lock.sql");
 const VERIFY = read("supabase/migrations/_verify.sql");
 const HARNESS = read("supabase/tests/rls/library_column_lock.test.sql");
+const PRINCIPLES_HARNESS = read("supabase/tests/rls/library_principles_text_lock.test.sql");
+
+/** Library tables the API roles hold NO privilege on: 20260929_01 + 20261016_01. */
+const SERVER_ONLY_TABLES = ["articles", "article_regulations", "article_amendments", "principle_paragraphs"];
 
 const TABLES = ["laws", "judicial_collections", "principles"] as const;
 type LockedTable = (typeof TABLES)[number];
@@ -54,13 +66,19 @@ const LIVE_COLUMNS: Record<LockedTable, string[]> = {
   ],
 };
 
-function grantList(table: LockedTable): string[] {
-  const m = new RegExp(String.raw`grant select \(([^)]*)\) on library\.${table} to anon, authenticated;`).exec(MIGRATION);
-  assert.ok(m, `20261004_01 must grant an explicit column list on library.${table}`);
+function grantList(table: LockedTable, sql = MIGRATION, label = "20261004_01"): string[] {
+  const m = new RegExp(String.raw`grant select \(([^)]*)\) on library\.${table} to anon, authenticated;`).exec(sql);
+  assert.ok(m, `${label} must grant an explicit column list on library.${table}`);
   return m[1].split(",").map((c) => c.trim()).filter(Boolean);
 }
 
-const ALLOWED = Object.fromEntries(TABLES.map((t) => [t, grantList(t)])) as Record<LockedTable, string[]>;
+/** What 20261004_01 granted (its _verify.sql section and harness carry these). */
+const ALLOWED_1004 = Object.fromEntries(TABLES.map((t) => [t, grantList(t)])) as Record<LockedTable, string[]>;
+/** What is in force: 20261016_01 replaced the principles list. */
+const ALLOWED = {
+  ...ALLOWED_1004,
+  principles: grantList("principles", PRINCIPLES_MIGRATION, "20261016_01"),
+} as Record<LockedTable, string[]>;
 const LOCKED = Object.fromEntries(
   TABLES.map((t) => [t, LIVE_COLUMNS[t].filter((c) => !ALLOWED[t].includes(c))]),
 ) as Record<LockedTable, string[]>;
@@ -307,9 +325,23 @@ function violationsIn(src: string, file: string): string[] {
   const re = /(\w+)\s*\.schema\(\s*['"]library['"]\s*\)\s*\.from\(\s*['"](\w+)['"]\s*\)/g;
   for (let m = re.exec(src); m; m = re.exec(src)) {
     const [, client, table] = m;
+    // A usage example in a doc comment (`*  supabase.schema(…)…`) is not a read.
+    const lineStart = src.lastIndexOf("\n", m.index) + 1;
+    if (/^\s*(?:\*|\/\/|\/\*)/.test(src.slice(lineStart, m.index))) continue;
     const kind = clientKind(src, client, m.index);
     if (kind === "service") continue;
+    if (SERVER_ONLY_TABLES.includes(table)) {
+      out.push(`${file}: request-client read of server-only library.${table}`);
+      continue;
+    }
     const chain = chainAt(src, m.index);
+    // An embed of a server-only table, from any library table.
+    const embedded = selectLiterals(src, chain);
+    for (const t of SERVER_ONLY_TABLES) {
+      if (new RegExp(String.raw`\b${t}\s*(?:!\w+\s*)?\(`).test(embedded)) {
+        out.push(`${file}: library.${table} embeds server-only library.${t} through ${kind === "unknown" ? `an unknown client "${client}"` : "the request client"}`);
+      }
+    }
     if (!isLockedTable(table)) {
       // Another library table: only an embed of a locked one matters.
       const cols = selectLiterals(src, chain);
@@ -377,10 +409,18 @@ test("the allow-lists: every live column is either allowed or locked, and the lo
     ],
   );
   assert.deepEqual(LOCKED.judicial_collections, ["metadata"]);
-  assert.deepEqual(LOCKED.principles, ["metadata"]);
-  // fts stays readable: built from readable columns only, and the public
-  // searches filter on it under anon's statement_timeout.
-  assert.ok(ALLOWED.laws.includes("fts") && ALLOWED.principles.includes("fts"));
+  // 20261004_01 locked only `metadata` on principles; 20261016_01 (owner
+  // decision ١٧١) adds the principle's text, its judgment and fts.
+  assert.deepEqual(LIVE_COLUMNS.principles.filter((c) => !ALLOWED_1004.principles.includes(c)), ["metadata"]);
+  assert.deepEqual(
+    [...LOCKED.principles].sort(),
+    ["facts", "fts", "metadata", "reasons", "ruling", "ruling_basis", "text"],
+  );
+  // laws.fts stays readable: built from readable columns only, and the public
+  // law searches filter on it under anon's statement_timeout. principles.fts
+  // is built from the locked text (every word with its position), so it is
+  // locked with it and the precedent searches run as the service role.
+  assert.ok(ALLOWED.laws.includes("fts") && !ALLOWED.principles.includes("fts"));
 });
 
 test("_verify.sql and the RLS harness carry the migration's allow-lists", () => {
@@ -391,9 +431,41 @@ test("_verify.sql and the RLS harness carry the migration's allow-lists", () => 
       const m = new RegExp(String.raw`\('library\.${t}', (?:array|ARRAY)\[([\s\S]*?)\]\)`).exec(text);
       assert.ok(m, `${label}: no allow-list for library.${t}`);
       const listed = [...m[1].matchAll(/'(\w+)'/g)].map((x) => x[1]);
-      assert.deepEqual(listed, ALLOWED[t], `${label}: library.${t} allow-list differs from the migration's grant`);
+      assert.deepEqual(listed, ALLOWED_1004[t], `${label}: library.${t} allow-list differs from the migration's grant`);
     }
   }
+  // Once 20261016_01 ran, _verify.sql's 20261004_01 block skips principles.
+  assert.match(section, /CONTINUE WHEN spec\.tbl = 'library\.principles'\s*AND coalesce\(obj_description\('library\.principles'::regclass, 'pg_class'\), ''\)\s*ILIKE '%text server-only since 20261016_01%';/);
+});
+
+test("20261016_01: _verify.sql, the harness and the migration's verify carry the principles allow-list", () => {
+  const listOf = (body: string) => [...body.matchAll(/'(\w+)'/g)].map((x) => x[1]);
+  const section = VERIFY.slice(VERIFY.indexOf("2026-10-16 — 20261016_01_library_principles_text_lock.sql"));
+  assert.ok(section.length > 100, "_verify.sql has no 20261016_01 section");
+  const v = /\('library\.principles', ARRAY\[([\s\S]*?)\]\)/.exec(section);
+  assert.ok(v, "_verify.sql: no 20261016_01 principles allow-list");
+  assert.deepEqual(listOf(v[1]), ALLOWED.principles, "_verify.sql 20261016_01 list");
+  const mv = /allowed text\[\] := array\[([\s\S]*?)\];/.exec(PRINCIPLES_MIGRATION);
+  assert.ok(mv, "20261016_01: no verify allow-list");
+  assert.deepEqual(listOf(mv[1]), ALLOWED.principles, "20261016_01 verify list");
+  const h = /foreach col in array array\[([\s\S]*?)\]/.exec(PRINCIPLES_HARNESS);
+  assert.ok(h, "harness: no principles allow-list");
+  assert.deepEqual(listOf(h[1]), ALLOWED.principles, "harness list");
+
+  // The migration: revoke + narrow grant, paragraphs server-only with their
+  // policies dropped by catalogue lookup, order guard, marker, raising verify.
+  assert.match(PRINCIPLES_MIGRATION, /revoke all on library\.principles from anon, authenticated, public;/);
+  assert.match(PRINCIPLES_MIGRATION, /revoke all on library\.principle_paragraphs from anon, authenticated, public;/);
+  assert.match(PRINCIPLES_MIGRATION, /grant all on library\.principle_paragraphs to service_role;/);
+  assert.match(PRINCIPLES_MIGRATION, /and pol\.tablename = 'principle_paragraphs'[\s\S]*?execute format\('drop policy %I on %I\.%I'/);
+  assert.match(PRINCIPLES_MIGRATION, /raise exception '20261016_01: apply 20261004_01_library_column_lock\.sql first/);
+  assert.match(PRINCIPLES_MIGRATION, /comment on table library\.principles is\s*'[^']*TEXT SERVER-ONLY since 20261016_01/);
+  assert.match(PRINCIPLES_MIGRATION, /raise exception '20261016_01 verify:%'/);
+  assert.match(PRINCIPLES_MIGRATION, /DEPLOY ORDER — CODE FIRST, THEN THIS MIGRATION/);
+  assert.equal((PRINCIPLES_MIGRATION.match(/^begin;$/gm) ?? []).length, 1);
+  assert.equal((PRINCIPLES_MIGRATION.match(/^commit;$/gm) ?? []).length, 1);
+  // 20261004_01 warns against being re-run after it.
+  assert.match(MIGRATION, /NOT AFTER 20261016_01_library_principles_text_lock\.sql/);
 });
 
 test("the migration: revoke + column grant, service_role kept, view closed, order guard, marker, raising verify", () => {
@@ -431,8 +503,13 @@ test("the scanner itself flags *, locked columns in select / filter / textSearch
     "const i = await supabase.schema('library').from('chapters').select('*, laws(*)');",
     "const j = await supabase.schema('library').from('principle_paragraphs').select('letter, principles!inner(id, metadata)');",
     "const COLS = 'id, metadata';",
+    // 20261016_01: the principle text, its judgment and fts are locked; the
+    // paragraphs are server-only, also as an embed.
+    "const k = await supabase.schema('library').from('principles').select('id').textSearch('fts', q);",
+    "const l = await supabase.schema('library').from('principles').select('id, text');",
+    "const m = await supabase.schema('library').from('judicial_collections').select('id, principles ( id, principle_paragraphs ( text ) )');",
   ].join("\n");
-  assert.equal(violationsIn(bad, "bad.ts").length, 10, violationsIn(bad, "bad.ts").join("\n"));
+  assert.equal(violationsIn(bad, "bad.ts").length, 13, violationsIn(bad, "bad.ts").join("\n"));
 
   const good = [
     "const supabase = await createClient();",
@@ -442,8 +519,12 @@ test("the scanner itself flags *, locked columns in select / filter / textSearch
     "const c = await supabase.schema('library').from('principles').select('id, issuing_body, judicial_collections ( id, title )').order('id');",
     "const d = await supabase.schema('library').from('chapters').select('*, laws(slug, title)');",
     "const e = await serverOnly.schema('library').from('articles').select('id, laws!inner(slug, preamble)');",
-    // fts is on the allow-list: the public full-text searches run as anon.
-    "const f = await supabase.schema('library').from('principles').select('id').textSearch('fts', q);",
+    // laws.fts is on the allow-list: the public law searches run as anon.
+    "const f = await supabase.schema('library').from('laws').select('slug').textSearch('fts', q);",
+    // The service role reads the locked principle text and the paragraphs.
+    "const p = await serverOnly.schema('library').from('principles').select('id, text, principle_paragraphs ( text )').textSearch('fts', q);",
+    // A usage example in a doc comment is not a read.
+    " *   supabase.schema('library').from('articles').select('*').eq('law_slug', slug)",
     "const g = await supabase.schema('library').from('laws').select(LAW_COLS).textSearch('fts', q).eq('type', t);",
     "const LAW_COLS = 'slug, title, ' + 'type';",
     "let q = supabase.schema('library').from('principles').select('id');",
@@ -495,29 +576,30 @@ test("no request-client read of laws / judicial_collections / principles anywher
 });
 
 test("reads the scanner cannot see (dynamic table names, a client parameter) are pinned here", () => {
-  // init: fetchSection(table, …) builds the query; only the laws section needs
-  // locked columns, and it is the only one handed the service client.
+  // init: fetchSection(table, …) builds the query. The laws section needs
+  // locked columns (20261004_01) and the principles section reads the
+  // principle text (20261016_01): those two — and only those — are handed the
+  // service client; the paywall then strips the text from locked rows.
   const init = read("src/app/api/library/init/route.ts");
   assert.match(init, /client: typeof supabase \| typeof serverOnly = supabase/);
   assert.match(init, /const serverOnly = await createServiceClient\(\);/);
   const lawsCall = init.slice(init.indexOf('fetchSection("laws"'), init.indexOf('shouldFetch("decrees")'));
   assert.match(lawsCall, /\}, serverOnly\)\s*: Promise\.resolve\(emptySection\(\)\)/);
-  assert.equal((init.match(/, serverOnly\)/g) ?? []).length, 1, "only the laws section runs as the service role");
   const principlesStart = /fetchSection\(\s*"principles"/.exec(init);
   assert.ok(principlesStart, "the principles section");
   const principlesCall = init.slice(principlesStart.index, init.indexOf('shouldFetch("books")'));
-  const principlesSelect = /`([\s\S]*?)`/.exec(principlesCall);
-  assert.ok(principlesSelect, "the principles section select");
-  for (const tok of principlesSelect[1].match(/[A-Za-z_]\w*/g) ?? []) {
-    assert.ok(!LOCKED.principles.includes(tok) && !LOCKED.judicial_collections.includes(tok), `init principles select names locked "${tok}"`);
-  }
+  assert.match(principlesCall, /\(q\) => q\.order\("id"\),\s*serverOnly\s*\)\s*: Promise\.resolve\(emptySection\(\)\)/);
+  const decreesCall = init.slice(init.indexOf('shouldFetch("decrees")'), principlesStart.index);
+  const booksCall = init.slice(init.indexOf('shouldFetch("books")'), init.indexOf('shouldFetch("collections")'));
+  assert.doesNotMatch(decreesCall + booksCall, /serverOnly/, "decrees and books stay on the request client");
+  assert.match(init, /const out = isFree \? \{ \.\.\.row \} : stripFields\(\{ \.\.\.row \}, \["text"\]\);/);
 
   // autocomplete: count(table, client) selects `id` and filters on `fts`;
-  // principles counts on the request client, so both must be allowed there.
+  // principles.fts is server-only, so the principles count passes serverOnly.
   const auto = read("src/app/api/library/autocomplete/route.ts");
   assert.match(auto, /\.select\('id', \{ count: 'estimated', head: true \}\)\s*\.textSearch\('fts',/);
-  assert.match(auto, /count\('principles'\),/);
-  assert.ok(ALLOWED.principles.includes("id") && ALLOWED.principles.includes("fts"));
+  assert.match(auto, /count\('principles', serverOnly\),/);
+  assert.match(auto, /\/\/ Top 2 principle matches \(server-only since 20261016_01\)\s*serverOnly\s*\.schema\('library'\)\s*\.from\('principles'\)/);
   assert.doesNotMatch(auto, /count\(['"](laws|judicial_collections)['"]/);
 
   // lawTitleHits runs on the request client (its callers pass `supabase`) and
@@ -563,11 +645,22 @@ test("routes that need locked columns read them with the service role and keep m
   assert.match(monitor, /supabase\s*\.schema\("library"\)\s*\.from\("decrees_circulars"\)/);
   assert.match(monitor, /maskOfficialDates\(buildLatest\(latestLawRows, orderRows, todayHijri\), isSubscriber\)/);
 
-  // The public searches stay on the request client (anon's statement_timeout).
+  // The law title searches stay on the request client (anon's
+  // statement_timeout); the precedents section filters on principles.fts,
+  // server-only since 20261016_01, so it runs as the service role and a locked
+  // hit's snippet is centred on the opening, never on the query.
   const search = read("src/app/api/library/search/route.ts");
-  assert.match(search, /let q = supabase\s*\.schema\('library'\)\s*\.from\('principles'\)/);
+  assert.match(search, /let q = serverOnly\s*\.schema\('library'\)\s*\.from\('principles'\)/);
+  assert.match(search, /snippet: truncateWithHighlight\(\s*\(r\.text as string\) \|\| '',\s*isFree \? parsed\.plainTerms : \[\],\s*snippetLen\(isFree\),\s*\)/);
   assert.match(search, /fetchLawTitleHitsChecked\(supabase, \{/);
 
   const precedent = read("src/app/api/library/precedents/[slug]/route.ts");
   assert.match(precedent, /\.from\('judicial_collections'\)\s*\.select\('id, title, court, year_hijri, part, source_id, track, description, ruling_count, free'\)/);
+  // The window (text, judgment, paragraphs) and its count fallback run as the
+  // service role; the per-principle mask is the paywall.
+  assert.match(precedent, /const serverOnly = await createServiceClient\(\);\s*const principlesQuery = await serverOnly\s*\.schema\('library'\)\s*\.from\('principles'\)/);
+  assert.match(precedent, /const head = await serverOnly\s*\.schema\('library'\)\s*\.from\('principles'\)/);
+  assert.match(precedent, /text: isLocked \? truncate\(p\.text, 150\) : p\.text,/);
+  assert.match(precedent, /paragraphs: isLocked\s*\? \[\]/);
+  assert.match(precedent, /details: isLocked \? null : \{/);
 });

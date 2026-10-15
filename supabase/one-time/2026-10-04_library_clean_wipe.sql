@@ -22,13 +22,20 @@
 --   laws, chapters, articles, article_amendments, article_regulations,
 --   decrees_circulars, decree_pages, judicial_collections, principles,
 --   principle_paragraphs, feqh_books, feqh_chapters, feqh_sections, feqh_blocks
+--   — and, when it exists, library_precedent_private.precedent_unparsed_details
+--   (20260919_private_precedent_details.sql: the owner's not-yet-classified
+--   judgment text, one row per principle, `references library.principles
+--   on delete restrict`). It is content of the same load — the owner's
+--   re-upload refills it (store_private_precedent_details) — and its foreign
+--   key would otherwise make the TRUNCATE fail. Added 2026-10-16.
 -- WHAT IT KEEPS: library.smart_folders, smart_folder_items, issue_reports,
---   invitations (users' data — 0 rows each on 2026-10-04), every table in
---   other schemas, grants, RLS, the column lock, functions, migrations.
---   No table outside these 14 has a foreign key into them (checked
---   2026-10-04), so no CASCADE is used — if one is ever added, the TRUNCATE
---   fails instead of silently emptying it. The only triggers on these tables
---   maintain updated_at.
+--   invitations (users' data — 0 rows each on 2026-10-04), every other table
+--   in any schema, grants, RLS, the column lock, functions, migrations.
+--   Apart from that private table, no table outside these 14 has a foreign
+--   key into them (checked against the production schema of 2026-10-10 and
+--   every migration up to 2026-10-16), so no CASCADE is used — if one is
+--   ever added, the TRUNCATE fails instead of silently emptying it. The only
+--   triggers on these tables maintain updated_at.
 --
 -- THE SITE IS EMPTY BETWEEN BLOCK 2 AND THE END OF THE LOAD (law pages,
 -- search, the library). So, BEFORE block 2:
@@ -106,6 +113,15 @@ union all select '(kept) smart_folders', count(*) from library.smart_folders
 union all select '(kept) smart_folder_items', count(*) from library.smart_folder_items
 union all select '(kept) issue_reports', count(*) from library.issue_reports
 union all select '(kept) invitations', count(*) from library.invitations;
+-- (and, when the private table exists, its row count as a NOTICE)
+do $$
+declare n bigint;
+begin
+  if to_regclass('library_precedent_private.precedent_unparsed_details') is not null then
+    execute 'select count(*) from library_precedent_private.precedent_unparsed_details' into n;
+    raise notice 'library_precedent_private.precedent_unparsed_details: % rows (emptied with the 14)', n;
+  end if;
+end $$;
 
 -- 2) WIPE — one transaction; rolls back unless all 14 are empty afterwards.
 --    It wipes NOTHING until you remove the two dashes at the start of the
@@ -122,21 +138,32 @@ begin
   end if;
 end $$;
 
-truncate table
-  library.article_amendments,
-  library.article_regulations,
-  library.articles,
-  library.chapters,
-  library.laws,
-  library.decree_pages,
-  library.decrees_circulars,
-  library.principle_paragraphs,
-  library.principles,
-  library.judicial_collections,
-  library.feqh_blocks,
-  library.feqh_sections,
-  library.feqh_chapters,
-  library.feqh_books;
+-- One TRUNCATE. It must name the private details table in the SAME command:
+-- TRUNCATE refuses a table that an unlisted table references, even an empty
+-- one. No CASCADE.
+do $$
+declare
+  targets text[] := array[
+    'library.article_amendments',
+    'library.article_regulations',
+    'library.articles',
+    'library.chapters',
+    'library.laws',
+    'library.decree_pages',
+    'library.decrees_circulars',
+    'library.principle_paragraphs',
+    'library.principles',
+    'library.judicial_collections',
+    'library.feqh_blocks',
+    'library.feqh_sections',
+    'library.feqh_chapters',
+    'library.feqh_books'];
+begin
+  if to_regclass('library_precedent_private.precedent_unparsed_details') is not null then
+    targets := targets || 'library_precedent_private.precedent_unparsed_details'::text;
+  end if;
+  execute 'truncate table ' || array_to_string(targets, ', ');
+end $$;
 
 do $$
 declare
@@ -152,6 +179,10 @@ begin
     execute format('select count(*) from library.%I', t) into n;
     if n > 0 then left_over := left_over || format(' %s=%s', t, n); end if;
   end loop;
+  if to_regclass('library_precedent_private.precedent_unparsed_details') is not null then
+    execute 'select count(*) from library_precedent_private.precedent_unparsed_details' into n;
+    if n > 0 then left_over := left_over || format(' precedent_unparsed_details=%s', n); end if;
+  end if;
   if left_over <> '' then
     raise exception 'library clean wipe: rows left —% — rolling back', left_over;
   end if;

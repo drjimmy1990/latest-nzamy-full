@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { createRoomError, parseCreateRoomBody, withRelatedId } from "./_createRoom";
 
 /**
  * GET /api/v1/chat/rooms — List user's chat rooms with last message preview
@@ -90,7 +91,7 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      return { ...room, last_message: lastMessage };
+      return { ...withRelatedId(room), last_message: lastMessage };
     }),
   );
 
@@ -98,8 +99,17 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * POST /api/v1/chat/rooms — Create a new chat room
- * Body: { participant_ids: string[], name?, room_type: 'direct'|'group'|'support' }
+ * POST /api/v1/chat/rooms — open THE chat room of a service request
+ * Body: { participant_ids: string[], related_id (or request_id): string,
+ *         name?: string, type (or room_type)?: 'direct' | 'group' }
+ *
+ * Since migration 20261016_03 a user creates a room only through
+ * public.create_chat_room: the caller must be a party of the request (its
+ * requester or assignee), the other participants must be its other party, and
+ * a request has one room — a second call returns it. This route used to insert
+ * the room and its participants itself, which the recursive production policy
+ * (42P17), the room's read-after-insert and a `room_type`-only body check
+ * (the client sends `type`) each broke on their own.
  */
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -113,55 +123,29 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
-
-  if (!body.room_type || !Array.isArray(body.participant_ids)) {
-    return NextResponse.json(
-      { error: "room_type and participant_ids are required" },
-      { status: 400 },
-    );
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "طلب غير صالح" }, { status: 400 });
+  }
+  const parsed = parseCreateRoomBody(body);
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
 
-  if (!["direct", "group", "support"].includes(body.room_type)) {
-    return NextResponse.json(
-      { error: "room_type must be 'direct', 'group', or 'support'" },
-      { status: 400 },
-    );
+  const { data: room, error } = await supabase.rpc("create_chat_room", {
+    p_request_id: parsed.value.requestId,
+    p_participant_ids: parsed.value.participantIds,
+    p_name: parsed.value.name,
+    p_room_type: parsed.value.roomType,
+  });
+
+  if (error || !room) {
+    console.error("[chat/rooms POST] create_chat_room failed:", error?.code, error?.message);
+    const mapped = createRoomError(error?.code);
+    return NextResponse.json({ error: mapped.error }, { status: mapped.status });
   }
 
-  // Create the room
-  const { data: room, error: roomError } = await supabase
-    .from("chat_rooms")
-    .insert({
-      name: body.name ?? null,
-      room_type: body.room_type,
-    })
-    .select()
-    .single();
-
-  if (roomError) {
-    return NextResponse.json({ error: roomError.message }, { status: 500 });
-  }
-
-  // Add current user as owner participant
-  const allParticipantIds = [
-    user.id,
-    ...body.participant_ids.filter((id: string) => id !== user.id),
-  ];
-
-  const participants = allParticipantIds.map((pid: string, index: number) => ({
-    room_id: room.id,
-    user_id: pid,
-    role: index === 0 ? "owner" : "member",
-  }));
-
-  const { error: partError } = await supabase
-    .from("chat_participants")
-    .insert(participants);
-
-  if (partError) {
-    return NextResponse.json({ error: partError.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ data: room }, { status: 201 });
+  return NextResponse.json({ data: withRelatedId(room) }, { status: 201 });
 }

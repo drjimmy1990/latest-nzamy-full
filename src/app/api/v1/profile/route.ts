@@ -52,6 +52,7 @@ const AR = {
   // badPhone used to live here. The message is now per-reason and comes from
   // saudiMobileMessage() via ./_phone.ts — appendix 03 §(a).
   badOnboardingFlag: "قيمة حالة إكمال الإعداد غير صالحة.",
+  badRateVisibility: "قيمة خيار إظهار السعر غير صالحة.",
   lawyerFieldsOnly: "هذه الحقول متاحة لحسابات المحامين فقط.",
   saveFailed: "تعذّر حفظ التعديلات. حاول مرة أخرى.",
   badSlug: "قيمة الرابط غير صالحة.",
@@ -463,6 +464,9 @@ export async function PATCH(request: Request) {
     "marketplace_visible",
     "is_accepting_clients",
     "show_contact",
+    // Owner decision ١٦٨ — migration 20261016_05_lawyer_show_hourly_rate.sql.
+    // The public lawyer APIs show hourly_rate only when this is true.
+    "show_hourly_rate",
     // Phase 7 (item 128 · 130 · 133) — contracts in lawyerProfileFields.ts /
     // contactSanitizer.ts; columns added by
     // supabase/migrations/20260907_phase7_profile_services_reviews.sql.
@@ -498,6 +502,11 @@ export async function PATCH(request: Request) {
   }
   if (phoneDecision.action === "store") {
     body.phone = phoneDecision.e164;
+  }
+
+  if ("show_hourly_rate" in body && typeof body.show_hourly_rate !== "boolean") {
+    // lawyer_profiles.show_hourly_rate is `boolean not null default false`.
+    return NextResponse.json({ error: AR.badRateVisibility }, { status: 400 });
   }
 
   if ("onboarding_completed" in body && typeof body.onboarding_completed !== "boolean") {

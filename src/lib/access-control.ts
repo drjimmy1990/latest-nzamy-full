@@ -17,6 +17,7 @@ import {
 } from "@/lib/paymentGatewayPolicy";
 import { isAuthUnavailable } from "@/lib/auth/apiAuth";
 import { AUTH_UNAVAILABLE_AR } from "@/lib/auth/resolveAuthOutcome";
+import { effectiveTier, type ActivePlanRow } from "@/lib/entitlementGrantRules";
 
 export type { PaymentGatewayState, PaymentGatewayStatus } from "@/lib/paymentGatewayPolicy";
 
@@ -94,16 +95,16 @@ const SERVER_FEATURE_GATES: Record<string, ServerTier> = {
 export async function getUserTier(userId: string): Promise<ServerTier> {
   const adminClient = await createServiceClient();
 
-  const { data: sub } = await adminClient
+  // Every active row with its end date: a row whose current_period_end has
+  // passed no longer counts (nothing flips it to 'expired'), and among the
+  // running rows the highest tier wins — see effectiveTier().
+  const { data: subs } = await adminClient
     .from("subscriptions")
-    .select("tier")
+    .select("tier, current_period_end")
     .eq("user_id", userId)
-    .eq("status", "active")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .eq("status", "active");
 
-  return (sub?.tier as ServerTier) ?? "free";
+  return effectiveTier((subs as ActivePlanRow[] | null) ?? [], Date.now(), TIER_RANK);
 }
 
 // ─── requireAdmin — Auth + admin check for API routes ─────────────────────────

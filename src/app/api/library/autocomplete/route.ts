@@ -52,9 +52,13 @@ export async function GET(request: Request) {
 
     // T28-21 (migration 20260929_01): library.articles is server-only, so its
     // count runs as the service role. Only a number leaves this route for it —
-    // no article row or text is selected (head: true). Everything else stays
-    // on the request client: migration 20261004_01 keeps `fts` and every
-    // laws / principles column read here on the anon allow-list.
+    // no article row or text is selected (head: true). Principles likewise
+    // since owner decision ١٧١ (migration 20261016_01): their `fts` and text
+    // are server-only, so their count and top matches run as the service role
+    // and only a 120-character opening of a principle leaves the route (the
+    // precedent page shows 150 of a locked one). Everything else stays on the
+    // request client: migration 20261004_01 keeps `fts` and every laws /
+    // decrees column read here on the anon allow-list.
     const serverOnly = await createServiceClient();
 
     const count = (table: string, client: typeof supabase | typeof serverOnly = supabase) => client
@@ -67,7 +71,7 @@ export async function GET(request: Request) {
     // Run all queries in parallel for speed
     const [lawsCount, precedentsCount, ordersCount, feqhCount, topLaws, topPrecedents, topOrders, topBooks] = await Promise.all([
       count('articles', serverOnly),
-      count('principles'),
+      count('principles', serverOnly),
       count('decrees_circulars'),
       count('feqh_blocks'),
 
@@ -97,8 +101,8 @@ export async function GET(request: Request) {
         };
       })(),
 
-      // Top 2 principle matches
-      supabase
+      // Top 2 principle matches (server-only since 20261016_01)
+      serverOnly
         .schema('library')
         .from('principles')
         .select('id, principle_number, issuing_body, text')
