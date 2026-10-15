@@ -10756,7 +10756,7 @@
       "region": "منطقة الرياض",
       "city": "الرياض",
       "email": "GEN-ARD-JON-ID1@moj.gov.sa",
-      "rawEmail": "GEN-ARD",
+      "rawEmail": "GEN-ARD JON-ID1@moj.gov.sa",
       "needsVerification": true,
       "suggestedEmail": "GEN-ARD-JON-ID1@moj.gov.sa",
       "verificationStatus": "خلل مسافة داخلية في المصدر — الصيغة المرجّحة: `GEN-ARD-JON-ID1@moj.gov.sa` — ثقة: عالية"
@@ -10769,7 +10769,7 @@
       "region": "منطقة الرياض",
       "city": "الرياض",
       "email": "GEN-ARD-SHI-ID1@moj.gov.sa",
-      "rawEmail": "GEN-ARD",
+      "rawEmail": "GEN-ARD SHI-ID1@moj.gov.sa",
       "needsVerification": true,
       "suggestedEmail": "GEN-ARD-SHI-ID1@moj.gov.sa",
       "verificationStatus": "خلل مسافة داخلية في المصدر — الصيغة المرجّحة: `GEN-ARD-SHI-ID1@moj.gov.sa` — ثقة: عالية"
@@ -21091,7 +21091,7 @@
       "region": "منطقة الباحة",
       "city": "قلوة",
       "email": "GEN-GIL-JC2@moj.gov.sa",
-      "rawEmail": "GEN-",
+      "rawEmail": "GEN- GIL-JC2@moj.gov.sa",
       "needsVerification": true,
       "suggestedEmail": "GEN-GIL-JC2@moj.gov.sa",
       "verificationStatus": "خلل مسافة داخلية في المصدر — الصيغة المرجّحة: `GEN-GIL-JC2@moj.gov.sa` — ثقة: عالية"
@@ -22313,7 +22313,7 @@
       "region": "منطقة الباحة",
       "city": "قلوة",
       "email": "GEN-GIL-JC3@moj.gov.sa",
-      "rawEmail": "GEN-",
+      "rawEmail": "GEN- GIL-JC3@moj.gov.sa",
       "needsVerification": true,
       "suggestedEmail": "GEN-GIL-JC3@moj.gov.sa",
       "verificationStatus": "خلل مسافة داخلية في المصدر — الصيغة المرجّحة: `GEN-GIL-JC3@moj.gov.sa` — ثقة: عالية"
@@ -27032,7 +27032,7 @@
       "region": "منطقة الرياض",
       "city": "الرياض",
       "email": "GEN-JMS-PC@moj.gov.sa",
-      "rawEmail": "GEN-",
+      "rawEmail": "GEN- JMS-PC@moj.gov.sa",
       "needsVerification": true,
       "suggestedEmail": "GEN-JMS-PC@moj.gov.sa",
       "verificationStatus": "خلل مسافة داخلية في المصدر — الصيغة المرجّحة: `GEN-JMS-PC@moj.gov.sa` — ثقة: عالية"

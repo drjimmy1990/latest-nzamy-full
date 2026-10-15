@@ -185,6 +185,12 @@ test("Circuits Directory email addresses are sendable", async (t) => {
     assert.strictEqual(byId.get("moj-cir-0366").email, "ktabh1D@moj.gov.sa");
   });
 
+  await t.test("the source value shown in the notice is the whole printed address", () => {
+    // The parser cut the five stray-space rows at the space ("GEN-ARD").
+    for (const c of data.circuits) assert.ok(c.rawEmail.includes("@"), `${c.id} rawEmail: ${c.rawEmail}`);
+    assert.strictEqual(byId.get("moj-cir-0827").rawEmail, "GEN-ARD JON-ID1@moj.gov.sa");
+  });
+
   await t.test("metadata counts match the rows", () => {
     const flagged = data.circuits.filter((c) => c.needsVerification).length;
     assert.strictEqual(data.metadata.needsVerificationCount, flagged);
