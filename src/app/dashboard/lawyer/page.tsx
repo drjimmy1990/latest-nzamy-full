@@ -65,6 +65,7 @@ import {
 import { apiGet, isSupabaseMode } from "@/lib/services/api";
 import { profileShareState, type ProfileShareState } from "./_components/profileShareTargets";
 import ShareProfileModal from "./_components/ShareProfileModal";
+import { formatTimeOfDayAr } from "./hearings/_timeOfDay";
 import { describeRequestEvent, type ActivityBadge } from "@/lib/events";
 import { orderReference } from "@/lib/services/orderReference";
 
@@ -1026,7 +1027,7 @@ export default function LawyerDashboardPage() {
               <div key={h.id} className={`p-3.5 rounded-xl border ${h.borderColor} ${h.bg}`}>
                 <div className="flex items-center justify-between mb-1.5">
                   <span className={`text-[11px] font-bold ${h.color}`}>
-                    {h.dateLabel}{h.time ? ` · ${h.time}` : ""}
+                    {h.dateLabel}{h.time ? ` · ${formatTimeOfDayAr(h.time)}` : ""}
                   </span>
                   <Gavel size={13} className={h.color} weight="duotone" />
                 </div>
