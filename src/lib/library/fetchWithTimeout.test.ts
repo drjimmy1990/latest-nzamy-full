@@ -2,10 +2,20 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fetchWithTimeout, LOADER_REQUEST_TIMEOUT_MS } from "./fetchWithTimeout.ts";
 
-/** A fetch that never answers until its signal aborts — the 2026-10-15 hang. */
+/**
+ * A fetch that never answers until its signal aborts — the 2026-10-15 hang.
+ * A real pending request holds a socket open, which keeps the event loop
+ * alive; AbortSignal.timeout's own timer does not (Node unrefs it), so on
+ * Node 22 a bare fake let the test file end with "Promise resolution is still
+ * pending". The interval stands in for that socket.
+ */
 const hangingFetch: typeof fetch = (_input, init) =>
   new Promise((_resolve, reject) => {
-    init?.signal?.addEventListener("abort", () => reject(init.signal!.reason));
+    const socket = setInterval(() => {}, 1_000);
+    init?.signal?.addEventListener("abort", () => {
+      clearInterval(socket);
+      reject(init.signal!.reason);
+    });
   });
 
 test("a request that never answers fails after the deadline instead of hanging", async () => {
