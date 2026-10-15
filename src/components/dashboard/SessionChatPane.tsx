@@ -348,7 +348,7 @@ export default function SessionChatPane({
               <div className="flex items-center gap-2">
                 <Robot size={16} weight="duotone" className="text-[#C8A762]" />
                 <span className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>
-                  مساعد نظامي AI
+                  مساعد ذكاء نظامي
                 </span>
               </div>
               <button

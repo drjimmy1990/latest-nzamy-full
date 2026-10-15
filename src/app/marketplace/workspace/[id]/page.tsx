@@ -312,7 +312,7 @@ export default function WorkspacePage() {
                   جراف القضية المشتركة — {WS.caseTitle}
                 </p>
                 <span className={`text-[10px] px-2 py-0.5 rounded-full mr-auto ${isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-[#C8A762]/10 text-[#0B3D2E]"}`}>
-                  نظامي AI
+                  ذكاء نظامي
                 </span>
               </div>
               <div className="h-[calc(100%-48px)]">

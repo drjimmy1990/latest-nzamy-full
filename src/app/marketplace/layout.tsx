@@ -6,7 +6,7 @@ export const metadata = buildMetadata({
   titleAr: "سوق الخدمات القانونية",
   titleEn: "Legal Services Marketplace",
   descriptionAr: "اطلب خدمات قانونية متخصصة أو قدّم خدماتك القانونية عبر منصة نظامي",
-  descriptionEn: "Request specialized legal services or offer your legal expertise on Nzamy platform",
+  descriptionEn: "Request specialized legal services or offer your legal expertise on Nezamy platform",
   path: "/marketplace",
   keywords: ["سوق قانوني","خدمات قانونية","محامي فريلانس"],
 });

@@ -206,7 +206,7 @@ export default function MailAdvisorPage() {
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
         <div className="flex items-center gap-2 mb-4 text-sm">
-          <Link href="/ai" className={`transition-colors ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"}`}>نظامي AI</Link>
+          <Link href="/ai" className={`transition-colors ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"}`}>ذكاء نظامي</Link>
           <CaretLeft size={12} className={isDark ? "text-zinc-600" : "text-slate-300"} />
           <span className={isDark ? "text-zinc-300" : "text-slate-600"}>LegalMail</span>
         </div>

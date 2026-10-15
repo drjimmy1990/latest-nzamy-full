@@ -13,7 +13,7 @@ import type { PlatformBlogArticle } from "@/constants/platformContent";
 import { BLOG_CATEGORY_FALLBACK, blogCategoryLabel } from "../_categories";
 
 const BASE_URL = "https://nezamy.sa";
-const SITE_NAME = "نظامي | Nzamy";
+const SITE_NAME = "نظامي | Nezamy";
 
 /** Format an ISO date string for display. */
 function formatDate(iso?: string | null, en = false): string {

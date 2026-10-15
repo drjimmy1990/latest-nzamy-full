@@ -275,7 +275,7 @@ export default function LawyerProfilePage() {
       <ArrowLeft size={15} className={isRTL ? "rotate-180" : ""} />
       {DIRECTORY_OPEN
         ? (isRTL ? "العودة إلى دليل المحامين" : "Back to the lawyer directory")
-        : (isRTL ? "الصفحة الرئيسية لنظامي" : "Nzamy home")}
+        : (isRTL ? "الصفحة الرئيسية لنظامي" : "Nezamy home")}
     </Link>
   );
 
@@ -380,7 +380,7 @@ export default function LawyerProfilePage() {
               <ArrowLeft size={16} className={isRTL ? "rotate-180" : ""} />
               {DIRECTORY_OPEN
                 ? (isRTL ? "تصفّح دليل المحامين" : "Browse the directory")
-                : (isRTL ? "الصفحة الرئيسية لنظامي" : "Nzamy home")}
+                : (isRTL ? "الصفحة الرئيسية لنظامي" : "Nezamy home")}
             </Link>
           </motion.section>
         )}

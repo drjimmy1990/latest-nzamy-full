@@ -15,7 +15,7 @@ const pageNames: Record<string, string> = {
   "/services/creators": "صنّاع المحتوى",
   "/erp": "نظامي ERP",
   "/erp/library": "المكتبة القانونية",
-  "/ai": "نظامي AI",
+  "/ai": "ذكاء نظامي",
   "/pricing": "الاشتراكات",
   "/pro/marketplace": "سوق المهنيين",
   "/join": "انضم كمحامي",

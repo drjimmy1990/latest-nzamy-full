@@ -76,7 +76,7 @@ export const CLIENT_SERVICE_CATEGORIES: ClientServiceCategory[] = [
     categoryId: "consultation",
     icon: "ChatCircle",
     label: "استشارة قانونية",
-    description: "اسأل محاميا مرخصا أو نظامي AI في دقائق",
+    description: "اسأل محاميا مرخصا أو ذكاء نظامي في دقائق",
     color: "from-[#0B3D2E] to-[#125340]",
     bgLight: "bg-white",
     borderColor: "border-slate-200",

@@ -464,7 +464,7 @@ export default function IndividualsPage() {
                   stepEn: "2",
                   labelAr: "نطابقك مع المتخصص",
                   labelEn: "We Match You with a Specialist",
-                  descAr: "يقترح نظامي AI أفضل محامٍ متخصص في قضيتك بناءً على التقييمات والخبرة.",
+                  descAr: "يقترح ذكاء نظامي أفضل محامٍ متخصص في قضيتك بناءً على التقييمات والخبرة.",
                   descEn: "Nezamy AI recommends the best specialist lawyer for your case based on ratings and experience.",
                   icon: Brain,
                 },
@@ -613,7 +613,7 @@ export default function IndividualsPage() {
                   href="/ai"
                   className="inline-flex items-center gap-2 rounded-2xl border border-white/30 px-7 py-4 text-sm font-medium text-white/90 transition-colors hover:border-white/50 hover:text-white"
                 >
-                  {isAr ? "جرّب نظامي AI" : "Try Nezamy AI"}
+                  {isAr ? "جرّب ذكاء نظامي" : "Try Nezamy AI"}
                   <Brain size={16} weight="duotone" />
                 </a>
               </div>

@@ -2,7 +2,7 @@
 
 export const metadata = buildMetadata({
   titleAr: "مجتمع نظامي القانوني",
-  titleEn: "Nzamy Legal Community",
+  titleEn: "Nezamy Legal Community",
   descriptionAr: "اطرح أسئلتك القانونية واحصل على إجابات من محامين ومتخصصين سعوديين",
   descriptionEn: "Ask your legal questions and get answers from Saudi lawyers and specialists",
   path: "/community",

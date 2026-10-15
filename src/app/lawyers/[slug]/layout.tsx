@@ -121,7 +121,7 @@ function unavailableMetadata(slug: string): Metadata {
     titleAr: "الملف الشخصي غير متاح",
     titleEn: "Profile Not Available",
     descriptionAr: "هذا الملف الشخصي غير متاح للعرض العام على منصة نظامي.",
-    descriptionEn: "This profile is not publicly available on Nzamy.",
+    descriptionEn: "This profile is not publicly available on Nezamy.",
     path: `/lawyers/${encodeURIComponent(slug)}`,
     noIndex: true,
   });
@@ -151,7 +151,7 @@ function namelessMetadata(slug: string): Metadata {
     titleAr: "ملف محامٍ موثّق",
     titleEn: "Verified Lawyer Profile",
     descriptionAr: "ملف مهني لمحامٍ موثّق على منصة نظامي.",
-    descriptionEn: "A verified lawyer's profile on Nzamy.",
+    descriptionEn: "A verified lawyer's profile on Nezamy.",
     path: `/lawyers/${encodeURIComponent(slug)}`,
     noIndex: true,
   });
@@ -275,7 +275,7 @@ function describeEn(row: GateRow): string | undefined {
   if (row.yearsExperience > 0) facts.push(`${row.yearsExperience} years of experience`);
 
   if (facts.length) return truncate(`${nameEn} — ${facts.join(" · ")}.`);
-  return truncate(`${nameEn} — verified lawyer profile on Nzamy.`);
+  return truncate(`${nameEn} — verified lawyer profile on Nezamy.`);
 }
 
 export async function generateMetadata({

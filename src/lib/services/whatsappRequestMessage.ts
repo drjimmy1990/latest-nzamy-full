@@ -134,7 +134,7 @@ export const WA_MODALITY_AR: Record<string, string> = {
 
 /** src/components/floating/wa-steps/StepConsult.tsx:112-121. */
 export const WA_PROVIDER_AR: Record<string, string> = {
-  ai: "نظامي AI",
+  ai: "ذكاء نظامي",
   lawyer: "محامي متخصص",
 };
 

@@ -12,7 +12,7 @@ export const PUBLIC_NAV: NavItem[] = [
   { label: "خدمات الأفراد",      labelEn: "Individuals",    href: "/services/individuals" },
   { label: "الشركات",            labelEn: "Business",       href: "/services/business" },
   { label: "المحامين",           labelEn: "Lawyers",        href: "/services/lawyers" },
-  { label: "نظامي AI",           labelEn: "Nezamy AI",      href: "/ai" },
+  { label: "ذكاء نظامي",           labelEn: "Nezamy AI",      href: "/ai" },
   { label: "الاشتراكات",         labelEn: "Pricing",        href: "/pricing" },
   {
     label: "المعرفة القانونية", labelEn: "Legal Knowledge", href: "#knowledge",
@@ -20,7 +20,7 @@ export const PUBLIC_NAV: NavItem[] = [
       { label: "المكتبة القانونية",   labelEn: "Legal Library",     href: "/laws",       icon: "BookOpen" },
       { label: "المجتمع القانوني",  labelEn: "Legal Community", href: "/community",  icon: "ChatCircle" },
       { label: "المدونة القانونية",  labelEn: "Legal Blog",      href: "/blog",      icon: "Article" },
-      { label: "ميديا نظامي",       labelEn: "Nzamy Media",     href: "/media",     icon: "PlayCircle", badge: "جديد" },
+      { label: "ميديا نظامي",       labelEn: "Nezamy Media",     href: "/media",     icon: "PlayCircle", badge: "جديد" },
       { label: "أكاديمية نظامي",    labelEn: "Nezamy Academy",  href: "/academy",   icon: "GraduationCap", badge: "جديد" },
     ],
   },
@@ -34,7 +34,7 @@ export const LAWYER_NAV: NavItem[] = [
   { label: "العملاء",   labelEn: "Clients",   href: "/dashboard/lawyer/clients" },
   { label: "سجل النشاط", labelEn: "Activity Log", href: "/dashboard/lawyer/activity", icon: "Clock" },
   {
-    label: "نظامي AI", labelEn: "Nezamy AI", href: "#ai",
+    label: "ذكاء نظامي", labelEn: "Nezamy AI", href: "#ai",
     children: [
       { label: "الصائغ القانوني",   labelEn: "Legal Drafter",    href: "/ai/draft",            icon: "PencilSimple" },
       { label: "محترف العقود",       labelEn: "Contract Pro",     href: "/ai/contracts",        icon: "FileText" },
@@ -53,7 +53,7 @@ export const FIRM_NAV: NavItem[] = [
   { label: "العقود",    labelEn: "Contracts", href: "/dashboard/firm/contracts" },
   { label: "الفريق",    labelEn: "Team",      href: "/dashboard/firm/team" },
   {
-    label: "نظامي AI", labelEn: "Nezamy AI", href: "#ai",
+    label: "ذكاء نظامي", labelEn: "Nezamy AI", href: "#ai",
     children: [
       { label: "الصائغ القانوني",  labelEn: "Legal Drafter",   href: "/ai/draft",         icon: "PencilSimple" },
       { label: "محترف العقود",      labelEn: "Contract Pro",    href: "/ai/contracts",     icon: "FileText" },
@@ -90,7 +90,7 @@ export const INDIVIDUAL_NAV: NavItem[] = [
   },
   { label: "قضاياي",        labelEn: "My Cases",     href: "/dashboard/client/cases" },
   { label: "المستندات",     labelEn: "Documents",    href: "/dashboard/client/documents" },
-  { label: "نظامي AI",      labelEn: "Nezamy AI",    href: "/ai/consult" },
+  { label: "ذكاء نظامي",      labelEn: "Nezamy AI",    href: "/ai/consult" },
 ];
 
 // ── Corporate Nav (شركة) ─────────────────────────────────────────────────────

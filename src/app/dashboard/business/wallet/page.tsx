@@ -12,7 +12,7 @@ import { useTheme } from "@/components/ThemeProvider";
 // ─── Mock Data ──────────────────────────────────────────────────────────
 const WALLET_DATA = {
   plan: "باقة نظامي برو (الشركات)",
-  planEn: "Nzamy Pro (Business)",
+  planEn: "Nezamy Pro (Business)",
   totalFeatures: 50,
   usedFeatures: 35,
   resetDate: "2026-05-01",

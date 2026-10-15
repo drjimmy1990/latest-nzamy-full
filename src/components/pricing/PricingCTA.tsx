@@ -21,7 +21,7 @@ export function PricingCTA({ isAr }: PricingCTAProps) {
             {isAr ? "ابدأ مجاناً اليوم" : "Start Free Today"}
           </h2>
           <p className="mx-auto mt-4 max-w-[45ch] text-sm text-white/70">
-            {isAr ? "لا بطاقة ائتمانية مطلوبة — ابدأ باستشارتك الأولى مع نظامي AI مجاناً."
+            {isAr ? "لا بطاقة ائتمانية مطلوبة — ابدأ باستشارتك الأولى مع ذكاء نظامي مجاناً."
                   : "No credit card required — start with your first AI consultation completely free."}
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-4">

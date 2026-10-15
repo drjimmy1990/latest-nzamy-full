@@ -370,7 +370,7 @@ export function getSidebarByUserType(
       base = LAWYER_SIDEBAR;
       if (country === "SA") {
         base = base.map(group => {
-          if (group.title === "نظامي AI" || group.titleEn === "Nezamy AI") {
+          if (group.title === "ذكاء نظامي" || group.titleEn === "Nezamy AI") {
             return {
               ...group,
               items: [
@@ -388,7 +388,7 @@ export function getSidebarByUserType(
       base = getFirmSidebar(affiliationRole, dashboardMode);
       if (country === "SA") {
         base = base.map(group => {
-          if (group.title === "نظامي AI" || group.titleEn === "Nezamy AI") {
+          if (group.title === "ذكاء نظامي" || group.titleEn === "Nezamy AI") {
             return {
               ...group,
               items: [
@@ -405,7 +405,7 @@ export function getSidebarByUserType(
     case "individual": {
       if (country && country !== "SA") {
         base = INDIVIDUAL_SIDEBAR.map(group => {
-          if (group.title === "نظامي AI" || group.titleEn === "Nzamy AI") {
+          if (group.title === "ذكاء نظامي" || group.titleEn === "Nezamy AI") {
             // Default of owner Q172 (2026-10-04): «الاستشارة» stays — /ai/global
             // is coming-soon (Q154), so replacing the consult with it left
             // non-Saudi individuals no way to ask. It is listed beside it.

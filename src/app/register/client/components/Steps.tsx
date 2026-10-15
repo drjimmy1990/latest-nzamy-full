@@ -701,7 +701,7 @@ export function Step4({
         {[
           { icon: Star, labelAr: "انتقل إلى لوحة التحكم", labelEn: "Go to Dashboard", href: dashboardHref },
           { icon: Scales, labelAr: "احجز استشارتك الأولى", labelEn: "Book your first consultation", href: "/services/consultations" },
-          { icon: Shield, labelAr: "جرّب نظامي AI مجاناً", labelEn: "Try Nezamy AI for free", href: "/ai" },
+          { icon: Shield, labelAr: "جرّب ذكاء نظامي مجاناً", labelEn: "Try Nezamy AI for free", href: "/ai" },
         ].map((item, i) => {
           const Icon = item.icon;
           return (

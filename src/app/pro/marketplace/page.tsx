@@ -41,7 +41,7 @@ const PRODUCTS = [
   {
     id: 1, category: "ai",
     name:    { ar: "الصائغ القانوني Pro", en: "Legal Drafter Pro" },
-    vendor:  { ar: "نظامي AI", en: "Nezamy AI" },
+    vendor:  { ar: "ذكاء نظامي", en: "Nezamy AI" },
     desc:    { ar: "توليد مسودات قانونية متكاملة بالذكاء الاصطناعي — عقود، مذكرات، ردود، في ثوانٍ", en: "Generate complete legal drafts with AI — contracts, memos, responses, in seconds" },
     price:   { ar: "٢٩٩ ر.س/شهر", en: "SAR 299/mo" },
     rating: 4.9, reviews: 312, verified: true,
@@ -53,7 +53,7 @@ const PRODUCTS = [
   {
     id: 2, category: "compliance",
     name:    { ar: "مراقب الامتثال التنظيمي", en: "Regulatory Compliance Monitor" },
-    vendor:  { ar: "نظامي AI", en: "Nezamy AI" },
+    vendor:  { ar: "ذكاء نظامي", en: "Nezamy AI" },
     desc:    { ar: "متابعة التغييرات التنظيمية تلقائياً وإشعارك عند صدور لوائح أو أحكام تؤثر على ملفاتك", en: "Auto-track regulatory changes and alert you when rules or rulings affect your files" },
     price:   { ar: "١٩٩ ر.س/شهر", en: "SAR 199/mo" },
     rating: 4.8, reviews: 187, verified: true,
@@ -64,7 +64,7 @@ const PRODUCTS = [
   {
     id: 3, category: "docs",
     name:    { ar: "مدير العقود الذكي", en: "Smart Contract Manager" },
-    vendor:  { ar: "نظامي AI", en: "Nezamy AI" },
+    vendor:  { ar: "ذكاء نظامي", en: "Nezamy AI" },
     desc:    { ar: "تنظيم وتتبع وتجديد عقودك تلقائياً مع تنبيهات انتهاء الصلاحية ومراجعة AI للبنود الخطرة", en: "Automatically organize, track, and renew your contracts with expiry alerts and AI risk clause review" },
     price:   { ar: "١٤٩ ر.س/شهر", en: "SAR 149/mo" },
     rating: 4.7, reviews: 243, verified: true,
@@ -86,7 +86,7 @@ const PRODUCTS = [
   {
     id: 5, category: "ai",
     name:    { ar: "محاكي الخصم (Wargaming)", en: "Opponent Simulator (Wargaming)" },
-    vendor:  { ar: "نظامي AI", en: "Nezamy AI" },
+    vendor:  { ar: "ذكاء نظامي", en: "Nezamy AI" },
     desc:    { ar: "AI يحاكي حجج الطرف الآخر في قضيتك ويساعدك في بناء دفاع صلب قبل الجلسة", en: "AI simulates opposing party arguments and helps you build a solid defense before the hearing" },
     price:   { ar: "٢٤٩ ر.س/شهر", en: "SAR 249/mo" },
     rating: 4.8, reviews: 98, verified: true,

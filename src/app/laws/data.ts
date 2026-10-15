@@ -555,5 +555,5 @@ export const COMPANIES_LAW: LawSystem = {
 export const LAW_ARTICLES = COMPANIES_LAW.chapters.flatMap(ch => ch.articles);
 export const PLANS = [
   { id: "library-only", name: "مكتبة قانونية", nameEn: "Library Only", price: "٤٩", priceEn: "49", features: ["وصول كامل للمكتبة", "تحديثات الأنظمة", "بحث متقدم"], featuresEn: ["Full library access", "Law updates", "Advanced search"], highlight: false },
-  { id: "pro", name: "نظامي برو", nameEn: "Nzamy Pro", price: "١٤٩", priceEn: "149", features: ["كل مزايا المكتبة", "الصائغ بالذكاء الاصطناعي", "السكرتير القانوني", "٢٠٠ توكن/شهر"], featuresEn: ["All library features", "AI Legal Drafter", "Legal Secretary AI", "200 tokens/month"], highlight: true },
+  { id: "pro", name: "نظامي برو", nameEn: "Nezamy Pro", price: "١٤٩", priceEn: "149", features: ["كل مزايا المكتبة", "الصائغ بالذكاء الاصطناعي", "السكرتير القانوني", "٢٠٠ توكن/شهر"], featuresEn: ["All library features", "AI Legal Drafter", "Legal Secretary AI", "200 tokens/month"], highlight: true },
 ];

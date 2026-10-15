@@ -2,9 +2,9 @@
 
 export const metadata = buildMetadata({
   titleAr: "شركاء نظامي",
-  titleEn: "Nzamy Partners",
+  titleEn: "Nezamy Partners",
   descriptionAr: "تعرف على شركاء منصة نظامي من مكاتب المحاماة والجهات القانونية المعتمدة",
-  descriptionEn: "Meet Nzamy's partners including law firms and accredited legal entities",
+  descriptionEn: "Meet Nezamy's partners including law firms and accredited legal entities",
   path: "/partners",
   keywords: ["شركاء","مكاتب محاماة","جهات قانونية"],
 });

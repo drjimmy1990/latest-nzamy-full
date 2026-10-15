@@ -711,7 +711,7 @@ export default function NewConsultationPage() {
             استشارة جديدة
           </h1>
           <p className={`text-[13px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
-            استشارة فورية مع نظامي AI أو موعد مع محامٍ متخصص
+            استشارة فورية مع ذكاء نظامي أو موعد مع محامٍ متخصص
           </p>
         </div>
 
@@ -742,7 +742,7 @@ export default function NewConsultationPage() {
                     <Robot size={24} weight="fill" className="text-amber-500" />
                   </div>
                   <div className="text-right w-full">
-                    <p className={`text-[14px] font-black ${isDark ? "text-white" : "text-zinc-900"}`}>نظامي AI</p>
+                    <p className={`text-[14px] font-black ${isDark ? "text-white" : "text-zinc-900"}`}>ذكاء نظامي</p>
                     <p className={`text-[11px] mt-0.5 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
                       استشارة فورية · {servicePriceLabel(aiConsultService)}
                     </p>
@@ -804,7 +804,7 @@ export default function NewConsultationPage() {
               <div className={`rounded-xl p-3.5 flex items-start gap-2.5 text-[11px] ${isDark ? "bg-white/[0.03] border border-white/[0.06]" : "bg-slate-50 border border-slate-200"}`}>
                 <Info size={13} className={isDark ? "text-zinc-500 flex-shrink-0 mt-0.5" : "text-slate-400 flex-shrink-0 mt-0.5"} />
                 <p className={isDark ? "text-zinc-500" : "text-slate-500"}>
-                  الاستشارة مع نظامي AI <strong>لا تُعدّ رأياً قانونياً رسمياً</strong> ولا تصلح أمام المحاكم. لو الموضوع حساس أو يتعلق بنزاع قضائي — نوصي باستشارة محامٍ معتمد.
+                  الاستشارة مع ذكاء نظامي <strong>لا تُعدّ رأياً قانونياً رسمياً</strong> ولا تصلح أمام المحاكم. لو الموضوع حساس أو يتعلق بنزاع قضائي — نوصي باستشارة محامٍ معتمد.
                 </p>
               </div>
             </motion.div>
@@ -1049,7 +1049,7 @@ export default function NewConsultationPage() {
                   <p className="font-bold mb-0.5">إرسال الطلب مجاني ومتاح بدون سداد فوري في هذه الخطوة</p>
                   <p className={`text-[11px] font-normal ${isDark ? "text-emerald-300/80" : "text-emerald-700"}`}>
                     {path === "ai"
-                      ? "استشارة نظامي AI مشمولة مجاناً للاستفسار اليومي الأول."
+                      ? "استشارة ذكاء نظامي مشمولة مجاناً للاستفسار اليومي الأول."
                       : `السعر التقديري لـ (${MODE_COPY[mode].label}): ${servicePriceLabel(service)} — لا يُخصم أي مبلغ الآن، ويتواصل معك فريق نظامي لتأكيد الموعد والتفاصيل.`}
                   </p>
                 </div>
@@ -1067,7 +1067,7 @@ export default function NewConsultationPage() {
                       {/* MODE_COPY again — the same label the mode buttons on
                           step 2 show, so the review screen cannot describe the
                           session differently from the button that chose it. */}
-                      {path === "ai" ? "نظامي AI — فورية" : `مع محامٍ — ${MODE_COPY[mode].label}`}
+                      {path === "ai" ? "ذكاء نظامي — فورية" : `مع محامٍ — ${MODE_COPY[mode].label}`}
                     </span>
                   </div>
                   {specialty && (

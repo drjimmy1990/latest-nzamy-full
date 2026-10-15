@@ -473,7 +473,7 @@ export default function SmartInspectorPage() {
       <div className={`${card} p-5`}>
         <div className="flex items-center gap-2 mb-2">
           <Brain size={16} className="text-[#0B3D2E]" weight="duotone" />
-          <p className={`text-[12.5px] font-black ${s("text-zinc-200", "text-zinc-800")}`}>توصية نظامي AI</p>
+          <p className={`text-[12.5px] font-black ${s("text-zinc-200", "text-zinc-800")}`}>توصية ذكاء نظامي</p>
         </div>
         <p className={`text-[13px] leading-relaxed ${s("text-zinc-400", "text-zinc-600")}`}>{result.recommendation}</p>
       </div>

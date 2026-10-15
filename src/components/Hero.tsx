@@ -351,7 +351,7 @@ export default function Hero() {
                     transition={{ delay: 1.6 }}
                     className="me-auto max-w-[80%] rounded-2xl rounded-ss-none border border-slate-100 bg-white px-4 py-3 text-xs leading-relaxed text-ink-muted dark:border-white/10 dark:bg-dark-card dark:text-gray-300"
                   >
-                    <span className="mb-1 block text-[10px] font-semibold text-gold-dark">{isAr ? "نظامي AI" : "Nezamy AI"}</span>
+                    <span className="mb-1 block text-[10px] font-semibold text-gold-dark">{isAr ? "ذكاء نظامي" : "Nezamy AI"}</span>
                     {isAr ? "تم تحليل العقد. وجدنا ٣ بنود تحتاج مراجعة متخصصة..." : "Contract analyzed. Found 3 clauses needing expert review..."}
                   </motion.div>
                 </div>

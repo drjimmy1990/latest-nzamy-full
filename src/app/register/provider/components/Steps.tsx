@@ -445,7 +445,7 @@ export function Step5({ isAr, providerType, selectedPlan }: { isAr: boolean; pro
 
   const planLabel = {
     lite: isAr ? "نظامي لايت" : "Nezamy Lite",
-    ai: isAr ? "نظامي AI" : "Nezamy AI",
+    ai: isAr ? "ذكاء نظامي" : "Nezamy AI",
     pro: isAr ? "نظامي برو" : "Nezamy Pro",
   }[selectedPlan] ?? selectedPlan;
 

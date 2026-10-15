@@ -511,7 +511,7 @@ export default function ClientDashboard() {
       desc: "مع محامي المكتب",
     },
     {
-      label: "اسأل نظامي AI",
+      label: "اسأل ذكاء نظامي",
       href: "/ai/consult",
       icon: Robot,
       color: "from-[#0B3D2E] to-[#1a6b50]",
@@ -679,7 +679,7 @@ export default function ClientDashboard() {
                   className="flex items-center gap-2 bg-white/10 border border-white/20 text-white font-semibold px-5 py-2.5 rounded-xl text-sm backdrop-blur-sm cursor-pointer"
                 >
                   <Robot size={16} weight="fill" />
-                  اسأل نظامي AI
+                  اسأل ذكاء نظامي
                 </motion.div>
               </Link>
               {/* THE ONLY ENTRY POINT TO THE PROFILE FROM THIS PAGE (WP-5 C-3).
@@ -1283,7 +1283,7 @@ export default function ClientDashboard() {
             <div>
               <p className={`text-[14px] font-bold ${isDark ? "text-white" : "text-zinc-800"}`}>لديك سؤال قانوني؟</p>
               <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-                اسأل بالكلام العادي — نظامي AI يجيبك فوراً
+                اسأل بالكلام العادي — ذكاء نظامي يجيبك فوراً
               </p>
             </div>
           </div>

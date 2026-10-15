@@ -237,7 +237,7 @@ export default function TranscriberPage() {
 
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-[12px]">
-        <Link href="/ai" className={`transition-colors ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"}`}>نظامي AI</Link>
+        <Link href="/ai" className={`transition-colors ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"}`}>ذكاء نظامي</Link>
         <CaretLeft size={11} className={isDark ? "text-zinc-700" : "text-slate-300"} />
         <span className={isDark ? "text-zinc-300" : "text-slate-600"}>المفرّغ الذكي</span>
       </div>

@@ -721,7 +721,7 @@ function S5({
       <div className="space-y-3 text-start">
         {[
           { icon: Briefcase, ar: "اذهب للوحة التحكم", en: "Go to My Dashboard", href: dashLink },
-          { icon: Brain,     ar: "جرّب نظامي AI",     en: "Try Nezamy AI",     href: "/ai" },
+          { icon: Brain,     ar: "جرّب ذكاء نظامي",     en: "Try Nezamy AI",     href: "/ai" },
           { icon: Gavel,     ar: "احجز استشارة",       en: "Book a Consultation", href: "/book/consultation" },
         ].map((link, i) => {
           const Icon = link.icon;

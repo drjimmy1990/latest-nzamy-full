@@ -73,7 +73,7 @@ export default function AISettingsPage() {
         <div className="flex items-start gap-2.5">
           <Robot size={15} className="flex-shrink-0 mt-0.5 text-[#C8A762]" />
           <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-            ستُطبَّق هذه التعليمات على أدوات نظامي AI عند تفعيلها.
+            ستُطبَّق هذه التعليمات على أدوات ذكاء نظامي عند تفعيلها.
           </p>
         </div>
       </div>

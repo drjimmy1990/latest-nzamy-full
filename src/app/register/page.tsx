@@ -90,10 +90,10 @@ const t = {
     ],
     alreadyHave: "Already have an account?",
     signIn: "Sign in",
-    partnerTitle: "Nzamy Partner",
+    partnerTitle: "Nezamy Partner",
     partnerTypes: [
       { label: "Partner / Content Creator", href: "/register/client?role=partner" },
-      { label: "Nzamy Media Subscriber", href: "/media" },
+      { label: "Nezamy Media Subscriber", href: "/media" },
       { label: "Nezamy Academy Student", href: "/academy" },
     ],
   },

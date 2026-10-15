@@ -60,7 +60,7 @@ export const CHANNEL_LABEL: Record<ConsultChannel, string> = {
   video: MODE_COPY.video.label,
   voice: MODE_COPY.voice.label,
   text: MODE_COPY.text.label,
-  ai: "نظامي AI",
+  ai: "ذكاء نظامي",
 };
 
 /** One stored value as a channel, or null. Not exported: the two keys are not interchangeable. */

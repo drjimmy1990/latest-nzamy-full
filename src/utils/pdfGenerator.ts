@@ -99,7 +99,7 @@ export const handleDownloadPDF = (msg: Message) => {
   printWindow.document.write(`
     <html dir="rtl" lang="ar">
     <head>
-      <title>تقرير استشارة قانونية - نظامي AI</title>
+      <title>تقرير استشارة قانونية - ذكاء نظامي</title>
       <style>
         body {
           font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -213,7 +213,7 @@ export const handleDownloadPDF = (msg: Message) => {
     </head>
     <body>
       <div class="header">
-        <div class="logo-title">نظامي AI • المستشار القانوني الذكي</div>
+        <div class="logo-title">ذكاء نظامي — Nezamy AI • المستشار القانوني الذكي</div>
         <div class="date">تاريخ الاصدار: ${new Date().toLocaleDateString("ar-SA")}</div>
       </div>
       
@@ -231,7 +231,7 @@ export const handleDownloadPDF = (msg: Message) => {
       ${roadmapHtml}
       
       <div class="footer">
-        هذا التقرير تم توليده بواسطة محرك نظامي AI لأغراض استرشادية فقط ولا يحل محل التوكيل أو الاستشارة القانونية الرسمية من محامٍ مرخص.
+        هذا التقرير تم توليده بواسطة محرك ذكاء نظامي لأغراض استرشادية فقط ولا يحل محل التوكيل أو الاستشارة القانونية الرسمية من محامٍ مرخص.
       </div>
       
       <script>

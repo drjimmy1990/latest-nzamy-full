@@ -219,7 +219,7 @@ function ContractDrawer({ contract, onClose, isRTL, isDark }: {
           <div className={`rounded-2xl border p-4 ${isDark ? "border-[#C8A762]/20 bg-[#C8A762]/5" : "border-amber-200 bg-amber-50"}`}>
             <p className="text-xs font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1.5 mb-2">
               <Robot size={14} weight="fill" />
-              {isRTL ? "تحليل نظامي AI:" : "Nzamy AI Analysis:"}
+              {isRTL ? "تحليل ذكاء نظامي:" : "Nezamy AI Analysis:"}
             </p>
             <p className={`text-xs leading-relaxed ${isDark ? "text-gray-300" : "text-gray-700"}`}>
               {contract.issues.length > 0

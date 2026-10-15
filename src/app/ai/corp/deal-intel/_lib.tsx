@@ -136,7 +136,7 @@ export async function exportReportToPDF(el: HTMLElement, filename: string, dealT
 
   pdf.setFillColor(11, 61, 46); pdf.rect(0, 0, pageW, 22, "F");
   pdf.setTextColor(200, 167, 98); pdf.setFontSize(13); pdf.setFont("helvetica", "bold");
-  pdf.text("NZAMY | Deal Intelligence Report", margin, 14);
+  pdf.text("Nezamy | Deal Intelligence Report", margin, 14);
   pdf.setFontSize(8); pdf.setTextColor(200, 200, 200);
   pdf.text(new Date().toLocaleDateString("ar-SA"), pageW - margin, 14, { align: "right" });
 
@@ -153,7 +153,7 @@ export async function exportReportToPDF(el: HTMLElement, filename: string, dealT
       pdf.addPage();
       pdf.setFillColor(11, 61, 46); pdf.rect(0, 0, pageW, 12, "F");
       pdf.setFontSize(8); pdf.setTextColor(200, 167, 98);
-      pdf.text("NZAMY | محلل الصفقات والفرص", margin, 8);
+      pdf.text("Nezamy | محلل الصفقات والفرص", margin, 8);
     }
     const srcY     = p * ((pageH - contentY - 12) / imgH) * canvas.height;
     const sliceH   = ((pageH - contentY - 12) / imgH) * canvas.height;

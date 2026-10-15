@@ -39,7 +39,7 @@ export default function SecretaryPage() {
           href="/ai"
           className={`transition-colors ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"}`}
         >
-          نظامي AI
+          ذكاء نظامي
         </Link>
         <CaretLeft size={12} className={isDark ? "text-zinc-600" : "text-slate-300"} />
         <span className={isDark ? "text-zinc-300" : "text-slate-600"}>السكرتير القانوني</span>
@@ -110,7 +110,7 @@ export default function SecretaryPage() {
                 : "border-slate-200 text-slate-600 hover:bg-slate-50"
             }`}
           >
-            العودة لأدوات نظامي AI
+            العودة لأدوات ذكاء نظامي
             <ArrowLeft size={12} />
           </Link>
         </div>

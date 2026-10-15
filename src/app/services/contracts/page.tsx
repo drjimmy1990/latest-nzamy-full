@@ -262,7 +262,7 @@ export default function ContractsPage() {
               <div className="w-3 h-3 rounded-full bg-amber-400" />
               <div className="w-3 h-3 rounded-full bg-emerald-400" />
               <span className={`text-xs ms-2 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-                {isRTL ? "نظامي AI — تحليل عقد العمل" : "Nezamy AI — Labor Contract Analysis"}
+                {isRTL ? "ذكاء نظامي — تحليل عقد العمل" : "Nezamy AI — Labor Contract Analysis"}
               </span>
               <div className="ms-auto flex items-center gap-1.5">
                 <Brain size={14} className="text-emerald-500" />

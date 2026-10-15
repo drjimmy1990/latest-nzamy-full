@@ -592,7 +592,7 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
     ? (isRTL ? "المساعد القانوني" : "Legal Assistant")
     : isRTL
       ? (isLoggedIn ? "مساعد نظامي حسب دورك" : "اطلب خدمة قانونية")
-      : (isLoggedIn ? "Role-aware Nzamy assistant" : "Request Legal Service");
+      : (isLoggedIn ? "Role-aware Nezamy assistant" : "Request Legal Service");
 
   const reportTooltip = isRTL ? "أبلغ عن مشكلة" : "Report an issue";
 

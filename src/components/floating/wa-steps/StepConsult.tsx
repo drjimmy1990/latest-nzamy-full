@@ -161,7 +161,7 @@ export default function StepConsult({
     const isTextMode = selections.modality === "text";
     const providers = [
       ...(isTextMode ? [{
-        icon: <Robot size={20} weight="fill" />, label: "نظامي AI",
+        icon: <Robot size={20} weight="fill" />, label: "ذكاء نظامي",
         price: "٥٠ ر.س للجلسة", sub: "أو مجاناً بالاشتراك الشهري", val: "ai",
         borderClass: "border-emerald-400 dark:border-emerald-500",
         badgeClass: "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400", badge: "AI",
@@ -241,7 +241,7 @@ export default function StepConsult({
         <motion.div variants={staggerItemVariants} className="flex items-center gap-2 flex-wrap">
           <span className="text-[11px] bg-[#0B3D2E]/10 dark:bg-emerald-900/30 text-[#0B3D2E] dark:text-emerald-400 rounded-full px-2.5 py-1 font-bold tracking-tight">استشارة قانونية</span>
           {selections.modality && <span className="text-[11px] font-bold bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300 rounded-full px-2.5 py-1">{modalityMap[selections.modality] ?? selections.modality}</span>}
-          {selections.provider && <span className="text-[11px] font-bold bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300 rounded-full px-2.5 py-1">{selections.provider === "ai" ? "نظامي AI" : "محامي"}</span>}
+          {selections.provider && <span className="text-[11px] font-bold bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300 rounded-full px-2.5 py-1">{selections.provider === "ai" ? "ذكاء نظامي" : "محامي"}</span>}
         </motion.div>
         <motion.p variants={staggerItemVariants} className={`text-xs font-medium ${isDark ? "text-gray-400" : "text-gray-500"}`}>أضف كل ما تريد الاستفسار عنه — تفاصيل مشكلتك ومخاوفك وملاحظاتك.</motion.p>
         <motion.input

@@ -114,7 +114,7 @@ function drawShareCard(
   ctx.fillText(
     data.isRTL
       ? "لوحة التفاعل والتحصيل المعرفي - منصة نظامي"
-      : "Gamified Knowledge Panel - Nzamy Platform",
+      : "Gamified Knowledge Panel - Nezamy Platform",
     titleX,
     85
   );
@@ -307,7 +307,7 @@ export function GamificationCard({ isRTL, isDark }: { isRTL: boolean; isDark: bo
     ].join("");
     return isRTL
       ? `⚡ أنجزت ${percentage}% من هدفي ${period} في منصة نظامي القانونية!\n📊 إحصائيات النشاط:\n📚 استعراض الأنظمة: ${lawsCount}${extraAr}\n🔗 تصفح المكتبة الآن: https://nezamy.sa/laws`
-      : `⚡ I reached ${percentage}% of my reading target ${period} on Nzamy Platform!\n📚 Laws: ${lawsCount}\n🔗 Visit: https://nezamy.sa/laws`;
+      : `⚡ I reached ${percentage}% of my reading target ${period} on Nezamy Platform!\n📚 Laws: ${lawsCount}\n🔗 Visit: https://nezamy.sa/laws`;
   };
 
   const copyToClipboard = async () => {

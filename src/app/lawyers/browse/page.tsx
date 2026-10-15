@@ -646,7 +646,7 @@ function NothingPublished({ isDark, isRTL }: { isDark: boolean; isRTL: boolean }
           <p className={`text-[11.5px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
             {isRTL
               ? "تحتاج مستشاراً قانونياً الآن؟ يمكنك تقديم طلبك مباشرة عبر خدمات نزامي القانونية."
-              : "Need legal help now? You can submit your request directly through Nzamy's legal services."}
+              : "Need legal help now? You can submit your request directly through Nezamy's legal services."}
           </p>
         </div>
 
@@ -1020,10 +1020,10 @@ export default function BrowseLawyersPage() {
               {showDirectoryUI
                 ? isRTL
                   ? `${arabicLawyerCount(directoryTotal)} على منصة نزامي — قارن التخصصات والخبرة وتصفّح الملفات.`
-                  : `${directoryTotal} verified ${directoryTotal === 1 ? "lawyer" : "lawyers"} on Nzamy — compare specialties and experience, and browse profiles.`
+                  : `${directoryTotal} verified ${directoryTotal === 1 ? "lawyer" : "lawyers"} on Nezamy — compare specialties and experience, and browse profiles.`
                 : isRTL
                   ? "دليل المحامين الموثّقين على منصة نزامي — قارن التخصصات والخبرة وتصفّح الملفات."
-                  : "The directory of verified lawyers on Nzamy — compare specialties and experience, and browse profiles."}
+                  : "The directory of verified lawyers on Nezamy — compare specialties and experience, and browse profiles."}
             </p>
           </div>
         </div>

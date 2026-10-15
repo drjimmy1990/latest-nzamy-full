@@ -180,7 +180,7 @@ export function AiLandingPage() {
             className="font-brand mb-6 text-4xl font-bold leading-tight text-white md:text-6xl"
           >
             {isRTL ? (
-              <>نظامي <span className="text-[#C8A762]">AI</span> — مساعدك القانوني الذكي</>
+              <>ذكاء <span className="text-[#C8A762]">نظامي</span> — <span dir="ltr" className="text-[#C8A762]">Nezamy AI</span></>
             ) : (
               <>Nezamy <span className="text-[#C8A762]">AI</span> — Your Smart Legal Assistant</>
             )}
@@ -193,7 +193,7 @@ export function AiLandingPage() {
             className="mx-auto mb-12 max-w-[55ch] text-lg text-white/70"
           >
             {isRTL
-              ? "مدرّب على الأنظمة والتشريعات السعودية. يجيب، يحلّل، ويصوغ — في ثوانٍ."
+              ? "مساعدك القانوني الذكي، مدرّب على الأنظمة والتشريعات السعودية. يجيب، يحلّل، ويصوغ — في ثوانٍ."
               : "Trained on Saudi laws and regulations. It answers, analyzes, drafts — in seconds."}
           </motion.p>
 
@@ -208,7 +208,7 @@ export function AiLandingPage() {
               <div className="h-2.5 w-2.5 rounded-full bg-red-400/70" />
               <div className="h-2.5 w-2.5 rounded-full bg-yellow-400/70" />
               <div className="h-2.5 w-2.5 rounded-full bg-emerald-400/70" />
-              <span className="ms-2 text-xs text-white/40">{isRTL ? "نظامي AI" : "Nezamy AI"}</span>
+              <span className="ms-2 text-xs text-white/40">{isRTL ? "ذكاء نظامي" : "Nezamy AI"}</span>
             </div>
             <div className="px-6 py-5 text-start">
               <div className="mb-2 flex items-center gap-2">
@@ -235,7 +235,7 @@ export function AiLandingPage() {
             whileTap={{ scale: 0.97 }}
             className="mt-8 inline-flex items-center gap-2 rounded-2xl bg-[#C8A762] px-8 py-4 text-sm font-bold text-white shadow-[0_8px_24px_-4px_rgba(200,167,98,0.5)] transition-shadow hover:shadow-[0_12px_32px_-4px_rgba(200,167,98,0.65)]"
           >
-            {isRTL ? "جرّب نظامي AI مجاناً" : "Try Nezamy AI Free"}
+            {isRTL ? "جرّب ذكاء نظامي مجاناً" : "Try Nezamy AI Free"}
             <ArrowLeft size={16} weight="bold" className={isRTL ? "" : "rotate-180"} />
           </motion.a>
         </div>
@@ -251,7 +251,7 @@ export function AiLandingPage() {
             className="mb-12 text-center"
           >
             <h2 className={`font-brand mb-3 text-3xl font-bold md:text-4xl ${isDark ? "text-white" : "text-[#0B3D2E]"}`}>
-              {isRTL ? "ما الذي يستطيع نظامي AI فعله؟" : "What can Nezamy AI do?"}
+              {isRTL ? "ما الذي يستطيع ذكاء نظامي فعله؟" : "What can Nezamy AI do?"}
             </h2>
             <p className={`text-sm ${isDark ? "text-gray-400" : "text-slate-500"}`}>
               {isRTL ? "٦ قدرات جوهرية لتغطية كل احتياجاتك القانونية" : "6 core capabilities to cover all your legal needs"}
@@ -301,7 +301,7 @@ export function AiLandingPage() {
             className="mb-12 text-center"
           >
             <h2 className={`font-brand mb-3 text-3xl font-bold md:text-4xl ${isDark ? "text-white" : "text-[#0B3D2E]"}`}>
-              {isRTL ? "شاهد نظامي AI في العمل" : "See Nezamy AI in Action"}
+              {isRTL ? "شاهد ذكاء نظامي في العمل" : "See Nezamy AI in Action"}
             </h2>
             <p className={`text-sm ${isDark ? "text-gray-400" : "text-slate-500"}`}>
               {isRTL ? "محادثة حقيقية حول نظام العمل السعودي" : "A real conversation about Saudi labor law"}
@@ -322,7 +322,7 @@ export function AiLandingPage() {
                 <Brain size={18} weight="fill" className="text-[#C8A762]" />
               </div>
               <div>
-                <div className="text-sm font-semibold text-white">{isRTL ? "نظامي AI" : "Nezamy AI"}</div>
+                <div className="text-sm font-semibold text-white">{isRTL ? "ذكاء نظامي" : "Nezamy AI"}</div>
                 <div className="flex items-center gap-1.5">
                   <motion.span
                     animate={{ scale: [1, 1.5, 1] }}
@@ -361,7 +361,7 @@ export function AiLandingPage() {
                     <div className={`max-w-[80%] rounded-2xl rounded-ss-none border px-4 py-3 text-sm leading-relaxed ${
                       isDark ? "border-white/10 bg-white/5 text-gray-300" : "border-slate-100 bg-slate-50 text-slate-700"
                     }`}>
-                      <span className="mb-1.5 block text-[11px] font-bold text-[#C8A762]">{isRTL ? "نظامي AI" : "Nezamy AI"}</span>
+                      <span className="mb-1.5 block text-[11px] font-bold text-[#C8A762]">{isRTL ? "ذكاء نظامي" : "Nezamy AI"}</span>
                       {isRTL ? exchange.aiAr : exchange.aiEn}
                     </div>
                   </div>
@@ -391,7 +391,7 @@ export function AiLandingPage() {
             className="mb-12 text-center"
           >
             <h2 className={`font-brand mb-3 text-3xl font-bold md:text-4xl ${isDark ? "text-white" : "text-[#0B3D2E]"}`}>
-              {isRTL ? "كيف يعمل نظامي AI؟" : "How does Nezamy AI work?"}
+              {isRTL ? "كيف يعمل ذكاء نظامي؟" : "How does Nezamy AI work?"}
             </h2>
             <p className={`text-sm ${isDark ? "text-gray-400" : "text-slate-500"}`}>
               {isRTL ? "ثلاثة أعمدة تقنية تضمن الدقة والموثوقية" : "Three technical pillars ensuring accuracy and reliability"}
@@ -482,7 +482,7 @@ export function AiLandingPage() {
               </div>
             </div>
             <h2 className={`font-brand mb-4 text-3xl font-bold md:text-4xl ${isDark ? "text-white" : "text-[#0B3D2E]"}`}>
-              {isRTL ? "جرّب نظامي AI مجاناً اليوم" : "Try Nezamy AI Free Today"}
+              {isRTL ? "جرّب ذكاء نظامي مجاناً اليوم" : "Try Nezamy AI Free Today"}
             </h2>
             <p className={`mb-8 text-base ${isDark ? "text-gray-400" : "text-slate-500"}`}>
               {isRTL
@@ -495,7 +495,7 @@ export function AiLandingPage() {
               whileTap={{ scale: 0.97 }}
               className="inline-flex items-center gap-2 rounded-2xl bg-[#0B3D2E] px-10 py-4 text-base font-bold text-white shadow-[0_8px_32px_-8px_rgba(11,61,46,0.5)] transition-shadow hover:shadow-[0_12px_40px_-8px_rgba(11,61,46,0.65)]"
             >
-              {isRTL ? "جرّب نظامي AI مجاناً" : "Try Nezamy AI Free"}
+              {isRTL ? "جرّب ذكاء نظامي مجاناً" : "Try Nezamy AI Free"}
               <ArrowLeft size={18} weight="bold" className={isRTL ? "" : "rotate-180"} />
             </motion.a>
           </motion.div>

@@ -1404,7 +1404,7 @@ export default function LegalLibraryPage() {
               style={libraryMode === "ai" ? { background: "linear-gradient(135deg, #0B3D2E, #1a6b50)" } : undefined}
             >
               <PhosphorIcons.Robot size={16} weight={libraryMode === "ai" ? "duotone" : "regular"} />
-              {isRTL ? "نظامي AI" : "Nezamy AI"}
+              {isRTL ? "ذكاء نظامي" : "Nezamy AI"}
               {libraryMode !== "ai" && (
                 <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-[#C8A762]/20 text-[#C8A762]">
                   {isRTL ? "جديد" : "NEW"}

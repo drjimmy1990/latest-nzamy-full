@@ -26,7 +26,7 @@ export default function NotFound() {
     {
       href: "/ai",
       icon: ShieldCheck,
-      label: isAr ? "نظامي AI" : "Nezamy AI",
+      label: isAr ? "ذكاء نظامي" : "Nezamy AI",
       desc: isAr ? "المساعد القانوني الذكي" : "Smart legal assistant",
     },
     {

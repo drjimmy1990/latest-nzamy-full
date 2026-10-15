@@ -278,7 +278,7 @@ const MsgBubble = memo(function MsgBubble({
       {/* Content */}
       <div className={`max-w-[84%] flex flex-col gap-1.5 ${isUser ? "items-end" : "items-start"}`}>
         {!isUser && (
-          <span className="text-[9px] font-bold tracking-widest uppercase px-0.5" style={{ color: GOLD }}>نظامي AI</span>
+          <span className="text-[9px] font-bold tracking-widest uppercase px-0.5" style={{ color: GOLD }}>ذكاء نظامي</span>
         )}
 
         {/* Bubble */}
@@ -435,7 +435,7 @@ const WelcomeScreen = memo(function WelcomeScreen({
               className="text-lg font-bold tracking-tight"
               style={{ fontFamily: "var(--font-brand)", color: isDark ? "#fff" : ROYAL }}
             >
-              نظامي AI — مساعدك القانوني
+              ذكاء نظامي — مساعدك القانوني
             </motion.h2>
             <motion.p
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.18 }}
@@ -847,7 +847,7 @@ export function AiTabContent({ isDark }: AiTabContentProps) {
     const sys: Msg = {
       id: `sys-${id}`,
       role: "system",
-      text: `نظامي AI · ${new Date().toLocaleDateString("ar-SA-u-nu-latn")}`,
+      text: `ذكاء نظامي · ${new Date().toLocaleDateString("ar-SA-u-nu-latn")}`,
       time: "",
     };
     setConvs(prev => [{
@@ -933,7 +933,7 @@ export function AiTabContent({ isDark }: AiTabContentProps) {
             <div>
               <p className="text-[12px] font-bold tracking-tight"
                 style={{ fontFamily: "var(--font-brand)", color: isDark ? "#fff" : ROYAL }}>
-                {activeConv && hasRealMsgs ? activeConv.title : "نظامي AI"}
+                {activeConv && hasRealMsgs ? activeConv.title : "ذكاء نظامي"}
               </p>
               <p className={`text-[9px] ${isDark ? "text-white/25" : "text-slate-400"}`}>مساعد قانوني ذكي</p>
             </div>

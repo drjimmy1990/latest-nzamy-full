@@ -1199,7 +1199,7 @@ export default function CaseDetailPage() {
                 <div className={`p-3 rounded-xl border ${isDark ? "border-[#C8A762]/20 bg-[#C8A762]/5" : "border-[#C8A762]/30 bg-[#C8A762]/5"}`}>
                   <div className="flex items-center gap-2 mb-1.5">
                     <Robot size={13} className="text-[#C8A762]" />
-                    <span className="text-[11px] font-bold text-[#C8A762]">تقييم نظامي AI</span>
+                    <span className="text-[11px] font-bold text-[#C8A762]">تقييم ذكاء نظامي</span>
                     <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-[#C8A762]/10 text-[#C8A762]">قريباً</span>
                   </div>
                   <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-600"}`}>

@@ -373,7 +373,7 @@ export default function ErpLibraryPage() {
           </h2>
           <p className="mx-auto mt-3 max-w-md text-white/60">
             {isAr
-              ? "استخدم ذكاء نظامي الاصطناعي لإنشاء قالب مخصص يناسب احتياجاتكم القانونية تماماً"
+              ? "استخدم ذكاء نظامي لإنشاء قالب مخصص يناسب احتياجاتكم القانونية تماماً"
               : "Use Nezamy AI to create a custom template tailored exactly to your legal needs"}
           </p>
           <div className="mt-6 flex flex-wrap justify-center gap-3">

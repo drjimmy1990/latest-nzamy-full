@@ -33,7 +33,7 @@ import { TIER_RANK, FEATURE_GATES, resolveFeatureAccess } from "@/hooks/featureA
 export const TIER_LABELS_AR: Record<UserTier, string> = {
   free:       "المجانية",
   shield:     "التأمين القانوني",
-  ai:         "نظامي AI",
+  ai:         "ذكاء نظامي",
   pro:        "الاحترافية",
   max:        "الاحترافية",
   corp:       "حوكمة الشركات",

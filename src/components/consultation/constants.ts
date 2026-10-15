@@ -53,7 +53,7 @@ export const specialties: Record<"ar" | "en", SpecialtyDef[]> = {
 export const consultationTypes: Record<"ar" | "en", TypeDef[]> = {
   ar: [
     {
-      id: "ai", icon: Brain, label: "نظامي AI", sublabel: "استجابة فورية", price: "٩٩ ر.س",
+      id: "ai", icon: Brain, label: "ذكاء نظامي", sublabel: "استجابة فورية", price: "٩٩ ر.س",
       desc: "مساعد قانوني ذكي مدرّب على الأنظمة السعودية", color: "border-royal/20 hover:border-royal/40", badge: null,
     },
     {

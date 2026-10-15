@@ -271,7 +271,7 @@ export default function SmartAnalyzer({ isDark, isRTL }: Props) {
         <div className="flex items-start gap-3">
           <Info size={15} weight="fill" className="text-[#0B3D2E] flex-shrink-0 mt-0.5" />
           <div>
-            <p className={`text-[11.5px] font-black mb-1 ${isDark ? "text-emerald-400" : "text-[#0B3D2E]"}`}>توصية نظامي AI</p>
+            <p className={`text-[11.5px] font-black mb-1 ${isDark ? "text-emerald-400" : "text-[#0B3D2E]"}`}>توصية ذكاء نظامي</p>
             <p className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{report.recommendation}</p>
           </div>
         </div>

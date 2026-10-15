@@ -525,7 +525,7 @@ export default function DepartmentDetailPage() {
                   <Sparkle size={18} weight="duotone" className="text-[#C8A762]" />
                 </div>
                 <div>
-                  <p className={`text-[13px] font-bold mb-1 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>تحليل نظامي AI للقسم</p>
+                  <p className={`text-[13px] font-bold mb-1 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>تحليل ذكاء نظامي للقسم</p>
                   <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>
                     سيتوفر هنا تقرير ذكاء اصطناعي شهري يحلّل نمط الطلبات ويقدّر التكاليف القادمة ويقترح أفضل إستراتيجية توظيف للمستشار القانوني داخل هذا القسم.
                   </p>

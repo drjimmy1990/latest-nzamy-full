@@ -4,7 +4,7 @@ export const metadata = buildMetadata({
   titleAr: "الأسئلة الشائعة",
   titleEn: "FAQ",
   descriptionAr: "إجابات على أكثر الأسئلة شيوعاً عن منصة نظامي وخدماتها القانونية",
-  descriptionEn: "Answers to the most common questions about Nzamy platform and its legal services",
+  descriptionEn: "Answers to the most common questions about Nezamy platform and its legal services",
   path: "/faq",
   keywords: ["أسئلة شائعة","مساعدة","كيفية"],
 });

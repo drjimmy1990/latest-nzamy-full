@@ -6,7 +6,7 @@ export const metadata = buildMetadata({
   titleAr: "سوق المهنيين",
   titleEn: "Professional Marketplace",
   descriptionAr: "أدوات وخدمات المهنيين على منصة نظامي",
-  descriptionEn: "Professional tools and services on the Nzamy platform",
+  descriptionEn: "Professional tools and services on the Nezamy platform",
   path: "/pro/marketplace",
   keywords: ["سوق المهنيين", "أدوات المحامي"],
 });

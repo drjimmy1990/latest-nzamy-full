@@ -116,7 +116,7 @@ const SEED: Notification[] = [
     id: "n8",
     type: "system",
     title: "تحديث المنصة",
-    body: "تم إطلاق المستشار الذكي الجديد — جرّب نظامي AI الآن",
+    body: "تم إطلاق المستشار الذكي الجديد — جرّب ذكاء نظامي الآن",
     href: "/ai/consult",
     time: "منذ أسبوع",
     read: true,

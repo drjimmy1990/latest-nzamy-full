@@ -23,7 +23,7 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
 
   // ── ③ نظامي AI — قلب العمل اليومي للمحامي ────────────────────────────────
   {
-    title: "نظامي AI", titleEn: "Nezamy AI",
+    title: "ذكاء نظامي", titleEn: "Nezamy AI",
     collapsible: true,
     defaultOpen: true,
     items: [
@@ -189,7 +189,7 @@ export const LAWYER_SIDEBAR_LITE: SidebarGroup[] = [
     ],
   },
   {
-    title: "نظامي AI — أساسية", titleEn: "Nezamy AI — Core",
+    title: "ذكاء نظامي — أساسية", titleEn: "Nezamy AI — Core",
     collapsible: true,
     defaultOpen: true,
     items: [
@@ -293,7 +293,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     ],
   },
   {
-    title: "نظامي AI", titleEn: "Nezamy AI",
+    title: "ذكاء نظامي", titleEn: "Nezamy AI",
     collapsible: true,
     defaultOpen: true,
     items: [
@@ -422,7 +422,7 @@ export const FIRM_SIDEBAR_LITE: SidebarGroup[] = [
     ],
   },
   {
-    title: "نظامي AI — أساسية", titleEn: "Nezamy AI — Core",
+    title: "ذكاء نظامي — أساسية", titleEn: "Nezamy AI — Core",
     collapsible: true,
     defaultOpen: true,
     items: [

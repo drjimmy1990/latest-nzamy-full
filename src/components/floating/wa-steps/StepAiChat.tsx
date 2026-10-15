@@ -263,7 +263,7 @@ export default function StepAiChat({ isDark, isRTL, userCategory, isLoggedIn, on
               <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent pointer-events-none" />
               <div className="flex items-center gap-2 mb-2 relative z-10">
                 <Robot size={18} weight="fill" className="text-[#C8A762]" />
-                <span className="text-[11px] font-black tracking-widest text-[#C8A762]">نظامي AI</span>
+                <span className="text-[11px] font-black tracking-widest text-[#C8A762]">ذكاء نظامي</span>
               </div>
               <p className="relative z-10">{welcome}</p>
               <span className="block mt-2 text-white/70 text-[10px] font-bold relative z-10">

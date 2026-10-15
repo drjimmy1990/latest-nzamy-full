@@ -157,7 +157,7 @@ export function PricingHero({
               >
                 {isAr
                   ? "✨ فريقك القانوني + أدوات نظامي = إنتاجية مضاعفة — الباقات تشمل اشتراك سنوي + محفظة نقاط لأدوات AI"
-                  : "✨ Your legal team + Nzamy tools = doubled productivity — Plans include annual subscription + AI points wallet"}
+                  : "✨ Your legal team + Nezamy tools = doubled productivity — Plans include annual subscription + AI points wallet"}
               </motion.div>
             )}
           </motion.div>

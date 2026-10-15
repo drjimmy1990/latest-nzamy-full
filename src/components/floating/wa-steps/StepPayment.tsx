@@ -47,7 +47,7 @@ export default function StepPayment({ step, isDark, history, selections, onNavig
     const rows = [
       { label: "الخدمة", value: serviceName },
       ...(selections.modality ? [{ label: "الطريقة", value: modalityLabel[selections.modality] ?? selections.modality }] : []),
-      ...(selections.provider ? [{ label: "المزود", value: selections.provider === "ai" ? "نظامي AI" : "محامي متخصص" }] : []),
+      ...(selections.provider ? [{ label: "المزود", value: selections.provider === "ai" ? "ذكاء نظامي" : "محامي متخصص" }] : []),
       ...(selections.contractType ? [{ label: "نوع العقد", value: selections.contractType }] : []),
       ...(selections.specialty ? [{ label: "التخصص", value: selections.specialty }] : []),
       ...(selections.city ? [{ label: "المدينة", value: selections.city }] : []),

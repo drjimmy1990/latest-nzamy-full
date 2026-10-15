@@ -148,7 +148,7 @@ export function LibraryAI({ isDark, isRTL = true }: { isDark: boolean; isRTL?: b
           <Sparkle size={13} weight="duotone" className="text-[#C8A762]" />
         </div>
         <div className={`flex-1 ${textStart}`}>
-          <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{isRTL ? "مساعد المكتبة — نظامي AI" : "Library Assistant — Nezamy AI"}</p>
+          <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{isRTL ? "مساعد المكتبة — ذكاء نظامي" : "Library Assistant — Nezamy AI"}</p>
           <p className={`text-[10px] ${isDark ? "text-zinc-400" : "text-slate-400"}`}>{isRTL ? "اسأل عن أي مادة أو استخرج نصوصاً محددة من النظام" : "Ask about any article or extract specific legal text"}</p>
         </div>
         {open ? <CaretUp size={12} className={isDark ? "text-zinc-600" : "text-slate-400"} /> : <CaretDown size={12} className={isDark ? "text-zinc-600" : "text-slate-400"} />}
@@ -180,7 +180,7 @@ export function LibraryAI({ isDark, isRTL = true }: { isDark: boolean; isRTL?: b
                           : isDark ? "bg-zinc-800 text-zinc-300 border border-white/[0.06]" : "bg-slate-100 text-zinc-700"
                       }`}>
                         {m.role === "ai" && (
-                          <p className={`text-[10px] font-bold mb-1 ${isDark ? "text-[#C8A762]" : "text-amber-700"}`}>{isRTL ? "✦ نظامي AI" : "✦ Nezamy AI"}</p>
+                          <p className={`text-[10px] font-bold mb-1 ${isDark ? "text-[#C8A762]" : "text-amber-700"}`}>{isRTL ? "✦ ذكاء نظامي" : "✦ Nezamy AI"}</p>
                         )}
                         {m.role === "ai" ? <LiteMarkdown text={m.text} /> : <p className="whitespace-pre-wrap">{m.text}</p>}
                       </div>
@@ -413,7 +413,7 @@ export function CommunityQuestionModal({
             </div>
             <div>
               <p className={`text-[13px] font-black ${isDark ? "text-white" : "text-gray-900"}`}>{isRTL ? "اسأل في المجتمع القانوني" : "Ask the Legal Community"}</p>
-              <p className={`text-[10px] ${muted}`}>{isRTL ? "سؤالك سيُنشر للمحامين في منصة نظامي" : "Your question will reach Nzamy lawyers"}</p>
+              <p className={`text-[10px] ${muted}`}>{isRTL ? "سؤالك سيُنشر للمحامين في منصة نظامي" : "Your question will reach Nezamy lawyers"}</p>
             </div>
           </div>
           <button onClick={onClose} className={`p-2 rounded-xl transition ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}><X size={16} /></button>

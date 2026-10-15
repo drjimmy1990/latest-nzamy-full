@@ -120,7 +120,7 @@ function AIMessageBubble({ msg, isDark, isLatest }: { msg: Message; isDark: bool
 
       <div className={`max-w-[82%] space-y-2 ${isUser ? "items-end" : "items-start"} flex flex-col`}>
         {!isUser && (
-          <span className="text-[10px] font-bold text-[#C8A762]">نظامي AI</span>
+          <span className="text-[10px] font-bold text-[#C8A762]">ذكاء نظامي</span>
         )}
 
         {/* Bubble */}
@@ -175,7 +175,7 @@ export default function AIConsultPage() {
     {
       id: "sys-1",
       role: "system",
-      text: "جلسة استشارة جديدة · نظامي AI",
+      text: "جلسة استشارة جديدة · ذكاء نظامي",
       time: "",
     },
   ]);
@@ -257,7 +257,7 @@ export default function AIConsultPage() {
       <div className={`flex-shrink-0 flex items-center justify-between px-5 py-3.5 border-b ${isDark ? "border-white/[0.06]" : "border-zinc-200"}`}>
         <div>
           <h1 className={`text-[15px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>المستشار الذكي</h1>
-          <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>اسأل أي سؤال قانوني — نظامي AI يجيب فوراً</p>
+          <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>اسأل أي سؤال قانوني — ذكاء نظامي يجيب فوراً</p>
         </div>
         <div className={`flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[11px] ${isDark ? "bg-[#0B3D2E]/30 text-emerald-400" : "bg-emerald-50 text-emerald-700"}`}>
           <motion.div animate={{ scale: [1, 1.4, 1] }} transition={{ duration: 2.5, repeat: Infinity }}

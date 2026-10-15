@@ -331,7 +331,7 @@ export function SidebarSection({
 
   // Determine which items to show in AI section
   const membershipVisibleItems = group.items.filter((item) => !item.requiresClientGroup || hasClientGroup);
-  const isAiSection = group.title === "نظامي AI" || group.title === "AI";
+  const isAiSection = group.title === "ذكاء نظامي" || group.title === "AI";
   const visibleItems =
     isAiSection && !showAll
       ? membershipVisibleItems.slice(0, AI_SECTION_DEFAULT_VISIBLE)
@@ -362,7 +362,7 @@ export function SidebarSection({
             <div className="flex items-center gap-2">
               <motion.div animate={{ scale: [1, 1.1, 1], rotate: [0, 5, -5, 0] }} transition={{ duration: 3, repeat: Infinity }} className="text-[13px]">⭐</motion.div>
               <span className={`text-[11px] font-black tracking-wide ${isDark ? "bg-clip-text text-transparent bg-gradient-to-r from-[#D4AF37] to-[#F3E5AB]" : "text-amber-800"}`}>
-                {isAr ? "سفير نظامي" : "Nzamy Ambassador"}
+                {isAr ? "سفير نظامي" : "Nezamy Ambassador"}
               </span>
             </div>
             {group.collapsible && (

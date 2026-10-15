@@ -12,7 +12,7 @@ export const metadata = buildMetadata({
   // titleAr/titleEn ("الاستشارة القانونية AI") are left as-is — a stable
   // product name matching the /ai/* URL family, not a capability claim.
   descriptionAr: "احصل على رأي قانوني مبني على الأنظمة السعودية — يعدّه فريق نظامي",
-  descriptionEn: "Get a legal opinion built on Saudi regulations, prepared by the Nazamy team",
+  descriptionEn: "Get a legal opinion built on Saudi regulations, prepared by the Nezamy team",
   path: "/ai/legal-opinion",
   keywords: ["استشارة قانونية","رأي قانوني","AI"],
 });

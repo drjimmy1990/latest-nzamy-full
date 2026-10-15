@@ -67,27 +67,27 @@ const sections = {
   ar: [
     {
       icon: Info,
-      title: "طبيعة نظامي AI",
+      title: "طبيعة ذكاء نظامي",
       color: "bg-royal/5 text-royal",
-      body: "نظامي AI هو مساعد قانوني ذكي مدرَّب على الأنظمة والتشريعات السعودية. هو أداة إرشادية تعليمية مصممة لمساعدتك على فهم حقوقك والخيارات المتاحة أمامك — وليس مصدراً لقرارات قانونية ملزمة.",
+      body: "«ذكاء نظامي — Nezamy AI» مساعد قانوني ذكي مدرَّب على الأنظمة والتشريعات السعودية. هو أداة إرشادية تعليمية مصممة لمساعدتك على فهم حقوقك والخيارات المتاحة أمامك — وليس مصدراً لقرارات قانونية ملزمة.",
     },
     {
       icon: Lock,
       title: "خصوصية محادثاتك",
       color: "bg-emerald-50 text-emerald-700",
-      body: "الاتصال بالمنصة مؤمَّن عبر TLS، والبيانات مخزَّنة لدى مزوّد البنية التحتية مع تشفير على مستوى القرص، وعزل صفوف (RLS) يمنع حساباً آخر من قراءة محادثاتك. ولا توجد طبقة تشفير طرف-لطرف. ومعالجة طلباتك في نظامي AI تمر عبر خدمات معالجة خارجية، لذلك لا نستطيع أن نعدك بأن محتوى محادثتك لا يغادر المنصة. أما التحكم في حفظ سجل المحادثات فهو غير متاح حالياً.",
+      body: "الاتصال بالمنصة مؤمَّن عبر TLS، والبيانات مخزَّنة لدى مزوّد البنية التحتية مع تشفير على مستوى القرص، وعزل صفوف (RLS) يمنع حساباً آخر من قراءة محادثاتك. ولا توجد طبقة تشفير طرف-لطرف. ومعالجة طلباتك في ذكاء نظامي تمر عبر خدمات معالجة خارجية، لذلك لا نستطيع أن نعدك بأن محتوى محادثتك لا يغادر المنصة. أما التحكم في حفظ سجل المحادثات فهو غير متاح حالياً.",
     },
     {
       icon: Warning,
       title: "حدود الموثوقية",
       color: "bg-amber-50 text-amber-700",
-      body: "رغم أن نظامي AI يسعى لتقديم معلومات دقيقة، فإن التشريعات تتغير باستمرار. تحقق دائماً من المصادر الرسمية (هيئة الزكاة والضريبة، وزارة العدل، هيئة السوق المالية...) أو استشر محامياً مرخصاً قبل اتخاذ أي قرار قانوني مهم.",
+      body: "رغم أن ذكاء نظامي يسعى لتقديم معلومات دقيقة، فإن التشريعات تتغير باستمرار. تحقق دائماً من المصادر الرسمية (هيئة الزكاة والضريبة، وزارة العدل، هيئة السوق المالية...) أو استشر محامياً مرخصاً قبل اتخاذ أي قرار قانوني مهم.",
     },
     {
       icon: Scales,
       title: "مسؤولية الاستخدام",
       color: "bg-slate-50 text-slate-700",
-      body: "لا تتحمل منصة نظامي أي مسؤولية قانونية أو مدنية تجاه أي ضرر ينشأ عن الاعتماد على مخرجات نظامي AI باعتبارها استشارة قانونية قاطعة. المستخدم يتحمل المسؤولية الكاملة عن قراراته المبنية على هذه المعلومات.",
+      body: "لا تتحمل منصة نظامي أي مسؤولية قانونية أو مدنية تجاه أي ضرر ينشأ عن الاعتماد على مخرجات ذكاء نظامي باعتبارها استشارة قانونية قاطعة. المستخدم يتحمل المسؤولية الكاملة عن قراراته المبنية على هذه المعلومات.",
     },
     {
       icon: ChatCircle,
@@ -99,7 +99,7 @@ const sections = {
       icon: FileText,
       title: "الاستخدامات المقبولة",
       color: "bg-purple-50 text-purple-700",
-      body: "يُحظر استخدام نظامي AI لأغراض احتيالية أو لانتهاك حقوق الآخرين أو لأي غرض مخالف للأنظمة السعودية. المنصة محمية بأنظمة رصد للكشف عن محاولات إساءة الاستخدام.",
+      body: "يُحظر استخدام ذكاء نظامي لأغراض احتيالية أو لانتهاك حقوق الآخرين أو لأي غرض مخالف للأنظمة السعودية. المنصة محمية بأنظمة رصد للكشف عن محاولات إساءة الاستخدام.",
     },
   ],
   en: [
@@ -191,7 +191,7 @@ export default function AiDisclaimerPage() {
               transition={{ delay: 0.1 }}
               className="font-brand mx-auto mt-5 text-4xl font-extrabold tracking-tight text-royal dark:text-white md:text-5xl"
             >
-              {isAr ? "نظامي AI — ماذا يستطيع وماذا لا يستطيع؟" : "Nezamy AI — What It Can & Cannot Do"}
+              {isAr ? "ذكاء نظامي — ماذا يستطيع وماذا لا يستطيع؟" : "Nezamy AI — What It Can & Cannot Do"}
             </motion.h1>
 
             <motion.p
@@ -201,7 +201,7 @@ export default function AiDisclaimerPage() {
               className="mx-auto mt-5 max-w-[54ch] text-base leading-relaxed text-ink-muted dark:text-gray-400 md:text-lg"
             >
               {isAr
-                ? "نظامي AI مساعد قانوني ذكي — وليس محامياً. اقرأ هذه الصفحة لتفهم حدود استخدامه وحقوقك."
+                ? "ذكاء نظامي مساعد قانوني ذكي — وليس محامياً. اقرأ هذه الصفحة لتفهم حدود استخدامه وحقوقك."
                 : "Nezamy AI is a smart legal assistant — not a lawyer. Read this page to understand its limits and your rights."}
             </motion.p>
 
@@ -216,7 +216,7 @@ export default function AiDisclaimerPage() {
                 <Warning size={20} weight="fill" className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
                 <p className="text-sm leading-relaxed text-amber-800 dark:text-amber-300">
                   {isAr
-                    ? "المعلومات المقدمة من نظامي AI هي لأغراض إعلامية وتعليمية فقط، ولا تُعدّ استشارةً قانونيةً ملزمة. للقضايا الفعلية، يُرجى الاستعانة بمحامٍ مرخص."
+                    ? "المعلومات المقدمة من ذكاء نظامي هي لأغراض إعلامية وتعليمية فقط، ولا تُعدّ استشارةً قانونيةً ملزمة. للقضايا الفعلية، يُرجى الاستعانة بمحامٍ مرخص."
                     : "Information provided by Nezamy AI is for informational and educational purposes only, and does not constitute binding legal advice. For actual cases, please consult a licensed lawyer."}
                 </p>
               </div>
@@ -242,7 +242,7 @@ export default function AiDisclaimerPage() {
                     <CheckCircle size={22} weight="duotone" className="text-emerald-600 dark:text-emerald-400" />
                   </span>
                   <h2 className="font-brand text-lg font-bold text-ink">
-                    {isAr ? "ما يستطيع نظامي AI فعله" : "What Nezamy AI Can Do"}
+                    {isAr ? "ما يستطيع ذكاء نظامي فعله" : "What Nezamy AI Can Do"}
                   </h2>
                 </div>
                 <ul className="space-y-3">
@@ -277,7 +277,7 @@ export default function AiDisclaimerPage() {
                     <XCircle size={22} weight="duotone" className="text-red-500 dark:text-red-400" />
                   </span>
                   <h2 className="font-brand text-lg font-bold text-ink">
-                    {isAr ? "ما لا يستطيع نظامي AI فعله" : "What Nezamy AI Cannot Do"}
+                    {isAr ? "ما لا يستطيع ذكاء نظامي فعله" : "What Nezamy AI Cannot Do"}
                   </h2>
                 </div>
                 <ul className="space-y-3">

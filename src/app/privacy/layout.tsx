@@ -4,7 +4,7 @@ export const metadata = buildMetadata({
   titleAr: "سياسة الخصوصية",
   titleEn: "Privacy Policy",
   descriptionAr: "اقرأ سياسة الخصوصية الخاصة بمنصة نظامي وكيفية حماية بياناتك الشخصية",
-  descriptionEn: "Read Nzamy's privacy policy and how we protect your personal data",
+  descriptionEn: "Read Nezamy's privacy policy and how we protect your personal data",
   path: "/privacy",
   keywords: ["خصوصية","بيانات","أمان"],
 });

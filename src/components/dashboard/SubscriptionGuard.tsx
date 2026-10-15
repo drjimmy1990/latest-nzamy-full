@@ -31,7 +31,7 @@ export function SubscriptionGuard({
     const TIER_LABELS: Record<string, string> = {
       free: "المجانية",
       shield: "التأمين القانوني",
-      ai: "نظامي AI",
+      ai: "ذكاء نظامي",
       pro: "الاحترافية",
       max: "الاحترافية", // no «الماكس» plan (owner, Q163) — same name as pro; see TIER_LABELS_AR
       corp: "حوكمة الشركات",

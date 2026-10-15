@@ -386,7 +386,7 @@ const toConsultation = (request: WorkflowRequest): Consultation => {
     // writes, so a client who picked a specific lawyer never saw that choice
     // reflected anywhere.
     provider: channel === "ai"
-      ? "نظامي AI"
+      ? "ذكاء نظامي"
       : metaString(request.metadata?.lawyerName) ?? "بانتظار تعيين المحامي",
     // Raw, never a placeholder — see the field comment on Consultation.
     providerName: channel === "ai" ? null : metaString(request.metadata?.lawyerName) ?? null,

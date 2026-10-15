@@ -36,7 +36,7 @@ export default function QuickAnswerPage() {
           href="/ai"
           className={`transition-colors ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-zinc-400 hover:text-zinc-600"}`}
         >
-          نظامي AI
+          ذكاء نظامي
         </Link>
         <CaretLeft size={12} className={isDark ? "text-zinc-600" : "text-zinc-300"} />
         <span className={isDark ? "text-zinc-300" : "text-zinc-600"}>المجيب القانوني السريع</span>
@@ -107,7 +107,7 @@ export default function QuickAnswerPage() {
                 : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"
             }`}
           >
-            العودة لأدوات نظامي AI
+            العودة لأدوات ذكاء نظامي
             <ArrowLeft size={12} />
           </Link>
         </div>

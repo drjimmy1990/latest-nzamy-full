@@ -88,7 +88,7 @@ export const INDIVIDUAL_SIDEBAR: SidebarGroup[] = [
 
   // ③ نظامي AI — أدوات ذكية (قابلة للطي)
   {
-    title: "نظامي AI", titleEn: "Nzamy AI",
+    title: "ذكاء نظامي", titleEn: "Nezamy AI",
     collapsible: true,
     defaultOpen: false,
     items: [
@@ -120,7 +120,7 @@ export const INDIVIDUAL_SIDEBAR: SidebarGroup[] = [
       // removes is the claim that a raw statute browser is part of an
       // individual client’s own workspace.
       { label: "برنامج الإحالة",   labelEn: "Referral",        href: "/dashboard/client/referral", icon: "Gift", badge: "قريباً" },
-      { label: "ميديا نظامي",      labelEn: "Nzamy Media",     href: "/media",                     icon: "PlayCircle",  badge: "قريباً" },
+      { label: "ميديا نظامي",      labelEn: "Nezamy Media",     href: "/media",                     icon: "PlayCircle",  badge: "قريباً" },
       { label: "الإشعارات",        labelEn: "Notifications",   href: "/notifications",             icon: "Bell" },
       { label: "الإعدادات",        labelEn: "Settings",        href: "/settings",                  icon: "GearSix" },
     ],
@@ -206,7 +206,7 @@ export const ADMIN_SIDEBAR: SidebarGroup[] = [
     ],
   },
   {
-    title: "فريق نظامي", titleEn: "Nzamy Team",
+    title: "فريق نظامي", titleEn: "Nezamy Team",
     items: [
       { label: "إدارة الفريق",       labelEn: "Team",            href: "/dashboard/admin/team",                    icon: "UsersFour" },
       { label: "الميزات (Flags)",    labelEn: "Feature Flags",   href: "/dashboard/admin/features",                icon: "ToggleRight" },

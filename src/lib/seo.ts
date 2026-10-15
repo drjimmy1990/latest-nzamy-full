@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 const BASE_URL = "https://nezamy.sa";
-const SITE_NAME = "نظامي | Nzamy";
+const SITE_NAME = "نظامي | Nezamy";
 const DEFAULT_OG = `${BASE_URL}/og-image.png`;
 
 interface SeoOptions {
