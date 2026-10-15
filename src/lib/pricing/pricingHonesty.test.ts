@@ -155,6 +155,53 @@ test("checkout: client signup keeps ?plan= and no longer offers the retired shie
   assert.match(steps, /requestEntitlement\(planEntitlementRequest\(plan\)\)/);
 });
 
+/** The `ar` and `en` plan lists of every `export const plans…` object in a file. */
+function planLists(path: string): { name: string; ar: string; en: string }[] {
+  const text = code(path);
+  const out: { name: string; ar: string; en: string }[] = [];
+  for (const chunk of text.split(/export const /).slice(1)) {
+    const name = chunk.slice(0, chunk.search(/[\s:=]/));
+    if (!name.startsWith("plans")) continue;
+    const arAt = chunk.indexOf("ar: [");
+    const enAt = chunk.indexOf("\n  en: [");
+    if (arAt < 0 || enAt < 0) continue;
+    out.push({ name, ar: chunk.slice(arAt, enAt), en: chunk.slice(enAt) });
+  }
+  return out;
+}
+
+const PLAN_FILES = PRICING_SURFACES.filter((p) => p.startsWith("constants/pricing/pricing."));
+
+test("Arabic plan lists show Arabic plan names (no «Firm Basic», no «/ Enterprise»)", () => {
+  let lists = 0;
+  for (const path of PLAN_FILES) {
+    for (const list of planLists(path)) {
+      lists++;
+      for (const m of list.ar.matchAll(/\bname: "([^"]*)"/g)) {
+        // "AI" alone is accepted (the owner's «الباقة الذكية (AI الذاتي)»).
+        assert.doesNotMatch(m[1], /[A-Za-z]{3,}/, `${path} ${list.name}.ar: «${m[1]}»`);
+      }
+    }
+  }
+  assert.ok(lists >= 10, `expected the pricing plan lists, found ${lists}`);
+  const firms = code("constants/pricing/pricing.firms.ts").split("\n  en: [")[0];
+  assert.doesNotMatch(firms, /Beta-ready|Backend-ready|اختيار (Growth|Scale)|target: "Enterprise"/);
+});
+
+test("no plan id repeats inside one list (React key), and each language keeps its own cards", () => {
+  for (const path of PLAN_FILES) {
+    for (const list of planLists(path)) {
+      for (const [lang, seg] of [["ar", list.ar], ["en", list.en]] as const) {
+        const ids = [...seg.matchAll(/\bid: "([^"]*)"/g)].map((m) => m[1]);
+        assert.equal(new Set(ids).size, ids.length, `${path} ${list.name}.${lang}: duplicate id in ${ids.join(", ")}`);
+      }
+    }
+  }
+  const providers = planLists("constants/pricing/pricing.providers.ts")[0];
+  assert.doesNotMatch(providers.ar, /Independent Consultant/);
+  assert.match(providers.en, /Independent Consultant/);
+});
+
 test("the comment stripper keeps string content that merely contains '//'", () => {
   // Guard for the helper above: the URL must survive, the trailing comment
   // must not, so a badge hidden after a URL on one line would still be seen.

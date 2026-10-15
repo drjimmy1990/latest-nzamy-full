@@ -316,7 +316,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
     },
     {
       id: "lib-firm-enterprise",
-      name: "مؤسسي / Enterprise",
+      name: "مؤسسي",
       badge: "٥٠+ عضو",
       priceMonthly: "مخصص",
       priceYearly:  "مخصص",

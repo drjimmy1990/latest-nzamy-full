@@ -2,10 +2,13 @@ import { Users, Coins, ShieldCheck } from "@phosphor-icons/react";
 import { Plan, ComparisonCategory } from "./pricing.types";
 
 export const plansFirms: { ar: Plan[]; en: Plan[] } = {
+  // Arabic names in the Arabic list («Firm Basic»/«Beta-ready» used to show on
+  // the Arabic page). Ids are unchanged: FirmPlanId, firmProfileReadiness.ts
+  // and the admin pricing screen key on them.
   ar: [
     {
       id: "firm-basic",
-      name: "Firm Basic",
+      name: "الأساسية",
       badge: "~١,٤٩٩ ر.س/شهر",
       priceMonthly: "17,988", priceYearly: "17,988", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
       desc: "مكتب صغير يحتاج تشغيل قضايا وعملاء وفريق محدود مع نقاط شركة واحدة.",
@@ -24,17 +27,17 @@ export const plansFirms: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: ["محفظة نقاط للشركة كلها", "AI قانوني أساسي حسب الرصيد", "نفاد النقاط يوقف الخدمات الاستهلاكية فقط", null],
         platform: ["3 مقاعد مضمّنة", "مقعد إضافي: 2,388 ر.س/سنة", "قضايا وعملاء ومستندات وفريق صغير", "بوابة عميل أساسية"],
-        support: ["دعم إعداد أولي", "Beta-ready بدون حفظ خادمي"],
+        support: ["دعم إعداد أولي", "نسخة تجريبية — بدون حفظ على الخادم"],
       },
     },
     {
       id: "firm-growth",
-      name: "Firm Growth",
+      name: "النمو",
       badge: "~٣,٩٩٩ ر.س/شهر ⭐",
       priceMonthly: "47,988", priceYearly: "47,988", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
       desc: "شركة محاماة نامية تحتاج أقسام وصلاحيات وبوابة عملاء ونقاط قابلة للتوزيع.",
       target: "شركة نامية",
-      cta: "اختيار Growth",
+      cta: "اختيار باقة النمو",
       ctaHref: "/register/provider?type=firm",
       highlighted: true,
       color: "border-gold/20",
@@ -48,17 +51,17 @@ export const plansFirms: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: ["120,000 نقطة سنوية للشركة", "حدود صرف حسب الدور أو القسم", "AI متقدم عند توفر الرصيد", null],
         platform: ["10 مقاعد مضمّنة", "مقعد إضافي: 2,988 ر.س/سنة", "أقسام ممارسة قانونية", "بوابة عملاء وهوية مكتب"],
-        support: ["تقارير تشغيل وفريق", "تجهيز RBAC محلي للربط"],
+        support: ["تقارير تشغيل وفريق", "تجهيز صلاحيات الأدوار محلياً تمهيداً للربط"],
       },
     },
     {
       id: "firm-scale",
-      name: "Firm Scale",
+      name: "التوسّع",
       badge: null,
       priceMonthly: "95,988", priceYearly: "95,988", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
       desc: "شركة محاماة كبيرة تحتاج حوكمة وفروع وChinese Walls وتحليلات أعمق.",
       target: "شركة كبيرة",
-      cta: "اختيار Scale",
+      cta: "اختيار باقة التوسّع",
       ctaHref: "/register/provider?type=firm",
       highlighted: false,
       color: "border-slate-200/50",
@@ -72,16 +75,16 @@ export const plansFirms: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: ["360,000 نقطة سنوية", "ميزانيات نقاط للإدارات", "OCR وترجمة وتحليل مستندات حسب الرصيد", null],
         platform: ["25 مقعد مضمّن", "مقعد إضافي: 3,588 ر.س/سنة", "حوكمة وChinese Walls", "فروع وغرف مشتركة وتحليلات"],
-        support: ["إعداد حوكمة", "سجل تدقيق Backend-ready"],
+        support: ["إعداد حوكمة", "سجل تدقيق جاهز للربط بالخادم"],
       },
     },
     {
       id: "firm-enterprise",
-      name: "Firm Enterprise",
+      name: "المؤسسية",
       badge: "مخصص",
       priceMonthly: "179,988+", priceYearly: "179,988+", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
       desc: "شبكة فروع أو شركة محاماة كبرى تحتاج عقدا مخصصا ونقاطا وسعة حسب الاتفاق.",
-      target: "Enterprise",
+      target: "مؤسسات كبرى",
       cta: "تواصل مع المبيعات",
       ctaHref: "/contact",
       highlighted: false,
