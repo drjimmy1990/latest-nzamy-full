@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
@@ -19,6 +19,7 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useAdminSettings, type CompanyFeatures } from "@/hooks/useAdminSettings";
+import { buildDefaultCompanyFeatures } from "@/hooks/useAdminSettingsHelper";
 import {
   BUSINESS_ADMIN_CONTROLS,
   BUSINESS_COMPANY_SIZE_LABEL,
@@ -40,13 +41,18 @@ type BooleanFeatureKey = {
   [Key in keyof CompanyFeatures]: CompanyFeatures[Key] extends boolean ? Key : never;
 }[keyof CompanyFeatures];
 
-const COMPANIES = [
-  { id: "C-001", name: "شركة الأفق للتجارة", plan: "Enterprise", owner: "نورة الزهراني", mrr: 2499 },
-  { id: "C-002", name: "شركة التقنية المتقدمة", plan: "Pro", owner: "فهد السبيعي", mrr: 999 },
-  { id: "C-003", name: "شركة المدار للخدمات", plan: "Corp", owner: "ريم القحطاني", mrr: 1499 },
-  { id: "C-004", name: "مؤسسة الندى الصغيرة", plan: "Shield", owner: "سالم المطيري", mrr: 249 },
-  { id: "C-005", name: "مجموعة الخليج القابضة", plan: "Enterprise", owner: "عبدالله الشمري", mrr: 4999 },
-];
+// The company list used to be five invented companies (C-001…C-005, with
+// owner names and MRR figures) shown as if they were customers. It now comes
+// from GET /api/v1/admin/corporates (business_profiles plus the owner's active
+// subscription), the same read the console's «إدارة الشركات» tab uses. The
+// profile settings further down are still this browser's localStorage only
+// (see the banner), keyed by the real company id.
+type AdminCompany = { id: string; name: string | null; plan: string; mrr: number };
+
+type CompaniesState =
+  | { status: "loading" }
+  | { status: "error" }
+  | { status: "ready"; companies: AdminCompany[] };
 
 const SIZE_OPTIONS = Object.keys(BUSINESS_COMPANY_SIZE_LABEL) as BusinessCompanySize[];
 const LEGAL_OPTIONS = Object.keys(BUSINESS_LEGAL_STRUCTURE_LABEL) as BusinessLegalStructure[];
@@ -78,15 +84,40 @@ export default function AdminBusinessProfilesPage() {
   const { isDark } = useTheme();
   const { features, updateCompanyFeatures } = useAdminSettings();
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState(COMPANIES[0].id);
-  const [toast, setToast] = useState("بروفيلات الشركات Backend-ready: كل تعديل هنا محلي فقط حتى ربط CompanyProfile API.");
+  const [companiesState, setCompaniesState] = useState<CompaniesState>({ status: "loading" });
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [toast, setToast] = useState("قائمة الشركات من قاعدة البيانات. إعدادات البروفيل أدناه محلية في هذا المتصفح فقط حتى ربط CompanyProfile API.");
 
-  const filteredCompanies = useMemo(
-    () => COMPANIES.filter((company) => `${company.id} ${company.name} ${company.plan}`.toLowerCase().includes(search.toLowerCase())),
-    [search],
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/v1/admin/corporates");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const body = (await res.json()) as { companies?: AdminCompany[] };
+        if (!cancelled) setCompaniesState({ status: "ready", companies: Array.isArray(body.companies) ? body.companies : [] });
+      } catch (err) {
+        console.error("[admin/business] companies read failed:", err);
+        if (!cancelled) setCompaniesState({ status: "error" });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const companies = useMemo(
+    () => (companiesState.status === "ready" ? companiesState.companies : []),
+    [companiesState],
   );
-  const selectedCompany = COMPANIES.find((company) => company.id === selectedId) ?? COMPANIES[0];
-  const selectedFeatures = features[selectedCompany.id];
+  const filteredCompanies = useMemo(
+    () => companies.filter((company) => `${company.name ?? ""} ${company.plan}`.toLowerCase().includes(search.toLowerCase())),
+    [companies, search],
+  );
+  const selectedCompany = companies.find((company) => company.id === selectedId) ?? companies[0] ?? null;
+  // A real company id has no localStorage entry until it is first edited, so
+  // the editor starts from the same defaults the store would fill in.
+  const selectedFeatures: CompanyFeatures | undefined = selectedCompany
+    ? features[selectedCompany.id] ?? buildDefaultCompanyFeatures(selectedCompany.id)
+    : undefined;
   const scenario = selectedFeatures
     ? resolveBusinessScenario(selectedFeatures.companySize, selectedFeatures.legalStructure, selectedFeatures.serviceModel)
     : BUSINESS_PROFILE_SCENARIOS[0];
@@ -99,7 +130,7 @@ export default function AdminBusinessProfilesPage() {
   }`;
 
   function updateProfile(updates: Partial<CompanyFeatures>) {
-    if (!selectedFeatures) return;
+    if (!selectedCompany || !selectedFeatures) return;
 
     const merged = { ...selectedFeatures, ...updates };
     const nextScenario = resolveBusinessScenario(merged.companySize, merged.legalStructure, merged.serviceModel);
@@ -112,13 +143,15 @@ export default function AdminBusinessProfilesPage() {
       hasHrFinanceAccess: updates.hasHrFinanceAccess ?? merged.companySize !== "owner_only",
     };
 
-    updateCompanyFeatures(selectedCompany.id, derivedUpdates);
+    // The whole object, not just the delta: a company edited for the first
+    // time has no stored entry for the store to merge the delta into.
+    updateCompanyFeatures(selectedCompany.id, { ...selectedFeatures, ...derivedUpdates });
     setToast("تم تحديث واجهة بروفيل الشركة محلياً. الربط الحقيقي ينتظر CompanyProfile API وAdminAuditEvent.");
   }
 
   function toggleFeature(key: BooleanFeatureKey) {
-    if (!selectedFeatures) return;
-    updateCompanyFeatures(selectedCompany.id, { [key]: !selectedFeatures[key] } as Partial<CompanyFeatures>);
+    if (!selectedCompany || !selectedFeatures) return;
+    updateCompanyFeatures(selectedCompany.id, { ...selectedFeatures, [key]: !selectedFeatures[key] });
     setToast(`تم تغيير ${key} محلياً فقط. لا يوجد حفظ خادمي في مرحلة البيتا.`);
   }
 
@@ -138,7 +171,11 @@ export default function AdminBusinessProfilesPage() {
     toggleFeature(featureFlag);
   }
 
-  const internalLegalCount = Object.values(features).filter((feature) => feature.hasInternalLegal).length;
+  // Counted over the real companies only: `features` also carries the
+  // store's built-in demo entries (C-001…), which are not customers.
+  const internalLegalCount = companies.filter(
+    (company) => (features[company.id] ?? buildDefaultCompanyFeatures(company.id)).hasInternalLegal,
+  ).length;
   const backendReadyControls = BUSINESS_ADMIN_CONTROLS.filter((control) => control.readiness === "Backend-ready").length;
 
   return (
@@ -152,7 +189,7 @@ export default function AdminBusinessProfilesPage() {
             <h1 className={`text-3xl font-black tracking-tight ${isDark ? "text-white" : "text-zinc-900"}`}>إدارة بروفيلات الشركات</h1>
           </div>
           <p className={`max-w-3xl text-sm leading-relaxed ${muted}`}>
-            مركز تحكم أدمن لتجهيز بروفيل الشركة حسب الحجم، وجود مستشار أو إدارة قانونية، ونموذج الخدمة. كل شيء هنا واجهة محلية موثقة كـ Backend-ready بدون API أو قاعدة بيانات.
+            مركز تحكم أدمن لتجهيز بروفيل الشركة حسب الحجم، وجود مستشار أو إدارة قانونية، ونموذج الخدمة. قائمة الشركات من قاعدة البيانات، أما إعدادات البروفيل فمحلية في هذا المتصفح فقط ولا تُحفظ على الخادم.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -172,7 +209,7 @@ export default function AdminBusinessProfilesPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {[
-          { label: "شركات Mock", value: COMPANIES.length, icon: Buildings },
+          { label: "الشركات المسجلة", value: companiesState.status === "ready" ? companies.length : "—", icon: Buildings },
           { label: "بها قانوني داخلي", value: internalLegalCount, icon: ShieldCheck },
           { label: "سيناريوهات مغطاة", value: BUSINESS_PROFILE_SCENARIOS.length, icon: UsersThree },
           { label: "Controls جاهزة", value: backendReadyControls, icon: CheckCircle },
@@ -217,13 +254,24 @@ export default function AdminBusinessProfilesPage() {
               />
             </div>
           </div>
+          {companiesState.status !== "ready" || filteredCompanies.length === 0 ? (
+            <div className={`p-6 text-center text-sm ${muted}`}>
+              {companiesState.status === "loading"
+                ? "جارٍ تحميل الشركات…"
+                : companiesState.status === "error"
+                  ? "تعذّر تحميل قائمة الشركات. حدّث الصفحة للمحاولة مجدداً."
+                  : companies.length === 0
+                    ? "لا توجد شركات مسجّلة بعد."
+                    : "لا توجد شركة تطابق البحث."}
+            </div>
+          ) : (
           <div className="divide-y divide-white/5">
             {filteredCompanies.map((company) => {
               const companyFeatures = features[company.id];
               const companyScenario = companyFeatures
                 ? resolveBusinessScenario(companyFeatures.companySize, companyFeatures.legalStructure, companyFeatures.serviceModel)
                 : BUSINESS_PROFILE_SCENARIOS[0];
-              const active = company.id === selectedCompany.id;
+              const active = company.id === selectedCompany?.id;
 
               return (
                 <button
@@ -237,10 +285,10 @@ export default function AdminBusinessProfilesPage() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <p className={`truncate text-sm font-black ${isDark ? "text-white" : "text-zinc-900"}`}>{company.name}</p>
+                        <p className={`truncate text-sm font-black ${isDark ? "text-white" : "text-zinc-900"}`}>{company.name || "شركة بلا اسم"}</p>
                         {active && <CaretLeft size={14} className="text-[#C8A762]" />}
                       </div>
-                      <p className={`mt-1 text-[11px] ${muted}`}>{company.id} · {company.plan} · {company.mrr} ر.س/شهر</p>
+                      <p className={`mt-1 text-[11px] ${muted}`}>{company.plan} · {company.mrr} ر.س/شهر</p>
                       <p className={`mt-2 text-[11px] font-bold ${companyFeatures?.hasInternalLegal ? "text-emerald-400" : "text-amber-400"}`}>
                         {companyScenario.title}
                       </p>
@@ -250,23 +298,20 @@ export default function AdminBusinessProfilesPage() {
               );
             })}
           </div>
+          )}
         </section>
 
-        {selectedFeatures && (
+        {selectedCompany && selectedFeatures && (
           <section className="space-y-5">
             <div className={`rounded-2xl border p-5 ${card}`}>
               <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h2 className={`text-xl font-black ${isDark ? "text-white" : "text-zinc-900"}`}>{selectedCompany.name}</h2>
+                    <h2 className={`text-xl font-black ${isDark ? "text-white" : "text-zinc-900"}`}>{selectedCompany.name || "شركة بلا اسم"}</h2>
                     <span className="rounded-full border border-blue-500/25 bg-blue-500/10 px-2 py-0.5 text-[11px] font-bold text-blue-300">Backend-ready</span>
                     <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[11px] font-bold text-amber-300">Beta local</span>
                   </div>
                   <p className={`mt-2 text-sm leading-relaxed ${muted}`}>{scenario.description}</p>
-                </div>
-                <div className={`rounded-xl border p-3 text-xs ${soft}`}>
-                  <p className={`font-bold ${muted}`}>Admin owner</p>
-                  <p className={`mt-1 font-black ${isDark ? "text-white" : "text-zinc-900"}`}>{selectedCompany.owner}</p>
                 </div>
               </div>
 

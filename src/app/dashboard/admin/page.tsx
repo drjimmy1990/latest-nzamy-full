@@ -9,7 +9,7 @@ import {
   Sparkle, Money, Star, MagnifyingGlass, DotsThree,
   Download, Bell, ToggleLeft, ToggleRight, Trash,
   ChartBar, ChartLine, ArrowClockwise, X, Funnel,
-  UserCirclePlus, Gear, SignOut, Globe, Lock,
+  UserCirclePlus, Gear, SignOut, Lock,
   BookOpen, ChatTeardrop, Storefront, UsersThree, ArrowsLeftRight,
 } from "@phosphor-icons/react";
 import LibraryTab     from "./tabs/LibraryTab";
@@ -161,10 +161,9 @@ export default function AdminDashboard() {
             className={`${card} flex items-center gap-2 px-5 py-2.5 text-[12px] font-bold text-purple-400 hover:bg-white/[0.06] transition-all hover:scale-105 active:scale-95`}>
             <ArrowsLeftRight size={14}/> وضع المحامي
           </Link>
-          <div className={`${card} flex items-center gap-2 px-4 py-2.5`}>
-            <Globe size={13} className="text-emerald-400 animate-pulse"/>
-            <p className="text-[11px] font-medium text-zinc-300">النظام يعمل بشكل طبيعي</p>
-          </div>
+          {/* «النظام يعمل بشكل طبيعي» stood here with a pulsing globe: a
+              literal, not a reading — nothing on this page probes any service.
+              See «صحة النظام» below. */}
           <button className={`${card} flex items-center gap-2 px-5 py-2.5 text-[12px] font-bold text-[#C8A762] hover:bg-white/[0.06] transition-all hover:scale-105 active:scale-95`}>
             <Download size={14}/> تصدير
           </button>
@@ -527,54 +526,47 @@ export default function AdminDashboard() {
       {/* ═══════════════ SYSTEM TAB ═══════════════ */}
       {activeTab==="system" && <motion.div key="sys" initial={{opacity:0,y:20, scale:0.98}} animate={{opacity:1,y:0, scale:1}} exit={{opacity:0, scale:0.98}} transition={{type:"spring", stiffness:100, damping:20}} className="space-y-6">
         
-        {/* Core Infrastructure Bento */}
+        {/* Core Infrastructure Bento
+            Every figure that stood here was a literal presented as a live
+            reading: «UPTIME 99.99%», «جميع الأنظمة تعمل بكفاءة (Operational)»,
+            and six service tiles with invented availability — API 99.98%,
+            PostgreSQL 99.7%, CDN 100%, Resend 97.2%, WhatsApp 94.1% and
+            Moyasar 99.8% (the payment gateway is not even live) — each with an
+            «SLA» no contract backs. No health check, status page or uptime
+            monitor feeds this page. The services are still listed, so an admin
+            knows what to check, but each says «غير متاح» instead of a number. */}
         <div className={`${card} p-6`}>
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-3">
-              <div className="h-12 w-12 rounded-[1.25rem] bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shadow-inner">
-                <Database size={22} className="text-emerald-400"/>
-              </div>
-              <div>
-                <p className="text-[16px] font-black text-white tracking-tight mb-0.5">البنية التحتية والخوادم</p>
-                <div className="flex items-center gap-1.5"><span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span></span><span className="text-[11px] font-bold text-emerald-400">جميع الأنظمة تعمل بكفاءة (Operational)</span></div>
-              </div>
+          <div className="flex items-center gap-3 mb-6">
+            <div className="h-12 w-12 rounded-[1.25rem] bg-white/5 border border-white/10 flex items-center justify-center shadow-inner">
+              <Database size={22} className="text-zinc-400"/>
             </div>
-            <div className="hidden sm:flex items-center gap-2 bg-white/5 border border-white/10 px-4 py-2 rounded-2xl">
-               <span className="text-[10px] text-zinc-500 font-mono">UPTIME:</span>
-               <span className="text-[14px] font-black text-white">99.99%</span>
+            <div>
+              <p className="text-[16px] font-black text-white tracking-tight mb-0.5">البنية التحتية والخوادم</p>
+              <p className="text-[11px] font-medium text-zinc-500">لا يوجد رصد حيّ متصل بهذه اللوحة</p>
             </div>
           </div>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {[
-              {label:"خوادم الـ API (الرياض)",      pct:99.98,sla:"٩٩.٩%"},
-              {label:"قواعد البيانات (PostgreSQL)", pct:99.7, sla:"٩٩.٩%"},
-              {label:"شبكة الملفات (CDN)",         pct:100,  sla:"٩٩.٩%"},
-              {label:"مزود البريد (Resend)",      pct:97.2, sla:"٩٩%"},
-              {label:"بوابة واتساب (WhatsApp)",   pct:94.1, sla:"٩٥%"},
-              {label:"بوابة الدفع (Moyasar)",     pct:99.8, sla:"٩٩.٩%"},
-            ].map((s,i)=>(
-              <motion.div key={i} initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} transition={{delay:i*0.05, type:"spring"}}
-                className={`rounded-[1.25rem] p-5 border shadow-inner group transition-all hover:-translate-y-1 ${s.pct>=99?"bg-emerald-500/5 border-emerald-500/20 hover:border-emerald-500/40":s.pct>=95?"bg-amber-500/5 border-amber-500/20 hover:border-amber-500/40":"bg-rose-500/5 border-rose-500/20 hover:border-rose-500/40"}`}>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2.5">
-                    <div className={`h-2.5 w-2.5 rounded-full ${s.pct>=99?"bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]":s.pct>=95?"bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)] animate-pulse":"bg-rose-400 shadow-[0_0_8px_rgba(244,63,94,0.6)] animate-ping"}`}/>
-                    <p className="text-[13px] font-bold text-white group-hover:text-emerald-400 transition-colors">{s.label}</p>
-                  </div>
-                  <span className={`text-[14px] font-black tracking-tight ${s.pct>=99?"text-emerald-400":s.pct>=95?"text-amber-400":"text-rose-400"}`}>{s.pct}%</span>
+              "خوادم الـ API",
+              "قاعدة البيانات (PostgreSQL)",
+              "شبكة الملفات (CDN)",
+              "مزود البريد (Resend)",
+              "بوابة واتساب (WhatsApp)",
+              "بوابة الدفع (Moyasar)",
+            ].map((label)=>(
+              <div key={label} className="rounded-[1.25rem] p-5 border bg-white/5 border-white/5">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[13px] font-bold text-zinc-300">{label}</p>
+                  <span className="text-[11px] font-bold text-zinc-500 bg-white/5 border border-white/10 px-2.5 py-1 rounded-lg">غير متاح</span>
                 </div>
-                <div className="h-2 w-full rounded-full bg-white/5 overflow-hidden shadow-inner flex items-center">
-                  <div className={`h-full rounded-full relative overflow-hidden ${s.pct>=99?"bg-gradient-to-r from-emerald-600 to-emerald-400":s.pct>=95?"bg-gradient-to-r from-amber-600 to-amber-400":"bg-gradient-to-r from-rose-600 to-rose-400"}`} style={{width:`${Math.min(s.pct,100)}%`}}>
-                     <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent w-full -translate-x-full animate-[shimmer_2s_infinite]"/>
-                  </div>
-                </div>
-                <div className="flex justify-between mt-2">
-                   <span className="text-[9px] font-medium text-zinc-500">الضمان (SLA): {s.sla}</span>
-                   {s.pct<95 && <span className="text-[9px] font-bold text-rose-400">يتطلب تدخل</span>}
-                </div>
-              </motion.div>
+              </div>
             ))}
           </div>
+          <p className="mt-4 text-[10px] leading-relaxed text-zinc-500">
+            هذه اللوحة لا تستقصي أي خدمة، فلا تعرض نسب توفر ولا حالة تشغيل.
+            للتحقق من حالة خدمة، راجع لوحة المزوّد المعني مباشرة.
+          </p>
         </div>
 
         {/* Security & Audit Logs Bento */}
