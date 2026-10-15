@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { currentPlanRow, type ActivePlanRow } from "@/lib/entitlementGrantRules";
+import { TIER_RANK } from "@/lib/access-control";
 import {
   slugIssue,
   educationIssue,
@@ -370,15 +372,14 @@ export async function GET() {
     }
   }
 
-  // Fetch subscription
-  const { data: subscription } = await supabase
+  // Fetch subscription — the one getUserTier() grants: an active row whose
+  // period has ended is not "the current plan" (nothing flips it to expired).
+  const { data: activeSubs } = await supabase
     .from("subscriptions")
     .select("*, subscription_plans(*)")
     .eq("user_id", user.id)
-    .eq("status", "active")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .eq("status", "active");
+  const subscription = currentPlanRow((activeSubs as ActivePlanRow[] | null) ?? [], Date.now(), TIER_RANK);
 
   // Always emitted, including `false`. An absent key would be
   // indistinguishable from an older deploy, and a client that reads

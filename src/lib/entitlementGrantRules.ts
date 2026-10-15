@@ -185,7 +185,19 @@ export function effectiveTier(
   nowMs: number,
   ranks: TierRankTable,
 ): ServerTier {
+  return (currentPlanRow(rows, nowMs, ranks)?.tier as ServerTier | undefined) ?? "free";
+}
+
+/**
+ * The active row effectiveTier() decides on — for screens that show the plan
+ * (GET /api/v1/profile, the dashboard summary), so they never show a plan the
+ * server no longer grants. null when nothing is running.
+ */
+export function currentPlanRow<T extends ActivePlanRow>(
+  rows: readonly T[] | null | undefined,
+  nowMs: number,
+  ranks: TierRankTable,
+): T | null {
   const running = (rows ?? []).filter((row) => planEndsAtMs(row) > nowMs && tierRank(row.tier, ranks) >= 0);
-  const best = dominantActivePlan(running, ranks);
-  return (best?.tier as ServerTier | undefined) ?? "free";
+  return dominantActivePlan(running, ranks);
 }

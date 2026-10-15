@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { currentPlanRow, type ActivePlanRow } from "@/lib/entitlementGrantRules";
+import { TIER_RANK } from "@/lib/access-control";
 import { stripInternalNotes } from "@/lib/services/internalNotes";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 
@@ -114,11 +116,10 @@ export async function GET() {
         .from("subscriptions")
         .select("*, subscription_plans(*)")
         .eq("user_id", uid)
-        .eq("status", "active")
-        .limit(1)
-        .single(),
+        .eq("status", "active"),
     )
-      .then(({ data }) => data ?? null)
+      // The plan getUserTier() grants: an ended period is not current.
+      .then(({ data }) => currentPlanRow((data as ActivePlanRow[] | null) ?? [], Date.now(), TIER_RANK))
       .catch(() => null),
 
     // 5. Community preview (latest posts)
