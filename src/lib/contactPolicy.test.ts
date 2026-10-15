@@ -41,3 +41,21 @@ test("platform contact policy rejects retired numbers and telephone CTAs", async
   }
   assert.deepEqual(violations, [], `contact policy violations:\n${violations.join("\n")}`);
 });
+
+test("Q33: no social-profile icon links except the platform's X account", async () => {
+  // Owner decision Q33 (2026-10-06): X and LinkedIn only, once their links are
+  // confirmed; every other platform's icon goes. linkedin.com/company/nezamy
+  // answered 404, so that address is out too (a confirmed LinkedIn page may
+  // come back; only the dead one is refused). Share intents
+  // (facebook.com/sharer, x.com/intent) and the YouTube embed on the home page
+  // are not profile links.
+  const PROFILE_LINK =
+    /https:\/\/(?:www\.)?(?:instagram\.com\/|youtube\.com\/(?:@|c\/|channel\/|user\/)|tiktok\.com\/@|snapchat\.com\/add|facebook\.com\/(?!sharer)|linkedin\.com\/company\/nezamy\b|whatsapp\.com\/channel)/i;
+  const files = await sourceFiles(SRC);
+  const violations: string[] = [];
+  for (const file of files) {
+    const text = await readFile(file, "utf8");
+    if (PROFILE_LINK.test(text)) violations.push(path.relative(process.cwd(), file));
+  }
+  assert.deepEqual(violations, [], `social profile links:\n${violations.join("\n")}`);
+});

@@ -10,9 +10,6 @@ import {
   ArrowLeft,
   ArrowRight,
   TwitterLogo,
-  LinkedinLogo,
-  InstagramLogo,
-  YoutubeLogo,
   Check,
   Warning,
   CaretRight,
@@ -200,16 +197,15 @@ export default function ContactPage() {
                 </p>
                 <div className="flex gap-3">
                   {[
-                    { icon: TwitterLogo, href: "https://x.com/nezamy", color: "hover:text-sky-400" },
-                    { icon: LinkedinLogo, href: "https://linkedin.com/company/nezamy", color: "hover:text-blue-500" },
-                    { icon: InstagramLogo, href: "https://instagram.com/nezamy", color: "hover:text-pink-500" },
-                    // @Nzamylaw is the firm's channel — the one that hosts the intro
-                    // video in Hero.tsx. @nezamy belongs to an unrelated person
-                    // ("Sherif Elnezamy") and @nzamy to another ("Nzam Y"); both were
-                    // live on the site, sending visitors to strangers.
-                    { icon: YoutubeLogo, href: "https://youtube.com/@Nzamylaw", color: "hover:text-red-500" },
+                    // Owner decision Q33 (2026-10-06): only the official X and LinkedIn
+                    // icons, and only after their links are confirmed; every other
+                    // platform's icon is removed (Instagram, YouTube). LinkedIn is out
+                    // as well: linkedin.com/company/nezamy answered 404 when it was
+                    // checked on 2026-08-27. x.com/nezamy blocks automated checks, so
+                    // the owner still has to confirm it is the platform's account.
+                    { icon: TwitterLogo, href: "https://x.com/nezamy", label: "حساب نظامي على منصة إكس", color: "hover:text-sky-400" },
                   ].map((s, i) => (
-                    <a key={i} href={s.href} target="_blank" rel="noopener noreferrer" className={`rounded-xl border p-3 transition ${isDark ? "border-white/10 text-gray-400" : "border-slate-200 text-slate-500"} ${s.color}`}>
+                    <a key={i} href={s.href} target="_blank" rel="noopener noreferrer" aria-label={s.label} className={`rounded-xl border p-3 transition ${isDark ? "border-white/10 text-gray-400" : "border-slate-200 text-slate-500"} ${s.color}`}>
                       <s.icon size={20} weight="bold" />
                     </a>
                   ))}
