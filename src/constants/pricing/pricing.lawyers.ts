@@ -169,7 +169,6 @@ export const lawyerProductPricing = {
       { name: "عصارة المرفقات", points: 300 },
       { name: "مُولّد أسئلة الاستجواب", points: 150 },
       { name: "الرأي الفصل — استشارة", points: 100 },
-      { name: "داعم الاتجاه", points: 100 },
       { name: "الرأي الفصل — خطاب رسمي", points: 50 },
     ]},
     { category: "أدوات مساعدة", items: [
@@ -241,7 +240,9 @@ export const lawyerServicesTable: ServiceCategory[] = [
       { name: "عصارة المرفقات",                  points: 300, baseSAR: "٣٠٠" },
       { name: "مُولّد أسئلة الاستجواب",           points: 150, baseSAR: "١٥٠" },
       { name: "الرأي الفصل — استشارة",           points: 100, baseSAR: "١٠٠" },
-      { name: "داعم الاتجاه (طلب)",               points: 100, baseSAR: "١٠٠" },
+      // No «داعم الاتجاه (طلب) — ١٠٠ نقطة» row: /ai/direction-support renders
+      // DashboardComingSoon (comingSoon in lawyerAiCatalog.ts), so it is not
+      // sold. It comes back with its page.
       { name: "الرأي الفصل — خطاب رسمي",        points: 50,  baseSAR: "٥٠" },
     ],
   },

@@ -9,6 +9,8 @@
  *   - Q3/Q28: payments happen outside the platform, there is no Escrow, and
  *     digital-plan fees are refundable within 14 days unless AI points were
  *     used.
+ * Plus: a working checkout path, Arabic plan names on the Arabic page, and
+ * no price for an AI tool whose page is «قريباً».
  *
  * Source text is read with readFileSync (the pattern pricingApprovals.test.ts
  * uses): the pricing constants import phosphor icons and React at runtime, and
@@ -19,6 +21,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { existsSync, readFileSync } from "node:fs";
+import { LAWYER_AI_TOOLS, getLawyerAiBadge } from "../../constants/lawyerAiCatalog.ts";
 
 function src(path: string): string {
   return readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
@@ -200,6 +203,22 @@ test("no plan id repeats inside one list (React key), and each language keeps it
   const providers = planLists("constants/pricing/pricing.providers.ts")[0];
   assert.doesNotMatch(providers.ar, /Independent Consultant/);
   assert.match(providers.en, /Independent Consultant/);
+});
+
+test("a coming-soon AI tool is neither priced on the hub nor sold on /pricing", () => {
+  const soon = LAWYER_AI_TOOLS.filter((t) => t.comingSoon);
+  assert.ok(soon.some((t) => t.permission === "ai:direction-support"), "direction-support is a «قريباً» page");
+  const lawyerTables = code("constants/pricing/pricing.lawyers.ts");
+  for (const tool of soon) {
+    assert.equal(getLawyerAiBadge(tool, "ar"), "قريباً");
+    assert.equal(getLawyerAiBadge(tool, "en"), "Coming soon");
+    // No points row for it in the services price list (lawyerServicesTable)
+    // or the reference table beside it.
+    assert.ok(
+      !lawyerTables.includes(`name: "${tool.titleAr}`),
+      `${tool.titleAr} is still priced in pricing.lawyers.ts`,
+    );
+  }
 });
 
 test("the comment stripper keeps string content that merely contains '//'", () => {
