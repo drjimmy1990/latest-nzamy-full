@@ -14,6 +14,7 @@ import { buildCitation } from "./_citation";
 import { splitAmendedLabelLine, splitAmendedMarker } from "./_amended-marker";
 import { splitNumberedItem } from "./_numbered-item";
 import { READER_SCROLL_MARGIN_TOP } from "./_reader-anchors";
+import { visibleAmendments } from "./_previous-versions";
 import { OfficialMetaLockedRow } from "../components/OfficialMetaLockedRow";
 import { useSubscription } from "@/hooks/useSubscription";
 
@@ -648,6 +649,8 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
   const [copiedReg, setCopiedReg]           = useState(false);
   const isRepealed  = isRepealedArticleStatus(article.status);
   const isAmended   = article.status === "amended";
+  // «الإصدارات السابقة»: only cards with something to read (_previous-versions.ts).
+  const previousVersions = visibleAmendments(article.amendments);
   const statusNotice = articleStatusNotice(article.status, isRTL);
   const mergedReg   = getMergedReg(article);
     const { can }     = useSubscription();
@@ -945,7 +948,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
               have it duplicated by an amendment fullText. Showing both would
               print the same superseded text twice on every one of them.
             */}
-            {viewMode !== "regulation" && isAmended && article.amendments && article.amendments.length > 0 && (
+            {viewMode !== "regulation" && isAmended && previousVersions.length > 0 && (
               <details
                 className={`my-3 rounded-xl border transition-all ${
                   isDark
@@ -955,23 +958,25 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
               >
                 <summary className="px-4 py-2.5 font-black cursor-pointer hover:underline text-[12px] flex items-center gap-1.5 select-none">
                   <ClockCounterClockwise size={12} className={isDark ? "text-amber-400" : "text-amber-600"} />
-                  <span>{isRTL ? `الإصدارات السابقة (${article.amendments.length})` : `Previous versions (${article.amendments.length})`}</span>
+                  <span>{isRTL ? `الإصدارات السابقة (${previousVersions.length})` : `Previous versions (${previousVersions.length})`}</span>
                 </summary>
                 <div className="px-4 pb-3 pt-2 border-t border-dashed border-amber-200/20 text-[12px] leading-relaxed space-y-2">
-                  {article.amendments.map((amend, i) => (
+                  {previousVersions.map((amend, i) => (
                     <div key={i} className={`p-3 rounded-xl border ${isDark ? "border-amber-700/10 bg-amber-900/5" : "border-amber-200 bg-amber-50/60"}`}>
+                      {(amend.sourceLocked || amend.source || amend.date) && (
                       <div className="flex gap-2 mb-1">
                         {amend.sourceLocked ? (
                           <span className={`text-[10px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>🔒 أداة التعديل وتاريخه متاحان للمشتركين</span>
                         ) : (
                           <>
-                            <span className={`text-[10px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>{amend.source}</span>
-                            <span className={`text-[10px] ${isDark ? "text-zinc-400" : "text-slate-400"}`}>{amend.date}</span>
+                            {amend.source && <span className={`text-[10px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>{amend.source}</span>}
+                            {amend.date && <span className={`text-[10px] ${isDark ? "text-zinc-400" : "text-slate-400"}`}>{amend.date}</span>}
                           </>
                         )}
                       </div>
-                      <p className={`text-[11px] mb-2 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{amend.summary}</p>
-                      <p className={`text-[12px] leading-relaxed pt-2 border-t ${isDark ? "border-amber-700/15 text-zinc-400" : "border-amber-200 text-zinc-600"}`}>{amend.fullText}</p>
+                      )}
+                      {amend.summary && <p className={`text-[11px] mb-2 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{amend.summary}</p>}
+                      {amend.fullText && <p className={`text-[12px] leading-relaxed ${amend.summary || amend.sourceLocked || amend.source || amend.date ? "pt-2 border-t" : ""} ${isDark ? "border-amber-700/15 text-zinc-400" : "border-amber-200 text-zinc-600"}`}>{amend.fullText}</p>}
                     </div>
                   ))}
                 </div>
