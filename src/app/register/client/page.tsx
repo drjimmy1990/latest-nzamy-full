@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   User,
   Buildings,
@@ -36,6 +36,17 @@ import {
 } from "./components/_corporateIdentity";
 
 import { BACKEND_MODE } from "@/lib/runtimeMode";
+import { getPlanList, type AudienceTab } from "@/constants/pricingData";
+import { resolveRequestedPlan } from "@/lib/pricing/planRequest";
+
+// The /pricing audience whose plans a given account type can sign up for.
+const AUDIENCE_BY_CLIENT_TYPE: Record<NonNullable<ClientType>, AudienceTab> = {
+  individual: "individuals",
+  company: "companies",
+  micro: "micro",
+  government: "government",
+  ngo: "ngo",
+};
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
@@ -48,10 +59,20 @@ export default function RegisterClientPage() {
   const [clientType, setClientType] = useState<ClientType>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
+  // `?plan=<Plan.id>` from a /pricing subscribe CTA. It used to be dropped
+  // here, so a guest who clicked «اشترك» ended up with an account and no
+  // request. It is resolved against the plan list of the account type being
+  // registered, and offered on the last step (Step4).
+  const [planParam, setPlanParam] = useState<string | null>(null);
+  // Whether signUp returned a live session. With email confirmation on it
+  // does not, and an entitlement request would be refused (401) — Step4 then
+  // says how to finish instead of offering a button that cannot work.
+  const [signupHasSession, setSignupHasSession] = useState(false);
 
   // Pre-select type from URL query param (e.g. ?type=individual)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    setPlanParam(params.get("plan"));
     const type = params.get("type") as ClientType;
     // "micro" was missing from this list while being a live option in Step1
     // (data.ts) and a live branch in the signup metadata below — so
@@ -63,6 +84,13 @@ export default function RegisterClientPage() {
     }
   }, []);
   const [formData, setFormData] = useState<Record<string, string>>({});
+
+  // null for a typo, a retired id, or a plan of another account type — see
+  // resolveRequestedPlan. Arabic list: the plan name is shown on Step4.
+  const requestedPlan = useMemo(
+    () => (clientType ? resolveRequestedPlan(planParam, getPlanList(AUDIENCE_BY_CLIENT_TYPE[clientType], true)) : null),
+    [clientType, planParam],
+  );
 
   const handleChange = (key: string, val: string) => setFormData((d) => ({ ...d, [key]: val }));
 
@@ -220,7 +248,13 @@ export default function RegisterClientPage() {
                   <Step3 key="s3" isAr={isAr} data={formData} onChange={handleChange} />
                 )}
                 {step === 4 && (
-                  <Step4 key="s4" isAr={isAr} clientType={clientType} />
+                  <Step4
+                    key="s4"
+                    isAr={isAr}
+                    clientType={clientType}
+                    requestedPlan={BACKEND_MODE === "supabase" ? requestedPlan : null /* demo mode has no backend */}
+                    canRequestNow={signupHasSession}
+                  />
                 )}
               </AnimatePresence>
 
@@ -283,7 +317,7 @@ export default function RegisterClientPage() {
                               return;
                             }
                             const phoneE164 = phoneResult.e164;
-                            const { error } = await supabase.auth.signUp({
+                            const { data: signUpData, error } = await supabase.auth.signUp({
                               email: formData.email,
                               password: formData.password,
                               options: {
@@ -371,6 +405,7 @@ export default function RegisterClientPage() {
                               return;
                             }
 
+                            setSignupHasSession(Boolean(signUpData.session));
                             setStep(4);
                           } catch {
                             setAuthError(isAr ? "حدث خطأ، حاول مرة أخرى" : "An error occurred, please try again");

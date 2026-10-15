@@ -59,7 +59,8 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
       },
     },
     {
-      id: "lawyer-royal", name: "الملكية", badge: "الأوفر قيمة",
+      // No «الأوفر قيمة» badge (owner, Q164, 2026-10-03: no superlative badges).
+      id: "lawyer-royal", name: "الملكية", badge: null,
       priceMonthly: "١٠٬٠٠٠", priceYearly: "١٠٬٠٠٠", periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
       desc: "٣٠٬٠٠٠ نقطة — بونص +٢٠٠٪", target: "مكاتب متوسطة", bonusLabel: "+٢٠٠٪ نقاط مجانية",
       cta: "انضم الآن", ctaHref: "/register/provider?plan=royal-credits", highlighted: false, color: "border-gold/20",
@@ -128,7 +129,7 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
       },
     },
     {
-      id: "lawyer-royal", name: "Royal", badge: "Best Value",
+      id: "lawyer-royal", name: "Royal", badge: null,
       priceMonthly: "10,000", priceYearly: "10,000", periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
       desc: "30,000 points — +200% bonus", target: "Mid-size Firms", bonusLabel: "+200% Free Points",
       cta: "Join Now", ctaHref: "/register/provider?plan=royal-credits", highlighted: false, color: "border-gold/20",
@@ -168,7 +169,6 @@ export const lawyerProductPricing = {
       { name: "عصارة المرفقات", points: 300 },
       { name: "مُولّد أسئلة الاستجواب", points: 150 },
       { name: "الرأي الفصل — استشارة", points: 100 },
-      { name: "داعم الاتجاه", points: 100 },
       { name: "الرأي الفصل — خطاب رسمي", points: 50 },
     ]},
     { category: "أدوات مساعدة", items: [
@@ -240,7 +240,9 @@ export const lawyerServicesTable: ServiceCategory[] = [
       { name: "عصارة المرفقات",                  points: 300, baseSAR: "٣٠٠" },
       { name: "مُولّد أسئلة الاستجواب",           points: 150, baseSAR: "١٥٠" },
       { name: "الرأي الفصل — استشارة",           points: 100, baseSAR: "١٠٠" },
-      { name: "داعم الاتجاه (طلب)",               points: 100, baseSAR: "١٠٠" },
+      // No «داعم الاتجاه (طلب) — ١٠٠ نقطة» row: /ai/direction-support renders
+      // DashboardComingSoon (comingSoon in lawyerAiCatalog.ts), so it is not
+      // sold. It comes back with its page.
       { name: "الرأي الفصل — خطاب رسمي",        points: 50,  baseSAR: "٥٠" },
     ],
   },

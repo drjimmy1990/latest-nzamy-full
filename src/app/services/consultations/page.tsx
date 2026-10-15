@@ -43,7 +43,9 @@ const consultationTypes = {
       // now says the roster is still being onboarded and no wait time can be
       // quoted. The remaining bullets describe the tier, not its uptime.
       features: ["غير محدود خلال الجلسة", "يستشهد بالمادة القانونية", "تصعيد للمحامي بضغطة"],
-      badge: "الأوفر",
+      // No «الأوفر» badge (owner, Q164, 2026-10-03: no superlative badges);
+      // the three prices sit side by side on the cards.
+      badge: null,
       color: "from-emerald-500/10 to-emerald-500/5",
       border: "border-emerald-500/20",
       accent: "text-emerald-600 dark:text-emerald-400",
@@ -85,7 +87,7 @@ const consultationTypes = {
       currency: "SAR",
       desc: "Get instant legal answers from an AI model specialized in Saudi regulations — with the option to escalate to a lawyer at any time",
       features: ["Unlimited within session", "Cites legal articles", "One-tap lawyer escalation"],
-      badge: "Best Value",
+      badge: null,
       color: "from-emerald-500/10 to-emerald-500/5",
       border: "border-emerald-500/20",
       accent: "text-emerald-600 dark:text-emerald-400",

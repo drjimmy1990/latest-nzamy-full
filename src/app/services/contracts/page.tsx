@@ -419,11 +419,8 @@ export default function ContractsPage() {
                     : "border-gray-100 bg-white"
                 }`}
               >
-                {tier.highlight && (
-                  <div className="absolute -top-3 start-1/2 -translate-x-1/2 bg-royal text-white text-xs font-bold px-3 py-1 rounded-full whitespace-nowrap">
-                    {isRTL ? "الأفضل قيمةً" : "Best Value"}
-                  </div>
-                )}
+                {/* No «الأفضل قيمةً» pill (owner, Q164, 2026-10-03: no
+                    superlative badges). `highlight` keeps the ring. */}
                 <h3 className={`text-lg font-bold mb-1 ${isDark ? "text-white" : "text-gray-900"}`}>{tier.name}</h3>
                 <p className={`text-sm mb-4 ${isDark ? "text-gray-400" : "text-gray-500"}`}>{tier.desc}</p>
                 <div className="flex items-end gap-1 mb-6">

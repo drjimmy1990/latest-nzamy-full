@@ -589,11 +589,20 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     description: "طلب قانوني غير مصنف يتم توجيهه حسب نوعه",
     basePrice: 500,
     priceMode: "starting_from",
+    // Owner Q42: «طلب عام» is open to clients at an ESTIMATED minimum of
+    // ٥٠٠ ر.س. formatClientServicePrice renders «يبدأ من ٥٠٠ ر.س»; this note
+    // says the figure is an estimate, not a quote.
+    priceNote: "سعر تقديري — يُحدَّد السعر النهائي بعد مراجعة الطلب",
     route: "/dashboard/client/requests/new?type=general",
     icon: "ShieldStar",
     receiverType: "lawyer",
     requestType: "service",
-    betaVisibility: "internal",
+    // Was "internal" (hidden from clients) — Q42 makes it client-facing.
+    // NOTE: the admin_pricing_catalog seed row (20260518) still says
+    // beta_visibility 'internal' and enabled false; /api/client-pricing only
+    // reads enabled rows, so this constant is what clients get until an admin
+    // enables that row — and then the row's own visibility wins.
+    betaVisibility: "public",
     requiresPayment: true,
     humanService: true,
   },

@@ -10,6 +10,8 @@ import type { Plan, AudienceTab, Billing } from "@/constants/pricingData";
 import { lawyerServicesTable } from "@/constants/pricing/pricing.lawyers";
 import { useUser } from "@/hooks/useUser";
 import { requestEntitlement } from "@/lib/services/entitlementService";
+import { referencePriceFor } from "@/lib/pricing/priceDisplay";
+import { planEntitlementRequest } from "@/lib/pricing/planRequest";
 
 interface PricingCardsProps {
   planList: Plan[];
@@ -58,6 +60,8 @@ function SpotlightCard({
 
   const price = billing === "monthly" ? plan.priceMonthly : plan.priceYearly;
   const period = billing === "monthly" ? plan.periodMonthly : plan.periodYearly;
+  // Yearly view only — see referencePriceFor (src/lib/pricing/priceDisplay.ts).
+  const referencePrice = referencePriceFor(plan, billing);
   const { bonusLabel } = plan;
   const allFeatures = [
     ...plan.features.ai,
@@ -170,13 +174,13 @@ function SpotlightCard({
         <div className={`my-6 border-y py-5 ${
           isHighlighted ? "border-white/10" : "border-slate-100 dark:border-white/8"
         }`}>
-          {plan.priceOriginal && (
+          {referencePrice && (
             <div className={`mb-1 text-xs font-medium ${
               isHighlighted ? "text-white/65" : "text-ink-muted dark:text-gray-500"
             }`}>
               <span className="opacity-80">{isAr ? "بدلاً من " : "Was "}</span>
               <span className="line-through font-semibold">
-                {plan.priceOriginal} {isAr ? "ر.س" : "SAR"}
+                {referencePrice} {isAr ? "ر.س" : "SAR"}
               </span>
             </div>
           )}
@@ -437,7 +441,8 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
   function handleSubscribe(plan: Plan): boolean {
     if (!isLoggedIn) return false;
     if (!isSubscribeCta(plan.ctaHref)) return false; // e.g. Contact Sales — let it navigate
-    void requestEntitlement({ kind: "plan", requested_ref: plan.name }).then((res) => {
+    // requested_ref = Plan.id (the name rides in `note`) — see planEntitlementRequest.
+    void requestEntitlement(planEntitlementRequest(plan, { libraryMode })).then((res) => {
       setToast(
         res.ok
           ? { ok: true, msg: "تم إرسال طلبك للمراجعة" }

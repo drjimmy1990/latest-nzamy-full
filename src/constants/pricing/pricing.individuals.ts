@@ -21,7 +21,9 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       desc: "صياغة مذكرات، عقود، وترافع قضائي متخصص — ادفع فقط عند الحاجة دون أي التزام سنوي",
       target: "أفراد",
       cta: "اطلب خدمة الآن",
-      ctaHref: "/dashboard/client/draft",
+      // The client's «اطلب خدمة جديدة» catalogue (sidebar). It used to point
+      // at /dashboard/client/draft, a route that does not exist.
+      ctaHref: "/dashboard/client/services",
       highlighted: false,
       color: "border-slate-300",
       isBetaHidden: false,
@@ -34,7 +36,8 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
         ],
         platform: [
           "تمثيل قضائي وترافع مخصص من محامٍ مرخّص",
-          "حجز الرسوم في محفظة الضمان المالي (Escrow)",
+          // No Escrow line (owner Q3/Q28): fees are paid outside the
+          // platform and nothing is held on the client's behalf.
           "فحص تعارض المصالح والتدقيق المكتبي قبل التسليم",
           "لا يوجد أي اشتراك دوري أو رسوم خفية",
         ],
@@ -69,7 +72,10 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
           "حساب رقمي متكامل لحفظ استفساراتك واستشاراتك",
           "إمكانية شراء استشارات محامين مرخصين بأسعار تفضيلية",
           "تحديثات يومية بالتغييرات التشريعية التي تهم الأفراد",
-          "لا تتطلب أي فحص طبي أو موافقة مسبقة",
+          // Was «لا تتطلب أي فحص طبي أو موافقة مسبقة» — insurance boilerplate
+          // (no legal plan has a medical check) that also overstated speed:
+          // every subscription is still activated after the team reviews it.
+          "لا تخضع لفحص الاكتتاب المطلوب في باقة الخصومة والتقاضي",
         ],
         support: ["دعم فني عبر المنصة والبريد"],
       },
@@ -78,7 +84,10 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       id: "ind-preventive",
       isBetaHidden: false,
       name: "الباقة الوقائية (استشارات وعقود)",
-      badge: "الأكثر طلباً للأفراد",
+      // No «الأكثر طلباً للأفراد» badge (owner, Q164, 2026-10-03): no
+      // subscription data supports a popularity claim. `highlighted` keeps
+      // the card's emphasis without making one.
+      badge: null,
       bonusLabel: "وفر شهرين عند الدفع السنوي",
       priceMonthly: "١٤٩",
       priceYearly: "١٬٤٩٠",
@@ -134,7 +143,6 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
         platform: [
           "تمثيل قضائي وترافع أمام المحاكم لقضية مؤهلة سنوياً",
           "استشارات غير محدودة طوال فترة التقاضي في القضية المقبولة",
-          "حجز الأتعاب في محفظة الضمان المالي المعتمدة",
           "⚠️ تخضع القضية للفحص المهني وضوابط الاكتتاب قبل التفعيل",
         ],
         support: ["خط ساخن ومتابعة مخصصة مع المحامي المسؤول"],
@@ -145,7 +153,10 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       isBetaHidden: false,
       name: "الباقة العائلية الشاملة",
       badge: "تغطي حتى ٥ أفراد",
-      bonusLabel: "وفر ٥٥٪ مقارنة بالاشتراكات الفردية",
+      // Was «وفر ٥٥٪ مقارنة بالاشتراكات الفردية», which no combination of the
+      // listed plans produces (5 × ١٤٩ = ٧٤٥ against ٦٩٩ is 6%). The annual
+      // saving below is exact: ٦٬٩٩٠ against 12 × ٦٩٩ = ٨٬٣٨٨.
+      bonusLabel: "وفر شهرين عند الدفع السنوي",
       priceMonthly: "٦٩٩",
       priceYearly: "٦٬٩٩٠",
       priceOriginal: "٨٬٣٨٨",
@@ -186,7 +197,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       desc: "Drafting briefs, contracts, and court representation — on-demand legal services without subscription commitments",
       target: "Individuals",
       cta: "Request Service",
-      ctaHref: "/dashboard/client/draft",
+      ctaHref: "/dashboard/client/services",
       highlighted: false,
       color: "border-slate-300",
       isBetaHidden: false,
@@ -199,7 +210,6 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
         ],
         platform: [
           "Full court representation by licensed Saudi attorneys",
-          "Funds held safely in escrow until client approval",
           "Conflict-of-interest checks & internal quality gates",
           "Zero recurring fees or hidden charges",
         ],
@@ -234,7 +244,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
           "Full digital profile to archive your questions and drafts",
           "Access to licensed lawyer consultations at discounted rates",
           "Daily updates on statutory changes relevant to individuals",
-          "Zero underwriting or medical qualification required",
+          "No underwriting review (unlike the Litigation plan)",
         ],
         support: ["Platform & email technical support"],
       },
@@ -243,7 +253,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       id: "ind-preventive",
       isBetaHidden: false,
       name: "Preventive Legal Shield",
-      badge: "Most Popular",
+      badge: null,
       bonusLabel: "Save 2 months on annual billing",
       priceMonthly: "149",
       priceYearly: "1,490",
@@ -299,7 +309,6 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
         platform: [
           "Court representation for 1 qualified eligible case per year",
           "Unlimited consultations throughout active case duration",
-          "Escrow protection for legal dispute fees",
           "⚠️ Subject to legal underwriting review and intake qualification",
         ],
         support: ["Direct case manager & attorney hotline"],
@@ -310,7 +319,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       isBetaHidden: false,
       name: "Family Legal Umbrella",
       badge: "Up to 5 Family Members",
-      bonusLabel: "Save up to 55% vs individual plans",
+      bonusLabel: "Save 2 months on annual billing",
       priceMonthly: "699",
       priceYearly: "6,990",
       priceOriginal: "8,388",
@@ -361,7 +370,7 @@ export const comparisonIndividuals: { ar: ComparisonCategory[]; en: ComparisonCa
         { feature: "استشارات مع محامٍ مرخّص",    "pay-per-piece": "٢٥٠ ر.س/جلسة",   "ind-ai": "سعر تفضيلي",           "ind-preventive": "٤ استشارات/سنة",       "ind-litigation": "غير محدودة للقضية",    "ind-family": "١٠ استشارات/سنة" },
         { feature: "خصم أتعاب الترافع والقضايا", "pay-per-piece": "-",              "ind-ai": "٥٪",                   "ind-preventive": "١٥٪",                  "ind-litigation": "قضية مشمولة بالكامل",  "ind-family": "٢٥٪ لكل العائلة" },
         { feature: "تمثيل قضائي وترافع بالمحاكم", "pay-per-piece": "أتعاب متفق عليها","ind-ai": "-",                   "ind-preventive": "بخصم ١٥٪",             "ind-litigation": "قضية مؤهلة سنوياً",    "ind-family": "بخصم ٢٥٪" },
-        { feature: "ضوابط القبول والاكتتاب",      "pay-per-piece": "فحص تعارض",     "ind-ai": "قبول فوري",            "ind-preventive": "قبول فوري",            "ind-litigation": "تخضع للفحص المهني",    "ind-family": "قبول فوري" },
+        { feature: "ضوابط القبول والاكتتاب",      "pay-per-piece": "فحص تعارض",     "ind-ai": "بدون اكتتاب",            "ind-preventive": "بدون اكتتاب",            "ind-litigation": "تخضع للفحص المهني",    "ind-family": "بدون اكتتاب" },
       ],
     },
     {
@@ -401,7 +410,7 @@ export const comparisonIndividuals: { ar: ComparisonCategory[]; en: ComparisonCa
         { feature: "Lawyer Consultations",        "pay-per-piece": "SAR 250/session","ind-ai": "Discounted rate",      "ind-preventive": "4 sessions/year",      "ind-litigation": "Unlimited for case",   "ind-family": "10 sessions/year" },
         { feature: "Litigation Fees Discount",    "pay-per-piece": "-",             "ind-ai": "5%",                   "ind-preventive": "15%",                  "ind-litigation": "Fully covered case",   "ind-family": "25% for family" },
         { feature: "Court Representation",        "pay-per-piece": "Agreed fee",    "ind-ai": "-",                    "ind-preventive": "15% off fee",          "ind-litigation": "1 eligible case/year", "ind-family": "25% off fee" },
-        { feature: "Underwriting & Intake Check", "pay-per-piece": "Conflict check","ind-ai": "Instant activation",   "ind-preventive": "Instant activation",   "ind-litigation": "Requires review gate", "ind-family": "Instant activation" },
+        { feature: "Underwriting & Intake Check", "pay-per-piece": "Conflict check","ind-ai": "No underwriting",   "ind-preventive": "No underwriting",   "ind-litigation": "Requires review gate", "ind-family": "No underwriting" },
       ],
     },
     {

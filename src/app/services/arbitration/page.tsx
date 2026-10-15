@@ -365,9 +365,8 @@ export default function ArbitrationPage() {
                 <h3 className="text-lg font-bold text-white">
                   {isRTL ? "التحكيم" : "Arbitration"}
                 </h3>
-                <span className="ms-auto bg-[#C8A762]/20 border border-[#C8A762]/30 text-[#C8A762] text-xs font-bold px-3 py-1 rounded-full">
-                  {isRTL ? "الأفضل" : "Best Choice"}
-                </span>
+                {/* No «الأفضل» pill (owner, Q164, 2026-10-03: no superlative
+                    badges). Which route suits a dispute is the reader's call. */}
               </div>
               <div className="p-6 space-y-4">
                 {comparisonPoints.map((point, i) => (

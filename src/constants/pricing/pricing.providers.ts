@@ -58,19 +58,6 @@ export const plansProviders: { ar: Plan[]; en: Plan[] } = {
         support: ["عمولة المنصة: ٥٪ فقط", "دعم فني عبر واتساب"],
       },
     },
-    {
-      id: "consultant-independent", name: "Independent Consultant", badge: "Article 18",
-      priceMonthly: "199", priceYearly: "1,990", periodMonthly: "SAR / month", periodYearly: "SAR / year",
-      desc: "Tailored for independent legal consultants for statutory research & advisory — excludes court litigation under Article 18.",
-      target: "Independent Legal Consultants", cta: "Subscribe Now",
-      ctaHref: "/register/provider?type=consultant&plan=independent", highlighted: false, color: "border-purple-300",
-      commissionPct: 5,
-      features: {
-        ai: ["Unlimited smart search in laws & principles", "Drafter & contract analyzer tools for advisory", "Legal opinion & memo generation", null],
-        platform: ["Client advisory management & calendar", "Verified consultant profile in marketplace", "🚫 Court representation gated (Art. 18)", null],
-        support: ["Platform commission: 5% only", "WhatsApp support"],
-      },
-    },
   ],
   en: [
     {
@@ -110,6 +97,21 @@ export const plansProviders: { ar: Plan[]; en: Plan[] } = {
         ai: ["Unlimited AI for your role", "Full Legal Library ✅", "Smart Secretary + Alerts", null],
         platform: ["Top Listing: 1st in search ✅", "\"Trusted Expert\" badge ✅", "Exclusive direct referrals", null],
         support: ["Platform commission: 5% only", "Priority VIP WhatsApp"],
+      },
+    },
+    // Moved here from the `ar` list, where it rendered an English card on the
+    // Arabic page with the same React key as the Arabic consultant card.
+    {
+      id: "consultant-independent", name: "Independent Consultant", badge: "Article 18",
+      priceMonthly: "199", priceYearly: "1,990", periodMonthly: "SAR / month", periodYearly: "SAR / year",
+      desc: "Tailored for independent legal consultants for statutory research & advisory — excludes court litigation under Article 18.",
+      target: "Independent Legal Consultants", cta: "Subscribe Now",
+      ctaHref: "/register/provider?type=consultant&plan=independent", highlighted: false, color: "border-purple-300",
+      commissionPct: 5,
+      features: {
+        ai: ["Unlimited smart search in laws & principles", "Drafter & contract analyzer tools for advisory", "Legal opinion & memo generation", null],
+        platform: ["Client advisory management & calendar", "Verified consultant profile in marketplace", "🚫 Court representation gated (Art. 18)", null],
+        support: ["Platform commission: 5% only", "WhatsApp support"],
       },
     },
   ],

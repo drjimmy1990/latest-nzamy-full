@@ -352,7 +352,9 @@ export default function ProviderProfilePage() {
               {activeTab === "pricing" && (
                 <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
                   <div className={`rounded-2xl border p-4 text-sm ${isDark ? "border-amber-700/30 bg-amber-950/30 text-amber-300" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
-                    الأسعار قابلة للتعديل. يتعامل نظامي بنظام Escrow — يُسدَّد المبلغ للعميل بشكل آمن حتى الانتهاء من الاستشارة.
+                    {/* No Escrow promise (owner Q3/Q28): the platform holds no
+                        client money — fees are settled outside it. */}
+                    الأسعار قابلة للتعديل. تُسدَّد أتعاب الاستشارة بينك وبين العميل مباشرة خارج المنصة، ولا تحتجز المنصة أي مبالغ.
                   </div>
                   {[
                     { label: "رسوم الاستشارة المعيارية (بالساعة)", key: "consultFee", value: mockProfile.consultFee, suffix: "ر.س" },
