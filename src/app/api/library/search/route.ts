@@ -622,6 +622,8 @@ export async function POST(request: Request) {
             meta: {
               bookTitle: book?.title,
               bookSlug: book?.id,
+              // Already selected for the join; the card shows the real author.
+              author: typeof book?.author === 'string' && book.author.trim() ? book.author.trim() : null,
               chapter: chapter?.title,
               page: r.page_number,
               volume: r.volume_number,
