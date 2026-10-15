@@ -93,7 +93,7 @@ const txt = {
         name: "سنوي (١٢ شهر)",
         price: "٥٬٠٠٠ ﷼ / سنة",
         priceYearly: "٥٬٠٠٠ ﷼ / سنة",
-        desc: "الأوفر قيمة للاستخدام المستدام وحفظ التعديلات",
+        desc: "اشتراك لمدة ١٢ شهراً للاستخدام المستمر",
         icon: Buildings,
         color: "from-purple-700 to-purple-500",
         features: [
@@ -190,7 +190,7 @@ const txt = {
         name: "Annual (12 Months)",
         price: "SAR 5,000 / Year",
         priceYearly: "SAR 5,000 / Year",
-        desc: "Best value for long-term practice",
+        desc: "A 12-month subscription for ongoing use",
         icon: Buildings,
         color: "from-purple-700 to-purple-500",
         features: [

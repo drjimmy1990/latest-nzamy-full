@@ -124,11 +124,8 @@ export function PaywallModal({ isOpen, onClose, isRTL, isDark, freeLimit }: {
           <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4" dir={isRTL ? "rtl" : "ltr"}>
             {PLANS.map(plan => (
               <div key={plan.id} className={`rounded-2xl border p-5 relative ${plan.highlight ? "border-[#C8A762] bg-[#C8A762]/5" : isDark ? "border-[#2d3748]" : "border-gray-200"}`}>
-                {plan.highlight && (
-                  <div className="absolute -top-3 inset-x-0 flex justify-center">
-                    <span className="px-3 py-1 bg-[#C8A762] text-[#0B3D2E] text-xs font-black rounded-full">{isRTL ? "الأكثر قيمة" : "Best Value"}</span>
-                  </div>
-                )}
+                {/* No «الأكثر قيمة» pill (owner, Q164, 2026-10-03: no
+                    superlative badges). `highlight` keeps the gold border. */}
                 <p className={`text-base font-black mb-0.5 ${isDark ? "text-white" : "text-gray-900"}`}>{isRTL ? plan.name : plan.nameEn}</p>
                 <p className={`text-xs mb-3 ${isDark ? "text-gray-400" : "text-gray-500"}`}>{isRTL ? plan.desc : plan.descEn}</p>
                 <div className="flex items-baseline gap-1 mb-4">

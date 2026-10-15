@@ -89,8 +89,11 @@ export const STANDALONE_LIBRARY_PLANS: Record<string, PricingPlan> = {
     periodYearlyAr: "ر.س / سنة",
     periodMonthlyEn: "SAR / year",
     periodYearlyEn: "SAR / year",
-    badgeAr: "الأكثر قيمة واعتماداً",
-    badgeEn: "Best Value",
+    // No «الأكثر قيمة واعتماداً» badge (owner, Q164, 2026-10-03): no
+    // subscription data supports an adoption claim, and the value superlative
+    // went with it. `highlighted` keeps the emphasis.
+    badgeAr: null,
+    badgeEn: null,
     descAr: "الاشتراك السنوي المعتمد للمحترفين والمكاتب — ٥٬٠٠٠ ر.س/سنة مع كامل التحديثات وتصدير النصوص",
     descEn: "Canonical annual subscription for professionals & firms — 5,000 SAR/year with all updates & exports",
     featuresAr: [
@@ -174,8 +177,9 @@ export const INDIVIDUALS_PYRAMID_PLANS: Record<string, PricingPlan> = {
     periodYearlyAr: "ر.س / سنة (شهرين مجاناً)",
     periodMonthlyEn: "SAR / month",
     periodYearlyEn: "SAR / year",
-    badgeAr: "الأكثر طلباً للأفراد",
-    badgeEn: "Most Popular",
+    // No «الأكثر طلباً للأفراد» badge (owner, Q164, 2026-10-03).
+    badgeAr: null,
+    badgeEn: null,
     descAr: "درعك الوقائي لحماية حقوقك وتعاملاتك اليومية — استشارات مع محامين مرخصين ومراجعة عقود",
     descEn: "Your preventive legal shield — licensed lawyer consultations and contract reviews",
     featuresAr: [

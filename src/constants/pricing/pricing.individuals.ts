@@ -78,7 +78,10 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       id: "ind-preventive",
       isBetaHidden: false,
       name: "الباقة الوقائية (استشارات وعقود)",
-      badge: "الأكثر طلباً للأفراد",
+      // No «الأكثر طلباً للأفراد» badge (owner, Q164, 2026-10-03): no
+      // subscription data supports a popularity claim. `highlighted` keeps
+      // the card's emphasis without making one.
+      badge: null,
       bonusLabel: "وفر شهرين عند الدفع السنوي",
       priceMonthly: "١٤٩",
       priceYearly: "١٬٤٩٠",
@@ -243,7 +246,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       id: "ind-preventive",
       isBetaHidden: false,
       name: "Preventive Legal Shield",
-      badge: "Most Popular",
+      badge: null,
       bonusLabel: "Save 2 months on annual billing",
       priceMonthly: "149",
       priceYearly: "1,490",

@@ -88,7 +88,9 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
     {
       id: "lib-annual",
       name: "سنوي",
-      badge: "الأوفر قيمة والأكثر اعتماداً",
+      // No «الأوفر قيمة والأكثر اعتماداً» badge (owner, Q164, 2026-10-03): no
+      // subscription data supports an adoption claim.
+      badge: null,
       priceMonthly: "٥٬٠٠٠",
       priceYearly:  "٥٬٠٠٠",
       priceOriginal: "٦٬٠٠٠",
@@ -189,7 +191,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
     {
       id: "lib-annual",
       name: "Annual",
-      badge: "Best Value",
+      badge: null,
       priceMonthly: "5,000",
       priceYearly:  "5,000",
       priceOriginal: "6,000",
