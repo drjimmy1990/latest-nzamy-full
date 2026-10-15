@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { normalizeArabic } from "@/utils/normalizeArabic";
 import { stripMarkdownMarks } from "@/lib/text/stripMarkdownMarks";
+import { groupLawSearchCards } from "./lawSearchGroups";
 import { courtBadge } from "./principleCardFields";
 import { realPrincipleNumber } from "./principleLink";
 import {
@@ -1096,6 +1097,10 @@ export default function LegalLibraryPage() {
         // `meta.status` above. Until the search API sends it, this is '' and
         // a repealed law found by search still shows as a normal card.
         status: typeof r.meta?.lawStatus === 'string' ? r.meta.lawStatus : '',
+        // Grouping keys (lawSearchGroups.ts): one card per law.
+        hitKind: r.meta?.kind,
+        lawTitle: r.meta?.lawTitle,
+        articleLabel: r.meta?.articleLabel,
         _isSearchResult: true,
       }))
     : lawsList.filter(s => {
@@ -1105,6 +1110,11 @@ export default function LegalLibraryPage() {
         const inQ   = !nq || normalizeArabic(s.title).includes(nq) || normalizeArabic(s.desc).includes(nq);
         return inCat && inDoc && inQ;
       });
+
+  // A search lists one card per law with its matching articles (owner
+  // package 10-06). Grouping runs over every loaded hit, so counts, paging
+  // and the per-hit lock stay the API's; see lawSearchGroups.ts.
+  const lawCards = isSearchActive ? groupLawSearchCards(filteredLaws) : filteredLaws;
 
   // ─── Filter: Principles ───────────────────────────────────────────────────────
   const filteredPrinciples = isSearchActive
@@ -2029,7 +2039,7 @@ export default function LegalLibraryPage() {
                           layoutMode={layoutMode}
                           isLoggedIn={isLoggedIn}
                           q={q}
-                          filteredLaws={filteredLaws}
+                          filteredLaws={lawCards}
                           filteredFeqhBooks={filteredFeqhBooks}
                           filteredCollections={filteredCollections}
                           filteredPrinciples={filteredPrinciples}

@@ -18,7 +18,8 @@ import {
 import { LAW_DOC_TYPES, type DocSubType, getDocAnchorPrefix } from "@/constants/lawsLibraryData";
 import { LEGAL_TAXONOMY } from "@/constants/taxonomies";
 import { SECTION_30 } from "../lawsIndexFacets";
-import { type SearchSection, SECTION_DEGRADED_NOTICE, SEARCH_SECTION_LABELS_AR } from "../searchCounts";
+import { type SearchSection, SECTION_DEGRADED_NOTICE, SEARCH_SECTION_LABELS_AR, formatArabicNumber } from "../searchCounts";
+import type { MatchedArticle } from "../lawSearchGroups";
 import { articleStatusNotice } from "../data";
 import { isRepealedLawStatus } from "../law-status";
 import { OfficialMetaLockedRow } from "./OfficialMetaLockedRow";
@@ -330,6 +331,44 @@ export function LawsTabContent({
                     يُعرض للأرشيف وللوقائع السابقة لإلغائه
                   </p>
                 );
+                // A search card lists the law's matching articles (owner package
+                // 10-06; page.tsx groups the hits with lawSearchGroups.ts). A
+                // locked hit shows its article label only, never its text. The
+                // «+N» counts loaded hits only, never the law's total.
+                const matchedArticles: MatchedArticle[] = sys._isSearchResult && Array.isArray(sys.matchedArticles) ? sys.matchedArticles : [];
+                const moreMatched: number = typeof sys.moreMatchedArticles === "number" ? sys.moreMatchedArticles : 0;
+                const matchedArticlesList = matchedArticles.length > 0 ? (
+                  <div className={`w-full text-start mb-3 rounded-lg border px-3 py-2 ${isDark ? "border-white/[0.06] bg-white/[0.02]" : "border-gray-100 bg-gray-50/60"}`}>
+                    <p className={`text-[10px] font-bold mb-1.5 ${muted}`}>{isRTL ? "المواد المطابقة" : "Matching articles"}</p>
+                    <ul className="space-y-1.5">
+                      {matchedArticles.map((a) => {
+                        const articleNotice = a.status === "status_undeclared" ? articleStatusNotice(a.status, isRTL) : null;
+                        return (
+                          <li key={a.id} className="text-[11px] leading-relaxed">
+                            <span className={`font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
+                              {a.label || (isRTL ? "مادة مطابقة" : "Matching article")}
+                            </span>
+                            {articleNotice && (
+                              <span className="ms-1.5 text-[9px] font-bold px-1 py-0.5 rounded bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20">
+                                {isRTL ? `حالة المادة: ${articleNotice}` : `Article status: ${articleNotice}`}
+                              </span>
+                            )}
+                            {isUnlocked && a.snippet && (
+                              <span className={`block line-clamp-2 ${muted}`}>{a.snippet}</span>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    {moreMatched > 0 && (
+                      <p className={`text-[10px] mt-1.5 ${muted}`}>
+                        {isRTL
+                          ? `و${formatArabicNumber(moreMatched)} من المواد المطابقة الأخرى ضمن النتائج المحمّلة`
+                          : `+${moreMatched} more matching articles among the loaded results`}
+                      </p>
+                    )}
+                  </div>
+                ) : null;
                 return (
                 <motion.div
                   key={sys.id}
@@ -434,6 +473,8 @@ export function LawsTabContent({
                           </p>
                         );
                       })()}
+
+                      {matchedArticlesList}
 
                       {/* Inline Compact Articles/Chapters Summary */}
                       <div className={`flex flex-wrap items-center justify-center gap-x-3 gap-y-1 mb-4 py-1.5 px-3 rounded-lg text-[10px] font-bold text-center ${isDark ? "bg-white/[0.03] text-gray-400" : "bg-gray-50 text-gray-600"}`}>
@@ -561,6 +602,7 @@ export function LawsTabContent({
                             </p>
                           );
                         })()}
+                        {matchedArticlesList && <div className="mt-2">{matchedArticlesList}</div>}
                       </div>
 
                       {/* Right: Stats + CTA */}

@@ -396,6 +396,8 @@ export async function POST(request: Request) {
             meta: {
               kind: 'article',
               lawTitle: law?.title,
+              // The label alone, for a card that lists hits under their law.
+              articleLabel: articleLabel || null,
               articleNumber: r.number,
               status: r.status,
               lawSlug: r.law_slug,
