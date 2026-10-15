@@ -31,7 +31,9 @@ const txt = {
     plansTitle: "اختر خطتك",
     plansSub: "اختر الخطة المناسبة — يُراجع طلبك ويُفعَّل الاشتراك بعد الموافقة.",
     monthly: "شهري",
-    yearly: "سنوي (وفّر ١٦٪)",
+    // No «(وفّر ١٦٪)»: every plan below has price === priceYearly, so the
+    // toggle saves nothing.
+    yearly: "سنوي",
     subscribe: "اشترك الآن",
     exploreFree: "تصفح المجاني",
     perMonth: "/شهر",
@@ -128,7 +130,7 @@ const txt = {
     plansTitle: "Choose Your Plan",
     plansSub: "Choose the plan that fits — your request is reviewed and activated once approved.",
     monthly: "Monthly",
-    yearly: "Yearly (Save 16%)",
+    yearly: "Yearly",
     subscribe: "Subscribe Now",
     exploreFree: "Browse Free",
     perMonth: "/mo",
@@ -365,10 +367,9 @@ export default function LawsSubscribePage() {
               >
                 {/* No «الأكثر طلباً» badge (owner, Q164, 2026-10-03): no
                     subscription data supports a popularity claim. The card
-                    keeps its `featured` emphasis styling. OPEN (owner
-                    decision): the same flag still shows struck-through "was"
-                    prices below (٦٠٠ / ٢,٤٠٠ ﷼) that no real price list backs
-                    — a reference-price claim of the same class. */}
+                    keeps its `featured` emphasis styling. The struck-through
+                    "was" prices it used to show (٦٠٠ / ٢,٤٠٠ ﷼) are gone too:
+                    no real price list ever carried them. */}
 
                 <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${plan.color} flex items-center justify-center mb-4 shadow`}>
                   <Icon size={20} weight="fill" className="text-white" />
@@ -378,26 +379,13 @@ export default function LawsSubscribePage() {
                 <p className={`text-[12px] mb-4 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{plan.desc}</p>
 
                 <div className="flex items-baseline gap-1.5 mb-5 flex-wrap">
-                  {plan.featured ? (
-                    <>
-                      <span className="text-sm line-through text-red-500 mr-1 ml-1 font-semibold">
-                        {yearly ? (isAr ? "٢,٤٠٠ ﷼ / سنة" : "SAR 2,400 / Year") : (isAr ? "٦٠٠ ﷼ / ٣ أشهر" : "SAR 600 / 3 Months")}
-                      </span>
-                      <span className={`text-2xl font-bold font-mono ${isDark ? "text-white" : "text-zinc-900"}`}>
-                        {yearly ? plan.priceYearly : plan.price}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <span className={`text-2xl font-bold font-mono ${isDark ? "text-white" : "text-zinc-900"}`}>
-                        {yearly ? plan.priceYearly : plan.price}
-                      </span>
-                      {!(yearly ? plan.priceYearly : plan.price).includes("/") && (
-                        <span className="text-[11px] text-zinc-400">
-                          {yearly ? t.perYear : t.perMonth}
-                        </span>
-                      )}
-                    </>
+                  <span className={`text-2xl font-bold font-mono ${isDark ? "text-white" : "text-zinc-900"}`}>
+                    {yearly ? plan.priceYearly : plan.price}
+                  </span>
+                  {!(yearly ? plan.priceYearly : plan.price).includes("/") && (
+                    <span className="text-[11px] text-zinc-400">
+                      {yearly ? t.perYear : t.perMonth}
+                    </span>
                   )}
                 </div>
 

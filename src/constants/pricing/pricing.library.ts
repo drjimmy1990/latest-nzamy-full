@@ -6,10 +6,15 @@ import { Plan } from "./pricing.types";
  * Stand-alone Library subscription plans.
  * Shown when audience is "lawyers" or "firms" AND libraryMode === true.
  *
- * Pricing (50% launch discount):
- *   lib-q1:     300 SAR / 3 months  (was 600)   → 30-day invite trial
- *   lib-q2:     550 SAR / 6 months  (was 1,050)  → 60-day invite trial
- *   lib-annual: 1,000 SAR / year    (was 2,100)  → 90-day invite trial
+ * Pricing (the plan objects below are the source of truth):
+ *   lib-q1:     1,500 SAR / 3 months  → 30-day invite trial
+ *   lib-q2:     2,750 SAR / 6 months  → 60-day invite trial
+ *   lib-annual: 5,000 SAR / year      → 90-day invite trial
+ *
+ * No `priceOriginal` and no «خصم ٥٠٪ لفترة الإطلاق» pill: the struck-through
+ * "was" prices (2,000 / 3,500 / 6,000, and 2× every firm-library price) were
+ * never charged anywhere, and the percentage matched none of them (the real
+ * gaps were 17–25%). A reference price comes back only once a real one exists.
  *
  * All plans include:
  *   ✓ Full access to 5,000+ laws, regulations, judicial principles
@@ -27,12 +32,10 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       badge: null,
       priceMonthly: "١٬٥٠٠",
       priceYearly:  "١٬٥٠٠",
-      priceOriginal: "٢٬٠٠٠",
       periodMonthly: "ر.س / ٣ أشهر",
       periodYearly:  "ر.س / ٣ أشهر",
       desc: "وصول كامل للمكتبة القانونية لمدة ٣ أشهر",
       target: "للتجربة",
-      bonusLabel: "خصم ٥٠٪ لفترة الإطلاق",
       pricingFormulaLabel: "حساب لمستخدم واحد (١ مقعد)",
       cta: "اشترك الآن",
       ctaHref: "/laws/subscribe?plan=lib-q1",
@@ -58,12 +61,10 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       badge: null,
       priceMonthly: "٢٬٧٥٠",
       priceYearly:  "٢٬٧٥٠",
-      priceOriginal: "٣٬٥٠٠",
       periodMonthly: "ر.س / ٦ أشهر",
       periodYearly:  "ر.س / ٦ أشهر",
       desc: "وصول كامل للمكتبة القانونية لمدة ٦ أشهر",
       target: "للمحترفين",
-      bonusLabel: "خصم ٥٠٪ لفترة الإطلاق",
       pricingFormulaLabel: "حساب لمستخدم واحد (١ مقعد)",
       cta: "اشترك الآن",
       ctaHref: "/laws/subscribe?plan=lib-q2",
@@ -93,12 +94,10 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       badge: null,
       priceMonthly: "٥٬٠٠٠",
       priceYearly:  "٥٬٠٠٠",
-      priceOriginal: "٦٬٠٠٠",
       periodMonthly: "ر.س / سنة",
       periodYearly:  "ر.س / سنة",
       desc: "وصول كامل للمكتبة القانونية لمدة ١٢ شهراً",
       target: "للمكاتب",
-      bonusLabel: "خصم ٥٠٪ لفترة الإطلاق",
       pricingFormulaLabel: "حساب لمستخدم واحد (١ مقعد)",
       cta: "اشترك الآن",
       ctaHref: "/laws/subscribe?plan=lib-annual",
@@ -130,12 +129,10 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       badge: null,
       priceMonthly: "1,500",
       priceYearly:  "1,500",
-      priceOriginal: "2,000",
       periodMonthly: "SAR / 3 months",
       periodYearly:  "SAR / 3 months",
       desc: "Full library access for 3 months",
       target: "Trial",
-      bonusLabel: "50% launch discount",
       pricingFormulaLabel: "1 user account (1 seat)",
       cta: "Subscribe Now",
       ctaHref: "/laws/subscribe?plan=lib-q1",
@@ -161,12 +158,10 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       badge: null,
       priceMonthly: "2,750",
       priceYearly:  "2,750",
-      priceOriginal: "3,500",
       periodMonthly: "SAR / 6 months",
       periodYearly:  "SAR / 6 months",
       desc: "Full library access for 6 months",
       target: "Professionals",
-      bonusLabel: "50% launch discount",
       pricingFormulaLabel: "1 user account (1 seat)",
       cta: "Subscribe Now",
       ctaHref: "/laws/subscribe?plan=lib-q2",
@@ -194,12 +189,10 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       badge: null,
       priceMonthly: "5,000",
       priceYearly:  "5,000",
-      priceOriginal: "6,000",
       periodMonthly: "SAR / year",
       periodYearly:  "SAR / year",
       desc: "Full library access for 12 months",
       target: "Firms",
-      bonusLabel: "50% launch discount",
       pricingFormulaLabel: "1 user account (1 seat)",
       cta: "Subscribe Now",
       ctaHref: "/laws/subscribe?plan=lib-annual",
@@ -234,7 +227,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       badge: "١–٥ أعضاء",
       priceMonthly: "٤٬٨٠٠",
       priceYearly:  "٤٬٨٠٠",
-      priceOriginal: "٩٬٦٠٠",
       periodMonthly: "ر.س / سنة",
       periodYearly:  "ر.س / سنة",
       desc: "مثالي للمكاتب الصغيرة وفرق العمل المحدودة",
@@ -266,7 +258,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       badge: "٦–٢٠ عضواً",
       priceMonthly: "١٢٬٠٠٠",
       priceYearly:  "١٢٬٠٠٠",
-      priceOriginal: "٢٤٬٠٠٠",
       periodMonthly: "ر.س / سنة",
       periodYearly:  "ر.س / سنة",
       desc: "لشركات المحاماة المتوسطة ذات الفرق المتعددة",
@@ -298,7 +289,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       badge: "٢١–٥٠ عضواً",
       priceMonthly: "٢٤٬٠٠٠",
       priceYearly:  "٢٤٬٠٠٠",
-      priceOriginal: "٤٨٬٠٠٠",
       periodMonthly: "ر.س / سنة",
       periodYearly:  "ر.س / سنة",
       desc: "لشركات المحاماة الكبرى والشركاء المتعددين",
@@ -363,7 +353,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       badge: "1–5 seats",
       priceMonthly: "4,800",
       priceYearly:  "4,800",
-      priceOriginal: "9,600",
       periodMonthly: "SAR / year",
       periodYearly:  "SAR / year",
       desc: "Perfect for small offices and limited teams",
@@ -395,7 +384,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       badge: "6–20 seats",
       priceMonthly: "12,000",
       priceYearly:  "12,000",
-      priceOriginal: "24,000",
       periodMonthly: "SAR / year",
       periodYearly:  "SAR / year",
       desc: "For medium law firms with multiple practice groups",
@@ -427,7 +415,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       badge: "21–50 seats",
       priceMonthly: "24,000",
       priceYearly:  "24,000",
-      priceOriginal: "48,000",
       periodMonthly: "SAR / year",
       periodYearly:  "SAR / year",
       desc: "For major law firms and multi-partner networks",

@@ -98,11 +98,9 @@ export function PricingHero({
                 }`}
               >
                 {b === "monthly" ? (isAr ? "شهري" : "Monthly") : (isAr ? "سنوي" : "Yearly")}
-                {b === "yearly" && (
-                  <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${billing === "yearly" ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400"}`}>
-                    -15%
-                  </span>
-                )}
+                {/* No «-15%» pill: annual is 10× monthly on every plan behind
+                    this toggle, so the saving is two months (≈17%), not 15%.
+                    Each card's own bonusLabel already states it. */}
               </button>
             ))}
           </motion.div>
@@ -215,8 +213,8 @@ export function PricingHero({
                 className="mx-auto max-w-md rounded-xl border border-emerald-200/60 bg-emerald-50/80 px-4 py-2.5 text-xs text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
               >
                 {isAr
-                  ? "📚 المكتبة القانونية — +٥٬٠٠٠ نظام ولائحة ومبدأ قضائي | خصم ٥٠٪ لفترة الإطلاق"
-                  : "📚 Legal Library — 5,000+ laws, regulations & principles | 50% launch discount"}
+                  ? "📚 المكتبة القانونية — +٥٬٠٠٠ نظام ولائحة ومبدأ قضائي"
+                  : "📚 Legal Library — 5,000+ laws, regulations & principles"}
               </motion.div>
             )}
           </motion.div>

@@ -28,7 +28,7 @@ export const plansNgo: { ar: Plan[]; en: Plan[] } = {
     },
     {
       id: "ngo-institutional", name: "التميز المؤسسي", badge: "~٤٩٩ ر.س / شهر ⭐",
-      priceMonthly: "٥,٩٨٨", priceYearly: "٥,٩٨8", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
+      priceMonthly: "٥,٩٨٨", priceYearly: "٥,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
       desc: "حوكمة كاملة وتقارير تلقائية للمراكز الرقابية", target: "مؤسسات كبرى", cta: "تواصل للمؤسسات",
       ctaHref: "/register/client?type=ngo&plan=institutional", highlighted: false, color: "border-royal/20",
       features: {

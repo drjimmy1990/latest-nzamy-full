@@ -4,6 +4,8 @@
  * Owner decisions this file holds the code to:
  *   - Q164 (2026-10-03): no popularity or superlative badges — no data backs
  *     «الأكثر طلباً», «الأكثر اعتماداً», «الأكثر قيمة», "Best Value" …
+ *   - no discount the prices do not produce (struck-through "was" prices that
+ *     were never charged, «خصم ٥٠٪», «-15%», «وفر ٥٥٪», «وفّر ١٦٪»).
  *
  * Source text is read with readFileSync (the pattern pricingApprovals.test.ts
  * uses): the pricing constants import phosphor icons and React at runtime, and
@@ -66,6 +68,42 @@ test("Q164: no popularity or superlative badge is rendered on a pricing surface"
     for (const pattern of SUPERLATIVE_BADGES) {
       assert.doesNotMatch(text, pattern, `${path} still carries ${pattern}`);
     }
+  }
+});
+
+test("no invented discount: the 50% launch claim and the made-up «was» prices are gone", () => {
+  for (const path of PRICING_SURFACES) {
+    const text = code(path);
+    assert.doesNotMatch(text, /خصم\s*٥٠٪|50%\s*launch/i, `${path}: «خصم ٥٠٪» launch claim`);
+  }
+  // The library and firm-library plans had struck-through prices nobody charged.
+  assert.doesNotMatch(code("constants/pricing/pricing.library.ts"), /priceOriginal/);
+  // /laws/subscribe struck through ٦٠٠ / ٢,٤٠٠ ﷼ above the real price.
+  const subscribe = code("app/laws/subscribe/page.tsx");
+  assert.doesNotMatch(subscribe, /line-through/);
+  assert.doesNotMatch(subscribe, /٦٠٠ ﷼|٢,٤٠٠ ﷼|SAR 600|SAR 2,400/);
+  // …and a «وفّر ١٦٪» toggle over plans whose price never changes with it.
+  assert.doesNotMatch(subscribe, /وفّر|وفر|Save \d/);
+});
+
+test("no percentage saving that the prices do not produce", () => {
+  // Annual = 10 × monthly on every toggled plan: two months (≈17%), not 15%.
+  assert.doesNotMatch(code("components/pricing/PricingHero.tsx"), /-15%|١٥٪-/);
+  // «وفر ٥٥٪»: no combination of the listed plans gives 55%.
+  const individuals = code("constants/pricing/pricing.individuals.ts");
+  assert.doesNotMatch(individuals, /٥٥٪|55%/);
+});
+
+test("no insurance boilerplate and no instant-activation promise on individuals plans", () => {
+  const individuals = code("constants/pricing/pricing.individuals.ts");
+  assert.doesNotMatch(individuals, /فحص طبي|medical/i);
+  // Every subscription request is reviewed before activation.
+  assert.doesNotMatch(individuals, /قبول فوري|Instant activation/);
+});
+
+test("no amount mixes Arabic-Indic and Latin digits (the «٥,٩٨8» typo)", () => {
+  for (const path of PRICING_SURFACES) {
+    assert.doesNotMatch(code(path), /[٠-٩][,٬]?[0-9]|[0-9][,٬]?[٠-٩]/, `${path}: mixed-digit amount`);
   }
 });
 
