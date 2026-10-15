@@ -11,6 +11,12 @@ import { markdownBoldToSafeHtml } from "@/utils/sanitize";
 // ─── Sections ────────────────────────────────────────────────────────────────
 
 const sections = {
+  // OPEN (owner wording needed, Q3/Q28): sections ٢ and ٤ below still
+  // describe the platform collecting service fees, holding them until
+  // delivery and refunding them — Escrow by function, though the word never
+  // appears. The owner has said payments happen outside the platform and
+  // there is no Escrow; replacing these two sections is a legal text for him
+  // to word, not a copy fix. Section ٣ carries his Q28 rule verbatim.
   ar: [
     {
       id: "scope",
@@ -35,6 +41,8 @@ const sections = {
       id: "subscriptions",
       title: "٣. استرداد اشتراكات الباقات",
       content: [
+        // Owner Q28 — the rule for digital plans, in his words.
+        "**الباقات الرقمية**: الرسوم المدفوعة للباقات الرقمية تخضع لسياسة استرداد خلال ١٤ يوماً ما لم يتم استهلاك نقاط الذكاء الاصطناعي.",
         "**حق العدول**: للمشترك الجديد حق العدول عن الاشتراك واسترداد قيمته وفق المدد والحالات المقررة في نظام التجارة الإلكترونية ولائحته التنفيذية، ما لم يكن قد استُهلك من الخدمة ما لا يمكن ردّه.",
         "بعد انقضاء مدة العدول: يمكن إلغاء التجديد التلقائي في أي وقت من إعدادات الحساب، ويستمر الوصول للخدمة حتى نهاية الفترة المدفوعة بالفعل دون استرداد جزئي عن الفترة المتبقية.",
         "الترقية بين الباقات لا تستوجب رسوم استرداد؛ يُحتسب فرق السعر تناسبياً على الفاتورة التالية.",
@@ -120,6 +128,7 @@ const sections = {
       id: "subscriptions",
       title: "3. Subscription Plan Refunds",
       content: [
+        "**Digital plans**: fees paid for digital plans are refundable within 14 days, unless AI points have been consumed.",
         "**Right of withdrawal**: New subscribers may withdraw from a subscription and recover its value within the periods and cases set out in the Saudi E-Commerce Law and its Implementing Regulations, except to the extent the service has already been consumed and cannot be returned.",
         "After the withdrawal period ends: automatic renewal can be cancelled at any time from account settings, and access continues until the end of the period already paid for, with no partial refund for the remaining period.",
         "Upgrading between plans does not require a refund; the price difference is pro-rated on the next invoice.",
@@ -204,7 +213,7 @@ export default function RefundPolicyPage() {
               {isRTL ? "سياسة الاسترجاع والاستبدال" : "Refund & Exchange Policy"}
             </h1>
             <p className={`mt-3 text-sm ${isDark ? "text-gray-400" : "text-slate-500"}`}>
-              {isRTL ? "آخر تحديث: ١ يناير ٢٠٢٥" : "Last updated: January 1, 2025"}
+              {isRTL ? "آخر تحديث: ١٦ أكتوبر ٢٠٢٦" : "Last updated: October 16, 2026"}
             </p>
             <div className={`mx-auto mt-4 max-w-lg rounded-xl border px-4 py-3 text-sm ${isDark ? "border-yellow-500/20 bg-yellow-500/5 text-yellow-300" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
               {isRTL

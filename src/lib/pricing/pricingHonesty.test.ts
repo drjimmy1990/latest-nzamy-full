@@ -6,6 +6,9 @@
  *     «الأكثر طلباً», «الأكثر اعتماداً», «الأكثر قيمة», "Best Value" …
  *   - no discount the prices do not produce (struck-through "was" prices that
  *     were never charged, «خصم ٥٠٪», «-15%», «وفر ٥٥٪», «وفّر ١٦٪»).
+ *   - Q3/Q28: payments happen outside the platform, there is no Escrow, and
+ *     digital-plan fees are refundable within 14 days unless AI points were
+ *     used.
  *
  * Source text is read with readFileSync (the pattern pricingApprovals.test.ts
  * uses): the pricing constants import phosphor icons and React at runtime, and
@@ -105,6 +108,29 @@ test("no amount mixes Arabic-Indic and Latin digits (the «٥,٩٨8» typo)", ()
   for (const path of PRICING_SURFACES) {
     assert.doesNotMatch(code(path), /[٠-٩][,٬]?[0-9]|[0-9][,٬]?[٠-٩]/, `${path}: mixed-digit amount`);
   }
+});
+
+test("Q3/Q28: no Escrow promise on plans, provider pricing or the firm wallet", () => {
+  const escrow = /escrow|الضمان المالي|حساب الأمانات|محفظة الضمان/i;
+  for (const path of [
+    ...PRICING_SURFACES,
+    "app/dashboard/provider/profile/page.tsx",
+    "app/dashboard/firm/wallet/page.tsx",
+    "app/refund-policy/page.tsx",
+  ]) {
+    assert.doesNotMatch(code(path), escrow, `${path} still promises Escrow`);
+  }
+});
+
+test("Q28: the refund policy states the 14-day digital-plan rule", () => {
+  const refund = code("app/refund-policy/page.tsx");
+  assert.ok(
+    refund.includes(
+      "الرسوم المدفوعة للباقات الرقمية تخضع لسياسة استرداد خلال ١٤ يوماً ما لم يتم استهلاك نقاط الذكاء الاصطناعي",
+    ),
+    "the owner's Q28 sentence is missing from /refund-policy",
+  );
+  assert.match(refund, /refundable within 14 days, unless AI points have been consumed/);
 });
 
 test("the comment stripper keeps string content that merely contains '//'", () => {

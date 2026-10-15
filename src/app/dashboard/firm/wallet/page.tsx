@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import {
   Wallet, ArrowUpRight, ArrowDownLeft,
   Bank, ClockCounterClockwise, CreditCard,
-  Plus, Receipt, HandCoins, Building
+  Plus, Receipt, HandCoins
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 
@@ -70,7 +70,7 @@ export default function FirmWalletPage() {
       </motion.div>
 
       {/* Balances */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Main Balance */}
         <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className={`${card} p-6 relative overflow-hidden bg-gradient-to-br from-[#0B3D2E] to-emerald-800 text-white border-none shadow-xl`}>
           <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-2xl -mr-10 -mt-10" />
@@ -113,23 +113,8 @@ export default function FirmWalletPage() {
           </p>
         </motion.div>
 
-        {/* Escrow (Trust) */}
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className={`${card} p-5 flex flex-col justify-center`}>
-          <div className="flex items-center gap-3 mb-3">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isDark ? "bg-blue-500/10" : "bg-blue-50"}`}>
-              <Building size={20} className="text-blue-500" weight="duotone" />
-            </div>
-            <div>
-              <p className={`text-[11px] font-bold ${isDark ? "text-zinc-400" : "text-slate-500"}`}>حساب الأمانات (Escrow)</p>
-              <p className={`text-[20px] font-black font-mono mt-0.5 ${isDark ? "text-white" : "text-slate-800"}`}>
-                ٥٠٠,٠٠٠ <span className={`text-[12px] font-sans ${isDark ? "text-zinc-500" : "text-slate-400"}`}>ريال</span>
-              </p>
-            </div>
-          </div>
-          <p className={`text-[10px] leading-relaxed mt-2 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-            مبالغ محفوظة لأغراض الصفقات والتسويات، لا يمكن سحبها إلا بموافقة الأطراف (Smart Contracts).
-          </p>
-        </motion.div>
+        {/* No «حساب الأمانات (Escrow)» card (owner Q3/Q28): the platform
+            holds no client money, so there is no trust balance to show. */}
       </div>
 
       {/* Transactions */}

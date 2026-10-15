@@ -221,7 +221,6 @@ export const INDIVIDUALS_PYRAMID_PLANS: Record<string, PricingPlan> = {
       "تمثيل قضائي وترافع أمام المحاكم لقضية مؤهلة سنوياً",
       "صياغة لوائح الدعوى والمذكرات الجوابية والاعتراضية",
       "استشارات غير محدودة طوال فترة التقاضي في القضية المقبولة",
-      "حجز الرسوم في محفظة الضمان المالي المعتمدة",
       "⚠️ خضوع القضية لقواعد الاكتتاب والتحقق المسبق قبل البدء",
     ],
     featuresEn: [
@@ -229,7 +228,6 @@ export const INDIVIDUALS_PYRAMID_PLANS: Record<string, PricingPlan> = {
       "Court representation for 1 qualified eligible case per year",
       "Drafting statements of claim, responses and appeals",
       "Unlimited consultations throughout active case duration",
-      "Escrow protection for dispute fees",
       "⚠️ Subject to legal underwriting review and intake qualification",
     ],
     highlighted: false,

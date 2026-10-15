@@ -34,7 +34,8 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
         ],
         platform: [
           "تمثيل قضائي وترافع مخصص من محامٍ مرخّص",
-          "حجز الرسوم في محفظة الضمان المالي (Escrow)",
+          // No Escrow line (owner Q3/Q28): fees are paid outside the
+          // platform and nothing is held on the client's behalf.
           "فحص تعارض المصالح والتدقيق المكتبي قبل التسليم",
           "لا يوجد أي اشتراك دوري أو رسوم خفية",
         ],
@@ -140,7 +141,6 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
         platform: [
           "تمثيل قضائي وترافع أمام المحاكم لقضية مؤهلة سنوياً",
           "استشارات غير محدودة طوال فترة التقاضي في القضية المقبولة",
-          "حجز الأتعاب في محفظة الضمان المالي المعتمدة",
           "⚠️ تخضع القضية للفحص المهني وضوابط الاكتتاب قبل التفعيل",
         ],
         support: ["خط ساخن ومتابعة مخصصة مع المحامي المسؤول"],
@@ -208,7 +208,6 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
         ],
         platform: [
           "Full court representation by licensed Saudi attorneys",
-          "Funds held safely in escrow until client approval",
           "Conflict-of-interest checks & internal quality gates",
           "Zero recurring fees or hidden charges",
         ],
@@ -308,7 +307,6 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
         platform: [
           "Court representation for 1 qualified eligible case per year",
           "Unlimited consultations throughout active case duration",
-          "Escrow protection for legal dispute fees",
           "⚠️ Subject to legal underwriting review and intake qualification",
         ],
         support: ["Direct case manager & attorney hotline"],
