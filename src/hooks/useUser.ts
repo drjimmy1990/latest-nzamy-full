@@ -17,6 +17,7 @@ import { LAWYER_AI_PERMISSION_KEYS } from "@/constants/lawyerAiCatalog";
 import { isDbUserType } from "@/lib/auth/userTypes";
 import { mergeMembershipReads } from "@/lib/auth/entityMembership";
 import type { ActiveEntityMemberships } from "@/lib/auth/entityMembership";
+import { normalizeGovernmentRole } from "@/hooks/governmentRole";
 import { createClient } from "@/lib/supabase/client";
 import {
   isSupabaseMode as isSupabaseBackend,
@@ -815,7 +816,10 @@ function mapSupabaseUser(
         }
       : undefined,
     firmMembership: memberships.firm as UserSession["firmMembership"],
-    governmentRole:     meta.government_role,
+    // user_metadata is writable by the account holder and the database allows
+    // roles the app has no screen for (clerk, admin); an unrecognised value is
+    // dropped here so every consumer's `?? "gov_counsel"` default applies.
+    governmentRole:     normalizeGovernmentRole(meta.government_role),
     officerSpecialty:    meta.officer_specialty,
     businessRole: (memberships.business?.role ?? meta.business_role) as BusinessRole | undefined,
     businessMembership: memberships.business as UserSession["businessMembership"],
