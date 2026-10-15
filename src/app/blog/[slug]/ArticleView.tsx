@@ -5,6 +5,7 @@ import {
   Clock, Eye, Share, BookmarkSimple, ArrowRight,
   Newspaper, ChatCircle, SealCheck, Scales,
   FacebookLogo, XLogo, WhatsappLogo, ArrowLeft,
+  Info, Lightbulb, Warning, WarningOctagon,
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -13,14 +14,19 @@ import Link from "next/link";
 import Image from "next/image";
 import { markdownBoldToSafeHtml } from "@/utils/sanitize";
 import type { PlatformBlogArticle } from "@/constants/platformContent";
+import { classifyBlockquote, CALLOUT_CLASSES, type CalloutKind } from "./_callouts";
 
-// ─── Markdown renderer (lightweight + GFM alerts) ────────────────────────────
-const ALERT_TYPES: Record<string, { label: string; cls: string }> = {
-  WARNING: { label: "تحذير", cls: "border-amber-400/40 bg-amber-400/10 text-amber-700 dark:text-amber-300" },
-  IMPORTANT: { label: "هام", cls: "border-red-400/40 bg-red-400/10 text-red-700 dark:text-red-300" },
-  NOTE: { label: "ملاحظة", cls: "border-sky-400/40 bg-sky-400/10 text-sky-700 dark:text-sky-300" },
-  TIP: { label: "نصيحة", cls: "border-emerald-400/40 bg-emerald-400/10 text-emerald-700 dark:text-emerald-300" },
-  CAUTION: { label: "احذر", cls: "border-orange-400/40 bg-orange-400/10 text-orange-700 dark:text-orange-300" },
+// ─── Markdown renderer (lightweight + callouts) ──────────────────────────────
+// Which blockquote is a note, a warning or a quoted statute — and its colours
+// (owner Q132–134: notes royal green/emerald, warnings amber/red, statutes in
+// a «السند النظامي» card) — live in ./_callouts.ts.
+const CALLOUT_ICONS: Record<CalloutKind, typeof Info> = {
+  important: Info,
+  note: Info,
+  tip: Lightbulb,
+  warning: Warning,
+  critical: WarningOctagon,
+  legal: Scales,
 };
 
 /** Convert heading text to a URL-safe anchor ID (works with Arabic text). */
@@ -117,25 +123,59 @@ function RenderContent({ md, isDark, toc }: { md: string; isDark: boolean; toc: 
     }
 
     const line = lines[i];
-    const alertMatch = /^>\s*\[!(WARNING|IMPORTANT|NOTE|TIP|CAUTION)\]/.exec(line);
-    if (alertMatch) {
-      const type = alertMatch[1];
-      const body: string[] = [];
-      i++;
-      while (i < lines.length && /^>\s?/.test(lines[i])) {
-        body.push(lines[i].replace(/^>\s?/, ""));
-        i++;
+
+    // Callouts: GitHub alerts, emoji-led notes/warnings and verbatim statute
+    // quotes (./_callouts.ts). Any other quote falls through to the plain
+    // blockquote branch below, untouched.
+    if (/^>(\s|\[!)/.test(line)) {
+      const quoteLines: string[] = [];
+      let j = i;
+      while (j < lines.length && /^>\s?/.test(lines[j])) {
+        quoteLines.push(lines[j].replace(/^>\s?/, ""));
+        j++;
       }
-      const a = ALERT_TYPES[type];
-      out.push(
-        <div key={key++} className={`rounded-xl border ps-4 pe-3 py-3 my-3 text-sm leading-relaxed ${a.cls}`}>
-          <p className="font-bold mb-1 flex items-center gap-1.5"><Scales size={14} weight="fill" /> {a.label}</p>
-          {body.map((b, j) => (
-            <p key={j} className="mb-1" dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(b) }} />
-          ))}
-        </div>,
-      );
-      continue;
+      // The sentence that introduces the quote decides «السند النظامي» vs «نص مقتبس».
+      let prev = i - 1;
+      while (prev >= 0 && lines[prev].trim() === "") prev--;
+      const callout = classifyBlockquote(quoteLines, prev >= 0 ? lines[prev] : "");
+      if (callout) {
+        i = j;
+        const Icon = CALLOUT_ICONS[callout.kind];
+        const body = callout.body.map((b) => b.replace(/\r$/, "")).filter((b) => b.trim() !== "");
+        if (callout.kind === "legal" && callout.label) {
+          // The statute's words, verbatim — not italic, one block.
+          out.push(
+            <figure key={key++} className={`rounded-xl border ps-4 pe-3 py-3 my-4 text-sm leading-relaxed ${CALLOUT_CLASSES.legal}`}>
+              <figcaption className={`font-bold mb-1.5 flex items-center gap-1.5 ${isDark ? "text-[#C8A762]" : "text-royal"}`}>
+                <Scales size={15} weight="fill" /> {callout.label}
+              </figcaption>
+              <blockquote dangerouslySetInnerHTML={{ __html: body.map((b) => markdownBoldToSafeHtml(b)).join("<br>") }} />
+            </figure>,
+          );
+        } else if (!callout.label) {
+          // A block that names its own heading (⚖️ «مرجعية المقال»).
+          out.push(
+            <div key={key++} className={`rounded-xl border ps-4 pe-3 py-3 my-3 text-sm leading-relaxed flex items-start gap-2 ${CALLOUT_CLASSES[callout.kind]}`}>
+              <Icon size={15} weight="fill" className="mt-0.5 shrink-0 text-[#C8A762]" />
+              <div>
+                {body.map((b, k) => (
+                  <p key={k} className="mb-1" dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(b) }} />
+                ))}
+              </div>
+            </div>,
+          );
+        } else {
+          out.push(
+            <div key={key++} className={`rounded-xl border ps-4 pe-3 py-3 my-3 text-sm leading-relaxed ${CALLOUT_CLASSES[callout.kind]}`}>
+              <p className="font-bold mb-1 flex items-center gap-1.5"><Icon size={14} weight="fill" /> {callout.label}</p>
+              {body.map((b, k) => (
+                <p key={k} className="mb-1" dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(b) }} />
+              ))}
+            </div>,
+          );
+        }
+        continue;
+      }
     }
 
     // Horizontal rule
@@ -213,6 +253,11 @@ function RenderContent({ md, isDark, toc }: { md: string; isDark: boolean; toc: 
   return <div className={`prose prose-sm max-w-none ${isDark ? "prose-invert" : ""}`}>{out}</div>;
 }
 
+/** First letter of a name, past an «أ.»/«د.»/«م.» title (charAt(2) printed a space or a dot). */
+function initialOf(name: string): string {
+  return name.replace(/^(?:أ\.|د\.|م\.)\s*/, "").trim().charAt(0) || "ن";
+}
+
 function formatDate(iso?: string | null, en = false): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -239,27 +284,26 @@ export default function ArticleView({
   const card = `rounded-2xl border p-6 ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`;
   const authorUrl = article.author.url || null;
   const toc = findToc(article.content);
+  const authorName = isRTL ? article.author.name : article.author.nameEn;
+  // The author's own title from the row (author_credentials), or nothing —
+  // never a made-up «محامٍ متخصص في …» for a consultant.
+  const authorTitle = (article.author.credentials || "").trim();
 
-  const AuthorCtaLink = () => {
-    if (authorUrl) {
-      return (
-        <a href={authorUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#0B3D2E] text-white text-sm font-bold rounded-xl hover:bg-[#0a3328] transition">
-          {isRTL ? "احجز استشارة" : "Book Consultation"} <ArrowLeft size={14} className={isRTL ? "rotate-180" : ""} />
-        </a>
-      );
-    }
-    return (
-      <Link href="/contact" className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#0B3D2E] text-white text-sm font-bold rounded-xl hover:bg-[#0a3328] transition">
-        {isRTL ? "احجز استشارة" : "Book Consultation"} <ArrowLeft size={14} className={isRTL ? "rotate-180" : ""} />
-      </Link>
-    );
-  };
+  // Booking stays on the platform. This went to the author's external URL
+  // (target=_blank) or to /contact; /book/consultation is the booking flow.
+  // The label does not promise THIS author — the team assigns the lawyer.
+  const AuthorCtaLink = () => (
+    <Link href="/book/consultation" className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#0B3D2E] text-white text-sm font-bold rounded-xl hover:bg-[#0a3328] transition">
+      {isRTL ? "احجز استشارة قانونية" : "Book a legal consultation"} <ArrowLeft size={14} className={isRTL ? "rotate-180" : ""} />
+    </Link>
+  );
 
   return (
     <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>
       <Navbar />
 
-      <div className="flex-1 max-w-5xl mx-auto w-full px-4 py-10">
+      {/* pt-32 clears the fixed z-50 Navbar — same convention as /laws. */}
+      <div className="flex-1 max-w-5xl mx-auto w-full px-4 pt-32 pb-10">
         {/* Breadcrumb */}
         <div className={`flex items-center gap-2 text-xs mb-6 ${muted}`}>
           <Link href="/blog" className="hover:text-[#0B3D2E] dark:hover:text-[#C8A762] transition">{isRTL ? "المدونة" : "Blog"}</Link>
@@ -300,30 +344,22 @@ export default function ArticleView({
               {/* Author */}
               {authorUrl ? (
                 <a href={authorUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 group">
-                  <div className="w-10 h-10 rounded-xl bg-[#0B3D2E] flex items-center justify-center text-white text-base font-bold">{(isRTL ? article.author.name : article.author.nameEn).charAt(2)}</div>
+                  <div className="w-10 h-10 rounded-xl bg-[#0B3D2E] flex items-center justify-center text-white text-base font-bold">{initialOf(authorName)}</div>
                   <div>
-                    <p className={`text-sm font-bold group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition flex items-center gap-1.5 ${isDark ? "text-gray-200" : "text-gray-800"}`}>
-                      {isRTL ? article.author.name : article.author.nameEn} {article.author.credentials ? <SealCheck size={14} color="#C8A762" weight="fill" /> : null}
+                    <p className={`text-sm font-bold group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition flex items-center gap-1.5 ${isDark ? "text-zinc-200" : "text-gray-800"}`}>
+                      {authorName} {authorTitle ? <SealCheck size={14} color="#C8A762" weight="fill" /> : null}
                     </p>
-                    {article.author.credentials ? (
-                      <p className={`text-xs ${muted}`}>{article.author.credentials}</p>
-                    ) : (
-                      <p className={`text-xs ${muted} flex items-center gap-1.5`}>
-                        <span>{isRTL ? article.author.specialty : article.author.specialtyEn}</span>
-                      </p>
-                    )}
+                    {authorTitle && <p className={`text-xs ${muted}`}>{authorTitle}</p>}
                   </div>
                 </a>
               ) : (
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#0B3D2E] flex items-center justify-center text-white text-base font-bold">{(isRTL ? article.author.name : article.author.nameEn).charAt(2)}</div>
+                  <div className="w-10 h-10 rounded-xl bg-[#0B3D2E] flex items-center justify-center text-white text-base font-bold">{initialOf(authorName)}</div>
                   <div>
-                    <p className={`text-sm font-bold flex items-center gap-1.5 ${isDark ? "text-gray-200" : "text-gray-800"}`}>
-                      {isRTL ? article.author.name : article.author.nameEn} {article.author.credentials ? <SealCheck size={14} color="#C8A762" weight="fill" /> : null}
+                    <p className={`text-sm font-bold flex items-center gap-1.5 ${isDark ? "text-zinc-200" : "text-gray-800"}`}>
+                      {authorName} {authorTitle ? <SealCheck size={14} color="#C8A762" weight="fill" /> : null}
                     </p>
-                    <p className={`text-xs ${muted} flex items-center gap-1.5`}>
-                      <span>{isRTL ? article.author.specialty : article.author.specialtyEn}</span>
-                    </p>
+                    {authorTitle && <p className={`text-xs ${muted}`}>{authorTitle}</p>}
                   </div>
                 </div>
               )}
@@ -376,16 +412,18 @@ export default function ArticleView({
             {/* Author CTA */}
             <div className={`rounded-2xl border p-6 flex flex-col sm:flex-row gap-5 items-start ${isDark ? "bg-[#0B3D2E]/15 border-[#0B3D2E]/30" : "bg-[#0B3D2E]/5 border-[#0B3D2E]/20"}`}>
               <div className="w-14 h-14 rounded-2xl bg-[#0B3D2E] flex items-center justify-center text-white text-xl font-bold flex-shrink-0">
-                {(isRTL ? article.author.name : article.author.nameEn).charAt(2)}
+                {initialOf(authorName)}
               </div>
               <div className="flex-1">
+                {/* The seal only beside an author whose row carries credentials —
+                    it was printed for every byline, the team fallback included. */}
                 <p className={`font-bold mb-1 flex items-center gap-1.5 ${isDark ? "text-white" : "text-gray-900"}`}>
-                  {isRTL ? article.author.name : article.author.nameEn} <SealCheck size={15} color="#C8A762" weight="fill" />
+                  {authorName} {authorTitle ? <SealCheck size={15} color="#C8A762" weight="fill" /> : null}
                 </p>
-                <p className={`text-sm mb-3 ${muted}`}>
-                  {article.author.credentials || (isRTL ? `محامٍ متخصص في ${article.author.specialty}` : `Specialized in ${article.author.specialtyEn}`)}
-                </p>
-                <AuthorCtaLink />
+                {authorTitle && <p className={`text-sm mb-3 ${muted}`}>{authorTitle}</p>}
+                <div className={authorTitle ? "" : "mt-2"}>
+                  <AuthorCtaLink />
+                </div>
               </div>
             </div>
           </article>

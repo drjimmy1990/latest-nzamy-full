@@ -10,6 +10,7 @@ import { ArticleJsonLd } from "@/components/ArticleJsonLd";
 import ArticleView from "./ArticleView";
 import { BLOG_FALLBACK_AUTHOR } from "@/constants/platformContent";
 import type { PlatformBlogArticle } from "@/constants/platformContent";
+import { BLOG_CATEGORY_FALLBACK, blogCategoryLabel } from "../_categories";
 
 const BASE_URL = "https://nezamy.sa";
 const SITE_NAME = "نظامي | Nzamy";
@@ -64,7 +65,8 @@ function formatReadTime(value: string | null | undefined, en: boolean): string {
 
 function rowToDetail(row: BlogRow): PlatformBlogArticle {
   const authorName = row.author_name || BLOG_FALLBACK_AUTHOR;
-  const tag = row.category || "أخبار قانونية";
+  // Raw `sec_*` section codes are never printed — see ../_categories.ts.
+  const tag = blogCategoryLabel(row.category) ?? BLOG_CATEGORY_FALLBACK;
   return {
     id: row.id || row.slug,
     slug: row.slug,
@@ -80,8 +82,11 @@ function rowToDetail(row: BlogRow): PlatformBlogArticle {
       name: authorName,
       nameEn: authorName,
       slug: "",
-      specialty: "قانوني",
-      specialtyEn: "Legal",
+      // No invented specialty. «قانوني» here became «محامٍ متخصص في قانوني»
+      // in the author box, for authors who are consultants. The box prints
+      // `credentials` (the row's own author_credentials) or nothing.
+      specialty: "",
+      specialtyEn: "",
       // No rating and no review count. This used to be a hardcoded
       // `rating: 5, reviewCount: 0` — every article's author card rendered
       // «★ 5 (0)»: a perfect score from zero reviews, on the public blog,
@@ -236,7 +241,8 @@ export default async function BlogArticlePage({
           author_credentials: row.author_credentials,
           schema_type: row.schema_type,
           aeo_pairs: row.aeo_pairs,
-          category: row.category,
+          // The breadcrumb's section name: the label, never a `sec_*` code.
+          category: blogCategoryLabel(row.category),
           canonical_url: row.canonical_url,
         }}
       />

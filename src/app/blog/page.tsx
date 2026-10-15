@@ -3,99 +3,20 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 import {
-  MagnifyingGlass, Newspaper, Clock, Eye, ArrowRight, Tag,
-  Scales, Briefcase, House, Users, BookOpen, Fire, Rss,
+  MagnifyingGlass, Newspaper, Clock, Eye, Tag, Rss, Warning, ArrowClockwise,
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import Image from "next/image";
+import { BLOG_FALLBACK_AUTHOR } from "@/constants/platformContent";
+import { BLOG_CATEGORY_FALLBACK, blogCategoryLabel, groupCategoryPills, type CategoryPill } from "./_categories";
 
-// ─── Data ──────────────────────────────────────────────────────────────────
-const CATEGORIES = [
-  { id: "all", label: "الكل", labelEn: "All", icon: BookOpen },
-  { id: "labor", label: "عمالي", labelEn: "Labor", icon: Briefcase },
-  { id: "commercial", label: "تجاري", labelEn: "Commercial", icon: Scales },
-  { id: "civil", label: "مدني", labelEn: "Civil", icon: House },
-  { id: "family", label: "أحوال", labelEn: "Family", icon: Users },
-  { id: "news", label: "أخبار قانونية", labelEn: "Legal News", icon: Newspaper },
-];
-
-const ARTICLES = [
-  {
-    id: 1, slug: "wrongful-termination-rights",
-    category: "labor", tag: "عمالي", tagEn: "Labor",
-    title: "حقوق العمال في حالة الفصل التعسفي — دليلك الشامل",
-    titleEn: "Workers' Rights in Wrongful Termination — Complete Guide",
-    excerpt: "يواجه الكثير من العمال خطر الفصل التعسفي دون إدراك حقوقهم الكاملة. في هذا المقال نستعرض ما يكفله نظام العمل السعودي.",
-    excerptEn: "Many workers face the risk of wrongful termination without knowing their full rights. In this article, we review what Saudi labor law guarantees.",
-    author: "أ. أحمد الغامدي", authorSlug: "ahmed-alghamdi", authorEn: "Ahmed Al-Ghamdi",
-    date: "فبراير ٢٠٢٦", dateEn: "Feb 2026",
-    readTime: "٧ دقائق", readTimeEn: "7 min",
-    views: 4231, featured: true,
-  },
-  {
-    id: 2, slug: "commercial-disputes",
-    category: "commercial", tag: "تجاري", tagEn: "Commercial",
-    title: "كيف تحمي شركتك من النزاعات التجارية قبل فوات الأوان؟",
-    titleEn: "How to Protect Your Business from Commercial Disputes Before It's Too Late",
-    excerpt: "النزاعات التجارية تُكلّف الشركات ملايين سنوياً. تعرّف على أهم الإجراءات الوقائية التي يجب اتخاذها من اليوم الأول.",
-    excerptEn: "Commercial disputes cost companies millions annually. Learn the most important preventive measures to take from day one.",
-    author: "أ. خالد المطيري", authorSlug: "khalid-almutairi", authorEn: "Khalid Al-Mutairi",
-    date: "يناير ٢٠٢٦", dateEn: "Jan 2026",
-    readTime: "٩ دقائق", readTimeEn: "9 min",
-    views: 3178, featured: true,
-  },
-  {
-    id: 3, slug: "lease-contracts-guide",
-    category: "civil", tag: "عقاري", tagEn: "Real Estate",
-    title: "دليلك الكامل لعقود الإيجار في السعودية ٢٠٢٦",
-    titleEn: "Complete Guide to Lease Contracts in KSA 2026",
-    excerpt: "عقود الإيجار مليئة بالتفاصيل التي يغفل عنها كثيرون. إليك أهم البنود التي يجب مراجعتها قبل التوقيع.",
-    excerptEn: "Lease contracts are full of details that many overlook. Here are the most important clauses to review before signing.",
-    author: "أ. سارة العتيبي", authorSlug: "sara-alotaibi", authorEn: "Sara Al-Otaibi",
-    date: "ديسمبر ٢٠٢٥", dateEn: "Dec 2025",
-    readTime: "٦ دقائق", readTimeEn: "6 min",
-    views: 2943, featured: false,
-  },
-  {
-    id: 4, slug: "end-of-service-calculator",
-    category: "labor", tag: "عمالي", tagEn: "Labor",
-    title: "كيف تحسب مكافأة نهاية الخدمة بدقة؟",
-    titleEn: "How to Calculate End-of-Service Accurately?",
-    excerpt: "حسابات نهاية الخدمة معقدة وتعتمد على عوامل متعددة. سنوضح لك الصيغة الدقيقة مع مثال عملي.",
-    excerptEn: "End-of-service calculations are complex and depend on multiple factors. We'll show you the exact formula with a practical example.",
-    author: "أ. أحمد الغامدي", authorSlug: "ahmed-alghamdi", authorEn: "Ahmed Al-Ghamdi",
-    date: "نوفمبر ٢٠٢٥", dateEn: "Nov 2025",
-    readTime: "٥ دقائق", readTimeEn: "5 min",
-    views: 5670, featured: false,
-  },
-  {
-    id: 5, slug: "custody-procedures",
-    category: "family", tag: "أحوال", tagEn: "Family",
-    title: "إجراءات الحضانة في المملكة — ما تحتاج معرفته",
-    titleEn: "Custody Procedures in Saudi Arabia — What You Need to Know",
-    excerpt: "قضايا الحضانة من أكثر القضايا حساسية. في هذا الدليل نستعرض معايير المحاكم والإجراءات المتبعة.",
-    excerptEn: "Custody cases are among the most sensitive. In this guide, we review court standards and procedures.",
-    author: "أ. سارة العتيبي", authorSlug: "sara-alotaibi", authorEn: "Sara Al-Otaibi",
-    date: "أكتوبر ٢٠٢٥", dateEn: "Oct 2025",
-    readTime: "٨ دقائق", readTimeEn: "8 min",
-    views: 3421, featured: false,
-  },
-  {
-    id: 6, slug: "company-data-protection",
-    category: "commercial", tag: "تجاري", tagEn: "Commercial",
-    title: "حماية البيانات للشركات في ضوء الأنظمة السعودية",
-    titleEn: "Data Protection for Companies Under Saudi Regulations",
-    excerpt: "اللوائح الجديدة لحماية البيانات تضع مسؤوليات ضخمة على الشركات. تعرف على التزاماتك القانونية.",
-    excerptEn: "New data protection regulations place huge responsibilities on companies. Learn your legal obligations.",
-    author: "أ. خالد المطيري", authorSlug: "khalid-almutairi", authorEn: "Khalid Al-Mutairi",
-    date: "سبتمبر ٢٠٢٥", dateEn: "Sep 2025",
-    readTime: "١٠ دقائق", readTimeEn: "10 min",
-    views: 2187, featured: false,
-  },
-];
+// No static catalog. A hardcoded ARTICLES list (six articles by three named
+// lawyers who never wrote them, with view counts) rendered whenever the read
+// failed or came back empty — a blog nobody wrote, shown as this one. A failed
+// read now says so, and an empty blog is empty.
 
 const PAGE_SIZE = 24;
 
@@ -161,16 +82,25 @@ function formatReadTime(value: string | null | undefined, en: boolean): string {
   return en ? `${raw} min` : `${raw} دقائق`;
 }
 
+/** First letter of a name, past an «أ.»/«د.»/«م.» title. */
+function initialOf(name: string): string {
+  return name.replace(/^(?:أ\.|د\.|م\.)\s*/, "").trim().charAt(0) || "ن";
+}
+
 function rowToArticle(row: BlogRow, index: number): Article {
-  const author = row.author_name || (index % 2 === 0 ? "أ. أحمد الغامدي" : "أ. سارة العتيبي");
+  // An article with no author_name is the platform's own — never a made-up
+  // lawyer (this alternated «أ. أحمد الغامدي» / «أ. سارة العتيبي» by row index).
+  const author = (row.author_name || "").trim() || BLOG_FALLBACK_AUTHOR;
   const cat = (row.category || "").trim();
+  // Raw `sec_*` section codes are never printed — see ./_categories.ts.
+  const tag = blogCategoryLabel(cat) ?? BLOG_CATEGORY_FALLBACK;
   const dateStr = formatPublished(row.published_at);
   return {
     id: (index + 1) as Article["id"],
     slug: row.slug,
-    category: cat || "news",
-    tag: cat || "أخبار قانونية",
-    tagEn: cat || "Legal News",
+    category: cat,
+    tag,
+    tagEn: tag,
     title: row.title,
     titleEn: row.title_en || row.title,
     excerpt: row.excerpt || "",
@@ -178,7 +108,7 @@ function rowToArticle(row: BlogRow, index: number): Article {
     cover: row.cover || null,
     author,
     authorSlug: "",
-    authorEn: row.author_name || author,
+    authorEn: author,
     date: dateStr,
     dateEn: dateStr,
     readTime: formatReadTime(row.read_time, false),
@@ -199,6 +129,9 @@ export default function BlogPage() {
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
+  // True when the last list request did not come back. Not the same as an
+  // empty blog, and never answered with a stand-in catalog.
+  const [loadFailed, setLoadFailed] = useState(false);
   const [dbCategories, setDbCategories] = useState<{ category: string; count: number }[]>([]);
   const offsetRef = useRef(0);
 
@@ -211,25 +144,26 @@ export default function BlogPage() {
       try {
         const res = await fetch("/api/v1/blog/categories", { cache: "no-store" });
         if (!res.ok) return;
-        const json = (await res.json()) as { data?: { category: string; count: number }[] };
-        if (Array.isArray(json.data)) setDbCategories(json.data);
+        const json = (await res.json()) as { data?: { category: string; count: number }[]; degraded?: boolean };
+        // A capped tally prints wrong counts — no pills rather than wrong ones.
+        if (Array.isArray(json.data) && !json.degraded) setDbCategories(json.data);
       } catch {
-        /* keep fallback pills */
+        /* only «الكل» */
       }
     })();
   }, []);
 
   // Fetch one page. reset=true replaces the list (mount / new search or category);
   // reset=false appends (load more). Search + category are server-side.
-  const fetchPage = useCallback(async (reset: boolean, query: string, cat: string) => {
+  const fetchPage = useCallback(async (reset: boolean, query: string, values: string[]) => {
     const base = reset ? 0 : offsetRef.current;
     setLoadingMore(true);
     try {
       const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(base) });
       if (query.trim()) params.set("q", query.trim());
-      if (cat && cat !== "all") params.set("category", cat);
+      for (const v of values) params.append("category", v);
       const res = await fetch(`/api/v1/blog?${params.toString()}`, { cache: "no-store" });
-      if (!res.ok) return;
+      if (!res.ok) { setLoadFailed(true); return; }
       const json = (await res.json()) as { data?: BlogRow[]; total?: number; hasMore?: boolean };
       const rows = Array.isArray(json.data) ? json.data : [];
       const mapped = rows.map((row, i) => rowToArticle(row, base + i));
@@ -237,38 +171,49 @@ export default function BlogPage() {
       setItems((prev) => (reset ? mapped : [...prev, ...mapped]));
       setTotal(json.total ?? mapped.length);
       setHasMore(Boolean(json.hasMore));
+      setLoadFailed(false);
     } catch {
-      /* keep whatever is already loaded */
+      // Keep whatever is already loaded, and say the request failed.
+      setLoadFailed(true);
     } finally {
       setLoadingMore(false);
       setInitialLoading(false);
     }
   }, []);
 
+  // Category pills from the real taxonomy, one per label: a topic stored both
+  // as its Arabic label and as its section code is one pill, and filters on
+  // both values (./_categories.ts).
+  const categoryPills: CategoryPill[] = groupCategoryPills(dbCategories);
+  const activePill = categoryPills.find((p) => p.id === category);
+  const categoryValues = activePill ? activePill.values : [];
+  const categoryKey = categoryValues.join("\u0001");
+
   // Initial load, and a refetch when search (debounced) or category changes.
   useEffect(() => {
-    const t = setTimeout(() => { void fetchPage(true, search, category); }, search ? 300 : 0);
+    const values = categoryKey ? categoryKey.split("\u0001") : [];
+    const t = setTimeout(() => { void fetchPage(true, search, values); }, search ? 300 : 0);
     return () => clearTimeout(t);
-  }, [search, category, fetchPage]);
+  }, [search, categoryKey, fetchPage]);
 
   if (!mounted) return null;
 
   const muted = isDark ? "text-zinc-400" : "text-slate-500";
   const card = `rounded-[2rem] border overflow-hidden backdrop-blur-xl shadow-[0_20px_40px_-15px_rgba(11,61,46,0.04)] ${isDark ? "bg-[#161b22]/80 border-white/[0.06]" : "bg-white/80 border-slate-200/50"}`;
 
-  // DB-backed once seeded; the static catalog is a pre-seed fallback only (shown
-  // when there is no search and the DB returned nothing AND initial load finished).
-  const usingDb = items.length > 0 || search.trim() !== "" || category !== "all" || total > 0;
-  const source: Article[] = usingDb ? items : (initialLoading ? [] : ARTICLES);
+  const source: Article[] = items;
   const featured = source.filter(a => a.featured);
+  // The featured strip only shows on the unfiltered first view; anywhere else a
+  // featured article belongs in the grid (a search used to hide it entirely).
+  const showFeatured = category === "all" && search === "" && featured.length > 0;
   // Search + category are both server-side now; only the featured/grid split is client.
-  const filtered = source.filter(a => !a.featured || category !== "all");
+  const filtered = source.filter(a => !showFeatured || !a.featured);
 
-  // Category pills from the real DB taxonomy (fallback to the static list pre-seed).
   const allCount = dbCategories.reduce((s, c) => s + c.count, 0);
-  const pills: { id: string; label: string; count?: number }[] = dbCategories.length > 0
-    ? [{ id: "all", label: isRTL ? "الكل" : "All", count: allCount }, ...dbCategories.map(c => ({ id: c.category, label: c.category, count: c.count }))]
-    : CATEGORIES.map(c => ({ id: c.id, label: isRTL ? c.label : c.labelEn }));
+  const pills: { id: string; label: string; count?: number }[] = [
+    { id: "all", label: isRTL ? "الكل" : "All", count: dbCategories.length > 0 ? allCount : undefined },
+    ...categoryPills.map(c => ({ id: c.id, label: c.label, count: c.count })),
+  ];
 
   const ArticleCard = ({ article, big = false }: { article: Article; big?: boolean }) => (
     <Link href={`/blog/${article.slug}`} className={`group ${card} flex flex-col hover:border-[#0B3D2E]/30 transition-colors`}>
@@ -301,7 +246,7 @@ export default function BlogPage() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded-full bg-[#0B3D2E] flex items-center justify-center text-white text-xs font-bold">
-              {(isRTL ? article.author : article.authorEn).charAt(2)}
+              {initialOf(isRTL ? article.author : article.authorEn)}
             </div>
             <span className={`text-xs ${muted}`}>{isRTL ? article.author : article.authorEn}</span>
           </div>
@@ -318,7 +263,8 @@ export default function BlogPage() {
     <div className={`min-h-[100dvh] flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-[#f9fafb] text-zinc-900"}`} dir={isRTL ? "rtl" : "ltr"} suppressHydrationWarning>
       <Navbar />
 
-      <div className="flex-1 max-w-6xl mx-auto w-full px-4 py-8">
+      {/* pt-32 clears the fixed z-50 Navbar — same convention as /laws. */}
+      <div className="flex-1 max-w-6xl mx-auto w-full px-4 pt-32 pb-8">
 
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
@@ -327,7 +273,9 @@ export default function BlogPage() {
               {isRTL ? "المدونة القانونية" : "Legal Blog"}
             </h1>
             <p className={`text-[13.5px] leading-relaxed ${muted}`}>
-              {isRTL ? "مقالات قانونية معمّقة بقلم محامين متخصصين" : "In-depth legal articles by specialized lawyers"}
+              {/* Not «بقلم محامين متخصصين»: the articles are written by the
+                  platform's consultants, and each one names its own author. */}
+              {isRTL ? "مقالات قانونية معمّقة في الأنظمة السعودية" : "In-depth articles on Saudi regulations"}
             </p>
           </div>
           <button className={`flex items-center gap-2 px-5 py-3 rounded-2xl border text-sm font-semibold transition-all backdrop-blur-sm ${isDark ? "bg-[#161b22]/60 border-white/[0.06] text-zinc-300 hover:bg-white/5" : "bg-white/80 border-slate-200/60 text-slate-600 hover:bg-slate-50 shadow-sm"}`}>
@@ -336,7 +284,7 @@ export default function BlogPage() {
         </div>
 
         {/* Featured */}
-        {category === "all" && search === "" && featured.length > 0 && (
+        {showFeatured && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
             <div className="flex items-center gap-2 mb-4">
               <span className="w-8 h-1 bg-[#C8A762] rounded-full inline-block" />
@@ -387,7 +335,20 @@ export default function BlogPage() {
               </div>
             ))}
           </div>
-        ) : filtered.length === 0 ? (
+        ) : loadFailed && items.length === 0 ? (
+          <div className={`rounded-[2rem] border p-16 text-center backdrop-blur-sm min-h-[300px] flex flex-col items-center justify-center ${isDark ? "bg-[#161b22]/80 border-white/[0.06]" : "bg-white/80 border-slate-200/50 shadow-sm"}`}>
+            <Warning size={36} weight="fill" className="text-amber-500 mb-4" />
+            <p className={`text-lg font-black tracking-tight mb-2 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{isRTL ? "تعذّر تحميل المقالات" : "Could not load articles"}</p>
+            <p className={`text-sm mb-6 ${muted}`}>{isRTL ? "هذه ليست مدونة فارغة — لم نتمكّن من القراءة." : "This is not an empty blog — the read failed."}</p>
+            <button
+              type="button"
+              onClick={() => void fetchPage(true, search, categoryValues)}
+              className="inline-flex items-center gap-2 px-6 py-3 bg-[#0B3D2E] text-white text-sm font-bold rounded-xl hover:bg-[#0a3328] transition"
+            >
+              <ArrowClockwise size={14} weight="bold" /> {isRTL ? "إعادة المحاولة" : "Retry"}
+            </button>
+          </div>
+        ) : filtered.length === 0 && !showFeatured ? (
           <div className={`rounded-[2rem] border p-16 text-center backdrop-blur-sm min-h-[300px] flex flex-col items-center justify-center ${isDark ? "bg-[#161b22]/80 border-white/[0.06]" : "bg-white/80 border-slate-200/50 shadow-sm"}`}>
             <div className="w-20 h-20 rounded-3xl bg-white border border-slate-200 shadow-sm flex items-center justify-center mb-5 dark:bg-zinc-800 dark:border-white/10">
               <Newspaper size={36} color="#C8A762" weight="duotone" />
@@ -407,8 +368,13 @@ export default function BlogPage() {
         {/* Load more */}
         {hasMore && (
           <div className="flex flex-col items-center gap-2 mt-8">
+            {loadFailed && (
+              <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                {isRTL ? "تعذّر تحميل المزيد — أعد المحاولة." : "Could not load more — try again."}
+              </span>
+            )}
             <button
-              onClick={() => void fetchPage(false, search, category)}
+              onClick={() => void fetchPage(false, search, categoryValues)}
               disabled={loadingMore}
               className="px-8 py-3 rounded-2xl text-sm font-bold bg-[#0B3D2E] text-white hover:bg-[#0a3328] disabled:opacity-50 transition-all shadow-[0_4px_14px_0_rgba(11,61,46,0.25)] active:scale-[0.98]"
             >

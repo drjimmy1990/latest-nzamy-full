@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { contactIssueIn } from "../../_feed";
 
 /**
  * POST /api/v1/community/posts/[id]/answers — Add an answer to a post
@@ -15,6 +16,9 @@ import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
  * `false`. This is what lets `mapCommunityAnswer` (item 147's read side,
  * src/lib/services/communityAnswerMap.ts) show the lawyer badge/CTA off a
  * real column instead of an always-false default.
+ *
+ * An answer carrying a phone number, e-mail, link or handle is refused with
+ * the Arabic reason (contactSanitizer.ts) — the same rule for every author.
  */
 export async function POST(
   request: NextRequest,
@@ -28,7 +32,7 @@ export async function POST(
 
   if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
   if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "سجّل الدخول لإضافة إجابة." }, { status: 401 });
   }
 
   const { id: postId } = await context.params;
@@ -39,6 +43,11 @@ export async function POST(
       { error: "body is required" },
       { status: 400 },
     );
+  }
+
+  const contactIssue = contactIssueIn([body.body ?? body.content]);
+  if (contactIssue) {
+    return NextResponse.json({ error: contactIssue }, { status: 400 });
   }
 
   // Verify post exists

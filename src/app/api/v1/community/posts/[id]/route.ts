@@ -1,18 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { DETAIL_SELECT, cleanDetail, contactIssueIn, visibilityForTab } from "../_feed";
 
 /**
  * GET /api/v1/community/posts/[id] — Get single post with all answers
  * Increments view count on each fetch.
  *
- * Item 147. Two additive fixes on top of the existing `*, community_answers(*)`
- * select, both needed for `src/app/community/[id]/page.tsx`'s `mapStoredReply`
+ * Item 147. Two additive fixes on top of the existing answers embed,
+ * both needed for `src/app/community/[id]/page.tsx`'s `mapStoredReply`
  * (via `mapCommunityAnswer`, src/lib/services/communityAnswerMap.ts) to ever
  * see a real answer instead of silently catching a `TypeError` and falling
  * back to mock data:
  *
- *   1. The embed is aliased `answers:community_answers(*)` so the response
+ *   1. The embed is aliased `answers:` so the response
  *      key matches `StoredCommunityQuestion.answers` — the shape the client
  *      has always been typed for. The un-aliased key (`community_answers`)
  *      made `savedQuestion.answers.map(...)` throw on every real post, which
@@ -33,7 +34,20 @@ import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
  *      gets `lawyerSlug: null`, not a fabricated one.
  *
  * `is_lawyer_verified` itself needs no route change — it is already a real
- * column on `community_answers(*)`.
+ * column on every answer row.
+ *
+ * The embed names its foreign key (DETAIL_SELECT, ../_feed.ts): a second FK
+ * (`community_posts.accepted_answer_id`) joins the same two tables, and the
+ * bare embed failed every read with PGRST201.
+ *
+ * Guests may read. The list route already serves them public posts, and the
+ * RLS policies used here ("anyone reads public community posts", "anyone
+ * reads active community answers") carry no `to authenticated` restriction —
+ * a 401 here sent every guest who clicked a question from the list to the
+ * page's error state. Only the view-count write still needs a session.
+ *
+ * Post and answer text pass through the contact filter (cleanDetail) before
+ * they leave the server.
  */
 export async function GET(
   _request: NextRequest,
@@ -42,20 +56,14 @@ export async function GET(
   const supabase = await createClient();
   const {
     data: { user },
-    error: authError,
   } = await supabase.auth.getUser();
-
-  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
 
   const { id } = await context.params;
 
   // Fetch post with answers
   const { data: post, error } = await supabase
     .from("community_posts")
-    .select("*, answers:community_answers(*)")
+    .select(DETAIL_SELECT)
     .eq("id", id)
     .single();
 
@@ -63,11 +71,14 @@ export async function GET(
     return NextResponse.json({ error: error.message }, { status: 404 });
   }
 
-  // Increment view count
-  await supabase
-    .from("community_posts")
-    .update({ view_count: (post.view_count ?? 0) + 1 })
-    .eq("id", id);
+  // Increment view count (signed-in readers only; RLS lets just the author's
+  // own update through — see the report on view counts).
+  if (user) {
+    await supabase
+      .from("community_posts")
+      .update({ view_count: (post.view_count ?? 0) + 1 })
+      .eq("id", id);
+  }
 
   type RawAnswer = { id: string; author_id: string; is_lawyer_verified: boolean };
   const answers: RawAnswer[] = Array.isArray(post.answers) ? post.answers : [];
@@ -101,7 +112,7 @@ export async function GET(
     lawyerSlug: slugByAuthor.get(a.author_id) ?? null,
   }));
 
-  return NextResponse.json({ data: { ...post, answers: answersWithSlug } });
+  return NextResponse.json({ data: cleanDetail({ ...post, answers: answersWithSlug }) });
 }
 
 /**
@@ -147,6 +158,32 @@ export async function PATCH(
     if (key in body) {
       updates[key] = body[key];
     }
+  }
+
+  const contactIssue = contactIssueIn([updates.title, updates.body, updates.tags]);
+  if (contactIssue) {
+    return NextResponse.json({ error: contactIssue }, { status: 400 });
+  }
+
+  if ("visibility" in updates) {
+    const visibility = visibilityForTab(String(updates.visibility ?? ""));
+    if (!visibility) {
+      return NextResponse.json({ error: "قيمة الظهور غير صالحة." }, { status: 400 });
+    }
+    if (visibility === "lawyers_only") {
+      const { data: lawyerProfile } = await supabase
+        .from("lawyer_profiles")
+        .select("verification_status")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (lawyerProfile?.verification_status !== "verified") {
+        return NextResponse.json(
+          { error: "النشر في مجتمع المحامين متاح للمحامين الموثّقين فقط." },
+          { status: 403 },
+        );
+      }
+    }
+    updates.visibility = visibility;
   }
 
   if (Object.keys(updates).length === 0) {

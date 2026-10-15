@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   PencilSimple, Scales, Briefcase, House, Users, Warning, BookOpen,
-  MagnifyingGlass, CaretDown, LightbulbFilament, CheckCircle, ArrowRight,
+  MagnifyingGlass, CaretDown, CheckCircle, ArrowRight, Gavel,
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -25,12 +25,8 @@ const CATEGORIES = [
   { id: "real-estate" as const, label: "عقاري", labelEn: "Real Estate", icon: BookOpen },
 ];
 
-// AI-suggested similar questions (mock)
-const SIMILAR = [
-  "هل يحق لصاحب العمل خصم من الراتب بدون إشعار؟",
-  "ما هي شروط الفصل التعسفي في نظام العمل السعودي؟",
-  "كيف أحسب مكافأة نهاية الخدمة؟",
-];
+// No «أسئلة مشابهة» list: it was three hardcoded questions, all linking to
+// /community/1, shown as «سُئلت من قبل» whenever the category was labour.
 
 export default function AskQuestionPage() {
   const { isRTL, isDark } = useTheme();
@@ -40,43 +36,55 @@ export default function AskQuestionPage() {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [category, setCategory] = useState<Category>("");
-  const [showSimilar, setShowSimilar] = useState(false);
   const [isAnon, setIsAnon] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [postedId, setPostedId] = useState<number | null>(null);
+  const [postedId, setPostedId] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  // /community/lawyers links here with ?tab=lawyers. Read once on mount from
+  // the URL (not useSearchParams, which needs a Suspense boundary to build).
+  const [lawyersOnly, setLawyersOnly] = useState(false);
   const isGuest = !user.isLoggedIn;
 
   useEffect(() => {
     setMounted(true);
+    try {
+      setLawyersOnly(new URLSearchParams(window.location.search).get("tab") === "lawyers");
+    } catch {
+      /* no query string — a public question */
+    }
   }, []);
 
-  useEffect(() => {
-    if (title.length > 15 && category === "labor") {
-      setShowSimilar(true);
-    } else {
-      setShowSimilar(false);
-    }
-  }, [title, category]);
+  const canSubmit = title.trim().length > 10 && category !== "" && !submitting;
 
-  const canSubmit = title.trim().length > 10 && category !== "";
-
+  /**
+   * Success is shown only for a question the server saved. The old catch
+   * («still show success to avoid blocking») told every guest — whom the
+   * route answers with a 401 — and every failed request «تم نشر سؤالك»,
+   * with a made-up id behind the «افتح صفحة السؤال» button.
+   */
   const handleSubmit = async () => {
     if (!canSubmit) return;
+    setSubmitting(true);
+    setSubmitError(null);
     try {
-      const question = await createCommunityPost({
+      const input = {
         title,
         body,
         category: category as Exclude<Category, "">,
         asker: user.name || "زائر نظامي",
-        askerType: user.userType === "lawyer" ? "lawyer" : user.isLoggedIn ? "user" : "guest",
+        askerType: user.userType === "lawyer" ? "lawyer" as const : user.isLoggedIn ? "user" as const : "guest" as const,
         isAnonymous: isAnon || isGuest,
-      });
-      setPostedId(question.id);
+        // Read by POST /api/v1/community/posts; accepted from a verified lawyer only.
+        visibility: lawyersOnly ? "lawyers_only" : "public",
+      };
+      const question = await createCommunityPost(input);
+      setPostedId(question?.id != null ? String(question.id) : null);
       setSubmitted(true);
-    } catch {
-      // Fallback error handling — still show success to avoid blocking
-      setPostedId(Date.now());
-      setSubmitted(true);
+    } catch (err) {
+      setSubmitError(err instanceof Error && err.message ? err.message : "تعذّر نشر السؤال — لم يُحفظ.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -90,18 +98,18 @@ export default function AskQuestionPage() {
     return (
       <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>
         <Navbar />
-        <div className="flex-1 flex items-center justify-center px-4">
+        <div className="flex-1 flex items-center justify-center px-4 pt-32 pb-10">
           <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className={`${card} max-w-md w-full text-center`}>
             <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mx-auto mb-5">
               <CheckCircle size={36} color="#22c55e" weight="fill" />
             </div>
             <h2 className={`text-xl font-bold mb-2 ${isDark ? "text-white" : "text-gray-900"}`}>
-              {isRTL ? "تم نشر سؤالك! ✅" : "Your question was posted! ✅"}
+              {isRTL ? "تم نشر سؤالك" : "Your question was posted"}
             </h2>
+            {/* No «ستصلك إشعار» here: nothing sends one when an answer is
+                added (the answers route records no notification). */}
             <p className={`text-sm mb-6 ${muted}`}>
-              {isGuest
-                ? (isRTL ? "سجّل للحصول على إشعار عند وصول الإجابة 🔔" : "Register to get notified when an answer arrives 🔔")
-                : (isRTL ? "ستصلك إشعار عند وصول أي إجابة" : "You'll be notified when any answer arrives")}
+              {isRTL ? "تظهر الإجابات في صفحة السؤال." : "Answers appear on the question's page."}
             </p>
             <div className="flex flex-col gap-3">
               {isGuest && (
@@ -114,7 +122,7 @@ export default function AskQuestionPage() {
               </Link>
               {postedId && (
                 <button
-                  onClick={() => router.push(`/community/${postedId}`)}
+                  onClick={() => router.push(`/community/${encodeURIComponent(postedId)}`)}
                   className="w-full py-3 rounded-xl text-sm font-bold bg-[#C8A762] text-[#0B3D2E]"
                 >
                   {isRTL ? "افتح صفحة السؤال" : "Open question"}
@@ -132,7 +140,8 @@ export default function AskQuestionPage() {
     <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>
       <Navbar />
 
-      <div className="flex-1 max-w-3xl mx-auto w-full px-4 py-10">
+      {/* pt-32 clears the fixed z-50 Navbar — same convention as /laws. */}
+      <div className="flex-1 max-w-3xl mx-auto w-full px-4 pt-32 pb-10">
 
         {/* Header */}
         <div className="mb-8">
@@ -146,9 +155,20 @@ export default function AskQuestionPage() {
           <h1 className={`text-2xl font-black ${isDark ? "text-white" : "text-gray-900"}`}>
             {isRTL ? "اطرح سؤالاً قانونياً" : "Ask a Legal Question"}
           </h1>
+          {/* «يمكنك السؤال بدون تسجيل — سؤال واحد مجاني/يوم» was not true:
+              the posts route needs a session. */}
           {isGuest && (
             <p className={`text-sm mt-1.5 ${muted}`}>
-              {isRTL ? "يمكنك السؤال بدون تسجيل — سؤال واحد مجاني/يوم" : "You can ask without registration — one free question/day"}
+              {isRTL ? "نشر السؤال يتطلّب تسجيل الدخول." : "Posting a question requires signing in."}{" "}
+              <Link href="/login" className="font-semibold text-[#0B3D2E] dark:text-[#C8A762] hover:underline">
+                {isRTL ? "تسجيل الدخول" : "Sign in"}
+              </Link>
+            </p>
+          )}
+          {lawyersOnly && (
+            <p className={`text-sm mt-2 flex items-center gap-1.5 ${isDark ? "text-[#C8A762]" : "text-amber-800"}`}>
+              <Gavel size={14} weight="fill" />
+              {isRTL ? "يُنشر هذا الموضوع في مجتمع المحامين (للمحامين الموثّقين)." : "This topic is posted to the lawyers' community (verified lawyers)."}
             </p>
           )}
         </div>
@@ -157,7 +177,7 @@ export default function AskQuestionPage() {
 
           {/* Category */}
           <div className={card}>
-            <label className={`block text-sm font-bold mb-3 ${isDark ? "text-gray-200" : "text-gray-700"}`}>
+            <label className={`block text-sm font-bold mb-3 ${isDark ? "text-zinc-200" : "text-gray-700"}`}>
               {isRTL ? "١. اختر التخصص" : "1. Choose Category"} <span className="text-red-500">*</span>
             </label>
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
@@ -176,7 +196,7 @@ export default function AskQuestionPage() {
 
           {/* Title */}
           <div className={card}>
-            <label className={`block text-sm font-bold mb-3 ${isDark ? "text-gray-200" : "text-gray-700"}`}>
+            <label className={`block text-sm font-bold mb-3 ${isDark ? "text-zinc-200" : "text-gray-700"}`}>
               {isRTL ? "٢. عنوان السؤال" : "2. Question Title"} <span className="text-red-500">*</span>
             </label>
             <input
@@ -191,35 +211,11 @@ export default function AskQuestionPage() {
               <span>{title.length}/200</span>
             </div>
 
-            {/* AI Similar Questions */}
-            <AnimatePresence>
-              {showSimilar && (
-                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                  <div className={`mt-4 rounded-xl p-4 ${isDark ? "bg-[#C8A762]/10 border border-[#C8A762]/20" : "bg-amber-50 border border-amber-200"}`}>
-                    <p className={`text-xs font-bold mb-2.5 flex items-center gap-1.5 ${isDark ? "text-[#C8A762]" : "text-amber-800"}`}>
-                      <LightbulbFilament size={14} weight="fill" />
-                      {isRTL ? "أسئلة مشابهة سُئلت من قبل:" : "Similar questions already asked:"}
-                    </p>
-                    <ul className="space-y-2">
-                      {SIMILAR.map((q, i) => (
-                        <li key={i}>
-                          <Link href="/community/1" className={`text-xs flex items-start gap-2 hover:underline ${isDark ? "text-gray-300" : "text-gray-700"}`}>
-                            <ArrowRight size={11} className={`mt-0.5 flex-shrink-0 ${isRTL ? "rotate-180" : ""}`} color={isDark ? "#C8A762" : "#0B3D2E"} />
-                            {q}
-                          </Link>
-                        </li>
-                      ))}
-                    </ul>
-                    <p className={`text-xs mt-2.5 ${muted}`}>{isRTL ? "هل سؤالك مختلف؟ تابع الكتابة." : "Is your question different? Keep writing."}</p>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
           </div>
 
           {/* Body (optional) */}
           <div className={card}>
-            <label className={`block text-sm font-bold mb-3 ${isDark ? "text-gray-200" : "text-gray-700"}`}>
+            <label className={`block text-sm font-bold mb-3 ${isDark ? "text-zinc-200" : "text-gray-700"}`}>
               {isRTL ? "٣. التفاصيل (اختياري)" : "3. Details (optional)"}
             </label>
             <textarea
@@ -236,7 +232,7 @@ export default function AskQuestionPage() {
           {/* Anonymous toggle */}
           <div className={`${card} flex items-center justify-between gap-4`}>
             <div>
-              <p className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-700"}`}>
+              <p className={`text-sm font-bold ${isDark ? "text-zinc-200" : "text-gray-700"}`}>
                 {isRTL ? "نشر كمجهول" : "Post Anonymously"}
               </p>
               <p className={`text-xs mt-0.5 ${muted}`}>
@@ -260,6 +256,12 @@ export default function AskQuestionPage() {
             </div>
           )}
 
+          {submitError && (
+            <p role="alert" className="text-sm font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+              <Warning size={16} weight="fill" className="shrink-0" /> {submitError}
+            </p>
+          )}
+
           {/* Submit */}
           <motion.button
             onClick={handleSubmit}
@@ -268,7 +270,7 @@ export default function AskQuestionPage() {
             whileTap={canSubmit ? { scale: 0.98 } : {}}
             className={`w-full py-4 rounded-2xl text-base font-bold transition-all ${canSubmit ? "bg-[#0B3D2E] text-white hover:bg-[#0a3328]" : isDark ? "bg-white/5 text-gray-600 cursor-not-allowed" : "bg-gray-100 text-gray-400 cursor-not-allowed"}`}
           >
-            {isRTL ? "نشر السؤال" : "Post Question"}
+            {submitting ? (isRTL ? "جارٍ النشر…" : "Posting…") : (isRTL ? "نشر السؤال" : "Post Question")}
           </motion.button>
         </div>
       </div>

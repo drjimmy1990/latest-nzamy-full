@@ -157,7 +157,7 @@ export const ALL_QUESTIONS: Question[] = [
 ];
 
 // ─── Sort answers: lawyers first (by rating), then users ────────────────────
-export function sortAnswers(answers: Answer[]): Answer[] {
+export function sortAnswers<T extends Pick<Answer, "authorType" | "authorRating" | "votes">>(answers: T[]): T[] {
   const lawyers = answers
     .filter(a => a.authorType === "lawyer")
     .sort((a, b) => b.authorRating - a.authorRating);
@@ -168,8 +168,6 @@ export function sortAnswers(answers: Answer[]): Answer[] {
 }
 
 // ─── Top Contributors ────────────────────────────────────────────────────────
-export const TOP_CONTRIBUTORS = [
-  { name: "أ. أحمد الغامدي",  rating: 127, specialty: "عمالي",  answers: 127 },
-  { name: "أ. سارة العتيبي",  rating: 89,  specialty: "مدني",   answers: 89  },
-  { name: "أ. خالد المطيري",  rating: 74,  specialty: "تجاري",  answers: 74  },
-];
+// No list here any more. The hardcoded TOP_CONTRIBUTORS (three invented
+// lawyers, 127/89/74) was printed on /community as real; the sidebar now reads
+// GET /api/v1/community/contributors and hides itself when that is empty.

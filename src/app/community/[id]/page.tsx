@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowUp, ArrowDown, CheckCircle, ChatCircle, SealCheck,
   ArrowRight, Clock, Eye, BookOpen, Share, BookmarkSimple,
-  PencilSimple, Crown, Warning, ThumbsUp, Scales, Plus,
+  PencilSimple, Crown, Warning, ThumbsUp, Scales, Plus, SpinnerGap, ArrowClockwise,
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -18,13 +18,14 @@ import {
 } from "@/lib/services/communityService";
 import { mapCommunityAnswer, type CommunityAnswerLike } from "@/lib/services/communityAnswerMap";
 import { mapCommunityPost, type CommunityPostLike } from "@/lib/services/communityPostMap";
+import { displayWhen } from "../_feedView";
 import ReportContentButton from "@/components/community/ReportContentButton";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 interface Reply {
-  id: number;
+  id: number | string;
   author: string; authorEn: string;
   type: "lawyer" | "user" | "guest";
   lawyerSlug?: string; lawyerSpecialty?: string; lawyerSpecialtyEn?: string;
@@ -35,56 +36,11 @@ interface Reply {
   isBest?: boolean;
 }
 
-// ─── Mock Data ─────────────────────────────────────────────────────────────
-const QUESTION = {
-  id: 1,
-  category: "labor", tag: "عمالي", tagEn: "Labor",
-  title: "هل يحق لصاحب العمل خصم من الراتب بسبب التأخر عن الدوام؟",
-  titleEn: "Can an employer deduct from salary for being late to work?",
-  body: "أعمل في شركة خاصة منذ ٣ سنوات، وفي الشهر الأخير بدأ مدير الموارد البشرية يخصم ١٠٠ ريال عن كل مرة أتأخر فيها حتى لو بدقائق. لم يُبلَّغ بهذه السياسة رسمياً ولم تكن موجودة في عقدي. هل هذا قانوني؟",
-  bodyEn: "I have been working in a private company for 3 years. Last month, the HR manager started deducting SAR 100 every time I'm late, even by minutes. I was not officially notified of this policy and it was not in my contract. Is this legal?",
-  asker: "زائر-3471", askerType: "guest", isAnon: true,
-  views: 312, votes: 24,
-  ago: "منذ ٣ ساعات", agoEn: "3 hours ago",
-  tags: ["عقود عمل", "خصم راتب", "حقوق العمال"],
-};
-
-const REPLIES: Reply[] = [
-  // ── المحامون أولاً ──────────────────────────────────────────────────────
-  {
-    id: 1, type: "lawyer", isBest: true,
-    author: "أ. أحمد محمد الغامدي", authorEn: "Ahmed Al-Ghamdi",
-    lawyerSlug: "ahmed-alghamdi", lawyerSpecialty: "قانون عمالي", lawyerSpecialtyEn: "Labor Law",
-    rating: 4.9, isVerified: true,
-    text: "وفقاً للمادة ٦٩ من نظام العمل السعودي، لا يجوز لصاحب العمل توقيع أي جزاء مالي على العامل إلا إذا كانت هذه الجزاءات منصوصاً عليها في لائحة تنظيم العمل المعتمدة والمُعلَنَة. وبما أنك لم تُبلَّغ بهذه السياسة رسمياً ولم تكن في عقدك، فهذا الخصم **غير قانوني** ويحق لك المطالبة باسترداد المبالغ المخصومة عبر مكتب العمل.",
-    textEn: "According to Article 69 of Saudi Labor Law, employers cannot impose financial penalties on employees unless these penalties are stated in an approved and announced work regulations. Since you were not officially notified and it was not in your contract, this deduction is **illegal** and you have the right to claim a refund through the Labor Office.",
-    date: "منذ ساعتين", dateEn: "2 hours ago", likes: 47,
-  },
-  {
-    id: 2, type: "lawyer",
-    author: "أ. سارة العتيبي", authorEn: "Sara Al-Otaibi",
-    lawyerSlug: "sara-alotaibi", lawyerSpecialty: "قانون مدني", lawyerSpecialtyEn: "Civil Law",
-    rating: 4.8, isVerified: true,
-    text: "أضيف إلى ما ذكره الزميل: يجب أن تبادر بتوثيق جميع حالات الخصم كتابياً (طلب كشف حساب رسمي من الموارد البشرية أو قسم الرواتب) قبل التقدم بشكوى لمكتب العمل. كذلك تأكد من الاحتفاظ بنسخة من عقد عملك الأصلي كدليل.",
-    textEn: "To add to what my colleague mentioned: you should document all deduction cases in writing (request an official payslip from HR or payroll department) before filing a complaint with the Labor Office. Also, make sure to keep a copy of your original employment contract as evidence.",
-    date: "منذ ساعة", dateEn: "1 hour ago", likes: 28,
-  },
-  // ── تعليقات الأفراد لاحقاً ──────────────────────────────────────────────
-  {
-    id: 3, type: "user",
-    author: "محمد العنزي", authorEn: "Mohammed Al-Anzi",
-    text: "واجهت نفس الوضع قبل سنة وفعلاً رفعت شكوى لمكتب العمل وحصلت على حقي كاملاً في أسبوعين فقط. لا تتردد!",
-    textEn: "I faced the same situation a year ago and I actually filed a complaint with the Labor Office and got my full rights within just two weeks. Don't hesitate!",
-    date: "منذ ٤٠ دقيقة", dateEn: "40 min ago", likes: 15,
-  },
-  {
-    id: 4, type: "guest",
-    author: "زائر-7821", authorEn: "Guest-7821",
-    text: "هل يحق لهم فصلك لو رفعت شكوى ضدهم؟",
-    textEn: "Can they fire you if you file a complaint against them?",
-    date: "منذ ٢٠ دقيقة", dateEn: "20 min ago", likes: 3,
-  },
-];
+// No mock question or replies here any more. A 404 or a failed read used to
+// render a hardcoded labour question with four invented answers (two named
+// lawyers with ratings) as if it were the post the visitor had opened —
+// including every guest, whom the detail route answered with a 401. The page
+// now says what happened instead: not found, or could not be read.
 
 const CATEGORY_LABELS: Record<string, string> = {
   labor: "عمالي",
@@ -120,8 +76,9 @@ function mapStoredQuestion(question: StoredCommunityQuestion) {
     isAnon: mapped.isAnon,
     views: mapped.views,
     votes: mapped.votes,
-    ago: mapped.ago,
-    agoEn: mapped.ago,
+    // A real row's `created_at` is an ISO string; print it as a date.
+    ago: displayWhen(mapped.ago),
+    agoEn: displayWhen(mapped.ago),
     tags: question.tags?.length ? question.tags : [tag],
   };
 }
@@ -148,8 +105,8 @@ function mapStoredReply(
     lawyerSlug: mapped.lawyerSlug,
     text: mapped.text,
     textEn: mapped.text,
-    date: mapped.date,
-    dateEn: mapped.date,
+    date: displayWhen(mapped.date),
+    dateEn: displayWhen(mapped.date),
     likes: mapped.likes,
     isVerified: mapped.isVerified,
     isBest: mapped.isBest,
@@ -162,14 +119,18 @@ export default function QuestionDetailPage() {
   const { isRTL, isDark } = useTheme();
   const params = useParams<{ id: string }>();
   const user = useUser();
-  const [votes, setVotes] = useState(QUESTION.votes);
+  const [votes, setVotes] = useState(0);
   const [userVote, setUserVote] = useState<"up" | "down" | null>(null);
   const [saved, setSaved] = useState(false);
   const [replyText, setReplyText] = useState("");
   const [isAnon, setIsAnon] = useState(false);
-  const [replies, setReplies] = useState<Reply[]>(REPLIES);
-  const [replyLikes, setReplyLikes] = useState<Record<number, number>>({});
+  const [replies, setReplies] = useState<Reply[]>([]);
+  const [replyLikes, setReplyLikes] = useState<Record<string, number>>({});
   const [storedQuestion, setStoredQuestion] = useState<StoredCommunityQuestion | null>(null);
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "missing" | "error">("loading");
+  const [loadSeq, setLoadSeq] = useState(0);
+  const [posting, setPosting] = useState(false);
+  const [replyError, setReplyError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const replyRef = useRef<HTMLTextAreaElement>(null);
 
@@ -182,7 +143,8 @@ export default function QuestionDetailPage() {
       // Demo-mode ids stay numeric (communityStore's `Date.now()`) and
       // `getCommunityPost` already accepts either as `number | string`.
       const id = params?.id;
-      if (!id) { setMounted(true); return; }
+      if (!id) { setLoadState("missing"); setMounted(true); return; }
+      setLoadState("loading");
       try {
         const savedQuestion = await getCommunityPost(id);
         setStoredQuestion(savedQuestion);
@@ -196,27 +158,77 @@ export default function QuestionDetailPage() {
           // below — read it through the same mapper so the vote counter and
           // `handleVote`'s arithmetic don't seed themselves from `undefined`.
           setVotes(mapCommunityPost(savedQuestion as unknown as CommunityPostLike).votes);
-          setReplies(savedQuestion.answers.map((a) => mapStoredReply(a, acceptedAnswerId)));
+          setReplies((savedQuestion.answers ?? []).map((a) => mapStoredReply(a, acceptedAnswerId)));
+          setLoadState("ready");
         } else {
-          setVotes(QUESTION.votes);
-          setReplies(REPLIES);
+          // The server said 404 — the question is not there (or not visible to
+          // this reader). Nothing is put on screen in its place.
+          setLoadState("missing");
         }
       } catch {
-        // Fallback to static data
-        setVotes(QUESTION.votes);
-        setReplies(REPLIES);
+        // A read that did not happen is not a missing question — say so.
+        setLoadState("error");
       }
       setMounted(true);
     };
     loadQuestion();
-  }, [params?.id]);
+  }, [params?.id, loadSeq]);
   if (!mounted) return null;
 
   const muted = isDark ? "text-gray-400" : "text-gray-500";
   const card = `rounded-2xl border ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`;
 
-  const question = storedQuestion ? mapStoredQuestion(storedQuestion) : QUESTION;
   const isGuest = !user.isLoggedIn;
+
+  if (loadState !== "ready" || !storedQuestion) {
+    const missing = loadState === "missing";
+    return (
+      <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir="rtl">
+        <Navbar />
+        <div className="flex-1 max-w-3xl mx-auto w-full px-4 pt-32 pb-10">
+          <div className={`${card} p-10 text-center flex flex-col items-center`}>
+            {loadState === "loading" ? (
+              <>
+                <SpinnerGap size={32} className="animate-spin text-[#C8A762] mb-4" />
+                <p className={`text-sm ${muted}`}>جارٍ تحميل السؤال…</p>
+              </>
+            ) : (
+              <>
+                {missing
+                  ? <Scales size={40} color="#C8A762" weight="duotone" className="mb-4" />
+                  : <Warning size={40} weight="fill" className="text-amber-500 mb-4" />}
+                <p className={`text-lg font-black mb-2 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>
+                  {missing ? "هذا السؤال غير موجود" : "تعذّرت قراءة السؤال"}
+                </p>
+                <p className={`text-sm mb-6 max-w-md ${muted}`}>
+                  {missing
+                    ? "قد يكون حُذف، أو أنه غير متاح لحسابك."
+                    : "لم نتمكّن من تحميل السؤال الآن — هذا لا يعني أنه غير موجود."}
+                </p>
+                <div className="flex flex-wrap items-center justify-center gap-3">
+                  {!missing && (
+                    <button
+                      type="button"
+                      onClick={() => setLoadSeq((n) => n + 1)}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#0B3D2E] text-white text-sm font-bold rounded-xl hover:bg-[#0a3328] transition"
+                    >
+                      <ArrowClockwise size={14} weight="bold" /> إعادة المحاولة
+                    </button>
+                  )}
+                  <Link href="/community" className={`px-5 py-2.5 rounded-xl text-sm font-semibold border ${isDark ? "border-[#2d3748] text-gray-300" : "border-gray-200 text-gray-600"}`}>
+                    العودة إلى المجتمع
+                  </Link>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  const question = mapStoredQuestion(storedQuestion);
 
   // Split: محامون أولاً ثم أفراد
   const lawyerReplies = replies.filter(r => r.type === "lawyer").sort((a, b) => {
@@ -232,43 +244,41 @@ export default function QuestionDetailPage() {
     setUserVote(dir);
   };
 
-  const handleLike = (id: number, base: number) => {
-    setReplyLikes(prev => ({ ...prev, [id]: (prev[id] ?? base) + (prev[id] !== undefined ? 0 : 1) }));
+  const handleLike = (id: number | string, base: number) => {
+    const k = String(id);
+    setReplyLikes(prev => ({ ...prev, [k]: (prev[k] ?? base) + (prev[k] !== undefined ? 0 : 1) }));
   };
 
+  /**
+   * Only a reply the server confirmed is shown. The old catch («Fallback:
+   * still add locally») put the text on screen as posted when nothing had
+   * been saved — a guest's 401, a refused phone number, a dropped request.
+   */
   const handleSubmitReply = async () => {
-    if (replyText.trim().length < 10) return;
-    const newReply: Reply = {
-      id: Date.now(),
-      type: user.userType === "lawyer" ? "lawyer" : "user",
-      author: isAnon ? "مستخدم مجهول" : user.name || "أنت",
-      authorEn: isAnon ? "Anonymous User" : user.name || "You",
-      text: replyText,
-      textEn: replyText,
-      date: "الآن",
-      dateEn: "Just now",
-      likes: 0,
-    };
-    if (storedQuestion) {
-      try {
-        await addCommunityAnswer(storedQuestion.id, {
-          author: newReply.author,
-          authorType: newReply.type === "lawyer" ? "lawyer" : "user",
-          authorRating: user.userType === "lawyer" ? 1 : 0,
-          content: replyText,
-        });
-      } catch {
-        // Fallback: still add locally
-      }
+    if (replyText.trim().length < 10 || posting) return;
+    const author = isAnon ? "مستخدم مجهول" : user.name || "أنت";
+    setPosting(true);
+    setReplyError(null);
+    try {
+      const savedAnswer = await addCommunityAnswer(storedQuestion.id, {
+        author,
+        authorType: user.userType === "lawyer" ? "lawyer" : "user",
+        authorRating: user.userType === "lawyer" ? 1 : 0,
+        content: replyText,
+      });
+      setReplies(prev => [...prev, mapStoredReply(savedAnswer)]);
+      setReplyText("");
+    } catch (err) {
+      setReplyError(err instanceof Error && err.message ? err.message : "تعذّر نشر تعليقك — لم يُحفظ.");
+    } finally {
+      setPosting(false);
     }
-    setReplies(prev => [...prev, newReply]);
-    setReplyText("");
   };
 
   // ── Reply Card (shared renderer) ──
   const ReplyCard = ({ reply }: { reply: Reply }) => {
     const isLawyer = reply.type === "lawyer";
-    const likes = replyLikes[reply.id] ?? reply.likes;
+    const likes = replyLikes[String(reply.id)] ?? reply.likes;
 
     return (
       <motion.div
@@ -304,7 +314,7 @@ export default function QuestionDetailPage() {
                 // dead /lawyers/undefined the owner flagged.
                 reply.lawyerSlug ? (
                   <Link href={`/lawyers/${reply.lawyerSlug}`} className="group">
-                    <p className={`text-sm font-bold flex items-center gap-1.5 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition ${isDark ? "text-gray-100" : "text-gray-800"}`}>
+                    <p className={`text-sm font-bold flex items-center gap-1.5 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition ${isDark ? "text-zinc-100" : "text-gray-800"}`}>
                       {isRTL ? reply.author : reply.authorEn}
                       <SealCheck size={14} color="#C8A762" weight="fill" />
                       {(isRTL ? reply.lawyerSpecialty : reply.lawyerSpecialtyEn) && (
@@ -320,7 +330,7 @@ export default function QuestionDetailPage() {
                   </Link>
                 ) : (
                   <div>
-                    <p className={`text-sm font-bold flex items-center gap-1.5 ${isDark ? "text-gray-100" : "text-gray-800"}`}>
+                    <p className={`text-sm font-bold flex items-center gap-1.5 ${isDark ? "text-zinc-100" : "text-gray-800"}`}>
                       {isRTL ? reply.author : reply.authorEn}
                       <SealCheck size={14} color="#C8A762" weight="fill" />
                       {(isRTL ? reply.lawyerSpecialty : reply.lawyerSpecialtyEn) && (
@@ -337,7 +347,7 @@ export default function QuestionDetailPage() {
                 )
               ) : (
                 <div>
-                  <p className={`text-sm font-semibold ${isDark ? "text-gray-200" : "text-gray-700"}`}>
+                  <p className={`text-sm font-semibold ${isDark ? "text-zinc-200" : "text-gray-700"}`}>
                     {isRTL ? reply.author : reply.authorEn}
                     {reply.type === "guest" && (
                       <span className={`ms-2 text-xs font-normal ${muted}`}>{isRTL ? "(زائر)" : "(Guest)"}</span>
@@ -354,12 +364,12 @@ export default function QuestionDetailPage() {
             <button
               onClick={() => handleLike(reply.id, reply.likes)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition ${
-                replyLikes[reply.id] !== undefined
+                replyLikes[String(reply.id)] !== undefined
                   ? "bg-[#0B3D2E]/10 border-[#0B3D2E]/30 text-[#0B3D2E] dark:text-[#C8A762]"
                   : isDark ? "border-[#2d3748] text-gray-400 hover:bg-white/5" : "border-gray-200 text-gray-500 hover:bg-gray-50"
               }`}
             >
-              <ThumbsUp size={12} weight={replyLikes[reply.id] !== undefined ? "fill" : "regular"} />
+              <ThumbsUp size={12} weight={replyLikes[String(reply.id)] !== undefined ? "fill" : "regular"} />
               {likes}
             </button>
             <ReportContentButton
@@ -373,7 +383,7 @@ export default function QuestionDetailPage() {
         </div>
 
         {/* Text */}
-        <p className={`text-sm leading-relaxed ${isLawyer ? isDark ? "text-gray-200" : "text-gray-700" : muted}`}>
+        <p className={`text-sm leading-relaxed ${isLawyer ? isDark ? "text-zinc-200" : "text-gray-700" : muted}`}>
           {(isRTL ? reply.text : reply.textEn).replace(/\*\*(.+?)\*\*/g, "«$1»")}
         </p>
 
@@ -404,7 +414,8 @@ export default function QuestionDetailPage() {
     <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>
       <Navbar />
 
-      <div className="flex-1 max-w-5xl mx-auto w-full px-4 py-10">
+      {/* pt-32 clears the fixed z-50 Navbar — same convention as /laws. */}
+      <div className="flex-1 max-w-5xl mx-auto w-full px-4 pt-32 pb-10">
 
         {/* Breadcrumb */}
         <div className={`flex items-center gap-2 text-xs mb-6 ${muted}`}>
@@ -460,11 +471,7 @@ export default function QuestionDetailPage() {
                       <Share size={12} /> {isRTL ? "شارك" : "Share"}
                     </button>
                     {/* `params.id` is the real community_posts.id (uuid) this
-                        page was navigated to — always present on a real post,
-                        even when the fetch that would have populated
-                        `storedQuestion` failed and the mock QUESTION is what's
-                        on screen. Preferred over `question.id`, which is only
-                        ever equal to it when `storedQuestion` loaded. */}
+                        page was navigated to. */}
                     <ReportContentButton targetType="post" targetId={String(params?.id ?? question.id)} isGuest={isGuest} />
                   </div>
                 </div>
@@ -520,10 +527,15 @@ export default function QuestionDetailPage() {
                 </p>
               </div>
 
+              {replyError && (
+                <p role="alert" className="mb-3 text-xs font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+                  <Warning size={14} weight="fill" className="shrink-0" /> {replyError}
+                </p>
+              )}
               <textarea
                 ref={replyRef}
                 value={replyText}
-                onChange={e => setReplyText(e.target.value)}
+                onChange={e => { setReplyText(e.target.value); if (replyError) setReplyError(null); }}
                 placeholder={isRTL ? "شاركنا تجربتك أو سؤالاً إضافياً... (١٠ أحرف على الأقل)" : "Share your experience or a follow-up question... (min 10 chars)"}
                 rows={4}
                 className={`w-full rounded-xl border px-4 py-3 text-sm resize-none outline-none transition focus:border-[#0B3D2E] mb-4 ${isDark ? "bg-[#0c0f12] border-[#2d3748] text-white placeholder-gray-600" : "bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400"}`}
@@ -547,7 +559,7 @@ export default function QuestionDetailPage() {
 
                 <motion.button
                   onClick={handleSubmitReply}
-                  disabled={replyText.trim().length < 10}
+                  disabled={replyText.trim().length < 10 || posting}
                   whileHover={replyText.trim().length >= 10 ? { scale: 1.02 } : {}}
                   whileTap={replyText.trim().length >= 10 ? { scale: 0.98 } : {}}
                   className={`ms-auto flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition ${replyText.trim().length >= 10 ? "bg-[#0B3D2E] text-white hover:bg-[#0a3328]" : isDark ? "bg-white/5 text-gray-600 cursor-not-allowed" : "bg-gray-100 text-gray-400 cursor-not-allowed"}`}
@@ -591,7 +603,7 @@ export default function QuestionDetailPage() {
             <div className={`rounded-2xl border p-4 text-center ${isDark ? "bg-[#C8A762]/5 border-[#C8A762]/20" : "bg-amber-50 border-amber-200"}`}>
               <Crown size={28} color="#C8A762" weight="duotone" className="mx-auto mb-2" />
               <p className={`text-xs font-bold mb-1 ${isDark ? "text-[#C8A762]" : "text-amber-800"}`}>{isRTL ? "هل أنت محامٍ؟" : "Are you a lawyer?"}</p>
-              <p className={`text-xs mb-3 ${muted}`}>{isRTL ? "إجابتك تظهر أولاً وتُعرِّف بك أمام آلاف الباحثين" : "Your answer appears first and introduces you to thousands of users"}</p>
+              <p className={`text-xs mb-3 ${muted}`}>{isRTL ? "إجابات المحامين الموثّقين تظهر أولاً" : "Verified lawyers' answers appear first"}</p>
               <Link href="/register?type=lawyer" className="block px-3 py-2 bg-[#C8A762] text-[#0B3D2E] text-xs font-black rounded-xl hover:opacity-90 transition">
                 {isRTL ? "سجّل كمحامٍ مجاناً" : "Register as Lawyer Free"}
               </Link>

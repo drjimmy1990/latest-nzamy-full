@@ -8,6 +8,9 @@ import { createServiceClient } from "@/lib/supabase/server";
  *   - limit   (default 24, max 60)
  *   - offset  (default 0)
  *   - q       (optional title search, case-insensitive)
+ *   - category (optional, repeatable — every stored value one pill stands
+ *               for: a topic can be stored as its Arabic label and as its
+ *               section code; see src/app/blog/_categories.ts)
  *
  * Reads the `articles` table via the service-role client (bypasses RLS so the
  * public list is always served, and works before RLS policies are applied to
@@ -33,7 +36,11 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(60, Math.max(1, parseInt(searchParams.get("limit") ?? "24", 10)));
     const offset = Math.max(0, parseInt(searchParams.get("offset") ?? "0", 10));
     const q = (searchParams.get("q") ?? "").trim();
-    const category = (searchParams.get("category") ?? "").trim();
+    const categories = searchParams
+      .getAll("category")
+      .map((c) => c.trim())
+      .filter(Boolean)
+      .slice(0, 20);
 
     const supabase = await createServiceClient();
 
@@ -45,7 +52,8 @@ export async function GET(request: NextRequest) {
       .range(offset, offset + limit - 1);
 
     if (q) query = query.ilike("title", `%${q}%`);
-    if (category) query = query.eq("category", category);
+    if (categories.length === 1) query = query.eq("category", categories[0]);
+    else if (categories.length > 1) query = query.in("category", categories);
 
     const { data, error, count } = await query;
 

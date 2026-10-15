@@ -29,13 +29,11 @@ import {
   type CommunityTab,
   type Category,
   type SortMode,
-  type Question,
-  type Answer,
   CATEGORIES,
   ALL_QUESTIONS,
   sortAnswers,
-  TOP_CONTRIBUTORS,
 } from "@/constants/communityData";
+import { type FeedQuestion, toFeedQuestion, filterAndSortFeed } from "./_feedView";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import Navbar from "@/components/Navbar";
@@ -53,6 +51,13 @@ import { listOk, listViewState, itemsOf, type ListRead } from "@/lib/services/li
 /** The route's own default page size (api/v1/community/posts/route.ts:24). */
 const PAGE_SIZE = 20;
 
+/** GET /api/v1/community/contributors — see that route for who is counted and listed. */
+interface Contributor {
+  name: string;
+  slug: string | null;
+  answers: number;
+}
+
 const arNum = (n: number) => n.toLocaleString("ar-SA");
 
 export default function CommunityPage() {
@@ -64,7 +69,7 @@ export default function CommunityPage() {
   const [category, setCategory] = useState<Category>("all");
   const [sort, setSort]         = useState<SortMode>("hot");
   const [search, setSearch]     = useState("");
-  const [expanded, setExpanded] = useState<number | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [mounted, setMounted]   = useState(false);
   const [read, setRead] = useState<ListRead<StoredCommunityQuestion> | null>(null);
   // Starts `true`. With it `false` the first paint renders «لم يعثر على أسئلة»
@@ -73,7 +78,7 @@ export default function CommunityPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreFailed, setMoreFailed] = useState(false);
-  const [questionVotes, setQuestionVotes] = useState<Record<number, "up" | "down" | null>>({});
+  const [questionVotes, setQuestionVotes] = useState<Record<string, "up" | "down" | null>>({});
   // True once the visitor has clicked a tab themselves — stops the
   // land-on-lawyers effect below from overriding a deliberate choice
   // (e.g. a lawyer who switches to "public" should not get bounced back).
@@ -113,6 +118,26 @@ export default function CommunityPage() {
   useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => { void loadPosts(); }, [loadPosts]);
+
+  // «أكثر المجيبين» — real counts from the API, or no widget at all. A failed
+  // or partial (`degraded`) read leaves it hidden: a ranking computed from
+  // part of the answers is not a smaller truth, it is a wrong one.
+  const [contributors, setContributors] = useState<Contributor[]>([]);
+  useEffect(() => {
+    if (!isSupabaseMode) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/v1/community/contributors", { cache: "no-store" });
+        if (!res.ok) return;
+        const json = (await res.json()) as { data?: Contributor[]; degraded?: boolean };
+        if (!cancelled && !json.degraded && Array.isArray(json.data)) setContributors(json.data);
+      } catch {
+        /* widget stays hidden */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Land a signed-in lawyer/firm account on "مجتمع المحامين" instead of the
   // guest default. Gated on `user.loading` so this never fires against the
@@ -171,7 +196,10 @@ export default function CommunityPage() {
 
   // In supabase mode, show ONLY real posts from the DB. The ALL_QUESTIONS mock
   // seed is demo-only — merging it in prod polluted the real community feed.
-  const questions = isSupabaseMode ? savedQuestions : [...savedQuestions, ...ALL_QUESTIONS];
+  // Both shapes (demo store, API feed item) go through one view model — see
+  // _feedView.ts for why the page can no longer assume the demo shape.
+  const questions: FeedQuestion[] = (isSupabaseMode ? savedQuestions : [...savedQuestions, ...ALL_QUESTIONS])
+    .map(toFeedQuestion);
 
   // «يُعرض ٢٠ من ٤٧». truncationNoticeAr() is deliberately not used: its
   // sentence ends «استخدم البحث للوصول إلى الباقي», and the search box on this
@@ -186,30 +214,22 @@ export default function CommunityPage() {
       ? `يُعرض ${arNum(read.items.length)} من ${arNum(read.total)} سؤالاً — حمّل المزيد للبحث في بقيتها.`
       : null;
 
-  const getVoteCount = (question: Question) => {
-    const vote = questionVotes[question.id];
+  const getVoteCount = (question: FeedQuestion) => {
+    const vote = questionVotes[question.key];
     if (vote === "up") return question.votes + 1;
     if (vote === "down") return question.votes - 1;
     return question.votes;
   };
 
-  const handleQuestionVote = (question: Question, direction: "up" | "down") => {
+  const handleQuestionVote = (question: FeedQuestion, direction: "up" | "down") => {
     setQuestionVotes((prev) => ({
       ...prev,
-      [question.id]: prev[question.id] === direction ? null : direction,
+      [question.key]: prev[question.key] === direction ? null : direction,
     }));
   };
 
   // Filter questions by tab, category, search
-  const filtered = questions
-    .filter(q => q.tab === tab)
-    .filter(q => category === "all" || q.category === category)
-    .filter(q => search === "" || q.title.toLowerCase().includes(search.toLowerCase()) || q.body?.toLowerCase().includes(search.toLowerCase()))
-    .sort((a, b) => {
-      if (sort === "hot") return getVoteCount(b) - getVoteCount(a);
-      if (sort === "new") return b.id - a.id;
-      return b.answers.length - a.answers.length;
-    });
+  const filtered = filterAndSortFeed(questions, { tab, category, search, sort, voteOf: getVoteCount });
 
   if (!mounted) return null;
 
@@ -217,7 +237,8 @@ export default function CommunityPage() {
     <div className={`min-h-screen flex flex-col ${bg}`} dir="rtl">
       <Navbar />
 
-      <div className="flex-1 max-w-6xl mx-auto w-full px-4 py-8">
+      {/* pt-32 clears the fixed z-50 Navbar — same convention as /laws. */}
+      <div className="flex-1 max-w-6xl mx-auto w-full px-4 pt-32 pb-8">
 
         {/* ── Page Header ── */}
         <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -368,26 +389,37 @@ export default function CommunityPage() {
               </div>
             </div>
 
-            {/* Top Contributors */}
-            <div className={`${card} p-4`}>
-              <p className={`text-xs font-bold mb-3 uppercase tracking-wider ${muted}`}>أكثر المجيبين</p>
-              <div className="space-y-3">
-                {TOP_CONTRIBUTORS.map((l, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#0B3D2E] to-[#1a5c44] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                      {l.name.charAt(3)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-xs font-semibold truncate ${isDark ? "text-gray-200" : "text-gray-800"}`}>{l.name}</p>
-                      <div className="flex items-center gap-1">
-                        <Star size={10} weight="fill" className="text-[#C8A762]" />
-                        <span className={`text-[10px] ${muted} truncate`}>{l.rating} تقييم — {l.specialty}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+            {/* Top Contributors — real answer counts of lawyers whose profile is
+                public (api/v1/community/contributors). Hidden when there are none
+                or the read failed; it used to print three invented lawyers. */}
+            {contributors.length > 0 && (
+              <div className={`${card} p-4`}>
+                <p className={`text-xs font-bold mb-3 uppercase tracking-wider ${muted}`}>أكثر المحامين إجابةً</p>
+                <div className="space-y-3">
+                  {contributors.map((l) => {
+                    const initial = l.name.replace(/^(?:أ\.|د\.|م\.)\s*/, "").trim().charAt(0) || "؟";
+                    const row = (
+                      <>
+                        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#0B3D2E] to-[#1a5c44] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                          {initial}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-xs font-semibold truncate ${isDark ? "text-zinc-200" : "text-gray-800"}`}>{l.name}</p>
+                          <span className={`text-[10px] ${muted}`}>{arNum(l.answers)} إجابة</span>
+                        </div>
+                      </>
+                    );
+                    return l.slug ? (
+                      <Link key={`${l.slug}-${l.name}`} href={`/lawyers/${encodeURIComponent(l.slug)}`} className="flex items-center gap-2 hover:opacity-80 transition">
+                        {row}
+                      </Link>
+                    ) : (
+                      <div key={l.name} className="flex items-center gap-2">{row}</div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Ranking rules info */}
             <div className={`${card} p-4`}>
@@ -506,22 +538,29 @@ export default function CommunityPage() {
                   <div className="w-20 h-20 rounded-3xl bg-white border border-slate-200 shadow-sm flex items-center justify-center mb-5 dark:bg-zinc-800 dark:border-white/10">
                     <Scales size={36} color="#C8A762" weight="duotone" />
                   </div>
-                  <p className={`text-lg font-black tracking-tight mb-2 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>لم يعثر على أسئلة</p>
-                  <p className={`text-sm mb-6 ${muted}`}>جرب البحث بكلمات مختلفة أو طرح سؤال جديد</p>
-                  <Link href="/community/ask" className="inline-flex items-center gap-2 px-6 py-3 bg-[#0B3D2E] text-white text-sm font-bold rounded-xl hover:bg-[#0a3328] shadow-md transition-all active:scale-[0.98]">
-                    اطرح أول سؤال
+                  {/* The lawyers tab lists only what RLS lets this reader see —
+                      today their own lawyers-only posts (see the posts route) —
+                      so «جرب البحث بكلمات مختلفة» would misdescribe it. */}
+                  <p className={`text-lg font-black tracking-tight mb-2 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>
+                    {tab === "lawyers" ? "لا توجد نقاشات ظاهرة لك هنا بعد" : "لم يعثر على أسئلة"}
+                  </p>
+                  <p className={`text-sm mb-6 ${muted}`}>
+                    {tab === "lawyers" ? "ابدأ أول موضوع في مجتمع المحامين." : "جرب البحث بكلمات مختلفة أو طرح سؤال جديد"}
+                  </p>
+                  <Link href={tab === "lawyers" ? "/community/ask?tab=lawyers" : "/community/ask"} className="inline-flex items-center gap-2 px-6 py-3 bg-[#0B3D2E] text-white text-sm font-bold rounded-xl hover:bg-[#0a3328] shadow-md transition-all active:scale-[0.98]">
+                    {tab === "lawyers" ? "اطرح موضوعاً" : "اطرح أول سؤال"}
                   </Link>
                 </div>
               ) : (
                 <div className="space-y-4">
                   {filtered.map((q, i) => {
                     const cat = CATEGORIES.find(c => c.id === q.category);
-                    const isOpen = expanded === q.id;
+                    const isOpen = expanded === q.key;
                     const sortedAnswers = sortAnswers(q.answers);
 
                     return (
                       <motion.article
-                        key={q.id}
+                        key={q.key}
                         layout
                         initial={{ opacity: 0, y: 16 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -535,18 +574,18 @@ export default function CommunityPage() {
                             <button
                               onClick={() => handleQuestionVote(q, "up")}
                               className={`w-11 h-11 sm:w-7 sm:h-7 rounded-lg flex items-center justify-center transition cursor-pointer ${
-                                questionVotes[q.id] === "up"
+                                questionVotes[q.key] === "up"
                                   ? "bg-[#0B3D2E] text-white"
                                   : isDark ? "hover:bg-white/10" : "hover:bg-gray-100"
                               }`}
                             >
                               <ArrowUp size={16} className="text-[#0B3D2E]" />
                             </button>
-                            <span className={`text-sm font-bold font-mono ${isDark ? "text-gray-200" : "text-gray-700"}`}>{getVoteCount(q)}</span>
+                            <span className={`text-sm font-bold font-mono ${isDark ? "text-zinc-200" : "text-gray-700"}`}>{getVoteCount(q)}</span>
                             <button
                               onClick={() => handleQuestionVote(q, "down")}
                               className={`w-11 h-11 sm:w-7 sm:h-7 rounded-lg flex items-center justify-center transition cursor-pointer ${
-                                questionVotes[q.id] === "down"
+                                questionVotes[q.key] === "down"
                                   ? "bg-red-500/10 text-red-500"
                                   : isDark ? "hover:bg-white/10" : "hover:bg-gray-100"
                               }`}
@@ -576,8 +615,8 @@ export default function CommunityPage() {
                             </div>
 
                             <button
-                              onClick={() => setExpanded(isOpen ? null : q.id)}
-                              className={`text-right w-full block text-sm font-bold leading-snug mb-3 hover:text-[#0B3D2E] dark:hover:text-[#C8A762] transition cursor-pointer ${isDark ? "text-gray-100" : "text-gray-800"}`}
+                              onClick={() => setExpanded(isOpen ? null : q.key)}
+                              className={`text-right w-full block text-sm font-bold leading-snug mb-3 hover:text-[#0B3D2E] dark:hover:text-[#C8A762] transition cursor-pointer ${isDark ? "text-zinc-100" : "text-gray-800"}`}
                             >
                               {q.title}
                             </button>
@@ -599,14 +638,14 @@ export default function CommunityPage() {
                                 {q.asker}
                               </span>
                               <span className={muted}>·</span>
-                              <span className={muted}>{q.ago}</span>
+                              <span className={muted}>{q.when}</span>
                               <span className={muted}>·</span>
                               <button
-                                onClick={() => setExpanded(isOpen ? null : q.id)}
+                                onClick={() => setExpanded(isOpen ? null : q.key)}
                                 className={`flex items-center gap-1 font-bold hover:text-[#0B3D2E] dark:hover:text-[#C8A762] transition cursor-pointer ${muted}`}
                               >
                                 <ChatCircle size={12} />
-                                {q.answers.length} إجابة
+                                {q.answerCount} إجابة
                               </button>
                               <span className={`flex items-center gap-1 ${muted} font-mono`}>
                                 <BookOpen size={12} />{q.views} مشاهدة
@@ -616,7 +655,7 @@ export default function CommunityPage() {
 
                           {/* Expand toggle */}
                           <button
-                            onClick={() => setExpanded(isOpen ? null : q.id)}
+                            onClick={() => setExpanded(isOpen ? null : q.key)}
                             className={`flex-shrink-0 self-start mt-1 w-7 h-7 rounded-lg flex items-center justify-center transition cursor-pointer ${isDark ? "hover:bg-white/10" : "hover:bg-gray-100"}`}
                           >
                             <motion.div animate={{ rotate: isOpen ? -90 : 0 }}>
@@ -637,8 +676,17 @@ export default function CommunityPage() {
                             >
                               <div className="p-5 space-y-4">
                                 <p className={`text-xs font-bold uppercase tracking-wider ${muted}`}>
-                                  الإجابات ({sortedAnswers.length}) — المحامون أولاً · مرتبة حسب التقييم
+                                  الإجابات ({q.answerCount}) — المحامون أولاً · مرتبة حسب التقييم
                                 </p>
+                                {/* The list read carries answer counts, not answer bodies —
+                                    the answers themselves are on the question's page. */}
+                                {sortedAnswers.length === 0 && (
+                                  <p className={`text-sm ${muted}`}>
+                                    {q.answerCount > 0
+                                      ? "اقرأ الإجابات كاملة في صفحة السؤال."
+                                      : "لا توجد إجابات بعد."}
+                                  </p>
+                                )}
                                 {sortedAnswers.map((ans, ai) => (
                                   <div
                                     key={ans.id}
@@ -701,14 +749,14 @@ export default function CommunityPage() {
                                 {/* Add answer CTA */}
                                 <div className={`flex items-center gap-3 pt-2 border-t ${isDark ? "border-[#2d3748]" : "border-gray-100"}`}>
                                   <Link
-                                    href={`/community/${q.id}`}
+                                    href={q.href}
                                     className="flex items-center gap-1.5 text-xs font-bold text-[#0B3D2E] dark:text-[#C8A762] hover:underline"
                                   >
                                     <ChatCircle size={13} />
                                     أضف إجابة
                                   </Link>
                                   <Link
-                                    href={`/community/${q.id}`}
+                                    href={q.href}
                                     className={`text-xs ${muted} hover:text-current transition`}
                                   >
                                     عرض الصفحة الكاملة ←
