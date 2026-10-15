@@ -128,8 +128,17 @@ test("unified decree indices use the same inventory and source-decision gate", (
   }));
   const result = parseDecrees(input);
   assert.deepEqual(result.decrees.map(row => row.id), ["public"]);
-  fs.writeFileSync(input, JSON.stringify({ ambiguous: { id: known.source_ids[0], title: "Renamed", articles: ["Test"] } }));
-  try { assert.throws(() => parseDecrees(input, dir), /unresolved corpus_scope/); }
+  // Owner decision 2026-10-08 (patch 04, سجل النطاق): every registry identity
+  // that carries source_ids is now decided. Use one that is still unresolved;
+  // when none is left, a decided identity must pass the same gate unrejected.
+  const unresolvedKnown = registry.entries.find((entry: { source_ids: string[]; corpus_scope: string }) =>
+    entry.source_ids.length && !["public_corpus", "institutional_reference"].includes(entry.corpus_scope));
+  const probe = unresolvedKnown ?? known;
+  fs.writeFileSync(input, JSON.stringify({ ambiguous: { id: probe.source_ids[0], title: "Renamed", articles: ["Test"] } }));
+  try {
+    if (unresolvedKnown) assert.throws(() => parseDecrees(input, dir), /unresolved corpus_scope/);
+    else assert.doesNotThrow(() => parseDecrees(input, dir));
+  }
   finally { process.exitCode = 0; }
 });
 

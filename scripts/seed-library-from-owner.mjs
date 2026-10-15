@@ -66,6 +66,7 @@ process.emitWarning = (warning, ...rest) => {
 };
 const { stripInternalContentKeys } = await import("../src/lib/library/internalContentFields.ts");
 const { liveWriteDecision, parseSeedOwnerArgs, SEED_OWNER_USAGE } = await import("../src/lib/library/seedOwnerArgs.ts");
+const { fetchWithTimeout } = await import("../src/lib/library/fetchWithTimeout.ts");
 
 // Leave from the top level without a synchronous process.exit right after the
 // dynamic .ts imports: on Windows that aborts Node itself (libuv
@@ -150,11 +151,15 @@ if (!isDry && !SERVICE_KEY) {
   await quit(1);
 }
 
+// Every request gives up after 2 minutes (src/lib/library/fetchWithTimeout.ts):
+// on 2026-10-15 one decree_pages request never answered and held the run 45
+// minutes. A timed-out batch now fails like any error and falls back row by row.
 const supabase = isDry
   ? null
   : createClient(SUPABASE_URL, SERVICE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false },
       db: { schema: "library" },
+      global: { fetch: fetchWithTimeout() },
     });
 
 // ── Rows directory: --rows only (no silent "newest package" pick) ────────────

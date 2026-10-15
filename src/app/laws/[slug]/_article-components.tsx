@@ -38,7 +38,7 @@ export function AmendedBadge({
       } ${className}`}
     >
       <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-      <span>✏️ ${text}</span>
+      <span>✏️ {text}</span>
     </span>
   );
 }
@@ -71,11 +71,11 @@ export function AmendedToggleDetails({
       <summary className="px-4 py-2.5 font-bold cursor-pointer hover:bg-amber-100/40 dark:hover:bg-amber-900/30 text-xs flex items-center justify-between select-none transition-colors">
         <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300">
           <ClockCounterClockwise size={13} className={isDark ? "text-amber-400" : "text-amber-600"} weight="bold" />
-          <span>${summary}</span>
+          <span>{summary}</span>
         </div>
         {decreeRef ? (
           <span className="text-[10px] px-2 py-0.5 rounded bg-amber-200/50 dark:bg-amber-900/50 text-amber-900 dark:text-amber-200 font-mono font-bold">
-            ${decreeRef}
+            {decreeRef}
           </span>
         ) : (
           <span className="text-[9.5px] px-2 py-0.5 rounded bg-amber-200/40 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 font-mono font-bold">
