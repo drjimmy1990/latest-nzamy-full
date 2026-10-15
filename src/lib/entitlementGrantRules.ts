@@ -167,3 +167,25 @@ export function planGrantDecision<T extends ActivePlanRow>(
 
   return { keepExisting: qualifying.length > 0, existing };
 }
+
+/**
+ * The tier a user holds RIGHT NOW, from their `status = 'active'` rows.
+ *
+ * getUserTier() (src/lib/access-control.ts) used to take the newest active row
+ * and trust it forever: nothing flips a row to 'expired' when
+ * current_period_end passes (admin grants and invite trials are written with
+ * an end date and auto_renew = false), so a 14-day trial kept unlocking the
+ * paid library and every pro tool indefinitely. A row now counts only while
+ * its period has not ended; a NULL or unparsable end is open-ended coverage
+ * (planEndsAtMs — the same rule the grant guard above uses). Among the rows
+ * still running, the highest tier wins, not the newest.
+ */
+export function effectiveTier(
+  rows: readonly ActivePlanRow[] | null | undefined,
+  nowMs: number,
+  ranks: TierRankTable,
+): ServerTier {
+  const running = (rows ?? []).filter((row) => planEndsAtMs(row) > nowMs && tierRank(row.tier, ranks) >= 0);
+  const best = dominantActivePlan(running, ranks);
+  return (best?.tier as ServerTier | undefined) ?? "free";
+}
