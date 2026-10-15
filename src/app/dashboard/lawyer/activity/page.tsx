@@ -11,7 +11,6 @@ import {
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
-import HijriDateWidget from "@/components/HijriDateWidget";
 import { apiGet, isSupabaseMode } from "@/lib/services/api";
 import { listFailed, listOk, listViewState } from "@/lib/services/listRead";
 
@@ -569,9 +568,6 @@ export default function ActivityLogPage() {
             It was a promise the platform cannot keep, on a page whose whole
             subject is an accurate record, so it is removed rather than wired
             to a stub. */}
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <HijriDateWidget/>
-        </div>
       </div>
 
       {/* Stats — each live card is a toggle over the feed below */}

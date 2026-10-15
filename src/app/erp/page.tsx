@@ -38,7 +38,7 @@ const modules = {
     { icon: Database, title: "إدارة المستندات", desc: "مستودع ذكي للمستندات مع بحث AI وتصنيف تلقائي وإدارة الإصدارات.", color: "bg-orange-500/10 text-orange-600" },
     { icon: ChartLineUp, title: "التقارير والتحليلات", desc: "لوحات بيانات تفاعلية وتقارير تفصيلية عن أداء المكتب والإيرادات والقضايا.", color: "bg-pink-500/10 text-pink-600" },
     { icon: Globe, title: "البوابة الرقمية للموكلين", desc: "منصة مخصصة لموكليك لتتابع قضاياهم ومستنداتهم والتواصل مع فريقكم.", color: "bg-cyan-500/10 text-cyan-600" },
-    { icon: Gear, title: "التكاملات والـ API", desc: "تكامل مع منظومة وزارة العدل (ناجز)، هيئة المحامين، وأنظمتكم الداخلية.", color: "bg-amber-500/10 text-amber-600" },
+    { icon: Gear, title: "التكاملات والـ API", desc: "قيد التطوير: تكاملات مخطط لها مع منظومة وزارة العدل (ناجز) وهيئة المحامين وأنظمتكم الداخلية، ولم يُفعَّل أيٌّ منها بعد.", color: "bg-amber-500/10 text-amber-600" },
   ],
   en: [
     { icon: FileText, title: "Case Management", desc: "Full case tracking from filing to closure with deadlines, hearings, and document management.", color: "bg-royal/10 text-royal" },
@@ -48,14 +48,14 @@ const modules = {
     { icon: Database, title: "Document Management", desc: "Smart document repository with AI search, auto-classification, and version control.", color: "bg-orange-500/10 text-orange-600" },
     { icon: ChartLineUp, title: "Reports & Analytics", desc: "Interactive dashboards and detailed reports on firm performance, revenue, and cases.", color: "bg-pink-500/10 text-pink-600" },
     { icon: Globe, title: "Client Portal", desc: "Dedicated platform for your clients to track cases, documents, and communicate with your team.", color: "bg-cyan-500/10 text-cyan-600" },
-    { icon: Gear, title: "Integrations & API", desc: "Integration with Ministry of Justice (Najiz), Bar Association, and your internal systems.", color: "bg-amber-500/10 text-amber-600" },
+    { icon: Gear, title: "Integrations & API", desc: "In development: planned integrations with the Ministry of Justice (Najiz), the Bar Association and your internal systems. None is live yet.", color: "bg-amber-500/10 text-amber-600" },
   ],
 };
 
 const faqs = [
   { q: { ar: "كم من الوقت يستغرق التطبيق؟", en: "How long does implementation take?" }, a: { ar: "يعتمد على حجم المؤسسة، لكن نوفر فريق تطبيق متخصص يُنجز الإعداد الأساسي خلال ٢–٤ أسابيع.", en: "Depends on firm size, but we provide a dedicated implementation team completing the core setup in 2-4 weeks." } },
   { q: { ar: "هل يمكن الاستضافة داخل المؤسسة (On-Premise)؟", en: "Is on-premise hosting available?" }, a: { ar: "نعم، نوفر خيار الاستضافة الخاصة أو السحابة أو النموذج الهجين حسب متطلبات حوكمة بياناتكم.", en: "Yes, we offer private hosting, cloud, or hybrid model depending on your data governance requirements." } },
-  { q: { ar: "هل يلتزم نظامي ERP بأنظمة هيئة الزكاة والضريبة؟", en: "Is Nezamy ERP compliant with ZATCA regulations?" }, a: { ar: "نعم، النظام المالي يلتزم كاملاً بمتطلبات الفاتورة الإلكترونية (ZATCA Phase 2).", en: "Yes, the financial module is fully compliant with e-invoicing requirements (ZATCA Phase 2)." } },
+  { q: { ar: "هل يلتزم نظامي ERP بأنظمة هيئة الزكاة والضريبة؟", en: "Is Nezamy ERP compliant with ZATCA regulations?" }, a: { ar: "ليس بعد. الفوترة الإلكترونية وفق متطلبات هيئة الزكاة والضريبة والجمارك (المرحلة الثانية) قيد التطوير، ولا يُصدر النظام حالياً فواتير إلكترونية بصيغتها.", en: "Not yet. E-invoicing to ZATCA Phase 2 requirements is in development; the system does not issue ZATCA e-invoices today." } },
   // Same 24/7 claim as the removed hero badge — and a «SLA مضمون» on top of it.
   // Support hours are أحد–خميس ٨ص–١٠م / الجمعة–السبت ٩ص–٥م (contact page), and
   // no service-level agreement is published anywhere to be guaranteed.
@@ -110,10 +110,12 @@ export default function ErpPage() {
                 credential. Also removed: «دعم ٢٤/٧ / 24/7 Support» — contact
                 page (src/app/contact/page.tsx:152) states the real hours as
                 أحد–خميس ٨ص–١٠م and الجمعة–السبت ٩ص–٥م, which is not 24/7. The
-                support badge now states those hours instead. */}
+                support badge now states those hours instead.
+                Also removed: «متكامل مع ناجز / Najiz Integrated» — nothing in the
+                codebase talks to Najiz, the Bar Association, ZATCA or the Ministry
+                of Commerce; the integration section below now says «قيد التطوير». */}
             {[
               { icon: ShieldCheck, label: isRTL ? "متوافق مع PDPL" : "PDPL Compliant" },
-              { icon: Globe, label: isRTL ? "متكامل مع ناجز" : "Najiz Integrated" },
               { icon: Headset, label: isRTL ? "دعم أحد–خميس ٨ص–١٠م" : "Support Sun–Thu 8am–10pm" },
             ].map((badge, i) => (
               <div key={i} className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/70 backdrop-blur">
@@ -163,12 +165,12 @@ export default function ErpPage() {
           <div className="grid items-center gap-12 md:grid-cols-2">
             <div>
               <h2 className={`text-3xl font-bold ${isDark ? "text-white" : "text-slate-900"}`}>
-                {isRTL ? "تكامل كامل مع المنظومة القضائية السعودية" : "Full Integration with the Saudi Judicial Ecosystem"}
+                {isRTL ? "تكاملات مخطط لها مع المنظومة القضائية السعودية" : "Planned Integrations with the Saudi Judicial Ecosystem"}
               </h2>
               <p className={`mt-4 text-lg ${isDark ? "text-gray-400" : "text-slate-500"}`}>
                 {isRTL
-                  ? "نظامي ERP يتحدث مباشرةً مع المنصات الحكومية بدون عمل يدوي، مما يوفر ساعات عمل يومياً لفريقكم."
-                  : "Nezamy ERP speaks directly with government platforms without manual work, saving your team hours daily."}
+                  ? "هذه التكاملات قيد التطوير ولم يُفعَّل أيٌّ منها بعد. الهدف أن يتصل نظامي ERP بالمنصات الحكومية مباشرةً فيقلّ العمل اليدوي على فريقكم."
+                  : "These integrations are in development and none is live yet. The goal is for Nezamy ERP to connect to government platforms directly, cutting manual work for your team."}
               </p>
               <ul className="mt-6 space-y-4">
                 {[
@@ -202,7 +204,7 @@ export default function ErpPage() {
                     <span className={`text-sm font-medium ${isDark ? "text-white" : "text-slate-900"}`}>{item.name}</span>
                     {i < 4 && (
                       <div className={`ms-auto text-xs ${isDark ? "text-gray-500" : "text-slate-400"}`}>
-                        {isRTL ? "↔ متكامل" : "↔ Integrated"}
+                        {isRTL ? "قيد التطوير" : "In development"}
                       </div>
                     )}
                     {i === 4 && <LinkSimple size={16} className="ms-auto text-gold" />}
@@ -222,7 +224,7 @@ export default function ErpPage() {
           </h2>
           <div className="grid gap-6 md:grid-cols-3">
             {[
-              { title: isRTL ? "السحابة" : "Cloud", icon: Globe, desc: isRTL ? "استضافة آمنة على بنيتنا السحابية في المنطقة السعودية مع SLA 99.9٪" : "Secure hosting on our Saudi-region cloud with 99.9% SLA", tag: isRTL ? "الأسرع للتشغيل" : "Fastest to deploy" },
+              { title: isRTL ? "السحابة" : "Cloud", icon: Globe, desc: isRTL ? "استضافة آمنة على بنيتنا السحابية في المنطقة السعودية" : "Secure hosting on our Saudi-region cloud", tag: isRTL ? "الأسرع للتشغيل" : "Fastest to deploy" },
               { title: isRTL ? "خاص (On-Premise)" : "Private (On-Premise)", icon: Database, desc: isRTL ? "تثبيت كامل داخل بنيتكم التحتية لأقصى درجات التحكم والخصوصية" : "Full installation in your infrastructure for maximum control and privacy", tag: isRTL ? "أقصى خصوصية" : "Maximum privacy" },
               { title: isRTL ? "هجين" : "Hybrid", icon: LinkSimple, desc: isRTL ? "بيانات حساسة على خوادمكم وأعباء العمل العامة في السحابة" : "Sensitive data on your servers, general workloads in the cloud", tag: isRTL ? "مرونة مثلى" : "Optimal flexibility" },
             ].map((opt, i) => (

@@ -87,6 +87,7 @@ import { getLawyerHearings, type HearingDto } from "@/lib/services/lawyerHearing
 import type { WorkflowRequest } from "@/lib/workflowStore";
 import { useUser } from "@/hooks/useUser";
 import AddHearingModal from "../_components/AddHearingModal";
+import { formatTimeOfDayAr, parseTimeOfDay } from "./_timeOfDay";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type EventType = "hearing"|"deadline"|"gov_review"|"notary"|"client_meet"|"court_collect"|"police"|"expert"|"contract"|"internal";
@@ -360,24 +361,6 @@ function formatEventDateAr(dateStr: string): string {
   return `${toArabicDigits(d.getDate())} ${month} ${toArabicDigits(d.getFullYear())}`;
 }
 
-/**
- * "HH:MM" → {h,m}, or null when there is no readable hour.
- *
- * Deliberately not `^\d{2}:\d{2}$`: `<input type="time">` emits "HH:MM:SS" once
- * its step is sub-minute, and `metadata.time` on older rows is whatever string
- * was stored. A regex that misses would fall back to the all-day URL silently —
- * i.e. straight back to the defect below — so this accepts a leading H:MM and a
- * trailing remainder, and range-checks what it read.
- */
-function parseTimeOfDay(raw: string | undefined): {h:number;m:number} | null {
-  const hit = /^\s*(\d{1,2}):(\d{2})/.exec(raw ?? "");
-  if (!hit) return null;
-  const h = Number(hit[1]);
-  const m = Number(hit[2]);
-  if (h > 23 || m > 59) return null;
-  return { h, m };
-}
-
 const pad2 = (n:number) => String(n).padStart(2,"0");
 const gcalDay = (d:Date) => `${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}`;
 const gcalStamp = (d:Date) => `${gcalDay(d)}T${pad2(d.getHours())}${pad2(d.getMinutes())}00`;
@@ -546,7 +529,7 @@ function EventCard({ev,isDark}:{ev:CalEvent;isDark:boolean}) {
             <p className={`text-[14px] font-bold leading-snug ${isDark?"text-zinc-100":"text-slate-800"}`}>{ev.title}</p>
             <div className="flex items-center flex-wrap gap-3 mt-1.5">
               <span className={`flex items-center gap-1 text-[11px] font-semibold ${ev.urgency==="critical"?"text-red-500":ev.urgency==="high"?"text-amber-500":isDark?"text-zinc-400":"text-slate-500"}`}>
-                <Clock size={11} />{formatEventDateAr(ev.date)}{ev.time?` — ${ev.time}`:""}
+                <Clock size={11} />{formatEventDateAr(ev.date)}{ev.time?` — ${formatTimeOfDayAr(ev.time)}`:""}
               </span>
               {ev.location&&<span className={`flex items-center gap-1 text-[11px] ${isDark?"text-zinc-500":"text-slate-400"}`}><MapPin size={11}/>{ev.location}</span>}
               {ev.client&&<span className={`flex items-center gap-1 text-[11px] ${isDark?"text-zinc-500":"text-slate-400"}`}><User size={11}/>{ev.client}</span>}

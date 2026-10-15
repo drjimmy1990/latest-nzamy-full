@@ -12,10 +12,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { X, List, Bell } from "@phosphor-icons/react";
+import { X, List, Bell, SignOut } from "@phosphor-icons/react";
 
 import { useTheme } from "@/components/ThemeProvider";
-import { useUser } from "@/hooks/useUser";
+import { useUser, logout } from "@/hooks/useUser";
 import { isSupabaseMode } from "@/lib/services/api";
 import { getPreferences, patchPreferences } from "@/lib/services/preferencesService";
 import { useAdminSettings } from "@/hooks/useAdminSettings";
@@ -225,6 +225,27 @@ export default function SharedSidebar() {
 
       {/* Feature Request widget — above settings divider */}
       <SidebarFeatureRequest />
+
+      {/* Sign out. Until this row the only ways out of a dashboard were the
+          public Navbar's avatar menu (not rendered on dashboard routes) and
+          the Settings page. It calls the same logout() as both of them —
+          Supabase signOut (or the demo reset) and the redirect to /login. */}
+      {isLoggedIn && (
+        <div className="px-3 pb-3">
+          <button
+            type="button"
+            onClick={() => logout()}
+            className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] font-semibold transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold ${
+              isDark
+                ? "text-rose-400 hover:bg-rose-500/[0.08]"
+                : "text-rose-600 hover:bg-rose-50"
+            }`}
+          >
+            <SignOut size={16} />
+            {isAr ? "تسجيل الخروج" : "Sign out"}
+          </button>
+        </div>
+      )}
 
     </div>
   );

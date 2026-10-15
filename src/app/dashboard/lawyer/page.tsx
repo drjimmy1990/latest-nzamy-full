@@ -12,7 +12,6 @@ import {
   Flag, Storefront,
   Timer, Folder, Money, Briefcase, ShareNetwork, Graph, MapPin,
 } from "@phosphor-icons/react";
-import HijriDateWidget from "@/components/HijriDateWidget";
 import Link from "next/link";
 import { LawyerDashboardSkeleton } from "@/components/ui";
 import { OnboardingBanner } from "@/components/OnboardingBanner";
@@ -65,6 +64,7 @@ import {
 import { apiGet, isSupabaseMode } from "@/lib/services/api";
 import { profileShareState, type ProfileShareState } from "./_components/profileShareTargets";
 import ShareProfileModal from "./_components/ShareProfileModal";
+import { formatTimeOfDayAr } from "./hearings/_timeOfDay";
 import { describeRequestEvent, type ActivityBadge } from "@/lib/events";
 import { orderReference } from "@/lib/services/orderReference";
 
@@ -620,7 +620,6 @@ export default function LawyerDashboardPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <HijriDateWidget />
           {/* The title sits on the wrapper, not the button: a disabled control
               swallows pointer events in several browsers, and with it the only
               explanation of why this button is greyed out. */}
@@ -1026,7 +1025,7 @@ export default function LawyerDashboardPage() {
               <div key={h.id} className={`p-3.5 rounded-xl border ${h.borderColor} ${h.bg}`}>
                 <div className="flex items-center justify-between mb-1.5">
                   <span className={`text-[11px] font-bold ${h.color}`}>
-                    {h.dateLabel}{h.time ? ` · ${h.time}` : ""}
+                    {h.dateLabel}{h.time ? ` · ${formatTimeOfDayAr(h.time)}` : ""}
                   </span>
                   <Gavel size={13} className={h.color} weight="duotone" />
                 </div>

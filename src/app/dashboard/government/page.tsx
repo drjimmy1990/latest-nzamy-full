@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser, type GovernmentRole } from "@/hooks/useUser";
+import { resolveGovernmentRole } from "@/hooks/governmentRole";
 import Link from "next/link";
 import { OnboardingBanner } from "@/components/OnboardingBanner";
 import { SectorProfileReadinessPanel } from "@/components/dashboard/sector/SectorProfileReadinessPanel";
@@ -174,7 +175,10 @@ export default function GovernmentDashboard() {
   const user  = useUser();
   const { isDark } = useTheme();
 
-  const role   = user.governmentRole ?? "gov_counsel";
+  // Validated again here, not only in useUser: demo sessions come from
+  // localStorage and never pass through that check, and every map below is
+  // keyed on exactly four roles — an unknown one used to crash the page.
+  const role   = resolveGovernmentRole(user.governmentRole);
   const meta   = ROLE_META[role];
   // ─── RBAC: double-filter — role array AND user permissions ───────────────────
   const allowedPerms = ROLE_PERMISSIONS[role];
