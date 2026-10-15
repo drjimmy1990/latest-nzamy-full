@@ -47,7 +47,25 @@ type BooleanFeatureKey = {
 // subscription), the same read the console's «إدارة الشركات» tab uses. The
 // profile settings further down are still this browser's localStorage only
 // (see the banner), keyed by the real company id.
-type AdminCompany = { id: string; name: string | null; plan: string; mrr: number };
+type ServerCompanyFlags = Pick<CompanyFeatures, "hasSecondment" | "hasLitigation" | "hasMarketplace" | "hasGovernance">;
+type AdminCompany = { id: string; name: string | null; plan: string; mrr: number; features?: Partial<ServerCompanyFlags> };
+
+/**
+ * The profile to show for a company. A stored local profile wins (it is what
+ * this editor last saved); otherwise the editor's defaults, overlaid with the
+ * four flags the server really stores for the company
+ * (business_profiles.metadata.features, edited in «إدارة الشركات») so this page
+ * never shows a value that contradicts that tab.
+ */
+function profileFor(company: AdminCompany, stored: CompanyFeatures | undefined): CompanyFeatures {
+  if (stored) return stored;
+  const server = company.features ?? {};
+  const flags: Partial<ServerCompanyFlags> = {};
+  for (const key of ["hasSecondment", "hasLitigation", "hasMarketplace", "hasGovernance"] as const) {
+    if (typeof server[key] === "boolean") flags[key] = server[key];
+  }
+  return { ...buildDefaultCompanyFeatures(company.id), ...flags };
+}
 
 type CompaniesState =
   | { status: "loading" }
@@ -113,10 +131,10 @@ export default function AdminBusinessProfilesPage() {
     [companies, search],
   );
   const selectedCompany = companies.find((company) => company.id === selectedId) ?? companies[0] ?? null;
-  // A real company id has no localStorage entry until it is first edited, so
-  // the editor starts from the same defaults the store would fill in.
+  // A real company id has no localStorage entry until it is first edited; see
+  // profileFor() for what the editor starts from.
   const selectedFeatures: CompanyFeatures | undefined = selectedCompany
-    ? features[selectedCompany.id] ?? buildDefaultCompanyFeatures(selectedCompany.id)
+    ? profileFor(selectedCompany, features[selectedCompany.id])
     : undefined;
   const scenario = selectedFeatures
     ? resolveBusinessScenario(selectedFeatures.companySize, selectedFeatures.legalStructure, selectedFeatures.serviceModel)
@@ -174,7 +192,7 @@ export default function AdminBusinessProfilesPage() {
   // Counted over the real companies only: `features` also carries the
   // store's built-in demo entries (C-001…), which are not customers.
   const internalLegalCount = companies.filter(
-    (company) => (features[company.id] ?? buildDefaultCompanyFeatures(company.id)).hasInternalLegal,
+    (company) => profileFor(company, features[company.id]).hasInternalLegal,
   ).length;
   const backendReadyControls = BUSINESS_ADMIN_CONTROLS.filter((control) => control.readiness === "Backend-ready").length;
 
@@ -353,6 +371,7 @@ export default function AdminBusinessProfilesPage() {
               <div className={`px-5 py-4 border-b ${isDark ? "border-white/[0.07]" : "border-zinc-100"}`}>
                 <h3 className={`font-black ${isDark ? "text-white" : "text-zinc-900"}`}>خدمات وصلاحيات الشركة</h3>
                 <p className={`mt-1 text-xs ${muted}`}>كل Toggle يغير واجهة الشركة محلياً ويحتاج لاحقاً ServiceEntitlement API.</p>
+                <p className={`mt-1 text-xs ${muted}`}>انتداب مستشار، والتقاضي، وسوق المهنيين، والحوكمة محفوظة فعلياً على الخادم: تبدأ هنا من قيمها المحفوظة، لكن تغييرها من هذه الصفحة محلي فقط. التغيير الفعلي من تبويب «إدارة الشركات» في لوحة الأدمن.</p>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
                 {FEATURE_TOGGLES.map((feature) => {
