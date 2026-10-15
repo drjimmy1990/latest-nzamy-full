@@ -274,6 +274,7 @@ const ADMIN_DASHBOARD_PERMISSIONS: UserPermission[] = [
   "dashboard:hrm",
   "cases:assign",
 ];
+const ADMIN_ALL_PERMISSIONS: UserPermission[] = [...ADMIN_AI_PERMISSIONS, ...ADMIN_DASHBOARD_PERMISSIONS];
 
 const PERMISSIONS: Record<string, Record<UserTier, UserPermission[]>> = {
   lawyer: {
@@ -333,14 +334,17 @@ const PERMISSIONS: Record<string, Record<UserTier, UserPermission[]>> = {
     enterprise: [],
   },
   admin: {
-    // مدير النظام — كل الصلاحيات
-    free:       [...ADMIN_AI_PERMISSIONS, ...ADMIN_DASHBOARD_PERMISSIONS],
-    shield:     [],
-    ai:         [],
-    pro:        [],
-    max:        [...ADMIN_AI_PERMISSIONS, ...ADMIN_DASHBOARD_PERMISSIONS],
-    corp:       [],
-    enterprise: [],
+    // مدير النظام — كل الصلاحيات، على كل باقة. The tier comes from
+    // user_metadata and says nothing about an admin's access; only free and
+    // max used to carry the list, so an admin whose tier read shield/ai/pro/
+    // corp/enterprise got no tools at all.
+    free:       ADMIN_ALL_PERMISSIONS,
+    shield:     ADMIN_ALL_PERMISSIONS,
+    ai:         ADMIN_ALL_PERMISSIONS,
+    pro:        ADMIN_ALL_PERMISSIONS,
+    max:        ADMIN_ALL_PERMISSIONS,
+    corp:       ADMIN_ALL_PERMISSIONS,
+    enterprise: ADMIN_ALL_PERMISSIONS,
   },
   // ─── الجهة الحكومية ────────────────────────────────────────────────────────
   // القاعدة: الصلاحيات الأساسية للكل + صلاحيات الدور تُضاف runtime في getDashboardRoute
