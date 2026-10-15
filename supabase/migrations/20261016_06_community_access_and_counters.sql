@@ -24,6 +24,16 @@
 --       accepted_answer_id, status — and nobody else's view or vote is ever
 --       counted (only the author passes the UPDATE policy).
 --   C6  VOTES ON THE UNREADABLE. community_votes INSERT checks only user_id.
+--   C7  SELF-SET COUNTERS ON INSERT. INSERT was table-level, so a raw REST POST
+--       could create a post with vote_count 5000, is_pinned, status or a
+--       backdated created_at.
+--
+-- PREREQUISITE — 20260922_03 IN FORCE
+--   community_is_verified_lawyer() trusts lawyer_profiles.verification_status.
+--   On production (2026-10-10 dump) lawyer_profiles has table-level GRANT ALL
+--   again, so a lawyer could set it on their own row. Run
+--   20260922_03_lawyer_provider_column_grants.sql first; the verify below
+--   refuses otherwise.
 --
 -- WHAT IT DOES (idempotent — safe to run any number of times)
 --   1. SECURITY DEFINER helpers (search_path '', caller-only via auth.uid()):
@@ -180,9 +190,11 @@ create policy "users update their own votes" on public.community_votes
         end
   );
 
--- ── 3. Column-level UPDATE ───────────────────────────────────────────────────
-revoke update on public.community_posts, public.community_answers from anon, authenticated, public;
+-- ── 3. Column-level INSERT and UPDATE (C5, C7) ───────────────────────────────
+revoke insert, update on public.community_posts, public.community_answers from anon, authenticated, public;
+grant insert (author_id, title, body, category, visibility, tags) on public.community_posts to authenticated;
 grant update (title, body, category, visibility, tags) on public.community_posts to authenticated;
+grant insert (post_id, author_id, body, is_lawyer_verified) on public.community_answers to authenticated;
 grant update (body) on public.community_answers to authenticated;
 grant all on public.community_posts, public.community_answers, public.community_votes to service_role;
 
@@ -262,15 +274,29 @@ revoke all on function public.community_answers_recount() from public, anon, aut
 revoke all on function public.community_record_view(uuid) from public;
 grant execute on function public.community_record_view(uuid) to anon, authenticated, service_role;
 
--- One-time recount from the rows (no trigger fired for the past).
+-- One-time recount from the rows (no trigger fired for the past). Only rows
+-- whose numbers change are touched, so updated_at is not stamped on every post.
+with c as (
+  select p.id,
+         coalesce((select sum(v.value) from public.community_votes v
+                    where v.target_type = 'post' and v.target_id = p.id), 0) as votes,
+         (select count(*) from public.community_answers a
+           where a.post_id = p.id and a.status = 'active') as answers
+    from public.community_posts p)
 update public.community_posts p
-   set vote_count = coalesce((select sum(v.value) from public.community_votes v
-                               where v.target_type = 'post' and v.target_id = p.id), 0),
-       answer_count = (select count(*) from public.community_answers a
-                        where a.post_id = p.id and a.status = 'active');
+   set vote_count = c.votes, answer_count = c.answers
+  from c
+ where c.id = p.id
+   and (p.vote_count is distinct from c.votes or p.answer_count is distinct from c.answers);
+with c as (
+  select a.id,
+         coalesce((select sum(v.value) from public.community_votes v
+                    where v.target_type = 'answer' and v.target_id = a.id), 0) as votes
+    from public.community_answers a)
 update public.community_answers a
-   set vote_count = coalesce((select sum(v.value) from public.community_votes v
-                               where v.target_type = 'answer' and v.target_id = a.id), 0);
+   set vote_count = c.votes
+  from c
+ where c.id = a.id and a.vote_count is distinct from c.votes;
 
 -- ── 5. Verify ────────────────────────────────────────────────────────────────
 do $$
@@ -283,6 +309,21 @@ begin
      or has_column_privilege('authenticated', 'public.community_answers', 'is_lawyer_verified', 'UPDATE')
      or has_column_privilege('authenticated', 'public.community_answers', 'vote_count', 'UPDATE') then
     missing := missing || ' an author can still set a counter / pin / status / the lawyer badge;';
+  end if;
+  if has_table_privilege('authenticated', 'public.community_posts', 'INSERT')
+     or has_column_privilege('authenticated', 'public.community_posts', 'vote_count', 'INSERT')
+     or has_column_privilege('authenticated', 'public.community_posts', 'created_at', 'INSERT')
+     or has_column_privilege('authenticated', 'public.community_answers', 'vote_count', 'INSERT') then
+    missing := missing || ' a new post or answer can still carry its own counters / date;';
+  end if;
+  if not has_column_privilege('authenticated', 'public.community_posts', 'title', 'INSERT')
+     or not has_column_privilege('authenticated', 'public.community_answers', 'body', 'INSERT') then
+    missing := missing || ' users cannot post or answer;';
+  end if;
+  if to_regclass('public.lawyer_profiles') is not null
+     and (has_column_privilege('authenticated', 'public.lawyer_profiles', 'verification_status', 'UPDATE')
+          or has_table_privilege('authenticated', 'public.lawyer_profiles', 'INSERT')) then
+    missing := missing || ' lawyer_profiles.verification_status is self-writable — run 20260922_03_lawyer_provider_column_grants.sql first (the lawyers-only checks trust it);';
   end if;
   if not has_column_privilege('authenticated', 'public.community_posts', 'body', 'UPDATE')
      or not has_column_privilege('authenticated', 'public.community_answers', 'body', 'UPDATE') then

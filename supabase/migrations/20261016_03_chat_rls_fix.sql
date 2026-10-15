@@ -24,6 +24,11 @@
 --       `sender_id = auth.uid()`, so a sender can change `room_id` and drop a
 --       message into a room they are not in; a participant can also post
 --       message_type 'system' / 'ai_response' and impersonate the platform.
+--   D5  BACKDATED MESSAGES. chat_messages INSERT was table-level, so a
+--       participant could set created_at (or the id) on their own message —
+--       backdate a line in a legal consultation.
+--   D6  STALE MEMBERS. When a request is reassigned, the previous lawyer
+--       stayed in its room and kept reading new messages.
 --   Plus: GRANT ALL to anon on all three tables and the sequence.
 --
 -- WHAT IT DOES (idempotent — safe to run any number of times)
@@ -197,7 +202,10 @@ grant update (name, status) on public.chat_rooms to authenticated;
 grant select, delete on public.chat_participants to authenticated;
 grant update (last_read_at, muted) on public.chat_participants to authenticated;
 
-grant select, insert on public.chat_messages to authenticated;
+grant select on public.chat_messages to authenticated;
+-- D5: no created_at / id / edited_at / deleted_at on insert.
+grant insert (room_id, sender_id, body, message_type, file_url, file_name, file_size, reply_to, metadata)
+  on public.chat_messages to authenticated;
 grant update (body, edited_at, deleted_at) on public.chat_messages to authenticated;
 grant usage, select on sequence public.chat_messages_id_seq to authenticated;
 
@@ -292,6 +300,33 @@ comment on function public.create_chat_room(text, uuid[], text, text) is
 revoke all on function public.create_chat_room(text, uuid[], text, text) from public, anon;
 grant execute on function public.create_chat_room(text, uuid[], text, text) to authenticated, service_role;
 
+-- D6: a reassigned request's previous lawyer leaves its room.
+create or replace function public.chat_drop_previous_assignee()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if old.assigned_to is not null
+     and old.assigned_to is distinct from new.assigned_to
+     and old.assigned_to is distinct from new.requester_user_id then
+    delete from public.chat_participants cp
+     using public.chat_rooms r
+     where r.id = cp.room_id
+       and r.request_id = new.id
+       and cp.user_id = old.assigned_to;
+  end if;
+  return null;
+end;
+$$;
+revoke all on function public.chat_drop_previous_assignee() from public, anon, authenticated;
+
+drop trigger if exists trg_chat_drop_previous_assignee on public.service_requests;
+create trigger trg_chat_drop_previous_assignee
+  after update of assigned_to on public.service_requests
+  for each row execute function public.chat_drop_previous_assignee();
+
 -- ── 5. Verify — raises, so a half-applied fix cannot look successful ─────────
 do $$
 declare
@@ -340,6 +375,14 @@ begin
   if has_column_privilege('authenticated', 'public.chat_participants', 'role', 'UPDATE')
      or has_column_privilege('authenticated', 'public.chat_participants', 'room_id', 'UPDATE') then
     missing := missing || ' a participant can change their role / room;';
+  end if;
+  if has_table_privilege('authenticated', 'public.chat_messages', 'INSERT')
+     or has_column_privilege('authenticated', 'public.chat_messages', 'created_at', 'INSERT')
+     or not has_column_privilege('authenticated', 'public.chat_messages', 'body', 'INSERT') then
+    missing := missing || ' message INSERT is not limited to its content columns (created_at forgeable, or body not insertable);';
+  end if;
+  if not exists (select 1 from pg_trigger where tgname = 'trg_chat_drop_previous_assignee') then
+    missing := missing || ' the reassignment trigger is missing;';
   end if;
   if has_column_privilege('authenticated', 'public.chat_messages', 'room_id', 'UPDATE')
      or has_column_privilege('authenticated', 'public.chat_messages', 'sender_id', 'UPDATE') then

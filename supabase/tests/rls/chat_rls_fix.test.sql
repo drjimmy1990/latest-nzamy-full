@@ -171,3 +171,34 @@ begin
   end if;
   raise notice 'T6 PASS: anon holds no chat privilege and cannot call the chat functions';
 end $$;
+
+-- T7 a message cannot be backdated (D5), and a reassigned lawyer leaves the room (D6)
+set role authenticated;
+select set_config('test.uid', '22222222-0000-0000-0000-00000000000c', false);
+do $$
+begin
+  begin
+    insert into public.chat_messages (room_id, sender_id, body, created_at)
+      values ('aaaaaaaa-1111-0000-0000-000000000001', '22222222-0000-0000-0000-00000000000c', 'رسالة قديمة', '2020-01-01');
+    raise exception 'T7 FAIL: a participant backdated a message';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+insert into auth.users (id) values ('44444444-0000-0000-0000-00000000004a');
+insert into public.profiles (id, user_type, display_name) values ('44444444-0000-0000-0000-00000000004a', 'lawyer', 'L2');
+update public.service_requests set assigned_to = '44444444-0000-0000-0000-00000000004a' where id = 'req-chat-1';
+do $$
+begin
+  if exists (select 1 from public.chat_participants
+              where room_id = 'aaaaaaaa-1111-0000-0000-000000000001'
+                and user_id = '11111111-0000-0000-0000-00000000000a') then
+    raise exception 'T7 FAIL: the previous lawyer is still in the room after reassignment';
+  end if;
+  if not exists (select 1 from public.chat_participants
+                  where room_id = 'aaaaaaaa-1111-0000-0000-000000000001'
+                    and user_id = '22222222-0000-0000-0000-00000000000c') then
+    raise exception 'T7 FAIL: the client left the room on reassignment';
+  end if;
+  raise notice 'T7 PASS: messages cannot be backdated; a reassigned lawyer leaves the request room, the client stays';
+end $$;

@@ -89,6 +89,18 @@ begin
     raise exception 'T3 FAIL: a client moved a post into lawyers-only';
   exception when insufficient_privilege then null;
   end;
+  begin
+    insert into public.community_posts (author_id, title, body, vote_count, is_pinned)
+      values ('c0000000-0000-0000-0000-00000000000c', 'x', 'y', 5000, true);
+    raise exception 'T3 FAIL: a new post carried its own vote_count / pin';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    insert into public.community_answers (post_id, author_id, body, vote_count)
+      values ('22222222-aaaa-0000-0000-000000000002', 'c0000000-0000-0000-0000-00000000000c', 'z', 9999);
+    raise exception 'T3 FAIL: a new answer carried its own vote_count';
+  exception when insufficient_privilege then null;
+  end;
   update public.community_posts set body = 'نص معدل' where id = '22222222-aaaa-0000-0000-000000000002';
   get diagnostics n = row_count;
   if n <> 1 then raise exception 'T3 FAIL: the author could not edit their own text'; end if;
