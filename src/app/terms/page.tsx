@@ -8,6 +8,12 @@ import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import { markdownBoldToSafeHtml } from "@/utils/sanitize";
+import {
+  LEGAL_IDENTITY_AR,
+  LEGAL_IDENTITY_EN,
+  NO_DIRECT_CONSULTATION_AR,
+  NO_DIRECT_CONSULTATION_EN,
+} from "@/constants/legalIdentity";
 
 // ─── Sections ────────────────────────────────────────────────────────────────
 
@@ -28,7 +34,8 @@ const sections = {
       id: "services",
       title: "٢. الخدمات المقدمة",
       content: [
-        "تعمل المنصة بوصفها وسيطاً تقنياً يربط طالبي الخدمات القانونية بمقدميها المرخصين ولا تُعدّ في ذاتها مكتب محاماة.",
+        LEGAL_IDENTITY_AR,
+        NO_DIRECT_CONSULTATION_AR,
         "تشمل الخدمات: الاستشارات القانونية، صياغة العقود ومراجعتها، التمثيل القضائي، التوثيق الرسمي، التحكيم التجاري، وتعقيب المعاملات.",
         "تتيح المنصة أدوات ذكاء اصطناعي للمساعدة في الصياغة والبحث والتحليل وتُعدّ هذه الأدوات داعمة لا بديلاً عن الاستشارة القانونية.",
         "تحتفظ المنصة بحق تغيير أو إضافة أو وقف أي خدمة مع إشعار مسبق.",
@@ -127,7 +134,7 @@ const sections = {
       title: "١٢. التواصل",
       content: [
         "لأي استفسارات قانونية أو شكاوى تتعلق بهذه الشروط، يُرجى التواصل عبر: legal@nezamy.sa",
-        "العنوان: شركة نظامي للمحاماة، مكة المكرمة — بطحاء قريش، المملكة العربية السعودية.",
+        "العنوان: نظامي، مكة المكرمة — بطحاء قريش، المملكة العربية السعودية.",
       ],
     },
   ],
@@ -147,7 +154,8 @@ const sections = {
       id: "services",
       title: "2. Services Provided",
       content: [
-        "The platform acts as a technology intermediary connecting legal service seekers with licensed providers and is not itself a law firm.",
+        LEGAL_IDENTITY_EN,
+        NO_DIRECT_CONSULTATION_EN,
         "Services include: legal consultations, contract drafting and review, legal representation, official notarization, commercial arbitration, and transaction tracking.",
         "The platform provides AI tools for drafting, research, and analysis assistance — these are supportive tools, not a substitute for legal consultation.",
         "The platform reserves the right to change, add, or suspend any service with prior notice.",
@@ -246,7 +254,7 @@ const sections = {
       title: "12. Contact",
       content: [
         "For any legal inquiries or complaints related to these terms, please contact: legal@nezamy.sa",
-        "Address: Nezamy Law Firm Company, Makkah — Batha Quraish, Kingdom of Saudi Arabia.",
+        "Address: Nezamy, Makkah — Batha Quraish, Kingdom of Saudi Arabia.",
       ],
     },
   ],

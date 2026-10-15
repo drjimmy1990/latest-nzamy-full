@@ -12,6 +12,12 @@ import {
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
+import {
+  LEGAL_IDENTITY_AR,
+  LEGAL_IDENTITY_EN,
+  NO_DIRECT_CONSULTATION_AR,
+  NO_DIRECT_CONSULTATION_EN,
+} from "@/constants/legalIdentity";
 
 type Category = "all" | "clients" | "providers" | "payment" | "tech";
 
@@ -196,9 +202,9 @@ const faqData: FAQItem[] = [
     questionAr: "ما الأنظمة التي تلتزم بها المنصة؟",
     questionEn: "Which regulations does the platform comply with?",
     answerAr:
-      "نخضع لإشراف وزارة العدل للخدمات القانونية، ونلتزم بنظام حماية البيانات الشخصية السعودي (PDPL). ولا تُستقبل أي مدفوعات إلكترونية عبر المنصة حالياً.",
+      `${LEGAL_IDENTITY_AR} ${NO_DIRECT_CONSULTATION_AR} ونلتزم بنظام حماية البيانات الشخصية السعودي (PDPL). ولا تُستقبل أي مدفوعات إلكترونية عبر المنصة حالياً.`,
     answerEn:
-      "We are subject to the Ministry of Justice's oversight for legal services and comply with the Saudi Personal Data Protection Law (PDPL). No electronic payments are received through the platform at this time.",
+      `${LEGAL_IDENTITY_EN} ${NO_DIRECT_CONSULTATION_EN} We comply with the Saudi Personal Data Protection Law (PDPL). No electronic payments are received through the platform at this time.`,
   },
 ];
 

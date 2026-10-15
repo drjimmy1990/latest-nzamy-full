@@ -328,7 +328,7 @@ export default function BusinessOverviewPage() {
               {accountName ?? "لوحة المنشأة"}
             </h1>
             <p className="mt-1 text-sm text-emerald-300/80">
-              اطلب خدمة قانونية من مكتب نظامي، وتابع طلبات منشأتك ووثائقها من هنا.
+              اطلب خدمة قانونية عبر نظامي، وتابع طلبات منشأتك ووثائقها من هنا.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2.5">

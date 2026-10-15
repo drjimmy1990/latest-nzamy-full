@@ -400,7 +400,7 @@ export default function ClientCasesPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-5 mb-8">
         <div>
           <h1 className="text-2xl md:text-3xl font-black tracking-tight" style={{ fontFamily: 'var(--font-brand)' }}>قضاياي</h1>
-          <p className={`text-sm mt-1.5 ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>كل طلب قانوني قدّمته إلى مكتب نظامي، وحالته الحالية</p>
+          <p className={`text-sm mt-1.5 ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>كل طلب قانوني قدّمته إلى فريق نظامي، وحالته الحالية</p>
         </div>
         {/*
           This used to open «قضية جديدة» — a four-step wizard

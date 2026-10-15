@@ -100,7 +100,7 @@ const sections = {
       title: "٩. التواصل",
       content: [
         "لأي استفسار عن الاسترداد: legal@nezamy.sa أو عبر صفحة تواصل معنا.",
-        "العنوان: شركة نظامي للمحاماة، مكة المكرمة — بطحاء قريش، المملكة العربية السعودية.",
+        "العنوان: نظامي، مكة المكرمة — بطحاء قريش، المملكة العربية السعودية.",
       ],
     },
   ],
@@ -186,7 +186,7 @@ const sections = {
       title: "9. Contact",
       content: [
         "For any refund inquiries: legal@nezamy.sa or via the Contact Us page.",
-        "Address: Nezamy Law Firm Company, Makkah — Batha Quraish, Kingdom of Saudi Arabia.",
+        "Address: Nezamy, Makkah — Batha Quraish, Kingdom of Saudi Arabia.",
       ],
     },
   ],

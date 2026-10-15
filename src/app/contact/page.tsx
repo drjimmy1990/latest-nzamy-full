@@ -23,6 +23,12 @@ import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
 import { normalizeSaudiMobile, sanitizePhoneDigits, saudiMobileMessage } from "@/lib/services/saudiMobile";
 import Link from "next/link";
+import {
+  LEGAL_IDENTITY_AR,
+  LEGAL_IDENTITY_EN,
+  NO_DIRECT_CONSULTATION_AR,
+  NO_DIRECT_CONSULTATION_EN,
+} from "@/constants/legalIdentity";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -359,7 +365,7 @@ export default function ContactPage() {
               allowFullScreen
               loading="lazy"
               referrerPolicy="no-referrer-when-downgrade"
-              title={isRTL ? "موقع شركة نظامي للمحاماة — مكة المكرمة" : "Nzamy Law Firm Location — Makkah"}
+              title={isRTL ? "موقع نظامي — مكة المكرمة" : "Nezamy Location — Makkah"}
             />
             <div className={`flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-4 sm:px-6 py-4 ${isDark ? "bg-dark-card" : "bg-white"}`}>
               <div className="flex items-center gap-3">
@@ -368,7 +374,12 @@ export default function ContactPage() {
                 </div>
                 <div>
                   <p className={`text-sm font-semibold ${isDark ? "text-white" : "text-slate-900"}`}>
-                    {isRTL ? "شركة نظامي للمحاماة" : "Nzamy Law Firm"}
+                    {isRTL ? "نظامي" : "Nezamy"}
+                  </p>
+                  <p className={`max-w-[60ch] text-xs leading-relaxed ${isDark ? "text-gray-400" : "text-slate-500"}`}>
+                    {isRTL
+                      ? `${LEGAL_IDENTITY_AR} ${NO_DIRECT_CONSULTATION_AR}`
+                      : `${LEGAL_IDENTITY_EN} ${NO_DIRECT_CONSULTATION_EN}`}
                   </p>
                   <p className={`text-xs ${isDark ? "text-gray-400" : "text-slate-500"}`}>
                     {isRTL ? "بطحاء قريش، 4173، 7603، مكة المكرمة 24362" : "Batha Quraish, 4173, 7603, Makkah 24362"}

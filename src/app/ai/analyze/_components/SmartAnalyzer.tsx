@@ -285,7 +285,7 @@ export default function SmartAnalyzer({ isDark, isRTL }: Props) {
 
       <motion.div variants={fadeUp} className={`${card} p-5`}>
         <p className={`text-[13px] font-black mb-0.5 ${isDark ? "text-white" : "text-zinc-900"}`}>هل تريد رأي محامٍ متخصص؟</p>
-        <p className={`text-[11.5px] mb-4 ${ts}`}>محامو نظامي المرخّصون يراجعون وضعك بالتفصيل ويضعون استراتيجية قانونية.</p>
+        <p className={`text-[11.5px] mb-4 ${ts}`}>المحامون المرخّصون المنضمّون إلى نظامي يراجعون وضعك بالتفصيل ويضعون استراتيجية قانونية.</p>
         <div className="flex gap-2 flex-wrap">
           <Link href="/dashboard/client/consultation"
             className="flex items-center gap-2 bg-[#0B3D2E] text-white font-black px-5 py-2.5 rounded-xl text-[12.5px] hover:bg-[#0a3328] transition-colors shadow-[0_4px_14px_rgba(11,61,46,0.22)]">

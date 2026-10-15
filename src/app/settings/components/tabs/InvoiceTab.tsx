@@ -64,7 +64,7 @@ export function InvoiceTab() {
 
           {/* Fields */}
           {[
-            { label: "اسم الكيان على الفاتورة",  placeholder: "مكتب نظامي للمحاماة والاستشارات القانونية" },
+            { label: "اسم الكيان على الفاتورة",  placeholder: "الاسم كما في السجل التجاري أو الترخيص" },
             { label: "الرقم الضريبي (VAT)",         placeholder: "3XXXXXXXXXXXXXXX" },
             { label: "عنوان الفاتورة",              placeholder: "حي الملقا، طريق الأمير محمد بن سلمان، الرياض" },
             { label: "البريد الإلكتروني للفواتير",  placeholder: "invoices@nezamy.sa" },

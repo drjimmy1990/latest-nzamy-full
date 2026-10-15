@@ -175,7 +175,7 @@ function WaOutcomeStep({
           target="_blank"
           rel="noopener noreferrer"
           className="w-full flex items-center justify-center gap-2 py-3.5 rounded-[1.25rem] bg-[#25D366] text-white text-[13px] font-bold hover:bg-[#1ebe5d] active:scale-[0.98] transition-all shadow-lg shadow-[#25D366]/20"
-          aria-label="فتح محادثة واتساب مع مكتب نظامي"
+          aria-label="فتح محادثة واتساب مع فريق نظامي"
         >
           <WhatsappLogo size={20} weight="fill" /> فتح محادثة واتساب مع المكتب
         </motion.a>

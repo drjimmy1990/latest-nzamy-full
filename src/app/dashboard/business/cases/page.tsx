@@ -344,7 +344,7 @@ function BusinessCasesPage() {
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-5 mb-8">
             <div>
               <h1 className="text-2xl md:text-3xl font-black tracking-tight" style={{ fontFamily: 'var(--font-brand)' }}>قضايا الشركة</h1>
-              <p className={`text-sm mt-1.5 ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>كل طلب قانوني قدّمته منشأتك إلى مكتب نظامي، وحالته الحالية</p>
+              <p className={`text-sm mt-1.5 ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>كل طلب قانوني قدّمته منشأتك إلى فريق نظامي، وحالته الحالية</p>
             </div>
             {/*
               The SAME link «قضاياي» and «../page.tsx»'s header both use —

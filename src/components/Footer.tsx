@@ -5,6 +5,12 @@ import { Scales, ArrowLeft, ArrowRight } from "@phosphor-icons/react";
 import { useTheme } from "./ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import { BETA_MONOPOLY_MODE } from "@/lib/betaConfig";
+import {
+  LEGAL_IDENTITY_AR,
+  LEGAL_IDENTITY_EN,
+  NO_DIRECT_CONSULTATION_AR,
+  NO_DIRECT_CONSULTATION_EN,
+} from "@/constants/legalIdentity";
 
 const footerLinksAr = {
   "عن المنصة": [
@@ -158,10 +164,19 @@ export default function Footer() {
           </div>
           <p className="text-xs text-ink-faint dark:text-zinc-400">
             {isAr
-              ? `جميع الحقوق محفوظة لشركة نظامي للمحاماة ${new Date().getFullYear()}`
-              : `All rights reserved. Nezamy Law Firm ${new Date().getFullYear()}`}
+              ? `جميع الحقوق محفوظة لنظامي ${new Date().getFullYear()}`
+              : `All rights reserved. Nezamy ${new Date().getFullYear()}`}
           </p>
         </div>
+
+        {/* Owner decision Q27: the operator is a LegalTech provider, not a
+            law firm, and consultations come from the licensed lawyers who
+            join it — shown on every page that carries this footer. */}
+        <p className="mt-4 text-center text-[11px] leading-relaxed text-ink-faint dark:text-zinc-400 md:text-start">
+          {isAr
+            ? `${LEGAL_IDENTITY_AR} ${NO_DIRECT_CONSULTATION_AR}`
+            : `${LEGAL_IDENTITY_EN} ${NO_DIRECT_CONSULTATION_EN}`}
+        </p>
       </div>
     </footer>
   );
