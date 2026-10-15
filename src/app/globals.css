@@ -166,14 +166,17 @@
    In dark mode, text-royal (#0B3D2E) has a ~1.4:1 contrast failure on dark backgrounds.
    Unless explicitly situated on a white/light surface, redirect text-royal to high-contrast emerald or white.
 */
-.dark :not(.bg-white, .bg-white *, [data-light-surface], [data-light-surface] *) > .text-royal,
-.dark .text-royal:not(.bg-white *, [data-light-surface] *) {
+/* Skips: an element that sets its own dark:text-* colour (this rule is
+   unlayered, so it would beat that utility), an element that is itself a white
+   or gold surface in dark mode (bg-white / bg-gold with no dark:bg-* override
+   keeps text-royal), and anything
+   inside a white or explicitly light surface. */
+.dark .text-royal:not([class*="dark:text-"], [class~="bg-white"]:not([class*="dark:bg-"]), [class~="bg-gold"]:not([class*="dark:bg-"]), .bg-white *, [data-light-surface], [data-light-surface] *) {
   color: #34d399; /* Emerald-400: >= 8.6:1 contrast on dark surfaces */
 }
 
 /* Dark mode hover rescue: hover:text-royal turning dark on black */
-.dark :not(.bg-white, .bg-white *, [data-light-surface], [data-light-surface] *) > .hover\:text-royal:hover,
-.dark .hover\:text-royal:not(.bg-white *, [data-light-surface] *):hover {
+.dark .hover\:text-royal:not([class*="dark:hover:text-"], [class~="bg-white"]:not([class*="dark:bg-"]), [class~="bg-gold"]:not([class*="dark:bg-"]), .bg-white *, [data-light-surface], [data-light-surface] *):hover {
   color: #C8A762 !important; /* Gold: >= 6.9:1 contrast */
 }
 
@@ -192,10 +195,10 @@
   color: rgba(248, 250, 252, 0.8) !important;
 }
 .dark .text-white\/70 {
-  color: rgba(248, 250, 252, 0.7) !important;
+  color: rgba(248, 250, 252, 0.78) !important;
 }
 .dark .text-white\/60 {
-  color: rgba(248, 250, 252, 0.75) !important;
+  color: rgba(248, 250, 252, 0.74) !important;
 }
 .dark .text-white\/50 {
   color: rgba(248, 250, 252, 0.70) !important;
@@ -204,9 +207,14 @@
   color: rgba(248, 250, 252, 0.65) !important;
 }
 
-/* Dark-mode zinc-500 rescue (used as muted copy, currently 3.46:1) */
-.dark .text-zinc-500 {
+/* Dark-mode zinc-500 rescue (used as muted copy, currently 3.46:1).
+   Elements with a hover:text-* colour get the rescue only while not hovered,
+   without !important, so their hover colour still shows. */
+.dark .text-zinc-500:not([class*="hover:text-"]) {
   color: #a1a1aa !important; /* zinc-400: 7.36:1 contrast */
+}
+.dark .text-zinc-500[class*="hover:text-"]:not(:hover) {
+  color: #a1a1aa;
 }
 .dark .border-white\/5,
 .dark .border-white\/\[0\.05\] {
