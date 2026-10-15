@@ -71,14 +71,11 @@ export async function GET(
     return NextResponse.json({ error: error.message }, { status: 404 });
   }
 
-  // Increment view count (signed-in readers only; RLS lets just the author's
-  // own update through — see the report on view counts).
-  if (user) {
-    await supabase
-      .from("community_posts")
-      .update({ view_count: (post.view_count ?? 0) + 1 })
-      .eq("id", id);
-  }
+  // One view, counted by the database (migration 20261016_06): the function
+  // adds 1 only when the caller may read the post, for guests too. Before
+  // that migration the RPC does not exist and the error is ignored — the old
+  // direct update only ever passed for the post's own author anyway.
+  await supabase.rpc("community_record_view", { p_post_id: id });
 
   type RawAnswer = { id: string; author_id: string; is_lawyer_verified: boolean };
   const answers: RawAnswer[] = Array.isArray(post.answers) ? post.answers : [];

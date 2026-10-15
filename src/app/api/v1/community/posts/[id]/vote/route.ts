@@ -6,6 +6,10 @@ import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
  * POST /api/v1/community/posts/[id]/vote — Vote on a post or answer
  * Body: { target_type: 'post'|'answer', target_id, value: 1|-1 }
  * Upsert: user can change their vote but not double-vote.
+ * vote_count is kept by the database (trigger trg_community_votes_recount,
+ * migration 20261016_06): this route only writes the vote row. It used to
+ * read-modify-write vote_count itself, which RLS let through only for the
+ * target's own author, so nobody else's vote was ever counted.
  */
 export async function POST(
   request: NextRequest,
@@ -67,25 +71,6 @@ export async function POST(
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Update vote count on target: adjust by difference
-    const diff = value - existingVote.value;
-    if (diff !== 0) {
-      const table =
-        target_type === "post" ? "community_posts" : "community_answers";
-      const { data: target } = await supabase
-        .from(table)
-        .select("vote_count")
-        .eq("id", target_id)
-        .single();
-
-      if (target) {
-        await supabase
-          .from(table)
-          .update({ vote_count: (target.vote_count ?? 0) + diff })
-          .eq("id", target_id);
-      }
-    }
-
     return NextResponse.json({ data });
   }
 
@@ -106,20 +91,5 @@ export async function POST(
   }
 
   // Increment vote count on target
-  const table =
-    target_type === "post" ? "community_posts" : "community_answers";
-  const { data: target } = await supabase
-    .from(table)
-    .select("vote_count")
-    .eq("id", target_id)
-    .single();
-
-  if (target) {
-    await supabase
-      .from(table)
-      .update({ vote_count: (target.vote_count ?? 0) + value })
-      .eq("id", target_id);
-  }
-
   return NextResponse.json({ data }, { status: 201 });
 }
