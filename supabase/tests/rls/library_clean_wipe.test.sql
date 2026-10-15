@@ -13,6 +13,7 @@
 --     $M/20260922_01_library_grants.sql $M/20260922_04_library_view_security_invoker.sql \
 --     $M/20260925_04_law_facet_counts.sql $M/20260929_01_library_text_server_only.sql \
 --     $M/20261004_01_library_column_lock.sql $M/20261004_02_library_chapter_levels.sql \
+--     supabase/tests/rls/prelude_extensions_schema.sql $M/20260919_private_precedent_details.sql \
 --     supabase/tests/rls/prelude_library_clean_wipe_fixture.sql \
 --     supabase/one-time/2026-10-04_library_clean_wipe.sql \
 --     supabase/tests/rls/library_clean_wipe.test.sql
@@ -100,13 +101,14 @@ drop table library.wipe_probe;
 
 -- T6 the file AS WRITTEN (the `set local` confirm line still commented out) wipes
 -- nothing: the whole file is run again — like Run in Studio with no selection —
--- with the confirmation cleared. /tmp/mig17.sql is the one-time file: it is the
--- 17th file of the chain above (15 migrations, the fixture, the wipe).
+-- with the confirmation cleared. /tmp/mig19.sql is the one-time file: it is the
+-- 19th file of the chain above (15 migrations, the extensions prelude, the
+-- private-details migration, the fixture, the wipe).
 -- Its expected output: ERROR "library clean wipe: NOT confirmed", then
 -- "current transaction is aborted" for the statements after it, and ROLLBACK.
 set nzamy.confirm_wipe = '';
 \set ON_ERROR_STOP off
-\i /tmp/mig17.sql
+\i /tmp/mig19.sql
 \set ON_ERROR_STOP on
 reset nzamy.confirm_wipe;
 do $$
@@ -115,4 +117,24 @@ begin
     raise exception 'T6: the unconfirmed file emptied the library';
   end if;
   raise notice 'T6 ok — the file as written (confirm line commented out) wiped nothing';
+end $$;
+
+-- T7 the private details table (20260919) was emptied in the same TRUNCATE, and
+-- takes a row again after its principle is reloaded.
+do $$
+begin
+  if to_regclass('library_precedent_private.precedent_unparsed_details') is null then
+    raise exception 'T7: run this file with 20260919_private_precedent_details.sql in the chain';
+  end if;
+  if (select count(*) from library_precedent_private.precedent_unparsed_details) <> 0 then
+    raise exception 'T7: the private details survived the wipe';
+  end if;
+  insert into library.judicial_collections (id, title) values ('wipe-col', 'مجموعة اختبارية') on conflict do nothing;
+  insert into library.principles (id, collection_id, text, order_index)
+    values ('wipe-col__p1', 'wipe-col', 'نص المبدأ', 1) on conflict do nothing;
+  insert into library_precedent_private.precedent_unparsed_details
+    (principle_id, collection_id, source_locator, body, body_sha256)
+  values ('wipe-col__p1', 'wipe-col', 'wipe-col.md#p1', 'نص التسبيب',
+          encode(extensions.digest(convert_to('نص التسبيب', 'UTF8'), 'sha256'), 'hex'));
+  raise notice 'T7 ok — the private details table was emptied with the 14 and reloads cleanly';
 end $$;

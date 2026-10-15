@@ -65,3 +65,16 @@ begin
     if n = 0 then raise exception 'fixture: library.% has no row', t; end if;
   end loop;
 end $$;
+
+-- 20260919_private_precedent_details.sql: one private details row per principle,
+-- `references library.principles on delete restrict` — emptied with the 14
+-- since 2026-10-16 (its foreign key made the TRUNCATE fail).
+do $$
+begin
+  if to_regclass('library_precedent_private.precedent_unparsed_details') is not null then
+    insert into library_precedent_private.precedent_unparsed_details
+      (principle_id, collection_id, source_locator, body, body_sha256)
+    values ('wipe-col__p1', 'wipe-col', 'wipe-col.md#p1', 'نص التسبيب',
+            encode(extensions.digest(convert_to('نص التسبيب', 'UTF8'), 'sha256'), 'hex'));
+  end if;
+end $$;
