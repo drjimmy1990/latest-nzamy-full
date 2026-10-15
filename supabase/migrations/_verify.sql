@@ -1129,3 +1129,67 @@ BEGIN
 
   RAISE NOTICE '_verify: 20261016_01 OK — principle text, judgment, fts and paragraphs are server-only; the catalogue columns stay public';
 END $$;
+
+
+-- ====================================================================
+-- 2026-10-16 — 20261016_02_profiles_members_write_lock.sql (owner decisions ٢٩ + ٣٠)
+-- ====================================================================
+-- authenticated may UPDATE only the 11 settings columns of public.profiles
+-- (never email / verified_at / nafath_verified / metadata / user_type), and the
+-- API roles cannot hard-DELETE a row of the four entity membership tables.
+-- Keyed on the marker comment on public.profiles.email, so a deploy that runs
+-- this file BEFORE the migration is applied still passes.
+SELECT '20261016_02 marker on public.profiles.email (profiles / members write lock)' AS check,
+       coalesce(col_description('public.profiles'::regclass,
+         (SELECT attnum FROM pg_attribute WHERE attrelid = 'public.profiles'::regclass AND attname = 'email')), '')
+         ILIKE '%server-write-only since 20261016_02%' AS present;
+
+DO $$
+DECLARE
+  editable text[] := ARRAY[
+    'display_name', 'display_name_en', 'phone', 'avatar_url', 'language',
+    'calendar_type', 'theme', 'country_code', 'city', 'onboarding_completed', 'nationality'];
+  col     text;
+  t       text;
+  missing text := '';
+BEGIN
+  IF coalesce(col_description('public.profiles'::regclass,
+       (SELECT attnum FROM pg_attribute WHERE attrelid = 'public.profiles'::regclass AND attname = 'email')), '')
+       NOT ILIKE '%server-write-only since 20261016_02%' THEN
+    RAISE NOTICE '_verify: 20261016_02 is not applied yet — users can still edit their own email / verification flags, and entity owners can hard-delete members';
+    RETURN;
+  END IF;
+
+  IF has_table_privilege('authenticated', 'public.profiles', 'UPDATE') THEN
+    missing := missing || ' authenticated holds table-level UPDATE on public.profiles again;';
+  END IF;
+  FOR col IN
+    SELECT att.attname::text FROM pg_attribute att
+     WHERE att.attrelid = 'public.profiles'::regclass AND att.attnum > 0 AND NOT att.attisdropped
+  LOOP
+    IF has_column_privilege('authenticated', 'public.profiles', col, 'UPDATE') AND NOT (col = ANY (editable)) THEN
+      missing := missing || format(' authenticated can UPDATE public.profiles.%s;', col);
+    END IF;
+    IF has_column_privilege('anon', 'public.profiles', col, 'UPDATE') THEN
+      missing := missing || format(' anon can UPDATE public.profiles.%s;', col);
+    END IF;
+  END LOOP;
+  FOREACH col IN ARRAY editable LOOP
+    IF NOT has_column_privilege('authenticated', 'public.profiles', col, 'UPDATE') THEN
+      missing := missing || format(' authenticated cannot UPDATE public.profiles.%s (the settings page would fail);', col);
+    END IF;
+  END LOOP;
+
+  FOREACH t IN ARRAY ARRAY['firm_members', 'business_members', 'government_members', 'ngo_members'] LOOP
+    CONTINUE WHEN to_regclass('public.' || t) IS NULL;
+    IF has_table_privilege('authenticated', 'public.' || t, 'DELETE') OR has_table_privilege('anon', 'public.' || t, 'DELETE') THEN
+      missing := missing || format(' an API role can DELETE public.%s again;', t);
+    END IF;
+  END LOOP;
+
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: the profiles / members write lock is broken —%', missing;
+  END IF;
+
+  RAISE NOTICE '_verify: 20261016_02 OK — profiles: 11 self-editable columns only; no API-role hard delete on the membership tables';
+END $$;
