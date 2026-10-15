@@ -213,6 +213,11 @@ function RenderContent({ md, isDark, toc }: { md: string; isDark: boolean; toc: 
   return <div className={`prose prose-sm max-w-none ${isDark ? "prose-invert" : ""}`}>{out}</div>;
 }
 
+/** First letter of a name, past an «أ.»/«د.»/«م.» title (charAt(2) printed a space or a dot). */
+function initialOf(name: string): string {
+  return name.replace(/^(?:أ\.|د\.|م\.)\s*/, "").trim().charAt(0) || "ن";
+}
+
 function formatDate(iso?: string | null, en = false): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -239,27 +244,26 @@ export default function ArticleView({
   const card = `rounded-2xl border p-6 ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`;
   const authorUrl = article.author.url || null;
   const toc = findToc(article.content);
+  const authorName = isRTL ? article.author.name : article.author.nameEn;
+  // The author's own title from the row (author_credentials), or nothing —
+  // never a made-up «محامٍ متخصص في …» for a consultant.
+  const authorTitle = (article.author.credentials || "").trim();
 
-  const AuthorCtaLink = () => {
-    if (authorUrl) {
-      return (
-        <a href={authorUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#0B3D2E] text-white text-sm font-bold rounded-xl hover:bg-[#0a3328] transition">
-          {isRTL ? "احجز استشارة" : "Book Consultation"} <ArrowLeft size={14} className={isRTL ? "rotate-180" : ""} />
-        </a>
-      );
-    }
-    return (
-      <Link href="/contact" className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#0B3D2E] text-white text-sm font-bold rounded-xl hover:bg-[#0a3328] transition">
-        {isRTL ? "احجز استشارة" : "Book Consultation"} <ArrowLeft size={14} className={isRTL ? "rotate-180" : ""} />
-      </Link>
-    );
-  };
+  // Booking stays on the platform. This went to the author's external URL
+  // (target=_blank) or to /contact; /book/consultation is the booking flow.
+  // The label does not promise THIS author — the team assigns the lawyer.
+  const AuthorCtaLink = () => (
+    <Link href="/book/consultation" className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#0B3D2E] text-white text-sm font-bold rounded-xl hover:bg-[#0a3328] transition">
+      {isRTL ? "احجز استشارة قانونية" : "Book a legal consultation"} <ArrowLeft size={14} className={isRTL ? "rotate-180" : ""} />
+    </Link>
+  );
 
   return (
     <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>
       <Navbar />
 
-      <div className="flex-1 max-w-5xl mx-auto w-full px-4 py-10">
+      {/* pt-32 clears the fixed z-50 Navbar — same convention as /laws. */}
+      <div className="flex-1 max-w-5xl mx-auto w-full px-4 pt-32 pb-10">
         {/* Breadcrumb */}
         <div className={`flex items-center gap-2 text-xs mb-6 ${muted}`}>
           <Link href="/blog" className="hover:text-[#0B3D2E] dark:hover:text-[#C8A762] transition">{isRTL ? "المدونة" : "Blog"}</Link>
@@ -300,30 +304,22 @@ export default function ArticleView({
               {/* Author */}
               {authorUrl ? (
                 <a href={authorUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 group">
-                  <div className="w-10 h-10 rounded-xl bg-[#0B3D2E] flex items-center justify-center text-white text-base font-bold">{(isRTL ? article.author.name : article.author.nameEn).charAt(2)}</div>
+                  <div className="w-10 h-10 rounded-xl bg-[#0B3D2E] flex items-center justify-center text-white text-base font-bold">{initialOf(authorName)}</div>
                   <div>
-                    <p className={`text-sm font-bold group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition flex items-center gap-1.5 ${isDark ? "text-gray-200" : "text-gray-800"}`}>
-                      {isRTL ? article.author.name : article.author.nameEn} {article.author.credentials ? <SealCheck size={14} color="#C8A762" weight="fill" /> : null}
+                    <p className={`text-sm font-bold group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition flex items-center gap-1.5 ${isDark ? "text-zinc-200" : "text-gray-800"}`}>
+                      {authorName} {authorTitle ? <SealCheck size={14} color="#C8A762" weight="fill" /> : null}
                     </p>
-                    {article.author.credentials ? (
-                      <p className={`text-xs ${muted}`}>{article.author.credentials}</p>
-                    ) : (
-                      <p className={`text-xs ${muted} flex items-center gap-1.5`}>
-                        <span>{isRTL ? article.author.specialty : article.author.specialtyEn}</span>
-                      </p>
-                    )}
+                    {authorTitle && <p className={`text-xs ${muted}`}>{authorTitle}</p>}
                   </div>
                 </a>
               ) : (
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#0B3D2E] flex items-center justify-center text-white text-base font-bold">{(isRTL ? article.author.name : article.author.nameEn).charAt(2)}</div>
+                  <div className="w-10 h-10 rounded-xl bg-[#0B3D2E] flex items-center justify-center text-white text-base font-bold">{initialOf(authorName)}</div>
                   <div>
-                    <p className={`text-sm font-bold flex items-center gap-1.5 ${isDark ? "text-gray-200" : "text-gray-800"}`}>
-                      {isRTL ? article.author.name : article.author.nameEn} {article.author.credentials ? <SealCheck size={14} color="#C8A762" weight="fill" /> : null}
+                    <p className={`text-sm font-bold flex items-center gap-1.5 ${isDark ? "text-zinc-200" : "text-gray-800"}`}>
+                      {authorName} {authorTitle ? <SealCheck size={14} color="#C8A762" weight="fill" /> : null}
                     </p>
-                    <p className={`text-xs ${muted} flex items-center gap-1.5`}>
-                      <span>{isRTL ? article.author.specialty : article.author.specialtyEn}</span>
-                    </p>
+                    {authorTitle && <p className={`text-xs ${muted}`}>{authorTitle}</p>}
                   </div>
                 </div>
               )}
@@ -376,16 +372,18 @@ export default function ArticleView({
             {/* Author CTA */}
             <div className={`rounded-2xl border p-6 flex flex-col sm:flex-row gap-5 items-start ${isDark ? "bg-[#0B3D2E]/15 border-[#0B3D2E]/30" : "bg-[#0B3D2E]/5 border-[#0B3D2E]/20"}`}>
               <div className="w-14 h-14 rounded-2xl bg-[#0B3D2E] flex items-center justify-center text-white text-xl font-bold flex-shrink-0">
-                {(isRTL ? article.author.name : article.author.nameEn).charAt(2)}
+                {initialOf(authorName)}
               </div>
               <div className="flex-1">
+                {/* The seal only beside an author whose row carries credentials —
+                    it was printed for every byline, the team fallback included. */}
                 <p className={`font-bold mb-1 flex items-center gap-1.5 ${isDark ? "text-white" : "text-gray-900"}`}>
-                  {isRTL ? article.author.name : article.author.nameEn} <SealCheck size={15} color="#C8A762" weight="fill" />
+                  {authorName} {authorTitle ? <SealCheck size={15} color="#C8A762" weight="fill" /> : null}
                 </p>
-                <p className={`text-sm mb-3 ${muted}`}>
-                  {article.author.credentials || (isRTL ? `محامٍ متخصص في ${article.author.specialty}` : `Specialized in ${article.author.specialtyEn}`)}
-                </p>
-                <AuthorCtaLink />
+                {authorTitle && <p className={`text-sm mb-3 ${muted}`}>{authorTitle}</p>}
+                <div className={authorTitle ? "" : "mt-2"}>
+                  <AuthorCtaLink />
+                </div>
               </div>
             </div>
           </article>
