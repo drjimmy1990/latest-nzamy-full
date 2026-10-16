@@ -1,14 +1,17 @@
 -- =============================================================================
 -- Migration: 20260921_01_profiles_rls_lockdown.sql
 -- =============================================================================
--- DO NOT RE-RUN ON THE SELF-HOSTED DATABASE (2026-10-16) until plan item N21
--- is done. About fifteen policies on other tables read public.profiles inline
--- with no TO clause ("admins read all lawyer profiles", articles_admin_read_all,
--- …), so they apply to anon too, and Postgres checks anon's SELECT on profiles
--- for each of them. The `revoke select … from anon` below would make every guest
--- read of those tables fail with 42501. 20261016_08 keeps that one grant; the
--- guest still reads zero rows because the three policies here are `to
--- authenticated`.
+-- RE-RUN ON THE SELF-HOSTED DATABASE ONLY AFTER
+-- 20261016_09_admin_policies_is_admin.sql (plan item N21). Before it, sixteen
+-- policies on twelve other tables read public.profiles inline with no TO clause
+-- ("admins read all lawyer profiles", articles_admin_read_all, …), so they
+-- apply to anon too, and Postgres checks anon's SELECT on profiles for each of
+-- them: the `revoke select … from anon` below would make every guest read of
+-- those tables fail with 42501. 20261016_09 re-creates them `TO authenticated
+-- USING (public.is_admin())` and makes this same revoke itself, so after it a
+-- re-run here changes nothing. (It does overwrite the table comment that
+-- 20261016_09 leaves as its marker; _verify.sql also detects that file by
+-- anon's missing SELECT, so the check still runs.)
 --
 -- PURPOSE
 --   Any authenticated user can read any other user's `public.profiles` row on

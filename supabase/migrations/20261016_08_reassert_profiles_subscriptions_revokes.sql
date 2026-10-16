@@ -37,6 +37,10 @@
 --      only after those policies call public.is_admin() instead (next batch).
 --      INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER stay revoked
 --      (20261016_02).
+--      UPDATE 2026-10-16: 20261016_09_admin_policies_is_admin.sql (plan item
+--      N21) did exactly that and revoked the SELECT. This file grants nothing
+--      to anon, so re-running it afterwards keeps the revoke; its verify no
+--      longer asks that anon hold SELECT.
 --
 -- DEPLOY ORDER — INDEPENDENT (no code change)
 --
@@ -97,9 +101,9 @@ begin
   if not has_table_privilege('authenticated', 'public.profiles', 'SELECT') then
     missing := missing || ' authenticated lost SELECT on public.profiles;';
   end if;
-  if not has_table_privilege('anon', 'public.profiles', 'SELECT') then
-    missing := missing || ' anon lost SELECT on public.profiles (guest reads of tables whose admin policy reads profiles would fail with 42501);';
-  end if;
+  -- No check that anon KEEPS SELECT on profiles any more: 20261016_09 (N21)
+  -- re-created the inline admin policies TO authenticated and revoked it, and
+  -- re-running this file after that must not fail on it.
   if not has_table_privilege('service_role', 'public.subscriptions', 'INSERT')
      or not has_table_privilege('service_role', 'public.credit_transactions', 'INSERT')
      or not has_table_privilege('service_role', 'public.profiles', 'UPDATE') then
