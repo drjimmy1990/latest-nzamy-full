@@ -4,6 +4,7 @@ import { SpecialtyDef, TypeDef, ConsultationType, ScheduleMode } from "@/compone
 import { timingLabelAr } from "@/components/consultation/buildConsultationIntake";
 import type { ConsultationAttachFailure } from "@/hooks/useConsultationForm";
 import Link from "next/link";
+import DisabledReason from "@/components/ui/DisabledReason";
 
 /**
  * The last step of the public booking wizard.
@@ -265,6 +266,20 @@ export function StepConfirm({
         </div>
       )}
 
+      <DisabledReason
+        className="w-full"
+        reason={
+          submitting
+            ? null
+            : backendDisabled
+              ? (isAr ? "الإرسال معطّل في وضع العرض التجريبي" : "Sending is disabled in demo mode")
+              : needsSignIn
+                ? (isAr ? "يلزم تسجيل الدخول لإرسال الطلب" : "Sign in to send this request")
+                : sessionLoading
+                  ? (isAr ? "جارٍ التحقق من تسجيل الدخول" : "Checking your sign-in")
+                  : null
+        }
+      >
       <motion.button
         whileHover={submitting || blocked ? undefined : { scale: 1.02 }}
         whileTap={submitting || blocked ? undefined : { scale: 0.98 }}
@@ -294,6 +309,7 @@ export function StepConfirm({
           </>
         )}
       </motion.button>
+      </DisabledReason>
     </div>
   );
 }

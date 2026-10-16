@@ -35,6 +35,9 @@ export default function IndividualsPage() {
   const [selectedService, setSelectedService] = useState<string | null>(null);
   const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
   const serviceList = isAr ? services.ar : services.en;
+  // The number of cards below, counted — never a literal (it said «٦» while
+  // being typed by hand).
+  const serviceCount = serviceList.length.toLocaleString(isAr ? "ar-SA" : "en-US");
   const faqList = isAr ? faqs.ar : faqs.en;
   const selected = serviceList.find((s) => s.id === selectedService) ?? null;
 
@@ -104,8 +107,8 @@ export default function IndividualsPage() {
                 </h1>
                 <p className="mt-6 max-w-[50ch] text-base leading-relaxed text-ink-muted dark:text-gray-400 md:text-lg">
                   {isAr
-                    ? "٦ خدمات قانونية متكاملة — من الاستشارة الفورية إلى التمثيل القضائي — بأسعار شفافة."
-                    : "6 comprehensive legal services — from instant consultation to court representation — with transparent pricing."}
+                    ? `${serviceCount} خدمات قانونية متكاملة — من الاستشارة إلى التمثيل القضائي — بأسعار شفافة.`
+                    : `${serviceCount} comprehensive legal services — from consultation to court representation — with transparent pricing.`}
                 </p>
 
                 {/*
@@ -210,7 +213,7 @@ export default function IndividualsPage() {
             >
               <span className="text-sm font-medium text-gold-dark">{isAr ? "اختر خدمتك" : "Choose Your Service"}</span>
               <h2 className="font-brand mt-2 text-3xl font-bold tracking-tight text-royal dark:text-white md:text-4xl">
-                {isAr ? "٦ خدمات قانونية متكاملة" : "6 Comprehensive Legal Services"}
+                {isAr ? `${serviceCount} خدمات قانونية متكاملة` : `${serviceCount} Comprehensive Legal Services`}
               </h2>
             </motion.div>
 
@@ -302,8 +305,8 @@ export default function IndividualsPage() {
               </h2>
               <p className="mx-auto mt-3 max-w-[65ch] text-sm text-ink-muted dark:text-gray-400">
                 {isAr
-                  ? "اختر المستوى المناسب لاحتياجك من الاستشارة الذكية الفورية حتى التمثيل القضائي المتكامل أمام المحاكم."
-                  : "Choose the level that suits your needs from 24/7 AI advisory to full court litigation representation."}
+                  ? "اختر المستوى المناسب لاحتياجك من الاستشارة الذكية حتى التمثيل القضائي المتكامل أمام المحاكم."
+                  : "Choose the level that suits your needs from AI advisory to full court litigation representation."}
               </p>
 
               {/* Billing Toggle */}

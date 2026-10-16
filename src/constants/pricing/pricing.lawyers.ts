@@ -55,7 +55,7 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
           "صلاحية ٦ أشهر",
         ],
         platform: ["Kanban + تقويم + السوق", "فريق: حتى ٣ أشخاص (٤٩ ر.س/مستخدم/شهر)"],
-        support: ["واتساب أولوية ٢٤/٧"],
+        support: ["دعم عبر واتساب"],
       },
     },
     {
@@ -125,7 +125,7 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
           "6-month validity",
         ],
         platform: ["Kanban + calendar + marketplace", "Team: up to 3 (SAR 49/user/month)"],
-        support: ["Priority WhatsApp 24/7"],
+        support: ["WhatsApp support"],
       },
     },
     {
@@ -301,7 +301,7 @@ export const comparisonLawyers: { ar: ComparisonCategory[]; en: ComparisonCatego
     { category: "الفريق والدعم", icon: Users, rows: [
       { feature: "أعضاء الفريق (الإضافي ٤٩ ر.س/شهر)","lawyer-free":"—","lawyer-basic": "—",       "lawyer-advanced": "—",      "lawyer-elite": "حتى ٣",  "lawyer-royal": "حتى ٣" },
       { feature: "Top Listing في السوق",     "lawyer-free": false,       "lawyer-basic": false,      "lawyer-advanced": false,    "lawyer-elite": false,    "lawyer-royal": true },
-      { feature: "الدعم",                    "lawyer-free": "بريد",      "lawyer-basic": "بريد",     "lawyer-advanced": "واتساب", "lawyer-elite": "واتساب ٢٤/٧","lawyer-royal": "VIP + مدير حساب" },
+      { feature: "الدعم",                    "lawyer-free": "بريد",      "lawyer-basic": "بريد",     "lawyer-advanced": "واتساب", "lawyer-elite": "واتساب","lawyer-royal": "VIP + مدير حساب" },
     ]},
   ],
   en: [
@@ -326,7 +326,7 @@ export const comparisonLawyers: { ar: ComparisonCategory[]; en: ComparisonCatego
     { category: "Team & Support", icon: Users, rows: [
       { feature: "Team members (SAR 49/mo each)","lawyer-free":"—","lawyer-basic":"—","lawyer-advanced":"—","lawyer-elite":"up to 3","lawyer-royal":"up to 3" },
       { feature: "Top Listing",               "lawyer-free": false, "lawyer-basic": false, "lawyer-advanced": false, "lawyer-elite": false, "lawyer-royal": true },
-      { feature: "Support",                   "lawyer-free": "Email","lawyer-basic":"Email","lawyer-advanced":"WhatsApp","lawyer-elite":"WhatsApp 24/7","lawyer-royal":"VIP + Account Mgr" },
+      { feature: "Support",                   "lawyer-free": "Email","lawyer-basic":"Email","lawyer-advanced":"WhatsApp","lawyer-elite":"WhatsApp","lawyer-royal":"VIP + Account Mgr" },
     ]},
   ],
 };

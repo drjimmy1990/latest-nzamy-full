@@ -186,3 +186,23 @@ test("the owner gate covers BOTH corporate write arms and runs before either wri
       routeSource.indexOf("const touchesBusinessRow =") < routeSource.indexOf(".update(businessProfilePatch)"),
   );
 });
+
+// Owner decision ٥٥: whether the bag's phone may be a 920 number depends on
+// the account type, so the bag is validated once user_type is read — and
+// still before anything is written.
+test("entitySettings is validated with the account type's 920 permission, before any write", () => {
+  const src = routeSource.replace(/\r\n/g, "\n");
+  const read = src.indexOf('.select("user_type")');
+  const validate = src.indexOf("validateEntitySettingsPatch(entitySettingsRaw, {\n      allowUnifiedPhone: acceptsUnifiedNumber(baseProfile.user_type),");
+  const firstWrite = src.indexOf("let profile = null;");
+  assert.ok(read > 0 && validate > read, "validated after user_type is known");
+  assert.ok(firstWrite > validate, "validated before the first write");
+  assert.equal((src.match(/validateEntitySettingsPatch\(/g) ?? []).length, 1, "one validation, not an early one with other rules");
+});
+
+test("national_address (owner ٥٦/٥٧) is allow-listed, validated, and a blank clears it", () => {
+  const src = routeSource.replace(/\r\n/g, "\n");
+  assert.match(src, /\n    "nationality",\n[\s\S]{0,200}?\n    "national_address",\n  \];/);
+  assert.match(src, /const issue = nationalAddressIssue\(body\.national_address\);/);
+  assert.match(src, /body\.national_address = body\.national_address\.trim\(\) \|\| null;/);
+});

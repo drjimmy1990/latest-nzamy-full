@@ -13,7 +13,7 @@ export function sanitizePhoneDigits(value: string): string {
 }
 
 /** Why a value is not a Saudi mobile. One reason per message; see `AR_MESSAGE`. */
-export type SaudiMobileReason = "empty" | "letters" | "length" | "prefix";
+export type SaudiMobileReason = "empty" | "letters" | "length" | "prefix" | "unified";
 
 export type SaudiMobileResult =
   | { ok: true; e164: string }
@@ -31,10 +31,13 @@ const AR_MESSAGE: Record<SaudiMobileReason, string> = {
   letters: "رقم الجوال يجب أن يحتوي على أرقام فقط.",
   length: "رقم الجوال السعودي مكوّن من ١٠ أرقام — مثال: 0512345678",
   prefix: "أدخل رقم جوال سعودي يبدأ بـ 05 — مثال: 0512345678",
+  // Owner decision ٥٥: a 920 number is a company's or a firm's, never a
+  // person's mobile — said in so many words rather than as a bad prefix.
+  unified: "هذا رقم موحّد (920) وليس رقم جوال — أدخل رقم جوال يبدأ بـ 05، مثال: 0512345678",
 };
 
 /** The Arabic message for a failed result; `""` for a successful one. */
-export function saudiMobileMessage(result: SaudiMobileResult): string {
+export function saudiMobileMessage(result: SaudiMobileResult | ContactPhoneResult): string {
   return result.ok ? "" : AR_MESSAGE[result.reason];
 }
 
@@ -81,6 +84,7 @@ export function normalizeSaudiMobile(raw: unknown): SaudiMobileResult {
   // foreign number) is a different mistake from a mobile with a digit missing,
   // and telling someone "Saudi mobiles are 10 digits" about a Cairo number is
   // worse than saying nothing.
+  if (UNIFIED_RE.test(subscriber)) return { ok: false, reason: "unified" };
   if (!subscriber.startsWith("5")) return { ok: false, reason: "prefix" };
   if (subscriber.length !== 9) return { ok: false, reason: "length" };
 
@@ -111,4 +115,68 @@ export function saudiMobileOrNull(raw: unknown): string | null {
  */
 export function hasValidSaudiMobile(raw: unknown): boolean {
   return normalizeSaudiMobile(raw).ok;
+}
+
+// ── Unified numbers (الرقم الموحد, 920) — owner decision ٥٥ ────────────────
+//
+// «مقبولة للشركات والمكاتب، وتُمنع للأفراد المستقلين» (answers of 2026-10-06).
+// So a 920 number is accepted as an ENTITY's contact number — the «رقم
+// التواصل» in the firm / company settings bag — and never as a person's
+// mobile: `profiles.phone` stays a mobile for every account (it is the
+// WhatsApp recipient and the onboarding gate's number; the DB constraint
+// profiles_phone_e164_saudi_mobile is unchanged).
+//
+// Shape: 920 then six digits, nine in all — the 9200XXXXX "universal access
+// number" range in stc's 2025 reference interconnection offer. It is a
+// shared-cost number dialled inside the Kingdom, so it is stored the way it
+// is dialled there (`920012345`), never as +966….
+
+/** 920 followed by six digits. */
+const UNIFIED_RE = /^920[0-9]{6}$/;
+
+export type SaudiUnifiedResult = { ok: true; national: string } | { ok: false };
+
+/** A Saudi unified number in its dialled form (`920012345`), or not one. */
+export function normalizeSaudiUnifiedNumber(raw: unknown): SaudiUnifiedResult {
+  if (typeof raw !== "string") return { ok: false };
+  const stripped = toAsciiDigits(raw).replace(STRIP_RE, "");
+  if (!DIGITS_RE.test(stripped)) return { ok: false };
+  const digits = stripped.replace(/^\+/, "");
+  const national = digits.startsWith("00966") ? digits.slice(5) : digits.startsWith("966") ? digits.slice(3) : digits;
+  return UNIFIED_RE.test(national) ? { ok: true, national } : { ok: false };
+}
+
+/** The account types whose entity contact number may be a 920 number: firms and companies. */
+export const UNIFIED_NUMBER_ACCOUNT_TYPES: readonly string[] = ["firm", "corporate", "micro"];
+
+export function acceptsUnifiedNumber(userType: string | null | undefined): boolean {
+  return typeof userType === "string" && UNIFIED_NUMBER_ACCOUNT_TYPES.includes(userType);
+}
+
+export type ContactPhoneResult =
+  | { ok: true; value: string }
+  | { ok: false; reason: SaudiMobileReason };
+
+/**
+ * An entity's contact number: a Saudi mobile (stored E.164), or — when
+ * `allowUnified` — a 920 number (stored as dialled). Anything else fails with
+ * normalizeSaudiMobile's reason.
+ */
+export function normalizeContactPhone(raw: unknown, opts: { allowUnified: boolean }): ContactPhoneResult {
+  const mobile = normalizeSaudiMobile(raw);
+  if (mobile.ok) return { ok: true, value: mobile.e164 };
+  if (opts.allowUnified) {
+    const unified = normalizeSaudiUnifiedNumber(raw);
+    if (unified.ok) return { ok: true, value: unified.national };
+  }
+  return mobile;
+}
+
+/** The Arabic message for a failed contact number; names 920 where it is allowed. */
+export function contactPhoneMessage(result: ContactPhoneResult, opts: { allowUnified: boolean }): string {
+  if (result.ok) return "";
+  if (opts.allowUnified && (result.reason === "prefix" || result.reason === "length")) {
+    return "أدخل رقم جوال يبدأ بـ 05 (مثال: 0512345678) أو رقماً موحّداً يبدأ بـ 920 (مثال: 920012345)";
+  }
+  return saudiMobileMessage(result);
 }

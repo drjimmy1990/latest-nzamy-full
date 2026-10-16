@@ -48,6 +48,15 @@ import {
   toProviderSubRole,
   type DbUserType,
 } from "@/lib/auth/userTypes";
+import PlanRequestCard from "@/components/pricing/PlanRequestCard";
+import { getPlanList } from "@/constants/pricingData";
+import { resolveRequestedPlan } from "@/lib/pricing/planRequest";
+import {
+  clearPendingPlan,
+  planAudienceForUserType,
+  readPendingPlan,
+  sessionStorageOrNull,
+} from "@/lib/pricing/pendingPlan";
 
 type UserType = DbUserType | null;
 type Step = 1 | 2 | 3 | 4 | 5;
@@ -674,10 +683,17 @@ function S5({
   userType,
   hasLawyer,
   typeWasNotChanged,
+  requestedPlan,
 }: {
   isAr: boolean;
   userType: UserType;
   hasLawyer: boolean | null;
+  /**
+   * The plan a Google sign-up was started for on /register/client, resolved
+   * against this account's own plan list; null when there is none (see
+   * src/lib/pricing/pendingPlan.ts).
+   */
+  requestedPlan: { id: string; name: string } | null;
   /**
    * True when the type the account ended up with is not the one that was
    * picked — either it was already set, or the account had already finished
@@ -717,6 +733,12 @@ function S5({
             ? "لم يتغيّر نوع حسابك — يُحدَّد مرة واحدة فقط. لتغييره تحتاج إلى مراجعة إدارة المنصّة."
             : "Your account type was not changed — it is set once. Changing it requires the platform administrators."}
         </p>
+      )}
+      {/* Signed in through OAuth, so the request can be sent right away. */}
+      {requestedPlan && (
+        <div className="mb-3 text-start">
+          <PlanRequestCard plan={requestedPlan} canRequestNow />
+        </div>
       )}
       <div className="space-y-3 text-start">
         {[
@@ -802,6 +824,23 @@ export default function OnboardingPage() {
    */
   const userType: UserType =
     existingUserType ?? (pickerId ? toDbUserType(pickerId) : null);
+
+  // A Google sign-up started from a /pricing plan left that plan id in this
+  // tab's sessionStorage (src/lib/pricing/pendingPlan.ts). Read once; it is
+  // offered on the last step, and only when the account's final type can
+  // request it (resolveRequestedPlan — a company plan is never offered to an
+  // individual). Demo mode has no backend to send the request to.
+  const [pendingPlanId] = useState<string | null>(() =>
+    isSupabaseMode ? readPendingPlan(sessionStorageOrNull()) : null,
+  );
+  const finalUserType = resolvedUserType ?? userType;
+  const planAudience = planAudienceForUserType(finalUserType);
+  const requestedPlan =
+    pendingPlanId && planAudience ? resolveRequestedPlan(pendingPlanId, getPlanList(planAudience, true)) : null;
+  // Shown once: the last step clears it, so a later visit does not offer it again.
+  useEffect(() => {
+    if (step === 5) clearPendingPlan(sessionStorageOrNull());
+  }, [step]);
 
   // Read the account's real type from `profiles` — not from user_metadata,
   // which an OAuth provider never populates. A type that is already set is
@@ -1139,6 +1178,7 @@ export default function OnboardingPage() {
                     typeWasNotChanged={
                       resolvedUserType !== null && pickerId !== null && resolvedUserType !== toDbUserType(pickerId)
                     }
+                    requestedPlan={requestedPlan}
                   />
                 )}
               </AnimatePresence>

@@ -1,8 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  acceptsUnifiedNumber,
+  contactPhoneMessage,
   hasValidSaudiMobile,
+  normalizeContactPhone,
   normalizeSaudiMobile,
+  normalizeSaudiUnifiedNumber,
   sanitizePhoneDigits,
   saudiMobileMessage,
   saudiMobileOrNull,
@@ -125,4 +129,40 @@ test("numeric input sanitizer blocks letters and normalizes Arabic digits", () =
   assert.equal(sanitizePhoneDigits("٠٥a١-٢ ٣x٤٥٦٧٨"), "0512345678");
   assert.equal(sanitizePhoneDigits("name@firm.com"), "");
   assert.equal(toAsciiDigits("٠١٢٣٤٥٦٧٨٩ ۰۱۲۳۴۵۶۷۸۹"), "0123456789 0123456789");
+});
+
+// ── owner decision ٥٥: 920 unified numbers ───────────────────────────────────
+
+test("a 920 number is never a personal mobile, and the refusal says why", () => {
+  for (const raw of ["920012345", "+966920012345", "9200 12345"]) {
+    const r = normalizeSaudiMobile(raw);
+    assert.deepEqual(r, { ok: false, reason: "unified" }, raw);
+  }
+  assert.match(saudiMobileMessage({ ok: false, reason: "unified" }), /920/);
+});
+
+test("normalizeSaudiUnifiedNumber: 920 + six digits, folded to the dialled form", () => {
+  for (const raw of ["920012345", " 9200-12345 ", "+966 920012345", "00966920012345", "966920012345", "٩٢٠٠١٢٣٤٥"]) {
+    assert.deepEqual(normalizeSaudiUnifiedNumber(raw), { ok: true, national: "920012345" }, raw);
+  }
+  for (const raw of ["92001234", "9200123456", "0920012345", "921012345", "800123456", "0512345678", "abc", "", null, 920012345]) {
+    assert.deepEqual(normalizeSaudiUnifiedNumber(raw), { ok: false }, String(raw));
+  }
+});
+
+test("only firms and companies may use a 920 number as their contact number", () => {
+  for (const t of ["firm", "corporate", "micro"]) assert.equal(acceptsUnifiedNumber(t), true, t);
+  for (const t of ["individual", "lawyer", "provider", "government", "ngo", "admin", "", null, undefined]) {
+    assert.equal(acceptsUnifiedNumber(t), false, String(t));
+  }
+});
+
+test("normalizeContactPhone: a mobile everywhere, a 920 number only when allowed", () => {
+  assert.deepEqual(normalizeContactPhone("0512345678", { allowUnified: false }), { ok: true, value: "+966512345678" });
+  assert.deepEqual(normalizeContactPhone("920012345", { allowUnified: true }), { ok: true, value: "920012345" });
+  const refused = normalizeContactPhone("920012345", { allowUnified: false });
+  assert.deepEqual(refused, { ok: false, reason: "unified" });
+  assert.equal(contactPhoneMessage(refused, { allowUnified: false }), saudiMobileMessage({ ok: false, reason: "unified" }));
+  assert.match(contactPhoneMessage(normalizeContactPhone("0112345678", { allowUnified: true }), { allowUnified: true }), /920/);
+  assert.doesNotMatch(contactPhoneMessage(normalizeContactPhone("0112345678", { allowUnified: false }), { allowUnified: false }), /920/);
 });

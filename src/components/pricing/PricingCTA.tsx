@@ -37,7 +37,7 @@ export function PricingCTA({ isAr }: PricingCTAProps) {
             </a>
           </div>
           <p className="mt-5 text-xs text-white/40">
-            {isAr ? "ضمان استرداد كامل خلال ١٤ يوماً · بدون عقود طويلة" : "14-day money-back guarantee · No long-term contracts"}
+            {isAr ? "استرداد خلال ١٤ يوماً ما لم تُستهلك نقاط الذكاء الاصطناعي · بدون عقود طويلة" : "Refundable within 14 days unless AI points were used · No long-term contracts"}
           </p>
         </motion.div>
       </div>

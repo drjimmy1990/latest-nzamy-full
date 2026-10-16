@@ -78,9 +78,9 @@ const faqData: FAQItem[] = [
     questionAr: "هل يوجد تطبيق للجوال؟",
     questionEn: "Is there a mobile app?",
     answerAr:
-      "نعم، تطبيق نظامي متاح على متجر App Store وGoogle Play. يتيح التطبيق جميع ميزات المنصة مع إشعارات فورية ومتابعة حالة الطلبات.",
+      "لا يوجد تطبيق لنظامي في App Store أو Google Play حالياً. تعمل المنصة من متصفح الجوال.",
     answerEn:
-      "Yes, the Nezamy app is available on the App Store and Google Play. The app provides all platform features with instant notifications and order status tracking.",
+      "There is no Nezamy app in the App Store or Google Play yet. The platform works in your phone's browser.",
   },
   // Clients
   {

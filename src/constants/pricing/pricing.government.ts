@@ -36,7 +36,7 @@ export const plansGovernment: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: ["جميع أدوات AI (١٩+ أداة متخصصة)", "نماذج مخصصة للجهة", "واجهة API للربط مع الأنظمة الداخلية", "تقارير AI تلقائية"],
         platform: ["حتى ١٠٠ مستخدم", "أدوار فرعية (قاضي/نيابة/ضابط/مستشار)", "لوحة إدارة مركزية", "ربط SSO + Active Directory"],
-        support: ["مدير حساب حكومي مخصص", "دعم على مدار الساعة", "تدريب ميداني + توثيق مخصص"],
+        support: ["مدير حساب حكومي مخصص", "تدريب ميداني + توثيق مخصص"],
       },
     },
   ],
@@ -71,7 +71,7 @@ export const plansGovernment: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: ["All AI tools (19+ specialized)", "Custom models for the entity", "API integration with internal systems", "Automated AI reports"],
         platform: ["Up to 100 users", "Sub-roles (Judge/Prosecutor/Officer/Counsel)", "Central admin dashboard", "SSO + Active Directory integration"],
-        support: ["Dedicated government account manager", "24/7 support", "On-site training + custom documentation"],
+        support: ["Dedicated government account manager", "On-site training + custom documentation"],
       },
     },
   ],
@@ -94,7 +94,7 @@ export const comparisonGovernment: { ar: ComparisonCategory[]; en: ComparisonCat
       { feature: "رادار الامتثال",                 "gov-eval": false,            "gov-department": "تفاعلي",          "gov-enterprise": "آلي + تصدير" },
     ]},
     { category: "الدعم والتدريب", icon: Gavel, rows: [
-      { feature: "الدعم الفني",                    "gov-eval": "بريد إلكتروني",  "gov-department": "أولوية",           "gov-enterprise": "٢٤/٧" },
+      { feature: "الدعم الفني",                    "gov-eval": "بريد إلكتروني",  "gov-department": "أولوية",           "gov-enterprise": "مدير حساب مخصص" },
       { feature: "التدريب",                         "gov-eval": false,            "gov-department": "عن بُعد",          "gov-enterprise": "ميداني + مخصص" },
       { feature: "مدير حساب",                       "gov-eval": false,            "gov-department": false,             "gov-enterprise": true },
     ]},
@@ -114,7 +114,7 @@ export const comparisonGovernment: { ar: ComparisonCategory[]; en: ComparisonCat
       { feature: "Compliance Radar",                 "gov-eval": false,            "gov-department": "Interactive",     "gov-enterprise": "Auto + Export" },
     ]},
     { category: "Support & Training", icon: Gavel, rows: [
-      { feature: "Technical Support",                "gov-eval": "Email",          "gov-department": "Priority",        "gov-enterprise": "24/7" },
+      { feature: "Technical Support",                "gov-eval": "Email",          "gov-department": "Priority",        "gov-enterprise": "Dedicated account manager" },
       { feature: "Training",                          "gov-eval": false,            "gov-department": "Remote",          "gov-enterprise": "On-site + Custom" },
       { feature: "Account Manager",                   "gov-eval": false,            "gov-department": false,             "gov-enterprise": true },
     ]},

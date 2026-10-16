@@ -752,7 +752,7 @@ export default function NewConsultationPage() {
                       </p>
                     )}
                     <div className="flex flex-col gap-1 mt-2.5">
-                      {["إجابة فورية ٢٤/٧", "استناد للأنظمة السعودية", "سرية تامة"].map(f => (
+                      {["بدون حجز موعد", "استناد للأنظمة السعودية", "سرية تامة"].map(f => (
                         <span key={f} className={`flex items-center gap-1 text-[10px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
                           <Check size={9} weight="bold" className="text-amber-500" /> {f}
                         </span>
@@ -760,7 +760,7 @@ export default function NewConsultationPage() {
                     </div>
                   </div>
                   <span className="text-[10px] bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2.5 py-1 rounded-full font-bold">
-                    متاح ٢٤/٧
+                    بدون حجز
                   </span>
                 </motion.button>
 

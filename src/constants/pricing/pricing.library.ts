@@ -45,7 +45,6 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث ذكي AI في المكتبة القانونية",
-          "تحديثات يومية فور صدور الأنظمة",
           "٣ دعوات لزملائك (تجربة ١ شهر لكل دعوة)",
         ],
         platform: [
@@ -74,7 +73,6 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث ذكي AI في المكتبة القانونية",
-          "تحديثات يومية فور صدور الأنظمة",
           "٣ دعوات لزملائك (تجربة ٢ شهر لكل دعوة)",
           "إشعارات تشريعية فورية",
         ],
@@ -107,7 +105,6 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث ذكي AI في المكتبة القانونية",
-          "تحديثات يومية فور صدور الأنظمة",
           "٣ دعوات لزملائك (تجربة ٣ أشهر لكل دعوة)",
           "إشعارات تشريعية فورية",
           "تصدير نصوص الأنظمة بصيغة PDF",
@@ -118,7 +115,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
           "إضافة للمسودة والحافظة",
           "مشاركة مقتطفات الأنظمة",
         ],
-        support: ["واتساب أولوية", "مدير حساب شخصي"],
+        support: ["دعم عبر واتساب", "مدير حساب شخصي"],
       },
     },
   ],
@@ -142,7 +139,6 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "Full access to laws, regulations & principles",
           "AI-powered smart search",
-          "Daily updates as new laws are issued",
           "3 colleague invitations (1-month trial each)",
         ],
         platform: [
@@ -171,9 +167,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "Full access to laws, regulations & principles",
           "AI-powered smart search",
-          "Daily updates as new laws are issued",
           "3 colleague invitations (2-month trial each)",
-          "Instant legislative alerts",
         ],
         platform: [
           "Focus reading mode",
@@ -202,9 +196,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "Full access to laws, regulations & principles",
           "AI-powered smart search",
-          "Daily updates as new laws are issued",
           "3 colleague invitations (3-month trial each)",
-          "Instant legislative alerts",
           "Export law texts as PDF",
         ],
         platform: [
@@ -213,7 +205,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
           "Draft cart & clipboard",
           "Share law excerpts",
         ],
-        support: ["Priority WhatsApp", "Dedicated account manager"],
+        support: ["WhatsApp support", "Dedicated account manager"],
       },
     },
   ],
@@ -241,7 +233,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث ذكي AI في المكتبة القانونية لكل الأعضاء",
-          "تحديثات يومية فور صدور الأنظمة",
           "٣ دعوات لزملائك (تجربة ٣ أشهر لكل دعوة)",
         ],
         platform: [
@@ -272,7 +263,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث ذكي AI في المكتبة القانونية لكل الأعضاء",
-          "تحديثات يومية فور صدور الأنظمة",
           "٣ دعوات لزملائك (تجربة ٣ أشهر لكل دعوة)",
         ],
         platform: [
@@ -280,7 +270,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
           "قراءة هادئة — وضع التركيز",
           "حفظ المفضلة والملاحظات المشتركة",
         ],
-        support: ["دعم واتساب أولوية"],
+        support: ["دعم عبر واتساب"],
       },
     },
     {
@@ -303,7 +293,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث ذكي AI في المكتبة القانونية لكل الأعضاء",
-          "تحديثات يومية فور صدور الأنظمة",
           "٣ دعوات لزملائك (تجربة ٣ أشهر لكل دعوة)",
         ],
         platform: [
@@ -311,7 +300,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
           "قراءة هادئة — وضع التركيز",
           "حفظ المفضلة والملاحظات المشتركة",
         ],
-        support: ["دعم واتساب أولوية", "مدير حساب مخصص"],
+        support: ["دعم عبر واتساب", "مدير حساب مخصص"],
       },
     },
     {
@@ -334,7 +323,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث ذكي AI في المكتبة القانونية لكل الأعضاء",
-          "تحديثات يومية فور صدور الأنظمة",
           "دعوات للزملاء مخصصة حسب الطلب",
         ],
         platform: [
@@ -342,7 +330,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
           "قراءة هادئة — وضع التركيز",
           "حفظ المفضلة والملاحظات المشتركة",
         ],
-        support: ["دعم على مدار الساعة", "مدير حساب مخصص"],
+        support: ["مدير حساب مخصص"],
       },
     },
   ],
@@ -367,7 +355,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "Full access to laws, regulations & principles",
           "AI-powered smart search for all team members",
-          "Daily updates as new laws are issued",
           "3 colleague invitations (3-month trial each)",
         ],
         platform: [
@@ -398,7 +385,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "Full access to laws, regulations & principles",
           "AI-powered smart search for all team members",
-          "Daily updates as new laws are issued",
           "3 colleague invitations (3-month trial each)",
         ],
         platform: [
@@ -406,7 +392,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
           "Focus reading mode",
           "Shared favorites & notes",
         ],
-        support: ["Priority WhatsApp support"],
+        support: ["WhatsApp support"],
       },
     },
     {
@@ -429,7 +415,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "Full access to laws, regulations & principles",
           "AI-powered smart search for all team members",
-          "Daily updates as new laws are issued",
           "3 colleague invitations (3-month trial each)",
         ],
         platform: [
@@ -437,7 +422,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
           "Focus reading mode",
           "Shared favorites & notes",
         ],
-        support: ["Priority WhatsApp & account manager"],
+        support: ["WhatsApp support & account manager"],
       },
     },
     {
@@ -460,7 +445,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "Full access to laws, regulations & principles",
           "AI-powered smart search for all team members",
-          "Daily updates as new laws are issued",
           "Custom colleague invites",
         ],
         platform: [
@@ -468,7 +452,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
           "Focus reading mode",
           "Shared favorites & notes",
         ],
-        support: ["24/7 dedicated support & SLA"],
+        support: ["Dedicated account manager"],
       },
     },
   ],

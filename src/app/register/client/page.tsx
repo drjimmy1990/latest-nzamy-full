@@ -38,6 +38,7 @@ import {
 import { BACKEND_MODE } from "@/lib/runtimeMode";
 import { getPlanList, type AudienceTab } from "@/constants/pricingData";
 import { resolveRequestedPlan } from "@/lib/pricing/planRequest";
+import { savePendingPlan, sessionStorageOrNull } from "@/lib/pricing/pendingPlan";
 
 // The /pricing audience whose plans a given account type can sign up for.
 const AUDIENCE_BY_CLIENT_TYPE: Record<NonNullable<ClientType>, AudienceTab> = {
@@ -454,8 +455,10 @@ export default function RegisterClientPage() {
                 </div>
               )}
 
-              {/* OR Google */}
-              {step === 1 && (
+              {/* OR Google — on step 2 as well: every /pricing plan CTA links
+                  here with ?type=, which opens the form on step 2, so a Google
+                  sign-up started from a plan would otherwise need «السابق». */}
+              {(step === 1 || step === 2) && (
                 <div className="mt-6">
                   <div className="flex items-center gap-3 mb-4">
                     <div className="flex-1 h-px bg-slate-200 dark:bg-white/10" />
@@ -465,6 +468,12 @@ export default function RegisterClientPage() {
                   <button
                     onClick={async () => {
                       if (BACKEND_MODE === "supabase") {
+                        // The plan cannot ride on redirectTo (GoTrue's redirect
+                        // allow-list may refuse it, and Google sign-in would then
+                        // fail silently): it waits in this tab's sessionStorage
+                        // for the onboarding wizard. Best-effort — sign-in goes
+                        // ahead whether or not it was saved.
+                        savePendingPlan(sessionStorageOrNull(), planParam);
                         const supabase = createClient();
                         await supabase.auth.signInWithOAuth({
                           provider: "google",

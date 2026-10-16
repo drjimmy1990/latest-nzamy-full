@@ -23,6 +23,7 @@ import {
 } from "@/lib/services/profileFormTransform";
 import { normalizeSaudiMobile, saudiMobileMessage } from "@/lib/services/saudiMobile";
 import { LocalActionStatus, SectionTitle } from "./_shared";
+import DisabledReason from "@/components/ui/DisabledReason";
 import DensityToggle from "@/components/DensityToggle";
 
 // ── The server envelope (GET/PATCH /api/v1/profile) — only the fields this tab reads ──
@@ -560,6 +561,17 @@ export function ProfileTab() {
       )}
       <LocalActionStatus show={Boolean(localMessage)} message={localMessage ?? undefined} />
 
+      <DisabledReason
+        reason={
+          loadFailed
+            ? "تعذّر تحميل بياناتك — أعد تحميل الصفحة ثم احفظ"
+            : isSupabaseMode && !isLoggedIn
+              ? "سجّل الدخول لحفظ التغييرات"
+              : !ready
+                ? "جارٍ تحميل بياناتك"
+                : null
+        }
+      >
       <motion.button
         whileTap={{ scale: 0.98, y: 1 }}
         onClick={handleSave}
@@ -580,6 +592,7 @@ export function ProfileTab() {
         ) : null}
         {saving ? "جاري الحفظ..." : saved ? "تم الحفظ" : "حفظ التغييرات"}
       </motion.button>
+      </DisabledReason>
     </div>
   );
 }

@@ -95,7 +95,7 @@ export default function TrackingPage() {
               className="flex flex-wrap justify-center gap-5"
             >
               {[
-                { icon: Bell, ar: "إشعارات فورية", en: "Instant Notifications" },
+                { icon: Bell, ar: "إشعار عند اكتمال الطلب", en: "Notified on completion" },
                 { icon: ChartBar, ar: "تقارير تفصيلية", en: "Detailed Reports" },
                 { icon: MapPin, ar: "تتبع مباشر", en: "Live Tracking" },
               ].map((feature, i) => (

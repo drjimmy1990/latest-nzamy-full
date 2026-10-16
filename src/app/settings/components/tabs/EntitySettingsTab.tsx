@@ -8,6 +8,7 @@ import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
 import { entityProfileTableFor } from "@/lib/services/profileSettingsFields";
 import { LEGAL_REP_CAPACITIES } from "@/app/register/client/components/_corporateIdentity";
 import { EmptyPanel, LocalActionStatus, SectionTitle } from "./_shared";
+import DisabledReason from "@/components/ui/DisabledReason";
 
 import {
   entitySettingsFieldsFor,
@@ -15,7 +16,7 @@ import {
   splitEntityTabValues,
   type FieldDef,
 } from "./_entitySettingsFields";
-import { normalizeSaudiMobile, saudiMobileMessage } from "@/lib/services/saudiMobile";
+import { acceptsUnifiedNumber, contactPhoneMessage, normalizeContactPhone } from "@/lib/services/saudiMobile";
 
 // ── Field definitions per entity type ──────────────────────────────────
 //
@@ -89,13 +90,15 @@ export function EntitySettingsTab() {
   const [phoneTouched, setPhoneTouched] = useState(false);
   const [scope, setScope] = useState<BusinessProfileScope>("owner");
 
-  // The bag's `phone` key is a Saudi mobile for every entity type — the server
-  // normalises it to E.164 and 400s anything else (validateEntitySettingsPatch).
+  // The bag's `phone` key is a Saudi mobile — or, for firms and companies, a
+  // 920 unified number (owner decision ٥٥) — the server normalises it and 400s
+  // anything else (validateEntitySettingsPatch with acceptsUnifiedNumber).
   // Checking it here too is what turns that 400 into a message beside the field
   // instead of a red banner after a round trip.
   const phoneInBag = settingsFields.some((f) => f.key === "phone");
   const phoneRaw = values.phone ?? "";
-  const phoneResult = normalizeSaudiMobile(phoneRaw);
+  const allowUnified = acceptsUnifiedNumber(userType);
+  const phoneResult = normalizeContactPhone(phoneRaw, { allowUnified });
   const phoneInvalid = phoneInBag && phoneRaw.trim() !== "" && !phoneResult.ok;
 
   // WP-6 B-2 — owner-only writes (plan §5 Q2). A member reads the company's
@@ -192,7 +195,7 @@ export function EntitySettingsTab() {
     // just typed — so the field is fixed first.
     if (phoneInvalid) {
       setPhoneTouched(true);
-      setError(saudiMobileMessage(phoneResult));
+      setError(contactPhoneMessage(phoneResult, { allowUnified }));
       return;
     }
 
@@ -289,7 +292,7 @@ export function EntitySettingsTab() {
           }`}
         />
         {showPhoneError && (
-          <p className="mt-1.5 text-xs text-rose-600 dark:text-rose-400">{saudiMobileMessage(phoneResult)}</p>
+          <p className="mt-1.5 text-xs text-rose-600 dark:text-rose-400">{contactPhoneMessage(phoneResult, { allowUnified })}</p>
         )}
       </div>
     );
@@ -389,6 +392,9 @@ export function EntitySettingsTab() {
           still read as «you could save if you tried harder», and the PATCH
           behind it answers 403 «تعديل بيانات الشركة متاح لمالك الحساب فقط». */}
       {!readOnly && (
+      <DisabledReason
+        reason={loadFailed ? "تعذّر تحميل البيانات — أعد تحميل الصفحة ثم احفظ" : !ready ? "جارٍ تحميل البيانات" : null}
+      >
       <motion.button
         whileTap={{ scale: 0.98, y: 1 }}
         onClick={handleSave}
@@ -402,6 +408,7 @@ export function EntitySettingsTab() {
         ) : null}
         {saving ? "جاري الحفظ..." : saved ? "تم الحفظ" : "حفظ التغييرات"}
       </motion.button>
+      </DisabledReason>
       )}
     </div>
   );

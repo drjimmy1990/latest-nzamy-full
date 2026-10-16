@@ -30,7 +30,7 @@
  * its own, so `node --test` resolves it without the bundler.
  */
 
-import { normalizeSaudiMobile, saudiMobileMessage } from "./saudiMobile.ts";
+import { contactPhoneMessage, normalizeContactPhone } from "./saudiMobile.ts";
 
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -46,6 +46,21 @@ export function nationalityIssue(value: unknown): string | null {
   if (value === null) return null;
   if (typeof value !== "string") return "الجنسية يجب أن تكون نصاً أو فارغة.";
   if (value.length > MAX_NATIONALITY_LENGTH) return `الجنسية يجب ألا تتجاوز ${MAX_NATIONALITY_LENGTH} حرفاً.`;
+  return null;
+}
+
+const MAX_NATIONAL_ADDRESS_LENGTH = 300;
+
+/**
+ * Arabic reason `profiles.national_address` is refused, or null (owner
+ * decisions ٥٦/٥٧ — optional, for invoices; migration 20261017_10). null
+ * clears it; the route stores a blank string as null too, because the column's
+ * CHECK refuses blanks.
+ */
+export function nationalAddressIssue(value: unknown): string | null {
+  if (value === null) return null;
+  if (typeof value !== "string") return "العنوان الوطني يجب أن يكون نصاً أو فارغاً.";
+  if (value.trim().length > MAX_NATIONAL_ADDRESS_LENGTH) return `العنوان الوطني يجب ألا يتجاوز ${MAX_NATIONAL_ADDRESS_LENGTH} حرفاً.`;
   return null;
 }
 
@@ -106,7 +121,10 @@ export const ENTITY_SETTINGS_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  *
  * Two keys carry a FORMAT on top of that, for every entity type (WP-6 B-1;
  * until now the bag accepted any string for both, which is how an e-mail
- * address could be stored as a firm's phone number):
+ * address could be stored as a firm's phone number). `allowUnifiedPhone`
+ * (owner decision ٥٥ — the route sets it from the account type through
+ * acceptsUnifiedNumber: firms and companies) also lets `phone` be a 920
+ * unified number, stored as dialled (`920012345`):
  *   • `phone` — a Saudi mobile, normalised to E.164 (`+9665XXXXXXXX`) by
  *     `normalizeSaudiMobile`, so the value the bag holds matches what
  *     `profiles.phone` holds after 20260921_04. `null` still clears it; an
@@ -117,7 +135,11 @@ export const ENTITY_SETTINGS_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * The refusal message for `phone` is `saudiMobileMessage`'s, so the user is
  * told WHICH of the four things is wrong rather than «غير صحيح».
  */
-export function validateEntitySettingsPatch(value: unknown): EntitySettingsPatchValidation {
+export function validateEntitySettingsPatch(
+  value: unknown,
+  opts: { allowUnifiedPhone?: boolean } = {},
+): EntitySettingsPatchValidation {
+  const allowUnified = opts.allowUnifiedPhone === true;
   if (!isPlainObject(value)) return { ok: false, error: "بيانات إعدادات الكيان يجب أن تكون كائناً." };
 
   const patch: Record<string, EntitySettingsValue> = {};
@@ -139,9 +161,9 @@ export function validateEntitySettingsPatch(value: unknown): EntitySettingsPatch
         if (v.trim() === "") {
           patch[key] = null;
         } else {
-          const mobile = normalizeSaudiMobile(v);
-          if (!mobile.ok) return { ok: false, error: saudiMobileMessage(mobile) };
-          patch[key] = mobile.e164;
+          const phone = normalizeContactPhone(v, { allowUnified });
+          if (!phone.ok) return { ok: false, error: contactPhoneMessage(phone, { allowUnified }) };
+          patch[key] = phone.value;
         }
       } else if (key === "email") {
         const trimmed = v.trim();

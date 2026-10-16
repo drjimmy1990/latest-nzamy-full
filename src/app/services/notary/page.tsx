@@ -128,8 +128,8 @@ const comparisonRows = [
   {
     label_ar: "التوفر",
     label_en: "Availability",
-    online_ar: "٢٤/٧",
-    online_en: "24/7",
+    online_ar: "تقديم الطلب إلكترونياً في أي وقت",
+    online_en: "Submit the request online anytime",
     inperson_ar: "أوقات الدوام فقط",
     inperson_en: "Office hours only",
   },
@@ -281,8 +281,8 @@ export default function NotaryPage() {
               >
                 {serviceType === "online"
                   ? isRTL
-                    ? "توثيق رقمي سريع، متاح ٢٤/٧، ختم إلكتروني معتمد"
-                    : "Fast digital notarization, available 24/7, certified electronic seal"
+                    ? "توثيق رقمي سريع، ختم إلكتروني معتمد"
+                    : "Fast digital notarization, certified electronic seal"
                   : isRTL
                   ? "توثيق حضوري في مكاتبنا أو لدى الكاتب العدل المعتمد"
                   : "In-person notarization at our offices or with a certified notary"}

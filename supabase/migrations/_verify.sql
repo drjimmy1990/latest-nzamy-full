@@ -1178,7 +1178,9 @@ END $$;
 -- 2026-10-16 — 20261016_02_profiles_members_write_lock.sql (owner decisions ٢٩ + ٣٠)
 -- ====================================================================
 -- authenticated may UPDATE only the 11 settings columns of public.profiles
--- (never email / verified_at / nafath_verified / metadata / user_type), and the
+-- (never email / verified_at / nafath_verified / metadata / user_type) — plus
+-- national_address once 20261017_10 has added it (owner ٥٦/٥٧; checked in its
+-- own section at the end of this file) — and the
 -- API roles cannot hard-DELETE a row of the four entity membership tables.
 -- Keyed on the marker comment on public.profiles.email, so a deploy that runs
 -- this file BEFORE the migration is applied still passes.
@@ -1192,6 +1194,9 @@ DECLARE
   editable text[] := ARRAY[
     'display_name', 'display_name_en', 'phone', 'avatar_url', 'language',
     'calendar_type', 'theme', 'country_code', 'city', 'onboarding_completed', 'nationality'];
+  -- Columns a later migration made self-editable: allowed when present, not
+  -- required (20261017_10 may not have run yet).
+  later_editable text[] := ARRAY['national_address'];
   col     text;
   t       text;
   missing text := '';
@@ -1210,7 +1215,8 @@ BEGIN
     SELECT att.attname::text FROM pg_attribute att
      WHERE att.attrelid = 'public.profiles'::regclass AND att.attnum > 0 AND NOT att.attisdropped
   LOOP
-    IF has_column_privilege('authenticated', 'public.profiles', col, 'UPDATE') AND NOT (col = ANY (editable)) THEN
+    IF has_column_privilege('authenticated', 'public.profiles', col, 'UPDATE')
+       AND NOT (col = ANY (editable) OR col = ANY (later_editable)) THEN
       missing := missing || format(' authenticated can UPDATE public.profiles.%s;', col);
     END IF;
     IF has_column_privilege('anon', 'public.profiles', col, 'UPDATE') THEN
@@ -1234,7 +1240,7 @@ BEGIN
     RAISE EXCEPTION '_verify: the profiles / members write lock is broken —%', missing;
   END IF;
 
-  RAISE NOTICE '_verify: 20261016_02 OK — profiles: 11 self-editable columns only; no API-role hard delete on the membership tables';
+  RAISE NOTICE '_verify: 20261016_02 OK — profiles: the 11 settings columns (+ national_address after 20261017_10) are the only self-editable ones; no API-role hard delete on the membership tables';
 END $$;
 
 
@@ -1472,4 +1478,58 @@ BEGIN
   END IF;
 
   RAISE NOTICE '_verify: 20261016_11 OK — no guest read of provider_profiles; a provider reads the own row, an admin reads all; authenticated UPDATE is (metadata, updated_at)';
+END $$;
+
+
+-- ====================================================================
+-- 2026-10-17 — 20261017_10_profiles_national_address.sql (owner decisions ٥٦ / ٥٧)
+-- ====================================================================
+-- An optional national address for invoices: public.profiles.national_address,
+-- NULL or 1–300 characters, self-editable through a COLUMN grant to
+-- authenticated (the 20261016_02 lock is otherwise unchanged — its own section
+-- above checks that), never writable by anon, and readable only where profiles
+-- rows are (the owner and admins). Before the migration the section passes with
+-- a NOTICE. After it, a missing column grant means 20261016_02 was re-run after
+-- 20261017_10 (a table-level REVOKE takes column grants with it): re-run
+-- 20261017_10.
+SELECT '20261017_10 applied (public.profiles.national_address exists)' AS check,
+       EXISTS (SELECT 1 FROM pg_attribute
+                WHERE attrelid = 'public.profiles'::regclass AND attname = 'national_address'
+                  AND NOT attisdropped) AS present;
+
+DO $$
+DECLARE
+  missing text := '';
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_attribute
+                  WHERE attrelid = 'public.profiles'::regclass AND attname = 'national_address'
+                    AND NOT attisdropped) THEN
+    RAISE NOTICE '_verify: 20261017_10 is not applied yet — no national address can be saved (the settings field would fail with 42703)';
+    RETURN;
+  END IF;
+
+  IF NOT has_column_privilege('authenticated', 'public.profiles', 'national_address', 'UPDATE') THEN
+    missing := missing || ' authenticated cannot UPDATE public.profiles.national_address — was 20261016_02 re-run after 20261017_10? Re-run 20261017_10;';
+  END IF;
+  IF has_column_privilege('anon', 'public.profiles', 'national_address', 'UPDATE')
+     OR has_column_privilege('anon', 'public.profiles', 'national_address', 'SELECT') THEN
+    missing := missing || ' anon can read or write public.profiles.national_address;';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                  WHERE conrelid = 'public.profiles'::regclass
+                    AND conname = 'profiles_national_address_length' AND convalidated) THEN
+    missing := missing || ' constraint profiles_national_address_length is missing or not validated;';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_policy
+              WHERE polrelid = 'public.profiles'::regclass
+                AND polcmd IN ('r', '*')
+                AND (polroles = '{0}'::oid[] OR 'anon'::regrole::oid = ANY (polroles))) THEN
+    missing := missing || ' a SELECT policy on public.profiles reaches anon or PUBLIC;';
+  END IF;
+
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: the profiles national address is broken —%', missing;
+  END IF;
+
+  RAISE NOTICE '_verify: 20261017_10 OK — profiles.national_address is optional (≤300), self-editable, owner- and admin-readable only';
 END $$;

@@ -42,7 +42,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: ["٤٠,٠٠٠ نقطة سنوية", "حزمة AI كاملة + تحليل مستندات", "سياسات امتثال مخصصة", null],
         platform: ["١٠ مقاعد", "Kanban: ٥٠ مهمة · ربط API ✅", "سوق + HR + تقارير مالية ✅", null],
-        support: ["مدير حساب", "دعم واتساب أولوية"],
+        support: ["مدير حساب", "دعم عبر واتساب"],
       },
     },
     // ── متوسطة (٥٠-٢٤٩) ────────────────────────────────
@@ -69,7 +69,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: ["٤٠,٠٠٠ نقطة سنوية", "رادار امتثال + Deal Intelligence ✅", "حدود صرف بالقسم", null],
         platform: ["١٠ مقاعد", "Kanban: ٥٠ مهمة · حوكمة ✅", "إدارات + تقارير مالية ✅", null],
-        support: ["تقارير دورية", "دعم واتساب أولوية"],
+        support: ["تقارير دورية", "دعم عبر واتساب"],
       },
     },
     { id: "dept-md-full", name: "متكاملة", badge: "~٢,٩١٦ ر.س/شهر",
@@ -82,7 +82,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: ["٨٠,٠٠٠ نقطة سنوية", "حزمة AI كاملة + فحص صحة ٣٦٠°", "سياسات امتثال مخصصة", null],
         platform: ["٢٠ مقعد", "Kanban: ١٠٠ مهمة · ربط API ✅", "حوكمة + إدارات + تقارير ✅", null],
-        support: ["مدير حساب مخصص", "دعم واتساب أولوية"],
+        support: ["مدير حساب مخصص", "دعم عبر واتساب"],
       },
     },
     // ── كبيرة (٢٥٠+) ───────────────────────────────────
@@ -122,7 +122,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: ["٢٠٠,٠٠٠ نقطة سنوية", "جميع أدوات AI مفتوحة", "سياسات امتثال مخصصة", null],
         platform: ["٥٠ مقعد", "Kanban: ٢٠٠ مهمة · SSO + API ✅", "حوكمة + انتداب + إشراف مجتمع ✅", null],
-        support: ["مدير حساب + SLA", "دعم فني ٢٤/٧"],
+        support: ["مدير حساب + SLA"],
       },
     },
   ],
@@ -164,7 +164,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: ["40,000 annual points", "Full AI suite + Doc Analyzer", "Custom compliance policies", null],
         platform: ["10 seats", "Kanban: 50 tasks · API ✅", "Marketplace + HR + Finance reports ✅", null],
-        support: ["Account manager", "Priority WhatsApp"],
+        support: ["Account manager", "WhatsApp support"],
       },
     },
     // ── Medium (50-249) EN ──────────────────────────────
@@ -191,7 +191,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: ["40,000 annual points", "Compliance + Deal Intelligence ✅", "Dept spending limits", null],
         platform: ["10 seats", "Kanban: 50 tasks · Governance ✅", "Departments + Finance reports ✅", null],
-        support: ["Periodic reports", "Priority WhatsApp"],
+        support: ["Periodic reports", "WhatsApp support"],
       },
     },
     { id: "dept-md-full", name: "Full Suite", badge: "~2,916 SAR/mo",
@@ -204,7 +204,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: ["80,000 annual points", "Full AI suite + Health Check 360°", "Custom compliance policies", null],
         platform: ["20 seats", "Kanban: 100 tasks · API ✅", "Governance + Departments + Reports ✅", null],
-        support: ["Dedicated account manager", "Priority WhatsApp"],
+        support: ["Dedicated account manager", "WhatsApp support"],
       },
     },
     // ── Large (250+) EN ─────────────────────────────────
@@ -244,7 +244,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: ["200,000 annual points", "All AI tools unlocked", "Custom compliance policies", null],
         platform: ["50 seats", "Kanban: 200 tasks · SSO + API ✅", "Governance + secondment + community ✅", null],
-        support: ["Account manager + SLA", "24/7 support"],
+        support: ["Account manager + SLA"],
       },
     },
   ],

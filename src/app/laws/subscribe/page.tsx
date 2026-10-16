@@ -15,7 +15,7 @@ import { useSubscription } from "@/hooks/useSubscription";
 import { isSupabaseMode } from "@/lib/services/api";
 import { requestEntitlement } from "@/lib/services/entitlementService";
 import { planFromParam } from "@/lib/pricing/planRequest";
-import { LIBRARY_STAT_LABELS, formatLibraryCount } from "@/lib/library/libraryStats";
+import { LIBRARY_STAT_KEYS, LIBRARY_STAT_LABELS, formatLibraryCount } from "@/lib/library/libraryStats";
 import { useLibraryStats } from "@/lib/library/useLibraryStats";
 
 // ─── Bilingual ──────────────────────────────────────────────────────────────
@@ -24,13 +24,11 @@ const txt = {
   ar: {
     heroTag: "المكتبة القانونية",
     heroTitle: "كل نظام ولائحة في المملكة — في مكان واحد",
-    heroSub: "بحث ذكي بالذكاء الاصطناعي في الأنظمة واللوائح السعودية، السوابق القضائية، والمبادئ القانونية — مع تحديثات فورية لحظة الصدور.",
-    // The library size is the live tile in the page (useLibraryStats), never a literal.
-    stats: [
-      { val: "27", label: "قسم قانوني" },
-      { val: "يومي", label: "تحديث الأنظمة" },
-      { val: "AI", label: "بحث ذكي" },
-    ],
+    heroSub: "بحث بالنص الكامل في الأنظمة واللوائح السعودية والسوابق والمبادئ القضائية.",
+    // The hero tiles are the library's live counts (useLibraryStats), never
+    // literals. «27 قسم قانوني» (no such division exists), «يومي — تحديث
+    // الأنظمة» (nothing watches for new legislation; the library is loaded by
+    // hand) and «AI — بحث ذكي» (search is Postgres full-text) were removed.
     plansTitle: "اختر خطتك",
     plansSub: "اختر الخطة المناسبة — يُراجع طلبك ويُفعَّل الاشتراك بعد الموافقة.",
     monthly: "شهري",
@@ -64,13 +62,12 @@ const txt = {
         name: "ربع سنوي (٣ أشهر)",
         price: "١٬٥٠٠ ر.س / ٣ أشهر",
         priceYearly: "١٬٥٠٠ ر.س / ٣ أشهر",
-        desc: "وصول كامل للمكتبة والبحث بالذكاء الاصطناعي",
+        desc: "وصول كامل للمكتبة والبحث بالنص الكامل",
         icon: MagnifyingGlass,
         color: "from-[#0B3D2E] to-emerald-600",
         features: [
           "نصوص الأنظمة واللوائح كاملة",
-          "بحث ذكي AI غير محدود",
-          "تحديثات يومية فور الصدور",
+          "بحث غير محدود بالنص الكامل",
           "دعم البريد الإلكتروني",
         ],
         cta: "اشترك الآن",
@@ -105,7 +102,6 @@ const txt = {
           "كل مزايا النصف سنوي",
           "مقارنة التعديلات (diff)",
           "تصدير نصوص الأنظمة بصيغة PDF",
-          "دعم واتساب أولوية + مدير حساب مخصص",
         ],
         cta: "اشترك الآن",
         featured: false,
@@ -114,7 +110,7 @@ const txt = {
     faqTitle: "أسئلة شائعة",
     faqs: [
       { q: "كيف يتم تفعيل الاشتراك؟", a: "عند الضغط على «اشترك الآن» يُرسَل طلبك للمراجعة، ويقوم فريقنا بتفعيل خطتك بعد الموافقة عليه. إن كان لديك كود دعوة، فإنه يُفعّل باقة Pro فوراً دون انتظار." },
-      { q: "ما الفرق بين البحث المحدود والبحث الذكي؟", a: "البحث المحدود يسمح بـ 5 عمليات يومية في عناوين الأنظمة فقط. البحث الذكي يتيح بحثاً غير محدود في النصوص الكاملة باستخدام الذكاء الاصطناعي مع اقتراحات ذكية." },
+      { q: "ما الفرق بين البحث المحدود والبحث الكامل؟", a: "البحث المحدود يسمح بـ 5 عمليات يومية في عناوين الأنظمة فقط. البحث الكامل يتيح بحثاً غير محدود في النصوص الكاملة." },
       { q: "هل يمكنني ترقية أو تنزيل خطتي في أي وقت؟", a: "بالتأكيد. يمكنك الترقية فوراً وسيُحسب الفرق تناسبياً. التنزيل يبدأ من دورة الفوترة التالية." },
       { q: "هل المكتبة تشمل الأنظمة الملغاة؟", a: "نعم. نحتفظ بجميع الأنظمة بما فيها الملغاة والمعدلة مع إشارة واضحة لحالة كل نظام وتاريخ التعديل." },
     ],
@@ -123,12 +119,7 @@ const txt = {
   en: {
     heroTag: "Legal Library",
     heroTitle: "Every Saudi Law & Regulation — In One Place",
-    heroSub: "AI-powered search across Saudi laws, regulations, judicial precedents, and legal principles — updated in real-time.",
-    stats: [
-      { val: "27", label: "Legal Sections" },
-      { val: "Daily", label: "Updates" },
-      { val: "AI", label: "Smart Search" },
-    ],
+    heroSub: "Full-text search across Saudi laws, regulations, judicial precedents and legal principles.",
     plansTitle: "Choose Your Plan",
     plansSub: "Choose the plan that fits — your request is reviewed and activated once approved.",
     monthly: "Monthly",
@@ -160,13 +151,12 @@ const txt = {
         name: "Quarterly (3 Months)",
         price: "SAR 1,500 / 3 Months",
         priceYearly: "SAR 1,500 / 3 Months",
-        desc: "Full library access with AI search",
+        desc: "Full library access with full-text search",
         icon: MagnifyingGlass,
         color: "from-[#0B3D2E] to-emerald-600",
         features: [
           "Full law & regulation texts",
-          "Unlimited AI smart search",
-          "Daily updates upon issuance",
+          "Unlimited full-text search",
           "Email support",
         ],
         cta: "Subscribe Now",
@@ -201,7 +191,6 @@ const txt = {
           "All Semi-Annual features",
           "Amendment diff comparison",
           "Export laws to PDF",
-          "Priority WhatsApp & account manager",
         ],
         cta: "Subscribe Now",
         featured: false,
@@ -210,7 +199,7 @@ const txt = {
     faqTitle: "Frequently Asked Questions",
     faqs: [
       { q: "How does activation work?", a: "Clicking \"Subscribe Now\" sends your request for review, and our team activates your plan once it's approved. If you have an invitation code, it activates the Pro tier immediately with no wait." },
-      { q: "What's the difference between limited and smart search?", a: "Limited search allows 5 daily queries on titles only. Smart search provides unlimited AI-powered full-text search with intelligent suggestions." },
+      { q: "What's the difference between limited and full search?", a: "Limited search allows 5 daily queries on titles only. Full search is unlimited across the full texts." },
       { q: "Can I upgrade or downgrade anytime?", a: "Absolutely. Upgrades take effect immediately with prorated pricing. Downgrades begin on your next billing cycle." },
       { q: "Does the library include repealed laws?", a: "Yes. We maintain all laws including repealed and amended ones with clear status indicators and modification dates." },
     ],
@@ -245,18 +234,19 @@ export default function LawsSubscribePage() {
     if (chosen) document.getElementById(`plan-${chosen}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
   }, []);
 
-  // The library-size tile is the live floor of library.laws (GET
+  // The four tiles are the live floors of the library's tables (GET
   // /api/library/stats), as on /login. «5,000+ نظام ولائحة» was a literal and
   // the wrong noun: the table holds every instrument type («وثيقة نظامية»).
-  // Loading → a placeholder; a failed count → no tile, never a number.
+  // Loading → placeholders; a failed count → no tiles at all, never a number;
+  // a count too small to floor (formatLibraryCount → null) → no tile.
   const library = useLibraryStats();
-  const libraryLaws = library.status === "ready" ? formatLibraryCount(library.stats.laws, isAr ? "ar" : "en") : null;
-  const statTiles: { val: string | null; label: string }[] = [
-    ...(library.status === "loading" || libraryLaws
-      ? [{ val: libraryLaws, label: isAr ? LIBRARY_STAT_LABELS.laws.ar : LIBRARY_STAT_LABELS.laws.en }]
-      : []),
-    ...t.stats,
-  ];
+  const statTiles: { val: string | null; label: string }[] =
+    library.status === "error"
+      ? []
+      : LIBRARY_STAT_KEYS.map((key) => ({
+          val: library.status === "ready" ? formatLibraryCount(library.stats[key], isAr ? "ar" : "en") : null,
+          label: isAr ? LIBRARY_STAT_LABELS[key].ar : LIBRARY_STAT_LABELS[key].en,
+        })).filter((tile) => library.status === "loading" || tile.val !== null);
 
   // "pro" tier or higher — src/hooks/useSubscription.ts's
   // "library-full-access" gate — is what actually unlocks the full library.

@@ -34,7 +34,7 @@ export const plansNgo: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: ["جميع قدرات AI للجمعيات", "مدقق الحوكمة الذكي (المركز الوطني)", "مُعد التقارير السنوية AI", "مراجعة عقود الشراكات"],
         platform: ["لوحة تحكم إدارية متقدمة", "ربط مباشر مع مكاتب المحاماة", "إعداد تلقائي لتقرير الشفافية", null],
-        support: ["مدير حساب مخصص", "دعم على مدار الساعة"],
+        support: ["مدير حساب مخصص"],
       },
     },
   ],
@@ -69,7 +69,7 @@ export const plansNgo: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: ["All NGO AI features", "Smart Governance Checker (NCNP)", "AI Annual Report Generator", "Partnership Contract Review"],
         platform: ["Advanced admin dashboard", "Direct connection to law firms", "Auto Transparency Report prep", null],
-        support: ["Dedicated account manager", "24/7 priority support"],
+        support: ["Dedicated account manager"],
       },
     },
   ],
