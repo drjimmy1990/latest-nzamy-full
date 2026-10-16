@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { libraryGate } from '@/lib/library-gate';
 import { rateLimit, clientIpFrom } from '@/lib/rateLimit';
+import { libraryAiAccess } from '../_libraryAiAccess';
 
 /**
  * POST /api/ai/explain-article
@@ -30,6 +31,11 @@ export async function POST(request: Request) {
       { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } },
     );
   }
+
+  // relatedArticles[].text comes from other laws too, so a guest gets 401 and a
+  // tier below pro gets 403 here, before the config check and any n8n call.
+  const denied = await libraryAiAccess();
+  if (denied) return denied;
 
   try {
     // Check if n8n is configured
