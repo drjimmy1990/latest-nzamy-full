@@ -7,6 +7,8 @@ import {
   Plus, Download, CalendarBlank, CheckCircle, Clock, Warning,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 // ─── Mock Data ─────────────────────────────────────────────────────────────────
 
@@ -105,7 +107,7 @@ const LiquidCard = ({ children, className = "", delay = 0 }: { children: React.R
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function FirmFinancePage() {
+function FirmFinancePageDemo() {
   const { isDark } = useTheme();
 
   return (
@@ -318,4 +320,22 @@ export default function FirmFinancePage() {
       </div>
     </div>
   );
+}
+
+/**
+ * Owner decision ١١٥ (demo fully separated from production): everything on
+ * this screen is a fixture — no API call backs it — so it renders in demo mode
+ * only. A production firm sees the honest gate instead of invented rows.
+ */
+export default function FirmFinancePage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="مالية المكتب"
+        description="تُعرض هذه الصفحة حين تُربط ببيانات مكتبك الفعلية، ولا نعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/firm"
+      />
+    );
+  }
+  return <FirmFinancePageDemo />;
 }

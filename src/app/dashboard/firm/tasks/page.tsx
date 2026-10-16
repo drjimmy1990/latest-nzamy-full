@@ -5,6 +5,8 @@ import { motion } from "framer-motion";
 import { CalendarBlank, CheckCircle, Clock, Gavel, MagnifyingGlass, Plus, WarningCircle } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { SubscriptionGuard } from "@/components/dashboard/SubscriptionGuard";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 type TaskStatus = "todo" | "doing" | "done";
 
@@ -17,7 +19,7 @@ const INITIAL_TASKS = [
 
 const STATUS_LABEL: Record<TaskStatus, string> = { todo: "مطلوب", doing: "قيد التنفيذ", done: "مكتمل" };
 
-export default function FirmTasksPage() {
+function FirmTasksPageDemo() {
   const { isDark } = useTheme();
   const [tasks, setTasks] = useState(INITIAL_TASKS);
   const [search, setSearch] = useState("");
@@ -109,4 +111,22 @@ function SmallAction({ label, icon: Icon, active, onClick }: { label: string; ic
       {label}
     </button>
   );
+}
+
+/**
+ * Owner decision ١١٥ (demo fully separated from production): everything on
+ * this screen is a fixture — no API call backs it — so it renders in demo mode
+ * only. A production firm sees the honest gate instead of invented rows.
+ */
+export default function FirmTasksPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="مهام الفريق"
+        description="مهام كل قضية متاحة في ملف القضية نفسه. لوحة مهام الفريق المجمّعة تُعرض هنا حين تُربط بها."
+        backHref="/dashboard/firm"
+      />
+    );
+  }
+  return <FirmTasksPageDemo />;
 }

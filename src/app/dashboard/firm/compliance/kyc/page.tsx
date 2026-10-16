@@ -8,6 +8,8 @@ import {
   WarningCircle, CaretDown, Eye, UploadSimple
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 // ─── Types & Mock Data ────────────────────────────────────────────────────────
 
@@ -79,7 +81,7 @@ const STATUS_ICONS: Record<KYCStatus, React.ReactNode> = {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function KYCCheckPage() {
+function KYCCheckPageDemo() {
   const { isDark } = useTheme();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<KYCStatus | "الكل">("الكل");
@@ -216,4 +218,22 @@ export default function KYCCheckPage() {
       </div>
     </div>
   );
+}
+
+/**
+ * Owner decision ١١٥ (demo fully separated from production): everything on
+ * this screen is a fixture — no API call backs it — so it renders in demo mode
+ * only. A production firm sees the honest gate instead of invented rows.
+ */
+export default function KYCCheckPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="التحقق من هوية العملاء"
+        description="تُعرض هذه الصفحة حين تُربط ببيانات مكتبك الفعلية، ولا نعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/firm"
+      />
+    );
+  }
+  return <KYCCheckPageDemo />;
 }

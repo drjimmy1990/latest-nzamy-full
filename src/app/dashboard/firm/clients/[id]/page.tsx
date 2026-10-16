@@ -10,6 +10,8 @@ import {
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 // ─── Mock Data ────────────────────────────────────────────────────────────────
 
@@ -39,7 +41,7 @@ const CLIENT_DATA = {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function ClientDetailsPage() {
+function ClientDetailsPageDemo() {
   const { isDark } = useTheme();
   const params = useParams(); // Using params.id in real app
   const [activeTab, setActiveTab] = useState<"overview" | "cases" | "invoices" | "documents">("overview");
@@ -206,4 +208,22 @@ export default function ClientDetailsPage() {
 
     </div>
   );
+}
+
+/**
+ * Owner decision ١١٥ (demo fully separated from production): everything on
+ * this screen is a fixture — no API call backs it — so it renders in demo mode
+ * only. A production firm sees the honest gate instead of invented rows.
+ */
+export default function ClientDetailsPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="ملف العميل"
+        description="قائمة موكلي المكتب متاحة من «العملاء». الملف التفصيلي للعميل يُعرض هنا حين يُربط بسجلاته."
+        backHref="/dashboard/firm"
+      />
+    );
+  }
+  return <ClientDetailsPageDemo />;
 }

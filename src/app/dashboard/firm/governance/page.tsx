@@ -9,6 +9,8 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { RoleGuard } from "@/components/dashboard/RoleGuard";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 // ─── Types & Mock Data ────────────────────────────────────────────────────────
 
@@ -316,7 +318,7 @@ function FirmGovernanceInner() {
 
 // ─── Page Shell ───────────────────────────────────────────────────────────────
 
-export default function FirmGovernancePage() {
+function FirmGovernancePageDemo() {
   return (
     <RoleGuard allowedRoles={["managing_partner", "partner", "senior_lawyer", "compliance_manager"]}>
       <Suspense fallback={<div className="p-8 text-center opacity-40 text-sm">جارٍ التحميل...</div>}>
@@ -324,4 +326,22 @@ export default function FirmGovernancePage() {
       </Suspense>
     </RoleGuard>
   );
+}
+
+/**
+ * Owner decision ١١٥ (demo fully separated from production): everything on
+ * this screen is a fixture — no API call backs it — so it renders in demo mode
+ * only. A production firm sees the honest gate instead of invented rows.
+ */
+export default function FirmGovernancePage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="الحوكمة"
+        description="تُعرض هذه الصفحة حين تُربط ببيانات مكتبك الفعلية، ولا نعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/firm"
+      />
+    );
+  }
+  return <FirmGovernancePageDemo />;
 }

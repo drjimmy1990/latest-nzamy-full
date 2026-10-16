@@ -11,6 +11,7 @@ import {
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import { createWorkflowId, createWorkflowRequest } from "@/lib/clientWorkflowRepository";
+import { buildServicesWizardRequest } from "./servicesWizardRequest";
 import { isDemoMode } from "@/lib/runtimeMode";
 import { useOrderAttachments } from "@/hooks/useOrderAttachments";
 import { MAX_UPLOAD_BYTES } from "@/lib/services/fileValidation";
@@ -168,70 +169,38 @@ export default function ServiceRequestWizard({
     }
     setSubmitting(true);
     try {
-      // `receiver: "ai_workspace"` — the نظامي team's queue, the one the admin
-      // console reads (api/v1/admin/service-orders/route.ts filters on it); the
-      // same literal /dashboard/client/requests/new sends, for the same reason
-      // (see its header). The «firm»/«lawyer» receivers this used to name are
-      // marketplace routes that BETA_MONOPOLY_MODE keeps closed, so a row
-      // addressed to them reached nobody. The budget is the client's range, not
-      // a charge: the payment is 0 / not_required and the range stays in
-      // metadata for the team to quote against.
-      const request = await createWorkflowRequest({
-        id: createWorkflowId("SRV"),
-        type: "service",
-        title: isRTL ? serviceTitle : serviceTitleEn,
-        description: form.description,
-        requester: {
-          userId: user.userId,
-          name: user.name,
-          role: user.userType,
-          tier: user.tier,
-          businessRole: user.businessRole,
-        },
-        receiver: "ai_workspace",
-        status: "pending_assignment",
-        payment: {
-          amount: 0,
-          status: "not_required",
-        },
-        sourcePath: "/services",
-        metadata: {
+      // The payload is built by buildServicesWizardRequest (receiver
+      // "ai_workspace" — the نظامي team's queue — payment 0 / not_required, the
+      // budget kept in metadata); its unit test passes it through the route's
+      // two pure gates (servicesWizardRequest.test.ts).
+      const request = await createWorkflowRequest(
+        buildServicesWizardRequest({
+          id: createWorkflowId("SRV"),
+          title: isRTL ? serviceTitle : serviceTitleEn,
           serviceTitleAr: serviceTitle,
-          schemaVersion: 1,
-          intake: {
-            description: form.description,
-            region: form.region,
-            deadline: form.deadline,
+          description: form.description,
+          requester: {
+            userId: user.userId,
+            name: user.name,
+            role: user.userType,
+            tier: user.tier,
+            businessRole: user.businessRole,
           },
           serviceId,
           userRole,
           region: form.region,
+          deadline: form.deadline,
           budgetMin: form.budgetMin,
           budgetMax: form.budgetMax,
-          deadline: form.deadline,
           confidential: form.confidential,
           assignmentMethod: form.assignmentMethod,
-          // Counts the UPLOADED files, not the picked ones. A file the client
-          // selected and whose upload failed is not in `attachments`, so it is
-          // not counted here either — the number the fulfiller reads is the
-          // number of documents they can actually open.
-          fileCount: attachments.length,
-          barNumber: form.barNumber || null,
-          courtName: form.courtName || null,
-          caseNumber: form.caseNumber || null,
-          serviceType: form.serviceType || null,
-          // Verbatim, no remapping: every consumer of an order's attachments
-          // reads `.documentId` off each entry, and rebuilding the shape here
-          // would silently detach the files. Same cast, and same reason, as
-          // /dashboard/client/requests/new: `WorkflowRequest.metadata` is
-          // still declared `Record<string, string | number | boolean | null>`,
-          // but that declaration is stale rather than load-bearing — nested
-          // objects are already stored and read there today. Widening it in
-          // src/lib/workflowStore.ts is the real fix and is outside this file.
+          barNumber: form.barNumber,
+          courtName: form.courtName,
+          caseNumber: form.caseNumber,
+          serviceType: form.serviceType,
           attachments,
-        } as unknown as Record<string, string | number | boolean | null>,
-        auditEvent: "service_marketplace_request_sent",
-      } as Parameters<typeof createWorkflowRequest>[0]);
+        }) as unknown as Parameters<typeof createWorkflowRequest>[0],
+      );
       setSubmittedId(request.id);
       setSubmitted(true);
     } catch {

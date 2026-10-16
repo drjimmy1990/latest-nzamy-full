@@ -4,6 +4,8 @@ import { motion } from "framer-motion";
 import { CopySimple, Plus, MagnifyingGlass, FileText, ArrowUpRight } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 const MOCK_TEMPLATES = [
   { id: "1", name: "عقد الخدمات القانونية القياسي",     category: "عقود", uses: 47, updated: "مارس ٢٠٢٤" },
@@ -14,7 +16,7 @@ const MOCK_TEMPLATES = [
   { id: "6", name: "مذكرة جوابية — قضايا عمالية",        category: "مذكرات", uses: 15, updated: "أبريل ٢٠٢٤" },
 ];
 
-export default function FirmTemplatesPage() {
+function FirmTemplatesPageDemo() {
   const { isDark } = useTheme();
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
@@ -65,4 +67,22 @@ export default function FirmTemplatesPage() {
       </div>
     </div>
   );
+}
+
+/**
+ * Owner decision ١١٥ (demo fully separated from production): everything on
+ * this screen is a fixture — no API call backs it — so it renders in demo mode
+ * only. A production firm sees the honest gate instead of invented rows.
+ */
+export default function FirmTemplatesPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="نماذج المكتب"
+        description="تُعرض هذه الصفحة حين تُربط ببيانات مكتبك الفعلية، ولا نعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/firm"
+      />
+    );
+  }
+  return <FirmTemplatesPageDemo />;
 }

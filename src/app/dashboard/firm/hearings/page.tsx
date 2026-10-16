@@ -8,6 +8,8 @@ import {
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 // ─── Modals ───────────────────────────────────────────────────────────────────
 
@@ -99,7 +101,7 @@ const STATUS_STYLE: Record<Hearing["status"], { label: string; color: string; do
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function FirmHearingsPage() {
+function FirmHearingsPageDemo() {
   const { isDark } = useTheme();
   const [showAddHearing, setShowAddHearing] = useState(false);
 
@@ -240,4 +242,22 @@ export default function FirmHearingsPage() {
       </AnimatePresence>
     </div>
   );
+}
+
+/**
+ * Owner decision ١١٥ (demo fully separated from production): everything on
+ * this screen is a fixture — no API call backs it — so it renders in demo mode
+ * only. A production firm sees the honest gate instead of invented rows.
+ */
+export default function FirmHearingsPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="جلسات المكتب"
+        description="جلسات كل قضية متاحة في ملف القضية نفسه. الجدول المجمّع لجلسات المكتب يُعرض هنا حين يُربط بها."
+        backHref="/dashboard/firm"
+      />
+    );
+  }
+  return <FirmHearingsPageDemo />;
 }

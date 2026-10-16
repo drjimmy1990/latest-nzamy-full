@@ -9,6 +9,8 @@ import {
   FunnelSimple, Warning, Student, Key,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 // ─── Mock Data ────────────────────────────────────────────────────────────────
 
@@ -41,7 +43,7 @@ const fadeUp = {
   show: (i: number) => ({ opacity: 1, y: 0, transition: { delay: i * 0.06, duration: 0.3 } }),
 };
 
-export default function FirmCasesAssignPage() {
+function FirmCasesAssignPageDemo() {
   const { isDark } = useTheme();
   const [caseSearch, setCaseSearch] = useState("");
   const [selectedCase, setSelectedCase] = useState<typeof UNASSIGNED_CASES[0] | null>(null);
@@ -330,4 +332,22 @@ export default function FirmCasesAssignPage() {
       </motion.div>
     </div>
   );
+}
+
+/**
+ * Owner decision ١١٥ (demo fully separated from production): everything on
+ * this screen is a fixture — no API call backs it — so it renders in demo mode
+ * only. A production firm sees the honest gate instead of invented rows.
+ */
+export default function FirmCasesAssignPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="توزيع القضايا"
+        description="يُضاف أعضاء المكتب إلى قضية من لوحة «فريق القضية» داخل ملف القضية نفسه."
+        backHref="/dashboard/firm"
+      />
+    );
+  }
+  return <FirmCasesAssignPageDemo />;
 }
