@@ -34,10 +34,16 @@
  * column. companyName / crNumber / legalRepName live in `identity` for that
  * reason.
  *
- * ── `phone` IS A SAUDI MOBILE, FOR EVERY ENTITY TYPE ────────────────────────
- * PATCH /api/v1/profile now normalises the bag's `phone` key through
- * `normalizeSaudiMobile` and stores E.164 (`+9665XXXXXXXX`) — see
- * validateEntitySettingsPatch in src/lib/services/profileEntityFields.ts.
+ * ── `phone` IS A SAUDI MOBILE — OR A 920 NUMBER FOR FIRMS AND COMPANIES ────
+ * PATCH /api/v1/profile normalises the bag's `phone` key: a mobile is stored
+ * E.164 (`+9665XXXXXXXX`); for firm, corporate and micro a 920 unified number
+ * is accepted too and stored as dialled (`920012345`) — owner decision ٥٥,
+ * 2026-10-06, «مقبولة للشركات والمكاتب، وتُمنع للأفراد». See
+ * validateEntitySettingsPatch in src/lib/services/profileEntityFields.ts and
+ * acceptsUnifiedNumber in src/lib/services/saudiMobile.ts. Government and ngo
+ * stay mobile-only (the decision names companies and firms).
+ *
+ * History, kept for the record:
  * The firm and ngo entries used to label this key «الرقم الموحد» with a
  * `920XXXXXXX` placeholder and government used the `1950` short code; none of
  * those is a mobile, so the form would have been asking for a value the server
@@ -113,7 +119,7 @@ export const ENTITY_SETTINGS_FIELDS: Record<string, FieldDef[]> = {
     { key: "vatNumber", label: "الرقم الضريبي (VAT)", placeholder: "3XXXXXXXXXXXXXXX" },
     { key: "address", label: "العنوان الرسمي", placeholder: "حي الملقا، طريق الأمير محمد بن سلمان", span: 2 },
     { key: "city", label: "المدينة", placeholder: "الرياض" },
-    { key: "phone", label: "رقم التواصل", placeholder: "05XXXXXXXX" },
+    { key: "phone", label: "رقم التواصل", placeholder: "05XXXXXXXX أو 920XXXXXX" },
     { key: "email", label: "البريد الإلكتروني الرسمي", placeholder: "info@nezamy.sa" },
     { key: "website", label: "الموقع الإلكتروني", placeholder: "https://nezamy.sa" },
     { key: "specialties", label: "التخصصات الرئيسية", placeholder: "قانون تجاري، منازعات، ملكية فكرية", span: 2 },
@@ -122,14 +128,14 @@ export const ENTITY_SETTINGS_FIELDS: Record<string, FieldDef[]> = {
   corporate: [
     { key: "address", label: "العنوان الرسمي", placeholder: "حي الملقا، طريق الأمير محمد بن سلمان", span: 2 },
     { key: "city", label: "المدينة", placeholder: "الرياض" },
-    { key: "phone", label: "رقم التواصل", placeholder: "05XXXXXXXX" },
+    { key: "phone", label: "رقم التواصل", placeholder: "05XXXXXXXX أو 920XXXXXX" },
     { key: "email", label: "البريد الإلكتروني الرسمي", placeholder: "info@nezamy.sa" },
     { key: "website", label: "الموقع الإلكتروني", placeholder: "https://nezamy.sa" },
   ],
   micro: [
     { key: "crNumber", label: "رقم السجل التجاري", placeholder: "4650XXXXXX" },
     { key: "address", label: "العنوان", placeholder: "حي النسيم، الرياض", span: 2 },
-    { key: "phone", label: "رقم التواصل", placeholder: "05XXXXXXXX" },
+    { key: "phone", label: "رقم التواصل", placeholder: "05XXXXXXXX أو 920XXXXXX" },
     { key: "email", label: "البريد الإلكتروني", placeholder: "khaled@mybiz.sa" },
   ],
   government: [

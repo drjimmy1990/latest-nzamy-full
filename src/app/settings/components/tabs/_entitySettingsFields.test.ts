@@ -168,3 +168,15 @@ test("the legal-department toggle is always a boolean — the column is NOT NULL
     true,
   );
 });
+
+// Owner decision ٥٥: firms and companies may give a 920 number; the form says so.
+test("the contact-number placeholder offers 920 exactly where the server accepts it", () => {
+  for (const type of ["firm", "corporate", "micro"]) {
+    const phone = ENTITY_SETTINGS_FIELDS[type].find((f) => f.key === "phone");
+    assert.equal(phone?.placeholder, "05XXXXXXXX أو 920XXXXXX", type);
+  }
+  for (const type of ["government", "ngo"]) {
+    const phone = ENTITY_SETTINGS_FIELDS[type].find((f) => f.key === "phone");
+    assert.equal(phone?.placeholder, "05XXXXXXXX", type);
+  }
+});

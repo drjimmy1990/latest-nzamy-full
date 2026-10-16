@@ -11,6 +11,7 @@ import {
 } from "@/lib/services/lawyerProfileFields";
 import { offPlatformContactIssue } from "@/lib/services/contactSanitizer";
 import { entityProfileTableFor } from "@/lib/services/profileSettingsFields";
+import { acceptsUnifiedNumber } from "@/lib/services/saudiMobile";
 import {
   nationalityIssue,
   officeAddressIssue,
@@ -622,6 +623,12 @@ export async function PATCH(request: Request) {
   // being `null`/absent/`{}` just means "nothing to merge this call", not an
   // error: ProfileTab always includes the key (possibly empty) for every
   // account type, since not every type has entitySettings-targeted fields.
+  //
+  // Only the SHAPE is checked here. The values are validated once user_type
+  // is known (below, still before any write): whether the bag's `phone` may
+  // be a 920 unified number depends on the account type (owner decision ٥٥ —
+  // firms and companies yes, everyone else a mobile).
+  let entitySettingsRaw: Record<string, unknown> | null = null;
   let entitySettingsPatch: Record<string, EntitySettingsValue> | null = null;
   if ("entitySettings" in body) {
     const raw = body.entitySettings;
@@ -629,11 +636,7 @@ export async function PATCH(request: Request) {
       if (!isPlainObject(raw)) {
         return NextResponse.json({ error: AR.badEntitySettingsShape }, { status: 400 });
       }
-      if (Object.keys(raw).length > 0) {
-        const validation = validateEntitySettingsPatch(raw);
-        if (!validation.ok) return NextResponse.json({ error: validation.error }, { status: 400 });
-        entitySettingsPatch = validation.patch;
-      }
+      if (Object.keys(raw).length > 0) entitySettingsRaw = raw;
     }
   }
 
@@ -669,7 +672,7 @@ export async function PATCH(request: Request) {
   if (
     Object.keys(profileUpdates).length === 0 &&
     Object.keys(lawyerUpdates).length === 0 &&
-    entitySettingsPatch === null &&
+    entitySettingsRaw === null &&
     businessProfilePatch === null
   ) {
     return NextResponse.json(
@@ -695,6 +698,14 @@ export async function PATCH(request: Request) {
   }
   if (baseErr || !baseProfile) {
     return NextResponse.json({ error: AR.profileNotFound }, { status: 404 });
+  }
+
+  if (entitySettingsRaw !== null) {
+    const validation = validateEntitySettingsPatch(entitySettingsRaw, {
+      allowUnifiedPhone: acceptsUnifiedNumber(baseProfile.user_type),
+    });
+    if (!validation.ok) return NextResponse.json({ error: validation.error }, { status: 400 });
+    entitySettingsPatch = validation.patch;
   }
 
   // Refuse BEFORE writing anything, so a rejected request leaves no half-write

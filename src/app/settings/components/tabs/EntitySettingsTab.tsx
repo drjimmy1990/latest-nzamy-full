@@ -16,7 +16,7 @@ import {
   splitEntityTabValues,
   type FieldDef,
 } from "./_entitySettingsFields";
-import { normalizeSaudiMobile, saudiMobileMessage } from "@/lib/services/saudiMobile";
+import { acceptsUnifiedNumber, contactPhoneMessage, normalizeContactPhone } from "@/lib/services/saudiMobile";
 
 // ── Field definitions per entity type ──────────────────────────────────
 //
@@ -90,13 +90,15 @@ export function EntitySettingsTab() {
   const [phoneTouched, setPhoneTouched] = useState(false);
   const [scope, setScope] = useState<BusinessProfileScope>("owner");
 
-  // The bag's `phone` key is a Saudi mobile for every entity type — the server
-  // normalises it to E.164 and 400s anything else (validateEntitySettingsPatch).
+  // The bag's `phone` key is a Saudi mobile — or, for firms and companies, a
+  // 920 unified number (owner decision ٥٥) — the server normalises it and 400s
+  // anything else (validateEntitySettingsPatch with acceptsUnifiedNumber).
   // Checking it here too is what turns that 400 into a message beside the field
   // instead of a red banner after a round trip.
   const phoneInBag = settingsFields.some((f) => f.key === "phone");
   const phoneRaw = values.phone ?? "";
-  const phoneResult = normalizeSaudiMobile(phoneRaw);
+  const allowUnified = acceptsUnifiedNumber(userType);
+  const phoneResult = normalizeContactPhone(phoneRaw, { allowUnified });
   const phoneInvalid = phoneInBag && phoneRaw.trim() !== "" && !phoneResult.ok;
 
   // WP-6 B-2 — owner-only writes (plan §5 Q2). A member reads the company's
@@ -193,7 +195,7 @@ export function EntitySettingsTab() {
     // just typed — so the field is fixed first.
     if (phoneInvalid) {
       setPhoneTouched(true);
-      setError(saudiMobileMessage(phoneResult));
+      setError(contactPhoneMessage(phoneResult, { allowUnified }));
       return;
     }
 
@@ -290,7 +292,7 @@ export function EntitySettingsTab() {
           }`}
         />
         {showPhoneError && (
-          <p className="mt-1.5 text-xs text-rose-600 dark:text-rose-400">{saudiMobileMessage(phoneResult)}</p>
+          <p className="mt-1.5 text-xs text-rose-600 dark:text-rose-400">{contactPhoneMessage(phoneResult, { allowUnified })}</p>
         )}
       </div>
     );

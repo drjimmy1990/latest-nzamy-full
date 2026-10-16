@@ -200,7 +200,9 @@ test("entitySettings: the bag's phone is normalised to E.164, whatever shape it 
 
 test("entitySettings: a phone that is not a Saudi mobile is refused with its OWN reason", () => {
   const cases: [string, string][] = [
-    ["920001234", saudiMobileMessage({ ok: false, reason: "prefix" })],
+    // Owner decision ٥٥: without allowUnifiedPhone (not a firm or company)
+    // a 920 number is refused, and told it is a unified number, not a mobile.
+    ["920001234", saudiMobileMessage({ ok: false, reason: "unified" })],
     ["1950", saudiMobileMessage({ ok: false, reason: "prefix" })],
     ["info@example.sa", saudiMobileMessage({ ok: false, reason: "letters" })],
     ["05123456789", saudiMobileMessage({ ok: false, reason: "length" })],
@@ -281,4 +283,25 @@ test("businessProfile: has_legal_dept is a real boolean — the column is NOT NU
 test("businessProfile: neither new column can be cleared — both are NOT NULL with a default", () => {
   assert.equal(validateBusinessProfilePatch({ service_model: null }, normalizeCr, isCapacity).ok, false);
   assert.equal(validateBusinessProfilePatch({ has_legal_dept: null }, normalizeCr, isCapacity).ok, false);
+});
+
+// ── owner decision ٥٥: 920 unified numbers for firms and companies ──────────
+
+test("entitySettings: with allowUnifiedPhone a 920 number is kept as dialled, a mobile still as E.164", () => {
+  for (const raw of ["920012345", "9200 12345", "920-01-2345", "+966920012345", "00966 920012345", "٩٢٠٠١٢٣٤٥"]) {
+    const v = validateEntitySettingsPatch({ phone: raw }, { allowUnifiedPhone: true });
+    assert.equal(v.ok, true, raw);
+    if (v.ok) assert.equal(v.patch.phone, "920012345", raw);
+  }
+  const mobile = validateEntitySettingsPatch({ phone: "0512345678" }, { allowUnifiedPhone: true });
+  assert.equal(mobile.ok, true);
+  if (mobile.ok) assert.equal(mobile.patch.phone, "+966512345678");
+});
+
+test("entitySettings: with allowUnifiedPhone a wrong number names both accepted shapes", () => {
+  for (const raw of ["0112345678", "92001234", "9200123456", "800123456"]) {
+    const v = validateEntitySettingsPatch({ phone: raw }, { allowUnifiedPhone: true });
+    assert.equal(v.ok, false, raw);
+    if (!v.ok) assert.match(v.error, /05.*920/, raw);
+  }
 });
