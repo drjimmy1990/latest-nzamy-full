@@ -191,7 +191,11 @@ test("checkout: client signup keeps ?plan= and no longer offers the retired shie
   assert.match(page, /requestedPlan=\{/);
   const steps = code("app/register/client/components/Steps.tsx");
   assert.doesNotMatch(steps, /عرض التأسيس|Founder 296|٧٥٠ ر\.س/);
-  assert.match(steps, /requestEntitlement\(planEntitlementRequest\(plan\)\)/);
+  // The request card is shared with the onboarding wizard (P1 item 4).
+  assert.match(steps, /import PlanRequestCard from "@\/components\/pricing\/PlanRequestCard";/);
+  assert.match(steps, /<PlanRequestCard plan=\{requestedPlan\} canRequestNow=\{canRequestNow\} \/>/);
+  const card = code("components/pricing/PlanRequestCard.tsx");
+  assert.match(card, /requestEntitlement\(planEntitlementRequest\(plan\)\)/);
 });
 
 /** The `ar` and `en` plan lists of every `export const plans…` object in a file. */
