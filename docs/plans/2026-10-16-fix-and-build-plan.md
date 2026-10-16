@@ -111,6 +111,12 @@ See the owner report §١‏.٢٦ for what the pass changed and what it left.
 | N21 | **Admin policies read `profiles` inline and apply to PUBLIC.** About fifteen live policies (`"admins read all lawyer profiles"`, `articles_admin_read_all`, `"Admins can modify platform settings"`, `blog_sections_admin_write`, `contact_admin_read`, `tickets_admin_all`, …) are `USING (EXISTS (SELECT 1 FROM public.profiles …))` with no `TO` clause. Postgres checks the caller's SELECT on every table a policy reads, so anon must keep SELECT on `profiles` or every guest read of those tables fails with 42501 (Docker: `profiles_anon_policy_subquery.test.sql`). Re-running 20260921_01 on live would break guest pages. Fix: recreate them `TO authenticated USING (public.is_admin())`, then revoke anon SELECT on `profiles` (finishing 20260921_01) and drop the exemption in `_verify.sql` | security | M |
 | N22 | **Fiqh search fails on very common words.** «عقد» → the fiqh section is `degraded` (503 on its own): PostgREST's `count=estimated` on `feqh_blocks` hits the 57014 statement timeout (~4 s as anon), while the same page without the count answers in ~0.5 s. Same query shape before this batch. Keep the rows when the count fails (or count cheaper); check laws/precedents/orders for the same | library / performance | S |
 
+**Status of N21 / N2 / N3 (2026-10-16, branch `claude/amazing-shirley-69859e`):**
+- N21 is built as `20261016_09_admin_policies_is_admin.sql`; run it any time.
+- N2 is built as `20261016_10_lawyer_profiles_select_column_lock.sql` plus the `/api/v1/profile` change; deploy the code first, then run the migration.
+- N3 is designed but not built: it waits on owner questions ١٩٩–٢٠٥.
+- Run order, Docker proofs and the N3 design: `docs/plans/2026-10-16-security-batch-n2-n21-n3-run-order.md`.
+
 ## 3. Decided by the owner, to build (medium)
 
 | Owner # | Decision | Size |

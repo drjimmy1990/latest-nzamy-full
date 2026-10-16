@@ -104,6 +104,50 @@ Then on the site:
 
 ---
 
+## N3 (library-only subscription grants `pro`): not built — waiting on the owner
+
+**Re-verified 2026-10-16 against HEAD:**
+- Approving a `library` request grants a plan tier the admin picks; the console defaults it to `pro` (`dashboard/admin/entitlements/requests/page.tsx`).
+- An admin library invitation code grants `pro` for 30 days (`REDEEM_TIER`, `api/v1/library/invitations/redeem`).
+- `pro` unlocks every tool gate (`ai-wargaming`, `health-check`, `finance`, `cases-unlimited`).
+- Still open.
+
+**Impact (grep; the gitnexus index is 226 commits stale and its database fails on WAL replay this session, so the tool returned nothing):**
+- `getUserTier` → **HIGH**:
+  - Called directly by `library/enactments`, `library/laws/[slug]`, `library/monitor` and `dashboard/summary`.
+  - Through `access-control.ts` it feeds `checkAccess`, `checkLibraryAccess`, `getLibraryAccessForUser`, `checkCreditBalance` and `checkTierLimit`.
+  - Through those, it gates seven library routes and every paid gate.
+- `grantEntitlement` has 4 callers: admin grant, admin request approve, invite accept and library invitation redeem.
+- `can("library-full-access")` in the browser reads `user_metadata.tier` (`useUser` → `useSubscription` → `featureAccess`). Six places use it: the laws, precedents and fiqh tabs, the article reader, `/laws/subscribe` and `InvitationBanner`.
+
+**Why it stops here:**
+- `subscriptions.plan_id` is a NOT NULL foreign key to `subscription_plans`, and live has no library plan row. Its tier CHECK allows only `free/ai/pro/corp/max`.
+- A separate library entitlement therefore needs library plan rows with names, prices and periods. The pricing page has `lib-q1` 1,500/3 months, `lib-q2` 2,750/6 months, `lib-annual` 5,000/year and `lib-firm-*`; `plans.ts` uses different ids. The quarterly and half-year plans fit neither `price_monthly` nor `price_yearly`. A zero-priced placeholder would show a false price.
+- A few behaviours are not owner-stated:
+  - what the library plan includes (the card promises «بحث بالذكاء الاصطناعي»);
+  - what the codes and colleague invites grant;
+  - what to do with live `pro` grants made for library requests.
+- These are questions ١٩٩–٢٠٥ in `أسئلة_المالك_٢٠٢٦-١٠-١٦.md`. Each has a default.
+
+**Design once answered (no change to `getUserTier` needed):**
+1. **Migration:**
+   - add `library` to both tier CHECKs;
+   - insert the library plan rows the owner confirms;
+   - verify that `effectiveTier` ignores `library` rows. `tierRank` returns -1 for a tier missing from `TIER_RANK`, and `currentPlanRow` drops rank < 0, so a `library` row never unlocks a tool.
+2. **`grantEntitlement`:**
+   - add an action `library` that writes a `tier = 'library'` row;
+   - limit both the downgrade guard and the cancel-all step to their own track (`library` rows vs tool rows), so neither grant cancels the other;
+   - stamp `user_metadata.library_until`, never `tier`.
+3. **`checkLibraryAccess` / `getLibraryAccessForUser`:** full access = tool tier ≥ `pro` **or** a running `library` row. One query reads both.
+4. **Callers:**
+   - approving `library` requests uses the new action, with the duration from `requested_ref`;
+   - the library invitation redeem uses it too;
+   - the console hides the tier picker for library requests.
+5. **Client:** `useUser` exposes `libraryUntil`, and `featureAccess` resolves `library-full-access` from it as well as from the tier.
+6. **Display:** the profile and dashboard show the library subscription next to the tool plan.
+
+---
+
 ## Rule for the future (N20)
 
 A self-host restore or any `GRANT ALL … TO anon, authenticated` re-opens these locks. `_verify.sql` says which one: its 20261016_09 section raises `anon holds a privilege on public.profiles again`. Re-run the file it names.
