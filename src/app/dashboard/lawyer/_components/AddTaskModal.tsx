@@ -4,6 +4,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { CheckCircle, XCircle, Warning, CircleNotch } from "@phosphor-icons/react";
 import { CasePicker } from "@/components/ui/CasePicker";
+import DualDatePicker from "@/components/ui/DualDatePicker";
 import { VoiceInput } from "@/components/ui/VoiceInput";
 import { createLawyerTask } from "@/lib/services/lawyerTasksService";
 
@@ -137,10 +138,10 @@ export default function AddTaskModal({ onClose, isDark }: Props) {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>تاريخ التسليم</label>
-                <input type="date" value={dueDate} disabled={saving} onChange={e => setDueDate(e.target.value)} className={inputCls} />
+                <DualDatePicker label="تاريخ التسليم" value={dueDate} disabled={saving} onChange={setDueDate} clearable className={inputCls} />
               </div>
               <div>
                 <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>الأولوية</label>

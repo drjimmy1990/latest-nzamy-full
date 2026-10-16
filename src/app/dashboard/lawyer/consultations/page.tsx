@@ -25,6 +25,7 @@ import { toArabicDigits } from "@/lib/services/arabicCount";
 import { formatGregorianAr } from "../_components/DeadlineCard";
 import ConsultationActionModal, { type ConsultationAction } from "../_components/consultations/ConsultationActionModal";
 import { saudiCalendarDate } from "@/lib/services/enactmentCountdown";
+import DualDatePicker from "@/components/ui/DualDatePicker";
 import { bookingDateError } from "./_bookingDate";
 
 /**
@@ -427,7 +428,7 @@ function BookingModal({ isDark, onClose, lawyerUserId, sessionLoading = false }:
                 <div className="space-y-3">
                   <div>
                     <label className={labelCls}>التاريخ</label>
-                    <input type="date" value={date} min={todayYMD || undefined} onChange={e => setDate(e.target.value)} className={inputCls} />
+                    <DualDatePicker label="تاريخ الاستشارة" value={date} min={todayYMD || undefined} onChange={setDate} className={inputCls} />
                   </div>
                   <div>
                     <label className={labelCls}>الوقت</label>

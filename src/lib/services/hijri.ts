@@ -191,8 +191,14 @@ const AR_GREGORIAN_MONTHS = [
  * machine set to en-US an Arabic RTL form shows `mm/dd/yyyy`, left to right,
  * with the calendar icon on the wrong side — which is what the owner
  * photographed in shots 20 and 25 of the hearing form. No markup changes that:
- * `lang` is advisory and Chrome ignores it for date fields, and replacing the
- * native picker with a custom one loses the mobile keyboard and the a11y.
+ * `lang` is advisory and Chrome ignores it for date fields.
+ *
+ * (Owner decision ١٢٧ since replaced those native fields on the dashboards with
+ * src/components/ui/DualDatePicker.tsx — Umm al-Qura and Gregorian in one
+ * picker. It answers the reasons the native field was kept: it is a real
+ * button, its calendar is a keyboard-operable ARIA grid, and month/year are
+ * native selects, so phones keep their wheels. Its field text IS this
+ * function's output, split over two lines, so the safety below still holds.)
  *
  * What can be fixed is the CONSEQUENCE. ٩/٢ and ٢/٩ are the same characters in
  * a different order, and on a court date a transposition is a missed hearing —

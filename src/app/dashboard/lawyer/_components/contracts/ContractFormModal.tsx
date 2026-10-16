@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { XCircle } from "@phosphor-icons/react";
-import { describeDateAr } from "@/lib/services/hijri";
+import DualDatePicker from "@/components/ui/DualDatePicker";
 import {
   createContract, updateContract,
   type Contract, type CreateContractInput, type UpdateContractInput,
@@ -226,20 +226,14 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
             <input type="number" min="0" value={valueSar} onChange={(e) => setValueSar(e.target.value)} placeholder="مثال: ٢٠٠٠٠" className={inputCls} />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className={labelCls}>تاريخ البداية</label>
-              <input type="date" value={startsOn} onChange={(e) => setStartsOn(e.target.value)} className={inputCls} />
-              {startsOn && describeDateAr(startsOn) && (
-                <p className={`mt-1.5 text-[10.5px] ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>{describeDateAr(startsOn)}</p>
-              )}
+              <DualDatePicker label="تاريخ البداية" value={startsOn} onChange={setStartsOn} clearable className={inputCls} />
             </div>
             <div>
               <label className={labelCls}>تاريخ النهاية</label>
-              <input type="date" value={endsOn} onChange={(e) => setEndsOn(e.target.value)} className={inputCls} />
-              {endsOn && describeDateAr(endsOn) && (
-                <p className={`mt-1.5 text-[10.5px] ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>{describeDateAr(endsOn)}</p>
-              )}
+              <DualDatePicker label="تاريخ النهاية" value={endsOn} onChange={setEndsOn} clearable className={inputCls} />
             </div>
           </div>
           {endsBeforeStarts && (
@@ -261,10 +255,7 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
 
           <div>
             <label className={labelCls}>تاريخ التوقيع (اختياري)</label>
-            <input type="date" value={signedOn} onChange={(e) => setSignedOn(e.target.value)} className={inputCls} />
-            {signedOn && describeDateAr(signedOn) && (
-              <p className={`mt-1.5 text-[10.5px] ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>{describeDateAr(signedOn)}</p>
-            )}
+            <DualDatePicker label="تاريخ التوقيع" value={signedOn} onChange={setSignedOn} clearable className={inputCls} />
           </div>
 
           <div>

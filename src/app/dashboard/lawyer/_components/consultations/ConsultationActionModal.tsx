@@ -11,6 +11,8 @@ import {
   type LawyerConsultation,
 } from "@/lib/services/lawyerConsultationsService";
 import { describeDateAr } from "@/lib/services/hijri";
+import { joinLocalDateTime, splitLocalDateTime } from "@/lib/services/dualCalendar";
+import DualDatePicker from "@/components/ui/DualDatePicker";
 import { toArabicDigits } from "@/lib/services/arabicCount";
 import {
   CONSULTATION_MODES,
@@ -116,7 +118,13 @@ export default function ConsultationActionModal({ consultation, action, isDark, 
   const [error, setError] = useState<string | null>(null);
 
   // ── schedule ──
-  const [scheduledAtLocal, setScheduledAtLocal] = useState(() => toDatetimeLocalValue(consultation.scheduledAt));
+  // The day comes from the shared Hijri/Gregorian picker and the hour from a
+  // time input. Kept as two halves so a day chosen before the hour is not
+  // lost; joined, they are the same "YYYY-MM-DDTHH:mm" the old datetime-local
+  // field produced, so everything below reads `scheduledAtLocal` unchanged.
+  const [scheduledDate, setScheduledDate] = useState(() => splitLocalDateTime(toDatetimeLocalValue(consultation.scheduledAt)).date);
+  const [scheduledTime, setScheduledTime] = useState(() => splitLocalDateTime(toDatetimeLocalValue(consultation.scheduledAt)).time);
+  const scheduledAtLocal = joinLocalDateTime(scheduledDate, scheduledTime);
   // Falls back to 60 only when the stored value isn't one of the offered
   // options — PATCH accepts any integer 5..480, so a row saved with e.g. 75
   // would otherwise leave the <select> matching nothing, silently rewriting
@@ -313,7 +321,10 @@ export default function ConsultationActionModal({ consultation, action, isDark, 
             <>
               <div>
                 <label className={labelCls}>الموعد <span className="text-red-500">*</span></label>
-                <input type="datetime-local" value={scheduledAtLocal} onChange={(e) => setScheduledAtLocal(e.target.value)} className={inputCls} />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <DualDatePicker label="تاريخ الموعد" value={scheduledDate} onChange={setScheduledDate} className={inputCls} />
+                  <input type="time" aria-label="وقت الموعد" value={scheduledTime} onChange={(e) => setScheduledTime(e.target.value)} className={inputCls} />
+                </div>
                 {scheduledAtDescribed && (
                   <p className={`mt-1.5 text-[11px] font-semibold ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>
                     {scheduledAtDescribed}{scheduledAtTime ? ` · ${scheduledAtTime}` : ""}

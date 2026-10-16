@@ -6,6 +6,7 @@ import Link from "next/link";
 import { CheckCircle, XCircle, Info, SealWarning, Timer } from "@phosphor-icons/react";
 import { toArabicDigits } from "@/lib/services/hijri";
 import { isoDate } from "@/lib/services/deadlineEngine";
+import DualDatePicker from "@/components/ui/DualDatePicker";
 import { formatGregorianAr } from "@/app/dashboard/lawyer/_components/DeadlineCard";
 import {
   recordCaseStageOutcome,
@@ -256,7 +257,7 @@ export default function RecordStageOutcomeModal({ onClose, isDark, caseRequestId
               <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
                 تاريخ الإغلاق {dateRequired && <span className="text-red-500">*</span>}
               </label>
-              <input type="date" value={closedOn} onChange={(e) => setClosedOn(e.target.value)} className={inputCls} />
+              <DualDatePicker label="تاريخ الإغلاق" value={closedOn} onChange={setClosedOn} clearable={!dateRequired} className={inputCls} />
               {dateMissing && (
                 <p className="mt-1.5 text-[11px] font-semibold text-red-500">تاريخ الإغلاق مطلوب لتسجيل نتيجة</p>
               )}

@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { XCircle } from "@phosphor-icons/react";
-import { describeDateAr } from "@/lib/services/hijri";
+import DualDatePicker from "@/components/ui/DualDatePicker";
 import {
   addContractParty, updateContractParty,
   addContractObligation, updateContractObligation,
@@ -334,10 +334,7 @@ export function ObligationFormModal({ contractId, isDark, onClose, initial, onSa
 
         <div>
           <label className={labelCls}>تاريخ الاستحقاق <span className="text-red-500">*</span></label>
-          <input type="date" value={dueOn} onChange={(e) => setDueOn(e.target.value)} className={inputCls} />
-          {dueOn && describeDateAr(dueOn) && (
-            <p className={`mt-1.5 text-[10.5px] ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>{describeDateAr(dueOn)}</p>
-          )}
+          <DualDatePicker label="تاريخ الاستحقاق" value={dueOn} onChange={setDueOn} className={inputCls} />
         </div>
 
         {parties && parties.length > 0 && (
@@ -466,14 +463,14 @@ export function PaymentFormModal({ contractId, isDark, onClose, initial, onSaved
           </select>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className={labelCls}>المبلغ (ر.س) <span className="text-red-500">*</span></label>
             <input type="number" min="0" value={amountSar} onChange={(e) => setAmountSar(e.target.value)} className={inputCls} />
           </div>
           <div>
             <label className={labelCls}>تاريخ الاستحقاق</label>
-            <input type="date" value={dueOn} onChange={(e) => setDueOn(e.target.value)} className={inputCls} />
+            <DualDatePicker label="تاريخ استحقاق الدفعة" value={dueOn} onChange={setDueOn} clearable className={inputCls} />
           </div>
         </div>
 
@@ -489,7 +486,7 @@ export function PaymentFormModal({ contractId, isDark, onClose, initial, onSaved
         {paidOnRequired && (
           <div>
             <label className={labelCls}>تاريخ السداد <span className="text-red-500">*</span></label>
-            <input type="date" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} className={inputCls} />
+            <DualDatePicker label="تاريخ السداد" value={paidOn} onChange={setPaidOn} className={inputCls} />
             {paidOnMissing && <p className="mt-1.5 text-[11px] font-semibold text-red-500">حدّد تاريخ السداد</p>}
           </div>
         )}

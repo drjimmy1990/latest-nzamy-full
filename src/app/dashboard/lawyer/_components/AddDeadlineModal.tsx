@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { CheckCircle, XCircle, ArrowClockwise, CircleNotch } from "@phosphor-icons/react";
 import { describeDateAr, toArabicDigits } from "@/lib/services/hijri";
 import { CasePicker } from "@/components/ui/CasePicker";
+import DualDatePicker from "@/components/ui/DualDatePicker";
 import {
   createDeadline,
   getDeadlineRules,
@@ -276,19 +277,13 @@ export default function AddDeadlineModal({ onClose, isDark, caseRequestId, onCre
               <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
                 {mode === "rule" ? "تاريخ الحدث (بداية المهلة)" : "تاريخ الحدث"} <span className="text-red-500">*</span>
               </label>
-              <input type="date" value={triggerDate} onChange={(e) => setTriggerDate(e.target.value)} className={inputCls} />
-              {triggerDate && describeDateAr(triggerDate) && (
-                <p className={`mt-1.5 text-[11px] font-semibold ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>{describeDateAr(triggerDate)}</p>
-              )}
+              <DualDatePicker label={mode === "rule" ? "تاريخ الحدث (بداية المهلة)" : "تاريخ الحدث"} value={triggerDate} onChange={setTriggerDate} className={inputCls} />
             </div>
 
             {mode === "manual" && (
               <div>
                 <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>تاريخ الاستحقاق <span className="text-red-500">*</span></label>
-                <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={inputCls} />
-                {dueDate && describeDateAr(dueDate) && (
-                  <p className={`mt-1.5 text-[11px] font-semibold ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>{describeDateAr(dueDate)}</p>
-                )}
+                <DualDatePicker label="تاريخ الاستحقاق" value={dueDate} onChange={setDueDate} className={inputCls} />
               </div>
             )}
 

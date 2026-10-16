@@ -10,6 +10,7 @@ import {
   feePairIssue,
 } from "@/lib/services/clientIdentityRules";
 import { FLAG_CONFIG } from "@/constants/lawyerClientsData";
+import DualDatePicker from "@/components/ui/DualDatePicker";
 import {
   type LawyerClient, type CreateLawyerClientInput,
   createLawyerClient,
@@ -400,7 +401,7 @@ export default function AddClientModal({ isDark, onClose, onCreated }: {
                 </div>
                 <div>
                   <label className={`text-[10px] font-bold uppercase tracking-wider mb-1 block ${labelCls}`}>تاريخ أول تعامل (اختياري)</label>
-                  <input type="date" value={firstEngagementOn} onChange={e => setFirstEngagementOn(e.target.value)} dir="ltr"
+                  <DualDatePicker label="تاريخ أول تعامل" value={firstEngagementOn} onChange={setFirstEngagementOn} clearable
                     className={`w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none transition ${inputCls}`} />
                 </div>
                 {/* A blank fee step no longer records a 0, so say what a blank

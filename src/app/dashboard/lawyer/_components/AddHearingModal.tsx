@@ -9,6 +9,7 @@ import { createLawyerHearing } from "@/lib/services/lawyerHearingsService";
 import { createWorkflowId } from "@/lib/workflowStore";
 import type { UserType, UserTier } from "@/hooks/useUser";
 import { describeDateAr, toArabicDigits } from "@/lib/services/hijri";
+import DualDatePicker from "@/components/ui/DualDatePicker";
 import { getHearingLocationField } from "./hearingLocationField";
 
 interface Props {
@@ -248,10 +249,10 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
                       <input type="text" value={caseName} onChange={e => setCaseName(e.target.value)} placeholder="مثال: قضية الأفق" className={inputCls} />
                     </div>
                   )}
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>التاريخ <span className="text-red-500">*</span></label>
-                      <input type="date" value={date} onChange={e => setDate(e.target.value)} className={inputCls} />
+                      <DualDatePicker label="تاريخ الموعد" value={date} onChange={setDate} className={inputCls} />
                     </div>
                     <div>
                       {/* «(اختياري)» because it IS optional and was not saying so.
