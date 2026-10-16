@@ -82,6 +82,13 @@ export const CORPORATE_SIDEBAR: SidebarGroup[] = [
       { label: "خزنة وثائق المنشأة", labelEn: "Company Documents", href: "/dashboard/business/documents", icon: "FolderOpen" },
       // WP-6 B-5/B-6 — a real roster over public.business_members.
       { label: "إدارة الفريق", labelEn: "Team", href: "/dashboard/business/team", icon: "UsersThree" },
+      // Owner decision ٣٦ (2026-10-17): the company data, edited by the owner or
+      // a delegate registered in «التفويض» below — for ANY account type that
+      // belongs to the company (/api/v1/business/profile).
+      { label: "بيانات المنشأة", labelEn: "Company Data", href: "/dashboard/business/company", icon: "Buildings" },
+      // Owner decisions ٣٦ + ٥ «التفويض»: public.business_delegations
+      // (20261017_30) through /api/v1/business/delegations.
+      { label: "التفويض", labelEn: "Delegations", href: "/dashboard/business/delegations", icon: "Key" },
     ],
   },
   {

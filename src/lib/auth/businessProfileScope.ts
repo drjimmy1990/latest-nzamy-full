@@ -34,7 +34,13 @@
  * disabling Save.
  */
 
-export type BusinessProfileScope = "owner" | "member" | "none";
+/**
+ * `"delegate"` (owner decision ٣٦, 20261017_30): an active member the owner
+ * registered in `business_delegations` for the company data. It is never what
+ * `resolveBusinessProfileScope` returns; `applyDelegation` upgrades a
+ * `"member"` to it after the delegation lookup.
+ */
+export type BusinessProfileScope = "owner" | "delegate" | "member" | "none";
 
 export interface BusinessScopeReads {
   /** `business_profiles.id` where `owner_user_id = caller`, or null for no row. */
@@ -77,7 +83,42 @@ export function resolveBusinessProfileScope(reads: BusinessScopeReads): Business
   };
 }
 
-/** True when this scope may write the company's row. Owner-only — plan §5 Q2. */
+/**
+ * What the delegation lookup (`is_business_profile_editor`, 20261017_30)
+ * answered for a member:
+ *   - "delegate"     a live company_profile delegation;
+ *   - "not_delegate" none;
+ *   - "unavailable"  the function is not installed yet (the migration has not
+ *                    run) — the WP-6 owner-only behaviour, not a failure;
+ *   - "failed"       the lookup errored, so the answer is unknown.
+ */
+export type DelegationLookup = "delegate" | "not_delegate" | "unavailable" | "failed";
+
+/**
+ * Upgrade a `"member"` decision with the delegation lookup. Owners and "none"
+ * pass through untouched: the lookup is asked only after the owner check
+ * fails, so an owner's save never depends on the delegations table.
+ *
+ * A failed lookup keeps `"member"` (the safe floor) and raises `readFailed`,
+ * which the screens already turn into «could not read — Save disabled» rather
+ * than «only the owner may edit», which might be false for this person.
+ */
+export function applyDelegation(
+  decision: BusinessScopeDecision,
+  lookup: DelegationLookup,
+): BusinessScopeDecision {
+  if (decision.scope !== "member") return decision;
+  if (lookup === "delegate") return { ...decision, scope: "delegate" };
+  if (lookup === "failed") return { ...decision, readFailed: true };
+  return decision;
+}
+
+/**
+ * True when this scope may write the company's row: the owner, or a
+ * registered delegate — owner decision ٣٦, which replaces the plan §5 Q2
+ * owner-only default. RLS enforces the same pair (the owner policy plus
+ * "business_profiles: registered delegate can update").
+ */
 export function canWriteBusinessProfile(scope: BusinessProfileScope): boolean {
-  return scope === "owner";
+  return scope === "owner" || scope === "delegate";
 }

@@ -45,6 +45,11 @@ export const BUSINESS_ROUTE_RULES: readonly Rule<BusinessRole>[] = [
   { path: "/dashboard/business/circuits-emails", match: "prefix", label: "الدوائر والإيميلات", allowedRoles: ["owner", "legal_manager", "legal_staff", "seconded"] },
   { path: "/dashboard/business/departments", match: "prefix", label: "الأقسام", allowedRoles: ["owner", "legal_manager", "department_head"] },
   { path: "/dashboard/business/team", match: "prefix", label: "الفريق والدعوات", allowedRoles: ["owner", "legal_manager", "hr_manager"] },
+  // Owner decision ٣٦. Every active member reads both; who may WRITE is the
+  // server's answer (owner or registered delegate), not a role list — a
+  // delegate can hold any role.
+  { path: "/dashboard/business/company", match: "prefix", label: "بيانات المنشأة", allowedRoles: ALL_BUSINESS_ROLES },
+  { path: "/dashboard/business/delegations", match: "prefix", label: "التفويض", allowedRoles: ALL_BUSINESS_ROLES },
   { path: "/dashboard/business/employee-contracts", match: "prefix", label: "عقود الموظفين", allowedRoles: ["owner", "legal_manager", "hr_manager"] },
   { path: "/dashboard/business/reports", match: "prefix", label: "التقارير", allowedRoles: ["owner", "legal_manager", "compliance_officer", "hr_manager", "finance_manager"] },
   { path: "/dashboard/business/wallet", match: "prefix", label: "الفوترة والمحفظة", allowedRoles: ["owner", "finance_manager"] },

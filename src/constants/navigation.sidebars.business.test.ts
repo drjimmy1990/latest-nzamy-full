@@ -34,11 +34,16 @@ const test = (name: string, fn: () => void) => {
 // deliberate edit here — every entry on it is a section a corporate account can
 // reach, and the whole point of the 26 August ruling was that most of them
 // could not honestly be.
-test('only the dashboard root, the document vault and the real team page are linked under /dashboard/business', () => {
+// Owner decision ٣٦ (2026-10-17) added «بيانات المنشأة» and «التفويض»: the
+// company data over /api/v1/business/profile and the delegation register over
+// public.business_delegations (20261017_30). Both are real reads and writes.
+test('only the real company sections are linked under /dashboard/business', () => {
   assert.deepEqual(VISIBLE_BUSINESS_ROUTES, [
     '/dashboard/business',
     '/dashboard/business/documents',
     '/dashboard/business/team',
+    '/dashboard/business/company',
+    '/dashboard/business/delegations',
   ]);
 });
 
@@ -53,6 +58,9 @@ test('the corporate sidebar links to nothing that renders fabricated data', () =
     // Nothing on the page is fabricated — a name the caller may not read shows
     // as «الاسم غير متاح», not as a dash or an invented person.
     '/dashboard/business/team',
+    // Owner decision ٣٦: the company data and the delegation register.
+    '/dashboard/business/company',
+    '/dashboard/business/delegations',
     // 2026-08-27 — the shared intake (owner س٢: «الشركة تستخدم نفس النموذج»).
     // These are /dashboard/client/* on purpose; routeAccess.ts opens exactly
     // these three subtrees to a corporate account and nothing else.
@@ -76,6 +84,8 @@ test('the intake links do NOT re-open any /dashboard/business section', () => {
     '/dashboard/business',
     '/dashboard/business/documents',
     '/dashboard/business/team',
+    '/dashboard/business/company',
+    '/dashboard/business/delegations',
   ]);
 });
 
@@ -228,6 +238,8 @@ test('the three visible business routes are not refused', () => {
     // answering «هذا القسم قيد الإعداد» over the company's own members.
     '/dashboard/business/team',
     '/dashboard/business/team?q=a',
+    '/dashboard/business/company',
+    '/dashboard/business/delegations',
   ]) {
     assert.equal(isHiddenBusinessSection(visible), false, visible);
   }
