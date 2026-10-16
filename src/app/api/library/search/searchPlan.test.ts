@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   ALL_SECTION_PREVIEW,
+  LAW_LOOKUP_BATCH,
   LAW_TITLE_HITS_LAWS,
+  attachLaws,
+  lawSlugBatches,
+  lawWindowNeedsJoin,
   SEARCH_MIN_FETCH,
   fetchSizeFor,
   dedupeResults,
@@ -56,6 +60,46 @@ test("isTimeoutError recognises statement_timeout and client aborts only", () =>
   assert.equal(isTimeoutError({ code: "42703", message: "column articles.original_text does not exist" }), false);
   assert.equal(isTimeoutError({ message: "Bad Request" }), false);
   assert.equal(isTimeoutError(null), false);
+});
+
+test("the laws window joins laws only for a filter on a law column", () => {
+  assert.equal(lawWindowNeedsJoin({}), false);
+  assert.equal(lawWindowNeedsJoin({ category: "" }), false);
+  assert.equal(lawWindowNeedsJoin({ category: "06" }), true);
+  assert.equal(lawWindowNeedsJoin({ lawType: "نظام" }), true);
+  assert.equal(lawWindowNeedsJoin({ category: "06", lawType: "نظام" }), true);
+});
+
+test("lawSlugBatches: distinct slugs, first seen first, never more than a batch per lookup", () => {
+  const rows = [
+    { law_slug: "labor-law" }, { law_slug: "civil-transactions" }, { law_slug: "labor-law" },
+    { law_slug: "" }, { law_slug: null }, {}, { law_slug: "zoo-requirements" },
+  ];
+  assert.deepEqual(lawSlugBatches(rows), [["labor-law", "civil-transactions", "zoo-requirements"]]);
+  assert.deepEqual(lawSlugBatches(rows, 2), [["labor-law", "civil-transactions"], ["zoo-requirements"]]);
+  assert.deepEqual(lawSlugBatches([]), []);
+  // The largest window (limit 100 + 3 title slots) from 103 laws: 3 lookups.
+  const many = Array.from({ length: 103 }, (_, i) => ({ law_slug: `law-${i}` }));
+  const batches = lawSlugBatches(many);
+  assert.equal(batches.length, Math.ceil(103 / LAW_LOOKUP_BATCH));
+  assert.ok(batches.every((b) => b.length <= LAW_LOOKUP_BATCH));
+  assert.deepEqual(batches.flat(), many.map((r) => r.law_slug));
+});
+
+test("attachLaws: each row gets its law as `laws`, in place; no row is ever dropped", () => {
+  const rows = [
+    { id: "a1", law_slug: "labor-law" },
+    { id: "a2", law_slug: "missing-law" },
+    { id: "a3", law_slug: "labor-law" },
+  ];
+  const labor = { slug: "labor-law", title: "نظام العمل", type: "نظام", section_code: "06", section_name: "x", status: "active" };
+  const out = attachLaws(rows, [labor, { slug: "other", title: "t" }]);
+  assert.deepEqual(out.map((r) => r.id), ["a1", "a2", "a3"]);
+  assert.equal(out[0].laws, labor);
+  assert.equal(out[2].laws, labor);
+  // A row whose law was not found stays (it is counted in the window).
+  assert.equal(out[1].laws, undefined);
+  assert.equal(attachLaws([], [labor]).length, 0);
 });
 
 test("the uncounted retry runs on the database's statement_timeout (57014) only", () => {
