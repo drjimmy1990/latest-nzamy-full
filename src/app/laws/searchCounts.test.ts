@@ -139,3 +139,42 @@ test("view-all says «كل» only for an exact, reachable count", () => {
   const degraded = readSearchCounts({ counts: { feqh: null } }, ["feqh"]);
   assert.equal(viewAllLabel(degraded, "feqh"), null);
 });
+
+// ── N17 (fix plan 2026-10-16): laws count matches, cards are per law ─────────
+
+test("the laws badge names its unit: matches, not cards", async () => {
+  const { lawMatchesBadge } = await import("./searchCounts.ts");
+  assert.equal(lawMatchesBadge({ kind: "exact", value: 37 }), "٣٧ مطابقة");
+  assert.equal(lawMatchesBadge({ kind: "exact", value: 5 }), "٥ مطابقات");
+  assert.equal(lawMatchesBadge({ kind: "exact", value: 1 }), "مطابقة واحدة");
+  assert.equal(lawMatchesBadge({ kind: "exact", value: 2 }), "مطابقتان");
+  assert.equal(lawMatchesBadge({ kind: "atLeast", value: 1000 }), "أكثر من ١٬٠٠٠ مطابقة");
+  assert.equal(lawMatchesBadge({ kind: "exact", value: 0 }), null);
+  assert.equal(lawMatchesBadge({ kind: "degraded" }), null);
+});
+
+test("the laws load-more label counts loaded matches and the cards they fill", async () => {
+  const { lawsLoadMoreLabel } = await import("./searchCounts.ts");
+  assert.equal(
+    lawsLoadMoreLabel(50, 12, { kind: "exact", value: 370 }, true),
+    "تحميل المزيد (المحمّل ٥٠ مطابقة من ٣٧٠، في ١٢ وثيقة)",
+  );
+  assert.equal(
+    lawsLoadMoreLabel(50, 5, { kind: "exact", value: 370 }, true),
+    "تحميل المزيد (المحمّل ٥٠ مطابقة من ٣٧٠، في ٥ وثائق)",
+  );
+  assert.equal(
+    lawsLoadMoreLabel(50, 2, { kind: "atLeast", value: 1000 }, true),
+    `تحميل المزيد (المحمّل ٥٠ مطابقة، في وثيقتين — يمكن تصفّح حتى ${(SEARCH_MAX_DEPTH).toLocaleString("ar-SA")} مطابقة)`,
+  );
+  // An older API's count left the title hits out: no total is claimed.
+  assert.equal(lawsLoadMoreLabel(3, 1, { kind: "exact", value: 40 }, false), "تحميل المزيد (المحمّل ٣ مطابقات، في وثيقة واحدة)");
+  assert.equal(lawsLoadMoreLabel(3, 1, { kind: "degraded" }, true), "تحميل المزيد (المحمّل ٣ مطابقات، في وثيقة واحدة)");
+});
+
+test("/laws uses the laws labels and counts the grouped cards it renders", () => {
+  const page = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+  assert.match(page, /k === "laws"\s*\?\s*lawMatchesBadge\(sectionCountDisplay\(searchCounts, k\)\)/);
+  assert.match(page, /if \(pagingSection === "laws"\) return lawsLoadMoreLabel\(pagingRows\.length, lawCards\.length, d, !!searchPaging\?\.lawCountIncludesTitleHits\);/);
+  assert.match(page, /const lawCards = isSearchActive \? groupLawSearchCards\(filteredLaws\) : filteredLaws;/);
+});
