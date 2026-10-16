@@ -9,22 +9,27 @@ import SocialProof from "@/components/SocialProof";
 import CommunityHighlights from "@/components/CommunityHighlights";
 import FAQ from "@/components/FAQ";
 import Footer from "@/components/Footer";
+import { LEGAL_IDENTITY_AR } from "@/constants/legalIdentity";
 
 const HOME_DESCRIPTION =
   "نظامي — المنصة القانونية الأولى في المملكة العربية السعودية: استشارات فورية، صياغة عقود بالذكاء الاصطناعي، تمثيل قضائي، وإدارة مكاتب المحاماة في منصة واحدة.";
 
-// LegalService structured data (schema.org) — same server-rendered
+// Organization structured data (schema.org) — same server-rendered
 // <script type="application/ld+json"> pattern as ArticleJsonLd.tsx, so it
 // lands in the initial HTML with no client hydration required.
-const legalServiceJsonLd = {
+// Owner decision Q27: an Organization, not a schema.org LegalService (the
+// type for law firms) — نظامي is a LegalTech provider, and the description is
+// the owner's identity sentence.
+const organizationJsonLd = {
   "@context": "https://schema.org",
-  "@type": "LegalService",
+  "@type": "Organization",
   name: "نظامي",
+  alternateName: "Nezamy",
   url: "https://nezamy.sa",
   logo: "https://nezamy.sa/logo.png",
-  description: HOME_DESCRIPTION,
+  description: LEGAL_IDENTITY_AR,
   areaServed: "SA",
-  availableLanguage: ["ar", "en"],
+  knowsLanguage: ["ar", "en"],
 };
 
 export const metadata: Metadata = {
@@ -52,7 +57,7 @@ export default function Home() {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(legalServiceJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
       />
       {/* S79: redirect مستخدم مسجّل لداشبورده تلقائياً */}
       <HomeRedirectGuard />

@@ -60,3 +60,10 @@ test("Q27: client screens call the platform «فريق نظامي», not «مك�
     assert.doesNotMatch(src(path), /مكتب نظامي/, `${path}: «مكتب نظامي»`);
   }
 });
+
+test("Q27: the home page's structured data is an Organization, not a schema.org LegalService (a law firm)", () => {
+  const text = src("app/page.tsx");
+  assert.doesNotMatch(text, /"@type":\s*"LegalService"/);
+  assert.match(text, /"@type":\s*"Organization"/);
+  assert.match(text, /description:\s*LEGAL_IDENTITY_AR/);
+});
