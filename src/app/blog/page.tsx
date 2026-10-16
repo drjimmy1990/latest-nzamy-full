@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 import {
-  MagnifyingGlass, Newspaper, Clock, Eye, Tag, Rss, Warning, ArrowClockwise,
+  MagnifyingGlass, Newspaper, Clock, Eye, Tag, Warning, ArrowClockwise,
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -278,9 +278,8 @@ export default function BlogPage() {
               {isRTL ? "مقالات قانونية معمّقة في الأنظمة السعودية" : "In-depth articles on Saudi regulations"}
             </p>
           </div>
-          <button className={`flex items-center gap-2 px-5 py-3 rounded-2xl border text-sm font-semibold transition-all backdrop-blur-sm ${isDark ? "bg-[#161b22]/60 border-white/[0.06] text-zinc-300 hover:bg-white/5" : "bg-white/80 border-slate-200/60 text-slate-600 hover:bg-slate-50 shadow-sm"}`}>
-            <Rss size={15} color="#C8A762" /> {isRTL ? "اشترك بـ RSS" : "Subscribe RSS"}
-          </button>
+          {/* No «اشترك بـ RSS» button: the site serves no feed, and the
+              button did nothing (N12, fix plan 2026-10-16). */}
         </div>
 
         {/* Featured */}
@@ -386,23 +385,9 @@ export default function BlogPage() {
           </div>
         )}
 
-        {/* Newsletter */}
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }} className={`mt-12 rounded-[2rem] border p-10 text-center backdrop-blur-xl shadow-lg relative overflow-hidden ${isDark ? "bg-[#0B3D2E]/20 border-[#0B3D2E]/40" : "bg-[#0B3D2E]/[0.03] border-[#0B3D2E]/20"}`}>
-          <div className="absolute -top-32 -left-32 w-64 h-64 bg-[#C8A762]/10 rounded-full blur-[80px] pointer-events-none" />
-          <div className="absolute -bottom-32 -right-32 w-64 h-64 bg-[#0B3D2E]/10 rounded-full blur-[80px] pointer-events-none" />
-          
-          <div className="w-16 h-16 rounded-2xl bg-white border border-slate-200 shadow-sm flex items-center justify-center mx-auto mb-5 dark:bg-[#161b22] dark:border-white/10 relative z-10">
-            <Newspaper size={28} color="#C8A762" weight="duotone" />
-          </div>
-          <h3 className={`text-2xl font-black tracking-tight mb-2 relative z-10 ${isDark ? "text-white" : "text-zinc-900"}`}>{isRTL ? "اشترك في النشرة القانونية" : "Subscribe to Legal Newsletter"}</h3>
-          <p className={`text-[13.5px] leading-relaxed mb-8 relative z-10 ${muted}`}>{isRTL ? "أحدث المقالات والتحديثات القانونية أسبوعياً إلى بريدك" : "Latest articles and legal updates weekly to your inbox"}</p>
-          <div className="flex flex-col sm:flex-row gap-3 max-w-sm mx-auto relative z-10">
-            <input placeholder={isRTL ? "بريدك الإلكتروني" : "Your email"} className={`flex-1 rounded-2xl border px-5 py-3.5 text-sm outline-none transition-all focus:ring-2 focus:ring-[#0B3D2E]/20 ${isDark ? "bg-[#0c0f12] border-white/[0.06] text-white placeholder-zinc-500" : "bg-white border-slate-200 text-slate-900 placeholder-slate-400"}`} />
-            <button className="px-6 py-3.5 bg-[#0B3D2E] text-white text-[13.5px] font-bold rounded-2xl hover:bg-[#0a3328] transition-all shadow-[0_4px_14px_0_rgba(11,61,46,0.3)] active:scale-[0.98]">
-              {isRTL ? "اشترك" : "Subscribe"}
-            </button>
-          </div>
-        </motion.div>
+        {/* No «اشترك في النشرة القانونية» form: no newsletter is sent and
+            nothing stored the address it asked for — the button did nothing
+            (N12, fix plan 2026-10-16). */}
       </div>
 
       <Footer />
