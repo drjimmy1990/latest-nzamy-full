@@ -38,6 +38,7 @@ export {
 } from "./demo-data";
 
 // ─── Demo arrays — gated ───
+import { isDemoMode } from "@/lib/runtimeMode";
 import {
   DEMO_PRINCIPLES as _DEMO_PRINCIPLES,
   DEMO_PRECEDENTS as _DEMO_PRECEDENTS,
@@ -48,13 +49,18 @@ import {
 } from "./demo-data";
 
 /**
- * True when demo data should be visible:
- *   - always in non-production (dev/test)
- *   - in production only if NEXT_PUBLIC_LIB_DEMO_FALLBACK === "1"
+ * True when demo data should be visible (owner decision ١١٥ — demo is fully
+ * separate from production):
+ *   - in demo mode (runtimeMode.isDemoMode — never true in a production build);
+ *   - in a NON-production build that opts in with NEXT_PUBLIC_LIB_DEMO_FALLBACK=1.
+ * It used to be on in every dev build even with the real backend, and a
+ * production build could switch it on with that same variable — which put the
+ * DEMO_* laws, precedents and books on a live page. No production value turns
+ * it on now.
  */
 const DEMO_ENABLED =
-  process.env.NODE_ENV !== "production" ||
-  process.env.NEXT_PUBLIC_LIB_DEMO_FALLBACK === "1";
+  isDemoMode ||
+  (process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_LIB_DEMO_FALLBACK === "1");
 
 export const DEMO_PRINCIPLES = DEMO_ENABLED ? _DEMO_PRINCIPLES : [];
 export const DEMO_PRECEDENTS = DEMO_ENABLED ? _DEMO_PRECEDENTS : [];

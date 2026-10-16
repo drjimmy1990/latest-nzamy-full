@@ -11,6 +11,8 @@ import {
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import { readWorkflowRequestsByReceiver, updateWorkflowRequest, type WorkflowRequest } from "@/lib/workflowStore";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Request = {
@@ -334,6 +336,19 @@ function ProviderRequestsPageInner() {
 }
 
 export default function ProviderRequestsPage() {
+  // Owner decision ١١٥: every request on this screen is a fixture (REQUESTS)
+  // or a row from the browser-only demo store, accepted «as provider-demo».
+  // No server feed of provider requests exists yet, so outside demo mode the
+  // page says so instead of showing invented clients.
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="طلبات العملاء"
+        description="تظهر هنا طلبات التوثيق والتحكيم الموجهة إليك حين يُربط استقبالها بحسابك. لا تُعرض طلبات افتراضية."
+        backHref="/dashboard/provider"
+      />
+    );
+  }
   return (
     <Suspense fallback={<div className="p-8 text-center opacity-40 text-sm">جارٍ التحميل...</div>}>
       <ProviderRequestsPageInner />

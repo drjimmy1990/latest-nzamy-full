@@ -80,7 +80,12 @@ export async function getWorkflowRequestsByReceiver(
 export async function createWorkflowRequest(
   input: Omit<WorkflowRequest, "createdAt" | "auditTrail"> & { auditEvent?: string },
 ): Promise<WorkflowRequest> {
-  if (!isSupabaseMode) return saveLocal(input);
+  if (!isSupabaseMode) {
+    // The browser store writes only in demo mode (workflowStore.ts, owner ١١٥).
+    const saved = saveLocal(input);
+    if (!saved) throw new Error("تعذّر حفظ الطلب: المتجر المحلي متاح في وضع العرض التجريبي فقط.");
+    return saved;
+  }
   // THROWS on failure — deliberately, and this is the reason this file has a
   // header. The caller must decide what to tell the user; it must not be told
   // by this function that a request succeeded when nothing was written.

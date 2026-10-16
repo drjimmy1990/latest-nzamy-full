@@ -5,6 +5,11 @@
  * Creates or updates 10 realistic test lawyer accounts on self-hosted Supabase
  * with known emails and passwords, verified profiles, and active pro subscriptions.
  *
+ * They are TEST accounts on the live database (owner decision ١١٥): each one is
+ * registered in public.test_accounts (migration 20261017_44) and written with
+ * marketplace_visible = false, so none of them reaches the public directory,
+ * a public lawyer page or the community contributors list.
+ *
  * Usage:
  *   node scripts/seed-test-lawyers.mjs                # dry-run (preview only)
  *   node scripts/seed-test-lawyers.mjs --execute      # creates the accounts
@@ -220,7 +225,7 @@ async function run() {
 
     if (!EXECUTE) {
       console.log(`   [DRY-RUN] Will ${existing ? "update existing user" : "create new user"}`);
-      console.log(`   [DRY-RUN] Tier: pro (lawyer-pro) | Verified: YES | Visible: YES | License: ${lawyer.license}`);
+      console.log(`   [DRY-RUN] Tier: pro (lawyer-pro) | Verified: YES | Listed: NO (test account) | License: ${lawyer.license}`);
       summary.push({ email, password: SEED_PASSWORD, name: lawyer.nameAr, status: existing ? "Will Update" : "Will Create" });
       continue;
     }
@@ -267,6 +272,20 @@ async function run() {
       console.log(`   ✓ Auth user updated & password reset`);
     }
 
+    // Phase 1b: Test-account registry (owner decision ١١٥, migration
+    // 20261017_44). Registered BEFORE the lawyer profile is written, so the
+    // database trigger keeps this account out of every public list from its
+    // first write. A database without the registry yet answers 42P01 / PGRST205;
+    // that is reported, never ignored silently.
+    const { error: registryErr } = await supabase
+      .from("test_accounts")
+      .upsert({ user_id: userId, source: "seed-test-lawyers" }, { onConflict: "user_id", ignoreDuplicates: true });
+    if (registryErr) {
+      console.error(`   ⚠️ Not registered as a test account (run 20261017_44 first): ${registryErr.message}`);
+    } else {
+      console.log(`   ✓ Registered as a test account (never listed publicly)`);
+    }
+
     // Phase 2: Profiles Table
     const { error: profileErr } = await supabase.from("profiles").upsert({
       id: userId,
@@ -291,14 +310,16 @@ async function run() {
       specialties: lawyer.specialties,
       bio_ar: lawyer.bioAr,
       is_accepting_clients: true,
-      marketplace_visible: true,
+      // Never listed: these are test accounts on the live database (owner
+      // decision ١١٥). 20261017_44's trigger enforces the same for any writer.
+      marketplace_visible: false,
       verification_status: "verified",
       updated_at: nowIso(),
     });
     if (lawyerProfErr) {
       console.error(`   ❌ Failed to update lawyer_profile: ${lawyerProfErr.message}`);
     } else {
-      console.log(`   ✓ Lawyer profile set (License: ${lawyer.license}, Marketplace: Visible)`);
+      console.log(`   ✓ Lawyer profile set (License: ${lawyer.license}, Marketplace: not listed — test account)`);
     }
 
     // Phase 4: Subscriptions Table

@@ -14,6 +14,7 @@ import {
 import { useTheme } from "@/components/ThemeProvider";
 import { useFirmRole } from "./layout";
 import { readWorkflowRequestsByReceiver, type WorkflowRequest } from "@/lib/workflowStore";
+import { isDemoMode } from "@/lib/runtimeMode";
 import { OnboardingBanner } from "@/components/OnboardingBanner";
 import { FirmProfileReadinessPanel } from "@/components/dashboard/firm/FirmProfileReadinessPanel";
 
@@ -143,115 +144,133 @@ export default function FirmDashboardPage() {
         </div>
       </div>
 
-      {/* ── KPI Stats ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {STATS.map((stat, i) => {
-          const Icon = stat.icon;
-          if (stat.requiresFinancials && !role.can.viewFinancials) {
+      {/* Owner decision ١١٥: the KPI cards, «البنود العاجلة» and «آخر النشاطات»
+          below are fixtures (STATS / URGENT_ITEMS / MY_ITEMS / RECENT_ACTIVITY) —
+          shown in demo mode only. A production firm sees an honest note until
+          these numbers are read from its own records. */}
+      {isDemoMode ? (
+        <>
+        {/* ── KPI Stats ── */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {STATS.map((stat, i) => {
+            const Icon = stat.icon;
+            if (stat.requiresFinancials && !role.can.viewFinancials) {
+              return (
+                <LockedCard key={i} isDark={isDark} isAr={isAr}
+                  labelAr="الماليات — متاح للمدير فقط"
+                  labelEn="Financials — Manager only"
+                />
+              );
+            }
             return (
-              <LockedCard key={i} isDark={isDark} isAr={isAr}
-                labelAr="الماليات — متاح للمدير فقط"
-                labelEn="Financials — Manager only"
-              />
-            );
-          }
-          return (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.07 }}
-              className={CARD(isDark)}
-            >
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 ${stat.bg}`}>
-                <Icon size={20} weight="duotone" className={stat.color} />
-              </div>
-              <p className={`text-[12px] mb-0.5 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                {isAr ? stat.labelAr : stat.labelEn}
-              </p>
-              <p className={`text-xl font-bold font-mono ${isDark ? "text-white" : "text-slate-800"}`}>{stat.value}</p>
-              <p className={`text-[11px] mt-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                {isAr ? stat.trendAr : stat.trendEn}
-              </p>
-            </motion.div>
-          );
-        })}
-      </div>
-
-      {/* ── Main Grid ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-
-        {/* Urgent items — 2/3 */}
-        <div className={`lg:col-span-2 ${CARD(isDark)}`}>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className={`text-sm font-bold flex items-center gap-2 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
-              <WarningCircle size={16} className="text-amber-500" weight="fill" />
-              {isLimitedView
-                ? (isAr ? "مهامي العاجلة" : "My Urgent Tasks")
-                : (isAr ? "العناصر العاجلة" : "Urgent Items")}
-            </h2>
-            {!isLimitedView && (
-              <Link href="/dashboard/firm/cases" className="text-xs text-royal hover:underline">
-                {isAr ? "كل القضايا" : "All Cases"}
-              </Link>
-            )}
-          </div>
-          <div className="space-y-3">
-            {urgentItems.map((item, i) => (
               <motion.div
-                key={item.id}
-                initial={{ opacity: 0, x: isAr ? -8 : 8 }} animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.2 + i * 0.06 }}
-                className={`flex items-center gap-3 p-3 rounded-xl border ${isDark ? "border-white/[0.05] bg-white/[0.02] hover:bg-white/[0.04]" : "border-slate-100 bg-slate-50/60 hover:bg-slate-100/60"} transition-colors cursor-pointer`}
+                key={i}
+                initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.07 }}
+                className={CARD(isDark)}
               >
-                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${item.type === "deadline" ? "bg-red-400 animate-pulse" : item.type === "hearing" ? "bg-amber-400" : "bg-blue-400"}`} />
-                <div className="flex-1 min-w-0">
-                  <p className={`text-[13px] font-medium truncate ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
-                    {isAr ? item.titleAr : item.titleEn}
-                  </p>
-                  <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                    {isAr ? item.deadlineAr : item.deadlineEn} · {item.assignee}
-                  </p>
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 ${stat.bg}`}>
+                  <Icon size={20} weight="duotone" className={stat.color} />
                 </div>
-                <ArrowUpRight size={15} className={isDark ? "text-zinc-600" : "text-slate-300"} />
+                <p className={`text-[12px] mb-0.5 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+                  {isAr ? stat.labelAr : stat.labelEn}
+                </p>
+                <p className={`text-xl font-bold font-mono ${isDark ? "text-white" : "text-slate-800"}`}>{stat.value}</p>
+                <p className={`text-[11px] mt-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                  {isAr ? stat.trendAr : stat.trendEn}
+                </p>
               </motion.div>
-            ))}
-          </div>
+            );
+          })}
         </div>
 
-        {/* Recent activity — 1/3 */}
-        <div className={CARD(isDark)}>
-          <div className="flex items-center gap-2 mb-4">
-            <ClockCounterClockwise size={16} className="text-royal" weight="duotone" />
-            <h2 className={`text-sm font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
-              {isAr ? "آخر النشاطات" : "Recent Activity"}
-            </h2>
-          </div>
-          <div className="space-y-3">
-            {RECENT_ACTIVITY.map((item, i) => {
-              const Icon = item.icon;
-              return (
+        {/* ── Main Grid ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+          {/* Urgent items — 2/3 */}
+          <div className={`lg:col-span-2 ${CARD(isDark)}`}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className={`text-sm font-bold flex items-center gap-2 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
+                <WarningCircle size={16} className="text-amber-500" weight="fill" />
+                {isLimitedView
+                  ? (isAr ? "مهامي العاجلة" : "My Urgent Tasks")
+                  : (isAr ? "العناصر العاجلة" : "Urgent Items")}
+              </h2>
+              {!isLimitedView && (
+                <Link href="/dashboard/firm/cases" className="text-xs text-royal hover:underline">
+                  {isAr ? "كل القضايا" : "All Cases"}
+                </Link>
+              )}
+            </div>
+            <div className="space-y-3">
+              {urgentItems.map((item, i) => (
                 <motion.div
                   key={item.id}
-                  initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 + i * 0.07 }}
-                  className="flex items-start gap-2.5"
+                  initial={{ opacity: 0, x: isAr ? -8 : 8 }} animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.2 + i * 0.06 }}
+                  className={`flex items-center gap-3 p-3 rounded-xl border ${isDark ? "border-white/[0.05] bg-white/[0.02] hover:bg-white/[0.04]" : "border-slate-100 bg-slate-50/60 hover:bg-slate-100/60"} transition-colors cursor-pointer`}
                 >
-                  <span className={`flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center mt-0.5 ${isDark ? "bg-white/[0.05] text-zinc-400" : "bg-slate-100 text-slate-500"}`}>
-                    <Icon size={14} weight="duotone" />
-                  </span>
-                  <div>
-                    <p className={`text-[12px] font-medium ${isDark ? "text-zinc-300" : "text-slate-700"}`}>
-                      {isAr ? item.action.ar : item.action.en}
+                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${item.type === "deadline" ? "bg-red-400 animate-pulse" : item.type === "hearing" ? "bg-amber-400" : "bg-blue-400"}`} />
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-[13px] font-medium truncate ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
+                      {isAr ? item.titleAr : item.titleEn}
                     </p>
                     <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                      {item.by} · {isAr ? item.timeAr : item.timeEn}
+                      {isAr ? item.deadlineAr : item.deadlineEn} · {item.assignee}
                     </p>
                   </div>
+                  <ArrowUpRight size={15} className={isDark ? "text-zinc-600" : "text-slate-300"} />
                 </motion.div>
-              );
-            })}
+              ))}
+            </div>
+          </div>
+
+          {/* Recent activity — 1/3 */}
+          <div className={CARD(isDark)}>
+            <div className="flex items-center gap-2 mb-4">
+              <ClockCounterClockwise size={16} className="text-royal" weight="duotone" />
+              <h2 className={`text-sm font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
+                {isAr ? "آخر النشاطات" : "Recent Activity"}
+              </h2>
+            </div>
+            <div className="space-y-3">
+              {RECENT_ACTIVITY.map((item, i) => {
+                const Icon = item.icon;
+                return (
+                  <motion.div
+                    key={item.id}
+                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 + i * 0.07 }}
+                    className="flex items-start gap-2.5"
+                  >
+                    <span className={`flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center mt-0.5 ${isDark ? "bg-white/[0.05] text-zinc-400" : "bg-slate-100 text-slate-500"}`}>
+                      <Icon size={14} weight="duotone" />
+                    </span>
+                    <div>
+                      <p className={`text-[12px] font-medium ${isDark ? "text-zinc-300" : "text-slate-700"}`}>
+                        {isAr ? item.action.ar : item.action.en}
+                      </p>
+                      <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                        {item.by} · {isAr ? item.timeAr : item.timeEn}
+                      </p>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
           </div>
         </div>
-      </div>
+        </>
+      ) : (
+        <div className={`${CARD(isDark)} flex items-start gap-3`}>
+          <ChartBar size={18} weight="duotone" className="text-royal flex-shrink-0 mt-0.5" />
+          <div>
+            <p className={`text-sm font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>مؤشرات المكتب</p>
+            <p className={`text-[12px] mt-1 leading-relaxed ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
+              أرقام القضايا والجلسات والإيرادات والبنود العاجلة وآخر النشاطات لا تُعرض هنا قبل أن تُقرأ من سجلات مكتبك الفعلية، ولا نعرض أرقاماً افتراضية مكانها. قضايا المكتب وفريقه متاحة من القائمة الجانبية.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ── Analytics CTA (manager/senior only) ── */}
       {role.can.viewAnalytics ? (

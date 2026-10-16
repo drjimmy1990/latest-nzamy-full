@@ -20,6 +20,7 @@ import { useNoSessionCookie } from "./useNoSessionCookie";
 // (see smartFolderApiMapper.test.ts). This file cannot host it and stay
 // testable with `node --test`: it is "use client" JSX.
 import { mapApiFolderToSmartFolder } from "./smartFolderApiMapper";
+import { isDemoMode } from "@/lib/runtimeMode";
 
 // Re-export for project compatibility
 export type { LawRef, SmartFolder, LibraryDoc };
@@ -93,23 +94,24 @@ export default function SmartFolders({
           // FolderSelectionModal in sync within the same tab.
           dispatchFoldersChanged(mapped);
         } else {
-          // API failed — fall back to localStorage
-          console.warn("[SmartFolders] API fetch failed, falling back to localStorage");
-          const local = loadFoldersFromLocalStorage();
-          if (local) setFolders(local);
+          // API failed. No localStorage fallback for a signed-in user: that
+          // key belongs to whoever last browsed here as a GUEST (owner ١١٥ —
+          // a session's data never mixes with a demo/guest store), so showing
+          // it would hand this account someone else's folders.
+          console.warn("[SmartFolders] API fetch failed; not falling back to the guest store");
         }
       } catch (err) {
-        console.warn("[SmartFolders] API error, falling back to localStorage:", err);
-        const local = loadFoldersFromLocalStorage();
-        if (local) setFolders(local);
+        console.warn("[SmartFolders] API error; not falling back to the guest store:", err);
       } finally {
         setIsLoading(false);
       }
     } else {
       // Guest: use localStorage (original behavior)
+      // Owner decision ١١٥: the sample folders are demo content — demo mode,
+      // or a non-production build that opts in; never a production build.
       const seedFolders: SmartFolder[] =
-        process.env.NEXT_PUBLIC_LIB_DEMO_FALLBACK === "1" ||
-        process.env.NODE_ENV !== "production"
+        isDemoMode ||
+        (process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_LIB_DEMO_FALLBACK === "1")
           ? DEMO_FOLDERS
           : [];
       const saved = loadFoldersFromLocalStorage();

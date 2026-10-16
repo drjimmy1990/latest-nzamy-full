@@ -45,7 +45,7 @@ import {
   COMMUNITY_UPDATED_EVENT,
 } from "@/lib/services/communityService";
 import { isSupabaseMode } from "@/lib/services/api";
-import { readCommunityQuestionsLocal } from "@/lib/communityStore";
+import { readCommunityQuestionsLocal, mergeDemoFeed } from "@/lib/communityStore";
 import { listOk, listViewState, itemsOf, type ListRead } from "@/lib/services/listRead";
 
 /** The route's own default page size (api/v1/community/posts/route.ts:24). */
@@ -198,7 +198,11 @@ export default function CommunityPage() {
   // seed is demo-only — merging it in prod polluted the real community feed.
   // Both shapes (demo store, API feed item) go through one view model — see
   // _feedView.ts for why the page can no longer assume the demo shape.
-  const questions: FeedQuestion[] = (isSupabaseMode ? savedQuestions : [...savedQuestions, ...ALL_QUESTIONS])
+  const questions: FeedQuestion[] = (isSupabaseMode
+    ? savedQuestions
+    // A seed question answered in demo mode is saved with its answer; that
+    // copy replaces the seed card instead of appearing beside it.
+    : mergeDemoFeed<(typeof savedQuestions)[number] | (typeof ALL_QUESTIONS)[number]>(savedQuestions, ALL_QUESTIONS))
     .map(toFeedQuestion);
 
   // «يُعرض ٢٠ من ٤٧». truncationNoticeAr() is deliberately not used: its

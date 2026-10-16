@@ -102,27 +102,57 @@ export function findDemoCommunityQuestion<T extends { id: number }>(
   return saved.find((question) => question.id === id) ?? seed.find((question) => question.id === id) ?? null;
 }
 
+/**
+ * The demo feed: this browser's questions first, then every seed question this
+ * browser has not already saved a copy of (a seed question that was answered
+ * here is stored with its new answer, and that copy wins). Without the
+ * de-duplication an answered seed card would appear twice.
+ */
+export function mergeDemoFeed<T extends { id: number }>(saved: readonly T[], seed: readonly T[]): T[] {
+  const savedIds = new Set(saved.map((question) => question.id));
+  return [...saved, ...seed.filter((question) => !savedIds.has(question.id))];
+}
+
+/**
+ * Pure core of `addCommunityAnswerLocal`: the saved list after `answer` is added
+ * to question `questionId`, plus the answer as stored. Owner decision ١١٥ (demo
+ * self-consistent and local only): a SEED question — one the demo feed shows but
+ * this browser never saved — used to be unanswerable («تعذّر حفظ الإجابة: السؤال
+ * غير موجود», N19), because only the saved list was searched. It is now copied
+ * into the saved list together with the answer. `null` only when the id is in
+ * neither list.
+ */
+export function withDemoAnswer(
+  saved: readonly StoredCommunityQuestion[],
+  seed: readonly StoredCommunityQuestion[],
+  questionId: number,
+  answer: Omit<StoredCommunityAnswer, "id" | "votes" | "isAccepted" | "ago">,
+  now: number,
+): { next: StoredCommunityQuestion[]; savedAnswer: StoredCommunityAnswer } | null {
+  const stored: StoredCommunityAnswer = { ...answer, id: now, votes: 0, isAccepted: false, ago: "الآن" };
+  const answered = (question: StoredCommunityQuestion): StoredCommunityQuestion => ({
+    ...question,
+    isAnswered: true,
+    answers: [...(question.answers ?? []), stored],
+  });
+  if (saved.some((question) => question.id === questionId)) {
+    return {
+      next: saved.map((question) => (question.id === questionId ? answered(question) : question)),
+      savedAnswer: stored,
+    };
+  }
+  const fromSeed = seed.find((question) => question.id === questionId);
+  if (!fromSeed) return null;
+  return { next: [answered(fromSeed), ...saved], savedAnswer: stored };
+}
+
 export function addCommunityAnswerLocal(
   questionId: number,
   answer: Omit<StoredCommunityAnswer, "id" | "votes" | "isAccepted" | "ago">,
+  seed: readonly StoredCommunityQuestion[] = [],
 ) {
-  const questions = readCommunityQuestionsLocal();
-  let savedAnswer: StoredCommunityAnswer | null = null;
-  const next = questions.map((question) => {
-    if (question.id !== questionId) return question;
-    savedAnswer = {
-      ...answer,
-      id: Date.now(),
-      votes: 0,
-      isAccepted: false,
-      ago: "الآن",
-    };
-    return {
-      ...question,
-      isAnswered: true,
-      answers: [...question.answers, savedAnswer],
-    };
-  });
-  if (savedAnswer) writeCommunityQuestionsLocal(next);
-  return savedAnswer;
+  const result = withDemoAnswer(readCommunityQuestionsLocal(), seed, questionId, answer, Date.now());
+  if (!result) return null;
+  writeCommunityQuestionsLocal(result.next);
+  return result.savedAnswer;
 }

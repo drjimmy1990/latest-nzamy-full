@@ -157,8 +157,8 @@ export const PROVIDER_SIDEBAR: SidebarGroup[] = [
   {
     title: "السوق والطلبات", titleEn: "Market & Requests",
     items: [
-      { label: "الطلبات المتاحة", labelEn: "Browse Market",  href: "/dashboard/provider/requests", icon: "Storefront", badge: "جديد" },
-      { label: "عروضي الجارية",  labelEn: "My Offers",      href: "/dashboard/provider/requests?tab=active", icon: "Package" },
+      { label: "الطلبات المتاحة", labelEn: "Browse Market",  href: "/dashboard/provider/requests", icon: "Storefront", badge: "قريباً" }, // owner ١١٥: no server feed yet, the page is DashboardComingSoon outside demo
+      { label: "عروضي الجارية",  labelEn: "My Offers",      href: "/dashboard/provider/requests?tab=active", icon: "Package", badge: "قريباً" },
       // «روابطي الترويجية» is gone for good (owner items ١٣٤ + ١٣٥ — the second
       // copy of the same screen). القاعدة ٣٨ forbids advertising a discount on
       // legal work, so this is a regulatory deletion with nothing to restore.

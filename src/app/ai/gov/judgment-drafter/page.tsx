@@ -29,7 +29,9 @@ export default function JudgmentDrafterPage() {
     setStep("drafting");
     setTimeout(() => {
       const id = createWorkflowId("GOV-DRAFT");
-      saveWorkflowRequest({
+      // Demo-only browser store (owner ١١٥): null outside demo mode, so no
+      // «saved» claim is shown for a draft that exists nowhere.
+      const saved = saveWorkflowRequest({
         id,
         type: "ai_draft",
         title: `مسودة حكم - ${form.caseType}`,
@@ -52,7 +54,7 @@ export default function JudgmentDrafterPage() {
         },
         auditEvent: "government_judgment_draft_saved",
       });
-      setSavedDraftId(id);
+      if (saved) setSavedDraftId(id);
       setStep("result");
     }, 2000);
   }

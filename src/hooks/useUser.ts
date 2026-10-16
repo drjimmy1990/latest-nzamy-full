@@ -341,10 +341,40 @@ export function setDemoSession(session: UserSession, key: string = ""): void {
   // switchers that call this are gated out of prod builds; this is defense in
   // depth so a stray caller can't forge a fabricated session on a live account.
   if (isSupabaseMode) return;
+  // Owner decision ١١٥: a demo session never rides on a real one. A browser
+  // that is still signed in to Supabase (sb-* cookies from a real account on
+  // this same origin) is signed out locally first, so no request made while
+  // the demo identity is on screen can act as that real account.
+  signOutRealSessionLocally();
   localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(session));
   localStorage.setItem(DEMO_KEY_STORAGE, key); // store the account key for bypass check
   document.cookie = "nzamy_demo_role=true; path=/";
   notifyAll();
+}
+
+/**
+ * Owner decision ١١٥ — demo and real sessions never mix. Drops the
+ * Supabase session held in this browser (`scope: "local"`: this browser only),
+ * best-effort and without waiting: a failure must not block the demo switch.
+ */
+function signOutRealSessionLocally(): void {
+  try {
+    void createClient().auth.signOut({ scope: "local" }).catch(() => undefined);
+  } catch { /* no Supabase configuration in this demo build — nothing to drop */ }
+}
+
+/**
+ * The demo markers (`nzamy_demo_role`/`nzamy_demo_key` + the cookie) are inert
+ * outside demo mode, but a real session must not carry them either: a later
+ * demo build on the same origin would otherwise resurrect a fabricated identity
+ * next to the real account's cookies.
+ */
+function clearDemoSessionMarkers(): void {
+  try {
+    localStorage.removeItem(DEMO_STORAGE_KEY);
+    localStorage.removeItem(DEMO_KEY_STORAGE);
+  } catch { /* ignore quota / private-mode errors */ }
+  document.cookie = "nzamy_demo_role=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
 }
 
 /** Log out — clears session, re-renders all components, then navigates to /login */
@@ -364,6 +394,7 @@ export function logout(): void {
       localStorage.removeItem("nzamy_smart_folders");
       localStorage.removeItem("nzamy_recent_sessions");
     } catch { /* ignore quota / private-mode errors */ }
+    clearDemoSessionMarkers();
 
     const supabase = createClient();
     supabase.auth.signOut().finally(() => {
@@ -372,7 +403,9 @@ export function logout(): void {
     return;
   }
 
-  // Demo mode: clear localStorage
+  // Demo mode: clear localStorage — and any real session that slipped in
+  // alongside it (owner ١١٥).
+  signOutRealSessionLocally();
   localStorage.setItem(DEMO_STORAGE_KEY, "guest");
   document.cookie = "nzamy_demo_role=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
   notifyAll();
@@ -660,6 +693,9 @@ export function useUser(): UseUserReturn {
   // the body makes two round trips (the user, then the profile) instead of one.
   const initSupabase = useCallback((): (() => void) | undefined => {
     if (!isSupabaseMode) return;
+
+    // Owner decision ١١٥: a real session starts without demo markers.
+    clearDemoSessionMarkers();
 
     let cancelled = false;
     let unsubscribe: (() => void) | undefined;

@@ -1569,3 +1569,62 @@ BEGIN
   END IF;
   RAISE NOTICE '_verify: 20261017_41 OK — private / case_team / firm notes, scopes pinned in RLS, no admin read of private notes, no guest privilege';
 END $$;
+
+-- ====================================================================
+-- 2026-10-17 — 20261017_44_test_accounts_never_listed.sql (owner decision ١١٥)
+-- ====================================================================
+-- Test accounts stay on the live database for testing but never reach a public
+-- list: public.test_accounts is service-role only (RLS on, no policy, no API
+-- privilege), and a trigger on lawyer_profiles / provider_profiles keeps a
+-- registered account's marketplace_visible false. Keyed on the registry, so a
+-- run BEFORE the migration passes with a NOTICE.
+SELECT '20261017_44 applied (test accounts never listed)' AS check,
+       to_regclass('public.test_accounts') IS NOT NULL AS present;
+
+DO $$
+DECLARE
+  t       text;
+  n       int;
+  priv    text;
+  missing text := '';
+BEGIN
+  IF to_regclass('public.test_accounts') IS NULL THEN
+    RAISE NOTICE '_verify: 20261017_44 is not applied yet — seeded test lawyers (verified + marketplace_visible) reach the public directory API, lawyer pages and the community contributors list';
+    RETURN;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_class WHERE oid = 'public.test_accounts'::regclass AND relrowsecurity) THEN
+    missing := missing || ' RLS is off on test_accounts;';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_policy WHERE polrelid = 'public.test_accounts'::regclass) THEN
+    missing := missing || ' test_accounts has a policy (it must be service-role only);';
+  END IF;
+  FOREACH priv IN ARRAY ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE'] LOOP
+    IF has_table_privilege('anon', 'public.test_accounts', priv)
+       OR has_table_privilege('authenticated', 'public.test_accounts', priv) THEN
+      missing := missing || format(' an API role holds %s on test_accounts (a GRANT ALL re-applied? re-run 20261017_44);', priv);
+    END IF;
+  END LOOP;
+
+  FOREACH t IN ARRAY ARRAY['lawyer_profiles', 'provider_profiles'] LOOP
+    CONTINUE WHEN to_regclass('public.' || t) IS NULL
+              OR NOT EXISTS (SELECT 1 FROM information_schema.columns
+                              WHERE table_schema = 'public' AND table_name = t AND column_name = 'marketplace_visible');
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger
+                    WHERE tgrelid = ('public.' || t)::regclass
+                      AND tgname = 'trg_' || t || '_test_account_never_listed' AND NOT tgisinternal AND tgenabled <> 'D') THEN
+      missing := missing || format(' %s has no enabled test-account trigger;', t);
+    END IF;
+    EXECUTE format('SELECT count(*) FROM public.%I p WHERE p.marketplace_visible IS TRUE
+                      AND EXISTS (SELECT 1 FROM public.test_accounts ta WHERE ta.user_id = p.user_id)', t) INTO n;
+    IF n <> 0 THEN
+      missing := missing || format(' %s registered test account(s) listed on %s;', n, t);
+    END IF;
+  END LOOP;
+
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: the 20261017_44 test-account separation is broken —%', missing;
+  END IF;
+  SELECT count(*) INTO n FROM public.test_accounts;
+  RAISE NOTICE '_verify: 20261017_44 OK — % registered test account(s), none marketplace-visible', n;
+END $$;

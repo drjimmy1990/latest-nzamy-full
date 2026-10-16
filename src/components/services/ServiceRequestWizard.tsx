@@ -10,7 +10,8 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
-import { createWorkflowId, saveWorkflowRequest } from "@/lib/workflowStore";
+import { createWorkflowId, createWorkflowRequest } from "@/lib/clientWorkflowRepository";
+import { isDemoMode } from "@/lib/runtimeMode";
 import { useOrderAttachments } from "@/hooks/useOrderAttachments";
 import { MAX_UPLOAD_BYTES } from "@/lib/services/fileValidation";
 
@@ -150,35 +151,58 @@ export default function ServiceRequestWizard({
     if (picked.length > 0) await attachFiles(picked);
   };
 
+  // Outside demo mode a request is a real row for a real account (owner
+  // decision ١١٥). It used to be written to the visitor's own browser with
+  // saveWorkflowRequest() and answered «تم إرسال الطلب» while the server never
+  // heard of it; createWorkflowRequest posts to /api/v1/service-requests, which
+  // needs a session. Demo mode keeps the browser-only store.
+  const needsSignIn = !isDemoMode && authKnown && !user.isLoggedIn;
+
   const handleSubmit = async () => {
     setSubmitError(null);
+    if (needsSignIn) {
+      setSubmitError(isRTL
+        ? "سجّل الدخول لإرسال الطلب، فهو يُحفظ في حسابك لتتابعه."
+        : "Sign in to send the request — it is saved to your account so you can follow it.");
+      return;
+    }
     setSubmitting(true);
     try {
-      // The 1800 ms sleep that used to sit here is gone. Nothing was being
-      // awaited: saveWorkflowRequest() is a synchronous local write, and the
-      // delay existed only to make the spinner look like a round trip to a
-      // server nobody was calling. The real network work — the uploads — has
-      // already happened by this point, and it showed its own progress.
-      const firmServiceIds = new Set(["srv-1", "srv-2", "srv-3"]);
-      const request = saveWorkflowRequest({
+      // `receiver: "ai_workspace"` — the نظامي team's queue, the one the admin
+      // console reads (api/v1/admin/service-orders/route.ts filters on it); the
+      // same literal /dashboard/client/requests/new sends, for the same reason
+      // (see its header). The «firm»/«lawyer» receivers this used to name are
+      // marketplace routes that BETA_MONOPOLY_MODE keeps closed, so a row
+      // addressed to them reached nobody. The budget is the client's range, not
+      // a charge: the payment is 0 / not_required and the range stays in
+      // metadata for the team to quote against.
+      const request = await createWorkflowRequest({
         id: createWorkflowId("SRV"),
         type: "service",
         title: isRTL ? serviceTitle : serviceTitleEn,
         description: form.description,
         requester: {
+          userId: user.userId,
           name: user.name,
           role: user.userType,
           tier: user.tier,
           businessRole: user.businessRole,
         },
-        receiver: firmServiceIds.has(serviceId) ? "firm" : "lawyer",
+        receiver: "ai_workspace",
         status: "pending_assignment",
         payment: {
-          amount: form.budgetMin,
-          status: "pending",
+          amount: 0,
+          status: "not_required",
         },
         sourcePath: "/services",
         metadata: {
+          serviceTitleAr: serviceTitle,
+          schemaVersion: 1,
+          intake: {
+            description: form.description,
+            region: form.region,
+            deadline: form.deadline,
+          },
           serviceId,
           userRole,
           region: form.region,
@@ -207,7 +231,7 @@ export default function ServiceRequestWizard({
           attachments,
         } as unknown as Record<string, string | number | boolean | null>,
         auditEvent: "service_marketplace_request_sent",
-      });
+      } as Parameters<typeof createWorkflowRequest>[0]);
       setSubmittedId(request.id);
       setSubmitted(true);
     } catch {

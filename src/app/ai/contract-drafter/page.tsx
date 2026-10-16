@@ -67,7 +67,9 @@ export default function ContractDrafterPage() {
     await new Promise((r) => setTimeout(r, 1800));
     const draftText = generateContractText(selectedType!, formData, isRTL);
     const id = createWorkflowId("CTR");
-    saveWorkflowRequest({
+    // Demo-only browser store (owner ١١٥): null outside demo mode, so no
+    // «saved» claim is shown for a draft that exists nowhere.
+    const saved = saveWorkflowRequest({
       id,
       type: "ai_draft",
       title: selectedType?.labelAr ?? selectedType?.labelEn ?? "Contract draft",
@@ -91,7 +93,7 @@ export default function ContractDrafterPage() {
       },
       auditEvent: "contract_draft_saved",
     });
-    setSavedContractId(id);
+    if (saved) setSavedContractId(id);
     setContractText(draftText);
     setIsGenerating(false);
     setStep(4);

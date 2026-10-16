@@ -144,8 +144,14 @@ export async function addCommunityAnswer(
   answer: Omit<StoredCommunityAnswer, "id" | "votes" | "isAccepted" | "ago">,
 ): Promise<StoredCommunityAnswer> {
   if (!isSupabaseMode) {
-    const saved = addCommunityAnswerLocal(Number(postId), answer);
-    // The local store returns null when the question id does not exist there.
+    // Demo is local only and self-consistent (owner ١١٥): a seed card the demo
+    // feed shows can be answered too — it is copied into this browser's store.
+    const saved = addCommunityAnswerLocal(
+      Number(postId),
+      answer,
+      ALL_QUESTIONS as unknown as StoredCommunityQuestion[],
+    );
+    // null only when the id is in neither this browser's store nor the seed.
     if (!saved) throw new Error("تعذّر حفظ الإجابة: السؤال غير موجود");
     return saved;
   }
