@@ -151,6 +151,8 @@ test("Q3/Q28: no page says the platform holds fees and releases them on delivery
   const holding = /تُصرف|صرف الأتعاب عبر المنصة|تُسدَّد الأتعاب عبر|عبر قنوات الدفع المعتمدة|ضمان مالي كامل|released|paid through the platform|financial guarantee/i;
   for (const path of [
     "app/services/individuals/page.tsx",
+    // Its cards and FAQ render on /services/individuals (N7, 2026-10-16).
+    "constants/servicesData.ts",
     "app/services/business/page.tsx",
     "app/services/legal-representation/page.tsx",
     "app/pro/page.tsx",
@@ -265,4 +267,46 @@ test("the comment stripper keeps string content that merely contains '//'", () =
   assert.match(stripped, /https:\/\/x\.test\/p/);
   assert.doesNotMatch(stripped, /الأكثر طلباً/);
   assert.match(stripped, /الأوفر/);
+});
+
+// ── N7 (fix plan 2026-10-16): claims nothing on the platform backs ───────────
+
+test("N7: no library size literal — the subscribe page shows the live count", () => {
+  const size = /5,000\+|\+٥٬٠٠٠|٥٬٠٠٠\+/;
+  for (const path of PRICING_SURFACES) assert.doesNotMatch(code(path), size, `${path}: library size literal`);
+  const subscribe = code("app/laws/subscribe/page.tsx");
+  assert.match(subscribe, /useLibraryStats\(\)/);
+  assert.match(subscribe, /formatLibraryCount\(library\.stats\.laws,/);
+  assert.match(subscribe, /statTiles\.map\(/);
+});
+
+test("N7: /services/individuals promises no ministry accreditation and no response time", () => {
+  for (const path of ["app/services/individuals/page.tsx", "constants/servicesData.ts"]) {
+    const c = code(path);
+    assert.doesNotMatch(c, /معتمدون من وزارة العدل|Ministry of Justice certified/, `${path}: MoJ accreditation`);
+    assert.doesNotMatch(c, /١٥ دقيقة|15 minutes|بدون انتظار|no wait/i, `${path}: response-time promise`);
+  }
+});
+
+test("N7: the government dashboard shows no invented KPIs or activity", () => {
+  const gov = code("app/dashboard/government/page.tsx");
+  assert.doesNotMatch(gov, /KPI_BY_ROLE|RECENT_ACTIONS|آخر النشاطات|بياناتك التشغيلية/);
+  assert.doesNotMatch(gov, /معدل الإنجاز|أعلى من المعدل الوطني/);
+});
+
+test("N7: the admin overview reads nothing it invents, and every shortcut opens a real page", () => {
+  const admin = code("app/dashboard/admin/page.tsx");
+  assert.doesNotMatch(admin, /MRR_DATA|USERS_TABLE|PLAN_DIST|AI_TOOLS|ALERTS|MRRChart|981000/);
+  assert.doesNotMatch(admin, /تصدير|<Download/, "no export button wired to nothing");
+  const hrefs = [...admin.matchAll(/href: "(\/dashboard\/admin[^"]*)"/g)].map((m) => m[1]);
+  assert.ok(hrefs.length >= 6, "the shortcuts are listed");
+  for (const href of hrefs) {
+    assert.ok(existsSync(new URL(`../../app${href}/page.tsx`, import.meta.url)), `${href} has no page`);
+  }
+});
+
+test("N7: the firm wallet is an honest coming-soon page, not mock transactions", () => {
+  const wallet = code("app/dashboard/firm/wallet/page.tsx");
+  assert.match(wallet, /<DashboardComingSoon title="محفظة المكتب"/);
+  assert.doesNotMatch(wallet, /MOCK_TRANSACTIONS|TRX-\d+/);
 });

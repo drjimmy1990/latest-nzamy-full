@@ -15,6 +15,8 @@ import { useSubscription } from "@/hooks/useSubscription";
 import { isSupabaseMode } from "@/lib/services/api";
 import { requestEntitlement } from "@/lib/services/entitlementService";
 import { planFromParam } from "@/lib/pricing/planRequest";
+import { LIBRARY_STAT_LABELS, formatLibraryCount } from "@/lib/library/libraryStats";
+import { useLibraryStats } from "@/lib/library/useLibraryStats";
 
 // ─── Bilingual ──────────────────────────────────────────────────────────────
 
@@ -22,9 +24,9 @@ const txt = {
   ar: {
     heroTag: "المكتبة القانونية",
     heroTitle: "كل نظام ولائحة في المملكة — في مكان واحد",
-    heroSub: "بحث ذكي بالذكاء الاصطناعي في 5,000+ نظام ولائحة سعودية، سوابق قضائية، ومبادئ قانونية — مع تحديثات فورية لحظة الصدور.",
+    heroSub: "بحث ذكي بالذكاء الاصطناعي في الأنظمة واللوائح السعودية، السوابق القضائية، والمبادئ القانونية — مع تحديثات فورية لحظة الصدور.",
+    // The library size is the live tile in the page (useLibraryStats), never a literal.
     stats: [
-      { val: "5,000+", label: "نظام ولائحة" },
       { val: "27", label: "قسم قانوني" },
       { val: "يومي", label: "تحديث الأنظمة" },
       { val: "AI", label: "بحث ذكي" },
@@ -121,9 +123,8 @@ const txt = {
   en: {
     heroTag: "Legal Library",
     heroTitle: "Every Saudi Law & Regulation — In One Place",
-    heroSub: "AI-powered search across 5,000+ Saudi laws, regulations, judicial precedents, and legal principles — updated in real-time.",
+    heroSub: "AI-powered search across Saudi laws, regulations, judicial precedents, and legal principles — updated in real-time.",
     stats: [
-      { val: "5,000+", label: "Laws & Regulations" },
       { val: "27", label: "Legal Sections" },
       { val: "Daily", label: "Updates" },
       { val: "AI", label: "Smart Search" },
@@ -244,6 +245,19 @@ export default function LawsSubscribePage() {
     if (chosen) document.getElementById(`plan-${chosen}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
   }, []);
 
+  // The library-size tile is the live floor of library.laws (GET
+  // /api/library/stats), as on /login. «5,000+ نظام ولائحة» was a literal and
+  // the wrong noun: the table holds every instrument type («وثيقة نظامية»).
+  // Loading → a placeholder; a failed count → no tile, never a number.
+  const library = useLibraryStats();
+  const libraryLaws = library.status === "ready" ? formatLibraryCount(library.stats.laws, isAr ? "ar" : "en") : null;
+  const statTiles: { val: string | null; label: string }[] = [
+    ...(library.status === "loading" || libraryLaws
+      ? [{ val: libraryLaws, label: isAr ? LIBRARY_STAT_LABELS.laws.ar : LIBRARY_STAT_LABELS.laws.en }]
+      : []),
+    ...t.stats,
+  ];
+
   // "pro" tier or higher — src/hooks/useSubscription.ts's
   // "library-full-access" gate — is what actually unlocks the full library.
   const hasFullLibrary = can("library-full-access");
@@ -327,11 +341,13 @@ export default function LawsSubscribePage() {
 
             {/* Stats */}
             <div className="grid grid-cols-2 gap-3 w-full lg:w-auto lg:min-w-[280px]">
-              {t.stats.map((s, i) => (
+              {statTiles.map((s, i) => (
                 <motion.div key={i} variants={fadeUp} initial="hidden" animate="show" custom={i + 1}
                   className={`rounded-2xl p-4 text-center ${card}`}
                 >
-                  <p className={`text-xl font-bold font-mono mb-0.5 ${isDark ? "text-indigo-400" : "text-indigo-700"}`}>{s.val}</p>
+                  <p className={`text-xl font-bold font-mono mb-0.5 ${isDark ? "text-indigo-400" : "text-indigo-700"}`}>
+                    {s.val ?? <span aria-hidden className="inline-block h-[0.8em] w-14 rounded-md align-middle animate-pulse bg-zinc-400/20" />}
+                  </p>
                   <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{s.label}</p>
                 </motion.div>
               ))}

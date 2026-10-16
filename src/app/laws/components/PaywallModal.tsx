@@ -59,14 +59,14 @@ export const PLANS = [
     price: "٥٬٠٠٠", priceEn: "5,000", period: "سنوياً", periodEn: "/ year",
     desc: "الاشتراك المعتمد الكامل لـ ١٢ شهراً — ٥٬٠٠٠ ر.س/سنة مع تصدير PDF وإضافة AI", descEn: "Canonical full annual access for 12 months with PDF export & AI Add-on eligibility",
     features: [
-      "وصول كامل وغير محدود لـ +٥٬٠٠٠ نظام ولائحة ومبدأ قضائي",
+      "وصول كامل وغير محدود للأنظمة واللوائح والمبادئ القضائية",
       "تصدير نصوص ومواد الأنظمة بصيغة PDF",
       "إشعارات التعديلات التشريعية وتتبع التحديثات فوراً",
       "إمكانية تفعيل إضافة باحث الذكاء الاصطناعي (٢٬٥٠٠ ر.س/سنة)",
       "دعم فني ذو أولوية عبر واتساب المخصص",
     ],
     featuresEn: [
-      "Unlimited access to 5,000+ laws, regulations & principles",
+      "Unlimited access to laws, regulations & principles",
       "Export law articles as official PDF documents",
       "Instant amendment alerts & legislative tracking",
       "Eligible for AI Legal Researcher Add-on (2,500 SAR/year)",
