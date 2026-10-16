@@ -144,9 +144,16 @@ function GoogleIcon() {
  * (/laws/subscribe passes the plan they chose). Read at the moment of use, not
  * with useSearchParams, which would need a Suspense boundary for `next build`.
  * postLoginPath keeps it on this site and out of the sign-in flow.
+ *
+ * `?from=` is the same thing under the proxy's name: src/proxy.ts and
+ * ServerSessionGate send an anonymous visitor of a protected page to
+ * `/login?from=<path>`. `next` wins when both are present (fix plan
+ * 2026-10-16, N5 follow-up).
  */
 function nextFromUrl(): string | null {
-  return typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("next");
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.search);
+  return params.get("next") ?? params.get("from");
 }
 
 export default function LoginPage() {

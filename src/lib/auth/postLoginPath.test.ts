@@ -36,3 +36,17 @@ test("/login reads ?next= through postLoginPath on every success path", () => {
   // No useSearchParams: it would need a Suspense boundary for `next build`.
   assert.doesNotMatch(src, /useSearchParams\(|import[^;]*useSearchParams/);
 });
+
+// The proxy and ServerSessionGate bounce a guest with `?from=<path>`, not
+// `?next=`; /login read only `next`, so the guest landed on a dashboard.
+test("/login also reads the proxy's ?from=, with ?next= first", () => {
+  const src = readFileSync(new URL("../../app/login/page.tsx", import.meta.url), "utf8");
+  assert.match(src, /params\.get\("next"\) \?\? params\.get\("from"\)/);
+  const proxy = readFileSync(new URL("../../proxy.ts", import.meta.url), "utf8");
+  assert.match(proxy, /searchParams\.set\("from", pathname\)/);
+});
+
+test("a ?from= path goes through the same postLoginPath rules", () => {
+  assert.equal(postLoginPath("/dashboard/lawyer/cases?tab=open", DASHBOARD), "/dashboard/lawyer/cases?tab=open");
+  assert.equal(postLoginPath("//evil.example", DASHBOARD), DASHBOARD);
+});
