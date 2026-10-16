@@ -15,6 +15,8 @@
 
 **Order:** Step 1 any time → Step 2 deploy the code → Step 3 `20261016_10`. Steps 1 and 3 do not depend on each other.
 
+**The same deploy also ships** (merged into `main` together, no SQL): the small-fixes batch N4–N19 (`claude/affectionate-haslett-b27117`) and the fiqh common-word search fix N22 (`claude/gifted-haslett-9edf85`). Combined check on the merged tree: 2,328/2,328 unit tests on Node 22, type-check clean, lint 0 errors.
+
 ---
 
 ## Step 1 (any time): N21 — `20261016_09_admin_policies_is_admin.sql`
