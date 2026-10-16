@@ -805,7 +805,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
 
         {isRepealed && (
           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/15 text-red-500 border border-red-500/25 flex-shrink-0">
-            🚫 {isRTL ? "ملغاة" : "Repealed"}
+            ⛔ {isRTL ? "ملغى وغير سارٍ" : "Repealed, not in force"}
           </span>
         )}
         {isAmended && (
@@ -890,7 +890,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                     {showRepealed && (
                       <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                         <div className={`mt-2 p-3 rounded-xl border text-[12px] leading-relaxed ${isDark ? "border-red-500/20 bg-red-900/10 text-red-200" : "border-red-200 bg-red-50 text-red-800"}`}>
-                          <p className="text-[10px] font-bold mb-1 opacity-60">{isRTL ? "النص الأصلي:" : "Original text:"}</p>
+                          <p className="text-[10px] font-bold mb-1 opacity-60">{isRTL ? "ونصه قبل الإلغاء:" : "Text prior to repeal:"}</p>
                           {/*
                            * This is paid content like any other article body.
                            * It was previously rendered ungated and as bare JSX,
