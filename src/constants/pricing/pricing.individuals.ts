@@ -55,7 +55,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       priceOriginal: "٤٦٨",
       periodMonthly: "ر.س / شهر",
       periodYearly: "ر.س / سنة",
-      desc: "مستشارك القانوني الذكي على مدار الساعة — إجابات نظامية فورية وصياغة خطابات وإنذارات",
+      desc: "مستشارك القانوني الذكي — إجابات نظامية وصياغة خطابات وإنذارات",
       target: "الأفراد والمستقلون والموظفون",
       cta: "اشترك في الباقة الذكية",
       ctaHref: "/register/client?type=individual&plan=ind-ai",
@@ -71,7 +71,6 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
         platform: [
           "حساب رقمي متكامل لحفظ استفساراتك واستشاراتك",
           "إمكانية شراء استشارات محامين مرخصين بأسعار تفضيلية",
-          "تحديثات يومية بالتغييرات التشريعية التي تهم الأفراد",
           // Was «لا تتطلب أي فحص طبي أو موافقة مسبقة» — insurance boilerplate
           // (no legal plan has a medical check) that also overstated speed:
           // every subscription is still activated after the team reviews it.
@@ -113,7 +112,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
           "خصم مستمر ١٥٪ على أتعاب الترافع وكافة القضايا",
           "مراجعة دورية لملفك العقدي والقانوني",
         ],
-        support: ["دعم مباشر ومسار سريع عبر واتساب"],
+        support: ["دعم مباشر عبر واتساب"],
       },
     },
     {
@@ -213,7 +212,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
           "Conflict-of-interest checks & internal quality gates",
           "Zero recurring fees or hidden charges",
         ],
-        support: ["Real-time case tracking on platform", "Direct administrative updates"],
+        support: ["Request tracking on the platform", "Periodic updates until the service is complete"],
       },
     },
     {
@@ -227,7 +226,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       priceOriginal: "468",
       periodMonthly: "SAR / month",
       periodYearly: "SAR / year",
-      desc: "Your 24/7 AI legal assistant — instant statutory answers and draft notices",
+      desc: "Your AI legal assistant — statutory answers and draft notices",
       target: "Individuals, Employees & Freelancers",
       cta: "Subscribe to Smart AI",
       ctaHref: "/register/client?type=individual&plan=ind-ai",
@@ -235,7 +234,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       color: "border-emerald-300",
       features: {
         ai: [
-          "Unlimited 24/7 AI legal assistant",
+          "Unlimited AI legal assistant",
           "Direct citations from Saudi statutory laws",
           "Draft generation for notices and official correspondence",
           "Court fees & limitation period calculators",
@@ -243,7 +242,6 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
         platform: [
           "Full digital profile to archive your questions and drafts",
           "Access to licensed lawyer consultations at discounted rates",
-          "Daily updates on statutory changes relevant to individuals",
           "No underwriting review (unlike the Litigation plan)",
         ],
         support: ["Platform & email technical support"],
@@ -279,7 +277,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
           "Permanent 15% discount on additional litigation services",
           "Periodic contractual portfolio review",
         ],
-        support: ["Priority WhatsApp technical & procedural support"],
+        support: ["Direct WhatsApp technical & procedural support"],
       },
     },
     {
@@ -388,7 +386,7 @@ export const comparisonIndividuals: { ar: ComparisonCategory[]; en: ComparisonCa
       rows: [
         { feature: "سعر الاشتراك الشهري",         "pay-per-piece": "صفر ر.س",       "ind-ai": "٣٩ ر.س",               "ind-preventive": "١٤٩ ر.س",              "ind-litigation": "٣٩٩ ر.س",              "ind-family": "٦٩٩ ر.س" },
         { feature: "سعر الاشتراك السنوي",         "pay-per-piece": "صفر ر.س",       "ind-ai": "٣٩٠ ر.س",              "ind-preventive": "١٬٤٩٠ ر.س",            "ind-litigation": "٣٬٩٩٠ ر.س",            "ind-family": "٦٬٩٩٠ ر.س" },
-        { feature: "مستوى الدعم الفني",           "pay-per-piece": "دعم للطلب",     "ind-ai": "دعم عبر المنصة",       "ind-preventive": "واتساب أولوية",        "ind-litigation": "مدير قضية مخصص",       "ind-family": "خط عائلي مباشر VIP" },
+        { feature: "مستوى الدعم الفني",           "pay-per-piece": "دعم للطلب",     "ind-ai": "دعم عبر المنصة",       "ind-preventive": "واتساب",        "ind-litigation": "مدير قضية مخصص",       "ind-family": "خط عائلي مباشر VIP" },
       ],
     },
   ],
@@ -428,7 +426,7 @@ export const comparisonIndividuals: { ar: ComparisonCategory[]; en: ComparisonCa
       rows: [
         { feature: "Monthly Subscription Price",  "pay-per-piece": "0 SAR",         "ind-ai": "39 SAR",               "ind-preventive": "149 SAR",              "ind-litigation": "399 SAR",              "ind-family": "699 SAR" },
         { feature: "Annual Subscription Price",   "pay-per-piece": "0 SAR",         "ind-ai": "390 SAR",              "ind-preventive": "1,490 SAR",            "ind-litigation": "3,990 SAR",            "ind-family": "6,990 SAR" },
-        { feature: "Support Level",               "pay-per-piece": "Order support", "ind-ai": "Platform support",      "ind-preventive": "Priority WhatsApp",    "ind-litigation": "Dedicated case manager","ind-family": "VIP family hotline" },
+        { feature: "Support Level",               "pay-per-piece": "Order support", "ind-ai": "Platform support",      "ind-preventive": "WhatsApp",    "ind-litigation": "Dedicated case manager","ind-family": "VIP family hotline" },
       ],
     },
   ],

@@ -233,7 +233,9 @@ export default function BusinessPage() {
                   <div className="mt-8 grid grid-cols-2 gap-4">
                     {[
                       { icon: Lock, labelAr: "سرية تامة", labelEn: "Full Confidentiality" },
-                      { icon: Clock, labelAr: "استجابة ٢٤/٧", labelEn: "24/7 Response" },
+                      // «استجابة ٢٤/٧» — removed: support works the hours on /contact
+                      // (أحد–خميس ٨ص–١٠م، الجمعة والسبت ٩ص–٥م), not round the clock.
+                      { icon: Clock, labelAr: "تواصل خلال أوقات العمل", labelEn: "Support during working hours" },
                       // «امتثال مضمون» / "Guaranteed Compliance" — removed.
                       // The other three chips on this card describe how the firm
                       // works; this one GUARANTEED an outcome, with no scope, no

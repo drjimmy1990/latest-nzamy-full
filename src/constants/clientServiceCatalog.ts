@@ -154,7 +154,7 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     serviceId: "ai-consult",
     categoryId: "consultation",
     label: "سؤال AI فوري",
-    description: "إجابة قانونية ذكية خلال ثوان - متاح 24/7 بدون حجز",
+    description: "إجابة قانونية ذكية بدون حجز موعد",
     basePrice: 49,
     priceMode: "free",
     priceNote: "لك سؤال واحد مجانا يوميا أو 49 ر.س إضافي",

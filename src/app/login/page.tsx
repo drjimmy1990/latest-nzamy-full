@@ -59,17 +59,17 @@ const t = {
     brandSlogan: "شريكك القانوني الذكي",
     brandDesc: "المنصة القانونية الأولى في المملكة العربية السعودية",
     feat1: "ذكاء اصطناعي قانوني متقدم",
-    feat2: "حماية وأمان تام لبياناتك",
+    feat2: "حماية بياناتك وخصوصيتك",
     feat3: "محامون معتمدون ومختارون بعناية",
     // «٣٧٠+ خدمة قانونية» was deleted from /services/individuals in an
     // earlier wave for being unsupported by the catalog it counted; the login
     // screen kept its own copy. Its slot now shows the legal library's real
     // size — NOT a literal (the same code runs on the cloud DB with 386 rows
-    // and on self-hosted with 5,901): see `libraryStat` in LoginPage below.
-    stat2Label: "دعم متواصل",
-    stat2Value: "٢٤/٧",
-    stat3Label: "آمن ومشفّر",
-    stat3Value: "١٠٠٪",
+    // and on self-hosted with 5,901): see `statTiles` in LoginPage below.
+    // «٢٤/٧ — دعم متواصل» and «١٠٠٪ — آمن ومشفّر» went the same way (fix
+    // plan 2026-10-16): support keeps the hours on /contact, and no
+    // measurement backs a 100% security figure. Their slots now show two more
+    // live library counts.
     logo: "نظامي",
   },
   en: {
@@ -95,12 +95,8 @@ const t = {
     brandSlogan: "Your Smart Legal Partner",
     brandDesc: "Saudi Arabia's leading legal platform",
     feat1: "Advanced AI legal assistance",
-    feat2: "Full data security & encryption",
+    feat2: "Your data, protected and private",
     feat3: "Verified & vetted lawyers",
-    stat2Label: "Support",
-    stat2Value: "24/7",
-    stat3Label: "Secure",
-    stat3Value: "100%",
     logo: "Nezamy",
   },
 };
@@ -111,10 +107,8 @@ const features = [
   { icon: Gavel, keyAr: "feat3", keyEn: "feat3" },
 ];
 
-const stats = [
-  { valueKey: "stat2Value", labelKey: "stat2Label" },
-  { valueKey: "stat3Value", labelKey: "stat3Label" },
-];
+/** The library counts the brand panel shows, all live (GET /api/library/stats). */
+const STAT_KEYS = ["laws", "articles", "principles"] as const;
 
 function GoogleIcon() {
   return (
@@ -162,20 +156,17 @@ export default function LoginPage() {
   const txt = isAr ? t.ar : t.en;
   const dir = isAr ? "rtl" : "ltr";
 
-  // Live floor of library.laws (GET /api/library/stats). null value = still
-  // loading → placeholder; a failed count drops the tile — never a literal.
+  // Live floors of the library's tables (GET /api/library/stats). null value =
+  // still loading → placeholder; a failed count drops every tile, and a count
+  // too small to floor drops its own — never a literal.
   const library = useLibraryStats();
-  const libraryLaws = library.status === "ready" ? formatLibraryCount(library.stats.laws, isAr ? "ar" : "en") : null;
-  const libraryStat = library.status === "loading" || libraryLaws
-    ? { value: libraryLaws, label: isAr ? LIBRARY_STAT_LABELS.laws.ar : LIBRARY_STAT_LABELS.laws.en }
-    : null;
-  const statTiles: { value: string | null; label: string }[] = [
-    ...(libraryStat ? [libraryStat] : []),
-    ...stats.map((s) => ({
-      value: String(txt[s.valueKey as keyof typeof txt]),
-      label: String(txt[s.labelKey as keyof typeof txt]),
-    })),
-  ];
+  const statTiles: { value: string | null; label: string }[] =
+    library.status === "error"
+      ? []
+      : STAT_KEYS.map((key) => ({
+          value: library.status === "ready" ? formatLibraryCount(library.stats[key], isAr ? "ar" : "en") : null,
+          label: isAr ? LIBRARY_STAT_LABELS[key].ar : LIBRARY_STAT_LABELS[key].en,
+        })).filter((tile) => library.status === "loading" || tile.value !== null);
 
   const router = useRouter();
   const user = useUser();

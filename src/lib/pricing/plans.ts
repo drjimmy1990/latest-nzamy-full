@@ -6,7 +6,8 @@
  * 1. Legal Library Standalone Subscription:
  *    - Annual: 5,000 SAR / year (Canonical rate, unified across system)
  *    - Quarterly: 1,500 SAR / quarter
- *    - AI Researcher Add-on: 2,500 SAR / year (optional)
+ *    - (The 2,500 SAR/year "AI Researcher Add-on" is withdrawn: AI points
+ *      replaced it — gap analysis 2026-10-16 §2. No plan offers it.)
  * 
  * 2. Individuals Pricing Pyramid:
  *    - Tier 1: AI Self-Service (الباقة الذكية) = 39 SAR/mo (390 SAR/yr)
@@ -63,14 +64,12 @@ export const STANDALONE_LIBRARY_PLANS: Record<string, PricingPlan> = {
     featuresAr: [
       "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
       "بحث ذكي وفهرسة رقمية دقيقة",
-      "تحديثات يومية فور صدور الأنظمة والتعديلات",
       "قراءة هادئة ووضع التركيز وحفظ المفضلة",
       "دعم فني عبر البريد الإلكتروني",
     ],
     featuresEn: [
       "Full access to laws, regulations & judicial principles",
-      "AI-powered search and precise digital indexing",
-      "Daily updates as new laws and amendments are issued",
+      "Full-text search and precise digital indexing",
       "Focus reader mode, favorites & bookmarks",
       "Email technical support",
     ],
@@ -99,18 +98,12 @@ export const STANDALONE_LIBRARY_PLANS: Record<string, PricingPlan> = {
     featuresAr: [
       "وصول كامل وغير محدود للأنظمة واللوائح والمبادئ القضائية",
       "محرك البحث القانوني المتقدم مع تصدير بصيغة PDF",
-      "تحديثات تشريعية لحظية وإشعارات التعديلات الجديدة",
       "حفظ الملاحظات والمجلدات الخاصة ومشاركة المقتطفات",
-      "إمكانية إضافة مساعد باحث الذكاء الاصطناعي (٢٬٥٠٠ ر.س/سنة)",
-      "دعم فني ذو أولوية عبر واتساب المخصص",
     ],
     featuresEn: [
       "Unlimited access to laws, regulations & principles",
       "Advanced legal search engine with PDF export",
-      "Instant legislative alerts and amendment tracking",
       "Private research folders, notes & snippet sharing",
-      "Eligible for AI Researcher Add-on (2,500 SAR/year)",
-      "Priority WhatsApp technical support",
     ],
     highlighted: true,
     ctaTextAr: "اشترك سنوياً",
@@ -119,16 +112,9 @@ export const STANDALONE_LIBRARY_PLANS: Record<string, PricingPlan> = {
   },
 };
 
-export const LIBRARY_AI_ADDON = {
-  id: "lib-ai-addon",
-  nameAr: "مساعد باحث الذكاء الاصطناعي الإضافي",
-  nameEn: "AI Legal Researcher Add-on",
-  priceYearly: 2500,
-  periodYearlyAr: "ر.س / سنة",
-  periodYearlyEn: "SAR / year",
-  descAr: "إضافة متقدمة للبحث الدلالي وتحليل وتلخيص المواد والسوابق القضائية آلياً",
-  descEn: "Advanced semantic research, automated article summarization and precedent analysis",
-};
+// LIBRARY_AI_ADDON (the 2,500 SAR/year AI researcher add-on) was defined here
+// and imported nowhere. AI points replaced it (gap analysis 2026-10-16 §2), so
+// the definition went with the plan lines that still sold it.
 
 // ─── 2. Individuals Pricing Pyramid ───────────────────────────────────────────
 
@@ -145,8 +131,8 @@ export const INDIVIDUALS_PYRAMID_PLANS: Record<string, PricingPlan> = {
     periodYearlyEn: "SAR / year",
     badgeAr: "١٫٢٥ ر.س يومياً",
     badgeEn: "Affordable",
-    descAr: "مستشارك القانوني الذكي على مدار الساعة — إجابات نظامية فورية وصياغة خطابات وإنذارات",
-    descEn: "Your 24/7 AI legal assistant — instant statutory answers and draft notices",
+    descAr: "مستشارك القانوني الذكي — إجابات نظامية وصياغة خطابات وإنذارات",
+    descEn: "Your AI legal assistant — statutory answers and draft notices",
     featuresAr: [
       "مساعد ذكاء اصطناعي قانوني غير محدود طوال الاشتراك",
       "استشهادات دقيقة بمواد الأنظمة واللوائح السعودية",
@@ -155,7 +141,7 @@ export const INDIVIDUALS_PYRAMID_PLANS: Record<string, PricingPlan> = {
       "دعم فني عبر المنصة والبريد",
     ],
     featuresEn: [
-      "Unlimited 24/7 AI legal assistant",
+      "Unlimited AI legal assistant",
       "Direct citations from Saudi statutory laws",
       "Draft generation for notices and official correspondence",
       "Court fees & statutory limitation period calculators",

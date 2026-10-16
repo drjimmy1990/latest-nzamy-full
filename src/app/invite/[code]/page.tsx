@@ -17,7 +17,7 @@ import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
   BookOpen, Gift, CheckCircle, ArrowLeft, ArrowRight,
-  Clock, Sparkle, Lock, WarningCircle, ArrowClockwise, MagnifyingGlass, Gavel,
+  Sparkle, Lock, WarningCircle, ArrowClockwise, MagnifyingGlass, Gavel,
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -29,10 +29,9 @@ import { trialLengthLabel } from "@/lib/services/inviteTrialLabel";
 // ── Features included in trial ────────────────────────────────────────────
 
 const TRIAL_FEATURES = [
-  { icon: MagnifyingGlass, ar: "بحث ذكي AI في كل الأنظمة واللوائح",     en: "AI-powered search across all laws and regulations" },
+  { icon: MagnifyingGlass, ar: "بحث بالنص الكامل في الأنظمة واللوائح",   en: "Full-text search across laws and regulations" },
   { icon: BookOpen,        ar: "نصوص الأنظمة واللوائح التنفيذية كاملة",  en: "Full law and executive regulation texts" },
   { icon: Gavel,           ar: "المبادئ القضائية والسوابق",              en: "Judicial principles and precedents" },
-  { icon: Clock,           ar: "تحديثات يومية فور صدور الأنظمة",         en: "Daily updates the moment laws are issued" },
 ];
 
 // ── Server response shape (GET /api/v1/invite/[code]) ─────────────────────

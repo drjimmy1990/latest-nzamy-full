@@ -276,7 +276,8 @@ test("N7: no library size literal — the subscribe page shows the live count", 
   for (const path of PRICING_SURFACES) assert.doesNotMatch(code(path), size, `${path}: library size literal`);
   const subscribe = code("app/laws/subscribe/page.tsx");
   assert.match(subscribe, /useLibraryStats\(\)/);
-  assert.match(subscribe, /formatLibraryCount\(library\.stats\.laws,/);
+  assert.match(subscribe, /formatLibraryCount\(library\.stats\[key\],/);
+  assert.match(subscribe, /LIBRARY_STAT_KEYS\.map\(/);
   assert.match(subscribe, /statTiles\.map\(/);
 });
 
@@ -309,4 +310,81 @@ test("N7: the firm wallet is an honest coming-soon page, not mock transactions",
   const wallet = code("app/dashboard/firm/wallet/page.tsx");
   assert.match(wallet, /<DashboardComingSoon title="محفظة المكتب"/);
   assert.doesNotMatch(wallet, /MOCK_TRANSACTIONS|TRX-\d+/);
+});
+
+// ── P1 item 2 (fix plan 2026-10-16): the claims seen next to N7's ────────────
+
+/** Every surface the P1 claims pass touched, plus the pricing surfaces above. */
+const CLAIM_SURFACES = [
+  ...PRICING_SURFACES,
+  "app/login/page.tsx",
+  "constants/servicesData.ts",
+  "constants/clientServiceCatalog.ts",
+  "components/pricing/PricingCTA.tsx",
+  "app/services/individuals/page.tsx",
+  "app/services/business/page.tsx",
+  "app/services/notary/page.tsx",
+  "app/services/tracking/page.tsx",
+  "app/services/lawyers/page.tsx",
+  "app/services/corporate/seconded-counsel/page.tsx",
+  "app/settings/components/tabs/HelpTab.tsx",
+  "components/floating/wa-steps/StepSuccessAndService.tsx",
+  "app/dashboard/client/consultation/new/page.tsx",
+  "app/invite/[code]/page.tsx",
+  "app/join/page.tsx",
+  "app/faq/page.tsx",
+  "components/legal-opinion/ContextConsult.tsx",
+  "components/legal-opinion/ContextStudy.tsx",
+];
+
+const UNSUPPORTED_CLAIMS: [RegExp, string][] = [
+  // Support keeps the hours on /contact; no AI tool has an uptime commitment.
+  [/٢٤\/٧|24\/7|على مدار الساعة|around the clock/i, "round-the-clock availability"],
+  // Nothing watches for new legislation: the library is loaded by hand.
+  [/تحديثات (يومية|فورية)|تحديثات تشريعية لحظية|لحظة الصدور|فور (صدور|الصدور)|تتبع التحديثات فوراً|daily updates|updated in real-time|instant (legislative|amendment) alerts/i, "real-time / daily legislative updates"],
+  [/واتساب أولوية|أولوية عبر واتساب|priority whatsapp/i, "priority WhatsApp support"],
+  // Points replaced the 2,500 SAR/year AI add-on (gap analysis 2026-10-16 §2).
+  [/إضافة باحث|مساعد باحث الذكاء|AI (Legal )?Researcher Add-on|AI Add-on/i, "the withdrawn AI add-on"],
+  [/معتمدون رسمياً|معتمدون لدى الجهات الرسمية|officially certified|accredited with official/i, "official accreditation"],
+  [/ضمان استرداد|money-back guarantee|refund guarantee/i, "a refund guarantee beyond the 14-day rule"],
+  [/متابعة لحظية|تحديث القضية لحظياً|real-time (case|transaction) tracking|إشعارا?ت? فوري|instant (completion )?notification/i, "real-time tracking / instant notification"],
+  [/٢٧ قسم|27 قسم/, "a «27 sections» count with no source"],
+];
+
+test("P1 item 2: no surface makes a claim the product cannot support", () => {
+  for (const path of CLAIM_SURFACES) {
+    const c = code(path);
+    for (const [re, what] of UNSUPPORTED_CLAIMS) assert.doesNotMatch(c, re, `${path}: ${what}`);
+  }
+});
+
+test("P1 item 2: /login shows live library counts, not «٢٤/٧» or «١٠٠٪ آمن»", () => {
+  const login = code("app/login/page.tsx");
+  // ("100%" alone is legitimate here: an SVG <rect width="100%">.)
+  assert.doesNotMatch(login, /١٠٠٪|stat2Value|stat3Value|"Secure"/);
+  assert.match(login, /STAT_KEYS\.map\(/);
+  assert.match(login, /formatLibraryCount\(library\.stats\[key\],/);
+});
+
+test("P1 item 2: /services/individuals counts its own service cards", () => {
+  const page = code("app/services/individuals/page.tsx");
+  assert.doesNotMatch(page, /٦ خدمات|6 comprehensive|6 Comprehensive/);
+  assert.match(page, /serviceList\.length\.toLocaleString\(/);
+});
+
+test("P1 item 2: the CTA's refund line states the refund page's condition", () => {
+  const cta = code("components/pricing/PricingCTA.tsx");
+  assert.match(cta, /استرداد خلال ١٤ يوماً ما لم تُستهلك نقاط الذكاء الاصطناعي/);
+});
+
+test("P1 item 1: the admin AI-usage pages are honest coming-soon pages", () => {
+  for (const path of [
+    "app/dashboard/admin/ai-usage/page.tsx",
+    "app/dashboard/admin/ai-usage/credits/page.tsx",
+    "app/dashboard/admin/ai-usage/reports/page.tsx",
+  ]) {
+    const c = code(path);
+    assert.match(c, /<DashboardComingSoon\b/, path);
+    assert.doesNotMatch(c, /TOOLS|TOP_CONSUMERS|CREDITS|QUALITY|Telemetry/, `${path}: invented figures`);
+  }
 });

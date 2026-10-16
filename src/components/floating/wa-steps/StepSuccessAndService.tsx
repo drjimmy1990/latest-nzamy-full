@@ -39,7 +39,7 @@ export function StepCustomerService({ isDark, onReset, whatsappHref }: CustomerS
   return (
     <motion.div variants={staggerListVariants} initial="hidden" animate="show" className="flex flex-col gap-3 relative">
       <motion.div variants={staggerItemVariants} className={`rounded-[1.25rem] border px-4 py-4 text-center ${isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-200/70 bg-gray-50"}`}>
-        <p className={`text-[13px] font-bold ${isDark ? "text-white" : "text-gray-900"}`}>فريقنا متاح ٢٤/٧ للمساعدة</p>
+        <p className={`text-[13px] font-bold ${isDark ? "text-white" : "text-gray-900"}`}>فريقنا متاح خلال أوقات العمل للمساعدة</p>
         <p className={`text-[11px] font-medium mt-1.5 ${isDark ? "text-gray-400" : "text-gray-500"}`}>اختر طريقة التواصل المفضلة</p>
       </motion.div>
 

@@ -70,7 +70,7 @@ export function HelpTab() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
           { icon: <BookOpen size={24} weight="fill" />, title: "مركز المساعدة", desc: "مقالات وأدلة مفصلة", color: "text-royal bg-royal/10 dark:text-emerald-400 dark:bg-emerald-400/10" },
-          { icon: <Headset size={24} weight="fill" />, title: "تواصل مع الدعم", desc: "فريقنا متاح ٢٤/٧", color: "text-gold bg-gold/10" },
+          { icon: <Headset size={24} weight="fill" />, title: "تواصل مع الدعم", desc: "أحد – خميس ٨ص – ١٠م، والجمعة والسبت ٩ص – ٥م", color: "text-gold bg-gold/10" },
           { icon: <Question size={24} weight="fill" />, title: "الأسئلة الشائعة", desc: "أجوبة للأسئلة الأكثر طرحاً", color: "text-purple-400 bg-purple-400/10" },
         ].map((card) => (
           <button

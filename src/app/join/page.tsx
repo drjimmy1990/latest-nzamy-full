@@ -114,8 +114,8 @@ const benefits = [
     icon: Headset,
     ar: "دعم مستمر",
     en: "Continuous Support",
-    descAr: "فريق دعم متخصص على مدار الساعة",
-    descEn: "Specialized support team around the clock",
+    descAr: "فريق دعم متخصص خلال أوقات العمل",
+    descEn: "Specialized support team during working hours",
   },
 ];
 

@@ -90,7 +90,7 @@ export function ContextConsult({ topicArea, setTopicArea, description, setDescri
       <div className={`${card} p-4`}>
         <div className="flex items-center justify-between mb-3">
           <p className={`text-[10px] font-black uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-            المجال القانوني — ٢٧ قسم
+            المجال القانوني
           </p>
           {selectedArea && (
             <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${

@@ -190,7 +190,7 @@ export function ContextStudy({
       {/* ─── 2. المجال القانوني ─── */}
       <div className={`${card} p-4`}>
         <p className={`text-[10px] font-black uppercase tracking-wider mb-3 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-          المجال القانوني — ٢٧ قسم
+          المجال القانوني
         </p>
         <div className="flex flex-wrap gap-1.5">
           {LEGAL_AREAS_27.map(area => (
