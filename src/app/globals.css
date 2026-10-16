@@ -705,3 +705,41 @@ body {
   }
 }
 
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Disabled buttons — one look everywhere (owner decision ١٣, 2026-10-06):
+   «عتامة 50% مع مؤشر منع cursor-not-allowed وتول تيب يوضح سبب التعطيل».
+   The tooltip is src/components/ui/DisabledReason.tsx (also behind the shared
+   Button's `disabledReason`); this block is the opacity and the cursor.
+
+   Two rules, on purpose:
+   1. @layer base — the default for every disabled button. A utility on the
+      element itself (e.g. `opacity-0` on a hidden control) still wins.
+   2. Unlayered — beats Tailwind's utilities layer, so the ~300 per-button
+      `disabled:opacity-30/40/60/70` and `disabled:cursor-default/wait`
+      variants all become the one standard without editing each file. The
+      cursor applies to every disabled button; the opacity only where the
+      button already asked to be dimmed when disabled (any `disabled:opacity-`
+      class) or carries none of its own.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@layer base {
+  button:disabled,
+  button[aria-disabled="true"],
+  [role="button"][aria-disabled="true"],
+  input:is([type="submit"], [type="button"], [type="reset"]):disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+button:disabled,
+button[aria-disabled="true"],
+[role="button"][aria-disabled="true"],
+input:is([type="submit"], [type="button"], [type="reset"]):disabled {
+  cursor: not-allowed;
+}
+
+button:disabled[class*="disabled:opacity-"],
+input:is([type="submit"], [type="button"], [type="reset"]):disabled[class*="disabled:opacity-"] {
+  opacity: 0.5;
+}

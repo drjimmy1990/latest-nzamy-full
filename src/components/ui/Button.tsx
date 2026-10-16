@@ -1,6 +1,7 @@
 "use client";
 import { motion } from "framer-motion";
 import { type ReactNode } from "react";
+import DisabledReason from "./DisabledReason";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger" | "gold";
 type Size = "sm" | "md" | "lg";
@@ -10,6 +11,11 @@ interface ButtonProps {
   variant?: Variant;
   size?: Size;
   disabled?: boolean;
+  /**
+   * Why the button is disabled (owner decision ١٣): a tooltip on hover and
+   * keyboard focus while `disabled` is true. Not shown while loading.
+   */
+  disabledReason?: string;
   loading?: boolean;
   fullWidth?: boolean;
   onClick?: () => void;
@@ -38,6 +44,7 @@ export default function Button({
   variant = "primary",
   size = "md",
   disabled = false,
+  disabledReason,
   loading = false,
   fullWidth = false,
   onClick,
@@ -46,7 +53,7 @@ export default function Button({
 }: ButtonProps) {
   const isInert = disabled || loading;
 
-  return (
+  const button = (
     <motion.button
       type={type}
       onClick={!isInert ? onClick : undefined}
@@ -76,5 +83,11 @@ export default function Button({
         children
       )}
     </motion.button>
+  );
+
+  return (
+    <DisabledReason reason={disabled && !loading ? disabledReason : null} className={fullWidth ? "w-full" : ""}>
+      {button}
+    </DisabledReason>
   );
 }

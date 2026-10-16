@@ -8,6 +8,7 @@ import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
 import { entityProfileTableFor } from "@/lib/services/profileSettingsFields";
 import { LEGAL_REP_CAPACITIES } from "@/app/register/client/components/_corporateIdentity";
 import { EmptyPanel, LocalActionStatus, SectionTitle } from "./_shared";
+import DisabledReason from "@/components/ui/DisabledReason";
 
 import {
   entitySettingsFieldsFor,
@@ -389,6 +390,9 @@ export function EntitySettingsTab() {
           still read as «you could save if you tried harder», and the PATCH
           behind it answers 403 «تعديل بيانات الشركة متاح لمالك الحساب فقط». */}
       {!readOnly && (
+      <DisabledReason
+        reason={loadFailed ? "تعذّر تحميل البيانات — أعد تحميل الصفحة ثم احفظ" : !ready ? "جارٍ تحميل البيانات" : null}
+      >
       <motion.button
         whileTap={{ scale: 0.98, y: 1 }}
         onClick={handleSave}
@@ -402,6 +406,7 @@ export function EntitySettingsTab() {
         ) : null}
         {saving ? "جاري الحفظ..." : saved ? "تم الحفظ" : "حفظ التغييرات"}
       </motion.button>
+      </DisabledReason>
       )}
     </div>
   );

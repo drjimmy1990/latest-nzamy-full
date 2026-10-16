@@ -2,6 +2,7 @@
 
 import { Receipt, Upload } from "@phosphor-icons/react";
 import { BackendReadyNotice, SectionTitle } from "./_shared";
+import DisabledReason from "@/components/ui/DisabledReason";
 
 // ── Tab: Invoices ────────────────────────────────────────────────────
 // REMOVED: handleSave, the `saved` tick with its «تم الحفظ» label, the
@@ -47,15 +48,16 @@ export function InvoiceTab() {
               <Receipt size={24} className="text-zinc-400" />
             </div>
             <div>
+              <DisabledReason reason="رفع شعار الفاتورة غير متاح حالياً: لا يوجد مكان يُحفظ فيه بعد">
               <button
                 type="button"
                 disabled
-                title="رفع شعار الفاتورة غير متاح حالياً"
                 className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl border border-zinc-200 text-zinc-400 disabled:cursor-not-allowed dark:border-white/[0.08] dark:text-zinc-500"
               >
                 <Upload size={14} />
                 رفع شعار الفاتورة — قريباً
               </button>
+              </DisabledReason>
               <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">
                 لا يوجد مكان يُحفظ فيه الشعار بعد، فلا يمكن رفعه من هنا.
               </p>
@@ -90,14 +92,15 @@ export function InvoiceTab() {
       </div>
 
       <div>
+        <DisabledReason reason="الحفظ غير متاح حالياً: لا توجد جهة تُخزَّن فيها هذه البيانات بعد">
         <button
           type="button"
           disabled
-          title="حفظ إعدادات الفواتير غير متاح حالياً"
           className="flex items-center gap-2 px-8 py-3 rounded-xl font-semibold text-sm disabled:cursor-not-allowed disabled:bg-zinc-300 disabled:text-zinc-500 disabled:shadow-none dark:disabled:bg-zinc-700 dark:disabled:text-zinc-400"
         >
           حفظ إعدادات الفواتير — قريباً
         </button>
+        </DisabledReason>
         <p className="text-xs leading-6 text-zinc-500 dark:text-zinc-400 mt-2">
           الحفظ معطّل لأن هذه البيانات لا تُخزَّن في أي مكان؛ لا توجد جهة تستقبلها بعد. لتحديث بيانات
           فاتورتك تواصل مع فريق نظامي.
