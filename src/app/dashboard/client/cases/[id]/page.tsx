@@ -21,8 +21,25 @@ import {
 // the identifier and is still in the URL; only the display shortens.
 import { orderReference } from "@/lib/services/orderReference";
 import { caseEventLabel } from "@/lib/services/caseEventLabels";
+// Owner decisions ١٥/١٩ — the litigation summary (degree, next hearing, final
+// ruling) from the fixed server projection /api/v1/client/cases/[id]/summary.
+import { ClientCaseSummaryCard } from "@/components/cases/ClientCaseSummaryCard";
 
-type CaseStage = "filed" | "pending" | "session" | "judgment" | "closed";
+// Where the REQUEST itself stands (service_requests.status), worded for the
+// client. This used to drive a five-step «مرفوعة / قيد التداول / جلسات / حكم /
+// مغلقة» bar that named litigation stages a request status cannot know: «جلسات»
+// lit up for any assigned request and «حكم» never could. The litigation stage
+// now comes from the degrees the lawyer records (ClientCaseSummaryCard, owner
+// decisions ١٥/١٩).
+const REQUEST_STATUS_AR: Record<string, string> = {
+  draft: "مسودة",
+  pending_payment: "بانتظار الدفع",
+  pending_assignment: "بانتظار إسناد محامٍ",
+  assigned: "لدى المحامي",
+  in_review: "قيد المراجعة",
+  completed: "مكتملة",
+  cancelled: "ملغاة",
+};
 
 interface TimelineEvent {
   date: string; title: string; desc?: string;
@@ -32,10 +49,8 @@ interface TimelineEvent {
 
 interface CaseData {
   id: string; title: string; caseNo: string; court: string;
-  stage: CaseStage; urgent: boolean;
+  status: string; urgent: boolean;
   lawyer: { name: string; type: string; phone: string; rating: number };
-  nextSession?: { date: string; time: string; location: string };
-  hearings: { id: string; title: string; date: string; time: string; location: string; status: string }[];
   fee: { total: number; paid: number };
   timeline: TimelineEvent[];
   documents: { name: string; date: string; type: string }[];
@@ -44,14 +59,6 @@ interface CaseData {
   team?: { name: string; role: string; initials: string }[];
   lawyerNoteForClient?: string;
 }
-
-const STAGES: { key: CaseStage; label: string }[] = [
-  { key: "filed",    label: "مرفوعة" },
-  { key: "pending",  label: "قيد التداول" },
-  { key: "session",  label: "جلسات" },
-  { key: "judgment", label: "حكم" },
-  { key: "closed",   label: "مغلقة" },
-];
 
 const EVENT_ICON: Record<TimelineEvent["type"], React.ElementType> = {
   session: CalendarCheck, document: FileText, update: ClipboardText,
@@ -87,43 +94,13 @@ function formatDate(iso: string | null | undefined): string {
   }
 }
 
-function mapStage(status: string | undefined): CaseStage {
-  switch (status) {
-    case "draft":
-      return "filed";
-    case "pending_payment":
-    case "pending_assignment":
-      return "pending";
-    case "assigned":
-    case "in_review":
-      return "session";
-    case "completed":
-    case "cancelled":
-      return "closed";
-    default:
-      return "pending";
-  }
-}
-
 /** Map a ServiceRequestDetail to the CaseData shape used by this page. */
 function toCaseData(r: ServiceRequestDetail): CaseData {
   const meta = (r.metadata ?? {}) as Record<string, any>;
-  const now = Date.now();
-
-  // Hearings
-  const rawHearings = Array.isArray(r.hearings) ? r.hearings : [];
-  const upcoming = rawHearings
-    .map((h) => ({ h, ts: h.hearingDate ? new Date(h.hearingDate).getTime() : NaN }))
-    .filter((x: any) => !isNaN(x.ts) && x.ts >= now)
-    .sort((a: any, b: any) => a.ts - b.ts)[0];
-
-  const nextSession = upcoming
-    ? {
-        date: formatDate(upcoming.h.hearingDate),
-        time: String(upcoming.h.hearingTime ?? "—"),
-        location: String(upcoming.h.location ?? "—"),
-      }
-    : undefined;
+  // Hearings are NOT read from this envelope: GET /api/v1/service-requests/[id]
+  // never sends them (a client cannot read public.hearings under RLS), so the
+  // «الجلسة القادمة» banner that used to be computed here was always empty.
+  // ClientCaseSummaryCard reads them from the fixed projection instead.
 
   // Timeline from events
   const timeline: TimelineEvent[] = (r.events ?? [])
@@ -161,23 +138,16 @@ function toCaseData(r: ServiceRequestDetail): CaseData {
     // than a long number.
     caseNo: orderReference(r.id) || r.id,
     court: String(meta.court ?? "—"),
-    stage: mapStage(r.status),
+    status: r.status,
     urgent,
     lawyer: {
-      name: r.assignedTo ?? "—",
+      // assignedTo is the lawyer's user id; the route resolves the name as
+      // assignedToName. Printing the id put a UUID where a name belongs.
+      name: r.assignedToName ?? (r.assignedTo ? "المحامي المكلّف" : "لم يُسند إلى محامٍ بعد"),
       type: "—",
       phone: "",
       rating: 0,
     },
-    nextSession,
-    hearings: rawHearings.map((hearing) => ({
-      id: hearing.id,
-      title: hearing.title,
-      date: formatDate(hearing.hearingDate),
-      time: hearing.hearingTime ?? "—",
-      location: hearing.courtName || hearing.location || "—",
-      status: hearing.status,
-    })),
     fee: { total: amount, paid },
     timeline,
     documents,
@@ -244,7 +214,6 @@ export default function ClientCaseDetailPage({ params }: { params: { id: string 
     : "rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]";
   const sm = isDark ? "text-zinc-500" : "text-slate-400";
 
-  const stageIdx = STAGES.findIndex(s => s.key === data.stage);
   const paidPct  = data.fee.total > 0 ? Math.round((data.fee.paid / data.fee.total) * 100) : 0;
 
   return (
@@ -279,27 +248,10 @@ export default function ClientCaseDetailPage({ params }: { params: { id: string 
             </div>
           </div>
 
-          {/* Stage pipeline */}
-          <div className="flex items-center gap-1 mb-2">
-            {STAGES.map((s, i) => {
-              const done = i < stageIdx;
-              const current = i === stageIdx;
-              return (
-                <div key={s.key} className="flex items-center flex-1">
-                  <div className={`flex-1 text-center text-[9px] font-bold py-1.5 rounded-lg transition-all ${
-                    current
-                      ? "bg-[#0B3D2E] text-white"
-                      : done
-                        ? isDark ? "bg-emerald-500/15 text-emerald-400" : "bg-emerald-50 text-emerald-600"
-                        : isDark ? "bg-white/[0.03] text-zinc-600" : "bg-slate-50 text-slate-400"
-                  }`}>{done ? "✓ " : ""}{s.label}</div>
-                  {i < STAGES.length - 1 && (
-                    <div className={`w-3 h-px mx-0.5 ${done ? "bg-emerald-400/60" : isDark ? "bg-white/[0.06]" : "bg-slate-200"}`} />
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          {/* Where the request stands. The litigation degree is in «ملخص القضية» below. */}
+          <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold ${isDark ? "bg-white/[0.05] text-zinc-300" : "bg-slate-100 text-slate-600"}`}>
+            حالة الطلب: {REQUEST_STATUS_AR[data.status] ?? "قيد المتابعة"}
+          </span>
 
           {/* Lawyer */}
           <div className={`flex items-center justify-between rounded-xl px-3 py-2.5 mt-3 ${isDark ? "bg-white/[0.03]" : "bg-slate-50"}`}>
@@ -324,57 +276,13 @@ export default function ClientCaseDetailPage({ params }: { params: { id: string 
         </div>
 
         {/* Next session banner */}
-        {data.nextSession && (
-          <div className={`px-5 py-3 border-t flex items-center gap-3 ${isDark ? "border-white/[0.06] bg-amber-500/5" : "border-amber-100 bg-amber-50/60"}`}>
-            <CalendarCheck size={14} className="text-amber-500 flex-shrink-0" />
-            <div className="flex-1">
-              <p className={`text-[12px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>الجلسة القادمة</p>
-              <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-amber-600/80"}`}>
-                {data.nextSession.date} — {data.nextSession.time} · {data.nextSession.location}
-              </p>
-            </div>
-            <span className="text-[9px] font-bold bg-amber-400/20 text-amber-600 dark:text-amber-300 px-2 py-0.5 rounded-full">تذكير مُفعّل</span>
-          </div>
-        )}
       </motion.div>
 
-      {/* Real hearings linked to this case. Lawyer-only notes/minutes are not
-          part of the API projection and therefore cannot leak into this view. */}
-      <motion.div initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.06 }}
-        className={`${card} p-4`}>
-        <div className="flex items-center gap-2 mb-3">
-          <CalendarCheck size={14} className="text-amber-500" />
-          <h2 className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>الجلسات والمواعيد</h2>
-          <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${isDark ? "bg-white/[0.05] text-zinc-500" : "bg-slate-100 text-slate-500"}`}>
-            {data.hearings.length}
-          </span>
-        </div>
-        {data.hearings.length === 0 ? (
-          <p className={`text-center text-[11px] py-4 ${sm}`}>لا توجد جلسات مرتبطة بهذه القضية بعد</p>
-        ) : (
-          <div className="space-y-2">
-            {data.hearings.map((hearing) => (
-              <div key={hearing.id} className={`rounded-xl px-3 py-2.5 ${isDark ? "bg-white/[0.03]" : "bg-slate-50"}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{hearing.title}</p>
-                    <p className={`mt-1 text-[10px] ${sm}`}>{hearing.date} — {hearing.time} · {hearing.location}</p>
-                  </div>
-                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold ${
-                    hearing.status === "cancelled"
-                      ? "bg-red-500/10 text-red-500"
-                      : hearing.status === "held"
-                        ? "bg-emerald-500/10 text-emerald-500"
-                        : "bg-amber-500/10 text-amber-500"
-                  }`}>
-                    {hearing.status === "cancelled" ? "ملغاة" : hearing.status === "held" ? "عُقدت" : "مجدولة"}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </motion.div>
+      {/* Owner decisions ١٥/١٩ — degree, next hearing, final ruling and the
+          client-visible hearings, from the fixed server projection. The
+          «تذكير مُفعّل» chip that sat on the old banner is gone: no reminder of
+          any kind is sent to a client for a hearing. */}
+      <ClientCaseSummaryCard caseId={data.id} />
 
       {/* Timeline */}
       <motion.div initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.08 }}

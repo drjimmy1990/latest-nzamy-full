@@ -40,13 +40,16 @@
  * codebase (service_requests carries a single `payment` field, not a ledger
  * or task list), so a tab for either would have nothing real to show.
  *
- * Per this project's data-model note: a business/corporate account today has
- * no firm-wide table (nothing inserts firm_members, and service_requests RLS
- * only admits requester_user_id or assigned_to) — so this file, like the
- * client one it mirrors, shows the requesting account's OWN case only. The
- * "team" roster and per-member task assignment the old mock displayed
- * assumed a firm data model that does not exist yet; removing them is
- * honest, not a regression.
+ * Who can open a case here is service_requests RLS: the requester, and since
+ * 20260914 every ACTIVE member of the company the case was filed under
+ * (business_id). The "team" roster and per-member task assignment the old mock
+ * displayed are still gone: nothing links a case to a company member as its
+ * handler.
+ *
+ * Owner decision ١٩ (2026-10-17): the overview opens with «ملخص القضية» —
+ * the current degree, the next hearing and the final ruling — from the fixed
+ * server projection /api/v1/client/cases/[id]/summary. The lawyer's internal
+ * notes, hearing minutes, judge and circuit are not part of it.
  */
 
 import { useState, useEffect } from "react";
@@ -72,6 +75,8 @@ import {
   isDocumentTimeoutError,
 } from "@/lib/services/documentService";
 import CaseGraphView from "../../kanban/CaseGraphView";
+// Owner decision ١٩ — «ملخص احترافي»: degree, next hearing, final ruling.
+import { ClientCaseSummaryCard } from "@/components/cases/ClientCaseSummaryCard";
 
 type TabPane = "overview" | "graph" | "docs";
 
@@ -276,6 +281,8 @@ export default function BusinessCaseDetailPage() {
           {/* ── OVERVIEW TAB ── */}
           {activeTab === "overview" && (
             <motion.div key="overview" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
+
+              <ClientCaseSummaryCard caseId={caseId} />
 
               {data.description && (
                 <div className={`${cardStyle} rounded-3xl p-6`}>
