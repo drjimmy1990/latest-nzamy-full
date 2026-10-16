@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { CheckCircle, XCircle } from "@phosphor-icons/react";
 import { addCaseStage } from "@/lib/services/caseStagesService";
 import { VALID_UI_DEGREES, type UiDegree } from "@/lib/services/caseStageVocabulary";
-import { describeDateAr } from "@/lib/services/hijri";
+import DualDatePicker from "@/components/ui/DualDatePicker";
 import type { CaseStage } from "@/lib/services/caseStagesService";
 
 interface Props {
@@ -128,21 +128,16 @@ export default function AddCaseStageModal({ onClose, isDark, caseRequestId, onCr
                 <input type="text" value={circuit} onChange={e => setCircuit(e.target.value)} className={inputCls} />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>القاضي</label>
                 <input type="text" value={judgeName} onChange={e => setJudgeName(e.target.value)} className={inputCls} />
               </div>
               <div>
                 <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>تاريخ الفتح</label>
-                <input type="date" value={openedOn} onChange={e => setOpenedOn(e.target.value)} className={inputCls} />
+                <DualDatePicker label="تاريخ الفتح" value={openedOn} onChange={setOpenedOn} clearable className={inputCls} />
               </div>
             </div>
-            {openedOn && describeDateAr(openedOn) && (
-              <div className={`rounded-xl px-3 py-2 border ${isDark ? "border-emerald-700/30 bg-emerald-900/10" : "border-emerald-200 bg-emerald-50"}`}>
-                <p className={`text-[11px] font-semibold ${isDark ? "text-emerald-300" : "text-emerald-800"}`}>{describeDateAr(openedOn)}</p>
-              </div>
-            )}
             <div>
               <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>ملاحظات</label>
               <textarea rows={3} value={notes} onChange={e => setNotes(e.target.value)} className={`${inputCls} resize-none`} />
