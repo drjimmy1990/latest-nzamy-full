@@ -31,8 +31,13 @@
 --   node scripts/library-q102-page-numbered-scan.mjs <scan.jsonl>
 --   node scripts/library-q102-page-numbered-generate.cjs <scan.jsonl> [--exclude <slugs.txt>]
 -- A RELOAD UNDOES IT: the owner's next library upload writes the type from his
---   files again. The same list, for his frontmatter, is
---   docs/plans/2026-10-17-q102-page-numbered-documents.md.
+--   files again, and until his files carry the label his live key diff
+--   (library:diff) shows these rows as changed. The list is
+--   docs/plans/2026-10-17-q102-page-numbered-documents.md. NOT YET for his
+--   frontmatter: his parser checks the type against enums.type in
+--   scripts/parsers/schema_manifest.json and silently falls back to «نظام»
+--   for any other value (parse-laws.ts validateEnum("type", …, "نظام")), so
+--   the label must be added there first (a developer change on owner-edits).
 -- ROLLBACK: block 4 (each row gets back the type it had).
 -- ════════════════════════════════════════════════════════════════════════════
 

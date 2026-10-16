@@ -94,8 +94,13 @@ const sql = `-- ═════════════════════�
 --   node scripts/library-q102-page-numbered-scan.mjs <scan.jsonl>
 --   node scripts/library-q102-page-numbered-generate.cjs <scan.jsonl> [--exclude <slugs.txt>]
 -- A RELOAD UNDOES IT: the owner's next library upload writes the type from his
---   files again. The same list, for his frontmatter, is
---   docs/plans/2026-10-17-q102-page-numbered-documents.md.
+--   files again, and until his files carry the label his live key diff
+--   (library:diff) shows these rows as changed. The list is
+--   docs/plans/2026-10-17-q102-page-numbered-documents.md. NOT YET for his
+--   frontmatter: his parser checks the type against enums.type in
+--   scripts/parsers/schema_manifest.json and silently falls back to «نظام»
+--   for any other value (parse-laws.ts validateEnum("type", …, "نظام")), so
+--   the label must be added there first (a developer change on owner-edits).
 -- ROLLBACK: block 4 (each row gets back the type it had).
 -- ════════════════════════════════════════════════════════════════════════════
 
@@ -193,7 +198,8 @@ const md = `# قرار المالك ١٠٢: الوثائق المرقّمة با
 **لماذا هذا الملف:** هذه الوثائق مرقّمة بالصفحات لا بالمواد، فكل موادها «الصفحة N». وهي اليوم مسجّلة في المكتبة بنوع «نظام» أو «لائحة تنفيذية». قرار المالك (إجابات ٢٠٢٦-١٠-٠٦، رقم ١٠٢) أن تُصنَّف «${LABEL}» مع بقاء ترقيم الصفحات كما هو.
 
 - **التطبيق على الموقع:** ملف SQL لمرة واحدة: \`supabase/one-time/2026-10-17_q102_page_numbered_documents.sql\`. يغيّر حقل النوع وحده، ولا يمسّ معرّفات المواد ولا أرقام الصفحات ولا الروابط.
-- **لكي لا يضيع مع إعادة الرفع:** يحتاج كل ملف في القائمة إلى \`type: ${LABEL}\` في الفرونت ماتر. وإلا أعاد أول رفع للمكتبة النوع القديم.
+- **إعادة رفع المكتبة تُرجع النوع القديم**، لأن الرفع يكتب النوع من ملفات المالك. وإلى أن تحمل ملفاته التصنيف الجديد ستُظهر أداة المقارنة (library:diff) هذه الوثائق مختلفة عن ملفاته.
+- **لا تُكتب القيمة في الفرونت ماتر بعدُ.** المحلّل يقبل أنواعاً محددة في \`scripts/parsers/schema_manifest.json\`، ويحوّل أي قيمة أخرى بصمت إلى «نظام». فلو كُتبت اليوم لصارت الوثائق الـ${N} كلها «نظام»، وهذا أسوأ مما هي عليه الآن. يضيف المطوّر القيمة «${LABEL}» إلى تلك القائمة أولاً (في فرع owner-edits)، ثم يكتبها المالك في ملفات هذه القائمة.
 - **كيف استُخرجت القائمة:** فحص للموقع الحي بصلاحية زائر في ٢٠٢٦-١٠-١٧ شمل كل الوثائق من نوع «نظام» أو «لائحة تنفيذية» (${scanned} وثيقة). يعيد ملف SQL حساب القائمة نفسها داخل قاعدة البيانات، ويرفض التنفيذ إن اختلفت.
 - **رقم ١١٢ في يوليو** كان على نسخة المكتبة القديمة. العدد على المكتبة الحالية **${N}** (${byType(full)}).
 
