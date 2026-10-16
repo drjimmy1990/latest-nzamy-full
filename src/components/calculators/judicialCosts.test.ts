@@ -157,3 +157,24 @@ test("parseClaimAmount refuses anything that is not a positive amount", () => {
     assert.equal(parseClaimAmount(raw), null, raw);
   }
 });
+
+// N9 (fix plan 2026-10-16): the fee calculator's tab subtitle named only the
+// first-instance and appeal caps. Any surface that states caps states all four.
+test("the fee calculator's court-fees subtitle names all four caps", async () => {
+  const { readFileSync } = await import("node:fs");
+  const page = readFileSync(new URL("../../app/ai/fee-calculator/page.tsx", import.meta.url), "utf8");
+  const row = page.split(/\r?\n/).find((line) => line.includes('id: "court_fees"'));
+  assert.ok(row, "court_fees tab not found");
+  const desc = /desc: "([^"]*)"/.exec(row!)?.[1] ?? "";
+  const ar = (n: number) => n.toLocaleString("ar-SA");
+  // The first-instance cap is written in words («مليون»).
+  assert.equal(FIRST_INSTANCE_COST_CAP_SAR, 1_000_000);
+  const caps = [
+    "بحد أقصى مليون ريال للدرجة الأولى",
+    `الاستئناف بحد أقصى ${ar(APPEAL_COST_CAP_SAR)}`,
+    `النقض ${ar(CASSATION_COST_CAP_SAR)}`,
+    `إعادة النظر ${ar(RECONSIDERATION_COST_CAP_SAR)}`,
+  ];
+  const named = caps.filter((text) => desc.includes(text)).length;
+  assert.equal(named, caps.length, `partial cap list: ${desc}`);
+});
