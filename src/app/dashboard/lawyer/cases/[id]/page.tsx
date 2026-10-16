@@ -249,7 +249,9 @@ const TABS = [
   { id: "stages",    label: "درجات التقاضي", icon: Scales },
   { id: "deadlines", label: "المهل",       icon: Timer },
   { id: "documents", label: "المستندات",   icon: FolderOpen },
-  { id: "team",      label: "الفريق",      icon: UsersThree },
+  // «أطراف القضية», not «الفريق»: this tab lists the responsible lawyer AND the
+  // client, while «فريق القضية» (owner ١٦٩, the notes tab) never includes the client.
+  { id: "team",      label: "أطراف القضية", icon: UsersThree },
   { id: "graph",     label: "خريطة القضية", icon: Graph },
   { id: "notes",     label: "الملاحظات",   icon: ChatDots },
 ];
@@ -1904,13 +1906,13 @@ export default function CaseDetailPage() {
             <div className="space-y-3">
               <div className="flex justify-between items-center">
                 <p className={`text-[12px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                  {team.length} أعضاء في الفريق
+                  أطراف القضية: {team.length}
                 </p>
               </div>
               {team.length === 0 ? (
                 <div className={`${card} p-10 flex flex-col items-center justify-center`}>
                   <UsersThree size={32} className={`mb-3 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
-                  <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>لا يوجد فريق معيّن</p>
+                  <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>لا أطراف مسجّلة لهذه القضية</p>
                 </div>
               ) : (
                 team.map((m, i) => (
@@ -2075,7 +2077,7 @@ export default function CaseDetailPage() {
                           <div className="flex items-center justify-between mb-2 gap-2">
                             <div className="flex items-center gap-2 min-w-0">
                               <div className="w-7 h-7 rounded-xl bg-royal/10 flex items-center justify-center flex-shrink-0">
-                                {/* بلا اسم لا يوجد حرف أول: أيقونة، لا خانة من المعرّف — نفس قاعدة تبويب «الفريق». */}
+                                {/* بلا اسم لا يوجد حرف أول: أيقونة، لا خانة من المعرّف — نفس قاعدة تبويب «أطراف القضية». */}
                                 {note.authorNameKnown
                                   ? <span className="text-[11px] font-bold text-royal">{note.authorName.charAt(0)}</span>
                                   : <User size={13} weight="duotone" className="text-royal" />}

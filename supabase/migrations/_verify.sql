@@ -1564,6 +1564,21 @@ BEGIN
     END IF;
   END LOOP;
 
+  -- The N21 trap: anon holds no privilege on these tables now, so a policy on
+  -- ANOTHER table that read one of them inline would turn every guest read of
+  -- that table into 42501. None does today; this keeps it that way.
+  SELECT string_agg(DISTINCT format('policy %s on %s reads %s', p.polname, p.polrelid::regclass, d.refobjid::regclass), '; ')
+    INTO bad
+    FROM pg_policy p
+    JOIN pg_depend d ON d.classid = 'pg_policy'::regclass AND d.objid = p.oid
+                    AND d.refclassid = 'pg_class'::regclass
+   WHERE d.refobjid IN ('public.case_notes'::regclass, 'public.lawyer_client_notes'::regclass,
+                        'public.consultation_notes'::regclass, 'public.case_team_members'::regclass)
+     AND p.polrelid <> d.refobjid;
+  IF bad IS NOT NULL THEN
+    missing := missing || format(' policies on other tables read a note table inline (guests would get 42501 there): %s;', bad);
+  END IF;
+
   IF missing <> '' THEN
     RAISE EXCEPTION '_verify: the 20261017_41 note scopes are broken —%', missing;
   END IF;
