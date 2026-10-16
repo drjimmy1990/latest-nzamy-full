@@ -1523,3 +1523,26 @@ BEGIN
 
   RAISE NOTICE '_verify: 20261017_20 OK — library.search_principles_page: INVOKER, statement_timeout 4s, service_role only';
 END $$;
+
+-- ====================================================================
+-- 2026-10-17 — 20261017_21_library_fts_statistics.sql (OPTIONAL search tuning)
+-- ====================================================================
+-- Reports, never raises: the file is optional. It says whether each library
+-- fts column carries statistics target 1000 (-1 / NULL = the default 100) —
+-- a migration that drops and re-creates an fts column resets it.
+DO $$
+DECLARE
+  t      text;
+  target integer;
+  report text := '';
+BEGIN
+  FOREACH t IN ARRAY ARRAY['library.articles', 'library.feqh_blocks', 'library.principles'] LOOP
+    CONTINUE WHEN to_regclass(t) IS NULL;
+    SELECT coalesce(a.attstattarget::integer, -1) INTO target
+      FROM pg_attribute a
+     WHERE a.attrelid = to_regclass(t) AND a.attname = 'fts' AND NOT a.attisdropped;
+    CONTINUE WHEN NOT FOUND;
+    report := report || format(' %s.fts=%s', t, CASE WHEN target < 0 THEN 'default' ELSE target::text END);
+  END LOOP;
+  RAISE NOTICE '_verify: 20261017_21 (optional) — fts statistics targets:% (1000 = applied; default = not applied or reset)', report;
+END $$;
