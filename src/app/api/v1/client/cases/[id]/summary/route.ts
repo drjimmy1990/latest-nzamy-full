@@ -19,10 +19,14 @@ import {
  *
  * TWO STEPS, IN THIS ORDER
  *   1. Access — the caller's OWN RLS-scoped client reads the case row from
- *      `service_requests`. That table's SELECT policies decide: the requester,
- *      an active member of the company the case was filed under (20260914), the
- *      assigned lawyer and their firm, an admin. Zero rows answers 404, the
- *      same body whether the case does not exist or is not theirs.
+ *      `service_requests`, and the route then keeps only the CLIENT side of
+ *      what RLS admitted: the requester, or an active member of the company the
+ *      case was filed under (business_id; `is_active_business_member`, the
+ *      same helper as the 20260914 policy). The table's other SELECT arms — the
+ *      assignee, the assignee's firm, and the verified-lawyer marketplace
+ *      browse of unassigned requests (service_requests_select_policy) — have
+ *      their own lawyer screens and get nothing here. Every refusal is the same
+ *      404 as a missing case.
  *   2. Projection — only then, the service client reads `hearings` and
  *      `case_stages` for THAT case id, naming the fixed column lists in
  *      src/lib/clientCaseSummary.ts and filtering hearing kinds to the two a
@@ -46,15 +50,15 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
   try {
     const auth = await assertRole();
     if (!auth.ok) return auth.response;
-    const { supabase } = auth;
+    const { user, supabase } = auth;
 
     const { id } = await context.params;
     if (!CASE_ID_RE.test(id)) return NextResponse.json({ error: AR.notFound }, { status: 404 });
 
-    // Step 1 — RLS decides whether this caller may see this case at all.
+    // Step 1 — RLS decides whether this caller may see this case at all…
     const { data: caseRow, error: caseErr } = await supabase
       .from("service_requests")
-      .select("id")
+      .select("id, requester_user_id, business_id")
       .eq("id", id)
       .maybeSingle();
     if (caseErr) {
@@ -62,6 +66,20 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
       return NextResponse.json({ error: AR.readFailed }, { status: 500 });
     }
     if (!caseRow) return NextResponse.json({ error: AR.notFound }, { status: 404 });
+
+    // …and only the client side of it may use this projection.
+    let isClientSide = caseRow.requester_user_id === user.id;
+    if (!isClientSide && caseRow.business_id) {
+      const { data: member, error: memberErr } = await supabase.rpc("is_active_business_member", {
+        p_business: caseRow.business_id,
+      });
+      if (memberErr) {
+        console.error("[client/cases summary] membership check failed:", memberErr.message, memberErr.code);
+        return NextResponse.json({ error: AR.readFailed }, { status: 500 });
+      }
+      isClientSide = member === true;
+    }
+    if (!isClientSide) return NextResponse.json({ error: AR.notFound }, { status: 404 });
 
     // Step 2 — the fixed projection, for exactly the case RLS just admitted.
     const service = await createServiceClient();

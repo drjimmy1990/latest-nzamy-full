@@ -41,6 +41,13 @@ test("the summary route reads only the fixed projection, after an RLS read of th
   assert.match(src, /\.from\("hearings"\)\s*\r?\n\s*\.select\(CLIENT_HEARING_COLUMNS\)/);
   assert.match(src, /\.from\("case_stages"\)\s*\r?\n\s*\.select\(CLIENT_STAGE_COLUMNS\)/);
   assert.match(src, /\.in\("kind", \[\.\.\.CLIENT_VISIBLE_HEARING_KINDS\]\)/);
+  // Only the client side of the case: the requester or an active member of
+  // its company. A verified lawyer browsing unassigned requests, the assignee
+  // and the assignee's firm can read the row under RLS but get a 404 here.
+  assert.ok(src.includes("let isClientSide = caseRow.requester_user_id === user.id;"));
+  assert.match(src, /rpc\("is_active_business_member", \{\s*p_business: caseRow\.business_id,/);
+  assert.ok(src.includes("if (!isClientSide) return NextResponse.json({ error: AR.notFound }, { status: 404 });"));
+  assert.ok(src.indexOf("if (!isClientSide)") < serviceClient, "the client-side check must come before the service client");
   // …and the note tables are never touched.
   assert.doesNotMatch(src, /\.from\("(case_notes|consultation_notes)"\)|select\("\*"\)/);
 });
