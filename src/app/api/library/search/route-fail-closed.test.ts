@@ -81,7 +81,8 @@ test("every section query error or malformed payload marks that section failed; 
   for (const name of ["laws", "precedents", "orders", "feqh"]) {
     assert.match(
       routeSource,
-      new RegExp(`const settled = await settlePage\\('${name}',[\\s\\S]{0,200}?\\);\\s*if \\(!settled\\) return \\{ ok: false \\};`),
+      // feqh passes its uncounted retry as a 4th argument (longer call).
+      new RegExp(`const settled = await settlePage\\('${name}',[\\s\\S]{0,${name === "feqh" ? 500 : 200}}?\\);\\s*if \\(!settled\\) return \\{ ok: false \\};`),
       name,
     );
   }
@@ -96,8 +97,9 @@ test("every section query error or malformed payload marks that section failed; 
 
 test("every section query has a deterministic primary-key order and reports count exactness", () => {
   // articles, principles, decrees_circulars and feqh_blocks all order by `id`
-  // (their primary key) before `.range()`, so pages are stable windows.
-  assert.equal((routeSource.match(/\.order\('id'\)/g) ?? []).length, 4);
+  // (their primary key) before `.range()`, so pages are stable windows. The
+  // fifth is feqh's uncounted retry, which re-reads the same window.
+  assert.equal((routeSource.match(/\.order\('id'\)/g) ?? []).length, 5);
   // Every window asks PostgREST for at least SEARCH_MIN_FETCH rows: a tiny
   // LIMIT with order('id') walks the primary key and timed out on rare terms.
   assert.match(routeSource, /lawQuery\(withHistory\)\.order\('id'\)\.range\(from, from \+ fetchSizeFor\(size\) - 1\)/);
@@ -126,4 +128,24 @@ test("sections run in parallel, use estimated counts, and the laws retry skips t
   assert.match(routeSource, /if \(shouldRetryLawsWithoutHistory\(res\.error\)\)/);
   assert.match(routeSource, /combineSearchOutcomes\(section, outcomes/);
   assert.match(routeSource, /return searchUnavailableResponse\(500\);/);
+});
+
+test("feqh keeps its rows when the database cancels the counted query (57014)", () => {
+  // settlePage re-reads without a count only on shouldRetryWithoutCount (57014,
+  // never a client abort or PGRST103), and only for a section that passes a
+  // retry. A failed retry still fails the section.
+  assert.match(routeSource, /if \(read\.kind === 'failed' && uncounted && shouldRetryWithoutCount\(res\.error\)\) \{/);
+  assert.match(routeSource, /if \(reread\.kind === 'rows'\) return uncountedPage\(reread\.rows, uncounted\.fetch, uncounted\.offset\);\s*console\.error\([^;]*\);\s*return null;/);
+  // feqh: the same window in the same order, without a count, one row past it
+  // (the proof that more exist), under a budget of its own.
+  assert.match(
+    routeSource,
+    /settlePage\('feqh', [^\n]*\{\s*offset: from,\s*fetch: fetchSizeFor\(size\),\s*run: \(\) => feqhQuery\(false, false\)\s*\.order\('id'\)\s*\.range\(from, from \+ fetchSizeFor\(size\)\)\s*\.abortSignal\(AbortSignal\.timeout\(SECTION_BUDGET_MS\)\)/,
+  );
+  assert.match(routeSource, /counted \? \{ count: 'estimated', head \} : \{ head \}/);
+  // laws, precedents and orders answered every common word on live
+  // (2026-10-16): no retry, so their settlePage call has three arguments.
+  assert.match(routeSource, /settlePage\('laws', base, \(\) =>\s*lawQuery\(false, true\)\.abortSignal\(signal\) as unknown as ReturnType<HeadCount>\);/);
+  assert.match(routeSource, /settlePage\('precedents', res as unknown as RowsResult, \(\) => precQuery\(true\)\.abortSignal\(signal\)\);/);
+  assert.match(routeSource, /settlePage\('orders', res as unknown as RowsResult, \(\) => orderQuery\(true\)\.abortSignal\(signal\)\);/);
 });

@@ -28,6 +28,8 @@ import {
   readPage,
   sectionCount,
   shouldRetryLawsWithoutHistory,
+  shouldRetryWithoutCount,
+  uncountedPage,
   type SearchResultItem,
   type SearchSectionName,
   type SectionOutcome,
@@ -56,6 +58,9 @@ const BOOK_TITLE_HITS_MAX = 3;
  *   total (PostgREST PGRST103, searchPlan.readPage), never a 503;
  * - section=all degrades: a failed section is reported in `degraded` and the
  *   others are still returned; a single-section request still fails closed;
+ * - feqh: when the database cancels the counted query (57014, a common word
+ *   on a cold cache), the same window is read again without a count and the
+ *   count is only what that page proves (settlePage, searchPlan.uncountedPage);
  * - page depth is capped in filters.ts (SEARCH_MAX_DEPTH) for single-section
  *   requests (section=all ignores `page`);
  * - law title hits count inside `limit` and inside `counts.laws`
@@ -91,15 +96,32 @@ type QueryError = { code?: string; message?: string; details?: string | null } |
 type RowsResult = { data: Record<string, unknown>[] | null; count: number | null; error: QueryError };
 type HeadCount = () => PromiseLike<{ count: number | null; error: unknown }>;
 type SettledPage = { rows: Record<string, unknown>[]; count: number | null };
+/** The same window without a count, `fetch + 1` rows from `offset` (searchPlan.uncountedPage). */
+type UncountedRetry = { run: () => PromiseLike<RowsResult>; offset: number; fetch: number };
 
 /**
  * One section page → its rows and PostgREST count, or null when the section
  * failed. A page past the end (PGRST103) is an empty page whose count is the
  * total from the error, or from a head count with the same filters when the
- * error does not carry it.
+ * error does not carry it. With `uncounted`, a counted query the database
+ * cancelled (57014, shouldRetryWithoutCount) is read again without a count:
+ * the rows are kept and the count is only what that page proves.
  */
-async function settlePage(label: SearchSectionName, res: RowsResult, headCount: HeadCount): Promise<SettledPage | null> {
+async function settlePage(
+  label: SearchSectionName,
+  res: RowsResult,
+  headCount: HeadCount,
+  uncounted?: UncountedRetry,
+): Promise<SettledPage | null> {
   const read = readPage<Record<string, unknown>>(res);
+  if (read.kind === 'failed' && uncounted && shouldRetryWithoutCount(res.error)) {
+    console.warn(`[Search] ${label}: the counted query hit the statement timeout; reading the page again without a count`);
+    const retry = await uncounted.run();
+    const reread = readPage<Record<string, unknown>>(retry);
+    if (reread.kind === 'rows') return uncountedPage(reread.rows, uncounted.fetch, uncounted.offset);
+    console.error(`[Search] ${label} query failed again without a count:`, retry.error ?? 'invalid data');
+    return null;
+  }
   if (read.kind === 'failed') {
     console.error(`[Search] ${label} query failed:`, res.error ?? 'invalid data');
     return null;
@@ -572,7 +594,7 @@ export async function POST(request: Request) {
       const { from, size } = window('feqh');
       const signal = AbortSignal.timeout(SECTION_BUDGET_MS);
       try {
-        const feqhQuery = (head = false) => supabase
+        const feqhQuery = (head = false, counted = true) => supabase
           .schema('library')
           .from('feqh_blocks')
           .select(`
@@ -584,7 +606,7 @@ export async function POST(request: Request) {
                 feqh_books!inner ( id, title, author, school, type )
               )
             )
-          `, { count: 'estimated', head })
+          `, counted ? { count: 'estimated', head } : { head })
           .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG });
 
         // Books whose TITLE or AUTHOR carries the query lead page 1 (a
@@ -617,7 +639,19 @@ export async function POST(request: Request) {
             volumesLabel: b.volumesLabel,
           },
         }));
-        const settled = await settlePage('feqh', res as unknown as RowsResult, () => feqhQuery(true).abortSignal(signal));
+        // A common word («عقد») on a cold cache: the database cancels the
+        // counted query (57014) before the rows come back. The same window is
+        // then read once more without a count, with a budget of its own (the
+        // cancelled attempt spent most of `signal`'s), so the section lists
+        // its rows with a floor count instead of failing.
+        const settled = await settlePage('feqh', res as unknown as RowsResult, () => feqhQuery(true).abortSignal(signal), {
+          offset: from,
+          fetch: fetchSizeFor(size),
+          run: () => feqhQuery(false, false)
+            .order('id')
+            .range(from, from + fetchSizeFor(size))
+            .abortSignal(AbortSignal.timeout(SECTION_BUDGET_MS)) as unknown as PromiseLike<RowsResult>,
+        });
         if (!settled) return { ok: false };
         const feqhResults = settled.rows;
         const results: SearchResultItem[] = feqhResults.map((r: Record<string, unknown>) => {

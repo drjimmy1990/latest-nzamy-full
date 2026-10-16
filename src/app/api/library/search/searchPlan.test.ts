@@ -24,11 +24,13 @@ import {
   scoreLawTitle,
   sectionCount,
   shouldRetryLawsWithoutHistory,
+  shouldRetryWithoutCount,
   stripDefiniteArticle,
   titlePhrasePattern,
   foldLettersForIlike,
   titlePrefixPattern,
   titleStemPatterns,
+  uncountedPage,
   type LawTitleCandidate,
   type SearchResultItem,
 } from "./searchPlan.ts";
@@ -54,6 +56,68 @@ test("isTimeoutError recognises statement_timeout and client aborts only", () =>
   assert.equal(isTimeoutError({ code: "42703", message: "column articles.original_text does not exist" }), false);
   assert.equal(isTimeoutError({ message: "Bad Request" }), false);
   assert.equal(isTimeoutError(null), false);
+});
+
+test("the uncounted retry runs on the database's statement_timeout (57014) only", () => {
+  // feqh «عقد» on live 2026-10-16: HTTP 500, 57014, after ~3.4s (anon role).
+  assert.equal(shouldRetryWithoutCount({ code: "57014", message: "canceling statement due to statement timeout" }), true);
+  // A client-side abort spent the section budget (a hung connection): a retry
+  // on the same request would fail again at once.
+  assert.equal(shouldRetryWithoutCount({ name: "AbortError", message: "This operation was aborted" }), false);
+  assert.equal(shouldRetryWithoutCount({ name: "TimeoutError", message: "signal timed out" }), false);
+  assert.equal(shouldRetryWithoutCount({ message: "canceling statement due to statement timeout" }), false);
+  // A page past the end is an answer, not a failure (readPage).
+  assert.equal(shouldRetryWithoutCount({ code: "PGRST103", details: "An offset of 50 was requested, but there are only 28 rows." }), false);
+  assert.equal(shouldRetryWithoutCount({ code: "42501", message: "permission denied" }), false);
+  assert.equal(shouldRetryWithoutCount(null), false);
+  assert.equal(shouldRetryWithoutCount(undefined), false);
+});
+
+test("uncountedPage: a row past the window proves more matches exist, and the count is only a floor", () => {
+  const rows = Array.from({ length: 51 }, (_, i) => ({ id: i }));
+  const page = uncountedPage(rows, 50, 0);
+  assert.equal(page.rows.length, 50, "the probe row is never listed");
+  assert.equal(page.count, null);
+  // The section then reports what the page proves: more than 50, never exact,
+  // so the /laws page prints «أكثر من ٥٠» and keeps paging.
+  assert.deepEqual(
+    sectionCount({ estimate: page.count, offset: 0, rawRows: page.rows.length, requested: 50, listedWhenComplete: 50 }),
+    { count: 50, exact: false },
+  );
+  assert.deepEqual(
+    sectionCount({ estimate: uncountedPage(rows, 50, 100).count, offset: 100, rawRows: 50, requested: 50 }),
+    { count: 150, exact: false },
+  );
+});
+
+test("uncountedPage: without the probe row the window reaches the end, so the count is exact", () => {
+  // Exactly a full window and nothing after it.
+  const full = uncountedPage(Array.from({ length: 50 }, (_, i) => ({ id: i })), 50, 0);
+  assert.equal(full.rows.length, 50);
+  assert.equal(full.count, 50);
+  assert.deepEqual(sectionCount({ estimate: full.count, offset: 0, rawRows: 50, requested: 50 }), { count: 50, exact: true });
+  const later = uncountedPage(Array.from({ length: 50 }, (_, i) => ({ id: i })), 50, 200);
+  assert.deepEqual(sectionCount({ estimate: later.count, offset: 200, rawRows: 50, requested: 50 }), { count: 250, exact: true });
+  // A short window.
+  const short = uncountedPage([{ id: 1 }, { id: 2 }, { id: 3 }], 50, 0);
+  assert.equal(short.count, 3);
+  assert.deepEqual(sectionCount({ estimate: short.count, offset: 0, rawRows: 3, requested: 50, listedWhenComplete: 3 }), { count: 3, exact: true });
+  const shortLater = uncountedPage([{ id: 1 }], 50, 100);
+  assert.deepEqual(sectionCount({ estimate: shortLater.count, offset: 100, rawRows: 1, requested: 50 }), { count: 101, exact: true });
+  // No match at all.
+  const none = uncountedPage([], 50, 0);
+  assert.equal(none.count, 0);
+  assert.deepEqual(sectionCount({ estimate: none.count, offset: 0, rawRows: 0, requested: 50, listedWhenComplete: 0 }), { count: 0, exact: true });
+});
+
+test("uncountedPage: an empty page past the end proves no total, and is never reported as exact", () => {
+  // Without a count PostgREST answers an offset past the end with 200 [] (no
+  // PGRST103 and no total). The match set is <= offset, nothing more; the
+  // /laws page stops paging on an empty page (`ended`).
+  const past = uncountedPage([], 50, 100);
+  assert.deepEqual(past.rows, []);
+  assert.equal(past.count, null);
+  assert.equal(sectionCount({ estimate: past.count, offset: 100, rawRows: 0, requested: 50 }).exact, false);
 });
 
 const item = (id: string, title: string, snippet: string, section: SearchResultItem["section"] = "laws"): SearchResultItem => ({

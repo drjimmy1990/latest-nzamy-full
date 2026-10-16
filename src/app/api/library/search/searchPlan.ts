@@ -199,6 +199,39 @@ export function readPage<T>(res: { data: unknown; count: number | null | undefin
   return { kind: 'rows', rows: res.data as T[], count: typeof res.count === 'number' ? res.count : null };
 }
 
+/**
+ * A counted section query cancelled by the database's statement_timeout
+ * (57014), and nothing else, is re-run without a count (route.ts settlePage).
+ * Measured on live 2026-10-16, feqh «عقد» (anon): 57014 at ~3.4s on a cold
+ * cache. Once the cancelled attempt has warmed it, the same window without a
+ * count took 0.15–0.95s and with `count: 'estimated'` 0.65–2.35s (the count
+ * walks up to 1001 matches through the section→chapter→book joins). A client
+ * abort (AbortError/TimeoutError) is not retried: it means a hung
+ * connection. PGRST103 is a page past the end, already an answer.
+ */
+export function shouldRetryWithoutCount(error: unknown): boolean {
+  return !!error && typeof error === 'object' && (error as { code?: unknown }).code === '57014';
+}
+
+/**
+ * The page of an uncounted retry. It asked for `fetch + 1` rows: the extra row
+ * is never listed, it only proves that more matches exist past this window.
+ * - extra row present → count null: sectionCount then reports offset + fetch,
+ *   not exact («أكثر من …» on the /laws page, which keeps paging);
+ * - no extra row → the window reaches the end of the match set, so the total
+ *   is offset + rows, exact;
+ * - an empty page past the end (offset > 0) → count null. Without a count
+ *   PostgREST answers it with 200 [] (no PGRST103, no total), which proves
+ *   only that the total is <= offset. The /laws page stops paging on an
+ *   empty page.
+ */
+export function uncountedPage<T>(rows: readonly T[], fetch: number, offset: number): { rows: T[]; count: number | null } {
+  const page = rows.slice(0, fetch);
+  if (rows.length > fetch) return { rows: page, count: null };
+  if (rows.length > 0 || offset === 0) return { rows: page, count: offset + rows.length };
+  return { rows: page, count: null };
+}
+
 /** True for a Postgres statement_timeout (57014) or a client-side abort. */
 export function isTimeoutError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
@@ -284,8 +317,10 @@ export function dedupeResults<T extends SearchResultItem>(items: readonly T[]): 
  * - section=all with EVERY section failed: 503.
  *
  * `countsExact[section]` is true only for a proven-exact count (SEARCH COUNTS
- * CONTRACT); `false` means a floor of 1001 (shown as «أكثر من ١٬٠٠٠») or, for
- * a section in `degraded`, no count at all. `total` is then a floor too.
+ * CONTRACT); `false` means a floor: 1001 for a PostgREST estimate (shown as
+ * «أكثر من ١٬٠٠٠»), the rows seen so far when the count itself timed out and
+ * the page was re-read without one (uncountedPage, «أكثر من ٥٠»), or, for a
+ * section in `degraded`, no count at all. `total` is then a floor too.
  * `countsEstimated`/`countsExactUpTo` are the round-1 fields, kept for older
  * clients.
  */
