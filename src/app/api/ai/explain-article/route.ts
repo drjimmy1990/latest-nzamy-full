@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { libraryGate } from '@/lib/library-gate';
 import { rateLimit, clientIpFrom } from '@/lib/rateLimit';
+import { libraryAiAccess } from '../_libraryAiAccess';
 
 /**
  * POST /api/ai/explain-article
@@ -43,6 +44,12 @@ export async function POST(request: Request) {
         { status: 503 }
       );
     }
+
+    // relatedArticles[].text comes from other laws too, so a guest gets 401 and
+    // a tier below pro 403 before any n8n call. It runs after the config check,
+    // so nobody is asked to sign in or subscribe while the service is offline.
+    const denied = await libraryAiAccess();
+    if (denied) return denied;
 
     const body = await request.json();
     const { articleId, lawSlug, question } = body;

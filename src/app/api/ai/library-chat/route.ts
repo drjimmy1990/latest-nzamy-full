@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { libraryGate } from '@/lib/library-gate';
 import { rateLimit, clientIpFrom } from '@/lib/rateLimit';
+import { libraryAiAccess } from '../_libraryAiAccess';
 
 /**
  * POST /api/ai/library-chat
@@ -43,6 +44,13 @@ export async function POST(request: Request) {
         { status: 503 }
       );
     }
+
+    // The agent quotes paywalled library text, so a guest gets 401 and a tier
+    // below pro 403 before any n8n call. It runs after the config check: the
+    // client turns 401/403 into "sign in" / "subscribe", and nobody should be
+    // asked to do either while the assistant is offline.
+    const denied = await libraryAiAccess();
+    if (denied) return denied;
 
     const body = await request.json();
     const { message, context } = body;
