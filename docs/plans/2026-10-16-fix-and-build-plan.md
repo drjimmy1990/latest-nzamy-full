@@ -18,7 +18,7 @@ Five parallel branches and one wording pass were merged into this branch. Verifi
 - `tsc` and `eslint` show 0 errors;
 - every migration was run twice (idempotent) in Docker with its own test file, against a reproduction of the live policies.
 
-### Security / database (seven migrations; run order in the companion file)
+### Security / database (eight migrations; run order in the companion file)
 
 | Item | Owner decision | Migration / code |
 |---|---|---|
@@ -32,6 +32,7 @@ Five parallel branches and one wording pass were merged into this branch. Verifi
 | Expired subscriptions kept unlocking paid features | bug | `effectiveTier()` in `getUserTier` |
 | Clean-wipe SQL would fail on the private precedent table's foreign key | bug | wipe file + Docker T7 |
 | The self-host restore re-granted what earlier migrations had revoked: the lawyer/role-profile column lock (a lawyer could self-verify) and EXECUTE on seven service-request functions | bug | re-run 20260922_03 (Step 0) + 20261016_07 |
+| …and the write lock on `subscriptions` / `credit_transactions` (20260921_02). `_verify.sql` stopped on live on anon's SELECT on `profiles`; that grant stays (see N21) | bug | 20261016_08 + `_verify.sql` now gates what matters: no anon write on `profiles`, no profiles policy reaching anon. It also expects 4 policies per members table once 20261016_02 has dropped the DELETE one (it expected 5 and would have failed next) |
 
 ### Pricing and honesty (fix/a1)
 
@@ -107,6 +108,8 @@ See the owner report §١‏.٢٦ for what the pass changed and what it left.
 | N18 | Precedent full-text search now runs as the service role (like articles), so a guest search has no `statement_timeout`; AbortSignal drops only the HTTP request. Add a timeout-bounded RPC for both | performance | M |
 | N19 | Community: in demo mode the seed cards open «هذا السؤال غير موجود»; `admin/business` local overrides hide later server flag changes (minor reviews) | community / admin | S |
 | N20 | **Grants from the self-host import.** The restore recreated the schema under Supabase's default privileges and replayed GRANTs only, never REVOKEs. What was checked against the 2026-10-10 dump: (a) every public table carries `GRANT ALL` to anon/authenticated, and RLS is on all 95, so rows stay gated; (b) tables with column-level grants — only the seven role-profile tables, whose lock re-running 20260922_03 restores (Step 0); profiles/chat/community column limits come from 20261016_02/03/06; (c) functions — 24 SECURITY DEFINER functions are executable by anon/authenticated, all policy helpers, triggers or owner-checked actions; the seven whose migrations revoked EXECUTE (20260908, 20260917) are re-locked by 20261016_07. **Not checked:** schemas other than `public` and `library`, sequences, and storage buckets. Rule: any future lock REVOKEs the table/function privilege itself and verifies the effective privilege | security | done / rule |
+| N21 | **Admin policies read `profiles` inline and apply to PUBLIC.** About fifteen live policies (`"admins read all lawyer profiles"`, `articles_admin_read_all`, `"Admins can modify platform settings"`, `blog_sections_admin_write`, `contact_admin_read`, `tickets_admin_all`, …) are `USING (EXISTS (SELECT 1 FROM public.profiles …))` with no `TO` clause. Postgres checks the caller's SELECT on every table a policy reads, so anon must keep SELECT on `profiles` or every guest read of those tables fails with 42501 (Docker: `profiles_anon_policy_subquery.test.sql`). Re-running 20260921_01 on live would break guest pages. Fix: recreate them `TO authenticated USING (public.is_admin())`, then revoke anon SELECT on `profiles` (finishing 20260921_01) and drop the exemption in `_verify.sql` | security | M |
+| N22 | **Fiqh search fails on very common words.** «عقد» → the fiqh section is `degraded` (503 on its own): PostgREST's `count=estimated` on `feqh_blocks` hits the 57014 statement timeout (~4 s as anon), while the same page without the count answers in ~0.5 s. Same query shape before this batch. Keep the rows when the count fails (or count cheaper); check laws/precedents/orders for the same | library / performance | S |
 
 ## 3. Decided by the owner, to build (medium)
 

@@ -8,7 +8,7 @@
 - Each migration is idempotent, so running one twice is safe.
 - Each migration ends with a verify block. The block **raises an error and rolls everything back** if the result is wrong.
 
-Seven new migrations, in `supabase/migrations/`, plus one existing file to re-run:
+Eight new migrations, in `supabase/migrations/`, plus one existing file to re-run:
 
 | File | What it does | Order |
 |---|---|---|
@@ -20,6 +20,7 @@ Seven new migrations, in `supabase/migrations/`, plus one existing file to re-ru
 | `20261016_05_lawyer_show_hourly_rate.sql` | Adds the "show my rate" switch, off by default (Q168) | **Before the deploy** |
 | `20261016_06_community_access_and_counters.sql` | Verified lawyers can read lawyers-only posts. Answers follow their post, no fake verified badge, counters kept by the database | Any time (after Step 0) |
 | `20261016_07_reassert_function_execute.sql` | Puts back the EXECUTE revokes of 20260908/20260917 on seven service-request functions (the self-host restore re-granted them) | Any time |
+| `20261016_08_reassert_profiles_subscriptions_revokes.sql` | Puts back the 20260921_02 write lock on `subscriptions` / `credit_transactions` (the self-host restore re-granted it). Added 2026-10-16 after `_verify.sql` stopped on live | **Before `_verify.sql`** |
 
 ---
 
@@ -75,7 +76,11 @@ cd <app folder> && git pull && bash deploy.sh
 7. `20261016_01_library_principles_text_lock.sql`. It ends with `NOTICE: 20261016_01 verify: OK`.
    - If you apply it **before** the deploy, every precedent page answers 500 until the code is live.
    - **Never re-run** `20261004_01_library_column_lock.sql` after this file: it re-opens the precedent text. If you ever must, re-run `20261016_01` right after it.
-8. Run `supabase/migrations/_verify.sql` in the SQL Editor. Expect `_verify: 20260922_03 OK`, `_verify: 20261016_01 OK` and `_verify: 20261016_02 OK`.
+8. Run `20261016_08_reassert_profiles_subscriptions_revokes.sql`. It ends with `NOTICE: 20261016_08 verify: OK`.
+   - Added after the first `_verify.sql` run on live stopped with "anon still holds 1 DML grant(s) on public.profiles — 20260921_01 was not applied".
+   - That one grant is anon's SELECT on `profiles`, and it **stays**: about fifteen admin policies on other tables read `profiles` inline and apply to guests too, so without it guest reads of those tables fail with 42501. Guests still read zero profile rows. `_verify.sql` now checks that instead (plan item N21 removes the need for the grant).
+   - **Never re-run `20260921_01_profiles_rls_lockdown.sql` on live** until N21 is done: its revoke takes that SELECT away.
+9. Run `supabase/migrations/_verify.sql` in the SQL Editor. Expect `_verify: 20260922_03 OK`, `_verify: 20261016_01 OK` and `_verify: 20261016_02 OK`.
 
 ## Step 4: check from outside (public anon key)
 

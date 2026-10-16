@@ -1,6 +1,15 @@
 -- =============================================================================
 -- Migration: 20260921_01_profiles_rls_lockdown.sql
 -- =============================================================================
+-- DO NOT RE-RUN ON THE SELF-HOSTED DATABASE (2026-10-16) until plan item N21
+-- is done. About fifteen policies on other tables read public.profiles inline
+-- with no TO clause ("admins read all lawyer profiles", articles_admin_read_all,
+-- …), so they apply to anon too, and Postgres checks anon's SELECT on profiles
+-- for each of them. The `revoke select … from anon` below would make every guest
+-- read of those tables fail with 42501. 20261016_08 keeps that one grant; the
+-- guest still reads zero rows because the three policies here are `to
+-- authenticated`.
+--
 -- PURPOSE
 --   Any authenticated user can read any other user's `public.profiles` row on
 --   the live database. No migration in this repository creates a permissive

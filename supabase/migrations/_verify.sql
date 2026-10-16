@@ -92,11 +92,20 @@ SELECT 'public.profiles policy count (expect 3)' AS check,
        (SELECT count(*) FROM pg_policy
          WHERE polrelid = 'public.profiles'::regclass) AS present;
 
-SELECT 'anon DML grants on public.profiles (expect 0)' AS check,
+-- anon keeps table-level SELECT since 20261016_08: about fifteen policies on
+-- other tables read public.profiles inline and apply to PUBLIC, so without it
+-- every guest read of those tables fails with 42501. The guest still reads zero
+-- rows: no profiles policy may reach anon (gated below).
+SELECT 'anon write grants on public.profiles (expect 0)' AS check,
        (SELECT count(*) FROM information_schema.role_table_grants
          WHERE table_schema = 'public' AND table_name = 'profiles'
            AND grantee = 'anon'
-           AND privilege_type IN ('SELECT', 'INSERT', 'UPDATE', 'DELETE')) AS present;
+           AND privilege_type IN ('INSERT', 'UPDATE', 'DELETE')) AS present;
+
+SELECT 'public.profiles policies that reach anon / PUBLIC (expect 0)' AS check,
+       (SELECT count(*) FROM pg_policy
+         WHERE polrelid = 'public.profiles'::regclass
+           AND (polroles = '{0}'::oid[] OR 'anon'::regrole::oid = ANY (polroles))) AS present;
 
 -- ── 20260921_02_subscriptions_write_revoke.sql (UAT-SUB-001) ──────────────
 SELECT 'subscriptions INSERT/UPDATE policies (expect 0)' AS check,
@@ -170,11 +179,20 @@ BEGIN
   IF n <> 3 THEN
     RAISE EXCEPTION '_verify: public.profiles carries % policies, expected exactly 3 — 20260921_01 was not applied', n;
   END IF;
+  -- SELECT is not counted: anon keeps it since 20261016_08 (see the check rows
+  -- above). What matters is that a guest can neither write a profile nor read
+  -- one row of it.
   SELECT count(*) INTO n FROM information_schema.role_table_grants
    WHERE table_schema = 'public' AND table_name = 'profiles' AND grantee = 'anon'
-     AND privilege_type IN ('SELECT', 'INSERT', 'UPDATE', 'DELETE');
+     AND privilege_type IN ('INSERT', 'UPDATE', 'DELETE');
   IF n <> 0 THEN
-    RAISE EXCEPTION '_verify: anon still holds % DML grant(s) on public.profiles — 20260921_01 was not applied', n;
+    RAISE EXCEPTION '_verify: anon still holds % write grant(s) on public.profiles — run 20261016_02 (or 20261016_08)', n;
+  END IF;
+  SELECT count(*) INTO n FROM pg_policy
+   WHERE polrelid = 'public.profiles'::regclass
+     AND (polroles = '{0}'::oid[] OR 'anon'::regrole::oid = ANY (polroles));
+  IF n <> 0 THEN
+    RAISE EXCEPTION '_verify: % policy/policies on public.profiles reach anon or PUBLIC — a guest can read profile rows (20260921_01 scoped all three to authenticated)', n;
   END IF;
 
   -- UAT-SUB-001
@@ -189,7 +207,7 @@ BEGIN
      AND grantee IN ('authenticated', 'anon')
      AND privilege_type IN ('INSERT', 'UPDATE', 'DELETE');
   IF n <> 0 THEN
-    RAISE EXCEPTION '_verify: % write grant(s) for authenticated/anon survive on subscriptions/credit_transactions — 20260921_02 was not applied', n;
+    RAISE EXCEPTION '_verify: % write grant(s) for authenticated/anon survive on subscriptions/credit_transactions — run 20261016_08 (the self-host restore re-granted what 20260921_02 revoked)', n;
   END IF;
 END $$;
 
@@ -537,6 +555,13 @@ DECLARE
   n    int;
   bad  text;
   body text;
+  -- 20261016_02 (owner decision ٣٠) drops the four "<t>: owner or admin can
+  -- delete" policies on purpose: a member is ended, never hard-deleted. Once its
+  -- marker is on public.profiles.email, each table carries 4 policies, not 5.
+  delete_dropped boolean := coalesce(col_description('public.profiles'::regclass,
+       (SELECT attnum FROM pg_attribute WHERE attrelid = 'public.profiles'::regclass AND attname = 'email')), '')
+       ILIKE '%server-write-only since 20261016_02%';
+  expected int := CASE WHEN delete_dropped THEN 4 ELSE 5 END;
 BEGIN
   FOREACH t IN ARRAY ARRAY['firm_members', 'business_members', 'government_members', 'ngo_members']
   LOOP
@@ -554,8 +579,13 @@ BEGIN
     END IF;
 
     SELECT count(*) INTO n FROM pg_policy WHERE polrelid = ('public.' || t)::regclass;
-    IF n <> 5 THEN
-      RAISE EXCEPTION '_verify: public.% carries % policies, expected exactly 5 (20260921_03''s four + 20260922_02''s invitee arm)', t, n;
+    IF n <> expected THEN
+      RAISE EXCEPTION '_verify: public.% carries % policies, expected exactly % (20260921_03''s four + 20260922_02''s invitee arm%)',
+        t, n, expected, CASE WHEN delete_dropped THEN ', minus the DELETE policy 20261016_02 drops' ELSE '' END;
+    END IF;
+    IF delete_dropped AND EXISTS (SELECT 1 FROM pg_policy
+                                   WHERE polrelid = ('public.' || t)::regclass AND polcmd = 'd') THEN
+      RAISE EXCEPTION '_verify: public.% has a DELETE policy again — 20261016_02 removed it (members are ended, never hard-deleted)', t;
     END IF;
 
     -- RLS filters ROWS, not COLUMNS, and `authenticated` holds the table-level
