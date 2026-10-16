@@ -96,6 +96,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "apikey: $ANON" "https://auth.nezamy
 Then on the site:
 - `/lawyers/browse` and one lawyer's public profile;
 - as a test lawyer: `/dashboard/lawyer/profile`, `/dashboard/lawyer/profile/edit` (change the bio, save, reload), Settings → المهنة;
+- as the same test lawyer: switch the dashboard mode in Settings, then check the server log has no `display_mode mirror failed`. The Docker tests prove the SQL; this checks how PostgREST builds the `RETURNING` for a save with `select=user_id` and for this `count: "exact"` update under column grants;
 - `/community` (both tabs) and a question page that has a lawyer's answer.
 
 **Never re-run after it** without re-running it: nothing in `supabase/migrations` re-grants SELECT on `lawyer_profiles`, but a self-host restore or any `GRANT ALL … TO anon, authenticated` does. `_verify.sql` names it.
