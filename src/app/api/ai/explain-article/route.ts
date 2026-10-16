@@ -32,11 +32,6 @@ export async function POST(request: Request) {
     );
   }
 
-  // relatedArticles[].text comes from other laws too, so a guest gets 401 and a
-  // tier below pro gets 403 here, before the config check and any n8n call.
-  const denied = await libraryAiAccess();
-  if (denied) return denied;
-
   try {
     // Check if n8n is configured
     if (!N8N_EXPLAIN_WEBHOOK_URL) {
@@ -49,6 +44,12 @@ export async function POST(request: Request) {
         { status: 503 }
       );
     }
+
+    // relatedArticles[].text comes from other laws too, so a guest gets 401 and
+    // a tier below pro 403 before any n8n call. It runs after the config check,
+    // so nobody is asked to sign in or subscribe while the service is offline.
+    const denied = await libraryAiAccess();
+    if (denied) return denied;
 
     const body = await request.json();
     const { articleId, lawSlug, question } = body;

@@ -20,7 +20,10 @@ import { isAuthUnavailable, authUnavailableResponse } from '@/lib/auth/apiAuth';
  *
  * Returns the response to send, or null when the caller may go on. Call it after
  * the rate limit (it costs a getUser round-trip and two service-role reads) and
- * before any n8n call.
+ * after the route's "not configured" 503. The client turns 401/403 into "sign in"
+ * / "subscribe" (src/app/laws/[slug]/_ai-reply.ts), which must not be offered
+ * while the assistant is offline. Call it before the body is read and before any
+ * n8n call.
  */
 export async function libraryAiAccess(): Promise<NextResponse | null> {
   const supabase = await createClient();

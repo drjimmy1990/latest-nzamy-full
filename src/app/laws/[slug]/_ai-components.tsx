@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, useRef } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CaretDown, CaretUp, Microphone, PaperPlaneTilt, Sparkle, X,
 } from "@phosphor-icons/react";
 import type { LawArticle } from "../data";
 import { LiteMarkdown } from "../components/AiTabContent";
+import { libraryAiRefusal, type LibraryAiAction } from "./_ai-reply";
 
 
 const QUICK_PROMPTS = [
@@ -27,7 +29,7 @@ const QUICK_PROMPTS_EN = [
   "Extract the financial statement articles",
 ];
 
-interface AIMessage { role: "user" | "ai"; text: string; }
+interface AIMessage { role: "user" | "ai"; text: string; action?: LibraryAiAction; }
 
 type SpeechRecognitionEventLike = {
   results: ArrayLike<ArrayLike<{ transcript: string }>>;
@@ -106,6 +108,7 @@ export function LibraryAI({ isDark, isRTL = true }: { isDark: boolean; isRTL?: b
     // When the webhook is not configured (503) or the call fails, show a
     // clear "قريباً / coming soon" message instead of fabricating an answer.
     let reply = "";
+    let action: LibraryAiAction | undefined;
     try {
       const res = await fetch("/api/ai/library-chat", {
         method: "POST",
@@ -124,9 +127,17 @@ export function LibraryAI({ isDark, isRTL = true }: { isDark: boolean; isRTL?: b
               ? "لم أتلقَّ رداً صالحاً من الخدمة حالياً."
               : "No valid reply from the AI service right now.";
       } else {
-        reply = isRTL
-          ? "الذكاء الاصطناعي قيد التفعيل وقريباً سيتوفر.\nحالياً يمكنك تصفح المواد والاستعانة بالفهرس والمبادئ والسوابق."
-          : "The AI assistant is being activated and will be available soon.\nFor now, browse the articles, index, principles, and precedents.";
+        // A guest (401), a tier below pro (403) or the rate limit (429) is told
+        // what to do, not "coming soon"; anything else keeps «قيد التفعيل».
+        const refusal = libraryAiRefusal(res.status, window.location.pathname + window.location.search);
+        if (refusal) {
+          reply = refusal.text;
+          action = refusal.action;
+        } else {
+          reply = isRTL
+            ? "الذكاء الاصطناعي قيد التفعيل وقريباً سيتوفر.\nحالياً يمكنك تصفح المواد والاستعانة بالفهرس والمبادئ والسوابق."
+            : "The AI assistant is being activated and will be available soon.\nFor now, browse the articles, index, principles, and precedents.";
+        }
       }
     } catch {
       reply = isRTL
@@ -134,7 +145,7 @@ export function LibraryAI({ isDark, isRTL = true }: { isDark: boolean; isRTL?: b
         : "The AI assistant is being activated and will be available soon.\nFor now, browse the articles, index, principles, and precedents.";
     }
 
-    setMsgs(m => [...m, { role: "ai", text: reply }]);
+    setMsgs(m => [...m, { role: "ai", text: reply, action }]);
     setLoading(false);
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
   };
@@ -183,6 +194,11 @@ export function LibraryAI({ isDark, isRTL = true }: { isDark: boolean; isRTL?: b
                           <p className={`text-[10px] font-bold mb-1 ${isDark ? "text-[#C8A762]" : "text-amber-700"}`}>{isRTL ? "✦ ذكاء نظامي" : "✦ Nezamy AI"}</p>
                         )}
                         {m.role === "ai" ? <LiteMarkdown text={m.text} /> : <p className="whitespace-pre-wrap">{m.text}</p>}
+                        {m.action && (
+                          <Link href={m.action.href} className="inline-block mt-2 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-[#0B3D2E] text-white hover:opacity-90 transition">
+                            {m.action.label}
+                          </Link>
+                        )}
                       </div>
                     </div>
                   ))}

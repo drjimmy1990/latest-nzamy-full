@@ -99,20 +99,24 @@ test("the gate's own error bodies are Arabic", () => {
 for (const route of ROUTES) {
   const source = readFileSync(new URL(`./${route.name}/route.ts`, import.meta.url), "utf8");
 
-  test(`${route.name}: the access gate runs after the rate limit and before any n8n call`, () => {
+  test(`${route.name}: the access gate runs after the config check and before any n8n call`, () => {
     assert.match(source, /import \{ libraryAiAccess \} from '\.\.\/_libraryAiAccess';/);
     assert.match(source, /const denied = await libraryAiAccess\(\);\s*if \(denied\) return denied;/);
 
     const gate = at(source, "const gate = await libraryGate();", route.name);
     const rate = at(source, `rateLimit(\`${route.rateKey}\${ip}\`, { limit: 20, windowMs: 60_000 });`, route.name);
-    const access = at(source, "const denied = await libraryAiAccess();", route.name);
     const configured = at(source, `if (!${route.url}) {`, route.name);
+    const access = at(source, "const denied = await libraryAiAccess();", route.name);
     const body = at(source, "await request.json();", route.name);
     const forward = at(source, `await fetch(${route.url}, {`, route.name);
     assert.ok(gate < rate, "libraryGate first");
-    assert.ok(rate < access, "the per-IP limit throttles guests before the getUser round-trip");
-    assert.ok(access < configured, "a guest learns nothing from the 503 'not configured' branch");
-    assert.ok(configured < body && body < forward);
+    assert.ok(rate < configured, "the per-IP limit comes before everything else");
+    // The client turns 401/403 into "sign in" / "subscribe"
+    // (src/app/laws/[slug]/_ai-reply.ts). While the webhook is unset everyone
+    // gets the 503 «قيد التفعيل», so nobody is asked to pay for an offline
+    // assistant.
+    assert.ok(configured < access, "the 503 'not configured' answer comes before 401/403");
+    assert.ok(access < body && body < forward, "401/403 come before the body is read and before n8n");
     // The only outbound call is the n8n one.
     assert.equal(source.match(/\bfetch\(/g)?.length, 1);
   });
