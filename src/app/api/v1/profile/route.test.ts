@@ -165,7 +165,7 @@ test("N2: the session client never reads lawyer_profiles' private columns", () =
 });
 
 test("PATCH answers a member with a specific Arabic 403, not AR.saveFailed", () => {
-  assert.match(routeSource, /businessOwnerOnly: "تعديل بيانات الشركة متاح لمالك الحساب فقط\.",/);
+  assert.match(routeSource, /businessOwnerOnly: "تعديل بيانات الشركة متاح لمالك الحساب أو المفوَّض المسجَّل في سجل التفويضات فقط\.",/);
   assert.match(
     routeSource,
     /if \(!canWriteBusinessProfile\(resolved\.scope\)\) \{[\s\S]{0,400}?AR\.businessOwnerOnly[\s\S]{0,200}?status: resolved\.scope === "member" \? 403 : 404/,
@@ -205,4 +205,17 @@ test("national_address (owner ٥٦/٥٧) is allow-listed, validated, and a blank
   assert.match(src, /\n    "nationality",\n[\s\S]{0,200}?\n    "national_address",\n  \];/);
   assert.match(src, /const issue = nationalAddressIssue\(body\.national_address\);/);
   assert.match(src, /body\.national_address = body\.national_address\.trim\(\) \|\| null;/);
+});
+
+test("owner decision ٣٦: a delegate is resolved after the owner check, and both corporate writes are keyed by the company id", () => {
+  // The delegation lookup runs only for a member, so an owner's save never
+  // depends on business_delegations (20261017_30) being installed.
+  assert.match(routeSource, /if \(decision\.scope !== "member" \|\| !decision\.businessId\) return decision;/);
+  assert.match(routeSource, /lookupProfileDelegation\(supabase, decision\.businessId, "api\/v1\/profile"\)/);
+  assert.match(routeSource, /businessRowId = resolved\.businessId;/);
+  // A delegate is not the owner: keyed by owner_user_id, the write would match
+  // zero rows for them.
+  assert.match(routeSource, /\.update\(businessProfilePatch\)\s*\r?\n\s*\.eq\("id", businessRowId \?\? ""\)/);
+  assert.doesNotMatch(routeSource, /\.update\(businessProfilePatch\)\s*\r?\n\s*\.eq\("owner_user_id"/);
+  assert.match(routeSource, /entityTable === "business_profiles" && businessRowId/);
 });

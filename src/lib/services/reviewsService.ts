@@ -6,6 +6,7 @@
  *   POST /api/v1/reviews                         — { requestId, rating, title?, body?, isAnonymous? }
  *   GET  /api/v1/reviews/mine                    — the lawyer: reviews about me (incl. my responses)
  *   PATCH /api/v1/reviews/[id]/response          — the lawyer answers a review once
+ *   GET/PATCH /api/v1/firm/reviews-visibility    — the firm manager's opt-in (owner decision ٢٠)
  *
  * A review is a fact about ONE completed request (DB: unique per request; RLS:
  * only its requester, only when completed). Free-floating ratings do not exist.
@@ -104,4 +105,20 @@ export async function respondToReview(id: string, response: string): Promise<Rev
   const res = await apiMutate<{ data: Review }>(`${BASE}/${encodeURIComponent(id)}/response`, "PATCH", { response });
   if (!res?.data) throw new Error("لم يُعِد الخادم التقييم بعد الردّ.");
   return res.data;
+}
+
+/** Owner decision ٢٠ — is this firm's review list public? Default off. */
+export interface FirmReviewVisibility {
+  publicReviews: boolean;
+  changedAt: string | null;
+}
+
+export async function getFirmReviewVisibility(): Promise<FirmReviewVisibility> {
+  if (!isSupabaseMode) throw new Error(DEMO);
+  return apiGet<FirmReviewVisibility>("/api/v1/firm/reviews-visibility");
+}
+
+export async function setFirmReviewVisibility(publicReviews: boolean): Promise<FirmReviewVisibility> {
+  if (!isSupabaseMode) throw new Error(DEMO);
+  return apiMutate<FirmReviewVisibility>("/api/v1/firm/reviews-visibility", "PATCH", { publicReviews });
 }

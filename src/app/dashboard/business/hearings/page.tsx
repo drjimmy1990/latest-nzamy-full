@@ -1,181 +1,212 @@
 "use client";
 
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  CalendarCheck, Clock, MapPin, Plus, Warning,
-  Buildings, MagnifyingGlass, Hourglass, Gavel, FileText
-} from "@phosphor-icons/react";
-import { useTheme } from "@/components/ThemeProvider";
-import { SubscriptionGuard } from "@/components/dashboard/SubscriptionGuard";
+/**
+ * «المواعيد» — /dashboard/business/hearings (owner decision ٥: one of the five
+ * company sections to build first).
+ *
+ * WHAT WAS HERE: `EVENTS`, five invented diary entries («مراجعة عقد التوريد
+ * الرئيسي», «تجديد رخصة الدفاع المدني», «جلسة عمالية بمحكمة التنفيذ», «موعد
+ * تقديم الإقرار الضريبي», «توقيع اتفاقية استثمار») with departments, places
+ * and relative dates («اليوم», «غداً») that belonged to no company — and a
+ * «إضافة موعد» button with nothing behind it.
+ *
+ * WHAT IT IS NOW: GET /api/v1/client/appointments —
+ *   • the upcoming court hearings and client meetings the lawyer recorded on
+ *     the company's cases (owner decisions ١٥/١٩: date, time and place only;
+ *     the team's notes and minutes never leave the server);
+ *   • the caller's own scheduled consultations.
+ * Nothing is added from here: the lawyer records hearings; a consultation is
+ * booked through «اطلب خدمة جديدة».
+ */
 
-// ─── Mock Data ─────────────────────────────────────────────────────────────────
-type EventType = "hearing" | "deadline" | "gov_review" | "contract";
-interface CalEvent {
-  id: string; title: string; type: EventType;
-  department: string; location: string; date: string; time: string;
-  urgency: "urgent" | "normal"; status: "pending" | "done";
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { motion } from "framer-motion";
+import { CalendarCheck, Gavel, ChatDots, Warning, ArrowLeft } from "@phosphor-icons/react";
+import { useTheme } from "@/components/ThemeProvider";
+import { isSupabaseMode } from "@/lib/services/api";
+import type { ClientHearing } from "@/lib/clientCaseSummary";
+import { CONSULTATION_MODE_AR, type ConsultationMode } from "@/lib/services/consultationVocabulary";
+
+interface AppointmentHearing extends ClientHearing {
+  caseTitle: string;
+}
+interface AppointmentConsultation {
+  id: string;
+  requestId: string | null;
+  scheduledAt: string;
+  mode: string | null;
+  specialty: string | null;
+}
+type Load =
+  | { state: "loading" }
+  | { state: "ok"; hearings: AppointmentHearing[]; consultations: AppointmentConsultation[]; casesCapped: boolean }
+  | { state: "failed"; message: string }
+  | { state: "demo" };
+
+const AR_MONTHS = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
+
+function dayAr(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return iso;
+  const n = (v: string) => Number(v).toLocaleString("ar-SA", { useGrouping: false });
+  return `${n(m[3])} ${AR_MONTHS[Number(m[2]) - 1] ?? ""} ${n(m[1])}`;
 }
 
-const EVENTS: CalEvent[] = [
-  { id: "e1", title: "مراجعة عقد التوريد الرئيسي", type: "contract", department: "المشتريات", location: "مكتب الإدارة", date: "اليوم", time: "١٠:٠٠ ص", urgency: "urgent", status: "pending" },
-  { id: "e2", title: "تجديد رخصة الدفاع المدني", type: "gov_review", department: "الأمن والسلامة", location: "البلدية", date: "غداً", time: "٩:٠٠ ص", urgency: "normal", status: "pending" },
-  { id: "e3", title: "جلسة عمالية بمحكمة التنفيذ", type: "hearing", department: "الموارد البشرية", location: "محكمة التنفيذ", date: "١٨ أبريل", time: "١١:٠٠ ص", urgency: "urgent", status: "pending" },
-  { id: "e4", title: "موعد تقديم الإقرار الضريبي", type: "deadline", department: "المالية", location: "منصة ZATCA", date: "٢٥ أبريل", time: "١١:٥٩ م", urgency: "urgent", status: "pending" },
-  { id: "e5", title: "توقيع اتفاقية استثمار", type: "contract", department: "الإدارة التنفيذية", location: "قاعة الاجتماعات الفائقة", date: "أمس", time: "٢:٠٠ م", urgency: "normal", status: "done" },
-];
+function instantAr(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return new Intl.DateTimeFormat("ar-SA-u-ca-gregory", {
+    timeZone: "Asia/Riyadh", day: "numeric", month: "long", year: "numeric", hour: "numeric", minute: "2-digit",
+  }).format(d);
+}
 
-const TYPE_CONFIG: Record<EventType, { icon: React.ElementType, label: string, color: string, bg: string, border: string }> = {
-  contract: { icon: FileText, label: "عقود", color: "text-blue-500", bg: "bg-blue-500/10", border: "border-blue-500/20" },
-  gov_review: { icon: Buildings, label: "مراجعة حكومية", color: "text-amber-500", bg: "bg-amber-500/10", border: "border-amber-500/20" },
-  hearing: { icon: Gavel, label: "جلسة قضائية", color: "text-purple-500", bg: "bg-purple-500/10", border: "border-purple-500/20" },
-  deadline: { icon: Warning, label: "موعد نهائي", color: "text-red-500", bg: "bg-red-500/10", border: "border-red-500/20" },
-};
+function timeAr(time: string | null): string | null {
+  if (!time) return null;
+  const [h, min] = time.split(":").map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(min)) return time;
+  return `${(h % 12 === 0 ? 12 : h % 12).toLocaleString("ar-SA")}:${min.toLocaleString("ar-SA", { minimumIntegerDigits: 2 })} ${h < 12 ? "ص" : "م"}`;
+}
 
-export default function BusinessHearingsPage() {
+export default function BusinessAppointmentsPage() {
   const { isDark } = useTheme();
-  const [search, setSearch] = useState("");
-  const [filterType, setFilterType] = useState<"all" | EventType>("all");
+  const [load, setLoad] = useState<Load>(() => (isSupabaseMode ? { state: "loading" } : { state: "demo" }));
 
-  const cardCls = isDark
-    ? "bg-zinc-900 border-white/[0.06]"
-    : "bg-white border-slate-200 outline-slate-100/50";
+  const fetchAll = useCallback(async (): Promise<Load> => {
+    try {
+      const res = await fetch("/api/v1/client/appointments", { credentials: "same-origin", cache: "no-store" });
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body) {
+        const msg = typeof body?.error === "string" && /[؀-ۿ]/.test(body.error) ? body.error : "تعذّر تحميل المواعيد.";
+        return { state: "failed", message: msg };
+      }
+      return {
+        state: "ok",
+        hearings: Array.isArray(body.hearings) ? body.hearings : [],
+        consultations: Array.isArray(body.consultations) ? body.consultations : [],
+        casesCapped: body.casesCapped === true,
+      };
+    } catch {
+      return { state: "failed", message: "تعذّر تحميل المواعيد. تحقق من اتصالك." };
+    }
+  }, []);
 
-  const textHeading = isDark ? "text-zinc-100" : "text-slate-800";
-  const textMuted = isDark ? "text-zinc-400" : "text-slate-500";
+  useEffect(() => {
+    if (!isSupabaseMode) return;
+    let cancelled = false;
+    void fetchAll().then((next) => { if (!cancelled) setLoad(next); });
+    return () => { cancelled = true; };
+  }, [fetchAll]);
 
-  const filtered = EVENTS.filter(e => {
-    if (filterType !== "all" && e.type !== filterType) return false;
-    if (search && !e.title.includes(search) && !e.department.includes(search)) return false;
-    return true;
-  });
-
-  const pendingEvents = filtered.filter(e => e.status === "pending");
-  const doneEvents = filtered.filter(e => e.status === "done");
+  const card = isDark
+    ? "rounded-2xl border border-white/[0.06] bg-zinc-900/70"
+    : "rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]";
+  const muted = isDark ? "text-zinc-400" : "text-slate-500";
+  const strong = isDark ? "text-zinc-100" : "text-slate-800";
+  const row = `flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl px-4 py-3 ${isDark ? "bg-white/[0.03]" : "bg-slate-50"}`;
 
   return (
-    <SubscriptionGuard featureKey="hearings">
-    <div className="max-w-[1200px] mx-auto space-y-6" dir="rtl">
-      {/* ── Header ── */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <h1 className={`text-2xl font-bold mb-1 ${textHeading}`}>
-            مواعيد وجلسات الشركة
-          </h1>
-          <p className={`text-sm ${textMuted}`}>
-            تتبع المواعيد القانونية، تجديد العقود، والتراخيص الخاصة بالشركة.
-          </p>
-        </div>
-        <button className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#0B3D2E] text-[#C8A762] text-sm font-bold shadow-md hover:bg-[#0B3D2E]/90 transition-colors">
-          <Plus size={16} weight="bold" />
-          إضافة موعد جديد
-        </button>
+    <div className="max-w-4xl mx-auto space-y-5" dir="rtl">
+      <div>
+        <h1 className={`text-xl font-black flex items-center gap-2 ${strong}`}>
+          <CalendarCheck size={22} weight="duotone" className="text-[#0B3D2E] dark:text-emerald-400" />
+          المواعيد
+        </h1>
+        <p className={`text-sm mt-1 ${muted}`}>
+          الجلسات القادمة في قضايا المنشأة كما سجّلها المحامي، واستشاراتك المجدولة.
+        </p>
       </div>
 
-      {/* ── Controls ── */}
-      <div className={`flex flex-col md:flex-row gap-4 p-4 rounded-xl border ${cardCls}`}>
-        <div className={`flex-1 flex items-center px-3 py-2 rounded-lg border ${isDark ? "bg-black/20 border-white/10" : "bg-slate-50 border-slate-200"}`}>
-          <MagnifyingGlass size={16} className={isDark ? "text-zinc-500" : "text-slate-400"} />
-          <input
-            type="text"
-            placeholder="ابحث عن موعد أو قسم..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-transparent border-none outline-none text-sm px-2 placeholder:opacity-50"
-          />
+      {load.state === "demo" && (
+        <div className={`${card} p-6 text-sm ${muted}`}>المواعيد تُقرأ من الحساب الحقيقي فقط، وليست متاحة في وضع العرض.</div>
+      )}
+      {load.state === "loading" && (
+        <div className="py-16 text-center">
+          <div className="inline-block w-8 h-8 rounded-full border-2 border-[#0B3D2E]/30 border-t-[#0B3D2E] animate-spin" />
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => setFilterType("all")}
-            className={`px-4 py-2 rounded-lg text-[13px] font-bold border transition ${filterType === "all" ? "bg-[#0B3D2E] text-[#C8A762] border-[#0B3D2E]" : isDark ? "border-white/10 text-zinc-400 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
-          >
-            الكل
-          </button>
-          {Object.entries(TYPE_CONFIG).map(([key, cfg]) => (
+      )}
+      {load.state === "failed" && (
+        <div className={`${card} p-6 flex items-start gap-3`}>
+          <Warning size={20} className="text-amber-500 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className={`text-sm font-bold ${strong}`}>{load.message}</p>
             <button
-              key={key}
-              onClick={() => setFilterType(key as EventType)}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13px] font-bold border transition ${filterType === key ? `${cfg.bg} ${cfg.color} border-${cfg.color.split("-")[1]}-500/50` : isDark ? "border-white/10 text-zinc-400 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+              onClick={() => { setLoad({ state: "loading" }); void fetchAll().then(setLoad); }}
+              className="mt-2 text-xs font-bold text-[#0B3D2E] dark:text-emerald-400 hover:underline"
             >
-              <cfg.icon size={14} weight="duotone" />
-              {cfg.label}
+              إعادة المحاولة
             </button>
-          ))}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* ── Events List ── */}
-      <div className="space-y-4">
-        {pendingEvents.length > 0 && (
-          <div className="space-y-3">
-            <h2 className={`text-[15px] font-bold flex items-center gap-2 ${textHeading}`}>
-              <Hourglass size={16} className="text-[#C8A762]" weight="duotone" />
-              المواعيد القادمة
+      {load.state === "ok" && (
+        <>
+          <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className={`${card} p-5`}>
+            <h2 className={`text-sm font-bold mb-3 flex items-center gap-2 ${strong}`}>
+              <Gavel size={16} /> الجلسات القادمة
             </h2>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <AnimatePresence>
-                {pendingEvents.map((evt) => {
-                  const cfg = TYPE_CONFIG[evt.type];
-                  return (
-                    <motion.div
-                      key={evt.id}
-                      layout initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-                      className={`relative p-5 rounded-2xl border ${isDark ? `bg-zinc-900 border-white/[0.08]` : `bg-white border-slate-200 shadow-sm`} ${evt.urgency === "urgent" ? (isDark ? "border-red-500/30 ring-1 ring-red-500/20" : "border-red-200 ring-1 ring-red-100") : ""}`}
-                    >
-                      <div className="flex items-start justify-between mb-3">
-                        <div className={`p-2 rounded-lg border ${cfg.bg} ${cfg.color} ${cfg.border}`}>
-                          <cfg.icon size={18} weight="duotone" />
-                        </div>
-                        {evt.urgency === "urgent" && (
-                          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500 text-white animate-pulse">
-                            عاجل
-                          </span>
-                        )}
-                      </div>
-                      <h3 className={`text-[14px] font-bold mb-1 leading-snug ${textHeading}`}>{evt.title}</h3>
-                      <p className={`text-[11px] mb-3 ${textMuted}`}>{cfg.label} · قسم {evt.department}</p>
-                      
-                      <div className={`flex flex-col gap-1.5 p-3 rounded-xl ${isDark ? "bg-black/20" : "bg-slate-50"}`}>
-                        <div className="flex items-center gap-2 text-[12px]">
-                          <CalendarCheck size={14} className={cfg.color} />
-                          <span className={`font-semibold ${textHeading}`}>{evt.date}</span>
-                          <span className={`mx-1 ${textMuted}`}>—</span>
-                          <span className={`font-semibold ${textHeading}`}>{evt.time}</span>
-                        </div>
-                        <div className={`flex items-center gap-2 text-[11px] mt-1 ${textMuted}`}>
-                          <MapPin size={14} />
-                          <span className="truncate">{evt.location}</span>
-                        </div>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
-            </div>
-          </div>
-        )}
-
-        {doneEvents.length > 0 && (
-          <div className="space-y-3 pt-6">
-            <h2 className={`text-[15px] font-bold flex items-center gap-2 ${textHeading} opacity-60`}>
-              <CalendarCheck size={16} weight="duotone" />
-              المواعيد المنجزة
-            </h2>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 opacity-60 grayscale-[0.3]">
-              {doneEvents.map((evt) => {
-                const cfg = TYPE_CONFIG[evt.type];
-                return (
-                  <div key={evt.id} className={`relative p-5 rounded-2xl border ${isDark ? `bg-zinc-900 border-white/[0.04]` : `bg-white border-slate-200`}`}>
-                    <h3 className={`text-[13px] font-bold mb-1 line-through ${textHeading}`}>{evt.title}</h3>
-                    <p className={`text-[11px] ${textMuted}`}>اكتمل في {evt.date}</p>
+            {load.hearings.length === 0 ? (
+              <p className={`text-sm py-3 ${muted}`}>لا توجد جلسات قادمة مسجّلة على قضايا المنشأة.</p>
+            ) : (
+              <div className="space-y-2">
+                {load.hearings.map((h) => (
+                  <div key={h.id} className={row}>
+                    <div>
+                      <p className={`text-[13px] font-bold ${strong}`}>{h.kindLabel} — {dayAr(h.date)}</p>
+                      <p className={`text-xs mt-0.5 ${muted}`}>
+                        {[timeAr(h.time), h.place].filter(Boolean).join(" · ") || "لم يُسجَّل الوقت والمكان بعد"}
+                      </p>
+                      {h.caseTitle && <p className={`text-[11px] mt-0.5 ${muted}`}>القضية: {h.caseTitle}</p>}
+                    </div>
+                    {h.caseId && (
+                      <Link
+                        href={`/dashboard/business/cases/${encodeURIComponent(h.caseId)}`}
+                        className="inline-flex items-center gap-1 self-start sm:self-center text-xs font-bold text-[#0B3D2E] dark:text-emerald-400 hover:underline"
+                      >
+                        ملف القضية <ArrowLeft size={12} />
+                      </Link>
+                    )}
                   </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
+                ))}
+              </div>
+            )}
+            {load.casesCapped && (
+              <p className={`text-[11px] mt-3 ${muted}`}>تُعرض جلسات أحدث ٣٠٠ قضية للمنشأة فقط.</p>
+            )}
+          </motion.section>
+
+          <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className={`${card} p-5`}>
+            <h2 className={`text-sm font-bold mb-3 flex items-center gap-2 ${strong}`}>
+              <ChatDots size={16} /> استشاراتك المجدولة
+            </h2>
+            {load.consultations.length === 0 ? (
+              <p className={`text-sm py-3 ${muted}`}>لا توجد استشارة مجدولة باسمك.</p>
+            ) : (
+              <div className="space-y-2">
+                {load.consultations.map((c) => (
+                  <div key={c.id} className={row}>
+                    <div>
+                      <p className={`text-[13px] font-bold ${strong}`}>{instantAr(c.scheduledAt)}</p>
+                      <p className={`text-xs mt-0.5 ${muted}`}>
+                        {[c.mode ? CONSULTATION_MODE_AR[c.mode as ConsultationMode] ?? null : null, c.specialty].filter(Boolean).join(" · ") || "استشارة"}
+                      </p>
+                    </div>
+                    {c.requestId && (
+                      <Link
+                        href={`/dashboard/client/consultation/${encodeURIComponent(c.requestId)}`}
+                        className="inline-flex items-center gap-1 self-start sm:self-center text-xs font-bold text-[#0B3D2E] dark:text-emerald-400 hover:underline"
+                      >
+                        تفاصيل الاستشارة <ArrowLeft size={12} />
+                      </Link>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </motion.section>
+        </>
+      )}
     </div>
-    </SubscriptionGuard>
   );
 }

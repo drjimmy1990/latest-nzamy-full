@@ -74,14 +74,43 @@ import type { SidebarGroup } from "./navigation.types";
 // (navigation.sidebars.ts:293,297), which is the right audience: the API and
 // RLS allow an active member to READ the roster and only the owner to change
 // it, and the page hides its write controls on the server's own `canManage`.
+//
+// OWNER DECISION ٥ (answers of 2026-10-06, built 2026-10-17): «تفعيل الأقسام
+// الأساسية الخمسة أولاً (العقود، القضايا، المواعيد، التفويض، والفريق) وإبقاء
+// البقية قيد التطوير». The five are the «إدارة المنشأة» group below, each on
+// real data:
+//   القضايا   — the company's service_requests (own + business_id rows, 20260914)
+//   العقود    — public.contracts linked to this account (GET /api/v1/client/contracts)
+//   المواعيد  — upcoming client-visible hearings on the company's cases + the
+//               caller's scheduled consultations (GET /api/v1/client/appointments)
+//   التفويض   — public.business_delegations (20261017_30)
+//   إدارة الفريق — public.business_members
+// «بيانات المنشأة» sits beside them (owner decision ٣٦). Every other
+// /dashboard/business section stays unlinked and renders «قيد التطوير»
+// (DashboardComingSoon) through the layout guard.
 export const CORPORATE_SIDEBAR: SidebarGroup[] = [
   {
     items: [
       { label: "نظرة عامة", labelEn: "Overview", href: "/dashboard/business", icon: "SquaresFour" },
       // Owner item ٨ — «ارفع وثائق المنشأة مرة واحدة وأرفقها بنقرة».
       { label: "خزنة وثائق المنشأة", labelEn: "Company Documents", href: "/dashboard/business/documents", icon: "FolderOpen" },
+    ],
+  },
+  {
+    title: "إدارة المنشأة", titleEn: "Company",
+    items: [
+      { label: "القضايا", labelEn: "All Cases", href: "/dashboard/business/cases", icon: "Gavel" },
+      { label: "العقود", labelEn: "Company Contracts", href: "/dashboard/business/contracts", icon: "FileText" },
+      { label: "المواعيد", labelEn: "Appointments", href: "/dashboard/business/hearings", icon: "CalendarCheck" },
+      // Owner decisions ٣٦ + ٥ «التفويض»: public.business_delegations
+      // (20261017_30) through /api/v1/business/delegations.
+      { label: "التفويض", labelEn: "Delegations", href: "/dashboard/business/delegations", icon: "Key" },
       // WP-6 B-5/B-6 — a real roster over public.business_members.
       { label: "إدارة الفريق", labelEn: "Team", href: "/dashboard/business/team", icon: "UsersThree" },
+      // Owner decision ٣٦ (2026-10-17): the company data, edited by the owner or
+      // a delegate registered in «التفويض» — for ANY account type that belongs
+      // to the company (/api/v1/business/profile).
+      { label: "بيانات المنشأة", labelEn: "Company Data", href: "/dashboard/business/company", icon: "Buildings" },
     ],
   },
   {

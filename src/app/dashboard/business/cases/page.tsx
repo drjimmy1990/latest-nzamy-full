@@ -14,17 +14,17 @@
  * (`../../firm/cases/page.tsx`), which additionally reads rows where the
  * account is the *assignee*. A firm can be handed a case; a company cannot.
  *
- * ── WHY THIS IS "ITS OWN ROWS ONLY", AND WHY THAT IS CORRECT ────────────────
- * "قضايا الشركة" reads as "every case anyone at the company filed", but no
- * code path in this repo ever inserts a `firm_members`-style row for a
- * corporate account, and `service_requests` RLS admits only
- * `requester_user_id = auth.uid()` (`OR assigned_to = auth.uid()`, which never
- * matches a company). There is no company-wide membership model yet, so this
- * page shows exactly the rows filed under THIS LOGIN — one signed-in user's
- * own activity, not a roster of colleagues' filings. That is the honest
- * behaviour of the data as it exists today; a real company-wide view needs a
- * membership table plus an RLS policy that joins through it, which is not
- * this page's work to fake with a client-side merge.
+ * ── WHOSE CASES (owner decision ٥, 2026-10-17) ─────────────────────────────
+ * «قضايا الشركة» = the caller's own requests PLUS every request filed under
+ * the company. Since 20260914 POST /api/v1/service-requests writes
+ * `business_id` from the filer's active membership, and the policy "business
+ * members read business service requests" lets every ACTIVE member read those
+ * rows; GET /api/v1/service-requests does not narrow them further. The page
+ * passes the company id (`businessMembership.entityId`) to
+ * `listClientWorkflowRequestsPage`, which keeps a row that is the caller's
+ * own OR carries that business_id — never a row RLS did not return.
+ * A request filed before 20260914, or by an account that was not yet a
+ * member, carries no business_id and stays its filer's alone.
  *
  * ── WHAT WAS HERE, AND WHAT DID NOT SURVIVE ─────────────────────────────────
  * The previous 569-line version rendered `MOCK_CASES`, seven fabricated cases
@@ -52,15 +52,10 @@
  * `@/components/dashboard/business/AddCaseModal.tsx` are deleted in this same
  * change — this page was their only importer.
  *
- * ── WHAT WAS NOT FIXED HERE ──────────────────────────────────────────────────
- * `./[id]/page.tsx` — the case-file destination these cards link to — is still
- * a fabricated screen (a `ShareGraphModal` that claims to encrypt and send an
- * external share, a graph view over data no table holds). Its cards will now
- * point real companies at a fake case file; that page is not this change's
- * file, and the fix is reported as a follow-up rather than attempted here.
- * Also unchanged: the layout's hidden-section gate, which today keeps this
- * whole route unreachable for `corporate` accounts — that gate is the
- * layout's business, not this file's.
+ * ── SINCE 2026-10-17 ───────────────────────────────────────────────────────────
+ * The section is linked from the company sidebar (owner decision ٥). The case
+ * file (./[id]/page.tsx) reads the real row and opens with «ملخص القضية»
+ * (owner decision ١٩). ./new redirects to the real three-step intake.
  */
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
@@ -248,7 +243,10 @@ function BusinessCasesPage() {
   const load = useCallback(async () => {
     const seq = ++loadSeq.current;
     try {
-      const page = await listClientWorkflowRequestsPage({ requesterUserId: user.userId });
+      const page = await listClientWorkflowRequestsPage({
+        requesterUserId: user.userId,
+        businessId: user.businessMembership?.entityId ?? null,
+      });
       if (seq !== loadSeq.current) return;
       // PER-ROW pairing, never index pairing: `toClientCase` returns null for a
       // row it cannot render (no id), so mapping the two lists separately and
@@ -274,7 +272,7 @@ function BusinessCasesPage() {
     } finally {
       if (seq === loadSeq.current) setLoading(false);
     }
-  }, [user.userId]);
+  }, [user.userId, user.businessMembership?.entityId]);
 
   /** The retry the failure banner and the failure empty-state both press. */
   const retry = useCallback(() => {

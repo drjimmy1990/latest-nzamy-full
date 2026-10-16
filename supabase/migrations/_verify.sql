@@ -1606,3 +1606,155 @@ BEGIN
   END LOOP;
   RAISE NOTICE '_verify: 20261017_21 (optional) — fts statistics targets:% (1000 = applied; default = not applied or reset)', report;
 END $$;
+
+-- 2026-10-17 — 20261017_30_business_delegations.sql (owner decisions ٣٦ + ٥)
+-- ====================================================================
+-- «سجل التفويضات»: the company data is edited by the owner or a delegate
+-- registered in public.business_delegations. Checked: the register exists with
+-- RLS on; anon holds nothing on it; authenticated reads, inserts five columns,
+-- updates revoked_at only and never deletes; the owner's UPDATE policy on
+-- business_profiles is untouched and the delegate's is beside it; the two
+-- helpers are SECURITY DEFINER and not executable by anon; the admin-flags
+-- trigger is on business_profiles. A run BEFORE the migration passes with a
+-- NOTICE (the table is absent).
+-- Re-running 20260921_03 drops the delegate policy with every other
+-- business_profiles policy: this section then RAISES — re-run 20261017_30.
+SELECT '20261017_30 applied (business_delegations exists)' AS check,
+       to_regclass('public.business_delegations') IS NOT NULL AS present;
+
+DO $$
+DECLARE
+  col     text;
+  fn      text;
+  missing text := '';
+BEGIN
+  IF to_regclass('public.business_delegations') IS NULL THEN
+    RAISE NOTICE '_verify: 20261017_30 is not applied yet — company data stays owner-only and «التفويض» answers «سجل التفويضات غير مفعّل بعد»';
+    RETURN;
+  END IF;
+
+  IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.business_delegations'::regclass) THEN
+    missing := missing || ' RLS is off on business_delegations;';
+  END IF;
+  IF has_table_privilege('anon', 'public.business_delegations', 'SELECT')
+     OR has_any_column_privilege('anon', 'public.business_delegations', 'SELECT')
+     OR has_any_column_privilege('anon', 'public.business_delegations', 'INSERT')
+     OR has_any_column_privilege('anon', 'public.business_delegations', 'UPDATE')
+     OR has_table_privilege('anon', 'public.business_delegations', 'DELETE') THEN
+    missing := missing || ' anon holds a privilege on business_delegations (a GRANT ALL re-applied? re-run 20261017_30);';
+  END IF;
+  IF has_table_privilege('authenticated', 'public.business_delegations', 'DELETE')
+     OR has_table_privilege('authenticated', 'public.business_delegations', 'TRUNCATE')
+     OR has_table_privilege('authenticated', 'public.business_delegations', 'UPDATE')
+     OR has_table_privilege('authenticated', 'public.business_delegations', 'INSERT') THEN
+    missing := missing || ' authenticated holds a table-level write or DELETE on business_delegations;';
+  END IF;
+  FOR col IN
+    SELECT att.attname::text FROM pg_attribute att
+     WHERE att.attrelid = 'public.business_delegations'::regclass AND att.attnum > 0 AND NOT att.attisdropped
+  LOOP
+    IF (col = 'revoked_at') <> has_column_privilege('authenticated', 'public.business_delegations', col, 'UPDATE') THEN
+      missing := missing || format(' authenticated UPDATE on business_delegations.%s is wrong (only revoked_at);', col);
+    END IF;
+    IF (col = ANY (ARRAY['business_id', 'delegate_user_id', 'scope', 'note', 'expires_on']))
+       <> has_column_privilege('authenticated', 'public.business_delegations', col, 'INSERT') THEN
+      missing := missing || format(' authenticated INSERT on business_delegations.%s is wrong;', col);
+    END IF;
+  END LOOP;
+  IF NOT has_table_privilege('authenticated', 'public.business_delegations', 'SELECT') THEN
+    missing := missing || ' authenticated cannot read business_delegations (the register would 401);';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_policy WHERE polrelid = 'public.business_delegations'::regclass AND polcmd IN ('d', '*')) THEN
+    missing := missing || ' a DELETE/ALL policy exists on business_delegations;';
+  END IF;
+
+  IF (SELECT count(*) FROM pg_policy
+       WHERE polrelid = 'public.business_profiles'::regclass AND polcmd = 'w'
+         AND polname IN ('business_profiles: owner can update',
+                         'business_profiles: registered delegate can update')) <> 2 THEN
+    missing := missing || ' the owner or the delegate UPDATE policy on business_profiles is missing (a re-run of 20260921_03 drops the delegate one — re-run 20261017_30);';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger
+                  WHERE tgrelid = 'public.business_profiles'::regclass AND NOT tgisinternal
+                    AND tgname = 'trg_business_profiles_keep_admin_flags') THEN
+    missing := missing || ' trg_business_profiles_keep_admin_flags is missing (a company could overwrite the admin console''s metadata.features);';
+  END IF;
+
+  FOREACH fn IN ARRAY ARRAY['public.is_business_profile_delegate(uuid)', 'public.is_business_profile_editor(uuid)'] LOOP
+    IF to_regprocedure(fn) IS NULL OR NOT (SELECT prosecdef FROM pg_proc WHERE oid = to_regprocedure(fn)) THEN
+      missing := missing || format(' %s is missing or not SECURITY DEFINER;', fn);
+    ELSIF has_function_privilege('anon', fn, 'EXECUTE') THEN
+      missing := missing || format(' anon can EXECUTE %s;', fn);
+    ELSIF NOT has_function_privilege('authenticated', fn, 'EXECUTE') THEN
+      missing := missing || format(' authenticated cannot EXECUTE %s (the profile routes would treat every delegate as a member);', fn);
+    END IF;
+  END LOOP;
+
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: the company delegation register is broken —%', missing;
+  END IF;
+
+  RAISE NOTICE '_verify: 20261017_30 OK — business_delegations (owner grants/revokes, members read, no delete); owner + registered-delegate UPDATE on business_profiles; metadata.features pinned';
+END $$;
+
+
+-- ====================================================================
+-- 2026-10-17 — 20261017_31_firm_reviews_opt_in.sql (owner decision ٢٠)
+-- ====================================================================
+-- A firm's reviews are public only when its manager opts in: the
+-- firm_profiles.public_reviews flag (NOT NULL DEFAULT false, no column grant —
+-- the 20260922_03 firm allowlist above stays display_mode/metadata/updated_at),
+-- its only API writer set_firm_public_reviews (not executable by anon), and the
+-- RESTRICTIVE SELECT policy on reviews beside the untouched permissive
+-- "anyone reads active reviews" (lawyer reviews unchanged). The policy's helper
+-- must stay executable by anon, or every guest review read fails 42501.
+-- A run BEFORE the migration passes with a NOTICE.
+SELECT '20261017_31 applied (firm_profiles.public_reviews exists)' AS check,
+       EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'firm_profiles'
+                  AND column_name = 'public_reviews') AS present;
+
+DO $$
+DECLARE
+  missing text := '';
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_schema = 'public' AND table_name = 'firm_profiles'
+                    AND column_name = 'public_reviews') THEN
+    RAISE NOTICE '_verify: 20261017_31 is not applied yet — every active firm review is readable by guests through REST (it can run any time; run it before the deploy)';
+    RETURN;
+  END IF;
+
+  IF has_column_privilege('authenticated', 'public.firm_profiles', 'public_reviews', 'UPDATE')
+     OR has_column_privilege('anon', 'public.firm_profiles', 'public_reviews', 'UPDATE') THEN
+    missing := missing || ' an API role can UPDATE firm_profiles.public_reviews directly (table-level UPDATE re-granted? re-run 20260922_03);';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policy
+                  WHERE polrelid = 'public.reviews'::regclass AND polcmd = 'r' AND NOT polpermissive
+                    AND polname = 'reviews: a firm''s reviews are public only by its opt-in') THEN
+    missing := missing || ' the restrictive firm-opt-in SELECT policy on reviews is missing (firm reviews are public again);';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policy
+                  WHERE polrelid = 'public.reviews'::regclass AND polcmd = 'r' AND polpermissive
+                    AND polname = 'anyone reads active reviews') THEN
+    missing := missing || ' "anyone reads active reviews" is missing (lawyer reviews would vanish);';
+  END IF;
+  IF to_regprocedure('public.review_row_readable(uuid,uuid)') IS NULL
+     OR NOT has_function_privilege('anon', 'public.review_row_readable(uuid,uuid)', 'EXECUTE') THEN
+    missing := missing || ' anon cannot EXECUTE review_row_readable (every guest review read fails 42501);';
+  END IF;
+  IF to_regprocedure('public.set_firm_public_reviews(boolean)') IS NULL THEN
+    missing := missing || ' set_firm_public_reviews is missing (the firm manager cannot switch the opt-in);';
+  ELSIF has_function_privilege('anon', 'public.set_firm_public_reviews(boolean)', 'EXECUTE') THEN
+    missing := missing || ' anon can EXECUTE set_firm_public_reviews;';
+  END IF;
+  IF to_regprocedure('public.firm_reviews_published(uuid)') IS NULL THEN
+    missing := missing || ' firm_reviews_published is missing (GET /api/v1/reviews?firm= answers empty for every firm);';
+  END IF;
+
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: the firm review opt-in is broken —%', missing;
+  END IF;
+
+  RAISE NOTICE '_verify: 20261017_31 OK — firm reviews public only by firm_profiles.public_reviews (default off, set through set_firm_public_reviews); lawyer reviews unchanged';
+END $$;

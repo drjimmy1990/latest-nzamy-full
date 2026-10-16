@@ -34,7 +34,9 @@ const ENTITY_LABEL: Record<string, string> = {
 };
 
 // ── The server envelope (GET/PATCH /api/v1/profile) — only what this tab reads ──
-type BusinessProfileScope = "owner" | "member" | "none";
+// "delegate" — owner decision ٣٦: a member the owner registered in سجل
+// التفويضات (20261017_30). Edits like the owner.
+type BusinessProfileScope = "owner" | "delegate" | "member" | "none";
 
 interface ProfileServerRow {
   entitySettings: Record<string, unknown> | null;
@@ -70,8 +72,18 @@ function arabicEntityError(err: unknown): string {
 }
 
 // ── Component ─────────────────────────────────────────────────────────
-export function EntitySettingsTab() {
-  const { userType, loading, isLoggedIn } = useUser();
+//
+// `endpoint` / `entityType` (owner decision ٣٦): the company dashboard mounts
+// this same form over /api/v1/business/profile for ANY member of the company —
+// a registered delegate is usually an `individual` or `lawyer` account, so the
+// fields are chosen by the company's type, not by the viewer's. /settings
+// mounts it with neither prop and behaves exactly as before.
+export function EntitySettingsTab({
+  endpoint = "/api/v1/profile",
+  entityType,
+}: { endpoint?: string; entityType?: string } = {}) {
+  const { userType: viewerType, loading, isLoggedIn } = useUser();
+  const userType = entityType ?? viewerType;
   const isCorporate = userType === "corporate";
   // BOTH arms, not either/or (WP-6 B-1). `identityFields` are the real
   // business_profiles columns (corporate only); `settingsFields` are the jsonb
@@ -101,9 +113,10 @@ export function EntitySettingsTab() {
   const phoneResult = normalizeContactPhone(phoneRaw, { allowUnified });
   const phoneInvalid = phoneInBag && phoneRaw.trim() !== "" && !phoneResult.ok;
 
-  // WP-6 B-2 — owner-only writes (plan §5 Q2). A member reads the company's
-  // real data and is TOLD who may change it, instead of being handed an
-  // editable form whose Save can only ever 403.
+  // WP-6 B-2, widened by owner decision ٣٦: the owner or a registered delegate
+  // writes. A plain member reads the company's real data and is TOLD who may
+  // change it, instead of being handed an editable form whose Save can only
+  // ever 403.
   const readOnly = scope === "member";
   const noBusinessRow = isCorporate && scope === "none";
 
@@ -128,7 +141,7 @@ export function EntitySettingsTab() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await apiGet<ProfileServerRow>("/api/v1/profile");
+        const res = await apiGet<ProfileServerRow>(endpoint);
         if (cancelled) return;
         setScope(res.businessProfileScope ?? "owner");
         const next: Record<string, string> = {};
@@ -173,7 +186,7 @@ export function EntitySettingsTab() {
     return () => {
       cancelled = true;
     };
-  }, [loading, isLoggedIn, userType, isCorporate, hasEntity, identityFields, settingsFields]);
+  }, [loading, isLoggedIn, userType, isCorporate, hasEntity, identityFields, settingsFields, endpoint]);
 
   const handleChange = (key: string, value: string) => {
     if (key === "phone") setPhoneTouched(true);
@@ -214,7 +227,7 @@ export function EntitySettingsTab() {
       if (businessProfile && Object.keys(businessProfile).length > 0) body.businessProfile = businessProfile;
       if (entitySettings && Object.keys(entitySettings).length > 0) body.entitySettings = entitySettings;
       if (Object.keys(body).length > 0) {
-        await apiMutate("/api/v1/profile", "PATCH", body);
+        await apiMutate(endpoint, "PATCH", body);
       }
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -373,7 +386,14 @@ export function EntitySettingsTab() {
       {readOnly && (
         <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-600 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-zinc-300">
           <Buildings size={15} weight="fill" />
-          هذه البيانات يعدّلها مالك الحساب فقط
+          هذه البيانات يعدّلها مالك الحساب أو المفوَّض المسجَّل في سجل التفويضات فقط
+        </div>
+      )}
+
+      {scope === "delegate" && (
+        <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+          <CheckCircle size={15} weight="fill" />
+          تعدّل هذه البيانات بتفويض مسجَّل من مالك الحساب
         </div>
       )}
 

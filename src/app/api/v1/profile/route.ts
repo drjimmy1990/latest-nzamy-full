@@ -35,9 +35,11 @@ import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 import { profilePhoneDecision } from "./_phone";
 import {
   resolveBusinessProfileScope,
+  applyDelegation,
   canWriteBusinessProfile,
   type BusinessProfileScope,
 } from "@/lib/auth/businessProfileScope";
+import { lookupProfileDelegation } from "@/lib/auth/businessDelegationLookup";
 
 // ─── Arabic error copy ────────────────────────────────────────────────────────
 // Every message this route can return reaches a user: the lawyer profile
@@ -72,7 +74,9 @@ const AR = {
   // WP-6 B-2. A member's PATCH used to match zero rows and leave here as
   // AR.saveFailed/500 — «تعذّر حفظ التعديلات. حاول مرة أخرى.» over a request
   // that will never succeed no matter how many times they try.
-  businessOwnerOnly: "تعديل بيانات الشركة متاح لمالك الحساب فقط.",
+  // Owner decision ٣٦ widened the writer from the owner alone to the owner or a
+  // delegate registered in business_delegations (20261017_30).
+  businessOwnerOnly: "تعديل بيانات الشركة متاح لمالك الحساب أو المفوَّض المسجَّل في سجل التفويضات فقط.",
 } as const;
 
 /** lawyer_profiles.headline_ar — checked in code, not just at the column (item 130). */
@@ -161,12 +165,20 @@ async function resolveBusinessScope(
     );
   }
 
-  return resolveBusinessProfileScope({
+  const decision = resolveBusinessProfileScope({
     ownedId: (owned.data?.id as string | undefined) ?? null,
     ownedFailed: Boolean(owned.error),
     memberId: (membership.data?.business_id as string | undefined) ?? null,
     memberFailed: Boolean(membership.error),
   });
+  // Owner decision ٣٦: a member the owner registered as a delegate may edit
+  // too. Asked only for a member, after the owner reads above — an owner's
+  // save never touches business_delegations (see lookupProfileDelegation).
+  if (decision.scope !== "member" || !decision.businessId) return decision;
+  return applyDelegation(
+    decision,
+    await lookupProfileDelegation(supabase, decision.businessId, "api/v1/profile"),
+  );
 }
 
 /**
@@ -753,6 +765,9 @@ export async function PATCH(request: Request) {
   const touchesBusinessRow =
     baseProfile.user_type === "corporate" &&
     (businessProfilePatch !== null || entitySettingsPatch !== null);
+  // The company row both corporate arms write — by id, not by owner_user_id,
+  // since a registered delegate (owner decision ٣٦) is not the owner.
+  let businessRowId: string | null = null;
   if (touchesBusinessRow) {
     const resolved = await resolveBusinessScope(supabase, user.id);
     if (resolved.readFailed) {
@@ -766,6 +781,7 @@ export async function PATCH(request: Request) {
         { status: resolved.scope === "member" ? 403 : 404 },
       );
     }
+    businessRowId = resolved.businessId;
   }
 
   let profile = null;
@@ -823,14 +839,18 @@ export async function PATCH(request: Request) {
   if (entitySettingsPatch !== null) {
     const entityTable = entityProfileTableFor(baseProfile.user_type)!; // guarded above
     const ownerCol = entityOwnerColumn(entityTable);
-    // Still keyed by the owner column, for corporate too: the owner gate above
-    // has already established that a business_profiles row with
-    // `owner_user_id = user.id` exists, so this filter and the resolved id name
-    // the same row — and a member never gets here at all.
+    // Corporate is keyed by the id the gate above resolved — the owner's row or,
+    // for a registered delegate (owner decision ٣٦), the company they were
+    // delegated by. Every other type is still keyed by its owner column. A
+    // plain member never gets here at all.
+    const [entityKeyCol, entityKey] =
+      entityTable === "business_profiles" && businessRowId
+        ? (["id", businessRowId] as const)
+        : ([ownerCol, user.id] as const);
     const { data: entityRow, error: entityReadErr } = await supabase
       .from(entityTable)
       .select("metadata")
-      .eq(ownerCol, user.id)
+      .eq(entityKeyCol, entityKey)
       .maybeSingle();
     if (entityReadErr) {
       console.error(`[api/v1/profile] ${entityTable} read failed:`, entityReadErr.message, entityReadErr.code);
@@ -850,7 +870,7 @@ export async function PATCH(request: Request) {
     const { data: updatedEntity, error: entityWriteErr } = await supabase
       .from(entityTable)
       .update({ metadata: mergedMetadata })
-      .eq(ownerCol, user.id)
+      .eq(entityKeyCol, entityKey)
       .select("metadata")
       .single();
     if (entityWriteErr) {
@@ -866,7 +886,7 @@ export async function PATCH(request: Request) {
     const { data, error } = await supabase
       .from("business_profiles")
       .update(businessProfilePatch)
-      .eq("owner_user_id", user.id)
+      .eq("id", businessRowId ?? "")
       .select(
         "company_name_ar, cr_number, legal_rep_name, legal_rep_capacity, service_model, has_legal_dept",
       )

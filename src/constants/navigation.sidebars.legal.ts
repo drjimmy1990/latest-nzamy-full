@@ -376,6 +376,11 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
       // badge «جديد» → «قريباً» — same reason as the lawyer sidebar (owner ١٣٦).
       { label: "الخزنة القانونية", labelEn: "Legal Vault",    href: "/services/lawyers/vault",  icon: "Vault", badge: "قريباً" },
       { label: "الملف المهني للمكتب", labelEn: "Firm Profile",   href: "/dashboard/firm/profile",  icon: "UserCircle" },
+      // Owner decision ٢٠ — the firm's real reviews and the manager's opt-in to
+      // show them publicly (20261017_31). No role list entry: the firm account
+      // (managing_partner, full mode) gets this sidebar unfiltered, and it is
+      // the only account that can switch the opt-in.
+      { label: "تقييمات المكتب",     labelEn: "Firm Reviews",   href: "/dashboard/firm/reviews",  icon: "Star" },
     ],
   },
   {

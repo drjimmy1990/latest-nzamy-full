@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   resolveBusinessProfileScope,
   canWriteBusinessProfile,
+  applyDelegation,
 } from "./businessProfileScope.ts";
 
 const NO_READS = { ownedId: null, ownedFailed: false, memberId: null, memberFailed: false };
@@ -70,8 +71,24 @@ test("an id from a FAILED read is never used", () => {
   );
 });
 
-test("only the owner may write — plan §5 Q2 default", () => {
+test("the owner or a registered delegate may write — owner decision ٣٦", () => {
   assert.equal(canWriteBusinessProfile("owner"), true);
+  assert.equal(canWriteBusinessProfile("delegate"), true);
   assert.equal(canWriteBusinessProfile("member"), false);
   assert.equal(canWriteBusinessProfile("none"), false);
+});
+
+test("applyDelegation upgrades a member only, and only on a live delegation", () => {
+  const member = { scope: "member" as const, businessId: "biz-1", readFailed: false };
+  assert.deepEqual(applyDelegation(member, "delegate"), { ...member, scope: "delegate" });
+  assert.deepEqual(applyDelegation(member, "not_delegate"), member);
+  // The migration has not run: the WP-6 owner-only behaviour, not an error.
+  assert.deepEqual(applyDelegation(member, "unavailable"), member);
+  // An unknown answer must not read as «only the owner may edit».
+  assert.deepEqual(applyDelegation(member, "failed"), { ...member, readFailed: true });
+
+  const owner = { scope: "owner" as const, businessId: "biz-1", readFailed: false };
+  assert.deepEqual(applyDelegation(owner, "failed"), owner);
+  const none = { scope: "none" as const, businessId: null, readFailed: false };
+  assert.deepEqual(applyDelegation(none, "delegate"), none);
 });
