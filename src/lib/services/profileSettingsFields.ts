@@ -39,6 +39,10 @@ export const COMMON_PROFILE_FIELDS: ProfileFieldSpec[] = [
 export const PROFILE_FIELDS_BY_TYPE: Record<string, ProfileFieldSpec[]> = {
   individual: [
     { key: "nationality", label: "الجنسية", placeholder: "سعودي", type: "text", target: "profile", maxLength: 60 },
+    // Owner decisions ٥٦/٥٧: the city (COMMON_PROFILE_FIELDS) is the
+    // individual's address; a national address is optional, for invoices.
+    // Column + grant: 20261017_10_profiles_national_address.sql.
+    { key: "nationalAddress", column: "national_address", label: "العنوان الوطني للفواتير (اختياري)", placeholder: "الرمز المختصر أو: رقم المبنى، الشارع، الحي، المدينة، الرمز البريدي", type: "text", span: 2, target: "profile", maxLength: 300 },
   ],
   lawyer: [
     // owner ك‏١.1 — «الجنسية» for a lawyer too. Same `public.profiles.nationality`

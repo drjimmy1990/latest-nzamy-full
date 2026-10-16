@@ -49,6 +49,21 @@ export function nationalityIssue(value: unknown): string | null {
   return null;
 }
 
+const MAX_NATIONAL_ADDRESS_LENGTH = 300;
+
+/**
+ * Arabic reason `profiles.national_address` is refused, or null (owner
+ * decisions ٥٦/٥٧ — optional, for invoices; migration 20261017_10). null
+ * clears it; the route stores a blank string as null too, because the column's
+ * CHECK refuses blanks.
+ */
+export function nationalAddressIssue(value: unknown): string | null {
+  if (value === null) return null;
+  if (typeof value !== "string") return "العنوان الوطني يجب أن يكون نصاً أو فارغاً.";
+  if (value.trim().length > MAX_NATIONAL_ADDRESS_LENGTH) return `العنوان الوطني يجب ألا يتجاوز ${MAX_NATIONAL_ADDRESS_LENGTH} حرفاً.`;
+  return null;
+}
+
 /** Arabic reason `lawyer_profiles.office_address` is refused, or null. */
 export function officeAddressIssue(value: unknown): string | null {
   if (value === null) return null;

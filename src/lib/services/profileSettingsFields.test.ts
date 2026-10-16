@@ -52,3 +52,18 @@ test("owner decision Q3 — الجنسية is lawyer + individual only, never an
     assert.equal(profileFieldsFor(type).some((f) => f.key === "nationality"), false, type);
   }
 });
+
+// Owner decisions ٥٦/٥٧ (2026-10-06): a city is the individual's address, and
+// a national address may be added for invoices — optional, never required.
+test("٥٦/٥٧ — an individual gives a city and, optionally, a national address; no free-text address", () => {
+  const fields = profileFieldsFor("individual");
+  assert.ok(fields.some((f) => f.key === "city" && f.target === "profile"));
+  const nat = fields.find((f) => f.key === "nationalAddress");
+  assert.equal(nat?.column, "national_address");
+  assert.equal(nat?.target, "profile");
+  assert.equal(nat?.maxLength, 300);
+  assert.match(nat?.label ?? "", /اختياري/);
+  assert.equal(fields.some((f) => f.key === "address" || f.column === "address"), false);
+  const { profile } = splitProfileForm("individual", { nationalAddress: "RRRD2929" });
+  assert.deepEqual(profile, { national_address: "RRRD2929" });
+});

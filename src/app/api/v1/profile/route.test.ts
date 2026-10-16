@@ -199,3 +199,10 @@ test("entitySettings is validated with the account type's 920 permission, before
   assert.ok(firstWrite > validate, "validated before the first write");
   assert.equal((src.match(/validateEntitySettingsPatch\(/g) ?? []).length, 1, "one validation, not an early one with other rules");
 });
+
+test("national_address (owner ٥٦/٥٧) is allow-listed, validated, and a blank clears it", () => {
+  const src = routeSource.replace(/\r\n/g, "\n");
+  assert.match(src, /\n    "nationality",\n[\s\S]{0,200}?\n    "national_address",\n  \];/);
+  assert.match(src, /const issue = nationalAddressIssue\(body\.national_address\);/);
+  assert.match(src, /body\.national_address = body\.national_address\.trim\(\) \|\| null;/);
+});

@@ -14,6 +14,7 @@ import { entityProfileTableFor } from "@/lib/services/profileSettingsFields";
 import { acceptsUnifiedNumber } from "@/lib/services/saudiMobile";
 import {
   nationalityIssue,
+  nationalAddressIssue,
   officeAddressIssue,
   licenseIssuedOnIssue,
   isPlainObject,
@@ -465,6 +466,9 @@ export async function PATCH(request: Request) {
     "onboarding_completed",
     // Task S1 — supabase/migrations/20260906_phase6_settings_out_of_browser.sql.
     "nationality",
+    // Owner decisions ٥٦/٥٧ — optional, for invoices. Column and its UPDATE
+    // grant: supabase/migrations/20261017_10_profiles_national_address.sql.
+    "national_address",
   ];
   // lawyer_profiles allowlist (real column names from the 20260603 schema).
   // NOTE: verification_status is intentionally NOT self-editable (admin-only) —
@@ -605,6 +609,15 @@ export async function PATCH(request: Request) {
   if ("nationality" in body) {
     const issue = nationalityIssue(body.nationality);
     if (issue) return NextResponse.json({ error: issue }, { status: 400 });
+  }
+
+  if ("national_address" in body) {
+    const issue = nationalAddressIssue(body.national_address);
+    if (issue) return NextResponse.json({ error: issue }, { status: 400 });
+    // Stored trimmed; a blank clears it (the column's CHECK refuses blanks).
+    if (typeof body.national_address === "string") {
+      body.national_address = body.national_address.trim() || null;
+    }
   }
 
   if ("license_issued_on" in body) {

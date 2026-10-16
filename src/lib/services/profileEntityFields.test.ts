@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   nationalityIssue,
+  nationalAddressIssue,
   officeAddressIssue,
   licenseIssuedOnIssue,
   isValidIsoDate,
@@ -304,4 +305,16 @@ test("entitySettings: with allowUnifiedPhone a wrong number names both accepted 
     assert.equal(v.ok, false, raw);
     if (!v.ok) assert.match(v.error, /05.*920/, raw);
   }
+});
+
+// ── profiles.national_address (owner ٥٦/٥٧, 20261017_10) ─────────────────────
+
+test("national_address: optional text up to 300 characters", () => {
+  assert.equal(nationalAddressIssue(null), null);
+  assert.equal(nationalAddressIssue("RRRD2929"), null);
+  assert.equal(nationalAddressIssue("ع".repeat(300)), null);
+  assert.equal(nationalAddressIssue(`  ${"ع".repeat(300)}  `), null, "measured after trimming");
+  assert.match(nationalAddressIssue("ع".repeat(301)) ?? "", /300/);
+  assert.ok(nationalAddressIssue(42));
+  assert.ok(nationalAddressIssue({ street: "x" }));
 });

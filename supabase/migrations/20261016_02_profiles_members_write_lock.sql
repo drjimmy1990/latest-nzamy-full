@@ -73,6 +73,13 @@
 -- DEPLOY ORDER — INDEPENDENT (no code depends on it)
 --   Apply by hand in the SQL Editor (as postgres), any time.
 --
+-- NOTE (2026-10-17, comment only): 20261017_10_profiles_national_address.sql
+--   adds a 12th self-editable column, national_address, through a COLUMN grant.
+--   Section 1 below REVOKEs UPDATE on the whole table, which also removes that
+--   column grant, and this file's verify still passes. If this file is ever
+--   re-run, re-run 20261017_10 right after it (proved in Docker:
+--   supabase/tests/rls/profiles_national_address.test.sql, hazard chain).
+--
 -- ROLLBACK (re-opens the self-edit of email / verification — owner decision required)
 --   begin;
 --     grant update on public.profiles to authenticated;
