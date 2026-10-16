@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { POST_ANSWERS_FK } from "../posts/_feed";
 import { tallyAuthors, rankContributors, type ContributorGate } from "./_rank";
+import { BETA_MONOPOLY_MODE } from "@/lib/betaConfig";
 
 /**
  * GET /api/v1/community/contributors — the lawyers with the most answers in
@@ -33,6 +34,12 @@ const MAX_CANDIDATES = 50;
 const LIMIT = 5;
 
 export async function GET() {
+  // The owner keeps the lawyer directory closed during the beta for privacy
+  // (Q151, BETA_MONOPOLY_MODE — /lawyers/browse redirects). A list of lawyers
+  // by name with profile links is a small directory, so it waits too. An
+  // empty list hides the widget (community/page.tsx).
+  if (BETA_MONOPOLY_MODE) return NextResponse.json({ data: [], degraded: false });
+
   try {
     const supabase = await createClient();
 

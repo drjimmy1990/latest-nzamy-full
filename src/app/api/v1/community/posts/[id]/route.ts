@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
-import { DETAIL_SELECT, cleanDetail, contactIssueIn, visibilityForTab } from "../_feed";
+import { DETAIL_SELECT, cleanDetail, contactIssueIn, publicDetail, visibilityForTab } from "../_feed";
 
 /**
  * GET /api/v1/community/posts/[id] — Get single post with all answers
@@ -68,7 +68,13 @@ export async function GET(
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 404 });
+    // PGRST116 = no row (or not readable): a real "not found". Anything else —
+    // a timeout, an ambiguous embed — is a failed read, not a missing question.
+    if (error.code === "PGRST116") {
+      return NextResponse.json({ error: "هذا السؤال غير موجود" }, { status: 404 });
+    }
+    console.error("[community/posts/[id] GET] read failed:", error.message, error.code);
+    return NextResponse.json({ error: "تعذّر تحميل السؤال" }, { status: 500 });
   }
 
   // One view, counted by the database (migration 20261016_06): the function
@@ -109,7 +115,7 @@ export async function GET(
     lawyerSlug: slugByAuthor.get(a.author_id) ?? null,
   }));
 
-  return NextResponse.json({ data: cleanDetail({ ...post, answers: answersWithSlug }) });
+  return NextResponse.json({ data: publicDetail(cleanDetail({ ...post, answers: answersWithSlug })) });
 }
 
 /**

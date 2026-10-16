@@ -191,6 +191,25 @@ export function toFeedItem(row: Row): CommunityFeedItem {
  * contact filter — the post itself and each answer body. Other fields are
  * returned exactly as read.
  */
+/**
+ * The public shape of a question page: `author_id` and `metadata` are dropped
+ * from the post and from every answer. The list route never sent author ids;
+ * the detail route reads them only to find the lawyers' profile slugs, and the
+ * page never reads them. (Guests can open this route.)
+ */
+export function publicDetail(post: Row): Row {
+  const strip = (r: Row): Row => {
+    const { author_id: _a, metadata: _m, ...rest } = r;
+    void _a;
+    void _m;
+    return rest;
+  };
+  const answers = Array.isArray(post.answers)
+    ? (post.answers as Row[]).map((a) => (a && typeof a === "object" ? strip(a) : a))
+    : post.answers;
+  return { ...strip(post), answers };
+}
+
 export function cleanDetail<T extends Row>(post: T): T {
   const answers = Array.isArray(post.answers)
     ? (post.answers as Row[]).map((a) => (a && typeof a === "object" ? { ...a, body: cleanText(a.body) } : a))
