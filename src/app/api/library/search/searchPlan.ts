@@ -37,6 +37,57 @@ export function fetchSizeFor(size: number): number {
   return Math.max(size, SEARCH_MIN_FETCH);
 }
 
+/**
+ * Whether the laws article window must embed `laws!inner`: only a filter on a
+ * law column (category → laws.section_code, lawType → laws.type) needs the
+ * join in the query itself. Without one the window reads articles alone and
+ * the laws are looked up by slug afterwards (lawSlugBatches / attachLaws):
+ * articles.law_slug is NOT NULL with a foreign key, so the join never drops
+ * a row. With the embed, a rare word made Postgres walk the whole primary
+ * key: the planner put such a word at 933 matches (its default for a word
+ * outside the column's most-common list; 0–10 in fact), so `order('id')`
+ * LIMIT 50 looked cheap, and the join cost on every match priced the
+ * full-text index out. Measured through the dev server 2026-10-16: «شفعة»,
+ * «مضاربة» hit the 4.5s section budget cold; warm, the same window took
+ * ~1.2s with the embed and ~0.45s without it.
+ */
+export function lawWindowNeedsJoin(filters: { category?: string; lawType?: string }): boolean {
+  return Boolean(filters.category || filters.lawType);
+}
+
+/** Law slugs per lookup: each batch goes into one PostgREST URL (slugs reach ~80 encoded chars). */
+export const LAW_LOOKUP_BATCH = 40;
+
+/** The page's distinct law slugs, first seen first, in batches of at most `size`. */
+export function lawSlugBatches(rows: readonly { law_slug?: unknown }[], size: number = LAW_LOOKUP_BATCH): string[][] {
+  const slugs: string[] = [];
+  const seen = new Set<string>();
+  for (const r of rows) {
+    const slug = typeof r.law_slug === 'string' ? r.law_slug : '';
+    if (!slug || seen.has(slug)) continue;
+    seen.add(slug);
+    slugs.push(slug);
+  }
+  const batches: string[][] = [];
+  for (let i = 0; i < slugs.length; i += size) batches.push(slugs.slice(i, i + size));
+  return batches;
+}
+
+/**
+ * The window's rows with each one's law attached as `laws`, the shape the
+ * `laws!inner` embed returned. Every row is kept, even one whose law was not
+ * found (the foreign key rules that out): the row count feeds the section
+ * count and the paging window (sectionCount's rawRows).
+ */
+export function attachLaws<T extends Record<string, unknown>>(
+  rows: readonly T[],
+  laws: readonly Record<string, unknown>[],
+): Array<T & { laws: Record<string, unknown> | undefined }> {
+  const bySlug = new Map<string, Record<string, unknown>>();
+  for (const law of laws) if (typeof law.slug === 'string') bySlug.set(law.slug, law);
+  return rows.map((r) => ({ ...r, laws: bySlug.get(String(r.law_slug ?? '')) }));
+}
+
 export interface SearchResultItem {
   id: unknown;
   section: SearchSectionName;

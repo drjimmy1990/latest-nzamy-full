@@ -130,6 +130,25 @@ test("sections run in parallel, use estimated counts, and the laws retry skips t
   assert.match(routeSource, /return searchUnavailableResponse\(500\);/);
 });
 
+test("the laws window joins laws only for a law-column filter, and attaches them by slug otherwise", () => {
+  // The window and its head count share one shape: the embed comes and goes
+  // with lawWindowNeedsJoin (category / lawType filter laws.*).
+  assert.match(routeSource, /const joinLaws = lawWindowNeedsJoin\(filters\);/);
+  assert.match(routeSource, /\.select\(LAW_COLUMNS\(withHistory, joinLaws\), \{ count: 'estimated', head \}\)/);
+  assert.match(routeSource, /law_slug\$\{embed \? `,\s*laws!inner \( \$\{LAW_FIELDS\} \)` : ''\}/);
+  // The ranked by-id fetch keeps its embed (primary-key lookups).
+  assert.match(routeSource, /\.select\(LAW_COLUMNS\(true\)\)\s*\.in\('id', ranked\)/);
+  // Without the join, each window row gets its law from one lookup per batch
+  // of slugs; a failed lookup fails the section instead of listing hits with
+  // no law title.
+  assert.match(
+    routeSource,
+    /lawSlugBatches\(rows\)\.map\(\(slugs\) => serverOnly\s*\.schema\('library'\)\s*\.from\('laws'\)\s*\.select\(LAW_FIELDS\)\s*\.in\('slug', slugs\)\s*\.abortSignal\(signal\)\)\)/,
+  );
+  assert.match(routeSource, /if \(failed\) \{\s*console\.error\([^;]*\);\s*return null;\s*\}\s*return attachLaws\(rows, /);
+  assert.match(routeSource, /articleRows = joinLaws \? lawResults : await withLaws\(lawResults\);\s*if \(!articleRows\) return \{ ok: false \};/);
+});
+
 test("feqh keeps its rows when the database cancels the counted query (57014)", () => {
   // settlePage re-reads without a count only on shouldRetryWithoutCount (57014,
   // never a client abort or PGRST103), and only for a section that passes a

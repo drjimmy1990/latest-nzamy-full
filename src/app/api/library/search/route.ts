@@ -14,6 +14,7 @@ import { truncateWithHighlight } from './snippet';
 import { isFreeLibraryItem } from '@/lib/library-item-access';
 import {
   ALL_SECTION_PREVIEW,
+  attachLaws,
   fetchSizeFor,
   LAW_TITLE_HITS_ALL,
   SEARCH_UNAVAILABLE_MESSAGE,
@@ -22,7 +23,9 @@ import {
   dedupeResults,
   lawFetchWindow,
   lawPageArticles,
+  lawSlugBatches,
   lawTitleSlots,
+  lawWindowNeedsJoin,
   orderRowsByIds,
   rankedLawOrderApplies,
   readPage,
@@ -61,6 +64,9 @@ const BOOK_TITLE_HITS_MAX = 3;
  * - feqh: when the database cancels the counted query (57014, a common word
  *   on a cold cache), the same window is read again without a count and the
  *   count is only what that page proves (settlePage, searchPlan.uncountedPage);
+ * - laws: the article window joins `laws` only for a category or law-type
+ *   filter; otherwise its laws are looked up by slug afterwards, since the
+ *   join made rare words walk the whole primary key (lawWindowNeedsJoin);
  * - page depth is capped in filters.ts (SEARCH_MAX_DEPTH) for single-section
  *   requests (section=all ignores `page`);
  * - law title hits count inside `limit` and inside `counts.laws`
@@ -251,19 +257,27 @@ export async function POST(request: Request) {
         // so the select is retried without it rather than made a hard deploy
         // ordering dependency. Drop this fallback once the migration is applied
         // everywhere.
-        const LAW_COLUMNS = (withHistory: boolean) => `
-            id, number, number_text, status, text,${withHistory ? ' original_text,' : ''} law_slug,
-            laws!inner ( slug, title, type, section_code, section_name, status )
+        const LAW_FIELDS = 'slug, title, type, section_code, section_name, status';
+        const LAW_COLUMNS = (withHistory: boolean, embed = true) => `
+            id, number, number_text, status, text,${withHistory ? ' original_text,' : ''} law_slug${embed ? `,
+            laws!inner ( ${LAW_FIELDS} )` : ''}
           `;
+        // The window (and its head count) joins laws only for a filter on a
+        // law column. Otherwise it reads articles alone and the laws are
+        // attached below (withLaws): with the join, a rare word («شفعة»)
+        // walked the whole primary key and hit the section budget
+        // (searchPlan.lawWindowNeedsJoin).
+        const joinLaws = lawWindowNeedsJoin(filters);
 
         const lawQuery = (withHistory: boolean, head = false) => {
           let q = serverOnly
             .schema('library')
             .from('articles')
-            .select(LAW_COLUMNS(withHistory), { count: 'estimated', head })
+            .select(LAW_COLUMNS(withHistory, joinLaws), { count: 'estimated', head })
             .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG });
 
-          // Apply filters (category arrives as the bare stored code, filters.ts)
+          // Apply filters (category arrives as the bare stored code, filters.ts).
+          // category and lawType filter the embed, present whenever either is set.
           if (filters.category) q = q.eq('laws.section_code', filters.category);
           if (filters.status) q = q.eq('status', filters.status);
           if (filters.lawType) q = q.eq('laws.type', filters.lawType);
@@ -355,7 +369,26 @@ export async function POST(request: Request) {
         if (!settled) return { ok: false };
         const lawResults = settled.rows;
 
-        let articleRows: Record<string, unknown>[] = lawResults;
+        // Window rows read without the join get their laws here: one lookup
+        // per LAW_LOOKUP_BATCH slugs (each batch is one URL). null when a
+        // lookup failed: a hit without its law has no title, so the section
+        // fails rather than list it.
+        const withLaws = async (rows: Record<string, unknown>[]): Promise<Record<string, unknown>[] | null> => {
+          const lookups = await Promise.all(lawSlugBatches(rows).map((slugs) => serverOnly
+            .schema('library')
+            .from('laws')
+            .select(LAW_FIELDS)
+            .in('slug', slugs)
+            .abortSignal(signal)));
+          const failed = lookups.find((l) => l.error || !Array.isArray(l.data));
+          if (failed) {
+            console.error('[Search] law lookup for the article window failed:', failed.error ?? 'invalid data');
+            return null;
+          }
+          return attachLaws(rows, lookups.flatMap((l) => l.data as unknown as Record<string, unknown>[]));
+        };
+
+        let articleRows: Record<string, unknown>[] | null = null;
         if (ranked && ranked.length > 0) {
           const byIds = await serverOnly
             .schema('library')
@@ -368,6 +401,10 @@ export async function POST(request: Request) {
           } else {
             console.warn('[Search] ranked rows fetch failed; using unranked order:', byIds.error);
           }
+        }
+        if (!articleRows) {
+          articleRows = joinLaws ? lawResults : await withLaws(lawResults);
+          if (!articleRows) return { ok: false };
         }
 
         const titleHits = title.hits;
