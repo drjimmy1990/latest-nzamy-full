@@ -174,10 +174,10 @@ export default function ErpPage() {
               </p>
               <ul className="mt-6 space-y-4">
                 {[
-                  isRTL ? "بوابة ناجز — استيراد تلقائي للجلسات والأحكام" : "Najiz Portal — automatic import of hearings and rulings",
-                  isRTL ? "هيئة المحامين — التحقق من الترخيص الآني" : "Bar Association — real-time license verification",
-                  isRTL ? "ZATCA — فاتورة إلكترونية Phase 2 تلقائية" : "ZATCA — automatic e-invoice Phase 2",
-                  isRTL ? "وزارة التجارة — التحقق من السجلات التجارية" : "Ministry of Commerce — commercial registration verification",
+                  isRTL ? "بوابة ناجز — استيراد الجلسات والأحكام (مخطَّط)" : "Najiz Portal — importing hearings and rulings (planned)",
+                  isRTL ? "هيئة المحامين — التحقق من الترخيص (مخطَّط)" : "Bar Association — license verification (planned)",
+                  isRTL ? "ZATCA — الفوترة الإلكترونية (مخطَّط)" : "ZATCA — e-invoicing (planned)",
+                  isRTL ? "وزارة التجارة — التحقق من السجلات التجارية (مخطَّط)" : "Ministry of Commerce — commercial registration verification (planned)",
                 ].map((item, i) => (
                   <li key={i} className="flex items-start gap-3">
                     <div className="mt-1 shrink-0 rounded-full bg-royal/10 p-1">

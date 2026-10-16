@@ -274,7 +274,7 @@ export default function RegisterProviderPage() {
             <div className="mt-8 space-y-4">
               {[
                 { icon: Brain, labelAr: "AI قانوني متقدم لمكتبك", labelEn: "Advanced legal AI for your firm" },
-                { icon: CurrencyDollar, labelAr: "نظام Escrow لحماية أتعابك", labelEn: "Escrow system protects your fees" },
+                { icon: CurrencyDollar, labelAr: "طلباتك وموكلوك في مكان واحد", labelEn: "Your requests and clients in one place" },
                 { icon: Star, labelAr: "وصول لآلاف العملاء المحتملين", labelEn: "Access thousands of potential clients" },
               ].map((item, i) => {
                 const Icon = item.icon;

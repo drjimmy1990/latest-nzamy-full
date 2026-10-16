@@ -261,7 +261,7 @@ export default function Hero() {
               </div>
               <div className="flex items-center gap-1.5 rounded-full bg-slate-50 dark:bg-white/5 px-2.5 py-1 sm:px-3 sm:py-1.5">
                 <CheckCircle size={16} className="text-gold-dark" />
-                {isAr ? "ضمان Escrow المالي" : "Escrow Financial Guarantee"}
+                {isAr ? "محامون مرخّصون" : "Licensed lawyers"}
               </div>
             </div>
           </motion.div>
@@ -386,8 +386,8 @@ export default function Hero() {
                   <ShieldCheck size={22} weight="fill" className="text-gold-dark" />
                 </div>
                 <div>
-                  <div className="text-xs font-semibold text-ink">{isAr ? "ضمان مالي كامل" : "Full Financial Guarantee"}</div>
-                  <div className="text-[10px] text-ink-muted">{isAr ? "نظام Escrow لحماية الطرفين" : "Escrow system to protect both parties"}</div>
+                  <div className="text-xs font-semibold text-ink">{isAr ? "محادثة خاصة" : "Private conversation"}</div>
+                  <div className="text-[10px] text-ink-muted">{isAr ? "محادثة الطلب بين طرفيه فقط" : "A request's chat is between its two parties only"}</div>
                 </div>
               </div>
             </motion.div>
