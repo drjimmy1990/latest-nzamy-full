@@ -1009,7 +1009,7 @@ export function LawsTabContent({
                             {book.categoryLabel}
                           </span>
                           )}
-                          {book.free && (
+                          {book.free && !book.locked && (
                             <span className="px-2 py-1 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
                               <Sparkle size={10} weight="fill" />
                               {isRTL ? "متاح" : "FREE"}
@@ -1070,7 +1070,7 @@ export function LawsTabContent({
                             {book.categoryLabel}
                           </span>
                           )}
-                          {book.free && (
+                          {book.free && !book.locked && (
                             <span className="px-2 py-1 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
                               <Sparkle size={10} weight="fill" />
                               {isRTL ? "متاح" : "FREE"}

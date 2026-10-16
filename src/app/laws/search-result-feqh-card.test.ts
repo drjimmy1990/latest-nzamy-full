@@ -57,3 +57,29 @@ test("a fiqh passage hit carries its book's author from the columns already sele
   assert.match(runFeqh, /feqh_books!inner \( id, title, author, school, type \)/);
   assert.match(runFeqh, /author: typeof book\?\.author === 'string'/);
 });
+
+// N4 (fix plan 2026-10-16): every fiqh hit was mapped `free: true` and the
+// server's `locked` flag was dropped, so a hit whose snippet the server had cut
+// short still said «متاح». The card keeps opening the book (the reader masks
+// each locked block; fiqh behind the wall is an open owner question), but a
+// locked hit no longer claims to be available.
+test("a fiqh search hit carries the server's lock, and a locked hit never says «متاح»", () => {
+  const start = routeSource.indexOf("const runFeqh = async");
+  const runFeqh = routeSource.slice(start, routeSource.indexOf("const runners:", start));
+  assert.match(runFeqh, /locked: !isFree,/, "the API marks each passage hit");
+
+  const mapping = feqhSearchMapping();
+  assert.match(mapping, /locked: r\.locked === true,/);
+
+  // Fiqh tab: both layouts gate the badge on the lock.
+  assert.match(cardSource, /const showAvailable = !book\.locked;/);
+  assert.match(cardSource, /\{book\.free && showAvailable && \(/);
+  assert.match(cardSource, /\{isBookFree && showAvailable && \(/);
+  assert.equal((cardSource.match(/\{(?:book\.free|isBookFree) && \(\s*<span[^>]*>\s*<Sparkle/g) || []).length, 0, "no ungated «متاح» badge left");
+
+  // «all» view: its two fiqh layouts.
+  const allView = readFileSync(new URL("./components/LawsTabContent.tsx", import.meta.url), "utf8");
+  const feqhCards = allView.slice(allView.indexOf("filteredFeqhBooks.slice(0, 3).map("), allView.indexOf("filteredFeqhBooks.length > 3"));
+  assert.equal((feqhCards.match(/\{book\.free && !book\.locked && \(/g) || []).length, 2);
+  assert.equal((feqhCards.match(/\{book\.free && \(\s*<span/g) || []).length, 0);
+});

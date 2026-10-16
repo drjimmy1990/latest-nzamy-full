@@ -1222,7 +1222,12 @@ export default function LegalLibraryPage() {
         category: known?.category ?? '',
         categoryLabel: known?.categoryLabel ?? '',
         desc: stripMarkdownMarks(r.snippet),
+        // The card still opens the book: the reader masks each locked block
+        // itself, and whether fiqh goes behind the wall is the owner's open
+        // question. `locked` is the server's per-hit answer (a short snippet);
+        // a locked hit no longer carries the «متاح» badge.
         free: true,
+        locked: r.locked === true,
         // No per-book reading progress is tracked (as for the catalogue,
         // T28-05): the constant 100 rendered «نسبة التحصيل 100%».
         progress: 0,
