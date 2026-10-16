@@ -14,6 +14,9 @@ import { redactAnonymousReview, requestIdsForEnrichment } from "./_redact";
  * the backstop, not the first line.
  *
  *   GET  ?lawyer=<uuid>&limit  — public: active reviews of a lawyer + stats
+ *   GET  ?firm=<uuid>&limit    — public: active reviews of a FIRM account, only
+ *                                once its manager opted in (owner decision ٢٠,
+ *                                20261017_31); otherwise the same empty body
  *   POST                       — the requester of a completed request reviews it
  *
  * `REVIEW_SELECT`, `ReviewRow` and `enrichReviews` are exported for
@@ -169,6 +172,9 @@ function statsDto(lawyerUserId: string, row: StatsRow | null) {
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
+    const firm = searchParams.get("firm");
+    if (firm !== null) return getFirmReviews(firm, clampLimit(searchParams.get("limit")));
+
     const lawyer = searchParams.get("lawyer");
     if (!lawyer || !UUID_RE.test(lawyer)) {
       return NextResponse.json({ error: "يجب تحديد المحامي." }, { status: 400 });
@@ -238,6 +244,62 @@ export async function GET(request: NextRequest) {
     console.error("[reviews GET] Unexpected error:", err);
     return NextResponse.json({ error: "تعذّر تحميل التقييمات." }, { status: 500 });
   }
+}
+
+/**
+ * GET ?firm=<uuid> — owner decision ٢٠: «تقييمات المكاتب لا تُعرض علناً إلا
+ * بموافقة مدير المكتب». The consent is `firm_profiles.public_reviews`
+ * (20261017_31), asked through `firm_reviews_published` because a guest cannot
+ * read firm_profiles. Not published → the same empty body as an unlisted
+ * lawyer, so the endpoint does not reveal which firms have reviews.
+ *
+ * The gate is asked FIRST, not inferred from the rows: RLS (the restrictive
+ * policy of 20261017_31) also lets a review's own reviewer read it, and a
+ * reviewer browsing this public endpoint must not be shown their review of a
+ * firm that never published. Before the migration runs the RPC is missing
+ * (PGRST202) — that reads as «not published», never as an error.
+ */
+async function getFirmReviews(firm: string, limit: number) {
+  if (!UUID_RE.test(firm)) {
+    return NextResponse.json({ error: "يجب تحديد المكتب." }, { status: 400 });
+  }
+  const supabase = await createClient();
+
+  const { data: published, error: gateErr } = await supabase.rpc("firm_reviews_published", { p_firm_user: firm });
+  if (gateErr && gateErr.code !== "PGRST202" && gateErr.code !== "42883") {
+    console.error("[reviews GET firm] gate failed:", gateErr.message, gateErr.code);
+    return NextResponse.json({ error: "تعذّر تحميل التقييمات." }, { status: 500 });
+  }
+  if (published !== true) {
+    return NextResponse.json({ data: [], total: 0, stats: null });
+  }
+
+  const [reviewsRes, statsRes] = await Promise.all([
+    supabase
+      .from("reviews")
+      .select(REVIEW_SELECT, { count: "exact" })
+      .eq("reviewee_id", firm)
+      .order("created_at", { ascending: false })
+      .range(0, limit - 1),
+    supabase
+      .from("lawyer_review_stats")
+      .select("lawyer_user_id, review_count, avg_rating, last_review_at")
+      .eq("lawyer_user_id", firm)
+      .maybeSingle(),
+  ]);
+  if (reviewsRes.error) {
+    console.error("[reviews GET firm] query failed:", reviewsRes.error.message, reviewsRes.error.code);
+    return NextResponse.json({ error: "تعذّر تحميل التقييمات." }, { status: 500 });
+  }
+  if (statsRes.error) {
+    console.error("[reviews GET firm] stats query failed:", statsRes.error.message, statsRes.error.code);
+  }
+  const rows = (reviewsRes.data ?? []) as ReviewRow[];
+  return NextResponse.json({
+    data: await enrichReviews(rows),
+    total: reviewsRes.count ?? rows.length,
+    stats: statsRes.error ? null : statsDto(firm, (statsRes.data as StatsRow | null) ?? null),
+  });
 }
 
 /**

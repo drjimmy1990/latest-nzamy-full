@@ -1565,3 +1565,65 @@ BEGIN
 
   RAISE NOTICE '_verify: 20261017_30 OK — business_delegations (owner grants/revokes, members read, no delete); owner + registered-delegate UPDATE on business_profiles; metadata.features pinned';
 END $$;
+
+
+-- ====================================================================
+-- 2026-10-17 — 20261017_31_firm_reviews_opt_in.sql (owner decision ٢٠)
+-- ====================================================================
+-- A firm's reviews are public only when its manager opts in: the
+-- firm_profiles.public_reviews flag (NOT NULL DEFAULT false, no column grant —
+-- the 20260922_03 firm allowlist above stays display_mode/metadata/updated_at),
+-- its only API writer set_firm_public_reviews (not executable by anon), and the
+-- RESTRICTIVE SELECT policy on reviews beside the untouched permissive
+-- "anyone reads active reviews" (lawyer reviews unchanged). The policy's helper
+-- must stay executable by anon, or every guest review read fails 42501.
+-- A run BEFORE the migration passes with a NOTICE.
+SELECT '20261017_31 applied (firm_profiles.public_reviews exists)' AS check,
+       EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'firm_profiles'
+                  AND column_name = 'public_reviews') AS present;
+
+DO $$
+DECLARE
+  missing text := '';
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_schema = 'public' AND table_name = 'firm_profiles'
+                    AND column_name = 'public_reviews') THEN
+    RAISE NOTICE '_verify: 20261017_31 is not applied yet — every active firm review is readable by guests through REST (it can run any time; run it before the deploy)';
+    RETURN;
+  END IF;
+
+  IF has_column_privilege('authenticated', 'public.firm_profiles', 'public_reviews', 'UPDATE')
+     OR has_column_privilege('anon', 'public.firm_profiles', 'public_reviews', 'UPDATE') THEN
+    missing := missing || ' an API role can UPDATE firm_profiles.public_reviews directly (table-level UPDATE re-granted? re-run 20260922_03);';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policy
+                  WHERE polrelid = 'public.reviews'::regclass AND polcmd = 'r' AND NOT polpermissive
+                    AND polname = 'reviews: a firm''s reviews are public only by its opt-in') THEN
+    missing := missing || ' the restrictive firm-opt-in SELECT policy on reviews is missing (firm reviews are public again);';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policy
+                  WHERE polrelid = 'public.reviews'::regclass AND polcmd = 'r' AND polpermissive
+                    AND polname = 'anyone reads active reviews') THEN
+    missing := missing || ' "anyone reads active reviews" is missing (lawyer reviews would vanish);';
+  END IF;
+  IF to_regprocedure('public.review_row_readable(uuid,uuid)') IS NULL
+     OR NOT has_function_privilege('anon', 'public.review_row_readable(uuid,uuid)', 'EXECUTE') THEN
+    missing := missing || ' anon cannot EXECUTE review_row_readable (every guest review read fails 42501);';
+  END IF;
+  IF to_regprocedure('public.set_firm_public_reviews(boolean)') IS NULL THEN
+    missing := missing || ' set_firm_public_reviews is missing (the firm manager cannot switch the opt-in);';
+  ELSIF has_function_privilege('anon', 'public.set_firm_public_reviews(boolean)', 'EXECUTE') THEN
+    missing := missing || ' anon can EXECUTE set_firm_public_reviews;';
+  END IF;
+  IF to_regprocedure('public.firm_reviews_published(uuid)') IS NULL THEN
+    missing := missing || ' firm_reviews_published is missing (GET /api/v1/reviews?firm= answers empty for every firm);';
+  END IF;
+
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: the firm review opt-in is broken —%', missing;
+  END IF;
+
+  RAISE NOTICE '_verify: 20261017_31 OK — firm reviews public only by firm_profiles.public_reviews (default off, set through set_firm_public_reviews); lawyer reviews unchanged';
+END $$;
