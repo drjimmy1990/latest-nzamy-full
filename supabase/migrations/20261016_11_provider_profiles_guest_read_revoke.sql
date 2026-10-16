@@ -26,6 +26,9 @@
 --           `select("metadata")`, then `update({ metadata }).select("metadata")`):
 --           the session, ONLY the caller's own row (`.eq("user_id", user.id)`);
 --       onboarding/account-type inserts the row with the service role;
+--     * outside src/, scripts/seed-clean-test-accounts.mjs reads it with
+--       SUPABASE_SERVICE_ROLE_KEY (unaffected); no edge function or workflow
+--       export in the repo names it;
 --     * no policy on another table, and no view, reads provider_profiles (dump
 --       2026-10-10 + every later migration); the only function that touches it
 --       is handle_new_user, SECURITY DEFINER.
