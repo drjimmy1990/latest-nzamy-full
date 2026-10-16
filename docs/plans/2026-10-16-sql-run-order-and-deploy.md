@@ -80,6 +80,7 @@ cd <app folder> && git pull && bash deploy.sh
    - Added after the first `_verify.sql` run on live stopped with "anon still holds 1 DML grant(s) on public.profiles — 20260921_01 was not applied".
    - That one grant is anon's SELECT on `profiles`, and it **stays**: about fifteen admin policies on other tables read `profiles` inline and apply to guests too, so without it guest reads of those tables fail with 42501. Guests still read zero profile rows. `_verify.sql` now checks that instead (plan item N21 removes the need for the grant).
    - **Never re-run `20260921_01_profiles_rls_lockdown.sql` on live** until N21 is done: its revoke takes that SELECT away.
+   - N21 is `20261016_09_admin_policies_is_admin.sql`; its steps are in `docs/plans/2026-10-16-security-batch-n2-n21-n3-run-order.md`. After it, both cautions above no longer apply.
 9. Run `supabase/migrations/_verify.sql` in the SQL Editor. Expect `_verify: 20260922_03 OK`, `_verify: 20261016_01 OK` and `_verify: 20261016_02 OK`.
 
 ## Step 4: check from outside (public anon key)

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { currentPlanRow, type ActivePlanRow } from "@/lib/entitlementGrantRules";
 import { TIER_RANK } from "@/lib/access-control";
 import {
@@ -90,6 +90,25 @@ const MAX_HEADLINE_LENGTH = 160;
  */
 function entityOwnerColumn(table: string): "owner_user_id" | "user_id" {
   return table === "micro_profiles" || table === "provider_profiles" ? "user_id" : "owner_user_id";
+}
+
+/**
+ * The signed-in lawyer's OWN lawyer_profiles row, every column — the one read
+ * in this route that uses the service role.
+ *
+ * Since 20261016_10 (plan item N2) anon and authenticated may SELECT only the
+ * public columns of lawyer_profiles: a row-level policy cannot hide columns, and
+ * "public read verified lawyers" used to hand license_number, hourly_rate (the
+ * owner's Q168 "hide my rate" switch), credit_balance and metadata to anyone
+ * through PostgREST. A column grant is per role, not per row, so the owner's
+ * own session cannot read those columns either — the settings and profile
+ * screens get them here, keyed by the id `auth.getUser()` has just verified,
+ * never by anything the request sends. Writes stay on the session client so the
+ * 20260922_03 column UPDATE list keeps applying.
+ */
+async function readOwnLawyerRow(userId: string) {
+  const service = await createServiceClient();
+  return service.from("lawyer_profiles").select("*").eq("user_id", userId).maybeSingle();
 }
 
 /**
@@ -270,11 +289,7 @@ export async function GET() {
   };
 
   if (profile.user_type === "lawyer") {
-    const { data, error } = await supabase
-      .from("lawyer_profiles")
-      .select("*")
-      .eq("user_id", user.id)
-      .maybeSingle();
+    const { data, error } = await readOwnLawyerRow(user.id);
     if (error) roleReadFailed("lawyer_profiles", error.message, error.code);
     else roleProfile = data;
   } else if (profile.user_type === "provider") {
@@ -746,11 +761,14 @@ export async function PATCH(request: Request) {
 
   let roleProfile = null;
   if (Object.keys(lawyerUpdates).length > 0) {
-    const { data, error } = await supabase
+    // RETURNING user_id only: `.select()` would be RETURNING *, and since
+    // 20261016_10 the session may not read the private columns (42501). The
+    // full row comes back from readOwnLawyerRow below.
+    const { error } = await supabase
       .from("lawyer_profiles")
       .update(lawyerUpdates)
       .eq("user_id", user.id)
-      .select()
+      .select("user_id")
       .single();
     if (error) {
       // uq_lawyer_profiles_slug (20260907_phase7_profile_services_reviews.sql)
@@ -765,7 +783,12 @@ export async function PATCH(request: Request) {
       console.error("[api/v1/profile] lawyer_profiles update failed:", error.message);
       return NextResponse.json({ error: AR.saveFailed }, { status: 500 });
     }
-    roleProfile = data;
+    // The write succeeded, so a failed read-back is logged, not a 500.
+    const { data: saved, error: readBackError } = await readOwnLawyerRow(user.id);
+    if (readBackError) {
+      console.error("[api/v1/profile] lawyer_profiles read-back failed:", readBackError.message, readBackError.code);
+    }
+    roleProfile = saved ?? null;
   }
 
   // ─── entitySettings — read-merge-write, same pattern as
