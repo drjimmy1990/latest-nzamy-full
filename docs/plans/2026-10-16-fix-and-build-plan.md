@@ -18,7 +18,7 @@ Five parallel branches and one wording pass were merged into this branch. Verifi
 - `tsc` and `eslint` show 0 errors;
 - every migration was run twice (idempotent) in Docker with its own test file, against a reproduction of the live policies.
 
-### Security / database (six migrations; run order in the companion file)
+### Security / database (seven migrations; run order in the companion file)
 
 | Item | Owner decision | Migration / code |
 |---|---|---|
@@ -31,6 +31,7 @@ Five parallel branches and one wording pass were merged into this branch. Verifi
 | Draft cart: every save failed (42703) and emptied the cart | bug | safe replace in `api/v1/drafts/cart` |
 | Expired subscriptions kept unlocking paid features | bug | `effectiveTier()` in `getUserTier` |
 | Clean-wipe SQL would fail on the private precedent table's foreign key | bug | wipe file + Docker T7 |
+| The self-host restore re-granted what earlier migrations had revoked: the lawyer/role-profile column lock (a lawyer could self-verify) and EXECUTE on seven service-request functions | bug | re-run 20260922_03 (Step 0) + 20261016_07 |
 
 ### Pricing and honesty (fix/a1)
 
@@ -105,7 +106,7 @@ See the owner report §١‏.٢٦ for what the pass changed and what it left.
 | N17 | Search: the laws count badge counts hits while cards are grouped per law («(37)» over 5 cards); «تحميل المزيد» may only raise «+N» (A4 review) | library | S |
 | N18 | Precedent full-text search now runs as the service role (like articles), so a guest search has no `statement_timeout`; AbortSignal drops only the HTTP request. Add a timeout-bounded RPC for both | performance | M |
 | N19 | Community: in demo mode the seed cards open «هذا السؤال غير موجود»; `admin/business` local overrides hide later server flag changes (minor reviews) | community / admin | S |
-| N20 | **Table-wide grants from the self-host import.** Production has `GRANT ALL` to anon/authenticated on every public table. RLS is on all 95, so rows are safe; only column-level intents are lost: the seven role-profile tables (fixed by re-running 20260922_03, Step 0), profiles/chat/community (fixed by 20261016_02/03/06). Any future column lock must REVOKE the table privilege first and verify the effective privilege | security | done / rule |
+| N20 | **Grants from the self-host import.** The restore recreated the schema under Supabase's default privileges and replayed GRANTs only, never REVOKEs. What was checked against the 2026-10-10 dump: (a) every public table carries `GRANT ALL` to anon/authenticated, and RLS is on all 95, so rows stay gated; (b) tables with column-level grants — only the seven role-profile tables, whose lock re-running 20260922_03 restores (Step 0); profiles/chat/community column limits come from 20261016_02/03/06; (c) functions — 24 SECURITY DEFINER functions are executable by anon/authenticated, all policy helpers, triggers or owner-checked actions; the seven whose migrations revoked EXECUTE (20260908, 20260917) are re-locked by 20261016_07. **Not checked:** schemas other than `public` and `library`, sequences, and storage buckets. Rule: any future lock REVOKEs the table/function privilege itself and verifies the effective privilege | security | done / rule |
 
 ## 3. Decided by the owner, to build (medium)
 

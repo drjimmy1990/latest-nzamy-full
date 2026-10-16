@@ -8,7 +8,7 @@
 - Each migration is idempotent, so running one twice is safe.
 - Each migration ends with a verify block. The block **raises an error and rolls everything back** if the result is wrong.
 
-Six new migrations, in `supabase/migrations/`:
+Seven new migrations, in `supabase/migrations/`, plus one existing file to re-run:
 
 | File | What it does | Order |
 |---|---|---|
@@ -18,7 +18,8 @@ Six new migrations, in `supabase/migrations/`:
 | `20261016_03_chat_rls_fix.sql` | Fixes the chat (every read currently fails with 42P17). Closes join-any-room, self-promotion and message-move. Adds `create_chat_room` | **Before the deploy** |
 | `20261016_04_deadline_rules_owner_q18.sql` | Urgent appeal is 10 days, not 15. The owner's appeal rules are marked verified (Q18) | Any time |
 | `20261016_05_lawyer_show_hourly_rate.sql` | Adds the "show my rate" switch, off by default (Q168) | **Before the deploy** |
-| `20261016_06_community_access_and_counters.sql` | Verified lawyers can read lawyers-only posts. Answers follow their post, no fake verified badge, counters kept by the database | Any time |
+| `20261016_06_community_access_and_counters.sql` | Verified lawyers can read lawyers-only posts. Answers follow their post, no fake verified badge, counters kept by the database | Any time (after Step 0) |
+| `20261016_07_reassert_function_execute.sql` | Puts back the EXECUTE revokes of 20260908/20260917 on seven service-request functions (the self-host restore re-granted them) | Any time |
 
 ---
 
@@ -53,6 +54,7 @@ You can also run the three "any time" files now:
    - If N > 0, run the read-only query at the end of that file. It lists the deadlines that are 5 days too late; tell those lawyers.
    - The migration does not move anyone's dates.
 5. `20261016_06_community_access_and_counters.sql`. It prints `verify: OK`.
+6. `20261016_07_reassert_function_execute.sql`. It prints `verify: OK`.
 
 ## Step 2: deploy the code
 
@@ -70,10 +72,10 @@ cd <app folder> && git pull && bash deploy.sh
 
 ## Step 3: after the deploy (code first, then SQL)
 
-6. `20261016_01_library_principles_text_lock.sql`. It ends with `NOTICE: 20261016_01 verify: OK`.
+7. `20261016_01_library_principles_text_lock.sql`. It ends with `NOTICE: 20261016_01 verify: OK`.
    - If you apply it **before** the deploy, every precedent page answers 500 until the code is live.
    - **Never re-run** `20261004_01_library_column_lock.sql` after this file: it re-opens the precedent text. If you ever must, re-run `20261016_01` right after it.
-7. Run `supabase/migrations/_verify.sql` in the SQL Editor. Expect `_verify: 20260922_03 OK`, `_verify: 20261016_01 OK` and `_verify: 20261016_02 OK`.
+8. Run `supabase/migrations/_verify.sql` in the SQL Editor. Expect `_verify: 20260922_03 OK`, `_verify: 20261016_01 OK` and `_verify: 20261016_02 OK`.
 
 ## Step 4: check from outside (public anon key)
 
