@@ -827,7 +827,12 @@ BEGIN
     END IF;
     --     … and SELECT survived: the profile screens, the lawyer directory and
     --     every membership lookup read these tables under RLS.
-    IF NOT has_table_privilege('authenticated', 'public.' || spec.tbl, 'SELECT') THEN
+    --     lawyer_profiles is column-locked for reads since 20261016_10: the API
+    --     roles keep SELECT on its 13 public columns only (gated exactly in the
+    --     20261016_10 section below), so a column grant on user_id counts here.
+    IF NOT has_table_privilege('authenticated', 'public.' || spec.tbl, 'SELECT')
+       AND NOT (spec.tbl = 'lawyer_profiles'
+                AND has_column_privilege('authenticated', 'public.lawyer_profiles', 'user_id', 'SELECT')) THEN
       RAISE EXCEPTION '_verify: authenticated LOST SELECT on public.% — the profile and directory reads would 401', spec.tbl;
     END IF;
 
