@@ -16,7 +16,7 @@
 
 **Order:** Step 1 any time → Step 2 deploy the code → Step 3 `20261016_10`. Steps 1 and 3 do not depend on each other. Step 4 (`20261016_11`) depends on none of them.
 
-**The same deploy also ships** (merged into `main` together, no SQL): the small-fixes batch N4–N19 (`claude/affectionate-haslett-b27117`) and the fiqh common-word search fix N22 (`claude/gifted-haslett-9edf85`). Combined check on the merged tree: 2,328/2,328 unit tests on Node 22, type-check clean, lint 0 errors.
+**The same deploy also ships** (merged into `main` together, no SQL): the small-fixes batch N4–N19 (`claude/affectionate-haslett-b27117`) the fiqh common-word search fix N22 and the laws rare-word fix (`claude/gifted-haslett-9edf85`), and the AI library chat / explain-article access check (`claude/gallant-allen-1af02e`: sign-in and full library access, only once the n8n webhook is configured). Combined check on the merged tree: 2,345/2,345 unit tests on Node 22, type-check clean, lint 0 errors; Docker tests for 09, 10 and 11 pass, each migration run twice.
 
 ---
 
