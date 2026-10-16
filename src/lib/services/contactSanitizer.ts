@@ -19,8 +19,9 @@ export type ContactKind = "phone" | "email" | "url" | "handle" | "whatsapp";
 
 export interface ContactMatch {
   kind: ContactKind;
-  /** The offending text as written (digits normalised to ASCII). */
+  /** The offending text as written (digits normalised to ASCII), trimmed. */
   text: string;
+  /** Where `text` starts in the input, so `index + text.length` is where it ends. */
   index: number;
 }
 
@@ -60,7 +61,10 @@ export function findOffPlatformContact(input: string): ContactMatch[] {
     for (const m of text.matchAll(re)) {
       const hit = m[0].trim();
       if (!hit) continue;
-      out.push({ kind, text: hit, index: m.index ?? 0 });
+      // The patterns may match leading whitespace («تابعني @x», «اتصل 5…»);
+      // the index skips it, or a cut at index + text.length stops one short.
+      const lead = m[0].length - m[0].trimStart().length;
+      out.push({ kind, text: hit, index: (m.index ?? 0) + lead });
     }
   };
   push("email", EMAIL_RE);
@@ -96,17 +100,27 @@ export function offPlatformContactIssue(input: string): string | null {
   return `لا يُسمح بوضع ${kinds.join(" أو ")} في هذا الحقل — التواصل يتم عبر المنصّة.`;
 }
 
-/** Replace every hit with «[محذوف]» — for feeds that must render anyway (never for storage of new text). */
+/**
+ * Replace every hit with «[محذوف]» — for feeds that must render anyway (never for storage of new text).
+ *
+ * The text outside the hits is copied from `input` as written: normalizeDigits
+ * maps one code unit to one, so offsets agree, and Arabic-Indic digits the
+ * author wrote (an article number, a date) stay Arabic-Indic.
+ */
 export function stripOffPlatformContact(input: string): string {
   const found = findOffPlatformContact(input);
   if (found.length === 0) return input;
-  const normalized = normalizeDigits(input);
   let out = "";
   let cursor = 0;
   for (const m of found) {
-    if (m.index < cursor) continue;
-    out += normalized.slice(cursor, m.index) + "[محذوف]";
-    cursor = m.index + m.text.length;
+    const end = m.index + m.text.length;
+    // A hit overlapping one already removed: drop whatever of it is left too.
+    if (m.index < cursor) {
+      cursor = Math.max(cursor, end);
+      continue;
+    }
+    out += input.slice(cursor, m.index) + "[محذوف]";
+    cursor = end;
   }
-  return out + normalized.slice(cursor);
+  return out + input.slice(cursor);
 }
