@@ -227,9 +227,9 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     title: "القضايا والملفات", titleEn: "Cases",
     items: [
       { label: "جميع القضايا",   labelEn: "All Cases",    href: "/dashboard/firm/cases",         icon: "Gavel" },
-      { label: "الجلسات",         labelEn: "Hearings",     href: "/dashboard/firm/hearings",      icon: "CalendarCheck" },
-      { label: "توزيع القضايا",   labelEn: "Assignments",  href: "/dashboard/firm/cases/assign",  icon: "ArrowsSplit" },
-      { label: "مهام الفريق",     labelEn: "Team Tasks",   href: "/dashboard/firm/tasks",         icon: "CheckSquare" },
+      { label: "الجلسات",         labelEn: "Hearings",     href: "/dashboard/firm/hearings", badge: "قريباً",      icon: "CalendarCheck" },
+      { label: "توزيع القضايا",   labelEn: "Assignments",  href: "/dashboard/firm/cases/assign", badge: "قريباً",  icon: "ArrowsSplit" },
+      { label: "مهام الفريق",     labelEn: "Team Tasks",   href: "/dashboard/firm/tasks", badge: "قريباً",         icon: "CheckSquare" },
       { label: "سجل النشاط",       labelEn: "Activity Log", href: "/dashboard/firm/activity",      icon: "ClockCounterClockwise" },
     ],
   },
@@ -237,9 +237,9 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     title: "العقود", titleEn: "Contracts",
     items: [
       { label: "مدير العقود",     labelEn: "Contract Manager", href: "/dashboard/firm/contracts",  icon: "FileText" },
-      { label: "النماذج القياسية",labelEn: "Templates",         href: "/dashboard/firm/templates",  icon: "CopySimple" },
-      { label: "المستندات",        labelEn: "Documents",         href: "/dashboard/firm/documents",  icon: "FolderOpen" },
-      { label: "الأرشيف الموحّد",   labelEn: "Unified Archive",   href: "/dashboard/firm/archive",    icon: "Archive" },
+      { label: "النماذج القياسية",labelEn: "Templates",         href: "/dashboard/firm/templates", badge: "قريباً",  icon: "CopySimple" },
+      { label: "المستندات",        labelEn: "Documents",         href: "/dashboard/firm/documents", badge: "قريباً",  icon: "FolderOpen" },
+      { label: "الأرشيف الموحّد",   labelEn: "Unified Archive",   href: "/dashboard/firm/archive", badge: "قريباً",    icon: "Archive" },
     ],
   },
   {
@@ -256,7 +256,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     items: [
       { label: "أعضاء الفريق",     labelEn: "Team",         href: "/dashboard/firm/team",             icon: "Users", gateKey: "firm-team" },
       { label: "الصلاحيات والأدوار",labelEn: "Roles",       href: "/dashboard/firm/team/roles",       icon: "Key", gateKey: "firm-team" },
-      { label: "سجلات الساعات",     labelEn: "Timesheets",  href: "/dashboard/firm/team/timesheets",  icon: "Clock", badge: "أساسي" },
+      { label: "سجلات الساعات",     labelEn: "Timesheets",  href: "/dashboard/firm/team/timesheets",  icon: "Clock", badge: "قريباً" },
       { label: "المتدربون",          labelEn: "Trainees",    href: "/dashboard/firm/team/trainees",    icon: "Student" },
       { label: "الحضور والإجازات",   labelEn: "Attendance",  href: "/dashboard/firm/team/attendance",  icon: "CalendarBlank" },
       { label: "الإنجازات والمكافآت",labelEn: "Achievements", href: "/dashboard/firm/achievements",    icon: "Trophy", badge: "جديد" },
@@ -276,17 +276,17 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     defaultOpen: false,
     items: [
       { label: "فحص تعارض المصالح", labelEn: "Conflict Check", href: "/dashboard/firm/compliance/conflict",   icon: "WarningCircle", badge: "حرج" },
-      { label: "اعتماد العملاء (KYC)",labelEn: "Client KYC",     href: "/dashboard/firm/compliance/kyc",        icon: "ShieldCheck" },
-      { label: "الجدران الصينية",    labelEn: "Chinese Walls",  href: "/dashboard/firm/compliance/walls",      icon: "Wall", gateKey: "firm-chinese-walls" },
+      { label: "اعتماد العملاء (KYC)",labelEn: "Client KYC",     href: "/dashboard/firm/compliance/kyc", badge: "قريباً",        icon: "ShieldCheck" },
+      { label: "الجدران الصينية",    labelEn: "Chinese Walls",  href: "/dashboard/firm/compliance/walls", badge: "قريباً",      icon: "Wall", gateKey: "firm-chinese-walls" },
       { label: "الفحص الشامل ٣٦٠°", labelEn: "Health Check 360°",  href: "/dashboard/firm/health-check",     icon: "MagnifyingGlass", badge: "جديد", gateKey: "firm-health-check" },
-      { label: "الحوكمة المؤسسية",   labelEn: "Governance",         href: "/dashboard/firm/governance",            icon: "ShieldCheck", badge: "جديد", gateKey: "firm-governance" },
+      { label: "الحوكمة المؤسسية",   labelEn: "Governance",         href: "/dashboard/firm/governance",            icon: "ShieldCheck", badge: "قريباً", gateKey: "firm-governance" },
       { label: "مصفوفة الحوكمة",     labelEn: "Governance Matrix",  href: "/dashboard/firm/governance?tab=matrix",  icon: "ListChecks", gateKey: "firm-governance" },
     ],
   },
   {
     title: "الماليات والتقارير", titleEn: "Finance & Reports",
     items: [
-      { label: "الإيرادات",       labelEn: "Revenue",    href: "/dashboard/firm/finance",           icon: "Money", gateKey: "firm-finance" },
+      { label: "الإيرادات",       labelEn: "Revenue",    href: "/dashboard/firm/finance", badge: "قريباً",           icon: "Money", gateKey: "firm-finance" },
       { label: "الأتعاب",          labelEn: "Fees",       href: "/dashboard/firm/fees",              icon: "Receipt", gateKey: "firm-finance" },
       { label: "التقارير المالية", labelEn: "Reports",    href: "/dashboard/firm/finance/reports",   icon: "ChartBar", gateKey: "firm-finance" },
       { label: "لوحة التحليلات",  labelEn: "Analytics",  href: "/dashboard/firm/analytics",         icon: "ChartLine", gateKey: "firm-analytics" },
@@ -407,8 +407,8 @@ export const FIRM_SIDEBAR_LITE: SidebarGroup[] = [
     title: "العمل اليومي", titleEn: "Daily Work",
     items: [
       { label: "جميع القضايا", labelEn: "All Cases", href: "/dashboard/firm/cases", icon: "Gavel" },
-      { label: "الجلسات", labelEn: "Hearings", href: "/dashboard/firm/hearings", icon: "CalendarCheck" },
-      { label: "مهام الفريق", labelEn: "Team Tasks", href: "/dashboard/firm/tasks", icon: "CheckSquare" },
+      { label: "الجلسات", labelEn: "Hearings", href: "/dashboard/firm/hearings", badge: "قريباً", icon: "CalendarCheck" },
+      { label: "مهام الفريق", labelEn: "Team Tasks", href: "/dashboard/firm/tasks", badge: "قريباً", icon: "CheckSquare" },
     ],
   },
   {
@@ -416,7 +416,7 @@ export const FIRM_SIDEBAR_LITE: SidebarGroup[] = [
     items: [
       { label: "دليل العملاء", labelEn: "Clients", href: "/dashboard/firm/clients", icon: "AddressBook" },
       { label: "مدير العقود", labelEn: "Contract Manager", href: "/dashboard/firm/contracts", icon: "FileText" },
-      { label: "المستندات", labelEn: "Documents", href: "/dashboard/firm/documents", icon: "FolderOpen" },
+      { label: "المستندات", labelEn: "Documents", href: "/dashboard/firm/documents", badge: "قريباً", icon: "FolderOpen" },
     ],
   },
   {

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { resolveFirmVisibilityFirmId } from "./_resolveFirmVisibility.ts";
+import { resolveCaseTeamFirmId, resolveFirmVisibilityFirmId } from "./_resolveFirmVisibility.ts";
 
 /**
  * Stubs the two-query shape `resolveFirmVisibilityFirmId` issues:
@@ -145,5 +145,58 @@ test("resolveFirmVisibilityFirmId: solo case, caller has no active membership an
   });
 
   const result = await resolveFirmVisibilityFirmId(supabase, "user-1", "case-1");
+  assert.ok("error" in result);
+});
+
+test("resolveCaseTeamFirmId: firm case, caller active in that firm -> resolves to the case's firm", async () => {
+  const { supabase, calls } = makeStub({
+    serviceRequests: { data: { firm_id: "firm-A" }, error: null },
+    firmMembers: (eqCalls) => {
+      const wantsA = eqCalls.some(([col, val]) => col === "firm_id" && val === "firm-A");
+      return wantsA ? { data: { firm_id: "firm-A" }, error: null } : { data: { firm_id: "firm-B" }, error: null };
+    },
+  });
+
+  const result = await resolveCaseTeamFirmId(supabase, "user-1", "case-1");
+  assert.deepEqual(result, { firmId: "firm-A" });
+  const firmMembersCall = calls.find((c) => c.table === "firm_members");
+  assert.ok(firmMembersCall!.eqCalls.some(([col, val]) => col === "firm_id" && val === "firm-A"));
+});
+
+test("resolveCaseTeamFirmId: solo case -> refused, with NO fallback to the caller's own firm", async () => {
+  const { supabase, calls } = makeStub({
+    serviceRequests: { data: { firm_id: null }, error: null },
+    firmMembers: () => {
+      throw new Error("firm_members must not be queried for a firm-less case: it has no team");
+    },
+  });
+
+  const result = await resolveCaseTeamFirmId(supabase, "user-1", "case-1");
+  assert.ok("error" in result, "a firm-less case has no team");
+  assert.equal(calls.some((c) => c.table === "firm_members"), false);
+});
+
+test("resolveCaseTeamFirmId: firm case, caller not active in that firm -> refused", async () => {
+  const { supabase } = makeStub({
+    serviceRequests: { data: { firm_id: "firm-A" }, error: null },
+    firmMembers: (eqCalls) => {
+      const wantsA = eqCalls.some(([col, val]) => col === "firm_id" && val === "firm-A");
+      return wantsA ? { data: null, error: null } : { data: { firm_id: "firm-B" }, error: null };
+    },
+  });
+
+  const result = await resolveCaseTeamFirmId(supabase, "user-1", "case-1");
+  assert.ok("error" in result);
+});
+
+test("resolveCaseTeamFirmId: case unreadable -> refused (fail closed)", async () => {
+  const { supabase } = makeStub({
+    serviceRequests: { data: null, error: { message: "boom", code: "500" } },
+    firmMembers: () => {
+      throw new Error("firm_members must not be queried when the case lookup errored");
+    },
+  });
+
+  const result = await resolveCaseTeamFirmId(supabase, "user-1", "case-1");
   assert.ok("error" in result);
 });

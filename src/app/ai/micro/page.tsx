@@ -155,7 +155,9 @@ export default function MicroBusinessPage() {
     const output = buildOutput(selected?.id ?? "consultation", answers);
     setGeneratedOutput(output);
     const id = createWorkflowId("MICRO");
-    saveWorkflowRequest({
+    // Demo-only browser store (owner ١١٥): null outside demo mode, so no
+    // «saved» claim is shown for a draft that exists nowhere.
+    const saved = saveWorkflowRequest({
       id,
       type: selected?.id === "labor_contract" ? "ai_draft" : "service",
       title: selected?.title ?? "Micro legal output",
@@ -182,7 +184,7 @@ export default function MicroBusinessPage() {
       },
       auditEvent: "micro_ai_output_saved",
     });
-    setSavedId(id);
+    if (saved) setSavedId(id);
     setGenerating(false);
     setStep("result");
   }

@@ -17,7 +17,7 @@
 // modules plus their unit tests import this file. Same spelling as
 // src/app/api/v1/tickets/_shared.ts and the other node-testable modules
 // (tsconfig sets allowImportingTsExtensions).
-import { isSupabaseMode as backendIsSupabase } from "../runtimeMode.ts";
+import { isSupabaseMode as backendIsSupabase, isDemoMode } from "../runtimeMode.ts";
 
 // The mode itself comes from src/lib/runtimeMode.ts — one derivation for the
 // whole app, `"supabase"` when the variable is unset, never `"demo"` (see that
@@ -69,6 +69,13 @@ export async function apiMutate<T>(
   method: "POST" | "PATCH" | "PUT" | "DELETE",
   body?: unknown,
 ): Promise<T> {
+  // Owner decision ١١٥: demo mode is local-only end to end. Whatever a demo
+  // screen tries to save, it never reaches a server — so demo data cannot land
+  // in any database, the production one included, even if the demo build
+  // shares an origin with a real session's cookies.
+  if (isDemoMode) {
+    throw new Error("وضع العرض التجريبي محلي بالكامل: لا يُرسَل أي حفظ أو تعديل إلى الخادم.");
+  }
   const response = await fetch(path, {
     method,
     headers: { "Content-Type": "application/json; charset=utf-8" },

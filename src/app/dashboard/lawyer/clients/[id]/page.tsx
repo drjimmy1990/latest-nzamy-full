@@ -1050,7 +1050,9 @@ export default function ClientDetailPage() {
 
             <div className={`px-4 py-2 flex items-start gap-1.5 text-[10px] border-b ${isDark ? "border-white/[0.05] bg-amber-500/[0.06] text-amber-400" : "border-slate-100 bg-amber-50 text-amber-700"}`}>
               <LockKey size={12} className="flex-shrink-0 mt-0.5" />
-              <span>سرية بالكامل — الموكّل لا يرى هذه الملاحظات أبداً. «للمكتب» تُشارَك مع زملائك النشطين في المكتب فقط.</span>
+              {/* Owner decision ١٦٩: what each scope reaches, as RLS enforces it since
+                  20261017_41 (no platform-admin read; a firm note carries the card's firm). */}
+              <span><strong>من يرى هذه الملاحظات:</strong> «خاصة بي» أنت فقط. «للمكتب» أعضاء مكتب هذا الموكّل النشطون. الموكّل لا يراها أبداً.</span>
             </div>
 
             <div className="p-4">
@@ -1112,7 +1114,7 @@ export default function ClientDetailPage() {
                     <div className="flex items-center justify-between">
                       <span className={`flex items-center gap-2 text-[9px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
                         {formatDate(note.createdAt)}
-                        <span className={`px-1.5 py-0.5 rounded-full font-bold ${
+                        <span title={note.visibility === "firm" ? "من يراها: أعضاء مكتب الموكّل النشطون" : "من يراها: أنت فقط"} className={`px-1.5 py-0.5 rounded-full font-bold ${
                           note.visibility === "firm"
                             ? isDark ? "bg-indigo-500/10 text-indigo-400" : "bg-indigo-50 text-indigo-600"
                             : isDark ? "bg-white/[0.06] text-zinc-500" : "bg-slate-100 text-slate-500"

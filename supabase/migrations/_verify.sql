@@ -1758,3 +1758,173 @@ BEGIN
 
   RAISE NOTICE '_verify: 20261017_31 OK — firm reviews public only by firm_profiles.public_reviews (default off, set through set_firm_public_reviews); lawyer reviews unchanged';
 END $$;
+
+-- ====================================================================
+-- 2026-10-17 — 20261017_41_notes_visibility_case_team.sql (owner decision ١٦٩)
+-- ====================================================================
+-- Notes are private by default and can be shared with the case team or the
+-- whole firm. This section re-checks what the migration's own verify block
+-- proves: the case_team scope on case_notes; case_team_members with exactly
+-- three policies and no UPDATE privilege; the scope rule on every note write
+-- policy; no platform-admin arm on a note SELECT policy; no guest privilege
+-- on the four tables; and EXECUTE on the seven helpers kept from PUBLIC/anon.
+-- Keyed on public.case_team_members, so a run BEFORE the migration passes
+-- with a NOTICE.
+SELECT '20261017_41 applied (case-team note scope)' AS check,
+       to_regclass('public.case_team_members') IS NOT NULL AS present;
+
+DO $$
+DECLARE
+  n       int;
+  bad     text;
+  f       text;
+  t       text;
+  priv    text;
+  missing text := '';
+BEGIN
+  IF to_regclass('public.case_team_members') IS NULL THEN
+    RAISE NOTICE '_verify: 20261017_41 is not applied yet — notes have two scopes (private / firm), the platform admin reads private notes, and a raw REST insert can file a note under any firm';
+    RETURN;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_class WHERE oid = 'public.case_team_members'::regclass AND relrowsecurity) THEN
+    missing := missing || ' RLS is off on case_team_members;';
+  END IF;
+  SELECT count(*) INTO n FROM pg_policy WHERE polrelid = 'public.case_team_members'::regclass;
+  IF n <> 3 THEN
+    missing := missing || format(' case_team_members carries %s policies, expected 3;', n);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                  WHERE conrelid = 'public.case_notes'::regclass AND contype = 'c'
+                    AND pg_get_constraintdef(oid) ILIKE '%case_team%') THEN
+    missing := missing || ' the case_notes visibility CHECK does not admit case_team;';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policy
+                  WHERE polrelid = 'public.case_notes'::regclass AND polcmd = 'r'
+                    AND pg_get_expr(polqual, polrelid) ILIKE '%is_case_team_member%') THEN
+    missing := missing || ' the case_notes SELECT policy has no case_team arm;';
+  END IF;
+
+  SELECT string_agg(format('%s.%s', c.relname, p.polname), ', ') INTO bad
+    FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid
+   WHERE c.relnamespace = 'public'::regnamespace
+     AND c.relname IN ('case_notes', 'lawyer_client_notes', 'consultation_notes')
+     AND coalesce(pg_get_expr(p.polqual, p.polrelid), '') ILIKE '%is_admin%';
+  IF bad IS NOT NULL THEN
+    missing := missing || format(' a note SELECT policy lets the platform admin read private notes again (a schema restore?): %s;', bad);
+  END IF;
+  SELECT string_agg(format('%s.%s', c.relname, p.polname), ', ') INTO bad
+    FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid
+   WHERE c.relnamespace = 'public'::regnamespace
+     AND c.relname IN ('case_notes', 'lawyer_client_notes', 'consultation_notes')
+     AND p.polcmd IN ('a', 'w')
+     AND coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '') !~ '(case|client|consultation)_note_scope_ok';
+  IF bad IS NOT NULL THEN
+    missing := missing || format(' note write policies without the scope rule: %s;', bad);
+  END IF;
+
+  FOREACH t IN ARRAY ARRAY['case_notes', 'lawyer_client_notes', 'consultation_notes', 'case_team_members'] LOOP
+    FOREACH priv IN ARRAY ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE'] LOOP
+      IF has_table_privilege('anon', 'public.' || t, priv) THEN
+        missing := missing || format(' anon holds %s on %s (a GRANT ALL re-applied? re-run 20261017_41);', priv, t);
+      END IF;
+    END LOOP;
+  END LOOP;
+  IF has_table_privilege('authenticated', 'public.case_team_members', 'UPDATE') THEN
+    missing := missing || ' authenticated can UPDATE case_team_members (rows are added or removed, never edited);';
+  END IF;
+
+  FOREACH f IN ARRAY ARRAY[
+    'public.case_team_user_ids(text)', 'public.is_case_team_member(text)',
+    'public.can_manage_case_team(text)', 'public.case_team_insert_ok(text, uuid, uuid)',
+    'public.case_note_scope_ok(text, text, uuid)', 'public.client_note_scope_ok(uuid, text, uuid)',
+    'public.consultation_note_scope_ok(text, text)'
+  ] LOOP
+    IF to_regprocedure(f) IS NULL THEN
+      missing := missing || format(' %s is missing;', f);
+    ELSIF has_function_privilege('public', f, 'EXECUTE') OR has_function_privilege('anon', f, 'EXECUTE') THEN
+      missing := missing || format(' %s is executable by PUBLIC/anon;', f);
+    ELSIF NOT has_function_privilege('authenticated', f, 'EXECUTE') THEN
+      missing := missing || format(' authenticated cannot execute %s (every note read would fail);', f);
+    END IF;
+  END LOOP;
+
+  -- The N21 trap: anon holds no privilege on these tables now, so a policy on
+  -- ANOTHER table that read one of them inline would turn every guest read of
+  -- that table into 42501. None does today; this keeps it that way.
+  SELECT string_agg(DISTINCT format('policy %s on %s reads %s', p.polname, p.polrelid::regclass, d.refobjid::regclass), '; ')
+    INTO bad
+    FROM pg_policy p
+    JOIN pg_depend d ON d.classid = 'pg_policy'::regclass AND d.objid = p.oid
+                    AND d.refclassid = 'pg_class'::regclass
+   WHERE d.refobjid IN ('public.case_notes'::regclass, 'public.lawyer_client_notes'::regclass,
+                        'public.consultation_notes'::regclass, 'public.case_team_members'::regclass)
+     AND p.polrelid <> d.refobjid;
+  IF bad IS NOT NULL THEN
+    missing := missing || format(' policies on other tables read a note table inline (guests would get 42501 there): %s;', bad);
+  END IF;
+
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: the 20261017_41 note scopes are broken —%', missing;
+  END IF;
+  RAISE NOTICE '_verify: 20261017_41 OK — private / case_team / firm notes, scopes pinned in RLS, no admin read of private notes, no guest privilege';
+END $$;
+
+-- ====================================================================
+-- 2026-10-17 — 20261017_44_test_accounts_never_listed.sql (owner decision ١١٥)
+-- ====================================================================
+-- Test accounts stay on the live database for testing but never reach a public
+-- list: public.test_accounts is service-role only (RLS on, no policy, no API
+-- privilege), and a trigger on lawyer_profiles / provider_profiles keeps a
+-- registered account's marketplace_visible false. Keyed on the registry, so a
+-- run BEFORE the migration passes with a NOTICE.
+SELECT '20261017_44 applied (test accounts never listed)' AS check,
+       to_regclass('public.test_accounts') IS NOT NULL AS present;
+
+DO $$
+DECLARE
+  t       text;
+  n       int;
+  priv    text;
+  missing text := '';
+BEGIN
+  IF to_regclass('public.test_accounts') IS NULL THEN
+    RAISE NOTICE '_verify: 20261017_44 is not applied yet — seeded test lawyers (verified + marketplace_visible) reach the public directory API, lawyer pages and the community contributors list';
+    RETURN;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_class WHERE oid = 'public.test_accounts'::regclass AND relrowsecurity) THEN
+    missing := missing || ' RLS is off on test_accounts;';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_policy WHERE polrelid = 'public.test_accounts'::regclass) THEN
+    missing := missing || ' test_accounts has a policy (it must be service-role only);';
+  END IF;
+  FOREACH priv IN ARRAY ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE'] LOOP
+    IF has_table_privilege('anon', 'public.test_accounts', priv)
+       OR has_table_privilege('authenticated', 'public.test_accounts', priv) THEN
+      missing := missing || format(' an API role holds %s on test_accounts (a GRANT ALL re-applied? re-run 20261017_44);', priv);
+    END IF;
+  END LOOP;
+
+  FOREACH t IN ARRAY ARRAY['lawyer_profiles', 'provider_profiles'] LOOP
+    CONTINUE WHEN to_regclass('public.' || t) IS NULL
+              OR NOT EXISTS (SELECT 1 FROM information_schema.columns
+                              WHERE table_schema = 'public' AND table_name = t AND column_name = 'marketplace_visible');
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger
+                    WHERE tgrelid = ('public.' || t)::regclass
+                      AND tgname = 'trg_' || t || '_test_account_never_listed' AND NOT tgisinternal AND tgenabled <> 'D') THEN
+      missing := missing || format(' %s has no enabled test-account trigger;', t);
+    END IF;
+    EXECUTE format('SELECT count(*) FROM public.%I p WHERE p.marketplace_visible IS TRUE
+                      AND EXISTS (SELECT 1 FROM public.test_accounts ta WHERE ta.user_id = p.user_id)', t) INTO n;
+    IF n <> 0 THEN
+      missing := missing || format(' %s registered test account(s) listed on %s;', n, t);
+    END IF;
+  END LOOP;
+
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: the 20261017_44 test-account separation is broken —%', missing;
+  END IF;
+  SELECT count(*) INTO n FROM public.test_accounts;
+  RAISE NOTICE '_verify: 20261017_44 OK — % registered test account(s), none marketplace-visible', n;
+END $$;

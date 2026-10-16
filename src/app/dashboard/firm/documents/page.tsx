@@ -5,6 +5,8 @@ import { motion } from "framer-motion";
 import { FolderOpen, Plus, UploadSimple, FileText, Download, Eye, TrashSimple, CaretDown, CaretUp } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { DocumentsTrashPanel } from "@/components/documents/DocumentsTrashPanel";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 const MOCK_DOCS = [
   { id: "1", name: "صك ملكية شركة الأفق",          type: "pdf",  size: "٢.١ MB", date: "١٢ أبريل ٢٠٢٤", case: "نزاع تجاري — الأفق" },
@@ -14,7 +16,7 @@ const MOCK_DOCS = [
   { id: "5", name: "محضر جلسة صلح — القحطاني",    type: "pdf",  size: "٤٥٠ KB", date: "٢٨ مارس ٢٠٢٤", case: "قضية عمالية ٤٥٦٧" },
 ];
 
-export default function FirmDocumentsPage() {
+function FirmDocumentsPageDemo() {
   const { isDark } = useTheme();
   const [trashOpen, setTrashOpen] = useState(false);
   const card = isDark
@@ -96,4 +98,22 @@ export default function FirmDocumentsPage() {
       </div>
     </div>
   );
+}
+
+/**
+ * Owner decision ١١٥ (demo fully separated from production): everything on
+ * this screen is a fixture — no API call backs it — so it renders in demo mode
+ * only. A production firm sees the honest gate instead of invented rows.
+ */
+export default function FirmDocumentsPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="مستندات المكتب"
+        description="مستندات كل قضية متاحة في ملف القضية نفسه. المكتبة المجمّعة لمستندات المكتب تُعرض هنا حين تُربط بها."
+        backHref="/dashboard/firm"
+      />
+    );
+  }
+  return <FirmDocumentsPageDemo />;
 }

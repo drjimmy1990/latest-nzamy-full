@@ -53,6 +53,7 @@ import {
   mergeSectionBlocks, neighbour, normalizeBlock, runFromCursorResponse,
   type BlocksBySection, type BookLinks, type CompleteSections, type ReaderBook, type ReaderState,
 } from "./_reader-model";
+import { isDemoMode } from "@/lib/runtimeMode";
 
 /** Blocks per request when a section is opened (sections hold 1–few blocks). */
 const SECTION_BLOCKS_LIMIT = 500;
@@ -425,8 +426,9 @@ export default function FeqhBookPage() {
       }
       if (cancelled) return;
 
-      // Fallback
-      if (slug === "rawd-al-murbi") {
+      // Fallback. DEMO_RAWD is demo content (owner decision ١١٥): it may stand
+      // in for a missing book only in demo mode, never on production.
+      if (slug === "rawd-al-murbi" && isDemoMode) {
         apply(fromNestedBook(DEMO_RAWD as unknown as Record<string, unknown>));
       } else if (slug === "sources-of-right-1") {
         try {

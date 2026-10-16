@@ -8,6 +8,8 @@ import {
   DotsThree, MagnifyingGlass
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 // ─── Types & Mock Data ────────────────────────────────────────────────────────
 
@@ -47,7 +49,7 @@ const MOCK_WALLS: WallEntry[] = [
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function ChineseWallsPage() {
+function ChineseWallsPageDemo() {
   const { isDark } = useTheme();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<WallStatus | "الكل">("الكل");
@@ -224,4 +226,22 @@ export default function ChineseWallsPage() {
       </div>
     </div>
   );
+}
+
+/**
+ * Owner decision ١١٥ (demo fully separated from production): everything on
+ * this screen is a fixture — no API call backs it — so it renders in demo mode
+ * only. A production firm sees the honest gate instead of invented rows.
+ */
+export default function ChineseWallsPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="الجدران الصينية"
+        description="تُعرض هذه الصفحة حين تُربط ببيانات مكتبك الفعلية، ولا نعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/firm"
+      />
+    );
+  }
+  return <ChineseWallsPageDemo />;
 }

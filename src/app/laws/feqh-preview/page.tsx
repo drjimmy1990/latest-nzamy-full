@@ -10,6 +10,7 @@ import {
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import { isDemoMode } from "@/lib/runtimeMode";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import { apiSlug } from '@/utils/apiSlug';
@@ -140,6 +141,9 @@ export default function FeqhPreviewPage() {
   // ── DB-backed book state (falls back to DEMO_BOOK) ──────────────────────
   const [book, setBook] = useState<FeqhBook>(DEMO_BOOK);
   const [isLoading, setIsLoading] = useState(true);
+  // Owner decision ١١٥: DEMO_BOOK is demo content. It may stand in only in demo
+  // mode; elsewhere the page shows a book only once the server returned one.
+  const [loadedFromServer, setLoadedFromServer] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -197,12 +201,14 @@ export default function FeqhPreviewPage() {
         // Only use API data if we got meaningful content
         if (apiBook.chapters.length > 0 && apiBook.chapters.some(ch => ch.blocks.length > 0)) {
           setBook(apiBook);
+          setLoadedFromServer(true);
           // Set active block to first available
           const firstBlock = apiBook.chapters[0]?.blocks[0];
           if (firstBlock) setActiveBlockId(firstBlock.id);
         }
       } catch {
-        // Silently fall back to DEMO_BOOK (already set as default)
+        // Demo mode: DEMO_BOOK (already the default) stays. Elsewhere the
+        // honest «not available» state below is shown instead.
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -257,6 +263,26 @@ This maps closely to the concepts of legal capacity (Article 48) and contract va
     large: "text-lg md:text-xl leading-loose",
     xlarge: "text-xl md:text-2xl leading-extra-loose",
   }[fontSize];
+
+  if (!isDemoMode && !loadedFromServer) {
+    return (
+      <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir="rtl">
+        <Navbar />
+        <main className="flex-1 flex flex-col items-center justify-center gap-3 px-4 py-24 text-center">
+          <BookOpen size={36} weight="duotone" className="text-[#C8A762]" />
+          <p className="text-base font-bold">
+            {isLoading ? "جارٍ تحميل الكتاب…" : "تعذّر عرض الكتاب الآن"}
+          </p>
+          {!isLoading && (
+            <p className={`text-sm max-w-md ${isDark ? "text-zinc-400" : "text-gray-500"}`}>
+              لم يصل محتوى الكتاب من المكتبة. أعد المحاولة لاحقاً، أو تصفّح كتب الفقه من المكتبة.
+            </p>
+          )}
+        </main>
+        <Footer />
+      </div>
+    );
+  }
 
   return (
     <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>

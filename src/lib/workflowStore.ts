@@ -7,6 +7,7 @@ import {
   readWorkflowRequestsLocal,
   updateWorkflowRequestLocal,
 } from "@/lib/clientWorkflowRepository";
+import { isDemoMode } from "@/lib/runtimeMode";
 
 export type WorkflowRequester = {
   userId?: string;
@@ -104,13 +105,31 @@ export function createWorkflowId(prefix = "NZ"): string {
   return createWorkflowIdFromRepository(prefix);
 }
 
+/*
+ * THE BROWSER STORE IS THE DEMO BACKEND, AND ONLY THAT (owner decision ١١٥ —
+ * «استقلاله التام عن بيئة الإنتاج»).
+ *
+ * These four functions read and write `localStorage` directly, with no mode
+ * check of their own, and they were called on production screens: the public
+ * /services wizard and four AI pages «saved» a request into the visitor's own
+ * browser and showed «تم الحفظ برقم …» for a row the server never received,
+ * while the firm overview and the provider requests page read that same key
+ * with no user filter — so on a shared browser one account saw another's
+ * requests. Outside demo mode they now do nothing: reads return [], writes
+ * return null, and every caller says nothing was saved. The mode-aware path
+ * for a REAL request is `createWorkflowRequest` in clientWorkflowRepository.ts
+ * (the API outside demo, this store inside it).
+ */
 export function readWorkflowRequests(): WorkflowRequest[] {
+  if (!isDemoMode) return [];
   return readWorkflowRequestsLocal();
 }
 
+/** Demo only — `null` outside demo mode, where nothing is written. */
 export function saveWorkflowRequest(
   input: Omit<WorkflowRequest, "createdAt" | "auditTrail"> & { auditEvent?: string },
-): WorkflowRequest {
+): WorkflowRequest | null {
+  if (!isDemoMode) return null;
   return createWorkflowRequestLocal(input);
 }
 
@@ -124,5 +143,6 @@ export function updateWorkflowRequest(
   auditEvent = "updated",
   by = "demo-user",
 ): WorkflowRequest | null {
+  if (!isDemoMode) return null;
   return updateWorkflowRequestLocal(id, patch, auditEvent, by);
 }

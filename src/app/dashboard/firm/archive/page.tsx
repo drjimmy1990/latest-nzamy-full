@@ -4,6 +4,8 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { Archive, ArrowCounterClockwise, FileText, Gavel, MagnifyingGlass, UserCircle, WarningCircle } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 const ITEMS = [
   { kind: "قضية", title: "نزاع توريد مغلق", meta: "حكم نهائي · التقاضي", date: "2026-03-12", icon: Gavel },
@@ -11,7 +13,7 @@ const ITEMS = [
   { kind: "مستند", title: "مسودة عقد وكالة قديمة", meta: "نسخة 2 · العقود", date: "2026-01-21", icon: FileText },
 ];
 
-export default function FirmArchivePage() {
+function FirmArchivePageDemo() {
   const { isDark } = useTheme();
   const [query, setQuery] = useState("");
   const [toast, setToast] = useState("الأرشيف الموحد Backend-ready: الاستعادة والحذف النهائي محليان فقط حتى ربط Archive API.");
@@ -67,4 +69,22 @@ export default function FirmArchivePage() {
       </div>
     </div>
   );
+}
+
+/**
+ * Owner decision ١١٥ (demo fully separated from production): everything on
+ * this screen is a fixture — no API call backs it — so it renders in demo mode
+ * only. A production firm sees the honest gate instead of invented rows.
+ */
+export default function FirmArchivePage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="الأرشيف"
+        description="القضايا المغلقة والمؤرشفة متاحة من «قضايا المكتب». الأرشيف الموحّد يُعرض هنا حين يُربط بها."
+        backHref="/dashboard/firm"
+      />
+    );
+  }
+  return <FirmArchivePageDemo />;
 }

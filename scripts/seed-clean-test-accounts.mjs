@@ -221,7 +221,9 @@ const ALL_ACCOUNTS = [
       specialties: ["قضايا تجارية", "شركات", "عقود"],
       bio_ar: "محامٍ مرخص ومستشار قانوني معتمد في الأنظمة التجارية وعقود الشركات.",
       is_accepting_clients: true,
-      marketplace_visible: true, // listed in the directory
+      // NOT listed: a test account on the live database is never shown to the
+      // public (owner decision ١١٥). 20261017_44's trigger forces this anyway.
+      marketplace_visible: false,
       verification_status: "verified",
     },
   },
@@ -326,7 +328,7 @@ const ALL_ACCOUNTS = [
     providerProfile: {
       sub_role: "notary",
       verification_status: "verified",
-      marketplace_visible: true,
+      marketplace_visible: false, // test account: never listed (owner ١١٥, 20261017_44)
     },
   },
   {
@@ -894,7 +896,28 @@ async function removePlaceholderCompany(acc, userId, keepBusinessId) {
 // ─── Per-account reconcile ───────────────────────────────────────────────────
 const entityIds = new Map(); // owner key → firm/business id (for member accounts)
 
+/**
+ * Owner decision ١١٥ (migration 20261017_44): every account this script owns is
+ * a TEST account on the live database and is registered as one, BEFORE any
+ * role profile is written — the registry is what keeps it out of every public
+ * list. A database without the registry yet answers 42P01 / PGRST205; that is
+ * a failure in the report, not something skipped silently.
+ */
+async function reconcileTestAccountRegistration(acc, userId) {
+  const { data, error } = await supabase.from("test_accounts").select("user_id").eq("user_id", userId).maybeSingle();
+  if (error) {
+    fail(acc.key, `test_accounts read failed (run 20261017_44 first): ${error.message}`);
+    return;
+  }
+  if (!data) {
+    await act(acc.key, "register in test_accounts (never listed publicly)", () =>
+      supabase.from("test_accounts").insert({ user_id: userId, source: "seed-clean-test-accounts" }),
+    );
+  }
+}
+
 async function reconcileAccount(acc, userId) {
+  await reconcileTestAccountRegistration(acc, userId);
   await reconcileProfile(acc, userId);
   await reconcileSubscription(acc, userId);
 

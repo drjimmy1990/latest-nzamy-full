@@ -105,21 +105,49 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       return NextResponse.json({ error: "نطاق الملاحظة يجب أن يكون خاصة أو ضمن المكتب." }, { status: 400 });
     }
 
-    const { data: membership, error: membershipError } = await supabase
-      .from("firm_members")
-      .select("firm_id")
-      .eq("user_id", user.id)
-      .eq("status", "active")
-      .limit(1)
-      .maybeSingle();
-    if (membershipError) {
-      console.error("[lawyer/clients/notes POST] firm_members lookup failed:", membershipError.message, membershipError.code);
-    }
-    if (visibility === "firm" && !membership?.firm_id) {
-      return NextResponse.json(
-        { error: "لا يمكن مشاركة الملاحظة مع المكتب لأنك غير مرتبط بمكتب نشط." },
-        { status: 400 },
-      );
+    // A «للمكتب» note carries the CARD's own firm when the card has one — the
+    // same rule case notes follow (`_resolveFirmVisibility.ts`), and since
+    // 20261017_41 the RLS rule `client_note_scope_ok` too. An unordered
+    // `.limit(1)` membership pick could file a firm-A card's note under firm B.
+    // A private note carries no firm at all (it used to be stamped anyway).
+    let firmId: string | null = null;
+    if (visibility === "firm") {
+      const { data: cardRow, error: cardError } = await supabase
+        .from("lawyer_clients")
+        .select("firm_id")
+        .eq("id", id)
+        .maybeSingle();
+      if (cardError || !cardRow) {
+        if (cardError) {
+          console.error("[lawyer/clients/notes POST] lawyer_clients lookup failed:", cardError.message, cardError.code);
+        }
+        return NextResponse.json(
+          { error: "لا يمكن مشاركة الملاحظة مع المكتب — تعذّر التحقق من بطاقة الموكّل." },
+          { status: 400 },
+        );
+      }
+      const cardFirmId = (cardRow as { firm_id: string | null }).firm_id;
+      let membershipQuery = supabase
+        .from("firm_members")
+        .select("firm_id")
+        .eq("user_id", user.id)
+        .eq("status", "active");
+      if (cardFirmId) membershipQuery = membershipQuery.eq("firm_id", cardFirmId);
+      const { data: membership, error: membershipError } = await membershipQuery.limit(1).maybeSingle();
+      if (membershipError) {
+        console.error("[lawyer/clients/notes POST] firm_members lookup failed:", membershipError.message, membershipError.code);
+      }
+      if (!membership?.firm_id) {
+        return NextResponse.json(
+          {
+            error: cardFirmId
+              ? "لا يمكن مشاركة الملاحظة مع المكتب لأنك لست عضوًا نشطًا في مكتب هذا الموكّل."
+              : "لا يمكن مشاركة الملاحظة مع المكتب لأنك غير مرتبط بمكتب نشط.",
+          },
+          { status: 400 },
+        );
+      }
+      firmId = membership.firm_id as string;
     }
 
     const { data, error } = await supabase
@@ -127,7 +155,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       .insert({
         client_id: id,
         author_user_id: user.id,
-        firm_id: membership?.firm_id ?? null,
+        firm_id: firmId,
         body: trimmedBody,
         visibility,
       })

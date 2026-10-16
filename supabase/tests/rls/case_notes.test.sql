@@ -109,8 +109,13 @@ do $$ begin
   insert into public.case_notes (request_id, author_user_id, body, visibility)
   values ('req-a', 'aaaaaaaa-0000-0000-0000-000000000001', 'x', 'public');
   raise notice 'T5 FAIL: an unknown visibility was accepted';
-exception when check_violation then
-  raise notice 'T5 PASS: visibility outside private/firm refused (23514)';
+exception
+  when check_violation then
+    raise notice 'T5 PASS: visibility outside private/firm refused (23514)';
+  -- with 20261017_41 applied the RLS scope rule (case_note_scope_ok) refuses
+  -- the row before the CHECK is reached
+  when insufficient_privilege then
+    raise notice 'T5 PASS: visibility outside private/firm/case_team refused (42501, 20261017_41 scope rule)';
 end $$;
 
 -- T6 update/delete: author only

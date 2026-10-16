@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
-import { assertRole } from "@/lib/auth/assertRole";
+import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 import {
   CASE_NOTE_SELECT,
   MAX_BODY_LENGTH,
@@ -9,7 +9,7 @@ import {
   caseNoteDbErrorResponse,
   type CaseNoteRow,
 } from "./_shared";
-import { resolveFirmVisibilityFirmId } from "./_resolveFirmVisibility";
+import { resolveCaseTeamFirmId, resolveFirmVisibilityFirmId } from "./_resolveFirmVisibility";
 
 /**
  * /api/v1/cases/[id]/notes — owner item 65 remainder ("the case file cannot
@@ -21,8 +21,11 @@ import { resolveFirmVisibilityFirmId } from "./_resolveFirmVisibility";
  * hearings/tasks/case_stages/deadlines already use; see the note on
  * src/app/api/v1/lawyer/case-stages/[caseId]/route.ts.
  *
- * `visibility`: `private` = the author alone; `firm` = the author's active
- * firm colleagues too (through `can_access_case_row`). RLS already hides a
+ * `visibility` (owner decision ١٦٩): `private` = the author alone;
+ * `case_team` = the case team (`public.case_team_user_ids`); `firm` = the
+ * author's active firm colleagues too (through `can_access_case_row`). Since
+ * 20261017_41 RLS also pins each scope's `firm_id` (`case_note_scope_ok`), so
+ * the API's choice below is not the only gate. RLS already hides a
  * `private` note of someone else's from this account, and already refuses an
  * insert on a case the caller cannot read — the SELECT below asks for every
  * row this account may read and lets the policy filter; the POST below lets
@@ -32,7 +35,7 @@ import { resolveFirmVisibilityFirmId } from "./_resolveFirmVisibility";
 
 export async function GET(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
     const { id } = await context.params;
@@ -64,6 +67,9 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
  * POST /api/v1/cases/[id]/notes
  * Body: { body, visibility }
  *
+ * `visibility: "case_team"` requires a FIRM case and an active membership in
+ * that firm (`resolveCaseTeamFirmId` — a firm-less case has no team).
+ *
  * `visibility: "firm"` requires the caller to be an ACTIVE member of the
  * CASE's own firm right now — the note's `firm_id` is that firm, never a
  * value the client sends, and never just any firm the caller happens to be
@@ -73,7 +79,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
  */
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
     const { id } = await context.params;
@@ -93,12 +99,14 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       return NextResponse.json({ error: `نص الملاحظة يجب ألا يتجاوز ${MAX_BODY_LENGTH} حرفًا.` }, { status: 400 });
     }
     if (!visibility || !VALID_VISIBILITY.has(visibility)) {
-      return NextResponse.json({ error: "نطاق الملاحظة يجب أن يكون خاصة أو ضمن المكتب." }, { status: 400 });
+      return NextResponse.json({ error: "نطاق الملاحظة يجب أن يكون: خاصة بك، أو لفريق القضية، أو لكل المكتب." }, { status: 400 });
     }
 
     let firmId: string | null = null;
-    if (visibility === "firm") {
-      const resolved = await resolveFirmVisibilityFirmId(supabase, user.id, id);
+    if (visibility === "firm" || visibility === "case_team") {
+      const resolved = visibility === "firm"
+        ? await resolveFirmVisibilityFirmId(supabase, user.id, id)
+        : await resolveCaseTeamFirmId(supabase, user.id, id);
       if ("error" in resolved) {
         return NextResponse.json({ error: resolved.error }, { status: 400 });
       }

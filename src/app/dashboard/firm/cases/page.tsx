@@ -57,7 +57,7 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Gavel, MagnifyingGlass, Plus, CalendarCheck, CaretLeft,
-  Clock, Archive, Warning,
+  Clock, Archive, Warning, NotePencil,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
@@ -75,6 +75,7 @@ import {
   listViewState,
   itemsOf,
 } from "@/lib/services/listRead";
+import { getSharedNoteCounts } from "@/lib/services/caseNotesService";
 
 // How many rows to ask the list endpoint for. The route's own default is 20,
 // and tasks/clients/invoices/hearings all share that same budget alongside
@@ -163,6 +164,18 @@ export default function FirmCasesPage() {
   const viewState = listViewState(loading, read);
   const cases = itemsOf(read);
 
+  // «📝 ملاحظة مشتركة» (owner decision ١٦٩): shared notes the caller can read
+  // on each listed case — counted by case_notes RLS, so a team-only note the
+  // caller is not on never lights the marker.
+  const [sharedNotes, setSharedNotes] = useState<Record<string, number>>({});
+  const caseIdsKey = cases.map(c => c.id).join(",");
+  useEffect(() => {
+    let cancelled = false;
+    const ids = caseIdsKey ? caseIdsKey.split(",") : [];
+    getSharedNoteCounts(ids).then(counts => { if (!cancelled) setSharedNotes(counts); });
+    return () => { cancelled = true; };
+  }, [caseIdsKey]);
+
   const retryLoad = useCallback(() => {
     setReloadKey(k => k + 1);
   }, []);
@@ -211,6 +224,13 @@ export default function FirmCasesPage() {
           <div className="flex items-center gap-2 mb-0.5 flex-wrap">
             <p className={`text-[13px] font-semibold truncate ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{c.title}</p>
             <span className={`flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${status.bg} ${status.color}`}>{status.label}</span>
+            {(sharedNotes[c.id] ?? 0) > 0 && (
+              <span title="ملاحظات شاركها الفريق على هذه القضية وتستطيع قراءتها"
+                className={`flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isDark ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-50 text-emerald-700"}`}>
+                <NotePencil size={10} weight="bold" />
+                ملاحظة مشتركة{sharedNotes[c.id] > 1 ? ` (${sharedNotes[c.id].toLocaleString("ar-SA")})` : ""}
+              </span>
+            )}
           </div>
           <div className={`flex items-center gap-2 text-[11px] flex-wrap ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
             <span>{c.client}</span>

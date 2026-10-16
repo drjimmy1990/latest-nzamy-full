@@ -93,6 +93,14 @@ import {
   type CaseNote,
   type CaseNoteVisibility,
 } from "@/lib/services/caseNotesService";
+import { getCaseTeam, addCaseTeamMember, removeCaseTeamMember } from "@/lib/services/caseTeamService";
+import {
+  NoteScopePicker,
+  NoteScopeLine,
+  NoteScopeBadge,
+  CaseTeamPanel,
+  type CaseTeamState,
+} from "@/components/dashboard/caseNotes/NoteScope";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -559,6 +567,24 @@ export default function FirmCaseDetailsPage() {
   }, [id]);
 
   useEffect(() => { loadCaseNotes(); }, [loadCaseNotes]);
+
+  // ── فريق القضية (owner decision ١٦٩) — who a «فريق القضية» note reaches.
+  // Read from the one SQL definition (public.case_team_user_ids) through
+  // GET /api/v1/cases/[id]/team; `null` = unreadable, so the scope is not offered.
+  const [caseTeam, setCaseTeam] = useState<CaseTeamState>(undefined);
+  const loadCaseTeam = useCallback(() => {
+    if (!id) return;
+    getCaseTeam(id).then(setCaseTeam);
+  }, [id]);
+  useEffect(() => { loadCaseTeam(); }, [loadCaseTeam]);
+  const addToCaseTeam = async (userId: string) => {
+    await addCaseTeamMember(id, userId);
+    loadCaseTeam();
+  };
+  const removeFromCaseTeam = async (userId: string) => {
+    await removeCaseTeamMember(id, userId);
+    loadCaseTeam();
+  };
 
   const caseNotesView = listViewState(caseNotesLoading, caseNotesRead);
   const caseNotesItems = itemsOf(caseNotesRead);
@@ -1244,20 +1270,7 @@ export default function FirmCaseDetailsPage() {
                     className={`w-full bg-transparent text-[12px] outline-none resize-none disabled:opacity-50 ${isDark ? "text-zinc-300 placeholder:text-zinc-600" : "text-slate-700 placeholder:text-slate-400"}`}
                   />
                   <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1 text-[10px]">
-                      <button type="button" onClick={() => setNewNoteVisibility("private")}
-                        className={`px-2 py-1 rounded-lg font-bold transition-colors ${
-                          newNoteVisibility === "private"
-                            ? isDark ? "bg-white/10 text-white" : "bg-slate-200 text-slate-700"
-                            : isDark ? "text-zinc-600" : "text-slate-400"
-                        }`}>خاصة بي</button>
-                      <button type="button" onClick={() => setNewNoteVisibility("firm")}
-                        className={`px-2 py-1 rounded-lg font-bold transition-colors ${
-                          newNoteVisibility === "firm"
-                            ? isDark ? "bg-white/10 text-white" : "bg-slate-200 text-slate-700"
-                            : isDark ? "text-zinc-600" : "text-slate-400"
-                        }`}>للمكتب</button>
-                    </div>
+                    <NoteScopePicker value={newNoteVisibility} onChange={setNewNoteVisibility} team={caseTeam} disabled={addingNote} />
                     <button onClick={submitCaseNote} disabled={!newNoteBody.trim() || addingNote}
                       className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[11px] font-bold bg-[#0B3D2E] text-[#C8A762] disabled:opacity-40 transition-opacity">
                       {addingNote ? <Spinner size={12} className="animate-spin" /> : <Plus size={12} weight="bold" />}
@@ -1265,11 +1278,11 @@ export default function FirmCaseDetailsPage() {
                     </button>
                   </div>
                 </div>
-                <p className={`mt-2 text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                  «خاصة بي» لا يراها أحد سواك. «للمكتب» تصل لزملائك النشطين في مكتبك فقط — الموكّل لا يرى أي ملاحظة هنا مطلقاً.
-                </p>
+                <NoteScopeLine scope={newNoteVisibility} team={caseTeam} />
                 {noteError && <p className="mt-2 text-[11px] font-semibold text-red-500">{noteError}</p>}
               </div>
+
+              <CaseTeamPanel team={caseTeam} onAdd={addToCaseTeam} onRemove={removeFromCaseTeam} onRetry={loadCaseTeam} card={card} />
 
               <div className="space-y-3">
                 {caseNotesView === "loading" ? (
@@ -1307,20 +1320,7 @@ export default function FirmCaseDetailsPage() {
                             className={`w-full rounded-xl border px-3 py-2 text-[12px] outline-none resize-none ${isDark ? "border-white/[0.08] bg-zinc-800 text-zinc-200" : "border-slate-200 bg-slate-50 text-slate-800"}`}
                           />
                           <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-1 text-[10px]">
-                              <button type="button" onClick={() => setEditNoteVisibility("private")}
-                                className={`px-2 py-1 rounded-lg font-bold transition-colors ${
-                                  editNoteVisibility === "private"
-                                    ? isDark ? "bg-white/10 text-white" : "bg-slate-200 text-slate-700"
-                                    : isDark ? "text-zinc-600" : "text-slate-400"
-                                }`}>خاصة بي</button>
-                              <button type="button" onClick={() => setEditNoteVisibility("firm")}
-                                className={`px-2 py-1 rounded-lg font-bold transition-colors ${
-                                  editNoteVisibility === "firm"
-                                    ? isDark ? "bg-white/10 text-white" : "bg-slate-200 text-slate-700"
-                                    : isDark ? "text-zinc-600" : "text-slate-400"
-                                }`}>للمكتب</button>
-                            </div>
+                            <NoteScopePicker value={editNoteVisibility} onChange={setEditNoteVisibility} team={caseTeam} disabled={savingNoteId === note.id} />
                             <div className="flex items-center gap-2">
                               <button onClick={cancelEditNote}
                                 className={`text-[11px] font-semibold ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"}`}>إلغاء</button>
@@ -1346,11 +1346,7 @@ export default function FirmCaseDetailsPage() {
                                   ? isDark ? "text-zinc-300" : "text-slate-700"
                                   : isDark ? "text-zinc-500" : "text-slate-400"
                               }`}>{note.authorName}</p>
-                              <span className={`flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
-                                note.visibility === "firm"
-                                  ? isDark ? "bg-indigo-500/10 text-indigo-400" : "bg-indigo-50 text-indigo-600"
-                                  : isDark ? "bg-white/[0.06] text-zinc-500" : "bg-slate-100 text-slate-500"
-                              }`}>{note.visibility === "firm" ? "للمكتب" : "خاصة بي"}</span>
+                              <NoteScopeBadge scope={note.visibility} team={caseTeam} />
                             </div>
                             <p className={`flex-shrink-0 text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{formatDate(note.createdAt)}</p>
                           </div>

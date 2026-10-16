@@ -123,7 +123,9 @@ ${benefits}
     setLoading(true);
     setTimeout(() => {
       const id = createWorkflowId("NGO-CTR");
-      saveWorkflowRequest({
+      // Demo-only browser store (owner ١١٥): null outside demo mode, so no
+      // «saved» claim is shown for a draft that exists nowhere.
+      const saved = saveWorkflowRequest({
         id,
         type: "ai_draft",
         title: `عقد تطوع - ${volunteerName}`,
@@ -152,7 +154,7 @@ ${benefits}
         },
         auditEvent: "ngo_volunteer_contract_saved",
       });
-      setSavedContractId(id);
+      if (saved) setSavedContractId(id);
       setLoading(false);
       setStep("result");
     }, 1400);

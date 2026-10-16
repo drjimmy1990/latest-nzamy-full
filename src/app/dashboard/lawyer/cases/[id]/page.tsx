@@ -67,6 +67,14 @@ import {
   type CaseNote,
   type CaseNoteVisibility,
 } from "@/lib/services/caseNotesService";
+import { getCaseTeam, addCaseTeamMember, removeCaseTeamMember } from "@/lib/services/caseTeamService";
+import {
+  NoteScopePicker,
+  NoteScopeLine,
+  NoteScopeBadge,
+  CaseTeamPanel,
+  type CaseTeamState,
+} from "@/components/dashboard/caseNotes/NoteScope";
 
 /**
  * Arabic counted-noun tables for this page's two tab counters.
@@ -241,7 +249,9 @@ const TABS = [
   { id: "stages",    label: "درجات التقاضي", icon: Scales },
   { id: "deadlines", label: "المهل",       icon: Timer },
   { id: "documents", label: "المستندات",   icon: FolderOpen },
-  { id: "team",      label: "الفريق",      icon: UsersThree },
+  // «أطراف القضية», not «الفريق»: this tab lists the responsible lawyer AND the
+  // client, while «فريق القضية» (owner ١٦٩, the notes tab) never includes the client.
+  { id: "team",      label: "أطراف القضية", icon: UsersThree },
   { id: "graph",     label: "خريطة القضية", icon: Graph },
   { id: "notes",     label: "الملاحظات",   icon: ChatDots },
 ];
@@ -552,6 +562,24 @@ export default function CaseDetailPage() {
   }, [id]);
 
   useEffect(() => { loadCaseNotes(); }, [loadCaseNotes]);
+
+  // ── فريق القضية (owner decision ١٦٩) — who a «فريق القضية» note reaches.
+  // Read from the one SQL definition (public.case_team_user_ids) through
+  // GET /api/v1/cases/[id]/team; `null` = unreadable, so the scope is not offered.
+  const [caseTeam, setCaseTeam] = useState<CaseTeamState>(undefined);
+  const loadCaseTeam = useCallback(() => {
+    if (!id) return;
+    getCaseTeam(id).then(setCaseTeam);
+  }, [id]);
+  useEffect(() => { loadCaseTeam(); }, [loadCaseTeam]);
+  const addToCaseTeam = async (userId: string) => {
+    await addCaseTeamMember(id, userId);
+    loadCaseTeam();
+  };
+  const removeFromCaseTeam = async (userId: string) => {
+    await removeCaseTeamMember(id, userId);
+    loadCaseTeam();
+  };
 
   const caseNotesView = listViewState(caseNotesLoading, caseNotesRead);
   const caseNotesItems = itemsOf(caseNotesRead);
@@ -1878,13 +1906,13 @@ export default function CaseDetailPage() {
             <div className="space-y-3">
               <div className="flex justify-between items-center">
                 <p className={`text-[12px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                  {team.length} أعضاء في الفريق
+                  أطراف القضية: {team.length}
                 </p>
               </div>
               {team.length === 0 ? (
                 <div className={`${card} p-10 flex flex-col items-center justify-center`}>
                   <UsersThree size={32} className={`mb-3 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
-                  <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>لا يوجد فريق معيّن</p>
+                  <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>لا أطراف مسجّلة لهذه القضية</p>
                 </div>
               ) : (
                 team.map((m, i) => (
@@ -1983,20 +2011,7 @@ export default function CaseDetailPage() {
                     className={`w-full bg-transparent text-[12px] outline-none resize-none disabled:opacity-50 ${isDark ? "text-zinc-300 placeholder:text-zinc-600" : "text-slate-700 placeholder:text-slate-400"}`}
                   />
                   <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1 text-[10px]">
-                      <button type="button" onClick={() => setNewNoteVisibility("private")}
-                        className={`px-2 py-1 rounded-lg font-bold transition-colors ${
-                          newNoteVisibility === "private"
-                            ? isDark ? "bg-white/10 text-white" : "bg-slate-200 text-slate-700"
-                            : isDark ? "text-zinc-600" : "text-slate-400"
-                        }`}>خاصة بي</button>
-                      <button type="button" onClick={() => setNewNoteVisibility("firm")}
-                        className={`px-2 py-1 rounded-lg font-bold transition-colors ${
-                          newNoteVisibility === "firm"
-                            ? isDark ? "bg-white/10 text-white" : "bg-slate-200 text-slate-700"
-                            : isDark ? "text-zinc-600" : "text-slate-400"
-                        }`}>للمكتب</button>
-                    </div>
+                    <NoteScopePicker value={newNoteVisibility} onChange={setNewNoteVisibility} team={caseTeam} disabled={addingNote} />
                     <button onClick={submitCaseNote} disabled={!newNoteBody.trim() || addingNote}
                       className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[11px] font-bold bg-[#0B3D2E] text-[#C8A762] disabled:opacity-40 transition-opacity">
                       {addingNote ? <Spinner size={12} className="animate-spin" /> : <Plus size={12} weight="bold" />}
@@ -2004,11 +2019,11 @@ export default function CaseDetailPage() {
                     </button>
                   </div>
                 </div>
-                <p className={`mt-2 text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                  «خاصة بي» لا يراها أحد سواك. «للمكتب» تصل لزملائك النشطين في مكتبك فقط — الموكّل لا يرى أي ملاحظة هنا مطلقاً.
-                </p>
+                <NoteScopeLine scope={newNoteVisibility} team={caseTeam} />
                 {noteError && <p className="mt-2 text-[11px] font-semibold text-red-500">{noteError}</p>}
               </div>
+
+              <CaseTeamPanel team={caseTeam} onAdd={addToCaseTeam} onRemove={removeFromCaseTeam} onRetry={loadCaseTeam} card={card} />
 
               <div className="space-y-3">
                 {caseNotesView === "loading" ? (
@@ -2046,20 +2061,7 @@ export default function CaseDetailPage() {
                             className={`w-full rounded-xl border px-3 py-2 text-[12px] outline-none resize-none ${isDark ? "border-white/[0.08] bg-zinc-800 text-zinc-200" : "border-slate-200 bg-slate-50 text-slate-800"}`}
                           />
                           <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-1 text-[10px]">
-                              <button type="button" onClick={() => setEditNoteVisibility("private")}
-                                className={`px-2 py-1 rounded-lg font-bold transition-colors ${
-                                  editNoteVisibility === "private"
-                                    ? isDark ? "bg-white/10 text-white" : "bg-slate-200 text-slate-700"
-                                    : isDark ? "text-zinc-600" : "text-slate-400"
-                                }`}>خاصة بي</button>
-                              <button type="button" onClick={() => setEditNoteVisibility("firm")}
-                                className={`px-2 py-1 rounded-lg font-bold transition-colors ${
-                                  editNoteVisibility === "firm"
-                                    ? isDark ? "bg-white/10 text-white" : "bg-slate-200 text-slate-700"
-                                    : isDark ? "text-zinc-600" : "text-slate-400"
-                                }`}>للمكتب</button>
-                            </div>
+                            <NoteScopePicker value={editNoteVisibility} onChange={setEditNoteVisibility} team={caseTeam} disabled={savingNoteId === note.id} />
                             <div className="flex items-center gap-2">
                               <button onClick={cancelEditNote}
                                 className={`text-[11px] font-semibold ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"}`}>إلغاء</button>
@@ -2075,7 +2077,7 @@ export default function CaseDetailPage() {
                           <div className="flex items-center justify-between mb-2 gap-2">
                             <div className="flex items-center gap-2 min-w-0">
                               <div className="w-7 h-7 rounded-xl bg-royal/10 flex items-center justify-center flex-shrink-0">
-                                {/* بلا اسم لا يوجد حرف أول: أيقونة، لا خانة من المعرّف — نفس قاعدة تبويب «الفريق». */}
+                                {/* بلا اسم لا يوجد حرف أول: أيقونة، لا خانة من المعرّف — نفس قاعدة تبويب «أطراف القضية». */}
                                 {note.authorNameKnown
                                   ? <span className="text-[11px] font-bold text-royal">{note.authorName.charAt(0)}</span>
                                   : <User size={13} weight="duotone" className="text-royal" />}
@@ -2085,11 +2087,7 @@ export default function CaseDetailPage() {
                                   ? isDark ? "text-zinc-300" : "text-slate-700"
                                   : isDark ? "text-zinc-500" : "text-slate-400"
                               }`}>{note.authorName}</p>
-                              <span className={`flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
-                                note.visibility === "firm"
-                                  ? isDark ? "bg-indigo-500/10 text-indigo-400" : "bg-indigo-50 text-indigo-600"
-                                  : isDark ? "bg-white/[0.06] text-zinc-500" : "bg-slate-100 text-slate-500"
-                              }`}>{note.visibility === "firm" ? "للمكتب" : "خاصة بي"}</span>
+                              <NoteScopeBadge scope={note.visibility} team={caseTeam} />
                             </div>
                             <p className={`flex-shrink-0 text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{formatDate(note.createdAt)}</p>
                           </div>

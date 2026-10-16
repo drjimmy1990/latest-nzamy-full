@@ -79,3 +79,54 @@ export async function resolveFirmVisibilityFirmId(
   }
   return { firmId: membership.firm_id };
 }
+
+/**
+ * Resolves the `firm_id` a `visibility: "case_team"` note carries (owner
+ * decision ١٦٩, migration 20261017_41).
+ *
+ * A case team exists only on a FIRM case: it is the case's lead and filer plus
+ * the `case_team_members` rows, each only while an active member of the
+ * case's own firm (`public.case_team_user_ids`). So, stricter than the `firm`
+ * scope above, there is no solo fallback: the case must carry a firm, and the
+ * caller must be an active member of THAT firm. RLS (`case_note_scope_ok`)
+ * enforces the same rule; this only turns the refusal into screen copy.
+ */
+export async function resolveCaseTeamFirmId(
+  supabase: SupabaseClient,
+  userId: string,
+  caseId: string,
+): Promise<{ firmId: string } | { error: string }> {
+  const { data: caseRow, error: caseError } = await supabase
+    .from("service_requests")
+    .select("firm_id")
+    .eq("id", caseId)
+    .maybeSingle();
+
+  if (caseError || !caseRow) {
+    if (caseError) {
+      console.error("[cases/notes] service_requests firm lookup failed:", caseError.message, caseError.code);
+    }
+    return { error: "لا يمكن مشاركة الملاحظة مع فريق القضية — تعذّر التحقق من القضية." };
+  }
+
+  const caseFirmId = (caseRow as { firm_id: string | null }).firm_id;
+  if (!caseFirmId) {
+    return { error: "هذه القضية ليست ضمن مكتب، فلا فريق لها. اجعل الملاحظة خاصة بك أو شاركها مع مكتبك." };
+  }
+
+  const { data: membership, error: membershipError } = await supabase
+    .from("firm_members")
+    .select("firm_id")
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .eq("firm_id", caseFirmId)
+    .limit(1)
+    .maybeSingle();
+  if (membershipError) {
+    console.error("[cases/notes] firm_members lookup failed:", membershipError.message, membershipError.code);
+  }
+  if (!membership?.firm_id) {
+    return { error: "لا يمكن مشاركة الملاحظة مع فريق القضية لأنك لست عضوًا نشطًا في مكتب هذه القضية." };
+  }
+  return { firmId: membership.firm_id };
+}

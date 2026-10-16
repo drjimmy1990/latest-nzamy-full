@@ -10,7 +10,9 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
-import { createWorkflowId, saveWorkflowRequest } from "@/lib/workflowStore";
+import { createWorkflowId, createWorkflowRequest } from "@/lib/clientWorkflowRepository";
+import { buildServicesWizardRequest } from "./servicesWizardRequest";
+import { isDemoMode } from "@/lib/runtimeMode";
 import { useOrderAttachments } from "@/hooks/useOrderAttachments";
 import { MAX_UPLOAD_BYTES } from "@/lib/services/fileValidation";
 
@@ -150,64 +152,55 @@ export default function ServiceRequestWizard({
     if (picked.length > 0) await attachFiles(picked);
   };
 
+  // Outside demo mode a request is a real row for a real account (owner
+  // decision ١١٥). It used to be written to the visitor's own browser with
+  // saveWorkflowRequest() and answered «تم إرسال الطلب» while the server never
+  // heard of it; createWorkflowRequest posts to /api/v1/service-requests, which
+  // needs a session. Demo mode keeps the browser-only store.
+  const needsSignIn = !isDemoMode && authKnown && !user.isLoggedIn;
+
   const handleSubmit = async () => {
     setSubmitError(null);
+    if (needsSignIn) {
+      setSubmitError(isRTL
+        ? "سجّل الدخول لإرسال الطلب، فهو يُحفظ في حسابك لتتابعه."
+        : "Sign in to send the request — it is saved to your account so you can follow it.");
+      return;
+    }
     setSubmitting(true);
     try {
-      // The 1800 ms sleep that used to sit here is gone. Nothing was being
-      // awaited: saveWorkflowRequest() is a synchronous local write, and the
-      // delay existed only to make the spinner look like a round trip to a
-      // server nobody was calling. The real network work — the uploads — has
-      // already happened by this point, and it showed its own progress.
-      const firmServiceIds = new Set(["srv-1", "srv-2", "srv-3"]);
-      const request = saveWorkflowRequest({
-        id: createWorkflowId("SRV"),
-        type: "service",
-        title: isRTL ? serviceTitle : serviceTitleEn,
-        description: form.description,
-        requester: {
-          name: user.name,
-          role: user.userType,
-          tier: user.tier,
-          businessRole: user.businessRole,
-        },
-        receiver: firmServiceIds.has(serviceId) ? "firm" : "lawyer",
-        status: "pending_assignment",
-        payment: {
-          amount: form.budgetMin,
-          status: "pending",
-        },
-        sourcePath: "/services",
-        metadata: {
+      // The payload is built by buildServicesWizardRequest (receiver
+      // "ai_workspace" — the نظامي team's queue — payment 0 / not_required, the
+      // budget kept in metadata); its unit test passes it through the route's
+      // two pure gates (servicesWizardRequest.test.ts).
+      const request = await createWorkflowRequest(
+        buildServicesWizardRequest({
+          id: createWorkflowId("SRV"),
+          title: isRTL ? serviceTitle : serviceTitleEn,
+          serviceTitleAr: serviceTitle,
+          description: form.description,
+          requester: {
+            userId: user.userId,
+            name: user.name,
+            role: user.userType,
+            tier: user.tier,
+            businessRole: user.businessRole,
+          },
           serviceId,
           userRole,
           region: form.region,
+          deadline: form.deadline,
           budgetMin: form.budgetMin,
           budgetMax: form.budgetMax,
-          deadline: form.deadline,
           confidential: form.confidential,
           assignmentMethod: form.assignmentMethod,
-          // Counts the UPLOADED files, not the picked ones. A file the client
-          // selected and whose upload failed is not in `attachments`, so it is
-          // not counted here either — the number the fulfiller reads is the
-          // number of documents they can actually open.
-          fileCount: attachments.length,
-          barNumber: form.barNumber || null,
-          courtName: form.courtName || null,
-          caseNumber: form.caseNumber || null,
-          serviceType: form.serviceType || null,
-          // Verbatim, no remapping: every consumer of an order's attachments
-          // reads `.documentId` off each entry, and rebuilding the shape here
-          // would silently detach the files. Same cast, and same reason, as
-          // /dashboard/client/requests/new: `WorkflowRequest.metadata` is
-          // still declared `Record<string, string | number | boolean | null>`,
-          // but that declaration is stale rather than load-bearing — nested
-          // objects are already stored and read there today. Widening it in
-          // src/lib/workflowStore.ts is the real fix and is outside this file.
+          barNumber: form.barNumber,
+          courtName: form.courtName,
+          caseNumber: form.caseNumber,
+          serviceType: form.serviceType,
           attachments,
-        } as unknown as Record<string, string | number | boolean | null>,
-        auditEvent: "service_marketplace_request_sent",
-      });
+        }) as unknown as Parameters<typeof createWorkflowRequest>[0],
+      );
       setSubmittedId(request.id);
       setSubmitted(true);
     } catch {
