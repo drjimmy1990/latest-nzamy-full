@@ -312,12 +312,28 @@ export type ClientWorkflowRequestsPage = {
 };
 
 export async function listClientWorkflowRequestsPage(
-  options: Pick<WorkflowListOptions, "requesterUserId"> = {},
+  options: Pick<WorkflowListOptions, "requesterUserId"> & {
+    /**
+     * The company the caller is an ACTIVE member of (owner decision ٥, «القضايا»
+     * of the company dashboard). When set, a row filed under that company
+     * (`business_id`, written server-side by POST /api/v1/service-requests)
+     * is kept too, not only the caller's own. RLS already returned it — the
+     * 20260914 policy "business members read business service requests" —
+     * so this widens the client-side filter to what the server proved, never
+     * past it. Not forwarded to the server: the fetch is unchanged.
+     */
+    businessId?: string | null;
+  } = {},
   limit: number = CLIENT_REQUESTS_FETCH_LIMIT,
 ): Promise<ClientWorkflowRequestsPage> {
-  const result = await fetchWorkflowRequests({ ...options, limit });
+  const { businessId, ...fetchOptions } = options;
+  const result = await fetchWorkflowRequests({ ...fetchOptions, limit });
   const requests = result.requests.filter((request) => {
-    if (options.requesterUserId) return requesterUserIdOf(request) === options.requesterUserId;
+    if (options.requesterUserId) {
+      if (requesterUserIdOf(request) === options.requesterUserId) return true;
+      const rowBusiness = (request as { business_id?: unknown }).business_id;
+      return Boolean(businessId) && typeof rowBusiness === "string" && rowBusiness === businessId;
+    }
 
     // No id to match on. This happens on the first render of every client page
     // that calls without one, and while useUser() is still resolving the

@@ -2,14 +2,14 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, usePathname } from "next/navigation";
-import Link from "next/link";
 import SharedSidebar from "@/components/dashboard/SharedSidebar";
 import { EntityRouteGuard } from "@/components/dashboard/EntityRouteGuard";
 import { UserTypeGuard } from "@/components/dashboard/UserTypeGuard";
-import { Storefront, Wrench, ArrowLeft } from "@phosphor-icons/react";
+import { Storefront } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import { isHiddenBusinessSection } from "@/constants/navigation.sidebars.business";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 /**
  * Business (Corporate) Dashboard Layout
@@ -34,48 +34,26 @@ function ModeHandler({ setMode }: { setMode: (m: "erp" | "service") => void }) {
 }
 
 /**
- * القسم قيد الإعداد — what a hidden corporate section renders instead of its page.
+ * «قيد التطوير» — what a company section outside the live set renders.
  *
- * The owner's ruling of 26 August (§3أ) took nineteen sections out of the
- * corporate sidebar because each renders invented cases, departments, employees
- * and invoices. Removing the link is not enough on its own: a company that
- * bookmarked one of those URLs, or that follows a link still standing in
- * CORPORATE_NAV, would land on the fabricated screen exactly as before. This is
- * what it sees instead.
+ * Owner decision ٥ (answers of 2026-10-06): «تفعيل الأقسام الأساسية الخمسة أولاً
+ * (العقود، القضايا، المواعيد، التفويض، والفريق) وإبقاء البقية قيد التطوير».
+ * The live sections are the ones CORPORATE_SIDEBAR links; any other
+ * /dashboard/business/* URL — a bookmark, an old link — lands here instead of
+ * on its page. Rendered through DashboardComingSoon, the one honest «not yet»
+ * screen, rather than a notice of this layout's own (the 26 August «هذا القسم
+ * قيد الإعداد … ما كان يظهر فيه لم يكن يخصّك», which it replaces).
  *
- * It states plainly that the section is not ready. It does not claim the data is
- * loading, and it does not redirect — a silent bounce would leave the company
- * wondering whether it had lost access to something it was paying for.
+ * It does not redirect: a silent bounce would leave the company wondering
+ * whether it had lost access to something it was paying for.
  */
-function SectionNotReady({ isAr, isDark }: { isAr: boolean; isDark: boolean }) {
+function SectionInDevelopment() {
   return (
-    <div className="max-w-xl mx-auto py-16 px-4 text-center">
-      <div
-        className={`inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-5 ${
-          isDark ? "bg-white/[0.06]" : "bg-zinc-100"
-        }`}
-      >
-        <Wrench size={26} className="text-ink-muted" />
-      </div>
-      <h1 className="text-xl font-black text-ink mb-3">
-        {isAr ? "هذا القسم قيد الإعداد" : "This section is not ready yet"}
-      </h1>
-      <p className="text-sm leading-7 text-ink-muted mb-8">
-        {isAr
-          ? "لم يُربط هذا القسم ببيانات شركتك بعد، وقد أُخفي من القائمة حتى يجهز. ما كان يظهر فيه لم يكن يخصّك."
-          : "This section is not connected to your company's data yet, so it has been hidden until it is. What it used to display was not yours."}
-      </p>
-      {/* No "contact us" line here on purpose. Naming a channel this cluster
-          cannot verify — a page, a number, an inbox — would be the same defect
-          in a smaller font. The back link is the only forward path claimed. */}
-      <Link
-        href="/dashboard/business"
-        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-royal text-gold text-sm font-bold hover:bg-royal-light transition-colors"
-      >
-        <ArrowLeft size={16} className={isAr ? "" : "rotate-180"} />
-        {isAr ? "العودة إلى لوحة الشركة" : "Back to the company dashboard"}
-      </Link>
-    </div>
+    <DashboardComingSoon
+      title="هذا القسم قيد التطوير"
+      description="لم يُربط هذا القسم ببيانات منشأتك بعد. الأقسام العاملة الآن: القضايا، والعقود، والمواعيد، والتفويض، وإدارة الفريق."
+      backHref="/dashboard/business"
+    />
   );
 }
 
@@ -85,7 +63,7 @@ export default function BusinessDashboardLayout({
   children: React.ReactNode;
 }) {
   const [mode, setMode] = useState<"erp" | "service">("erp");
-  const { lang, isDark } = useTheme();
+  const { lang } = useTheme();
   const isAr = lang === "ar";
   const pathname = usePathname() ?? "";
   const { userType } = useUser();
@@ -134,7 +112,7 @@ export default function BusinessDashboardLayout({
 
           <div className="p-4 md:p-6 pt-4">
             {sectionHidden ? (
-              <SectionNotReady isAr={isAr} isDark={isDark} />
+              <SectionInDevelopment />
             ) : (
               <EntityRouteGuard scope="business">
                 {children}

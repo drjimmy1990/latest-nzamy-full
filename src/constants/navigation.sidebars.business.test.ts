@@ -36,14 +36,20 @@ const test = (name: string, fn: () => void) => {
 // could not honestly be.
 // Owner decision ٣٦ (2026-10-17) added «بيانات المنشأة» and «التفويض»: the
 // company data over /api/v1/business/profile and the delegation register over
-// public.business_delegations (20261017_30). Both are real reads and writes.
+// public.business_delegations (20261017_30). Owner decision ٥ (same day) made
+// the five core sections live: «القضايا» (service_requests, own + business_id),
+// «العقود» (contracts linked to the account), «المواعيد» (/api/v1/client/
+// appointments), «التفويض» and «إدارة الفريق». All are real reads.
 test('only the real company sections are linked under /dashboard/business', () => {
   assert.deepEqual(VISIBLE_BUSINESS_ROUTES, [
     '/dashboard/business',
     '/dashboard/business/documents',
+    '/dashboard/business/cases',
+    '/dashboard/business/contracts',
+    '/dashboard/business/hearings',
+    '/dashboard/business/delegations',
     '/dashboard/business/team',
     '/dashboard/business/company',
-    '/dashboard/business/delegations',
   ]);
 });
 
@@ -54,13 +60,16 @@ test('the corporate sidebar links to nothing that renders fabricated data', () =
     // Real: /dashboard/business/documents lists the account's own uploads and
     // nothing else — there is no mock row anywhere in it.
     '/dashboard/business/documents',
-    // Real since WP-6 B-5: public.business_members via /api/v1/business/members.
-    // Nothing on the page is fabricated — a name the caller may not read shows
-    // as «الاسم غير متاح», not as a dash or an invented person.
-    '/dashboard/business/team',
-    // Owner decision ٣٦: the company data and the delegation register.
-    '/dashboard/business/company',
+    // Owner decision ٥ — the five core company sections. Real since WP-6 B-5:
+    // «إدارة الفريق» over public.business_members (a name the caller may not
+    // read shows as «الاسم غير متاح», never an invented person).
+    '/dashboard/business/cases',
+    '/dashboard/business/contracts',
+    '/dashboard/business/hearings',
     '/dashboard/business/delegations',
+    '/dashboard/business/team',
+    // Owner decision ٣٦: the company data.
+    '/dashboard/business/company',
     // 2026-08-27 — the shared intake (owner س٢: «الشركة تستخدم نفس النموذج»).
     // These are /dashboard/client/* on purpose; routeAccess.ts opens exactly
     // these three subtrees to a corporate account and nothing else.
@@ -83,9 +92,12 @@ test('the intake links do NOT re-open any /dashboard/business section', () => {
   assert.deepEqual(VISIBLE_BUSINESS_ROUTES, [
     '/dashboard/business',
     '/dashboard/business/documents',
+    '/dashboard/business/cases',
+    '/dashboard/business/contracts',
+    '/dashboard/business/hearings',
+    '/dashboard/business/delegations',
     '/dashboard/business/team',
     '/dashboard/business/company',
-    '/dashboard/business/delegations',
   ]);
 });
 
@@ -125,9 +137,6 @@ test('a trailing slash, a query and a hash do not change the answer', () => {
 test('every hidden section is refused, including its sub-pages', () => {
   for (const hidden of [
     '/dashboard/business/kanban',
-    '/dashboard/business/cases',
-    '/dashboard/business/cases/new',
-    '/dashboard/business/cases/abc-123',
     '/dashboard/business/departments',
     '/dashboard/business/departments/hr',
     '/dashboard/business/reports',
@@ -142,7 +151,6 @@ test('every hidden section is refused, including its sub-pages', () => {
     '/dashboard/business/marketplace',
     '/dashboard/business/requests',
     '/dashboard/business/consultations',
-    '/dashboard/business/hearings',
     '/dashboard/business/procedures-expert',
   ]) {
     assert.equal(isVisibleBusinessRoute(hidden), false, hidden);
@@ -216,8 +224,6 @@ test('a route outside /dashboard/business is never a hidden business section', (
 test('every hidden business section is still refused', () => {
   for (const hidden of [
     '/dashboard/business/kanban',
-    '/dashboard/business/cases',
-    '/dashboard/business/cases/abc-123',
     '/dashboard/business/wallet',
     '/dashboard/business/reports',
     '/dashboard/business/reviews/new',
@@ -240,6 +246,12 @@ test('the three visible business routes are not refused', () => {
     '/dashboard/business/team?q=a',
     '/dashboard/business/company',
     '/dashboard/business/delegations',
+    // Owner decision ٥ — the five core sections and their sub-pages.
+    '/dashboard/business/cases',
+    '/dashboard/business/cases/abc-123',
+    '/dashboard/business/cases/new',
+    '/dashboard/business/contracts',
+    '/dashboard/business/hearings',
   ]) {
     assert.equal(isHiddenBusinessSection(visible), false, visible);
   }
