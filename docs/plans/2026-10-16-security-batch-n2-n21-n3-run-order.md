@@ -12,8 +12,9 @@
 |---|---|---|
 | `20261016_09_admin_policies_is_admin.sql` | N21: the sixteen admin policies that read `profiles` inline become `TO authenticated USING (public.is_admin())`; then anon loses SELECT on `profiles` | **Any time** (no code needed) |
 | `20261016_10_lawyer_profiles_select_column_lock.sql` | N2: guests and signed-in users read only the 13 public columns of `lawyer_profiles` (no licence, rate, credit, contact or metadata through REST) | **After the deploy** |
+| `20261016_11_provider_profiles_guest_read_revoke.sql` | N2 follow-up: nobody reads another provider's row through REST any more (the guest-read policy is dropped, anon holds nothing). A provider reads their own row, an admin reads all | **Any time** after Step 0 of the 2026-10-16 batch (no code needed) |
 
-**Order:** Step 1 any time → Step 2 deploy the code → Step 3 `20261016_10`. Steps 1 and 3 do not depend on each other.
+**Order:** Step 1 any time → Step 2 deploy the code → Step 3 `20261016_10`. Steps 1 and 3 do not depend on each other. Step 4 (`20261016_11`) depends on none of them.
 
 **The same deploy also ships** (merged into `main` together, no SQL): the small-fixes batch N4–N19 (`claude/affectionate-haslett-b27117`) and the fiqh common-word search fix N22 (`claude/gifted-haslett-9edf85`). Combined check on the merged tree: 2,328/2,328 unit tests on Node 22, type-check clean, lint 0 errors.
 
@@ -104,6 +105,51 @@ Then on the site:
 **Never re-run after it** without re-running it: nothing in `supabase/migrations` re-grants SELECT on `lawyer_profiles`, but a self-host restore or any `GRANT ALL … TO anon, authenticated` does. `_verify.sql` names it.
 
 **Rollback:** `grant select on public.lawyer_profiles to anon, authenticated;` (re-opens every column).
+
+---
+
+## Step 4 (any time): N2 follow-up — `20261016_11_provider_profiles_guest_read_revoke.sql`
+
+**The hole:** checked live 2026-10-16 with the anon key, `GET /rest/v1/provider_profiles?select=user_id,verification_status` answers `200` with a verified provider's row. The policy "public read verified providers" has no `TO`, and the self-host restore left table-level SELECT with `anon` and `authenticated`. So guests **and every signed-in account** read every column of a listed provider: licence number and expiry, rate, `sub_role`, service areas, availability, and `metadata`. `metadata.settings` holds what the provider types in Settings → «الملف الشخصي», including their own licence number and its expiry.
+
+**Why a revoke, not N2's column lock:** nothing about a provider is public.
+- No page lists providers.
+- In `src/`, only the admin verification routes read other providers' rows, and they use the service role.
+- `/api/v1/profile` reads only the caller's own row.
+- No policy on another table, and no view, reads `provider_profiles`.
+
+So the file drops the guest-read policy and takes every privilege away from `anon`. The provider's own-row policy and the admin policy stay. **No code change, so no deploy order.**
+
+Paste the whole file and click Run. It ends with
+`NOTICE: 20261016_11 verify: OK — no guest read of provider_profiles (policy dropped, anon holds nothing); …`.
+
+- It refuses to run until Step 0 of the 2026-10-16 batch (`20260922_03`) is in force.
+- **The guard.** If a policy on another table, or a view, reads `provider_profiles` (one created after the 2026-10-10 dump), the file stops, names it and changes nothing. Send me the name.
+- It revokes nothing from signed-in users except DELETE / TRUNCATE / REFERENCES / TRIGGER. They keep SELECT (each provider reads their own row) and the `20260922_03` save list (`metadata`, `updated_at`), which its verify block checks again.
+- **The live probe.** After the revoke, still inside the transaction, it reads every `public` table and view as `anon`. A "permission denied for table provider_profiles" rolls it back. Other failures print a NOTICE and do not stop it.
+- `_verify.sql` gets a section for it: `_verify: 20261016_11 OK …`. Before the file runs, it prints `… is not applied yet …` and passes. If a restore brings the policy or the grant back, it names both.
+
+**Check from outside (public anon key).** These must now answer `401` (42501), not `200`:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' -H "apikey: $ANON" "https://auth.nezamy.sa/rest/v1/provider_profiles?select=user_id,verification_status&limit=1"
+```
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' -H "apikey: $ANON" "https://auth.nezamy.sa/rest/v1/provider_profiles?select=*&limit=1"
+```
+
+Then on the site:
+- as a test provider (notary, arbitrator or bailiff): Settings → «الملف الشخصي». Change «نبذة» or «رقم الترخيص», save, reload; the value stays (these fields live in `metadata.settings`);
+- as an admin: «تحقق المزودين» still lists the providers.
+
+**Rollback** (re-opens every column of a listed provider to the anon key):
+
+```sql
+create policy "public read verified providers" on public.provider_profiles
+  for select using (verification_status = 'verified' and marketplace_visible = true);
+grant select on public.provider_profiles to anon;
+```
 
 ---
 
