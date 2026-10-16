@@ -1473,3 +1473,53 @@ BEGIN
 
   RAISE NOTICE '_verify: 20261016_11 OK — no guest read of provider_profiles; a provider reads the own row, an admin reads all; authenticated UPDATE is (metadata, updated_at)';
 END $$;
+
+-- ====================================================================
+-- 2026-10-17 — 20261017_20_library_search_principles_page.sql (fix plan N18)
+-- ====================================================================
+-- The precedents search window with its own 4s statement_timeout (PostgREST
+-- applies it before the call). service_role only: the function returns the
+-- server-only principle text, so a GRANT to anon/authenticated (a schema
+-- restore replays the default EXECUTE grants) is a leak. A run BEFORE the
+-- migration passes with a NOTICE: the route falls back to its inline query.
+SELECT '20261017_20 applied (time-limited precedents search)' AS check,
+       to_regprocedure('library.search_principles_page(text, integer, integer, text, text, integer, text)') IS NOT NULL AS present;
+
+DO $$
+DECLARE
+  fn      CONSTANT text := 'library.search_principles_page(text, integer, integer, text, text, integer, text)';
+  cfg     text[];
+  definer boolean;
+  r       text;
+  missing text := '';
+BEGIN
+  IF to_regprocedure(fn) IS NULL THEN
+    RAISE NOTICE '_verify: 20261017_20 is not applied yet — guest precedent searches run as the service role with no statement_timeout (the route uses its inline query until then)';
+    RETURN;
+  END IF;
+
+  SELECT p.proconfig, p.prosecdef INTO cfg, definer FROM pg_proc p WHERE p.oid = to_regprocedure(fn);
+  IF definer THEN
+    missing := missing || ' it is SECURITY DEFINER (expected INVOKER — re-run 20261017_20);';
+  END IF;
+  IF cfg IS NULL OR NOT ('statement_timeout=4s' = ANY (cfg)) THEN
+    missing := missing || format(' proconfig %s lacks statement_timeout=4s (the time limit is gone — re-run 20261017_20);', coalesce(cfg::text, 'NULL'));
+  END IF;
+  IF cfg IS NULL OR NOT ('search_path=""' = ANY (cfg)) THEN
+    missing := missing || format(' proconfig %s lacks search_path='''';', coalesce(cfg::text, 'NULL'));
+  END IF;
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF has_function_privilege(r, fn, 'EXECUTE') THEN
+      missing := missing || format(' %s can EXECUTE it — it returns the server-only principle text (a GRANT re-applied? re-run 20261017_20);', r);
+    END IF;
+  END LOOP;
+  IF NOT has_function_privilege('service_role', fn, 'EXECUTE') THEN
+    missing := missing || ' service_role cannot EXECUTE it (every precedent search would fail);';
+  END IF;
+
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: the time-limited precedents search is broken —%', missing;
+  END IF;
+
+  RAISE NOTICE '_verify: 20261017_20 OK — library.search_principles_page: INVOKER, statement_timeout 4s, service_role only';
+END $$;

@@ -293,6 +293,41 @@ export function isTimeoutError(error: unknown): boolean {
 }
 
 /**
+ * The RPC is not there: PGRST202 (absent from PostgREST's schema cache) or
+ * 42883 (absent from Postgres). This, and nothing else, sends the precedents
+ * section back to its inline query (fix plan N18): a 57014 from
+ * library.search_principles_page means its own statement_timeout cancelled
+ * it, and the inline query, which runs as the service role with no limit,
+ * would undo the fix.
+ */
+export function isMissingFunctionError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const code = (error as { code?: unknown }).code;
+  return code === 'PGRST202' || code === '42883';
+}
+
+/**
+ * library.search_principles_page (migration 20261017_20) answers one jsonb
+ * object, `{"rows": [...], "count": n}`. This turns it into the page shape
+ * readPage reads, so settlePage and sectionCount treat it like the inline
+ * query's PostgREST page. An error passes through; any other shape is a
+ * failed page (data null), never an empty one.
+ */
+export function rpcPageResult(res: { data: unknown; error: unknown }): {
+  data: Record<string, unknown>[] | null;
+  count: number | null;
+  error: unknown;
+} {
+  if (res.error) return { data: null, count: null, error: res.error };
+  const body = res.data as { rows?: unknown; count?: unknown } | null;
+  if (!body || typeof body !== 'object' || !Array.isArray(body.rows)) {
+    return { data: null, count: null, error: null };
+  }
+  const count = typeof body.count === 'number' && Number.isSafeInteger(body.count) && body.count >= 0 ? body.count : null;
+  return { data: body.rows as Record<string, unknown>[], count, error: null };
+}
+
+/**
  * Title key for de-duplication: Arabic-normalised, with the seeder's
  * `_0`/`_1` copy suffix removed («نظام العمل التطوعي_0» is the same law as
  * «نظام العمل التطوعي»).

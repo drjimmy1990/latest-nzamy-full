@@ -168,3 +168,21 @@ test("feqh keeps its rows when the database cancels the counted query (57014)", 
   assert.match(routeSource, /settlePage\('precedents', res as unknown as RowsResult, \(\) => precQuery\(true\)\.abortSignal\(signal\)\);/);
   assert.match(routeSource, /settlePage\('orders', res as unknown as RowsResult, \(\) => orderQuery\(true\)\.abortSignal\(signal\)\);/);
 });
+
+test("precedents run through the time-limited RPC and fall back only when it is missing (N18)", () => {
+  // migration 20261017_20: library.search_principles_page, service role only.
+  assert.match(routeSource, /const PRINCIPLES_RPC = 'search_principles_page';/);
+  assert.match(routeSource, /await serverOnly\s*\.schema\('library'\)\s*\.rpc\(PRINCIPLES_RPC, \{/);
+  assert.doesNotMatch(routeSource, /supabase\s*\.schema\('library'\)\s*\.rpc\(PRINCIPLES_RPC/);
+  // The same window and filters as the inline query.
+  assert.match(
+    routeSource,
+    /p_tsquery: ftsQuery,\s*p_offset: from,\s*p_fetch: fetchSizeFor\(size\),\s*p_track: filters\.track \?\? null,\s*p_source: filters\.source \?\? null,\s*p_year: filters\.year \?\? null,\s*p_court: filters\.court \?\? null,/,
+  );
+  // The inline query runs only when the function is missing; any other RPC
+  // error (57014 above all) goes to settlePage and fails the section.
+  assert.match(routeSource, /const rpcMissing = rpcRes !== null && isMissingFunctionError\(rpcRes\.error\);/);
+  assert.match(routeSource, /const res = rpcRes !== null && !rpcMissing\s*\? rpcPageResult\(rpcRes\)\s*: await precQuery\(\)/);
+  assert.match(routeSource, /if \(rpcMissing\) principlesRpcMissingUntil = Date\.now\(\) \+ PRINCIPLES_RPC_RETRY_MS;/);
+  assert.doesNotMatch(routeSource, /shouldRetryWithoutCount\(rpcRes/);
+});
