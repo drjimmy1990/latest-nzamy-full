@@ -1378,3 +1378,93 @@ BEGIN
 
   RAISE NOTICE '_verify: 20261016_10 OK — anon/authenticated read the 13 public lawyer_profiles columns only; no policy reads a locked column';
 END $$;
+
+-- ====================================================================
+-- 2026-10-16 — 20261016_11_provider_profiles_guest_read_revoke.sql (N2 follow-up)
+-- ====================================================================
+-- No guest read of provider_profiles: "public read verified providers" is
+-- gone, anon holds no privilege, and the only SELECT policies that reach the
+-- API roles are the own-row and admin ones (a schema restore re-creates the
+-- dropped policy and the GRANT ALL — this section names both). authenticated
+-- keeps table-level SELECT (own-row reads) and UPDATE on exactly
+-- (metadata, updated_at). Keyed on the marker comment on
+-- provider_profiles.license_number OR anon's missing table-level SELECT, so a
+-- run BEFORE the migration passes with a NOTICE.
+SELECT '20261016_11 applied (no guest read of provider_profiles)' AS check,
+       NOT has_table_privilege('anon', 'public.provider_profiles', 'SELECT') AS present;
+
+DO $$
+DECLARE
+  update_cols text[] := ARRAY['metadata', 'updated_at'];
+  select_pols text[] := ARRAY['providers read own profile', 'admins read all provider profiles'];
+  priv        text;
+  col         text;
+  offenders   text;
+  missing     text := '';
+BEGIN
+  IF coalesce(col_description('public.provider_profiles'::regclass,
+       (SELECT attnum FROM pg_attribute WHERE attrelid = 'public.provider_profiles'::regclass AND attname = 'license_number')), '')
+       NOT ILIKE '%private since 20261016_11%'
+     AND has_table_privilege('anon', 'public.provider_profiles', 'SELECT') THEN
+    RAISE NOTICE '_verify: 20261016_11 is not applied yet — anon (and every signed-in account) can read every provider_profiles column of a listed provider through REST (it can run any time)';
+    RETURN;
+  END IF;
+
+  SELECT string_agg(format('%s (%s)', p.polname, pg_get_expr(p.polqual, p.polrelid)), '; ')
+    INTO offenders
+    FROM pg_policy p
+   WHERE p.polrelid = 'public.provider_profiles'::regclass
+     AND p.polcmd IN ('r', '*')
+     AND (p.polroles = '{0}'::oid[]
+          OR 'anon'::regrole::oid = ANY (p.polroles)
+          OR 'authenticated'::regrole::oid = ANY (p.polroles))
+     AND NOT (p.polname = ANY (select_pols));
+  IF offenders IS NOT NULL THEN
+    missing := missing || format(' SELECT policies on provider_profiles hand rows to the API roles again (a schema restore? re-run 20261016_11): %s;', offenders);
+  END IF;
+
+  FOREACH priv IN ARRAY ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'] LOOP
+    IF has_table_privilege('anon', 'public.provider_profiles', priv) THEN
+      missing := missing || format(' anon holds %s on provider_profiles again (self-host schema or a GRANT ALL re-applied? re-run 20261016_11);', priv);
+    END IF;
+  END LOOP;
+  FOREACH priv IN ARRAY ARRAY['SELECT', 'INSERT', 'UPDATE', 'REFERENCES'] LOOP
+    IF has_any_column_privilege('anon', 'public.provider_profiles', priv) THEN
+      missing := missing || format(' anon holds column-level %s on provider_profiles;', priv);
+    END IF;
+  END LOOP;
+
+  IF NOT has_table_privilege('authenticated', 'public.provider_profiles', 'SELECT') THEN
+    missing := missing || ' authenticated cannot read provider_profiles (GET /api/v1/profile reads the provider''s own row with the session);';
+  END IF;
+  FOR col IN
+    SELECT att.attname::text FROM pg_attribute att
+     WHERE att.attrelid = 'public.provider_profiles'::regclass AND att.attnum > 0 AND NOT att.attisdropped
+  LOOP
+    IF (col = ANY (update_cols)) <> has_column_privilege('authenticated', 'public.provider_profiles', col, 'UPDATE') THEN
+      missing := missing || format(' authenticated UPDATE on provider_profiles.%s is %s, expected %s (the 20260922_03 list);', col,
+        has_column_privilege('authenticated', 'public.provider_profiles', col, 'UPDATE'), col = ANY (update_cols));
+    END IF;
+  END LOOP;
+
+  SELECT string_agg(DISTINCT format('policy %s on %s', p.polname, p.polrelid::regclass), '; ')
+    INTO offenders
+    FROM pg_policy p
+    JOIN pg_depend d ON d.classid = 'pg_policy'::regclass AND d.objid = p.oid
+                    AND d.refclassid = 'pg_class'::regclass
+                    AND d.refobjid = 'public.provider_profiles'::regclass
+   WHERE p.polrelid <> 'public.provider_profiles'::regclass;
+  IF offenders IS NOT NULL THEN
+    missing := missing || format(' policies on other tables read provider_profiles inline (guests get 42501 there): %s;', offenders);
+  END IF;
+
+  IF NOT has_table_privilege('service_role', 'public.provider_profiles', 'SELECT') THEN
+    missing := missing || ' service_role cannot read provider_profiles (the admin verification queue would fail);';
+  END IF;
+
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: the provider_profiles guest-read revoke is broken —%', missing;
+  END IF;
+
+  RAISE NOTICE '_verify: 20261016_11 OK — no guest read of provider_profiles; a provider reads the own row, an admin reads all; authenticated UPDATE is (metadata, updated_at)';
+END $$;
