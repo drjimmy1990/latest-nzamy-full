@@ -31,9 +31,11 @@ export const FREE_LIMIT = 5;
 // ─── Library Paywall Plans ─────────────────────────────────────────────────────
 // NOTE: الصائغ القانوني + السكرتير + AI tokens هي أدوات المحامي حصراً
 // وتظهر في /pricing ضمن باقات المحامي — لا تظهر هنا.
+// `id` is the catalogue id /laws/subscribe and /pricing key on
+// (src/constants/pricing/pricing.library.ts); the CTA below sends it as ?plan=.
 export const PLANS = [
   {
-    id: "lib-quarterly",
+    id: "lib-q1",
     name: "المكتبة القانونية — ربع سنوي", nameEn: "Legal Library — Quarterly",
     price: "١٬٥٠٠", priceEn: "1,500", period: "٣ أشهر", periodEn: "/ 3 months",
     desc: "وصول كامل للأنظمة واللوائح والمبادئ القضائية لمدة ٣ أشهر", descEn: "Full access to laws, regulations and judicial principles for 3 months",

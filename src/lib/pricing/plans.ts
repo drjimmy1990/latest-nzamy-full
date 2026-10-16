@@ -46,8 +46,8 @@ export interface PricingPlan {
 // ─── 1. Standalone Legal Library Plans ────────────────────────────────────────
 
 export const STANDALONE_LIBRARY_PLANS: Record<string, PricingPlan> = {
-  "lib-quarterly": {
-    id: "lib-quarterly",
+  "lib-q1": {
+    id: "lib-q1",
     nameAr: "المكتبة القانونية — ربع سنوي",
     nameEn: "Legal Library — Quarterly",
     priceMonthly: 1500,
@@ -77,7 +77,7 @@ export const STANDALONE_LIBRARY_PLANS: Record<string, PricingPlan> = {
     highlighted: false,
     ctaTextAr: "اشترك الآن",
     ctaTextEn: "Subscribe Now",
-    ctaHref: "/laws/subscribe?plan=lib-quarterly",
+    ctaHref: "/laws/subscribe?plan=lib-q1",
   },
   "lib-annual": {
     id: "lib-annual",

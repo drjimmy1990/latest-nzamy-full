@@ -52,6 +52,16 @@ export function planEntitlementRequest(
   };
 }
 
+/**
+ * The `?plan=` a page was opened with, when it names one of the plans that
+ * page sells (`ids`); otherwise null. /laws/subscribe uses it to mark the plan
+ * the paywall or a /pricing CTA sent; it never requests anything by itself.
+ */
+export function planFromParam(param: string | null | undefined, ids: readonly string[]): string | null {
+  const wanted = param?.trim();
+  return wanted && ids.includes(wanted) ? wanted : null;
+}
+
 /** The `plan` query value of a CTA href, or null. */
 export function planParamOf(href: string): string | null {
   const q = href.indexOf("?");

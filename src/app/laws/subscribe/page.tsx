@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
@@ -14,6 +14,7 @@ import { useUser } from "@/hooks/useUser";
 import { useSubscription } from "@/hooks/useSubscription";
 import { isSupabaseMode } from "@/lib/services/api";
 import { requestEntitlement } from "@/lib/services/entitlementService";
+import { planFromParam } from "@/lib/pricing/planRequest";
 
 // ─── Bilingual ──────────────────────────────────────────────────────────────
 
@@ -229,6 +230,19 @@ export default function LawsSubscribePage() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
+  // `?plan=` from the paywall or a /pricing CTA (lib-q1 / lib-annual): the plan
+  // the visitor chose is marked and scrolled into view. Nothing is requested on
+  // arrival — the request still waits for «اشترك الآن». Read in an effect, not
+  // with useSearchParams (that needs a Suspense boundary for `next build`).
+  const [chosenPlanId, setChosenPlanId] = useState<string | null>(null);
+  useEffect(() => {
+    const chosen = planFromParam(
+      new URLSearchParams(window.location.search).get("plan"),
+      txt.ar.plans.map((p) => p.id).filter((id) => id !== "free"),
+    );
+    setChosenPlanId(chosen);
+    if (chosen) document.getElementById(`plan-${chosen}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, []);
 
   // "pro" tier or higher — src/hooks/useSubscription.ts's
   // "library-full-access" gate — is what actually unlocks the full library.
@@ -258,10 +272,11 @@ export default function LawsSubscribePage() {
     // Guests: no gateway and no entitlement request without a session — the
     // old fallback here created a fake local "subscription" and handed out
     // 3 fabricated referral links (src/lib/invitationStore.ts). The honest
-    // action is to send them to sign in first.
+    // action is to send them to sign in first — and back here, with the plan
+    // they chose (`next`, read by /login through postLoginPath).
     setToast({ ok: false, msg: "يلزم تسجيل الدخول للاشتراك في المكتبة" });
     window.setTimeout(() => {
-      window.location.href = "/login";
+      window.location.href = `/login?next=${encodeURIComponent(`/laws/subscribe?plan=${planId}`)}`;
     }, 1400);
   }
 
@@ -353,9 +368,12 @@ export default function LawsSubscribePage() {
             return (
               <motion.div
                 key={plan.name}
+                id={`plan-${plan.id}`}
                 variants={fadeUp} initial="hidden" animate="show" custom={i + 6}
                 whileHover={{ y: -4, transition: { type: "spring", stiffness: 200, damping: 20 } }}
                 className={`relative rounded-2xl border p-6 transition-all ${
+                  chosenPlanId === plan.id ? "outline outline-2 outline-offset-2 outline-[#C8A762] " : ""
+                }${
                   plan.featured
                     ? isDark
                       ? "bg-gradient-to-b from-[#C8A762]/10 to-zinc-900/80 border-[#C8A762]/30 ring-1 ring-[#C8A762]/20"
@@ -370,6 +388,12 @@ export default function LawsSubscribePage() {
                     keeps its `featured` emphasis styling. The struck-through
                     "was" prices it used to show (٦٠٠ / ٢,٤٠٠ ﷼) are gone too:
                     no real price list ever carried them. */}
+
+                {chosenPlanId === plan.id && (
+                  <span className="absolute top-4 end-4 rounded-full border border-[#C8A762]/40 bg-[#C8A762]/10 px-2.5 py-1 text-[11px] font-bold text-[#9b6f12] dark:text-[#C8A762]">
+                    الخطة التي اخترتها
+                  </span>
+                )}
 
                 <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${plan.color} flex items-center justify-center mb-4 shadow`}>
                   <Icon size={20} weight="fill" className="text-white" />
