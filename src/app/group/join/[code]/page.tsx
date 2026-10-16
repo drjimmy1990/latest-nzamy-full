@@ -3,9 +3,12 @@
 import { motion } from "framer-motion";
 import { UsersThree, ShieldCheck, ArrowRight, Sparkle, CreditCard, Clock, CheckCircle } from "@phosphor-icons/react";
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import { useTheme } from "@/components/ThemeProvider";
 
-export default function GroupJoinPage({ params }: { params: { code: string } }) {
+export default function GroupJoinPage() {
+  // Next 16: a client page reads its params with useParams().
+  const params = useParams<{ code: string }>();
   const { isDark } = useTheme();
   
   // Mock data for the invitation

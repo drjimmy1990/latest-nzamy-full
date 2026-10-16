@@ -9,6 +9,7 @@ import {
   MapPin, Receipt, Users, ListChecks, Eye, Lock,
 } from "@phosphor-icons/react";
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import { useTheme } from "@/components/ThemeProvider";
 import {
   getServiceRequestDetail,
@@ -156,7 +157,10 @@ function toCaseData(r: ServiceRequestDetail): CaseData {
   };
 }
 
-export default function ClientCaseDetailPage({ params }: { params: { id: string } }) {
+export default function ClientCaseDetailPage() {
+  // Next 16 hands a page its params as a Promise; a client page reads them
+  // with useParams() (synchronous `params.id` is undefined there).
+  const params = useParams<{ id: string }>();
   const { isDark } = useTheme();
   const [liveCase, setLiveCase] = useState<CaseData | null>(null);
   const [loading, setLoading] = useState(true);
