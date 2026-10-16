@@ -3,6 +3,18 @@
  * ─────────────────────────────────────────────────────────────
  * Parser for Ministry of Justice Circuits & Entities Email Directory
  * Ingests 2,192 judicial records across 112 pages from the official Markdown archive.
+ *
+ * The owner's 52 address corrections (Q4, emails_affected_52.csv) live in
+ * src/data/circuits-directory-corrections.json and are applied after parsing,
+ * so a re-run reproduces them instead of restoring the printed typos. Each one
+ * must match its row by id, page and printed address, or the run stops: the
+ * ids are positional, and a correction applied to the wrong row is worse than
+ * none.
+ *
+ * Dry by default: it parses, applies the corrections and reports what would
+ * change in src/data/circuits-directory.json. `--write` writes it.
+ *   node scripts/parsers/parse-circuits-directory.mjs [--source <md>] [--out <json>] [--write]
+ * Local files only; it never touches a database.
  * ─────────────────────────────────────────────────────────────
  */
 
@@ -19,6 +31,7 @@ const SOURCE_PATH = path.resolve(
 );
 
 const OUTPUT_PATH = path.resolve(projectRoot, "src/data/circuits-directory.json");
+const CORRECTIONS_PATH = path.resolve(projectRoot, "src/data/circuits-directory-corrections.json");
 
 // Regions list in Saudi Arabia
 const SAUDI_REGIONS = [
@@ -202,12 +215,59 @@ function detectRegionAndCity(name, rawRegion) {
   return { region: "منطقة الرياض", city: "الرياض" }; // fallback
 }
 
-export function parseCircuitsDirectory() {
-  if (!fs.existsSync(SOURCE_PATH)) {
-    throw new Error(`Source file not found at: ${SOURCE_PATH}`);
+/**
+ * Apply the owner's corrections to parsed rows, in place. Pure (no I/O), so it
+ * is unit-tested without the source file.
+ *
+ * A correction names its row three ways — id, page and the printed address
+ * (`rawEmail`) — and all three must agree, or this throws. The corrected
+ * address becomes `email` (what copy and mailto use) and, on a row still
+ * flagged for verification, `suggestedEmail` too. Flags are left alone: an
+ * unconfirmed row stays «يتطلب تحققاً» (Q4).
+ *
+ * Returns how many rows' addresses changed.
+ */
+export function applyOwnerCorrections(circuits, corrections) {
+  const byId = new Map(circuits.map((c) => [c.id, c]));
+  const seen = new Set();
+  let changed = 0;
+  for (const fix of corrections) {
+    if (seen.has(fix.id)) throw new Error(`Correction for ${fix.id} is listed twice`);
+    seen.add(fix.id);
+    const row = byId.get(fix.id);
+    if (!row || row.page !== fix.page || row.rawEmail !== fix.printed) {
+      const found = row ? `page ${row.page}, printed ${row.rawEmail}` : "no such row";
+      throw new Error(`Correction for ${fix.id} (page ${fix.page}, printed ${fix.printed}) matches no row: ${found}`);
+    }
+    if (row.email !== fix.email) changed++;
+    row.email = fix.email;
+    if (row.needsVerification) row.suggestedEmail = fix.email;
+  }
+  return changed;
+}
+
+function readCorrections(file) {
+  const doc = JSON.parse(fs.readFileSync(file, "utf8"));
+  if (!Array.isArray(doc.corrections) || doc.corrections.length === 0) {
+    throw new Error(`No corrections in ${file}`);
+  }
+  return doc.corrections;
+}
+
+/** Rows (by id) whose fields differ between two payloads; metadata is not compared. */
+function changedRows(before, after) {
+  const old = new Map((before?.circuits ?? []).map((c) => [c.id, JSON.stringify(c)]));
+  const ids = new Set([...old.keys(), ...after.circuits.map((c) => c.id)]);
+  const next = new Map(after.circuits.map((c) => [c.id, JSON.stringify(c)]));
+  return [...ids].filter((id) => old.get(id) !== next.get(id));
+}
+
+export function parseCircuitsDirectory({ source = SOURCE_PATH, out = OUTPUT_PATH, write = false } = {}) {
+  if (!fs.existsSync(source)) {
+    throw new Error(`Source file not found at: ${source}`);
   }
 
-  const content = fs.readFileSync(SOURCE_PATH, "utf8");
+  const content = fs.readFileSync(source, "utf8");
 
   // 1. Parse the 36 known verification cases
   const verificationMap = new Map();
@@ -281,12 +341,15 @@ export function parseCircuitsDirectory() {
       let verificationStatus = "معتمد";
 
       if (hasWarningMarker) {
-        const printedMatch = emailRaw.match(/⚠️\s*`?([^\s`*(]+)`?/);
+        // The printed address is the whole backticked value: five rows carry a
+        // stray space («GEN-ARD JON-ID1@moj.gov.sa») that an unquoted match
+        // cut at the space («GEN-ARD»).
+        const printedMatch = emailRaw.match(/⚠️\s*(?:`([^`]+)`|([^\s`*(]+))/);
         const suggestedMatch = emailRaw.match(/الصيغة المرجّحة:\s*`?([^\s`*)]+)`?/);
         const noteMatch = emailRaw.match(/\*\((.*?)\)\*/);
 
         if (printedMatch) {
-          printedEmail = printedMatch[1].trim();
+          printedEmail = (printedMatch[1] ?? printedMatch[2]).trim();
         }
         if (suggestedMatch) {
           suggestedEmail = suggestedMatch[1].trim();
@@ -331,11 +394,7 @@ export function parseCircuitsDirectory() {
     }
   }
 
-  // Write output JSON
-  const outputDir = path.dirname(OUTPUT_PATH);
-  if (!fs.existsSync(outputDir)) {
-    fs.mkdirSync(outputDir, { recursive: true });
-  }
+  const corrected = applyOwnerCorrections(circuits, readCorrections(CORRECTIONS_PATH));
 
   const payload = {
     metadata: {
@@ -351,14 +410,35 @@ export function parseCircuitsDirectory() {
     circuits
   };
 
-  fs.writeFileSync(OUTPUT_PATH, JSON.stringify(payload, null, 2), "utf8");
   console.log(`✔ Successfully parsed ${circuits.length} circuits.`);
+  console.log(`✔ Owner corrections applied: ${corrected} address(es) changed from the printed source.`);
   console.log(`✔ Verified: ${payload.metadata.verifiedCount}, Needs verification: ${payload.metadata.needsVerificationCount}`);
-  console.log(`✔ Output saved to: ${OUTPUT_PATH}`);
+
+  const existing = fs.existsSync(out) ? JSON.parse(fs.readFileSync(out, "utf8")) : null;
+  const changed = changedRows(existing, payload);
+  console.log(`✔ Rows that differ from ${out}: ${changed.length}${changed.length ? ` (${changed.slice(0, 10).join(", ")}${changed.length > 10 ? ", …" : ""})` : ""}`);
+
+  if (!write) {
+    console.log("Dry run: nothing written. Pass --write to save the output.");
+    return payload;
+  }
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  fs.writeFileSync(out, JSON.stringify(payload, null, 2), "utf8");
+  console.log(`✔ Output saved to: ${out}`);
 
   return payload;
 }
 
+function argValue(args, name) {
+  const i = args.indexOf(name);
+  return i >= 0 && args[i + 1] ? path.resolve(args[i + 1]) : undefined;
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  parseCircuitsDirectory();
+  const args = process.argv.slice(2);
+  parseCircuitsDirectory({
+    source: argValue(args, "--source"),
+    out: argValue(args, "--out"),
+    write: args.includes("--write"),
+  });
 }

@@ -1,0 +1,318 @@
+{
+  "source": "emails_affected_52.csv — the owner's visual check of the printed directory, 2026-10-12 (package 2026-10-06, 03_المرفقات_والبيانات_المفقودة)",
+  "rule": "Q4: every address in standard Latin digits; a row flagged before this table stays «يتطلب تحققاً» until the owner confirms it. scripts/parsers/parse-circuits-directory.mjs applies these after parsing and refuses to run if one matches no row.",
+  "corrections": [
+    {
+      "id": "moj-cir-0230",
+      "page": 13,
+      "printed": "moj.gov.sa@GEN-SAM-COURT٢",
+      "email": "GEN-SAM-COURT2@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0236",
+      "page": 13,
+      "printed": "moj.gov.sa@GEN-SHG-COURT٢",
+      "email": "GEN-SHG-COURT2@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0366",
+      "page": 20,
+      "printed": "ktabh١D@moj.gov.sa",
+      "email": "ktabh1D@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0368",
+      "page": 20,
+      "printed": "HAS@moj.gov.sa-KIT١",
+      "email": "KIT1-HAS@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0369",
+      "page": 20,
+      "printed": "KHO@moj.gov.sa-KIT١",
+      "email": "KIT1-KHO@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0370",
+      "page": 20,
+      "printed": "BGA@moj.gov.sa-KIT٢",
+      "email": "KIT2-BGA@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0371",
+      "page": 20,
+      "printed": "DAM@moj.gov.sa-KIT٢",
+      "email": "KIT2-DAM@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0372",
+      "page": 20,
+      "printed": "HAS@moj.gov.sa-KIT٢",
+      "email": "KIT2-HAS@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0373",
+      "page": 20,
+      "printed": "KHO@moj.gov.sa-KIT٢",
+      "email": "KIT2-KHO@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0409",
+      "page": 22,
+      "printed": "ktabh١R@moj.gov.sa",
+      "email": "ktabh1R@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0410",
+      "page": 22,
+      "printed": "ktabh١Rj@moj.gov.sa",
+      "email": "ktabh1Rj@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0411",
+      "page": 22,
+      "printed": "RYD@moj.gov.sa-KIT١",
+      "email": "KIT1-RYD@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0412",
+      "page": 22,
+      "printed": "KIT٢E-RYD@moj.gov.sa",
+      "email": "KIT2E-RYD@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0413",
+      "page": 22,
+      "printed": "HAIR@moj.gov.sa-KIT٢",
+      "email": "KIT2-HAIR@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0414",
+      "page": 22,
+      "printed": "KIT٢S-RYD@moj.gov.sa",
+      "email": "KIT2S-RYD@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0441",
+      "page": 24,
+      "printed": "KHJ@moj.gov.sa-KIT٢",
+      "email": "KIT2-KHJ@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0442",
+      "page": 24,
+      "printed": "KIT٢N-RYD@moj.gov.sa",
+      "email": "KIT2N-RYD@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0445",
+      "page": 24,
+      "printed": "BUR@moj.gov.sa-KIT١",
+      "email": "KIT1-BUR@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0446",
+      "page": 24,
+      "printed": "BUR@moj.gov.sa-KIT٢",
+      "email": "KIT2-BUR@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0460",
+      "page": 25,
+      "printed": "KIT١E-MAD@moj.gov.sa",
+      "email": "KIT1E-MAD@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0461",
+      "page": 25,
+      "printed": "KIT١W-MAD@moj.gov.sa",
+      "email": "KIT1W-MAD@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0462",
+      "page": 25,
+      "printed": "KIT٢E-MAD@moj.gov.sa",
+      "email": "KIT2E-MAD@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0463",
+      "page": 25,
+      "printed": "KIT٢W-MAD@moj.gov.sa",
+      "email": "KIT2W-MAD@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0464",
+      "page": 25,
+      "printed": "YEN@moj.gov.sa-KIT٢",
+      "email": "KIT2-YEN@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0475",
+      "page": 25,
+      "printed": "TAB@moj.gov.sa-KIT١",
+      "email": "KIT1-TAB@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0482",
+      "page": 26,
+      "printed": "TAB@moj.gov.sa-KIT٢",
+      "email": "KIT2-TAB@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0483",
+      "page": 26,
+      "printed": "Jaz@moj.gov.sa-KIT١",
+      "email": "KIT1-Jaz@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0484",
+      "page": 26,
+      "printed": "Jaz@moj.gov.sa-KIT٢",
+      "email": "KIT2-Jaz@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0498",
+      "page": 27,
+      "printed": "Hal@moj.gov.sa-KIT١",
+      "email": "KIT1-Hal@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0499",
+      "page": 27,
+      "printed": "Hal@moj.gov.sa-KIT٢",
+      "email": "KIT2-Hal@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0509",
+      "page": 27,
+      "printed": "TTH@moj.gov.sa-KIT٢",
+      "email": "KIT2-TTH@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0511",
+      "page": 27,
+      "printed": "ABH@moj.gov.sa-KIT١",
+      "email": "KIT1-ABH@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0512",
+      "page": 27,
+      "printed": "BIS@moj.gov.sa-KIT١",
+      "email": "KIT1-BIS@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0513",
+      "page": 27,
+      "printed": "ABH@moj.gov.sa-KIT٢",
+      "email": "KIT2-ABH@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0514",
+      "page": 27,
+      "printed": "BIS@moj.gov.sa-KIT٢",
+      "email": "KIT2-BIS@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0534",
+      "page": 28,
+      "printed": "ktabh١M@moj.gov.sa",
+      "email": "ktabh1M@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0535",
+      "page": 28,
+      "printed": "ktabh١J@moj.gov.sa",
+      "email": "ktabh1J@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0536",
+      "page": 28,
+      "printed": "GON@moj.gov.sa-KIT١",
+      "email": "KIT1-GON@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0537",
+      "page": 29,
+      "printed": "JMO@moj.gov.sa-KIT١",
+      "email": "KIT1-JMO@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0538",
+      "page": 29,
+      "printed": "RNH@moj.gov.sa-KIT١",
+      "email": "KIT1-RNH@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0539",
+      "page": 29,
+      "printed": "TAF@moj.gov.sa-KIT١",
+      "email": "KIT1-TAF@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0540",
+      "page": 29,
+      "printed": "KIT٢E-MECK@moj.gov.sa",
+      "email": "KIT2E-MECK@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0541",
+      "page": 29,
+      "printed": "KIT٢N-JED@moj.gov.sa",
+      "email": "KIT2N-JED@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0542",
+      "page": 29,
+      "printed": "KIT٢S-JED@moj.gov.sa",
+      "email": "KIT2S-JED@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0543",
+      "page": 29,
+      "printed": "Taif@moj.gov.sa-KIT٢",
+      "email": "KIT2-Taif@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0554",
+      "page": 29,
+      "printed": "KIT٢W-MECK@moj.gov.sa",
+      "email": "KIT2W-MECK@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0555",
+      "page": 29,
+      "printed": "NAJ@moj.gov.sa-KIT١",
+      "email": "KIT1-NAJ@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0827",
+      "page": 45,
+      "printed": "GEN-ARD JON-ID1@moj.gov.sa",
+      "email": "GEN-ARD-JON-ID1@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-0828",
+      "page": 45,
+      "printed": "GEN-ARD SHI-ID1@moj.gov.sa",
+      "email": "GEN-ARD-SHI-ID1@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-1622",
+      "page": 84,
+      "printed": "GEN- GIL-JC2@moj.gov.sa",
+      "email": "GEN-GIL-JC2@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-1716",
+      "page": 89,
+      "printed": "GEN- GIL-JC3@moj.gov.sa",
+      "email": "GEN-GIL-JC3@moj.gov.sa"
+    },
+    {
+      "id": "moj-cir-2079",
+      "page": 107,
+      "printed": "GEN- JMS-PC@moj.gov.sa",
+      "email": "GEN-JMS-PC@moj.gov.sa"
+    }
+  ]
+}
