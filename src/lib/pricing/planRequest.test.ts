@@ -86,3 +86,45 @@ test("every client-registration CTA carries its own plan id in ?plan=", () => {
   // individuals 4 × 2 languages, micro 1 × 2, ngo 2 × 2
   assert.equal(seen, 14);
 });
+
+// ── N5 (fix plan 2026-10-16): the library checkout path ─────────────────────
+
+test("planFromParam keeps only a plan the page sells", async () => {
+  const { planFromParam } = await import("./planRequest.ts");
+  const ids = ["lib-q1", "lib-annual"];
+  assert.equal(planFromParam("lib-q1", ids), "lib-q1");
+  assert.equal(planFromParam(" lib-annual ", ids), "lib-annual");
+  for (const v of [null, undefined, "", "lib-quarterly", "free", "LIB-Q1"]) {
+    assert.equal(planFromParam(v, ids), null, String(v));
+  }
+});
+
+test("the paywall and every library CTA send the id /laws/subscribe knows", () => {
+  const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
+  const subscribe = read("../../app/laws/subscribe/page.tsx");
+  const subscribeIds = new Set([...subscribe.matchAll(/id: "(lib-[\w-]+)"/g)].map((m) => m[1]));
+  assert.deepEqual([...subscribeIds].sort(), ["lib-annual", "lib-q1", "lib-q2"]);
+
+  const paywall = read("../../app/laws/components/PaywallModal.tsx");
+  const paywallIds = [...paywall.matchAll(/id: "(lib-[\w-]+)"/g)].map((m) => m[1]);
+  assert.ok(paywallIds.length > 0);
+  for (const id of paywallIds) assert.ok(subscribeIds.has(id), `paywall plan ${id}`);
+  assert.match(paywall, /href=\{`\/laws\/subscribe\?plan=\$\{plan\.id\}`\}/);
+
+  for (const rel of ["./plans.ts", "../../constants/pricing/pricing.library.ts"]) {
+    for (const m of read(rel).matchAll(/\/laws\/subscribe\?plan=([\w-]+)/g)) {
+      assert.ok(subscribeIds.has(m[1]), `${rel}: ?plan=${m[1]}`);
+    }
+  }
+});
+
+test("/laws/subscribe marks the ?plan= it was sent and takes a guest to /login and back", () => {
+  const src = readFileSync(new URL("../../app/laws/subscribe/page.tsx", import.meta.url), "utf8");
+  assert.match(src, /planFromParam\(\s*new URLSearchParams\(window\.location\.search\)\.get\("plan"\),/);
+  assert.match(src, /chosenPlanId === plan\.id && \(/);
+  // Arriving with a plan never sends a request: only the button does.
+  const effect = src.slice(src.indexOf("const [chosenPlanId"), src.indexOf("// \"pro\" tier or higher"));
+  assert.doesNotMatch(effect, /requestEntitlement|handleSubscribe/);
+  assert.match(src, /window\.location\.href = `\/login\?next=\$\{encodeURIComponent\(`\/laws\/subscribe\?plan=\$\{planId\}`\)\}`;/);
+  assert.doesNotMatch(src, /useSearchParams\(|import[^;]*useSearchParams/);
+});

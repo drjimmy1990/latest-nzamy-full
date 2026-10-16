@@ -31,9 +31,11 @@ export const FREE_LIMIT = 5;
 // ─── Library Paywall Plans ─────────────────────────────────────────────────────
 // NOTE: الصائغ القانوني + السكرتير + AI tokens هي أدوات المحامي حصراً
 // وتظهر في /pricing ضمن باقات المحامي — لا تظهر هنا.
+// `id` is the catalogue id /laws/subscribe and /pricing key on
+// (src/constants/pricing/pricing.library.ts); the CTA below sends it as ?plan=.
 export const PLANS = [
   {
-    id: "lib-quarterly",
+    id: "lib-q1",
     name: "المكتبة القانونية — ربع سنوي", nameEn: "Legal Library — Quarterly",
     price: "١٬٥٠٠", priceEn: "1,500", period: "٣ أشهر", periodEn: "/ 3 months",
     desc: "وصول كامل للأنظمة واللوائح والمبادئ القضائية لمدة ٣ أشهر", descEn: "Full access to laws, regulations and judicial principles for 3 months",
@@ -57,14 +59,14 @@ export const PLANS = [
     price: "٥٬٠٠٠", priceEn: "5,000", period: "سنوياً", periodEn: "/ year",
     desc: "الاشتراك المعتمد الكامل لـ ١٢ شهراً — ٥٬٠٠٠ ر.س/سنة مع تصدير PDF وإضافة AI", descEn: "Canonical full annual access for 12 months with PDF export & AI Add-on eligibility",
     features: [
-      "وصول كامل وغير محدود لـ +٥٬٠٠٠ نظام ولائحة ومبدأ قضائي",
+      "وصول كامل وغير محدود للأنظمة واللوائح والمبادئ القضائية",
       "تصدير نصوص ومواد الأنظمة بصيغة PDF",
       "إشعارات التعديلات التشريعية وتتبع التحديثات فوراً",
       "إمكانية تفعيل إضافة باحث الذكاء الاصطناعي (٢٬٥٠٠ ر.س/سنة)",
       "دعم فني ذو أولوية عبر واتساب المخصص",
     ],
     featuresEn: [
-      "Unlimited access to 5,000+ laws, regulations & principles",
+      "Unlimited access to laws, regulations & principles",
       "Export law articles as official PDF documents",
       "Instant amendment alerts & legislative tracking",
       "Eligible for AI Legal Researcher Add-on (2,500 SAR/year)",

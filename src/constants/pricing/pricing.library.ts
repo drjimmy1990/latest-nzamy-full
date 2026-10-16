@@ -17,7 +17,7 @@ import { Plan } from "./pricing.types";
  * gaps were 17–25%). A reference price comes back only once a real one exists.
  *
  * All plans include:
- *   ✓ Full access to 5,000+ laws, regulations, judicial principles
+ *   ✓ Full access to laws, regulations, judicial principles
  *   ✓ AI-powered search
  *   ✓ Daily legislative updates
  *   ✓ 3 colleague invitations for free trial
@@ -43,7 +43,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       color: "border-blue-200/60",
       features: {
         ai: [
-          "وصول كامل لـ +٥٬٠٠٠ نظام ولائحة ومبدأ قضائي",
+          "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث ذكي AI في المكتبة القانونية",
           "تحديثات يومية فور صدور الأنظمة",
           "٣ دعوات لزملائك (تجربة ١ شهر لكل دعوة)",
@@ -72,7 +72,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       color: "border-royal/20",
       features: {
         ai: [
-          "وصول كامل لـ +٥٬٠٠٠ نظام ولائحة ومبدأ قضائي",
+          "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث ذكي AI في المكتبة القانونية",
           "تحديثات يومية فور صدور الأنظمة",
           "٣ دعوات لزملائك (تجربة ٢ شهر لكل دعوة)",
@@ -105,7 +105,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       color: "border-gold/20",
       features: {
         ai: [
-          "وصول كامل لـ +٥٬٠٠٠ نظام ولائحة ومبدأ قضائي",
+          "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث ذكي AI في المكتبة القانونية",
           "تحديثات يومية فور صدور الأنظمة",
           "٣ دعوات لزملائك (تجربة ٣ أشهر لكل دعوة)",
@@ -140,7 +140,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       color: "border-blue-200/60",
       features: {
         ai: [
-          "Full access to 5,000+ laws, regulations & principles",
+          "Full access to laws, regulations & principles",
           "AI-powered smart search",
           "Daily updates as new laws are issued",
           "3 colleague invitations (1-month trial each)",
@@ -169,7 +169,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       color: "border-royal/20",
       features: {
         ai: [
-          "Full access to 5,000+ laws, regulations & principles",
+          "Full access to laws, regulations & principles",
           "AI-powered smart search",
           "Daily updates as new laws are issued",
           "3 colleague invitations (2-month trial each)",
@@ -200,7 +200,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       color: "border-gold/20",
       features: {
         ai: [
-          "Full access to 5,000+ laws, regulations & principles",
+          "Full access to laws, regulations & principles",
           "AI-powered smart search",
           "Daily updates as new laws are issued",
           "3 colleague invitations (3-month trial each)",
@@ -239,7 +239,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       color: "border-blue-200/60",
       features: {
         ai: [
-          "وصول كامل لـ +٥٬٠٠٠ نظام ولائحة ومبدأ قضائي",
+          "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث ذكي AI في المكتبة القانونية لكل الأعضاء",
           "تحديثات يومية فور صدور الأنظمة",
           "٣ دعوات لزملائك (تجربة ٣ أشهر لكل دعوة)",
@@ -270,7 +270,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       color: "border-royal/20",
       features: {
         ai: [
-          "وصول كامل لـ +٥٬٠٠٠ نظام ولائحة ومبدأ قضائي",
+          "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث ذكي AI في المكتبة القانونية لكل الأعضاء",
           "تحديثات يومية فور صدور الأنظمة",
           "٣ دعوات لزملائك (تجربة ٣ أشهر لكل دعوة)",
@@ -301,7 +301,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       color: "border-gold/20",
       features: {
         ai: [
-          "وصول كامل لـ +٥٬٠٠٠ نظام ولائحة ومبدأ قضائي",
+          "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث ذكي AI في المكتبة القانونية لكل الأعضاء",
           "تحديثات يومية فور صدور الأنظمة",
           "٣ دعوات لزملائك (تجربة ٣ أشهر لكل دعوة)",
@@ -332,7 +332,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       color: "border-zinc-200/60 dark:border-white/10",
       features: {
         ai: [
-          "وصول كامل لـ +٥٬٠٠٠ نظام ولائحة ومبدأ قضائي",
+          "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث ذكي AI في المكتبة القانونية لكل الأعضاء",
           "تحديثات يومية فور صدور الأنظمة",
           "دعوات للزملاء مخصصة حسب الطلب",
@@ -365,7 +365,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       color: "border-blue-200/60",
       features: {
         ai: [
-          "Full access to 5,000+ laws, regulations & principles",
+          "Full access to laws, regulations & principles",
           "AI-powered smart search for all team members",
           "Daily updates as new laws are issued",
           "3 colleague invitations (3-month trial each)",
@@ -396,7 +396,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       color: "border-royal/20",
       features: {
         ai: [
-          "Full access to 5,000+ laws, regulations & principles",
+          "Full access to laws, regulations & principles",
           "AI-powered smart search for all team members",
           "Daily updates as new laws are issued",
           "3 colleague invitations (3-month trial each)",
@@ -427,7 +427,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       color: "border-gold/20",
       features: {
         ai: [
-          "Full access to 5,000+ laws, regulations & principles",
+          "Full access to laws, regulations & principles",
           "AI-powered smart search for all team members",
           "Daily updates as new laws are issued",
           "3 colleague invitations (3-month trial each)",
@@ -458,7 +458,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       color: "border-zinc-200/60 dark:border-white/10",
       features: {
         ai: [
-          "Full access to 5,000+ laws, regulations & principles",
+          "Full access to laws, regulations & principles",
           "AI-powered smart search for all team members",
           "Daily updates as new laws are issued",
           "Custom colleague invites",

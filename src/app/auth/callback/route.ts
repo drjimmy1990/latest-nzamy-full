@@ -158,9 +158,9 @@ export async function GET(request: Request) {
   // No code, a failed exchange, or a session that carries no user: nothing
   // here can route the caller, so send them back to sign in.
   //
-  // KNOWN GAP, owned by /login, not by this file: src/app/login/page.tsx never
-  // reads the query string (it imports useRouter at :4 and no useSearchParams;
-  // its `error` at :151 is local component state), so this parameter renders
+  // KNOWN GAP, owned by /login, not by this file: src/app/login/page.tsx reads
+  // only `?next=` from the query string, never `?error=` (its `error` is local
+  // component state), so this parameter renders
   // nothing and the person sees an ordinary sign-in page with no explanation
   // of what went wrong. The parameter is kept so that whoever fixes /login has
   // something to read.

@@ -10759,7 +10759,7 @@
       "rawEmail": "GEN-ARD JON-ID1@moj.gov.sa",
       "needsVerification": true,
       "suggestedEmail": "GEN-ARD-JON-ID1@moj.gov.sa",
-      "verificationStatus": "خلل مسافة داخلية في المصدر — الصيغة المرجّحة: `GEN-ARD-JON-ID1@moj.gov.sa` — ثقة: عالية"
+      "verificationStatus": "مرجّحة (صُححت بالاستناد لمصدر خارجي غير رسمي)"
     },
     {
       "id": "moj-cir-0828",
@@ -10772,7 +10772,7 @@
       "rawEmail": "GEN-ARD SHI-ID1@moj.gov.sa",
       "needsVerification": true,
       "suggestedEmail": "GEN-ARD-SHI-ID1@moj.gov.sa",
-      "verificationStatus": "خلل مسافة داخلية في المصدر — الصيغة المرجّحة: `GEN-ARD-SHI-ID1@moj.gov.sa` — ثقة: عالية"
+      "verificationStatus": "مرجّحة (صُححت بالاستناد لمصدر خارجي غير رسمي)"
     },
     {
       "id": "moj-cir-0829",
@@ -21094,7 +21094,7 @@
       "rawEmail": "GEN- GIL-JC2@moj.gov.sa",
       "needsVerification": true,
       "suggestedEmail": "GEN-GIL-JC2@moj.gov.sa",
-      "verificationStatus": "خلل مسافة داخلية في المصدر — الصيغة المرجّحة: `GEN-GIL-JC2@moj.gov.sa` — ثقة: عالية"
+      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
     },
     {
       "id": "moj-cir-1623",
@@ -22316,7 +22316,7 @@
       "rawEmail": "GEN- GIL-JC3@moj.gov.sa",
       "needsVerification": true,
       "suggestedEmail": "GEN-GIL-JC3@moj.gov.sa",
-      "verificationStatus": "خلل مسافة داخلية في المصدر — الصيغة المرجّحة: `GEN-GIL-JC3@moj.gov.sa` — ثقة: عالية"
+      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
     },
     {
       "id": "moj-cir-1717",
@@ -27035,7 +27035,7 @@
       "rawEmail": "GEN- JMS-PC@moj.gov.sa",
       "needsVerification": true,
       "suggestedEmail": "GEN-JMS-PC@moj.gov.sa",
-      "verificationStatus": "خلل مسافة داخلية في المصدر — الصيغة المرجّحة: `GEN-JMS-PC@moj.gov.sa` — ثقة: عالية"
+      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
     },
     {
       "id": "moj-cir-2080",

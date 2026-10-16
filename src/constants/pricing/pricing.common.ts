@@ -79,7 +79,7 @@ export const faqs: { ar: FaqItem[]; en: FaqItem[] } = {
     { q: "هل التراجع أو الترقية بين الباقات مجاني؟", a: "الترقية فورية ومجانية. التراجع يسري من بداية الدورة الفوترة التالية." },
     { q: "هل الترافع يعني حضور المحامي أمام المحكمة فعلياً؟", a: "نعم، الترافع في باقات الشركات يعني حضور محامٍ معتمد من شبكة نظامي أمام المحكمة فعلياً، ويُدار عبر سوق المهنيين." },
     { q: "كيف تعمل خدمة 'الدفع بالعمل القانوني'؟", a: "لا تحتاج اشتراكاً. تختار الخدمة وتدفع مباشرة. المنصة تأخذ ٨٪ عمولة، والباقي يذهب للمزود أو المحامي المختار." },
-    { q: "ما هي المكتبة القانونية وكيف أشترك فيها؟", a: "المكتبة القانونية تضم +٥٬٠٠٠ نظام ولائحة ومبدأ قضائي. مشمولة مجاناً لكل المحامين وشركات المحاماة. لغيرهم: ١,٥٠٠ ر.س/سنة أو ١٧٥ ر.س/شهر." },
+    { q: "ما هي المكتبة القانونية وكيف أشترك فيها؟", a: "المكتبة القانونية تضم الأنظمة واللوائح والمبادئ القضائية. مشمولة مجاناً لكل المحامين وشركات المحاماة. لغيرهم: ١,٥٠٠ ر.س/سنة أو ١٧٥ ر.س/شهر." },
     { q: "هل المرشد القضائي متاح لغير المحامين؟", a: "لا، المرشد القضائي أداة متخصصة حصرية للمحامين المسجلين فقط." },
   ],
   en: [
@@ -89,7 +89,7 @@ export const faqs: { ar: FaqItem[]; en: FaqItem[] } = {
     { q: "Is upgrading or downgrading free?", a: "Upgrades are instant and free. Downgrades take effect from the next billing cycle." },
     { q: "Does litigation mean actual court presence?", a: "Yes, litigation in company plans means a certified Nezamy network lawyer physically attends court, managed via the Professional Marketplace." },
     { q: "How does the Pay-Per-Use service work?", a: "No subscription needed. Choose your service, pay directly. The platform takes an 8% commission; the rest goes to the selected provider or lawyer." },
-    { q: "What is the Legal Library and how do I subscribe?", a: "The Legal Library contains 5,000+ laws, regulations, and judicial principles. It's free for all lawyers and law firms. For others: SAR 1,500/year or SAR 175/month." },
+    { q: "What is the Legal Library and how do I subscribe?", a: "The Legal Library contains laws, regulations, and judicial principles. It's free for all lawyers and law firms. For others: SAR 1,500/year or SAR 175/month." },
     { q: "Is the Judicial Guide available for non-lawyers?", a: "No, the Judicial Guide is an exclusive tool available only to registered lawyers." },
   ],
 };

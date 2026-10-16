@@ -190,6 +190,9 @@ export function FeqhTabContent({
         <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" : "space-y-4"}>
           {displayedCards.map(({ key: cardKey, book, title: cardTitle, volumesLabel }) => {
             const isBookFree = book.free || hasLibraryAccess;
+            // A search hit the server locked opens the book (its reader masks
+            // the block) but is not «متاح»: only part of its text is free.
+            const showAvailable = !book.locked;
             return (
               <motion.div
                 key={cardKey}
@@ -254,7 +257,7 @@ export function FeqhTabContent({
                           <p className="text-[10px] text-amber-600 dark:text-[#C8A762] font-semibold mt-1">{book.author}</p>
                         )}
                       </div>
-                      {book.free && (
+                      {book.free && showAvailable && (
                         <span className="px-2 py-0.5 text-[9px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-md flex items-center gap-1">
                           <Sparkle size={9} weight="fill" />
                           {isRTL ? "متاح" : "FREE"}
@@ -325,7 +328,7 @@ export function FeqhTabContent({
                           {book.categoryLabel}
                         </span>
                         )}
-                        {isBookFree && (
+                        {isBookFree && showAvailable && (
                           <span className="px-2 py-1 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
                             <Sparkle size={10} weight="fill" />
                             {isRTL ? "متاح" : "FREE"}

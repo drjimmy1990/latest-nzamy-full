@@ -11,7 +11,6 @@ import {
   ArrowLeft,
   Check,
   Star,
-  Clock,
   CurrencyDollar,
   ShieldCheck,
   Brain,
@@ -169,11 +168,14 @@ export default function IndividualsPage() {
               >
                 {/* No «ضمان مالي كامل — لا تُصرف الأتعاب قبل الإنجاز» badge
                     (owner Q3/Q28): fees are paid outside the platform, which
-                    holds nothing — there is no release to guarantee. */}
+                    holds nothing — there is no release to guarantee.
+                    No «معتمدون من وزارة العدل»: the platform's verification is
+                    its own check on the account, not a ministry accreditation
+                    (as on /lawyers/browse). No «استجابة فورية — خلال ١٥ دقيقة
+                    أو أقل» tile: no response time is measured or promised. */}
                 {[
                   { icon: Brain, label: isAr ? "ذكاء اصطناعي قانوني" : "Legal AI", desc: isAr ? "مدرّب على الأنظمة السعودية" : "Trained on Saudi law", color: "text-royal bg-royal/5 dark:bg-royal/20" },
-                  { icon: Star, label: isAr ? "محامون موثّقون" : "Verified Lawyers", desc: isAr ? "معتمدون من وزارة العدل" : "Ministry of Justice certified", color: "text-gold-dark bg-gold/10" },
-                  { icon: Clock, label: isAr ? "استجابة فورية" : "Instant Response", desc: isAr ? "خلال ١٥ دقيقة أو أقل" : "Within 15 minutes or less", color: "text-blue-600 bg-blue-50 dark:bg-blue-500/10" },
+                  { icon: Star, label: isAr ? "محامون موثّقون" : "Verified Lawyers", desc: isAr ? "موثّقون على المنصة" : "Verified on the platform", color: "text-gold-dark bg-gold/10" },
                 ].map((item, i) => {
                   const Icon = item.icon;
                   return (

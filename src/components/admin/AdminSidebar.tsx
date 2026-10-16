@@ -10,9 +10,10 @@ import {
   Scales, ShieldCheck, Database, CaretDown, ClipboardText,
   Money, Megaphone, Star, Globe, BookOpen, Article,
   Storefront, ToggleRight, Flag, Tag, UsersFour, Crown, Tray, Files,
-  Lightbulb, List,
+  Lightbulb, List, House,
 } from "@phosphor-icons/react";
 import { useNotifications } from "@/hooks/useNotifications";
+import { logout } from "@/hooks/useUser";
 import { createClient } from "@/lib/supabase/client";
 import { toArabicDigits } from "@/lib/services/arabicCount";
 
@@ -319,12 +320,23 @@ export function AdminSidebar() {
         })}
       </nav>
 
-      {/* Footer */}
-      <div className="border-t border-white/[0.05] p-3">
+      {/* Footer. The console had no way to sign out: «العودة للموقع» wore the
+          sign-out icon but only opened the home page, still signed in. The
+          button calls the same logout() as the dashboard sidebar
+          (SharedSidebar) — Supabase signOut, then /login. */}
+      <div className="border-t border-white/[0.05] p-3 space-y-1">
         <Link href="/" className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-[11px] text-zinc-600 hover:text-zinc-300 hover:bg-white/[0.04] transition-all">
-          <SignOut size={13} />
+          <House size={13} />
           العودة للموقع
         </Link>
+        <button
+          type="button"
+          onClick={() => logout()}
+          className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-[11px] font-semibold text-rose-400 hover:bg-rose-500/[0.08] transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/40"
+        >
+          <SignOut size={13} />
+          تسجيل الخروج
+        </button>
       </div>
     </aside>
     </>

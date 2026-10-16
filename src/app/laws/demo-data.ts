@@ -93,6 +93,8 @@ export interface FeqhBookDemo {
   categoryLabel: string;
   desc: string;
   free: boolean;
+  /** A search hit the server locked (its snippet is cut short). Catalogue rows never carry it. */
+  locked?: boolean;
   progress: number;
   volCount: number;
   lastUpdated: string;

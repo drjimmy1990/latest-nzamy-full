@@ -19,6 +19,8 @@
  * No `@/` imports: node:test cannot resolve the alias.
  */
 
+import { countPhraseAr } from "../../lib/services/arabicCount.ts";
+
 export const SEARCH_SECTIONS = ["laws", "precedents", "orders", "feqh"] as const;
 export type SearchSection = (typeof SEARCH_SECTIONS)[number];
 
@@ -125,6 +127,41 @@ export function formatCountAr(d: SectionCountDisplay | { value: number; atLeast:
     return d.kind === "atLeast" ? `أكثر من ${formatArabicNumber(d.value)}` : formatArabicNumber(d.value);
   }
   return d.atLeast ? `أكثر من ${formatArabicNumber(d.value)}` : formatArabicNumber(d.value);
+}
+
+// ─── Laws: matches are counted, cards are grouped ────────────────────────────
+//
+// counts.laws counts MATCHES (law-title hits and article hits), while the page
+// lists one card per law (lawSearchGroups.ts): «(37)» sat over five cards, and
+// «تحميل المزيد (معروض ٥٠ …)» counted rows the grouping had folded into
+// existing cards, so a click could add only «+N» lines. These labels name the
+// unit. The card count is of LOADED matches only — never a law total the API
+// does not send.
+
+const MATCH_FORMS = { zero: null, one: "مطابقة واحدة", two: "مطابقتان", few: "مطابقات", many: "مطابقة" };
+/** After «في»: the genitive dual. library.laws holds every instrument type, hence «وثيقة». */
+const LAW_CARD_FORMS = { zero: null, one: "وثيقة واحدة", two: "وثيقتين", few: "وثائق", many: "وثيقة" };
+
+/** The "all" view's laws badge: «٣٧ مطابقة», «أكثر من ١٬٠٠٠ مطابقة»; null when degraded or zero. */
+export function lawMatchesBadge(d: SectionCountDisplay): string | null {
+  if (d.kind === "degraded") return null;
+  if (d.kind === "atLeast") return `أكثر من ${formatArabicNumber(d.value)} مطابقة`;
+  return countPhraseAr(d.value, MATCH_FORMS);
+}
+
+/**
+ * The laws tab's load-more label: the matches loaded, the total when it is
+ * exact, and the cards they fill — «تحميل المزيد (المحمّل ٥٠ مطابقة من ٣٧٠،
+ * في ١٢ وثيقة)». `countKnown` is false for a degraded section or an older API
+ * whose count left the title hits out.
+ */
+export function lawsLoadMoreLabel(loadedMatches: number, lawCards: number, d: SectionCountDisplay, countKnown: boolean): string {
+  const loaded = countPhraseAr(loadedMatches, MATCH_FORMS) ?? formatArabicNumber(0);
+  const cards = countPhraseAr(lawCards, LAW_CARD_FORMS);
+  const inCards = cards ? `، في ${cards}` : "";
+  if (!countKnown || d.kind === "degraded") return `تحميل المزيد (المحمّل ${loaded}${inCards})`;
+  if (d.kind === "atLeast") return `تحميل المزيد (المحمّل ${loaded}${inCards} — يمكن تصفّح حتى ${formatArabicNumber(SEARCH_MAX_DEPTH)} مطابقة)`;
+  return `تحميل المزيد (المحمّل ${loaded} من ${formatArabicNumber(d.value)}${inCards})`;
 }
 
 /** Search-result section → the /laws "all" view block it fills. */

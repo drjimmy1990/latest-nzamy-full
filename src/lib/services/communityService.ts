@@ -37,11 +37,12 @@ import { listOk, listFailed, type ListRead } from "@/lib/services/listRead";
 import {
   readCommunityQuestionsLocal,
   createCommunityQuestion as createCommunityQuestionLocal,
-  findCommunityQuestionLocal,
+  findDemoCommunityQuestion,
   addCommunityAnswerLocal,
   COMMUNITY_STORAGE_KEY,
   COMMUNITY_UPDATED_EVENT,
 } from "@/lib/communityStore";
+import { ALL_QUESTIONS } from "@/constants/communityData";
 import type {
   StoredCommunityQuestion,
   StoredCommunityAnswer,
@@ -103,7 +104,15 @@ export async function getCommunityPosts(opts?: {
  * this function exists to make.
  */
 export async function getCommunityPost(id: number | string): Promise<StoredCommunityQuestion | null> {
-  if (!isSupabaseMode) return findCommunityQuestionLocal(Number(id));
+  // Demo mode: the feed lists this browser's questions AND the seed cards, so the
+  // detail lookup reads both, or every seed card opened «غير موجود».
+  if (!isSupabaseMode) {
+    return findDemoCommunityQuestion(
+      Number(id),
+      readCommunityQuestionsLocal(),
+      ALL_QUESTIONS as unknown as StoredCommunityQuestion[],
+    );
+  }
   const res = await fetch(`/api/v1/community/posts/${encodeURIComponent(String(id))}`, {
     headers: { "Content-Type": "application/json; charset=utf-8" },
     cache: "no-store",

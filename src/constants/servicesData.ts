@@ -15,7 +15,7 @@ export const services = {
       duration: "٣٠ دقيقة",
       color: "bg-royal/5 text-royal",
       borderHover: "hover:border-royal/20",
-      features: ["استشارة فورية بدون انتظار", "محامون معتمدون من وزارة العدل", "تقرير مكتوب بعد الاستشارة", "ذكاء نظامي متاح ٢٤/٧"],
+      features: ["محامون موثّقون على المنصة", "تقرير مكتوب بعد الاستشارة", "ذكاء نظامي متاح ٢٤/٧"],
     },
     {
       id: "litigation",
@@ -28,7 +28,7 @@ export const services = {
       duration: "حسب القضية",
       color: "bg-gold/10 text-gold-dark",
       borderHover: "hover:border-gold/20",
-      features: ["محامون متخصصون في كل نوع قضايا", "متابعة مستمرة للقضية", "تقارير دورية للموكّل", "الأتعاب لا تُصرف للمحامي إلا بعد الإنجاز"],
+      features: ["محامون متخصصون في كل نوع قضايا", "متابعة مستمرة للقضية", "تقارير دورية للموكّل"],
     },
     {
       id: "contracts",
@@ -97,7 +97,7 @@ export const services = {
       duration: "30 minutes",
       color: "bg-royal/5 text-royal",
       borderHover: "hover:border-royal/20",
-      features: ["Instant consultation, no wait", "Ministry of Justice certified lawyers", "Written report after session", "Nezamy AI available 24/7"],
+      features: ["Lawyers verified on the platform", "Written report after session", "Nezamy AI available 24/7"],
     },
     {
       id: "litigation",
@@ -110,7 +110,7 @@ export const services = {
       duration: "Case-dependent",
       color: "bg-gold/10 text-gold-dark",
       borderHover: "hover:border-gold/20",
-      features: ["Specialists for each case type", "Continuous case follow-up", "Periodic client reports", "Fees released to the lawyer only after delivery"],
+      features: ["Specialists for each case type", "Continuous case follow-up", "Periodic client reports"],
     },
     {
       id: "contracts",
@@ -169,16 +169,19 @@ export const services = {
   ],
 };
 
+// No «كيف تُحفظ حقوقي المالية؟ — تُدفع الأتعاب عبر المنصة ولا تُصرف للمحامي إلا
+// بعد الإنجاز» entry, and no such line in the features above: fees are paid
+// outside the platform, which holds nothing (owner Q3/Q28). The consultation
+// card no longer says «محامون معتمدون من وزارة العدل» (the verification is the
+// platform's own) or «استشارة فورية بدون انتظار» (no wait time is measured).
 export const faqs = {
   ar: [
     { q: "هل الاستشارة سرية تماماً؟", a: "نعم. كل استشارة محمية بسرية مهنية كاملة وفق نظام المحاماة السعودي." },
-    { q: "كيف تُحفظ حقوقي المالية؟", a: "تُدفع الأتعاب عبر المنصة ولا تُصرف للمحامي إلا بعد إنجاز الخدمة المتفق عليها." },
     { q: "هل يمكنني تقييم المحامي بعد الانتهاء؟", a: "بالتأكيد. نظام التقييم شفاف ومرئي للجميع لضمان جودة الخدمة." },
     { q: "ماذا إذا لم أكن راضياً عن الخدمة؟", a: "إذا لم تكن الخدمة مطابقة لما اتُّفق عليه يمكنك طلب الاسترداد — والمدد والحالات مبيّنة في سياسة الاسترجاع وفق نظام التجارة الإلكترونية." },
   ],
   en: [
     { q: "Is the consultation fully confidential?", a: "Yes. Every consultation is protected by full professional confidentiality under Saudi Bar regulations." },
-    { q: "How are my payments protected?", a: "Fees are paid through the platform and are not released to the lawyer until the agreed service has been delivered." },
     { q: "Can I rate the lawyer after the service?", a: "Absolutely. Our rating system is transparent and public to ensure service quality." },
     { q: "What if I'm not satisfied with the service?", a: "If the service does not match what was agreed you may request a refund — the periods and cases are set out in the Refund Policy under the Saudi E-Commerce Law." },
   ],

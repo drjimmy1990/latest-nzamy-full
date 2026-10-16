@@ -213,8 +213,8 @@ export function PricingHero({
                 className="mx-auto max-w-md rounded-xl border border-emerald-200/60 bg-emerald-50/80 px-4 py-2.5 text-xs text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
               >
                 {isAr
-                  ? "📚 المكتبة القانونية — +٥٬٠٠٠ نظام ولائحة ومبدأ قضائي"
-                  : "📚 Legal Library — 5,000+ laws, regulations & principles"}
+                  ? "📚 المكتبة القانونية — الأنظمة واللوائح والمبادئ القضائية"
+                  : "📚 Legal Library — laws, regulations & principles"}
               </motion.div>
             )}
           </motion.div>

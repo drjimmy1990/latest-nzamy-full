@@ -85,6 +85,23 @@ export function findCommunityQuestionLocal(id: number) {
   return readCommunityQuestionsLocal().find((question) => question.id === id) ?? null;
 }
 
+/**
+ * A demo-mode question by id: this browser's saved questions first, then the
+ * seed list the demo feed shows beside them (ALL_QUESTIONS in
+ * src/constants/communityData.ts). The lookup read the saved list only, so
+ * every seed card on /community opened «هذا السؤال غير موجود» (N19, fix plan
+ * 2026-10-16). The seed is an argument: communityData.ts loads icons, and
+ * `node --test` loads this file.
+ */
+export function findDemoCommunityQuestion<T extends { id: number }>(
+  id: number,
+  saved: readonly T[],
+  seed: readonly T[],
+): T | null {
+  if (!Number.isFinite(id)) return null;
+  return saved.find((question) => question.id === id) ?? seed.find((question) => question.id === id) ?? null;
+}
+
 export function addCommunityAnswerLocal(
   questionId: number,
   answer: Omit<StoredCommunityAnswer, "id" | "votes" | "isAccepted" | "ago">,

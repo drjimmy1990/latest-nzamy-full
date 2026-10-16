@@ -80,6 +80,8 @@ import {
   appendSearchRows,
   formatArabicNumber,
   formatCountAr,
+  lawMatchesBadge,
+  lawsLoadMoreLabel,
   readSearchCounts,
   searchPagingState,
   sectionCountDisplay,
@@ -1222,7 +1224,12 @@ export default function LegalLibraryPage() {
         category: known?.category ?? '',
         categoryLabel: known?.categoryLabel ?? '',
         desc: stripMarkdownMarks(r.snippet),
+        // The card still opens the book: the reader masks each locked block
+        // itself, and whether fiqh goes behind the wall is the owner's open
+        // question. `locked` is the server's per-hit answer (a short snippet);
+        // a locked hit no longer carries the «متاح» badge.
         free: true,
+        locked: r.locked === true,
         // No per-book reading progress is tracked (as for the catalogue,
         // T28-05): the constant 100 rendered «نسبة التحصيل 100%».
         progress: 0,
@@ -1328,7 +1335,10 @@ export default function LegalLibraryPage() {
   const searchViewAllLabels: Partial<Record<SearchSection, string>> = {};
   if (isSearchActive && !searchLoading && !searchError && searchResults) {
     for (const k of SEARCH_SECTIONS) {
-      const label = formatCountAr(sectionCountDisplay(searchCounts, k));
+      // Laws count matches but list one card per law: the badge names its unit.
+      const label = k === "laws"
+        ? lawMatchesBadge(sectionCountDisplay(searchCounts, k))
+        : formatCountAr(sectionCountDisplay(searchCounts, k));
       if (label !== null) searchCountLabels[k] = label;
       const viewAll = viewAllLabel(searchCounts, k);
       if (viewAll !== null) searchViewAllLabels[k] = viewAll;
@@ -1348,9 +1358,11 @@ export default function LegalLibraryPage() {
     if (!pagingSection) return "";
     const shown = formatArabicNumber(pagingRows.length);
     const d = sectionCountDisplay(searchCounts, pagingSection);
-    // An API without `lawTitleHits` counted article matches only, with the
-    // title hits beside them: the laws tab then states only what is on screen.
-    if ((pagingSection === "laws" && !searchPaging?.lawCountIncludesTitleHits) || d.kind === "degraded") return `تحميل المزيد (معروض ${shown})`;
+    // Laws rows are matches folded into one card per law: say so, and how many
+    // cards. An API without `lawTitleHits` counted article matches only, with
+    // the title hits beside them, so its total is left out (countKnown false).
+    if (pagingSection === "laws") return lawsLoadMoreLabel(pagingRows.length, lawCards.length, d, !!searchPaging?.lawCountIncludesTitleHits);
+    if (d.kind === "degraded") return `تحميل المزيد (معروض ${shown})`;
     if (d.kind === "atLeast") return `تحميل المزيد (معروض ${shown} — يمكن تصفّح حتى ${formatArabicNumber(SEARCH_MAX_DEPTH)})`;
     return `تحميل المزيد (معروض ${shown} من ${formatArabicNumber(d.value)})`;
   })();

@@ -39,3 +39,29 @@ test("stripping replaces every hit and keeps the rest", () => {
   assert.equal(out.includes("example.com"), false);
   assert.ok(out.startsWith("للتواصل [محذوف]") && out.endsWith("شكراً"));
 });
+
+// N6 (fix plan 2026-10-16): a hit with leading whitespace was cut one character
+// short, and the whole text came back with Arabic-Indic digits rewritten.
+test("a hit's index is where its trimmed text starts", () => {
+  const input = "تابعني @ahmad_law";
+  const [m] = findOffPlatformContact(input);
+  assert.equal(m.text, "@ahmad_law");
+  assert.equal(input.slice(m.index, m.index + m.text.length), "@ahmad_law");
+});
+
+test("stripping removes the whole hit: no last character left behind", () => {
+  assert.equal(stripOffPlatformContact("تابعني @ahmad_law"), "تابعني [محذوف]");
+  assert.equal(stripOffPlatformContact("اتصل 501234567 الآن"), "اتصل [محذوف] الآن");
+  assert.equal(stripOffPlatformContact("تابعني @ahmad_law للمزيد"), "تابعني [محذوف] للمزيد");
+});
+
+test("stripping keeps the author's Arabic-Indic digits outside the hits, and removes a hit written in them", () => {
+  assert.equal(
+    stripOffPlatformContact("وفق المادة ١٨٧ اتصل ٠٥٠١٢٣٤٥٦٧ قبل ١٠/٣"),
+    "وفق المادة ١٨٧ اتصل [محذوف] قبل ١٠/٣",
+  );
+  assert.equal(stripOffPlatformContact("المادة ١٨٧ من النظام"), "المادة ١٨٧ من النظام");
+  const out = stripOffPlatformContact("واتساب: ٠٥٠١٢٣٤٥٦٧ شكراً");
+  assert.equal(/[٠-٩0-9]/.test(out), false, out);
+  assert.ok(out.endsWith("شكراً"));
+});

@@ -20,6 +20,7 @@ import {
 import { useTheme } from "@/components/ThemeProvider";
 import { useAdminSettings, type CompanyFeatures } from "@/hooks/useAdminSettings";
 import { buildDefaultCompanyFeatures } from "@/hooks/useAdminSettingsHelper";
+import { isServerCompanyFlag, withServerFlags, type ServerCompanyFlag } from "./serverFlags";
 import {
   BUSINESS_ADMIN_CONTROLS,
   BUSINESS_COMPANY_SIZE_LABEL,
@@ -47,25 +48,20 @@ type BooleanFeatureKey = {
 // subscription), the same read the console's «إدارة الشركات» tab uses. The
 // profile settings further down are still this browser's localStorage only
 // (see the banner), keyed by the real company id.
-type ServerCompanyFlags = Pick<CompanyFeatures, "hasSecondment" | "hasLitigation" | "hasMarketplace" | "hasGovernance">;
-type AdminCompany = { id: string; name: string | null; plan: string; mrr: number; features?: Partial<ServerCompanyFlags> };
+type AdminCompany = { id: string; name: string | null; plan: string; mrr: number; features?: Partial<Record<ServerCompanyFlag, boolean>> };
 
 /**
- * The profile to show for a company. A stored local profile wins (it is what
- * this editor last saved); otherwise the editor's defaults, overlaid with the
- * four flags the server really stores for the company
- * (business_profiles.metadata.features, edited in «إدارة الشركات») so this page
- * never shows a value that contradicts that tab.
+ * The profile to show for a company: what this editor last saved locally (or
+ * its defaults), with the four flags the server really stores over it
+ * (serverFlags.ts), so this page never contradicts «إدارة الشركات» — not even
+ * after the company was edited here.
  */
 function profileFor(company: AdminCompany, stored: CompanyFeatures | undefined): CompanyFeatures {
-  if (stored) return stored;
-  const server = company.features ?? {};
-  const flags: Partial<ServerCompanyFlags> = {};
-  for (const key of ["hasSecondment", "hasLitigation", "hasMarketplace", "hasGovernance"] as const) {
-    if (typeof server[key] === "boolean") flags[key] = server[key];
-  }
-  return { ...buildDefaultCompanyFeatures(company.id), ...flags };
+  return withServerFlags(stored ?? buildDefaultCompanyFeatures(company.id), company.features);
 }
+
+/** Q13: why a server-backed toggle is disabled here. */
+const SERVER_FLAG_REASON = "تُعدَّل هذه الميزة وتُحفظ من تبويب «إدارة الشركات» في لوحة التحكم";
 
 type CompaniesState =
   | { status: "loading" }
@@ -169,6 +165,12 @@ export default function AdminBusinessProfilesPage() {
 
   function toggleFeature(key: BooleanFeatureKey) {
     if (!selectedCompany || !selectedFeatures) return;
+    // The server's value always shows here, so a local toggle of one of its
+    // four flags would change nothing on screen. It is saved where it is real.
+    if (isServerCompanyFlag(key)) {
+      setToast(`${SERVER_FLAG_REASON}.`);
+      return;
+    }
     updateCompanyFeatures(selectedCompany.id, { ...selectedFeatures, [key]: !selectedFeatures[key] });
     setToast(`تم تغيير ${key} محلياً فقط. لا يوجد حفظ خادمي في مرحلة البيتا.`);
   }
@@ -376,11 +378,16 @@ export default function AdminBusinessProfilesPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
                 {FEATURE_TOGGLES.map((feature) => {
                   const enabled = Boolean(selectedFeatures[feature.key]);
+                  const serverFlag = isServerCompanyFlag(feature.key);
                   return (
                     <button
                       key={feature.key}
                       onClick={() => toggleFeature(feature.key)}
-                      className={`p-4 text-start border-b md:border-l transition ${isDark ? "border-white/[0.05] hover:bg-white/[0.03]" : "border-zinc-100 hover:bg-zinc-50"}`}
+                      disabled={serverFlag}
+                      title={serverFlag ? SERVER_FLAG_REASON : undefined}
+                      className={`p-4 text-start border-b md:border-l transition ${isDark ? "border-white/[0.05]" : "border-zinc-100"} ${
+                        serverFlag ? "opacity-50 cursor-not-allowed" : isDark ? "hover:bg-white/[0.03]" : "hover:bg-zinc-50"
+                      }`}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>

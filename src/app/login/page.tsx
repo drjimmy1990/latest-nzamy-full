@@ -30,6 +30,7 @@ import { authenticateTest, TEST_ACCOUNTS, TEST_PASSWORD } from "@/lib/test-crede
 import { setDemoSession, useUser } from "@/hooks/useUser";
 import { getDashboardRoute } from "@/constants/navigation";
 import { isDbUserType } from "@/lib/auth/userTypes";
+import { postLoginPath } from "@/lib/auth/postLoginPath";
 import { createClient } from "@/lib/supabase/client";
 import { isDemoUiEnabled, BACKEND_MODE } from "@/lib/runtimeMode";
 import { saudiMobileOrNull } from "@/lib/services/saudiMobile";
@@ -138,6 +139,16 @@ function GoogleIcon() {
   );
 }
 
+/**
+ * `?next=` — where to land after signing in, when a page sent the visitor here
+ * (/laws/subscribe passes the plan they chose). Read at the moment of use, not
+ * with useSearchParams, which would need a Suspense boundary for `next build`.
+ * postLoginPath keeps it on this site and out of the sign-in flow.
+ */
+function nextFromUrl(): string | null {
+  return typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("next");
+}
+
 export default function LoginPage() {
   const { lang, theme, toggleLang, toggleTheme } = useTheme();
   const isAr = lang === "ar";
@@ -172,7 +183,7 @@ export default function LoginPage() {
   // Redirect if user is already logged in
   useEffect(() => {
     if (!user.loading && user.isLoggedIn) {
-      const dest = getDashboardRoute(user.userType);
+      const dest = postLoginPath(nextFromUrl(), getDashboardRoute(user.userType));
       router.replace(dest);
     }
   }, [user.loading, user.isLoggedIn, user.userType, router]);
@@ -259,7 +270,7 @@ export default function LoginPage() {
         const session = (await handshake.json()) as { userType?: string | null };
         const dest =
           typeof session.userType === "string" && isDbUserType(session.userType)
-            ? getDashboardRoute(session.userType)
+            ? postLoginPath(nextFromUrl(), getDashboardRoute(session.userType))
             : "/onboarding";
 
         // A FULL document load, not router.push: the next request has to reach
@@ -277,7 +288,7 @@ export default function LoginPage() {
         return;
       }
       setDemoSession(session);
-      const dest = getDashboardRoute(session.userType);
+      const dest = postLoginPath(nextFromUrl(), getDashboardRoute(session.userType));
       router.push(dest);
     } catch {
       setError(isAr ? "حدث خطأ في الاتصال" : "Connection error");

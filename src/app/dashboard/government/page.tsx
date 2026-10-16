@@ -11,8 +11,7 @@ import {
   Gavel, MagnifyingGlass, PencilSimple, Brain,
   Warning, ClipboardText, ShieldCheck, Clock,
   LockKey, ListBullets, Bell, Buildings, Lightbulb,
-  FileText, ArrowLeft, ArrowUpRight, Scales,
-  ChartLineUp, CalendarCheck, CheckCircle,
+  FileText, ArrowLeft, Scales,
 } from "@phosphor-icons/react";
 
 // ─── ROLE SYSTEM ──────────────────────────────────────────────────────────────
@@ -59,57 +58,10 @@ const ALL_TOOLS: { label: string; sub: string; href: string; Icon: React.Element
   { label: "مراجع العقود الحكومية",sub: "مراجعة بنود عقود التوريد والخدمات",  href: "/ai/gov/contract-reviewer",     Icon: FileText,       roles: ["gov_counsel"], permKey: "ai:gov:contract-reviewer" },
 ];
 
-// KPIs are contextual per role
-const KPI_BY_ROLE: Record<GovRole, { label: string; value: string; note: string }[]> = {
-  judge: [
-    { label: "القضايا الجارية",   value: "23",   note: "5 جلسات هذا الأسبوع" },
-    { label: "أحكام منتظرة",     value: "7",    note: "استحقاق خلال أسبوع" },
-    { label: "معدل الإنجاز",     value: "91%",  note: "أعلى من المعدل الوطني" },
-    { label: "متوسط مدة القضية", value: "47 يوم", note: "تحسّن 8 أيام" },
-  ],
-  prosecutor: [
-    { label: "القضايا قيد التحقيق", value: "14",  note: "3 جلسات استجواب" },
-    { label: "التوقيفات النشطة",    value: "6",   note: "4 تنتهي خلال 48 ساعة" },
-    { label: "الإحالات للمحكمة",   value: "9",   note: "هذا الشهر" },
-    { label: "لوائح الاتهام",      value: "11",  note: "3 في مرحلة الصياغة" },
-  ],
-  officer: [
-    { label: "المهام المفتوحة",  value: "8",   note: "2 عاجلة الآن" },
-    { label: "محاضر هذا الأسبوع", value: "12", note: "اكتملت 9 منها" },
-    { label: "التوقيفات الجارية", value: "3",   note: "أقصى مدة: 21 ساعة" },
-    { label: "الامتثال الإجرائي", value: "98%", note: "دون انتهاكات" },
-  ],
-  gov_counsel: [
-    { label: "العقود النشطة",     value: "12",   note: "2 تنتهي قريباً" },
-    { label: "القضايا والنزاعات", value: "5",    note: "جلسة قادمة" },
-    { label: "مؤشر الامتثال",    value: "94%",  note: "فوق المعدل" },
-    { label: "التقارير المعلقة",  value: "3",    note: "استحقاق هذا الأسبوع" },
-  ],
-};
-
-// Recent actions contextual
-const RECENT_ACTIONS: Record<GovRole, { text: string; time: string; Icon: React.ElementType }[]> = {
-  judge: [
-    { text: "صدر حكم في القضية ١٤٥-ج", time: "منذ ساعتين",    Icon: Gavel },
-    { text: "تأجيل جلسة الثلاثاء",       time: "منذ 3 ساعات",   Icon: CalendarCheck },
-    { text: "مراجعة 4 صحف دعوى واردة",   time: "اليوم الصباح",  Icon: FileText },
-  ],
-  prosecutor: [
-    { text: "إحالة قضية ٠٠٣٢ للمحكمة",  time: "منذ ساعة",      Icon: ArrowUpRight },
-    { text: "استجواب شاهد ج في ٠٠٢١",    time: "منذ 4 ساعات",   Icon: MagnifyingGlass },
-    { text: "صياغة لائحة اتهام ٠٠١٩",    time: "أمس",           Icon: PencilSimple },
-  ],
-  officer: [
-    { text: "استيفاء محضر قبض ٠٠٥٤",    time: "منذ 30 دقيقة",  Icon: ClipboardText },
-    { text: "تسليم شخص موقوف لنيابة",    time: "منذ ساعتين",    Icon: CheckCircle },
-    { text: "إغلاق بلاغ ٠٠٤١",          time: "اليوم الصباح",  Icon: ShieldCheck },
-  ],
-  gov_counsel: [
-    { text: "مراجعة عقد استشاري جديد",   time: "منذ ساعة",      Icon: FileText },
-    { text: "رأي قانوني في مناقصة ١٢",   time: "منذ 3 ساعات",   Icon: Lightbulb },
-    { text: "تقرير امتثال ربع سنوي",      time: "أمس",           Icon: ChartLineUp },
-  ],
-};
+// No KPI strip and no «آخر النشاطات» (N7, fix plan 2026-10-16). Both were
+// literals per role — «القضايا الجارية 23», «معدل الإنجاز 91% — أعلى من
+// المعدل الوطني», «صدر حكم في القضية ١٤٥-ج منذ ساعتين» — and no government
+// case, hearing or activity table exists for them to come from.
 
 // ─── ANIMATION ────────────────────────────────────────────────────────────────
 
@@ -187,8 +139,6 @@ export default function GovernmentDashboard() {
     t.roles.includes(role) &&
     (userPerms.length === 0 || userPerms.some(p => allowedPerms.includes(p)) || t.permKey === undefined)
   );
-  const kpis   = KPI_BY_ROLE[role];
-  const recent = RECENT_ACTIONS[role];
   const headerActions = HEADER_ACTIONS_BY_ROLE[role];
   const quickNav = QUICK_NAV_BY_ROLE[role];
   const RoleIcon = meta.iconEl;
@@ -225,7 +175,7 @@ export default function GovernmentDashboard() {
               {user.name || "الجهة الحكومية"}
             </h1>
             <p className={`max-w-[52ch] text-base leading-relaxed ${muted}`}>
-              لوحة تحكم {meta.label} — أدوات ذكاء اصطناعي مخصصة حسب دورك وبياناتك التشغيلية.
+              لوحة تحكم {meta.label} — أدوات ذكاء اصطناعي مخصصة حسب دورك.
             </p>
           </div>
 
@@ -244,24 +194,6 @@ export default function GovernmentDashboard() {
               );
             })}
           </div>
-        </motion.div>
-
-        {/* ── KPI Strip ─────────────────────────────────────────────────────── */}
-        <motion.div
-          variants={container} initial="hidden" animate="show"
-          className={`grid grid-cols-2 md:grid-cols-4 divide-x divide-x-reverse border rounded-[2rem] overflow-hidden ${
-            isDark ? "divide-white/5 border-white/5" : "divide-slate-200 border-slate-200"
-          }`}
-        >
-          {kpis.map((k, i) => (
-            <motion.div key={k.label} variants={item} className="px-6 py-6">
-              <div className={`text-2xl md:text-3xl font-mono font-bold tracking-tighter ${
-                i === 0 ? (isDark ? "text-white" : "text-slate-900") : (isDark ? "text-slate-200" : "text-slate-800")
-              }`}>{k.value}</div>
-              <div className={`text-xs mt-1 ${muted}`}>{k.label}</div>
-              <div className={`text-xs mt-1 ${dim}`}>{k.note}</div>
-            </motion.div>
-          ))}
         </motion.div>
 
         {/* ── Main Body: Split ───────────────────────────────────────────────── */}
@@ -332,34 +264,8 @@ export default function GovernmentDashboard() {
             </div>
           </motion.div>
 
-          {/* RIGHT: Recent Activity + Quick Nav ─────────────────────────────── */}
+          {/* RIGHT: Quick Nav ───────────────────────────────────────────────── */}
           <motion.div variants={container} initial="hidden" animate="show" className="space-y-4">
-
-            {/* Recent Activity */}
-            <div className={`p-8 rounded-[2.5rem] border ${card}`}>
-              <h2 className={`text-xl font-semibold tracking-tight mb-6 ${isDark ? "text-white" : "text-slate-900"}`}>
-                آخر النشاطات
-              </h2>
-              <div className="space-y-5">
-                {recent.map((r, i) => {
-                  const Icon = r.Icon;
-                  return (
-                    <div key={i} className="relative flex items-start gap-4">
-                      {i !== recent.length - 1 && (
-                        <div className={`absolute top-8 right-[14px] bottom-[-20px] w-px ${isDark ? "bg-white/5" : "bg-slate-100"}`} />
-                      )}
-                      <div className={`relative z-10 w-7 h-7 flex items-center justify-center rounded-full shrink-0 border ${accent}`}>
-                        <Icon size={14} weight="duotone" />
-                      </div>
-                      <div className="flex-1 pt-0.5">
-                        <p className={`text-sm font-medium ${isDark ? "text-white" : "text-slate-800"}`}>{r.text}</p>
-                        <p className={`text-xs mt-0.5 ${dim}`}>{r.time}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
 
             {/* Quick Navigation */}
             <div className={`p-6 rounded-[2rem] border ${card}`}>

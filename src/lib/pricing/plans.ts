@@ -46,8 +46,8 @@ export interface PricingPlan {
 // ─── 1. Standalone Legal Library Plans ────────────────────────────────────────
 
 export const STANDALONE_LIBRARY_PLANS: Record<string, PricingPlan> = {
-  "lib-quarterly": {
-    id: "lib-quarterly",
+  "lib-q1": {
+    id: "lib-q1",
     nameAr: "المكتبة القانونية — ربع سنوي",
     nameEn: "Legal Library — Quarterly",
     priceMonthly: 1500,
@@ -58,17 +58,17 @@ export const STANDALONE_LIBRARY_PLANS: Record<string, PricingPlan> = {
     periodYearlyEn: "SAR / 3 months",
     badgeAr: null,
     badgeEn: null,
-    descAr: "وصول كامل وشامل لـ +٥٬٠٠٠ نظام ولائحة ومبدأ قضائي لمدة ٣ أشهر",
-    descEn: "Full access to 5,000+ Saudi laws, regulations and judicial principles for 3 months",
+    descAr: "وصول كامل وشامل للأنظمة واللوائح والمبادئ القضائية لمدة ٣ أشهر",
+    descEn: "Full access to Saudi laws, regulations and judicial principles for 3 months",
     featuresAr: [
-      "وصول كامل لـ +٥٬٠٠٠ نظام ولائحة ومبدأ قضائي",
+      "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
       "بحث ذكي وفهرسة رقمية دقيقة",
       "تحديثات يومية فور صدور الأنظمة والتعديلات",
       "قراءة هادئة ووضع التركيز وحفظ المفضلة",
       "دعم فني عبر البريد الإلكتروني",
     ],
     featuresEn: [
-      "Full access to 5,000+ laws, regulations & judicial principles",
+      "Full access to laws, regulations & judicial principles",
       "AI-powered search and precise digital indexing",
       "Daily updates as new laws and amendments are issued",
       "Focus reader mode, favorites & bookmarks",
@@ -77,7 +77,7 @@ export const STANDALONE_LIBRARY_PLANS: Record<string, PricingPlan> = {
     highlighted: false,
     ctaTextAr: "اشترك الآن",
     ctaTextEn: "Subscribe Now",
-    ctaHref: "/laws/subscribe?plan=lib-quarterly",
+    ctaHref: "/laws/subscribe?plan=lib-q1",
   },
   "lib-annual": {
     id: "lib-annual",
@@ -97,7 +97,7 @@ export const STANDALONE_LIBRARY_PLANS: Record<string, PricingPlan> = {
     descAr: "الاشتراك السنوي المعتمد للمحترفين والمكاتب — ٥٬٠٠٠ ر.س/سنة مع كامل التحديثات وتصدير النصوص",
     descEn: "Canonical annual subscription for professionals & firms — 5,000 SAR/year with all updates & exports",
     featuresAr: [
-      "وصول كامل وغير محدود لـ +٥٬٠٠٠ نظام ولائحة ومبدأ قضائي",
+      "وصول كامل وغير محدود للأنظمة واللوائح والمبادئ القضائية",
       "محرك البحث القانوني المتقدم مع تصدير بصيغة PDF",
       "تحديثات تشريعية لحظية وإشعارات التعديلات الجديدة",
       "حفظ الملاحظات والمجلدات الخاصة ومشاركة المقتطفات",
@@ -105,7 +105,7 @@ export const STANDALONE_LIBRARY_PLANS: Record<string, PricingPlan> = {
       "دعم فني ذو أولوية عبر واتساب المخصص",
     ],
     featuresEn: [
-      "Unlimited access to 5,000+ laws, regulations & principles",
+      "Unlimited access to laws, regulations & principles",
       "Advanced legal search engine with PDF export",
       "Instant legislative alerts and amendment tracking",
       "Private research folders, notes & snippet sharing",

@@ -136,13 +136,12 @@ export const CONTACT_REDACTED = "[محذوف]";
  * Phone numbers, e-mails, links and handles never leave the server in
  * community text: each one becomes «[محذوف]».
  *
- * Not `stripOffPlatformContact`: a match's `index` points at the start of the
- * UNtrimmed regex hit while its `text` is trimmed, so a hit with leading
- * whitespace («تابعني @ahmad_law», «اتصل 501234567») is cut one character
- * early and its last character survives («…[محذوف]w»). It also returns the
- * whole text with Arabic-Indic digits rewritten as ASCII. Here each hit is
- * located by its own text, and the untouched parts come from the original
- * string (`normalizeDigits` is one code unit for one, so offsets agree).
+ * Written when `stripOffPlatformContact` cut a hit with leading whitespace
+ * («تابعني @ahmad_law», «اتصل 501234567») one character early and rewrote
+ * every Arabic-Indic digit as ASCII; both are fixed there now (N6, fix plan
+ * 2026-10-16) and this does the same thing. Each hit is located by its own
+ * text, and the untouched parts come from the original string
+ * (`normalizeDigits` is one code unit for one, so offsets agree).
  */
 export function cleanText(v: unknown): string {
   const input = text(v);
