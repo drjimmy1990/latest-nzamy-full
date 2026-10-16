@@ -59,6 +59,12 @@ alter table public.community_votes enable row level security;
 grant all on public.community_posts, public.community_answers, public.community_votes to anon, authenticated, service_role;
 grant all on sequence public.community_votes_id_seq to anon, authenticated, service_role;
 
+-- 20261016_06 requires 20260922_03 in force (lawyer_profiles.verification_status
+-- not self-writable). stubs.sql grants ALL on every public table; this is the
+-- part of 20260922_03 that matters here.
+revoke insert, update on public.lawyer_profiles from anon, authenticated;
+grant update (bio_ar) on public.lawyer_profiles to authenticated;
+
 -- Production's policies, verbatim.
 CREATE POLICY "anyone reads active community answers" ON public.community_answers FOR SELECT USING ((status = 'active'::text));
 CREATE POLICY "anyone reads public community posts" ON public.community_posts FOR SELECT USING (((status = ANY (ARRAY['active'::text, 'closed'::text])) AND ((visibility = 'public'::text) OR (author_id = auth.uid()))));

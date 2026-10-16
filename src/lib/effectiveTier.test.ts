@@ -42,3 +42,17 @@ test("getUserTier reads every active row with its end date and decides with effe
   assert.match(fn, /return effectiveTier\(\(subs as ActivePlanRow\[\] \| null\) \?\? \[\], Date\.now\(\), TIER_RANK\);/);
   assert.doesNotMatch(fn, /\.limit\(1\)/);
 });
+
+test("the profile and dashboard summary show the plan getUserTier grants, not the newest active row", async () => {
+  const { currentPlanRow } = await import("./entitlementGrantRules.ts");
+  const rows = [
+    { id: "old-pro", tier: "pro", current_period_end: "2026-09-01T00:00:00Z" },
+    { id: "ai", tier: "ai", current_period_end: null },
+  ];
+  assert.equal(currentPlanRow(rows, NOW, RANKS)?.id, "ai");
+  assert.equal(currentPlanRow([rows[0]], NOW, RANKS), null);
+  for (const rel of ["../app/api/v1/profile/route.ts", "../app/api/v1/dashboard/summary/route.ts"]) {
+    const src = readFileSync(new URL(rel, import.meta.url), "utf8");
+    assert.match(src, /currentPlanRow\(\(\w+ as ActivePlanRow\[\] \| null\) \?\? \[\], Date\.now\(\), TIER_RANK\)/, rel);
+  }
+});

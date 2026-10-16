@@ -25,6 +25,10 @@
 --     show and send it only when GET /api/v1/profile returns the key, so the
 --     screens keep saving before this file runs.
 --
+-- PREREQUISITE — 20260922_03 IN FORCE (step 0 refuses otherwise)
+--   On production the table-level grants came back with the self-host import,
+--   so run 20260922_03_lawyer_provider_column_grants.sql again first.
+--
 -- DEPLOY ORDER — THIS MIGRATION FIRST, THEN THE CODE
 --   The public lawyer routes of the same commit select show_hourly_rate; on a
 --   database without the column they answer «تعذّر تحميل دليل المحامين» (42703)
@@ -47,6 +51,22 @@
 -- =============================================================================
 
 begin;
+
+-- ── 0. 20260922_03 must be in force ──────────────────────────────────────────
+-- The production schema of 2026-10-10 shows table-level GRANT ALL on
+-- lawyer_profiles to anon and authenticated next to 20260922_03's column
+-- grants (the self-host import re-granted ALL), so the column lock — and with
+-- it «لا يوثّق المحامي نفسه» — is not in force. Re-run
+-- 20260922_03_lawyer_provider_column_grants.sql first; this file then adds
+-- one column to its list.
+do $$
+begin
+  if has_table_privilege('authenticated', 'public.lawyer_profiles', 'UPDATE')
+     or has_table_privilege('anon', 'public.lawyer_profiles', 'UPDATE')
+     or has_table_privilege('authenticated', 'public.lawyer_profiles', 'INSERT') then
+    raise exception '20261016_05: lawyer_profiles still has table-level INSERT/UPDATE for the API roles — run 20260922_03_lawyer_provider_column_grants.sql first, then this file';
+  end if;
+end $$;
 
 alter table public.lawyer_profiles
   add column if not exists show_hourly_rate boolean not null default false;

@@ -32,15 +32,26 @@ test("bad bodies are refused before anything is written", () => {
   assert.equal(buildCartRows(U, Array(MAX_CART_ITEMS + 1).fill({ law_slug: "a", article_number: "1" })).ok, false);
 });
 
-test("the route replaces safely: read old ids, insert, then delete the old ids (undoing the insert on failure)", () => {
+test("one row per article: a repeated (law_slug, article_number) is dropped, positions stay dense", () => {
+  const r = buildCartRows(U, [
+    { law_slug: "a", article_number: "1", payload: { n: 1 } },
+    { law_slug: "b", article_number: "2" },
+    { law_slug: "a", article_number: 1, payload: { n: 2 } },
+  ]);
+  assert.ok(r.ok);
+  assert.deepEqual(r.rows.map((x) => [x.law_slug, x.article_number, x.position, x.payload]), [
+    ["a", "1", 0, { n: 1 }],
+    ["b", "2", 1, null],
+  ]);
+});
+
+test("the route replaces safely: upsert on the unique key, then delete what the new cart dropped", () => {
   const src = readFileSync(new URL("./route.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   const put = src.slice(src.indexOf("export async function PUT"));
-  const readOld = put.indexOf('.select("id")\n    .eq("user_id", user.id);');
-  const insert = put.indexOf(".insert(built.rows)");
-  const del = put.indexOf('.in("id", previousIds)');
-  assert.ok(readOld > 0 && insert > readOld && del > insert, "order: read old ids → insert → delete old ids");
-  assert.match(put, /\.in\("id", insertedIds\)/, "a failed cleanup removes the rows just inserted");
+  const upsert = put.indexOf('.upsert(built.rows, { onConflict: "user_id,law_slug,article_number" })');
+  const del = put.indexOf('.delete().eq("user_id", user.id)');
+  assert.ok(upsert > 0 && del > upsert, "order: upsert → delete the dropped rows");
+  assert.match(put, /removal\.not\("id", "in", `\(\$\{keptIds\.join\(","\)\}\)`\)/);
+  assert.doesNotMatch(put, /\.insert\(built\.rows\)/, "a plain insert collides with the unique key");
   assert.doesNotMatch(src, /article_title:/, "never writes the missing column");
-  // The old pattern: delete the whole cart first, result ignored.
-  assert.doesNotMatch(put, /await supabase\s*\.from\("law_draft_carts"\)\s*\.delete\(\)\s*\.eq\("user_id", user\.id\);/);
 });
