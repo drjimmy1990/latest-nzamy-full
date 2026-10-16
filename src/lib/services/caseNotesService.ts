@@ -3,8 +3,8 @@
  * ─────────────────────────────────────────────────────────
  * Typed client for /api/v1/cases/[id]/notes (owner item 65 remainder,
  * public.case_notes). Modeled on lawyerClientNotesService.ts: RLS shows a
- * `private` note to its author only and a `firm` note to the author's active
- * colleagues too — the client-facing shape here just adds update, since a
+ * `private` note to its author only, a `case_team` note to the case team and a
+ * `firm` note to the author's active colleagues too — the client-facing shape here just adds update, since a
  * case note (unlike a client-card note) is expected to be corrected in place.
  */
 
@@ -13,7 +13,12 @@
 import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
 import { listOk, listFailed, listFromApi, type ListRead } from "@/lib/services/listRead";
 
-export type CaseNoteVisibility = "private" | "firm";
+/**
+ * Owner decision ١٦٩ (migration 20261017_41): `private` = the author alone;
+ * `case_team` = the case team (see caseTeamService.ts); `firm` = every active
+ * member of the case's firm.
+ */
+export type CaseNoteVisibility = "private" | "case_team" | "firm";
 
 export interface CaseNote {
   id: string;
@@ -68,4 +73,22 @@ export async function updateCaseNote(
 export async function deleteCaseNote(caseId: string, noteId: string): Promise<void> {
   if (!isSupabaseMode) throw new Error("الملاحظات غير متاحة في وضع العرض التجريبي");
   await apiMutate<void>(`${base(caseId)}/${encodeURIComponent(noteId)}`, "DELETE");
+}
+
+/**
+ * Shared notes (`case_team` / `firm`) the caller can read, per case id — the
+ * «📝 ملاحظة مشتركة» marker on the cases list (owner decision ١٦٩). An empty
+ * object on failure: a missing marker is the honest fallback, never a guess.
+ */
+export async function getSharedNoteCounts(caseIds: string[]): Promise<Record<string, number>> {
+  if (!isSupabaseMode || caseIds.length === 0) return {};
+  try {
+    const body = await apiGet<{ data: Record<string, number> }>("/api/v1/cases/shared-notes", {
+      ids: caseIds.slice(0, 200).join(","),
+    });
+    return body?.data ?? {};
+  } catch (error) {
+    console.error("[caseNotesService] getSharedNoteCounts failed:", error);
+    return {};
+  }
 }

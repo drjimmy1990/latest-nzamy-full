@@ -1473,3 +1473,99 @@ BEGIN
 
   RAISE NOTICE '_verify: 20261016_11 OK — no guest read of provider_profiles; a provider reads the own row, an admin reads all; authenticated UPDATE is (metadata, updated_at)';
 END $$;
+
+-- ====================================================================
+-- 2026-10-17 — 20261017_41_notes_visibility_case_team.sql (owner decision ١٦٩)
+-- ====================================================================
+-- Notes are private by default and can be shared with the case team or the
+-- whole firm. This section re-checks what the migration's own verify block
+-- proves: the case_team scope on case_notes; case_team_members with exactly
+-- three policies and no UPDATE privilege; the scope rule on every note write
+-- policy; no platform-admin arm on a note SELECT policy; no guest privilege
+-- on the four tables; and EXECUTE on the seven helpers kept from PUBLIC/anon.
+-- Keyed on public.case_team_members, so a run BEFORE the migration passes
+-- with a NOTICE.
+SELECT '20261017_41 applied (case-team note scope)' AS check,
+       to_regclass('public.case_team_members') IS NOT NULL AS present;
+
+DO $$
+DECLARE
+  n       int;
+  bad     text;
+  f       text;
+  t       text;
+  priv    text;
+  missing text := '';
+BEGIN
+  IF to_regclass('public.case_team_members') IS NULL THEN
+    RAISE NOTICE '_verify: 20261017_41 is not applied yet — notes have two scopes (private / firm), the platform admin reads private notes, and a raw REST insert can file a note under any firm';
+    RETURN;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_class WHERE oid = 'public.case_team_members'::regclass AND relrowsecurity) THEN
+    missing := missing || ' RLS is off on case_team_members;';
+  END IF;
+  SELECT count(*) INTO n FROM pg_policy WHERE polrelid = 'public.case_team_members'::regclass;
+  IF n <> 3 THEN
+    missing := missing || format(' case_team_members carries %s policies, expected 3;', n);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                  WHERE conrelid = 'public.case_notes'::regclass AND contype = 'c'
+                    AND pg_get_constraintdef(oid) ILIKE '%case_team%') THEN
+    missing := missing || ' the case_notes visibility CHECK does not admit case_team;';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policy
+                  WHERE polrelid = 'public.case_notes'::regclass AND polcmd = 'r'
+                    AND pg_get_expr(polqual, polrelid) ILIKE '%is_case_team_member%') THEN
+    missing := missing || ' the case_notes SELECT policy has no case_team arm;';
+  END IF;
+
+  SELECT string_agg(format('%s.%s', c.relname, p.polname), ', ') INTO bad
+    FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid
+   WHERE c.relnamespace = 'public'::regnamespace
+     AND c.relname IN ('case_notes', 'lawyer_client_notes', 'consultation_notes')
+     AND coalesce(pg_get_expr(p.polqual, p.polrelid), '') ILIKE '%is_admin%';
+  IF bad IS NOT NULL THEN
+    missing := missing || format(' a note SELECT policy lets the platform admin read private notes again (a schema restore?): %s;', bad);
+  END IF;
+  SELECT string_agg(format('%s.%s', c.relname, p.polname), ', ') INTO bad
+    FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid
+   WHERE c.relnamespace = 'public'::regnamespace
+     AND c.relname IN ('case_notes', 'lawyer_client_notes', 'consultation_notes')
+     AND p.polcmd IN ('a', 'w')
+     AND coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '') !~ '(case|client|consultation)_note_scope_ok';
+  IF bad IS NOT NULL THEN
+    missing := missing || format(' note write policies without the scope rule: %s;', bad);
+  END IF;
+
+  FOREACH t IN ARRAY ARRAY['case_notes', 'lawyer_client_notes', 'consultation_notes', 'case_team_members'] LOOP
+    FOREACH priv IN ARRAY ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE'] LOOP
+      IF has_table_privilege('anon', 'public.' || t, priv) THEN
+        missing := missing || format(' anon holds %s on %s (a GRANT ALL re-applied? re-run 20261017_41);', priv, t);
+      END IF;
+    END LOOP;
+  END LOOP;
+  IF has_table_privilege('authenticated', 'public.case_team_members', 'UPDATE') THEN
+    missing := missing || ' authenticated can UPDATE case_team_members (rows are added or removed, never edited);';
+  END IF;
+
+  FOREACH f IN ARRAY ARRAY[
+    'public.case_team_user_ids(text)', 'public.is_case_team_member(text)',
+    'public.can_manage_case_team(text)', 'public.case_team_insert_ok(text, uuid, uuid)',
+    'public.case_note_scope_ok(text, text, uuid)', 'public.client_note_scope_ok(uuid, text, uuid)',
+    'public.consultation_note_scope_ok(text, text)'
+  ] LOOP
+    IF to_regprocedure(f) IS NULL THEN
+      missing := missing || format(' %s is missing;', f);
+    ELSIF has_function_privilege('public', f, 'EXECUTE') OR has_function_privilege('anon', f, 'EXECUTE') THEN
+      missing := missing || format(' %s is executable by PUBLIC/anon;', f);
+    ELSIF NOT has_function_privilege('authenticated', f, 'EXECUTE') THEN
+      missing := missing || format(' authenticated cannot execute %s (every note read would fail);', f);
+    END IF;
+  END LOOP;
+
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: the 20261017_41 note scopes are broken —%', missing;
+  END IF;
+  RAISE NOTICE '_verify: 20261017_41 OK — private / case_team / firm notes, scopes pinned in RLS, no admin read of private notes, no guest privilege';
+END $$;

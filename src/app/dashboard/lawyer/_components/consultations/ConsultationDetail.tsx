@@ -397,6 +397,11 @@ export default function ConsultationDetail({ consultationId, isDark, basePath }:
                 {!consultation.firmId && (
                   <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>هذه الاستشارة غير مرتبطة بمكتب — «للمكتب» غير متاحة.</p>
                 )}
+                {/* Owner decision ١٦٩ — what the chosen scope reaches (RLS, 20261017_41). */}
+                <p className={`text-[10px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
+                  <span className="font-bold">من يرى هذه الملاحظة: </span>
+                  {noteVisibility === "firm" ? "أعضاء مكتب هذه الاستشارة النشطون. لا يراها العميل." : "أنت فقط. لا يراها زملاؤك ولا العميل."}
+                </p>
               </div>
 
               {noteError && <p className="mt-2 text-[11px] font-semibold text-red-500">{noteError}</p>}
@@ -426,7 +431,7 @@ export default function ConsultationDetail({ consultationId, isDark, basePath }:
                     <div className="flex items-center justify-between">
                       <span className={`flex items-center gap-2 text-[9px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
                         {note.authorName ?? "مستخدم"} · {formatDateTimeAr(note.createdAt) ?? note.createdAt}
-                        <span className={`px-1.5 py-0.5 rounded-full font-bold ${
+                        <span title={note.visibility === "firm" ? "من يراها: أعضاء مكتب الاستشارة النشطون" : "من يراها: كاتبها فقط"} className={`px-1.5 py-0.5 rounded-full font-bold ${
                           note.visibility === "firm"
                             ? isDark ? "bg-indigo-500/10 text-indigo-400" : "bg-indigo-50 text-indigo-600"
                             : isDark ? "bg-white/[0.06] text-zinc-500" : "bg-slate-100 text-slate-500"

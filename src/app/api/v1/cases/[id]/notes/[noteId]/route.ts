@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
-import { assertRole } from "@/lib/auth/assertRole";
+import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
 import {
   CASE_NOTE_SELECT,
   MAX_BODY_LENGTH,
@@ -9,7 +9,7 @@ import {
   caseNoteDbErrorResponse,
   type CaseNoteRow,
 } from "../_shared";
-import { resolveFirmVisibilityFirmId } from "../_resolveFirmVisibility";
+import { resolveCaseTeamFirmId, resolveFirmVisibilityFirmId } from "../_resolveFirmVisibility";
 
 /**
  * PATCH /api/v1/cases/[id]/notes/[noteId]
@@ -23,7 +23,7 @@ import { resolveFirmVisibilityFirmId } from "../_resolveFirmVisibility";
  */
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string; noteId: string }> }) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
     const { id, noteId } = await context.params;
@@ -50,10 +50,12 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
     if (visibility !== undefined) {
       if (!VALID_VISIBILITY.has(visibility)) {
-        return NextResponse.json({ error: "نطاق الملاحظة يجب أن يكون خاصة أو ضمن المكتب." }, { status: 400 });
+        return NextResponse.json({ error: "نطاق الملاحظة يجب أن يكون: خاصة بك، أو لفريق القضية، أو لكل المكتب." }, { status: 400 });
       }
-      if (visibility === "firm") {
-        const resolved = await resolveFirmVisibilityFirmId(supabase, user.id, id);
+      if (visibility === "firm" || visibility === "case_team") {
+        const resolved = visibility === "firm"
+          ? await resolveFirmVisibilityFirmId(supabase, user.id, id)
+          : await resolveCaseTeamFirmId(supabase, user.id, id);
         if ("error" in resolved) {
           return NextResponse.json({ error: resolved.error }, { status: 400 });
         }
@@ -99,7 +101,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
  */
 export async function DELETE(_request: NextRequest, context: { params: Promise<{ id: string; noteId: string }> }) {
   try {
-    const auth = await assertRole(["lawyer", "firm"]);
+    const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { supabase } = auth;
     const { id, noteId } = await context.params;

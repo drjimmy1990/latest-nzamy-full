@@ -3,8 +3,10 @@
  * ─────────────────────────────────────────────────────────
  * Backed by `public.case_notes` (migration 20260910_case_notes.sql), modeled
  * on `lawyer_client_notes` / lawyerClientNotesService.ts. A note kept on a
- * case file: `private` = the author alone, `firm` = the author's active firm
- * colleagues too (RLS: `can_access_case_row(author_user_id, firm_id)`).
+ * case file: `private` = the author alone, `case_team` = the case team,
+ * `firm` = the author's active firm colleagues too (owner decision ١٦٩; RLS
+ * since 20261017_41 — `is_case_team_member(request_id)` / `can_access_case_row`,
+ * and `case_note_scope_ok` on every write).
  *
  * `hydrateAuthorNames` uses the SERVICE client on purpose — the RLS-scoped
  * client can read the author's own profile, but not necessarily a colleague's
@@ -25,7 +27,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 export const CASE_NOTE_SELECT = "id, request_id, author_user_id, firm_id, visibility, body, created_at, updated_at";
 
 export const MAX_BODY_LENGTH = 8000;
-export const VALID_VISIBILITY = new Set(["private", "firm"]);
+export const VALID_VISIBILITY = new Set(["private", "firm", "case_team"]);
 
 export interface CaseNoteRow {
   id: string;
@@ -36,6 +38,17 @@ export interface CaseNoteRow {
   body: string;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * Owner decision ١٦٩: `private` = the author alone; `case_team` = the case
+ * team (`public.case_team_user_ids`, migration 20261017_41); `firm` = every
+ * active member of the note's firm.
+ */
+export type CaseNoteVisibility = "private" | "case_team" | "firm";
+
+function toVisibility(value: string): CaseNoteVisibility {
+  return value === "firm" || value === "case_team" ? value : "private";
 }
 
 export interface CaseNoteDto {
@@ -54,7 +67,7 @@ export interface CaseNoteDto {
   /** true when the signed-in user wrote it — the only case the UI offers edit/delete. */
   mine: boolean;
   firmId: string | null;
-  visibility: "private" | "firm";
+  visibility: CaseNoteVisibility;
   body: string;
   createdAt: string;
   updatedAt: string;
@@ -71,7 +84,7 @@ export function toCaseNoteDto(row: CaseNoteRow, uid: string, authorName: string 
     authorNameKnown: !!authorName,
     mine,
     firmId: row.firm_id,
-    visibility: row.visibility === "firm" ? "firm" : "private",
+    visibility: toVisibility(row.visibility),
     body: row.body,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

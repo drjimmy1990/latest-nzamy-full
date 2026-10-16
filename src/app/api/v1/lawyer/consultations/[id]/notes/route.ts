@@ -123,6 +123,28 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       return NextResponse.json({ error: "نطاق الملاحظة يجب أن يكون خاصة أو ضمن المكتب." }, { status: 400 });
     }
 
+    // «للمكتب» needs a consultation that belongs to a firm: the note is read
+    // through the consultation's own firm, so on a firm-less consultation it
+    // would reach nobody but its author while labelled otherwise. RLS
+    // (`consultation_note_scope_ok`, 20261017_41) refuses it as well; this
+    // only answers with screen copy instead of a misleading 403.
+    if (visibility === "firm") {
+      const { data: consultation, error: consultationError } = await supabase
+        .from("consultations")
+        .select("firm_id")
+        .eq("id", id)
+        .maybeSingle();
+      if (consultationError) {
+        console.error("[lawyer/consultations/notes POST] consultation lookup failed:", consultationError.message, consultationError.code);
+      }
+      if (!(consultation as { firm_id: string | null } | null)?.firm_id) {
+        return NextResponse.json(
+          { error: "هذه الاستشارة ليست ضمن مكتب، فلا يمكن مشاركة الملاحظة مع المكتب. اجعلها خاصة بك." },
+          { status: 400 },
+        );
+      }
+    }
+
     const { data, error } = await supabase
       .from("consultation_notes")
       .insert({
