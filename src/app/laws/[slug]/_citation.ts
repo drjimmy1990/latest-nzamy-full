@@ -91,6 +91,10 @@ const KNOWN_DOC_TYPES: Record<string, { ar: string; en: string }> = {
   "تعليمات":             { ar: "تعليمات",             en: "Instructions" },
   "دليل":                { ar: "دليل",                en: "Guide" },
   "دليل إرشادي":         { ar: "دليل إرشادي",         en: "Guidance Manual" },
+  // Owner decision ١٠٢ (answers of 2026-10-06): the page-numbered documents
+  // once typed «نظام» / «لائحة تنفيذية» carry this label, verbatim. Cited by
+  // page: «الصفحة (3) من دليل إرشادي / تنظيم إداري (…) ونصه:».
+  "دليل إرشادي / تنظيم إداري": { ar: "دليل إرشادي / تنظيم إداري", en: "Guidance / Administrative Regulation" },
   "سياسة":               { ar: "سياسة",               en: "Policy" },
   "تعميم":               { ar: "تعميم",               en: "Circular" },
   "قرار":                { ar: "قرار",                en: "Decision" },
