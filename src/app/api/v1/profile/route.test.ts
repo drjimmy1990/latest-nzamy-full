@@ -137,11 +137,31 @@ test("an unreadable company row is reported as a read failure, never as 'none'",
   assert.match(routeSource, /if \(resolved\.readFailed\) \{\s*\r?\n[\s\S]{0,400}?roleProfileReadFailed = true;/);
 });
 
-test("the membership read goes through the RLS client — no service_role in this route", () => {
+test("the membership read goes through the RLS client — service_role only for the lawyer's own row", () => {
   // Reading a colleague's company is RLS's decision (20260921_03's
   // business_members / business_profiles SELECT policies), not a bypass.
-  assert.doesNotMatch(routeSource, /createServiceClient/);
   assert.match(routeSource, /\.from\("business_members"\)\s*\r?\n\s*\.select\("business_id"\)/);
+  assert.match(routeSource, /async function resolveBusinessScope\(\s*\r?\n\s*supabase: Awaited<ReturnType<typeof createClient>>/);
+  // The one service-role client in this file is readOwnLawyerRow's, and it
+  // reads lawyer_profiles by the verified user id (plan item N2).
+  assert.equal(routeSource.match(/await createServiceClient\(\)/g)?.length, 1);
+  assert.match(
+    routeSource,
+    /const service = await createServiceClient\(\);\s*\r?\n\s*return service\.from\("lawyer_profiles"\)\.select\("\*"\)\.eq\("user_id", userId\)\.maybeSingle\(\);/,
+  );
+});
+
+test("N2: the session client never reads lawyer_profiles' private columns", () => {
+  // 20261016_10 leaves anon/authenticated SELECT on the public columns only, so
+  // a session `select("*")` (or the RETURNING * of a bare `.select()` after the
+  // update) would answer 42501.
+  assert.doesNotMatch(routeSource, /supabase\s*\.from\("lawyer_profiles"\)\s*\.select\("\*"\)/);
+  assert.match(routeSource, /const \{ data, error \} = await readOwnLawyerRow\(user\.id\);/);
+  assert.match(
+    routeSource,
+    /\.from\("lawyer_profiles"\)\s*\r?\n\s*\.update\(lawyerUpdates\)\s*\r?\n\s*\.eq\("user_id", user\.id\)\s*\r?\n\s*\.select\("user_id"\)/,
+  );
+  assert.match(routeSource, /await readOwnLawyerRow\(user\.id\);\s*\r?\n\s*if \(readBackError\)/);
 });
 
 test("PATCH answers a member with a specific Arabic 403, not AR.saveFailed", () => {

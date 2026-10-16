@@ -1300,3 +1300,81 @@ BEGIN
 
   RAISE NOTICE '_verify: 20261016_09 OK — anon holds no privilege on public.profiles; no policy that reads profiles reaches a guest';
 END $$;
+
+
+-- ====================================================================
+-- 2026-10-16 — 20261016_10_lawyer_profiles_select_column_lock.sql (plan item N2)
+-- ====================================================================
+-- anon and authenticated read only the 13 public columns of lawyer_profiles —
+-- never the licence, rate (Q168), credit, contact or metadata columns — and no
+-- policy that applies to them reads a locked column (that would turn every
+-- query of its table into 42501). Keyed on the marker comment on
+-- lawyer_profiles.license_number OR anon's missing table-level SELECT, so a run
+-- BEFORE the migration passes with a NOTICE (code first, then migration).
+-- The column list here MUST match the migration's grant list.
+SELECT '20261016_10 applied (lawyer_profiles column-locked for the API roles)' AS check,
+       NOT has_table_privilege('anon', 'public.lawyer_profiles', 'SELECT') AS present;
+
+DO $$
+DECLARE
+  public_cols text[] := ARRAY[
+    'user_id', 'slug', 'specialties', 'years_experience', 'bio_ar', 'bio_en',
+    'headline_ar', 'education', 'courts', 'languages', 'verification_status',
+    'marketplace_visible', 'is_accepting_clients'];
+  r       text;
+  col     text;
+  leaks   text;
+  missing text := '';
+BEGIN
+  IF coalesce(col_description('public.lawyer_profiles'::regclass,
+       (SELECT attnum FROM pg_attribute WHERE attrelid = 'public.lawyer_profiles'::regclass AND attname = 'license_number')), '')
+       NOT ILIKE '%private since 20261016_10%'
+     AND has_table_privilege('anon', 'public.lawyer_profiles', 'SELECT') THEN
+    RAISE NOTICE '_verify: 20261016_10 is not applied yet — anon can read every lawyer_profiles column of a listed lawyer through REST (apply it after the code deploy)';
+    RETURN;
+  END IF;
+
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF has_table_privilege(r, 'public.lawyer_profiles', 'SELECT') THEN
+      missing := missing || format(' %s holds table-level SELECT on lawyer_profiles again (self-host schema or a GRANT ALL re-applied? re-run 20261016_10);', r);
+    END IF;
+    FOREACH col IN ARRAY public_cols LOOP
+      IF NOT has_column_privilege(r, 'public.lawyer_profiles', col, 'SELECT') THEN
+        missing := missing || format(' %s cannot read public column lawyer_profiles.%s;', r, col);
+      END IF;
+    END LOOP;
+    FOR col IN
+      SELECT att.attname::text FROM pg_attribute att
+       WHERE att.attrelid = 'public.lawyer_profiles'::regclass AND att.attnum > 0 AND NOT att.attisdropped
+    LOOP
+      IF NOT (col = ANY (public_cols)) AND has_column_privilege(r, 'public.lawyer_profiles', col, 'SELECT') THEN
+        missing := missing || format(' %s can read locked column lawyer_profiles.%s;', r, col);
+      END IF;
+    END LOOP;
+  END LOOP;
+
+  SELECT string_agg(DISTINCT format('%s on %s (lawyer_profiles.%s)', p.polname, p.polrelid::regclass, att.attname), '; ')
+    INTO leaks
+    FROM pg_policy p
+    JOIN pg_depend d ON d.classid = 'pg_policy'::regclass AND d.objid = p.oid
+                    AND d.refclassid = 'pg_class'::regclass
+                    AND d.refobjid = 'public.lawyer_profiles'::regclass AND d.refobjsubid > 0
+    JOIN pg_attribute att ON att.attrelid = d.refobjid AND att.attnum = d.refobjsubid
+   WHERE (p.polroles = '{0}'::oid[]
+          OR 'anon'::regrole::oid = ANY (p.polroles)
+          OR 'authenticated'::regrole::oid = ANY (p.polroles))
+     AND NOT (att.attname::text = ANY (public_cols));
+  IF leaks IS NOT NULL THEN
+    missing := missing || format(' policies read a locked lawyer_profiles column, so every API-role query of their table fails with 42501: %s;', leaks);
+  END IF;
+
+  IF NOT has_table_privilege('service_role', 'public.lawyer_profiles', 'SELECT') THEN
+    missing := missing || ' service_role cannot read lawyer_profiles (the directory and GET /api/v1/profile would fail);';
+  END IF;
+
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: the lawyer_profiles column lock is broken —%', missing;
+  END IF;
+
+  RAISE NOTICE '_verify: 20261016_10 OK — anon/authenticated read the 13 public lawyer_profiles columns only; no policy reads a locked column';
+END $$;
