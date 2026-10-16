@@ -353,6 +353,15 @@ export function LawsTabContent({
                                 {isRTL ? `حالة المادة: ${articleNotice}` : `Article status: ${articleNotice}`}
                               </span>
                             )}
+                            {/* Owner decisions ٥١/٥٢: a repealed article found by search carries the
+                                same red badge as a repealed law; its text stays behind the wall. */}
+                            {a.status === "repealed" && (
+                              <span className={`ms-1.5 text-[9px] font-black px-1 py-0.5 rounded border ${
+                                isDark ? "bg-red-950/50 border-red-500/40 text-red-300" : "bg-red-50 border-red-300 text-red-700"
+                              }`}>
+                                ⛔ ملغى وغير سارٍ
+                              </span>
+                            )}
                             {isUnlocked && a.snippet && (
                               <span className={`block line-clamp-2 ${muted}`}>{a.snippet}</span>
                             )}

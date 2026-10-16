@@ -16,6 +16,7 @@ import {
   ALL_SECTION_PREVIEW,
   attachLaws,
   fetchSizeFor,
+  isMissingFunctionError,
   LAW_TITLE_HITS_ALL,
   SEARCH_UNAVAILABLE_MESSAGE,
   SINGLE_TERM_TITLE_MAX,
@@ -29,6 +30,7 @@ import {
   orderRowsByIds,
   rankedLawOrderApplies,
   readPage,
+  rpcPageResult,
   sectionCount,
   shouldRetryLawsWithoutHistory,
   shouldRetryWithoutCount,
@@ -83,12 +85,15 @@ function searchUnavailableResponse(status = 503) {
 }
 
 /**
- * Client-side ceiling per section. For precedents/orders/feqh the anon role's
+ * Client-side ceiling per section. For orders/feqh the anon role's
  * statement_timeout (~3s) normally cancels a slow query first; this bounds a
  * hung connection. The laws section reads library.articles as the SERVICE
  * ROLE since T28-21 (the table is server-only), which does not carry anon's
  * 3s limit: aborting ends this route's wait, not necessarily the query on the
- * database side.
+ * database side. Precedents also run as the service role (20261016_01); their
+ * window goes through library.search_principles_page, whose own 4s
+ * statement_timeout (20261017_20, applied by PostgREST before the call) ends
+ * the query in the database before this budget runs out.
  */
 const SECTION_BUDGET_MS = 4500;
 
@@ -97,6 +102,11 @@ const RANKED_RPC = 'search_law_articles_ranked';
 const RANKED_RPC_RETRY_MS = 10 * 60 * 1000;
 const RANKED_RPC_BUDGET_MS = 1500;
 let rankedRpcMissingUntil = 0;
+
+/** Precedents window with its own statement_timeout (migration 20261017_20, fix plan N18). */
+const PRINCIPLES_RPC = 'search_principles_page';
+const PRINCIPLES_RPC_RETRY_MS = 10 * 60 * 1000;
+let principlesRpcMissingUntil = 0;
 
 type QueryError = { code?: string; message?: string; details?: string | null } | null;
 type RowsResult = { data: Record<string, unknown>[] | null; count: number | null; error: QueryError };
@@ -526,10 +536,36 @@ export async function POST(request: Request) {
           return q;
         };
 
-        const res = await precQuery()
-          .order('id')
-          .range(from, from + fetchSizeFor(size) - 1)
-          .abortSignal(signal);
+        // Fix plan N18: the same window through library.search_principles_page
+        // (migration 20261017_20), whose 4s statement_timeout PostgREST applies
+        // before the call — the inline query below runs as the service role,
+        // which has no statement_timeout, so the database would keep running
+        // it after this route stopped waiting. The inline query stays for one
+        // case only: the function is not there yet (isMissingFunctionError,
+        // remembered for 10 minutes). A 57014 from the function fails the
+        // section like any other error; it is never retried unbounded.
+        const rpcRes = Date.now() < principlesRpcMissingUntil
+          ? null
+          : await serverOnly
+            .schema('library')
+            .rpc(PRINCIPLES_RPC, {
+              p_tsquery: ftsQuery,
+              p_offset: from,
+              p_fetch: fetchSizeFor(size),
+              p_track: filters.track ?? null,
+              p_source: filters.source ?? null,
+              p_year: filters.year ?? null,
+              p_court: filters.court ?? null,
+            })
+            .abortSignal(signal);
+        const rpcMissing = rpcRes !== null && isMissingFunctionError(rpcRes.error);
+        if (rpcMissing) principlesRpcMissingUntil = Date.now() + PRINCIPLES_RPC_RETRY_MS;
+        const res = rpcRes !== null && !rpcMissing
+          ? rpcPageResult(rpcRes)
+          : await precQuery()
+            .order('id')
+            .range(from, from + fetchSizeFor(size) - 1)
+            .abortSignal(signal);
         const settled = await settlePage('precedents', res as unknown as RowsResult, () => precQuery(true).abortSignal(signal));
         if (!settled) return { ok: false };
         const precResults = settled.rows;

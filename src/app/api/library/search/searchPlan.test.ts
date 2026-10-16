@@ -14,6 +14,8 @@ import {
   isSectionCountExact,
   isPastEndError,
   isTimeoutError,
+  isMissingFunctionError,
+  rpcPageResult,
   lawFetchWindow,
   lawPageArticles,
   lawTitleSlots,
@@ -115,6 +117,46 @@ test("the uncounted retry runs on the database's statement_timeout (57014) only"
   assert.equal(shouldRetryWithoutCount({ code: "42501", message: "permission denied" }), false);
   assert.equal(shouldRetryWithoutCount(null), false);
   assert.equal(shouldRetryWithoutCount(undefined), false);
+});
+
+test("isMissingFunctionError: only a missing RPC sends precedents back to the inline query (N18)", () => {
+  // PostgREST before 20261017_20 is applied, and Postgres itself.
+  assert.equal(isMissingFunctionError({ code: "PGRST202", message: "Could not find the function library.search_principles_page" }), true);
+  assert.equal(isMissingFunctionError({ code: "42883", message: "function does not exist" }), true);
+  // The function's own statement_timeout fired: the unbounded inline query
+  // must NOT run instead (it would undo the fix).
+  assert.equal(isMissingFunctionError({ code: "57014", message: "canceling statement due to statement timeout" }), false);
+  assert.equal(isMissingFunctionError({ name: "AbortError", message: "This operation was aborted" }), false);
+  assert.equal(isMissingFunctionError({ code: "42501", message: "permission denied for function search_principles_page" }), false);
+  assert.equal(isMissingFunctionError({ code: "PGRST203", message: "ambiguous function" }), false);
+  assert.equal(isMissingFunctionError(null), false);
+  assert.equal(isMissingFunctionError(undefined), false);
+});
+
+test("rpcPageResult: the RPC's {rows, count} reads like a PostgREST page", () => {
+  const rows = [{ id: "c__p-1", text: "العقد", judicial_collections: { id: "c", court: "المحكمة العليا" } }];
+  const page = rpcPageResult({ data: { rows, count: 1234 }, error: null });
+  assert.deepEqual(page, { data: rows, count: 1234, error: null });
+  // readPage sees rows and the count; above 1000 the section stays "more than 1000".
+  const read = readPage(page);
+  assert.equal(read.kind, "rows");
+  assert.equal(isSectionCountExact(1234, 0, 50, 50), false);
+  // An empty page past the end still carries the total (no PGRST103 from an RPC).
+  assert.deepEqual(rpcPageResult({ data: { rows: [], count: 28 }, error: null }), { data: [], count: 28, error: null });
+  assert.equal(resolveSectionCount(28, 50, 0, 50), 28);
+  // An error passes through untouched (57014 then fails the section).
+  const err = { code: "57014", message: "canceling statement due to statement timeout" };
+  assert.deepEqual(rpcPageResult({ data: null, error: err }), { data: null, count: null, error: err });
+  assert.equal(readPage(rpcPageResult({ data: null, error: err })).kind, "failed");
+  // A body of any other shape is a failed page, never an empty one.
+  for (const data of [null, [], "x", { count: 3 }, { rows: "x", count: 3 }]) {
+    const bad = rpcPageResult({ data, error: null });
+    assert.equal(bad.data, null);
+    assert.equal(readPage(bad).kind, "failed");
+  }
+  // A count that is not a whole non-negative number is no count.
+  assert.equal(rpcPageResult({ data: { rows: [], count: -1 }, error: null }).count, null);
+  assert.equal(rpcPageResult({ data: { rows: [], count: "7" }, error: null }).count, null);
 });
 
 test("uncountedPage: a row past the window proves more matches exist, and the count is only a floor", () => {
