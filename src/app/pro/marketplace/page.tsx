@@ -76,7 +76,7 @@ const PRODUCTS = [
     id: 4, category: "analytics",
     name:    { ar: "لوحة تحليلات الأداء Pro", en: "Performance Analytics Dashboard Pro" },
     vendor:  { ar: "نظامي Analytics", en: "Nezamy Analytics" },
-    desc:    { ar: "تقارير مفصّلة عن أداء مكتبك: الإيرادات، معدل نجاح القضايا، إنتاجية الفريق، ورضا الموكلين", en: "Detailed reports on your firm's performance: revenue, case win rate, team productivity, and client satisfaction" },
+    desc:    { ar: "تقارير مفصّلة عن أداء مكتبك: الإيرادات، مراحل القضايا ومهلها، إنتاجية الفريق، ورضا الموكلين", en: "Detailed reports on your firm's performance: revenue, case win rate, team productivity, and client satisfaction" },
     price:   { ar: "٩٩ ر.س/شهر", en: "SAR 99/mo" },
     rating: 4.6, reviews: 156, verified: true,
     badge:   null, badgeColor: "",

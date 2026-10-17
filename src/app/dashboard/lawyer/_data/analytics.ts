@@ -128,5 +128,5 @@ export const SHARE_TOGGLE_DEFAULTS = {
   achievements: true,
   reviews:      true,
   financial:    false,
-  winRate:      true,
+  // No winRate toggle: owner answer ١٩٣ bans a win percentage everywhere.
 };

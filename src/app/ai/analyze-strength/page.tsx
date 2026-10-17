@@ -63,7 +63,7 @@ export default function AIStrengthPage() {
           <span className="rounded-full bg-[#C8A762]/15 border border-[#C8A762]/30 px-2.5 py-0.5 text-[10px] font-bold text-[#C8A762]">PRO</span>
         </div>
         <p className={`text-[13px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-          قيّم قوة قضيتك + توقّع حجج الخصم + حدد الفرص والمخاطر — تحليل شامل قبل الترافع
+          قيّم قوة أسانيدك + توقّع حجج الخصم + حدد المخاطر الإجرائية — تحليل شامل قبل الترافع
         </p>
       </div>
 
@@ -292,7 +292,7 @@ export default function AIStrengthPage() {
           <AiResultActions
             text={[
               `تقرير محلل الموقف والخصم`,
-              `مؤشر قوة القضية: ${ANALYSIS.overallScore}/100`,
+              `مؤشر قوة الأسانيد: ${ANALYSIS.overallScore}/100`,
               `الحكم: ${ANALYSIS.verdict}`,
               ``,
               `نقاط القوة:\n${ANALYSIS.strengths.map((s: string) => `• ${s}`).join("\n")}`,
@@ -314,7 +314,7 @@ export default function AIStrengthPage() {
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
               <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
                 <div className={`${card} p-6 shadow-sm flex flex-col items-center text-center`}>
-                  <p className={`text-[11px] font-bold uppercase tracking-wider mb-4 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>مؤشر قوة القضية</p>
+                  <p className={`text-[11px] font-bold uppercase tracking-wider mb-4 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>مؤشر قوة الأسانيد</p>
                   <ScoreGauge score={ANALYSIS.overallScore} isDark={isDark} />
                   <div className={`mt-4 rounded-2xl px-4 py-2.5 border ${isDark ? "border-amber-700/30 bg-amber-900/20" : "border-amber-200 bg-amber-50"}`}>
                     <p className={`text-[12px] leading-relaxed ${isDark ? "text-amber-300" : "text-amber-800"}`}>{ANALYSIS.verdict}</p>
@@ -415,7 +415,7 @@ export default function AIStrengthPage() {
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
-                  { label: "قوة الموقف", value: `${ANALYSIS.overallScore}/100`, color: "text-[#C8A762]", bg: isDark ? "bg-[#C8A762]/5 border-[#C8A762]/20" : "bg-amber-50 border-amber-200" },
+                  { label: "قوة الأسانيد", value: `${ANALYSIS.overallScore}/100`, color: "text-[#C8A762]", bg: isDark ? "bg-[#C8A762]/5 border-[#C8A762]/20" : "bg-amber-50 border-amber-200" },
                   { label: "هجمات الخصم المتوقعة", value: `${OPPONENT_MOVES.length}`, color: "text-red-500", bg: isDark ? "bg-red-500/5 border-red-700/20" : "bg-red-50 border-red-200" },
                   { label: "مخاطر عالية", value: `${RISKS_MATRIX.filter(r => r.impact >= 80).length}`, color: "text-orange-500", bg: isDark ? "bg-orange-500/5 border-orange-700/20" : "bg-orange-50 border-orange-200" },
                   { label: "فرص متاحة", value: `${ANALYSIS.strengths.length}`, color: "text-emerald-500", bg: isDark ? "bg-emerald-500/5 border-emerald-700/20" : "bg-emerald-50 border-emerald-200" },

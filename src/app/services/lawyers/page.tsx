@@ -56,8 +56,9 @@ const ROLES = [
       {
         href: "/ai/analyze-strength",
         icon: ChartLine,
-        labelAr: "محلل فرص النجاح",
-        descAr: "ارفع وقائع القضية قبل الاستلام ليخبرك النظام بفرص فوزك بناءً على السوابق والأدلة المتاحة.",
+        // Owner answer ١٩٣: no chance-of-winning — strength of the grounds and procedural risks.
+        labelAr: "محلل قوة الأسانيد",
+        descAr: "ارفع وقائع القضية قبل الاستلام ليعرض لك النظام مؤشرات قوة الأسانيد والمخاطر الإجرائية بناءً على السوابق والأدلة المتاحة.",
         badge: null,
         hot: false,
         features: ["تقييم الأدلة", "السوابق المطابقة", "قرار استلام موثق"],
