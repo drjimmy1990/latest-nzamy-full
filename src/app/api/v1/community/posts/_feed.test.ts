@@ -58,12 +58,13 @@ test("tab and visibility: the page's `lawyers` is the column's `lawyers_only`", 
 test("categories map between the UI ids and the CHECK list, both ways", () => {
   assert.equal(dbCategoryFor("real-estate"), "real_estate");
   assert.equal(dbCategoryFor("labor"), "labor");
-  assert.equal(dbCategoryFor("civil"), "other");
+  assert.equal(dbCategoryFor("civil"), "civil"); // 20261018_03 (owner answer ١٩٠)
   assert.equal(dbCategoryFor("all"), null);
   assert.equal(dbCategoryFor(""), null);
   assert.equal(dbCategoryFor("not-a-category"), null);
   assert.equal(uiCategoryFor("real_estate"), "real-estate");
-  assert.equal(uiCategoryFor("other"), "civil");
+  assert.equal(uiCategoryFor("civil"), "civil");
+  assert.equal(uiCategoryFor("other"), "civil"); // a pre-20261018_03 row
   assert.equal(uiCategoryFor("general"), "general");
   for (const ui of ["labor", "commercial", "civil", "criminal", "family", "real-estate"]) {
     assert.equal(uiCategoryFor(dbCategoryFor(ui)), ui, ui);

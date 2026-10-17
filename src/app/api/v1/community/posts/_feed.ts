@@ -58,9 +58,9 @@ export function visibilityForTab(raw: string | null | undefined): PostVisibility
   }
 }
 
-/** community_posts.category CHECK list. */
+/** community_posts.category CHECK list (20261018_03 added civil). */
 export const DB_CATEGORIES = [
-  "general", "labor", "commercial", "criminal", "family", "real_estate",
+  "general", "labor", "commercial", "civil", "criminal", "family", "real_estate",
   "administrative", "intellectual_property", "international", "other",
 ] as const;
 export type DbCategory = (typeof DB_CATEGORIES)[number];
@@ -68,14 +68,12 @@ export type DbCategory = (typeof DB_CATEGORIES)[number];
 /**
  * UI category id → column value. The UI spells real estate with a hyphen.
  *
- * «مدني» (`civil`) has no value in the CHECK list. Until the owner decides
- * whether to add one, it is stored as `other` — the only value that does not
- * claim a different field of law — and `other` reads back as `civil`, so a
- * question asked under «مدني» is found under «مدني».
+ * «مدني» (`civil`) is its own value since migration 20261018_03 (owner answer
+ * ١٩٠). Before it, «مدني» was stored as `other`; the migration moved those
+ * rows to `civil`, and `other` still reads back as «مدني» in case one is left.
  */
 const UI_TO_DB: Record<string, DbCategory> = {
   "real-estate": "real_estate",
-  civil: "other",
 };
 const DB_TO_UI: Record<string, string> = {
   real_estate: "real-estate",
