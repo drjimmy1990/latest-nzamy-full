@@ -50,6 +50,9 @@ interface ServiceCategory {
 
 const IS_CLIENT_BETA = false; // Turned off to show all comprehensive services
 
+/** Owner answer ١٩٧ — verbatim. */
+const HUMAN_REVIEW_LINE = "تُعد وتُراجع وتُعتمد بإشراف مستشار قانوني معتمد من فريق نظامي.";
+
 const ICON_MAP: Record<string, React.ElementType> = {
   ChatCircle,
   FileText,
@@ -188,7 +191,7 @@ function SubServiceCard({ svc }: { svc: SubService }) {
             )}
             {svc.humanService && (
               <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400">
-                <Users size={9} weight="fill" /> محامٍ متخصص
+                <Users size={9} weight="fill" /> بإشراف مستشار
               </span>
             )}
           </div>
@@ -196,6 +199,15 @@ function SubServiceCard({ svc }: { svc: SubService }) {
           <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed mb-3">
             {svc.desc}
           </p>
+          {/* Owner answer ١٩٧ (2026-10-16), his wording for every catalogue
+              service the team delivers. A request lands on the نظامي desk
+              (see receiverType in clientServiceCatalog.ts), not on a named
+              lawyer, so the card no longer says «محامٍ متخصص». */}
+          {svc.humanService && (
+            <p className="-mt-2 mb-3 text-[11px] font-semibold text-blue-700 dark:text-blue-300 leading-relaxed">
+              {HUMAN_REVIEW_LINE}
+            </p>
+          )}
 
           {/* Price + CTA */}
           <div className="flex items-center justify-between gap-3">

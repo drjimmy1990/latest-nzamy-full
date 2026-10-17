@@ -10,6 +10,8 @@ import {
   ArrowLeft,
   GitBranch,
   FileText,
+  Key,
+  ClockCounterClockwise,
 } from '@phosphor-icons/react';
 
 const FadeUp = ({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) => {
@@ -36,12 +38,28 @@ const FadeUp = ({ children, delay = 0 }: { children: React.ReactNode; delay?: nu
 // certificate, no ZATCA or PDPL integration — settings ComplianceTab says
 // so), «2FA» (no second factor exists in the code), «نسخ احتياطية كل 6
 // ساعات … 30 نسخة», «مراقبة أمنية على مدار الساعة» and «Bug Bounty متاح».
+// Owner answer ١٩٨ (2026-10-16) keeps exactly what the platform does: TLS
+// (1.3 by default — the live server also accepts 1.2 for older clients,
+// measured 2026-10-17), password hashing (bcrypt in the auth service), RLS,
+// and the retention policy of the privacy page.
 const pillars = [
   {
     icon: Lock,
     title: 'تشفير الاتصال وعزل البيانات',
-    desc: 'كل اتصال بالمنصة مشفّر عبر TLS، وتعزل سياسات الأمان على مستوى الصف (RLS) سجلات كل حساب عن غيره داخل قاعدة البيانات.',
-    badge: 'TLS · RLS',
+    desc: 'كل اتصال بالمنصة مشفّر عبر TLS 1.3 (و1.2 للأجهزة الأقدم)، وتعزل سياسات الأمان على مستوى الصف (RLS) سجلات كل حساب عن غيره داخل قاعدة البيانات.',
+    badge: 'TLS 1.3 · RLS',
+  },
+  {
+    icon: Key,
+    title: 'تجزئة كلمات المرور',
+    desc: 'لا تُحفظ كلمة المرور نصاً: تُخزَّن مُجزّأة (bcrypt) في خدمة المصادقة، فلا يطّلع عليها أحد.',
+    badge: 'bcrypt',
+  },
+  {
+    icon: ClockCounterClockwise,
+    title: 'سياسة الحفظ والإتلاف',
+    desc: 'نحتفظ بالبيانات طالما الحساب نشط أو بالقدر اللازم نظاماً، وتُحذف بطلبك ما لم يوجد التزام نظامي بحفظها — التفاصيل في سياسة الخصوصية.',
+    badge: 'الحفظ',
   },
   {
     icon: ShieldCheck,
@@ -58,8 +76,9 @@ const pillars = [
 ];
 
 const certifications = [
-  { name: 'TLS', desc: 'تشفير الاتصال' },
+  { name: 'TLS 1.3', desc: 'تشفير الاتصال' },
   { name: 'RLS', desc: 'عزل سجلات كل حساب' },
+  { name: 'bcrypt', desc: 'تجزئة كلمات المرور' },
 ];
 
 export default function SecurityPage() {
@@ -170,8 +189,8 @@ export default function SecurityPage() {
               </h2>
               <div className="space-y-4">
                 {[
-                  { icon: Eye, title: 'حق الوصول', desc: 'احصل على نسخة كاملة من بياناتك في أي وقت' },
-                  { icon: FileText, title: 'حق التصحيح', desc: 'طلب تصحيح أي بيانات غير دقيقة فوراً' },
+                  { icon: Eye, title: 'حق الوصول', desc: 'طلب نسخة من بياناتك عبر فريق الدعم' },
+                  { icon: FileText, title: 'حق التصحيح', desc: 'طلب تصحيح أي بيانات غير دقيقة' },
                   { icon: GitBranch, title: 'حق المحو', desc: 'طلب حذف بياناتك في حدود ما يسمح به النظام' },
                 ].map((r, i) => (
                   <div key={r.title} className="flex items-start gap-4 p-4 rounded-xl border border-slate-100 hover:border-royal/20 transition-colors">
@@ -191,7 +210,7 @@ export default function SecurityPage() {
                 <h3 className="font-bold text-ink mb-5 text-base">للتواصل مع فريق الأمان</h3>
                 <div className="space-y-3 mb-6">
                   {[
-                    { label: 'إيميل الأمان', value: 'security@nzamy.sa' },
+                    { label: 'إيميل الأمان', value: 'security@nezamy.sa' },
                     { label: 'وقت الاستجابة', value: 'خلال ٢٤ ساعة' },
                   ].map((item) => (
                     <div key={item.label} className="flex justify-between py-2 border-b border-slate-200 last:border-0 text-sm">

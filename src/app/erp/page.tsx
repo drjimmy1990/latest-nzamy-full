@@ -53,8 +53,10 @@ const modules = {
 };
 
 const faqs = [
-  { q: { ar: "كم من الوقت يستغرق التطبيق؟", en: "How long does implementation take?" }, a: { ar: "يعتمد على حجم المؤسسة، لكن نوفر فريق تطبيق متخصص يُنجز الإعداد الأساسي خلال ٢–٤ أسابيع.", en: "Depends on firm size, but we provide a dedicated implementation team completing the core setup in 2-4 weeks." } },
-  { q: { ar: "هل يمكن الاستضافة داخل المؤسسة (On-Premise)؟", en: "Is on-premise hosting available?" }, a: { ar: "نعم، نوفر خيار الاستضافة الخاصة أو السحابة أو النموذج الهجين حسب متطلبات حوكمة بياناتكم.", en: "Yes, we offer private hosting, cloud, or hybrid model depending on your data governance requirements." } },
+  // Owner answer ١٩٦ (2026-10-16): no estimated duration and no on-premise /
+  // hybrid option — Nezamy is a cloud platform (Enterprise SaaS).
+  { q: { ar: "كم من الوقت يستغرق التطبيق؟", en: "How long does implementation take?" }, a: { ar: "يعتمد على حجم المؤسسة واحتياجاتها؛ نتفق معكم على خطة الإعداد وجدولها بعد التعرّف على متطلباتكم.", en: "It depends on the firm's size and needs; we agree the setup plan and its schedule with you once we know your requirements." } },
+  { q: { ar: "هل يمكن الاستضافة داخل المؤسسة (On-Premise)؟", en: "Is on-premise hosting available?" }, a: { ar: "لا. نظامي منصة سحابية، ولا يُثبَّت داخل بنية المنشأة ولا بنموذج هجين.", en: "No. Nezamy is a cloud platform; it is not installed in your infrastructure or in a hybrid model." } },
   { q: { ar: "هل يلتزم نظامي ERP بأنظمة هيئة الزكاة والضريبة؟", en: "Is Nezamy ERP compliant with ZATCA regulations?" }, a: { ar: "ليس بعد. الفوترة الإلكترونية وفق متطلبات هيئة الزكاة والضريبة والجمارك (المرحلة الثانية) قيد التطوير، ولا يُصدر النظام حالياً فواتير إلكترونية بصيغتها.", en: "Not yet. E-invoicing to ZATCA Phase 2 requirements is in development; the system does not issue ZATCA e-invoices today." } },
   // Same 24/7 claim as the removed hero badge — and a «SLA مضمون» on top of it.
   // Support hours are أحد–خميس ٨ص–١٠م / الجمعة–السبت ٩ص–٥م (contact page), and
@@ -220,13 +222,13 @@ export default function ErpPage() {
       <section className={`py-20 ${isDark ? "bg-dark-bg" : "bg-slate-50"}`}>
         <div className="mx-auto max-w-5xl px-4">
           <h2 className={`mb-10 text-center text-2xl font-bold ${isDark ? "text-white" : "text-slate-900"}`}>
-            {isRTL ? "خيارات النشر" : "Deployment Options"}
+            {isRTL ? "الاستضافة" : "Hosting"}
           </h2>
-          <div className="grid gap-6 md:grid-cols-3">
+          {/* Owner answer ١٩٦: cloud only — the «خاص (On-Premise)» and «هجين»
+              cards promised installations Nezamy does not offer. */}
+          <div className="mx-auto grid max-w-md gap-6">
             {[
-              { title: isRTL ? "السحابة" : "Cloud", icon: Globe, desc: isRTL ? "استضافة آمنة على بنيتنا السحابية في المنطقة السعودية" : "Secure hosting on our Saudi-region cloud", tag: isRTL ? "الأسرع للتشغيل" : "Fastest to deploy" },
-              { title: isRTL ? "خاص (On-Premise)" : "Private (On-Premise)", icon: Database, desc: isRTL ? "تثبيت كامل داخل بنيتكم التحتية لأقصى درجات التحكم والخصوصية" : "Full installation in your infrastructure for maximum control and privacy", tag: isRTL ? "أقصى خصوصية" : "Maximum privacy" },
-              { title: isRTL ? "هجين" : "Hybrid", icon: LinkSimple, desc: isRTL ? "بيانات حساسة على خوادمكم وأعباء العمل العامة في السحابة" : "Sensitive data on your servers, general workloads in the cloud", tag: isRTL ? "مرونة مثلى" : "Optimal flexibility" },
+              { title: isRTL ? "السحابة" : "Cloud", icon: Globe, desc: isRTL ? "استضافة آمنة على بنيتنا السحابية في المنطقة السعودية" : "Secure hosting on our Saudi-region cloud", tag: isRTL ? "منصة سحابية" : "Cloud platform" },
             ].map((opt, i) => (
               <div key={i} className={`rounded-2xl border p-6 ${isDark ? "border-white/10 bg-dark-card" : "border-slate-200 bg-white"}`}>
                 <div className="mb-4 flex items-center justify-between">
