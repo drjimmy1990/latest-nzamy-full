@@ -56,9 +56,12 @@ export async function GET(request: Request) {
     // since owner decision ١٧١ (migration 20261016_01): their `fts` and text
     // are server-only, so their count and top matches run as the service role
     // and only a 120-character opening of a principle leaves the route (the
-    // precedent page shows 150 of a locked one). Everything else stays on the
-    // request client: migration 20261004_01 keeps `fts` and every laws /
-    // decrees column read here on the anon allow-list.
+    // precedent page shows 150 of a locked one). The fiqh blocks likewise since
+    // owner answer ١٨٣ (migration 20261018_02): their `fts` is server-only,
+    // so their count runs as the service role (a number only; the book matches
+    // come from feqh_books titles). Everything else stays on the request
+    // client: migration 20261004_01 keeps `fts` and every laws / decrees
+    // column read here on the anon allow-list.
     const serverOnly = await createServiceClient();
 
     const count = (table: string, client: typeof supabase | typeof serverOnly = supabase) => client
@@ -73,7 +76,7 @@ export async function GET(request: Request) {
       count('articles', serverOnly),
       count('principles', serverOnly),
       count('decrees_circulars'),
-      count('feqh_blocks'),
+      count('feqh_blocks', serverOnly),
 
       // Top 2 law matches — title-first (the Labor Law for «نظام العمل»),
       // falling back to plain full-text matches when no title carries the query.

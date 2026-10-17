@@ -1928,3 +1928,90 @@ BEGIN
   SELECT count(*) INTO n FROM public.test_accounts;
   RAISE NOTICE '_verify: 20261017_44 OK — % registered test account(s), none marketplace-visible', n;
 END $$;
+
+-- ====================================================================
+-- 2026-10-18 — 20261018_02_library_feqh_decree_text_lock.sql (owner answer ١٨٣)
+-- ====================================================================
+-- The fiqh text (feqh_blocks.matn, sharh, hashiyah, fts) and the decree page
+-- text (decree_pages.content) are server-only; anon / authenticated read the
+-- place columns below and nothing else; library.search_feqh_page is INVOKER,
+-- 4s, service_role only. Keyed on the marker comment on library.feqh_blocks,
+-- so a run BEFORE the migration passes with a NOTICE (code first, then
+-- migration). The allow-lists here MUST match the migration's grant lists.
+SELECT '20261018_02 marker on library.feqh_blocks (fiqh / decree text server-only)' AS check,
+       coalesce(obj_description('library.feqh_blocks'::regclass, 'pg_class'), '')
+         ILIKE '%text server-only since 20261018_02%' AS present;
+
+DO $$
+DECLARE
+  spec    record;
+  r       text;
+  col     text;
+  fn      constant text := 'library.search_feqh_page(text, integer, integer)';
+  cfg     text[];
+  missing text := '';
+BEGIN
+  IF coalesce(obj_description('library.feqh_blocks'::regclass, 'pg_class'), '')
+       NOT ILIKE '%text server-only since 20261018_02%' THEN
+    RAISE NOTICE '_verify: 20261018_02 is not applied yet — fiqh text and decree pages are still anon-readable (the pre-lock posture; apply it after the code deploy)';
+    RETURN;
+  END IF;
+
+  FOR spec IN
+    SELECT * FROM (VALUES
+      ('library.feqh_blocks', ARRAY['id', 'section_id', 'topic', 'volume_number', 'page_number', 'order_index', 'created_at', 'updated_at', 'page_label', 'volume_label', 'book_id']),
+      ('library.decree_pages', ARRAY['id', 'decree_id', 'page_number', 'created_at', 'updated_at', 'number_text', 'order_index'])
+    ) AS v(tbl, allowed)
+  LOOP
+    FOREACH r IN ARRAY ARRAY['anon', 'authenticated']
+    LOOP
+      IF has_table_privilege(r, spec.tbl, 'SELECT') THEN
+        missing := missing || format(' %s holds table-level SELECT on %s (was 20260922_01 §3 or the self-host schema re-applied? re-run 20261018_02);', r, spec.tbl);
+      END IF;
+      FOREACH col IN ARRAY spec.allowed
+      LOOP
+        IF NOT has_column_privilege(r, spec.tbl, col, 'SELECT') THEN
+          missing := missing || format(' %s cannot read public column %s.%s;', r, spec.tbl, col);
+        END IF;
+      END LOOP;
+      FOR col IN
+        SELECT att.attname::text
+          FROM pg_attribute att
+         WHERE att.attrelid = spec.tbl::regclass
+           AND att.attnum > 0
+           AND NOT att.attisdropped
+      LOOP
+        IF NOT (col = ANY (spec.allowed)) AND has_column_privilege(r, spec.tbl, col, 'SELECT') THEN
+          missing := missing || format(' %s can read locked column %s.%s (re-run 20261018_02);', r, spec.tbl, col);
+        END IF;
+      END LOOP;
+    END LOOP;
+    IF NOT has_table_privilege('service_role', spec.tbl, 'SELECT') THEN
+      missing := missing || format(' service_role cannot read %s (every book / decree page would 500);', spec.tbl);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies
+                    WHERE schemaname || '.' || tablename = spec.tbl
+                      AND cmd IN ('SELECT', 'ALL')
+                      AND roles && ARRAY['anon', 'public']::name[]) THEN
+      missing := missing || format(' no read policy for anon on %s (every guest read of the page places returns 0 rows);', spec.tbl);
+    END IF;
+  END LOOP;
+
+  SELECT p.proconfig INTO cfg FROM pg_proc p WHERE p.oid = to_regprocedure(fn);
+  IF NOT FOUND THEN
+    missing := missing || ' library.search_feqh_page is missing (the fiqh search would fail — re-run 20261018_02);';
+  ELSE
+    IF cfg IS NULL OR NOT ('statement_timeout=4s' = ANY (cfg)) THEN
+      missing := missing || ' search_feqh_page lost its statement_timeout=4s;';
+    END IF;
+    IF has_function_privilege('anon', fn, 'EXECUTE') OR has_function_privilege('authenticated', fn, 'EXECUTE') THEN
+      missing := missing || ' an API role can EXECUTE search_feqh_page (it returns the server-only text; a GRANT re-applied? re-run 20261018_02);';
+    END IF;
+  END IF;
+
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: the fiqh / decree text lock is broken —%', missing;
+  END IF;
+
+  RAISE NOTICE '_verify: 20261018_02 OK — fiqh text, its fts and decree page content are server-only; their place columns stay public; search_feqh_page is 4s and service_role only';
+END $$;

@@ -79,6 +79,8 @@ export interface DemoOrder {
   summary_brief?: string;
   preamble?: string;
   articles?: string[];
+  /** From /api/library/decrees/[id]: how many leading pages carry their text (the rest are locked). */
+  unlockedCount?: number;
   hashtags?: string[];
   official_url?: string;
 }

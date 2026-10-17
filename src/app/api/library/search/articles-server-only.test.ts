@@ -62,12 +62,12 @@ test("autocomplete counts library.articles with the service role and never selec
   assert.match(auto, /\.select\('id', \{ count: 'estimated', head: true \}\)/);
   // No other articles read in autocomplete.
   assert.equal((auto.match(/'articles'/g) ?? []).length, 1);
-  // Decrees and fiqh count on the request client (default argument);
-  // principles on the service role since 20261016_01.
-  for (const t of ["decrees_circulars", "feqh_blocks"]) {
-    assert.match(auto, new RegExp(String.raw`count\('${t}'\),`));
-  }
+  // Decrees count on the request client (default argument); principles on
+  // the service role since 20261016_01, fiqh blocks since 20261018_02 (their
+  // fts is server-only, owner answer ١٨٣).
+  assert.match(auto, /count\('decrees_circulars'\),/);
   assert.match(auto, /count\('principles', serverOnly\),/);
+  assert.match(auto, /count\('feqh_blocks', serverOnly\),/);
 });
 
 test("the tier-shaped 200 is private, no-store", () => {

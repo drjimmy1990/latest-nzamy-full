@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { checkLibraryAccess } from '@/lib/access-control';
 import { libraryGate } from '@/lib/library-gate';
 import { selectAllPages } from '@/lib/supabase/selectAllPages';
 import { buildBookSeries, type BookSeriesInfo, type VolumeRow } from '@/lib/library/bookVolumes';
+import { FREE_PAGES, FREE_PAGES_SCAN, feqhLockFrom, type BlockPlace } from '@/lib/library/freePages';
 import { cleanBookText, firstBlockOrderBySection, normalizeHashiyah, planBlocksPage, planBlocksRequest, shapeToc } from './_shape';
 
 /**
@@ -25,6 +26,13 @@ import { cleanBookText, firstBlockOrderBySection, normalizeHashiyah, planBlocksP
  * (1000) without an error: «مطالب أولي النهى … الجزء 01» has 4,860 chapters and
  * its TOC stopped at 1,000; 26 of 185 books were cut. It is now walked in
  * windows with selectAllPages (5 windows / ~1.3s for that book).
+ *
+ * The block text (matn, sharh, hashiyah) is server-only since migration
+ * 20261018_02 (owner answer ١٨٣): it is read with the service role, and a
+ * guest or free reader gets it for the book's first two printed pages only
+ * (src/lib/library/freePages.ts) — past them a block carries its place and
+ * topic, no text. The TOC, the section order and the counts read public
+ * columns on the request client.
  */
 export async function GET(
   request: Request,
@@ -49,6 +57,7 @@ export async function GET(
     const includeToc = searchParams.get('toc') !== '0';
 
     const supabase = await createClient();
+    const serverOnly = await createServiceClient();
 
     // Fetch book metadata
     const { data: book, error: bookError } = await supabase
@@ -107,6 +116,33 @@ export async function GET(
     const isWhitelisted = probe.isWhitelisted;
     const freeLimit = probe.freeLimit; // -1 = unlimited (whitelisted or Pro+)
     const hasFullAccess = freeLimit === -1 || isWhitelisted;
+    const byOverride = probe.freeLimitSource === 'override';
+
+    // The order_index from which blocks are locked. Owner answer ١٨٣: the
+    // book's first two printed pages (its leading blocks' page_number, public
+    // columns); an admin per-book override still counts blocks, as before. A
+    // failed lookup locks every block rather than open the text.
+    let lockFrom = Number.POSITIVE_INFINITY;
+    if (!hasFullAccess) {
+      if (byOverride) {
+        lockFrom = freeLimit;
+      } else {
+        const { data: lead, error: leadError } = await supabase
+          .schema('library')
+          .from('feqh_blocks')
+          .select('order_index, page_number')
+          .eq('book_id', slug)
+          .order('order_index', { ascending: true })
+          .order('id', { ascending: true })
+          .limit(FREE_PAGES_SCAN);
+        if (leadError) {
+          console.error(`[Books] free-pages lookup failed for "${slug}" — every block locked:`, leadError);
+          lockFrom = Number.NEGATIVE_INFINITY;
+        } else {
+          lockFrom = feqhLockFrom((lead ?? []) as BlockPlace[], FREE_PAGES_SCAN);
+        }
+      }
+    }
 
     // Full TOC (chapters with sections, no blocks for performance), walked in
     // windows so a book past 1,000 chapters is not silently cut. The order's
@@ -159,6 +195,7 @@ export async function GET(
           let q = supabase
             .schema('library')
             .from('feqh_blocks')
+            // column-lock-reviewed: both branches name public columns only (id, section_id, order_index, book_id)
             .select(
               scope === 'join'
                 ? 'id, section_id, order_index, feqh_sections!inner ( feqh_chapters!inner ( book_id ) )'
@@ -241,7 +278,9 @@ export async function GET(
     const runBlocksQuery = async (withLabels: boolean, scope: Scope): Promise<BlocksResult> => {
       const needsJoin = scope === 'join';
 
-      let q = supabase
+      // Service role: matn / sharh / hashiyah are server-only (20261018_02);
+      // the per-block mask below is the paywall.
+      let q = serverOnly
         .schema('library')
         .from('feqh_blocks')
         .select(`
@@ -280,6 +319,7 @@ export async function GET(
       let q = supabase
         .schema('library')
         .from('feqh_blocks')
+        // column-lock-reviewed: both branches name public columns only (id, book_id)
         .select(
           scope === 'join' ? 'id, feqh_sections!inner ( feqh_chapters!inner ( book_id ) )' : 'id',
           { count: 'exact', head: true },
@@ -396,8 +436,7 @@ export async function GET(
       blocks: (blocks || []).map((b: Record<string, unknown>) => {
         // Gate on the block's own book-global order_index so locking is correct
         // across pagination pages and section-filtered loads.
-        const isLocked =
-          !hasFullAccess && freeLimit !== -1 && (b.order_index as number) >= freeLimit;
+        const isLocked = !hasFullAccess && (b.order_index as number) >= lockFrom;
         return {
           id: b.id,
           topic: b.topic,
@@ -410,10 +449,11 @@ export async function GET(
           page: b.page_number ?? null,
           volLabel: b.volume_label ?? null,
           pageLabel: b.page_label ?? null,
-          // Cleaned first (page-break comments, bold marks, «---»-only text),
-          // then previewed — so a locked preview is clean too (T28-10).
-          matn: (() => { const t = cleanBookText(b.matn); return isLocked && t ? t.substring(0, 100) + (t.length > 100 ? '...' : '') : t; })(),
-          sharh: (() => { const t = cleanBookText(b.sharh); return isLocked && t ? t.substring(0, 100) + (t.length > 100 ? '...' : '') : t; })(),
+          // Cleaned (page-break comments, bold marks, «---»-only text). A
+          // locked block carries no text at all (owner answer ١٨٣) — not even
+          // an opening: a 100-character opening of every block was the book.
+          matn: isLocked ? '' : cleanBookText(b.matn),
+          sharh: isLocked ? '' : cleanBookText(b.sharh),
           // Always a list: the column is `{}` for every current row.
           hashiyah: isLocked ? [] : normalizeHashiyah(b.hashiyah),
           sectionId: b.section_id,
@@ -423,7 +463,10 @@ export async function GET(
       }),
       paywall: {
         isWhitelisted,
-        freeLimit,
+        // What is free: -1 = everything; otherwise FREE_PAGES printed pages
+        // (freeUnit 'pages'), or an admin override's block count ('blocks').
+        freeLimit: hasFullAccess ? -1 : byOverride ? freeLimit : FREE_PAGES,
+        freeUnit: byOverride ? 'blocks' : 'pages',
         hasFullAccess,
         // A cursor window is not counted (the count would be of the window's
         // filter, not the book): null rather than a wrong number.

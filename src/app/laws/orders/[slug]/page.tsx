@@ -345,6 +345,11 @@ export default function OrderReaderPage() {
     );
   }
 
+  // Owner answer ١٨٣: pages at or past the API's unlockedCount carry no text
+  // (a demo order has none, so every page is open).
+  const unlockedCount = typeof order.unlockedCount === "number" ? order.unlockedCount : (order.articles?.length ?? 0);
+  const isPageLocked = (idx: number) => idx >= unlockedCount;
+
   // ── Custom colors based on issuer ──
   const isRoyal = order.type === "royal";
   const themeClass = isRoyal
@@ -491,7 +496,9 @@ export default function OrderReaderPage() {
                     {order.articles.map((art, idx) => {
                       const itemUniqueId = `order-${order.id}-art-${idx}`;
                       const label = isRTL ? `الصفحة ${idx + 1}` : `Page ${idx + 1}`;
-                      const snippet = art.slice(0, 45) + (art.length > 45 ? "..." : "");
+                      const snippet = isPageLocked(idx)
+                        ? (isRTL ? "للمشتركين" : "Subscribers")
+                        : art.slice(0, 45) + (art.length > 45 ? "..." : "");
                       return (
                         <button
                           key={idx}
@@ -559,6 +566,25 @@ export default function OrderReaderPage() {
                   order.articles.map((art, idx) => {
                     const itemUniqueId = `order-${order.id}-art-${idx}`;
                     const isAdded = cart.some(item => item.articleId === itemUniqueId);
+                    if (isPageLocked(idx)) {
+                      // Owner answer ١٨٣: the API sends no text past the free
+                      // pages, so a locked page is its number and a lock card.
+                      return (
+                        <div key={idx} id={itemUniqueId} className={`nzamy-reader-block p-5 rounded-2xl border ${
+                          isDark ? "bg-[#0c0f12]/30 border-white/5 text-zinc-400" : "bg-white border-slate-100 text-slate-500 shadow-sm"
+                        }`}>
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${
+                            isRoyal ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                          }`}>
+                            {isRTL ? `الصفحة ${idx + 1}` : `Page ${idx + 1}`}
+                          </span>
+                          <div className="mt-3 flex items-center gap-2 text-xs font-bold text-amber-700 dark:text-amber-400">
+                            <Lock size={14} weight="fill" />
+                            <span>{isRTL ? "المعاينة المجانية أول صفحتين؛ نص هذه الصفحة متاح لمشتركي Pro أو أعلى." : "The free preview is the first two pages; this page is for Pro subscribers."}</span>
+                          </div>
+                        </div>
+                      );
+                    }
                     return (
                       <div key={idx} id={itemUniqueId} className={`nzamy-reader-block p-5 rounded-2xl border transition-all ${
                         isDark 

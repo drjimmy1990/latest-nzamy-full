@@ -85,10 +85,13 @@ function searchUnavailableResponse(status = 503) {
 }
 
 /**
- * Client-side ceiling per section. For orders/feqh the anon role's
+ * Client-side ceiling per section. For orders the anon role's
  * statement_timeout (~3s) normally cancels a slow query first; this bounds a
- * hung connection. The laws section reads library.articles as the SERVICE
- * ROLE since T28-21 (the table is server-only), which does not carry anon's
+ * hung connection. The fiqh window reads server-only text since 20261018_02
+ * and goes through library.search_feqh_page, whose own 4s statement_timeout
+ * ends the query in the database (as for precedents below). The laws section
+ * reads library.articles as the SERVICE ROLE since T28-21 (the table is
+ * server-only), which does not carry anon's
  * 3s limit: aborting ends this route's wait, not necessarily the query on the
  * database side. Precedents also run as the service role (20261016_01); their
  * window goes through library.search_principles_page, whose own 4s
@@ -107,6 +110,11 @@ let rankedRpcMissingUntil = 0;
 const PRINCIPLES_RPC = 'search_principles_page';
 const PRINCIPLES_RPC_RETRY_MS = 10 * 60 * 1000;
 let principlesRpcMissingUntil = 0;
+
+/** Fiqh window with its own statement_timeout (migration 20261018_02, owner answer ١٨٣). */
+const FEQH_RPC = 'search_feqh_page';
+const FEQH_RPC_RETRY_MS = 10 * 60 * 1000;
+let feqhRpcMissingUntil = 0;
 
 type QueryError = { code?: string; message?: string; details?: string | null } | null;
 type RowsResult = { data: Record<string, unknown>[] | null; count: number | null; error: QueryError };
@@ -682,15 +690,36 @@ export async function POST(request: Request) {
           `, counted ? { count: 'estimated', head } : { head })
           .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG });
 
+        // Owner answer ١٨٣: matn / sharh / fts are server-only (20261018_02),
+        // so the window goes through library.search_feqh_page as the service
+        // role, with the function's 4s statement_timeout (PostgREST applies it
+        // before the call). The request-client query above stays for one case
+        // only: the function is not there yet (isMissingFunctionError,
+        // remembered for 10 minutes) — the lock and the function ship in the
+        // same migration, so that query still runs under anon's 3s limit. A
+        // 57014 from the function fails the section; it is never retried.
+        const feqhWindow = async (): Promise<{ res: unknown; viaRpc: boolean }> => {
+          if (Date.now() >= feqhRpcMissingUntil) {
+            const rpcRes = await serverOnly
+              .schema('library')
+              .rpc(FEQH_RPC, { p_tsquery: ftsQuery, p_offset: from, p_fetch: fetchSizeFor(size) })
+              .abortSignal(signal);
+            if (!isMissingFunctionError(rpcRes.error)) return { res: rpcPageResult(rpcRes), viaRpc: true };
+            feqhRpcMissingUntil = Date.now() + FEQH_RPC_RETRY_MS;
+          }
+          const res = await feqhQuery()
+            .order('id')
+            .range(from, from + fetchSizeFor(size) - 1)
+            .abortSignal(signal);
+          return { res, viaRpc: false };
+        };
+
         // Books whose TITLE or AUTHOR carries the query lead page 1 (a
         // passage search alone never surfaced «إعلام الموقعين» itself, nor
         // «السنهوري»'s books). Page 1 only: they are a header, not counted
         // rows (see the return below).
-        const [res, titleBooks] = await Promise.all([
-          feqhQuery()
-            .order('id')
-            .range(from, from + fetchSizeFor(size) - 1)
-            .abortSignal(signal),
+        const [{ res, viaRpc }, titleBooks] = await Promise.all([
+          feqhWindow(),
           from === 0
             ? fetchBookTitleHits(supabase, parsed.raw, BOOK_TITLE_HITS_MAX, signal)
             : Promise.resolve({ hits: [], error: null }),
@@ -717,7 +746,9 @@ export async function POST(request: Request) {
         // then read once more without a count, with a budget of its own (the
         // cancelled attempt spent most of `signal`'s), so the section lists
         // its rows with a floor count instead of failing.
-        const settled = await settlePage('feqh', res as unknown as RowsResult, () => feqhQuery(true).abortSignal(signal), {
+        // The function returns its own count, so its page needs neither a
+        // head count nor the uncounted retry; both stay for the fallback.
+        const settled = await settlePage('feqh', res as unknown as RowsResult, () => feqhQuery(true).abortSignal(signal), viaRpc ? undefined : {
           offset: from,
           fetch: fetchSizeFor(size),
           run: () => feqhQuery(false, false)
@@ -736,7 +767,9 @@ export async function POST(request: Request) {
             id: r.id,
             section: 'feqh',
             title: `${book?.title} — ${r.topic}`,
-            snippet: truncateWithHighlight((r.sharh || r.matn) as string, parsed.plainTerms, snippetLen(isFree)),
+            // Owner answer ١٨٣: a locked hit carries its place (book, chapter,
+            // page) and no text — not even the opening.
+            snippet: isFree ? truncateWithHighlight((r.sharh || r.matn) as string, parsed.plainTerms, snippetLen(isFree)) : '',
             locked: !isFree,
             meta: {
               bookTitle: book?.title,

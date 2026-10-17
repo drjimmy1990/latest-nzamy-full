@@ -107,7 +107,10 @@ test("every section query has a deterministic primary-key order and reports coun
     // feqh runs its window inside Promise.all beside the book-title lookup.
     assert.match(routeSource, new RegExp(`(?:await |\\[\\s*)?${name}\\(\\)\\s*\\.order\\('id'\\)\\s*\\.range\\(from, from \\+ fetchSizeFor\\(size\\) - 1\\)`));
   }
-  assert.match(routeSource, /await Promise\.all\(\[\s*feqhQuery\(\)\s*\.order\('id'\)/);
+  // Since 20261018_02 the window is feqhWindow(): the RPC, or this query
+  // while the function is missing.
+  assert.match(routeSource, /await Promise\.all\(\[\s*feqhWindow\(\),/);
+  assert.match(routeSource, /const res = await feqhQuery\(\)\s*\.order\('id'\)\s*\.range\(from, from \+ fetchSizeFor\(size\) - 1\)/);
   assert.doesNotMatch(routeSource, /\.range\(from, from \+ size - 1\)/);
   assert.equal((routeSource.match(/requested: fetchSizeFor\(size\)/g) ?? []).length, 4);
   assert.equal((routeSource.match(/\.\.\.sectionCount\(\{/g) ?? []).length, 4);
@@ -185,4 +188,18 @@ test("precedents run through the time-limited RPC and fall back only when it is 
   assert.match(routeSource, /const res = rpcRes !== null && !rpcMissing\s*\? rpcPageResult\(rpcRes\)\s*: await precQuery\(\)/);
   assert.match(routeSource, /if \(rpcMissing\) principlesRpcMissingUntil = Date\.now\(\) \+ PRINCIPLES_RPC_RETRY_MS;/);
   assert.doesNotMatch(routeSource, /shouldRetryWithoutCount\(rpcRes/);
+});
+
+test("fiqh runs through the time-limited RPC and falls back only when it is missing (owner answer ١٨٣)", () => {
+  // migration 20261018_02: library.search_feqh_page, service role only.
+  assert.match(routeSource, /const FEQH_RPC = 'search_feqh_page';/);
+  assert.match(routeSource, /await serverOnly\s*\.schema\('library'\)\s*\.rpc\(FEQH_RPC, \{ p_tsquery: ftsQuery, p_offset: from, p_fetch: fetchSizeFor\(size\) \}\)/);
+  assert.doesNotMatch(routeSource, /supabase\s*\.schema\('library'\)\s*\.rpc\(FEQH_RPC/);
+  // Only a missing function falls back (remembered 10 minutes); any other
+  // RPC result, a 57014 included, is the page.
+  assert.match(routeSource, /if \(!isMissingFunctionError\(rpcRes\.error\)\) return \{ res: rpcPageResult\(rpcRes\), viaRpc: true \};\s*feqhRpcMissingUntil = Date\.now\(\) \+ FEQH_RPC_RETRY_MS;/);
+  // The RPC page skips the uncounted retry (that retry is the inline query).
+  assert.match(routeSource, /settlePage\('feqh', res as unknown as RowsResult, \(\) => feqhQuery\(true\)\.abortSignal\(signal\), viaRpc \? undefined : \{/);
+  // A locked fiqh hit carries no text.
+  assert.match(routeSource, /snippet: isFree \? truncateWithHighlight\(\(r\.sharh \|\| r\.matn\) as string, parsed\.plainTerms, snippetLen\(isFree\)\) : '',/);
 });

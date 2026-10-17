@@ -19,6 +19,10 @@
  * article tables. The principles allow-list is therefore parsed from
  * 20261016_01 (the one in force); 20261004_01's own list is still checked
  * against its _verify.sql section and harness.
+ *
+ * Migration 20261018_02 (owner answer ١٨٣) column-locks library.feqh_blocks
+ * (matn, sharh, hashiyah, fts) and library.decree_pages (content); their
+ * allow-lists are parsed from it.
  */
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -35,11 +39,15 @@ const PRINCIPLES_MIGRATION = read("supabase/migrations/20261016_01_library_princ
 const VERIFY = read("supabase/migrations/_verify.sql");
 const HARNESS = read("supabase/tests/rls/library_column_lock.test.sql");
 const PRINCIPLES_HARNESS = read("supabase/tests/rls/library_principles_text_lock.test.sql");
+const FEQH_MIGRATION = read("supabase/migrations/20261018_02_library_feqh_decree_text_lock.sql");
+const FEQH_HARNESS = read("supabase/tests/rls/library_feqh_decree_text_lock.test.sql");
 
 /** Library tables the API roles hold NO privilege on: 20260929_01 + 20261016_01. */
 const SERVER_ONLY_TABLES = ["articles", "article_regulations", "article_amendments", "principle_paragraphs"];
 
-const TABLES = ["laws", "judicial_collections", "principles"] as const;
+/** The tables 20261004_01 column-locked; 20261018_02 added the last two. */
+const TABLES_1004 = ["laws", "judicial_collections", "principles"] as const;
+const TABLES = [...TABLES_1004, "feqh_blocks", "decree_pages"] as const;
 type LockedTable = (typeof TABLES)[number];
 
 /** Live column lists (self-hosted production schema, 2026-10-04). */
@@ -64,20 +72,28 @@ const LIVE_COLUMNS: Record<LockedTable, string[]> = {
     "reference", "text", "ruling_basis", "facts", "reasons", "ruling", "year_hijri", "order_index", "fts",
     "created_at", "updated_at", "classification_keywords", "hashtags", "is_redacted", "metadata",
   ],
+  // 2026-10-17
+  feqh_blocks: [
+    "id", "section_id", "topic", "volume_number", "page_number", "matn", "sharh", "hashiyah", "order_index",
+    "fts", "created_at", "updated_at", "page_label", "volume_label", "book_id",
+  ],
+  decree_pages: ["id", "decree_id", "page_number", "content", "created_at", "updated_at", "number_text", "order_index"],
 };
 
-function grantList(table: LockedTable, sql = MIGRATION, label = "20261004_01"): string[] {
+function grantList(table: string, sql = MIGRATION, label = "20261004_01"): string[] {
   const m = new RegExp(String.raw`grant select \(([^)]*)\) on library\.${table} to anon, authenticated;`).exec(sql);
   assert.ok(m, `${label} must grant an explicit column list on library.${table}`);
   return m[1].split(",").map((c) => c.trim()).filter(Boolean);
 }
 
 /** What 20261004_01 granted (its _verify.sql section and harness carry these). */
-const ALLOWED_1004 = Object.fromEntries(TABLES.map((t) => [t, grantList(t)])) as Record<LockedTable, string[]>;
-/** What is in force: 20261016_01 replaced the principles list. */
+const ALLOWED_1004 = Object.fromEntries(TABLES_1004.map((t) => [t, grantList(t)])) as Record<(typeof TABLES_1004)[number], string[]>;
+/** What is in force: 20261016_01 replaced the principles list; 20261018_02 locks the fiqh / decree text. */
 const ALLOWED = {
   ...ALLOWED_1004,
   principles: grantList("principles", PRINCIPLES_MIGRATION, "20261016_01"),
+  feqh_blocks: grantList("feqh_blocks", FEQH_MIGRATION, "20261018_02"),
+  decree_pages: grantList("decree_pages", FEQH_MIGRATION, "20261018_02"),
 } as Record<LockedTable, string[]>;
 const LOCKED = Object.fromEntries(
   TABLES.map((t) => [t, LIVE_COLUMNS[t].filter((c) => !ALLOWED[t].includes(c))]),
@@ -421,13 +437,46 @@ test("the allow-lists: every live column is either allowed or locked, and the lo
   // is built from the locked text (every word with its position), so it is
   // locked with it and the precedent searches run as the service role.
   assert.ok(ALLOWED.laws.includes("fts") && !ALLOWED.principles.includes("fts"));
+  // 20261018_02: the fiqh text and its fts, and the decree page text.
+  assert.deepEqual([...LOCKED.feqh_blocks].sort(), ["fts", "hashiyah", "matn", "sharh"]);
+  assert.deepEqual(LOCKED.decree_pages, ["content"]);
+});
+
+test("20261018_02: _verify.sql, the harness and the migration's verify carry the fiqh / decree allow-lists", () => {
+  const listOf = (body: string) => [...body.matchAll(/'(\w+)'/g)].map((x) => x[1]);
+  const section = VERIFY.slice(VERIFY.indexOf("2026-10-18 — 20261018_02_library_feqh_decree_text_lock.sql"));
+  assert.ok(section.length > 100, "_verify.sql has no 20261018_02 section");
+  for (const t of ["feqh_blocks", "decree_pages"] as const) {
+    for (const [label, text] of [["_verify.sql", section], ["migration verify", FEQH_MIGRATION]] as const) {
+      const m = new RegExp(String.raw`\('library\.${t}', (?:array|ARRAY)\[([\s\S]*?)\]\)`).exec(text);
+      assert.ok(m, `${label}: no allow-list for library.${t}`);
+      assert.deepEqual(listOf(m[1]), ALLOWED[t], `${label}: library.${t} allow-list differs from the grant`);
+    }
+    // The harness asserts each public column of the table.
+    const h = new RegExp(String.raw`foreach col in array array\[([^\]]*)\] loop\s*if not has_column_privilege\(r, 'library\.${t}'`).exec(FEQH_HARNESS);
+    assert.ok(h, `harness: no ${t} allow-list`);
+    assert.deepEqual(listOf(h[1]), ALLOWED[t], `harness ${t} list`);
+  }
+
+  assert.match(FEQH_MIGRATION, /revoke all on library\.feqh_blocks from anon, authenticated, public;/);
+  assert.match(FEQH_MIGRATION, /revoke all on library\.decree_pages from anon, authenticated, public;/);
+  assert.match(FEQH_MIGRATION, /grant all on library\.feqh_blocks to service_role;/);
+  assert.match(FEQH_MIGRATION, /grant all on library\.decree_pages to service_role;/);
+  assert.match(FEQH_MIGRATION, /comment on table library\.feqh_blocks is\s*'[^']*TEXT SERVER-ONLY since 20261018_02/);
+  assert.match(FEQH_MIGRATION, /set statement_timeout = '4s'/);
+  assert.match(FEQH_MIGRATION, /revoke all on function library\.search_feqh_page\(text, integer, integer\) from public, anon, authenticated;/);
+  assert.match(FEQH_MIGRATION, /raise exception '20261018_02 verify:%'/);
+  assert.match(FEQH_MIGRATION, /DEPLOY ORDER — CODE FIRST, THEN THIS MIGRATION/);
+  assert.equal((FEQH_MIGRATION.match(/^begin;$/gm) ?? []).length, 1);
+  assert.equal((FEQH_MIGRATION.match(/^commit;$/gm) ?? []).length, 1);
+  assert.match(FEQH_MIGRATION, /^commit;\s*\n[\s\S]*^notify pgrst, 'reload schema';$/m);
 });
 
 test("_verify.sql and the RLS harness carry the migration's allow-lists", () => {
   const section = VERIFY.slice(VERIFY.indexOf("2026-10-04 — 20261004_01_library_column_lock.sql"));
   assert.ok(section.length > 100, "_verify.sql has no 20261004_01 section");
   for (const [label, text] of [["_verify.sql", section], ["harness", HARNESS], ["migration verify", MIGRATION]] as const) {
-    for (const t of TABLES) {
+    for (const t of TABLES_1004) {
       const m = new RegExp(String.raw`\('library\.${t}', (?:array|ARRAY)\[([\s\S]*?)\]\)`).exec(text);
       assert.ok(m, `${label}: no allow-list for library.${t}`);
       const listed = [...m[1].matchAll(/'(\w+)'/g)].map((x) => x[1]);
@@ -469,7 +518,7 @@ test("20261016_01: _verify.sql, the harness and the migration's verify carry the
 });
 
 test("the migration: revoke + column grant, service_role kept, view closed, order guard, marker, raising verify", () => {
-  for (const t of TABLES) {
+  for (const t of TABLES_1004) {
     assert.match(MIGRATION, new RegExp(String.raw`revoke all on library\.${t} from anon, authenticated, public;`));
     assert.match(MIGRATION, new RegExp(String.raw`grant all on library\.${t} to service_role;`));
     assert.match(MIGRATION, new RegExp(String.raw`alter table library\.${t}\s+enable row level security;`));
@@ -566,13 +615,22 @@ test("the scanner flags what it cannot read: a non-literal select or filter colu
   assert.equal(violationsIn(reviewedLocked, "reviewed.ts").length, 1);
 });
 
-test("no request-client read of laws / judicial_collections / principles anywhere in src names a locked column or *", () => {
+test("no request-client read of a column-locked library table anywhere in src names a locked column or *", () => {
   // src/lib/supabaseLibrary.ts is dead code (only its own dead-fetch test
   // reads it); reviving it means moving its reads to the service role first.
   const files = sourceFiles("src").filter((f) => f !== "src/lib/supabaseLibrary.ts");
   assert.ok(files.includes("src/app/sitemap.ts") && files.includes("src/app/api/library/init/route.ts"));
-  const violations = files.flatMap((f) => violationsIn(read(f), f));
-  assert.deepEqual(violations, []);
+  // The one known exception: the fiqh search's request-client query (matn,
+  // sharh, fts) runs ONLY while library.search_feqh_page is missing — before
+  // 20261018_02, which ships the lock and the function together; after it
+  // that query answers 42501. route-fail-closed.test.ts pins the fallback
+  // ("fiqh runs through the time-limited RPC …"). Drop this with the fallback.
+  const preLockFallback = ["matn", "sharh", "fts"].map(
+    (c) => `src/app/api/library/search/route.ts: request-client read of library.feqh_blocks names locked column "${c}"`,
+  );
+  const all = files.flatMap((f) => violationsIn(read(f), f));
+  assert.deepEqual(all.filter((v) => !preLockFallback.includes(v)), []);
+  assert.deepEqual(all.filter((v) => preLockFallback.includes(v)), preLockFallback, "the fallback changed — update this exception");
 });
 
 test("reads the scanner cannot see (dynamic table names, a client parameter) are pinned here", () => {

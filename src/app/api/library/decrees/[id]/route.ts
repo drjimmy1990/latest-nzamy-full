@@ -1,11 +1,18 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { checkLibraryAccess } from '@/lib/access-control';
 import { libraryGate } from '@/lib/library-gate';
+import { freeDecreePages } from '@/lib/library/freePages';
 
 /**
  * GET /api/library/decrees/[id]
  * Fetch a single decree/circular with all pages.
+ *
+ * The page text (decree_pages.content) is server-only since migration
+ * 20261018_02 (owner answer ١٨٣): it is read with the service role, and a
+ * guest or free reader gets the first two pages in full (src/lib/library/
+ * freePages.ts); every later page is sent as an empty string — no opening.
+ * `unlockedCount` says how many leading pages carry their text.
  */
 export async function GET(
   _request: Request,
@@ -39,16 +46,26 @@ export async function GET(
     // a document-level gate unlocked the whole decree for guests — the bug.)
     const probe = await checkLibraryAccess(userId, id, 0, "decrees");
     const isWhitelisted = probe.isWhitelisted;
-    const freeLimit = probe.freeLimit; // -1 = unlimited (whitelisted or Pro+)
-    const hasFullAccess = freeLimit === -1 || isWhitelisted;
+    const hasFullAccess = probe.freeLimit === -1 || isWhitelisted;
 
-    // Fetch pages
-    const { data: pages } = await supabase
+    // Fetch pages — service role: content is server-only (20261018_02). An
+    // error is a 500, never a decree that silently has no pages.
+    const serverOnly = await createServiceClient();
+    const { data: pages, error: pagesError } = await serverOnly
       .schema('library')
       .from('decree_pages')
-      .select('*')
+      .select('page_number, order_index, content')
       .eq('decree_id', id)
-      .order('page_number', { ascending: true });
+      .order('page_number', { ascending: true })
+      .order('order_index', { ascending: true });
+    if (pagesError || !Array.isArray(pages)) {
+      console.error(`[Decrees API] pages query failed for "${id}":`, pagesError?.code ?? 'no-error-code', pagesError?.message ?? 'null payload');
+      return NextResponse.json({ error: 'تعذّر تحميل صفحات هذا القرار' }, { status: 500 });
+    }
+    // How many leading pages carry their text: all (Pro+, whitelisted), an
+    // admin override, or the owner's first two pages.
+    const free = freeDecreePages(probe, pages.length);
+    const unlockedCount = free === -1 ? pages.length : Math.min(free, pages.length);
 
     // Format response matching frontend DemoOrder interface
     const response = {
@@ -64,20 +81,15 @@ export async function GET(
       preamble: decree.preamble || '',
       paywall: {
         isWhitelisted,
-        freeLimit,
+        freeLimit: free,
         hasFullAccess,
-        totalItems: pages?.length ?? 0,
+        totalItems: pages.length,
       },
-      articles: (pages || []).map((p: Record<string, unknown>, idx: number) => {
-        const content = p.content as string;
-        const isLocked = !hasFullAccess && freeLimit !== -1 && idx >= freeLimit;
-        if (isLocked && typeof content === 'string') {
-          return content.substring(0, 200) + (content.length > 200 ? '...' : '');
-        }
-        return content;
-      }),
-      // Pages the client may render in full; the rest are truncated previews.
-      unlockedCount: hasFullAccess ? (pages?.length ?? 0) : Math.min(freeLimit, pages?.length ?? 0),
+      // A locked page is an empty string: the reader shows a lock card for
+      // every page at or past unlockedCount.
+      articles: pages.map((p: Record<string, unknown>, idx: number) =>
+        idx < unlockedCount && typeof p.content === 'string' ? p.content : ''),
+      unlockedCount,
       hashtags: decree.hashtags || [],
       official_url: decree.official_url || '',
       hasAccess: hasFullAccess, // legacy field kept for existing client checks
