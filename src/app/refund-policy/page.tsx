@@ -11,12 +11,11 @@ import { markdownBoldToSafeHtml } from "@/utils/sanitize";
 // ─── Sections ────────────────────────────────────────────────────────────────
 
 const sections = {
-  // OPEN (owner wording needed, Q3/Q28): sections ٢ and ٤ below still
-  // describe the platform collecting service fees, holding them until
-  // delivery and refunding them — Escrow by function, though the word never
-  // appears. The owner has said payments happen outside the platform and
-  // there is no Escrow; replacing these two sections is a legal text for him
-  // to word, not a copy fix. Section ٣ carries his Q28 rule verbatim.
+  // Owner answer ١٨٠ (2026-10-16): sections ٢ and ٣ carry his two clauses
+  // verbatim. Professional fees are a direct contract between the client and
+  // the licensed law office through a SAMA-licensed gateway; the platform
+  // holds no funds, so there is no Escrow, no commission deducted on payout
+  // and no platform refund of those fees (section ٤ says so).
   ar: [
     {
       id: "scope",
@@ -29,21 +28,18 @@ const sections = {
     },
     {
       id: "collection",
-      title: "٢. كيف تُحصَّل الأتعاب وأثر ذلك على الاسترداد",
+      title: "٢. أتعاب الاستشارات والخدمات المهنية",
       content: [
-        "تُحصَّل الأتعاب عبر قنوات الدفع المعتمدة في المنصة عند تأكيد الطلب، ولا يُصرف المستحق لمقدم الخدمة إلا بعد إنجاز الخدمة أو المرحلة المتفق عليها منها.",
-        "ولأن المبلغ لا ينتقل لمقدم الخدمة قبل الإنجاز، فإن استرداده قبل بدء الخدمة لا يتطلب موافقته ولا يتوقف عليها.",
-        "عمولة المنصة (٥٪–١٥٪ حسب نوع الخدمة) تُقتطع فقط عند صرف المبلغ لمقدم الخدمة، وبالتالي لا تُقتطع من أي مبلغ يُسترد قبل بدء الخدمة.",
-        "يُرد المبلغ إلى وسيلة الدفع الأصلية خلال المدة المقررة في نظام التجارة الإلكترونية ولائحته التنفيذية، وبما لا يتجاوز المدد المبيّنة في القسم ٧ أدناه.",
+        "**أتعاب الاستشارات والخدمات المهنية**: تمثل علاقة تعاقدية مباشرة بين العميل ومكتب المحاماة المستقل المرخص عبر بوابة دفع معتمدة ومرخصة من البنك المركزي (SAMA)، ولا تحتفظ المنصة بأي أموال في حساب وسيط، وتخضع لسياسة الإلغاء الكامل قبل ٢٤ ساعة من موعد الجلسة الاستشارية.",
       ],
     },
     {
       id: "subscriptions",
       title: "٣. استرداد اشتراكات الباقات",
       content: [
-        // Owner Q28 — the rule for digital plans, in his words.
-        "**الباقات الرقمية**: الرسوم المدفوعة للباقات الرقمية تخضع لسياسة استرداد خلال ١٤ يوماً ما لم يتم استهلاك نقاط الذكاء الاصطناعي.",
-        "**حق العدول**: للمشترك الجديد حق العدول عن الاشتراك واسترداد قيمته وفق المدد والحالات المقررة في نظام التجارة الإلكترونية ولائحته التنفيذية، ما لم يكن قد استُهلك من الخدمة ما لا يمكن ردّه.",
+        // Owner answer ١٨٠ — the rule for digital plans, in his words.
+        "**الاشتراكات والوحدات الرقمية**: يحق للمشترك ممارسة حق العدول واسترداد كامل قيمة الاشتراك الرقمي خلال (١٤) يوماً من تاريخ السداد وفق نظام التجارة الإلكترونية ولائحته، بشرط عدم استهلاك أكثر من ٥٪ من رصيد وحدات الاستخدام (النقاط) أو تصدير مذكرات مدفوعة.",
+        "يُرد المبلغ إلى وسيلة الدفع الأصلية، وبما لا يتجاوز المدد المبيّنة في القسم ٧ أدناه.",
         "بعد انقضاء مدة العدول: يمكن إلغاء التجديد التلقائي في أي وقت من إعدادات الحساب، ويستمر الوصول للخدمة حتى نهاية الفترة المدفوعة بالفعل دون استرداد جزئي عن الفترة المتبقية.",
         "الترقية بين الباقات لا تستوجب رسوم استرداد؛ يُحتسب فرق السعر تناسبياً على الفاتورة التالية.",
       ],
@@ -52,10 +48,9 @@ const sections = {
       id: "individual-services",
       title: "٤. استرداد أتعاب الخدمات الفردية",
       content: [
-        "**قبل بدء الخدمة**: استرداد كامل ١٠٠٪ إذا لم يبدأ مقدم الخدمة العمل على الطلب بعد (لم تُجدول جلسة، لم تبدأ الصياغة، لم يُفتح الملف).",
-        "**أثناء الخدمة**: استرداد جزئي يتناسب مع الجزء غير المُنجز، إذا ثبت إخلال مقدم الخدمة بالاتفاق أو تأخّره دون عذر مقبول.",
-        "**بعد إتمام الخدمة وتسليمها وقبولها من طالب الخدمة**: لا يحق الاسترداد، لكن يحق تقديم شكوى جودة تُحال لفريق ضمان الجودة للمراجعة.",
-        "عند إلغاء طالب الخدمة للطلب مباشرة بعد قبول مقدم الخدمة له وقبل أي عمل فعلي، تُرد الأتعاب كاملة خصماً على أي رسوم تحويل بنكي فعلية إن وُجدت.",
+        "تُدفع أتعاب الخدمات المهنية لمكتب المحاماة المرخّص مباشرة (القسم ٢)، ولا تحتفظ بها المنصة.",
+        "**الإلغاء قبل ٢٤ ساعة** من موعد الجلسة الاستشارية: إلغاء كامل.",
+        "وما عدا ذلك يخضع لاتفاق العميل ومكتب المحاماة، ويحق للعميل تقديم شكوى جودة تُحال إلى فريق نظامي للمراجعة.",
       ],
     },
     {
@@ -116,20 +111,17 @@ const sections = {
     },
     {
       id: "collection",
-      title: "2. How Fees Are Collected and What That Means for Refunds",
+      title: "2. Consultation and Professional Service Fees",
       content: [
-        "Fees are collected through the platform's approved payment channels upon order confirmation, and are not paid out to the service provider until the service — or the agreed milestone of it — has been delivered.",
-        "Because the money has not moved to the service provider before delivery, refunding it before the service starts neither requires nor depends on their approval.",
-        "The platform's commission (5%–15% depending on the service) is deducted only when funds are paid out to the service provider, so it is never deducted from any amount refunded before the service begins.",
-        "Refunds are returned to the original payment method within the period prescribed by the Saudi E-Commerce Law and its Implementing Regulations, and no later than the periods set out in Section 7 below.",
+        "**Consultation and professional service fees** are a direct contract between the client and the licensed independent law office, paid through a payment gateway licensed by the Saudi Central Bank (SAMA). The platform holds no funds in an intermediary account. They follow a full-cancellation policy up to 24 hours before the consultation session.",
       ],
     },
     {
       id: "subscriptions",
       title: "3. Subscription Plan Refunds",
       content: [
-        "**Digital plans**: fees paid for digital plans are refundable within 14 days, unless AI points have been consumed.",
-        "**Right of withdrawal**: New subscribers may withdraw from a subscription and recover its value within the periods and cases set out in the Saudi E-Commerce Law and its Implementing Regulations, except to the extent the service has already been consumed and cannot be returned.",
+        "**Subscriptions and digital units**: the subscriber may exercise the right of withdrawal and recover the full value of the digital subscription within (14) days of payment under the E-Commerce Law and its Regulation, provided no more than 5% of the usage units (points) has been consumed and no paid memos have been exported.",
+        "Refunds go to the original payment method, within the periods set out in Section 7 below.",
         "After the withdrawal period ends: automatic renewal can be cancelled at any time from account settings, and access continues until the end of the period already paid for, with no partial refund for the remaining period.",
         "Upgrading between plans does not require a refund; the price difference is pro-rated on the next invoice.",
       ],
@@ -138,10 +130,9 @@ const sections = {
       id: "individual-services",
       title: "4. Refunds for Individual Services",
       content: [
-        "**Before the service starts**: 100% full refund if the service provider has not yet begun work on the request (no session scheduled, no drafting started, no file opened).",
-        "**During the service**: A partial refund proportional to the uncompleted portion, if the service provider is proven to have breached the agreement or delayed without acceptable excuse.",
-        "**After the service is completed, delivered, and accepted** by the service seeker: no refund is due, but a quality complaint may be filed and referred to the quality assurance team for review.",
-        "If the service seeker cancels the request immediately after the provider accepts it and before any actual work, fees are refunded in full, less any actual bank transfer fees incurred, if any.",
+        "Professional service fees are paid directly to the licensed law office (Section 2); the platform does not hold them.",
+        "**Cancelling up to 24 hours** before the consultation session: full cancellation.",
+        "Anything else follows the agreement between the client and the law office; the client may file a quality complaint for the Nezamy team to review.",
       ],
     },
     {

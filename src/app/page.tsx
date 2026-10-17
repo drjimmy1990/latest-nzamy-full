@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Navbar from "@/components/Navbar";
+import { PromotionalCampaignBanner } from "@/components/pricing/PromotionalCampaignBanner";
 import Hero from "@/components/Hero";
 import UserTypeSelector from "@/components/UserTypeSelector";
 import ServicesBento from "@/components/ServicesBento";
@@ -64,6 +65,8 @@ export default function Home() {
       <Navbar />
       <div className="flex flex-col">
         <Hero />
+        {/* A dated campaign only (owner ١٧٩); renders nothing today. */}
+        <PromotionalCampaignBanner />
         <UserTypeSelector />
         <ServicesBento />
         <ContractAnalysisShowcase />

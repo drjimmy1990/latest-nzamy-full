@@ -47,15 +47,17 @@ export const plansProviders: { ar: Plan[]; en: Plan[] } = {
     },
     {
       id: "consultant-independent", name: "مستشار مستقل", badge: "المادة ١٨",
-      priceMonthly: "١٩٩", priceYearly: "١٬٩٩٠", periodMonthly: "ر.س / شهر", periodYearly: "ر.س / سنة",
-      desc: "مخصص للمستشارين القانونيين المستقلين لدراسة الأنظمة وصياغة العقود — لا تشمل الترافع القضائي لغير المرخصين.",
+      // Owner answer ١٧٣ (2026-10-16): the same price and point use as
+      // «المحامي المحترف»; the difference is the dashboard rights (Art. 18).
+      priceMonthly: "٣٩٩", priceYearly: "٣٬٩٩٠", periodMonthly: "ر.س / شهر", periodYearly: "ر.س / سنة",
+      desc: "للمستشارين القانونيين المستقلين: دراسة الأنظمة وصياغة العقود والاستشارات، بلا ترافع ولا إدارة جلسات (المادة ١٨ من نظام المحاماة).",
       target: "المستشارون القانونيون المستقلون", cta: "اشترك الآن",
       ctaHref: "/register/provider?type=consultant&plan=independent", highlighted: false, color: "border-purple-300",
       commissionPct: 5,
       features: {
-        ai: ["بحث ذكي غير محدود في الأنظمة واللوائح والمبادئ", "أدوات الصائغ الآلي ومحترف العقود للاستشارات", "توليد المذكرات الاستشارية والآراء النظامية", null],
-        platform: ["إدارة العملاء والملفات الاستشارية والتقويم", "ملف مهني موثق في سوق المستشارين", "🚫 حظر ميزات الترافع والتمثيل بالمحاكم (م ١٨)", null],
-        support: ["عمولة المنصة: ٥٪ فقط", "دعم فني عبر واتساب"],
+        ai: ["١٬٥٠٠ نقطة كل شهر، بتكلفة أدوات باقة المحامي نفسها", "صياغة العقود وتدقيقها: ١٠ نقاط", "المساعد القانوني والتشريع المقارن: ٥ نقاط", null],
+        platform: ["العملاء والملفات الاستشارية والتقويم", "ملف مهني للمستشار", "🚫 لا ترافع ولا إدارة جلسات (المادة ١٨)", null],
+        support: ["السنوي بسعر عشرة أشهر"],
       },
     },
   ],
@@ -103,15 +105,15 @@ export const plansProviders: { ar: Plan[]; en: Plan[] } = {
     // Arabic page with the same React key as the Arabic consultant card.
     {
       id: "consultant-independent", name: "Independent Consultant", badge: "Article 18",
-      priceMonthly: "199", priceYearly: "1,990", periodMonthly: "SAR / month", periodYearly: "SAR / year",
-      desc: "Tailored for independent legal consultants for statutory research & advisory — excludes court litigation under Article 18.",
+      priceMonthly: "399", priceYearly: "3,990", periodMonthly: "SAR / month", periodYearly: "SAR / year",
+      desc: "For independent legal consultants: statutory research, contract drafting and advice — no pleading or hearing management (Article 18).",
       target: "Independent Legal Consultants", cta: "Subscribe Now",
       ctaHref: "/register/provider?type=consultant&plan=independent", highlighted: false, color: "border-purple-300",
       commissionPct: 5,
       features: {
-        ai: ["Unlimited smart search in laws & principles", "Drafter & contract analyzer tools for advisory", "Legal opinion & memo generation", null],
-        platform: ["Client advisory management & calendar", "Verified consultant profile in marketplace", "🚫 Court representation gated (Art. 18)", null],
-        support: ["Platform commission: 5% only", "WhatsApp support"],
+        ai: ["1,500 points every month, at the lawyer plan's tool costs", "Contract drafting and review: 10 points", "Legal assistant and comparative law: 5 points", null],
+        platform: ["Clients, advisory files and calendar", "Consultant profile", "🚫 No pleading or hearing management (Art. 18)", null],
+        support: ["Yearly priced at ten months"],
       },
     },
   ],

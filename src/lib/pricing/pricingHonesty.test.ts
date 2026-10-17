@@ -6,9 +6,10 @@
  *     «الأكثر طلباً», «الأكثر اعتماداً», «الأكثر قيمة», "Best Value" …
  *   - no discount the prices do not produce (struck-through "was" prices that
  *     were never charged, «خصم ٥٠٪», «-15%», «وفر ٥٥٪», «وفّر ١٦٪»).
- *   - Q3/Q28: payments happen outside the platform, there is no Escrow, and
- *     digital-plan fees are refundable within 14 days unless AI points were
- *     used.
+ *   - Q3/Q28 and ١٨٠ (2026-10-16): payments happen outside the platform, there
+ *     is no Escrow and no 8% / 15% commission, and a digital subscription is
+ *     refundable within 14 days while no more than 5% of its points are used
+ *     and no paid memo was exported.
  * Plus: a working checkout path, Arabic plan names on the Arabic page, and
  * no price for an AI tool whose page is «قريباً».
  *
@@ -156,20 +157,35 @@ test("Q3/Q28: no page says the platform holds fees and releases them on delivery
     "app/services/business/page.tsx",
     "app/services/legal-representation/page.tsx",
     "app/pro/page.tsx",
+    // Owner answer ١٨٠: sections ٢ and ٤ used to collect, hold and pay out fees.
+    "app/refund-policy/page.tsx",
   ]) {
     assert.doesNotMatch(code(path), holding, `${path} still describes the platform holding fees`);
   }
 });
 
-test("Q28: the refund policy states the 14-day digital-plan rule", () => {
+test("١٨٠: the refund policy carries the owner's two clauses verbatim", () => {
   const refund = code("app/refund-policy/page.tsx");
   assert.ok(
     refund.includes(
-      "الرسوم المدفوعة للباقات الرقمية تخضع لسياسة استرداد خلال ١٤ يوماً ما لم يتم استهلاك نقاط الذكاء الاصطناعي",
+      "يحق للمشترك ممارسة حق العدول واسترداد كامل قيمة الاشتراك الرقمي خلال (١٤) يوماً من تاريخ السداد وفق نظام التجارة الإلكترونية ولائحته، بشرط عدم استهلاك أكثر من ٥٪ من رصيد وحدات الاستخدام (النقاط) أو تصدير مذكرات مدفوعة.",
     ),
-    "the owner's Q28 sentence is missing from /refund-policy",
+    "the owner's subscription clause is missing from /refund-policy",
   );
-  assert.match(refund, /refundable within 14 days, unless AI points have been consumed/);
+  assert.ok(
+    refund.includes(
+      "تمثل علاقة تعاقدية مباشرة بين العميل ومكتب المحاماة المستقل المرخص عبر بوابة دفع معتمدة ومرخصة من البنك المركزي (SAMA)، ولا تحتفظ المنصة بأي أموال في حساب وسيط، وتخضع لسياسة الإلغاء الكامل قبل ٢٤ ساعة من موعد الجلسة الاستشارية.",
+    ),
+    "the owner's professional-fees clause is missing from /refund-policy",
+  );
+  assert.ok(refund.includes("no more than 5% of the usage units (points) has been consumed"), "the English subscription clause is missing");
+});
+
+test("١٨٠: no platform commission on the refund page or the pricing price list", () => {
+  const commission = /عمولة المنصة|٥٪–١٥٪|٨٪ عمولة|رسوم منصة|عمولة منصة|platform fee|platform's commission|8% commission|15% fee/i;
+  for (const path of ["app/refund-policy/page.tsx", "constants/pricing/pricing.common.ts"]) {
+    assert.doesNotMatch(code(path), commission, `${path} still states a platform commission`);
+  }
 });
 
 test("checkout: the pay-per-piece CTA points at a client page that exists", () => {
@@ -378,7 +394,7 @@ test("P1 item 2: /services/individuals counts its own service cards", () => {
 
 test("P1 item 2: the CTA's refund line states the refund page's condition", () => {
   const cta = code("components/pricing/PricingCTA.tsx");
-  assert.match(cta, /استرداد خلال ١٤ يوماً ما لم تُستهلك نقاط الذكاء الاصطناعي/);
+  assert.match(cta, /استرداد خلال ١٤ يوماً ما لم يُستهلك أكثر من ٥٪ من النقاط/);
 });
 
 test("P1 item 1: the admin AI-usage pages are honest coming-soon pages", () => {

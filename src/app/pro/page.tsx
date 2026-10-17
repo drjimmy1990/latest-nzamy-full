@@ -47,40 +47,40 @@ const features = {
   ],
 };
 
+// Owner answers ١٧٤ / ١٧٥ (2026-10-16): 399 for the lawyer, 990 for a law
+// office (3 seats), 1,490 for a law firm (5 seats); yearly is ten months.
+// The old 299 / 799 prices and the API / SSO / account-manager promises are gone.
 const plans = [
   {
-    name: { ar: "Pro شخصي", en: "Pro Personal" },
-    price: { ar: "٢٩٩", en: "299" },
+    name: { ar: "المحامي المحترف", en: "Professional Lawyer" },
+    price: { ar: "٣٩٩", en: "399" },
     unit: { ar: "ر.س/شهر", en: "SAR/mo" },
-    desc: { ar: "للمحامي المستقل", en: "For solo lawyers" },
+    desc: { ar: "للمحامي المرخّص", en: "For a licensed lawyer" },
     features: {
-      ar: ["جميع ميزات Pro", "حتى ٥٠ موكل", "٥ مستخدمين", "دعم بالبريد"],
-      en: ["All Pro features", "Up to 50 clients", "5 users", "Email support"],
+      ar: ["١٬٥٠٠ نقطة كل شهر", "القضايا والجلسات والمهل", "الموكّلون والاستشارات والعقود", "السنوي ٣٬٩٩٠ ر.س"],
+      en: ["1,500 points every month", "Cases, hearings and deadlines", "Clients, consultations and contracts", "Yearly SAR 3,990"],
     },
     highlight: false,
   },
   {
-    name: { ar: "Pro مكتب", en: "Pro Office" },
-    price: { ar: "٧٩٩", en: "799" },
+    name: { ar: "مكتب المحاماة", en: "Law Office" },
+    price: { ar: "٩٩٠", en: "990" },
     unit: { ar: "ر.س/شهر", en: "SAR/mo" },
-    desc: { ar: "للمكاتب الصغيرة ٢–١٠ محامين", en: "For small firms 2–10 lawyers" },
+    desc: { ar: "٣ مقاعد مشمولة", en: "3 seats included" },
     features: {
-      ar: ["جميع ميزات Personal", "موكلون غير محدودون", "٢٠ مستخدم", "دعم فوري", "تقارير متقدمة"],
-      en: ["All Personal features", "Unlimited clients", "20 users", "Priority support", "Advanced reports"],
+      ar: ["ما في باقة المحامي المحترف", "٣ مقاعد مشمولة", "أعضاء المكتب وصلاحياتهم", "السنوي ٩٬٩٠٠ ر.س"],
+      en: ["Everything in Professional Lawyer", "3 seats included", "Members and their permissions", "Yearly SAR 9,900"],
     },
     highlight: true,
   },
   {
-    name: { ar: "Pro Enterprise", en: "Pro Enterprise" },
-    price: { ar: "حسب الطلب", en: "Custom" },
-    unit: { ar: "", en: "" },
-    desc: { ar: "للشركات القانونية الكبرى", en: "For large law firms" },
+    name: { ar: "شركة المحاماة", en: "Law Firm" },
+    price: { ar: "١٬٤٩٠", en: "1,490" },
+    unit: { ar: "ر.س/شهر", en: "SAR/mo" },
+    desc: { ar: "٥ مقاعد مشمولة", en: "5 seats included" },
     features: {
-      // "SLA مضمون" / "Guaranteed SLA" dropped (Task B1, item 14) — no
-      // service-level agreement is published anywhere on the platform to be
-      // guaranteed (same finding already fixed on /erp's FAQ).
-      ar: ["كل شيء في Office", "API مخصص", "SSO", "مدير حساب مخصص"],
-      en: ["Everything in Office", "Custom API", "SSO", "Dedicated account manager"],
+      ar: ["ما في باقة مكتب المحاماة", "٥ مقاعد مشمولة", "السنوي ١٤٬٩٠٠ ر.س"],
+      en: ["Everything in Law Office", "5 seats included", "Yearly SAR 14,900"],
     },
     highlight: false,
   },

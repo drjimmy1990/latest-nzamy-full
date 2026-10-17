@@ -15,7 +15,7 @@ export interface LawyerCreditWallet {
   lawyerId: string;
   balance: number;
   expiresAt?: string;
-  lastTopupPackageId?: "lawyer-basic" | "lawyer-advanced" | "lawyer-elite" | "lawyer-royal";
+  lastTopupPackageId?: "topup-100" | "topup-250" | "topup-500" | "topup-1000";
 }
 
 export interface LawyerTeamMember {

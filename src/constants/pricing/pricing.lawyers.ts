@@ -1,204 +1,128 @@
-import { Brain, Gavel, Users, ShieldCheck, Lightning, Star, Fire, Crown } from "@phosphor-icons/react";
+import { Lightning, Gavel } from "@phosphor-icons/react";
 import { Plan, ComparisonCategory } from "./pricing.types";
 
-// ─── Credits Packages: Lawyers ────────────────────────────────────────────────
-// Model: pay-per-use credits. No monthly subscription.
-// 1 SAR = 1 point at base rate. Bonuses apply per package tier.
-// Validity: 6 months (Royal: 12 months)
+// ─── Lawyers: one subscription + point top-ups (owner answers ١٧٤ / ١٧٨, 2026-10-16) ─
+// - «المحامي المحترف»: 399 SAR/month or 3,990 SAR/year (ten months), with
+//   1,500 points every month.
+// - Top-ups are extra point packs for a subscriber who uses up the month's
+//   points: 1 SAR = 1 point, plus a bonus on the larger packs
+//   (100→100, 250→300, 500→700, 1,000→1,500).
+// - Points are prepaid usage units for Nezamy's own AI tools only. They are
+//   never called a wallet or a cash balance, never move between users and
+//   never pay a lawyer's fee (a stored-value product would need a SAMA
+//   licence — owner answer ١٧٨).
+// - The old 1,000–10,000 SAR packs, their 50–200% bonuses and the
+//   launch offers for the first lawyers are gone (owner answers ١٧٤ / ١٧٩).
+// The independent consultant pays the same (owner answer ١٧٣); see
+// pricing.providers.ts.
+
+export const LAWYER_PRO_MONTHLY_POINTS = 1500;
 
 export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
   ar: [
     {
-      id: "lawyer-basic", name: "الأساسية", badge: null,
+      id: "lawyer-pro", name: "المحامي المحترف", badge: null,
+      priceMonthly: "٣٩٩", priceYearly: "٣٬٩٩٠", periodMonthly: "ر.س / شهر", periodYearly: "ر.س / سنة",
+      desc: "اشتراك يتضمن ١٬٥٠٠ نقطة كل شهر لأدوات الذكاء الاصطناعي", target: "محامٍ مرخّص",
+      cta: "اشترك الآن", ctaHref: "/register/provider?plan=lawyer-pro", highlighted: true, color: "border-royal/20",
+      features: {
+        ai: [
+          "١٬٥٠٠ نقطة كل شهر",
+          "صياغة المذكرات واللوائح: ١٥ نقطة",
+          "صياغة العقود وتدقيقها: ١٠ نقاط",
+          "عصارة المرفقات وتلخيص ملف القضية: ٨ نقاط",
+        ],
+        platform: ["إدارة القضايا والجلسات والمهل", "الموكّلون والاستشارات والعقود"],
+        support: ["السنوي بسعر عشرة أشهر"],
+      },
+    },
+    {
+      id: "topup-100", name: "شحن ١٠٠", badge: null,
+      priceMonthly: "١٠٠", priceYearly: "١٠٠", periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
+      desc: "١٠٠ نقطة", target: "شحن إضافي للمشترك",
+      cta: "اشحن الآن", ctaHref: "/register/provider?plan=topup-100", highlighted: false, color: "border-blue-200/60",
+      features: { ai: ["١٠٠ نقطة", "١ ر.س للنقطة"], platform: [], support: [] },
+    },
+    {
+      id: "topup-250", name: "شحن ٢٥٠", badge: null,
+      priceMonthly: "٢٥٠", priceYearly: "٢٥٠", periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
+      desc: "٣٠٠ نقطة", target: "شحن إضافي للمشترك", bonusLabel: "+٥٠ نقطة مجاناً",
+      cta: "اشحن الآن", ctaHref: "/register/provider?plan=topup-250", highlighted: false, color: "border-emerald-200/60",
+      features: { ai: ["٣٠٠ نقطة", "نحو ٠٫٨٣ ر.س للنقطة"], platform: [], support: [] },
+    },
+    {
+      id: "topup-500", name: "شحن ٥٠٠", badge: null,
+      priceMonthly: "٥٠٠", priceYearly: "٥٠٠", periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
+      desc: "٧٠٠ نقطة", target: "شحن إضافي للمشترك", bonusLabel: "+٢٠٠ نقطة مجاناً",
+      cta: "اشحن الآن", ctaHref: "/register/provider?plan=topup-500", highlighted: false, color: "border-gold/20",
+      features: { ai: ["٧٠٠ نقطة", "نحو ٠٫٧١ ر.س للنقطة"], platform: [], support: [] },
+    },
+    {
+      id: "topup-1000", name: "شحن ١٬٠٠٠", badge: null,
       priceMonthly: "١٬٠٠٠", priceYearly: "١٬٠٠٠", periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
-      desc: "١٬٥٠٠ نقطة — بونص +٥٠٪", target: "مستقل", bonusLabel: "+٥٠٪ نقاط مجانية",
-      cta: "اشحن الآن", ctaHref: "/register/provider?plan=basic-credits", highlighted: false, color: "border-blue-200/60",
-      features: {
-        ai: [
-          "١٬٥٠٠ نقطة (تدفع ١٬٠٠٠ وتستلم ١٬٥٠٠)",
-          "مذكرة ثانية مجانية بعد أول شحن",
-          "المكتبة الكاملة: ٥٠ نقطة/شهر",
-          "سؤال قانوني سريع: ٢٠ نقطة",
-        ],
-        platform: ["Kanban + تقويم (رصيد ≥ ٥٠٠)", "نشر في السوق (رصيد ≥ ٥٠٠)"],
-        support: ["دعم بريد إلكتروني"],
-      },
-    },
-    {
-      id: "lawyer-advanced", name: "المتقدمة", badge: null,
-      priceMonthly: "٢٬٥٠٠", priceYearly: "٢٬٥٠٠", periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
-      desc: "٥٬٠٠٠ نقطة — بونص +١٠٠٪", target: "محامون", bonusLabel: "+١٠٠٪ نقاط مجانية",
-      cta: "اشحن الآن", ctaHref: "/register/provider?plan=advanced-credits", highlighted: true, color: "border-royal/20",
-      features: {
-        ai: [
-          "٥٬٠٠٠ نقطة (تدفع ٢٬٥٠٠ وتستلم ٥٬٠٠٠)",
-          "مذكرة ثانية مجانية بعد أول شحن",
-          "🎁 المكتبة القانونية الكاملة: مشمولة مجاناً (٦ أشهر)",
-          "سؤال سريع (٢٠ نقطة) + ترجمة قانونية (٥٠ نقطة)",
-          "صلاحية ٦ أشهر",
-        ],
-        platform: ["Kanban + تقويم + السوق (رصيد ≥ ٥٠٠)"],
-        support: ["دعم واتساب"],
-      },
-    },
-    {
-      id: "lawyer-elite", name: "النخبة", badge: null,
-      priceMonthly: "٥٬٠٠٠", priceYearly: "٥٬٠٠٠", periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
-      desc: "١٢٬٥٠٠ نقطة — بونص +١٥٠٪", target: "مكاتب", bonusLabel: "+١٥٠٪ نقاط مجانية",
-      cta: "اشحن الآن", ctaHref: "/register/provider?plan=elite-credits", highlighted: false, color: "border-emerald-200/60",
-      features: {
-        ai: [
-          "١٢٬٥٠٠ نقطة (تدفع ٥٬٠٠٠ وتستلم ١٢٬٥٠٠)",
-          "🎁 المكتبة القانونية الكاملة: مشمولة مجاناً (٦ أشهر)",
-          "السكرتير الذكي + راصد التشريعات",
-          "صياغة من نموذج + الأرشيف السحابي",
-          "صلاحية ٦ أشهر",
-        ],
-        platform: ["Kanban + تقويم + السوق", "فريق: حتى ٣ أشخاص (٤٩ ر.س/مستخدم/شهر)"],
-        support: ["دعم عبر واتساب"],
-      },
-    },
-    {
-      // No «الأوفر قيمة» badge (owner, Q164, 2026-10-03: no superlative badges).
-      id: "lawyer-royal", name: "الملكية", badge: null,
-      priceMonthly: "١٠٬٠٠٠", priceYearly: "١٠٬٠٠٠", periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
-      desc: "٣٠٬٠٠٠ نقطة — بونص +٢٠٠٪", target: "مكاتب متوسطة", bonusLabel: "+٢٠٠٪ نقاط مجانية",
-      cta: "انضم الآن", ctaHref: "/register/provider?plan=royal-credits", highlighted: false, color: "border-gold/20",
-      features: {
-        ai: [
-          "٣٠٬٠٠٠ نقطة (تدفع ١٠٬٠٠٠ وتستلم ٣٠٬٠٠٠)",
-          "🎁 المكتبة القانونية الكاملة: مشمولة مجاناً (١٢ شهراً)",
-          "السكرتير الذكي + راصد التشريعات",
-          "صياغة من نموذج + الأرشيف السحابي",
-          "صلاحية ١٢ شهراً",
-        ],
-        platform: ["Kanban + تقويم + السوق", "فريق: حتى ٣ + ٤٩ ر.س/مستخدم/شهر", "Top Listing في السوق"],
-        support: ["VIP واتساب مباشر", "مدير حساب شخصي"],
-      },
+      desc: "١٬٥٠٠ نقطة", target: "شحن إضافي للمشترك", bonusLabel: "+٥٠٠ نقطة مجاناً",
+      cta: "اشحن الآن", ctaHref: "/register/provider?plan=topup-1000", highlighted: false, color: "border-[#C8A762]/25",
+      features: { ai: ["١٬٥٠٠ نقطة", "نحو ٠٫٦٧ ر.س للنقطة"], platform: [], support: [] },
     },
   ],
   en: [
     {
-      id: "lawyer-basic", name: "Basic", badge: null,
+      id: "lawyer-pro", name: "Professional Lawyer", badge: null,
+      priceMonthly: "399", priceYearly: "3,990", periodMonthly: "SAR / month", periodYearly: "SAR / year",
+      desc: "Subscription with 1,500 AI points every month", target: "Licensed lawyer",
+      cta: "Subscribe", ctaHref: "/register/provider?plan=lawyer-pro", highlighted: true, color: "border-royal/20",
+      features: {
+        ai: [
+          "1,500 points every month",
+          "Briefs and pleadings: 15 points",
+          "Contract drafting and review: 10 points",
+          "Attachment digest and case summary: 8 points",
+        ],
+        platform: ["Cases, hearings and deadlines", "Clients, consultations and contracts"],
+        support: ["Yearly priced at ten months"],
+      },
+    },
+    {
+      id: "topup-100", name: "Top-up 100", badge: null,
+      priceMonthly: "100", priceYearly: "100", periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
+      desc: "100 points", target: "Extra points for subscribers",
+      cta: "Top up", ctaHref: "/register/provider?plan=topup-100", highlighted: false, color: "border-blue-200/60",
+      features: { ai: ["100 points", "SAR 1 per point"], platform: [], support: [] },
+    },
+    {
+      id: "topup-250", name: "Top-up 250", badge: null,
+      priceMonthly: "250", priceYearly: "250", periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
+      desc: "300 points", target: "Extra points for subscribers", bonusLabel: "+50 free points",
+      cta: "Top up", ctaHref: "/register/provider?plan=topup-250", highlighted: false, color: "border-emerald-200/60",
+      features: { ai: ["300 points", "About SAR 0.83 per point"], platform: [], support: [] },
+    },
+    {
+      id: "topup-500", name: "Top-up 500", badge: null,
+      priceMonthly: "500", priceYearly: "500", periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
+      desc: "700 points", target: "Extra points for subscribers", bonusLabel: "+200 free points",
+      cta: "Top up", ctaHref: "/register/provider?plan=topup-500", highlighted: false, color: "border-gold/20",
+      features: { ai: ["700 points", "About SAR 0.71 per point"], platform: [], support: [] },
+    },
+    {
+      id: "topup-1000", name: "Top-up 1,000", badge: null,
       priceMonthly: "1,000", priceYearly: "1,000", periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
-      desc: "1,500 points — +50% bonus", target: "Independent", bonusLabel: "+50% Free Points",
-      cta: "Top Up Now", ctaHref: "/register/provider?plan=basic-credits", highlighted: false, color: "border-blue-200/60",
-      features: {
-        ai: [
-          "1,500 points (pay 1,000 receive 1,500)",
-          "2nd free brief after first top-up",
-          "Full Library: 50 pts/month",
-          "Quick question: 20 pts",
-        ],
-        platform: ["Kanban + calendar (balance ≥ 500)", "Marketplace posting (balance ≥ 500)"],
-        support: ["Email support"],
-      },
-    },
-    {
-      id: "lawyer-advanced", name: "Advanced", badge: null,
-      priceMonthly: "2,500", priceYearly: "2,500", periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
-      desc: "5,000 points — +100% bonus", target: "Lawyers", bonusLabel: "+100% Free Points",
-      cta: "Top Up Now", ctaHref: "/register/provider?plan=advanced-credits", highlighted: true, color: "border-royal/20",
-      features: {
-        ai: [
-          "5,000 points (pay 2,500 receive 5,000)",
-          "2nd free brief after first top-up",
-          "🎁 Full Legal Library: Included Free (6 Months)",
-          "Quick question (20 pts) + Legal translation (50 pts)",
-          "6-month validity",
-        ],
-        platform: ["Kanban + calendar + marketplace (≥500 balance)"],
-        support: ["WhatsApp support"],
-      },
-    },
-    {
-      id: "lawyer-elite", name: "Elite", badge: null,
-      priceMonthly: "5,000", priceYearly: "5,000", periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
-      desc: "12,500 points — +150% bonus", target: "Firms", bonusLabel: "+150% Free Points",
-      cta: "Top Up Now", ctaHref: "/register/provider?plan=elite-credits", highlighted: false, color: "border-emerald-200/60",
-      features: {
-        ai: [
-          "12,500 points (pay 5,000 receive 12,500)",
-          "🎁 Full Legal Library: Included Free (6 Months)",
-          "Smart Secretary + Legislation Monitor",
-          "Template drafting + Cloud Archive",
-          "6-month validity",
-        ],
-        platform: ["Kanban + calendar + marketplace", "Team: up to 3 (SAR 49/user/month)"],
-        support: ["WhatsApp support"],
-      },
-    },
-    {
-      id: "lawyer-royal", name: "Royal", badge: null,
-      priceMonthly: "10,000", priceYearly: "10,000", periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
-      desc: "30,000 points — +200% bonus", target: "Mid-size Firms", bonusLabel: "+200% Free Points",
-      cta: "Join Now", ctaHref: "/register/provider?plan=royal-credits", highlighted: false, color: "border-gold/20",
-      features: {
-        ai: [
-          "30,000 points (+200% bonus)",
-          "Reply brief = SAR 167 | Appeal = SAR 333",
-          "Cassation = SAR 500 | Due Diligence = SAR 1,667",
-          "Simple contract = SAR 167 | Detailed = SAR 333",
-          "🎁 Full Legal Library: Included Free (12 Months)",
-          "Smart Secretary + Legislation Monitor",
-          "Template drafting + Cloud Archive",
-        ],
-        platform: ["All infrastructure features", "Team: up to 3 + SAR 49/user/month", "12-month validity", "Top Listing"],
-        support: ["Direct VIP WhatsApp", "Dedicated account manager"],
-      },
+      desc: "1,500 points", target: "Extra points for subscribers", bonusLabel: "+500 free points",
+      cta: "Top up", ctaHref: "/register/provider?plan=topup-1000", highlighted: false, color: "border-[#C8A762]/25",
+      features: { ai: ["1,500 points", "About SAR 0.67 per point"], platform: [], support: [] },
     },
   ],
 };
 
-// ─── Product Pricing Table (Points Reference) ─────────────────────────────────
-export const lawyerProductPricing = {
-  ar: [
-    { category: "مذكرات قانونية", items: [
-      { name: "مذكرة رد / جوابية / إلحاقية / ختامية", points: 500 },
-      { name: "مذكرة استئناف", points: 1000 },
-      { name: "مذكرة نقض / التماس", points: 1500 },
-    ]},
-    { category: "عقود", items: [
-      { name: "عقد مبسط (٣ صفحات)", points: 500 },
-      { name: "عقد تفصيلي بلغتين", points: 1000 },
-      { name: "تقرير عناية واجبة", points: 5000 },
-    ]},
-    { category: "أدوات تحليلية", items: [
-      { name: "الرأي الفصل — دراسة قانونية", points: 800 },
-      { name: "الرأي الفصل — مذكرة رأي", points: 400 },
-      { name: "عصارة المرفقات", points: 300 },
-      { name: "مُولّد أسئلة الاستجواب", points: 150 },
-      { name: "الرأي الفصل — استشارة", points: 100 },
-      { name: "الرأي الفصل — خطاب رسمي", points: 50 },
-    ]},
-    { category: "أدوات مساعدة", items: [
-      { name: "المترجم القانوني", points: 50 },
-      { name: "المحاكي الشامل (جلسة)", points: 30 },
-      { name: "سؤال قانوني سريع", points: 20 },
-      { name: "ParaLegal — إحاطة", points: 20 },
-      { name: "المفرّغ الذكي (جلسة)", points: 10 },
-      { name: "منقح ناجز", points: 10 },
-      { name: "المقارن الذكي", points: 5 },
-      { name: "السكرتير الذكي (تنظيم/تذكير)", points: 5 },
-      { name: "صياغة مستند من نموذج", points: 50 },
-      { name: "الأرشيف السحابي (سعة إضافية)", points: 50 },
-    ]},
-    { category: "مجاني دائماً", items: [
-      { name: "المرشد القضائي", points: 0 },
-      { name: "الحاسبة القانونية", points: 0 },
-      { name: "المجمّع البحثي", points: 0 },
-    ]},
-  ],
-};
-
-// ─── Services Catalog Table — shown BELOW plan cards ───────────────────────────
-// Points column = base cost (1 pt = 1 SAR when buying direct, no package)
-// Displayed as informational reference; no per-plan pricing here.
+// ─── Point costs per tool (owner answer ١٧٨) — shown below the cards ──────────
+// Only the tools the owner priced are listed. The other AI tools (translator,
+// simulator, due diligence, interrogation questions, …) are priced in owner
+// question ٢١٦ and stay off this table until he answers: a missing price is
+// better than a guessed one.
 export interface ServiceRow {
   name: string;
   points: number;
-  baseSAR: string;  // price at 1 SAR/pt (no package)
-  marketSAR?: string; // typical market price outside Nzamy
+  /** Shown instead of `points` when the cost is a range («١–٢»). */
+  pointsLabel?: string;
   note?: string;
 }
 export interface ServiceCategory {
@@ -210,40 +134,21 @@ export interface ServiceCategory {
 
 export const lawyerServicesTable: ServiceCategory[] = [
   {
-    category: "مذكرات قانونية",
+    category: "الصياغة",
     emoji: "📋",
     color: "text-blue-400",
     items: [
-      { name: "مذكرة رد / جوابية / إلحاقية / ختامية", points: 500,  baseSAR: "٥٠٠", note: "مذكرة مجانية عند التسجيل 🎁" },
-      { name: "مذكرة استئناف",                          points: 1000, baseSAR: "١٬٠٠٠" },
-      { name: "مذكرة نقض / التماس",                    points: 1500, baseSAR: "١٬٥٠٠" },
+      { name: "الصائغ القانوني: المذكرات ومذكرات الدفاع واللوائح الاعتراضية", points: 15 },
+      { name: "صياغة العقود وتدقيقها ومصفوفة المخاطر", points: 10 },
     ],
   },
   {
-    category: "عقود ومستندات",
-    emoji: "📝",
-    color: "text-emerald-400",
-    items: [
-      { name: "عقد مبسط (٣ صفحات)",         points: 500,  baseSAR: "٥٠٠" },
-      { name: "عقد تفصيلي بلغتين",           points: 1000, baseSAR: "١٬٠٠٠" },
-      { name: "صياغة مستند من نموذج",        points: 50,   baseSAR: "٥٠" },
-      { name: "تقرير عناية واجبة (DD)",       points: 5000, baseSAR: "٥٬٠٠٠", note: "٩ أقسام شاملة" },
-    ],
-  },
-  {
-    category: "أدوات التحليل القانوني",
+    category: "التحليل",
     emoji: "🔍",
     color: "text-amber-400",
     items: [
-      { name: "الرأي الفصل — دراسة قانونية",   points: 800, baseSAR: "٨٠٠" },
-      { name: "الرأي الفصل — مذكرة رأي",        points: 400, baseSAR: "٤٠٠" },
-      { name: "عصارة المرفقات",                  points: 300, baseSAR: "٣٠٠" },
-      { name: "مُولّد أسئلة الاستجواب",           points: 150, baseSAR: "١٥٠" },
-      { name: "الرأي الفصل — استشارة",           points: 100, baseSAR: "١٠٠" },
-      // No «داعم الاتجاه (طلب) — ١٠٠ نقطة» row: /ai/direction-support renders
-      // DashboardComingSoon (comingSoon in lawyerAiCatalog.ts), so it is not
-      // sold. It comes back with its page.
-      { name: "الرأي الفصل — خطاب رسمي",        points: 50,  baseSAR: "٥٠" },
+      { name: "عصارة المرفقات وتلخيص ملف القضية واستخلاص النزاع", points: 8 },
+      { name: "فحص المذكرة الشكلي والموضوعي", points: 5 },
     ],
   },
   {
@@ -251,15 +156,9 @@ export const lawyerServicesTable: ServiceCategory[] = [
     emoji: "⚡",
     color: "text-purple-400",
     items: [
-      { name: "المترجم القانوني",                   points: 50, baseSAR: "٥٠" },
-      { name: "المحاكي الشامل (جلسة)",             points: 30, baseSAR: "٣٠" },
-      { name: "سؤال قانوني سريع",                  points: 20, baseSAR: "٢٠" },
-      { name: "ParaLegal — إحاطة",                  points: 20, baseSAR: "٢٠" },
-      { name: "المفرّغ الذكي (جلسة)",               points: 10, baseSAR: "١٠" },
-      { name: "منقح ناجز",                          points: 10, baseSAR: "١٠" },
-      { name: "الأرشيف السحابي (سعة إضافية)",     points: 50, baseSAR: "٥٠" },
-      { name: "المقارن الذكي",                      points: 5,  baseSAR: "٥" },
-      { name: "السكرتير الذكي (تنظيم / تذكير)",   points: 5,  baseSAR: "٥" },
+      { name: "المساعد القانوني والتشريع المقارن", points: 5 },
+      { name: "التفريغ الصوتي الذكي وأوامر السكرتير", points: 5 },
+      { name: "البحث الدلالي وشرح المواد في المكتبة", points: 1, pointsLabel: "١–٢" },
     ],
   },
   {
@@ -267,66 +166,35 @@ export const lawyerServicesTable: ServiceCategory[] = [
     emoji: "🎁",
     color: "text-green-400",
     items: [
-      { name: "المرشد القضائي",       points: 0, baseSAR: "مجاني" },
-      { name: "الحاسبة القانونية",    points: 0, baseSAR: "مجاني" },
-      { name: "المجمّع البحثي",       points: 0, baseSAR: "مجاني" },
-      { name: "المجتمع القانوني",     points: 0, baseSAR: "مجاني" },
-      { name: "المكتبة الأساسية (نظام المرافعات + الإثبات)", points: 0, baseSAR: "مجاني" },
+      { name: "المرشد القضائي", points: 0 },
+      { name: "الحاسبة القانونية", points: 0 },
+      { name: "المجمّع البحثي", points: 0 },
+      { name: "المجتمع القانوني", points: 0 },
     ],
   },
 ];
 
 // ─── Comparison Table ─────────────────────────────────────────────────────────
+// Keys are the plan ids above (the table's columns come from the plan list).
 export const comparisonLawyers: { ar: ComparisonCategory[]; en: ComparisonCategory[] } = {
   ar: [
-    { category: "باقات النقاط", icon: Lightning, rows: [
-      { feature: "النقاط المحصّلة",        "lawyer-free": "—",         "lawyer-basic": "١٬٥٠٠",   "lawyer-advanced": "٥٬٠٠٠",  "lawyer-elite": "١٢٬٥٠٠", "lawyer-royal": "٣٠٬٠٠٠" },
-      { feature: "البونص",                 "lawyer-free": "—",         "lawyer-basic": "+٥٠٪",    "lawyer-advanced": "+١٠٠٪",  "lawyer-elite": "+١٥٠٪",  "lawyer-royal": "+٢٠٠٪" },
-      { feature: "سعر النقطة",             "lawyer-free": "—",         "lawyer-basic": "٠٫٦٧ ر.س","lawyer-advanced": "٠٫٥٠ ر.س","lawyer-elite": "٠٫٤٠ ر.س","lawyer-royal": "٠٫٣٣ ر.س" },
-      { feature: "صلاحية النقاط",          "lawyer-free": "—",         "lawyer-basic": "٦ أشهر",  "lawyer-advanced": "٦ أشهر", "lawyer-elite": "٦ أشهر", "lawyer-royal": "١٢ شهراً" },
+    { category: "الاشتراك وحزم الشحن", icon: Lightning, rows: [
+      { feature: "النقاط",      "lawyer-pro": "١٬٥٠٠ كل شهر", "topup-100": "١٠٠",   "topup-250": "٣٠٠",      "topup-500": "٧٠٠",      "topup-1000": "١٬٥٠٠" },
+      { feature: "نقاط مجانية", "lawyer-pro": "—",            "topup-100": "—",     "topup-250": "+٥٠",      "topup-500": "+٢٠٠",     "topup-1000": "+٥٠٠" },
+      { feature: "سعر النقطة",  "lawyer-pro": "نحو ٠٫٢٧ ر.س", "topup-100": "١ ر.س", "topup-250": "نحو ٠٫٨٣ ر.س", "topup-500": "نحو ٠٫٧١ ر.س", "topup-1000": "نحو ٠٫٦٧ ر.س" },
     ]},
-    { category: "أسعار المنتجات", icon: Gavel, rows: [
-      { feature: "مذكرة رد (٥٠٠ نقطة)",    "lawyer-free": "٥٠٠ ر.س",  "lawyer-basic": "٣٣٣ ر.س", "lawyer-advanced": "٢٥٠ ر.س ✅","lawyer-elite": "٢٠٠ ر.س","lawyer-royal": "١٦٧ ر.س" },
-      { feature: "استئناف (١٬٠٠٠ نقطة)",   "lawyer-free": "١٬٠٠٠ ر.س","lawyer-basic": "٦٦٧ ر.س", "lawyer-advanced": "٥٠٠ ر.س", "lawyer-elite": "٤٠٠ ر.س","lawyer-royal": "٣٣٣ ر.س" },
-      { feature: "نقض/التماس (١٬٥٠٠ نقطة)","lawyer-free": "١٬٥٠٠ ر.س","lawyer-basic": "١٬٠٠٠ ر.س","lawyer-advanced": "٧٥٠ ر.س", "lawyer-elite": "٦٠٠ ر.س","lawyer-royal": "٥٠٠ ر.س" },
-      { feature: "عقد مبسط (٥٠٠ نقطة)",    "lawyer-free": "٥٠٠ ر.س",  "lawyer-basic": "٣٣٣ ر.س", "lawyer-advanced": "٢٥٠ ر.س", "lawyer-elite": "٢٠٠ ر.س","lawyer-royal": "١٦٧ ر.س" },
-      { feature: "عناية واجبة (٥٬٠٠٠ نقطة)","lawyer-free":"٥٬٠٠٠ ر.س","lawyer-basic": "٣٬٣٣٣ ر.س","lawyer-advanced": "٢٬٥٠٠ ر.س","lawyer-elite": "٢٬٠٠٠ ر.س","lawyer-royal": "١٬٦٦٧ ر.س" },
-    ]},
-    { category: "الأدوات والمزايا", icon: Brain, rows: [
-      { feature: "مذكرة مجانية عند التسجيل","lawyer-free": true,        "lawyer-basic": true,       "lawyer-advanced": true,     "lawyer-elite": true,     "lawyer-royal": true },
-      { feature: "مذكرة ثانية مجانية",       "lawyer-free": false,       "lawyer-basic": true,       "lawyer-advanced": true,     "lawyer-elite": true,     "lawyer-royal": true },
-      { feature: "المكتبة الكاملة",          "lawyer-free": "مرافعات+إثبات","lawyer-basic":"٥٠ نقطة/شهر","lawyer-advanced":"مجاناً بالكامل ✅","lawyer-elite":"مجاناً بالكامل ✅","lawyer-royal":"مجاناً بالكامل ✅" },
-      { feature: "Kanban + تقويم + سوق",     "lawyer-free": false,       "lawyer-basic": "رصيد ≥ ٥٠٠","lawyer-advanced": "رصيد ≥ ٥٠٠","lawyer-elite": "رصيد ≥ ٥٠٠","lawyer-royal": "رصيد ≥ ٥٠٠" },
-    ]},
-    { category: "الفريق والدعم", icon: Users, rows: [
-      { feature: "أعضاء الفريق (الإضافي ٤٩ ر.س/شهر)","lawyer-free":"—","lawyer-basic": "—",       "lawyer-advanced": "—",      "lawyer-elite": "حتى ٣",  "lawyer-royal": "حتى ٣" },
-      { feature: "Top Listing في السوق",     "lawyer-free": false,       "lawyer-basic": false,      "lawyer-advanced": false,    "lawyer-elite": false,    "lawyer-royal": true },
-      { feature: "الدعم",                    "lawyer-free": "بريد",      "lawyer-basic": "بريد",     "lawyer-advanced": "واتساب", "lawyer-elite": "واتساب","lawyer-royal": "VIP + مدير حساب" },
+    { category: "المنصة", icon: Gavel, rows: [
+      { feature: "إدارة القضايا والجلسات والمهل", "lawyer-pro": true, "topup-100": "مع الاشتراك", "topup-250": "مع الاشتراك", "topup-500": "مع الاشتراك", "topup-1000": "مع الاشتراك" },
     ]},
   ],
   en: [
-    { category: "Credit Packages", icon: Lightning, rows: [
-      { feature: "Points received",    "lawyer-free": "—",      "lawyer-basic": "1,500",    "lawyer-advanced": "5,000",   "lawyer-elite": "12,500",  "lawyer-royal": "30,000" },
-      { feature: "Bonus",              "lawyer-free": "—",      "lawyer-basic": "+50%",     "lawyer-advanced": "+100%",   "lawyer-elite": "+150%",   "lawyer-royal": "+200%" },
-      { feature: "Point cost",         "lawyer-free": "—",      "lawyer-basic": "SAR 0.67", "lawyer-advanced": "SAR 0.50","lawyer-elite": "SAR 0.40","lawyer-royal": "SAR 0.33" },
-      { feature: "Validity",           "lawyer-free": "—",      "lawyer-basic": "6 months", "lawyer-advanced": "6 months","lawyer-elite": "6 months","lawyer-royal": "12 months" },
+    { category: "Subscription & top-ups", icon: Lightning, rows: [
+      { feature: "Points",          "lawyer-pro": "1,500 / month",  "topup-100": "100",   "topup-250": "300",            "topup-500": "700",            "topup-1000": "1,500" },
+      { feature: "Free points",     "lawyer-pro": "—",              "topup-100": "—",     "topup-250": "+50",            "topup-500": "+200",           "topup-1000": "+500" },
+      { feature: "Price per point", "lawyer-pro": "About SAR 0.27", "topup-100": "SAR 1", "topup-250": "About SAR 0.83", "topup-500": "About SAR 0.71", "topup-1000": "About SAR 0.67" },
     ]},
-    { category: "Product Prices", icon: Gavel, rows: [
-      { feature: "Reply brief (500 pts)",     "lawyer-free": "SAR 500",   "lawyer-basic": "SAR 333",  "lawyer-advanced": "SAR 250 ✅","lawyer-elite": "SAR 200","lawyer-royal": "SAR 167" },
-      { feature: "Appeal (1,000 pts)",        "lawyer-free": "SAR 1,000", "lawyer-basic": "SAR 667",  "lawyer-advanced": "SAR 500",  "lawyer-elite": "SAR 400","lawyer-royal": "SAR 333" },
-      { feature: "Cassation (1,500 pts)",     "lawyer-free": "SAR 1,500", "lawyer-basic": "SAR 1,000","lawyer-advanced": "SAR 750",  "lawyer-elite": "SAR 600","lawyer-royal": "SAR 500" },
-      { feature: "Due Diligence (5,000 pts)", "lawyer-free": "SAR 5,000", "lawyer-basic": "SAR 3,333","lawyer-advanced": "SAR 2,500","lawyer-elite": "SAR 2,000","lawyer-royal":"SAR 1,667" },
-    ]},
-    { category: "Features", icon: Brain, rows: [
-      { feature: "Free brief on signup",      "lawyer-free": true,  "lawyer-basic": true,  "lawyer-advanced": true,  "lawyer-elite": true,  "lawyer-royal": true },
-      { feature: "2nd free brief after top-up","lawyer-free": false, "lawyer-basic": true,  "lawyer-advanced": true,  "lawyer-elite": true,  "lawyer-royal": true },
-      { feature: "Full legal library",        "lawyer-free": "Basic laws","lawyer-basic":"50 pts/mo","lawyer-advanced":"Included free ✅","lawyer-elite":"Included free ✅","lawyer-royal":"Included free ✅" },
-      { feature: "Kanban + calendar + market","lawyer-free": false, "lawyer-basic": "≥500 balance","lawyer-advanced":"≥500 balance","lawyer-elite":"≥500 balance","lawyer-royal":"≥500 balance" },
-    ]},
-    { category: "Team & Support", icon: Users, rows: [
-      { feature: "Team members (SAR 49/mo each)","lawyer-free":"—","lawyer-basic":"—","lawyer-advanced":"—","lawyer-elite":"up to 3","lawyer-royal":"up to 3" },
-      { feature: "Top Listing",               "lawyer-free": false, "lawyer-basic": false, "lawyer-advanced": false, "lawyer-elite": false, "lawyer-royal": true },
-      { feature: "Support",                   "lawyer-free": "Email","lawyer-basic":"Email","lawyer-advanced":"WhatsApp","lawyer-elite":"WhatsApp","lawyer-royal":"VIP + Account Mgr" },
+    { category: "Platform", icon: Gavel, rows: [
+      { feature: "Cases, hearings and deadlines", "lawyer-pro": true, "topup-100": "With the subscription", "topup-250": "With the subscription", "topup-500": "With the subscription", "topup-1000": "With the subscription" },
     ]},
   ],
 };

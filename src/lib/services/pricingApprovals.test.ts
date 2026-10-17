@@ -10,10 +10,23 @@ const providerRegistration = readFileSync(
   "utf8",
 );
 
-test("approved point packages include the legal library at the documented tiers", () => {
-  assert.match(lawyers, /lawyer-advanced[\s\S]*مشمولة مجاناً \(٦ أشهر\)/);
-  assert.match(lawyers, /lawyer-elite[\s\S]*مشمولة مجاناً \(٦ أشهر\)/);
-  assert.match(lawyers, /lawyer-royal[\s\S]*مشمولة مجاناً \(١٢ شهراً\)/);
+// Owner answers ١٧٤ / ١٧٨ / ١٧٩ (2026-10-16): one subscription and four top-ups.
+// The library is no longer bundled into the packs (whether lawyers get it is
+// owner question ٢٠٨), and the free-memo offers are gone.
+test("the lawyer tab is the 399 subscription with 1,500 points plus four top-ups", () => {
+  assert.match(lawyers, /id: "lawyer-pro"[\s\S]*?priceMonthly: "٣٩٩", priceYearly: "٣٬٩٩٠"/);
+  assert.match(lawyers, /LAWYER_PRO_MONTHLY_POINTS = 1500/);
+  const topups: Array<[string, string, string]> = [
+    ["topup-100", "١٠٠", "١٠٠ نقطة"],
+    ["topup-250", "٢٥٠", "٣٠٠ نقطة"],
+    ["topup-500", "٥٠٠", "٧٠٠ نقطة"],
+    ["topup-1000", "١٬٠٠٠", "١٬٥٠٠ نقطة"],
+  ];
+  for (const [id, price, points] of topups) {
+    assert.match(lawyers, new RegExp(`id: "${id}"[\\s\\S]*?priceMonthly: "${price}"[\\s\\S]*?desc: "${points}"`), id);
+  }
+  assert.doesNotMatch(lawyers, /lawyer-(basic|advanced|elite|royal)|مشمولة مجاناً|مذكرة مجانية|مذكرة ثانية|أول ٥٠٠/);
+  assert.doesNotMatch(lawyers, /محفظة|رصيد نقدي/);
 });
 
 test("library subscription buttons point to live routes", () => {
@@ -41,6 +54,9 @@ test("retired shield and group plans are removed", () => {
 test("provider registration no longer sells the retired monthly AI plans", () => {
   assert.doesNotMatch(providerRegistration, /AI قانوني غير محدود|Unlimited legal AI/);
   assert.doesNotMatch(providerRegistration, /price: "١٩٩"|price: "٤٩٩"|price: "199"|price: "499"/);
-  assert.match(providerRegistration, /١٧٬٩٨٨/);
+  // Owner answer ١٧٥: the firm ERP is 990/month for 3 seats, not 17,988/year.
+  assert.doesNotMatch(providerRegistration, /١٧٬٩٨٨|17,988/);
+  assert.match(providerRegistration, /price: "٩٩٠"/);
   assert.match(providerRegistration, /ERP مجاني للمحامي الفرد/);
+  assert.doesNotMatch(providerRegistration, /محفظة/);
 });

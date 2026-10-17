@@ -39,18 +39,23 @@ const STATUS_LABEL: Record<AdminPricingStatus, string> = {
   disabled: "معطل",
 };
 
-const LAWYER_PLAN_NUMBERS: Record<string, { price: number; credits: number }> = {
-  "lawyer-basic": { price: 1000, credits: 1500 },
-  "lawyer-advanced": { price: 2500, credits: 5000 },
-  "lawyer-elite": { price: 5000, credits: 12500 },
-  "lawyer-royal": { price: 10000, credits: 30000 },
+// Owner answers ١٧٤ / ١٧٨ (2026-10-16): the subscription (monthly / yearly) and
+// the four top-ups (one price, points with the bonus).
+const LAWYER_PLAN_NUMBERS: Record<string, { price: number; yearly?: number; credits: number }> = {
+  "lawyer-pro": { price: 399, yearly: 3990, credits: 1500 },
+  "topup-100": { price: 100, credits: 100 },
+  "topup-250": { price: 250, credits: 300 },
+  "topup-500": { price: 500, credits: 700 },
+  "topup-1000": { price: 1000, credits: 1500 },
 };
 
 const FIRM_PLAN_NUMBERS: Record<string, { monthly: number; yearly: number; credits: number; baseSeats: number; extraSeatYearly: number | null; maxSeats: number | null }> = {
-  "firm-basic": { monthly: 1499, yearly: 17988, credits: 30000, baseSeats: 3, extraSeatYearly: 2388, maxSeats: 8 },
+  // Owner answer ١٧٥ (2026-10-16): 990/9,900 for 3 seats and 1,490/14,900 for
+  // 5 seats. No firm points and no extra-seat price are set yet (question ٢١٧).
+  "firm-basic": { monthly: 990, yearly: 9900, credits: 0, baseSeats: 3, extraSeatYearly: null, maxSeats: null },
   "firm-growth": { monthly: 3999, yearly: 47988, credits: 120000, baseSeats: 10, extraSeatYearly: 2988, maxSeats: 30 },
   "firm-scale": { monthly: 7999, yearly: 95988, credits: 360000, baseSeats: 25, extraSeatYearly: 3588, maxSeats: 75 },
-  "firm-enterprise": { monthly: 14999, yearly: 179988, credits: 900000, baseSeats: 50, extraSeatYearly: null, maxSeats: null },
+  "firm-enterprise": { monthly: 1490, yearly: 14900, credits: 0, baseSeats: 5, extraSeatYearly: null, maxSeats: null },
 };
 
 const INITIAL_PRICING: AdminPricingItem[] = [
@@ -59,7 +64,7 @@ const INITIAL_PRICING: AdminPricingItem[] = [
     scope: "lawyer",
     name: plan.name,
     priceMonthly: LAWYER_PLAN_NUMBERS[plan.id]?.price ?? 0,
-    priceYearly: LAWYER_PLAN_NUMBERS[plan.id]?.price ?? 0,
+    priceYearly: LAWYER_PLAN_NUMBERS[plan.id]?.yearly ?? LAWYER_PLAN_NUMBERS[plan.id]?.price ?? 0,
     includedCredits: LAWYER_PLAN_NUMBERS[plan.id]?.credits ?? 0,
     status: "beta",
     betaLocked: true,
@@ -80,7 +85,7 @@ const INITIAL_PRICING: AdminPricingItem[] = [
     billingMetric: "seat",
     status: "beta",
     betaLocked: true,
-    notes: `${plan.desc} النموذج: اشتراك سنوي + مقاعد + نقاط للشركة. ${plan.pricingFormulaLabel ?? ""}`,
+    notes: `${plan.desc} النموذج: اشتراك شهري أو سنوي + مقاعد. ${plan.pricingFormulaLabel ?? ""}`,
   })),
   {
     id: "individual-quick-question",

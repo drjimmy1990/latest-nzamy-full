@@ -10,6 +10,7 @@ import type { AudienceTab, Billing, CompanySize } from "@/constants/pricingData"
 
 import { PricingHero }         from "@/components/pricing/PricingHero";
 import { PricingCards }        from "@/components/pricing/PricingCards";
+import { PromotionalCampaignBanner } from "@/components/pricing/PromotionalCampaignBanner";
 import { PricingComparison }   from "@/components/pricing/PricingComparison";
 import { PricingTestimonials } from "@/components/pricing/PricingTestimonials";
 import { PricingFAQ }          from "@/components/pricing/PricingFAQ";
@@ -84,6 +85,9 @@ export default function PricingPage() {
           hasLegalDept={hasLegalDept} setHasLegalDept={setHasLegalDept}
           libraryMode={libraryMode} setLibraryMode={setLibraryMode}
         />
+
+        {/* A dated campaign only (owner ١٧٩); renders nothing today. */}
+        <PromotionalCampaignBanner />
 
         {/* Plan cards + enterprise + SME + quarterly */}
         <PricingCards

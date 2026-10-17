@@ -5,6 +5,7 @@
  * 
  * 1. Legal Library Standalone Subscription:
  *    - Annual: 5,000 SAR / year (Canonical rate, unified across system)
+ *    - Half-year: 2,750 SAR / 6 months (owner answer ١٧٧, 2026-10-16)
  *    - Quarterly: 1,500 SAR / quarter
  *    - (The 2,500 SAR/year "AI Researcher Add-on" is withdrawn: AI points
  *      replaced it — gap analysis 2026-10-16 §2. No plan offers it.)
@@ -16,7 +17,8 @@
  *    - Tier 4: Family/Group (الباقة العائلية الشاملة) = 699 SAR/mo (6,990 SAR/yr)
  * 
  * 3. Independent Legal Consultant:
- *    - 199 SAR/mo (Article 18 Regulatory Gated — No court representation for unlicensed)
+ *    - 399 SAR/mo or 3,990 SAR/yr, the same as «المحامي المحترف» (owner answer
+ *      ١٧٣, 2026-10-16); Article 18: no pleading or hearing management
  * ─────────────────────────────────────────────────────────────
  */
 
@@ -77,6 +79,35 @@ export const STANDALONE_LIBRARY_PLANS: Record<string, PricingPlan> = {
     ctaTextAr: "اشترك الآن",
     ctaTextEn: "Subscribe Now",
     ctaHref: "/laws/subscribe?plan=lib-q1",
+  },
+  "lib-q2": {
+    id: "lib-q2",
+    nameAr: "المكتبة القانونية — نصف سنوي",
+    nameEn: "Legal Library — Half-year",
+    priceMonthly: 2750,
+    priceYearly: 2750,
+    periodMonthlyAr: "ر.س / ٦ أشهر",
+    periodYearlyAr: "ر.س / ٦ أشهر",
+    periodMonthlyEn: "SAR / 6 months",
+    periodYearlyEn: "SAR / 6 months",
+    badgeAr: null,
+    badgeEn: null,
+    descAr: "وصول كامل للأنظمة واللوائح والمبادئ القضائية لمدة ستة أشهر",
+    descEn: "Full access to Saudi laws, regulations and judicial principles for 6 months",
+    featuresAr: [
+      "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
+      "بحث ذكي وفهرسة رقمية دقيقة",
+      "قراءة هادئة ووضع التركيز وحفظ المفضلة",
+    ],
+    featuresEn: [
+      "Full access to laws, regulations & judicial principles",
+      "Full-text search and precise digital indexing",
+      "Focus reader mode, favorites & bookmarks",
+    ],
+    highlighted: false,
+    ctaTextAr: "اشترك الآن",
+    ctaTextEn: "Subscribe Now",
+    ctaHref: "/laws/subscribe?plan=lib-q2",
   },
   "lib-annual": {
     id: "lib-annual",
@@ -266,8 +297,8 @@ export const INDEPENDENT_CONSULTANT_PLAN: PricingPlan = {
   id: "consultant-independent",
   nameAr: "المستشار القانوني المستقل",
   nameEn: "Independent Legal Consultant",
-  priceMonthly: 199,
-  priceYearly: 1990,
+  priceMonthly: 399,
+  priceYearly: 3990,
   periodMonthlyAr: "ر.س / شهر",
   periodYearlyAr: "ر.س / سنة",
   periodMonthlyEn: "SAR / month",

@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
 import {
   Check, Crown, ArrowLeft, Buildings,
-  Lightning, Star, Flame, Coins, Gift, Gavel, Users, CheckCircle
+  Lightning, Coins, Gavel, Users, CheckCircle
 } from "@phosphor-icons/react";
 import type { Plan, AudienceTab, Billing } from "@/constants/pricingData";
 import { lawyerServicesTable } from "@/constants/pricing/pricing.lawyers";
@@ -71,13 +71,10 @@ function SpotlightCard({
 
   const isHighlighted = plan.highlighted;
 
-  /* badge icon per lawyer tier */
+  /* icon on the lawyer cards: the subscription, then the top-ups */
   const tierIcon = isLawyer ? (() => {
-    if (plan.id === "lawyer-free") return null;
-    if (plan.id === "lawyer-basic") return <Lightning size={12} weight="fill" />;
-    if (plan.id === "lawyer-advanced") return <Star size={12} weight="fill" />;
-    if (plan.id === "lawyer-elite") return <Flame size={12} weight="fill" />;
-    if (plan.id === "lawyer-royal") return <Crown size={12} weight="fill" />;
+    if (plan.id === "lawyer-pro") return <Crown size={12} weight="fill" />;
+    if (plan.id.startsWith("topup-")) return <Lightning size={12} weight="fill" />;
     return null;
   })() : null;
 
@@ -278,34 +275,43 @@ function SpotlightCard({
   );
 }
 
-/* ─── Lawyer-specific layout: single 4-col row ───────────────────────────── */
+/* ─── Lawyer layout: the subscription, then the point top-ups ──────────────── */
 function LawyerCreditsLayout({ planList, billing, isAr, onSubscribe }: { planList: Plan[]; billing: Billing; isAr: boolean; onSubscribe?: (plan: Plan) => boolean }) {
+  const subscription = planList.filter((p) => !p.id.startsWith("topup-"));
+  const topups = planList.filter((p) => p.id.startsWith("topup-"));
   return (
-    <div className="space-y-4 lg:space-y-5">
-      {/* Single row: all 4 plans */}
-      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4 lg:gap-4">
-        {planList.map((plan, i) => (
-          <SpotlightCard key={plan.id} plan={plan} billing={billing} index={i} isLawyer isAr={isAr} compact onSubscribe={onSubscribe} />
+    <div className="space-y-6 lg:space-y-8">
+      <div className="mx-auto grid max-w-md gap-3">
+        {subscription.map((plan, i) => (
+          <SpotlightCard key={plan.id} plan={plan} billing={billing} index={i} isLawyer isAr={isAr} onSubscribe={onSubscribe} />
         ))}
       </div>
 
-      {/* Free brief footnote — slim strip */}
+      {topups.length > 0 && (
+        <div>
+          <h3 className="mb-4 text-center font-brand text-lg font-bold text-ink">
+            {isAr ? "حزم الشحن الإضافية" : "Extra point top-ups"}
+          </h3>
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4 lg:gap-4">
+            {topups.map((plan, i) => (
+              <SpotlightCard key={plan.id} plan={plan} billing={billing} index={i + subscription.length} isLawyer isAr={isAr} compact onSubscribe={onSubscribe} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* The points rule (owner answer ١٧٨) */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true }}
         className="flex flex-wrap items-center justify-center gap-3 rounded-2xl border border-gold/15 bg-gold/5 px-6 py-3.5 dark:border-gold/10 dark:bg-gold/8"
       >
-        <Gift size={16} weight="duotone" className="shrink-0 text-gold-dark dark:text-gold" />
+        <Coins size={16} weight="duotone" className="shrink-0 text-gold-dark dark:text-gold" />
         <p className="text-sm text-ink-muted dark:text-gray-300">
-          <span className="font-semibold text-ink dark:text-white">مذكرة مجانية (أي نوع) فور التسجيل</span>
-          {" + "}
-          <span className="font-semibold text-ink dark:text-white">مذكرة ثانية مجاناً بعد أول شحن</span>
-          {" — عرض لفترة محدودة لأول ٥٠٠ محامٍ مرخّص"}
-        </p>
-        <Coins size={16} weight="duotone" className="shrink-0 text-ink-faint dark:text-gray-500" />
-        <p className="text-xs text-ink-faint dark:text-gray-500">
-          نظام النقاط: اشتري مرة واحدة — استخدم متى تحتاج. صلاحية ٦ أشهر (الملكية ١٢ شهراً).
+          {isAr
+            ? "النقاط وحدات استخدام مسبقة الدفع لأدوات الذكاء الاصطناعي في نظامي وحدها: لا تُحوَّل بين المستخدمين، ولا تُدفع بها أتعاب المحامين، ولا تُصرف نقداً."
+            : "Points are prepaid usage units for Nezamy's own AI tools only: they cannot be transferred, used to pay lawyers' fees, or cashed out."}
         </p>
       </motion.div>
     </div>
@@ -334,7 +340,7 @@ function LawyerServicesTable({ isAr }: { isAr: boolean }) {
         </button>
         {!open && (
           <p className="mt-2 text-xs text-ink-faint">
-            {isAr ? "السعر المبيّن هو السعر المرجعي للنقطة (١ نقطة = ١ ر.س) — تنخفض مع كل باقة" : "Prices shown at base rate (1 pt = 1 SAR) — drop with each package tier"}
+            {isAr ? "التكلفة بالنقاط لكل استخدام. النقطة بـ١ ر.س في الشحن الأساسي، وأقل في الحزم الأكبر" : "Cost in points per use. A point is SAR 1 at the base top-up, less in the larger packs"}
           </p>
         )}
       </div>
@@ -353,7 +359,7 @@ function LawyerServicesTable({ isAr }: { isAr: boolean }) {
               <span className="text-xl">💡</span>
               <p className="leading-relaxed">
                 <span className="font-bold">كيف تقرأ الجدول؟</span><br/>
-                تُخصم هذه النقاط من رصيدك عند استخدام الخدمة، وكلما اخترت باقة أكبر، حصلت على نقاط أكثر بتكلفة أقل.
+                تُخصم هذه النقاط من رصيدك عند كل استخدام للأداة. والأدوات غير المذكورة في الجدول لم تُحدَّد تكلفتها بعد.
               </p>
             </div>
 
@@ -386,7 +392,7 @@ function LawyerServicesTable({ isAr }: { isAr: boolean }) {
                             )}
                           </td>
                           <td className="px-3 py-2.5 text-center font-mono text-[12px] font-bold text-royal">
-                            {item.points === 0 ? "—" : item.points.toLocaleString()}
+                            {item.points === 0 ? "—" : (item.pointsLabel ?? item.points.toLocaleString("ar-SA"))}
                           </td>
                         </tr>
                       ))}
