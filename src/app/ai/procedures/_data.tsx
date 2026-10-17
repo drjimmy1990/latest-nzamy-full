@@ -1,49 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  Gavel, Buildings, Shield, FileText, HouseSimple, Scales, ClipboardText,
-  Copy, Check, Envelope, Warning,
+  Gavel, Buildings, Shield, Scales, ClipboardText,
+  Copy, Check, Envelope,
 } from "@phosphor-icons/react";
 import { copyToClipboard } from "@/lib/services/publicProfileLink";
 
-// ─── Circuits directory: honesty + one-tap copy (owner test 28-9, T28-33) ────
+// ─── Circuits directory: one-tap copy ─────────────────────────────────────────
 //
-// Every circuit entry on this page and on the two dashboard copies
-// (dashboard/business/circuits-emails, dashboard/firm/circuits-emails) has
-// been in the repo since the initial commit and bears the marks of placeholder
-// data: sequential phone numbers (0112175000/01/02), «c.court.r1@moj.gov.sa»,
-// najiz codes and durations nobody sourced. The owner's own package calls it a
-// sample and says the real 2,192-circuit directory must still be supplied. So
-// the directory says so, on every screen and on every entry, until it is
-// replaced from the official source — and no circuit data is added here.
-
-export const CIRCUITS_SAMPLE_NOTICE =
-  "عيّنة توضيحية لم يُتحقَّق منها بعد — لا تعتمد هذه العناوين في مراسلة رسمية حتى نحدّث الدليل من مصدره الرسمي";
-
-/** The notice every circuits screen shows above the directory. */
-export function CircuitsSampleNotice({ isDark }: { isDark: boolean }) {
-  return (
-    <div role="note" className={`rounded-2xl border p-3.5 flex items-start gap-2.5 ${isDark ? "border-amber-700/30 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
-      <Warning size={16} weight="fill" className="text-amber-500 flex-shrink-0 mt-0.5" />
-      <p className={`text-[12px] font-semibold leading-relaxed ${isDark ? "text-amber-300" : "text-amber-800"}`}>
-        {CIRCUITS_SAMPLE_NOTICE}
-      </p>
-    </div>
-  );
-}
-
-/** True only for an entry that carries `verified: true` (none do today). */
-export function isVerifiedCircuit(entry: unknown): boolean {
-  return (entry as { verified?: boolean } | null)?.verified === true;
-}
-
-/** «غير مُتحقَّق» — carried by every entry until the directory is sourced. */
-export function UnverifiedBadge() {
-  return (
-    <span className="inline-flex items-center gap-1 text-[10px] font-bold rounded-full border px-2 py-0.5 border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400">
-      <Warning size={10} weight="fill" /> غير مُتحقَّق
-    </span>
-  );
-}
+// The circuits tab renders the Ministry of Justice directory
+// (_CircuitsDirectory.tsx over src/data/circuits-directory.json). The 14-entry
+// sample that lived here — placeholder addresses such as
+// «c.court.r1@moj.gov.sa», sequential phone numbers, najiz codes and durations
+// nobody sourced, every row tagged «غير مُتحقَّق» (owner test 28-9, T28-33) —
+// was deleted with owner answer ١٩٢ (2026-10-16).
 
 /**
  * One circuit e-mail: the FULL address (the directory used to show only the
@@ -57,11 +26,10 @@ export function UnverifiedBadge() {
  * permissions fall back to execCommand, which can still fail) — otherwise it
  * tells the user to select the address by hand.
  *
- * `verified` gates the copy and mailto buttons: an entry that has not been
- * checked against the official directory (all of them today) shows its
- * address as text only, so a litigant is never one click away from mailing a
- * placeholder. The buttons appear per entry once it carries a source and a
- * verification date.
+ * `verified` gates the copy and mailto buttons: an entry the directory still
+ * flags for verification shows its address as text only, so a litigant is
+ * never one click away from mailing an unconfirmed address (none is flagged
+ * since owner answer ١٩٢).
  */
 export function CircuitEmail({ email, isDark, verified = false }: { email: string; isDark: boolean; verified?: boolean }) {
   const [status, setStatus] = useState<"idle" | "copied" | "failed">("idle");
@@ -106,53 +74,6 @@ export function CircuitEmail({ email, isDark, verified = false }: { email: strin
     </div>
   );
 }
-
-export const CIRCUITS = [
-  {
-    court: "المحكمة التجارية — الرياض",
-    circuits: [
-      { num: "١", spec: "عقود التجارة والشركات", email: "c.court.r1@moj.gov.sa", phone: "0112175000", floor: "الدور الثاني", najizCode: "TC-R-01", avgDays: "٤٥-٩٠ يوم", notes: "تختص بالنزاعات فوق ٥٠٠ ألف ريال" },
-      { num: "٢", spec: "الإفلاس والتصفية", email: "c.court.r2@moj.gov.sa", phone: "0112175001", floor: "الدور الثاني", najizCode: "TC-R-02", avgDays: "٩٠-١٨٠ يوم", notes: "إجراءات نظام الإفلاس الجديد" },
-      { num: "٣", spec: "منازعات العقارات التجارية", email: "c.court.r3@moj.gov.sa", phone: "0112175002", floor: "الدور الثالث", najizCode: "TC-R-03", avgDays: "٦٠-١٢٠ يوم", notes: "" },
-    ],
-    icon: Buildings, color: "text-blue-500", bg: "bg-blue-500/10",
-  },
-  {
-    court: "المحكمة العمالية — الرياض",
-    circuits: [
-      { num: "١", spec: "منازعات إنهاء العقد والفصل", email: "labor1.r@hrsd.gov.sa", phone: "19911", floor: "الدور الأول", najizCode: "LAB-R-01", avgDays: "٣٠-٦٠ يوم", notes: "يشترط التسوية الودية أولاً" },
-      { num: "٢", spec: "الأجور ومكافآت نهاية الخدمة", email: "labor2.r@hrsd.gov.sa", phone: "19911", floor: "الدور الأول", najizCode: "LAB-R-02", avgDays: "٢١-٤٥ يوم", notes: "" },
-      { num: "٣", spec: "إصابات العمل والتأمينات", email: "labor3.r@hrsd.gov.sa", phone: "19911", floor: "الدور الثاني", najizCode: "LAB-R-03", avgDays: "٤٥-٩٠ يوم", notes: "تُنسّق مع المؤسسة العامة للتأمينات" },
-    ],
-    icon: Shield, color: "text-emerald-500", bg: "bg-emerald-500/10",
-  },
-  {
-    court: "محكمة الاستئناف — الرياض",
-    circuits: [
-      { num: "١", spec: "استئناف الأحكام التجارية", email: "appeal1@moj.gov.sa", phone: "0112175100", floor: "الدور الرابع", najizCode: "APP-R-01", avgDays: "٦٠-١٢٠ يوم", notes: "٣٠ يوم من تاريخ الحكم لرفع الاستئناف" },
-      { num: "٢", spec: "استئناف الأحكام العمالية", email: "appeal2@moj.gov.sa", phone: "0112175100", floor: "الدور الرابع", najizCode: "APP-R-02", avgDays: "٤٥-٩٠ يوم", notes: "" },
-    ],
-    icon: Gavel, color: "text-amber-500", bg: "bg-amber-500/10",
-  },
-  {
-    court: "المحكمة الإدارية — الرياض",
-    circuits: [
-      { num: "١", spec: "منازعات الموظفين وجهاتهم الحكومية", email: "admin1@diwan.gov.sa", phone: "0112083500", floor: "الدور الأول", najizCode: "ADM-R-01", avgDays: "٩٠-١٨٠ يوم", notes: "يشترط التظلم الإداري قبل رفع الدعوى" },
-      { num: "٢", spec: "العقود الحكومية والمنافسات", email: "admin2@diwan.gov.sa", phone: "0112083500", floor: "الدور الأول", najizCode: "ADM-R-02", avgDays: "٦٠-١٢٠ يوم", notes: "" },
-      { num: "٣", spec: "الضرائب والجمارك والزكاة", email: "admin3@diwan.gov.sa", phone: "0112083500", floor: "الدور الثاني", najizCode: "ADM-R-03", avgDays: "٦٠-١٨٠ يوم", notes: "تُنسّق مع هيئة الزكاة" },
-    ],
-    icon: FileText, color: "text-purple-500", bg: "bg-purple-500/10",
-  },
-  {
-    court: "محاكم الأسرة — الرياض",
-    circuits: [
-      { num: "١", spec: "الطلاق والخلع", email: "family1.r@moj.gov.sa", phone: "0112175200", floor: "الدور الأول (نساء)", najizCode: "FAM-R-01", avgDays: "٣٠-٦٠ يوم", notes: "يتم الفصل في مسائل الطلاق أسرع نسبياً" },
-      { num: "٢", spec: "الحضانة والنفقة", email: "family2.r@moj.gov.sa", phone: "0112175200", floor: "الدور الثاني", najizCode: "FAM-R-02", avgDays: "٤٥-٩٠ يوم", notes: "يمكن طلب نفقة مؤقتة أثناء النظر في الدعوى" },
-      { num: "٣", spec: "الميراث وتصفية التركات", email: "family3.r@moj.gov.sa", phone: "0112175200", floor: "الدور الثالث", najizCode: "FAM-R-03", avgDays: "٦٠-١٨٠ يوم", notes: "" },
-    ],
-    icon: HouseSimple, color: "text-pink-500", bg: "bg-pink-500/10",
-  },
-];
 
 export const PROCEDURE_STEPS: Record<string, { title: string; description: string; steps: { label: string; time: string; tip?: string; critical?: boolean }[] }> = {
   commercial: {

@@ -3,9 +3,9 @@
     "title": "دليل البريد الإلكتروني للجهات والإدارات والدوائر القضائية",
     "source": "وزارة العدل — المملكة العربية السعودية",
     "totalCount": 2192,
-    "extractedAt": "2026-10-09T23:07:35.466Z",
-    "verifiedCount": 2156,
-    "needsVerificationCount": 36,
+    "extractedAt": "2026-10-17T13:47:08.708Z",
+    "verifiedCount": 2192,
+    "needsVerificationCount": 0,
     "categoriesCount": 8,
     "regionsCount": 16
   },
@@ -2996,9 +2996,9 @@
       "city": "منطقة جازان",
       "email": "GEN-SAM-COURT2@moj.gov.sa",
       "rawEmail": "moj.gov.sa@GEN-SAM-COURT٢",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "GEN-SAM-COURT2@moj.gov.sa",
-      "verificationStatus": "مرجّحة (صُححت بالاستناد لمصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0231",
@@ -3074,9 +3074,9 @@
       "city": "منطقة جازان",
       "email": "GEN-SHG-COURT2@moj.gov.sa",
       "rawEmail": "moj.gov.sa@GEN-SHG-COURT٢",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "GEN-SHG-COURT2@moj.gov.sa",
-      "verificationStatus": "مرجّحة (صُححت بالاستناد لمصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0237",
@@ -4790,9 +4790,9 @@
       "city": "المنطقة الشرقية",
       "email": "KIT1-HAS@moj.gov.sa",
       "rawEmail": "HAS@moj.gov.sa-KIT١",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT1-HAS@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0369",
@@ -4803,9 +4803,9 @@
       "city": "المنطقة الشرقية",
       "email": "KIT1-KHO@moj.gov.sa",
       "rawEmail": "KHO@moj.gov.sa-KIT١",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT1-KHO@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0370",
@@ -4816,9 +4816,9 @@
       "city": "المنطقة الشرقية",
       "email": "KIT2-BGA@moj.gov.sa",
       "rawEmail": "BGA@moj.gov.sa-KIT٢",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT2-BGA@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0371",
@@ -4829,9 +4829,9 @@
       "city": "المنطقة الشرقية",
       "email": "KIT2-DAM@moj.gov.sa",
       "rawEmail": "DAM@moj.gov.sa-KIT٢",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT2-DAM@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0372",
@@ -4842,9 +4842,9 @@
       "city": "المنطقة الشرقية",
       "email": "KIT2-HAS@moj.gov.sa",
       "rawEmail": "HAS@moj.gov.sa-KIT٢",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT2-HAS@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0373",
@@ -4855,9 +4855,9 @@
       "city": "المنطقة الشرقية",
       "email": "KIT2-KHO@moj.gov.sa",
       "rawEmail": "KHO@moj.gov.sa-KIT٢",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT2-KHO@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0374",
@@ -5349,9 +5349,9 @@
       "city": "منطقة الرياض",
       "email": "KIT1-RYD@moj.gov.sa",
       "rawEmail": "RYD@moj.gov.sa-KIT١",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT1-RYD@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0412",
@@ -5375,9 +5375,9 @@
       "city": "منطقة الرياض",
       "email": "KIT2-HAIR@moj.gov.sa",
       "rawEmail": "HAIR@moj.gov.sa-KIT٢",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT2-HAIR@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0414",
@@ -5739,9 +5739,9 @@
       "city": "منطقة الرياض",
       "email": "KIT2-KHJ@moj.gov.sa",
       "rawEmail": "KHJ@moj.gov.sa-KIT٢",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT2-KHJ@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0442",
@@ -5791,9 +5791,9 @@
       "city": "منطقة القصيم",
       "email": "KIT1-BUR@moj.gov.sa",
       "rawEmail": "BUR@moj.gov.sa-KIT١",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT1-BUR@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0446",
@@ -5804,9 +5804,9 @@
       "city": "منطقة القصيم",
       "email": "KIT2-BUR@moj.gov.sa",
       "rawEmail": "BUR@moj.gov.sa-KIT٢",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT2-BUR@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0447",
@@ -6038,9 +6038,9 @@
       "city": "منطقة المدينة المنورة",
       "email": "KIT2-YEN@moj.gov.sa",
       "rawEmail": "YEN@moj.gov.sa-KIT٢",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT2-YEN@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0465",
@@ -6181,9 +6181,9 @@
       "city": "منطقة تبوك",
       "email": "KIT1-TAB@moj.gov.sa",
       "rawEmail": "TAB@moj.gov.sa-KIT١",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT1-TAB@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0476",
@@ -6272,9 +6272,9 @@
       "city": "منطقة تبوك",
       "email": "KIT2-TAB@moj.gov.sa",
       "rawEmail": "TAB@moj.gov.sa-KIT٢",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT2-TAB@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0483",
@@ -6285,9 +6285,9 @@
       "city": "منطقة جازان",
       "email": "KIT1-Jaz@moj.gov.sa",
       "rawEmail": "Jaz@moj.gov.sa-KIT١",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT1-Jaz@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0484",
@@ -6298,9 +6298,9 @@
       "city": "منطقة جازان",
       "email": "KIT2-Jaz@moj.gov.sa",
       "rawEmail": "Jaz@moj.gov.sa-KIT٢",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT2-Jaz@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0485",
@@ -6480,9 +6480,9 @@
       "city": "منطقة حائل",
       "email": "KIT1-Hal@moj.gov.sa",
       "rawEmail": "Hal@moj.gov.sa-KIT١",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT1-Hal@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0499",
@@ -6493,9 +6493,9 @@
       "city": "منطقة حائل",
       "email": "KIT2-Hal@moj.gov.sa",
       "rawEmail": "Hal@moj.gov.sa-KIT٢",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT2-Hal@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0500",
@@ -6623,9 +6623,9 @@
       "city": "منطقة عسير",
       "email": "KIT2-TTH@moj.gov.sa",
       "rawEmail": "TTH@moj.gov.sa-KIT٢",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT2-TTH@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0510",
@@ -6649,9 +6649,9 @@
       "city": "منطقة عسير",
       "email": "KIT1-ABH@moj.gov.sa",
       "rawEmail": "ABH@moj.gov.sa-KIT١",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT1-ABH@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0512",
@@ -6662,9 +6662,9 @@
       "city": "منطقة عسير",
       "email": "KIT1-BIS@moj.gov.sa",
       "rawEmail": "BIS@moj.gov.sa-KIT١",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT1-BIS@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0513",
@@ -6675,9 +6675,9 @@
       "city": "منطقة عسير",
       "email": "KIT2-ABH@moj.gov.sa",
       "rawEmail": "ABH@moj.gov.sa-KIT٢",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT2-ABH@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0514",
@@ -6688,9 +6688,9 @@
       "city": "منطقة عسير",
       "email": "KIT2-BIS@moj.gov.sa",
       "rawEmail": "BIS@moj.gov.sa-KIT٢",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT2-BIS@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0515",
@@ -6974,9 +6974,9 @@
       "city": "منطقة مكة المكرمة",
       "email": "KIT1-GON@moj.gov.sa",
       "rawEmail": "GON@moj.gov.sa-KIT١",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT1-GON@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0537",
@@ -6987,9 +6987,9 @@
       "city": "منطقة مكة المكرمة",
       "email": "KIT1-JMO@moj.gov.sa",
       "rawEmail": "JMO@moj.gov.sa-KIT١",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT1-JMO@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0538",
@@ -7000,9 +7000,9 @@
       "city": "منطقة مكة المكرمة",
       "email": "KIT1-RNH@moj.gov.sa",
       "rawEmail": "RNH@moj.gov.sa-KIT١",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT1-RNH@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0539",
@@ -7013,9 +7013,9 @@
       "city": "منطقة مكة المكرمة",
       "email": "KIT1-TAF@moj.gov.sa",
       "rawEmail": "TAF@moj.gov.sa-KIT١",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT1-TAF@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0540",
@@ -7065,9 +7065,9 @@
       "city": "منطقة مكة المكرمة",
       "email": "KIT2-Taif@moj.gov.sa",
       "rawEmail": "Taif@moj.gov.sa-KIT٢",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT2-Taif@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0544",
@@ -7221,9 +7221,9 @@
       "city": "منطقة نجران",
       "email": "KIT1-NAJ@moj.gov.sa",
       "rawEmail": "NAJ@moj.gov.sa-KIT١",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "KIT1-NAJ@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0556",
@@ -10757,9 +10757,9 @@
       "city": "الرياض",
       "email": "GEN-ARD-JON-ID1@moj.gov.sa",
       "rawEmail": "GEN-ARD JON-ID1@moj.gov.sa",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "GEN-ARD-JON-ID1@moj.gov.sa",
-      "verificationStatus": "مرجّحة (صُححت بالاستناد لمصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0828",
@@ -10770,9 +10770,9 @@
       "city": "الرياض",
       "email": "GEN-ARD-SHI-ID1@moj.gov.sa",
       "rawEmail": "GEN-ARD SHI-ID1@moj.gov.sa",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "GEN-ARD-SHI-ID1@moj.gov.sa",
-      "verificationStatus": "مرجّحة (صُححت بالاستناد لمصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-0829",
@@ -21092,9 +21092,9 @@
       "city": "قلوة",
       "email": "GEN-GIL-JC2@moj.gov.sa",
       "rawEmail": "GEN- GIL-JC2@moj.gov.sa",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "GEN-GIL-JC2@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-1623",
@@ -22314,9 +22314,9 @@
       "city": "قلوة",
       "email": "GEN-GIL-JC3@moj.gov.sa",
       "rawEmail": "GEN- GIL-JC3@moj.gov.sa",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "GEN-GIL-JC3@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-1717",
@@ -27033,9 +27033,9 @@
       "city": "الرياض",
       "email": "GEN-JMS-PC@moj.gov.sa",
       "rawEmail": "GEN- JMS-PC@moj.gov.sa",
-      "needsVerification": true,
+      "needsVerification": false,
       "suggestedEmail": "GEN-JMS-PC@moj.gov.sa",
-      "verificationStatus": "مرجّحة (تطابق مع مصدر خارجي غير رسمي)"
+      "verificationStatus": "معتمد بقرار المالك (١٩٢)"
     },
     {
       "id": "moj-cir-2080",

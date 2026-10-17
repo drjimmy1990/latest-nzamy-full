@@ -246,6 +246,34 @@ export function applyOwnerCorrections(circuits, corrections) {
   return changed;
 }
 
+/**
+ * Owner answer ١٩٢ (2026-10-16): «رفع وسم «غير متحقَّق» فوراً واعتماد كافة
+ * العناوين الـ ٣٦ رسمياً». The rows the source still marks «مرجّحة» — 32
+ * matched against an unofficial external source, 4 corrected from one — become
+ * approved: the address is the suggested one, the flag goes, and the status
+ * names the decision so the provenance stays readable. Exactly
+ * OWNER_ADOPTED_FLAGGED rows, or the run stops: a new source flagging other
+ * rows is not covered by his decision.
+ *
+ * Returns how many rows were adopted.
+ */
+export const OWNER_ADOPTED_FLAGGED = 36;
+export const OWNER_ADOPTION_STATUS = "معتمد بقرار المالك (١٩٢)";
+
+export function applyOwnerAdoption(circuits, expected = OWNER_ADOPTED_FLAGGED) {
+  const flagged = circuits.filter((c) => c.needsVerification);
+  if (flagged.length !== expected) {
+    throw new Error(`Owner decision ١٩٢ adopted ${expected} flagged addresses; this source flags ${flagged.length} — review them before adopting`);
+  }
+  for (const row of flagged) {
+    if (!row.suggestedEmail) throw new Error(`${row.id} is flagged with no suggested address`);
+    row.email = row.suggestedEmail;
+    row.needsVerification = false;
+    row.verificationStatus = OWNER_ADOPTION_STATUS;
+  }
+  return flagged.length;
+}
+
 function readCorrections(file) {
   const doc = JSON.parse(fs.readFileSync(file, "utf8"));
   if (!Array.isArray(doc.corrections) || doc.corrections.length === 0) {
@@ -395,6 +423,7 @@ export function parseCircuitsDirectory({ source = SOURCE_PATH, out = OUTPUT_PATH
   }
 
   const corrected = applyOwnerCorrections(circuits, readCorrections(CORRECTIONS_PATH));
+  const adopted = applyOwnerAdoption(circuits);
 
   const payload = {
     metadata: {
@@ -412,6 +441,7 @@ export function parseCircuitsDirectory({ source = SOURCE_PATH, out = OUTPUT_PATH
 
   console.log(`✔ Successfully parsed ${circuits.length} circuits.`);
   console.log(`✔ Owner corrections applied: ${corrected} address(es) changed from the printed source.`);
+  console.log(`✔ Owner decision ١٩٢: ${adopted} flagged address(es) adopted as approved.`);
   console.log(`✔ Verified: ${payload.metadata.verifiedCount}, Needs verification: ${payload.metadata.needsVerificationCount}`);
 
   const existing = fs.existsSync(out) ? JSON.parse(fs.readFileSync(out, "utf8")) : null;

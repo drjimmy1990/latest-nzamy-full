@@ -4,7 +4,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Gavel, BookOpen, ArrowRight, CaretLeft,
-  Clock, Info, Globe, MapPin, CaretDown,
+  Clock, Info, MapPin, CaretDown,
   ClipboardText,
 } from "@phosphor-icons/react";
 import Link from "next/link";
@@ -14,10 +14,8 @@ import { toArabicDigits } from "@/lib/services/arabicCount";
 
 
 // ─── Types & Imports ─────────────────────────────────────────────────────────
-import {
-  CIRCUITS, PROCEDURE_STEPS, COURTS_LIST,
-  CircuitEmail, CircuitsSampleNotice, UnverifiedBadge, isVerifiedCircuit,
-} from "./_data";
+import { PROCEDURE_STEPS, COURTS_LIST } from "./_data";
+import { CircuitsDirectory } from "./_CircuitsDirectory";
 
 type Mode = "circuits" | "procedures";
 
@@ -28,7 +26,6 @@ export default function ProceduresPage() {
   const { isDark } = useTheme();
   const [mode, setMode] = useState<Mode>("circuits");
   const [selectedCourt, setSelectedCourt] = useState<string | null>(null);
-  const [expandedCircuit, setExpandedCircuit] = useState<number | null>(null);
   const [expandedStep, setExpandedStep] = useState<number | null>(null);
 
   const card = isDark
@@ -98,96 +95,11 @@ export default function ProceduresPage() {
         {mode === "circuits" && (
           <motion.div key="circuits" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
 
-            {/* Owner test 28-9 (T28-33): the entries below are an unverified
-                sample (see CIRCUITS_SAMPLE_NOTICE in _data.tsx), so the tab
-                opens by saying so. */}
-            <CircuitsSampleNotice isDark={isDark} />
-
-            {/* Owner item ٣٥ — the circuits directory used to live in a SECOND
-                `{mode === "circuits"}` block further down, carrying the same
-                `key="circuits"` as this one. Two children with one key under
-                `<AnimatePresence mode="wait">` is what produced the tall empty
-                gap in the owner's screenshot: the presence tracker treats them
-                as one node, keeps the first, and reserves the space of the
-                second while it waits for an exit that never comes. Merged here
-                so the tab is a single keyed child. Its «ابحث: دائرة تجارية…»
-                input had no value, no onChange and no filter behind it, and was
-                deleted for that reason. */}
-            {CIRCUITS.map((group, gi) => {
-              const Icon = group.icon;
-              return (
-                <div key={gi} className={`${card} overflow-hidden`}>
-                  <button onClick={() => setExpandedCircuit(expandedCircuit === gi ? null : gi)}
-                    className={`w-full flex items-center gap-3 p-4`}>
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${group.bg}`}>
-                      <Icon size={17} weight="duotone" className={group.color} />
-                    </div>
-                    <p className={`flex-1 text-[13px] font-bold text-start ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{group.court}</p>
-                    <span className={`text-[10px] rounded-full px-2 py-0.5 ${isDark ? "bg-zinc-800 text-zinc-500" : "bg-slate-100 text-slate-400"}`}>
-                      {group.circuits.length} دوائر
-                    </span>
-                    <CaretDown size={13} className={`transition-transform flex-shrink-0 ${expandedCircuit === gi ? "rotate-180" : ""} ${isDark ? "text-zinc-600" : "text-slate-400"}`} />
-                  </button>
-
-                  <AnimatePresence>
-                    {expandedCircuit === gi && (
-                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-                        className={`border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
-                        {group.circuits.map((circuit, ci2) => (
-                          <div key={ci2} className={`p-4 ${ci2 < group.circuits.length - 1 ? (isDark ? "border-b border-white/[0.04]" : "border-b border-slate-50") : ""}`}>
-                            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className={`text-[10px] font-black rounded-full px-2 py-0.5 ${group.bg} ${group.color}`}>
-                                  الدائرة {circuit.num}
-                                </span>
-                                <p className={`text-[12px] font-semibold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{circuit.spec}</p>
-                                {!isVerifiedCircuit(circuit) && <UnverifiedBadge />}
-                              </div>
-                              {/* Durations, floors and najiz codes are shown only for a verified
-                                  entry — the sample ones were never sourced. */}
-                              {isVerifiedCircuit(circuit) && circuit.avgDays && (
-                                <span className={`text-[10px] flex items-center gap-1 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
-                                  <Clock size={9} />{circuit.avgDays}
-                                </span>
-                              )}
-                            </div>
-                            {/* The full address — the tab used to print only
-                                the part before «@» (owner test 28-9, T28-33). */}
-                            {circuit.email && (
-                              <div className="mb-2">
-                                <CircuitEmail email={circuit.email} isDark={isDark} verified={isVerifiedCircuit(circuit)} />
-                              </div>
-                            )}
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                              {isVerifiedCircuit(circuit) && circuit.floor && (
-                                <div className={`flex items-center gap-1.5 text-[10px] rounded-lg px-2 py-1.5 border ${isDark ? "border-white/[0.06] text-zinc-500" : "border-slate-100 text-slate-500"}`}>
-                                  <MapPin size={11} className="text-amber-500 flex-shrink-0" />
-                                  {circuit.floor}
-                                </div>
-                              )}
-                              {isVerifiedCircuit(circuit) && circuit.najizCode && (
-                                <div className={`flex items-center gap-1.5 text-[10px] rounded-lg px-2 py-1.5 border font-mono ${isDark ? "border-white/[0.06] text-zinc-600" : "border-slate-100 text-slate-400"}`}>
-                                  <Globe size={11} className="text-purple-500 flex-shrink-0" />
-                                  {circuit.najizCode}
-                                </div>
-                              )}
-                            </div>
-                            {circuit.notes && (
-                              <p className={`mt-2 text-[10px] flex items-start gap-1.5 ${isDark ? "text-zinc-700" : "text-slate-400"}`}>
-                                <Info size={10} className="flex-shrink-0 mt-0.5" />{circuit.notes}
-                              </p>
-                            )}
-                          </div>
-                        ))}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              );
-            })}
-
-            {/* «البيانات تُحدَّث دورياً» used to sit here — nothing updates
-                this sample, and the line contradicted the notice above. */}
+            {/* Owner answer ١٩٢: the tab is the Ministry of Justice directory
+                (2,192 addresses, the 36 once-flagged adopted). It replaces a
+                14-entry sample whose placeholder addresses carried
+                «غير مُتحقَّق» on every row. */}
+            <CircuitsDirectory isDark={isDark} />
             <div className={`text-center py-3`}>
               <p className={`text-[11px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
                 للتأكيد الرسمي تواصل مباشرة مع المحكمة

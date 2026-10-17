@@ -29,6 +29,14 @@ interface CircuitRecord {
 
 const ALL_CIRCUITS: CircuitRecord[] = (circuitsRawData as { circuits: CircuitRecord[] }).circuits;
 
+// The counts come from the data, not the page: the 36 «مرجّحة» rows this page
+// once counted by hand were adopted by the owner's answer ١٩٢ (2026-10-16).
+const fmt = (n: number) => n.toLocaleString("en-US");
+const TOTAL_COUNT = ALL_CIRCUITS.length;
+const FLAGGED_COUNT = ALL_CIRCUITS.filter((c) => c.needsVerification).length;
+const APPROVED_COUNT = TOTAL_COUNT - FLAGGED_COUNT;
+const CATEGORY_COUNT = new Set(ALL_CIRCUITS.map((c) => c.category)).size;
+
 const REGIONS = [
   "الكل",
   "منطقة الرياض",
@@ -266,15 +274,15 @@ export default function CircuitsEmailsPage() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className={`${card} p-3.5 text-center`}>
           <p className="text-[11px] text-zinc-500">إجمالي الجهات والدوائر</p>
-          <p className="text-lg font-bold text-royal font-mono">2,192</p>
+          <p className="text-lg font-bold text-royal font-mono">{fmt(TOTAL_COUNT)}</p>
         </div>
         <div className={`${card} p-3.5 text-center`}>
-          <p className="text-[11px] text-zinc-500">المعتمدة مباشرة</p>
-          <p className="text-lg font-bold text-emerald-500 font-mono">2,156</p>
+          <p className="text-[11px] text-zinc-500">العناوين المعتمدة</p>
+          <p className="text-lg font-bold text-emerald-500 font-mono">{fmt(APPROVED_COUNT)}</p>
         </div>
         <div className={`${card} p-3.5 text-center`}>
-          <p className="text-[11px] text-zinc-500">تدقيق يدوي (أخطاء bidi بالطباعة)</p>
-          <p className="text-lg font-bold text-amber-500 font-mono">36</p>
+          <p className="text-[11px] text-zinc-500">أنواع الجهات</p>
+          <p className="text-lg font-bold text-amber-500 font-mono">{fmt(CATEGORY_COUNT)}</p>
         </div>
         <div className={`${card} p-3.5 text-center`}>
           <p className="text-[11px] text-zinc-500">المناطق المغطاة</p>
@@ -362,7 +370,7 @@ export default function CircuitsEmailsPage() {
                     : "bg-zinc-100 text-zinc-600"
                 }`}
               >
-                الكل (2,192)
+                الكل ({fmt(TOTAL_COUNT)})
               </button>
               <button
                 onClick={() => { setVerificationFilter("verified"); setCurrentPage(1); }}
@@ -374,9 +382,9 @@ export default function CircuitsEmailsPage() {
                     : "bg-zinc-100 text-zinc-600"
                 }`}
               >
-                معتمد رسمي (2,156)
+                معتمد رسمي ({fmt(APPROVED_COUNT)})
               </button>
-              <button
+              {FLAGGED_COUNT > 0 && <button
                 onClick={() => { setVerificationFilter("needsVerification"); setCurrentPage(1); }}
                 className={`px-2.5 py-1 rounded-lg text-[10px] font-medium transition-colors ${
                   verificationFilter === "needsVerification"
@@ -386,8 +394,8 @@ export default function CircuitsEmailsPage() {
                     : "bg-zinc-100 text-zinc-600"
                 }`}
               >
-                يتطلب تحققاً (36)
-              </button>
+                يتطلب تحققاً ({fmt(FLAGGED_COUNT)})
+              </button>}
             </div>
           </div>
         </div>

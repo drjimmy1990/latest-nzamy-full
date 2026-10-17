@@ -42,12 +42,13 @@ test("Circuits Directory Data Integrity Test", async (t) => {
     }
   });
 
-  await t.test("Exactly 36 entries are flagged for manual verification", () => {
-    const unverified = data.circuits.filter(c => c.needsVerification);
-    assert.strictEqual(unverified.length, 36, "Must flag exactly 36 entries with known PDF bidi typos");
-    for (const item of unverified) {
-      assert.ok(item.suggestedEmail, `Unverified item ${item.name} must have a suggestedEmail`);
-      assert.ok(item.verificationStatus, `Unverified item ${item.name} must have a verificationStatus`);
+  await t.test("Owner answer ١٩٢: the 36 once-flagged entries are adopted, none is flagged", () => {
+    assert.strictEqual(data.circuits.filter(c => c.needsVerification).length, 0);
+    const adopted = data.circuits.filter(c => c.verificationStatus === "معتمد بقرار المالك (١٩٢)");
+    assert.strictEqual(adopted.length, 36, "the 36 entries the source marked «مرجّحة»");
+    for (const item of adopted) {
+      assert.ok(item.suggestedEmail, `Adopted item ${item.id} keeps the suggested address it was adopted with`);
+      assert.strictEqual(item.email, item.suggestedEmail, `Adopted item ${item.id} uses that address`);
     }
   });
 
@@ -124,12 +125,18 @@ test("Circuits Directory email addresses are sendable", async (t) => {
     for (const c of data.circuits) assert.match(c.email, MOJ_ADDRESS, c.id);
   });
 
-  await t.test("the 36 rows flagged before his table stay unverified until he confirms them", () => {
-    // Q4: anything unconfirmed keeps its «يتطلب تحققاً» label. The pinned rows
-    // below are one of each defect kind.
-    assert.strictEqual(byId.get("moj-cir-0368").needsVerification, true); // bidi + digit (KIT1-HAS)
-    assert.strictEqual(byId.get("moj-cir-0230").needsVerification, true); // bidi + digit (GEN-SAM-COURT2)
-    assert.strictEqual(byId.get("moj-cir-0827").needsVerification, true); // stray space (GEN-ARD-JON-ID1)
+  await t.test("the 36 rows flagged before his table are adopted by his answer ١٩٢, at their suggested address", () => {
+    // Q4 kept them «يتطلب تحققاً» until he confirmed; answer ١٩٢ (2026-10-16)
+    // adopts all 36. The pinned rows below are one of each defect kind.
+    for (const [id, address] of [
+      ["moj-cir-0368", "KIT1-HAS@moj.gov.sa"], // bidi + digit
+      ["moj-cir-0230", "GEN-SAM-COURT2@moj.gov.sa"], // bidi + digit
+      ["moj-cir-0827", "GEN-ARD-JON-ID1@moj.gov.sa"], // stray space
+    ]) {
+      assert.strictEqual(byId.get(id).needsVerification, false, id);
+      assert.strictEqual(byId.get(id).verificationStatus, "معتمد بقرار المالك (١٩٢)", id);
+      assert.strictEqual(byId.get(id).email, address, id);
+    }
     assert.strictEqual(byId.get("moj-cir-0366").needsVerification, false); // digit only (ktabh1D)
     assert.strictEqual(byId.get("moj-cir-0366").email, "ktabh1D@moj.gov.sa");
   });
