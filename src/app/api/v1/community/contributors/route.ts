@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { POST_ANSWERS_FK } from "../posts/_feed";
 import { tallyAuthors, rankContributors, type ContributorGate } from "./_rank";
-import { BETA_MONOPOLY_MODE } from "@/lib/betaConfig";
 
 /**
  * GET /api/v1/community/contributors — the lawyers with the most answers in
@@ -34,11 +33,12 @@ const MAX_CANDIDATES = 50;
 const LIMIT = 5;
 
 export async function GET() {
-  // The owner keeps the lawyer directory closed during the beta for privacy
-  // (Q151, BETA_MONOPOLY_MODE — /lawyers/browse redirects). A list of lawyers
-  // by name with profile links is a small directory, so it waits too. An
-  // empty list hides the widget (community/page.tsx).
-  if (BETA_MONOPOLY_MODE) return NextResponse.json({ data: [], degraded: false });
+  // Open during the beta too (owner answer ١٨٩, 2026-10-16): «اعتماد قائمة
+  // «أكثر المحامين إجابةً» استناداً إلى بيانات رقمية حقيقية» — an honest
+  // professional record a lawyer may share. It was held back with the
+  // directory (Q151, BETA_MONOPOLY_MODE); it lists only lawyers who published
+  // their own profile (verified + marketplace_visible; test accounts never are,
+  // 20261017_44), and the directory itself stays closed.
 
   try {
     const supabase = await createClient();
