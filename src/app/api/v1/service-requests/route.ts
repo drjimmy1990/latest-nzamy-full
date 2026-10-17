@@ -468,7 +468,11 @@ export async function POST(request: NextRequest) {
         status,
         requester_user_id: user.id,
         source_path: requestData.sourcePath ?? requestData.source_path ?? '',
-        assigned_to: requestData.assignedTo ?? requestData.assigned_to ?? null,
+        // N16 (20261018_04): a request is assigned by the office (claim /
+        // admin), never by its requester. The caller may only file a request
+        // to themselves (a lawyer adding their own case or hearing); any other
+        // id is dropped, not 500'd (the database guard would refuse it).
+        assigned_to: (requestData.assignedTo ?? requestData.assigned_to ?? null) === user.id ? user.id : null,
         receiver: shape.value.receiver,
         requester: shape.value.requester,
         payment: persistedPayment,

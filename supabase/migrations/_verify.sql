@@ -2015,3 +2015,42 @@ BEGIN
 
   RAISE NOTICE '_verify: 20261018_02 OK — fiqh text, its fts and decree page content are server-only; their place columns stay public; search_feqh_page is 4s and service_role only';
 END $$;
+
+-- ====================================================================
+-- 2026-10-18 — 20261018_04_service_requests_session_write_guard.sql (fix plan N16)
+-- ====================================================================
+-- A session may insert a request only unassigned or assigned to itself, and
+-- may update only its status (plus lawyer_client_id by the assignee). A run
+-- before the migration passes with a NOTICE.
+SELECT '20261018_04 applied (service_requests session-write guard)' AS check,
+       EXISTS (SELECT 1 FROM pg_trigger
+                WHERE tgrelid = 'public.service_requests'::regclass
+                  AND tgname = 'trg_00_service_requests_session_guard') AS present;
+
+DO $$
+DECLARE
+  first_before text;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger
+                  WHERE tgrelid = 'public.service_requests'::regclass
+                    AND tgname = 'trg_00_service_requests_session_guard') THEN
+    RAISE NOTICE '_verify: 20261018_04 is not applied yet — a client can still assign any lawyer to a request (and so open a chat with them) and rewrite description / metadata / payment through REST';
+    RETURN;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_trigger
+              WHERE tgrelid = 'public.service_requests'::regclass
+                AND tgname = 'trg_00_service_requests_session_guard' AND tgenabled = 'D') THEN
+    RAISE EXCEPTION '_verify: the service_requests session-write guard is DISABLED — re-run 20261018_04';
+  END IF;
+  SELECT t.tgname INTO first_before
+    FROM pg_trigger t
+   WHERE t.tgrelid = 'public.service_requests'::regclass AND NOT t.tgisinternal AND (t.tgtype & 2) = 2
+   ORDER BY t.tgname LIMIT 1;
+  IF first_before <> 'trg_00_service_requests_session_guard' THEN
+    RAISE EXCEPTION '_verify: % fires before the service_requests guard — rename it or re-run 20261018_04', first_before;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_proc WHERE oid = 'public.guard_service_request_session_writes()'::regprocedure AND prosecdef) THEN
+    RAISE EXCEPTION '_verify: guard_service_request_session_writes is SECURITY DEFINER — it must run as the caller (re-run 20261018_04)';
+  END IF;
+  RAISE NOTICE '_verify: 20261018_04 OK — service_requests: session inserts unassigned or self-assigned; session updates status only (+ lawyer_client_id by the assignee)';
+END $$;
