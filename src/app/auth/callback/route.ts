@@ -3,6 +3,7 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { needsOnboarding } from "@/lib/auth/onboardingGate";
 import { safeLocalPath } from "@/lib/auth/safeLocalPath";
+import { POST_LOGIN_COOKIE, readPostLoginCookie } from "@/lib/auth/postLoginCookie";
 import {
   FALLBACK_DASHBOARD_PATH,
   dashboardPathFor,
@@ -82,6 +83,12 @@ export async function GET(request: Request) {
 
   if (code) {
     const cookieStore = await cookies();
+    // Where /login was asked to send a Google sign-in (src/lib/auth/postLoginCookie.ts).
+    // Read once, re-validated, and cleared whatever happens below.
+    const stashed = readPostLoginCookie(cookieStore.get(POST_LOGIN_COOKIE)?.value);
+    if (cookieStore.get(POST_LOGIN_COOKIE)) {
+      cookieStore.set(POST_LOGIN_COOKIE, "", { path: "/", maxAge: 0 });
+    }
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -147,9 +154,11 @@ export async function GET(request: Request) {
         // `dashboardPathFor` always returns a string, so it can never fall
         // through to `next` on its own — the recognised/unrecognised decision
         // has to be made here for `next` to mean anything.
+        // A Google sign-in started on /login?next=… lands there, as a password
+        // sign-in does; otherwise the dashboard, as before.
         const redirectTo = isDbUserType(userType)
-          ? dashboardPathFor(userType)
-          : next;
+          ? (stashed ?? dashboardPathFor(userType))
+          : (stashed ?? next);
         return redirectRelative(redirectTo);
       }
     }

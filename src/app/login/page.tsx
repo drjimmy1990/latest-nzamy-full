@@ -31,6 +31,7 @@ import { setDemoSession, useUser } from "@/hooks/useUser";
 import { getDashboardRoute } from "@/constants/navigation";
 import { isDbUserType } from "@/lib/auth/userTypes";
 import { postLoginPath } from "@/lib/auth/postLoginPath";
+import { postLoginCookieAssignment, stashablePostLoginPath } from "@/lib/auth/postLoginCookie";
 import { createClient } from "@/lib/supabase/client";
 import { isDemoUiEnabled, BACKEND_MODE } from "@/lib/runtimeMode";
 import { saudiMobileOrNull } from "@/lib/services/saudiMobile";
@@ -298,6 +299,17 @@ export default function LoginPage() {
   async function handleGoogleSignIn() {
     if (BACKEND_MODE !== "supabase") return;
     try {
+      // Keep ?next= / ?from= across the Google round trip without touching
+      // redirectTo (src/lib/auth/postLoginCookie.ts). Best-effort: a blocked
+      // cookie only means landing on the dashboard, as before.
+      const stash = stashablePostLoginPath(nextFromUrl());
+      if (stash) {
+        try {
+          document.cookie = postLoginCookieAssignment(stash, window.location.protocol === "https:");
+        } catch {
+          // Cookies blocked: sign in anyway.
+        }
+      }
       const supabase = createClient();
       await supabase.auth.signInWithOAuth({
         provider: "google",
