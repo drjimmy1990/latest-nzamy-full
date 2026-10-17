@@ -5,11 +5,12 @@
  * (/ai/fee-calculator). An ESTIMATE, labelled «تقديرية استرشادية» wherever a
  * figure appears.
  *
- * The arithmetic lives in ./judicialCosts.ts and is the owner's rule only
- * (Q149, 2026-10-03; Q167, 2026-10-06): 5% of a monetary claim capped at
- * 1,000,000 SAR, and per request an appeal capped at 10,000, cassation at
- * 7,000 and reconsideration at 10,000 SAR (Articles 3 and 7 of the Judicial
- * Costs Law). This screen used to pick a court and
+ * The arithmetic lives in ./judicialCosts.ts and is the costs regulation
+ * as the owner adopted it (answer ١٨٢, 2026-10-16): a monetary claim at one
+ * band rate on the whole amount — 5% / 4% / 3% / 2% — capped at 1,000,000
+ * SAR, and flat request amounts: appeal 5,000, cassation 7,000,
+ * reconsideration 10,000 SAR (Articles 2 and 6 of the regulation, Article 3
+ * of the law). This screen used to pick a court and
  * a case type and then apply value bands, per-court rates, stage surcharges
  * and exemption notes that no source backed; all of that is gone rather than
  * re-labelled, and what the rule does not cover is said in plain words below
@@ -88,7 +89,7 @@ export default function CalcCourtFees() {
         <Info size={15} weight="duotone" className="flex-shrink-0 mt-0.5 text-[#C8A762]" />
         <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-300" : "text-amber-800"}`}>
           <strong>حاسبة {JUDICIAL_COSTS_ESTIMATE_LABEL}.</strong>{" "}
-          تحتسب ٥٪ من قيمة المطالبة المالية بحد أقصى مليون (١٬٠٠٠٬٠٠٠) ريال للدرجة الأولى، وتكاليف الاستئناف بحد أقصى ١٠٬٠٠٠ ريال، والنقض بحد أقصى ٧٬٠٠٠ ريال، والتماس إعادة النظر بحد أقصى ١٠٬٠٠٠ ريال، وفقاً لنظام التكاليف القضائية ولائحته التنفيذية.
+          تحتسب تكاليف الدرجة الأولى نسبةً من كامل قيمة المطالبة المالية بحسب شريحتها: ٥٪ لأقل من ١٠٠ ألف ريال، و٤٪ من ١٠٠ ألف إلى أقل من ٥٠٠ ألف، و٣٪ من ٥٠٠ ألف إلى أقل من مليون، و٢٪ لمليون فأكثر، بحد أقصى مليون (١٬٠٠٠٬٠٠٠) ريال. وتكاليف الطلبات مبالغ مقطوعة: الاستئناف ٥٬٠٠٠ ريال، والنقض ٧٬٠٠٠ ريال، والتماس إعادة النظر ١٠٬٠٠٠ ريال، وفقاً لنظام التكاليف القضائية ولائحته التنفيذية.
         </p>
       </div>
 

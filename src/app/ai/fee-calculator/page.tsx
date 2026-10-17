@@ -92,11 +92,11 @@ type Tab = "lawyer_fees" | "court_fees" | "labor_rights" | "deadlines" | "date_c
 
 const TABS: { id: Tab; label: string; icon: React.ElementType; desc: string }[] = [
   { id: "lawyer_fees",   label: "أتعاب المحامي",     icon: Calculator,       desc: "تقدير أتعاب التمثيل القانوني" },
-  // «التكاليف القضائية», the regulation's own term; the owner's rule (Q149)
-  // and the «تقديرية استرشادية» label live in components/calculators. All four
-  // caps (Q167), as CalcCourtFees states them: naming two read as if cassation
-  // and reconsideration had none.
-  { id: "court_fees",   label: "التكاليف القضائية", icon: Buildings,        desc: "تقديرية استرشادية — ٥٪ بحد أقصى مليون ريال للدرجة الأولى، والاستئناف بحد أقصى ١٠٬٠٠٠ ريال، والنقض ٧٬٠٠٠، والتماس إعادة النظر ١٠٬٠٠٠" },
+  // «التكاليف القضائية», the regulation's own term; the rule (owner answer
+  // ١٨٢: the regulation's bands and flat amounts) and the «تقديرية استرشادية»
+  // label live in components/calculators. The subtitle names every figure
+  // CalcCourtFees applies.
+  { id: "court_fees",   label: "التكاليف القضائية", icon: Buildings,        desc: "تقديرية استرشادية — الدرجة الأولى من ٥٪ إلى ٢٪ بحسب شريحة المطالبة بحد أقصى مليون ريال، والاستئناف ٥٬٠٠٠ ريال، والنقض ٧٬٠٠٠، والتماس إعادة النظر ١٠٬٠٠٠" },
   { id: "labor_rights", label: "مستحقات العمل",     icon: Users,            desc: "حسابات نهاية الخدمة والإشعار" },
   { id: "deadlines",    label: "المواعيد القانونية", icon: CalendarBlank,    desc: "احسب مواعيد الاعتراض والتقادم" },
   { id: "date_convert", label: "تحويل التاريخ",      icon: ArrowsLeftRight,  desc: "هجري ↔ ميلادي بدقة" },

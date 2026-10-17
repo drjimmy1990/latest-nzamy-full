@@ -1,144 +1,104 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  APPEAL_COST_CAP_SAR,
-  CASSATION_COST_CAP_SAR,
+  APPEAL_COST_SAR,
+  CASSATION_COST_SAR,
+  FIRST_INSTANCE_BANDS,
   FIRST_INSTANCE_COST_CAP_SAR,
   JUDICIAL_COSTS_ESTIMATE_LABEL,
-  MONETARY_CLAIM_RATE,
-  RECONSIDERATION_COST_CAP_SAR,
+  RECONSIDERATION_COST_SAR,
   estimateJudicialCosts,
+  firstInstanceBand,
   parseClaimAmount,
 } from "./judicialCosts.ts";
 
-const both = { includeFirstInstance: true, includeAppeal: true };
+const firstOnly = { includeFirstInstance: true, includeAppeal: false };
+const fee = (claimAmountSar: number) => estimateJudicialCosts({ claimAmountSar, ...firstOnly })!.lines[0];
 
-test("the constants are the statutory caps and owner's rule (Decision #167): 5%, 1,000,000 SAR first instance cap, and 10,000 SAR appeal cap", () => {
-  assert.equal(MONETARY_CLAIM_RATE, 0.05);
+test("the constants are the regulation's (owner answer ١٨٢): four bands, a 1,000,000 SAR ceiling, flat 5,000 / 7,000 / 10,000", () => {
+  assert.deepEqual(FIRST_INSTANCE_BANDS.map((b) => [b.below, b.rate]), [
+    [100_000, 0.05],
+    [500_000, 0.04],
+    [1_000_000, 0.03],
+    [Number.POSITIVE_INFINITY, 0.02],
+  ]);
   assert.equal(FIRST_INSTANCE_COST_CAP_SAR, 1_000_000);
-  assert.equal(APPEAL_COST_CAP_SAR, 10_000);
+  assert.equal(APPEAL_COST_SAR, 5_000);
+  assert.equal(CASSATION_COST_SAR, 7_000);
+  assert.equal(RECONSIDERATION_COST_SAR, 10_000);
   assert.equal(JUDICIAL_COSTS_ESTIMATE_LABEL, "تقديرية استرشادية");
 });
 
-test("first instance is 5% of the claim, capped at 1,000,000 SAR (Owner Decision #167)", () => {
-  const small = estimateJudicialCosts({ claimAmountSar: 40_000, includeFirstInstance: true, includeAppeal: false })!;
-  assert.deepEqual(small.lines.map((l) => [l.id, l.amountSar]), [["first-instance", 2_000]]);
-  assert.equal(small.lines[0].capped, false);
-
-  const large = estimateJudicialCosts({ claimAmountSar: 50_000_000, includeFirstInstance: true, includeAppeal: false })!;
-  assert.equal(large.totalSar, 1_000_000);
-  assert.equal(large.lines[0].amountSar, FIRST_INSTANCE_COST_CAP_SAR);
-  assert.equal(large.lines[0].capped, true);
+test("each band's rate applies to the whole claim, with the edges where Article 2 puts them", () => {
+  assert.equal(fee(40_000).amountSar, 2_000);       // 5%
+  assert.equal(fee(99_999).amountSar, 5_000);       // 5% of 99,999 = 4,999.95 → 5,000
+  assert.equal(fee(100_000).amountSar, 4_000);      // «مائة ألف ريال فأكثر» → 4% of the whole
+  assert.equal(fee(250_000).amountSar, 10_000);     // 4%, not 5% of 100,000 + 4% of 150,000 (11,000)
+  assert.equal(fee(499_999).amountSar, 20_000);     // 4% → 19,999.96 → 20,000
+  assert.equal(fee(500_000).amountSar, 15_000);     // 3%
+  assert.equal(fee(999_999).amountSar, 30_000);     // 3% → 29,999.97 → 30,000
+  assert.equal(fee(1_000_000).amountSar, 20_000);   // 2%
+  assert.equal(firstInstanceBand(1_000_000).percentAr, "٢٪");
+  assert.ok([40_000, 250_000, 500_000, 1_000_000].every((a) => !fee(a).capped));
 });
 
-test("first instance exactly at the cap (20,000,000 → 1,000,000) is not reported as capped", () => {
-  const r = estimateJudicialCosts({ claimAmountSar: 20_000_000, includeFirstInstance: true, includeAppeal: false })!;
-  assert.equal(r.lines[0].amountSar, 1_000_000);
-  assert.equal(r.lines[0].capped, false);
+test("the 1,000,000 SAR ceiling: 50,000,000 lands on it exactly (not capped), above it is capped", () => {
+  assert.deepEqual([fee(50_000_000).amountSar, fee(50_000_000).capped], [1_000_000, false]);
+  assert.deepEqual([fee(80_000_000).amountSar, fee(80_000_000).capped], [1_000_000, true]);
+  assert.match(fee(80_000_000).basis, /الحد الأعلى/);
 });
 
-test("an appeal is 5% of the amount below the cap", () => {
-  const r = estimateJudicialCosts({ claimAmountSar: 150_000, includeFirstInstance: false, includeAppeal: true })!;
-  assert.equal(r.lines[0].id, "appeal");
-  assert.equal(r.lines[0].amountSar, 7_500);
-  assert.equal(r.lines[0].capped, false);
+test("the first-instance basis names the rate and the band", () => {
+  const line = fee(250_000);
+  assert.match(line.basis, /٤٪/);
+  assert.match(line.basis, /من ١٠٠ ألف إلى أقل من ٥٠٠ ألف ريال/);
+  assert.match(line.basis, /المادة الثانية من اللائحة التنفيذية/);
 });
 
-test("an appeal never exceeds 10,000 SAR", () => {
-  const r = estimateJudicialCosts({ claimAmountSar: 1_000_000, includeFirstInstance: false, includeAppeal: true })!;
-  assert.equal(r.lines[0].amountSar, APPEAL_COST_CAP_SAR);
-  assert.equal(r.lines[0].capped, true);
-});
-
-test("exactly at the cap (200,000 → 10,000) is not reported as capped", () => {
-  const r = estimateJudicialCosts({ claimAmountSar: 200_000, includeFirstInstance: false, includeAppeal: true })!;
-  assert.equal(r.lines[0].amountSar, 10_000);
-  assert.equal(r.lines[0].capped, false);
-});
-
-test("both stages add up, in order", () => {
-  const r = estimateJudicialCosts({ claimAmountSar: 1_000_000, ...both })!;
-  assert.deepEqual(r.lines.map((l) => l.amountSar), [50_000, 10_000]);
-  assert.equal(r.totalSar, 60_000);
-});
-
-test("both stages capped for 50,000,000 SAR claim", () => {
-  const r = estimateJudicialCosts({ claimAmountSar: 50_000_000, ...both })!;
-  assert.deepEqual(r.lines.map((l) => l.amountSar), [1_000_000, 10_000]);
-  assert.equal(r.lines[0].capped, true);
-  assert.equal(r.lines[1].capped, true);
-  assert.equal(r.totalSar, 1_010_000);
-});
-
-test("figures are whole riyals", () => {
-  const r = estimateJudicialCosts({ claimAmountSar: 1_234.5, ...both })!;
-  assert.deepEqual(r.lines.map((l) => l.amountSar), [62, 62]);
-});
-
-test("nothing to estimate → null, never a zero that reads as «exempt»", () => {
-  for (const claimAmountSar of [0, -5, NaN, Infinity]) {
-    assert.equal(estimateJudicialCosts({ claimAmountSar, ...both }), null, String(claimAmountSar));
+test("requests are flat amounts whatever the claim (Article 6)", () => {
+  for (const claimAmountSar of [1_000, 150_000, 5_000_000]) {
+    const r = estimateJudicialCosts({
+      claimAmountSar,
+      includeFirstInstance: false,
+      includeAppeal: true,
+      includeCassation: true,
+      includeReconsideration: true,
+    })!;
+    assert.deepEqual(r.lines.map((l) => [l.id, l.amountSar, l.capped]), [
+      ["appeal", 5_000, false],
+      ["cassation", 7_000, false],
+      ["reconsideration", 10_000, false],
+    ]);
+    assert.ok(r.lines.every((l) => /مبلغ مقطوع/.test(l.basis) && /المادة السادسة/.test(l.basis)));
   }
-  assert.equal(estimateJudicialCosts({ claimAmountSar: 1000, includeFirstInstance: false, includeAppeal: false }), null);
-});
-
-test("Owner Decision #167: cassation is capped at 7,000 SAR and reconsideration at 10,000 SAR", () => {
-  assert.equal(CASSATION_COST_CAP_SAR, 7_000);
-  assert.equal(RECONSIDERATION_COST_CAP_SAR, 10_000);
-});
-
-test("cassation is 5% below its cap; exactly at the cap (140,000 → 7,000) is not reported as capped", () => {
-  const below = estimateJudicialCosts({ claimAmountSar: 100_000, includeFirstInstance: false, includeAppeal: false, includeCassation: true })!;
-  assert.deepEqual(below.lines.map((l) => [l.id, l.amountSar, l.capped]), [["cassation", 5_000, false]]);
-  assert.equal(below.lines[0].label, "طلب النقض");
-
-  const at = estimateJudicialCosts({ claimAmountSar: 140_000, includeFirstInstance: false, includeAppeal: false, includeCassation: true })!;
-  assert.equal(at.lines[0].amountSar, 7_000);
-  assert.equal(at.lines[0].capped, false);
-});
-
-test("cassation never exceeds 7,000 SAR", () => {
-  const r = estimateJudicialCosts({ claimAmountSar: 1_000_000, includeFirstInstance: false, includeAppeal: false, includeCassation: true })!;
-  assert.equal(r.lines[0].amountSar, CASSATION_COST_CAP_SAR);
-  assert.equal(r.lines[0].capped, true);
-  assert.match(r.lines[0].basis, /٧٬٠٠٠/);
-});
-
-test("reconsideration is 5% below its cap and never exceeds 10,000 SAR", () => {
-  const below = estimateJudicialCosts({ claimAmountSar: 150_000, includeFirstInstance: false, includeAppeal: false, includeReconsideration: true })!;
-  assert.deepEqual(below.lines.map((l) => [l.id, l.amountSar, l.capped]), [["reconsideration", 7_500, false]]);
-  assert.equal(below.lines[0].label, "طلب التماس إعادة النظر");
-
-  const at = estimateJudicialCosts({ claimAmountSar: 200_000, includeFirstInstance: false, includeAppeal: false, includeReconsideration: true })!;
-  assert.equal(at.lines[0].amountSar, 10_000);
-  assert.equal(at.lines[0].capped, false);
-
-  const over = estimateJudicialCosts({ claimAmountSar: 5_000_000, includeFirstInstance: false, includeAppeal: false, includeReconsideration: true })!;
-  assert.equal(over.lines[0].amountSar, RECONSIDERATION_COST_CAP_SAR);
-  assert.equal(over.lines[0].capped, true);
 });
 
 test("all four lines come in court order and add up", () => {
   const r = estimateJudicialCosts({
-    claimAmountSar: 50_000_000,
+    claimAmountSar: 2_000_000,
     includeFirstInstance: true,
     includeAppeal: true,
     includeCassation: true,
     includeReconsideration: true,
   })!;
   assert.deepEqual(r.lines.map((l) => [l.id, l.amountSar]), [
-    ["first-instance", 1_000_000],
-    ["appeal", 10_000],
+    ["first-instance", 40_000],
+    ["appeal", 5_000],
     ["cassation", 7_000],
     ["reconsideration", 10_000],
   ]);
-  assert.equal(r.totalSar, 1_027_000);
-  assert.ok(r.lines.every((l) => l.capped));
+  assert.equal(r.totalSar, 62_000);
+  assert.deepEqual(r.lines.map((l) => l.label), ["قيد الدعوى (الدرجة الأولى)", "طلب الاستئناف", "طلب النقض", "طلب التماس إعادة النظر"]);
 });
 
-test("a request picked alone is enough to estimate; none picked is still null", () => {
-  assert.notEqual(estimateJudicialCosts({ claimAmountSar: 1000, includeFirstInstance: false, includeAppeal: false, includeCassation: true }), null);
-  assert.notEqual(estimateJudicialCosts({ claimAmountSar: 1000, includeFirstInstance: false, includeAppeal: false, includeReconsideration: true }), null);
+test("figures are whole riyals", () => {
+  assert.equal(fee(1_234.5).amountSar, 62);
+});
+
+test("nothing to estimate → null, never a zero that reads as «exempt»", () => {
+  for (const claimAmountSar of [0, -5, NaN, Infinity]) {
+    assert.equal(estimateJudicialCosts({ claimAmountSar, includeFirstInstance: true, includeAppeal: true }), null, String(claimAmountSar));
+  }
   assert.equal(
     estimateJudicialCosts({ claimAmountSar: 1000, includeFirstInstance: false, includeAppeal: false, includeCassation: false, includeReconsideration: false }),
     null,
@@ -158,23 +118,32 @@ test("parseClaimAmount refuses anything that is not a positive amount", () => {
   }
 });
 
-// N9 (fix plan 2026-10-16): the fee calculator's tab subtitle named only the
-// first-instance and appeal caps. Any surface that states caps states all four.
-test("the fee calculator's court-fees subtitle names all four caps", async () => {
+// N9 (fix plan 2026-10-16), owner answer ١٨٢: the tab subtitle states the
+// bands' ceiling and all three request amounts, never a 5%-for-all or a 10,000
+// appeal cap.
+test("the fee calculator's court-fees subtitle states the regulation's figures", async () => {
   const { readFileSync } = await import("node:fs");
   const page = readFileSync(new URL("../../app/ai/fee-calculator/page.tsx", import.meta.url), "utf8");
   const row = page.split(/\r?\n/).find((line) => line.includes('id: "court_fees"'));
   assert.ok(row, "court_fees tab not found");
   const desc = /desc: "([^"]*)"/.exec(row!)?.[1] ?? "";
   const ar = (n: number) => n.toLocaleString("ar-SA");
-  // The first-instance cap is written in words («مليون»).
-  assert.equal(FIRST_INSTANCE_COST_CAP_SAR, 1_000_000);
-  const caps = [
-    "بحد أقصى مليون ريال للدرجة الأولى",
-    `الاستئناف بحد أقصى ${ar(APPEAL_COST_CAP_SAR)}`,
-    `النقض ${ar(CASSATION_COST_CAP_SAR)}`,
-    `إعادة النظر ${ar(RECONSIDERATION_COST_CAP_SAR)}`,
-  ];
-  const named = caps.filter((text) => desc.includes(text)).length;
-  assert.equal(named, caps.length, `partial cap list: ${desc}`);
+  for (const text of [
+    "بحد أقصى مليون ريال",
+    `الاستئناف ${ar(APPEAL_COST_SAR)}`,
+    `النقض ${ar(CASSATION_COST_SAR)}`,
+    `إعادة النظر ${ar(RECONSIDERATION_COST_SAR)}`,
+  ]) {
+    assert.ok(desc.includes(text), `missing «${text}» in: ${desc}`);
+  }
+  assert.ok(!desc.includes("بحد أقصى ١٠٬٠٠٠"), desc);
+});
+
+test("the court-fees screen states the bands and the flat amounts", async () => {
+  const { readFileSync } = await import("node:fs");
+  const screen = readFileSync(new URL("./CalcCourtFees.tsx", import.meta.url), "utf8");
+  for (const text of ["٥٪", "٤٪", "٣٪", "٢٪", "٥٬٠٠٠", "٧٬٠٠٠", "١٠٬٠٠٠", "مليون"]) {
+    assert.ok(screen.includes(text), text);
+  }
+  assert.ok(!screen.includes("الاستئناف بحد أقصى"), "the old appeal cap is still on the screen");
 });
