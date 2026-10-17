@@ -27,8 +27,10 @@ import {
   Stamp,
   Shield,
   Certificate,
+  SignOut,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { logout } from "@/hooks/useUser";
 import { createClient } from "@/lib/supabase/client";
 import { normalizeSaudiMobile, saudiMobileMessage } from "@/lib/services/saudiMobile";
 import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
@@ -1146,6 +1148,18 @@ export default function OnboardingPage() {
               </button>
               <button onClick={toggleTheme} className="rounded-lg border border-slate-200 dark:border-dark-border px-3 py-1.5 text-xs font-medium text-ink-muted hover:text-royal transition-colors dark:text-gray-400">
                 {theme === "light" ? "🌙" : "☀️"}
+              </button>
+              {/* An account that cannot finish the wizard yet (no phone at
+                  hand, wrong account) was stuck here: every protected page
+                  sends it back (src/proxy.ts, Gate 1). Signing out returns it
+                  to the public site as a visitor. */}
+              <button
+                type="button"
+                onClick={() => logout("/")}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-dark-border px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50 transition-colors dark:text-rose-400 dark:hover:bg-rose-500/[0.08]"
+              >
+                <SignOut size={14} />
+                {isAr ? "تسجيل الخروج" : "Sign out"}
               </button>
             </div>
           </div>

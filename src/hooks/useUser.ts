@@ -377,8 +377,12 @@ function clearDemoSessionMarkers(): void {
   document.cookie = "nzamy_demo_role=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
 }
 
-/** Log out — clears session, re-renders all components, then navigates to /login */
-export function logout(): void {
+/**
+ * Log out — clears session, re-renders all components, then navigates to
+ * `redirectTo` (/login by default; the onboarding wizard sends the visitor
+ * back to the public site instead).
+ */
+export function logout(redirectTo: string = "/login"): void {
   if (typeof window === "undefined") return;
 
   // Supabase mode: sign out through Supabase Auth
@@ -398,7 +402,7 @@ export function logout(): void {
 
     const supabase = createClient();
     supabase.auth.signOut().finally(() => {
-      window.location.href = "/login";
+      window.location.href = redirectTo;
     });
     return;
   }
@@ -409,7 +413,7 @@ export function logout(): void {
   localStorage.setItem(DEMO_STORAGE_KEY, "guest");
   document.cookie = "nzamy_demo_role=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
   notifyAll();
-  setTimeout(() => { window.location.href = "/login"; }, 150);
+  setTimeout(() => { window.location.href = redirectTo; }, 150);
 }
 
 // ─── ⚠️ DEMO BLOCK END ───────────────────────────────────────────────────────
