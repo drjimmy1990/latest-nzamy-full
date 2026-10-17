@@ -323,3 +323,25 @@ nzamy-mobile/app/
 ## 8. الخاتمة وخلاصة الاعتماد
 
 بهذا الإنجاز والتدقيق المكتمل، يمتلك تطبيق الهاتف الأصلي `nzamy-mobile` تطابقاً كاملاً ومثبتاً بنسبة **100%** مع كافة وظائف، معالجات، شاشات، وواجهات منصة `nzamy-website`. تعمل كافة الخدمات القانونية الذكية، إدارة القضايا، حاسبة المهل، ومكتبة الأنظمة بسلاسة فائقة، متانة تشغيلية، وتجربة مستخدم سعودية أصيلة ورفيعة المستوى.
+
+---
+
+## 9. مزامنة تحديثات الموقع الأخيرة (Oct 14–17 Sync Pass: `1bc178e0..19eb082f`)
+
+تمت مزامنة كافة التعديلات والقرارات الأمنية والوظيفية التي أُضيفت إلى `nzamy-website` حتى التزام `19eb082f` إلى تطبيق `nzamy-mobile` واجتياز 84 اختبار وحدة بنجاح (84/84 Passed):
+
+| # | التعديل في الموقع (`nzamy-website`) | التطبيق في الموبايل (`nzamy-mobile`) |
+|---|---|---|
+| **1** | تقييد أعمدة `profiles` و`lawyer_profiles` العامة على مستوى قاعدة البيانات (`20261016_08` & `20261016_10`) | تحديث `src/context/AuthContext.tsx` لاستخدام قوائم الأعمدة العامة الصريحة (`PUBLIC_PROFILE_COLUMNS` و`PUBLIC_LAWYER_COLUMNS`) بدلاً من `select("*")`، مع جلب البيانات الكاملة عبر `GET /api/v1/profile`. |
+| **2** | إلزام ربط غرف المحادثة بطلب خدمة نشط (`related_id`) وتحديد الأعضاء (`20261016_03`) | تحديث `app/chat/index.tsx` و`app/lawyers/[id].tsx` و`app/requests/[id].tsx` لاشتراط وإرسال `related_id` و`participant_ids` و`room_type: "direct" | "group"`. |
+| **3** | حماية مسارات الذكاء الاصطناعي للمكتبة والشرح (`401`/`403`/`429`) ومنع الردود الوهمية (`3160584c`, `4b9eef3b`) | إنشاء `libraryAiRefusal` في `src/lib/libraryHelpers.ts` وربطه في `app/ai/chat.tsx` و`app/ai/explain.tsx` و`app/library/laws/[slug].tsx` مع أزرار تسجيل الدخول أو ترقية الاشتراك. |
+| **4** | قفل نصوص السوابق والمواد لغير المشتركين وتنظيف نصوص المبادئ القضائية (`Owner Decision 171`) | تحديث `app/library/precedents/[slug].tsx` و`app/library/laws/[slug].tsx` لتنظيف رموز Markdown وعلامات الصفحات عبر `cleanPrincipleText` و`principleParagraphs` وإظهار تنبيه الاشتراك عند `locked: true`. |
+| **5** | تمييز الأنظمة والمواد الملغاة (`⛔ ملغى وغير سارٍ` + `ونصه قبل الإلغاء:`) والأدلة الإرشادية (`Owner Decisions 51/52/101/102`) | تحديث `app/library/laws/[slug].tsx` و`app/library/search.tsx` لعرض شارة الإلغاء ومقدمة النص السابق وتسمية `دليل إرشادي / تنظيم إداري`. |
+| **6** | تجميع نتائج بحث المكتبة (بطاقة واحدة لكل نظام مع المواد المطابقة) وتصحيح مسارات التوجيه (`cd191cb6`, `db0bfd7d`) | إضافة `groupLawSearchResults` و`resolveSearchResultRoute` في `src/lib/libraryHelpers.ts` وتطبيقها في `app/library/search.tsx`. |
+| **7** | دعم الرقم الموحّد `920XXXXXXX` للمنشآت ورفضه للجوال الشخصي + العنوان الوطني الاختياري (`Owner Decisions 55/56/57`) | تحديث `src/lib/saudiPhone.ts` و`app/(tabs)/profile.tsx` و`app/(auth)/onboarding.tsx` لدعم `normalizeContactPhone` و`saudiMobileMessage` وحقل `nationalAddress`. |
+| **8** | خيار إظهار/إخفاء السعر بالساعة للمحامي (`show_hourly_rate`, `Owner Decision 168`) | إضافة مفتاح التفعيل في `app/(tabs)/profile.tsx` واحترام `show_hourly_rate !== false` في `app/lawyers/index.tsx` و`app/lawyers/[id].tsx`. |
+| **9** | نطاق ظهور ملاحظات المحامي (`private` / `case_team` / `firm`) وعزلها عن العميل (`Owner Decision 169`) | إضافة محدّد نطاق الرؤية (`خاص بي` / `أطراف القضية` / `المكتب كامل`) في `app/lawyer/clients.tsx`. |
+| **10** | تنسيق الوقت بنظام 12 ساعة بالعربية (`٠١:٥٤ م`) والتاريخ الهجري المزدوج (تقويم أم القرى) (`Owner Decision 127`) | إنشاء `src/lib/timeAndHijri.ts` (`formatTimeOfDayAr`, `formatHijriUmmAlQura`, `formatDualDateDisplay`) وتطبيقه في `app/lawyer/hearings.tsx` و`app/lawyer/deadlines.tsx` و`app/requests/[id].tsx`. |
+| **11** | تعريب تصنيفات المدونة (`sec_XX_*`) وتمييز `السند النظامي` عن `نص مقتبس` والتنبيهات (`be55e0de`) | إنشاء `src/lib/blogHelpers.ts` (`blogCategoryLabel`, `classifyBlockquote`) وتطبيقه في `app/blog/index.tsx` و`app/blog/[slug].tsx`. |
+| **12** | ملخص القضية للموكّل (`/api/v1/client/cases/[id]/summary`) وخيار الطلب العام (`general-request` من ٥٠٠ ر.س) (`Owner Decisions 15/19/42`) | إضافة بطاقة «ملخص القضية للموكّل» في `app/requests/[id].tsx` وإضافة `general-request` في `app/(tabs)/requests.tsx` و`app/consultations/book.tsx`. |
+
