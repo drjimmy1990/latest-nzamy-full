@@ -1,8 +1,10 @@
 import { useState, useMemo } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Stack, Trash, X, ArrowCounterClockwise, Copy, Check, BookOpen, CaretDown, CaretUp, FileText, Scales, Gavel
+  Stack, Trash, X, ArrowCounterClockwise, Copy, Check, BookOpen, CaretDown, CaretUp, FileText, Scales, Gavel, Tray
 } from "@phosphor-icons/react";
+import { addToDesktop } from "@/lib/services/researchService";
 
 export interface CartEntry {
   articleId: string;
@@ -30,6 +32,7 @@ export function DraftDrawer({ cart, onRemoveArticle, onClearAll, onClose, isDark
   const [history, setHistory]       = useState<CartEntry[][]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [collapsedLaws, setCollapsedLaws] = useState<Set<string>>(new Set());
+  const [sendState, setSendState] = useState<"idle" | "sending" | "sent" | "failed">("idle");
 
   // ── Group by lawName ──────────────────────────────────────────────────────────
   const grouped = useMemo(() => {
@@ -97,6 +100,29 @@ export function DraftDrawer({ cart, onRemoveArticle, onClearAll, onClose, isDark
   const handleCopyLaw = (lawName: string) => {
     const text = (grouped.get(lawName) ?? []).map(e => buildEntryText(e, isRTL)).join("\n\n" + "─".repeat(30) + "\n\n");
     navigator.clipboard.writeText(text);
+  };
+
+  // ── Send to the collector (owner answer ١٩٤) ───────────────────────────────
+  // The cart's destination is «المجمّع البحثي والقضائي» (/ai/collector): the
+  // chosen articles, principles and precedents land on its desktop, one item
+  // per law, ready for reports and research. A guest (or a role the research
+  // API refuses) gets a failure that says to sign in — never a silent success.
+  const handleSendToCollector = async () => {
+    const entries = selectedIds.length ? cart.filter(c => selectedIds.includes(c.articleId)) : cart;
+    if (!entries.length || sendState === "sending") return;
+    const byLaw = new Map<string, CartEntry[]>();
+    entries.forEach(e => { if (!byLaw.has(e.lawName)) byLaw.set(e.lawName, []); byLaw.get(e.lawName)!.push(e); });
+    setSendState("sending");
+    try {
+      for (const [lawName, items] of byLaw) {
+        const title = isRTL ? `${lawName} — ${items.length} ${items.length === 1 ? "مادة" : "مواد"}` : `${lawName} — ${items.length}`;
+        await addToDesktop("legal-library", "text", title, items.map(e => buildEntryText(e, isRTL)).join("\n\n" + "─".repeat(30) + "\n\n"));
+      }
+      setSendState("sent");
+    } catch (error) {
+      console.error("[DraftDrawer] send to collector failed:", error);
+      setSendState("failed");
+    }
   };
 
   // ── Actions ───────────────────────────────────────────────────────────────────
@@ -255,6 +281,29 @@ export function DraftDrawer({ cart, onRemoveArticle, onClearAll, onClose, isDark
             <button onClick={handleCopyAll} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[#0B3D2E] text-white text-[12px] font-bold hover:opacity-90 transition">
               {copied ? <><Check size={13} /> {isRTL ? "تم النسخ" : "Copied"}</> : <><Copy size={13} /> {isRTL ? "نسخ كل المسودة" : "Copy entire draft"}</>}
             </button>
+          )}
+          <button
+            onClick={handleSendToCollector}
+            disabled={sendState === "sending"}
+            className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border text-[12px] font-bold transition disabled:opacity-60 ${isDark ? "border-[#C8A762]/30 text-[#C8A762] hover:bg-[#C8A762]/10" : "border-amber-300 text-amber-800 hover:bg-amber-50"}`}
+          >
+            <Tray size={13} />
+            {sendState === "sending"
+              ? (isRTL ? "جارٍ الإرسال…" : "Sending…")
+              : selectedIds.length
+                ? (isRTL ? `إرسال المحدد إلى المجمّع البحثي (${selectedIds.length})` : `Send selected to the collector (${selectedIds.length})`)
+                : (isRTL ? "إرسال المسودة إلى المجمّع البحثي" : "Send the draft to the collector")}
+          </button>
+          {sendState === "sent" && (
+            <p role="status" className={`text-[11px] text-center ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>
+              {isRTL ? "وصلت إلى سطح المكتب في المجمّع البحثي — " : "Added to the collector desktop — "}
+              <Link href="/ai/collector" className="font-bold underline">{isRTL ? "فتح المجمّع" : "Open the collector"}</Link>
+            </p>
+          )}
+          {sendState === "failed" && (
+            <p role="alert" className="text-[11px] text-center text-red-600">
+              {isRTL ? "تعذّر الإرسال — سجّل الدخول بحساب يملك المجمّع البحثي ثم أعد المحاولة." : "Could not send — sign in with an account that has the collector, then try again."}
+            </p>
           )}
         </div>
       )}
