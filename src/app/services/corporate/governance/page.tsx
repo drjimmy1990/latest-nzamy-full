@@ -27,7 +27,7 @@ const WORKFLOW_STEPS = [
   { num: "③", title: "رابط + رمز دخول", desc: "كل مراجع يتلقى رابطه الخاص ورمز ٦ أرقام — يقرأ المستند ويكتب ملاحظاته.", color: "" },
   { num: "④", title: "مراجعة واعتماد", desc: "كل إدارة تقرأ وتعلّق وتعتمد من جهازها — بدون تسجيل حساب.", color: "" },
   { num: "⑤", title: "التصعيد والمتابعة", desc: "لم يستجب خلال المدة المحددة؟ يتصعّد تلقائياً للـ CEO مع إشعار واتساب عاجل.", color: "bg-red-500/5 border-red-500/20" },
-  { num: "⑥", title: "ختم رقمي", desc: "اعتماد مكتمل → يُختم المستند رقمياً + يُحفظ في سجل لا يُمسح.", color: "bg-emerald-500/5 border-emerald-500/20" },
+  { num: "⑥", title: "ختم رقمي", desc: "اعتماد مكتمل → يُختم المستند رقمياً ويُحفظ في سجل الاعتمادات.", color: "bg-emerald-500/5 border-emerald-500/20" },
 ];
 
 const MATRIX_EXAMPLE = [
@@ -62,7 +62,7 @@ export default function GovernancePage() {
             <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-royal/30 bg-royal/5 mb-6">
               <ShieldCheck size={14} className="text-royal" weight="duotone" />
-              <span className="text-[12px] font-semibold text-royal">حوكمة مؤسسية ذكية — لا يوجد مثيل في السوق السعودي</span>
+              <span className="text-[12px] font-semibold text-royal">قيد التطوير — لم تُطلق بعد</span>
             </motion.div>
 
             <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
@@ -73,35 +73,23 @@ export default function GovernancePage() {
 
             <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
               className={`text-lg leading-relaxed max-w-2xl mx-auto mb-8 ${ts}`}>
-              عقودك تُعتمد بأسرع وقت ممكن بدلاً من الضياع بين الإيميلات.
-              حدّد القواعد مرة واحدة — والنظام يُطبّقها على كل مستند تلقائياً.
+              نبني لشركتك مسار اعتماد يمرّ فيه كل عقد بقنواته الصحيحة بدلاً من الضياع بين الإيميلات:
+              تحدّد القواعد مرة واحدة، ويطبّقها النظام على كل مستند. ما يلي وصفٌ لما نعمل عليه — الخدمة غير متاحة بعد.
             </motion.p>
 
             <div className="flex flex-wrap justify-center gap-4">
-              <motion.a href="/register" whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+              <motion.a href="/contact" whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
                 className="inline-flex items-center gap-2 px-7 py-4 rounded-2xl bg-[#0B3D2E] text-white font-bold shadow-[0_8px_24px_-8px_rgba(11,61,46,0.5)]">
-                جرّب الحوكمة الآن <ArrowLeft size={16} weight="bold" />
+                سجّل اهتمام شركتك <ArrowLeft size={16} weight="bold" />
               </motion.a>
               <a href="#how" className={`inline-flex items-center gap-2 px-6 py-4 rounded-2xl border font-medium text-sm ${border} ${ts}`}>
-                كيف تعمل؟
+                كيف ستعمل؟
               </a>
             </div>
 
-            {/* Stats */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-14 max-w-3xl mx-auto">
-              {[
-                { v: "٠ ثانية", l: "وقت التطبيق" },
-                { v: "٦ أرقام", l: "رمز دخول لكل مراجع" },
-                { v: "واتساب", l: "إشعار فوري" },
-                { v: "١٠٠٪", l: "audit trail كامل" },
-              ].map((s, i) => (
-                <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 + i * 0.1 }}
-                  className={`rounded-2xl border p-5 text-center ${border} ${cardBg}`}>
-                  <p className="text-2xl font-extrabold text-royal">{s.v}</p>
-                  <p className={`text-[11px] mt-1 ${ts}`}>{s.l}</p>
-                </motion.div>
-              ))}
-            </div>
+            {/* No stats bar: «٠ ثانية / واتساب / ١٠٠٪ audit trail» described a
+                system that does not exist yet (no approval table, no endpoint —
+                dashboard/business/governance says «غير متاحة حالياً»). */}
           </div>
         </section>
 
@@ -109,8 +97,8 @@ export default function GovernancePage() {
         <section className="py-16">
           <div className="max-w-[1100px] mx-auto px-6">
             <div className="text-center mb-12">
-              <span className="text-sm font-medium text-[#C8A762]">لماذا نظامي؟</span>
-              <h2 className={`text-3xl font-bold mt-2 ${tp}`}>كل ما تحتاجه لحوكمة مستنداتك</h2>
+              <span className="text-sm font-medium text-[#C8A762]">ما نعمل عليه</span>
+              <h2 className={`text-3xl font-bold mt-2 ${tp}`}>ما ستقدّمه حوكمة المستندات</h2>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {FEATURES.map((f, i) => {
@@ -135,7 +123,7 @@ export default function GovernancePage() {
         <section id="how" className="py-16 md:py-24">
           <div className="max-w-[1000px] mx-auto px-6">
             <div className="text-center mb-14">
-              <span className="text-sm font-medium text-[#C8A762]">كيف تعمل؟</span>
+              <span className="text-sm font-medium text-[#C8A762]">كيف ستعمل؟</span>
               <h2 className={`text-3xl font-bold mt-2 ${tp}`}>٦ خطوات — من الرفع إلى الختم الرقمي</h2>
             </div>
             <div className="grid gap-5">
@@ -211,15 +199,14 @@ export default function GovernancePage() {
                     <span className="text-royal block mt-1">بدون موافقتك.</span>
                   </h2>
                   <p className={`text-[14px] leading-relaxed mb-6 ${ts}`}>
-                    ٧٢٪ من الشركات السعودية تكتشف عقوداً وُقّعت بدون الموافقات اللازمة — فقط عند التفتيش.
-                    مع نظامي، كل مستند يمر بالقنوات الصحيحة — تلقائياً وبدون تأخير.
+                    كل مستند سيمرّ بقنواته الصحيحة وفق قواعد شركتك، ولن يُعتمد عقد كبير دون صاحب القرار.
                   </p>
                   <div className="space-y-3">
                     {[
                       "كل عقد يُطابق قواعد شركتك تلقائياً",
                       "لا يحتاج المراجع تسجيل حساب — رابط + رمز دخول فقط",
                       "إشعارات واتساب فورية لكل خطوة",
-                      "تاريخ كامل لكل قرار — لا يُمحى أبداً",
+                      "سجل كامل لكل قرار",
                     ].map((point, i) => (
                       <div key={i} className="flex items-start gap-2">
                         <Check size={14} weight="bold" className="text-royal mt-0.5 shrink-0" />
@@ -231,7 +218,7 @@ export default function GovernancePage() {
                 <div className={`w-full md:w-72 rounded-2xl border p-5 ${border} ${cardBg} shadow-lg`}>
                   <div className="flex items-center gap-2 mb-3">
                     <Bell size={16} className="text-emerald-500" weight="fill" />
-                    <span className={`text-[11px] font-bold ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>إشعار واتساب</span>
+                    <span className={`text-[11px] font-bold ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>مثال توضيحي لإشعار واتساب</span>
                   </div>
                   <div className={`rounded-xl p-3 text-[12px] leading-relaxed ${isDark ? "bg-white/[0.03] text-zinc-300" : "bg-zinc-50 text-zinc-600"}`}>
                     <p className="font-bold mb-1">🏛️ نظامي — تصعيد تلقائي</p>
@@ -250,15 +237,11 @@ export default function GovernancePage() {
             <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
               className="rounded-[2.5rem] bg-[#0B3D2E] p-10 md:p-16 text-center shadow-[0_20px_60px_-15px_rgba(11,61,46,0.5)]">
               <ShieldCheck size={36} weight="duotone" className="text-[#C8A762] mx-auto mb-4" />
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">ابدأ حوكمة مستنداتك الآن</h2>
+              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">حوكمة المستندات قيد التطوير</h2>
               <p className="text-white/60 text-sm max-w-md mx-auto mb-8">
-                ضمن باقة الشركات — بدون إعدادات معقدة. حدّد القواعد وابدأ العمل.
+                أخبرنا باحتياجات شركتك في الاعتمادات، ونبلغك عند الإطلاق.
               </p>
               <div className="flex flex-wrap items-center justify-center gap-4">
-                <motion.a href="/register" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-                  className="inline-flex items-center gap-2 px-8 py-4 rounded-2xl bg-[#C8A762] text-[#0B3D2E] font-bold text-sm">
-                  ابدأ مجاناً <ArrowLeft size={16} weight="bold" />
-                </motion.a>
                 <a href="/contact" className="inline-flex items-center gap-2 px-7 py-4 rounded-2xl border border-white/30 text-white/80 font-medium text-sm">
                   <Phone size={15} /> تواصل مع مستشار
                 </a>

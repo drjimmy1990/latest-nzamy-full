@@ -89,8 +89,8 @@ const plans = [
 const faqs = [
   { q: { ar: "ما الفرق بين نظامي Pro ونظامي العادي؟", en: "What's the difference between Nezamy Pro and regular Nezamy?" }, a: { ar: "نظامي Pro مخصص للمحامين ومقدمي الخدمات القانونية، ويوفر أدوات متقدمة لإدارة الأعمال القانونية بالكامل، بينما نظامي العادي موجه لطالبي الخدمة.", en: "Nezamy Pro is designed for lawyers and legal service providers, offering advanced tools for full legal practice management, while regular Nezamy is for service seekers." } },
   { q: { ar: "هل يمكنني الاستمرار في استقبال العملاء من منصة نظامي؟", en: "Can I continue receiving clients from the Nezamy platform?" }, a: { ar: "نعم، عند الاشتراك في Pro يمكنك الاستمرار في الظهور في قائمة المقدمين واستقبال طلبات العملاء.", en: "Yes, subscribing to Pro allows you to remain listed as a provider and receive client requests." } },
-  { q: { ar: "هل يعمل نظامي Pro مع منظومة وزارة العدل؟", en: "Does Nezamy Pro integrate with the Ministry of Justice?" }, a: { ar: "نعم، يتكامل مع بوابة ناجز والنظام القضائي السعودي لسحب بيانات القضايا تلقائياً.", en: "Yes, it integrates with Najiz portal and the Saudi judicial system to auto-fetch case data." } },
-  { q: { ar: "هل يوجد نسخة تجريبية؟", en: "Is there a free trial?" }, a: { ar: "نعم، ٣٠ يوماً مجاناً بدون بطاقة ائتمان.", en: "Yes, 30 days free with no credit card required." } },
+  { q: { ar: "هل يعمل نظامي Pro مع منظومة وزارة العدل؟", en: "Does Nezamy Pro integrate with the Ministry of Justice?" }, a: { ar: "ليس بعد. التكامل مع بوابة ناجز قيد التطوير، وتُدخل بيانات القضايا والجلسات في نظامي يدوياً حالياً.", en: "Not yet. A Najiz integration is in development; case and hearing data is entered into Nezamy by hand today." } },
+  { q: { ar: "هل يوجد نسخة تجريبية؟", en: "Is there a free trial?" }, a: { ar: "التسجيل مجاني ولا يلزم بطاقة ائتمان، وتُفعَّل مزايا الباقة الاحترافية عند الاشتراك.", en: "Signing up is free with no credit card; the professional plan's features start when you subscribe." } },
 ];
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -124,7 +124,7 @@ export default function ProPage() {
             </p>
             <div className="mt-10 flex flex-wrap justify-center gap-4">
               <Link href="/register/provider" className="inline-flex items-center gap-2 rounded-xl bg-gold px-8 py-4 font-semibold text-royal transition hover:bg-gold/90">
-                {isRTL ? "ابدأ مجاناً ٣٠ يوماً" : "Start Free for 30 Days"}
+                {isRTL ? "سجّل مجاناً" : "Sign up free"}
                 <Arrow size={18} />
               </Link>
               <Link href="#features" className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-8 py-4 font-semibold text-white backdrop-blur transition hover:bg-white/20">
@@ -296,7 +296,7 @@ export default function ProPage() {
             {isRTL ? "جاهز لتطوير مكتبك القانوني؟" : "Ready to Elevate Your Legal Practice?"}
           </h2>
           <p className="mx-auto mt-4 max-w-lg text-white/70">
-            {isRTL ? "ابدأ تجربتك المجانية لمدة ٣٠ يوماً. لا يلزم بطاقة ائتمان." : "Start your free 30-day trial. No credit card required."}
+            {isRTL ? "التسجيل مجاني ولا يلزم بطاقة ائتمان." : "Signing up is free. No credit card required."}
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-4">
             <Link href="/register/provider" className="inline-flex items-center gap-2 rounded-xl bg-gold px-8 py-4 font-semibold text-royal transition hover:bg-gold/90">
