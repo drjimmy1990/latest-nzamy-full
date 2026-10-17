@@ -9,6 +9,7 @@ import {
 } from "@phosphor-icons/react";
 import { copyToClipboard } from "@/lib/services/publicProfileLink";
 import { BETA_MONOPOLY_MODE } from "@/lib/betaConfig";
+import { qrWithLogo } from "@/lib/qr/qrWithLogo";
 import {
   buildProfileShareTargets,
   PROFILE_SHARE_TEXT,
@@ -93,13 +94,16 @@ export default function ShareProfileModal({ onClose, isDark, lawyerName, state, 
         // `qrcode` is CommonJS: depending on the bundler's interop its
         // functions arrive as named exports or under `default`.
         const toDataURL = typeof mod.toDataURL === "function" ? mod.toDataURL : mod.default.toDataURL;
+        // Level H: the centre carries the brand's Arabic logo (owner answer
+        // ١٩٥, src/lib/qr/qrWithLogo.ts) and the code must still scan.
         return toDataURL(shareUrl, {
-          errorCorrectionLevel: "M",
+          errorCorrectionLevel: "H",
           margin: 2,
           width: 480,
           color: { dark: "#0B3D2E", light: "#FFFFFF" },
         });
       })
+      .then((plain: string) => qrWithLogo(plain))
       .then((dataUrl) => { if (!cancelled) setQr({ url: shareUrl, dataUrl }); })
       .catch(() => { if (!cancelled) setQr({ url: shareUrl, dataUrl: null }); });
     return () => { cancelled = true; };
