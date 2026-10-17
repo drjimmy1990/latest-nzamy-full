@@ -36,6 +36,12 @@ export interface LibraryAccessResult {
   allowed: boolean;
   isWhitelisted: boolean;
   freeLimit: number;
+  /**
+   * Where a positive freeLimit came from: an admin per-document override, or
+   * the platform default — which a document route turns into the owner's
+   * preview formula (src/lib/library/previewLimit.ts, owner answer ١٨٤).
+   */
+  freeLimitSource?: "override" | "default";
   currentTier: ServerTier;
   message?: string;
 }
@@ -234,13 +240,15 @@ export async function checkLibraryAccess(
   }
 
   // 5. Check free limit (per-law override or global default)
-  const freeLimit = overrides[itemId] ?? globalFreeLimit;
+  const hasOverride = typeof overrides[itemId] === "number";
+  const freeLimit = hasOverride ? overrides[itemId] : globalFreeLimit;
   const allowed = articleIndex < freeLimit; // 0-indexed
 
   return {
     allowed,
     isWhitelisted: false,
     freeLimit,
+    freeLimitSource: hasOverride ? "override" : "default",
     currentTier,
     message: allowed ? undefined : `المادة مقفلة — يتطلب اشتراك Pro أو أعلى`,
   };

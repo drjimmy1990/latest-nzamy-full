@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { checkLibraryAccess, getUserTier, TIER_RANK } from '@/lib/access-control';
+import { effectiveFreeLimit } from '@/lib/library/previewLimit';
 import { libraryGate } from '@/lib/library-gate';
 import { lawStatusForDetail } from '@/app/laws/law-status';
 import { resolveParentLawLink, type ParentLawCandidate } from './_resolve-parent-law';
@@ -241,7 +242,9 @@ export async function GET(
     // Check access once (same result for all articles in a law)
     const firstLockedCheck = await checkLibraryAccess(userId, slug, 0);
     const isWhitelisted = firstLockedCheck.isWhitelisted;
-    const freeLimit = firstLockedCheck.freeLimit;
+    // Owner answer ١٨٤: the preview is 5% of the law or 5 articles, whichever
+    // is less, never below 3 (an admin per-law override still wins).
+    const freeLimit = effectiveFreeLimit(firstLockedCheck, articles.length);
     const hasFullAccess = firstLockedCheck.currentTier === 'pro' ||
                           firstLockedCheck.currentTier === 'max' ||
                           firstLockedCheck.currentTier === 'corp' ||

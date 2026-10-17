@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { checkLibraryAccess, getLibraryAccessForUser } from '@/lib/access-control';
+import { effectiveFreeLimit } from '@/lib/library/previewLimit';
 import { libraryGate } from '@/lib/library-gate';
 import { isFreeLibraryItem } from '@/lib/library-item-access';
 import { isPrincipleLocked, planPrincipleWindow } from './_window';
@@ -72,7 +73,6 @@ export async function GET(
     const probe = await checkLibraryAccess(userId, slug, 0, "principles", { includeExplicitFreeItem: false });
     const { hasFullAccess, freeItemsByType, whitelistedSlugs } = await getLibraryAccessForUser(userId);
     const isWhitelisted = false;
-    const freeLimit = probe.freeLimit; // -1 = unlimited (whitelisted or Pro+)
 
     // Fetch one window of principles with paragraphs. Explicit columns: `*`
     // dragged the fts tsvector along for every row. Service role: the text
@@ -114,6 +114,9 @@ export async function GET(
       }
     }
     const totalCount = total ?? offset + (principles?.length ?? 0);
+    // Owner answer ١٨٤: the free first principles are 5% of the collection or
+    // 5, whichever is less, never below 3; -1 = unlimited (Pro+).
+    const freeLimit = effectiveFreeLimit(probe, totalCount);
 
     // Format response matching frontend interface
     const response = {
