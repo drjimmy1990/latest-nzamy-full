@@ -12,6 +12,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { BLOG_FALLBACK_AUTHOR } from "@/constants/platformContent";
 import { BLOG_CATEGORY_FALLBACK, blogCategoryLabel, groupCategoryPills, type CategoryPill } from "./_categories";
+import { allPillCount } from "./blogCounts";
 
 // No static catalog. A hardcoded ARTICLES list (six articles by three named
 // lawyers who never wrote them, with view counts) rendered whenever the read
@@ -126,6 +127,9 @@ export default function BlogPage() {
   const [mounted, setMounted] = useState(false);
   const [items, setItems] = useState<Article[]>([]);
   const [total, setTotal] = useState(0);
+  // Every published article — the `total` of an unfiltered request. Not
+  // `total`, which is the count of whatever is filtered or searched now.
+  const [allTotal, setAllTotal] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -170,6 +174,9 @@ export default function BlogPage() {
       offsetRef.current = base + mapped.length;
       setItems((prev) => (reset ? mapped : [...prev, ...mapped]));
       setTotal(json.total ?? mapped.length);
+      if (reset && values.length === 0 && !query.trim() && typeof json.total === "number") {
+        setAllTotal(json.total);
+      }
       setHasMore(Boolean(json.hasMore));
       setLoadFailed(false);
     } catch {
@@ -209,9 +216,13 @@ export default function BlogPage() {
   // Search + category are both server-side now; only the featured/grid split is client.
   const filtered = source.filter(a => !showFeatured || !a.featured);
 
-  const allCount = dbCategories.reduce((s, c) => s + c.count, 0);
+  // The exact number of published articles (owner ٢١٥), not the sum of the
+  // category pills, which leaves out every article with a blank category.
+  // The sum is only the fallback once the first, unfiltered read has failed —
+  // never a number shown for a moment before the real one arrives.
+  const allCount = allPillCount(allTotal, initialLoading ? [] : dbCategories.map((c) => c.count));
   const pills: { id: string; label: string; count?: number }[] = [
-    { id: "all", label: isRTL ? "الكل" : "All", count: dbCategories.length > 0 ? allCount : undefined },
+    { id: "all", label: isRTL ? "الكل" : "All", count: allCount },
     ...categoryPills.map(c => ({ id: c.id, label: c.label, count: c.count })),
   ];
 

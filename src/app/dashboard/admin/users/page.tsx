@@ -790,13 +790,16 @@ export default function AdminUsersPage() {
                       ? "border-white/[0.06] text-zinc-400 hover:bg-zinc-800/60"
                       : "border-slate-100 text-slate-500 hover:bg-slate-50"
                 }`}>
-                {f.label}
+                {/* «الكل (N)», N the live count of accounts (owner ٢١٤); plain
+                    «الكل» until the counts arrive. Its number is in the label,
+                    so the badge below is for the type chips only. */}
+                {f.value === "all" && n !== undefined && n !== null ? `الكل (${countTileAr(n)})` : f.label}
                 {/* zinc-500 in dark, not the zinc-600 the row-meta line below
                     uses: this is a number an admin reads off the chip, not
                     decoration. No gray-* token anywhere on this bar —
                     globals.css redefines gray-50/100/200 as dark SURFACES, so
                     text in those goes invisible in dark mode. */}
-                {n !== undefined && n !== null && (
+                {f.value !== "all" && n !== undefined && n !== null && (
                   <span className={`text-[10px] font-mono ${active ? "text-white/70" : isDark ? "text-zinc-500" : "text-slate-400"}`}>
                     {countTileAr(n)}
                   </span>
