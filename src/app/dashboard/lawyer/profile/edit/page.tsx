@@ -848,9 +848,13 @@ export default function LawyerProfileEditPage() {
         Owner answer ٢١٩: the lawyer (or legal consultant) uploads an image of
         his licence; admins open it from the verification queue. Shown only
         once the form holds a real professional row — without one the route
-        has no row to save the path on. The page cannot tell whether an image
-        was uploaded before (the path is readable by the service role only),
-        so the status line speaks only about this session's upload.
+        has no row to save the path on. The status line speaks only about this
+        session's upload: the page does not show whether an image was uploaded
+        before. (GET /api/v1/profile does return licence_image_path to its
+        owner — it reads his row with the service role — but this page does
+        not use it. The object sits under licences/<uid>/, outside the
+        own-folder Storage namespace, so knowing the path gives him no way to
+        replace it.)
       */}
       {loaded && (
         <div className={`${card} p-5 space-y-3`}>

@@ -16,7 +16,11 @@
  *     client (only the service role holds a privilege on that column);
  *   - a failed or zero-row update removes the uploaded object, and a missing
  *     column (before 20261019_20) answers 503, never 500;
- *   - the stored path never goes back to the browser.
+ *   - the object lives at licences/<uid>/…, outside the own-folder namespace
+ *     (fix round 1), and a body without a numeric Content-Length is 411;
+ *   - this route never answers with the stored path. (GET /api/v1/profile
+ *     does return it to the owner; the path is not a secret, which is why it
+ *     must sit where no own-folder policy reaches.)
  */
 
 import test from "node:test";
@@ -64,8 +68,23 @@ test("Storage and the column write use the service client", () => {
   assert.ok(!/auth\.supabase|\bsupabase\.storage|\bsupabase\s*\.from\("lawyer_profiles"\)/.test(post), "the session client never writes here");
 });
 
-test("the path is the caller's own licence folder", () => {
-  assert.match(post, /`\$\{user\.id\}\/licence\/\$\{Date\.now\(\)\}-\$\{safeLicenceName\(/);
+test("the path sits outside the own-folder namespace: licences/<uid>/…", () => {
+  // Fix round 1: the documents bucket's own-folder policies (set by hand) key
+  // on (storage.foldername(name))[1] = auth.uid(). Under `${uid}/…` a live
+  // UPDATE/DELETE policy would let the lawyer swap the object after the
+  // magic-byte check; under `licences/${uid}/…` only the service role can.
+  assert.match(post, /`licences\/\$\{user\.id\}\/\$\{Date\.now\(\)\}-\$\{safeLicenceName\(file\.name\)\}\.\$\{check\.ext\}`/);
+  assert.ok(!/`\$\{user\.id\}\//.test(src), "no path may start with the caller's uid");
+});
+
+test("a body without a numeric Content-Length is refused with 411, before it is read", () => {
+  assert.match(src, /noLength:\s*"تعذّر قبول الملف — أعد المحاولة"/);
+  const lengthAt = at('request.headers.get("content-length")');
+  const refuse = at("{ error: AR.noLength }, { status: 411 }");
+  assert.ok(lengthAt < refuse && refuse < at("request.formData()"), "411 is answered before the body is buffered");
+  // `Number(null ?? "")` is 0 — the old guard let a missing header through.
+  assert.ok(!/Number\(request\.headers\.get\("content-length"\)\s*\?\?\s*""\)/.test(post), "a missing header must not read as 0");
+  assert.match(post, /\/\^\\d\+\$\//, "only an all-digit header counts as a length");
 });
 
 test("the update counts its rows, and a failed or zero-row update removes the object", () => {

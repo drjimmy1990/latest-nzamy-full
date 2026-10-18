@@ -12,11 +12,20 @@ import { LICENCE_ERRORS, LICENCE_MAX_BYTES, safeLicenceName, validateLicenceUplo
  * the `documents` bucket's Storage policies were set by hand and their live
  * state is unknown, and `lawyer_profiles.licence_image_path` is writable by the
  * service role only (20261019_20). So the file is checked here, put at
- * `${userId}/licence/<timestamp>-<safeName>.<ext>` with the service client,
+ * `licences/${userId}/<timestamp>-<safeName>.<ext>` with the service client,
  * and the path is saved on the caller's own row.
  *
- * Body: multipart/form-data with one field, `file`. Response: `{ ok: true }` —
- * the path, and any link to it, never go back to the browser.
+ * Why `licences/` first and not `${userId}/…`: the bucket's hand-set
+ * own-folder policies key on `(storage.foldername(name))[1] = auth.uid()`.
+ * Under the lawyer's own uid folder, a live UPDATE/DELETE policy would let him
+ * replace the object after the magic-byte check below, with any content. With
+ * `licences` as the first folder no such policy matches, so only the service
+ * role can touch it. (The path itself is not secret: GET /api/v1/profile
+ * returns the owner's whole lawyer_profiles row, this column included.)
+ *
+ * Body: multipart/form-data with one field, `file`, sent with a numeric
+ * Content-Length (browsers always send one for FormData; 411 without it).
+ * Response: `{ ok: true }` — this route never answers with the path or a link.
  *
  * Deploy order: before 20261019_20 runs the column does not exist; the update
  * fails with 42703/PGRST204, the uploaded object is removed and the answer is
@@ -29,6 +38,7 @@ import { LICENCE_ERRORS, LICENCE_MAX_BYTES, safeLicenceName, validateLicenceUplo
 
 const AR = {
   notLawyer: "رفع صورة الترخيص متاح لحساب المحامي أو المستشار القانوني فقط.",
+  noLength: "تعذّر قبول الملف — أعد المحاولة",
   badForm: "تعذّرت قراءة الملف المرفوع. أعد المحاولة.",
   noFile: "لم يُرفق ملف. اختر صورة الترخيص أولاً.",
   noRow: "لا يوجد ملف مهني مرتبط بحسابك، فلا يمكن حفظ صورة الترخيص.",
@@ -57,9 +67,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: AR.notLawyer }, { status: 403 });
     }
 
-    // Refuse an obviously oversized body before buffering it.
-    const declaredLength = Number(request.headers.get("content-length") ?? "");
-    if (Number.isFinite(declaredLength) && declaredLength > LICENCE_MAX_BYTES + MULTIPART_ALLOWANCE) {
+    // Refuse an oversized body before buffering it — and a body whose size is
+    // not declared at all, which this guard could not judge (a missing header
+    // used to read as 0 and pass). Browsers always send it for FormData.
+    const rawLength = (request.headers.get("content-length") ?? "").trim();
+    if (!/^\d+$/.test(rawLength)) {
+      return NextResponse.json({ error: AR.noLength }, { status: 411 });
+    }
+    if (Number(rawLength) > LICENCE_MAX_BYTES + MULTIPART_ALLOWANCE) {
       return NextResponse.json({ error: LICENCE_ERRORS.tooLarge }, { status: 413 });
     }
 
@@ -81,7 +96,8 @@ export async function POST(request: NextRequest) {
     }
 
     const service = await createServiceClient();
-    const path = `${user.id}/licence/${Date.now()}-${safeLicenceName(file.name)}.${check.ext}`;
+    // Outside the own-folder namespace — see the header comment.
+    const path = `licences/${user.id}/${Date.now()}-${safeLicenceName(file.name)}.${check.ext}`;
 
     const { error: uploadError } = await service.storage
       .from("documents")
