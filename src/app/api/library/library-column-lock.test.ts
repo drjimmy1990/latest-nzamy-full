@@ -23,6 +23,9 @@
  * Migration 20261018_02 (owner answer ١٨٣) column-locks library.feqh_blocks
  * (matn, sharh, hashiyah, fts) and library.decree_pages (content); their
  * allow-lists are parsed from it.
+ *
+ * Migration 20261019_40 (owner answer ٢٢١) column-locks
+ * library.decrees_circulars (preamble); its allow-list is parsed from it.
  */
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -41,13 +44,15 @@ const HARNESS = read("supabase/tests/rls/library_column_lock.test.sql");
 const PRINCIPLES_HARNESS = read("supabase/tests/rls/library_principles_text_lock.test.sql");
 const FEQH_MIGRATION = read("supabase/migrations/20261018_02_library_feqh_decree_text_lock.sql");
 const FEQH_HARNESS = read("supabase/tests/rls/library_feqh_decree_text_lock.test.sql");
+const PREAMBLE_MIGRATION = read("supabase/migrations/20261019_40_library_decree_preamble_lock.sql");
+const PREAMBLE_HARNESS = read("supabase/tests/rls/library_decree_preamble_lock.test.sql");
 
 /** Library tables the API roles hold NO privilege on: 20260929_01 + 20261016_01. */
 const SERVER_ONLY_TABLES = ["articles", "article_regulations", "article_amendments", "principle_paragraphs"];
 
-/** The tables 20261004_01 column-locked; 20261018_02 added the last two. */
+/** The tables 20261004_01 column-locked; 20261018_02 added feqh_blocks and decree_pages, 20261019_40 decrees_circulars. */
 const TABLES_1004 = ["laws", "judicial_collections", "principles"] as const;
-const TABLES = [...TABLES_1004, "feqh_blocks", "decree_pages"] as const;
+const TABLES = [...TABLES_1004, "feqh_blocks", "decree_pages", "decrees_circulars"] as const;
 type LockedTable = (typeof TABLES)[number];
 
 /** Live column lists (self-hosted production schema, 2026-10-04). */
@@ -78,6 +83,11 @@ const LIVE_COLUMNS: Record<LockedTable, string[]> = {
     "fts", "created_at", "updated_at", "page_label", "volume_label", "book_id",
   ],
   decree_pages: ["id", "decree_id", "page_number", "content", "created_at", "updated_at", "number_text", "order_index"],
+  // 2026-10-18 (controller-verified live columns)
+  decrees_circulars: [
+    "id", "title", "type", "issuer", "ref", "date", "summary", "summary_brief", "category", "preamble",
+    "hashtags", "official_url", "fts", "created_at", "updated_at", "instrument_ar",
+  ],
 };
 
 function grantList(table: string, sql = MIGRATION, label = "20261004_01"): string[] {
@@ -88,12 +98,13 @@ function grantList(table: string, sql = MIGRATION, label = "20261004_01"): strin
 
 /** What 20261004_01 granted (its _verify.sql section and harness carry these). */
 const ALLOWED_1004 = Object.fromEntries(TABLES_1004.map((t) => [t, grantList(t)])) as Record<(typeof TABLES_1004)[number], string[]>;
-/** What is in force: 20261016_01 replaced the principles list; 20261018_02 locks the fiqh / decree text. */
+/** What is in force: 20261016_01 replaced the principles list; 20261018_02 locks the fiqh / decree text; 20261019_40 the decree preamble. */
 const ALLOWED = {
   ...ALLOWED_1004,
   principles: grantList("principles", PRINCIPLES_MIGRATION, "20261016_01"),
   feqh_blocks: grantList("feqh_blocks", FEQH_MIGRATION, "20261018_02"),
   decree_pages: grantList("decree_pages", FEQH_MIGRATION, "20261018_02"),
+  decrees_circulars: grantList("decrees_circulars", PREAMBLE_MIGRATION, "20261019_40"),
 } as Record<LockedTable, string[]>;
 const LOCKED = Object.fromEntries(
   TABLES.map((t) => [t, LIVE_COLUMNS[t].filter((c) => !ALLOWED[t].includes(c))]),
@@ -440,6 +451,42 @@ test("the allow-lists: every live column is either allowed or locked, and the lo
   // 20261018_02: the fiqh text and its fts, and the decree page text.
   assert.deepEqual([...LOCKED.feqh_blocks].sort(), ["fts", "hashiyah", "matn", "sharh"]);
   assert.deepEqual(LOCKED.decree_pages, ["content"]);
+  // 20261019_40 (owner answer ٢٢١): the decree preamble. decrees_circulars.fts
+  // stays readable: it is built from title, summary and summary_brief only.
+  assert.deepEqual(LOCKED.decrees_circulars, ["preamble"]);
+  assert.ok(ALLOWED.decrees_circulars.includes("fts"));
+});
+
+test("20261019_40: _verify.sql, the harness and the migration's verify carry the decree allow-list", () => {
+  const listOf = (body: string) => [...body.matchAll(/'(\w+)'/g)].map((x) => x[1]);
+  const section = VERIFY.slice(VERIFY.indexOf("2026-10-19 — 20261019_40_library_decree_preamble_lock.sql"));
+  assert.ok(section.length > 100, "_verify.sql has no 20261019_40 section");
+  const v = /\('library\.decrees_circulars', ARRAY\[([\s\S]*?)\]\)/.exec(section);
+  assert.ok(v, "_verify.sql: no decrees_circulars allow-list");
+  assert.deepEqual(listOf(v[1]), ALLOWED.decrees_circulars, "_verify.sql 20261019_40 list");
+  assert.match(section, /ILIKE '%preamble server-only since 20261019_40%'/);
+  assert.match(section, /RAISE NOTICE '_verify: 20261019_40 is not applied yet/);
+  const mv = /allowed constant text\[\] := array\[([\s\S]*?)\];/.exec(PREAMBLE_MIGRATION);
+  assert.ok(mv, "20261019_40: no verify allow-list");
+  assert.deepEqual(listOf(mv[1]), ALLOWED.decrees_circulars, "20261019_40 verify list");
+  const h = /foreach col in array array\[([^\]]*)\] loop\s*if not has_column_privilege\(r, 'library\.decrees_circulars'/.exec(PREAMBLE_HARNESS);
+  assert.ok(h, "harness: no decrees_circulars allow-list");
+  assert.deepEqual(listOf(h[1]), ALLOWED.decrees_circulars, "harness list");
+
+  assert.match(PREAMBLE_MIGRATION, /revoke all on library\.decrees_circulars from anon, authenticated, public;/);
+  assert.match(PREAMBLE_MIGRATION, /grant all on library\.decrees_circulars to service_role;/);
+  assert.match(PREAMBLE_MIGRATION, /alter table library\.decrees_circulars enable row level security;/);
+  assert.match(PREAMBLE_MIGRATION, /comment on table library\.decrees_circulars is\s*'[^']*PREAMBLE SERVER-ONLY since 20261019_40/);
+  assert.match(PREAMBLE_MIGRATION, /has_column_privilege\(r, tbl, a\.name, 'SELECT'\)/, "the pg_attribute sweep");
+  assert.match(PREAMBLE_MIGRATION, /raise exception '20261019_40 verify:%'/);
+  assert.match(PREAMBLE_MIGRATION, /raise exception '20261019_40: library\.decrees_circulars\.instrument_ar is missing/);
+  assert.match(PREAMBLE_MIGRATION, /DEPLOY ORDER — CODE FIRST, THEN THIS MIGRATION/);
+  assert.equal((PREAMBLE_MIGRATION.match(/^begin;$/gm) ?? []).length, 1);
+  assert.equal((PREAMBLE_MIGRATION.match(/^commit;$/gm) ?? []).length, 1);
+  assert.match(PREAMBLE_MIGRATION, /^commit;\s*\n[\s\S]*^notify pgrst, 'reload schema';$/m);
+  // The library_column_lock harness checks the catalogue any-column, so it
+  // passes after this lock too.
+  assert.match(HARNESS, /if not has_any_column_privilege\('anon', t, 'SELECT'\) then\s*raise exception 'T7 FAIL: anon lost SELECT on %', t;/);
 });
 
 test("20261018_02: _verify.sql, the harness and the migration's verify carry the fiqh / decree allow-lists", () => {
@@ -557,8 +604,11 @@ test("the scanner itself flags *, locked columns in select / filter / textSearch
     "const k = await supabase.schema('library').from('principles').select('id').textSearch('fts', q);",
     "const l = await supabase.schema('library').from('principles').select('id, text');",
     "const m = await supabase.schema('library').from('judicial_collections').select('id, principles ( id, principle_paragraphs ( text ) )');",
+    // 20261019_40: the decree preamble is locked, and so is *.
+    "const n = await supabase.schema('library').from('decrees_circulars').select('id, title, preamble');",
+    "const o = await supabase.schema('library').from('decrees_circulars').select('*').eq('id', id);",
   ].join("\n");
-  assert.equal(violationsIn(bad, "bad.ts").length, 13, violationsIn(bad, "bad.ts").join("\n"));
+  assert.equal(violationsIn(bad, "bad.ts").length, 15, violationsIn(bad, "bad.ts").join("\n"));
 
   const good = [
     "const supabase = await createClient();",
@@ -578,6 +628,9 @@ test("the scanner itself flags *, locked columns in select / filter / textSearch
     "const LAW_COLS = 'slug, title, ' + 'type';",
     "let q = supabase.schema('library').from('principles').select('id');",
     "if (x) q = q.eq('judicial_collections.track', x).order('id');",
+    // The decree catalogue and its fts stay public; the preamble is a service read.
+    "const r = await supabase.schema('library').from('decrees_circulars').select('id, title, ref').textSearch('fts', q).order('id');",
+    "const s = await serverOnly.schema('library').from('decrees_circulars').select('preamble').eq('id', id);",
   ].join("\n");
   assert.deepEqual(violationsIn(good, "good.ts"), []);
 });
@@ -683,6 +736,29 @@ test("reads the scanner cannot see (dynamic table names, a client parameter) are
   assert.match(stats, /laws: \{ table: "laws", column: "slug", serverOnly: false \}/);
   assert.match(stats, /principles: \{ table: "principles", column: "id", serverOnly: false \}/);
   assert.ok(ALLOWED.laws.includes("slug") && ALLOWED.principles.includes("id"));
+
+  // 20261019_40: the decree catalogue is column-locked too (preamble). The
+  // reads the chain scanner cannot see — init's fetchSection(table, …), the
+  // autocomplete count(table) and libraryStats — stay on the request client,
+  // so every column they name must be on the decree allow-list.
+  const decreeList = /const DECREE_LIST_COLUMNS =\s*"([^"]*)";/.exec(init);
+  assert.ok(decreeList, "init: DECREE_LIST_COLUMNS");
+  for (const c of decreeList[1].split(",").map((s) => s.trim())) {
+    assert.ok(ALLOWED.decrees_circulars.includes(c), `init reads decrees_circulars.${c}, not on the 20261019_40 allow-list`);
+  }
+  assert.match(init, /fetchSection\("decrees_circulars", DECREE_LIST_COLUMNS, "decrees", \(q\) => q\.order\("id"\)\)/);
+  assert.match(auto, /count\('decrees_circulars'\),/);
+  assert.match(stats, /decrees: \{ table: "decrees_circulars", column: "id", serverOnly: false \}/);
+  assert.ok(["id", "fts"].every((c) => ALLOWED.decrees_circulars.includes(c)), "the decree counts select id and filter on fts");
+  // monitor: the orders feed filters through a built .or() (marked reviewed
+  // for the scanner); it names the `date` column only.
+  const monitorSrc = read("src/app/api/library/monitor/route.ts");
+  assert.match(
+    monitorSrc,
+    /\.from\("decrees_circulars"\)\s*\.select\(ORDER_COLUMNS\)\s*\/\/ column-lock-reviewed: [^\n]*\n\s*\.or\(likeYearClauses\(\["date"\], latestTokens\)\)/,
+  );
+  assert.match(read("src/lib/library/monitorFeed.ts"), /return columns\.flatMap\(\(c\) => tokens\.map\(\(t\) => `\$\{c\}\.like\.\*\$\{t\}\*`\)\)\.join\(","\);/);
+  assert.ok(ALLOWED.decrees_circulars.includes("date"));
 });
 
 test("routes that need locked columns read them with the service role and keep masking per tier", () => {
@@ -702,6 +778,27 @@ test("routes that need locked columns read them with the service role and keep m
   assert.equal((monitor.match(/serverOnly\s*\.schema\("library"\)\s*\.from\("laws"\)/g) ?? []).length, 2);
   assert.match(monitor, /supabase\s*\.schema\("library"\)\s*\.from\("decrees_circulars"\)/);
   assert.match(monitor, /maskOfficialDates\(buildLatest\(latestLawRows, orderRows, todayHijri\), isSubscriber\)/);
+
+  // 20261019_40 (owner answer ٢٢١): the decree's metadata is read by name on
+  // the request client; the preamble with the service role, and only full
+  // library access gets its text (hasFullLibraryAccess — never the free-item
+  // whitelist, as for a law's official metadata). Everyone else gets '' and
+  // preambleLocked when the decree has one.
+  const decree = read("src/app/api/library/decrees/[id]/route.ts");
+  assert.match(decree, /await supabase\s*\.schema\('library'\)\s*\.from\('decrees_circulars'\)\s*\.select\(DECREE_COLUMNS\)\s*\.eq\('id', id\)/);
+  assert.match(decree, /serverOnly\s*\.schema\('library'\)\s*\.from\('decrees_circulars'\)\s*\.select\('preamble'\)\s*\.eq\('id', id\)/);
+  assert.match(decree, /const \[probe, isSubscriber\] = await Promise\.all\(\[\s*checkLibraryAccess\(userId, id, 0, "decrees"\),\s*hasFullLibraryAccess\(userId\),\s*\]\);/);
+  assert.match(decree, /preamble: isSubscriber \? preamble : '',/);
+  assert.match(decree, /preambleLocked: !isSubscriber && preamble\.trim\(\) !== '',/);
+  assert.doesNotMatch(decree, /decree\.preamble|\.select\('\*'\)/);
+  assert.match(decree, /'Cache-Control': TIER_SHAPED_CACHE_CONTROL/);
+  // The reader shows the lock card, with the subscribe link, instead of the text.
+  const reader = read("src/app/laws/orders/[slug]/page.tsx");
+  const lockCard = reader.slice(reader.indexOf("{order.preambleLocked ? ("), reader.indexOf(") : order.preamble && ("));
+  assert.ok(lockCard.length > 0, "the reader has a preambleLocked branch before the preamble text");
+  assert.match(lockCard, /الديباجة متاحة للمشتركين/);
+  assert.match(lockCard, /href="\/laws\/subscribe"/);
+  assert.doesNotMatch(lockCard, /order\.preamble\b(?!Locked)/);
 
   // The law title searches stay on the request client (anon's
   // statement_timeout); the precedents section filters on principles.fts,

@@ -543,8 +543,30 @@ export default function OrderReaderPage() {
                 <span className={isDark ? "text-gray-300" : "text-gray-600"} dangerouslySetInnerHTML={{ __html: formatBold(order.summary || "") }}></span>
               </div>
 
-              {/* Preamble */}
-              {order.preamble && (
+              {/* Preamble — subscribers only (owner answer ٢٢١): for everyone
+                  else the API sends no text and preambleLocked, and the
+                  reader shows this card. */}
+              {order.preambleLocked ? (
+                <div className="mb-8 print:hidden">
+                  <h3 className={`text-xs font-black uppercase tracking-wider mb-3 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+                    {isRTL ? "الديباجة التمهيدية" : "Preamble"}
+                  </h3>
+                  <div className={`p-5 rounded-2xl border flex flex-wrap items-center justify-between gap-3 ${
+                    isDark ? "bg-[#0c0f12]/50 border-white/5" : "bg-slate-50/50 border-slate-100"
+                  }`}>
+                    <div className="flex items-center gap-2 text-xs font-bold text-amber-700 dark:text-amber-400">
+                      <Lock size={14} weight="fill" />
+                      <span>{isRTL ? "الديباجة متاحة للمشتركين" : "The preamble is available to subscribers"}</span>
+                    </div>
+                    <Link
+                      href="/laws/subscribe"
+                      className="text-xs font-bold px-3 py-1.5 rounded-xl bg-[#C8A762] text-white hover:bg-[#b8964f] transition-colors"
+                    >
+                      {isRTL ? "اشترك" : "Subscribe"}
+                    </Link>
+                  </div>
+                </div>
+              ) : order.preamble && (
                 <div className="mb-8 print:hidden">
                   <h3 className={`text-xs font-black uppercase tracking-wider mb-3 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
                     {isRTL ? "الديباجة التمهيدية" : "Preamble"}

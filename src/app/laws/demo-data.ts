@@ -78,6 +78,12 @@ export interface DemoOrder {
   cat: string;
   summary_brief?: string;
   preamble?: string;
+  /**
+   * From /api/library/decrees/[id] (owner answer ٢٢١): the decree has a
+   * preamble and the reader is not a subscriber, so `preamble` is '' and the
+   * reader shows a lock card instead.
+   */
+  preambleLocked?: boolean;
   articles?: string[];
   /** From /api/library/decrees/[id]: how many leading pages carry their text (the rest are locked). */
   unlockedCount?: number;

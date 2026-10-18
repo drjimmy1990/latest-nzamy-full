@@ -99,6 +99,7 @@ export async function GET() {
         .schema("library")
         .from("decrees_circulars")
         .select(ORDER_COLUMNS)
+        // column-lock-reviewed: likeYearClauses(["date"], …) builds date.like clauses only; date is on the 20261019_40 allow-list
         .or(likeYearClauses(["date"], latestTokens))
         .limit(1000),
     ]);
