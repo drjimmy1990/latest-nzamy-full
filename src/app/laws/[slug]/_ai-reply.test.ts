@@ -14,7 +14,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { libraryAiRefusal } from "./_ai-reply.ts";
 
 const componentSource = readFileSync(new URL("./_ai-components.tsx", import.meta.url), "utf8");
@@ -30,14 +30,27 @@ test("a guest (401) is sent to sign in and brought back to the page they asked f
   // The query string survives as one `next` value, not as extra /login params.
   assert.equal(new URL(refusal.action.href, "https://x.test").searchParams.get("next"), "/laws/نظام-الشركات?tab=ai");
   assert.match(refusal.text, /سجّل الدخول/);
+  // The assistant comes with Pro and above, not with the library subscription
+  // (owner ٢٠٧), so the guest is not told it is for library subscribers.
+  assert.match(refusal.text, /Pro فما فوق/);
+  assert.doesNotMatch(refusal.text, /مشتركي المكتبة/);
 });
 
-test("a signed-in user below pro (403) is offered the library plans, not «قيد التفعيل»", () => {
+test("a signed-in user below pro (403) is offered the Pro plans, not the library subscription", () => {
   const refusal = libraryAiRefusal(403, "/precedents/x");
   assert.ok(refusal);
-  assert.deepEqual(refusal.action, { label: "عرض باقات المكتبة", href: "/laws/subscribe" });
-  assert.match(refusal.text, /Pro أو أعلى/);
-  assert.doesNotMatch(refusal.text, /قيد التفعيل/);
+  // A library-only subscriber gets this 403 too (owner ٢٠٧): the text says the
+  // library subscription covers the texts, not the assistant, and the link goes
+  // to the plans page, not back to the library subscription they already have.
+  assert.equal(
+    refusal.text,
+    "المساعد الذكي للمكتبة متاح لباقة Pro فما فوق؛ اشتراك المكتبة يشمل النصوص دون المساعد.\nاشترك في باقة Pro لتسأل عن المواد وتستخرج نصوصها.",
+  );
+  assert.deepEqual(refusal.action, { label: "عرض الباقات", href: "/pricing" });
+  assert.doesNotMatch(refusal.text, /مشتركي المكتبة|قيد التفعيل/);
+  // /pricing is the plans page (src/app/pricing/page.tsx). It reads no query
+  // parameter, so the link carries none.
+  assert.ok(existsSync(new URL("../../pricing/page.tsx", import.meta.url)), "src/app/pricing/page.tsx");
 });
 
 test("the rate limit (429) says to wait, with no link", () => {

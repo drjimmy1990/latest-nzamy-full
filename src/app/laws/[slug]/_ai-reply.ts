@@ -2,8 +2,12 @@
  * What the library assistant (LibraryAI in ./_ai-components.tsx) says when
  * POST /api/ai/library-chat answers with a refusal it can act on.
  *
- * The route lets through only signed-in users with full library access
- * (src/app/api/ai/_libraryAiAccess.ts): a guest gets 401, a tier below pro 403.
+ * The route lets through only signed-in users on Pro or above, or an admin
+ * (src/app/api/ai/_libraryAiAccess.ts): a guest gets 401, everyone else 403.
+ * That includes a library-only subscriber: the library subscription opens the
+ * texts, not the assistant (owner answer ٢٠٧), so neither message calls the
+ * assistant a library-subscription feature and the 403 links to the plans page,
+ * not to /laws/subscribe.
  * Before this, every non-ok answer read «قيد التفعيل», so once the n8n webhook
  * is live a guest or a free user would be told "coming soon" about a feature
  * that is live but closed to them.
@@ -26,14 +30,14 @@ export interface LibraryAiRefusal {
 export function libraryAiRefusal(status: number, currentPath: string): LibraryAiRefusal | null {
   if (status === 401) {
     return {
-      text: "سجّل الدخول لتستخدم مساعد المكتبة.\nالمساعد متاح لمشتركي المكتبة القانونية (باقة Pro أو أعلى).",
+      text: "سجّل الدخول لتستخدم مساعد المكتبة.\nالمساعد متاح لباقة Pro فما فوق.",
       action: { label: "تسجيل الدخول", href: `/login?next=${encodeURIComponent(currentPath)}` },
     };
   }
   if (status === 403) {
     return {
-      text: "مساعد المكتبة متاح لمشتركي المكتبة القانونية (باقة Pro أو أعلى).\nاشترك لتسأل عن المواد وتستخرج نصوصها.",
-      action: { label: "عرض باقات المكتبة", href: "/laws/subscribe" },
+      text: "المساعد الذكي للمكتبة متاح لباقة Pro فما فوق؛ اشتراك المكتبة يشمل النصوص دون المساعد.\nاشترك في باقة Pro لتسأل عن المواد وتستخرج نصوصها.",
+      action: { label: "عرض الباقات", href: "/pricing" },
     };
   }
   if (status === 429) {
