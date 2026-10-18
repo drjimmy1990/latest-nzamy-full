@@ -1,0 +1,94 @@
+-- prelude_wipe_subscriptions_fixture.sql — the accounts, subscriptions, library
+-- grant and credit row that wipe_subscriptions.test.sql checks, plus a copy of
+-- each table taken BEFORE the wipe runs. Listed BEFORE
+-- supabase/one-time/2026-10-19_wipe_subscriptions_and_trials.sql in the chain of
+-- wipe_subscriptions.test.sql (which documents the full command).
+--
+-- stubs.sql's auth.users has only `id`; the live table also has `email` and
+-- `raw_user_meta_data` (where user_metadata.tier is stored), which the
+-- one-time file reads and writes.
+alter table auth.users add column if not exists email text;
+alter table auth.users add column if not exists raw_user_meta_data jsonb;
+
+-- Stands in for the user removing the dashes before the two `set local` lines
+-- of block 2 and typing the deploy time: every later connection (each file of
+-- the chain) starts confirmed. T5 of the test clears each setting in turn and
+-- proves block 2 then raises and changes nothing.
+-- The cutoff is a fixed past time: "old" rows below are created before it,
+-- "new" rows after it (and still before now, so the future-cutoff guard passes).
+alter database postgres set nzamy.confirm_wipe = 'WIPE-2026-10-19';
+alter database postgres set nzamy.wipe_cutoff = '2026-09-01 00:00:00+03';
+
+-- Accounts (all non-admin except E):
+--   A d0a1 client  pro  — one old ACTIVE row (period end in the future) + the library grant
+--   B d0b2 lawyer  pro  — one old TRIALING row (an invite trial, no period end)
+--   C d0c3 client  pro  — one NEW active row (created after the cutoff)
+--   D d0d4 lawyer  pro  — an old PAST_DUE row (period already ended) AND a new active row; credits
+--   E d0e5 admin   max  — one old active row (cancelled; the metadata stays)
+--   F d0f6 client  ai   — no live row, one row cancelled long ago (must not change)
+--   G d0a7 client  —    — metadata without a tier key, no row (must not change)
+--   H d0a8 client  —    — metadata NULL, one old EXPIRED row (must not change)
+insert into auth.users (id, email, raw_user_meta_data) values
+  ('00000000-0000-4000-8000-00000000d0a1', 'a@wipe.test', '{"tier":"pro","full_name":"أحمد"}'),
+  ('00000000-0000-4000-8000-00000000d0b2', 'b@wipe.test', '{"tier":"pro"}'),
+  ('00000000-0000-4000-8000-00000000d0c3', 'c@wipe.test', '{"tier":"pro"}'),
+  ('00000000-0000-4000-8000-00000000d0d4', 'd@wipe.test', '{"tier":"pro"}'),
+  ('00000000-0000-4000-8000-00000000d0e5', 'e@wipe.test', '{"tier":"max"}'),
+  ('00000000-0000-4000-8000-00000000d0f6', 'f@wipe.test', '{"tier":"ai"}'),
+  ('00000000-0000-4000-8000-00000000d0a7', 'g@wipe.test', '{"full_name":"زينب"}'),
+  ('00000000-0000-4000-8000-00000000d0a8', 'h@wipe.test', null);
+insert into public.profiles (id, user_type, display_name) values
+  ('00000000-0000-4000-8000-00000000d0a1', 'client', 'A'),
+  ('00000000-0000-4000-8000-00000000d0b2', 'lawyer', 'B'),
+  ('00000000-0000-4000-8000-00000000d0c3', 'client', 'C'),
+  ('00000000-0000-4000-8000-00000000d0d4', 'lawyer', 'D'),
+  ('00000000-0000-4000-8000-00000000d0e5', 'admin',  'E'),
+  ('00000000-0000-4000-8000-00000000d0f6', 'client', 'F'),
+  ('00000000-0000-4000-8000-00000000d0a7', 'client', 'G'),
+  ('00000000-0000-4000-8000-00000000d0a8', 'client', 'H');
+
+-- Plans come from 20260603_phase1_003's seed (individual-*, lawyer-*).
+insert into public.subscriptions
+  (id, user_id, plan_id, tier, billing_cycle, status, auto_renew,
+   started_at, current_period_start, current_period_end, cancelled_at, created_at, updated_at, metadata)
+values
+  ('00000000-0000-4000-8000-0000000051a1', '00000000-0000-4000-8000-00000000d0a1', 'individual-pro', 'pro', 'custom', 'active', true,
+   '2026-08-01 10:00+03', '2026-08-01 10:00+03', '2099-01-01 00:00+03', null, '2026-08-01 10:00+03', '2026-08-01 10:00+03',
+   '{"method":"admin_grant","granted_by":null}'),
+  ('00000000-0000-4000-8000-0000000051b2', '00000000-0000-4000-8000-00000000d0b2', 'lawyer-pro', 'pro', 'custom', 'trialing', false,
+   '2026-08-15 10:00+03', '2026-08-15 10:00+03', null, null, '2026-08-15 10:00+03', '2026-08-15 10:00+03',
+   '{"method":"invite_trial"}'),
+  ('00000000-0000-4000-8000-0000000051c3', '00000000-0000-4000-8000-00000000d0c3', 'individual-pro', 'pro', 'custom', 'active', false,
+   '2026-09-15 10:00+03', '2026-09-15 10:00+03', '2099-01-01 00:00+03', null, '2026-09-15 10:00+03', '2026-09-15 10:00+03',
+   '{"method":"admin_grant"}'),
+  ('00000000-0000-4000-8000-0000000051d4', '00000000-0000-4000-8000-00000000d0d4', 'lawyer-pro', 'pro', 'monthly', 'past_due', true,
+   '2026-07-01 10:00+03', '2026-07-01 10:00+03', '2026-07-31 10:00+03', null, '2026-07-01 10:00+03', '2026-07-01 10:00+03',
+   '{"method":"admin_assignment"}'),
+  ('00000000-0000-4000-8000-0000000052d4', '00000000-0000-4000-8000-00000000d0d4', 'lawyer-pro', 'pro', 'custom', 'active', false,
+   '2026-09-20 10:00+03', '2026-09-20 10:00+03', '2099-01-01 00:00+03', null, '2026-09-20 10:00+03', '2026-09-20 10:00+03',
+   '{"method":"admin_grant"}'),
+  ('00000000-0000-4000-8000-0000000051e5', '00000000-0000-4000-8000-00000000d0e5', 'individual-pro', 'pro', 'custom', 'active', false,
+   '2026-08-01 10:00+03', '2026-08-01 10:00+03', '2099-01-01 00:00+03', null, '2026-08-01 10:00+03', '2026-08-01 10:00+03',
+   '{"method":"admin_assignment"}'),
+  ('00000000-0000-4000-8000-0000000051f6', '00000000-0000-4000-8000-00000000d0f6', 'individual-ai', 'ai', 'custom', 'cancelled', false,
+   '2026-07-01 10:00+03', '2026-07-01 10:00+03', '2026-08-10 10:00+03', '2026-08-10 10:00+03', '2026-07-01 10:00+03', '2026-08-10 10:00+03',
+   '{"method":"admin_grant"}'),
+  ('00000000-0000-4000-8000-0000000051a8', '00000000-0000-4000-8000-00000000d0a8', 'individual-ai', 'ai', 'custom', 'expired', false,
+   '2026-06-01 10:00+03', '2026-06-01 10:00+03', '2026-07-01 10:00+03', null, '2026-06-01 10:00+03', '2026-07-01 10:00+03',
+   '{}');
+
+-- A new-model library grant (20261019_10) for A — the file never touches it.
+insert into public.library_access_grants (id, user_id, plan_ref, source, starts_at, ends_at, granted_by, created_at)
+values ('00000000-0000-4000-8000-000000006a01', '00000000-0000-4000-8000-00000000d0a1', 'lib-founder', 'founder_campaign',
+        '2026-08-02 10:00+03', '2099-01-01 00:00+03', null, '2026-08-02 10:00+03');
+
+-- A credit row for D — credits stay as they are (question ٢٢٤ is open).
+insert into public.credit_transactions (user_id, amount, kind, balance_after, description)
+values ('00000000-0000-4000-8000-00000000d0d4', 500, 'admin_adjustment', 500, 'wipe fixture');
+
+-- Copies taken before the wipe, and the time the fixture finished.
+create table public.wipe204_subs_before    as select * from public.subscriptions;
+create table public.wipe204_users_before   as select id, raw_user_meta_data from auth.users;
+create table public.wipe204_grants_before  as select * from public.library_access_grants;
+create table public.wipe204_credits_before as select * from public.credit_transactions;
+create table public.wipe204_t0 as select clock_timestamp() as t0;
