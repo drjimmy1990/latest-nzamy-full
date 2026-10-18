@@ -4,9 +4,10 @@
 -- public.service_requests, the API roles — loads first by itself):
 --   the real subscriptions shape (20260603_phase1_003, which also seeds the plans
 --   the rows point at) → the library grants table (20261019_10) → the fixture
---   (accounts, rows, a library grant, a credit row, copies of each table, and
---   both settings armed at the database level) → the one-time file, run AS
---   WRITTEN (all 3 blocks, as the user pastes it) → this file.
+--   (entitlement_requests in its live shape; accounts, rows, requests, a library
+--   grant, a credit row; copies of each table; both settings armed at the
+--   database level) → the one-time file, run AS WRITTEN (all 3 blocks, as the
+--   user pastes it) → this file.
 -- Run from the repo root:
 --   R=supabase/tests/rls; M=supabase/migrations; bash $R/run.sh \
 --     $M/20260603_phase1_003_subscriptions_billing.sql $M/20261019_10_library_access_grants.sql \
@@ -24,8 +25,19 @@
 --
 -- Every assertion RAISES on failure (the harness fails closed on ERROR).
 
--- T1 the four live rows created before the cutoff (A active, B trialing,
--- D past_due, admin E active) are cancelled exactly as the brief says.
+-- The live rows the wipe must cancel: A active, B trialing, D past_due, admin
+-- E active, M (its plan request was approved BEFORE the cutoff), N (its only
+-- post-cutoff requests are a library approval, a rejection and a pending one).
+-- Every other row — C and D's rows created after the cutoff, J and K (a plan /
+-- media request approved after it), L (row changed after it), the cancelled
+-- and expired rows — must stay exactly as it was.
+create temp table expect_cancelled (id uuid primary key);
+insert into expect_cancelled values
+  ('00000000-0000-4000-8000-0000000051a1'), ('00000000-0000-4000-8000-0000000051b2'),
+  ('00000000-0000-4000-8000-0000000051d4'), ('00000000-0000-4000-8000-0000000051e5'),
+  ('00000000-0000-4000-8000-0000000054a4'), ('00000000-0000-4000-8000-0000000054a5');
+
+-- T1 the six targeted rows are cancelled exactly as the brief says.
 do $$
 declare
   t0 timestamptz := (select t0 from public.wipe204_t0);
@@ -35,9 +47,10 @@ begin
   for r in
     select s.*, b.status as old_status, b.current_period_end as old_cpe,
            b.metadata as old_meta, b.tier as old_tier
-      from public.subscriptions s join public.wipe204_subs_before b using (id)
-     where s.id in ('00000000-0000-4000-8000-0000000051a1', '00000000-0000-4000-8000-0000000051b2',
-                    '00000000-0000-4000-8000-0000000051d4', '00000000-0000-4000-8000-0000000051e5')
+      from public.subscriptions s
+      join public.wipe204_subs_before b using (id)
+      join expect_cancelled e using (id)
+     order by s.id
   loop
     n := n + 1;
     if r.status <> 'cancelled' then
@@ -65,39 +78,43 @@ begin
       raise exception 'T1 FAIL: % tier changed % → %', r.id, r.old_tier, r.tier;
     end if;
   end loop;
-  if n <> 4 then raise exception 'T1 FAIL: found % of the 4 old live rows', n; end if;
+  if n <> 6 then raise exception 'T1 FAIL: found % of the 6 targeted rows', n; end if;
   -- D's period had already ended in July: the wipe must not move it forward.
   if (select current_period_end from public.subscriptions
        where id = '00000000-0000-4000-8000-0000000051d4') <> '2026-07-31 10:00+03' then
     raise exception 'T1 FAIL: D''s past period end moved';
   end if;
-  raise notice 'T1 PASS: 4 live rows created before the cutoff cancelled (active, trialing, past_due, admin), period ends clipped, metadata stamped';
+  raise notice 'T1 PASS: 6 targeted rows cancelled (active, trialing, past_due, admin, request approved before the cutoff, library/rejected/pending requests only), period ends clipped, metadata stamped';
 end $$;
 
 -- T2 everything else is exactly as before: the rows created after the cutoff,
--- the rows already cancelled / expired, the library grant and the credits.
+-- the SPARED rows (J, K, L), the rows already cancelled / expired, the library
+-- grant, the credits and the requests.
 do $$
 declare
   diff int;
 begin
   select count(*) into diff from (
-    (select * from public.subscriptions
-      where id not in ('00000000-0000-4000-8000-0000000051a1', '00000000-0000-4000-8000-0000000051b2',
-                       '00000000-0000-4000-8000-0000000051d4', '00000000-0000-4000-8000-0000000051e5')
+    (select * from public.subscriptions where id not in (select id from expect_cancelled)
      except select * from public.wipe204_subs_before)
     union all
-    (select * from public.wipe204_subs_before
-      where id not in ('00000000-0000-4000-8000-0000000051a1', '00000000-0000-4000-8000-0000000051b2',
-                       '00000000-0000-4000-8000-0000000051d4', '00000000-0000-4000-8000-0000000051e5')
+    (select * from public.wipe204_subs_before where id not in (select id from expect_cancelled)
      except select * from public.subscriptions)
   ) d;
   if diff <> 0 then raise exception 'T2 FAIL: % other subscription row(s) changed', diff; end if;
   if (select count(*) from public.subscriptions) <> (select count(*) from public.wipe204_subs_before) then
     raise exception 'T2 FAIL: the number of subscription rows changed';
   end if;
-  if (select status from public.subscriptions where id = '00000000-0000-4000-8000-0000000051c3') <> 'active'
-     or (select status from public.subscriptions where id = '00000000-0000-4000-8000-0000000052d4') <> 'active' then
+  if (select count(*) from public.subscriptions
+       where status = 'active'
+         and id in ('00000000-0000-4000-8000-0000000051c3', '00000000-0000-4000-8000-0000000052d4')) <> 2 then
     raise exception 'T2 FAIL: a row created after the cutoff is no longer active';
+  end if;
+  if (select count(*) from public.subscriptions
+       where status = 'active'
+         and id in ('00000000-0000-4000-8000-0000000054a1', '00000000-0000-4000-8000-0000000054a2',
+                    '00000000-0000-4000-8000-0000000054a3')) <> 3 then
+    raise exception 'T2 FAIL: a spared row (J plan request / K media request / L changed after the cutoff) is no longer active';
   end if;
 
   select count(*) into diff from (
@@ -115,12 +132,20 @@ begin
     (select * from public.wipe204_credits_before except select * from public.credit_transactions)
   ) d;
   if diff <> 0 then raise exception 'T2 FAIL: credit_transactions changed'; end if;
-  raise notice 'T2 PASS: rows after the cutoff still active; cancelled/expired rows, the library grant and the credits untouched';
+
+  select count(*) into diff from (
+    (select * from public.entitlement_requests except select * from public.wipe204_requests_before)
+    union all
+    (select * from public.wipe204_requests_before except select * from public.entitlement_requests)
+  ) d;
+  if diff <> 0 then raise exception 'T2 FAIL: entitlement_requests changed'; end if;
+  raise notice 'T2 PASS: rows after the cutoff and spared rows (J, K, L) still active; cancelled/expired rows, the library grant, the credits and the requests untouched';
 end $$;
 
--- T3 metadata: free only for the non-admins left with nothing (A, B, F); A's
--- other keys kept; C and D (a row after the cutoff) keep pro; admin E keeps
--- max; G (no tier key) and H (NULL) unchanged.
+-- T3 metadata: free only for the non-admin, non-spared accounts left with
+-- nothing (A, B, F, M, N); A's other keys kept; C and D (a row after the
+-- cutoff) and J, K, L (spared) keep pro; admin E keeps max; G (no tier key)
+-- and H (NULL) unchanged.
 do $$
 declare
   m jsonb;
@@ -130,23 +155,31 @@ begin
   if m is distinct from '{"tier":"free","full_name":"أحمد"}'::jsonb then
     raise exception 'T3 FAIL: A metadata is %', m;
   end if;
-  select raw_user_meta_data into m from auth.users where id = '00000000-0000-4000-8000-00000000d0b2';
-  if m is distinct from '{"tier":"free"}'::jsonb then raise exception 'T3 FAIL: B metadata is %', m; end if;
-  select raw_user_meta_data into m from auth.users where id = '00000000-0000-4000-8000-00000000d0f6';
-  if m is distinct from '{"tier":"free"}'::jsonb then raise exception 'T3 FAIL: F metadata is %', m; end if;
+  select count(*) into diff from auth.users
+   where id in ('00000000-0000-4000-8000-00000000d0b2', '00000000-0000-4000-8000-00000000d0f6',
+                '00000000-0000-4000-8000-00000000d1a4', '00000000-0000-4000-8000-00000000d1a5')
+     and raw_user_meta_data is distinct from '{"tier":"free"}'::jsonb;
+  if diff <> 0 then raise exception 'T3 FAIL: % of B, F, M, N not reset to free', diff; end if;
 
   select count(*) into diff
     from auth.users u join public.wipe204_users_before b using (id)
    where u.id not in ('00000000-0000-4000-8000-00000000d0a1', '00000000-0000-4000-8000-00000000d0b2',
-                      '00000000-0000-4000-8000-00000000d0f6')
+                      '00000000-0000-4000-8000-00000000d0f6', '00000000-0000-4000-8000-00000000d1a4',
+                      '00000000-0000-4000-8000-00000000d1a5')
      and u.raw_user_meta_data is distinct from b.raw_user_meta_data;
   if diff <> 0 then
-    raise exception 'T3 FAIL: % account(s) outside A/B/F had their metadata changed (C, D keep pro; admin E keeps max; G, H as they were)', diff;
+    raise exception 'T3 FAIL: % account(s) outside A/B/F/M/N had their metadata changed (C, D, J, K, L keep pro; admin E keeps max; G, H as they were)', diff;
+  end if;
+  if (select count(*) from auth.users
+       where raw_user_meta_data->>'tier' = 'pro'
+         and id in ('00000000-0000-4000-8000-00000000d1a1', '00000000-0000-4000-8000-00000000d1a2',
+                    '00000000-0000-4000-8000-00000000d1a3')) <> 3 then
+    raise exception 'T3 FAIL: a spared account (J, K, L) lost its tier';
   end if;
   if (select raw_user_meta_data->>'tier' from auth.users where id = '00000000-0000-4000-8000-00000000d0e5') <> 'max' then
     raise exception 'T3 FAIL: the admin''s metadata changed';
   end if;
-  raise notice 'T3 PASS: metadata reset to free for A, B, F only; C, D, admin E, G, H untouched';
+  raise notice 'T3 PASS: metadata reset to free for A, B, F, M, N only; C, D, spared J, K, L, admin E, G, H untouched';
 end $$;
 
 -- T4 a second run (the whole file again, still confirmed) is a no-op.
@@ -185,9 +218,10 @@ end $$;
 -- block, so the commit after it turns into ROLLBACK without an error of its
 -- own, and block 3 raises nothing) and nothing may change.
 insert into public.subscriptions
-  (id, user_id, plan_id, tier, billing_cycle, status, auto_renew, current_period_end, created_at, metadata)
+  (id, user_id, plan_id, tier, billing_cycle, status, auto_renew, current_period_end, created_at, updated_at, metadata)
 values ('00000000-0000-4000-8000-0000000053b2', '00000000-0000-4000-8000-00000000d0b2', 'lawyer-pro', 'pro',
-        'custom', 'active', false, '2099-01-01 00:00+03', '2026-08-20 10:00+03', '{"method":"admin_grant"}');
+        'custom', 'active', false, '2099-01-01 00:00+03', '2026-08-20 10:00+03', '2026-08-20 10:00+03',
+        '{"method":"admin_grant"}');
 update auth.users set raw_user_meta_data = '{"tier":"pro"}' where id = '00000000-0000-4000-8000-00000000d0b2';
 create temp table s2 as select * from public.subscriptions;
 create temp table u2 as select id, raw_user_meta_data from auth.users;
@@ -211,7 +245,7 @@ begin
     union all (select * from u2 except select id, raw_user_meta_data from auth.users)
   ) d;
   if diff <> 0 then raise exception '% FAIL: % account(s) changed', label, diff; end if;
-  raise notice '% PASS: block 2 raised (%), nothing changed', label, err;
+  raise notice '% PASS: block 2 raised, nothing changed', label;
 end $$;
 
 -- T5a no confirmation
@@ -249,8 +283,8 @@ reset nzamy.confirm_wipe;
 reset nzamy.wipe_cutoff;
 select pg_temp.wipe204_unchanged('T5c (neither setting)', '%NOT confirmed%') \g /dev/null
 
--- T5d a cutoff that is not a time (the placeholder left as it is)
-set nzamy.wipe_cutoff = '<the time deploy.sh finished>';
+-- T5d the placeholder left as it is
+set nzamy.wipe_cutoff = '<DEPLOY-TIME-WITH-OFFSET>';
 \set ON_ERROR_STOP off
 \o /dev/null
 \i /tmp/mig4.sql
@@ -258,9 +292,42 @@ select set_config('test.err', :'LAST_ERROR_MESSAGE', false);
 \o
 \set ON_ERROR_STOP on
 reset nzamy.wipe_cutoff;
-select pg_temp.wipe204_unchanged('T5d (cutoff not a time)', '%is not a time%') \g /dev/null
+select pg_temp.wipe204_unchanged('T5d (placeholder)', '%does not end in a UTC offset%') \g /dev/null
 
--- T5e a cutoff in the future (it would cancel subscriptions granted after the deploy)
+-- T5e a time WITHOUT an offset (the editor runs in UTC: it would be read 3 hours late)
+set nzamy.wipe_cutoff = '2026-09-01 00:00:00';
+\set ON_ERROR_STOP off
+\o /dev/null
+\i /tmp/mig4.sql
+select set_config('test.err', :'LAST_ERROR_MESSAGE', false);
+\o
+\set ON_ERROR_STOP on
+reset nzamy.wipe_cutoff;
+select pg_temp.wipe204_unchanged('T5e (no offset)', '%does not end in a UTC offset%') \g /dev/null
+
+-- T5f a date alone ('-01' at its end is not an offset)
+set nzamy.wipe_cutoff = '2026-09-01';
+\set ON_ERROR_STOP off
+\o /dev/null
+\i /tmp/mig4.sql
+select set_config('test.err', :'LAST_ERROR_MESSAGE', false);
+\o
+\set ON_ERROR_STOP on
+reset nzamy.wipe_cutoff;
+select pg_temp.wipe204_unchanged('T5f (date alone)', '%does not end in a UTC offset%') \g /dev/null
+
+-- T5g ends in an offset but is not a time
+set nzamy.wipe_cutoff = '2026-13-45 21:30:00+03';
+\set ON_ERROR_STOP off
+\o /dev/null
+\i /tmp/mig4.sql
+select set_config('test.err', :'LAST_ERROR_MESSAGE', false);
+\o
+\set ON_ERROR_STOP on
+reset nzamy.wipe_cutoff;
+select pg_temp.wipe204_unchanged('T5g (not a time)', '%is not a time%') \g /dev/null
+
+-- T5h a cutoff in the future (it would cancel subscriptions granted after the deploy)
 set nzamy.wipe_cutoff = '2999-01-01 00:00:00+03';
 \set ON_ERROR_STOP off
 \o /dev/null
@@ -269,13 +336,67 @@ select set_config('test.err', :'LAST_ERROR_MESSAGE', false);
 \o
 \set ON_ERROR_STOP on
 reset nzamy.wipe_cutoff;
-select pg_temp.wipe204_unchanged('T5e (cutoff in the future)', '%in the future%') \g /dev/null
+select pg_temp.wipe204_unchanged('T5h (cutoff in the future)', '%in the future%') \g /dev/null
 
--- T6 with both settings back, the re-armed row IS a target: the run cancels it
--- and B is back to free (so T5's "nothing changed" was not vacuous).
+-- T5i (reviewer probe F) — on ONE session, block 1 with its cutoff line
+-- enabled, then block 2 with ONLY its confirm line: block 2 must raise
+-- «cutoff is not set» (the cutoff typed in block 1 ends with block 1).
+-- The session starts with neither setting; the file's own lines are enabled
+-- by sed on a copy, so the lines under test are the file's real lines.
+set nzamy.confirm_wipe = '';
+set nzamy.wipe_cutoff = '';
+\! sed -e "s|^-- select set_config('nzamy.wipe_cutoff', '<DEPLOY-TIME-WITH-OFFSET>', true);|select set_config('nzamy.wipe_cutoff', '2026-09-01 00:00:00+03', true);|" -e "s|^-- set local nzamy.confirm_wipe = 'WIPE-2026-10-19';|set local nzamy.confirm_wipe = 'WIPE-2026-10-19';|" /tmp/mig4.sql > /tmp/probe_f.sql
+\! sed -n '1,/^rollback;$/p' /tmp/probe_f.sql > /tmp/probe_f_block1.sql
+do $$
+declare
+  f  text := pg_read_file('/tmp/probe_f.sql');
+  b1 text := pg_read_file('/tmp/probe_f_block1.sql');
+begin
+  if (length(f) - length(replace(f, E'\nselect set_config(''nzamy.wipe_cutoff'', ''2026-09-01 00:00:00+03'', true);', '')))
+     / length(E'\nselect set_config(''nzamy.wipe_cutoff'', ''2026-09-01 00:00:00+03'', true);') <> 1
+     or (length(f) - length(replace(f, E'\nset local nzamy.confirm_wipe = ''WIPE-2026-10-19'';', '')))
+     / length(E'\nset local nzamy.confirm_wipe = ''WIPE-2026-10-19'';') <> 1
+     or position(E'\n-- set local nzamy.wipe_cutoff' in f) = 0
+     or position(E'\nset local nzamy.wipe_cutoff' in f) > 0 then
+    raise exception 'T5i SETUP FAIL: the copy does not enable exactly block 1''s cutoff line and block 2''s confirm line';
+  end if;
+  if position(E'\nselect set_config(''nzamy.wipe_cutoff''' in b1) = 0 or position('2) WIPE' in b1) > 0 then
+    raise exception 'T5i SETUP FAIL: the block-1 extract is not block 1';
+  end if;
+end $$;
+-- block 1 alone first: it runs cleanly WITH the cutoff (its (0) row shows
+-- the typed time), and the cutoff is gone once block 1 ends.
+\o /tmp/probe_f_block1.out
+\i /tmp/probe_f_block1.sql
+\o
+do $$
+begin
+  if position('2026-09-01 00:00:00+03' in pg_read_file('/tmp/probe_f_block1.out')) = 0 then
+    raise exception 'T5i FAIL: block 1 did not read the cutoff typed on its own line';
+  end if;
+  if coalesce(current_setting('nzamy.wipe_cutoff', true), '') <> '' then
+    raise exception 'T5i FAIL: block 1''s cutoff outlived block 1: %', current_setting('nzamy.wipe_cutoff', true);
+  end if;
+end $$;
+-- then the whole copy (block 1 → block 2 → block 3) on the same session
+\set ON_ERROR_STOP off
+\o /dev/null
+\i /tmp/probe_f.sql
+select set_config('test.err', :'LAST_ERROR_MESSAGE', false);
+\o
+\set ON_ERROR_STOP on
+reset nzamy.confirm_wipe;
+reset nzamy.wipe_cutoff;
+select pg_temp.wipe204_unchanged('T5i (block 1 cutoff, block 2 confirm only, one session)', '%cutoff is not set%') \g /dev/null
+
+-- T6 with both settings back (the cutoff now written with Z, the same instant),
+-- the re-armed row IS a target: the run cancels it and B is back to free (so
+-- T5's "nothing changed" was not vacuous); C and the spared J, K, L stay.
+set nzamy.wipe_cutoff = '2026-08-31T21:00:00Z';
 \o /dev/null
 \i /tmp/mig4.sql
 \o
+reset nzamy.wipe_cutoff;
 do $$
 begin
   if (select status from public.subscriptions where id = '00000000-0000-4000-8000-0000000053b2') <> 'cancelled' then
@@ -285,10 +406,13 @@ begin
      is distinct from '{"tier":"free"}'::jsonb then
     raise exception 'T6 FAIL: B''s metadata was not reset by a confirmed run';
   end if;
-  if (select status from public.subscriptions where id = '00000000-0000-4000-8000-0000000051c3') <> 'active' then
-    raise exception 'T6 FAIL: C''s row created after the cutoff was cancelled';
+  if (select count(*) from public.subscriptions
+       where status = 'active'
+         and id in ('00000000-0000-4000-8000-0000000051c3', '00000000-0000-4000-8000-0000000054a1',
+                    '00000000-0000-4000-8000-0000000054a2', '00000000-0000-4000-8000-0000000054a3')) <> 4 then
+    raise exception 'T6 FAIL: C''s row or a spared row (J, K, L) was cancelled';
   end if;
-  raise notice 'T6 PASS: confirmed again, the re-armed row is cancelled and B reset; C kept';
+  raise notice 'T6 PASS: confirmed again (cutoff written with Z), the re-armed row is cancelled and B reset; C, J, K, L kept';
 end $$;
 
 select 'wipe_subscriptions: ALL PASS' as result;

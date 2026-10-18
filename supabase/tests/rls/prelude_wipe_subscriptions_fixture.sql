@@ -77,6 +77,64 @@ values
    '2026-06-01 10:00+03', '2026-06-01 10:00+03', '2026-07-01 10:00+03', null, '2026-06-01 10:00+03', '2026-07-01 10:00+03',
    '{}');
 
+-- public.entitlement_requests — the live shape (20260706_entitlement_requests.sql
+-- without its policies; columns and CHECKs as in the 2026-10-10 schema dump).
+create table if not exists public.entitlement_requests (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid not null references auth.users(id) on delete cascade,
+  kind          text not null check (kind in ('plan','credits','wallet','library','media')),
+  requested_ref text,
+  amount        numeric,
+  note          text,
+  status        text not null default 'pending' check (status in ('pending','approved','rejected')),
+  decided_by    uuid references auth.users(id),
+  decided_at    timestamptz,
+  created_at    timestamptz not null default now()
+);
+
+-- SPARED or not — accounts an admin acted on (or seemed to) after the cutoff:
+--   J d1a1 client pro — old active row + a PLAN request approved AFTER the cutoff
+--                        (approved while already entitled: no new row)   → spared
+--   K d1a2 lawyer pro — old active row + a MEDIA request approved AFTER the cutoff → spared
+--   L d1a3 client pro — old active row whose updated_at is AFTER the cutoff
+--                        (the admin's «تغيير الخطة» edits the row in place) → spared
+--   M d1a4 client pro — old active row + a PLAN request approved BEFORE the cutoff → wiped
+--   N d1a5 client pro — old active row + a LIBRARY request approved after the cutoff,
+--                        a PLAN request REJECTED after it, a PLAN request pending → wiped
+insert into auth.users (id, email, raw_user_meta_data) values
+  ('00000000-0000-4000-8000-00000000d1a1', 'j@wipe.test', '{"tier":"pro"}'),
+  ('00000000-0000-4000-8000-00000000d1a2', 'k@wipe.test', '{"tier":"pro"}'),
+  ('00000000-0000-4000-8000-00000000d1a3', 'l@wipe.test', '{"tier":"pro"}'),
+  ('00000000-0000-4000-8000-00000000d1a4', 'm@wipe.test', '{"tier":"pro"}'),
+  ('00000000-0000-4000-8000-00000000d1a5', 'n@wipe.test', '{"tier":"pro"}');
+insert into public.profiles (id, user_type, display_name) values
+  ('00000000-0000-4000-8000-00000000d1a1', 'client', 'J'),
+  ('00000000-0000-4000-8000-00000000d1a2', 'lawyer', 'K'),
+  ('00000000-0000-4000-8000-00000000d1a3', 'client', 'L'),
+  ('00000000-0000-4000-8000-00000000d1a4', 'client', 'M'),
+  ('00000000-0000-4000-8000-00000000d1a5', 'client', 'N');
+insert into public.subscriptions
+  (id, user_id, plan_id, tier, billing_cycle, status, auto_renew,
+   started_at, current_period_start, current_period_end, created_at, updated_at, metadata)
+values
+  ('00000000-0000-4000-8000-0000000054a1', '00000000-0000-4000-8000-00000000d1a1', 'individual-pro', 'pro', 'custom', 'active', false,
+   '2026-08-05 10:00+03', '2026-08-05 10:00+03', '2099-01-01 00:00+03', '2026-08-05 10:00+03', '2026-08-05 10:00+03', '{"method":"admin_grant"}'),
+  ('00000000-0000-4000-8000-0000000054a2', '00000000-0000-4000-8000-00000000d1a2', 'lawyer-pro', 'pro', 'custom', 'active', false,
+   '2026-08-05 10:00+03', '2026-08-05 10:00+03', '2099-01-01 00:00+03', '2026-08-05 10:00+03', '2026-08-05 10:00+03', '{"method":"admin_grant"}'),
+  ('00000000-0000-4000-8000-0000000054a3', '00000000-0000-4000-8000-00000000d1a3', 'individual-pro', 'pro', 'custom', 'active', false,
+   '2026-08-05 10:00+03', '2026-08-05 10:00+03', '2099-01-01 00:00+03', '2026-08-05 10:00+03', '2026-09-05 10:00+03', '{"method":"admin_assignment"}'),
+  ('00000000-0000-4000-8000-0000000054a4', '00000000-0000-4000-8000-00000000d1a4', 'individual-pro', 'pro', 'custom', 'active', false,
+   '2026-08-05 10:00+03', '2026-08-05 10:00+03', '2099-01-01 00:00+03', '2026-08-05 10:00+03', '2026-08-05 10:00+03', '{"method":"admin_grant"}'),
+  ('00000000-0000-4000-8000-0000000054a5', '00000000-0000-4000-8000-00000000d1a5', 'individual-pro', 'pro', 'custom', 'active', false,
+   '2026-08-05 10:00+03', '2026-08-05 10:00+03', '2099-01-01 00:00+03', '2026-08-05 10:00+03', '2026-08-05 10:00+03', '{"method":"admin_grant"}');
+insert into public.entitlement_requests (user_id, kind, requested_ref, status, decided_by, decided_at, created_at) values
+  ('00000000-0000-4000-8000-00000000d1a1', 'plan',    'pro',     'approved', '00000000-0000-4000-8000-00000000d0e5', '2026-09-10 10:00+03', '2026-09-09 10:00+03'),
+  ('00000000-0000-4000-8000-00000000d1a2', 'media',   'media',   'approved', '00000000-0000-4000-8000-00000000d0e5', '2026-09-12 10:00+03', '2026-09-11 10:00+03'),
+  ('00000000-0000-4000-8000-00000000d1a4', 'plan',    'pro',     'approved', '00000000-0000-4000-8000-00000000d0e5', '2026-08-20 10:00+03', '2026-08-19 10:00+03'),
+  ('00000000-0000-4000-8000-00000000d1a5', 'library', 'library', 'approved', '00000000-0000-4000-8000-00000000d0e5', '2026-09-10 10:00+03', '2026-09-09 10:00+03'),
+  ('00000000-0000-4000-8000-00000000d1a5', 'plan',    'pro',     'rejected', '00000000-0000-4000-8000-00000000d0e5', '2026-09-11 10:00+03', '2026-09-09 10:00+03'),
+  ('00000000-0000-4000-8000-00000000d1a5', 'plan',    'max',     'pending',  null,                                   null,                  '2026-09-12 10:00+03');
+
 -- A new-model library grant (20261019_10) for A — the file never touches it.
 insert into public.library_access_grants (id, user_id, plan_ref, source, starts_at, ends_at, granted_by, created_at)
 values ('00000000-0000-4000-8000-000000006a01', '00000000-0000-4000-8000-00000000d0a1', 'lib-founder', 'founder_campaign',
@@ -91,4 +149,5 @@ create table public.wipe204_subs_before    as select * from public.subscriptions
 create table public.wipe204_users_before   as select id, raw_user_meta_data from auth.users;
 create table public.wipe204_grants_before  as select * from public.library_access_grants;
 create table public.wipe204_credits_before as select * from public.credit_transactions;
+create table public.wipe204_requests_before as select * from public.entitlement_requests;
 create table public.wipe204_t0 as select clock_timestamp() as t0;
