@@ -343,14 +343,16 @@ select pg_temp.wipe204_unchanged('T5h (cutoff in the future)', '%in the future%'
 -- «cutoff is not set» (the cutoff typed in block 1 ends with block 1).
 -- The session starts with neither setting; the file's own lines are enabled
 -- by sed on a copy, so the lines under test are the file's real lines.
+-- Run twice: (a) statement by statement (\i, as psql sends a file), and
+-- (b) as ONE query string, as the SQL Editor's Run sends it — there a BEGIN
+-- turns the statements before it into the same transaction, so only block 1's
+-- own `begin transaction read only` … `rollback` pair ends its cutoff.
 set nzamy.confirm_wipe = '';
 set nzamy.wipe_cutoff = '';
 \! sed -e "s|^-- select set_config('nzamy.wipe_cutoff', '<DEPLOY-TIME-WITH-OFFSET>', true);|select set_config('nzamy.wipe_cutoff', '2026-09-01 00:00:00+03', true);|" -e "s|^-- set local nzamy.confirm_wipe = 'WIPE-2026-10-19';|set local nzamy.confirm_wipe = 'WIPE-2026-10-19';|" /tmp/mig4.sql > /tmp/probe_f.sql
-\! sed -n '1,/^rollback;$/p' /tmp/probe_f.sql > /tmp/probe_f_block1.sql
 do $$
 declare
   f  text := pg_read_file('/tmp/probe_f.sql');
-  b1 text := pg_read_file('/tmp/probe_f_block1.sql');
 begin
   if (length(f) - length(replace(f, E'\nselect set_config(''nzamy.wipe_cutoff'', ''2026-09-01 00:00:00+03'', true);', '')))
      / length(E'\nselect set_config(''nzamy.wipe_cutoff'', ''2026-09-01 00:00:00+03'', true);') <> 1
@@ -360,25 +362,8 @@ begin
      or position(E'\nset local nzamy.wipe_cutoff' in f) > 0 then
     raise exception 'T5i SETUP FAIL: the copy does not enable exactly block 1''s cutoff line and block 2''s confirm line';
   end if;
-  if position(E'\nselect set_config(''nzamy.wipe_cutoff''' in b1) = 0 or position('2) WIPE' in b1) > 0 then
-    raise exception 'T5i SETUP FAIL: the block-1 extract is not block 1';
-  end if;
 end $$;
--- block 1 alone first: it runs cleanly WITH the cutoff (its (0) row shows
--- the typed time), and the cutoff is gone once block 1 ends.
-\o /tmp/probe_f_block1.out
-\i /tmp/probe_f_block1.sql
-\o
-do $$
-begin
-  if position('2026-09-01 00:00:00+03' in pg_read_file('/tmp/probe_f_block1.out')) = 0 then
-    raise exception 'T5i FAIL: block 1 did not read the cutoff typed on its own line';
-  end if;
-  if coalesce(current_setting('nzamy.wipe_cutoff', true), '') <> '' then
-    raise exception 'T5i FAIL: block 1''s cutoff outlived block 1: %', current_setting('nzamy.wipe_cutoff', true);
-  end if;
-end $$;
--- then the whole copy (block 1 → block 2 → block 3) on the same session
+-- (a) statement by statement, on this session
 \set ON_ERROR_STOP off
 \o /dev/null
 \i /tmp/probe_f.sql
@@ -387,7 +372,29 @@ select set_config('test.err', :'LAST_ERROR_MESSAGE', false);
 \set ON_ERROR_STOP on
 reset nzamy.confirm_wipe;
 reset nzamy.wipe_cutoff;
-select pg_temp.wipe204_unchanged('T5i (block 1 cutoff, block 2 confirm only, one session)', '%cutoff is not set%') \g /dev/null
+select pg_temp.wipe204_unchanged('T5i-a (block 1 cutoff, block 2 confirm only, statement by statement)', '%cutoff is not set%') \g /dev/null
+
+-- (b) the same copy as ONE query string on a fresh session that starts with
+-- neither setting (PGOPTIONS overrides the database-level values the fixture
+-- armed). Its output is CSV: block 1 (0)'s row must show the typed cutoff
+-- (block 1 read it) and block 2 must raise «cutoff is not set».
+\! PGOPTIONS='-c nzamy.confirm_wipe= -c nzamy.wipe_cutoff=' psql -X -q -U postgres --csv -c "$(cat /tmp/probe_f.sql)" > /tmp/probe_f_onequery.out 2>&1
+do $$
+declare
+  o     text := pg_read_file('/tmp/probe_f_onequery.out');
+  row0  text := substring(o from E'(?:^|\n)cutoff_typed,cutoff_in_riyadh_time,block_2_accepts_it\n([^\n]*)');
+  typed text := replace(split_part(row0, ',', 1), '"', '');
+begin
+  if row0 is null then
+    raise exception 'T5i-b FAIL: block 1 (0) printed no row in one-query mode — output: %', left(o, 2000);
+  end if;
+  if typed <> '2026-09-01 00:00:00+03' or replace(split_part(row0, ',', 3), '"', '') <> 't' then
+    raise exception 'T5i-b FAIL: block 1 (0) cutoff_typed = "%", block_2_accepts_it = "%" (expected the typed cutoff, t)',
+      typed, split_part(row0, ',', 3);
+  end if;
+  perform set_config('test.err', coalesce(substring(o from 'ERROR:  ([^\n]*)'), ''), false);
+end $$;
+select pg_temp.wipe204_unchanged('T5i-b (the same copy as ONE query, like the SQL Editor''s Run)', '%cutoff is not set%') \g /dev/null
 
 -- T6 with both settings back (the cutoff now written with Z, the same instant),
 -- the re-armed row IS a target: the run cancels it and B is back to free (so

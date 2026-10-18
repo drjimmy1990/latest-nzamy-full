@@ -68,7 +68,7 @@
 --   the start of BOTH `set local` lines and type the time in place of the
 --   <DEPLOY-TIME-WITH-OFFSET> placeholder. (Same effect, same place:
 --     select set_config('nzamy.confirm_wipe', 'WIPE-2026-10-19', true);
---     select set_config('nzamy.wipe_cutoff', '2026-10-19 21:30:00+03', true);)
+--     select set_config('nzamy.wipe_cutoff', '<DEPLOY-TIME-WITH-OFFSET>', true);)
 --   Every setting in this file lasts only for the transaction it is set in
 --   (`set local`, or set_config with true as its third argument). Block 1 runs
 --   in its own read-only transaction that ends with rollback, so a cutoff
