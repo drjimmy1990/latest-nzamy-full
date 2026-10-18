@@ -2,6 +2,7 @@ import { MetadataRoute } from "next";
 import { BETA_MONOPOLY_MODE } from "@/lib/betaConfig";
 import { createServiceClient } from "@/lib/supabase/server";
 import { selectAllPages } from "@/lib/supabase/selectAllPages";
+import { blogCategorySlug } from "./blog/_categories";
 
 const BASE_URL = "https://nezamy.sa";
 
@@ -104,6 +105,7 @@ const publicRoutes: SitemapRoute[] = [
 interface PublishedArticleRow {
   id: string;
   slug: string;
+  category: string | null;
   updated_at: string | null;
   published_at: string | null;
   date_modified: string | null;
@@ -130,6 +132,11 @@ interface PublishedArticleRow {
  * sitemap missing its SECOND half (whichever half a mid-scan timeout landed
  * on) is a worse, silently-inconsistent failure than falling back to just
  * the static `/blog` entry.
+ *
+ * The same read lists the category pages, /blog/category/<slug> (4 Oct item
+ * 99) — each one that holds at least one published article, so no empty
+ * page is advertised. Its lastModified is its newest article's. On a failed
+ * read they go with the articles, for the same reason.
  */
 async function getBlogSitemapEntries(): Promise<MetadataRoute.Sitemap> {
   try {
@@ -137,7 +144,7 @@ async function getBlogSitemapEntries(): Promise<MetadataRoute.Sitemap> {
     const { data, error } = await selectAllPages<PublishedArticleRow>((from, to) =>
       supabase
         .from("articles")
-        .select("id, slug, updated_at, published_at, date_modified")
+        .select("id, slug, category, updated_at, published_at, date_modified")
         .eq("status", "published")
         .order("slug")
         .order("id")
@@ -150,14 +157,31 @@ async function getBlogSitemapEntries(): Promise<MetadataRoute.Sitemap> {
     }
     if (!data) return [];
 
-    return data
-      .filter((row) => Boolean(row.slug))
-      .map((row) => ({
-        url: `${BASE_URL}/blog/${row.slug}`,
-        lastModified: row.date_modified || row.updated_at || row.published_at || undefined,
-        changeFrequency: "monthly" as const,
-        priority: 0.7,
-      }));
+    const rows = data.filter((row) => Boolean(row.slug));
+    const articleEntries: MetadataRoute.Sitemap = rows.map((row) => ({
+      url: `${BASE_URL}/blog/${row.slug}`,
+      lastModified: row.date_modified || row.updated_at || row.published_at || undefined,
+      changeFrequency: "monthly" as const,
+      priority: 0.7,
+    }));
+
+    // Newest article date per category page (undefined when none is dated).
+    const newer = (a?: string, b?: string) => (!a ? b : !b ? a : Date.parse(b) > Date.parse(a) ? b : a);
+    const newestBySlug = new Map<string, string | undefined>();
+    for (const row of rows) {
+      const slug = blogCategorySlug(row.category);
+      if (!slug) continue;
+      const date = row.date_modified || row.updated_at || row.published_at || undefined;
+      newestBySlug.set(slug, newer(newestBySlug.get(slug), date));
+    }
+    const categoryEntries: MetadataRoute.Sitemap = [...newestBySlug.entries()].map(([slug, date]) => ({
+      url: `${BASE_URL}/blog/category/${slug}`,
+      lastModified: date,
+      changeFrequency: "weekly" as const,
+      priority: 0.6,
+    }));
+
+    return [...categoryEntries, ...articleEntries];
   } catch (err) {
     console.error("[sitemap] blog article fetch failed:", err);
     return [];

@@ -36,8 +36,11 @@ test("allPillCount has no number to show before anything is known", () => {
 });
 
 test("the blog's «الكل» pill reads the unfiltered total through allPillCount", () => {
-  const code = stripComments(readFileSync(new URL("./page.tsx", import.meta.url), "utf8"));
+  // The list moved to ./BlogList.tsx, shared by /blog and the category pages.
+  const code = stripComments(readFileSync(new URL("./BlogList.tsx", import.meta.url), "utf8"));
   assert.match(code, /allPillCount\(\s*allTotal\s*,/);
+  // allTotal is the total of one unfiltered read, not the filtered `total`.
+  assert.match(code, /fetch\("\/api\/v1\/blog\?limit=1"/);
   // The old sum of the category pills is gone.
   assert.doesNotMatch(code, /dbCategories\.reduce\(/);
 });

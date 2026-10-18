@@ -9,7 +9,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { existsSync, readFileSync } from "node:fs";
 
-const code = readFileSync(new URL("./page.tsx", import.meta.url), "utf8")
+// The list lives in ./BlogList.tsx (shared by /blog and the category pages
+// since 4 Oct item 99); ./page.tsx only renders it. Both are read.
+const code = ["./page.tsx", "./BlogList.tsx"]
+  .map((file) => readFileSync(new URL(file, import.meta.url), "utf8"))
+  .join("\n")
   .replace(/\/\*[\s\S]*?\*\//g, "")
   .replace(/(^|[^:"'\\])\/\/.*$/gm, "$1");
 

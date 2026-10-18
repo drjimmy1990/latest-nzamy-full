@@ -85,6 +85,92 @@ export function blogCategoryLabel(raw: string | null | undefined): string | null
   return value;
 }
 
+/**
+ * One page per CATEGORY_AR topic: /blog/category/<slug> (4 Oct item 99; the
+ * owner's example is /blog/category/labor). The slug is the code's topic
+ * suffix, hyphenated — written out here rather than derived, because it is a
+ * URL search engines keep: renaming a code must not move its page.
+ */
+export const BLOG_CATEGORY_SLUGS: Record<string, string> = {
+  sec_00_procedural: "procedural",
+  sec_01_criminal: "criminal",
+  sec_02_admin: "admin",
+  sec_03_civil: "civil",
+  sec_04_commercial: "commercial",
+  sec_05_ip: "ip",
+  sec_06_labor: "labor",
+  sec_07_real_estate_construction: "real-estate-construction",
+  sec_08_financial: "financial",
+  sec_09_tax: "tax",
+  sec_10_health: "health",
+  sec_11_environment: "environment",
+  sec_12_tech: "tech",
+  sec_13_logistics: "logistics",
+  sec_14_energy: "energy",
+  sec_15_media: "media",
+  sec_16_industry: "industry",
+  sec_17_constitutional: "constitutional",
+  sec_18_agriculture_food: "agriculture-food",
+  sec_19_investment: "investment",
+  sec_20_education: "education",
+  sec_21_sports: "sports",
+  sec_22_hajj: "hajj",
+  sec_23_defense: "defense",
+  sec_24_social: "social",
+  sec_25_tourism: "tourism",
+  sec_26_municipal: "municipal",
+  sec_27_culture: "culture",
+  sec_28_arbitration: "arbitration",
+  sec_29_international: "international",
+};
+
+export interface BlogCategoryPage {
+  slug: string;
+  /** Its CATEGORY_AR code. */
+  code: string;
+  label: string;
+}
+
+/** Every category page, in CATEGORY_AR order (generateStaticParams, sitemap). */
+export const BLOG_CATEGORY_PAGES: BlogCategoryPage[] = Object.entries(BLOG_CATEGORY_SLUGS).map(
+  ([code, slug]) => ({ slug, code, label: BLOG_CATEGORY_AR[code] }),
+);
+
+const PAGE_BY_SLUG = new Map(BLOG_CATEGORY_PAGES.map((p) => [p.slug, p]));
+const PAGE_BY_LABEL = new Map(BLOG_CATEGORY_PAGES.map((p) => [p.label, p]));
+
+/** The category page a URL slug names, or `null` (→ 404). */
+export function blogCategoryBySlug(slug: string): BlogCategoryPage | null {
+  return PAGE_BY_SLUG.get(slug) ?? null;
+}
+
+/**
+ * The page slug for a stored category value — a CATEGORY_AR label, or a code
+ * from either numbering — or `null` when it has no page (a free frontmatter
+ * label, an unknown code, a blank).
+ */
+export function blogCategorySlug(raw: string | null | undefined): string | null {
+  const label = blogCategoryLabel(raw);
+  return label ? PAGE_BY_LABEL.get(label)?.slug ?? null : null;
+}
+
+/**
+ * The stored `category` values to filter on for the pill labelled `label`:
+ * what is known without asking the server (the label itself, and every
+ * CATEGORY_AR code with that label), plus the values the server's tally
+ * grouped under it (`fromServer`, e.g. the other numbering's code). Sorted
+ * and once each, so the same filter is always the same request. «الكل» is
+ * no filter.
+ */
+export function blogCategoryValues(label: string, fromServer: readonly string[]): string[] {
+  if (label === "all") return [];
+  const values = new Set<string>([label, ...fromServer]);
+  for (const [code, codeLabel] of Object.entries(BLOG_CATEGORY_AR)) {
+    if (codeLabel === label) values.add(code);
+  }
+  return [...values].sort();
+}
+
 export interface CategoryPill {
   /** The label — what the reader sees and what identifies the pill. */
   id: string;
