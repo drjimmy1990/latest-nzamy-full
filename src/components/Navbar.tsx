@@ -1,7 +1,7 @@
 "use client";
 
 import type { Dispatch, ElementType, MouseEvent as ReactMouseEvent, ReactNode, SetStateAction } from "react";
-import { useState, useRef, useEffect, useId } from "react";
+import { useState, useRef, useEffect, useId, useSyncExternalStore } from "react";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence, useMotionValue } from "framer-motion";
 import {
@@ -16,6 +16,14 @@ import { useUser, logout } from "@/hooks/useUser";
 import { getNavByUserType, getDashboardRoute, getRoleLabel, isMegaMenu, type NavItem } from "@/constants/navigation";
 import Link from "next/link";
 import { useNotifications } from "@/hooks/useNotifications";
+import { isNavbarTransparent, isPastSolidThreshold } from "./navbarChrome";
+
+// ─── Scroll position as an external store (for the see-through home bar) ─────
+function subscribeToScroll(onChange: () => void) {
+  window.addEventListener("scroll", onChange, { passive: true });
+  return () => window.removeEventListener("scroll", onChange);
+}
+const subscribeToNothing = () => () => {};
 
 // ─── Icon resolver (phosphor icon names → components) ─────────────────────────
 const ICON_MAP = PhosphorIcons as unknown as Record<string, ElementType>;
@@ -384,7 +392,7 @@ function MegaMenu({ item, isAr, activeDropdown, setActiveDropdown }: {
                       <li key={child.href}>
                         <a
                           href={child.href}
-                          className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-ink-muted transition-colors hover:bg-royal/5 hover:text-royal dark:text-zinc-300 dark:hover:text-white dark:hover:bg-white/5"
+                          className="hover-gold flex items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-sm text-ink-muted transition-colors hover:bg-royal/5 hover:text-royal dark:text-zinc-300 dark:hover:text-white dark:hover:bg-white/5"
                         >
                           {child.icon && (
                             <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-royal/5 text-royal dark:bg-white/5 dark:text-zinc-300">
@@ -454,6 +462,17 @@ export default function Navbar() {
     setAvatarOpen(false);
   }
 
+  // See-through over the home hero only (owner, item 130); solid after 8px of
+  // scroll, with the phone menu open, and on every other page. The scroll
+  // listener is attached on "/" only. The server snapshot is "not scrolled",
+  // and React re-reads the real position right after hydration.
+  const scrolled = useSyncExternalStore(
+    pathname === "/" ? subscribeToScroll : subscribeToNothing,
+    () => isPastSolidThreshold(window.scrollY),
+    () => false,
+  );
+  const transparent = isNavbarTransparent(pathname, scrolled, mobileOpen);
+
   // ── Select proper nav based on userType ──
   const ACTIVE_NAV = getNavByUserType(isLoggedIn ? userType : null);
   const dashboardHref = getDashboardRoute(userType);
@@ -486,7 +505,17 @@ export default function Navbar() {
       className="fixed top-0 right-0 left-0 z-50 safe-top"
     >
       <div className="mx-auto max-w-[1400px] px-4 pt-4">
-        <div className="relative rounded-[1.25rem] border border-slate-200/70 bg-white/85 px-6 py-3 lg:px-4 xl:px-6 shadow-[0_8px_32px_-8px_rgba(11,61,46,0.08)] backdrop-blur-xl dark:border-white/10 dark:bg-dark-card/90">
+        {/* While see-through the bar has no surface of its own and the hero's
+            background video shows behind it, so its muted text is lifted to
+            full ink. The token is overridden rather than each class, so every
+            link and icon in the bar follows. */}
+        <div
+          className={`relative rounded-[1.25rem] border px-6 py-3 lg:px-4 xl:px-6 transition-[background-color,border-color,box-shadow] duration-300 ${
+            transparent
+              ? "border-transparent bg-transparent shadow-none [--color-ink-muted:var(--color-ink)]"
+              : "border-slate-200/70 bg-white/85 shadow-[0_8px_32px_-8px_rgba(11,61,46,0.08)] backdrop-blur-xl dark:border-white/10 dark:bg-dark-card/90"
+          }`}
+        >
           <div className="flex items-center justify-between">
 
             {/* ── Logo ── */}

@@ -13,7 +13,10 @@
   --color-surface: #f9fafb;
   --color-surface-elevated: #ffffff;
   --color-ink: #1a1a1a;
-  --color-ink-muted: #6b7280;
+  /* Muted body text: gray-600 (7.6:1 on white). It was gray-500, #6b7280
+     (4.8:1); the owner's item 130 asks for stronger text contrast. Light
+     surfaces only — `.dark` below sets its own. */
+  --color-ink-muted: #4b5563;
   --color-ink-faint: #9ca3af;
   --color-dark-bg: #0c0f12;
   --color-dark-card: #161b22;
@@ -23,6 +26,20 @@
   --font-heading: var(--font-cairo), "Cairo", "Outfit", "Geist", sans-serif;
   --font-mono: var(--font-jetbrains-mono), "JetBrains Mono", monospace;
   --font-serif: "Outfit", "Geist", serif;
+  /* The owner's 12px corners (4 Oct item 130) — the `rounded-card` utility. */
+  --radius-card: 12px;
+}
+
+/*
+  hover-gold — the owner's gold hover (4 Oct item 130), from --color-gold.
+  It turns the BORDER gold, never the text: gold on white is about 2.2:1. An
+  element without a border of its own needs `border border-transparent` for
+  the effect to show.
+*/
+@utility hover-gold {
+  &:hover {
+    border-color: var(--color-gold);
+  }
 }
 
 @layer base {

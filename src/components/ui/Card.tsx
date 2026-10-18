@@ -27,7 +27,7 @@ export default function Card({
   return (
     <div
       className={[
-        "rounded-2xl border",
+        "rounded-card border",
         isDark ? "bg-[#161b22] border-white/10" : "bg-white dark:bg-[#161b22] border-gray-200 dark:border-white/10",
         paddingClasses[padding],
         hover ? "transition-shadow hover:shadow-lg" : "",

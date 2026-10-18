@@ -3,8 +3,10 @@
 import { useTheme } from "@/components/ThemeProvider";
 
 // ─── Base shimmer block ────────────────────────────────────────────────────────
+// Exported for the public pages' loading screens (owner, 4 Oct item 130), which
+// need a title bar and a search bar beside the card skeletons below.
 
-function Shimmer({ className = "" }: { className?: string }) {
+export function Shimmer({ className = "" }: { className?: string }) {
   const { isDark } = useTheme();
   return (
     <div

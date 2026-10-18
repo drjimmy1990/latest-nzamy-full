@@ -33,10 +33,11 @@ const variantClasses: Record<Variant, string> = {
   gold: "bg-[#C8A762] text-[#0B3D2E] hover:bg-[#b8974f] font-bold dark:bg-gold dark:text-[#0B3D2E] dark:hover:bg-gold-light",
 };
 
+// Every size takes the owner's 12px corners (item 130) from the radius token.
 const sizeClasses: Record<Size, string> = {
-  sm: "px-3 py-1.5 text-xs rounded-lg",
-  md: "px-5 py-2.5 text-sm rounded-xl",
-  lg: "px-7 py-3.5 text-base rounded-2xl",
+  sm: "px-3 py-1.5 text-xs rounded-card",
+  md: "px-5 py-2.5 text-sm rounded-card",
+  lg: "px-7 py-3.5 text-base rounded-card",
 };
 
 export default function Button({
