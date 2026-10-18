@@ -599,8 +599,9 @@ const AI_TOOLS: AiToolCard[] = [
       tool.betaStatus === "beta-free"
         ? "Official lawyer beta tool, free until admin pricing is approved."
         : "Official lawyer tool connected to the credit catalog.",
-    badgeAr: getLawyerAiBadge(tool, "ar"),
-    badgeEn: getLawyerAiBadge(tool, "en"),
+    // No badge for a priced tool the price list does not list (owner ٢١٦).
+    badgeAr: getLawyerAiBadge(tool, "ar") ?? undefined,
+    badgeEn: getLawyerAiBadge(tool, "en") ?? undefined,
   })),
   ...LEGACY_AI_TOOLS.filter((tool) => tool.id === "ai:tracker" || tool.id?.startsWith("ai:corp:")),
 ];

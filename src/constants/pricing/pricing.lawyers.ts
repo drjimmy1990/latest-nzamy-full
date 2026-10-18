@@ -113,18 +113,32 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
   ],
 };
 
-// ─── Point costs per tool (owner answer ١٧٨) — shown below the cards ──────────
-// Only the tools the owner priced are listed. The other AI tools (translator,
-// simulator, due diligence, interrogation questions, …) are priced in owner
-// question ٢١٦ and stay off this table until he answers: a missing price is
-// better than a guessed one.
+// ─── Point costs per tool (owner answers ١٧٨ and ٢١٦) — shown below the cards ─
+// This is the price list, and the hub's point badges read it: a row's `tools`
+// names the catalog ids it prices, and TOOL_POINT_LABELS
+// (src/constants/lawyerAiCatalog.ts) repeats its label for those ids
+// (pricingApprovals.test.ts holds the two equal). Only the tools the owner
+// priced are listed: a missing price is better than a guessed one.
+// Not listed although ٢١٦ prices them: «المقارن الذكي» and «المترجم القانوني»,
+// which still return canned output. A price over a tool that does not work is
+// a false promise (pricingHonesty.test.ts forbids pricing a «قريباً» tool).
+// Points are not deducted yet: automatic deduction starts with electronic
+// payment (owner gate G4).
 export interface ServiceRow {
   name: string;
   points: number;
   /** Shown instead of `points` when the cost is a range («١–٢»). */
   pointsLabel?: string;
+  /** The catalog ids (LawyerAiPermission) this row prices on the hub. */
+  tools?: string[];
   note?: string;
 }
+
+/** Shown under the price list (owner answer ٢١٦): the archive costs no points. */
+export const LAWYER_ARCHIVE_NOTE = {
+  ar: "الأرشيف السحابي: ضمن سعة الباقة",
+  en: "Cloud archive: within the plan's storage",
+};
 export interface ServiceCategory {
   category: string;
   emoji: string;
@@ -138,8 +152,9 @@ export const lawyerServicesTable: ServiceCategory[] = [
     emoji: "📋",
     color: "text-blue-400",
     items: [
-      { name: "الصائغ القانوني: المذكرات ومذكرات الدفاع واللوائح الاعتراضية", points: 15 },
-      { name: "صياغة العقود وتدقيقها ومصفوفة المخاطر", points: 10 },
+      { name: "الصائغ القانوني: المذكرات ومذكرات الدفاع واللوائح الاعتراضية", points: 15, tools: ["ai:draft"] },
+      { name: "صياغة العقود وتدقيقها ومصفوفة المخاطر", points: 10, tools: ["ai:contracts"] },
+      { name: "الصياغة من نموذج", points: 5, pointsLabel: "٥–٨" },
     ],
   },
   {
@@ -147,8 +162,20 @@ export const lawyerServicesTable: ServiceCategory[] = [
     emoji: "🔍",
     color: "text-amber-400",
     items: [
-      { name: "عصارة المرفقات وتلخيص ملف القضية واستخلاص النزاع", points: 8 },
+      { name: "عصارة المرفقات وتلخيص ملف القضية واستخلاص النزاع", points: 8, tools: ["ai:analyze"] },
       { name: "فحص المذكرة الشكلي والموضوعي", points: 5 },
+      { name: "مولّد أسئلة الاستجواب", points: 5, pointsLabel: "٥–٨" },
+      { name: "منقح ناجز", points: 5, pointsLabel: "٥–٨", tools: ["ai:najiz-optimizer"] },
+    ],
+  },
+  {
+    category: "الأدوات المعمّقة والتقارير",
+    emoji: "⚖️",
+    color: "text-rose-400",
+    items: [
+      { name: "المحاكي القضائي", points: 15, pointsLabel: "١٥–٢٠", tools: ["ai:wargaming"] },
+      { name: "تقرير العناية الواجبة", points: 15, pointsLabel: "١٥–٢٠" },
+      { name: "الرأي الفصل", points: 15, pointsLabel: "١٥–٢٠", tools: ["ai:legal-opinion"] },
     ],
   },
   {
@@ -157,7 +184,7 @@ export const lawyerServicesTable: ServiceCategory[] = [
     color: "text-purple-400",
     items: [
       { name: "المساعد القانوني والتشريع المقارن", points: 5 },
-      { name: "التفريغ الصوتي الذكي وأوامر السكرتير", points: 5 },
+      { name: "التفريغ الصوتي الذكي وأوامر السكرتير", points: 5, tools: ["ai:transcriber", "ai:secretary"] },
       { name: "البحث الدلالي وشرح المواد في المكتبة", points: 1, pointsLabel: "١–٢" },
     ],
   },

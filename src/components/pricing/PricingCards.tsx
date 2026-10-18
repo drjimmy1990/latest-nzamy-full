@@ -7,7 +7,7 @@ import {
   Lightning, Coins, Gavel, Users, CheckCircle
 } from "@phosphor-icons/react";
 import type { Plan, AudienceTab, Billing } from "@/constants/pricingData";
-import { lawyerServicesTable } from "@/constants/pricing/pricing.lawyers";
+import { lawyerServicesTable, LAWYER_ARCHIVE_NOTE } from "@/constants/pricing/pricing.lawyers";
 import { useUser } from "@/hooks/useUser";
 import { requestEntitlement } from "@/lib/services/entitlementService";
 import { referencePriceFor } from "@/lib/pricing/priceDisplay";
@@ -340,7 +340,7 @@ function LawyerServicesTable({ isAr }: { isAr: boolean }) {
         </button>
         {!open && (
           <p className="mt-2 text-xs text-ink-faint">
-            {isAr ? "التكلفة بالنقاط لكل استخدام. النقطة بـ١ ر.س في الشحن الأساسي، وأقل في الحزم الأكبر" : "Cost in points per use. A point is SAR 1 at the base top-up, less in the larger packs"}
+            {isAr ? "قائمة أسعار الأدوات بالنقاط. النقطة بـ١ ر.س في الشحن الأساسي، وأقل في الحزم الأكبر" : "The tools' price list in points. A point is SAR 1 at the base top-up, less in the larger packs"}
           </p>
         )}
       </div>
@@ -355,11 +355,15 @@ function LawyerServicesTable({ isAr }: { isAr: boolean }) {
             className="overflow-hidden"
           >
             {/* Disclaimer */}
-            <div className="mb-6 rounded-2xl border border-amber-200/60 bg-amber-50/60 px-5 py-3.5 text-[12px] text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/5 dark:text-amber-300 flex items-start gap-3" dir="rtl">
+            <div className="mb-6 rounded-2xl border border-amber-200/60 bg-amber-50/60 px-5 py-3.5 text-[12px] text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/5 dark:text-amber-300 flex items-start gap-3" dir={isAr ? "rtl" : "ltr"}>
               <span className="text-xl">💡</span>
               <p className="leading-relaxed">
-                <span className="font-bold">كيف تقرأ الجدول؟</span><br/>
-                تُخصم هذه النقاط من رصيدك عند كل استخدام للأداة. والأدوات غير المذكورة في الجدول لم تُحدَّد تكلفتها بعد.
+                {/* Owner answer ٢١٦ and gate G4: nothing is deducted yet, so the
+                    table is a price list, not a running meter. */}
+                <span className="font-bold">{isAr ? "كيف تقرأ الجدول؟" : "How to read this table"}</span><br/>
+                {isAr
+                  ? "هذا الجدول قائمة أسعار الأدوات بالنقاط، ويبدأ الخصم الآلي من رصيدك مع إطلاق الدفع الإلكتروني. والأدوات غير المذكورة فيه لم تُحدَّد تكلفتها بعد."
+                  : "This table is the tools' price list in points; automatic deduction from your balance starts with electronic payment. Tools not listed have no price yet."}
               </p>
             </div>
 
@@ -402,7 +406,10 @@ function LawyerServicesTable({ isAr }: { isAr: boolean }) {
               ))}
             </div>
 
-            <p className="mt-4 text-center text-[11px] text-ink-faint">
+            <p className="mt-4 text-center text-[12px] font-semibold text-ink-muted dark:text-gray-300">
+              {isAr ? LAWYER_ARCHIVE_NOTE.ar : LAWYER_ARCHIVE_NOTE.en}
+            </p>
+            <p className="mt-2 text-center text-[11px] text-ink-faint">
               {isAr ? "* الأسعار لا تشمل ضريبة القيمة المضافة. الخدمات المجانية متاحة لجميع الحسابات بدون قيود." : "* Prices exclude VAT. Free services are available to all accounts without restrictions."}
             </p>
           </motion.div>
