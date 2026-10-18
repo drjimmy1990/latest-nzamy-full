@@ -18,6 +18,8 @@ import {
 import { isAuthUnavailable } from "@/lib/auth/apiAuth";
 import { AUTH_UNAVAILABLE_AR } from "@/lib/auth/resolveAuthOutcome";
 import { effectiveTier, type ActivePlanRow } from "@/lib/entitlementGrantRules";
+import { fullLibraryAccess } from "@/lib/libraryAccessDecision";
+import { hasActiveLibraryGrant } from "@/lib/libraryAccessServer";
 
 export type { PaymentGatewayState, PaymentGatewayStatus } from "@/lib/paymentGatewayPolicy";
 
@@ -169,6 +171,65 @@ export async function checkAccess(
   };
 }
 
+// ─── Full library access — Pro+, a library grant, or an admin ────────────────
+// Owner answers ٢٠٥ / ٢٠٩ (2026-10-18): the library subscription
+// (public.library_access_grants) opens the whole library on its own, and so
+// does a platform admin. The rule is fullLibraryAccess() in
+// ./libraryAccessDecision.ts; these are its reads. getUserTier() is unchanged,
+// so everything keyed on the tier alone (credits, feature gates) keeps its answer.
+
+/**
+ * True when the user is a platform admin (profiles.user_type = 'admin'), read
+ * with the service client. A null id, no row, or any failure is false; never
+ * throws.
+ */
+export async function isPlatformAdmin(userId: string | null): Promise<boolean> {
+  if (!userId) return false;
+  try {
+    const adminClient = await createServiceClient();
+    const { data, error } = await adminClient
+      .from("profiles")
+      .select("user_type")
+      .eq("id", userId)
+      .maybeSingle();
+    if (error || !data) {
+      if (error) console.error("[access-control] isPlatformAdmin read failed:", error.code, error.message);
+      return false;
+    }
+    return (data as { user_type?: unknown }).user_type === "admin";
+  } catch (err) {
+    console.error("[access-control] isPlatformAdmin failed:", err instanceof Error ? err.message : err);
+    return false;
+  }
+}
+
+/**
+ * True when the user has the full library: a Pro+ tier, an active library
+ * grant, or an admin. A guest (null) never does. The routes that shape
+ * official metadata on it call this; the per-article paywall is
+ * checkLibraryAccess() below, which applies the same rule.
+ */
+export async function hasFullLibraryAccess(userId: string | null): Promise<boolean> {
+  if (!userId) return false;
+  const [tier, isAdmin, hasLibraryGrant] = await Promise.all([
+    getUserTier(userId),
+    isPlatformAdmin(userId),
+    hasActiveLibraryGrant(userId),
+  ]);
+  return fullLibraryAccess({ tier, isAdmin, hasLibraryGrant }, TIER_RANK);
+}
+
+/**
+ * The same rule for a caller that has already read the tier: a guest reads
+ * nothing more, and a Pro+ tier skips the admin and grant reads (same answer).
+ */
+async function fullLibraryAccessForTier(userId: string | null, tier: ServerTier): Promise<boolean> {
+  if (!userId) return false;
+  if (fullLibraryAccess({ tier, isAdmin: false, hasLibraryGrant: false }, TIER_RANK)) return true;
+  const [isAdmin, hasLibraryGrant] = await Promise.all([isPlatformAdmin(userId), hasActiveLibraryGrant(userId)]);
+  return fullLibraryAccess({ tier, isAdmin, hasLibraryGrant }, TIER_RANK);
+}
+
 // ─── checkLibraryAccess — Library-specific paywall ────────────────────────────
 
 export async function checkLibraryAccess(
@@ -227,10 +288,10 @@ export async function checkLibraryAccess(
 
   // 3. Get user tier (guest = free)
   const currentTier: ServerTier = userId ? await getUserTier(userId) : "free";
-  const tierRank = TIER_RANK[currentTier] ?? 0;
 
-  // 4. Pro+ gets full access
-  if (tierRank >= TIER_RANK.pro) {
+  // 4. Full library access gets everything (owner ٢٠٥/٢٠٩): a Pro+ tier, an
+  // active library grant, or an admin. currentTier stays the real tier.
+  if (await fullLibraryAccessForTier(userId, currentTier)) {
     return {
       allowed: true,
       isWhitelisted: false,
@@ -250,19 +311,20 @@ export async function checkLibraryAccess(
     freeLimit,
     freeLimitSource: hasOverride ? "override" : "default",
     currentTier,
-    message: allowed ? undefined : `المادة مقفلة — يتطلب اشتراك Pro أو أعلى`,
+    message: allowed ? undefined : `المادة مقفلة — تتطلب اشتراك المكتبة أو باقة Pro فما فوق`,
   };
 }
 
 // ─── getLibraryAccessForUser — one-shot library access context ────────────────
 // For list/search routes that are NOT per-article-index (where checkLibraryAccess
 // is the right call). Returns the user's tier + whether they have full library
-// access (pro+) + the whitelisted slugs and per-type free items so the route can
-// mark rows free/locked. Guests (userId null) get tier "free".
+// access (a Pro+ tier, an active library grant, or an admin — owner ٢٠٥/٢٠٩) +
+// the whitelisted slugs and per-type free items so the route can mark rows
+// free/locked. Guests (userId null) get tier "free".
 
 export interface LibraryUserAccess {
   tier: ServerTier;
-  hasFullAccess: boolean; // tier >= pro
+  hasFullAccess: boolean; // Pro+ tier, an active library grant, or an admin
   whitelistedSlugs: string[]; // library_whitelisted_laws.slugs (law-slug-keyed)
   freeItemsByType: Record<string, string[]>; // library_free_items, keyed by content type
 }
@@ -273,7 +335,7 @@ export async function getLibraryAccessForUser(
   const adminClient = await createServiceClient();
 
   const tier: ServerTier = userId ? await getUserTier(userId) : "free";
-  const hasFullAccess = (TIER_RANK[tier] ?? 0) >= TIER_RANK.pro;
+  const hasFullAccess = await fullLibraryAccessForTier(userId, tier);
 
   const { data: settings } = await adminClient
     .from("platform_settings")

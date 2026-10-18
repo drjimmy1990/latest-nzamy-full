@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { libraryGate } from "@/lib/library-gate";
-import { getUserTier, TIER_RANK } from "@/lib/access-control";
+import { hasFullLibraryAccess } from "@/lib/access-control";
 import {
   buildLatest,
   buildRecentlyEffective,
@@ -65,7 +65,8 @@ export async function GET() {
     const supabase = await createClient();
 
     // T28-22: the same subscriber rule as the law page, the catalogue and the
-    // countdown (tier pro and above) — issue and gazette dates are theirs.
+    // countdown — full library access (owner ٢٠٥/٢٠٩): a Pro+ tier, an active
+    // library grant, or an admin. Issue and gazette dates are theirs.
     let userId: string | null = null;
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -73,9 +74,7 @@ export async function GET() {
     } catch {
       userId = null;
     }
-    const isSubscriber = userId
-      ? (TIER_RANK[await getUserTier(userId)] ?? 0) >= TIER_RANK.pro
-      : false;
+    const isSubscriber = await hasFullLibraryAccess(userId);
 
     const y = todayHijri.year;
 

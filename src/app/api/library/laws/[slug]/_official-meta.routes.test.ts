@@ -17,7 +17,8 @@ const enactmentsSource = readFileSync(new URL("../../enactments/route.ts", impor
 test("init: law rows are masked for non-subscribers and the envelope says so", () => {
   assert.match(initSource, /import \{ maskListOfficialFields, TIER_SHAPED_CACHE_CONTROL \} from "@\/app\/api\/library\/laws\/\[slug\]\/_official-meta";/);
   assert.match(initSource, /return \{ \.\.\.maskListOfficialFields\(shaped, hasFullAccess\), free: isFree, locked: !isFree \};/);
-  // hasFullAccess here is getLibraryAccessForUser's tier >= pro — no whitelist.
+  // hasFullAccess here is getLibraryAccessForUser's full library access (a
+  // Pro+ tier, an active library grant, or an admin; owner ٢٠٥/٢٠٩) — no whitelist.
   assert.match(initSource, /const \{ hasFullAccess, whitelistedSlugs, freeItemsByType \} = await getLibraryAccessForUser\(userId\);/);
   assert.match(initSource, /officialMetaLocked: !hasFullAccess,/);
   assert.match(initSource, /\{ headers: \{ "Cache-Control": TIER_SHAPED_CACHE_CONTROL \} \}/);
@@ -31,7 +32,9 @@ test("enactments: gated like every library route, tier-masked, private", () => {
   assert.match(enactmentsSource, /gazetteIssueNumber: isSubscriber \? row\.gazette_issue_number : null,/);
   assert.match(enactmentsSource, /officialMetaLocked: !isSubscriber,/);
   assert.match(enactmentsSource, /\{ headers: \{ "Cache-Control": TIER_SHAPED_CACHE_CONTROL \} \}/);
-  assert.match(enactmentsSource, /TIER_RANK\[await getUserTier\(userId\)\] \?\? 0\) >= TIER_RANK\.pro/);
+  // The subscriber rule is full library access (owner ٢٠٥/٢٠٩), not the tier alone.
+  assert.match(enactmentsSource, /const isSubscriber = await hasFullLibraryAccess\(userId\);/);
+  assert.doesNotMatch(enactmentsSource, /TIER_RANK\.pro|getUserTier\(/);
 });
 
 test("enactments: upcoming stays > today; recent is [today-14, today], newest first — today belongs to recent", () => {

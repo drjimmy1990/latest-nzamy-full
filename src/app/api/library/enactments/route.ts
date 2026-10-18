@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { getUserTier, TIER_RANK } from "@/lib/access-control";
+import { hasFullLibraryAccess } from "@/lib/access-control";
 import { libraryGate } from "@/lib/library-gate";
 import { TIER_SHAPED_CACHE_CONTROL } from "@/app/api/library/laws/[slug]/_official-meta";
 import { RECENT_ENACTMENT_WINDOW_DAYS } from "@/lib/services/enactmentCountdown";
@@ -49,11 +49,10 @@ export async function GET() {
     } catch {
       userId = null;
     }
-    // T28-22: the same subscriber rule as the law page and the catalogue
-    // (tier pro and above).
-    const isSubscriber = userId
-      ? (TIER_RANK[await getUserTier(userId)] ?? 0) >= TIER_RANK.pro
-      : false;
+    // T28-22: the same subscriber rule as the law page and the catalogue —
+    // full library access (owner ٢٠٥/٢٠٩): a Pro+ tier, an active library
+    // grant, or an admin. A guest is never a subscriber.
+    const isSubscriber = await hasFullLibraryAccess(userId);
 
     // One clock for both lists, so a request that straddles Saudi midnight
     // cannot put the same law in both or in neither.

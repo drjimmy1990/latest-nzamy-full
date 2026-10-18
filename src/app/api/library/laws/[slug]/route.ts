@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
-import { checkLibraryAccess, getUserTier, TIER_RANK } from '@/lib/access-control';
+import { checkLibraryAccess, hasFullLibraryAccess } from '@/lib/access-control';
 import { effectiveFreeLimit } from '@/lib/library/previewLimit';
 import { libraryGate } from '@/lib/library-gate';
 import { lawStatusForDetail } from '@/app/laws/law-status';
@@ -239,27 +239,28 @@ export async function GET(
     }
 
     // ── Paywall check ────────────────────────────────────────────────────────
-    // Check access once (same result for all articles in a law)
-    const firstLockedCheck = await checkLibraryAccess(userId, slug, 0);
+    // Check access once (same result for all articles in a law), and read
+    // the subscriber flag alongside it (T28-22 below).
+    const [firstLockedCheck, isSubscriber] = await Promise.all([
+      checkLibraryAccess(userId, slug, 0),
+      hasFullLibraryAccess(userId),
+    ]);
     const isWhitelisted = firstLockedCheck.isWhitelisted;
     // Owner answer ١٨٤: the preview is 5% of the law or 5 articles, whichever
     // is less, never below 3 (an admin per-law override still wins).
     const freeLimit = effectiveFreeLimit(firstLockedCheck, articles.length);
-    const hasFullAccess = firstLockedCheck.currentTier === 'pro' ||
-                          firstLockedCheck.currentTier === 'max' ||
-                          firstLockedCheck.currentTier === 'corp' ||
-                          firstLockedCheck.currentTier === 'enterprise' ||
-                          isWhitelisted;
+    // Full library access (owner ٢٠٥/٢٠٩: a Pro+ tier, an active library
+    // grant, or an admin) or a whitelisted law. checkLibraryAccess opens the
+    // text by the same rule (freeLimit -1); this flag is paywall.hasFullAccess.
+    const hasFullAccess = isSubscriber || isWhitelisted;
 
     // T28-22 (owner decision): the decree, its date, the official links and the
-    // gazette reference are for SUBSCRIBERS — keyed on the tier alone, never on
-    // the whitelist (a whitelisted law opens its text, not its official
+    // gazette reference are for SUBSCRIBERS — full library access as above,
+    // never the whitelist (a whitelisted law opens its text, not its official
     // metadata), exactly as /api/library/init and /api/library/enactments do.
-    // checkLibraryAccess answers a whitelisted law before it reads the tier
-    // (currentTier 'free' for everyone), so that case reads the tier here.
-    const isSubscriber = isWhitelisted
-      ? (userId ? (TIER_RANK[await getUserTier(userId)] ?? 0) >= TIER_RANK.pro : false)
-      : (TIER_RANK[firstLockedCheck.currentTier] ?? 0) >= TIER_RANK.pro;
+    // hasFullLibraryAccess reads the user's own tier, grant and role, so a
+    // whitelisted law (answered by checkLibraryAccess before it reads the
+    // tier) is keyed the same way as any other.
     const officialMeta = lawOfficialMeta(law, isSubscriber);
 
     // Tag each article with its global (document-order) index for the paywall

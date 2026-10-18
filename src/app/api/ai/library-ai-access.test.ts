@@ -79,10 +79,14 @@ test("the gate is full access, not a per-item free check", () => {
   // A chat answer can draw on any law and explain-article returns other laws'
   // relatedArticles[].text, so a free law or first-N article cannot contain it.
   assert.doesNotMatch(gateSource, /checkLibraryAccess|isFreeLibraryItem|isExplicitlyFreeLibraryItem/);
-  // "pro" in the 403 is this rule; if it moves, the message has to move with it.
+  // "pro" in the 403 was this rule; if it moves, the message has to move with it.
+  // It moved (owner ٢٠٥/٢٠٩): hasFullAccess is now the full LIBRARY rule — a
+  // Pro+ tier, an active library grant, or an admin. The gate still reads it,
+  // so a library-only grant holder passes it until task 1.4 gives the
+  // assistant its own Pro+-or-admin rule (owner ٢٠٧). Ship the two together.
   assert.match(
     accessControlSource,
-    /const hasFullAccess = \(TIER_RANK\[tier\] \?\? 0\) >= TIER_RANK\.pro;/,
+    /const hasFullAccess = await fullLibraryAccessForTier\(userId, tier\);/,
   );
 });
 

@@ -360,9 +360,19 @@ test("T28-21: _verify.sql asserts the lock once applied and does not demand anon
   assert.match(migrationSource, /DO NOT RE-RUN AFTER 20260929_01_library_text_server_only\.sql/);
 });
 
-test("T28-22: official metadata is shaped by lawOfficialMeta on the subscriber tier, not on the whitelist", () => {
+test("T28-22: official metadata is shaped by lawOfficialMeta on the subscriber rule, not on the whitelist", () => {
   assert.match(routeSource, /const officialMeta = lawOfficialMeta\(law, isSubscriber\);/);
-  assert.match(routeSource, /TIER_RANK\[await getUserTier\(userId\)\]/);
+  // The subscriber rule is full library access (owner ٢٠٥/٢٠٩: Pro+, an active
+  // library grant, or an admin), read for the user whether or not the law is
+  // whitelisted — the whitelist never makes a subscriber.
+  assert.match(
+    routeSource,
+    /const \[firstLockedCheck, isSubscriber\] = await Promise\.all\(\[\s*checkLibraryAccess\(userId, slug, 0\),\s*hasFullLibraryAccess\(userId\),\s*\]\);/,
+  );
+  assert.doesNotMatch(routeSource, /isSubscriber = isWhitelisted/);
+  assert.doesNotMatch(routeSource, /TIER_RANK\.pro|getUserTier\(|currentTier === 'pro'/);
+  // The page's full-access flag is that rule or the whitelist.
+  assert.match(routeSource, /const hasFullAccess = isSubscriber \|\| isWhitelisted;/);
   for (const field of ["issuanceDecree", "issuanceDate", "source", "officialSourceUrl", "gazette", "officialMetaLocked"]) {
     assert.match(routeSource, new RegExp(String.raw`${field}: officialMeta\.${field},`));
   }
