@@ -29,6 +29,7 @@ import { useLibraryStats } from "@/lib/library/useLibraryStats";
 import Link from "next/link";
 import { useUser, UserPermission } from "@/hooks/useUser";
 import { LAWYER_AI_TOOLS, getLawyerAiBadge, type LawyerAiTool } from "@/constants/lawyerAiCatalog";
+import { isConsultantBlockedPath } from "@/lib/auth/practiceKind";
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
@@ -614,6 +615,9 @@ function AiHubDashboard() {
   // If a tool has no ID required (null), it's public (like generic consult)
   // Otherwise, user must have the exact permission.
   const allowedTools = AI_TOOLS.filter((t) => {
+    // Art. 18 (owner ١٧٣ / ٢١٩): a consultant may not plead or manage
+    // hearings, so the court tools are not offered to him here either.
+    if (user.practiceKind === "consultant" && isConsultantBlockedPath(t.href)) return false;
     // ── Access Control Logic ──
     if (t.href === "/ai/global") {
       if (user.userType === "admin") return true;

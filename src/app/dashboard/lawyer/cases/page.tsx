@@ -140,6 +140,9 @@ function isLawyerCaseRow(request: WorkflowRequest): boolean {
 export default function CasesPage() {
   const { isDark } = useTheme();
   const user = useUser();
+  // Art. 18 (owner ١٧٣ / ٢١٩): a consultant is not linked to the hearings
+  // diary or the wargaming tool from his case list.
+  const isConsultant = user.practiceKind === "consultant";
   const [search,        setSearch]        = useState("");
   const [statusFilter,  setStatusFilter]  = useState<CaseStatus | "all">("all");
   const [typeFilter,    setTypeFilter]    = useState<CaseType | "all">("all");
@@ -772,10 +775,12 @@ export default function CasesPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          {!isConsultant && (
           <Link href="/dashboard/lawyer/hearings"
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-colors ${isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
             <CalendarCheck size={15} />الجلسات
           </Link>
+          )}
           <button onClick={() => setShowAddCase(true)}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors">
             <Plus size={15} weight="bold" />قضية جديدة
@@ -1044,9 +1049,11 @@ export default function CasesPage() {
         <Link href="/ai/draft" className="flex items-center gap-1.5 text-[12px] text-royal hover:underline">
           <ArrowUpRight size={13} />صياغة مذكرة
         </Link>
+        {!isConsultant && (
         <Link href="/ai/wargaming" className="flex items-center gap-1.5 text-[12px] text-orange-500 hover:underline">
           <ArrowUpRight size={13} />محاكي خصم
         </Link>
+        )}
       </motion.div>
       <AnimatePresence>
         {showAddCase && <AddCaseModal onClose={() => setShowAddCase(false)} isDark={isDark} user={{ userId: user.userId, name: user.name, userType: user.userType, tier: user.tier }} />}

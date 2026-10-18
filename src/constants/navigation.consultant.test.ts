@@ -143,6 +143,7 @@ test("the lawyer case page reads practiceKind and gates its court controls", () 
   const triggers = [
     "setShowAddHearing(true)",
     'href="/dashboard/lawyer/hearings"',
+    'href="/ai/wargaming"',
     "setShowAddStage(true)",
     "setEditingStage(s)",
     "setShowAddDeadline(true)",
@@ -165,4 +166,48 @@ test("each court tab of the case page shows the Art. 18 note to a consultant", (
     const body = CASE_PAGE.slice(start, end);
     assert.match(body, /courtWritesRefused && <ConsultantBlockedNote/, `${tab} tab has no consultant note`);
   }
+});
+
+// ── The lawyer dashboard and case list (advisor sweep after the ruling) ──────
+// The «المواعيد القادمة» and «مواعيد حرجة» cards, the urgent hearings banner and
+// the «جدول الجلسات» quick action are hearings tools on the consultant's own
+// dashboard; the case list links to the hearings diary and the wargaming tool.
+
+const read = (...parts: string[]) => readFileSync(path.join(process.cwd(), "src", "app", ...parts), "utf8");
+
+test("the lawyer dashboard hides the hearings and deadlines cards and the urgent banner from a consultant", () => {
+  const page = read("dashboard", "lawyer", "page.tsx");
+  for (const needle of [
+    'const isConsultant = practiceKind === "consultant";',
+    "{soonestUrgent && !isConsultant && (",
+    "{/* Upcoming Hearings */}\n        {!isConsultant && (",
+    "{/* Critical Deadlines */}\n        {!isConsultant && (",
+    // A full class string each way, so Tailwind sees both.
+    'isConsultant ? "grid grid-cols-1 gap-5" : "grid grid-cols-1 lg:grid-cols-3 gap-5"',
+    "isConsultantBlockedPath(item.href)",
+  ]) {
+    assert.ok(page.includes(needle), `the lawyer dashboard is missing: ${needle}`);
+  }
+});
+
+test("the lawyer case list hides the hearings and wargaming links from a consultant", () => {
+  const page = read("dashboard", "lawyer", "cases", "page.tsx");
+  assert.ok(page.includes('user.practiceKind === "consultant"'), "the case list does not read practiceKind");
+  for (const href of ['href="/dashboard/lawyer/hearings"', 'href="/ai/wargaming"']) {
+    const at = page.indexOf(href);
+    assert.ok(at > 0, `${href} not found`);
+    assert.equal(page.indexOf(href, at + 1), -1, `${href} appears twice`);
+    assert.ok(
+      page.slice(Math.max(0, at - 200), at).includes("!isConsultant && ("),
+      `${href} is not hidden from a consultant`,
+    );
+  }
+});
+
+test("the /ai hub drops the court tools from a consultant's grid", () => {
+  const page = read("ai", "page.tsx");
+  assert.ok(
+    page.includes('if (user.practiceKind === "consultant" && isConsultantBlockedPath(t.href)) return false;'),
+    "the /ai hub's allowedTools filter does not drop the court tools for a consultant",
+  );
 });

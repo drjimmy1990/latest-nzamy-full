@@ -208,6 +208,11 @@ function shortRequestRef(requestId: string | undefined): string {
 
 export default function LawyerDashboardPage() {
   const { name, tier: userTier, userId, userType, practiceKind, loading: userLoading } = useUser();
+  // Art. 18 (owner ١٧٣ / ٢١٩): a consultant may not plead or manage hearings,
+  // so his dashboard drops the hearings banner, the «المواعيد القادمة» and
+  // «مواعيد حرجة» cards, the «جدول الجلسات» quick action and the court tools
+  // among his quick tools.
+  const isConsultant = practiceKind === "consultant";
   const { isDark } = useTheme();
   // `activityTab` — REMOVED. It only ever held "all": the «نشاط AI» filter it
   // drove could not match a row, because nothing records AI-tool usage. See the
@@ -773,7 +778,7 @@ export default function LawyerDashboardPage() {
           version hardcoded «لديك موعد طعن خلال يومين» over whatever happened to
           be first in the list — so a client meeting could be announced as an
           appeal deadline, and a date eight days out as two days away. */}
-      {soonestUrgent && (
+      {soonestUrgent && !isConsultant && (
         <motion.div
           initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
           className={`rounded-2xl p-4 border flex items-center gap-3 ${isDark ? "border-red-700/30 bg-red-900/10" : "border-red-200 bg-red-50"}`}
@@ -873,7 +878,7 @@ export default function LawyerDashboardPage() {
             { label: "تتبع الوقت",        icon: Timer,         href: "/dashboard/lawyer/tasks",    accent: false },
           ]
             // Art. 18: a consultant is not offered the hearings schedule.
-            .filter((item) => !(practiceKind === "consultant" && item.href && isConsultantBlockedPath(item.href)))
+            .filter((item) => !(isConsultant && item.href && isConsultantBlockedPath(item.href)))
             .map((item) => {
             const Icon = item.icon;
             const base = `flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold transition-all select-none ${
@@ -968,8 +973,9 @@ export default function LawyerDashboardPage() {
           has no secondment surface at all, and there is no data behind one
           either — which is why nothing is rendered here. ──────────────────── */}
 
-      {/* ── Second Grid: Tasks + Hearings + Deadlines ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      {/* ── Second Grid: Tasks + Hearings + Deadlines ──
+          A consultant keeps only the tasks card, full width (Art. 18). */}
+      <div className={isConsultant ? "grid grid-cols-1 gap-5" : "grid grid-cols-1 lg:grid-cols-3 gap-5"}>
 
         {/* Urgent Tasks */}
         <div className={`${card} p-5 flex flex-col`}>
@@ -1024,6 +1030,7 @@ export default function LawyerDashboardPage() {
         </div>
 
         {/* Upcoming Hearings */}
+        {!isConsultant && (
         <div className={`${card} p-5`}>
           <div className="flex items-center justify-between mb-3">
             <h2 className={`text-sm font-bold flex items-center gap-2 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
@@ -1056,8 +1063,10 @@ export default function LawyerDashboardPage() {
             ))}
           </div>
         </div>
+        )}
 
         {/* Critical Deadlines */}
+        {!isConsultant && (
         <div className={`${card} p-5`}>
           <div className="flex items-center justify-between mb-3">
             <h2 className={`text-sm font-bold flex items-center gap-2 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
@@ -1124,6 +1133,7 @@ export default function LawyerDashboardPage() {
             )}
           </div>
         </div>
+        )}
       </div>
 
       {/* ── Main Grid: Activity + Cases ── */}

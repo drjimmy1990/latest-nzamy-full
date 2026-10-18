@@ -461,9 +461,10 @@ export default function CaseDetailPage() {
   const user = useUser();
   // Art. 18 (owner ١٧٣ / ٢١٩): a consultant may not plead or manage hearings,
   // and the hearing, stage and deadline writes refuse him with 403. His case
-  // tabs keep everything they read and lose the controls that write; a note
-  // says why. Both flags wait for the session, so neither the controls nor
-  // the note show for a moment to the wrong lawyer.
+  // tabs keep everything they read and lose the controls that write (and the
+  // links into the court tools); a note says why. Both flags wait for the
+  // session, so neither the controls nor the note show for a moment to the
+  // wrong lawyer.
   const courtWritesAllowed = !user.loading && user.practiceKind !== "consultant";
   const courtWritesRefused = !user.loading && user.practiceKind === "consultant";
   // Declared here (not beside loadCaseHearings further down) because the
@@ -1152,10 +1153,12 @@ export default function CaseDetailPage() {
               className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors">
               <PencilSimple size={14} />صياغة مذكرة
             </Link>
+            {courtWritesAllowed && (
             <Link href="/ai/wargaming"
               className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-colors ${isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
               <Robot size={14} />محاكي الخصم
             </Link>
+            )}
           </div>
         </div>
 
