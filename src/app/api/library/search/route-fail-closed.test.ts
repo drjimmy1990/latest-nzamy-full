@@ -98,7 +98,10 @@ test("every section query error or malformed payload marks that section failed; 
 test("every section query has a deterministic primary-key order and reports count exactness", () => {
   // articles, principles, decrees_circulars and feqh_blocks all order by `id`
   // (their primary key) before `.range()`, so pages are stable windows. The
-  // fifth is feqh's uncounted retry, which re-reads the same window.
+  // fifth is feqh's uncounted retry, which re-reads the same window. The
+  // articles, principles and feqh windows go through their time-limited RPCs
+  // (20261019_41, 20261017_20, 20261018_02), which order by id in SQL; these
+  // inline queries are their missing-function fallbacks, so the count stays 5.
   assert.equal((routeSource.match(/\.order\('id'\)/g) ?? []).length, 5);
   // Every window asks PostgREST for at least SEARCH_MIN_FETCH rows: a tiny
   // LIMIT with order('id') walks the primary key and timed out on rare terms.
@@ -127,6 +130,8 @@ test("ranking vs paging: section=laws never takes its order from the ranked RPC"
 test("sections run in parallel, use estimated counts, and the laws retry skips timeouts and pages past the end", () => {
   assert.match(routeSource, /await Promise\.all\(names\.map\(\(name\) => runners\[name\]\(\)\)\)/);
   assert.doesNotMatch(routeSource, /count: 'exact'/);
+  // laws, precedents, orders and feqh; the laws, precedents and feqh ones are
+  // the inline fallbacks of their RPCs (whose count is exact in SQL).
   assert.equal((routeSource.match(/count: 'estimated'/g) ?? []).length, 4);
   assert.match(routeSource, /if \(shouldRetryLawsWithoutHistory\(res\.error\)\)/);
   assert.match(routeSource, /combineSearchOutcomes\(section, outcomes/);
@@ -149,7 +154,46 @@ test("the laws window joins laws only for a law-column filter, and attaches them
     /lawSlugBatches\(rows\)\.map\(\(slugs\) => serverOnly\s*\.schema\('library'\)\s*\.from\('laws'\)\s*\.select\(LAW_FIELDS\)\s*\.in\('slug', slugs\)\s*\.abortSignal\(signal\)\)\)/,
   );
   assert.match(routeSource, /if \(failed\) \{\s*console\.error\([^;]*\);\s*return null;\s*\}\s*return attachLaws\(rows, /);
-  assert.match(routeSource, /articleRows = joinLaws \? lawResults : await withLaws\(lawResults\);\s*if \(!articleRows\) return \{ ok: false \};/);
+  // The RPC window (20261019_41) carries no embed: its rows always get their
+  // laws here; only the inline fallback's joined window arrives with them.
+  assert.match(routeSource, /articleRows = joinLaws && !viaRpc \? lawResults : await withLaws\(lawResults\);\s*if \(!articleRows\) return \{ ok: false \};/);
+});
+
+test("laws run through the time-limited RPC and fall back only when it is missing (20261019_41)", () => {
+  // migration 20261019_41: library.search_law_articles_page, service role only.
+  assert.match(routeSource, /const LAWS_RPC = 'search_law_articles_page';/);
+  assert.match(routeSource, /const LAWS_RPC_RETRY_MS = 10 \* 60 \* 1000;/);
+  assert.match(
+    routeSource,
+    /await serverOnly\s*\.schema\('library'\)\s*\.rpc\(LAWS_RPC, \{\s*p_tsquery: ftsQuery,\s*p_offset: from,\s*p_fetch: fetchSizeFor\(size\),\s*p_status: filters\.status \?\? null,\s*p_section_code: filters\.category \?\? null,\s*p_law_type: filters\.lawType \?\? null,\s*\}\)\s*\.abortSignal\(signal\);/,
+  );
+  assert.doesNotMatch(routeSource, /supabase\s*\.schema\('library'\)\s*\.rpc\(LAWS_RPC/);
+  // Only a missing function falls back (remembered 10 minutes); any other
+  // RPC result, a 57014 included, is the page — settlePage fails the section.
+  assert.match(
+    routeSource,
+    /if \(Date\.now\(\) >= lawsRpcMissingUntil\) \{[\s\S]*?if \(!isMissingFunctionError\(rpcRes\.error\)\) return \{ res: rpcPageResult\(rpcRes\) as unknown as RowsResult, viaRpc: true \};\s*lawsRpcMissingUntil = Date\.now\(\) \+ LAWS_RPC_RETRY_MS;\s*\}/,
+  );
+  // The inline query, and its original_text retry, run only after that branch.
+  const start = routeSource.indexOf("const lawWindow = async");
+  const end = routeSource.indexOf("const [{ res: base, viaRpc }, ranked, title] = await Promise.all([");
+  assert.ok(start > -1 && end > start, "lawWindow() and its call");
+  const win = routeSource.slice(start, end);
+  const rpcAt = win.indexOf(".rpc(LAWS_RPC");
+  assert.ok(rpcAt > -1 && rpcAt < win.indexOf("await runLawQuery(true)"), "the RPC comes before the inline query");
+  assert.ok(win.indexOf("await runLawQuery(true)") < win.indexOf("shouldRetryLawsWithoutHistory(res.error)"));
+  assert.match(routeSource, /const \[\{ res: base, viaRpc \}, ranked, title\] = await Promise\.all\(\[\s*lawWindow\(\),/);
+  assert.doesNotMatch(routeSource, /shouldRetryWithoutCount\(rpcRes/);
+  assert.doesNotMatch(routeSource, /shouldRetryLawsWithoutHistory\(rpcRes/);
+  // The route's arguments are the migration's parameters.
+  const migration = readFileSync(
+    new URL("../../../../../supabase/migrations/20261019_41_library_search_law_articles_page.sql", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    migration,
+    /create or replace function library\.search_law_articles_page\(\s*p_tsquery\s+text,\s*p_offset\s+integer,\s*p_fetch\s+integer,\s*p_status\s+text default null,\s*p_section_code\s+text default null,\s*p_law_type\s+text default null\s*\)/,
+  );
 });
 
 test("feqh keeps its rows when the database cancels the counted query (57014)", () => {

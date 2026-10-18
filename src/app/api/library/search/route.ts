@@ -91,9 +91,12 @@ function searchUnavailableResponse(status = 503) {
  * and goes through library.search_feqh_page, whose own 4s statement_timeout
  * ends the query in the database (as for precedents below). The laws section
  * reads library.articles as the SERVICE ROLE since T28-21 (the table is
- * server-only), which does not carry anon's
- * 3s limit: aborting ends this route's wait, not necessarily the query on the
- * database side. Precedents also run as the service role (20261016_01); their
+ * server-only), which does not carry anon's 3s limit; its window goes through
+ * library.search_law_articles_page (20261019_41), whose own 4s
+ * statement_timeout ends the query in the database. Only its inline fallback
+ * (while that function is missing) is bounded by this budget alone: aborting
+ * ends this route's wait, not necessarily the query on the database side.
+ * Precedents also run as the service role (20261016_01); their
  * window goes through library.search_principles_page, whose own 4s
  * statement_timeout (20261017_20, applied by PostgREST before the call) ends
  * the query in the database before this budget runs out.
@@ -115,6 +118,11 @@ let principlesRpcMissingUntil = 0;
 const FEQH_RPC = 'search_feqh_page';
 const FEQH_RPC_RETRY_MS = 10 * 60 * 1000;
 let feqhRpcMissingUntil = 0;
+
+/** Laws (articles) window with its own statement_timeout (migration 20261019_41). */
+const LAWS_RPC = 'search_law_articles_page';
+const LAWS_RPC_RETRY_MS = 10 * 60 * 1000;
+let lawsRpcMissingUntil = 0;
 
 type QueryError = { code?: string; message?: string; details?: string | null } | null;
 type RowsResult = { data: Record<string, unknown>[] | null; count: number | null; error: QueryError };
@@ -343,18 +351,44 @@ export async function POST(request: Request) {
           return (data as Array<{ id?: unknown }>).map((r) => String(r.id)).filter(Boolean);
         };
 
-        const [base, ranked, title] = await Promise.all([
-          (async () => {
-            let res = await runLawQuery(true);
-            // Retry without original_text on a rejected select — never on a
-            // timeout (it only doubles the wait) and never on a page past the
-            // end (PGRST103 is not a column problem).
-            if (shouldRetryLawsWithoutHistory(res.error)) {
-              console.warn('[Search] laws query failed with original_text — retrying without it. Apply migration 20260729_article_history_columns.sql to remove this round-trip. Cause:', res.error);
-              res = await runLawQuery(false);
-            }
-            return res;
-          })(),
+        // The window through library.search_law_articles_page (migration
+        // 20261019_41), whose 4s statement_timeout PostgREST applies before the
+        // call — the inline query runs as the service role, which has no
+        // statement_timeout, so the database would keep running it after this
+        // route stopped waiting. The inline query (with its original_text
+        // retry and its join rule) stays for one case only: the function is
+        // not there yet (isMissingFunctionError, remembered for 10 minutes). A
+        // 57014 from the function fails the section like any other error; it
+        // is never retried inline.
+        const lawWindow = async (): Promise<{ res: RowsResult; viaRpc: boolean }> => {
+          if (Date.now() >= lawsRpcMissingUntil) {
+            const rpcRes = await serverOnly
+              .schema('library')
+              .rpc(LAWS_RPC, {
+                p_tsquery: ftsQuery,
+                p_offset: from,
+                p_fetch: fetchSizeFor(size),
+                p_status: filters.status ?? null,
+                p_section_code: filters.category ?? null,
+                p_law_type: filters.lawType ?? null,
+              })
+              .abortSignal(signal);
+            if (!isMissingFunctionError(rpcRes.error)) return { res: rpcPageResult(rpcRes) as unknown as RowsResult, viaRpc: true };
+            lawsRpcMissingUntil = Date.now() + LAWS_RPC_RETRY_MS;
+          }
+          let res = await runLawQuery(true);
+          // Retry without original_text on a rejected select — never on a
+          // timeout (it only doubles the wait) and never on a page past the
+          // end (PGRST103 is not a column problem).
+          if (shouldRetryLawsWithoutHistory(res.error)) {
+            console.warn('[Search] laws query failed with original_text — retrying without it. Apply migration 20260729_article_history_columns.sql to remove this round-trip. Cause:', res.error);
+            res = await runLawQuery(false);
+          }
+          return { res, viaRpc: false };
+        };
+
+        const [{ res: base, viaRpc }, ranked, title] = await Promise.all([
+          lawWindow(),
           rankedIds().catch((e) => {
             console.warn('[Search] ranked law search threw; using unranked order:', e);
             return null;
@@ -421,7 +455,9 @@ export async function POST(request: Request) {
           }
         }
         if (!articleRows) {
-          articleRows = joinLaws ? lawResults : await withLaws(lawResults);
+          // The RPC's rows carry no embed (20261019_41): their laws are always
+          // attached here; only the inline joined window arrives with them.
+          articleRows = joinLaws && !viaRpc ? lawResults : await withLaws(lawResults);
           if (!articleRows) return { ok: false };
         }
 

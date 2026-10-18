@@ -13,11 +13,15 @@ import test from "node:test";
 
 const routeSource = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 
-test("every library.articles read (page, head count, ranked RPC, by-id refetch) uses the service-role client", () => {
+test("every library.articles read (window RPC, page, head count, ranked RPC, by-id refetch) uses the service-role client", () => {
   assert.match(routeSource, /import \{ createClient, createServiceClient \} from '@\/lib\/supabase\/server';/);
   assert.match(routeSource, /const serverOnly = await createServiceClient\(\);/);
+  // The lawQuery builder (the window RPC's missing-function fallback) and the by-id refetch.
   const fromArticles = [...routeSource.matchAll(/(\w+)\s*\.schema\('library'\)\s*\.from\('articles'\)/g)].map((m) => m[1]);
   assert.deepEqual(fromArticles, ["serverOnly", "serverOnly"], "the lawQuery builder and the by-id refetch");
+  // Both article RPCs: the window (20261019_41) and the ranked order (20260925_01).
+  const articleRpcs = [...routeSource.matchAll(/(\w+)\s*\.schema\('library'\)\s*\.rpc\((LAWS_RPC|RANKED_RPC),/g)].map((m) => `${m[1]}:${m[2]}`);
+  assert.deepEqual(articleRpcs, ["serverOnly:RANKED_RPC", "serverOnly:LAWS_RPC"]);
   assert.match(routeSource, /await serverOnly\s*\.schema\('library'\)\s*\.rpc\(RANKED_RPC,/);
   // The head-count fallback goes through the same builder, so it moves with it.
   assert.match(routeSource, /lawQuery\(false, true\)\.abortSignal\(signal\)/);
