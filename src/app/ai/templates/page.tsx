@@ -6,7 +6,7 @@ import {
   BookOpen, MagnifyingGlass, Sparkle, ArrowLeft,
   FileText, Seal, ChatCircleText, FileMagnifyingGlass,
   BookmarksSimple, Scales, ShieldCheck, Buildings,
-  Users, Brain, Star, Clock, Download, ArrowUpRight,
+  Users, Brain, Clock, Download, ArrowUpRight,
   FunnelSimple, X, Crown,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
@@ -237,10 +237,6 @@ export default function TemplatesPage() {
                   <span className={`text-[9px] ${isDark ? "text-zinc-700" : "text-slate-300"}`}>·</span>
                   <span className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{tmpl.pages}</span>
                 </div>
-                <div className="flex items-center gap-1">
-                  <Star size={9} className="text-amber-400" weight="fill" />
-                  <span className={`text-[10px] font-mono ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{tmpl.uses.toLocaleString()}</span>
-                </div>
               </div>
 
               {/* Hover overlay CTA */}
@@ -295,9 +291,6 @@ export default function TemplatesPage() {
                   </span>
                   <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${isDark ? "bg-white/[0.04] border-white/[0.08] text-zinc-400" : "bg-slate-50 border-slate-200 text-slate-500"} border`}>
                     <Clock size={10} /> {selected.pages}
-                  </span>
-                  <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${isDark ? "bg-white/[0.04] border-white/[0.08] text-zinc-400" : "bg-slate-50 border-slate-200 text-slate-500"} border`}>
-                    <Star size={10} className="text-amber-400" weight="fill" /> {selected.uses.toLocaleString()} استخدام
                   </span>
                   {selected.isAi && (
                     <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-500 border border-purple-500/20">

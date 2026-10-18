@@ -192,9 +192,11 @@ export const ADMIN_SIDEBAR: SidebarGroup[] = [
       { label: "إعدادات المنصة",        labelEn: "Platform Settings", href: "/dashboard/admin/settings",            icon: "Gear",                   badge: "جديد" },
       { label: "سجل التدقيق",          labelEn: "Audit Log",       href: "/dashboard/admin/audit-log",             icon: "ClockCounterClockwise", badge: "مُطوَّر" },
       { label: "الأمان والحماية",      labelEn: "Security",        href: "/dashboard/admin/security",              icon: "ShieldCheck",            badge: "مُطوَّر" },
-      { label: "سجل النظام",           labelEn: "System Log",      href: "/dashboard/admin/system",                icon: "Terminal" },
-      { label: "النسخ الاحتياطي",      labelEn: "Backup",          href: "/dashboard/admin/system/backup",          icon: "Database" },
-      { label: "مركز التقارير",        labelEn: "Reports Center",  href: "/dashboard/admin/reports",                icon: "ChartBar",               badge: "جديد" },
+      // Owner answer ١١٥ — all three showed fixed logs, backups and figures and
+      // render DashboardComingSoon now.
+      { label: "سجل النظام",           labelEn: "System Log",      href: "/dashboard/admin/system",                icon: "Terminal",               badge: "قريباً" },
+      { label: "النسخ الاحتياطي",      labelEn: "Backup",          href: "/dashboard/admin/system/backup",          icon: "Database",               badge: "قريباً" },
+      { label: "مركز التقارير",        labelEn: "Reports Center",  href: "/dashboard/admin/reports",                icon: "ChartBar",               badge: "قريباً" },
     ],
   },
 

@@ -212,6 +212,10 @@ export const LAWYER_AI_TOOLS: readonly LawyerAiTool[] = [
     betaStatus: "priced",
     sidebarPlacement: "more-tools",
     adminPricingKey: "lawyer.ai.legal_translate",
+    // Owner answer ١١٥ — the page printed one fixed "translation" whatever was
+    // typed in; it renders DashboardComingSoon now. The row stays for the same
+    // reasons as direction-support's above.
+    comingSoon: true,
   },
   {
     permission: "ai:transcriber",
@@ -221,6 +225,10 @@ export const LAWYER_AI_TOOLS: readonly LawyerAiTool[] = [
     betaStatus: "priced",
     sidebarPlacement: "more-tools",
     adminPricingKey: "lawyer.ai.transcriber",
+    // Owner answer ١١٥ — both modes printed a fixed transcript of a hearing
+    // nobody uploaded; the page renders DashboardComingSoon now. Its ٥-point
+    // label below stays: the owner priced the row it shares with the secretary.
+    comingSoon: true,
   },
   {
     permission: "ai:compare",
@@ -230,6 +238,9 @@ export const LAWYER_AI_TOOLS: readonly LawyerAiTool[] = [
     betaStatus: "priced",
     sidebarPlacement: "more-tools",
     adminPricingKey: "lawyer.ai.compare",
+    // Owner answer ١١٥ — every difference and issue was a fixture; the page
+    // renders DashboardComingSoon now.
+    comingSoon: true,
   },
   {
     permission: "ai:secretary",
@@ -290,8 +301,9 @@ export const LAWYER_AI_TOOL_BY_PERMISSION = Object.fromEntries(
  *
  * A priced tool with no entry gets no badge: a missing price is better than a
  * guessed one. That is quick-answer and case-brief (the owner has not priced
- * them), and compare and legal-translate (both still return canned output, so
- * the owner's ٢١٦ range is not shown until they work).
+ * them), and compare and legal-translate (both returned canned output and are
+ * «قريباً» now, owner ١١٥ — the owner's ٢١٦ range is not shown until they
+ * work). A `comingSoon` tool shows «قريباً» whatever this map holds.
  */
 export const TOOL_POINT_LABELS: Record<string, string> = {
   "ai:draft": "١٥",

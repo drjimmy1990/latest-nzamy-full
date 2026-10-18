@@ -104,9 +104,12 @@ export const CORPORATE_NAV: NavItem[] = [
       { label: "محترف العقود",    labelEn: "Contract Pro",    href: "/ai/contracts",         icon: "FileText" },
       { label: "مراقب الامتثال", labelEn: "Compliance",      href: "/ai/corp/compliance-monitor",   icon: "ShieldCheck" },
       { label: "المستشار التجاري",labelEn: "Corp Advisor",    href: "/ai/corp/advisor",      icon: "Buildings" },
-      { label: "LegalMail",       labelEn: "LegalMail",       href: "/ai/mail-advisor",      icon: "Envelope", badge: "جديد" },
-      { label: "مستشار HR",       labelEn: "HR Advisor",      href: "/ai/corp/hr",           icon: "Users" },
-      { label: "CorpMind",        labelEn: "CorpMind",        href: "/ai/corp/corpmind",     icon: "Robot", badge: "مُحسّن" },
+      // Owner answer ١١٥ — these three printed canned output and render
+      // DashboardComingSoon now; navComingSoon.test.ts does not scan this file,
+      // cannedOutputGate.test.ts does.
+      { label: "LegalMail",       labelEn: "LegalMail",       href: "/ai/mail-advisor",      icon: "Envelope", badge: "قريباً" },
+      { label: "مستشار HR",       labelEn: "HR Advisor",      href: "/ai/corp/hr",           icon: "Users", badge: "قريباً" },
+      { label: "CorpMind",        labelEn: "CorpMind",        href: "/ai/corp/corpmind",     icon: "Robot", badge: "قريباً" },
     ],
   },
   {
@@ -149,7 +152,9 @@ export const ADMIN_NAV: NavItem[] = [
   {
     label: "الإعدادات", labelEn: "Settings", href: "#settings",
     children: [
-      { label: "إعدادات النظام", labelEn: "System Settings", href: "/dashboard/admin/system",   icon: "Gear" },
+      // «قريباً» (owner ١١٥): the page showed fixed log lines and renders
+      // DashboardComingSoon now.
+      { label: "إعدادات النظام", labelEn: "System Settings", href: "/dashboard/admin/system",   icon: "Gear", badge: "قريباً" },
       { label: "الأمان والصلاحيات", labelEn: "Security",    href: "/dashboard/admin/security", icon: "ShieldCheck" },
     ],
   },

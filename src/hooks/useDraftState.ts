@@ -51,13 +51,6 @@ export function useDraftState(initialMode = "") {
   const [processing, setProcessing] = useState(false);
   const [copied, setCopied]       = useState(false);
 
-  // Client sharing
-  const [shareLink, setShareLink]         = useState<string | null>(null);
-  const [sharePasscode, setSharePasscode] = useState<string | null>(null);
-  const [linkCopied, setLinkCopied]       = useState(false);
-  const [clientEmail, setClientEmail]     = useState("");
-  const [clientPhone, setClientPhone]     = useState("");
-
   // Step 1 state
   const [clientRole, setClientRole]   = useState<"plaintiff" | "defendant" | "">("");
   const [memoType, setMemoType]       = useState(seed.memoType);
@@ -189,14 +182,6 @@ export function useDraftState(initialMode = "") {
     setSupportDocs(prev => prev.map(d => d.id === id ? { ...d, [field]: val } : d));
   }
 
-  // Share link
-  function generateShareLink() {
-    const token = Math.random().toString(36).substring(2, 10).toUpperCase();
-    const code  = String(Math.floor(100000 + Math.random() * 900000));
-    setShareLink(`https://nzamy.sa/share/${token}`);
-    setSharePasscode(code);
-  }
-
   // Navigation
   // Walks CLIENT_VISIBLE_STEPS (identify -> case -> submit), not the full
   // 8-item STEPS array — the hidden mock steps are not part of the client
@@ -283,10 +268,6 @@ export function useDraftState(initialMode = "") {
     submitNotes, setSubmitNotes, submitting, setSubmitting, submitErrors,
     uploadedAttachments, uploading, attachError,
     buildSummary, submitOrder, attachFile, attachFiles, removeAttachment,
-    // sharing
-    shareLink, setShareLink, sharePasscode, setSharePasscode,
-    linkCopied, setLinkCopied, clientEmail, setClientEmail,
-    clientPhone, setClientPhone, generateShareLink,
     // judgment data
     judgmentNumber, setJudgmentNumber, judgmentCourt, setJudgmentCourt,
     judgmentDate, setJudgmentDate, judgmentText, setJudgmentText,

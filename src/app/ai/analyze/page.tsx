@@ -43,7 +43,7 @@ function AnalyzePageInner() {
             <div className={`h-64 rounded-2xl ${isDark ? "bg-white/[0.04]" : "bg-slate-200/70"}`} />
           </div>
         ) : user.userType === "lawyer" || user.userType === "firm" ? (
-          <AttachmentSqueezer isDark={isDark} isRTL={isRTL} />
+          <AttachmentSqueezer />
         ) : (
           <SmartAnalyzer isDark={isDark} isRTL={isRTL} />
         )}

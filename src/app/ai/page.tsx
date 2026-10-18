@@ -562,9 +562,12 @@ const LEGACY_AI_TOOLS: AiToolCard[] = [
   { id: "ai:procedures", href: "/ai/procedures", titleAr: "المرشد القضائي", titleEn: "Court Guide", icon: UserCheck, descAr: "توجيهك للإجراءات الصحيحة أمام المحاكم", descEn: "Guide to court procedures" },
   { id: "ai:communicate", href: "/ai/communicate", titleAr: "المتحدث الذكي", titleEn: "Smart Communicator", icon: Envelope, descAr: "AI يكتب رسائلك وإيميلاتك بالأسلوب المناسب", descEn: "AI writes your messages and emails in the right tone" },
   { id: "ai:assistant", href: "/ai/assistant", titleAr: "المساعد المتقدم", titleEn: "Advanced Assistant", icon: Robot, descAr: "مساعد قانوني شخصي دائم عبر محادثة ذكية مطولة", descEn: "Persistent personal legal assistant through smart chat" },
-  // Corporate specific
-  { id: "ai:corp:compliance", href: "/ai/corp/compliance", titleAr: "مراقب الامتثال", titleEn: "Compliance", icon: Database, descAr: "فحص وتأكيد مراعاة الشركة للأنظمة", descEn: "Check company regulatory compliance" },
-  { id: "ai:tracker", href: "/ai/tracker", titleAr: "المُعقّب الذكي", titleEn: "AI Agent", icon: Sparkle, descAr: "وكيل AI لمتابعة المعاملات آلياً", descEn: "Agent to follow up on transactions", badge: "جديد" },
+  // Corporate specific. Owner answer ١١٥: /ai/corp/compliance and /ai/tracker
+  // (a redirect to /ai/corp/corpmind) render DashboardComingSoon now — both
+  // pages printed fixed results — so their cards say «قريباً» and promise
+  // nothing live.
+  { id: "ai:corp:compliance", href: "/ai/corp/compliance", titleAr: "مراقب الامتثال", titleEn: "Compliance", icon: Database, descAr: "فحص امتثال الشركة للأنظمة — قيد الإعداد", descEn: "Company regulatory compliance check — in preparation", badgeAr: "قريباً", badgeEn: "Soon" },
+  { id: "ai:tracker", href: "/ai/tracker", titleAr: "المُعقّب الذكي", titleEn: "AI Agent", icon: Sparkle, descAr: "وكيل لمتابعة المعاملات — قيد الإعداد", descEn: "Agent to follow up on transactions — in preparation", badgeAr: "قريباً", badgeEn: "Soon" },
   { id: "ai:monitor", href: "/ai/monitor", titleAr: "راصد التشريعات", titleEn: "Law Monitor", icon: Database, descAr: "الأنظمة قيد النفاذ والنافذة حديثاً وأحدث الإصدارات من المكتبة", descEn: "Upcoming, newly in-force and latest laws from the library" }
 ];
 
@@ -591,12 +594,16 @@ const AI_TOOLS: AiToolCard[] = [
     titleAr: tool.titleAr,
     titleEn: tool.titleEn,
     icon: LAWYER_AI_ICON_MAP[tool.permission],
-    descAr:
-      tool.betaStatus === "beta-free"
+    // A «قريباً» tool (owner ١١٥) is not described as part of the credit
+    // catalog: its page cannot answer yet.
+    descAr: tool.comingSoon
+      ? "غير متاحة حالياً — قيد الإعداد."
+      : tool.betaStatus === "beta-free"
         ? "أداة قانونية رسمية للمحامي في البيتا، متاحة مجاناً حتى اعتماد سعرها من الأدمن."
         : "أداة قانونية رسمية ضمن كتالوج المحامي ونظام الرصيد.",
-    descEn:
-      tool.betaStatus === "beta-free"
+    descEn: tool.comingSoon
+      ? "Not available yet — in preparation."
+      : tool.betaStatus === "beta-free"
         ? "Official lawyer beta tool, free until admin pricing is approved."
         : "Official lawyer tool connected to the credit catalog.",
     // No badge for a priced tool the price list does not list (owner ٢١٦).

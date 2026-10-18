@@ -36,7 +36,7 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
       { label: "محترف العقود",      labelEn: "Contract Pro",             href: "/ai/contracts",     icon: "FileText" },
       // ٣: الاستراتيجية — للقضايا الكبيرة
       { label: "المحاكي الشامل",   labelEn: "Litigation Studio",        href: "/ai/wargaming",     icon: "Scales",       divider: true, badge: "مُدمَج" },
-      { label: "عصارة المرفقات",    labelEn: "Attachment Analyzer",      href: "/ai/analyze",       icon: "MagnifyingGlass" },
+      { label: "عصارة المرفقات",    labelEn: "Attachment Analyzer",      href: "/ai/analyze",       icon: "MagnifyingGlass", badge: "قريباً" },
       { label: "الرأي الفصل",       labelEn: "Al-Ra'y Al-Fasl",          href: "/ai/legal-opinion", icon: "Lightbulb" },
       // ٤: المساعدة والمتابعة
       { label: "السكرتير الذكي",    labelEn: "AI Secretary",             href: "/ai/secretary",     icon: "Robot",        divider: true },
@@ -101,9 +101,11 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
       // DashboardComingSoon now (its results were module constants), and a nav
       // entry is a promise about the page under it.
       { label: "داعم الاتجاه",      labelEn: "Direction Support",  href: "/ai/direction-support", icon: "Compass",       badge: "قريباً", divider: true },
-      { label: "المترجم القانوني",  labelEn: "Legal Translator",  href: "/ai/legal-translate",  icon: "Translate",     badge: "جديد" },
-      { label: "المفرّغ الذكي",      labelEn: "Transcriber",       href: "/ai/transcriber",      icon: "Microphone" },
-      { label: "المقارن الذكي",      labelEn: "Smart Comparator",  href: "/ai/compare",          icon: "ArrowsLeftRight", badge: "جديد" },
+      // Owner answer ١١٥ — these three printed canned output and render
+      // DashboardComingSoon now, so each row is badged «قريباً».
+      { label: "المترجم القانوني",  labelEn: "Legal Translator",  href: "/ai/legal-translate",  icon: "Translate",     badge: "قريباً" },
+      { label: "المفرّغ الذكي",      labelEn: "Transcriber",       href: "/ai/transcriber",      icon: "Microphone",    badge: "قريباً" },
+      { label: "المقارن الذكي",      labelEn: "Smart Comparator",  href: "/ai/compare",          icon: "ArrowsLeftRight", badge: "قريباً" },
     ],
   },
 
@@ -198,7 +200,7 @@ export const LAWYER_SIDEBAR_LITE: SidebarGroup[] = [
       { label: "الصائغ القانوني",   labelEn: "Legal Drafter",   href: "/ai/draft",         icon: "PencilSimple", divider: true },
       { label: "محترف العقود",      labelEn: "Contract Pro",    href: "/ai/contracts",     icon: "FileText" },
       { label: "الرأي الفصل",       labelEn: "Legal Opinion",   href: "/ai/legal-opinion", icon: "Lightbulb" },
-      { label: "عصارة المرفقات",    labelEn: "Doc Analyzer",    href: "/ai/analyze",       icon: "MagnifyingGlass" },
+      { label: "عصارة المرفقات",    labelEn: "Doc Analyzer",    href: "/ai/analyze",       icon: "MagnifyingGlass", badge: "قريباً" },
     ],
   },
   {
@@ -310,7 +312,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
       { label: "منقح ناجز",             labelEn: "Najiz Optimizer",  href: "/ai/najiz-optimizer",  icon: "Broom",        badge: "جديد" },
       // ③ التحليل والاستراتيجية
       { label: "المحاكي الشامل للقضايا",labelEn: "Litigation Studio", href: "/ai/wargaming",        icon: "Scales",       divider: true, badge: "مُدمَج" },
-      { label: "فاحص المستندات",        labelEn: "Doc Analyzer",     href: "/ai/analyze?source=firm", icon: "MagnifyingGlass", gateKey: "firm-ai" },
+      { label: "فاحص المستندات",        labelEn: "Doc Analyzer",     href: "/ai/analyze?source=firm", icon: "MagnifyingGlass", gateKey: "firm-ai", badge: "قريباً" },
       // ④ البحث والمراقبة
       { label: "المرشد القضائي",        labelEn: "Court Guide",      href: "/ai/procedures",       icon: "MapTrifold",   divider: true },
       { label: "راصد التشريعات",        labelEn: "Law Monitor",      href: "/ai/monitor",          icon: "Bell" },
@@ -327,9 +329,9 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     defaultOpen: false,
     items: [
       { label: "المستشار التجاري",    labelEn: "Business Advisor",       href: "/ai/corp/advisor",            icon: "Briefcase" },
-      { label: "مدير العقود CLM",      labelEn: "Contract Lifecycle",     href: "/ai/corp/clm",                icon: "ArrowsClockwise" },
+      { label: "مدير العقود CLM",      labelEn: "Contract Lifecycle",     href: "/ai/corp/clm",                icon: "ArrowsClockwise", badge: "قريباً" },
       { label: "مراقب الامتثال",       labelEn: "Compliance Monitor",     href: "/ai/corp/compliance-monitor",  icon: "ShieldCheck" },
-      { label: "مستشار الموارد البشرية", labelEn: "HR Advisor",           href: "/ai/corp/hr",                 icon: "UserCirclePlus" },
+      { label: "مستشار الموارد البشرية", labelEn: "HR Advisor",           href: "/ai/corp/hr",                 icon: "UserCirclePlus", badge: "قريباً" },
     ],
   },
   // ── أدوات قانونية إضافية (موروثة من المحامي الفرد) ───────────────────────
@@ -340,9 +342,9 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     items: [
       // badge «جديد» → «قريباً» — same reason as the lawyer sidebar above.
       { label: "داعم الاتجاه",      labelEn: "Direction Support",  href: "/ai/direction-support", icon: "Compass",         badge: "قريباً" },
-      { label: "المترجم القانوني",  labelEn: "Legal Translator",   href: "/ai/legal-translate",   icon: "Translate",       badge: "جديد" },
-      { label: "المفرّغ الذكي",      labelEn: "Transcriber",        href: "/ai/transcriber",       icon: "Microphone" },
-      { label: "المقارن الذكي",      labelEn: "Smart Comparator",   href: "/ai/compare",           icon: "ArrowsLeftRight", badge: "جديد" },
+      { label: "المترجم القانوني",  labelEn: "Legal Translator",   href: "/ai/legal-translate",   icon: "Translate",       badge: "قريباً" },
+      { label: "المفرّغ الذكي",      labelEn: "Transcriber",        href: "/ai/transcriber",       icon: "Microphone",      badge: "قريباً" },
+      { label: "المقارن الذكي",      labelEn: "Smart Comparator",   href: "/ai/compare",           icon: "ArrowsLeftRight", badge: "قريباً" },
       { label: "الدوائر والإيميلات",  labelEn: "Circuits & Emails",  href: "/dashboard/firm/circuits-emails",  icon: "Envelope" },
     ],
   },
@@ -436,7 +438,7 @@ export const FIRM_SIDEBAR_LITE: SidebarGroup[] = [
       { label: "الصائغ القانوني", labelEn: "Legal Drafter", href: "/ai/draft", icon: "PencilSimple", divider: true },
       { label: "محترف العقود", labelEn: "Contract Pro", href: "/ai/contracts", icon: "FileText" },
       { label: "مراجع العقود", labelEn: "Contract Reviewer", href: "/ai/contract-reviewer", icon: "MagnifyingGlass", badge: "جديد" },
-      { label: "فاحص المستندات", labelEn: "Doc Analyzer", href: "/ai/analyze?source=firm", icon: "MagnifyingGlass", gateKey: "firm-ai" },
+      { label: "فاحص المستندات", labelEn: "Doc Analyzer", href: "/ai/analyze?source=firm", icon: "MagnifyingGlass", gateKey: "firm-ai", badge: "قريباً" },
     ],
   },
   {

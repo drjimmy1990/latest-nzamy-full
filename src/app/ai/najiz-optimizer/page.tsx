@@ -138,7 +138,6 @@ function NajizOptimizerPage() {
   const [inputText, setInputText]     = useState("");
   const [result,    setResult]        = useState<string | null>(null);
   const [report,    setReport]        = useState<OptimizationReport | null>(null);
-  const [processing, setProcessing]   = useState(false);
   const [copied,    setCopied]        = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -155,18 +154,14 @@ function NajizOptimizerPage() {
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/70"
     : "rounded-2xl border border-slate-200 bg-white shadow-sm";
 
+  // Runs at once (owner answer ١١٥): this is a rule-based text cleaner, so the
+  // result is ready the moment the button is pressed. It used to sit behind a
+  // 1.2-second timer and a spinner listing "checks", dressed up as an AI step.
   function handleOptimize() {
     if (!inputText.trim()) return;
-    setProcessing(true);
-    setResult(null);
-    setReport(null);
-    // Simulate a brief "AI processing" delay for UX
-    setTimeout(() => {
-      const { result: r, report: rep } = runNajizOptimizer(inputText);
-      setResult(r);
-      setReport(rep);
-      setProcessing(false);
-    }, 1200);
+    const { result: r, report: rep } = runNajizOptimizer(inputText);
+    setResult(r);
+    setReport(rep);
   }
 
   function handleCopy() {
@@ -209,7 +204,7 @@ function NajizOptimizerPage() {
               </span>
             </div>
             <p className={`text-[13px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-              تنظيف وتهيئة المذكرات القانونية لمنصة ناجز — إزالة الرموز · حذف الحقول الفارغة · ضبط الحروف
+              منقّح نصوص بقواعد ثابتة لمذكرات ناجز، لا يستخدم الذكاء الاصطناعي ولا يعيد الصياغة — إزالة الرموز · حذف الحقول الفارغة · ضبط الحروف
             </p>
           </div>
         </div>
@@ -258,25 +253,17 @@ function NajizOptimizerPage() {
           <motion.button
             whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
             onClick={handleOptimize}
-            disabled={!inputText.trim() || processing}
+            disabled={!inputText.trim()}
             className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-l from-[#0B3D2E] to-[#1a6b50] text-white text-[13px] font-bold shadow-md disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {processing ? (
-              <>
-                <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                  className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white" />
-                جارٍ التنقيح والتحليل...
-              </>
-            ) : (
-              <><Broom size={16} weight="duotone" /> تنقيح وتهيئة للناجز</>
-            )}
+            <Broom size={16} weight="duotone" /> تنقيح وتهيئة للناجز
           </motion.button>
         </div>
 
         {/* ── Result ── */}
         <div className="space-y-3">
           <AnimatePresence mode="wait">
-            {!result && !processing && (
+            {!result && (
               <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                 className={`${card} flex flex-col items-center justify-center text-center p-12 h-full min-h-[400px]`}>
                 <TextT size={48} className={`mb-4 ${isDark ? "text-zinc-700" : "text-slate-200"}`} weight="duotone" />
@@ -286,22 +273,6 @@ function NajizOptimizerPage() {
                 <p className={`text-[11px] mt-1 ${isDark ? "text-zinc-700" : "text-slate-300"}`}>
                   الصق نصك واضغط "تنقيح"
                 </p>
-              </motion.div>
-            )}
-
-            {processing && (
-              <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className={`${card} flex flex-col items-center justify-center text-center p-12 h-full min-h-[400px]`}>
-                <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                  className="w-12 h-12 rounded-full border-2 border-[#C8A762]/20 border-t-[#C8A762] mb-4" />
-                <p className={`text-[14px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>جارٍ التنقيح</p>
-                <div className={`text-[11px] mt-2 space-y-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                  {["فحص الرموز غير المسموح بها", "حذف الحقول الفارغة", "ضبط تنسيق القوائم", "قياس طول النص"].map((step, i) => (
-                    <motion.p key={i} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.25 }}>
-                      ✓ {step}
-                    </motion.p>
-                  ))}
-                </div>
               </motion.div>
             )}
 
