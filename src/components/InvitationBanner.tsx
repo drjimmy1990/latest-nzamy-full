@@ -74,7 +74,7 @@ export default function InvitationBanner() {
               لديك كود دعوة للمكتبة القانونية؟
             </p>
             <p className={`text-[11px] mt-0.5 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-              فعّله للحصول على وصول كامل لنصوص الأنظمة والبحث الذكي
+              فعّله لتفتح نصوص المكتبة القانونية كاملة لمدة ٣٠ يوماً.
             </p>
           </div>
 

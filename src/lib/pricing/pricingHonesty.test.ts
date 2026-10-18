@@ -397,6 +397,28 @@ test("P1 item 2: the CTA's refund line states the refund page's condition", () =
   assert.match(cta, /استرداد خلال ١٤ يوماً ما لم يُستهلك أكثر من ٥٪ من النقاط/);
 });
 
+// ── Task 1.6 (owner ٢٠١–٢٠٣): an invite code opens the library, nothing else ──
+// Since 2026-10-18 a library invitation code grants the legal library for 30
+// days (a library grant, no plan tier, no AI search), so its copy may promise
+// neither Pro nor «البحث الذكي».
+
+test("T1.6: the invite-code copy promises the library for 30 days, not Pro or smart search", () => {
+  const banner = code("components/InvitationBanner.tsx");
+  assert.doesNotMatch(banner, /البحث الذكي/, "banner: smart search");
+  assert.doesNotMatch(banner, /\bPro\b/, "banner: Pro");
+  assert.match(banner, /فعّله لتفتح نصوص المكتبة القانونية كاملة لمدة ٣٠ يوماً\./);
+
+  const subscribe = code("app/laws/subscribe/page.tsx");
+  const faqs = subscribe.match(/faqs: \[[\s\S]*?\n {4}\],/g) ?? [];
+  assert.equal(faqs.length, 2, "the Arabic FAQ and its English twin");
+  for (const faq of faqs) {
+    assert.doesNotMatch(faq, /باقة Pro/, "FAQ: «باقة Pro»");
+    assert.doesNotMatch(faq, /Pro tier/i, "FAQ: Pro tier");
+  }
+  assert.match(subscribe, /إن كان لديك كود دعوة، فإنه يفتح المكتبة القانونية كاملة لمدة ٣٠ يوماً فور تفعيله، دون انتظار\./);
+  assert.match(subscribe, /If you have an invitation code, it opens the full legal library for 30 days as soon as you redeem it — no waiting\./);
+});
+
 test("P1 item 1: the admin AI-usage pages are honest coming-soon pages", () => {
   for (const path of [
     "app/dashboard/admin/ai-usage/page.tsx",

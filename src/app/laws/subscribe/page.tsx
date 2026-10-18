@@ -109,7 +109,7 @@ const txt = {
     ],
     faqTitle: "أسئلة شائعة",
     faqs: [
-      { q: "كيف يتم تفعيل الاشتراك؟", a: "عند الضغط على «اشترك الآن» يُرسَل طلبك للمراجعة، ويقوم فريقنا بتفعيل خطتك بعد الموافقة عليه. إن كان لديك كود دعوة، فإنه يُفعّل باقة Pro فوراً دون انتظار." },
+      { q: "كيف يتم تفعيل الاشتراك؟", a: "عند الضغط على «اشترك الآن» يُرسَل طلبك للمراجعة، ويقوم فريقنا بتفعيل خطتك بعد الموافقة عليه. إن كان لديك كود دعوة، فإنه يفتح المكتبة القانونية كاملة لمدة ٣٠ يوماً فور تفعيله، دون انتظار." },
       { q: "ما الفرق بين البحث المحدود والبحث الكامل؟", a: "البحث المحدود يسمح بـ 5 عمليات يومية في عناوين الأنظمة فقط. البحث الكامل يتيح بحثاً غير محدود في النصوص الكاملة." },
       { q: "هل يمكنني ترقية أو تنزيل خطتي في أي وقت؟", a: "بالتأكيد. يمكنك الترقية فوراً وسيُحسب الفرق تناسبياً. التنزيل يبدأ من دورة الفوترة التالية." },
       { q: "هل المكتبة تشمل الأنظمة الملغاة؟", a: "نعم. نحتفظ بجميع الأنظمة بما فيها الملغاة والمعدلة مع إشارة واضحة لحالة كل نظام وتاريخ التعديل." },
@@ -198,7 +198,7 @@ const txt = {
     ],
     faqTitle: "Frequently Asked Questions",
     faqs: [
-      { q: "How does activation work?", a: "Clicking \"Subscribe Now\" sends your request for review, and our team activates your plan once it's approved. If you have an invitation code, it activates the Pro tier immediately with no wait." },
+      { q: "How does activation work?", a: "Clicking \"Subscribe Now\" sends your request for review, and our team activates your plan once it's approved. If you have an invitation code, it opens the full legal library for 30 days as soon as you redeem it — no waiting." },
       { q: "What's the difference between limited and full search?", a: "Limited search allows 5 daily queries on titles only. Full search is unlimited across the full texts." },
       { q: "Can I upgrade or downgrade anytime?", a: "Absolutely. Upgrades take effect immediately with prorated pricing. Downgrades begin on your next billing cycle." },
       { q: "Does the library include repealed laws?", a: "Yes. We maintain all laws including repealed and amended ones with clear status indicators and modification dates." },
@@ -448,11 +448,12 @@ export default function LawsSubscribePage() {
         </div>
 
         {/* ── Redeem an invitation code ──────────────────────────────────
-            Only for a signed-in user below Pro — the code grants the legal
-            library for 30 days (a library grant, not a plan; owner ٢٠١–٢٠٣)
-            via POST /api/v1/library/invitations/redeem (admin-issued,
+            Only for a signed-in user without the full library (canRedeemCode
+            above) — the code grants the legal library for 30 days (a library
+            grant, not a plan; owner ٢٠١–٢٠٣) via
+            POST /api/v1/library/invitations/redeem (admin-issued,
             src/lib/services/libraryInvitationsService.ts). Nothing here is
-            offered to a guest or to a Pro+ user who has no use for it. */}
+            offered to a guest or to a user who already has the library. */}
         {canRedeemCode && (
           <motion.div variants={fadeUp} initial="hidden" animate="show" custom={9} className="text-center">
             <button
