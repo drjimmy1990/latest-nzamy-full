@@ -162,11 +162,16 @@ export async function DELETE(
       .eq("id", id)
       .maybeSingle();
 
-    const { error } = await supabase.from("articles").delete().eq("id", id);
+    const { data: deleted, error } = await supabase.from("articles").delete().eq("id", id).select("id");
 
     if (error) {
       console.error("[admin/articles/[id] DELETE] Supabase error:", error.message, error.details, error.hint, error.code);
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    // A delete that matched nothing is not an error to PostgREST; it is a 404,
+    // and there is nothing to audit.
+    if (!deleted || deleted.length === 0) {
+      return NextResponse.json({ error: "غير موجود" }, { status: 404 });
     }
 
     await logAdminAction({

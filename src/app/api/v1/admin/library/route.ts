@@ -330,14 +330,20 @@ export async function DELETE(request: NextRequest) {
         );
     }
 
-    const { error } = await adminClient
+    const { data: deleted, error } = await adminClient
       .schema("library")
       .from(table)
       .delete()
-      .eq(column, id);
+      .eq(column, id)
+      .select(column);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    // A delete that matched nothing is not an error to PostgREST; it is a 404,
+    // and there is nothing to audit.
+    if (!deleted || deleted.length === 0) {
+      return NextResponse.json({ error: "غير موجود" }, { status: 404 });
     }
 
     await logAdminAction({

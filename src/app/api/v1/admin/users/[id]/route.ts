@@ -226,26 +226,7 @@ export async function PATCH(
       );
     }
 
-    // ── Handle suspension ──────────────────────────────────────────────────
-    if (body.status === "suspended") {
-      // Cancel any active subscriptions
-      await adminClient
-        .from("subscriptions")
-        .update({
-          status: "cancelled",
-          cancelled_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("user_id", userId)
-        .eq("status", "active");
-
-      // Downgrade auth metadata tier to free
-      await adminClient.auth.admin.updateUserById(userId, {
-        user_metadata: { tier: "free" },
-      });
-    }
-
-    // ── Audit (owner ٢١٠): one row for this request ────────────────────────
+    // ── The audit row's profile half (owner ٢١٠): the profile write is done ──
     const prior = (existing ?? {}) as Record<string, unknown>;
     const current = (updatedProfile ?? {}) as Record<string, unknown>;
     const before: Record<string, unknown> = {};
@@ -262,12 +243,55 @@ export async function PATCH(
       before.verified_at = prior.verified_at ?? null;
       after.verified_at = current.verified_at ?? null;
     }
+
+    // ── Handle suspension ──────────────────────────────────────────────────
+    // No table holds a "suspended" status (the profile is not marked): a
+    // suspension cancels the active subscriptions, then sets the auth tier to
+    // free. Each result is checked. A write that fails stops the suspension
+    // with a 500, and the audit row records what really happened, under
+    // user_suspension_failed, so a half-done suspension never reads as done.
     if (body.status === "suspended") {
-      // What a suspension does today: no table holds a "suspended" status
-      // (the profile is not marked), so the row records only these two.
-      after.active_subscriptions = "cancelled";
-      after.auth_tier = "free";
+      const suspensionFailed = async (detail: Record<string, unknown>) => {
+        await logAdminAction({
+          actorId,
+          action: "user_suspension_failed",
+          targetType: "profile",
+          targetId: userId,
+          before,
+          after: { ...after, ...detail },
+          metadata: { fields: Object.keys(after) },
+        });
+        return NextResponse.json({ error: "تعذّر إكمال الإيقاف" }, { status: 500 });
+      };
+
+      const { data: cancelledRows, error: cancelError } = await adminClient
+        .from("subscriptions")
+        .update({
+          status: "cancelled",
+          cancelled_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("user_id", userId)
+        .eq("status", "active")
+        .select("id");
+      if (cancelError) {
+        console.error("[admin/users/[id]] suspension: cancelling subscriptions failed:", cancelError.code, cancelError.message);
+        return suspensionFailed({ cancelled_count: null, cancel_error: cancelError.code ?? "error", auth_tier: "unchanged" });
+      }
+      const cancelledCount = cancelledRows?.length ?? 0;
+
+      const { data: tierResult, error: tierError } = await adminClient.auth.admin.updateUserById(userId, {
+        user_metadata: { tier: "free" },
+      });
+      if (tierError) {
+        console.error("[admin/users/[id]] suspension: setting the auth tier failed:", tierError.message);
+        return suspensionFailed({ cancelled_count: cancelledCount, auth_tier: "unchanged", tier_error: tierError.message });
+      }
+
+      after.cancelled_count = cancelledCount;
+      after.auth_tier = (tierResult?.user?.user_metadata as { tier?: unknown } | undefined)?.tier ?? null;
     }
+
     await logAdminAction({
       actorId,
       action:
@@ -317,7 +341,9 @@ export async function DELETE(
   const gate = await requireStaff("users.delete");
   if (!gate.ok) return gate.response;
 
-  if (userId === gate.userId) {
+  // UUIDs compare case-insensitively: an upper-cased form of one's own id is
+  // the same account.
+  if (userId.toLowerCase() === gate.userId.toLowerCase()) {
     return NextResponse.json({ error: "لا يمكنك حذف حسابك من لوحة الإدارة" }, { status: 400 });
   }
 

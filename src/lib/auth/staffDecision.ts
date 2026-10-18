@@ -52,6 +52,9 @@ export function staffDecision(input: StaffDecisionInput, action: StaffAction): S
   }
   if (input.tableMissing === true) return { allowed: true, role: "super_admin" };
   if (input.readFailed === true) {
+    // Deliberate (accepted in the Task 3.3 review): a failed read still lets
+    // through what an auditor may do — `read` only — since that is no wider
+    // than the fail-closed role. Every write gets the 503 instead.
     return staffCan("auditor", action)
       ? { allowed: true, role: "auditor" }
       : { allowed: false, role: null, status: 503, error: STAFF_CHECK_UNAVAILABLE_AR };

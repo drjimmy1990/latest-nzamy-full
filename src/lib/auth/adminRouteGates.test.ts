@@ -382,8 +382,59 @@ test("users DELETE: an admin cannot delete their own account from the console", 
   assert.ok(refusalAt > -1, "the self-delete refusal is missing");
   assert.ok(gateAt < refusalAt && refusalAt < deleteAt, "gate, then the self-delete refusal, then the delete");
   const guard = body.slice(body.lastIndexOf("if (", refusalAt), refusalAt);
-  assert.ok(guard.includes("userId === gate.userId"), "the refusal compares the target with the caller");
+  assert.ok(
+    guard.includes("userId.toLowerCase() === gate.userId.toLowerCase()"),
+    "the refusal compares the target with the caller case-insensitively (an upper-cased UUID is the same account)",
+  );
   assert.ok(body.slice(refusalAt, refusalAt + 80).includes("status: 400"), "the refusal is a 400");
+});
+
+test("users PATCH: a suspension's audit row records what its writes really did", () => {
+  const body = handler("users/[id]/route.ts", "PATCH");
+  const cancelAt = body.indexOf('.from("subscriptions")');
+  assert.ok(cancelAt > -1, "the suspension no longer cancels subscriptions");
+  const cancel = body.slice(cancelAt, body.indexOf(";", cancelAt));
+  assert.ok(cancel.includes('.select("id")'), "the cancel returns its rows, so the count is real");
+  assert.ok(/const \{ data: cancelledRows, error: cancelError \}/.test(body), "the cancel's result is captured");
+  assert.ok(/const \{ data: tierResult, error: tierError \}/.test(body), "the tier change's result is captured");
+
+  // either error → 500 «تعذّر إكمال الإيقاف», recorded as a failed suspension, never as done
+  const helperAt = body.indexOf("const suspensionFailed = async");
+  assert.ok(helperAt > -1 && helperAt < cancelAt, "one failure path, defined before the writes");
+  const helper = body.slice(helperAt, cancelAt);
+  assert.ok(helper.includes('"user_suspension_failed"'), "a half-completed suspension is recorded as failed");
+  const msgAt = helper.indexOf('"تعذّر إكمال الإيقاف"');
+  assert.ok(msgAt > -1 && helper.slice(msgAt, msgAt + 80).includes("status: 500"), "the failure answers 500 «تعذّر إكمال الإيقاف»");
+  assert.ok(helper.indexOf("logAdminAction(") < msgAt, "the failed row is written, then the 500");
+  assert.equal(countOf(body, "return suspensionFailed("), 2, "both writes return through the failure path");
+  assert.ok(body.indexOf("if (cancelError)") > cancelAt, "the cancel's error is checked");
+  assert.ok(body.indexOf("if (tierError)") > body.indexOf("if (cancelError)"), "the tier error is checked");
+
+  // success records the real values, never the old constants
+  assert.equal(body.includes('active_subscriptions: "cancelled"'), false, "no fixed claim of a cancellation");
+  assert.ok(body.includes("cancelled_count"), "the success row carries the real cancelled count");
+  assert.ok(/auth_tier\s*[:=]\s*.*tierResult/.test(body), "the tier recorded is the one the auth admin API returned");
+});
+
+test("deleting a row that does not exist is a 404 and writes no audit row", () => {
+  const routes: Array<[string, string]> = [
+    ["articles/[id]/route.ts", "DELETE"],
+    ["coupons/[id]/route.ts", "DELETE"],
+    ["library/route.ts", "DELETE"],
+  ];
+  for (const [file, method] of routes) {
+    const body = handler(file, method);
+    const deleteAt = body.indexOf(".delete()");
+    assert.ok(deleteAt > -1, `${file}: no delete`);
+    const call = body.slice(deleteAt, body.indexOf(";", deleteAt));
+    assert.ok(/\.select\(/.test(call), `${file}: the delete must return what it removed`);
+    const notFoundAt = body.indexOf('"غير موجود"', deleteAt);
+    const logAt = body.indexOf("logAdminAction(", deleteAt);
+    assert.ok(notFoundAt > deleteAt && notFoundAt < logAt, `${file}: the 404 comes after the delete and before the audit row`);
+    assert.ok(body.slice(notFoundAt, notFoundAt + 60).includes("status: 404"), `${file}: zero rows deleted is a 404`);
+    const guard = body.slice(body.lastIndexOf("if (", notFoundAt), notFoundAt);
+    assert.ok(/\.length === 0/.test(guard), `${file}: the 404 is keyed on zero deleted rows`);
+  }
 });
 
 test("the community and verification routes keep their audit labels and metadata", () => {
