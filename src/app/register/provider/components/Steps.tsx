@@ -22,6 +22,7 @@ import {
 } from "@phosphor-icons/react";
 import { ProviderType, Step } from "../types";
 import { providerTypes, specializations, plans } from "../data";
+import { signupCountry } from "../signupMetadata";
 
 export function StepIndicator({ step, total }: { step: Step; total: number }) {
   return (
@@ -94,6 +95,10 @@ export function Step1({ isAr, selected, onSelect }: { isAr: boolean; selected: P
 // ─── Step 2: Professional info (Type-Aware) ──────────────────────────────────
 export function Step2({ isAr, providerType, data, onChange, selectedSpecs, setSelectedSpecs }: { isAr: boolean; providerType: ProviderType; data: Record<string, string>; onChange: (k: string, v: string) => void; selectedSpecs: string[]; setSelectedSpecs: React.Dispatch<React.SetStateAction<string[]>> }) {
   const isFirm = providerType === "firm";
+  // A consultant registers in Saudi Arabia only (owner answer ٢١٩): the
+  // country is SA and its select is disabled, whatever the form holds.
+  const isConsultant = providerType === "consultant";
+  const country = signupCountry(providerType, data.country);
   const specs = isAr ? specializations.ar : specializations.en;
 
   const toggleSpec = (spec: string) => {
@@ -107,6 +112,9 @@ export function Step2({ isAr, providerType, data, onChange, selectedSpecs, setSe
     notary:     { label: isAr ? "رقم ترخيص التوثيق (وزارة العدل)" : "Notary License No.",   ph: "NOT-XXXXXXXX", hint: isAr ? "رقم القيد في سجل الموثقين"                : "MOJ Notaries Register" },
     tracker:    { label: isAr ? "رقم هوية المعقّب الرسمي"    : "Gov. Agent ID",              ph: "AGT-XXXXXXXX", hint: isAr ? "الرقم الصادر عن الجهة المرخّصة للتعقيب" : "Issued by licensed bailiff authority" },
     arbitrator: { label: isAr ? "رقم الترخيص (مركز التحكيم)" : "Arbitration License No.",   ph: "ARB-XXXXXXXX", hint: isAr ? "رقم القيد في قائمة المحكّمين المعتمدين"  : "Accredited arbitrators registry" },
+    // Owner answer ٢١٩ names the document: «رقم الترخيص المهني». The lawyer's
+    // hint (Saudi Bar membership) is not said of a consultant.
+    consultant: { label: isAr ? "رقم الترخيص المهني" : "Professional Licence No.", ph: "XXXXXXXX", hint: isAr ? "ترخيص مستشار قانوني في المملكة العربية السعودية" : "A legal consultant's licence in Saudi Arabia" },
   };
   const lc = licenseMap[providerType ?? "lawyer"] ?? licenseMap.lawyer;
 
@@ -194,12 +202,13 @@ export function Step2({ isAr, providerType, data, onChange, selectedSpecs, setSe
           <div className="relative">
             <Globe size={18} className={`absolute top-1/2 -translate-y-1/2 text-ink-faint dark:text-gray-500 pointer-events-none ${isAr ? "right-3.5" : "left-3.5"}`} />
             <select
-              value={data.country || "SA"}
+              value={country}
+              disabled={isConsultant}
               onChange={(e) => {
                 onChange("country", e.target.value);
                 onChange("city", ""); // Reset city when country changes
               }}
-              className={`${inputBase} ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"} cursor-pointer`}
+              className={`${inputBase} ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"} cursor-pointer disabled:cursor-not-allowed disabled:opacity-70`}
             >
               <option value="SA">{isAr ? "المملكة العربية السعودية (SA)" : "Saudi Arabia (SA)"}</option>
               <option value="AE">{isAr ? "الإمارات العربية المتحدة (AE)" : "United Arab Emirates (AE)"}</option>
@@ -212,6 +221,11 @@ export function Step2({ isAr, providerType, data, onChange, selectedSpecs, setSe
               <option value="MA">{isAr ? "المملكة المغربية (MA)" : "Morocco (MA)"}</option>
             </select>
           </div>
+          {isConsultant && (
+            <p className="mt-1 text-xs text-ink-faint dark:text-gray-500">
+              {isAr ? "المستشار القانوني: للمرخّصين في المملكة العربية السعودية" : "Legal consultant: for those licensed in Saudi Arabia"}
+            </p>
+          )}
         </div>
 
         {/* City */}
@@ -219,7 +233,7 @@ export function Step2({ isAr, providerType, data, onChange, selectedSpecs, setSe
           <label className="mb-1.5 block text-sm font-medium text-ink dark:text-gray-300">{isAr ? "المدينة" : "City"}</label>
           <div className="relative">
             <MapPin size={18} className={`absolute top-1/2 -translate-y-1/2 text-ink-faint dark:text-gray-500 pointer-events-none ${isAr ? "right-3.5" : "left-3.5"}`} />
-            {!data.country || data.country === "SA" ? (
+            {country === "SA" ? (
               <select value={data.city || ""} onChange={e => onChange("city", e.target.value)} className={`${inputBase} ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"} cursor-pointer`}>
                 <option value="">{isAr ? "اختر المدينة" : "Select city"}</option>
                 {["الرياض", "جدة", "الدمام", "مكة المكرمة", "المدينة المنورة", "الطائف", "أخرى"].map(city => (
@@ -440,6 +454,7 @@ export function Step5({ isAr, providerType, selectedPlan }: { isAr: boolean; pro
     notary: isAr ? "موثّق" : "Notary",
     tracker: isAr ? "معقّب" : "Gov. Agent",
     arbitrator: isAr ? "محكّم" : "Arbitrator",
+    consultant: isAr ? "مستشار قانوني" : "Legal Consultant",
     null: "",
   }[providerType ?? "null"];
 
@@ -456,6 +471,8 @@ export function Step5({ isAr, providerType, selectedPlan }: { isAr: boolean; pro
     notary:     "/dashboard/provider",
     tracker:    "/dashboard/provider",
     arbitrator: "/dashboard/provider",
+    // A consultant is a lawyer account (practice_kind 'consultant').
+    consultant: "/dashboard/lawyer",
   };
   const href = dashboardHref[providerType ?? "lawyer"] ?? "/dashboard/provider";
 

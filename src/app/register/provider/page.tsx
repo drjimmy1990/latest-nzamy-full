@@ -1,7 +1,8 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Gavel,
   Buildings,
@@ -28,12 +29,33 @@ import { useTheme } from "@/components/ThemeProvider";
 
 import { ProviderType, Step } from "./types";
 import { StepIndicator, Step1, Step2, Step3, Step4, Step5 } from "./components/Steps";
+import {
+  CONSULTANT_COUNTRY,
+  parseProviderTypeParam,
+  providerSignupMetadata,
+  signupCountry,
+  type ProviderTypeId,
+} from "./signupMetadata";
 import { setDemoSession, getPermissions } from "@/hooks/useUser";
 import type { UserSession, UserType } from "@/hooks/useUser";
 import { createClient } from "@/lib/supabase/client";
 import { normalizeSaudiMobile, saudiMobileMessage } from "@/lib/services/saudiMobile";
 
 import { BACKEND_MODE } from "@/lib/runtimeMode";
+
+// `?type=` from a /pricing CTA (e.g. /register/provider?type=consultant)
+// preselects that card. Step 1 stays on screen, so the choice can still be
+// changed. A value that names no card (the other provider CTAs send
+// `?type=service`) selects nothing. useSearchParams lives in this
+// null-rendering child, inside its own <Suspense>, so `next build` can still
+// prerender the rest of the page.
+function ProviderTypeFromQuery({ onType }: { onType: (t: ProviderTypeId) => void }) {
+  const type = parseProviderTypeParam(useSearchParams().get("type"));
+  useEffect(() => {
+    if (type) onType(type);
+  }, [type, onType]);
+  return null;
+}
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function RegisterProviderPage() {
@@ -51,6 +73,16 @@ export default function RegisterProviderPage() {
   const [googleError, setGoogleError] = useState<string | null>(null);
   const [googleLoading, setGoogleLoading] = useState(false);
   const handleChange = (k: string, v: string) => setFormData(d => ({ ...d, [k]: v }));
+
+  // A consultant registers in Saudi Arabia only (owner answer ٢١٩). Someone
+  // who chose another country on step 2 and came back for the consultant card
+  // must not keep that country, or a city typed for it, in the form.
+  const selectProviderType = useCallback((t: ProviderType) => {
+    setProviderType(t);
+    if (t === "consultant") {
+      setFormData(d => (d.country && d.country !== CONSULTANT_COUNTRY ? { ...d, country: CONSULTANT_COUNTRY, city: "" } : d));
+    }
+  }, []);
 
   // Google sign-up. Same provider and same `redirectTo` as /login and
   // /register/client — one OAuth entry point, one callback.
@@ -202,8 +234,15 @@ export default function RegisterProviderPage() {
    * broke in the first place, at 20260616 — this line goes back to
    * `providerType === "lawyer" || providerType === "firm"` and the note
    * returns with it.
+   *
+   * ── The consultant card: email only ──────────────────────────────────────
+   * «مستشار قانوني» (owner answer ٢١٩) is registered through this form only
+   * (ruling P11). Google carries no signup metadata and the onboarding picker
+   * has no consultant option, so a Google sign-up from this card would come
+   * back as an ordinary lawyer, an advocate with the court tools. The Google
+   * button is therefore not offered for it; "التالي" is.
    */
-  const googleSignUpWorks = providerType !== null;
+  const googleSignUpWorks = providerType !== null && providerType !== "consultant";
   const emailSignUpWorks = providerType !== null;
 
   const canNext = () => {
@@ -234,6 +273,9 @@ export default function RegisterProviderPage() {
 
   return (
     <div dir={dir} className="min-h-screen bg-surface font-body dark:bg-dark-bg transition-colors duration-300">
+      <Suspense fallback={null}>
+        <ProviderTypeFromQuery onType={selectProviderType} />
+      </Suspense>
       <div className="flex min-h-screen">
 
         {/* ── Brand panel ── */}
@@ -350,7 +392,7 @@ export default function RegisterProviderPage() {
 
               {/* Step content */}
               <AnimatePresence mode="wait">
-                {step === 1 && <Step1 key="s1" isAr={isAr} selected={providerType} onSelect={setProviderType} />}
+                {step === 1 && <Step1 key="s1" isAr={isAr} selected={providerType} onSelect={selectProviderType} />}
                 {step === 2 && <Step2 key="s2" isAr={isAr} providerType={providerType} data={formData} onChange={handleChange} selectedSpecs={selectedSpecs} setSelectedSpecs={setSelectedSpecs} />}
                 {step === 3 && <Step3 key="s3" isAr={isAr} data={formData} onChange={handleChange} />}
                 {step === 4 && <Step4 key="s4" isAr={isAr} selectedPlan={selectedPlan} onSelect={setSelectedPlan} />}
@@ -380,8 +422,14 @@ export default function RegisterProviderPage() {
                     onClick={async () => {
                       if (!canNext()) return;
                       if (step === 4) {
-                        const userType: UserType = providerType === "firm" ? "firm" : providerType === "lawyer" ? "lawyer" : "provider";
-                        const subRole = providerType === "notary" ? "notary" as const : providerType === "arbitrator" ? "arbitrator" as const : providerType === "tracker" ? "bailiff" as const : null;
+                        // Unreachable without a card: step 1's canNext needs one.
+                        if (providerType === null) return;
+                        // user_type and sub_role, plus practice_kind for a
+                        // consultant only (signupMetadata.ts).
+                        const signupMeta = providerSignupMetadata(providerType);
+                        const userType: UserType = signupMeta.user_type;
+                        const subRole = signupMeta.sub_role;
+                        const country = signupCountry(providerType, formData.country);
                         const displayName = formData.firmName || `${formData.firstName || ""} ${formData.lastName || ""}`.trim() || "شريك نظامي";
                         const tier = selectedPlan === "pro" ? "pro" as const : selectedPlan === "lite" ? "free" as const : "ai" as const;
 
@@ -403,13 +451,12 @@ export default function RegisterProviderPage() {
                               password: formData.password,
                               options: {
                                 data: {
-                                  user_type: userType,
+                                  ...signupMeta,
                                   display_name: displayName,
                                   full_name: displayName,
                                   tier,
-                                  sub_role: subRole,
                                   phone: normalizedPhone,
-                                  country_code: formData.country || "SA",
+                                  country_code: country,
                                   city: formData.city || null,
                                   credit_balance: 0,
                                   credits_max: 0,
@@ -463,8 +510,11 @@ export default function RegisterProviderPage() {
                           creditsMax: 100,
                           dashboardMode: "full",
                           permissions: getPermissions(userType, tier),
-                          country: formData.country || "SA",
+                          country,
                           providerSpecialties: selectedSpecs,
+                          // The demo twin of lawyer_profiles.practice_kind;
+                          // absent reads as an advocate (useUser).
+                          ...(signupMeta.practice_kind ? { practiceKind: signupMeta.practice_kind } : {}),
                         };
                         setDemoSession(session);
                         setStep(5);
