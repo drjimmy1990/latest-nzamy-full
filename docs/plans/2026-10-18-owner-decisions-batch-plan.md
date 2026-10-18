@@ -36,6 +36,12 @@
 - **Migration ranges:** W1 `20261019_10–19`, W2 `_20–29`, W3 `_30–39`, W4 `_40–49`, W6 `_50–59`, W8 `_60–69`. One-time SQL goes in `supabase/one-time/2026-10-19_*.sql` with a preview block and a typed-confirm guard.
 - **Unit tests:** `npx -y node@22 --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test "src/**/*.test.ts"`. Test files import modules with a relative `.ts` extension, so pure modules carry no `@/` imports.
 - **Line endings:** keep each file's endings. Check with `git ls-files --eol`. Use the scratchpad `mixed-edit.cjs` for `i/crlf` and `i/mixed` files. In `D:/nzwt/integ`, use `git -c core.autocrlf=false`.
+- **Deploy-order rule:** code that reads a new table or column tolerates its absence and degrades to today's behaviour. On `42P01` (relation missing) or `42703` (column missing) it takes the fallback named in its task and logs once; it never returns 500 and never locks everyone out. A central route sends a new column only when it is non-null.
+- **GitNexus (both CLAUDE.md files):**
+  - refresh the index first (`node .gitnexus/run.cjs analyze`, else `npx gitnexus analyze`; it was stale in the last batch);
+  - run `impact({target, direction: "upstream"})` before editing any existing function, class or method, report the blast radius in the task's notes, and stop and warn on HIGH/CRITICAL;
+  - run `detect_changes()` before every commit, not only in W9;
+  - if the index cannot find a symbol, grep its callers by hand and say so.
 - **Never** run library seeders. Never print keys. Put no server IP in the repo.
 - **Subagents** use `model: opus`.
 - **The owner report** (`تقرير_للمالك_…`) and the questions file change in the same commit set as the batch. An item reads «نُفِّذ ✓» only after the user has applied it and the result has been checked live.
@@ -45,7 +51,7 @@
 
 | Gate | Decision | Default the code ships with | Unblocks |
 |---|---|---|---|
-| **G1** | ٢٠٤ «اللغي كل الداتا» — scope | The one-time SQL cancels every subscription and library grant and resets each account's tier to free. It deletes NO accounts and NO credits. It does not run until the user confirms the scope | T1.7 run |
+| **G1** | ٢٠٤ «اللغي كل الداتا» — scope | The one-time SQL cancels every subscription created before the deploy and resets the tier of accounts left with none. It deletes NO accounts, NO credits and no new-model library grants. It does not run until the user confirms the scope | T1.7 run |
 | **G2** | ٢١٨ founder campaign dates | `founder_campaign` setting is empty, so the campaign is inactive. The admin can set the dates in Settings; no code change is needed | T6.x live |
 | **G3** | ٢٢١ says the decree preview is «٥٪ أو ٣ مواد»; ١٨٣ said «أول صفحتين» | Keep two pages (١٨٣, live) | none |
 | **G4** | ٢٠٦ 1–2 points per assistant question for non-Pro | `points_enforcement = false`: nothing is charged. Ledger and debit RPC are built | W8 switch-on |
@@ -68,6 +74,30 @@ The report says so in one line each.
 3. **A consultant who calls a court API directly** (`POST /api/v1/lawyer/hearings`, `case-stages`, `najiz/sync`) gets 403 and no row is written. Hiding the nav is not enough. This is tested in T2.3.
 4. **An `operations` staffer who calls a destructive admin endpoint directly** gets 403 and nothing changes. A `super_admin` succeeds, and exactly one `admin_audit_events` row is written. This is tested in T3.3.
 5. **A guest who opens a decree** still gets HTTP 200 after the column lock (no `select('*')`). With an empty preamble there is no lock card; with a non-empty one there is a lock card and no text. A subscriber sees the preamble. This is tested in T4.2.
+
+## Execution order
+
+Run the tasks one at a time, on one branch (`batch/2026-10-18-owner-decisions`). The workstreams are not independent.
+
+**Interface dependencies:**
+- W6 needs W1 (`library_access_grants`) and W2 (the `lawyer_profiles` signup trigger).
+- W8 needs W1 (`libraryAiDecision`).
+- T4.2 needs T1.3 (`hasFullLibraryAccess`).
+
+**Shared files:**
+
+| File | Tasks |
+|---|---|
+| `src/lib/access-control.ts` | T1.3, T3.3 |
+| `src/hooks/useUser.ts` | T2.4, T3.4 |
+| `src/app/api/ai/_libraryAiAccess.ts` | T1.4, T8.2 |
+| `admin/entitlements/requests/[id]/route.ts` | T1.5, T3.3 |
+| `admin/settings/route.ts` | T3.3, T6.1 |
+| `lawyer/hearings/route.ts` | T2.3, T7.4 |
+| `pricing.providers.ts` | T2.5, T5.4 |
+| `supabase/migrations/_verify.sql` | every workstream with a migration |
+
+**Order:** W1 → W2 → W3 → W4 → W5 → W6 → W7 → W8 → W9. W5 and W7 have no schema and can move earlier if a gate holds something else up.
 
 ---
 
@@ -127,7 +157,7 @@ The report says so in one line each.
   - `export function libraryPlanDays(ref: unknown): number | null`
   - `export function isGrantActive(grant: { starts_at: string; ends_at: string }, now: Date): boolean`
 - Produces, in `libraryAccessServer.ts`:
-  - `export async function hasActiveLibraryGrant(userId: string): Promise<boolean>` — service client; true when a row exists with `starts_at <= now() < ends_at`.
+  - `export async function hasActiveLibraryGrant(userId: string): Promise<boolean>` — service client; true when a row exists with `starts_at <= now() < ends_at`. On `42P01` (table not created yet) it returns false, so access falls back to the tier alone.
   - `export async function grantLibraryAccess(input: { userId: string; planRef: LibraryPlanRef; days: number; source: LibraryGrantSource; grantedBy?: string | null }): Promise<{ ok: true; endsAt: string } | { ok: false; error: string }>` — inserts one row starting now; rejects `days` outside 1–3660.
 
 - [ ] **Step 1: Write the failing tests.**
@@ -240,17 +270,19 @@ The report says so in one line each.
 
 **Interfaces:** none in code.
 
-Block 1 is a read-only preview: counts of active subscriptions by tier, library grants, and accounts whose `raw_user_meta_data->>'tier'` is not free. Block 2 is one transaction:
-- guard: `select current_setting('nzamy.confirm_wipe', true) = 'WIPE-2026-10-19'` or raise;
-- `update public.subscriptions set status = 'cancelled', cancelled_at = now(), auto_renew = false, current_period_end = least(coalesce(current_period_end, now()), now()), metadata = metadata || jsonb_build_object('wiped_at', now(), 'wipe', 'owner-204')` where status in ('active','trialing','past_due');
-- `delete from public.library_access_grants`;
-- `update auth.users set raw_user_meta_data = jsonb_set(coalesce(raw_user_meta_data,'{}'), '{tier}', '"free"')` for all non-admin users;
-- verify zero active subscriptions remain.
+**Target.** ٢٠٤ is about access handed out under the OLD model, before the split. Today every grant path (`src/lib/entitlements.ts` `grantEntitlement`) writes a `subscriptions` row, stamps `user_metadata.tier`, and for credits writes `lawyer_profiles.credit_balance` plus `credit_transactions`. There is no separate entitlement table (`entitlement_requests` holds requests only). `library_access_grants` holds new-model rows only (including founder grants) and is NEVER touched by this file.
+
+Block 1 is a read-only preview: counts of active subscriptions created before the cutoff, by tier and by `metadata->>'source'`, and the accounts whose `raw_user_meta_data->>'tier'` is not free. Block 2 is one transaction:
+- guards: `current_setting('nzamy.confirm_wipe', true) = 'WIPE-2026-10-19'`, and `current_setting('nzamy.wipe_cutoff', true)::timestamptz` is set (the user types the deploy time). Raise if either is missing;
+- `update public.subscriptions set status = 'cancelled', cancelled_at = now(), auto_renew = false, current_period_end = least(coalesce(current_period_end, now()), now()), metadata = metadata || jsonb_build_object('wiped_at', now(), 'wipe', 'owner-204')` where status in ('active','trialing','past_due') **and created_at < the cutoff**;
+- reset `raw_user_meta_data.tier` to `"free"` only for non-admin users left with **no** active subscription after that update;
+- credits stay as they are (G1 asks whether they go too);
+- verify: zero active subscriptions created before the cutoff remain.
 
 - [ ] **Step 1: Write the Docker test:**
-  - fixture with two active subscriptions, one grant, and metadata tier pro;
-  - without the confirm setting, block 2 raises;
-  - with it, 0 active rows, 0 grants, and tier free — admin metadata untouched;
+  - fixture: two active subscriptions created before the cutoff, one created after it, one `library_access_grants` row, metadata tier pro on all three users;
+  - without either setting, block 2 raises;
+  - with both: the two old rows are cancelled, the new row stays active, the grant row is untouched, metadata becomes free only for the users with nothing left, and admin metadata is untouched;
   - a second run is a no-op.
 - [ ] **Step 2: Run** (expect FAIL before the file exists), write the file, run it again. Expected: PASS.
 - [ ] **Step 3: Commit** `chore(owner-204): one-time wipe of earlier subscriptions and trial grants (held for the scope confirmation)`.
@@ -326,7 +358,7 @@ Block 1 is a read-only preview: counts of active subscriptions by tier, library 
 
 **Files:**
 - Modify:
-  - `src/hooks/useUser.ts` (expose `practiceKind` read from `lawyer_profiles.practice_kind` in the profile fetch)
+  - `src/hooks/useUser.ts` (expose `practiceKind` from its own `select('practice_kind')` on `lawyer_profiles`, never added to the existing profile select; any error, including `42703` before `_20` runs, gives `'advocate'`)
   - `src/constants/navigation.sidebars.ts:361-370` (for a lawyer with `practiceKind === 'consultant'`, drop items whose href satisfies `isConsultantBlockedPath`)
   - `src/lib/lawyerQuickTools.ts` (same filter)
   - the blocked lawyer pages (`src/app/dashboard/lawyer/hearings/page.tsx`, `deadlines/page.tsx`) and the three AI tools — render a lock panel with `CONSULTANT_BLOCKED_MESSAGE` for consultants
@@ -454,7 +486,7 @@ Block 1 is a read-only preview: counts of active subscriptions by tier, library 
 
 **Interfaces:**
 - Consumes `staffCan` and `toStaffRole` (T3.2) and `public.platform_staff` (T3.1).
-- `export async function requireStaff(action: StaffAction): Promise<{ ok: true; userId: string; role: StaffRole } | { ok: false; response: NextResponse }>` — calls the existing `requireAdmin()` (`access-control.ts:118`) first and passes its 503/401/403 through unchanged; then 403 `{ error: 'هذا الإجراء لقيادة المنصة فقط' }` when `staffCan` is false. It reads the role with the service client from `platform_staff`, treating an admin with no row as auditor (fail-closed).
+- `export async function requireStaff(action: StaffAction): Promise<{ ok: true; userId: string; role: StaffRole } | { ok: false; response: NextResponse }>` — calls the existing `requireAdmin()` (`access-control.ts:118`) first and passes its 503/401/403 through unchanged; then 403 `{ error: 'هذا الإجراء لقيادة المنصة فقط' }` when `staffCan` is false. It reads the role with the service client from `platform_staff`, treating an admin with no row as auditor (fail-closed). On `42P01` (`_30` not run yet) it applies today's rule (every admin allowed) and logs once. That is no wider than production today, and it keeps a wrong run order from 403ing every admin action.
 - `export async function logAdminAction(input: { actorId: string; action: string; targetType: string; targetId: string | null; before?: unknown; after?: unknown; metadata?: Record<string, unknown> }): Promise<void>` — a service-role insert into `admin_audit_events` (`before` → `before_state`, `after` → `after_state`) with `actor_type 'admin'` and `actor_email` looked up once. It logs (and never throws) on failure.
 - `admin/users/[id]` PATCH also refuses `user_type: 'admin'` on the server (closing the missing allowlist). Only `staff.manage` (T3.4) creates staff.
 
@@ -674,11 +706,12 @@ The line reads «مقاعد إضافية: تواصل مع المبيعات», li
 - Consumes `library_access_grants` (T1.1) and the `lawyer_profiles` signup trigger (T2.1).
 - `platform_settings` key `founder_campaign` with value `{"starts_on": "YYYY-MM-DD" | null, "ends_on": … | null, "library_days": 90}`, seeded with nulls.
 - `public.founder_campaign_active(p_at timestamptz default now()) returns boolean` (Riyadh date, inclusive).
-- AFTER INSERT trigger `trg_lawyer_profiles_founder` (SECURITY DEFINER): when active, insert a `library_access_grants` row (`'lib-founder'`, `'founder_campaign'`, `ends_at = now() + library_days`) and set `lawyer_profiles.metadata = metadata || '{"badges":["founder"]}'`. The grant fires once per user (guarded on an existing `lib-founder` row).
+- `lawyer_profiles.founder_badge boolean not null default false` with `grant select (founder_badge) on public.lawyer_profiles to anon, authenticated`. `metadata` is outside the 20261016_10 SELECT list, so the badge cannot live there. No UPDATE grant: only the trigger and the service role set it.
+- BEFORE INSERT trigger `trg_lawyer_profiles_founder` (SECURITY DEFINER, `search_path ''`). When the campaign is active it sets `NEW.founder_badge = true` (on NEW, so no UPDATE re-fires the row's update triggers) and inserts a `library_access_grants` row (`'lib-founder'`, `'founder_campaign'`, `ends_at = now() + library_days`). The grant fires once per user (guarded on an existing `lib-founder` row). It applies to every new `lawyer_profiles` row, consultants included.
 
 - [ ] **Step 1: Docker test:**
-  - dates null → no grant;
-  - dates around today → a grant of 90 days and the badge;
+  - dates null → no grant, `founder_badge` false;
+  - dates around today → a grant of 90 days and `founder_badge` true; anon can `select founder_badge` and still cannot `select metadata`;
   - dates in the past → none;
   - a second profile insert for the same user → no second grant;
   - negative control.
@@ -693,7 +726,7 @@ The line reads «مقاعد إضافية: تواصل مع المبيعات», li
   - `src/components/pricing/PromotionalCampaignBanner.tsx` (fetch the route; fall back to code `CAMPAIGNS`)
   - `src/lib/pricing/campaigns.ts` (`founderCampaignFromSetting(value, today): Campaign | null`)
   - admin settings page (two date fields)
-  - lawyer profile pages (a «المحامي المؤسس» badge when `metadata.badges` includes `founder`)
+  - lawyer profile pages (a «المحامي المؤسس» badge when `founder_badge` is true; the select tolerates the column being absent, per the deploy-order rule)
 - Test: `src/lib/pricing/campaigns.test.ts`
 
 **Interfaces:** `founderCampaignFromSetting` returns the copy:
@@ -855,11 +888,12 @@ The owner report tells his library agent to set `status: active` in the source f
 - [ ] **Step 1:** Full checks — unit suite, type-check, lint (0 errors), every new Docker test plus its negative control, the `_verify` sections tested before and after, and a local webpack build (`npx next build --webpack`; the four known extra-export flags only).
 - [ ] **Step 2:** `detect_changes({scope:"compare", base_ref:"main"})` and review.
 - [ ] **Step 3:** Write the report, the questions and the run order. The run order:
-  - **any time:** W1 `_10`, W2 `_20`, W3 `_30`, W8 `_60`;
+  - **BEFORE the deploy (the new code reads them):** W1 `_10`, W2 `_20`, W3 `_30`, W8 `_60`. Thanks to the deploy-order rule a wrong order only degrades: no grants, everyone an advocate, the old admin rule. But the report says "before";
+  - **any time:** W4 `_41` (the route falls back while it is missing);
   - **then the deploy;**
-  - **after the deploy:** W4 `_40` (the decree route must stop using `*` first), W4 `_41`, W6 `_50`;
+  - **after the deploy:** W4 `_40` (the decree route must stop using `*` first) and W6 `_50` (needs `_10` and `_20`);
   - **then** `_verify`;
-  - **then the held one-time SQL:** q102 (T7.1), LAW-00-1150 (T7.2), and the wipe (T1.7) only after G1.
+  - **then the held one-time SQL:** q102 (T7.1), LAW-00-1150 (T7.2), and the wipe (T1.7) only after G1, with `nzamy.wipe_cutoff` = the deploy time.
 - [ ] **Step 4:** Merge to main and push (fast-forward the main folder; never touch its untracked files). Do not sync `owner-edits`.
 - [ ] **Step 5:** After the user deploys and runs the SQL, check live from outside:
   - anon `decrees_circulars?select=preamble` → 401;
