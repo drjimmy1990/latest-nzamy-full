@@ -68,6 +68,29 @@ test("accepted source type still writes a bound laws.json", () => {
   assert.match(report.output_sha256, /^[0-9a-f]{64}$/);
 });
 
+// Owner answer ٢١١: the page-numbered documents are «دليل إرشادي / تنظيم إداري».
+// The label must reach laws.json as written — not fall back to «نظام».
+test("the owner's label «دليل إرشادي / تنظيم إداري» is an accepted type and survives to laws.json", () => {
+  const label = "دليل إرشادي / تنظيم إداري";
+  const { result, output } = runFixture(label);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const laws = JSON.parse(fs.readFileSync(path.join(output, "laws.json"), "utf8")).laws;
+  assert.equal(laws.length, 1);
+  assert.equal(laws[0].type, label);
+  const report = JSON.parse(fs.readFileSync(path.join(output, "parse-report-laws.json"), "utf8"));
+  assert.equal(report.counts.rejectedEnumValues, 0);
+});
+
+test("near misses of the owner's label are still rejected", () => {
+  for (const type of ["دليل إرشادي/تنظيم إداري", "تنظيم إداري", "دليل إرشادي / تنظيم"]) {
+    const { result, output } = runFixture(type);
+    assert.equal(result.status, 1, `${type}: ${result.stderr || result.stdout}`);
+    assert.equal(fs.existsSync(path.join(output, "laws.json")), false, type);
+    const report = JSON.parse(fs.readFileSync(path.join(output, "parse-report-laws.json"), "utf8"));
+    assert.equal(report.counts.rejectedEnumValues, 1, type);
+  }
+});
+
 test("explicit out-of-contract parent status cannot be seeded through CLI", () => {
   for (const status of ["status_undeclared", "invented_status"]) {
     const { result, output } = runFixture("نظام", status);

@@ -22,7 +22,7 @@ test("ambiguous raw types cannot regain a blanket normalization", () => {
     assert.equal(map[raw], undefined, `${raw} requires file-by-file adjudication`);
   }
   const bytes = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-  assert.equal(bytes.manifest_version, "1.18");
+  assert.equal(bytes.manifest_version, "1.19");
 });
 
 test("editorial notes never leave the parser; review flags stay for diagnostics", async () => {

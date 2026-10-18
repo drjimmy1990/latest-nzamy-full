@@ -24,6 +24,7 @@ export type DocSubType =
   | "ضوابط"
   | "قواعد"
   | "دليل إرشادي"
+  | "دليل إرشادي / تنظيم إداري"
   | "دليل"
   | "سياسة"
   | "جداول"
@@ -49,6 +50,8 @@ export const LAW_DOC_TYPES: { id: DocSubType; label: string; labelEn: string; an
   { id: "ضوابط",         label: "ضوابط",         labelEn: "Controls",              anchorPrefix: "CONTROLS",    isSecondary: true  },
   { id: "قواعد",         label: "قواعد",         labelEn: "Rules",                 anchorPrefix: "RULES",       isSecondary: true  },
   { id: "دليل إرشادي",   label: "دليل إرشادي",   labelEn: "Guideline",             anchorPrefix: "GUIDELINE",   isSecondary: true  },
+  // Owner ١٠٢/٢١١: the documents numbered by page, not by article.
+  { id: "دليل إرشادي / تنظيم إداري", label: "دليل إرشادي / تنظيم إداري", labelEn: "Guidance / Administrative Regulation", anchorPrefix: "GUIDELINE", isSecondary: true },
   { id: "دليل",          label: "دليل",          labelEn: "Guideline",             anchorPrefix: "GUIDELINE",   isSecondary: true  },
   { id: "سياسة",         label: "سياسة",         labelEn: "Policy",                anchorPrefix: "POLICY",      isSecondary: true  },
   { id: "جداول",         label: "جداول",         labelEn: "Schedules",             anchorPrefix: "APPENDIX",    isSecondary: true  },

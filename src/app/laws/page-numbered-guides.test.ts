@@ -59,3 +59,27 @@ test("the Docker fixture is generated from the same list as the one-time file", 
     [...new Set(listed)].sort(),
   );
 });
+
+// Owner answer ٢١١ (18 Oct): the label must be an accepted type BEFORE his
+// files carry it — the parser refuses a type outside enums.type.
+test("the parser's manifest accepts the label (owner ٢١١) and its version moved past 1.18", () => {
+  const manifest = JSON.parse(
+    readFileSync(new URL("../../../scripts/parsers/schema_manifest.json", import.meta.url), "utf8"),
+  ) as { manifest_version: string; enums: { type: string[] } };
+  assert.ok(manifest.enums.type.includes(LABEL));
+  // One value, verbatim — not split into «دليل إرشادي» and «تنظيم إداري».
+  assert.ok(!manifest.enums.type.includes("تنظيم إداري"));
+  assert.equal(manifest.manifest_version, "1.19");
+});
+
+test("the /laws type lists know the label", () => {
+  const data = readFileSync(new URL("./data.ts", import.meta.url), "utf8");
+  // Plain substring checks: the label holds no regex metacharacters to escape.
+  assert.ok(data.includes(`  | "${LABEL}"`), "LawDocumentType");
+  const lists = readFileSync(new URL("../../constants/lawsLibraryData.ts", import.meta.url), "utf8");
+  assert.ok(lists.includes(`  | "${LABEL}"`), "DocSubType");
+  assert.ok(
+    lists.includes(`{ id: "${LABEL}", label: "${LABEL}", labelEn: "Guidance / Administrative Regulation"`),
+    "LAW_DOC_TYPES",
+  );
+});
