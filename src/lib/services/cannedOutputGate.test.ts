@@ -261,6 +261,59 @@ test("every nav row to a gated page is badged «قريباً» — the files nav
   for (const r of lawyerAnalyze) assert.equal(r.badge, "قريباً");
 });
 
+// ── Fix round 2: no other surface sells the secretary or the attachment tool ──
+
+test("no pricing card, CTA, tile or canned answer sells the secretary or the attachment tool", () => {
+  // The provider-elite plan card sold the secretary as a paid feature.
+  const providers = code("constants/pricing/pricing.providers.ts");
+  for (const s of ["السكرتير الذكي", "Smart Secretary"]) {
+    assert.ok(!providers.includes(s), `pricing.providers.ts still sells ${s}`);
+  }
+
+  // The drafter's «ملف ثقيل؟ استعن بعصارة المرفقات» callout and its button.
+  const stepCase = code("components/draft/steps/StepCase.tsx");
+  for (const s of ['href="/ai/analyze"', "عصارة المرفقات", "الانتقال للعصارة"]) {
+    assert.ok(!stepCase.includes(s), `StepCase still promotes the attachment tool: ${s}`);
+  }
+
+  // The public lawyer-services tiles: no tile sends a visitor to the
+  // secretary as running automation; the deadline tile opens the real radar.
+  const services = code("app/services/lawyers/page.tsx");
+  assert.ok(!services.includes('href: "/ai/secretary"'), "a services tile still links the secretary");
+  assert.ok(!services.includes("سكرتيرك الذي لا ينام"));
+  assert.match(services, /href: "\/dashboard\/lawyer\/deadlines",\s*icon: \w+,\s*labelAr: "حارس المهل النظامية"/);
+
+  // The floating assistant's canned answer and the firm secretary's menu row.
+  const answers = code("components/floating/types.ts");
+  for (const s of ["تفعيل السكرتير الذكي", "يجدول تلقائياً"]) {
+    assert.ok(!answers.includes(s), `the floating assistant still promises: ${s}`);
+  }
+  const floating = code("components/floating/constants/floatingServices.tsx");
+  const secretaryRows = floating.split("\n").filter((l) => l.includes('href: "/ai/secretary"'));
+  assert.ok(secretaryRows.length >= 1, "the firm secretary row is gone — update this pin");
+  for (const row of secretaryRows) {
+    assert.match(row, /badge: "قريباً"/, "the floating secretary row is not badged «قريباً»");
+    assert.ok(!row.includes("تلخيص وتفريغ وتنبيه"));
+    // floatingLinks.test.ts reads every quoted string after `href:` on the
+    // line as a link, so the badge must come BEFORE the href.
+    assert.ok(row.indexOf("badge:") < row.indexOf("href:"), "the badge must precede href on the line");
+  }
+
+  // The firm dashboard's header button and AI quick tile, like the lawyer tile.
+  assert.ok(!code("app/dashboard/firm/page.tsx").includes('"/ai/secretary"'), "the firm dashboard still offers the secretary");
+});
+
+test("a client sees the working analyzer card on the hub, not the lawyer tool's «قريباً»", () => {
+  // /ai/analyze renders AttachmentSqueezer only for lawyer and firm accounts;
+  // everyone else gets SmartAnalyzer. The hub uses the same split.
+  const lawyerSide = 'user.userType === "lawyer" || user.userType === "firm"';
+  assert.ok(code("app/ai/analyze/page.tsx").includes(lawyerSide), "analyze/page.tsx changed its split — update the hub to match");
+  const hub = code("app/ai/page.tsx");
+  assert.match(hub, /const CLIENT_ANALYZE_CARD\b/);
+  assert.ok(hub.includes(lawyerSide), "the hub does not use the analyzer page's lawyer/firm split");
+  assert.match(hub, /t\.id === "ai:analyze" \? CLIENT_ANALYZE_CARD : t/);
+});
+
 test("the hub's corporate compliance card says «قريباً», and no hub card for a gated page is «جديد»", () => {
   const hub = code("app/ai/page.tsx");
   const card = (id: string) => hub.split("\n").find((l) => l.includes(`id: "${id}"`)) ?? "";

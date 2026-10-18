@@ -7,7 +7,7 @@ import Link from "next/link";
 import {
   Gavel, UsersThree, ChartBar, Money,
   CalendarCheck, ArrowUpRight, WarningCircle,
-  ClockCounterClockwise, Robot, FileText,
+  ClockCounterClockwise, FileText,
   CheckCircle, Buildings, ChartLine,
   Lock, Plus, ArrowLeft,
 } from "@phosphor-icons/react";
@@ -131,11 +131,7 @@ export default function FirmDashboardPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Link href="/ai/secretary"
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0B3D2E]/90 transition-colors"
-          >
-            <Robot size={16} weight="duotone" /> {isAr ? "السكرتير الذكي" : "AI Secretary"}
-          </Link>
+          {/* No «السكرتير الذكي» button (owner ١١٥): the secretary is «قريباً». */}
           {role.can.addNewCase && (
             <button className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-colors ${isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
               <Plus size={15} weight="bold" /> {isAr ? "قضية جديدة" : "New Case"}
@@ -314,7 +310,7 @@ export default function FirmDashboardPage() {
             { href: "/ai/draft",            labelAr: "صياغة مذكرة",     labelEn: "Draft Memo",      icon: FileText,   color: "text-royal"         },
             { href: "/ai/wargaming",        labelAr: "محاكي الخصم",     labelEn: "Case Simulator",  icon: Gavel,       color: "text-purple-500"    },
             { href: "/ai/report-generator", labelAr: "توليد تقرير",     labelEn: "Generate Report", icon: ChartLine,   color: "text-emerald-500"   },
-            { href: "/ai/secretary",        labelAr: "السكرتير الذكي",  labelEn: "AI Secretary",    icon: Robot,       color: "text-[#C8A762]"     },
+            // No secretary tile (owner ١١٥): it is «قريباً», like the lawyer tile.
           ].map((action) => {
             const Icon = action.icon;
             return (

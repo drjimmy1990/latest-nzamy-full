@@ -81,15 +81,8 @@ const ROLES = [
         hot: false,
         features: ["كشف المخاطر", "مقارنة النسخ", "قوالب معتمدة"],
       },
-      {
-        href: "/ai/secretary",
-        icon: Headset,
-        labelAr: "منظم الجلسات الآلي",
-        descAr: "سكرتيرك الذي لا ينام. يتابع جدول محكمتك، يذكرك بالمواعيد، ويرتب مستندات كل جلسة تلقائياً.",
-        badge: "يحميك من الغياب",
-        hot: false,
-        features: ["تنبيهات استباقية", "أجندة ذكية", "تقارير يومية"],
-      },
+      // No «منظم الجلسات الآلي» tile (owner ١١٥): it sent visitors to the
+      // secretary (/ai/secretary), which is «قريباً», as running automation.
     ],
     cta: { href: "/join", labelAr: "انضم الآن لمضاعفة إنتاجيتك" },
   },
@@ -137,15 +130,8 @@ const ROLES = [
         hot: false,
         features: ["حفظ سحابي مشفر", "تنبيهات التجديد", "مراجعة جماعية"],
       },
-      {
-        href: "/ai/secretary",
-        icon: Headset,
-        labelAr: "رادار مواعيد المكتب",
-        descAr: "لوحة موحدة لجميع جلسات ومواعيد الفريق. يحلل التضاربات ويحذّرك قبل وقوع الغيابات لتعيين بديل.",
-        badge: null,
-        hot: false,
-        features: ["كشف تعارض الجلسات", "إعادة توزيع المهام", "إشعار الطوارئ"],
-      },
+      // No «رادار مواعيد المكتب» tile (owner ١١٥): it linked the secretary,
+      // which is «قريباً».
       {
         href: "/ai/draft",
         icon: PencilSimple,
@@ -195,15 +181,8 @@ const ROLES = [
         hot: false,
         features: ["عقود نقل ملكية", "وكالات الورثة", "عقود التأسيس"],
       },
-      {
-        href: "/ai/secretary",
-        icon: Headset,
-        labelAr: "منسق المراجعين",
-        descAr: "أرسل تنبيهات آلية للموكلين بالطلبات والمستندات الناقصة قبل الموعد لتجنب إضاعة وقتك.",
-        badge: null,
-        hot: false,
-        features: ["تأكيد الموعد للمراجع", "قوائم الطلبات المسبقة", "رسائل التذكير"],
-      },
+      // No «منسق المراجعين» tile (owner ١١٥): it linked the secretary, which
+      // is «قريباً».
       {
         href: "/ai/legal-opinion",
         icon: MagnifyingGlass,
@@ -234,13 +213,17 @@ const ROLES = [
     ],
     tools: [
       {
-        href: "/ai/secretary",
+        // Owner ١١٥: this tile linked the secretary (/ai/secretary, «قريباً»).
+        // The feature it describes is the real deadline radar, a lawyer
+        // dashboard page (routeAccess: lawyer accounts), so it links there and
+        // says only what the radar does.
+        href: "/dashboard/lawyer/deadlines",
         icon: Headset,
         labelAr: "حارس المهل النظامية",
-        descAr: "النظام ينذرك بشدة قبل انتهاء مدد الاعتراض والاستئناف. حماية حقيقية لك من الوقوع في الخطأ.",
+        descAr: "رادار المهل في لوحة المحامي: يحسب مدد الاعتراض والاستئناف من تاريخ الحكم مع العطل الرسمية، ويعرض ما بقي من كل مهلة.",
         badge: "حصن وقائي",
         hot: true,
-        features: ["عداد المهل القانونية", "إنذار الشطب", "تنبيه قبل الإغلاق"],
+        features: ["عداد المهل القانونية", "احتساب العطل الرسمية", "حالة كل مهلة"],
       },
       {
         href: "/ai/draft",

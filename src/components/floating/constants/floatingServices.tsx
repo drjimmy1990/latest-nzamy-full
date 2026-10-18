@@ -347,7 +347,7 @@ function getFirmServices(user: ServiceSession): ServiceItem[] {
       { key: "firm-admin-hearings", icon: <CalendarCheck {...iconProps} />, label: "جلسات اليوم", sub: "مواعيد وتنبيهات ومحاضر", href: "/dashboard/firm/hearings" },
       { key: "firm-admin-clients", icon: <AddressBook {...iconProps} />, label: "العملاء والاستشارات", sub: "مواعيد وبيانات تواصل", href: "/dashboard/firm/clients" },
       { key: "firm-admin-docs", icon: <FileText {...iconProps} />, label: "المستندات والأرشيف", sub: "رفع وفرز ومتابعة", href: "/dashboard/firm/documents" },
-      { key: "firm-admin-secretary", icon: <Robot {...iconProps} />, label: "السكرتير الذكي", sub: "تلخيص وتفريغ وتنبيه", href: "/ai/secretary" },
+      { key: "firm-admin-secretary", icon: <Robot {...iconProps} />, label: "السكرتير الذكي", sub: "قريباً — غير متاح بعد", badge: "قريباً", href: "/ai/secretary" },
       ...(role === "office_admin" ? [{ key: "firm-office-team", icon: <UsersThree {...iconProps} />, label: "إدارة الفريق", sub: "دعوات وأدوار تشغيلية", href: "/dashboard/firm/team" }] : []),
       quick,
     ], role === "office_admin" ? "دعم مدير المكتب" : "دعم السكرتارية");

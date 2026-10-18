@@ -4,7 +4,6 @@ import { useState, useRef, RefObject, MutableRefObject, Dispatch, SetStateAction
 import { motion } from "framer-motion";
 import { CloudArrowUp, PaperclipHorizontal, BookOpen, UploadSimple, FileArrowUp, X, Plus, MagnifyingGlass, FolderOpen, ArrowRight, Warning } from "@phosphor-icons/react";
 import { AnimatePresence } from "framer-motion";
-import Link from "next/link";
 import { VoiceInput } from "@/components/ui/VoiceInput";
 import { DraftPartyForm } from "@/components/draft/DraftPartyForm";
 import { JudgmentHeader } from "@/components/draft/JudgmentHeader";
@@ -363,29 +362,9 @@ export function StepCase({
           </div>
         )}
 
-        {/* Attachment Analyzer CTA Banner — keyed off what actually attached in
-            bulk, not off `bulkUpload` itself: the mode toggle alone used to
-            pop this upsell on an empty panel. */}
-        <AnimatePresence>
-          {(bulkAttached.length > 1 || supportDocs.length > 1 || supportDocs.some(d => d.isLargeFile)) && (
-            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
-              <div className={`mt-3 p-3 rounded-xl border flex items-center justify-between gap-4 ${isDark ? "border-[#C8A762]/30 bg-[#C8A762]/5" : "border-amber-200 bg-amber-50"}`}>
-                <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${isDark ? "bg-[#C8A762]/20" : "bg-amber-200"}`}>
-                    <MagnifyingGlass size={16} weight="duotone" className="text-[#C8A762]" />
-                  </div>
-                  <div>
-                    <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-amber-900"}`}>ملف ثقيل ومعقد؟ استعن بـ "عصارة المرفقات"</p>
-                    <p className={`text-[10px] ${isDark ? "text-zinc-400" : "text-amber-700"}`}>أداة متخصصة لتحليل وفرز مئات الصفحات والمستندات قبل بدء الصياغة.</p>
-                  </div>
-                </div>
-                <Link href="/ai/analyze" className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap transition-colors ${isDark ? "bg-[#C8A762] text-zinc-900 hover:bg-[#d4b574]" : "bg-amber-600 text-white hover:bg-amber-700"}`}>
-                  الانتقال للعصارة <ArrowRight size={12} className="rotate-180" />
-                </Link>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {/* No upsell to the attachment digest here (owner ١١٥): its lawyer
+            flow printed a fixed report and is «قريباً», so a heavy file is
+            not sent to it. */}
       </div>
 
       {/* ذاكرة المكتب — HIDDEN (Task C6): "AI يجمع بين قاعدة نظامي + نماذج

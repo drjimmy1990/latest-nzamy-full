@@ -40,7 +40,9 @@ export const plansProviders: { ar: Plan[]; en: Plan[] } = {
       ctaHref: "/register/provider?type=service&plan=elite", highlighted: false, color: "border-gold/30",
       commissionPct: 5,
       features: {
-        ai: ["استخدام AI مفتوح لدورك", "المكتبة القانونية باشتراك", "السكرتير الذكي + تنبيهات", null],
+        // No «السكرتير الذكي + تنبيهات» (owner ١١٥): the secretary is «قريباً»,
+        // so no plan sells it.
+        ai: ["استخدام AI مفتوح لدورك", "المكتبة القانونية باشتراك", null],
         platform: ["Top Listing: تصدر نتائج البحث ✅", "badge \"خبير موثوق\" ✅", "إحالات تلقائية وحصرية", null],
         support: ["عمولة المنصة: ٥٪ فقط", "واتساب VIP أولوية قصوى"],
       },
@@ -96,7 +98,7 @@ export const plansProviders: { ar: Plan[]; en: Plan[] } = {
       ctaHref: "/register/provider?type=service&plan=elite", highlighted: false, color: "border-gold/30",
       commissionPct: 5,
       features: {
-        ai: ["Unlimited AI for your role", "Legal library by subscription", "Smart Secretary + Alerts", null],
+        ai: ["Unlimited AI for your role", "Legal library by subscription", null],
         platform: ["Top Listing: 1st in search ✅", "\"Trusted Expert\" badge ✅", "Exclusive direct referrals", null],
         support: ["Platform commission: 5% only", "Priority VIP WhatsApp"],
       },

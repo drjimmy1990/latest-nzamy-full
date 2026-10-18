@@ -284,12 +284,22 @@ test("a coming-soon AI tool is neither priced on the hub nor sold on /pricing", 
     assert.equal(getLawyerAiBadge(tool, "en"), "Coming soon");
     // No second price source on the hub side either.
     assert.ok(!(tool.permission in TOOL_POINT_LABELS), `${tool.permission} still has a hub point label`);
-    // And no row or plan-card line that opens with its name (the lawyer card
-    // listed «عصارة المرفقات وتلخيص ملف القضية: ٨ نقاط» with no tools id).
-    assert.ok(
-      !lawyerTables.includes(`"${tool.titleAr}`),
-      `${tool.titleAr} is still sold in pricing.lawyers.ts`,
-    );
+  }
+
+  // And no row, plan-card line or feature bullet that opens with its name, in
+  // ANY pricing file (fix round 2): the lawyer card listed «عصارة المرفقات
+  // وتلخيص ملف القضية: ٨ نقاط» with no tools id, and the provider-elite card
+  // in pricing.providers.ts sold «السكرتير الذكي + تنبيهات».
+  const pricingDir = new URL("../../constants/pricing/", import.meta.url);
+  const pricingFiles = readdirSync(pricingDir).filter((f) => f.endsWith(".ts"));
+  assert.ok(pricingFiles.length >= 10, `found only ${pricingFiles.length} pricing files — the listing broke`);
+  for (const file of pricingFiles) {
+    const body = code(`constants/pricing/${file}`);
+    for (const tool of soon) {
+      for (const title of [tool.titleAr, tool.titleEn]) {
+        assert.ok(!body.includes(`"${title}`), `«${title}» is «قريباً» but constants/pricing/${file} still sells it`);
+      }
+    }
   }
 });
 

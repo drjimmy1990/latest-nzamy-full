@@ -613,16 +613,30 @@ const AI_TOOLS: AiToolCard[] = [
   ...LEGACY_AI_TOOLS.filter((tool) => tool.id === "ai:tracker" || tool.id?.startsWith("ai:corp:")),
 ];
 
+/**
+ * The client-side card for /ai/analyze (owner ١١٥, fix round 2). The catalog
+ * row "ai:analyze" is the LAWYER tool «عصارة المرفقات», which is «قريباً»;
+ * /ai/analyze/page.tsx renders it only for lawyer and firm accounts and gives
+ * everyone else SmartAnalyzer. The hub uses the same split, so a client is not
+ * told a tool that opens for him is coming soon.
+ */
+const CLIENT_ANALYZE_CARD: AiToolCard = LEGACY_AI_TOOLS.find((t) => t.id === "ai:analyze")!;
+
 function AiHubDashboard() {
   const { lang, theme } = useTheme();
   const user = useUser();
   const isRTL = lang === "ar";
   const isDark = theme === "dark";
+  // Same condition as src/app/ai/analyze/page.tsx (cannedOutputGate.test.ts).
+  const seesLawyerAnalyzer = user.userType === "lawyer" || user.userType === "firm";
+  const hubTools = seesLawyerAnalyzer
+    ? AI_TOOLS
+    : AI_TOOLS.map((t) => (t.id === "ai:analyze" ? CLIENT_ANALYZE_CARD : t));
 
   // Filter tools based on user permissions
   // If a tool has no ID required (null), it's public (like generic consult)
   // Otherwise, user must have the exact permission.
-  const allowedTools = AI_TOOLS.filter((t) => {
+  const allowedTools = hubTools.filter((t) => {
     // Art. 18 (owner ١٧٣ / ٢١٩): a consultant may not plead or manage
     // hearings, so the court tools are not offered to him here either.
     if (user.practiceKind === "consultant" && isConsultantBlockedPath(t.href)) return false;
