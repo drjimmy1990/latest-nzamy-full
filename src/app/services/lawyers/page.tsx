@@ -83,6 +83,21 @@ const ROLES = [
       },
       // No «منظم الجلسات الآلي» tile (owner ١١٥): it sent visitors to the
       // secretary (/ai/secretary), which is «قريباً», as running automation.
+      {
+        // The real deadline radar (owner ١١٥, fix rounds 2–3). It used to sit
+        // under «معقّب / مراجع دوائر» and link the secretary; the radar is a
+        // lawyer dashboard page (routeAccess: lawyer accounts only), so it
+        // lives here, with the people who can open it. No «حصن وقائي» badge:
+        // the radar counts the days, and its reminders wait on a scheduled
+        // cron that is not running yet, so it protects no one by itself.
+        href: "/dashboard/lawyer/deadlines",
+        icon: Headset,
+        labelAr: "حارس المهل النظامية",
+        descAr: "رادار المهل في لوحتك: يحسب مدد الاعتراض والاستئناف من تاريخ الحكم مع العطل الرسمية، ويعرض ما بقي من كل مهلة.",
+        badge: null,
+        hot: false,
+        features: ["عداد المهل القانونية", "احتساب العطل الرسمية", "حالة كل مهلة"],
+      },
     ],
     cta: { href: "/join", labelAr: "انضم الآن لمضاعفة إنتاجيتك" },
   },
@@ -206,25 +221,14 @@ const ROLES = [
     badgeAr: "مراجعة",
     // أُزيلت أرقام مُختلَقة: «٠ مهل استئناف مفقودة» (وعدُ نتيجة لا يمكن ضمانه)،
     // «+٣٥٪ سرعة في تجهيز متطلبات الرد»، وادعاء الإتاحة «٢٤/٧».
+    // Owner ١١٥ (fix round 3): no «عدّاد المهل» and no «إنذار مبكر» here. A
+    // معقّب is a provider account and cannot open the deadline radar (lawyers
+    // only), and the early-warning reminder depends on a cron that is not
+    // scheduled yet. The radar tile moved to the lawyer role above.
     stats: [
-      { val: "عدّاد المهل", label: "مدد الاعتراض والاستئناف محسوبة أمامك" },
-      { val: "إنذار مبكر", label: "تنبيه قبل انتهاء المهلة لا بعدها" },
       { val: "سجل المعاملات", label: "حالة كل معاملة ومن يتابعها" },
     ],
     tools: [
-      {
-        // Owner ١١٥: this tile linked the secretary (/ai/secretary, «قريباً»).
-        // The feature it describes is the real deadline radar, a lawyer
-        // dashboard page (routeAccess: lawyer accounts), so it links there and
-        // says only what the radar does.
-        href: "/dashboard/lawyer/deadlines",
-        icon: Headset,
-        labelAr: "حارس المهل النظامية",
-        descAr: "رادار المهل في لوحة المحامي: يحسب مدد الاعتراض والاستئناف من تاريخ الحكم مع العطل الرسمية، ويعرض ما بقي من كل مهلة.",
-        badge: "حصن وقائي",
-        hot: true,
-        features: ["عداد المهل القانونية", "احتساب العطل الرسمية", "حالة كل مهلة"],
-      },
       {
         href: "/ai/draft",
         icon: PencilSimple,
@@ -244,7 +248,7 @@ const ROLES = [
         features: ["دليل الإجراءات العدلية", "متطلبات التنفيذ", "اشتراطات المحاكم"],
       },
     ],
-    cta: { href: "/join", labelAr: "نظّم مراجعاتك واحفظ المهل" },
+    cta: { href: "/join", labelAr: "نظّم مراجعاتك" },
   },
 ];
 

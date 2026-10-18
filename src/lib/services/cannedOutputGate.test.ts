@@ -283,6 +283,25 @@ test("no pricing card, CTA, tile or canned answer sells the secretary or the att
   assert.ok(!services.includes("سكرتيرك الذي لا ينام"));
   assert.match(services, /href: "\/dashboard\/lawyer\/deadlines",\s*icon: \w+,\s*labelAr: "حارس المهل النظامية"/);
 
+  // Fix round 3: the radar tile lives under the LAWYER role (the radar is a
+  // lawyer-only page, routeAccess.ts), not under «معقّب / مراجع دوائر»
+  // (a provider account), and no courts-role stat sells the radar or an early
+  // reminder that waits on an unscheduled cron.
+  const roleBlock = (id: string) => {
+    const start = services.indexOf(`id: "${id}",`);
+    assert.ok(start >= 0, `role ${id} not found`);
+    const next = services.indexOf('\n  {\n    id: "', start + 1);
+    return services.slice(start, next < 0 ? services.indexOf("\n];", start) : next);
+  };
+  assert.ok(roleBlock("lawyer").includes('href: "/dashboard/lawyer/deadlines"'), "the radar tile is not under the lawyer role");
+  const courts = roleBlock("courts");
+  assert.ok(!courts.includes("/dashboard/lawyer/deadlines"), "the courts role still links the lawyer-only radar");
+  const courtsStats = courts.slice(courts.indexOf("stats: ["), courts.indexOf("tools: ["));
+  for (const s of ["عدّاد المهل", "إنذار مبكر", "المهل", "تنبيه"]) {
+    assert.ok(!courtsStats.includes(s), `a courts-role stat still mentions ${s}`);
+  }
+  assert.ok(!courts.includes("حصن وقائي"));
+
   // The floating assistant's canned answer and the firm secretary's menu row.
   const answers = code("components/floating/types.ts");
   for (const s of ["تفعيل السكرتير الذكي", "يجدول تلقائياً"]) {
