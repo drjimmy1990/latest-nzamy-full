@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { requireAdmin } from "@/lib/access-control";
+import { requireStaff } from "@/lib/access-control";
+import { logAdminAction } from "@/lib/auth/adminAudit";
 
 /**
  * PATCH /api/v1/admin/tickets/[id] — Update a support ticket (admin only)
@@ -15,6 +16,8 @@ import { requireAdmin } from "@/lib/access-control";
  * }
  *
  * Always bumps updated_at.
+ *
+ * Owner ٢١٠: a staff role with tickets.manage; each update is audited.
  */
 export async function PATCH(
   request: NextRequest,
@@ -22,10 +25,8 @@ export async function PATCH(
 ) {
   const { id } = await params;
 
-  const gate = await requireAdmin();
-  if (!gate.isAdmin) {
-    return NextResponse.json({ error: gate.error }, { status: gate.status ?? 403 });
-  }
+  const gate = await requireStaff("tickets.manage");
+  if (!gate.ok) return gate.response;
 
   let body: {
     status?: string;
@@ -70,6 +71,15 @@ export async function PATCH(
     if (!data) {
       return NextResponse.json({ error: "التذكرة غير موجودة" }, { status: 404 });
     }
+
+    const changed = Object.fromEntries(Object.entries(updateData).filter(([k]) => k !== "updated_at"));
+    await logAdminAction({
+      actorId: gate.userId,
+      action: "support_ticket_updated",
+      targetType: "support_ticket",
+      targetId: id,
+      after: changed,
+    });
 
     return NextResponse.json({ success: true, data });
   } catch (err) {

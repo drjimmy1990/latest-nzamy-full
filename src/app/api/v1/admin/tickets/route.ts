@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { requireAdmin } from "@/lib/access-control";
+import { requireAdmin, requireStaff } from "@/lib/access-control";
+import { logAdminAction } from "@/lib/auth/adminAudit";
 
 /**
  * GET /api/v1/admin/tickets — List support tickets (admin only)
@@ -63,10 +64,9 @@ export async function GET(request: NextRequest) {
  * }
  */
 export async function POST(request: NextRequest) {
-  const gate = await requireAdmin();
-  if (!gate.isAdmin) {
-    return NextResponse.json({ error: gate.error }, { status: gate.status ?? 403 });
-  }
+  // Owner ٢١٠: a staff role with tickets.manage; audited.
+  const gate = await requireStaff("tickets.manage");
+  if (!gate.ok) return gate.response;
 
   let body: {
     subject?: string;
@@ -112,6 +112,20 @@ export async function POST(request: NextRequest) {
       console.error("[admin/tickets POST] Supabase error:", error.message, error.details, error.hint, error.code);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    await logAdminAction({
+      actorId: gate.userId,
+      action: "support_ticket_created",
+      targetType: "support_ticket",
+      targetId: data?.id != null ? String(data.id) : null,
+      after: {
+        subject: insertData.subject,
+        priority: insertData.priority,
+        status: insertData.status,
+        user_id: insertData.user_id,
+        assignee_id: insertData.assignee_id,
+      },
+    });
 
     return NextResponse.json({ success: true, data }, { status: 201 });
   } catch (err) {

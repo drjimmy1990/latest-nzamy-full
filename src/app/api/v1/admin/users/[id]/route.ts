@@ -304,7 +304,9 @@ export async function PATCH(
 /**
  * DELETE /api/v1/admin/users/[id] — Delete user account
  *
- * Requires: a staff role with users.delete (owner ٢١٠).
+ * Requires: a staff role with users.delete (owner ٢١٠). An admin cannot
+ * delete their own account from here (controller ruling on Task 3.3): the
+ * audit row could not even be written, its actor would be gone.
  */
 export async function DELETE(
   request: NextRequest,
@@ -314,6 +316,10 @@ export async function DELETE(
 
   const gate = await requireStaff("users.delete");
   if (!gate.ok) return gate.response;
+
+  if (userId === gate.userId) {
+    return NextResponse.json({ error: "لا يمكنك حذف حسابك من لوحة الإدارة" }, { status: 400 });
+  }
 
   const adminClient = await createServiceClient();
 

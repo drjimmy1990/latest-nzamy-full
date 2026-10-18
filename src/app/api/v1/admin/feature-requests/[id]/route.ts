@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { assertRole } from "@/lib/auth/assertRole";
+import { requireStaff } from "@/lib/access-control";
+import { logAdminAction } from "@/lib/auth/adminAudit";
+import { createClient } from "@/lib/supabase/server";
 import { validateFeatureRequestPatch } from "@/lib/services/feedbackInput";
 import { FEATURE_REQUEST_SELECT, featureRequestDbErrorResponse, toFeatureRequestDto, type FeatureRequestRow } from "@/app/api/v1/feature-requests/_shared";
 
@@ -12,12 +14,15 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * a row RLS hides) into a clean 404 instead of letting an
  * `.update(...).select().single()` on zero matched rows surface as
  * PostgREST's `PGRST116` and get laundered into a 500.
+ *
+ * Owner ٢١٠: triage needs a staff role with tickets.manage and is audited.
+ * The writes keep using the caller's RLS-scoped session client.
  */
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await assertRole(["admin"]);
-    if (!auth.ok) return auth.response;
-    const { supabase } = auth;
+    const gate = await requireStaff("tickets.manage");
+    if (!gate.ok) return gate.response;
+    const supabase = await createClient();
     const { id } = await context.params;
 
     if (!UUID_RE.test(id)) {
@@ -57,6 +62,14 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       const { status, message } = featureRequestDbErrorResponse(error);
       return NextResponse.json({ error: message }, { status });
     }
+
+    await logAdminAction({
+      actorId: gate.userId,
+      action: "feature_request_updated",
+      targetType: "feature_request",
+      targetId: id,
+      after: update,
+    });
 
     return NextResponse.json({ data: toFeatureRequestDto(data as FeatureRequestRow) });
   } catch (err) {

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
+import { requireStaff } from "@/lib/access-control";
+import { logAdminAction } from "@/lib/auth/adminAudit";
 import { createServiceClient } from "@/lib/supabase/server";
 import {
   generateInvitationCode,
@@ -49,12 +51,15 @@ export async function GET() {
 const MAX_GENERATE_ATTEMPTS = 5;
 
 /**
- * POST /api/v1/admin/library-invitations — create a code. Admin only.
+ * POST /api/v1/admin/library-invitations — create a code.
  * Body: { code?: string, maxUses: number (1..1000), expiresAt?: ISO string }
+ *
+ * Owner ٢١٠: a code grants library access, so issuing one needs a staff role
+ * with entitlements.grant, and each one is audited.
  */
 export async function POST(request: NextRequest) {
-  const auth = await assertRole(["admin"]);
-  if (!auth.ok) return auth.response;
+  const gate = await requireStaff("entitlements.grant");
+  if (!gate.ok) return gate.response;
 
   let body: Record<string, unknown>;
   try {
@@ -103,7 +108,7 @@ export async function POST(request: NextRequest) {
         code,
         max_uses: maxUsesResult.value,
         expires_at: expiresAtResult.value,
-        created_by: auth.user.id,
+        created_by: gate.userId,
       })
       .select(LIBRARY_INVITATION_SELECT)
       .single<LibraryInvitationRow>();
@@ -125,6 +130,14 @@ export async function POST(request: NextRequest) {
     const mapped = libraryInvitationDbErrorResponse(lastError);
     return NextResponse.json({ error: mapped.message }, { status: mapped.status });
   }
+
+  await logAdminAction({
+    actorId: gate.userId,
+    action: "library_invitation_created",
+    targetType: "library_invitation",
+    targetId: created.id,
+    after: { code, max_uses: maxUsesResult.value, expires_at: expiresAtResult.value },
+  });
 
   return NextResponse.json({ data: toLibraryInvitationDto(created) }, { status: 201 });
 }

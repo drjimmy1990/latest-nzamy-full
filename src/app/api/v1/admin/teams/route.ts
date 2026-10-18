@@ -165,14 +165,10 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  // 1. Auth check
-  const adminCheck = await requireAdmin();
-  if (!adminCheck.isAdmin) {
-    return NextResponse.json(
-      { error: adminCheck.error || "غير مصرح" },
-      { status: adminCheck.status || 403 }
-    );
-  }
+  // 1. Staff gate (owner ٢١٠): a staff member's record is staff management.
+  //    Task 3.4 may rewrite this handler; it keeps this gate.
+  const gate = await requireStaff("staff.manage");
+  if (!gate.ok) return gate.response;
 
   try {
     const { id, status } = await request.json();
@@ -219,6 +215,15 @@ export async function PATCH(request: NextRequest) {
     if (updateError) {
       return NextResponse.json({ error: updateError.message }, { status: 500 });
     }
+
+    await logAdminAction({
+      actorId: gate.userId,
+      action: "staff_member_status_updated",
+      targetType: "profile",
+      targetId: String(id),
+      before: { status: (currentMetadata as Record<string, unknown>).status ?? null },
+      after: { status },
+    });
 
     return NextResponse.json({
       success: true,

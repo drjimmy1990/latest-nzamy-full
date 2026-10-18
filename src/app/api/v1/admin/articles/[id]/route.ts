@@ -56,8 +56,11 @@ export async function GET(
 /**
  * PATCH /api/v1/admin/articles/[id] — Update an article.
  *
- * Admin-gated. Only allowlisted fields are applied. When `status` transitions
+ * Only allowlisted fields are applied. When `status` transitions
  * to 'published' and the row has no `published_at` yet, it is stamped to now.
+ *
+ * Owner ٢١٠: content changes need a staff role with content.delete (the
+ * matrix keeps content to super_admin), and each one is audited.
  *
  * Next 16: dynamic params are async.
  */
@@ -65,10 +68,8 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const gate = await requireAdmin();
-  if (!gate.isAdmin) {
-    return NextResponse.json({ error: gate.error }, { status: gate.status ?? 403 });
-  }
+  const gate = await requireStaff("content.delete");
+  if (!gate.ok) return gate.response;
 
   const { id } = await params;
 
@@ -119,6 +120,16 @@ export async function PATCH(
       console.error("[admin/articles/[id] PATCH] Supabase error:", error.message, error.details, error.hint, error.code);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    // Field names, not the article body: the row itself holds the text.
+    await logAdminAction({
+      actorId: gate.userId,
+      action: "article_updated",
+      targetType: "article",
+      targetId: id,
+      after: { slug: data?.slug ?? null, status: data?.status ?? null },
+      metadata: { fields: Object.keys(update).filter((k) => k !== "updated_at") },
+    });
 
     return NextResponse.json({ success: true, data });
   } catch (err) {

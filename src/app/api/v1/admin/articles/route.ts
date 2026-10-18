@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { requireAdmin } from "@/lib/access-control";
+import { requireAdmin, requireStaff } from "@/lib/access-control";
+import { logAdminAction } from "@/lib/auth/adminAudit";
 
 /**
  * GET /api/v1/admin/articles — List ALL articles (any status) for the admin CMS.
@@ -53,12 +54,13 @@ export async function GET() {
  *
  * `author_id` is set to the acting admin. When `status === 'published'`,
  * `published_at` is stamped to now.
+ *
+ * Owner ٢١٠: content changes need a staff role with content.delete (the
+ * matrix keeps content to super_admin), and each one is audited.
  */
 export async function POST(request: NextRequest) {
-  const gate = await requireAdmin();
-  if (!gate.isAdmin) {
-    return NextResponse.json({ error: gate.error }, { status: gate.status ?? 403 });
-  }
+  const gate = await requireStaff("content.delete");
+  if (!gate.ok) return gate.response;
 
   let body: Record<string, unknown>;
   try {
@@ -107,6 +109,14 @@ export async function POST(request: NextRequest) {
       console.error("[admin/articles POST] Supabase error:", error.message, error.details, error.hint, error.code);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    await logAdminAction({
+      actorId: gate.userId,
+      action: "article_created",
+      targetType: "article",
+      targetId: data?.id != null ? String(data.id) : null,
+      after: { slug, title, status },
+    });
 
     return NextResponse.json({ success: true, data }, { status: 201 });
   } catch (err) {

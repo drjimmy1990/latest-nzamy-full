@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { requireAdmin } from "@/lib/access-control";
+import { requireAdmin, requireStaff } from "@/lib/access-control";
+import { logAdminAction } from "@/lib/auth/adminAudit";
 import { isReceiptMethod } from "@/lib/services/receiptSerial";
 import { tafqit } from "@/lib/services/tafqit";
 
@@ -28,12 +29,13 @@ import { tafqit } from "@/lib/services/tafqit";
  * this route writes is complete enough that the document can be generated from
  * it whenever that decision is made — including `amount_words`, stored rather
  * than recomputed so an issued receipt keeps saying what it said.
+ *
+ * Owner ٢١٠: issuing a receipt needs a staff role with orders.manage, and each
+ * one is audited.
  */
 export async function POST(request: NextRequest) {
-  const gate = await requireAdmin();
-  if (!gate.isAdmin || !gate.userId) {
-    return NextResponse.json({ error: gate.error ?? "غير مصرح" }, { status: gate.status ?? 403 });
-  }
+  const gate = await requireStaff("orders.manage");
+  if (!gate.ok) return gate.response;
 
   let body: {
     requestId?: string;
@@ -116,6 +118,19 @@ export async function POST(request: NextRequest) {
     console.error("[admin receipts] insert failed:", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  await logAdminAction({
+    actorId: gate.userId,
+    action: "receipt_issued",
+    targetType: "receipt",
+    targetId: receipt?.id != null ? String(receipt.id) : null,
+    after: {
+      request_id: body.requestId ?? null,
+      amount: receipt?.amount ?? null,
+      method: body.method,
+      serial: receipt?.serial ?? null,
+    },
+  });
 
   return NextResponse.json({ success: true, data: receipt });
 }
