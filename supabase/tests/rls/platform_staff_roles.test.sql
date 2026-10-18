@@ -27,7 +27,8 @@
 --       roles, a second admin a2 and audit rows for a2 and b1.
 --   prelude_platform_staff_between_runs.sql  between the runs: the user
 --       downgrades a2 to auditor and makes a3 an admin by hand — the second run
---       must keep a2 an auditor and give a3 super_admin.
+--       promotes nobody: a2 stays an auditor and a3 gets no row (the backfill
+--       runs only on the first apply, while platform_staff is empty).
 --
 -- NEGATIVE CONTROL (must FAIL; recorded 2026-10-18) — the chain without the
 -- two 20261019_30 files and the between-runs prelude (it needs the table):
@@ -62,7 +63,7 @@
 -- "permission denied" (the revoke, not an RLS refusal).
 --
 -- Actors: a1 admin (super_admin) · a2 admin (auditor after the first run;
--- deleted by GoTrue in T10) · a3 admin made between the runs · c1 client ·
+-- deleted by GoTrue in T10) · a3 admin made between the runs (no row until T8) · c1 client ·
 -- b1 lawyer (deleted in T12) · d1 provider.
 -- Every assertion RAISES on failure.
 \set ON_ERROR_STOP on
@@ -263,28 +264,40 @@ begin
   raise notice 'T4 PASS: postgres and supabase_admin update / delete (trusted); service_role TRUNCATE gets 42501 (append-only); postgres TRUNCATE passes';
 end $$;
 
--- T5 the backfill after two runs: every admin of the first run became a
--- super_admin; a2's downgrade (between the runs) survived the re-run; a3,
--- made an admin by hand between the runs, was picked up; nobody else is staff
+-- T5 the backfill runs only on the first apply (platform_staff empty):
+--   * the first apply backfilled EVERY admin of that moment — a1 and a2, both
+--     with no granter;
+--   * the re-run promoted nobody: a2's downgrade to auditor (between the runs)
+--     stands, and a3 — made an admin after the first apply — has NO row, so
+--     staff_role() is NULL for a3 (an auditor until a super_admin assigns a
+--     role; T8 assigns one);
+--   * nobody else is staff.
 do $$
 begin
-  if (select count(*) from public.platform_staff) <> 3
+  if (select count(*) from public.platform_staff) <> 2
      or (select staff_role from public.platform_staff where user_id = '00000000-0000-0000-0000-0000000000a1') is distinct from 'super_admin'
      or (select granted_by from public.platform_staff where user_id = '00000000-0000-0000-0000-0000000000a1') is not null
      or (select staff_role from public.platform_staff where user_id = '00000000-0000-0000-0000-0000000000a2') is distinct from 'auditor'
-     or (select staff_role from public.platform_staff where user_id = '00000000-0000-0000-0000-0000000000a3') is distinct from 'super_admin'
-     or exists (select 1 from public.profiles p
-                 where p.user_type = 'admin'
-                   and not exists (select 1 from public.platform_staff s where s.user_id = p.id)) then
+     or exists (select 1 from public.platform_staff where user_id = '00000000-0000-0000-0000-0000000000a3')
+     or (select user_type from public.profiles where id = '00000000-0000-0000-0000-0000000000a3') <> 'admin' then
     raise exception 'T5 FAIL: platform_staff is %',
       (select string_agg(user_id::text || '=' || staff_role, ', ' order by user_id) from public.platform_staff);
   end if;
-  raise notice 'T5 PASS: the backfill made a1 super_admin, kept a2''s downgrade to auditor across the re-run, picked up a3; c1 / b1 / d1 are not staff';
 end $$;
+set role authenticated;
+do $$
+begin
+  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000a3', true);
+  if public.staff_role() is not null or public.is_super_admin() then
+    raise exception 'T5 FAIL: a3 (admin since after the first apply, no row) reads staff_role() = %', public.staff_role();
+  end if;
+end $$;
+reset role;
+do $$ begin raise notice 'T5 PASS: the first apply made every admin of the time (a1, a2) super_admin; the re-run promoted nobody — a2''s downgrade stands, a3 (admin since) has no row and staff_role() NULL; c1 / b1 / d1 are not staff'; end $$;
 
 -- T6 reading platform_staff: a non-admin reads nothing (as authenticated and as
--- the brief's app_user), every admin reads all three rows (whatever his own
--- staff role), a guest has no privilege at all
+-- the brief's app_user), every admin reads both rows (whatever his own staff
+-- role), a guest has no privilege at all
 set role authenticated;
 do $$
 declare
@@ -295,10 +308,10 @@ begin
   if n <> 0 then raise exception 'T6 FAIL: the client reads % staff rows', n; end if;
   perform set_config('test.uid', '00000000-0000-0000-0000-0000000000a2', true);
   select count(*) into n from public.platform_staff;
-  if n <> 3 then raise exception 'T6 FAIL: the auditor admin reads % staff rows, expected 3', n; end if;
+  if n <> 2 then raise exception 'T6 FAIL: the auditor admin reads % staff rows, expected 2', n; end if;
   perform set_config('test.uid', '00000000-0000-0000-0000-0000000000a1', true);
   select count(*) into n from public.platform_staff;
-  if n <> 3 then raise exception 'T6 FAIL: the super_admin reads % staff rows, expected 3', n; end if;
+  if n <> 2 then raise exception 'T6 FAIL: the super_admin reads % staff rows, expected 2', n; end if;
 end $$;
 reset role;
 set role app_user;
@@ -317,7 +330,7 @@ begin
   perform public.t_denied('T6 anon read', $q$select count(*) from public.platform_staff$q$);
 end $$;
 reset role;
-do $$ begin raise notice 'T6 PASS: a non-admin (authenticated and app_user) reads 0 staff rows; the auditor and the super_admin read all 3; anon gets "permission denied"'; end $$;
+do $$ begin raise notice 'T6 PASS: a non-admin (authenticated and app_user) reads 0 staff rows; the auditor and the super_admin read both; anon gets "permission denied"'; end $$;
 
 -- T7 writing platform_staff: no session writes, not even a super_admin's (the
 -- server does it with the service role, T3.4); the service role inserts,
@@ -363,7 +376,7 @@ end $$;
 reset role;
 do $$
 begin
-  if (select count(*) from public.platform_staff) <> 3
+  if (select count(*) from public.platform_staff) <> 2
      or exists (select 1 from public.platform_staff where user_id = '00000000-0000-0000-0000-0000000000c1')
      or (select staff_role from public.platform_staff where user_id = '00000000-0000-0000-0000-0000000000a2') <> 'auditor' then
     raise exception 'T7 FAIL: platform_staff changed';
@@ -372,9 +385,11 @@ begin
 end $$;
 
 -- T8 staff_role() / is_super_admin() for the caller (auth.uid()); a guest may
--- not call either
+-- not call either. a3 (no row since T5) is given operations the way T3.4
+-- does it: a service-role insert.
 set role service_role;
-update public.platform_staff set staff_role = 'operations' where user_id = '00000000-0000-0000-0000-0000000000a3';
+insert into public.platform_staff (user_id, staff_role, granted_by)
+  values ('00000000-0000-0000-0000-0000000000a3', 'operations', '00000000-0000-0000-0000-0000000000a1');
 reset role;
 set role authenticated;
 do $$

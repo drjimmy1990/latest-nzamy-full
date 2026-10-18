@@ -2340,8 +2340,12 @@ END $$;
 -- for normal sessions (O / A) — with no API write privilege (table, column,
 -- sequence) and SELECT kept. Keyed on the table's existence (to_regclass,
 -- never ::regclass), so a run before the migration passes with a NOTICE.
--- An admin with no staff row (made by hand since) is a NOTICE, not a stop:
--- requireStaff (T3.3) treats that admin as an auditor (fail-closed).
+-- An admin with no staff row (made since the first apply) is a NOTICE, not a
+-- stop: requireStaff (T3.3) treats that admin as an auditor (fail-closed).
+-- Every "re-run 20261019_30" hint below is safe to follow: a re-run
+-- re-asserts grants, functions and triggers and PROMOTES NOBODY (the
+-- super_admin backfill runs only on the first apply, while platform_staff is
+-- empty).
 SELECT '20261019_30 applied (public.platform_staff + append-only audit log)' AS check,
        to_regclass('public.platform_staff') IS NOT NULL AS present;
 
@@ -2367,14 +2371,14 @@ BEGIN
 
   -- platform_staff: RLS + its one policy
   IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass(staff)) THEN
-    missing := missing || ' RLS is off on platform_staff (every signed-in user would read the staff list — re-run 20261019_30);';
+    missing := missing || ' RLS is off on platform_staff (every signed-in user would read the staff list — re-run 20261019_30, which promotes nobody);';
   END IF;
   IF (SELECT count(*) FROM pg_policy WHERE polrelid = to_regclass(staff)) <> 1
      OR NOT EXISTS (SELECT 1 FROM pg_policy pol
                      WHERE pol.polrelid = to_regclass(staff) AND pol.polname = 'admins read platform staff'
                        AND pol.polcmd = 'r' AND pol.polroles = ARRAY['authenticated'::regrole::oid]
                        AND position('is_admin()' IN pg_get_expr(pol.polqual, pol.polrelid)) > 0) THEN
-    missing := missing || ' platform_staff must carry exactly one policy, "admins read platform staff" FOR SELECT TO authenticated USING is_admin() (re-run 20261019_30);';
+    missing := missing || ' platform_staff must carry exactly one policy, "admins read platform staff" FOR SELECT TO authenticated USING is_admin() (re-run 20261019_30, which promotes nobody);';
   END IF;
 
   -- effective privileges on both tables (a schema restore re-applies GRANT ALL)
@@ -2386,7 +2390,7 @@ BEGIN
     FOREACH r IN ARRAY ARRAY['public', 'anon', 'authenticated'] LOOP
       FOREACH p IN ARRAY ARRAY['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'] LOOP
         IF has_table_privilege(r, tbl, p) THEN
-          missing := missing || format(' %s holds %s on %s (a GRANT re-applied? re-run 20261019_30);', r, p, tbl);
+          missing := missing || format(' %s holds %s on %s (a GRANT re-applied? re-run 20261019_30, which promotes nobody);', r, p, tbl);
         END IF;
       END LOOP;
       CONTINUE WHEN has_table_privilege(r, tbl, 'INSERT, UPDATE, REFERENCES');   -- reported above
@@ -2404,7 +2408,7 @@ BEGIN
   END LOOP;
   FOREACH r IN ARRAY ARRAY['public', 'anon'] LOOP
     IF has_table_privilege(r, staff, 'SELECT') OR has_any_column_privilege(r, staff, 'SELECT') THEN
-      missing := missing || format(' %s can read platform_staff (re-run 20261019_30);', r);
+      missing := missing || format(' %s can read platform_staff (re-run 20261019_30, which promotes nobody);', r);
     END IF;
   END LOOP;
   IF NOT has_table_privilege('authenticated', staff, 'SELECT')
@@ -2415,7 +2419,7 @@ BEGIN
   IF seq IS NOT NULL THEN
     FOREACH r IN ARRAY ARRAY['public', 'anon', 'authenticated'] LOOP
       IF has_sequence_privilege(r, seq, 'USAGE, SELECT, UPDATE') THEN
-        missing := missing || format(' %s holds a privilege on %s (re-run 20261019_30);', r, seq);
+        missing := missing || format(' %s holds a privilege on %s (re-run 20261019_30, which promotes nobody);', r, seq);
       END IF;
     END LOOP;
     IF NOT has_sequence_privilege('service_role', seq, 'USAGE') THEN
@@ -2426,17 +2430,17 @@ BEGIN
   -- the role functions
   FOREACH fn IN ARRAY ARRAY['public.staff_role()', 'public.is_super_admin()'] LOOP
     IF to_regprocedure(fn) IS NULL THEN
-      missing := missing || format(' %s is missing (re-run 20261019_30);', fn);
+      missing := missing || format(' %s is missing (re-run 20261019_30, which promotes nobody);', fn);
       CONTINUE;
     END IF;
     SELECT p2.proconfig INTO cfg FROM pg_proc p2 WHERE p2.oid = to_regprocedure(fn);
     IF NOT (SELECT prosecdef FROM pg_proc WHERE oid = to_regprocedure(fn))
        OR cfg IS NULL OR NOT ('search_path=""' = ANY (cfg)) THEN
-      missing := missing || format(' %s is not SECURITY DEFINER with search_path '''' (proconfig %s — re-run 20261019_30);', fn, coalesce(cfg::text, 'NULL'));
+      missing := missing || format(' %s is not SECURITY DEFINER with search_path '''' (proconfig %s — re-run 20261019_30, which promotes nobody);', fn, coalesce(cfg::text, 'NULL'));
     END IF;
     FOREACH r IN ARRAY ARRAY['public', 'anon'] LOOP
       IF has_function_privilege(r, fn, 'EXECUTE') THEN
-        missing := missing || format(' %s can EXECUTE %s (a GRANT re-applied? re-run 20261019_30);', r, fn);
+        missing := missing || format(' %s can EXECUTE %s (a GRANT re-applied? re-run 20261019_30, which promotes nobody);', r, fn);
       END IF;
     END LOOP;
     IF NOT has_function_privilege('authenticated', fn, 'EXECUTE') THEN
@@ -2446,24 +2450,24 @@ BEGIN
   IF to_regprocedure('public.staff_role()') IS NOT NULL
      AND (SELECT position('public.profiles' IN prosrc) = 0 OR position('user_type' IN prosrc) = 0
             FROM pg_proc WHERE oid = to_regprocedure('public.staff_role()')) THEN
-    missing := missing || ' staff_role() does not read profiles.user_type — a demoted admin''s leftover staff row keeps its role (re-run 20261019_30);';
+    missing := missing || ' staff_role() does not read profiles.user_type — a demoted admin''s leftover staff row keeps its role (re-run 20261019_30, which promotes nobody);';
   END IF;
 
   -- admin_audit_events: append-only
   IF to_regclass(audit) IS NOT NULL THEN
     IF NOT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = to_regclass(audit)
                     AND attname = 'actor_email' AND NOT attisdropped) THEN
-      missing := missing || ' admin_audit_events.actor_email is missing (re-run 20261019_30);';
+      missing := missing || ' admin_audit_events.actor_email is missing (re-run 20261019_30, which promotes nobody);';
     END IF;
     IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass(audit)) THEN
       missing := missing || ' RLS is off on admin_audit_events (anon / authenticated keep SELECT — every row would be readable);';
     END IF;
     IF to_regprocedure(trg) IS NULL THEN
-      missing := missing || ' admin_audit_append_only() is missing (re-run 20261019_30);';
+      missing := missing || ' admin_audit_append_only() is missing (re-run 20261019_30, which promotes nobody);';
     ELSE
       SELECT p2.proconfig INTO cfg FROM pg_proc p2 WHERE p2.oid = to_regprocedure(trg);
       IF (SELECT prosecdef FROM pg_proc WHERE oid = to_regprocedure(trg)) THEN
-        missing := missing || ' admin_audit_append_only is SECURITY DEFINER — every writer reads as its owner and nothing is refused (re-run 20261019_30);';
+        missing := missing || ' admin_audit_append_only is SECURITY DEFINER — every writer reads as its owner and nothing is refused (re-run 20261019_30, which promotes nobody);';
       END IF;
       IF cfg IS NULL OR NOT ('search_path=""' = ANY (cfg)) THEN
         missing := missing || format(' admin_audit_append_only proconfig %s lacks search_path='''';', coalesce(cfg::text, 'NULL'));
@@ -2476,20 +2480,20 @@ BEGIN
              AND t.tgqual IS NULL                    -- no WHEN
              AND t.tgattr = ''::int2vector           -- not UPDATE OF <columns>
              AND t.tgfoid = to_regprocedure(trg)) <> 1 THEN
-        missing := missing || ' admin_audit_events has no trg_admin_audit_append_only BEFORE UPDATE OR DELETE FOR EACH ROW — audit rows can be rewritten (re-run 20261019_30);';
+        missing := missing || ' admin_audit_events has no trg_admin_audit_append_only BEFORE UPDATE OR DELETE FOR EACH ROW — audit rows can be rewritten (re-run 20261019_30, which promotes nobody);';
       END IF;
       IF (SELECT count(*) FROM pg_trigger t
            WHERE t.tgrelid = to_regclass(audit) AND t.tgname = 'trg_admin_audit_no_truncate'
              AND NOT t.tgisinternal
              AND t.tgtype = (2 | 32)                 -- STATEMENT | BEFORE | TRUNCATE
              AND t.tgfoid = to_regprocedure(trg)) <> 1 THEN
-        missing := missing || ' admin_audit_events has no trg_admin_audit_no_truncate BEFORE TRUNCATE — the log can be wiped (re-run 20261019_30);';
+        missing := missing || ' admin_audit_events has no trg_admin_audit_no_truncate BEFORE TRUNCATE — the log can be wiped (re-run 20261019_30, which promotes nobody);';
       END IF;
       IF EXISTS (SELECT 1 FROM pg_trigger
                   WHERE tgrelid = to_regclass(audit)
                     AND tgname IN ('trg_admin_audit_append_only', 'trg_admin_audit_no_truncate')
                     AND tgenabled NOT IN ('O', 'A')) THEN   -- D = disabled, R = replica only
-        missing := missing || ' an append-only trigger on admin_audit_events is DISABLED or replica-only (re-run 20261019_30);';
+        missing := missing || ' an append-only trigger on admin_audit_events is DISABLED or replica-only (re-run 20261019_30, which promotes nobody);';
       END IF;
     END IF;
   END IF;
@@ -2504,7 +2508,7 @@ BEGIN
    WHERE pr.user_type = 'admin'
      AND NOT EXISTS (SELECT 1 FROM public.platform_staff s WHERE s.user_id = pr.id);
   IF ids IS NOT NULL THEN
-    RAISE NOTICE '_verify: 20261019_30 — admins with no platform_staff row (they act as auditors until a super_admin gives them a role in the admin console): %', ids;
+    RAISE NOTICE '_verify: 20261019_30 — admins with no platform_staff row (they act as auditors until a super_admin gives them a role in the admin console; re-running 20261019_30 promotes nobody): %', ids;
   END IF;
   SELECT string_agg(s.user_id::text, ', ') INTO ids
     FROM public.platform_staff s

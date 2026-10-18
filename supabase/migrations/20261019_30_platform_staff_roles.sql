@@ -32,10 +32,16 @@
 --      platform_staff and profiles past RLS), search_path ''. EXECUTE revoked
 --      from PUBLIC and anon (live grants every new function to anon by
 --      default), granted to authenticated and service_role.
---   4. Backfill: every current admin gets a super_admin row
---      (`on conflict do nothing`), so no admin loses anything today; the user
---      downgrades staff afterwards. A re-run never re-promotes a downgraded
---      staffer, and gives super_admin to an admin added since without a row.
+--   4. Backfill — FIRST APPLY ONLY. While public.platform_staff is empty,
+--      every current admin gets a super_admin row, so no admin loses anything
+--      today (the user downgrades staff afterwards); a NOTICE names every
+--      user_id that got super_admin. Once the table has a row, a run inserts
+--      NOTHING: RE-RUNNING THIS FILE (to repair grant drift after a restore,
+--      as _verify.sql suggests) PROMOTES NOBODY. A downgrade stands, and an
+--      admin made since (no row) stays an auditor until a super_admin gives
+--      them a role in the admin console; such admins are listed in a NOTICE.
+--      (If no admin exists at the first apply the table stays empty, and the
+--      first run that finds one backfills then.)
 --   5. public.admin_audit_events:
 --      * `actor_email text` (the actor's address at the time — survives the
 --        account's deletion, when actor_id goes NULL);
@@ -85,6 +91,9 @@
 --   service role (admin/community/moderation/[id], admin/community/reports/[id],
 --   admin/verifications/[id], onboarding/account-type), and no one updates or
 --   deletes audit rows.
+--   RE-RUNS are safe at any time (repair after a restore re-applies GRANT
+--   ALL): grants, functions and triggers are re-asserted and NOBODY is
+--   promoted — the super_admin backfill runs only on the first apply.
 --
 -- BEFORE APPLYING — writers outside this repo
 --   An n8n workflow or script that writes admin_audit_events with a USER's
@@ -196,13 +205,32 @@ revoke all on function public.is_super_admin() from public, anon;
 grant execute on function public.staff_role() to authenticated, service_role;
 grant execute on function public.is_super_admin() to authenticated, service_role;
 
--- ── 4. Backfill — every current admin is a super_admin until the user says
---       otherwise; a re-run changes no existing row ───────────────────────────
-insert into public.platform_staff (user_id, staff_role)
-select p.id, 'super_admin'
-  from public.profiles p
- where p.user_type = 'admin'
-on conflict (user_id) do nothing;
+-- ── 4. Backfill — first apply only (platform_staff empty); a re-run promotes
+--       nobody. The transaction-local setting tells the verify which run this
+--       is. ──────────────────────────────────────────────────────────────────
+do $$
+declare
+  ids text;
+begin
+  if not exists (select 1 from public.platform_staff) then
+    with ins as (
+      insert into public.platform_staff (user_id, staff_role)
+      select p.id, 'super_admin'
+        from public.profiles p
+       where p.user_type = 'admin'
+      on conflict (user_id) do nothing
+      returning user_id
+    )
+    select string_agg(user_id::text, ', ' order by user_id) into ids from ins;
+    perform pg_catalog.set_config('nzamy.platform_staff_first_apply', 'on', true);
+    raise notice '20261019_30: first apply — super_admin given to every current admin: %',
+      coalesce(ids, '(none — there is no admin yet; the first run that finds one backfills then)');
+  else
+    perform pg_catalog.set_config('nzamy.platform_staff_first_apply', 'off', true);
+    raise notice '20261019_30: platform_staff already has % row(s) — backfill skipped; this run promotes nobody',
+      (select count(*) from public.platform_staff);
+  end if;
+end $$;
 
 -- ── 5. admin_audit_events: actor_email, RLS, no API writes ───────────────────
 alter table public.admin_audit_events add column if not exists actor_email text;
@@ -465,13 +493,19 @@ begin
     missing := missing || ' admin_audit_events lacks one enabled trg_admin_audit_no_truncate BEFORE TRUNCATE FOR EACH STATEMENT;';
   end if;
 
-  -- every current admin is staff
-  select string_agg(p3.id::text, ', ') into unstaffed
+  -- every admin is staff: guaranteed on the first apply (the backfill ran in
+  -- this transaction), so a gap then is a failure; on a later run the backfill
+  -- is skipped by design, so a gap is reported and nobody is promoted
+  select string_agg(p3.id::text, ', ' order by p3.id) into unstaffed
     from public.profiles p3
    where p3.user_type = 'admin'
      and not exists (select 1 from public.platform_staff s where s.user_id = p3.id);
   if unstaffed is not null then
-    missing := missing || format(' admins without a platform_staff row: %s;', unstaffed);
+    if coalesce(pg_catalog.current_setting('nzamy.platform_staff_first_apply', true), '') = 'on' then
+      missing := missing || format(' admins without a platform_staff row after the first-apply backfill: %s;', unstaffed);
+    else
+      raise notice '20261019_30: admins with no platform_staff row (this run promotes nobody — they act as auditors until a super_admin gives them a role in the admin console): %', unstaffed;
+    end if;
   end if;
 
   if missing <> '' then
