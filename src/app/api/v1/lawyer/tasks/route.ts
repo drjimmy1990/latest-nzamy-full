@@ -1,5 +1,6 @@
 import { NextResponse, NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
+import { createServiceClient } from "@/lib/supabase/server";
 import { recordActivity, RequestEvent } from "@/lib/events";
 import {
   readSubtasks,
@@ -47,6 +48,8 @@ interface TaskRow {
   category: string | null;
   due_date: string | null;
   completed_at: string | null;
+  /** Owner item 59 («المحامي المُكلَّف»). Nullable; nothing writes it yet. */
+  assignee_user_id: string | null;
   metadata: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
@@ -54,7 +57,13 @@ interface TaskRow {
 
 const VALID_STATUSES = new Set(["todo", "in_progress", "done", "archived"]);
 
-function toDto(row: TaskRow, steps: TaskSubtask[]) {
+/**
+ * `assigneeName` is resolved by GET from `profiles.display_name` (see
+ * `resolveDisplayNames`); null when the task has no assignee or the name
+ * could not be resolved, never guessed. POST creates no assignee, so it passes
+ * nothing.
+ */
+function toDto(row: TaskRow, steps: TaskSubtask[], assigneeName: string | null = null) {
   const meta = row.metadata ?? {};
   return {
     id: row.id,
@@ -67,6 +76,8 @@ function toDto(row: TaskRow, steps: TaskSubtask[]) {
     caseRef: typeof meta.caseRef === "string" ? meta.caseRef : undefined,
     notes: row.description || undefined,
     subtasks: steps,
+    assigneeUserId: row.assignee_user_id ?? null,
+    assigneeName: row.assignee_user_id ? assigneeName : null,
     createdAt: row.created_at,
     created_at: row.created_at,
     updatedAt: row.updated_at,
@@ -74,7 +85,40 @@ function toDto(row: TaskRow, steps: TaskSubtask[]) {
 }
 
 const TASK_SELECT =
-  "id, case_request_id, title, description, status, priority, category, due_date, completed_at, metadata, created_at, updated_at";
+  "id, case_request_id, title, description, status, priority, category, due_date, completed_at, assignee_user_id, metadata, created_at, updated_at";
+
+/**
+ * `profiles.display_name` for each id, best-effort. Service-role, the same
+ * pattern `service-requests/[id]` uses to resolve a document's `uploaderName`:
+ * `profiles` SELECT under RLS only allows "read own row" or "admin reads
+ * all", so the caller's own client cannot read a colleague's name. Only ids
+ * taken from the caller's OWN tasks reach here, and only `id, display_name`
+ * is read. Never fails the parent read: a failed lookup leaves the names null.
+ */
+async function resolveDisplayNames(ids: string[]): Promise<Record<string, string>> {
+  const namesById: Record<string, string> = {};
+  if (ids.length === 0) return namesById;
+  try {
+    const svc = await createServiceClient();
+    const { data: nameRows, error } = await svc
+      .from("profiles")
+      .select("id, display_name")
+      .in("id", ids);
+    if (error) {
+      console.error("[lawyer/tasks GET] assignee name lookup failed:", error.message, error.code);
+      return namesById;
+    }
+    for (const row of nameRows ?? []) {
+      const r = row as Record<string, unknown>;
+      if (typeof r.id === "string" && typeof r.display_name === "string" && r.display_name.trim()) {
+        namesById[r.id] = r.display_name.trim();
+      }
+    }
+  } catch (e) {
+    console.error("[lawyer/tasks GET] assignee name lookup failed:", (e as Error).message);
+  }
+  return namesById;
+}
 
 /**
  * GET /api/v1/lawyer/tasks
@@ -144,7 +188,16 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const tasks = rows.map((row) => toDto(row, stepsByTask.get(row.id) ?? []));
+    // «المحامي المُكلَّف» (owner item 59): one batched name lookup for every
+    // distinct assignee on the page.
+    const assigneeIds = Array.from(
+      new Set(rows.map((r) => r.assignee_user_id).filter((v): v is string => typeof v === "string" && v.length > 0)),
+    );
+    const namesById = await resolveDisplayNames(assigneeIds);
+
+    const tasks = rows.map((row) =>
+      toDto(row, stepsByTask.get(row.id) ?? [], row.assignee_user_id ? namesById[row.assignee_user_id] ?? null : null),
+    );
     return NextResponse.json({ data: tasks, total: count ?? tasks.length });
   } catch (err) {
     console.error("[lawyer/tasks GET] Unexpected error:", err);

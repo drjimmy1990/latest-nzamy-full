@@ -51,6 +51,10 @@ export interface LawyerTask {
   caseRef?: string;
   notes?: string;
   subtasks?: LawyerSubtask[];
+  /** tasks.assignee_user_id — null when the task has no assignee. */
+  assigneeUserId?: string | null;
+  /** The assignee's profiles.display_name, resolved server-side; null when unknown. «المحامي المُكلَّف» (owner item 59). */
+  assigneeName?: string | null;
 }
 
 export interface CreateLawyerTaskInput {

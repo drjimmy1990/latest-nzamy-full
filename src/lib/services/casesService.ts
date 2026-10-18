@@ -170,6 +170,9 @@ export interface ServiceRequestAttachment {
    * UUIDs the RLS-scoped client cannot always join to a name). Absent when
    * the uploader's profile could not be resolved — never guessed. */
   uploaderName?: string | null;
+  /** attachments.source: upload / generated / imported / contract_version.
+   * Shown on the lawyer case file as «مصدر المستند» (owner item 59). */
+  source?: string | null;
 }
 
 export interface ServiceRequestHearing {

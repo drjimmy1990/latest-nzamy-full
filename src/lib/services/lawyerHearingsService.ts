@@ -30,6 +30,8 @@ export interface HearingDto {
   urgency: string;
   notes?: string;
   status: string;
+  /** hearings.duration_minutes — «مدة الجلسة» (owner item 59). null when not recorded. */
+  durationMinutes?: number | null;
   createdAt?: string;
   updatedAt?: string;
 }

@@ -362,6 +362,9 @@ export async function GET(
       ...(a.mime_type != null ? { mime_type: a.mime_type } : {}),
       created_at: a.created_at ?? null,
       ...(ownerId && namesById[ownerId] ? { uploaderName: namesById[ownerId] } : {}),
+      // attachments.source (upload / generated / imported / contract_version):
+      // the lawyer case file shows it as «مصدر المستند» (owner item 59).
+      ...(typeof a.source === "string" ? { source: a.source } : {}),
     };
   });
 

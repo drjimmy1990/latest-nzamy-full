@@ -18,6 +18,8 @@ export interface Task {
   caseRef?: string;
   caseId?: string;
   assignedTo?: string;
+  /** «المحامي المُكلَّف» (owner item 59): tasks.assignee_user_id resolved to a name by the route. Undefined = none. */
+  assigneeName?: string;
   ownerId?: string;   // undefined = mine; set to team member id = team task
   notes?: string;
   subtasks?: { id: string; title: string; done: boolean }[];

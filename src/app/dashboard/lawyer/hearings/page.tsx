@@ -89,6 +89,7 @@ import { useUser } from "@/hooks/useUser";
 import AddHearingModal from "../_components/AddHearingModal";
 import ConsultantGate from "@/components/dashboard/ConsultantGate";
 import { formatTimeOfDayAr, parseTimeOfDay } from "./_timeOfDay";
+import { formatDurationAr, HEARING_DURATION_LABEL_AR } from "@/lib/services/item59Labels";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type EventType = "hearing"|"deadline"|"gov_review"|"notary"|"client_meet"|"court_collect"|"police"|"expert"|"contract"|"internal";
@@ -113,6 +114,9 @@ interface CalEvent {
   // (see `todayKey`), so «اليوم» still means today on a tab left open all night.
   location?: string; date: string; dateSort: number;
   time?: string; urgency: "critical"|"high"|"normal";
+  // hearings.duration_minutes — «مدة الجلسة» (owner item 59). null/undefined
+  // when the row records none; the card then shows «—».
+  durationMinutes?: number | null;
   notes?: string; done?: boolean; deadlineDaysLeft?: number;
   workflow?: WorkflowStep[];
 }
@@ -223,6 +227,7 @@ function hearingDtoToCalEvent(row: HearingDto): CalEvent | null {
     dateSort,
     time: row.time || undefined,
     urgency,
+    durationMinutes: row.durationMinutes ?? null,
     notes: row.notes || undefined,
     done: isDone,
     workflow: undefined,
@@ -392,15 +397,18 @@ function googleCalUrl(ev: CalEvent): string | null {
   // asserting one — the row records none — so the meaning is left where it
   // already is rather than pinned to a guess.
   //
-  // One hour is the TEMPLATE's default block, not a claim about the sitting —
-  // nothing on the row records a duration, and Google's compose screen opens
-  // with the end time editable before anything is saved. A row with no readable
-  // time keeps the old all-day form rather than inventing an hour for it.
+  // The block's length is the row's own `duration_minutes` («مدة الجلسة»,
+  // owner item 59) when one is recorded. Without one, one hour is the
+  // TEMPLATE's default block, not a claim about the sitting — Google's compose
+  // screen opens with the end time editable before anything is saved. A row
+  // with no readable time keeps the old all-day form rather than inventing an
+  // hour for it.
   const at = parseTimeOfDay(ev.time);
   let dates: string;
   if (at) {
     start.setHours(at.h, at.m, 0, 0);
-    const end = new Date(start.getTime() + 60*60*1000);
+    const minutes = typeof ev.durationMinutes === "number" && ev.durationMinutes > 0 ? ev.durationMinutes : 60;
+    const end = new Date(start.getTime() + minutes*60*1000);
     dates = `${gcalStamp(start)}/${gcalStamp(end)}`;
   } else {
     const day = gcalDay(start);
@@ -533,6 +541,9 @@ function EventCard({ev,isDark}:{ev:CalEvent;isDark:boolean}) {
                 <Clock size={11} />{formatEventDateAr(ev.date)}{ev.time?` — ${formatTimeOfDayAr(ev.time)}`:""}
               </span>
               {ev.location&&<span className={`flex items-center gap-1 text-[11px] ${isDark?"text-zinc-500":"text-slate-400"}`}><MapPin size={11}/>{ev.location}</span>}
+              {/* «مدة الجلسة» (owner item 59), «—» when the row records none.
+                  Not on a deadline: a due date has no length. */}
+              {!isDeadline&&<span className={`flex items-center gap-1 text-[11px] ${isDark?"text-zinc-500":"text-slate-400"}`}><Hourglass size={11}/>{HEARING_DURATION_LABEL_AR}: {formatDurationAr(ev.durationMinutes)}</span>}
               {ev.client&&<span className={`flex items-center gap-1 text-[11px] ${isDark?"text-zinc-500":"text-slate-400"}`}><User size={11}/>{ev.client}</span>}
             </div>
             {/* Links Row */}

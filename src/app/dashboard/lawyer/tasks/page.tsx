@@ -123,6 +123,7 @@ export default function LawyerTasksPage() {
         caseRef: d.caseRef || undefined,
         notes: d.notes || undefined,
         subtasks: d.subtasks || [],
+        assigneeName: d.assigneeName || undefined,
       })));
       setLoadState("ready");
     } catch (err) {

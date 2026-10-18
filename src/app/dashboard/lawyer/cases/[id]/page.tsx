@@ -19,6 +19,7 @@ import { countPhraseAr, type ArabicCountForms } from "@/lib/services/arabicCount
 import { getLawyerHearings, type HearingDto } from "@/lib/services/lawyerHearingsService";
 import { getCaseStages, type CaseStage } from "@/lib/services/caseStagesService";
 import { caseEventLabel } from "@/lib/services/caseEventLabels";
+import { DOCUMENT_SOURCE_LABEL_AR, documentSourceLabelAr } from "@/lib/services/item59Labels";
 import {
   getDeadlines,
   updateDeadline,
@@ -356,9 +357,12 @@ function formatFileSize(bytes: number | null | undefined): string {
  * without inventing a taxonomy nothing writes to. Uploader is now the other
  * real column: `attachments.owner_user_id` resolved to `profiles.display_name`
  * server-side (the same service-role join finding 183 added) and returned as
- * `doc.uploaderName` — shown next to the type chip when present. "Source" (an
- * intake channel — email, WhatsApp, portal) still has no column anywhere and
- * stays out rather than be invented.
+ * `doc.uploaderName` — shown next to the type chip when present. The file's
+ * origin is the third real column: `attachments.source` (upload / generated /
+ * imported / contract_version), shown as «مصدر المستند» (owner item 59) through
+ * `documentSourceLabelAr`. That is how the file entered the platform, not an
+ * intake channel: whether it first arrived by email, WhatsApp or the portal
+ * still has no column anywhere and stays out rather than be invented.
  */
 function fileTypeLabel(mimeType: string | null | undefined): string {
   const mt = (mimeType ?? "").toLowerCase();
@@ -1906,6 +1910,8 @@ export default function CaseDetailPage() {
                       <p className={`text-[13px] font-semibold truncate ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{doc.name}</p>
                       <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
                         {formatFileSize(doc.file_size)} · {formatDate(doc.created_at)}
+                        {/* «مصدر المستند» (owner item 59): attachments.source; «—» for anything else. */}
+                        {` · ${DOCUMENT_SOURCE_LABEL_AR}: ${documentSourceLabelAr(doc.source)}`}
                         {doc.uploaderName ? ` · رفعه ${doc.uploaderName}` : ""}
                       </p>
                     </div>
@@ -1914,9 +1920,9 @@ export default function CaseDetailPage() {
                         row's width blank at rest (finding 191). This is also
                         the honest slice of "category" the row can show: real
                         `mime_type` data, not an invented taxonomy (finding
-                        190) — uploader now shows too, on the line above, when
-                        the service-role join resolved a name; see the note on
-                        `fileTypeLabel` above. */}
+                        190) — the source shows on the line above, and the
+                        uploader too when the service-role join resolved a
+                        name; see the note on `fileTypeLabel` above. */}
                     <span className={`hidden sm:inline-block flex-shrink-0 text-[10px] font-bold px-2 py-1 rounded-lg ${isDark ? "bg-white/[0.04] text-zinc-500" : "bg-slate-100 text-slate-400"}`}>
                       {fileTypeLabel(doc.mime_type)}
                     </span>

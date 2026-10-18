@@ -54,6 +54,8 @@ interface HearingRow {
   urgency: string;
   status: string;
   notes: string;
+  /** Owner item 59 («مدة الجلسة»). Nullable; nothing writes it yet. */
+  duration_minutes: number | null;
   metadata: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
@@ -73,13 +75,14 @@ function toDto(row: HearingRow) {
     urgency: urgencyFromDb(row.urgency),
     notes: row.notes || undefined,
     status: row.status,
+    durationMinutes: typeof row.duration_minutes === "number" ? row.duration_minutes : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
 const HEARINGS_SELECT =
-  "id, case_request_id, title, kind, hearing_date, hearing_time, location, urgency, status, notes, metadata, created_at, updated_at";
+  "id, case_request_id, title, kind, hearing_date, hearing_time, location, urgency, status, notes, duration_minutes, metadata, created_at, updated_at";
 
 /**
  * GET /api/v1/lawyer/hearings

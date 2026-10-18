@@ -5,12 +5,13 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   CheckCircle, Clock, Circle, Archive,
   CaretRight, Scales, Trash,
-  PencilSimple, Plus, X, Note,
+  PencilSimple, Plus, X, Note, User,
 } from "@phosphor-icons/react";
 
 import Link from "next/link";
 import { PRIORITY_CONFIG, CATEGORY_CONFIG } from "../_data";
 import type { Task, TaskStatus } from "../_types";
+import { TASK_ASSIGNEE_LABEL_AR, assigneeLabelAr } from "@/lib/services/item59Labels";
 
 // ─── TaskCard ──────────────────────────────────────────────────────────────────
 
@@ -152,6 +153,12 @@ export function TaskCard({
                 <Note size={10} /> {(task as any).notes}
               </p>
             )}
+            {/* «المحامي المُكلَّف» (owner item 59): tasks.assignee_user_id,
+                resolved to a name by GET /api/v1/lawyer/tasks. «—» when the
+                task has no assignee. */}
+            <p className={`text-[11px] mt-0.5 flex items-center gap-1 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+              <User size={10} /> {TASK_ASSIGNEE_LABEL_AR}: {assigneeLabelAr(task.assigneeName)}
+            </p>
           </div>
 
           {/* Priority dot — dimmed once the task is done, same rule as the
