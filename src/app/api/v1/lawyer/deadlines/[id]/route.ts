@@ -1,5 +1,6 @@
 import { NextResponse, NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
+import { assertCourtPractice } from "@/lib/auth/assertCourtPractice";
 import { recordActivity, RequestEvent } from "@/lib/events";
 import { hijriLabelAr } from "@/lib/services/hijri";
 import { parseIsoDate, daysUntil } from "@/lib/services/deadlineEngine";
@@ -102,6 +103,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     const auth = await assertRole(["lawyer", "firm"]);
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
+    // Art. 18: the deadline radar is a court tool; a legal consultant does not plead.
+    const refused = await assertCourtPractice(supabase, user.id);
+    if (refused) return refused;
     const { id } = await context.params;
 
     const { data: existing, error: fetchError } = await supabase

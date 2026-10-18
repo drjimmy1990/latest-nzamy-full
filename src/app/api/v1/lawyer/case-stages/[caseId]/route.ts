@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { assertRole } from "@/lib/auth/assertRole";
+import { assertCourtPractice } from "@/lib/auth/assertCourtPractice";
 import { recordActivity, RequestEvent } from "@/lib/events";
 import type { AutoDeadlineResult, AutoDeadlineSummary } from "@/lib/services/caseStagesService";
 import {
@@ -141,6 +142,9 @@ export async function POST(request: NextRequest, context: { params: Promise<{ ca
     const auth = await assertRole(["lawyer", "firm"]);
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
+    // Art. 18: a legal consultant does not plead, so he records no court degree.
+    const refused = await assertCourtPractice(supabase, user.id);
+    if (refused) return refused;
     const { caseId } = await context.params;
 
     const body = await request.json();
@@ -409,6 +413,10 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ c
     const auth = await assertRole(["lawyer", "firm"]);
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
+    // Art. 18: a legal consultant does not plead, so he records no judgment
+    // (and so this PATCH's statutory-deadline hook never runs for him).
+    const refused = await assertCourtPractice(supabase, user.id);
+    if (refused) return refused;
     const { caseId } = await context.params;
 
     const body = await request.json();

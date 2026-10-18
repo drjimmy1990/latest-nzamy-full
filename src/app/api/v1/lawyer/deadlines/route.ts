@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { assertRole } from "@/lib/auth/assertRole";
+import { assertCourtPractice } from "@/lib/auth/assertCourtPractice";
 import { recordActivity, RequestEvent } from "@/lib/events";
 import { hijriLabelAr } from "@/lib/services/hijri";
 import {
@@ -206,6 +207,9 @@ export async function POST(request: NextRequest) {
     const auth = await assertRole(["lawyer", "firm"]);
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
+    // Art. 18: the deadline radar is a court tool; a legal consultant does not plead.
+    const refused = await assertCourtPractice(supabase, user.id);
+    if (refused) return refused;
 
     const body = (await request.json()) as CreateBody;
     const { title, triggerDate, ruleId, dueDate, kind, caseRequestId, stageId, hearingId, priority, reminderOffsetsDays, notes } = body;

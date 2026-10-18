@@ -1,5 +1,6 @@
 import { NextResponse, NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
+import { assertCourtPractice } from "@/lib/auth/assertCourtPractice";
 import { recordActivity, RequestEvent } from "@/lib/events";
 import {
   type UiHearingType, type UiUrgency,
@@ -145,6 +146,9 @@ export async function POST(request: NextRequest) {
     const auth = await assertRole(["lawyer", "firm"]);
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
+    // Art. 18: a legal consultant does not manage hearings.
+    const refused = await assertCourtPractice(supabase, user.id);
+    if (refused) return refused;
 
     const body = await request.json();
     const {
