@@ -21,7 +21,7 @@
  */
 import assert from "node:assert/strict";
 import test from "node:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { LAWYER_AI_TOOLS, getLawyerAiBadge } from "../../constants/lawyerAiCatalog.ts";
 
 function src(path: string): string {
@@ -376,6 +376,22 @@ test("P1 item 2: no surface makes a claim the product cannot support", () => {
     const c = code(path);
     for (const [re, what] of UNSUPPORTED_CLAIMS) assert.doesNotMatch(c, re, `${path}: ${what}`);
   }
+});
+
+test("٢١٧: the sales team's internal seat range (200–250 SAR) is on no public page", () => {
+  // Owner answer ٢١٧: extra seats are «تواصل مع المبيعات»; the range is a
+  // negotiating guide for the CRM, not a public price.
+  const range = /٢٠٠\s*[–-]\s*٢٥٠|200\s*[–-]\s*250/;
+  let files = 0;
+  for (const dir of ["app", "components", "constants"]) {
+    const root = new URL(`../../${dir}/`, import.meta.url);
+    for (const entry of readdirSync(root, { recursive: true }) as string[]) {
+      if (!/\.tsx?$/.test(entry) || /\.test\.tsx?$/.test(entry)) continue;
+      files++;
+      assert.doesNotMatch(src(`${dir}/${entry.replace(/\\/g, "/")}`), range, `${dir}/${entry}`);
+    }
+  }
+  assert.ok(files > 100, `scanned ${files} files`);
 });
 
 test("P1 item 2: /login shows live library counts, not «٢٤/٧» or «١٠٠٪ آمن»", () => {

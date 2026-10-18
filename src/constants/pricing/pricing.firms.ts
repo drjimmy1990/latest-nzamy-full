@@ -2,12 +2,14 @@ import { Users, ShieldCheck } from "@phosphor-icons/react";
 import { Plan, ComparisonCategory } from "./pricing.types";
 
 // ─── Law firms (owner answer ١٧٥, 2026-10-16) ─────────────────────────────────
-// Two plans replace the four yearly tiers (17,988 … 179,988+ SAR):
+// Two plans replace the four yearly tiers:
 // - «مكتب المحاماة» (Firm Pro): 990 SAR/month or 9,900 SAR/year, 3 seats.
 // - «شركة المحاماة» (Enterprise): 1,490 SAR/month or 14,900 SAR/year, 5 seats.
-// The yearly price is ten months. Extra seats are sold at a descending price
-// the owner has not set yet (owner question ٢١٧), so no seat price is shown,
-// and no included firm points are claimed for the same reason.
+// The yearly price is ten months. Extra seats go through sales (owner answer
+// ٢١٧, 2026-10-18): each card links «مقاعد إضافية: تواصل مع المبيعات» to
+// /contact?type=firm-seats and quotes no seat price. The sales team's
+// negotiating range stays in the CRM, never on a public page. No included
+// firm points are claimed: the owner has set none.
 // Ids are kept: FirmPlanId, firmProfileReadiness.ts and the admin pricing
 // screen key on "firm-basic" / "firm-enterprise".
 export const plansFirms: { ar: Plan[]; en: Plan[] } = {
@@ -29,8 +31,9 @@ export const plansFirms: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: [],
         platform: ["٣ مقاعد مشمولة", "القضايا والجلسات والمهل", "الموكّلون والاستشارات والعقود", "أعضاء المكتب وصلاحياتهم"],
-        support: ["السنوي بسعر عشرة أشهر", "مقاعد إضافية عند الطلب"],
+        support: ["السنوي بسعر عشرة أشهر"],
       },
+      salesLine: { label: "مقاعد إضافية: تواصل مع المبيعات", href: "/contact?type=firm-seats" },
     },
     {
       id: "firm-enterprise",
@@ -49,8 +52,9 @@ export const plansFirms: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: [],
         platform: ["٥ مقاعد مشمولة", "القضايا والجلسات والمهل", "الموكّلون والاستشارات والعقود", "أعضاء الشركة وصلاحياتهم"],
-        support: ["السنوي بسعر عشرة أشهر", "مقاعد إضافية عند الطلب"],
+        support: ["السنوي بسعر عشرة أشهر"],
       },
+      salesLine: { label: "مقاعد إضافية: تواصل مع المبيعات", href: "/contact?type=firm-seats" },
     },
   ],
   en: [
@@ -71,8 +75,9 @@ export const plansFirms: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: [],
         platform: ["3 seats included", "Cases, hearings and deadlines", "Clients, consultations and contracts", "Members and their permissions"],
-        support: ["Yearly priced at ten months", "Extra seats on request"],
+        support: ["Yearly priced at ten months"],
       },
+      salesLine: { label: "Extra seats: contact sales", href: "/contact?type=firm-seats" },
     },
     {
       id: "firm-enterprise",
@@ -91,8 +96,9 @@ export const plansFirms: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: [],
         platform: ["5 seats included", "Cases, hearings and deadlines", "Clients, consultations and contracts", "Members and their permissions"],
-        support: ["Yearly priced at ten months", "Extra seats on request"],
+        support: ["Yearly priced at ten months"],
       },
+      salesLine: { label: "Extra seats: contact sales", href: "/contact?type=firm-seats" },
     },
   ],
 };

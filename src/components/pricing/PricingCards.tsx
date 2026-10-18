@@ -251,6 +251,20 @@ function SpotlightCard({
           ))}
         </ul>
 
+        {/* Owner answer ٢١٧: extra seats are sold through sales, so the card
+            links to them instead of quoting a seat price. */}
+        {plan.salesLine && (
+          <a
+            href={plan.salesLine.href}
+            className={`mt-4 inline-flex w-fit items-center gap-2 text-sm font-semibold underline-offset-4 hover:underline ${
+              isHighlighted ? "text-gold" : "text-royal dark:text-gold"
+            }`}
+          >
+            <Users size={14} weight="duotone" />
+            {plan.salesLine.label}
+          </a>
+        )}
+
         {/* CTA */}
         <motion.a
           href={plan.ctaHref}

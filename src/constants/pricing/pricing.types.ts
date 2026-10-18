@@ -20,6 +20,11 @@ export interface Plan {
   maxSeats?: number | null;
   includedAnnualPoints?: number;
   pricingFormulaLabel?: string;
+  /**
+   * A line under the features that links to sales instead of quoting a price
+   * (owner answer ٢١٧: «مقاعد إضافية: تواصل مع المبيعات»).
+   */
+  salesLine?: { label: string; href: string };
   companySize?: CompanySize | CompanySize[];
   forLegalDept?: boolean;
   /** Commission percentage for InDrive-style provider plans */

@@ -51,40 +51,28 @@ export const FIRM_ROLE_LABEL: Record<FirmRole, string> = {
   in_house_counsel: "مستشار قانوني داخلي",
 };
 
+// The two firm plans /pricing sells (owner answer ١٧٥, 2026-10-16):
+// «مكتب المحاماة» 9,900 SAR/year with 3 seats and «شركة المحاماة» 14,900
+// SAR/year with 5 seats, with no included points. Extra seats go through sales
+// (owner answer ٢١٧, 2026-10-18), so no seat price and no seat ceiling.
+// The retired middle tiers have no contract: a profile still marked
+// "firm-growth" / "firm-scale" (demo data) falls back to the first row.
 export const FIRM_PLAN_CONTRACTS: FirmPlanContract[] = [
   {
     plan: "firm-basic",
-    annualPrice: 17988,
+    annualPrice: 9900,
     includedSeats: 3,
-    extraSeatAnnualPrice: 2388,
-    includedAnnualPoints: 30000,
-    maxSeats: 8,
-    betaLocked: true,
-  },
-  {
-    plan: "firm-growth",
-    annualPrice: 47988,
-    includedSeats: 10,
-    extraSeatAnnualPrice: 2988,
-    includedAnnualPoints: 120000,
-    maxSeats: 30,
-    betaLocked: true,
-  },
-  {
-    plan: "firm-scale",
-    annualPrice: 95988,
-    includedSeats: 25,
-    extraSeatAnnualPrice: 3588,
-    includedAnnualPoints: 360000,
-    maxSeats: 75,
+    extraSeatAnnualPrice: null,
+    includedAnnualPoints: 0,
+    maxSeats: null,
     betaLocked: true,
   },
   {
     plan: "firm-enterprise",
-    annualPrice: 179988,
-    includedSeats: 50,
+    annualPrice: 14900,
+    includedSeats: 5,
     extraSeatAnnualPrice: null,
-    includedAnnualPoints: 900000,
+    includedAnnualPoints: 0,
     maxSeats: null,
     betaLocked: true,
   },

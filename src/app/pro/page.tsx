@@ -50,6 +50,8 @@ const features = {
 // Owner answers ١٧٤ / ١٧٥ (2026-10-16): 399 for the lawyer, 990 for a law
 // office (3 seats), 1,490 for a law firm (5 seats); yearly is ten months.
 // The old 299 / 799 prices and the API / SSO / account-manager promises are gone.
+// Extra seats go through sales (owner answer ٢١٧, 2026-10-18), and the office
+// plan no longer says it includes the lawyer plan: firm plans bundle no points.
 const plans = [
   {
     name: { ar: "المحامي المحترف", en: "Professional Lawyer" },
@@ -68,9 +70,10 @@ const plans = [
     unit: { ar: "ر.س/شهر", en: "SAR/mo" },
     desc: { ar: "٣ مقاعد مشمولة", en: "3 seats included" },
     features: {
-      ar: ["ما في باقة المحامي المحترف", "٣ مقاعد مشمولة", "أعضاء المكتب وصلاحياتهم", "السنوي ٩٬٩٠٠ ر.س"],
-      en: ["Everything in Professional Lawyer", "3 seats included", "Members and their permissions", "Yearly SAR 9,900"],
+      ar: ["٣ مقاعد مشمولة", "القضايا والجلسات والمهل", "أعضاء المكتب وصلاحياتهم", "السنوي ٩٬٩٠٠ ر.س"],
+      en: ["3 seats included", "Cases, hearings and deadlines", "Members and their permissions", "Yearly SAR 9,900"],
     },
+    salesLine: { ar: "مقاعد إضافية: تواصل مع المبيعات", en: "Extra seats: contact sales", href: "/contact?type=firm-seats" },
     highlight: true,
   },
   {
@@ -82,6 +85,7 @@ const plans = [
       ar: ["ما في باقة مكتب المحاماة", "٥ مقاعد مشمولة", "السنوي ١٤٬٩٠٠ ر.س"],
       en: ["Everything in Law Office", "5 seats included", "Yearly SAR 14,900"],
     },
+    salesLine: { ar: "مقاعد إضافية: تواصل مع المبيعات", en: "Extra seats: contact sales", href: "/contact?type=firm-seats" },
     highlight: false,
   },
 ];
@@ -247,6 +251,14 @@ export default function ProPage() {
                     </li>
                   ))}
                 </ul>
+                {plan.salesLine && (
+                  <Link
+                    href={plan.salesLine.href}
+                    className={`mt-4 inline-flex text-sm font-semibold underline-offset-4 hover:underline ${plan.highlight || isDark ? "text-gold" : "text-royal"}`}
+                  >
+                    {isRTL ? plan.salesLine.ar : plan.salesLine.en}
+                  </Link>
+                )}
                 <Link href="/register/provider" className={`mt-8 flex w-full items-center justify-center rounded-xl py-3 text-sm font-semibold transition ${plan.highlight
                   ? "bg-gold text-royal hover:bg-gold/90"
                   : isDark ? "border border-white/20 text-white hover:bg-white/10" : "border border-slate-300 text-slate-700 hover:bg-slate-50"

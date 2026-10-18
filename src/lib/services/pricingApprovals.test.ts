@@ -170,3 +170,60 @@ test("provider registration no longer sells the retired monthly AI plans", () =>
   assert.match(providerRegistration, /ERP مجاني للمحامي الفرد/);
   assert.doesNotMatch(providerRegistration, /محفظة/);
 });
+
+// ── Owner answer ٢١٧ (2026-10-18): extra seats are sold through sales ─────────
+// The 200–250 SAR/month range is the sales team's internal guide; no public
+// page shows it (pricingHonesty.test.ts) and no page quotes a seat price.
+
+const SALES_LINE_AR = "مقاعد إضافية: تواصل مع المبيعات";
+const SALES_LINE_EN = "Extra seats: contact sales";
+const SALES_HREF = "/contact?type=firm-seats";
+
+function count(text: string, needle: string): number {
+  return text.split(needle).length - 1;
+}
+
+test("٢١٧: every firm plan sends extra seats to sales, with a link", () => {
+  const firms = readFileSync(new URL("../../constants/pricing/pricing.firms.ts", import.meta.url), "utf8");
+  const [firmsAr, firmsEn = ""] = firms.split("\n  en: [");
+  assert.equal(count(firmsAr, `salesLine: { label: "${SALES_LINE_AR}", href: "${SALES_HREF}" }`), 2, "both Arabic firm plans");
+  assert.equal(count(firmsEn, `salesLine: { label: "${SALES_LINE_EN}", href: "${SALES_HREF}" }`), 2, "both English firm plans");
+  assert.doesNotMatch(firms, /مقاعد إضافية عند الطلب|Extra seats on request/);
+  // The card renders the line as a link.
+  assert.match(pricingCards, /plan\.salesLine && \(/);
+  assert.match(pricingCards, /href=\{plan\.salesLine\.href\}/);
+
+  const pro = readFileSync(new URL("../../app/pro/page.tsx", import.meta.url), "utf8");
+  assert.equal(count(pro, `salesLine: { ar: "${SALES_LINE_AR}", en: "${SALES_LINE_EN}", href: "${SALES_HREF}" }`), 2, "/pro: both firm plans");
+  assert.match(pro, /href=\{plan\.salesLine\.href\}/);
+  // The office plan bundles no points, so it does not include the lawyer plan.
+  assert.doesNotMatch(pro, /ما في باقة المحامي المحترف|Everything in Professional Lawyer/);
+
+  // Registration: a plan card is a <button>, so the line is text there.
+  assert.ok(providerRegistration.includes(`"${SALES_LINE_AR}"`), "provider registration (ar)");
+  assert.ok(providerRegistration.includes(`"${SALES_LINE_EN}"`), "provider registration (en)");
+});
+
+test("٢١٧: no stale firm price or seat price is left on the firm surfaces", () => {
+  // The four yearly tiers (17,988 / 47,988 / 95,988 / 179,988) and their seat
+  // prices (2,388 / 2,988 / 3,588). The same digits are also the live NGO,
+  // provider and legal-department prices, so the scan is the firm files.
+  const stale = /(?<![\d٠-٩,٬])(?:17,?988|47,?988|95,?988|179,?988|2,?388|2,?988|3,?588|١٧[,٬]?٩٨٨|٢[,٬]?٣٨٨|٢[,٬]?٩٨٨|٣[,٬]?٥٨٨)(?![\d٠-٩])/;
+  for (const path of [
+    "constants/pricing/pricing.firms.ts",
+    "app/pro/page.tsx",
+    "app/register/provider/data.ts",
+    "app/dashboard/admin/pricing/page.tsx",
+    "constants/firmProfileReadiness.ts",
+  ]) {
+    const text = readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
+    assert.doesNotMatch(text, stale, `${path} still carries a stale firm price`);
+  }
+  const admin = readFileSync(new URL("../../app/dashboard/admin/pricing/page.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(admin, /"firm-growth"|"firm-scale"/, "admin pricing: plans that no longer exist");
+  const readiness = readFileSync(new URL("../../constants/firmProfileReadiness.ts", import.meta.url), "utf8");
+  const contracts = readiness.slice(readiness.indexOf("export const FIRM_PLAN_CONTRACTS"), readiness.indexOf("export const FIRM_ROLE_CONTRACTS"));
+  assert.match(contracts, /plan: "firm-basic",\s*annualPrice: 9900,\s*includedSeats: 3,\s*extraSeatAnnualPrice: null,\s*includedAnnualPoints: 0,/);
+  assert.match(contracts, /plan: "firm-enterprise",\s*annualPrice: 14900,\s*includedSeats: 5,\s*extraSeatAnnualPrice: null,\s*includedAnnualPoints: 0,/);
+  assert.doesNotMatch(contracts, /firm-growth|firm-scale/);
+});

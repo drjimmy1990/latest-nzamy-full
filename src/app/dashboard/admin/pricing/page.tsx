@@ -51,10 +51,10 @@ const LAWYER_PLAN_NUMBERS: Record<string, { price: number; yearly?: number; cred
 
 const FIRM_PLAN_NUMBERS: Record<string, { monthly: number; yearly: number; credits: number; baseSeats: number; extraSeatYearly: number | null; maxSeats: number | null }> = {
   // Owner answer ١٧٥ (2026-10-16): 990/9,900 for 3 seats and 1,490/14,900 for
-  // 5 seats. No firm points and no extra-seat price are set yet (question ٢١٧).
+  // 5 seats; no firm points. Extra seats go through sales (owner answer ٢١٧,
+  // 2026-10-18), so no seat price is set here. The two plans /pricing sells
+  // are the only rows: the retired middle tiers had no plan to look up.
   "firm-basic": { monthly: 990, yearly: 9900, credits: 0, baseSeats: 3, extraSeatYearly: null, maxSeats: null },
-  "firm-growth": { monthly: 3999, yearly: 47988, credits: 120000, baseSeats: 10, extraSeatYearly: 2988, maxSeats: 30 },
-  "firm-scale": { monthly: 7999, yearly: 95988, credits: 360000, baseSeats: 25, extraSeatYearly: 3588, maxSeats: 75 },
   "firm-enterprise": { monthly: 1490, yearly: 14900, credits: 0, baseSeats: 5, extraSeatYearly: null, maxSeats: null },
 };
 
