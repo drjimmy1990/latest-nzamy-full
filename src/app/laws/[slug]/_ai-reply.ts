@@ -7,7 +7,9 @@
  * That includes a library-only subscriber: the library subscription opens the
  * texts, not the assistant (owner answer ٢٠٧), so neither message calls the
  * assistant a library-subscription feature and the 403 links to the plans page,
- * not to /laws/subscribe.
+ * not to /laws/subscribe. Neither names a plan either: /pricing shows lawyers
+ * «المحامي المحترف» and everyone else the individuals tab, so no plan there
+ * reads "Pro" (the server's own 403 JSON keeps requiredTier: 'pro').
  * Before this, every non-ok answer read «قيد التفعيل», so once the n8n webhook
  * is live a guest or a free user would be told "coming soon" about a feature
  * that is live but closed to them.
@@ -30,13 +32,13 @@ export interface LibraryAiRefusal {
 export function libraryAiRefusal(status: number, currentPath: string): LibraryAiRefusal | null {
   if (status === 401) {
     return {
-      text: "سجّل الدخول لتستخدم مساعد المكتبة.\nالمساعد متاح لباقة Pro فما فوق.",
+      text: "سجّل الدخول لتستخدم مساعد المكتبة.\nاشتراك المكتبة يشمل النصوص دون المساعد.",
       action: { label: "تسجيل الدخول", href: `/login?next=${encodeURIComponent(currentPath)}` },
     };
   }
   if (status === 403) {
     return {
-      text: "المساعد الذكي للمكتبة متاح لباقة Pro فما فوق؛ اشتراك المكتبة يشمل النصوص دون المساعد.\nاشترك في باقة Pro لتسأل عن المواد وتستخرج نصوصها.",
+      text: "المساعد الذكي للمكتبة غير مشمول في اشتراكك الحالي؛ اشتراك المكتبة يشمل النصوص دون المساعد.",
       action: { label: "عرض الباقات", href: "/pricing" },
     };
   }

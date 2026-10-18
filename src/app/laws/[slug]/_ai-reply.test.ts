@@ -18,6 +18,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { libraryAiRefusal } from "./_ai-reply.ts";
 
 const componentSource = readFileSync(new URL("./_ai-components.tsx", import.meta.url), "utf8");
+const replySource = readFileSync(new URL("./_ai-reply.ts", import.meta.url), "utf8");
 
 test("a guest (401) is sent to sign in and brought back to the page they asked from", () => {
   const refusal = libraryAiRefusal(401, "/laws/نظام-الشركات?tab=ai");
@@ -30,27 +31,42 @@ test("a guest (401) is sent to sign in and brought back to the page they asked f
   // The query string survives as one `next` value, not as extra /login params.
   assert.equal(new URL(refusal.action.href, "https://x.test").searchParams.get("next"), "/laws/نظام-الشركات?tab=ai");
   assert.match(refusal.text, /سجّل الدخول/);
-  // The assistant comes with Pro and above, not with the library subscription
-  // (owner ٢٠٧), so the guest is not told it is for library subscribers.
-  assert.match(refusal.text, /Pro فما فوق/);
-  assert.doesNotMatch(refusal.text, /مشتركي المكتبة/);
+  // The assistant is not part of the library subscription (owner ٢٠٧); the
+  // guest is told that, and is not told which plan to buy.
+  assert.equal(refusal.text, "سجّل الدخول لتستخدم مساعد المكتبة.\nاشتراك المكتبة يشمل النصوص دون المساعد.");
 });
 
-test("a signed-in user below pro (403) is offered the Pro plans, not the library subscription", () => {
+test("a signed-in user below pro (403) is told the plan does not include it and shown the plans", () => {
   const refusal = libraryAiRefusal(403, "/precedents/x");
   assert.ok(refusal);
   // A library-only subscriber gets this 403 too (owner ٢٠٧): the text says the
   // library subscription covers the texts, not the assistant, and the link goes
   // to the plans page, not back to the library subscription they already have.
+  // It names no plan: /pricing shows lawyers «المحامي المحترف» and everyone
+  // else the individuals tab, so no plan there reads "Pro".
   assert.equal(
     refusal.text,
-    "المساعد الذكي للمكتبة متاح لباقة Pro فما فوق؛ اشتراك المكتبة يشمل النصوص دون المساعد.\nاشترك في باقة Pro لتسأل عن المواد وتستخرج نصوصها.",
+    "المساعد الذكي للمكتبة غير مشمول في اشتراكك الحالي؛ اشتراك المكتبة يشمل النصوص دون المساعد.",
   );
   assert.deepEqual(refusal.action, { label: "عرض الباقات", href: "/pricing" });
   assert.doesNotMatch(refusal.text, /مشتركي المكتبة|قيد التفعيل/);
   // /pricing is the plans page (src/app/pricing/page.tsx). It reads no query
   // parameter, so the link carries none.
   assert.ok(existsSync(new URL("../../pricing/page.tsx", import.meta.url)), "src/app/pricing/page.tsx");
+});
+
+test("no refusal names a plan or calls the assistant a library-subscriber feature", () => {
+  // The refusals as shown, and every string literal in the module (comments
+  // stripped), so a branch added later is covered too.
+  for (const status of [401, 403, 429]) {
+    const refusal = libraryAiRefusal(status, "/laws/x");
+    assert.ok(refusal);
+    for (const text of [refusal.text, refusal.action?.label ?? ""]) {
+      assert.doesNotMatch(text, /باقة Pro|لمشتركي المكتبة|\bPro\b/, text);
+    }
+  }
+  const code = replySource.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  assert.doesNotMatch(code, /باقة Pro|لمشتركي المكتبة/);
 });
 
 test("the rate limit (429) says to wait, with no link", () => {
@@ -65,13 +81,13 @@ test("not configured, library closed and server errors fall through to the calle
   }
 });
 
-test("the new copy is Arabic; the only Latin word is the plan name Pro", () => {
+test("the new copy is Arabic, with no Latin letters (it names no plan)", () => {
   for (const status of [401, 403, 429]) {
     const refusal = libraryAiRefusal(status, "/laws/x");
     assert.ok(refusal);
     for (const text of [refusal.text, refusal.action?.label ?? "ـ"]) {
       assert.match(text, /[؀-ۿ]/, text);
-      assert.doesNotMatch(text.replace(/\bPro\b/g, ""), /[A-Za-z]/, text);
+      assert.doesNotMatch(text, /[A-Za-z]/, text);
     }
   }
 });
