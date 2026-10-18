@@ -23,6 +23,7 @@ import {
   SECTOR_ROW_BY_USER_TYPE,
   isClaimableDbUserType,
 } from "@/lib/auth/accountTypeClaim";
+import { apiErrorText } from "@/lib/services/apiErrorText";
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 interface SubscriptionPlan {
@@ -253,7 +254,7 @@ function feedsVerificationQueue(row: SectorRowRef | null): boolean {
  * (src/app/dashboard/admin/tabs/CommunityTab.tsx:6-12, used at :173) and
  * «تحقق المزودين» through `TYPE_CFG`
  * (src/app/dashboard/admin/provider-verification/page.tsx:22-28, used at :331,
- * reached from src/components/admin/AdminSidebar.tsx:28, which fetches through
+ * reached from the console sidebar (src/components/admin/adminNavByRole.ts), which fetches through
  * `getVerificationRequests` in src/lib/services/adminService.ts:88).
  *
  * Of this page's labels only «محامي» survives that trip unchanged. A firm is
@@ -481,21 +482,25 @@ function sectorRowNotes(fromType: string, toType: string): SectorNote[] {
 /**
  * Arabic failure text for a PATCH status.
  *
- * Deliberately does NOT surface the server's `error` field, which the sibling
- * handlers on this page do. That route returns `updateError.message` — the raw
- * Postgres string, in English — for any database failure
- * (src/app/api/v1/admin/users/[id]/route.ts:202-207), while every other branch
- * returns Arabic. Passing it through would put English on screen on exactly the
- * interesting case (a CHECK-constraint rejection), so the Arabic is authored
- * here instead. Every branch says the change was not saved, so a failure is
- * never mistaken for a partial one.
+ * A refusal (400/403/503…) shows the server's own Arabic reason — since owner
+ * answer ٢١٠ a 403 is usually «هذا الإجراء لقيادة المنصة فقط» (a staff role
+ * that may not), not a missing admin account, so a fixed «صلاحيات المسؤول
+ * مطلوبة» hid the real reason. A 500 still never surfaces the server's
+ * `error`: that branch returns `updateError.message`, the raw Postgres string
+ * in English (a CHECK-constraint rejection), so the Arabic is authored here
+ * (apiErrorText also drops any error without an Arabic letter). Every branch
+ * says the change was not saved, so a failure is never mistaken for a partial
+ * one.
  */
-function userTypeErrorFor(status: number): string {
-  if (status === 401) return "انتهت الجلسة — يرجى تسجيل الدخول من جديد. لم يُحفظ أي تغيير.";
-  if (status === 403) return "غير مصرح — صلاحيات المسؤول مطلوبة. لم يُحفظ أي تغيير.";
-  if (status === 404) return "المستخدم غير موجود. لم يُحفظ أي تغيير.";
-  if (status === 400) return "بيانات غير صالحة. لم يُحفظ أي تغيير.";
-  return "تعذّر تغيير نوع الحساب. لم يُحفظ أي تغيير.";
+function userTypeErrorFor(status: number, body: unknown = null): string {
+  const NOT_SAVED = " لم يُحفظ أي تغيير.";
+  let fallback = "تعذّر تغيير نوع الحساب.";
+  if (status === 401) fallback = "انتهت الجلسة — يرجى تسجيل الدخول من جديد.";
+  else if (status === 403) fallback = "غير مصرح — لا يملك دورك هذا الإجراء.";
+  else if (status === 404) fallback = "المستخدم غير موجود.";
+  else if (status === 400) fallback = "بيانات غير صالحة.";
+  const text = apiErrorText(status, body, fallback);
+  return /[.!؟]$/.test(text) ? text + NOT_SAVED : text + "." + NOT_SAVED;
 }
 
 const TIER_MAP: Record<string,string> = {
@@ -655,7 +660,7 @@ export default function UserProfilePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ verified: true }),
       });
-      if (!res.ok) throw new Error("فشل توثيق الحساب");
+      if (!res.ok) throw new Error(apiErrorText(res.status, await res.json().catch(() => null), "فشل توثيق الحساب"));
       fetchUser();
     } catch (err) {
       alert(err instanceof Error ? err.message : "حدث خطأ");
@@ -673,7 +678,7 @@ export default function UserProfilePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "suspended" }),
       });
-      if (!res.ok) throw new Error("فشل تعليق الحساب");
+      if (!res.ok) throw new Error(apiErrorText(res.status, await res.json().catch(() => null), "فشل تعليق الحساب"));
       fetchUser();
     } catch (err) {
       alert(err instanceof Error ? err.message : "حدث خطأ");
@@ -690,7 +695,7 @@ export default function UserProfilePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ verified: true }),
       });
-      if (!res.ok) throw new Error("فشل تفعيل الحساب");
+      if (!res.ok) throw new Error(apiErrorText(res.status, await res.json().catch(() => null), "فشل تفعيل الحساب"));
       fetchUser();
     } catch (err) {
       alert(err instanceof Error ? err.message : "حدث خطأ");
@@ -757,7 +762,7 @@ export default function UserProfilePage() {
         body: JSON.stringify({ user_type: selectedType }),
       });
       if (!res.ok) {
-        setTypeMsg({ type: "err", text: userTypeErrorFor(res.status) });
+        setTypeMsg({ type: "err", text: userTypeErrorFor(res.status, await res.json().catch(() => null)) });
         return;
       }
       // The manual steps ride along with the success text, because this is the

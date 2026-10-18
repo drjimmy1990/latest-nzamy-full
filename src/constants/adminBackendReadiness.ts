@@ -25,10 +25,11 @@ export const ADMIN_BACKEND_READINESS: AdminBackendReadinessSurface[] = [
     status: "Backend-ready",
     contract: "AdminTeamMember",
     // The old screen advertised a five-level RBAC matrix that nothing enforced.
-    // It was replaced with an honest state: every admin account currently holds
-    // full authority (assertRole.ts treats `admin` as a blanket bypass), so
-    // there are no tiers to render until that changes.
-    note: "الدعوات والتعليق تعمل عبر /api/v1/admin/teams. لا توجد مستويات صلاحية — كل حساب أدمن يملك صلاحية كاملة.",
+    // Owner answer ٢١٠ (Task 3.4): three staff roles in platform_staff
+    // (20261019_30), enforced on every admin write by requireStaff, set on
+    // this page by a super admin. Before the migration runs every admin keeps
+    // full access.
+    note: "الدعوات وتعيين الأدوار (مشرف رئيسي / عمليات / مراجع) تعمل عبر /api/v1/admin/teams، والخادم يتحقق من الدور في كل إجراء إداري. تعمل الأدوار بعد تطبيق تحديث قاعدة البيانات.",
   },
   {
     id: "business-profiles",

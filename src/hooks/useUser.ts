@@ -19,6 +19,7 @@ import { mergeMembershipReads } from "@/lib/auth/entityMembership";
 import type { ActiveEntityMemberships } from "@/lib/auth/entityMembership";
 import { normalizeGovernmentRole } from "@/hooks/governmentRole";
 import { toPracticeKind, type PracticeKind } from "@/lib/auth/practiceKind";
+import { toStaffRole, type StaffRole } from "@/lib/auth/staffRoles";
 import { createClient } from "@/lib/supabase/client";
 import {
   isSupabaseMode as isSupabaseBackend,
@@ -188,6 +189,12 @@ export interface UserSession {
    * literal sessions predate it; useUser() always returns a resolved value.
    */
   practiceKind?: PracticeKind;
+  /**
+   * Owner ٢١٠: an admin's staff role (public.staff_role()), null when it could
+   * not be read. Optional because demo and literal sessions predate it;
+   * useUser() always returns a value (null for every non-admin).
+   */
+  staffRole?: StaffRole | null;
 }
 
 export type UserPermission =
@@ -437,6 +444,15 @@ export interface UseUserReturn extends UserSession {
    * 20261019_20 runs) — today's behaviour.
    */
   practiceKind: PracticeKind;
+  /**
+   * Owner ٢١٠: the admin's staff role — super_admin / operations / auditor —
+   * read through public.staff_role(). Null for every non-admin, and for an
+   * admin whenever it cannot be read: before 20261019_30 runs the function
+   * does not exist (PGRST202 / 42883), and any other error reads the same.
+   * The admin nav shows everything on null (today's behaviour); the server
+   * (requireStaff) enforces the real rule, so null never widens access.
+   */
+  staffRole: StaffRole | null;
 }
 
 // ─── Map Supabase user → UserSession ─────────────────────────────────────────
@@ -650,6 +666,31 @@ async function readPracticeKind(
   }
 }
 
+/** The deploy-order rule: a missing function is logged once, not on every read. */
+let staffRoleFailureLogged = false;
+
+/**
+ * Owner ٢١٠ — an admin's staff role through public.staff_role() (20261019_30:
+ * SECURITY DEFINER, EXECUTE granted to authenticated; it answers the caller's
+ * own role while their profile is an admin). Any failure is null, logged once:
+ * before the migration the function is missing (PGRST202 / 42883).
+ */
+async function readStaffRole(supabase: ReturnType<typeof createClient>): Promise<StaffRole | null> {
+  try {
+    const { data, error } = await supabase.rpc("staff_role");
+    if (error) {
+      if (!staffRoleFailureLogged) {
+        staffRoleFailureLogged = true;
+        console.warn("[useUser] staff_role() read failed; the admin nav stays complete (the server still enforces roles):", error.message, error.code);
+      }
+      return null;
+    }
+    return toStaffRole(data);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Builds the browser-side session.
  *
@@ -669,6 +710,7 @@ function mapSupabaseUser(
   profileState: ProfileState = "ok",
   membershipState: MembershipState = "ok",
   practiceKind: PracticeKind = "advocate",
+  staffRole: StaffRole | null = null,
 ): UserSession {
   if (!user) return GUEST_SESSION;
 
@@ -735,6 +777,8 @@ function mapSupabaseUser(
     country:       meta.country_code ?? "SA",
     // Only a lawyer can be a consultant (Art. 18).
     practiceKind:  userType === "lawyer" ? practiceKind : "advocate",
+    // Only an admin holds a staff role (owner ٢١٠).
+    staffRole:     userType === "admin" ? staffRole : null,
   };
 }
 
@@ -780,11 +824,15 @@ export function useUser(): UseUserReturn {
       // practice_kind is read for a lawyer only, so it waits for the profile
       // read — while still overlapping the four membership reads.
       const profileRead = readProfileUserType(supabase, authUser.id);
-      const [read, membershipRead, practiceRead] = await Promise.all([
+      const [read, membershipRead, practiceRead, staffRead] = await Promise.all([
         profileRead,
         readEntityMemberships(supabase, authUser.id),
         profileRead.then((r) =>
           r.status === "found" && r.userType === "lawyer" ? readPracticeKind(supabase, authUser.id) : null,
+        ),
+        // Owner ٢١٠: the staff role, for an admin only (undefined: not read).
+        profileRead.then((r) =>
+          r.status === "found" && r.userType === "admin" ? readStaffRole(supabase) : undefined,
         ),
       ]);
       // Superseded or unmounted: drop this result and leave `loading` alone —
@@ -850,6 +898,16 @@ export function useUser(): UseUserReturn {
               ? toPracticeKind(prev.practiceKind)
               : "advocate";
 
+        // Owner ٢١٠. A profile read that failed carries the previous staff
+        // role forward for this same user, like the type; any other failure
+        // is null (the full admin nav — the server still enforces).
+        const staffRole: StaffRole | null =
+          staffRead !== undefined
+            ? staffRead
+            : read.status === "unavailable" && prev.isLoggedIn && prev.userId === authUser.id
+              ? (prev.staffRole ?? null)
+              : null;
+
         return mapSupabaseUser(
           authUser,
           read.status === "found" ? read.userType : carried,
@@ -857,6 +915,7 @@ export function useUser(): UseUserReturn {
           profileState,
           membershipState,
           practiceKind,
+          staffRole,
         );
       });
 
@@ -993,7 +1052,12 @@ export function useUser(): UseUserReturn {
   const practiceKind: PracticeKind =
     session.userType === "lawyer" ? toPracticeKind(session.practiceKind) : "advocate";
 
-  return { ...session, practiceKind, isDemoBypass, loading };
+  // Owner ٢١٠: only an admin holds a staff role; a demo or literal session
+  // without the field reads as null (today's full admin nav).
+  const staffRole: StaffRole | null =
+    session.userType === "admin" ? toStaffRole(session.staffRole) : null;
+
+  return { ...session, practiceKind, staffRole, isDemoBypass, loading };
 }
 
 // ─── Utility ──────────────────────────────────────────────────────────────────

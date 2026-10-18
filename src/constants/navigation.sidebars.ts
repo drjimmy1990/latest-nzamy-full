@@ -3,8 +3,9 @@ import type { SidebarGroup, SidebarItem } from "./navigation.types";
 // Relative with `.ts` (and the primary chain below too) so `node --test` can
 // load this module — navigation.consultant.test.ts runs getSidebarByUserType.
 import { isConsultantBlockedPath, type PracticeKind } from "../lib/auth/practiceKind.ts";
+import type { StaffRole } from "../lib/auth/staffRoles.ts";
 import {
-  ADMIN_SIDEBAR,
+  adminSidebarForRole,
   CORPORATE_SIDEBAR,
   FIRM_SIDEBAR,
   FIRM_SIDEBAR_LITE,
@@ -19,6 +20,7 @@ import {
 
 export {
   ADMIN_SIDEBAR,
+  adminSidebarForRole,
   CORPORATE_SIDEBAR,
   FIRM_SIDEBAR,
   FIRM_SIDEBAR_LITE,
@@ -373,6 +375,12 @@ export function getSidebarByUserType(
   country?: string | null,
   /** lawyer_profiles.practice_kind; read for lawyers only, ignored for every other type. */
   practiceKind?: PracticeKind | null,
+  /**
+   * Owner ٢١٠: an admin's staff role (useUser().staffRole); read for admins
+   * only. Null or absent keeps today's full admin sidebar — the server
+   * enforces the real rule.
+   */
+  staffRole?: StaffRole | null,
 ): SidebarGroup[] {
   const isConsultant = userType === "lawyer" && practiceKind === "consultant";
 
@@ -392,7 +400,7 @@ export function getSidebarByUserType(
 
   let base: SidebarGroup[];
   switch (userType) {
-    case "admin":      base = ADMIN_SIDEBAR; break;
+    case "admin":      base = adminSidebarForRole(staffRole); break;
     case "lawyer": {
       base = LAWYER_SIDEBAR;
       if (country === "SA") {

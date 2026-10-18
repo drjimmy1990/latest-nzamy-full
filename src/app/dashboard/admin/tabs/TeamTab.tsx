@@ -2,6 +2,11 @@
 import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
 import { UsersThree, Headset, ChartBar, BookOpen, Storefront, Shield, Clock } from "@phosphor-icons/react";
+import { useUser } from "@/hooks/useUser";
+import { toStaffRole, type StaffRole } from "@/lib/auth/staffRoles";
+import { DEFAULT_INVITE_ROLE, STAFF_ROLES_IN_ORDER, STAFF_ROLE_LABELS_AR, STAFF_ROLE_SUMMARY_AR } from "@/lib/auth/staffManagement";
+import { staffMaySee } from "@/lib/auth/adminNavAccess";
+import { apiErrorText } from "@/lib/services/apiErrorText";
 
 const DEPT_ICON: Record<string, React.ElementType> = {
   "الإدارة": Shield,
@@ -25,6 +30,13 @@ export default function TeamTab() {
   const [team, setTeam] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Owner ٢١٠: false until public.platform_staff exists (20261019_30).
+  const [rolesReady, setRolesReady] = useState(false);
+  // The viewer's staff role: invitations and the status label are staff
+  // management (super_admin). Null (not readable yet) shows them; the server
+  // refuses a role that may not.
+  const { staffRole } = useUser();
+  const canManage = staffMaySee(staffRole, "staff.manage");
 
   // Invite form state
   const [showInviteForm, setShowInviteForm] = useState(false);
@@ -32,6 +44,7 @@ export default function TeamTab() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("مسؤول");
   const [inviteDept, setInviteDept] = useState("الإدارة");
+  const [inviteStaffRole, setInviteStaffRole] = useState<StaffRole>(DEFAULT_INVITE_ROLE);
   const [inviting, setInviting] = useState(false);
 
   const fetchData = async () => {
@@ -41,6 +54,7 @@ export default function TeamTab() {
       if (!res.ok) throw new Error("Failed to fetch team data");
       const data = await res.json();
       setTeam(data.team || []);
+      setRolesReady(data.staffRolesReady === true);
       setError(null);
     } catch (err: any) {
       console.error(err);
@@ -66,16 +80,18 @@ export default function TeamTab() {
           email: inviteEmail,
           role: inviteRole,
           department: inviteDept,
+          staffRole: inviteStaffRole,
         }),
       });
       if (res.ok) {
         setInviteName("");
         setInviteEmail("");
+        setInviteStaffRole(DEFAULT_INVITE_ROLE);
         setShowInviteForm(false);
         fetchData();
       } else {
-        const err = await res.json();
-        alert(`خطأ: ${err.error || "فشل إرسال الدعوة"}`);
+        const err = await res.json().catch(() => null);
+        alert(`خطأ: ${apiErrorText(res.status, err, "فشل إرسال الدعوة")}`);
       }
     } catch (err) {
       console.error("Invite error:", err);
@@ -88,10 +104,11 @@ export default function TeamTab() {
   const toggleStatus = async (id: string, currentStatus: string) => {
     const newStatus = currentStatus === "active" ? "suspended" : "active";
     // The status is a label on profiles.metadata; nothing in the auth path reads it, so
-    // "تعليق" does not revoke anything. Say so before the owner assumes otherwise.
+    // "تعليق" does not revoke anything (the staff role is what limits a member).
+    // Say so before the owner assumes otherwise.
     const confirmText =
       newStatus === "suspended"
-        ? "التعليق وسم إداري فقط ولا يمنع العضو من الدخول إلى لوحة الإدارة. هل تريد المتابعة؟"
+        ? "التعليق وسم إداري فقط ولا يمنع العضو من الدخول إلى لوحة الإدارة، ولا يغيّر دوره. هل تريد المتابعة؟"
         : "هل أنت متأكد من تنشيط وسم عضو الفريق هذا؟";
     if (!confirm(confirmText)) return;
     try {
@@ -103,8 +120,8 @@ export default function TeamTab() {
       if (res.ok) {
         fetchData();
       } else {
-        const err = await res.json();
-        alert(`خطأ: ${err.error || "فشل التحديث"}`);
+        const err = await res.json().catch(() => null);
+        alert(`خطأ: ${apiErrorText(res.status, err, "فشل التحديث")}`);
       }
     } catch (err) {
       console.error("Toggle status error:", err);
@@ -145,18 +162,19 @@ export default function TeamTab() {
         <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} className={`${card} p-5 border border-amber-500/20`}>
           <h3 className="text-[13px] font-bold text-white mb-4">دعوة عضو فريق جديد</h3>
 
-          {/* The invite creates a user_type "admin" account — full platform authority.
-              assertRole.ts:46 and UserTypeGuard.tsx:32 let 'admin' through everything,
-              and the role/department below are descriptive labels, not permissions. */}
-          <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/[0.08] p-4">
+          {/* The invite creates a user_type "admin" account. assertRole.ts and
+              UserTypeGuard.tsx still let 'admin' read every dashboard; the staff
+              role chosen below (owner ٢١٠, platform_staff) decides which admin-console
+              actions the member may take. Job title and department are labels only. */}
+          <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/[0.08] p-4">
             <div className="flex items-start gap-2">
-              <Shield size={16} weight="fill" className="text-red-400 mt-0.5 flex-shrink-0" />
+              <Shield size={16} weight="fill" className="text-amber-400 mt-0.5 flex-shrink-0" />
               <div>
-                <p className="text-[12px] font-black text-red-300 mb-1.5">تنبيه: الدعوة تمنح صلاحية إدارية كاملة</p>
-                <p className="text-[11px] text-red-200/80 leading-relaxed">
-                  العضو المدعو يصبح «مدير» بصلاحية كاملة على المنصة: إعدادات المنصة، خطط الأسعار، الاشتراكات،
-                  منح الصلاحيات، الكوبونات، الإيرادات، وبيانات كل المستخدمين. لا يوجد مستوى صلاحية أقل من ذلك،
-                  والمسمى الوظيفي والقسم أدناه وصف تنظيمي فقط ولا يُقيّدان ما يستطيع العضو فعله.
+                <p className="text-[12px] font-black text-amber-300 mb-1.5">الدعوة تُنشئ حساب «مدير»</p>
+                <p className="text-[11px] text-amber-100/80 leading-relaxed">
+                  العضو المدعو يطّلع على بيانات المنصة كلها، والدور الذي تختاره أدناه يحدد ما يستطيع تغييره من لوحة
+                  الإدارة. المسمى الوظيفي والقسم وصف تنظيمي فقط ولا يُقيّدان شيئاً.
+                  {!rolesReady && " الأدوار تعمل بعد تطبيق تحديث قاعدة البيانات؛ حتى ذلك الحين يملك كل حساب «مدير» صلاحية كاملة."}
                 </p>
               </div>
             </div>
@@ -196,6 +214,21 @@ export default function TeamTab() {
                 className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl px-3 py-2 text-[12px] text-zinc-200 outline-none focus:border-[#C8A762]"
               />
             </div>
+            <div className="md:col-span-2">
+              <label className="block text-[10px] text-zinc-500 mb-1">الدور في لوحة الإدارة</label>
+              <select
+                value={inviteStaffRole}
+                onChange={(e) => setInviteStaffRole(toStaffRole(e.target.value) ?? DEFAULT_INVITE_ROLE)}
+                className="w-full bg-zinc-900 border border-white/[0.08] rounded-xl px-3 py-2 text-[12px] text-zinc-200 outline-none focus:border-[#C8A762]"
+              >
+                {STAFF_ROLES_IN_ORDER.map((r) => (
+                  <option key={r} value={r}>
+                    {STAFF_ROLE_LABELS_AR[r]}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-[10px] text-zinc-500 leading-relaxed">{STAFF_ROLE_SUMMARY_AR[inviteStaffRole]}</p>
+            </div>
             <div>
               <label className="block text-[10px] text-zinc-500 mb-1">القسم (وصف فقط — لا يقيّد الوصول)</label>
               <select
@@ -223,7 +256,7 @@ export default function TeamTab() {
                 disabled={inviting}
                 className="px-4 py-2 rounded-xl bg-[#C8A762] text-[11px] font-bold text-black hover:bg-amber-400 transition-all disabled:opacity-50"
               >
-                {inviting ? "جاري الإرسال..." : "إرسال الدعوة ومنح صلاحية كاملة"}
+                {inviting ? "جاري الإرسال..." : "إرسال الدعوة"}
               </button>
             </div>
           </form>
@@ -269,7 +302,7 @@ export default function TeamTab() {
                       <span className="text-[9px] font-bold bg-white/[0.04] text-zinc-500 px-2 py-1 rounded-lg">
                         {m.department}
                       </span>
-                      {m.status !== "invited" && (
+                      {canManage && m.status !== "invited" && (
                         <button
                           onClick={() => toggleStatus(m.id, m.status)}
                           className={`text-[9px] font-bold underline cursor-pointer ${
@@ -291,12 +324,16 @@ export default function TeamTab() {
                     </div>
                   </div>
 
-                  {/* Actual authority. Every member listed here is user_type "admin", which
-                      passes every allow-list (assertRole.ts:46) and every UI guard
-                      (UserTypeGuard.tsx:32) — there is no narrower level to display. */}
+                  {/* The member's staff role (owner ٢١٠). No row reads as auditor, as
+                      requireStaff treats it; before 20261019_30 every admin keeps full
+                      access. Roles are changed on /dashboard/admin/team. */}
                   <div className="flex items-center gap-1.5">
-                    <Shield size={11} weight="fill" className="text-red-400" />
-                    <p className="text-[10px] font-bold text-red-400">صلاحية إدارية كاملة على المنصة</p>
+                    <Shield size={11} weight="fill" className="text-[#C8A762]" />
+                    <p className="text-[10px] font-bold text-[#C8A762]">
+                      {rolesReady
+                        ? `الدور: ${STAFF_ROLE_LABELS_AR[toStaffRole(m.staffRole) ?? "auditor"]}${toStaffRole(m.staffRole) ? "" : " (لم يُعيَّن دور)"}`
+                        : "صلاحية كاملة حتى تطبيق تحديث الأدوار"}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -305,13 +342,15 @@ export default function TeamTab() {
         })}
       </div>
 
-      {/* Add member button */}
+      {/* Add member button — staff management (super_admin) */}
+      {canManage && (
       <button
         onClick={() => setShowInviteForm(true)}
         className={`${card} w-full p-4 flex items-center justify-center gap-2 text-[12px] font-bold text-zinc-500 hover:text-zinc-300 hover:border-white/[0.12] transition-all border-dashed`}
       >
         <UsersThree size={16} /> إضافة عضو فريق جديد
       </button>
+      )}
       {loading && <div className="py-12 text-center text-zinc-500">جاري التحميل...</div>}
     </motion.div>
   );

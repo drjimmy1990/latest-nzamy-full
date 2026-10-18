@@ -6,6 +6,7 @@ import { logAdminAction } from "@/lib/auth/adminAudit";
 import { usersPatchActions } from "@/lib/auth/staffDecision";
 import type { StaffAction } from "@/lib/auth/staffRoles";
 import { isAssignableUserType } from "@/lib/auth/userTypes";
+import { checkStaffRoleChange } from "@/lib/auth/platformStaffServer";
 
 /**
  * GET /api/v1/admin/users/[id] — Fetch single user with full details
@@ -138,6 +139,11 @@ export async function GET(
  * path creates staff), and otherwise one of the types the database allows.
  *
  * If status is 'suspended', also cancels any active subscription.
+ *
+ * Demoting an admin to another type (Task 3.4) removes them from staff: it is
+ * refused while they are the last super admin (400 «لا يمكن إزالة آخر مشرف
+ * رئيسي»), and once the profile write succeeds their platform_staff row is
+ * deleted, so a later promotion cannot bring the old role back.
  */
 export async function PATCH(
   request: NextRequest,
@@ -194,6 +200,20 @@ export async function PATCH(
       .eq("id", userId)
       .maybeSingle();
 
+    // ── Demoting an admin: the last super admin stays (owner ٢١٠) ──────────
+    // body.user_type is never "admin" here (refused above), so a change on an
+    // admin account takes them out of staff.
+    const leavesStaff =
+      body.user_type !== undefined && (existing as { user_type?: unknown } | null)?.user_type === "admin";
+    let staffChange: { previousRole: string | null; tableMissing: boolean } | null = null;
+    if (leavesStaff) {
+      const change = await checkStaffRoleChange(adminClient, { targetId: userId, targetIsAdmin: true, nextRole: null });
+      if (!change.ok) {
+        return NextResponse.json({ error: change.error }, { status: change.status });
+      }
+      staffChange = { previousRole: change.previousRole, tableMissing: change.tableMissing };
+    }
+
     // ── Build update payload ───────────────────────────────────────────────
     const updateData: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
@@ -242,6 +262,23 @@ export async function PATCH(
     if (body.verified !== undefined) {
       before.verified_at = prior.verified_at ?? null;
       after.verified_at = current.verified_at ?? null;
+    }
+
+    // ── A demoted admin's role row goes (owner ٢١٠) ────────────────────────
+    // Only after the demotion is written. public.staff_role() already ignores
+    // a non-admin's row, but a row left behind would return with its old role
+    // the day the account is promoted again. A failed delete is logged: the
+    // demotion itself stands.
+    if (staffChange && !staffChange.tableMissing) {
+      const { error: staffDeleteError } = await adminClient
+        .from("platform_staff")
+        .delete()
+        .eq("user_id", userId);
+      before.staff_role = staffChange.previousRole;
+      after.staff_role = staffDeleteError ? staffChange.previousRole : null;
+      if (staffDeleteError) {
+        console.error("[admin/users/[id]] PATCH: removing the demoted admin's staff role failed:", staffDeleteError.code, staffDeleteError.message);
+      }
     }
 
     // ── Handle suspension ──────────────────────────────────────────────────
@@ -330,7 +367,9 @@ export async function PATCH(
  *
  * Requires: a staff role with users.delete (owner ٢١٠). An admin cannot
  * delete their own account from here (controller ruling on Task 3.3): the
- * audit row could not even be written, its actor would be gone.
+ * audit row could not even be written, its actor would be gone. The last
+ * super admin cannot be deleted either (Task 3.4); a deleted admin's
+ * platform_staff row goes with the auth user (ON DELETE CASCADE).
  */
 export async function DELETE(
   request: NextRequest,
@@ -358,6 +397,17 @@ export async function DELETE(
       .eq("id", userId)
       .maybeSingle();
 
+    // The last super admin stays (owner ٢١٠): 400, or 503 when unreadable.
+    // Only an admin holds a role, so deleting anyone else reads nothing here.
+    let previousRole: string | null = null;
+    if (target?.user_type === "admin") {
+      const change = await checkStaffRoleChange(adminClient, { targetId: userId, targetIsAdmin: true, nextRole: null });
+      if (!change.ok) {
+        return NextResponse.json({ error: change.error }, { status: change.status });
+      }
+      previousRole = change.previousRole;
+    }
+
     // Delete user from auth (cascades to profiles, subscriptions, lawyer_profiles etc.)
     const { error: deleteError } = await adminClient.auth.admin.deleteUser(userId);
     if (deleteError) {
@@ -372,7 +422,7 @@ export async function DELETE(
       action: "user_deleted",
       targetType: "profile",
       targetId: userId,
-      before: target ?? null,
+      before: target ? { ...target, staff_role: previousRole } : null,
       after: null,
     });
 

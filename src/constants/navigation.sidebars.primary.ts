@@ -1,4 +1,7 @@
 import type { SidebarGroup } from "./navigation.types";
+// Relative with `.ts` so `node --test` can load this chain (see navigation.sidebars.ts).
+import type { StaffRole } from "../lib/auth/staffRoles.ts";
+import { filterNavGroupsByRole } from "../lib/auth/adminNavAccess.ts";
 
 export * from "./navigation.sidebars.legal.ts";
 export * from "./navigation.sidebars.business.ts";
@@ -220,3 +223,13 @@ export const ADMIN_SIDEBAR: SidebarGroup[] = [
     ],
   },
 ];
+
+/**
+ * ADMIN_SIDEBAR for one staff role (owner answer ٢١٠, Task 3.4): the admin
+ * sees only the tools their role may use (src/lib/auth/adminNavAccess.ts).
+ * super_admin, and a null role (not readable in the browser — the server
+ * still enforces), get every item; the personal /settings is never hidden.
+ */
+export function adminSidebarForRole(role: StaffRole | null | undefined): SidebarGroup[] {
+  return filterNavGroupsByRole(ADMIN_SIDEBAR, role);
+}

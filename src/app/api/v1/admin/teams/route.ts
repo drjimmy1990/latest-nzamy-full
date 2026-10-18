@@ -2,6 +2,40 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin, requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
 import { createServiceClient } from "@/lib/supabase/server";
+import { toStaffRole } from "@/lib/auth/staffRoles";
+import { isMissingStaffTable } from "@/lib/auth/staffDecision";
+import {
+  INVALID_STAFF_ROLE_AR,
+  NOT_STAFF_AR,
+  OWN_ROLE_AR,
+  STAFF_ROLES_NOT_READY_AR,
+  inviteStaffRole,
+  isSameAccount,
+} from "@/lib/auth/staffManagement";
+import { checkStaffRoleChange, readStaffRolesOf } from "@/lib/auth/platformStaffServer";
+
+/**
+ * /api/v1/admin/teams — Nezamy's own team (every profile with user_type
+ * 'admin') and each member's staff role (owner answer ٢١٠, Task 3.4).
+ *
+ * user_type 'admin' says who is staff; public.platform_staff (20261019_30)
+ * says which kind: super_admin, operations or auditor. The role decides which
+ * admin-console writes a member may make (requireStaff, Task 3.3). Every role
+ * can still read the console's data, and user_type 'admin' still passes the
+ * other dashboards' guards (assertRole.ts, UserTypeGuard.tsx).
+ *
+ *   GET   — the members, each with `staffRole` (null: no row — requireStaff
+ *           treats that admin as an auditor), and `staffRolesReady` (false
+ *           while the table does not exist yet).
+ *   POST  — invite: creates (or promotes) the admin AND writes their role,
+ *           `staffRole` in the body, default 'operations'. super_admin only.
+ *   PATCH — `{ userId, staffRole }` sets a member's role; `{ id, status }`
+ *           sets the descriptive status label (TeamTab). super_admin only.
+ *
+ * Nobody changes their own role, and the last super admin cannot be demoted:
+ * that keeps platform_staff non-empty, so a re-run of 20261019_30 promotes
+ * nobody.
+ */
 
 export async function GET(request: NextRequest) {
   // 1. Auth check
@@ -26,7 +60,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    const team = (data || []).map((p: any) => {
+    // The roles. Missing table (20261019_30 not applied) or a failed read:
+    // every staffRole is null and staffRolesReady false — the list still loads.
+    const rows = data || [];
+    const rolesRead = await readStaffRolesOf(
+      adminClient,
+      rows.map((p: { id?: unknown }) => p.id).filter((id: unknown): id is string => typeof id === "string"),
+    );
+    const roles = rolesRead.status === "ok" ? rolesRead.roles : null;
+
+    const team = rows.map((p: any) => {
       const meta = p.metadata || {};
       return {
         id: p.id,
@@ -39,11 +82,12 @@ export async function GET(request: NextRequest) {
         accessList: meta.access_list || meta.access || [],
         dashboardTabs: meta.tabs_list || meta.dashboardTabs || [],
         tabsList: meta.tabs_list || meta.dashboardTabs || [],
-        status: meta.status || "active"
+        status: meta.status || "active",
+        staffRole: roles?.get(p.id) ?? null,
       };
     });
 
-    return NextResponse.json({ team });
+    return NextResponse.json({ team, staffRolesReady: rolesRead.status === "ok" });
 
   } catch (err: any) {
     console.error("[admin/teams] GET error:", err);
@@ -60,7 +104,7 @@ export async function POST(request: NextRequest) {
   if (!gate.ok) return gate.response;
 
   try {
-    const { name, email, role, department } = await request.json();
+    const { name, email, role, department, staffRole: rawStaffRole } = await request.json();
 
     if (!name || !email) {
       return NextResponse.json(
@@ -69,18 +113,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // The staff role (owner ٢١٠): absent → operations; anything else must be
+    // one of the three. Checked before any write.
+    const staffRole = inviteStaffRole(rawStaffRole);
+    if (!staffRole) {
+      return NextResponse.json({ error: INVALID_STAFF_ROLE_AR }, { status: 400 });
+    }
+
     const adminClient = await createServiceClient();
 
     let userId = "";
+    // The account's type before this invite (null: a new account), for the audit row.
+    let previousUserType: string | null = null;
 
-    // Create the user in auth.users
-    // WARNING: user_type "admin" is FULL platform authority, not a team seat.
-    // src/lib/auth/assertRole.ts:46 short-circuits every allow-list for 'admin', and
-    // src/components/dashboard/UserTypeGuard.tsx:32 lets 'admin' bypass every UI guard —
-    // so an invited member reaches settings, pricing, entitlement grants, coupons and revenue.
-    // The role/department captured below are descriptive labels only; nothing reads them as
-    // permissions. Narrowing this grant needs a real admin-tier model first, otherwise the
-    // admins who already exist lose access.
+    // Create the user in auth.users. user_type "admin" makes them staff; the
+    // platform_staff row written below decides what they may do in the console.
     const { data: authUser, error: authError } = await adminClient.auth.admin.createUser({
       email,
       email_confirm: true,
@@ -95,12 +142,13 @@ export async function POST(request: NextRequest) {
       if (authError.message.includes("already registered") || authError.message.includes("exists")) {
         const { data: existingProfile } = await adminClient
           .from("profiles")
-          .select("id")
+          .select("id, user_type")
           .eq("email", email)
           .maybeSingle();
 
         if (existingProfile) {
           userId = existingProfile.id;
+          previousUserType = typeof existingProfile.user_type === "string" ? existingProfile.user_type : null;
         } else {
           return NextResponse.json({ error: authError.message }, { status: 400 });
         }
@@ -118,8 +166,41 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // An invite to an existing account sets its role, so the role rules apply:
+    // inviting your own address cannot change your own role, and re-inviting
+    // the last super admin under another role cannot demote them.
+    if (isSameAccount(userId, gate.userId)) {
+      return NextResponse.json({ error: OWN_ROLE_AR }, { status: 400 });
+    }
+    const change = await checkStaffRoleChange(adminClient, {
+      targetId: userId,
+      targetIsAdmin: previousUserType === "admin",
+      nextRole: staffRole,
+    });
+    if (!change.ok) {
+      return NextResponse.json({ error: change.error }, { status: change.status });
+    }
+    const previousRole = change.previousRole;
+
+    // The role row first, upserted, so an old row (a former admin's) never
+    // survives to bring back an old role, and the account is never an admin
+    // under a stale role. Before 20261019_30 runs there is no table: the
+    // invite goes on without a role (every admin keeps full access until it
+    // runs, and its first apply makes every admin a super_admin).
+    if (!change.tableMissing) {
+      const { error: staffError } = await adminClient
+        .from("platform_staff")
+        .upsert(
+          { user_id: userId, staff_role: staffRole, granted_by: gate.userId, granted_at: new Date().toISOString() },
+          { onConflict: "user_id" },
+        );
+      if (staffError && !isMissingStaffTable(staffError.code)) {
+        console.error("[admin/teams] POST: writing the staff role failed:", staffError.code, staffError.message);
+        return NextResponse.json({ error: "تعذّر حفظ دور العضو — لم تُرسَل الدعوة" }, { status: 500 });
+      }
+    }
+
     // Upsert the profile to set the user details and metadata
-    // Same full-authority grant as the auth user above — see the warning at createUser.
     const { error: profileError } = await adminClient
       .from("profiles")
       .upsert({
@@ -146,7 +227,14 @@ export async function POST(request: NextRequest) {
       action: "staff_member_invited",
       targetType: "profile",
       targetId: userId,
-      after: { user_type: "admin", email, role: role || "مسؤول", department: department || "الإدارة" },
+      before: { user_type: previousUserType, staff_role: previousRole },
+      after: {
+        user_type: "admin",
+        staff_role: change.tableMissing ? null : staffRole,
+        email,
+        role: role || "مسؤول",
+        department: department || "الإدارة",
+      },
       metadata: { existing_account: !authUser?.user },
     });
 
@@ -166,12 +254,92 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   // 1. Staff gate (owner ٢١٠): a staff member's record is staff management.
-  //    Task 3.4 may rewrite this handler; it keeps this gate.
   const gate = await requireStaff("staff.manage");
   if (!gate.ok) return gate.response;
 
   try {
-    const { id, status } = await request.json();
+    const parsed: unknown = await request.json().catch(() => undefined);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return NextResponse.json({ error: "بيانات غير صالحة" }, { status: 400 });
+    }
+
+    // ── { userId, staffRole }: set a member's staff role (owner ٢١٠) ─────────
+    if ("staffRole" in parsed) {
+      const body = parsed as { userId?: unknown; staffRole?: unknown };
+      const targetId = typeof body.userId === "string" ? body.userId.trim() : "";
+      if (!targetId) {
+        return NextResponse.json({ error: "معرّف العضو مطلوب لتغيير الدور" }, { status: 400 });
+      }
+      const nextRole = toStaffRole(body.staffRole);
+      if (!nextRole) {
+        return NextResponse.json({ error: INVALID_STAFF_ROLE_AR }, { status: 400 });
+      }
+      if (isSameAccount(targetId, gate.userId)) {
+        return NextResponse.json({ error: OWN_ROLE_AR }, { status: 400 });
+      }
+
+      const adminClient = await createServiceClient();
+
+      // Only an admin holds a role: a row on any other account would lie
+      // dormant and come back the day the account is promoted.
+      const { data: target, error: targetError } = await adminClient
+        .from("profiles")
+        .select("user_type")
+        .eq("id", targetId)
+        .maybeSingle();
+      if (targetError) {
+        console.error("[admin/teams] PATCH: reading the member failed:", targetError.code, targetError.message);
+        return NextResponse.json({ error: "حدث خطأ أثناء تحديث دور عضو الفريق" }, { status: 500 });
+      }
+      if (!target) {
+        return NextResponse.json({ error: "عضو الفريق غير موجود" }, { status: 404 });
+      }
+      if (target.user_type !== "admin") {
+        return NextResponse.json({ error: NOT_STAFF_AR }, { status: 400 });
+      }
+
+      // The last super admin stays one (400), and an unreadable role or count
+      // is a 503, never a guess.
+      const change = await checkStaffRoleChange(adminClient, { targetId, targetIsAdmin: true, nextRole });
+      if (!change.ok) {
+        return NextResponse.json({ error: change.error }, { status: change.status });
+      }
+      if (change.tableMissing) {
+        return NextResponse.json({ error: STAFF_ROLES_NOT_READY_AR }, { status: 503 });
+      }
+      const previousRole = change.previousRole;
+      if (previousRole === nextRole) {
+        return NextResponse.json({ success: true, staffRole: nextRole, message: "الدور لم يتغيّر" });
+      }
+
+      const { error: upsertError } = await adminClient
+        .from("platform_staff")
+        .upsert(
+          { user_id: targetId, staff_role: nextRole, granted_by: gate.userId, granted_at: new Date().toISOString() },
+          { onConflict: "user_id" },
+        );
+      if (upsertError) {
+        if (isMissingStaffTable(upsertError.code)) {
+          return NextResponse.json({ error: STAFF_ROLES_NOT_READY_AR }, { status: 503 });
+        }
+        console.error("[admin/teams] PATCH: writing the staff role failed:", upsertError.code, upsertError.message);
+        return NextResponse.json({ error: "تعذّر حفظ الدور — لم يتغيّر شيء" }, { status: 500 });
+      }
+
+      await logAdminAction({
+        actorId: gate.userId,
+        action: "staff_role_updated",
+        targetType: "profile",
+        targetId,
+        before: { staff_role: previousRole },
+        after: { staff_role: nextRole },
+      });
+
+      return NextResponse.json({ success: true, staffRole: nextRole, message: "تم تحديث دور عضو الفريق" });
+    }
+
+    // ── { id, status }: the descriptive status label (TeamTab) ──────────────
+    const { id, status } = parsed as { id?: unknown; status?: unknown };
 
     if (!id || !status) {
       return NextResponse.json(
@@ -196,9 +364,9 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    // NOTE: this writes metadata.status only — a display label. user_type stays "admin", and the
-    // auth path reads user_type alone (assertRole.ts:46, UserTypeGuard.tsx:32), so "suspended"
-    // does NOT revoke a member's access. Real suspension needs the admin-tier model.
+    // NOTE: this writes metadata.status only — a display label. It revokes
+    // nothing: user_type stays "admin" and the staff role is unchanged. What a
+    // member may do is their staff role (the branch above).
     const currentMetadata = profile.metadata && typeof profile.metadata === "object" ? profile.metadata : {};
     const updatedMetadata = {
       ...currentMetadata,

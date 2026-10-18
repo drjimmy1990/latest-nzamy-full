@@ -40,7 +40,7 @@ export default function SharedSidebar() {
     userType: sessionUserType, subRole, name, credits, creditsMax,
     dashboardMode, active_roles, governmentRole, businessRole,
     affiliation, businessMembership, isDemoBypass, country, loading, isLoggedIn,
-    practiceKind,
+    practiceKind, staffRole,
   } = useUser();
 
   // Whether the two inputs `useSubscription().can()` reads have settled.
@@ -126,9 +126,10 @@ export default function SharedSidebar() {
   const userType = isBusinessIntake ? "corporate" : pathUserType ?? sessionUserType;
 
   // practiceKind (Art. 18): a consultant's sidebar has no pleading or hearings tools.
+  // staffRole (owner ٢١٠): an admin sees only the tools of their staff role.
   const groups = getSidebarByUserType(
     userType, mode, subRole, active_roles ?? [],
-    governmentRole, businessRole, affiliation?.role, isDemoBypass, country, practiceKind
+    governmentRole, businessRole, affiliation?.role, isDemoBypass, country, practiceKind, staffRole
   );
   
   const showModeToggle = userType === "lawyer" || userType === "firm";

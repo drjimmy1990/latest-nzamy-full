@@ -22,6 +22,10 @@ const USERS_COUNT: ArabicCountForms = {
   many: "مستخدماً",
 };
 import { DB_USER_TYPES, isDbUserType, type DbUserType } from "@/lib/auth/userTypes";
+import { useUser } from "@/hooks/useUser";
+import type { StaffRole } from "@/lib/auth/staffRoles";
+import { staffMaySee } from "@/lib/auth/adminNavAccess";
+import { apiErrorText } from "@/lib/services/apiErrorText";
 
 // ─── Types & Data ─────────────────────────────────────────────────────────────
 
@@ -272,6 +276,7 @@ function UserRow({
   onUpdate,
   selected,
   onToggleSelect,
+  staffRole,
 }: {
   user: PlatformUser;
   isDark: boolean;
@@ -280,6 +285,12 @@ function UserRow({
   /** Owner item ٦٦ — checked state for the bulk-verify selector. */
   selected: boolean;
   onToggleSelect: (id: string) => void;
+  /**
+   * Owner ٢١٠: the viewing admin's staff role, read once by the page. The
+   * delete affordance is shown only to a role that may delete (null — not
+   * readable yet — shows it; the server refuses a role that may not).
+   */
+  staffRole: StaffRole | null;
 }) {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -300,7 +311,8 @@ function UserRow({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ verified: true }),
       });
-      if (!res.ok) throw new Error("فشل التحقق من المستخدم");
+      // The API's own reason on a refusal («هذا الإجراء لقيادة المنصة فقط»…).
+      if (!res.ok) throw new Error(apiErrorText(res.status, await res.json().catch(() => null), "فشل التحقق من المستخدم"));
       onUpdate();
     } catch (err) {
       alert(err instanceof Error ? err.message : "حدث خطأ");
@@ -318,7 +330,7 @@ function UserRow({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "suspended" }),
       });
-      if (!res.ok) throw new Error("فشل إيقاف المستخدم");
+      if (!res.ok) throw new Error(apiErrorText(res.status, await res.json().catch(() => null), "فشل إيقاف المستخدم"));
       onUpdate();
     } catch (err) {
       alert(err instanceof Error ? err.message : "حدث خطأ");
@@ -334,7 +346,7 @@ function UserRow({
       const res = await fetch(`/api/v1/admin/users/${user.id}`, {
         method: "DELETE",
       });
-      if (!res.ok) throw new Error("فشل حذف المستخدم");
+      if (!res.ok) throw new Error(apiErrorText(res.status, await res.json().catch(() => null), "فشل حذف المستخدم"));
       onUpdate();
     } catch (err) {
       alert(err instanceof Error ? err.message : "حدث خطأ");
@@ -430,7 +442,10 @@ function UserRow({
                 {[
                   { label: "عرض الملف", icon: Eye, onClick: () => router.push(`/dashboard/admin/users/${user.id}`) },
                   { label: "تعديل الخطة", icon: Crown, onClick: () => router.push(`/dashboard/admin/users/${user.id}?tab=subscription`) },
-                  { label: "حذف المستخدم", icon: Trash, danger: true, onClick: handleDelete },
+                  // Owner ٢١٠: deleting a user is a super_admin action.
+                  ...(staffMaySee(staffRole, "users.delete")
+                    ? [{ label: "حذف المستخدم", icon: Trash, danger: true, onClick: handleDelete }]
+                    : []),
                 ].map(item => {
                   const Icon = item.icon;
                   return (
@@ -457,6 +472,9 @@ function UserRow({
 
 export default function AdminUsersPage() {
   const { isDark } = useTheme();
+  // Owner ٢١٠: read once here and handed to every row (each useUser() call
+  // makes its own reads).
+  const { staffRole } = useUser();
   const [search, setSearch]         = useState("");
   const [roleFilter, setRoleFilter] = useState<DbUserType | "all">("all");
   const [statusFilter, setStatusFilter] = useState<UserStatus | "all">("all");
@@ -983,7 +1001,7 @@ export default function AdminUsersPage() {
         {!loading && !error && visibleUsers.map((u, i) => (
           <motion.div key={u.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
             <UserRow user={u} isDark={isDark} card={card} onUpdate={() => fetchUsers(1, false)}
-              selected={selected.has(u.id)} onToggleSelect={toggleSelect} />
+              selected={selected.has(u.id)} onToggleSelect={toggleSelect} staffRole={staffRole} />
           </motion.div>
         ))}
 
