@@ -39,7 +39,7 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
       { label: "عصارة المرفقات",    labelEn: "Attachment Analyzer",      href: "/ai/analyze",       icon: "MagnifyingGlass", badge: "قريباً" },
       { label: "الرأي الفصل",       labelEn: "Al-Ra'y Al-Fasl",          href: "/ai/legal-opinion", icon: "Lightbulb" },
       // ٤: المساعدة والمتابعة
-      { label: "السكرتير الذكي",    labelEn: "AI Secretary",             href: "/ai/secretary",     icon: "Robot",        divider: true },
+      { label: "السكرتير الذكي",    labelEn: "AI Secretary",             href: "/ai/secretary",     icon: "Robot",        divider: true, badge: "قريباً" },
       { label: "راصد التشريعات",    labelEn: "Law Monitor",              href: "/ai/monitor",       icon: "Bell" },
     ],
   },
@@ -317,7 +317,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
       { label: "المرشد القضائي",        labelEn: "Court Guide",      href: "/ai/procedures",       icon: "MapTrifold",   divider: true },
       { label: "راصد التشريعات",        labelEn: "Law Monitor",      href: "/ai/monitor",          icon: "Bell" },
       // ⑤ المساعدة الذكية
-      { label: "السكرتير الذكي",        labelEn: "AI Secretary",     href: "/ai/secretary",        icon: "Robot",        divider: true },
+      { label: "السكرتير الذكي",        labelEn: "AI Secretary",     href: "/ai/secretary",        icon: "Robot",        divider: true, badge: "قريباً" },
       { label: "الحاسبة القانونية",     labelEn: "Legal Calculator", href: "/ai/fee-calculator",   icon: "Calculator" },
       { label: "مولّد التقارير",        labelEn: "Report Generator", href: "/ai/report-generator", icon: "FileArrowUp",  badge: "جديد" },
     ],

@@ -22,7 +22,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { LAWYER_AI_TOOLS, getLawyerAiBadge } from "../../constants/lawyerAiCatalog.ts";
+import { LAWYER_AI_TOOLS, TOOL_POINT_LABELS, getLawyerAiBadge } from "../../constants/lawyerAiCatalog.ts";
 
 function src(path: string): string {
   return readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
@@ -264,15 +264,31 @@ test("no plan id repeats inside one list (React key), and each language keeps it
 test("a coming-soon AI tool is neither priced on the hub nor sold on /pricing", () => {
   const soon = LAWYER_AI_TOOLS.filter((t) => t.comingSoon);
   assert.ok(soon.some((t) => t.permission === "ai:direction-support"), "direction-support is a «قريباً» page");
+  const soonIds = new Set<string>(soon.map((t) => t.permission));
   const lawyerTables = code("constants/pricing/pricing.lawyers.ts");
+
+  // By id, not by name (owner ١١٥ fix round): a row is tied to its tools by
+  // `tools: [...]`, and a row's wording need not start with a tool's title —
+  // «التفريغ الصوتي الذكي وأوامر السكرتير» sold two «قريباً» tools and passed
+  // the old title-prefix check. Every `tools` list anywhere in the file counts.
+  const lists = [...lawyerTables.matchAll(/tools: \[([^\]]*)\]/g)];
+  assert.ok(lists.length >= 5, `found only ${lists.length} tools lists — the parser broke`);
+  for (const [, list] of lists) {
+    for (const [, id] of list.matchAll(/"([^"]+)"/g)) {
+      assert.ok(!soonIds.has(id), `${id} is «قريباً» but a pricing.lawyers.ts row still prices it`);
+    }
+  }
+
   for (const tool of soon) {
     assert.equal(getLawyerAiBadge(tool, "ar"), "قريباً");
     assert.equal(getLawyerAiBadge(tool, "en"), "Coming soon");
-    // No points row for it in the services price list (lawyerServicesTable)
-    // or the reference table beside it.
+    // No second price source on the hub side either.
+    assert.ok(!(tool.permission in TOOL_POINT_LABELS), `${tool.permission} still has a hub point label`);
+    // And no row or plan-card line that opens with its name (the lawyer card
+    // listed «عصارة المرفقات وتلخيص ملف القضية: ٨ نقاط» with no tools id).
     assert.ok(
-      !lawyerTables.includes(`name: "${tool.titleAr}`),
-      `${tool.titleAr} is still priced in pricing.lawyers.ts`,
+      !lawyerTables.includes(`"${tool.titleAr}`),
+      `${tool.titleAr} is still sold in pricing.lawyers.ts`,
     );
   }
 });

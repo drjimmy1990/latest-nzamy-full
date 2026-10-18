@@ -152,6 +152,11 @@ export const LAWYER_AI_TOOLS: readonly LawyerAiTool[] = [
     betaStatus: "priced",
     sidebarPlacement: "core",
     adminPricingKey: "lawyer.ai.analyze",
+    // Owner answer ١١٥, fix round 1 — the lawyer flow (AttachmentSqueezer)
+    // printed one fixed report for any files and renders DashboardComingSoon
+    // now. The route stays live for clients (SmartAnalyzer), but this row is
+    // the LAWYER tool, so it is «قريباً», unpriced and off the quick tiles.
+    comingSoon: true,
   },
   {
     permission: "ai:legal-opinion",
@@ -226,8 +231,8 @@ export const LAWYER_AI_TOOLS: readonly LawyerAiTool[] = [
     sidebarPlacement: "more-tools",
     adminPricingKey: "lawyer.ai.transcriber",
     // Owner answer ١١٥ — both modes printed a fixed transcript of a hearing
-    // nobody uploaded; the page renders DashboardComingSoon now. Its ٥-point
-    // label below stays: the owner priced the row it shares with the secretary.
+    // nobody uploaded; the page renders DashboardComingSoon now, so it is
+    // unpriced (the owner's ٥ is recorded above TOOL_POINT_LABELS).
     comingSoon: true,
   },
   {
@@ -250,6 +255,9 @@ export const LAWYER_AI_TOOLS: readonly LawyerAiTool[] = [
     betaStatus: "priced",
     sidebarPlacement: "core",
     adminPricingKey: "lawyer.ai.secretary",
+    // Owner answer ١١٥, fix round 1 — the page itself says «مؤجّل بقرار المالك
+    // (قريباً)»: its rules, decisions and activity were literals.
+    comingSoon: true,
   },
   {
     permission: "ai:monitor",
@@ -304,13 +312,20 @@ export const LAWYER_AI_TOOL_BY_PERMISSION = Object.fromEntries(
  * them), and compare and legal-translate (both returned canned output and are
  * «قريباً» now, owner ١١٥ — the owner's ٢١٦ range is not shown until they
  * work). A `comingSoon` tool shows «قريباً» whatever this map holds.
+ *
+ * UNPRICED UNTIL THEY WORK (owner ١١٥, fix round 1). These tools are
+ * `comingSoon`, so neither this map nor lawyerServicesTable sells them. The
+ * owner's approved prices, to restore (here AND as a table row with the same
+ * `tools` ids) once each page really answers:
+ *   - "ai:analyze": "٨" — row «عصارة المرفقات وتلخيص ملف القضية واستخلاص
+ *     النزاع», points 8; the lawyer card also listed «عصارة المرفقات وتلخيص
+ *     ملف القضية: ٨ نقاط» / "Attachment digest and case summary: 8 points".
+ *   - "ai:transcriber": "٥" and "ai:secretary": "٥" — one shared row,
+ *     «التفريغ الصوتي الذكي وأوامر السكرتير», points 5.
  */
 export const TOOL_POINT_LABELS: Record<string, string> = {
   "ai:draft": "١٥",
   "ai:contracts": "١٠",
-  "ai:analyze": "٨",
-  "ai:transcriber": "٥",
-  "ai:secretary": "٥",
   "ai:najiz-optimizer": "٥–٨",
   "ai:wargaming": "١٥–٢٠",
   "ai:legal-opinion": "١٥–٢٠",

@@ -16,7 +16,10 @@
  *   • /ai/direction-support — renders DashboardComingSoon (UAT-LIVE-AI-001);
  *   • /ai/secretary         — built on literals (see the note on the removed
  *                             «AI Secretary Notice» in dashboard/lawyer/page.tsx);
- *   • /ai/research          — only a redirect to /ai/legal-opinion.
+ *   • /ai/research          — only a redirect to /ai/legal-opinion;
+ *   • /ai/analyze           — «عصارة المرفقات»: the lawyer flow is «قريباً»
+ *                             (owner ١١٥ — it printed a fixed report), even
+ *                             though page.tsx stays live for clients.
  *
  * `icon` is a string key, not a Phosphor component: this module is imported
  * by the preferences validator and by `node --test`, neither of which should
@@ -68,7 +71,6 @@ export const LAWYER_QUICK_TOOLS: readonly QuickTool[] = [
   // ── أدوات الذكاء الاصطناعي ───────────────────────────────────────────────
   { id: "draft",         label: "الصائغ القانوني",    desc: "مذكرات ولوائح",            href: "/ai/draft",                       group: "ai",          icon: "PencilSimple" },
   { id: "brief-check",   label: "مراجعة المذكرات",    desc: "يراجعها فريق نظامي",       href: "/ai/brief-check",                 group: "ai",          icon: "FileMagnifyingGlass" },
-  { id: "analyze",       label: "عصارة المرفقات",     desc: "تحليل المستندات",          href: "/ai/analyze",                     group: "ai",          icon: "MagnifyingGlass" },
   { id: "collector",     label: "المجمّع البحثي",      desc: "جمع المواد البحثية",       href: "/ai/collector",                   group: "ai",          icon: "Tray" },
   { id: "legal-opinion", label: "الرأي الفصل",        desc: "رأي قانوني مسبَّب",         href: "/ai/legal-opinion",               group: "ai",          icon: "Lightbulb" },
   { id: "wargaming",     label: "المحاكي الشامل",     desc: "محاكاة المرافعة",          href: "/ai/wargaming",                   group: "ai",          icon: "Sword" },

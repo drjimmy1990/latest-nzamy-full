@@ -23,7 +23,8 @@ import test from "node:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { LAWYER_AI_TOOL_BY_PERMISSION, getLawyerAiBadge } from "../../constants/lawyerAiCatalog.ts";
+import { LAWYER_AI_TOOL_BY_PERMISSION, TOOL_POINT_LABELS, getLawyerAiBadge } from "../../constants/lawyerAiCatalog.ts";
+import { LAWYER_QUICK_TOOLS } from "../lawyerQuickTools.ts";
 
 function src(rel: string): string {
   return readFileSync(new URL(`../../${rel}`, import.meta.url), "utf8");
@@ -139,14 +140,23 @@ test("AttachmentSqueezer is «قريباً» and can no longer export a canned r
   }
 });
 
-test("/ai/analyze itself stays live: the client analyzer is not gated with it", () => {
-  // The route also serves SmartAnalyzer to clients, so page.tsx must not
-  // import DashboardComingSoon (navComingSoon.test.ts would then require
-  // «قريباً» on every client nav row to /ai/analyze, and lawyerQuickTools
-  // would refuse the route).
+test("/ai/analyze: page.tsx stays live for clients, while the lawyer tool is «قريباً» everywhere it is sold", () => {
+  // Fix round 1 (coordinator ruling b). The route also serves SmartAnalyzer
+  // to clients, so page.tsx itself does not import DashboardComingSoon. The
+  // lawyer tool «عصارة المرفقات» is gated in the component AND, so the gate
+  // cannot hide behind page.tsx, carries `comingSoon` in the catalog, has no
+  // price (row, plan-card line or hub label) and no quick-access tile.
   const page = code("app/ai/analyze/page.tsx");
   assert.ok(!page.includes(SOON_IMPORT));
   assert.match(page, /<SmartAnalyzer\b/);
+
+  assert.equal(LAWYER_AI_TOOL_BY_PERMISSION["ai:analyze"].comingSoon, true);
+  assert.ok(!("ai:analyze" in TOOL_POINT_LABELS), "ai:analyze still has a hub point label");
+  assert.deepEqual(LAWYER_QUICK_TOOLS.filter((t) => t.href.startsWith("/ai/analyze")).map((t) => t.id), []);
+  const pricing = code("constants/pricing/pricing.lawyers.ts");
+  for (const s of ["عصارة المرفقات", "Attachment digest", '"ai:analyze"']) {
+    assert.ok(!pricing.includes(s), `pricing.lawyers.ts still sells the attachment tool: ${s}`);
+  }
 });
 
 // ── منقح ناجز: keeps working, loses the fake "AI" delay ──────────────────────
@@ -193,13 +203,21 @@ test("useDraftState no longer mints a share link it never stores", () => {
 
 // ── The catalog, the nav and the hub say «قريباً» too ────────────────────────
 
-test("the gated lawyer tools are «قريباً» on the hub; the Najiz cleaner is not", () => {
-  for (const id of ["ai:compare", "ai:legal-translate", "ai:transcriber"] as const) {
+test("the gated lawyer tools are «قريباً» on the hub and unpriced; the Najiz cleaner is not", () => {
+  for (const id of ["ai:compare", "ai:legal-translate", "ai:transcriber", "ai:analyze", "ai:secretary"] as const) {
     const tool = LAWYER_AI_TOOL_BY_PERMISSION[id];
     assert.equal(tool.comingSoon, true, `${id} is not marked comingSoon`);
     assert.equal(getLawyerAiBadge(tool, "ar"), "قريباً");
+    assert.ok(!(id in TOOL_POINT_LABELS), `${id} still has a hub point label`);
+  }
+  // The row «التفريغ الصوتي الذكي وأوامر السكرتير» sold the transcriber and
+  // the secretary, both «قريباً» (fix round 1).
+  const pricing = code("constants/pricing/pricing.lawyers.ts");
+  for (const s of ["التفريغ الصوتي الذكي", '"ai:transcriber"', '"ai:secretary"']) {
+    assert.ok(!pricing.includes(s), `pricing.lawyers.ts still sells ${s}`);
   }
   assert.notEqual(LAWYER_AI_TOOL_BY_PERMISSION["ai:najiz-optimizer"].comingSoon, true);
+  assert.equal(TOOL_POINT_LABELS["ai:najiz-optimizer"], "٥–٨");
 });
 
 /** `{ href, badge }` for every nav row on one line, in the given constants file. */
@@ -218,6 +236,8 @@ test("every nav row to a gated page is badged «قريباً» — the files nav
     "/dashboard/admin/system", "/dashboard/admin/system/backup", "/dashboard/admin/reports",
     // عصارة المرفقات: lawyer and firm rows land on the gated AttachmentSqueezer.
     "/ai/analyze?source=firm",
+    // The secretary's page says it is postponed by the owner (fix round 1).
+    "/ai/secretary",
   ]);
   const files = [
     "constants/navigation.sidebars.legal.ts",
@@ -233,7 +253,7 @@ test("every nav row to a gated page is badged «قريباً» — the files nav
       if (r.badge !== "قريباً") wrong.push(`${f}: ${r.href} badged «${r.badge ?? "(none)"}»`);
     }
   }
-  assert.ok(seen >= 15, `found only ${seen} rows — the parser broke`);
+  assert.ok(seen >= 19, `found only ${seen} rows — the parser broke`);
   assert.deepEqual(wrong, []);
   // The two LAWYER rows to /ai/analyze (the firm rows use ?source=firm).
   const lawyerAnalyze = navRows("constants/navigation.sidebars.legal.ts").filter((r) => r.href === "/ai/analyze");

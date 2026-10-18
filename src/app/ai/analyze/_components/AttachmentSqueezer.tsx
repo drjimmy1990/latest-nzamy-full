@@ -12,12 +12,14 @@
 // collector (/ai/collector), where it then sat beside real research as if it
 // had been extracted from his case.
 //
-// Gated here rather than in page.tsx on purpose: the same route serves the
-// client analyzer (SmartAnalyzer), which this does not touch, so the route
-// itself must not read as coming-soon (navComingSoon.test.ts and
-// lawyerQuickTools.test.ts key off page.tsx). With the report gone there is
-// nothing left to export, so the collector write is gone with it. The lawyer
-// and firm sidebar rows to /ai/analyze carry «قريباً».
+// Gated here rather than in page.tsx because the same route serves the client
+// analyzer (SmartAnalyzer), which this does not touch. So that the gate does
+// not hide behind page.tsx (the honesty tests key off it), the lawyer tool is
+// «قريباً» everywhere else too: `comingSoon` on "ai:analyze" in
+// lawyerAiCatalog.ts, no price on /pricing, no quick-access tile, and the
+// lawyer and firm sidebar rows badged «قريباً» (cannedOutputGate.test.ts).
+// With the report gone there is nothing left to export, so the collector
+// write is gone with it.
 //
 // ClientMediaPanel.tsx and InputPhase.tsx beside this file were used only by
 // the old flow; they stay on disk (owner decision ٤) and leave the bundle.

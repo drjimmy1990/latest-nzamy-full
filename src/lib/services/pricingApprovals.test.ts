@@ -109,7 +109,11 @@ test("٢١٦: every hub badge is the price-list label or absent (one source for 
     assert.ok(!fromTable.has(id), `${id} is priced by two rows`);
     fromTable.set(id, rowLabel(row));
   }
-  assert.ok(fromTable.size >= 8, "the catalog tools the table prices carry their ids");
+  // Five since owner answer ١١٥: analyze (٨), transcriber and secretary (٥,
+  // one shared row) were unpriced until they work — their pages say «قريباً».
+  // The owner's figures are kept in the TOOL_POINT_LABELS comment for when
+  // they come back. Not a regression: a tool that cannot answer is not sold.
+  assert.ok(fromTable.size >= 5, "the catalog tools the table prices carry their ids");
   assert.deepEqual(Object.fromEntries(fromTable), labels);
 
   const nonPrice = new Set(["قريباً", "بيتا مجاني", "مجاني"]);

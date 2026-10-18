@@ -30,7 +30,6 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
           "١٬٥٠٠ نقطة كل شهر",
           "صياغة المذكرات واللوائح: ١٥ نقطة",
           "صياغة العقود وتدقيقها: ١٠ نقاط",
-          "عصارة المرفقات وتلخيص ملف القضية: ٨ نقاط",
         ],
         platform: ["إدارة القضايا والجلسات والمهل", "الموكّلون والاستشارات والعقود"],
         support: ["السنوي بسعر عشرة أشهر"],
@@ -76,7 +75,6 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
           "1,500 points every month",
           "Briefs and pleadings: 15 points",
           "Contract drafting and review: 10 points",
-          "Attachment digest and case summary: 8 points",
         ],
         platform: ["Cases, hearings and deadlines", "Clients, consultations and contracts"],
         support: ["Yearly priced at ten months"],
@@ -162,7 +160,10 @@ export const lawyerServicesTable: ServiceCategory[] = [
     emoji: "🔍",
     color: "text-amber-400",
     items: [
-      { name: "عصارة المرفقات وتلخيص ملف القضية واستخلاص النزاع", points: 8, tools: ["ai:analyze"] },
+      // Owner answer ١١٥: the attachment digest (٨) and, under «أدوات مساعدة»,
+      // the transcriber + secretary row (٥) are off this list until those pages
+      // work — all three say «قريباً». Their prices are kept in the comment
+      // above TOOL_POINT_LABELS (lawyerAiCatalog.ts) for when they return.
       { name: "فحص المذكرة الشكلي والموضوعي", points: 5 },
       { name: "مولّد أسئلة الاستجواب", points: 5, pointsLabel: "٥–٨" },
       { name: "منقح ناجز", points: 5, pointsLabel: "٥–٨", tools: ["ai:najiz-optimizer"] },
@@ -184,7 +185,6 @@ export const lawyerServicesTable: ServiceCategory[] = [
     color: "text-purple-400",
     items: [
       { name: "المساعد القانوني والتشريع المقارن", points: 5 },
-      { name: "التفريغ الصوتي الذكي وأوامر السكرتير", points: 5, tools: ["ai:transcriber", "ai:secretary"] },
       { name: "البحث الدلالي وشرح المواد في المكتبة", points: 1, pointsLabel: "١–٢" },
     ],
   },
