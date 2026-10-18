@@ -11,6 +11,7 @@ import {
   validateTaskTitle,
   validateTaskAssignee,
   TASK_ASSIGNEE_INVALID_AR,
+  namesVisibleTo,
 } from "./taskMetadata.ts";
 
 // ─── validateSubtasks ─────────────────────────────────────────────────────────
@@ -159,4 +160,31 @@ test("validateTaskAssignee: the id is matched exactly, after trimming", () => {
     { ok: true, value: COLLEAGUE },
   );
   assert.equal(validateTaskAssignee({ assigneeId: COLLEAGUE.toUpperCase(), callerId: CALLER, firmMemberIds: [COLLEAGUE] }).ok, false);
+});
+
+// ─── namesVisibleTo: whose display name a task list may reveal ─────────────────
+// `assignee_user_id` can hold ANY auth user's id: the insert policy checks only
+// the owner, so a raw PostgREST write skips validateTaskAssignee. The names
+// are read with the service role, so the route may resolve only the caller
+// and members of the caller's own firm (any status, so a former member still
+// shows). Everyone else stays unnamed.
+
+test("namesVisibleTo: the caller and the caller's firm members only", () => {
+  assert.deepEqual(
+    namesVisibleTo({ ids: [CALLER, COLLEAGUE, STRANGER], callerId: CALLER, firmMemberIds: [CALLER, COLLEAGUE] }),
+    [CALLER, COLLEAGUE],
+  );
+});
+
+test("namesVisibleTo: a solo lawyer sees only their own name", () => {
+  assert.deepEqual(namesVisibleTo({ ids: [CALLER, COLLEAGUE, STRANGER], callerId: CALLER, firmMemberIds: [] }), [CALLER]);
+  assert.deepEqual(namesVisibleTo({ ids: [STRANGER], callerId: CALLER, firmMemberIds: [] }), []);
+});
+
+test("namesVisibleTo: de-duplicates and ignores blanks", () => {
+  assert.deepEqual(
+    namesVisibleTo({ ids: [COLLEAGUE, COLLEAGUE, "", CALLER], callerId: CALLER, firmMemberIds: [COLLEAGUE] }),
+    [COLLEAGUE, CALLER],
+  );
+  assert.deepEqual(namesVisibleTo({ ids: [], callerId: CALLER, firmMemberIds: [COLLEAGUE] }), []);
 });

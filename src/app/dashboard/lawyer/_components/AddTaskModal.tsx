@@ -28,9 +28,10 @@ export default function AddTaskModal({ onClose, isDark }: Props) {
   const [caseId, setCaseId] = useState("");
   const [caseRef, setCaseRef] = useState("");
   // «المحامي المُكلَّف» (owner item 59). "" = nobody. The options come from
-  // the server (the caller plus their firm's active members); with one option
-  // or none — a solo lawyer, or a failed read — the picker is not shown and
-  // the task is saved unassigned. The route re-checks whatever is sent.
+  // the server: the caller, plus their firm's active members. A solo lawyer
+  // gets «—» and themself. Only a failed read (no options) hides the picker,
+  // and the task is then saved unassigned. The route re-checks whatever is
+  // sent.
   const [assigneeId, setAssigneeId] = useState("");
   const [assigneeOptions, setAssigneeOptions] = useState<TaskAssigneeOption[] | null>(null);
   useEffect(() => {
@@ -41,7 +42,7 @@ export default function AddTaskModal({ onClose, isDark }: Props) {
     })();
     return () => { cancelled = true; };
   }, []);
-  const showAssignee = (assigneeOptions?.length ?? 0) > 1;
+  const showAssignee = (assigneeOptions?.length ?? 0) >= 1;
 
   const inputCls = `w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none disabled:opacity-50 ${
     isDark

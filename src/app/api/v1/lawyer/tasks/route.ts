@@ -10,9 +10,10 @@ import {
   validateSubtasks,
   validateTaskTitle,
   validateTaskAssignee,
+  namesVisibleTo,
   type TaskSubtask,
 } from "@/lib/services/taskMetadata";
-import { readActiveFirmMemberIds, readCallerFirmId, resolveDisplayNames } from "./_assignees";
+import { readActiveFirmMemberIds, readCallerFirmId, readFirmMemberIdsAnyStatus, resolveDisplayNames } from "./_assignees";
 
 /**
  * /api/v1/lawyer/tasks — Phase 1, step 2 (خطة_البناء_الكاملة §5).
@@ -156,11 +157,21 @@ export async function GET(request: NextRequest) {
     }
 
     // «المحامي المُكلَّف» (owner item 59): one batched name lookup for every
-    // distinct assignee on the page.
+    // distinct assignee on the page — but only for the caller and members of
+    // the caller's firm (namesVisibleTo). `assignee_user_id` can be written
+    // raw through PostgREST with any user's id, and the lookup runs as the
+    // service role, so an unfiltered lookup would leak private names. The
+    // roster (any status) is read only when someone other than the caller is
+    // named.
     const assigneeIds = Array.from(
       new Set(rows.map((r) => r.assignee_user_id).filter((v): v is string => typeof v === "string" && v.length > 0)),
     );
-    const namesById = await resolveDisplayNames(assigneeIds);
+    const firmMemberIds = assigneeIds.some((id) => id !== user.id)
+      ? await readFirmMemberIdsAnyStatus(supabase, await readCallerFirmId(supabase, user.id))
+      : [];
+    const namesById = await resolveDisplayNames(
+      namesVisibleTo({ ids: assigneeIds, callerId: user.id, firmMemberIds }),
+    );
 
     const tasks = rows.map((row) =>
       toDto(row, stepsByTask.get(row.id) ?? [], row.assignee_user_id ? namesById[row.assignee_user_id] ?? null : null),
@@ -228,10 +239,11 @@ export async function POST(request: NextRequest) {
     // The roster is read only when the body names someone other than the
     // caller; null and "myself" need no lookup.
     const namesOther = typeof assigneeUserId === "string" && assigneeUserId.trim() !== user.id;
+    const activeMemberIds = namesOther ? await readActiveFirmMemberIds(supabase, firmId) : [];
     const parsedAssignee = validateTaskAssignee({
       assigneeId: assigneeUserId,
       callerId: user.id,
-      firmMemberIds: namesOther ? await readActiveFirmMemberIds(supabase, firmId) : [],
+      firmMemberIds: activeMemberIds,
     });
     if (!parsedAssignee.ok) return NextResponse.json({ error: parsedAssignee.error }, { status: 400 });
 
@@ -287,9 +299,14 @@ export async function POST(request: NextRequest) {
       payload: { title: parsedTitle.value },
     });
 
+    // The same visibility rule as GET, against the roster the validation above
+    // already read (the assignee was just checked to be in it, or the caller).
     const created = data as TaskRow;
-    const assigneeName = created.assignee_user_id
-      ? (await resolveDisplayNames([created.assignee_user_id]))[created.assignee_user_id] ?? null
+    const visible = created.assignee_user_id
+      ? namesVisibleTo({ ids: [created.assignee_user_id], callerId: user.id, firmMemberIds: activeMemberIds })
+      : [];
+    const assigneeName = visible.length > 0
+      ? (await resolveDisplayNames(visible))[visible[0]] ?? null
       : null;
     return NextResponse.json({ data: toDto(created, steps, assigneeName) });
   } catch (err) {

@@ -197,3 +197,28 @@ export function validateTaskAssignee(input: {
   if (id === callerId || firmMemberIds.includes(id)) return { ok: true, value: id };
   return { ok: false, error: TASK_ASSIGNEE_INVALID_AR };
 }
+
+/**
+ * The assignee ids whose display name a task list may reveal: the caller and
+ * the members of the caller's own firm (`firmMemberIds`, any membership
+ * status, so a former colleague still shows), de-duplicated, in input order.
+ *
+ * Why it exists: names are read with the service role, and
+ * `tasks.assignee_user_id` can name ANY auth user — the insert/update policies
+ * check the owner, not the assignee, so a raw PostgREST write skips
+ * `validateTaskAssignee`. Without this filter a lawyer could set a client's id
+ * as an assignee and read that client's private `profiles.display_name` back
+ * from the task list. An id outside the set is simply left unnamed.
+ */
+export function namesVisibleTo(input: {
+  ids: readonly string[];
+  callerId: string;
+  firmMemberIds: readonly string[];
+}): string[] {
+  const allowed = new Set<string>([input.callerId, ...input.firmMemberIds]);
+  const out: string[] = [];
+  for (const id of input.ids) {
+    if (id && allowed.has(id) && !out.includes(id)) out.push(id);
+  }
+  return out;
+}

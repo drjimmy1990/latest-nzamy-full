@@ -48,8 +48,8 @@ export function TaskCard({
 
   // The picker's options: the server's list, plus the task's current assignee
   // when they are no longer on it (e.g. left the firm), so the select shows
-  // the true state. Shown when there is someone to choose (more than the
-  // caller alone) or an assignee to clear; hidden when the list was not read.
+  // the true state. Shown whenever the list was read — a solo lawyer gets «—»
+  // and themself — or there is an assignee to clear; hidden when it was not.
   const currentAssignee = task.assigneeUserId ?? "";
   const pickerOptions: TaskAssigneeOption[] = assigneeOptions
     ? [
@@ -59,7 +59,7 @@ export function TaskCard({
           : []),
       ]
     : [];
-  const showAssigneePicker = !!assigneeOptions && (assigneeOptions.length > 1 || !!currentAssignee);
+  const showAssigneePicker = !!assigneeOptions && (assigneeOptions.length >= 1 || !!currentAssignee);
 
   const openEdit = () => {
     setEditTitle(task.title);

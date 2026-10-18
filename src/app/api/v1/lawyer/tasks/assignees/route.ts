@@ -7,8 +7,9 @@ import { readActiveFirmMemberIds, readCallerFirmId, resolveDisplayNames } from "
  * options (owner item 59).
  *
  * Response: `{ data: [{ userId, name, isSelf }] }`, the caller first.
- *   - A solo lawyer (no active firm membership) gets only themself, and the
- *     forms hide the picker: there is nobody else to choose.
+ *   - A solo lawyer (no active firm membership) gets only themself; the forms
+ *     still show the picker («—» or themself), so a solo lawyer's tasks can
+ *     carry an assignee rather than reading «—» for ever.
  *   - A firm member gets every ACTIVE member of their firm.
  *
  * This list is for display only. POST/PATCH /api/v1/lawyer/tasks re-read the

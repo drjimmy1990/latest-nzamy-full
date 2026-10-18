@@ -40,17 +40,31 @@ export async function readCallerFirmId(supabase: SupabaseClient, userId: string)
 }
 
 /**
- * The user ids of every ACTIVE member of `firmId`. On a read error this
- * returns `[]` (logged), so validation refuses any assignee other than the
- * caller rather than accepting one it could not check.
+ * The user ids of every ACTIVE member of `firmId` — who may be ASSIGNED. On a
+ * read error this returns `[]` (logged), so validation refuses any assignee
+ * other than the caller rather than accepting one it could not check.
  */
 export async function readActiveFirmMemberIds(supabase: SupabaseClient, firmId: string | null): Promise<string[]> {
+  return readFirmMemberIds(supabase, firmId, true);
+}
+
+/**
+ * The user ids of every member of `firmId` in ANY status (invited, active,
+ * suspended, removed) — whose NAME a task list may show (see
+ * `namesVisibleTo`), so a task assigned to a colleague who has since left
+ * still names them. The co-member SELECT policy filters on the caller being
+ * active, not on the row's status. On a read error: `[]`, so no colleague
+ * name is revealed.
+ */
+export async function readFirmMemberIdsAnyStatus(supabase: SupabaseClient, firmId: string | null): Promise<string[]> {
+  return readFirmMemberIds(supabase, firmId, false);
+}
+
+async function readFirmMemberIds(supabase: SupabaseClient, firmId: string | null, activeOnly: boolean): Promise<string[]> {
   if (!firmId) return [];
-  const { data, error } = await supabase
-    .from("firm_members")
-    .select("user_id")
-    .eq("firm_id", firmId)
-    .eq("status", "active");
+  let query = supabase.from("firm_members").select("user_id").eq("firm_id", firmId);
+  if (activeOnly) query = query.eq("status", "active");
+  const { data, error } = await query;
   if (error) {
     console.error("[lawyer/tasks] firm roster read failed:", error.message, error.code);
     return [];
@@ -67,9 +81,10 @@ export async function readActiveFirmMemberIds(supabase: SupabaseClient, firmId: 
 /**
  * `profiles.display_name` for each id, best-effort. Service-role, the same
  * pattern `service-requests/[id]` uses to resolve a document's `uploaderName`.
- * Only ids the caller's own reads already produced reach here (their own
- * tasks' assignees, or their firm's roster), and only `id, display_name` is
- * read. Never fails the parent request: a failed lookup leaves the names out.
+ * Callers pass only ids from the caller's own firm roster or the caller
+ * themself — a task's `assignee_user_id` goes through `namesVisibleTo`
+ * first, because that column can hold any user's id — and only
+ * `id, display_name` is read. Never fails the parent request: a failed lookup leaves the names out.
  */
 export async function resolveDisplayNames(ids: string[]): Promise<Record<string, string>> {
   const namesById: Record<string, string> = {};
