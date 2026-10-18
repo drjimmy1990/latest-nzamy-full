@@ -51,15 +51,19 @@ const caseTypes = {
 
 const steps = {
   ar: [
-    { num: "١", icon: FileText, title: "تقييم القضية", desc: "تقديم تفاصيل قضيتك، يراجعها محامٍ متخصص ويُقدم تقييماً أولياً مجانياً خلال ٢٤ ساعة." },
-    { num: "٢", icon: UserCircle, title: "اختيار المحامي", desc: "يُقترح عليك محامون متخصصون في نوع قضيتك مع تقييماتهم وسجل قضاياهم." },
+    // Step ١ promised the assessment «خلال ٢٤ ساعة», a commitment nothing
+    // enforces. Step ٢ was «اختيار المحامي» from suggestions «مع تقييماتهم وسجل
+    // قضاياهم»: there is no ratings table, the directory is closed during the
+    // beta (BETA_MONOPOLY_MODE), and the office assigns the lawyer (N16).
+    { num: "١", icon: FileText, title: "تقييم القضية", desc: "تقديم تفاصيل قضيتك، يراجعها محامٍ متخصص ويُقدم تقييماً أولياً مجانياً." },
+    { num: "٢", icon: UserCircle, title: "إسناد المحامي", desc: "يُراجع فريق نظامي طلبك ويُسنده إلى محامٍ مختص بنوع قضيتك." },
     { num: "٣", icon: Handshake, title: "توقيع التوكيل", desc: "وكالة رسمية إلكترونية موثقة وتحديد الأتعاب بشفافية تامة." },
     { num: "٤", icon: Lock, title: "سداد الأتعاب", desc: "تُسدَّد الأتعاب للمحامي مباشرةً خارج المنصة، وفق المراحل المتفق عليها كتابةً." },
     { num: "٥", icon: Gavel, title: "الترافع والمتابعة", desc: "يترافع محاميك أمام المحكمة مع تحديثات دورية وتقارير مفصّلة بعد كل جلسة." },
   ],
   en: [
-    { num: "1", icon: FileText, title: "Case Evaluation", desc: "Submit your case details, reviewed by a specialized lawyer who provides a free preliminary assessment within 24 hours." },
-    { num: "2", icon: UserCircle, title: "Lawyer Selection", desc: "Specialized lawyers are suggested based on your case type with ratings and case history." },
+    { num: "1", icon: FileText, title: "Case Evaluation", desc: "Submit your case details, reviewed by a specialized lawyer who provides a free preliminary assessment." },
+    { num: "2", icon: UserCircle, title: "Lawyer Assignment", desc: "Nezamy's team reviews your request and assigns a specialist lawyer for your type of case." },
     { num: "3", icon: Handshake, title: "Power of Attorney", desc: "Official electronic notarized POA and transparent fee determination." },
     { num: "4", icon: Lock, title: "Fee Payment", desc: "Fees are paid directly to the lawyer, outside the platform, per the stages agreed in writing." },
     { num: "5", icon: Gavel, title: "Litigation & Follow-up", desc: "Your lawyer pleads in court with periodic updates and detailed reports after each hearing." },
@@ -67,7 +71,7 @@ const steps = {
 };
 
 const faqs = [
-  { q: { ar: "كيف أختار المحامي المناسب لقضيتي؟", en: "How do I choose the right lawyer for my case?" }, a: { ar: "نظامي يقترح عليك محامين بناءً على تخصصهم وموقعهم وتقييمات موكليهم السابقين. يمكنك مراجعة ملفاتهم الكاملة قبل الاختيار.", en: "Nezamy suggests lawyers based on their specialty, location, and previous client ratings. You can review their full profiles before choosing." } },
+  { q: { ar: "من يتولّى قضيتي؟", en: "Who handles my case?" }, a: { ar: "يُراجع فريق نظامي طلبك ويُسنده إلى محامٍ مختص بنوع قضيتك.", en: "Nezamy's team reviews your request and assigns a specialist lawyer for your type of case." } },
   { q: { ar: "كيف تُحفظ حقوقي المالية؟", en: "How are my payments protected?" }, a: { ar: "تُتفق الأتعاب ومراحل سدادها كتابةً مع المحامي قبل البدء، وتُسدَّد له مباشرةً خارج المنصة؛ فالمنصة لا تحتجز أي مبالغ.", en: "Fees and their payment stages are agreed in writing with the lawyer before work starts, and are paid to the lawyer directly, outside the platform; the platform holds no money." } },
   { q: { ar: "هل يمكنني تغيير المحامي أثناء سير القضية؟", en: "Can I change the lawyer during the case?" }, a: { ar: "نعم، إذا لم تكن راضياً يمكن تغيير المحامي، وتُسوّى الأتعاب عن المراحل التي لم تُنجَز وفق الاتفاق المكتوب معه.", en: "Yes, if unsatisfied you can change lawyers; fees for stages not delivered are settled under your written agreement with the lawyer." } },
   { q: { ar: "ما درجات التقاضي التي يغطيها نظامي؟", en: "Which court levels does Nezamy cover?" }, a: { ar: "جميع الدرجات: المحاكم الابتدائية، محاكم الاستئناف، المحكمة العليا، المحاكم الإدارية، والمحاكم التجارية.", en: "All levels: Primary courts, Courts of Appeal, Supreme Court, Administrative Courts, and Commercial Courts." } },
@@ -288,7 +292,7 @@ export default function LegalRepresentationPage() {
             {isRTL ? "لا تواجه المحكمة وحدك" : "Don't Face the Court Alone"}
           </h2>
           <p className="mx-auto mt-4 max-w-lg text-white/70">
-            {isRTL ? "قيّم قضيتك مجاناً واحصل على رأي قانوني متخصص خلال ٢٤ ساعة." : "Evaluate your case for free and get specialized legal advice within 24 hours."}
+            {isRTL ? "قيّم قضيتك مجاناً واحصل على رأي قانوني متخصص." : "Evaluate your case for free and get specialized legal advice."}
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-4">
             <Link href="/register/client" className="inline-flex items-center gap-2 rounded-xl bg-gold px-8 py-4 font-semibold text-royal transition hover:bg-gold/90">

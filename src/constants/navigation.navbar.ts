@@ -15,15 +15,10 @@ import type { NavItem } from "./navigation.types";
 //
 // Each group opens with its overview page, then every public service page
 // that belongs to it, each labelled with its own page's title. A page joins
-// only when it is real: not «قريباً», not a redirect, no invented figures.
-// Left out for now, and why (coordinator ruling on item 129, 2026-10-18):
-//   /services/cases       — «+٤٢٠ قضية مُغلقة في آخر ٦ أشهر», an invented figure
-//   /services/labor       — «٩٣٪»، «١٨ يوماً»، «+٦٨٠ قضية», invented figures
-//   /services/collection  — «٨٧٪»، «٢٣ يوماً»، «+١,٢٠٠ ملف», invented figures
-//   /services/corporate   — monthly plans (٢,٤٩٩ / ٥,٩٩٩) that /pricing does not
-//                           offer, and a hard-coded «تقييم مؤسستك» score widget
-//   /services/lawyers/vault — «قريباً — غير متاحة حالياً»
-// Once a page's figures are removed it can join its group here.
+// only when it is real and honest: not «قريباً», not a redirect, no invented
+// figures and no feature the platform does not have. Every /services page has
+// a recorded decision; the ones left out, and why, are LEFT_OUT in
+// navigation.navbar.test.ts. Re-vet a page there before adding it here.
 export const PUBLIC_NAV: NavItem[] = [
   { label: "الرئيسية",          labelEn: "Home",           href: "/?noredirect=true" },
   {
@@ -45,6 +40,7 @@ export const PUBLIC_NAV: NavItem[] = [
           { label: "عرض خدمات الشركات",      labelEn: "View business services", href: "/services/business",                  icon: "Buildings" },
           { label: "تأسيس الشركات",          labelEn: "Company Formation",      href: "/services/business/company-formation", icon: "Storefront" },
           { label: "تسجيل العلامات التجارية", labelEn: "Trademark Registration", href: "/services/business/trademark",         icon: "TrademarkRegistered" },
+          { label: "الفحص القانوني الشامل ٣٦٠°", labelEn: "360° Legal Health Check", href: "/services/corporate/health-check", icon: "MagnifyingGlass" },
         ],
       },
       {

@@ -123,13 +123,16 @@ const consultationTypes = {
 
 const steps = {
   ar: [
-    { num: "١", title: "اختر المحامي", desc: "تصفّح ملفات المحامين وفلتر حسب التخصص والتقييم" },
+    // Was «اختر المحامي — تصفّح ملفات المحامين وفلتر حسب التخصص والتقييم»: the
+    // directory is closed during the beta (BETA_MONOPOLY_MODE), there is no
+    // ratings table, and the office assigns the lawyer (N16).
+    { num: "١", title: "إسناد المحامي", desc: "يُراجع فريق نظامي طلبك ويُسنده إلى محامٍ مختص" },
     { num: "٢", title: "احجز الموعد", desc: "اختر نوع الاستشارة والوقت المناسب وادفع بأمان" },
     { num: "٣", title: "الجلسة", desc: "التواصل عبر المنصة بالصوت أو الفيديو أو الدردشة" },
     { num: "٤", title: "التقرير", desc: "احصل على ملخص مكتوب وتوصيات المحامي بعد الجلسة" },
   ],
   en: [
-    { num: "1", title: "Choose a Lawyer", desc: "Browse lawyer profiles and filter by specialty and rating" },
+    { num: "1", title: "Lawyer Assignment", desc: "Nezamy's team reviews your request and assigns a specialist lawyer" },
     { num: "2", title: "Book a Slot", desc: "Select consultation type, preferred time and pay securely" },
     { num: "3", title: "The Session", desc: "Connect via the platform by voice, video or chat" },
     { num: "4", title: "The Report", desc: "Receive a written summary and lawyer recommendations after the session" },
