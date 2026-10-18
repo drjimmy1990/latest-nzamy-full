@@ -7,9 +7,9 @@ import { Plan } from "./pricing.types";
  * Shown when audience is "lawyers" or "firms" AND libraryMode === true.
  *
  * Pricing (the plan objects below are the source of truth):
- *   lib-q1:     1,500 SAR / 3 months  → 30-day invite trial
- *   lib-q2:     2,750 SAR / 6 months  → 60-day invite trial
- *   lib-annual: 5,000 SAR / year      → 90-day invite trial
+ *   lib-q1:     1,500 SAR / 3 months
+ *   lib-q2:     2,750 SAR / 6 months
+ *   lib-annual: 5,000 SAR / year
  *
  * No `priceOriginal` and no «خصم ٥٠٪ لفترة الإطلاق» pill: the struck-through
  * "was" prices (2,000 / 3,500 / 6,000, and 2× every firm-library price) were
@@ -20,8 +20,11 @@ import { Plan } from "./pricing.types";
  *   ✓ Full access to laws, regulations, judicial principles
  *   ✓ Advanced search in the legal library — the texts only; AI tools spend
  *     the user's points (owner answer ١٩٩, 2026-10-18)
- *   ✓ Daily legislative updates
- *   ✓ 3 colleague invitations for free trial
+ *   ✓ 3 colleague invitations to try the library. No card states a trial
+ *     length: the redeem flow grants 30 days and a colleague invite uses the
+ *     invitation's own trial_days (owner answer ٢٠٣ says only "the trial
+ *     period"). Nothing notifies subscribers of new legislation, so no card
+ *     promises legislative alerts.
  * ─────────────────────────────────────────────────────────────
  */
 
@@ -46,7 +49,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث متقدّم في المكتبة القانونية",
-          "٣ دعوات لزملائك (تجربة ١ شهر لكل دعوة)",
+          "٣ دعوات لتجربة المكتبة",
         ],
         platform: [
           "قراءة هادئة — وضع التركيز",
@@ -74,8 +77,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث متقدّم في المكتبة القانونية",
-          "٣ دعوات لزملائك (تجربة ٢ شهر لكل دعوة)",
-          "إشعارات تشريعية فورية",
+          "٣ دعوات لتجربة المكتبة",
         ],
         platform: [
           "قراءة هادئة — وضع التركيز",
@@ -106,8 +108,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث متقدّم في المكتبة القانونية",
-          "٣ دعوات لزملائك (تجربة ٣ أشهر لكل دعوة)",
-          "إشعارات تشريعية فورية",
+          "٣ دعوات لتجربة المكتبة",
           "تصدير نصوص الأنظمة بصيغة PDF",
         ],
         platform: [
@@ -140,7 +141,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "Full access to laws, regulations & principles",
           "Advanced search in the legal library",
-          "3 colleague invitations (1-month trial each)",
+          "3 invitations for colleagues to try the library",
         ],
         platform: [
           "Focus reading mode",
@@ -168,7 +169,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "Full access to laws, regulations & principles",
           "Advanced search in the legal library",
-          "3 colleague invitations (2-month trial each)",
+          "3 invitations for colleagues to try the library",
         ],
         platform: [
           "Focus reading mode",
@@ -197,7 +198,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "Full access to laws, regulations & principles",
           "Advanced search in the legal library",
-          "3 colleague invitations (3-month trial each)",
+          "3 invitations for colleagues to try the library",
           "Export law texts as PDF",
         ],
         platform: [
@@ -234,7 +235,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث متقدّم في المكتبة القانونية",
-          "٣ دعوات لزملائك (تجربة ٣ أشهر لكل دعوة)",
+          "٣ دعوات لتجربة المكتبة",
         ],
         platform: [
           "١–٥ مقاعد نشطة",
@@ -264,7 +265,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث متقدّم في المكتبة القانونية",
-          "٣ دعوات لزملائك (تجربة ٣ أشهر لكل دعوة)",
+          "٣ دعوات لتجربة المكتبة",
         ],
         platform: [
           "٦–٢٠ مقعداً نشطاً",
@@ -294,7 +295,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث متقدّم في المكتبة القانونية",
-          "٣ دعوات لزملائك (تجربة ٣ أشهر لكل دعوة)",
+          "٣ دعوات لتجربة المكتبة",
         ],
         platform: [
           "٢١–٥٠ مقعداً نشطاً",
@@ -356,7 +357,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "Full access to laws, regulations & principles",
           "Advanced search in the legal library",
-          "3 colleague invitations (3-month trial each)",
+          "3 invitations for colleagues to try the library",
         ],
         platform: [
           "1–5 active seats",
@@ -386,7 +387,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "Full access to laws, regulations & principles",
           "Advanced search in the legal library",
-          "3 colleague invitations (3-month trial each)",
+          "3 invitations for colleagues to try the library",
         ],
         platform: [
           "6–20 active seats",
@@ -416,7 +417,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "Full access to laws, regulations & principles",
           "Advanced search in the legal library",
-          "3 colleague invitations (3-month trial each)",
+          "3 invitations for colleagues to try the library",
         ],
         platform: [
           "21–50 active seats",

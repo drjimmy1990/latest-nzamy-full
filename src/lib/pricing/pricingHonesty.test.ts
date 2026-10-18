@@ -490,16 +490,38 @@ test("٢٠٨: no plan says the legal library is free", () => {
   assert.ok(providers.includes('"Legal library by subscription"'), "provider-elite (en)");
   assert.match(providers, /feature: "المكتبة القانونية",[^}]*"provider-elite": "باشتراك"/);
   assert.match(providers, /feature: "Legal Library",[^}]*"provider-elite": "By subscription"/);
+  // Fix round 1: nothing pays for the library in points either (١٩٩ / ٢٠٨).
+  assert.doesNotMatch(providers, /المكتبة القانونية \(٥٠ نقطة|٥٠ نقطة\/شهر|Legal Library \(50 pts|50 pts\/mo/);
+  assert.equal(providers.split('"المكتبة القانونية باشتراك"').length - 1, 2, "provider-pro and provider-elite (ar)");
+  assert.equal(providers.split('"Legal library by subscription"').length - 1, 2, "provider-pro and provider-elite (en)");
+  assert.match(providers, /feature: "المكتبة القانونية",[^}]*"provider-pro": "باشتراك"/);
+  assert.match(providers, /feature: "Legal Library",[^}]*"provider-pro": "By subscription"/);
 });
 
-test("P15: the subscribe FAQ promises no prorated upgrade or billing cycle (there is no gateway)", () => {
-  const subscribe = code("app/laws/subscribe/page.tsx");
-  assert.doesNotMatch(subscribe, /تناسبياً|دورة الفوترة|prorat|billing cycle/i);
-  assert.ok(subscribe.includes("يمكنك طلب الترقية أو التغيير في أي وقت؛ يراجع الفريق الطلب ويفعّله يدوياً."), "AR answer");
-  assert.ok(
-    subscribe.includes("You can request an upgrade or a change at any time; the team reviews the request and activates it manually."),
-    "EN answer",
-  );
+test("fix round 1: the library cards promise no legislative alerts and no invite-trial length", () => {
+  const library = code("constants/pricing/pricing.library.ts");
+  // No code notifies a library subscriber of new legislation.
+  assert.doesNotMatch(library, /إشعارات تشريعية|legislative (alerts|notifications|updates)/i);
+  // Nothing grants a 60- or 90-day invite trial: the redeem flow is 30 days
+  // and a colleague invite uses the invitation's own trial_days (٢٠٣). So no
+  // card — and not the header comment — states a length.
+  const raw = src("constants/pricing/pricing.library.ts");
+  assert.doesNotMatch(raw, /تجربة [١٢٣] ?(شهر|أشهر)|تجربة ٢ شهر|تجربة ٣ أشهر|\d-month trial|\d+-day invite trial/);
+  assert.equal(library.split('"٣ دعوات لتجربة المكتبة"').length - 1, 6, "three individual + three firm cards (ar)");
+  assert.equal(library.split('"3 invitations for colleagues to try the library"').length - 1, 6, "the English twins");
+});
+
+test("P15: the subscribe and /pricing FAQs promise no prorated upgrade or billing cycle (there is no gateway)", () => {
+  // /laws/subscribe, and the /pricing FAQ in pricing.common.ts (fix round 1).
+  for (const path of ["app/laws/subscribe/page.tsx", "constants/pricing/pricing.common.ts"]) {
+    const faq = code(path);
+    assert.doesNotMatch(faq, /تناسبياً|دورة الفوترة|الترقية فورية|prorat|billing cycle|instant and free/i, path);
+    assert.ok(faq.includes("يمكنك طلب الترقية أو التغيير في أي وقت؛ يراجع الفريق الطلب ويفعّله يدوياً."), `${path}: AR answer`);
+    assert.ok(
+      faq.includes("You can request an upgrade or a change at any time; the team reviews the request and activates it manually."),
+      `${path}: EN answer`,
+    );
+  }
 });
 
 test("٢٠٣: the colleague-invite page names the legal library and the length the server grants", () => {

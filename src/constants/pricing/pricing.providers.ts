@@ -27,7 +27,7 @@ export const plansProviders: { ar: Plan[]; en: Plan[] } = {
       ctaHref: "/register/provider?type=service&plan=pro", highlighted: true, color: "border-royal/20",
       commissionPct: 10,
       features: {
-        ai: ["أدوات AI: ٣٠ استخداماً/أسبوع", "المكتبة القانونية (٥٠ نقطة/شهر)", "قوالب متقدمة (توثيق/تحكيم)", null],
+        ai: ["أدوات AI: ٣٠ استخداماً/أسبوع", "المكتبة القانونية باشتراك", "قوالب متقدمة (توثيق/تحكيم)", null],
         platform: ["أولوية في تلقي الطلبات الجديدة ✅", "badge \"محترف\" على ملفك", "إحصائيات أداء أساسية", null],
         support: ["عمولة المنصة: ١٠٪ فقط", "دعم فني عبر واتساب"],
       },
@@ -83,7 +83,7 @@ export const plansProviders: { ar: Plan[]; en: Plan[] } = {
       ctaHref: "/register/provider?type=service&plan=pro", highlighted: true, color: "border-royal/20",
       commissionPct: 10,
       features: {
-        ai: ["AI tools: 30 uses/week", "Legal Library (50 pts/mo)", "Advanced templates (Notary/Arbitration)", null],
+        ai: ["AI tools: 30 uses/week", "Legal library by subscription", "Advanced templates (Notary/Arbitration)", null],
         platform: ["Priority in new requests ✅", "\"Professional\" badge", "Basic analytics", null],
         support: ["Platform commission: 10% only", "WhatsApp support"],
       },
@@ -128,7 +128,7 @@ export const comparisonProviders: { ar: ComparisonCategory[]; en: ComparisonCate
     ]},
     { category: "أدوات الذكاء الاصطناعي", icon: Brain, rows: [
       { feature: "استخدام أدوات AI", "provider-free": "٥/أسبوع", "provider-pro": "٣٠/أسبوع", "provider-elite": "مفتوح" },
-      { feature: "المكتبة القانونية", "provider-free": "❌", "provider-pro": "٥٠ نقطة/شهر", "provider-elite": "باشتراك" },
+      { feature: "المكتبة القانونية", "provider-free": "❌", "provider-pro": "باشتراك", "provider-elite": "باشتراك" },
       { feature: "قوالب العمل", "provider-free": "أساسية", "provider-pro": "متقدمة", "provider-elite": "متقدمة + سكرتير ذكي" },
     ]},
     { category: "الظهور والسوق", icon: Star, rows: [
@@ -144,7 +144,7 @@ export const comparisonProviders: { ar: ComparisonCategory[]; en: ComparisonCate
     ]},
     { category: "AI Tools", icon: Brain, rows: [
       { feature: "AI tool usage", "provider-free": "5/week", "provider-pro": "30/week", "provider-elite": "Unlimited" },
-      { feature: "Legal Library", "provider-free": "❌", "provider-pro": "50 pts/mo", "provider-elite": "By subscription" },
+      { feature: "Legal Library", "provider-free": "❌", "provider-pro": "By subscription", "provider-elite": "By subscription" },
       { feature: "Work templates", "provider-free": "Basic", "provider-pro": "Advanced", "provider-elite": "Advanced + Smart Sec" },
     ]},
     { category: "Visibility & Market", icon: Star, rows: [
