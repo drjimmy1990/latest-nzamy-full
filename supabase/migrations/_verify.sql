@@ -2238,8 +2238,9 @@ END $$;
 -- 2026-10-19 — 20261019_21_consultant_court_write_guard.sql (Art. 18; owner ١٧٣ / ٢١٩)
 -- ====================================================================
 -- hearings, case_stages and deadlines refuse a consultant's session writes:
--- one BEFORE INSERT OR UPDATE trigger per table, first in line, on a SECURITY
--- DEFINER function no API role may EXECUTE. Keyed on the function's existence
+-- one BEFORE INSERT OR UPDATE trigger per table, enabled for normal sessions
+-- (O / A, not D or replica-only R), first in line, on a SECURITY DEFINER
+-- function no API role may EXECUTE. Keyed on the function's existence
 -- (to_regprocedure, never ::regprocedure), so a run before the migration
 -- passes with a NOTICE.
 SELECT '20261019_21 applied (consultant court-write guard)' AS check,
@@ -2290,8 +2291,9 @@ BEGIN
       CONTINUE;
     END IF;
     IF EXISTS (SELECT 1 FROM pg_trigger
-                WHERE tgrelid = to_regclass(tbl) AND tgname = 'trg_00_refuse_consultant_court_rows' AND tgenabled = 'D') THEN
-      missing := missing || format(' the Art. 18 guard on %s is DISABLED (re-run 20261019_21);', tbl);
+                WHERE tgrelid = to_regclass(tbl) AND tgname = 'trg_00_refuse_consultant_court_rows'
+                  AND tgenabled NOT IN ('O', 'A')) THEN   -- D = disabled, R = replica only: never fires for a session
+      missing := missing || format(' the Art. 18 guard on %s is DISABLED or replica-only (re-run 20261019_21);', tbl);
     END IF;
     SELECT t.tgname INTO first_before
       FROM pg_trigger t

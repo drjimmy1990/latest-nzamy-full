@@ -29,10 +29,26 @@
 --       always the owner, so the caller is read from the `role` setting —
 --       PostgREST sets it per request (anon / authenticated / service_role) and
 --       a definer call does not change it — or, when no SET ROLE is in force,
---       from session_user. postgres, service_role and supabase_admin pass: the
---       Next routes on the service client, the deadlines cron, the SQL editor,
---       backfills. EVERY other role is guarded (fail-closed, as in
---       20261018_04): authenticated, anon, any other login.
+--       from session_user. postgres, service_role, supabase_admin and
+--       supabase_auth_admin pass: the Next routes on the service client, the
+--       deadlines cron, the SQL editor, backfills, and GoTrue (it connects as
+--       supabase_auth_admin with no SET ROLE; deleting an account cascades
+--       through profiles → firm_profiles into these tables). EVERY other role
+--       is guarded (fail-closed, as in 20261018_04): authenticated, anon, any
+--       other login.
+--     * A CASCADE-SHAPED UPDATE passes, from any writer: every column whose
+--       value changes (OLD vs NEW, updated_at ignored — the *_updated_at
+--       triggers fire after this one) is one of the table's ON DELETE SET NULL
+--       pointers, and each goes from a value to NULL. That is what Postgres
+--       writes when the row a pointer names is deleted; nulling a pointer is
+--       not court activity. The pointers (FKs of 20260903_phase1 /
+--       20260904_phase5, as on live):
+--         hearings     stage_id, firm_id
+--         case_stages  firm_id, owner_user_id
+--         deadlines    firm_id, stage_id, hearing_id, rule_id
+--       (case_request_id, contract_id and the hearings / deadlines
+--       owner_user_id are ON DELETE CASCADE: deletes, never guarded.) An
+--       UPDATE that changes nothing is not cascade-shaped.
 --     * deadlines with kind = 'contract' pass — a contract obligation's radar
 --       date (src/app/api/v1/lawyer/contracts/_obligations.ts writes them
 --       through the session; a consultant manages contracts). On UPDATE the
@@ -55,7 +71,11 @@
 --
 -- WHAT IT DOES NOT DO
 --   * DELETE is not guarded: a consultant may still delete his own old court
---     rows (the delete policies are owner-only).
+--     rows (the delete policies are owner-only). The ON DELETE SET NULL
+--     updates a delete cascades onto OTHER court rows — a hearing or deadline
+--     that pointed at a deleted stage, a deadline that pointed at a deleted
+--     hearing, any row of a deleted firm — are cascade-shaped and pass, whoever
+--     deletes and whoever owns the nulled row.
 --   * hearings are refused whatever their kind (an appointment too), as the
 --     hearings route refuses every POST.
 --   * A SECURITY DEFINER function called FROM a session keeps the session's
@@ -64,11 +84,15 @@
 --   * It does not move or delete court rows a consultant already owns.
 --
 -- DEPLOY ORDER — after 20261019_20 (it refuses to run before). EITHER ORDER
---   for the code: the routes already refuse a consultant first, and every
---   session write of an advocate, a firm account or a contract obligation
---   passes. Effect on the routes: an advocate's PATCH of a consultant-owned
---   stage / deadline (firm colleagues) now fails with 42501 — the route lets
---   the advocate through and the database refuses the row.
+--   for the code: the routes already refuse a consultant first. An advocate's
+--   or a firm account's writes to rows it owns pass, contract-obligation
+--   deadlines pass for everyone, deletes and their SET NULL cascades pass, and
+--   an account deletion (GoTrue, supabase_auth_admin) passes.
+--   One route-visible change: an advocate's UPDATE of a CONSULTANT-OWNED court
+--   row (a firm colleague's) now fails with 42501 — the route lets the
+--   advocate through and the database refuses the row (case-stages PATCH
+--   answers 500 with the Art. 18 text; deadlines PATCH maps it through
+--   dbErrorResponse).
 --
 -- BEFORE APPLYING — writers outside this repo
 --   Anything that writes these tables with a USER's session (a native app, an
@@ -121,15 +145,40 @@ security definer
 set search_path = ''
 as $fn$
 declare
-  v_role   text := pg_catalog.current_setting('role', true);
-  v_caller text;
+  v_role     text := pg_catalog.current_setting('role', true);
+  v_caller   text;
+  v_set_null text[];
+  v_old      jsonb;
+  v_new      jsonb;
+  v_cascade  boolean;
 begin
   -- current_user is this function's owner (SECURITY DEFINER); the writer is
   -- the session's SET ROLE (PostgREST: anon / authenticated / service_role),
-  -- or its login role when none is set.
+  -- or its login role when none is set (GoTrue: supabase_auth_admin).
   v_caller := case when v_role is null or v_role in ('', 'none') then session_user::text else v_role end;
-  if v_caller in ('postgres', 'service_role', 'supabase_admin') then
+  if v_caller in ('postgres', 'service_role', 'supabase_admin', 'supabase_auth_admin') then
     return new;
+  end if;
+
+  -- a cascade-shaped UPDATE: every changed column is one of this table's
+  -- ON DELETE SET NULL pointers, going from a value to NULL (a column that
+  -- changed and is NULL now had a value before)
+  if tg_op = 'UPDATE' then
+    v_set_null := case tg_table_name
+      when 'hearings'    then array['stage_id', 'firm_id']
+      when 'case_stages' then array['firm_id', 'owner_user_id']
+      when 'deadlines'   then array['firm_id', 'stage_id', 'hearing_id', 'rule_id']
+      else array[]::text[]
+    end;
+    v_old := pg_catalog.to_jsonb(old) - 'updated_at';
+    v_new := pg_catalog.to_jsonb(new) - 'updated_at';
+    select pg_catalog.bool_and(e.key = any (v_set_null) and e.value = 'null'::jsonb)
+      into v_cascade
+      from pg_catalog.jsonb_each(v_new) e
+     where e.value is distinct from (v_old -> e.key);
+    if coalesce(v_cascade, false) then   -- NULL: nothing changed
+      return new;
+    end if;
   end if;
 
   -- a contract obligation's deadline, before and after
@@ -155,7 +204,7 @@ end
 $fn$;
 
 comment on function public.refuse_consultant_court_rows() is
-  'Art. 18 (20261019_21): BEFORE INSERT OR UPDATE on hearings / case_stages / deadlines — a writer other than postgres / service_role / supabase_admin gets 42501 when the caller or the row owner is a consultant (lawyer_profiles.practice_kind) and the caller is not an admin; deadlines with kind = contract (before and after) pass.';
+  'Art. 18 (20261019_21): BEFORE INSERT OR UPDATE on hearings / case_stages / deadlines — a writer other than postgres / service_role / supabase_admin / supabase_auth_admin gets 42501 when the caller or the row owner is a consultant (lawyer_profiles.practice_kind) and the caller is not an admin; cascade-shaped updates (only ON DELETE SET NULL pointers changed, each to NULL) and deadlines with kind = contract (before and after) pass.';
 
 revoke all on function public.refuse_consultant_court_rows() from public, anon, authenticated;
 
@@ -228,7 +277,7 @@ begin
          where t.tgrelid = tbl::regclass
            and t.tgname = 'trg_00_refuse_consultant_court_rows'
            and not t.tgisinternal
-           and t.tgenabled <> 'D'
+           and t.tgenabled in ('O', 'A')             -- fires in normal sessions (not D, not replica-only R)
            and (t.tgtype & 23) = 23                  -- ROW | BEFORE | INSERT | UPDATE
            and (t.tgtype & (8 | 32 | 64)) = 0        -- no DELETE / TRUNCATE / INSTEAD
            and t.tgqual is null                      -- no WHEN
@@ -249,7 +298,7 @@ begin
   if missing <> '' then
     raise exception '20261019_21 verify:%', missing;
   end if;
-  raise notice '20261019_21 verify: OK — hearings / case_stages / deadlines refuse a consultant''s session writes (contract deadlines and admins pass; postgres / service_role / supabase_admin trusted); definer %', owner;
+  raise notice '20261019_21 verify: OK — hearings / case_stages / deadlines refuse a consultant''s session writes (contract deadlines, cascade nulls and admins pass; postgres / service_role / supabase_admin / supabase_auth_admin trusted); definer %', owner;
 end $$;
 
 commit;

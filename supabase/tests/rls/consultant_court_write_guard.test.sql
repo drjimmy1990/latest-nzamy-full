@@ -42,8 +42,12 @@
 -- what PostgREST does for a signed-in request (it sets the `role` setting to
 -- authenticated; auth.uid() is the token's sub). T10 repeats the key cases as
 -- anon and as app_user — a role that is neither an API role nor trusted — to
--- show the guard is fail-closed: it trusts only postgres, service_role and
--- supabase_admin.
+-- show the guard is fail-closed: it trusts only postgres, service_role,
+-- supabase_admin and supabase_auth_admin. T12 plays GoTrue exactly: `set
+-- session authorization supabase_auth_admin` (the role is created here), no
+-- SET ROLE, and an account delete that cascades into the court tables.
+-- T13 / T14: an UPDATE that only nulls ON DELETE SET NULL pointers (what a
+-- delete cascades) passes from anyone; anything else with it is refused.
 --
 -- A refusal must be THE GUARD'S: RLS failures and denied EXECUTE are 42501 too,
 -- so t_refused() also requires the Art. 18 message.
@@ -53,6 +57,7 @@
 --           active member of firm F
 --   A  …e2  advocate, active member of firm F
 --   N  …e3  firm account with NO lawyer_profiles row, owner of firm F
+--           (GoTrue deletes this account in T12)
 --   KA …e4  consultant who is also a platform admin (profiles.user_type admin)
 -- Every assertion RAISES on failure.
 \set ON_ERROR_STOP on
@@ -400,7 +405,7 @@ begin
   foreach tbl in array array['public.hearings', 'public.case_stages', 'public.deadlines'] loop
     if (select count(*) from pg_trigger t
          where t.tgrelid = tbl::regclass and t.tgname = 'trg_00_refuse_consultant_court_rows'
-           and not t.tgisinternal and t.tgenabled <> 'D'
+           and not t.tgisinternal and t.tgenabled in ('O', 'A')
            and (t.tgtype & 23) = 23 and (t.tgtype & (8 | 32 | 64)) = 0
            and t.tgqual is null and t.tgattr = ''::int2vector
            and t.tgfoid = fn) <> 1 then
@@ -414,6 +419,171 @@ begin
     end if;
   end loop;
   raise notice 'T11 PASS: definer with search_path '''', no API EXECUTE; one enabled BEFORE INSERT OR UPDATE row guard per table, first in line, after two runs';
+end $$;
+
+-- T12 GoTrue deletes an account: it connects as supabase_auth_admin and sets
+-- no role. Deleting the firm owner N cascades auth.users → profiles →
+-- firm_profiles → firm_id SET NULL on the firm's court rows, among them the
+-- CONSULTANT's firm hearing c604 (the admin console's auth.admin.deleteUser).
+-- First, so the pre-fix guard fails here. Then a direct insert by the same
+-- role isolates the trusted-role half (an INSERT is never cascade-shaped).
+do $$
+begin
+  if not exists (select 1 from pg_roles where rolname = 'supabase_auth_admin') then
+    create role supabase_auth_admin nologin noinherit;
+  end if;
+end $$;
+grant usage on schema auth to supabase_auth_admin;
+grant select, delete on auth.users to supabase_auth_admin;
+grant insert on public.hearings to supabase_auth_admin;
+set session authorization supabase_auth_admin;
+do $$
+begin
+  if pg_catalog.current_setting('role') <> 'none' or session_user <> 'supabase_auth_admin' then
+    raise exception 'T12 SETUP: expected GoTrue''s shape (no role, session_user supabase_auth_admin), got % / %',
+      pg_catalog.current_setting('role'), session_user;
+  end if;
+  perform public.t_ok('T12 GoTrue deletes the firm owner',
+    $q$delete from auth.users where id = '00000000-0000-0000-0000-0000000000e3'$q$);
+  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000e1', true);
+  perform public.t_ok('T12 supabase_auth_admin inserts a consultant-owned hearing',
+    $q$insert into public.hearings (id, owner_user_id, kind, title, hearing_date)
+       values ('00000000-0000-0000-0000-00000000c1a1', '00000000-0000-0000-0000-0000000000e1', 'judicial', 'جلسة', '2026-11-10')$q$);
+end $$;
+reset session authorization;
+do $$
+begin
+  if exists (select 1 from auth.users where id = '00000000-0000-0000-0000-0000000000e3')
+     or exists (select 1 from public.firm_profiles where id = '00000000-0000-0000-0000-0000000000f1') then
+    raise exception 'T12 FAIL: the firm owner or the firm survived the delete';
+  end if;
+  if (select firm_id from public.hearings where id = '00000000-0000-0000-0000-00000000c604') is not null
+     or (select firm_id from public.hearings where id = '00000000-0000-0000-0000-00000000a401') is not null then
+    raise exception 'T12 FAIL: the firm''s hearings still point at the deleted firm';
+  end if;
+  if not exists (select 1 from public.hearings where id = '00000000-0000-0000-0000-00000000c1a1') then
+    raise exception 'T12 FAIL: the supabase_auth_admin insert is not there';
+  end if;
+  raise notice 'T12 PASS: GoTrue (supabase_auth_admin, no role) deletes a firm owner — the firm_id nulls on the consultant''s firm hearing go through — and is trusted on a direct insert';
+end $$;
+
+-- T13 a consultant's direct UPDATE of a pointer: only nulling ON DELETE SET
+-- NULL pointers passes; any other change with it, re-pointing, setting a
+-- pointer, or a no-op is refused. Rows seeded by the service role:
+--   S1 c701 his stage · H1 c702 his hearing on S1 · D1 c703 his deadline on S1
+--   and H1 · D2 c705 his deadline on H1 · H2 c704 his hearing on the
+--   advocate's stage a402
+set role service_role;
+insert into public.case_stages (id, case_request_id, owner_user_id)
+  values ('00000000-0000-0000-0000-00000000c701', 'req-k', '00000000-0000-0000-0000-0000000000e1');
+insert into public.hearings (id, owner_user_id, case_request_id, stage_id, kind, title, hearing_date) values
+  ('00000000-0000-0000-0000-00000000c702', '00000000-0000-0000-0000-0000000000e1', 'req-k',
+   '00000000-0000-0000-0000-00000000c701', 'judicial', 'جلسة على الدرجة', '2026-11-11'),
+  ('00000000-0000-0000-0000-00000000c704', '00000000-0000-0000-0000-0000000000e1', null,
+   '00000000-0000-0000-0000-00000000a402', 'judicial', 'جلسة على درجة المحامي', '2026-11-12');
+insert into public.deadlines (id, owner_user_id, stage_id, hearing_id, title, kind, trigger_date, due_date) values
+  ('00000000-0000-0000-0000-00000000c703', '00000000-0000-0000-0000-0000000000e1',
+   '00000000-0000-0000-0000-00000000c701', '00000000-0000-0000-0000-00000000c702', 'مهلة على الجلسة', 'statutory', '2026-11-11', '2026-12-11'),
+  ('00000000-0000-0000-0000-00000000c705', '00000000-0000-0000-0000-0000000000e1',
+   null, '00000000-0000-0000-0000-00000000c702', 'مهلة ثانية على الجلسة', 'court_order', '2026-11-11', '2026-11-21');
+-- every other pointer in the guard's list, on rows of a second firm F2 (owned
+-- by the advocate; the consultant an active member, so a stage with no owner
+-- stays reachable): H3 c706 · S2 c707 · S3 c708 · D3 c709 (firm + rule)
+reset role;
+insert into public.firm_profiles (id, owner_user_id, name_ar) values
+  ('00000000-0000-0000-0000-0000000000f2', '00000000-0000-0000-0000-0000000000e2', 'المكتب الثاني');
+insert into public.firm_members (firm_id, user_id, role, status, accepted_at) values
+  ('00000000-0000-0000-0000-0000000000f2', '00000000-0000-0000-0000-0000000000e1', 'legal_consultant', 'active', now());
+set role service_role;
+insert into public.hearings (id, owner_user_id, firm_id, kind, title, hearing_date) values
+  ('00000000-0000-0000-0000-00000000c706', '00000000-0000-0000-0000-0000000000e1',
+   '00000000-0000-0000-0000-0000000000f2', 'judicial', 'جلسة في المكتب الثاني', '2026-11-13');
+insert into public.case_stages (id, case_request_id, owner_user_id, firm_id) values
+  ('00000000-0000-0000-0000-00000000c707', 'req-k', '00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000f2'),
+  ('00000000-0000-0000-0000-00000000c708', 'req-k', '00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000f2');
+insert into public.deadlines (id, owner_user_id, firm_id, rule_id, title, kind, trigger_date, due_date)
+  select '00000000-0000-0000-0000-00000000c709', '00000000-0000-0000-0000-0000000000e1',
+         '00000000-0000-0000-0000-0000000000f2', r.id, 'مهلة بقاعدة', 'statutory', '2026-11-13', '2026-12-13'
+    from public.deadline_rules r where r.owner_user_id is null order by r.code limit 1;
+reset role;
+set role authenticated;
+do $$
+begin
+  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000e1', true);
+  perform public.t_ok('T13 null hearings.firm_id',
+    $q$update public.hearings set firm_id = null where id = '00000000-0000-0000-0000-00000000c706'$q$);
+  perform public.t_ok('T13 null case_stages.firm_id',
+    $q$update public.case_stages set firm_id = null where id = '00000000-0000-0000-0000-00000000c707'$q$);
+  perform public.t_ok('T13 null case_stages.owner_user_id',
+    $q$update public.case_stages set owner_user_id = null where id = '00000000-0000-0000-0000-00000000c708'$q$);
+  perform public.t_ok('T13 null deadlines.firm_id and rule_id together',
+    $q$update public.deadlines set firm_id = null, rule_id = null where id = '00000000-0000-0000-0000-00000000c709'$q$);
+  perform public.t_refused('T13 null a pointer AND change a court field (hearing)',
+    $q$update public.hearings set stage_id = null, status = 'held' where id = '00000000-0000-0000-0000-00000000c702'$q$);
+  perform public.t_refused('T13 null a pointer AND change a court field (deadline)',
+    $q$update public.deadlines set hearing_id = null, due_date = '2027-01-15' where id = '00000000-0000-0000-0000-00000000c703'$q$);
+  perform public.t_refused('T13 re-point a pointer',
+    $q$update public.hearings set stage_id = '00000000-0000-0000-0000-00000000c602' where id = '00000000-0000-0000-0000-00000000c702'$q$);
+  perform public.t_refused('T13 set a pointer from NULL',
+    $q$update public.deadlines set rule_id = (select r.id from public.deadline_rules r where r.owner_user_id is null order by r.code limit 1)
+        where id = '00000000-0000-0000-0000-00000000c703'$q$);
+  perform public.t_refused('T13 no-op update',
+    $q$update public.hearings set status = status where id = '00000000-0000-0000-0000-00000000c702'$q$);
+  perform public.t_ok('T13 only null a pointer (updated_at ignored)',
+    $q$update public.deadlines set hearing_id = null, updated_at = now() where id = '00000000-0000-0000-0000-00000000c703'$q$);
+end $$;
+reset role;
+do $$
+begin
+  if (select status || '/' || stage_id from public.hearings where id = '00000000-0000-0000-0000-00000000c702')
+       <> 'scheduled/00000000-0000-0000-0000-00000000c701' then
+    raise exception 'T13 FAIL: a refused update changed H1';
+  end if;
+  if (select due_date from public.deadlines where id = '00000000-0000-0000-0000-00000000c703') <> '2026-12-11'
+     or (select stage_id from public.deadlines where id = '00000000-0000-0000-0000-00000000c703') is distinct from '00000000-0000-0000-0000-00000000c701'
+     or (select rule_id from public.deadlines where id = '00000000-0000-0000-0000-00000000c703') is not null
+     or (select hearing_id from public.deadlines where id = '00000000-0000-0000-0000-00000000c703') is not null then
+    raise exception 'T13 FAIL: D1 is not (due 2026-12-11, stage S1, no rule, hearing nulled)';
+  end if;
+  if (select firm_id from public.hearings where id = '00000000-0000-0000-0000-00000000c706') is not null
+     or (select firm_id from public.case_stages where id = '00000000-0000-0000-0000-00000000c707') is not null
+     or (select owner_user_id from public.case_stages where id = '00000000-0000-0000-0000-00000000c708') is not null
+     or (select count(*) from public.deadlines where id = '00000000-0000-0000-0000-00000000c709'
+           and firm_id is null and rule_id is null) <> 1 then
+    raise exception 'T13 FAIL: a pointer the consultant nulled is still set';
+  end if;
+  raise notice 'T13 PASS: nulling only SET NULL pointers passes — every pointer in the list, alone or together, updated_at ignored; with a court field, re-pointing, setting from NULL or a no-op it gets 42501';
+end $$;
+
+-- T14 deletes and their SET NULL cascades, through sessions:
+--   the consultant deletes his stage S1 (H1.stage_id and D1.stage_id nulled)
+--   and his hearing H1 (D2.hearing_id nulled); the advocate deletes his stage
+--   a402 (the CONSULTANT's H2.stage_id nulled)
+set role authenticated;
+do $$
+begin
+  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000e1', true);
+  perform public.t_ok('T14 consultant deletes his stage',
+    $q$delete from public.case_stages where id = '00000000-0000-0000-0000-00000000c701'$q$);
+  perform public.t_ok('T14 consultant deletes his hearing',
+    $q$delete from public.hearings where id = '00000000-0000-0000-0000-00000000c702'$q$);
+  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000e2', true);
+  perform public.t_ok('T14 advocate deletes his stage under a consultant''s hearing',
+    $q$delete from public.case_stages where id = '00000000-0000-0000-0000-00000000a402'$q$);
+end $$;
+reset role;
+do $$
+begin
+  if exists (select 1 from public.case_stages where id in ('00000000-0000-0000-0000-00000000c701', '00000000-0000-0000-0000-00000000a402'))
+     or exists (select 1 from public.hearings where id = '00000000-0000-0000-0000-00000000c702') then
+    raise exception 'T14 FAIL: a deleted stage or hearing is still there';
+  end if;
+  if (select stage_id from public.deadlines where id = '00000000-0000-0000-0000-00000000c703') is not null
+     or (select hearing_id from public.deadlines where id = '00000000-0000-0000-0000-00000000c705') is not null
+     or (select stage_id from public.hearings where id = '00000000-0000-0000-0000-00000000c704') is not null then
+    raise exception 'T14 FAIL: a pointer to a deleted row was not nulled';
+  end if;
+  raise notice 'T14 PASS: a consultant deletes his stage and hearing, an advocate deletes a stage under a consultant''s hearing — the SET NULL cascades go through';
 end $$;
 
 drop function public.t_refused(text, text);
