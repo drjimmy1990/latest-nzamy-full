@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/access-control";
+import { requireAdmin, requireStaff } from "@/lib/access-control";
+import { logAdminAction } from "@/lib/auth/adminAudit";
 import { createServiceClient } from "@/lib/supabase/server";
 import {
   parseLibraryListParams,
@@ -286,14 +287,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  // 1. Auth check
-  const adminCheck = await requireAdmin();
-  if (!adminCheck.isAdmin) {
-    return NextResponse.json(
-      { error: adminCheck.error || "غير مصرح" },
-      { status: adminCheck.status || 403 }
-    );
-  }
+  // 1. Staff gate (owner ٢١٠)
+  const gate = await requireStaff("library.delete");
+  if (!gate.ok) return gate.response;
 
   try {
     const { id, type } = await request.json();
@@ -344,6 +340,14 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    await logAdminAction({
+      actorId: gate.userId,
+      action: "library_record_deleted",
+      targetType: `library.${table}`,
+      targetId: String(id),
+      metadata: { type },
+    });
+
     return NextResponse.json({
       success: true,
       message: "تم حذف السجل بنجاح"
@@ -359,14 +363,9 @@ export async function DELETE(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  // 1. Auth check
-  const adminCheck = await requireAdmin();
-  if (!adminCheck.isAdmin) {
-    return NextResponse.json(
-      { error: adminCheck.error || "غير مصرح" },
-      { status: adminCheck.status || 403 }
-    );
-  }
+  // 1. Staff gate (owner ٢١٠)
+  const gate = await requireStaff("settings.write");
+  if (!gate.ok) return gate.response;
 
   try {
     const { id, type, free } = await request.json();
@@ -465,6 +464,15 @@ export async function PATCH(request: NextRequest) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    await logAdminAction({
+      actorId: gate.userId,
+      action: free ? "library_free_item_enabled" : "library_free_item_disabled",
+      targetType: "platform_setting",
+      targetId: "library_free_items",
+      after: { free },
+      metadata: { type, id: String(id) },
+    });
 
     return NextResponse.json({
       success: true,

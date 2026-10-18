@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/access-control";
+import { requireStaff } from "@/lib/access-control";
+import { logAdminAction } from "@/lib/auth/adminAudit";
 import { createServiceClient } from "@/lib/supabase/server";
 import { validateCommunityReportStatusPatch, type CommunityReportStatusPatchBody } from "@/lib/services/communityReportsInput";
 import { COMMUNITY_REPORT_SELECT, toCommunityReportDto, type CommunityReportRow } from "@/app/api/v1/community/reports/_shared";
@@ -16,13 +17,12 @@ const STATUS_TO_AUDIT_ACTION: Record<string, string> = {
 
 /**
  * PATCH /api/v1/admin/community/reports/[id] { status } — admin triage of
- * one report. Same client shape as
+ * one report. Same shape as
  * /api/v1/admin/community/moderation/[id]/route.ts's PATCH ON PURPOSE
- * (`requireAdmin()` + `createServiceClient()` throughout, including the
- * audit insert): `admin_audit_events` has RLS enabled with NO policies at
- * all (20260603_phase1_005_advanced_features.sql: "only service role — no
- * user access"), so even a signed-in admin's own RLS-scoped client cannot
- * write to it — only the service client can, regardless of who is acting.
+ * (`requireStaff("community.moderate")` + `createServiceClient()`, and the
+ * audit row through logAdminAction, owner ٢١٠): `admin_audit_events` is
+ * written by the service role only (20261019_30 makes it append-only and
+ * revokes every write from the API roles).
  *
  * Every PATCH stamps `reviewed_by`/`reviewed_at` to the acting admin and
  * now(), whatever status is chosen — "reviewed_at" means "an admin last
@@ -36,10 +36,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       return NextResponse.json({ error: "معرّف البلاغ غير صالح." }, { status: 400 });
     }
 
-    const gate = await requireAdmin();
-    if (!gate.isAdmin) {
-      return NextResponse.json({ error: gate.error }, { status: gate.status ?? 403 });
-    }
+    const gate = await requireStaff("community.moderate");
+    if (!gate.ok) return gate.response;
 
     let body: unknown;
     try {
@@ -88,22 +86,17 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       return NextResponse.json({ error: "تعذّر تحديث حالة البلاغ." }, { status: 500 });
     }
 
-    // Audit trail (best-effort — never fail the decision if logging fails),
-    // matching /api/v1/admin/community/moderation/[id]/route.ts's own PATCH.
-    try {
-      await admin.from("admin_audit_events").insert({
-        actor_id: gate.userId,
-        actor_type: "admin",
-        action: STATUS_TO_AUDIT_ACTION[newStatus] ?? "community_report_triaged",
-        target_type: "community_report",
-        target_id: id,
-        before_state: { status: beforeStatus },
-        after_state: { status: newStatus },
-        metadata: { status: newStatus },
-      });
-    } catch (auditErr) {
-      console.error("[admin/community/reports/[id] PATCH] audit insert failed:", auditErr);
-    }
+    // Audit trail (best-effort: logAdminAction never throws or fails the
+    // decision), matching /api/v1/admin/community/moderation/[id]/route.ts.
+    await logAdminAction({
+      actorId: gate.userId,
+      action: STATUS_TO_AUDIT_ACTION[newStatus] ?? "community_report_triaged",
+      targetType: "community_report",
+      targetId: id,
+      before: { status: beforeStatus },
+      after: { status: newStatus },
+      metadata: { status: newStatus },
+    });
 
     return NextResponse.json({ data: toCommunityReportDto(updated as CommunityReportRow) });
   } catch (err) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { requireAdmin } from "@/lib/access-control";
+import { requireAdmin, requireStaff } from "@/lib/access-control";
+import { logAdminAction } from "@/lib/auth/adminAudit";
 
 /** Columns an admin is allowed to patch on an article. */
 const PATCHABLE_FIELDS = [
@@ -129,27 +130,42 @@ export async function PATCH(
 /**
  * DELETE /api/v1/admin/articles/[id] — Delete an article.
  *
- * Admin-gated. Next 16: dynamic params are async.
+ * Needs a staff role with content.delete, and is audited (owner ٢١٠).
+ * Next 16: dynamic params are async.
  */
 export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const gate = await requireAdmin();
-  if (!gate.isAdmin) {
-    return NextResponse.json({ error: gate.error }, { status: gate.status ?? 403 });
-  }
+  const gate = await requireStaff("content.delete");
+  if (!gate.ok) return gate.response;
 
   const { id } = await params;
 
   try {
     const supabase = await createServiceClient();
+    // What is being deleted, for the audit row (afterwards it is gone).
+    const { data: target } = await supabase
+      .from("articles")
+      .select("slug, title, status")
+      .eq("id", id)
+      .maybeSingle();
+
     const { error } = await supabase.from("articles").delete().eq("id", id);
 
     if (error) {
       console.error("[admin/articles/[id] DELETE] Supabase error:", error.message, error.details, error.hint, error.code);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    await logAdminAction({
+      actorId: gate.userId,
+      action: "article_deleted",
+      targetType: "article",
+      targetId: id,
+      before: target ?? null,
+      after: null,
+    });
 
     return NextResponse.json({ success: true });
   } catch (err) {

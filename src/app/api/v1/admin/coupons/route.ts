@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { requireAdmin } from "@/lib/access-control";
+import { requireAdmin, requireStaff } from "@/lib/access-control";
+import { logAdminAction } from "@/lib/auth/adminAudit";
 
 /**
  * Coupons admin API — backs src/app/dashboard/admin/subscriptions/coupons/page.tsx
@@ -61,13 +62,13 @@ export async function GET() {
  * Accepts the page's AdminCoupon-ish payload and maps it to the real columns:
  *   code, couponType, discountType, value, pointsGranted, planGranted,
  *   usageLimit, startsAt, expiresAt, status, eligibleRoles[]
+ *
+ * Needs a staff role with settings.write, and is audited (owner ٢١٠).
  */
 export async function POST(request: NextRequest) {
   try {
-    const gate = await requireAdmin();
-    if (!gate.isAdmin) {
-      return NextResponse.json({ error: gate.error }, { status: gate.status ?? 403 });
-    }
+    const gate = await requireStaff("settings.write");
+    if (!gate.ok) return gate.response;
 
     let body: Record<string, unknown>;
     try {
@@ -136,6 +137,15 @@ export async function POST(request: NextRequest) {
       console.error("[admin/coupons POST] Supabase error:", error.message, error.details, error.hint, error.code);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    await logAdminAction({
+      actorId: gate.userId,
+      action: "coupon_created",
+      targetType: "coupon",
+      targetId: data?.id != null ? String(data.id) : null,
+      after: insertRow,
+      metadata: { code },
+    });
 
     return NextResponse.json({ success: true, data }, { status: 201 });
   } catch (err) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { requireAdmin } from "@/lib/access-control";
+import { requireStaff } from "@/lib/access-control";
+import { logAdminAction } from "@/lib/auth/adminAudit";
 
 /**
  * PATCH /api/v1/admin/coupons/[id] — Update a coupon (e.g. enable/disable).
@@ -14,6 +15,9 @@ import { requireAdmin } from "@/lib/access-control";
  *   startsAt?: string         — valid_from
  *   expiresAt?: string        — valid_until
  *   eligibleRoles?: string[]  — eligible_user_types (client => individual)
+ *
+ * Owner ٢١٠: PATCH needs a staff role with settings.write, DELETE one with
+ * coupons.delete; each successful change is audited.
  */
 function roleToUserType(role: string): string {
   return role === "client" ? "individual" : role;
@@ -26,10 +30,8 @@ export async function PATCH(
   try {
     const { id } = await params;
 
-    const gate = await requireAdmin();
-    if (!gate.isAdmin) {
-      return NextResponse.json({ error: gate.error }, { status: gate.status ?? 403 });
-    }
+    const gate = await requireStaff("settings.write");
+    if (!gate.ok) return gate.response;
 
     let body: Record<string, unknown>;
     try {
@@ -112,6 +114,19 @@ export async function PATCH(
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    const changed = Object.keys(updateData).filter((k) => k !== "updated_at");
+    const prior = existing as Record<string, unknown>;
+    const current = (data ?? {}) as Record<string, unknown>;
+    await logAdminAction({
+      actorId: gate.userId,
+      action: "coupon_updated",
+      targetType: "coupon",
+      targetId: id,
+      before: Object.fromEntries(changed.map((k) => [k, prior[k] ?? null])),
+      after: Object.fromEntries(changed.map((k) => [k, current[k] ?? null])),
+      metadata: { code: prior.code ?? null },
+    });
+
     return NextResponse.json({ success: true, data });
   } catch (err) {
     console.error("[admin/coupons PATCH] Unexpected error:", err);
@@ -129,18 +144,32 @@ export async function DELETE(
   try {
     const { id } = await params;
 
-    const gate = await requireAdmin();
-    if (!gate.isAdmin) {
-      return NextResponse.json({ error: gate.error }, { status: gate.status ?? 403 });
-    }
+    const gate = await requireStaff("coupons.delete");
+    if (!gate.ok) return gate.response;
 
     const adminClient = await createServiceClient();
+    // What is being deleted, for the audit row (afterwards it is gone).
+    const { data: target } = await adminClient
+      .from("coupons")
+      .select("code, discount_type, discount_value, points_granted, plan_granted, used_count, active")
+      .eq("id", id)
+      .maybeSingle();
+
     const { error } = await adminClient.from("coupons").delete().eq("id", id);
 
     if (error) {
       console.error("[admin/coupons DELETE] Supabase error:", error.message, error.details, error.hint, error.code);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    await logAdminAction({
+      actorId: gate.userId,
+      action: "coupon_deleted",
+      targetType: "coupon",
+      targetId: id,
+      before: target ?? null,
+      after: null,
+    });
 
     return NextResponse.json({ success: true });
   } catch (err) {

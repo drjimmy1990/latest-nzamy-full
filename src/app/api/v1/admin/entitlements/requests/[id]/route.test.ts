@@ -132,9 +132,10 @@ test("the reject arm grants nothing", () => {
 });
 
 test("the route still refuses a non-admin, and a request already decided", () => {
-  const gateAt = routeSource.indexOf("await requireAdmin()");
+  // Owner ٢١٠: requireStaff runs requireAdmin() first, then the staff role.
+  const gateAt = routeSource.indexOf('await requireStaff("entitlements.decide")');
   const grantAt = routeSource.indexOf(GRANT_CALL);
-  assert.ok(gateAt > -1 && gateAt < grantAt, "the admin gate must run before the grant");
+  assert.ok(gateAt > -1 && gateAt < grantAt, "the staff gate must run before the grant");
   assert.ok(
     routeSource.includes('reqRow.status !== "pending"') && routeSource.includes("status: 409"),
     "a request that was already decided must still be a 409, or an admin can re-grant it",
@@ -264,7 +265,7 @@ test("the requester is told the library is active until its real end date", () =
 
 test("the library arm runs only after the admin gate and the pending check", () => {
   const code = codeOnly(routeSource);
-  const gateAt = code.indexOf("await requireAdmin()");
+  const gateAt = code.indexOf('await requireStaff("entitlements.decide")');
   const pendingAt = code.indexOf('reqRow.status !== "pending"');
   const callAt = code.indexOf("return approveLibraryRequest(");
   assert.ok(gateAt > -1 && pendingAt > -1 && callAt > -1);

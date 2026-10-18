@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { requireAdmin } from "@/lib/access-control";
+import { requireStaff } from "@/lib/access-control";
+import { logAdminAction } from "@/lib/auth/adminAudit";
 import { fanOutBroadcast } from "@/lib/broadcastFanout";
 
 /**
@@ -17,7 +18,7 @@ import { fanOutBroadcast } from "@/lib/broadcastFanout";
  * When status transitions to 'sent', sent_at is stamped (unless the caller
  * supplied its own sent_at).
  *
- * Requires: authenticated admin user
+ * Requires: a staff role with broadcasts.send; audited (owner ٢١٠).
  */
 export async function PATCH(
   request: NextRequest,
@@ -26,10 +27,8 @@ export async function PATCH(
   try {
     const { id } = await params;
 
-    const gate = await requireAdmin();
-    if (!gate.isAdmin) {
-      return NextResponse.json({ error: gate.error }, { status: gate.status ?? 403 });
-    }
+    const gate = await requireStaff("broadcasts.send");
+    if (!gate.ok) return gate.response;
 
     let body: {
       title?: string;
@@ -98,6 +97,14 @@ export async function PATCH(
     if (body.status === "sent") {
       await fanOutBroadcast(data);
     }
+
+    await logAdminAction({
+      actorId: gate.userId,
+      action: body.status === "sent" ? "broadcast_sent" : "broadcast_updated",
+      targetType: "broadcast",
+      targetId: id,
+      after: update,
+    });
 
     return NextResponse.json({ success: true, data });
   } catch (err) {

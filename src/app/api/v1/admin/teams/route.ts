@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/access-control";
+import { requireAdmin, requireStaff } from "@/lib/access-control";
+import { logAdminAction } from "@/lib/auth/adminAudit";
 import { createServiceClient } from "@/lib/supabase/server";
 
 export async function GET(request: NextRequest) {
@@ -54,14 +55,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  // 1. Auth check
-  const adminCheck = await requireAdmin();
-  if (!adminCheck.isAdmin) {
-    return NextResponse.json(
-      { error: adminCheck.error || "غير مصرح" },
-      { status: adminCheck.status || 403 }
-    );
-  }
+  // 1. Staff gate (owner ٢١٠): inviting a member creates an admin.
+  const gate = await requireStaff("staff.manage");
+  if (!gate.ok) return gate.response;
 
   try {
     const { name, email, role, department } = await request.json();
@@ -144,6 +140,15 @@ export async function POST(request: NextRequest) {
     if (profileError) {
       return NextResponse.json({ error: profileError.message }, { status: 500 });
     }
+
+    await logAdminAction({
+      actorId: gate.userId,
+      action: "staff_member_invited",
+      targetType: "profile",
+      targetId: userId,
+      after: { user_type: "admin", email, role: role || "مسؤول", department: department || "الإدارة" },
+      metadata: { existing_account: !authUser?.user },
+    });
 
     return NextResponse.json({
       success: true,

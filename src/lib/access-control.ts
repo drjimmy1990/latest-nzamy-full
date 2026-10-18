@@ -8,6 +8,7 @@
  *   import { requireAdmin, checkLibraryAccess, checkCreditBalance } from "@/lib/access-control";
  */
 
+import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isExplicitlyFreeLibraryItem, type LibraryFreeItemType } from "@/lib/library-item-access";
 import {
@@ -20,6 +21,8 @@ import { AUTH_UNAVAILABLE_AR } from "@/lib/auth/resolveAuthOutcome";
 import { effectiveTier, type ActivePlanRow } from "@/lib/entitlementGrantRules";
 import { fullLibraryAccess } from "@/lib/libraryAccessDecision";
 import { hasActiveLibraryGrant } from "@/lib/libraryAccessServer";
+import type { StaffAction, StaffRole } from "@/lib/auth/staffRoles";
+import { STAFF_ONLY_AR, isMissingStaffTable, staffDecision } from "@/lib/auth/staffDecision";
 
 export type { PaymentGatewayState, PaymentGatewayStatus } from "@/lib/paymentGatewayPolicy";
 
@@ -143,6 +146,82 @@ export async function requireAdmin(): Promise<AdminCheckResult> {
   }
 
   return { isAdmin: true, userId: user.id };
+}
+
+// ─── requireStaff — admin + staff role for a destructive admin write ─────────
+// Owner answer ٢١٠: each admin is a super_admin, operations or auditor
+// (public.platform_staff, 20261019_30), and the matrix in
+// src/lib/auth/staffRoles.ts says which role may do which action. A route
+// calls requireStaff("<action>") before it validates or writes anything, and
+// logAdminAction() (src/lib/auth/adminAudit.ts) after the write succeeds.
+//
+// The role is read with the service client from platform_staff. An admin with
+// no row is an auditor (fail-closed), and so is an admin whose row could not be
+// read for any other reason (logged every time). Before 20261019_30 runs (the
+// table is missing: 42P01 / PGRST205) every admin keeps today's access, logged
+// once per process. That is no wider than production today, and a wrong run
+// order cannot 403 every admin action. The role holds only while
+// profiles.user_type = 'admin', which requireAdmin() has already checked.
+
+export type StaffCheckResult =
+  | { ok: true; userId: string; role: StaffRole }
+  | { ok: false; response: NextResponse };
+
+let staffTableMissingLogged = false;
+
+export async function requireStaff(action: StaffAction): Promise<StaffCheckResult> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.isAdmin || !adminCheck.userId) {
+    // requireAdmin's 503 / 401 / 403, unchanged.
+    return {
+      ok: false,
+      response: NextResponse.json({ error: adminCheck.error }, { status: adminCheck.status ?? 403 }),
+    };
+  }
+
+  const userId = adminCheck.userId;
+  const { role, tableMissing } = await readStaffRole(userId);
+  const decision = staffDecision({ isAdmin: true, role, tableMissing }, action);
+  if (!decision.allowed) {
+    return { ok: false, response: NextResponse.json({ error: STAFF_ONLY_AR }, { status: 403 }) };
+  }
+  return { ok: true, userId, role: decision.role };
+}
+
+/** The admin's platform_staff.staff_role (null: no row or unreadable). Never throws. */
+async function readStaffRole(userId: string): Promise<{ role: unknown; tableMissing: boolean }> {
+  try {
+    const adminClient = await createServiceClient();
+    const { data, error } = await adminClient
+      .from("platform_staff")
+      .select("staff_role")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) {
+      if (isMissingStaffTable(error.code)) {
+        if (!staffTableMissingLogged) {
+          staffTableMissingLogged = true;
+          console.warn(
+            "[access-control] requireStaff: public.platform_staff does not exist yet (20261019_30 not applied); every admin keeps full access",
+          );
+        }
+        return { role: null, tableMissing: true };
+      }
+      console.error(
+        "[access-control] requireStaff: platform_staff read failed; treating the admin as auditor:",
+        error.code,
+        error.message,
+      );
+      return { role: null, tableMissing: false };
+    }
+    return { role: (data as { staff_role?: unknown } | null)?.staff_role ?? null, tableMissing: false };
+  } catch (err) {
+    console.error(
+      "[access-control] requireStaff: platform_staff read threw; treating the admin as auditor:",
+      err instanceof Error ? err.message : err,
+    );
+    return { role: null, tableMissing: false };
+  }
 }
 
 // ─── checkAccess — Generic feature access check ───────────────────────────────

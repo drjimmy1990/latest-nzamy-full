@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { requireStaff } from "@/lib/access-control";
+import { logAdminAction } from "@/lib/auth/adminAudit";
 
 /** Allowlisted setting keys that admins can modify */
 const ALLOWED_SETTINGS_KEYS = [
@@ -132,36 +134,13 @@ export async function GET() {
  *
  * Upserts into platform_settings table.
  *
- * Requires: authenticated admin user
+ * Requires: a staff role with settings.write (owner ٢١٠); each change is
+ * audited with the value before and after.
  */
 export async function PATCH(request: NextRequest) {
-  // ── Auth check ─────────────────────────────────────────────────────────────
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-
-  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
-  if (!user) {
-    return NextResponse.json(
-      { error: "غير مصرح — يرجى تسجيل الدخول" },
-      { status: 401 },
-    );
-  }
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("user_type")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile || profile.user_type !== "admin") {
-    return NextResponse.json(
-      { error: "غير مصرح — صلاحيات المسؤول مطلوبة" },
-      { status: 403 },
-    );
-  }
+  // ── Staff gate (owner ٢١٠) ─────────────────────────────────────────────────
+  const gate = await requireStaff("settings.write");
+  if (!gate.ok) return gate.response;
 
   // ── Parse body ─────────────────────────────────────────────────────────────
   let body: { key: string; value: unknown };
@@ -205,6 +184,13 @@ export async function PATCH(request: NextRequest) {
   const adminClient = await createServiceClient();
 
   try {
+    // ── The value before, for the audit row (a failed read only loses that) ──
+    const { data: previous } = await adminClient
+      .from("platform_settings")
+      .select("value")
+      .eq("key", key)
+      .maybeSingle();
+
     // ── Upsert setting ─────────────────────────────────────────────────────
     const { data, error } = await adminClient
       .from("platform_settings")
@@ -222,6 +208,15 @@ export async function PATCH(request: NextRequest) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    await logAdminAction({
+      actorId: gate.userId,
+      action: "platform_setting_updated",
+      targetType: "platform_setting",
+      targetId: key,
+      before: { value: previous?.value ?? null },
+      after: { value },
+    });
 
     return NextResponse.json({
       success: true,

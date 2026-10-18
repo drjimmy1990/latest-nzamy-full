@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/access-control";
+import { requireAdmin, requireStaff } from "@/lib/access-control";
+import { logAdminAction } from "@/lib/auth/adminAudit";
 import { createServiceClient } from "@/lib/supabase/server";
 
 export async function GET(request: NextRequest) {
@@ -85,14 +86,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  // 1. Auth check
-  const adminCheck = await requireAdmin();
-  if (!adminCheck.isAdmin) {
-    return NextResponse.json(
-      { error: adminCheck.error || "غير مصرح" },
-      { status: adminCheck.status || 403 }
-    );
-  }
+  // 1. Staff gate (owner ٢١٠): the features a company may use are an entitlement.
+  const gate = await requireStaff("entitlements.grant");
+  if (!gate.ok) return gate.response;
 
   const adminClient = await createServiceClient();
 
@@ -140,6 +136,15 @@ export async function PATCH(request: NextRequest) {
       .eq("id", id);
 
     if (updateError) throw updateError;
+
+    await logAdminAction({
+      actorId: gate.userId,
+      action: "corporate_features_updated",
+      targetType: "business_profile",
+      targetId: String(id),
+      before: { features: currentFeatures },
+      after: { features: updatedFeatures },
+    });
 
     return NextResponse.json({
       success: true,

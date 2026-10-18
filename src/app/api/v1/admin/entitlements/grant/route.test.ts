@@ -57,11 +57,12 @@ test("the override is not taken from the request body", () => {
   );
 });
 
-test("the route still refuses a non-admin before granting anything", () => {
-  const gateAt = routeSource.indexOf("await requireAdmin()");
+test("the route still refuses a non-admin (and a staff role without entitlements.grant) before granting anything", () => {
+  // Owner ٢١٠: requireStaff runs requireAdmin() first, then the staff role.
+  const gateAt = routeSource.indexOf('await requireStaff("entitlements.grant")');
   const grantAt = routeSource.indexOf("await grantEntitlement({");
-  assert.ok(gateAt > -1, "requireAdmin is gone — this route writes with the service-role client");
-  assert.ok(gateAt < grantAt, "the admin gate must run before the grant");
+  assert.ok(gateAt > -1, "the staff gate is gone — this route writes with the service-role client");
+  assert.ok(gateAt < grantAt, "the staff gate must run before the grant");
 });
 
 test("a failed grant is a 400 with the Arabic error, not a silent success", () => {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { requireAdmin } from "@/lib/access-control";
+import { requireStaff } from "@/lib/access-control";
+import { logAdminAction } from "@/lib/auth/adminAudit";
 
 /**
  * PATCH /api/v1/admin/community/moderation/[id] — Apply a moderation decision to
@@ -15,7 +16,9 @@ import { requireAdmin } from "@/lib/access-control";
  *   approve            → 'active'    (visible / kept)
  *   hide | escalate    → 'moderated' (held for legal/senior review)
  *   remove | reject    → 'deleted'   (removed)
- * The decision is also written to admin_audit_events for traceability.
+ * The decision is also written to admin_audit_events for traceability, once,
+ * through logAdminAction (owner ٢١٠), and needs a staff role with
+ * community.moderate.
  *
  * The page also sends the UI status values directly (approved/rejected/escalated);
  * those are accepted as aliases.
@@ -47,10 +50,8 @@ export async function PATCH(
   try {
     const { id } = await params;
 
-    const gate = await requireAdmin();
-    if (!gate.isAdmin) {
-      return NextResponse.json({ error: gate.error }, { status: gate.status ?? 403 });
-    }
+    const gate = await requireStaff("community.moderate");
+    if (!gate.ok) return gate.response;
 
     let body: { action?: string; reason?: string };
     try {
@@ -111,21 +112,16 @@ export async function PATCH(
       return NextResponse.json({ error: updateError.message }, { status: 500 });
     }
 
-    // Audit trail (best-effort — never fail the decision if logging fails).
-    try {
-      await admin.from("admin_audit_events").insert({
-        actor_id: gate.userId,
-        actor_type: "admin",
-        action: DB_STATUS_TO_AUDIT_ACTION[newStatus] ?? "community_post_moderated",
-        target_type: "community_post",
-        target_id: id,
-        before_state: { status: beforeStatus },
-        after_state: { status: newStatus, reason: body.reason ?? null },
-        metadata: { reason: body.reason ?? null, action: rawAction },
-      });
-    } catch (auditErr) {
-      console.error("[admin/community/moderation PATCH] audit insert failed:", auditErr);
-    }
+    // Audit trail (best-effort: logAdminAction never throws or fails the decision).
+    await logAdminAction({
+      actorId: gate.userId,
+      action: DB_STATUS_TO_AUDIT_ACTION[newStatus] ?? "community_post_moderated",
+      targetType: "community_post",
+      targetId: id,
+      before: { status: beforeStatus },
+      after: { status: newStatus, reason: body.reason ?? null },
+      metadata: { reason: body.reason ?? null, action: rawAction },
+    });
 
     return NextResponse.json({
       success: true,

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin, type ServerTier } from "@/lib/access-control";
+import { requireStaff, type ServerTier } from "@/lib/access-control";
+import { logAdminAction } from "@/lib/auth/adminAudit";
 import { grantEntitlement, type GrantAction } from "@/lib/entitlements";
 
 /**
@@ -18,12 +19,13 @@ import { grantEntitlement, type GrantAction } from "@/lib/entitlements";
  * المنحة بنجاح» over a no-op. It is not read from the body on purpose: the
  * console sends no such field, so a passthrough flag would leave exactly that
  * silent no-op in place.
+ *
+ * Owner answer ٢١٠: needs a staff role with entitlements.grant, and each
+ * successful grant is audited.
  */
 export async function POST(request: NextRequest) {
-  const gate = await requireAdmin();
-  if (!gate.isAdmin) {
-    return NextResponse.json({ error: gate.error }, { status: gate.status ?? 403 });
-  }
+  const gate = await requireStaff("entitlements.grant");
+  if (!gate.ok) return gate.response;
 
   let body: {
     userId?: string;
@@ -50,11 +52,26 @@ export async function POST(request: NextRequest) {
     amount: typeof body.amount === "number" ? body.amount : undefined,
     durationDays: body.durationDays,
     description: body.description,
-    actorId: gate.userId ?? undefined,
+    actorId: gate.userId,
     // See the header: an admin acts deliberately, and `free` is the revoke.
     replaceActive: true,
   });
 
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
+
+  await logAdminAction({
+    actorId: gate.userId,
+    action: "entitlement_granted",
+    targetType: "profile",
+    targetId: body.userId,
+    after: {
+      action: body.action,
+      tier: body.tier ?? null,
+      amount: typeof body.amount === "number" ? body.amount : null,
+      durationDays: body.durationDays ?? null,
+    },
+    metadata: { description: body.description ?? null },
+  });
+
   return NextResponse.json({ success: true, data: result });
 }

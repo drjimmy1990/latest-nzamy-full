@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServiceClient } from "@/lib/supabase/server";
-import { requireAdmin } from "@/lib/access-control";
+import { requireStaff } from "@/lib/access-control";
+import { logAdminAction } from "@/lib/auth/adminAudit";
 import { recordEvent, RequestEvent } from "@/lib/events";
 import { recordNotification } from "@/lib/notify";
 import { dispatchToN8n } from "@/lib/n8n/dispatch";
@@ -192,6 +193,9 @@ async function dispatchOrderNotice(opts: {
  * precondition on the row's current assignee, and IS the recovery route for
  * a stuck order. Takeover-via-reclaim is no longer needed and no longer
  * happens.
+ *
+ * Owner ٢١٠: needs a staff role with orders.manage, and each action that
+ * succeeds (resend, assign, claim, deliver, cancel) is audited once.
  */
 export async function PATCH(
   request: NextRequest,
@@ -199,10 +203,8 @@ export async function PATCH(
 ) {
   const { id } = await params;
 
-  const gate = await requireAdmin();
-  if (!gate.isAdmin || !gate.userId) {
-    return NextResponse.json({ error: gate.error ?? "غير مصرح" }, { status: gate.status ?? 403 });
-  }
+  const gate = await requireStaff("orders.manage");
+  if (!gate.ok) return gate.response;
   const adminUserId = gate.userId;
 
   let body: {
@@ -247,6 +249,12 @@ export async function PATCH(
       requesterUserId: (order.requester_user_id as string | null) ?? null,
       adminUserId, eventName: RequestEvent.SERVICE_REQUEST_COMPLETED, nowIso,
       kind: "delivery_resend",
+    });
+    await logAdminAction({
+      actorId: adminUserId,
+      action: "service_order_whatsapp_resent",
+      targetType: "service_request",
+      targetId: id,
     });
     return NextResponse.json({ success: true, data: order });
   }
@@ -333,6 +341,15 @@ export async function PATCH(
     } catch (e) {
       console.error("[service-orders] assign recordEvent failed:", e);
     }
+
+    await logAdminAction({
+      actorId: adminUserId,
+      action: "service_order_assigned",
+      targetType: "service_request",
+      targetId: id,
+      before: { assigned_to: order.assigned_to ?? null },
+      after: { assigned_to: assigneeUserId },
+    });
 
     return NextResponse.json({ success: true, data: routed });
   }
@@ -455,7 +472,27 @@ export async function PATCH(
     updated = data as Record<string, unknown>;
   }
 
-  // ── side-channels: best-effort, never break the write ──────────────────────
+  // ── audit (owner ٢١٠), then the side-channels: best-effort, never break the write
+  await logAdminAction({
+    actorId: adminUserId,
+    action:
+      body.action === "claim"
+        ? "service_order_claimed"
+        : body.action === "deliver"
+          ? "service_order_delivered"
+          : "service_order_cancelled",
+    targetType: "service_request",
+    targetId: id,
+    before: { status: order.status ?? null, assigned_to: order.assigned_to ?? null },
+    after: { status: updated.status ?? null, assigned_to: updated.assigned_to ?? null },
+    metadata:
+      body.action === "deliver"
+        ? { documentId: body.documentId ?? null, sendWhatsapp: body.sendWhatsapp !== false }
+        : body.action === "cancel"
+          ? { reason: body.reason ?? null }
+          : {},
+  });
+
   try {
     await recordEvent({ supabase: admin, requestId: id, event: eventName, actorUserId: adminUserId, actorName: "الإدارة" });
   } catch (e) { console.error("[service-orders] recordEvent failed:", e); }

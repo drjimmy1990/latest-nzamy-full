@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { createServiceClient } from "@/lib/supabase/server";
+import { requireStaff } from "@/lib/access-control";
+import { logAdminAction } from "@/lib/auth/adminAudit";
 
 /**
  * POST /api/v1/admin/credits — Grant or adjust credits for a user
@@ -16,36 +17,12 @@ import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
  * - Updates lawyer_profiles.credit_balance
  * - Returns the new balance
  *
- * Requires: authenticated admin user
+ * Requires: a staff role with credits.adjust (owner ٢١٠)
  */
 export async function POST(request: NextRequest) {
-  // ── Auth check ─────────────────────────────────────────────────────────────
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-
-  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
-  if (!user) {
-    return NextResponse.json(
-      { error: "غير مصرح — يرجى تسجيل الدخول" },
-      { status: 401 },
-    );
-  }
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("user_type")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile || profile.user_type !== "admin") {
-    return NextResponse.json(
-      { error: "غير مصرح — صلاحيات المسؤول مطلوبة" },
-      { status: 403 },
-    );
-  }
+  // ── Staff gate (owner ٢١٠) ─────────────────────────────────────────────────
+  const gate = await requireStaff("credits.adjust");
+  if (!gate.ok) return gate.response;
 
   // ── Parse body ─────────────────────────────────────────────────────────────
   let body: { user_id: string; amount: number; description: string };
@@ -115,7 +92,7 @@ export async function POST(request: NextRequest) {
         balance_after: newBalance,
         description,
         metadata: {
-          adjusted_by: user.id,
+          adjusted_by: gate.userId,
           adjusted_at: new Date().toISOString(),
           previous_balance: currentBalance,
         },
@@ -143,6 +120,16 @@ export async function POST(request: NextRequest) {
         { status: 500 },
       );
     }
+
+    await logAdminAction({
+      actorId: gate.userId,
+      action: "credits_adjusted",
+      targetType: "profile",
+      targetId: user_id,
+      before: { credit_balance: currentBalance },
+      after: { credit_balance: newBalance },
+      metadata: { amount, description },
+    });
 
     return NextResponse.json({
       success: true,

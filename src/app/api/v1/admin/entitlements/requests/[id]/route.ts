@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { requireAdmin, type ServerTier } from "@/lib/access-control";
+import { requireStaff, type ServerTier } from "@/lib/access-control";
+import { logAdminAction } from "@/lib/auth/adminAudit";
 import { grantEntitlement, type GrantAction } from "@/lib/entitlements";
 import { libraryEndsAtAr, resolveLibraryRequestGrant } from "@/lib/libraryAccess";
 import { grantLibraryAccess } from "@/lib/libraryAccessServer";
@@ -43,6 +44,9 @@ import { recordNotification } from "@/lib/notify";
  * حسابك», and the response carries `alreadyEntitled` so the console can say so
  * too once its page reads the body. The admin's own toast already reads «تمت
  * الموافقة» — the approval, not an activation — so it stays true either way.
+ *
+ * Owner answer ٢١٠: deciding a request needs a staff role with
+ * entitlements.decide, and each decision is audited once, after its write.
  */
 export async function PATCH(
   request: NextRequest,
@@ -50,10 +54,8 @@ export async function PATCH(
 ) {
   const { id } = await params;
 
-  const gate = await requireAdmin();
-  if (!gate.isAdmin) {
-    return NextResponse.json({ error: gate.error }, { status: gate.status ?? 403 });
-  }
+  const gate = await requireStaff("entitlements.decide");
+  if (!gate.ok) return gate.response;
 
   let body: {
     action?: "approve" | "reject";
@@ -91,6 +93,15 @@ export async function PATCH(
       .update({ status: "rejected", decided_by: gate.userId, decided_at: nowIso })
       .eq("id", id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    await logAdminAction({
+      actorId: gate.userId,
+      action: "entitlement_request_rejected",
+      targetType: "entitlement_request",
+      targetId: id,
+      before: { status: "pending" },
+      after: { status: "rejected" },
+      metadata: { kind: reqRow.kind ?? null, user_id: requesterId },
+    });
     await recordNotification({
       userId: requesterId,
       title: "تم رفض طلبك",
@@ -132,7 +143,7 @@ export async function PATCH(
       tier: body.tier as ServerTier | undefined,
       amount: typeof body.amount === "number" ? body.amount : reqAmount,
       durationDays: body.durationDays,
-      actorId: gate.userId ?? undefined,
+      actorId: gate.userId,
       // No `replaceActive` — see the header. An approval must never move a
       // requester DOWN; grantEntitlement declines instead and says so.
     });
@@ -144,6 +155,16 @@ export async function PATCH(
       .update({ status: "approved", decided_by: gate.userId, decided_at: nowIso })
       .eq("id", id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    await logAdminAction({
+      actorId: gate.userId,
+      action: "entitlement_request_approved",
+      targetType: "entitlement_request",
+      targetId: id,
+      before: { status: "pending" },
+      after: { status: "approved", grantAction, tier: body.tier ?? null, alreadyEntitled: result.alreadyEntitled === true },
+      metadata: { kind, user_id: requesterId },
+    });
 
     // Nothing was written when the account already holds an equal-or-better
     // plan: the approval stands, but the requester must NOT be told a
@@ -189,7 +210,7 @@ async function approveLibraryRequest(input: {
   id: string;
   requestedRef: unknown;
   requesterId: string;
-  adminId: string | null;
+  adminId: string;
   durationDays: unknown;
   nowIso: string;
 }) {
@@ -249,6 +270,16 @@ async function approveLibraryRequest(input: {
       { status: 400 },
     );
   }
+
+  await logAdminAction({
+    actorId: adminId,
+    action: "entitlement_request_approved",
+    targetType: "entitlement_request",
+    targetId: id,
+    before: { status: "pending" },
+    after: { status: "approved", planRef: plan.planRef, days: plan.days, endsAt: grant.endsAt },
+    metadata: { kind: "library", user_id: requesterId },
+  });
 
   const untilAr = libraryEndsAtAr(grant.endsAt);
   await recordNotification({

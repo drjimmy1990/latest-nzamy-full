@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { requireAdmin } from "@/lib/access-control";
+import { requireAdmin, requireStaff } from "@/lib/access-control";
+import { logAdminAction } from "@/lib/auth/adminAudit";
 import { fanOutBroadcast } from "@/lib/broadcastFanout";
 
 /**
@@ -55,14 +56,12 @@ export async function GET() {
  * }
  *
  * created_by is set from the admin's user id.
- * Requires: authenticated admin user
+ * Requires: a staff role with broadcasts.send; audited (owner ٢١٠).
  */
 export async function POST(request: NextRequest) {
   try {
-    const gate = await requireAdmin();
-    if (!gate.isAdmin) {
-      return NextResponse.json({ error: gate.error }, { status: gate.status ?? 403 });
-    }
+    const gate = await requireStaff("broadcasts.send");
+    if (!gate.ok) return gate.response;
 
     let body: {
       title?: string;
@@ -117,6 +116,14 @@ export async function POST(request: NextRequest) {
     if (status === "sent" && data) {
       await fanOutBroadcast(data);
     }
+
+    await logAdminAction({
+      actorId: gate.userId,
+      action: status === "sent" ? "broadcast_sent" : "broadcast_created",
+      targetType: "broadcast",
+      targetId: data?.id != null ? String(data.id) : null,
+      after: { title, audience: insert.audience, status, scheduled_at: insert.scheduled_at },
+    });
 
     return NextResponse.json({ success: true, data }, { status: 201 });
   } catch (err) {

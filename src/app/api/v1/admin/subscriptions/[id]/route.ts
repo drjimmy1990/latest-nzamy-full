@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { createServiceClient } from "@/lib/supabase/server";
+import { requireStaff } from "@/lib/access-control";
+import { logAdminAction } from "@/lib/auth/adminAudit";
 
 /**
  * PATCH /api/v1/admin/subscriptions/[id] — Update a subscription
@@ -16,7 +17,7 @@ import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
  * - If tier changes, also updates auth metadata tier
  * - If status changes to 'cancelled', sets cancelled_at = now()
  *
- * Requires: authenticated admin user
+ * Requires: a staff role with subscriptions.write (owner ٢١٠)
  */
 export async function PATCH(
   request: NextRequest,
@@ -24,33 +25,9 @@ export async function PATCH(
 ) {
   const { id: subscriptionId } = await params;
 
-  // ── Auth check ─────────────────────────────────────────────────────────────
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-
-  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
-  if (!user) {
-    return NextResponse.json(
-      { error: "غير مصرح — يرجى تسجيل الدخول" },
-      { status: 401 },
-    );
-  }
-
-  const { data: adminProfile } = await supabase
-    .from("profiles")
-    .select("user_type")
-    .eq("id", user.id)
-    .single();
-
-  if (!adminProfile || adminProfile.user_type !== "admin") {
-    return NextResponse.json(
-      { error: "غير مصرح — صلاحيات المسؤول مطلوبة" },
-      { status: 403 },
-    );
-  }
+  // ── Staff gate (owner ٢١٠) ─────────────────────────────────────────────────
+  const gate = await requireStaff("subscriptions.write");
+  if (!gate.ok) return gate.response;
 
   // ── Parse body ─────────────────────────────────────────────────────────────
   let body: {
@@ -172,6 +149,19 @@ export async function PATCH(
       }
     }
 
+    const changed = Object.keys(updateData).filter((k) => k !== "updated_at");
+    const prior = existing as Record<string, unknown>;
+    const current = (updated ?? {}) as Record<string, unknown>;
+    await logAdminAction({
+      actorId: gate.userId,
+      action: body.status === "cancelled" ? "subscription_cancelled" : "subscription_updated",
+      targetType: "subscription",
+      targetId: subscriptionId,
+      before: Object.fromEntries(changed.map((k) => [k, prior[k] ?? null])),
+      after: Object.fromEntries(changed.map((k) => [k, current[k] ?? null])),
+      metadata: { user_id: prior.user_id ?? null },
+    });
+
     return NextResponse.json({
       success: true,
       message: "تم تحديث الاشتراك بنجاح",
@@ -192,7 +182,7 @@ export async function PATCH(
  * Sets status = 'cancelled', cancelled_at = now(),
  * and downgrades auth metadata tier back to 'free'.
  *
- * Requires: authenticated admin user
+ * Requires: a staff role with subscriptions.write (owner ٢١٠)
  */
 export async function DELETE(
   request: NextRequest,
@@ -200,33 +190,9 @@ export async function DELETE(
 ) {
   const { id: subscriptionId } = await params;
 
-  // ── Auth check ─────────────────────────────────────────────────────────────
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-
-  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
-  if (!user) {
-    return NextResponse.json(
-      { error: "غير مصرح — يرجى تسجيل الدخول" },
-      { status: 401 },
-    );
-  }
-
-  const { data: adminProfile } = await supabase
-    .from("profiles")
-    .select("user_type")
-    .eq("id", user.id)
-    .single();
-
-  if (!adminProfile || adminProfile.user_type !== "admin") {
-    return NextResponse.json(
-      { error: "غير مصرح — صلاحيات المسؤول مطلوبة" },
-      { status: 403 },
-    );
-  }
+  // ── Staff gate (owner ٢١٠) ─────────────────────────────────────────────────
+  const gate = await requireStaff("subscriptions.write");
+  if (!gate.ok) return gate.response;
 
   const adminClient = await createServiceClient();
 
@@ -274,6 +240,16 @@ export async function DELETE(
         metaError,
       );
     }
+
+    await logAdminAction({
+      actorId: gate.userId,
+      action: "subscription_revoked",
+      targetType: "subscription",
+      targetId: subscriptionId,
+      before: { status: existing.status ?? null },
+      after: { status: "cancelled" },
+      metadata: { user_id: existing.user_id ?? null },
+    });
 
     return NextResponse.json({
       success: true,

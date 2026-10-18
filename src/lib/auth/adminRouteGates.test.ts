@@ -1,0 +1,419 @@
+/**
+ * adminRouteGates.test.ts — owner answer ٢١٠ (Task 3.3): every destructive
+ * admin write needs the right staff role, and each successful one leaves one
+ * row in public.admin_audit_events.
+ *
+ * Two halves:
+ *   1. The pure role decision (./staffDecision.ts) and the audit row builder
+ *      (./adminAuditRow.ts), executed.
+ *   2. Source pins on the route handlers. The routes import `next/server` and
+ *      the Supabase clients, so `node --test` cannot import and run them; the
+ *      technique is the one src/app/api/v1/admin/entitlements/grant/route.test.ts
+ *      uses. Comments are stripped first, so prose that names `requireAdmin`
+ *      or `admin_audit_events` neither satisfies nor breaks a pin.
+ *
+ * RUN: npx -y node@22 --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test src/lib/auth/adminRouteGates.test.ts
+ */
+
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join, relative, sep } from "node:path";
+import { STAFF_MATRIX, type StaffAction, type StaffRole } from "./staffRoles.ts";
+import {
+  STAFF_ONLY_AR,
+  isMissingStaffTable,
+  staffDecision,
+  usersPatchActions,
+} from "./staffDecision.ts";
+import { buildAdminAuditRow, isMissingAuditColumn } from "./adminAuditRow.ts";
+
+const SRC = join(import.meta.dirname, "..", "..");
+const ADMIN_API = join(SRC, "app", "api", "v1", "admin");
+
+const ALL_ACTIONS = [...STAFF_MATRIX.super_admin] as StaffAction[];
+const WRITE_ACTIONS = ALL_ACTIONS.filter((a) => a !== "read");
+
+// ─── 1. The pure role decision ────────────────────────────────────────────────
+
+test("the refusal copy is the brief's, verbatim", () => {
+  assert.equal(STAFF_ONLY_AR, "هذا الإجراء لقيادة المنصة فقط");
+});
+
+test("a non-admin is refused every action, even with the table missing or a super_admin row", () => {
+  for (const action of ALL_ACTIONS) {
+    for (const tableMissing of [true, false]) {
+      for (const role of ["super_admin", "operations", "auditor", null]) {
+        const d = staffDecision({ isAdmin: false, role, tableMissing }, action);
+        assert.equal(d.allowed, false, `${action} / tableMissing=${tableMissing} / role=${role}`);
+      }
+    }
+  }
+});
+
+test("an admin with no platform_staff row is an auditor: read only (fail-closed)", () => {
+  const read = staffDecision({ isAdmin: true, role: null, tableMissing: false }, "read");
+  assert.deepEqual(read, { allowed: true, role: "auditor" });
+  for (const action of WRITE_ACTIONS) {
+    const d = staffDecision({ isAdmin: true, role: null, tableMissing: false }, action);
+    assert.equal(d.allowed, false, action);
+    assert.equal(d.role, "auditor");
+  }
+});
+
+test("a role value outside the union reads as auditor, never as a wider role", () => {
+  for (const role of ["Super_Admin", " super_admin", "owner", "admin", "", 1, {}, undefined]) {
+    for (const action of WRITE_ACTIONS) {
+      const d = staffDecision({ isAdmin: true, role, tableMissing: false }, action);
+      assert.equal(d.allowed, false, `${String(role)} → ${action}`);
+    }
+    assert.equal(staffDecision({ isAdmin: true, role, tableMissing: false }, "read").allowed, true);
+  }
+});
+
+test("before 20261019_30 runs (table missing) every admin keeps today's access", () => {
+  for (const action of ALL_ACTIONS) {
+    const d = staffDecision({ isAdmin: true, role: null, tableMissing: true }, action);
+    assert.deepEqual(d, { allowed: true, role: "super_admin" }, action);
+  }
+});
+
+test("a row's role decides exactly by the matrix", () => {
+  for (const role of ["super_admin", "operations", "auditor"] as StaffRole[]) {
+    for (const action of ALL_ACTIONS) {
+      const d = staffDecision({ isAdmin: true, role, tableMissing: false }, action);
+      assert.equal(d.allowed, STAFF_MATRIX[role].has(action), `${role} → ${action}`);
+      assert.equal(d.role, role);
+    }
+  }
+});
+
+test("42P01 and PGRST205 mean the staff table is missing; nothing else does", () => {
+  assert.equal(isMissingStaffTable("42P01"), true);
+  assert.equal(isMissingStaffTable("PGRST205"), true);
+  for (const code of ["42703", "PGRST204", "42501", "PGRST116", "", undefined]) {
+    assert.equal(isMissingStaffTable(code), false, String(code));
+  }
+});
+
+test("users PATCH: each field needs its own action; nothing recognised needs nothing", () => {
+  assert.deepEqual(usersPatchActions({ user_type: "lawyer" }), ["users.change_type"]);
+  assert.deepEqual(usersPatchActions({ user_type: "admin" }), ["users.change_type"]);
+  assert.deepEqual(usersPatchActions({ status: "suspended" }), ["users.suspend"]);
+  assert.deepEqual(usersPatchActions({ verified: true }), ["verifications.decide"]);
+  assert.deepEqual(usersPatchActions({ verified: false }), ["verifications.decide"]);
+  assert.deepEqual(usersPatchActions({ metadata: { a: 1 } }), ["users.change_type"]);
+  assert.deepEqual(
+    usersPatchActions({ user_type: "firm", metadata: {}, status: "suspended", verified: true }),
+    ["users.change_type", "users.suspend", "verifications.decide"],
+  );
+  // status other than "suspended" is not a write the route performs
+  assert.deepEqual(usersPatchActions({ status: "active" }), []);
+  assert.deepEqual(usersPatchActions({}), []);
+  assert.deepEqual(usersPatchActions(null), []);
+  assert.deepEqual(usersPatchActions("x"), []);
+  assert.deepEqual(usersPatchActions([]), []);
+});
+
+// ─── 1b. The audit row ────────────────────────────────────────────────────────
+
+test("the audit row maps before/after to before_state/after_state as an admin actor", () => {
+  const row = buildAdminAuditRow(
+    {
+      actorId: "a1",
+      action: "user_deleted",
+      targetType: "profile",
+      targetId: "u1",
+      before: { user_type: "lawyer" },
+      after: null,
+      metadata: { reason: "x" },
+    },
+    null,
+  );
+  assert.deepEqual(row, {
+    actor_id: "a1",
+    actor_type: "admin",
+    action: "user_deleted",
+    target_type: "profile",
+    target_id: "u1",
+    before_state: { user_type: "lawyer" },
+    after_state: null,
+    metadata: { reason: "x" },
+  });
+});
+
+test("metadata is never null (the column is NOT NULL); a missing before/after is null", () => {
+  const row = buildAdminAuditRow(
+    { actorId: "a1", action: "setting_updated", targetType: "platform_setting", targetId: null },
+    null,
+  );
+  assert.deepEqual(row.metadata, {});
+  assert.equal(row.before_state, null);
+  assert.equal(row.after_state, null);
+  assert.equal(row.target_id, null);
+});
+
+test("actor_email is sent only when there is one (a central route sends a new column only when non-null)", () => {
+  const base = { actorId: "a1", action: "x", targetType: "t", targetId: "1" };
+  assert.equal("actor_email" in buildAdminAuditRow(base, null), false);
+  assert.equal("actor_email" in buildAdminAuditRow(base, ""), false);
+  assert.equal("actor_email" in buildAdminAuditRow(base, "   "), false);
+  assert.equal(buildAdminAuditRow(base, "admin@example.com").actor_email, "admin@example.com");
+});
+
+test("42703 and PGRST204 mean actor_email is missing (retry without it); nothing else does", () => {
+  assert.equal(isMissingAuditColumn("42703"), true);
+  assert.equal(isMissingAuditColumn("PGRST204"), true);
+  for (const code of ["42P01", "PGRST205", "42501", "", undefined]) {
+    assert.equal(isMissingAuditColumn(code), false, String(code));
+  }
+});
+
+// ─── 2. Source pins ───────────────────────────────────────────────────────────
+
+/** The source with comment lines dropped (JSDoc, block and line comments). */
+function codeOnly(source: string): string {
+  return source
+    .split(/\r?\n/)
+    .filter((line) => {
+      const t = line.trimStart();
+      return !t.startsWith("*") && !t.startsWith("/*") && !t.startsWith("//");
+    })
+    .join("\n");
+}
+
+function routeCode(file: string): string {
+  return codeOnly(readFileSync(join(ADMIN_API, ...file.split("/")), "utf8"));
+}
+
+/** One exported handler: from `export async function METHOD(` to the next export or EOF. */
+function handler(file: string, method: string): string {
+  const code = routeCode(file);
+  const start = code.indexOf(`export async function ${method}(`);
+  assert.ok(start > -1, `${file} has no ${method} handler`);
+  const next = code.indexOf("\nexport ", start + 1);
+  return code.slice(start, next === -1 ? code.length : next);
+}
+
+const WRITE_MARKERS = [
+  ".insert(",
+  ".update(",
+  ".delete(",
+  ".upsert(",
+  ".rpc(",
+  "auth.admin.deleteUser(",
+  "auth.admin.createUser(",
+  "auth.admin.updateUserById(",
+  "grantEntitlement(",
+  "grantLibraryAccess(",
+  "fanOutBroadcast(",
+  "dispatchOrderNotice(",
+];
+
+function firstWriteAt(body: string): number {
+  const hits = WRITE_MARKERS.map((m) => body.indexOf(m)).filter((i) => i > -1);
+  return hits.length ? Math.min(...hits) : -1;
+}
+
+function countOf(body: string, needle: string): number {
+  return body.split(needle).length - 1;
+}
+
+/**
+ * The route → action table (the brief's research table plus controller ruling
+ * P13). `logs` is the least number of logAdminAction calls the handler holds —
+ * one per arm that answers success after a write.
+ */
+const GATES: Array<{ file: string; method: string; action: StaffAction | "per-field"; logs: number }> = [
+  { file: "users/[id]/route.ts", method: "DELETE", action: "users.delete", logs: 1 },
+  { file: "users/[id]/route.ts", method: "PATCH", action: "per-field", logs: 1 },
+  { file: "teams/route.ts", method: "POST", action: "staff.manage", logs: 1 },
+  { file: "subscriptions/route.ts", method: "POST", action: "subscriptions.write", logs: 1 },
+  { file: "subscriptions/[id]/route.ts", method: "PATCH", action: "subscriptions.write", logs: 1 },
+  { file: "subscriptions/[id]/route.ts", method: "DELETE", action: "subscriptions.write", logs: 1 },
+  { file: "entitlements/grant/route.ts", method: "POST", action: "entitlements.grant", logs: 1 },
+  // reject arm, plan approve arm, library approve arm (approveLibraryRequest sits below PATCH)
+  { file: "entitlements/requests/[id]/route.ts", method: "PATCH", action: "entitlements.decide", logs: 3 },
+  { file: "credits/route.ts", method: "POST", action: "credits.adjust", logs: 1 },
+  { file: "settings/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
+  { file: "library/route.ts", method: "DELETE", action: "library.delete", logs: 1 },
+  { file: "library/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
+  { file: "articles/[id]/route.ts", method: "DELETE", action: "content.delete", logs: 1 },
+  { file: "coupons/route.ts", method: "POST", action: "settings.write", logs: 1 },
+  { file: "coupons/[id]/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
+  { file: "coupons/[id]/route.ts", method: "DELETE", action: "coupons.delete", logs: 1 },
+  { file: "corporates/route.ts", method: "PATCH", action: "entitlements.grant", logs: 1 },
+  // resend_whatsapp arm, assign arm, claim/deliver/cancel arm
+  { file: "service-orders/[id]/route.ts", method: "PATCH", action: "orders.manage", logs: 3 },
+  { file: "verifications/[id]/route.ts", method: "PATCH", action: "verifications.decide", logs: 1 },
+  { file: "community/moderation/[id]/route.ts", method: "PATCH", action: "community.moderate", logs: 1 },
+  { file: "community/reports/[id]/route.ts", method: "PATCH", action: "community.moderate", logs: 1 },
+  { file: "broadcasts/route.ts", method: "POST", action: "broadcasts.send", logs: 1 },
+  { file: "broadcasts/[id]/route.ts", method: "PATCH", action: "broadcasts.send", logs: 1 },
+];
+
+/**
+ * Write handlers deliberately left on requireAdmin() by this task. None of them
+ * is in the brief's table; each is listed so a NEW write handler cannot slip in
+ * without a decision.
+ */
+const LEFT_ON_REQUIRE_ADMIN = new Set([
+  "articles/route.ts POST", // content authoring — no content.write action in the matrix
+  "articles/[id]/route.ts PATCH", // content authoring
+  "feature-requests/[id]/route.ts PATCH", // triage of a suggestion box
+  "library-invitations/route.ts POST", // assertRole(["admin"]) — invitation codes
+  "library-issue-reports/[id]/route.ts PATCH", // triage of a reader's report
+  "receipts/route.ts POST", // سندات القبض — not in the brief's table
+  "teams/route.ts PATCH", // rewritten by Task 3.4 ({ userId, staffRole }, staff.manage)
+  "tickets/route.ts POST", // support tickets (tickets.manage is a later wiring)
+  "tickets/[id]/route.ts PATCH", // support tickets
+]);
+
+for (const { file, method, action, logs } of GATES) {
+  test(`${file} ${method}: ${action} before any write, then one audit row`, () => {
+    const body = handler(file, method);
+    const writeAt = firstWriteAt(body);
+    assert.ok(writeAt > -1, "no write found — the pin table is stale");
+
+    const gateNeedle = action === "per-field" ? "await requireStaff(" : `await requireStaff("${action}")`;
+    const gateAt = body.indexOf(gateNeedle);
+    assert.ok(gateAt > -1, `${gateNeedle} is missing`);
+    assert.ok(gateAt < writeAt, "the staff gate must run before the first write");
+
+    const logAt = body.indexOf("logAdminAction(");
+    assert.ok(logAt > writeAt, "logAdminAction must come after the write it records");
+    assert.ok(
+      countOf(body, "logAdminAction(") >= logs,
+      `expected at least ${logs} logAdminAction call(s), one per successful arm`,
+    );
+
+    assert.equal(body.includes("requireAdmin("), false, "a gated write handler must not keep requireAdmin()");
+    assert.equal(body.includes("auth.getUser("), false, "the inline admin check must be gone — requireStaff does it");
+    assert.equal(body.includes('from("admin_audit_events")'), false, "audit rows go through logAdminAction only");
+  });
+}
+
+test("every write handler under /api/v1/admin is gated or deliberately left", () => {
+  const gated = new Set(GATES.map((g) => `${g.file} ${g.method}`));
+  const found: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      const p = join(dir, name);
+      if (statSync(p).isDirectory()) walk(p);
+      else if (name === "route.ts") {
+        const rel = relative(ADMIN_API, p).split(sep).join("/");
+        const code = codeOnly(readFileSync(p, "utf8"));
+        for (const m of code.matchAll(/export async function (POST|PATCH|PUT|DELETE)\(/g)) {
+          found.push(`${rel} ${m[1]}`);
+        }
+      }
+    }
+  };
+  walk(ADMIN_API);
+  for (const key of found) {
+    assert.ok(gated.has(key) || LEFT_ON_REQUIRE_ADMIN.has(key), `${key} is neither gated nor listed as left`);
+  }
+  for (const key of gated) assert.ok(found.includes(key), `${key} is pinned but no longer exists`);
+});
+
+test("users PATCH: the gate covers each field's action, and 'admin' is refused on the server", () => {
+  const body = handler("users/[id]/route.ts", "PATCH");
+  const writeAt = firstWriteAt(body);
+  const actionsAt = body.indexOf("usersPatchActions(");
+  assert.ok(actionsAt > -1 && actionsAt < writeAt, "the actions come from usersPatchActions(body)");
+  const loopAt = body.indexOf("await requireStaff(action)");
+  assert.ok(loopAt > actionsAt && loopAt < writeAt, "every derived action is checked before the write");
+
+  const refusalAt = body.indexOf('"لا يمكن منح صلاحية المشرف من هنا"');
+  assert.ok(refusalAt > -1, "the server-side refusal of user_type 'admin' is missing");
+  assert.ok(refusalAt < writeAt, "the refusal must come before the write");
+  const refusal = body.slice(body.lastIndexOf("if (", refusalAt), body.indexOf(");", refusalAt));
+  assert.ok(refusal.includes('=== "admin"'), "the refusal is keyed on user_type === \"admin\"");
+  assert.ok(body.slice(refusalAt, refusalAt + 200).includes("status: 403"), "the refusal is a 403");
+  assert.ok(body.includes("isAssignableUserType("), "any other user_type must be one the database allows");
+  assert.ok(
+    body.includes('return NextResponse.json({ error: "لا توجد حقول للتحديث" }, { status: 400 })'),
+    "a body with nothing the route writes is a 400, not a silent success",
+  );
+});
+
+test("the community and verification routes keep their audit labels and metadata", () => {
+  const moderation = handler("community/moderation/[id]/route.ts", "PATCH");
+  assert.ok(moderation.includes('DB_STATUS_TO_AUDIT_ACTION[newStatus] ?? "community_post_moderated"'));
+  assert.ok(moderation.includes("metadata: { reason: body.reason ?? null, action: rawAction }"));
+  assert.ok(moderation.includes('targetType: "community_post"'));
+
+  const reports = handler("community/reports/[id]/route.ts", "PATCH");
+  assert.ok(reports.includes('STATUS_TO_AUDIT_ACTION[newStatus] ?? "community_report_triaged"'));
+  assert.ok(reports.includes("metadata: { status: newStatus }"));
+  assert.ok(reports.includes('targetType: "community_report"'));
+
+  const verifications = handler("verifications/[id]/route.ts", "PATCH");
+  assert.ok(verifications.includes('action === "approve" ? "verification_approved" : "verification_rejected"'));
+  assert.ok(verifications.includes("metadata: { reason: reason ?? null }"));
+  assert.ok(verifications.includes("targetType: updatedType"));
+});
+
+test("nothing outside adminAudit.ts inserts into admin_audit_events (one row per action)", () => {
+  // onboarding/account-type records a USER's own claim (actor_type "user");
+  // logAdminAction writes actor_type "admin" only, so that writer stays.
+  const ALLOWED = new Set(["lib/auth/adminAudit.ts", "app/api/v1/onboarding/account-type/route.ts"]);
+  const offenders: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      const p = join(dir, name);
+      if (statSync(p).isDirectory()) {
+        walk(p);
+        continue;
+      }
+      if (!/\.(ts|tsx)$/.test(name) || /\.test\.ts$/.test(name)) continue;
+      const rel = relative(SRC, p).split(sep).join("/");
+      const code = codeOnly(readFileSync(p, "utf8"));
+      for (const m of code.matchAll(/from\("admin_audit_events"\)/g)) {
+        const tail = code.slice(m.index, m.index + 120);
+        if (/^from\("admin_audit_events"\)\s*\.(insert|upsert|update|delete)\(/.test(tail) && !ALLOWED.has(rel)) {
+          offenders.push(rel);
+        }
+      }
+    }
+  };
+  walk(SRC);
+  assert.deepEqual(offenders, []);
+  const onboarding = codeOnly(readFileSync(join(SRC, "app/api/v1/onboarding/account-type/route.ts"), "utf8"));
+  assert.ok(onboarding.includes('actor_type: "user"'), "the allow-listed onboarding writer must be a user actor");
+});
+
+test("requireStaff: requireAdmin first, the role from platform_staff with the service client, fail-closed", () => {
+  const src = codeOnly(readFileSync(join(SRC, "lib/access-control.ts"), "utf8"));
+  const start = src.indexOf("export async function requireStaff(action: StaffAction)");
+  assert.ok(start > -1, "requireStaff(action: StaffAction) is missing");
+  const end = src.indexOf("\nexport ", start + 1);
+  const fn = src.slice(start, end === -1 ? src.length : end);
+  assert.ok(fn.indexOf("await requireAdmin()") > -1, "requireStaff must call requireAdmin()");
+  assert.ok(
+    fn.includes("{ error: adminCheck.error") && fn.includes("status: adminCheck.status"),
+    "requireAdmin's 503/401/403 pass through unchanged",
+  );
+  assert.ok(fn.includes("staffDecision("), "the decision is the pure staffDecision()");
+  assert.ok(fn.includes("{ error: STAFF_ONLY_AR }, { status: 403 }"), "a refused role is a 403 with the brief's copy");
+
+  // the reader
+  assert.ok(src.includes('.from("platform_staff")'), "the role is read from platform_staff");
+  assert.ok(src.includes('.select("staff_role")'));
+  assert.ok(src.includes("isMissingStaffTable(error.code)"), "42P01 / PGRST205 keep today's rule");
+  const readerAt = src.indexOf('.from("platform_staff")');
+  const readerFn = src.slice(src.lastIndexOf("async function", readerAt), readerAt);
+  assert.ok(readerFn.includes("createServiceClient()"), "the role is read with the service client");
+});
+
+test("logAdminAction: service-role insert, actor_email looked up, retried without it, never throws", () => {
+  const src = codeOnly(readFileSync(join(SRC, "lib/auth/adminAudit.ts"), "utf8"));
+  assert.ok(src.includes("export async function logAdminAction(input: AdminActionInput): Promise<void>"));
+  assert.ok(src.includes("createServiceClient()"));
+  assert.ok(src.includes('.from("admin_audit_events")'));
+  assert.ok(src.includes("auth.admin.getUserById("), "actor_email comes from auth.users");
+  assert.ok(src.includes("isMissingAuditColumn(error.code)"), "42703 / PGRST204 retry without actor_email");
+  assert.ok(src.includes("buildAdminAuditRow(input, null)"), "the retry drops actor_email");
+  assert.ok(/\}\s*catch\s*\(/.test(src), "every failure is caught and logged");
+  assert.equal(/\bthrow\b/.test(src), false, "logAdminAction never throws");
+});
