@@ -2597,3 +2597,53 @@ BEGIN
 
   RAISE NOTICE '_verify: 20261019_40 OK — decrees_circulars.preamble is server-only; its 15 catalogue columns (fts included) stay public';
 END $$;
+
+-- ====================================================================
+-- 2026-10-19 — 20261019_41_library_search_law_articles_page.sql (laws search time limit)
+-- ====================================================================
+-- The laws search window with its own 4s statement_timeout (PostgREST
+-- applies it before the call). service_role only: the function returns the
+-- server-only article text, so a GRANT to anon/authenticated (a schema
+-- restore replays the default EXECUTE grants) is a leak. A run BEFORE the
+-- migration passes with a NOTICE: the route falls back to its inline query.
+SELECT '20261019_41 applied (time-limited laws search)' AS check,
+       to_regprocedure('library.search_law_articles_page(text, integer, integer, text, text, text)') IS NOT NULL AS present;
+
+DO $$
+DECLARE
+  fn      CONSTANT text := 'library.search_law_articles_page(text, integer, integer, text, text, text)';
+  cfg     text[];
+  definer boolean;
+  r       text;
+  missing text := '';
+BEGIN
+  IF to_regprocedure(fn) IS NULL THEN
+    RAISE NOTICE '_verify: 20261019_41 is not applied yet — law searches run as the service role with no statement_timeout (the route uses its inline query until then)';
+    RETURN;
+  END IF;
+
+  SELECT p.proconfig, p.prosecdef INTO cfg, definer FROM pg_proc p WHERE p.oid = to_regprocedure(fn);
+  IF definer THEN
+    missing := missing || ' it is SECURITY DEFINER (expected INVOKER — re-run 20261019_41);';
+  END IF;
+  IF cfg IS NULL OR NOT ('statement_timeout=4s' = ANY (cfg)) THEN
+    missing := missing || format(' proconfig %s lacks statement_timeout=4s (the time limit is gone — re-run 20261019_41);', coalesce(cfg::text, 'NULL'));
+  END IF;
+  IF cfg IS NULL OR NOT ('search_path=""' = ANY (cfg)) THEN
+    missing := missing || format(' proconfig %s lacks search_path='''';', coalesce(cfg::text, 'NULL'));
+  END IF;
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF has_function_privilege(r, fn, 'EXECUTE') THEN
+      missing := missing || format(' %s can EXECUTE it — it returns the server-only article text (a GRANT re-applied? re-run 20261019_41);', r);
+    END IF;
+  END LOOP;
+  IF NOT has_function_privilege('service_role', fn, 'EXECUTE') THEN
+    missing := missing || ' service_role cannot EXECUTE it (every law search would fail);';
+  END IF;
+
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: the time-limited laws search is broken —%', missing;
+  END IF;
+
+  RAISE NOTICE '_verify: 20261019_41 OK — library.search_law_articles_page: INVOKER, statement_timeout 4s, service_role only';
+END $$;
