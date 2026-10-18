@@ -56,7 +56,9 @@
 | **G3** | ٢٢١ says the decree preview is «٥٪ أو ٣ مواد»; ١٨٣ said «أول صفحتين» | Keep two pages (١٨٣, live) | none |
 | **G4** | ٢٠٦ 1–2 points per assistant question for non-Pro | `points_enforcement = false`: nothing is charged. Ledger and debit RPC are built | W8 switch-on |
 | **G5** | ٢٠٠ says «تبقى كما هي» but quotes 4,800 (3 seats) / 18,000 (7) / 32,000 (15); the page shows 4,800 (1–5 seats) / 12,000 (6–20) / 24,000 (large) | Keep the page as it is («تبقى كما هي في صفحة الأسعار») and ask about the numbers | T5.4 |
-| **G6** | 4 Oct items 103 (letterhead) and 130 (eight visual tweaks) name no screens | Not built; asked | none |
+| **G6** | 4 Oct item 103: a unified letterhead for «مطبوعات الخزنة». The vault (`src/app/ai/vault/page.tsx`) is a «قريباً» page, so there is nowhere to upload a logo, stamp or signature | Not built; ask whether to build the vault first | none |
+
+Item 130 (eight visual refinements) is specific enough to build: T7.8.
 
 Add G1–G6 to the owner questions file as ٢٢٤–٢٢٩ in W9.
 
@@ -822,6 +824,23 @@ The owner report tells his library agent to set `status: active` in the source f
 - Test: `src/lib/services/cannedOutputGate.test.ts` — each listed page's source no longer contains its canned constant, and either renders the coming-soon marker or reads a real API.
 
 - [ ] **Step 1–4:** red, implement, green; type-check. **Step 5:** commit `fix(honesty): AI tools and admin pages that showed canned output say «قريباً» (owner ١١٥)`.
+
+### Task 7.8: Item 130 — the eight visual refinements
+
+The owner's list: 12px corners, text contrast, spacing, gold hover, a transparent navbar, shimmer loading screens, RTL alignment, mobile response.
+
+**Files:**
+- Modify:
+  - `src/app/globals.css` (`@theme`: `--radius-card: 12px`; a `hover-gold` utility using the existing gold token)
+  - `src/components/ui/Card.tsx`, `Button.tsx` (use the radius token)
+  - `src/components/Navbar.tsx` (transparent over the home hero, solid after 8px of scroll and on every other page)
+  - `loading.tsx` for `/laws`, `/blog`, `/lawyers/browse` and the dashboard home (use the existing `src/components/ui/Skeleton.tsx` shimmer)
+  - body text on white surfaces at `text-gray-600` or darker (never `text-gray-100/200`: the dark-mode trap)
+- Test: `src/components/ui/designTokens.test.ts` (Card and Button use the radius token; the four `loading.tsx` files render `Skeleton`; Navbar has the scroll threshold)
+
+- [ ] **Step 1–4:** red, implement, green.
+- [ ] **Step 5: Check in the preview** (`preview_start`): at 375px and at desktop, light and dark, on home, `/laws`, `/blog`, `/pricing`, `/lawyers/browse`, `/services/individuals`, with no horizontal scroll and RTL alignment intact. Take screenshots for the report.
+- [ ] **Step 6: Commit** `style: 12px corners, gold hover, transparent home navbar, shimmer loading, contrast and mobile fixes (4 Oct item 130)`.
 
 ---
 
