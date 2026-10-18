@@ -137,6 +137,10 @@ test("٢١٦: the price list does not say points are deducted on every use (enfo
   assert.match(pricingCards, /قائمة أسعار الأدوات بالنقاط/);
   assert.match(pricingCards, /الخصم الآلي[^\n"]*الدفع الإلكتروني/);
   assert.match(pricingCards, /automatic deduction[^\n"]*electronic payment/i);
+  // The lawyer card at provider registration made the same claim (fix round 1).
+  assert.doesNotMatch(providerRegistration, /خصم النقاط|تُخصم|[Pp]oints deducted|deducted per/);
+  assert.ok(providerRegistration.includes('"أسعار الأدوات بالنقاط حسب قائمة الأسعار"'), "provider registration (ar)");
+  assert.ok(providerRegistration.includes('"Tool prices in points per the price list"'), "provider registration (en)");
 });
 
 test("library subscription buttons point to live routes", () => {
