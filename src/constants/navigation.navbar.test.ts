@@ -148,3 +148,11 @@ test("Navbar: menus close on an outside click and on a route change", () => {
   assert.match(navbar, /usePathname\(\)/);
   assert.match(navbar, /pathname !== menusPath/);
 });
+
+test("Navbar: the full-width panel box takes no clicks; only the bridge and the panel do", () => {
+  // Otherwise the invisible box beside the max-w-4xl panel swallows a click
+  // meant as "outside" and blocks the page under it.
+  assert.match(navbar, /className="pointer-events-none absolute inset-x-0 top-\[calc\(100%_-_1rem\)\] z-50"/);
+  assert.match(navbar, /<div aria-hidden="true" className="pointer-events-auto h-6" \/>/);
+  assert.match(navbar, /className="pointer-events-auto mx-auto grid max-w-4xl grid-cols-4/);
+});

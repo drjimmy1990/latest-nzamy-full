@@ -374,14 +374,18 @@ function MegaMenu({ item, isAr, activeDropdown, setActiveDropdown }: {
             transition={{ type: "spring", stiffness: 300, damping: 25 }}
             /* Anchored to the bar (its rounded container is `relative`), not to
                the trigger: four columns hung off a link in the middle of the
-               bar would run off a 1024px screen. The box starts 1rem above the
-               bar's bottom edge and pads down, so the pointer never crosses a
-               gap on its way from the trigger to a link — crossing one fires
-               mouseleave and shuts the menu. */
-            className="absolute inset-x-0 top-[calc(100%_-_1rem)] z-50 pt-6"
+               bar would run off a 1024px screen. The box spans the bar's full
+               width but takes no clicks itself (pointer-events-none), so a
+               click or hover beside the narrower panel reaches the page and
+               counts as outside. Only the bridge strip and the panel take the
+               pointer. The bridge starts 1rem above the bar's bottom edge, so
+               the pointer never crosses a gap on its way from the trigger to a
+               link — crossing one fires mouseleave and shuts the menu. */
+            className="pointer-events-none absolute inset-x-0 top-[calc(100%_-_1rem)] z-50"
             dir={isAr ? "rtl" : "ltr"}
           >
-            <div className="mx-auto grid max-w-4xl grid-cols-4 gap-3 rounded-2xl border border-slate-200/50 bg-white p-4 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] dark:border-white/10 dark:bg-zinc-900">
+            <div aria-hidden="true" className="pointer-events-auto h-6" />
+            <div className="pointer-events-auto mx-auto grid max-w-4xl grid-cols-4 gap-3 rounded-2xl border border-slate-200/50 bg-white p-4 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] dark:border-white/10 dark:bg-zinc-900">
               {item.children!.map((group, gi) => (
                 <div key={group.href} role="group" aria-labelledby={`${panelId}-group-${gi}`}>
                   <p id={`${panelId}-group-${gi}`} className="px-3 pb-2 text-xs font-bold text-royal dark:text-gold">
