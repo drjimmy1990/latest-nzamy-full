@@ -221,6 +221,7 @@ test("legal-representation and consultations no longer promise ratings or choosi
     assert.doesNotMatch(src, /تقييمات|والتقييم/, `${href}: no lawyer ratings («تقييمات»)`);
     assert.doesNotMatch(src, /\brating/i, `${href}: no lawyer ratings ("rating")`);
     assert.doesNotMatch(src, /اختيار المحامي|اختر المحامي|Choose a Lawyer|Lawyer Selection/, `${href}: no lawyer-choosing step`);
+    assert.doesNotMatch(src, /اختيار محامٍ|محامٍ بعينه|choose a specific lawyer/i, `${href}: no choosing a specific lawyer`);
     assert.match(src, /يُراجع فريق نظامي طلبك ويُسنده إلى محامٍ مختص/, `${href}: says the office assigns the lawyer`);
     assert.match(src, /Nezamy's team reviews your request and assigns a specialist lawyer/, `${href}: English twin`);
   }

@@ -153,7 +153,9 @@ const faqs = {
   ar: [
     { q: "كيف تتم الاستشارة الفورية؟", a: "بعد الدفع مباشرةً يتم تحويلك لغرفة دردشة/صوت/فيديو مع أول محامٍ متاح من التخصص المطلوب. ولأن قائمة المحامين لا تزال قيد التجهيز، لا يمكننا حالياً تحديد وقت انتظار متوقع." },
     { q: "هل الاستشارة سرية؟", a: "نعم، تلتزم المنصة بسرية المعلومات القانونية بموجب النظام السعودي. وتقنياً: الاتصال مؤمَّن عبر TLS، وعزل صفوف (RLS) يمنع حساباً آخر من قراءة محادثاتك. ولا توجد طبقة تشفير طرف-لطرف (E2E)." },
-    { q: "ما الفرق بين الاستشارة الفورية والمجدولة؟", a: "الفورية تربطك بأول محامٍ متاح خلال دقائق لمدة ٣٠ دقيقة. المجدولة تتيح لك اختيار محامٍ بعينه وتحديد وقت يناسبك لمدة ٦٠ دقيقة." },
+    // The scheduled half said «تتيح لك اختيار محامٍ بعينه»: the office assigns
+    // the lawyer (N16), the same as step ١ above.
+    { q: "ما الفرق بين الاستشارة الفورية والمجدولة؟", a: "الفورية تربطك بأول محامٍ متاح خلال دقائق لمدة ٣٠ دقيقة. المجدولة تحدّد فيها وقتاً يناسبك لمدة ٦٠ دقيقة، ويُراجع فريق نظامي طلبك ويُسنده إلى محامٍ مختص." },
     // Was «نعم، نضمن الرضا الكامل … استرداد كامل خلال ٢٤ ساعة من انتهاء الجلسة»,
     // which /refund-policy (owner answer ١٨٠, sections ٢ and ٤) does not offer.
     // This answer restates that policy and links to it; it adds no term.
@@ -163,7 +165,7 @@ const faqs = {
   en: [
     { q: "How does an instant consultation work?", a: "After payment you are immediately connected to a voice/video/chat room with the first available lawyer in the requested specialty. Because the lawyer roster is still being onboarded, we cannot quote an expected wait time yet." },
     { q: "Is the consultation confidential?", a: "Yes — the platform complies with Saudi legal confidentiality requirements. Technically: traffic is secured with TLS, and row-level security (RLS) prevents another account from reading your conversations. There is no end-to-end (E2E) encryption." },
-    { q: "What is the difference between instant and scheduled?", a: "Instant connects you with the first available lawyer in minutes for 30 minutes. Scheduled lets you choose a specific lawyer and a time that suits you for 60 minutes." },
+    { q: "What is the difference between instant and scheduled?", a: "Instant connects you with the first available lawyer in minutes for 30 minutes. Scheduled lets you pick a time that suits you for 60 minutes; Nezamy's team reviews your request and assigns a specialist lawyer." },
     { q: "Can I get a refund if I am not satisfied?", a: "Consultation fees are paid directly to the licensed law office; the platform does not hold them. Cancelling up to 24 hours before the session is a full cancellation. Anything else follows your agreement with the law office, and you may file a quality complaint for the Nezamy team to review.", link: { href: "/refund-policy", label: "Refund Policy" } },
     { q: "Does Nezamy AI replace a lawyer?", a: "Nezamy AI is an excellent aid for general and informational queries, but for complex cases and court representation there is no substitute for follow-up by a licensed, experienced lawyer." },
   ],
