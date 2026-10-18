@@ -11,14 +11,15 @@ import {
 import Link from "next/link";
 import { PRIORITY_CONFIG, CATEGORY_CONFIG } from "../_data";
 import type { Task, TaskStatus } from "../_types";
-import { TASK_ASSIGNEE_LABEL_AR, assigneeLabelAr } from "@/lib/services/item59Labels";
+import { TASK_ASSIGNEE_LABEL_AR, assigneeLabelAr, assigneeOptionLabelAr } from "@/lib/services/item59Labels";
+import type { TaskAssigneeOption } from "@/lib/services/lawyerTasksService";
 
 // ─── TaskCard ──────────────────────────────────────────────────────────────────
 
 export function TaskCard({
   task, isDark, onToggle, onDelete, onArchive, onStatusChange,
   draggable, onDragStart, onDragEnd,
-  onSubtaskToggle, onEditSave,
+  onSubtaskToggle, onEditSave, assigneeOptions,
 }: {
   task: Task; isDark: boolean;
   onToggle: (id: string) => void;
@@ -30,6 +31,8 @@ export function TaskCard({
   onDragEnd?: () => void;
   onSubtaskToggle?: (taskId: string, subtaskId: string) => void;
   onEditSave?: (taskId: string, patch: Partial<Task>) => void;
+  /** «المحامي المُكلَّف» options, read once by the page. null/undefined hides the picker. */
+  assigneeOptions?: TaskAssigneeOption[] | null;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [tracking, setTracking] = useState(false);
@@ -41,6 +44,22 @@ export function TaskCard({
   const [editPriority, setEditPriority] = useState(task.priority);
   const [editSubtasks, setEditSubtasks] = useState(task.subtasks ? [...task.subtasks] : []);
   const [newSubInput, setNewSubInput]   = useState("");
+  const [editAssignee, setEditAssignee] = useState(task.assigneeUserId ?? "");
+
+  // The picker's options: the server's list, plus the task's current assignee
+  // when they are no longer on it (e.g. left the firm), so the select shows
+  // the true state. Shown when there is someone to choose (more than the
+  // caller alone) or an assignee to clear; hidden when the list was not read.
+  const currentAssignee = task.assigneeUserId ?? "";
+  const pickerOptions: TaskAssigneeOption[] = assigneeOptions
+    ? [
+        ...assigneeOptions,
+        ...(currentAssignee && !assigneeOptions.some(o => o.userId === currentAssignee)
+          ? [{ userId: currentAssignee, name: task.assigneeName ?? null, isSelf: false }]
+          : []),
+      ]
+    : [];
+  const showAssigneePicker = !!assigneeOptions && (assigneeOptions.length > 1 || !!currentAssignee);
 
   const openEdit = () => {
     setEditTitle(task.title);
@@ -48,6 +67,7 @@ export function TaskCard({
     setEditPriority(task.priority);
     setEditSubtasks(task.subtasks ? [...task.subtasks] : []);
     setNewSubInput("");
+    setEditAssignee(task.assigneeUserId ?? "");
     setEditOpen(true);
   };
 
@@ -68,11 +88,18 @@ export function TaskCard({
   const toggleEditSub    = (id: string) => setEditSubtasks(prev => prev.map(s => s.id === id ? { ...s, done: !s.done } : s));
 
   const saveEdit = () => {
+    // The assignee is sent only when it changed, with the name the card will
+    // show until the next refetch.
+    const assigneeChanged = showAssigneePicker && editAssignee !== currentAssignee;
+    const picked = pickerOptions.find(o => o.userId === editAssignee);
     onEditSave?.(task.id, {
       title: editTitle,
       priority: editPriority,
       subtasks: editSubtasks,
       ...(editNotes !== undefined ? { notes: editNotes } : {}),
+      ...(assigneeChanged
+        ? { assigneeUserId: editAssignee || null, assigneeName: picked?.name ?? undefined }
+        : {}),
     } as any);
     setEditOpen(false);
   };
@@ -300,6 +327,18 @@ export function TaskCard({
                     className={`w-full rounded-xl border px-3.5 py-2.5 text-[13px] outline-none resize-none transition-colors ${isDark ? "border-white/[0.08] bg-zinc-800 text-zinc-300 focus:border-royal/40 placeholder:text-zinc-600" : "border-slate-200 bg-slate-50 text-slate-700 focus:border-royal/40 placeholder:text-slate-400"}`}
                     placeholder="أضف وصفاً أو ملاحظة للمهمة..." />
                 </div>
+
+                {/* «المحامي المُكلَّف» (owner item 59) */}
+                {showAssigneePicker && (
+                  <div>
+                    <label className={`block text-[11px] font-bold uppercase tracking-wider mb-2 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{TASK_ASSIGNEE_LABEL_AR}</label>
+                    <select value={editAssignee} onChange={e => setEditAssignee(e.target.value)}
+                      className={`w-full rounded-xl border px-3.5 py-2.5 text-[13px] outline-none transition-colors ${isDark ? "border-white/[0.08] bg-zinc-800 text-zinc-200 focus:border-royal/40" : "border-slate-200 bg-slate-50 text-slate-700 focus:border-royal/40"}`}>
+                      <option value="">—</option>
+                      {pickerOptions.map(o => <option key={o.userId} value={o.userId}>{assigneeOptionLabelAr(o)}</option>)}
+                    </select>
+                  </div>
+                )}
 
                 {/* Priority */}
                 <div>

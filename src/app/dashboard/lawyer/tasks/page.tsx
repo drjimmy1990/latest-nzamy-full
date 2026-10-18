@@ -15,7 +15,9 @@ import {
   updateLawyerTaskStatus,
   updateLawyerTask,
   updateLawyerTaskSubtasks,
+  getTaskAssigneeOptions,
   type LawyerTask,
+  type TaskAssigneeOption,
 } from "@/lib/services/lawyerTasksService";
 import { apiGet, isSupabaseMode } from "@/lib/services/api";
 import { SHARED_CASES } from "@/lib/casesStore";
@@ -123,6 +125,7 @@ export default function LawyerTasksPage() {
         caseRef: d.caseRef || undefined,
         notes: d.notes || undefined,
         subtasks: d.subtasks || [],
+        assigneeUserId: d.assigneeUserId || undefined,
         assigneeName: d.assigneeName || undefined,
       })));
       setLoadState("ready");
@@ -135,6 +138,18 @@ export default function LawyerTasksPage() {
   // Wrapped rather than `void loadTasks()` so the fetch is not a synchronous call
   // out of the effect body — same shape as src/components/ui/CasePicker.tsx.
   useEffect(() => { (async () => { await loadTasks(); })(); }, [loadTasks]);
+
+  // «المحامي المُكلَّف» picker options for every card's edit form, read once
+  // here rather than once per card. null (not read, or failed) hides the picker.
+  const [assigneeOptions, setAssigneeOptions] = useState<TaskAssigneeOption[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const options = await getTaskAssigneeOptions();
+      if (!cancelled) setAssigneeOptions(options);
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // AddTaskModal dispatches this once the server has CONFIRMED the insert.
   useEffect(() => {
@@ -393,6 +408,7 @@ export default function LawyerTasksPage() {
       ...(patch.dueDate !== undefined ? { dueDate: patch.dueDate } : {}),
       ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
       ...(patch.subtasks !== undefined ? { subtasks: patch.subtasks } : {}),
+      ...(patch.assigneeUserId !== undefined ? { assigneeUserId: patch.assigneeUserId } : {}),
     }).then(res => {
       if (!previous) return;
       const before: Task = previous;
@@ -409,6 +425,10 @@ export default function LawyerTasksPage() {
       if (patch.dueDate !== undefined) revert.dueDate = before.dueDate;
       if (patch.notes !== undefined) revert.notes = before.notes;
       if (patch.subtasks !== undefined) revert.subtasks = before.subtasks;
+      if (patch.assigneeUserId !== undefined) {
+        revert.assigneeUserId = before.assigneeUserId;
+        revert.assigneeName = before.assigneeName;
+      }
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...revert } : t));
       setSaveError("تعذّر حفظ تعديلات المهمة. أعد المحاولة.");
     });
@@ -789,7 +809,7 @@ export default function LawyerTasksPage() {
                             </button>
                           </div>
                         ) : (
-                          <TaskCard task={task} isDark={isDark} onToggle={onToggle} onDelete={onDelete} onArchive={onArchive} onStatusChange={onStatusChange} onSubtaskToggle={onSubtaskToggle} onEditSave={onEditSave}/>
+                          <TaskCard task={task} isDark={isDark} onToggle={onToggle} onDelete={onDelete} onArchive={onArchive} onStatusChange={onStatusChange} onSubtaskToggle={onSubtaskToggle} onEditSave={onEditSave} assigneeOptions={assigneeOptions}/>
                         )}
                       </motion.div>
                     ))}
@@ -887,6 +907,7 @@ export default function LawyerTasksPage() {
                             onStatusChange={onStatusChange}
                             onSubtaskToggle={onSubtaskToggle}
                             onEditSave={onEditSave}
+                            assigneeOptions={assigneeOptions}
                             draggable={isDraggable}
                             onDragStart={isDraggable?onDragStart:undefined}
                             onDragEnd={()=>dragId.current=null} />

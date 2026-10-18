@@ -10,6 +10,9 @@
  *   - `public.attachments.source`         (text, CHECK upload / generated /
  *                                          imported / contract_version)
  *
+ * Also the «مدة الجلسة» select's options and the server's check on what it
+ * may save (`validateHearingDuration`).
+ *
  * Pure: no `@/` imports, so `item59Labels.test.ts` runs under plain node.
  * Every empty value renders «—», never a zero, «NaN» or a raw enum word.
  */
@@ -54,6 +57,36 @@ export function formatDurationAr(minutes: number | null | undefined): string {
   return hoursPart ?? minutesPart ?? EMPTY_FIELD_AR;
 }
 
+/** The lengths the add-hearing form offers, in minutes; each is labelled by `formatDurationAr`. */
+export const HEARING_DURATION_OPTIONS = [30, 60, 90, 120, 180] as const;
+
+/** The bounds the hearings POST accepts: five minutes to one day. */
+export const HEARING_DURATION_MIN = 5;
+export const HEARING_DURATION_MAX = 1440;
+
+export const HEARING_DURATION_INVALID_AR = "مدة الجلسة غير صالحة";
+
+/**
+ * The server's check on `durationMinutes`: null/undefined (not set) → null;
+ * a whole number from 5 to 1440 → itself; anything else (a string, a fraction,
+ * NaN, out of range) → an error. Not limited to the form's five options, so a
+ * later form can offer other lengths without a route change.
+ */
+export function validateHearingDuration(
+  input: unknown,
+): { ok: true; value: number | null } | { ok: false; error: string } {
+  if (input === null || input === undefined) return { ok: true, value: null };
+  if (
+    typeof input !== "number" ||
+    !Number.isInteger(input) ||
+    input < HEARING_DURATION_MIN ||
+    input > HEARING_DURATION_MAX
+  ) {
+    return { ok: false, error: HEARING_DURATION_INVALID_AR };
+  }
+  return { ok: true, value: input };
+}
+
 /** `attachments.source` → its Arabic label. The keys are the column's CHECK list. */
 export const DOCUMENT_SOURCE_LABELS_AR = {
   upload: "رفع",
@@ -69,6 +102,17 @@ export function documentSourceLabelAr(source: unknown): string {
   // inherited Object member.
   if (!Object.prototype.hasOwnProperty.call(DOCUMENT_SOURCE_LABELS_AR, source)) return EMPTY_FIELD_AR;
   return DOCUMENT_SOURCE_LABELS_AR[source as keyof typeof DOCUMENT_SOURCE_LABELS_AR];
+}
+
+/**
+ * One option's text in the «المحامي المُكلَّف» picker: «الاسم (أنا)» for the
+ * caller («أنا» with no name), the member's name otherwise, and «عضو في المكتب»
+ * for a member with no display name, never their id.
+ */
+export function assigneeOptionLabelAr(option: { name: string | null | undefined; isSelf: boolean }): string {
+  const name = typeof option.name === "string" ? option.name.trim() : "";
+  if (option.isSelf) return name ? `${name} (أنا)` : "أنا";
+  return name || "عضو في المكتب";
 }
 
 /** The assignee's resolved display name, or «—» when the task has none (or it could not be resolved). */

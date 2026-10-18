@@ -66,6 +66,8 @@ export interface CreateLawyerTaskInput {
   caseRef?: string;
   notes?: string;
   subtasks?: LawyerSubtask[];
+  /** «المحامي المُكلَّف»: null/absent = nobody. The route accepts only the caller or an active member of their firm. */
+  assigneeUserId?: string | null;
 }
 
 /**
@@ -82,6 +84,16 @@ export interface UpdateLawyerTaskInput {
   dueDate?: string | null;
   notes?: string;
   subtasks?: LawyerSubtask[];
+  /** null clears the assignee; omitted leaves it alone. */
+  assigneeUserId?: string | null;
+}
+
+/** One option of the «المحامي المُكلَّف» picker (GET /api/v1/lawyer/tasks/assignees). */
+export interface TaskAssigneeOption {
+  userId: string;
+  /** profiles.display_name; null when the member has none. */
+  name: string | null;
+  isSelf: boolean;
 }
 
 // ─── Service functions ────────────────────────────────────────────────────────
@@ -138,6 +150,23 @@ export async function createLawyerTask(input: CreateLawyerTaskInput): Promise<La
   return res.data;
 }
 
+/**
+ * Who the «المحامي المُكلَّف» picker may offer: the caller, plus every active
+ * member of their firm. null when it could not be read (or in demo mode,
+ * which has no task store) — the forms then hide the picker rather than offer
+ * a list they cannot vouch for. The route re-checks every choice anyway.
+ */
+export async function getTaskAssigneeOptions(): Promise<TaskAssigneeOption[] | null> {
+  if (!isSupabaseMode) return null;
+  try {
+    const res = await apiGet<{ data?: TaskAssigneeOption[] }>("/api/v1/lawyer/tasks/assignees");
+    return Array.isArray(res.data) ? res.data : null;
+  } catch (e) {
+    console.error("[lawyerTasksService] getTaskAssigneeOptions failed:", e);
+    return null;
+  }
+}
+
 export async function updateLawyerTaskStatus(taskId: string, status: LawyerTaskStatus): Promise<boolean> {
   if (!isSupabaseMode) return false;
 
@@ -177,6 +206,7 @@ export async function updateLawyerTask(
   if (patch.dueDate !== undefined) body.dueDate = patch.dueDate;
   if (patch.notes !== undefined) body.notes = patch.notes;
   if (patch.subtasks !== undefined) body.subtasks = patch.subtasks;
+  if (patch.assigneeUserId !== undefined) body.assigneeUserId = patch.assigneeUserId;
 
   // Nothing to send — treat as a no-op success rather than a phantom failure.
   if (Object.keys(body).length === 1) return { ok: true };

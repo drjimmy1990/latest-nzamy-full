@@ -7,6 +7,7 @@ import {
   VALID_UI_TYPES, VALID_UI_URGENCIES,
   typeToKind, kindToType, urgencyToDb, urgencyFromDb,
 } from "@/lib/services/hearingVocabulary";
+import { validateHearingDuration } from "@/lib/services/item59Labels";
 
 /**
  * /api/v1/lawyer/hearings — Phase 1 (خطة_البناء_الكاملة §5).
@@ -54,7 +55,7 @@ interface HearingRow {
   urgency: string;
   status: string;
   notes: string;
-  /** Owner item 59 («مدة الجلسة»). Nullable; nothing writes it yet. */
+  /** Owner item 59 («مدة الجلسة»). Nullable; set by POST's `durationMinutes`. */
   duration_minutes: number | null;
   metadata: Record<string, unknown> | null;
   created_at: string;
@@ -136,7 +137,10 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/v1/lawyer/hearings
- * Body: { type, date, time?, caseName?, caseRequestId?, urgency?, location?, notes?, title }
+ * Body: { type, date, time?, caseName?, caseRequestId?, urgency?, location?, notes?, title, durationMinutes? }
+ *
+ * `durationMinutes` («مدة الجلسة», owner item 59): a whole number of minutes
+ * from 5 to 1440, or null/absent for "not set" — see `validateHearingDuration`.
  *
  * `title` is composed by the CALLER (AddHearingModal already builds
  * `${typeLabel} — ${caseName}` client-side, the same as AddCaseModal does for
@@ -155,10 +159,11 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const {
-      type, date, time, caseName, caseRequestId, urgency, location, notes, title,
+      type, date, time, caseName, caseRequestId, urgency, location, notes, title, durationMinutes,
     } = body as {
       type?: string; date?: string; time?: string; caseName?: string;
       caseRequestId?: string; urgency?: string; location?: string; notes?: string; title?: string;
+      durationMinutes?: unknown;
     };
 
     if (!type || !(VALID_TYPES as Set<string>).has(type)) {
@@ -174,6 +179,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "title required" }, { status: 400 });
     }
     const uiUrgency: UiUrgency = urgency && (VALID_URGENCIES as Set<string>).has(urgency) ? (urgency as UiUrgency) : "normal";
+    const parsedDuration = validateHearingDuration(durationMinutes);
+    if (!parsedDuration.ok) {
+      return NextResponse.json({ error: parsedDuration.error }, { status: 400 });
+    }
 
     // Solo lawyer → no firm row → firm_id stays null, exactly what
     // can_access_case_row's owner arm is for. A lawyer with more than one
@@ -206,6 +215,8 @@ export async function POST(request: NextRequest) {
         location: location?.trim() || "",
         urgency: urgencyToDb(uiUrgency),
         notes: notes?.trim() || "",
+        // Sent only when set, so an unset duration leaves the column to its default.
+        ...(parsedDuration.value !== null ? { duration_minutes: parsedDuration.value } : {}),
         metadata,
       })
       .select(HEARINGS_SELECT)

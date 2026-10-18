@@ -9,6 +9,8 @@ import {
   validatePriority,
   validateSubtasks,
   validateTaskTitle,
+  validateTaskAssignee,
+  TASK_ASSIGNEE_INVALID_AR,
 } from "./taskMetadata.ts";
 
 // ─── validateSubtasks ─────────────────────────────────────────────────────────
@@ -111,4 +113,50 @@ test("validateTaskTitle trims and rejects blanks", () => {
   assert.equal(validateTaskTitle(undefined).ok, false);
   assert.equal(validateTaskTitle(42).ok, false);
   assert.equal(validateTaskTitle("x".repeat(400)).ok, false);
+});
+
+// ─── validateTaskAssignee (owner item 59, «المحامي المُكلَّف») ──────────────────
+
+const CALLER = "11111111-1111-1111-1111-111111111111";
+const COLLEAGUE = "2222abcd-2222-4222-a222-22222222abcd";
+const STRANGER = "33333333-3333-3333-3333-333333333333";
+
+test("validateTaskAssignee: null (or absent) clears the assignee", () => {
+  assert.deepEqual(validateTaskAssignee({ assigneeId: null, callerId: CALLER, firmMemberIds: [] }), { ok: true, value: null });
+  assert.deepEqual(validateTaskAssignee({ assigneeId: undefined, callerId: CALLER, firmMemberIds: [] }), { ok: true, value: null });
+});
+
+test("validateTaskAssignee: the caller may always assign themself, firm or no firm", () => {
+  assert.deepEqual(validateTaskAssignee({ assigneeId: CALLER, callerId: CALLER, firmMemberIds: [] }), { ok: true, value: CALLER });
+  assert.deepEqual(validateTaskAssignee({ assigneeId: CALLER, callerId: CALLER, firmMemberIds: [COLLEAGUE] }), { ok: true, value: CALLER });
+});
+
+test("validateTaskAssignee: an active member of the caller's firm is accepted", () => {
+  assert.deepEqual(
+    validateTaskAssignee({ assigneeId: COLLEAGUE, callerId: CALLER, firmMemberIds: [CALLER, COLLEAGUE] }),
+    { ok: true, value: COLLEAGUE },
+  );
+});
+
+test("validateTaskAssignee: anyone else is refused with the owner-facing message", () => {
+  // Codepoints of «المحامي المُكلَّف غير صالح», as the controller wrote it.
+  const msg = "المحامي المُكلَّف غير صالح";
+  assert.equal(TASK_ASSIGNEE_INVALID_AR, msg);
+  const refused = { ok: false, error: msg };
+  // A solo lawyer (no firm) naming someone else.
+  assert.deepEqual(validateTaskAssignee({ assigneeId: COLLEAGUE, callerId: CALLER, firmMemberIds: [] }), refused);
+  // A firm member naming someone outside the firm.
+  assert.deepEqual(validateTaskAssignee({ assigneeId: STRANGER, callerId: CALLER, firmMemberIds: [CALLER, COLLEAGUE] }), refused);
+  // Not an id at all.
+  for (const bad of ["", "   ", 42, {}, [], true]) {
+    assert.deepEqual(validateTaskAssignee({ assigneeId: bad, callerId: CALLER, firmMemberIds: [CALLER, COLLEAGUE] }), refused);
+  }
+});
+
+test("validateTaskAssignee: the id is matched exactly, after trimming", () => {
+  assert.deepEqual(
+    validateTaskAssignee({ assigneeId: `  ${COLLEAGUE}  `, callerId: CALLER, firmMemberIds: [COLLEAGUE] }),
+    { ok: true, value: COLLEAGUE },
+  );
+  assert.equal(validateTaskAssignee({ assigneeId: COLLEAGUE.toUpperCase(), callerId: CALLER, firmMemberIds: [COLLEAGUE] }).ok, false);
 });

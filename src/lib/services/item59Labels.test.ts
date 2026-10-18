@@ -9,6 +9,10 @@ import {
   formatDurationAr,
   documentSourceLabelAr,
   assigneeLabelAr,
+  HEARING_DURATION_OPTIONS,
+  validateHearingDuration,
+  HEARING_DURATION_INVALID_AR,
+  assigneeOptionLabelAr,
 } from "./item59Labels.ts";
 
 // 4 Oct item 59 — the owner approved three new fields on the lawyer screens.
@@ -91,4 +95,43 @@ test("assignee: the resolved name, or «—» when there is none", () => {
   assert.equal(assigneeLabelAr(null), "—");
   assert.equal(assigneeLabelAr(undefined), "—");
   assert.equal(assigneeLabelAr("   "), "—");
+});
+
+// ─── The «مدة الجلسة» select and its server check ────────────────────────────
+
+test("the duration select offers the controller's five lengths, in his words", () => {
+  assert.deepEqual([...HEARING_DURATION_OPTIONS], [30, 60, 90, 120, 180]);
+  assert.deepEqual(HEARING_DURATION_OPTIONS.map(formatDurationAr), [
+    "٣٠ دقيقة",
+    "ساعة",
+    "ساعة و٣٠ دقيقة",
+    "ساعتان",
+    "٣ ساعات",
+  ]);
+});
+
+test("validateHearingDuration: null or absent means not set", () => {
+  assert.deepEqual(validateHearingDuration(null), { ok: true, value: null });
+  assert.deepEqual(validateHearingDuration(undefined), { ok: true, value: null });
+});
+
+test("validateHearingDuration: a whole number of minutes from 5 to 1440", () => {
+  for (const n of [5, 30, 90, 180, 1440]) {
+    assert.deepEqual(validateHearingDuration(n), { ok: true, value: n });
+  }
+});
+
+test("validateHearingDuration: anything else is refused", () => {
+  assert.equal(HEARING_DURATION_INVALID_AR, "مدة الجلسة غير صالحة");
+  for (const bad of [0, 4, 1441, -30, 90.5, Number.NaN, Number.POSITIVE_INFINITY, "90", "", {}, [], true]) {
+    assert.deepEqual(validateHearingDuration(bad), { ok: false, error: HEARING_DURATION_INVALID_AR }, String(bad));
+  }
+});
+
+test("assignee picker option text: never an id", () => {
+  assert.equal(assigneeOptionLabelAr({ name: "سارة العتيبي", isSelf: true }), "سارة العتيبي (أنا)");
+  assert.equal(assigneeOptionLabelAr({ name: null, isSelf: true }), "أنا");
+  assert.equal(assigneeOptionLabelAr({ name: " خالد ", isSelf: false }), "خالد");
+  assert.equal(assigneeOptionLabelAr({ name: null, isSelf: false }), "عضو في المكتب");
+  assert.equal(assigneeOptionLabelAr({ name: "  ", isSelf: false }), "عضو في المكتب");
 });

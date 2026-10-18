@@ -1,6 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
-import { createServiceClient } from "@/lib/supabase/server";
 import { recordActivity, RequestEvent } from "@/lib/events";
 import {
   readSubtasks,
@@ -10,8 +9,10 @@ import {
   validatePriority,
   validateSubtasks,
   validateTaskTitle,
+  validateTaskAssignee,
   type TaskSubtask,
 } from "@/lib/services/taskMetadata";
+import { readActiveFirmMemberIds, readCallerFirmId, resolveDisplayNames } from "./_assignees";
 
 /**
  * /api/v1/lawyer/tasks — Phase 1, step 2 (خطة_البناء_الكاملة §5).
@@ -48,7 +49,7 @@ interface TaskRow {
   category: string | null;
   due_date: string | null;
   completed_at: string | null;
-  /** Owner item 59 («المحامي المُكلَّف»). Nullable; nothing writes it yet. */
+  /** Owner item 59 («المحامي المُكلَّف»). Nullable; set by POST/PATCH `assigneeUserId`. */
   assignee_user_id: string | null;
   metadata: Record<string, unknown> | null;
   created_at: string;
@@ -58,10 +59,9 @@ interface TaskRow {
 const VALID_STATUSES = new Set(["todo", "in_progress", "done", "archived"]);
 
 /**
- * `assigneeName` is resolved by GET from `profiles.display_name` (see
- * `resolveDisplayNames`); null when the task has no assignee or the name
- * could not be resolved, never guessed. POST creates no assignee, so it passes
- * nothing.
+ * `assigneeName` is resolved from `profiles.display_name` (see
+ * `resolveDisplayNames` in ./_assignees); null when the task has no assignee
+ * or the name could not be resolved, never guessed.
  */
 function toDto(row: TaskRow, steps: TaskSubtask[], assigneeName: string | null = null) {
   const meta = row.metadata ?? {};
@@ -86,39 +86,6 @@ function toDto(row: TaskRow, steps: TaskSubtask[], assigneeName: string | null =
 
 const TASK_SELECT =
   "id, case_request_id, title, description, status, priority, category, due_date, completed_at, assignee_user_id, metadata, created_at, updated_at";
-
-/**
- * `profiles.display_name` for each id, best-effort. Service-role, the same
- * pattern `service-requests/[id]` uses to resolve a document's `uploaderName`:
- * `profiles` SELECT under RLS only allows "read own row" or "admin reads
- * all", so the caller's own client cannot read a colleague's name. Only ids
- * taken from the caller's OWN tasks reach here, and only `id, display_name`
- * is read. Never fails the parent read: a failed lookup leaves the names null.
- */
-async function resolveDisplayNames(ids: string[]): Promise<Record<string, string>> {
-  const namesById: Record<string, string> = {};
-  if (ids.length === 0) return namesById;
-  try {
-    const svc = await createServiceClient();
-    const { data: nameRows, error } = await svc
-      .from("profiles")
-      .select("id, display_name")
-      .in("id", ids);
-    if (error) {
-      console.error("[lawyer/tasks GET] assignee name lookup failed:", error.message, error.code);
-      return namesById;
-    }
-    for (const row of nameRows ?? []) {
-      const r = row as Record<string, unknown>;
-      if (typeof r.id === "string" && typeof r.display_name === "string" && r.display_name.trim()) {
-        namesById[r.id] = r.display_name.trim();
-      }
-    }
-  } catch (e) {
-    console.error("[lawyer/tasks GET] assignee name lookup failed:", (e as Error).message);
-  }
-  return namesById;
-}
 
 /**
  * GET /api/v1/lawyer/tasks
@@ -207,7 +174,12 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/v1/lawyer/tasks
- * Body: { title, category?, priority?, dueDate?, caseId?, caseRef?, notes?, subtasks? }
+ * Body: { title, category?, priority?, dueDate?, caseId?, caseRef?, notes?, subtasks?, assigneeUserId? }
+ *
+ * `assigneeUserId` («المحامي المُكلَّف», owner item 59): null/absent, the
+ * caller, or an active member of the caller's firm — checked here against the
+ * roster this route reads itself (`validateTaskAssignee`), never against a
+ * list the client sent. Anything else is a 400.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -216,7 +188,7 @@ export async function POST(request: NextRequest) {
     const { user, supabase } = auth;
 
     const body = await request.json();
-    const { title, category, priority, dueDate, caseId, caseRef, notes, subtasks } = body as {
+    const { title, category, priority, dueDate, caseId, caseRef, notes, subtasks, assigneeUserId } = body as {
       title?: string;
       category?: string;
       priority?: string;
@@ -225,6 +197,7 @@ export async function POST(request: NextRequest) {
       caseRef?: string;
       notes?: string;
       subtasks?: unknown;
+      assigneeUserId?: unknown;
     };
 
     const parsedTitle = validateTaskTitle(title);
@@ -248,17 +221,19 @@ export async function POST(request: NextRequest) {
 
     // Solo lawyer → no firm row → firm_id stays null, matching hearings'
     // POST — the owner arm of can_access_case_row is what keeps a solo
-    // lawyer's own tasks visible to them.
-    const { data: membership, error: membershipError } = await supabase
-      .from("firm_members")
-      .select("firm_id")
-      .eq("user_id", user.id)
-      .eq("status", "active")
-      .limit(1)
-      .maybeSingle();
-    if (membershipError) {
-      console.error("[lawyer/tasks] firm_members lookup failed:", membershipError.message, membershipError.code);
-    }
+    // lawyer's own tasks visible to them. The same read now also names the
+    // firm whose roster bounds the assignee (./_assignees).
+    const firmId = await readCallerFirmId(supabase, user.id);
+
+    // The roster is read only when the body names someone other than the
+    // caller; null and "myself" need no lookup.
+    const namesOther = typeof assigneeUserId === "string" && assigneeUserId.trim() !== user.id;
+    const parsedAssignee = validateTaskAssignee({
+      assigneeId: assigneeUserId,
+      callerId: user.id,
+      firmMemberIds: namesOther ? await readActiveFirmMemberIds(supabase, firmId) : [],
+    });
+    if (!parsedAssignee.ok) return NextResponse.json({ error: parsedAssignee.error }, { status: 400 });
 
     const metadata: Record<string, unknown> = {};
     if (caseRef && caseRef.trim()) metadata.caseRef = caseRef.trim();
@@ -267,13 +242,15 @@ export async function POST(request: NextRequest) {
       .from("tasks")
       .insert({
         case_request_id: caseId || null,
-        firm_id: membership?.firm_id ?? null,
+        firm_id: firmId,
         owner_user_id: user.id,
         title: parsedTitle.value,
         description: notes?.trim() || "",
         priority: parsedPriority.value,
         category: parsedCategory.value,
         due_date: parsedDueDate.value,
+        // Sent only when set: an unassigned task leaves the column to its default.
+        ...(parsedAssignee.value !== null ? { assignee_user_id: parsedAssignee.value } : {}),
         metadata,
       })
       .select(TASK_SELECT)
@@ -302,7 +279,7 @@ export async function POST(request: NextRequest) {
       supabase,
       kind: RequestEvent.TASK_CREATED,
       ownerUserId: user.id,
-      firmId: membership?.firm_id ?? null,
+      firmId,
       actorUserId: user.id,
       caseRequestId: caseId || null,
       subjectTable: "tasks",
@@ -310,7 +287,11 @@ export async function POST(request: NextRequest) {
       payload: { title: parsedTitle.value },
     });
 
-    return NextResponse.json({ data: toDto(data as TaskRow, steps) });
+    const created = data as TaskRow;
+    const assigneeName = created.assignee_user_id
+      ? (await resolveDisplayNames([created.assignee_user_id]))[created.assignee_user_id] ?? null
+      : null;
+    return NextResponse.json({ data: toDto(created, steps, assigneeName) });
   } catch (err) {
     console.error("[lawyer/tasks POST] Unexpected error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -319,7 +300,10 @@ export async function POST(request: NextRequest) {
 
 /**
  * PATCH /api/v1/lawyer/tasks
- * Body: { taskId, status?, title?, priority?, category?, dueDate?, notes?, subtasks? }
+ * Body: { taskId, status?, title?, priority?, category?, dueDate?, notes?, subtasks?, assigneeUserId? }
+ *
+ * `assigneeUserId`: absent leaves the assignee alone, null clears it, and an
+ * id is checked exactly as POST checks it (`validateTaskAssignee`).
  *
  * Every field is its own column now, so — unlike the old jsonb-merge route —
  * this is a plain partial `.update()`: no read-before-write, and no risk of
@@ -338,7 +322,7 @@ export async function PATCH(request: NextRequest) {
     const { user, supabase } = auth;
 
     const body = await request.json();
-    const { taskId, status, title, priority, category, dueDate, notes, subtasks } = body as {
+    const { taskId, status, title, priority, category, dueDate, notes, subtasks, assigneeUserId } = body as {
       taskId?: string;
       status?: unknown;
       title?: unknown;
@@ -347,6 +331,7 @@ export async function PATCH(request: NextRequest) {
       dueDate?: unknown;
       notes?: unknown;
       subtasks?: unknown;
+      assigneeUserId?: unknown;
     };
 
     if (!taskId) {
@@ -396,6 +381,17 @@ export async function PATCH(request: NextRequest) {
       update.description = parsed.value;
     }
 
+    if (assigneeUserId !== undefined) {
+      const namesOther = typeof assigneeUserId === "string" && assigneeUserId.trim() !== user.id;
+      const parsed = validateTaskAssignee({
+        assigneeId: assigneeUserId,
+        callerId: user.id,
+        firmMemberIds: namesOther ? await readActiveFirmMemberIds(supabase, await readCallerFirmId(supabase, user.id)) : [],
+      });
+      if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
+      update.assignee_user_id = parsed.value;
+    }
+
     let parsedSubtasks: TaskSubtask[] | null = null;
     if (subtasks !== undefined) {
       const parsed = validateSubtasks(subtasks);
@@ -408,7 +404,7 @@ export async function PATCH(request: NextRequest) {
 
     if (!hasFieldUpdate && !hasSubtasksUpdate) {
       return NextResponse.json(
-        { error: "taskId and at least one of status, title, priority, category, dueDate, notes or subtasks required" },
+        { error: "taskId and at least one of status, title, priority, category, dueDate, notes, subtasks or assigneeUserId required" },
         { status: 400 },
       );
     }

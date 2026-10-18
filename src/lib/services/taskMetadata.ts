@@ -171,3 +171,29 @@ export function validateTaskTitle(input: unknown): TaskValidation<string> {
   }
   return { ok: true, value: title };
 }
+
+// ─── Assignee (owner item 59, «المحامي المُكلَّف») ─────────────────────────────
+
+/** The one message for an assignee the caller may not name. */
+export const TASK_ASSIGNEE_INVALID_AR = "المحامي المُكلَّف غير صالح";
+
+/**
+ * Who `tasks.assignee_user_id` may name: nobody (null), the caller, or an
+ * active member of the caller's firm. `firmMemberIds` is what the SERVER read
+ * from `firm_members` — never a list the client sent. A solo lawyer passes
+ * `[]`, so only null or themself get through. `undefined` is read as null
+ * here; the route itself skips the field entirely when the body omits it.
+ */
+export function validateTaskAssignee(input: {
+  assigneeId: unknown;
+  callerId: string;
+  firmMemberIds: readonly string[];
+}): TaskValidation<string | null> {
+  const { assigneeId, callerId, firmMemberIds } = input;
+  if (assigneeId === null || assigneeId === undefined) return { ok: true, value: null };
+  if (typeof assigneeId !== "string") return { ok: false, error: TASK_ASSIGNEE_INVALID_AR };
+  const id = assigneeId.trim();
+  if (!id) return { ok: false, error: TASK_ASSIGNEE_INVALID_AR };
+  if (id === callerId || firmMemberIds.includes(id)) return { ok: true, value: id };
+  return { ok: false, error: TASK_ASSIGNEE_INVALID_AR };
+}

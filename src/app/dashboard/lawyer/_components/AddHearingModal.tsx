@@ -11,6 +11,7 @@ import type { UserType, UserTier } from "@/hooks/useUser";
 import { describeDateAr, toArabicDigits } from "@/lib/services/hijri";
 import DualDatePicker from "@/components/ui/DualDatePicker";
 import { getHearingLocationField } from "./hearingLocationField";
+import { formatDurationAr, HEARING_DURATION_LABEL_AR, HEARING_DURATION_OPTIONS } from "@/lib/services/item59Labels";
 
 interface Props {
   onClose: () => void;
@@ -62,6 +63,9 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
   const [notes, setNotes] = useState("");
   const [urgency, setUrgency] = useState<Urgency>("normal");
   const [location, setLocation] = useState("");
+  // «مدة الجلسة» (owner item 59), in minutes as the select's string value;
+  // "" = not set.
+  const [duration, setDuration] = useState("");
 
   // Row 70: step 2 no longer shows the same flat "الموقع" field for every
   // type. `null` here means the field is hidden for this type (a deadline
@@ -75,6 +79,10 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
   // location field shown) must not silently carry the old courtroom text
   // into a deadline row nobody can see it was set on.
   const effectiveLocation = locationField ? location : "";
+  // Same rule for the duration: a deadline has no length, so a value picked
+  // before switching to «موعد طعن / نهائي» is not saved on it.
+  const showDuration = type !== "deadline";
+  const effectiveDuration = showDuration && duration ? Number(duration) : null;
 
   const inputCls = `w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none ${
     isDark
@@ -132,7 +140,7 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
       // Demo mode still uses the old local-store path below: there it is the
       // real backend and genuinely round-trips. The lie was supabase-only.
       if (isSupabaseMode) {
-        await createLawyerHearing({ type, date, time, caseName, caseRequestId, urgency, location: effectiveLocation, notes, title });
+        await createLawyerHearing({ type, date, time, caseName, caseRequestId, urgency, location: effectiveLocation, notes, title, durationMinutes: effectiveDuration });
       } else {
         const id = createWorkflowId();
         await createWorkflowRequest({
@@ -150,7 +158,7 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
           },
           payment: { amount: 0, status: "not_required" as const },
           sourcePath: "",
-          metadata: { hearing: true, date, time, type, urgency, location: effectiveLocation, notes, caseName },
+          metadata: { hearing: true, date, time, type, urgency, location: effectiveLocation, notes, caseName, durationMinutes: effectiveDuration },
           assignedTo: user.userId,
         });
       }
@@ -327,6 +335,17 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
                     <div>
                       <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{locationField.label}</label>
                       <input type="text" value={location} onChange={e => setLocation(e.target.value)} placeholder={locationField.placeholder} className={inputCls} />
+                    </div>
+                  )}
+                  {/* «مدة الجلسة» (owner item 59) → hearings.duration_minutes.
+                      Optional; hidden for a deadline, like the location. */}
+                  {showDuration && (
+                    <div>
+                      <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{HEARING_DURATION_LABEL_AR} <span className={isDark ? "text-zinc-500" : "text-slate-400"}>(اختياري)</span></label>
+                      <select value={duration} onChange={e => setDuration(e.target.value)} className={inputCls}>
+                        <option value="">—</option>
+                        {HEARING_DURATION_OPTIONS.map(m => <option key={m} value={String(m)}>{formatDurationAr(m)}</option>)}
+                      </select>
                     </div>
                   )}
                   <div>

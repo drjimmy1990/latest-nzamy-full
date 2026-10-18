@@ -66,6 +66,8 @@ export interface CreateHearingInput {
   location?: string;
   notes?: string;
   title: string;
+  /** «مدة الجلسة» in minutes (5–1440); null/absent = not set. */
+  durationMinutes?: number | null;
 }
 
 export async function createLawyerHearing(input: CreateHearingInput): Promise<HearingDto> {

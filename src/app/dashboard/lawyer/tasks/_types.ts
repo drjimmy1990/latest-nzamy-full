@@ -18,7 +18,9 @@ export interface Task {
   caseRef?: string;
   caseId?: string;
   assignedTo?: string;
-  /** «المحامي المُكلَّف» (owner item 59): tasks.assignee_user_id resolved to a name by the route. Undefined = none. */
+  /** «المحامي المُكلَّف» (owner item 59): tasks.assignee_user_id. null/undefined = nobody. */
+  assigneeUserId?: string | null;
+  /** That assignee's display name, resolved by the route. Undefined = none or unknown. */
   assigneeName?: string;
   ownerId?: string;   // undefined = mine; set to team member id = team task
   notes?: string;

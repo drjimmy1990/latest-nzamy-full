@@ -114,8 +114,9 @@ interface CalEvent {
   // (see `todayKey`), so «اليوم» still means today on a tab left open all night.
   location?: string; date: string; dateSort: number;
   time?: string; urgency: "critical"|"high"|"normal";
-  // hearings.duration_minutes — «مدة الجلسة» (owner item 59). null/undefined
-  // when the row records none; the card then shows «—».
+  // hearings.duration_minutes — «مدة الجلسة» (owner item 59), set from
+  // AddHearingModal. null/undefined when the row records none; the card then
+  // shows «—».
   durationMinutes?: number | null;
   notes?: string; done?: boolean; deadlineDaysLeft?: number;
   workflow?: WorkflowStep[];
@@ -267,6 +268,7 @@ function demoWorkflowToHearing(request: WorkflowRequest): CalEvent | null {
     dateSort,
     time: typeof meta.time === "string" && meta.time ? meta.time : undefined,
     urgency,
+    durationMinutes: typeof meta.durationMinutes === "number" ? meta.durationMinutes : null,
     notes: typeof meta.notes === "string" && meta.notes ? meta.notes : undefined,
     done: isDone,
     workflow: undefined,

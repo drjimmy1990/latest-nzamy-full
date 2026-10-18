@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { CheckCircle, XCircle, Warning, CircleNotch } from "@phosphor-icons/react";
 import { CasePicker } from "@/components/ui/CasePicker";
 import DualDatePicker from "@/components/ui/DualDatePicker";
 import { VoiceInput } from "@/components/ui/VoiceInput";
-import { createLawyerTask } from "@/lib/services/lawyerTasksService";
+import { createLawyerTask, getTaskAssigneeOptions, type TaskAssigneeOption } from "@/lib/services/lawyerTasksService";
+import { TASK_ASSIGNEE_LABEL_AR, assigneeOptionLabelAr } from "@/lib/services/item59Labels";
 
 interface Props {
   onClose: () => void;
@@ -26,6 +27,21 @@ export default function AddTaskModal({ onClose, isDark }: Props) {
   const [priority, setPriority] = useState("normal");
   const [caseId, setCaseId] = useState("");
   const [caseRef, setCaseRef] = useState("");
+  // «المحامي المُكلَّف» (owner item 59). "" = nobody. The options come from
+  // the server (the caller plus their firm's active members); with one option
+  // or none — a solo lawyer, or a failed read — the picker is not shown and
+  // the task is saved unassigned. The route re-checks whatever is sent.
+  const [assigneeId, setAssigneeId] = useState("");
+  const [assigneeOptions, setAssigneeOptions] = useState<TaskAssigneeOption[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const options = await getTaskAssigneeOptions();
+      if (!cancelled) setAssigneeOptions(options);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  const showAssignee = (assigneeOptions?.length ?? 0) > 1;
 
   const inputCls = `w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none disabled:opacity-50 ${
     isDark
@@ -49,6 +65,7 @@ export default function AddTaskModal({ onClose, isDark }: Props) {
         dueDate: dueDate || undefined,
         caseId: caseId || undefined,
         caseRef: caseRef || undefined,
+        ...(showAssignee && assigneeId ? { assigneeUserId: assigneeId } : {}),
       });
       setDone(true);
       // Same signal the tasks Kanban and the dashboard widgets listen for.
@@ -137,6 +154,16 @@ export default function AddTaskModal({ onClose, isDark }: Props) {
                 isDark={isDark}
               />
             </div>
+
+            {showAssignee && assigneeOptions && (
+              <div>
+                <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{TASK_ASSIGNEE_LABEL_AR} <span className={isDark ? "text-zinc-500" : "text-slate-400"}>(اختياري)</span></label>
+                <select value={assigneeId} disabled={saving} onChange={e => setAssigneeId(e.target.value)} className={inputCls}>
+                  <option value="">—</option>
+                  {assigneeOptions.map(o => <option key={o.userId} value={o.userId}>{assigneeOptionLabelAr(o)}</option>)}
+                </select>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
