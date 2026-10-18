@@ -2054,3 +2054,67 @@ BEGIN
   END IF;
   RAISE NOTICE '_verify: 20261018_04 OK — service_requests: session inserts unassigned or self-assigned; session updates status only (+ lawyer_client_id by the assignee)';
 END $$;
+
+-- ====================================================================
+-- 2026-10-19 — 20261019_10_library_access_grants.sql (owner answers ١٩٩ / ٢٠١–٢٠٣)
+-- ====================================================================
+-- The library subscription as its own grant: a signed-in user reads only their
+-- own rows (one SELECT policy), a guest holds nothing, only the server writes.
+-- Keyed on the table's existence (to_regclass, never ::regclass), so a run
+-- before the migration passes with a NOTICE.
+SELECT '20261019_10 applied (public.library_access_grants)' AS check,
+       to_regclass('public.library_access_grants') IS NOT NULL AS present;
+
+DO $$
+DECLARE
+  tbl     constant text := 'public.library_access_grants';
+  r       text;
+  p       text;
+  col     text;
+  missing text := '';
+BEGIN
+  IF to_regclass(tbl) IS NULL THEN
+    RAISE NOTICE '_verify: 20261019_10 is not applied yet — library access still comes only from the subscription tier (no library-only grants table)';
+    RETURN;
+  END IF;
+
+  IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass(tbl)) THEN
+    missing := missing || ' RLS is off (every signed-in user would read every grant — re-run 20261019_10);';
+  END IF;
+  IF (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND tablename = 'library_access_grants') <> 1
+     OR NOT EXISTS (SELECT 1 FROM pg_policies
+                     WHERE schemaname = 'public' AND tablename = 'library_access_grants'
+                       AND policyname = 'own library grants' AND cmd = 'SELECT') THEN
+    missing := missing || ' expected exactly one policy, "own library grants" FOR SELECT (re-run 20261019_10);';
+  END IF;
+
+  FOREACH r IN ARRAY ARRAY['anon', 'public']
+  LOOP
+    FOREACH p IN ARRAY ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']
+    LOOP
+      IF has_table_privilege(r, tbl, p) THEN
+        missing := missing || format(' %s holds %s (a schema restore re-applied GRANT ALL? re-run 20261019_10);', r, p);
+      END IF;
+    END LOOP;
+    FOR col IN
+      SELECT att.attname::text FROM pg_attribute att
+       WHERE att.attrelid = to_regclass(tbl) AND att.attnum > 0 AND NOT att.attisdropped
+    LOOP
+      IF has_column_privilege(r, tbl, col, 'SELECT, INSERT, UPDATE, REFERENCES') THEN
+        missing := missing || format(' %s holds a column privilege on %s;', r, col);
+      END IF;
+    END LOOP;
+  END LOOP;
+  IF has_table_privilege('authenticated', tbl, 'INSERT, UPDATE, DELETE, TRUNCATE') THEN
+    missing := missing || ' authenticated can write grants (a user could give themselves the library — re-run 20261019_10);';
+  END IF;
+  IF NOT has_table_privilege('service_role', tbl, 'SELECT')
+     OR NOT has_table_privilege('service_role', tbl, 'INSERT') THEN
+    missing := missing || ' service_role cannot read or insert grants (library approvals would fail);';
+  END IF;
+
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: library_access_grants is not locked —%', missing;
+  END IF;
+  RAISE NOTICE '_verify: 20261019_10 OK — library_access_grants: RLS on, one own-row SELECT policy, no guest privilege, no session writes';
+END $$;
