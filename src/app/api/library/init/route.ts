@@ -288,6 +288,10 @@ export async function GET(request: Request) {
         // withheld from this viewer (non-subscriber), so the page can say
         // «للمشتركين» instead of «—».
         officialMetaLocked: !hasFullAccess,
+        // The viewer's own full-library flag (a Pro+ tier, an active library
+        // grant, or an admin; owner ٢٠٥/٢٠٩). /laws hands it to its tabs, so a
+        // card's lock follows this rule, not the client's tier-only gate.
+        viewer: { hasFullAccess },
       },
       // Tier-shaped (paywall + official metadata): never from a shared cache.
       { headers: { "Cache-Control": TIER_SHAPED_CACHE_CONTROL } },

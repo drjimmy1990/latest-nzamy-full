@@ -184,6 +184,10 @@ export default function LegalLibraryPage() {
   // issue date from a non-subscriber and says so with a top-level flag; the
   // cards then show one locked row instead of those two lines.
   const [officialMetaLocked, setOfficialMetaLocked] = useState(false);
+  // The same response's `viewer.hasFullAccess`: a Pro+ tier, an active
+  // library grant, or an admin. The tabs lock a card on it, so a library
+  // subscriber is not shown locks by the client's tier-only gate.
+  const [viewerHasFullAccess, setViewerHasFullAccess] = useState(false);
 
   // — Feqh filters —
   const [feqhType,    setFeqhType]    = useState<FeqhType>("all");
@@ -548,6 +552,7 @@ export default function LegalLibraryPage() {
         // dbLaws and pagination.laws; this response must not overwrite it.
         const lawsOwnedByFilter = lawsRequestIdRef.current !== 0;
         setOfficialMetaLocked(data?.officialMetaLocked === true);
+        setViewerHasFullAccess(data?.viewer?.hasFullAccess === true);
         if (!lawsOwnedByFilter) {
           setDbLaws(data.laws?.data || []);
           lawsKeyRef.current = lawsFilterKey("all", "all");
@@ -620,7 +625,10 @@ export default function LegalLibraryPage() {
     const res = await fetch(`/api/library/init?${params.toString()}`);
     const body = res.ok ? await res.json() : null;
     // The lock is per viewer, not per filter, so any successful page may set it.
-    if (body && typeof body === "object") setOfficialMetaLocked(body.officialMetaLocked === true);
+    if (body && typeof body === "object") {
+      setOfficialMetaLocked(body.officialMetaLocked === true);
+      setViewerHasFullAccess(body.viewer?.hasFullAccess === true);
+    }
     const stale = requestId !== lawsRequestIdRef.current || (page > 1 && key !== lawsKeyRef.current);
     const laws = body?.laws;
     const ok = !!laws && !laws.degraded && Array.isArray(laws.data);
@@ -1945,6 +1953,7 @@ export default function LegalLibraryPage() {
                           precSort={precSort}
                           setPrecSort={setPrecSort}
                           searchCountLabel={searchCountLabels.precedents}
+                          viewerHasFullAccess={viewerHasFullAccess}
                           resultsPending={searchPending}
                           searchFailed={searchFailed}
                         />
@@ -2069,6 +2078,7 @@ export default function LegalLibraryPage() {
                           docSubType={docSubType}
                           setDocSubType={setDocSubType}
                           officialMetaLocked={officialMetaLocked}
+                          viewerHasFullAccess={viewerHasFullAccess}
                           resultsPending={searchPending}
                           searchFailed={searchFailed}
                         />
@@ -2115,6 +2125,7 @@ export default function LegalLibraryPage() {
                           setShowPaywall={setShowPaywall}
                           activeCat={activeCat}
                           q={q}
+                          viewerHasFullAccess={viewerHasFullAccess}
                           resultsPending={searchPending}
                           searchFailed={searchFailed}
                         />

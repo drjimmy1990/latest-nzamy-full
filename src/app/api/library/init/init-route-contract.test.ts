@@ -54,3 +54,97 @@ test("the laws filters reach PostgREST only through .eq (no user input in .or)",
 test("the outer failure answers in Arabic, not with a raw driver message", () => {
   assert.doesNotMatch(source, /error: error\.message/);
 });
+
+// ── Task 1.6: the library pages decide «full library» from the server ──────
+// Full library access is a Pro+ tier, an active library grant, or an admin
+// (getLibraryAccessForUser().hasFullAccess, owner ٢٠٥/٢٠٩). The client's
+// can("library-full-access") is tier-only, so a library-grant holder got the
+// texts from the server and lock icons from the client. These pins keep the
+// six client sites on the server's answer.
+const repo = path.resolve(here, "../../../../..");
+const readRepo = (rel: string) => fs.readFileSync(path.join(repo, rel), "utf8");
+
+const LIBRARY_ACCESS_SITES = [
+  "src/app/laws/components/FeqhTabContent.tsx",
+  "src/app/laws/components/LawsTabContent.tsx",
+  "src/app/laws/components/PrecedentsTabContent.tsx",
+  "src/app/laws/[slug]/_article-components.tsx",
+  "src/app/laws/subscribe/page.tsx",
+  "src/components/InvitationBanner.tsx",
+] as const;
+const TABS = ["FeqhTabContent", "LawsTabContent", "PrecedentsTabContent"] as const;
+
+test("the response tells the page whether this viewer has the full library", () => {
+  assert.match(source, /const \{ hasFullAccess, whitelistedSlugs, freeItemsByType \} = await getLibraryAccessForUser\(userId\)/);
+  assert.match(source, /viewer: \{ hasFullAccess \}/);
+});
+
+test("/laws keeps the viewer flag from init and hands it to the three tabs", () => {
+  const page = readRepo("src/app/laws/page.tsx");
+  assert.match(page, /const \[viewerHasFullAccess, setViewerHasFullAccess\] = useState\(false\)/);
+  // The first load and the server-filtered laws pages both carry it.
+  const reads = page.match(/setViewerHasFullAccess\((?:data\?|body)\.viewer\?\.hasFullAccess === true\)/g) ?? [];
+  assert.equal(reads.length, 2, "the first load and fetchLawsPage both read viewer.hasFullAccess");
+  for (const tab of TABS) {
+    const m = new RegExp(`<${tab}\\b`).exec(page);
+    assert.ok(m, `${tab} is not rendered`);
+    const tag = page.slice(m.index, page.indexOf("/>", m.index));
+    assert.match(tag, /viewerHasFullAccess=\{viewerHasFullAccess\}/, `${tab} does not get the flag`);
+  }
+});
+
+test("the tabs take viewerHasFullAccess as a required prop", () => {
+  for (const tab of TABS) {
+    const src = readRepo(`src/app/laws/components/${tab}.tsx`);
+    assert.match(src, /\n\s*viewerHasFullAccess: boolean;/, `${tab} has no required viewerHasFullAccess prop`);
+    assert.doesNotMatch(src, /useSubscription/, `${tab} still reads the tier on the client`);
+  }
+});
+
+test("the law reader locks articles on the law API's paywall.hasFullAccess", () => {
+  const page = readRepo("src/app/laws/[slug]/page.tsx");
+  assert.match(page, /setViewerHasFullAccess\(data\?\.paywall\?\.hasFullAccess === true\)/);
+  // Reset with the other per-law fields, so a new slug never inherits it.
+  assert.match(page, /setPreambleLocked\(false\);\r?\n\s*setViewerHasFullAccess\(false\);/);
+  const blocks = page.match(/<ArticleBlock\b[\s\S]*?\/>/g) ?? [];
+  assert.equal(blocks.length, 2);
+  for (const block of blocks) assert.match(block, /viewerHasFullAccess=\{viewerHasFullAccess\}/);
+
+  const reader = readRepo("src/app/laws/[slug]/_article-components.tsx");
+  assert.match(reader, /viewerHasFullAccess: boolean;/);
+  assert.match(reader, /const isLocked\s+= !article\.free && !viewerHasFullAccess;/);
+});
+
+test("the redeem CTA and the invitation banner ask GET /api/v1/library/access, and wait for it", () => {
+  const subscribe = readRepo("src/app/laws/subscribe/page.tsx");
+  assert.match(subscribe, /import \{ useLibraryFullAccess \} from "@\/lib\/library\/useLibraryFullAccess";/);
+  assert.match(subscribe, /const canRedeemCode = isLoggedIn && isSupabaseMode && !libraryAccess\.loading && !libraryAccess\.hasFullAccess;/);
+
+  const banner = readRepo("src/components/InvitationBanner.tsx");
+  assert.match(banner, /import \{ useLibraryFullAccess \} from "@\/lib\/library\/useLibraryFullAccess";/);
+  assert.match(banner, /const eligible = isLoggedIn && isSupabaseMode && !libraryAccess\.loading && !libraryAccess\.hasFullAccess;/);
+});
+
+test("none of the six sites gates library text on the tier-only can(\"library-full-access\")", () => {
+  for (const rel of LIBRARY_ACCESS_SITES) {
+    const src = readRepo(rel);
+    assert.doesNotMatch(src, /library-full-access/, `${rel} still names the tier-only gate`);
+  }
+});
+
+test("the assistant keeps its own rule: no full-library flag shows or hides it (owner ٢٠٧)", () => {
+  const files = [...LIBRARY_ACCESS_SITES, "src/app/laws/page.tsx", "src/app/laws/[slug]/page.tsx"];
+  const flag = /hasFullAccess|HasFullAccess|libraryAccess\./;
+  for (const rel of files) {
+    const lines = readRepo(rel).split(/\r?\n/);
+    lines.forEach((line, i) => {
+      // The assistant panel (and the line that would wrap it in a condition)
+      // and the article's «اشرح لي» button.
+      if (/<LibraryAI\b/.test(line)) {
+        assert.doesNotMatch(`${lines[i - 1] ?? ""}\n${line}`, flag, `${rel}:${i + 1}: ${line.trim()}`);
+      } else if (/showExplainBtn/.test(line)) {
+        assert.doesNotMatch(line, flag, `${rel}:${i + 1}: ${line.trim()}`);
+      }
+    });
+  }
+});

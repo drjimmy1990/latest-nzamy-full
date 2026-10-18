@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { useSubscription } from "@/hooks/useSubscription";
 import { Lock, Sparkle, ArrowRight, CaretLeft, CaretRight } from "@phosphor-icons/react";
 import { type FeqhBookDemo } from "../demo-data-access";
 import { FEQH_TYPES, type FeqhType } from "@/constants/lawsLibraryData";
@@ -33,6 +32,11 @@ interface FeqhTabContentProps {
   setShowPaywall: (show: boolean) => void;
   activeCat: string;
   q: string;
+  /**
+   * The viewer has the full library (`viewer.hasFullAccess` from
+   * /api/library/init): a Pro+ tier, an active library grant, or an admin.
+   */
+  viewerHasFullAccess: boolean;
   /** A search request is in flight: skeleton cards, not «لا توجد نتائج». */
   resultsPending?: boolean;
   /** The search failed (its error is shown above): no empty state. */
@@ -53,12 +57,11 @@ export function FeqhTabContent({
   setShowPaywall,
   activeCat,
   q,
+  viewerHasFullAccess,
   resultsPending = false,
   searchFailed = false,
 }: FeqhTabContentProps) {
   const [page, setPage] = useState(1);
-  const { can } = useSubscription();
-  const hasLibraryAccess = can("library-full-access");
   const itemsPerPage = 6;
 
   // Reset page when filter states change
@@ -189,7 +192,7 @@ export function FeqhTabContent({
       ) : displayedCards.length > 0 ? (
         <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" : "space-y-4"}>
           {displayedCards.map(({ key: cardKey, book, title: cardTitle, volumesLabel }) => {
-            const isBookFree = book.free || hasLibraryAccess;
+            const isBookFree = book.free || viewerHasFullAccess;
             // A search hit the server locked opens the book (its reader masks
             // the block) but is not «متاح»: only part of its text is free.
             const showAvailable = !book.locked;

@@ -2,7 +2,6 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
-import { useSubscription } from "@/hooks/useSubscription";
 import { useRouter } from "next/navigation";
 import { Gavel, Scales, Lock, Sparkle, ArrowRight, CaretLeft, CaretRight } from "@phosphor-icons/react";
 import {
@@ -52,6 +51,11 @@ interface PrecedentsTabContentProps {
    * far, so their length is not the section count. undefined = browse mode.
    */
   searchCountLabel?: string;
+  /**
+   * The viewer has the full library (`viewer.hasFullAccess` from
+   * /api/library/init): a Pro+ tier, an active library grant, or an admin.
+   */
+  viewerHasFullAccess: boolean;
   /** A search request is in flight: skeleton cards, not «لا توجد نتائج». */
   resultsPending?: boolean;
   /** The search failed (its error is shown above): no empty state. */
@@ -82,12 +86,11 @@ export function PrecedentsTabContent({
   precSort,
   setPrecSort,
   searchCountLabel,
+  viewerHasFullAccess,
   resultsPending = false,
   searchFailed = false,
 }: PrecedentsTabContentProps) {
   const router = useRouter();
-  const { can } = useSubscription();
-  const hasLibraryAccess = can("library-full-access");
 
   // Digit normalizer and Hijri year parser
   function parseYear(yearStr: string): number {
@@ -359,7 +362,7 @@ export function PrecedentsTabContent({
           </p>
           <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" : "flex flex-col gap-4"}>
             {filteredCollections.map((col, idx) => {
-              const isColFree = col.free || hasLibraryAccess;
+              const isColFree = col.free || viewerHasFullAccess;
               return (
                 <motion.div
                   key={col.id}

@@ -4,7 +4,6 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useSubscription } from "@/hooks/useSubscription";
 import {
   BookOpen,
   Lock,
@@ -193,6 +192,8 @@ interface LawsTabContentProps {
   setDocSubType: (type: DocSubType) => void;
   // اشتراك المكتبة — يفتح كل محتوى أنظمة ولوائح
   librarySubscribed?: boolean;
+  // للزائر المكتبة كاملة (viewer.hasFullAccess من /api/library/init): باقة Pro فما فوق أو اشتراك مكتبة أو مدير
+  viewerHasFullAccess: boolean;
   // T28-22: بيانات الإصدار الرسمية محجوبة عن غير المشترك (علم من /api/library/init)
   officialMetaLocked?: boolean;
   // طلب البحث لم يكتمل بعد: هياكل نابضة بدل البطاقات وبدل «لا توجد نتائج»
@@ -228,14 +229,13 @@ export function LawsTabContent({
   docSubType,
   setDocSubType,
   librarySubscribed = false,
+  viewerHasFullAccess,
   officialMetaLocked = false,
   resultsPending = false,
   searchFailed = false,
 }: LawsTabContentProps) {
   const router = useRouter();
   const [expandedDesc, setExpandedDesc] = useState<Record<string, boolean>>({});
-  const { can } = useSubscription();
-  const hasLibraryAccess = can("library-full-access");
 
   if (resultsPending) {
     return (
@@ -275,7 +275,7 @@ export function LawsTabContent({
           <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-8" : "flex flex-col gap-4 mb-8"}>
             <AnimatePresence mode="popLayout">
               {filteredLaws.map((sys, idx) => {
-                const isUnlocked = sys.free || hasLibraryAccess;
+                const isUnlocked = sys.free || viewerHasFullAccess;
                 // API search rows describe an article; never substitute the parent law status here.
                 const searchArticleStatusNotice = sys._isSearchResult && sys.articleStatus === "status_undeclared"
                   ? articleStatusNotice(sys.articleStatus, isRTL)

@@ -5,9 +5,10 @@
  * ─────────────────────────────────────────────────────────────
  * A subtle, non-intrusive banner shown inside /laws to a
  * signed-in user who does not yet have full library access
- * (tier below Pro — src/hooks/useSubscription.ts's
- * "library-full-access" gate), inviting them to redeem a library
- * invitation code if they have one. Clicking "تفعيل الكود" opens
+ * (the server's answer, GET /api/v1/library/access: a Pro+ tier,
+ * an active library grant, or an admin), inviting them to redeem
+ * a library invitation code if they have one. It waits for that
+ * answer, so it never flashes for a subscriber. Clicking "تفعيل الكود" opens
  * InvitationModal, which spends the code through
  * POST /api/v1/library/invitations/redeem.
  *
@@ -25,21 +26,21 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Gift, X } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
-import { useSubscription } from "@/hooks/useSubscription";
+import { useLibraryFullAccess } from "@/lib/library/useLibraryFullAccess";
 import { isSupabaseMode } from "@/lib/services/api";
 import InvitationModal from "./InvitationModal";
 
 export default function InvitationBanner() {
   const { isDark } = useTheme();
   const { isLoggedIn } = useUser();
-  const { can } = useSubscription();
+  const libraryAccess = useLibraryFullAccess();
   const [dismissed, setDismissed] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
 
   // Demo mode cannot redeem anything — the endpoint only exists in Supabase
   // mode (see redeemLibraryInvitation's DEMO guard) — so offering the CTA
   // there would be a control that can only fail.
-  const eligible = isLoggedIn && isSupabaseMode && !can("library-full-access");
+  const eligible = isLoggedIn && isSupabaseMode && !libraryAccess.loading && !libraryAccess.hasFullAccess;
 
   if (!eligible || dismissed) {
     return <InvitationModal open={modalOpen} onClose={() => setModalOpen(false)} />;

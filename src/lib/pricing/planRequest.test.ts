@@ -123,7 +123,12 @@ test("/laws/subscribe marks the ?plan= it was sent and takes a guest to /login a
   assert.match(src, /planFromParam\(\s*new URLSearchParams\(window\.location\.search\)\.get\("plan"\),/);
   assert.match(src, /chosenPlanId === plan\.id && \(/);
   // Arriving with a plan never sends a request: only the button does.
-  const effect = src.slice(src.indexOf("const [chosenPlanId"), src.indexOf("// \"pro\" tier or higher"));
+  // The ?plan= effect, from its state up to the effect's closing `}, []);`.
+  const effectStart = src.indexOf("const [chosenPlanId");
+  const effectEnd = src.indexOf("}, []);", effectStart);
+  assert.ok(effectStart >= 0 && effectEnd > effectStart, "the ?plan= effect was not found");
+  const effect = src.slice(effectStart, effectEnd);
+  assert.match(effect, /setChosenPlanId\(chosen\)/);
   assert.doesNotMatch(effect, /requestEntitlement|handleSubscribe/);
   assert.match(src, /window\.location\.href = `\/login\?next=\$\{encodeURIComponent\(`\/laws\/subscribe\?plan=\$\{planId\}`\)\}`;/);
   assert.doesNotMatch(src, /useSearchParams\(|import[^;]*useSearchParams/);

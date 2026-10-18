@@ -11,12 +11,12 @@ import {
 import { useTheme } from "@/components/ThemeProvider";
 import InvitationModal from "@/components/InvitationModal";
 import { useUser } from "@/hooks/useUser";
-import { useSubscription } from "@/hooks/useSubscription";
 import { isSupabaseMode } from "@/lib/services/api";
 import { requestEntitlement } from "@/lib/services/entitlementService";
 import { planFromParam } from "@/lib/pricing/planRequest";
 import { LIBRARY_STAT_KEYS, LIBRARY_STAT_LABELS, formatLibraryCount } from "@/lib/library/libraryStats";
 import { useLibraryStats } from "@/lib/library/useLibraryStats";
+import { useLibraryFullAccess } from "@/lib/library/useLibraryFullAccess";
 
 // ─── Bilingual ──────────────────────────────────────────────────────────────
 
@@ -212,7 +212,7 @@ const txt = {
 export default function LawsSubscribePage() {
   const { isDark, lang } = useTheme();
   const { isLoggedIn } = useUser();
-  const { can } = useSubscription();
+  const libraryAccess = useLibraryFullAccess();
   const isAr = lang === "ar";
   const t = isAr ? txt.ar : txt.en;
   const Arrow = isAr ? ArrowLeft : ArrowRight;
@@ -248,12 +248,13 @@ export default function LawsSubscribePage() {
           label: isAr ? LIBRARY_STAT_LABELS[key].ar : LIBRARY_STAT_LABELS[key].en,
         })).filter((tile) => library.status === "loading" || tile.val !== null);
 
-  // "pro" tier or higher — src/hooks/useSubscription.ts's
-  // "library-full-access" gate — is what actually unlocks the full library.
-  const hasFullLibrary = can("library-full-access");
+  // The full library is the server's answer (GET /api/v1/library/access): a
+  // Pro+ tier, an active library grant, or an admin. The client's tier-only
+  // gate told a library subscriber to redeem a code.
   // The code-redeem CTA can only ever succeed for a signed-in user in
-  // Supabase mode (redeemLibraryInvitation throws in demo mode).
-  const canRedeemCode = isLoggedIn && isSupabaseMode && !hasFullLibrary;
+  // Supabase mode (redeemLibraryInvitation throws in demo mode), and it waits
+  // for the answer so it never flashes for a subscriber.
+  const canRedeemCode = isLoggedIn && isSupabaseMode && !libraryAccess.loading && !libraryAccess.hasFullAccess;
 
   function handleSubscribe(planId: string) {
     if (planId === "free") {

@@ -16,7 +16,6 @@ import { splitNumberedItem } from "./_numbered-item";
 import { READER_SCROLL_MARGIN_TOP } from "./_reader-anchors";
 import { visibleAmendments } from "./_previous-versions";
 import { OfficialMetaLockedRow } from "../components/OfficialMetaLockedRow";
-import { useSubscription } from "@/hooks/useSubscription";
 
 /**
  * «معدّلة» badge with amber styling and pulse indicator (Rule 5).
@@ -625,7 +624,7 @@ export function RightPanel({ article, isDark, cart, onTogglePrinciple, onToggleP
 }
 
 // ─── Article Block ─────────────────────────────────────────────────────────────
-export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddArticle, onRemoveArticle, onAddExecReg, onRemoveExecReg, onActive, isActive, showPaywall, onExplain, isRTL = true, fontClass = "text-[13px]", isReadingMode = false, viewMode = "all" }: {
+export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddArticle, onRemoveArticle, onAddExecReg, onRemoveExecReg, onActive, isActive, showPaywall, onExplain, isRTL = true, fontClass = "text-[13px]", isReadingMode = false, viewMode = "all", viewerHasFullAccess }: {
   article: LawArticle; lawName: string;
   /** The document's own kind, straight from `library.laws.type`. */
   lawType?: string;
@@ -643,6 +642,8 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
   fontClass?: string; // حجم الخط: text-[13px] | text-[15px] | text-[17px]
   isReadingMode?: boolean;
   viewMode?: "all" | "law" | "regulation";
+  /** The law API's `paywall.hasFullAccess`: full library access or a whitelisted law. */
+  viewerHasFullAccess: boolean;
 }) {
   const [showRepealed,   setShowRepealed]   = useState(false);
   const [copied, setCopied]                 = useState(false);
@@ -653,9 +654,8 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
   const previousVersions = visibleAmendments(article.amendments);
   const statusNotice = articleStatusNotice(article.status, isRTL);
   const mergedReg   = getMergedReg(article);
-    const { can }     = useSubscription();
-  const hasLibraryAccess = can("library-full-access");
-  const isLocked    = !article.free && !hasLibraryAccess;
+  // The server's answer for this law, not the client's tier-only gate.
+  const isLocked    = !article.free && !viewerHasFullAccess;
   /**
    * For a repealed article the substantive content lives in `originalText` —
    * `text` is legitimately empty, because the live article no longer exists.

@@ -87,6 +87,10 @@ function LawSystemPageContent() {
   // back to its own default when this is still null (loading, or the fetch
   // failed before setting it).
   const [libraryFreeLimit, setLibraryFreeLimit] = useState<number | null>(null);
+  // `paywall.hasFullAccess` from the same response: full library access (a
+  // Pro+ tier, an active library grant, or an admin) or a whitelisted law.
+  // ArticleBlock locks an article on it, never on the client's tier.
+  const [viewerHasFullAccess, setViewerHasFullAccess] = useState(false);
   // T28-22/23/26: official-publication fields (lock flag, official URL, Umm
   // al-Qura issue, the law that replaced a repealed one). Held beside `law`
   // rather than inside it — the LawSystem mapping below is a shared whitelist.
@@ -174,6 +178,7 @@ function LawSystemPageContent() {
         setLawMeta(getLawMeta(slug));
         setOfficialMeta(EMPTY_OFFICIAL_META);
         setPreambleLocked(false);
+        setViewerHasFullAccess(false);
         setLawNotice("");
         const res = await fetch(`/api/library/laws/${apiSlug(slug)}`);
         if (cancelled) return;
@@ -189,6 +194,7 @@ function LawSystemPageContent() {
         setLibraryFreeLimit(
           typeof data?.paywall?.freeLimit === "number" ? data.paywall.freeLimit : null,
         );
+        setViewerHasFullAccess(data?.paywall?.hasFullAccess === true);
         setOfficialMeta(parseOfficialMeta(data));
         setPreambleLocked(data?.preambleLocked === true);
         setLawNotice(typeof data?.notice === "string" ? data.notice.trim() : "");
@@ -1340,6 +1346,7 @@ function LawSystemPageContent() {
                       fontClass={fontClass}
                       isReadingMode={isReadingMode}
                       viewMode={viewMode}
+                      viewerHasFullAccess={viewerHasFullAccess}
                     />
                   ));
                 })()}
@@ -1369,6 +1376,7 @@ function LawSystemPageContent() {
                     fontClass={fontClass}
                     isReadingMode={isReadingMode}
                     viewMode={viewMode}
+                    viewerHasFullAccess={viewerHasFullAccess}
                   />
                 );
                 const chapterPill = (title: string) => (
