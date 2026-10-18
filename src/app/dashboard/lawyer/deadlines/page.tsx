@@ -18,6 +18,7 @@ import {
   type Deadline, type DeadlineRule, type HolidayRule, type DeadlineStatus,
 } from "@/lib/services/deadlinesService";
 import AddDeadlineModal from "../_components/AddDeadlineModal";
+import ConsultantGate from "@/components/dashboard/ConsultantGate";
 import DeadlineCard, { formatGregorianAr, AR_MONTHS } from "../_components/DeadlineCard";
 
 // ─── «العطل الرسمية» shape in words ────────────────────────────────────────────
@@ -49,7 +50,16 @@ const OPEN_COUNT_FORMS: ArabicCountForms = {
   few: "مهل مفتوحة", many: "مهلة مفتوحة",
 };
 
-export default function LawyerDeadlinesPage() {
+/** Art. 18 (owner ١٧٣ / ٢١٩): a consultant gets the lock panel instead of this tool. */
+export default function LawyerDeadlinesRoute() {
+  return (
+    <ConsultantGate>
+      <LawyerDeadlinesPage />
+    </ConsultantGate>
+  );
+}
+
+function LawyerDeadlinesPage() {
   const { isDark } = useTheme();
   const user = useUser();
 

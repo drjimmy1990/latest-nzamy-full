@@ -54,7 +54,8 @@ import AddCaseModal from "./_components/AddCaseModal";
 import AddTaskModal from "./_components/AddTaskModal";
 import QuickToolsCustomizer, { QUICK_TOOL_ICONS } from "./_components/QuickToolsCustomizer";
 import { ACTIVITY_TYPE_CONFIG } from "./_data/mockData";
-import { DEFAULT_QUICK_TOOLS, resolveQuickToolIds, quickToolsFor } from "@/lib/lawyerQuickTools";
+import { DEFAULT_QUICK_TOOLS, resolveQuickToolIds, quickToolsFor, quickToolIdsForPracticeKind } from "@/lib/lawyerQuickTools";
+import { isConsultantBlockedPath } from "@/lib/auth/practiceKind";
 import { getPreferences } from "@/lib/services/preferencesService";
 import {
   getLawyerDashboardSummary,
@@ -206,7 +207,7 @@ function shortRequestRef(requestId: string | undefined): string {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function LawyerDashboardPage() {
-  const { name, tier: userTier, userId, userType } = useUser();
+  const { name, tier: userTier, userId, userType, practiceKind, loading: userLoading } = useUser();
   const { isDark } = useTheme();
   // `activityTab` — REMOVED. It only ever held "all": the «نشاط AI» filter it
   // drove could not match a row, because nothing records AI-tool usage. See the
@@ -357,7 +358,18 @@ export default function LawyerDashboardPage() {
       });
     return () => { cancelled = true; };
   }, []);
-  const quickTools = useMemo(() => (quickToolIds ? quickToolsFor(quickToolIds) : null), [quickToolIds]);
+  // Art. 18 (owner ١٧٣ / ٢١٩): a consultant's grid drops the court tools, and
+  // falls back to his own default if fewer than three are left. It stays on the
+  // placeholders until the session says which kind of lawyer this is, so a
+  // consultant never sees a court tool flash past.
+  const visibleQuickToolIds = useMemo(
+    () => (quickToolIds && !userLoading ? quickToolIdsForPracticeKind(quickToolIds, practiceKind) : null),
+    [quickToolIds, userLoading, practiceKind],
+  );
+  const quickTools = useMemo(
+    () => (visibleQuickToolIds ? quickToolsFor(visibleQuickToolIds) : null),
+    [visibleQuickToolIds],
+  );
 
   // ─── Derived tier — REMOVED ───────────────────────────────────────────────
   // `deriveLawyerTier()` translated `useUser().tier` into the four-plan
@@ -859,7 +871,10 @@ export default function LawyerDashboardPage() {
             { label: "جدول الجلسات",     icon: Gavel,         href: "/dashboard/lawyer/hearings", accent: false },
             { label: "مستنداتي",           icon: Folder,        href: "/dashboard/lawyer/documents", accent: false },
             { label: "تتبع الوقت",        icon: Timer,         href: "/dashboard/lawyer/tasks",    accent: false },
-          ].map((item) => {
+          ]
+            // Art. 18: a consultant is not offered the hearings schedule.
+            .filter((item) => !(practiceKind === "consultant" && item.href && isConsultantBlockedPath(item.href)))
+            .map((item) => {
             const Icon = item.icon;
             const base = `flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold transition-all select-none ${
               item.accent
@@ -1359,11 +1374,12 @@ export default function LawyerDashboardPage() {
           />
         )}
         {showAddTask && <AddTaskModal onClose={() => setShowAddTask(false)} isDark={isDark} />}
-        {showQuickToolsCustomizer && quickToolIds && (
+        {showQuickToolsCustomizer && visibleQuickToolIds && (
           <QuickToolsCustomizer
             key="quick-tools"
             isDark={isDark}
-            currentIds={quickToolIds}
+            currentIds={visibleQuickToolIds}
+            practiceKind={practiceKind}
             canSave={isSupabaseMode}
             onClose={() => setShowQuickToolsCustomizer(false)}
             onSaved={setQuickToolIds}

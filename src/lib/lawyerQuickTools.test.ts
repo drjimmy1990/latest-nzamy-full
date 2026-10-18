@@ -12,8 +12,11 @@ import {
   resolveQuickToolIds,
   quickToolsFor,
   isKnownQuickToolId,
+  quickToolsForPracticeKind,
+  quickToolIdsForPracticeKind,
 } from "./lawyerQuickTools.ts";
 import { LAWYER_AI_TOOLS } from "../constants/lawyerAiCatalog.ts";
+import { isConsultantBlockedPath } from "./auth/practiceKind.ts";
 
 // ── The registry only offers real pages ────────────────────────────────────
 
@@ -125,4 +128,43 @@ test("quickToolsFor maps ids to entries in order and skips unknown ones", () => 
   assert.deepEqual(quickToolsFor(["draft", "nope", "cases"]).map((t) => t.href), ["/ai/draft", "/dashboard/lawyer/cases"]);
   assert.equal(isKnownQuickToolId("cases"), true);
   assert.equal(isKnownQuickToolId("secretary"), false);
+});
+
+// ── Art. 18: the consultant (owner ١٧٣ / ٢١٩) ────────────────────────────────
+
+test("the registry offers four court tools, and a consultant sees none of them", () => {
+  assert.deepEqual(
+    LAWYER_QUICK_TOOLS.filter((t) => isConsultantBlockedPath(t.href)).map((t) => t.id),
+    ["hearings", "deadlines", "brief-check", "wargaming"],
+  );
+  const shown = quickToolsForPracticeKind(LAWYER_QUICK_TOOLS, "consultant");
+  assert.deepEqual(shown.filter((t) => isConsultantBlockedPath(t.href)), []);
+  assert.deepEqual(shown, LAWYER_QUICK_TOOLS.filter((t) => !isConsultantBlockedPath(t.href)));
+});
+
+test("an advocate's quick tools are unchanged", () => {
+  assert.deepEqual(quickToolsForPracticeKind(LAWYER_QUICK_TOOLS, "advocate"), [...LAWYER_QUICK_TOOLS]);
+  assert.deepEqual(quickToolIdsForPracticeKind(["hearings", "wargaming", "cases"], "advocate"), ["hearings", "wargaming", "cases"]);
+});
+
+test("a consultant's default is the owner's four without the brief review, and still saveable", () => {
+  const ids = quickToolIdsForPracticeKind(DEFAULT_QUICK_TOOLS, "consultant");
+  assert.deepEqual(ids, ["cases", "draft", "calculator"]);
+  assert.ok(Array.isArray(validateQuickToolIds(ids)));
+});
+
+test("a consultant's saved choice loses its court tools; under 3 left → his default", () => {
+  assert.deepEqual(
+    quickToolIdsForPracticeKind(["hearings", "tasks", "wargaming", "draft", "clients"], "consultant"),
+    ["tasks", "draft", "clients"],
+  );
+  assert.deepEqual(
+    quickToolIdsForPracticeKind(["hearings", "deadlines", "brief-check", "cases"], "consultant"),
+    ["cases", "draft", "calculator"],
+  );
+  for (const stored of [LAWYER_QUICK_TOOLS.slice(0, 8).map((t) => t.id), ["hearings", "deadlines", "wargaming"]]) {
+    const ids = quickToolIdsForPracticeKind(stored, "consultant");
+    assert.ok(Array.isArray(validateQuickToolIds(ids)), JSON.stringify(ids));
+    assert.deepEqual(quickToolsFor(ids).filter((t) => isConsultantBlockedPath(t.href)), []);
+  }
 });

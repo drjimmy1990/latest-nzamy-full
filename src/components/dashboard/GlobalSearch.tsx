@@ -102,7 +102,7 @@ function ContentTypeIcon({ type }: { type: PersonalContentKind }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export function GlobalSearch() {
   const { isDark, lang } = useTheme();
-  const { userType: sessionUserType, subRole, active_roles, governmentRole, businessRole, businessMembership, affiliation, isDemoBypass, dashboardMode, country } = useUser();
+  const { userType: sessionUserType, subRole, active_roles, governmentRole, businessRole, businessMembership, affiliation, isDemoBypass, dashboardMode, country, practiceKind } = useUser();
   const pathname = usePathname() ?? "/";
   const isAr = lang === "ar";
   const router = useRouter();
@@ -131,8 +131,9 @@ export function GlobalSearch() {
     (sessionUserType === "corporate" || !!businessMembership);
   const userType = isBusinessIntake ? "corporate" : pathUserType ?? sessionUserType;
 
-  // Gather all tools for this user
-  const groups = getSidebarByUserType(userType, dashboardMode, subRole, active_roles ?? [], governmentRole, businessRole, affiliation?.role, isDemoBypass, country);
+  // Gather all tools for this user — the same list as the sidebar, so a
+  // consultant (Art. 18) finds no pleading or hearings tool here either.
+  const groups = getSidebarByUserType(userType, dashboardMode, subRole, active_roles ?? [], governmentRole, businessRole, affiliation?.role, isDemoBypass, country, practiceKind);
   const allTools = extractTools(groups, hasClientGroup);
 
   // ── The account's own content ─────────────────────────────────────────────

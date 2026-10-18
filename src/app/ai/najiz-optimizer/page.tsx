@@ -11,6 +11,7 @@ import {
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
+import ConsultantGate from "@/components/dashboard/ConsultantGate";
 import { MOCK_DRAFT } from "@/components/draft/draftConstants";
 
 // ─── Najiz Optimizer Core Logic ───────────────────────────────────────────────
@@ -123,7 +124,16 @@ function CharBar({ count, isDark }: { count: number; isDark: boolean }) {
 }
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
-export default function NajizOptimizerPage() {
+/** Art. 18 (owner ١٧٣ / ٢١٩): a consultant gets the lock panel instead of this tool. */
+export default function NajizOptimizerRoute() {
+  return (
+    <ConsultantGate>
+      <NajizOptimizerPage />
+    </ConsultantGate>
+  );
+}
+
+function NajizOptimizerPage() {
   const { isDark } = useTheme();
   const [inputText, setInputText]     = useState("");
   const [result,    setResult]        = useState<string | null>(null);

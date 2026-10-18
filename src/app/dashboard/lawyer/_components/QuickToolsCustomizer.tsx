@@ -17,9 +17,12 @@ import {
   QUICK_TOOLS_MAX,
   QUICK_TOOL_GROUP_LABELS,
   resolveQuickToolIds,
+  quickToolsForPracticeKind,
+  quickToolIdsForPracticeKind,
   type QuickToolGroup,
   type QuickToolIcon,
 } from "@/lib/lawyerQuickTools";
+import type { PracticeKind } from "@/lib/auth/practiceKind";
 
 /** The registry stores icon NAMES (it is loaded by node tests); this maps them. */
 export const QUICK_TOOL_ICONS: Record<QuickToolIcon, React.ElementType> = {
@@ -35,6 +38,8 @@ interface Props {
   currentIds: readonly string[];
   /** false in demo mode: there is no account to save to */
   canSave: boolean;
+  /** Art. 18: a consultant is offered no court tool, and his default has none. */
+  practiceKind?: PracticeKind;
   onClose: () => void;
   onSaved: (ids: string[]) => void;
 }
@@ -52,8 +57,10 @@ function arabicSaveError(err: unknown): string {
  * preferences `{ quickTools }` — into user_settings.preferences, never the
  * browser. The order on the dashboard is the order they were ticked.
  */
-export default function QuickToolsCustomizer({ isDark, currentIds, canSave, onClose, onSaved }: Props) {
+export default function QuickToolsCustomizer({ isDark, currentIds, canSave, practiceKind = "advocate", onClose, onSaved }: Props) {
   const [selected, setSelected] = useState<string[]>(() => [...currentIds]);
+  const offeredTools = quickToolsForPracticeKind(LAWYER_QUICK_TOOLS, practiceKind);
+  const defaultIds = quickToolIdsForPracticeKind(DEFAULT_QUICK_TOOLS, practiceKind);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,8 +71,8 @@ export default function QuickToolsCustomizer({ isDark, currentIds, canSave, onCl
     : count > QUICK_TOOLS_MAX
       ? `الحد الأقصى ${toArabicDigits(QUICK_TOOLS_MAX)} أدوات — ألغِ تحديد ${toArabicDigits(count - QUICK_TOOLS_MAX)} قبل الحفظ.`
       : null;
-  const isDefault = selected.length === DEFAULT_QUICK_TOOLS.length
-    && selected.every((id, i) => id === DEFAULT_QUICK_TOOLS[i]);
+  const isDefault = selected.length === defaultIds.length
+    && selected.every((id, i) => id === defaultIds[i]);
 
   const toggle = (id: string) => {
     setError(null);
@@ -146,7 +153,7 @@ export default function QuickToolsCustomizer({ isDark, currentIds, canSave, onCl
                 {QUICK_TOOL_GROUP_LABELS[group]}
               </legend>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {LAWYER_QUICK_TOOLS.filter((tool) => tool.group === group).map((tool) => {
+                {offeredTools.filter((tool) => tool.group === group).map((tool) => {
                   const checked = selected.includes(tool.id);
                   const Icon = QUICK_TOOL_ICONS[tool.icon];
                   return (
@@ -194,7 +201,7 @@ export default function QuickToolsCustomizer({ isDark, currentIds, canSave, onCl
         <div className="mt-5 flex items-center gap-2">
           <button
             type="button"
-            onClick={() => { setError(null); setSelected([...DEFAULT_QUICK_TOOLS]); }}
+            onClick={() => { setError(null); setSelected([...defaultIds]); }}
             disabled={isDefault || saving}
             className={`flex items-center gap-1.5 rounded-xl border px-3.5 py-2.5 text-[12px] font-bold transition-colors ${
               isDefault || saving

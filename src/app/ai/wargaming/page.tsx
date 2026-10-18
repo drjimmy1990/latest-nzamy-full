@@ -15,6 +15,7 @@ import { useUser } from "@/hooks/useUser";
 import { VoiceInput } from "@/components/ui/VoiceInput";
 import AiResultActions from "@/components/AiResultActions";
 import BetaReviewGate from "@/components/BetaReviewGate";
+import ConsultantGate from "@/components/dashboard/ConsultantGate";
 import { useOrderAttachments } from "@/hooks/useOrderAttachments";
 import { createServiceOrder } from "@/lib/services/serviceOrders";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
@@ -877,7 +878,16 @@ function submitErrorMessageAr(err: unknown): string {
 }
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
-export default function AIWargamingPage() {
+/** Art. 18 (owner ١٧٣ / ٢١٩): a consultant gets the lock panel instead of this tool. */
+export default function AIWargamingRoute() {
+  return (
+    <ConsultantGate>
+      <AIWargamingPage />
+    </ConsultantGate>
+  );
+}
+
+function AIWargamingPage() {
   const { isDark:D } = useTheme();
   const user = useUser();
 

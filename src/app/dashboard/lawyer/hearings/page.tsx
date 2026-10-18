@@ -87,6 +87,7 @@ import { getLawyerHearings, type HearingDto } from "@/lib/services/lawyerHearing
 import type { WorkflowRequest } from "@/lib/workflowStore";
 import { useUser } from "@/hooks/useUser";
 import AddHearingModal from "../_components/AddHearingModal";
+import ConsultantGate from "@/components/dashboard/ConsultantGate";
 import { formatTimeOfDayAr, parseTimeOfDay } from "./_timeOfDay";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -844,7 +845,16 @@ function CalendarView({events,isDark,onAddOnDate}:{events:CalEvent[];isDark:bool
 }
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
-export default function LawyerHearingsPage() {
+/** Art. 18 (owner ١٧٣ / ٢١٩): a consultant gets the lock panel instead of this tool. */
+export default function LawyerHearingsRoute() {
+  return (
+    <ConsultantGate>
+      <LawyerHearingsPage />
+    </ConsultantGate>
+  );
+}
+
+function LawyerHearingsPage() {
   const {isDark} = useTheme();
   const user = useUser();
   const searchParams = useSearchParams();

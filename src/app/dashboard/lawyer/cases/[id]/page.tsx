@@ -29,6 +29,7 @@ import AddCaseStageModal from "../../_components/AddCaseStageModal";
 import AddDeadlineModal from "../../_components/AddDeadlineModal";
 import RecordStageOutcomeModal from "../../_components/RecordStageOutcomeModal";
 import DeadlineCard, { daysLeftChip } from "../../_components/DeadlineCard";
+import { ConsultantBlockedNote } from "@/components/dashboard/ConsultantGate";
 import dynamic from "next/dynamic";
 import {
   itemsOf,
@@ -458,6 +459,13 @@ export default function CaseDetailPage() {
   const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null);
 
   const user = useUser();
+  // Art. 18 (owner ١٧٣ / ٢١٩): a consultant may not plead or manage hearings,
+  // and the hearing, stage and deadline writes refuse him with 403. His case
+  // tabs keep everything they read and lose the controls that write; a note
+  // says why. Both flags wait for the session, so neither the controls nor
+  // the note show for a moment to the wrong lawyer.
+  const courtWritesAllowed = !user.loading && user.practiceKind !== "consultant";
+  const courtWritesRefused = !user.loading && user.practiceKind === "consultant";
   // Declared here (not beside loadCaseHearings further down) because the
   // `hearings` useMemo below reads it, and hooks below its own declaration
   // in the same component are a TDZ error, not just a style choice.
@@ -1611,21 +1619,26 @@ export default function CaseDetailPage() {
                       {hearingsSortDesc ? "الأحدث أولاً" : "الأقرب أولاً"}
                     </button>
                   )}
+                  {courtWritesAllowed && (
                   <Link href="/dashboard/lawyer/hearings" title="فتح تقويم الجلسات العام"
                     className={`flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-[11px] font-semibold border transition-colors ${isDark ? "border-white/10 text-zinc-400 hover:bg-white/5" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
                     <CalendarCheck size={13} />تقويم الجلسات
                   </Link>
+                  )}
                   {/* Was `disabled title="قريباً"` — the hearings table did not
                       exist. Phase 1 (2026-09-03) built it; this button opens the
                       same AddHearingModal the standalone diary uses, with the
                       case pre-filled via `caseRequestId` so it cannot be typed
                       wrong or left unlinked. */}
+                  {courtWritesAllowed && (
                   <button onClick={() => setShowAddHearing(true)}
                     className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#092e22] transition-colors">
                     <Plus size={12} weight="bold" />إضافة جلسة
                   </button>
+                  )}
                 </div>
               </div>
+              {courtWritesRefused && <ConsultantBlockedNote />}
               {hearingsView === "loading" ? (
                 <div className={`${card} p-10 flex items-center justify-center gap-2`}>
                   <Spinner size={20} className="text-royal animate-spin" />
@@ -1647,7 +1660,9 @@ export default function CaseDetailPage() {
                 <div className={`${card} p-10 flex flex-col items-center justify-center`}>
                   <CalendarCheck size={32} className={`mb-3 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
                   <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>لا توجد جلسات مسجّلة</p>
-                  <p className={`text-[11px] mt-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>أضِف أول جلسة لهذه القضية بالزر أعلاه.</p>
+                  {courtWritesAllowed && (
+                    <p className={`text-[11px] mt-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>أضِف أول جلسة لهذه القضية بالزر أعلاه.</p>
+                  )}
                 </div>
               ) : (
                 sortedHearings.map((h, i) => (
@@ -1682,11 +1697,14 @@ export default function CaseDetailPage() {
                 <p className={`text-[12px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
                   {caseStages.length === 0 ? "لا درجات تقاضٍ مسجّلة" : `${toArabicDigits(caseStages.length)} درجة تقاضٍ`}
                 </p>
+                {courtWritesAllowed && (
                 <button onClick={() => setShowAddStage(true)}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#092e22] transition-colors">
                   <Plus size={12} weight="bold" />إضافة درجة تقاضٍ
                 </button>
+                )}
               </div>
+              {courtWritesRefused && <ConsultantBlockedNote />}
               {stagesView === "loading" ? (
                 <div className={`${card} p-10 flex items-center justify-center gap-2`}>
                   <Spinner size={20} className="text-royal animate-spin" />
@@ -1708,7 +1726,9 @@ export default function CaseDetailPage() {
                 <div className={`${card} p-10 flex flex-col items-center justify-center`}>
                   <Scales size={32} className={`mb-3 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
                   <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>لا توجد درجات تقاضٍ مسجّلة</p>
-                  <p className={`text-[11px] mt-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>سجِّل الدرجة الحالية للقضية (ابتدائي، استئناف...) بالزر أعلاه.</p>
+                  {courtWritesAllowed && (
+                    <p className={`text-[11px] mt-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>سجِّل الدرجة الحالية للقضية (ابتدائي، استئناف...) بالزر أعلاه.</p>
+                  )}
                 </div>
               ) : (
                 caseStages.map((s, i) => {
@@ -1731,10 +1751,12 @@ export default function CaseDetailPage() {
                         </div>
                         <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
                           <span className={`text-[10px] font-bold px-2 py-1 rounded-lg border whitespace-nowrap ${outcome.color}`}>{outcome.label}</span>
+                          {courtWritesAllowed && (
                           <button onClick={() => setEditingStage(s)}
                             className={`text-[11px] font-bold whitespace-nowrap hover:underline ${isDark ? "text-[#C8A762]" : "text-royal"}`}>
                             {!s.outcome || s.outcome === "pending" ? "تسجيل النتيجة" : "تعديل النتيجة"}
                           </button>
+                          )}
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[11px]">
@@ -1771,11 +1793,14 @@ export default function CaseDetailPage() {
                 <p className={`text-[12px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
                   {deadlinesKnown ? countPhraseAr(caseDeadlines.length, DEADLINES_COUNT) : "المهل"}
                 </p>
+                {courtWritesAllowed && (
                 <button onClick={() => setShowAddDeadline(true)}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#092e22] transition-colors">
                   <Plus size={12} weight="bold" />إضافة مهلة
                 </button>
+                )}
               </div>
+              {courtWritesRefused && <ConsultantBlockedNote />}
               {deadlinesView === "loading" ? (
                 <div className={`${card} p-10 flex items-center justify-center gap-2`}>
                   <Spinner size={20} className="text-royal animate-spin" />
@@ -1797,9 +1822,11 @@ export default function CaseDetailPage() {
                 <div className={`${card} p-10 flex flex-col items-center justify-center text-center`}>
                   <Timer size={32} className={`mb-3 ${isDark ? "text-zinc-700" : "text-slate-300"}`} />
                   <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>لا مهل لهذه القضية بعد</p>
-                  <p className={`text-[11px] mt-1 max-w-[320px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                    أضف مهلة، أو سجّل نتيجة درجة تقاضٍ بتاريخ إغلاق وستُحسب مهلة الاعتراض تلقائياً.
-                  </p>
+                  {courtWritesAllowed && (
+                    <p className={`text-[11px] mt-1 max-w-[320px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                      أضف مهلة، أو سجّل نتيجة درجة تقاضٍ بتاريخ إغلاق وستُحسب مهلة الاعتراض تلقائياً.
+                    </p>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-2.5">
@@ -1811,7 +1838,8 @@ export default function CaseDetailPage() {
                       showCaseLink={false}
                       busy={!!deadlineRowBusy[d.id]}
                       error={deadlineRowError[d.id] ?? null}
-                      onAction={(next) => handleDeadlineAction(d, next)}
+                      // No onAction → DeadlineCard shows no «تمّت / إلغاء» buttons.
+                      onAction={courtWritesAllowed ? (next) => handleDeadlineAction(d, next) : undefined}
                     />
                   ))}
                 </div>

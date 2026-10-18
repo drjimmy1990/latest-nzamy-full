@@ -18,6 +18,7 @@ import { isDbUserType } from "@/lib/auth/userTypes";
 import { mergeMembershipReads } from "@/lib/auth/entityMembership";
 import type { ActiveEntityMemberships } from "@/lib/auth/entityMembership";
 import { normalizeGovernmentRole } from "@/hooks/governmentRole";
+import { toPracticeKind, type PracticeKind } from "@/lib/auth/practiceKind";
 import { createClient } from "@/lib/supabase/client";
 import {
   isSupabaseMode as isSupabaseBackend,
@@ -181,6 +182,12 @@ export interface UserSession {
    */
   active_roles?: ProviderRole[];      // مثال: ["notary"] أو ["notary","bailiff"]
   country?:      string;              // البلد (مثال: SA, AE, EG, JO)
+  /**
+   * Art. 18 of نظام المحاماة (owner ١٧٣ / ٢١٩): lawyer_profiles.practice_kind.
+   * A 'consultant' may not plead or manage hearings. Optional because demo and
+   * literal sessions predate it; useUser() always returns a resolved value.
+   */
+  practiceKind?: PracticeKind;
 }
 
 export type UserPermission =
@@ -424,6 +431,12 @@ export interface UseUserReturn extends UserSession {
   /** True if this demo account bypasses ALL beta gating (BETA_REVIEW_MODE + BETA_MONOPOLY_MODE) */
   isDemoBypass: boolean;
   loading: boolean;
+  /**
+   * 'consultant' only for a lawyer whose lawyer_profiles row says so;
+   * 'advocate' for every other account, and when the read fails (42703 before
+   * 20261019_20 runs) — today's behaviour.
+   */
+  practiceKind: PracticeKind;
 }
 
 // ─── Map Supabase user → UserSession ─────────────────────────────────────────
@@ -598,6 +611,45 @@ async function readProfileUserType(
   }
 }
 
+type PracticeKindRead =
+  | { status: "found"; practiceKind: PracticeKind }
+  | { status: "unavailable" };
+
+/** The deploy-order rule: a missing column is logged once, not on every read. */
+let practiceKindFailureLogged = false;
+
+/**
+ * Art. 18 — reads `lawyer_profiles.practice_kind` for one lawyer with its OWN
+ * query. The column is never added to another select, so on a database where
+ * 20261019_20 has not run yet (42703) only this field falls back, to
+ * 'advocate', and the profile and membership reads are untouched. No row reads
+ * as 'advocate' too. The row is reachable through the "lawyers read own
+ * profile" policy; user_id and practice_kind are both in the column grant.
+ */
+async function readPracticeKind(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+): Promise<PracticeKindRead> {
+  try {
+    const { data, error } = await supabase
+      .from("lawyer_profiles")
+      .select("practice_kind")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (error) {
+      if (!practiceKindFailureLogged) {
+        practiceKindFailureLogged = true;
+        console.warn("[useUser] lawyer_profiles.practice_kind read failed; the lawyer is treated as an advocate:", error.message, error.code);
+      }
+      return { status: "unavailable" };
+    }
+    return { status: "found", practiceKind: toPracticeKind(data?.practice_kind) };
+  } catch {
+    return { status: "unavailable" };
+  }
+}
+
 /**
  * Builds the browser-side session.
  *
@@ -616,6 +668,7 @@ function mapSupabaseUser(
   memberships: ActiveEntityMemberships = {},
   profileState: ProfileState = "ok",
   membershipState: MembershipState = "ok",
+  practiceKind: PracticeKind = "advocate",
 ): UserSession {
   if (!user) return GUEST_SESSION;
 
@@ -680,6 +733,8 @@ function mapSupabaseUser(
     businessMembership: memberships.business as UserSession["businessMembership"],
     active_roles:       meta.active_roles,
     country:       meta.country_code ?? "SA",
+    // Only a lawyer can be a consultant (Art. 18).
+    practiceKind:  userType === "lawyer" ? practiceKind : "advocate",
   };
 }
 
@@ -722,9 +777,15 @@ export function useUser(): UseUserReturn {
       authUser: User,
       eventId: number,
     ) => {
-      const [read, membershipRead] = await Promise.all([
-        readProfileUserType(supabase, authUser.id),
+      // practice_kind is read for a lawyer only, so it waits for the profile
+      // read — while still overlapping the four membership reads.
+      const profileRead = readProfileUserType(supabase, authUser.id);
+      const [read, membershipRead, practiceRead] = await Promise.all([
+        profileRead,
         readEntityMemberships(supabase, authUser.id),
+        profileRead.then((r) =>
+          r.status === "found" && r.userType === "lawyer" ? readPracticeKind(supabase, authUser.id) : null,
+        ),
       ]);
       // Superseded or unmounted: drop this result and leave `loading` alone —
       // whichever event overtook this one is responsible for releasing it.
@@ -776,12 +837,26 @@ export function useUser(): UseUserReturn {
               ? "degraded"
               : "unavailable";
 
+        // Art. 18. A failed practice_kind read, or a profile read that failed
+        // altogether, carries the previous answer forward for this same user,
+        // the way the type is carried above — a token refresh on a bad network
+        // must not flip a consultant to an advocate and back. With nothing to
+        // carry (a first load) it is 'advocate', today's behaviour.
+        const practiceKind: PracticeKind =
+          practiceRead?.status === "found"
+            ? practiceRead.practiceKind
+            : (practiceRead?.status === "unavailable" || read.status === "unavailable") &&
+                prev.isLoggedIn && prev.userId === authUser.id
+              ? toPracticeKind(prev.practiceKind)
+              : "advocate";
+
         return mapSupabaseUser(
           authUser,
           read.status === "found" ? read.userType : carried,
           membershipRead.status === "found" ? membershipRead.memberships : carriedMemberships,
           profileState,
           membershipState,
+          practiceKind,
         );
       });
 
@@ -913,7 +988,12 @@ export function useUser(): UseUserReturn {
 
   const isDemoBypass = _DEMO_BYPASS_KEYS.includes(demoKey);
 
-  return { ...session, isDemoBypass, loading };
+  // Art. 18: only a lawyer can be a consultant, and a demo or literal session
+  // without the field reads as an advocate.
+  const practiceKind: PracticeKind =
+    session.userType === "lawyer" ? toPracticeKind(session.practiceKind) : "advocate";
+
+  return { ...session, practiceKind, isDemoBypass, loading };
 }
 
 // ─── Utility ──────────────────────────────────────────────────────────────────

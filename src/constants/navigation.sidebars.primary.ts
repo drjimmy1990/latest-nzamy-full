@@ -1,7 +1,7 @@
 import type { SidebarGroup } from "./navigation.types";
 
-export * from "./navigation.sidebars.legal";
-export * from "./navigation.sidebars.business";
+export * from "./navigation.sidebars.legal.ts";
+export * from "./navigation.sidebars.business.ts";
 
 // ── Individual Sidebar (عميل فرد) ─────────────────────────────────────────────
 // UX DECISION (2026-05-19): Action-First — sidebar links only to high-level entry points.

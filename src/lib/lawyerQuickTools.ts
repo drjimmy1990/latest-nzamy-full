@@ -22,8 +22,11 @@
  * by the preferences validator and by `node --test`, neither of which should
  * load React. The dashboard maps the key to a component.
  *
- * No `@/` imports and no runtime imports at all — keep it that way.
+ * No `@/` imports. The one runtime import is practiceKind.ts, itself pure and
+ * import-free, so the Art. 18 path list exists once — keep it that way.
  */
+
+import { isConsultantBlockedPath, type PracticeKind } from "./auth/practiceKind.ts";
 
 export type QuickToolGroup = "operational" | "ai";
 
@@ -139,4 +142,32 @@ export function resolveQuickToolIds(stored: unknown): string[] {
 /** Registry entries for a list of ids, in the given order; unknown ids skipped. */
 export function quickToolsFor(ids: readonly string[]): QuickTool[] {
   return ids.map((id) => TOOL_BY_ID.get(id)).filter((tool): tool is QuickTool => tool !== undefined);
+}
+
+/**
+ * Art. 18 of نظام المحاماة (owner ١٧٣ / ٢١٩): a consultant may not plead or
+ * manage hearings, so the tools on CONSULTANT_BLOCKED_PREFIXES are removed from
+ * any list shown to him — the dashboard grid and the customizer alike. An
+ * advocate's list comes back as it was.
+ */
+export function quickToolsForPracticeKind<T extends { href: string }>(
+  tools: readonly T[],
+  practiceKind: PracticeKind,
+): T[] {
+  return practiceKind === "consultant"
+    ? tools.filter((tool) => !isConsultantBlockedPath(tool.href))
+    : [...tools];
+}
+
+/**
+ * The ids to show a lawyer of this practice kind. A consultant's saved choice
+ * loses its court tools; if fewer than three survive he gets his own default
+ * (the owner's four minus the brief review), so the result is always something
+ * `validateQuickToolIds` accepts and the customizer can save it unchanged.
+ */
+export function quickToolIdsForPracticeKind(ids: readonly string[], practiceKind: PracticeKind): string[] {
+  if (practiceKind !== "consultant") return [...ids];
+  const kept = quickToolsForPracticeKind(quickToolsFor(ids), practiceKind).map((tool) => tool.id);
+  if (kept.length >= QUICK_TOOLS_MIN) return kept;
+  return quickToolsForPracticeKind(quickToolsFor(DEFAULT_QUICK_TOOLS), practiceKind).map((tool) => tool.id);
 }

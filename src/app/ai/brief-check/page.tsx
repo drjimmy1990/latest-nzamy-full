@@ -36,6 +36,7 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
+import ConsultantGate from "@/components/dashboard/ConsultantGate";
 import { useOrderAttachments } from "@/hooks/useOrderAttachments";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
 import { apiMutate } from "@/lib/services/api";
@@ -49,7 +50,16 @@ import {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function AIBriefCheckPage() {
+/** Art. 18 (owner ١٧٣ / ٢١٩): a consultant gets the lock panel instead of this tool. */
+export default function AIBriefCheckRoute() {
+  return (
+    <ConsultantGate>
+      <AIBriefCheckPage />
+    </ConsultantGate>
+  );
+}
+
+function AIBriefCheckPage() {
   const { isDark } = useTheme();
   const user = useUser();
   const { uploading, attachError, attachFile, removeAttachment, clearAttachError } = useOrderAttachments();
