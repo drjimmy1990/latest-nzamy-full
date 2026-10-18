@@ -3,7 +3,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
-import { usersPatchActions } from "@/lib/auth/staffDecision";
+import { STAFF_CHECK_UNAVAILABLE_AR, usersPatchActions } from "@/lib/auth/staffDecision";
 import type { StaffAction } from "@/lib/auth/staffRoles";
 import { isAssignableUserType } from "@/lib/auth/userTypes";
 import { checkStaffRoleChange } from "@/lib/auth/platformStaffServer";
@@ -194,11 +194,18 @@ export async function PATCH(
 
   try {
     // ── The fields as they are now, for the audit row ──────────────────────
-    const { data: existing } = await adminClient
+    const { data: existing, error: existingError } = await adminClient
       .from("profiles")
       .select("user_type, verified_at, metadata")
       .eq("id", userId)
       .maybeSingle();
+
+    // A type change on an account whose current type cannot be read could be
+    // an admin's demotion: refuse rather than skip the rule below (fail closed).
+    if (body.user_type !== undefined && existingError) {
+      console.error("[admin/users/[id]] PATCH: reading the account before a type change failed:", existingError.code, existingError.message);
+      return NextResponse.json({ error: STAFF_CHECK_UNAVAILABLE_AR }, { status: 503 });
+    }
 
     // ── Demoting an admin: the last super admin stays (owner ٢١٠) ──────────
     // body.user_type is never "admin" here (refused above), so a change on an
@@ -391,11 +398,18 @@ export async function DELETE(
   try {
     // Who is being deleted, read first: afterwards the profile is gone and the
     // audit row is the only trace of it.
-    const { data: target } = await adminClient
+    const { data: target, error: targetError } = await adminClient
       .from("profiles")
       .select("email, display_name, user_type")
       .eq("id", userId)
       .maybeSingle();
+
+    // Unreadable: it could be the last super admin. Refuse rather than skip
+    // the rule below (fail closed).
+    if (targetError) {
+      console.error("[admin/users/[id]] DELETE: reading the account failed:", targetError.code, targetError.message);
+      return NextResponse.json({ error: STAFF_CHECK_UNAVAILABLE_AR }, { status: 503 });
+    }
 
     // The last super admin stays (owner ٢١٠): 400, or 503 when unreadable.
     // Only an admin holds a role, so deleting anyone else reads nothing here.

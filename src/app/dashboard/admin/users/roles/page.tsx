@@ -10,8 +10,9 @@ import { STAFF_ROLES_IN_ORDER, STAFF_ROLE_LABELS_AR, STAFF_ROLE_SUMMARY_AR } fro
 // Each admin holds one staff role in public.platform_staff (20261019_30), and
 // src/lib/auth/staffRoles.ts says which admin-console action each role may
 // take; the server checks it on every admin write (requireStaff). Roles are
-// set on /dashboard/admin/team. Before 20261019_30 runs every admin keeps full
-// access, which this page says too.
+// set on /dashboard/admin/team, which also says when roles are not live yet
+// (before 20261019_30 runs every admin keeps full access). This page states
+// the model only, so it cannot go stale once the migration is applied.
 export default function AdminRolesPage() {
   const { isDark } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -44,7 +45,7 @@ export default function AdminRolesPage() {
           </ul>
           <p className={`text-xs leading-relaxed ${muted}`}>
             كل الأدوار حسابات «مدير» تطّلع على بيانات المنصة؛ الدور يحدد ما يستطيع العضو تغييره من لوحة الإدارة. المدير الذي لم يُعيَّن له
-            دور يُعامَل «مراجعاً». تعمل الأدوار بعد تطبيق تحديث قاعدة البيانات، وحتى ذلك الحين يملك كل حساب «مدير» صلاحية كاملة.
+            دور يُعامَل «مراجعاً». حالة الأدوار الحالية لكل عضو في صفحة الفريق.
           </p>
           <Link href="/dashboard/admin/team" className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold ${isDark ? "bg-white/5 text-gray-300 hover:bg-white/10" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}>
             تعيين الأدوار من صفحة الفريق

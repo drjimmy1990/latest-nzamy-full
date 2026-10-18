@@ -29,7 +29,7 @@ export const ADMIN_BACKEND_READINESS: AdminBackendReadinessSurface[] = [
     // (20261019_30), enforced on every admin write by requireStaff, set on
     // this page by a super admin. Before the migration runs every admin keeps
     // full access.
-    note: "الدعوات وتعيين الأدوار (مشرف رئيسي / عمليات / مراجع) تعمل عبر /api/v1/admin/teams، والخادم يتحقق من الدور في كل إجراء إداري. تعمل الأدوار بعد تطبيق تحديث قاعدة البيانات.",
+    note: "الدعوات وتعيين الأدوار (مشرف رئيسي / عمليات / مراجع) تعمل عبر /api/v1/admin/teams، والخادم يتحقق من الدور في كل إجراء إداري.",
   },
   {
     id: "business-profiles",

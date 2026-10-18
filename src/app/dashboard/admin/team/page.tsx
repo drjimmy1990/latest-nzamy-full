@@ -35,10 +35,21 @@ interface TeamMember {
   staffRole: StaffRole | null;
 }
 
+/**
+ * What the API could say about roles:
+ *   ready   — read; the selector and the labels apply.
+ *   missing — public.platform_staff does not exist yet: every admin keeps full
+ *             access until 20261019_30 runs (staffRolesReady false).
+ *   error   — the roles could not be read now (staffRolesError). requireStaff
+ *             fails closed to auditor meanwhile, so nothing here may claim
+ *             full access, and no role can be changed.
+ */
+type RolesState = "ready" | "missing" | "error";
+
 type Load =
   | { state: "loading" }
   | { state: "error"; message: string }
-  | { state: "ok"; team: TeamMember[]; rolesReady: boolean };
+  | { state: "ok"; team: TeamMember[]; rolesState: RolesState };
 
 export default function AdminTeamPage() {
   const { isDark } = useTheme();
@@ -63,7 +74,9 @@ export default function AdminTeamPage() {
           email: typeof m.email === "string" ? m.email : null,
           staffRole: toStaffRole(m.staffRole),
         }));
-      setLoad({ state: "ok", team, rolesReady: body?.staffRolesReady === true });
+      const rolesState: RolesState =
+        body?.staffRolesError === true ? "error" : body?.staffRolesReady === true ? "ready" : "missing";
+      setLoad({ state: "ok", team, rolesState });
     } catch {
       setLoad({ state: "error", message: "تعذّر الاتصال بالخادم" });
     }
@@ -137,12 +150,21 @@ export default function AdminTeamPage() {
         </p>
       </motion.div>
 
-      {load.state === "ok" && !load.rolesReady && (
+      {load.state === "ok" && load.rolesState === "missing" && (
         <div className={`rounded-2xl border p-4 flex items-start gap-2 ${isDark ? "border-amber-500/25 bg-amber-500/[0.07]" : "border-amber-200 bg-amber-50"}`}>
           <Info size={16} weight="fill" className={`mt-0.5 flex-shrink-0 ${isDark ? "text-amber-400" : "text-amber-600"}`} />
           <p className={`text-sm leading-relaxed ${isDark ? "text-amber-100/80" : "text-amber-900/80"}`}>
             أدوار الفريق تعمل بعد تطبيق تحديث قاعدة البيانات. حتى ذلك الحين يملك كل حساب «مدير» صلاحية كاملة،
             ولا يمكن تغيير الأدوار.
+          </p>
+        </div>
+      )}
+
+      {load.state === "ok" && load.rolesState === "error" && (
+        <div className={`rounded-2xl border p-4 flex items-start gap-2 ${isDark ? "border-red-500/25 bg-red-500/[0.07]" : "border-red-200 bg-red-50"}`}>
+          <Info size={16} weight="fill" className={`mt-0.5 flex-shrink-0 ${isDark ? "text-red-400" : "text-red-600"}`} />
+          <p className={`text-sm leading-relaxed ${isDark ? "text-red-100/80" : "text-red-900/80"}`}>
+            تعذّر قراءة أدوار الفريق الآن — أعد تحميل الصفحة بعد قليل. لا يمكن تغيير الأدوار حتى تُقرأ.
           </p>
         </div>
       )}
@@ -166,7 +188,7 @@ export default function AdminTeamPage() {
           load.team.map((member) => {
             const isSelf = !!userId && isSameAccount(member.id, userId);
             const effective: StaffRole = member.staffRole ?? "auditor";
-            const editable = canManage && load.rolesReady && !isSelf;
+            const editable = canManage && load.rolesState === "ready" && !isSelf;
             return (
               <div
                 key={member.id}
@@ -181,9 +203,13 @@ export default function AdminTeamPage() {
                   {rowError?.id === member.id && <p className="mt-1 text-xs text-red-500">{rowError.text}</p>}
                 </div>
 
-                {!load.rolesReady ? (
+                {load.rolesState === "missing" ? (
                   <span className={`text-xs font-bold px-2 py-1 rounded-lg ${isDark ? "bg-white/5 text-gray-300" : "bg-gray-100 text-gray-600"}`}>
                     صلاحية كاملة حتى تطبيق التحديث
+                  </span>
+                ) : load.rolesState === "error" ? (
+                  <span className={`text-xs font-bold px-2 py-1 rounded-lg ${isDark ? "bg-white/5 text-gray-300" : "bg-gray-100 text-gray-600"}`}>
+                    الدور غير معروف الآن
                   </span>
                 ) : editable ? (
                   <div className="flex items-center gap-2">

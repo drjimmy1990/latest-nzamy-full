@@ -25,8 +25,10 @@ import { checkStaffRoleChange, readStaffRolesOf } from "@/lib/auth/platformStaff
  * other dashboards' guards (assertRole.ts, UserTypeGuard.tsx).
  *
  *   GET   — the members, each with `staffRole` (null: no row — requireStaff
- *           treats that admin as an auditor), and `staffRolesReady` (false
- *           while the table does not exist yet).
+ *           treats that admin as an auditor), `staffRolesReady` (false only
+ *           while the table does not exist yet) and `staffRolesError` (the
+ *           roles could not be read now — requireStaff then fails closed to
+ *           auditor, so a screen must not read it as "not migrated").
  *   POST  — invite: creates (or promotes) the admin AND writes their role,
  *           `staffRole` in the body, default 'operations'. super_admin only.
  *   PATCH — `{ userId, staffRole }` sets a member's role; `{ id, status }`
@@ -60,8 +62,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // The roles. Missing table (20261019_30 not applied) or a failed read:
-    // every staffRole is null and staffRolesReady false — the list still loads.
+    // The roles. Missing table (20261019_30 not applied): staffRolesReady
+    // false. A failed read: staffRolesError true. Either way every staffRole
+    // is null and the list still loads.
     const rows = data || [];
     const rolesRead = await readStaffRolesOf(
       adminClient,
@@ -87,7 +90,11 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    return NextResponse.json({ team, staffRolesReady: rolesRead.status === "ok" });
+    return NextResponse.json({
+      team,
+      staffRolesReady: rolesRead.status !== "table_missing",
+      staffRolesError: rolesRead.status === "failed",
+    });
 
   } catch (err: any) {
     console.error("[admin/teams] GET error:", err);

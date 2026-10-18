@@ -30,8 +30,10 @@ export default function TeamTab() {
   const [team, setTeam] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // Owner ٢١٠: false until public.platform_staff exists (20261019_30).
-  const [rolesReady, setRolesReady] = useState(false);
+  // Owner ٢١٠: "missing" until public.platform_staff exists (20261019_30);
+  // "error" when the roles could not be read now (staffRolesError) — the
+  // server then treats every admin as an auditor, so no full-access copy.
+  const [rolesState, setRolesState] = useState<"ready" | "missing" | "error">("missing");
   // The viewer's staff role: invitations and the status label are staff
   // management (super_admin). Null (not readable yet) shows them; the server
   // refuses a role that may not.
@@ -54,7 +56,7 @@ export default function TeamTab() {
       if (!res.ok) throw new Error("Failed to fetch team data");
       const data = await res.json();
       setTeam(data.team || []);
-      setRolesReady(data.staffRolesReady === true);
+      setRolesState(data.staffRolesError === true ? "error" : data.staffRolesReady === true ? "ready" : "missing");
       setError(null);
     } catch (err: any) {
       console.error(err);
@@ -174,7 +176,7 @@ export default function TeamTab() {
                 <p className="text-[11px] text-amber-100/80 leading-relaxed">
                   العضو المدعو يطّلع على بيانات المنصة كلها، والدور الذي تختاره أدناه يحدد ما يستطيع تغييره من لوحة
                   الإدارة. المسمى الوظيفي والقسم وصف تنظيمي فقط ولا يُقيّدان شيئاً.
-                  {!rolesReady && " الأدوار تعمل بعد تطبيق تحديث قاعدة البيانات؛ حتى ذلك الحين يملك كل حساب «مدير» صلاحية كاملة."}
+                  {rolesState === "missing" && " الأدوار تعمل بعد تطبيق تحديث قاعدة البيانات؛ حتى ذلك الحين يملك كل حساب «مدير» صلاحية كاملة."}
                 </p>
               </div>
             </div>
@@ -330,9 +332,11 @@ export default function TeamTab() {
                   <div className="flex items-center gap-1.5">
                     <Shield size={11} weight="fill" className="text-[#C8A762]" />
                     <p className="text-[10px] font-bold text-[#C8A762]">
-                      {rolesReady
+                      {rolesState === "ready"
                         ? `الدور: ${STAFF_ROLE_LABELS_AR[toStaffRole(m.staffRole) ?? "auditor"]}${toStaffRole(m.staffRole) ? "" : " (لم يُعيَّن دور)"}`
-                        : "صلاحية كاملة حتى تطبيق تحديث الأدوار"}
+                        : rolesState === "error"
+                          ? "تعذّر قراءة الدور الآن"
+                          : "صلاحية كاملة حتى تطبيق تحديث الأدوار"}
                     </p>
                   </div>
                 </div>

@@ -132,6 +132,9 @@ function handler(rel: string, method: string): string {
 const TEAMS = "app/api/v1/admin/teams/route.ts";
 const USERS = "app/api/v1/admin/users/[id]/route.ts";
 
+/** From an `if (` at `at` to the closing brace of its block (4-space indent). */
+const ifBlock = (body: string, at: number) => body.slice(at, body.indexOf("\n    }", at));
+
 /** The 400 answer for one refusal constant, e.g. `{ error: OWN_ROLE_AR }, { status: 400 }`. */
 const refusal400 = (name: string) => `NextResponse.json({ error: ${name} }, { status: 400 })`;
 
@@ -219,6 +222,20 @@ test("teams GET returns each member's staffRole and whether roles are live", () 
   assert.ok(body.includes("readStaffRolesOf("), "the roles are read with the members");
   assert.ok(body.includes("staffRole:"), "each member carries staffRole");
   assert.ok(body.includes("staffRolesReady"), "the page can tell 'not migrated yet' from 'no row'");
+  // An outage is not "not migrated": requireStaff fails closed to auditor then,
+  // so the screens must not claim full authority.
+  assert.ok(body.includes('staffRolesReady: rolesRead.status !== "table_missing"'), "not ready means the table is missing, nothing else");
+  assert.ok(body.includes('staffRolesError: rolesRead.status === "failed"'), "a failed read is reported apart");
+});
+
+test("the team screens tell a failed role read apart from a missing table", () => {
+  for (const rel of ["app/dashboard/admin/team/page.tsx", "app/dashboard/admin/tabs/TeamTab.tsx"]) {
+    const code = read(rel);
+    assert.ok(code.includes("staffRolesError"), `${rel}: reads staffRolesError`);
+    assert.ok(code.includes("تعذّر قراءة"), `${rel}: says the roles could not be read`);
+  }
+  const page = read("app/dashboard/admin/team/page.tsx");
+  assert.ok(page.includes('rolesState === "ready"'), "the selector needs roles that were read");
 });
 
 test("users DELETE: the last super_admin cannot be deleted", () => {
@@ -233,6 +250,10 @@ test("users DELETE: the last super_admin cannot be deleted", () => {
   const guard = body.slice(body.lastIndexOf("if (", checkAt), checkAt);
   assert.ok(guard.includes('target?.user_type === "admin"'), "only an admin is checked: deleting anyone else reads no role");
   assert.ok(body.includes("NextResponse.json({ error: change.error }, { status: change.status })"));
+  // An unreadable target must not skip the rule (fail closed).
+  const errAt = body.indexOf("if (targetError)");
+  assert.ok(errAt > selfAt && errAt < checkAt, "a failed read of the target is checked before the rule");
+  assert.ok(ifBlock(body, errAt).includes("{ error: STAFF_CHECK_UNAVAILABLE_AR }, { status: 503 }"), "as a 503");
 });
 
 test("users PATCH: demoting an admin checks the rule first and removes the role row after", () => {
@@ -247,6 +268,10 @@ test("users PATCH: demoting an admin checks the rule first and removes the role 
   const removal = body.slice(removeAt, body.indexOf(";", removeAt));
   assert.ok(removal.includes(".delete()") && removal.includes('.eq("user_id", userId)'), "their own row only");
   assert.ok(body.includes("before.staff_role = "), "the audit row records the role removed");
+  // An unreadable account must not skip the rule on a type change (fail closed).
+  const errAt = body.indexOf("if (body.user_type !== undefined && existingError)");
+  assert.ok(errAt > -1 && errAt < checkAt, "a failed read of the account is checked before the rule");
+  assert.ok(ifBlock(body, errAt).includes("{ error: STAFF_CHECK_UNAVAILABLE_AR }, { status: 503 }"), "as a 503");
 });
 
 test("the team page: a selector for super admins only, the API's error text on refusal", () => {
