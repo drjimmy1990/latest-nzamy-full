@@ -29,6 +29,14 @@ export interface VerificationRequest {
   license_number?: string | null;
   email?: string | null;
   phone?: string | null;
+  /**
+   * A 10-minute signed link to the licence image the lawyer uploaded (owner
+   * answer ٢١٩), or null. Lawyer rows only; signed when the list was read, so
+   * it expires 10 minutes after that.
+   */
+  licenceImageUrl?: string | null;
+  /** Lawyer rows only: 'consultant' = مستشار قانوني. */
+  practiceKind?: "advocate" | "consultant";
 }
 
 interface VerificationListResponse {

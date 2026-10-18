@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowLeft, ArrowClockwise, CheckCircle, Info, Plus, SpinnerGap, Trash, Warning } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowClockwise, CheckCircle, IdentificationCard, Info, Plus, SpinnerGap, Trash, UploadSimple, Warning } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
 import { BETA_MONOPOLY_MODE } from "@/lib/betaConfig";
@@ -21,6 +21,7 @@ import {
   type LanguageCode,
 } from "@/lib/services/lawyerProfileFields";
 import { offPlatformContactIssue } from "@/lib/services/contactSanitizer";
+import { LICENCE_ACCEPT, validateLicenceUpload } from "@/lib/services/licenceUpload";
 
 type Form = {
   bio_ar: string;
@@ -57,6 +58,14 @@ const MAX_HEADLINE_LENGTH = 160;
 // field too, not only in the general save banner. Keep in sync with that
 // route's copy.
 const SLUG_TAKEN_MESSAGE = "هذا الرابط مستخدم من محامٍ آخر";
+
+// Owner answer ٢١٩ — the licence image upload (POST /api/v1/lawyer/licence-image).
+const LICENCE_UPLOADED_MESSAGE = "تم رفع صورة الترخيص — يراجعها فريق نظامي";
+const LICENCE_UPLOAD_FAILED = "تعذّر رفع صورة الترخيص. أعد المحاولة.";
+// A 413 for a file that already passed the 5 MB check here came from the
+// server in front of the app (a reverse proxy answers with HTML, not JSON).
+const LICENCE_REJECTED_SIZE = "رفض الخادم حجم الملف. صغّر الصورة ثم أعد المحاولة، وإن تكرّر ذلك فأبلغ فريق نظامي.";
+const LICENCE_NETWORK_ERROR = "تعذّر الاتصال بالخادم. تحقّق من اتصالك ثم أعد المحاولة.";
 
 /**
  * `lawyer_profiles.education` is jsonb — Postgres enforces "is this an
@@ -268,6 +277,13 @@ export default function LawyerProfileEditPage() {
   // Null only before load() has resolved, and the banner is not rendered then
   // (the spinner returns first). Every non-success exit from load() sets it.
   const [blocked, setBlocked] = useState<BlockedReason | null>(null);
+  // Licence image upload (owner answer ٢١٩). Independent of handleSave: the
+  // file goes up on its own button. `licenceInputKey` remounts the file input
+  // to clear it after a successful upload.
+  const [licenceFile, setLicenceFile] = useState<File | null>(null);
+  const [licenceUploading, setLicenceUploading] = useState(false);
+  const [licenceMsg, setLicenceMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [licenceInputKey, setLicenceInputKey] = useState(0);
 
   const load = useCallback(async () => {
     // `isSupabaseMode` is a module-level constant, so this branch is
@@ -424,6 +440,45 @@ export default function LawyerProfileEditPage() {
       setMsg({ type: "err", text });
       if (text === SLUG_TAKEN_MESSAGE) setSlugServerError(text);
     } finally { setSaving(false); }
+  };
+
+  const handleLicenceUpload = async () => {
+    if (!licenceFile || licenceUploading || !loaded) return;
+    setLicenceUploading(true); setLicenceMsg(null);
+    try {
+      // The route's own checks (size, type, and the first bytes agreeing with
+      // the type), run here first so a refusal needs no round trip.
+      const head = new Uint8Array(await licenceFile.slice(0, 16).arrayBuffer());
+      const check = validateLicenceUpload({ size: licenceFile.size, type: licenceFile.type, head });
+      if (!check.ok) { setLicenceMsg({ type: "err", text: check.error }); return; }
+
+      const body = new FormData();
+      body.append("file", licenceFile);
+      // A raw fetch, not apiMutate: apiMutate JSON-encodes its body and sets a
+      // JSON Content-Type, and a file must go as multipart/form-data with the
+      // boundary the browser writes itself — so no Content-Type header here.
+      const res = await fetch("/api/v1/lawyer/licence-image", {
+        method: "POST",
+        body,
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      const data = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (!res.ok) {
+        setLicenceMsg({
+          type: "err",
+          text: data?.error ?? (res.status === 413 ? LICENCE_REJECTED_SIZE : LICENCE_UPLOAD_FAILED),
+        });
+        return;
+      }
+      setLicenceMsg({ type: "ok", text: LICENCE_UPLOADED_MESSAGE });
+      setLicenceFile(null);
+      setLicenceInputKey((k) => k + 1);
+    } catch {
+      setLicenceMsg({ type: "err", text: LICENCE_NETWORK_ERROR });
+    } finally {
+      setLicenceUploading(false);
+    }
   };
 
   const card = isDark
@@ -788,6 +843,57 @@ export default function LawyerProfileEditPage() {
           </Link>
         </div>
       </div>
+
+      {/*
+        Owner answer ٢١٩: the lawyer (or legal consultant) uploads an image of
+        his licence; admins open it from the verification queue. Shown only
+        once the form holds a real professional row — without one the route
+        has no row to save the path on. The page cannot tell whether an image
+        was uploaded before (the path is readable by the service role only),
+        so the status line speaks only about this session's upload.
+      */}
+      {loaded && (
+        <div className={`${card} p-5 space-y-3`}>
+          <div className="flex items-center gap-2">
+            <IdentificationCard size={16} weight="duotone" className="text-[#C8A762]" />
+            <p className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>توثيق الترخيص</p>
+          </div>
+          <div>
+            <label htmlFor="licence-image" className={label}>صورة الترخيص المهني</label>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+              <input key={licenceInputKey} id="licence-image" type="file" accept={LICENCE_ACCEPT}
+                disabled={licenceUploading}
+                onChange={(e) => { setLicenceFile(e.target.files?.[0] ?? null); setLicenceMsg(null); }}
+                className={`${input} file:me-3 file:rounded-lg file:border-0 file:px-3 file:py-1 file:text-[11px] file:font-bold ${
+                  isDark ? "file:bg-zinc-700 file:text-zinc-200" : "file:bg-slate-200 file:text-slate-700"}`} />
+              <button type="button" onClick={handleLicenceUpload} disabled={!licenceFile || licenceUploading}
+                className="flex-shrink-0 flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-[12px] font-bold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                {licenceUploading ? <SpinnerGap size={14} className="animate-spin" /> : <UploadSimple size={14} />} رفع الصورة
+              </button>
+            </div>
+            <p className={`text-[11px] mt-1.5 leading-relaxed ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+              صورة JPG أو PNG أو WEBP، أو ملف PDF، حتى ٥ ميغابايت. لا تظهر في ملفك العام؛ يراجعها فريق نظامي لتوثيق حسابك. تُرفع بزر «رفع الصورة» ولا تحتاج «حفظ التعديلات»، والرفع الجديد يحلّ محلّ السابق.
+            </p>
+          </div>
+          {/* The status line. */}
+          <div role="status" aria-live="polite">
+            {licenceUploading ? (
+              <p className={`text-[12px] font-bold flex items-center gap-2 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+                <SpinnerGap size={14} className="animate-spin flex-shrink-0" /> جارٍ رفع الصورة…
+              </p>
+            ) : licenceMsg ? (
+              <div className={`text-[12px] font-bold px-3 py-2 rounded-xl flex items-start gap-2 ${licenceMsg.type === "ok" ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"}`}>
+                {licenceMsg.type === "ok" ? <CheckCircle size={14} className="flex-shrink-0 mt-0.5" /> : <Warning size={14} className="flex-shrink-0 mt-0.5" />}
+                <span>{licenceMsg.text}</span>
+              </div>
+            ) : licenceFile ? (
+              <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+                الملف المختار: <span dir="ltr">{licenceFile.name}</span> — اضغط «رفع الصورة».
+              </p>
+            ) : null}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

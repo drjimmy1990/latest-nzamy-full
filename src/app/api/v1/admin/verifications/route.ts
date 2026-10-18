@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import type { VerificationStatus } from "@/types/database";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { toPracticeKind } from "@/lib/auth/practiceKind";
 
 /**
  * GET /api/v1/admin/verifications — List verification requests
@@ -13,6 +14,13 @@ import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
  *   - offset (default: 0)
  *
  * Requires: authenticated admin user
+ *
+ * Each lawyer row also carries (owner answer ٢١٩):
+ *   - licenceImageUrl — a 10-minute signed link to the licence image the lawyer
+ *     uploaded (POST /api/v1/lawyer/licence-image), or null when there is none
+ *     or signing failed;
+ *   - practiceKind — 'advocate' | 'consultant'.
+ * Firm and provider rows carry licenceImageUrl: null.
  */
 export async function GET(request: NextRequest) {
   // ── Auth check: ensure the caller is an admin ──────────────────────────────
@@ -66,6 +74,16 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: lawyerError.message }, { status: 500 });
   }
 
+  // ── Licence images (owner answer ٢١٩) ────────────────────────────────────
+  // licence_image_path and practice_kind (20261019_20) come off the `*` above
+  // — service role only for the path. They are deliberately NOT named in the
+  // select: before that migration runs, naming them fails this whole queue
+  // with 42703, while `*` simply leaves them out (→ null / 'advocate').
+  const lawyerRows = (lawyerData ?? []) as Record<string, unknown>[];
+  const licenceImageUrls = await Promise.all(
+    lawyerRows.map((lp) => signLicenceImage(adminClient, lp.licence_image_path)),
+  );
+
   // ── Fetch provider verifications ───────────────────────────────────────────
   let providerQuery = adminClient
     .from("provider_profiles")
@@ -113,7 +131,7 @@ export async function GET(request: NextRequest) {
 
   const verifications = [
     // Lawyer profiles
-    ...(lawyerData ?? []).map((lp: Record<string, unknown>) => {
+    ...lawyerRows.map((lp, i) => {
       const p = lp.profiles as unknown as ProfileJoin;
       return {
         id: `PV-L-${(p.id as string).slice(0, 6)}`,
@@ -127,6 +145,8 @@ export async function GET(request: NextRequest) {
         license_number: lp.license_number as string | null,
         email: p.email,
         phone: p.phone,
+        licenceImageUrl: licenceImageUrls[i],
+        practiceKind: toPracticeKind(lp.practice_kind),
       };
     }),
     // Provider profiles (notary, arbitrator, bailiff)
@@ -144,6 +164,7 @@ export async function GET(request: NextRequest) {
         license_number: pp.license_number as string | null,
         email: p.email,
         phone: p.phone,
+        licenceImageUrl: null,
       };
     }),
     // Firm profiles
@@ -161,6 +182,7 @@ export async function GET(request: NextRequest) {
         license_number: fp.license_number as string | null,
         email: p?.email ?? null,
         phone: p?.phone ?? null,
+        licenceImageUrl: null,
       };
     }),
   ];
@@ -183,6 +205,31 @@ export async function GET(request: NextRequest) {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * A 10-minute signed link to a lawyer's licence image in the private
+ * `documents` bucket, or null — no path, an object that is gone, or any
+ * signing error. Never throws: one bad row must not 500 the whole queue.
+ */
+async function signLicenceImage(
+  adminClient: Awaited<ReturnType<typeof createServiceClient>>,
+  path: unknown,
+): Promise<string | null> {
+  if (typeof path !== "string" || path === "") return null;
+  try {
+    const { data, error } = await adminClient.storage
+      .from("documents")
+      .createSignedUrl(path, 600);
+    if (error || !data?.signedUrl) {
+      console.error("[admin/verifications GET] licence image signing failed:", error?.message);
+      return null;
+    }
+    return data.signedUrl;
+  } catch (err) {
+    console.error("[admin/verifications GET] licence image signing threw:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
 
 function formatRelativeDate(isoDate: string): string {
   const now = Date.now();

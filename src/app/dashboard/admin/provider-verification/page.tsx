@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
   MagnifyingGlass, Check, X, Clock, Warning,
@@ -33,6 +33,20 @@ const TYPE_CFG: Record<string,{label:string;color:string}> = {
   arbitrator:{ label:"محكّم", color:"text-purple-400" },
   bailiff:{ label:"معقّب", color:"text-orange-400" },
 };
+
+/**
+ * A lawyer row whose practice_kind is 'consultant' (owner answer ٢١٩) reads
+ * «مستشار قانوني» in place of «محامي» — the two side by side would contradict
+ * each other.
+ */
+const CONSULTANT_BADGE = "text-[9px] font-bold px-2 py-0.5 rounded-full border bg-purple-500/10 border-purple-500/20 text-purple-400";
+
+/**
+ * The licence-image links in the list are signed for 10 minutes when the list
+ * is read (GET /api/v1/admin/verifications). Past 9 minutes a click re-reads
+ * the list instead of opening a link that may already have expired.
+ */
+const LICENCE_LINK_FRESH_MS = 9 * 60 * 1000;
 
 const STATUS_CFG: Record<string,{label:string;cls:string}> = {
   pending:{ label:"قيد المراجعة", cls:"bg-amber-500/10 border-amber-500/20 text-amber-400" },
@@ -75,6 +89,8 @@ export default function ProviderVerificationPage() {
   const [read, setRead] = useState<ListRead<VerificationRequest> | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  // When the current list (and so its signed licence links) was read.
+  const readAt = useRef(0);
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
@@ -89,6 +105,7 @@ export default function ProviderVerificationPage() {
     // throw, but the real failure signal is now the value itself.
     try {
       setRead(await getVerificationRequests());
+      readAt.current = Date.now();
     } catch {
       setRead(listFailed<VerificationRequest>());
     } finally {
@@ -416,7 +433,9 @@ export default function ProviderVerificationPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <p className={`text-[13px] font-bold ${isDark?"text-zinc-100":"text-slate-800"}`}>{r.name}</p>
-                    <span className={`text-[9px] font-bold ${tc.color}`}>{tc.label}</span>
+                    {r.type === "lawyer" && r.practiceKind === "consultant"
+                      ? <span className={CONSULTANT_BADGE}>مستشار قانوني</span>
+                      : <span className={`text-[9px] font-bold ${tc.color}`}>{tc.label}</span>}
                     <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${sc.cls}`}>{sc.label}</span>
                   </div>
                   <div className={`flex items-center gap-3 text-[10px] ${isDark?"text-zinc-600":"text-slate-400"}`}>
@@ -453,12 +472,37 @@ export default function ProviderVerificationPage() {
                       >
                         {isActioning ? <SpinnerGap size={11} className="animate-spin" /> : <X size={11} weight="bold"/>} رفض
                       </button>
-                      <button
-                        onClick={() => setToast(`معاينة ملف ${r.name}: المستندات ستعرض من backend المستندات لاحقاً.`)}
-                        className={`px-2 py-1.5 rounded-lg text-[10px] font-bold ${isDark?"bg-white/[0.04] text-zinc-400":"bg-slate-50 text-slate-500"} hover:text-blue-400 transition-colors`}
-                      >
-                        <Eye size={12}/>
-                      </button>
+                      {/* Owner answer ٢١٩: the licence image the lawyer uploaded,
+                          through a 10-minute signed link. No image → disabled. */}
+                      {r.licenceImageUrl ? (
+                        <a
+                          href={r.licenceImageUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="فتح صورة الترخيص في نافذة جديدة"
+                          aria-label={`فتح صورة ترخيص ${r.name}`}
+                          onClick={(e) => {
+                            if (Date.now() - readAt.current > LICENCE_LINK_FRESH_MS) {
+                              e.preventDefault();
+                              setToast("رابط صورة الترخيص قارب انتهاء صلاحيته، فأُعيد تحميل القائمة. اضغط زر المعاينة مرة أخرى.");
+                              fetchData();
+                            }
+                          }}
+                          className={`px-2 py-1.5 rounded-lg text-[10px] font-bold ${isDark?"bg-white/[0.04] text-zinc-400":"bg-slate-50 text-slate-500"} hover:text-blue-400 transition-colors`}
+                        >
+                          <Eye size={12}/>
+                        </a>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled
+                          title={r.type === "lawyer" ? "لا توجد صورة ترخيص مرفوعة، أو تعذّر إنشاء رابطها" : "لا توجد صورة ترخيص لهذا النوع من الحسابات"}
+                          aria-label="لا توجد صورة ترخيص"
+                          className={`px-2 py-1.5 rounded-lg text-[10px] font-bold ${isDark?"bg-white/[0.04] text-zinc-400":"bg-slate-50 text-slate-500"} opacity-40 cursor-not-allowed`}
+                        >
+                          <Eye size={12}/>
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
