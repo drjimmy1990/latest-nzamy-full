@@ -261,10 +261,12 @@ begin
       raise exception 'T7 FAIL: anon can SELECT %', t;
     end if;
   end loop;
+  -- Any-column, not table-level: 20261018_02 (feqh_blocks) and 20261019_40
+  -- (decrees_circulars) narrow these to column grants, and anon still reads them.
   foreach t in array array['library.chapters', 'library.decrees_circulars', 'library.principle_paragraphs',
                            'library.feqh_books', 'library.feqh_blocks']
   loop
-    if not has_table_privilege('anon', t, 'SELECT') then
+    if not has_any_column_privilege('anon', t, 'SELECT') then
       raise exception 'T7 FAIL: anon lost SELECT on %', t;
     end if;
   end loop;

@@ -2518,3 +2518,82 @@ BEGIN
   END IF;
   RAISE NOTICE '_verify: 20261019_30 OK — platform_staff: RLS on, admins read, service role writes; staff_role() / is_super_admin() definer, admins only, no guest EXECUTE; admin_audit_events append-only (UPDATE / DELETE / TRUNCATE triggers, invoker), no API writes, SELECT kept';
 END $$;
+
+-- ====================================================================
+-- 2026-10-19 — 20261019_40_library_decree_preamble_lock.sql (owner answer ٢٢١)
+-- ====================================================================
+-- The decree preamble (decrees_circulars.preamble) is server-only; anon /
+-- authenticated read the catalogue columns below and nothing else (fts
+-- included: it is built from title, summary and summary_brief, never the
+-- preamble). Keyed on the marker comment on library.decrees_circulars, so a
+-- run BEFORE the migration passes with a NOTICE (code first, then migration).
+-- The allow-list here MUST match the migration's grant list.
+SELECT '20261019_40 marker on library.decrees_circulars (decree preamble server-only)' AS check,
+       coalesce(obj_description('library.decrees_circulars'::regclass, 'pg_class'), '')
+         ILIKE '%preamble server-only since 20261019_40%' AS present;
+
+DO $$
+DECLARE
+  spec    record;
+  r       text;
+  col     text;
+  missing text := '';
+BEGIN
+  IF coalesce(obj_description('library.decrees_circulars'::regclass, 'pg_class'), '')
+       NOT ILIKE '%preamble server-only since 20261019_40%' THEN
+    RAISE NOTICE '_verify: 20261019_40 is not applied yet — the decree preamble is still anon-readable (the pre-lock posture; apply it after the code deploy)';
+    RETURN;
+  END IF;
+
+  FOR spec IN
+    SELECT * FROM (VALUES
+      ('library.decrees_circulars', ARRAY['id', 'title', 'type', 'issuer', 'ref', 'date', 'summary', 'summary_brief', 'category', 'hashtags', 'official_url', 'fts', 'created_at', 'updated_at', 'instrument_ar'])
+    ) AS v(tbl, allowed)
+  LOOP
+    FOREACH r IN ARRAY ARRAY['anon', 'authenticated']
+    LOOP
+      IF has_table_privilege(r, spec.tbl, 'SELECT') THEN
+        missing := missing || format(' %s holds table-level SELECT on %s (was 20260922_01 §3 or the self-host schema re-applied? re-run 20261019_40);', r, spec.tbl);
+      END IF;
+      IF has_table_privilege(r, spec.tbl, 'INSERT') OR has_table_privilege(r, spec.tbl, 'UPDATE')
+         OR has_table_privilege(r, spec.tbl, 'DELETE') OR has_any_column_privilege(r, spec.tbl, 'UPDATE') THEN
+        missing := missing || format(' %s can write %s (re-run 20261019_40);', r, spec.tbl);
+      END IF;
+      FOREACH col IN ARRAY spec.allowed
+      LOOP
+        IF NOT has_column_privilege(r, spec.tbl, col, 'SELECT') THEN
+          missing := missing || format(' %s cannot read public column %s.%s (the /laws index and search would fail);', r, spec.tbl, col);
+        END IF;
+      END LOOP;
+      FOR col IN
+        SELECT att.attname::text
+          FROM pg_attribute att
+         WHERE att.attrelid = spec.tbl::regclass
+           AND att.attnum > 0
+           AND NOT att.attisdropped
+      LOOP
+        IF NOT (col = ANY (spec.allowed)) AND has_column_privilege(r, spec.tbl, col, 'SELECT') THEN
+          missing := missing || format(' %s can read locked column %s.%s (re-run 20261019_40);', r, spec.tbl, col);
+        END IF;
+      END LOOP;
+    END LOOP;
+    IF NOT has_table_privilege('service_role', spec.tbl, 'SELECT') THEN
+      missing := missing || format(' service_role cannot read %s (every decree page would 500);', spec.tbl);
+    END IF;
+    IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = spec.tbl::regclass) THEN
+      missing := missing || format(' RLS is off on %s (re-run 20261019_40);', spec.tbl);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies
+                    WHERE schemaname || '.' || tablename = spec.tbl
+                      AND cmd IN ('SELECT', 'ALL')
+                      AND roles && ARRAY['anon', 'public']::name[]) THEN
+      missing := missing || format(' no read policy for anon on %s (every guest read of the decree catalogue returns 0 rows);', spec.tbl);
+    END IF;
+  END LOOP;
+
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: the decree preamble lock is broken —%', missing;
+  END IF;
+
+  RAISE NOTICE '_verify: 20261019_40 OK — decrees_circulars.preamble is server-only; its 15 catalogue columns (fts included) stay public';
+END $$;
