@@ -36,19 +36,29 @@
 --       through profiles → firm_profiles into these tables). EVERY other role
 --       is guarded (fail-closed, as in 20261018_04): authenticated, anon, any
 --       other login.
---     * A CASCADE-SHAPED UPDATE passes, from any writer: every column whose
---       value changes (OLD vs NEW, updated_at ignored — the *_updated_at
---       triggers fire after this one) is one of the table's ON DELETE SET NULL
---       pointers, and each goes from a value to NULL. That is what Postgres
---       writes when the row a pointer names is deleted; nulling a pointer is
---       not court activity. The pointers (FKs of 20260903_phase1 /
---       20260904_phase5, as on live):
+--     * A FOREIGN-KEY CASCADE passes, from any writer — both must hold:
+--         - it runs inside a trigger (pg_trigger_depth() > 1): the ON DELETE
+--           SET NULL action is a trigger on the deleted row's table, and its
+--           UPDATE fires this one a level deeper. A direct UPDATE from a
+--           session is depth 1 and is judged like any other write, so a
+--           consultant cannot null a colleague's pointers through REST;
+--         - it is cascade-shaped: every column whose value changes (OLD vs
+--           NEW, updated_at ignored — the *_updated_at triggers fire after
+--           this one) is one of the table's ON DELETE SET NULL pointers, and
+--           each goes from a value to NULL. An UPDATE that changes nothing is
+--           not cascade-shaped. This half covers a write some other trigger
+--           might issue (none writes these tables today).
+--       Nulling a pointer because its row was deleted is not court activity.
+--       The pointers are the trigger's arguments (TG_ARGV), so the verify
+--       below and _verify.sql compare the DEPLOYED list with the table's
+--       ON DELETE SET NULL foreign keys and raise on any difference (a new
+--       SET NULL FK left out would make its cascade fail closed). As on live
+--       (20260903_phase1 / 20260904_phase5):
 --         hearings     stage_id, firm_id
 --         case_stages  firm_id, owner_user_id
 --         deadlines    firm_id, stage_id, hearing_id, rule_id
 --       (case_request_id, contract_id and the hearings / deadlines
---       owner_user_id are ON DELETE CASCADE: deletes, never guarded.) An
---       UPDATE that changes nothing is not cascade-shaped.
+--       owner_user_id are ON DELETE CASCADE: deletes, never guarded.)
 --     * deadlines with kind = 'contract' pass — a contract obligation's radar
 --       date (src/app/api/v1/lawyer/contracts/_obligations.ts writes them
 --       through the session; a consultant manages contracts). On UPDATE the
@@ -160,16 +170,12 @@ begin
     return new;
   end if;
 
-  -- a cascade-shaped UPDATE: every changed column is one of this table's
-  -- ON DELETE SET NULL pointers, going from a value to NULL (a column that
-  -- changed and is NULL now had a value before)
-  if tg_op = 'UPDATE' then
-    v_set_null := case tg_table_name
-      when 'hearings'    then array['stage_id', 'firm_id']
-      when 'case_stages' then array['firm_id', 'owner_user_id']
-      when 'deadlines'   then array['firm_id', 'stage_id', 'hearing_id', 'rule_id']
-      else array[]::text[]
-    end;
+  -- a foreign-key cascade: inside a trigger (the SET NULL action), and
+  -- cascade-shaped — every changed column is one of this table's ON DELETE
+  -- SET NULL pointers (the trigger's arguments), going from a value to NULL
+  -- (a column that changed and is NULL now had a value before)
+  if tg_op = 'UPDATE' and pg_catalog.pg_trigger_depth() > 1 then
+    v_set_null := tg_argv;
     v_old := pg_catalog.to_jsonb(old) - 'updated_at';
     v_new := pg_catalog.to_jsonb(new) - 'updated_at';
     select pg_catalog.bool_and(e.key = any (v_set_null) and e.value = 'null'::jsonb)
@@ -204,24 +210,26 @@ end
 $fn$;
 
 comment on function public.refuse_consultant_court_rows() is
-  'Art. 18 (20261019_21): BEFORE INSERT OR UPDATE on hearings / case_stages / deadlines — a writer other than postgres / service_role / supabase_admin / supabase_auth_admin gets 42501 when the caller or the row owner is a consultant (lawyer_profiles.practice_kind) and the caller is not an admin; cascade-shaped updates (only ON DELETE SET NULL pointers changed, each to NULL) and deadlines with kind = contract (before and after) pass.';
+  'Art. 18 (20261019_21): BEFORE INSERT OR UPDATE on hearings / case_stages / deadlines — a writer other than postgres / service_role / supabase_admin / supabase_auth_admin gets 42501 when the caller or the row owner is a consultant (lawyer_profiles.practice_kind) and the caller is not an admin; foreign-key cascades (inside a trigger, only the ON DELETE SET NULL pointers named in the trigger arguments changed, each to NULL) and deadlines with kind = contract (before and after) pass.';
 
 revoke all on function public.refuse_consultant_court_rows() from public, anon, authenticated;
 
+-- The arguments are each table's ON DELETE SET NULL pointers (the cascade
+-- exemption); the verify checks them against pg_constraint.
 drop trigger if exists trg_00_refuse_consultant_court_rows on public.hearings;
 create trigger trg_00_refuse_consultant_court_rows
   before insert or update on public.hearings
-  for each row execute function public.refuse_consultant_court_rows();
+  for each row execute function public.refuse_consultant_court_rows('stage_id', 'firm_id');
 
 drop trigger if exists trg_00_refuse_consultant_court_rows on public.case_stages;
 create trigger trg_00_refuse_consultant_court_rows
   before insert or update on public.case_stages
-  for each row execute function public.refuse_consultant_court_rows();
+  for each row execute function public.refuse_consultant_court_rows('firm_id', 'owner_user_id');
 
 drop trigger if exists trg_00_refuse_consultant_court_rows on public.deadlines;
 create trigger trg_00_refuse_consultant_court_rows
   before insert or update on public.deadlines
-  for each row execute function public.refuse_consultant_court_rows();
+  for each row execute function public.refuse_consultant_court_rows('firm_id', 'stage_id', 'hearing_id', 'rule_id');
 
 comment on trigger trg_00_refuse_consultant_court_rows on public.hearings is
   'ART. 18 GUARD since 20261019_21 — read by _verify.sql.';
@@ -240,6 +248,8 @@ declare
   definer boolean;
   owner   text;
   first_before text;
+  args    text[];
+  fks     text[];
   missing text := '';
 begin
   -- the function
@@ -293,12 +303,29 @@ begin
     if first_before is distinct from 'trg_00_refuse_consultant_court_rows' then
       missing := missing || format(' %s fires before the guard on %s;', coalesce(first_before, 'nothing'), tbl);
     end if;
+    -- the cascade exemption's pointer list (the trigger arguments) = the
+    -- table's ON DELETE SET NULL foreign-key columns
+    select coalesce(array_agg(x order by x), '{}')
+      into args
+      from pg_trigger t,
+           unnest(array_remove(string_to_array(encode(t.tgargs, 'escape'), '\000'), '')) x
+     where t.tgrelid = tbl::regclass and t.tgname = 'trg_00_refuse_consultant_court_rows';
+    select coalesce(array_agg(a.attname::text order by a.attname), '{}')
+      into fks
+      from pg_constraint c
+      cross join lateral unnest(case when coalesce(cardinality(c.confdelsetcols), 0) = 0
+                                     then c.conkey else c.confdelsetcols end) k(attnum)
+      join pg_attribute a on a.attrelid = c.conrelid and a.attnum = k.attnum
+     where c.conrelid = tbl::regclass and c.contype = 'f' and c.confdeltype = 'n';
+    if args is distinct from fks then
+      missing := missing || format(' %s: the guard''s SET NULL pointers %s differ from the table''s ON DELETE SET NULL foreign keys %s;', tbl, args, fks);
+    end if;
   end loop;
 
   if missing <> '' then
     raise exception '20261019_21 verify:%', missing;
   end if;
-  raise notice '20261019_21 verify: OK — hearings / case_stages / deadlines refuse a consultant''s session writes (contract deadlines, cascade nulls and admins pass; postgres / service_role / supabase_admin / supabase_auth_admin trusted); definer %', owner;
+  raise notice '20261019_21 verify: OK — hearings / case_stages / deadlines refuse a consultant''s session writes (contract deadlines, foreign-key cascade nulls and admins pass; pointer lists match the SET NULL foreign keys; postgres / service_role / supabase_admin / supabase_auth_admin trusted); definer %', owner;
 end $$;
 
 commit;

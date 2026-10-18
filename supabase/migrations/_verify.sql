@@ -2240,7 +2240,8 @@ END $$;
 -- hearings, case_stages and deadlines refuse a consultant's session writes:
 -- one BEFORE INSERT OR UPDATE trigger per table, enabled for normal sessions
 -- (O / A, not D or replica-only R), first in line, on a SECURITY DEFINER
--- function no API role may EXECUTE. Keyed on the function's existence
+-- function no API role may EXECUTE, its SET NULL pointer arguments equal to
+-- each table's ON DELETE SET NULL foreign keys. Keyed on the function's existence
 -- (to_regprocedure, never ::regprocedure), so a run before the migration
 -- passes with a NOTICE.
 SELECT '20261019_21 applied (consultant court-write guard)' AS check,
@@ -2254,6 +2255,8 @@ DECLARE
   cfg     text[];
   definer boolean;
   first_before text;
+  args    text[];
+  fks     text[];
   missing text := '';
 BEGIN
   IF to_regprocedure(fn) IS NULL THEN
@@ -2302,10 +2305,25 @@ BEGIN
     IF first_before IS DISTINCT FROM 'trg_00_refuse_consultant_court_rows' THEN
       missing := missing || format(' %s fires before the Art. 18 guard on %s — rename it;', first_before, tbl);
     END IF;
+    -- the cascade exemption's pointers (the trigger arguments) = the table's
+    -- ON DELETE SET NULL foreign-key columns
+    SELECT coalesce(array_agg(x ORDER BY x), '{}') INTO args
+      FROM pg_trigger t,
+           unnest(array_remove(string_to_array(encode(t.tgargs, 'escape'), '\000'), '')) x
+     WHERE t.tgrelid = to_regclass(tbl) AND t.tgname = 'trg_00_refuse_consultant_court_rows';
+    SELECT coalesce(array_agg(a.attname::text ORDER BY a.attname), '{}') INTO fks
+      FROM pg_constraint c
+      CROSS JOIN LATERAL unnest(CASE WHEN coalesce(cardinality(c.confdelsetcols), 0) = 0
+                                     THEN c.conkey ELSE c.confdelsetcols END) k(attnum)
+      JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+     WHERE c.conrelid = to_regclass(tbl) AND c.contype = 'f' AND c.confdeltype = 'n';
+    IF args IS DISTINCT FROM fks THEN
+      missing := missing || format(' %s: the guard''s SET NULL pointers %s differ from the table''s ON DELETE SET NULL foreign keys %s — a delete cascading onto a consultant-owned row would be refused (add the pointer to the trigger arguments in 20261019_21 and re-run it);', tbl, args, fks);
+    END IF;
   END LOOP;
 
   IF missing <> '' THEN
     RAISE EXCEPTION '_verify: the 20261019_21 consultant court-write guard is broken —%', missing;
   END IF;
-  RAISE NOTICE '_verify: 20261019_21 OK — hearings / case_stages / deadlines: a consultant''s session writes get 42501 (contract deadlines and admins pass)';
+  RAISE NOTICE '_verify: 20261019_21 OK — hearings / case_stages / deadlines: a consultant''s session writes get 42501 (contract deadlines, admins and foreign-key cascade nulls pass; the pointer lists match the SET NULL foreign keys; postgres / service_role / supabase_admin / supabase_auth_admin trusted)';
 END $$;

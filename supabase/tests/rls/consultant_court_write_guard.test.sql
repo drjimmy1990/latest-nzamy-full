@@ -46,8 +46,12 @@
 -- supabase_admin and supabase_auth_admin. T12 plays GoTrue exactly: `set
 -- session authorization supabase_auth_admin` (the role is created here), no
 -- SET ROLE, and an account delete that cascades into the court tables.
--- T13 / T14: an UPDATE that only nulls ON DELETE SET NULL pointers (what a
--- delete cascades) passes from anyone; anything else with it is refused.
+-- T13–T15: only a FOREIGN-KEY CASCADE is exempt — an UPDATE inside a trigger
+-- (pg_trigger_depth() > 1) that only nulls ON DELETE SET NULL pointers. A
+-- direct pointer-only UPDATE from a session is judged like any other write
+-- (T13, incl. the reviewer's A1–A3 on a colleague's rows); real cascades from
+-- deletes pass (T12, T14); T15 relays writes through a test trigger to show
+-- the shape half (only listed pointers, to NULL, something changed).
 --
 -- A refusal must be THE GUARD'S: RLS failures and denied EXECUTE are 42501 too,
 -- so t_refused() also requires the Art. 18 message.
@@ -467,40 +471,51 @@ begin
   raise notice 'T12 PASS: GoTrue (supabase_auth_admin, no role) deletes a firm owner — the firm_id nulls on the consultant''s firm hearing go through — and is trusted on a direct insert';
 end $$;
 
--- T13 a consultant's direct UPDATE of a pointer: only nulling ON DELETE SET
--- NULL pointers passes; any other change with it, re-pointing, setting a
--- pointer, or a no-op is refused. Rows seeded by the service role:
+-- T13 a DIRECT pointer-only UPDATE is judged like any other write (only a
+-- foreign-key cascade is exempt): refused for the consultant on his own rows
+-- (every pointer in the list) and on an advocate colleague's firm rows
+-- (A1–A3), allowed for the advocate on his own row. Rows seeded by the
+-- service role:
 --   S1 c701 his stage · H1 c702 his hearing on S1 · D1 c703 his deadline on S1
 --   and H1 · D2 c705 his deadline on H1 · H2 c704 his hearing on the
---   advocate's stage a402
-set role service_role;
-insert into public.case_stages (id, case_request_id, owner_user_id)
-  values ('00000000-0000-0000-0000-00000000c701', 'req-k', '00000000-0000-0000-0000-0000000000e1');
-insert into public.hearings (id, owner_user_id, case_request_id, stage_id, kind, title, hearing_date) values
-  ('00000000-0000-0000-0000-00000000c702', '00000000-0000-0000-0000-0000000000e1', 'req-k',
-   '00000000-0000-0000-0000-00000000c701', 'judicial', 'جلسة على الدرجة', '2026-11-11'),
-  ('00000000-0000-0000-0000-00000000c704', '00000000-0000-0000-0000-0000000000e1', null,
-   '00000000-0000-0000-0000-00000000a402', 'judicial', 'جلسة على درجة المحامي', '2026-11-12');
-insert into public.deadlines (id, owner_user_id, stage_id, hearing_id, title, kind, trigger_date, due_date) values
-  ('00000000-0000-0000-0000-00000000c703', '00000000-0000-0000-0000-0000000000e1',
-   '00000000-0000-0000-0000-00000000c701', '00000000-0000-0000-0000-00000000c702', 'مهلة على الجلسة', 'statutory', '2026-11-11', '2026-12-11'),
-  ('00000000-0000-0000-0000-00000000c705', '00000000-0000-0000-0000-0000000000e1',
-   null, '00000000-0000-0000-0000-00000000c702', 'مهلة ثانية على الجلسة', 'court_order', '2026-11-11', '2026-11-21');
--- every other pointer in the guard's list, on rows of a second firm F2 (owned
--- by the advocate; the consultant an active member, so a stage with no owner
--- stays reachable): H3 c706 · S2 c707 · S3 c708 · D3 c709 (firm + rule)
+--   advocate's stage a402 · KR c715 his deadline rule · D4 c716 his deadline
+--   on KR
+--   on firm F2 (owned by the advocate; the consultant an active member):
+--   H3 c706 · S2 c707 · S3 c708 · D3 c709 (firm + platform rule) — his;
+--   SA c712 stage · HA c713 hearing on SA · DA c714 deadline on HA — the
+--   advocate's
 reset role;
 insert into public.firm_profiles (id, owner_user_id, name_ar) values
   ('00000000-0000-0000-0000-0000000000f2', '00000000-0000-0000-0000-0000000000e2', 'المكتب الثاني');
 insert into public.firm_members (firm_id, user_id, role, status, accepted_at) values
-  ('00000000-0000-0000-0000-0000000000f2', '00000000-0000-0000-0000-0000000000e1', 'legal_consultant', 'active', now());
+  ('00000000-0000-0000-0000-0000000000f2', '00000000-0000-0000-0000-0000000000e1', 'legal_consultant', 'active', now()),
+  ('00000000-0000-0000-0000-0000000000f2', '00000000-0000-0000-0000-0000000000e2', 'managing_partner', 'active', now());
 set role service_role;
-insert into public.hearings (id, owner_user_id, firm_id, kind, title, hearing_date) values
-  ('00000000-0000-0000-0000-00000000c706', '00000000-0000-0000-0000-0000000000e1',
-   '00000000-0000-0000-0000-0000000000f2', 'judicial', 'جلسة في المكتب الثاني', '2026-11-13');
 insert into public.case_stages (id, case_request_id, owner_user_id, firm_id) values
+  ('00000000-0000-0000-0000-00000000c701', 'req-k', '00000000-0000-0000-0000-0000000000e1', null),
   ('00000000-0000-0000-0000-00000000c707', 'req-k', '00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000f2'),
-  ('00000000-0000-0000-0000-00000000c708', 'req-k', '00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000f2');
+  ('00000000-0000-0000-0000-00000000c708', 'req-k', '00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000f2'),
+  ('00000000-0000-0000-0000-00000000c712', 'req-a', '00000000-0000-0000-0000-0000000000e2', '00000000-0000-0000-0000-0000000000f2');
+insert into public.hearings (id, owner_user_id, case_request_id, stage_id, firm_id, kind, title, hearing_date) values
+  ('00000000-0000-0000-0000-00000000c702', '00000000-0000-0000-0000-0000000000e1', 'req-k',
+   '00000000-0000-0000-0000-00000000c701', null, 'judicial', 'جلسة على الدرجة', '2026-11-11'),
+  ('00000000-0000-0000-0000-00000000c704', '00000000-0000-0000-0000-0000000000e1', null,
+   '00000000-0000-0000-0000-00000000a402', null, 'judicial', 'جلسة على درجة المحامي', '2026-11-12'),
+  ('00000000-0000-0000-0000-00000000c706', '00000000-0000-0000-0000-0000000000e1', null,
+   null, '00000000-0000-0000-0000-0000000000f2', 'judicial', 'جلسة في المكتب الثاني', '2026-11-13'),
+  ('00000000-0000-0000-0000-00000000c713', '00000000-0000-0000-0000-0000000000e2', 'req-a',
+   '00000000-0000-0000-0000-00000000c712', '00000000-0000-0000-0000-0000000000f2', 'judicial', 'جلسة المحامي في المكتب الثاني', '2026-11-14');
+insert into public.deadline_rules (id, code, owner_user_id, title_ar, trigger_kind, period_days) values
+  ('00000000-0000-0000-0000-00000000c715', 'k_own_rule', '00000000-0000-0000-0000-0000000000e1', 'قاعدتي', 'judgment', 30);
+insert into public.deadlines (id, owner_user_id, firm_id, stage_id, hearing_id, rule_id, title, kind, trigger_date, due_date) values
+  ('00000000-0000-0000-0000-00000000c703', '00000000-0000-0000-0000-0000000000e1', null,
+   '00000000-0000-0000-0000-00000000c701', '00000000-0000-0000-0000-00000000c702', null, 'مهلة على الجلسة', 'statutory', '2026-11-11', '2026-12-11'),
+  ('00000000-0000-0000-0000-00000000c705', '00000000-0000-0000-0000-0000000000e1', null,
+   null, '00000000-0000-0000-0000-00000000c702', null, 'مهلة ثانية على الجلسة', 'court_order', '2026-11-11', '2026-11-21'),
+  ('00000000-0000-0000-0000-00000000c714', '00000000-0000-0000-0000-0000000000e2', '00000000-0000-0000-0000-0000000000f2',
+   null, '00000000-0000-0000-0000-00000000c713', null, 'مهلة المحامي على جلسته', 'statutory', '2026-11-14', '2026-12-14'),
+  ('00000000-0000-0000-0000-00000000c716', '00000000-0000-0000-0000-0000000000e1', null,
+   null, null, '00000000-0000-0000-0000-00000000c715', 'مهلة بقاعدتي', 'statutory', '2026-11-15', '2026-12-15');
 insert into public.deadlines (id, owner_user_id, firm_id, rule_id, title, kind, trigger_date, due_date)
   select '00000000-0000-0000-0000-00000000c709', '00000000-0000-0000-0000-0000000000e1',
          '00000000-0000-0000-0000-0000000000f2', r.id, 'مهلة بقاعدة', 'statutory', '2026-11-13', '2026-12-13'
@@ -510,55 +525,64 @@ set role authenticated;
 do $$
 begin
   perform set_config('test.uid', '00000000-0000-0000-0000-0000000000e1', true);
-  perform public.t_ok('T13 null hearings.firm_id',
+  -- his own rows: every pointer in the list
+  perform public.t_refused('T13 direct null hearings.firm_id',
     $q$update public.hearings set firm_id = null where id = '00000000-0000-0000-0000-00000000c706'$q$);
-  perform public.t_ok('T13 null case_stages.firm_id',
+  perform public.t_refused('T13 direct null case_stages.firm_id',
     $q$update public.case_stages set firm_id = null where id = '00000000-0000-0000-0000-00000000c707'$q$);
-  perform public.t_ok('T13 null case_stages.owner_user_id',
+  perform public.t_refused('T13 direct null case_stages.owner_user_id',
     $q$update public.case_stages set owner_user_id = null where id = '00000000-0000-0000-0000-00000000c708'$q$);
-  perform public.t_ok('T13 null deadlines.firm_id and rule_id together',
+  perform public.t_refused('T13 direct null deadlines.firm_id and rule_id',
     $q$update public.deadlines set firm_id = null, rule_id = null where id = '00000000-0000-0000-0000-00000000c709'$q$);
-  perform public.t_refused('T13 null a pointer AND change a court field (hearing)',
+  perform public.t_refused('T13 direct null hearings.stage_id',
+    $q$update public.hearings set stage_id = null where id = '00000000-0000-0000-0000-00000000c702'$q$);
+  perform public.t_refused('T13 direct null deadlines.hearing_id and stage_id',
+    $q$update public.deadlines set hearing_id = null, stage_id = null, updated_at = now() where id = '00000000-0000-0000-0000-00000000c703'$q$);
+  perform public.t_refused('T13 null a pointer AND change a court field',
     $q$update public.hearings set stage_id = null, status = 'held' where id = '00000000-0000-0000-0000-00000000c702'$q$);
-  perform public.t_refused('T13 null a pointer AND change a court field (deadline)',
-    $q$update public.deadlines set hearing_id = null, due_date = '2027-01-15' where id = '00000000-0000-0000-0000-00000000c703'$q$);
-  perform public.t_refused('T13 re-point a pointer',
-    $q$update public.hearings set stage_id = '00000000-0000-0000-0000-00000000c602' where id = '00000000-0000-0000-0000-00000000c702'$q$);
-  perform public.t_refused('T13 set a pointer from NULL',
-    $q$update public.deadlines set rule_id = (select r.id from public.deadline_rules r where r.owner_user_id is null order by r.code limit 1)
-        where id = '00000000-0000-0000-0000-00000000c703'$q$);
-  perform public.t_refused('T13 no-op update',
-    $q$update public.hearings set status = status where id = '00000000-0000-0000-0000-00000000c702'$q$);
-  perform public.t_ok('T13 only null a pointer (updated_at ignored)',
-    $q$update public.deadlines set hearing_id = null, updated_at = now() where id = '00000000-0000-0000-0000-00000000c703'$q$);
+  -- A1–A3: the advocate colleague's firm rows
+  perform public.t_refused('T13 A1 null the advocate''s stage owner',
+    $q$update public.case_stages set owner_user_id = null where id = '00000000-0000-0000-0000-00000000c712'$q$);
+  perform public.t_refused('T13 A2 null the advocate''s hearing stage_id',
+    $q$update public.hearings set stage_id = null where id = '00000000-0000-0000-0000-00000000c713'$q$);
+  perform public.t_refused('T13 A3 null the advocate''s deadline hearing_id',
+    $q$update public.deadlines set hearing_id = null where id = '00000000-0000-0000-0000-00000000c714'$q$);
+
+  -- the advocate on his own row: unaffected
+  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000e2', true);
+  perform public.t_ok('T13 advocate nulls a pointer on his own deadline',
+    $q$update public.deadlines set firm_id = null where id = '00000000-0000-0000-0000-00000000c714'$q$);
 end $$;
 reset role;
 do $$
 begin
-  if (select status || '/' || stage_id from public.hearings where id = '00000000-0000-0000-0000-00000000c702')
-       <> 'scheduled/00000000-0000-0000-0000-00000000c701' then
-    raise exception 'T13 FAIL: a refused update changed H1';
-  end if;
-  if (select due_date from public.deadlines where id = '00000000-0000-0000-0000-00000000c703') <> '2026-12-11'
-     or (select stage_id from public.deadlines where id = '00000000-0000-0000-0000-00000000c703') is distinct from '00000000-0000-0000-0000-00000000c701'
-     or (select rule_id from public.deadlines where id = '00000000-0000-0000-0000-00000000c703') is not null
-     or (select hearing_id from public.deadlines where id = '00000000-0000-0000-0000-00000000c703') is not null then
-    raise exception 'T13 FAIL: D1 is not (due 2026-12-11, stage S1, no rule, hearing nulled)';
-  end if;
-  if (select firm_id from public.hearings where id = '00000000-0000-0000-0000-00000000c706') is not null
-     or (select firm_id from public.case_stages where id = '00000000-0000-0000-0000-00000000c707') is not null
-     or (select owner_user_id from public.case_stages where id = '00000000-0000-0000-0000-00000000c708') is not null
+  if (select firm_id from public.hearings where id = '00000000-0000-0000-0000-00000000c706') is distinct from '00000000-0000-0000-0000-0000000000f2'
+     or (select firm_id from public.case_stages where id = '00000000-0000-0000-0000-00000000c707') is distinct from '00000000-0000-0000-0000-0000000000f2'
+     or (select owner_user_id from public.case_stages where id = '00000000-0000-0000-0000-00000000c708') is distinct from '00000000-0000-0000-0000-0000000000e1'
      or (select count(*) from public.deadlines where id = '00000000-0000-0000-0000-00000000c709'
-           and firm_id is null and rule_id is null) <> 1 then
-    raise exception 'T13 FAIL: a pointer the consultant nulled is still set';
+           and firm_id is not null and rule_id is not null) <> 1
+     or (select status || '/' || stage_id from public.hearings where id = '00000000-0000-0000-0000-00000000c702')
+          <> 'scheduled/00000000-0000-0000-0000-00000000c701'
+     or (select hearing_id || '/' || stage_id from public.deadlines where id = '00000000-0000-0000-0000-00000000c703')
+          <> '00000000-0000-0000-0000-00000000c702/00000000-0000-0000-0000-00000000c701' then
+    raise exception 'T13 FAIL: a refused direct update changed one of the consultant''s rows';
   end if;
-  raise notice 'T13 PASS: nulling only SET NULL pointers passes — every pointer in the list, alone or together, updated_at ignored; with a court field, re-pointing, setting from NULL or a no-op it gets 42501';
+  if (select owner_user_id from public.case_stages where id = '00000000-0000-0000-0000-00000000c712') is distinct from '00000000-0000-0000-0000-0000000000e2'
+     or (select stage_id from public.hearings where id = '00000000-0000-0000-0000-00000000c713') is distinct from '00000000-0000-0000-0000-00000000c712'
+     or (select hearing_id from public.deadlines where id = '00000000-0000-0000-0000-00000000c714') is distinct from '00000000-0000-0000-0000-00000000c713' then
+    raise exception 'T13 FAIL: A1–A3 changed the advocate''s rows';
+  end if;
+  if (select firm_id from public.deadlines where id = '00000000-0000-0000-0000-00000000c714') is not null then
+    raise exception 'T13 FAIL: the advocate''s own pointer null did not land';
+  end if;
+  raise notice 'T13 PASS: direct pointer-only nulls get 42501 for the consultant — every pointer of his own rows, and A1–A3 on an advocate colleague''s firm rows — while the advocate nulls a pointer on his own row';
 end $$;
 
--- T14 deletes and their SET NULL cascades, through sessions:
---   the consultant deletes his stage S1 (H1.stage_id and D1.stage_id nulled)
---   and his hearing H1 (D2.hearing_id nulled); the advocate deletes his stage
---   a402 (the CONSULTANT's H2.stage_id nulled)
+-- T14 real foreign-key cascades through sessions:
+--   the consultant deletes his stage S1 (H1.stage_id and D1.stage_id nulled),
+--   his hearing H1 (D1.hearing_id and D2.hearing_id nulled) and his rule KR
+--   (D4.rule_id nulled); the advocate deletes his stage a402 (the
+--   CONSULTANT's H2.stage_id nulled)
 set role authenticated;
 do $$
 begin
@@ -567,6 +591,8 @@ begin
     $q$delete from public.case_stages where id = '00000000-0000-0000-0000-00000000c701'$q$);
   perform public.t_ok('T14 consultant deletes his hearing',
     $q$delete from public.hearings where id = '00000000-0000-0000-0000-00000000c702'$q$);
+  perform public.t_ok('T14 consultant deletes his deadline rule',
+    $q$delete from public.deadline_rules where id = '00000000-0000-0000-0000-00000000c715'$q$);
   perform set_config('test.uid', '00000000-0000-0000-0000-0000000000e2', true);
   perform public.t_ok('T14 advocate deletes his stage under a consultant''s hearing',
     $q$delete from public.case_stages where id = '00000000-0000-0000-0000-00000000a402'$q$);
@@ -575,16 +601,72 @@ reset role;
 do $$
 begin
   if exists (select 1 from public.case_stages where id in ('00000000-0000-0000-0000-00000000c701', '00000000-0000-0000-0000-00000000a402'))
-     or exists (select 1 from public.hearings where id = '00000000-0000-0000-0000-00000000c702') then
-    raise exception 'T14 FAIL: a deleted stage or hearing is still there';
+     or exists (select 1 from public.hearings where id = '00000000-0000-0000-0000-00000000c702')
+     or exists (select 1 from public.deadline_rules where id = '00000000-0000-0000-0000-00000000c715') then
+    raise exception 'T14 FAIL: a deleted stage, hearing or rule is still there';
   end if;
-  if (select stage_id from public.deadlines where id = '00000000-0000-0000-0000-00000000c703') is not null
+  if (select count(*) from public.deadlines where id = '00000000-0000-0000-0000-00000000c703'
+        and stage_id is null and hearing_id is null) <> 1
      or (select hearing_id from public.deadlines where id = '00000000-0000-0000-0000-00000000c705') is not null
+     or (select rule_id from public.deadlines where id = '00000000-0000-0000-0000-00000000c716') is not null
      or (select stage_id from public.hearings where id = '00000000-0000-0000-0000-00000000c704') is not null then
     raise exception 'T14 FAIL: a pointer to a deleted row was not nulled';
   end if;
-  raise notice 'T14 PASS: a consultant deletes his stage and hearing, an advocate deletes a stage under a consultant''s hearing — the SET NULL cascades go through';
+  raise notice 'T14 PASS: the consultant deletes his stage, hearing and rule, the advocate deletes a stage under a consultant''s hearing — the SET NULL cascades go through';
 end $$;
+
+-- T15 the shape half: a write issued by ANOTHER trigger is also deeper than
+-- depth 1 (none writes these tables today). It passes only when
+-- cascade-shaped. Harness device: t_relay runs the statement it is given from
+-- an AFTER INSERT trigger, as the session. Rows: H5 c720 his hearing on his
+-- stage c602 · D5 c721 his deadline on H5.
+create table public.t_relay (stmt text not null);
+create function public.t_relay_run() returns trigger language plpgsql as $$
+begin
+  execute new.stmt;
+  return new;
+end $$;
+create trigger t_relay_after after insert on public.t_relay
+  for each row execute function public.t_relay_run();
+set role service_role;
+insert into public.hearings (id, owner_user_id, stage_id, kind, title, hearing_date) values
+  ('00000000-0000-0000-0000-00000000c720', '00000000-0000-0000-0000-0000000000e1',
+   '00000000-0000-0000-0000-00000000c602', 'judicial', 'جلسة للمرحِّل', '2026-11-16');
+insert into public.deadlines (id, owner_user_id, hearing_id, title, kind, trigger_date, due_date) values
+  ('00000000-0000-0000-0000-00000000c721', '00000000-0000-0000-0000-0000000000e1',
+   '00000000-0000-0000-0000-00000000c720', 'مهلة للمرحِّل', 'statutory', '2026-11-16', '2026-12-16');
+reset role;
+set role authenticated;
+do $$
+begin
+  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000e1', true);
+  perform public.t_refused('T15 relayed: null a pointer AND change a court field',
+    $q$insert into public.t_relay (stmt) values ($r$update public.hearings set stage_id = null, status = 'held' where id = '00000000-0000-0000-0000-00000000c720'$r$)$q$);
+  perform public.t_refused('T15 relayed: re-point a pointer',
+    $q$insert into public.t_relay (stmt) values ($r$update public.hearings set stage_id = '00000000-0000-0000-0000-00000000c707' where id = '00000000-0000-0000-0000-00000000c720'$r$)$q$);
+  perform public.t_refused('T15 relayed: set a pointer from NULL',
+    $q$insert into public.t_relay (stmt) values ($r$update public.deadlines set firm_id = '00000000-0000-0000-0000-0000000000f2' where id = '00000000-0000-0000-0000-00000000c721'$r$)$q$);
+  perform public.t_refused('T15 relayed: no-op',
+    $q$insert into public.t_relay (stmt) values ($r$update public.hearings set status = status where id = '00000000-0000-0000-0000-00000000c720'$r$)$q$);
+  perform public.t_ok('T15 relayed: only null a pointer (updated_at ignored)',
+    $q$insert into public.t_relay (stmt) values ($r$update public.deadlines set hearing_id = null, updated_at = now() where id = '00000000-0000-0000-0000-00000000c721'$r$)$q$);
+end $$;
+reset role;
+do $$
+begin
+  if (select status || '/' || stage_id from public.hearings where id = '00000000-0000-0000-0000-00000000c720')
+       <> 'scheduled/00000000-0000-0000-0000-00000000c602'
+     or (select firm_id from public.deadlines where id = '00000000-0000-0000-0000-00000000c721') is not null then
+    raise exception 'T15 FAIL: a refused relayed update changed a row';
+  end if;
+  if (select hearing_id from public.deadlines where id = '00000000-0000-0000-0000-00000000c721') is not null then
+    raise exception 'T15 FAIL: the relayed pointer-only null did not land';
+  end if;
+  raise notice 'T15 PASS: a write relayed by another trigger (deeper than a direct write) passes only when cascade-shaped (updated_at ignored); a court field, re-pointing, setting from NULL or a no-op gets 42501';
+end $$;
+drop trigger t_relay_after on public.t_relay;
+drop function public.t_relay_run();
+drop table public.t_relay;
 
 drop function public.t_refused(text, text);
 drop function public.t_ok(text, text);
