@@ -1,18 +1,19 @@
 "use client";
 
-import type { ElementType, MouseEvent as ReactMouseEvent, ReactNode } from "react";
-import { useState, useRef, useEffect } from "react";
+import type { Dispatch, ElementType, MouseEvent as ReactMouseEvent, ReactNode, SetStateAction } from "react";
+import { useState, useRef, useEffect, useId } from "react";
+import { usePathname } from "next/navigation";
 import { motion, AnimatePresence, useMotionValue } from "framer-motion";
 import {
   List, X, CaretDown, Scales, Moon, Sun, Globe,
-  User, ChartBar, Layout, SignOut, GearSix, Bell,
+  ChartBar, Layout, SignOut, GearSix, Bell,
   Buildings,
 } from "@phosphor-icons/react";
 import * as PhosphorIcons from "@phosphor-icons/react";
 import Image from "next/image";
 import { useTheme } from "./ThemeProvider";
 import { useUser, logout } from "@/hooks/useUser";
-import { getNavByUserType, getDashboardRoute, getRoleLabel, type NavItem } from "@/constants/navigation";
+import { getNavByUserType, getDashboardRoute, getRoleLabel, isMegaMenu, type NavItem } from "@/constants/navigation";
 import Link from "next/link";
 import { useNotifications } from "@/hooks/useNotifications";
 
@@ -287,6 +288,146 @@ function NavDropdown({ items, isAr }: { items: NavItem[]; isAr: boolean }) {
   );
 }
 
+// ─── Services mega menu (owner, 4 Oct item 129) ───────────────────────────────
+// A disclosure, not an ARIA menu: Tab walks the links in reading order, which
+// is what this panel offers. role="menu" would promise arrow-key navigation
+// instead, so it is deliberately absent (as is aria-haspopup="menu").
+function MegaMenu({ item, isAr, activeDropdown, setActiveDropdown }: {
+  item: NavItem;
+  isAr: boolean;
+  activeDropdown: string | null;
+  setActiveDropdown: Dispatch<SetStateAction<string | null>>;
+}) {
+  const panelId = useId();
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const open = activeDropdown === item.label;
+  const close = () => setActiveDropdown((current) => (current === item.label ? null : current));
+
+  // A click anywhere outside the trigger and its panel closes it.
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setActiveDropdown((current) => (current === item.label ? null : current));
+      }
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open, item.label, setActiveDropdown]);
+
+  return (
+    <div
+      ref={wrapperRef}
+      onMouseEnter={() => setActiveDropdown(item.label)}
+      onMouseLeave={close}
+      onKeyDown={(e) => {
+        // The page-wide Escape handler closes every menu; this one also hands
+        // focus back to the trigger, so the keyboard is not left on a link
+        // that has just disappeared.
+        if (e.key === "Escape" && open) {
+          close();
+          triggerRef.current?.focus();
+        }
+      }}
+      onBlur={(e) => {
+        // Tabbing past the last link closes the panel behind the focus. A
+        // blur with no new target (a click on the panel's own padding) is
+        // left to the outside-click and mouseleave handlers.
+        const next = e.relatedTarget as Node | null;
+        if (open && next && !e.currentTarget.contains(next)) close();
+      }}
+    >
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-expanded={open}
+        aria-controls={panelId}
+        /* Enter and Space on a <button> fire a click with detail 0, so the
+           keyboard toggles. A pointer click (detail 1+) only opens: the hover
+           has already opened it and a toggle would shut it again, and on a
+           touch screen at lg+ (an iPad) the tap is the only way in. */
+        onClick={(e) => setActiveDropdown(e.detail === 0 && open ? null : item.label)}
+        className="flex cursor-pointer items-center gap-1 whitespace-nowrap rounded-lg px-2 py-2 text-sm font-medium text-ink-muted transition-colors hover:bg-royal/5 hover:text-royal dark:text-zinc-400 dark:hover:text-white dark:hover:bg-white/5 xl:px-3"
+      >
+        {isAr ? item.label : item.labelEn}
+        <motion.span animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.2 }}>
+          <CaretDown size={13} />
+        </motion.span>
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            id={panelId}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            transition={{ type: "spring", stiffness: 300, damping: 25 }}
+            /* Anchored to the bar (its rounded container is `relative`), not to
+               the trigger: four columns hung off a link in the middle of the
+               bar would run off a 1024px screen. The box starts 1rem above the
+               bar's bottom edge and pads down, so the pointer never crosses a
+               gap on its way from the trigger to a link — crossing one fires
+               mouseleave and shuts the menu. */
+            className="absolute inset-x-0 top-[calc(100%_-_1rem)] z-50 pt-6"
+            dir={isAr ? "rtl" : "ltr"}
+          >
+            <div className="mx-auto grid max-w-4xl grid-cols-4 gap-3 rounded-2xl border border-slate-200/50 bg-white p-4 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] dark:border-white/10 dark:bg-zinc-900">
+              {item.children!.map((group, gi) => (
+                <div key={group.href} role="group" aria-labelledby={`${panelId}-group-${gi}`}>
+                  <p id={`${panelId}-group-${gi}`} className="px-3 pb-2 text-xs font-bold text-royal dark:text-gold">
+                    {isAr ? group.label : group.labelEn}
+                  </p>
+                  <ul className="space-y-1">
+                    {group.children!.map((child) => (
+                      <li key={child.href}>
+                        <a
+                          href={child.href}
+                          className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-ink-muted transition-colors hover:bg-royal/5 hover:text-royal dark:text-zinc-300 dark:hover:text-white dark:hover:bg-white/5"
+                        >
+                          {child.icon && (
+                            <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-royal/5 text-royal dark:bg-white/5 dark:text-zinc-300">
+                              <NavIcon name={child.icon} size={17} />
+                            </span>
+                          )}
+                          <span className="flex-1">{isAr ? child.label : child.labelEn}</span>
+                          {child.badge && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-[#C8A762]/15 text-[#C8A762] border border-[#C8A762]/30">
+                              {child.badge}
+                            </span>
+                          )}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ─── One link inside an expanded section of the mobile drawer ────────────────
+function MobileChildLink({ item, isAr }: { item: NavItem; isAr: boolean }) {
+  return (
+    <a
+      href={item.href}
+      className="flex min-h-[44px] items-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-medium text-ink-muted/80 transition-colors hover:bg-royal/5 hover:text-royal dark:text-zinc-300 dark:hover:text-white cursor-pointer"
+    >
+      <span>{isAr ? item.label : item.labelEn}</span>
+      {item.badge && (
+        <span className="rounded-md bg-gold/15 px-1.5 py-0.5 text-[10px] font-bold text-gold">
+          {item.badge}
+        </span>
+      )}
+    </a>
+  );
+}
+
 // ─── Main Navbar ──────────────────────────────────────────────────────────────
 export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -298,6 +439,20 @@ export default function Navbar() {
   const { theme, lang, toggleTheme, toggleLang } = useTheme();
   const { isLoggedIn, userType, name, affiliation } = useUser();
   const isAr = lang === "ar";
+  const mobileSectionIds = useId();
+
+  // A client-side route change closes every menu. Adjusting state while
+  // rendering when the path changes (React's documented pattern) closes them
+  // in the same frame instead of one stale frame later.
+  const pathname = usePathname();
+  const [menusPath, setMenusPath] = useState(pathname);
+  if (pathname !== menusPath) {
+    setMenusPath(pathname);
+    setActiveDropdown(null);
+    setMobileOpen(false);
+    setMobileSection(null);
+    setAvatarOpen(false);
+  }
 
   // ── Select proper nav based on userType ──
   const ACTIVE_NAV = getNavByUserType(isLoggedIn ? userType : null);
@@ -331,7 +486,7 @@ export default function Navbar() {
       className="fixed top-0 right-0 left-0 z-50 safe-top"
     >
       <div className="mx-auto max-w-[1400px] px-4 pt-4">
-        <div className="rounded-[1.25rem] border border-slate-200/70 bg-white/85 px-6 py-3 lg:px-4 xl:px-6 shadow-[0_8px_32px_-8px_rgba(11,61,46,0.08)] backdrop-blur-xl dark:border-white/10 dark:bg-dark-card/90">
+        <div className="relative rounded-[1.25rem] border border-slate-200/70 bg-white/85 px-6 py-3 lg:px-4 xl:px-6 shadow-[0_8px_32px_-8px_rgba(11,61,46,0.08)] backdrop-blur-xl dark:border-white/10 dark:bg-dark-card/90">
           <div className="flex items-center justify-between">
 
             {/* ── Logo ── */}
@@ -367,7 +522,15 @@ export default function Navbar() {
                 so seven Arabic links and the controls fit in 1024px even at
                 100% display density (the 75% default leaves ~1365 CSS px). */}
             <div className="hidden items-center gap-0.5 lg:flex xl:gap-1">
-              {ACTIVE_NAV.map((link) => (
+              {ACTIVE_NAV.map((link) => isMegaMenu(link) ? (
+                <MegaMenu
+                  key={link.label}
+                  item={link}
+                  isAr={isAr}
+                  activeDropdown={activeDropdown}
+                  setActiveDropdown={setActiveDropdown}
+                />
+              ) : (
                 <div
                   key={link.label}
                   className="relative"
@@ -555,10 +718,11 @@ export default function Navbar() {
 
                       Parents now expand in place. `#`-prefixed hrefs are
                       placeholders for a menu, never destinations. */}
-                  {ACTIVE_NAV.map((link) => {
+                  {ACTIVE_NAV.map((link, index) => {
                     const hasChildren = !!link.children?.length;
                     const isPlaceholder = link.href.startsWith("#");
                     const expanded = mobileSection === link.label;
+                    const sectionId = `${mobileSectionIds}-section-${index}`;
 
                     if (!hasChildren) {
                       return (
@@ -578,6 +742,7 @@ export default function Navbar() {
                           type="button"
                           onClick={() => setMobileSection(expanded ? null : link.label)}
                           aria-expanded={expanded}
+                          aria-controls={sectionId}
                           /* min-h-[44px] is Apple's minimum touch target; the
                              plain <a> rows above compute to 44px from py-3 plus
                              the text line box, and this keeps parity. */
@@ -592,7 +757,7 @@ export default function Navbar() {
                         </button>
 
                         {expanded && (
-                          <div className={`${isAr ? "pr-4" : "pl-4"} pb-1`}>
+                          <div id={sectionId} className={`${isAr ? "pr-4" : "pl-4"} pb-1`}>
                             {/* The parent itself is only navigable when it has
                                 a real destination of its own. */}
                             {!isPlaceholder && (
@@ -603,20 +768,23 @@ export default function Navbar() {
                                 {isAr ? `عرض الكل — ${link.label}` : `View all — ${link.labelEn}`}
                               </a>
                             )}
-                            {link.children!.map((child) => (
-                              <a
-                                key={child.label}
-                                href={child.href}
-                                className="flex min-h-[44px] items-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-medium text-ink-muted/80 transition-colors hover:bg-royal/5 hover:text-royal dark:text-zinc-300 dark:hover:text-white cursor-pointer"
-                              >
-                                <span>{isAr ? child.label : child.labelEn}</span>
-                                {child.badge && (
-                                  <span className="rounded-md bg-gold/15 px-1.5 py-0.5 text-[10px] font-bold text-gold">
-                                    {child.badge}
-                                  </span>
-                                )}
-                              </a>
-                            ))}
+                            {link.children!.map((child) =>
+                              child.children?.length ? (
+                                /* A mega-menu group (item 129) collapses to a
+                                   titled list here; the title is a heading,
+                                   never a link. */
+                                <div key={child.label} role="group" aria-label={isAr ? child.label : child.labelEn}>
+                                  <p className="px-4 pt-3 pb-1 text-[11px] font-bold text-royal dark:text-gold">
+                                    {isAr ? child.label : child.labelEn}
+                                  </p>
+                                  {child.children.map((grandchild) => (
+                                    <MobileChildLink key={grandchild.label} item={grandchild} isAr={isAr} />
+                                  ))}
+                                </div>
+                              ) : (
+                                <MobileChildLink key={child.label} item={child} isAr={isAr} />
+                              ),
+                            )}
                           </div>
                         )}
                       </div>

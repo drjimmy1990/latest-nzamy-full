@@ -6,13 +6,43 @@ import type { NavItem } from "./navigation.types";
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ── Public Nav (Visitors / Not logged in) ────────────────────────────────────
-// NOTE: يبقى كما هو — بناءً على قرار المستخدم
+// «الخدمات» is the mega menu the owner approved in 4 Oct item 129: one entry
+// whose panel sorts the services into four groups. The group titles are his
+// own words (ruling P18). It replaced four top-level links — «خدمات الأفراد»,
+// «الشركات», «المحامين», «ذكاء نظامي» — and every one of their pages is still
+// linked here, once (navigation.navbar.test.ts). A group's `href` is a "#"
+// placeholder: the title is a heading, never a destination.
 export const PUBLIC_NAV: NavItem[] = [
   { label: "الرئيسية",          labelEn: "Home",           href: "/?noredirect=true" },
-  { label: "خدمات الأفراد",      labelEn: "Individuals",    href: "/services/individuals" },
-  { label: "الشركات",            labelEn: "Business",       href: "/services/business" },
-  { label: "المحامين",           labelEn: "Lawyers",        href: "/services/lawyers" },
-  { label: "ذكاء نظامي",           labelEn: "Nezamy AI",      href: "/ai" },
+  {
+    label: "الخدمات", labelEn: "Services", href: "#services",
+    children: [
+      {
+        label: "خدمات الأفراد", labelEn: "Individual Services", href: "#services-individuals",
+        children: [
+          { label: "عرض خدمات الأفراد", labelEn: "View individual services", href: "/services/individuals", icon: "User" },
+        ],
+      },
+      {
+        label: "خدمات الشركات", labelEn: "Business Services", href: "#services-business",
+        children: [
+          { label: "عرض خدمات الشركات", labelEn: "View business services", href: "/services/business", icon: "Buildings" },
+        ],
+      },
+      {
+        label: "خدمات المحامين", labelEn: "Lawyer Services", href: "#services-lawyers",
+        children: [
+          { label: "عرض خدمات المحامين", labelEn: "View lawyer services", href: "/services/lawyers", icon: "Scales" },
+        ],
+      },
+      {
+        label: "أدوات الذكاء الاصطناعي", labelEn: "AI Tools", href: "#services-ai",
+        children: [
+          { label: "ذكاء نظامي", labelEn: "Nezamy AI", href: "/ai", icon: "Brain" },
+        ],
+      },
+    ],
+  },
   { label: "الاشتراكات",         labelEn: "Pricing",        href: "/pricing" },
   {
     label: "المعرفة القانونية", labelEn: "Legal Knowledge", href: "#knowledge",
@@ -197,6 +227,16 @@ export const NGO_NAV: NavItem[] = [
     ],
   },
 ];
+
+/**
+ * A nav item renders as a mega menu (item 129) when every child is itself a
+ * group of links. A plain link beside the groups would have nowhere to show
+ * in the panel, so a mixed list stays an ordinary dropdown.
+ */
+export function isMegaMenu(item: NavItem): boolean {
+  const children = item.children ?? [];
+  return children.length > 0 && children.every((child) => (child.children?.length ?? 0) > 0);
+}
 
 // ── Helper: get navbar by userType
 export function getNavByUserType(userType: UserType): NavItem[] {
