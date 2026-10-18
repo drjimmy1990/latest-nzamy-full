@@ -507,7 +507,7 @@ test("fix round 1: the library cards promise no legislative alerts and no invite
   // card — and not the header comment — states a length.
   const raw = src("constants/pricing/pricing.library.ts");
   assert.doesNotMatch(raw, /تجربة [١٢٣] ?(شهر|أشهر)|تجربة ٢ شهر|تجربة ٣ أشهر|\d-month trial|\d+-day invite trial/);
-  assert.equal(library.split('"٣ دعوات لتجربة المكتبة"').length - 1, 6, "three individual + three firm cards (ar)");
+  assert.equal(library.split('"٣ دعوات للزملاء لتجربة المكتبة"').length - 1, 6, "three individual + three firm cards (ar)");
   assert.equal(library.split('"3 invitations for colleagues to try the library"').length - 1, 6, "the English twins");
 });
 
