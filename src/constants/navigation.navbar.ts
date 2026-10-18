@@ -161,7 +161,8 @@ export const CORPORATE_NAV: NavItem[] = [
     label: "خدمات متقدمة", labelEn: "Advanced Services", href: "#advanced",
     children: [
       { label: "الفحص القانوني ٣٦٠°", labelEn: "Health Check 360°", href: "/dashboard/business/health-check",    icon: "MagnifyingGlass", badge: "جديد" },
-      { label: "الحوكمة المؤسسية",     labelEn: "Governance",        href: "/services/corporate/governance",      icon: "ShieldCheck", badge: "جديد" },
+      // «قريباً», not «جديد»: the page itself says «قيد التطوير — لم تُطلق بعد».
+      { label: "الحوكمة المؤسسية",     labelEn: "Governance",        href: "/services/corporate/governance",      icon: "ShieldCheck", badge: "قريباً" },
       { label: "إرسال للمراجعة",       labelEn: "New Review",        href: "/dashboard/business/reviews/new",     icon: "FileArrowUp" },
       { label: "مراجعات الإدارات",     labelEn: "Dept Reviews",      href: "/dashboard/business/reviews",         icon: "ClipboardText" },
       { label: "المستشار المنتدب",     labelEn: "Seconded Counsel",  href: "/services/corporate/seconded-counsel",icon: "UserCircle" },

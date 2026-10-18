@@ -232,6 +232,34 @@ test("legal-representation and consultations no longer promise ratings or choosi
   assert.doesNotMatch(rep, /24 hours/i, "legal-representation: no \"within 24 hours\"");
 });
 
+// The consultations FAQ promised «نضمن الرضا الكامل … استرداد كامل خلال ٢٤
+// ساعة من انتهاء الجلسة». The owner-approved /refund-policy (answer ١٨٠) says
+// otherwise: a full cancellation up to 24 hours BEFORE the session; anything
+// else follows the client's agreement with the law office, plus a quality
+// complaint the Nezamy team reviews.
+test("consultations: the refund answer says what /refund-policy says, and links to it", () => {
+  const src = code(readFileSync(pageFileFor("/services/consultations"), "utf8"));
+  assert.doesNotMatch(src, /نضمن الرضا/, "no satisfaction guarantee");
+  assert.doesNotMatch(src, /من انتهاء الجلسة/, "no refund counted from the end of the session");
+  assert.doesNotMatch(src, /guarantee full satisfaction/i);
+  assert.doesNotMatch(src, /session completion/i);
+  assert.match(src, /قبل ٢٤ ساعة من موعد الجلسة/, "the policy's own rule, in Arabic");
+  assert.match(src, /up to 24 hours before the session/, "and in English");
+  assert.match(src, /href: "\/refund-policy"/, "the answer links to the policy");
+
+  const policy = readFileSync(pageFileFor("/refund-policy"), "utf8");
+  assert.match(policy, /الإلغاء قبل ٢٤ ساعة/, "the rule quoted is still the policy's rule");
+});
+
+test("the corporate menu badges governance «قريباً», as its page says «قيد التطوير»", () => {
+  const row = CORPORATE_NAV.flatMap((i) => i.children ?? [i]).find(
+    (i) => i.href === "/services/corporate/governance",
+  );
+  assert.ok(row, "CORPORATE_NAV still links governance");
+  assert.equal(row.badge, "قريباً");
+  assert.match(readFileSync(pageFileFor(row.href), "utf8"), /قيد التطوير — لم تُطلق بعد/);
+});
+
 test("only the visitor navbar has a mega menu; the signed-in navbars render as before", () => {
   const signedIn = [
     LAWYER_NAV, FIRM_NAV, INDIVIDUAL_NAV, CORPORATE_NAV, MICRO_NAV,
