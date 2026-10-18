@@ -9,15 +9,21 @@
  * `next/server`, assertRole and the Supabase service client, so it cannot be
  * imported and executed from `node --test`. The rate-limit half IS executable.
  *
- * What it pins (review 2026-09-21 A3/C01, follow-up 2026-09-22): this route
- * burns a `library.invitations.current_uses` slot BEFORE it grants. Since
- * grantEntitlement started skipping downgrades, a redemption by a user who
- * already holds pro-or-better writes no subscription — so the burned slot must
- * be given back, with the same compare-and-swap the failed-grant path uses, and
- * the answer must not be the 200 that makes
- * src/lib/services/libraryInvitationDisplay.ts print «فُعّلت باقة … حتى …» over
- * a grant that never happened. Passing `replaceActive` instead would re-create
- * A3 through a second door: a 30-day "pro" code cancelling a live "max".
+ * What it pins:
+ *   - Owner answers ٢٠١–٢٠٣ (2026-10-18): a code grants the LIBRARY, for 30
+ *     days — a `lib-invite` row in library_access_grants with source
+ *     'invite_code' — and no longer a "pro" subscription through
+ *     grantEntitlement. The success payload says so (`tier: "library"`,
+ *     `days`), so src/lib/services/libraryInvitationDisplay.ts prints the
+ *     library sentence instead of «فُعّلت باقة Pro …».
+ *   - The route burns a `library.invitations.current_uses` slot BEFORE it
+ *     grants, so a failed grant gives the slot back with one shared
+ *     compare-and-swap (review 2026-09-21 A3/C01). The old second refund, for
+ *     a grant grantEntitlement SKIPPED as a downgrade, is gone with the call
+ *     itself: a library grant is its own row, cancels nothing, and has no
+ *     skipped outcome.
+ *   - A failed grant (the grants table may not exist yet — deploy order) is a
+ *     400 in Arabic, never a 500 and never the raw English/Postgres error.
  */
 
 import test from "node:test";
@@ -31,7 +37,7 @@ const routeSource = readFileSync(join(import.meta.dirname, "route.ts"), "utf8");
 /**
  * The route with its JSDoc and line comments dropped, so a rule about the CODE
  * is neither satisfied nor broken by prose that merely names the identifier —
- * the route's own header explains at length why `replaceActive` is NOT passed.
+ * the route's own header explains why there is no `pro` and no skipped grant.
  */
 function codeOnly(source: string): string {
   return source
@@ -43,23 +49,42 @@ function codeOnly(source: string): string {
     .join("\n");
 }
 
-// ── 1. the no-downgrade rule is NOT overridden here ─────────────────────────
+const GRANT_CALL = "await grantLibraryAccess({";
 
-test("the redeem flow never overrides the no-downgrade rule", () => {
-  assert.ok(
-    !codeOnly(routeSource).includes("replaceActive"),
-    "a self-service code must never cancel a better live subscription — that is review A3/C01 itself",
-  );
+/** The object literal handed to grantLibraryAccess(). */
+function grantCallBlock(source: string): string {
+  const callAt = source.indexOf(GRANT_CALL);
+  assert.ok(callAt > -1, "the route no longer calls grantLibraryAccess");
+  const endAt = source.indexOf("});", callAt);
+  assert.ok(endAt > callAt, "could not find the end of the grantLibraryAccess call");
+  return source.slice(callAt, endAt);
+}
+
+// ── 1. a code grants the library for 30 days, never "pro" ───────────────────
+
+test("redeem writes a 30-day lib-invite library grant", () => {
+  const code = codeOnly(routeSource);
+  assert.ok(code.includes("const REDEEM_LIBRARY_DAYS = 30;"), "a code's library window is 30 days");
+  const call = grantCallBlock(code);
+  assert.ok(call.includes("userId,"), "the grant goes to the signed-in caller");
+  assert.ok(call.includes('planRef: "lib-invite"'), "an invitation code's grant is plan 'lib-invite'");
+  assert.ok(call.includes("days: REDEEM_LIBRARY_DAYS"), "the grant lasts the 30 days");
+  assert.ok(call.includes('source: "invite_code"'), "the grant's source is 'invite_code'");
+});
+
+test("redeem no longer grants pro or writes a subscription", () => {
+  const code = codeOnly(routeSource);
+  assert.ok(!code.includes("grantEntitlement"), "grantEntitlement writes a `subscriptions` row — a code is the library only");
+  assert.ok(!code.includes('"pro"'), "no pro tier survives in the redeem flow");
+  assert.ok(!code.includes("ServerTier"), "a code carries no plan tier any more");
+  assert.ok(!code.includes("replaceActive"), "a self-service code must never cancel a live subscription — review A3/C01");
 });
 
 // ── 2. the burned slot is refunded through one shared CAS ───────────────────
 
 test("the refund is a compare-and-swap, written once and shared", () => {
   const helperAt = routeSource.indexOf("async function refundClaimedUse(");
-  assert.ok(
-    helperAt > -1,
-    "the refund is no longer a named helper — the two callers will drift",
-  );
+  assert.ok(helperAt > -1, "the refund is no longer a named helper");
   const helperEnd = routeSource.indexOf("\n  }", routeSource.indexOf("console.error", helperAt));
   assert.ok(helperEnd > helperAt, "could not find the end of refundClaimedUse");
   const helper = routeSource.slice(helperAt, helperEnd);
@@ -78,46 +103,54 @@ test("the refund is a compare-and-swap, written once and shared", () => {
   );
 });
 
-test("both a failed grant and a skipped grant refund the use", () => {
+test("a failed grant refunds the use, answers 400 in Arabic, and hides the raw error", () => {
+  const code = codeOnly(routeSource);
   assert.equal(
-    routeSource.split("await refundClaimedUse(claimed);").length - 1,
-    2,
-    "the failure path and the alreadyEntitled path must each give the slot back",
+    code.split("await refundClaimedUse(claimed);").length - 1,
+    1,
+    "exactly one refund: the failed grant (a library grant has no skipped outcome)",
   );
-  const failAt = routeSource.indexOf("if (!grant.ok) {");
-  const skipAt = routeSource.indexOf("if (grant.alreadyEntitled) {");
-  assert.ok(failAt > -1 && skipAt > -1, "one of the two arms is gone");
-  assert.ok(failAt < skipAt, "the ok check must narrow the result before alreadyEntitled is read");
+  const failAt = code.indexOf("if (!grant.ok) {");
+  const refundAt = code.indexOf("await refundClaimedUse(claimed);");
+  const successAt = code.indexOf("ok: true");
+  assert.ok(failAt > -1, "the route no longer checks its grant");
+  assert.ok(
+    failAt < refundAt && refundAt < successAt,
+    "the refund belongs to the failure arm, before the success payload",
+  );
+  const block = code.slice(failAt, successAt);
+  assert.ok(
+    block.includes("status: 400"),
+    "a failed grant (the table may be missing) is a 400 like every rejection here, never a 500",
+  );
+  assert.ok(!block.includes("status: 500"));
+  assert.ok(/error:\s*"[^"]*المكتبة/.test(block), "the failure must be Arabic and name the library");
+  assert.ok(
+    !block.includes("grant.error"),
+    "the grant's error is English or raw Postgres — apiMutate shows `error` verbatim",
+  );
 });
 
-// ── 3. a skipped grant is a 400, not a fake activation ──────────────────────
+// ── 3. the success payload says library, 30 days, and the real end ──────────
 
-test("an alreadyEntitled redemption answers 400 with an Arabic message, before the success payload", () => {
-  const skipAt = routeSource.indexOf("if (grant.alreadyEntitled) {");
-  const successAt = routeSource.indexOf("const subscription = (grant.detail");
+test("the success payload names the library, its days, and the grant's own end", () => {
+  const code = codeOnly(routeSource);
+  const successAt = code.indexOf("ok: true");
   assert.ok(successAt > -1, "the success payload vanished — re-read this test");
+  const payload = code.slice(successAt, code.indexOf("});", successAt));
   assert.ok(
-    skipAt < successAt,
-    "the skip arm must return before tier/until are read off the EXISTING subscription",
+    payload.includes('tier: "library"'),
+    "the payload must not say pro: the modal turns `tier` into its sentence",
   );
-  const skipBlock = routeSource.slice(skipAt, successAt);
-  assert.ok(skipBlock.includes("status: 400"), "every rejection in this route is a 400");
-  assert.ok(
-    /error:\s*\n?\s*"[^"]*باقة/.test(skipBlock),
-    "the skip arm must carry an Arabic error — apiMutate throws it and the modal shows it verbatim",
-  );
-  assert.ok(
-    skipBlock.includes("كود الدعوة"),
-    "the message must tell the user the code was not spent",
-  );
-  assert.ok(!skipBlock.includes("ok: true"), "a skipped grant must not answer like a success");
+  assert.ok(payload.includes("days: REDEEM_LIBRARY_DAYS"), "the modal says how long the library is open");
+  assert.ok(payload.includes("until: grant.endsAt"), "the end date is the inserted grant's own");
 });
 
 // ── 4. the counter is still claimed before the grant, under the strict bucket ─
 
 test("the slot is claimed before the grant, so the code cannot be spent twice", () => {
   const claimAt = routeSource.indexOf("claimed = updated;");
-  const grantAt = routeSource.indexOf("await grantEntitlement({");
+  const grantAt = routeSource.indexOf(GRANT_CALL);
   assert.ok(claimAt > -1 && claimAt < grantAt, "the CAS claim must still precede the grant");
 });
 

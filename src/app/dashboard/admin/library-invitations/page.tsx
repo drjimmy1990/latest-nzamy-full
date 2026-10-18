@@ -15,7 +15,8 @@ import { formatArabicDate, toArabicDigits } from "@/lib/services/clientDashboard
  * POST /api/v1/admin/library-invitations — create { code?, maxUses, expiresAt? }
  *
  * Every code grants the SAME thing regardless of who creates it or how many
- * uses it has: the "pro" tier for 30 days (see redeem route). There is no
+ * uses it has: the legal library for 30 days — a library grant, not a plan
+ * (owner answers ٢٠١–٢٠٣; see the redeem route). There is no
  * per-code trial length to configure here — that belongs to the OTHER,
  * unrelated invitation system (public.invitations, colleague referrals).
  */
@@ -127,7 +128,7 @@ export default function AdminLibraryInvitationsPage() {
           <div>
             <h1 className="text-xl font-black text-white">أكواد دعوة المكتبة</h1>
             <p className="text-[12px] text-zinc-500">
-              كل كود يمنح باقة Pro لمدة ٣٠ يوماً — أي مستخدم مسجّل يفعّله من صفحة اشتراك المكتبة.
+              كل كود يمنح اشتراك المكتبة القانونية لمدة ٣٠ يوماً — أي مستخدم مسجّل يفعّله من صفحة اشتراك المكتبة.
             </p>
           </div>
         </div>

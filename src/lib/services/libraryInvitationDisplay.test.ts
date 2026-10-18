@@ -42,3 +42,28 @@ test("redeemSuccessMessageAr never hard-codes the Pro label for a different tier
     "فُعّلت باقة max حتى ٤ أكتوبر ٢٠٢٦",
   );
 });
+
+// ── the library tier (owner answers ٢٠١–٢٠٣: a code grants the library) ─────
+
+test("redeemSuccessMessageAr names the legal library, its 30 days and the end date", () => {
+  assert.equal(
+    redeemSuccessMessageAr("library", "2026-10-04T09:30:00.000Z", 30),
+    "فُعّل اشتراك المكتبة القانونية لمدة ٣٠ يوماً حتى ٤ أكتوبر ٢٠٢٦",
+  );
+});
+
+test("redeemSuccessMessageAr drops the length or the date it was not given, never says Pro", () => {
+  assert.equal(
+    redeemSuccessMessageAr("library", "2026-10-04T09:30:00.000Z", null),
+    "فُعّل اشتراك المكتبة القانونية حتى ٤ أكتوبر ٢٠٢٦",
+  );
+  assert.equal(redeemSuccessMessageAr("library", null, 30), "فُعّل اشتراك المكتبة القانونية لمدة ٣٠ يوماً");
+  assert.equal(redeemSuccessMessageAr("library", "not-a-date", undefined), "فُعّل اشتراك المكتبة القانونية");
+  assert.ok(!redeemSuccessMessageAr("library", null, 30).includes("Pro"));
+});
+
+test("redeemSuccessMessageAr counts short library windows with the right Arabic form", () => {
+  assert.equal(redeemSuccessMessageAr("library", null, 7), "فُعّل اشتراك المكتبة القانونية لمدة ٧ أيام");
+  assert.equal(redeemSuccessMessageAr("library", null, 1), "فُعّل اشتراك المكتبة القانونية لمدة يوم واحد");
+  assert.equal(redeemSuccessMessageAr("library", null, 0), "فُعّل اشتراك المكتبة القانونية");
+});

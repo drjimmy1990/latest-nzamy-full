@@ -5,7 +5,9 @@
  *
  * This file is the pure half: the plan and source names the table's CHECK
  * constraints allow, the fixed length of the three paid plans, the half-open
- * window test, and the date math of a new grant. The IO half (reading and
+ * window test, the date math of a new grant, the plan and length an approved
+ * request or a colleague invitation grants, and the grant's end date in
+ * Arabic. The IO half (reading and
  * writing the table with the service client) is ./libraryAccessServer.ts.
  *
  * Relative imports only: `node --test` loads this file (libraryAccess.test.ts).
@@ -72,4 +74,68 @@ export function grantWindow(days: number, now: Date): { startsAt: string; endsAt
  */
 export function isMissingLibraryGrantsTable(code: string | undefined): boolean {
   return code === '42P01' || code === 'PGRST205';
+}
+
+/** The length of a library request whose ref is not one of the paid plans. */
+export const LIBRARY_REQUEST_FALLBACK_DAYS = 90;
+
+/**
+ * What an approved `library` entitlement request grants (owner ٢٠١–٢٠٣):
+ * the requested paid plan under its own name, or 'lib-admin' for any other
+ * ref; for the admin's `durationDays` when given, else the plan's real length,
+ * else 90 days. `durationDays` undefined or null means "not given"; anything
+ * else must be an integer from 1 to 3660, or the answer is `{ ok: false }`.
+ */
+export function resolveLibraryRequestGrant(
+  requestedRef: unknown,
+  durationDays: unknown,
+): { ok: true; planRef: LibraryPlanRef; days: number } | { ok: false } {
+  const planDays = libraryPlanDays(requestedRef);
+  const planRef: LibraryPlanRef = planDays === null ? 'lib-admin' : (requestedRef as LibraryPlanRef);
+  if (durationDays === undefined || durationDays === null) {
+    return { ok: true, planRef, days: planDays ?? LIBRARY_REQUEST_FALLBACK_DAYS };
+  }
+  if (
+    typeof durationDays !== 'number' ||
+    !Number.isInteger(durationDays) ||
+    durationDays < GRANT_MIN_DAYS ||
+    durationDays > GRANT_MAX_DAYS
+  ) {
+    return { ok: false };
+  }
+  return { ok: true, planRef, days: durationDays };
+}
+
+/** The trial length of a colleague invitation whose trial_days is unusable. */
+export const COLLEAGUE_INVITE_FALLBACK_DAYS = 30;
+
+/**
+ * The library trial a colleague invitation grants, in days: its own
+ * `trial_days` when that is an integer from 1 to 3660, else 30.
+ */
+export function colleagueInviteTrialDays(trialDays: unknown): number {
+  return typeof trialDays === 'number' &&
+    Number.isInteger(trialDays) &&
+    trialDays >= GRANT_MIN_DAYS &&
+    trialDays <= GRANT_MAX_DAYS
+    ? trialDays
+    : COLLEAGUE_INVITE_FALLBACK_DAYS;
+}
+
+/**
+ * A grant's end as an Arabic Gregorian date in Riyadh time («١٨ أكتوبر ٢٠٢٧»),
+ * whatever timezone the server runs in. Null for a value that is not a
+ * parseable date string, never "Invalid Date".
+ */
+export function libraryEndsAtAr(endsAt: unknown): string | null {
+  if (typeof endsAt !== 'string' || endsAt.length === 0) return null;
+  const ms = Date.parse(endsAt);
+  if (!Number.isFinite(ms)) return null;
+  return new Intl.DateTimeFormat('ar-SA', {
+    calendar: 'gregory',
+    timeZone: 'Asia/Riyadh',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(new Date(ms));
 }

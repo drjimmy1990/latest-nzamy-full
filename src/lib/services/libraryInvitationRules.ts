@@ -11,9 +11,9 @@
  * updated_at. There is no per-code tier/trial_days column — that is the
  * *other* invitation system (`public.invitations`, colleague referrals,
  * `/api/v1/invite/[code]/accept`). A library code always grants the same
- * thing: the "pro" tier that unlocks `library-full-access`
- * (src/hooks/useSubscription.ts FEATURE_GATES), for a fixed duration — see
- * the redeem route for that constant.
+ * thing: the legal library — a `lib-invite` library grant, not a plan
+ * (owner answers ٢٠١–٢٠٣) — for a fixed duration; see the redeem route for
+ * that constant.
  */
 
 import { randomInt } from "node:crypto";

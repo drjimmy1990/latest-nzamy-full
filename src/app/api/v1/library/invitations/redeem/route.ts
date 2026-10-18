@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
 import { createServiceClient } from "@/lib/supabase/server";
-import { grantEntitlement } from "@/lib/entitlements";
-import type { ServerTier } from "@/lib/access-control";
+import { grantLibraryAccess } from "@/lib/libraryAccessServer";
 import { normalizeInvitationCode } from "@/lib/services/libraryInvitationRules";
 import { libraryInvitationDbErrorResponse } from "../_shared";
 
@@ -15,30 +14,30 @@ import { libraryInvitationDbErrorResponse } from "../_shared";
  * unlike the sibling colleague-referral flow at
  * /api/v1/invite/[code]/accept (public.invitations), which uses 404/409/410.
  *
- * A code always grants the SAME thing: the "pro" tier, which is what
- * unlocks `library-full-access` in src/hooks/useSubscription.ts's
- * FEATURE_GATES / src/lib/access-control.ts's SERVER_FEATURE_GATES. There is
- * no per-code tier or trial-length column on `library.invitations` (unlike
- * `public.invitations`, which does carry `tier`/`trial_days`) — the current
- * UI (src/lib/invitationStore.ts, entirely client-side/localStorage) never
- * promised a specific length for this admin-code flow, so 30 days is the
- * documented fallback.
+ * A code always grants the SAME thing (owner answers ٢٠١–٢٠٣, 2026-10-18):
+ * the legal library, for 30 days — one `lib-invite` row in
+ * public.library_access_grants with source 'invite_code' — and no plan tier.
+ * It used to grant a 30-day "pro" subscription through grantEntitlement;
+ * full library access is now Pro+ OR an active library grant OR admin
+ * (src/lib/libraryAccessDecision.ts), so the grant alone opens the library.
+ * There is no per-code length column on `library.invitations` (unlike
+ * `public.invitations`, which carries `trial_days`), so the length is fixed
+ * here.
  *
- * ── Why this route does NOT pass `replaceActive` (review 2026-09-21 A3/C01) ──
- * grantEntitlement skips a plan grant that would downgrade the user. Overriding
- * that here would re-create the very bug the review found, through a second
- * door: a 30-day "pro" code would cancel a live "max" subscription. So the
- * grant is allowed to skip, and the slot this route already burned off
- * `current_uses` is given BACK with the same compare-and-swap the failed-grant
- * path uses (refundClaimedUse below) — the code stays spendable for the day the
- * better plan lapses. The answer is a 400 with an Arabic message, the same
- * shape every other rejection here takes, because the alternative (200 with the
- * EXISTING subscription in `tier`/`until`) would make
- * src/lib/services/libraryInvitationDisplay.ts print «فُعّلت باقة … حتى …» over
- * a grant that never happened.
+ * A library grant is its own row: it cancels no subscription, so a code can
+ * no longer downgrade anyone (review 2026-09-21 A3/C01) and there is no
+ * "skipped" outcome to refund. The one refund left is for a FAILED grant —
+ * for instance 20261019_10 has not run yet — which gives back the slot this
+ * route already burned off `current_uses` (refundClaimedUse below) and answers
+ * a 400 in Arabic, the shape every other rejection here takes. It never falls
+ * back to granting "pro": that would undo the owner's decision.
+ *
+ * The success payload keeps its shape ({ ok, tier, until }) and says what was
+ * granted: `tier: "library"`, plus `days`, so
+ * src/lib/services/libraryInvitationDisplay.ts prints «فُعّل اشتراك المكتبة
+ * القانونية لمدة ٣٠ يوماً حتى …».
  */
-const REDEEM_TIER: ServerTier = "pro";
-const REDEEM_DURATION_DAYS = 30;
+const REDEEM_LIBRARY_DAYS = 30;
 
 /** Bounds the number of read→CAS-update rounds when concurrent redemptions
  *  race for the same code's `current_uses` counter. */
@@ -163,42 +162,27 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const grant = await grantEntitlement({
+  const grant = await grantLibraryAccess({
     userId,
-    action: "plan",
-    tier: REDEEM_TIER,
-    durationDays: REDEEM_DURATION_DAYS,
-    description: `دعوة المكتبة: ${code}`,
-    actorId: userId,
+    planRef: "lib-invite",
+    days: REDEEM_LIBRARY_DAYS,
+    source: "invite_code",
   });
 
   if (!grant.ok) {
-    // Don't burn the invitation on a failed grant — give the use back.
-    await refundClaimedUse(claimed);
-    return NextResponse.json({ error: grant.error || "تعذّر تفعيل الاشتراك" }, { status: 500 });
-  }
-
-  if (grant.alreadyEntitled) {
-    // Nothing was written: the account already holds an equal-or-better plan,
-    // and grantEntitlement refused to trade it for this 30-day "pro" window.
-    // Don't burn the invitation for a subscription the user did not receive —
-    // the same refund the failure path takes, so the code can be spent later.
+    // grantLibraryAccess has logged its error (English or raw Postgres). Don't
+    // burn the invitation on a failed grant — give the use back.
     await refundClaimedUse(claimed);
     return NextResponse.json(
-      {
-        error:
-          "حسابك يحمل بالفعل باقة مماثلة أو أعلى. لم يُستهلك كود الدعوة، ويمكنك استخدامه بعد انتهاء اشتراكك الحالي.",
-      },
+      { error: "تعذّر تفعيل اشتراك المكتبة. لم يُستهلك كود الدعوة، حاول مرة أخرى لاحقاً." },
       { status: 400 },
     );
   }
 
-  const subscription = (grant.detail as { subscription?: { tier?: string; current_period_end?: string } })
-    .subscription;
-
   return NextResponse.json({
     ok: true,
-    tier: subscription?.tier ?? REDEEM_TIER,
-    until: subscription?.current_period_end ?? null,
+    tier: "library",
+    days: REDEEM_LIBRARY_DAYS,
+    until: grant.endsAt,
   });
 }

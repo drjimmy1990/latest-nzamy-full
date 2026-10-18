@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
+import { colleagueInviteTrialDays } from "@/lib/libraryAccess";
 
 /**
  * GET /api/v1/invite/[code] — Public invite-code lookup for the
@@ -105,7 +106,9 @@ export async function GET(
     return NextResponse.json({
       valid: true,
       status: invitation.status,
-      trialDays: invitation.trial_days ?? 14,
+      // The same rule POST .../accept grants by (owner ٢٠١–٢٠٣): the row's
+      // own whole-day trial, else 30, so the page promises what is granted.
+      trialDays: colleagueInviteTrialDays(invitation.trial_days),
       tier: invitation.tier ?? null,
       expiresAt: invitation.expires_at,
       inviterName,

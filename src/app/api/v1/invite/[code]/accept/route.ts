@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { grantEntitlement } from "@/lib/entitlements";
 import type { ServerTier } from "@/lib/access-control";
+import { colleagueInviteTrialDays } from "@/lib/libraryAccess";
+import { grantLibraryAccess } from "@/lib/libraryAccessServer";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 
 /**
@@ -9,8 +10,19 @@ import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
  *
  * Requires an authenticated user. Looks up invitations by code (service-role,
  * since there is no public select policy), validates it is still 'pending' and
- * not expired, then grants the invited user a plan trial via grantEntitlement
- * and marks the invitation accepted.
+ * not expired, then grants the invited user a LIBRARY trial and marks the
+ * invitation accepted.
+ *
+ * What it grants (owner answers ٢٠١–٢٠٣, 2026-10-18): one `lib-trial` row in
+ * public.library_access_grants, source 'colleague_invite', for the
+ * invitation's own `trial_days` (30 when it is not a whole number of days
+ * from 1 to 3660 — colleagueInviteTrialDays, which GET /api/v1/invite/[code]
+ * also uses, so the landing page promises the length granted here). It no
+ * longer grants a plan: the invitation's `tier` decides nothing, and no
+ * `subscriptions` row is written. This route serves only these
+ * public.invitations colleague invites — the landing page
+ * (src/app/invite/[code]/page.tsx) invites to the legal library; team and
+ * firm invitations are answered at /api/v1/me/invitations/{kind}/{id}/accept.
  *
  * invitations columns (20260706_content_and_ops.sql):
  *   code, inviter_id, trial_days (default 14), tier, status
@@ -35,12 +47,15 @@ import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
  * 3. A row whose `tier` is NULL or not one of VALID_TIERS is REFUSED (400).
  *    It used to silently become "pro" — combined with invite/sync, which let
  *    any signed-in user write `tier: null` rows with the service-role
- *    client, that was a self-service Pro subscription.
- * The grant itself also no longer cancels a better live subscription — see
- * `replaceActive` in src/lib/entitlements.ts. When it declines for that
- * reason the invitation is left PENDING and the answer is a 400 carrying the
- * Arabic explanation: burning the code would cost the user a trial they never
- * received, and a 2xx would be read as success by the only consumer —
+ *    client, that was a self-service Pro subscription. Since owner ٢٠١–٢٠٣
+ *    the tier grants nothing; the refusal is kept as the row-validity check
+ *    the review mandated, so a malformed row still dies here.
+ * The old "skipped grant" arm (grantEntitlement declining to replace a better
+ * plan) is gone with that call: a library grant is its own row, cancels
+ * nothing, and is either written or failed. A FAILED grant (for instance
+ * 20261019_10 has not run yet) leaves the invitation PENDING and answers a
+ * 400 in Arabic — never a 500, never the raw error, and never a fallback to
+ * a plan. A 2xx would be read as success by the only consumer —
  * src/app/invite/[code]/page.tsx sets `accepted` on any ok response without
  * looking at the body, and would print «تجربتك مفعّلة!» over a grant that was
  * never written. Its `!res.ok` arm shows `json.error` verbatim, which is why
@@ -133,7 +148,9 @@ export async function POST(
     }
 
     // The tier must be spelled out on the invitation. A missing or unknown
-    // tier is refused — it must NEVER fall back to "pro" (review A3/C01).
+    // tier is refused — it must NEVER fall back to "pro" (review A3/C01). It
+    // is a row-validity check only: the grant below is the library, whatever
+    // the tier says (owner ٢٠١–٢٠٣).
     const rawTier = row.tier as string | null;
     if (!rawTier || !VALID_TIERS.includes(rawTier as ServerTier)) {
       return NextResponse.json(
@@ -141,37 +158,20 @@ export async function POST(
         { status: 400 },
       );
     }
-    const tier = rawTier as ServerTier;
-    const durationDays =
-      typeof row.trial_days === "number" && row.trial_days > 0
-        ? (row.trial_days as number)
-        : 14;
+    const trialDays = colleagueInviteTrialDays(row.trial_days);
 
-    const grant = await grantEntitlement({
+    const grant = await grantLibraryAccess({
       userId: user.id,
-      action: "plan",
-      tier,
-      durationDays,
-      actorId: user.id,
-      description: `قبول دعوة ${code}`,
+      planRef: "lib-trial",
+      days: trialDays,
+      source: "colleague_invite",
     });
 
+    // grantLibraryAccess has logged its error (English or raw Postgres). The
+    // invitation stays pending, so the user can accept it again later.
     if (!grant.ok) {
-      return NextResponse.json({ error: grant.error }, { status: 500 });
-    }
-
-    // Nothing was written: the account already holds this plan or a better one,
-    // and grantEntitlement refused to trade it for this trial. Do NOT mark the
-    // invitation accepted — the user received nothing, so the code stays
-    // redeemable once the better plan lapses. It is a 400, not a 200: the
-    // landing page treats every ok response as an activated trial (see the
-    // header), and it renders this `error` verbatim.
-    if (grant.alreadyEntitled) {
       return NextResponse.json(
-        {
-          error:
-            "حسابك يحمل بالفعل هذه الباقة أو أعلى منها، ولم نغيّر اشتراكك الحالي. كود الدعوة لم يُستهلك ويمكنك استخدامه لاحقاً.",
-        },
+        { error: "تعذّر تفعيل تجربة المكتبة القانونية. لم تُستهلك الدعوة، حاول مرة أخرى لاحقاً." },
         { status: 400 },
       );
     }
@@ -194,11 +194,11 @@ export async function POST(
       );
     }
 
-    // Reaching here means a real grant: every other outcome, including the
-    // skipped one, returned a non-2xx above.
+    // Reaching here means a real grant: every other outcome returned a
+    // non-2xx above.
     return NextResponse.json({
       success: true,
-      data: { tier, trialDays: durationDays },
+      data: { planRef: "lib-trial", trialDays, until: grant.endsAt },
     });
   } catch (err) {
     console.error("[invite accept] Unexpected error:", err);

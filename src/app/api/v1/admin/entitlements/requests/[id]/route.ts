@@ -2,22 +2,35 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin, type ServerTier } from "@/lib/access-control";
 import { grantEntitlement, type GrantAction } from "@/lib/entitlements";
+import { libraryEndsAtAr, resolveLibraryRequestGrant } from "@/lib/libraryAccess";
+import { grantLibraryAccess } from "@/lib/libraryAccessServer";
 import { recordNotification } from "@/lib/notify";
 
 /**
  * PATCH /api/v1/admin/entitlements/requests/[id] — admin decides a request.
  * Body: { action: 'approve' | 'reject', grantAction?, tier?, amount?, durationDays? }
- * On approve: applies grantEntitlement (library/media requests → plan tier the
+ * On approve: applies grantEntitlement (media requests → the plan tier the
  * admin picks), then marks the request approved and notifies the requester.
+ *
+ * A `library` request is the exception (owner answers ٢٠١–٢٠٣, 2026-10-18):
+ * it grants the library only, never a plan. approveLibraryRequest (below)
+ * inserts a library_access_grants row — the requested plan (lib-q1 / lib-q2 /
+ * lib-annual, else lib-admin) for the admin's `durationDays` or the plan's
+ * real length (90/180/365, else 90) — and writes no `subscriptions` row. A
+ * library grant is its own row and cancels nothing, so the no-downgrade
+ * discussion below does not apply to it. If the grant fails (for instance
+ * 20261019_10 has not run yet) the answer is a 400 in Arabic and the request
+ * stays pending; it never falls back to granting a plan.
  *
  * This route deliberately does NOT pass `replaceActive` (review 2026-09-21
  * A3/C01 follow-up). POST /api/v1/admin/entitlements/grant does, because
  * granting `free` there is the only revoke an admin has — but nobody submits a
  * REQUEST asking to be moved down, so here the override would buy nothing and
- * cost something concrete: src/app/dashboard/admin/entitlements/requests/page.tsx:75
- * sends `tier: tierFor[row.id] ?? "pro"` and its selector shows "pro" until the
- * admin touches it, so approving a max/corp holder's library request without
- * changing the dropdown would cancel that subscription and insert a 30-day pro.
+ * cost something concrete: src/app/dashboard/admin/entitlements/requests/page.tsx
+ * sends `tier: tierFor[row.id] ?? "pro"` for plan and media rows, and its
+ * selector shows "pro" until the admin touches it, so approving a max/corp
+ * holder's media request without changing the dropdown would cancel that
+ * subscription and insert a 30-day pro.
  *
  * Without the override grantEntitlement declines that write and reports
  * `alreadyEntitled`, and the approve arm below tells the two outcomes apart:
@@ -86,8 +99,23 @@ export async function PATCH(
 
   // ── Approve ────────────────────────────────────────────────────────────────
   if (body.action === "approve") {
-    // Map the request kind → a concrete grant action. library/media → plan.
     const kind = reqRow.kind as string;
+
+    // A library request grants the library only, through its own arm — it
+    // must never reach grantEntitlement, which writes `subscriptions`.
+    if (kind === "library") {
+      return approveLibraryRequest({
+        admin,
+        id,
+        requestedRef: reqRow.requested_ref,
+        requesterId,
+        adminId: gate.userId,
+        durationDays: body.durationDays,
+        nowIso,
+      });
+    }
+
+    // Map the request kind → a concrete grant action. media → plan.
     const grantAction: GrantAction =
       body.grantAction ??
       (kind === "credits" ? "credits" : kind === "wallet" ? "wallet" : "plan");
@@ -139,4 +167,82 @@ export async function PATCH(
     { error: "action يجب أن يكون approve أو reject" },
     { status: 400 },
   );
+}
+
+/**
+ * Approves a `library` request (owner ٢٠١–٢٠٣): one library_access_grants row,
+ * source 'request', granted by the deciding admin. The order matches the plan
+ * arm above: validate, grant, and only then mark the request approved and
+ * tell the requester — so a failed grant leaves the request pending.
+ */
+async function approveLibraryRequest(input: {
+  admin: Awaited<ReturnType<typeof createServiceClient>>;
+  id: string;
+  requestedRef: unknown;
+  requesterId: string;
+  adminId: string | null;
+  durationDays: unknown;
+  nowIso: string;
+}) {
+  const { admin, id, requestedRef, requesterId, adminId, durationDays, nowIso } = input;
+
+  const plan = resolveLibraryRequestGrant(requestedRef, durationDays);
+  if (!plan.ok) {
+    return NextResponse.json(
+      { error: "مدة الاشتراك يجب أن تكون عدداً صحيحاً من يوم واحد إلى ٣٦٦٠ يوماً" },
+      { status: 400 },
+    );
+  }
+
+  const grant = await grantLibraryAccess({
+    userId: requesterId,
+    planRef: plan.planRef,
+    days: plan.days,
+    source: "request",
+    grantedBy: adminId,
+  });
+  if (!grant.ok) {
+    // grantLibraryAccess has logged its error, which is English or raw
+    // Postgres; the admin sees Arabic. The request stays pending, so it can be
+    // approved again once the grant works.
+    return NextResponse.json(
+      { error: "تعذّر تفعيل اشتراك المكتبة، وبقي الطلب قيد المراجعة. حاول مرة أخرى لاحقاً." },
+      { status: 400 },
+    );
+  }
+
+  const { error } = await admin
+    .from("entitlement_requests")
+    .update({ status: "approved", decided_by: adminId, decided_at: nowIso })
+    .eq("id", id);
+  if (error) {
+    console.error(
+      "[admin/entitlements/requests] library grant written, but the request was not marked approved:",
+      error.code,
+      error.message,
+    );
+    return NextResponse.json(
+      { error: "فُعّل اشتراك المكتبة، لكن تعذّر تحديث حالة الطلب. لا توافق عليه مرة أخرى." },
+      { status: 500 },
+    );
+  }
+
+  const untilAr = libraryEndsAtAr(grant.endsAt);
+  await recordNotification({
+    userId: requesterId,
+    title: "تمت الموافقة على طلبك",
+    body: untilAr
+      ? `تم تفعيل اشتراك المكتبة القانونية حتى ${untilAr}.`
+      : "تم تفعيل اشتراك المكتبة القانونية.",
+    href: "/laws",
+  });
+
+  return NextResponse.json({
+    success: true,
+    data: {
+      status: "approved",
+      alreadyEntitled: false,
+      grant: { planRef: plan.planRef, days: plan.days, endsAt: grant.endsAt },
+    },
+  });
 }

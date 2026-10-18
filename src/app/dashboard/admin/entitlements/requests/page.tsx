@@ -4,12 +4,15 @@ import { useEffect, useState, useCallback } from "react";
 import {
   Tray, CheckCircle, XCircle, Clock, CreditCard, Coins, Wallet, BookOpen, Play,
 } from "@phosphor-icons/react";
+import { libraryPlanDays } from "@/lib/libraryAccess";
 
 /**
  * Admin → Entitlement requests queue.
  * Users' paid CTAs create requests here (GET /api/v1/admin/entitlements/requests).
- * Approve applies grantEntitlement (library/media → the tier the admin picks);
- * reject just closes it. Both notify the requester.
+ * Approve: a library request grants the library only, for the days shown on
+ * its row (prefilled from its plan — 90/180/365, else 90; owner ٢٠١–٢٠٣);
+ * plan/media requests apply grantEntitlement with the tier the admin picks.
+ * Reject just closes it. Both notify the requester.
  */
 
 interface RequestRow {
@@ -40,12 +43,18 @@ const KIND_META: Record<string, { label: string; icon: typeof CreditCard }> = {
 
 const TIERS = ["shield", "ai", "pro", "max", "corp", "enterprise"] as const;
 
+/** A library request's default length: its plan's days (90/180/365), else 90. */
+function defaultLibraryDays(row: RequestRow): number {
+  return libraryPlanDays(row.requested_ref) ?? 90;
+}
+
 export default function AdminEntitlementRequestsPage() {
   const [status, setStatus] = useState<string>("pending");
   const [rows, setRows] = useState<RequestRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [tierFor, setTierFor] = useState<Record<string, string>>({});
+  const [daysFor, setDaysFor] = useState<Record<string, string>>({});
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const load = useCallback(async () => {
@@ -65,14 +74,24 @@ export default function AdminEntitlementRequestsPage() {
     load();
   }, [load]);
 
+  /** The days a library approval sends; an edited field is sent as typed, and the server validates it. */
+  function libraryDaysFor(row: RequestRow): number {
+    const raw = daysFor[row.id];
+    return raw === undefined ? defaultLibraryDays(row) : Number(raw);
+  }
+
   async function decide(row: RequestRow, action: "approve" | "reject") {
     setBusyId(row.id);
     setToast(null);
     try {
       const body: Record<string, unknown> = { action };
-      // library/media/plan approvals need a tier to grant.
-      if (action === "approve" && ["plan", "library", "media"].includes(row.kind)) {
+      // plan/media approvals need a tier to grant.
+      if (action === "approve" && ["plan", "media"].includes(row.kind)) {
         body.tier = tierFor[row.id] ?? "pro";
+      }
+      // A library approval grants the library only, for these days.
+      if (action === "approve" && row.kind === "library") {
+        body.durationDays = libraryDaysFor(row);
       }
       const res = await fetch(`/api/v1/admin/entitlements/requests/${row.id}`, {
         method: "PATCH",
@@ -139,7 +158,8 @@ export default function AdminEntitlementRequestsPage() {
         {rows.map((row) => {
           const meta = KIND_META[row.kind] ?? { label: row.kind, icon: Clock };
           const Icon = meta.icon;
-          const needsTier = ["plan", "library", "media"].includes(row.kind);
+          const needsTier = ["plan", "media"].includes(row.kind);
+          const isLibrary = row.kind === "library";
           return (
             <div key={row.id} className="rounded-2xl border border-white/[0.06] bg-white/[0.03] p-4">
               <div className="flex items-start gap-3">
@@ -160,6 +180,21 @@ export default function AdminEntitlementRequestsPage() {
 
                 {row.status === "pending" ? (
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    {isLibrary && (
+                      <label className="flex items-center gap-1.5 text-[11px] text-zinc-400">
+                        المدة بالأيام
+                        <input
+                          type="number"
+                          min={1}
+                          max={3660}
+                          step={1}
+                          inputMode="numeric"
+                          value={daysFor[row.id] ?? String(defaultLibraryDays(row))}
+                          onChange={(e) => setDaysFor((p) => ({ ...p, [row.id]: e.target.value }))}
+                          className="w-20 rounded-lg bg-white/[0.04] border border-white/[0.08] px-2 py-1.5 text-[11px] text-white focus:outline-none"
+                        />
+                      </label>
+                    )}
                     {needsTier && (
                       <select
                         value={tierFor[row.id] ?? "pro"}

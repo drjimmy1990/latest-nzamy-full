@@ -12,7 +12,8 @@
  * real table from src/lib/rateLimitRoutes.ts.
  *
  * What it pins (review 2026-09-21 A3 / C01 — "any signed-in user can grant
- * themselves Pro for free" — and its 2026-09-22 follow-up):
+ * themselves Pro for free" — its 2026-09-22 follow-up, and the owner's answers
+ * ٢٠١–٢٠٣ of 2026-10-18):
  *   1. POST /api/v1/invite/sync is GONE. It let any authenticated caller write
  *      20 self-chosen codes into public.invitations with the service-role
  *      client and `tier: null`.
@@ -20,11 +21,16 @@
  *   3. a row with NO inviter_id is refused (400) instead of skipping guard 2.
  *      (That NULL is produced by the FK's `on delete set null`, not by
  *      invite/sync — see the route header.)
- *   4. a NULL/unknown tier is refused (400) instead of becoming "pro".
- *   5. a grant that was SKIPPED (the account already holds that plan or better)
- *      leaves the invitation pending AND answers a non-2xx: the landing page
- *      sets `accepted` on any ok response without reading the body, so a 200
- *      would print «تجربتك مفعّلة!» over a grant that was never written.
+ *   4. a NULL/unknown tier is refused (400) instead of becoming "pro". The
+ *      tier no longer decides what is granted (point 5); the refusal stays as
+ *      the row-validity check the review mandated.
+ *   5. a colleague invitation grants the LIBRARY: a `lib-trial` row in
+ *      library_access_grants, source 'colleague_invite', for the invitation's
+ *      own trial_days (30 when unusable) — never a plan tier, never a
+ *      `subscriptions` row. A library grant cancels nothing and has no
+ *      "skipped" outcome, so the old alreadyEntitled arm is gone with
+ *      grantEntitlement; a FAILED grant (the table may not exist yet) is a 400
+ *      in Arabic that leaves the invitation pending.
  *   6. the accept path is still in the proxy's strict rate-limit bucket.
  */
 
@@ -36,8 +42,33 @@ import { isStrictRateLimitedRoute } from "../../../../../../lib/rateLimitRoutes.
 
 const routeSource = readFileSync(join(import.meta.dirname, "route.ts"), "utf8");
 const inviteDir = join(import.meta.dirname, "..", "..");
+const lookupSource = readFileSync(join(import.meta.dirname, "..", "route.ts"), "utf8");
 
 const INVALID_INVITE_AR = 'error: "هذه الدعوة غير صالحة."';
+const GRANT_CALL = "await grantLibraryAccess({";
+
+/**
+ * The route with its JSDoc and line comments dropped, so a rule about the CODE
+ * is neither satisfied nor broken by prose that merely names the identifier.
+ */
+function codeOnly(source: string): string {
+  return source
+    .split(/\r?\n/)
+    .filter((line) => {
+      const t = line.trimStart();
+      return !t.startsWith("*") && !t.startsWith("/*") && !t.startsWith("//");
+    })
+    .join("\n");
+}
+
+/** The object literal handed to grantLibraryAccess(). */
+function grantCallBlock(source: string): string {
+  const callAt = source.indexOf(GRANT_CALL);
+  assert.ok(callAt > -1, "the route no longer calls grantLibraryAccess");
+  const endAt = source.indexOf("});", callAt);
+  assert.ok(endAt > callAt, "could not find the end of the grantLibraryAccess call");
+  return source.slice(callAt, endAt);
+}
 
 // ── 1. the writer is deleted ────────────────────────────────────────────────
 
@@ -76,7 +107,7 @@ test("a code created by the caller is refused with 403 and the Arabic message", 
   const guardAt = routeSource.indexOf("row.inviter_id === user.id");
   const statusAt = routeSource.indexOf('row.status !== "pending"');
   const expiryAt = routeSource.indexOf("row.expires_at &&");
-  const grantAt = routeSource.indexOf("await grantEntitlement({");
+  const grantAt = routeSource.indexOf(GRANT_CALL);
   assert.ok(statusAt > -1 && expiryAt > -1 && grantAt > -1);
   assert.ok(
     statusAt < guardAt && guardAt < expiryAt && guardAt < grantAt,
@@ -139,10 +170,10 @@ test("a missing or unknown tier is a 400 with the Arabic refusal", () => {
   // the SECOND one, so lastIndexOf, not indexOf.
   const refusalAt = routeSource.lastIndexOf(INVALID_INVITE_AR);
   const tierGuardAt = routeSource.indexOf("!rawTier || !VALID_TIERS.includes");
-  const grantAt = routeSource.indexOf("await grantEntitlement({");
+  const grantAt = routeSource.indexOf(GRANT_CALL);
   assert.ok(
     tierGuardAt < refusalAt && refusalAt < grantAt,
-    "the tier must be validated BEFORE the entitlement is granted",
+    "the tier must be validated BEFORE anything is granted",
   );
   assert.ok(
     routeSource.slice(refusalAt, refusalAt + 120).includes("status: 400"),
@@ -155,54 +186,69 @@ test("a missing or unknown tier is a 400 with the Arabic refusal", () => {
   );
 });
 
-test("the tier the grant receives is the invitation's own, not a default", () => {
-  assert.match(routeSource, /const tier = rawTier as ServerTier;/);
-  assert.match(routeSource, /tier,\n\s*durationDays,/);
+// ── 5. a colleague invitation grants the library trial, nothing else ───────
+
+test("accept writes a lib-trial library grant for the invitation's own trial length", () => {
+  const code = codeOnly(routeSource);
+  const call = grantCallBlock(code);
+  assert.ok(call.includes("userId: user.id"), "the grant goes to the signed-in caller");
+  assert.ok(call.includes('planRef: "lib-trial"'), "a colleague invitation's grant is plan 'lib-trial'");
+  assert.ok(call.includes("days: trialDays"), "the grant lasts the invitation's trial");
+  assert.ok(call.includes('source: "colleague_invite"'), "the grant's source is 'colleague_invite'");
+  assert.ok(
+    code.includes("const trialDays = colleagueInviteTrialDays(row.trial_days);"),
+    "the trial length is the invitation's trial_days, 30 when unusable",
+  );
 });
 
-// ── 5. a skipped grant must not burn the invitation ────────────────────────
+test("the invitation's tier grants nothing, and no subscription is written", () => {
+  const code = codeOnly(routeSource);
+  assert.ok(!code.includes("grantEntitlement"), "grantEntitlement writes a `subscriptions` row — a colleague invite is the library only");
+  assert.ok(!grantCallBlock(code).includes("tier"), "the invitation's tier must not reach the grant");
+  assert.ok(!code.includes("const tier = rawTier"), "the tier is validated as a row check only, never carried forward");
+});
 
-test("an alreadyEntitled grant refuses with 400 BEFORE the invitation is marked accepted", () => {
-  const grantAt = routeSource.indexOf("await grantEntitlement({");
-  const skipAt = routeSource.indexOf("if (grant.alreadyEntitled) {");
-  const acceptAt = routeSource.indexOf('status: "accepted"');
-  assert.ok(skipAt > -1, "the route no longer notices a skipped grant");
+test("a failed grant is a 400 in Arabic BEFORE the invitation is marked accepted", () => {
+  const code = codeOnly(routeSource);
+  const grantAt = code.indexOf(GRANT_CALL);
+  const failAt = code.indexOf("if (!grant.ok) {");
+  const acceptAt = code.indexOf('status: "accepted"');
+  assert.ok(failAt > -1, "the route no longer checks its grant");
   assert.ok(acceptAt > -1, "the accept update vanished — re-read this test");
   assert.ok(
-    grantAt < skipAt && skipAt < acceptAt,
-    "the skip arm must return before the invitation is consumed, or the user pays a code for nothing",
+    grantAt < failAt && failAt < acceptAt,
+    "the failure arm must return before the invitation is consumed, or the user pays a code for nothing",
   );
-  const skipBlock = routeSource.slice(skipAt, acceptAt);
+  const block = code.slice(failAt, acceptAt);
   assert.ok(
-    !skipBlock.includes('status: "accepted"'),
-    "the skip arm must not mark the invitation accepted",
+    block.includes("status: 400"),
+    "a failed grant (the table may not exist yet) is a 400, never a 500 — the landing page shows json.error",
   );
-  assert.ok(
-    skipBlock.includes("status: 400"),
-    "the skip arm must answer a non-2xx: the landing page renders ANY ok response as an activated trial",
-  );
-  assert.ok(
-    skipBlock.includes("error:") && skipBlock.includes("باقة"),
-    "the skip arm must refuse with an Arabic `error` naming the plan the account already holds — the page prints json.error verbatim",
-  );
+  assert.ok(!block.includes("status: 500"));
+  assert.ok(/error:\s*"[^"]*المكتبة/.test(block), "the failure must be Arabic and name the library");
+  assert.ok(!block.includes("grant.error"), "the grant's error is English or raw Postgres — the page prints it verbatim");
 });
 
-test("a 2xx from this route always means a subscription was written", () => {
-  // src/app/invite/[code]/page.tsx:125-134 does `if (!res.ok) {…}` and then
-  // `setAccepted(true)` without ever reading `json.data`, so a flag inside a
-  // 200 body cannot be acted on: the two outcomes must differ by STATUS. The
-  // sibling POST /api/v1/library/invitations/redeem refuses for the same
-  // reason.
+test("a 2xx from this route always means a library grant was written", () => {
+  // src/app/invite/[code]/page.tsx does `if (!res.ok) {…}` and then
+  // `setAccepted(true)` without ever reading `json.data`, so the two outcomes
+  // must differ by STATUS.
+  const code = codeOnly(routeSource);
+  const failAt = code.indexOf("if (!grant.ok) {");
+  const successAt = code.indexOf("success: true");
+  assert.ok(failAt > -1 && successAt > failAt, "the only success payload must come after the failure arm has returned");
+  const payload = code.slice(successAt, code.indexOf("});", successAt));
+  assert.ok(payload.includes('planRef: "lib-trial"'), "the payload names what was granted");
+  assert.ok(payload.includes("until: grant.endsAt"), "the payload carries the grant's own end");
+  assert.ok(!payload.includes("tier"), "the payload must not claim a plan tier was granted");
+});
+
+test("the landing page promises the same trial length accept grants", () => {
+  // GET /api/v1/invite/[code] feeds «وصول مجاني لمدة …» on the landing page;
+  // with its own `?? 14` it would promise 14 days over a 30-day grant.
   assert.ok(
-    !routeSource.includes("alreadyEntitled: false"),
-    "a success payload a caller must inspect to learn whether anything happened is exactly what the landing page ignores",
-  );
-  const skipAt = routeSource.indexOf("if (grant.alreadyEntitled) {");
-  const successAt = routeSource.indexOf("success: true");
-  assert.ok(skipAt > -1, "the route no longer notices a skipped grant");
-  assert.ok(
-    successAt > skipAt,
-    "the only success payload must come after the skip arm has returned",
+    codeOnly(lookupSource).includes("trialDays: colleagueInviteTrialDays(invitation.trial_days)"),
+    "the lookup must use the same trial-length rule as accept",
   );
 });
 

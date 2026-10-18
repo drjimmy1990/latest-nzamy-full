@@ -34,9 +34,12 @@ export interface LibraryInvitation {
 }
 
 export interface RedeemLibraryInvitationResult {
+  /** "library" since owner answers ٢٠١–٢٠٣: a code grants the legal library, not a plan. */
   tier: string;
-  /** ISO timestamp the granted plan runs until, or null if the server did not report one. */
+  /** ISO timestamp the grant runs until, or null if the server did not report one. */
   until: string | null;
+  /** Length of the grant in days, or null if the server did not report one. */
+  days: number | null;
 }
 
 export interface CreateLibraryInvitationInput {
@@ -52,12 +55,12 @@ const DEMO = "غير متاح في وضع العرض التجريبي";
 /** Spend a library invitation code for the signed-in user. Throws with an Arabic message on rejection. */
 export async function redeemLibraryInvitation(code: string): Promise<RedeemLibraryInvitationResult> {
   if (!isSupabaseMode) throw new Error(DEMO);
-  const res = await apiMutate<{ ok: true; tier: string; until: string | null }>(
+  const res = await apiMutate<{ ok: true; tier: string; until: string | null; days?: number }>(
     "/api/v1/library/invitations/redeem",
     "POST",
     { code },
   );
-  return { tier: res.tier, until: res.until };
+  return { tier: res.tier, until: res.until, days: typeof res.days === "number" ? res.days : null };
 }
 
 export async function adminListLibraryInvitations(): Promise<ListRead<LibraryInvitation>> {

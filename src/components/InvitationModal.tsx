@@ -52,7 +52,7 @@ export default function InvitationModal({ open, onClose }: InvitationModalProps)
     setResult(null);
     try {
       const res = await redeemLibraryInvitation(trimmed);
-      setResult({ ok: true, message: redeemSuccessMessageAr(res.tier, res.until) });
+      setResult({ ok: true, message: redeemSuccessMessageAr(res.tier, res.until, res.days) });
     } catch (err) {
       // apiMutate throws with the server's own Arabic message (bad code,
       // expired, exhausted, demo mode …) — surfaced verbatim, never replaced
@@ -180,8 +180,8 @@ export default function InvitationModal({ open, onClose }: InvitationModalProps)
                     <span>{result.message}</span>
                   </div>
                   {/* Server state is already updated — the reload only
-                      refreshes THIS browser's session so useUser() picks up
-                      the new tier from user_metadata. Not triggered
+                      refreshes THIS browser's pages so they re-read the
+                      library access the grant opened. Not triggered
                       automatically on close: a page reloading itself because
                       the user tapped the backdrop is jarring, and the grant
                       does not depend on it. */}

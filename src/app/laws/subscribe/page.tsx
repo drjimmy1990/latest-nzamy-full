@@ -447,10 +447,11 @@ export default function LawsSubscribePage() {
         </div>
 
         {/* ── Redeem an invitation code ──────────────────────────────────
-            Only for a signed-in user below Pro — the code always grants the
-            "pro" tier via POST /api/v1/library/invitations/redeem (admin-
-            issued, src/lib/services/libraryInvitationsService.ts). Nothing
-            here is offered to a guest or to a Pro+ user who has no use for it. */}
+            Only for a signed-in user below Pro — the code grants the legal
+            library for 30 days (a library grant, not a plan; owner ٢٠١–٢٠٣)
+            via POST /api/v1/library/invitations/redeem (admin-issued,
+            src/lib/services/libraryInvitationsService.ts). Nothing here is
+            offered to a guest or to a Pro+ user who has no use for it. */}
         {canRedeemCode && (
           <motion.div variants={fadeUp} initial="hidden" animate="show" custom={9} className="text-center">
             <button
