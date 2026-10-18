@@ -125,9 +125,14 @@ test("a failed grant refunds the use, answers 400 in Arabic, and hides the raw e
   );
   assert.ok(!block.includes("status: 500"));
   assert.ok(/error:\s*"[^"]*المكتبة/.test(block), "the failure must be Arabic and name the library");
+  const response = block.slice(block.indexOf("return NextResponse.json("));
   assert.ok(
-    !block.includes("grant.error"),
+    !response.includes("grant.error"),
     "the grant's error is English or raw Postgres — apiMutate shows `error` verbatim",
+  );
+  assert.ok(
+    /console\.error\([^)]*grant\.error\)/.test(block),
+    "the hidden error must still be logged, since the user never sees it",
   );
 });
 

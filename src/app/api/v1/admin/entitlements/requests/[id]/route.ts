@@ -18,9 +18,12 @@ import { recordNotification } from "@/lib/notify";
  * lib-annual, else lib-admin) for the admin's `durationDays` or the plan's
  * real length (90/180/365, else 90) — and writes no `subscriptions` row. A
  * library grant is its own row and cancels nothing, so the no-downgrade
- * discussion below does not apply to it. If the grant fails (for instance
- * 20261019_10 has not run yet) the answer is a 400 in Arabic and the request
- * stays pending; it never falls back to granting a plan.
+ * discussion below does not apply to it. A new grant EXTENDS the requester's
+ * current access, so the arm CLAIMS the request first (pending → approved,
+ * conditionally): two concurrent approvals of one request cannot both add
+ * the full length. If the grant then fails (for instance 20261019_10 has not
+ * run yet) the claim is undone and the answer is a 400 in Arabic; it never
+ * falls back to granting a plan.
  *
  * This route deliberately does NOT pass `replaceActive` (review 2026-09-21
  * A3/C01 follow-up). POST /api/v1/admin/entitlements/grant does, because
@@ -171,9 +174,15 @@ export async function PATCH(
 
 /**
  * Approves a `library` request (owner ٢٠١–٢٠٣): one library_access_grants row,
- * source 'request', granted by the deciding admin. The order matches the plan
- * arm above: validate, grant, and only then mark the request approved and
- * tell the requester — so a failed grant leaves the request pending.
+ * source 'request', granted by the deciding admin. The order is validate →
+ * claim → grant → notify:
+ *   - the claim is a conditional update (pending → approved) that reports the
+ *     rows it took, so of two concurrent approvals only one reaches the grant
+ *     — grants extend each other, and a second one would add the full length
+ *     again;
+ *   - a failed grant undoes the claim (back to pending, decider cleared), so
+ *     the request returns to the queue;
+ *   - the requester is notified only after a successful grant.
  */
 async function approveLibraryRequest(input: {
   admin: Awaited<ReturnType<typeof createServiceClient>>;
@@ -194,6 +203,21 @@ async function approveLibraryRequest(input: {
     );
   }
 
+  const { data: claimed, error: claimError } = await admin
+    .from("entitlement_requests")
+    .update({ status: "approved", decided_by: adminId, decided_at: nowIso })
+    .eq("id", id)
+    .eq("status", "pending")
+    .select("id");
+  if (claimError) {
+    console.error("[admin/entitlements/requests] library request claim failed:", claimError.code, claimError.message);
+    return NextResponse.json({ error: "تعذّر اعتماد الطلب. حاول مرة أخرى." }, { status: 500 });
+  }
+  if (!claimed || claimed.length === 0) {
+    // Another approval (or a rejection) decided it after the pending check.
+    return NextResponse.json({ error: "تم البت في هذا الطلب مسبقًا" }, { status: 409 });
+  }
+
   const grant = await grantLibraryAccess({
     userId: requesterId,
     planRef: plan.planRef,
@@ -202,28 +226,27 @@ async function approveLibraryRequest(input: {
     grantedBy: adminId,
   });
   if (!grant.ok) {
-    // grantLibraryAccess has logged its error, which is English or raw
-    // Postgres; the admin sees Arabic. The request stays pending, so it can be
-    // approved again once the grant works.
+    // grant.error is English or raw Postgres: logged here, never sent.
+    console.error("[admin/entitlements/requests] library grant failed:", grant.error);
+    const { error: revertError } = await admin
+      .from("entitlement_requests")
+      .update({ status: "pending", decided_by: null, decided_at: null })
+      .eq("id", id)
+      .eq("status", "approved");
+    if (revertError) {
+      console.error(
+        "[admin/entitlements/requests] library grant failed AND the request could not be put back to pending:",
+        revertError.code,
+        revertError.message,
+      );
+      return NextResponse.json(
+        { error: "تعذّر تفعيل اشتراك المكتبة، وتعذّرت إعادة الطلب إلى قيد المراجعة. راجع حالته قبل أي إجراء." },
+        { status: 500 },
+      );
+    }
     return NextResponse.json(
       { error: "تعذّر تفعيل اشتراك المكتبة، وبقي الطلب قيد المراجعة. حاول مرة أخرى لاحقاً." },
       { status: 400 },
-    );
-  }
-
-  const { error } = await admin
-    .from("entitlement_requests")
-    .update({ status: "approved", decided_by: adminId, decided_at: nowIso })
-    .eq("id", id);
-  if (error) {
-    console.error(
-      "[admin/entitlements/requests] library grant written, but the request was not marked approved:",
-      error.code,
-      error.message,
-    );
-    return NextResponse.json(
-      { error: "فُعّل اشتراك المكتبة، لكن تعذّر تحديث حالة الطلب. لا توافق عليه مرة أخرى." },
-      { status: 500 },
     );
   }
 

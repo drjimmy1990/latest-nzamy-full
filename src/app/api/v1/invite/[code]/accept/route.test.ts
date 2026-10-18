@@ -226,7 +226,15 @@ test("a failed grant is a 400 in Arabic BEFORE the invitation is marked accepted
   );
   assert.ok(!block.includes("status: 500"));
   assert.ok(/error:\s*"[^"]*المكتبة/.test(block), "the failure must be Arabic and name the library");
-  assert.ok(!block.includes("grant.error"), "the grant's error is English or raw Postgres — the page prints it verbatim");
+  const response = block.slice(block.indexOf("return NextResponse.json("));
+  assert.ok(
+    !response.includes("grant.error"),
+    "the grant's error is English or raw Postgres — the page prints it verbatim",
+  );
+  assert.ok(
+    /console\.error\([^)]*grant\.error\)/.test(block),
+    "the hidden error must still be logged, since the user never sees it",
+  );
 });
 
 test("a 2xx from this route always means a library grant was written", () => {

@@ -200,24 +200,65 @@ test("an invalid durationDays is a 400 with Arabic copy, before anything is writ
   assert.ok(/error:\s*"[^"]*مدة الاشتراك/.test(block), "the refusal must be Arabic and name the duration");
 });
 
-test("a failed library grant is a 400 in Arabic, leaves the request pending, and hides the raw error", () => {
+test("the library arm claims the request (pending → approved) BEFORE it grants", () => {
+  // With grants that extend each other, two concurrent approvals of one
+  // request would add the full length twice; the conditional claim lets only
+  // one of them through.
   const arm = codeOnly(libraryArm(routeSource));
+  const claimAt = arm.indexOf('status: "approved"');
+  const grantAt = arm.indexOf("await grantLibraryAccess({");
+  assert.ok(claimAt > -1 && grantAt > -1);
+  assert.ok(claimAt < grantAt, "claim first, then grant");
+  const claim = arm.slice(claimAt, grantAt);
+  assert.ok(claim.includes('.eq("status", "pending")'), "the claim must be conditional on the request still being pending");
+  assert.ok(claim.includes('.select("id")'), "the claim must report how many rows it took");
+  assert.ok(claim.includes("decided_by: adminId") && claim.includes("decided_at: nowIso"));
+});
+
+test("a lost claim is a 409 and grants nothing", () => {
+  const arm = codeOnly(libraryArm(routeSource));
+  const lostAt = arm.indexOf("claimed.length === 0");
+  const grantAt = arm.indexOf("await grantLibraryAccess({");
+  assert.ok(lostAt > -1 && lostAt < grantAt, "zero claimed rows must return before the grant");
+  const block = arm.slice(lostAt, grantAt);
+  assert.ok(block.includes("status: 409"));
+  assert.ok(block.includes("تم البت في هذا الطلب مسبقًا"));
+});
+
+test("a failed library grant puts the request back to pending, answers 400 in Arabic, and hides the raw error", () => {
+  const arm = codeOnly(libraryArm(routeSource));
+  const grantAt = arm.indexOf("await grantLibraryAccess({");
   const failAt = arm.indexOf("if (!grant.ok)");
-  const approveAt = arm.indexOf('status: "approved"');
-  assert.ok(failAt > -1, "the library arm no longer checks its grant");
-  assert.ok(approveAt > failAt, "the request must not be marked approved when the grant failed");
-  const block = arm.slice(failAt, approveAt);
+  const noticeAt = arm.indexOf("await recordNotification({");
+  assert.ok(grantAt < failAt && failAt < noticeAt, "grant, then the failure arm, then (only on success) the notification");
+  const block = arm.slice(failAt, noticeAt);
+  const revertAt = block.indexOf('status: "pending"');
+  assert.ok(revertAt > -1, "a failed grant must undo the claim");
+  assert.ok(
+    block.includes("decided_by: null") && block.includes("decided_at: null"),
+    "the undo clears who decided and when",
+  );
+  assert.ok(block.includes('.eq("status", "approved")'), "the undo only touches the claim this request made");
   assert.ok(block.includes("status: 400"), "a failed grant (the table may not exist yet) is a 400, never a 500");
   assert.ok(block.includes("تعذّر تفعيل اشتراك المكتبة"), "the failure must be explained in Arabic");
-  assert.ok(!block.includes("grant.error"), "the grant's error is English or raw Postgres — it must not reach the admin's toast");
+  const respond = block.slice(block.indexOf("return NextResponse.json("));
+  assert.ok(!respond.includes("grant.error"), "the grant's error is English or raw Postgres — logged, never sent");
+  assert.ok(
+    /console\.error\([^)]*grant\.error\)/.test(block),
+    "the hidden error must still be logged, since the admin never sees it",
+  );
+  assert.ok(
+    block.indexOf("console.error") < block.indexOf('status: "pending"'),
+    "log the grant's error before undoing the claim",
+  );
 });
 
 test("the requester is told the library is active until its real end date", () => {
   const arm = codeOnly(libraryArm(routeSource));
-  const approveAt = arm.indexOf('status: "approved"');
+  const failAt = arm.indexOf("if (!grant.ok)");
   const noticeAt = arm.indexOf("تم تفعيل اشتراك المكتبة القانونية حتى");
-  assert.ok(noticeAt > approveAt, "the notification follows the approval");
-  assert.ok(arm.includes("libraryEndsAtAr(grant.endsAt)"), "the date in the notification is the grant's own end");
+  assert.ok(noticeAt > failAt, "the notification follows a successful grant only");
+  assert.ok(arm.includes("libraryEndsAtAr(grant.endsAt)"), "the date is the grant's own (extended) end");
   assert.ok(arm.includes("await recordNotification({"));
 });
 

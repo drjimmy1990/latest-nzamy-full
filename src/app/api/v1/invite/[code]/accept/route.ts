@@ -167,9 +167,10 @@ export async function POST(
       source: "colleague_invite",
     });
 
-    // grantLibraryAccess has logged its error (English or raw Postgres). The
+    // grant.error is English or raw Postgres: logged here, never sent. The
     // invitation stays pending, so the user can accept it again later.
     if (!grant.ok) {
+      console.error("[invite accept] library grant failed:", grant.error);
       return NextResponse.json(
         { error: "تعذّر تفعيل تجربة المكتبة القانونية. لم تُستهلك الدعوة، حاول مرة أخرى لاحقاً." },
         { status: 400 },

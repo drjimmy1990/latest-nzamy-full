@@ -5,7 +5,8 @@
  *
  * This file is the pure half: the plan and source names the table's CHECK
  * constraints allow, the fixed length of the three paid plans, the half-open
- * window test, the date math of a new grant, the plan and length an approved
+ * window test, the date math of a new grant (which extends the current one),
+ * the plan and length an approved
  * request or a colleague invitation grants, and the grant's end date in
  * Arabic. The IO half (reading and
  * writing the table with the service client) is ./libraryAccessServer.ts.
@@ -66,6 +67,30 @@ export function grantWindow(days: number, now: Date): { startsAt: string; endsAt
   const t = now.getTime();
   if (!Number.isFinite(t)) return null;
   return { startsAt: new Date(t).toISOString(), endsAt: new Date(t + days * DAY_MS).toISOString() };
+}
+
+/**
+ * The window of a new grant that EXTENDS the user's current access instead of
+ * overlapping it (controller ruling, 2026-10-18): it starts at the later of
+ * `now` and `latestActiveEnd` — the latest ends_at among the user's grants
+ * that end after now — and lasts `days` whole days from there. A
+ * `latestActiveEnd` that is not a parseable date string, or is not after
+ * `now`, is ignored (the grant starts now). Null when `days` is not an
+ * integer from 1 to 3660 or `now` is an invalid date, as for grantWindow.
+ */
+export function stackedGrantWindow(
+  days: number,
+  now: Date,
+  latestActiveEnd: string | null,
+): { startsAt: string; endsAt: string } | null {
+  const t = now.getTime();
+  if (!Number.isFinite(t)) return null;
+  let start = t;
+  if (typeof latestActiveEnd === 'string') {
+    const end = Date.parse(latestActiveEnd);
+    if (Number.isFinite(end) && end > t) start = end;
+  }
+  return grantWindow(days, new Date(start));
 }
 
 /**

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   LIBRARY_PLAN_DAYS,
   colleagueInviteTrialDays,
@@ -9,6 +11,7 @@ import {
   libraryEndsAtAr,
   libraryPlanDays,
   resolveLibraryRequestGrant,
+  stackedGrantWindow,
 } from "./libraryAccess.ts";
 
 test("libraryPlanDays: the three paid library plans and their lengths", () => {
@@ -161,4 +164,77 @@ test("libraryEndsAtAr: an unparseable value gives null, never 'Invalid Date'", (
   assert.equal(libraryEndsAtAr(""), null);
   assert.equal(libraryEndsAtAr(null), null);
   assert.equal(libraryEndsAtAr(42), null);
+});
+
+// ── A new grant extends the current one (controller ruling, 2026-10-18) ─────
+
+const DAY = 86_400_000;
+const NOW = new Date("2026-10-19T09:00:00.000Z");
+const at = (days: number) => new Date(NOW.getTime() + days * DAY).toISOString();
+
+test("stackedGrantWindow: no active grant starts now", () => {
+  assert.deepEqual(stackedGrantWindow(90, NOW, null), { startsAt: NOW.toISOString(), endsAt: at(90) });
+  assert.deepEqual(stackedGrantWindow(90, NOW, null), grantWindow(90, NOW));
+});
+
+test("stackedGrantWindow: an active grant ending in 10 days, plus 90, starts there and ends 100 days from now", () => {
+  assert.deepEqual(stackedGrantWindow(90, NOW, at(10)), { startsAt: at(10), endsAt: at(100) });
+});
+
+test("stackedGrantWindow: an end in the past, or exactly now, is ignored", () => {
+  assert.deepEqual(stackedGrantWindow(30, NOW, at(-5)), { startsAt: NOW.toISOString(), endsAt: at(30) });
+  assert.deepEqual(stackedGrantWindow(30, NOW, NOW.toISOString()), { startsAt: NOW.toISOString(), endsAt: at(30) });
+});
+
+test("stackedGrantWindow: garbage input is ignored", () => {
+  for (const junk of ["not-a-date", "", 42, {}, undefined]) {
+    assert.deepEqual(
+      stackedGrantWindow(30, NOW, junk as unknown as string | null),
+      { startsAt: NOW.toISOString(), endsAt: at(30) },
+      `latestActiveEnd ${String(junk)}`,
+    );
+  }
+});
+
+test("stackedGrantWindow: invalid days give null, with the same rules as grantWindow", () => {
+  for (const bad of [0, -1, 3661, 1.5, Number.NaN, "90" as unknown as number]) {
+    assert.equal(stackedGrantWindow(bad, NOW, at(10)), null, `days ${String(bad)}`);
+    assert.equal(stackedGrantWindow(bad, NOW, null), null, `days ${String(bad)}`);
+  }
+  assert.equal(stackedGrantWindow(30, new Date(Number.NaN), null), null);
+});
+
+// The IO half cannot be imported here (it uses @/ aliases), so its wiring is
+// pinned in the source.
+const serverSource = readFileSync(join(import.meta.dirname, "libraryAccessServer.ts"), "utf8");
+
+test("grantLibraryAccess reads the user's latest active end and stacks the new window on it", () => {
+  const grantAt = serverSource.indexOf("export async function grantLibraryAccess(");
+  assert.ok(grantAt > -1);
+  const body = serverSource.slice(grantAt);
+  const readAt = body.indexOf("await latestActiveGrantEnd(");
+  const windowAt = body.indexOf("stackedGrantWindow(input.days, now, latestActiveEnd)");
+  const insertAt = body.indexOf(".insert({");
+  assert.ok(readAt > -1, "the grant no longer reads the current end");
+  assert.ok(windowAt > readAt && insertAt > windowAt, "read, then the stacked window, then the insert");
+  const insert = body.slice(insertAt, body.indexOf("});", insertAt));
+  assert.ok(insert.includes("starts_at: window.startsAt") && insert.includes("ends_at: window.endsAt"));
+  assert.ok(body.includes("return { ok: true, endsAt: window.endsAt }"), "the returned end is the extended end");
+});
+
+test("the end read takes the latest ends_at after now, and any read error means 'start now'", () => {
+  const readAt = serverSource.indexOf("async function latestActiveGrantEnd(");
+  assert.ok(readAt > -1, "the end read is no longer its own helper");
+  const helper = serverSource.slice(readAt, serverSource.indexOf("\n}\n", readAt));
+  assert.ok(helper.includes(".select('ends_at')"));
+  assert.ok(helper.includes(".eq('user_id', userId)"));
+  assert.ok(helper.includes(".gt('ends_at', nowIso)"), "only grants that end after now count");
+  assert.ok(helper.includes(".order('ends_at', { ascending: false })") && helper.includes(".limit(1)"));
+  assert.ok(helper.includes("catch"), "a thrown read must not fail the grant");
+  assert.ok(!helper.includes("throw"), "the read never throws");
+  assert.equal(
+    helper.split("return null;").length - 1,
+    2,
+    "both the error arm and the catch fall back to null (start now)",
+  );
 });

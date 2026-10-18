@@ -170,8 +170,9 @@ export async function POST(request: NextRequest) {
   });
 
   if (!grant.ok) {
-    // grantLibraryAccess has logged its error (English or raw Postgres). Don't
+    // grant.error is English or raw Postgres: logged here, never sent. Don't
     // burn the invitation on a failed grant — give the use back.
+    console.error("[library/invitations/redeem] library grant failed:", grant.error);
     await refundClaimedUse(claimed);
     return NextResponse.json(
       { error: "تعذّر تفعيل اشتراك المكتبة. لم يُستهلك كود الدعوة، حاول مرة أخرى لاحقاً." },

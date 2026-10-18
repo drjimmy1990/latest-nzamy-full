@@ -2,6 +2,7 @@ import { createServiceClient } from '@/lib/supabase/server';
 import {
   grantWindow,
   isMissingLibraryGrantsTable,
+  stackedGrantWindow,
   type LibraryGrantSource,
   type LibraryPlanRef,
 } from '@/lib/libraryAccess';
@@ -18,6 +19,11 @@ import {
  * (42P01 / PGRST205) means "no library grant", so access falls back to the
  * subscription tier alone (the read logs this once per process; a failed
  * grant logs every time). Neither function throws.
+ *
+ * A new grant EXTENDS the user's current access (controller ruling,
+ * 2026-10-18): it starts at the later of now and the latest ends_at among the
+ * user's grants that end after now, so an early renewal or a code redeemed
+ * during an active grant adds its full length instead of overlapping.
  */
 
 const TABLE = 'library_access_grants';
@@ -65,9 +71,58 @@ export async function hasActiveLibraryGrant(userId: string): Promise<boolean> {
   }
 }
 
+type ServiceClient = Awaited<ReturnType<typeof createServiceClient>>;
+
 /**
- * Inserts one grant starting now and lasting `days` whole days (an integer
- * from 1 to 3660). Returns the grant's end as an ISO string. Never throws.
+ * The latest ends_at among the user's grants that end after `nowIso` — the
+ * point a new grant extends from — or null. Every failure (the table missing,
+ * a query error, a throw) answers null, i.e. "start now": this read must
+ * never fail the grant. A missing table still fails the grant, at the insert.
+ */
+async function latestActiveGrantEnd(
+  supabase: ServiceClient,
+  userId: string,
+  nowIso: string,
+): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from(TABLE)
+      .select('ends_at')
+      .eq('user_id', userId)
+      .gt('ends_at', nowIso)
+      .order('ends_at', { ascending: false })
+      .limit(1);
+    if (error) {
+      // A missing table is reported by the insert that follows.
+      if (!isMissingLibraryGrantsTable(error.code)) {
+        console.warn(
+          '[libraryAccess] grantLibraryAccess: could not read the current grant end; the new grant starts now:',
+          error.code,
+          error.message,
+        );
+      }
+      return null;
+    }
+    const row = Array.isArray(data) ? (data[0] as { ends_at?: unknown } | undefined) : undefined;
+    return row && typeof row.ends_at === 'string' ? row.ends_at : null;
+  } catch (err) {
+    console.warn(
+      '[libraryAccess] grantLibraryAccess: the current grant end read threw; the new grant starts now:',
+      err instanceof Error ? err.message : err,
+    );
+    return null;
+  }
+}
+
+/**
+ * Inserts one grant lasting `days` whole days (an integer from 1 to 3660),
+ * starting at the later of now and the end of the user's latest active grant
+ * (stackedGrantWindow). Returns the grant's end — the extended end — as an
+ * ISO string. Never throws.
+ *
+ * Logging: an insert failure or a throw is logged here; the two input checks
+ * (userId, days) are not. Callers that hide `error` from users log it
+ * themselves.
  */
 export async function grantLibraryAccess(input: {
   userId: string;
@@ -79,12 +134,18 @@ export async function grantLibraryAccess(input: {
   if (typeof input.userId !== 'string' || input.userId.length === 0) {
     return { ok: false, error: 'userId is required' };
   }
-  const window = grantWindow(input.days, new Date());
-  if (!window) {
+  const now = new Date();
+  if (!grantWindow(input.days, now)) {
     return { ok: false, error: 'days must be an integer from 1 to 3660' };
   }
   try {
     const supabase = await createServiceClient();
+    const latestActiveEnd = await latestActiveGrantEnd(supabase, input.userId, now.toISOString());
+    const window = stackedGrantWindow(input.days, now, latestActiveEnd);
+    if (!window) {
+      // Unreachable while grantWindow accepted these days; kept for the type.
+      return { ok: false, error: 'days must be an integer from 1 to 3660' };
+    }
     const { error } = await supabase.from(TABLE).insert({
       user_id: input.userId,
       plan_ref: input.planRef,
