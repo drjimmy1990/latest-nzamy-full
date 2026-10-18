@@ -12,7 +12,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import {
@@ -45,13 +45,44 @@ const HREFS_BEFORE_ITEM_129 = [
   "/academy",
 ];
 
-// Ruling P18: the owner's own titles from item 129, in this order.
+// Ruling P18: the owner's own titles from item 129, in this order. Each group
+// opens with its overview page, then every real public service page under it
+// (coordinator ruling, 2026-10-18: "each service reachable in one click").
 const GROUPS = [
-  { label: "خدمات الأفراد", href: "/services/individuals" },
-  { label: "خدمات الشركات", href: "/services/business" },
-  { label: "خدمات المحامين", href: "/services/lawyers" },
-  { label: "أدوات الذكاء الاصطناعي", href: "/ai" },
+  {
+    label: "خدمات الأفراد",
+    hrefs: [
+      "/services/individuals",
+      "/services/consultations",
+      "/services/contracts",
+      "/services/legal-representation",
+      "/services/notary",
+    ],
+  },
+  {
+    label: "خدمات الشركات",
+    hrefs: ["/services/business", "/services/business/company-formation", "/services/business/trademark"],
+  },
+  { label: "خدمات المحامين", hrefs: ["/services/lawyers", "/erp"] },
+  // Task 7.7 is gating individual AI tools as «قريباً»; the column links the hub only.
+  { label: "أدوات الذكاء الاصطناعي", hrefs: ["/ai"] },
 ];
+
+// Service pages left out of the menu, each for a reason a test can see in its
+// source. If one of these is fixed, move it into GROUPS deliberately.
+const LEFT_OUT: Record<string, RegExp> = {
+  "/services/cases": /\+٤٢٠ قضية/,                  // invented figure
+  "/services/labor": /\+٦٨٠/,                       // invented figures
+  "/services/collection": /\+١,٢٠٠/,                // invented figures
+  "/services/corporate": /price: '٢,٤٩٩'/,          // plans /pricing does not offer
+  "/services/lawyers/vault": /قريباً — غير متاحة حالياً/, // coming soon
+};
+
+/** src/app/<path>/page.tsx for an href ("/x?y" → src/app/x/page.tsx). */
+function pageFileFor(href: string): string {
+  const route = href.split(/[?#]/)[0].replace(/^\/+|\/+$/g, "");
+  return path.join(process.cwd(), "src/app", route, "page.tsx");
+}
 
 /** The destinations a visitor can click: items with no children of their own. */
 function leaves(items: NavItem[]): NavItem[] {
@@ -88,7 +119,7 @@ test("«الخدمات» is a bilingual mega menu with the four P18 groups, in o
   );
 });
 
-test("no group is empty, each has an English twin, and each holds its service", () => {
+test("no group is empty, each has an English twin, and each lists its service pages", () => {
   const groups = servicesItem().children!;
   for (const [i, group] of groups.entries()) {
     assert.ok(group.labelEn.trim().length > 0, `${group.label} has an English title`);
@@ -97,10 +128,45 @@ test("no group is empty, each has an English twin, and each holds its service", 
     for (const link of group.children!) {
       assert.ok(link.label.trim() && link.labelEn.trim(), `${link.href} is labelled in both languages`);
     }
-    assert.ok(
-      group.children!.some((link) => link.href === GROUPS[i].href),
-      `${GROUPS[i].href} sits under «${group.label}»`,
-    );
+    // The overview page first, then the group's service pages, in order.
+    assert.deepEqual(group.children!.map((link) => link.href), GROUPS[i].hrefs, `«${group.label}»`);
+  }
+});
+
+test("every link in the visitor navbar is unique", () => {
+  const hrefs = leaves(PUBLIC_NAV).map((i) => i.href);
+  assert.deepEqual(
+    hrefs.filter((h, i) => hrefs.indexOf(h) !== i),
+    [],
+    "no href is linked twice",
+  );
+  const labels = leaves(servicesItem().children!).map((i) => i.label);
+  assert.equal(new Set(labels).size, labels.length, "no two services share a label");
+});
+
+test("every href resolves to an existing page.tsx under src/app", () => {
+  for (const leaf of leaves(PUBLIC_NAV)) {
+    assert.ok(existsSync(pageFileFor(leaf.href)), `${leaf.href} → ${path.relative(process.cwd(), pageFileFor(leaf.href))}`);
+  }
+});
+
+test("no service in the menu is a redirect or a whole-page «قريباً» screen", () => {
+  // Comments may mention either (the /ai hub's do); only code counts.
+  const code = (src: string) =>
+    src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
+  for (const leaf of leaves(servicesItem().children!)) {
+    const src = code(readFileSync(pageFileFor(leaf.href), "utf8"));
+    assert.doesNotMatch(src, /\bredirect\(/, `${leaf.href} redirects`);
+    assert.doesNotMatch(src, /<(Dashboard)?ComingSoon\b/, `${leaf.href} is a coming-soon screen`);
+  }
+});
+
+test("the pages left out stay out, and each still shows the reason it was left out", () => {
+  const linked = new Set(leaves(PUBLIC_NAV).map((i) => i.href));
+  for (const [href, reason] of Object.entries(LEFT_OUT)) {
+    assert.ok(!linked.has(href), `${href} is not in the menu`);
+    // When the reason disappears from the page, this fails: time to add it.
+    assert.match(readFileSync(pageFileFor(href), "utf8"), reason, `${href} still carries its reason`);
   }
 });
 
@@ -150,9 +216,9 @@ test("Navbar: menus close on an outside click and on a route change", () => {
 });
 
 test("Navbar: the full-width panel box takes no clicks; only the bridge and the panel do", () => {
-  // Otherwise the invisible box beside the max-w-4xl panel swallows a click
+  // Otherwise the invisible box beside the max-w-5xl panel swallows a click
   // meant as "outside" and blocks the page under it.
   assert.match(navbar, /className="pointer-events-none absolute inset-x-0 top-\[calc\(100%_-_1rem\)\] z-50"/);
   assert.match(navbar, /<div aria-hidden="true" className="pointer-events-auto h-6" \/>/);
-  assert.match(navbar, /className="pointer-events-auto mx-auto grid max-w-4xl grid-cols-4/);
+  assert.match(navbar, /className="pointer-events-auto mx-auto grid max-w-5xl grid-cols-4/);
 });

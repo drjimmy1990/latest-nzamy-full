@@ -12,6 +12,18 @@ import type { NavItem } from "./navigation.types";
 // «الشركات», «المحامين», «ذكاء نظامي» — and every one of their pages is still
 // linked here, once (navigation.navbar.test.ts). A group's `href` is a "#"
 // placeholder: the title is a heading, never a destination.
+//
+// Each group opens with its overview page, then every public service page
+// that belongs to it, each labelled with its own page's title. A page joins
+// only when it is real: not «قريباً», not a redirect, no invented figures.
+// Left out for now, and why (coordinator ruling on item 129, 2026-10-18):
+//   /services/cases       — «+٤٢٠ قضية مُغلقة في آخر ٦ أشهر», an invented figure
+//   /services/labor       — «٩٣٪»، «١٨ يوماً»، «+٦٨٠ قضية», invented figures
+//   /services/collection  — «٨٧٪»، «٢٣ يوماً»، «+١,٢٠٠ ملف», invented figures
+//   /services/corporate   — monthly plans (٢,٤٩٩ / ٥,٩٩٩) that /pricing does not
+//                           offer, and a hard-coded «تقييم مؤسستك» score widget
+//   /services/lawyers/vault — «قريباً — غير متاحة حالياً»
+// Once a page's figures are removed it can join its group here.
 export const PUBLIC_NAV: NavItem[] = [
   { label: "الرئيسية",          labelEn: "Home",           href: "/?noredirect=true" },
   {
@@ -20,19 +32,26 @@ export const PUBLIC_NAV: NavItem[] = [
       {
         label: "خدمات الأفراد", labelEn: "Individual Services", href: "#services-individuals",
         children: [
-          { label: "عرض خدمات الأفراد", labelEn: "View individual services", href: "/services/individuals", icon: "User" },
+          { label: "عرض خدمات الأفراد",   labelEn: "View individual services", href: "/services/individuals",          icon: "User" },
+          { label: "الاستشارات القانونية", labelEn: "Legal Consultations",      href: "/services/consultations",        icon: "ChatCircleDots" },
+          { label: "العقود والمستندات",    labelEn: "Contracts & Documents",    href: "/services/contracts",            icon: "FileText" },
+          { label: "التمثيل القضائي",      labelEn: "Legal Representation",     href: "/services/legal-representation", icon: "Gavel" },
+          { label: "التوثيق الرسمي",       labelEn: "Official Notarization",    href: "/services/notary",               icon: "Stamp" },
         ],
       },
       {
         label: "خدمات الشركات", labelEn: "Business Services", href: "#services-business",
         children: [
-          { label: "عرض خدمات الشركات", labelEn: "View business services", href: "/services/business", icon: "Buildings" },
+          { label: "عرض خدمات الشركات",      labelEn: "View business services", href: "/services/business",                  icon: "Buildings" },
+          { label: "تأسيس الشركات",          labelEn: "Company Formation",      href: "/services/business/company-formation", icon: "Storefront" },
+          { label: "تسجيل العلامات التجارية", labelEn: "Trademark Registration", href: "/services/business/trademark",         icon: "TrademarkRegistered" },
         ],
       },
       {
         label: "خدمات المحامين", labelEn: "Lawyer Services", href: "#services-lawyers",
         children: [
           { label: "عرض خدمات المحامين", labelEn: "View lawyer services", href: "/services/lawyers", icon: "Scales" },
+          { label: "نظامي ERP",          labelEn: "Nezamy ERP",           href: "/erp",              icon: "Database" },
         ],
       },
       {

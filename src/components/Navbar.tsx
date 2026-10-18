@@ -385,7 +385,7 @@ function MegaMenu({ item, isAr, activeDropdown, setActiveDropdown }: {
             dir={isAr ? "rtl" : "ltr"}
           >
             <div aria-hidden="true" className="pointer-events-auto h-6" />
-            <div className="pointer-events-auto mx-auto grid max-w-4xl grid-cols-4 gap-3 rounded-2xl border border-slate-200/50 bg-white p-4 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] dark:border-white/10 dark:bg-zinc-900">
+            <div className="pointer-events-auto mx-auto grid max-w-5xl grid-cols-4 gap-3 rounded-2xl border border-slate-200/50 bg-white p-4 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] dark:border-white/10 dark:bg-zinc-900">
               {item.children!.map((group, gi) => (
                 <div key={group.href} role="group" aria-labelledby={`${panelId}-group-${gi}`}>
                   <p id={`${panelId}-group-${gi}`} className="px-3 pb-2 text-xs font-bold text-royal dark:text-gold">
