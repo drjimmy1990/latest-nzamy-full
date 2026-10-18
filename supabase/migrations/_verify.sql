@@ -1322,7 +1322,10 @@ END $$;
 -- query of its table into 42501). Keyed on the marker comment on
 -- lawyer_profiles.license_number OR anon's missing table-level SELECT, so a run
 -- BEFORE the migration passes with a NOTICE (code first, then migration).
--- The column list here MUST match the migration's grant list.
+-- The column list here MUST match the migration's grant list. Columns granted
+-- by LATER migrations are listed in later_cols: allowed to be readable here,
+-- and required to be readable by their own section (20261019_20 —
+-- practice_kind), which may run before that migration exists.
 SELECT '20261016_10 applied (lawyer_profiles column-locked for the API roles)' AS check,
        NOT has_table_privilege('anon', 'public.lawyer_profiles', 'SELECT') AS present;
 
@@ -1332,6 +1335,7 @@ DECLARE
     'user_id', 'slug', 'specialties', 'years_experience', 'bio_ar', 'bio_en',
     'headline_ar', 'education', 'courts', 'languages', 'verification_status',
     'marketplace_visible', 'is_accepting_clients'];
+  later_cols  text[] := ARRAY['practice_kind'];   -- 20261019_20 (owner ١٧٣ / ٢١٩)
   r       text;
   col     text;
   leaks   text;
@@ -1358,7 +1362,7 @@ BEGIN
       SELECT att.attname::text FROM pg_attribute att
        WHERE att.attrelid = 'public.lawyer_profiles'::regclass AND att.attnum > 0 AND NOT att.attisdropped
     LOOP
-      IF NOT (col = ANY (public_cols)) AND has_column_privilege(r, 'public.lawyer_profiles', col, 'SELECT') THEN
+      IF NOT (col = ANY (public_cols || later_cols)) AND has_column_privilege(r, 'public.lawyer_profiles', col, 'SELECT') THEN
         missing := missing || format(' %s can read locked column lawyer_profiles.%s;', r, col);
       END IF;
     END LOOP;
@@ -1374,7 +1378,7 @@ BEGIN
    WHERE (p.polroles = '{0}'::oid[]
           OR 'anon'::regrole::oid = ANY (p.polroles)
           OR 'authenticated'::regrole::oid = ANY (p.polroles))
-     AND NOT (att.attname::text = ANY (public_cols));
+     AND NOT (att.attname::text = ANY (public_cols || later_cols));
   IF leaks IS NOT NULL THEN
     missing := missing || format(' policies read a locked lawyer_profiles column, so every API-role query of their table fails with 42501: %s;', leaks);
   END IF;
@@ -1387,7 +1391,7 @@ BEGIN
     RAISE EXCEPTION '_verify: the lawyer_profiles column lock is broken —%', missing;
   END IF;
 
-  RAISE NOTICE '_verify: 20261016_10 OK — anon/authenticated read the 13 public lawyer_profiles columns only; no policy reads a locked column';
+  RAISE NOTICE '_verify: 20261016_10 OK — anon/authenticated read the 13 public lawyer_profiles columns (plus practice_kind from 20261019_20) only; no policy reads a locked column';
 END $$;
 
 -- ====================================================================
@@ -2117,4 +2121,115 @@ BEGIN
     RAISE EXCEPTION '_verify: library_access_grants is not locked —%', missing;
   END IF;
   RAISE NOTICE '_verify: 20261019_10 OK — library_access_grants: RLS on, one own-row SELECT policy, no guest privilege, no session writes';
+END $$;
+
+-- ====================================================================
+-- 2026-10-19 — 20261019_20_lawyer_practice_kind.sql (owner answers ١٧٣ / ٢١٩)
+-- ====================================================================
+-- The independent consultant: lawyer_profiles.practice_kind ('advocate' |
+-- 'consultant', default 'advocate') readable by anon and authenticated,
+-- licence_image_path for the service role only, neither writable by a
+-- session, and the BEFORE INSERT trigger that fills practice_kind and
+-- license_number from the signup metadata. Keyed on the practice_kind column
+-- (information_schema, never has_column_privilege on a missing column), so a
+-- run before the migration passes with a NOTICE.
+SELECT '20261019_20 applied (lawyer_profiles.practice_kind + signup fill)' AS check,
+       EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'lawyer_profiles'
+                  AND column_name = 'practice_kind') AS present;
+
+DO $$
+DECLARE
+  tbl     CONSTANT text := 'public.lawyer_profiles';
+  fn      CONSTANT text := 'public.lawyer_profile_from_signup()';
+  r       text;
+  dfl     text;
+  cfg     text[];
+  definer boolean;
+  owner   text;
+  missing text := '';
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_schema = 'public' AND table_name = 'lawyer_profiles'
+                    AND column_name = 'practice_kind') THEN
+    RAISE NOTICE '_verify: 20261019_20 is not applied yet — every lawyer reads as an advocate, a consultant cannot be told apart, and the licence number typed at signup is not saved';
+    RETURN;
+  END IF;
+
+  -- the columns
+  SELECT pg_get_expr(d.adbin, d.adrelid) INTO dfl
+    FROM pg_attribute a
+    LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+   WHERE a.attrelid = tbl::regclass AND a.attname = 'practice_kind' AND NOT a.attisdropped;
+  IF dfl IS DISTINCT FROM '''advocate''::text'
+     OR NOT (SELECT attnotnull FROM pg_attribute WHERE attrelid = tbl::regclass AND attname = 'practice_kind') THEN
+    missing := missing || format(' practice_kind is not NOT NULL DEFAULT ''advocate'' (default %s);', coalesce(dfl, 'none'));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                  WHERE conrelid = tbl::regclass AND conname = 'lawyer_profiles_practice_kind_check'
+                    AND contype = 'c' AND convalidated) THEN
+    missing := missing || ' the CHECK lawyer_profiles_practice_kind_check is missing (re-run 20261019_20);';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_schema = 'public' AND table_name = 'lawyer_profiles'
+                    AND column_name = 'licence_image_path') THEN
+    missing := missing || ' licence_image_path is missing (re-run 20261019_20);';
+  ELSE
+    FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'public'] LOOP
+      IF has_column_privilege(r, tbl, 'licence_image_path', 'SELECT, INSERT, UPDATE, REFERENCES') THEN
+        missing := missing || format(' %s holds a privilege on licence_image_path — the licence image path is service-role only (a GRANT re-applied? re-run 20261016_10, then 20261019_20);', r);
+      END IF;
+    END LOOP;
+  END IF;
+
+  -- the privileges on practice_kind
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF NOT has_column_privilege(r, tbl, 'practice_kind', 'SELECT') THEN
+      missing := missing || format(' %s cannot SELECT practice_kind — a public profile cannot show «مستشار قانوني» (a re-run of 20261016_10 revokes this grant: re-run 20261019_20 after it);', r);
+    END IF;
+    IF has_column_privilege(r, tbl, 'practice_kind', 'INSERT, UPDATE') THEN
+      missing := missing || format(' %s can write practice_kind (a lawyer could switch kind himself);', r);
+    END IF;
+  END LOOP;
+
+  -- the trigger
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger t
+                  WHERE t.tgrelid = tbl::regclass
+                    AND t.tgname = 'trg_lawyer_profiles_from_signup'
+                    AND NOT t.tgisinternal
+                    AND (t.tgtype & 7) = 7          -- FOR EACH ROW | BEFORE | INSERT
+                    AND t.tgfoid = to_regprocedure(fn)) THEN
+    missing := missing || ' trg_lawyer_profiles_from_signup is missing or not BEFORE INSERT on lawyer_profile_from_signup() (re-run 20261019_20);';
+  ELSIF EXISTS (SELECT 1 FROM pg_trigger
+                 WHERE tgrelid = tbl::regclass AND tgname = 'trg_lawyer_profiles_from_signup' AND tgenabled = 'D') THEN
+    missing := missing || ' trg_lawyer_profiles_from_signup is DISABLED — consultants sign up as advocates (re-run 20261019_20);';
+  END IF;
+
+  -- the function
+  SELECT p.proconfig, p.prosecdef, pg_get_userbyid(p.proowner)
+    INTO cfg, definer, owner
+    FROM pg_proc p WHERE p.oid = to_regprocedure(fn);
+  IF NOT coalesce(definer, false) THEN
+    missing := missing || ' lawyer_profile_from_signup is missing or not SECURITY DEFINER;';
+  END IF;
+  IF cfg IS NULL OR NOT ('search_path=""' = ANY (cfg)) THEN
+    missing := missing || format(' lawyer_profile_from_signup proconfig %s lacks search_path='''';', coalesce(cfg::text, 'NULL'));
+  END IF;
+  IF to_regprocedure(fn) IS NOT NULL THEN
+    FOREACH r IN ARRAY ARRAY['public', 'anon', 'authenticated'] LOOP
+      IF has_function_privilege(r, fn, 'EXECUTE') THEN
+        missing := missing || format(' %s can EXECUTE lawyer_profile_from_signup;', r);
+      END IF;
+    END LOOP;
+  END IF;
+  IF owner IS NOT NULL
+     AND NOT (has_schema_privilege(owner, 'auth', 'USAGE')
+              AND has_column_privilege(owner, 'auth.users', 'raw_user_meta_data', 'SELECT')) THEN
+    missing := missing || format(' the function owner %s cannot read auth.users.raw_user_meta_data — the signup fill silently does nothing;', owner);
+  END IF;
+
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: the 20261019_20 consultant columns are broken —%', missing;
+  END IF;
+  RAISE NOTICE '_verify: 20261019_20 OK — practice_kind readable by anon/authenticated, licence_image_path service role only, neither writable by a session; trg_lawyer_profiles_from_signup enabled (definer %)', owner;
 END $$;
