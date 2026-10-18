@@ -263,7 +263,10 @@ export async function PATCH(
       after.verified_at = current.verified_at ?? null;
     }
     if (body.status === "suspended") {
-      after.status = "suspended";
+      // What a suspension does today: no table holds a "suspended" status
+      // (the profile is not marked), so the row records only these two.
+      after.active_subscriptions = "cancelled";
+      after.auth_tier = "free";
     }
     await logAdminAction({
       actorId,

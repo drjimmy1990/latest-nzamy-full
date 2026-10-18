@@ -250,9 +250,11 @@ export async function PATCH(
       adminUserId, eventName: RequestEvent.SERVICE_REQUEST_COMPLETED, nowIso,
       kind: "delivery_resend",
     });
+    // "requested", not "sent": dispatchOrderNotice swallows every failure,
+    // and its outcome is the request_events row it writes, not this one.
     await logAdminAction({
       actorId: adminUserId,
-      action: "service_order_whatsapp_resent",
+      action: "service_order_whatsapp_resend_requested",
       targetType: "service_request",
       targetId: id,
     });
