@@ -146,14 +146,68 @@ test("library subscription buttons point to live routes", () => {
 });
 
 test("individual pricing pyramid includes approved plans and per-service pricing", () => {
-  assert.equal((individuals.match(/isBetaHidden: false/g) ?? []).length, 10);
+  // Four plans × two languages (the 699 family plan merged, owner ٢١٣/١٧٦).
+  assert.equal((individuals.match(/isBetaHidden: false/g) ?? []).length, 8);
   assert.match(individuals, /id: "pay-per-piece"/);
   assert.match(individuals, /id: "ind-ai"/);
   assert.match(individuals, /id: "ind-preventive"/);
   assert.match(individuals, /id: "ind-litigation"/);
-  assert.match(individuals, /id: "ind-family"/);
+  assert.doesNotMatch(individuals, /ind-family/);
   assert.match(individuals, /priceMonthly: "حسب الخدمة"/);
   assert.match(individuals, /priceYearly: "بدون اشتراك"/);
+});
+
+// ── Owner answers ٢١٣ + ١٧٦ (2026-10-18): «التأمين القانوني» with family cover ─
+
+const plansTs = readFileSync(new URL("../../lib/pricing/plans.ts", import.meta.url), "utf8");
+
+/** One plan object, from its id to the line that closes it. */
+function planBlock(text: string, from: number, id: string): string {
+  const start = text.indexOf(`id: "${id}"`, from);
+  assert.ok(start >= 0, `plan ${id} not found`);
+  return text.slice(start, text.indexOf("\n    },", start));
+}
+
+test("٢١٣/١٧٦: the 699 family plan is gone from the individuals plans and their comparison", () => {
+  assert.doesNotMatch(individuals, /ind-family|٦٩٩|٦٬٩٩٠|\b699\b|6,990/);
+  assert.doesNotMatch(plansTs, /ind-family|\b699\b|\b6990\b/);
+});
+
+test("٢١٣/١٧٦: ind-litigation is «التأمين القانوني» at 399 / 3,990 with the family option", () => {
+  const enAt = individuals.indexOf("\n  en: [");
+  const ar = planBlock(individuals, 0, "ind-litigation");
+  const en = planBlock(individuals, enAt, "ind-litigation");
+  assert.match(ar, /name: "التأمين القانوني"/);
+  assert.match(ar, /priceMonthly: "٣٩٩",\s*priceYearly: "٣٬٩٩٠"/);
+  // Dependants at 20 / 30 / 40% off: ٣١٩, ٢٧٩, then ٢٣٩ from the third on.
+  assert.match(ar, /٣١٩ ر\.س[^"]*٢٧٩ ر\.س[^"]*٢٣٩ ر\.س/);
+  for (const line of ["٣٥٬٠٠٠–٥٠٬٠٠٠ ر.س سنوياً", "٣٬٠٠٠–٥٬٠٠٠ نقطة شهرياً", "تُضاف التغطية العائلية بطلب يراجعه الفريق"]) {
+    assert.ok(ar.includes(line), `ar: «${line}»`);
+  }
+  assert.match(ar, /footnote: "\* تطبق الشروط والأحكام"/);
+
+  assert.match(en, /name: "Legal Insurance"/);
+  assert.match(en, /priceMonthly: "399",\s*priceYearly: "3,990"/);
+  assert.match(en, /SAR 319[^"]*SAR 279[^"]*SAR 239/);
+  assert.match(en, /footnote: "\* Terms and conditions apply"/);
+
+  const canonical = planBlock(plansTs, 0, "ind-litigation");
+  assert.match(canonical, /nameAr: "التأمين القانوني"/);
+  assert.match(canonical, /priceMonthly: 399,\s*priceYearly: 3990/);
+  assert.match(canonical, /٣١٩ ر\.س[^"]*٢٧٩ ر\.س[^"]*٢٣٩ ر\.س/);
+  assert.ok(canonical.includes("تُضاف التغطية العائلية بطلب يراجعه الفريق"));
+  assert.match(canonical, /footnoteAr: "\* تطبق الشروط والأحكام"/);
+  assert.match(canonical, /footnoteEn: "\* Terms and conditions apply"/);
+});
+
+test("٢١٣: the footnote renders, small and grey, under the card on both pages", () => {
+  const services = readFileSync(new URL("../../app/services/individuals/page.tsx", import.meta.url), "utf8");
+  assert.match(services, /\{\(isAr \? plan\.footnoteAr : plan\.footnoteEn\) && \(/);
+  assert.match(services, /text-\[11px\] text-ink-faint[^"]*">\s*\{isAr \? plan\.footnoteAr : plan\.footnoteEn\}/);
+  // Three plans now, so three columns.
+  assert.doesNotMatch(services, /lg:grid-cols-4/);
+  assert.match(pricingCards, /\{plan\.footnote && \(/);
+  assert.match(pricingCards, /text-\[11px\][\s\S]{0,120}\{plan\.footnote\}/);
 });
 
 test("retired shield and group plans are removed", () => {

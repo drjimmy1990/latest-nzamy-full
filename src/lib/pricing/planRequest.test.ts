@@ -49,6 +49,20 @@ test("no param, unknown or retired ids resolve to nothing", () => {
   assert.equal(resolveRequestedPlan("ind-ai", PLANS), null); // another account type's plan
 });
 
+test("a link to the retired family plan asks for «التأمين القانوني», which now carries the family cover", () => {
+  // Owner ٢١٣/١٧٦: the 699 «ind-family» plan is merged into ind-litigation.
+  // An old ?plan=ind-family link, or one saved by pendingPlan before the
+  // deploy, resolves to the plan that sells the family option now.
+  const individuals: RequestablePlan[] = [
+    { id: "ind-ai", name: "الباقة الذكية (AI الذاتي)", ctaHref: "/register/client?type=individual&plan=ind-ai" },
+    { id: "ind-litigation", name: "التأمين القانوني", ctaHref: "/register/client?type=individual&plan=ind-litigation" },
+  ];
+  assert.deepEqual(resolveRequestedPlan("ind-family", individuals), { id: "ind-litigation", name: "التأمين القانوني" });
+  assert.deepEqual(resolveRequestedPlan(" ind-family ", individuals), { id: "ind-litigation", name: "التأمين القانوني" });
+  // Not for an audience that does not sell it.
+  assert.equal(resolveRequestedPlan("ind-family", PLANS), null);
+});
+
 test("a plan not sold through this signup is not offered", () => {
   assert.equal(resolveRequestedPlan("micro-free", PLANS), null); // free: its CTA names no plan
   assert.equal(resolveRequestedPlan("ngo-x", PLANS), null); // sold via /contact
@@ -83,8 +97,9 @@ test("every client-registration CTA carries its own plan id in ?plan=", () => {
       seen++;
     }
   }
-  // individuals 4 × 2 languages, micro 1 × 2, ngo 2 × 2
-  assert.equal(seen, 14);
+  // individuals 3 × 2 languages (the 699 family plan merged into
+  // «التأمين القانوني», owner ٢١٣/١٧٦), micro 1 × 2, ngo 2 × 2
+  assert.equal(seen, 12);
 });
 
 // ── N5 (fix plan 2026-10-16): the library checkout path ─────────────────────

@@ -5,8 +5,10 @@ import { Plan, ComparisonCategory } from "./pricing.types";
 // 1. pay-per-piece: الدفع بالعمل القانوني المقطوع (بدون اشتراك)
 // 2. ind-ai: الباقة الذكية (٣٩ ر.س / شهر أو ٣٩٠ ر.س / سنة) — ذكاء اصطناعي ذاتي
 // 3. ind-preventive: الباقة الوقائية (١٤٩ ر.س / شهر أو ١٬٤٩٠ ر.س / سنة) — استشارات وعقود
-// 4. ind-litigation: باقة الخصومة والتقاضي (٣٩٩ ر.س / شهر أو ٣٬٩٩٠ ر.س / سنة) [تخضع لضوابط الاكتتاب]
-// 5. ind-family: الباقة العائلية الشاملة (٦٩٩ ر.س / شهر أو ٦٬٩٩٠ ر.س / سنة) — حتى ٥ أفراد
+// 4. ind-litigation: «التأمين القانوني» (٣٩٩ ر.س / شهر أو ٣٬٩٩٠ ر.س / سنة) [تخضع لضوابط الاكتتاب]
+//    مع خيار التغطية العائلية (owner answers ٢١٣ + ١٧٦, 2026-10-18). The
+//    separate family plan is gone: its cover is an option of this plan now,
+//    added on a request the team reviews (no dependants mechanism is built).
 
 export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
   ar: [
@@ -74,7 +76,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
           // Was «لا تتطلب أي فحص طبي أو موافقة مسبقة» — insurance boilerplate
           // (no legal plan has a medical check) that also overstated speed:
           // every subscription is still activated after the team reviews it.
-          "لا تخضع لفحص الاكتتاب المطلوب في باقة الخصومة والتقاضي",
+          "لا تخضع لفحص الاكتتاب المطلوب في «التأمين القانوني»",
         ],
         support: ["دعم فني عبر المنصة والبريد"],
       },
@@ -118,7 +120,9 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
     {
       id: "ind-litigation",
       isBetaHidden: false,
-      name: "باقة الخصومة والتقاضي",
+      // Owner answer ٢١٣: the commercial name, with «* تطبق الشروط والأحكام»
+      // in small grey type under the card (`footnote`).
+      name: "التأمين القانوني",
       badge: "تخضع لقواعد الاكتتاب والقبول",
       bonusLabel: "تمثيل وترافع أمام المحاكم",
       priceMonthly: "٣٩٩",
@@ -126,8 +130,8 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       priceOriginal: "٤٬٧٨٨",
       periodMonthly: "ر.س / شهر",
       periodYearly: "ر.س / سنة",
-      desc: "تمثيل قضائي وترافع معتمد أمام المحاكم — تخضع للتدقيق المهني المسبق وخلو النزاع من التعارض",
-      target: "أصحاب النزاعات والقضايا المتداولة",
+      desc: "تمثيل قضائي وترافع معتمد أمام المحاكم، مع خيار تغطية عائلية — تخضع للتدقيق المهني المسبق وخلو النزاع من التعارض",
+      target: "أصحاب النزاعات والقضايا المتداولة وأسرهم",
       cta: "طلب الانضمام للباقة",
       ctaHref: "/register/client?type=individual&plan=ind-litigation",
       highlighted: false,
@@ -143,45 +147,16 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
           "تمثيل قضائي وترافع أمام المحاكم لقضية مؤهلة سنوياً",
           "استشارات غير محدودة طوال فترة التقاضي في القضية المقبولة",
           "⚠️ تخضع القضية للفحص المهني وضوابط الاكتتاب قبل التفعيل",
+          // Owner answer ١٧٦ (line 16): the family option.
+          "التغطية العائلية: التابع الأول ٣١٩ ر.س، والثاني ٢٧٩ ر.س، والثالث فأكثر ٢٣٩ ر.س شهرياً (خصم ٢٠٪ / ٣٠٪ / ٤٠٪)",
+          "سقف عائلي مشترك لأتعاب الترافع: ٣٥٬٠٠٠–٥٠٬٠٠٠ ر.س سنوياً",
+          "للأسرة: رصيد استشارات وقائية مشترك، و٣٬٠٠٠–٥٬٠٠٠ نقطة شهرياً",
+          "لكل فرد بالغ حسابه الخاص، لا يطّلع عليه بقية أفراد الأسرة",
+          "تُضاف التغطية العائلية بطلب يراجعه الفريق",
         ],
         support: ["خط ساخن ومتابعة مخصصة مع المحامي المسؤول"],
       },
-    },
-    {
-      id: "ind-family",
-      isBetaHidden: false,
-      name: "الباقة العائلية الشاملة",
-      badge: "تغطي حتى ٥ أفراد",
-      // Was «وفر ٥٥٪ مقارنة بالاشتراكات الفردية», which no combination of the
-      // listed plans produces (5 × ١٤٩ = ٧٤٥ against ٦٩٩ is 6%). The annual
-      // saving below is exact: ٦٬٩٩٠ against 12 × ٦٩٩ = ٨٬٣٨٨.
-      bonusLabel: "وفر شهرين عند الدفع السنوي",
-      priceMonthly: "٦٩٩",
-      priceYearly: "٦٬٩٩٠",
-      priceOriginal: "٨٬٣٨٨",
-      periodMonthly: "ر.س / شهر",
-      periodYearly: "ر.س / سنة",
-      desc: "مظلة حماية قانونية متكاملة لجميع أفراد الأسرة مع استقلالية تامة للخصوصية وضامن موحد",
-      target: "العائلات حتى ٥ أفراد",
-      cta: "ابدأ الباقة العائلية",
-      ctaHref: "/register/client?type=individual&plan=ind-family",
-      highlighted: false,
-      color: "border-[#C8A762]",
-      features: {
-        ai: [
-          "ذكاء اصطناعي قانوني مفتوح ومستقل لكل فرد في حسابه الخاص",
-          "استشهادات نظامية وفحص عقود الإيجار والعمل للأسرة",
-          "توليد الخطابات ومسودات الاتفاقات العائلية",
-          "حسابات مستقلة لكل فرد تحترم خصوصيته الكاملة",
-        ],
-        platform: [
-          "١٠ استشارات قانونية سنوية موزعة على أفراد العائلة مع محامين مرخصين",
-          "صياغة وتدقيق ٤ عقود سنوية (إيجار، عمل، بيع، تركات)",
-          "خصم ٢٥٪ على أتعاب الترافع وكافة القضايا لجميع أفراد العائلة",
-          "ضامن مالي موحد (Master Payer) مع عزل تام للبيانات (RLS)",
-        ],
-        support: ["أولوية قصوى على خط الدعم العائلي المخصص"],
-      },
+      footnote: "* تطبق الشروط والأحكام",
     },
   ],
   en: [
@@ -242,7 +217,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
         platform: [
           "Full digital profile to archive your questions and drafts",
           "Access to licensed lawyer consultations at discounted rates",
-          "No underwriting review (unlike the Litigation plan)",
+          "No underwriting review (unlike Legal Insurance)",
         ],
         support: ["Platform & email technical support"],
       },
@@ -283,7 +258,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
     {
       id: "ind-litigation",
       isBetaHidden: false,
-      name: "Litigation & Representation",
+      name: "Legal Insurance",
       badge: "Subject to Underwriting",
       bonusLabel: "Full Court Representation",
       priceMonthly: "399",
@@ -291,9 +266,9 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       priceOriginal: "4,788",
       periodMonthly: "SAR / month",
       periodYearly: "SAR / year",
-      desc: "Court representation & litigation defense — subject to underwriting review and conflict checks",
-      target: "Litigants & Dispute Parties",
-      cta: "Apply for Litigation Plan",
+      desc: "Court representation & litigation defense, with a family cover option — subject to underwriting review and conflict checks",
+      target: "Litigants, dispute parties and their families",
+      cta: "Apply for Legal Insurance",
       ctaHref: "/register/client?type=individual&plan=ind-litigation",
       highlighted: false,
       color: "border-amber-400",
@@ -308,42 +283,15 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
           "Court representation for 1 qualified eligible case per year",
           "Unlimited consultations throughout active case duration",
           "⚠️ Subject to legal underwriting review and intake qualification",
+          "Family cover: first dependant SAR 319, second SAR 279, third and beyond SAR 239 a month (20% / 30% / 40% off)",
+          "Shared family cap on litigation fees: SAR 35,000–50,000 a year",
+          "For the family: a shared pool of preventive consultations and 3,000–5,000 points a month",
+          "Each adult keeps a private account the rest of the family cannot see",
+          "Family cover is added on request, after the team reviews it",
         ],
         support: ["Direct case manager & attorney hotline"],
       },
-    },
-    {
-      id: "ind-family",
-      isBetaHidden: false,
-      name: "Family Legal Umbrella",
-      badge: "Up to 5 Family Members",
-      bonusLabel: "Save 2 months on annual billing",
-      priceMonthly: "699",
-      priceYearly: "6,990",
-      priceOriginal: "8,388",
-      periodMonthly: "SAR / month",
-      periodYearly: "SAR / year",
-      desc: "Comprehensive family legal protection with full member privacy and a unified master payer",
-      target: "Families up to 5 members",
-      cta: "Start Family Umbrella",
-      ctaHref: "/register/client?type=individual&plan=ind-family",
-      highlighted: false,
-      color: "border-[#C8A762]",
-      features: {
-        ai: [
-          "Independent unlimited AI accounts for each family member",
-          "Statutory citations, lease checks, and employment advice",
-          "Drafting notices and family settlement agreements",
-          "Private member profiles ensuring individual confidentiality",
-        ],
-        platform: [
-          "10 annual licensed lawyer consultations across members",
-          "Drafting & review of 4 annual family contracts",
-          "25% discount on litigation fees for all family members",
-          "Single Master Payer guarantor with full RLS data separation",
-        ],
-        support: ["VIP family dedicated concierge support line"],
-      },
+      footnote: "* Terms and conditions apply",
     },
   ],
 };
@@ -355,38 +303,38 @@ export const comparisonIndividuals: { ar: ComparisonCategory[]; en: ComparisonCa
       category: "الذكاء الاصطناعي والوقاية",
       icon: Brain,
       rows: [
-        { feature: "الذكاء الاصطناعي القانوني",   "pay-per-piece": "محدود",          "ind-ai": "غير محدود",            "ind-preventive": "غير محدود",            "ind-litigation": "غير محدود",            "ind-family": "مستقل لكل فرد" },
-        { feature: "الاستشهاد بالمواد النظامية",  "pay-per-piece": true,            "ind-ai": true,                   "ind-preventive": true,                   "ind-litigation": true,                   "ind-family": true },
-        { feature: "فحص وتدقيق العقود",          "pay-per-piece": "٨٠٠ ر.س/عقد",    "ind-ai": "خصم ١٠٪",              "ind-preventive": "عقدان مجاناً/سنة",     "ind-litigation": "شامل عقود النزاع",     "ind-family": "٤ عقود مجاناً/سنة" },
-        { feature: "صياغة الخطابات والإنذارات",   "pay-per-piece": "حسب الخدمة",     "ind-ai": true,                   "ind-preventive": true,                   "ind-litigation": true,                   "ind-family": true },
+        { feature: "الذكاء الاصطناعي القانوني",   "pay-per-piece": "محدود",          "ind-ai": "غير محدود",            "ind-preventive": "غير محدود",            "ind-litigation": "غير محدود" },
+        { feature: "الاستشهاد بالمواد النظامية",  "pay-per-piece": true,            "ind-ai": true,                   "ind-preventive": true,                   "ind-litigation": true },
+        { feature: "فحص وتدقيق العقود",          "pay-per-piece": "٨٠٠ ر.س/عقد",    "ind-ai": "خصم ١٠٪",              "ind-preventive": "عقدان مجاناً/سنة",     "ind-litigation": "شامل عقود النزاع" },
+        { feature: "صياغة الخطابات والإنذارات",   "pay-per-piece": "حسب الخدمة",     "ind-ai": true,                   "ind-preventive": true,                   "ind-litigation": true },
       ],
     },
     {
       category: "المحامي المرخّص والتمثيل القضائي",
       icon: Gavel,
       rows: [
-        { feature: "استشارات مع محامٍ مرخّص",    "pay-per-piece": "٢٥٠ ر.س/جلسة",   "ind-ai": "سعر تفضيلي",           "ind-preventive": "٤ استشارات/سنة",       "ind-litigation": "غير محدودة للقضية",    "ind-family": "١٠ استشارات/سنة" },
-        { feature: "خصم أتعاب الترافع والقضايا", "pay-per-piece": "-",              "ind-ai": "٥٪",                   "ind-preventive": "١٥٪",                  "ind-litigation": "قضية مشمولة بالكامل",  "ind-family": "٢٥٪ لكل العائلة" },
-        { feature: "تمثيل قضائي وترافع بالمحاكم", "pay-per-piece": "أتعاب متفق عليها","ind-ai": "-",                   "ind-preventive": "بخصم ١٥٪",             "ind-litigation": "قضية مؤهلة سنوياً",    "ind-family": "بخصم ٢٥٪" },
-        { feature: "ضوابط القبول والاكتتاب",      "pay-per-piece": "فحص تعارض",     "ind-ai": "بدون اكتتاب",            "ind-preventive": "بدون اكتتاب",            "ind-litigation": "تخضع للفحص المهني",    "ind-family": "بدون اكتتاب" },
+        { feature: "استشارات مع محامٍ مرخّص",    "pay-per-piece": "٢٥٠ ر.س/جلسة",   "ind-ai": "سعر تفضيلي",           "ind-preventive": "٤ استشارات/سنة",       "ind-litigation": "غير محدودة للقضية" },
+        { feature: "خصم أتعاب الترافع والقضايا", "pay-per-piece": "-",              "ind-ai": "٥٪",                   "ind-preventive": "١٥٪",                  "ind-litigation": "قضية مشمولة بالكامل" },
+        { feature: "تمثيل قضائي وترافع بالمحاكم", "pay-per-piece": "أتعاب متفق عليها","ind-ai": "-",                   "ind-preventive": "بخصم ١٥٪",             "ind-litigation": "قضية مؤهلة سنوياً" },
+        { feature: "ضوابط القبول والاكتتاب",      "pay-per-piece": "فحص تعارض",     "ind-ai": "بدون اكتتاب",            "ind-preventive": "بدون اكتتاب",            "ind-litigation": "تخضع للفحص المهني" },
       ],
     },
     {
       category: "هيكل الاشتراك والمجموعة",
       icon: UsersThree,
       rows: [
-        { feature: "عدد المستفيدين",             "pay-per-piece": "فرد",           "ind-ai": "فرد واحد",             "ind-preventive": "فرد واحد",             "ind-litigation": "صاحب القضية",          "ind-family": "حتى ٥ أفراد" },
-        { feature: "طريقة السداد",                "pay-per-piece": "عند الطلب",     "ind-ai": "شهري / سنوي",          "ind-preventive": "شهري / سنوي",          "ind-litigation": "شهري / سنوي",          "ind-family": "ضامن مالي موحد" },
-        { feature: "عزل الخصوصية (RLS)",         "pay-per-piece": true,            "ind-ai": true,                   "ind-preventive": true,                   "ind-litigation": true,                   "ind-family": "١٠٠٪ معزول لكل عضو" },
+        { feature: "عدد المستفيدين",             "pay-per-piece": "فرد",           "ind-ai": "فرد واحد",             "ind-preventive": "فرد واحد",             "ind-litigation": "صاحب القضية، وأسرته بطلب" },
+        { feature: "طريقة السداد",                "pay-per-piece": "عند الطلب",     "ind-ai": "شهري / سنوي",          "ind-preventive": "شهري / سنوي",          "ind-litigation": "شهري / سنوي" },
+        { feature: "عزل الخصوصية (RLS)",         "pay-per-piece": true,            "ind-ai": true,                   "ind-preventive": true,                   "ind-litigation": true },
       ],
     },
     {
       category: "التكلفة والدعم",
       icon: ShieldCheck,
       rows: [
-        { feature: "سعر الاشتراك الشهري",         "pay-per-piece": "صفر ر.س",       "ind-ai": "٣٩ ر.س",               "ind-preventive": "١٤٩ ر.س",              "ind-litigation": "٣٩٩ ر.س",              "ind-family": "٦٩٩ ر.س" },
-        { feature: "سعر الاشتراك السنوي",         "pay-per-piece": "صفر ر.س",       "ind-ai": "٣٩٠ ر.س",              "ind-preventive": "١٬٤٩٠ ر.س",            "ind-litigation": "٣٬٩٩٠ ر.س",            "ind-family": "٦٬٩٩٠ ر.س" },
-        { feature: "مستوى الدعم الفني",           "pay-per-piece": "دعم للطلب",     "ind-ai": "دعم عبر المنصة",       "ind-preventive": "واتساب",        "ind-litigation": "مدير قضية مخصص",       "ind-family": "خط عائلي مباشر VIP" },
+        { feature: "سعر الاشتراك الشهري",         "pay-per-piece": "صفر ر.س",       "ind-ai": "٣٩ ر.س",               "ind-preventive": "١٤٩ ر.س",              "ind-litigation": "٣٩٩ ر.س" },
+        { feature: "سعر الاشتراك السنوي",         "pay-per-piece": "صفر ر.س",       "ind-ai": "٣٩٠ ر.س",              "ind-preventive": "١٬٤٩٠ ر.س",            "ind-litigation": "٣٬٩٩٠ ر.س" },
+        { feature: "مستوى الدعم الفني",           "pay-per-piece": "دعم للطلب",     "ind-ai": "دعم عبر المنصة",       "ind-preventive": "واتساب",        "ind-litigation": "مدير قضية مخصص" },
       ],
     },
   ],
@@ -395,38 +343,38 @@ export const comparisonIndividuals: { ar: ComparisonCategory[]; en: ComparisonCa
       category: "AI & Preventive Law",
       icon: Brain,
       rows: [
-        { feature: "Legal AI Queries",            "pay-per-piece": "Limited",       "ind-ai": "Unlimited",            "ind-preventive": "Unlimited",            "ind-litigation": "Unlimited",            "ind-family": "Private per member" },
-        { feature: "Statutory Article Citations", "pay-per-piece": true,            "ind-ai": true,                   "ind-preventive": true,                   "ind-litigation": true,                   "ind-family": true },
-        { feature: "Contract Audit & Review",     "pay-per-piece": "SAR 800/contract","ind-ai": "10% off",            "ind-preventive": "2 free/year",          "ind-litigation": "Case contracts included","ind-family": "4 free/year" },
-        { feature: "Notice & Letter Drafting",    "pay-per-piece": "Per service",   "ind-ai": true,                   "ind-preventive": true,                   "ind-litigation": true,                   "ind-family": true },
+        { feature: "Legal AI Queries",            "pay-per-piece": "Limited",       "ind-ai": "Unlimited",            "ind-preventive": "Unlimited",            "ind-litigation": "Unlimited" },
+        { feature: "Statutory Article Citations", "pay-per-piece": true,            "ind-ai": true,                   "ind-preventive": true,                   "ind-litigation": true },
+        { feature: "Contract Audit & Review",     "pay-per-piece": "SAR 800/contract","ind-ai": "10% off",            "ind-preventive": "2 free/year",          "ind-litigation": "Case contracts included" },
+        { feature: "Notice & Letter Drafting",    "pay-per-piece": "Per service",   "ind-ai": true,                   "ind-preventive": true,                   "ind-litigation": true },
       ],
     },
     {
       category: "Licensed Lawyers & Court Cases",
       icon: Gavel,
       rows: [
-        { feature: "Lawyer Consultations",        "pay-per-piece": "SAR 250/session","ind-ai": "Discounted rate",      "ind-preventive": "4 sessions/year",      "ind-litigation": "Unlimited for case",   "ind-family": "10 sessions/year" },
-        { feature: "Litigation Fees Discount",    "pay-per-piece": "-",             "ind-ai": "5%",                   "ind-preventive": "15%",                  "ind-litigation": "Fully covered case",   "ind-family": "25% for family" },
-        { feature: "Court Representation",        "pay-per-piece": "Agreed fee",    "ind-ai": "-",                    "ind-preventive": "15% off fee",          "ind-litigation": "1 eligible case/year", "ind-family": "25% off fee" },
-        { feature: "Underwriting & Intake Check", "pay-per-piece": "Conflict check","ind-ai": "No underwriting",   "ind-preventive": "No underwriting",   "ind-litigation": "Requires review gate", "ind-family": "No underwriting" },
+        { feature: "Lawyer Consultations",        "pay-per-piece": "SAR 250/session","ind-ai": "Discounted rate",      "ind-preventive": "4 sessions/year",      "ind-litigation": "Unlimited for case" },
+        { feature: "Litigation Fees Discount",    "pay-per-piece": "-",             "ind-ai": "5%",                   "ind-preventive": "15%",                  "ind-litigation": "Fully covered case" },
+        { feature: "Court Representation",        "pay-per-piece": "Agreed fee",    "ind-ai": "-",                    "ind-preventive": "15% off fee",          "ind-litigation": "1 eligible case/year" },
+        { feature: "Underwriting & Intake Check", "pay-per-piece": "Conflict check","ind-ai": "No underwriting",   "ind-preventive": "No underwriting",   "ind-litigation": "Requires review gate" },
       ],
     },
     {
       category: "Subscription & Group Architecture",
       icon: UsersThree,
       rows: [
-        { feature: "Number of Members",           "pay-per-piece": "Solo",          "ind-ai": "Solo",                 "ind-preventive": "Solo",                 "ind-litigation": "Litigant",             "ind-family": "Up to 5 members" },
-        { feature: "Billing Mechanism",           "pay-per-piece": "On demand",     "ind-ai": "Monthly / Yearly",     "ind-preventive": "Monthly / Yearly",     "ind-litigation": "Monthly / Yearly",     "ind-family": "Single Master Payer" },
-        { feature: "Data Privacy Isolation (RLS)","pay-per-piece": true,            "ind-ai": true,                   "ind-preventive": true,                   "ind-litigation": true,                   "ind-family": "100% private per member" },
+        { feature: "Number of Members",           "pay-per-piece": "Solo",          "ind-ai": "Solo",                 "ind-preventive": "Solo",                 "ind-litigation": "Litigant; family on request" },
+        { feature: "Billing Mechanism",           "pay-per-piece": "On demand",     "ind-ai": "Monthly / Yearly",     "ind-preventive": "Monthly / Yearly",     "ind-litigation": "Monthly / Yearly" },
+        { feature: "Data Privacy Isolation (RLS)","pay-per-piece": true,            "ind-ai": true,                   "ind-preventive": true,                   "ind-litigation": true },
       ],
     },
     {
       category: "Pricing & Support",
       icon: ShieldCheck,
       rows: [
-        { feature: "Monthly Subscription Price",  "pay-per-piece": "0 SAR",         "ind-ai": "39 SAR",               "ind-preventive": "149 SAR",              "ind-litigation": "399 SAR",              "ind-family": "699 SAR" },
-        { feature: "Annual Subscription Price",   "pay-per-piece": "0 SAR",         "ind-ai": "390 SAR",              "ind-preventive": "1,490 SAR",            "ind-litigation": "3,990 SAR",            "ind-family": "6,990 SAR" },
-        { feature: "Support Level",               "pay-per-piece": "Order support", "ind-ai": "Platform support",      "ind-preventive": "WhatsApp",    "ind-litigation": "Dedicated case manager","ind-family": "VIP family hotline" },
+        { feature: "Monthly Subscription Price",  "pay-per-piece": "0 SAR",         "ind-ai": "39 SAR",               "ind-preventive": "149 SAR",              "ind-litigation": "399 SAR" },
+        { feature: "Annual Subscription Price",   "pay-per-piece": "0 SAR",         "ind-ai": "390 SAR",              "ind-preventive": "1,490 SAR",            "ind-litigation": "3,990 SAR" },
+        { feature: "Support Level",               "pay-per-piece": "Order support", "ind-ai": "Platform support",      "ind-preventive": "WhatsApp",    "ind-litigation": "Dedicated case manager" },
       ],
     },
   ],

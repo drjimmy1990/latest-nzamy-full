@@ -13,8 +13,9 @@
  * 2. Individuals Pricing Pyramid:
  *    - Tier 1: AI Self-Service (الباقة الذكية) = 39 SAR/mo (390 SAR/yr)
  *    - Tier 2: Preventive (الباقة الوقائية) = 149 SAR/mo (1,490 SAR/yr)
- *    - Tier 3: Litigation (باقة الخصومة والتقاضي) = 399 SAR/mo (3,990 SAR/yr) [Underwriting Gated]
- *    - Tier 4: Family/Group (الباقة العائلية الشاملة) = 699 SAR/mo (6,990 SAR/yr)
+ *    - Tier 3: «التأمين القانوني» = 399 SAR/mo (3,990 SAR/yr) [Underwriting Gated],
+ *      with the family cover option (owner answers ٢١٣ + ١٧٦, 2026-10-18).
+ *      The separate family tier is merged into it.
  * 
  * 3. Independent Legal Consultant:
  *    - 399 SAR/mo or 3,990 SAR/yr, the same as «المحامي المحترف» (owner answer
@@ -44,6 +45,9 @@ export interface PricingPlan {
   ctaTextAr: string;
   ctaTextEn: string;
   ctaHref: string;
+  /** Small grey line under the card (owner answer ٢١٣: «* تطبق الشروط والأحكام»). */
+  footnoteAr?: string;
+  footnoteEn?: string;
 }
 
 // ─── 1. Standalone Legal Library Plans ────────────────────────────────────────
@@ -221,8 +225,8 @@ export const INDIVIDUALS_PYRAMID_PLANS: Record<string, PricingPlan> = {
 
   "ind-litigation": {
     id: "ind-litigation",
-    nameAr: "باقة الخصومة والتقاضي",
-    nameEn: "Litigation & Representation Plan",
+    nameAr: "التأمين القانوني",
+    nameEn: "Legal Insurance",
     priceMonthly: 399,
     priceYearly: 3990,
     periodMonthlyAr: "ر.س / شهر",
@@ -231,14 +235,20 @@ export const INDIVIDUALS_PYRAMID_PLANS: Record<string, PricingPlan> = {
     periodYearlyEn: "SAR / year",
     badgeAr: "تخضع لقواعد القبول والاكتتاب",
     badgeEn: "Subject to Underwriting",
-    descAr: "تمثيل قضائي وترافع معتمد أمام المحاكم — تخضع للتدقيق المهني المسبق وخلو النزاع من التعارض",
-    descEn: "Court representation & litigation defense — subject to underwriting review and conflict checks",
+    descAr: "تمثيل قضائي وترافع معتمد أمام المحاكم، مع خيار تغطية عائلية — تخضع للتدقيق المهني المسبق وخلو النزاع من التعارض",
+    descEn: "Court representation & litigation defense, with a family cover option — subject to underwriting review and conflict checks",
     featuresAr: [
       "كل مزايا الباقتين الذكية والوقائية",
       "تمثيل قضائي وترافع أمام المحاكم لقضية مؤهلة سنوياً",
       "صياغة لوائح الدعوى والمذكرات الجوابية والاعتراضية",
       "استشارات غير محدودة طوال فترة التقاضي في القضية المقبولة",
       "⚠️ خضوع القضية لقواعد الاكتتاب والتحقق المسبق قبل البدء",
+      // Owner answer ١٧٦ (line 16): the family option.
+      "التغطية العائلية: التابع الأول ٣١٩ ر.س، والثاني ٢٧٩ ر.س، والثالث فأكثر ٢٣٩ ر.س شهرياً (خصم ٢٠٪ / ٣٠٪ / ٤٠٪)",
+      "سقف عائلي مشترك لأتعاب الترافع: ٣٥٬٠٠٠–٥٠٬٠٠٠ ر.س سنوياً",
+      "للأسرة: رصيد استشارات وقائية مشترك، و٣٬٠٠٠–٥٬٠٠٠ نقطة شهرياً",
+      "لكل فرد بالغ حسابه الخاص، لا يطّلع عليه بقية أفراد الأسرة",
+      "تُضاف التغطية العائلية بطلب يراجعه الفريق",
     ],
     featuresEn: [
       "All Smart AI & Preventive features included",
@@ -246,48 +256,19 @@ export const INDIVIDUALS_PYRAMID_PLANS: Record<string, PricingPlan> = {
       "Drafting statements of claim, responses and appeals",
       "Unlimited consultations throughout active case duration",
       "⚠️ Subject to legal underwriting review and intake qualification",
+      "Family cover: first dependant SAR 319, second SAR 279, third and beyond SAR 239 a month (20% / 30% / 40% off)",
+      "Shared family cap on litigation fees: SAR 35,000–50,000 a year",
+      "For the family: a shared pool of preventive consultations and 3,000–5,000 points a month",
+      "Each adult keeps a private account the rest of the family cannot see",
+      "Family cover is added on request, after the team reviews it",
     ],
     highlighted: false,
     requiresUnderwriting: true,
     ctaTextAr: "تقديم طلب انضمام للباقة",
-    ctaTextEn: "Apply for Litigation Plan",
+    ctaTextEn: "Apply for Legal Insurance",
     ctaHref: "/register/client?type=individual&plan=ind-litigation",
-  },
-
-  "ind-family": {
-    id: "ind-family",
-    nameAr: "الباقة العائلية الشاملة",
-    nameEn: "Family Legal Umbrella",
-    priceMonthly: 699,
-    priceYearly: 6990,
-    periodMonthlyAr: "ر.س / شهر",
-    periodYearlyAr: "ر.س / سنة (شهرين مجاناً)",
-    periodMonthlyEn: "SAR / month",
-    periodYearlyEn: "SAR / year",
-    badgeAr: "تغطي حتى ٥ أفراد",
-    badgeEn: "Up to 5 Family Members",
-    descAr: "مظلة حماية قانونية متكاملة لجميع أفراد الأسرة مع استقلالية تامة للخصوصية وضامن موحد",
-    descEn: "Comprehensive family legal protection with full member privacy and a unified master payer",
-    featuresAr: [
-      "تغطية قانونية شاملة للأسرة حتى ٥ أفراد مسجلين",
-      "١٠ استشارات قانونية سنوية موزعة على أفراد العائلة مع محامين مرخصين",
-      "صياغة وتدقيق ٤ عقود سنوية (إيجار، عمل، بيع، استثمار)",
-      "ذكاء اصطناعي قانوني مفتوح ومستقل لكل فرد في حسابه الخاص",
-      "خصم ٢٥٪ على أتعاب الترافع وكافة القضايا لكافة أفراد العائلة",
-      "عزل تام لبيانات وخصوصية كل عضو (RLS Security)",
-    ],
-    featuresEn: [
-      "Comprehensive legal coverage for up to 5 family members",
-      "10 annual licensed lawyer consultations across members",
-      "Drafting & review of 4 annual family contracts",
-      "Independent unlimited AI accounts for each member",
-      "25% discount on litigation fees for all family members",
-      "Full cryptographic and role-based privacy separation (RLS)",
-    ],
-    highlighted: false,
-    ctaTextAr: "اشترك في الباقة العائلية",
-    ctaTextEn: "Subscribe to Family Plan",
-    ctaHref: "/register/client?type=individual&plan=ind-family",
+    footnoteAr: "* تطبق الشروط والأحكام",
+    footnoteEn: "* Terms and conditions apply",
   },
 };
 

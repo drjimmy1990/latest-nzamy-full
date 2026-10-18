@@ -55,7 +55,8 @@ function field(block: string, name: string): string | null {
 
 test("every individuals reference price is exactly 12 × the monthly price, above the annual one", () => {
   const blocks = planBlocks(individuals);
-  assert.ok(blocks.length >= 10, `expected the ar + en plan lists, found ${blocks.length} plans`);
+  // Four plans × two languages since the 699 family plan merged into «التأمين القانوني» (owner ٢١٣/١٧٦).
+  assert.ok(blocks.length >= 8, `expected the ar + en plan lists, found ${blocks.length} plans`);
   let checked = 0;
   for (const block of blocks) {
     const original = field(block, "priceOriginal");
@@ -69,5 +70,5 @@ test("every individuals reference price is exactly 12 × the monthly price, abov
     assert.ok(yearly! < reference!, `${id}: the annual price is not below the reference price`);
     checked++;
   }
-  assert.equal(checked, 8, "four paid plans × two languages carry a reference price");
+  assert.equal(checked, 6, "three paid plans × two languages carry a reference price");
 });

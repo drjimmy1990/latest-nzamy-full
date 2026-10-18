@@ -340,7 +340,7 @@ export default function IndividualsPage() {
             </motion.div>
 
             {/* Pyramid Grid */}
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
               {Object.values(INDIVIDUALS_PYRAMID_PLANS).map((plan, idx) => {
                 const isYearly = billingCycle === "yearly";
                 const price = isYearly ? plan.priceYearly : plan.priceMonthly;
@@ -418,19 +418,27 @@ export default function IndividualsPage() {
                       </ul>
                     </div>
 
-                    {/* CTA */}
-                    <motion.a
-                      href={plan.ctaHref}
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      className={`w-full text-center py-3 rounded-xl text-xs font-bold transition-all ${
-                        plan.highlighted
-                          ? "bg-royal text-white shadow-md hover:bg-royal/90"
-                          : "bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-                      }`}
-                    >
-                      {isAr ? plan.ctaTextAr : plan.ctaTextEn}
-                    </motion.a>
+                    <div>
+                      {/* CTA */}
+                      <motion.a
+                        href={plan.ctaHref}
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        className={`block w-full text-center py-3 rounded-xl text-xs font-bold transition-all ${
+                          plan.highlighted
+                            ? "bg-royal text-white shadow-md hover:bg-royal/90"
+                            : "bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+                        }`}
+                      >
+                        {isAr ? plan.ctaTextAr : plan.ctaTextEn}
+                      </motion.a>
+                      {/* Owner answer ٢١٣: «* تطبق الشروط والأحكام», small and grey. */}
+                      {(isAr ? plan.footnoteAr : plan.footnoteEn) && (
+                        <p className="mt-2 text-center text-[11px] text-ink-faint dark:text-gray-500">
+                          {isAr ? plan.footnoteAr : plan.footnoteEn}
+                        </p>
+                      )}
+                    </div>
                   </motion.div>
                 );
               })}

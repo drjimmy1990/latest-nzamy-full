@@ -25,6 +25,8 @@ export interface Plan {
    * (owner answer ٢١٧: «مقاعد إضافية: تواصل مع المبيعات»).
    */
   salesLine?: { label: string; href: string };
+  /** Small grey line under the card (owner answer ٢١٣: «* تطبق الشروط والأحكام»). */
+  footnote?: string;
   companySize?: CompanySize | CompanySize[];
   forLegalDept?: boolean;
   /** Commission percentage for InDrive-style provider plans */

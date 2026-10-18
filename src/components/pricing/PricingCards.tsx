@@ -284,6 +284,13 @@ function SpotlightCard({
           {plan.cta}
           <ArrowLeft size={15} weight="bold" />
         </motion.a>
+
+        {/* Owner answer ٢١٣: «* تطبق الشروط والأحكام», small and grey. */}
+        {plan.footnote && (
+          <p className={`mt-2.5 text-center text-[11px] ${isHighlighted ? "text-white/50" : "text-ink-faint dark:text-gray-500"}`}>
+            {plan.footnote}
+          </p>
+        )}
       </div>
     </motion.div>
   );

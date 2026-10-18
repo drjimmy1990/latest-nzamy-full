@@ -81,12 +81,25 @@ export function planParamOf(href: string): string | null {
  * sold through «تواصل معنا») resolves to null and the signup simply carries no
  * plan, rather than offering something the pricing page does not sell.
  */
+/**
+ * Retired plan ids whose product lives on inside another plan. Owner answers
+ * ٢١٣ + ١٧٦ (2026-10-18): the 699 family plan «ind-family» was merged into
+ * «التأمين القانوني» (ind-litigation) as its family option, so an old
+ * `?plan=ind-family` link — or one pendingPlan saved before the deploy — asks
+ * for that plan. (The retired shield/group plans have no successor and still
+ * resolve to nothing.)
+ */
+const MERGED_PLAN_IDS: Readonly<Record<string, string>> = {
+  "ind-family": "ind-litigation",
+};
+
 export function resolveRequestedPlan(
   planParam: string | null | undefined,
   plans: readonly RequestablePlan[],
 ): { id: string; name: string } | null {
-  const wanted = planParam?.trim();
-  if (!wanted) return null;
+  const raw = planParam?.trim();
+  if (!raw) return null;
+  const wanted = MERGED_PLAN_IDS[raw] ?? raw;
   const plan = plans.find((p) => p.id === wanted);
   if (!plan) return null;
   if (!plan.ctaHref.startsWith("/register/client")) return null;
