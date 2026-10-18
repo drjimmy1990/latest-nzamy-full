@@ -2327,3 +2327,184 @@ BEGIN
   END IF;
   RAISE NOTICE '_verify: 20261019_21 OK — hearings / case_stages / deadlines: a consultant''s session writes get 42501 (contract deadlines, admins and foreign-key cascade nulls pass; the pointer lists match the SET NULL foreign keys; postgres / service_role / supabase_admin / supabase_auth_admin trusted)';
 END $$;
+
+-- ====================================================================
+-- 2026-10-19 — 20261019_30_platform_staff_roles.sql (owner ٢١٠)
+-- ====================================================================
+-- platform_staff (super_admin / operations / auditor): RLS on, one SELECT
+-- policy TO authenticated via is_admin(), no session writes; staff_role() /
+-- is_super_admin() SECURITY DEFINER with search_path '', no guest EXECUTE;
+-- admin_audit_events append-only — an INVOKER function on one BEFORE UPDATE OR
+-- DELETE row trigger and one BEFORE TRUNCATE statement trigger, both enabled
+-- for normal sessions (O / A) — with no API write privilege (table, column,
+-- sequence) and SELECT kept. Keyed on the table's existence (to_regclass,
+-- never ::regclass), so a run before the migration passes with a NOTICE.
+-- An admin with no staff row (made by hand since) is a NOTICE, not a stop:
+-- requireStaff (T3.3) treats that admin as an auditor (fail-closed).
+SELECT '20261019_30 applied (public.platform_staff + append-only audit log)' AS check,
+       to_regclass('public.platform_staff') IS NOT NULL AS present;
+
+DO $$
+DECLARE
+  staff   CONSTANT text := 'public.platform_staff';
+  audit   CONSTANT text := 'public.admin_audit_events';
+  trg     CONSTANT text := 'public.admin_audit_append_only()';
+  seq     text;
+  tbl     text;
+  fn      text;
+  r       text;
+  p       text;
+  col     text;
+  cfg     text[];
+  ids     text;
+  missing text := '';
+BEGIN
+  IF to_regclass(staff) IS NULL THEN
+    RAISE NOTICE '_verify: 20261019_30 is not applied yet — every admin can do everything, and the service role can still rewrite or delete admin_audit_events rows';
+    RETURN;
+  END IF;
+
+  -- platform_staff: RLS + its one policy
+  IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass(staff)) THEN
+    missing := missing || ' RLS is off on platform_staff (every signed-in user would read the staff list — re-run 20261019_30);';
+  END IF;
+  IF (SELECT count(*) FROM pg_policy WHERE polrelid = to_regclass(staff)) <> 1
+     OR NOT EXISTS (SELECT 1 FROM pg_policy pol
+                     WHERE pol.polrelid = to_regclass(staff) AND pol.polname = 'admins read platform staff'
+                       AND pol.polcmd = 'r' AND pol.polroles = ARRAY['authenticated'::regrole::oid]
+                       AND position('is_admin()' IN pg_get_expr(pol.polqual, pol.polrelid)) > 0) THEN
+    missing := missing || ' platform_staff must carry exactly one policy, "admins read platform staff" FOR SELECT TO authenticated USING is_admin() (re-run 20261019_30);';
+  END IF;
+
+  -- effective privileges on both tables (a schema restore re-applies GRANT ALL)
+  FOREACH tbl IN ARRAY ARRAY[staff, audit] LOOP
+    IF to_regclass(tbl) IS NULL THEN
+      missing := missing || format(' %s is missing;', tbl);
+      CONTINUE;
+    END IF;
+    FOREACH r IN ARRAY ARRAY['public', 'anon', 'authenticated'] LOOP
+      FOREACH p IN ARRAY ARRAY['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'] LOOP
+        IF has_table_privilege(r, tbl, p) THEN
+          missing := missing || format(' %s holds %s on %s (a GRANT re-applied? re-run 20261019_30);', r, p, tbl);
+        END IF;
+      END LOOP;
+      CONTINUE WHEN has_table_privilege(r, tbl, 'INSERT, UPDATE, REFERENCES');   -- reported above
+      FOR col IN SELECT a.attname::text FROM pg_attribute a
+                  WHERE a.attrelid = to_regclass(tbl) AND a.attnum > 0 AND NOT a.attisdropped LOOP
+        IF has_column_privilege(r, tbl, col, 'INSERT, UPDATE, REFERENCES') THEN
+          missing := missing || format(' %s holds a column write privilege on %s.%s;', r, tbl, col);
+        END IF;
+      END LOOP;
+    END LOOP;
+    IF NOT has_table_privilege('service_role', tbl, 'SELECT')
+       OR NOT has_table_privilege('service_role', tbl, 'INSERT') THEN
+      missing := missing || format(' service_role cannot read or insert %s (role changes / audit writes would fail);', tbl);
+    END IF;
+  END LOOP;
+  FOREACH r IN ARRAY ARRAY['public', 'anon'] LOOP
+    IF has_table_privilege(r, staff, 'SELECT') OR has_any_column_privilege(r, staff, 'SELECT') THEN
+      missing := missing || format(' %s can read platform_staff (re-run 20261019_30);', r);
+    END IF;
+  END LOOP;
+  IF NOT has_table_privilege('authenticated', staff, 'SELECT')
+     OR (to_regclass(audit) IS NOT NULL AND NOT has_table_privilege('authenticated', audit, 'SELECT')) THEN
+    missing := missing || ' authenticated lost SELECT on platform_staff or admin_audit_events (the admin console / the activity feed read nothing);';
+  END IF;
+  seq := CASE WHEN to_regclass(audit) IS NOT NULL THEN pg_get_serial_sequence(audit, 'id') END;
+  IF seq IS NOT NULL THEN
+    FOREACH r IN ARRAY ARRAY['public', 'anon', 'authenticated'] LOOP
+      IF has_sequence_privilege(r, seq, 'USAGE, SELECT, UPDATE') THEN
+        missing := missing || format(' %s holds a privilege on %s (re-run 20261019_30);', r, seq);
+      END IF;
+    END LOOP;
+    IF NOT has_sequence_privilege('service_role', seq, 'USAGE') THEN
+      missing := missing || format(' service_role lacks USAGE on %s — every audit insert fails (silently: logAdminAction never throws);', seq);
+    END IF;
+  END IF;
+
+  -- the role functions
+  FOREACH fn IN ARRAY ARRAY['public.staff_role()', 'public.is_super_admin()'] LOOP
+    IF to_regprocedure(fn) IS NULL THEN
+      missing := missing || format(' %s is missing (re-run 20261019_30);', fn);
+      CONTINUE;
+    END IF;
+    SELECT p2.proconfig INTO cfg FROM pg_proc p2 WHERE p2.oid = to_regprocedure(fn);
+    IF NOT (SELECT prosecdef FROM pg_proc WHERE oid = to_regprocedure(fn))
+       OR cfg IS NULL OR NOT ('search_path=""' = ANY (cfg)) THEN
+      missing := missing || format(' %s is not SECURITY DEFINER with search_path '''' (proconfig %s — re-run 20261019_30);', fn, coalesce(cfg::text, 'NULL'));
+    END IF;
+    FOREACH r IN ARRAY ARRAY['public', 'anon'] LOOP
+      IF has_function_privilege(r, fn, 'EXECUTE') THEN
+        missing := missing || format(' %s can EXECUTE %s (a GRANT re-applied? re-run 20261019_30);', r, fn);
+      END IF;
+    END LOOP;
+    IF NOT has_function_privilege('authenticated', fn, 'EXECUTE') THEN
+      missing := missing || format(' authenticated cannot EXECUTE %s;', fn);
+    END IF;
+  END LOOP;
+
+  -- admin_audit_events: append-only
+  IF to_regclass(audit) IS NOT NULL THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = to_regclass(audit)
+                    AND attname = 'actor_email' AND NOT attisdropped) THEN
+      missing := missing || ' admin_audit_events.actor_email is missing (re-run 20261019_30);';
+    END IF;
+    IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass(audit)) THEN
+      missing := missing || ' RLS is off on admin_audit_events (anon / authenticated keep SELECT — every row would be readable);';
+    END IF;
+    IF to_regprocedure(trg) IS NULL THEN
+      missing := missing || ' admin_audit_append_only() is missing (re-run 20261019_30);';
+    ELSE
+      SELECT p2.proconfig INTO cfg FROM pg_proc p2 WHERE p2.oid = to_regprocedure(trg);
+      IF (SELECT prosecdef FROM pg_proc WHERE oid = to_regprocedure(trg)) THEN
+        missing := missing || ' admin_audit_append_only is SECURITY DEFINER — every writer reads as its owner and nothing is refused (re-run 20261019_30);';
+      END IF;
+      IF cfg IS NULL OR NOT ('search_path=""' = ANY (cfg)) THEN
+        missing := missing || format(' admin_audit_append_only proconfig %s lacks search_path='''';', coalesce(cfg::text, 'NULL'));
+      END IF;
+      IF (SELECT count(*) FROM pg_trigger t
+           WHERE t.tgrelid = to_regclass(audit) AND t.tgname = 'trg_admin_audit_append_only'
+             AND NOT t.tgisinternal
+             AND (t.tgtype & 27) = 27                -- ROW | BEFORE | DELETE | UPDATE
+             AND (t.tgtype & (4 | 32 | 64)) = 0      -- no INSERT / TRUNCATE / INSTEAD
+             AND t.tgqual IS NULL                    -- no WHEN
+             AND t.tgattr = ''::int2vector           -- not UPDATE OF <columns>
+             AND t.tgfoid = to_regprocedure(trg)) <> 1 THEN
+        missing := missing || ' admin_audit_events has no trg_admin_audit_append_only BEFORE UPDATE OR DELETE FOR EACH ROW — audit rows can be rewritten (re-run 20261019_30);';
+      END IF;
+      IF (SELECT count(*) FROM pg_trigger t
+           WHERE t.tgrelid = to_regclass(audit) AND t.tgname = 'trg_admin_audit_no_truncate'
+             AND NOT t.tgisinternal
+             AND t.tgtype = (2 | 32)                 -- STATEMENT | BEFORE | TRUNCATE
+             AND t.tgfoid = to_regprocedure(trg)) <> 1 THEN
+        missing := missing || ' admin_audit_events has no trg_admin_audit_no_truncate BEFORE TRUNCATE — the log can be wiped (re-run 20261019_30);';
+      END IF;
+      IF EXISTS (SELECT 1 FROM pg_trigger
+                  WHERE tgrelid = to_regclass(audit)
+                    AND tgname IN ('trg_admin_audit_append_only', 'trg_admin_audit_no_truncate')
+                    AND tgenabled NOT IN ('O', 'A')) THEN   -- D = disabled, R = replica only
+        missing := missing || ' an append-only trigger on admin_audit_events is DISABLED or replica-only (re-run 20261019_30);';
+      END IF;
+    END IF;
+  END IF;
+
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: the 20261019_30 staff roles / append-only audit log are broken —%', missing;
+  END IF;
+
+  -- data, not drift: reported, never a stop
+  SELECT string_agg(pr.id::text, ', ') INTO ids
+    FROM public.profiles pr
+   WHERE pr.user_type = 'admin'
+     AND NOT EXISTS (SELECT 1 FROM public.platform_staff s WHERE s.user_id = pr.id);
+  IF ids IS NOT NULL THEN
+    RAISE NOTICE '_verify: 20261019_30 — admins with no platform_staff row (they act as auditors until a super_admin gives them a role in the admin console): %', ids;
+  END IF;
+  SELECT string_agg(s.user_id::text, ', ') INTO ids
+    FROM public.platform_staff s
+   WHERE NOT EXISTS (SELECT 1 FROM public.profiles pr WHERE pr.id = s.user_id AND pr.user_type = 'admin');
+  IF ids IS NOT NULL THEN
+    RAISE NOTICE '_verify: 20261019_30 — platform_staff rows whose user is no longer an admin (staff_role() still returns their role; remove them): %', ids;
+  END IF;
+  RAISE NOTICE '_verify: 20261019_30 OK — platform_staff: RLS on, admins read, service role writes; staff_role() / is_super_admin() definer, no guest EXECUTE; admin_audit_events append-only (UPDATE / DELETE / TRUNCATE triggers, invoker), no API writes, SELECT kept';
+END $$;
