@@ -244,11 +244,11 @@ export default function InvitePage() {
                 <p className="text-white/70 text-sm leading-relaxed">
                   {inviterName
                     ? (isRTL
-                        ? `${inviterName} يدعوك للاستفادة من المكتبة القانونية في منصة نظامي مجاناً.`
-                        : `${inviterName} is inviting you to access the Legal Library on Nezamy for free.`)
+                        ? `${inviterName} يدعوك لتجربة المكتبة القانونية في منصة نظامي مجاناً.`
+                        : `${inviterName} is inviting you to try the Legal Library on Nezamy for free.`)
                     : (isRTL
-                        ? "أحد زملائك القانونيين يدعوك للاستفادة من المكتبة القانونية في منصة نظامي مجاناً."
-                        : "A legal colleague is inviting you to access the Legal Library on Nezamy for free.")}
+                        ? "أحد زملائك القانونيين يدعوك لتجربة المكتبة القانونية في منصة نظامي مجاناً."
+                        : "A legal colleague is inviting you to try the Legal Library on Nezamy for free.")}
                 </p>
               </div>
             </div>
@@ -263,8 +263,8 @@ export default function InvitePage() {
                   <div>
                     <p className={`text-[14px] font-bold ${isDark ? "text-[#C8A762]" : "text-amber-800"}`}>
                       {isRTL
-                        ? `وصول مجاني لمدة ${trialLengthLabel(trialDays, true)}`
-                        : `Free access for ${trialLengthLabel(trialDays, false)}`}
+                        ? `وصول مجاني للمكتبة القانونية لمدة ${trialLengthLabel(trialDays, true)}`
+                        : `Free access to the legal library for ${trialLengthLabel(trialDays, false)}`}
                     </p>
                     <p className={`text-[11px] mt-0.5 ${isDark ? "text-zinc-400" : "text-amber-700/70"}`}>
                       {isRTL ? "بدون بطاقة ائتمانية · لا التزام" : "No credit card · No commitment"}
@@ -289,8 +289,8 @@ export default function InvitePage() {
                     </p>
                     <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
                       {isRTL
-                        ? `سجّل الآن للاستفادة من ${trialLengthLabel(trialDays, true)} كاملة`
-                        : `Register now to enjoy ${trialLengthLabel(trialDays, false)} of full access`}
+                        ? `سجّل الآن لتفتح المكتبة القانونية لمدة ${trialLengthLabel(trialDays, true)}`
+                        : `Register now to open the legal library for ${trialLengthLabel(trialDays, false)}`}
                     </p>
                   </div>
                   <Link
@@ -353,8 +353,8 @@ export default function InvitePage() {
 
                   <p className={`text-center text-[10px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
                     {isRTL
-                      ? `التجربة مجانية لمدة ${trialLengthLabel(trialDays, true)} — لا يتطلب بطاقة ائتمان`
-                      : `Free trial for ${trialLengthLabel(trialDays, false)} — no credit card required`}
+                      ? `تجربة المكتبة القانونية مجانية لمدة ${trialLengthLabel(trialDays, true)} — لا تتطلب بطاقة ائتمان`
+                      : `The legal library trial is free for ${trialLengthLabel(trialDays, false)} — no credit card required`}
                   </p>
                 </>
               )}

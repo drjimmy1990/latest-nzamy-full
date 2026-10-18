@@ -40,7 +40,7 @@ export const plansProviders: { ar: Plan[]; en: Plan[] } = {
       ctaHref: "/register/provider?type=service&plan=elite", highlighted: false, color: "border-gold/30",
       commissionPct: 5,
       features: {
-        ai: ["استخدام AI مفتوح لدورك", "المكتبة القانونية مجاناً ✅", "السكرتير الذكي + تنبيهات", null],
+        ai: ["استخدام AI مفتوح لدورك", "المكتبة القانونية باشتراك", "السكرتير الذكي + تنبيهات", null],
         platform: ["Top Listing: تصدر نتائج البحث ✅", "badge \"خبير موثوق\" ✅", "إحالات تلقائية وحصرية", null],
         support: ["عمولة المنصة: ٥٪ فقط", "واتساب VIP أولوية قصوى"],
       },
@@ -96,7 +96,7 @@ export const plansProviders: { ar: Plan[]; en: Plan[] } = {
       ctaHref: "/register/provider?type=service&plan=elite", highlighted: false, color: "border-gold/30",
       commissionPct: 5,
       features: {
-        ai: ["Unlimited AI for your role", "Full Legal Library ✅", "Smart Secretary + Alerts", null],
+        ai: ["Unlimited AI for your role", "Legal library by subscription", "Smart Secretary + Alerts", null],
         platform: ["Top Listing: 1st in search ✅", "\"Trusted Expert\" badge ✅", "Exclusive direct referrals", null],
         support: ["Platform commission: 5% only", "Priority VIP WhatsApp"],
       },
@@ -128,7 +128,7 @@ export const comparisonProviders: { ar: ComparisonCategory[]; en: ComparisonCate
     ]},
     { category: "أدوات الذكاء الاصطناعي", icon: Brain, rows: [
       { feature: "استخدام أدوات AI", "provider-free": "٥/أسبوع", "provider-pro": "٣٠/أسبوع", "provider-elite": "مفتوح" },
-      { feature: "المكتبة القانونية", "provider-free": "❌", "provider-pro": "٥٠ نقطة/شهر", "provider-elite": "مفتوح ✅" },
+      { feature: "المكتبة القانونية", "provider-free": "❌", "provider-pro": "٥٠ نقطة/شهر", "provider-elite": "باشتراك" },
       { feature: "قوالب العمل", "provider-free": "أساسية", "provider-pro": "متقدمة", "provider-elite": "متقدمة + سكرتير ذكي" },
     ]},
     { category: "الظهور والسوق", icon: Star, rows: [
@@ -144,7 +144,7 @@ export const comparisonProviders: { ar: ComparisonCategory[]; en: ComparisonCate
     ]},
     { category: "AI Tools", icon: Brain, rows: [
       { feature: "AI tool usage", "provider-free": "5/week", "provider-pro": "30/week", "provider-elite": "Unlimited" },
-      { feature: "Legal Library", "provider-free": "❌", "provider-pro": "50 pts/mo", "provider-elite": "Unlimited ✅" },
+      { feature: "Legal Library", "provider-free": "❌", "provider-pro": "50 pts/mo", "provider-elite": "By subscription" },
       { feature: "Work templates", "provider-free": "Basic", "provider-pro": "Advanced", "provider-elite": "Advanced + Smart Sec" },
     ]},
     { category: "Visibility & Market", icon: Star, rows: [

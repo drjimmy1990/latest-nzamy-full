@@ -446,3 +446,71 @@ test("P1 item 1: the admin AI-usage pages are honest coming-soon pages", () => {
     assert.doesNotMatch(c, /TOOLS|TOP_CONSUMERS|CREDITS|QUALITY|Telemetry/, `${path}: invented figures`);
   }
 });
+
+// ── Task 5.4 (owner ١٩٩ / ٢٠٨, 2026-10-18): the library subscription is texts ──
+// A library plan opens the library's texts, not the AI tools (those spend the
+// user's points), and no plan says the library is free: it is a subscription.
+
+const ADVANCED_SEARCH_AR = "بحث متقدّم في المكتبة القانونية";
+const ADVANCED_SEARCH_EN = "Advanced search in the legal library";
+
+test("١٩٩: no library plan mentions AI or «smart» search; each card says «بحث متقدّم في المكتبة القانونية»", () => {
+  const library = code("constants/pricing/pricing.library.ts");
+  assert.doesNotMatch(library, /\bAI\b/, "pricing.library.ts: «AI»");
+  assert.doesNotMatch(library, /ذكي|الذكاء|[Ss]mart/, "pricing.library.ts: smart / AI search");
+  // Three individual plans and four firm plans, in each language.
+  assert.equal(library.split(`"${ADVANCED_SEARCH_AR}"`).length - 1, 7);
+  assert.equal(library.split(`"${ADVANCED_SEARCH_EN}"`).length - 1, 7);
+
+  // The same plans as plans.ts and the /laws paywall describe them.
+  const plans = code("lib/pricing/plans.ts");
+  const standalone = plans.slice(plans.indexOf("STANDALONE_LIBRARY_PLANS"), plans.indexOf("INDIVIDUALS_PYRAMID_PLANS"));
+  assert.ok(standalone.length > 0, "STANDALONE_LIBRARY_PLANS was not found");
+  assert.doesNotMatch(standalone, /ذكي|[Ss]mart|\bAI\b/, "plans.ts library plans: smart / AI search");
+  const paywall = code("app/laws/components/PaywallModal.tsx");
+  const paywallPlans = paywall.slice(paywall.indexOf("export const PLANS"), paywall.indexOf("export function PaywallModal"));
+  assert.doesNotMatch(paywallPlans, /ذكي|[Ss]mart|\bAI\b/, "PaywallModal plans: smart / AI search");
+});
+
+test("G5: the firm library plans keep their prices and seats (٢٠٠ — «تبقى كما هي»)", () => {
+  const firmLibrary = code("constants/pricing/pricing.library.ts").split("export const plansFirmsLibrary")[1] ?? "";
+  for (const [price, seats] of [["٤٬٨٠٠", "١–٥ مقاعد نشطة"], ["١٢٬٠٠٠", "٦–٢٠ مقعداً نشطاً"], ["٢٤٬٠٠٠", "٢١–٥٠ مقعداً نشطاً"]]) {
+    assert.match(firmLibrary, new RegExp(`priceMonthly: "${price}",\\s*priceYearly:  "${price}"`), price);
+    assert.ok(firmLibrary.includes(`"${seats}"`), seats);
+  }
+});
+
+test("٢٠٨: no plan says the legal library is free", () => {
+  for (const path of PRICING_SURFACES) {
+    assert.doesNotMatch(code(path), /المكتبة( القانونية)? مجان|[Ff]ree (legal )?[Ll]ibrary/, `${path}: a free-library claim`);
+  }
+  const providers = code("constants/pricing/pricing.providers.ts");
+  assert.doesNotMatch(providers, /Full Legal Library/);
+  assert.ok(providers.includes('"المكتبة القانونية باشتراك"'), "provider-elite (ar)");
+  assert.ok(providers.includes('"Legal library by subscription"'), "provider-elite (en)");
+  assert.match(providers, /feature: "المكتبة القانونية",[^}]*"provider-elite": "باشتراك"/);
+  assert.match(providers, /feature: "Legal Library",[^}]*"provider-elite": "By subscription"/);
+});
+
+test("P15: the subscribe FAQ promises no prorated upgrade or billing cycle (there is no gateway)", () => {
+  const subscribe = code("app/laws/subscribe/page.tsx");
+  assert.doesNotMatch(subscribe, /تناسبياً|دورة الفوترة|prorat|billing cycle/i);
+  assert.ok(subscribe.includes("يمكنك طلب الترقية أو التغيير في أي وقت؛ يراجع الفريق الطلب ويفعّله يدوياً."), "AR answer");
+  assert.ok(
+    subscribe.includes("You can request an upgrade or a change at any time; the team reviews the request and activates it manually."),
+    "EN answer",
+  );
+});
+
+test("٢٠٣: the colleague-invite page names the legal library and the length the server grants", () => {
+  const invite = code("app/invite/[code]/page.tsx");
+  // The length is the invitation's own (colleagueInviteTrialDays, 30 by
+  // default), as the accept route grants it — never a hard-coded figure.
+  assert.match(invite, /`وصول مجاني للمكتبة القانونية لمدة \$\{trialLengthLabel\(trialDays, true\)\}`/);
+  assert.match(invite, /`Free access to the legal library for \$\{trialLengthLabel\(trialDays, false\)\}`/);
+  assert.match(invite, /`سجّل الآن لتفتح المكتبة القانونية لمدة \$\{trialLengthLabel\(trialDays, true\)\}`/);
+  assert.match(invite, /`Register now to open the legal library for \$\{trialLengthLabel\(trialDays, false\)\}`/);
+  assert.match(invite, /`تجربة المكتبة القانونية مجانية لمدة \$\{trialLengthLabel\(trialDays, true\)\} — لا تتطلب بطاقة ائتمان`/);
+  // «شهر كامل كاملة» and a vague "full access" are gone.
+  assert.doesNotMatch(invite, /\$\{trialLengthLabel\(trialDays, true\)\} كاملة|of full access/);
+});

@@ -41,12 +41,12 @@ export const PLANS = [
     desc: "وصول كامل للأنظمة واللوائح والمبادئ القضائية لمدة ٣ أشهر", descEn: "Full access to laws, regulations and judicial principles for 3 months",
     features: [
       "الوصول الكامل لمواد الأنظمة واللوائح",
-      "محرك البحث الذكي والفهرسة الدقيقة",
+      "بحث متقدّم في المكتبة القانونية",
       "وضع التركيز للقراءة وحفظ المفضلة",
     ],
     featuresEn: [
       "Full access to all law articles & regulations",
-      "Full-text search & precise indexing",
+      "Advanced search in the legal library",
       "Focus reading mode & bookmarks",
     ],
     highlight: false,

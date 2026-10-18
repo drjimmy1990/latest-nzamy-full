@@ -69,13 +69,13 @@ export const STANDALONE_LIBRARY_PLANS: Record<string, PricingPlan> = {
     descEn: "Full access to Saudi laws, regulations and judicial principles for 3 months",
     featuresAr: [
       "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
-      "بحث ذكي وفهرسة رقمية دقيقة",
+      "بحث متقدّم في المكتبة القانونية",
       "قراءة هادئة ووضع التركيز وحفظ المفضلة",
       "دعم فني عبر البريد الإلكتروني",
     ],
     featuresEn: [
       "Full access to laws, regulations & judicial principles",
-      "Full-text search and precise digital indexing",
+      "Advanced search in the legal library",
       "Focus reader mode, favorites & bookmarks",
       "Email technical support",
     ],
@@ -100,12 +100,12 @@ export const STANDALONE_LIBRARY_PLANS: Record<string, PricingPlan> = {
     descEn: "Full access to Saudi laws, regulations and judicial principles for 6 months",
     featuresAr: [
       "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
-      "بحث ذكي وفهرسة رقمية دقيقة",
+      "بحث متقدّم في المكتبة القانونية",
       "قراءة هادئة ووضع التركيز وحفظ المفضلة",
     ],
     featuresEn: [
       "Full access to laws, regulations & judicial principles",
-      "Full-text search and precise digital indexing",
+      "Advanced search in the legal library",
       "Focus reader mode, favorites & bookmarks",
     ],
     highlighted: false,

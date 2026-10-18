@@ -18,7 +18,8 @@ import { Plan } from "./pricing.types";
  *
  * All plans include:
  *   ✓ Full access to laws, regulations, judicial principles
- *   ✓ AI-powered search
+ *   ✓ Advanced search in the legal library — the texts only; AI tools spend
+ *     the user's points (owner answer ١٩٩, 2026-10-18)
  *   ✓ Daily legislative updates
  *   ✓ 3 colleague invitations for free trial
  * ─────────────────────────────────────────────────────────────
@@ -44,7 +45,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: [
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
-          "بحث ذكي AI في المكتبة القانونية",
+          "بحث متقدّم في المكتبة القانونية",
           "٣ دعوات لزملائك (تجربة ١ شهر لكل دعوة)",
         ],
         platform: [
@@ -72,7 +73,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: [
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
-          "بحث ذكي AI في المكتبة القانونية",
+          "بحث متقدّم في المكتبة القانونية",
           "٣ دعوات لزملائك (تجربة ٢ شهر لكل دعوة)",
           "إشعارات تشريعية فورية",
         ],
@@ -104,7 +105,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: [
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
-          "بحث ذكي AI في المكتبة القانونية",
+          "بحث متقدّم في المكتبة القانونية",
           "٣ دعوات لزملائك (تجربة ٣ أشهر لكل دعوة)",
           "إشعارات تشريعية فورية",
           "تصدير نصوص الأنظمة بصيغة PDF",
@@ -138,7 +139,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: [
           "Full access to laws, regulations & principles",
-          "AI-powered smart search",
+          "Advanced search in the legal library",
           "3 colleague invitations (1-month trial each)",
         ],
         platform: [
@@ -166,7 +167,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: [
           "Full access to laws, regulations & principles",
-          "AI-powered smart search",
+          "Advanced search in the legal library",
           "3 colleague invitations (2-month trial each)",
         ],
         platform: [
@@ -195,7 +196,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: [
           "Full access to laws, regulations & principles",
-          "AI-powered smart search",
+          "Advanced search in the legal library",
           "3 colleague invitations (3-month trial each)",
           "Export law texts as PDF",
         ],
@@ -232,7 +233,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: [
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
-          "بحث ذكي AI في المكتبة القانونية لكل الأعضاء",
+          "بحث متقدّم في المكتبة القانونية",
           "٣ دعوات لزملائك (تجربة ٣ أشهر لكل دعوة)",
         ],
         platform: [
@@ -262,7 +263,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: [
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
-          "بحث ذكي AI في المكتبة القانونية لكل الأعضاء",
+          "بحث متقدّم في المكتبة القانونية",
           "٣ دعوات لزملائك (تجربة ٣ أشهر لكل دعوة)",
         ],
         platform: [
@@ -292,7 +293,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: [
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
-          "بحث ذكي AI في المكتبة القانونية لكل الأعضاء",
+          "بحث متقدّم في المكتبة القانونية",
           "٣ دعوات لزملائك (تجربة ٣ أشهر لكل دعوة)",
         ],
         platform: [
@@ -322,7 +323,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: [
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
-          "بحث ذكي AI في المكتبة القانونية لكل الأعضاء",
+          "بحث متقدّم في المكتبة القانونية",
           "دعوات للزملاء مخصصة حسب الطلب",
         ],
         platform: [
@@ -354,7 +355,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: [
           "Full access to laws, regulations & principles",
-          "AI-powered smart search for all team members",
+          "Advanced search in the legal library",
           "3 colleague invitations (3-month trial each)",
         ],
         platform: [
@@ -384,7 +385,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: [
           "Full access to laws, regulations & principles",
-          "AI-powered smart search for all team members",
+          "Advanced search in the legal library",
           "3 colleague invitations (3-month trial each)",
         ],
         platform: [
@@ -414,7 +415,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: [
           "Full access to laws, regulations & principles",
-          "AI-powered smart search for all team members",
+          "Advanced search in the legal library",
           "3 colleague invitations (3-month trial each)",
         ],
         platform: [
@@ -444,7 +445,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: [
           "Full access to laws, regulations & principles",
-          "AI-powered smart search for all team members",
+          "Advanced search in the legal library",
           "Custom colleague invites",
         ],
         platform: [

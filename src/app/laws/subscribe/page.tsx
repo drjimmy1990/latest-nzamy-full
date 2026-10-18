@@ -111,7 +111,7 @@ const txt = {
     faqs: [
       { q: "كيف يتم تفعيل الاشتراك؟", a: "عند الضغط على «اشترك الآن» يُرسَل طلبك للمراجعة، ويقوم فريقنا بتفعيل خطتك بعد الموافقة عليه. إن كان لديك كود دعوة، فإنه يفتح المكتبة القانونية كاملة لمدة ٣٠ يوماً فور تفعيله، دون انتظار." },
       { q: "ما الفرق بين البحث المحدود والبحث الكامل؟", a: "البحث المحدود يسمح بـ 5 عمليات يومية في عناوين الأنظمة فقط. البحث الكامل يتيح بحثاً غير محدود في النصوص الكاملة." },
-      { q: "هل يمكنني ترقية أو تنزيل خطتي في أي وقت؟", a: "بالتأكيد. يمكنك الترقية فوراً وسيُحسب الفرق تناسبياً. التنزيل يبدأ من دورة الفوترة التالية." },
+      { q: "هل يمكنني ترقية أو تنزيل خطتي في أي وقت؟", a: "يمكنك طلب الترقية أو التغيير في أي وقت؛ يراجع الفريق الطلب ويفعّله يدوياً." },
       { q: "هل المكتبة تشمل الأنظمة الملغاة؟", a: "نعم. نحتفظ بجميع الأنظمة بما فيها الملغاة والمعدلة مع إشارة واضحة لحالة كل نظام وتاريخ التعديل." },
     ],
     backToLibrary: "العودة للمكتبة",
@@ -200,7 +200,7 @@ const txt = {
     faqs: [
       { q: "How does activation work?", a: "Clicking \"Subscribe Now\" sends your request for review, and our team activates your plan once it's approved. If you have an invitation code, it opens the full legal library for 30 days as soon as you redeem it — no waiting." },
       { q: "What's the difference between limited and full search?", a: "Limited search allows 5 daily queries on titles only. Full search is unlimited across the full texts." },
-      { q: "Can I upgrade or downgrade anytime?", a: "Absolutely. Upgrades take effect immediately with prorated pricing. Downgrades begin on your next billing cycle." },
+      { q: "Can I upgrade or downgrade anytime?", a: "You can request an upgrade or a change at any time; the team reviews the request and activates it manually." },
       { q: "Does the library include repealed laws?", a: "Yes. We maintain all laws including repealed and amended ones with clear status indicators and modification dates." },
     ],
     backToLibrary: "Back to Library",
