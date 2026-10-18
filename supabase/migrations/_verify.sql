@@ -2233,3 +2233,77 @@ BEGIN
   END IF;
   RAISE NOTICE '_verify: 20261019_20 OK — practice_kind readable by anon/authenticated, licence_image_path service role only, neither writable by a session; trg_lawyer_profiles_from_signup enabled (definer %)', owner;
 END $$;
+
+-- ====================================================================
+-- 2026-10-19 — 20261019_21_consultant_court_write_guard.sql (Art. 18; owner ١٧٣ / ٢١٩)
+-- ====================================================================
+-- hearings, case_stages and deadlines refuse a consultant's session writes:
+-- one BEFORE INSERT OR UPDATE trigger per table, first in line, on a SECURITY
+-- DEFINER function no API role may EXECUTE. Keyed on the function's existence
+-- (to_regprocedure, never ::regprocedure), so a run before the migration
+-- passes with a NOTICE.
+SELECT '20261019_21 applied (consultant court-write guard)' AS check,
+       to_regprocedure('public.refuse_consultant_court_rows()') IS NOT NULL AS present;
+
+DO $$
+DECLARE
+  fn      CONSTANT text := 'public.refuse_consultant_court_rows()';
+  tbl     text;
+  r       text;
+  cfg     text[];
+  definer boolean;
+  first_before text;
+  missing text := '';
+BEGIN
+  IF to_regprocedure(fn) IS NULL THEN
+    RAISE NOTICE '_verify: 20261019_21 is not applied yet — a consultant can still write hearings, case stages and court deadlines straight through REST (only the API routes refuse him)';
+    RETURN;
+  END IF;
+
+  -- the function
+  SELECT p.proconfig, p.prosecdef INTO cfg, definer FROM pg_proc p WHERE p.oid = to_regprocedure(fn);
+  IF NOT coalesce(definer, false) THEN
+    missing := missing || ' refuse_consultant_court_rows is not SECURITY DEFINER — it cannot read practice_kind past RLS (re-run 20261019_21);';
+  END IF;
+  IF cfg IS NULL OR NOT ('search_path=""' = ANY (cfg)) THEN
+    missing := missing || format(' refuse_consultant_court_rows proconfig %s lacks search_path='''' (re-run 20261019_21);', coalesce(cfg::text, 'NULL'));
+  END IF;
+  FOREACH r IN ARRAY ARRAY['public', 'anon', 'authenticated'] LOOP
+    IF has_function_privilege(r, fn, 'EXECUTE') THEN
+      missing := missing || format(' %s can EXECUTE refuse_consultant_court_rows (a GRANT re-applied? re-run 20261019_21);', r);
+    END IF;
+  END LOOP;
+
+  -- the triggers
+  FOREACH tbl IN ARRAY ARRAY['public.hearings', 'public.case_stages', 'public.deadlines'] LOOP
+    IF to_regclass(tbl) IS NULL THEN
+      missing := missing || format(' %s is missing;', tbl);
+      CONTINUE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger t
+                    WHERE t.tgrelid = to_regclass(tbl)
+                      AND t.tgname = 'trg_00_refuse_consultant_court_rows'
+                      AND NOT t.tgisinternal
+                      AND (t.tgtype & 23) = 23              -- ROW | BEFORE | INSERT | UPDATE
+                      AND t.tgfoid = to_regprocedure(fn)) THEN
+      missing := missing || format(' %s has no trg_00_refuse_consultant_court_rows BEFORE INSERT OR UPDATE FOR EACH ROW — a consultant writes it through REST (re-run 20261019_21);', tbl);
+      CONTINUE;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_trigger
+                WHERE tgrelid = to_regclass(tbl) AND tgname = 'trg_00_refuse_consultant_court_rows' AND tgenabled = 'D') THEN
+      missing := missing || format(' the Art. 18 guard on %s is DISABLED (re-run 20261019_21);', tbl);
+    END IF;
+    SELECT t.tgname INTO first_before
+      FROM pg_trigger t
+     WHERE t.tgrelid = to_regclass(tbl) AND NOT t.tgisinternal AND (t.tgtype & 2) = 2
+     ORDER BY t.tgname LIMIT 1;
+    IF first_before IS DISTINCT FROM 'trg_00_refuse_consultant_court_rows' THEN
+      missing := missing || format(' %s fires before the Art. 18 guard on %s — rename it;', first_before, tbl);
+    END IF;
+  END LOOP;
+
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: the 20261019_21 consultant court-write guard is broken —%', missing;
+  END IF;
+  RAISE NOTICE '_verify: 20261019_21 OK — hearings / case_stages / deadlines: a consultant''s session writes get 42501 (contract deadlines and admins pass)';
+END $$;
