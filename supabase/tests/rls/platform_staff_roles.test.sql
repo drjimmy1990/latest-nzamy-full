@@ -409,6 +409,49 @@ end $$;
 reset role;
 do $$ begin raise notice 'T8 PASS: staff_role() returns super_admin / auditor / operations / NULL (non-staff, no session); is_super_admin() is true only for the super_admin, never NULL; anon may call neither'; end $$;
 
+-- T8b a staff role holds only while the account is an admin (controller
+-- ruling on concern 3): demoting an admin — the service role demotes a1
+-- (super_admin), postgres demotes a3 (operations) — leaves the platform_staff
+-- rows in place, but staff_role() is NULL and is_super_admin() false for them;
+-- promoting a1 back restores super_admin from the same row
+set role service_role;
+update public.profiles set user_type = 'client' where id = '00000000-0000-0000-0000-0000000000a1';
+reset role;
+update public.profiles set user_type = 'lawyer' where id = '00000000-0000-0000-0000-0000000000a3';
+set role authenticated;
+do $$
+declare
+  u text;
+begin
+  foreach u in array array['00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a3'] loop
+    perform set_config('test.uid', u, true);
+    if public.staff_role() is not null or public.is_super_admin() is distinct from false then
+      raise exception 'T8b FAIL: the demoted % still reads staff_role() = %, is_super_admin() = %',
+        u, public.staff_role(), public.is_super_admin();
+    end if;
+  end loop;
+end $$;
+reset role;
+do $$
+begin
+  if (select count(*) from public.platform_staff
+       where user_id in ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a3')) <> 2 then
+    raise exception 'T8b FAIL: demoting an admin removed the staff row (the read should change, not the row)';
+  end if;
+end $$;
+update public.profiles set user_type = 'admin'
+ where id in ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a3');
+set role authenticated;
+do $$
+begin
+  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000a1', true);
+  if public.staff_role() is distinct from 'super_admin' or not public.is_super_admin() then
+    raise exception 'T8b FAIL: a1 promoted back does not read super_admin again';
+  end if;
+end $$;
+reset role;
+do $$ begin raise notice 'T8b PASS: a demoted admin (by service_role or postgres) keeps the staff row but staff_role() is NULL and is_super_admin() false; promoted back, the role returns'; end $$;
+
 -- T9 rule (b), the shape half: an UPDATE issued by ANOTHER trigger runs deeper
 -- than depth 1, like a cascade. Played as the service role (current_user is
 -- untrusted), it passes only when the one change is actor_id from a value to

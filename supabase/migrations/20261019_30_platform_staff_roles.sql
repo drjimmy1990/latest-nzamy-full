@@ -24,12 +24,14 @@
 --      row. No write policy: `revoke all` from PUBLIC / anon / authenticated
 --      (table and column level), then SELECT back to authenticated only;
 --      service_role ALL. Only the server (service role) assigns roles.
---   3. public.staff_role() → text: the caller's (auth.uid()) staff_role, or
---      NULL. public.is_super_admin() → boolean: staff_role() = 'super_admin',
---      never NULL. Both STABLE, SECURITY DEFINER (they read platform_staff past
---      RLS), search_path ''. EXECUTE revoked from PUBLIC and anon (live grants
---      every new function to anon by default), granted to authenticated and
---      service_role.
+--   3. public.staff_role() → text: the caller's (auth.uid()) staff_role while
+--      the caller's profiles.user_type = 'admin', else NULL — a staff role
+--      holds only while the account is an admin, so a demoted admin's leftover
+--      row grants nothing. public.is_super_admin() → boolean: staff_role() =
+--      'super_admin', never NULL. Both STABLE, SECURITY DEFINER (they read
+--      platform_staff and profiles past RLS), search_path ''. EXECUTE revoked
+--      from PUBLIC and anon (live grants every new function to anon by
+--      default), granted to authenticated and service_role.
 --   4. Backfill: every current admin gets a super_admin row
 --      (`on conflict do nothing`), so no admin loses anything today; the user
 --      downgrades staff afterwards. A re-run never re-promotes a downgraded
@@ -72,10 +74,8 @@
 --   * It does not gate any route — Task 3.3 does (requireStaff reads
 --     platform_staff with the service client; an admin with no row reads as
 --     auditor, and before this file runs, 42P01 keeps today's rule).
---   * staff_role() does not check profiles.user_type: a staff row left behind
---     after an admin is demoted still reads as its role. requireStaff calls
---     requireAdmin first, so no route trusts it alone; a future policy built on
---     is_super_admin() alone would.
+--   * It does not delete a demoted admin's platform_staff row (staff_role()
+--     already ignores it; _verify.sql lists such rows in a NOTICE).
 --   * It does not move existing audit rows or fill actor_email for them.
 --
 -- DEPLOY ORDER — INDEPENDENT of the code. Before the T3.3 deploy every admin
@@ -168,11 +168,15 @@ stable
 security definer
 set search_path = ''
 as $$
-  select ps.staff_role from public.platform_staff ps where ps.user_id = auth.uid()
+  select ps.staff_role
+    from public.platform_staff ps
+    join public.profiles p on p.id = ps.user_id
+   where ps.user_id = auth.uid()
+     and p.user_type = 'admin'
 $$;
 
 comment on function public.staff_role() is
-  'Owner ٢١٠ (20261019_30): the caller''s (auth.uid()) platform_staff.staff_role, or NULL when the caller is not staff. SECURITY DEFINER (reads past RLS); EXECUTE for authenticated and service_role only.';
+  'Owner ٢١٠ (20261019_30): the caller''s (auth.uid()) platform_staff.staff_role while the caller''s profiles.user_type = ''admin'', else NULL (a demoted admin''s leftover row grants nothing). SECURITY DEFINER (reads past RLS); EXECUTE for authenticated and service_role only.';
 
 create or replace function public.is_super_admin()
 returns boolean
@@ -409,6 +413,12 @@ begin
       end if;
     end loop;
   end loop;
+  -- a staff role holds only while the account is an admin
+  if to_regprocedure('public.staff_role()') is not null
+     and (select position('public.profiles' in prosrc) = 0 or position('user_type' in prosrc) = 0
+            from pg_proc where oid = to_regprocedure('public.staff_role()')) then
+    missing := missing || ' staff_role() does not read profiles.user_type — a demoted admin''s leftover staff row would keep its role;';
+  end if;
 
   -- admin_audit_events: the column, RLS, the read policy
   if not exists (select 1 from pg_attribute where attrelid = audit::regclass
@@ -467,7 +477,7 @@ begin
   if missing <> '' then
     raise exception '20261019_30 verify:%', missing;
   end if;
-  raise notice '20261019_30 verify: OK — platform_staff (% rows; RLS, admins read, service role writes); staff_role() / is_super_admin() definer, no guest EXECUTE; admin_audit_events append-only (invoker triggers on UPDATE / DELETE / TRUNCATE), no API writes, SELECT kept, actor_email added',
+  raise notice '20261019_30 verify: OK — platform_staff (% rows; RLS, admins read, service role writes); staff_role() / is_super_admin() definer, admins only, no guest EXECUTE; admin_audit_events append-only (invoker triggers on UPDATE / DELETE / TRUNCATE), no API writes, SELECT kept, actor_email added',
     (select count(*) from public.platform_staff);
 end $$;
 

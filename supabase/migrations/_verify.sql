@@ -2333,8 +2333,9 @@ END $$;
 -- ====================================================================
 -- platform_staff (super_admin / operations / auditor): RLS on, one SELECT
 -- policy TO authenticated via is_admin(), no session writes; staff_role() /
--- is_super_admin() SECURITY DEFINER with search_path '', no guest EXECUTE;
--- admin_audit_events append-only — an INVOKER function on one BEFORE UPDATE OR
+-- is_super_admin() SECURITY DEFINER with search_path '', no guest EXECUTE, and
+-- staff_role() reads profiles.user_type (a staff role holds only while the
+-- account is an admin); admin_audit_events append-only — an INVOKER function on one BEFORE UPDATE OR
 -- DELETE row trigger and one BEFORE TRUNCATE statement trigger, both enabled
 -- for normal sessions (O / A) — with no API write privilege (table, column,
 -- sequence) and SELECT kept. Keyed on the table's existence (to_regclass,
@@ -2442,6 +2443,11 @@ BEGIN
       missing := missing || format(' authenticated cannot EXECUTE %s;', fn);
     END IF;
   END LOOP;
+  IF to_regprocedure('public.staff_role()') IS NOT NULL
+     AND (SELECT position('public.profiles' IN prosrc) = 0 OR position('user_type' IN prosrc) = 0
+            FROM pg_proc WHERE oid = to_regprocedure('public.staff_role()')) THEN
+    missing := missing || ' staff_role() does not read profiles.user_type — a demoted admin''s leftover staff row keeps its role (re-run 20261019_30);';
+  END IF;
 
   -- admin_audit_events: append-only
   IF to_regclass(audit) IS NOT NULL THEN
@@ -2504,7 +2510,7 @@ BEGIN
     FROM public.platform_staff s
    WHERE NOT EXISTS (SELECT 1 FROM public.profiles pr WHERE pr.id = s.user_id AND pr.user_type = 'admin');
   IF ids IS NOT NULL THEN
-    RAISE NOTICE '_verify: 20261019_30 — platform_staff rows whose user is no longer an admin (staff_role() still returns their role; remove them): %', ids;
+    RAISE NOTICE '_verify: 20261019_30 — platform_staff rows whose user is no longer an admin (staff_role() ignores them; remove them, or they return if the account is made an admin again): %', ids;
   END IF;
-  RAISE NOTICE '_verify: 20261019_30 OK — platform_staff: RLS on, admins read, service role writes; staff_role() / is_super_admin() definer, no guest EXECUTE; admin_audit_events append-only (UPDATE / DELETE / TRUNCATE triggers, invoker), no API writes, SELECT kept';
+  RAISE NOTICE '_verify: 20261019_30 OK — platform_staff: RLS on, admins read, service role writes; staff_role() / is_super_admin() definer, admins only, no guest EXECUTE; admin_audit_events append-only (UPDATE / DELETE / TRUNCATE triggers, invoker), no API writes, SELECT kept';
 END $$;
