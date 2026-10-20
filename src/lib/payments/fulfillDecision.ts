@@ -114,29 +114,41 @@ export function fulfillDecision(
  * to metadata.paid_unmatched = {payment_id, reason, at} (merged), so an admin
  * finds the money that bought nothing: a rejected payment (order, amount,
  * currency or mode mismatch) or a paid payment for a closed unpaid order.
+ *
+ * A payment whose metadata.order_id names ANOTHER order is that order's
+ * money, not this one's: it leaves no trace here (a callback
+ * `?order=X&id=<Y's payment>` must never mark X, nor overwrite X's real
+ * trace). Every other reject already implies the payment names this order.
  */
 export function paidUnmatchedReason(
   decision: FulfillDecision,
-  payment: Pick<FulfillPaymentView, "status">,
-  order: Pick<FulfillOrderView, "status">,
+  payment: Pick<FulfillPaymentView, "status" | "metadata">,
+  order: Pick<FulfillOrderView, "id" | "status">,
 ): string | null {
   if (payment.status !== "paid") return null;
-  if (typeof decision === "object") return decision.reject;
+  if (typeof decision === "object") {
+    const named = payment.metadata?.order_id;
+    if (typeof named === "string" && named !== "" && named !== order.id) return null;
+    return decision.reject;
+  }
   if (decision === "already_done") return `order_${order.status}`;
   return null;
 }
 
 /**
- * The payment a sweep should settle an intent-only order with: the paid one,
+ * The payment a sweep should settle an intent-only order with: among the
+ * listed payments whose metadata.order_id is this order (a list Moyasar did
+ * not filter can never hand over another order's payment), the paid one —
  * the newest by created_at when there are several (an unknown date sorts
  * oldest). null when none is paid — the order is left alone.
  */
-export function pickPaidPayment<T extends { status: string; createdAt: string | null }>(
-  payments: readonly T[] | null | undefined,
-): T | null {
+export function pickPaidPayment<
+  T extends { status: string; createdAt: string | null; metadata: Record<string, unknown> },
+>(payments: readonly T[] | null | undefined, orderId: string): T | null {
   let best: T | null = null;
   let bestMs = Number.NEGATIVE_INFINITY;
   for (const p of payments ?? []) {
+    if (p.metadata?.order_id !== orderId) continue;
     if (p.status !== "paid") continue;
     const ms = p.createdAt ? Date.parse(p.createdAt) : Number.NaN;
     const key = Number.isFinite(ms) ? ms : Number.NEGATIVE_INFINITY;
@@ -153,9 +165,12 @@ export function pickPaidPayment<T extends { status: string; createdAt: string | 
 /**
  * How long after the claim a paid, unfulfilled order is left to the call that
  * claimed it. Only the sweep resumes, and only after this: a callback and a
- * webhook arriving together must not both run the plan grant, whose
- * check-before-insert on subscriptions.metadata.order_id has no UNIQUE behind
- * it.
+ * webhook arriving together must not both run the grant. The plan grant is
+ * guarded twice anyway — its check-before-insert on
+ * subscriptions.metadata->>'order_id' and the partial UNIQUE index
+ * subscriptions_order_id_key (20261022_30) — but two concurrent grants would
+ * still each cancel the other's freshly inserted row before one re-activates
+ * it; the delay keeps them apart.
  */
 export const RESUME_AFTER_MS = 10 * 60 * 1000;
 

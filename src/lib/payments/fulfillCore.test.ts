@@ -204,6 +204,55 @@ test("a PAID payment for a cancelled order: already_done, paid_unmatched order_c
   assert.equal((unmatched(log)[0].payload as { p_patch: { paid_unmatched: { reason: string } } }).p_patch.paid_unmatched.reason, "order_cancelled");
 });
 
+test("a callback for order X with another order's PAID payment leaves no trace on X", async () => {
+  const { client, log } = happyDb(orderRow({ metadata: { paid_unmatched: { payment_id: "pay_real", reason: "amount_mismatch", at: "t" } } }));
+  const { d } = deps(client, gateway(paymentOf({ id: "pay_Y", metadata: { order_id: "00000000-0000-0000-0000-0000000a00ff" } })));
+  const r = await fulfillOrderWith(d, { ...INPUT, paymentId: "pay_Y" });
+  assert.deepEqual(r, { outcome: "rejected", reason: "order_mismatch" });
+  assert.equal(unmatched(log).length, 0, "X keeps its real trace untouched");
+});
+
+test("findPaidPaymentWith ignores listed payments of other orders", async () => {
+  const listed = [
+    paymentOf({ id: "p-theirs", status: "paid", createdAt: "2026-10-22T07:50:00Z", metadata: { order_id: "00000000-0000-0000-0000-0000000a00ff" } }),
+    paymentOf({ id: "p-mine", status: "paid", createdAt: "2026-10-22T07:30:00Z" }),
+  ];
+  assert.deepEqual(await findPaidPaymentWith({ gateway: async () => gateway(null, listed) }, ORDER), { ok: true, paymentId: "p-mine" });
+  assert.deepEqual(await findPaidPaymentWith({ gateway: async () => gateway(null, [listed[0]]) }, ORDER), { ok: true, paymentId: null });
+});
+
+test("already_entitled is merged through the metadata RPC before the stamp, never by replacing metadata", async () => {
+  const plan = orderRow({ kind: "plan", item_id: "ind-ai", billing: "monthly", total_halalas: 3900 });
+  const { client, log } = happyDb(plan, (q) => {
+    if (q.table === "subscriptions" && q.op === "select" && has(q, "eq", "status", "active")) {
+      return { data: [{ id: "max", tier: "max", status: "active", current_period_end: "2027-01-01T00:00:00Z" }] };
+    }
+    if (q.table === "subscriptions" && q.op === "select") return { data: [] };
+    return undefined;
+  });
+  const { d, notices } = deps(client, gateway(paymentOf({ amount: 3900 })));
+  const r = await fulfillOrderWith(d, INPUT);
+  assert.equal(r.reason, "already_entitled");
+  const mergeAt = idx(log, (q) => q.table === "merge_payment_order_metadata");
+  const stampAt = idx(log, (q) => stamps([q]).length === 1);
+  assert.ok(mergeAt > -1 && stampAt > mergeAt, "merge, then stamp");
+  assert.deepEqual((log[mergeAt].payload as { p_patch: unknown }).p_patch, { already_entitled: true });
+  assert.ok(!("metadata" in (log[stampAt].payload as object)), "the stamp never writes metadata");
+  assert.equal(notices.length, 1);
+});
+
+test("no_user is merged through the metadata RPC, never by replacing metadata", async () => {
+  const { client, log } = happyDb(orderRow(), (q) =>
+    q.table === "claim_payment_order" ? { data: [{ ...orderRow(), user_id: null, status: "paid", receipt_number: "NZ-2026-000004" }] } : undefined,
+  );
+  const { d } = deps(client, gateway(paymentOf()));
+  const r = await fulfillOrderWith(d, INPUT);
+  assert.equal(r.reason, "order_has_no_user");
+  const merge = log.find((q) => q.table === "merge_payment_order_metadata");
+  assert.deepEqual((merge?.payload as { p_patch: unknown }).p_patch, { no_user: true });
+  assert.ok(stamps(log).length === 1 && stamps(log).every((q) => !("metadata" in (q.payload as object))));
+});
+
 test("a PAID payment when another payment is stamped on the order: order_mismatch + paid_unmatched", async () => {
   const { client, log } = happyDb(orderRow({ moyasar_payment_id: "pay_0" }));
   const { d } = deps(client, gateway(paymentOf()));

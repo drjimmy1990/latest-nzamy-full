@@ -105,9 +105,13 @@ test("the order's subscription already exists → no cancel, no insert; the poin
 });
 
 test("a 23505 on the plan insert (another call inserted it) re-activates the order's row and counts as done", async () => {
-  const { client, log } = planDb([], (q) =>
-    q.table === "subscriptions" && q.op === "insert" ? { error: { code: "23505", message: "subscriptions_order_id_key" } } : undefined,
-  );
+  const { client, log } = planDb([], (q) => {
+    if (q.table === "subscriptions" && q.op === "insert") return { error: { code: "23505", message: "subscriptions_order_id_key" } };
+    if (q.table === "subscriptions" && q.op === "update" && (q.payload as { status?: string }).status === "active") {
+      return { data: [{ current_period_end: "2027-10-22T08:00:00.000Z" }] };
+    }
+    return undefined;
+  });
   const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS }, order("ind-ai", "plan", "yearly"), { now: NOW });
   assert.deepEqual(r, { ok: true, alreadyEntitled: false });
   const again = log.find((q) => q.table === "subscriptions" && q.op === "update" && (q.payload as { status?: string }).status === "active");
@@ -149,4 +153,14 @@ test("a missing points function → ok:false, missing (the sweep retries later)"
   const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS }, order("topup-100", "topup", "once"), { now: NOW });
   assert.equal(r.ok, false);
   if (!r.ok) assert.equal(r.missing, true);
+});
+
+test("a 23505 on the plan insert whose re-activation finds no row is a grant FAILURE (fulfilled_at stays null)", async () => {
+  const { client } = planDb([], (q) => {
+    if (q.table === "subscriptions" && q.op === "insert") return { error: { code: "23505", message: "subscriptions_order_id_key" } };
+    if (q.table === "subscriptions" && q.op === "update" && (q.payload as { status?: string }).status === "active") return { data: [] };
+    return undefined;
+  });
+  const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS }, order("ind-ai", "plan", "yearly"), { now: NOW });
+  assert.equal(r.ok, false);
 });

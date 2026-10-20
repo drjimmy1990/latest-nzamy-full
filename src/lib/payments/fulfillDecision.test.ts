@@ -246,15 +246,33 @@ const NOW = new Date("2026-10-22T08:00:00Z");
 const inDays = (d: number) => new Date(NOW.getTime() + d * 86_400_000).toISOString();
 
 test("pickPaidPayment: none, one failed, one paid, two with one paid, two paid → the newest paid", () => {
-  const p = (id: string, status: string, createdAt: string | null) => ({ id, status, createdAt });
-  assert.equal(pickPaidPayment([]), null);
-  assert.equal(pickPaidPayment(null), null);
-  assert.equal(pickPaidPayment([p("a", "failed", "2026-10-22T08:00:00Z")]), null);
-  assert.equal(pickPaidPayment([p("a", "paid", "2026-10-22T08:00:00Z")])?.id, "a");
-  assert.equal(pickPaidPayment([p("a", "failed", "2026-10-22T09:00:00Z"), p("b", "paid", "2026-10-22T08:00:00Z")])?.id, "b");
-  assert.equal(pickPaidPayment([p("a", "paid", "2026-10-22T08:00:00Z"), p("b", "paid", "2026-10-22T09:00:00Z")])?.id, "b");
-  assert.equal(pickPaidPayment([p("a", "paid", null), p("b", "paid", "2026-10-22T09:00:00Z")])?.id, "b");
-  assert.equal(pickPaidPayment([p("a", "initiated", "2026-10-22T09:00:00Z"), p("b", "authorized", null)]), null);
+  const p = (id: string, status: string, createdAt: string | null) => ({ id, status, createdAt, metadata: { order_id: ORDER_ID } });
+  assert.equal(pickPaidPayment([], ORDER_ID), null);
+  assert.equal(pickPaidPayment(null, ORDER_ID), null);
+  assert.equal(pickPaidPayment([p("a", "failed", "2026-10-22T08:00:00Z")], ORDER_ID), null);
+  assert.equal(pickPaidPayment([p("a", "paid", "2026-10-22T08:00:00Z")], ORDER_ID)?.id, "a");
+  assert.equal(pickPaidPayment([p("a", "failed", "2026-10-22T09:00:00Z"), p("b", "paid", "2026-10-22T08:00:00Z")], ORDER_ID)?.id, "b");
+  assert.equal(pickPaidPayment([p("a", "paid", "2026-10-22T08:00:00Z"), p("b", "paid", "2026-10-22T09:00:00Z")], ORDER_ID)?.id, "b");
+  assert.equal(pickPaidPayment([p("a", "paid", null), p("b", "paid", "2026-10-22T09:00:00Z")], ORDER_ID)?.id, "b");
+  assert.equal(pickPaidPayment([p("a", "initiated", "2026-10-22T09:00:00Z"), p("b", "authorized", null)], ORDER_ID), null);
+});
+
+test("pickPaidPayment ignores payments of other orders, even newer paid ones (an unfiltered list)", () => {
+  const p = (id: string, status: string, createdAt: string, orderId: unknown) => ({ id, status, createdAt, metadata: { order_id: orderId } });
+  assert.equal(pickPaidPayment([p("other", "paid", "2026-10-22T09:00:00Z", "another-order")], ORDER_ID), null);
+  assert.equal(
+    pickPaidPayment([p("mine", "paid", "2026-10-22T08:00:00Z", ORDER_ID), p("other", "paid", "2026-10-22T09:00:00Z", "another-order")], ORDER_ID)?.id,
+    "mine",
+  );
+  assert.equal(pickPaidPayment([{ id: "x", status: "paid", createdAt: null, metadata: {} }], ORDER_ID), null, "no order_id → not this order's");
+});
+
+test("paidUnmatchedReason: a paid payment that names ANOTHER order never traces this one", () => {
+  const theirs = payment({ metadata: { order_id: "another-order" } });
+  assert.equal(paidUnmatchedReason(fulfillDecision(order(), theirs, "test"), theirs, order()), null);
+  const unnamed = payment({ metadata: {} });
+  assert.equal(paidUnmatchedReason(fulfillDecision(order(), unnamed, "test"), unnamed, order()), "order_mismatch",
+    "a payment naming no order still leaves a trace on the order it was brought for");
 });
 
 test("paidUnmatchedReason: only a PAID payment that did not settle the order leaves a trace", () => {

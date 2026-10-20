@@ -196,7 +196,10 @@ async function grantPlan(
         .select("current_period_end");
       if (againErr) return failure("subscriptions re-activate", againErr);
       const row = Array.isArray(again) ? (again[0] as { current_period_end?: string | null } | undefined) : undefined;
-      periodEnd = row?.current_period_end ? new Date(row.current_period_end) : periodEnd;
+      // No row: the 23505 was not this order's subscription after all — a
+      // failure, so fulfilled_at stays null and the sweep retries.
+      if (!row) return { ok: false, error: "subscriptions re-activate: the order's row was not found after a 23505" };
+      periodEnd = row.current_period_end ? new Date(row.current_period_end) : periodEnd;
     } else if (insertErr) {
       return failure("subscriptions insert", insertErr);
     }

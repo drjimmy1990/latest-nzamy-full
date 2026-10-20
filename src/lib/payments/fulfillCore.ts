@@ -245,9 +245,14 @@ async function finish(
     // The account was deleted after checkout: nothing can be granted. Close
     // the order so the sweep stops; an admin refunds it from the orders page.
     console.error("[payments] fulfillOrder: paid order has no user (account deleted) — refund it:", order.id);
+    // The flag is merged (other keys, e.g. a concurrent paid_unmatched, are
+    // kept) BEFORE the stamp, so a stamped order always carries it.
+    if (!(await mergeOrderMetadata(admin, order.id, { no_user: true }))) {
+      return { outcome: "pending", reason: "metadata_merge_failed", receiptNumber };
+    }
     const { error } = await admin
       .from("payment_orders")
-      .update({ fulfilled_at: now.toISOString(), metadata: { ...(order.metadata ?? {}), no_user: true } })
+      .update({ fulfilled_at: now.toISOString() })
       .eq("id", order.id)
       .is("fulfilled_at", null);
     if (error) return pendingForDbError("no-user stamp", error);
@@ -274,11 +279,14 @@ async function finish(
     return { outcome: "pending", reason: granted.missing ? "schema_missing" : "grant_failed", receiptNumber };
   }
 
-  const stamp: Record<string, unknown> = { fulfilled_at: now.toISOString() };
-  if (granted.alreadyEntitled) stamp.metadata = { ...(order.metadata ?? {}), already_entitled: true };
+  // already_entitled is merged (never replacing the other keys) BEFORE the
+  // stamp: a refresh that finds the order fulfilled must also find the flag.
+  if (granted.alreadyEntitled && !(await mergeOrderMetadata(admin, order.id, { already_entitled: true }))) {
+    return { outcome: "pending", reason: "metadata_merge_failed", receiptNumber };
+  }
   const { data: stamped, error: stampErr } = await admin
     .from("payment_orders")
-    .update(stamp)
+    .update({ fulfilled_at: now.toISOString() })
     .eq("id", order.id)
     .is("fulfilled_at", null)
     .select("id");
@@ -475,7 +483,7 @@ export async function findPaidPaymentWith(
     if (!client) return { ok: false, reason: "gateway_disabled" };
     const listed = await client.listPaymentsByOrder(orderId);
     if (!listed.ok) return { ok: false, reason: `list_failed_${listed.status}` };
-    return { ok: true, paymentId: pickPaidPayment(listed.data)?.id ?? null };
+    return { ok: true, paymentId: pickPaidPayment(listed.data, orderId)?.id ?? null };
   } catch (err) {
     return { ok: false, reason: err instanceof Error ? err.message : "error" };
   }
