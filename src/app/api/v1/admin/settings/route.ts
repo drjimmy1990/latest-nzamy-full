@@ -13,6 +13,10 @@ const ALLOWED_SETTINGS_KEYS = [
   "tier_limits",
   "payments_gateway",
   "library_status",
+  // Owner ٢١٨ / ٢٢٥ (20261021_50): {"starts_on","ends_on": "YYYY-MM-DD" | null,
+  // "library_days": number}. Read by founder_campaign_active() and the
+  // BEFORE INSERT trigger on lawyer_profiles; malformed dates read as "off".
+  "founder_campaign",
 ] as const;
 
 /**
