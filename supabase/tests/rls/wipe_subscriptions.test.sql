@@ -33,19 +33,54 @@
 --
 -- Every assertion RAISES on failure (the harness fails closed on ERROR).
 
+-- T0 the test-account list (owner ٢٢٤) is written twice in the one-time file
+-- (blocks 1 and 2 cannot share it): the two copies are identical, and their
+-- e-mail patterns are exactly 20261017_44's backfill (/tmp/mig3.sql),
+-- whitespace aside. In the negative control (no one-time file in the chain)
+-- there is no /tmp/mig5.sql: T0 is skipped there and the chain fails at T1
+-- (T4 runs /tmp/mig5.sql, so the full chain cannot pass without it).
+do $$
+declare
+  f      text := pg_read_file('/tmp/mig5.sql', 0, 10000000, true);
+  mig    text := regexp_replace(pg_read_file('/tmp/mig3.sql'), '\s+', ' ', 'g');
+  copies text[];
+  emails text;
+begin
+  if f is null then
+    raise notice 'T0 SKIP: no /tmp/mig5.sql in this chain (the negative control)';
+    return;
+  end if;
+  select array_agg(m[1]) into copies
+    from regexp_matches(f, 'TEST ACCOUNTS \(owner ٢٢٤\) — begin(.*?)TEST ACCOUNTS — end', 'g') as m;
+  if coalesce(array_length(copies, 1), 0) <> 2 then
+    raise exception 'T0 FAIL: % copies of the test-account list (expect 2: block 1 and block 2)', coalesce(array_length(copies, 1), 0);
+  end if;
+  if copies[1] <> copies[2] then
+    raise exception 'T0 FAIL: the two copies of the test-account list differ';
+  end if;
+  emails := regexp_replace(substring(copies[1] from '(where lower\(u\.email\) like .*''ngo-director@nezamy\.sa''\))'), '\s+', ' ', 'g');
+  if emails is null or position(emails in mig) = 0 then
+    raise exception 'T0 FAIL: the e-mail patterns are not 20261017_44''s backfill: %', emails;
+  end if;
+  raise notice 'T0 PASS: the two copies of the test-account list are identical and match 20261017_44''s e-mail patterns';
+end $$;
+
 -- The live rows the wipe must cancel: A active, B trialing, D past_due, admin
 -- E active, M (its plan request was approved BEFORE the cutoff), N (its only
--- post-cutoff requests are a library approval, a rejection and a pending one).
+-- post-cutoff requests are a library approval, a rejection and a pending one),
+-- T (lawyer11@nezamy.sa — close to, but NOT, a test-account e-mail).
 -- Every other row — C and D's rows created after the cutoff, J and K (a plan /
--- media request approved after it), L (row changed after it), the cancelled
--- and expired rows — must stay exactly as it was.
+-- media request approved after it), L (row changed after it), the test
+-- accounts P (registered), R and S (unregistered, matched by e-mail), the
+-- cancelled and expired rows — must stay exactly as it was.
 create temp table expect_cancelled (id uuid primary key);
 insert into expect_cancelled values
   ('00000000-0000-4000-8000-0000000051a1'), ('00000000-0000-4000-8000-0000000051b2'),
   ('00000000-0000-4000-8000-0000000051d4'), ('00000000-0000-4000-8000-0000000051e5'),
-  ('00000000-0000-4000-8000-0000000054a4'), ('00000000-0000-4000-8000-0000000054a5');
+  ('00000000-0000-4000-8000-0000000054a4'), ('00000000-0000-4000-8000-0000000054a5'),
+  ('00000000-0000-4000-8000-0000000055a5');
 
--- T1 the six targeted rows are cancelled exactly as the brief says.
+-- T1 the seven targeted rows are cancelled exactly as the brief says.
 do $$
 declare
   t0 timestamptz := (select t0 from public.wipe204_t0);
@@ -86,17 +121,17 @@ begin
       raise exception 'T1 FAIL: % tier changed % → %', r.id, r.old_tier, r.tier;
     end if;
   end loop;
-  if n <> 6 then raise exception 'T1 FAIL: found % of the 6 targeted rows', n; end if;
+  if n <> 7 then raise exception 'T1 FAIL: found % of the 7 targeted rows', n; end if;
   -- D's period had already ended in July: the wipe must not move it forward.
   if (select current_period_end from public.subscriptions
        where id = '00000000-0000-4000-8000-0000000051d4') <> '2026-07-31 10:00+03' then
     raise exception 'T1 FAIL: D''s past period end moved';
   end if;
-  raise notice 'T1 PASS: 6 targeted rows cancelled (active, trialing, past_due, admin, request approved before the cutoff, library/rejected/pending requests only), period ends clipped, metadata stamped';
+  raise notice 'T1 PASS: 7 targeted rows cancelled (active, trialing, past_due, admin, request approved before the cutoff, library/rejected/pending requests only, lawyer11 — not a test e-mail), period ends clipped, metadata stamped';
 end $$;
 
 -- T2 everything else is exactly as before: the rows created after the cutoff,
--- the SPARED rows (J, K, L, test account P), the rows already cancelled / expired, the library
+-- the SPARED rows (J, K, L, test accounts P, R, S), the rows already cancelled / expired, the library
 -- grant, the credits and the requests.
 do $$
 declare
@@ -104,6 +139,11 @@ declare
 begin
   if (select status from public.subscriptions where id = '00000000-0000-4000-8000-0000000055a1') <> 'active' then
     raise exception 'T2 FAIL: test account P''s old live row was cancelled (owner ٢٢٤: test accounts are spared)';
+  end if;
+  if (select count(*) from public.subscriptions
+       where status = 'active'
+         and id in ('00000000-0000-4000-8000-0000000055a3', '00000000-0000-4000-8000-0000000055a4')) <> 2 then
+    raise exception 'T2 FAIL: an unregistered test account''s old live row was cancelled (R …@nzamy.test / S corp-owner@nezamy.sa — owner ٢٢٤)';
   end if;
   select count(*) into diff from (
     (select * from public.subscriptions where id not in (select id from expect_cancelled)
@@ -156,11 +196,11 @@ begin
     (select * from public.wipe204_requests_before except select * from public.entitlement_requests)
   ) d;
   if diff <> 0 then raise exception 'T2 FAIL: entitlement_requests changed'; end if;
-  raise notice 'T2 PASS: rows after the cutoff and spared rows (J, K, L, test account P) still active; cancelled/expired rows, the library grant, the credits, the requests and the test-account registry untouched';
+  raise notice 'T2 PASS: rows after the cutoff and spared rows (J, K, L, test accounts P, R, S) still active; cancelled/expired rows, the library grant, the credits, the requests and the test-account registry untouched';
 end $$;
 
 -- T3 metadata: free only for the non-admin, non-spared accounts left with
--- nothing (A, B, F, M, N); A's other keys kept; C and D (a row after the
+-- nothing (A, B, F, M, N, T); A's other keys kept; test accounts P, Q, R, S keep pro; C and D (a row after the
 -- cutoff) and J, K, L (spared) keep pro; admin E keeps max; G (no tier key)
 -- and H (NULL) unchanged.
 do $$
@@ -172,20 +212,26 @@ begin
   if m is distinct from '{"tier":"free","full_name":"أحمد"}'::jsonb then
     raise exception 'T3 FAIL: A metadata is %', m;
   end if;
+  if (select count(*) from auth.users
+       where raw_user_meta_data = '{"tier":"pro"}'::jsonb
+         and id in ('00000000-0000-4000-8000-00000000d2a3', '00000000-0000-4000-8000-00000000d2a4')) <> 2 then
+    raise exception 'T3 FAIL: an unregistered test account (R …@nzamy.test / S corp-owner@nezamy.sa) lost its tier (owner ٢٢٤)';
+  end if;
   select count(*) into diff from auth.users
    where id in ('00000000-0000-4000-8000-00000000d0b2', '00000000-0000-4000-8000-00000000d0f6',
-                '00000000-0000-4000-8000-00000000d1a4', '00000000-0000-4000-8000-00000000d1a5')
+                '00000000-0000-4000-8000-00000000d1a4', '00000000-0000-4000-8000-00000000d1a5',
+                '00000000-0000-4000-8000-00000000d2a5')
      and raw_user_meta_data is distinct from '{"tier":"free"}'::jsonb;
-  if diff <> 0 then raise exception 'T3 FAIL: % of B, F, M, N not reset to free', diff; end if;
+  if diff <> 0 then raise exception 'T3 FAIL: % of B, F, M, N, T not reset to free', diff; end if;
 
   select count(*) into diff
     from auth.users u join public.wipe204_users_before b using (id)
    where u.id not in ('00000000-0000-4000-8000-00000000d0a1', '00000000-0000-4000-8000-00000000d0b2',
                       '00000000-0000-4000-8000-00000000d0f6', '00000000-0000-4000-8000-00000000d1a4',
-                      '00000000-0000-4000-8000-00000000d1a5')
+                      '00000000-0000-4000-8000-00000000d1a5', '00000000-0000-4000-8000-00000000d2a5')
      and u.raw_user_meta_data is distinct from b.raw_user_meta_data;
   if diff <> 0 then
-    raise exception 'T3 FAIL: % account(s) outside A/B/F/M/N had their metadata changed (C, D, J, K, L keep pro; admin E keeps max; G, H as they were)', diff;
+    raise exception 'T3 FAIL: % account(s) outside A/B/F/M/N/T had their metadata changed (C, D, J, K, L keep pro; admin E keeps max; G, H as they were)', diff;
   end if;
   if (select count(*) from auth.users
        where raw_user_meta_data->>'tier' = 'pro'
@@ -204,7 +250,7 @@ begin
      is distinct from '{"tier":"pro","full_name":"اختبار"}'::jsonb then
     raise exception 'T3 FAIL: test account Q (no live row) had its tier reset (owner ٢٢٤)';
   end if;
-  raise notice 'T3 PASS: metadata reset to free for A, B, F, M, N only; C, D, spared J, K, L, test accounts P and Q, admin E, G, H untouched';
+  raise notice 'T3 PASS: metadata reset to free for A, B, F, M, N, T only; C, D, spared J, K, L, test accounts P, Q (registered) and R, S (by e-mail), admin E, G, H untouched';
 end $$;
 
 -- T4 a second run (the whole file again, still confirmed) is a no-op.
@@ -445,10 +491,20 @@ begin
     raise exception 'T6 FAIL: C''s row or a spared row (J, K, L) was cancelled';
   end if;
   if (select status from public.subscriptions where id = '00000000-0000-4000-8000-0000000055a1') <> 'active'
+     or (select raw_user_meta_data from auth.users where id = '00000000-0000-4000-8000-00000000d2a1')
+        is distinct from '{"tier":"pro"}'::jsonb
      or (select raw_user_meta_data->>'tier' from auth.users where id = '00000000-0000-4000-8000-00000000d2a2') <> 'pro' then
-    raise exception 'T6 FAIL: a test account (P''s row or Q''s tier) was wiped';
+    raise exception 'T6 FAIL: a registered test account (P''s row or metadata, Q''s tier) was wiped';
   end if;
-  raise notice 'T6 PASS: confirmed again (cutoff written with Z), the re-armed row is cancelled and B reset; C, J, K, L and test accounts P, Q kept';
+  if (select count(*) from public.subscriptions
+       where status = 'active'
+         and id in ('00000000-0000-4000-8000-0000000055a3', '00000000-0000-4000-8000-0000000055a4')) <> 2
+     or (select count(*) from auth.users
+          where raw_user_meta_data = '{"tier":"pro"}'::jsonb
+            and id in ('00000000-0000-4000-8000-00000000d2a3', '00000000-0000-4000-8000-00000000d2a4')) <> 2 then
+    raise exception 'T6 FAIL: an unregistered test account (R or S) was wiped';
+  end if;
+  raise notice 'T6 PASS: confirmed again (cutoff written with Z), the re-armed row is cancelled and B reset; C, J, K, L and test accounts P, Q, R, S kept';
 end $$;
 
 -- T7 public.test_accounts missing (an old restore without 20261017_44): block 2

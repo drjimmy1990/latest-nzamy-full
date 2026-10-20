@@ -164,6 +164,31 @@ insert into public.test_accounts (user_id, source) values
   ('00000000-0000-4000-8000-00000000d2a1', 'seed-clean-test-accounts'),
   ('00000000-0000-4000-8000-00000000d2a2', 'uat');
 
+-- TEST ACCOUNTS NOT IN THE REGISTRY (created after 20261017_44's one-time
+-- backfill — the UAT kit never registers its accounts). The wipe spares them by
+-- the backfill's own e-mail patterns:
+--   R d2a3 client pro — 'QA-Unreg@NZAMY.test' (case differs) + an old ACTIVE row → spared
+--   S d2a4 client pro — 'corp-owner@nezamy.sa' (the role list) + an old ACTIVE row → spared
+--   T d2a5 lawyer pro — 'lawyer11@nezamy.sa' (NOT one of lawyer1..10) + an old ACTIVE row → wiped
+insert into auth.users (id, email, raw_user_meta_data) values
+  ('00000000-0000-4000-8000-00000000d2a3', 'QA-Unreg@NZAMY.test',  '{"tier":"pro"}'),
+  ('00000000-0000-4000-8000-00000000d2a4', 'corp-owner@nezamy.sa', '{"tier":"pro"}'),
+  ('00000000-0000-4000-8000-00000000d2a5', 'lawyer11@nezamy.sa',   '{"tier":"pro"}');
+insert into public.profiles (id, user_type, display_name) values
+  ('00000000-0000-4000-8000-00000000d2a3', 'client', 'R'),
+  ('00000000-0000-4000-8000-00000000d2a4', 'client', 'S'),
+  ('00000000-0000-4000-8000-00000000d2a5', 'lawyer', 'T');
+insert into public.subscriptions
+  (id, user_id, plan_id, tier, billing_cycle, status, auto_renew,
+   started_at, current_period_start, current_period_end, created_at, updated_at, metadata)
+values
+  ('00000000-0000-4000-8000-0000000055a3', '00000000-0000-4000-8000-00000000d2a3', 'individual-pro', 'pro', 'custom', 'active', false,
+   '2026-08-01 10:00+03', '2026-08-01 10:00+03', '2099-01-01 00:00+03', '2026-08-01 10:00+03', '2026-08-01 10:00+03', '{"method":"admin_grant"}'),
+  ('00000000-0000-4000-8000-0000000055a4', '00000000-0000-4000-8000-00000000d2a4', 'individual-pro', 'pro', 'custom', 'active', false,
+   '2026-08-01 10:00+03', '2026-08-01 10:00+03', '2099-01-01 00:00+03', '2026-08-01 10:00+03', '2026-08-01 10:00+03', '{"method":"admin_grant"}'),
+  ('00000000-0000-4000-8000-0000000055a5', '00000000-0000-4000-8000-00000000d2a5', 'lawyer-pro', 'pro', 'custom', 'active', false,
+   '2026-08-01 10:00+03', '2026-08-01 10:00+03', '2099-01-01 00:00+03', '2026-08-01 10:00+03', '2026-08-01 10:00+03', '{"method":"admin_grant"}');
+
 -- A new-model library grant (20261019_10) for A — the file never touches it.
 insert into public.library_access_grants (id, user_id, plan_ref, source, starts_at, ends_at, granted_by, created_at)
 values ('00000000-0000-4000-8000-000000006a01', '00000000-0000-4000-8000-00000000d0a1', 'lib-founder', 'founder_campaign',
