@@ -2,29 +2,50 @@
 
 import { useEffect, useState } from "react";
 import { Crown, ArrowLeft, X } from "@phosphor-icons/react";
-import { activeCampaign, type Campaign } from "@/lib/pricing/campaigns";
+import { activeCampaign, campaignFromApi, type Campaign } from "@/lib/pricing/campaigns";
 
 const DISMISSED_PREFIX = "nzamy_dismissed_campaign_";
 
 /**
- * Dismissible banner for a real, dated campaign (owner answer ١٧٩). Renders
- * nothing unless `activeCampaign` finds one for today. Today is read after
+ * Dismissible banner for a real, dated campaign (owner answer ١٧٩). The
+ * founder-lawyer campaign (owner ٢١٨ / ٢٢٥) comes from GET
+ * /api/v1/campaigns/active, which reads the admin-set dates; when that route
+ * fails or answers nothing usable, the code `CAMPAIGNS` list is the fallback.
+ * Renders nothing when neither has a campaign for today. Today is read after
  * mount, never during render, so a cached page cannot show a campaign on the
- * wrong day (the SSR cached-date trap).
+ * wrong day (the SSR cached-date trap) — and the route's campaign is
+ * re-checked against today here, because the route answer is cached 5 minutes.
  */
 export function PromotionalCampaignBanner() {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
 
   useEffect(() => {
-    const live = activeCampaign(new Date());
-    if (!live) return;
-    let dismissed = false;
-    try {
-      dismissed = window.localStorage.getItem(DISMISSED_PREFIX + live.id) === "1";
-    } catch {
-      // Storage blocked (private mode): show it; the close button still works for this visit.
+    let cancelled = false;
+
+    async function load() {
+      let fromRoute: Campaign | null = null;
+      try {
+        const res = await fetch("/api/v1/campaigns/active");
+        if (res.ok) fromRoute = campaignFromApi(await res.json());
+      } catch {
+        // Network failure or unreadable body: fall back to the code list.
+      }
+      const now = new Date();
+      const live = (fromRoute && activeCampaign(now, [fromRoute])) ?? activeCampaign(now);
+      if (cancelled || !live) return;
+      let dismissed = false;
+      try {
+        dismissed = window.localStorage.getItem(DISMISSED_PREFIX + live.id) === "1";
+      } catch {
+        // Storage blocked (private mode): show it; the close button still works for this visit.
+      }
+      if (!dismissed) setCampaign(live);
     }
-    if (!dismissed) setCampaign(live);
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (!campaign) return null;

@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   BookBookmark,
   BookOpen,
+  CalendarBlank,
   Check,
   CreditCard,
   FloppyDisk,
@@ -37,6 +38,12 @@ interface SettingsData {
   tier_limits?: TierLimit[];
   payments_gateway?: { status: "disabled" | "test" | "live"; provider?: string | null };
   library_status?: { status: "open" | "closed"; message?: string | null };
+  founder_campaign?: { starts_on?: unknown; ends_on?: unknown; library_days?: unknown };
+}
+
+/** A `YYYY-MM-DD` string from the stored setting, else "" (an empty date field). */
+function storedDay(value: unknown): string {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : "";
 }
 
 const TIER_META: Record<string, { label: string; color: string; bg: string }> = {
@@ -83,6 +90,13 @@ export default function AdminSettingsPage() {
   const [libraryStatus, setLibraryStatus] = useState<"open" | "closed">("open");
   const [libraryMessage, setLibraryMessage] = useState<string>("");
   const [confirmCloseLibrary, setConfirmCloseLibrary] = useState(false);
+
+  // Founder-lawyer campaign dates (owner ٢١٨ / ٢٢٥, 20261021_50). An empty
+  // field saves as null = the campaign is off. library_days is not edited
+  // here; the loaded value is kept (90 when it is missing or out of range).
+  const [founderStartsOn, setFounderStartsOn] = useState("");
+  const [founderEndsOn, setFounderEndsOn] = useState("");
+  const [founderLibraryDays, setFounderLibraryDays] = useState(90);
 
   // ── Styles ──
   const card = isDark
@@ -135,6 +149,14 @@ export default function AdminSettingsPage() {
         if (typeof settings.library_status?.message === "string") {
           setLibraryMessage(settings.library_status.message);
         }
+        if (settings.founder_campaign && typeof settings.founder_campaign === "object") {
+          setFounderStartsOn(storedDay(settings.founder_campaign.starts_on));
+          setFounderEndsOn(storedDay(settings.founder_campaign.ends_on));
+          const days = settings.founder_campaign.library_days;
+          if (typeof days === "number" && Number.isInteger(days) && days >= 1 && days <= 3650) {
+            setFounderLibraryDays(days);
+          }
+        }
         setLoading(false);
       })
       .catch((err) => {
@@ -153,7 +175,16 @@ export default function AdminSettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ key, value }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        // The route's own Arabic reason (e.g. a refused date) — the admin
+        // must see why a value was not saved, not a generic failure.
+        const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
+        if (typeof body?.error === "string" && body.error) {
+          showToast(body.error, "error");
+          return;
+        }
+        throw new Error(`HTTP ${res.status}`);
+      }
       showToast(toastMessage, "success");
     } catch (err) {
       console.error("Failed to save setting:", err);
@@ -197,6 +228,24 @@ export default function AdminSettingsPage() {
       libraryStatus === "closed"
         ? "تم إغلاق المكتبة القانونية — لن تظهر للزوار."
         : "تم فتح المكتبة القانونية.",
+    );
+  }
+
+  function saveFounderCampaign() {
+    if (founderStartsOn && founderEndsOn && founderStartsOn > founderEndsOn) {
+      showToast("تاريخ البداية يجب ألا يكون بعد تاريخ النهاية.", "error");
+      return;
+    }
+    saveSettingKey(
+      "founder_campaign",
+      {
+        starts_on: founderStartsOn || null,
+        ends_on: founderEndsOn || null,
+        library_days: founderLibraryDays,
+      },
+      founderStartsOn && founderEndsOn
+        ? "تم حفظ تواريخ حملة المحامي المؤسس."
+        : "تم الحفظ — الحملة متوقفة لأن أحد التاريخين فارغ.",
     );
   }
 
@@ -807,6 +856,72 @@ export default function AdminSettingsPage() {
               </div>
             )}
           </div>
+        </div>
+      </motion.div>
+
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {/* ── Section 5: Founder-lawyer campaign dates (owner ٢١٨ / ٢٢٥) ── */}
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.195 }} className={`${card} overflow-hidden`}>
+        <div className={`px-6 py-4 border-b flex items-center justify-between ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-[#C8A762]/10 text-[#C8A762]">
+              <CalendarBlank size={20} weight="duotone" />
+            </div>
+            <div>
+              <h2 className={`text-base font-black ${isDark ? "text-white" : "text-gray-900"}`}>حملة المحامي المؤسس</h2>
+              <p className={`text-xs mt-0.5 ${muted}`}>تاريخا بداية الحملة ونهايتها بتوقيت الرياض — يسري فوراً بدون إعادة نشر</p>
+            </div>
+          </div>
+          <button
+            onClick={saveFounderCampaign}
+            disabled={saving === "founder_campaign"}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-[#0B3D2E] hover:bg-[#0a3328] disabled:opacity-50 transition-colors"
+          >
+            {saving === "founder_campaign" ? (
+              <SpinnerGap size={16} className="animate-spin" />
+            ) : (
+              <FloppyDisk size={16} />
+            )}
+            حفظ
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="founder-starts-on" className={`text-sm font-bold block mb-2 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
+                تاريخ البداية
+              </label>
+              <input
+                id="founder-starts-on"
+                type="date"
+                value={founderStartsOn}
+                onChange={(e) => setFounderStartsOn(e.target.value)}
+                className={`w-full px-4 py-2.5 rounded-xl border text-sm outline-none ${
+                  isDark ? "bg-[#0d1117] border-white/10 text-white" : "bg-white border-slate-200 text-gray-900"
+                }`}
+              />
+            </div>
+            <div>
+              <label htmlFor="founder-ends-on" className={`text-sm font-bold block mb-2 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
+                تاريخ النهاية (يشمل هذا اليوم)
+              </label>
+              <input
+                id="founder-ends-on"
+                type="date"
+                value={founderEndsOn}
+                onChange={(e) => setFounderEndsOn(e.target.value)}
+                className={`w-full px-4 py-2.5 rounded-xl border text-sm outline-none ${
+                  isDark ? "bg-[#0d1117] border-white/10 text-white" : "bg-white border-slate-200 text-gray-900"
+                }`}
+              />
+            </div>
+          </div>
+          <p className={`text-xs ${muted}`}>
+            كل محامٍ يسجّل بين التاريخين (شاملاً اليومين) يحصل على {founderLibraryDays} يوماً من المكتبة القانونية وشارة «المحامي المؤسس»، ويظهر شريط الحملة للزوار في الفترة نفسها. إفراغ أي من التاريخين يوقف الحملة.
+          </p>
         </div>
       </motion.div>
 

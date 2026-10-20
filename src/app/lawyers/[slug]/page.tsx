@@ -66,6 +66,7 @@ import {
   Translate,
   Star,
   Clock,
+  Crown,
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -121,6 +122,11 @@ interface FullLawyerProfile extends PublicLawyerProfile {
   reviewStats: ReviewStats | null;
   /** null = the sub-read failed server-side; [] = genuinely no active reviews yet. */
   reviews: Review[] | null;
+  /**
+   * «المحامي المؤسس» (owner ٢١٨ / ٢٢٥) — sent only when true; absent before
+   * migration 20261021_50 runs, or when the read failed (no badge then).
+   */
+  founder_badge?: boolean;
 }
 
 type LoadState =
@@ -537,6 +543,17 @@ export default function LawyerProfilePage() {
                         <SealCheck size={12} weight="fill" />
                         {isRTL ? "موثّق" : "Verified"}
                       </span>
+                      {/* Real: lawyer_profiles.founder_badge, set only by the
+                          signup trigger during the founder campaign (20261021_50). */}
+                      {p.founder_badge === true && (
+                        <span
+                          className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold text-white"
+                          style={{ backgroundColor: GREEN }}
+                        >
+                          <Crown size={12} weight="fill" color={GOLD} />
+                          {isRTL ? "المحامي المؤسس" : "Founding lawyer"}
+                        </span>
+                      )}
                     </div>
 
                     {headline && (

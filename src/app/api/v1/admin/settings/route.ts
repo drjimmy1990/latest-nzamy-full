@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
+import { founderCampaignSettingIssue } from "@/lib/pricing/campaigns";
 
 /** Allowlisted setting keys that admins can modify */
 const ALLOWED_SETTINGS_KEYS = [
@@ -15,7 +16,8 @@ const ALLOWED_SETTINGS_KEYS = [
   "library_status",
   // Owner ٢١٨ / ٢٢٥ (20261021_50): {"starts_on","ends_on": "YYYY-MM-DD" | null,
   // "library_days": number}. Read by founder_campaign_active() and the
-  // BEFORE INSERT trigger on lawyer_profiles; malformed dates read as "off".
+  // BEFORE INSERT trigger on lawyer_profiles; malformed dates read as "off" —
+  // so the write is validated below.
   "founder_campaign",
 ] as const;
 
@@ -63,6 +65,10 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, (value: unknown) => string | nul
 
     return "بوابة الدفع مغلقة افتراضياً؛ test/stub يتطلب بيئة local أو staging وإذن خادمي صريح، وlive غير مدعوم بعد";
   },
+  // A malformed date reads as "campaign off" in founder_campaign_active(), so a
+  // typo would silently stop the founder grants — refuse it here instead.
+  // Pure, so src/lib/pricing/campaigns.test.ts covers it.
+  founder_campaign: founderCampaignSettingIssue,
 };
 
 /**

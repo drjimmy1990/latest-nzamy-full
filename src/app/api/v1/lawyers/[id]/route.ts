@@ -66,6 +66,39 @@ const PUBLIC_COLUMNS =
  */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * «المحامي المؤسس» (owner ٢١٨ / ٢٢٥) — `lawyer_profiles.founder_badge`, added by
+ * 20261021_50. Read on its OWN, never inside `PUBLIC_COLUMNS`: until the user
+ * runs that migration the column is absent, and naming it in the main select
+ * would fail the whole profile with 42703 and 404 every published lawyer
+ * (deploy-order rule). Any error here — 42703 included — reads as "no badge"
+ * and is logged once per server process.
+ */
+let founderBadgeReadLogged = false;
+
+async function readFounderBadge(
+  supabase: Awaited<ReturnType<typeof createServiceClient>>,
+  lawyerUserId: string,
+): Promise<boolean> {
+  try {
+    const { data, error } = await supabase
+      .from("lawyer_profiles")
+      .select("founder_badge")
+      .eq("user_id", lawyerUserId)
+      .maybeSingle();
+    if (error) {
+      if (!founderBadgeReadLogged) {
+        founderBadgeReadLogged = true;
+        console.warn("[lawyers/[id] GET] founder_badge unreadable, showing no badge:", error.code, error.message);
+      }
+      return false;
+    }
+    return (data as { founder_badge?: unknown } | null)?.founder_badge === true;
+  } catch {
+    return false;
+  }
+}
+
 /** `numeric` columns (`price_sar`, `avg_rating`) come back from postgres as strings over the wire. */
 function num(v: number | string | null | undefined): number | null {
   if (v === null || v === undefined || v === "") return null;
@@ -256,7 +289,7 @@ export async function GET(
   let reviews: Review[] | null = [];
 
   if (lawyerUserId) {
-    const [servicesRes, statsRes, reviewsRes] = await Promise.all([
+    const [servicesRes, statsRes, reviewsRes, founderBadge] = await Promise.all([
       supabase
         .from("lawyer_services")
         .select(
@@ -282,7 +315,11 @@ export async function GET(
         .eq("status", "active")
         .order("created_at", { ascending: false })
         .limit(10),
+      readFounderBadge(supabase, lawyerUserId),
     ]);
+
+    // Sent only when true (a new column reaches the client only when set).
+    if (founderBadge) row.founder_badge = true;
 
     if (servicesRes.error) {
       console.error("[lawyers/[id] GET] lawyer_services read failed:", servicesRes.error.message);

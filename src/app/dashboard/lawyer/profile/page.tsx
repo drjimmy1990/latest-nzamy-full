@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  UserCircle, Phone, Envelope, MapPin, PencilSimple, SealCheck,
+  UserCircle, Phone, Envelope, MapPin, PencilSimple, SealCheck, Crown,
   Warning, Printer, Certificate, Clock, XCircle, Prohibit,
   Eye, EyeSlash, SpinnerGap, ArrowClockwise, Info, ShareNetwork,
   GraduationCap, Bank, Translate, Plus, TrashSimple,
@@ -104,6 +104,10 @@ const EMPTY_PROFILE = {
   barNumber: "",
   yearsExp: 0,
   verified: false,
+  // «المحامي المؤسس» (owner ٢١٨ / ٢٢٥): lawyer_profiles.founder_badge, read
+  // off GET /api/v1/profile's `select("*")` — absent before 20261021_50 runs,
+  // which reads as no badge.
+  founderBadge: false,
   // verification_status verbatim from lawyer_profiles; null when the column is
   // empty. Never defaulted to "pending" — an assumed status is an invented one.
   verificationStatus: null as VerificationStatus | null,
@@ -260,6 +264,7 @@ export default function LawyerProfilePage() {
       education?: unknown;
       courts?: string[] | null;
       languages?: string[] | null;
+      founder_badge?: boolean | null;
     } | null;
     // Optional so an older deploy of the route (which did not send the key)
     // reads as `undefined` → `!== true` → "did not fail", the same conclusion
@@ -293,6 +298,7 @@ export default function LawyerProfilePage() {
         verificationStatus: r?.verification_status ?? null,
         // Verified seal driven by the REAL status, never hardcoded true.
         verified: r?.verification_status === "verified",
+        founderBadge: r?.founder_badge === true,
         marketplaceVisible: r?.marketplace_visible === true,
         isAcceptingClients: r?.is_accepting_clients === true,
         hasRoleProfile: r != null,
@@ -548,6 +554,12 @@ export default function LawyerProfilePage() {
                   </h1>
                   {profileData.verified && (
                     <SealCheck size={18} weight="fill" className="text-[#C8A762]" />
+                  )}
+                  {profileData.founderBadge && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[#0B3D2E] px-2.5 py-0.5 text-[11px] font-bold text-white">
+                      <Crown size={12} weight="fill" className="text-[#C8A762]" />
+                      المحامي المؤسس
+                    </span>
                   )}
                 </div>
                 <p className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
