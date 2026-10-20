@@ -22,7 +22,10 @@
 -- raises and changes nothing, a missing public.test_accounts raises and
 -- changes nothing, a cutoff typed in block 1 never reaches block 2).
 --
--- WHY A CUTOFF: until the deploy, every grant path (src/lib/entitlements.ts
+-- WHY A CUTOFF: until the deploy that split the library from the AI tools —
+--   the deploy of the 18-Oct owner-decisions batch (main 9215ce6c, deployed
+--   by the user on 2026-10-19); "the deploy" below always means THAT one —
+--   every grant path (src/lib/entitlements.ts
 --   grantEntitlement, the admin subscriptions page, invite-code trials)
 --   wrote a public.subscriptions row and stamped auth user_metadata.tier — a
 --   library approval gave the whole "pro" tier, AI tools included. After the
@@ -81,16 +84,46 @@
 --
 -- THE TWO SETTINGS (block 2 refuses to run without both):
 --   nzamy.confirm_wipe = 'WIPE-2026-10-19'
---   nzamy.wipe_cutoff  = the time deploy.sh FINISHED, ending in an explicit
---                        UTC offset — '2026-10-19 21:30:00+03',
+--   nzamy.wipe_cutoff  = the time the deploy that SPLIT the library from the
+--                        AI tools finished: the deploy of the 18-Oct
+--                        owner-decisions batch (main 9215ce6c, deployed by
+--                        the user on 2026-10-19) —
+--                        «وقت انتهاء نشر دفعة ١٨ أكتوبر (فصل المكتبة عن
+--                        أدوات الذكاء، commit 9215ce6c) — وليس وقت نشر أي
+--                        دفعة بعدها». NOT the time of any later deploy (in
+--                        particular NOT the founder-campaign batch's): a
+--                        later time would cancel the deliberate new-model
+--                        subscriptions approved in between.
+--                        It ends in an explicit UTC offset —
+--                        '2026-10-19 21:30:00+03',
 --                        '2026-10-19 21:30+03:00' or '2026-10-19T18:30:00Z'.
 --                        Block 2 refuses a time without one: the editor's
 --                        session runs in UTC, so '2026-10-19 21:30' would be
 --                        read three hours late and cancel grants made after
 --                        the deploy.
+--   HOW TO FIND THAT TIME (not from the build now live: a later deploy
+--   replaced it, so `bash deploy.sh --status` no longer shows that build):
+--     * the deploy log of that run. The run order starts deploy.sh as
+--         nohup bash deploy.sh > /root/deploy-$(date +%F).log 2>&1 &
+--       so on the app server:
+--         grep -n 'Deploying\|Deployed' /root/deploy-2026-10-19.log
+--         ls -l --time-style=full-iso /root/deploy-2026-10-19.log
+--       The «Deploying …» line must name 9215ce6… (if it names a later commit,
+--       a later deploy that day overwrote the file and its time is too late);
+--       the file's last-modified time is when its last line «✔ Deployed …»
+--       was written — the end of the deploy. Type it with the offset `ls`
+--       prints.
+--     * NOT `git log -1 --format=%cI 9215ce6c` (2026-10-18T22:58:50+03:00):
+--       that is when the commit was made, not when it went live.
+--     * a cross-check from the data: only the new code writes
+--       public.library_access_grants (20261019_10 creates it empty), so the
+--       cutoff must not be LATER than
+--         select min(created_at) from public.library_access_grants;
+--       (no rows → no bound).
 --   How to set them in the SQL Editor: in block 2, remove the two dashes at
---   the start of BOTH `set local` lines and type the time in place of the
---   <DEPLOY-TIME-WITH-OFFSET> placeholder. (Same effect, same place:
+--   the start of BOTH `set local` lines and type that time (the end of the
+--   18-Oct batch's deploy) in place of the <DEPLOY-TIME-WITH-OFFSET>
+--   placeholder. (Same effect, same place:
 --     select set_config('nzamy.confirm_wipe', 'WIPE-2026-10-19', true);
 --     select set_config('nzamy.wipe_cutoff', '<DEPLOY-TIME-WITH-OFFSET>', true);)
 --   Every setting in this file lasts only for the transaction it is set in
@@ -104,13 +137,15 @@
 --
 -- ORDER:
 --   1. Run block 1 alone, with its set_config line un-commented and the
---      deploy time typed in place of the placeholder. Read: (0) how the cutoff
+--      cutoff (the end of the 18-Oct batch's deploy, 9215ce6c — see THE TWO
+--      SETTINGS) typed in place of the placeholder. Read: (0) how the cutoff
 --      is read and whether block 2 will accept it; (a) the live rows by tier,
 --      status and where they came from; (b) the accounts whose metadata tier
 --      is not free and what block 2 will do to each; (d) what block 2 SPARES.
 --      Block 1 stops at its first statement if public.test_accounts does not
 --      exist — apply migration 20261017_44 first.
---   2. Set block 2's cutoff to the same time — the end of deploy.sh. Check
+--   2. Set block 2's cutoff to the same time — the end of the 18-Oct batch's
+--      deploy (9215ce6c), not of any deploy after it. Check
 --      block 1 (d): every account listed there is a test account or one an
 --      admin acted on after the deploy, and block 2 leaves its rows and tier
 --      as they are.
@@ -164,8 +199,9 @@ begin
   ) x), ''), true);
 end $$;
 
--- Un-comment and type the deploy time WITH its offset in place of the
--- placeholder (as typed, it fails). It fills the cutoff columns and lists
+-- Un-comment and type the time the 18-Oct batch's deploy (9215ce6c, the
+-- library / AI split) finished — not a later deploy's — WITH its offset, in
+-- place of the placeholder (as typed, it fails; see the header). It fills the cutoff columns and lists
 -- (b) and (d). It lasts only until this block's rollback — block 2 never sees it.
 -- select set_config('nzamy.wipe_cutoff', '<DEPLOY-TIME-WITH-OFFSET>', true);
 
@@ -297,9 +333,11 @@ select null::uuid, null::text,
 rollback;
 
 -- 2) WIPE — one transaction. It changes NOTHING until you remove the two
---    dashes at the start of BOTH `set local` lines below and type the time
---    deploy.sh finished in place of the placeholder, WITH its offset (e.g.
---    '2026-10-19 21:30:00+03').
+--    dashes at the start of BOTH `set local` lines below and type, in place
+--    of the placeholder and WITH its offset (e.g. '2026-10-19 21:30:00+03'),
+--    the time the 18-Oct batch's deploy finished — the library / AI split,
+--    9215ce6c, deployed 2026-10-19 — NOT the time of any later deploy (the
+--    founder-campaign batch's included). See the header for how to find it.
 begin;
 
 -- set local nzamy.confirm_wipe = 'WIPE-2026-10-19';
@@ -321,15 +359,15 @@ declare
   v_left         bigint;
 begin
   if coalesce(current_setting('nzamy.confirm_wipe', true), '') <> 'WIPE-2026-10-19' then
-    raise exception 'wipe subscriptions (owner ٢٠٤): NOT confirmed — nothing changed. Remove the two dashes before both "set local" lines in block 2, type the deploy time, then run block 2 alone.';
+    raise exception 'wipe subscriptions (owner ٢٠٤): NOT confirmed — nothing changed. Remove the two dashes before both "set local" lines in block 2, type the time the 18-Oct batch''s deploy finished (the library / AI split, 9215ce6c — not any later deploy), then run block 2 alone.';
   end if;
   if v_cutoff_text is null then
-    raise exception 'wipe subscriptions (owner ٢٠٤): the cutoff is not set — nothing changed. Type the time deploy.sh finished in block 2''s "set local nzamy.wipe_cutoff" line, e.g. ''2026-10-19 21:30:00+03'' (a cutoff typed in block 1 does not reach block 2).';
+    raise exception 'wipe subscriptions (owner ٢٠٤): the cutoff is not set — nothing changed. Type the time the 18-Oct batch''s deploy finished (the library / AI split, 9215ce6c, deployed 2026-10-19 — NOT the time of any later deploy) in block 2''s "set local nzamy.wipe_cutoff" line, e.g. ''2026-10-19 21:30:00+03'' (a cutoff typed in block 1 does not reach block 2).';
   end if;
   -- An explicit UTC offset, checked on the raw text before the cast: the
   -- session runs in UTC, so a time without one would be read three hours late.
   if v_cutoff_text !~ '[0-9]{1,2}:[0-9]{2}(:[0-9]{2}(\.[0-9]+)?)?\s*([+-][0-9]{2}(:?[0-9]{2})?|[Zz])$' then
-    raise exception 'wipe subscriptions (owner ٢٠٤): the cutoff "%" does not end in a UTC offset — nothing changed. Type the time deploy.sh finished WITH its offset, e.g. ''2026-10-19 21:30:00+03'' or ''2026-10-19T18:30:00Z''.', v_cutoff_text;
+    raise exception 'wipe subscriptions (owner ٢٠٤): the cutoff "%" does not end in a UTC offset — nothing changed. Type the time the 18-Oct batch''s deploy finished (9215ce6c — not any later deploy) WITH its offset, e.g. ''2026-10-19 21:30:00+03'' or ''2026-10-19T18:30:00Z''.', v_cutoff_text;
   end if;
   begin
     v_cutoff := v_cutoff_text::timestamptz;
@@ -337,7 +375,7 @@ begin
     raise exception 'wipe subscriptions (owner ٢٠٤): the cutoff "%" is not a time — nothing changed. Type it like ''2026-10-19 21:30:00+03''.', v_cutoff_text;
   end;
   if v_cutoff > now() then
-    raise exception 'wipe subscriptions (owner ٢٠٤): the cutoff % is in the future — nothing changed. It is the time deploy.sh FINISHED; a later time would cancel subscriptions granted after the deploy.', v_cutoff;
+    raise exception 'wipe subscriptions (owner ٢٠٤): the cutoff % is in the future — nothing changed. It is the time the 18-Oct batch''s deploy FINISHED (the library / AI split, 9215ce6c, deployed 2026-10-19), not the time of any later deploy: a later time would cancel subscriptions granted after that deploy.', v_cutoff;
   end if;
   -- Owner ٢٢٤: test accounts are spared, so the registry must exist BEFORE any
   -- change (an old restore without migration 20261017_44 would wipe them).

@@ -37,8 +37,13 @@
 --      outside 20261016_10's SELECT allow-list (a guest cannot read it).
 --      No `revoke all` is run on lawyer_profiles: that would also drop the
 --      21 self-service UPDATE column grants and practice_kind's SELECT.
---      Step 1 proves the table-level privileges are already gone, and the
---      verify block sweeps every column's effective privilege.
+--      Step 1 proves the table-level privileges are already gone. The verify
+--      block checks the effective privileges (has_column_privilege) of
+--      founder_badge (anon / authenticated read, cannot write; PUBLIC holds
+--      nothing; service_role reads and writes), that metadata stays
+--      unreadable and that no table-level privilege is back. The sweep of
+--      EVERY lawyer_profiles column (pg_attribute) is in _verify.sql's
+--      20261016_10 section, which lists founder_badge as allowed.
 --   5. public.lawyer_profile_founder_campaign() — SECURITY DEFINER,
 --      search_path '' — and the BEFORE INSERT trigger
 --      trg_lawyer_profiles_founder. While founder_campaign_active(now()):
