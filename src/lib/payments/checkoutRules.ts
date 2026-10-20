@@ -147,4 +147,12 @@ export interface CheckoutResponse {
   /** Plans keep the card for renewal (owner ٢٤٦); one-off items do not. */
   saveCard: boolean;
   quote: { net: number; vat: number; total: number; vatMode: VatMode };
+  /**
+   * The intent's callback_url, `<NEXT_PUBLIC_SITE_URL>/payments/result?order=<orderId>`
+   * — the browser hands it to Moyasar.init (the form requires one) instead of
+   * building its own from window.location.
+   */
+  callbackUrl: string;
+  /** The intent's expires_at (ISO), or null when Moyasar sent none. */
+  expiresAt: string | null;
 }

@@ -554,6 +554,21 @@ test("P15: the subscribe and /pricing FAQs promise no prorated upgrade or billin
   }
 });
 
+test("Task 7 ruling: /laws/subscribe says «reviewed» only while online payment is off", () => {
+  const subscribe = code("app/laws/subscribe/page.tsx");
+  // gateway off: today's review copy, unchanged
+  assert.ok(subscribe.includes('plansSub: "اختر الخطة المناسبة — يُراجع طلبك ويُفعَّل الاشتراك بعد الموافقة.",'));
+  assert.ok(subscribe.includes("عند الضغط على «اشترك الآن» يُرسَل طلبك للمراجعة، ويقوم فريقنا بتفعيل خطتك بعد الموافقة عليه."));
+  // gateway on: the payment activates the subscription
+  assert.ok(subscribe.includes("يُفعَّل الاشتراك فور إتمام الدفع الإلكتروني"), "intro, gateway on");
+  assert.ok(subscribe.includes("بعد الدفع الإلكتروني يُفعَّل الاشتراك تلقائياً؛ وما زال بإمكانك تقديم طلب يراجعه الفريق"), "FAQ, gateway on");
+  assert.ok(subscribe.includes("your subscription is activated as soon as the online payment completes"), "English twin");
+  // …chosen by the same predicate the buy buttons use
+  assert.match(subscribe, /const payOnline = gatewayAllowsCheckout\(payments\);/);
+  assert.match(subscribe, /\{payOnline \? t\.plansSubPaid : t\.plansSub\}/);
+  assert.match(subscribe, /\{payOnline && faq\.aPaid \? faq\.aPaid : faq\.a\}/);
+});
+
 test("٢٠٣: the colleague-invite page names the legal library and the length the server grants", () => {
   const invite = code("app/invite/[code]/page.tsx");
   // The length is the invitation's own (colleagueInviteTrialDays, 30 by

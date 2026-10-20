@@ -11,7 +11,7 @@ import type { Plan, AudienceTab, Billing } from "@/constants/pricingData";
 import { lawyerServicesTable, LAWYER_ARCHIVE_NOTE } from "@/constants/pricing/pricing.lawyers";
 import { useUser } from "@/hooks/useUser";
 import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
-import { checkoutHref, gatewayAllowsCheckout } from "@/lib/payments/checkoutView";
+import { buyButtonAction } from "@/lib/payments/checkoutView";
 import { requestEntitlement } from "@/lib/services/entitlementService";
 import { referencePriceFor } from "@/lib/pricing/priceDisplay";
 import { planEntitlementRequest } from "@/lib/pricing/planRequest";
@@ -487,9 +487,12 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
   function handleSubscribe(plan: Plan): boolean {
     if (!isLoggedIn) return false;
     if (!isSubscribeCta(plan.ctaHref)) return false; // e.g. Contact Sales — let it navigate
-    const payHref = checkoutHref(plan.id, billing, gatewayAllowsCheckout(payments), isLoggedIn);
-    if (payHref) {
-      router.push(payHref);
+    const action = buyButtonAction(plan.id, billing, payments, isLoggedIn);
+    // Sold online but the gateway status has not loaded: ignore the click
+    // rather than file a request the payer did not mean.
+    if (action.kind === "wait") return true;
+    if (action.kind === "checkout") {
+      router.push(action.href);
       return true;
     }
     // requested_ref = Plan.id (the name rides in `note`) — see planEntitlementRequest.

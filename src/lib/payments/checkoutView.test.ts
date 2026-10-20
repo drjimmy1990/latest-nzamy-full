@@ -9,17 +9,22 @@ import { PAYABLE_ITEMS } from "./catalog.ts";
 import { VAT_NOTICE } from "../pricing/vatNotice.ts";
 import type { CheckoutResponse } from "./checkoutRules.ts";
 import {
+  buyButtonAction,
   checkoutBillingFor,
   checkoutHref,
   checkoutItemNotes,
   gatewayAllowsCheckout,
   initiatingResult,
+  intentNeedsRefresh,
   listedVatNotice,
   moyasarInitConfig,
   moyasarMethods,
+  needsNewCheckout,
   parseCheckoutQuery,
   parseCheckoutResponse,
   quoteVatNotice,
+  refreshDecision,
+  INTENT_EXPIRY_MARGIN_MS,
   INTENT_REFRESH_MS,
   LITIGATION_COVERAGE_AR,
 } from "./checkoutView.ts";
@@ -109,11 +114,17 @@ test("checkoutItemNotes: ind-litigation states the main-subscriber coverage verb
   assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["ind-litigation"]), [LITIGATION_COVERAGE_AR]);
 });
 
-test("checkoutItemNotes: each top-up states its points and the validity the catalog grants", () => {
-  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-100"]), ["١٠٠ نقطة", "صالحة ٣ أشهر من تاريخ الشراء"]);
-  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-250"]), ["٣٠٠ نقطة", "صالحة ٣ أشهر من تاريخ الشراء"]);
-  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-500"]), ["٧٠٠ نقطة", "صالحة ٦ أشهر من تاريخ الشراء"]);
-  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-1000"]), ["١٬٥٠٠ نقطة", "صالحة ١٢ شهراً من تاريخ الشراء"]);
+test("checkoutItemNotes: each top-up states the validity the catalog grants; the points are in its label already", () => {
+  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-100"]), ["صالحة ٣ أشهر من تاريخ الشراء"]);
+  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-250"]), ["صالحة ٣ أشهر من تاريخ الشراء"]);
+  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-500"]), ["صالحة ٦ أشهر من تاريخ الشراء"]);
+  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-1000"]), ["صالحة ١٢ شهراً من تاريخ الشراء"]);
+  // every top-up label names its points, so the screen shows them once
+  for (const [id, points] of [["topup-100", "١٠٠ نقطة"], ["topup-250", "٣٠٠ نقطة"], ["topup-500", "٧٠٠ نقطة"], ["topup-1000", "١٬٥٠٠ نقطة"]]) {
+    assert.ok(PAYABLE_ITEMS[id].labelAr.includes(points), id);
+  }
+  // a top-up whose label does not name its points still gets the line
+  assert.deepEqual(checkoutItemNotes({ ...PAYABLE_ITEMS["topup-100"], labelAr: "شحن" }), ["١٠٠ نقطة", "صالحة ٣ أشهر من تاريخ الشراء"]);
 });
 
 test("checkoutItemNotes: the library states its access length; firm plans promise no seats", () => {
@@ -128,10 +139,36 @@ test("checkoutItemNotes: the library states its access length; firm plans promis
   }
 });
 
+// ── the buy buttons while the status loads ──────────────────────────────────
+
+test("buyButtonAction: checkout / wait / request", () => {
+  const on = { disabled: false, provider: "moyasar", loading: false };
+  const off = { disabled: true, provider: null, loading: false };
+  const loading = { disabled: true, provider: null, loading: true };
+  assert.deepEqual(buyButtonAction("lawyer-pro", "yearly", on, true), {
+    kind: "checkout",
+    href: "/checkout?item=lawyer-pro&billing=yearly",
+  });
+  assert.deepEqual(buyButtonAction("topup-500", "monthly", on, true), {
+    kind: "checkout",
+    href: "/checkout?item=topup-500&billing=once",
+  });
+  assert.deepEqual(buyButtonAction("lawyer-pro", "monthly", off, true), { kind: "request" }, "gateway off (٢٤٦)");
+  // a sellable item is not turned into a request while the status is unknown
+  assert.deepEqual(buyButtonAction("lawyer-pro", "monthly", loading, true), { kind: "wait" });
+  assert.deepEqual(buyButtonAction("lib-q1", "once", loading, true), { kind: "wait" });
+  // items not sold online never wait on the gateway
+  assert.deepEqual(buyButtonAction("provider-pro", "monthly", loading, true), { kind: "request" });
+  assert.deepEqual(buyButtonAction("lib-firm-small", "monthly", on, true), { kind: "request" });
+  // guests are the caller's business (register / login navigation)
+  assert.deepEqual(buyButtonAction("lawyer-pro", "monthly", on, false), { kind: "request" });
+});
+
 // ── the Moyasar form ────────────────────────────────────────────────────────
 
+const ORDER = "0b8f9a3e-1111-4222-8333-444455556666";
 const RESPONSE: CheckoutResponse = {
-  orderId: "0b8f9a3e-1111-4222-8333-444455556666",
+  orderId: ORDER,
   intentId: "pi_123",
   clientSecret: "pi_123_secret_abc",
   publishableKey: "pk_test_abc",
@@ -139,7 +176,17 @@ const RESPONSE: CheckoutResponse = {
   descriptionAr: "NEZAMY — المحامي المحترف",
   saveCard: true,
   quote: { net: 39900, vat: 5985, total: 45885, vatMode: "exclusive" },
+  callbackUrl: `https://nezamy.example/payments/result?order=${ORDER}`,
+  expiresAt: "2026-10-22T11:00:00.000Z",
 };
+
+const opts = (over: Partial<Parameters<typeof moyasarInitConfig>[1]> = {}) => ({
+  element: ".mysr-form",
+  applePayFlag: undefined,
+  initiate: async () => RESPONSE,
+  onNeedsNewCheckout: () => {},
+  ...over,
+});
 
 test("moyasarMethods: Apple Pay only with a publishable key and the flag set to 'true'", () => {
   assert.deepEqual(moyasarMethods("pk_test_abc", "true"), ["creditcard", "applepay"]);
@@ -149,38 +196,29 @@ test("moyasarMethods: Apple Pay only with a publishable key and the flag set to 
   assert.deepEqual(moyasarMethods("", "true"), ["creditcard"]);
 });
 
-test("initiatingResult hands Moyasar the intent and the order id as payment metadata", () => {
-  const cb = "https://example.test/payments/result?order=0b8f9a3e-1111-4222-8333-444455556666";
-  const r = initiatingResult(RESPONSE, cb);
+test("initiatingResult hands Moyasar the intent, the order id as payment metadata and the server's callback", () => {
+  const r = initiatingResult(RESPONSE);
   assert.deepEqual(r, {
     payment_intent: { id: "pi_123", client_secret: "pi_123_secret_abc" },
     amount: 45885,
-    metadata: { order_id: RESPONSE.orderId },
-    callback_url: cb,
+    metadata: { order_id: ORDER },
+    callback_url: RESPONSE.callbackUrl,
   });
   // only keys Moyasar lets on_initiating change (any other key throws there)
   const allowed = new Set(["callback_url", "description", "metadata", "amount", "splits", "publishable_api_key", "currency", "save_card", "use_payment_intent", "payment_intent"]);
   for (const k of Object.keys(r)) assert.ok(allowed.has(k), k);
 });
 
-test("moyasarInitConfig: the values the brief pins", async () => {
+test("moyasarInitConfig: the values the brief pins, and the server's callback URL", async () => {
   let calls = 0;
-  const cfg = moyasarInitConfig(RESPONSE, {
-    element: ".mysr-form",
-    origin: "https://example.test",
-    applePayFlag: undefined,
-    initiate: async () => {
-      calls++;
-      return RESPONSE;
-    },
-  });
+  const cfg = moyasarInitConfig(RESPONSE, opts({ initiate: async () => (calls++, RESPONSE) }));
   assert.equal(cfg.element, ".mysr-form");
   assert.equal(cfg.amount, 45885);
   assert.equal(cfg.currency, "SAR");
   assert.equal(cfg.description, "NEZAMY — المحامي المحترف");
   assert.equal(cfg.publishable_api_key, "pk_test_abc");
-  assert.equal(cfg.callback_url, "https://example.test/payments/result?order=0b8f9a3e-1111-4222-8333-444455556666");
-  assert.deepEqual(cfg.metadata, { order_id: RESPONSE.orderId });
+  assert.equal(cfg.callback_url, RESPONSE.callbackUrl);
+  assert.deepEqual(cfg.metadata, { order_id: ORDER });
   assert.deepEqual(cfg.methods, ["creditcard"]);
   assert.deepEqual(cfg.supported_networks, ["mada", "visa", "mastercard"]);
   assert.equal(cfg.language, "ar");
@@ -193,31 +231,69 @@ test("moyasarInitConfig: the values the brief pins", async () => {
   });
   const result = await cfg.on_initiating();
   assert.equal(calls, 1);
-  assert.deepEqual(result, initiatingResult(RESPONSE, cfg.callback_url));
+  assert.deepEqual(result, initiatingResult(RESPONSE));
+});
+
+test("moyasarInitConfig: the callbacks are async functions (the form refuses any other kind)", () => {
+  const cfg = moyasarInitConfig(RESPONSE, opts());
+  assert.equal(cfg.on_initiating.constructor.name, "AsyncFunction");
+  assert.equal(cfg.on_failure.constructor.name, "AsyncFunction");
 });
 
 test("moyasarInitConfig: one-off items keep no card; Apple Pay follows the flag", () => {
   const once = { ...RESPONSE, saveCard: false };
-  const cfg = moyasarInitConfig(once, { element: ".mysr-form", origin: "https://example.test", applePayFlag: "true", initiate: async () => once });
+  const cfg = moyasarInitConfig(once, opts({ applePayFlag: "true", initiate: async () => once }));
   assert.deepEqual(cfg.credit_card, { save_card: false });
   assert.deepEqual(cfg.methods, ["creditcard", "applepay"]);
 });
 
 test("moyasarInitConfig: on_initiating uses the intent it is given, or false when none can be had", async () => {
-  const fresh = { ...RESPONSE, orderId: "11111111-2222-4333-8444-555566667777", intentId: "pi_new", clientSecret: "pi_new_secret" };
-  const cfg = moyasarInitConfig(RESPONSE, { element: ".mysr-form", origin: "https://example.test", applePayFlag: undefined, initiate: async () => fresh });
-  const r = await cfg.on_initiating();
+  const other = "11111111-2222-4333-8444-555566667777";
+  const fresh = {
+    ...RESPONSE,
+    orderId: other,
+    intentId: "pi_new",
+    clientSecret: "pi_new_secret",
+    callbackUrl: `https://nezamy.example/payments/result?order=${other}`,
+  };
+  const r = await moyasarInitConfig(RESPONSE, opts({ initiate: async () => fresh })).on_initiating();
   assert.ok(r && typeof r === "object");
   assert.deepEqual(r.payment_intent, { id: "pi_new", client_secret: "pi_new_secret" });
-  assert.deepEqual(r.metadata, { order_id: fresh.orderId });
-  assert.equal(r.callback_url, "https://example.test/payments/result?order=11111111-2222-4333-8444-555566667777");
+  assert.deepEqual(r.metadata, { order_id: other });
+  assert.equal(r.callback_url, fresh.callbackUrl);
 
-  const none = moyasarInitConfig(RESPONSE, { element: ".mysr-form", origin: "https://example.test", applePayFlag: undefined, initiate: async () => null });
-  assert.equal(await none.on_initiating(), false);
+  assert.equal(await moyasarInitConfig(RESPONSE, opts({ initiate: async () => null })).on_initiating(), false);
 });
+
+test("moyasarInitConfig: on_failure asks for a new checkout only when the intent is used up", async () => {
+  let asked = 0;
+  const cfg = moyasarInitConfig(RESPONSE, opts({ onNeedsNewCheckout: () => asked++ }));
+  await cfg.on_failure({ type: "intent_not_fulfillable", message: "x", errors: null });
+  assert.equal(asked, 1);
+  await cfg.on_failure({ id: "pay_1", status: "failed" });
+  assert.equal(asked, 2);
+  await cfg.on_failure({ type: "api_error", message: "Error code: 500", errors: null });
+  await cfg.on_failure(new TypeError("Failed to fetch"));
+  assert.equal(asked, 2);
+});
+
+test("needsNewCheckout: a failed payment or a not-fulfillable intent", () => {
+  assert.equal(needsNewCheckout({ type: "intent_not_fulfillable" }), true);
+  assert.equal(needsNewCheckout({ status: "failed" }), true);
+  for (const r of [null, undefined, "failed", {}, { status: "paid" }, { status: "initiated" }, { type: "api_error" }, { type: "invalid_request_error" }, new Error("x")]) {
+    assert.equal(needsNewCheckout(r), false, String(JSON.stringify(r)));
+  }
+});
+
+// ── the checkout answer ─────────────────────────────────────────────────────
 
 test("parseCheckoutResponse keeps a well-formed answer and refuses anything else", () => {
   assert.deepEqual(parseCheckoutResponse(JSON.parse(JSON.stringify(RESPONSE))), RESPONSE);
+  // expiresAt may be null or absent
+  assert.deepEqual(parseCheckoutResponse({ ...RESPONSE, expiresAt: null }), { ...RESPONSE, expiresAt: null });
+  const { expiresAt: _drop, ...noExpiry } = RESPONSE;
+  void _drop;
+  assert.deepEqual(parseCheckoutResponse(noExpiry), { ...RESPONSE, expiresAt: null });
   const broken: unknown[] = [
     null,
     [],
@@ -231,10 +307,34 @@ test("parseCheckoutResponse keeps a well-formed answer and refuses anything else
     { ...RESPONSE, quote: { ...RESPONSE.quote, vatMode: "buyer" } },
     { ...RESPONSE, quote: { ...RESPONSE.quote, total: 1 } },
     { ...RESPONSE, quote: null },
+    { ...RESPONSE, callbackUrl: undefined },
+    { ...RESPONSE, callbackUrl: "javascript:alert(1)//payments/result?order=" + ORDER },
+    { ...RESPONSE, callbackUrl: "https://nezamy.example/payments/result?order=someone-else" },
+    { ...RESPONSE, expiresAt: 3600 },
   ];
   for (const b of broken) assert.equal(parseCheckoutResponse(b), null, JSON.stringify(b));
 });
 
-test("an intent is refreshed well inside Moyasar's one-hour life", () => {
+// ── the held intent ─────────────────────────────────────────────────────────
+
+test("intentNeedsRefresh follows expires_at, with a margin; without one, the age", () => {
+  const expires = Date.parse(RESPONSE.expiresAt as string);
+  assert.equal(intentNeedsRefresh(RESPONSE, 0, expires - INTENT_EXPIRY_MARGIN_MS - 1), false);
+  assert.equal(intentNeedsRefresh(RESPONSE, 0, expires - INTENT_EXPIRY_MARGIN_MS), true);
+  assert.equal(intentNeedsRefresh(RESPONSE, 0, expires + 1), true);
+  const at = 1_000_000;
+  for (const expiresAt of [null, "not a date"]) {
+    assert.equal(intentNeedsRefresh({ expiresAt }, at, at + INTENT_REFRESH_MS - 1), false);
+    assert.equal(intentNeedsRefresh({ expiresAt }, at, at + INTENT_REFRESH_MS), true);
+  }
   assert.ok(INTENT_REFRESH_MS > 0 && INTENT_REFRESH_MS <= 55 * 60 * 1000);
+  assert.ok(INTENT_EXPIRY_MARGIN_MS >= 5 * 60 * 1000);
+});
+
+test("refreshDecision: the same charge proceeds; a changed total stops for the payer to confirm", () => {
+  const fresh = { ...RESPONSE, orderId: "x", intentId: "pi_2" };
+  assert.equal(refreshDecision(RESPONSE, fresh), "proceed");
+  assert.equal(refreshDecision(RESPONSE, { ...fresh, amountHalalas: 46000, quote: { ...RESPONSE.quote, total: 46000 } }), "confirm");
+  assert.equal(refreshDecision(RESPONSE, { ...fresh, quote: { ...RESPONSE.quote, net: 39901, vat: 5984 } }), "confirm");
+  assert.equal(refreshDecision(RESPONSE, { ...fresh, quote: { ...RESPONSE.quote, vatMode: "inclusive" } }), "confirm");
 });

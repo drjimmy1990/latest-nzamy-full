@@ -135,6 +135,18 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
         <div className="mt-7">
           <MoyasarCheckout itemId={parsed.itemId} billing={parsed.billing} />
         </div>
+
+        {/* Controller ruling (Task 7 fix round 1): one line, no checkbox. */}
+        <p className="mt-5 text-xs leading-6 text-zinc-600 dark:text-zinc-400">
+          بإتمام الدفع فإنك توافق على{" "}
+          <Link href="/terms" className="font-semibold underline underline-offset-2">
+            الشروط والأحكام
+          </Link>{" "}
+          و
+          <Link href="/refund-policy" className="font-semibold underline underline-offset-2">
+            سياسة الاسترداد
+          </Link>
+        </p>
       </section>
     </Shell>
   );

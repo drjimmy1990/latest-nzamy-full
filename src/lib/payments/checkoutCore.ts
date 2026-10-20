@@ -28,7 +28,7 @@
  *      superseded it meanwhile) or an error → the intent is cancelled, the
  *      order closed, 503 — the client secret never goes out for a closed
  *      order.
- *   8. 200 CheckoutResponse.
+ *   8. 200 CheckoutResponse, with the intent's callback URL and expiry.
  * A missing B1 table (isMissingPaymentsObject) → 503 with the Arabic copy,
  * logged once; never 500.
  *
@@ -192,12 +192,13 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
     return fail(503, CHECKOUT_FAILED_AR);
   }
   const descriptionAr = intentDescription(q.item.labelAr);
+  const callbackUrl = callbackUrlFor(input.origin, orderId);
 
   // 6. the intent
   const intent = await client.createIntent({
     amountHalalas: q.totalHalalas,
     description: descriptionAr,
-    callbackUrl: callbackUrlFor(input.origin, orderId),
+    callbackUrl,
     metadata: { order_id: orderId },
   });
   if (!intent.ok) {
@@ -233,6 +234,8 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
       descriptionAr,
       saveCard: q.item.saveCard,
       quote: { net: q.netHalalas, vat: q.vatHalalas, total: q.totalHalalas, vatMode: q.vatMode },
+      callbackUrl,
+      expiresAt: intent.data.expiresAt,
     },
   };
 }

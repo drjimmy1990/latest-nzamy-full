@@ -19,7 +19,7 @@
  */
 
 import { PAYABLE_ITEMS, quote, type Billing, type PayableItem, type VatMode } from "./catalog.ts";
-import { callbackUrlFor, type CheckoutResponse } from "./checkoutRules.ts";
+import type { CheckoutResponse } from "./checkoutRules.ts";
 import { VAT_NOTICE } from "../pricing/vatNotice.ts";
 
 // ── the buy buttons ─────────────────────────────────────────────────────────
@@ -66,6 +66,27 @@ export function gatewayAllowsCheckout(status: {
   loading?: boolean;
 }): boolean {
   return status.loading !== true && status.disabled === false && status.provider === "moyasar";
+}
+
+export type BuyAction = { kind: "checkout"; href: string } | { kind: "wait" } | { kind: "request" };
+
+/**
+ * What a signed-in buy button does: "checkout" → /checkout; "request" →
+ * today's entitlement request; "wait" → nothing yet, because the item is sold
+ * online but the gateway status has not loaded — a click then must not file a
+ * request the payer did not mean (it would be a request instead of a payment).
+ * Items not sold online never wait: the gateway does not concern them.
+ */
+export function buyButtonAction(
+  planId: string,
+  billing: Billing,
+  status: { disabled: boolean; provider: string | null; loading?: boolean },
+  signedIn: boolean,
+): BuyAction {
+  if (!signedIn || checkoutHref(planId, billing, true, true) === null) return { kind: "request" };
+  if (status.loading === true) return { kind: "wait" };
+  const href = checkoutHref(planId, billing, gatewayAllowsCheckout(status), signedIn);
+  return href ? { kind: "checkout", href } : { kind: "request" };
 }
 
 // ── the query string ────────────────────────────────────────────────────────
@@ -133,7 +154,10 @@ export function checkoutItemNotes(item: PayableItem): string[] {
   if (item.id === "ind-litigation") return [LITIGATION_COVERAGE_AR];
   if (item.kind === "topup") {
     const notes: string[] = [];
-    if (typeof item.points === "number") notes.push(pointsAr(item.points));
+    // The label already names the points («شحن ٢٥٠ (٣٠٠ نقطة)»): no second line.
+    if (typeof item.points === "number" && !item.labelAr.includes(pointsAr(item.points))) {
+      notes.push(pointsAr(item.points));
+    }
     if (typeof item.pointsValidityMonths === "number") {
       notes.push(`صالحة ${monthsAr(item.pointsValidityMonths)} من تاريخ الشراء`);
     }
@@ -180,7 +204,8 @@ const isText = (v: unknown): v is string => typeof v === "string" && v.length > 
 /**
  * A 200 body of POST /api/v1/payments/checkout, checked before the form is
  * built from it; anything malformed is null (the screen says the payment
- * could not start). Moyasar refuses amounts under 100 halalas.
+ * could not start). Moyasar refuses amounts under 100 halalas. The callback
+ * URL must be the server's http(s) result URL for this very order.
  */
 export function parseCheckoutResponse(body: unknown): CheckoutResponse | null {
   if (typeof body !== "object" || body === null || Array.isArray(body)) return null;
@@ -193,6 +218,10 @@ export function parseCheckoutResponse(body: unknown): CheckoutResponse | null {
   if (typeof q !== "object" || q === null || !isInt(q.net) || !isInt(q.vat) || !isInt(q.total)) return null;
   if (q.vatMode !== "exclusive" && q.vatMode !== "inclusive") return null;
   if (q.total !== b.amountHalalas) return null;
+  if (!isText(b.callbackUrl) || !/^https?:\/\/[^/?#]+\/payments\/result\?order=/.test(b.callbackUrl)) return null;
+  if (!b.callbackUrl.endsWith(`?order=${encodeURIComponent(b.orderId)}`)) return null;
+  const expiresAt = b.expiresAt === undefined || b.expiresAt === null ? null : b.expiresAt;
+  if (expiresAt !== null && !isText(expiresAt)) return null;
   return {
     orderId: b.orderId,
     intentId: b.intentId,
@@ -202,16 +231,70 @@ export function parseCheckoutResponse(body: unknown): CheckoutResponse | null {
     descriptionAr: b.descriptionAr,
     saveCard: b.saveCard,
     quote: { net: q.net, vat: q.vat, total: q.total, vatMode: q.vatMode },
+    callbackUrl: b.callbackUrl,
+    expiresAt,
   };
 }
 
-// ── the Moyasar form ────────────────────────────────────────────────────────
+// ── the held intent ─────────────────────────────────────────────────────────
 
 /**
- * An intent lives one hour from creation (checkoutRules.ts). A payer who
- * presses «ادفع» later than this after «متابعة الدفع» gets a new intent first.
+ * An intent lives one hour from creation (checkoutRules.ts). Without an
+ * expires_at, a payer who presses pay later than this after «متابعة الدفع»
+ * gets a new intent first.
  */
 export const INTENT_REFRESH_MS = 50 * 60 * 1000;
+
+/** With an expires_at, the intent is replaced this long before it lapses. */
+export const INTENT_EXPIRY_MARGIN_MS = 10 * 60 * 1000;
+
+/**
+ * True when the held intent must be replaced before paying: within
+ * INTENT_EXPIRY_MARGIN_MS of its expires_at, or — when Moyasar sent none or
+ * an unreadable one — INTENT_REFRESH_MS after it was received.
+ */
+export function intentNeedsRefresh(
+  resp: Pick<CheckoutResponse, "expiresAt">,
+  receivedAt: number,
+  now: number,
+): boolean {
+  const expires = resp.expiresAt ? Date.parse(resp.expiresAt) : Number.NaN;
+  if (Number.isFinite(expires)) return now >= expires - INTENT_EXPIRY_MARGIN_MS;
+  return now - receivedAt >= INTENT_REFRESH_MS;
+}
+
+/**
+ * After a refresh: "proceed" pays with the new intent when it charges exactly
+ * what the payer was shown; "confirm" stops the payment so the screen shows
+ * the new figures first (a price or VAT rule changed in between).
+ */
+export function refreshDecision(
+  shown: Pick<CheckoutResponse, "amountHalalas" | "quote">,
+  fresh: Pick<CheckoutResponse, "amountHalalas" | "quote">,
+): "proceed" | "confirm" {
+  const same =
+    shown.amountHalalas === fresh.amountHalalas &&
+    shown.quote.net === fresh.quote.net &&
+    shown.quote.vat === fresh.quote.vat &&
+    shown.quote.total === fresh.quote.total &&
+    shown.quote.vatMode === fresh.quote.vatMode;
+  return same ? "proceed" : "confirm";
+}
+
+/**
+ * True when what the Moyasar form reported means the held intent cannot be
+ * paid any more, so the next attempt needs a new checkout (order + intent):
+ * a failed payment (a declined card consumes the intent) or Moyasar's
+ * intent_not_fulfillable (used, cancelled or expired). Anything else — a
+ * network blip, a form validation message — keeps the intent.
+ */
+export function needsNewCheckout(reported: unknown): boolean {
+  if (typeof reported !== "object" || reported === null) return false;
+  const r = reported as { type?: unknown; status?: unknown };
+  return r.type === "intent_not_fulfillable" || r.status === "failed";
+}
+
+// ── the Moyasar form ────────────────────────────────────────────────────────
 
 export type MoyasarMethod = "creditcard" | "applepay";
 
@@ -231,12 +314,12 @@ export interface InitiatingResult {
   callback_url: string;
 }
 
-export function initiatingResult(resp: CheckoutResponse, callbackUrl: string): InitiatingResult {
+export function initiatingResult(resp: CheckoutResponse): InitiatingResult {
   return {
     payment_intent: { id: resp.intentId, client_secret: resp.clientSecret },
     amount: resp.amountHalalas,
     metadata: { order_id: resp.orderId },
-    callback_url: callbackUrl,
+    callback_url: resp.callbackUrl,
   };
 }
 
@@ -253,6 +336,7 @@ export interface MoyasarInitConfig {
   language: "ar";
   use_payment_intent: true;
   on_initiating: () => Promise<InitiatingResult | false>;
+  on_failure: (reported: unknown) => Promise<void>;
   credit_card: { save_card: boolean };
   apple_pay: { country: "SA"; label: "NEZAMY"; validate_merchant_url: string };
 }
@@ -260,25 +344,29 @@ export interface MoyasarInitConfig {
 /**
  * The Moyasar.init config for one checkout response.
  *
- * `callback_url` is required by the form, though Moyasar uses the intent's own
- * (the same URL, built by the server from NEXT_PUBLIC_SITE_URL); here it is
- * built from the page's origin. `initiate` returns the intent to pay with —
- * the one already held, or a new one when it is near expiry — or null when
- * none can be had, which makes on_initiating answer false (no payment).
+ * `callback_url` is the server's (resp.callbackUrl, built from
+ * NEXT_PUBLIC_SITE_URL — the intent's own); the form requires one although
+ * Moyasar uses the intent's. `initiate` returns the intent to pay with — the
+ * one held, or a new one near expiry — or null, which makes on_initiating
+ * answer false (no payment). `onNeedsNewCheckout` runs when the form reports
+ * a failure that used up the intent (needsNewCheckout).
  *
- * metadata.order_id is set twice on purpose: moyasar-payment-form 2.3.0 builds
- * the fulfil body as {amount, currency, description, publishable_api_key,
- * metadata (from init)} overlaid with the data and then with on_initiating's
- * result, so the init value is the floor and on_initiating's (which names a
- * refreshed order) wins.
+ * moyasar-payment-form 2.3.0 accepts on_initiating / on_failure only as async
+ * functions (it checks the constructor name), so both are `async`.
+ *
+ * metadata.order_id is set twice on purpose: the form builds the fulfil body
+ * as {amount, currency, description, publishable_api_key, metadata (from
+ * init)} overlaid with the data and then with on_initiating's result, so the
+ * init value is the floor and on_initiating's (which names a refreshed order)
+ * wins.
  */
 export function moyasarInitConfig(
   resp: CheckoutResponse,
   opts: {
     element: string;
-    origin: string;
     applePayFlag: string | undefined;
     initiate: () => Promise<CheckoutResponse | null>;
+    onNeedsNewCheckout: () => void;
   },
 ): MoyasarInitConfig {
   return {
@@ -287,7 +375,7 @@ export function moyasarInitConfig(
     currency: "SAR",
     description: resp.descriptionAr,
     publishable_api_key: resp.publishableKey,
-    callback_url: callbackUrlFor(opts.origin, resp.orderId),
+    callback_url: resp.callbackUrl,
     metadata: { order_id: resp.orderId },
     methods: moyasarMethods(resp.publishableKey, opts.applePayFlag),
     supported_networks: ["mada", "visa", "mastercard"],
@@ -296,7 +384,10 @@ export function moyasarInitConfig(
     on_initiating: async () => {
       const current = await opts.initiate();
       if (!current) return false;
-      return initiatingResult(current, callbackUrlFor(opts.origin, current.orderId));
+      return initiatingResult(current);
+    },
+    on_failure: async (reported: unknown) => {
+      if (needsNewCheckout(reported)) opts.onNeedsNewCheckout();
     },
     credit_card: { save_card: resp.saveCard },
     apple_pay: {

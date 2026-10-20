@@ -6,10 +6,11 @@ import { useRouter } from "next/navigation";
 import { formatHalalas, type Billing } from "@/lib/payments/catalog";
 import type { CheckoutResponse } from "@/lib/payments/checkoutRules";
 import {
-  INTENT_REFRESH_MS,
+  intentNeedsRefresh,
   moyasarInitConfig,
   parseCheckoutResponse,
   quoteVatNotice,
+  refreshDecision,
 } from "@/lib/payments/checkoutView";
 
 /**
@@ -17,14 +18,21 @@ import {
  *
  *   1. «متابعة الدفع» POSTs /api/v1/payments/checkout {itemId, billing} from the
  *      click (never from an effect: a second POST would supersede the first
- *      order). The server prices the item for this buyer and creates the
- *      order and the Moyasar intent.
+ *      order); an in-flight ref ignores a second press. The server prices the
+ *      item for this buyer and creates the order and the Moyasar intent.
  *   2. The answer's quote is shown — net, VAT, total and the VAT sentence for
  *      the quoted mode — and the Moyasar form is mounted: the package and its
- *      CSS are imported only now, and Moyasar.init runs once.
+ *      CSS are imported only now, and Moyasar.init runs once per checkout,
+ *      with the server's callback URL.
  *   3. When the payer presses pay, on_initiating hands Moyasar the intent and
  *      metadata.order_id (fulfilment rejects a payment without it). An intent
- *      older than INTENT_REFRESH_MS is replaced by a new checkout first.
+ *      near its expires_at is replaced by a new checkout first; if the new one
+ *      charges a different total, the payment stops and the new figures are
+ *      shown for the payer to confirm (refreshDecision).
+ *   4. When the form reports that the intent is used up — a declined card, or
+ *      intent_not_fulfillable — the held checkout is dropped and «متابعة الدفع»
+ *      starts a new one (needsNewCheckout). 3-D Secure failures land on
+ *      /payments/result, whose retry link comes back here.
  * 401 → /login and back here; 403 / 503 / 400 → the server's Arabic copy.
  */
 
@@ -38,9 +46,13 @@ type StartResult =
   | { ok: true; resp: CheckoutResponse }
   | { ok: false; message: string; audience: boolean };
 
+type MoyasarApi = { init: (config: object) => void; setAmount?: (amount: number) => void };
+
 const START_FAILED_AR = "تعذّر بدء عملية الدفع، حاول مرة أخرى بعد قليل";
 const FORM_FAILED_AR = "تعذّر تحميل نموذج الدفع، حدّث الصفحة وحاول مرة أخرى";
 const REFRESH_FAILED_AR = "انتهت مهلة جلسة الدفع ولم نتمكّن من تجديدها، حدّث الصفحة وحاول مرة أخرى";
+const TOTAL_CHANGED_AR = "تغيّر المبلغ المستحق منذ عرضه. راجع الإجمالي الجديد أعلاه ثم اضغط زر الدفع مرة أخرى.";
+const NEW_CHECKOUT_AR = "لم يكتمل الدفع بجلسة الدفع هذه. اضغط «متابعة الدفع» لبدء محاولة جديدة.";
 
 async function startCheckout(itemId: string, billing: Billing): Promise<StartResult | "signed-out"> {
   let res: Response;
@@ -78,27 +90,40 @@ function loginHref(): string {
   return `/login?next=${encodeURIComponent(`${window.location.pathname}${window.location.search}`)}`;
 }
 
+const NOTICE_CLASS =
+  "rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200";
+
 export default function MoyasarCheckout({ itemId, billing }: { itemId: string; billing: Billing }) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [notice, setNotice] = useState<string | null>(null);
+  /** The checkout the form pays with, and when it was received. */
   const current = useRef<{ resp: CheckoutResponse; at: number } | null>(null);
+  /** A checkout POST is running: a second press is ignored. */
+  const inFlight = useRef(false);
   const initialised = useRef(false);
+  const moyasar = useRef<MoyasarApi | null>(null);
 
   async function onStart() {
-    if (phase.kind === "starting" || phase.kind === "ready") return;
+    if (inFlight.current || current.current) return;
+    inFlight.current = true;
+    setNotice(null);
     setPhase({ kind: "starting" });
-    const result = await startCheckout(itemId, billing);
-    if (result === "signed-out") {
-      router.push(loginHref());
-      return;
+    try {
+      const result = await startCheckout(itemId, billing);
+      if (result === "signed-out") {
+        router.push(loginHref());
+        return;
+      }
+      if (!result.ok) {
+        setPhase({ kind: "error", message: result.message, audience: result.audience });
+        return;
+      }
+      current.current = { resp: result.resp, at: Date.now() };
+      setPhase({ kind: "ready", resp: result.resp });
+    } finally {
+      inFlight.current = false;
     }
-    if (!result.ok) {
-      setPhase({ kind: "error", message: result.message, audience: result.audience });
-      return;
-    }
-    current.current = { resp: result.resp, at: Date.now() };
-    setPhase({ kind: "ready", resp: result.resp });
   }
 
   const ready = phase.kind === "ready" ? phase.resp : null;
@@ -111,10 +136,11 @@ export default function MoyasarCheckout({ itemId, billing }: { itemId: string; b
     initialised.current = true;
 
     // The intent to pay with: the one held, or a new checkout when it is near
-    // Moyasar's one-hour expiry. Null → on_initiating answers false.
+    // its expiry. Null → on_initiating answers false (no payment now).
     async function initiate(): Promise<CheckoutResponse | null> {
       const held = current.current;
-      if (held && Date.now() - held.at < INTENT_REFRESH_MS) return held.resp;
+      if (!held) return null;
+      if (!intentNeedsRefresh(held.resp, held.at, Date.now())) return held.resp;
       const fresh = await startCheckout(itemId, billing);
       if (fresh === "signed-out") {
         router.push(loginHref());
@@ -125,7 +151,23 @@ export default function MoyasarCheckout({ itemId, billing }: { itemId: string; b
         return null;
       }
       current.current = { resp: fresh.resp, at: Date.now() };
+      if (refreshDecision(held.resp, fresh.resp) === "confirm") {
+        // Never charge a total the payer has not seen: show it, stop here.
+        setPhase({ kind: "ready", resp: fresh.resp });
+        moyasar.current?.setAmount?.(fresh.resp.amountHalalas);
+        setNotice(TOTAL_CHANGED_AR);
+        return null;
+      }
       return fresh.resp;
+    }
+
+    // The intent is used up: drop it; «متابعة الدفع» makes a new checkout
+    // (the server closes this buyer's earlier unpaid orders for the item).
+    function needNewCheckout() {
+      current.current = null;
+      initialised.current = false;
+      setPhase({ kind: "idle" });
+      setNotice(NEW_CHECKOUT_AR);
     }
 
     (async () => {
@@ -138,16 +180,15 @@ export default function MoyasarCheckout({ itemId, billing }: { itemId: string; b
         // The package's `import` export is its UMD build: webpack may hand it
         // over as the default export or as the module itself.
         const loaded = mod as unknown as { default?: { init?: unknown }; init?: unknown };
-        const Moyasar = (typeof loaded.default?.init === "function" ? loaded.default : loaded) as {
-          init: (config: object) => void;
-        };
+        const Moyasar = (typeof loaded.default?.init === "function" ? loaded.default : loaded) as MoyasarApi;
         if (typeof Moyasar.init !== "function") throw new Error("moyasar-payment-form has no init");
+        moyasar.current = Moyasar;
         Moyasar.init(
           moyasarInitConfig(ready, {
             element: ".mysr-form",
-            origin: window.location.origin,
             applePayFlag: process.env.NEXT_PUBLIC_APPLE_PAY_ENABLED,
             initiate,
+            onNeedsNewCheckout: needNewCheckout,
           }),
         );
       } catch (err) {
@@ -185,14 +226,21 @@ export default function MoyasarCheckout({ itemId, billing }: { itemId: string; b
 
   if (!ready) {
     return (
-      <button
-        type="button"
-        onClick={onStart}
-        disabled={phase.kind === "starting"}
-        className="inline-flex w-full items-center justify-center rounded-xl bg-[#0B3D2E] px-6 py-3.5 text-sm font-bold text-white transition-colors hover:bg-[#0E4D3A] disabled:cursor-wait disabled:opacity-70"
-      >
-        {phase.kind === "starting" ? "جارٍ تجهيز الدفع…" : "متابعة الدفع"}
-      </button>
+      <div className="space-y-4">
+        {notice ? (
+          <p className={NOTICE_CLASS} role="alert">
+            {notice}
+          </p>
+        ) : null}
+        <button
+          type="button"
+          onClick={onStart}
+          disabled={phase.kind === "starting"}
+          className="inline-flex w-full items-center justify-center rounded-xl bg-[#0B3D2E] px-6 py-3.5 text-sm font-bold text-white transition-colors hover:bg-[#0E4D3A] disabled:cursor-wait disabled:opacity-70"
+        >
+          {phase.kind === "starting" ? "جارٍ تجهيز الدفع…" : "متابعة الدفع"}
+        </button>
+      </div>
     );
   }
 
@@ -215,7 +263,7 @@ export default function MoyasarCheckout({ itemId, billing }: { itemId: string; b
       <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">{quoteVatNotice(ready.quote.vatMode)}</p>
 
       {notice ? (
-        <p className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200" role="alert">
+        <p className={NOTICE_CLASS} role="alert">
           {notice}
         </p>
       ) : null}

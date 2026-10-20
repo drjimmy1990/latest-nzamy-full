@@ -13,7 +13,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import InvitationModal from "@/components/InvitationModal";
 import { useUser } from "@/hooks/useUser";
 import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
-import { checkoutHref, gatewayAllowsCheckout } from "@/lib/payments/checkoutView";
+import { buyButtonAction, gatewayAllowsCheckout } from "@/lib/payments/checkoutView";
 import { isSupabaseMode } from "@/lib/services/api";
 import { requestEntitlement } from "@/lib/services/entitlementService";
 import { planFromParam } from "@/lib/pricing/planRequest";
@@ -35,6 +35,9 @@ const txt = {
     // hand) and «AI — بحث ذكي» (search is Postgres full-text) were removed.
     plansTitle: "اختر خطتك",
     plansSub: "اختر الخطة المناسبة — يُراجع طلبك ويُفعَّل الاشتراك بعد الموافقة.",
+    // While the Moyasar gateway is on (gatewayAllowsCheckout) a plan is paid
+    // online and activated by the payment, not by a review (Task 7 ruling).
+    plansSubPaid: "اختر الخطة المناسبة — يُفعَّل الاشتراك فور إتمام الدفع الإلكتروني.",
     monthly: "شهري",
     // No «(وفّر ١٦٪)»: every plan below has price === priceYearly, so the
     // toggle saves nothing.
@@ -115,7 +118,11 @@ const txt = {
     ],
     faqTitle: "أسئلة شائعة",
     faqs: [
-      { q: "كيف يتم تفعيل الاشتراك؟", a: "عند الضغط على «اشترك الآن» يُرسَل طلبك للمراجعة، ويقوم فريقنا بتفعيل خطتك بعد الموافقة عليه. إن كان لديك كود دعوة، فإنه يفتح المكتبة القانونية كاملة لمدة ٣٠ يوماً فور تفعيله، دون انتظار." },
+      {
+        q: "كيف يتم تفعيل الاشتراك؟",
+        a: "عند الضغط على «اشترك الآن» يُرسَل طلبك للمراجعة، ويقوم فريقنا بتفعيل خطتك بعد الموافقة عليه. إن كان لديك كود دعوة، فإنه يفتح المكتبة القانونية كاملة لمدة ٣٠ يوماً فور تفعيله، دون انتظار.",
+        aPaid: "بعد الدفع الإلكتروني يُفعَّل الاشتراك تلقائياً؛ وما زال بإمكانك تقديم طلب يراجعه الفريق. إن كان لديك كود دعوة، فإنه يفتح المكتبة القانونية كاملة لمدة ٣٠ يوماً فور تفعيله، دون انتظار.",
+      },
       { q: "ما الفرق بين البحث المحدود والبحث الكامل؟", a: "البحث المحدود يسمح بـ 5 عمليات يومية في عناوين الأنظمة فقط. البحث الكامل يتيح بحثاً غير محدود في النصوص الكاملة." },
       { q: "هل يمكنني ترقية أو تنزيل خطتي في أي وقت؟", a: "يمكنك طلب الترقية أو التغيير في أي وقت؛ يراجع الفريق الطلب ويفعّله يدوياً." },
       { q: "هل المكتبة تشمل الأنظمة الملغاة؟", a: "نعم. نحتفظ بجميع الأنظمة بما فيها الملغاة والمعدلة مع إشارة واضحة لحالة كل نظام وتاريخ التعديل." },
@@ -128,6 +135,7 @@ const txt = {
     heroSub: "Full-text search across Saudi laws, regulations, judicial precedents and legal principles.",
     plansTitle: "Choose Your Plan",
     plansSub: "Choose the plan that fits — your request is reviewed and activated once approved.",
+    plansSubPaid: "Choose the plan that fits — your subscription is activated as soon as the online payment completes.",
     monthly: "Monthly",
     yearly: "Yearly",
     subscribe: "Subscribe Now",
@@ -205,7 +213,11 @@ const txt = {
     ],
     faqTitle: "Frequently Asked Questions",
     faqs: [
-      { q: "How does activation work?", a: "Clicking \"Subscribe Now\" sends your request for review, and our team activates your plan once it's approved. If you have an invitation code, it opens the full legal library for 30 days as soon as you redeem it — no waiting." },
+      {
+        q: "How does activation work?",
+        a: "Clicking \"Subscribe Now\" sends your request for review, and our team activates your plan once it's approved. If you have an invitation code, it opens the full legal library for 30 days as soon as you redeem it — no waiting.",
+        aPaid: "After online payment the subscription is activated automatically; you can still send a request for the team to review. If you have an invitation code, it opens the full legal library for 30 days as soon as you redeem it — no waiting.",
+      },
       { q: "What's the difference between limited and full search?", a: "Limited search allows 5 daily queries on titles only. Full search is unlimited across the full texts." },
       { q: "Can I upgrade or downgrade anytime?", a: "You can request an upgrade or a change at any time; the team reviews the request and activates it manually." },
       { q: "Does the library include repealed laws?", a: "Yes. We maintain all laws including repealed and amended ones with clear status indicators and modification dates." },
@@ -221,6 +233,8 @@ export default function LawsSubscribePage() {
   const { isLoggedIn } = useUser();
   const payments = usePaymentsStatus();
   const router = useRouter();
+  // The review copy (intro, activation FAQ) holds only while payment is off.
+  const payOnline = gatewayAllowsCheckout(payments);
   const libraryAccess = useLibraryFullAccess();
   const isAr = lang === "ar";
   const t = isAr ? txt.ar : txt.en;
@@ -272,9 +286,10 @@ export default function LawsSubscribePage() {
     }
     // Logged-in users with the Moyasar gateway on pay online: the library
     // plans are one-off payments (PAYABLE_ITEMS lib-*).
-    const payHref = checkoutHref(planId, "once", gatewayAllowsCheckout(payments), isLoggedIn);
-    if (payHref) {
-      router.push(payHref);
+    const action = buyButtonAction(planId, "once", payments, isLoggedIn);
+    if (action.kind === "wait") return; // the gateway status has not loaded yet
+    if (action.kind === "checkout") {
+      router.push(action.href);
       return;
     }
     // Otherwise (gateway off — owner ٢٤٦): send an entitlement request
@@ -365,7 +380,7 @@ export default function LawsSubscribePage() {
         {/* ── Toggle ──────────────────────────────────────────────────── */}
         <motion.div variants={fadeUp} initial="hidden" animate="show" custom={5} className="text-center space-y-3">
           <h2 className={`text-2xl font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>{t.plansTitle}</h2>
-          <p className={`text-sm ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{t.plansSub}</p>
+          <p className={`text-sm ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{payOnline ? t.plansSubPaid : t.plansSub}</p>
 
           <div className={`inline-flex items-center gap-1 p-1 rounded-xl ${isDark ? "bg-zinc-800" : "bg-zinc-100"}`}>
             {[false, true].map(isY => (
@@ -519,7 +534,7 @@ export default function LawsSubscribePage() {
                     animate={{ height: "auto", opacity: 1 }}
                     className={`px-5 pb-4 text-[13px] leading-relaxed ${isDark ? "text-zinc-500" : "text-zinc-500"}`}
                   >
-                    {faq.a}
+                    {payOnline && faq.aPaid ? faq.aPaid : faq.a}
                   </motion.div>
                 )}
               </div>

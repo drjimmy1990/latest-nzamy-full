@@ -84,6 +84,8 @@ test("happy path: the quote's price, a created order, the intent, the guarded st
     descriptionAr: "NEZAMY — المحامي المحترف",
     saveCard: true,
     quote: { net: q.netHalalas, vat: q.vatHalalas, total: q.totalHalalas, vatMode: "exclusive" },
+    callbackUrl: `https://nezamy.sa/payments/result?order=${NEW_ORDER}`,
+    expiresAt: null,
   });
   assert.equal(q.totalHalalas, 45885);
 
@@ -248,4 +250,23 @@ test("deploy order: a missing payment_orders table is 503 «الدفع الإل�
   const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW }, input());
   assert.deepEqual(r, { status: 503, body: { error: MOYASAR_DISABLED_MESSAGE_AR } });
   assert.equal(m.intents.length, 0);
+});
+
+test("the response carries the intent's callback URL (from the server origin) and its expiry", async () => {
+  const { client: admin } = db("lawyer");
+  const m = moyasar();
+  const expiring = {
+    ...m.client,
+    createIntent: async (i: Parameters<typeof m.client.createIntent>[0]) => {
+      const r = await m.client.createIntent(i);
+      return r.ok ? { ...r, data: { ...r.data, expiresAt: "2026-10-22T11:00:00.000Z" } } : r;
+    },
+  };
+  const r = await startCheckoutWith({ admin, client: expiring, now: () => NOW }, input());
+  assert.equal(r.status, 200);
+  if (r.status !== 200) return;
+  // the same URL the intent was created with — never the browser's origin
+  assert.equal(r.body.callbackUrl, `https://nezamy.sa/payments/result?order=${NEW_ORDER}`);
+  assert.equal(m.intents.at(-1)?.callbackUrl, r.body.callbackUrl);
+  assert.equal(r.body.expiresAt, "2026-10-22T11:00:00.000Z");
 });
