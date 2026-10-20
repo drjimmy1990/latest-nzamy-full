@@ -871,7 +871,7 @@ export default function AdminSettingsPage() {
             </div>
             <div>
               <h2 className={`text-base font-black ${isDark ? "text-white" : "text-gray-900"}`}>حملة المحامي المؤسس</h2>
-              <p className={`text-xs mt-0.5 ${muted}`}>تاريخا بداية الحملة ونهايتها بتوقيت الرياض — يسري فوراً بدون إعادة نشر</p>
+              <p className={`text-xs mt-0.5 ${muted}`}>تاريخا بداية الحملة ونهايتها بتوقيت الرياض — يسري خلال دقائق بدون إعادة نشر</p>
             </div>
           </div>
           <button

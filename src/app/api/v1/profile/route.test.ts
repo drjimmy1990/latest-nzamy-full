@@ -142,9 +142,15 @@ test("the membership read goes through the RLS client — service_role only for 
   // business_members / business_profiles SELECT policies), not a bypass.
   assert.match(routeSource, /\.from\("business_members"\)\s*\r?\n\s*\.select\("business_id"\)/);
   assert.match(routeSource, /async function resolveBusinessScope\(\s*\r?\n\s*supabase: Awaited<ReturnType<typeof createClient>>/);
-  // The one service-role client in this file is readOwnLawyerRow's, and it
-  // reads lawyer_profiles by the verified user id (plan item N2).
-  assert.equal(routeSource.match(/await createServiceClient\(\)/g)?.length, 1);
+  // The service-role clients in this file are readOwnLawyerRow's and
+  // readOwnFounderBadge's (owner ٢١٨ / ٢٢٥); both read lawyer_profiles by the
+  // verified user id only (plan item N2).
+  assert.equal(routeSource.match(/await createServiceClient\(\)/g)?.length, 2);
+  assert.match(
+    routeSource,
+    /const service = await createServiceClient\(\);\s*\r?\n\s*return await founderBadgeFrom\(\s*\r?\n\s*service\.from\("lawyer_profiles"\)\.select\("founder_badge"\)\.eq\("user_id", userId\)\.maybeSingle\(\),/,
+  );
+  assert.match(routeSource, /const founderBadgeRead = readOwnFounderBadge\(user\.id\);/);
   assert.match(
     routeSource,
     /const service = await createServiceClient\(\);\s*\r?\n\s*return service\.from\("lawyer_profiles"\)\.select\("\*"\)\.eq\("user_id", userId\)\.maybeSingle\(\);/,

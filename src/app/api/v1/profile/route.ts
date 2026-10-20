@@ -40,6 +40,7 @@ import {
   type BusinessProfileScope,
 } from "@/lib/auth/businessProfileScope";
 import { lookupProfileDelegation } from "@/lib/auth/businessDelegationLookup";
+import { founderBadgeFrom } from "@/lib/lawyers/founderBadge";
 
 // ─── Arabic error copy ────────────────────────────────────────────────────────
 // Every message this route can return reaches a user: the lawyer profile
@@ -115,6 +116,25 @@ function entityOwnerColumn(table: string): "owner_user_id" | "user_id" {
 async function readOwnLawyerRow(userId: string) {
   const service = await createServiceClient();
   return service.from("lawyer_profiles").select("*").eq("user_id", userId).maybeSingle();
+}
+
+/**
+ * «المحامي المؤسس» (owner ٢١٨ / ٢٢٥) — the caller's own
+ * lawyer_profiles.founder_badge, read on its OWN with an explicit select,
+ * never through the `select("*")` above. Before 20261021_50 runs the column
+ * is absent; founderBadgeFrom turns that 42703 (or any error / throw) into
+ * "no badge", logged once.
+ */
+async function readOwnFounderBadge(userId: string): Promise<boolean> {
+  try {
+    const service = await createServiceClient();
+    return await founderBadgeFrom(
+      service.from("lawyer_profiles").select("founder_badge").eq("user_id", userId).maybeSingle(),
+      "api/v1/profile",
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -297,13 +317,17 @@ export async function GET() {
   // supabase-js infers for the row type.
   let roleProfile = null;
   let roleProfileReadFailed = false;
+  let founderBadge = false;
   const roleReadFailed = (table: string, message: string, code: string) => {
     console.error(`[api/v1/profile] ${table} read failed:`, message, code);
     roleProfileReadFailed = true;
   };
 
   if (profile.user_type === "lawyer") {
+    // Started first so the two reads overlap; it never rejects.
+    const founderBadgeRead = readOwnFounderBadge(user.id);
     const { data, error } = await readOwnLawyerRow(user.id);
+    founderBadge = await founderBadgeRead;
     if (error) roleReadFailed("lawyer_profiles", error.message, error.code);
     else roleProfile = data;
   } else if (profile.user_type === "provider") {
@@ -427,6 +451,9 @@ export async function GET() {
     subscription,
     entitySettings,
     ...(profile.user_type === "corporate" ? { businessProfile, businessProfileScope } : {}),
+    // Sent only when true (deploy-order rule: a new column reaches the client
+    // only when set); the dashboard profile page reads this, not roleProfile.
+    ...(founderBadge ? { founderBadge: true } : {}),
   });
 }
 

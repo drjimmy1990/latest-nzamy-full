@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { withholdHiddenRate } from "@/lib/lawyers/publicRate";
+import { founderBadgeFrom } from "@/lib/lawyers/founderBadge";
 import type { LawyerService } from "@/lib/services/lawyerServicesService";
 import type { Review, ReviewStats } from "@/lib/services/reviewsService";
 import type { EducationEntry } from "@/lib/services/lawyerProfileFields";
@@ -65,39 +66,6 @@ const PUBLIC_COLUMNS =
  * dashes, which would misroute it into the id branch and 404 a real profile.
  */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/**
- * «المحامي المؤسس» (owner ٢١٨ / ٢٢٥) — `lawyer_profiles.founder_badge`, added by
- * 20261021_50. Read on its OWN, never inside `PUBLIC_COLUMNS`: until the user
- * runs that migration the column is absent, and naming it in the main select
- * would fail the whole profile with 42703 and 404 every published lawyer
- * (deploy-order rule). Any error here — 42703 included — reads as "no badge"
- * and is logged once per server process.
- */
-let founderBadgeReadLogged = false;
-
-async function readFounderBadge(
-  supabase: Awaited<ReturnType<typeof createServiceClient>>,
-  lawyerUserId: string,
-): Promise<boolean> {
-  try {
-    const { data, error } = await supabase
-      .from("lawyer_profiles")
-      .select("founder_badge")
-      .eq("user_id", lawyerUserId)
-      .maybeSingle();
-    if (error) {
-      if (!founderBadgeReadLogged) {
-        founderBadgeReadLogged = true;
-        console.warn("[lawyers/[id] GET] founder_badge unreadable, showing no badge:", error.code, error.message);
-      }
-      return false;
-    }
-    return (data as { founder_badge?: unknown } | null)?.founder_badge === true;
-  } catch {
-    return false;
-  }
-}
 
 /** `numeric` columns (`price_sar`, `avg_rating`) come back from postgres as strings over the wire. */
 function num(v: number | string | null | undefined): number | null {
@@ -315,7 +283,14 @@ export async function GET(
         .eq("status", "active")
         .order("created_at", { ascending: false })
         .limit(10),
-      readFounderBadge(supabase, lawyerUserId),
+      // «المحامي المؤسس» (owner ٢١٨ / ٢٢٥): its OWN read, never in
+      // PUBLIC_COLUMNS — before 20261021_50 runs the column is absent, and
+      // naming it there would 404 every published profile with 42703.
+      // founderBadgeFrom turns any error or throw into "no badge", logged once.
+      founderBadgeFrom(
+        supabase.from("lawyer_profiles").select("founder_badge").eq("user_id", lawyerUserId).maybeSingle(),
+        "lawyers/[id] GET",
+      ),
     ]);
 
     // Sent only when true (a new column reaches the client only when set).

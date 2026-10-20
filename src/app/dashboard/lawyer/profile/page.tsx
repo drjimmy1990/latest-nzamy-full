@@ -104,9 +104,9 @@ const EMPTY_PROFILE = {
   barNumber: "",
   yearsExp: 0,
   verified: false,
-  // «المحامي المؤسس» (owner ٢١٨ / ٢٢٥): lawyer_profiles.founder_badge, read
-  // off GET /api/v1/profile's `select("*")` — absent before 20261021_50 runs,
-  // which reads as no badge.
+  // «المحامي المؤسس» (owner ٢١٨ / ٢٢٥): GET /api/v1/profile's own
+  // `founderBadge` field (an explicit select("founder_badge") read there, sent
+  // only when true) — never roleProfile's `select("*")`. Absent → no badge.
   founderBadge: false,
   // verification_status verbatim from lawyer_profiles; null when the column is
   // empty. Never defaulted to "pending" — an assumed status is an invented one.
@@ -264,12 +264,13 @@ export default function LawyerProfilePage() {
       education?: unknown;
       courts?: string[] | null;
       languages?: string[] | null;
-      founder_badge?: boolean | null;
     } | null;
     // Optional so an older deploy of the route (which did not send the key)
     // reads as `undefined` → `!== true` → "did not fail", the same conclusion
     // the page drew before the marker existed. The route always sends it.
     roleProfileReadFailed?: boolean;
+    /** Sent only when true (20261021_50); absent = no badge. */
+    founderBadge?: boolean;
   };
 
   const load = useCallback(async () => {
@@ -298,7 +299,7 @@ export default function LawyerProfilePage() {
         verificationStatus: r?.verification_status ?? null,
         // Verified seal driven by the REAL status, never hardcoded true.
         verified: r?.verification_status === "verified",
-        founderBadge: r?.founder_badge === true,
+        founderBadge: res.founderBadge === true,
         marketplaceVisible: r?.marketplace_visible === true,
         isAcceptingClients: r?.is_accepting_clients === true,
         hasRoleProfile: r != null,

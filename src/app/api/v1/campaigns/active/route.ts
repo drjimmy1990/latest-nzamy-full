@@ -23,6 +23,16 @@ export const dynamic = "force-dynamic";
 
 const HEADERS = { "Cache-Control": "public, max-age=300" };
 
+// Logged once per server process: a failing banner read is worth one line,
+// not one per visitor.
+let readFailureLogged = false;
+
+function logOnce(...args: unknown[]): void {
+  if (readFailureLogged) return;
+  readFailureLogged = true;
+  console.error(...args);
+}
+
 function answer(campaign: Campaign | null) {
   return NextResponse.json({ campaign }, { status: 200, headers: HEADERS });
 }
@@ -37,13 +47,13 @@ export async function GET() {
       .maybeSingle();
 
     if (error) {
-      console.error("[campaigns/active GET] founder_campaign read failed:", error.code, error.message);
+      logOnce("[campaigns/active GET] founder_campaign read failed:", error.code, error.message);
       return answer(null);
     }
 
     return answer(founderCampaignFromSetting(data?.value ?? null, riyadhDay(new Date())));
   } catch (err) {
-    console.error("[campaigns/active GET] unexpected error:", err);
+    logOnce("[campaigns/active GET] unexpected error:", err);
     return answer(null);
   }
 }
