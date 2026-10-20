@@ -180,6 +180,7 @@ test("moyasarInitConfig: the values the brief pins", async () => {
   assert.equal(cfg.description, "NEZAMY — المحامي المحترف");
   assert.equal(cfg.publishable_api_key, "pk_test_abc");
   assert.equal(cfg.callback_url, "https://example.test/payments/result?order=0b8f9a3e-1111-4222-8333-444455556666");
+  assert.deepEqual(cfg.metadata, { order_id: RESPONSE.orderId });
   assert.deepEqual(cfg.methods, ["creditcard"]);
   assert.deepEqual(cfg.supported_networks, ["mada", "visa", "mastercard"]);
   assert.equal(cfg.language, "ar");

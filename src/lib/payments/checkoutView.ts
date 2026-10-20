@@ -247,6 +247,7 @@ export interface MoyasarInitConfig {
   description: string;
   publishable_api_key: string;
   callback_url: string;
+  metadata: { order_id: string };
   methods: MoyasarMethod[];
   supported_networks: ("mada" | "visa" | "mastercard")[];
   language: "ar";
@@ -264,6 +265,12 @@ export interface MoyasarInitConfig {
  * built from the page's origin. `initiate` returns the intent to pay with —
  * the one already held, or a new one when it is near expiry — or null when
  * none can be had, which makes on_initiating answer false (no payment).
+ *
+ * metadata.order_id is set twice on purpose: moyasar-payment-form 2.3.0 builds
+ * the fulfil body as {amount, currency, description, publishable_api_key,
+ * metadata (from init)} overlaid with the data and then with on_initiating's
+ * result, so the init value is the floor and on_initiating's (which names a
+ * refreshed order) wins.
  */
 export function moyasarInitConfig(
   resp: CheckoutResponse,
@@ -281,6 +288,7 @@ export function moyasarInitConfig(
     description: resp.descriptionAr,
     publishable_api_key: resp.publishableKey,
     callback_url: callbackUrlFor(opts.origin, resp.orderId),
+    metadata: { order_id: resp.orderId },
     methods: moyasarMethods(resp.publishableKey, opts.applePayFlag),
     supported_networks: ["mada", "visa", "mastercard"],
     language: "ar",
