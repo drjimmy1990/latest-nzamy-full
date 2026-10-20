@@ -50,6 +50,10 @@
 -- committed 'paid' row and matches nothing. T1–T4 prove the WHERE; T8 pins
 -- that it is a single statement.
 --
+-- T9 proves merge_payment_order_metadata keeps the other keys; T10 the
+-- partial UNIQUE index subscriptions_order_id_key (one subscription per paid
+-- order).
+--
 -- Actors: U …d001 (orders A initiated, B created, C paid, D failed, E initiated).
 -- Every assertion RAISES on failure.
 
@@ -314,4 +318,87 @@ begin
     raise exception 'T8 FAIL: the claim runs more than one UPDATE';
   end if;
   raise notice 'T8 PASS: one UPDATE … WHERE id = p_order AND status IN (created, initiated) … RETURNING *, receipt from next_receipt_number()';
+end $$;
+
+-- T9 merge_payment_order_metadata merges, never overwrites: a trace lands
+--    next to the keys already there; a later patch replaces only its own key;
+--    an unknown order answers false; sessions get 42501
+update public.payment_orders set metadata = '{"user_email": "u@example.test", "already_entitled": true}'::jsonb
+ where id = '00000000-0000-0000-0000-0000000a0003';
+set role service_role;
+do $$
+declare
+  md jsonb;
+begin
+  if not public.merge_payment_order_metadata('00000000-0000-0000-0000-0000000a0003',
+           '{"paid_unmatched": {"payment_id": "pay_X", "reason": "amount_mismatch", "at": "2026-10-22T08:00:00Z"}}') then
+    raise exception 'T9 FAIL: the merge did not find order C';
+  end if;
+  if not public.merge_payment_order_metadata('00000000-0000-0000-0000-0000000a0003', '{"sweep_attempts": 3}') then
+    raise exception 'T9 FAIL: the second merge did not find order C';
+  end if;
+  perform public.merge_payment_order_metadata('00000000-0000-0000-0000-0000000a0003', '{"sweep_attempts": 4}');
+  select metadata into md from public.payment_orders where id = '00000000-0000-0000-0000-0000000a0003';
+  if md ->> 'user_email' is distinct from 'u@example.test' or (md ->> 'already_entitled')::boolean is distinct from true
+     or md -> 'paid_unmatched' ->> 'reason' is distinct from 'amount_mismatch'
+     or (md ->> 'sweep_attempts')::int is distinct from 4 then
+    raise exception 'T9 FAIL: the merge lost or mangled a key: %', md;
+  end if;
+  if public.merge_payment_order_metadata('00000000-0000-0000-0000-0000000a0999', '{"x": 1}') then
+    raise exception 'T9 FAIL: the merge answered true for an order that does not exist';
+  end if;
+  raise notice 'T9 PASS: the merge keeps user_email / already_entitled, adds paid_unmatched, replaces only sweep_attempts (3 → 4); unknown order → false';
+end $$;
+reset role;
+set role app_user;
+do $$
+begin
+  begin
+    perform public.merge_payment_order_metadata('00000000-0000-0000-0000-0000000a0005', '{"x": 1}');
+    raise exception 'T9 FAIL: authenticated (app_user) executed merge_payment_order_metadata';
+  exception when insufficient_privilege then
+    null;
+  end;
+  raise notice 'T9 PASS (authenticated): EXECUTE on merge_payment_order_metadata raises 42501';
+end $$;
+reset role;
+do $$
+declare
+  mfn constant text := 'public.merge_payment_order_metadata(uuid, jsonb)';
+  cfg     text[];
+  definer boolean;
+begin
+  if has_function_privilege('anon', mfn, 'EXECUTE') or has_function_privilege('authenticated', mfn, 'EXECUTE')
+     or has_function_privilege('public', mfn, 'EXECUTE') or not has_function_privilege('service_role', mfn, 'EXECUTE') then
+    raise exception 'T9 FAIL: the merge is not service-role-only after the re-run (the stray grant survived?)';
+  end if;
+  select proconfig, prosecdef into cfg, definer from pg_proc where oid = to_regprocedure(mfn);
+  if not coalesce(definer, false) or not ('search_path=""' = any (cfg)) then
+    raise exception 'T9 FAIL: the merge is not SECURITY DEFINER with search_path ''''';
+  end if;
+  raise notice 'T9 PASS: the merge is service role only (the between-runs grant was revoked), SECURITY DEFINER, search_path ''''';
+end $$;
+
+-- T10 one subscription per paid order: a second row with the same
+--    metadata.order_id raises 23505; rows without an order are unconstrained
+insert into public.subscription_plans (id, tier, audience, name_ar)
+  values ('t10-plan', 'pro', 'lawyer', 'خطة اختبار') on conflict (id) do nothing;
+do $$
+begin
+  insert into public.subscriptions (user_id, plan_id, tier, status, metadata) values
+    ('00000000-0000-0000-0000-00000000d001', 't10-plan', 'pro', 'cancelled', '{"order_id": "00000000-0000-0000-0000-0000000a0001", "method": "moyasar"}');
+  begin
+    insert into public.subscriptions (user_id, plan_id, tier, status, metadata) values
+      ('00000000-0000-0000-0000-00000000d001', 't10-plan', 'pro', 'active', '{"order_id": "00000000-0000-0000-0000-0000000a0001"}');
+    raise exception 'T10 FAIL: a second subscription for order A was accepted';
+  exception when unique_violation then
+    null;
+  end;
+  insert into public.subscriptions (user_id, plan_id, tier, status, metadata) values
+    ('00000000-0000-0000-0000-00000000d001', 't10-plan', 'pro', 'active', '{"method": "admin_grant"}'),
+    ('00000000-0000-0000-0000-00000000d001', 't10-plan', 'pro', 'cancelled', '{}');
+  if (select count(*) from public.subscriptions where user_id = '00000000-0000-0000-0000-00000000d001') <> 3 then
+    raise exception 'T10 FAIL: expected 3 subscriptions (one per order + two without an order)';
+  end if;
+  raise notice 'T10 PASS: subscriptions_order_id_key refuses a second row for one order (23505); rows without metadata.order_id are unconstrained';
 end $$;

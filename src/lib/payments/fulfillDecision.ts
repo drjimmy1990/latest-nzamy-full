@@ -11,6 +11,7 @@
  */
 
 import { createHash, timingSafeEqual } from "node:crypto";
+import { planEndsAtMs, tierRank, type ActivePlanRow, type TierRankTable } from "../entitlementGrantRules.ts";
 
 export type FulfillMode = "test" | "live";
 
@@ -107,6 +108,46 @@ export function fulfillDecision(
   return "wait";
 }
 
+/**
+ * Why a PAID payment did not settle this order, or null. A payment that is
+ * not paid took no money and leaves no trace. fulfillOrder writes the answer
+ * to metadata.paid_unmatched = {payment_id, reason, at} (merged), so an admin
+ * finds the money that bought nothing: a rejected payment (order, amount,
+ * currency or mode mismatch) or a paid payment for a closed unpaid order.
+ */
+export function paidUnmatchedReason(
+  decision: FulfillDecision,
+  payment: Pick<FulfillPaymentView, "status">,
+  order: Pick<FulfillOrderView, "status">,
+): string | null {
+  if (payment.status !== "paid") return null;
+  if (typeof decision === "object") return decision.reject;
+  if (decision === "already_done") return `order_${order.status}`;
+  return null;
+}
+
+/**
+ * The payment a sweep should settle an intent-only order with: the paid one,
+ * the newest by created_at when there are several (an unknown date sorts
+ * oldest). null when none is paid — the order is left alone.
+ */
+export function pickPaidPayment<T extends { status: string; createdAt: string | null }>(
+  payments: readonly T[] | null | undefined,
+): T | null {
+  let best: T | null = null;
+  let bestMs = Number.NEGATIVE_INFINITY;
+  for (const p of payments ?? []) {
+    if (p.status !== "paid") continue;
+    const ms = p.createdAt ? Date.parse(p.createdAt) : Number.NaN;
+    const key = Number.isFinite(ms) ? ms : Number.NEGATIVE_INFINITY;
+    if (!best || key > bestMs) {
+      best = p;
+      bestMs = key;
+    }
+  }
+  return best;
+}
+
 // ── resuming a paid order whose grant did not finish ────────────────────────
 
 /**
@@ -137,6 +178,33 @@ export const SWEEP_INITIATED_AFTER_MS = 10 * 60 * 1000;
 export const SWEEP_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
 /** Orders per sweep run, per query. */
 export const SWEEP_BATCH = 50;
+/** Sweep runs a paid-but-unfinished order gets before it is left to an admin. */
+export const SWEEP_MAX_ATTEMPTS = 20;
+
+function attemptsOf(metadata: Record<string, unknown> | null | undefined): number {
+  const n = metadata?.sweep_attempts;
+  return typeof n === "number" && Number.isInteger(n) && n > 0 ? n : 0;
+}
+
+/** True once a paid-but-unfinished order has used up its sweep attempts. */
+export function sweepGaveUp(metadata: Record<string, unknown> | null | undefined): boolean {
+  return attemptsOf(metadata) >= SWEEP_MAX_ATTEMPTS;
+}
+
+/**
+ * The metadata patch after one more failed sweep attempt on a paid order: the
+ * counter, and on the last attempt a paid_unmatched trace (reason
+ * sweep_gave_up) so an admin sees it.
+ */
+export function sweepAttemptPatch(
+  metadata: Record<string, unknown> | null | undefined,
+  paymentId: string | null,
+  atIso: string,
+): Record<string, unknown> {
+  const next = attemptsOf(metadata) + 1;
+  if (next < SWEEP_MAX_ATTEMPTS) return { sweep_attempts: next };
+  return { sweep_attempts: next, paid_unmatched: { payment_id: paymentId, reason: "sweep_gave_up", at: atIso } };
+}
 
 // ── dates ───────────────────────────────────────────────────────────────────
 
@@ -156,6 +224,43 @@ export function planPeriodEnd(now: Date, billing: string): Date | null {
   if (billing === "monthly") return addMonthsUtc(now, 1);
   if (billing === "yearly") return addMonthsUtc(now, 12);
   return null;
+}
+
+/**
+ * The window a plan bought now runs over (controller ruling, fix round 1):
+ *   - `running` — the active rows still covering the user (period end null or
+ *     after now). A row whose period ended is lapsed even while its status
+ *     still reads 'active' (nothing moves B1 rows to 'expired'); it never
+ *     blocks a purchase. planGrantDecision gets `running` only.
+ *   - the SAME rank stacks: when the user holds a running row of the plan's
+ *     rank with a finite end, the new period starts at the latest such end and
+ *     the remaining days carry over (monthly + monthly = old end + 1 month;
+ *     yearly held + monthly bought = yearly end + 1 month). An open-ended
+ *     same-rank row cannot be stacked onto — the new window starts now and
+ *     planGrantDecision keeps that row.
+ *   - a lower rank → higher rank upgrade starts now (pro-rata is B2); a higher
+ *     running rank is left to planGrantDecision, which keeps it.
+ * null for a billing a plan does not have.
+ */
+export function planWindow<T extends ActivePlanRow>(input: {
+  now: Date;
+  billing: string;
+  tier: string;
+  activeRows: readonly T[] | null | undefined;
+  ranks: TierRankTable;
+}): { start: Date; end: Date; running: T[] } | null {
+  const nowMs = input.now.getTime();
+  const running = (input.activeRows ?? []).filter((row) => planEndsAtMs(row) > nowMs);
+  const rank = tierRank(input.tier, input.ranks);
+  let baseMs = nowMs;
+  for (const row of running) {
+    if (tierRank(row.tier, input.ranks) !== rank) continue;
+    const endMs = planEndsAtMs(row);
+    if (Number.isFinite(endMs) && endMs > baseMs) baseMs = endMs;
+  }
+  const start = new Date(baseMs);
+  const end = planPeriodEnd(start, input.billing);
+  return end ? { start, end, running } : null;
 }
 
 /**

@@ -1,48 +1,56 @@
 /**
  * grantPurchase.ts — what a paid order grants (Moyasar payments B1, Task 5).
- * SERVER-ONLY (service role). Called by ./fulfillOrder.ts after the order was
- * claimed (claim_payment_order, 20261022_30), never before.
+ * Runs with the service role, after the order was claimed
+ * (claim_payment_order, 20261022_30), never before. Its IO comes in through
+ * `deps` (the service client, the library grant, the tier ranking), wired by
+ * ./fulfillOrder.ts, so `node --test` can drive it with a fake client
+ * (grantPurchase.test.ts).
  *
  *   plan    → a `subscriptions` row: plan_id = item.id, tier = item.tier,
- *             billing_cycle = order.billing, one month or one year, auto_renew
- *             false (B2 turns it on), payment_method_id = the saved card's row,
- *             metadata {order_id, method: 'moyasar'}; the user's active rows are
- *             cancelled first, as grantEntitlement does, and user_metadata.tier
- *             is stamped. planGrantDecision guards it: an active plan the
- *             purchase would downgrade (a higher tier, or the same tier running
- *             longer) is never replaced — the result is `alreadyEntitled` and
- *             the order is left paid for an admin refund. lawyer-pro and
- *             consultant-independent also get a plan_monthly lot of 1,500 points
- *             (PLAN_MONTHLY_POINTS = LAWYER_PRO_MONTHLY_POINTS) expiring at the period end (monthly)
- *             or after one month (yearly; B2 tops up the later months).
+ *             billing_cycle = order.billing, auto_renew false (B2 turns it on),
+ *             payment_method_id = the saved card's row, metadata {order_id,
+ *             method: 'moyasar'}; the user's active rows are cancelled first,
+ *             as grantEntitlement does, and user_metadata.tier is stamped.
+ *             The window (planWindow, ./fulfillDecision.ts): one month or one
+ *             year from now; on the SAME rank it starts at the end of the
+ *             running row, so the remaining days carry over. Lapsed rows (period
+ *             ended, status still 'active') never block. planGrantDecision
+ *             guards the rest: a higher-ranked running plan (or an open-ended
+ *             one of the same rank) is never replaced — the result is
+ *             `alreadyEntitled` and the order is left paid for an admin refund.
+ *             lawyer-pro and consultant-independent also get a plan_monthly lot
+ *             of PLAN_MONTHLY_POINTS (= LAWYER_PRO_MONTHLY_POINTS) expiring at
+ *             the period end (monthly) or after one month (yearly; B2 tops up
+ *             the later months).
  *   library → grantLibraryAccess({ source: 'purchase', orderId }).
  *   topup   → credit_points(user, points, 'purchase', now + validity months, order).
  *
  * EXACTLY ONCE: every grant is keyed on the order, so a retry (the sweep, or a
  * second caller) never grants twice —
- *   subscriptions.metadata->>'order_id' (checked before the insert),
- *   library_access_grants.order_id UNIQUE (23505 = already granted),
+ *   subscriptions: the order's row is looked up first, and the partial UNIQUE
+ *     index on metadata->>'order_id' (20261022_30) backs it: a 23505 on the
+ *     insert means another call inserted it; that row is re-activated (this
+ *     call's cancel may have caught it) and the grant counts as done;
+ *   library_access_grants.order_id UNIQUE (23505 = already granted);
  *   points_lots UNIQUE (order_id, source) (23505 = already credited).
- * Concurrency is the caller's job: only the call that claimed the order runs
- * this, and the sweep resumes an unfinished order only RESUME_AFTER_MS after
- * the claim (./fulfillDecision.ts).
  *
  * Never throws. A missing table or function (the migrations not applied yet)
  * comes back as `{ ok: false, missing: true }`; the order then stays
  * unfulfilled and the sweep retries it.
+ *
+ * Relative imports only (and type-only package imports): `node --test` loads it.
  */
 
-import { createServiceClient } from "@/lib/supabase/server";
-import { TIER_RANK } from "@/lib/access-control";
-import { grantLibraryAccess } from "@/lib/libraryAccessServer";
-import { planGrantDecision, type ActivePlanRow } from "../entitlementGrantRules.ts";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { planGrantDecision, type ActivePlanRow, type TierRankTable } from "../entitlementGrantRules.ts";
+import type { LibraryGrantSource, LibraryPlanRef } from "../libraryAccess.ts";
 import { PAYABLE_ITEMS, type PayableItem } from "./catalog.ts";
 import {
   addMonthsUtc,
   isMissingPaymentsObject,
   MONTHLY_POINTS_PLAN_IDS,
   PLAN_MONTHLY_POINTS,
-  planPeriodEnd,
+  planWindow,
 } from "./fulfillDecision.ts";
 
 /** The columns of a claimed payment_orders row a grant reads. */
@@ -58,7 +66,23 @@ export type GrantPurchaseResult =
   | { ok: true; alreadyEntitled: boolean }
   | { ok: false; error: string; missing?: boolean };
 
-type ServiceClient = Awaited<ReturnType<typeof createServiceClient>>;
+export type GrantLibraryFn = (input: {
+  userId: string;
+  planRef: LibraryPlanRef;
+  days: number;
+  source: LibraryGrantSource;
+  orderId?: string | null;
+}) => Promise<{ ok: true; endsAt: string } | { ok: false; error: string; code?: string }>;
+
+export interface GrantPurchaseDeps {
+  /** The service-role client. */
+  admin: SupabaseClient;
+  /** grantLibraryAccess (src/lib/libraryAccessServer.ts). */
+  grantLibrary: GrantLibraryFn;
+  /** TIER_RANK (src/lib/access-control.ts). */
+  ranks: TierRankTable;
+}
+
 type DbError = { code?: string; message?: string } | null;
 
 /** A lot must outlive the call by at least this much, or it is not credited. */
@@ -70,7 +94,7 @@ function failure(step: string, error: DbError): { ok: false; error: string; miss
 }
 
 async function creditOrderLot(
-  admin: ServiceClient,
+  admin: SupabaseClient,
   input: { userId: string; points: number; source: "purchase" | "plan_monthly"; expiresAt: Date; orderId: string },
 ): Promise<{ ok: true } | { ok: false; error: string; missing?: boolean }> {
   const { error } = await admin.rpc("credit_points", {
@@ -88,12 +112,13 @@ async function creditOrderLot(
 }
 
 async function grantPlan(
-  admin: ServiceClient,
+  deps: GrantPurchaseDeps,
   order: PurchaseOrder,
   item: PayableItem,
   paymentMethodId: string | null,
   now: Date,
 ): Promise<GrantPurchaseResult> {
+  const { admin } = deps;
   const tier = item.tier;
   if (!tier) return { ok: false, error: `plan ${item.id} has no tier` };
 
@@ -112,9 +137,6 @@ async function grantPlan(
   if (done) {
     periodEnd = done.current_period_end ? new Date(done.current_period_end) : null;
   } else {
-    periodEnd = planPeriodEnd(now, order.billing);
-    if (!periodEnd) return { ok: false, error: `plan order with billing ${order.billing}` };
-
     const { data: activeRows, error: activeErr } = await admin
       .from("subscriptions")
       .select("id, tier, status, current_period_end")
@@ -123,11 +145,22 @@ async function grantPlan(
     // Fail closed: what the user holds must be known before anything is cancelled.
     if (activeErr) return failure("active subscriptions read", activeErr);
 
-    const decision = planGrantDecision({
-      activeRows: (activeRows as ActivePlanRow[] | null) ?? [],
+    const window = planWindow({
+      now,
+      billing: order.billing,
       tier,
-      newPeriodEnd: periodEnd,
-      ranks: TIER_RANK,
+      activeRows: (activeRows as ActivePlanRow[] | null) ?? [],
+      ranks: deps.ranks,
+    });
+    if (!window) return { ok: false, error: `plan order with billing ${order.billing}` };
+    periodEnd = window.end;
+
+    // Only the rows still running are protected; a lapsed row is cancelled below.
+    const decision = planGrantDecision({
+      activeRows: window.running,
+      tier,
+      newPeriodEnd: window.end,
+      ranks: deps.ranks,
     });
     if (decision.keepExisting) return { ok: true, alreadyEntitled: true };
 
@@ -146,13 +179,27 @@ async function grantPlan(
       billing_cycle: order.billing,
       status: "active",
       started_at: nowIso,
-      current_period_start: nowIso,
-      current_period_end: periodEnd.toISOString(),
+      current_period_start: window.start.toISOString(),
+      current_period_end: window.end.toISOString(),
       auto_renew: false,
       payment_method_id: paymentMethodId,
       metadata: { order_id: order.id, method: "moyasar" },
     });
-    if (insertErr) return failure("subscriptions insert", insertErr);
+    if (insertErr && insertErr.code === "23505") {
+      // subscriptions_order_id_key: another call inserted this order's row
+      // first, and the cancel above may have caught it — re-activate it.
+      const { data: again, error: againErr } = await admin
+        .from("subscriptions")
+        .update({ status: "active", cancelled_at: null, updated_at: nowIso })
+        .eq("user_id", order.user_id)
+        .eq("metadata->>order_id", order.id)
+        .select("current_period_end");
+      if (againErr) return failure("subscriptions re-activate", againErr);
+      const row = Array.isArray(again) ? (again[0] as { current_period_end?: string | null } | undefined) : undefined;
+      periodEnd = row?.current_period_end ? new Date(row.current_period_end) : periodEnd;
+    } else if (insertErr) {
+      return failure("subscriptions insert", insertErr);
+    }
 
     // Keep auth metadata in sync (useSubscription hydration); the row is the truth.
     try {
@@ -182,6 +229,7 @@ async function grantPlan(
 }
 
 export async function grantPurchase(
+  deps: GrantPurchaseDeps,
   order: PurchaseOrder,
   opts: { paymentMethodId?: string | null; now?: Date } = {},
 ): Promise<GrantPurchaseResult> {
@@ -195,17 +243,16 @@ export async function grantPurchase(
       return { ok: false, error: `order kind ${order.kind} does not match item kind ${item.kind}` };
     }
     const now = opts.now ?? new Date();
-    const admin = await createServiceClient();
 
     if (item.kind === "plan") {
-      return await grantPlan(admin, order, item, opts.paymentMethodId ?? null, now);
+      return await grantPlan(deps, order, item, opts.paymentMethodId ?? null, now);
     }
 
     if (item.kind === "library") {
       if (!item.libraryPlanRef || !item.libraryDays) {
         return { ok: false, error: `library item ${item.id} has no plan or length` };
       }
-      const grant = await grantLibraryAccess({
+      const grant = await deps.grantLibrary({
         userId: order.user_id,
         planRef: item.libraryPlanRef,
         days: item.libraryDays,
@@ -222,7 +269,7 @@ export async function grantPurchase(
     if (!item.points || !item.pointsValidityMonths) {
       return { ok: false, error: `top-up ${item.id} has no points or validity` };
     }
-    const lot = await creditOrderLot(admin, {
+    const lot = await creditOrderLot(deps.admin, {
       userId: order.user_id,
       points: item.points,
       source: "purchase",

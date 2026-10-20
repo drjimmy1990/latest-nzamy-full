@@ -9,6 +9,7 @@
  *   POST   /v1/payment_intents             {amount, currency, description, callback_url}
  *   POST   /v1/payment_intents/{id}/cancel
  *   GET    /v1/payments/{id}
+ *   GET    /v1/payments?metadata[order_id]={id}  → {payments: [...], meta}
  *   POST   /v1/payments/{id}/refund         optional {amount}
  *   POST   /v1/payments/{id}/void
  *   GET    /v1/tokens/{id}
@@ -328,6 +329,24 @@ export function createMoyasarClient(
 
     fetchPayment(id: string): Promise<MoyasarResult<MoyasarPayment>> {
       return paymentCall("GET", idPath("/v1/payments", id));
+    },
+
+    /**
+     * The payments whose metadata.order_id is this order —
+     * GET /v1/payments?metadata[order_id]=<id> (Moyasar filters list
+     * endpoints by metadata). First page only: an order has one intent and an
+     * intent originates one payment. A malformed entry is dropped; a body
+     * without a `payments` array is an invalid_response.
+     */
+    async listPaymentsByOrder(orderId: string): Promise<MoyasarResult<MoyasarPayment[]>> {
+      if (typeof orderId !== "string" || !SAFE_ID.test(orderId)) return invalidRequest("invalid order id");
+      const query = new URLSearchParams({ "metadata[order_id]": orderId });
+      const r = await call("GET", `/v1/payments?${query.toString()}`);
+      if (!r.ok) return r;
+      const b = r.body;
+      if (!isPlainObject(b) || !Array.isArray(b.payments)) return invalidResponse(r.status);
+      const payments = b.payments.map(mapPayment).filter((p): p is MoyasarPayment => p !== null);
+      return { ok: true, data: payments };
     },
 
     refund(id: string, amountHalalas?: number): Promise<MoyasarResult<MoyasarPayment>> {

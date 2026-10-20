@@ -350,3 +350,48 @@ test("createMoyasarClient refuses a disabled or mismatched config without naming
     (err: Error) => /publishable key/.test(err.message) && !err.message.includes("pk_live_placeholderPublish789"),
   );
 });
+
+// ── listPaymentsByOrder (B1 Task 5 fix round 1: the sweep's intent-only orders) ──
+
+test("listPaymentsByOrder GETs /v1/payments filtered by metadata[order_id] and maps every payment", async () => {
+  const ORDER = "0b9f5b5e-7a4c-4f6e-9a33-6e2c2a0f5a11";
+  const failed = { ...PAYMENT, id: "pay-failed", status: "failed" };
+  const { impl, calls } = fakeFetch(() =>
+    json(200, { payments: [PAYMENT, failed, { id: "", status: "paid" }], meta: { current_page: 1, next_page: null } }),
+  );
+  const r = await createMoyasarClient(CFG, impl).listPaymentsByOrder(ORDER);
+  assert.equal(calls.length, 1);
+  const url = new URL(calls[0].url);
+  assert.equal(url.origin + url.pathname, `${MOYASAR_API_BASE}/v1/payments`);
+  assert.equal(url.searchParams.get("metadata[order_id]"), ORDER);
+  assert.equal(calls[0].init.method, "GET");
+  assert.equal(header(calls[0].init, "Authorization"), BASIC);
+  assert.ok(r.ok);
+  if (r.ok) {
+    assert.deepEqual(r.data.map((p) => [p.id, p.status]), [[PAYMENT.id, "paid"], ["pay-failed", "failed"]], "a malformed entry is dropped");
+    assert.equal(r.data[0].amount, 45885);
+    assert.deepEqual(r.data[0].metadata, { order_id: ORDER });
+  }
+});
+
+test("listPaymentsByOrder: an empty list, a body without payments, a bad order id, an HTTP error", async () => {
+  const empty = fakeFetch(() => json(200, { payments: [], meta: {} }));
+  const a = await createMoyasarClient(CFG, empty.impl).listPaymentsByOrder("0b9f5b5e-7a4c-4f6e-9a33-6e2c2a0f5a11");
+  assert.deepEqual(a, { ok: true, data: [] });
+
+  const odd = fakeFetch(() => json(200, { meta: {} }));
+  const b = await createMoyasarClient(CFG, odd.impl).listPaymentsByOrder("0b9f5b5e-7a4c-4f6e-9a33-6e2c2a0f5a11");
+  assert.equal(b.ok, false);
+  if (!b.ok) assert.equal(b.type, "invalid_response");
+
+  const never = fakeFetch(() => json(200, { payments: [] }));
+  for (const bad of ["", "a/b", "x&metadata[user]=1", "a".repeat(201)]) {
+    const r = await createMoyasarClient(CFG, never.impl).listPaymentsByOrder(bad);
+    assert.equal(r.ok, false, bad);
+  }
+  assert.equal(never.calls.length, 0, "a bad order id never reaches Moyasar");
+
+  const err = fakeFetch(() => json(401, { type: "authentication_error", message: "Invalid authorization credentials" }));
+  const c = await createMoyasarClient(CFG, err.impl).listPaymentsByOrder("0b9f5b5e-7a4c-4f6e-9a33-6e2c2a0f5a11");
+  assert.deepEqual(c, { ok: false, status: 401, type: "authentication_error", message: "Invalid authorization credentials" });
+});

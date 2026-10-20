@@ -1,9 +1,9 @@
 -- prelude_payments_fulfill_once_between_runs.sql — runs BETWEEN the two
 -- 20261022_30 runs in payments_fulfill_once.test.sql's chain.
 --   * asserts the first run: the claim exists, service role only;
---   * then grants EXECUTE on it to anon and authenticated, the shape a
---     self-host schema restore leaves behind. The second run must take it
---     back (T7 of the test).
+--   * then grants EXECUTE on the claim and on the metadata merge to anon and
+--     authenticated, the shape a self-host schema restore leaves behind. The
+--     second run must take both back (T7 and T9 of the test).
 do $$
 declare
   fn constant text := 'public.claim_payment_order(uuid, text, boolean)';
@@ -19,3 +19,4 @@ begin
 end $$;
 
 grant execute on function public.claim_payment_order(uuid, text, boolean) to anon, authenticated;
+grant execute on function public.merge_payment_order_metadata(uuid, jsonb) to anon, authenticated;

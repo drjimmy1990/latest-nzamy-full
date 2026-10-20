@@ -11,7 +11,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const fulfill = readFileSync(join(import.meta.dirname, "fulfillOrder.ts"), "utf8");
+const fulfill = readFileSync(join(import.meta.dirname, "fulfillCore.ts"), "utf8");
+const wrapper = readFileSync(join(import.meta.dirname, "fulfillOrder.ts"), "utf8");
 const grant = readFileSync(join(import.meta.dirname, "grantPurchase.ts"), "utf8");
 
 function body(src: string, signature: string): string {
@@ -26,7 +27,7 @@ test("the claim is the claim_payment_order RPC, run only on a 'grant' decision; 
   const claimAt = run.indexOf('admin.rpc("claim_payment_order"');
   assert.ok(decideAt > -1 && claimAt > decideAt, "decide, then claim");
   assert.ok(run.includes("p_live: live") && run.includes("const live = client.mode === \"live\""), "the mode stamped is the key's mode");
-  assert.match(run, /if \(!claimed\) return \{ outcome: "already_done"/);
+  assert.match(run, /if \(!claimed\) \{[\s\S]{0,700}return \{ outcome: "already_done", reason: "claimed_elsewhere" \}/);
   assert.match(run, /claimErr\.code === "23505"[\s\S]{0,300}reason: "order_mismatch"/, "a payment already on another order is order_mismatch");
   assert.ok(!/from\("payment_orders"\)\s*\.update\(\{\s*status: "paid"/.test(fulfill), "no other code path writes status paid");
 });
@@ -40,7 +41,7 @@ test("finish: card saved before the grant, fulfilled_at stamped only while null,
   const cardAt = fin.indexOf("await saveCard(");
   const grantAt = fin.indexOf("await grantPurchase(");
   const stampAt = fin.indexOf('.is("fulfilled_at", null)', grantAt);
-  const notifyAt = fin.indexOf("await recordNotification(");
+  const notifyAt = fin.indexOf("await deps.notify(");
   assert.ok(cardAt > -1 && grantAt > cardAt, "the card is saved before the grant (the subscription points at it)");
   assert.ok(stampAt > grantAt, "fulfilled_at is stamped after the grant, conditionally");
   assert.ok(notifyAt > stampAt, "the notification follows the stamp");
@@ -51,12 +52,13 @@ test("finish: card saved before the grant, fulfilled_at stamped only while null,
 });
 
 test("the notification always has a body", () => {
-  assert.match(fulfill, /recordNotification\(\{ userId: order\.user_id, title: notice\.title, body: notice\.body, href: notice\.href \}\)/);
+  assert.match(fulfill, /deps\.notify\(\{ userId: order\.user_id, title: notice\.title, body: notice\.body, href: notice\.href \}\)/);
+  assert.match(wrapper, /notify: \(n\) => recordNotification\(n\)/);
 });
 
 test("a paid unfulfilled order is resumed only by the sweep, only after RESUME_AFTER_MS", () => {
   const run = body(fulfill, "async function run(");
-  assert.match(run, /if \(input\.resume && resumeAllowed\(order, Date\.now\(\)\)\) return resume\(admin, order\)/);
+  assert.match(run, /if \(input\.resume && resumeAllowed\(order, \(deps\.now\?\.\(\) \?\? new Date\(\)\)\.getTime\(\)\)\) return resume\(deps, order\)/);
   assert.match(run, /reason: "fulfilment_in_progress"/);
 });
 
@@ -101,4 +103,18 @@ test("a later call on a closed order still reports a refund review or a refund �
   const block = early.slice(0, early.indexOf("\n  }\n"));
   assert.match(block, /already_entitled === true[\s\S]{0,80}"already_entitled"/, "metadata.already_entitled → reason already_entitled");
   assert.match(block, /order\.status === "refunded"[\s\S]{0,40}"order_refunded"/, "a refunded order → reason order_refunded");
+});
+
+test("the server wrapper wires the real service client, gateway, ranking, library grant and notifier", () => {
+  assert.match(wrapper, /admin: await createServiceClient\(\)/);
+  assert.match(wrapper, /gateway: platformGateway/);
+  assert.match(wrapper, /grantLibrary: grantLibraryAccess/);
+  assert.match(wrapper, /ranks: TIER_RANK/);
+  assert.match(wrapper, /const cfg = await getMoyasarConfig\(\);\s*if \(!cfg\.enabled\) return null;/);
+  assert.match(wrapper, /return await fulfillOrderWith\(await serverDeps\(\), input\)/);
+});
+
+test("paid_unmatched is written through the merge RPC, never by replacing metadata", () => {
+  assert.match(fulfill, /admin\.rpc\("merge_payment_order_metadata", \{ p_order: orderId, p_patch: patch \}\)/);
+  assert.match(fulfill, /paid_unmatched: \{ payment_id: paymentId, reason, at \}/);
 });

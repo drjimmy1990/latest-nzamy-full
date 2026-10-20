@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { fulfillOrder, type FulfillOutcome } from "@/lib/payments/fulfillOrder";
+import {
+  findPaidPaymentForOrder,
+  fulfillOrder,
+  mergePaymentOrderMetadata,
+  type FulfillOutcome,
+} from "@/lib/payments/fulfillOrder";
 import {
   cronSecretMatches,
   isMissingPaymentsObject,
@@ -8,6 +13,8 @@ import {
   SWEEP_BATCH,
   SWEEP_INITIATED_AFTER_MS,
   SWEEP_LOOKBACK_MS,
+  sweepAttemptPatch,
+  sweepGaveUp,
 } from "@/lib/payments/fulfillDecision";
 
 /**
@@ -17,17 +24,22 @@ import {
  *
  *   (a) orders still `initiated` more than 10 minutes (and less than 7 days)
  *       after checkout that carry a `moyasar_payment_id` — fulfillOrder
- *       fetches the payment again and grants, records the failure or waits;
- *   (b) orders `paid` more than 10 minutes ago whose `fulfilled_at` is still
+ *       fetches the payment again and grants, records the failure or waits.
+ *       Newest first: abandoned 3-D Secure pages stay initiated for the whole
+ *       lookback and must not crowd newer orders out of the batch;
+ *   (b) the same window's initiated orders with only an intent id: the
+ *       order's payments are listed at Moyasar by metadata[order_id]
+ *       (listPaymentsByOrder) and, when one is paid (the newest paid),
+ *       fulfillOrder runs with it — it fetches and verifies the payment again
+ *       before anything is stamped. None paid → left alone;
+ *   (c) orders `paid` more than 10 minutes ago whose `fulfilled_at` is still
  *       null (a grant failed after the claim) — fulfillOrder resumes the
  *       grant; every grant is keyed on the order, so nothing is granted twice.
- *       Oldest first and without a lookback: a paid order must never be
- *       forgotten (one that keeps failing is logged on every run).
- *
- * Initiated orders that have only an intent id (no payment id yet) are
- * counted as `intent_only` and left alone: the Moyasar client has no
- * "payments of this intent" lookup, and the payment id reaches the order
- * from the result page or the webhook (a 'wait' stamps it).
+ *       Each unfinished run adds one to metadata.sweep_attempts; after
+ *       SWEEP_MAX_ATTEMPTS (20) the order is skipped and carries
+ *       metadata.paid_unmatched {reason: 'sweep_gave_up'} for an admin. The
+ *       given-up orders are filtered out in code from a window of
+ *       4 × SWEEP_BATCH, oldest first.
  *
  * ── AUTH — fails CLOSED ─────────────────────────────────────────────────────
  * Header `x-cron-secret` must equal CRON_SECRET, compared with
@@ -48,7 +60,10 @@ interface SweepRow {
   id: string;
   merchant: string | null;
   moyasar_payment_id: string | null;
+  metadata?: Record<string, unknown> | null;
 }
+
+const merchantOf = (row: SweepRow): "platform" | "office" => (row.merchant === "office" ? "office" : "platform");
 
 export async function POST(request: NextRequest) {
   if (!cronSecretMatches(request.headers.get("x-cron-secret"), process.env.CRON_SECRET)) {
@@ -61,17 +76,32 @@ export async function POST(request: NextRequest) {
   const initiatedAfter = new Date(now - SWEEP_LOOKBACK_MS).toISOString();
   const paidBefore = new Date(now - RESUME_AFTER_MS).toISOString();
 
-  const tally: Record<FulfillOutcome | "intent_only" | "errors", number> = {
+  const tally: Record<FulfillOutcome | "intent_only" | "intent_unpaid" | "gave_up" | "errors", number> = {
     granted: 0,
     already_done: 0,
     failed: 0,
     pending: 0,
     rejected: 0,
     intent_only: 0,
+    intent_unpaid: 0,
+    gave_up: 0,
     errors: 0,
   };
 
-  // (a) initiated orders
+  async function settle(row: SweepRow, paymentId: string): Promise<FulfillOutcome | null> {
+    try {
+      const result = await fulfillOrder({ orderId: row.id, paymentId, merchant: merchantOf(row), resume: true });
+      tally[result.outcome]++;
+      if (result.outcome === "rejected") console.warn("[cron/payments-sweep] order rejected:", row.id, result.reason);
+      return result.outcome;
+    } catch (err) {
+      console.error("[cron/payments-sweep] one order threw:", row.id, err);
+      tally.errors++;
+      return null;
+    }
+  }
+
+  // (a) initiated orders with a payment id
   const { data: initiated, error: initiatedErr } = await admin
     .from("payment_orders")
     .select("id, merchant, moyasar_payment_id")
@@ -79,64 +109,81 @@ export async function POST(request: NextRequest) {
     .lt("created_at", initiatedBefore)
     .gt("created_at", initiatedAfter)
     .not("moyasar_payment_id", "is", null)
-    // newest first: abandoned 3-D Secure pages stay initiated for the whole
-    // lookback and must not crowd newer orders out of the batch
     .order("created_at", { ascending: false })
     .limit(SWEEP_BATCH);
   if (initiatedErr) {
-    if (isMissingPaymentsObject(initiatedErr.code)) {
-      return NextResponse.json({ skipped: "schema_missing" });
-    }
+    if (isMissingPaymentsObject(initiatedErr.code)) return NextResponse.json({ skipped: "schema_missing" });
     console.error("[cron/payments-sweep] initiated orders query failed:", initiatedErr.code, initiatedErr.message);
     tally.errors++;
   }
+  for (const row of (initiated ?? []) as SweepRow[]) {
+    if (row.moyasar_payment_id) await settle(row, row.moyasar_payment_id);
+  }
 
-  // the intent-only ones, counted for the log
-  const { count: intentOnly } = await admin
+  // (b) initiated orders with only an intent: ask Moyasar for the order's paid payment
+  const { data: intentOnly, error: intentErr } = await admin
     .from("payment_orders")
-    .select("id", { count: "exact", head: true })
+    .select("id, merchant, moyasar_payment_id")
     .eq("status", "initiated")
     .lt("created_at", initiatedBefore)
     .gt("created_at", initiatedAfter)
-    .is("moyasar_payment_id", null);
-  tally.intent_only = intentOnly ?? 0;
+    .is("moyasar_payment_id", null)
+    .not("moyasar_intent_id", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(SWEEP_BATCH);
+  if (intentErr) {
+    console.error("[cron/payments-sweep] intent-only orders query failed:", intentErr.code, intentErr.message);
+    tally.errors++;
+  }
+  for (const row of (intentOnly ?? []) as SweepRow[]) {
+    tally.intent_only++;
+    if (merchantOf(row) !== "platform") continue;
+    const found = await findPaidPaymentForOrder(row.id);
+    if (!found.ok) {
+      console.warn("[cron/payments-sweep] listing the order's payments failed:", row.id, found.reason);
+      tally.errors++;
+      continue;
+    }
+    if (!found.paymentId) {
+      tally.intent_unpaid++;
+      continue;
+    }
+    await settle(row, found.paymentId);
+  }
 
-  // (b) paid orders whose grant did not finish
+  // (c) paid orders whose grant did not finish
   const { data: unfulfilled, error: unfulfilledErr } = await admin
     .from("payment_orders")
-    .select("id, merchant, moyasar_payment_id")
+    .select("id, merchant, moyasar_payment_id, metadata")
     .eq("status", "paid")
     .is("fulfilled_at", null)
     .lt("paid_at", paidBefore)
     .order("paid_at", { ascending: true })
-    .limit(SWEEP_BATCH);
+    .limit(SWEEP_BATCH * 4);
   if (unfulfilledErr) {
-    if (isMissingPaymentsObject(unfulfilledErr.code)) {
-      return NextResponse.json({ skipped: "schema_missing" });
-    }
+    if (isMissingPaymentsObject(unfulfilledErr.code)) return NextResponse.json({ skipped: "schema_missing" });
     console.error("[cron/payments-sweep] unfulfilled orders query failed:", unfulfilledErr.code, unfulfilledErr.message);
     tally.errors++;
   }
-
-  const rows = [...((initiated ?? []) as SweepRow[]), ...((unfulfilled ?? []) as SweepRow[])];
-  for (const row of rows) {
+  const resumable = ((unfulfilled ?? []) as SweepRow[]).filter((row) => {
+    if (!sweepGaveUp(row.metadata)) return true;
+    tally.gave_up++;
+    return false;
+  });
+  for (const row of resumable.slice(0, SWEEP_BATCH)) {
     if (!row.moyasar_payment_id) continue;
-    try {
-      const result = await fulfillOrder({
-        orderId: row.id,
-        paymentId: row.moyasar_payment_id,
-        merchant: row.merchant === "office" ? "office" : "platform",
-        resume: true,
-      });
-      tally[result.outcome]++;
-      if (result.outcome === "rejected") {
-        console.warn("[cron/payments-sweep] order rejected:", row.id, result.reason);
+    const outcome = await settle(row, row.moyasar_payment_id);
+    if (outcome !== "granted" && outcome !== "already_done") {
+      const patch = sweepAttemptPatch(row.metadata, row.moyasar_payment_id, new Date().toISOString());
+      await mergePaymentOrderMetadata(row.id, patch);
+      if (sweepGaveUp(patch)) {
+        console.error("[cron/payments-sweep] giving up on a paid order — admin review:", row.id);
       }
-    } catch (err) {
-      console.error("[cron/payments-sweep] one order threw:", row.id, err);
-      tally.errors++;
     }
   }
 
-  return NextResponse.json({ swept: rows.length, ...tally });
+  return NextResponse.json({
+    swept: (initiated?.length ?? 0) + (intentOnly?.length ?? 0) + Math.min(resumable.length, SWEEP_BATCH),
+    ...tally,
+  });
 }

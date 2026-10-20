@@ -3161,8 +3161,10 @@ END $$;
 -- 2026-10-22 — 20261022_30_claim_payment_order.sql (Moyasar payments B1, Task 5)
 -- ====================================================================
 -- The claim that turns an order paid exactly once: one conditional UPDATE
--- (created / initiated → paid, the receipt number taken inside it), SECURITY
--- DEFINER with search_path '', EXECUTE for service_role only. Keyed on the
+-- (created / initiated → paid, the receipt number taken inside it), the
+-- metadata merge for traces, both SECURITY DEFINER with search_path '' and
+-- EXECUTE for service_role only; the partial UNIQUE index
+-- subscriptions_order_id_key (one subscription per paid order). Keyed on the
 -- function's existence, so a run before the migration passes with a NOTICE.
 -- >>> verify:payments_fulfill_once — supabase/tests/rls/payments_fulfill_once.test.sql
 -- extracts the lines between these two markers; keep them.
@@ -3172,6 +3174,7 @@ SELECT '20261022_30 applied (public.claim_payment_order)' AS check,
 DO $$
 DECLARE
   fn      CONSTANT text := 'public.claim_payment_order(uuid, text, boolean)';
+  mfn     CONSTANT text := 'public.merge_payment_order_metadata(uuid, jsonb)';
   r       text;
   cfg     text[];
   definer boolean;
@@ -3205,10 +3208,37 @@ BEGIN
     missing := missing || ' service_role cannot EXECUTE the claim (no payment would complete);';
   END IF;
 
+  -- the metadata merge (paid_unmatched / sweep_attempts traces)
+  IF to_regprocedure(mfn) IS NULL THEN
+    missing := missing || ' merge_payment_order_metadata(uuid, jsonb) is missing — paid payments that bought nothing leave no trace (re-run 20261022_30);';
+  ELSE
+    SELECT proconfig, prosecdef INTO cfg, definer FROM pg_proc WHERE oid = to_regprocedure(mfn);
+    IF NOT coalesce(definer, false) OR cfg IS NULL OR NOT ('search_path=""' = ANY (cfg)) THEN
+      missing := missing || ' merge_payment_order_metadata is not SECURITY DEFINER with search_path '''' (re-run 20261022_30);';
+    END IF;
+    FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'public'] LOOP
+      IF has_function_privilege(r, mfn, 'EXECUTE') THEN
+        missing := missing || format(' %s can EXECUTE merge_payment_order_metadata — a user could rewrite order metadata (re-run 20261022_30);', r);
+      END IF;
+    END LOOP;
+    IF NOT has_function_privilege('service_role', mfn, 'EXECUTE') THEN
+      missing := missing || ' service_role cannot EXECUTE merge_payment_order_metadata;';
+    END IF;
+  END IF;
+
+  -- one subscription per paid order
+  IF NOT EXISTS (SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+                  WHERE i.indrelid = to_regclass('public.subscriptions') AND c.relname = 'subscriptions_order_id_key'
+                    AND i.indisunique AND i.indpred IS NOT NULL
+                    AND pg_get_indexdef(i.indexrelid) ~* '\(\(metadata ->> ''order_id''::text\)\)') THEN
+    missing := missing || ' subscriptions_order_id_key (partial UNIQUE on metadata->>''order_id'') is missing — a paid plan could be inserted twice (re-run 20261022_30);';
+  END IF;
+
   IF missing <> '' THEN
     RAISE EXCEPTION '_verify: the 20261022_30 claim is broken —%', missing;
   END IF;
-  RAISE NOTICE '_verify: 20261022_30 OK — claim_payment_order: one conditional UPDATE, receipt number inside, SECURITY DEFINER, service role only; % paid order(s) not fulfilled yet',
-    (SELECT count(*) FROM public.payment_orders WHERE status = 'paid' AND fulfilled_at IS NULL);
+  RAISE NOTICE '_verify: 20261022_30 OK — claim_payment_order: one conditional UPDATE, receipt number inside; merge_payment_order_metadata; both SECURITY DEFINER, service role only; subscriptions_order_id_key present; % paid order(s) not fulfilled yet, % order(s) with a paid payment that bought nothing (metadata.paid_unmatched)',
+    (SELECT count(*) FROM public.payment_orders WHERE status = 'paid' AND fulfilled_at IS NULL),
+    (SELECT count(*) FROM public.payment_orders WHERE metadata ? 'paid_unmatched');
 END $$;
 -- <<< verify:payments_fulfill_once

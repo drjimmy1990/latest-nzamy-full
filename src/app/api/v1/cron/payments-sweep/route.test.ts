@@ -38,10 +38,27 @@ test("the sweep re-runs fulfillOrder for initiated orders with a payment id and 
   assert.match(routeSource, /RESUME_AFTER_MS/);
   assert.match(routeSource, /\.limit\(SWEEP_BATCH\)/);
   assert.match(routeSource, /fulfillOrder\(\{[^}]*resume: true/, "the sweep is the one caller that resumes");
+  assert.match(routeSource, /\.order\("created_at", \{ ascending: false \}\)/, "initiated orders newest first");
 });
 
-test("initiated orders with only an intent are counted, not guessed at", () => {
-  assert.match(routeSource, /intent_only/);
+test("intent-only initiated orders: Moyasar's paid payment for the order, verified again by fulfillOrder", () => {
+  const post = routeSource.slice(routeSource.indexOf("// (b)"));
+  const block = post.slice(0, post.indexOf("// (c)"));
+  assert.match(block, /\.is\("moyasar_payment_id", null\)/);
+  assert.match(block, /\.not\("moyasar_intent_id", "is", null\)/);
+  const findAt = block.indexOf("await findPaidPaymentForOrder(row.id)");
+  const settleAt = block.indexOf("await settle(row, found.paymentId)");
+  assert.ok(findAt > -1 && settleAt > findAt, "list the order's payments, then settle with the paid one");
+  assert.match(block, /if \(!found\.paymentId\) \{\s*tally\.intent_unpaid\+\+;\s*continue;/, "none paid → left alone");
+  assert.doesNotMatch(block, /update\(/, "the sweep never stamps an unverified payment id");
+});
+
+test("paid-but-unfinished orders count their attempts and are given up after SWEEP_MAX_ATTEMPTS", () => {
+  const post = routeSource.slice(routeSource.indexOf("// (c)"));
+  assert.match(post, /select\("id, merchant, moyasar_payment_id, metadata"\)/);
+  assert.match(post, /sweepGaveUp\(row\.metadata\)/);
+  assert.match(post, /if \(outcome !== "granted" && outcome !== "already_done"\)[\s\S]{0,200}sweepAttemptPatch\(row\.metadata, row\.moyasar_payment_id/);
+  assert.match(post, /await mergePaymentOrderMetadata\(row\.id, patch\)/);
 });
 
 test("a missing payments table never answers 500", () => {

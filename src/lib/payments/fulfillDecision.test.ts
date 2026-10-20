@@ -17,8 +17,14 @@ import {
   MONTHLY_POINTS_PLAN_IDS,
   PLAN_MONTHLY_POINTS,
   planPeriodEnd,
+  paidUnmatchedReason,
+  pickPaidPayment,
+  planWindow,
   RESUME_AFTER_MS,
   resumeAllowed,
+  SWEEP_MAX_ATTEMPTS,
+  sweepAttemptPatch,
+  sweepGaveUp,
   type FulfillOrderView,
   type FulfillPaymentView,
 } from "./fulfillDecision.ts";
@@ -231,4 +237,104 @@ test("cronSecretMatches compares with timingSafeEqual on equal-length digests", 
   assert.match(body, /timingSafeEqual\(/);
   assert.match(body, /createHash\("sha256"\)/);
   assert.doesNotMatch(body, /===\s*secret|secret\s*===/, "no plain string comparison of the secret");
+});
+
+// ── fix round 1 ─────────────────────────────────────────────────────────────
+
+const RANKS = { free: 0, shield: 1, ai: 2, pro: 3, max: 4, corp: 5, enterprise: 6 } as const;
+const NOW = new Date("2026-10-22T08:00:00Z");
+const inDays = (d: number) => new Date(NOW.getTime() + d * 86_400_000).toISOString();
+
+test("pickPaidPayment: none, one failed, one paid, two with one paid, two paid → the newest paid", () => {
+  const p = (id: string, status: string, createdAt: string | null) => ({ id, status, createdAt });
+  assert.equal(pickPaidPayment([]), null);
+  assert.equal(pickPaidPayment(null), null);
+  assert.equal(pickPaidPayment([p("a", "failed", "2026-10-22T08:00:00Z")]), null);
+  assert.equal(pickPaidPayment([p("a", "paid", "2026-10-22T08:00:00Z")])?.id, "a");
+  assert.equal(pickPaidPayment([p("a", "failed", "2026-10-22T09:00:00Z"), p("b", "paid", "2026-10-22T08:00:00Z")])?.id, "b");
+  assert.equal(pickPaidPayment([p("a", "paid", "2026-10-22T08:00:00Z"), p("b", "paid", "2026-10-22T09:00:00Z")])?.id, "b");
+  assert.equal(pickPaidPayment([p("a", "paid", null), p("b", "paid", "2026-10-22T09:00:00Z")])?.id, "b");
+  assert.equal(pickPaidPayment([p("a", "initiated", "2026-10-22T09:00:00Z"), p("b", "authorized", null)]), null);
+});
+
+test("paidUnmatchedReason: only a PAID payment that did not settle the order leaves a trace", () => {
+  const paid = payment();
+  assert.equal(paidUnmatchedReason({ reject: "amount_mismatch" }, paid, order()), "amount_mismatch");
+  assert.equal(paidUnmatchedReason({ reject: "currency_mismatch" }, paid, order()), "currency_mismatch");
+  assert.equal(paidUnmatchedReason({ reject: "order_mismatch" }, paid, order({ moyasar_payment_id: "pay_0" })), "order_mismatch");
+  assert.equal(paidUnmatchedReason("already_done", paid, order({ status: "cancelled" })), "order_cancelled");
+  assert.equal(paidUnmatchedReason("already_done", paid, order({ status: "failed" })), "order_failed");
+  assert.equal(paidUnmatchedReason("grant", paid, order()), null);
+  assert.equal(paidUnmatchedReason("wait", paid, order()), null);
+  // a payment that is not paid took no money: no trace
+  assert.equal(paidUnmatchedReason({ reject: "amount_mismatch" }, payment({ status: "failed" }), order()), null);
+  assert.equal(paidUnmatchedReason("already_done", payment({ status: "initiated" }), order({ status: "cancelled" })), null);
+  // end to end through the decision: a paid payment of the wrong amount
+  const wrong = payment({ amount: 45884 });
+  assert.equal(paidUnmatchedReason(fulfillDecision(order(), wrong, "test"), wrong, order()), "amount_mismatch");
+});
+
+test("sweep attempts: counted from metadata, the 20th gives up with a paid_unmatched trace", () => {
+  assert.equal(SWEEP_MAX_ATTEMPTS, 20);
+  const at = "2026-10-22T08:00:00.000Z";
+  assert.deepEqual(sweepAttemptPatch({}, "pay_1", at), { sweep_attempts: 1 });
+  assert.deepEqual(sweepAttemptPatch(null, "pay_1", at), { sweep_attempts: 1 });
+  assert.deepEqual(sweepAttemptPatch({ sweep_attempts: 7, other: 1 }, "pay_1", at), { sweep_attempts: 8 });
+  assert.deepEqual(sweepAttemptPatch({ sweep_attempts: "x" }, "pay_1", at), { sweep_attempts: 1 });
+  assert.deepEqual(sweepAttemptPatch({ sweep_attempts: 19 }, "pay_1", at), {
+    sweep_attempts: 20,
+    paid_unmatched: { payment_id: "pay_1", reason: "sweep_gave_up", at },
+  });
+  assert.equal(sweepGaveUp({ sweep_attempts: 19 }), false);
+  assert.equal(sweepGaveUp({ sweep_attempts: 20 }), true);
+  assert.equal(sweepGaveUp(null), false);
+});
+
+test("planWindow: nothing held → starts now, one month or one year", () => {
+  const w = planWindow({ now: NOW, billing: "monthly", tier: "pro", activeRows: [], ranks: RANKS });
+  assert.equal(w?.start.toISOString(), NOW.toISOString());
+  assert.equal(w?.end.toISOString(), "2026-11-22T08:00:00.000Z");
+  assert.equal(planWindow({ now: NOW, billing: "once", tier: "pro", activeRows: [], ranks: RANKS }), null);
+});
+
+test("planWindow: a lapsed row (status still active, period ended) is not running and never counts", () => {
+  const w = planWindow({
+    now: NOW, billing: "monthly", tier: "ai", ranks: RANKS,
+    activeRows: [{ id: "old-max", tier: "max", current_period_end: inDays(-3) }],
+  });
+  assert.deepEqual(w?.running, []);
+  assert.equal(w?.start.toISOString(), NOW.toISOString());
+});
+
+test("planWindow: the same rank stacks — monthly with 20 days left + monthly → old end + 1 month", () => {
+  const oldEnd = inDays(20);
+  const w = planWindow({
+    now: NOW, billing: "monthly", tier: "pro", ranks: RANKS,
+    activeRows: [{ id: "m", tier: "pro", current_period_end: oldEnd }],
+  });
+  assert.equal(w?.start.toISOString(), new Date(oldEnd).toISOString());
+  assert.equal(w?.end.toISOString(), addMonthsUtc(new Date(oldEnd), 1).toISOString());
+});
+
+test("planWindow: yearly held + monthly bought (same rank) → yearly end + 1 month", () => {
+  const yearEnd = inDays(300);
+  const w = planWindow({
+    now: NOW, billing: "monthly", tier: "pro", ranks: RANKS,
+    activeRows: [{ id: "y", tier: "pro", current_period_end: yearEnd }],
+  });
+  assert.equal(w?.end.toISOString(), addMonthsUtc(new Date(yearEnd), 1).toISOString());
+});
+
+test("planWindow: an upgrade starts now; a higher or open-ended same rank row is left to planGrantDecision", () => {
+  const up = planWindow({
+    now: NOW, billing: "monthly", tier: "max", ranks: RANKS,
+    activeRows: [{ id: "p", tier: "pro", current_period_end: inDays(20) }],
+  });
+  assert.equal(up?.start.toISOString(), NOW.toISOString(), "lower → higher starts now (pro-rata is B2)");
+  const open = planWindow({
+    now: NOW, billing: "monthly", tier: "pro", ranks: RANKS,
+    activeRows: [{ id: "admin", tier: "pro", current_period_end: null }],
+  });
+  assert.equal(open?.start.toISOString(), NOW.toISOString(), "an open-ended row cannot be stacked onto");
+  assert.equal(open?.running.length, 1);
 });
