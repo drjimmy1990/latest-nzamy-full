@@ -110,7 +110,16 @@ export async function POST(request: NextRequest) {
   const parsed = parseCheckoutBody(raw);
   if (!parsed.ok) return reply({ error: "طلب الدفع غير صالح" }, 400);
 
-  const cfg = await getMoyasarConfig();
+  // The settings read resolves to "disabled" on a query error, but building
+  // the service client can still throw (a missing env value): that is a 503
+  // too, never an unhandled 500.
+  let cfg: Awaited<ReturnType<typeof getMoyasarConfig>>;
+  try {
+    cfg = await getMoyasarConfig();
+  } catch {
+    console.error("[payments/checkout] reading the gateway settings threw");
+    return unavailable();
+  }
   if (!cfg.enabled) {
     return reply({ error: MOYASAR_DISABLED_MESSAGE_AR }, 503);
   }
@@ -129,7 +138,13 @@ export async function POST(request: NextRequest) {
     return unavailable();
   }
 
-  const admin = await createServiceClient();
+  let admin: Admin;
+  try {
+    admin = await createServiceClient();
+  } catch {
+    console.error("[payments/checkout] the service client could not be created");
+    return unavailable();
+  }
 
   // The buyer's account type decides the library's VAT mode (catalog.ts).
   // A failed read is a 503, never a guess: a business buyer priced as an

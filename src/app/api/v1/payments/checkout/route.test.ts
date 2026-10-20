@@ -45,6 +45,9 @@ test("signed-in only: 401 before anything is read or priced", () => {
 test("the gateway switch: disabled → 503 «الدفع الإلكتروني غير متاح حالياً»", () => {
   assert.match(code, /import \{[^}]*MOYASAR_DISABLED_MESSAGE_AR[^}]*\} from "@\/lib\/payments\/moyasarConfig"/);
   assert.match(post, /if \(!cfg\.enabled\) \{\s*return reply\(\{ error: MOYASAR_DISABLED_MESSAGE_AR \}, 503\);/);
+  // a throw while reading the settings (or building the service client) is a 503 too, never an implicit 500
+  assert.match(post, /try \{\s*cfg = await getMoyasarConfig\(\);\s*\} catch \{[\s\S]{0,120}return unavailable\(\);/);
+  assert.match(post, /try \{\s*admin = await createServiceClient\(\);\s*\} catch \{[\s\S]{0,120}return unavailable\(\);/);
 });
 
 test("the price comes from quote(), with the caller's profiles.user_type — never from the body", () => {
