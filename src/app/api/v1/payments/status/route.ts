@@ -12,8 +12,9 @@ import { getPaymentGatewayStatus } from "@/lib/access-control";
  */
 export async function GET() {
   try {
-    const state = await getPaymentGatewayStatus();
-    return NextResponse.json(state, {
+    const { status, provider, disabled } = await getPaymentGatewayStatus();
+    // Name the three public fields: nothing else the state may grow ever leaks.
+    return NextResponse.json({ status, provider, disabled }, {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (err) {

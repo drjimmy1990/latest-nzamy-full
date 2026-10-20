@@ -4,6 +4,11 @@ import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
 import { founderCampaignSettingIssue } from "@/lib/pricing/campaigns";
+import {
+  billingCompanySettingIssue,
+  isBillingCompanyComplete,
+  paymentsGatewaySettingIssue,
+} from "@/lib/payments/moyasarConfig";
 
 /** Allowlisted setting keys that admins can modify */
 const ALLOWED_SETTINGS_KEYS = [
@@ -19,6 +24,12 @@ const ALLOWED_SETTINGS_KEYS = [
   // BEFORE INSERT trigger on lawyer_profiles; malformed dates read as "off" —
   // so the write is validated below.
   "founder_campaign",
+  // Moyasar B1 (20261022_10): the receipt's issuer —
+  // {"legal_name_ar","cr_number","vat_number","address_ar": string | null}.
+  // payments_gateway cannot go live until all four are filled.
+  "billing_company",
+  // Moyasar B1: boolean switch for points enforcement.
+  "points_enforcement",
 ] as const;
 
 /**
@@ -30,8 +41,19 @@ const ALLOWED_SETTINGS_KEYS = [
  * caught, so it is enforced here rather than trusted to the caller.
  *
  * Returns an error string when invalid, or null when the value is acceptable.
+ * A validator that needs another stored setting reads it through `ctx`.
  */
-const SETTINGS_VALUE_VALIDATORS: Record<string, (value: unknown) => string | null> = {
+interface SettingValidatorContext {
+  /** isBillingCompanyComplete() of the stored billing_company (false on a read error). */
+  billingCompanyComplete: () => Promise<boolean>;
+}
+
+type SettingValidator = (
+  value: unknown,
+  ctx: SettingValidatorContext,
+) => string | null | Promise<string | null>;
+
+const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   library_status: (value) => {
     if (typeof value !== "object" || value === null || Array.isArray(value)) {
       return 'قيمة library_status يجب أن تكون كائناً بالشكل: {"status":"open"|"closed","message":string|null}';
@@ -45,31 +67,52 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, (value: unknown) => string | nul
     }
     return null;
   },
-  payments_gateway: (value) => {
-    if (typeof value !== "object" || value === null || Array.isArray(value)) {
-      return 'قيمة payments_gateway يجب أن تكون كائناً بالشكل: {"status":"disabled","provider":null}';
-    }
-
-    const { status, provider } = value as { status?: unknown; provider?: unknown };
-    if (status === "disabled" && (provider === null || provider === undefined)) {
-      return null;
-    }
-
-    const deploymentEnvironment = process.env.NZAMY_DEPLOYMENT_ENV?.toLowerCase();
+  // {status: "disabled"|"test"|"live", provider: "moyasar"}; the stub keeps its
+  // local/staging gate; live is refused while billing_company is incomplete.
+  // The keys are checked at runtime (resolveMoyasarConfig), not here.
+  // Pure rules in src/lib/payments/moyasarConfig.ts (and its test).
+  payments_gateway: async (value, ctx) => {
+    const deploymentEnvironment = process.env.NZAMY_DEPLOYMENT_ENV?.trim().toLowerCase();
     const stubAllowed =
       process.env.NZAMY_ALLOW_STUB_PAYMENTS === "true" &&
       (deploymentEnvironment === "local" || deploymentEnvironment === "staging");
-    if (status === "test" && provider === "stub" && stubAllowed) {
-      return null;
-    }
-
-    return "بوابة الدفع مغلقة افتراضياً؛ test/stub يتطلب بيئة local أو staging وإذن خادمي صريح، وlive غير مدعوم بعد";
+    const wantsLive =
+      typeof value === "object" &&
+      value !== null &&
+      (value as { status?: unknown }).status === "live";
+    return paymentsGatewaySettingIssue(value, {
+      stubAllowed,
+      billingCompanyComplete: wantsLive ? await ctx.billingCompanyComplete() : false,
+    });
   },
+  billing_company: billingCompanySettingIssue,
+  points_enforcement: (value) =>
+    typeof value === "boolean" ? null : "قيمة points_enforcement يجب أن تكون true أو false",
   // A malformed date reads as "campaign off" in founder_campaign_active(), so a
   // typo would silently stop the founder grants — refuse it here instead.
   // Pure, so src/lib/pricing/campaigns.test.ts covers it.
   founder_campaign: founderCampaignSettingIssue,
 };
+
+/** A read error or a missing row counts as incomplete, so live stays refused. */
+async function readBillingCompanyComplete(): Promise<boolean> {
+  try {
+    const adminClient = await createServiceClient();
+    const { data, error } = await adminClient
+      .from("platform_settings")
+      .select("value")
+      .eq("key", "billing_company")
+      .maybeSingle();
+    if (error) {
+      console.error("[admin/settings] billing_company read failed; live stays refused", error.message);
+      return false;
+    }
+    return isBillingCompanyComplete(data?.value);
+  } catch (err) {
+    console.error("[admin/settings] billing_company read failed; live stays refused", err);
+    return false;
+  }
+}
 
 /**
  * GET /api/v1/admin/settings — Fetch all platform settings
@@ -185,7 +228,7 @@ export async function PATCH(request: NextRequest) {
   // ── Validate the value shape for safety-critical keys ──────────────────────
   const validate = SETTINGS_VALUE_VALIDATORS[key];
   if (validate) {
-    const invalid = validate(value);
+    const invalid = await validate(value, { billingCompanyComplete: readBillingCompanyComplete });
     if (invalid) {
       return NextResponse.json({ error: invalid }, { status: 400 });
     }

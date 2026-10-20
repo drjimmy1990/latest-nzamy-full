@@ -16,6 +16,12 @@ import {
   type PaymentGatewayState,
   type PaymentGatewayStatus,
 } from "@/lib/paymentGatewayPolicy";
+import {
+  isBillingCompanyComplete,
+  resolveMoyasarConfig,
+  type MoyasarConfigResult,
+  type MoyasarEnv,
+} from "@/lib/payments/moyasarConfig";
 import { isAuthUnavailable } from "@/lib/auth/apiAuth";
 import { AUTH_UNAVAILABLE_AR } from "@/lib/auth/resolveAuthOutcome";
 import { effectiveTier, type ActivePlanRow } from "@/lib/entitlementGrantRules";
@@ -492,27 +498,65 @@ export async function checkCreditBalance(
 }
 
 // ─── Payment gateway status ─────────────────────────────────────────────────────
-// Admin-controlled gate (platform_settings.payments_gateway). Until a real
-// payment provider is decided, the admin keeps status = "disabled" and payment
-// call-sites block submit. "test" runs the stub adapter; "live" is reserved for
-// the future real provider.
+// Admin-controlled gate (platform_settings.payments_gateway), resolved through
+// src/lib/paymentGatewayPolicy.ts:
+//   - {status:"test", provider:"stub"} — local/staging with
+//     NZAMY_ALLOW_STUB_PAYMENTS=true only (unchanged);
+//   - {status:"test"|"live", provider:"moyasar"} — the server's Moyasar keys
+//     must belong to that mode; live also needs a complete billing_company.
+// Anything else, a read error or a missing row is "disabled".
 
-export async function getPaymentGatewayStatus(): Promise<PaymentGatewayState> {
+/** Moyasar keys from the server environment. Never log or return them. */
+function moyasarEnv(): MoyasarEnv {
+  return {
+    secretKey: process.env.MOYASAR_SECRET_KEY,
+    publishableKey: process.env.NEXT_PUBLIC_MOYASAR_PUBLISHABLE_KEY,
+    webhookSecret: process.env.MOYASAR_WEBHOOK_SECRET,
+  };
+}
+
+/**
+ * payments_gateway and billing_company in one read. A read error leaves both
+ * null (disabled / incomplete); a missing billing_company row (its migration
+ * not applied yet) reads as incomplete, so live stays off and test still works.
+ */
+async function readPaymentSettings(): Promise<{ gateway: unknown; billingCompanyComplete: boolean }> {
   const adminClient = await createServiceClient();
-  const { data: setting, error } = await adminClient
+  const { data, error } = await adminClient
     .from("platform_settings")
-    .select("value")
-    .eq("key", "payments_gateway")
-    .maybeSingle();
+    .select("key, value")
+    .in("key", ["payments_gateway", "billing_company"]);
 
   if (error) {
     console.error("[payments_gateway] setting read failed; gateway remains disabled", error.message);
+    return { gateway: null, billingCompanyComplete: false };
   }
+  const byKey = new Map((data ?? []).map((row) => [row.key as string, row.value as unknown]));
+  return {
+    gateway: byKey.get("payments_gateway") ?? null,
+    billingCompanyComplete: isBillingCompanyComplete(byKey.get("billing_company")),
+  };
+}
 
-  return resolvePaymentGatewayState(error ? null : setting?.value, {
+/** Public-safe: {status, provider, disabled} only — no key ever. */
+export async function getPaymentGatewayStatus(): Promise<PaymentGatewayState> {
+  const { gateway, billingCompanyComplete } = await readPaymentSettings();
+  return resolvePaymentGatewayState(gateway, {
     deploymentEnvironment: process.env.NZAMY_DEPLOYMENT_ENV,
     allowStubPayments: process.env.NZAMY_ALLOW_STUB_PAYMENTS === "true",
+    moyasar: moyasarEnv(),
+    billingCompanyComplete,
   });
+}
+
+/**
+ * Server-only: the Moyasar config (keys included) for createMoyasarClient, or
+ * {enabled:false, reason}. The reason is for server logs and never names a
+ * key; users see MOYASAR_DISABLED_MESSAGE_AR.
+ */
+export async function getMoyasarConfig(): Promise<MoyasarConfigResult> {
+  const { gateway, billingCompanyComplete } = await readPaymentSettings();
+  return resolveMoyasarConfig(gateway, moyasarEnv(), billingCompanyComplete);
 }
 
 // ─── Legal library open/close switch ──────────────────────────────────────────
