@@ -3156,3 +3156,59 @@ BEGIN
     v, (SELECT count(*) FROM public.points_lots WHERE source = 'migrated');
 END $$;
 -- <<< verify:points_lots
+
+-- ====================================================================
+-- 2026-10-22 — 20261022_30_claim_payment_order.sql (Moyasar payments B1, Task 5)
+-- ====================================================================
+-- The claim that turns an order paid exactly once: one conditional UPDATE
+-- (created / initiated → paid, the receipt number taken inside it), SECURITY
+-- DEFINER with search_path '', EXECUTE for service_role only. Keyed on the
+-- function's existence, so a run before the migration passes with a NOTICE.
+-- >>> verify:payments_fulfill_once — supabase/tests/rls/payments_fulfill_once.test.sql
+-- extracts the lines between these two markers; keep them.
+SELECT '20261022_30 applied (public.claim_payment_order)' AS check,
+       to_regprocedure('public.claim_payment_order(uuid, text, boolean)') IS NOT NULL AS present;
+
+DO $$
+DECLARE
+  fn      CONSTANT text := 'public.claim_payment_order(uuid, text, boolean)';
+  r       text;
+  cfg     text[];
+  definer boolean;
+  ret     text;
+  def     text;
+  missing text := '';
+BEGIN
+  IF to_regprocedure(fn) IS NULL THEN
+    RAISE NOTICE '_verify: 20261022_30 is not applied yet — no paid order can be claimed (fulfilment answers pending until it runs)';
+    RETURN;
+  END IF;
+  SELECT proconfig, prosecdef, pg_get_function_result(oid) INTO cfg, definer, ret
+    FROM pg_proc WHERE oid = to_regprocedure(fn);
+  IF NOT coalesce(definer, false) OR cfg IS NULL OR NOT ('search_path=""' = ANY (cfg)) THEN
+    missing := missing || ' the claim is not SECURITY DEFINER with search_path '''' (re-run 20261022_30);';
+  END IF;
+  IF ret IS DISTINCT FROM 'SETOF payment_orders' THEN
+    missing := missing || format(' the claim returns %s, expected SETOF payment_orders (re-run 20261022_30);', ret);
+  END IF;
+  def := pg_get_functiondef(to_regprocedure(fn));
+  IF def !~* 'status\s+in\s*\(\s*''created''\s*,\s*''initiated''\s*\)'
+     OR def !~* 'receipt_number\s*=\s*public\.next_receipt_number\(\)' THEN
+    missing := missing || ' the claim no longer re-checks the open statuses or takes the receipt number inside the UPDATE — an order could be paid twice (re-run 20261022_30);';
+  END IF;
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'public'] LOOP
+    IF has_function_privilege(r, fn, 'EXECUTE') THEN
+      missing := missing || format(' %s can EXECUTE the claim — a user could mark an order paid (a schema restore re-granted it? re-run 20261022_30);', r);
+    END IF;
+  END LOOP;
+  IF NOT has_function_privilege('service_role', fn, 'EXECUTE') THEN
+    missing := missing || ' service_role cannot EXECUTE the claim (no payment would complete);';
+  END IF;
+
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: the 20261022_30 claim is broken —%', missing;
+  END IF;
+  RAISE NOTICE '_verify: 20261022_30 OK — claim_payment_order: one conditional UPDATE, receipt number inside, SECURITY DEFINER, service role only; % paid order(s) not fulfilled yet',
+    (SELECT count(*) FROM public.payment_orders WHERE status = 'paid' AND fulfilled_at IS NULL);
+END $$;
+-- <<< verify:payments_fulfill_once

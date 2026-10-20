@@ -120,6 +120,13 @@ async function latestActiveGrantEnd(
  * (stackedGrantWindow). Returns the grant's end — the extended end — as an
  * ISO string. Never throws.
  *
+ * `orderId` (a paid order, source 'purchase', B1 Task 5) is written to
+ * order_id, which is UNIQUE: a second grant for the same order fails with
+ * `code` 23505, which the caller reads as "already granted". The column is
+ * sent only when an order is given, so the other callers keep working on a
+ * database where 20261022_10 has not run. A failure carries the database
+ * error `code` when there is one.
+ *
  * Logging: an insert failure or a throw is logged here; the two input checks
  * (userId, days) are not. Callers that hide `error` from users log it
  * themselves.
@@ -130,7 +137,8 @@ export async function grantLibraryAccess(input: {
   days: number;
   source: LibraryGrantSource;
   grantedBy?: string | null;
-}): Promise<{ ok: true; endsAt: string } | { ok: false; error: string }> {
+  orderId?: string | null;
+}): Promise<{ ok: true; endsAt: string } | { ok: false; error: string; code?: string }> {
   if (typeof input.userId !== 'string' || input.userId.length === 0) {
     return { ok: false, error: 'userId is required' };
   }
@@ -153,15 +161,20 @@ export async function grantLibraryAccess(input: {
       starts_at: window.startsAt,
       ends_at: window.endsAt,
       granted_by: input.grantedBy ?? null,
+      ...(input.orderId ? { order_id: input.orderId } : {}),
     });
     if (error) {
       if (isMissingLibraryGrantsTable(error.code)) {
         // A rare admin write: log every failed grant, not just the first.
         console.error(`[libraryAccess] grantLibraryAccess: ${MISSING_TABLE_ERROR} (20261019_10 not applied)`);
-        return { ok: false, error: MISSING_TABLE_ERROR };
+        return { ok: false, error: MISSING_TABLE_ERROR, code: error.code };
+      }
+      if (error.code === '23505' && input.orderId) {
+        // the order's grant already exists — the caller treats it as done
+        return { ok: false, error: error.message, code: error.code };
       }
       console.error('[libraryAccess] grantLibraryAccess insert failed:', error.code, error.message);
-      return { ok: false, error: error.message };
+      return { ok: false, error: error.message, code: error.code };
     }
     return { ok: true, endsAt: window.endsAt };
   } catch (err) {

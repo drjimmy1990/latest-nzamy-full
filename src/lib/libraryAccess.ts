@@ -25,7 +25,13 @@ export type LibraryPlanRef =
   | 'lib-admin';
 
 /** The source values the table's CHECK constraint allows. */
-export type LibraryGrantSource = 'request' | 'invite_code' | 'colleague_invite' | 'founder_campaign' | 'admin';
+export type LibraryGrantSource =
+  | 'request'
+  | 'invite_code'
+  | 'colleague_invite'
+  | 'founder_campaign'
+  | 'admin'
+  | 'purchase';
 
 /**
  * The paid library plans with a fixed length, in days. The other plan refs

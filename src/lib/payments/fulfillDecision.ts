@@ -1,0 +1,248 @@
+/**
+ * fulfillDecision.ts — the pure half of fulfilment (Moyasar payments B1,
+ * Task 5): what a payment fetched from Moyasar means for an order, the dates
+ * a purchase runs to, the Arabic notices, the error codes that mean "the
+ * migration has not run yet", and the cron secret check.
+ *
+ * The IO half is ./fulfillOrder.ts (the one place a payment becomes a
+ * purchase) and ./grantPurchase.ts (what a purchase grants).
+ *
+ * Pure: relative imports and node builtins only, so `node --test` loads it.
+ */
+
+import { createHash, timingSafeEqual } from "node:crypto";
+
+export type FulfillMode = "test" | "live";
+
+/** The columns of a payment_orders row the decision reads. */
+export interface FulfillOrderView {
+  id: string;
+  status: string;
+  total_halalas: number;
+  currency: string;
+  merchant?: string | null;
+  moyasar_payment_id?: string | null;
+}
+
+/** The fields of a fetched Moyasar payment the decision reads (MoyasarPayment fits). */
+export interface FulfillPaymentView {
+  id: string;
+  status: string;
+  /** Halalas. */
+  amount: number;
+  currency: string;
+  /** Only when the body carried a boolean `live` (see moyasarClient.ts). */
+  live?: boolean;
+  metadata: Record<string, unknown>;
+}
+
+export interface FulfillContext {
+  /** The merchant the caller works for; the order must belong to it. */
+  merchant?: string;
+  /** The webhook body's `live`; it must agree with the gateway mode. */
+  liveFlag?: boolean;
+  /** The order the payer came back for (the callback's `?order=`). */
+  callbackOrderId?: string;
+}
+
+export type FulfillRejectReason = "amount_mismatch" | "currency_mismatch" | "mode_mismatch" | "order_mismatch";
+
+export type FulfillDecision =
+  | "grant"
+  | "already_done"
+  | "record_failed"
+  | "wait"
+  | { reject: FulfillRejectReason };
+
+/** Order statuses a payment can still settle (the claim's WHERE clause). */
+const OPEN_ORDER_STATUSES: ReadonlySet<string> = new Set(["created", "initiated"]);
+
+/**
+ * What a fetched payment means for an order. In order:
+ *   1. order_mismatch — the payment does not name this order
+ *      (metadata.order_id missing or different), another payment is already
+ *      stamped on the order, the order belongs to another merchant, or the
+ *      callback came back for another order;
+ *   2. already_done — the order is no longer open (paid, refunded, failed,
+ *      voided, cancelled, or a status this code does not know): a closed
+ *      order never re-opens and never grants twice;
+ *   3. amount_mismatch, currency_mismatch — the payment is not the order's
+ *      price;
+ *   4. mode_mismatch — the payment's `live`, or the webhook's live flag,
+ *      disagrees with the gateway mode. On the callback and sweep path
+ *      neither is present and the mode is the mode of the key that fetched
+ *      the payment;
+ *   5. the payment's status: paid → grant, failed → record_failed, anything
+ *      else (initiated, authorized, captured, refunded, voided, unknown) →
+ *      wait. Only "paid" ever grants.
+ */
+export function fulfillDecision(
+  order: FulfillOrderView,
+  payment: FulfillPaymentView,
+  mode: FulfillMode,
+  ctx: FulfillContext = {},
+): FulfillDecision {
+  const named = payment.metadata?.order_id;
+  if (typeof named !== "string" || named !== order.id) return { reject: "order_mismatch" };
+  if (ctx.callbackOrderId !== undefined && ctx.callbackOrderId !== order.id) return { reject: "order_mismatch" };
+  if (order.moyasar_payment_id && order.moyasar_payment_id !== payment.id) return { reject: "order_mismatch" };
+  if (ctx.merchant !== undefined && (order.merchant ?? "platform") !== ctx.merchant) {
+    return { reject: "order_mismatch" };
+  }
+
+  if (!OPEN_ORDER_STATUSES.has(order.status)) return "already_done";
+
+  if (payment.amount !== order.total_halalas) return { reject: "amount_mismatch" };
+  if (String(payment.currency).toUpperCase() !== String(order.currency).toUpperCase()) {
+    return { reject: "currency_mismatch" };
+  }
+
+  const expectedLive = mode === "live";
+  for (const flag of [payment.live, ctx.liveFlag]) {
+    if (typeof flag === "boolean" && flag !== expectedLive) return { reject: "mode_mismatch" };
+  }
+
+  if (payment.status === "paid") return "grant";
+  if (payment.status === "failed") return "record_failed";
+  return "wait";
+}
+
+// ── resuming a paid order whose grant did not finish ────────────────────────
+
+/**
+ * How long after the claim a paid, unfulfilled order is left to the call that
+ * claimed it. Only the sweep resumes, and only after this: a callback and a
+ * webhook arriving together must not both run the plan grant, whose
+ * check-before-insert on subscriptions.metadata.order_id has no UNIQUE behind
+ * it.
+ */
+export const RESUME_AFTER_MS = 10 * 60 * 1000;
+
+/** True when the sweep may finish this order's grant. */
+export function resumeAllowed(
+  order: { status: string; fulfilled_at: string | null; paid_at: string | null },
+  nowMs: number,
+): boolean {
+  if (order.status !== "paid" || order.fulfilled_at || !order.paid_at) return false;
+  const paidMs = Date.parse(order.paid_at);
+  if (!Number.isFinite(paidMs)) return false;
+  return nowMs - paidMs > RESUME_AFTER_MS;
+}
+
+// ── the sweep's windows ─────────────────────────────────────────────────────
+
+/** An initiated order is swept once it is this old… */
+export const SWEEP_INITIATED_AFTER_MS = 10 * 60 * 1000;
+/** …and no longer once it is this old (an abandoned 3-D Secure page). */
+export const SWEEP_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
+/** Orders per sweep run, per query. */
+export const SWEEP_BATCH = 50;
+
+// ── dates ───────────────────────────────────────────────────────────────────
+
+/** `months` calendar months after `from` (UTC), clamped to the end of a shorter month. */
+export function addMonthsUtc(from: Date, months: number): Date {
+  const d = new Date(from.getTime());
+  const day = d.getUTCDate();
+  d.setUTCDate(1);
+  d.setUTCMonth(d.getUTCMonth() + months);
+  const lastDay = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+  d.setUTCDate(Math.min(day, lastDay));
+  return d;
+}
+
+/** The end of a plan bought now: one month (monthly) or one year (yearly). */
+export function planPeriodEnd(now: Date, billing: string): Date | null {
+  if (billing === "monthly") return addMonthsUtc(now, 1);
+  if (billing === "yearly") return addMonthsUtc(now, 12);
+  return null;
+}
+
+/**
+ * The points a month those plans come with — LAWYER_PRO_MONTHLY_POINTS in
+ * src/constants/pricing/pricing.lawyers.ts. Mirrored here, not imported: that
+ * file imports @phosphor-icons/react (React context), which a route handler
+ * must not load. fulfillDecision.test.ts fails if the two drift apart.
+ */
+export const PLAN_MONTHLY_POINTS = 1500;
+
+/**
+ * The plans that come with 1,500 points a month (PLAN_MONTHLY_POINTS):
+ * the lawyer card says so (pricing.lawyers.ts) and the independent
+ * consultant's card promises the same (pricing.providers.ts, owner ١٧٣).
+ */
+export const MONTHLY_POINTS_PLAN_IDS: ReadonlySet<string> = new Set(["lawyer-pro", "consultant-independent"]);
+
+// ── deploy order ────────────────────────────────────────────────────────────
+
+/**
+ * True when an error means a table, column or function of the B1 migrations
+ * does not exist yet (Postgres 42P01 / 42703 / 42883, PostgREST PGRST202 /
+ * PGRST204 / PGRST205). The caller answers 'pending' and logs once.
+ */
+export function isMissingPaymentsObject(code: string | null | undefined): boolean {
+  return (
+    code === "42P01" ||
+    code === "42703" ||
+    code === "42883" ||
+    code === "PGRST202" ||
+    code === "PGRST204" ||
+    code === "PGRST205"
+  );
+}
+
+// ── the Arabic notices ──────────────────────────────────────────────────────
+
+export interface FulfilmentNotice {
+  title: string;
+  body: string;
+  href: string;
+}
+
+/** The in-app notification a fulfilled order sends (title and a non-empty body). */
+export function fulfilmentNoticeAr(input: {
+  kind: "plan" | "library" | "topup";
+  labelAr: string;
+  receiptNumber: string | null;
+  alreadyEntitled: boolean;
+}): FulfilmentNotice {
+  const label = `«${input.labelAr}»`;
+  const receipt = input.receiptNumber ? ` رقم الإيصال: ${input.receiptNumber}.` : "";
+  const href = "/dashboard/billing";
+
+  if (input.alreadyEntitled) {
+    return {
+      title: "دفعتك قيد المراجعة",
+      body: `استلمنا دفعتك مقابل ${label}، ولم نغيّر اشتراكك الحالي لأنه يشمل ما اشتريته.${receipt} ستراجع الإدارة الدفعة لاسترداد المبلغ.`,
+      href,
+    };
+  }
+  if (input.kind === "topup") {
+    return {
+      title: "أُضيفت النقاط إلى رصيدك",
+      body: `تم الدفع وإضافة نقاط ${label} إلى رصيدك.${receipt}`,
+      href,
+    };
+  }
+  return {
+    title: input.kind === "library" ? "تم تفعيل اشتراك المكتبة" : "تم تفعيل اشتراكك",
+    body: `تم الدفع وتفعيل ${label}.${receipt}`,
+    href,
+  };
+}
+
+// ── the cron secret ─────────────────────────────────────────────────────────
+
+/**
+ * True when the `x-cron-secret` header equals CRON_SECRET. Both sides are
+ * hashed with SHA-256 first, so timingSafeEqual always compares two
+ * equal-length buffers and the comparison time says nothing about the secret
+ * or its length. An unset or empty secret refuses everyone.
+ */
+export function cronSecretMatches(header: string | null | undefined, secret: string | null | undefined): boolean {
+  if (typeof secret !== "string" || secret.length === 0) return false;
+  if (typeof header !== "string" || header.length === 0) return false;
+  const a = createHash("sha256").update(header, "utf8").digest();
+  const b = createHash("sha256").update(secret, "utf8").digest();
+  return timingSafeEqual(a, b);
+}

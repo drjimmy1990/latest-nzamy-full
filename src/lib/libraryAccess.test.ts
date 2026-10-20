@@ -238,3 +238,16 @@ test("the end read takes the latest ends_at after now, and any read error means 
     "both the error arm and the catch fall back to null (start now)",
   );
 });
+
+test("a purchase grant sends order_id only when an order is given, and hands back the error code (B1 Task 5)", () => {
+  const grantAt = serverSource.indexOf("export async function grantLibraryAccess(");
+  const body = serverSource.slice(grantAt);
+  const insertAt = body.indexOf(".insert({");
+  const insert = body.slice(insertAt, body.indexOf("});", insertAt));
+  assert.ok(
+    insert.includes("...(input.orderId ? { order_id: input.orderId } : {})"),
+    "order_id must be spread in only for an order: the other callers would fail with 42703 before 20261022_10",
+  );
+  assert.ok(!/order_id:\s*input\.orderId\s*\?\?/.test(insert), "never send order_id: null");
+  assert.ok(body.includes("code: error.code"), "a failed insert carries the database error code (23505 = already granted)");
+});
