@@ -36,3 +36,11 @@ end $$;
 create table public._payments_between_runs as
   select id, updated_at from public.subscription_plans
    where id in ('ind-ai','ind-preventive','ind-litigation','lawyer-pro','consultant-independent','firm-basic','firm-enterprise');
+
+-- the constraint oids T8 compares against: a no-op re-run keeps every one
+-- (a drop + re-add would give a new oid and re-validate the whole table)
+create table public._payments_constraints_between_runs as
+  select conname::text, oid from pg_constraint
+   where conname in ('subscription_plans_tier_check', 'subscriptions_tier_check',
+                     'library_access_grants_source_check', 'library_access_grants_order_id_fkey',
+                     'library_access_grants_order_id_key');

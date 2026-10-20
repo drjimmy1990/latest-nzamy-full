@@ -396,6 +396,15 @@ begin
   if (select count(*) from pg_trigger where tgrelid = 'public.payment_orders'::regclass and not tgisinternal) <> 1 then
     raise exception 'T8 FAIL: expected exactly one trigger (updated_at) on payment_orders';
   end if;
+  if (select count(*) from public._payments_constraints_between_runs) <> 5 then
+    raise exception 'T8 FAIL: the prelude recorded % of the 5 constraint oids', (select count(*) from public._payments_constraints_between_runs);
+  end if;
+  if exists (select 1 from public._payments_constraints_between_runs b
+              where not exists (select 1 from pg_constraint c where c.oid = b.oid and c.conname = b.conname)) then
+    raise exception 'T8 FAIL: the second run dropped and re-added %',
+      (select string_agg(b.conname, ', ') from public._payments_constraints_between_runs b
+        where not exists (select 1 from pg_constraint c where c.oid = b.oid and c.conname = b.conname));
+  end if;
   if (select value ->> 'legal_name_ar' from public.platform_settings where key = 'billing_company') is distinct from 'شركة نظامي للاختبار' then
     raise exception 'T8 FAIL: the second run reset billing_company';
   end if;
@@ -410,7 +419,7 @@ begin
     raise exception 'T8 FAIL: expected 24 plan rows (18 seeded + 6 new; lawyer-pro was already there), got %',
       (select count(*) from public.subscription_plans);
   end if;
-  raise notice 'T8 PASS: after two runs — one CHECK per tier column, one named source CHECK, one FK (SET NULL) + one UNIQUE on order_id, 2 policies, 2 indexes, 1 trigger; billing_company, sort_order and every plan row as left between the runs';
+  raise notice 'T8 PASS: after two runs — one CHECK per tier column, one named source CHECK, one FK (SET NULL) + one UNIQUE on order_id, 2 policies, 2 indexes, 1 trigger; the 5 constraints kept their oids (not dropped + re-added); billing_company, sort_order and every plan row as left between the runs';
 end $$;
 
 -- T9 deleting a GoTrue user is never blocked: the order stays with a null
