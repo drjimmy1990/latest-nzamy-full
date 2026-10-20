@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
+import { pickPlanRow } from "@/lib/payments/pickPlanRow";
 
 /**
  * GET /api/v1/admin/subscriptions — List all subscriptions with user info
@@ -181,26 +182,28 @@ export async function POST(request: NextRequest) {
     
     if (profile) {
       const audience = profile.user_type;
-      const { data: plan } = await adminClient
+      // Several rows can match (the plans sold online sit next to the older
+      // catalog rows): pickPlanRow prefers a sold plan, else the lowest id.
+      const { data: plans } = await adminClient
         .from("subscription_plans")
         .select("id")
         .eq("tier", tier)
         .eq("audience", audience)
-        .limit(1)
-        .maybeSingle();
-      if (plan) {
-        plan_id = plan.id;
+        .order("id");
+      const planPick = pickPlanRow(plans);
+      if (planPick) {
+        plan_id = planPick;
       } else {
         // Find any plan that matches this tier in the database
-        const { data: fallbackPlan } = await adminClient
+        const { data: fallbackPlans } = await adminClient
           .from("subscription_plans")
           .select("id")
           .eq("tier", tier)
-          .limit(1)
-          .maybeSingle();
-        
-        if (fallbackPlan) {
-          plan_id = fallbackPlan.id;
+          .order("id");
+        const fallbackPick = pickPlanRow(fallbackPlans);
+
+        if (fallbackPick) {
+          plan_id = fallbackPick;
         } else {
           return NextResponse.json(
             { error: `باقة الاشتراك من الفئة ${tier} غير متوفرة في النظام لجمهور ${audience}` },

@@ -19,7 +19,8 @@
 --   public.payment_methods           saved card tokens (ON DELETE CASCADE).
 --   public.payment_webhook_events    Moyasar event ids already handled.
 --   public.payment_receipt_seq       + public.next_receipt_number() → text
---     'NZ-<Riyadh year>-<6 digits>'. SECURITY DEFINER, search_path ''.
+--     'NZ-<Riyadh year>-<at least 6 digits>' (never truncated: 1000000 stays
+--     7 digits); one sequence for all years. SECURITY DEFINER, search_path ''.
 --   public.subscription_plans.tier and public.subscriptions.tier CHECKs gain
 --     'shield' and 'enterprise' (the ServerTier list in
 --     src/lib/access-control.ts). The constraints are found through
@@ -211,12 +212,16 @@ volatile
 security definer
 set search_path = ''
 as $$
+  -- at least 6 digits, never truncated past 999999 (a truncated number would
+  -- repeat an earlier one and the claim would hit the UNIQUE). One sequence
+  -- for all years: the year prefix is informational.
   select 'NZ-' || to_char(now() at time zone 'Asia/Riyadh', 'YYYY')
-         || '-' || lpad(nextval('public.payment_receipt_seq')::text, 6, '0');
+         || '-' || lpad(n::text, greatest(6, length(n::text)), '0')
+    from (select nextval('public.payment_receipt_seq') as n) s;
 $$;
 
 comment on function public.next_receipt_number() is
-  'Next payment receipt number, NZ-<Riyadh year>-<6 digits> (20261022_10, B1). Service role only.';
+  'Next payment receipt number, NZ-<Riyadh year>-<at least 6 digits>, one sequence for all years (20261022_10, B1). Service role only.';
 
 revoke all on function public.next_receipt_number() from public, anon, authenticated;
 grant execute on function public.next_receipt_number() to service_role;
@@ -348,6 +353,9 @@ declare
   methods_cols constant text[] := array['id','user_id','merchant','token','brand','last_four','exp_month',
     'exp_year','status','created_at'];
   events_cols  constant text[] := array['event_id','merchant','type','payment_id','live','received_at','outcome'];
+  -- the columns authenticated may SELECT (24 and 9): everything but metadata / token
+  orders_sel   constant text[] := array['id','user_id','merchant','kind','item_id','billing','net_halalas','vat_halalas','total_halalas','vat_mode','currency','status','moyasar_intent_id','moyasar_payment_id','live','source','receipt_number','paid_at','fulfilled_at','refunded_at','refunded_halalas','failure_message','created_at','updated_at'];
+  methods_sel  constant text[] := array['id','user_id','merchant','brand','last_four','exp_month','exp_year','status','created_at'];
   plans_bad    text;
 begin
   -- columns
@@ -414,8 +422,8 @@ begin
         end if;
         if has_column_privilege(r, 'public.' || tbl, col, 'SELECT')
            <> (r = 'authenticated'
-               and ((tbl = 'payment_orders' and col <> 'metadata')
-                    or (tbl = 'payment_methods' and col <> 'token'))) then
+               and ((tbl = 'payment_orders' and col = any (orders_sel))
+                    or (tbl = 'payment_methods' and col = any (methods_sel)))) then
           missing := missing || format(' %s %s SELECT on %s.%s;', r,
                        case when has_column_privilege(r, 'public.' || tbl, col, 'SELECT') then 'holds' else 'lacks' end,
                        tbl, col);

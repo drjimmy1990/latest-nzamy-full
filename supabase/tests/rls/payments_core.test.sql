@@ -267,8 +267,8 @@ declare
 begin
   a := public.next_receipt_number();
   b := public.next_receipt_number();
-  if a !~ '^NZ-[0-9]{4}-[0-9]{6}$' or b !~ '^NZ-[0-9]{4}-[0-9]{6}$' then
-    raise exception 'T5 FAIL: receipt numbers % / % are not NZ-YYYY-NNNNNN', a, b;
+  if a !~ '^NZ-[0-9]{4}-[0-9]{6,}$' or b !~ '^NZ-[0-9]{4}-[0-9]{6,}$' then
+    raise exception 'T5 FAIL: receipt numbers % / % are not NZ-YYYY-NNNNNN(+)', a, b;
   end if;
   if a <> 'NZ-' || y || '-000002' or b <> 'NZ-' || y || '-000003' then
     raise exception 'T5 FAIL: expected NZ-%-000002 then NZ-%-000003 (000001 taken between the runs), got % / %', y, y, a, b;
@@ -287,6 +287,39 @@ begin
   raise notice 'T5 PASS: authenticated is denied the function and the sequence; service_role gets %, % then 000004 inside an UPDATE; a duplicate receipt number raises unique_violation', a, b;
 end $$;
 reset role;
+
+-- T5b past 999999 the number grows to 7 digits and stays distinct (lpad with
+--     a fixed 6 would truncate 1000000 to '100000', repeat an earlier number
+--     and make the claim hit the UNIQUE); the sequence is restored afterwards
+do $$
+declare
+  y    text := to_char(now() at time zone 'Asia/Riyadh', 'YYYY');
+  keep bigint := (select last_value from public.payment_receipt_seq);
+  a    text;
+  b    text;
+begin
+  perform setval('public.payment_receipt_seq', 999999);
+  set local role service_role;
+  a := public.next_receipt_number();
+  b := public.next_receipt_number();
+  reset role;
+  if a <> 'NZ-' || y || '-1000000' or b <> 'NZ-' || y || '-1000001' then
+    raise exception 'T5b FAIL: after 999999 expected NZ-%-1000000 then NZ-%-1000001, got % / %', y, y, a, b;
+  end if;
+  if a !~ '^NZ-[0-9]{4}-[0-9]{6,}$' then
+    raise exception 'T5b FAIL: % does not match the loosened shape', a;
+  end if;
+  -- 100000 (6 digits) and 1000000 (7) are different receipts and both store
+  update public.payment_orders set receipt_number = 'NZ-' || y || '-100000'
+   where id = '00000000-0000-0000-0000-0000000d0002';
+  update public.payment_orders set receipt_number = a
+   where user_id = '00000000-0000-0000-0000-00000000c001' and item_id = 'lib-q1';
+  update public.payment_orders set receipt_number = null where id = '00000000-0000-0000-0000-0000000d0002';
+  update public.payment_orders set receipt_number = null
+   where user_id = '00000000-0000-0000-0000-00000000c001' and item_id = 'lib-q1';
+  perform setval('public.payment_receipt_seq', keep);
+  raise notice 'T5b PASS: after 999999 the service role gets % then % (7 digits, distinct from NZ-%-100000; both store under the UNIQUE)', a, b, y;
+end $$;
 
 -- T6 tiers: a subscription with tier enterprise (and shield) inserts; an
 --    unknown tier is still refused; the sold plans carry the ruling's tiers

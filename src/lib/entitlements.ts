@@ -22,6 +22,7 @@ import {
   planGrantDecision,
   type ActivePlanRow,
 } from "./entitlementGrantRules.ts";
+import { pickPlanRow } from "./payments/pickPlanRow.ts";
 
 export type GrantAction = "plan" | "credits" | "wallet";
 
@@ -178,6 +179,8 @@ export async function grantEntitlement(input: GrantInput): Promise<GrantResult> 
         .maybeSingle();
       const audience = prof?.user_type as string | undefined;
 
+      // Several rows can match (the plans sold online sit next to the older
+      // catalog rows): pickPlanRow prefers a sold plan, else the lowest id.
       let planId: string | null = null;
       if (audience) {
         const { data: p } = await admin
@@ -185,18 +188,16 @@ export async function grantEntitlement(input: GrantInput): Promise<GrantResult> 
           .select("id")
           .eq("tier", tier)
           .eq("audience", audience)
-          .limit(1)
-          .maybeSingle();
-        planId = (p?.id as string | undefined) ?? null;
+          .order("id");
+        planId = pickPlanRow(p as Array<{ id: string }> | null);
       }
       if (!planId) {
         const { data: p2 } = await admin
           .from("subscription_plans")
           .select("id")
           .eq("tier", tier)
-          .limit(1)
-          .maybeSingle();
-        planId = (p2?.id as string | undefined) ?? null;
+          .order("id");
+        planId = pickPlanRow(p2 as Array<{ id: string }> | null);
       }
       if (!planId) {
         return { ok: false, error: `لا توجد باقة اشتراك من الفئة ${tier} في النظام` };

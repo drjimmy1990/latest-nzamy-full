@@ -2807,6 +2807,9 @@ DECLARE
   company  jsonb;
   drift    text;
   missing  text := '';
+  -- the columns authenticated may SELECT (24 and 9): everything but metadata / token
+  orders_sel  CONSTANT text[] := array['id','user_id','merchant','kind','item_id','billing','net_halalas','vat_halalas','total_halalas','vat_mode','currency','status','moyasar_intent_id','moyasar_payment_id','live','source','receipt_number','paid_at','fulfilled_at','refunded_at','refunded_halalas','failure_message','created_at','updated_at'];
+  methods_sel CONSTANT text[] := array['id','user_id','merchant','brand','last_four','exp_month','exp_year','status','created_at'];
 BEGIN
   IF to_regclass('public.payment_orders') IS NULL THEN
     RAISE NOTICE '_verify: 20261022_10 is not applied yet — no online payment (no orders, saved cards or receipt numbers)';
@@ -2856,8 +2859,8 @@ BEGIN
         END IF;
         IF has_column_privilege(r, 'public.' || tbl, col, 'SELECT')
            <> (r = 'authenticated'
-               AND ((tbl = 'payment_orders' AND col <> 'metadata')
-                    OR (tbl = 'payment_methods' AND col <> 'token'))) THEN
+               AND ((tbl = 'payment_orders' AND col = ANY (orders_sel))
+                    OR (tbl = 'payment_methods' AND col = ANY (methods_sel)))) THEN
           missing := missing || format(' %s %s SELECT on %s.%s (re-run 20261022_10);', r,
                        CASE WHEN has_column_privilege(r, 'public.' || tbl, col, 'SELECT') THEN 'holds' ELSE 'lacks' END,
                        tbl, col);
@@ -2889,8 +2892,14 @@ BEGIN
     missing := missing || ' next_receipt_number() is not SECURITY DEFINER with search_path '''' (re-run 20261022_10);';
   END IF;
 
-  -- the tier CHECKs
+  -- the tier CHECKs: exactly one CHECK on each tier column, and it allows all 7
   FOREACH tbl IN ARRAY ARRAY['subscription_plans', 'subscriptions'] LOOP
+    SELECT a.attnum INTO att FROM pg_attribute a
+     WHERE a.attrelid = to_regclass('public.' || tbl) AND a.attname = 'tier' AND NOT a.attisdropped;
+    IF (SELECT count(*) FROM pg_constraint WHERE conrelid = to_regclass('public.' || tbl)
+         AND contype = 'c' AND conkey = ARRAY[att]) <> 1 THEN
+      missing := missing || format(' %s: expected exactly one CHECK on tier (a narrower CHECK left behind would still refuse shield / enterprise — re-run 20261022_10);', tbl);
+    END IF;
     SELECT pg_get_constraintdef(oid) INTO def FROM pg_constraint
      WHERE conrelid = to_regclass('public.' || tbl) AND conname = tbl || '_tier_check';
     FOREACH v IN ARRAY ARRAY['free', 'shield', 'ai', 'pro', 'max', 'corp', 'enterprise'] LOOP
