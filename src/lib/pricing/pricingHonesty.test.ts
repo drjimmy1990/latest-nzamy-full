@@ -23,6 +23,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { LAWYER_AI_TOOLS, TOOL_POINT_LABELS, getLawyerAiBadge } from "../../constants/lawyerAiCatalog.ts";
+import type { AudienceTab } from "../../constants/pricing/pricing.types.ts";
+import { BUSINESS_USER_TYPES, PAYABLE_ITEMS } from "../payments/catalog.ts";
+import { VAT_NOTICE, vatNoticeFor } from "./vatNotice.ts";
 
 function src(path: string): string {
   return readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
@@ -50,6 +53,7 @@ const PRICING_SURFACES = [
   "constants/pricing/pricing.ngo.ts",
   "constants/pricing/pricing.providers.ts",
   "lib/pricing/plans.ts",
+  "lib/pricing/vatNotice.ts",
   "components/pricing/PricingCards.tsx",
   "components/pricing/PricingHero.tsx",
   "app/laws/components/PaywallModal.tsx",
@@ -561,4 +565,90 @@ test("٢٠٣: the colleague-invite page names the legal library and the length t
   assert.match(invite, /`تجربة المكتبة القانونية مجانية لمدة \$\{trialLengthLabel\(trialDays, true\)\} — لا تتطلب بطاقة ائتمان`/);
   // «شهر كامل كاملة» and a vague "full access" are gone.
   assert.doesNotMatch(invite, /\$\{trialLengthLabel\(trialDays, true\)\} كاملة|of full access/);
+});
+
+// ── Owner ٢٣٩ / ٢٤٨ / ٢٤٩ (Moyasar B1, task 10): VAT per audience, top-up validity ──
+// The screens say what the server charges (src/lib/payments/catalog.ts):
+// lawyers, consultants, firms and every establishment pay VAT on top; the
+// individuals' prices include it; the library depends on the buyer. Each
+// pricing section states its rule once, under its prices — not per card.
+
+const VAT_EXCLUSIVE_AR = "الأسعار غير شاملة ضريبة القيمة المضافة ١٥٪ وتُضاف عند الدفع ويصدر بها فاتورة ضريبية رسمية";
+const VAT_EXCLUSIVE_EN = "Prices exclude 15% VAT, added at checkout with an official tax invoice";
+const VAT_INCLUSIVE_AR = "الأسعار شاملة ضريبة القيمة المضافة";
+const VAT_INCLUSIVE_EN = "Prices include VAT";
+const VAT_LIBRARY_AR = "للأفراد: شامل الضريبة · للمحامين والمنشآت: غير شامل الضريبة";
+const VAT_LIBRARY_EN = "For individuals: VAT included · For lawyers and establishments: VAT excluded";
+
+test("٢٤٨: the three VAT sentences are the owner's, verbatim, with their English twins", () => {
+  assert.deepEqual(VAT_NOTICE.exclusive, { ar: VAT_EXCLUSIVE_AR, en: VAT_EXCLUSIVE_EN });
+  assert.deepEqual(VAT_NOTICE.inclusive, { ar: VAT_INCLUSIVE_AR, en: VAT_INCLUSIVE_EN });
+  assert.deepEqual(VAT_NOTICE.library, { ar: VAT_LIBRARY_AR, en: VAT_LIBRARY_EN });
+});
+
+test("٢٤٨: each /pricing audience section carries its own VAT sentence", () => {
+  const exclusive: AudienceTab[] = ["lawyers", "firms", "providers", "companies", "micro", "ngo", "government"];
+  for (const audience of exclusive) {
+    assert.deepEqual(vatNoticeFor(audience, false), VAT_NOTICE.exclusive, audience);
+  }
+  assert.deepEqual(vatNoticeFor("individuals", false), VAT_NOTICE.inclusive);
+  // Library mode exists on the lawyers and firms tabs only (getPlanList).
+  assert.deepEqual(vatNoticeFor("lawyers", true), VAT_NOTICE.library);
+  assert.deepEqual(vatNoticeFor("firms", true), VAT_NOTICE.library);
+  assert.deepEqual(vatNoticeFor("individuals", true), VAT_NOTICE.inclusive);
+  assert.deepEqual(vatNoticeFor("companies", true), VAT_NOTICE.exclusive);
+
+  // The exclusive rule covers exactly the business buyers the server charges
+  // VAT on top (BUSINESS_USER_TYPES), mapped to their tabs as /pricing does.
+  const page = code("app/pricing/page.tsx");
+  const map = page.slice(page.indexOf("USER_TYPE_TO_AUDIENCE"), page.indexOf("function audienceForUserType"));
+  const entries = [...map.matchAll(/(\w+):\s*"(\w+)"/g)];
+  assert.ok(entries.length >= 8, `found only ${entries.length} user-type tabs — the parser broke`);
+  for (const [, userType, audience] of entries) {
+    const expected = (BUSINESS_USER_TYPES as readonly string[]).includes(userType) ? VAT_NOTICE.exclusive : VAT_NOTICE.inclusive;
+    assert.deepEqual(vatNoticeFor(audience as AudienceTab, false), expected, `${userType} → ${audience}`);
+  }
+
+  // PricingCards renders the sentence once for the whole section, after the
+  // cards, and no other VAT wording competes with it.
+  const cards = code("components/pricing/PricingCards.tsx");
+  assert.equal(cards.split("vatNoticeFor(audience, libraryMode)").length - 1, 1, "one VAT note per section");
+  assert.ok(cards.includes("{isAr ? vatNotice.ar : vatNotice.en}"), "the VAT note is rendered");
+  assert.doesNotMatch(cards, /SpotlightCard\([\s\S]*vatNoticeFor[\s\S]*function LawyerCreditsLayout/, "not per card");
+  assert.doesNotMatch(cards, /لا تشمل ضريبة|Prices exclude VAT\./, "the old paraphrase under the points table");
+});
+
+test("٢٤٨: /laws/subscribe shows the library VAT sentence and its English twin", () => {
+  const subscribe = code("app/laws/subscribe/page.tsx");
+  assert.ok(subscribe.includes(`vatNote: "${VAT_LIBRARY_AR}"`), "Arabic library sentence");
+  assert.ok(subscribe.includes(`vatNote: "${VAT_LIBRARY_EN}"`), "English library sentence");
+  assert.equal(subscribe.split("{t.vatNote}").length - 1, 1, "rendered once, under the plans");
+});
+
+/** «صالحة ٣ أشهر» / «صالحة ١٢ شهراً» — Arabic plural for 3–10, accusative singular from 11. */
+function validityAr(months: number): string {
+  const digits = String(months).replace(/[0-9]/g, (d) => "٠١٢٣٤٥٦٧٨٩"[Number(d)]);
+  return months >= 3 && months <= 10 ? `صالحة ${digits} أشهر` : `صالحة ${digits} شهراً`;
+}
+
+test("٢٤٩: each top-up card states the validity the catalog grants", () => {
+  const topups = Object.values(PAYABLE_ITEMS).filter((item) => item.kind === "topup");
+  assert.equal(topups.length, 4, "four top-ups in the catalog");
+  const lawyers = planLists("constants/pricing/pricing.lawyers.ts").find((l) => l.name === "plansLawyers");
+  assert.ok(lawyers, "plansLawyers was not found");
+  for (const item of topups) {
+    const months = item.pointsValidityMonths;
+    assert.ok(months, `${item.id} has no validity in the catalog`);
+    for (const [lang, seg, expected] of [
+      ["ar", lawyers.ar, validityAr(months)],
+      ["en", lawyers.en, `valid for ${months} months`],
+    ] as const) {
+      const block = seg.slice(seg.indexOf(`id: "${item.id}"`));
+      const desc = block.match(/desc: "([^"]*)"/);
+      assert.ok(seg.includes(`id: "${item.id}"`) && desc, `${item.id}.${lang}: card not found`);
+      assert.ok(desc[1].endsWith(` · ${expected}`), `${item.id}.${lang}: desc «${desc[1]}» should end with «${expected}»`);
+    }
+  }
+  // The three wordings the owner wrote (٢٤٩).
+  assert.deepEqual([3, 6, 12].map(validityAr), ["صالحة ٣ أشهر", "صالحة ٦ أشهر", "صالحة ١٢ شهراً"]);
 });

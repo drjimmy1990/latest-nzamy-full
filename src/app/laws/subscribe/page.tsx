@@ -39,6 +39,8 @@ const txt = {
     exploreFree: "تصفح المجاني",
     perMonth: "/شهر",
     perYear: "/سنة",
+    // Owner ٢٤٨: the library's VAT depends on the buyer (catalog.ts, vat "buyer").
+    vatNote: "للأفراد: شامل الضريبة · للمحامين والمنشآت: غير شامل الضريبة",
     plans: [
       {
         id: "free",
@@ -128,6 +130,7 @@ const txt = {
     exploreFree: "Browse Free",
     perMonth: "/mo",
     perYear: "/yr",
+    vatNote: "For individuals: VAT included · For lawyers and establishments: VAT excluded",
     plans: [
       {
         id: "free",
@@ -446,6 +449,9 @@ export default function LawsSubscribePage() {
             );
           })}
         </div>
+        <p className={`-mt-10 text-center text-[12px] font-medium ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+          {t.vatNote}
+        </p>
 
         {/* ── Redeem an invitation code ──────────────────────────────────
             Only for a signed-in user without the full library (canRedeemCode

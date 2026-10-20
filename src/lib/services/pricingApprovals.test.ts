@@ -26,7 +26,7 @@ test("the lawyer tab is the 399 subscription with 1,500 points plus four top-ups
     ["topup-1000", "١٬٠٠٠", "١٬٥٠٠ نقطة"],
   ];
   for (const [id, price, points] of topups) {
-    assert.match(lawyers, new RegExp(`id: "${id}"[\\s\\S]*?priceMonthly: "${price}"[\\s\\S]*?desc: "${points}"`), id);
+    assert.match(lawyers, new RegExp(`id: "${id}"[\\s\\S]*?priceMonthly: "${price}"[\\s\\S]*?desc: "${points}( · [^"]*)?"`), id);
   }
   assert.doesNotMatch(lawyers, /lawyer-(basic|advanced|elite|royal)|مشمولة مجاناً|مذكرة مجانية|مذكرة ثانية|أول ٥٠٠/);
   assert.doesNotMatch(lawyers, /محفظة|رصيد نقدي/);

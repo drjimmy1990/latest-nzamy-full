@@ -12,6 +12,7 @@ import { useUser } from "@/hooks/useUser";
 import { requestEntitlement } from "@/lib/services/entitlementService";
 import { referencePriceFor } from "@/lib/pricing/priceDisplay";
 import { planEntitlementRequest } from "@/lib/pricing/planRequest";
+import { vatNoticeFor } from "@/lib/pricing/vatNotice";
 
 interface PricingCardsProps {
   planList: Plan[];
@@ -431,7 +432,8 @@ function LawyerServicesTable({ isAr }: { isAr: boolean }) {
               {isAr ? LAWYER_ARCHIVE_NOTE.ar : LAWYER_ARCHIVE_NOTE.en}
             </p>
             <p className="mt-2 text-center text-[11px] text-ink-faint">
-              {isAr ? "* الأسعار لا تشمل ضريبة القيمة المضافة. الخدمات المجانية متاحة لجميع الحسابات بدون قيود." : "* Prices exclude VAT. Free services are available to all accounts without restrictions."}
+              {/* The section's VAT sentence sits under the cards (owner ٢٤٨). */}
+              {isAr ? "* الخدمات المجانية متاحة لجميع الحسابات بدون قيود." : "* Free services are available to all accounts without restrictions."}
             </p>
           </motion.div>
         )}
@@ -462,6 +464,8 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
   const isLawyer         = audience === "lawyers";
   const showEnterpriseRow = audience === "companies";
   const showSMESection    = false; // Removed as there is a dedicated Micro tab now
+  // One VAT sentence per section, under its prices (owner ٢٣٩ / ٢٤٨).
+  const vatNotice = vatNoticeFor(audience, libraryMode);
 
   const { isLoggedIn } = useUser();
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -492,13 +496,16 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
       <div className="mx-auto max-w-[1200px] px-4">
 
         {isLawyer && !libraryMode ? (
-          <>
-            <LawyerCreditsLayout planList={planList} billing={billing} isAr={isAr} onSubscribe={handleSubscribe} />
-            <LawyerServicesTable isAr={isAr} />
-          </>
+          <LawyerCreditsLayout planList={planList} billing={billing} isAr={isAr} onSubscribe={handleSubscribe} />
         ) : (
           <DefaultLayout planList={planList} billing={billing} isAr={isAr} onSubscribe={handleSubscribe} />
         )}
+
+        <p className="mt-6 text-center text-xs font-medium text-ink-muted dark:text-gray-400">
+          {isAr ? vatNotice.ar : vatNotice.en}
+        </p>
+
+        {isLawyer && !libraryMode && <LawyerServicesTable isAr={isAr} />}
 
         {/* Enterprise row */}
         {showEnterpriseRow && (
