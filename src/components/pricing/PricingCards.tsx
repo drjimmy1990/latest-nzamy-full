@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
 import {
   Check, Crown, ArrowLeft, Buildings,
@@ -9,6 +10,8 @@ import {
 import type { Plan, AudienceTab, Billing } from "@/constants/pricingData";
 import { lawyerServicesTable, LAWYER_ARCHIVE_NOTE } from "@/constants/pricing/pricing.lawyers";
 import { useUser } from "@/hooks/useUser";
+import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
+import { checkoutHref, gatewayAllowsCheckout } from "@/lib/payments/checkoutView";
 import { requestEntitlement } from "@/lib/services/entitlementService";
 import { referencePriceFor } from "@/lib/pricing/priceDisplay";
 import { planEntitlementRequest } from "@/lib/pricing/planRequest";
@@ -25,8 +28,9 @@ interface PricingCardsProps {
 /**
  * A ctaHref is a subscribe/register call-to-action we should intercept for
  * logged-in users. "Contact sales" (/contact) and free-tier links keep their
- * default navigation. Everything else (register/subscribe) becomes an
- * entitlement request instead of a dead-end since no gateway exists yet.
+ * default navigation. Everything else (register/subscribe) goes to /checkout
+ * when the Moyasar gateway is on and the plan is sold online, and otherwise
+ * becomes an entitlement request (owner ٢٤٦).
  */
 function isSubscribeCta(href: string): boolean {
   if (!href) return false;
@@ -270,8 +274,8 @@ function SpotlightCard({
         <motion.a
           href={plan.ctaHref}
           onClick={(e) => {
-            // Logged-in users: turn subscribe CTAs into an entitlement request
-            // instead of the register/subscribe dead-end (no gateway yet).
+            // Logged-in users: subscribe CTAs go to /checkout (gateway on) or
+            // become an entitlement request — see handleSubscribe.
             if (onSubscribe?.(plan)) e.preventDefault();
           }}
           whileHover={{ scale: 1.02 }}
@@ -468,17 +472,26 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
   const vatNotice = vatNoticeFor(audience, libraryMode);
 
   const { isLoggedIn } = useUser();
+  const payments = usePaymentsStatus();
+  const router = useRouter();
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
 
   /**
    * Logged-in subscribe handler. For guests we return false so the CTA keeps
-   * its default register/login navigation. For logged-in users we send an
-   * entitlement request (no gateway yet) and surface an Arabic confirmation.
+   * its default register/login navigation. For logged-in users: with the
+   * Moyasar gateway on, a plan or top-up sold online (PAYABLE_ITEMS) goes to
+   * /checkout (checkoutHref); otherwise we send an entitlement request and
+   * surface an Arabic confirmation, as before the gateway (owner ٢٤٦).
    * Returns true when handled so the caller can suppress default navigation.
    */
   function handleSubscribe(plan: Plan): boolean {
     if (!isLoggedIn) return false;
     if (!isSubscribeCta(plan.ctaHref)) return false; // e.g. Contact Sales — let it navigate
+    const payHref = checkoutHref(plan.id, billing, gatewayAllowsCheckout(payments), isLoggedIn);
+    if (payHref) {
+      router.push(payHref);
+      return true;
+    }
     // requested_ref = Plan.id (the name rides in `note`) — see planEntitlementRequest.
     void requestEntitlement(planEntitlementRequest(plan, { libraryMode })).then((res) => {
       setToast(

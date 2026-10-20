@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   BookOpen, Check, ArrowLeft, ArrowRight, MagnifyingGlass,
   Bell, Lock, Scales, Gavel, Buildings, ShieldCheck,
@@ -11,6 +12,8 @@ import {
 import { useTheme } from "@/components/ThemeProvider";
 import InvitationModal from "@/components/InvitationModal";
 import { useUser } from "@/hooks/useUser";
+import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
+import { checkoutHref, gatewayAllowsCheckout } from "@/lib/payments/checkoutView";
 import { isSupabaseMode } from "@/lib/services/api";
 import { requestEntitlement } from "@/lib/services/entitlementService";
 import { planFromParam } from "@/lib/pricing/planRequest";
@@ -216,6 +219,8 @@ const txt = {
 export default function LawsSubscribePage() {
   const { isDark, lang } = useTheme();
   const { isLoggedIn } = useUser();
+  const payments = usePaymentsStatus();
+  const router = useRouter();
   const libraryAccess = useLibraryFullAccess();
   const isAr = lang === "ar";
   const t = isAr ? txt.ar : txt.en;
@@ -265,8 +270,15 @@ export default function LawsSubscribePage() {
       window.location.href = "/laws";
       return;
     }
-    // Logged-in users: send an entitlement request instead of the local
-    // subscription mock (no gateway yet). Admin approves it later.
+    // Logged-in users with the Moyasar gateway on pay online: the library
+    // plans are one-off payments (PAYABLE_ITEMS lib-*).
+    const payHref = checkoutHref(planId, "once", gatewayAllowsCheckout(payments), isLoggedIn);
+    if (payHref) {
+      router.push(payHref);
+      return;
+    }
+    // Otherwise (gateway off — owner ٢٤٦): send an entitlement request
+    // instead of the local subscription mock. Admin approves it later.
     if (isLoggedIn) {
       void requestEntitlement({ kind: "library", requested_ref: planId }).then((res) => {
         setToast(
