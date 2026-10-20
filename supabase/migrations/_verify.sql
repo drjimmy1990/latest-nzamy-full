@@ -2988,9 +2988,10 @@ END $$;
 -- SECURITY DEFINER with search_path ''; debit_points locks the unexpired lots
 -- FOR UPDATE nearest-expiry first; points_enforcement is a JSON boolean.
 -- Keyed on the table's existence (to_regclass), so a run before the migration
--- passes with a NOTICE. A positive credit_balance without a migrated lot only
--- NOTICEs: admin/credits still writes credit_balance until the B1 points
--- wiring lands.
+-- passes with a NOTICE. The balance backfill is one-shot (marker
+-- points_lots_migrated_at, which must exist); a positive credit_balance
+-- without a migrated lot only NOTICEs: admin/credits still writes
+-- credit_balance until the B1 points wiring lands.
 -- >>> verify:points_lots — supabase/tests/rls/points_lots.test.sql extracts
 -- the lines between these two markers; keep them.
 SELECT '20261022_20 applied (public.points_lots)' AS check,
@@ -3041,6 +3042,14 @@ BEGIN
                   AND conname = 'points_lots_points_left_check') THEN
     missing := missing || ' points_lots_points_left_check is missing (a lot could go negative — re-run 20261022_20);';
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = to_regclass('public.points_lots')
+                  AND conname = 'points_lots_order_source_key' AND contype = 'u') THEN
+    missing := missing || ' points_lots_order_source_key (UNIQUE order_id, source) is missing (fulfilment could credit an order twice);';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'points_lots'
+                  AND indexname = 'points_lots_user_expires_idx') THEN
+    missing := missing || ' points_lots_user_expires_idx is missing (re-run 20261022_20);';
+  END IF;
 
   -- RLS and policies
   FOREACH tbl IN ARRAY ARRAY['points_lots', 'points_ledger'] LOOP
@@ -3085,9 +3094,11 @@ BEGIN
         END IF;
       END LOOP;
     END LOOP;
-    IF NOT has_table_privilege('service_role', 'public.' || tbl, 'SELECT') THEN
-      missing := missing || format(' service_role cannot read %s (the billing page would show no points);', tbl);
-    END IF;
+    FOREACH p IN ARRAY ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE'] LOOP
+      IF NOT has_table_privilege('service_role', 'public.' || tbl, p) THEN
+        missing := missing || format(' service_role lacks %s on %s (re-run 20261022_20);', p, tbl);
+      END IF;
+    END LOOP;
   END LOOP;
   FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'public'] LOOP
     IF has_sequence_privilege(r, 'public.points_ledger_id_seq', 'USAGE, SELECT, UPDATE') THEN
@@ -3126,6 +3137,9 @@ BEGIN
   SELECT value INTO v FROM public.platform_settings WHERE key = 'points_enforcement';
   IF v IS NULL OR jsonb_typeof(v) <> 'boolean' THEN
     missing := missing || format(' platform_settings points_enforcement is missing or not a JSON boolean: %s (re-run 20261022_20);', coalesce(v::text, 'no row'));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.platform_settings WHERE key = 'points_lots_migrated_at') THEN
+    missing := missing || ' platform_settings points_lots_migrated_at is missing — the one-shot balance backfill is unrecorded, so a re-run of 20261022_20 would migrate balances again;';
   END IF;
 
   IF missing <> '' THEN

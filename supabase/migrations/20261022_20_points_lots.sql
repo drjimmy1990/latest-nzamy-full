@@ -8,14 +8,18 @@
 --   lot nearest to expiry first and may span several lots; an expired lot no
 --   longer counts. Every change to a lot writes one ledger row per lot touched.
 --   The points balances people already hold are kept (٢٢٤): each non-zero
---   lawyer_profiles.credit_balance becomes one 'migrated' lot.
+--   lawyer_profiles.credit_balance, and each non-zero latest
+--   credit_transactions.balance_after of a user without a lawyer profile,
+--   becomes one 'migrated' lot.
 --
 -- WHAT IT CREATES OR CHANGES (idempotent — safe to run any number of times)
 --   public.points_lots     one row per batch of points: source (purchase,
 --     plan_monthly, grant, admin, migrated, refund_restore), points_total > 0,
 --     points_left between 0 and points_total, expires_at NOT NULL, order_id →
 --     payment_orders ON DELETE SET NULL, user_id → auth.users ON DELETE
---     CASCADE. Index (user_id, expires_at); partial index on order_id.
+--     CASCADE. UNIQUE (order_id, source): one lot per order and source, so
+--     fulfilment is idempotent per order (NULL order_id is unconstrained).
+--     Index (user_id, expires_at).
 --   public.points_ledger   one row per lot touched: delta <> 0 (credit +,
 --     usage / expiry / refund_revoke −; admin_adjustment either), reason, tool,
 --     ref. user_id and lot_id cascade (deleting a GoTrue user is never
@@ -23,8 +27,9 @@
 --   public.points_balance(p_user uuid) → int   the sum of points_left over the
 --     user's lots with expires_at > now().
 --   public.credit_points(p_user, p_points, p_source, p_expires_at, p_order,
---     p_ref) → uuid   creates one lot (expiry must be in the future) and its
---     'credit' ledger row; returns the lot id.
+--     p_ref) → uuid   creates one lot (expiry must be in the future; a given
+--     p_order must belong to p_user) and its 'credit' ledger row; returns the
+--     lot id.
 --   public.debit_points(p_user, p_points, p_tool, p_ref) → int   locks the
 --     user's unexpired lots FOR UPDATE ordered by expires_at, created_at, id
 --     (every debit locks in the same order: two debits never deadlock and never
@@ -39,10 +44,20 @@
 --   public.platform_settings  key points_enforcement seeded false (a JSON
 --     boolean — the admin settings validator requires one); ON CONFLICT DO
 --     NOTHING, so an admin's value is never reset.
---   Existing balances (ruling 5): one 'migrated' lot per user with
---     lawyer_profiles.credit_balance > 0, expiring now() + 12 months, plus its
---     'credit' ledger row. A user who already has a migrated lot is skipped, so
---     a re-run adds nothing. credit_balance itself is left untouched.
+--   Existing balances (ruling 5; controller ruling of fix round 1): one
+--     'migrated' lot, expiring now() + 12 months, plus its 'credit' ledger row,
+--     per user with
+--       (a) lawyer_profiles.credit_balance > 0, or
+--       (b) NO lawyer_profiles row and a latest credit_transactions
+--           .balance_after (by created_at, id) > 0 — the balance
+--           checkCreditBalance (src/lib/access-control.ts) reads for them.
+--     A lawyer's balance is credit_balance alone (as checkCreditBalance reads
+--     it), so a lawyer is never migrated from both sources. ONE-SHOT: the first
+--     apply records platform_settings key points_lots_migrated_at, and every
+--     later run skips both backfills (a balance that turns positive after the
+--     migration never mints a fresh 12-month lot); a user who already has a
+--     migrated lot is skipped as well. credit_balance and credit_transactions
+--     are left untouched.
 --
 -- WHO CAN DO WHAT
 --   * points_lots / points_ledger: RLS on; revoke ALL from anon,
@@ -55,14 +70,16 @@
 --   * points_balance: EXECUTE for authenticated and service_role. A signed-in
 --     caller may ask only for auth.uid() (another user raises 42501); the
 --     service role (role setting service_role) and the database owner in the
---     SQL Editor (role setting none) may ask for anyone.
+--     SQL Editor (role setting none AND a session user that is postgres, a
+--     member of it, or a superuser) may ask for anyone.
 --   All four are SECURITY DEFINER with search_path ''.
 --   A raising verify at the end checks all of the above, the effective column
 --   privileges included (a pg_attribute sweep).
 --
 -- PREREQUISITES (the file raises without them)
 --   20261022_10 (payment_orders), 20260627_platform_settings,
---   20260603_phase1_001 (lawyer_profiles.credit_balance).
+--   20260603_phase1_001 (lawyer_profiles.credit_balance),
+--   20260603_phase1_003 (credit_transactions).
 --
 -- DEPLOY ORDER — BEFORE THE DEPLOY (the batch ships it as
 -- 02_BEFORE_DEPLOY_20261022_20_points_lots.sql, after 20261022_10)
@@ -77,7 +94,8 @@
 --     public.credit_points(uuid, int, text, timestamptz, uuid, text),
 --     public.debit_points(uuid, int, text, text), public.revoke_lot(uuid, text);
 --   drop table if exists public.points_ledger, public.points_lots;
---   delete from public.platform_settings where key = 'points_enforcement';
+--   delete from public.platform_settings
+--    where key in ('points_enforcement', 'points_lots_migrated_at');
 -- =============================================================================
 
 begin;
@@ -95,6 +113,9 @@ begin
                     and column_name = 'credit_balance') then
     raise exception '20261022_20: public.lawyer_profiles.credit_balance does not exist — run 20260603_phase1_001 first';
   end if;
+  if to_regclass('public.credit_transactions') is null then
+    raise exception '20261022_20: public.credit_transactions does not exist — run 20260603_phase1_003 first';
+  end if;
 end $$;
 
 -- ── 1. points_lots ───────────────────────────────────────────────────────────
@@ -109,13 +130,14 @@ create table if not exists public.points_lots (
   expires_at   timestamptz not null,
   order_id     uuid null references public.payment_orders(id) on delete set null,
   created_at   timestamptz not null default now(),
-  constraint points_lots_points_left_check check (points_left between 0 and points_total)
+  constraint points_lots_points_left_check check (points_left between 0 and points_total),
+  -- one lot per order and source: fulfilment can never credit an order twice
+  -- (NULL order_id — migrated, grants, admin — stays unconstrained)
+  constraint points_lots_order_source_key unique (order_id, source)
 );
 
 create index if not exists points_lots_user_expires_idx
   on public.points_lots (user_id, expires_at);
-create index if not exists points_lots_order_idx
-  on public.points_lots (order_id) where order_id is not null;
 
 comment on table public.points_lots is
   'Points in expiring lots (20261022_20, B1; owner ٢٢٤/٢٤٤/٢٤٩). A user reads own rows; only the server writes, through credit_points / debit_points / revoke_lot.';
@@ -178,13 +200,20 @@ as $$
 declare
   v_uid  uuid := auth.uid();
   -- the outer SET ROLE survives SECURITY DEFINER (current_user does not):
-  -- service_role for the server, none for the database owner (SQL Editor)
+  -- service_role for the server, none for a session that never SET ROLE
   v_role text := coalesce(nullif(current_setting('role', true), ''), 'none');
 begin
   if p_user is null then
     raise exception 'points_balance: p_user is required' using errcode = '22023';
   end if;
-  if not ((v_uid is not null and v_uid = p_user) or v_role in ('service_role', 'none')) then
+  -- role none is trusted only for the database owner (the SQL Editor): the
+  -- session user must be postgres, a member of it, or a superuser — never a
+  -- login role that merely inherits authenticated
+  if not ((v_uid is not null and v_uid = p_user)
+          or v_role = 'service_role'
+          or (v_role = 'none'
+              and (pg_has_role(session_user, 'postgres', 'MEMBER')
+                   or coalesce((select r.rolsuper from pg_catalog.pg_roles r where r.rolname = session_user), false)))) then
     raise exception 'points_balance: a user may read only their own balance' using errcode = '42501';
   end if;
   return coalesce((select sum(l.points_left) from public.points_lots l
@@ -220,6 +249,10 @@ begin
   end if;
   if p_expires_at is null or p_expires_at <= now() then
     raise exception 'credit_points: p_expires_at must be in the future' using errcode = '22023';
+  end if;
+  if p_order is not null
+     and not exists (select 1 from public.payment_orders o where o.id = p_order and o.user_id = p_user) then
+    raise exception 'credit_points: p_order is not an order of p_user' using errcode = '22023';
   end if;
   insert into public.points_lots (user_id, source, points_total, points_left, expires_at, order_id)
     values (p_user, p_source, p_points, p_points, p_expires_at, p_order)
@@ -286,6 +319,13 @@ begin
     v_need := v_need - v_take;
   end loop;
 
+  -- cannot happen while the lots stay locked; if it ever does, roll back
+  -- rather than return a debit that was only partly taken
+  if v_need > 0 then
+    raise exception 'debit_points_invariant' using errcode = 'P0001',
+      detail = format('%s of %s points not found after the lock', v_need, p_points);
+  end if;
+
   return coalesce((select sum(l.points_left) from public.points_lots l
                     where l.user_id = p_user and l.expires_at > now()), 0)::int;
 end;
@@ -342,12 +382,17 @@ insert into public.platform_settings (key, value, description) values
 on conflict (key) do nothing;
 
 -- ── 8. existing balances become migrated lots (ruling 5; owner ٢٢٤) ──────────
--- One lot per user with a positive credit_balance, unless the user already
--- has a migrated lot (a re-run adds nothing). credit_balance is not changed.
+-- ONE-SHOT: both backfills run only while platform_settings has no
+-- points_lots_migrated_at row; the row is written right after them, in this
+-- same transaction. A user who already has a migrated lot is skipped too.
+-- credit_balance and credit_transactions are not changed.
+
+-- 8a. lawyers: lawyer_profiles.credit_balance > 0
 with src as (
   select lp.user_id, lp.credit_balance
     from public.lawyer_profiles lp
    where lp.credit_balance > 0
+     and not exists (select 1 from public.platform_settings ps where ps.key = 'points_lots_migrated_at')
      and not exists (select 1 from public.points_lots pl
                       where pl.user_id = lp.user_id and pl.source = 'migrated')
 ), lots as (
@@ -359,6 +404,38 @@ with src as (
 insert into public.points_ledger (user_id, lot_id, delta, reason, ref)
 select l.user_id, l.id, l.points_total, 'credit', 'migrated:lawyer_profiles.credit_balance'
   from lots l;
+
+-- 8b. everyone else (no lawyer_profiles row at all): the latest
+--     credit_transactions.balance_after, by created_at then id — what
+--     checkCreditBalance reads for them. A lawyer's balance is credit_balance
+--     alone, so a lawyer is never migrated from this source.
+with latest as (
+  select distinct on (ct.user_id) ct.user_id, ct.balance_after
+    from public.credit_transactions ct
+   where not exists (select 1 from public.lawyer_profiles lp where lp.user_id = ct.user_id)
+   order by ct.user_id, ct.created_at desc, ct.id desc
+), src as (
+  select l.user_id, l.balance_after
+    from latest l
+   where l.balance_after > 0
+     and not exists (select 1 from public.platform_settings ps where ps.key = 'points_lots_migrated_at')
+     and not exists (select 1 from public.points_lots pl
+                      where pl.user_id = l.user_id and pl.source = 'migrated')
+), lots as (
+  insert into public.points_lots (user_id, source, points_total, points_left, expires_at)
+  select s.user_id, 'migrated', s.balance_after, s.balance_after, now() + interval '12 months'
+    from src s
+  returning id, user_id, points_total
+)
+insert into public.points_ledger (user_id, lot_id, delta, reason, ref)
+select l.user_id, l.id, l.points_total, 'credit', 'migrated:credit_transactions.balance_after'
+  from lots l;
+
+-- 8c. the one-shot marker (never overwritten)
+insert into public.platform_settings (key, value, description) values
+  ('points_lots_migrated_at', to_jsonb(now()),
+   'تاريخ تحويل أرصدة النقاط القائمة إلى دفعات صالحة ١٢ شهرًا (مرة واحدة؛ لا يُعاد التحويل ما دام هذا المفتاح موجودًا) (20261022_20)')
+on conflict (key) do nothing;
 
 -- ── Verify ───────────────────────────────────────────────────────────────────
 do $$
@@ -396,6 +473,10 @@ begin
   if not exists (select 1 from pg_constraint where conrelid = 'public.points_lots'::regclass
                   and conname = 'points_lots_points_left_check') then
     missing := missing || ' points_lots_points_left_check is missing;';
+  end if;
+  if not exists (select 1 from pg_constraint where conrelid = 'public.points_lots'::regclass
+                  and conname = 'points_lots_order_source_key' and contype = 'u') then
+    missing := missing || ' points_lots_order_source_key (UNIQUE order_id, source) is missing (an older points_lots? fulfilment could credit an order twice);';
   end if;
   if not exists (select 1 from pg_indexes where schemaname = 'public' and tablename = 'points_lots'
                   and indexname = 'points_lots_user_expires_idx') then
@@ -486,16 +567,23 @@ begin
     missing := missing || format(' platform_settings points_enforcement is missing or not a JSON boolean: %s;', coalesce(v::text, 'no row'));
   end if;
 
-  -- every positive credit_balance has its migrated lot
-  select count(*) into n from public.lawyer_profiles lp
-   where lp.credit_balance > 0
-     and not exists (select 1 from public.points_lots pl where pl.user_id = lp.user_id and pl.source = 'migrated');
-  if n > 0 then
-    missing := missing || format(' %s lawyer(s) with a positive credit_balance have no migrated lot;', n);
+  -- the one-shot backfill marker
+  if not exists (select 1 from public.platform_settings where key = 'points_lots_migrated_at') then
+    missing := missing || ' platform_settings points_lots_migrated_at is missing (the balance backfill did not record itself);';
   end if;
 
   if missing <> '' then
     raise exception '20261022_20 verify:%', missing;
+  end if;
+
+  -- a positive balance without a migrated lot is legitimate after the
+  -- one-shot backfill (it turned positive later): NOTICE only
+  select count(*) into n from public.lawyer_profiles lp
+   where lp.credit_balance > 0
+     and not exists (select 1 from public.points_lots pl where pl.user_id = lp.user_id and pl.source = 'migrated');
+  if n > 0 then
+    raise notice '20261022_20: % lawyer(s) hold a positive credit_balance without a migrated lot (positive after the one-shot backfill of %)',
+      n, (select value from public.platform_settings where key = 'points_lots_migrated_at');
   end if;
   raise notice '20261022_20 verify: OK — points_lots / points_ledger own-row SELECT, no session writes; points_balance own-or-service, credit_points / debit_points / revoke_lot service role only; debit locks nearest-expiry first; points_enforcement = %; % migrated lot(s)',
     v, (select count(*) from public.points_lots where source = 'migrated');

@@ -47,6 +47,8 @@
 -- created_at), and T3–T5 prove the behaviour.
 --
 -- Actors: L1 …e001 (credit_balance 250), L0 …e000 (credit_balance 0),
+--         N1 …e002 / N0 …e003 / N2 …e004 (no lawyer profile; credit_transactions
+--         latest balance_after 40 / 0 / 25 — see the fixture prelude),
 --         U …f001 (two lots, spanning debit), V …f002 (expired lot),
 --         W …f003 (revoke, RLS), X …f004 (same-expiry tie-break).
 -- Every assertion RAISES on failure.
@@ -81,15 +83,21 @@ revoke all on sequence public.points_ledger_id_seq from app_user;
 
 -- T1 existing balances: L1's 250 became one migrated lot (200 left after the
 --    between-runs debit), the second run neither added a lot nor restored the
---    points; L0 (0) got none; credit_balance untouched; the admin's
---    points_enforcement = true survived the re-run
+--    points; L0 (0) got none; non-lawyers migrate their latest
+--    credit_transactions.balance_after (N1 40, N2 25 by id, N0 0 → none); a
+--    lawyer is never migrated twice; the backfill is one-shot (balances made
+--    positive between the runs get no lot); credit_balance untouched; the
+--    admin's points_enforcement = true survived the re-run
 do $$
 declare
   lot record;
 begin
-  if (select count(*) from public.points_lots where source = 'migrated') <> 1 then
-    raise exception 'T1 FAIL: expected exactly 1 migrated lot after two runs, got %',
+  if (select count(*) from public.points_lots where source = 'migrated') <> 3 then
+    raise exception 'T1 FAIL: expected exactly 3 migrated lots after two runs (L1, N1, N2), got %',
       (select count(*) from public.points_lots where source = 'migrated');
+  end if;
+  if (select count(*) from public.points_lots where user_id = '00000000-0000-0000-0000-00000000e001') <> 1 then
+    raise exception 'T1 FAIL: lawyer L1 was migrated from both credit_balance and credit_transactions';
   end if;
   select * into lot from public.points_lots
    where user_id = '00000000-0000-0000-0000-00000000e001' and source = 'migrated';
@@ -104,8 +112,32 @@ begin
     raise exception 'T1 FAIL: the migrated lot carries an order';
   end if;
   if exists (select 1 from public.points_lots where user_id = '00000000-0000-0000-0000-00000000e000') then
-    raise exception 'T1 FAIL: L0 (credit_balance 0) got a lot';
+    raise exception 'T1 FAIL: L0 (credit_balance 0 at the first run, 80 before the second) got a lot — the backfill is not one-shot';
   end if;
+  if exists (select 1 from public.points_lots where user_id = '00000000-0000-0000-0000-00000000e003') then
+    raise exception 'T1 FAIL: N0 (latest balance_after 0 at the first run, 55 before the second) got a lot';
+  end if;
+  select * into lot from public.points_lots
+   where user_id = '00000000-0000-0000-0000-00000000e002' and source = 'migrated';
+  if lot.points_total <> 40 or lot.points_left <> 40
+     or lot.expires_at > now() + interval '12 months'
+     or lot.expires_at < now() + interval '12 months' - interval '1 hour' then
+    raise exception 'T1 FAIL: N1''s migrated lot is %/% expiring % (expected 40, about now() + 12 months)',
+      lot.points_left, lot.points_total, lot.expires_at;
+  end if;
+  if (select string_agg(reason || ':' || delta || ':' || ref, ',') from public.points_ledger where lot_id = lot.id)
+     is distinct from 'credit:40:migrated:credit_transactions.balance_after' then
+    raise exception 'T1 FAIL: N1''s migrated lot has no single credit row from credit_transactions';
+  end if;
+  if (select points_total from public.points_lots
+       where user_id = '00000000-0000-0000-0000-00000000e004' and source = 'migrated') is distinct from 25 then
+    raise exception 'T1 FAIL: N2 (two rows at one created_at: 70 then 25 by id) did not get one 25-point lot';
+  end if;
+  if (select count(*) from public.platform_settings where key = 'points_lots_migrated_at') <> 1 then
+    raise exception 'T1 FAIL: expected one points_lots_migrated_at marker';
+  end if;
+  select * into lot from public.points_lots
+   where user_id = '00000000-0000-0000-0000-00000000e001' and source = 'migrated';
   if (select credit_balance from public.lawyer_profiles where user_id = '00000000-0000-0000-0000-00000000e001') <> 250 then
     raise exception 'T1 FAIL: credit_balance was changed';
   end if;
@@ -117,12 +149,13 @@ begin
   if (select value from public.platform_settings where key = 'points_enforcement') is distinct from 'true'::jsonb then
     raise exception 'T1 FAIL: the second run reset points_enforcement';
   end if;
-  raise notice 'T1 PASS: credit_balance 250 → one 250-point migrated lot expiring now() + 12 months with its credit row; the re-run added none and kept 200 left; credit_balance 0 → no lot; credit_balance untouched; points_enforcement kept true';
+  raise notice 'T1 PASS: credit_balance 250 → one 250-point migrated lot (not a second from its 999 credit_transactions row) expiring now() + 12 months with its credit row; the re-run added none and kept 200 left; non-lawyers: latest balance_after 40 → one 40 lot, latest 0 → none, a created_at tie goes by id (25); one-shot: L0 credit_balance 80 and N0 balance_after 55 set between the runs → no lot; one marker; credit_balance untouched; points_enforcement kept true';
 end $$;
 
 -- T2 credit_points: creates the lot and one credit row; refuses a zero or
---    negative amount, a past or missing expiry, an unknown source, order or
---    user
+--    negative amount, a past or missing expiry, an unknown source or user, an
+--    order that is unknown or another user's, and a second lot of the same
+--    source for one order (UNIQUE order_id, source)
 set role service_role;
 do $$
 declare
@@ -162,7 +195,19 @@ begin
     perform public.credit_points('00000000-0000-0000-0000-00000000f003', 5, 'purchase', now() + interval '1 month',
                                  '00000000-0000-0000-0000-0000000d0fff');
     raise exception 'T2 FAIL: an unknown order accepted';
-  exception when foreign_key_violation then null;
+  exception when invalid_parameter_value then null;
+  end;
+  begin
+    perform public.credit_points('00000000-0000-0000-0000-00000000f003', 5, 'purchase', now() + interval '1 month',
+                                 '00000000-0000-0000-0000-0000000d0f01');
+    raise exception 'T2 FAIL: another user''s order (U''s) accepted for W';
+  exception when invalid_parameter_value then null;
+  end;
+  begin
+    perform public.credit_points('00000000-0000-0000-0000-00000000f003', 70, 'purchase', now() + interval '3 months',
+                                 '00000000-0000-0000-0000-0000000d0f03', 'order:w again');
+    raise exception 'T2 FAIL: a second purchase lot for the same order accepted';
+  exception when unique_violation then null;
   end;
   begin
     perform public.credit_points('00000000-0000-0000-0000-00000000ffff', 5, 'purchase', now() + interval '1 month');
@@ -172,7 +217,7 @@ begin
   if (select count(*) from public.points_lots where user_id = '00000000-0000-0000-0000-00000000f003') <> 1 then
     raise exception 'T2 FAIL: a refused credit left a lot behind';
   end if;
-  raise notice 'T2 PASS: credit_points makes the lot + one credit row; 0 / negative points and a past / null expiry raise 22023; source gift raises 23514; an unknown order or user raises 23503';
+  raise notice 'T2 PASS: credit_points makes the lot + one credit row; 0 / negative points, a past / null expiry, an unknown order and another user''s order raise 22023; a second purchase lot for one order raises 23505; source gift raises 23514; an unknown user raises 23503';
 end $$;
 reset role;
 
@@ -425,6 +470,38 @@ begin
 end $$;
 reset role;
 
+-- T7b role setting none is trusted only for the database owner: a login
+--     role that inherits authenticated, connected directly (no SET ROLE, so
+--     the role setting is none), cannot read another user's balance; postgres
+--     can. (psql \c over the container's local socket, trust auth.)
+\c - app_user
+do $$
+begin
+  if current_setting('role') <> 'none' or session_user <> 'app_user' then
+    raise exception 'T7b FAIL: setup — role setting %, session user %', current_setting('role'), session_user;
+  end if;
+  begin
+    perform public.points_balance('00000000-0000-0000-0000-00000000e001');
+    raise exception 'T7b FAIL: app_user (role none, inherits authenticated) read L1''s balance';
+  exception when insufficient_privilege then null;
+  end;
+  perform set_config('test.uid', '00000000-0000-0000-0000-00000000e001', true);
+  if public.points_balance('00000000-0000-0000-0000-00000000e001') <> 200 then
+    raise exception 'T7b FAIL: app_user signed in as L1 did not read its own 200';
+  end if;
+end $$;
+\c - postgres
+do $$
+begin
+  if current_setting('role') <> 'none' or session_user <> 'postgres' then
+    raise exception 'T7b FAIL: setup — role setting %, session user %', current_setting('role'), session_user;
+  end if;
+  if public.points_balance('00000000-0000-0000-0000-00000000e001') <> 200 then
+    raise exception 'T7b FAIL: postgres (the owner, role none) did not read L1''s 200';
+  end if;
+  raise notice 'T7b PASS: with role setting none, app_user (a login inheriting authenticated) is refused another user''s balance (42501) and reads its own; postgres reads anyone''s';
+end $$;
+
 -- T8 the owner reads their own lots and ledger only, every column; no write
 set role app_user;
 do $$
@@ -540,6 +617,14 @@ begin
   if position('insufficient_points' in def) = 0 then
     raise exception 'T10 FAIL: debit_points does not raise insufficient_points';
   end if;
+  if def !~* 'if\s+v_need\s*>\s*0\s+then\s+raise\s+exception\s+''debit_points_invariant''' then
+    raise exception 'T10 FAIL: debit_points does not raise debit_points_invariant when points remain after the loop';
+  end if;
+  if (select pg_get_constraintdef(oid) from pg_constraint
+       where conrelid = 'public.points_lots'::regclass and conname = 'points_lots_order_source_key')
+     is distinct from 'UNIQUE (order_id, source)' then
+    raise exception 'T10 FAIL: points_lots_order_source_key is not UNIQUE (order_id, source)';
+  end if;
   if (select count(*) from pg_policies where schemaname = 'public' and tablename in ('points_lots', 'points_ledger')) <> 2 then
     raise exception 'T10 FAIL: expected exactly 2 policies on the points tables';
   end if;
@@ -550,7 +635,7 @@ begin
   if (select count(*) from public.platform_settings where key = 'points_enforcement') <> 1 then
     raise exception 'T10 FAIL: expected one points_enforcement row';
   end if;
-  raise notice 'T10 PASS: all four functions SECURITY DEFINER with search_path ''''; debit_points locks unexpired lots FOR UPDATE ordered by expires_at, created_at, id and raises insufficient_points; 2 policies, the (user_id, expires_at) index, one setting row';
+  raise notice 'T10 PASS: all four functions SECURITY DEFINER with search_path ''''; debit_points locks unexpired lots FOR UPDATE ordered by expires_at, created_at, id and raises insufficient_points; debit_points_invariant guard; UNIQUE (order_id, source); 2 policies, the (user_id, expires_at) index, one setting row';
 end $$;
 
 -- T11 deleting an order keeps its lot (order_id SET NULL); deleting a GoTrue
