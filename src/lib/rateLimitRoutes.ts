@@ -81,11 +81,19 @@ export function libraryReadClientKey(
  * added directly at `/api/v1/cron` or `/api/v1/n8n` (no further segment), it
  * would NOT match either exclusion and so WOULD be rate-limited by the
  * general bucket — re-check this the day one is added.
+ *
+ * One exact path is also excluded: POST /api/v1/payments/webhook, hit only by
+ * Moyasar's servers (a few shared addresses, retrying each event up to six
+ * times) and guarded by the webhook secret instead. The exact path only — the
+ * rest of /api/v1/payments/ (checkout included) stays limited.
  */
+export const RATE_LIMIT_EXEMPT_API_PATHS: ReadonlySet<string> = new Set(["/api/v1/payments/webhook"]);
+
 export function isGeneralRateLimitedApiPath(method: string, pathname: string): boolean {
   if (!GENERAL_RATE_LIMITED_METHODS.has(method)) return false;
   if (!pathname.startsWith("/api/v1/")) return false;
   if (pathname.startsWith("/api/v1/cron/")) return false;
   if (pathname.startsWith("/api/v1/n8n/")) return false;
+  if (RATE_LIMIT_EXEMPT_API_PATHS.has(pathname)) return false;
   return true;
 }

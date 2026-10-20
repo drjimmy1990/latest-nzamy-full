@@ -67,6 +67,15 @@ test("isGeneralRateLimitedApiPath: excludes the /api/v1/n8n/ subtree", () => {
   assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/n8n/trigger"), false);
 });
 
+test("isGeneralRateLimitedApiPath: excludes exactly /api/v1/payments/webhook (Moyasar's retries must never be throttled)", () => {
+  assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/payments/webhook"), false);
+  // exact path only: the rest of /api/v1/payments/ stays limited
+  assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/payments/checkout"), true);
+  assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/payments/webhookx"), true);
+  assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/payments/webhook/x"), true);
+  assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/payments/webhooks"), true);
+});
+
 test("isGeneralRateLimitedApiPath: does NOT exclude a path that merely starts with the same letters", () => {
   // /api/v1/n8n-lookalike/... must not be swept up by the /api/v1/n8n/ exclusion.
   assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/n8n-lookalike/foo"), true);
