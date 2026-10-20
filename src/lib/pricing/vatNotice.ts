@@ -6,7 +6,9 @@
  *   - lawyers, consultants, firms and every establishment pay VAT on top
  *     (BUSINESS_USER_TYPES buy VAT-exclusive);
  *   - the individuals' prices include VAT;
- *   - the library depends on the buyer, so its plans state both rules.
+ *   - the library depends on the buyer, so its plans state both rules —
+ *     except the firms' library plans (lib-firm-*), which only establishments
+ *     buy, so they carry the business sentence.
  *
  * Pure: no `@/` imports and no runtime imports, so `node --test` loads it
  * (pricingHonesty.test.ts).
@@ -33,10 +35,11 @@ export const VAT_NOTICE = {
 
 /**
  * The sentence for one /pricing section. Library mode exists on the lawyers
- * and firms tabs only — the same condition getPlanList uses to swap in the
- * library plans.
+ * and firms tabs only (getPlanList). On the lawyers tab it shows the library
+ * plans anyone buys, so both rules; on the firms tab it shows the firm library
+ * plans, so the business sentence like the rest of that tab.
  */
 export function vatNoticeFor(audience: AudienceTab, libraryMode: boolean | undefined): VatNotice {
-  if (libraryMode && (audience === "lawyers" || audience === "firms")) return VAT_NOTICE.library;
+  if (libraryMode && audience === "lawyers") return VAT_NOTICE.library;
   return audience === "individuals" ? VAT_NOTICE.inclusive : VAT_NOTICE.exclusive;
 }

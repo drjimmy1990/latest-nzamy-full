@@ -17,6 +17,7 @@ import { planFromParam } from "@/lib/pricing/planRequest";
 import { LIBRARY_STAT_KEYS, LIBRARY_STAT_LABELS, formatLibraryCount } from "@/lib/library/libraryStats";
 import { useLibraryStats } from "@/lib/library/useLibraryStats";
 import { useLibraryFullAccess } from "@/lib/library/useLibraryFullAccess";
+import { VAT_NOTICE } from "@/lib/pricing/vatNotice";
 
 // ─── Bilingual ──────────────────────────────────────────────────────────────
 
@@ -40,7 +41,7 @@ const txt = {
     perMonth: "/شهر",
     perYear: "/سنة",
     // Owner ٢٤٨: the library's VAT depends on the buyer (catalog.ts, vat "buyer").
-    vatNote: "للأفراد: شامل الضريبة · للمحامين والمنشآت: غير شامل الضريبة",
+    vatNote: VAT_NOTICE.library.ar,
     plans: [
       {
         id: "free",
@@ -130,7 +131,7 @@ const txt = {
     exploreFree: "Browse Free",
     perMonth: "/mo",
     perYear: "/yr",
-    vatNote: "For individuals: VAT included · For lawyers and establishments: VAT excluded",
+    vatNote: VAT_NOTICE.library.en,
     plans: [
       {
         id: "free",

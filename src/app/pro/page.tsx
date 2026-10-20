@@ -25,6 +25,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
+import { VAT_NOTICE } from "@/lib/pricing/vatNotice";
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
@@ -268,6 +269,10 @@ export default function ProPage() {
               </motion.div>
             ))}
           </div>
+          {/* Lawyer and firm plans are sold VAT-exclusive (owner ٢٤٨). */}
+          <p className={`mt-6 text-center text-xs font-medium ${isDark ? "text-gray-400" : "text-slate-500"}`}>
+            {isRTL ? VAT_NOTICE.exclusive.ar : VAT_NOTICE.exclusive.en}
+          </p>
         </div>
       </section>
 

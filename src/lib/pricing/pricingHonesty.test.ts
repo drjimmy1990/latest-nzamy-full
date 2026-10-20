@@ -592,9 +592,12 @@ test("٢٤٨: each /pricing audience section carries its own VAT sentence", () =
     assert.deepEqual(vatNoticeFor(audience, false), VAT_NOTICE.exclusive, audience);
   }
   assert.deepEqual(vatNoticeFor("individuals", false), VAT_NOTICE.inclusive);
-  // Library mode exists on the lawyers and firms tabs only (getPlanList).
+  // Library mode exists on the lawyers and firms tabs only (getPlanList). The
+  // lawyers' library plans are the ones anyone buys, so both rules apply; the
+  // firms' library plans (lib-firm-*) are sold to establishments only, so the
+  // business sentence (controller ruling, task 10 fix round 1).
   assert.deepEqual(vatNoticeFor("lawyers", true), VAT_NOTICE.library);
-  assert.deepEqual(vatNoticeFor("firms", true), VAT_NOTICE.library);
+  assert.deepEqual(vatNoticeFor("firms", true), VAT_NOTICE.exclusive);
   assert.deepEqual(vatNoticeFor("individuals", true), VAT_NOTICE.inclusive);
   assert.deepEqual(vatNoticeFor("companies", true), VAT_NOTICE.exclusive);
 
@@ -620,15 +623,39 @@ test("٢٤٨: each /pricing audience section carries its own VAT sentence", () =
 
 test("٢٤٨: /laws/subscribe shows the library VAT sentence and its English twin", () => {
   const subscribe = code("app/laws/subscribe/page.tsx");
-  assert.ok(subscribe.includes(`vatNote: "${VAT_LIBRARY_AR}"`), "Arabic library sentence");
-  assert.ok(subscribe.includes(`vatNote: "${VAT_LIBRARY_EN}"`), "English library sentence");
+  assert.match(subscribe, /import \{ VAT_NOTICE \} from "@\/lib\/pricing\/vatNotice";/);
+  assert.ok(subscribe.includes("vatNote: VAT_NOTICE.library.ar,"), "Arabic library sentence");
+  assert.ok(subscribe.includes("vatNote: VAT_NOTICE.library.en,"), "English library sentence");
+  assert.ok(!subscribe.includes(VAT_LIBRARY_AR) && !subscribe.includes(VAT_LIBRARY_EN), "no second copy of the sentence");
   assert.equal(subscribe.split("{t.vatNote}").length - 1, 1, "rendered once, under the plans");
 });
 
-/** «صالحة ٣ أشهر» / «صالحة ١٢ شهراً» — Arabic plural for 3–10, accusative singular from 11. */
+test("٢٤٨: the /laws paywall shows the library VAT sentence once, under its plans", () => {
+  const paywall = code("app/laws/components/PaywallModal.tsx");
+  assert.match(paywall, /import \{ VAT_NOTICE \} from "@\/lib\/pricing\/vatNotice";/);
+  const render = "{isRTL ? VAT_NOTICE.library.ar : VAT_NOTICE.library.en}";
+  assert.equal(paywall.split(render).length - 1, 1, "one library sentence");
+  const modal = paywall.slice(paywall.indexOf("export function PaywallModal"));
+  assert.ok(modal.indexOf(render) > modal.indexOf("{PLANS.map("), "under the plan grid");
+});
+
+test("٢٤٨: /pro shows the business VAT sentence once, under its lawyer and firm prices", () => {
+  const pro = code("app/pro/page.tsx");
+  assert.match(pro, /import \{ VAT_NOTICE \} from "@\/lib\/pricing\/vatNotice";/);
+  const render = "{isRTL ? VAT_NOTICE.exclusive.ar : VAT_NOTICE.exclusive.en}";
+  assert.equal(pro.split(render).length - 1, 1, "one business sentence");
+  assert.ok(pro.indexOf(render) > pro.indexOf("{plans.map("), "under the price cards");
+});
+
+/**
+ * «صالحة شهراً واحداً» / «صالحة شهرين» / «صالحة ٣ أشهر» / «صالحة ١٢ شهراً»:
+ * Arabic agreement for 1, 2, 3–10 (plural) and 11+ (accusative singular).
+ */
 function validityAr(months: number): string {
+  if (months === 1) return "صالحة شهراً واحداً";
+  if (months === 2) return "صالحة شهرين";
   const digits = String(months).replace(/[0-9]/g, (d) => "٠١٢٣٤٥٦٧٨٩"[Number(d)]);
-  return months >= 3 && months <= 10 ? `صالحة ${digits} أشهر` : `صالحة ${digits} شهراً`;
+  return months <= 10 ? `صالحة ${digits} أشهر` : `صالحة ${digits} شهراً`;
 }
 
 test("٢٤٩: each top-up card states the validity the catalog grants", () => {
@@ -641,7 +668,7 @@ test("٢٤٩: each top-up card states the validity the catalog grants", () => {
     assert.ok(months, `${item.id} has no validity in the catalog`);
     for (const [lang, seg, expected] of [
       ["ar", lawyers.ar, validityAr(months)],
-      ["en", lawyers.en, `valid for ${months} months`],
+      ["en", lawyers.en, `valid for ${months} month${months === 1 ? "" : "s"}`],
     ] as const) {
       const block = seg.slice(seg.indexOf(`id: "${item.id}"`));
       const desc = block.match(/desc: "([^"]*)"/);
@@ -651,4 +678,6 @@ test("٢٤٩: each top-up card states the validity the catalog grants", () => {
   }
   // The three wordings the owner wrote (٢٤٩).
   assert.deepEqual([3, 6, 12].map(validityAr), ["صالحة ٣ أشهر", "صالحة ٦ أشهر", "صالحة ١٢ شهراً"]);
+  // …and the helper's own agreement, so a future 1- or 2-month pack is held to correct Arabic.
+  assert.deepEqual([1, 2, 10, 11].map(validityAr), ["صالحة شهراً واحداً", "صالحة شهرين", "صالحة ١٠ أشهر", "صالحة ١١ شهراً"]);
 });
