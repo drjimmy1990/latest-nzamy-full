@@ -1,27 +1,35 @@
 -- wipe_subscriptions.test.sql — proves the one-time file
--- supabase/one-time/2026-10-19_wipe_subscriptions_and_trials.sql (owner answer ٢٠٤).
+-- supabase/one-time/2026-10-19_wipe_subscriptions_and_trials.sql (owner answers
+-- ٢٠٤ and ٢٢٤ — test accounts are spared).
 -- Chain (run.sh, postgres:16; stubs.sql — auth.users, public.profiles,
--- public.service_requests, the API roles — loads first by itself):
+-- public.lawyer_profiles, public.service_requests, the API roles — loads first
+-- by itself):
 --   the real subscriptions shape (20260603_phase1_003, which also seeds the plans
---   the rows point at) → the library grants table (20261019_10) → the fixture
---   (entitlement_requests in its live shape; accounts, rows, requests, a library
+--   the rows point at) → the library grants table (20261019_10) → the real test
+--   accounts registry (20261017_44; its e-mail backfill is skipped here, stubs'
+--   auth.users has no email yet) → the fixture (entitlement_requests in its live
+--   shape; accounts, rows, requests, two registered test accounts, a library
 --   grant, a credit row; copies of each table; both settings armed at the
 --   database level) → the one-time file, run AS WRITTEN (all 3 blocks, as the
 --   user pastes it) → this file.
 -- Run from the repo root:
 --   R=supabase/tests/rls; M=supabase/migrations; bash $R/run.sh \
 --     $M/20260603_phase1_003_subscriptions_billing.sql $M/20261019_10_library_access_grants.sql \
+--     $M/20261017_44_test_accounts_never_listed.sql \
 --     $R/prelude_wipe_subscriptions_fixture.sql \
 --     supabase/one-time/2026-10-19_wipe_subscriptions_and_trials.sql \
 --     $R/wipe_subscriptions.test.sql
--- The one-time file is the 4th file of the chain, so it is /tmp/mig4.sql in the
--- container; T4–T6 run it again from there with \i.
+-- The one-time file is the 5th file of the chain, so it is /tmp/mig5.sql in the
+-- container; T4–T7 run it again from there with \i.
 --
 -- NEGATIVE CONTROL (must FAIL): the same chain without the one-time file →
 --   bash $R/run.sh $M/20260603_phase1_003_subscriptions_billing.sql \
---     $M/20261019_10_library_access_grants.sql $R/prelude_wipe_subscriptions_fixture.sql \
---     $R/wipe_subscriptions.test.sql
+--     $M/20261019_10_library_access_grants.sql $M/20261017_44_test_accounts_never_listed.sql \
+--     $R/prelude_wipe_subscriptions_fixture.sql $R/wipe_subscriptions.test.sql
 --   → "T1 FAIL: subscription …51a1 (active before) is still active".
+-- The run WITHOUT public.test_accounts is T7: it drops the table at the end of
+-- this chain, runs the whole file again with a fresh target armed, and proves
+-- block 2 raises and changes nothing.
 --
 -- Every assertion RAISES on failure (the harness fails closed on ERROR).
 
@@ -88,12 +96,15 @@ begin
 end $$;
 
 -- T2 everything else is exactly as before: the rows created after the cutoff,
--- the SPARED rows (J, K, L), the rows already cancelled / expired, the library
+-- the SPARED rows (J, K, L, test account P), the rows already cancelled / expired, the library
 -- grant, the credits and the requests.
 do $$
 declare
   diff int;
 begin
+  if (select status from public.subscriptions where id = '00000000-0000-4000-8000-0000000055a1') <> 'active' then
+    raise exception 'T2 FAIL: test account P''s old live row was cancelled (owner ٢٢٤: test accounts are spared)';
+  end if;
   select count(*) into diff from (
     (select * from public.subscriptions where id not in (select id from expect_cancelled)
      except select * from public.wipe204_subs_before)
@@ -116,6 +127,12 @@ begin
                     '00000000-0000-4000-8000-0000000054a3')) <> 3 then
     raise exception 'T2 FAIL: a spared row (J plan request / K media request / L changed after the cutoff) is no longer active';
   end if;
+  select count(*) into diff from (
+    (select * from public.test_accounts except select * from public.wipe204_tests_before)
+    union all
+    (select * from public.wipe204_tests_before except select * from public.test_accounts)
+  ) d;
+  if diff <> 0 then raise exception 'T2 FAIL: public.test_accounts changed'; end if;
 
   select count(*) into diff from (
     (select * from public.library_access_grants except select * from public.wipe204_grants_before)
@@ -139,7 +156,7 @@ begin
     (select * from public.wipe204_requests_before except select * from public.entitlement_requests)
   ) d;
   if diff <> 0 then raise exception 'T2 FAIL: entitlement_requests changed'; end if;
-  raise notice 'T2 PASS: rows after the cutoff and spared rows (J, K, L) still active; cancelled/expired rows, the library grant, the credits and the requests untouched';
+  raise notice 'T2 PASS: rows after the cutoff and spared rows (J, K, L, test account P) still active; cancelled/expired rows, the library grant, the credits, the requests and the test-account registry untouched';
 end $$;
 
 -- T3 metadata: free only for the non-admin, non-spared accounts left with
@@ -179,7 +196,15 @@ begin
   if (select raw_user_meta_data->>'tier' from auth.users where id = '00000000-0000-4000-8000-00000000d0e5') <> 'max' then
     raise exception 'T3 FAIL: the admin''s metadata changed';
   end if;
-  raise notice 'T3 PASS: metadata reset to free for A, B, F, M, N only; C, D, spared J, K, L, admin E, G, H untouched';
+  if (select raw_user_meta_data from auth.users where id = '00000000-0000-4000-8000-00000000d2a1')
+     is distinct from '{"tier":"pro"}'::jsonb then
+    raise exception 'T3 FAIL: test account P''s tier was reset (owner ٢٢٤)';
+  end if;
+  if (select raw_user_meta_data from auth.users where id = '00000000-0000-4000-8000-00000000d2a2')
+     is distinct from '{"tier":"pro","full_name":"اختبار"}'::jsonb then
+    raise exception 'T3 FAIL: test account Q (no live row) had its tier reset (owner ٢٢٤)';
+  end if;
+  raise notice 'T3 PASS: metadata reset to free for A, B, F, M, N only; C, D, spared J, K, L, test accounts P and Q, admin E, G, H untouched';
 end $$;
 
 -- T4 a second run (the whole file again, still confirmed) is a no-op.
@@ -187,7 +212,7 @@ create temp table s1 as select * from public.subscriptions;
 create temp table u1 as select id, raw_user_meta_data from auth.users;
 create temp table g1 as select * from public.library_access_grants;
 \o /dev/null
-\i /tmp/mig4.sql
+\i /tmp/mig5.sql
 \o
 do $$
 declare
@@ -252,7 +277,7 @@ end $$;
 set nzamy.confirm_wipe = '';
 \set ON_ERROR_STOP off
 \o /dev/null
-\i /tmp/mig4.sql
+\i /tmp/mig5.sql
 select set_config('test.err', :'LAST_ERROR_MESSAGE', false);
 \o
 \set ON_ERROR_STOP on
@@ -263,7 +288,7 @@ select pg_temp.wipe204_unchanged('T5a (no confirmation)', '%NOT confirmed%') \g 
 set nzamy.wipe_cutoff = '';
 \set ON_ERROR_STOP off
 \o /dev/null
-\i /tmp/mig4.sql
+\i /tmp/mig5.sql
 select set_config('test.err', :'LAST_ERROR_MESSAGE', false);
 \o
 \set ON_ERROR_STOP on
@@ -275,7 +300,7 @@ set nzamy.confirm_wipe = '';
 set nzamy.wipe_cutoff = '';
 \set ON_ERROR_STOP off
 \o /dev/null
-\i /tmp/mig4.sql
+\i /tmp/mig5.sql
 select set_config('test.err', :'LAST_ERROR_MESSAGE', false);
 \o
 \set ON_ERROR_STOP on
@@ -287,7 +312,7 @@ select pg_temp.wipe204_unchanged('T5c (neither setting)', '%NOT confirmed%') \g 
 set nzamy.wipe_cutoff = '<DEPLOY-TIME-WITH-OFFSET>';
 \set ON_ERROR_STOP off
 \o /dev/null
-\i /tmp/mig4.sql
+\i /tmp/mig5.sql
 select set_config('test.err', :'LAST_ERROR_MESSAGE', false);
 \o
 \set ON_ERROR_STOP on
@@ -298,7 +323,7 @@ select pg_temp.wipe204_unchanged('T5d (placeholder)', '%does not end in a UTC of
 set nzamy.wipe_cutoff = '2026-09-01 00:00:00';
 \set ON_ERROR_STOP off
 \o /dev/null
-\i /tmp/mig4.sql
+\i /tmp/mig5.sql
 select set_config('test.err', :'LAST_ERROR_MESSAGE', false);
 \o
 \set ON_ERROR_STOP on
@@ -309,7 +334,7 @@ select pg_temp.wipe204_unchanged('T5e (no offset)', '%does not end in a UTC offs
 set nzamy.wipe_cutoff = '2026-09-01';
 \set ON_ERROR_STOP off
 \o /dev/null
-\i /tmp/mig4.sql
+\i /tmp/mig5.sql
 select set_config('test.err', :'LAST_ERROR_MESSAGE', false);
 \o
 \set ON_ERROR_STOP on
@@ -320,7 +345,7 @@ select pg_temp.wipe204_unchanged('T5f (date alone)', '%does not end in a UTC off
 set nzamy.wipe_cutoff = '2026-13-45 21:30:00+03';
 \set ON_ERROR_STOP off
 \o /dev/null
-\i /tmp/mig4.sql
+\i /tmp/mig5.sql
 select set_config('test.err', :'LAST_ERROR_MESSAGE', false);
 \o
 \set ON_ERROR_STOP on
@@ -331,7 +356,7 @@ select pg_temp.wipe204_unchanged('T5g (not a time)', '%is not a time%') \g /dev/
 set nzamy.wipe_cutoff = '2999-01-01 00:00:00+03';
 \set ON_ERROR_STOP off
 \o /dev/null
-\i /tmp/mig4.sql
+\i /tmp/mig5.sql
 select set_config('test.err', :'LAST_ERROR_MESSAGE', false);
 \o
 \set ON_ERROR_STOP on
@@ -349,7 +374,7 @@ select pg_temp.wipe204_unchanged('T5h (cutoff in the future)', '%in the future%'
 -- own `begin transaction read only` … `rollback` pair ends its cutoff.
 set nzamy.confirm_wipe = '';
 set nzamy.wipe_cutoff = '';
-\! sed -e "s|^-- select set_config('nzamy.wipe_cutoff', '<DEPLOY-TIME-WITH-OFFSET>', true);|select set_config('nzamy.wipe_cutoff', '2026-09-01 00:00:00+03', true);|" -e "s|^-- set local nzamy.confirm_wipe = 'WIPE-2026-10-19';|set local nzamy.confirm_wipe = 'WIPE-2026-10-19';|" /tmp/mig4.sql > /tmp/probe_f.sql
+\! sed -e "s|^-- select set_config('nzamy.wipe_cutoff', '<DEPLOY-TIME-WITH-OFFSET>', true);|select set_config('nzamy.wipe_cutoff', '2026-09-01 00:00:00+03', true);|" -e "s|^-- set local nzamy.confirm_wipe = 'WIPE-2026-10-19';|set local nzamy.confirm_wipe = 'WIPE-2026-10-19';|" /tmp/mig5.sql > /tmp/probe_f.sql
 do $$
 declare
   f  text := pg_read_file('/tmp/probe_f.sql');
@@ -401,7 +426,7 @@ select pg_temp.wipe204_unchanged('T5i-b (the same copy as ONE query, like the SQ
 -- T5's "nothing changed" was not vacuous); C and the spared J, K, L stay.
 set nzamy.wipe_cutoff = '2026-08-31T21:00:00Z';
 \o /dev/null
-\i /tmp/mig4.sql
+\i /tmp/mig5.sql
 \o
 reset nzamy.wipe_cutoff;
 do $$
@@ -419,7 +444,42 @@ begin
                     '00000000-0000-4000-8000-0000000054a2', '00000000-0000-4000-8000-0000000054a3')) <> 4 then
     raise exception 'T6 FAIL: C''s row or a spared row (J, K, L) was cancelled';
   end if;
-  raise notice 'T6 PASS: confirmed again (cutoff written with Z), the re-armed row is cancelled and B reset; C, J, K, L kept';
+  if (select status from public.subscriptions where id = '00000000-0000-4000-8000-0000000055a1') <> 'active'
+     or (select raw_user_meta_data->>'tier' from auth.users where id = '00000000-0000-4000-8000-00000000d2a2') <> 'pro' then
+    raise exception 'T6 FAIL: a test account (P''s row or Q''s tier) was wiped';
+  end if;
+  raise notice 'T6 PASS: confirmed again (cutoff written with Z), the re-armed row is cancelled and B reset; C, J, K, L and test accounts P, Q kept';
+end $$;
+
+-- T7 public.test_accounts missing (an old restore without 20261017_44): block 2
+-- must raise BEFORE any change, never wipe the test accounts silently. Re-arm
+-- first (a fresh old live row for B, B back to pro), so "nothing changed"
+-- means something; then drop the registry and run the whole file again.
+insert into public.subscriptions
+  (id, user_id, plan_id, tier, billing_cycle, status, auto_renew, current_period_end, created_at, updated_at, metadata)
+values ('00000000-0000-4000-8000-0000000053b3', '00000000-0000-4000-8000-00000000d0b2', 'lawyer-pro', 'pro',
+        'custom', 'active', false, '2099-01-01 00:00+03', '2026-08-21 10:00+03', '2026-08-21 10:00+03',
+        '{"method":"admin_grant"}');
+update auth.users set raw_user_meta_data = '{"tier":"pro"}' where id = '00000000-0000-4000-8000-00000000d0b2';
+truncate s2;
+insert into s2 select * from public.subscriptions;
+truncate u2;
+insert into u2 select id, raw_user_meta_data from auth.users;
+drop table public.test_accounts;
+\set ON_ERROR_STOP off
+\o /dev/null
+\i /tmp/mig5.sql
+select set_config('test.err', :'LAST_ERROR_MESSAGE', false);
+\o
+\set ON_ERROR_STOP on
+select pg_temp.wipe204_unchanged('T7 (public.test_accounts missing)', '%public.test_accounts does not exist — nothing changed%') \g /dev/null
+do $$
+begin
+  if (select status from public.subscriptions where id = '00000000-0000-4000-8000-0000000053b3') <> 'active'
+     or (select status from public.subscriptions where id = '00000000-0000-4000-8000-0000000055a1') <> 'active' then
+    raise exception 'T7 FAIL: a row was cancelled without the test-account registry';
+  end if;
+  raise notice 'T7 PASS: without public.test_accounts block 2 raises; the re-armed row and test account P''s row stay active';
 end $$;
 
 select 'wipe_subscriptions: ALL PASS' as result;

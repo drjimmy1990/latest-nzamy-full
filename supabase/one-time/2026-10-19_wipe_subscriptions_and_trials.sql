@@ -3,19 +3,24 @@
 -- 2026-10-18): access handed out under the OLD model, before the library / AI
 -- split, ends. Written 2026-10-19.
 --
--- ⛔ HELD — DO NOT RUN YET. It waits for the owner to confirm the scope of ٢٠٤
---    (question ٢٢٤: are points balances zeroed too?). This file does NOT touch
---    points / credits; if he says they go too, that is a separate step.
+-- SCOPE — the owner's answer to question ٢٢٤ (2026-10-20):
+--   «(أ) — نلغي الاشتراكات والتجارب السابقة وتبقى أرصدة النقاط (مع الإبقاء
+--   الإلزامي على الحسابات التجريبية Test Accounts الخاصة باختباراتنا)»
+--   So: previous subscriptions and trials are cancelled; points / credits stay
+--   exactly as they are (this file never touches them); and every test account
+--   (public.test_accounts, migration 20261017_44) is spared — its rows and its
+--   tier stay as they are (see SPARED below).
 --
 -- Run by the user in the self-hosted SQL Editor (auth.nezamy.sa, as postgres),
 -- block by block, AFTER the batch that splits the library from the AI tools is
 -- deployed. The owner never runs it.
 -- Tested on a throwaway Postgres: supabase/tests/rls/wipe_subscriptions.test.sql
 -- (old live rows cancelled, rows after the cutoff and accounts an admin acted
--- on after it kept, metadata free only for non-admins left with nothing,
--- library grants and credits untouched, a second run changes nothing, every
--- missing or bad setting raises and changes nothing, a cutoff typed in block 1
--- never reaches block 2).
+-- on after it kept, test accounts' rows and tier kept, metadata free only for
+-- non-admin, non-test accounts left with nothing, library grants and credits
+-- untouched, a second run changes nothing, every missing or bad setting
+-- raises and changes nothing, a missing public.test_accounts raises and
+-- changes nothing, a cutoff typed in block 1 never reaches block 2).
 --
 -- WHY A CUTOFF: until the deploy, every grant path (src/lib/entitlements.ts
 --   grantEntitlement, the admin subscriptions page, invite-code trials)
@@ -24,8 +29,9 @@
 --   deploy, library access is written to public.library_access_grants, and a
 --   subscriptions row is a deliberate tier grant under the new model. So:
 --   rows created BEFORE the deploy finished go; rows created after it stay;
---   and an account an admin acted on after the deploy is a post-split
---   decision, so it stays too (see SPARED below).
+--   an account an admin acted on after the deploy is a post-split decision,
+--   so it stays too; and test accounts stay whatever their dates (see SPARED
+--   below).
 --
 -- WHAT CHANGES (block 2, one transaction, all-or-nothing):
 --   * public.subscriptions — every row with status active / trialing /
@@ -39,8 +45,14 @@
 --     not SPARED, and left with NO active / trialing / past_due subscription
 --     after the update above. An account holding a row created after the
 --     cutoff keeps its tier; admins' metadata is not touched.
--- SPARED — older than the cutoff, but an admin acted on it after the deploy
---   (block 1 (d) lists both, with the time):
+-- SPARED — three classes (block 1 (d) lists all three, with the time):
+--   * every account in public.test_accounts (owner ٢٢٤: «مع الإبقاء الإلزامي
+--     على الحسابات التجريبية») — ALL its subscription rows stay as they are
+--     and its tier is not reset, whatever their dates. Block 2 raises and
+--     changes nothing when public.test_accounts does not exist (an old
+--     restore without migration 20261017_44): without the registry the test
+--     accounts could not be told apart, and they would be wiped.
+--   Older than the cutoff, but an admin acted on it after the deploy:
 --   * a live row whose updated_at is at or after the cutoff — the admin user
 --     page's «تغيير الخطة» (PATCH /api/v1/admin/subscriptions/[id]) edits the
 --     row in place, so created_at stays old and only updated_at moves;
@@ -50,10 +62,11 @@
 --     better live row writes no row; only the request records the decision.
 -- WHAT IT KEEPS: public.library_access_grants (new-model library grants,
 --   founder grants included) — never touched; points / credits
---   (lawyer_profiles.credit_balance, credit_transactions) — untouched until
---   ٢٢٤ is answered; subscriptions already cancelled / expired; the rows
---   created after the cutoff; the SPARED rows and accounts;
---   entitlement_requests (read, never written); every other table.
+--   (lawyer_profiles.credit_balance, credit_transactions) — never touched
+--   (owner ٢٢٤: «وتبقى أرصدة النقاط»); subscriptions already cancelled /
+--   expired; the rows created after the cutoff; the SPARED rows and accounts,
+--   test accounts included; entitlement_requests and public.test_accounts
+--   (read, never written); every other table.
 --
 -- THE TWO SETTINGS (block 2 refuses to run without both):
 --   nzamy.confirm_wipe = 'WIPE-2026-10-19'
@@ -84,14 +97,18 @@
 --      is read and whether block 2 will accept it; (a) the live rows by tier,
 --      status and where they came from; (b) the accounts whose metadata tier
 --      is not free and what block 2 will do to each; (d) what block 2 SPARES.
+--      Block 1 stops at its first statement if public.test_accounts does not
+--      exist — apply migration 20261017_44 first.
 --   2. Set block 2's cutoff to the same time — the end of deploy.sh. Check
---      block 1 (d): every account listed there is one an admin acted on after
---      the deploy, and block 2 leaves its rows and tier as they are.
+--      block 1 (d): every account listed there is a test account or one an
+--      admin acted on after the deploy, and block 2 leaves its rows and tier
+--      as they are.
 --   3. Run block 2 alone. It raises and changes nothing if the confirmation is
 --      missing, or the cutoff is missing, has no UTC offset, is not a time, or
---      is in the future; it rolls back if any live row it should have
---      cancelled remains, or a non-admin, non-spared account left with no live
---      row still carries a tier other than free.
+--      is in the future, or public.test_accounts does not exist; it rolls back
+--      if any live row it should have cancelled remains, a non-admin,
+--      non-spared account left with no live row still carries a tier other
+--      than free, or a test account lost a live row or its tier.
 --      Safe to run twice: the second run changes nothing.
 --   4. Run block 3 and compare with block 1.
 --
@@ -109,6 +126,15 @@
 
 -- 1) PREVIEW — read-only, in its own transaction; run alone.
 begin transaction read only;
+
+-- The test-account registry (owner ٢٢٤) must exist: (b) and (d) read it, and
+-- block 2 refuses to run without it.
+do $$
+begin
+  if to_regclass('public.test_accounts') is null then
+    raise exception 'preview (owner ٢٢٤): public.test_accounts does not exist — apply migration 20261017_44 first; block 2 refuses to run without it (the test accounts could not be spared).';
+  end if;
+end $$;
 
 -- Un-comment and type the deploy time WITH its offset in place of the
 -- placeholder (as typed, it fails). It fills the cutoff columns and lists
@@ -152,6 +178,8 @@ select u.id, u.email, p.user_type,
        (select count(*) from public.subscriptions s
          where s.user_id = u.id and s.status in ('active', 'trialing', 'past_due')) as live_rows,
        case when p.user_type = 'admin' then 'kept (admin)'
+            when exists (select 1 from public.test_accounts t where t.user_id = u.id)
+              then 'kept (a test account, owner ٢٢٤ — see (d))'
             when c.at is null then '(set the cutoff to see)'
             when exists (select 1 from public.entitlement_requests er
                           where er.user_id = u.id and er.kind in ('plan', 'media')
@@ -187,13 +215,28 @@ begin
   end if;
 end $$;
 
--- (d) what block 2 SPARES although it is older than the cutoff: live rows an
---     admin changed after the cutoff, and accounts with a plan / media request
+-- (d) what block 2 SPARES: the test accounts that hold a live row or a tier
+--     other than free (owner ٢٢٤ — listed with or without a cutoff; at = when
+--     the account was registered), and, older than the cutoff, live rows an
+--     admin changed after it and accounts with a plan / media request
 --     approved after it. tier = the row's tier, or the account's metadata tier.
 with cutoff as (
   select nullif(btrim(coalesce(current_setting('nzamy.wipe_cutoff', true), '')), '')::timestamptz as at
 )
-select s.user_id, u.email::text as email,
+select t.user_id, u.email::text as email,
+       'a test account (owner ٢٢٤)'::text as spared_because,
+       u.raw_user_meta_data->>'tier' as tier, t.created_at as at,
+       ('registered by ' || t.source || '; '
+        || (select count(*) from public.subscriptions s
+             where s.user_id = t.user_id and s.status in ('active', 'trialing', 'past_due'))::text
+        || ' live row(s) kept') as detail
+  from public.test_accounts t
+  left join auth.users u on u.id = t.user_id
+ where coalesce(u.raw_user_meta_data->>'tier', 'free') <> 'free'
+    or exists (select 1 from public.subscriptions s
+                where s.user_id = t.user_id and s.status in ('active', 'trialing', 'past_due'))
+union all
+select s.user_id, u.email::text,
        'a subscription changed after the cutoff'::text as spared_because,
        s.tier, s.updated_at as at, ('subscription ' || s.id::text) as detail
   from public.subscriptions s
@@ -238,6 +281,8 @@ declare
   v_kept         bigint;
   v_spared_rows  bigint;
   v_spared_users bigint;
+  v_spared_tests bigint;
+  v_tests_after  bigint;
   v_left         bigint;
 begin
   if coalesce(current_setting('nzamy.confirm_wipe', true), '') <> 'WIPE-2026-10-19' then
@@ -259,6 +304,11 @@ begin
   if v_cutoff > now() then
     raise exception 'wipe subscriptions (owner ٢٠٤): the cutoff % is in the future — nothing changed. It is the time deploy.sh FINISHED; a later time would cancel subscriptions granted after the deploy.', v_cutoff;
   end if;
+  -- Owner ٢٢٤: test accounts are spared, so the registry must exist BEFORE any
+  -- change (an old restore without migration 20261017_44 would wipe them).
+  if to_regclass('public.test_accounts') is null then
+    raise exception 'wipe subscriptions (owner ٢٢٤): public.test_accounts does not exist — nothing changed. Apply migration 20261017_44 first: without it the test accounts could not be spared.';
+  end if;
 
   -- SPARED (counted for the notice): rows an admin changed after the cutoff,
   -- and accounts with a plan / media request approved after it.
@@ -267,6 +317,15 @@ begin
      and created_at < v_cutoff and updated_at >= v_cutoff;
   select count(distinct user_id) into v_spared_users from public.entitlement_requests
    where kind in ('plan', 'media') and status = 'approved' and decided_at >= v_cutoff;
+  -- Test accounts (owner ٢٢٤) the wipe would otherwise touch: a live row
+  -- created before the cutoff, or a tier other than free. Counted again after
+  -- the change: the two counts must match.
+  select count(*) into v_spared_tests from public.test_accounts t
+   where exists (select 1 from public.subscriptions s
+                  where s.user_id = t.user_id and s.status in ('active', 'trialing', 'past_due')
+                    and s.created_at < v_cutoff)
+      or exists (select 1 from auth.users u
+                  where u.id = t.user_id and coalesce(u.raw_user_meta_data->>'tier', 'free') <> 'free');
 
   update public.subscriptions s
      set status = 'cancelled',
@@ -277,6 +336,7 @@ begin
    where s.status in ('active', 'trialing', 'past_due')
      and s.created_at < v_cutoff
      and s.updated_at < v_cutoff
+     and not exists (select 1 from public.test_accounts t where t.user_id = s.user_id)
      and not exists (select 1 from public.entitlement_requests er
                       where er.user_id = s.user_id and er.kind in ('plan', 'media')
                         and er.status = 'approved' and er.decided_at >= v_cutoff);
@@ -287,6 +347,7 @@ begin
    where coalesce(u.raw_user_meta_data->>'tier', 'free') <> 'free'
      and not exists (select 1 from public.profiles p
                       where p.id = u.id and p.user_type = 'admin')
+     and not exists (select 1 from public.test_accounts t where t.user_id = u.id)
      and not exists (select 1 from public.entitlement_requests er
                       where er.user_id = u.id and er.kind in ('plan', 'media')
                         and er.status = 'approved' and er.decided_at >= v_cutoff)
@@ -294,11 +355,13 @@ begin
                       where s.user_id = u.id and s.status in ('active', 'trialing', 'past_due'));
   get diagnostics v_reset = row_count;
 
-  -- Verify: no live row the wipe targets remains, and no non-admin, non-spared
-  -- account left without a live row still carries a tier other than free.
+  -- Verify: no live row the wipe targets remains, no non-admin, non-spared
+  -- account left without a live row still carries a tier other than free, and
+  -- every test account is as it was.
   select count(*) into v_left from public.subscriptions s
    where s.status in ('active', 'trialing', 'past_due')
      and s.created_at < v_cutoff and s.updated_at < v_cutoff
+     and not exists (select 1 from public.test_accounts t where t.user_id = s.user_id)
      and not exists (select 1 from public.entitlement_requests er
                       where er.user_id = s.user_id and er.kind in ('plan', 'media')
                         and er.status = 'approved' and er.decided_at >= v_cutoff);
@@ -308,6 +371,7 @@ begin
   select count(*) into v_left from auth.users u
    where coalesce(u.raw_user_meta_data->>'tier', 'free') <> 'free'
      and not exists (select 1 from public.profiles p where p.id = u.id and p.user_type = 'admin')
+     and not exists (select 1 from public.test_accounts t where t.user_id = u.id)
      and not exists (select 1 from public.entitlement_requests er
                       where er.user_id = u.id and er.kind in ('plan', 'media')
                         and er.status = 'approved' and er.decided_at >= v_cutoff)
@@ -316,11 +380,23 @@ begin
   if v_left <> 0 then
     raise exception 'wipe subscriptions (owner ٢٠٤): % non-admin account(s) with no live subscription still carry a paid tier — rolling back', v_left;
   end if;
+  select count(*) into v_left from public.subscriptions s
+   where s.metadata->>'wipe' = 'owner-204' and s.cancelled_at = now()
+     and exists (select 1 from public.test_accounts t where t.user_id = s.user_id);
+  select count(*) into v_tests_after from public.test_accounts t
+   where exists (select 1 from public.subscriptions s
+                  where s.user_id = t.user_id and s.status in ('active', 'trialing', 'past_due')
+                    and s.created_at < v_cutoff)
+      or exists (select 1 from auth.users u
+                  where u.id = t.user_id and coalesce(u.raw_user_meta_data->>'tier', 'free') <> 'free');
+  if v_left <> 0 or v_tests_after <> v_spared_tests then
+    raise exception 'wipe subscriptions (owner ٢٢٤): a test account was touched (% row(s) cancelled by this run; % spared before, % after) — rolling back', v_left, v_spared_tests, v_tests_after;
+  end if;
 
   select count(*) into v_kept from public.subscriptions
    where status in ('active', 'trialing', 'past_due') and created_at >= v_cutoff;
-  raise notice 'wipe subscriptions (owner ٢٠٤): OK — % subscription(s) created before % cancelled; % account(s) reset to free; spared: % row(s) changed after the cutoff, % account(s) with a request approved after it; % live subscription(s) created after the cutoff kept. library_access_grants and credits untouched.',
-    v_cancelled, v_cutoff, v_reset, v_spared_rows, v_spared_users, v_kept;
+  raise notice 'wipe subscriptions (owner ٢٠٤ / ٢٢٤): OK — % subscription(s) created before % cancelled; % account(s) reset to free; spared: % test account(s) holding an old live row or a paid tier, % row(s) changed after the cutoff, % account(s) with a request approved after it; % live subscription(s) created after the cutoff kept. library_access_grants and credits untouched.',
+    v_cancelled, v_cutoff, v_reset, v_spared_tests, v_spared_rows, v_spared_users, v_kept;
 end $$;
 
 commit;
@@ -334,7 +410,8 @@ select tier, count(*) as cancelled_by_this_file,
  group by tier
  order by tier;
 
--- (b) the live rows left — created after the deploy, or spared (block 1 (d))
+-- (b) the live rows left — created after the deploy, or spared (block 1 (d),
+--     test accounts included)
 select tier, status, count(*) as live_rows,
        min(created_at) as oldest_created, max(updated_at) as last_changed
   from public.subscriptions
@@ -343,7 +420,9 @@ select tier, status, count(*) as live_rows,
  order by tier, status;
 
 -- (c) the accounts still carrying a tier other than free, and why — expect no
---     «NEITHER» row except an account block 1 (d) listed
+--     «NEITHER» row except an account block 1 (d) listed (a test account
+--     with no live row shows here as NEITHER). This block does not read
+--     public.test_accounts, so it runs on a database without it.
 select u.id, u.email, p.user_type,
        u.raw_user_meta_data->>'tier' as metadata_tier,
        case when p.user_type = 'admin' then 'admin'

@@ -1,7 +1,8 @@
 -- prelude_wipe_subscriptions_fixture.sql — the accounts, subscriptions, library
 -- grant and credit row that wipe_subscriptions.test.sql checks, plus a copy of
 -- each table taken BEFORE the wipe runs. Listed BEFORE
--- supabase/one-time/2026-10-19_wipe_subscriptions_and_trials.sql in the chain of
+-- supabase/one-time/2026-10-19_wipe_subscriptions_and_trials.sql and AFTER
+-- 20261017_44 (public.test_accounts) in the chain of
 -- wipe_subscriptions.test.sql (which documents the full command).
 --
 -- stubs.sql's auth.users has only `id`; the live table also has `email` and
@@ -135,12 +136,40 @@ insert into public.entitlement_requests (user_id, kind, requested_ref, status, d
   ('00000000-0000-4000-8000-00000000d1a5', 'plan',    'pro',     'rejected', '00000000-0000-4000-8000-00000000d0e5', '2026-09-11 10:00+03', '2026-09-09 10:00+03'),
   ('00000000-0000-4000-8000-00000000d1a5', 'plan',    'max',     'pending',  null,                                   null,                  '2026-09-12 10:00+03');
 
+-- TEST ACCOUNTS (owner ٢٢٤: «مع الإبقاء الإلزامي على الحسابات التجريبية»),
+-- registered in public.test_accounts (20261017_44, loaded before this file):
+--   P d2a1 client pro — an old ACTIVE row (created and changed before the
+--                        cutoff, no request) → only the test-account rule
+--                        keeps it: the row stays live, the tier stays pro
+--   Q d2a2 lawyer pro — NO live row (one row cancelled long ago) → an ordinary
+--                        account would be reset to free; Q keeps pro
+-- The ordinary accounts with an old live row (A, B, M, N) are the control.
+insert into auth.users (id, email, raw_user_meta_data) values
+  ('00000000-0000-4000-8000-00000000d2a1', 'client-pro@nezamy.sa', '{"tier":"pro"}'),
+  ('00000000-0000-4000-8000-00000000d2a2', 'qa-wipe@nzamy.test',   '{"tier":"pro","full_name":"اختبار"}');
+insert into public.profiles (id, user_type, display_name) values
+  ('00000000-0000-4000-8000-00000000d2a1', 'client', 'P'),
+  ('00000000-0000-4000-8000-00000000d2a2', 'lawyer', 'Q');
+insert into public.subscriptions
+  (id, user_id, plan_id, tier, billing_cycle, status, auto_renew,
+   started_at, current_period_start, current_period_end, cancelled_at, created_at, updated_at, metadata)
+values
+  ('00000000-0000-4000-8000-0000000055a1', '00000000-0000-4000-8000-00000000d2a1', 'individual-pro', 'pro', 'custom', 'active', true,
+   '2026-08-01 10:00+03', '2026-08-01 10:00+03', '2099-01-01 00:00+03', null, '2026-08-01 10:00+03', '2026-08-01 10:00+03',
+   '{"method":"admin_grant"}'),
+  ('00000000-0000-4000-8000-0000000055a2', '00000000-0000-4000-8000-00000000d2a2', 'lawyer-pro', 'pro', 'custom', 'cancelled', false,
+   '2026-07-01 10:00+03', '2026-07-01 10:00+03', '2026-08-01 10:00+03', '2026-08-01 10:00+03', '2026-07-01 10:00+03', '2026-08-01 10:00+03',
+   '{"method":"admin_grant"}');
+insert into public.test_accounts (user_id, source) values
+  ('00000000-0000-4000-8000-00000000d2a1', 'seed-clean-test-accounts'),
+  ('00000000-0000-4000-8000-00000000d2a2', 'uat');
+
 -- A new-model library grant (20261019_10) for A — the file never touches it.
 insert into public.library_access_grants (id, user_id, plan_ref, source, starts_at, ends_at, granted_by, created_at)
 values ('00000000-0000-4000-8000-000000006a01', '00000000-0000-4000-8000-00000000d0a1', 'lib-founder', 'founder_campaign',
         '2026-08-02 10:00+03', '2099-01-01 00:00+03', null, '2026-08-02 10:00+03');
 
--- A credit row for D — credits stay as they are (question ٢٢٤ is open).
+-- A credit row for D — credits stay as they are (owner ٢٢٤: points balances stay).
 insert into public.credit_transactions (user_id, amount, kind, balance_after, description)
 values ('00000000-0000-4000-8000-00000000d0d4', 500, 'admin_adjustment', 500, 'wipe fixture');
 
@@ -150,4 +179,5 @@ create table public.wipe204_users_before   as select id, raw_user_meta_data from
 create table public.wipe204_grants_before  as select * from public.library_access_grants;
 create table public.wipe204_credits_before as select * from public.credit_transactions;
 create table public.wipe204_requests_before as select * from public.entitlement_requests;
+create table public.wipe204_tests_before    as select * from public.test_accounts;
 create table public.wipe204_t0 as select clock_timestamp() as t0;
