@@ -87,6 +87,13 @@ test("lib-q1: a business buyer pays VAT on top, anyone else pays the shown price
   }
 });
 
+test("lib-q1 for a micro establishment: VAT on top (controller ruling on ٢٤٨)", () => {
+  const q = quote("lib-q1", "once", "micro");
+  assert.ok(q.ok);
+  assert.equal(q.vatMode, "exclusive");
+  assert.equal(q.totalHalalas, 172500);
+});
+
 test("every business user type gets the exclusive library price", () => {
   for (const buyer of BUSINESS_USER_TYPES) {
     const q = quote("lib-annual", "once", buyer);
@@ -194,11 +201,28 @@ test("only plans save the card (auto-renew)", () => {
   }
 });
 
-test("BUSINESS_USER_TYPES is the owner's list", () => {
+test("BUSINESS_USER_TYPES is the owner's list plus micro establishments", () => {
   assert.deepEqual(
     [...BUSINESS_USER_TYPES],
-    ["lawyer", "provider", "firm", "corporate", "business", "government", "ngo"],
+    ["lawyer", "provider", "firm", "corporate", "business", "government", "ngo", "micro"],
   );
+});
+
+test("the catalog is frozen: no code can patch a price at runtime", () => {
+  assert.ok(Object.isFrozen(PAYABLE_ITEMS));
+  for (const item of Object.values(PAYABLE_ITEMS)) {
+    assert.ok(Object.isFrozen(item), item.id);
+    assert.ok(Object.isFrozen(item.prices), `${item.id}.prices`);
+  }
+  // Test files are ES modules, so this runs in strict mode and must throw.
+  assert.throws(() => {
+    (PAYABLE_ITEMS["lawyer-pro"].prices as { monthly?: number }).monthly = 1;
+  }, TypeError);
+  assert.throws(() => {
+    (PAYABLE_ITEMS as Record<string, unknown>)["free-stuff"] = {};
+  }, TypeError);
+  assert.equal(PAYABLE_ITEMS["lawyer-pro"].prices.monthly, 39900);
+  assert.equal(Object.hasOwn(PAYABLE_ITEMS, "free-stuff"), false);
 });
 
 // ─── consistency with the prices the site shows ──────────────────────────────
@@ -259,15 +283,18 @@ test("every catalog price equals the Arabic and English display price in src/con
     for (const [monthlyText, yearlyText] of entries) {
       const monthly = parseDisplayedAmount(monthlyText);
       const yearly = parseDisplayedAmount(yearlyText);
+      assert.notEqual(monthly, null, `${path} ${item.id}: priceMonthly «${monthlyText}» is unparseable`);
+      assert.notEqual(yearly, null, `${path} ${item.id}: priceYearly «${yearlyText}» is unparseable`);
+      if (monthly === null || yearly === null) continue;
       if (item.prices.once !== undefined) {
-        assert.equal(monthly! * 100, item.prices.once, `${item.id} once vs priceMonthly «${monthlyText}»`);
-        assert.equal(yearly! * 100, item.prices.once, `${item.id} once vs priceYearly «${yearlyText}»`);
+        assert.equal(monthly * 100, item.prices.once, `${item.id} once vs priceMonthly «${monthlyText}»`);
+        assert.equal(yearly * 100, item.prices.once, `${item.id} once vs priceYearly «${yearlyText}»`);
       }
       if (item.prices.monthly !== undefined) {
-        assert.equal(monthly! * 100, item.prices.monthly, `${item.id} monthly vs «${monthlyText}»`);
+        assert.equal(monthly * 100, item.prices.monthly, `${item.id} monthly vs «${monthlyText}»`);
       }
       if (item.prices.yearly !== undefined) {
-        assert.equal(yearly! * 100, item.prices.yearly, `${item.id} yearly vs «${yearlyText}»`);
+        assert.equal(yearly * 100, item.prices.yearly, `${item.id} yearly vs «${yearlyText}»`);
       }
     }
   }
@@ -300,4 +327,10 @@ test("formatHalalas: Arabic digits, «٬» thousands, «٫» decimals only when 
   assert.equal(formatHalalas(172500), "١٬٧٢٥ ر.س");
   assert.equal(formatHalalas(0), "٠ ر.س");
   assert.equal(formatHalalas(123456789), "١٬٢٣٤٬٥٦٧٫٨٩ ر.س");
+});
+
+test("formatHalalas refuses anything that is not a non-negative integer of halalas", () => {
+  for (const bad of [-1, -39900, 0.5, 399.99, Number.NaN, Number.POSITIVE_INFINITY, 2 ** 53]) {
+    assert.throws(() => formatHalalas(bad), RangeError, String(bad));
+  }
 });

@@ -28,12 +28,13 @@ export type ServerTierLiteral = "ai" | "pro" | "max" | "corp" | "enterprise";
 
 export type LibraryPlanRef = "lib-q1" | "lib-q2" | "lib-annual";
 
-export type PayableItem = {
+/** Frozen at runtime too: this is the price authority, nothing may patch it. */
+export type PayableItem = Readonly<{
   id: string;
   kind: ItemKind;
   labelAr: string;
   /** Halalas, as listed (net for exclusive VAT, gross for inclusive). */
-  prices: Partial<Record<Billing, number>>;
+  prices: Readonly<Partial<Record<Billing, number>>>;
   vat: VatMode | "buyer";
   tier?: ServerTierLiteral;
   libraryPlanRef?: LibraryPlanRef;
@@ -42,7 +43,12 @@ export type PayableItem = {
   pointsValidityMonths?: number;
   /** Plans renew automatically (owner ٢٤٦), so only they keep the card. */
   saveCard: boolean;
-};
+}>;
+
+function freezeItem(item: PayableItem): PayableItem {
+  Object.freeze(item.prices);
+  return Object.freeze(item);
+}
 
 export const VAT_PERCENT = 15;
 
@@ -56,7 +62,7 @@ function plan(
   tier: ServerTierLiteral,
   vat: VatMode,
 ): PayableItem {
-  return {
+  return freezeItem({
     id,
     kind: "plan",
     labelAr,
@@ -64,11 +70,11 @@ function plan(
     vat,
     tier,
     saveCard: true,
-  };
+  });
 }
 
 function library(id: LibraryPlanRef, labelAr: string, sar: number, days: number): PayableItem {
-  return {
+  return freezeItem({
     id,
     kind: "library",
     labelAr,
@@ -77,11 +83,11 @@ function library(id: LibraryPlanRef, labelAr: string, sar: number, days: number)
     libraryPlanRef: id,
     libraryDays: days,
     saveCard: false,
-  };
+  });
 }
 
 function topup(id: string, labelAr: string, sar: number, points: number, months: number): PayableItem {
-  return {
+  return freezeItem({
     id,
     kind: "topup",
     labelAr,
@@ -90,10 +96,10 @@ function topup(id: string, labelAr: string, sar: number, points: number, months:
     points,
     pointsValidityMonths: months,
     saveCard: false,
-  };
+  });
 }
 
-export const PAYABLE_ITEMS: Record<string, PayableItem> = {
+export const PAYABLE_ITEMS: Readonly<Record<string, PayableItem>> = Object.freeze({
   "lawyer-pro": plan("lawyer-pro", "المحامي المحترف", 399, 3990, "pro", "exclusive"),
   "consultant-independent": plan("consultant-independent", "المستشار القانوني المستقل", 399, 3990, "pro", "exclusive"),
   "firm-basic": plan("firm-basic", "مكتب المحاماة", 990, 9900, "corp", "exclusive"),
@@ -108,9 +114,12 @@ export const PAYABLE_ITEMS: Record<string, PayableItem> = {
   "topup-250": topup("topup-250", "شحن ٢٥٠ (٣٠٠ نقطة)", 250, 300, 3),
   "topup-500": topup("topup-500", "شحن ٥٠٠ (٧٠٠ نقطة)", 500, 700, 6),
   "topup-1000": topup("topup-1000", "شحن ١٬٠٠٠ (١٬٥٠٠ نقطة)", 1000, 1500, 12),
-};
+});
 
-/** `profiles.user_type` values that buy the library VAT-exclusive (owner ٢٤٨). */
+/**
+ * `profiles.user_type` values that buy the library VAT-exclusive (owner ٢٤٨:
+ * establishments pay VAT on top). `micro` accounts are small establishments.
+ */
 export const BUSINESS_USER_TYPES = [
   "lawyer",
   "provider",
@@ -119,6 +128,7 @@ export const BUSINESS_USER_TYPES = [
   "business",
   "government",
   "ngo",
+  "micro",
 ] as const;
 
 export type QuoteResult =
@@ -165,13 +175,17 @@ function toArabicDigits(latin: string): string {
  * Halalas as Arabic text: 45885 → «٤٥٨٫٨٥ ر.س», 39900 → «٣٩٩ ر.س»,
  * 399000 → «٣٬٩٩٠ ر.س». Built by hand rather than with Intl, whose Arabic
  * output (bidi marks, separators) varies between ICU versions.
+ *
+ * Money is a non-negative integer of halalas; anything else is a bug upstream,
+ * so it throws a RangeError rather than rounding it away.
  */
 export function formatHalalas(h: number): string {
-  const whole = Math.round(Math.abs(h));
-  const sign = h < 0 && whole !== 0 ? "-" : "";
-  const sar = Math.floor(whole / SAR);
-  const halalas = whole % SAR;
+  if (!Number.isSafeInteger(h) || h < 0) {
+    throw new RangeError(`formatHalalas: expected a non-negative integer of halalas, got ${h}`);
+  }
+  const sar = Math.floor(h / SAR);
+  const halalas = h % SAR;
   const grouped = String(sar).replace(/\B(?=(\d{3})+(?!\d))/g, "٬");
   const fraction = halalas === 0 ? "" : `٫${String(halalas).padStart(2, "0")}`;
-  return `${sign}${toArabicDigits(grouped + fraction)} ر.س`;
+  return `${toArabicDigits(grouped + fraction)} ر.س`;
 }
