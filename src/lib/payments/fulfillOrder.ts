@@ -286,7 +286,15 @@ async function run(input: FulfillOrderInput): Promise<FulfillResult> {
     return { outcome: "pending", reason: "fulfilment_in_progress", receiptNumber: order.receipt_number };
   }
   if (order.status === "paid" || order.status === "refunded") {
-    return { outcome: "already_done", receiptNumber: order.receipt_number };
+    // A later call (the payer refreshing after the webhook finished) must see
+    // what the first one saw: a kept plan awaiting a refund review, or a refund.
+    const reason =
+      order.metadata?.already_entitled === true
+        ? "already_entitled"
+        : order.status === "refunded"
+          ? "order_refunded"
+          : undefined;
+    return { outcome: "already_done", ...(reason ? { reason } : {}), receiptNumber: order.receipt_number };
   }
 
   if (input.merchant !== "platform") {

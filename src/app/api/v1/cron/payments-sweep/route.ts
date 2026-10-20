@@ -21,6 +21,8 @@ import {
  *   (b) orders `paid` more than 10 minutes ago whose `fulfilled_at` is still
  *       null (a grant failed after the claim) — fulfillOrder resumes the
  *       grant; every grant is keyed on the order, so nothing is granted twice.
+ *       Oldest first and without a lookback: a paid order must never be
+ *       forgotten (one that keeps failing is logged on every run).
  *
  * Initiated orders that have only an intent id (no payment id yet) are
  * counted as `intent_only` and left alone: the Moyasar client has no
@@ -77,7 +79,9 @@ export async function POST(request: NextRequest) {
     .lt("created_at", initiatedBefore)
     .gt("created_at", initiatedAfter)
     .not("moyasar_payment_id", "is", null)
-    .order("created_at", { ascending: true })
+    // newest first: abandoned 3-D Secure pages stay initiated for the whole
+    // lookback and must not crowd newer orders out of the batch
+    .order("created_at", { ascending: false })
     .limit(SWEEP_BATCH);
   if (initiatedErr) {
     if (isMissingPaymentsObject(initiatedErr.code)) {

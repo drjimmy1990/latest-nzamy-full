@@ -94,3 +94,11 @@ test("grantPurchase keys every grant on the order", () => {
   assert.match(grant, /error\.code === "23505"\) return \{ ok: true \}/, "points 23505 = already credited");
   assert.match(grant, /p_order: input\.orderId/);
 });
+
+test("a later call on a closed order still reports a refund review or a refund — never a bare success", () => {
+  const run = body(fulfill, "async function run(");
+  const early = run.slice(run.indexOf('if (order.status === "paid" || order.status === "refunded")'));
+  const block = early.slice(0, early.indexOf("\n  }\n"));
+  assert.match(block, /already_entitled === true[\s\S]{0,80}"already_entitled"/, "metadata.already_entitled → reason already_entitled");
+  assert.match(block, /order\.status === "refunded"[\s\S]{0,40}"order_refunded"/, "a refunded order → reason order_refunded");
+});
