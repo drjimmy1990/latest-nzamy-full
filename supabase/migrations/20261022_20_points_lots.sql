@@ -64,9 +64,11 @@
 --   20261022_10 (payment_orders), 20260627_platform_settings,
 --   20260603_phase1_001 (lawyer_profiles.credit_balance).
 --
--- DEPLOY ORDER — EITHER ORDER
---   Nothing reads the new tables until the later B1 tasks, whose code
---   tolerates their absence (42P01 / 42883) and keeps today's behaviour.
+-- DEPLOY ORDER — BEFORE THE DEPLOY (the batch ships it as
+-- 02_BEFORE_DEPLOY_20261022_20_points_lots.sql, after 20261022_10)
+--   The B1 code tolerates the absence of these objects (42P01 / 42883) and
+--   keeps today's behaviour, so running it late breaks nothing — but a paid
+--   top-up cannot be credited as a lot until this file has run.
 --   points_enforcement is seeded false: no tool starts refusing for lack of
 --   points until an admin turns it on.
 --
