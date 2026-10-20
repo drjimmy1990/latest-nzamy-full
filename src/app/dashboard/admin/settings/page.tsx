@@ -21,6 +21,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { isBillingCompanyComplete } from "@/lib/payments/moyasarConfig";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,6 +40,43 @@ interface SettingsData {
   payments_gateway?: { status: "disabled" | "test" | "live"; provider?: string | null };
   library_status?: { status: "open" | "closed"; message?: string | null };
   founder_campaign?: { starts_on?: unknown; ends_on?: unknown; library_days?: unknown };
+  billing_company?: { legal_name_ar?: unknown; cr_number?: unknown; vat_number?: unknown; address_ar?: unknown };
+}
+
+/** The providers the settings route accepts (moyasarConfig.paymentsGatewaySettingIssue). */
+type PaymentProvider = "moyasar" | "stub";
+
+/** platform_settings.billing_company, as edited here ("" = not filled). */
+interface BillingCompanyForm {
+  legal_name_ar: string;
+  cr_number: string;
+  vat_number: string;
+  address_ar: string;
+}
+
+const EMPTY_BILLING_COMPANY: BillingCompanyForm = { legal_name_ar: "", cr_number: "", vat_number: "", address_ar: "" };
+
+const BILLING_COMPANY_FIELDS: ReadonlyArray<{ key: keyof BillingCompanyForm; label: string; hint?: string; ltr?: boolean }> = [
+  { key: "legal_name_ar", label: "الاسم النظامي للمنشأة" },
+  { key: "cr_number", label: "رقم السجل التجاري", ltr: true },
+  { key: "vat_number", label: "الرقم الضريبي", hint: "15 رقماً، يبدأ بـ 3 وينتهي بـ 3", ltr: true },
+  { key: "address_ar", label: "العنوان" },
+];
+
+/** A stored string field, else "" (an empty input). */
+function storedText(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+/** The form as the setting stores it: trimmed, "" → null. */
+function billingCompanyValue(form: BillingCompanyForm) {
+  const clean = (v: string) => (v.trim() === "" ? null : v.trim());
+  return {
+    legal_name_ar: clean(form.legal_name_ar),
+    cr_number: clean(form.cr_number),
+    vat_number: clean(form.vat_number),
+    address_ar: clean(form.address_ar),
+  };
 }
 
 /** A `YYYY-MM-DD` string from the stored setting, else "" (an empty date field). */
@@ -83,7 +121,10 @@ export default function AdminSettingsPage() {
 
   // Payment gateway
   const [paymentStatus, setPaymentStatus] = useState<"disabled" | "test" | "live">("disabled");
-  const [paymentProvider, setPaymentProvider] = useState<string>("");
+  const [paymentProvider, setPaymentProvider] = useState<PaymentProvider>("moyasar");
+
+  // The receipt's issuer (billing_company); live needs all four filled.
+  const [billingCompany, setBillingCompany] = useState<BillingCompanyForm>(EMPTY_BILLING_COMPANY);
 
   // Legal library open/close switch. Defaults to "open" so a failed settings
   // load never renders this control as if the library were already closed.
@@ -140,8 +181,17 @@ export default function AdminSettingsPage() {
         if (settings.payments_gateway?.status) {
           setPaymentStatus(settings.payments_gateway.status);
         }
-        if (typeof settings.payments_gateway?.provider === "string") {
-          setPaymentProvider(settings.payments_gateway.provider);
+        if (settings.payments_gateway?.provider === "stub") {
+          setPaymentProvider("stub");
+        }
+        if (settings.billing_company && typeof settings.billing_company === "object") {
+          const b = settings.billing_company;
+          setBillingCompany({
+            legal_name_ar: storedText(b.legal_name_ar),
+            cr_number: storedText(b.cr_number),
+            vat_number: storedText(b.vat_number),
+            address_ar: storedText(b.address_ar),
+          });
         }
         if (settings.library_status?.status) {
           setLibraryStatus(settings.library_status.status);
@@ -207,12 +257,20 @@ export default function AdminSettingsPage() {
   }
 
   function savePaymentGateway() {
+    // "disabled" is stored with moyasar or null; a disabled stub is just null.
+    const provider = paymentStatus === "disabled" && paymentProvider === "stub" ? null : paymentProvider;
     saveSettingKey(
       "payments_gateway",
-      { status: paymentStatus, provider: paymentProvider.trim() || null },
+      { status: paymentStatus, provider },
       "تم حفظ إعدادات بوابة الدفع.",
     );
   }
+
+  function saveBillingCompany() {
+    saveSettingKey("billing_company", billingCompanyValue(billingCompany), "تم حفظ بيانات المنشأة.");
+  }
+
+  const billingCompanyComplete = isBillingCompanyComplete(billingCompanyValue(billingCompany));
 
   function saveLibraryStatus() {
     // Closing takes the entire library offline for every visitor, so require a
@@ -669,7 +727,7 @@ export default function AdminSettingsPage() {
             </div>
             <div>
               <h2 className={`text-base font-black ${isDark ? "text-white" : "text-gray-900"}`}>بوابة الدفع</h2>
-              <p className={`text-xs mt-0.5 ${muted}`}>تحكم في تفعيل مدفوعات المنصة حتى يقرر مزود الدفع النهائي (Moyasar / Tap / HyperPay)</p>
+              <p className={`text-xs mt-0.5 ${muted}`}>تحكم في تفعيل مدفوعات المنصة عبر ميسّر</p>
             </div>
           </div>
           <button
@@ -694,9 +752,9 @@ export default function AdminSettingsPage() {
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {([
-                { key: "disabled", label: "معطّلة", desc: "لا توجد مدفوعات — يُحظر إنشاء الطلبات المدفوعة", color: "red" },
-                { key: "test", label: "تجريبية", desc: "يعمل محول الدفع التجريبي (stub) — للاختبار فقط", color: "amber" },
-                { key: "live", label: "فعّالة", desc: "مزود دفع حقيقي مفعّل", color: "emerald" },
+                { key: "disabled", label: "معطّلة", desc: "لا توجد مدفوعات — يُحظر الدفع الإلكتروني", color: "red" },
+                { key: "test", label: "تجريبي", desc: "مدفوعات ميسّر بمفاتيح الاختبار (لا يُخصم مال حقيقي)", color: "amber" },
+                { key: "live", label: "مباشر", desc: "مدفوعات حقيقية، ولا يُتاح حتى تكتمل بيانات المنشأة", color: "emerald" },
               ] as const).map((opt) => {
                 const active = paymentStatus === opt.key;
                 return (
@@ -732,22 +790,79 @@ export default function AdminSettingsPage() {
 
           {/* Provider */}
           <div className={`border-t pt-6 ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
-            <label className={`text-sm font-bold block mb-3 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
-              مزود الدفع (اختياري)
+            <label htmlFor="payment-provider" className={`text-sm font-bold block mb-3 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
+              مزود الدفع
             </label>
-            <input
-              type="text"
+            <select
+              id="payment-provider"
               value={paymentProvider}
-              onChange={(e) => setPaymentProvider(e.target.value)}
-              placeholder="مثال: moyasar / tap / hyperpay — اتركه فارغاً حتى التفعيل"
-              className={`w-full px-4 py-2.5 rounded-xl border text-sm font-mono outline-none ${
+              onChange={(e) => setPaymentProvider(e.target.value === "stub" ? "stub" : "moyasar")}
+              className={`w-full px-4 py-2.5 rounded-xl border text-sm outline-none ${
                 isDark
-                  ? "bg-[#0d1117] border-white/10 text-white placeholder:text-zinc-600 focus:border-[#C8A762]/40"
-                  : "bg-white border-slate-200 text-gray-900 placeholder:text-slate-400 focus:border-[#0B3D2E]/40"
+                  ? "bg-[#0d1117] border-white/10 text-white focus:border-[#C8A762]/40"
+                  : "bg-white border-slate-200 text-gray-900 focus:border-[#0B3D2E]/40"
               }`}
-            />
+            >
+              <option value="moyasar">ميسّر (Moyasar)</option>
+              <option value="stub">محوّل تجريبي داخلي (stub) — بيئة التطوير فقط</option>
+            </select>
             <p className={`text-xs mt-2 ${muted}`}>
-              عند ضبط الحالة على «معطّلة»، تُحظر جميع إجراءات الدفع في المنصة ويعرض المستخدمون رسالة «الدفع غير متاح حالياً».
+              يعمل الوضع المختار فقط إذا طابقت مفاتيح ميسّر في الخادم هذا الوضع (مفاتيح الاختبار للتجريبي، والمفاتيح الحقيقية للمباشر)؛ وإلا يبقى الدفع متوقفاً.
+            </p>
+            <p className={`text-xs mt-2 ${muted}`}>
+              عند ضبط الحالة على «معطّلة»، تُحظر جميع إجراءات الدفع في المنصة ويعرض المستخدمون رسالة «الدفع الإلكتروني غير متاح حالياً».
+            </p>
+          </div>
+
+          {/* Billing company (the receipt's issuer) */}
+          <div className={`border-t pt-6 ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div>
+                <p className={`text-sm font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>بيانات المنشأة</p>
+                <p className={`text-xs mt-0.5 ${muted}`}>تظهر في إيصال الدفع، ولا يُتاح الوضع المباشر حتى تكتمل الحقول الأربعة.</p>
+              </div>
+              <button
+                onClick={saveBillingCompany}
+                disabled={saving === "billing_company"}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold bg-[#0B3D2E] text-white hover:bg-[#0a3328] disabled:opacity-50 transition-colors"
+              >
+                {saving === "billing_company" ? (
+                  <SpinnerGap size={16} className="animate-spin" />
+                ) : (
+                  <FloppyDisk size={16} />
+                )}
+                حفظ
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {BILLING_COMPANY_FIELDS.map((field) => (
+                <div key={field.key}>
+                  <label htmlFor={`billing-${field.key}`} className={`text-xs font-bold block mb-1.5 ${isDark ? "text-zinc-300" : "text-slate-600"}`}>
+                    {field.label}
+                  </label>
+                  <input
+                    id={`billing-${field.key}`}
+                    type="text"
+                    dir={field.ltr ? "ltr" : undefined}
+                    inputMode={field.ltr ? "numeric" : undefined}
+                    value={billingCompany[field.key]}
+                    onChange={(e) => setBillingCompany((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                    className={`w-full px-4 py-2.5 rounded-xl border text-sm outline-none ${field.ltr ? "font-mono" : ""} ${
+                      isDark
+                        ? "bg-[#0d1117] border-white/10 text-white focus:border-[#C8A762]/40"
+                        : "bg-white border-slate-200 text-gray-900 focus:border-[#0B3D2E]/40"
+                    }`}
+                  />
+                  {field.hint ? <p className={`text-[11px] mt-1 ${muted}`}>{field.hint}</p> : null}
+                </div>
+              ))}
+            </div>
+            <p className={`text-xs mt-3 font-bold ${
+              billingCompanyComplete ? "text-emerald-500" : isDark ? "text-amber-400" : "text-amber-600"
+            }`}>
+              {billingCompanyComplete
+                ? "بيانات المنشأة مكتملة."
+                : "بيانات المنشأة غير مكتملة — لا يمكن تفعيل الوضع المباشر."}
             </p>
           </div>
         </div>

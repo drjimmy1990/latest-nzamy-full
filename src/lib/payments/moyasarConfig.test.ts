@@ -192,3 +192,18 @@ test("source contract: the admin route, the status route and access-control are 
   assert.match(access, /webhookSecret: process\.env\.MOYASAR_WEBHOOK_SECRET/);
   assert.match(access, /billingCompanyComplete: isBillingCompanyComplete\(byKey\.get\("billing_company"\)\)/);
 });
+
+test("source contract: the admin settings page offers only accepted providers and edits billing_company", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const page = readFileSync(join(import.meta.dirname, "../../app/dashboard/admin/settings/page.tsx"), "utf8");
+  const options = [...page.matchAll(/<option value="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(options, ["moyasar", "stub"]);
+  assert.match(page, /مدفوعات ميسّر بمفاتيح الاختبار \(لا يُخصم مال حقيقي\)/);
+  assert.match(page, /مدفوعات حقيقية، ولا يُتاح حتى تكتمل بيانات المنشأة/);
+  assert.doesNotMatch(page, /محول الدفع التجريبي \(stub\) — للاختبار فقط/);
+  assert.match(page, /saveSettingKey\("billing_company", billingCompanyValue\(billingCompany\)/);
+  for (const key of ["legal_name_ar", "cr_number", "vat_number", "address_ar"]) {
+    assert.match(page, new RegExp(`key: "${key}"`));
+  }
+});

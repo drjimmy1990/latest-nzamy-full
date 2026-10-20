@@ -344,4 +344,9 @@ test("createMoyasarClient refuses a disabled or mismatched config without naming
     () => createMoyasarClient({ ...CFG, mode: "live" }, fetch),
     (err: Error) => !SECRETS.some((s) => err.message.includes(s)),
   );
+  // the publishable key must belong to the same mode as the secret key
+  assert.throws(
+    () => createMoyasarClient({ ...CFG, publishableKey: "pk_live_placeholderPublish789" }, fetch),
+    (err: Error) => /publishable key/.test(err.message) && !err.message.includes("pk_live_placeholderPublish789"),
+  );
 });

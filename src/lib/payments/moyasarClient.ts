@@ -192,6 +192,9 @@ export function createMoyasarClient(
   if (!cfg.secretKey.startsWith(`sk_${cfg.mode}_`)) {
     throw new Error(`createMoyasarClient: the secret key does not belong to ${cfg.mode} mode`);
   }
+  if (typeof cfg.publishableKey !== "string" || !cfg.publishableKey.startsWith(`pk_${cfg.mode}_`)) {
+    throw new Error(`createMoyasarClient: the publishable key does not belong to ${cfg.mode} mode`);
+  }
 
   const mode: MoyasarMode = cfg.mode;
   const timeoutMs = options.timeoutMs ?? MOYASAR_TIMEOUT_MS;

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getPaymentGatewayStatus } from "@/lib/access-control";
+import { MOYASAR_DISABLED_MESSAGE_AR } from "@/lib/payments/moyasarConfig";
+import { isPaidServiceRequest, paidServiceRequestAllowed } from "@/lib/payments/serviceRequestPaymentGate";
 import { recordEvent, RequestEvent } from "@/lib/events";
 import { dispatchToN8n } from "@/lib/n8n/dispatch";
 import { buildWebhookPayload } from "@/lib/n8n/payload";
@@ -290,8 +292,7 @@ export async function POST(request: NextRequest) {
     // current caller posts flat — but the two must stay in sync by
     // construction, not by coincidence.
     const payment = requestData.payment;
-    const isPaidRequest =
-      payment && typeof payment === "object" && Number(payment.amount) > 0;
+    const isPaidRequest = isPaidServiceRequest(payment);
 
     let persistedPayment = {
       amount: 0,
@@ -301,10 +302,13 @@ export async function POST(request: NextRequest) {
     };
 
     if (isPaidRequest) {
+      // Until B3 (office payments) a paid service request passes only through
+      // the enabled staging stub: with Moyasar on, B1 sells plans only, and a
+      // paid request here would be left pending with nothing to pay it.
       const gateway = await getPaymentGatewayStatus();
-      if (gateway.disabled) {
+      if (!paidServiceRequestAllowed(gateway)) {
         return NextResponse.json(
-          { error: "الدفع غير متاح حالياً" },
+          { error: MOYASAR_DISABLED_MESSAGE_AR },
           { status: 402 },
         );
       }

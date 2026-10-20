@@ -349,8 +349,9 @@ DROP VIEW IF EXISTS _verify_documents_policies;
 -- and both fingerprints are cheap to read, so the deploy reads them.
 -- =============================================================================
 
-SELECT 'platform_settings.payments_gateway status (expect disabled or live, never test/stub)' AS check,
-       coalesce((SELECT value->>'status' FROM public.platform_settings
+SELECT 'platform_settings.payments_gateway status/provider (expect disabled, or test/live with moyasar; never the stub on production)' AS check,
+       coalesce((SELECT (value->>'status') || '/' || coalesce(value->>'provider', 'null')
+                   FROM public.platform_settings
                   WHERE key = 'payments_gateway'), '(row missing)') AS present;
 
 SELECT 'is_active_firm_member overloads taking p_firm_id (expect 0)' AS check,
@@ -359,33 +360,48 @@ SELECT 'is_active_firm_member overloads taking p_firm_id (expect 0)' AS check,
            AND p.proname = 'is_active_firm_member'
            AND pg_get_function_arguments(p.oid) ILIKE '%p_firm_id%') AS present;
 
+-- >>> verify:payments_gateway — supabase/tests/rls/verify_payments_gateway.test.sql
+-- extracts the lines between these two markers; keep them.
 DO $$
 DECLARE
   v_status   text;
   v_provider text;
-  n          int;
 BEGIN
   -- _staging_only_20260916_enable_test_payment_gateway.sql flips the LIVE
   -- gateway to a stub with ON CONFLICT DO UPDATE, i.e. it overwrites whatever
   -- is there. Live value verified 2026-09-20: {"status":"disabled",
-  -- "provider":null}. 'live' is the other legitimate value (20260628).
+  -- "provider":null}. Since Moyasar B1 (20261022) the legitimate production
+  -- values are disabled, {"status":"test","provider":"moyasar"} (the owner's
+  -- run with Moyasar TEST keys: no real money moves) and
+  -- {"status":"live","provider":"moyasar"}.
   SELECT value->>'status', value->>'provider' INTO v_status, v_provider
     FROM public.platform_settings WHERE key = 'payments_gateway';
 
-  -- A stub gateway is LEGITIMATE on staging (20260628 documents `test`), so
-  -- this is a hard stop only when the deploy declares itself production:
+  -- The STUB is what must never reach production: provider 'stub', the old
+  -- status 'stub', or status 'test' with no provider (the pre-B1 stub shape).
+  -- It is LEGITIMATE on staging (20260628 documents `test`), so this is a
+  -- hard stop only when the deploy declares itself production:
   --   PGOPTIONS="-c nzamy.env=production" psql … -f supabase/migrations/_verify.sql
   -- Everywhere else it is a loud WARNING in the deploy log, never a silent pass.
-  IF v_status IN ('test', 'stub') THEN
+  IF coalesce(v_status, 'disabled') <> 'disabled'
+     AND (v_provider = 'stub'
+          OR v_status = 'stub'
+          OR (v_status = 'test' AND coalesce(v_provider, '') = '')) THEN
     IF current_setting('nzamy.env', true) = 'production' THEN
       RAISE EXCEPTION '_verify: platform_settings.payments_gateway is status=% provider=% on PRODUCTION — _staging_only_20260916_enable_test_payment_gateway.sql was applied here, and every payment flow is now running against a stub',
         v_status, coalesce(v_provider, 'null');
     ELSE
-      RAISE WARNING '_verify: platform_settings.payments_gateway is status=% provider=% — acceptable on staging only; it must read disabled/live before a production deploy (set nzamy.env=production to make this fatal)',
+      RAISE WARNING '_verify: platform_settings.payments_gateway is status=% provider=% — acceptable on staging only; it must read disabled or moyasar before a production deploy (set nzamy.env=production to make this fatal)',
         v_status, coalesce(v_provider, 'null');
     END IF;
   END IF;
+END $$;
+-- <<< verify:payments_gateway
 
+DO $$
+DECLARE
+  n int;
+BEGIN
   -- The two _superseded_20260916_* files redeclare the 20260903 helpers with
   -- renamed parameters (p_firm_id / p_firm instead of 20260903's p_firm), which
   -- is what makes them die with 42P13 — CREATE OR REPLACE cannot rename a
