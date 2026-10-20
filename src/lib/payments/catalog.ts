@@ -43,10 +43,19 @@ export type PayableItem = Readonly<{
   pointsValidityMonths?: number;
   /** Plans renew automatically (owner ٢٤٦), so only they keep the card. */
   saveCard: boolean;
+  /**
+   * The `profiles.user_type` values that may buy this item online, or "any".
+   * Access is gated by tier rank and same-rank purchases stack, so a plan
+   * sold to the wrong audience would buy another audience's access cheaper
+   * (a lawyer taking ind-preventive's `pro` for 149 instead of lawyer-pro).
+   * Checkout refuses a buyer outside the list (buyerAllowed).
+   */
+  buyers: Readonly<string[]> | "any";
 }>;
 
 function freezeItem(item: PayableItem): PayableItem {
   Object.freeze(item.prices);
+  if (Array.isArray(item.buyers)) Object.freeze(item.buyers);
   return Object.freeze(item);
 }
 
@@ -61,6 +70,7 @@ function plan(
   yearlySar: number,
   tier: ServerTierLiteral,
   vat: VatMode,
+  buyers: readonly string[],
 ): PayableItem {
   return freezeItem({
     id,
@@ -70,6 +80,7 @@ function plan(
     vat,
     tier,
     saveCard: true,
+    buyers: [...buyers],
   });
 }
 
@@ -83,6 +94,7 @@ function library(id: LibraryPlanRef, labelAr: string, sar: number, days: number)
     libraryPlanRef: id,
     libraryDays: days,
     saveCard: false,
+    buyers: "any",
   });
 }
 
@@ -96,17 +108,18 @@ function topup(id: string, labelAr: string, sar: number, points: number, months:
     points,
     pointsValidityMonths: months,
     saveCard: false,
+    buyers: "any",
   });
 }
 
 export const PAYABLE_ITEMS: Readonly<Record<string, PayableItem>> = Object.freeze({
-  "lawyer-pro": plan("lawyer-pro", "المحامي المحترف", 399, 3990, "pro", "exclusive"),
-  "consultant-independent": plan("consultant-independent", "المستشار القانوني المستقل", 399, 3990, "pro", "exclusive"),
-  "firm-basic": plan("firm-basic", "مكتب المحاماة", 990, 9900, "corp", "exclusive"),
-  "firm-enterprise": plan("firm-enterprise", "شركة المحاماة", 1490, 14900, "enterprise", "exclusive"),
-  "ind-ai": plan("ind-ai", "الباقة الذكية", 39, 390, "ai", "inclusive"),
-  "ind-preventive": plan("ind-preventive", "الباقة الوقائية", 149, 1490, "pro", "inclusive"),
-  "ind-litigation": plan("ind-litigation", "التأمين القانوني", 399, 3990, "max", "inclusive"),
+  "lawyer-pro": plan("lawyer-pro", "المحامي المحترف", 399, 3990, "pro", "exclusive", ["lawyer"]),
+  "consultant-independent": plan("consultant-independent", "المستشار القانوني المستقل", 399, 3990, "pro", "exclusive", ["lawyer", "provider"]),
+  "firm-basic": plan("firm-basic", "مكتب المحاماة", 990, 9900, "corp", "exclusive", ["firm"]),
+  "firm-enterprise": plan("firm-enterprise", "شركة المحاماة", 1490, 14900, "enterprise", "exclusive", ["firm"]),
+  "ind-ai": plan("ind-ai", "الباقة الذكية", 39, 390, "ai", "inclusive", ["individual"]),
+  "ind-preventive": plan("ind-preventive", "الباقة الوقائية", 149, 1490, "pro", "inclusive", ["individual"]),
+  "ind-litigation": plan("ind-litigation", "التأمين القانوني", 399, 3990, "max", "inclusive", ["individual"]),
   "lib-q1": library("lib-q1", "المكتبة القانونية — ربع سنوي", 1500, 90),
   "lib-q2": library("lib-q2", "المكتبة القانونية — نصف سنوي", 2750, 180),
   "lib-annual": library("lib-annual", "المكتبة القانونية — سنوي", 5000, 365),
@@ -163,6 +176,16 @@ export function quote(itemId: string, billing: Billing, buyerUserType: string | 
   const totalHalalas = listed;
   const netHalalas = Math.round((totalHalalas * 100) / (100 + VAT_PERCENT));
   return { ok: true, item, vatMode, netHalalas, vatHalalas: totalHalalas - netHalalas, totalHalalas };
+}
+
+/**
+ * True when an account of `userType` may buy `item` online. "any" items
+ * (library, top-ups) are open to every signed-in account; a plan only to its
+ * listed audience. An unknown or missing user type buys only "any" items.
+ */
+export function buyerAllowed(item: Pick<PayableItem, "buyers">, userType: string | null | undefined): boolean {
+  if (item.buyers === "any") return true;
+  return typeof userType === "string" && item.buyers.includes(userType);
 }
 
 const ARABIC_DIGITS = "٠١٢٣٤٥٦٧٨٩";

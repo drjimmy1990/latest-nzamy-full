@@ -25,8 +25,8 @@ import {
  *   - signed out → /login?from=<this page>;
  *   - the order is read with the service role AND `user_id = <the signed-in
  *     user>` in the same query: someone else's order (or none) is a 404;
- *   - fulfillOrder with the callback's payment id (or the one already stored
- *     on the order) — it re-fetches the payment from Moyasar with the secret
+ *   - fulfillOrder with the payment id already stored on the order (verified
+ *     when it was stamped), or else the callback's — it re-fetches the payment from Moyasar with the secret
  *     key and decides. `?status=` and `?message=` are never read: the URL is
  *     the payer's to edit;
  *   - the outcome is shown in Arabic (src/lib/payments/resultView.ts):
@@ -77,6 +77,17 @@ const BUTTON =
   "inline-flex items-center justify-center rounded-xl px-5 py-2.5 text-sm font-bold transition-colors";
 const PRIMARY = `${BUTTON} bg-[#0B3D2E] text-white hover:bg-[#0E4D3A]`;
 const SECONDARY = `${BUTTON} border border-zinc-300 text-zinc-800 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800`;
+
+/** The page cannot reach the database right now: say so, offer a refresh. */
+function temporarilyUnavailableView(): ResultView {
+  return {
+    tone: "pending",
+    title: "الخدمة غير متاحة مؤقتاً",
+    body: "تعذّر عرض حالة الدفع الآن. حدّث الصفحة بعد لحظات.",
+    refresh: true,
+    contact: false,
+  };
+}
 
 function ResultCard({ view, refreshHref }: { view: ResultView; refreshHref: string }) {
   return (
@@ -151,7 +162,13 @@ export default async function PaymentResultPage({ searchParams }: { searchParams
   } = await supabase.auth.getUser();
   if (!user) redirect(`/login?from=${encodeURIComponent(selfHref)}`);
 
-  const admin = await createServiceClient();
+  let admin: Awaited<ReturnType<typeof createServiceClient>>;
+  try {
+    admin = await createServiceClient();
+  } catch {
+    console.error("[payments/result] the service client could not be created");
+    return <Shell view={temporarilyUnavailableView()} refreshHref={selfHref} />;
+  }
   const { data, error } = await admin
     .from("payment_orders")
     .select("id, kind, item_id, billing, status, receipt_number, moyasar_payment_id")
@@ -172,7 +189,9 @@ export default async function PaymentResultPage({ searchParams }: { searchParams
   if (!data) notFound();
 
   const order = data as ResultOrder & { moyasar_payment_id: string | null };
-  const paymentId = urlPaymentId ?? order.moyasar_payment_id;
+  // The stored payment id wins: it was verified against this order when it was
+  // stamped. The callback's ?id= is used only while the order has none.
+  const paymentId = order.moyasar_payment_id ?? urlPaymentId;
 
   let view: ResultView;
   if (!paymentId) {

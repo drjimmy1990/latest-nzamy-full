@@ -46,9 +46,9 @@ test("never trusts ?status= from the URL", () => {
   assert.match(code, /firstParam\(sp\.id\)/);
 });
 
-test("fulfils with the callback's payment id (or the stored one) as the platform merchant", () => {
+test("fulfils with the stored payment id (the callback's only when the order has none) as the platform merchant", () => {
   assert.match(code, /fulfillOrder\(\{ orderId: order\.id, paymentId, merchant: "platform" \}\)/);
-  assert.match(code, /\?\? order\.moyasar_payment_id/);
+  assert.match(code, /const paymentId = order\.moyasar_payment_id \?\? urlPaymentId;/);
   assert.match(code, /resultViewWithoutPayment\(order\)/, "no payment id: no fulfilment call");
   assert.match(code, /paymentResultView\(result, order\)/);
 });
@@ -56,6 +56,11 @@ test("fulfils with the callback's payment id (or the stored one) as the platform
 test("Moyasar's own message is shown only beside the Arabic copy, with its own direction", () => {
   assert.match(code, /view\.detail/);
   assert.match(code, /dir="auto"/);
+});
+
+test("a service client that cannot be built renders the Arabic «temporarily unavailable» state, never a 500", () => {
+  assert.match(code, /try \{\s*admin = await createServiceClient\(\);\s*\} catch \{[\s\S]{0,200}temporarilyUnavailableView\(\)/);
+  assert.match(pageSource, /"الخدمة غير متاحة مؤقتاً"/);
 });
 
 test("deploy order: a missing payments table never answers 500", () => {

@@ -14,6 +14,7 @@ import { readFileSync } from "node:fs";
 import type { ServerTier } from "../access-control.ts";
 import {
   BUSINESS_USER_TYPES,
+  buyerAllowed,
   PAYABLE_ITEMS,
   formatHalalas,
   quote,
@@ -201,6 +202,59 @@ test("only plans save the card (auto-renew)", () => {
   }
 });
 
+test("each item's buyers: plans to their own audience, library and top-ups to anyone", () => {
+  const want: Record<string, readonly string[] | "any"> = {
+    "lawyer-pro": ["lawyer"],
+    "consultant-independent": ["lawyer", "provider"],
+    "firm-basic": ["firm"],
+    "firm-enterprise": ["firm"],
+    "ind-ai": ["individual"],
+    "ind-preventive": ["individual"],
+    "ind-litigation": ["individual"],
+    "lib-q1": "any",
+    "lib-q2": "any",
+    "lib-annual": "any",
+    "topup-100": "any",
+    "topup-250": "any",
+    "topup-500": "any",
+    "topup-1000": "any",
+  };
+  assert.deepEqual(Object.keys(want).sort(), [...EXPECTED_IDS].sort());
+  for (const [id, buyers] of Object.entries(want)) assert.deepEqual(PAYABLE_ITEMS[id].buyers, buyers, id);
+  for (const item of Object.values(PAYABLE_ITEMS)) {
+    if (item.kind === "plan") assert.notEqual(item.buyers, "any", `${item.id}: a plan is never sold to anyone`);
+  }
+});
+
+test("buyerAllowed: the audience check checkout runs before quoting", () => {
+  const P = PAYABLE_ITEMS;
+  // the swap the review found: a lawyer buying the individuals' pro / max tiers
+  assert.equal(buyerAllowed(P["ind-preventive"], "lawyer"), false);
+  assert.equal(buyerAllowed(P["ind-litigation"], "lawyer"), false);
+  assert.equal(buyerAllowed(P["ind-ai"], "firm"), false);
+  // and the reverse
+  assert.equal(buyerAllowed(P["lawyer-pro"], "individual"), false);
+  assert.equal(buyerAllowed(P["firm-basic"], "lawyer"), false);
+  assert.equal(buyerAllowed(P["consultant-independent"], "individual"), false);
+  // the audiences themselves
+  assert.equal(buyerAllowed(P["lawyer-pro"], "lawyer"), true);
+  assert.equal(buyerAllowed(P["consultant-independent"], "lawyer"), true);
+  assert.equal(buyerAllowed(P["consultant-independent"], "provider"), true);
+  assert.equal(buyerAllowed(P["firm-enterprise"], "firm"), true);
+  assert.equal(buyerAllowed(P["ind-litigation"], "individual"), true);
+  // a missing or unknown type buys only "any" items
+  for (const t of [null, undefined, "", "admin", "Lawyer"]) {
+    assert.equal(buyerAllowed(P["lawyer-pro"], t), false, String(t));
+    assert.equal(buyerAllowed(P["ind-ai"], t), false, String(t));
+    assert.equal(buyerAllowed(P["lib-q1"], t), true, String(t));
+    assert.equal(buyerAllowed(P["topup-100"], t), true, String(t));
+  }
+  for (const t of ["individual", "lawyer", "firm", "corporate", "micro", "provider"]) {
+    assert.equal(buyerAllowed(P["lib-annual"], t), true, t);
+    assert.equal(buyerAllowed(P["topup-1000"], t), true, t);
+  }
+});
+
 test("BUSINESS_USER_TYPES is the owner's list plus micro establishments", () => {
   assert.deepEqual(
     [...BUSINESS_USER_TYPES],
@@ -213,6 +267,7 @@ test("the catalog is frozen: no code can patch a price at runtime", () => {
   for (const item of Object.values(PAYABLE_ITEMS)) {
     assert.ok(Object.isFrozen(item), item.id);
     assert.ok(Object.isFrozen(item.prices), `${item.id}.prices`);
+    if (Array.isArray(item.buyers)) assert.ok(Object.isFrozen(item.buyers), `${item.id}.buyers`);
   }
   // Test files are ES modules, so this runs in strict mode and must throw.
   assert.throws(() => {
