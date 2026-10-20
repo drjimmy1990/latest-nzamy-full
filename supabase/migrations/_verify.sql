@@ -2777,3 +2777,178 @@ BEGIN
   RAISE NOTICE '_verify: 20261021_50 OK — founder_campaign = %; campaign active now (Riyadh): %; founder_badge readable by anon/authenticated, not writable by a session; trg_lawyer_profiles_founder enabled (definer %)',
     v, public.founder_campaign_active(), owner;
 END $$;
+
+-- ====================================================================
+-- 2026-10-22 — 20261022_10_payments_core.sql (Moyasar payments B1)
+-- ====================================================================
+-- Orders, saved cards and handled webhook events: a signed-in user reads only
+-- their own orders (never metadata) and cards (never the token), webhook
+-- events are service role only, no session writes any of them; receipt
+-- numbers come from a SECURITY DEFINER function only the service role runs;
+-- both tier CHECKs allow shield and enterprise; a library grant can carry the
+-- order that bought it (one grant per order). Keyed on the table's existence
+-- (to_regclass, never ::regclass), so a run before the migration passes with
+-- a NOTICE. Plan prices and an empty billing_company only NOTICE: an admin may
+-- edit a price, and live mode itself refuses an incomplete company.
+SELECT '20261022_10 applied (public.payment_orders)' AS check,
+       to_regclass('public.payment_orders') IS NOT NULL AS present;
+
+DO $$
+DECLARE
+  r        text;
+  p        text;
+  col      text;
+  v        text;
+  def      text;
+  tbl      text;
+  att      int2;
+  cfg      text[];
+  definer  boolean;
+  company  jsonb;
+  drift    text;
+  missing  text := '';
+BEGIN
+  IF to_regclass('public.payment_orders') IS NULL THEN
+    RAISE NOTICE '_verify: 20261022_10 is not applied yet — no online payment (no orders, saved cards or receipt numbers)';
+    RETURN;
+  END IF;
+
+  IF to_regclass('public.payment_methods') IS NULL OR to_regclass('public.payment_webhook_events') IS NULL
+     OR to_regclass('public.payment_receipt_seq') IS NULL
+     OR to_regprocedure('public.next_receipt_number()') IS NULL THEN
+    RAISE EXCEPTION '_verify: 20261022_10 is half applied — payment_methods, payment_webhook_events, payment_receipt_seq or next_receipt_number() is missing (re-run 20261022_10)';
+  END IF;
+
+  FOREACH tbl IN ARRAY ARRAY['payment_orders', 'payment_methods', 'payment_webhook_events'] LOOP
+    IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass('public.' || tbl)) THEN
+      missing := missing || format(' RLS is off on %s (re-run 20261022_10);', tbl);
+    END IF;
+  END LOOP;
+  IF (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND tablename = 'payment_orders') <> 1
+     OR NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'payment_orders'
+                     AND policyname = 'own payment orders' AND cmd = 'SELECT') THEN
+    missing := missing || ' payment_orders: expected exactly one policy, "own payment orders" FOR SELECT;';
+  END IF;
+  IF (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND tablename = 'payment_methods') <> 1
+     OR NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'payment_methods'
+                     AND policyname = 'own payment methods' AND cmd = 'SELECT') THEN
+    missing := missing || ' payment_methods: expected exactly one policy, "own payment methods" FOR SELECT;';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'payment_webhook_events') THEN
+    missing := missing || ' payment_webhook_events has a policy (it is service role only);';
+  END IF;
+
+  -- effective privileges (pg_attribute sweep): no table-level privilege for
+  -- the API roles; authenticated SELECTs every column but metadata / token
+  FOREACH tbl IN ARRAY ARRAY['payment_orders', 'payment_methods', 'payment_webhook_events'] LOOP
+    FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'public'] LOOP
+      FOREACH p IN ARRAY ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'] LOOP
+        IF has_table_privilege(r, 'public.' || tbl, p) THEN
+          missing := missing || format(' %s holds table %s on %s (a schema restore re-applied GRANT ALL? re-run 20261022_10);', r, p, tbl);
+        END IF;
+      END LOOP;
+      FOR col IN
+        SELECT a.attname::text FROM pg_attribute a
+         WHERE a.attrelid = to_regclass('public.' || tbl) AND a.attnum > 0 AND NOT a.attisdropped
+      LOOP
+        IF has_column_privilege(r, 'public.' || tbl, col, 'INSERT, UPDATE, REFERENCES') THEN
+          missing := missing || format(' %s can write %s.%s;', r, tbl, col);
+        END IF;
+        IF has_column_privilege(r, 'public.' || tbl, col, 'SELECT')
+           <> (r = 'authenticated'
+               AND ((tbl = 'payment_orders' AND col <> 'metadata')
+                    OR (tbl = 'payment_methods' AND col <> 'token'))) THEN
+          missing := missing || format(' %s %s SELECT on %s.%s (re-run 20261022_10);', r,
+                       CASE WHEN has_column_privilege(r, 'public.' || tbl, col, 'SELECT') THEN 'holds' ELSE 'lacks' END,
+                       tbl, col);
+        END IF;
+      END LOOP;
+    END LOOP;
+    IF NOT has_table_privilege('service_role', 'public.' || tbl, 'SELECT')
+       OR NOT has_table_privilege('service_role', 'public.' || tbl, 'INSERT')
+       OR NOT has_table_privilege('service_role', 'public.' || tbl, 'UPDATE') THEN
+      missing := missing || format(' service_role cannot read or write %s (checkout and fulfilment would fail);', tbl);
+    END IF;
+  END LOOP;
+
+  -- receipt numbers
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'public'] LOOP
+    IF has_sequence_privilege(r, 'public.payment_receipt_seq', 'USAGE, SELECT, UPDATE') THEN
+      missing := missing || format(' %s holds a privilege on payment_receipt_seq;', r);
+    END IF;
+    IF has_function_privilege(r, 'public.next_receipt_number()', 'EXECUTE') THEN
+      missing := missing || format(' %s can EXECUTE next_receipt_number() (re-run 20261022_10);', r);
+    END IF;
+  END LOOP;
+  IF NOT has_function_privilege('service_role', 'public.next_receipt_number()', 'EXECUTE') THEN
+    missing := missing || ' service_role cannot EXECUTE next_receipt_number() (a paid order would get no receipt number);';
+  END IF;
+  SELECT proconfig, prosecdef INTO cfg, definer FROM pg_proc
+   WHERE oid = to_regprocedure('public.next_receipt_number()');
+  IF NOT coalesce(definer, false) OR cfg IS NULL OR NOT ('search_path=""' = ANY (cfg)) THEN
+    missing := missing || ' next_receipt_number() is not SECURITY DEFINER with search_path '''' (re-run 20261022_10);';
+  END IF;
+
+  -- the tier CHECKs
+  FOREACH tbl IN ARRAY ARRAY['subscription_plans', 'subscriptions'] LOOP
+    SELECT pg_get_constraintdef(oid) INTO def FROM pg_constraint
+     WHERE conrelid = to_regclass('public.' || tbl) AND conname = tbl || '_tier_check';
+    FOREACH v IN ARRAY ARRAY['free', 'shield', 'ai', 'pro', 'max', 'corp', 'enterprise'] LOOP
+      IF def IS NULL OR position(quote_literal(v) IN def) = 0 THEN
+        missing := missing || format(' %s.tier CHECK does not allow %s (re-run 20261022_10);', tbl, v);
+      END IF;
+    END LOOP;
+  END LOOP;
+
+  -- library grants bought by an order
+  SELECT pg_get_constraintdef(oid) INTO def FROM pg_constraint
+   WHERE conrelid = to_regclass('public.library_access_grants') AND conname = 'library_access_grants_source_check';
+  IF def IS NULL OR position('''purchase''' IN def) = 0 THEN
+    missing := missing || ' library_access_grants source CHECK does not allow purchase (re-run 20261022_10);';
+  END IF;
+  SELECT attnum INTO att FROM pg_attribute
+   WHERE attrelid = to_regclass('public.library_access_grants') AND attname = 'order_id' AND NOT attisdropped;
+  IF att IS NULL THEN
+    missing := missing || ' library_access_grants.order_id is missing (re-run 20261022_10);';
+  ELSIF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = to_regclass('public.library_access_grants')
+                     AND contype = 'f' AND conkey = ARRAY[att] AND confrelid = to_regclass('public.payment_orders'))
+     OR NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = to_regclass('public.library_access_grants')
+                     AND contype = 'u' AND conkey = ARRAY[att]) THEN
+    missing := missing || ' library_access_grants.order_id lacks its FK to payment_orders or its UNIQUE (one grant per order);';
+  END IF;
+
+  -- the 7 plans sold online exist (a paid plan writes subscriptions.plan_id = item id)
+  SELECT string_agg(x.id, ', ') INTO drift
+    FROM unnest(ARRAY['ind-ai', 'ind-preventive', 'ind-litigation', 'lawyer-pro', 'consultant-independent',
+                      'firm-basic', 'firm-enterprise']) AS x(id)
+   WHERE NOT EXISTS (SELECT 1 FROM public.subscription_plans sp WHERE sp.id = x.id);
+  IF drift IS NOT NULL THEN
+    missing := missing || format(' subscription_plans lacks %s (a paid plan could not be granted — re-run 20261022_10);', drift);
+  END IF;
+
+  -- billing_company
+  SELECT value INTO company FROM public.platform_settings WHERE key = 'billing_company';
+  IF company IS NULL OR jsonb_typeof(company) <> 'object' THEN
+    missing := missing || format(' platform_settings billing_company is missing or not an object: %s (re-run 20261022_10);', coalesce(company::text, 'no row'));
+  END IF;
+
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: the 20261022_10 payments schema is broken —%', missing;
+  END IF;
+
+  SELECT string_agg(x.id || ' ' || sp.price_monthly || '/' || sp.price_yearly, ', ') INTO drift
+    FROM (VALUES ('ind-ai', 39, 390), ('ind-preventive', 149, 1490), ('ind-litigation', 399, 3990),
+                 ('lawyer-pro', 399, 3990), ('consultant-independent', 399, 3990),
+                 ('firm-basic', 990, 9900), ('firm-enterprise', 1490, 14900)) AS x(id, pm, py)
+    JOIN public.subscription_plans sp ON sp.id = x.id
+   WHERE sp.price_monthly <> x.pm OR sp.price_yearly <> x.py;
+  IF drift IS NOT NULL THEN
+    RAISE NOTICE '_verify: 20261022_10 — plan prices differ from the B1 catalog (an admin edit? checkout charges the code catalog, not this table): %', drift;
+  END IF;
+  IF NOT (company ?& ARRAY['legal_name_ar', 'cr_number', 'vat_number', 'address_ar'])
+     OR coalesce(company ->> 'legal_name_ar', '') = '' OR coalesce(company ->> 'cr_number', '') = ''
+     OR coalesce(company ->> 'vat_number', '') = '' OR coalesce(company ->> 'address_ar', '') = '' THEN
+    RAISE NOTICE '_verify: 20261022_10 — billing_company is not complete yet (legal name, CR, VAT number, address): live payments stay off until an admin fills it';
+  END IF;
+  RAISE NOTICE '_verify: 20261022_10 OK — payment_orders / payment_methods own-row SELECT without metadata / token, webhook events service role only, no session writes; next_receipt_number() service role only; tiers allow shield + enterprise; library grants take purchase + order_id; 7 sold plans present';
+END $$;
