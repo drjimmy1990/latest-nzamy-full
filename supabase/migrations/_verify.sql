@@ -2977,3 +2977,168 @@ BEGIN
   END IF;
   RAISE NOTICE '_verify: 20261022_10 OK — payment_orders / payment_methods own-row SELECT without metadata / token, webhook events service role only, no session writes; next_receipt_number() service role only; tiers allow shield + enterprise; library grants take purchase + order_id; 7 sold plans present';
 END $$;
+
+-- ====================================================================
+-- 2026-10-22 — 20261022_20_points_lots.sql (Moyasar payments B1, Task 2)
+-- ====================================================================
+-- Points in expiring lots (owner ٢٢٤ / ٢٤٤ / ٢٤٩): a signed-in user reads
+-- only their own lots and ledger rows, no session writes either table or the
+-- ledger sequence; credit_points / debit_points / revoke_lot are service role
+-- only; points_balance is authenticated (own balance) + service role; all four
+-- SECURITY DEFINER with search_path ''; debit_points locks the unexpired lots
+-- FOR UPDATE nearest-expiry first; points_enforcement is a JSON boolean.
+-- Keyed on the table's existence (to_regclass), so a run before the migration
+-- passes with a NOTICE. A positive credit_balance without a migrated lot only
+-- NOTICEs: admin/credits still writes credit_balance until the B1 points
+-- wiring lands.
+-- >>> verify:points_lots — supabase/tests/rls/points_lots.test.sql extracts
+-- the lines between these two markers; keep them.
+SELECT '20261022_20 applied (public.points_lots)' AS check,
+       to_regclass('public.points_lots') IS NOT NULL AS present;
+
+DO $$
+DECLARE
+  r        text;
+  p        text;
+  col      text;
+  tbl      text;
+  fn       text;
+  cfg      text[];
+  definer  boolean;
+  v        jsonb;
+  n        int;
+  missing  text := '';
+  lots_cols   CONSTANT text[] := array['id','user_id','source','points_total','points_left','expires_at','order_id','created_at'];
+  ledger_cols CONSTANT text[] := array['id','user_id','lot_id','delta','reason','tool','ref','created_at'];
+  fns         CONSTANT text[] := array['public.points_balance(uuid)',
+                                       'public.credit_points(uuid,integer,text,timestamp with time zone,uuid,text)',
+                                       'public.debit_points(uuid,integer,text,text)',
+                                       'public.revoke_lot(uuid,text)'];
+BEGIN
+  IF to_regclass('public.points_lots') IS NULL THEN
+    RAISE NOTICE '_verify: 20261022_20 is not applied yet — no points lots (top-ups cannot be credited; balances still live in lawyer_profiles.credit_balance)';
+    RETURN;
+  END IF;
+
+  IF to_regclass('public.points_ledger') IS NULL OR to_regclass('public.points_ledger_id_seq') IS NULL THEN
+    RAISE EXCEPTION '_verify: 20261022_20 is half applied — points_ledger or its id sequence is missing (re-run 20261022_20)';
+  END IF;
+
+  -- columns and the lot invariant
+  FOREACH col IN ARRAY lots_cols LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = to_regclass('public.points_lots')
+                    AND attname = col AND NOT attisdropped) THEN
+      missing := missing || format(' points_lots.%s is missing;', col);
+    END IF;
+  END LOOP;
+  FOREACH col IN ARRAY ledger_cols LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = to_regclass('public.points_ledger')
+                    AND attname = col AND NOT attisdropped) THEN
+      missing := missing || format(' points_ledger.%s is missing;', col);
+    END IF;
+  END LOOP;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = to_regclass('public.points_lots')
+                  AND conname = 'points_lots_points_left_check') THEN
+    missing := missing || ' points_lots_points_left_check is missing (a lot could go negative — re-run 20261022_20);';
+  END IF;
+
+  -- RLS and policies
+  FOREACH tbl IN ARRAY ARRAY['points_lots', 'points_ledger'] LOOP
+    IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass('public.' || tbl)) THEN
+      missing := missing || format(' RLS is off on %s (re-run 20261022_20);', tbl);
+    END IF;
+  END LOOP;
+  IF (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND tablename = 'points_lots') <> 1
+     OR NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'points_lots'
+                     AND policyname = 'own points lots' AND cmd = 'SELECT') THEN
+    missing := missing || ' points_lots: expected exactly one policy, "own points lots" FOR SELECT;';
+  END IF;
+  IF (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND tablename = 'points_ledger') <> 1
+     OR NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'points_ledger'
+                     AND policyname = 'own points ledger' AND cmd = 'SELECT') THEN
+    missing := missing || ' points_ledger: expected exactly one policy, "own points ledger" FOR SELECT;';
+  END IF;
+
+  -- effective privileges (pg_attribute sweep): no table-level privilege for
+  -- the API roles; authenticated SELECTs exactly the allow-list; no column write
+  FOREACH tbl IN ARRAY ARRAY['points_lots', 'points_ledger'] LOOP
+    FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'public'] LOOP
+      FOREACH p IN ARRAY ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'] LOOP
+        IF has_table_privilege(r, 'public.' || tbl, p) THEN
+          missing := missing || format(' %s holds table %s on %s (a schema restore re-applied GRANT ALL? re-run 20261022_20);', r, p, tbl);
+        END IF;
+      END LOOP;
+      FOR col IN
+        SELECT a.attname::text FROM pg_attribute a
+         WHERE a.attrelid = to_regclass('public.' || tbl) AND a.attnum > 0 AND NOT a.attisdropped
+      LOOP
+        IF has_column_privilege(r, 'public.' || tbl, col, 'INSERT, UPDATE, REFERENCES') THEN
+          missing := missing || format(' %s can write %s.%s (a user could mint points — re-run 20261022_20);', r, tbl, col);
+        END IF;
+        IF has_column_privilege(r, 'public.' || tbl, col, 'SELECT')
+           <> (r = 'authenticated'
+               AND ((tbl = 'points_lots' AND col = ANY (lots_cols))
+                    OR (tbl = 'points_ledger' AND col = ANY (ledger_cols)))) THEN
+          missing := missing || format(' %s %s SELECT on %s.%s (re-run 20261022_20);', r,
+                       CASE WHEN has_column_privilege(r, 'public.' || tbl, col, 'SELECT') THEN 'holds' ELSE 'lacks' END,
+                       tbl, col);
+        END IF;
+      END LOOP;
+    END LOOP;
+    IF NOT has_table_privilege('service_role', 'public.' || tbl, 'SELECT') THEN
+      missing := missing || format(' service_role cannot read %s (the billing page would show no points);', tbl);
+    END IF;
+  END LOOP;
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'public'] LOOP
+    IF has_sequence_privilege(r, 'public.points_ledger_id_seq', 'USAGE, SELECT, UPDATE') THEN
+      missing := missing || format(' %s holds a privilege on points_ledger_id_seq (re-run 20261022_20);', r);
+    END IF;
+  END LOOP;
+
+  -- the functions
+  FOREACH fn IN ARRAY fns LOOP
+    IF to_regprocedure(fn) IS NULL THEN
+      missing := missing || format(' %s is missing (re-run 20261022_20);', fn);
+      CONTINUE;
+    END IF;
+    SELECT proconfig, prosecdef INTO cfg, definer FROM pg_proc WHERE oid = to_regprocedure(fn);
+    IF NOT coalesce(definer, false) OR cfg IS NULL OR NOT ('search_path=""' = ANY (cfg)) THEN
+      missing := missing || format(' %s is not SECURITY DEFINER with search_path '''' (re-run 20261022_20);', fn);
+    END IF;
+    IF has_function_privilege('anon', fn, 'EXECUTE') OR has_function_privilege('public', fn, 'EXECUTE') THEN
+      missing := missing || format(' anon or PUBLIC can EXECUTE %s (re-run 20261022_20);', fn);
+    END IF;
+    IF has_function_privilege('authenticated', fn, 'EXECUTE') <> (fn = 'public.points_balance(uuid)') THEN
+      missing := missing || format(' authenticated %s EXECUTE %s (re-run 20261022_20);',
+                   CASE WHEN has_function_privilege('authenticated', fn, 'EXECUTE') THEN 'can' ELSE 'cannot' END, fn);
+    END IF;
+    IF NOT has_function_privilege('service_role', fn, 'EXECUTE') THEN
+      missing := missing || format(' service_role cannot EXECUTE %s;', fn);
+    END IF;
+  END LOOP;
+  IF to_regprocedure('public.debit_points(uuid,integer,text,text)') IS NOT NULL
+     AND pg_get_functiondef(to_regprocedure('public.debit_points(uuid,integer,text,text)'))
+         !~* 'order\s+by\s+pl\.expires_at\s*,\s*pl\.created_at\s*,\s*pl\.id\s+for\s+update' THEN
+    missing := missing || ' debit_points no longer locks the lots FOR UPDATE nearest-expiry first (re-run 20261022_20);';
+  END IF;
+
+  -- points_enforcement
+  SELECT value INTO v FROM public.platform_settings WHERE key = 'points_enforcement';
+  IF v IS NULL OR jsonb_typeof(v) <> 'boolean' THEN
+    missing := missing || format(' platform_settings points_enforcement is missing or not a JSON boolean: %s (re-run 20261022_20);', coalesce(v::text, 'no row'));
+  END IF;
+
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: the 20261022_20 points lots are broken —%', missing;
+  END IF;
+
+  SELECT count(*) INTO n FROM public.lawyer_profiles lp
+   WHERE lp.credit_balance > 0
+     AND NOT EXISTS (SELECT 1 FROM public.points_lots pl WHERE pl.user_id = lp.user_id AND pl.source = 'migrated');
+  IF n > 0 THEN
+    RAISE NOTICE '_verify: 20261022_20 — % lawyer(s) hold a positive credit_balance but no migrated lot (credited after the migration ran? admin/credits still writes credit_balance)', n;
+  END IF;
+  RAISE NOTICE '_verify: 20261022_20 OK — points_lots / points_ledger own-row SELECT, no session writes; points_balance own-or-service, credit / debit / revoke service role only; debit locks nearest-expiry first; points_enforcement = %; % migrated lot(s)',
+    v, (SELECT count(*) FROM public.points_lots WHERE source = 'migrated');
+END $$;
+-- <<< verify:points_lots
