@@ -34,6 +34,7 @@ export const NAV = [
       { href: "/dashboard/admin/provider-verification/firms", icon: Scales, label: "شركات المحاماة" },
       { href: "/dashboard/admin/sector-profiles", icon: Globe, label: "بروفيلات القطاعات" },
       { href: "/dashboard/admin/subscriptions", icon: CreditCard, label: "الاشتراكات" },
+      { href: "/dashboard/admin/subscriptions/orders", icon: CreditCard, label: "عمليات الدفع والاسترداد" },
       { href: "/dashboard/admin/subscriptions/coupons", icon: Tag, label: "الكوبونات" },
       { href: "/dashboard/admin/entitlements", icon: Crown, label: "منح الصلاحيات" },
       { href: "/dashboard/admin/entitlements/requests", icon: Tray, label: "طلبات الترقية" },

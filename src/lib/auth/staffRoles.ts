@@ -29,6 +29,8 @@ export type StaffAction =
   | "entitlements.decide"
   | "credits.adjust"
   | "orders.manage"
+  | "payments.read"
+  | "payments.refund"
   | "verifications.decide"
   | "community.moderate"
   | "tickets.manage"
@@ -50,6 +52,8 @@ const EVERY_ACTION: Readonly<Record<StaffAction, true>> = {
   "entitlements.decide": true,
   "credits.adjust": true,
   "orders.manage": true,
+  "payments.read": true,
+  "payments.refund": true,
   "verifications.decide": true,
   "community.moderate": true,
   "tickets.manage": true,
@@ -143,8 +147,9 @@ export const STAFF_MATRIX: Readonly<Record<StaffRole, ReadonlySet<StaffAction>>>
       "tickets.manage",
       "entitlements.decide",
       "read",
+      "payments.read",
     ]),
-    auditor: new FrozenSet<StaffAction>(["read"]),
+    auditor: new FrozenSet<StaffAction>(["read", "payments.read"]),
   });
 
 /**

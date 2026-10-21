@@ -183,7 +183,7 @@ async function grantPlan(
       current_period_end: window.end.toISOString(),
       auto_renew: false,
       payment_method_id: paymentMethodId,
-      metadata: { order_id: order.id, method: "moyasar" },
+      metadata: { order_id: order.id, method: "moyasar", replaced_ids: window.running.map(row => row.id) },
     });
     if (insertErr && insertErr.code === "23505") {
       // subscriptions_order_id_key: another call inserted this order's row

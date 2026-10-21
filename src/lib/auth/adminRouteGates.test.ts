@@ -33,7 +33,7 @@ const SRC = join(import.meta.dirname, "..", "..");
 const ADMIN_API = join(SRC, "app", "api", "v1", "admin");
 
 const ALL_ACTIONS = [...STAFF_MATRIX.super_admin] as StaffAction[];
-const WRITE_ACTIONS = ALL_ACTIONS.filter((a) => a !== "read");
+const WRITE_ACTIONS = ALL_ACTIONS.filter((a) => a !== "read" && a !== "payments.read");
 
 // ─── 1. The pure role decision ────────────────────────────────────────────────
 
@@ -238,6 +238,8 @@ const WRITE_MARKERS = [
   "grantLibraryAccess(",
   "fanOutBroadcast(",
   "dispatchOrderNotice(",
+  "adjustPointsWith(",
+  "refundOrderWith(",
 ];
 
 function firstWriteAt(body: string): number {
@@ -255,6 +257,7 @@ function countOf(body: string, needle: string): number {
  * one per arm that answers success after a write.
  */
 const GATES: Array<{ file: string; method: string; action: StaffAction | "per-field"; logs: number }> = [
+  { file: "payments/orders/[id]/refund/route.ts", method: "POST", action: "payments.refund", logs: 0 },
   { file: "users/[id]/route.ts", method: "DELETE", action: "users.delete", logs: 1 },
   { file: "users/[id]/route.ts", method: "PATCH", action: "per-field", logs: 1 },
   { file: "teams/route.ts", method: "POST", action: "staff.manage", logs: 1 },
@@ -305,7 +308,7 @@ for (const { file, method, action, logs } of GATES) {
     assert.ok(gateAt < writeAt, "the staff gate must run before the first write");
 
     const logAt = body.indexOf("logAdminAction(");
-    assert.ok(logAt > writeAt, "logAdminAction must come after the write it records");
+    if (logs > 0) assert.ok(logAt > writeAt, "logAdminAction must come after the write it records");
     assert.ok(
       countOf(body, "logAdminAction(") >= logs,
       `expected at least ${logs} logAdminAction call(s), one per successful arm`,

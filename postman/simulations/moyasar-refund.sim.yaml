@@ -1,0 +1,5 @@
+simulation: moyasar-refund
+routing: path
+mocks:
+  - routeKey: moyasar
+    path: ../mocks/moyasar-refund/config.yaml

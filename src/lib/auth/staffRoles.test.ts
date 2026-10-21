@@ -25,6 +25,8 @@ const EVERY_ACTION: Record<StaffAction, true> = {
   "entitlements.decide": true,
   "credits.adjust": true,
   "orders.manage": true,
+  "payments.read": true,
+  "payments.refund": true,
   "verifications.decide": true,
   "community.moderate": true,
   "tickets.manage": true,
@@ -40,14 +42,21 @@ const OPERATIONS_ROW: StaffAction[] = [
   "tickets.manage",
   "entitlements.decide",
   "read",
+  "payments.read",
 ];
 
 const ROLES: StaffRole[] = ["super_admin", "operations", "auditor"];
 
 const sorted = (row: Iterable<string>) => [...row].sort();
 
-test("the brief names 18 actions", () => {
-  assert.equal(ACTIONS.length, 18);
+test("the staff matrix includes the two payment actions", () => {
+  assert.equal(ACTIONS.length, 20);
+});
+test("only the super admin can refund; all staff roles may read payments", () => {
+  for (const role of ROLES) {
+    assert.equal(staffCan(role,"payments.read"),true);
+    assert.equal(staffCan(role,"payments.refund"),role === "super_admin");
+  }
 });
 
 test("the matrix has exactly the three staff roles", () => {
@@ -93,11 +102,11 @@ test("operations may decide an entitlement request but not grant one", () => {
   assert.equal(staffCan("operations", "entitlements.grant"), false);
 });
 
-test("auditor holds exactly {read}", () => {
-  assert.deepEqual(sorted(STAFF_MATRIX.auditor), ["read"]);
-  assert.equal(STAFF_MATRIX.auditor.size, 1);
+test("auditor holds only read actions", () => {
+  assert.deepEqual(sorted(STAFF_MATRIX.auditor), ["payments.read", "read"]);
+  assert.equal(STAFF_MATRIX.auditor.size, 2);
   for (const action of ACTIONS) {
-    assert.equal(staffCan("auditor", action), action === "read", action);
+    assert.equal(staffCan("auditor", action), action === "read" || action === "payments.read", action);
   }
 });
 
@@ -230,7 +239,7 @@ test("what a row hands out is a copy that cannot reach back", () => {
   });
   assert.equal(seen, row, "forEach passes the row, not the Set inside it");
 
-  assert.deepEqual(sorted(row), ["read"]);
+  assert.deepEqual(sorted(row), ["payments.read", "read"]);
   assert.equal(staffCan("auditor", "users.delete"), false);
   assert.equal(staffCan("auditor", "staff.manage"), false);
   assert.equal(staffCan("auditor", "credits.adjust"), false);
@@ -252,10 +261,10 @@ test("a row reads like a set", () => {
   assert.equal(row.isDisjointFrom(new Set<StaffAction>(["users.delete"])), true);
   assert.deepEqual(
     sorted(row.intersection(STAFF_MATRIX.auditor)),
-    ["read"],
+    ["payments.read", "read"],
   );
   assert.deepEqual(
     sorted(STAFF_MATRIX.auditor.symmetricDifference(row)),
-    sorted(OPERATIONS_ROW.filter((a) => a !== "read")),
+    sorted(OPERATIONS_ROW.filter((a) => a !== "read" && a !== "payments.read")),
   );
 });

@@ -35,6 +35,7 @@ export const ADMIN_PAGE_ACTION: Readonly<Record<string, StaffAction>> = Object.f
   "/dashboard/admin/users": "read",
   "/dashboard/admin/business": "read",
   "/dashboard/admin/subscriptions": "read",
+  "/dashboard/admin/subscriptions/orders": "payments.read",
   "/dashboard/admin/subscriptions/payments": "read",
   "/dashboard/admin/ai-usage": "read",
   "/dashboard/admin/ai-usage/credits": "read",

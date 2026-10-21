@@ -5,7 +5,7 @@
  * There is NO new enforcement here — the app already enforces tiers/credits in
  * src/lib/access-control.ts. This only writes the rows those checks read:
  *   - plan    → supabase `subscriptions` (+ auth metadata tier)   [mirrors POST /api/v1/admin/subscriptions]
- *   - credits → `credit_transactions` ledger (+ lawyer_profiles.credit_balance) [mirrors POST /api/v1/admin/credits]
+ *   - credits → expiring points lots through the service-only RPCs
  *   - wallet  → `wallet_transactions` credit
  *
  * A `library`/`media` request is fulfilled by granting the PLAN tier that
@@ -23,6 +23,7 @@ import {
   type ActivePlanRow,
 } from "./entitlementGrantRules.ts";
 import { pickPlanRow } from "./payments/pickPlanRow.ts";
+import { adjustPointsWith } from "./payments/pointsAdmin.ts";
 
 export type GrantAction = "plan" | "credits" | "wallet";
 
@@ -251,53 +252,14 @@ export async function grantEntitlement(input: GrantInput): Promise<GrantResult> 
         return { ok: false, error: "المبلغ يجب أن يكون عددًا صحيحًا غير صفري" };
       }
 
-      // Current balance: lawyer_profiles.credit_balance if present, else ledger.
-      const { data: lp } = await admin
-        .from("lawyer_profiles")
-        .select("credit_balance")
-        .eq("user_id", input.userId)
-        .maybeSingle();
-
-      let current = 0;
-      if (lp && typeof lp.credit_balance === "number") {
-        current = lp.credit_balance;
-      } else {
-        const { data: last } = await admin
-          .from("credit_transactions")
-          .select("balance_after")
-          .eq("user_id", input.userId)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        current = (last?.balance_after as number | null) ?? 0;
-      }
-
-      const newBalance = current + amount;
-      if (newBalance < 0) {
-        return { ok: false, error: `الرصيد غير كافٍ (الحالي: ${current})` };
-      }
-
-      const { error: txErr } = await admin.from("credit_transactions").insert({
-        user_id: input.userId,
-        amount,
-        kind: "admin_adjustment",
-        balance_after: newBalance,
-        description: input.description ?? "منحة إدارية للنقاط",
-        metadata: { ...actorMeta, previous_balance: current },
-      });
-      if (txErr) return { ok: false, error: txErr.message };
-
-      if (lp) {
-        await admin
-          .from("lawyer_profiles")
-          .update({ credit_balance: newBalance, updated_at: now.toISOString() })
-          .eq("user_id", input.userId);
-      }
-
+      const expires = new Date(now);
+      expires.setUTCFullYear(expires.getUTCFullYear() + 1);
+      const changed = await adjustPointsWith(admin, { userId: input.userId, amount, ref: `grant:${input.actorId ?? "admin"}:${input.description ?? ""}`, expiresAt: expires });
+      if (!changed.ok) return changed;
       return {
         ok: true,
         action: "credits",
-        detail: { previous_balance: current, new_balance: newBalance },
+        detail: { previous_balance: changed.previous_balance, new_balance: changed.new_balance },
       };
     }
 

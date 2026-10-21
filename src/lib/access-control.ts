@@ -457,6 +457,17 @@ export async function checkCreditBalance(
   const adminClient = await createServiceClient();
 
   // Try lawyer_profiles first (has credit_balance column)
+  const points = await adminClient.rpc("points_balance", { p_user: userId });
+  if (!points.error && Number.isSafeInteger(points.data)) {
+    const currentBalance = points.data as number;
+    const tier = await getUserTier(userId);
+    return { allowed: tier === "enterprise" || tier === "corp" || currentBalance >= requiredCredits, currentBalance, required: requiredCredits };
+  }
+  // Only an unapplied migration falls back. A database outage must never
+  // revive the old, non-expiring balance after lots became authoritative.
+  if (!points.error || !["42P01","42703","42883","PGRST202","PGRST204","PGRST205"].includes(points.error.code)) {
+    return { allowed: false, currentBalance: 0, required: requiredCredits };
+  }
   const { data: lawyer } = await adminClient
     .from("lawyer_profiles")
     .select("credit_balance")

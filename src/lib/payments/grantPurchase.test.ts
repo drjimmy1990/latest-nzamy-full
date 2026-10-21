@@ -50,7 +50,7 @@ test("a lapsed max row (status still active, period ended) never blocks: ind-ai 
   assert.equal(ins.current_period_start, NOW.toISOString());
   assert.equal(ins.current_period_end, "2026-11-22T08:00:00.000Z");
   assert.equal(ins.auto_renew, false);
-  assert.deepEqual(ins.metadata, { order_id: ORDER, method: "moyasar" });
+  assert.deepEqual(ins.metadata, { order_id: ORDER, method: "moyasar", replaced_ids: [] });
   assert.equal(lots(log).length, 0, "ind-ai comes with no monthly points");
 });
 
@@ -76,6 +76,7 @@ test("same rank, monthly with 20 days left + another monthly → the new period 
   assert.equal(ins.current_period_start, new Date(oldEnd).toISOString());
   assert.equal(ins.current_period_end, expectedEnd);
   assert.equal(ins.payment_method_id, "pm-1");
+  assert.deepEqual((ins.metadata as { replaced_ids: string[] }).replaced_ids, ["pro-m"]);
   const lot = lots(log)[0].payload as Record<string, unknown>;
   assert.equal(lot.p_source, "plan_monthly");
   assert.equal(lot.p_points, 1500);

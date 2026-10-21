@@ -197,8 +197,13 @@ export default async function PaymentResultPage({ searchParams }: { searchParams
   if (!paymentId) {
     view = resultViewWithoutPayment(order);
   } else {
-    const result = await fulfillOrder({ orderId: order.id, paymentId, merchant: "platform" });
-    view = paymentResultView(result, order);
+    try {
+      const result = await fulfillOrder({ orderId: order.id, paymentId, merchant: "platform" });
+      view = paymentResultView(result, order);
+    } catch {
+      console.error("[payments/result] fulfilment temporarily unavailable");
+      view = pendingView();
+    }
   }
 
   return <Shell view={view} refreshHref={selfHref} />;

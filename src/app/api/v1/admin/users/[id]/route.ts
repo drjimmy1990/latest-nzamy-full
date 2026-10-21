@@ -101,6 +101,10 @@ export async function GET(
       .order("created_at", { ascending: false })
       .limit(20);
 
+    const points = await adminClient.rpc("points_balance", { p_user: userId });
+    if (points.error || !Number.isSafeInteger(points.data)) {
+      return NextResponse.json({ error: "رصيد النقاط غير متاح مؤقتاً" }, { status: 503 });
+    }
     // ── Separate active subscription from history ──────────────────────────
     const activeSubscription =
       subscriptions?.find(
@@ -114,7 +118,7 @@ export async function GET(
         subscription_history: subscriptions ?? [],
         lawyer_profile: lawyerProfile ?? null,
         credit_transactions: creditTransactions ?? [],
-        credit_balance: (lawyerProfile?.credit_balance as number) ?? 0,
+        credit_balance: points.data,
       },
     });
   } catch (err) {

@@ -84,7 +84,7 @@ test("grantPurchase keys every grant on the order", () => {
   assert.ok(existingAt > -1 && decisionAt > existingAt && cancelAt > decisionAt && insertAt > cancelAt,
     "check the order's row, then the downgrade guard, then cancel, then insert");
   assert.match(plan, /if \(decision\.keepExisting\) return \{ ok: true, alreadyEntitled: true \}/);
-  assert.match(plan, /metadata: \{ order_id: order\.id, method: "moyasar" \}/);
+  assert.match(plan, /metadata: \{ order_id: order\.id, method: "moyasar", replaced_ids:/);
   assert.match(plan, /auto_renew: false/);
   assert.match(plan, /payment_method_id: paymentMethodId/);
   assert.match(plan, /billing_cycle: order\.billing/);

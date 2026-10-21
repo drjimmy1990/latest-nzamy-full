@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
+import { adjustPointsWith } from "@/lib/payments/pointsAdmin";
 
 /**
  * POST /api/v1/admin/credits — Grant or adjust credits for a user
@@ -12,9 +13,7 @@ import { logAdminAction } from "@/lib/auth/adminAudit";
  *   description: string
  * }
  *
- * - Reads current balance from lawyer_profiles.credit_balance
- * - Creates credit_transactions record with kind = 'admin_adjustment'
- * - Updates lawyer_profiles.credit_balance
+ * - Adjusts the authoritative points lots through service-only RPCs
  * - Returns the new balance
  *
  * Requires: a staff role with credits.adjust (owner ٢١٠)
@@ -55,71 +54,12 @@ export async function POST(request: NextRequest) {
   const adminClient = await createServiceClient();
 
   try {
-    // ── Get current balance ──────────────────────────────────────────────────
-    const { data: lawyerProfile, error: lpError } = await adminClient
-      .from("lawyer_profiles")
-      .select("user_id, credit_balance")
-      .eq("user_id", user_id)
-      .single();
-
-    if (lpError || !lawyerProfile) {
-      return NextResponse.json(
-        { error: "ملف المحامي غير موجود لهذا المستخدم" },
-        { status: 404 },
-      );
-    }
-
-    const currentBalance = (lawyerProfile.credit_balance as number) ?? 0;
-    const newBalance = currentBalance + amount;
-
-    // ── Prevent negative balance ─────────────────────────────────────────────
-    if (newBalance < 0) {
-      return NextResponse.json(
-        {
-          error: `الرصيد غير كافٍ. الرصيد الحالي: ${currentBalance}، المبلغ المطلوب خصمه: ${Math.abs(amount)}`,
-        },
-        { status: 400 },
-      );
-    }
-
-    // ── Create transaction record ────────────────────────────────────────────
-    const { error: txError } = await adminClient
-      .from("credit_transactions")
-      .insert({
-        user_id,
-        amount,
-        kind: "admin_adjustment",
-        balance_after: newBalance,
-        description,
-        metadata: {
-          adjusted_by: gate.userId,
-          adjusted_at: new Date().toISOString(),
-          previous_balance: currentBalance,
-        },
-      });
-
-    if (txError) {
-      return NextResponse.json(
-        { error: txError.message },
-        { status: 500 },
-      );
-    }
-
-    // ── Update credit balance ────────────────────────────────────────────────
-    const { error: updateError } = await adminClient
-      .from("lawyer_profiles")
-      .update({
-        credit_balance: newBalance,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("user_id", user_id);
-
-    if (updateError) {
-      return NextResponse.json(
-        { error: updateError.message },
-        { status: 500 },
-      );
-    }
+    const expires = new Date();
+    expires.setUTCFullYear(expires.getUTCFullYear() + 1);
+    const changed = await adjustPointsWith(adminClient, { userId: user_id, amount, ref: `admin:${gate.userId}:${description}`, expiresAt: expires });
+    if (!changed.ok) return NextResponse.json({ error: changed.error }, { status: changed.error.includes("غير كافٍ") ? 400 : 503 });
+    const currentBalance = changed.previous_balance;
+    const newBalance = changed.new_balance;
 
     await logAdminAction({
       actorId: gate.userId,
@@ -148,7 +88,7 @@ export async function POST(request: NextRequest) {
     console.error("[admin/credits] POST error:", err);
     return NextResponse.json(
       { error: "حدث خطأ أثناء تعديل الرصيد" },
-      { status: 500 },
+      { status: 503 },
     );
   }
 }

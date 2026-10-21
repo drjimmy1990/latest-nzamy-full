@@ -127,9 +127,6 @@ export async function GET(request: NextRequest) {
           status,
           billing_cycle,
           current_period_end
-        ),
-        lawyer_profiles!left(
-          credit_balance
         )
       `,
         { count: "exact" },
@@ -219,20 +216,15 @@ export async function GET(request: NextRequest) {
         ) as Record<DbUserType, number>)
       : null;
 
+    const balances = await adminClient.rpc("admin_points_balances", { p_users: (data ?? []).map(row => row.id) });
+    if (balances.error) return NextResponse.json({ error: "رصيد النقاط غير متاح مؤقتاً" }, { status: 503 });
+    const byUser = new Map<string, number>((balances.data ?? []).map((b: { user_id: string; balance: number }) => [b.user_id,b.balance]));
     // ── Transform results ────────────────────────────────────────────────────
     const users = (data ?? []).map((row: Record<string, unknown>) => {
       // Pick the active subscription (first match) or null
       const subs = row.subscriptions as Record<string, unknown>[] | null;
       const activeSub =
         subs?.find((s) => s.status === "active") ?? subs?.[0] ?? null;
-
-      const lawyerProfiles = row.lawyer_profiles as
-        | Record<string, unknown>[]
-        | Record<string, unknown>
-        | null;
-      const lp = Array.isArray(lawyerProfiles)
-        ? lawyerProfiles[0]
-        : lawyerProfiles;
 
       return {
         id: row.id,
@@ -254,7 +246,7 @@ export async function GET(request: NextRequest) {
               current_period_end: activeSub.current_period_end,
             }
           : null,
-        credit_balance: (lp?.credit_balance as number) ?? 0,
+        credit_balance: byUser.get(row.id as string) ?? 0,
       };
     });
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
+import { pickPlanRow } from "@/lib/payments/pickPlanRow";
 
 /**
  * PATCH /api/v1/admin/subscriptions/[id] — Update a subscription
@@ -80,15 +81,14 @@ export async function PATCH(
         
         if (profile) {
           const audience = profile.user_type === "individual" ? "individual" : profile.user_type === "firm" ? "firm" : "lawyer";
-          const { data: plan } = await adminClient
+          const { data: plans } = await adminClient
             .from("subscription_plans")
             .select("id")
             .eq("tier", body.tier)
-            .eq("audience", audience)
-            .limit(1)
-            .maybeSingle();
-          if (plan) {
-            updateData.plan_id = plan.id;
+            .eq("audience", audience);
+          const planId = pickPlanRow(plans);
+          if (planId) {
+            updateData.plan_id = planId;
           } else {
             updateData.plan_id = `${audience}-${body.tier}`;
           }

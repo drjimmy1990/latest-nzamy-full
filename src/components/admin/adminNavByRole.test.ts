@@ -44,9 +44,9 @@ const SUPER_ONLY = [
 
 // ─── The console's own sidebar (AdminSidebar.tsx) ─────────────────────────────
 
-test("super_admin sees all 31 items of the console sidebar", () => {
+test("super_admin sees all 32 items of the console sidebar", () => {
   const all = hrefsOf(NAV);
-  assert.equal(all.length, 31, "the console sidebar has 31 items");
+  assert.equal(all.length, 32, "the console sidebar has 32 items");
   assert.equal(new Set(all).size, all.length, "no href is listed twice");
   assert.deepEqual(adminNavForRole("super_admin"), NAV);
 });
@@ -93,10 +93,10 @@ test("operations keeps its own day-to-day tools and the read pages", () => {
 
 test("auditor sees no write pages: only the read items", () => {
   const seen = hrefsOf(adminNavForRole("auditor"));
-  const reads = hrefsOf(NAV).filter((h) => ADMIN_PAGE_ACTION[h] === "read");
+  const reads = hrefsOf(NAV).filter((h) => ["read", "payments.read"].includes(ADMIN_PAGE_ACTION[h]));
   assert.deepEqual(seen, reads);
   assert.ok(seen.length > 0, "the auditor still has pages to read");
-  for (const href of seen) assert.equal(ADMIN_PAGE_ACTION[href], "read", href);
+  for (const href of seen) assert.ok(["read", "payments.read"].includes(ADMIN_PAGE_ACTION[href]), href);
   for (const href of [...SUPER_ONLY, "/dashboard/admin/tickets", "/dashboard/admin/provider-verification"]) {
     assert.equal(seen.includes(href), false, href);
   }
@@ -113,11 +113,8 @@ test("a section left with no item is dropped, not rendered empty", () => {
   for (const role of ROLES) {
     for (const group of adminNavForRole(role)) assert.ok(group.items.length > 0, `${role}: ${group.section}`);
   }
-  // Every console section keeps a read page, so the case is shown on ADMIN_SIDEBAR,
-  // whose «العمليات المالية» holds only write tools.
-  const titles = adminSidebarForRole("auditor").map((g) => g.title);
-  assert.ok(ADMIN_SIDEBAR.some((g) => g.title === "العمليات المالية"));
-  assert.equal(titles.includes("العمليات المالية"), false, "an emptied section disappears");
+  const filtered = filterNavGroupsByRole([{ title: "write only", items: [{ href: "/dashboard/admin/settings" }] }], "auditor");
+  assert.deepEqual(filtered, [], "an emptied section disappears");
 });
 
 test("the filter never changes the source nav", () => {
@@ -173,8 +170,8 @@ test("filterNavGroupsByRole keeps the group's own fields", () => {
 
 // ─── ADMIN_SIDEBAR (SharedSidebar / GlobalSearch) ─────────────────────────────
 
-test("ADMIN_SIDEBAR: super_admin and a null role see all 34 items", () => {
-  assert.equal(hrefsOf(ADMIN_SIDEBAR).length, 34, "ADMIN_SIDEBAR has 34 items");
+test("ADMIN_SIDEBAR: super_admin and a null role see all 35 items", () => {
+  assert.equal(hrefsOf(ADMIN_SIDEBAR).length, 35, "ADMIN_SIDEBAR has 35 items");
   assert.deepEqual(adminSidebarForRole("super_admin"), ADMIN_SIDEBAR);
   assert.deepEqual(adminSidebarForRole(null), ADMIN_SIDEBAR);
 });
@@ -189,7 +186,7 @@ test("ADMIN_SIDEBAR: operations sees no settings, team, roles or pricing item; t
 test("ADMIN_SIDEBAR: auditor sees only read pages (plus the personal /settings)", () => {
   for (const href of hrefsOf(adminSidebarForRole("auditor"))) {
     if (href === "/settings") continue;
-    assert.equal(ADMIN_PAGE_ACTION[href], "read", href);
+    assert.ok(["read","payments.read"].includes(ADMIN_PAGE_ACTION[href]), href);
   }
   for (const group of adminSidebarForRole("auditor")) assert.ok(group.items.length > 0);
 });
