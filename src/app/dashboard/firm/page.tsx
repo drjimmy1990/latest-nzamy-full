@@ -12,7 +12,7 @@ import {
   Lock, Plus, ArrowLeft,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
-import { useFirmRole } from "./layout";
+import { useFirmRole } from "./firmRoleContext";
 import { readWorkflowRequestsByReceiver, type WorkflowRequest } from "@/lib/workflowStore";
 import { isDemoMode } from "@/lib/runtimeMode";
 import { OnboardingBanner } from "@/components/OnboardingBanner";

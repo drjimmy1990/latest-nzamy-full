@@ -114,7 +114,7 @@ function useTypingEffect(text: string, speed = 40) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export function AiLandingPage() {
+function AiLandingPage() {
   const { lang, theme } = useTheme();
   const isRTL = lang === "ar";
   const isDark = theme === "dark";

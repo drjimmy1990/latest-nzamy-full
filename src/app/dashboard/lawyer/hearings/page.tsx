@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { LawyerDeadlinesPanel } from "../deadlines/page";
+import { LawyerDeadlinesPanel } from "../_components/LawyerDeadlinesPanel";
 import {
   CalendarCheck, Clock, MapPin, Gavel, Plus, Warning,
   CheckCircle, FileText, Buildings, Receipt,

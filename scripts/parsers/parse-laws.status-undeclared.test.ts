@@ -10,7 +10,7 @@ import path from "node:path";
 import test from "node:test";
 import { parseLaws } from "./parse-laws.ts";
 import { resolveArticleIdentityStatus, resolveSeedArticleStatus, seedLaws } from "../seed-library.ts";
-import { articleStatusForDetail } from "../../src/app/api/library/laws/[slug]/route.ts";
+import { articleStatusForDetail } from "../../src/app/api/library/laws/[slug]/_article-status.ts";
 
 function fixture(articleStatus: string | null): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nzamy-status-undeclared-"));

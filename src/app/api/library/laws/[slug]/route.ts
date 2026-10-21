@@ -1,3 +1,4 @@
+import { articleStatusForDetail } from "./_article-status";
 import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { checkLibraryAccess, hasFullLibraryAccess } from '@/lib/access-control';
@@ -422,20 +423,6 @@ export async function GET(
 
 /** Preview length granted to a locked article's body text, in characters. */
 const LOCKED_PREVIEW_CHARS = 100;
-
-const ARTICLE_DETAIL_STATUSES = new Set([
-  'active', 'amended', 'repealed', 'suspended', 'added', 'merged', 'status_undeclared',
-]);
-
-/** Detail API boundary: absence is unknown, and a malformed stored token fails closed. */
-export function articleStatusForDetail(rawValue: unknown): string {
-  const status = rawValue == null ? '' : String(rawValue).trim();
-  if (status === '') return 'status_undeclared';
-  if (!ARTICLE_DETAIL_STATUSES.has(status)) {
-    throw new Error(`unknown article status "${status}" in law detail response`);
-  }
-  return status;
-}
 
 /**
  * Separate, looser cap for a locked article's TITLE.
