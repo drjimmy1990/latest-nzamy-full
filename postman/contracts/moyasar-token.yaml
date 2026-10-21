@@ -1,0 +1,18 @@
+openapi: 3.0.3
+info:
+  title: Moyasar token deletion used by billing
+  version: 1.0.0
+servers:
+  - url: https://api.moyasar.com
+paths:
+  /v1/tokens/{id}:
+    delete:
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: Token deleted }
+        '404': { description: Token not found }
+        '500': { description: Provider unavailable }

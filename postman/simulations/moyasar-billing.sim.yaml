@@ -1,0 +1,5 @@
+simulation: moyasar-billing
+routing: path
+mocks:
+  - routeKey: moyasar
+    path: ../mocks/moyasar-token/config.yaml

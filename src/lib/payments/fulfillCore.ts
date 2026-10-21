@@ -203,6 +203,7 @@ async function saveCard(
         user_id: order.user_id,
         merchant: order.merchant ?? "platform",
         token,
+        live: client.mode === "live",
         brand: t?.brand ?? null,
         last_four: t?.lastFour ?? null,
         exp_month: t?.month ?? null,
@@ -264,6 +265,15 @@ async function finish(
     return { outcome: "pending", reason: "unknown_item", receiptNumber };
   }
   const item = PAYABLE_ITEMS[order.item_id];
+
+  // Record only masked payment details for receipts, including one-off buys
+  // that do not save a reusable card token. Never persist the masked PAN.
+  const lastFour = payment?.source.number?.match(/(\d{4})$/)?.[1] ?? null;
+  if (payment && lastFour && !order.metadata?.payment_method) {
+    if (!(await mergeOrderMetadata(admin, order.id, {
+      payment_method: { type: payment.source.type, last_four: lastFour },
+    }))) return { outcome: "pending", reason: "metadata_merge_failed", receiptNumber };
+  }
 
   const token = payment?.source?.token;
   const paymentMethodId = item.saveCard && token && client ? await saveCard(admin, client, order, token) : null;

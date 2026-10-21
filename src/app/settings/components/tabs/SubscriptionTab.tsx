@@ -53,12 +53,10 @@ export function SubscriptionTab() {
       </div>
 
       <div>
-        <SectionTitle>الفواتير</SectionTitle>
-        <EmptyPanel
-          icon={<Receipt size={28} />}
-          title="لا توجد فواتير"
-          description="لا تُعرض أي فاتورة في هذا الحساب، ولا يوجد مصدر فواتير مرتبط بهذه الصفحة."
-        />
+        <SectionTitle>الفوترة والمدفوعات</SectionTitle>
+        <Link href="/dashboard/billing" className="inline-flex items-center gap-2 rounded-xl bg-[#0B3D2E] px-5 py-3 text-sm font-bold text-white dark:bg-[#C8A762] dark:text-[#0B3D2E]">
+          <Receipt size={20} /> عرض المدفوعات والإيصالات والنقاط
+        </Link>
       </div>
     </div>
   );

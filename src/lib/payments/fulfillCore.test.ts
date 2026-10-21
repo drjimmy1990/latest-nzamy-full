@@ -104,6 +104,24 @@ const stamps = (log: FakeQuery[]) =>
   log.filter((q) => q.table === "payment_orders" && q.op === "update" && "fulfilled_at" in (q.payload as object));
 const unmatched = (log: FakeQuery[]) => log.filter((q) => q.table === "merge_payment_order_metadata");
 
+test("saved cards keep the verified gateway mode and receipts keep only masked payment details", async () => {
+  const row = orderRow({ kind: "plan", item_id: "lawyer-pro", billing: "monthly", total_halalas: 45885 });
+  const { client, log } = happyDb(row, q => {
+    if (q.table === "payment_methods" && q.op === "insert") return { data: { id: "card-1" } };
+    if (q.table === "subscriptions" && q.op === "select") return { data: [] };
+    if (q.table === "subscription_plans") return { data: [{ id: "plan-1", tier: "pro", name: "lawyer-pro" }] };
+    return undefined;
+  });
+  const { d } = deps(client, gateway(paymentOf({ amount: 45885, source: { type: "creditcard", token: "token-secret", number: "4111-11XX-XXXX-1111", company: "visa" } })));
+  await fulfillOrderWith(d, INPUT);
+  const inserted = log.find(q => q.table === "payment_methods" && q.op === "insert");
+  assert.equal((inserted?.payload as { live: boolean }).live, false);
+  const snapshot = log.find(q => q.table === "merge_payment_order_metadata" && JSON.stringify(q.payload).includes("payment_method"));
+  assert.ok(snapshot);
+  assert.ok(JSON.stringify(snapshot.payload).includes("1111"));
+  assert.ok(!JSON.stringify(snapshot.payload).includes("token-secret") && !JSON.stringify(snapshot.payload).includes("4111-11XX"));
+});
+
 test("grant: claim, then the points, then fulfilled_at stamped once (while null), then one notification", async () => {
   const { client, log } = happyDb();
   const { d, notices } = deps(client, gateway(paymentOf()));

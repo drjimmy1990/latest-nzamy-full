@@ -1,0 +1,10 @@
+version: 1
+id: 54a7591a-87fd-4a76-9109-ac36a39137ab
+name: Moyasar token deletion used by billing
+slug: moyasar-token-deletion-used-by-b
+protocol: http
+port: 4918
+scenarios:
+  - name: default
+    path: ./default.js
+    default: true
