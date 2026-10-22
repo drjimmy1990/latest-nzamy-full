@@ -3,9 +3,9 @@ import { redirect } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { DeleteCardButton } from "@/components/payments/BillingControls";
-import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { BILLING_UNAVAILABLE_AR, getBillingWith } from "@/lib/payments/billingCore";
-import { arabicDigits, billingDateAr, billingItemAr, cardLabel, orderStatusAr, type BillingData } from "@/lib/payments/billingView";
+import { arabicDigits, billingDateAr, billingItemAr, cardLabel, hasReceipt, orderStatusAr, type BillingData } from "@/lib/payments/billingView";
 import { formatHalalas } from "@/lib/payments/catalog";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +18,8 @@ export default async function BillingPage() {
   if (!user) redirect("/login?next=%2Fdashboard%2Fbilling");
   let data: BillingData | null = null;
   try {
-    const result = await getBillingWith(await createServiceClient(), user.id);
+    // The user's own rows through the user's RLS client, never the service client.
+    const result = await getBillingWith(supabase, user.id);
     if (result.status === 200) data = result.body as BillingData;
   } catch { /* The page keeps a useful unavailable state while configuration is missing. */ }
   return <>
@@ -42,7 +43,7 @@ export default async function BillingPage() {
           </section>
           <section className={PANEL}>
             <h2 className="text-xl font-bold">عمليات الدفع</h2><p className="mt-2 text-xs text-zinc-500">آخر ١٠٠ عملية في حسابك</p>
-            {data.orders.length ? <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[560px] text-right text-sm"><thead className="text-zinc-500"><tr>{["العملية", "التاريخ", "المبلغ", "الحالة", "الإيصال"].map(label => <th key={label} className="py-3 pl-4 font-medium">{label}</th>)}</tr></thead><tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">{data.orders.map(order => <tr key={order.id}><td className="py-4 pl-4 font-semibold">{billingItemAr(order.item_id)}</td><td className="py-4 pl-4">{billingDateAr(order.paid_at ?? order.created_at)}</td><td className="py-4 pl-4 whitespace-nowrap">{formatHalalas(order.total_halalas)}</td><td className="py-4 pl-4">{orderStatusAr(order.status)}</td><td className="py-4">{order.receipt_number ? <Link href={`/dashboard/billing/receipt/${order.id}`} className="font-semibold text-[#0B3D2E] dark:text-[#C8A762]">عرض الإيصال</Link> : "—"}</td></tr>)}</tbody></table></div> : <p className="mt-4 text-sm text-zinc-500">لا توجد عمليات دفع في حسابك.</p>}
+            {data.orders.length ? <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[560px] text-right text-sm"><thead className="text-zinc-500"><tr>{["العملية", "التاريخ", "المبلغ", "الحالة", "الإيصال"].map(label => <th key={label} className="py-3 pl-4 font-medium">{label}</th>)}</tr></thead><tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">{data.orders.map(order => <tr key={order.id}><td className="py-4 pl-4 font-semibold">{billingItemAr(order.item_id)}</td><td className="py-4 pl-4">{billingDateAr(order.paid_at ?? order.created_at)}</td><td className="py-4 pl-4 whitespace-nowrap">{formatHalalas(order.total_halalas)}</td><td className="py-4 pl-4">{orderStatusAr(order.status)}</td><td className="py-4">{hasReceipt(order) ? <Link href={`/dashboard/billing/receipt/${order.id}`} className="font-semibold text-[#0B3D2E] dark:text-[#C8A762]">عرض الإيصال</Link> : "—"}</td></tr>)}</tbody></table></div> : <p className="mt-4 text-sm text-zinc-500">لا توجد عمليات دفع في حسابك.</p>}
           </section>
         </>}
       </div>

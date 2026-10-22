@@ -60,9 +60,14 @@ export function billingDateAr(value: string | null | undefined): string {
   if (!value || !Number.isFinite(Date.parse(value))) return "غير متاح";
   return new Intl.DateTimeFormat("ar-SA-u-ca-gregory", { dateStyle: "medium", timeZone: "Asia/Riyadh" }).format(new Date(value));
 }
+/** A receipt exists only for money actually taken: paid, or paid then refunded. A voided payment never settled. */
+const RECEIPT_STATUSES: readonly string[] = ["paid", "refunded"];
+export function hasReceipt(order: Pick<BillingOrder, "status" | "receipt_number">): boolean {
+  return !!order.receipt_number && RECEIPT_STATUSES.includes(order.status);
+}
 /** Receipts use the paid order's amounts; current catalog prices never replace them. */
 export function receiptView(order: BillingOrder, company: unknown) {
-  if (!order.receipt_number || !order.paid_at || !["paid", "refunded", "voided"].includes(order.status)) return null;
+  if (!hasReceipt(order) || !order.paid_at) return null;
   const amounts = [order.net_halalas, order.vat_halalas, order.total_halalas, order.refunded_halalas];
   if (order.currency !== "SAR" || !amounts.every(v => Number.isSafeInteger(v) && v >= 0) || order.total_halalas <= 0 || order.total_halalas !== order.net_halalas + order.vat_halalas || order.refunded_halalas > order.total_halalas) return null;
   return {
@@ -72,6 +77,7 @@ export function receiptView(order: BillingOrder, company: unknown) {
     date: billingDateAr(order.paid_at),
     item: billingItemAr(order.item_id),
     net: formatHalalas(order.net_halalas),
+    vatLabel: "ضريبة القيمة المضافة ١٥٪",
     vat: formatHalalas(order.vat_halalas),
     total: formatHalalas(order.total_halalas),
     refunded: formatHalalas(order.refunded_halalas),

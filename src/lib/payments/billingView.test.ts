@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { receiptView, cardLabel, orderStatusAr } from "./billingView.ts";
+import { receiptView, cardLabel, orderStatusAr, hasReceipt } from "./billingView.ts";
 
 const order = { id: "order-1", item_id: "lawyer-pro", net_halalas: 39900, vat_halalas: 5985, total_halalas: 45885, currency: "SAR", receipt_number: "NZ-2026-000001", paid_at: "2026-10-22T10:00:00Z", status: "paid", refunded_halalas: 0, last_four: "1111" };
 const company = { legal_name_ar: "منشأة الاختبار", cr_number: "1234567890", vat_number: "300000000000003", address_ar: "الرياض" };
@@ -42,4 +42,15 @@ test("card copy renders only four digits, including unknown-card fallback", () =
 test("test-mode receipt clearly says no real money was charged", () => {
   assert.equal(receiptView({ ...order, live: false }, company)?.testNotice, "إيصال تجريبي — لم تُخصم أموال حقيقية");
   assert.equal(receiptView({ ...order, live: true }, company)?.testNotice, null);
+});
+test("receipts exist only for paid and refunded orders; voided, failed and cancelled are not receipts", () => {
+  for (const status of ["voided", "failed", "cancelled"]) {
+    assert.equal(receiptView({ ...order, status }, company), null, status);
+    assert.equal(hasReceipt({ ...order, status }), false, status);
+  }
+  for (const status of ["paid", "refunded"]) assert.equal(hasReceipt({ ...order, status }), true, status);
+  assert.equal(hasReceipt({ ...order, receipt_number: null }), false);
+});
+test("the receipt VAT label reads exactly «ضريبة القيمة المضافة ١٥٪»", () => {
+  assert.equal(receiptView(order, company)?.vatLabel, "ضريبة القيمة المضافة ١٥٪");
 });

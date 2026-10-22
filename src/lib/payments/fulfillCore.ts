@@ -266,15 +266,6 @@ async function finish(
   }
   const item = PAYABLE_ITEMS[order.item_id];
 
-  // Record only masked payment details for receipts, including one-off buys
-  // that do not save a reusable card token. Never persist the masked PAN.
-  const lastFour = payment?.source.number?.match(/(\d{4})$/)?.[1] ?? null;
-  if (payment && lastFour && !order.metadata?.payment_method) {
-    if (!(await mergeOrderMetadata(admin, order.id, {
-      payment_method: { type: payment.source.type, last_four: lastFour },
-    }))) return { outcome: "pending", reason: "metadata_merge_failed", receiptNumber };
-  }
-
   const token = payment?.source?.token;
   const paymentMethodId = item.saveCard && token && client ? await saveCard(admin, client, order, token) : null;
 
@@ -287,6 +278,17 @@ async function finish(
     if (granted.missing) logMissingOnce("grant", { code: "missing", message: granted.error });
     else console.error("[payments] fulfillOrder: the grant failed; the sweep will retry:", order.id, granted.error);
     return { outcome: "pending", reason: granted.missing ? "schema_missing" : "grant_failed", receiptNumber };
+  }
+
+  // Masked payment details exist only so the receipt can show the last four.
+  // Best-effort, after the grant: a failure never blocks or delays what the
+  // user paid for (mergeOrderMetadata logs it); the receipt then reads
+  // «تفاصيل البطاقة غير متاحة». Never persist the masked PAN.
+  const lastFour = payment?.source?.number?.match(/(\d{4})$/)?.[1] ?? null;
+  if (payment && lastFour && !order.metadata?.payment_method) {
+    await mergeOrderMetadata(admin, order.id, {
+      payment_method: { type: payment.source.type, last_four: lastFour },
+    });
   }
 
   // already_entitled is merged (never replacing the other keys) BEFORE the

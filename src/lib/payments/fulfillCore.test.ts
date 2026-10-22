@@ -343,3 +343,27 @@ test("findPaidPaymentWith: the newest paid payment of the order, or null; a list
   const broken = { ...gateway(null), listPaymentsByOrder: async () => ({ ok: false, status: 500, type: "x", message: "y" }) } as unknown as GatewayClient;
   assert.deepEqual(await findPaidPaymentWith({ gateway: async () => broken }, ORDER), { ok: false, reason: "list_failed_500" });
 });
+
+test("a failed card-details merge never blocks the grant: it runs after the grant and the purchase completes", async () => {
+  const { client, log } = happyDb(orderRow(), (q) =>
+    q.table === "merge_payment_order_metadata" && JSON.stringify(q.payload).includes("payment_method")
+      ? { error: { code: "XX000", message: "merge down" } }
+      : undefined,
+  );
+  const { d, notices } = deps(client, gateway(paymentOf({ source: { type: "creditcard", number: "4111-11XX-XXXX-1111" } })));
+  const r = await fulfillOrderWith(d, INPUT);
+  assert.equal(r.outcome, "granted");
+  const merge = idx(log, (q) => q.table === "merge_payment_order_metadata" && JSON.stringify(q.payload).includes("payment_method"));
+  const credit = idx(log, (q) => q.table === "credit_points");
+  assert.ok(merge > -1 && credit > -1 && credit < merge, "the merge runs after the grant");
+  assert.equal(stamps(log).length, 1);
+  assert.equal(notices.length, 1);
+});
+
+test("a payment without a source object still grants (no throw on source.number)", async () => {
+  const { client, log } = happyDb();
+  const { d } = deps(client, gateway(paymentOf({ source: undefined as unknown as MoyasarPayment["source"] })));
+  const r = await fulfillOrderWith(d, INPUT);
+  assert.equal(r.outcome, "granted");
+  assert.ok(!log.some((q) => q.table === "merge_payment_order_metadata" && JSON.stringify(q.payload).includes("payment_method")));
+});
