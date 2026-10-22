@@ -4,8 +4,9 @@ import { redirect } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import MoyasarCheckout from "@/components/payments/MoyasarCheckout";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getPaymentGatewayStatus } from "@/lib/access-control";
+import { viewerGatewayState } from "@/lib/payments/testModeAccess";
 import { MOYASAR_DISABLED_MESSAGE_AR } from "@/lib/payments/moyasarConfig";
 import { AUDIENCE_REFUSED_AR, UNKNOWN_ITEM_AR } from "@/lib/payments/checkoutCore";
 import { buyerAllowed, formatHalalas, PAYABLE_ITEMS } from "@/lib/payments/catalog";
@@ -23,7 +24,8 @@ import {
  *   - an unknown item, or a billing it does not offer → «هذا المنتج غير متاح
  *     للدفع الإلكتروني» and a link to /pricing;
  *   - signed out → /login?next=<this page>;
- *   - the gateway off (or not Moyasar) → «الدفع الإلكتروني غير متاح حالياً»;
+ *   - the gateway off (or not Moyasar), or in test mode for anyone but staff
+ *     and test accounts → «الدفع الإلكتروني غير متاح حالياً»;
  *   - an account type the item is not sold to → «هذه الباقة غير متاحة لنوع
  *     حسابك» and a link to /pricing (the checkout POST refuses it too);
  *   - otherwise the item, its listed price and the VAT sentence, the notes
@@ -85,9 +87,16 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
   } = await supabase.auth.getUser();
   if (!user) redirect(`/login?next=${encodeURIComponent(selfHref)}`);
 
+  // Test mode is for platform staff and test accounts only (B1 final review):
+  // anyone else sees the gateway as off, exactly as GET /api/v1/payments/status.
   let gatewayOn = false;
   try {
-    gatewayOn = gatewayAllowsCheckout(await getPaymentGatewayStatus());
+    gatewayOn = gatewayAllowsCheckout(
+      await viewerGatewayState(await getPaymentGatewayStatus(), {
+        userId: async () => user.id,
+        admin: () => createServiceClient(),
+      }),
+    );
   } catch {
     console.error("[checkout] reading the gateway status threw");
   }

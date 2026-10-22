@@ -5,6 +5,7 @@ import { MOYASAR_DISABLED_MESSAGE_AR } from "@/lib/payments/moyasarConfig";
 import { createMoyasarClient, type MoyasarClient } from "@/lib/payments/moyasarClient";
 import { parseCheckoutBody, resolveCallbackOrigin } from "@/lib/payments/checkoutRules";
 import { startCheckoutWith } from "@/lib/payments/checkoutCore";
+import { checkoutModeAllowed } from "@/lib/payments/testModeAccess";
 
 /**
  * POST /api/v1/payments/checkout — starts one online payment (Moyasar
@@ -17,6 +18,10 @@ import { startCheckoutWith } from "@/lib/payments/checkoutCore";
  *      while reading it, or building a client, is the same 503.
  *   3. The callback origin is NEXT_PUBLIC_SITE_URL, never the Host header;
  *      unset, or not https in live mode → 503 (logged).
+ *   4. Test mode is for platform staff and the accounts in
+ *      public.test_accounts only (checkoutModeAllowed,
+ *      src/lib/payments/testModeAccess.ts): anyone else gets the same 503 as
+ *      a disabled gateway. Live is not gated.
  * The rest — the audience check (403), the quote, superseding earlier orders,
  * the order, the intent, the guarded stamp and the CheckoutResponse — is
  * startCheckoutWith in src/lib/payments/checkoutCore.ts, tested there.
@@ -77,6 +82,10 @@ export async function POST(request: NextRequest) {
   } catch {
     console.error("[payments/checkout] the service client could not be created");
     return unavailable();
+  }
+
+  if (!(await checkoutModeAllowed(admin, cfg.mode, user.id))) {
+    return reply({ error: MOYASAR_DISABLED_MESSAGE_AR }, 503);
   }
 
   try {

@@ -53,6 +53,21 @@ test("the gateway switch: disabled → 503 «الدفع الإلكتروني غ�
   assert.match(post, /\} catch \(err\) \{[\s\S]{0,200}return unavailable\(\);/, "a throw from the checkout itself is a 503");
 });
 
+test("test mode is for staff and test accounts only: anyone else gets the gateway-off 503 before anything is priced", () => {
+  assert.match(code, /import \{ checkoutModeAllowed \} from "@\/lib\/payments\/testModeAccess"/);
+  assert.match(
+    post,
+    /if \(!\(await checkoutModeAllowed\(admin, cfg\.mode, user\.id\)\)\) \{\s*return reply\(\{ error: MOYASAR_DISABLED_MESSAGE_AR \}, 503\);/,
+  );
+  const unauthAt = post.indexOf("}, 401);");
+  const disabledAt = post.indexOf("if (!cfg.enabled)");
+  const adminAt = post.indexOf("admin = await createServiceClient()");
+  const gateAt = post.indexOf("checkoutModeAllowed(admin, cfg.mode, user.id)");
+  const startAt = post.indexOf("startCheckoutWith(");
+  assert.ok(unauthAt > -1 && disabledAt > unauthAt && adminAt > disabledAt, "401, gateway switch, service client");
+  assert.ok(gateAt > adminAt && startAt > gateAt, "the test-mode gate runs before startCheckoutWith");
+});
+
 test("only {itemId, billing} reaches the checkout — the body never carries a price", () => {
   assert.match(post, /const parsed = parseCheckoutBody\(raw\)/);
   assert.match(post, /itemId: parsed\.itemId,\s*billing: parsed\.billing,/);

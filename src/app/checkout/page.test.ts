@@ -41,7 +41,13 @@ test("/checkout is a server component, per request, not indexed", () => {
 test("/checkout: a guest goes to /login?next=<this page>; the gateway and the audience are checked first", () => {
   assert.match(page, /auth\.getUser\(\)/);
   assert.match(page, /redirect\(`\/login\?next=\$\{encodeURIComponent\(selfHref\)\}`\)/);
-  assert.match(page, /gatewayAllowsCheckout\(await getPaymentGatewayStatus\(\)\)/);
+  // test mode: staff and test accounts only (B1 final review), the viewer rule of GET /api/v1/payments/status
+  assert.match(page, /import \{ viewerGatewayState \} from "@\/lib\/payments\/testModeAccess"/);
+  assert.match(
+    page,
+    /gatewayAllowsCheckout\(\s*await viewerGatewayState\(await getPaymentGatewayStatus\(\), \{\s*userId: async \(\) => user\.id,\s*admin: \(\) => createServiceClient\(\),\s*\}\),\s*\)/,
+  );
+  assert.ok(page.indexOf("viewerGatewayState(") > page.indexOf("redirect(`/login"), "the viewer is signed in first");
   assert.match(page, /<Notice title=\{MOYASAR_DISABLED_MESSAGE_AR\} \/>/);
   assert.match(page, /!buyerAllowed\(item, userType\)\) return <Notice title=\{AUDIENCE_REFUSED_AR\} \/>/);
   assert.match(page, /href="\/pricing"/);
