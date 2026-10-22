@@ -3278,3 +3278,38 @@ do $$ declare fn text; role_name text; col text; privilege_name text; begin
 end $$;
 
 -- <<< verify:payments_billing_refunds_admin_points
+
+-- >>> verify:points_admin_adjustment_reason
+-- 2026-10-22 — 20261022_34_points_admin_adjustment_reason.sql (B1 Tasks 8+9 fix round 1).
+-- Read-only, safe to repeat. Before _34 runs it only reports; after, it raises
+-- when admin deductions could still be recorded (or remain) as usage.
+do $$
+declare role_name text; body text; mislabelled bigint;
+begin
+  if to_regclass('public.points_ledger') is null then
+    raise notice '_verify: 20261022_34 — points ledger not applied yet'; return;
+  end if;
+  select count(*) into mislabelled from public.points_ledger where reason = 'usage' and tool = 'admin_adjustment';
+  if to_regprocedure('public.admin_debit_points(uuid,int,text)') is null then
+    raise notice '_verify: 20261022_34 is not applied yet — admin deductions are recorded as usage (% row(s) to relabel); run 08_AFTER_RUN_20261022_34', mislabelled;
+    return;
+  end if;
+  foreach role_name in array array['anon','authenticated','service_role'] loop
+    if has_function_privilege(role_name,'public.admin_debit_points(uuid,int,text)','EXECUTE') then
+      raise exception '_verify: % can EXECUTE the internal admin_debit_points (re-run 20261022_34)', role_name;
+    end if;
+  end loop;
+  if not exists (select 1 from pg_proc where oid = 'public.admin_debit_points(uuid,int,text)'::regprocedure
+                  and prosecdef and proconfig @> array['search_path=""']) then
+    raise exception '_verify: admin_debit_points is not SECURITY DEFINER with search_path '''' (re-run 20261022_34)';
+  end if;
+  select prosrc into body from pg_proc where oid = 'public.adjust_admin_points(uuid,int,timestamptz,text)'::regprocedure;
+  if body is null or body not like '%public.admin_debit_points(%' then
+    raise exception '_verify: adjust_admin_points does not debit through admin_debit_points — deductions read as usage (re-run 20261022_34)';
+  end if;
+  if mislabelled > 0 then
+    raise exception '_verify: % admin deduction row(s) still labelled usage (re-run 20261022_34)', mislabelled;
+  end if;
+  raise notice '_verify: 20261022_34 OK — admin deductions are recorded as admin_adjustment; the helper is internal';
+end $$;
+-- <<< verify:points_admin_adjustment_reason
