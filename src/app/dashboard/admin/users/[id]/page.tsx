@@ -71,7 +71,8 @@ interface UserData {
   subscription_history: Subscription[];
   lawyer_profile: Record<string, unknown> | null;
   credit_transactions: CreditTransaction[];
-  credit_balance: number;
+  /** null when the balance read failed — shown as «—». */
+  credit_balance: number | null;
 }
 
 /**
@@ -1076,7 +1077,7 @@ export default function UserProfilePage() {
       {/* KPI Strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label:"رصيد الكريدت", val:`${(U.credit_balance ?? 0).toLocaleString("ar-SA")}`, icon:Money, c:"text-emerald-400" },
+          { label:"رصيد الكريدت", val:U.credit_balance == null ? "—" : U.credit_balance.toLocaleString("ar-SA"), icon:Money, c:"text-emerald-400" },
           { label:"المعاملات", val:(creditTxns.length).toLocaleString("ar-SA"), icon:Robot, c:"text-purple-400" },
           { label:"الاشتراكات", val:subHistory.length.toString(), icon:Ticket, c:"text-orange-400" },
           { label:"الباقة", val:planLabel, icon:Star, c:"text-[#C8A762]" },
@@ -1233,7 +1234,7 @@ export default function UserProfilePage() {
                 <div className={`mt-4 pt-3 border-t ${isDark ? "border-white/[0.04]" : "border-slate-50"} flex items-center gap-2`}>
                   <Money size={14} className="text-emerald-400"/>
                   <span className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>رصيد الكريدت الحالي:</span>
-                  <span className="text-[13px] font-bold text-emerald-400">{(U.credit_balance ?? 0).toLocaleString("ar-SA")}</span>
+                  <span className="text-[13px] font-bold text-emerald-400">{U.credit_balance == null ? "—" : U.credit_balance.toLocaleString("ar-SA")}</span>
                 </div>
               </>
             ) : (

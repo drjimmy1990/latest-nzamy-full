@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { DB_USER_TYPES, isDbUserType, type DbUserType } from "@/lib/auth/userTypes";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { readAdminBalances } from "@/lib/payments/pointsAdmin";
 
 /**
  * The PostgREST `or=` clause for a free-text search over the three name/email
@@ -216,9 +217,8 @@ export async function GET(request: NextRequest) {
         ) as Record<DbUserType, number>)
       : null;
 
-    const balances = await adminClient.rpc("admin_points_balances", { p_users: (data ?? []).map(row => row.id) });
-    if (balances.error) return NextResponse.json({ error: "رصيد النقاط غير متاح مؤقتاً" }, { status: 503 });
-    const byUser = new Map<string, number>((balances.data ?? []).map((b: { user_id: string; balance: number }) => [b.user_id,b.balance]));
+    // A failed balance read shows «—» (null) on each row; it never fails the page.
+    const byUser = await readAdminBalances(adminClient, (data ?? []).map(row => row.id as string));
     // ── Transform results ────────────────────────────────────────────────────
     const users = (data ?? []).map((row: Record<string, unknown>) => {
       // Pick the active subscription (first match) or null
@@ -246,7 +246,7 @@ export async function GET(request: NextRequest) {
               current_period_end: activeSub.current_period_end,
             }
           : null,
-        credit_balance: byUser.get(row.id as string) ?? 0,
+        credit_balance: byUser ? byUser.get(row.id as string) ?? 0 : null,
       };
     });
 

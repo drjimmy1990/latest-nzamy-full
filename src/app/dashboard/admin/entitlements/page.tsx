@@ -19,7 +19,8 @@ interface AdminUserRow {
   email: string | null;
   user_type: string | null;
   subscription: { tier: string; status: string; current_period_end: string | null } | null;
-  credit_balance: number;
+  /** null when the balance read failed — shown as «—». */
+  credit_balance: number | null;
 }
 
 const TIERS = ["free", "shield", "ai", "pro", "max", "corp", "enterprise"] as const;
@@ -178,7 +179,7 @@ export default function AdminEntitlementsPage() {
                 <p className="text-[11px] text-zinc-500">{selected.email}</p>
                 <div className="mt-3 flex gap-4 text-[12px]">
                   <span className="text-zinc-400">الباقة: <b className="text-[#C8A762]">{selected.subscription?.tier ?? "free"}</b></span>
-                  <span className="text-zinc-400">النقاط: <b className="text-emerald-300">{selected.credit_balance}</b></span>
+                  <span className="text-zinc-400">النقاط: <b className="text-emerald-300">{selected.credit_balance ?? "—"}</b></span>
                 </div>
               </div>
 

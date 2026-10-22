@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { readAdminBalance } from "@/lib/payments/pointsAdmin";
 import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
 import { STAFF_CHECK_UNAVAILABLE_AR, usersPatchActions } from "@/lib/auth/staffDecision";
@@ -101,10 +102,8 @@ export async function GET(
       .order("created_at", { ascending: false })
       .limit(20);
 
-    const points = await adminClient.rpc("points_balance", { p_user: userId });
-    if (points.error || !Number.isSafeInteger(points.data)) {
-      return NextResponse.json({ error: "رصيد النقاط غير متاح مؤقتاً" }, { status: 503 });
-    }
+    // A failed balance read shows «—» (null); it never fails the page.
+    const pointsBalance = await readAdminBalance(adminClient, userId);
     // ── Separate active subscription from history ──────────────────────────
     const activeSubscription =
       subscriptions?.find(
@@ -118,7 +117,7 @@ export async function GET(
         subscription_history: subscriptions ?? [],
         lawyer_profile: lawyerProfile ?? null,
         credit_transactions: creditTransactions ?? [],
-        credit_balance: points.data,
+        credit_balance: pointsBalance,
       },
     });
   } catch (err) {

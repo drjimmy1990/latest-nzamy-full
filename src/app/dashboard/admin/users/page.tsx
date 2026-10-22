@@ -85,7 +85,8 @@ interface PlatformUser {
     billing_cycle: string;
     current_period_end: string | null;
   } | null;
-  credit_balance: number;
+  /** null when the balance read failed — shown as «—». */
+  credit_balance: number | null;
 }
 
 interface UsersApiResponse {
@@ -399,7 +400,7 @@ function UserRow({
         </div>
         <p className={`text-[11px] truncate ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{user.email}</p>
         <div className={`flex items-center gap-3 mt-1 text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-          <span><Robot size={9} className="inline me-1" />{toArabicDigits(user.credit_balance.toLocaleString())} طلب AI</span>
+          <span><Robot size={9} className="inline me-1" />{user.credit_balance == null ? "—" : toArabicDigits(user.credit_balance.toLocaleString())} طلب AI</span>
           <span>انضم: {formatArabicDate(user.created_at)}</span>
         </div>
       </div>

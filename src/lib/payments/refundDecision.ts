@@ -11,3 +11,7 @@ export function refundDecision(order: RefundOrder, now: Date, usage: RefundUsage
   if (order.kind === "library") warnings.push("يُنهي الاسترداد الوصول الذي منحته هذه العملية؛ راجع استخدام المحتوى وشروط الاسترداد.");
   return { method: now.getTime() - paidAt < 2 * 60 * 60 * 1000 ? "void" as const : "refund" as const, reverse, warnings };
 }
+/** The admin list shows the refund button only where the route can act. */
+export function canOfferRefund(order: { status: string; merchant: string; live: boolean | null }): boolean {
+  return order.status === "paid" && order.merchant === "platform" && typeof order.live === "boolean";
+}

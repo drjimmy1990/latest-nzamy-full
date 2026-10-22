@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireStaff } from "@/lib/access-control";
 import { createServiceClient } from "@/lib/supabase/server";
+import { riyadhFilterIso } from "@/lib/payments/adminOrderFilters";
 
 export async function GET(request: Request) {
   const gate = await requireStaff("payments.read");
@@ -8,7 +9,7 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   try {
     const admin = await createServiceClient();
-    let query = admin.from("payment_orders").select("id,user_id,item_id,kind,status,total_halalas,refunded_halalas,receipt_number,created_at,paid_at,fulfilled_at,live,metadata").order("created_at", { ascending: false }).limit(100);
+    let query = admin.from("payment_orders").select("id,user_id,merchant,item_id,kind,status,total_halalas,refunded_halalas,receipt_number,created_at,paid_at,fulfilled_at,live,metadata").order("created_at", { ascending: false }).limit(100);
     const status = params.get("status");
     if (status) {
       if (!["created","initiated","paid","failed","refunded","voided","cancelled"].includes(status)) return NextResponse.json({ error: "الحالة غير صالحة" }, { status: 400 });
@@ -17,10 +18,13 @@ export async function GET(request: Request) {
     const user = params.get("user");
     if (user && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user)) return NextResponse.json({ error: "معرّف المستخدم غير صالح" }, { status: 400 });
     if (user) query = query.eq("user_id",user);
+    // datetime-local has no zone: read it as Riyadh time (+03:00).
     for (const [key,op] of [["from","gt"],["to","lt"]] as const) {
       const date = params.get(key);
-      if (date && !Number.isFinite(Date.parse(date))) return NextResponse.json({ error: "التاريخ غير صالح" }, { status: 400 });
-      if (date) query = op === "gt" ? query.gt("created_at",new Date(date).toISOString()) : query.lt("created_at",new Date(date).toISOString());
+      if (!date) continue;
+      const iso = riyadhFilterIso(date);
+      if (!iso) return NextResponse.json({ error: "التاريخ غير صالح" }, { status: 400 });
+      query = op === "gt" ? query.gt("created_at",iso) : query.lt("created_at",iso);
     }
     const [orders, orphanEvents] = await Promise.all([
       query,

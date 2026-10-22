@@ -3,7 +3,7 @@ import { requireStaff } from "@/lib/access-control";
 import { getMoyasarConfig } from "@/lib/access-control";
 import { createServiceClient } from "@/lib/supabase/server";
 import { createMoyasarClient } from "@/lib/payments/moyasarClient";
-import { refundOrderWith } from "@/lib/payments/refundCore";
+import { REFUND_NOTICE_AR, refundOrderWith } from "@/lib/payments/refundCore";
 import { recordNotification } from "@/lib/notify";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -18,7 +18,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const result = await refundOrderWith({ admin,
       gateway: async () => { const cfg = await getMoyasarConfig(); return cfg.enabled ? createMoyasarClient(cfg) : null; },
       syncTier: async (userId, tier) => { await admin.auth.admin.updateUserById(userId, { user_metadata: { tier } }); },
-      notify: async userId => recordNotification({ userId, title: "تم استرداد دفعتك", body: "تمت إعادة الدفعة إلى وسيلة الدفع الأصلية وإلغاء الصلاحيات المرتبطة بهذه العملية.", href: "/dashboard/billing" }),
+      notify: async userId => recordNotification({ userId, title: REFUND_NOTICE_AR.title, body: REFUND_NOTICE_AR.body, href: "/dashboard/billing" }),
     }, id, gate.userId, (body as { confirm: boolean }).confirm);
     // finish_payment_refund records the audit in the same transaction as
     // reversal; no best-effort audit can be lost after money has moved.

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { refundOrderWith } from "./refundCore.ts";
+import { refundOrderWith, REFUND_NOT_HERE_AR, REFUND_NOTICE_AR } from "./refundCore.ts";
 import { fakeDb } from "./fakeDb.test-helper.ts";
 import type { MoyasarPayment, MoyasarClient } from "./moyasarClient.ts";
 const order = { id: "o", user_id: "u", merchant: "platform", kind: "topup", status: "paid", total_halalas: 11500, paid_at: "2026-10-22T10:00:00Z", fulfilled_at: "2026-10-22T10:00:01Z", moyasar_payment_id: "p", live: false, metadata: {} };
@@ -83,4 +83,27 @@ test("a retryable claim can be replaced only after checking the provider paid st
   const { deps, events } = setup({ metadata: { refund_job: { ...job, state: "retryable" } } });
   assert.equal((await refundOrderWith(deps,"o","admin",true)).status,200);
   assert.ok(events.includes("claim_payment_refund"));
+});
+test("a deleted account's plan order refunds without a null user filter (no_user)", async () => {
+  const { deps, events, log } = setup({ user_id: null, kind: "plan", metadata: { no_user: true } } as unknown as Partial<typeof order>);
+  assert.equal((await refundOrderWith(deps, "o", "admin", true)).status, 200);
+  assert.ok(!log.some(q => q.filters.some(([, c, v]) => c === "user_id" && v === null)));
+  assert.ok(!events.includes("subscriptions"));
+  assert.ok(events.includes("finish_payment_refund"));
+  assert.ok(!events.includes("tier") && !events.includes("notice"));
+});
+test("a non-platform or unknown-mode order is a permanent 409 refusal, at review time too", async () => {
+  for (const change of [{ merchant: "office" }, { live: null }]) {
+    for (const confirm of [false, true]) {
+      const { deps, events } = setup(change as unknown as Partial<typeof order>);
+      const r = await refundOrderWith(deps, "o", "admin", confirm);
+      assert.equal(r.status, 409);
+      assert.deepEqual(r.body, { error: REFUND_NOT_HERE_AR });
+      assert.ok(!events.includes("claim_payment_refund"));
+    }
+  }
+});
+test("the refund notice says the refund started and may take days, never that it is done", () => {
+  assert.ok(REFUND_NOTICE_AR.body.includes("بدأت إعادة المبلغ إلى وسيلة الدفع الأصلية، وقد يستغرق ظهوره في حسابك عدة أيام حسب البنك"));
+  assert.ok(!REFUND_NOTICE_AR.body.includes("تمت إعادة") && !REFUND_NOTICE_AR.title.includes("تم استرداد"));
 });

@@ -13,6 +13,13 @@ export interface RefundDeps {
 }
 const fail = (status: number, error: string) => ({ status, body: { error } });
 const unavailable = () => fail(503, "تعذّر إتمام الاسترداد مؤقتاً، حاول مرة أخرى");
+/** A permanent refusal: this order's money is not in the platform account. */
+export const REFUND_NOT_HERE_AR = "لا يمكن استرداد هذا الطلب من هنا؛ راجع حساب المكتب أو لوحة ميسّر";
+/** Card refunds take days to reach the bank account; never claim it is done. */
+export const REFUND_NOTICE_AR = {
+  title: "بدأ استرداد دفعتك",
+  body: "بدأت إعادة المبلغ إلى وسيلة الدفع الأصلية، وقد يستغرق ظهوره في حسابك عدة أيام حسب البنك. وأُلغيت الصلاحيات المرتبطة بهذه العملية.",
+};
 
 /** An uncertain gateway outcome leaves the claim in place: never resend blindly. */
 export async function refundOrderWith(deps: RefundDeps, orderId: string, actorId: string, confirm: boolean) {
@@ -22,7 +29,10 @@ export async function refundOrderWith(deps: RefundDeps, orderId: string, actorId
     const order = result.data as RefundRow | null;
     if (!order) return fail(404, "عملية الدفع غير موجودة");
     if (order.status !== "paid" || !order.fulfilled_at || !order.moyasar_payment_id) return fail(409, "هذه العملية غير متاحة للاسترداد؛ راجع حالة الدفع والتفعيل");
-    if (order.kind === "plan" && !order.metadata?.already_entitled) {
+    if (order.merchant !== "platform" || typeof order.live !== "boolean") return fail(409, REFUND_NOT_HERE_AR);
+    // A deleted account (metadata.no_user) has no subscription to look up;
+    // finish_payment_refund handles the null user.
+    if (order.kind === "plan" && order.user_id && !order.metadata?.already_entitled) {
       const granted = await deps.admin.from("subscriptions").select("id,status").eq("metadata->>order_id",order.id).eq("user_id",order.user_id).maybeSingle();
       if (granted.error) return unavailable();
       if (granted.data?.status === "cancelled") return fail(409, "استُبدلت هذه الباقة بعملية لاحقة؛ يلزم مراجعة فترات الاشتراك قبل الاسترداد");
@@ -35,7 +45,6 @@ export async function refundOrderWith(deps: RefundDeps, orderId: string, actorId
     const decision = refundDecision(order, deps.now?.() ?? new Date(), { pointsUsedFromOrderLot: used, planPointsUsedPct: total ? used * 100 / total : 0 });
     if (!decision) return fail(409, "هذه العملية غير متاحة للاسترداد");
     if (!confirm) return { status: 200, body: { review: true, method: decision.method, warnings: decision.warnings, totalHalalas: order.total_halalas } };
-    if (order.merchant !== "platform" || typeof order.live !== "boolean") return unavailable();
     const gateway = await deps.gateway();
     if (!gateway || (gateway.mode === "live") !== order.live) return unavailable();
     let job = order.metadata?.refund_job as RefundJob | undefined;
