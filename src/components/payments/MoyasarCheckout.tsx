@@ -29,7 +29,8 @@ import {
  *      near its expires_at is replaced by a new checkout first; if the new one
  *      charges a different total, the payment stops and the new figures are
  *      shown for the payer to confirm (refreshDecision).
- *   4. When the form reports that the intent is used up — a declined card, or
+ *   4. Whenever the form calls on_failure — a string message (Moyasar's
+ *      documented shape) or an object such as a declined card or
  *      intent_not_fulfillable — the held checkout is dropped and «متابعة الدفع»
  *      starts a new one (needsNewCheckout). 3-D Secure failures land on
  *      /payments/result, whose retry link comes back here.
@@ -161,7 +162,7 @@ export default function MoyasarCheckout({ itemId, billing }: { itemId: string; b
       return fresh.resp;
     }
 
-    // The intent is used up: drop it; «متابعة الدفع» makes a new checkout
+    // The form reported a failure: drop the intent; «متابعة الدفع» makes a new checkout
     // (the server closes this buyer's earlier unpaid orders for the item).
     function needNewCheckout() {
       current.current = null;

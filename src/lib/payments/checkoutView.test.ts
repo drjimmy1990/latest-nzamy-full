@@ -265,23 +265,28 @@ test("moyasarInitConfig: on_initiating uses the intent it is given, or false whe
   assert.equal(await moyasarInitConfig(RESPONSE, opts({ initiate: async () => null })).on_initiating(), false);
 });
 
-test("moyasarInitConfig: on_failure asks for a new checkout only when the intent is used up", async () => {
+test("moyasarInitConfig: every on_failure call asks for a new checkout — a string message or an object", async () => {
   let asked = 0;
   const cfg = moyasarInitConfig(RESPONSE, opts({ onNeedsNewCheckout: () => asked++ }));
-  await cfg.on_failure({ type: "intent_not_fulfillable", message: "x", errors: null });
+  // Moyasar documents on_failure as receiving a STRING message
+  await cfg.on_failure("Payment failed: insufficient funds");
   assert.equal(asked, 1);
+  await cfg.on_failure("");
+  assert.equal(asked, 2);
+  // objects seen from the form: a not-fulfillable intent, a failed payment, an API error, a network error
+  await cfg.on_failure({ type: "intent_not_fulfillable", message: "x", errors: null });
+  assert.equal(asked, 3);
   await cfg.on_failure({ id: "pay_1", status: "failed" });
-  assert.equal(asked, 2);
+  assert.equal(asked, 4);
   await cfg.on_failure({ type: "api_error", message: "Error code: 500", errors: null });
+  assert.equal(asked, 5);
   await cfg.on_failure(new TypeError("Failed to fetch"));
-  assert.equal(asked, 2);
+  assert.equal(asked, 6);
 });
 
-test("needsNewCheckout: a failed payment or a not-fulfillable intent", () => {
-  assert.equal(needsNewCheckout({ type: "intent_not_fulfillable" }), true);
-  assert.equal(needsNewCheckout({ status: "failed" }), true);
-  for (const r of [null, undefined, "failed", {}, { status: "paid" }, { status: "initiated" }, { type: "api_error" }, { type: "invalid_request_error" }, new Error("x")]) {
-    assert.equal(needsNewCheckout(r), false, String(JSON.stringify(r)));
+test("needsNewCheckout: any on_failure report, string or object, needs a new checkout", () => {
+  for (const r of ["failed", "", "Payment failed", { type: "intent_not_fulfillable" }, { status: "failed" }, {}, { type: "api_error" }, new Error("x"), null, undefined]) {
+    assert.equal(needsNewCheckout(r), true, String(JSON.stringify(r)));
   }
 });
 

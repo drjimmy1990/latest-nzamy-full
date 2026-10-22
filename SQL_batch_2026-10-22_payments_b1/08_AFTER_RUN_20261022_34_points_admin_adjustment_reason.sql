@@ -19,6 +19,8 @@
 --   * Backfill: the rows _33 mislabelled (reason 'usage', tool
 --     'admin_adjustment') become reason 'admin_adjustment', tool null.
 --   * public.debit_points is NOT changed.
+--   * The verify block also checks that the owner of adjust_admin_points (the
+--     role it runs as) can EXECUTE admin_debit_points (B1 final review).
 --
 -- Idempotent: create or replace + a backfill that matches nothing the second
 -- time. Safe at any time after 20261022_33. One transaction; the verify block
@@ -123,13 +125,20 @@ update public.points_ledger
  where reason = 'usage' and tool = 'admin_adjustment';
 
 do $$
-declare role_name text; body text;
+declare role_name text; body text; fn_owner text;
 begin
   foreach role_name in array array['anon','authenticated','service_role'] loop
     if has_function_privilege(role_name,'public.admin_debit_points(uuid,int,text)','EXECUTE') then
       raise exception '20261022_34: % can EXECUTE the internal admin_debit_points', role_name;
     end if;
   end loop;
+  -- The SECURITY DEFINER adjust_admin_points runs as its owner: that role must
+  -- be able to run the helper, or every admin deduction fails (42501).
+  select pg_get_userbyid(proowner) into fn_owner from pg_proc
+   where oid = 'public.adjust_admin_points(uuid,int,timestamptz,text)'::regprocedure;
+  if not has_function_privilege(fn_owner,'public.admin_debit_points(uuid,int,text)','EXECUTE') then
+    raise exception '20261022_34: %, the owner of adjust_admin_points, cannot EXECUTE admin_debit_points — admin deductions would fail; give both functions the same owner', fn_owner;
+  end if;
   foreach role_name in array array['anon','authenticated'] loop
     if has_function_privilege(role_name,'public.adjust_admin_points(uuid,int,timestamptz,text)','EXECUTE') then
       raise exception '20261022_34: % can EXECUTE adjust_admin_points', role_name;

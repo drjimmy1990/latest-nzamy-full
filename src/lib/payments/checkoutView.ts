@@ -282,16 +282,17 @@ export function refreshDecision(
 }
 
 /**
- * True when what the Moyasar form reported means the held intent cannot be
- * paid any more, so the next attempt needs a new checkout (order + intent):
- * a failed payment (a declined card consumes the intent) or Moyasar's
- * intent_not_fulfillable (used, cancelled or expired). Anything else — a
- * network blip, a form validation message — keeps the intent.
+ * True for every report the Moyasar form passes to on_failure: the next
+ * attempt needs a new checkout (order + intent). Moyasar documents on_failure
+ * as receiving a STRING message, and the form also passes objects (a failed
+ * payment, since a declined card consumes the intent; Moyasar's
+ * intent_not_fulfillable; an API or network error). The shape cannot reliably
+ * tell a used-up intent apart, so any on_failure call drops the held intent
+ * (B1 final review); the server supersedes the earlier order.
  */
 export function needsNewCheckout(reported: unknown): boolean {
-  if (typeof reported !== "object" || reported === null) return false;
-  const r = reported as { type?: unknown; status?: unknown };
-  return r.type === "intent_not_fulfillable" || r.status === "failed";
+  void reported;
+  return true;
 }
 
 // ── the Moyasar form ────────────────────────────────────────────────────────
@@ -348,8 +349,8 @@ export interface MoyasarInitConfig {
  * NEXT_PUBLIC_SITE_URL — the intent's own); the form requires one although
  * Moyasar uses the intent's. `initiate` returns the intent to pay with — the
  * one held, or a new one near expiry — or null, which makes on_initiating
- * answer false (no payment). `onNeedsNewCheckout` runs when the form reports
- * a failure that used up the intent (needsNewCheckout).
+ * answer false (no payment). `onNeedsNewCheckout` runs on every on_failure
+ * report, a string message or an object (needsNewCheckout).
  *
  * moyasar-payment-form 2.3.0 accepts on_initiating / on_failure only as async
  * functions (it checks the constructor name), so both are `async`.

@@ -3,9 +3,14 @@ import assert from "node:assert/strict";
 import { refundDecision, canOfferRefund } from "./refundDecision.ts";
 const now = new Date("2026-10-22T12:00:00Z");
 const base = { status: "paid", kind: "plan", paid_at: "2026-10-22T10:01:00Z" };
-test("refund selects void before two hours and refund after", () => {
-  assert.equal(refundDecision(base, now, { pointsUsedFromOrderLot: 0, planPointsUsedPct: 0 })?.method, "void");
-  assert.equal(refundDecision({ ...base, paid_at: "2026-10-22T09:59:00Z" }, now, { pointsUsedFromOrderLot: 0, planPointsUsedPct: 0 })?.method, "refund");
+test("refund selects void only under 90 minutes after payment, refund from 90 minutes on", () => {
+  const usage = { pointsUsedFromOrderLot: 0, planPointsUsedPct: 0 };
+  // now = 12:00Z
+  assert.equal(refundDecision({ ...base, paid_at: "2026-10-22T10:31:00Z" }, now, usage)?.method, "void"); // 89 min
+  assert.equal(refundDecision({ ...base, paid_at: "2026-10-22T11:59:00Z" }, now, usage)?.method, "void"); // 1 min
+  assert.equal(refundDecision({ ...base, paid_at: "2026-10-22T10:30:00Z" }, now, usage)?.method, "refund"); // exactly 90 min
+  assert.equal(refundDecision({ ...base, paid_at: "2026-10-22T10:29:00Z" }, now, usage)?.method, "refund"); // 91 min
+  assert.equal(refundDecision({ ...base, paid_at: "2026-10-22T10:01:00Z" }, now, usage)?.method, "refund"); // 1 h 59 min: was void under the 2 h rule
 });
 test("closed orders and invalid dates cannot be refunded", () => {
   for (const change of [{ status: "refunded" }, { status: "failed" }, { paid_at: null }, { paid_at: "bad" }]) assert.equal(refundDecision({ ...base, ...change }, now, { pointsUsedFromOrderLot: 0, planPointsUsedPct: 0 }), null);

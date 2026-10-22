@@ -3284,7 +3284,7 @@ end $$;
 -- Read-only, safe to repeat. Before _34 runs it only reports; after, it raises
 -- when admin deductions could still be recorded (or remain) as usage.
 do $$
-declare role_name text; body text; mislabelled bigint;
+declare role_name text; body text; mislabelled bigint; fn_owner text;
 begin
   if to_regclass('public.points_ledger') is null then
     raise notice '_verify: 20261022_34 — points ledger not applied yet'; return;
@@ -3302,6 +3302,12 @@ begin
   if not exists (select 1 from pg_proc where oid = 'public.admin_debit_points(uuid,int,text)'::regprocedure
                   and prosecdef and proconfig @> array['search_path=""']) then
     raise exception '_verify: admin_debit_points is not SECURITY DEFINER with search_path '''' (re-run 20261022_34)';
+  end if;
+  -- adjust_admin_points (SECURITY DEFINER) runs as its owner, who must be able to run the helper.
+  select pg_get_userbyid(proowner) into fn_owner from pg_proc
+   where oid = 'public.adjust_admin_points(uuid,int,timestamptz,text)'::regprocedure;
+  if fn_owner is null or not has_function_privilege(fn_owner,'public.admin_debit_points(uuid,int,text)','EXECUTE') then
+    raise exception '_verify: %, the owner of adjust_admin_points, cannot EXECUTE admin_debit_points — admin deductions fail; give both functions the same owner', coalesce(fn_owner, '(adjust_admin_points missing)');
   end if;
   select prosrc into body from pg_proc where oid = 'public.adjust_admin_points(uuid,int,timestamptz,text)'::regprocedure;
   if body is null or body not like '%public.admin_debit_points(%' then
