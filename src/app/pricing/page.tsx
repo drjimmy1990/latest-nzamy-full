@@ -56,6 +56,11 @@ export default function PricingPage() {
   // the user explicitly picks a tab themselves, so we never clobber that.
   const [audience, setAudience] = useState<AudienceTab>("individuals");
   const userPickedRef = useRef(false);
+
+  // Open at the plans, not wherever the previous page was scrolled to.
+  useEffect(() => {
+    if (!window.location.hash) window.scrollTo(0, 0);
+  }, []);
   useEffect(() => {
     if (userLoading || userPickedRef.current || !isLoggedIn) return;
     setAudience(audienceForUserType(userType));
@@ -114,8 +119,8 @@ export default function PricingPage() {
         {/* FAQ accordion */}
         <PricingFAQ isAr={isAr} faqList={faqList} />
 
-        {/* Bottom CTA */}
-        <PricingCTA isAr={isAr} />
+        {/* Bottom CTA — sign-up copy, so guests only. */}
+        {!isLoggedIn && <PricingCTA isAr={isAr} />}
 
       </div>
       <Footer />

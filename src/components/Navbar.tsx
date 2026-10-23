@@ -232,7 +232,7 @@ function AvatarDropdown({
       {[
         { href: dashboardHref,  icon: Layout,   label: isAr ? "لوحة التحكم"     : "Dashboard" },
         { href: "/settings",    icon: GearSix,  label: isAr ? "الملف الشخصي"   : "My Account" },
-        { href: "/pricing",     icon: ChartBar, label: isAr ? "الاشتراك والباقة" : "Plan & Billing" },
+        { href: "/settings?tab=subscription", icon: ChartBar, label: isAr ? "الاشتراك والباقة" : "Plan & Billing" },
         // No «الإشعارات» row: the bell beside this menu is the one entry point,
         // and its own footer links to /notifications.
       ].map(({ href, icon: Icon, label }) => (
@@ -873,7 +873,7 @@ export default function Navbar() {
                             {isAr ? "الملف الشخصي" : "My Account"}
                           </Link>
                           <Link
-                            href="/pricing"
+                            href="/settings?tab=subscription"
                             className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-ink-muted hover:bg-royal/5 hover:text-royal dark:text-zinc-400 dark:hover:text-white dark:hover:bg-white/5 transition-colors"
                           >
                             <ChartBar size={16} weight="duotone" />
