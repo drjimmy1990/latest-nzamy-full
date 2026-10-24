@@ -21,7 +21,7 @@ export const plansGovernment: { ar: Plan[]; en: Plan[] } = {
       id: "gov-department", name: "الإدارة القانونية", badge: "ترخيص سنوي",
       priceMonthly: "تواصل معنا", priceYearly: "تواصل معنا", periodMonthly: "عقد سنوي", periodYearly: "عقد سنوي",
       desc: "ترخيص لإدارة قانونية واحدة داخل الجهة الحكومية", target: "إدارات قانونية", cta: "طلب عرض سعر",
-      ctaHref: "/contact?type=government&plan=department", highlighted: true, color: "border-sky-200/60",
+      ctaHref: "/contact?type=government&plan=department", highlighted: true, color: "border-sky-200/60 dark:border-sky-500/20",
       features: {
         ai: ["جميع أدوات الذكاء الاصطناعي حسب الدور", "صائغ الأحكام + المنطوق (القاضي)", "صائغ لوائح الاتهام (النيابة)", "مراجع العقود الحكومية (المستشار)"],
         platform: ["حتى ١٠ مستخدمين", "لوحة تحكم كاملة + تقارير", "إدارة القضايا والعقود (حسب العقد)", "رادار الامتثال التفاعلي"],
@@ -56,7 +56,7 @@ export const plansGovernment: { ar: Plan[]; en: Plan[] } = {
       id: "gov-department", name: "Legal Department", badge: "Annual License",
       priceMonthly: "Contact Us", priceYearly: "Contact Us", periodMonthly: "Annual Contract", periodYearly: "Annual Contract",
       desc: "License for a single legal department within a government entity", target: "Legal Departments", cta: "Request Quote",
-      ctaHref: "/contact?type=government&plan=department", highlighted: true, color: "border-sky-200/60",
+      ctaHref: "/contact?type=government&plan=department", highlighted: true, color: "border-sky-200/60 dark:border-sky-500/20",
       features: {
         ai: ["All AI tools per role", "Judgment + Verdict Drafter (Judge)", "Indictment Drafter (Prosecutor)", "Government Contract Reviewer (Counsel)"],
         platform: ["Up to 10 users", "Full dashboard + reports", "Cases & contracts: per contract", "Interactive compliance radar"],

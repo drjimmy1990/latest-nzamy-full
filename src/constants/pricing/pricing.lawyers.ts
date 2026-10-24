@@ -41,14 +41,14 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
       id: "topup-100", name: "شحن ١٠٠", badge: null,
       priceMonthly: "١٠٠", priceYearly: "١٠٠", periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
       desc: "١٠٠ نقطة · صالحة ٣ أشهر", target: "شحن إضافي للمشترك",
-      cta: "اشحن الآن", ctaHref: "/register/provider?plan=topup-100", highlighted: false, color: "border-blue-200/60",
+      cta: "اشحن الآن", ctaHref: "/register/provider?plan=topup-100", highlighted: false, color: "border-blue-200/60 dark:border-blue-500/20",
       features: { ai: ["١٠٠ نقطة", "١ ر.س للنقطة"], platform: [], support: [] },
     },
     {
       id: "topup-250", name: "شحن ٢٥٠", badge: null,
       priceMonthly: "٢٥٠", priceYearly: "٢٥٠", periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
       desc: "٣٠٠ نقطة · صالحة ٣ أشهر", target: "شحن إضافي للمشترك", bonusLabel: "+٥٠ نقطة مجاناً",
-      cta: "اشحن الآن", ctaHref: "/register/provider?plan=topup-250", highlighted: false, color: "border-emerald-200/60",
+      cta: "اشحن الآن", ctaHref: "/register/provider?plan=topup-250", highlighted: false, color: "border-emerald-200/60 dark:border-emerald-500/20",
       features: { ai: ["٣٠٠ نقطة", "نحو ٠٫٨٣ ر.س للنقطة"], platform: [], support: [] },
     },
     {
@@ -86,14 +86,14 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
       id: "topup-100", name: "Top-up 100", badge: null,
       priceMonthly: "100", priceYearly: "100", periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
       desc: "100 points · valid for 3 months", target: "Extra points for subscribers",
-      cta: "Top up", ctaHref: "/register/provider?plan=topup-100", highlighted: false, color: "border-blue-200/60",
+      cta: "Top up", ctaHref: "/register/provider?plan=topup-100", highlighted: false, color: "border-blue-200/60 dark:border-blue-500/20",
       features: { ai: ["100 points", "SAR 1 per point"], platform: [], support: [] },
     },
     {
       id: "topup-250", name: "Top-up 250", badge: null,
       priceMonthly: "250", priceYearly: "250", periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
       desc: "300 points · valid for 3 months", target: "Extra points for subscribers", bonusLabel: "+50 free points",
-      cta: "Top up", ctaHref: "/register/provider?plan=topup-250", highlighted: false, color: "border-emerald-200/60",
+      cta: "Top up", ctaHref: "/register/provider?plan=topup-250", highlighted: false, color: "border-emerald-200/60 dark:border-emerald-500/20",
       features: { ai: ["300 points", "About SAR 0.83 per point"], platform: [], support: [] },
     },
     {

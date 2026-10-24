@@ -61,7 +61,7 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     { id: "biz-sm-full", name: "متكاملة", badge: "~٣,٧٤٩ ر.س/شهر",
       priceMonthly: "٤٤,٩٨٨", priceYearly: "٤٤,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
       desc: "فريق قانوني كامل عن بُعد — استشارات + ترافع + AI + حوكمة", target: "شركات صغيرة", cta: "اشترك سنوياً",
-      ctaHref: "/register/client?type=company", highlighted: false, color: "border-emerald-200/50",
+      ctaHref: "/register/client?type=company", highlighted: false, color: "border-emerald-200/50 dark:border-emerald-500/20",
       companySize: "small", forLegalDept: false,
       features: {
         ai: [
@@ -134,7 +134,7 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     { id: "biz-md-full", name: "متكاملة", badge: "~٨,٣٣٢ ر.س/شهر",
       priceMonthly: "٩٩,٩٨٨", priceYearly: "٩٩,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
       desc: "إدارة قانونية خارجية شاملة — مكتب محاماة كامل مدمج في شركتك", target: "شركات متوسطة", cta: "تواصل معنا",
-      ctaHref: "/contact", highlighted: false, color: "border-emerald-200/50",
+      ctaHref: "/contact", highlighted: false, color: "border-emerald-200/50 dark:border-emerald-500/20",
       companySize: "medium", forLegalDept: false,
       features: {
         ai: [
@@ -207,7 +207,7 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     { id: "biz-lg-full", name: "متكاملة", badge: "عقد مخصص",
       priceMonthly: "تواصل معنا", priceYearly: "تواصل معنا", periodMonthly: "عقد سنوي", periodYearly: "عقد سنوي",
       desc: "عقد مخصص — مكتب محاماة كامل مدمج في مؤسستك بشروط متفق عليها", target: "مؤسسات كبيرة", cta: "تواصل مع المبيعات",
-      ctaHref: "/contact", highlighted: false, color: "border-emerald-200/50",
+      ctaHref: "/contact", highlighted: false, color: "border-emerald-200/50 dark:border-emerald-500/20",
       companySize: "large", forLegalDept: false,
       features: {
         ai: [
@@ -256,7 +256,7 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     { id: "biz-sm-full", name: "Full Service", badge: "~3,749 SAR/mo",
       priceMonthly: "44,988", priceYearly: "44,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
       desc: "Complete remote legal team — consultations + capped litigation + full AI", target: "Small Companies", cta: "Subscribe Yearly",
-      ctaHref: "/register/client?type=company", highlighted: false, color: "border-emerald-200/50",
+      ctaHref: "/register/client?type=company", highlighted: false, color: "border-emerald-200/50 dark:border-emerald-500/20",
       companySize: "small", forLegalDept: false,
       features: {
         ai: ["Legal AI (CorpMind): 100 queries/mo", "Contract review: 10 (5AI + 5 lawyer)/mo", "Deal Intelligence + Compliance ✅", "Doc Analyzer AI ✅"],
@@ -290,7 +290,7 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     { id: "biz-md-full", name: "Full Service", badge: "~8,332 SAR/mo",
       priceMonthly: "99,988", priceYearly: "99,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
       desc: "Outsourced legal department — a full law firm embedded in your company", target: "Medium Companies", cta: "Contact Us",
-      ctaHref: "/contact", highlighted: false, color: "border-emerald-200/50",
+      ctaHref: "/contact", highlighted: false, color: "border-emerald-200/50 dark:border-emerald-500/20",
       companySize: "medium", forLegalDept: false,
       features: {
         ai: ["Legal AI (CorpMind): 200 queries/mo", "Contract review: 15 (5AI + 10 lawyer)/mo", "Full AI suite + advanced compliance", "Health Check 360° ✅"],
@@ -324,7 +324,7 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     { id: "biz-lg-full", name: "Full Service", badge: "Custom",
       priceMonthly: "Contact Us", priceYearly: "Contact Us", periodMonthly: "Annual Contract", periodYearly: "Annual Contract",
       desc: "Custom contract — a full law firm embedded in your corporation", target: "Large Enterprises", cta: "Contact Sales",
-      ctaHref: "/contact", highlighted: false, color: "border-emerald-200/50",
+      ctaHref: "/contact", highlighted: false, color: "border-emerald-200/50 dark:border-emerald-500/20",
       companySize: "large", forLegalDept: false,
       features: {
         ai: ["Custom AI quota", "Contract review + drafting: per contract", "All AI tools unlocked", "Compliance radar + custom reports"],

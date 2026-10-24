@@ -44,7 +44,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       cta: "اشترك الآن",
       ctaHref: "/laws/subscribe?plan=lib-q1",
       highlighted: false,
-      color: "border-blue-200/60",
+      color: "border-blue-200/60 dark:border-blue-500/20",
       features: {
         ai: [
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
@@ -136,7 +136,7 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       cta: "Subscribe Now",
       ctaHref: "/laws/subscribe?plan=lib-q1",
       highlighted: false,
-      color: "border-blue-200/60",
+      color: "border-blue-200/60 dark:border-blue-500/20",
       features: {
         ai: [
           "Full access to laws, regulations & principles",
@@ -230,7 +230,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       cta: "اشترك الآن",
       ctaHref: "/contact?type=firm-library",
       highlighted: false,
-      color: "border-blue-200/60",
+      color: "border-blue-200/60 dark:border-blue-500/20",
       features: {
         ai: [
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
@@ -352,7 +352,7 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       cta: "Subscribe Now",
       ctaHref: "/contact?type=firm-library",
       highlighted: false,
-      color: "border-blue-200/60",
+      color: "border-blue-200/60 dark:border-blue-500/20",
       features: {
         ai: [
           "Full access to laws, regulations & principles",

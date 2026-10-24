@@ -19,7 +19,7 @@ export const plansNgo: { ar: Plan[]; en: Plan[] } = {
       id: "ngo-impact", name: "الأثر المستدام", badge: "~١٩٩ ر.س / شهر",
       priceMonthly: "٢,٣٨٨", priceYearly: "٢,٣٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
       desc: "أدوات الذكاء الاصطناعي لرفع كفاءة الحوكمة والتشغيل", target: "جمعيات متوسطة", cta: "ارتقِ بالجمعية",
-      ctaHref: "/register/client?type=ngo&plan=ngo-impact", highlighted: true, color: "border-emerald-200/60",
+      ctaHref: "/register/client?type=ngo&plan=ngo-impact", highlighted: true, color: "border-emerald-200/60 dark:border-emerald-500/20",
       features: {
         ai: ["المستشار الذكي: ٥٠/أسبوع", "صائغ عقود التطوع AI", "محلل التبرعات والبيانات المالية", null],
         platform: ["إدارة المتطوعين (حتى ٥٠٠)", "تصدير التقارير الربعية (مسودة)", "رادار الامتثال التفاعلي", "خصم ١٥٪ على استشارات المحامين"],
@@ -54,7 +54,7 @@ export const plansNgo: { ar: Plan[]; en: Plan[] } = {
       id: "ngo-impact", name: "Sustainable Impact", badge: "~199 SAR/mo",
       priceMonthly: "2,388", priceYearly: "2,388", periodMonthly: "SAR / year", periodYearly: "SAR / year",
       desc: "AI tools to elevate governance and operations", target: "Mid-size NGOs", cta: "Upgrade NGO",
-      ctaHref: "/register/client?type=ngo&plan=ngo-impact", highlighted: true, color: "border-emerald-200/60",
+      ctaHref: "/register/client?type=ngo&plan=ngo-impact", highlighted: true, color: "border-emerald-200/60 dark:border-emerald-500/20",
       features: {
         ai: ["AI Consultant: 50/week", "AI Volunteer Contract Drafter", "Donation & Finance Analyzer", null],
         platform: ["Up to 500 volunteers", "Quarterly reports export", "Interactive compliance radar", "15% discount on lawyer consults"],

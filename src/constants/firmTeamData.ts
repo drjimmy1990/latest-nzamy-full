@@ -64,9 +64,9 @@ export const WORK_TYPE: Record<WorkItemType,{label:string;icon:React.ElementType
 
 export const WORK_STATUS: Record<WorkItemStatus,{label:string;dot:string;badge:string}> = {
   active:    { label:'نشطة',    dot:'bg-emerald-400',             badge:'bg-emerald-50 text-emerald-700'  },
-  scheduled: { label:'مجدولة', dot:'bg-amber-400 animate-pulse', badge:'bg-amber-50 text-amber-700'      },
+  scheduled: { label:'مجدولة', dot:'bg-amber-400 animate-pulse', badge:'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400'      },
   done:      { label:'منتهية', dot:'bg-slate-400',               badge:'bg-slate-100 text-slate-600'     },
-  pending:   { label:'معلّقة', dot:'bg-red-400',                 badge:'bg-red-50 text-red-700'          },
+  pending:   { label:'معلّقة', dot:'bg-red-400',                 badge:'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-400'          },
 };
 
 // ─── Mock Data ────────────────────────────────────────────────────────────────

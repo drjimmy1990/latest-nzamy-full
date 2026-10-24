@@ -2,7 +2,7 @@
  * darkModeGuard.test.ts — no page outside the admin console paints a light
  * surface, a light hue border or invisible text in dark mode (dark-mode sweep,
  * 2026-10-25). The rules live in darkModeScan.ts; this file walks every .tsx
- * under src and holds the allow-list of deliberate exceptions.
+ * and .ts module under src and holds the allow-list of deliberate exceptions.
  *
  * The admin console (src/app/dashboard/admin/**, and AdminSidebar, which only
  * the console mounts) is not scanned file by file: its layout wraps everything
@@ -70,6 +70,9 @@ const ALLOW: [string, string | null, string][] = [
   // inverted primary buttons
   ["app/dashboard/government/page.tsx", "bg-white text-zinc-950 hover:bg-slate-200", INVERTED],
   ["app/dashboard/ngo/page.tsx", "bg-white text-zinc-950 hover:bg-slate-200", INVERTED],
+  // the dark counterpart is added where the value is rendered
+  ["components/consultation/constants.ts", "border-emerald-200 hover:border-emerald-400", "StepScheduling renders this colour next to dark:border-white/10"],
+  ["components/consultation/constants.ts", "border-blue-200 hover:border-blue-400", "StepScheduling renders this colour next to dark:border-white/10"],
   // must stay white
   ["app/dashboard/lawyer/_components/ShareProfileModal.tsx", "w-28 h-28 flex-shrink-0 rounded-xl bg-white p-1.5", "the QR code's quiet zone: scanners need dark modules on white"],
   ["components/payments/MoyasarCheckout.tsx", "nz-moyasar-surface", "Moyasar's card form keeps its own light styling: an always-light surface in both themes"],
@@ -81,16 +84,17 @@ const ALLOW: [string, string | null, string][] = [
 
 const ADMIN_ONLY = ["components/admin/AdminSidebar.tsx"];
 
-function tsxFiles(dir: string, out: string[] = []): string[] {
+/** Every .tsx, and every .ts module (colour maps live in data files too); tests and the scanner aside. */
+function sourceFiles(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
-    if (statSync(p).isDirectory()) tsxFiles(p, out);
-    else if (name.endsWith(".tsx")) out.push(relative(SRC, p).split("\\").join("/"));
+    if (statSync(p).isDirectory()) sourceFiles(p, out);
+    else if (/\.tsx?$/.test(name) && !/\.(?:test|d)\.ts$/.test(name)) out.push(relative(SRC, p).split("\\").join("/"));
   }
   return out;
 }
-const ALL_TSX = tsxFiles(SRC);
-const SCANNED = ALL_TSX.filter((f) => !f.startsWith("app/dashboard/admin/") && !ADMIN_ONLY.includes(f));
+const ALL_TSX = sourceFiles(SRC);
+const SCANNED = ALL_TSX.filter((f) => !f.startsWith("app/dashboard/admin/") && !ADMIN_ONLY.includes(f) && f !== "lib/ui/darkModeScan.ts");
 const read = (rel: string) => readFileSync(join(SRC, rel), "utf8");
 
 const allowed = (f: DarkModeFinding) => ALLOW.some(([file, needle]) => file === f.file && (needle === null || f.text.includes(needle)));
