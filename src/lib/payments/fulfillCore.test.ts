@@ -109,6 +109,7 @@ test("saved cards keep the verified gateway mode and receipts keep only masked p
   const { client, log } = happyDb(row, q => {
     if (q.table === "payment_methods" && q.op === "insert") return { data: { id: "card-1" } };
     if (q.table === "subscriptions" && q.op === "select") return { data: [] };
+    if (q.table === "grant_plan_subscription") return { data: { inserted: true, subscription_id: "sub-1", current_period_end: null } };
     if (q.table === "subscription_plans") return { data: [{ id: "plan-1", tier: "pro", name: "lawyer-pro" }] };
     return undefined;
   });

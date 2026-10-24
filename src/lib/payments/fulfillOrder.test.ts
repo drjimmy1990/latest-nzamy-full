@@ -79,15 +79,23 @@ test("grantPurchase keys every grant on the order", () => {
   const plan = body(grant, "async function grantPlan(");
   const existingAt = plan.indexOf('.eq("metadata->>order_id", order.id)');
   const decisionAt = plan.indexOf("planGrantDecision(");
-  const cancelAt = plan.indexOf('status: "cancelled"');
-  const insertAt = plan.indexOf('from("subscriptions").insert(');
-  assert.ok(existingAt > -1 && decisionAt > existingAt && cancelAt > decisionAt && insertAt > cancelAt,
-    "check the order's row, then the downgrade guard, then cancel, then insert");
+  const grantAt = plan.indexOf('admin.rpc("grant_plan_subscription"');
+  assert.ok(existingAt > -1 && decisionAt > existingAt && grantAt > decisionAt,
+    "check the order's row, then the downgrade guard, then the atomic cancel + insert (20261025_10)");
+  assert.doesNotMatch(plan, /from\("subscriptions"\)\s*\.(update|insert)\(/, "no separate cancel or insert request");
+  assert.doesNotMatch(plan, /status: "cancelled"/);
   assert.match(plan, /if \(decision\.keepExisting\) return \{ ok: true, alreadyEntitled: true \}/);
-  assert.match(plan, /metadata: \{ order_id: order\.id, method: "moyasar", replaced_ids:/);
-  assert.match(plan, /auto_renew: false/);
-  assert.match(plan, /payment_method_id: paymentMethodId/);
-  assert.match(plan, /billing_cycle: order\.billing/);
+  assert.match(plan, /p_order: order\.id,/);
+  assert.match(plan, /p_user: order\.user_id,/);
+  assert.match(plan, /p_plan_id: item\.id,/);
+  assert.match(plan, /p_tier: tier,/);
+  assert.match(plan, /p_billing: order\.billing,/);
+  assert.match(plan, /p_period_start: window\.start\.toISOString\(\),/);
+  assert.match(plan, /p_period_end: window\.end\.toISOString\(\),/);
+  assert.match(plan, /p_payment_method: paymentMethodId,/);
+  assert.match(plan, /p_now: now\.toISOString\(\),/, "one timestamp for started_at and cancelled_at (refund restore)");
+  assert.match(plan, /p_running: window\.running\.map\(/, "replaced_ids = the running rows only");
+  assert.match(plan, /if \(grantErr\) return failure\("grant_plan_subscription", grantErr\)/);
   assert.match(plan, /source: "plan_monthly"/);
   assert.match(plan, /points: PLAN_MONTHLY_POINTS/);
 
