@@ -71,3 +71,49 @@ test("deploy order: a missing payments table never answers 500", () => {
 test("never indexed", () => {
   assert.match(code, /robots: \{ index: false/);
 });
+
+// ── Payments UX fixes 2026-10-25: the page confirms on its own; the receipt has a way back ──
+
+function stripComments(source: string): string {
+  return source
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split(/\r?\n/)
+    .filter((line) => !line.trimStart().startsWith("//"))
+    .join("\n");
+}
+const readRel = (rel: string) => stripComments(readFileSync(join(import.meta.dirname, rel), "utf8"));
+const poller = readRel("../../../components/payments/ResultAutoRefresh.tsx");
+const receipt = readRel("../../dashboard/billing/receipt/[orderId]/page.tsx");
+
+test("the auto-refresh renders only for a view that offers the refresh link, with no key", () => {
+  assert.match(code, /import ResultAutoRefresh from "@\/components\/payments\/ResultAutoRefresh"/);
+  assert.match(code, /\{view\.refresh \? <ResultAutoRefresh refresh \/> : null\}/);
+  // no key: a pending re-render keeps the component (and its window) in place
+  assert.doesNotMatch(code, /<ResultAutoRefresh[^>]*key=/);
+  // the manual refresh stays
+  assert.match(code, /تحديث الصفحة/);
+});
+
+test("ResultAutoRefresh polls with router.refresh every 3 s, decided by autoRefreshDecision, with a quiet line", () => {
+  assert.match(poller, /^"use client";/);
+  assert.match(poller, /import \{ AUTO_REFRESH_INTERVAL_MS, autoRefreshDecision \} from "@\/lib\/payments\/resultView"/);
+  assert.match(poller, /setInterval\(/);
+  assert.match(poller, /AUTO_REFRESH_INTERVAL_MS\)/);
+  assert.match(poller, /if \(decision === "poll"\) \{\s*router\.refresh\(\);/);
+  assert.match(poller, /clearInterval\(timer\);\s*setPolling\(false\);/);
+  assert.match(poller, /return \(\) => clearInterval\(timer\)/);
+  assert.match(poller, /جارٍ التحقق تلقائياً…/);
+  assert.match(poller, /if \(!refresh \|\| !polling\) return null;/);
+});
+
+test("the receipt page has the site Navbar and a button-styled way back, both hidden when printing", () => {
+  assert.match(receipt, /import Navbar from "@\/components\/Navbar"/);
+  assert.match(receipt, /<div className="print:hidden"><Navbar \/><\/div>/);
+  assert.match(receipt, /const BACK_LINK = "inline-flex[^"]*rounded-xl[^"]*print:hidden"/);
+  assert.match(receipt, /<Link href="\/dashboard\/billing" className=\{BACK_LINK\}>العودة إلى الفوترة<\/Link>/);
+  // every render path — the receipt and the unavailable state — has the Navbar
+  assert.equal((receipt.match(/<ScreenNavbar \/>/g) ?? []).length, 2);
+  // the main clears the fixed Navbar on screen; print resets it
+  assert.match(receipt, /<main[^>]*pt-32[^>]*print:p-0/);
+});

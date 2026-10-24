@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import ResultAutoRefresh from "@/components/payments/ResultAutoRefresh";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { fulfillOrder } from "@/lib/payments/fulfillOrder";
 import { isMissingPaymentsObject } from "@/lib/payments/fulfillDecision";
@@ -32,7 +33,10 @@ import {
  *   - the outcome is shown in Arabic (src/lib/payments/resultView.ts):
  *     success with the receipt link, the refund-review notice, a failure with
  *     Moyasar's message beside the Arabic copy and a retry link, or
- *     «جارٍ تأكيد الدفع…» with a refresh.
+ *     «جارٍ تأكيد الدفع…» with a refresh. While it is pending the page
+ *     re-renders itself every 3 s for about a minute (ResultAutoRefresh,
+ *     autoRefreshDecision), so a confirmation that lands a moment later shows
+ *     without a press; the manual refresh link stays.
  *
  * Deploy order: before 20261022_10 runs the orders table is missing — the
  * page says online payment is unavailable (logged once), never a 500.
@@ -102,6 +106,9 @@ function ResultCard({ view, refreshHref }: { view: ResultView; refreshHref: stri
           </span>
         </p>
       ) : null}
+      {/* While pending the page re-renders itself every 3 s for about a minute;
+          a final render drops this, which stops it (autoRefreshDecision). */}
+      {view.refresh ? <ResultAutoRefresh refresh /> : null}
       <div className="mt-6 flex flex-wrap gap-3">
         {view.receiptHref ? (
           <Link href={view.receiptHref} className={PRIMARY}>

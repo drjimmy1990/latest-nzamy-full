@@ -7,7 +7,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fulfilmentNoticeAr } from "./fulfillDecision.ts";
-import { paymentResultView, resultViewWithoutPayment, type ResultOrder } from "./resultView.ts";
+import {
+  AUTO_REFRESH_INTERVAL_MS,
+  AUTO_REFRESH_WINDOW_MS,
+  autoRefreshDecision,
+  paymentResultView,
+  pendingView,
+  resultViewWithoutPayment,
+  type ResultOrder,
+} from "./resultView.ts";
 
 const order: ResultOrder = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -139,4 +147,44 @@ test("resultViewWithoutPayment: no payment reported yet — pending while open, 
   assert.equal(cancelled.retryHref, RETRY);
   // a paid order always carries its payment id; if one ever does not, it is not a success here
   assert.equal(resultViewWithoutPayment({ ...order, status: "paid" }).tone, "pending");
+});
+
+test("autoRefreshDecision: a pending view polls every 3 s for about a minute, then stops", () => {
+  assert.equal(AUTO_REFRESH_INTERVAL_MS, 3_000);
+  assert.equal(AUTO_REFRESH_WINDOW_MS, 60_000);
+  const view = pendingView();
+  const startedAt = 1_000_000;
+  assert.equal(autoRefreshDecision({ view, startedAt, now: startedAt }), "poll");
+  assert.equal(autoRefreshDecision({ view, startedAt, now: startedAt + 3_000 }), "poll");
+  assert.equal(autoRefreshDecision({ view, startedAt, now: startedAt + 59_999 }), "poll");
+  assert.equal(autoRefreshDecision({ view, startedAt, now: startedAt + 60_000 }), "stop");
+  assert.equal(autoRefreshDecision({ view, startedAt, now: startedAt + 600_000 }), "stop");
+  // another call still granting (claimed_elsewhere) is pending too
+  const claimed = paymentResultView({ outcome: "already_done", reason: "claimed_elsewhere" }, order);
+  assert.equal(autoRefreshDecision({ view: claimed, startedAt, now: startedAt }), "poll");
+});
+
+test("autoRefreshDecision: never polls on a final state", () => {
+  const startedAt = 1_000_000;
+  const finals = [
+    paymentResultView({ outcome: "granted" }, order),
+    paymentResultView({ outcome: "already_done" }, order),
+    paymentResultView({ outcome: "already_done", reason: "already_entitled" }, order),
+    paymentResultView({ outcome: "already_done", reason: "order_refunded" }, order),
+    paymentResultView({ outcome: "already_done", reason: "order_cancelled" }, order),
+    paymentResultView({ outcome: "failed", reason: "declined" }, order),
+    paymentResultView({ outcome: "rejected" }, order),
+    resultViewWithoutPayment({ ...order, status: "cancelled" }),
+  ];
+  for (const view of finals) {
+    assert.equal(view.refresh, false, view.title);
+    assert.equal(autoRefreshDecision({ view, startedAt, now: startedAt }), "stop", view.title);
+  }
+});
+
+test("autoRefreshDecision: a clock that is not a number, or runs backwards, stops", () => {
+  const view = pendingView();
+  assert.equal(autoRefreshDecision({ view, startedAt: Number.NaN, now: 5 }), "stop");
+  assert.equal(autoRefreshDecision({ view, startedAt: 10, now: Number.POSITIVE_INFINITY }), "stop");
+  assert.equal(autoRefreshDecision({ view, startedAt: 10_000, now: 5_000 }), "stop");
 });
