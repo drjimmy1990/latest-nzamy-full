@@ -165,7 +165,7 @@ export default function MyMarketplaceDashboard(props: Props) {
             className={`pb-3 transition-colors relative ${
               activeTab === "my-requests"
                 ? "text-blue-600 dark:text-blue-400 font-bold"
-                : `${muted} hover:text-gray-700 dark:hover:text-gray-200`
+                : `${muted} hover:text-gray-700 dark:hover:text-white`
             }`}
           >
             طلباتي وإسناداتي ({listings.length})
@@ -178,7 +178,7 @@ export default function MyMarketplaceDashboard(props: Props) {
             className={`pb-3 transition-colors relative ${
               activeTab === "incoming-offers"
                 ? "text-blue-600 dark:text-blue-400 font-bold"
-                : `${muted} hover:text-gray-700 dark:hover:text-gray-200`
+                : `${muted} hover:text-gray-700 dark:hover:text-white`
             }`}
           >
             العروض المستلمة (٤)
@@ -191,7 +191,7 @@ export default function MyMarketplaceDashboard(props: Props) {
             className={`pb-3 transition-colors relative ${
               activeTab === "browse-open"
                 ? "text-blue-600 dark:text-blue-400 font-bold"
-                : `${muted} hover:text-gray-700 dark:hover:text-gray-200`
+                : `${muted} hover:text-gray-700 dark:hover:text-white`
             }`}
           >
             فرص التعاون المتاحة

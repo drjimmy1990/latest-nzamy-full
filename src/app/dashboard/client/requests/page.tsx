@@ -377,7 +377,7 @@ function RequestDetailModal({ req, onClose, onCancel, reviewableEntry, onReviewe
           {/* Close button */}
           <button
             onClick={onClose}
-            className="absolute top-4 left-4 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+            className="absolute top-4 left-4 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5 text-gray-400 hover:text-gray-600 dark:hover:text-white transition-colors"
           >
             <X size={18} weight="bold" />
           </button>

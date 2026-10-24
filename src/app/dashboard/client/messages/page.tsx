@@ -662,7 +662,7 @@ export default function MessagesPage() {
                 <Link
                   href="/dashboard/client/documents"
                   title="لإرسال مستند، ارفعه في «مستنداتي» ثم أرفقه بطلب الخدمة"
-                  className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                  className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-white transition-colors"
                 >
                   <Paperclip size={18} />
                 </Link>

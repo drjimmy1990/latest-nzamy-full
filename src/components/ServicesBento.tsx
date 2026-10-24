@@ -214,7 +214,7 @@ export default function ServicesBento() {
               className={`flex items-center gap-2 rounded-xl px-4 py-2.5 min-h-[44px] sm:px-5 text-sm font-semibold transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold ${
                 activeTab === "individual"
                   ? "bg-white text-royal shadow-sm dark:bg-emerald-950/60 dark:text-emerald-300 dark:border dark:border-emerald-500/30"
-                  : "text-ink-muted hover:text-ink dark:text-gray-400 dark:hover:text-gray-200"
+                  : "text-ink-muted hover:text-ink dark:text-gray-400 dark:hover:text-white"
               }`}
             >
               <User size={18} weight={activeTab === "individual" ? "fill" : "regular"} />
@@ -228,7 +228,7 @@ export default function ServicesBento() {
               className={`flex items-center gap-2 rounded-xl px-4 py-2.5 min-h-[44px] sm:px-5 text-sm font-semibold transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold ${
                 activeTab === "business"
                   ? "bg-white text-royal shadow-sm dark:bg-emerald-950/60 dark:text-emerald-300 dark:border dark:border-emerald-500/30"
-                  : "text-ink-muted hover:text-ink dark:text-gray-400 dark:hover:text-gray-200"
+                  : "text-ink-muted hover:text-ink dark:text-gray-400 dark:hover:text-white"
               }`}
             >
               <Buildings size={18} weight={activeTab === "business" ? "fill" : "regular"} />
