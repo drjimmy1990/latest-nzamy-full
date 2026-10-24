@@ -34,6 +34,7 @@ import {
   PRIVATE_PRECEDENT_STORAGE_VERSION,
 } from "./seed-library.live-preflight";
 import { stripInternalContentKeys } from "../src/lib/library/internalContentFields";
+import { joinStoredPreamble } from "../src/lib/library/splitPreamble";
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Types — Imported from parser output shapes
@@ -708,7 +709,9 @@ export async function seedLaws(
       publication_date_hijri: law.publication_date_hijri ?? null,
       effective_date_hijri: law.effective_date_hijri ?? null,
       total_articles: law.total_articles || 0,
-      preamble: (law.preamble || "") + (law.regulation_preamble ? `\n***\n${law.regulation_preamble}` : ""),
+      // N1.2: joined under the REGULATION_PREAMBLE marker, never `***` — the
+      // file template uses `***` rules itself (src/lib/library/splitPreamble.ts).
+      preamble: joinStoredPreamble(law.preamble, law.regulation_preamble),
       has_merged_regulation: law.has_executive_reg || false,
       status: (law.law_status || "status_undeclared").substring(0, 30),
       boe_source_url: String(law.boe_source_url || law.boe_url || "").substring(0, 500),

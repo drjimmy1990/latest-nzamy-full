@@ -9,6 +9,7 @@ import { resolveParentLawLink, type ParentLawCandidate } from './_resolve-parent
 import { orderLawChapters } from './_order-chapters';
 import { articleDisplayLabel, articleLocatorText } from './_article-label';
 import { lawOfficialMeta, TIER_SHAPED_CACHE_CONTROL } from './_official-meta';
+import { splitStoredPreamble } from '@/lib/library/splitPreamble';
 import { selectAllPages } from '@/lib/supabase/selectAllPages';
 
 /**
@@ -272,19 +273,11 @@ export async function GET(
       (article as Record<string, unknown>).__globalIndex = articleGlobalIndex++;
     });
 
-    // Extract combined regulation preamble if present
-    let preamble = law.preamble || '';
-    let regulationPreamble = '';
-    if (preamble.includes('\n***\n')) {
-      // ب-88: the standard file template bakes in multiple decorative `***`
-      // separators before the first ARTICLE_START/CHAPTER_START anchor (after
-      // the AI-summary block, the info card, the H1...), so `split` can return
-      // 3-7 parts, not just 2. Rejoining everything past the first split keeps
-      // it all in regulationPreamble instead of silently dropping parts[2:].
-      const parts = preamble.split('\n***\n');
-      preamble = parts[0].trim();
-      regulationPreamble = parts.slice(1).join('\n***\n').trim();
-    }
+    // The law's preamble and its regulation's preamble share one column. N1.2:
+    // split ONLY on the REGULATION_PREAMBLE marker — the file template's own
+    // `***` rules (موجز / identity card / H1) are not a regulation boundary,
+    // and splitting on them labelled the card «اللائحة التنفيذية».
+    const { preamble, regulationPreamble } = splitStoredPreamble(law.preamble);
 
     // ── Build the flat "اللائحة وحدها" view — one sorted list per secondary
     // instrument (`ref`), spanning every نظام article, with dual-linked
