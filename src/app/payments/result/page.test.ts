@@ -95,14 +95,17 @@ test("the auto-refresh renders only for a view that offers the refresh link, wit
   assert.match(code, /تحديث الصفحة/);
 });
 
-test("ResultAutoRefresh polls with router.refresh every 3 s, decided by autoRefreshDecision, with a quiet line", () => {
+test("ResultAutoRefresh: a chained 3 s timeout, the next one only after the previous refresh finished", () => {
   assert.match(poller, /^"use client";/);
   assert.match(poller, /import \{ AUTO_REFRESH_INTERVAL_MS, autoRefreshDecision \} from "@\/lib\/payments\/resultView"/);
-  assert.match(poller, /setInterval\(/);
-  assert.match(poller, /AUTO_REFRESH_INTERVAL_MS\)/);
-  assert.match(poller, /if \(decision === "poll"\) \{\s*router\.refresh\(\);/);
-  assert.match(poller, /clearInterval\(timer\);\s*setPolling\(false\);/);
-  assert.match(poller, /return \(\) => clearInterval\(timer\)/);
+  assert.doesNotMatch(poller, /setInterval\(/);
+  assert.match(poller, /const \[refreshing, startRefresh\] = useTransition\(\);/);
+  // nothing is scheduled while a refresh is still running
+  assert.match(poller, /if \(!refresh \|\| !polling \|\| refreshing\) return;/);
+  assert.match(poller, /setTimeout\(\(\) => \{[\s\S]*?\}, AUTO_REFRESH_INTERVAL_MS\);/);
+  assert.match(poller, /if \(decision === "poll"\) \{\s*startRefresh\(\(\) => router\.refresh\(\)\);\s*\} else \{\s*setPolling\(false\);/);
+  assert.match(poller, /return \(\) => clearTimeout\(timer\)/);
+  assert.match(poller, /\[refresh, polling, refreshing, router\]/);
   assert.match(poller, /جارٍ التحقق تلقائياً…/);
   assert.match(poller, /if \(!refresh \|\| !polling\) return null;/);
 });
