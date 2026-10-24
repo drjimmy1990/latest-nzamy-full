@@ -1278,7 +1278,7 @@ export default function ClientDashboard() {
         <div className={`${card} p-6`}>
           <div className="flex items-center gap-3 mb-5">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#C8A762] to-[#b8974f] flex items-center justify-center">
-              <Robot size={20} weight="fill" className="text-[#0B3D2E]" />
+              <Robot size={20} weight="fill" className="text-[#0B3D2E] dark:text-emerald-400" />
             </div>
             <div>
               <p className={`text-[14px] font-bold ${isDark ? "text-white" : "text-zinc-800"}`}>لديك سؤال قانوني؟</p>

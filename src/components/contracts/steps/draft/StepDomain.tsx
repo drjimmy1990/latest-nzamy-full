@@ -378,7 +378,7 @@ export function StepDomain({
                             <p className={`text-[12px] font-semibold mb-0.5 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{ct.title}</p>
                             <p className={`text-[10px] leading-snug ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>{ct.desc}</p>
                             {contractType === ct.id && (
-                              <span className="mt-1.5 inline-block text-[9px] font-black text-[#0B3D2E] bg-[#0B3D2E]/10 px-1.5 py-0.5 rounded-full">✓ محدد</span>
+                              <span className="mt-1.5 inline-block text-[9px] font-black text-[#0B3D2E] dark:text-emerald-400 bg-[#0B3D2E]/10 px-1.5 py-0.5 rounded-full">✓ محدد</span>
                             )}
                           </motion.button>
                         ))}

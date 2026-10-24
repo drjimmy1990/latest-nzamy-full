@@ -100,14 +100,14 @@ export default function GovernmentContractsPage() {
               transition={{ delay: i * 0.04, duration: 0.3 }}
               className={`group rounded-2xl border ${card} p-4 flex items-center gap-4 hover:border-[#0B3D2E]/20 transition-all`}>
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? 'bg-white/[0.06]' : 'bg-slate-100'}`}>
-                <FileText size={18} weight="duotone" className="text-[#0B3D2E]" />
+                <FileText size={18} weight="duotone" className="text-[#0B3D2E] dark:text-emerald-400" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className={`text-sm font-semibold mb-0.5 ${textPri}`}>{c.title}</p>
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className={`text-xs ${textMuted}`}>{c.id}</span>
                   {c.vendor !== '—' && <span className={`text-xs ${textMuted}`}>· {c.vendor}</span>}
-                  {c.value > 0 && <span className="text-xs text-[#0B3D2E] font-bold">· {c.value.toLocaleString('ar-SA')} ر.س</span>}
+                  {c.value > 0 && <span className="text-xs text-[#0B3D2E] dark:text-emerald-400 font-bold">· {c.value.toLocaleString('ar-SA')} ر.س</span>}
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">

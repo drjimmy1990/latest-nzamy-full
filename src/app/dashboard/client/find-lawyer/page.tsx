@@ -223,7 +223,7 @@ function LawyerCard({ l, index }: { l: DirectoryLawyer; index: number }) {
         onMouseLeave={handleMouseLeave}
         whileHover={{ scale: 1.015 }}
         transition={{ type: 'spring', stiffness: 200, damping: 28 }}
-        className="group relative flex flex-col overflow-hidden rounded-[1.75rem] bg-white border border-slate-200/60 shadow-[0_20px_40px_-15px_rgba(11,61,46,0.06)] select-none h-full"
+        className="group relative flex flex-col overflow-hidden rounded-[1.75rem] bg-white dark:bg-dark-card border border-slate-200/60 dark:border-dark-border shadow-[0_20px_40px_-15px_rgba(11,61,46,0.06)] select-none h-full"
       >
         {/* Spotlight border glow */}
         <motion.div
@@ -252,7 +252,7 @@ function LawyerCard({ l, index }: { l: DirectoryLawyer; index: number }) {
                 <img
                   src={l.avatarUrl}
                   alt={l.name ?? ''}
-                  className="w-[58px] h-[58px] rounded-[14px] object-cover bg-white"
+                  className="w-[58px] h-[58px] rounded-[14px] object-cover bg-white dark:bg-zinc-800"
                   loading="lazy"
                 />
               ) : (
@@ -263,8 +263,8 @@ function LawyerCard({ l, index }: { l: DirectoryLawyer; index: number }) {
             </div>
             {/* A real claim, not a decoration: GET /api/v1/lawyers returns only
                 rows whose verification_status is 'verified'. */}
-            <div className="absolute -bottom-1.5 -right-1.5 w-[22px] h-[22px] rounded-full bg-white flex items-center justify-center shadow-md" title="ملف موثّق">
-              <SealCheck size={15} weight="fill" className="text-[#0B3D2E]" />
+            <div className="absolute -bottom-1.5 -right-1.5 w-[22px] h-[22px] rounded-full bg-white dark:bg-zinc-900 flex items-center justify-center shadow-md" title="ملف موثّق">
+              <SealCheck size={15} weight="fill" className="text-[#0B3D2E] dark:text-emerald-400" />
             </div>
           </div>
 
@@ -272,12 +272,12 @@ function LawyerCard({ l, index }: { l: DirectoryLawyer; index: number }) {
             {/* No name in either language ⇒ no heading. The old cast rendered
                 «undefined» here for every real row. */}
             {l.name && (
-              <h3 className="font-black text-zinc-900 text-[15px] tracking-tight leading-tight mb-1 truncate">
+              <h3 className="font-black text-zinc-900 dark:text-zinc-100 text-[15px] tracking-tight leading-tight mb-1 truncate">
                 {l.name}
               </h3>
             )}
             {l.specialties.length > 0 && (
-              <p className="text-[11.5px] text-[#0B3D2E] font-semibold truncate">
+              <p className="text-[11.5px] text-[#0B3D2E] dark:text-emerald-400 font-semibold truncate">
                 {l.specialties[0]}
               </p>
             )}
@@ -290,7 +290,7 @@ function LawyerCard({ l, index }: { l: DirectoryLawyer; index: number }) {
           <div className="px-6 pb-4 flex gap-1.5 flex-wrap">
             {l.yearsExperience !== undefined && (
               <span className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-50 border border-slate-100 text-[10px] text-slate-500 font-semibold">
-                <Briefcase size={9} weight="fill" className="text-[#0B3D2E]" />
+                <Briefcase size={9} weight="fill" className="text-[#0B3D2E] dark:text-emerald-400" />
                 {arabicYearsOfPractice(l.yearsExperience)}
               </span>
             )}
@@ -304,7 +304,7 @@ function LawyerCard({ l, index }: { l: DirectoryLawyer; index: number }) {
                 lawyer's own stated rate and is NOT what an office consultation
                 costs. The old card printed it as a consultation price range. */}
             {l.hourlyRate !== undefined && (
-              <span className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-[#C8A762]/10 border border-[#C8A762]/20 text-[10px] text-[#8a6f2e] font-semibold">
+              <span className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-[#C8A762]/10 border border-[#C8A762]/20 text-[10px] text-[#8a6f2e] dark:text-[#C8A762] font-semibold">
                 <Coins size={9} weight="fill" />
                 الأتعاب بالساعة {l.hourlyRate.toLocaleString('ar-SA')} ر.س
               </span>
@@ -316,7 +316,7 @@ function LawyerCard({ l, index }: { l: DirectoryLawyer; index: number }) {
         {l.specialties.length > 1 && (
           <div className="px-6 pb-4 flex flex-wrap gap-1.5">
             {l.specialties.slice(1, 4).map((s) => (
-              <span key={s} className="px-2 py-0.5 text-[10px] border border-slate-200 rounded-lg text-slate-500 bg-white">
+              <span key={s} className="px-2 py-0.5 text-[10px] border border-slate-200 rounded-lg text-slate-500 bg-white dark:bg-white/[0.03]">
                 {s}
               </span>
             ))}
@@ -364,7 +364,7 @@ function FilterChip({
       onClick={onClick}
       whileTap={{ scale: 0.96 }}
       className={`flex-shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-[11.5px] font-semibold border transition-all duration-200 ${
-        active ? activeClass : 'border-slate-200 text-slate-500 hover:border-slate-300 bg-white hover:text-slate-700'
+        active ? activeClass : 'border-slate-200 text-slate-500 hover:border-slate-300 bg-white dark:bg-white/[0.03] hover:text-slate-700'
       }`}
     >
       {children}
@@ -445,7 +445,7 @@ export default function FindLawyerPage() {
   const hasLawyers = lawyers.length > 0;
 
   return (
-    <div className="min-h-[100dvh] bg-[#f9fafb]" dir="rtl">
+    <div className="min-h-[100dvh] bg-[#f9fafb] dark:bg-dark-bg" dir="rtl">
       <div className="max-w-7xl mx-auto px-4 md:px-8 py-8">
 
         {/* ── Header ───────────────────────────────────────────────────────
@@ -460,9 +460,9 @@ export default function FindLawyerPage() {
               <span className="h-[3px] w-8 rounded-full bg-[#C8A762] inline-block" />
               <span className="text-[11px] font-black tracking-widest text-[#C8A762] uppercase">محامون موثّقون</span>
             </div>
-            <h1 className="text-3xl md:text-4xl font-black tracking-tight text-zinc-900 leading-tight mb-3">
+            <h1 className="text-3xl md:text-4xl font-black tracking-tight text-zinc-900 dark:text-zinc-100 leading-tight mb-3">
               ابحث عن المحامي<br />
-              <span className="text-[#0B3D2E]">المناسب لقضيتك</span>
+              <span className="text-[#0B3D2E] dark:text-emerald-400">المناسب لقضيتك</span>
             </h1>
             <p className="text-slate-500 text-[13.5px] leading-relaxed max-w-[55ch]">
               محامون وثّق المكتب تراخيصهم واختاروا نشر ملفاتهم في الدليل — اطّلع على
@@ -476,12 +476,12 @@ export default function FindLawyerPage() {
               printed above a plural «يستقبلون» again. */}
           {complete && acceptingCount > 0 && (
             <div className="flex flex-col justify-end">
-              <div className="flex items-center gap-3 p-4 rounded-2xl bg-white border border-slate-200/70 shadow-[0_4px_16px_-4px_rgba(0,0,0,0.04)]">
+              <div className="flex items-center gap-3 p-4 rounded-2xl bg-white dark:bg-dark-card border border-slate-200/70 dark:border-dark-border shadow-[0_4px_16px_-4px_rgba(0,0,0,0.04)]">
                 <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center">
                   <AvailabilityPulse />
                 </div>
                 <div>
-                  <p className="text-[15px] font-black text-zinc-900 leading-none">
+                  <p className="text-[15px] font-black text-zinc-900 dark:text-zinc-100 leading-none">
                     {arabicLawyerCount(acceptingCount)}
                   </p>
                   <p className="text-[10.5px] text-slate-400 mt-1">
@@ -504,7 +504,7 @@ export default function FindLawyerPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="اسم المحامي، التخصص، أو المدينة…"
-                className="w-full pr-11 pl-10 py-3.5 text-[13.5px] border border-slate-200 rounded-2xl bg-white focus:outline-none focus:border-[#0B3D2E]/40 focus:ring-2 focus:ring-[#0B3D2E]/8 transition-all shadow-sm placeholder:text-slate-400"
+                className="w-full pr-11 pl-10 py-3.5 text-[13.5px] border border-slate-200 rounded-2xl bg-white dark:bg-dark-card focus:outline-none focus:border-[#0B3D2E]/40 focus:ring-2 focus:ring-[#0B3D2E]/8 transition-all shadow-sm placeholder:text-slate-400"
               />
               <AnimatePresence>
                 {search && (
@@ -561,7 +561,7 @@ export default function FindLawyerPage() {
                   className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[11.5px] font-semibold border transition-all ${
                     acceptingOnly
                       ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
-                      : 'border-slate-200 text-slate-500 bg-white hover:border-slate-300'
+                      : 'border-slate-200 text-slate-500 bg-white dark:bg-white/[0.03] hover:border-slate-300'
                   }`}
                 >
                   {acceptingOnly ? <AvailabilityPulse /> : <span className="w-2 h-2 rounded-full bg-slate-300" />}
@@ -573,7 +573,7 @@ export default function FindLawyerPage() {
                 <button
                   type="button"
                   onClick={clearAll}
-                  className="flex items-center gap-1.5 text-[11.5px] text-rose-600 hover:text-rose-700 font-semibold px-3 py-2 rounded-xl border border-rose-200 hover:bg-rose-50 transition-all active:scale-[0.97]"
+                  className="flex items-center gap-1.5 text-[11.5px] text-rose-600 dark:text-rose-400 hover:text-rose-700 font-semibold px-3 py-2 rounded-xl border border-rose-200 dark:border-rose-500/20 hover:bg-rose-50 dark:hover:bg-rose-500/20 transition-all active:scale-[0.97]"
                 >
                   <X size={12} />
                   مسح الفلاتر ({activeFiltersCount})
@@ -585,7 +585,7 @@ export default function FindLawyerPage() {
                   type="button"
                   whileTap={{ scale: 0.96 }}
                   onClick={() => setSortOpen(!sortOpen)}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-[11.5px] font-semibold border border-slate-200 bg-white text-slate-600 hover:border-slate-300 transition-all"
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-[11.5px] font-semibold border border-slate-200 bg-white dark:bg-white/[0.03] text-slate-600 hover:border-slate-300 transition-all"
                 >
                   <CaretUpDown size={12} />
                   {sortLabel}
@@ -597,7 +597,7 @@ export default function FindLawyerPage() {
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: -8, scale: 0.96 }}
                       transition={{ type: 'spring', stiffness: 300, damping: 28 }}
-                      className="absolute left-0 top-full mt-1.5 bg-white border border-slate-200 rounded-2xl shadow-[0_12px_30px_-8px_rgba(0,0,0,0.1)] py-1.5 z-20 min-w-[190px]"
+                      className="absolute left-0 top-full mt-1.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-white/10 rounded-2xl shadow-[0_12px_30px_-8px_rgba(0,0,0,0.1)] py-1.5 z-20 min-w-[190px]"
                     >
                       {SORT_OPTIONS.map((opt) => (
                         <button
@@ -606,11 +606,11 @@ export default function FindLawyerPage() {
                           onClick={() => { setSort(opt.id); setSortOpen(false); }}
                           className={`w-full text-right px-4 py-2.5 text-[11.5px] font-medium flex items-center gap-2 transition-colors ${
                             sort === opt.id
-                              ? 'text-[#0B3D2E] bg-[#0B3D2E]/5 font-semibold'
+                              ? 'text-[#0B3D2E] dark:text-emerald-400 bg-[#0B3D2E]/5 dark:bg-emerald-500/10 font-semibold'
                               : 'text-slate-600 hover:bg-slate-50'
                           }`}
                         >
-                          {sort === opt.id && <CheckCircle size={11} className="text-[#0B3D2E]" weight="fill" />}
+                          {sort === opt.id && <CheckCircle size={11} className="text-[#0B3D2E] dark:text-emerald-400" weight="fill" />}
                           {opt.label}
                         </button>
                       ))}
@@ -644,11 +644,11 @@ export default function FindLawyerPage() {
               transition={{ type: 'spring', stiffness: 120, damping: 18 }}
               className="flex flex-col items-center py-24 gap-5 text-center"
             >
-              <div className="w-20 h-20 rounded-3xl bg-white border border-amber-200 shadow-[0_8px_24px_-8px_rgba(0,0,0,0.06)] flex items-center justify-center">
+              <div className="w-20 h-20 rounded-3xl bg-white dark:bg-dark-card border border-amber-200 dark:border-amber-500/20 shadow-[0_8px_24px_-8px_rgba(0,0,0,0.06)] flex items-center justify-center">
                 <WarningCircle size={32} className="text-amber-500" weight="duotone" />
               </div>
               <div className="max-w-[330px] space-y-1.5">
-                <p className="font-black text-zinc-800 text-lg">تعذّر تحميل دليل المحامين</p>
+                <p className="font-black text-zinc-800 dark:text-zinc-200 text-lg">تعذّر تحميل دليل المحامين</p>
                 <p className="text-slate-500 text-[13px] leading-relaxed">
                   لم نتمكّن من الوصول إلى الخادم. هذه مشكلة في التحميل ولا تعني أن الدليل فارغ.
                 </p>
@@ -656,7 +656,7 @@ export default function FindLawyerPage() {
               <button
                 type="button"
                 onClick={() => window.location.reload()}
-                className="text-[12px] text-[#0B3D2E] font-semibold px-5 py-2.5 rounded-xl border border-[#0B3D2E]/20 hover:bg-[#0B3D2E]/5 transition-all"
+                className="text-[12px] text-[#0B3D2E] dark:text-emerald-400 font-semibold px-5 py-2.5 rounded-xl border border-[#0B3D2E]/20 dark:border-emerald-500/30 hover:bg-[#0B3D2E]/5 transition-all"
               >
                 إعادة المحاولة
               </button>
@@ -674,12 +674,12 @@ export default function FindLawyerPage() {
               transition={{ type: 'spring', stiffness: 120, damping: 18 }}
               className="flex flex-col items-center py-24 gap-6 text-center"
             >
-              <div className="w-24 h-24 rounded-[1.75rem] bg-gradient-to-br from-[#0B3D2E]/5 via-white to-[#C8A762]/5 border border-slate-200/80 shadow-[0_12px_32px_-8px_rgba(11,61,46,0.08)] flex items-center justify-center">
-                <Scales size={40} className="text-[#0B3D2E]/30" weight="duotone" />
+              <div className="w-24 h-24 rounded-[1.75rem] bg-gradient-to-br from-[#0B3D2E]/5 via-white dark:via-dark-card to-[#C8A762]/5 border border-slate-200/80 shadow-[0_12px_32px_-8px_rgba(11,61,46,0.08)] flex items-center justify-center">
+                <Scales size={40} className="text-[#0B3D2E]/30 dark:text-emerald-400/30" weight="duotone" />
               </div>
 
               <div className="max-w-[420px] space-y-2.5">
-                <p className="font-black text-zinc-800 text-xl leading-tight">
+                <p className="font-black text-zinc-800 dark:text-zinc-200 text-xl leading-tight">
                   لم يَنشُر أي محامٍ ملفاً عاماً في الدليل بعد
                 </p>
                 <p className="text-slate-500 text-[13px] leading-relaxed">
@@ -720,18 +720,18 @@ export default function FindLawyerPage() {
               transition={{ type: 'spring', stiffness: 120, damping: 18 }}
               className="flex flex-col items-center py-24 gap-5 text-center"
             >
-              <div className="w-20 h-20 rounded-3xl bg-white border border-slate-200 shadow-[0_8px_24px_-8px_rgba(0,0,0,0.06)] flex items-center justify-center">
+              <div className="w-20 h-20 rounded-3xl bg-white dark:bg-dark-card border border-slate-200 shadow-[0_8px_24px_-8px_rgba(0,0,0,0.06)] flex items-center justify-center">
                 <MagnifyingGlass size={32} className="text-slate-300" weight="thin" />
               </div>
               <div className="max-w-[280px]">
-                <p className="font-black text-zinc-700 text-lg mb-1.5">لا توجد نتائج مطابقة</p>
+                <p className="font-black text-zinc-700 dark:text-zinc-300 text-lg mb-1.5">لا توجد نتائج مطابقة</p>
                 <p className="text-slate-400 text-[13px] leading-relaxed">جرّب تغيير الفلاتر أو توسيع نطاق البحث</p>
               </div>
               <motion.button
                 type="button"
                 whileTap={{ scale: 0.96 }}
                 onClick={clearAll}
-                className="text-[12px] text-[#0B3D2E] font-semibold px-5 py-2.5 rounded-xl border border-[#0B3D2E]/20 hover:bg-[#0B3D2E]/5 transition-all"
+                className="text-[12px] text-[#0B3D2E] dark:text-emerald-400 font-semibold px-5 py-2.5 rounded-xl border border-[#0B3D2E]/20 dark:border-emerald-500/30 hover:bg-[#0B3D2E]/5 transition-all"
               >
                 مسح الفلاتر
               </motion.button>

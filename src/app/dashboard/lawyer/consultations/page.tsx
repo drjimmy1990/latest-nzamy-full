@@ -340,9 +340,9 @@ function BookingModal({ isDark, onClose, lawyerUserId, sessionLoading = false }:
                             ? isDark ? "border-[#0B3D2E]/60 bg-[#0B3D2E]/15" : "border-[#0B3D2E]/30 bg-[#0B3D2E]/5"
                             : isDark ? "border-white/[0.06] hover:border-white/[0.12]" : "border-slate-200 hover:border-slate-300"
                         }`}>
-                        <Icon size={18} weight="duotone" className={consultType === ct.id ? "text-[#0B3D2E]" : isDark ? "text-zinc-500" : "text-slate-400"} />
+                        <Icon size={18} weight="duotone" className={consultType === ct.id ? "text-[#0B3D2E] dark:text-emerald-400" : isDark ? "text-zinc-500" : "text-slate-400"} />
                         <span className={`text-[13px] font-semibold ${consultType === ct.id ? isDark ? "text-zinc-100" : "text-slate-800" : isDark ? "text-zinc-400" : "text-slate-600"}`}>{ct.label}</span>
-                        {consultType === ct.id && <CheckCircle size={14} weight="fill" className="text-[#0B3D2E] ms-auto" />}
+                        {consultType === ct.id && <CheckCircle size={14} weight="fill" className="text-[#0B3D2E] dark:text-emerald-400 ms-auto" />}
                       </button>
                     );
                   })}

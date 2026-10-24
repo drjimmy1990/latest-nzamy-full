@@ -158,7 +158,7 @@ function FirmCasesAssignPageDemo() {
         <motion.div variants={fadeUp} initial="hidden" animate="show" custom={2} className={`${card} overflow-hidden`}>
           <div className={`px-5 py-4 border-b ${isDark ? "border-white/[0.07]" : "border-zinc-100"}`}>
             <p className={`text-[13px] font-bold mb-3 flex items-center gap-2 ${isDark ? "text-white" : "text-zinc-800"}`}>
-              <Gavel size={14} className="text-[#0B3D2E]" weight="duotone" />
+              <Gavel size={14} className="text-[#0B3D2E] dark:text-emerald-400" weight="duotone" />
               القضايا غير المعيّنة ({filteredCases.length})
             </p>
             <div className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${isDark ? "bg-zinc-800 border-white/[0.07]" : "bg-zinc-50 border-zinc-200"}`}>
@@ -209,7 +209,7 @@ function FirmCasesAssignPageDemo() {
           <div className={`px-5 py-4 border-b ${isDark ? "border-white/[0.07]" : "border-zinc-100"}`}>
             <div className="flex items-center justify-between mb-3">
               <p className={`text-[13px] font-bold flex items-center gap-2 ${isDark ? "text-white" : "text-zinc-800"}`}>
-                <UserPlus size={14} className="text-[#0B3D2E]" weight="duotone" />
+                <UserPlus size={14} className="text-[#0B3D2E] dark:text-emerald-400" weight="duotone" />
                 اختر المحامي ({filteredTeam.length})
               </p>
               <button

@@ -252,7 +252,7 @@ export default function NewRequestWizard() {
               <div className="w-14 h-14 bg-[#0B3D2E]/10 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
                 {uploading
                   ? <div className="w-6 h-6 border-2 border-[#0B3D2E]/30 border-t-[#0B3D2E] rounded-full animate-spin" />
-                  : <UploadSimple size={24} className="text-[#0B3D2E]" />}
+                  : <UploadSimple size={24} className="text-[#0B3D2E] dark:text-emerald-400" />}
               </div>
               <p className="text-sm font-bold text-gray-900 dark:text-white mb-1">
                 {uploading ? "جارٍ رفع الملفات..." : "اضغط هنا لرفع المستندات"}

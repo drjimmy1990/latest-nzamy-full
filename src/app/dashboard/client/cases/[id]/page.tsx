@@ -207,7 +207,7 @@ export default function ClientCaseDetailPage() {
           <Warning size={40} className={isDark ? "text-zinc-700" : "text-slate-300"} />
           <p className="text-lg font-bold">{fetchError ?? "القضية غير موجودة"}</p>
           <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>لم يتم العثور على قضية بهذا المعرف، أو قد تكون محذوفة.</p>
-          <Link href="/dashboard/client/cases" className="mt-2 text-sm text-[#0B3D2E] hover:underline">← العودة لقضاياي</Link>
+          <Link href="/dashboard/client/cases" className="mt-2 text-sm text-[#0B3D2E] dark:text-emerald-400 hover:underline">← العودة لقضاياي</Link>
         </div>
       </div>
     );
@@ -292,7 +292,7 @@ export default function ClientCaseDetailPage() {
       <motion.div initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.08 }}
         className={`${card} p-4`}>
         <div className="flex items-center gap-2 mb-4">
-          <Scales size={14} className="text-[#0B3D2E]" />
+          <Scales size={14} className="text-[#0B3D2E] dark:text-emerald-400" />
           <h2 className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>مسار القضية</h2>
           <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${isDark ? "bg-white/[0.05] text-zinc-500" : "bg-slate-100 text-slate-500"}`}>
             {data.timeline.filter(e => e.done).length}/{data.timeline.length} مراحل
@@ -346,7 +346,7 @@ export default function ClientCaseDetailPage() {
         <motion.div initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.09 }}
           className={`${card} p-4 space-y-4`}>
           <div className="flex items-center gap-2">
-            <Eye size={14} className="text-[#0B3D2E]" />
+            <Eye size={14} className="text-[#0B3D2E] dark:text-emerald-400" />
             <h2 className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>ما شاركه معك محاميك</h2>
             <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${isDark ? "bg-[#0B3D2E]/30 text-emerald-400" : "bg-emerald-50 text-emerald-700"}`}>
               مرئي لك فقط

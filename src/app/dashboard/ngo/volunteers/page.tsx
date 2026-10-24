@@ -43,7 +43,7 @@ export default function NGOVolunteersPage() {
               className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-bold transition ${isDark ? "bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 text-emerald-400" : "bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-700"}`}>
               <HandHeart size={14} /> صائغ عقد تطوع
             </a>
-            <button className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-bold transition ${isDark ? "bg-white/5 border border-white/10 hover:bg-white/10 text-gray-200" : "bg-gray-100 border border-gray-200 hover:bg-gray-200 text-gray-700"}`}>
+            <button className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-bold transition ${isDark ? "bg-white/5 border border-white/10 hover:bg-white/10 text-zinc-200" : "bg-gray-100 border border-gray-200 hover:bg-gray-200 text-gray-700"}`}>
               <Plus size={14} /> متطوع جديد
             </button>
           </div>
@@ -68,7 +68,7 @@ export default function NGOVolunteersPage() {
               VOLUNTEERS.map((v, i) => (
                 <motion.div key={v.name} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.06 }}
                   className={`grid grid-cols-[1fr_1fr_auto_auto_auto] px-5 py-4 items-center gap-4 transition ${row}`}>
-                  <span className={`font-semibold text-sm ${isDark ? "text-gray-200" : "text-gray-800"}`}>{v.name}</span>
+                  <span className={`font-semibold text-sm ${isDark ? "text-zinc-200" : "text-gray-800"}`}>{v.name}</span>
                   <span className={`text-sm ${muted}`}>{v.role}</span>
                   <span className={`text-sm font-mono font-bold ${isDark ? "text-gray-300" : "text-gray-700"}`}>{v.hours}</span>
                   <span>

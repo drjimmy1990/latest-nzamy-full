@@ -46,7 +46,7 @@ export default function NGOContractsPage() {
               className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition ${isDark ? "bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 text-emerald-400" : "bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-700"}`}>
               <Handshake size={14} /> صائغ عقد تطوع
             </Link>
-            <button className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition ${isDark ? "bg-white/5 border border-white/10 hover:bg-white/10 text-gray-200" : "bg-gray-100 border border-gray-200 hover:bg-gray-200 text-gray-700"}`}>
+            <button className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition ${isDark ? "bg-white/5 border border-white/10 hover:bg-white/10 text-zinc-200" : "bg-gray-100 border border-gray-200 hover:bg-gray-200 text-gray-700"}`}>
               <Plus size={14} /> عقد جديد
             </button>
           </div>
@@ -58,7 +58,7 @@ export default function NGOContractsPage() {
               <motion.div key={c.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.07 }}
                 className={`px-5 py-4 flex items-center justify-between gap-4 transition ${isDark ? "hover:bg-white/[0.02]" : "hover:bg-gray-50"}`}>
                 <div className="flex-1 min-w-0">
-                  <div className={`font-semibold text-sm truncate ${isDark ? "text-gray-200" : "text-gray-800"}`}>{c.title}</div>
+                  <div className={`font-semibold text-sm truncate ${isDark ? "text-zinc-200" : "text-gray-800"}`}>{c.title}</div>
                   <div className={`text-xs mt-1 ${muted}`}>{c.id} · {c.party}{c.value !== "—" ? ` · ${c.value} ر.س` : ""}</div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">

@@ -79,7 +79,7 @@ export default function NGOCompliancePage() {
                   className={`px-5 py-4 flex items-start justify-between gap-4 transition ${isDark ? "hover:bg-white/[0.02]" : "hover:bg-gray-50"}`}>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className={`font-semibold text-sm ${isDark ? "text-gray-200" : "text-gray-800"}`}>{item.title}</span>
+                      <span className={`font-semibold text-sm ${isDark ? "text-zinc-200" : "text-gray-800"}`}>{item.title}</span>
                       <span className={`text-[10px] font-mono font-bold ${isDark ? "text-[#C8A762]" : "text-amber-600"}`}>{item.source}</span>
                     </div>
                     <p className={`text-xs mt-1 ${muted}`}>{item.body}</p>

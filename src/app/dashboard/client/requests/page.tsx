@@ -588,7 +588,7 @@ function RequestDetailModal({ req, onClose, onCancel, reviewableEntry, onReviewe
                     onCancel(req.id);
                     onClose();
                   }}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-red-200 hover:border-transparent bg-red-50/50 hover:bg-red-500 text-red-600 hover:text-white text-xs font-bold transition-all"
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-red-200 dark:border-red-500/20 hover:border-transparent bg-red-50/50 dark:bg-red-500/10 hover:bg-red-500 text-red-600 dark:text-red-400 hover:text-white text-xs font-bold transition-all"
                 >
                   إلغاء هذا الطلب
                 </button>

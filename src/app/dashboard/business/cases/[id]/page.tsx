@@ -196,11 +196,11 @@ export default function BusinessCaseDetailPage() {
           </p>
           <button
             onClick={() => setReloadKey(k => k + 1)}
-            className="mt-1 flex items-center gap-1.5 text-sm font-bold text-[#0B3D2E] hover:underline"
+            className="mt-1 flex items-center gap-1.5 text-sm font-bold text-[#0B3D2E] dark:text-emerald-400 hover:underline"
           >
             <ArrowClockwise size={14} /> إعادة المحاولة
           </button>
-          <Link href="/dashboard/business/cases" className="text-sm text-[#0B3D2E] hover:underline">← العودة للقضايا</Link>
+          <Link href="/dashboard/business/cases" className="text-sm text-[#0B3D2E] dark:text-emerald-400 hover:underline">← العودة للقضايا</Link>
         </div>
       </div>
     );
@@ -214,7 +214,7 @@ export default function BusinessCaseDetailPage() {
           <Warning size={40} className={isDark ? "text-zinc-700" : "text-slate-300"} />
           <p className="text-lg font-bold">القضية غير موجودة</p>
           <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>قد يكون الرابط غير صحيح أو أن القضية محذوفة.</p>
-          <Link href="/dashboard/business/cases" className="mt-2 text-sm text-[#0B3D2E] hover:underline">← العودة للقضايا</Link>
+          <Link href="/dashboard/business/cases" className="mt-2 text-sm text-[#0B3D2E] dark:text-emerald-400 hover:underline">← العودة للقضايا</Link>
         </div>
       </div>
     );
@@ -296,7 +296,7 @@ export default function BusinessCaseDetailPage() {
               {/* Timeline */}
               <div className={`${cardStyle} rounded-3xl p-6`}>
                 <div className="flex items-center gap-2 mb-4">
-                  <Scales size={16} className="text-[#0B3D2E]" />
+                  <Scales size={16} className="text-[#0B3D2E] dark:text-emerald-400" />
                   <h3 className={`text-[14px] font-bold ${isDark ? "text-white" : "text-zinc-800"}`}>مسار القضية</h3>
                   <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${isDark ? "bg-white/[0.05] text-zinc-500" : "bg-slate-100 text-slate-500"}`}>
                     {timeline.length}

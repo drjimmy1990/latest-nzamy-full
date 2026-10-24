@@ -130,7 +130,7 @@ export default function ArbitrationDraftsPage() {
                     <p className={`text-xs mt-0.5 ${muted}`}>{draft.parties}</p>
                   </div>
                   <div className="text-end shrink-0">
-                    <p className={`text-xs font-bold ${isDark ? "text-gray-200" : "text-gray-700"}`}>{draft.wordCount.toLocaleString()} كلمة</p>
+                    <p className={`text-xs font-bold ${isDark ? "text-zinc-200" : "text-gray-700"}`}>{draft.wordCount.toLocaleString()} كلمة</p>
                     <div className={`flex items-center gap-1 mt-1 text-[10px] ${muted}`}>
                       <CalendarBlank size={10} /> {draft.lastEdited}
                     </div>

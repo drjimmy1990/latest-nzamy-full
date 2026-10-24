@@ -271,7 +271,7 @@ export function Step3({
             >
               <div className="flex items-center gap-3">
                 <FileText size={20} color="#C8A762" weight="duotone" />
-                <span className={`text-sm ${isDark ? "text-gray-200" : "text-gray-700"}`}>{doc}</span>
+                <span className={`text-sm ${isDark ? "text-zinc-200" : "text-gray-700"}`}>{doc}</span>
               </div>
               <button
                 onClick={() => onRemove(i)}

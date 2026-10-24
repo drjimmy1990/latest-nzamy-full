@@ -155,7 +155,7 @@ export default function ClientDrawer({ client, isDark, onClose }: { client: Lawy
         {/* Header */}
         <div className={`flex items-center justify-between px-5 py-4 border-b ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold ${client.clientType === "company" ? "bg-indigo-500/10 text-indigo-500" : "bg-[#0B3D2E]/10 text-[#0B3D2E]"}`}>
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold ${client.clientType === "company" ? "bg-indigo-500/10 text-indigo-500" : "bg-[#0B3D2E]/10 text-[#0B3D2E] dark:text-emerald-400"}`}>
               {client.clientType === "company" ? <Buildings size={18} weight="duotone" /> : client.name.charAt(0)}
             </div>
             <div>

@@ -91,7 +91,7 @@ export default function ArbitrationPartiesPage() {
             <input
               value={search} onChange={e => setSearch(e.target.value)}
               placeholder="ابحث باسم الطرف أو رقم القضية..."
-              className={`bg-transparent outline-none text-sm w-64 ${isDark ? "text-gray-200 placeholder:text-gray-600" : "text-gray-800 placeholder:text-gray-400"}`}
+              className={`bg-transparent outline-none text-sm w-64 ${isDark ? "text-zinc-200 placeholder:text-gray-600" : "text-gray-800 placeholder:text-gray-400"}`}
             />
           </div>
         </motion.div>
@@ -127,7 +127,7 @@ export default function ArbitrationPartiesPage() {
 
                 <div className="space-y-1.5 text-xs">
                   <div className={`flex items-center gap-2 ${muted}`}>
-                    <Users size={12} /> <span>الوكيل: <span className={`font-semibold ${isDark ? "text-gray-200" : "text-gray-700"}`}>{party.representative}</span></span>
+                    <Users size={12} /> <span>الوكيل: <span className={`font-semibold ${isDark ? "text-zinc-200" : "text-gray-700"}`}>{party.representative}</span></span>
                   </div>
                   {party.repFirm && (
                     <div className={`flex items-center gap-2 ${muted}`}>

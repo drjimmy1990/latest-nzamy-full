@@ -175,7 +175,7 @@ export default function RequirementsChecklist({ title, subtitle, backHref = "/da
                     </div>
                     {item.portal && (
                       <a href={item.portal.url} target="_blank" rel="noopener noreferrer"
-                        className="mt-3 inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#0B3D2E] hover:underline">
+                        className="mt-3 inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#0B3D2E] dark:text-emerald-400 hover:underline">
                         <ArrowSquareOut size={13} />
                         {item.portal.label}
                       </a>

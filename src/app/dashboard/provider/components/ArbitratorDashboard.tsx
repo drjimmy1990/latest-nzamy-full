@@ -190,7 +190,7 @@ export default function ArbitratorDashboard() {
                   </span>
                 </div>
                 <p className={`text-xl font-black mb-0.5 ${isDark ? "text-white" : "text-gray-900"}`}>{kpi.value}</p>
-                <p className={`text-xs font-semibold ${isDark ? "text-gray-200" : "text-gray-700"}`}>{kpi.label}</p>
+                <p className={`text-xs font-semibold ${isDark ? "text-zinc-200" : "text-gray-700"}`}>{kpi.label}</p>
                 <p className={`text-xs mt-0.5 ${muted}`}>{kpi.sub}</p>
               </motion.div>
             );
@@ -247,7 +247,7 @@ export default function ArbitratorDashboard() {
                             {cfg.icon} {cfg.label}
                           </span>
                         </div>
-                        <p className={`font-semibold text-sm leading-snug mb-1 ${isDark ? "text-gray-100" : "text-gray-800"}`}>
+                        <p className={`font-semibold text-sm leading-snug mb-1 ${isDark ? "text-zinc-100" : "text-gray-800"}`}>
                           {c.parties}
                         </p>
                         <p className={`text-xs ${muted} mb-1.5`}>{c.subject}</p>
@@ -307,7 +307,7 @@ export default function ArbitratorDashboard() {
                         : isDark ? "border-amber-500/20 bg-amber-500/5" : "border-amber-100 bg-amber-50"
                     }`}>
                     <div className="flex items-start justify-between gap-2 mb-1">
-                      <p className={`text-xs font-bold leading-snug ${isDark ? "text-gray-100" : "text-gray-800"}`}>
+                      <p className={`text-xs font-bold leading-snug ${isDark ? "text-zinc-100" : "text-gray-800"}`}>
                         {h.parties}
                       </p>
                       <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${
@@ -365,7 +365,7 @@ export default function ArbitratorDashboard() {
                       <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isDark ? "bg-indigo-500/10" : "bg-indigo-50"}`}>
                         <Icon size={17} weight="duotone" className={isDark ? "text-[#C8A762]" : "text-indigo-600"} />
                       </div>
-                      <span className={`text-[11px] font-semibold leading-tight ${isDark ? "text-gray-200" : "text-gray-700"}`}>
+                      <span className={`text-[11px] font-semibold leading-tight ${isDark ? "text-zinc-200" : "text-gray-700"}`}>
                         {tool.label}
                       </span>
                     </Link>

@@ -87,7 +87,7 @@ export default function ComingSoon({ path }: { path: string }) {
             onClick={() => window.history.back()}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-6 py-3 text-sm font-medium text-ink-muted"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white dark:bg-dark-card px-6 py-3 text-sm font-medium text-ink-muted"
           >
             <ArrowRight size={16} weight="bold" />
             رجوع
@@ -95,7 +95,7 @@ export default function ComingSoon({ path }: { path: string }) {
         </div>
 
         {isKnown && (
-          <div className="mt-12 rounded-2xl border border-slate-200/50 bg-white p-6">
+          <div className="mt-12 rounded-2xl border border-slate-200/50 bg-white dark:bg-dark-card p-6">
             <div className="mb-3 text-xs font-medium text-ink-faint">مسار الصفحة</div>
             <code className="rounded-lg bg-surface px-3 py-1.5 font-mono text-sm text-royal">
               {path}

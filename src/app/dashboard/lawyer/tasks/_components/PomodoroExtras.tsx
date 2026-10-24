@@ -293,7 +293,7 @@ export function ShareButton({
                 <div className="flex items-center gap-3 mb-4 relative z-10">
                   <span className="text-3xl drop-shadow-md">{rank.emoji}</span>
                   <div>
-                    <p className="text-[13px] font-black text-[#0B3D2E]">💎 إنجازي على نظامي</p>
+                    <p className="text-[13px] font-black text-[#0B3D2E] dark:text-emerald-400">💎 إنجازي على نظامي</p>
                   </div>
                 </div>
                 {fields.map(f => (

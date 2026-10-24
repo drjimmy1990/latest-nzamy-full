@@ -723,7 +723,7 @@ export default function FirmCaseDetailsPage() {
           >
             <ArrowClockwise size={14} /> إعادة المحاولة
           </button>
-          <Link href="/dashboard/firm/cases" className="text-sm text-[#0B3D2E] hover:underline">← العودة للقضايا</Link>
+          <Link href="/dashboard/firm/cases" className="text-sm text-[#0B3D2E] dark:text-emerald-400 hover:underline">← العودة للقضايا</Link>
         </div>
       </div>
     );
@@ -737,7 +737,7 @@ export default function FirmCaseDetailsPage() {
           <Warning size={40} className={isDark ? "text-zinc-700" : "text-slate-300"} />
           <p className="text-lg font-bold">القضية غير موجودة</p>
           <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>قد يكون الرابط غير صحيح أو أن القضية محذوفة.</p>
-          <Link href="/dashboard/firm/cases" className="mt-2 text-sm text-[#0B3D2E] hover:underline">← العودة للقضايا</Link>
+          <Link href="/dashboard/firm/cases" className="mt-2 text-sm text-[#0B3D2E] dark:text-emerald-400 hover:underline">← العودة للقضايا</Link>
         </div>
       </div>
     );

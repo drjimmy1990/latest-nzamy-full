@@ -74,7 +74,7 @@ function VoiceBubble({ duration, isDark, isSelf }: { duration: string; isDark: b
           isSelf ? "bg-white/20" : "bg-[#0B3D2E]/10"
         }`}
       >
-        <Microphone size={14} weight="fill" className={isSelf ? "text-white" : "text-[#0B3D2E]"} />
+        <Microphone size={14} weight="fill" className={isSelf ? "text-white" : "text-[#0B3D2E] dark:text-emerald-400"} />
       </motion.div>
       <div className="flex items-end gap-[2px] h-6 flex-1">
         {bars.map((h, i) => (
@@ -128,7 +128,7 @@ function AttachmentBubble({
           isSelf ? "bg-white/20" : "bg-[#0B3D2E]/10"
         }`}
       >
-        <FileText size={16} weight="fill" className={isSelf ? "text-white" : "text-[#0B3D2E]"} />
+        <FileText size={16} weight="fill" className={isSelf ? "text-white" : "text-[#0B3D2E] dark:text-emerald-400"} />
       </div>
       <div className="min-w-0 flex-1">
         <p
@@ -211,7 +211,7 @@ export default function SessionChatPane({
                         : "bg-emerald-50 border border-emerald-200/60"
                     }`}
                   >
-                    <Robot size={13} className="flex-shrink-0 mt-0.5 text-[#0B3D2E]" />
+                    <Robot size={13} className="flex-shrink-0 mt-0.5 text-[#0B3D2E] dark:text-emerald-400" />
                     <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{msg.text}</p>
                   </div>
                 </motion.div>

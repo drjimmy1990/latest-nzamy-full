@@ -275,7 +275,7 @@ export default function CaseDetailPage() {
                           className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
                             isLawyer
                               ? isDark
-                                ? "bg-[#0B3D2E]/30 text-gray-200"
+                                ? "bg-[#0B3D2E]/30 text-zinc-200"
                                 : "bg-[#0B3D2E]/10 text-gray-800"
                               : "bg-[#C8A762] text-[#0B3D2E]"
                           }`}
@@ -327,7 +327,7 @@ export default function CaseDetailPage() {
                         {doc.type}
                       </div>
                       <div>
-                        <p className={`text-sm font-medium ${isDark ? "text-gray-200" : "text-gray-800"}`}>{doc.name}</p>
+                        <p className={`text-sm font-medium ${isDark ? "text-zinc-200" : "text-gray-800"}`}>{doc.name}</p>
                         <p className={`text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>{doc.size} — {doc.date}</p>
                       </div>
                     </div>

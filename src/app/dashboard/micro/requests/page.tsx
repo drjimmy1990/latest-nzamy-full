@@ -433,7 +433,7 @@ export default function MicroRequestsPage() {
                         }`}
                       >
                         <div className="w-9 h-9 rounded-xl bg-[#0B3D2E]/10 flex items-center justify-center mb-3">
-                          <Icon size={18} weight="duotone" className="text-[#0B3D2E]" />
+                          <Icon size={18} weight="duotone" className="text-[#0B3D2E] dark:text-emerald-400" />
                         </div>
                         <p className={`text-[13px] font-bold mb-0.5 ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>{svc.label}</p>
                         <p className={`text-[11px] mb-2 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{svc.desc}</p>

@@ -59,7 +59,7 @@ export default function NGOReportsPage() {
               <motion.div key={r.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.07 }}
                 className={`px-5 py-4 flex items-center justify-between gap-4 transition ${isDark ? "hover:bg-white/[0.02]" : "hover:bg-gray-50"}`}>
                 <div className="flex-1 min-w-0">
-                  <div className={`font-semibold text-sm truncate ${isDark ? "text-gray-200" : "text-gray-800"}`}>{r.title}</div>
+                  <div className={`font-semibold text-sm truncate ${isDark ? "text-zinc-200" : "text-gray-800"}`}>{r.title}</div>
                   <div className={`text-xs mt-1 font-mono ${muted}`}>{r.id} · {r.period}</div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">

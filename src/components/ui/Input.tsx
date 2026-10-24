@@ -26,7 +26,7 @@ export default function Input({
           htmlFor={inputId}
           className={[
             "block text-sm font-semibold mb-1.5",
-            isDark ? "text-gray-200" : "text-gray-700 dark:text-zinc-200",
+            isDark ? "text-zinc-200" : "text-gray-700 dark:text-zinc-200",
           ].join(" ")}
         >
           {label}

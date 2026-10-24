@@ -428,7 +428,7 @@ export default function MessagesPage() {
         <aside className="w-80 flex-shrink-0 flex flex-col border-l border-gray-100 dark:border-white/8 bg-white dark:bg-[#161b22]">
           <div className="p-4 border-b border-gray-100 dark:border-white/8">
             <h1 className="text-base font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-              <ChatCircle size={18} weight="duotone" className="text-[#0B3D2E]" />
+              <ChatCircle size={18} weight="duotone" className="text-[#0B3D2E] dark:text-emerald-400" />
               رسائلي
             </h1>
             <div className="relative">
@@ -503,13 +503,13 @@ export default function MessagesPage() {
               <div>
                 <div className="flex items-center gap-2">
                   <span className="font-bold text-sm text-gray-900 dark:text-white">{activeThread.lawyerName}</span>
-                  {!isClosed && <SealCheck size={14} weight="fill" className="text-[#0B3D2E]" />}
+                  {!isClosed && <SealCheck size={14} weight="fill" className="text-[#0B3D2E] dark:text-emerald-400" />}
                   <span className={`text-[10px] font-medium ${STATUS_BADGE[activeThread.status].cls}`}>
                     {STATUS_BADGE[activeThread.status].label}
                   </span>
                 </div>
                 {activeThread.caseId && (
-                  <Link href={`/dashboard/client/cases?id=${activeThread.caseId}`} className="text-xs text-[#0B3D2E] hover:underline">
+                  <Link href={`/dashboard/client/cases?id=${activeThread.caseId}`} className="text-xs text-[#0B3D2E] dark:text-emerald-400 hover:underline">
                     ملف القضية رقم {activeThread.caseId}
                   </Link>
                 )}

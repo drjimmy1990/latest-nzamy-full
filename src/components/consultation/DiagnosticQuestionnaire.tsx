@@ -41,7 +41,7 @@ export default function DiagnosticQuestionnaire({
         isDark ? "bg-[#0B3D2E]/5 border-[#0B3D2E]/20" : "bg-[#0B3D2E]/5 border-[#0B3D2E]/10"
       }`}
     >
-      <div className="flex items-center gap-1.5 text-[#0B3D2E] mb-4">
+      <div className="flex items-center gap-1.5 text-[#0B3D2E] dark:text-emerald-400 mb-4">
         <Warning size={16} weight="fill" className="text-[#C8A762]" />
         <span className="text-[12.5px] font-black">الاستبيان التشخيصي لتدقيق الموقف النظامي (3 أسئلة)</span>
       </div>

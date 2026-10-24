@@ -152,7 +152,7 @@ export default function ProviderDashboardPage() {
                   </span>
                 </div>
                 <p className={`text-xl font-black mb-0.5 ${isDark ? "text-white" : "text-gray-900"}`}>{kpi.value}</p>
-                <p className={`text-xs font-semibold ${isDark ? "text-gray-200" : "text-gray-700"}`}>{kpi.label}</p>
+                <p className={`text-xs font-semibold ${isDark ? "text-zinc-200" : "text-gray-700"}`}>{kpi.label}</p>
                 <p className={`text-xs mt-0.5 ${muted}`}>{kpi.sub}</p>
               </motion.div>
             );
@@ -191,7 +191,7 @@ export default function ProviderDashboardPage() {
                       className={`p-4 hover:${isDark ? "bg-white/2" : "bg-gray-50/70"} transition-colors`}>
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="flex-1 min-w-0">
-                          <p className={`font-semibold text-sm leading-snug mb-1.5 ${isDark ? "text-gray-100" : "text-gray-800"}`}>
+                          <p className={`font-semibold text-sm leading-snug mb-1.5 ${isDark ? "text-zinc-100" : "text-gray-800"}`}>
                             {offer.requestTitle}
                           </p>
                           <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -220,9 +220,9 @@ export default function ProviderDashboardPage() {
                       {offer.status === "accepted" && (
                         <div className={`mt-3 pt-3 border-t ${isDark ? "border-[#2d3748]" : "border-gray-100"} flex items-center justify-between`}>
                           <span className={`text-xs ${muted}`}>
-                            طلب من: <span className={`font-medium ${isDark ? "text-gray-200" : "text-gray-700"}`}>{offer.postedBy}</span>
+                            طلب من: <span className={`font-medium ${isDark ? "text-zinc-200" : "text-gray-700"}`}>{offer.postedBy}</span>
                           </span>
-                          <button className="flex items-center gap-1.5 text-xs font-bold text-[#0B3D2E] bg-[#0B3D2E]/10 px-3 py-1.5 rounded-xl hover:bg-[#0B3D2E]/20 transition">
+                          <button className="flex items-center gap-1.5 text-xs font-bold text-[#0B3D2E] dark:text-emerald-400 bg-[#0B3D2E]/10 px-3 py-1.5 rounded-xl hover:bg-[#0B3D2E]/20 transition">
                             <ChatDots size={13} /> تواصل
                           </button>
                         </div>
@@ -274,7 +274,7 @@ export default function ProviderDashboardPage() {
                               </span>
                             )}
                           </div>
-                          <p className={`font-semibold text-sm leading-snug mb-1.5 line-clamp-2 ${isDark ? "text-gray-100" : "text-gray-800"}`}>
+                          <p className={`font-semibold text-sm leading-snug mb-1.5 line-clamp-2 ${isDark ? "text-zinc-100" : "text-gray-800"}`}>
                             {req.title}
                           </p>
                           <div className="flex items-center gap-2 text-xs">
@@ -333,7 +333,7 @@ export default function ProviderDashboardPage() {
                         : isDark ? "border-amber-500/30 bg-amber-500/5" : "border-amber-200 bg-amber-50"
                     }`}>
                     <div className="flex items-start justify-between gap-2 mb-1">
-                      <p className={`text-xs font-bold leading-snug ${isDark ? "text-gray-100" : "text-gray-800"}`}>
+                      <p className={`text-xs font-bold leading-snug ${isDark ? "text-zinc-100" : "text-gray-800"}`}>
                         {svc.title}
                       </p>
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${
@@ -380,7 +380,7 @@ export default function ProviderDashboardPage() {
                   <div key={review.id}
                     className={`rounded-xl p-3.5 ${isDark ? "bg-white/3" : "bg-gray-50"}`}>
                     <div className="flex items-start justify-between gap-2 mb-1.5">
-                      <p className={`text-xs font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>
+                      <p className={`text-xs font-bold ${isDark ? "text-zinc-200" : "text-gray-800"}`}>
                         {review.clientName}
                       </p>
                       <span className="text-xs text-amber-500 font-bold">
@@ -458,7 +458,7 @@ export default function ProviderDashboardPage() {
                     return (
                       <tr key={offer.id}
                         className={`border-t transition-colors ${isDark ? "border-[#2d3748] hover:bg-[#1a1f2e]" : "border-gray-50 hover:bg-gray-50"}`}>
-                        <td className={`px-4 py-3.5 text-sm font-medium ${isDark ? "text-gray-200" : "text-gray-800"}`}>{offer.requestTitle}</td>
+                        <td className={`px-4 py-3.5 text-sm font-medium ${isDark ? "text-zinc-200" : "text-gray-800"}`}>{offer.requestTitle}</td>
                         <td className={`px-4 py-3.5 text-xs ${muted} flex items-center gap-1 mt-0.5`}>
                           <MapPin size={11} weight="fill" />{offer.requestCity}
                         </td>
@@ -559,7 +559,7 @@ export default function ProviderDashboardPage() {
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isDark ? "bg-[#C8A762]/10" : "bg-[#0B3D2E]/5"}`}>
                     <Icon size={18} weight="duotone" className={isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"} />
                   </div>
-                  <span className={`text-[12px] font-semibold ${isDark ? "text-gray-200" : "text-gray-700"}`}>{tool.label}</span>
+                  <span className={`text-[12px] font-semibold ${isDark ? "text-zinc-200" : "text-gray-700"}`}>{tool.label}</span>
                   <span className={`text-[10px] ${muted}`}>{tool.desc}</span>
                 </Link>
               );

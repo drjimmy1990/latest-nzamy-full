@@ -96,7 +96,7 @@ export default function GovernmentReportsPage() {
               transition={{ delay: i * 0.04, duration: 0.3 }}
               className={`group rounded-2xl border ${card} p-4 flex items-center gap-4 hover:border-[#0B3D2E]/20 transition-all`}>
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? 'bg-white/[0.06]' : 'bg-slate-100'}`}>
-                <ClipboardText size={18} weight="duotone" className="text-[#0B3D2E]" />
+                <ClipboardText size={18} weight="duotone" className="text-[#0B3D2E] dark:text-emerald-400" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className={`text-sm font-semibold mb-0.5 ${textPri}`}>{r.title}</p>

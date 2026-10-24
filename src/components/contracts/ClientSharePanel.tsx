@@ -170,7 +170,7 @@ export default function ClientSharePanel({
             )}
             {clientEmail && (
               <a href={mailHref}
-                className="flex-1 flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-[12px] font-bold border-zinc-300 text-zinc-700">
+                className="flex-1 flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-[12px] font-bold border-zinc-300 dark:border-white/[0.12] text-zinc-700 dark:text-zinc-300">
                 <EnvelopeSimple size={13} /> إرسال الرابط بالبريد
               </a>
             )}

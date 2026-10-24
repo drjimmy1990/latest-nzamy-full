@@ -44,7 +44,7 @@ export default function NotaryRequestsPage() {
           <div className="flex items-center gap-2">
             <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${isDark ? "border-[#2d3748] bg-[#161b22]" : "border-gray-200 bg-white"}`}>
               <MagnifyingGlass size={14} className={muted} />
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="بحث..." className={`bg-transparent outline-none text-sm w-36 ${isDark ? "text-gray-200 placeholder:text-gray-600" : "text-gray-800 placeholder:text-gray-400"}`} />
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="بحث..." className={`bg-transparent outline-none text-sm w-36 ${isDark ? "text-zinc-200 placeholder:text-gray-600" : "text-gray-800 placeholder:text-gray-400"}`} />
             </div>
             <Link href="/ai/draft?mode=notary" className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition ${isDark ? "bg-violet-500/10 text-violet-400 hover:bg-violet-500/20" : "bg-violet-50 text-violet-700 hover:bg-violet-100"}`}>
               <Stamp size={14} /> مسودة جديدة <Arrow size={12} />
@@ -83,7 +83,7 @@ export default function NotaryRequestsPage() {
                   className={`grid grid-cols-12 items-center px-5 py-4 transition ${isDark ? "hover:bg-white/2" : "hover:bg-gray-50"}`}>
                   <span className={`col-span-2 text-[10px] font-mono font-bold ${isDark ? "text-[#C8A762]" : "text-violet-600"}`}>{r.id}</span>
                   <div className="col-span-3">
-                    <p className={`text-xs font-semibold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{r.client}</p>
+                    <p className={`text-xs font-semibold ${isDark ? "text-zinc-200" : "text-gray-800"}`}>{r.client}</p>
                     <p className={`text-[10px] ${muted}`}>{r.date}</p>
                   </div>
                   <span className={`col-span-4 text-xs ${isDark ? "text-gray-300" : "text-gray-700"}`}>{r.type}</span>

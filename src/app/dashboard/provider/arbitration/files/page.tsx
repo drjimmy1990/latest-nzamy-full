@@ -111,7 +111,7 @@ export default function ArbitrationFilesPage() {
             <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm ${isDark ? "border-[#2d3748] bg-[#161b22]" : "border-gray-200 bg-white"}`}>
               <MagnifyingGlass size={14} className={muted} />
               <input value={search} onChange={e => setSearch(e.target.value)}
-                placeholder="بحث..." className={`bg-transparent outline-none text-sm w-40 ${isDark ? "text-gray-200 placeholder:text-gray-600" : "text-gray-800 placeholder:text-gray-400"}`}
+                placeholder="بحث..." className={`bg-transparent outline-none text-sm w-40 ${isDark ? "text-zinc-200 placeholder:text-gray-600" : "text-gray-800 placeholder:text-gray-400"}`}
               />
             </div>
             <button className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 transition">
@@ -155,7 +155,7 @@ export default function ArbitrationFilesPage() {
                   <div className="col-span-5 flex items-center gap-2.5 min-w-0">
                     <FileIcon size={20} weight="duotone" className={isDark ? "text-indigo-400 shrink-0" : "text-indigo-600 shrink-0"} />
                     <div className="min-w-0">
-                      <p className={`text-xs font-semibold truncate ${isDark ? "text-gray-100" : "text-gray-800"}`}>{file.name}</p>
+                      <p className={`text-xs font-semibold truncate ${isDark ? "text-zinc-100" : "text-gray-800"}`}>{file.name}</p>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <CalendarBlank size={10} className={muted} />
                         <span className={`text-[10px] ${muted}`}>{file.uploadedAt}</span>

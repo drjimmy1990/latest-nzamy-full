@@ -486,7 +486,7 @@ function FilterRow<T extends string>({
               onClick={()=>{ if(f.key !== allKey) onChange(f.key as T); }}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold border transition-all flex-shrink-0 ${
                 value===f.key
-                  ? f.key==="deadlines"?"bg-red-50 text-red-600 border-red-200":f.key==="archive"?"bg-amber-50 text-amber-600 border-amber-200":isDark?"bg-zinc-700 text-white border-transparent":"bg-[#0B3D2E]/5 text-[#0B3D2E] border-[#0B3D2E]/20"
+                  ? f.key==="deadlines"?"bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 border-red-200 dark:border-red-500/20":f.key==="archive"?"bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/20":isDark?"bg-zinc-700 text-white border-transparent":"bg-[#0B3D2E]/5 text-[#0B3D2E] border-[#0B3D2E]/20"
                   : isDark?"border-white/[0.06] text-zinc-500 hover:text-zinc-300":"border-transparent text-slate-500 hover:bg-slate-50"
               }`}>
               {f.dot && <span className={`w-1.5 h-1.5 rounded-full ${f.dot}`} />}
