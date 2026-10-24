@@ -26,6 +26,7 @@ import { LAWYER_AI_TOOLS, TOOL_POINT_LABELS, getLawyerAiBadge } from "../../cons
 import type { AudienceTab } from "../../constants/pricing/pricing.types.ts";
 import { BUSINESS_USER_TYPES, PAYABLE_ITEMS } from "../payments/catalog.ts";
 import { VAT_NOTICE, vatNoticeFor } from "./vatNotice.ts";
+import { USER_TYPE_TO_AUDIENCE } from "./audienceForUserType.ts";
 
 function src(path: string): string {
   return readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
@@ -617,10 +618,9 @@ test("٢٤٨: each /pricing audience section carries its own VAT sentence", () =
   assert.deepEqual(vatNoticeFor("companies", true), VAT_NOTICE.exclusive);
 
   // The exclusive rule covers exactly the business buyers the server charges
-  // VAT on top (BUSINESS_USER_TYPES), mapped to their tabs as /pricing does.
-  const page = code("app/pricing/page.tsx");
-  const map = page.slice(page.indexOf("USER_TYPE_TO_AUDIENCE"), page.indexOf("function audienceForUserType"));
-  const entries = [...map.matchAll(/(\w+):\s*"(\w+)"/g)];
+  // VAT on top (BUSINESS_USER_TYPES), mapped to their tabs as /pricing and
+  // Settings → «الاشتراك والباقة» do (src/lib/pricing/audienceForUserType.ts).
+  const entries = Object.entries(USER_TYPE_TO_AUDIENCE).map(([u, a]) => [`${u}:${a}`, u, a as string] as const);
   assert.ok(entries.length >= 8, `found only ${entries.length} user-type tabs — the parser broke`);
   for (const [, userType, audience] of entries) {
     const expected = (BUSINESS_USER_TYPES as readonly string[]).includes(userType) ? VAT_NOTICE.exclusive : VAT_NOTICE.inclusive;

@@ -3,7 +3,7 @@
 import { motion } from "framer-motion";
 import { Crown, Buildings, Briefcase, ShieldCheck, BookOpen } from "@phosphor-icons/react";
 import type { AudienceTab, Billing, CompanySize } from "@/constants/pricingData";
-import { audienceTabs, audiencesWithBillingToggle, billingNotes } from "@/constants/pricingData";
+import { audienceTabs as audienceTabsList, audiencesWithBillingToggle, billingNotes } from "@/constants/pricingData";
 
 interface PricingHeroProps {
   isAr: boolean;
@@ -17,6 +17,13 @@ interface PricingHeroProps {
   setHasLegalDept: (v: boolean) => void;
   libraryMode: boolean;
   setLibraryMode: (v: boolean) => void;
+  /**
+   * Which audience tabs the bar offers (owner, 2026-10-24):
+   *   all     — every family, clickable (default; guests and admins);
+   *   own     — the member's own family only, as a label (`audience` is it);
+   *   pending — the session is still resolving: no bar yet, only its space.
+   */
+  audienceTabs?: "all" | "own" | "pending";
 }
 
 const companySizePills: { id: CompanySize; labelAr: string; labelEn: string; icon: React.ElementType }[] = [
@@ -25,13 +32,18 @@ const companySizePills: { id: CompanySize; labelAr: string; labelEn: string; ico
   { id: "large",  labelAr: "مؤسسة كبيرة (٢٥٠+)",    labelEn: "Large (250+)",    icon: ShieldCheck },
 ];
 
+function findAudienceTab(audience: AudienceTab) {
+  return audienceTabsList.find(tab => tab.id === audience) ?? null;
+}
+
 export function PricingHero({
   isAr, billing, setBilling, audience, setAudience,
   companySize, setCompanySize, hasLegalDept, setHasLegalDept,
-  libraryMode, setLibraryMode,
+  libraryMode, setLibraryMode, audienceTabs = "all",
 }: PricingHeroProps) {
   const note = billingNotes[audience];
   const showBillingToggle = audiencesWithBillingToggle.includes(audience);
+  const ownTab = audienceTabs === "own" ? findAudienceTab(audience) : null;
 
   return (
     <section className="relative overflow-hidden pb-16 pt-32 md:pt-40">
@@ -57,20 +69,36 @@ export function PricingHero({
           {isAr ? "ابدأ مجاناً وترقَّ حسب نمو احتياجاتك — دون التزام طويل الأمد" : "Start free and upgrade as your needs grow — no long-term commitment"}
         </motion.p>
 
-        {/* Audience tabs */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18 }}
-          className="mt-8 inline-flex flex-wrap items-center justify-center gap-1 rounded-2xl border border-slate-200/50 bg-white p-1.5 dark:border-white/10 dark:bg-dark-card"
-        >
-          {audienceTabs.map(tab => (
-            <button key={tab.id} onClick={() => setAudience(tab.id)}
-              className={`rounded-xl px-5 py-2.5 text-sm font-medium transition-all ${
-                audience === tab.id ? "bg-royal text-white shadow-sm" : "text-ink-muted hover:text-ink dark:text-gray-400 dark:hover:text-gray-200"
-              }`}
-            >
-              {isAr ? tab.labelAr : tab.labelEn}
-            </button>
-          ))}
-        </motion.div>
+        {/* Audience tabs — every family for a guest; a member's own family
+            only, as a label; nothing (just its space) while the session loads. */}
+        {audienceTabs === "pending" ? (
+          <div aria-hidden="true" className="mt-8 h-[52px]" />
+        ) : ownTab ? (
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18 }}
+            className="mt-8 inline-flex flex-wrap items-center justify-center gap-3 rounded-2xl border border-slate-200/50 bg-white p-1.5 ps-4 dark:border-white/10 dark:bg-dark-card"
+          >
+            <span className="text-xs font-medium text-ink-muted dark:text-gray-400">
+              {isAr ? "باقات نوع حسابك:" : "Plans for your account type:"}
+            </span>
+            <span aria-current="true" className="rounded-xl bg-royal px-5 py-2.5 text-sm font-medium text-white shadow-sm">
+              {isAr ? ownTab.labelAr : ownTab.labelEn}
+            </span>
+          </motion.div>
+        ) : (
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18 }}
+            className="mt-8 inline-flex flex-wrap items-center justify-center gap-1 rounded-2xl border border-slate-200/50 bg-white p-1.5 dark:border-white/10 dark:bg-dark-card"
+          >
+            {audienceTabsList.map(tab => (
+              <button key={tab.id} onClick={() => setAudience(tab.id)}
+                className={`rounded-xl px-5 py-2.5 text-sm font-medium transition-all ${
+                  audience === tab.id ? "bg-royal text-white shadow-sm" : "text-ink-muted hover:text-ink dark:text-gray-400 dark:hover:text-gray-200"
+                }`}
+              >
+                {isAr ? tab.labelAr : tab.labelEn}
+              </button>
+            ))}
+          </motion.div>
+        )}
 
         {/* Info bar — billing note per audience — BLOCK level so it's below tabs */}
         {note && !libraryMode && (

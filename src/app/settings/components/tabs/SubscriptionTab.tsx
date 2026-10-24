@@ -1,54 +1,78 @@
 "use client";
 
-import { CrownSimple, Receipt } from "@phosphor-icons/react";
+import { useState } from "react";
+import { BookOpen, CrownSimple, Receipt } from "@phosphor-icons/react";
 import Link from "next/link";
-import { EmptyPanel, SectionTitle } from "./_shared";
-import { useUser } from "@/hooks/useUser";
-import { useSubscription, TIER_LABELS_AR } from "@/hooks/useSubscription";
+import { SectionTitle } from "./_shared";
+import { useUser, type UserTier } from "@/hooks/useUser";
+import { TIER_LABELS_AR } from "@/hooks/useSubscription";
+import { PricingCards } from "@/components/pricing/PricingCards";
+import { audiencesWithBillingToggle, getPlanList } from "@/constants/pricingData";
+import type { AudienceTab, Billing } from "@/constants/pricingData";
+import { audienceForUserType } from "@/lib/pricing/audienceForUserType";
 
 // ── Tab: Subscription ────────────────────────────────────────────────
 // This tab used to build a whole billing history out of literals: a plan card
 // per user type (name, price, «يتجدد ١ أغسطس ٢٠٢٦»), up to four usage meters,
 // an auto-renew toggle that promised a charge on that date, and three invoices
-// stamped «مدفوع». Nothing here was ever read from `subscriptions`, and no
-// money has ever moved through this platform — an invoice marked paid for a
-// payment nobody made is the most dangerous row a finance or bank reviewer can
-// be shown, and it survived into production because the demo banner above it
-// was compiled out of the production build.
+// stamped «مدفوع». Nothing here was ever read from `subscriptions` — an
+// invoice marked paid for a payment nobody made is the most dangerous row a
+// finance or bank reviewer can be shown.
 //
-// Nothing client-readable reports this account's plan today for MOST roles.
-// Deliberately NOT used as a substitute for them: useUser().tier defaults to
-// `meta.tier ?? "free"`, which cannot tell "no subscription granted" apart
-// from "granted the free tier" — a corporate account under contract would be
-// labelled «مجاني». Plans are granted by an administrator
-// (src/lib/entitlements.ts), so absence stays the honest answer for those
-// roles until a client endpoint exposes the real `subscriptions` row.
+// «باقتك الحالية» shows the account's tier for EVERY account type (owner,
+// 2026-10-24). It used to do so for the "individual" type only (2026-09-04),
+// because plans were then granted by an administrator alone and `meta.tier`
+// defaults to "free". Since Moyasar B1 went live plans are also bought online,
+// and the tier is the same field every access gate in the app already stakes
+// real feature access on (SidebarComponents' UpgradeBadge/SubscriptionGuard/
+// useSubscription().can — useSubscription's tier is `useUser().tier ?? "free"`),
+// kept in sync with the `subscriptions` table by the entitlement writes.
+// Showing it here is not a new claim; it is the one this account already lives
+// under everywhere else in the product. The tier is read from the SAME
+// useUser() call as `loading` (each useUser() call holds its own state), so the
+// panel never paints «لا باقة فعّالة» from a session that has not resolved.
 //
-// The one exception is the "individual" account type (2026-09-04): the owner
-// asked for this tab to show an individual's real plan, and `meta.tier` IS
-// the same field every access gate in the app already stakes real feature
-// access on (SidebarComponents' UpgradeBadge/SubscriptionGuard/useSubscription
-// .can) — kept in sync with the `subscriptions` table by grantEntitlement()'s
-// admin_grant write. Showing it here is not a new, unverifiable claim; it is
-// the one claim this account is already living under everywhere else in the
-// product. What is still NOT shown, for anyone: a renewal date, a price, or
-// an invoice — `subscriptions.current_period_end` exists server-side but has
-// no client-readable route, and inventing one is out of scope here.
+// What is still NOT shown, for anyone: a renewal date, a price paid, or an
+// invoice — `subscriptions.current_period_end` exists server-side but has no
+// client-readable route, and inventing one is out of scope here. Receipts live
+// under «الفوترة والمدفوعات» (/dashboard/billing).
+//
+// «الباقات المتاحة لحسابك» lists the plans of the account's own family — the
+// same map /pricing locks a member to (src/lib/pricing/audienceForUserType.ts)
+// — through the same PricingCards, so a buy button behaves exactly as on
+// /pricing: online checkout when the gateway allows it, otherwise the review
+// request (owner ٢٤٦). A type with no family of its own (admin) gets a link to
+// /pricing instead.
+const PLANS_ANCHOR = "account-plans";
+
 export function SubscriptionTab() {
-  const { userType } = useUser();
+  const { userType, loading, tier } = useUser();
+  const audience = loading ? null : audienceForUserType(userType);
 
   return (
     <div className="space-y-8">
       <div>
         <SectionTitle>باقتك الحالية</SectionTitle>
-        {userType === "individual" ? (
-          <IndividualPlanPanel />
+        <CurrentPlanPanel
+          loading={loading}
+          tier={tier ?? "free"}
+          plansHref={audience ? `#${PLANS_ANCHOR}` : "/pricing"}
+        />
+      </div>
+
+      <div id={PLANS_ANCHOR} className="scroll-mt-24">
+        <SectionTitle>الباقات المتاحة لحسابك</SectionTitle>
+        {loading ? (
+          <PanelSkeleton />
+        ) : audience ? (
+          <AccountPlans audience={audience} />
         ) : (
-          <EmptyPanel
-            icon={<CrownSimple size={28} />}
-            title="لا تُعرض بيانات الاشتراك هنا"
-            description="لا يقرأ هذا القسم أي سجل اشتراك، فلا يعرض باقة أو تاريخ تجديد أو حدود استخدام. لمعرفة باقتك أو تعديلها، تواصل مع إدارة المنصة."
-          />
+          <Link
+            href="/pricing"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200/60 bg-white px-5 py-3 text-sm font-bold text-[#0B3D2E] dark:border-white/10 dark:bg-[#161b22] dark:text-[#C8A762]"
+          >
+            <CrownSimple size={18} /> عرض جميع الباقات
+          </Link>
         )}
       </div>
 
@@ -62,24 +86,106 @@ export function SubscriptionTab() {
   );
 }
 
-// ── Individual accounts only: real tier, sourced from useSubscription() ──
-function IndividualPlanPanel() {
-  const { loading } = useUser();
-  const { tier } = useSubscription();
+function PanelSkeleton() {
+  return (
+    <div
+      aria-hidden="true"
+      className="h-[92px] rounded-[2rem] border border-slate-200/50 dark:border-white/[0.06] bg-slate-100/60 dark:bg-white/[0.03] animate-pulse"
+    />
+  );
+}
 
+// ── The plans of the account's own family, as on /pricing ──
+function AccountPlans({ audience }: { audience: AudienceTab }) {
+  const [billing, setBilling] = useState<Billing>("monthly");
+  const [libraryModeState, setLibraryMode] = useState(false);
+
+  const hasLibrary = audience === "lawyers" || audience === "firms";
+  const libraryMode = hasLibrary && libraryModeState;
+  // Same rule as /pricing (PricingHero): annual-only families get no toggle
+  // and stay on "monthly", which is what /pricing hands their buy buttons.
+  const showBillingToggle = audiencesWithBillingToggle.includes(audience);
+  const effectiveBilling: Billing = showBillingToggle ? billing : "monthly";
+  const planList = getPlanList(audience, true, { libraryMode });
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-3">
+        {hasLibrary && (
+          <PillGroup
+            label="نوع الباقات"
+            value={libraryMode ? "library" : "all"}
+            onChange={(v) => setLibraryMode(v === "library")}
+            options={[
+              { id: "all", label: "كافة الخدمات" },
+              { id: "library", label: "المكتبة القانونية", icon: <BookOpen size={15} weight={libraryMode ? "fill" : "regular"} /> },
+            ]}
+          />
+        )}
+        {showBillingToggle && (
+          <PillGroup
+            label="مدة الاشتراك"
+            value={billing}
+            onChange={(v) => setBilling(v === "yearly" ? "yearly" : "monthly")}
+            options={[
+              { id: "monthly", label: "شهري" },
+              { id: "yearly", label: "سنوي" },
+            ]}
+          />
+        )}
+      </div>
+
+      <div className="-mx-4 mt-6">
+        <PricingCards
+          planList={planList}
+          billing={effectiveBilling}
+          isAr
+          audience={audience}
+          libraryMode={libraryMode}
+        />
+      </div>
+    </div>
+  );
+}
+
+function PillGroup({
+  label, value, onChange, options,
+}: {
+  label: string;
+  value: string;
+  onChange: (id: string) => void;
+  options: { id: string; label: string; icon?: React.ReactNode }[];
+}) {
+  return (
+    <div role="group" aria-label={label} className="inline-flex items-center gap-1 rounded-2xl border border-slate-200/60 bg-white p-1.5 dark:border-white/10 dark:bg-[#161b22]">
+      {options.map((o) => (
+        <button
+          key={o.id}
+          type="button"
+          aria-pressed={value === o.id}
+          onClick={() => onChange(o.id)}
+          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all ${
+            value === o.id
+              ? "bg-[#0B3D2E] text-white shadow-sm dark:bg-[#C8A762] dark:text-[#0B3D2E]"
+              : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-300"
+          }`}
+        >
+          {o.icon}
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── Every account type: the real tier (useSubscription's field) ──
+function CurrentPlanPanel({ loading, tier, plansHref }: { loading: boolean; tier: UserTier; plansHref: string }) {
   // Still resolving the session — say nothing about the plan yet. Same rule
   // SidebarComponents.tsx's `gateReady` exists to enforce: `meta.tier` reads
   // as the guest/free tier before the session loads, so painting "no plan"
-  // here first would flash a wrong answer for every paying individual before
+  // here first would flash a wrong answer for every paying member before
   // flipping to the truth a moment later.
-  if (loading) {
-    return (
-      <div
-        aria-hidden="true"
-        className="h-[92px] rounded-[2rem] border border-slate-200/50 dark:border-white/[0.06] bg-slate-100/60 dark:bg-white/[0.03] animate-pulse"
-      />
-    );
-  }
+  if (loading) return <PanelSkeleton />;
 
   if (tier === "free") {
     return (
@@ -92,7 +198,7 @@ function IndividualPlanPanel() {
           لا يوجد اشتراك مدفوع مفعّل على حسابك حالياً.
         </p>
         <Link
-          href="/pricing"
+          href={plansHref}
           className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-[#0B3D2E] px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-[#0f5a42] dark:bg-[#C8A762] dark:text-[#0B3D2E] dark:hover:opacity-90"
         >
           الباقات المتاحة
@@ -114,7 +220,7 @@ function IndividualPlanPanel() {
           </div>
         </div>
         <Link
-          href="/pricing"
+          href={plansHref}
           className="text-xs font-bold text-[#0B3D2E] dark:text-[#C8A762] hover:underline"
         >
           الباقات المتاحة
