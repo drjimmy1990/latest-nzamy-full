@@ -3319,3 +3319,59 @@ begin
   raise notice '_verify: 20261022_34 OK — admin deductions are recorded as admin_adjustment; the helper is internal';
 end $$;
 -- <<< verify:points_admin_adjustment_reason
+
+-- ====================================================================
+-- 2026-10-25 — 20261025_10_grant_plan_atomic.sql (owner-free P2, N4.1)
+-- ====================================================================
+-- A paid plan is granted in ONE transaction: grant_plan_subscription takes a
+-- per-user lock, re-checks the running rows, cancels the active rows and
+-- inserts the order's row — SECURITY DEFINER, search_path public, pg_temp,
+-- EXECUTE for service_role only. Keyed on the function's existence, so a run
+-- before the migration passes with a NOTICE. Read-only, safe to repeat.
+-- >>> verify:grant_plan_atomic — supabase/tests/rls/grant_plan_atomic.test.sql
+-- extracts the lines between these two markers; keep them.
+SELECT '20261025_10 applied (public.grant_plan_subscription)' AS check,
+       to_regprocedure('public.grant_plan_subscription(uuid, uuid, text, text, text, timestamptz, timestamptz, text, timestamptz, jsonb)') IS NOT NULL AS present;
+
+DO $$
+DECLARE
+  fn      CONSTANT text := 'public.grant_plan_subscription(uuid, uuid, text, text, text, timestamptz, timestamptz, text, timestamptz, jsonb)';
+  r       text;
+  cfg     text[];
+  definer boolean;
+  ret     text;
+  src     text;
+  missing text := '';
+BEGIN
+  IF to_regprocedure(fn) IS NULL THEN
+    RAISE NOTICE '_verify: 20261025_10 is not applied yet — the new code cannot grant a paid plan (orders stay paid but unfulfilled; run 01_ANY_TIME_20261025_10 BEFORE deploying)';
+    RETURN;
+  END IF;
+  SELECT proconfig, prosecdef, pg_get_function_result(oid), prosrc INTO cfg, definer, ret, src
+    FROM pg_proc WHERE oid = to_regprocedure(fn);
+  IF NOT coalesce(definer, false) OR cfg IS NULL OR NOT ('search_path=public, pg_temp' = ANY (cfg)) THEN
+    missing := missing || ' the grant is not SECURITY DEFINER with search_path public, pg_temp (re-run 20261025_10);';
+  END IF;
+  IF ret IS DISTINCT FROM 'jsonb' THEN
+    missing := missing || format(' the grant returns %s, expected jsonb (re-run 20261025_10);', ret);
+  END IF;
+  IF src !~* 'pg_advisory_xact_lock' OR src !~* 'cancelled_at\s*=\s*p_now' OR src !~* '''replaced_ids''' THEN
+    missing := missing || ' the grant lost its per-user lock, cancelled_at = p_now or replaced_ids — refunds could not restore the previous plan (re-run 20261025_10);';
+  END IF;
+  IF src ~* 'exception\s+when' THEN
+    missing := missing || ' the grant catches an exception — a failed insert could keep the cancel (re-run 20261025_10);';
+  END IF;
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'public'] LOOP
+    IF has_function_privilege(r, fn, 'EXECUTE') THEN
+      missing := missing || format(' %s can EXECUTE the grant — a user could give themselves a plan (a schema restore re-granted it? re-run 20261025_10);', r);
+    END IF;
+  END LOOP;
+  IF NOT has_function_privilege('service_role', fn, 'EXECUTE') THEN
+    missing := missing || ' service_role cannot EXECUTE the grant (no plan purchase would complete);';
+  END IF;
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: the 20261025_10 grant is broken —%', missing;
+  END IF;
+  RAISE NOTICE '_verify: 20261025_10 OK — grant_plan_subscription: per-user lock, stale check, cancel + insert in one transaction; SECURITY DEFINER, search_path public, pg_temp, service role only';
+END $$;
+-- <<< verify:grant_plan_atomic
