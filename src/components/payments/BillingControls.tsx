@@ -2,7 +2,8 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-export function DeleteCardButton({ id }: { id: string }) {
+/** onDeleted: a caller that read the cards in the browser (settings «المدفوعات») reads them again; without it the server page is refreshed. */
+export function DeleteCardButton({ id, onDeleted }: { id: string; onDeleted?: () => void }) {
   const router = useRouter();
   const inFlight = useRef(false);
   const [busy, setBusy] = useState(false);
@@ -17,7 +18,7 @@ export function DeleteCardButton({ id }: { id: string }) {
       if (!response.ok) {
         const body = await response.json();
         setError(typeof body.error === "string" ? body.error : "تعذّر حذف البطاقة، حاول مرة أخرى");
-      } else { router.refresh(); }
+      } else if (onDeleted) { onDeleted(); } else { router.refresh(); }
     } catch { setError("تعذّر الاتصال، حاول مرة أخرى"); }
     finally { inFlight.current = false; setBusy(false); }
   }

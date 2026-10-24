@@ -88,3 +88,56 @@ export function receiptView(order: BillingOrder, company: unknown) {
     taxInvoiceNotice: "تصدر الفاتورة الضريبية الرسمية بشكل منفصل",
   };
 }
+
+// ── The GET /api/v1/billing answer, read in the browser (settings tabs) ──
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+const isText = (v: unknown): v is string => typeof v === "string";
+const isTextOrNull = (v: unknown) => v === null || v === undefined || typeof v === "string";
+const isCount = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number) >= 0;
+function isOrderRow(v: unknown): boolean {
+  return isObject(v) && isText(v.id) && isText(v.item_id) && isText(v.status) && isCount(v.total_halalas)
+    && isTextOrNull(v.receipt_number) && isTextOrNull(v.paid_at) && isTextOrNull(v.created_at);
+}
+function isCardRow(v: unknown): boolean {
+  return isObject(v) && isText(v.id) && isText(v.status) && isTextOrNull(v.brand) && isTextOrNull(v.last_four);
+}
+function isLotRow(v: unknown): boolean {
+  return isObject(v) && isText(v.id) && isCount(v.points_left) && isCount(v.points_total) && isText(v.expires_at);
+}
+/**
+ * The billing answer as the settings tabs read it, or null when it is anything
+ * else (an error body, a missing or non-integer balance, a malformed row). The
+ * caller shows nothing (or its error state) for null — never a 0 balance or an
+ * empty list it did not read.
+ */
+export function parseBillingResponse(body: unknown): BillingData | null {
+  if (!isObject(body)) return null;
+  const { orders, cards, lots, pointsBalance } = body;
+  if (!isCount(pointsBalance)) return null;
+  if (!Array.isArray(orders) || !orders.every(isOrderRow)) return null;
+  if (!Array.isArray(cards) || !cards.every(isCardRow)) return null;
+  if (!Array.isArray(lots) || !lots.every(isLotRow)) return null;
+  return body as unknown as BillingData;
+}
+/** The balance and the nearest expiry among the lots that still hold points (null when none). */
+export function pointsSummary(data: Pick<BillingData, "pointsBalance" | "lots">): { balance: number; nearestExpiry: string | null } {
+  let nearest: string | null = null;
+  let nearestAt = Number.POSITIVE_INFINITY;
+  for (const lot of data.lots) {
+    const at = Date.parse(lot.expires_at);
+    if (lot.points_left > 0 && Number.isFinite(at) && at < nearestAt) { nearestAt = at; nearest = lot.expires_at; }
+  }
+  return { balance: data.pointsBalance, nearestExpiry: nearest };
+}
+const BRANDS_AR: Record<string, string> = { mada: "مدى", visa: "فيزا", master: "ماستركارد", mastercard: "ماستركارد", amex: "أمريكان إكسبريس" };
+/** The card network in Arabic, or null for one we do not know. */
+export function cardBrandAr(brand: unknown): string | null {
+  if (typeof brand !== "string") return null;
+  const key = brand.trim().toLowerCase();
+  return Object.hasOwn(BRANDS_AR, key) ? BRANDS_AR[key] : null;
+}
+/** «مدى · بطاقة تنتهي بـ ٤٢٤٢» — the brand beside cardLabel, when the brand is known. */
+export function cardTitleAr(card: Pick<BillingCard, "brand" | "last_four">): string {
+  const brand = cardBrandAr(card.brand);
+  return brand ? `${brand} · ${cardLabel(card.last_four)}` : cardLabel(card.last_four);
+}

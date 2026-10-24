@@ -5,7 +5,7 @@ import Footer from "@/components/Footer";
 import { DeleteCardButton } from "@/components/payments/BillingControls";
 import { createClient } from "@/lib/supabase/server";
 import { BILLING_UNAVAILABLE_AR, getBillingWith } from "@/lib/payments/billingCore";
-import { arabicDigits, billingDateAr, billingItemAr, cardLabel, hasReceipt, orderStatusAr, type BillingData } from "@/lib/payments/billingView";
+import { arabicDigits, billingDateAr, billingItemAr, cardTitleAr, hasReceipt, orderStatusAr, type BillingData } from "@/lib/payments/billingView";
 import { formatHalalas } from "@/lib/payments/catalog";
 
 export const dynamic = "force-dynamic";
@@ -39,7 +39,7 @@ export default async function BillingPage() {
           </section>
           <section className={PANEL}>
             <h2 className="text-xl font-bold">البطاقات المحفوظة</h2>
-            {data.cards.length ? <ul className="mt-4 divide-y divide-zinc-200 dark:divide-zinc-800">{data.cards.map(card => <li key={card.id} className="flex flex-wrap items-center justify-between gap-4 py-4"><div><p className="font-semibold">{cardLabel(card.last_four)}</p><p className="mt-1 text-xs text-zinc-500">{card.status === "inactive" ? "غير نشطة" : "محفوظة"}</p></div><DeleteCardButton id={card.id} /></li>)}</ul> : <p className="mt-4 text-sm text-zinc-500">لا توجد بطاقات محفوظة.</p>}
+            {data.cards.length ? <ul className="mt-4 divide-y divide-zinc-200 dark:divide-zinc-800">{data.cards.map(card => <li key={card.id} className="flex flex-wrap items-center justify-between gap-4 py-4"><div><p className="font-semibold">{cardTitleAr(card)}</p><p className="mt-1 text-xs text-zinc-500">{card.status === "inactive" ? "غير نشطة" : "محفوظة"}</p></div><DeleteCardButton id={card.id} /></li>)}</ul> : <p className="mt-4 text-sm text-zinc-500">لا توجد بطاقات محفوظة.</p>}
           </section>
           <section className={PANEL}>
             <h2 className="text-xl font-bold">عمليات الدفع</h2><p className="mt-2 text-xs text-zinc-500">آخر ١٠٠ عملية في حسابك</p>

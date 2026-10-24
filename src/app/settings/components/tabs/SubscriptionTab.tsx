@@ -10,6 +10,8 @@ import { audiencesWithBillingToggle, getPlanList } from "@/constants/pricingData
 import type { AudienceTab, Billing } from "@/constants/pricingData";
 import { audienceForUserType, extraPlanIdsFor, withExtraPlans } from "@/lib/pricing/audienceForUserType";
 import { currentPlanLabelAr } from "@/lib/pricing/currentPlanLabel";
+import { PointsBalanceCard } from "@/components/payments/PointsBalanceCard";
+import { useBillingData } from "@/components/payments/useBillingData";
 
 // ── Tab: Subscription ────────────────────────────────────────────────
 // This tab used to build a whole billing history out of literals: a plan card
@@ -49,11 +51,17 @@ import { currentPlanLabelAr } from "@/lib/pricing/currentPlanLabel";
 // /pricing instead. An independent consultant (a lawyer account with
 // practice kind 'consultant') also gets the «مستشار مستقل» card, as on
 // /pricing (extraPlanIdsFor).
+//
+// «رصيد النقاط» (payments UX fixes 2026-10-25): the balance and its nearest
+// expiry, from GET /api/v1/billing — the same RLS read as /dashboard/billing,
+// which the card links to for the per-batch details. Shown only once that
+// read succeeds: a failed read shows no card, never a 0 balance.
 const PLANS_ANCHOR = "account-plans";
 
 export function SubscriptionTab() {
   const { userType, practiceKind, loading, tier } = useUser();
   const audience = loading ? null : audienceForUserType(userType);
+  const { state: billingRead } = useBillingData();
 
   return (
     <div className="space-y-8">
@@ -66,6 +74,13 @@ export function SubscriptionTab() {
           plansHref={audience ? `#${PLANS_ANCHOR}` : "/pricing"}
         />
       </div>
+
+      {billingRead.status === "ready" ? (
+        <div>
+          <SectionTitle>رصيد النقاط</SectionTitle>
+          <PointsBalanceCard data={billingRead.data} />
+        </div>
+      ) : null}
 
       <div id={PLANS_ANCHOR} className="scroll-mt-24">
         <SectionTitle>الباقات المتاحة لحسابك</SectionTitle>
