@@ -135,6 +135,15 @@ function AccountPlans({ audience }: { audience: AudienceTab }) {
         )}
       </div>
 
+      {/* The size pills and the in-house legal-department plan set live on
+          /pricing only (PricingHero); this list is the full standard set. */}
+      {audience === "companies" && (
+        <p className="mt-3 text-xs leading-6 text-zinc-500 dark:text-zinc-400">
+          باقات الشركات ذات الإدارة القانونية الداخلية وخيارات حجم الشركة في{" "}
+          <Link href="/pricing" className="font-bold text-[#0B3D2E] hover:underline dark:text-[#C8A762]">صفحة الباقات</Link>.
+        </p>
+      )}
+
       <div className="-mx-4 mt-6">
         <PricingCards
           planList={planList}
