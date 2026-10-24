@@ -28,10 +28,11 @@ const TEST = { status: "test", provider: "moyasar" };
 const LIVE = { status: "live", provider: "moyasar" };
 
 test("keyMode: by the key's own prefix; blank is missing; anything else is other", () => {
-  assert.equal(keyMode("sk_test_x", "sk"), "test");
-  assert.equal(keyMode("  sk_live_x ", "sk"), "live");
-  assert.equal(keyMode("pk_test_x", "pk"), "test");
-  assert.equal(keyMode("pk_live_x", "pk"), "live");
+  // Bodies of a real key's length (N1.1 judges the shape, so "sk_test_x" is "other").
+  assert.equal(keyMode(TEST_ENV.secretKey, "sk"), "test");
+  assert.equal(keyMode(`  ${LIVE_ENV.secretKey} `, "sk"), "live");
+  assert.equal(keyMode(TEST_ENV.publishableKey, "pk"), "test");
+  assert.equal(keyMode(LIVE_ENV.publishableKey, "pk"), "live");
   for (const v of [undefined, null, "", "   ", 42]) assert.equal(keyMode(v, "sk"), "missing", String(v));
   // a key in the wrong slot is not "test"/"live"
   assert.equal(keyMode("pk_test_x", "sk"), "other");
@@ -157,4 +158,33 @@ test("source contract: the route is staff-gated, no-store, and returns only the 
   assert.match(fn, /buildGatewayDiagnostic\(/);
   assert.match(fn, /moyasarEnv\(\)/);
   assert.match(fn, /if \(error\)[\s\S]*?return null;/, "a read error is null (a 503), never a fake disabled state");
+});
+
+// ─── N1.1: key shape ─────────────────────────────────────────────────────────
+
+test("N1.1: a masked, spaced or truncated key reads 'other', not test/live", () => {
+  assert.equal(keyMode("sk_test_XzYQHba5GfKfNP**************************", "sk"), "other");
+  assert.equal(keyMode("pk_live_wBmGtEv5WpmtFM**************************", "pk"), "other");
+  assert.equal(keyMode("sk_test_placeholder Secret123", "sk"), "other");
+  assert.equal(keyMode("sk_test_XzYQHba5GfKfNP", "sk"), "other");
+  assert.equal(keyMode(TEST_ENV.secretKey, "sk"), "test");
+  assert.equal(keyMode(LIVE_ENV.publishableKey, "pk"), "live");
+});
+
+test("N1.1: the admin card names the shape problem in Arabic and leaks no key", () => {
+  const masked = "sk_live_wBmGtEv5WpmtFM**************************";
+  const d = buildGatewayDiagnostic(TEST, { ...TEST_ENV, secretKey: masked }, false);
+  assert.equal(d.effective.enabled, false);
+  assert.match(d.effective.reasonAr ?? "", /^المفتاح السري منسوخ من الشاشة المقنّعة/);
+  assert.equal(d.keys.secretKeyMode, "other");
+  const json = JSON.stringify(d);
+  assert.equal(json.includes("wBmGtEv5"), false);
+  assert.equal(/\*\*\*|sk_|pk_/.test(json), false);
+
+  const spaced = buildGatewayDiagnostic(TEST, { ...TEST_ENV, publishableKey: "pk_test_placeholder Publish123" }, false);
+  assert.match(spaced.effective.reasonAr ?? "", /^المفتاح العام فيه مسافة/);
+  const short = buildGatewayDiagnostic(TEST, { ...TEST_ENV, secretKey: "sk_test_abc" }, false);
+  assert.match(short.effective.reasonAr ?? "", /^طول المفتاح السري/);
+  const hook = buildGatewayDiagnostic(TEST, { ...TEST_ENV, webhookSecret: "sec_wh_****" }, false);
+  assert.match(hook.effective.reasonAr ?? "", /^سر Webhook منسوخ/);
 });

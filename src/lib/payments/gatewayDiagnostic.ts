@@ -12,7 +12,7 @@
  * Pure: no runtime imports, so `node --test` loads it directly.
  */
 
-import { resolveMoyasarConfig, type MoyasarEnv, type MoyasarMode } from "./moyasarConfig.ts";
+import { keyShapeIssue, resolveMoyasarConfig, type MoyasarEnv, type MoyasarMode } from "./moyasarConfig.ts";
 
 export type KeyMode = "test" | "live" | "missing" | "other";
 
@@ -20,10 +20,14 @@ export type KeyMode = "test" | "live" | "missing" | "other";
  * The mode a key belongs to, judged by its own prefix: sk_ for the secret
  * key, pk_ for the publishable one. A publishable key pasted into the secret
  * slot is 'other', not 'test' — the same verdict resolveMoyasarConfig reaches.
+ * So is a key whose shape is wrong (masked with *, a space inside, a truncated
+ * body — N1.1): it is not a usable test or live key, and the effective reason
+ * names the problem.
  */
 export function keyMode(value: unknown, kind: "sk" | "pk"): KeyMode {
   const v = typeof value === "string" ? value.trim() : "";
   if (!v) return "missing";
+  if (keyShapeIssue(v)) return "other";
   if (v.startsWith(`${kind}_test_`)) return "test";
   if (v.startsWith(`${kind}_live_`)) return "live";
   return "other";
@@ -42,6 +46,21 @@ const FIXED_REASONS_AR: Record<string, string> = {
   "publishable key is not set": "المفتاح العام غير مضبوط في الخادم",
   "webhook secret is not set": "سر Webhook غير مضبوط في الخادم",
   "live mode needs a complete billing_company setting": "الوضع المباشر يحتاج بيانات المنشأة كاملة",
+  // N1.1 — the key's shape. Never the value, only what is wrong with it.
+  "secret key is masked (contains *)":
+    "المفتاح السري منسوخ من الشاشة المقنّعة (فيه نجوم *) — انسخه كاملاً بزر النسخ في لوحة ميسّر أو ولّد مفتاحاً جديداً",
+  "secret key contains whitespace": "المفتاح السري فيه مسافة أو سطر جديد — أعد لصقه في الخادم دون فراغات",
+  "secret key has an invalid length or characters":
+    "طول المفتاح السري أو رموزه غير صحيحة (منسوخ ناقصاً على الأرجح) — انسخه كاملاً من لوحة ميسّر",
+  "publishable key is masked (contains *)":
+    "المفتاح العام منسوخ من الشاشة المقنّعة (فيه نجوم *) — انسخه كاملاً من لوحة ميسّر، ثم أعد النشر لأنه يُضمَّن عند البناء",
+  "publishable key contains whitespace":
+    "المفتاح العام فيه مسافة أو سطر جديد — أعد لصقه دون فراغات، ثم أعد النشر لأنه يُضمَّن عند البناء",
+  "publishable key has an invalid length or characters":
+    "طول المفتاح العام أو رموزه غير صحيحة (منسوخ ناقصاً على الأرجح) — انسخه كاملاً، ثم أعد النشر لأنه يُضمَّن عند البناء",
+  "webhook secret is masked (contains *)":
+    "سر Webhook منسوخ من الشاشة المقنّعة (فيه نجوم *) — انسخه كاملاً من إعدادات Webhook في لوحة ميسّر",
+  "webhook secret contains whitespace": "سر Webhook فيه مسافة أو سطر جديد — أعد لصقه في الخادم دون فراغات",
 };
 
 const MODE_MISMATCH = /^(secret|publishable) key does not belong to (test|live) mode$/;

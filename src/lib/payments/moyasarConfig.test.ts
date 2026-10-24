@@ -207,3 +207,73 @@ test("source contract: the admin settings page offers only accepted providers an
     assert.match(page, new RegExp(`key: "${key}"`));
   }
 });
+
+// ─── N1.1: key shape ─────────────────────────────────────────────────────────
+// A key copied from Moyasar's masked screen ends in «****…»; a pasted key can
+// carry a space or a line break; a truncated paste is too short. Each one is
+// refused with its own reason, before the mode-prefix check (a masked live key
+// saved in test mode must say "masked", not "wrong mode").
+
+/** A 40-character body, the length of the keys the owner's dashboard shows. */
+const BODY40 = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcd";
+
+test("N1.1: valid 40-character test and live keys still pass", () => {
+  const test40 = { secretKey: `sk_test_${BODY40}`, publishableKey: `pk_test_${BODY40}`, webhookSecret: "whsec_placeholder_456" };
+  const live40 = { secretKey: `sk_live_${BODY40}`, publishableKey: `pk_live_${BODY40}`, webhookSecret: "whsec_placeholder_456" };
+  assert.equal(resolveMoyasarConfig({ status: "test", provider: "moyasar" }, test40, false).enabled, true);
+  assert.equal(resolveMoyasarConfig({ status: "live", provider: "moyasar" }, live40, true).enabled, true);
+  // Surrounding whitespace (a trailing newline in .env) is trimmed, as before.
+  assert.equal(
+    resolveMoyasarConfig({ status: "test", provider: "moyasar" }, { ...test40, secretKey: ` ${test40.secretKey}\n` }, false).enabled,
+    true,
+  );
+});
+
+const MASKED_SK = "sk_test_XzYQHba5GfKfNP**************************";
+const MASKED_PK = "pk_test_XzYQHba5GfKfNP**************************";
+
+test("N1.1: a bad key shape is disabled with its own reason", () => {
+  const T = { status: "test", provider: "moyasar" };
+  const cases: Array<[string, Parameters<typeof resolveMoyasarConfig>[1], RegExp]> = [
+    ["masked secret", { ...TEST_ENV, secretKey: MASKED_SK }, /^secret key is masked/],
+    ["masked publishable", { ...TEST_ENV, publishableKey: MASKED_PK }, /^publishable key is masked/],
+    ["masked webhook secret", { ...TEST_ENV, webhookSecret: "sec_wh_****************" }, /^webhook secret is masked/],
+    ["space inside secret", { ...TEST_ENV, secretKey: "sk_test_placeholder Secret123" }, /^secret key contains whitespace/],
+    ["newline inside publishable", { ...TEST_ENV, publishableKey: "pk_test_placeholder\nPublish123" }, /^publishable key contains whitespace/],
+    ["tab inside webhook secret", { ...TEST_ENV, webhookSecret: "whsec\tplaceholder" }, /^webhook secret contains whitespace/],
+    ["truncated secret", { ...TEST_ENV, secretKey: "sk_test_XzYQHba5GfKfNP" }, /^secret key has an invalid length or characters/],
+    ["truncated publishable", { ...TEST_ENV, publishableKey: "pk_test_abc" }, /^publishable key has an invalid length or characters/],
+    ["over-long secret", { ...TEST_ENV, secretKey: `sk_test_${"a".repeat(81)}` }, /^secret key has an invalid length or characters/],
+    ["odd character in secret", { ...TEST_ENV, secretKey: "sk_test_placeholder$ecret123" }, /^secret key has an invalid length or characters/],
+  ];
+  for (const [label, env, reason] of cases) {
+    const cfg = resolveMoyasarConfig(T, env, false);
+    assert.equal(cfg.enabled, false, label);
+    assert.match((cfg as { reason: string }).reason, reason, label);
+  }
+});
+
+test("N1.1: a masked LIVE key saved in test mode says masked, not wrong mode", () => {
+  const cfg = resolveMoyasarConfig(
+    { status: "test", provider: "moyasar" },
+    { ...TEST_ENV, secretKey: "sk_live_wBmGtEv5WpmtFM**************************" },
+    false,
+  );
+  assert.equal(cfg.enabled, false);
+  assert.match((cfg as { reason: string }).reason, /^secret key is masked/);
+});
+
+test("N1.1: a shape reason never carries the key", () => {
+  const envs = [
+    { ...TEST_ENV, secretKey: MASKED_SK },
+    { ...TEST_ENV, publishableKey: MASKED_PK },
+    { ...TEST_ENV, secretKey: "sk_test_placeholder Secret123" },
+    { ...TEST_ENV, secretKey: "sk_test_XzYQHba5GfKfNP" },
+    { ...TEST_ENV, webhookSecret: "sec_wh_****************" },
+  ];
+  for (const env of envs) {
+    const text = JSON.stringify(resolveMoyasarConfig({ status: "test", provider: "moyasar" }, env, false));
+    for (const v of Object.values(env)) assert.equal(text.includes(String(v)), false);
+    assert.equal(/sk_(test|live)_|pk_(test|live)_|XzYQ|\*\*\*/.test(text), false);
+  }
+});

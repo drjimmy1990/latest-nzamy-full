@@ -48,7 +48,7 @@ const KEY_MODE_AR: Record<KeyMode, string> = {
   test: "تجريبي",
   live: "مباشر",
   missing: "غير مضبوط",
-  other: "صيغة غير معروفة",
+  other: "صيغة غير صالحة",
 };
 
 const isKeyMode = (v: unknown): v is KeyMode => v === "test" || v === "live" || v === "missing" || v === "other";

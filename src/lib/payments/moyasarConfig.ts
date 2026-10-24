@@ -46,6 +46,37 @@ const isPlainObject = (v: unknown): v is Record<string, unknown> =>
 
 const clean = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
 
+// ─── key shape (N1.1) ────────────────────────────────────────────────────────
+
+/**
+ * The body of a Moyasar key — what follows `sk_test_`, `pk_live_` … — is
+ * judged by length and characters. ASSUMPTION: the keys the owner's dashboard
+ * shows have a 40-character body (a 14-character visible prefix plus 26 mask
+ * stars); Moyasar does not publish a fixed length, so the bound is kept wide
+ * (20–80) and only catches a truncated or run-on paste. `_` and `-` are
+ * allowed so a key format we have not seen is not refused outright.
+ */
+export const MOYASAR_KEY_BODY = /^[A-Za-z0-9_-]{20,80}$/;
+
+/** Mask characters a dashboard uses to hide a key («sk_live_wBm…****»). */
+const MASK_CHARS = /[*•●]/;
+
+export type KeyShapeIssue = "masked" | "whitespace" | "malformed";
+
+/**
+ * What is wrong with a (trimmed) key's shape, or null when nothing is. A value
+ * without an `xx_test_` / `xx_live_` prefix is not judged for length here:
+ * the mode-prefix check names that problem. The webhook secret is free-form,
+ * so for it only "masked" and "whitespace" apply.
+ */
+export function keyShapeIssue(value: string): KeyShapeIssue | null {
+  if (MASK_CHARS.test(value)) return "masked";
+  if (/\s/.test(value)) return "whitespace";
+  const m = /^[a-z]{2}_(?:test|live)_(.*)$/.exec(value);
+  if (m && !MOYASAR_KEY_BODY.test(m[1])) return "malformed";
+  return null;
+}
+
 export function resolveMoyasarConfig(
   setting: unknown,
   env: MoyasarEnv,
@@ -63,6 +94,23 @@ export function resolveMoyasarConfig(
   if (!secretKey) return { enabled: false, reason: "secret key is not set" };
   if (!publishableKey) return { enabled: false, reason: "publishable key is not set" };
   if (!webhookSecret) return { enabled: false, reason: "webhook secret is not set" };
+
+  // N1.1: the shape, before the mode prefix — a masked live key saved in test
+  // mode is "masked", which is the fix the admin needs, not "wrong mode".
+  const secretShape = keyShapeIssue(secretKey);
+  if (secretShape === "masked") return { enabled: false, reason: "secret key is masked (contains *)" };
+  if (secretShape === "whitespace") return { enabled: false, reason: "secret key contains whitespace" };
+  if (secretShape === "malformed") return { enabled: false, reason: "secret key has an invalid length or characters" };
+  const publishableShape = keyShapeIssue(publishableKey);
+  if (publishableShape === "masked") return { enabled: false, reason: "publishable key is masked (contains *)" };
+  if (publishableShape === "whitespace") return { enabled: false, reason: "publishable key contains whitespace" };
+  if (publishableShape === "malformed") {
+    return { enabled: false, reason: "publishable key has an invalid length or characters" };
+  }
+  const webhookShape = keyShapeIssue(webhookSecret);
+  if (webhookShape === "masked") return { enabled: false, reason: "webhook secret is masked (contains *)" };
+  if (webhookShape === "whitespace") return { enabled: false, reason: "webhook secret contains whitespace" };
+
   if (!secretKey.startsWith(`sk_${mode}_`)) {
     return { enabled: false, reason: `secret key does not belong to ${mode} mode` };
   }
