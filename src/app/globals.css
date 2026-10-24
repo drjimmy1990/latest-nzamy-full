@@ -187,13 +187,15 @@
    unlayered, so it would beat that utility), an element that is itself a white
    or gold surface in dark mode (bg-white / bg-gold with no dark:bg-* override
    keeps text-royal), and anything
-   inside a white or explicitly light surface. */
-.dark .text-royal:not([class*="dark:text-"], [class~="bg-white"]:not([class*="dark:bg-"]), [class~="bg-gold"]:not([class*="dark:bg-"]), .bg-white *, [data-light-surface], [data-light-surface] *) {
+   inside a white or explicitly light surface. A bg-white card that turns dark
+   through its own dark:bg-* is not a light surface, so its children are
+   rescued too. */
+.dark .text-royal:not([class*="dark:text-"], [class~="bg-white"]:not([class*="dark:bg-"]), [class~="bg-gold"]:not([class*="dark:bg-"]), .bg-white:not([class*="dark:bg-"]) *, [data-light-surface], [data-light-surface] *) {
   color: #34d399; /* Emerald-400: >= 8.6:1 contrast on dark surfaces */
 }
 
 /* Dark mode hover rescue: hover:text-royal turning dark on black */
-.dark .hover\:text-royal:not([class*="dark:hover:text-"], [class~="bg-white"]:not([class*="dark:bg-"]), [class~="bg-gold"]:not([class*="dark:bg-"]), .bg-white *, [data-light-surface], [data-light-surface] *):hover {
+.dark .hover\:text-royal:not([class*="dark:hover:text-"], [class~="bg-white"]:not([class*="dark:bg-"]), [class~="bg-gold"]:not([class*="dark:bg-"]), .bg-white:not([class*="dark:bg-"]) *, [data-light-surface], [data-light-surface] *):hover {
   color: #C8A762 !important; /* Gold: >= 6.9:1 contrast */
 }
 
