@@ -20,7 +20,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <ForceDarkTheme>
       <UserTypeGuard allowedTypes={["admin"]}>
-        <div className="admin-console dark flex h-[100dvh] overflow-hidden bg-[#0a0a0f] [color-scheme:dark]" dir="rtl" suppressHydrationWarning>
+        <div className="admin-console dark text-[#e5e7eb] flex h-[100dvh] overflow-hidden bg-[#0a0a0f] [color-scheme:dark]" dir="rtl" suppressHydrationWarning>
           <AdminSidebar />
           {/* AdminSidebar now renders a fixed lg:hidden top bar (56px + notch).
               lg:pt-0 leaves the desktop console exactly as it was. */}
