@@ -112,7 +112,7 @@ export default function FAQ() {
                   <span className={`text-base font-bold md:text-lg ${
                     isOpen 
                       ? (isDark ? "text-emerald-400" : "text-royal") 
-                      : (isDark ? "text-gray-200" : "text-ink")
+                      : (isDark ? "text-zinc-200" : "text-ink")
                   }`}>
                     {faq.q}
                   </span>

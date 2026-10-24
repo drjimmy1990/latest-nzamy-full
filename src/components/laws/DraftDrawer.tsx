@@ -269,7 +269,7 @@ export function DraftDrawer({ cart, onRemoveArticle, onClearAll, onClose, isDark
         <div className={`p-3 border-t flex flex-col gap-2 ${isDark ? "border-white/[0.07]" : "border-slate-200"}`}>
           {selectedIds.length > 0 ? (
             <div className="flex gap-2">
-              <button onClick={doDeleteSelected} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-red-50 text-red-600 text-[11px] font-bold hover:bg-red-100 transition">
+              <button onClick={doDeleteSelected} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 text-[11px] font-bold hover:bg-red-100 dark:hover:bg-red-500/20 transition">
                 <Trash size={13} /> {isRTL ? `حذف المحدد (${selectedIds.length})` : `Delete (${selectedIds.length})`}
               </button>
               <button onClick={handleCopySelected} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#0B3D2E] text-white text-[11px] font-bold hover:opacity-90 transition">

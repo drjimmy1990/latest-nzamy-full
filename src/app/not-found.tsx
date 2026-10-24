@@ -102,7 +102,7 @@ export default function NotFound() {
                 transition={{ delay: 0.5 + i * 0.1, type: "spring", stiffness: 100, damping: 20 }}
                 whileHover={{ scale: 1.02, y: -2 }}
                 whileTap={{ scale: 0.98 }}
-                className="group flex items-start gap-4 rounded-2xl border border-slate-200/50 bg-white p-5 text-start shadow-sm transition-all hover:border-royal/15 hover:shadow-md"
+                className="group flex items-start gap-4 rounded-2xl border border-slate-200/50 bg-white dark:bg-dark-card p-5 text-start shadow-sm transition-all hover:border-royal/15 hover:shadow-md"
               >
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-royal/5 text-royal transition-colors group-hover:bg-royal/10">
                   <link.icon size={22} weight="duotone" />

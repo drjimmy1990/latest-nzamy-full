@@ -1524,7 +1524,7 @@ export default function LegalLibraryPage() {
                           }}
                           className={`w-full flex items-center gap-3 px-4 py-3 text-sm text-right transition border-b last:border-0 ${
                             isDark
-                              ? "hover:bg-white/5 text-gray-200 border-white/[0.04]"
+                              ? "hover:bg-white/5 text-zinc-200 border-white/[0.04]"
                               : "hover:bg-gray-50 text-gray-800 border-gray-100"
                           }`}
                           dir={isRTL ? "rtl" : "ltr"}
@@ -1892,7 +1892,7 @@ export default function LegalLibraryPage() {
                       <div className={`mb-4 flex flex-col sm:flex-row sm:items-center gap-2 rounded-xl border px-4 py-3 ${
                         isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"
                       }`}>
-                        <label htmlFor="law-search-article-status" className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>
+                        <label htmlFor="law-search-article-status" className={`text-sm font-bold ${isDark ? "text-zinc-200" : "text-gray-800"}`}>
                           {isRTL ? "حالة المادة" : "Article status"}
                         </label>
                         <select

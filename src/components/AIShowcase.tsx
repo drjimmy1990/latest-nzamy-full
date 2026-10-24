@@ -51,7 +51,7 @@ const AiFeatureCard = memo(function AiFeatureCard({
         <Icon size={20} weight="duotone" />
       </div>
       <div>
-        <h4 className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-ink"}`}>{title}</h4>
+        <h4 className={`text-sm font-bold ${isDark ? "text-zinc-200" : "text-ink"}`}>{title}</h4>
         <p className={`mt-1 text-xs leading-relaxed ${isDark ? "text-gray-400" : "text-ink-muted"}`}>{desc}</p>
       </div>
     </motion.div>

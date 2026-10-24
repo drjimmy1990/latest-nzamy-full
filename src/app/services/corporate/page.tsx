@@ -135,7 +135,7 @@ export default function CorporateServicePage() {
         </div>
 
         <FadeUp delay={0.2}>
-          <div className="p-8 rounded-3xl border border-slate-200 bg-white shadow-[0_20px_60px_-15px_rgba(11,61,46,0.08)]">
+          <div className="p-8 rounded-3xl border border-slate-200 bg-white dark:bg-dark-card shadow-[0_20px_60px_-15px_rgba(11,61,46,0.08)]">
             <div className="flex items-center gap-3 mb-6">
               <div className="w-10 h-10 rounded-xl bg-royal/10 flex items-center justify-center">
                 <Buildings size={22} className="text-royal" />
@@ -180,7 +180,7 @@ export default function CorporateServicePage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {solutions.map((s, i) => (
             <FadeUp key={s.title} delay={i * 0.07}>
-              <div className="group p-7 rounded-2xl border border-slate-200/80 bg-white hover:border-royal/25 hover:shadow-[0_8px_32px_-8px_rgba(11,61,46,0.12)] transition-all duration-300">
+              <div className="group p-7 rounded-2xl border border-slate-200/80 bg-white dark:bg-dark-card hover:border-royal/25 hover:shadow-[0_8px_32px_-8px_rgba(11,61,46,0.12)] transition-all duration-300">
                 <div className="flex items-start justify-between mb-5">
                   <div className="w-10 h-10 rounded-xl bg-royal/8 flex items-center justify-center group-hover:bg-royal/15 transition-colors">
                     <s.icon size={20} className="text-royal" />
@@ -205,7 +205,7 @@ export default function CorporateServicePage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-3xl">
           {plans.map((p, i) => (
             <FadeUp key={p.name} delay={i * 0.1}>
-              <div className={`p-8 rounded-2xl flex flex-col gap-6 ${p.highlight ? 'bg-royal text-white' : 'bg-white border border-slate-200'}`}>
+              <div className={`p-8 rounded-2xl flex flex-col gap-6 ${p.highlight ? 'bg-royal text-white' : 'bg-white dark:bg-dark-card border border-slate-200'}`}>
                 <div>
                   <p className={`text-xs font-semibold uppercase tracking-wider mb-2 ${p.highlight ? 'text-gold' : 'text-ink-muted'}`}>{p.name}</p>
                   <div className="flex items-baseline gap-1">

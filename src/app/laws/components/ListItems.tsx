@@ -490,7 +490,7 @@ export function PrecedentRow({ pr, isDark, idx, isRTL = true, onClick, onHashtag
                   {getTooltipData(activeTooltip).map((item, idx) => (
                     <div key={idx} className="flex items-start gap-1.5 text-[11px] leading-relaxed font-semibold hover:underline cursor-pointer">
                       <span className="text-[#C8A762] shrink-0">•</span>
-                      <span className={isDark ? "text-gray-200" : "text-gray-700"}>{item}</span>
+                      <span className={isDark ? "text-zinc-200" : "text-gray-700"}>{item}</span>
                     </div>
                   ))}
                 </div>
@@ -523,7 +523,7 @@ export function OrderRow({ o, isDark, idx, isRTL = true, onClick, onHashtagClick
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1.5 flex-wrap">
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${style.class}`}>{typeLabel}</span>
-            <span className={`text-[11px] font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{o.ref}</span>
+            <span className={`text-[11px] font-bold ${isDark ? "text-zinc-200" : "text-gray-800"}`}>{o.ref}</span>
             <span className={`text-[10px] ${isDark ? "text-gray-600" : "text-slate-400"}`}>{o.date}</span>
           </div>
           <p className={`text-[13px] font-bold mb-1.5 ${isDark ? "text-white" : "text-gray-900"}`}>{o.title}</p>
@@ -721,7 +721,7 @@ export function OrderCard({ o, isDark, idx, isRTL = true, onClick, onHashtagClic
       </div>
 
       <div className="pt-3 border-t border-slate-100 dark:border-white/[0.04]">
-        <div className={`text-[10px] mb-2 font-bold ${isDark ? "text-gray-200" : "text-gray-700"}`}>{o.ref}</div>
+        <div className={`text-[10px] mb-2 font-bold ${isDark ? "text-zinc-200" : "text-gray-700"}`}>{o.ref}</div>
         <p className={`text-[9px] ${isDark ? "text-gray-600" : "text-slate-400"}`}>{issuerLabel}</p>
       </div>
     </motion.div>

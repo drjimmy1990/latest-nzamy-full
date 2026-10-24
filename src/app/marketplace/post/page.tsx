@@ -201,7 +201,7 @@ export default function MarketplacePostPage() {
         {/* Guest nudge — preview visible but submit blocked */}
         {isGuest && (
           <div className={`${card} p-4 mb-5 flex items-center gap-4`}>
-            <Info size={28} className="text-[#0B3D2E] flex-shrink-0" weight="duotone" />
+            <Info size={28} className="text-[#0B3D2E] dark:text-emerald-400 flex-shrink-0" weight="duotone" />
             <div className="flex-1">
               <p className={`text-sm font-bold ${isDark ? "text-white" : "text-gray-900"}`}>
                 سجّل دخولك لنشر الطلب
@@ -287,7 +287,7 @@ export default function MarketplacePostPage() {
                               <Icon size={18} />
                             </div>
                             <div>
-                              <p className={`font-bold text-sm ${active ? (isDark ? "text-white" : "text-[#0B3D2E]") : isDark ? "text-gray-200" : "text-gray-800"}`}>
+                              <p className={`font-bold text-sm ${active ? (isDark ? "text-white" : "text-[#0B3D2E]") : isDark ? "text-zinc-200" : "text-gray-800"}`}>
                                 {cat.label}
                               </p>
                               <p className={`text-xs mt-0.5 ${muted}`}>{cat.desc}</p>
@@ -299,7 +299,7 @@ export default function MarketplacePostPage() {
                     {errors.category && <p className="text-red-500 text-xs">{errors.category}</p>}
 
                     <div>
-                      <label className={`block text-sm font-bold mb-2 ${isDark ? "text-gray-200" : "text-gray-700"}`}>
+                      <label className={`block text-sm font-bold mb-2 ${isDark ? "text-zinc-200" : "text-gray-700"}`}>
                         <MapPin size={14} className="inline ml-1" />
                         المدينة
                       </label>
@@ -327,7 +327,7 @@ export default function MarketplacePostPage() {
                     </div>
 
                     <div>
-                      <label className={`block text-sm font-bold mb-2 ${isDark ? "text-gray-200" : "text-gray-700"}`}>
+                      <label className={`block text-sm font-bold mb-2 ${isDark ? "text-zinc-200" : "text-gray-700"}`}>
                         عنوان الطلب
                       </label>
                       <input
@@ -345,7 +345,7 @@ export default function MarketplacePostPage() {
                     </div>
 
                     <div>
-                      <label className={`block text-sm font-bold mb-2 ${isDark ? "text-gray-200" : "text-gray-700"}`}>
+                      <label className={`block text-sm font-bold mb-2 ${isDark ? "text-zinc-200" : "text-gray-700"}`}>
                         وصف تفصيلي
                       </label>
                       <textarea
@@ -363,7 +363,7 @@ export default function MarketplacePostPage() {
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <label className={`block text-sm font-bold mb-2 ${isDark ? "text-gray-200" : "text-gray-700"}`}>
+                        <label className={`block text-sm font-bold mb-2 ${isDark ? "text-zinc-200" : "text-gray-700"}`}>
                           <CalendarBlank size={14} className="inline ml-1" />
                           المدة المطلوبة
                         </label>
@@ -375,7 +375,7 @@ export default function MarketplacePostPage() {
                       </div>
 
                       <div>
-                        <label className={`block text-sm font-bold mb-2 ${isDark ? "text-gray-200" : "text-gray-700"}`}>
+                        <label className={`block text-sm font-bold mb-2 ${isDark ? "text-zinc-200" : "text-gray-700"}`}>
                           الأولوية / الاستعجال
                         </label>
                         <div className="space-y-2">
@@ -399,7 +399,7 @@ export default function MarketplacePostPage() {
 
                     {/* Attachments placeholder */}
                     <div>
-                      <label className={`block text-sm font-bold mb-2 ${isDark ? "text-gray-200" : "text-gray-700"}`}>
+                      <label className={`block text-sm font-bold mb-2 ${isDark ? "text-zinc-200" : "text-gray-700"}`}>
                         المرفقات (اختياري)
                       </label>
                       <div className={`border-2 border-dashed rounded-xl p-6 text-center ${isDark ? "border-[#2d3748]" : "border-gray-200"}`}>
@@ -443,7 +443,7 @@ export default function MarketplacePostPage() {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className={`block text-sm font-bold mb-2 ${isDark ? "text-gray-200" : "text-gray-700"}`}>
+                        <label className={`block text-sm font-bold mb-2 ${isDark ? "text-zinc-200" : "text-gray-700"}`}>
                           <CurrencyDollar size={14} className="inline ml-1" />
                           الحد الأدنى (ر.س)
                         </label>
@@ -458,7 +458,7 @@ export default function MarketplacePostPage() {
                         {errors.budgetMin && <p className="text-red-500 text-xs mt-1">{errors.budgetMin}</p>}
                       </div>
                       <div>
-                        <label className={`block text-sm font-bold mb-2 ${isDark ? "text-gray-200" : "text-gray-700"}`}>
+                        <label className={`block text-sm font-bold mb-2 ${isDark ? "text-zinc-200" : "text-gray-700"}`}>
                           الحد الأعلى (ر.س)
                         </label>
                         <input
@@ -518,7 +518,7 @@ export default function MarketplacePostPage() {
                         ].map((row, i) => (
                           <div key={i} className={`flex gap-4 pb-4 border-b last:border-0 last:pb-0 ${isDark ? "border-[#2d3748]" : "border-gray-100"}`}>
                             <span className={`text-xs font-bold w-28 shrink-0 ${muted}`}>{row.label}</span>
-                            <span className={`text-sm flex-1 ${isDark ? "text-gray-200" : "text-gray-800"}`}>{row.value}</span>
+                            <span className={`text-sm flex-1 ${isDark ? "text-zinc-200" : "text-gray-800"}`}>{row.value}</span>
                           </div>
                         ))}
                       </div>
@@ -543,7 +543,7 @@ export default function MarketplacePostPage() {
                         />
                         <span className={`text-sm ${isDark ? "text-gray-300" : "text-gray-700"}`}>
                           أوافق على{" "}
-                          <Link href="/terms" className="text-[#0B3D2E] font-bold underline underline-offset-2">
+                          <Link href="/terms" className="text-[#0B3D2E] dark:text-emerald-400 font-bold underline underline-offset-2">
                             شروط الاستخدام
                           </Link>{" "}
                           وسياسة سوق المهنيين في نظامي.

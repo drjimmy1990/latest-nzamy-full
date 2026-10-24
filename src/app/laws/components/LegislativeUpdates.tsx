@@ -504,7 +504,7 @@ function WidgetUpdateRow({ update, index, isDark, isRTL }: { update: Legislative
       {/* Text */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 flex-wrap">
-          <span className={`text-xs font-bold truncate ${isDark ? "text-gray-200" : "text-gray-800"}`}>
+          <span className={`text-xs font-bold truncate ${isDark ? "text-zinc-200" : "text-gray-800"}`}>
             {update.lawName}
           </span>
           {update.articleRef && (

@@ -128,7 +128,7 @@ export default function WorkspacePage() {
         <div className="flex flex-col md:flex-row items-start md:items-center gap-5">
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-1">
-              <Scales size={16} className="text-[#0B3D2E]" weight="duotone" />
+              <Scales size={16} className="text-[#0B3D2E] dark:text-emerald-400" weight="duotone" />
               <h1 className={`text-[16px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>{WS.caseTitle}</h1>
               <span className={`text-[10px] px-2 py-0.5 rounded-full ${isDark ? "bg-[#0B3D2E]/20 text-emerald-400" : "bg-emerald-50 text-emerald-700"}`}>{WS.caseType}</span>
             </div>
@@ -284,7 +284,7 @@ export default function WorkspacePage() {
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <div className="w-7 h-7 rounded-xl bg-[#0B3D2E]/10 flex items-center justify-center">
-                          <span className="text-[11px] font-bold text-[#0B3D2E]">أنا</span>
+                          <span className="text-[11px] font-bold text-[#0B3D2E] dark:text-emerald-400">أنا</span>
                         </div>
                         <p className={`text-[12px] font-semibold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>{WS.myName}</p>
                       </div>
@@ -307,7 +307,7 @@ export default function WorkspacePage() {
           {tab === "graph" && (
             <div className={`${card} overflow-hidden`} style={{ height: "560px" }}>
               <div className={`p-3 border-b flex items-center gap-2 ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
-                <Graph size={14} weight="duotone" className="text-[#0B3D2E]" />
+                <Graph size={14} weight="duotone" className="text-[#0B3D2E] dark:text-emerald-400" />
                 <p className={`text-[12px] font-semibold ${isDark ? "text-zinc-300" : "text-slate-600"}`}>
                   جراف القضية المشتركة — {WS.caseTitle}
                 </p>

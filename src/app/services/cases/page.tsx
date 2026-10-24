@@ -155,7 +155,7 @@ export default function CasesServicePage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {services.map((s, i) => (
             <FadeUp key={s.title} delay={i * 0.07}>
-              <div className="group p-7 rounded-2xl border border-slate-200/80 bg-white hover:border-royal/30 hover:shadow-[0_8px_32px_-8px_rgba(11,61,46,0.12)] transition-all duration-300 flex gap-5 items-start">
+              <div className="group p-7 rounded-2xl border border-slate-200/80 bg-white dark:bg-dark-card hover:border-royal/30 hover:shadow-[0_8px_32px_-8px_rgba(11,61,46,0.12)] transition-all duration-300 flex gap-5 items-start">
                 <div className="w-11 h-11 rounded-xl bg-royal/8 flex items-center justify-center flex-shrink-0 group-hover:bg-royal/15 transition-colors">
                   <s.icon size={22} className="text-royal" />
                 </div>

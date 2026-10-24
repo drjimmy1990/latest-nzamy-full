@@ -94,7 +94,7 @@ export function PostRequestTab({ isDark, isGuest }: { isDark: boolean; isGuest: 
                       ? isDark ? "border-[#C8A762]/40 bg-[#C8A762]/10 text-[#C8A762]" : "border-[#0B3D2E]/40 bg-[#0B3D2E]/8 text-[#0B3D2E] shadow-sm"
                       : isDark ? "border-[#2d3748] text-gray-400 hover:border-gray-600" : "border-gray-200 text-gray-600 hover:border-gray-300 bg-white"
                   }`}>
-                  <p className={`text-[13px] font-bold mb-0.5 ${reqType === lt.id ? "" : isDark ? "text-gray-200" : "text-gray-800"}`}>{lt.label}</p>
+                  <p className={`text-[13px] font-bold mb-0.5 ${reqType === lt.id ? "" : isDark ? "text-zinc-200" : "text-gray-800"}`}>{lt.label}</p>
                   <p className={`text-[10px] leading-snug ${reqType === lt.id ? "opacity-70" : isDark ? "text-gray-600" : "text-gray-400"}`}>{lt.desc}</p>
                 </button>
               ))}

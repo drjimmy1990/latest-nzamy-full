@@ -286,7 +286,7 @@ const MsgBubble = memo(function MsgBubble({
           isUser
             ? "px-4 py-3 text-white rounded-tr-sm"
             : isDark
-              ? "px-4 py-3.5 rounded-tl-sm border border-white/[0.07] bg-dark-card text-gray-200"
+              ? "px-4 py-3.5 rounded-tl-sm border border-white/[0.07] bg-dark-card text-zinc-200"
               : "px-4 py-3.5 rounded-tl-sm border border-slate-100 bg-white text-slate-800 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]"
         }`}
           style={isUser ? { background: `linear-gradient(135deg, ${ROYAL} 0%, #1a6b50 100%)` } : undefined}

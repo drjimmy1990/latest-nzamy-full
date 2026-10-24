@@ -290,7 +290,7 @@ export default function MarketplaceDetailPage() {
                       <div className="flex items-start justify-between gap-4 mb-3">
                         <div>
                           <div className="flex items-center gap-2 mb-1">
-                            <p className={`font-bold text-sm ${isDark ? "text-gray-100" : "text-gray-900"}`}>
+                            <p className={`font-bold text-sm ${isDark ? "text-zinc-100" : "text-gray-900"}`}>
                               {offer.providerName}
                             </p>
                             {offer.isTop && (
@@ -467,7 +467,7 @@ export default function MarketplaceDetailPage() {
               className={`${card} p-4`}>
               <div className="flex items-center gap-2 mb-3">
                 <Shield size={16} weight="fill" className="text-emerald-500" />
-                <p className={`text-xs font-bold ${isDark ? "text-gray-200" : "text-gray-700"}`}>ضمان المنصة</p>
+                <p className={`text-xs font-bold ${isDark ? "text-zinc-200" : "text-gray-700"}`}>ضمان المنصة</p>
               </div>
               <ul className={`text-xs space-y-2 ${muted}`}>
                 <li className="flex items-start gap-1.5">

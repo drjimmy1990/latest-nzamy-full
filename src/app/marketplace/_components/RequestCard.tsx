@@ -47,7 +47,7 @@ export function RequestCard({
       </div>
 
       <Link href={`/marketplace/${req.id}`}
-        className={`block text-base font-bold leading-snug mb-2 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition ${isDark ? "text-gray-100" : "text-gray-800"}`}>
+        className={`block text-base font-bold leading-snug mb-2 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition ${isDark ? "text-zinc-100" : "text-gray-800"}`}>
         {req.title}
       </Link>
       <p className={`text-sm leading-relaxed mb-3 line-clamp-2 ${muted}`}>{req.description}</p>

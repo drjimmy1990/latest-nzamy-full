@@ -138,7 +138,7 @@ const categoryStyle: Record<ClauseCategory, {
     borderDark: "dark:border-slate-600/40",
     quoteBar: "border-slate-400",
     textLight: "text-slate-800",
-    textDark: "dark:text-slate-200",
+    textDark: "dark:text-zinc-200",
     icon: <ArrowsInLineHorizontal size={12} weight="fill" />,
   },
   harmful: {

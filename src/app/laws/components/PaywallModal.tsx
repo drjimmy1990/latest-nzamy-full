@@ -386,7 +386,7 @@ export function AdvancedSearchModal({
           <div className={`flex items-center justify-between px-5 py-3 border-b ${bdr}`}>
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-lg bg-[#0B3D2E]/10 flex items-center justify-center shrink-0">
-                <Scales size={17} className="text-[#0B3D2E]" weight="duotone" />
+                <Scales size={17} className="text-[#0B3D2E] dark:text-emerald-400" weight="duotone" />
               </div>
               <div>
                 <p className={`text-[13px] font-black leading-none ${isDark ? "text-white" : "text-gray-900"}`}>
@@ -683,7 +683,7 @@ export function RegisteredUserStats({ isRTL, isDark }: { isRTL: boolean; isDark:
       </h2>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[
-          { icon: Books,          color: "bg-[#0B3D2E]/10 text-[#0B3D2E]",  val: "14", labelAr: "نظام تمت قراءته",    labelEn: "Systems Read" },
+          { icon: Books,          color: "bg-[#0B3D2E]/10 text-[#0B3D2E] dark:text-emerald-400",  val: "14", labelAr: "نظام تمت قراءته",    labelEn: "Systems Read" },
           { icon: BookmarkSimple, color: "bg-amber-500/10 text-amber-600",   val: "32", labelAr: "مبدأ/مادة محفوظة",  labelEn: "Saved Items" },
           { icon: Scroll,         color: "bg-purple-500/10 text-purple-600", val: "5",  labelAr: "تحديثات قضائية لك", labelEn: "New Judicial Updates" },
         ].map((item, i) => {

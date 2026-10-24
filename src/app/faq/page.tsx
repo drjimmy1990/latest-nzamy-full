@@ -274,7 +274,7 @@ export default function FAQPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={isRTL ? "ابحث في الأسئلة الشائعة..." : "Search FAQs..."}
-              className={`w-full py-3.5 ${isRTL ? "pr-12 pl-4" : "pl-12 pr-4"} rounded-xl bg-white text-gray-900 placeholder-gray-400 outline-none shadow-lg text-sm`}
+              className={`w-full py-3.5 ${isRTL ? "pr-12 pl-4" : "pl-12 pr-4"} rounded-xl bg-white dark:bg-dark-card text-gray-900 dark:text-zinc-100 placeholder-gray-400 outline-none shadow-lg text-sm`}
             />
           </div>
         </motion.div>

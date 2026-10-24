@@ -439,11 +439,11 @@ export function PrecedentsTabContent({
                            <div className={`grid grid-cols-2 gap-4 mb-4 p-4 rounded-xl border ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"}`}>
                             <div className="flex flex-col">
                               <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "عدد المبادئ" : "Principles Count"}</span>
-                              <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{col.rulingCount}</span>
+                              <span className={`text-sm font-bold ${isDark ? "text-zinc-200" : "text-gray-800"}`}>{col.rulingCount}</span>
                             </div>
                             <div className="flex flex-col">
                               <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "المسار" : "Track"}</span>
-                              <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>
+                              <span className={`text-sm font-bold ${isDark ? "text-zinc-200" : "text-gray-800"}`}>
                                 {col.track === "ordinary"
                                   ? isRTL
                                     ? "قضاء عادي"
@@ -518,11 +518,11 @@ export function PrecedentsTabContent({
                           <div className={`grid grid-cols-2 gap-4 p-4 rounded-xl border min-w-[220px] ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"}`}>
                             <div className="flex flex-col">
                               <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "عدد المبادئ" : "Principles Count"}</span>
-                              <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{col.rulingCount}</span>
+                              <span className={`text-sm font-bold ${isDark ? "text-zinc-200" : "text-gray-800"}`}>{col.rulingCount}</span>
                             </div>
                             <div className="flex flex-col">
                               <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "المسار" : "Track"}</span>
-                              <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>
+                              <span className={`text-sm font-bold ${isDark ? "text-zinc-200" : "text-gray-800"}`}>
                                 {col.track === "ordinary"
                                   ? isRTL
                                     ? "قضاء عادي"

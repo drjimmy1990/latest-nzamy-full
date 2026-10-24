@@ -125,7 +125,7 @@ export default function CreatorsServicePage() {
             {creators.map((c, i) => (
               <motion.div
                 key={c.name}
-                className="flex items-center gap-3 p-4 rounded-xl border border-slate-200 bg-white hover:border-gold/30 hover:bg-gold/3 transition-colors cursor-default"
+                className="flex items-center gap-3 p-4 rounded-xl border border-slate-200 bg-white dark:bg-dark-card hover:border-gold/30 hover:bg-gold/3 transition-colors cursor-default"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.3 + i * 0.07, duration: 0.4, ease: 'easeOut' }}
@@ -148,7 +148,7 @@ export default function CreatorsServicePage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {services.map((s, i) => (
             <FadeUp key={s.title} delay={i * 0.07}>
-              <div className="group p-7 rounded-2xl border border-slate-200/80 bg-white hover:border-royal/25 hover:shadow-[0_8px_28px_-8px_rgba(11,61,46,0.1)] transition-all duration-300 h-full flex flex-col gap-4">
+              <div className="group p-7 rounded-2xl border border-slate-200/80 bg-white dark:bg-dark-card hover:border-royal/25 hover:shadow-[0_8px_28px_-8px_rgba(11,61,46,0.1)] transition-all duration-300 h-full flex flex-col gap-4">
                 <div className="flex items-center justify-between">
                   <div className="w-10 h-10 rounded-xl bg-royal/8 flex items-center justify-center group-hover:bg-royal/15 transition-colors">
                     <s.icon size={20} className="text-royal" />

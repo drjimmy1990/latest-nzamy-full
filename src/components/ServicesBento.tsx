@@ -332,7 +332,7 @@ export default function ServicesBento() {
         <div className="mt-8 rounded-[2.5rem] border border-slate-200/50 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-dark-card sm:p-8">
           <div className="mb-4 flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-gold" />
-            <span className={`text-sm font-bold ${isDark ? "text-gray-200" : "text-ink"}`}>
+            <span className={`text-sm font-bold ${isDark ? "text-zinc-200" : "text-ink"}`}>
               {isAr ? "نغطي كافة التخصصات القانونية" : "We cover all legal specializations"}
             </span>
           </div>

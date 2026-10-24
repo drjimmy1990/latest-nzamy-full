@@ -954,7 +954,7 @@ export default function LawyerProfilePage() {
                             <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
                               <div className="flex items-center gap-2">
                                 <div className="flex">{ratingStars(r.rating, isDark)}</div>
-                                <span className={`text-xs font-semibold ${isDark ? "text-gray-200" : "text-gray-700"}`}>
+                                <span className={`text-xs font-semibold ${isDark ? "text-zinc-200" : "text-gray-700"}`}>
                                   {r.reviewerName ?? "عميل"}
                                 </span>
                               </div>

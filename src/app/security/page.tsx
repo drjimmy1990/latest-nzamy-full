@@ -162,7 +162,7 @@ export default function SecurityPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {pillars.map((p, i) => (
             <FadeUp key={p.title} delay={i * 0.07}>
-              <div className="group p-7 rounded-2xl border border-slate-200/80 bg-white hover:border-royal/25 hover:shadow-[0_8px_28px_-8px_rgba(11,61,46,0.1)] transition-all duration-300 h-full flex flex-col gap-4">
+              <div className="group p-7 rounded-2xl border border-slate-200/80 bg-white dark:bg-dark-card hover:border-royal/25 hover:shadow-[0_8px_28px_-8px_rgba(11,61,46,0.1)] transition-all duration-300 h-full flex flex-col gap-4">
                 <div className="flex items-center justify-between">
                   <div className="w-10 h-10 rounded-xl bg-royal/8 flex items-center justify-center group-hover:bg-royal/15 transition-colors">
                     <p.icon size={20} className="text-royal" />

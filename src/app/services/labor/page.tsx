@@ -95,7 +95,7 @@ export default function LaborServicePage() {
             {stats.map((s, i) => (
               <div
                 key={s.label}
-                className="flex items-center gap-5 p-5 rounded-2xl border border-slate-200/80 bg-white hover:border-royal/20 transition-colors"
+                className="flex items-center gap-5 p-5 rounded-2xl border border-slate-200/80 bg-white dark:bg-dark-card hover:border-royal/20 transition-colors"
               >
                 <span className="text-4xl font-bold text-royal tracking-tight" style={{ fontFamily: 'var(--font-mono)' }}>
                   {s.value}
@@ -110,11 +110,11 @@ export default function LaborServicePage() {
       {/* ── Warning Banner ── */}
       <section className="max-w-[1400px] mx-auto px-6 md:px-10 mt-20">
         <FadeUp>
-          <div className="flex items-start gap-4 p-5 rounded-2xl bg-amber-50 border border-amber-200">
-            <Warning size={22} className="text-amber-600 flex-shrink-0 mt-0.5" />
+          <div className="flex items-start gap-4 p-5 rounded-2xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20">
+            <Warning size={22} className="text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
             <div>
-              <p className="font-semibold text-amber-800 mb-1">مهلة قانونية تنتهي</p>
-              <p className="text-amber-700 text-sm leading-relaxed">
+              <p className="font-semibold text-amber-800 dark:text-amber-300 mb-1">مهلة قانونية تنتهي</p>
+              <p className="text-amber-700 dark:text-amber-400 text-sm leading-relaxed">
                 وفق نظام العمل السعودي، مدة تقادم الحقوق العمالية <strong>١٢ شهراً</strong> من تاريخ المطالبة الأولى. لا تؤجل.
               </p>
             </div>
@@ -132,7 +132,7 @@ export default function LaborServicePage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-0 border border-slate-200 rounded-2xl overflow-hidden divide-y divide-x divide-slate-200 md:grid-rows-2">
           {rights.map((r, i) => (
             <FadeUp key={r.title} delay={i * 0.06}>
-              <div className="group p-6 bg-white hover:bg-royal/3 transition-colors h-full">
+              <div className="group p-6 bg-white dark:bg-dark-card hover:bg-royal/3 transition-colors h-full">
                 <div className="w-9 h-9 rounded-xl bg-royal/8 flex items-center justify-center mb-4 group-hover:bg-royal/15 transition-colors">
                   <r.icon size={18} className="text-royal" />
                 </div>

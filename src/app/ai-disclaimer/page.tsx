@@ -80,7 +80,7 @@ const sections = {
     {
       icon: Warning,
       title: "حدود الموثوقية",
-      color: "bg-amber-50 text-amber-700",
+      color: "bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400",
       body: "رغم أن ذكاء نظامي يسعى لتقديم معلومات دقيقة، فإن التشريعات تتغير باستمرار. تحقق دائماً من المصادر الرسمية (هيئة الزكاة والضريبة، وزارة العدل، هيئة السوق المالية...) أو استشر محامياً مرخصاً قبل اتخاذ أي قرار قانوني مهم.",
     },
     {
@@ -98,7 +98,7 @@ const sections = {
     {
       icon: FileText,
       title: "الاستخدامات المقبولة",
-      color: "bg-purple-50 text-purple-700",
+      color: "bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400",
       body: "يُحظر استخدام ذكاء نظامي لأغراض احتيالية أو لانتهاك حقوق الآخرين أو لأي غرض مخالف للأنظمة السعودية. المنصة محمية بأنظمة رصد للكشف عن محاولات إساءة الاستخدام.",
     },
   ],
@@ -118,7 +118,7 @@ const sections = {
     {
       icon: Warning,
       title: "Reliability Limits",
-      color: "bg-amber-50 text-amber-700",
+      color: "bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400",
       body: "While Nezamy AI strives for accuracy, legislation changes constantly. Always verify through official sources (ZATCA, Ministry of Justice, CMA...) or consult a licensed lawyer before making any significant legal decision.",
     },
     {
@@ -136,7 +136,7 @@ const sections = {
     {
       icon: FileText,
       title: "Acceptable Use",
-      color: "bg-purple-50 text-purple-700",
+      color: "bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400",
       body: "It is prohibited to use Nezamy AI for fraudulent purposes, to violate others' rights, or for any purpose contrary to Saudi regulations. The platform is protected by monitoring systems to detect misuse attempts.",
     },
   ],

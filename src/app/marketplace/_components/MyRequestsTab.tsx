@@ -125,7 +125,7 @@ export function MyRequestsTab({
                   </div>
 
                   <Link href={`/marketplace/${offer.requestId}`}
-                    className={`block text-[14px] font-bold leading-snug mb-2 hover:underline ${isDark ? "text-gray-100" : "text-gray-800"}`}>
+                    className={`block text-[14px] font-bold leading-snug mb-2 hover:underline ${isDark ? "text-zinc-100" : "text-gray-800"}`}>
                     {offer.requestTitle}
                   </Link>
 
@@ -274,9 +274,9 @@ export function MyRequestsTab({
           <div className={`flex items-start gap-3 rounded-xl px-4 py-3 border ${
             isDark ? "bg-[#0B3D2E]/10 border-[#0B3D2E]/30" : "bg-emerald-50 border-emerald-100"
           }`}>
-            <Rocket size={18} weight="duotone" className="text-[#0B3D2E] mt-0.5 flex-shrink-0" />
+            <Rocket size={18} weight="duotone" className="text-[#0B3D2E] dark:text-emerald-400 mt-0.5 flex-shrink-0" />
             <p className={`text-xs leading-relaxed ${isDark ? "text-gray-300" : "text-gray-600"}`}>
-              <span className="font-bold text-[#0B3D2E]">الطلبات المفتوحة</span> — تُنشر للمحامين المتخصصين وتَصلك عروضهم مع تقييماتهم. اختر الأنسب لك.
+              <span className="font-bold text-[#0B3D2E] dark:text-emerald-400">الطلبات المفتوحة</span> — تُنشر للمحامين المتخصصين وتَصلك عروضهم مع تقييماتهم. اختر الأنسب لك.
             </p>
           </div>
 
@@ -328,7 +328,7 @@ export function MyRequestsTab({
                     </div>
 
                     <Link href={`/marketplace/${req.id}`}
-                      className={`block text-base font-bold leading-snug mb-2 hover:underline ${isDark ? "text-gray-100" : "text-gray-800"}`}>
+                      className={`block text-base font-bold leading-snug mb-2 hover:underline ${isDark ? "text-zinc-100" : "text-gray-800"}`}>
                       {req.title}
                     </Link>
                     <p className={`text-sm leading-relaxed mb-4 line-clamp-2 ${muted}`}>{req.description}</p>
@@ -399,7 +399,7 @@ export function MyRequestsTab({
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className={`font-bold text-sm ${isDark ? "text-white" : "text-gray-900"}`}>{req.lawyerName}</span>
-                          <SealCheck size={14} weight="fill" className="text-[#0B3D2E]" />
+                          <SealCheck size={14} weight="fill" className="text-[#0B3D2E] dark:text-emerald-400" />
                           <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full ${stat.bg} ${stat.color}`}>
                             {stat.label}
                           </span>
@@ -414,7 +414,7 @@ export function MyRequestsTab({
                       <span className={`text-[11px] ${muted} flex-shrink-0`}>{req.sentAt}</span>
                     </div>
 
-                    <p className={`text-sm font-semibold mb-3 ${isDark ? "text-gray-200" : "text-gray-800"}`}>
+                    <p className={`text-sm font-semibold mb-3 ${isDark ? "text-zinc-200" : "text-gray-800"}`}>
                       {req.requestTitle}
                     </p>
 

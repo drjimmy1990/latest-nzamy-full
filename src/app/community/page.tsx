@@ -583,7 +583,7 @@ export default function CommunityPage() {
                                   : isDark ? "hover:bg-white/10" : "hover:bg-gray-100"
                               }`}
                             >
-                              <ArrowUp size={16} className="text-[#0B3D2E]" />
+                              <ArrowUp size={16} className="text-[#0B3D2E] dark:text-emerald-400" />
                             </button>
                             <span className={`text-sm font-bold font-mono ${isDark ? "text-zinc-200" : "text-gray-700"}`}>{getVoteCount(q)}</span>
                             <button
@@ -714,7 +714,7 @@ export default function CommunityPage() {
                                     {/* Vote */}
                                     <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
                                       <button className={`w-11 h-11 sm:w-6 sm:h-6 rounded-lg flex items-center justify-center transition cursor-pointer ${isDark ? "hover:bg-white/10" : "hover:bg-white/60"}`}>
-                                        <ArrowUp size={13} className="text-[#0B3D2E]" />
+                                        <ArrowUp size={13} className="text-[#0B3D2E] dark:text-emerald-400" />
                                       </button>
                                       <span className={`text-xs font-bold font-mono ${isDark ? "text-gray-300" : "text-gray-600"}`}>{ans.votes}</span>
                                     </div>

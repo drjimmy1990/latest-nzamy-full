@@ -116,11 +116,11 @@ export default function CollectionServicePage() {
               <p className="text-white/60 text-xs mt-2">من إجمالي الملفات المسلّمة في آخر ١٢ شهراً</p>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="p-5 rounded-2xl border border-slate-200 bg-white">
+              <div className="p-5 rounded-2xl border border-slate-200 bg-white dark:bg-dark-card">
                 <p className="text-2xl font-bold text-ink tracking-tight" style={{ fontFamily: 'var(--font-mono)' }}>٢٣ يوماً</p>
                 <p className="text-ink-muted text-xs mt-1">متوسط وقت التسوية الودية</p>
               </div>
-              <div className="p-5 rounded-2xl border border-slate-200 bg-white">
+              <div className="p-5 rounded-2xl border border-slate-200 bg-white dark:bg-dark-card">
                 <p className="text-2xl font-bold text-ink tracking-tight" style={{ fontFamily: 'var(--font-mono)' }}>+١,٢٠٠</p>
                 <p className="text-ink-muted text-xs mt-1">ملف دين تم إغلاقه</p>
               </div>
@@ -139,7 +139,7 @@ export default function CollectionServicePage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
           {approaches.map((a, i) => (
             <FadeUp key={a.step} delay={i * 0.08}>
-              <div className="p-6 rounded-2xl border border-slate-200 bg-white hover:border-royal/25 hover:shadow-[0_8px_32px_-8px_rgba(11,61,46,0.1)] transition-all duration-300 h-full flex flex-col gap-5">
+              <div className="p-6 rounded-2xl border border-slate-200 bg-white dark:bg-dark-card hover:border-royal/25 hover:shadow-[0_8px_32px_-8px_rgba(11,61,46,0.1)] transition-all duration-300 h-full flex flex-col gap-5">
                 <div className="flex items-center justify-between">
                   <div className="w-10 h-10 rounded-xl bg-royal/8 flex items-center justify-center">
                     <a.icon size={20} className="text-royal" />
@@ -166,7 +166,7 @@ export default function CollectionServicePage() {
         <FadeUp delay={0.07}>
           <div className="flex flex-wrap gap-3">
             {types.map((type) => (
-              <span key={type} className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 bg-white rounded-xl text-sm text-ink hover:border-royal/30 hover:bg-royal/3 transition-colors">
+              <span key={type} className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 bg-white dark:bg-dark-card rounded-xl text-sm text-ink hover:border-royal/30 hover:bg-royal/3 transition-colors">
                 <CheckCircle size={14} className="text-royal" weight="fill" />
                 {type}
               </span>

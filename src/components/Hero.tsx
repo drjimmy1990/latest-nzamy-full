@@ -240,7 +240,7 @@ export default function Hero() {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                className={`inline-flex items-center gap-3 rounded-2xl border px-6 py-4 text-sm font-medium shadow-sm transition-all hover:border-royal/20 w-full justify-center sm:w-auto cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold ${isDark ? "border-white/10 bg-white/5 text-gray-200 hover:text-emerald-400" : "border-slate-200 bg-white text-ink-muted hover:text-royal"}`}
+                className={`inline-flex items-center gap-3 rounded-2xl border px-6 py-4 text-sm font-medium shadow-sm transition-all hover:border-royal/20 w-full justify-center sm:w-auto cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold ${isDark ? "border-white/10 bg-white/5 text-zinc-200 hover:text-emerald-400" : "border-slate-200 bg-white text-ink-muted hover:text-royal"}`}
               >
                 <span className="flex h-8 w-8 items-center justify-center rounded-full bg-royal/5 dark:bg-emerald-500/10">
                   <Play size={16} weight="fill" className="text-royal dark:text-emerald-400" />
