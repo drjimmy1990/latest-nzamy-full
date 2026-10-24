@@ -621,7 +621,7 @@ test("٢٤٨: each /pricing audience section carries its own VAT sentence", () =
   // VAT on top (BUSINESS_USER_TYPES), mapped to their tabs as /pricing and
   // Settings → «الاشتراك والباقة» do (src/lib/pricing/audienceForUserType.ts).
   const entries = Object.entries(USER_TYPE_TO_AUDIENCE).map(([u, a]) => [`${u}:${a}`, u, a as string] as const);
-  assert.ok(entries.length >= 8, `found only ${entries.length} user-type tabs — the parser broke`);
+  assert.ok(entries.length >= 8, `USER_TYPE_TO_AUDIENCE maps only ${entries.length} user types — entries were lost`);
   for (const [, userType, audience] of entries) {
     const expected = (BUSINESS_USER_TYPES as readonly string[]).includes(userType) ? VAT_NOTICE.exclusive : VAT_NOTICE.inclusive;
     assert.deepEqual(vatNoticeFor(audience as AudienceTab, false), expected, `${userType} → ${audience}`);

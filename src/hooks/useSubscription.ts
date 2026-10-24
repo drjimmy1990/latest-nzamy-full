@@ -16,29 +16,14 @@
 import { useUser, type UserTier } from "@/hooks/useUser";
 import { useAdminSettings } from "@/hooks/useAdminSettings";
 import { isSupabaseMode } from "@/lib/services/api";
-import { TIER_RANK, FEATURE_GATES, resolveFeatureAccess } from "@/hooks/featureAccess";
+import { TIER_RANK, FEATURE_GATES, TIER_LABELS_AR, resolveFeatureAccess } from "@/hooks/featureAccess";
 
 // ─── Tier → Arabic label ───────────────────────────────────────────────────────
-// The one canonical copy. Previously duplicated as a local literal inside
-// SubscriptionGuard.tsx (still is — that copy is CRITICAL risk to touch, see
-// its own file); every NEW caller should read from here instead of adding a
-// third copy.
-//
-// `max` shows the SAME name as `pro`. The owner (Q163, 2026-10-03): there is
-// no «الماكس» plan. `max` stays a tier KEY — rank 4 in TIER_RANK, existing
-// rows and demo accounts carry it, and entitlement logic is unchanged — it
-// just never reaches a user as a plan name of its own. No FEATURE_GATES entry
-// requires `max`, so «رقِّ إلى الاحترافية» is never shown to someone already
-// holding a tier labelled «الاحترافية».
-export const TIER_LABELS_AR: Record<UserTier, string> = {
-  free:       "المجانية",
-  shield:     "التأمين القانوني",
-  ai:         "ذكاء نظامي",
-  pro:        "الاحترافية",
-  max:        "الاحترافية",
-  corp:       "حوكمة الشركات",
-  enterprise: "الشركات المتكاملة",
-};
+// The one canonical copy lives in ./featureAccess.ts (pure, so `node --test`
+// loads it — src/lib/pricing/currentPlanLabel.ts falls back to it) and is
+// re-exported here, so `import { TIER_LABELS_AR } from "@/hooks/useSubscription"`
+// keeps working.
+export { TIER_LABELS_AR };
 
 /** Arabic label for a tier key that may not be a known `UserTier` (e.g. read
  *  off a route/config value rather than the session). Never prints a raw

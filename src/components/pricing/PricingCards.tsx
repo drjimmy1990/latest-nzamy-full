@@ -12,6 +12,7 @@ import { lawyerServicesTable, LAWYER_ARCHIVE_NOTE } from "@/constants/pricing/pr
 import { useUser } from "@/hooks/useUser";
 import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
 import { buyButtonAction } from "@/lib/payments/checkoutView";
+import { buyClickGate } from "@/lib/pricing/buyClickGate";
 import { requestEntitlement } from "@/lib/services/entitlementService";
 import { referencePriceFor } from "@/lib/pricing/priceDisplay";
 import { planEntitlementRequest } from "@/lib/pricing/planRequest";
@@ -471,7 +472,7 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
   // One VAT sentence per section, under its prices (owner ٢٣٩ / ٢٤٨).
   const vatNotice = vatNoticeFor(audience, libraryMode);
 
-  const { isLoggedIn } = useUser();
+  const { isLoggedIn, loading: sessionLoading } = useUser();
   const payments = usePaymentsStatus();
   const router = useRouter();
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -483,10 +484,16 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
    * /checkout (checkoutHref); otherwise we send an entitlement request and
    * surface an Arabic confirmation, as before the gateway (owner ٢٤٦).
    * Returns true when handled so the caller can suppress default navigation.
+   * While this component's own useUser() is still resolving, a buy click is
+   * ignored (buyClickGate "wait"): acting on it would send a signed-in member
+   * to /register as a guest. Settings → «الاشتراك والباقة» mounts these cards
+   * with a fresh useUser() call, so that window is real there.
    */
   function handleSubscribe(plan: Plan): boolean {
-    if (!isLoggedIn) return false;
     if (!isSubscribeCta(plan.ctaHref)) return false; // e.g. Contact Sales — let it navigate
+    const gate = buyClickGate({ loading: sessionLoading, isLoggedIn });
+    if (gate === "wait") return true;
+    if (gate === "default") return false;
     const action = buyButtonAction(plan.id, billing, payments, isLoggedIn);
     // Sold online but the gateway status has not loaded: ignore the click
     // rather than file a request the payer did not mean.

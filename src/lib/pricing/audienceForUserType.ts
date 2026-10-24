@@ -11,6 +11,7 @@
  */
 import type { AudienceTab } from "../../constants/pricing/pricing.types.ts";
 import type { UserType } from "../../types/database.ts";
+import type { PracticeKind } from "../auth/practiceKind.ts";
 
 /** Account type → its own pricing tab. `admin` has none on purpose. */
 export const USER_TYPE_TO_AUDIENCE: Partial<Record<UserType, AudienceTab>> = {
@@ -51,4 +52,39 @@ export function audienceTabsView(session: {
   if (!session.isLoggedIn) return { kind: "all" };
   const audience = audienceForUserType(session.userType);
   return audience ? { kind: "locked", audience } : { kind: "all" };
+}
+
+/**
+ * Plans shown on top of the account type's own family (owner ruling,
+ * 2026-10-24). An independent consultant is a `lawyer` account with
+ * practice kind 'consultant': it stays on the lawyers family — the catalog
+ * lets every lawyer buy «المحامي المحترف» — and also sees the
+ * «مستشار مستقل» card (`consultant-independent`, sold to lawyers too), which
+ * otherwise lives in the providers family. Library mode lists the library
+ * plans only, so nothing is added there.
+ */
+export function extraPlanIdsFor(
+  userType: UserType | null | undefined,
+  practiceKind: PracticeKind | null | undefined,
+  libraryMode: boolean,
+): readonly string[] {
+  if (libraryMode) return [];
+  return userType === "lawyer" && practiceKind === "consultant" ? ["consultant-independent"] : [];
+}
+
+/**
+ * The family's own list plus the `extraIds` plans taken from `source`, in
+ * source order. A plan already in the list, or missing from `source`, is not
+ * added twice or invented (the cards are keyed by id). No extras: the same
+ * list object.
+ */
+export function withExtraPlans<T extends { id: string }>(
+  list: T[],
+  extraIds: readonly string[],
+  source: readonly T[],
+): T[] {
+  if (extraIds.length === 0) return list;
+  const have = new Set(list.map((p) => p.id));
+  const extras = source.filter((p) => extraIds.includes(p.id) && !have.has(p.id));
+  return extras.length === 0 ? list : [...list, ...extras];
 }

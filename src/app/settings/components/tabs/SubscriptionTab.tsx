@@ -5,11 +5,11 @@ import { BookOpen, CrownSimple, Receipt } from "@phosphor-icons/react";
 import Link from "next/link";
 import { SectionTitle } from "./_shared";
 import { useUser, type UserTier } from "@/hooks/useUser";
-import { TIER_LABELS_AR } from "@/hooks/useSubscription";
 import { PricingCards } from "@/components/pricing/PricingCards";
 import { audiencesWithBillingToggle, getPlanList } from "@/constants/pricingData";
 import type { AudienceTab, Billing } from "@/constants/pricingData";
-import { audienceForUserType } from "@/lib/pricing/audienceForUserType";
+import { audienceForUserType, extraPlanIdsFor, withExtraPlans } from "@/lib/pricing/audienceForUserType";
+import { currentPlanLabelAr } from "@/lib/pricing/currentPlanLabel";
 
 // ── Tab: Subscription ────────────────────────────────────────────────
 // This tab used to build a whole billing history out of literals: a plan card
@@ -31,6 +31,10 @@ import { audienceForUserType } from "@/lib/pricing/audienceForUserType";
 // under everywhere else in the product. The tier is read from the SAME
 // useUser() call as `loading` (each useUser() call holds its own state), so the
 // panel never paints «لا باقة فعّالة» from a session that has not resolved.
+// It is named after the plan the account's family actually sells for that
+// tier (currentPlanLabelAr: the catalog's labelAr — «مكتب المحاماة»,
+// «الباقة الوقائية», «المستشار القانوني المستقل»…), and after the generic
+// tier name only when no sold plan matches.
 //
 // What is still NOT shown, for anyone: a renewal date, a price paid, or an
 // invoice — `subscriptions.current_period_end` exists server-side but has no
@@ -42,11 +46,13 @@ import { audienceForUserType } from "@/lib/pricing/audienceForUserType";
 // — through the same PricingCards, so a buy button behaves exactly as on
 // /pricing: online checkout when the gateway allows it, otherwise the review
 // request (owner ٢٤٦). A type with no family of its own (admin) gets a link to
-// /pricing instead.
+// /pricing instead. An independent consultant (a lawyer account with
+// practice kind 'consultant') also gets the «مستشار مستقل» card, as on
+// /pricing (extraPlanIdsFor).
 const PLANS_ANCHOR = "account-plans";
 
 export function SubscriptionTab() {
-  const { userType, loading, tier } = useUser();
+  const { userType, practiceKind, loading, tier } = useUser();
   const audience = loading ? null : audienceForUserType(userType);
 
   return (
@@ -56,6 +62,7 @@ export function SubscriptionTab() {
         <CurrentPlanPanel
           loading={loading}
           tier={tier ?? "free"}
+          planLabel={currentPlanLabelAr(userType, practiceKind, tier ?? "free")}
           plansHref={audience ? `#${PLANS_ANCHOR}` : "/pricing"}
         />
       </div>
@@ -65,7 +72,7 @@ export function SubscriptionTab() {
         {loading ? (
           <PanelSkeleton />
         ) : audience ? (
-          <AccountPlans audience={audience} />
+          <AccountPlans audience={audience} extraPlanIds={extraPlanIdsFor(userType, practiceKind, false)} />
         ) : (
           <Link
             href="/pricing"
@@ -96,7 +103,7 @@ function PanelSkeleton() {
 }
 
 // ── The plans of the account's own family, as on /pricing ──
-function AccountPlans({ audience }: { audience: AudienceTab }) {
+function AccountPlans({ audience, extraPlanIds }: { audience: AudienceTab; extraPlanIds: readonly string[] }) {
   const [billing, setBilling] = useState<Billing>("monthly");
   const [libraryModeState, setLibraryMode] = useState(false);
 
@@ -106,7 +113,12 @@ function AccountPlans({ audience }: { audience: AudienceTab }) {
   // and stay on "monthly", which is what /pricing hands their buy buttons.
   const showBillingToggle = audiencesWithBillingToggle.includes(audience);
   const effectiveBilling: Billing = showBillingToggle ? billing : "monthly";
-  const planList = getPlanList(audience, true, { libraryMode });
+  // Library mode lists the library plans only (extraPlanIdsFor's rule).
+  const planList = withExtraPlans(
+    getPlanList(audience, true, { libraryMode }),
+    libraryMode ? [] : extraPlanIds,
+    getPlanList("providers", true),
+  );
 
   return (
     <div>
@@ -187,8 +199,11 @@ function PillGroup({
   );
 }
 
-// ── Every account type: the real tier (useSubscription's field) ──
-function CurrentPlanPanel({ loading, tier, plansHref }: { loading: boolean; tier: UserTier; plansHref: string }) {
+// ── Every account type: the real tier (useSubscription's field), named
+//    after the plan its family sells (currentPlanLabelAr) ──
+function CurrentPlanPanel({
+  loading, tier, planLabel, plansHref,
+}: { loading: boolean; tier: UserTier; planLabel: string; plansHref: string }) {
   // Still resolving the session — say nothing about the plan yet. Same rule
   // SidebarComponents.tsx's `gateReady` exists to enforce: `meta.tier` reads
   // as the guest/free tier before the session loads, so painting "no plan"
@@ -224,7 +239,7 @@ function CurrentPlanPanel({ loading, tier, plansHref }: { loading: boolean; tier
             <CrownSimple size={22} weight="fill" />
           </div>
           <div>
-            <p className="text-sm font-bold text-zinc-800 dark:text-zinc-100">{TIER_LABELS_AR[tier]}</p>
+            <p className="text-sm font-bold text-zinc-800 dark:text-zinc-100">{planLabel}</p>
             <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">باقتك الحالية</p>
           </div>
         </div>

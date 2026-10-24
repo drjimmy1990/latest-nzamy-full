@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { USER_TYPE_TO_AUDIENCE, audienceForUserType, audienceTabsView } from "./audienceForUserType.ts";
+import { USER_TYPE_TO_AUDIENCE, audienceForUserType, audienceTabsView, extraPlanIdsFor, withExtraPlans } from "./audienceForUserType.ts";
 
 const MAPPED = [
   ["lawyer", "lawyers"],
@@ -45,4 +45,31 @@ test("a member is locked to their own family", () => {
 test("a signed-in type with no family (admin, or no profile yet) keeps the full bar", () => {
   assert.deepEqual(audienceTabsView({ loading: false, isLoggedIn: true, userType: "admin" }), { kind: "all" });
   assert.deepEqual(audienceTabsView({ loading: false, isLoggedIn: true, userType: null }), { kind: "all" });
+});
+
+test("an independent consultant also sees the consultant card; an advocate the lawyers family only", () => {
+  assert.deepEqual(extraPlanIdsFor("lawyer", "consultant", false), ["consultant-independent"]);
+  assert.deepEqual(extraPlanIdsFor("lawyer", "advocate", false), []);
+  // Library mode lists the library plans only.
+  assert.deepEqual(extraPlanIdsFor("lawyer", "consultant", true), []);
+  // A provider already has the card in its own family; other types never get it.
+  for (const userType of ["provider", "firm", "individual", "corporate", "admin", null, undefined] as const) {
+    assert.deepEqual(extraPlanIdsFor(userType, "consultant", false), [], String(userType));
+  }
+});
+
+test("withExtraPlans appends the extra plans once, in source order, keeping the family's own", () => {
+  const family = [{ id: "lawyer-pro" }, { id: "topup-100" }];
+  const source = [{ id: "provider-free" }, { id: "consultant-independent" }];
+  assert.deepEqual(
+    withExtraPlans(family, ["consultant-independent"], source).map((p) => p.id),
+    ["lawyer-pro", "topup-100", "consultant-independent"],
+  );
+  assert.equal(withExtraPlans(family, [], source), family, "no extras: the same list");
+  // Already in the list, or missing from the source: nothing added.
+  assert.deepEqual(
+    withExtraPlans([...family, { id: "consultant-independent" }], ["consultant-independent"], source).map((p) => p.id),
+    ["lawyer-pro", "topup-100", "consultant-independent"],
+  );
+  assert.deepEqual(withExtraPlans(family, ["nope"], source).map((p) => p.id), ["lawyer-pro", "topup-100"]);
 });

@@ -91,7 +91,7 @@ export function PricingHero({
             {audienceTabsList.map(tab => (
               <button key={tab.id} onClick={() => setAudience(tab.id)}
                 className={`rounded-xl px-5 py-2.5 text-sm font-medium transition-all ${
-                  audience === tab.id ? "bg-royal text-white shadow-sm" : "text-ink-muted hover:text-ink dark:text-gray-400 dark:hover:text-gray-200"
+                  audience === tab.id ? "bg-royal text-white shadow-sm" : "text-ink-muted hover:text-ink dark:text-gray-400 dark:hover:text-white"
                 }`}
               >
                 {isAr ? tab.labelAr : tab.labelEn}
@@ -122,7 +122,7 @@ export function PricingHero({
             {(["monthly", "yearly"] as const).map(b => (
               <button key={b} onClick={() => setBilling(b)}
                 className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-medium transition-all ${
-                  billing === b ? "bg-royal text-white shadow-sm" : "text-ink-muted hover:text-ink dark:text-gray-400 dark:hover:text-gray-200"
+                  billing === b ? "bg-royal text-white shadow-sm" : "text-ink-muted hover:text-ink dark:text-gray-400 dark:hover:text-white"
                 }`}
               >
                 {b === "monthly" ? (isAr ? "شهري" : "Monthly") : (isAr ? "سنوي" : "Yearly")}
@@ -213,7 +213,7 @@ export function PricingHero({
                 className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-medium transition-all ${
                   !libraryMode
                     ? "bg-royal text-white shadow-sm"
-                    : "text-ink-muted hover:text-ink dark:text-gray-400 dark:hover:text-gray-200"
+                    : "text-ink-muted hover:text-ink dark:text-gray-400 dark:hover:text-white"
                 }`}
               >
                 {isAr ? "🚀 كافة الخدمات" : "🚀 All Services"}
@@ -225,7 +225,7 @@ export function PricingHero({
                 className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-medium transition-all ${
                   libraryMode
                     ? "bg-royal text-white shadow-sm"
-                    : "text-ink-muted hover:text-ink dark:text-gray-400 dark:hover:text-gray-200"
+                    : "text-ink-muted hover:text-ink dark:text-gray-400 dark:hover:text-white"
                 }`}
               >
                 <BookOpen size={15} weight={libraryMode ? "fill" : "regular"} />

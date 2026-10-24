@@ -16,7 +16,7 @@ import { PricingTestimonials } from "@/components/pricing/PricingTestimonials";
 import { PricingFAQ }          from "@/components/pricing/PricingFAQ";
 import { PricingCTA }          from "@/components/pricing/PricingCTA";
 import { GovernmentRolesInfo } from "@/components/pricing/GovernmentRolesInfo";
-import { audienceTabsView } from "@/lib/pricing/audienceForUserType";
+import { audienceTabsView, extraPlanIdsFor, withExtraPlans } from "@/lib/pricing/audienceForUserType";
 
 // Which package families the audience bar offers (owner, 2026-10-24): a
 // member sees only their own account type's family — the bar is locked to it
@@ -27,7 +27,7 @@ import { audienceTabsView } from "@/lib/pricing/audienceForUserType";
 export default function PricingPage() {
   const { lang } = useTheme();
   const isAr = lang === "ar";
-  const { userType, isLoggedIn, loading: userLoading } = useUser();
+  const { userType, practiceKind, isLoggedIn, loading: userLoading } = useUser();
 
   const [billing,  setBilling]  = useState<Billing>("monthly");
   const [companySize,  setCompanySize]  = useState<CompanySize>("small");
@@ -54,6 +54,11 @@ export default function PricingPage() {
   }, []);
 
   const planList       = getPlanList(audience, isAr, { hasLegalDept, companySize, libraryMode });
+  // A locked independent consultant also gets the «مستشار مستقل» card on the
+  // lawyers family (extraPlanIdsFor). Cards only: the comparison table has no
+  // column for it.
+  const extraPlanIds   = tabsView.kind === "locked" ? extraPlanIdsFor(userType, practiceKind, libraryMode) : [];
+  const cardPlanList   = withExtraPlans(planList, extraPlanIds, getPlanList("providers", isAr));
   const comparisonList = getComparisonList(audience, isAr);
   const faqList        = isAr ? faqs.ar : faqs.en;
 
@@ -83,7 +88,7 @@ export default function PricingPage() {
 
         {/* Plan cards + enterprise + SME + quarterly */}
         <PricingCards
-          planList={planList} billing={billing}
+          planList={cardPlanList} billing={billing}
           isAr={isAr} audience={audience}
           libraryMode={libraryMode}
         />
