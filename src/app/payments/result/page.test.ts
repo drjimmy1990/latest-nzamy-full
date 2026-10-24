@@ -97,7 +97,9 @@ test("the auto-refresh renders only for a view that offers the refresh link, wit
 
 test("ResultAutoRefresh: a chained 3 s timeout, the next one only after the previous refresh finished", () => {
   assert.match(poller, /^"use client";/);
-  assert.match(poller, /import \{ AUTO_REFRESH_INTERVAL_MS, autoRefreshDecision \} from "@\/lib\/payments\/resultView"/);
+  assert.match(poller, /import \{ AUTO_REFRESH_INTERVAL_MS, autoRefreshDecision \} from "@\/lib\/payments\/autoRefresh"/);
+  // A client component: never import resultView/fulfillDecision (node:crypto) into the browser bundle.
+  assert.doesNotMatch(poller, /payments\/(resultView|fulfillDecision|fulfillCore|fulfillOrder)/);
   assert.doesNotMatch(poller, /setInterval\(/);
   assert.match(poller, /const \[refreshing, startRefresh\] = useTransition\(\);/);
   // nothing is scheduled while a refresh is still running
