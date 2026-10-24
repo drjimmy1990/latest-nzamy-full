@@ -269,9 +269,17 @@ export default function MoyasarCheckout({ itemId, billing }: { itemId: string; b
         </p>
       ) : null}
 
-      {/* The Moyasar form renders into this element; it keeps its own light
-          styling, so it sits on a white card in both themes. */}
-      <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 dark:ring-zinc-700">
+      {/* The Moyasar form renders into this element and keeps its own light
+          styling (black field text), so it sits on an always-light surface in
+          both themes: white, dark text, color-scheme light, and the scoped
+          .nz-moyasar-surface rules in globals.css that undo the site-wide
+          dark input colours inside it. Only this area — the summary above
+          follows the theme. */}
+      <div
+        data-light-surface
+        className="nz-moyasar-surface rounded-2xl bg-white p-4 text-zinc-900 shadow-sm ring-1 ring-zinc-200 [color-scheme:light] dark:ring-zinc-700"
+        style={{ colorScheme: "light" }}
+      >
         <div className="mysr-form" />
       </div>
     </div>

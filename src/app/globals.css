@@ -275,6 +275,36 @@ html[dir="rtl"] .text-left {
   color: #6b7280 !important;
 }
 
+/* Moyasar's card form (MoyasarCheckout) is an always-light surface in both
+   themes. Its fields carry Moyasar's own `div#mysr .text-black` (black text,
+   !important), so the dark input rule above left black text on #1c2128 —
+   unreadable. Inside the surface the fields go back to white with dark text;
+   (0,2,1)/(0,3,1) outrank `.dark input` / `.dark input:focus`. Labels inherit
+   the surface's dark text. */
+.nz-moyasar-surface {
+  color-scheme: light;
+  background-color: #ffffff;
+  color: #18181b;
+}
+.dark .nz-moyasar-surface input,
+.dark .nz-moyasar-surface textarea,
+.dark .nz-moyasar-surface select {
+  background-color: #ffffff !important;
+  color: #1a1a1a !important;
+  border-color: #e5e7eb !important;
+}
+.dark .nz-moyasar-surface input::placeholder,
+.dark .nz-moyasar-surface textarea::placeholder {
+  color: #9ca3af !important;
+}
+.dark .nz-moyasar-surface input:focus,
+.dark .nz-moyasar-surface textarea:focus {
+  border-color: #e5e7eb !important;
+}
+.dark .nz-moyasar-surface label {
+  color: #1a1a1a;
+}
+
 /* ── Reliable dark-mode card/surface overrides ────────────────────────────
    Tailwind v4 pre-computes opacity-modified color values (e.g. bg-white/80)
    at build time using oklab(), so CSS variable overrides alone don't cover

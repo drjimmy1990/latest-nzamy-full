@@ -20,7 +20,6 @@ import {
   WarningCircle,
   X,
 } from "@phosphor-icons/react";
-import { useTheme } from "@/components/ThemeProvider";
 import { isBillingCompanyComplete } from "@/lib/payments/moyasarConfig";
 import type { GatewayDiagnostic, KeyMode } from "@/lib/payments/gatewayDiagnostic";
 
@@ -138,7 +137,14 @@ const DEFAULT_TIERS: TierLimit[] = [
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AdminSettingsPage() {
-  const { isDark } = useTheme();
+  // The admin console is dark-only: its layout (dashboard/admin/layout.tsx)
+  // paints bg-[#0a0a0f] whatever the site theme is. This page used to follow
+  // the site theme (useTheme().isDark), so with the light theme it painted
+  // white cards, white inputs and a text-gray-900 title on the black console
+  // (tester, 2026-10-24). It now always renders its dark branch, like the other
+  // console pages; the root also carries `dark` so dark: utilities, the
+  // globals.css dark input rules and native controls match.
+  const isDark = true;
 
   // ── State ──
   const [loading, setLoading] = useState(true);
@@ -383,7 +389,7 @@ export default function AdminSettingsPage() {
   // ── Loading Skeleton ──
   if (loading) {
     return (
-      <div className="p-6 md:p-10 space-y-6 max-w-[1200px] mx-auto pb-32" dir="rtl">
+      <div className="dark p-6 md:p-10 space-y-6 max-w-[1200px] mx-auto pb-32 text-zinc-100 [color-scheme:dark]" dir="rtl">
         <div className="flex items-center gap-3 mb-6">
           <div className={`p-2 rounded-xl ${isDark ? "bg-[#0B3D2E]/25" : "bg-[#0B3D2E]/10"}`}>
             <SpinnerGap size={24} className="animate-spin text-[#C8A762]" />
@@ -404,7 +410,7 @@ export default function AdminSettingsPage() {
   }
 
   return (
-    <div className="p-6 md:p-10 space-y-6 max-w-[1200px] mx-auto pb-32" dir="rtl">
+    <div className="dark p-6 md:p-10 space-y-6 max-w-[1200px] mx-auto pb-32 text-zinc-100 [color-scheme:dark]" dir="rtl">
       {/* ── Toast ── */}
       <AnimatePresence>
         {toast && (
