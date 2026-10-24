@@ -22,6 +22,7 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { isBillingCompanyComplete } from "@/lib/payments/moyasarConfig";
+import type { GatewayDiagnostic, KeyMode } from "@/lib/payments/gatewayDiagnostic";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -41,6 +42,40 @@ interface SettingsData {
   library_status?: { status: "open" | "closed"; message?: string | null };
   founder_campaign?: { starts_on?: unknown; ends_on?: unknown; library_days?: unknown };
   billing_company?: { legal_name_ar?: unknown; cr_number?: unknown; vat_number?: unknown; address_ar?: unknown };
+}
+
+const KEY_MODE_AR: Record<KeyMode, string> = {
+  test: "تجريبي",
+  live: "مباشر",
+  missing: "غير مضبوط",
+  other: "صيغة غير معروفة",
+};
+
+const isKeyMode = (v: unknown): v is KeyMode => v === "test" || v === "live" || v === "missing" || v === "other";
+
+/** GET /api/v1/admin/payments/gateway-status, or null for any other shape. */
+function asGatewayDiagnostic(v: unknown): GatewayDiagnostic | null {
+  if (typeof v !== "object" || v === null) return null;
+  const d = v as Partial<GatewayDiagnostic>;
+  const e = d.effective;
+  const k = d.keys;
+  if (!e || typeof e.enabled !== "boolean") return null;
+  if (e.enabled && e.mode !== "test" && e.mode !== "live") return null;
+  if (!e.enabled && (typeof e.reasonAr !== "string" || !e.reasonAr)) return null;
+  if (!k || !isKeyMode(k.secretKeyMode) || !isKeyMode(k.publishableKeyMode) || typeof k.webhookSecretSet !== "boolean") {
+    return null;
+  }
+  return d as GatewayDiagnostic;
+}
+
+/** The diagnostic, or null when the endpoint fails — never a guessed state. */
+async function fetchGatewayDiagnostic(): Promise<GatewayDiagnostic | null> {
+  try {
+    const res = await fetch("/api/v1/admin/payments/gateway-status", { cache: "no-store" });
+    return res.ok ? asGatewayDiagnostic(await res.json()) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The providers the settings route accepts (moyasarConfig.paymentsGatewaySettingIssue). */
@@ -122,6 +157,9 @@ export default function AdminSettingsPage() {
   // Payment gateway
   const [paymentStatus, setPaymentStatus] = useState<"disabled" | "test" | "live">("disabled");
   const [paymentProvider, setPaymentProvider] = useState<PaymentProvider>("moyasar");
+  // What the server really does with the saved gateway and its keys; null
+  // until loaded or when the diagnostic fails (then nothing is shown).
+  const [gatewayDiag, setGatewayDiag] = useState<GatewayDiagnostic | null>(null);
 
   // The receipt's issuer (billing_company); live needs all four filled.
   const [billingCompany, setBillingCompany] = useState<BillingCompanyForm>(EMPTY_BILLING_COMPANY);
@@ -150,6 +188,15 @@ export default function AdminSettingsPage() {
   const showToast = useCallback((message: string, type: "success" | "error" | "info" = "success") => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
+  }, []);
+
+  // ── Gateway diagnostic ──
+  const loadGatewayStatus = useCallback(async () => {
+    setGatewayDiag(await fetchGatewayDiagnostic());
+  }, []);
+
+  useEffect(() => {
+    void fetchGatewayDiagnostic().then(setGatewayDiag);
   }, []);
 
   // ── Load Settings ──
@@ -217,7 +264,7 @@ export default function AdminSettingsPage() {
   }, []);
 
   // ── Save Helpers ──
-  async function saveSettingKey(key: string, value: unknown, toastMessage: string) {
+  async function saveSettingKey(key: string, value: unknown, toastMessage: string): Promise<boolean> {
     setSaving(key);
     try {
       const res = await fetch("/api/v1/admin/settings", {
@@ -231,14 +278,16 @@ export default function AdminSettingsPage() {
         const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
         if (typeof body?.error === "string" && body.error) {
           showToast(body.error, "error");
-          return;
+          return false;
         }
         throw new Error(`HTTP ${res.status}`);
       }
       showToast(toastMessage, "success");
+      return true;
     } catch (err) {
       console.error("Failed to save setting:", err);
       showToast("فشل في حفظ الإعدادات. حاول مرة أخرى.", "error");
+      return false;
     } finally {
       setSaving(null);
     }
@@ -256,18 +305,21 @@ export default function AdminSettingsPage() {
     saveSettingKey("tier_limits", tierLimits, "تم حفظ حدود الاستخدام لجميع المستويات.");
   }
 
-  function savePaymentGateway() {
+  async function savePaymentGateway() {
     // "disabled" is stored with moyasar or null; a disabled stub is just null.
     const provider = paymentStatus === "disabled" && paymentProvider === "stub" ? null : paymentProvider;
-    saveSettingKey(
+    await saveSettingKey(
       "payments_gateway",
       { status: paymentStatus, provider },
       "تم حفظ إعدادات بوابة الدفع.",
     );
+    await loadGatewayStatus();
   }
 
-  function saveBillingCompany() {
-    saveSettingKey("billing_company", billingCompanyValue(billingCompany), "تم حفظ بيانات المنشأة.");
+  async function saveBillingCompany() {
+    // Live mode depends on billing_company, so the effective state can change.
+    await saveSettingKey("billing_company", billingCompanyValue(billingCompany), "تم حفظ بيانات المنشأة.");
+    await loadGatewayStatus();
   }
 
   const billingCompanyComplete = isBillingCompanyComplete(billingCompanyValue(billingCompany));
@@ -786,6 +838,24 @@ export default function AdminSettingsPage() {
                 );
               })}
             </div>
+            {gatewayDiag ? (
+              <div className="mt-3 space-y-1">
+                <p
+                  className={`text-xs font-bold ${
+                    gatewayDiag.effective.enabled
+                      ? isDark ? "text-emerald-400" : "text-emerald-600"
+                      : isDark ? "text-amber-400" : "text-amber-600"
+                  }`}
+                >
+                  {gatewayDiag.effective.enabled
+                    ? `الحالة الفعلية: مفعّلة (${gatewayDiag.effective.mode === "live" ? "مباشر" : "تجريبي"})`
+                    : `الحالة الفعلية: معطّلة — ${gatewayDiag.effective.reasonAr}`}
+                </p>
+                <p className={`text-[11px] ${muted}`}>
+                  {`المفتاح السري: ${KEY_MODE_AR[gatewayDiag.keys.secretKeyMode]} · المفتاح العام: ${KEY_MODE_AR[gatewayDiag.keys.publishableKeyMode]} · سر Webhook: ${gatewayDiag.keys.webhookSecretSet ? "مضبوط" : "غير مضبوط"}`}
+                </p>
+              </div>
+            ) : null}
           </div>
 
           {/* Provider */}

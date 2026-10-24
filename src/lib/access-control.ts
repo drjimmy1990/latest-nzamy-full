@@ -21,6 +21,7 @@ import {
   type MoyasarConfigResult,
   type MoyasarEnv,
 } from "@/lib/payments/moyasarConfig";
+import { buildGatewayDiagnostic, type GatewayDiagnostic } from "@/lib/payments/gatewayDiagnostic";
 import { isAuthUnavailable } from "@/lib/auth/apiAuth";
 import { AUTH_UNAVAILABLE_AR } from "@/lib/auth/resolveAuthOutcome";
 import { effectiveTier, type ActivePlanRow } from "@/lib/entitlementGrantRules";
@@ -567,6 +568,30 @@ export async function getPaymentGatewayStatus(): Promise<PaymentGatewayState> {
 export async function getMoyasarConfig(): Promise<MoyasarConfigResult> {
   const { gateway, billingCompanyComplete } = await readPaymentSettings();
   return resolveMoyasarConfig(gateway, moyasarEnv(), billingCompanyComplete);
+}
+
+/**
+ * Server-only, for the admin settings page: the saved gateway, whether Moyasar
+ * is really on and why not (Arabic), and each key's mode label — never a key.
+ * Same read and env as getMoyasarConfig, but a read error is null (the route
+ * answers 503) instead of a "disabled" that would look like a real verdict.
+ */
+export async function getPaymentGatewayDiagnostic(): Promise<GatewayDiagnostic | null> {
+  const adminClient = await createServiceClient();
+  const { data, error } = await adminClient
+    .from("platform_settings")
+    .select("key, value")
+    .in("key", ["payments_gateway", "billing_company"]);
+  if (error) {
+    console.error("[payments_gateway] diagnostic read failed", error.message);
+    return null;
+  }
+  const byKey = new Map((data ?? []).map((row) => [row.key as string, row.value as unknown]));
+  return buildGatewayDiagnostic(
+    byKey.get("payments_gateway") ?? null,
+    moyasarEnv(),
+    isBillingCompanyComplete(byKey.get("billing_company")),
+  );
 }
 
 // ─── Legal library open/close switch ──────────────────────────────────────────
