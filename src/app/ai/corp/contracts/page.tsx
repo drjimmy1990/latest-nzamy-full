@@ -105,7 +105,7 @@ export default function CorpContractDrafterPage() {
           </p>
         </div>
         <div className={`flex-shrink-0 h-12 w-12 rounded-2xl flex items-center justify-center ${isDark ? 'bg-emerald-900/30' : 'bg-emerald-50'}`}>
-          <FileText size={22} weight="duotone" className="text-[#0B3D2E]" />
+          <FileText size={22} weight="duotone" className="text-[#0B3D2E] dark:text-emerald-400" />
         </div>
       </div>
 
@@ -116,7 +116,7 @@ export default function CorpContractDrafterPage() {
             onClick={() => { setInput(t.label); setType(t.label); }}
             initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
             className={`${card} p-3.5 text-start hover:border-[#0B3D2E]/30 transition-colors ${type === t.label ? 'border-[#0B3D2E]/40' : ''}`}>
-            <t.icon size={18} className="text-[#0B3D2E] mb-2" weight="duotone" />
+            <t.icon size={18} className="text-[#0B3D2E] dark:text-emerald-400 mb-2" weight="duotone" />
             <p className={`text-[12px] font-semibold mb-0.5 ${isDark ? 'text-zinc-200' : 'text-zinc-800'}`}>{t.label}</p>
             <p className={`text-[10px] ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>{t.desc}</p>
           </motion.button>
@@ -153,7 +153,7 @@ export default function CorpContractDrafterPage() {
             {EXAMPLE_PROMPTS.slice(0, 2).map((q, i) => (
               <button key={i} onClick={() => setInput(q)}
                 className={`text-[10px] rounded-xl px-2.5 py-1 border transition-colors ${isDark ? 'border-white/[0.07] bg-white/[0.04] text-zinc-500 hover:text-zinc-300' : 'border-slate-200 bg-white text-zinc-400 hover:text-zinc-600'}`}>
-                <Lightning size={8} className="inline me-1 text-[#0B3D2E]" />
+                <Lightning size={8} className="inline me-1 text-[#0B3D2E] dark:text-emerald-400" />
                 {q}
               </button>
             ))}
@@ -172,7 +172,7 @@ export default function CorpContractDrafterPage() {
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
           className={`${card} p-5 flex items-center gap-3`}>
           <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}>
-            <Robot size={20} weight="duotone" className="text-[#0B3D2E]" />
+            <Robot size={20} weight="duotone" className="text-[#0B3D2E] dark:text-emerald-400" />
           </motion.div>
           <div>
             <p className={`text-[14px] font-semibold ${isDark ? 'text-zinc-300' : 'text-zinc-700'}`}>
@@ -192,7 +192,7 @@ export default function CorpContractDrafterPage() {
           className={`${card} overflow-hidden`}>
           <div className={`flex items-center justify-between px-5 py-3 border-b ${isDark ? 'border-white/[0.06]' : 'border-slate-100'}`}>
             <div className="flex items-center gap-2">
-              <FileText size={14} className="text-[#0B3D2E]" />
+              <FileText size={14} className="text-[#0B3D2E] dark:text-emerald-400" />
               <span className={`text-[12px] font-semibold ${isDark ? 'text-zinc-300' : 'text-zinc-700'}`}>
                 مسودة العقد
               </span>

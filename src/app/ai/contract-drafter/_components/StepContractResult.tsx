@@ -50,7 +50,7 @@ export default function StepContractResult({
           className="w-20 h-20 rounded-full bg-[#0B3D2E]/10 border border-[#0B3D2E]/20 flex items-center justify-center mx-auto mb-5 relative"
         >
           <div className="absolute inset-0 bg-[#0B3D2E]/20 blur-xl rounded-full" />
-          <FileText size={40} weight="fill" className="text-[#0B3D2E] relative z-10" />
+          <FileText size={40} weight="fill" className="text-[#0B3D2E] dark:text-emerald-400 relative z-10" />
         </motion.div>
         <h2 className={`text-3xl font-black mb-3 tracking-tight ${isDark ? "text-white" : "text-zinc-900"}`} style={{ fontFamily: 'var(--font-brand)' }}>
           {isRTL ? "مسوّدة عقدك جاهزة ✓" : "Your contract draft is ready ✓"}
@@ -119,7 +119,7 @@ export default function StepContractResult({
           <motion.div key="review-tab" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }}>
             <div className={`rounded-[2rem] border p-10 flex flex-col items-center text-center gap-5 ${isDark ? "border-white/10 bg-zinc-900/50 backdrop-blur-xl" : "border-zinc-200 bg-white shadow-lg"}`}>
               <div className={`w-16 h-16 rounded-full flex items-center justify-center ${isDark ? "bg-[#0B3D2E]/20 border border-[#0B3D2E]/30" : "bg-[#0B3D2E]/10 border border-[#0B3D2E]/20"}`}>
-                <Brain size={30} className="text-[#0B3D2E]" weight="duotone" />
+                <Brain size={30} className="text-[#0B3D2E] dark:text-emerald-400" weight="duotone" />
               </div>
               <div>
                 <p className={`text-[16px] font-bold mb-2 ${isDark ? "text-white" : "text-zinc-900"}`}>

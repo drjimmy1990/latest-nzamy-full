@@ -17,7 +17,7 @@ export default function DetentionRecordsPage() {
   const bg = isDark ? "bg-[#0c0f12]" : "bg-gray-50";
   const card = `rounded-2xl border ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`;
   const muted = isDark ? "text-gray-400" : "text-gray-500";
-  const inp = `w-full rounded-xl border px-4 py-3 text-sm outline-none transition ${isDark ? "bg-[#0c0f12] border-[#2d3748] text-gray-200 placeholder:text-gray-600 focus:border-indigo-500" : "bg-white border-gray-200 text-gray-800 placeholder:text-gray-400 focus:border-indigo-500"}`;
+  const inp = `w-full rounded-xl border px-4 py-3 text-sm outline-none transition ${isDark ? "bg-[#0c0f12] border-[#2d3748] text-zinc-200 placeholder:text-gray-600 focus:border-indigo-500" : "bg-white border-gray-200 text-gray-800 placeholder:text-gray-400 focus:border-indigo-500"}`;
   const isValid = form.name.length > 2 && form.reason.length > 5;
   const RECORD = `محضر ضبط وإيقاف\nرقم المحضر: POL-${Date.now().toString().slice(-6)}\n\nتاريخ الضبط: ${new Date().toLocaleDateString("ar-SA")}\nمكان الضبط: ${form.location || "..."}\nوقت الضبط: ${form.time || "..."}\n\nبيانات الموقوف:\nالاسم: ${form.name}\nرقم الهوية: ${form.id || "..."}\n\nسبب الضبط: ${form.reason}\n\nإجراءات التسليم:\nتم إبلاغ النيابة العامة في: ...\nتم إبلاغ ذوي الموقوف في: ...\n\nضابط الضبط: _______________ الرتبة: _______________`;
   return (

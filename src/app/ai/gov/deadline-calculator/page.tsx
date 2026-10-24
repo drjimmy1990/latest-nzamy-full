@@ -107,7 +107,7 @@ export default function DeadlineCalculatorPage() {
   const bg = isDark ? "bg-[#0c0f12]" : "bg-gray-50";
   const card = `rounded-2xl border ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`;
   const muted = isDark ? "text-gray-400" : "text-gray-500";
-  const inp = `w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition ${isDark ? "bg-[#0c0f12] border-[#2d3748] text-gray-200 focus:border-indigo-500" : "bg-white border-gray-200 text-gray-800 focus:border-indigo-500"}`;
+  const inp = `w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition ${isDark ? "bg-[#0c0f12] border-[#2d3748] text-zinc-200 focus:border-indigo-500" : "bg-white border-gray-200 text-gray-800 focus:border-indigo-500"}`;
 
   const applyPreset = (rule: DeadlineRule) => {
     setForm((f) => ({
@@ -195,7 +195,7 @@ export default function DeadlineCalculatorPage() {
                   onClick={() => applyPreset(r)}
                   className={`text-start text-xs px-3 py-2.5 rounded-xl border transition ${form.ruleId === r.id ? (isDark ? "border-amber-500/50 bg-amber-500/10" : "border-amber-300 bg-amber-50") : (isDark ? "border-[#2d3748] bg-white/2 hover:bg-white/5" : "border-gray-100 hover:bg-gray-50")}`}
                 >
-                  <span className={`block font-bold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{r.titleAr}</span>
+                  <span className={`block font-bold ${isDark ? "text-zinc-200" : "text-gray-800"}`}>{r.titleAr}</span>
                   <span className={`block mt-0.5 ${muted}`}>{r.sourceAr}</span>
                   {!r.verifiedByOwner && (
                     <span className={`inline-flex items-center gap-1 mt-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isDark ? "bg-amber-500/15 text-amber-400" : "bg-amber-100 text-amber-700"}`}>

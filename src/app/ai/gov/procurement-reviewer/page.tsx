@@ -17,7 +17,7 @@ export default function ProcurementReviewerPage() {
   const bg = isDark ? "bg-[#0c0f12]" : "bg-gray-50";
   const card = `rounded-2xl border ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`;
   const muted = isDark ? "text-gray-400" : "text-gray-500";
-  const inp = `w-full rounded-xl border px-4 py-3 text-sm outline-none resize-none transition ${isDark ? "bg-[#0c0f12] border-[#2d3748] text-gray-200 placeholder:text-gray-600 focus:border-indigo-500" : "bg-white border-gray-200 text-gray-800 placeholder:text-gray-400 focus:border-indigo-500"}`;
+  const inp = `w-full rounded-xl border px-4 py-3 text-sm outline-none resize-none transition ${isDark ? "bg-[#0c0f12] border-[#2d3748] text-zinc-200 placeholder:text-gray-600 focus:border-indigo-500" : "bg-white border-gray-200 text-gray-800 placeholder:text-gray-400 focus:border-indigo-500"}`;
   const isValid = form.value.length > 0 && form.entity.length > 2;
   const CHECKS = [
     { text: "إعلان المنافسة في البوابة الرسمية قبل ٣٠ يوماً", pass: true },
@@ -82,7 +82,7 @@ export default function ProcurementReviewerPage() {
                 {CHECKS.map((c, i) => (
                   <div key={i} className={`flex items-start gap-3 p-3 rounded-xl ${isDark ? "bg-white/2" : "bg-gray-50"}`}>
                     {c.pass ? <CheckCircle size={15} weight="fill" className="text-emerald-500 shrink-0 mt-0.5" /> : <XCircle size={15} weight="fill" className="text-rose-500 shrink-0 mt-0.5" />}
-                    <div><p className={`text-xs font-semibold ${isDark ? "text-gray-200" : "text-gray-800"}`}>{c.text}</p>{c.note && <p className="text-xs text-rose-500 mt-0.5">{c.note}</p>}</div>
+                    <div><p className={`text-xs font-semibold ${isDark ? "text-zinc-200" : "text-gray-800"}`}>{c.text}</p>{c.note && <p className="text-xs text-rose-500 mt-0.5">{c.note}</p>}</div>
                   </div>
                 ))}
               </div>

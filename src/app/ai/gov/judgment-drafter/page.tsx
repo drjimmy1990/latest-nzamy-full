@@ -21,7 +21,7 @@ export default function JudgmentDrafterPage() {
   const bg = isDark ? "bg-[#0c0f12]" : "bg-gray-50";
   const card = `rounded-2xl border ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`;
   const muted = isDark ? "text-gray-400" : "text-gray-500";
-  const inp = `w-full rounded-xl border px-4 py-3 text-sm outline-none resize-none transition ${isDark ? "bg-[#0c0f12] border-[#2d3748] text-gray-200 placeholder:text-gray-600 focus:border-indigo-500" : "bg-white border-gray-200 text-gray-800 placeholder:text-gray-400 focus:border-indigo-500"}`;
+  const inp = `w-full rounded-xl border px-4 py-3 text-sm outline-none resize-none transition ${isDark ? "bg-[#0c0f12] border-[#2d3748] text-zinc-200 placeholder:text-gray-600 focus:border-indigo-500" : "bg-white border-gray-200 text-gray-800 placeholder:text-gray-400 focus:border-indigo-500"}`;
   const isValid = form.facts.length > 20 && form.decision.length > 10;
   const DRAFT = `بسم الله الرحمن الرحيم\n\nالحكم رقم: …/…/١٤٤٦\n\nبعد الاطلاع على أوراق القضية وملفاتها، وبعد المداولة القانونية؛\n\nحيث إن المدّعي تقدّم بدعواه مستنداً إلى ما ذكره من وقائع، وحيث إن المدّعى عليه أبدى دفاعه كاملاً،\n\nوحيث إن المحكمة قد استعرضت الأدلة والمستندات المقدّمة من الطرفين،\n\nوبناءً على المادة … من نظام …، وبعد التحقق من الاختصاص القضائي؛\n\n**لذا حكمت المحكمة:**\n\n${form.decision}\n\nصدر هذا الحكم وأُفهم به علناً في جلسة اليوم …`;
   function draftJudgment() {

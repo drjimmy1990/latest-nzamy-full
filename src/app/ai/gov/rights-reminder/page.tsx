@@ -44,7 +44,7 @@ export default function RightsReminderPage() {
         {/* Progress */}
         <div className={`${card} p-4 shadow-sm`}>
           <div className="flex items-center justify-between mb-2">
-            <p className={`text-xs font-bold ${isDark ? "text-gray-200" : "text-gray-700"}`}>اكتمال الضمانات</p>
+            <p className={`text-xs font-bold ${isDark ? "text-zinc-200" : "text-gray-700"}`}>اكتمال الضمانات</p>
             <p className={`text-xs font-black ${allDone ? "text-emerald-500" : isDark ? "text-sky-400" : "text-sky-600"}`}>{checked.length}/{RIGHTS.length}</p>
           </div>
           <div className={`h-2 rounded-full ${isDark ? "bg-gray-800" : "bg-gray-200"}`}>
@@ -63,7 +63,7 @@ export default function RightsReminderPage() {
                   {checked.includes(i) && <CheckCircle size={14} weight="fill" className="text-white" />}
                 </div>
                 <div className="flex-1">
-                  <p className={`text-sm font-semibold ${checked.includes(i) ? "line-through opacity-50" : isDark ? "text-gray-200" : "text-gray-800"}`}>{r.text}</p>
+                  <p className={`text-sm font-semibold ${checked.includes(i) ? "line-through opacity-50" : isDark ? "text-zinc-200" : "text-gray-800"}`}>{r.text}</p>
                   <p className={`text-xs mt-0.5 font-bold ${isDark ? "text-sky-400/70" : "text-sky-600"}`}>{r.article}</p>
                 </div>
               </button>

@@ -201,7 +201,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             admin queue's search resolves both forms. */}
         <div className="flex items-center gap-2">
           <span className={`text-[12px] font-mono font-bold ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>{orderReference(order.id)}</span>
-          <button onClick={copyId} className="text-[11px] font-semibold text-[#0B3D2E]">
+          <button onClick={copyId} className="text-[11px] font-semibold text-[#0B3D2E] dark:text-emerald-400">
             {idCopied ? "تم النسخ ✓" : "نسخ رقم الطلب"}
           </button>
         </div>

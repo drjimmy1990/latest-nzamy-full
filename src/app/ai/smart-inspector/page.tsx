@@ -154,13 +154,13 @@ export default function SmartInspectorPage() {
             className={`${card} p-7 text-right w-full group transition-all hover:border-[#0B3D2E]/30`}
           >
             <div className={`flex h-12 w-12 items-center justify-center rounded-2xl mb-5 ${s("bg-[#0B3D2E]/40", "bg-[#0B3D2E]/8")} group-hover:bg-[#0B3D2E]/15 transition-colors`}>
-              <CloudArrowUp size={24} className="text-[#0B3D2E]" weight="duotone" />
+              <CloudArrowUp size={24} className="text-[#0B3D2E] dark:text-emerald-400" weight="duotone" />
             </div>
             <h3 className={`text-[16px] font-black mb-1.5 ${s("text-white", "text-zinc-900")}`}>ارفع ملف القضية</h3>
             <p className={`text-[12.5px] leading-relaxed ${s("text-zinc-500", "text-slate-400")}`}>
               PDF أو Word — الذكاء الاصطناعي يقرأ الملف ويحلل وضعك القانوني تلقائياً
             </p>
-            <div className={`mt-5 flex items-center gap-1.5 text-[11px] font-bold text-[#0B3D2E]`}>
+            <div className={`mt-5 flex items-center gap-1.5 text-[11px] font-bold text-[#0B3D2E] dark:text-emerald-400`}>
               ارفع الملف <ArrowLeft size={12} />
             </div>
           </motion.button>
@@ -306,7 +306,7 @@ export default function SmartInspectorPage() {
                   onClick={() => { setDomain(d); setAnswers([]); setCurrentQ(0); }}
                   className={`${card} p-4 flex flex-col items-start gap-3 text-right transition-all hover:border-[#0B3D2E]/30`}>
                   <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${s("bg-[#0B3D2E]/30", "bg-[#0B3D2E]/6")}`}>
-                    <Icon size={18} className="text-[#0B3D2E]" weight="duotone" />
+                    <Icon size={18} className="text-[#0B3D2E] dark:text-emerald-400" weight="duotone" />
                   </div>
                   <p className={`text-[13px] font-black ${s("text-zinc-200", "text-zinc-800")}`}>{d.label}</p>
                 </motion.button>
@@ -472,7 +472,7 @@ export default function SmartInspectorPage() {
       {/* Recommendation */}
       <div className={`${card} p-5`}>
         <div className="flex items-center gap-2 mb-2">
-          <Brain size={16} className="text-[#0B3D2E]" weight="duotone" />
+          <Brain size={16} className="text-[#0B3D2E] dark:text-emerald-400" weight="duotone" />
           <p className={`text-[12.5px] font-black ${s("text-zinc-200", "text-zinc-800")}`}>توصية ذكاء نظامي</p>
         </div>
         <p className={`text-[13px] leading-relaxed ${s("text-zinc-400", "text-zinc-600")}`}>{result.recommendation}</p>

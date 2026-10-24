@@ -32,7 +32,7 @@ export default function JudicialSearchPage() {
   const card = `rounded-2xl border ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`;
   const muted = isDark ? "text-gray-400" : "text-gray-500";
   const inputClass = `w-full rounded-xl border px-4 py-3 text-sm outline-none transition ${
-    isDark ? "bg-[#0c0f12] border-[#2d3748] text-gray-200 placeholder:text-gray-600 focus:border-indigo-500"
+    isDark ? "bg-[#0c0f12] border-[#2d3748] text-zinc-200 placeholder:text-gray-600 focus:border-indigo-500"
            : "bg-white border-gray-200 text-gray-800 placeholder:text-gray-400 focus:border-indigo-500"
   }`;
   const resultText = [
@@ -125,7 +125,7 @@ export default function JudicialSearchPage() {
                     <span className={`text-xs font-bold ${isDark ? "text-[#C8A762]" : "text-indigo-700"}`}>{p.court}</span>
                     <span className={`text-xs ${muted}`}>{p.date}</span>
                   </div>
-                  <p className={`text-sm leading-relaxed ${isDark ? "text-gray-200" : "text-gray-800"}`}>{p.text}</p>
+                  <p className={`text-sm leading-relaxed ${isDark ? "text-zinc-200" : "text-gray-800"}`}>{p.text}</p>
                   <div className="flex gap-2 mt-3">
                     <button className={`flex items-center gap-1 text-xs font-bold px-2.5 py-1.5 rounded-lg transition ${
                       isDark ? "bg-white/5 text-gray-400 hover:bg-white/10" : "bg-gray-100 text-gray-600 hover:bg-gray-200"

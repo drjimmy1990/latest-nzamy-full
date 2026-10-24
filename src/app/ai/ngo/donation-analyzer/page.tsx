@@ -31,7 +31,7 @@ export default function DonationAnalyzerPage() {
   const bg = isDark ? "bg-[#0c0f12]" : "bg-gray-50";
   const card = `rounded-2xl border ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`;
   const muted = isDark ? "text-gray-400" : "text-gray-500";
-  const inp = `w-full rounded-xl border px-4 py-3 text-sm outline-none transition ${isDark ? "bg-[#0c0f12] border-[#2d3748] text-gray-200 focus:border-emerald-500" : "bg-white border-gray-200 text-gray-800 focus:border-emerald-500"}`;
+  const inp = `w-full rounded-xl border px-4 py-3 text-sm outline-none transition ${isDark ? "bg-[#0c0f12] border-[#2d3748] text-zinc-200 focus:border-emerald-500" : "bg-white border-gray-200 text-gray-800 focus:border-emerald-500"}`;
   const total = 169500;
   const RESULT = {
     total: "١٦٩٬٥٠٠",
@@ -73,7 +73,7 @@ export default function DonationAnalyzerPage() {
                         <div key={i} className={`flex items-center gap-3 p-3 rounded-xl ${isDark ? "bg-white/2 border border-[#2d3748]" : "bg-gray-50 border border-gray-100"}`}>
                           <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${conf.bg}`}><Icon size={14} weight="duotone" className={conf.color} /></div>
                           <div className="flex-1 min-w-0">
-                            <p className={`text-xs font-bold truncate ${isDark ? "text-gray-200" : "text-gray-800"}`}>{d.donor}</p>
+                            <p className={`text-xs font-bold truncate ${isDark ? "text-zinc-200" : "text-gray-800"}`}>{d.donor}</p>
                             <p className={`text-[10px] ${muted}`}>{d.campaign} · {d.date}</p>
                           </div>
                           <p className={`text-xs font-black ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>{d.amount} ر.س</p>
@@ -122,7 +122,7 @@ export default function DonationAnalyzerPage() {
                   {RESULT.distribution.map((d, i) => (
                     <div key={i}>
                       <div className="flex justify-between text-xs mb-1">
-                        <span className={`font-semibold ${isDark ? "text-gray-200" : "text-gray-700"}`}>{d.label}</span>
+                        <span className={`font-semibold ${isDark ? "text-zinc-200" : "text-gray-700"}`}>{d.label}</span>
                         <span className={`font-black ${isDark ? "text-gray-300" : "text-gray-600"}`}>{d.pct}٪</span>
                       </div>
                       <div className={`h-2.5 rounded-full ${isDark ? "bg-gray-800" : "bg-gray-200"}`}>

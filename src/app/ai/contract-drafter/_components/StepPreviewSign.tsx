@@ -40,7 +40,7 @@ export default function StepPreviewSign({
       <div className={`rounded-[2rem] border p-8 sm:p-10 mb-6 ${isDark ? "border-white/10 bg-zinc-900/50 backdrop-blur-xl" : "border-zinc-200 bg-white shadow-lg"}`}>
         <div className="flex items-center justify-between mb-8 pb-6 border-b border-white/10">
           <div className="flex items-center gap-4">
-            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${isDark ? "bg-[#0B3D2E]/20 text-[#0B3D2E]" : "bg-[#0B3D2E]/10 text-[#0B3D2E]"}`}>
+            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${isDark ? "bg-[#0B3D2E]/20 text-[#0B3D2E] dark:text-emerald-400" : "bg-[#0B3D2E]/10 text-[#0B3D2E]"}`}>
               <FileText size={26} weight="duotone" className={isDark ? "text-emerald-400" : ""} />
             </div>
             <h2 className={`text-xl font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>

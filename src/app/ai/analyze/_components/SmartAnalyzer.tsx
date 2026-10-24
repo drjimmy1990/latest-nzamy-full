@@ -269,7 +269,7 @@ export default function SmartAnalyzer({ isDark, isRTL }: Props) {
 
       <motion.div variants={fadeUp} className={`rounded-2xl border p-5 ${isDark ? "border-[#0B3D2E]/30 bg-[#0B3D2E]/[0.08]" : "border-[#0B3D2E]/15 bg-[#0B3D2E]/[0.04]"}`}>
         <div className="flex items-start gap-3">
-          <Info size={15} weight="fill" className="text-[#0B3D2E] flex-shrink-0 mt-0.5" />
+          <Info size={15} weight="fill" className="text-[#0B3D2E] dark:text-emerald-400 flex-shrink-0 mt-0.5" />
           <div>
             <p className={`text-[11.5px] font-black mb-1 ${isDark ? "text-emerald-400" : "text-[#0B3D2E]"}`}>توصية ذكاء نظامي</p>
             <p className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{report.recommendation}</p>

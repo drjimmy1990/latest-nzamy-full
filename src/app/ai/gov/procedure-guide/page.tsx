@@ -45,7 +45,7 @@ export default function ProcedureGuidePage() {
         <div className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border ${isDark ? "border-[#2d3748] bg-[#161b22]" : "border-gray-200 bg-white"}`}>
           <MagnifyingGlass size={15} className={muted} />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ابحث في الإجراءات..."
-            className={`bg-transparent outline-none text-sm flex-1 ${isDark ? "text-gray-200 placeholder:text-gray-600" : "text-gray-800 placeholder:text-gray-400"}`} />
+            className={`bg-transparent outline-none text-sm flex-1 ${isDark ? "text-zinc-200 placeholder:text-gray-600" : "text-gray-800 placeholder:text-gray-400"}`} />
         </div>
         <div className="space-y-3">
           {filtered.map((p, i) => (
