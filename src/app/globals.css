@@ -336,6 +336,23 @@ html[dir="rtl"] .text-left {
   box-shadow: 0 0 0 2px rgba(200, 167, 98, 0.1) !important;
 }
 
+/* The admin console is dark-only (ForceDarkTheme + `dark` on .admin-console,
+   src/app/dashboard/admin/layout.tsx), so its text is light. On paper it is
+   still black on white: the id outranks the .dark text rescues above, and
+   the console's 100dvh/overflow box is opened so a printout is not clipped. */
+@media print {
+  #main-content .admin-console,
+  #main-content .admin-console * {
+    color: #000 !important;
+    border-color: #d4d4d8 !important;
+  }
+  #main-content .admin-console,
+  #main-content .admin-console .print-main {
+    height: auto !important;
+    overflow: visible !important;
+  }
+}
+
 /* ── Accessibility: Respect reduced-motion preference ── */
 @media (prefers-reduced-motion: reduce) {
   *,

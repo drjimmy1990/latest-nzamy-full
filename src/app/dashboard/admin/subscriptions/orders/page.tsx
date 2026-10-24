@@ -45,10 +45,7 @@ export default function AdminPaymentOrdersPage() {
     } catch { setError("تعذّر الاتصال؛ راجع حالة العملية قبل تكرار الطلب"); }
     finally { inFlight.current = false; setBusy(false); }
   }
-  // The admin console is dark-only (dashboard/admin/layout.tsx paints
-  // bg-[#0a0a0f] whatever the site theme is): `dark` here keeps this page's
-  // dark: palette on in both themes, so no white table or input on the black console.
-  return <div dir="rtl" className="dark space-y-6 p-4 text-zinc-900 [color-scheme:dark] dark:text-zinc-100 sm:p-8">
+  return <div dir="rtl" className="space-y-6 p-4 text-zinc-900 dark:text-zinc-100 sm:p-8">
     <div><h1 className="text-2xl font-extrabold">عمليات الدفع والاسترداد</h1><p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">آخر ١٠٠ عملية. الاسترداد إلى وسيلة الدفع الأصلية متاح للمسؤول الأعلى فقط.</p></div>
     <div className="flex flex-wrap gap-3"><select aria-label="حالة الدفع" value={status} onChange={e => setStatus(e.target.value)} className="rounded-xl border border-zinc-300 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900"><option value="">جميع الحالات</option>{["created","initiated","paid","failed","refunded","voided","cancelled"].map(s => <option key={s} value={s}>{orderStatusAr(s)}</option>)}</select><input aria-label="معرّف المستخدم" value={user} onChange={e => setUser(e.target.value)} placeholder="معرّف المستخدم" className="rounded-xl border border-zinc-300 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900" /><label className="text-sm">من<input aria-label="من تاريخ" type="datetime-local" value={from} onChange={e => setFrom(e.target.value)} className="ms-2 rounded-xl border border-zinc-300 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900" /></label><label className="text-sm">إلى<input aria-label="إلى تاريخ" type="datetime-local" value={to} onChange={e => setTo(e.target.value)} className="ms-2 rounded-xl border border-zinc-300 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900" /></label><button onClick={() => void load()} className="rounded-xl border border-zinc-300 px-4 dark:border-zinc-700 dark:hover:bg-zinc-800">تحديث</button></div>
     {error ? <p role="alert" className="rounded-xl bg-red-50 p-4 text-red-800 dark:bg-red-950 dark:text-red-200">{error}</p> : null}

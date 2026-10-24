@@ -33,10 +33,11 @@ const FILES = [
   "app/settings/components/tabs/SubscriptionTab.tsx",
   "app/settings/components/tabs/PaymentsTab.tsx",
   "components/payments/PointsBalanceCard.tsx",
-  "app/dashboard/admin/subscriptions/orders/page.tsx",
-  "app/dashboard/admin/settings/page.tsx",
   "components/pricing/PricingCards.tsx",
 ];
+// The admin console pages (settings, subscriptions/orders, subscriptions/payments,
+// subscriptions, coupons, …) are not scanned one by one: the admin layout makes
+// the whole console dark whatever the site theme is (ForceDarkTheme test below).
 
 /** Deliberate light surfaces: [file, a substring of the class string, why]. */
 const ALLOW: [string, string, string][] = [
@@ -159,23 +160,35 @@ test("the Moyasar form renders into an always-light surface: white, dark text, c
   }
   assert.doesNotMatch(wrapper[1], /dark:bg-|dark:text-/, "the form area does not follow the theme");
   // the scoped rules that undo globals.css's `.dark input` colours inside it
-  const css = readFileSync(join(ROOT, "app/globals.css"), "utf8");
+  // normalised, so the checks hold on a CRLF checkout too
+  const css = readFileSync(join(ROOT, "app/globals.css"), "utf8").replace(/\r\n/g, "\n");
   assert.match(css, /\.nz-moyasar-surface \{\s*color-scheme: light;\s*background-color: #ffffff;\s*color: #18181b;\s*\}/);
   assert.match(css, /\.dark \.nz-moyasar-surface input,\s*\.dark \.nz-moyasar-surface textarea,\s*\.dark \.nz-moyasar-surface select \{\s*background-color: #ffffff !important;\s*color: #1a1a1a !important;/);
   assert.match(css, /\.dark \.nz-moyasar-surface input::placeholder,\s*\.dark \.nz-moyasar-surface textarea::placeholder \{\s*color: #9ca3af !important;/);
   // the scoped rules come after the site-wide dark input rule they override
-  assert.ok(css.indexOf(".dark .nz-moyasar-surface input,") > css.indexOf(".dark input,\n.dark textarea {"));
+  const siteWide = css.indexOf(".dark input,\n.dark textarea {");
+  assert.ok(siteWide >= 0, "the site-wide dark input rule");
+  assert.ok(css.indexOf(".dark .nz-moyasar-surface input,") > siteWide);
 });
 
-test("the admin console pages stay dark whatever the site theme is (the console shell is dark-only)", () => {
-  const layout = readFileSync(join(ROOT, "app/dashboard/admin/layout.tsx"), "utf8");
-  assert.match(layout, /bg-\[#0a0a0f\]/, "the premise: the console shell is always dark");
-  const settings = stripComments(readFileSync(join(ROOT, "app/dashboard/admin/settings/page.tsx"), "utf8"));
-  assert.doesNotMatch(settings, /useTheme/);
-  assert.match(settings, /const isDark = true;/);
-  assert.equal((settings.match(/<div className="dark p-6 md:p-10 [^"]*\[color-scheme:dark\]" dir="rtl">/g) ?? []).length, 2, "loading and loaded roots");
-  const orders = stripComments(readFileSync(join(ROOT, "app/dashboard/admin/subscriptions/orders/page.tsx"), "utf8"));
-  assert.match(orders, /return <div dir="rtl" className="dark [^"]*\[color-scheme:dark\]/);
+test("the admin console is dark whatever the site theme is: ForceDarkTheme + `dark` on the layout root", () => {
+  const layout = stripComments(readFileSync(join(ROOT, "app/dashboard/admin/layout.tsx"), "utf8"));
+  assert.match(layout, /import \{ ForceDarkTheme \} from "@\/components\/ThemeProvider"/);
+  // ForceDarkTheme is the outermost element: everything the console renders reads isDark: true
+  assert.match(layout, /return \(\s*<ForceDarkTheme>[\s\S]*<\/ForceDarkTheme>\s*\);/);
+  const root = /<div className="([^"]*bg-\[#0a0a0f\][^"]*)"/.exec(layout);
+  assert.ok(root, "the console root");
+  for (const cls of ["admin-console", "dark", "[color-scheme:dark]"]) assert.ok(root[1].split(/\s+/).includes(cls), cls);
+  assert.ok(layout.indexOf("<ForceDarkTheme>") < layout.indexOf(root[0]) && layout.indexOf(root[0]) < layout.indexOf("{children}"));
+  // ForceDarkTheme re-provides the context with the pure forced value (executed in src/lib/forceDarkTheme.test.ts)
+  const provider = readFileSync(join(ROOT, "components/ThemeProvider.tsx"), "utf8");
+  assert.match(provider, /export function ForceDarkTheme\(\{ children \}: \{ children: React\.ReactNode \}\) \{\s*const parent = useContext\(ThemeContext\);\s*const value = useMemo\(\(\) => forceDarkThemeValue\(parent\), \[parent\]\);\s*return <ThemeContext\.Provider value=\{value\}>\{children\}<\/ThemeContext\.Provider>;/);
+  // the root provider and the default context are unchanged: the site theme still decides elsewhere
+  assert.match(provider, /const ThemeContext = createContext<ThemeContextType>\(\{\s*theme: "dark",/);
+  assert.match(provider, /const isDark = theme === "dark";/);
+  // on paper the console is still black on white
+  const css = readFileSync(join(ROOT, "app/globals.css"), "utf8").replace(/\r\n/g, "\n");
+  assert.match(css, /@media print \{\s*#main-content \.admin-console,\s*#main-content \.admin-console \* \{\s*color: #000 !important;/);
 });
 
 test("the receipt prints black on white, also when printed from dark mode", () => {

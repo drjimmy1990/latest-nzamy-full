@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import {
   DEFAULT_DENSITY,
   DENSITY_LEGACY_STORAGE_KEY,
@@ -10,6 +10,7 @@ import {
   type Density,
 } from "@/lib/density";
 import { syncNativeStatusBar } from "@/lib/mobile/nativeBridge";
+import { forceDarkThemeValue } from "@/lib/forceDarkTheme";
 
 type Theme = "light" | "dark";
 type Lang = "ar" | "en";
@@ -50,6 +51,20 @@ const ThemeContext = createContext<ThemeContextType>({
 
 export function useTheme() {
   return useContext(ThemeContext);
+}
+
+/**
+ * ForceDarkTheme — a dark-only area inside the site (the admin console,
+ * src/app/dashboard/admin/layout.tsx). Below it `useTheme()` answers
+ * `theme: "dark"`, `isDark: true` whatever the site theme is, and the theme
+ * setters do nothing; language, calendar and density stay the site's
+ * (forceDarkThemeValue). It changes only the context: the caller adds the
+ * `dark` class to its root so the `dark:` utilities match.
+ */
+export function ForceDarkTheme({ children }: { children: React.ReactNode }) {
+  const parent = useContext(ThemeContext);
+  const value = useMemo(() => forceDarkThemeValue(parent), [parent]);
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 /** The display-density slice of the theme context. */
