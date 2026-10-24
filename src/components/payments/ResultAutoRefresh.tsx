@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AUTO_REFRESH_INTERVAL_MS, autoRefreshDecision } from "@/lib/payments/resultView";
+import { AUTO_REFRESH_INTERVAL_MS, autoRefreshDecision } from "@/lib/payments/autoRefresh";
 
 /**
  * ResultAutoRefresh — /payments/result confirms on its own while the outcome
