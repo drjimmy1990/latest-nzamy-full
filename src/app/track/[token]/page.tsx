@@ -10,11 +10,20 @@
 // as approved for the client.
 //
 // The old /cases/[id] stays a 404 (N1.3); this is the real tracking page.
+//
+// D2 (owner ٢٧٦, 20261026_62): before any case data, readTrackingGate asks
+// the database for the link's state only. Paused, expired and revoked links
+// get a neutral page with no case data. A live link first asks for the last
+// 4 digits of the client's mobile on the case file (TrackingUnlockForm →
+// POST /api/v1/track/<token>/unlock, compared in SQL); the httpOnly cookie
+// it sets is checked here on every view. Before 20261026_62 runs, the gate
+// answers "v1" and the page behaves as it did (no digits asked).
 
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { readTrackingView } from "@/lib/tracking/trackingSnapshot.server";
+import { isTrackingUnlocked, readTrackingGate, readTrackingView } from "@/lib/tracking/trackingSnapshot.server";
+import TrackingUnlockForm from "./TrackingUnlockForm";
 import { formatTimeOfDayAr } from "@/app/dashboard/lawyer/hearings/_timeOfDay";
 
 export const dynamic = "force-dynamic";
@@ -36,11 +45,45 @@ function dayAr(date: string): string {
 
 export default async function CaseTrackingPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  const read = await readTrackingView(token);
-  if (read.state === "none") notFound();
-
   const shell = "min-h-[70vh] bg-slate-50 dark:bg-zinc-950 px-4 py-10";
   const card = "mx-auto w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-white/[0.08] dark:bg-zinc-900";
+
+  const gate = await readTrackingGate(token);
+  if (gate === "none") notFound();
+  if (gate === "paused" || gate === "expired" || gate === "unavailable") {
+    return (
+      <main className={shell} dir="rtl">
+        <div className={card} role="status">
+          <p className="text-xs font-bold text-[#8a6d2c] dark:text-[#C8A762]">متابعة القضية</p>
+          <h1 className="mt-1 text-lg font-bold text-slate-800 dark:text-white">
+            {gate === "unavailable" ? "هذا الرابط لم يعد متاحاً" : "الرابط موقوف مؤقتاً — تواصل مع محاميك"}
+          </h1>
+          <p className="mt-2 text-sm text-slate-600 dark:text-zinc-300">
+            {gate === "unavailable"
+              ? "تواصل مع محاميك ليرسل إليك رابطاً جديداً."
+              : "يستطيع محاميك إعادة تفعيل الرابط نفسه متى شاء، فتعود إليك المتابعة من هنا."}
+          </p>
+        </div>
+      </main>
+    );
+  }
+  if (gate === "active" && !(await isTrackingUnlocked(token))) {
+    return (
+      <main className={shell} dir="rtl">
+        <div className={card}>
+          <p className="text-xs font-bold text-[#8a6d2c] dark:text-[#C8A762]">متابعة القضية</p>
+          <h1 className="mt-1 text-lg font-bold text-slate-800 dark:text-white">تحقق سريع قبل عرض القضية</h1>
+          <p className="mt-2 text-sm text-slate-600 dark:text-zinc-300">
+            لحماية قضيتك، أدخل آخر ٤ أرقام من رقم الجوال المسجّل في ملف القضية. لا تحتاج إلى حساب.
+          </p>
+          <TrackingUnlockForm token={token} />
+        </div>
+      </main>
+    );
+  }
+
+  const read = gate === "error" ? ({ state: "error" } as const) : await readTrackingView(token);
+  if (read.state === "none") notFound();
 
   if (read.state === "error") {
     return (

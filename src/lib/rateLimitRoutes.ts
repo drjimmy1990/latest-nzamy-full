@@ -17,6 +17,10 @@ export const STRICT_RATE_LIMITED_ROUTES: readonly RegExp[] = [
   /^\/api\/v1\/library\/invitations\/redeem$/, // POST /api/v1/library/invitations/redeem
   /^\/api\/v1\/invite\/[^/]+\/accept$/, // POST /api/v1/invite/[code]/accept
   /^\/api\/v1\/contact$/, // POST /api/v1/contact
+  // D2 (owner ٢٧٦): the client's 4-digit check on a tracking link. The database
+  // also locks the link after 5 wrong tries; this bucket caps one address
+  // walking many links.
+  /^\/api\/v1\/track\/[^/]+\/unlock$/, // POST /api/v1/track/[token]/unlock
 ];
 
 export const GENERAL_RATE_LIMITED_METHODS: ReadonlySet<string> = new Set([
@@ -26,7 +30,7 @@ export const GENERAL_RATE_LIMITED_METHODS: ReadonlySet<string> = new Set([
   "DELETE",
 ]);
 
-/** True when `method` + `pathname` is one of the four strict-bucket POST actions. */
+/** True when `method` + `pathname` is one of the strict-bucket POST actions. */
 export function isStrictRateLimitedRoute(method: string, pathname: string): boolean {
   return method === "POST" && STRICT_RATE_LIMITED_ROUTES.some((re) => re.test(pathname));
 }

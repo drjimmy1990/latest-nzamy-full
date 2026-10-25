@@ -19,6 +19,7 @@ test("isStrictRateLimitedRoute: matches all four listed POST actions with a real
   assert.equal(isStrictRateLimitedRoute("POST", "/api/v1/library/invitations/redeem"), true);
   assert.equal(isStrictRateLimitedRoute("POST", "/api/v1/invite/xyz789/accept"), true);
   assert.equal(isStrictRateLimitedRoute("POST", "/api/v1/contact"), true);
+  assert.equal(isStrictRateLimitedRoute("POST", `/api/v1/track/${"a".repeat(64)}/unlock`), true, "the tracking link's 4-digit check (D2)");
 });
 
 test("isStrictRateLimitedRoute: only POST counts, not GET/PUT/etc on the same path", () => {
@@ -37,6 +38,8 @@ test("isStrictRateLimitedRoute: a neighbouring, unrelated route does not match",
   assert.equal(isStrictRateLimitedRoute("POST", "/api/v1/invite/xyz789"), false); // no /accept
   assert.equal(isStrictRateLimitedRoute("POST", "/api/v1/library/invitations"), false); // no /redeem
   assert.equal(isStrictRateLimitedRoute("POST", "/api/v1/share/abc123/verify/extra"), false);
+  assert.equal(isStrictRateLimitedRoute("POST", "/api/v1/track/abc/def/unlock"), false);
+  assert.equal(isStrictRateLimitedRoute("GET", "/api/v1/track/abc/unlock"), false);
 });
 
 // ─── isGeneralRateLimitedApiPath ─────────────────────────────────────────────
