@@ -4206,6 +4206,23 @@ begin
           and a.attname = 'decided_by' and con.confdeltype <> 'n') then
     missing := missing || ' entitlement_requests.decided_by blocks account deletion again;';
   end if;
+  -- the 2026-10-26 review fixes: the self-only cancel, the dry-run prepare
+  -- with the after-delete file list, and the Storage read guard's helper
+  if to_regprocedure('public.account_deletion_close(uuid,uuid)') is not null
+     or to_regprocedure('public.account_keep_rules(uuid)') is not null
+     or to_regprocedure('public.account_deletion_close(uuid,uuid,boolean)') is null
+     or to_regprocedure('public.account_purge_storage_paths(uuid)') is null then
+    missing := missing || ' an older 20261026_70 is applied (self-cancelable admin freezes, moves before the delete) — the 2026-10-26 review version is not;';
+  elsif exists (select 1 from pg_roles where rolname = 'authenticated')
+        and has_function_privilege('authenticated', 'public.account_purge_storage_paths(uuid)', 'EXECUTE') then
+    missing := missing || ' authenticated may execute account_purge_storage_paths;';
+  end if;
+  if to_regprocedure('public.storage_object_held_by_other(text)') is null then
+    missing := missing || ' storage_object_held_by_other is missing;';
+  elsif exists (select 1 from pg_roles where rolname = 'authenticated')
+        and not has_function_privilege('authenticated', 'public.storage_object_held_by_other(text)', 'EXECUTE') then
+    missing := missing || ' authenticated cannot execute storage_object_held_by_other (every documents read would fail once 71 runs);';
+  end if;
   if missing <> '' then
     raise exception '_verify: 20261026_70 —% %', missing, fix;
   end if;
@@ -4243,3 +4260,38 @@ begin
     n, (select count(*) from public.account_deletion_requests where status = 'blocked');
 end $$;
 -- <<< verify:account_deletion
+
+-- >>> verify:storage_documents_read_guard — supabase/tests/rls/account_deletion.test.sql (T15)
+-- 2026-10-26 — SQL_batch_2026-10-26_owner_answers/71_AFTER_70_storage_policies_documents_select.sql
+-- (= supabase/storage_policies_documents.sql), run as supabase_admin after
+-- 20261026_70. The documents bucket's owner-only SELECT policy must call
+-- public.storage_object_held_by_other(name), or a removed firm member still
+-- downloads the firm files he uploaded straight from the Storage API. Read-only.
+-- NOTICE while 20261026_70 has not run; RAISES once it has and the policy
+-- lacks the guard — 71 not run yet, or 17 run again after it.
+do $$
+declare
+  n_sel   int;
+  n_guard int;
+begin
+  if to_regprocedure('public.storage_object_held_by_other(text)') is null then
+    raise notice '_verify: 71_AFTER_70 — 20261026_70 is not applied yet; "documents select own" carries no held-by-other guard until 70 and then 71 run';
+    return;
+  end if;
+  if to_regclass('storage.objects') is null then
+    raise exception '_verify: 71_AFTER_70 — storage.objects is not visible, the documents read guard cannot be checked';
+  end if;
+  -- by content, never by name (the Dashboard suffixes names): every
+  -- permissive SELECT policy that can match the documents bucket
+  select count(*),
+         count(*) filter (where coalesce(pg_get_expr(p.polqual, p.polrelid), '') like '%storage_object_held_by_other(name)%')
+    into n_sel, n_guard
+    from pg_policy p
+   where p.polrelid = 'storage.objects'::regclass and p.polcmd = 'r' and p.polpermissive
+     and coalesce(pg_get_expr(p.polqual, p.polrelid), '') like '%documents%';
+  if n_sel = 0 or n_guard <> n_sel then
+    raise exception '_verify: 71_AFTER_70 — % of % documents SELECT policies call storage_object_held_by_other: a removed firm member can still read the firm files left in his folder. Run SQL_batch_2026-10-26_owner_answers/71_AFTER_70_storage_policies_documents_select.sql as supabase_admin (and never 17 after it)', n_guard, n_sel;
+  end if;
+  raise notice '_verify: 71_AFTER_70 OK — the documents SELECT policy refuses objects whose row belongs to someone else';
+end $$;
+-- <<< verify:storage_documents_read_guard
