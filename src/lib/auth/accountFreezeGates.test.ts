@@ -117,4 +117,7 @@ test("cron: fails closed on CRON_SECRET, and the purge deletes the account befor
   const removeAt = lib.indexOf(".storage.from(STORAGE_BUCKET).remove(");
   assert.ok(prepareAt > -1 && prepareAt < deleteAt && deleteAt < removeAt, "prepare → deleteUser → Storage");
   assert.equal(/\.list\(/.test(lib), false, "never lists a folder to delete it — only the prepared paths");
+  // a prepare error the database answered is blocked, never re-claimed daily
+  const prepErr = lib.slice(lib.indexOf("if (prep.error) {"), lib.indexOf("const prepared ="));
+  assert.ok(prepErr.includes('prep.error.code ? "blocked" : "retry"'), "a coded prepare error is terminal");
 });

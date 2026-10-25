@@ -188,8 +188,12 @@ export async function purgeAccountWith(
 
   const prep = await admin.rpc("account_purge_prepare", { p_user: args.userId });
   if (prep.error) {
-    await finish(admin, args.requestId, "retry", {}, `prepare: ${prep.error.code ?? ""} ${prep.error.message}`);
-    return { ...run, reason: "prepare_failed" };
+    // An error the database answered (a SQLSTATE / PGRST code: a trigger, a
+    // privilege, a column) is deterministic — blocked, not re-claimed every
+    // day. Only a transport failure (no code) is retried.
+    const outcome: PurgeOutcome = prep.error.code ? "blocked" : "retry";
+    await finish(admin, args.requestId, outcome, {}, `prepare: ${prep.error.code ?? ""} ${prep.error.message}`);
+    return { ...run, outcome, reason: "prepare_failed" };
   }
   const prepared = (prep.data ?? {}) as { ok?: boolean; blocked?: string; storage_paths?: unknown; keep?: unknown };
   if (!prepared.ok) {
