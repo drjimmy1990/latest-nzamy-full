@@ -23,10 +23,10 @@
 
 | Phase | Items | State |
 |---|---|---|
-| P1 | N1.1–N1.9 | ✅ 8/9 made and reviewed (review fixes cd10c88b, 69170514, 2dbbc7af, 5d4cc5fc); N1.8 blocked |
+| P1 | N1.1–N1.9 | ✅ all 9 made and reviewed (review fixes cd10c88b, 69170514, 2dbbc7af, 5d4cc5fc; N1.8 ecc4c5bc) |
 | P2 | N4.1 | ✅ made and reviewed (aa8aeff4), merged into the batch at 9c38a311. N4.2 = your live checks |
 
-**Batch state:** all 30 buildable items are made except N1.8 (blocked). The merged batch has 3,610 unit tests passing, tsc clean, and the production build compiling. The final whole-branch review ran every migration together in Docker (all 11 RLS tests pass, every file re-runnable) and fixed a stray merge marker in `_verify.sql` (e38fd72c); 3,612 unit tests pass. SQL run order: `SQL_batch_2026-10-25_owner_free/README.md` (files 01, 10–17, 20–22). Not merged into main or pushed; that waits for your go.
+**Batch state:** all 30 items are made. The merged batch has 3,630 unit tests passing, tsc clean, and the production build compiling. The final whole-branch review ran every migration together in Docker (all 11 RLS tests pass, every file re-runnable) and fixed a stray merge marker in `_verify.sql` (e38fd72c); 3,630 unit tests pass after N1.8. SQL run order: `SQL_batch_2026-10-25_owner_free/README.md` (files 01, 10–17, 20–22). Not merged into main or pushed; that waits for your go.
 | P3 | N2.1, N2.2, N2.3, N3.1, N3.3 | ✅ all 5 made and reviewed |
 | P4 | N3.2, N3.4, N3.6, N3.7 (one SQL batch) | ✅ all 4 made and reviewed |
 | P5 | N2.4–N2.8 | ✅ all 5 made and reviewed; library track merged into the batch |
@@ -45,7 +45,7 @@ Each item is either a plain fix, or built on a default that matches decisions he
 | N1.5 ✅ made (6a898ea0) | Blog: the author link stops opening an outside site; consultation links point to `/book/consultation` | Owner axis 8 says this plainly | S |
 | N1.6 ✅ made (2ee8077a) | Blog table of contents: gold `#C8A762` on hover in both themes, plus active-section highlight while scrolling | Owner axis 8 | S |
 | N1.7 ✅ made (fa7e4155) | Blog spacing: drop the `<br/>` added for every blank line (`ArticleView.tsx:246`) and tune the margins | Owner axis 8 | S |
-| N1.8 ⛔ blocked: `/ai/transcriber` is a «قريباً» page (owner ١١٥), and his README §39 now sends transcripts to `/ai/analyze?tab=tactical`, not the drafter. Moved to Part 2 | Transcriber: add a «إرسال النص للصائغ القانوني» button to `/ai/draft`, passed through the server or the URL, not localStorage | Owner axis 9; a small addition | S |
+| N1.8 ✅ made (ecc4c5bc): the drafter takes a transcript through a one-shot session handoff and prefills «الوقائع», and the button is ready. It is mounted only when the transcriber or «عصارة المرفقات» gets a real service (both are «قريباً», owner ١١٥) | Transcriber: add a «إرسال النص للصائغ القانوني» button to `/ai/draft`, passed through the server or the URL, not localStorage | Owner axis 9; a small addition | S |
 | N1.9 ✅ made (69ed32bd) | Firm route rules: limit firm hearings and procedures-expert to litigation roles (Article 18) | Matches the existing consultant court-write guard | S |
 
 ### Batch N2: library (no reload, no new data)
@@ -119,7 +119,7 @@ Each item is either a plain fix, or built on a default that matches decisions he
 | ٢٧٥ AI models | Model choice in n8n for new tools | Haiku 5.5 / Sonnet 5.5, no Opus |
 | ٢٧٦ tracking-link fields and lifetime | Final field set in N3.6 | Default set, until revoked |
 | ٢٧٧ merged-first sort in search too | N2.5 scope | Catalogue only |
-| N1.8 transcriber → drafter vs `/ai/analyze` (his own docs disagree; the transcriber is «قريباً») | The button and its target | Not built |
+| N1.8 target when the transcriber goes live: drafter or `/ai/analyze` (his own docs disagree) | Where the ready button is mounted | Drafter handoff built; button mounted on activation |
 | ٢٥٥ SMS sign-in | SMS provider + phone sign-in (M–L, monthly cost) | Email + phone field |
 | ٢٥٦ ZIP of attachments + branding: where; lawyer or firm | Branding vault + ZIP bundle (M–L + SQL; his `20261019_vault_lawyer_branding.sql` can't run: it reads a non-existent `profiles.role`) | Not built |
 | (old) ١٨٦/٢٢٢ basic laws for companies | Waiting on his library agent moving 3 files | — |
