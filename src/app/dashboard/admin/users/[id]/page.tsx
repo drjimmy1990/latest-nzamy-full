@@ -24,6 +24,7 @@ import {
   isClaimableDbUserType,
 } from "@/lib/auth/accountTypeClaim";
 import { apiErrorText } from "@/lib/services/apiErrorText";
+import { cyclePrice, cycleUnitAr, subscriptionCycleAr } from "@/lib/payments/planRowPrice";
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 interface SubscriptionPlan {
@@ -996,7 +997,7 @@ export default function UserProfilePage() {
   /* ── Build payments from subscription history ──────────────────────────── */
   const PAYMENTS = subHistory.map(s => ({
     date: formatDate(s.created_at),
-    amount: s.subscription_plans?.price_monthly ?? 0,
+    amount: cyclePrice(s.subscription_plans, s.billing_cycle) ?? s.subscription_plans?.price_monthly ?? 0,
     status: s.status,
     tier: s.subscription_plans?.name_ar ?? s.tier,
   }));
@@ -1146,9 +1147,9 @@ export default function UserProfilePage() {
               <>
                 <div className="grid grid-cols-3 gap-4 mb-5">
                   {[
-                    { label:"الباقة الحالية", val:`${activeSub.subscription_plans?.name_ar ?? activeSub.tier} — ${activeSub.subscription_plans?.price_monthly ?? 0} ر.س/${activeSub.billing_cycle === "yearly" ? "سنة" : "شهر"}` },
+                    { label:"الباقة الحالية", val:`${activeSub.subscription_plans?.name_ar ?? activeSub.tier} — ${cyclePrice(activeSub.subscription_plans, activeSub.billing_cycle) ?? activeSub.subscription_plans?.price_monthly ?? 0} ر.س/${cycleUnitAr(activeSub.billing_cycle)}` },
                     { label:"تاريخ التجديد", val: formatDate(activeSub.current_period_end) },
-                    { label:"دورة الفوترة", val: activeSub.billing_cycle === "yearly" ? "سنوي" : "شهري" },
+                    { label:"دورة الفوترة", val: subscriptionCycleAr(activeSub.billing_cycle) },
                   ].map((r,i)=>(
                     <div key={i}>
                       <p className={`text-[10px] mb-1 ${isDark?"text-zinc-500":"text-slate-400"}`}>{r.label}</p>

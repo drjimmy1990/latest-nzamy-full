@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { monthlyEquivalent } from "@/lib/payments/planRowPrice";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 
 /**
@@ -72,10 +73,7 @@ export async function GET() {
           `
           tier,
           billing_cycle,
-          subscription_plans (
-            price_monthly,
-            price_yearly
-          )
+          subscription_plans ( * )
         `,
         )
         .eq("status", "active"),
@@ -111,19 +109,11 @@ export async function GET() {
       const tier = (sub.tier as string) ?? "unknown";
       activeSubsByTier[tier] = (activeSubsByTier[tier] ?? 0) + 1;
 
-      // MRR calculation: use monthly price, or yearly / 12
+      // MRR: the cycle's own price over its months (yearly / 12, quarterly / 3,
+      // semiannual / 6), else the monthly price. `subscription_plans ( * )` so
+      // the read works before and after 20261026_10 adds the two new columns.
       const plan = sub.subscription_plans as unknown as Record<string, unknown> | null;
-      if (plan) {
-        const monthlyPrice = plan.price_monthly as number | null;
-        const yearlyPrice = plan.price_yearly as number | null;
-        const billingCycle = sub.billing_cycle as string;
-
-        if (billingCycle === "yearly" && yearlyPrice) {
-          mrr += yearlyPrice / 12;
-        } else if (monthlyPrice) {
-          mrr += monthlyPrice;
-        }
-      }
+      mrr += monthlyEquivalent(plan, sub.billing_cycle as string);
     }
 
     // ── Total credits used ─────────────────────────────────────────────────

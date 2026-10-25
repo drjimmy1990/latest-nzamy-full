@@ -16,7 +16,8 @@ export type SubscriptionTier = 'free' | 'ai' | 'pro' | 'corp' | 'max';
 
 export type SubscriptionStatus = 'active' | 'past_due' | 'cancelled' | 'expired' | 'trialing';
 
-export type BillingCycle = 'monthly' | 'yearly' | 'custom';
+/** subscriptions.billing_cycle: the four cycles (20261026_10) or an admin 'custom' grant. */
+export type BillingCycle = 'monthly' | 'quarterly' | 'semiannual' | 'yearly' | 'custom';
 
 export type VerificationStatus = 'pending' | 'verified' | 'rejected' | 'suspended';
 
@@ -269,6 +270,9 @@ export interface SubscriptionPlan {
   description_ar: string;
   description_en: string;
   price_monthly: number;
+  /** Null for a plan with no such cycle; absent before 20261026_10. */
+  price_quarterly?: number | null;
+  price_semiannual?: number | null;
   price_yearly: number;
   features: Array<{
     key: string;

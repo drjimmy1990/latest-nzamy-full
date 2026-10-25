@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/access-control";
 import { createServiceClient } from "@/lib/supabase/server";
+import { monthlyEquivalent } from "@/lib/payments/planRowPrice";
 
 export async function GET(request: NextRequest) {
   // 1. Auth check
@@ -24,11 +25,7 @@ export async function GET(request: NextRequest) {
         user_id,
         billing_cycle,
         status,
-        subscription_plans (
-          name_ar,
-          price_monthly,
-          price_yearly
-        )
+        subscription_plans ( * )
       `).eq("status", "active")
     ]);
 
@@ -60,11 +57,7 @@ export async function GET(request: NextRequest) {
         const planDetails: any = sub.subscription_plans;
         if (planDetails) {
           plan = planDetails.name_ar || "مجاني";
-          if (sub.billing_cycle === "yearly" && planDetails.price_yearly) {
-            mrr = Number(planDetails.price_yearly) / 12;
-          } else if (planDetails.price_monthly) {
-            mrr = Number(planDetails.price_monthly);
-          }
+          mrr = monthlyEquivalent(planDetails, sub.billing_cycle);
         }
       }
 
