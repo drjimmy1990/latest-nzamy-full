@@ -231,7 +231,7 @@ T=supabase/tests/rls; M=supabase/migrations; bash $T/run.sh \
 
 **تنبيه:** أي جهة خارج هذا المستودع تكتب في الجدولين **بجلسة مستخدم** (تطبيق جوال، أو سير عمل n8n بتوكن مستخدم) تخضع للقاعدة نفسها. ما يكتب بمفتاح `service_role` لا يتأثر.
 
-**ما لا يغلقه هذا الملف (للمتابعة):** جدول `document_shares` — سياسته تسمح للمستخدم بإدراج رابط مشاركة بأي مسار ملف وبرمز يختاره، وصفحة التحقق من الرابط توقّعه بصلاحية الخادم. هذه ثغرة من النوع نفسه وتحتاج ملفاً مستقلاً.
+**ما لا يغلقه هذا الملف:** جدول `document_shares` — سياسته تسمح للمستخدم بإدراج رابط مشاركة بأي مسار ملف وبرمز يختاره، وصفحة التحقق من الرابط توقّعه بصلاحية الخادم. ثغرة من النوع نفسه، **يغلقها الملف 66** (القسم التالي).
 
 **للتراجع (يدوياً):** الأوامر في رأس الملف.
 
@@ -264,6 +264,68 @@ Existing rows are not rewritten. The new routes refuse any row whose path is out
 
 Order: run it BEFORE the code deploy (it also works after). Its warning count is the only early signal of which files the new routes will stop serving. After the deploy, two kinds of row answer «not found»: an old row whose path is outside its owner's folder (forged, or an old writer's key shape), and a contract version whose uploader's account was deleted (`uploaded_by` null). The new routes also never copy or remove such a row's object with the service role: copy answers 404, and the permanent delete / 30-day purge drop the row but keep the bytes.
 
-Not closed here: `document_shares` (FOR ALL, `owner_id = auth.uid()`) lets a session insert any `document_path` with a token it chose, and `/api/v1/share/[token]/verify` signs it with the service role. That is the same class of hole and needs its own file.
+Not closed here: `document_shares` (FOR ALL, `owner_id = auth.uid()`) lets a session insert any `document_path` with a token it chose, and `/api/v1/share/[token]/verify` signs it with the service role. That is the same class of hole; **66 closes it** (next section).
 
 `deploy.sh` does not run `_verify.sql`; when you run it by hand, expect `_verify: 20261026_65 OK`.
+
+---
+
+## 66: رابط المشاركة لا يفتح إلا مستنداً يملكه صاحب الرابط (إصلاح أمني — المراجعة المستقلة، البند ١، نصف `document_shares`)
+
+`66_NOW_20261026_66_document_shares_path_ownership.sql` نسخة مطابقة من `supabase/migrations/20261026_66_document_shares_path_ownership.sql`.
+
+**هذه ثغرة مفتوحة على الإنتاج اليوم — نفّذ الملف الآن، بعد 65 مباشرة، ولا تنتظر النشر.** يحتاج 65 قبله (يتوقف برسالة واضحة إن لم يجده). لا يحتاج نشر كود: طريق المشاركة الوحيد في التطبيق (`POST /api/v1/share`، لم يتغيّر منذ 5 سبتمبر) يلتزم بالقاعدة أصلاً.
+
+| الترتيب | الملف | بأي دور | متى |
+|---|---|---|---|
+| 1 | `65_BEFORE_DEPLOY_20261026_65_attachments_path_ownership.sql` | محرر SQL (postgres) | الآن |
+| 2 | `66_NOW_20261026_66_document_shares_path_ownership.sql` | محرر SQL (postgres) | الآن، بعد 65 — يغلق ثغرة مفتوحة اليوم |
+
+**الثغرة:** صفحة فتح رابط المشاركة (`/api/v1/share/[token]/verify`) توقّع مسار الملف المسجّل في صف المشاركة بصلاحية الخادم الكاملة. وسياسة الجدول (`document_shares_owner_write`، لكل العمليات) لا تفحص إلا أن صاحب الصف هو المستخدم. فكان يمكن لأي مستخدم مسجّل، عبر واجهة قاعدة البيانات مباشرة ودون المرور بالتطبيق، أن يدرج صف مشاركة يشير إلى **ملف أي مستخدم آخر** برمز يختاره هو، ثم يفتح `/share/<رمزه>` فيحصل على رابط تحميل الملف. أو أن يغيّر مسار مشاركة يملكها. فحص الطريق في الكود لا يفيد هنا: الهجوم لا يمر به.
+
+**القاعدة بعد الملف** (للجلسات فقط، ومنها جلسة المشرف؛ الخادم بصلاحية `service_role` لا يتأثر):
+- **الإنشاء:** صاحب المشاركة هو المستخدم نفسه. والمستند (`document_id` + `document_path`) مستند **رفعه هو**، غير محذوف وليس في السلة، وملفه داخل مجلده. الرمز مخزّن مشفّراً فقط (لا رمز ولا باسكود بنص صريح).
+- **لماذا «يملكه» لا «يستطيع قراءته»:** طريقا المشاركة في الواجهة (صفحة مستندات المحامي، ومراجعة العقود) لا يشاركان إلا ملفات المستخدم نفسه. القاعدة الأوسع كانت ستسمح لطرف في قضية بنشر رابط عام لملف الطرف الآخر. والطريق نفسه صار يرفض مستنداً لا يملكه المستخدم بـ«المستند غير موجود».
+- **التعديل:** لا يتغيّر صاحب المشاركة ولا المستند ولا المسار ولا الرمز. العنوان ومدة الصلاحية والباسكود تبقى قابلة للتعديل لصاحبها.
+- السياسة الواحدة «لكل العمليات» استُبدلت بسياسات منفصلة: قراءة (كما هي) وإنشاء وتعديل وحذف لصاحب المشاركة، وسياسة المشرف كما هي. ويحذف الملف أي سياسة إدراج أخرى على الجدول ويطبع اسمها.
+- **في الكود (مع النشر القادم):** صفحة فتح الرابط لا توقّع الملف إلا إذا كان المستند ما زال موجوداً، وليس في السلة، ومسجّلاً باسم صاحب المشاركة، ومساره داخل مجلده. فالمستند المحذوف لا يُفتح برابط قديم.
+
+**الصفوف القديمة لا تُعدَّل.** إن ظهر في نهاية الملف تحذير بعدد روابط مشاركة سارية لا تشير إلى مستند حيّ لصاحبها، فالأرجح أنها **روابط مزوّرة**. هذه تبقى تفتح حتى نشر الكود. شغّل الاستعلام المطبوع مع التحذير وأرسل النتيجة للمراجعة. ولإيقافها فوراً قبل النشر (يدوياً، بعد المراجعة):
+
+```sql
+update public.document_shares s set expires_at = now()
+ where (s.expires_at is null or s.expires_at > now())
+   and not exists (select 1 from public.attachments a
+                    where a.id::text = s.document_id and a.storage_path = s.document_path
+                      and a.owner_user_id = s.owner_id and a.deleted_at is null
+                      and public.storage_path_in_folder(a.storage_path, a.owner_user_id));
+```
+
+**`lawyer_profiles.licence_image_path` (فُحص):** لا تملك الجلسات أي صلاحية على هذا العمود (20261019_20)، والكاتب الوحيد هو الخادم (`licences/<معرّف المحامي>/…`). لا شيء يُغلق هنا. يحذّر الملف إن عادت الجلسات تستطيع كتابته (و`_verify.sql` يتوقف). وصار طابور التوثيق عند المشرف لا يوقّع إلا مساراً داخل `licences/<معرّف ذلك المحامي>/`.
+
+**النتيجة المتوقعة:** في نهاية الملف `20261026_66 verify: OK`. وفي `_verify.sql` (يدوياً؛ `deploy.sh` لا يشغّله): `_verify: 20261026_66 OK`.
+
+**للتراجع (يدوياً):** الأوامر في رأس الملف.
+
+### الاختبار (Docker محلي فقط)
+
+```bash
+M=supabase/migrations; T=supabase/tests/rls; bash $T/run.sh   $M/20260903_phase2_clients_and_firm_membership.sql $M/20260904_phase5_deadline_radar.sql   $M/20260905_phase3_consultations_and_contracts.sql $M/20260910_case_notes.sql   $M/20261017_41_notes_visibility_case_team.sql   $T/prelude_attachments_live.sql $T/prelude_attachments_stray_insert_policies.sql   $M/20261025_51_soft_delete_case_notes_docs.sql   $M/20261026_65_attachments_path_ownership.sql   $T/prelude_document_shares_live.sql   $M/20261026_66_document_shares_path_ownership.sql $M/20261026_66_document_shares_path_ownership.sql   $T/document_shares_path_ownership.test.sql
+```
+
+---
+
+**English summary.** `66_NOW_20261026_66_document_shares_path_ownership.sql` is identical to `supabase/migrations/20261026_66_document_shares_path_ownership.sql`. **It closes a hole that is live on production today. Run it now, right after 65; it needs no code deploy.** The app's one share writer, `POST /api/v1/share` (unchanged since 2026-09-05), already complies.
+
+The hole: `/api/v1/share/[token]/verify` signs `document_shares.document_path` with the service role, and `document_shares_owner_write` (FOR ALL) checked only `owner_id = auth.uid()`. Through raw PostgREST a session could insert a share of anybody's file with a token hash it chose, or re-point one of its own shares.
+
+After 66, for sessions only (admins included; `postgres` / `service_role` / `supabase_admin` pass):
+- INSERT: `owner_id` is you; `(document_id, document_path)` is `(id, storage_path)` of a live attachment you uploaded, with its file in your folder; `token_hash` only, with no plaintext token or passcode.
+- UPDATE: `owner_id`, `document_id`, `document_path`, `token_hash` and `token` are frozen.
+- Why owner-only: both UI share paths share the user's own files. A wider "may read" rule would let a case participant publish the other side's file. The route now refuses a non-owned attachment with a 404.
+- Mechanics: a SECURITY INVOKER trigger (`trg_00_…`) plus per-command policies replace the FOR ALL one; any other INSERT policy is dropped by scan.
+- In code (next deploy): the verify route signs only while the share still points at a live, unbinned attachment of the share's owner, in his folder.
+
+Existing rows are not rewritten. A warning count means live shares that fail the rule, most likely forged. They keep opening until the code deploy, and the SQL above expires them by hand.
+
+`licence_image_path`: sessions hold no privilege on it (20261019_20). 66 warns and `_verify.sql` raises if that ever changes. The admin queue now signs only `licences/<that lawyer>/…`.
