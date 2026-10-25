@@ -17,10 +17,6 @@ export const STRICT_RATE_LIMITED_ROUTES: readonly RegExp[] = [
   /^\/api\/v1\/library\/invitations\/redeem$/, // POST /api/v1/library/invitations/redeem
   /^\/api\/v1\/invite\/[^/]+\/accept$/, // POST /api/v1/invite/[code]/accept
   /^\/api\/v1\/contact$/, // POST /api/v1/contact
-  // D2 (owner ٢٧٦): the client's 4-digit check on a tracking link. The database
-  // also locks the link after 5 wrong tries; this bucket caps one address
-  // walking many links.
-  /^\/api\/v1\/track\/[^/]+\/unlock$/, // POST /api/v1/track/[token]/unlock
 ];
 
 export const GENERAL_RATE_LIMITED_METHODS: ReadonlySet<string> = new Set([
@@ -30,7 +26,7 @@ export const GENERAL_RATE_LIMITED_METHODS: ReadonlySet<string> = new Set([
   "DELETE",
 ]);
 
-/** True when `method` + `pathname` is one of the strict-bucket POST actions. */
+/** True when `method` + `pathname` is one of the four strict-bucket POST actions. */
 export function isStrictRateLimitedRoute(method: string, pathname: string): boolean {
   return method === "POST" && STRICT_RATE_LIMITED_ROUTES.some((re) => re.test(pathname));
 }
@@ -63,6 +59,19 @@ export const TRACKING_PAGE_RE = /^\/track\/[^/]+$/;
 /** True for a GET/HEAD of /track/<one segment>. */
 export function isTrackingPageRoute(method: string, pathname: string): boolean {
   return (method === "GET" || method === "HEAD") && TRACKING_PAGE_RE.test(pathname);
+}
+
+// The client's 4-digit check on a tracking link (D2, owner ٢٧٦). The database
+// locks a link after 5 wrong tries; this pair of buckets caps one visitor
+// walking many links. It is NOT the strict bucket: that one keys on the
+// proxy-resolved IP alone, which may be one Cloudflare edge shared by many
+// clients (see libraryReadClientKey), so the proxy keys it like the tracking
+// page — the visitor key plus a wider per-IP ceiling. POST only.
+export const TRACKING_UNLOCK_RE = /^\/api\/v1\/track\/[^/]+\/unlock$/;
+
+/** True for a POST of /api/v1/track/<one segment>/unlock. */
+export function isTrackingUnlockRoute(method: string, pathname: string): boolean {
+  return method === "POST" && TRACKING_UNLOCK_RE.test(pathname);
 }
 
 /**

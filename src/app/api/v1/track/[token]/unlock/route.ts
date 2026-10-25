@@ -10,8 +10,8 @@ import { unlockCookieFor, unlockTracking } from "@/lib/tracking/trackingSnapshot
  * ٢٧٦): the last 4 digits of the mobile number on the case file. Public, no
  * account. The comparison, the per-link counter and the 15-minute lock after
  * 5 wrong tries all happen in public.case_tracking_unlock (20261026_62), in
- * one locked row; this route never sees the phone. The proxy also puts this
- * path in its strict per-IP bucket (rateLimitRoutes.ts).
+ * one locked row; this route never sees the phone. The proxy also limits this
+ * path per visitor and per IP (isTrackingUnlockRoute, rateLimitRoutes.ts).
  *
  * Wrong digits, an unknown token and a paused / revoked link all get the same
  * answer, so the response never says whether a link exists. Success sets an

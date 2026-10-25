@@ -168,7 +168,11 @@ test("v2: the unlock route — generic denial, the strict bucket, and the cookie
   assert.match(mod, /sameSite: "strict"/);
   assert.match(mod, /path: unlockCookiePath\(token\)/);
   assert.match(mod, /unlockCookieKey\(process\.env\.SUPABASE_SERVICE_ROLE_KEY\)/);
-  assert.ok(read("lib/rateLimitRoutes.ts").includes(String.raw`/^\/api\/v1\/track\/[^/]+\/unlock$/`), "the unlock POST is in the strict bucket");
+  assert.ok(read("lib/rateLimitRoutes.ts").includes(String.raw`TRACKING_UNLOCK_RE = /^\/api\/v1\/track\/[^/]+\/unlock$/`), "the unlock POST has its own route matcher");
+  const proxy = read("proxy.ts");
+  assert.match(proxy, /const isTrackingUnlockMatch = isTrackingUnlockRoute\(method, pathname\);/);
+  assert.match(proxy, /rateLimiter\.check\("tracking-unlock-ip", ip, TRACKING_UNLOCK_IP_RATE_LIMIT\)/);
+  assert.match(proxy, /rateLimiter\.check\("tracking-unlock", key, TRACKING_UNLOCK_RATE_LIMIT\)/);
 });
 
 test("v2: creation refuses a case with no client mobile before inserting; pause/resume go through the RPCs with the session", () => {
@@ -183,4 +187,14 @@ test("v2: creation refuses a case with no client mobile before inserting; pause/
   const panel = read("components/dashboard/caseTracking/CaseTrackingLinksPanel.tsx");
   for (const w of ["إيقاف مؤقت", "إعادة تفعيل", "إلغاء نهائي", "نعم، ألغِ الرابط نهائياً"]) assert.ok(panel.includes(w), w);
   assert.doesNotMatch(panel, /text-(gray|slate)-(100|200)\b/, "no gray-100/200 text (dark-mode trap: those are surfaces)");
+});
+
+test("v2: the unlock POST is public — no auth gate in front of it (the client has no account)", async () => {
+  const { isProtectedApiPath } = await import("../auth/routeAccess.ts");
+  assert.equal(isProtectedApiPath(`/api/v1/track/${"a".repeat(64)}/unlock`), false);
+  assert.equal(isProtectedApiPath(`/track/${"a".repeat(64)}`), false);
+  const proxy = read("proxy.ts");
+  const list = /const PROTECTED = \[([\s\S]*?)\];/.exec(proxy);
+  assert.ok(list, "proxy.ts has its PROTECTED page prefixes");
+  assert.doesNotMatch(list[1], /"\/track|"\/api/, "neither /track nor /api is a protected page prefix");
 });

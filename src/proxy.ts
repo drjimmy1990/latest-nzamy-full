@@ -28,6 +28,7 @@ import {
   isGeneralRateLimitedApiPath,
   isLibraryReadRateLimitedRoute,
   isTrackingPageRoute,
+  isTrackingUnlockRoute,
   libraryReadClientKey,
 } from "@/lib/rateLimitRoutes";
 import { hasValidSaudiMobile } from "@/lib/services/saudiMobile";
@@ -72,6 +73,12 @@ const TRACKING_PAGE_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 30
 // this ceiling holds whatever that header says. It is wider because X-Real-IP
 // may be one Cloudflare edge shared by many visitors.
 const TRACKING_PAGE_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 300 };
+// The tracking link's 4-digit check (D2, POST /api/v1/track/<token>/unlock):
+// 10 tries per visitor per 10 minutes (the database also locks each link
+// after 5 wrong tries), and a wider ceiling per proxy-resolved IP for the
+// same reason as the page's.
+const TRACKING_UNLOCK_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 10 };
+const TRACKING_UNLOCK_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 200 };
 
 // The actual route tables (which paths/methods match which bucket) live in
 // src/lib/rateLimitRoutes.ts, pure and tested on their own — see that file's
@@ -104,8 +111,9 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
     const isGeneralMatch = isGeneralRateLimitedApiPath(method, pathname);
     const isLibraryReadMatch = isLibraryReadRateLimitedRoute(method, pathname);
     const isTrackingMatch = isTrackingPageRoute(method, pathname);
+    const isTrackingUnlockMatch = isTrackingUnlockRoute(method, pathname);
 
-    if (!isStrictMatch && !isGeneralMatch && !isLibraryReadMatch && !isTrackingMatch) return null;
+    if (!isStrictMatch && !isGeneralMatch && !isLibraryReadMatch && !isTrackingMatch && !isTrackingUnlockMatch) return null;
 
     const ip = resolveClientIp((name) => req.headers.get(name));
 
@@ -131,6 +139,14 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
       // Same visitor key as the library bucket (Cloudflare's CF-Connecting-IP).
       const key = libraryReadClientKey((name) => req.headers.get(name), ip);
       const decision = rateLimiter.check("tracking-page", key, TRACKING_PAGE_RATE_LIMIT);
+      if (!decision.allowed) return rateLimitResponse(decision);
+    }
+
+    if (isTrackingUnlockMatch) {
+      const perIp = rateLimiter.check("tracking-unlock-ip", ip, TRACKING_UNLOCK_IP_RATE_LIMIT);
+      if (!perIp.allowed) return rateLimitResponse(perIp);
+      const key = libraryReadClientKey((name) => req.headers.get(name), ip);
+      const decision = rateLimiter.check("tracking-unlock", key, TRACKING_UNLOCK_RATE_LIMIT);
       if (!decision.allowed) return rateLimitResponse(decision);
     }
 
