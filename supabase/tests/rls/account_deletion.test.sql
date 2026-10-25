@@ -30,7 +30,11 @@
 --     $T/prelude_storage_objects_stub.sql \
 --     $M/20261026_70_account_deletion.sql \
 --     $M/20261026_70_account_deletion.sql \
+--     supabase/storage_policies_documents.sql \
 --     $T/account_deletion.test.sql
+-- (storage_policies_documents.sql is the canonical copy of
+-- SQL_batch_2026-10-26_owner_answers/71_AFTER_70_…; prod runs it as
+-- supabase_admin, Docker as postgres.)
 --
 -- NEGATIVE CONTROL (must FAIL): the chain without the two 20261026_70 lines,
 -- running only the fixtures (everything before the first `set role
@@ -43,6 +47,23 @@
 -- the member-removal UPDATE with the Art. 18 refusal «هذه الأداة للمحامي
 -- المرخّص بالترافع…», exit 3 (recorded 2026-10-26): a consultant firm owner
 -- could not remove a lawyer at all.
+-- NEGATIVE CONTROLS of the 2026-10-26 fix pass (each must FAIL; recorded
+-- 2026-10-26, exit 3). "fixtures" = everything before the first `set role
+-- authenticated`; "old 70" = 20261026_70 of commit 5cb01e6f.
+--   3. storage policy with the reviewer's INLINE subquery (`not exists (select
+--      … from public.attachments …)` in the policy, no definer helper), on
+--      fixtures + T6 + T15 → "T15 FAIL: the removed member still reads
+--      (Storage API) the firm document he uploaded": the subquery runs under
+--      M's RLS, sees no row, and lets the bytes through. The same with
+--      SQL_batch_2026-10-25_owner_free/17 (no SELECT guard) — i.e. re-running
+--      17 after 71.
+--   4. old 70, fixtures + T12 → "T12 FAIL: the user lifted a freeze the
+--      administration made".
+--   5. old 70, fixtures + T13 + T14 → "T13 FAIL: the client's request on the
+--      firm case went to 00000000-…-00000000000f" (a non-member's rows moved).
+--   6. old 70, fixtures + T14 (preview check removed) → "T14 FAIL: prepare
+--      changed N's rows: …:9999…  → …:0000…000f … trail=5 notes_to_O=1":
+--      the old prepare committed the moves before deleteUser.
 --
 -- People:
 --   O  firm owner of F (managing partner by the 20260903_phase2 trigger)
@@ -55,6 +76,8 @@
 --   A  admin
 --   Q  owner of firm F3, a legal consultant (practice_kind) — T11
 --   R  lawyer, member of F3                               — T11
+--   N  lawyer, member of F, whose purge fails after prepare — T14
+--   Z  an auth user with no profiles row                  — T12
 -- The live lawyer_profiles (prelude + 20261016_10 + 20261019_20) and the
 -- Art. 18 guard of 20261019_21 are in the chain on purpose: the guard reads
 -- the SESSION's role, so it judges the firm owner's member-removal PATCH.
@@ -62,6 +85,18 @@
 \set ON_ERROR_STOP 1
 \pset format unaligned
 \pset tuples_only on
+
+-- GoTrue's auth.users has an email column (the stub does not); GoTrue deletes
+-- as supabase_auth_admin with no SET ROLE (T11b, T14).
+alter table auth.users add column if not exists email text;
+do $$
+begin
+  if not exists (select 1 from pg_roles where rolname = 'supabase_auth_admin') then
+    create role supabase_auth_admin login;
+  end if;
+end $$;
+grant usage on schema auth to supabase_auth_admin;
+grant select, delete on auth.users to supabase_auth_admin;
 
 insert into auth.users (id) values
   ('00000000-0000-0000-0000-00000000000f'), ('11111111-0000-0000-0000-000000000001'),
@@ -73,10 +108,12 @@ insert into public.profiles (id, user_type, display_name, email) values
   ('11111111-0000-0000-0000-000000000001', 'lawyer',     'L محامٍ',       'l@example.test'),
   ('22222222-0000-0000-0000-000000000002', 'lawyer',     'M محامٍ',       'm@example.test'),
   ('33333333-0000-0000-0000-000000000003', 'individual', 'S سكرتير',      's@example.test'),
-  ('44444444-0000-0000-0000-000000000004', 'lawyer',     'I محامٍ مستقل', 'i@example.test'),
+  ('44444444-0000-0000-0000-000000000004', 'lawyer',     'I محامٍ مستقل', null),
   ('55555555-0000-0000-0000-000000000005', 'individual', 'C موكل',        'c@example.test'),
   ('66666666-0000-0000-0000-000000000006', 'individual', 'X غريب',        'x@example.test'),
   ('aaaaaaaa-0000-0000-0000-00000000000a', 'admin',      'A مشرف',        'a@example.test');
+-- I signed up with Google: profiles.email is empty, auth.users.email is not (7: the snapshot reads the auth row)
+update auth.users set email = 'i@auth.example.test' where id = '44444444-0000-0000-0000-000000000004';
 insert into public.firm_profiles (id, owner_user_id, name_ar) values
   ('ffffffff-0000-0000-0000-0000000000f1', '00000000-0000-0000-0000-00000000000f', 'مكتب الاختبار');
 insert into public.firm_members (firm_id, user_id, role, status, accepted_at) values
@@ -105,10 +142,14 @@ insert into public.attachments (id, request_id, owner_user_id, file_name, storag
   (103, null,       '44444444-0000-0000-0000-000000000004', 'vault.pdf',  '44444444-0000-0000-0000-000000000004/1-vault.pdf'),
   (104, 'case-own', '44444444-0000-0000-0000-000000000004', 'own.pdf',    '44444444-0000-0000-0000-000000000004/2-own.pdf'),
   (105, 'case-i',   '44444444-0000-0000-0000-000000000004', 'shared.pdf', '44444444-0000-0000-0000-000000000004/3-shared.pdf'),
-  (106, 'case-i',   '55555555-0000-0000-0000-000000000005', 'c.pdf',      '55555555-0000-0000-0000-000000000005/1-c.pdf');
+  (106, 'case-i',   '55555555-0000-0000-0000-000000000005', 'c.pdf',      '55555555-0000-0000-0000-000000000005/1-c.pdf'),
+  (107, null,       '22222222-0000-0000-0000-000000000002', 'mine.pdf',   '22222222-0000-0000-0000-000000000002/2-mine.pdf');
 
 insert into storage.objects (bucket_id, name) values
   ('documents', '11111111-0000-0000-0000-000000000001/1-l.pdf'),
+  ('documents', '22222222-0000-0000-0000-000000000002/1-m.pdf'),
+  ('documents', '22222222-0000-0000-0000-000000000002/2-mine.pdf'),
+  ('documents', '22222222-0000-0000-0000-000000000002/contracts/ct-f/1-firm.pdf'),
   ('documents', '44444444-0000-0000-0000-000000000004/1-vault.pdf'),
   ('documents', '44444444-0000-0000-0000-000000000004/2-own.pdf'),
   ('documents', '44444444-0000-0000-0000-000000000004/3-shared.pdf'),
@@ -119,8 +160,11 @@ insert into storage.objects (bucket_id, name) values
 
 insert into public.contracts (id, client_user_id, owner_user_id, title) values
   ('ct-1', '55555555-0000-0000-0000-000000000005', '44444444-0000-0000-0000-000000000004', 'عقد أتعاب');
+insert into public.contracts (id, client_user_id, owner_user_id, firm_id, title) values
+  ('ct-f', '55555555-0000-0000-0000-000000000005', '22222222-0000-0000-0000-000000000002', 'ffffffff-0000-0000-0000-0000000000f1', 'عقد المكتب');
 insert into public.contract_versions (contract_id, version_no, file_name, storage_path, uploaded_by) values
-  ('ct-1', 1, 'contract.pdf', '44444444-0000-0000-0000-000000000004/contracts/ct-1/1-contract.pdf', '44444444-0000-0000-0000-000000000004');
+  ('ct-1', 1, 'contract.pdf', '44444444-0000-0000-0000-000000000004/contracts/ct-1/1-contract.pdf', '44444444-0000-0000-0000-000000000004'),
+  ('ct-f', 1, 'firm.pdf',     '22222222-0000-0000-0000-000000000002/contracts/ct-f/1-firm.pdf',     '22222222-0000-0000-0000-000000000002');
 
 insert into public.hearings (case_request_id, firm_id, owner_user_id, title, hearing_date) values
   ('case-l', 'ffffffff-0000-0000-0000-0000000000f1', '11111111-0000-0000-0000-000000000001', 'جلسة قضية L', current_date + 7);
@@ -299,6 +343,37 @@ begin
   raise notice 'T6c PASS: the firm owner is notified with a count, never the content';
 end $$;
 
+-- ── T15 raw Storage reads follow the rows (the documents SELECT policy) ─────
+-- M's firm document and firm contract version stay in M's folder after the
+-- transfer; the Storage API must refuse them to him. His own vault file stays
+-- his; an active member (L) still reads the firm document he uploaded.
+set role authenticated;
+select set_config('test.uid', '22222222-0000-0000-0000-000000000002', false);
+do $$
+declare n int;
+begin
+  select count(*) into n from storage.objects
+   where bucket_id = 'documents' and name = '22222222-0000-0000-0000-000000000002/1-m.pdf';
+  if n <> 0 then raise exception 'T15 FAIL: the removed member still reads (Storage API) the firm document he uploaded'; end if;
+  select count(*) into n from storage.objects
+   where bucket_id = 'documents' and name = '22222222-0000-0000-0000-000000000002/contracts/ct-f/1-firm.pdf';
+  if n <> 0 then raise exception 'T15 FAIL: the removed member still reads the firm contract version he uploaded'; end if;
+  select count(*) into n from storage.objects
+   where bucket_id = 'documents' and name = '22222222-0000-0000-0000-000000000002/2-mine.pdf';
+  if n <> 1 then raise exception 'T15 FAIL: the removed member lost his own vault file'; end if;
+  raise notice 'T15 PASS: the removed member cannot read the firm document or contract version left in his folder; his own vault file stays readable';
+end $$;
+select set_config('test.uid', '11111111-0000-0000-0000-000000000001', false);
+do $$
+declare n int;
+begin
+  select count(*) into n from storage.objects
+   where bucket_id = 'documents' and name = '11111111-0000-0000-0000-000000000001/1-l.pdf';
+  if n <> 1 then raise exception 'T15b FAIL: an active member lost his own upload on a firm case'; end if;
+  raise notice 'T15b PASS: an active member still reads the firm document he uploaded';
+end $$;
+reset role;
+
 -- ── T7 purge of I after 60 days: personal goes, shared and invoices stay ────
 set role authenticated;
 select set_config('test.uid', '44444444-0000-0000-0000-000000000004', false);
@@ -318,13 +393,22 @@ begin
   if claimed <> 0 then raise exception 'T7 FAIL: the same request was claimed twice'; end if;
   select public.account_purge_prepare('44444444-0000-0000-0000-000000000004') into r;
   if not (r->>'ok')::boolean then raise exception 'T7 FAIL: prepare refused: %', r; end if;
-  select array(select jsonb_array_elements_text(r->'storage_paths') order by 1) into paths;
-  if paths <> array['44444444-0000-0000-0000-000000000004/1-vault.pdf',
-                    '44444444-0000-0000-0000-000000000004/2-own.pdf',
-                    '44444444-0000-0000-0000-000000000004/9-orphan.pdf'] then
-    raise exception 'T7 FAIL: storage paths to remove are %', paths;
+  -- a dry run: the keep rules are previewed, nothing is written before the delete
+  if (r->'keep_preview'->>'documents_kept_for_others')::int <> 1 or (r->'keep_preview'->>'invoices_snapshotted')::int <> 1 then
+    raise exception 'T7 FAIL: the preview is %', r->'keep_preview';
   end if;
-  raise notice 'T7 PASS: claimed once; prepare lists the vault, own-case and orphan objects — never the shared case document, the contract or another bucket';
+  if (select owner_user_id from public.attachments where id = 105) is distinct from '44444444-0000-0000-0000-000000000004' then
+    raise exception 'T7 FAIL: prepare detached the shared document before the delete';
+  end if;
+  if exists (select 1 from public.payment_orders where metadata ? 'buyer_snapshot') then
+    raise exception 'T7 FAIL: prepare wrote the buyer snapshot before the delete';
+  end if;
+  begin
+    perform public.account_purge_storage_paths('44444444-0000-0000-0000-000000000004');
+    raise exception 'T7 FAIL: the files of a live account were listed for removal';
+  exception when object_not_in_prerequisite_state then null;
+  end;
+  raise notice 'T7 PASS: claimed once; prepare is a dry run (previewed, nothing detached or snapshotted); no file list while the account exists';
 end $$;
 reset role;
 set role authenticated;
@@ -340,6 +424,17 @@ reset role;
 -- what deleteUser does
 delete from auth.users where id = '44444444-0000-0000-0000-000000000004';
 set role service_role;
+do $$
+declare paths text[];
+begin
+  select array(select unnest(public.account_purge_storage_paths('44444444-0000-0000-0000-000000000004')) order by 1) into paths;
+  if paths <> array['44444444-0000-0000-0000-000000000004/1-vault.pdf',
+                    '44444444-0000-0000-0000-000000000004/2-own.pdf',
+                    '44444444-0000-0000-0000-000000000004/9-orphan.pdf'] then
+    raise exception 'T7d FAIL: storage paths to remove are %', paths;
+  end if;
+  raise notice 'T7d PASS: after the delete the file list is the vault, own-case and orphan objects — never the shared case document, the contract or another bucket';
+end $$;
 select public.account_purge_finish(
   (select id from public.account_deletion_requests where user_id = '44444444-0000-0000-0000-000000000004' and status = 'purging'),
   'purged', '{"storage_removed": 3}'::jsonb, null);
@@ -358,8 +453,8 @@ begin
   select count(*) into n from public.contract_versions where contract_id = 'ct-1';
   if n <> 1 then raise exception 'T7c FAIL: the contract version was lost'; end if;
   select metadata->'buyer_snapshot' into snap from public.payment_orders where id = 'eeeeeeee-0000-0000-0000-000000000001';
-  if snap is null or snap->>'display_name' <> 'I محامٍ مستقل' or snap->>'email' <> 'i@example.test' then
-    raise exception 'T7c FAIL: the paid invoice lost its buyer (%)', snap;
+  if snap is null or snap->>'display_name' <> 'I محامٍ مستقل' or snap->>'email' is distinct from 'i@auth.example.test' then
+    raise exception 'T7c FAIL: the paid invoice lost its buyer, or took the empty profiles.email over auth.users.email (%)', snap;
   end if;
   if (select user_id from public.payment_orders where id = 'eeeeeeee-0000-0000-0000-000000000001') is not null then
     raise exception 'T7c FAIL: payment_orders.user_id should be SET NULL';
@@ -509,14 +604,256 @@ declare r jsonb;
 begin
   r := public.account_purge_prepare('88888888-0000-0000-0000-000000000008');
   if not (r->>'ok')::boolean then raise exception 'T11b FAIL: prepare refused R: %', r; end if;
+  if (select owner_user_id from public.hearings where case_request_id = 'case-r') <> '88888888-0000-0000-0000-000000000008' then
+    raise exception 'T11b FAIL: prepare moved the hearing — it must be a dry run';
+  end if;
+end $$;
+reset role;
+-- what GoTrue does: its login role, supabase_auth_admin, with no SET ROLE
+set session authorization supabase_auth_admin;
+delete from auth.users where id = '88888888-0000-0000-0000-000000000008';
+reset session authorization;
+do $$
+begin
+  if exists (select 1 from auth.users where id = '88888888-0000-0000-0000-000000000008') then
+    raise exception 'T11b FAIL: R was not deleted';
+  end if;
+  if (select owner_user_id from public.hearings where case_request_id = 'case-r') <> '77777777-0000-0000-0000-000000000007' then
+    raise exception 'T11b FAIL: the delete (supabase_auth_admin) did not move the hearing to the firm owner';
+  end if;
+  raise notice 'T11b PASS: prepare moves nothing; the delete itself, as GoTrue''s supabase_auth_admin, moves the hearing the Art. 18 guard refused on the session path — nothing is lost';
+end $$;
+
+-- ── T12 an admin's freeze is the administration's to lift ───────────────────
+-- (finding 2; the reviewer's P1.) The user's «استعادة» lifts only a freeze he
+-- asked for; a self request an admin then freezes becomes the admin's.
+insert into auth.users (id) values ('abababab-0000-0000-0000-0000000000ab');  -- Z: no profiles row
+set role service_role;
+do $$
+declare r jsonb;
+begin
+  r := public.account_deletion_request_for('66666666-0000-0000-0000-000000000006', 'aaaaaaaa-0000-0000-0000-00000000000a', 'admin');
+  if r->>'requested_by' <> 'admin' then raise exception 'T12 FAIL: the admin freeze is %', r; end if;
+end $$;
+reset role;
+set role authenticated;
+select set_config('test.uid', '66666666-0000-0000-0000-000000000006', false);
+do $$
+declare ok boolean; r jsonb;
+begin
+  select public.cancel_account_deletion() into ok;
+  if ok then raise exception 'T12 FAIL: the user lifted a freeze the administration made'; end if;
+  select public.request_account_deletion(null) into r;
+  if r->>'requested_by' <> 'admin' then raise exception 'T12 FAIL: a self request turned the admin freeze into his own (%)', r; end if;
+end $$;
+reset role;
+set role service_role;
+do $$
+declare ok boolean;
+begin
+  if (select status from public.account_deletion_requests
+       where user_id = '66666666-0000-0000-0000-000000000006' and status <> 'cancelled') <> 'requested' then
+    raise exception 'T12 FAIL: the admin freeze did not survive the user''s cancel';
+  end if;
+  select public.account_deletion_cancel_for('66666666-0000-0000-0000-000000000006', 'aaaaaaaa-0000-0000-0000-00000000000a') into ok;
+  if not ok then raise exception 'T12 FAIL: an admin could not lift the administration''s freeze'; end if;
+end $$;
+reset role;
+-- X asks himself, then an admin freezes: the request becomes the admin's, its date stays
+set role authenticated;
+select set_config('test.uid', '66666666-0000-0000-0000-000000000006', false);
+select public.request_account_deletion('بطلبي') is not null;
+reset role;
+create temp table _t12 as
+  select purge_after from public.account_deletion_requests
+   where user_id = '66666666-0000-0000-0000-000000000006' and status = 'requested';
+set role service_role;
+select public.account_deletion_request_for('66666666-0000-0000-0000-000000000006', 'aaaaaaaa-0000-0000-0000-00000000000a', 'admin') is not null;
+reset role;
+set role authenticated;
+select set_config('test.uid', '66666666-0000-0000-0000-000000000006', false);
+do $$
+declare ok boolean;
+begin
+  select public.cancel_account_deletion() into ok;
+  if ok then raise exception 'T12 FAIL: the user lifted his own request after an admin froze it too'; end if;
+end $$;
+reset role;
+do $$
+declare r public.account_deletion_requests;
+begin
+  select * into r from public.account_deletion_requests
+   where user_id = '66666666-0000-0000-0000-000000000006' and status = 'requested';
+  if r.requested_by <> 'admin' or r.requested_by_user <> 'aaaaaaaa-0000-0000-0000-00000000000a' then
+    raise exception 'T12 FAIL: the taken-over request is %/%', r.requested_by, r.requested_by_user;
+  end if;
+  if r.purge_after <> (select purge_after from _t12) then
+    raise exception 'T12 FAIL: the admin take-over moved purge_after';
+  end if;
+end $$;
+set role service_role;
+do $$
+declare ok boolean; r jsonb;
+begin
+  select public.account_deletion_cancel_for('66666666-0000-0000-0000-000000000006', 'aaaaaaaa-0000-0000-0000-00000000000a') into ok;
+  if not ok then raise exception 'T12 FAIL: the admin could not restore X'; end if;
+  -- 7: an auth user with no profiles row can be frozen (and restored)
+  r := public.account_deletion_request_for('abababab-0000-0000-0000-0000000000ab', 'aaaaaaaa-0000-0000-0000-00000000000a', 'admin');
+  if r->>'status' <> 'requested' then raise exception 'T12 FAIL: an auth user with no profile could not be frozen (%)', r; end if;
+  select public.account_deletion_cancel_for('abababab-0000-0000-0000-0000000000ab', 'aaaaaaaa-0000-0000-0000-00000000000a') into ok;
+  if not ok then raise exception 'T12 FAIL: the profile-less account could not be restored'; end if;
+  begin
+    perform public.account_deletion_request_for(gen_random_uuid(), null, 'x');
+    raise exception 'T12 FAIL: a freeze was opened for an account that does not exist';
+  exception when no_data_found then null;
+  end;
+  raise notice 'T12 PASS: the user cannot lift an admin freeze (nor by asking himself); a self request an admin freezes becomes the admin''s with its date kept; an admin lifts both; a profile-less auth user can be frozen; a missing account is P0002';
+end $$;
+reset role;
+
+-- ── T13 a client's rows on a firm case are not firm assets ──────────────────
+-- (finding 3; the reviewer's P2.) C is no member of F. Deleting C must not
+-- move his request to the firm owner, nor tell O that "a member" left.
+insert into public.service_requests (id, requester_user_id, assigned_to, title, firm_id) values
+  ('case-cf', '55555555-0000-0000-0000-000000000005', '00000000-0000-0000-0000-00000000000f', 'طلب C لدى المكتب', 'ffffffff-0000-0000-0000-0000000000f1');
+insert into public.attachments (id, request_id, owner_user_id, file_name, storage_path) values
+  (201, 'case-cf', '55555555-0000-0000-0000-000000000005', 'c2.pdf', '55555555-0000-0000-0000-000000000005/2-c.pdf');
+create temp table _t13 as select count(*) as n from public.notifications where user_id = '00000000-0000-0000-0000-00000000000f';
+set role service_role;
+do $$
+declare r jsonb;
+begin
+  r := public.account_purge_prepare('55555555-0000-0000-0000-000000000005');
+  if not (r->>'ok')::boolean then raise exception 'T13 FAIL: a firm''s client is blocked from deletion: %', r; end if;
+  if coalesce((r->'keep_preview'->'transferred'->>'total')::int, 0) <> 0 then
+    raise exception 'T13 FAIL: the preview moves a client''s rows to the firm owner: %', r->'keep_preview';
+  end if;
+end $$;
+reset role;
+delete from auth.users where id = '55555555-0000-0000-0000-000000000005';
+do $$
+begin
+  if (select requester_user_id from public.service_requests where id = 'case-cf') is not null then
+    raise exception 'T13 FAIL: the client''s request on the firm case went to %', (select requester_user_id from public.service_requests where id = 'case-cf');
+  end if;
+  if not exists (select 1 from public.attachments where id = 201 and owner_user_id is null) then
+    raise exception 'T13 FAIL: the client''s document on the firm case was not kept for the firm (owner null)';
+  end if;
+  if (select count(*) from public.notifications where user_id = '00000000-0000-0000-0000-00000000000f') <> (select n from _t13) then
+    raise exception 'T13 FAIL: the firm owner was told a member''s account was deleted';
+  end if;
+  if exists (select 1 from public.firm_asset_transfers where from_user_id = '55555555-0000-0000-0000-000000000005') then
+    raise exception 'T13 FAIL: the client''s rows are in the firm transfer trail';
+  end if;
+  raise notice 'T13 PASS: a non-member''s request on a firm case is nulled, not moved; his document stays for the firm with no owner; no member-left notice, no trail row';
+end $$;
+
+-- ── T14 a delete that fails after prepare changes nothing ───────────────────
+-- (finding 4.) N is a member of F with a firm case. prepare is a dry run; a
+-- delete that fails (here a NO ACTION key, as a hand-applied prod FK would)
+-- rolls the trigger's moves back with it, so N is restorable with his work.
+-- Then a move a guard refuses makes the delete itself refuse
+-- (ACCOUNT_DELETE_FIRM_ASSETS_LEFT), and once both are gone the delete (as
+-- GoTrue) moves everything to O.
+insert into auth.users (id) values ('99999999-0000-0000-0000-000000000009');
+insert into public.profiles (id, user_type, display_name, email) values
+  ('99999999-0000-0000-0000-000000000009', 'lawyer', 'N محامٍ', 'n@example.test');
+insert into public.firm_members (firm_id, user_id, role, status, accepted_at) values
+  ('ffffffff-0000-0000-0000-0000000000f1', '99999999-0000-0000-0000-000000000009', 'lawyer', 'active', now());
+insert into public.service_requests (id, requester_user_id, assigned_to, title, firm_id) values
+  ('case-n', '99999999-0000-0000-0000-000000000009', '99999999-0000-0000-0000-000000000009', 'قضية N', 'ffffffff-0000-0000-0000-0000000000f1');
+insert into public.case_notes (id, request_id, author_user_id, firm_id, visibility, body) values
+  ('bbbbbbbb-0000-0000-0000-000000000021', 'case-n', '99999999-0000-0000-0000-000000000009', 'ffffffff-0000-0000-0000-0000000000f1', 'firm', 'مذكرة N');
+insert into public.attachments (id, request_id, owner_user_id, file_name, storage_path) values
+  (301, 'case-n', '99999999-0000-0000-0000-000000000009', 'n.pdf', '99999999-0000-0000-0000-000000000009/1-n.pdf');
+insert into public.hearings (case_request_id, firm_id, owner_user_id, title, hearing_date) values
+  ('case-n', 'ffffffff-0000-0000-0000-0000000000f1', '99999999-0000-0000-0000-000000000009', 'جلسة قضية N', current_date + 5);
+create function pg_temp.t14_snapshot() returns text language sql as $$
+  select concat_ws(' | ',
+    (select string_agg(sr.id || ':' || coalesce(sr.requester_user_id::text, '-') || ':' || coalesce(sr.assigned_to::text, '-'), ',')
+       from public.service_requests sr where sr.id = 'case-n'),
+    (select string_agg(n.id::text || ':' || coalesce(n.author_user_id::text, '-'), ',') from public.case_notes n where n.request_id = 'case-n'),
+    (select string_agg(a.id::text || ':' || coalesce(a.owner_user_id::text, '-'), ',') from public.attachments a where a.request_id = 'case-n'),
+    (select string_agg(coalesce(h.owner_user_id::text, '-'), ',') from public.hearings h where h.case_request_id = 'case-n'),
+    'trail=' || (select count(*) from public.firm_asset_transfers t where t.from_user_id = '99999999-0000-0000-0000-000000000009'),
+    'notes_to_O=' || (select count(*) from public.notifications x where x.user_id = '00000000-0000-0000-0000-00000000000f'),
+    'user=' || (select count(*) from auth.users u where u.id = '99999999-0000-0000-0000-000000000009'));
+$$;
+create temp table _t14 as select pg_temp.t14_snapshot() as before;
+set role service_role;
+do $$
+declare r jsonb;
+begin
+  r := public.account_purge_prepare('99999999-0000-0000-0000-000000000009');
+  if not (r->>'ok')::boolean then raise exception 'T14 FAIL: prepare refused N: %', r; end if;
+  if coalesce((r->'keep_preview'->'transferred'->>'total')::int, 0) < 4 then
+    raise exception 'T14 FAIL: the preview should name N''s firm rows: %', r->'keep_preview';
+  end if;
+end $$;
+reset role;
+create table public._t14_hold (u uuid references auth.users(id));
+insert into public._t14_hold values ('99999999-0000-0000-0000-000000000009');
+do $$
+begin
+  if pg_temp.t14_snapshot() <> (select before from _t14) then
+    raise exception 'T14 FAIL: prepare changed N''s rows: % → %', (select before from _t14), pg_temp.t14_snapshot();
+  end if;
+  begin
+    delete from auth.users where id = '99999999-0000-0000-0000-000000000009';
+    raise exception 'T14 FAIL: the delete went through the NO ACTION key';
+  exception when foreign_key_violation then null;
+  end;
+  if pg_temp.t14_snapshot() <> (select before from _t14) then
+    raise exception 'T14 FAIL: a failed delete after prepare changed N''s rows: % → %', (select before from _t14), pg_temp.t14_snapshot();
+  end if;
+  raise notice 'T14 PASS: prepare writes nothing, and a delete that fails afterwards leaves N''s case, note, document, hearing, trail and the owner''s notices exactly as they were';
+end $$;
+drop table public._t14_hold;
+-- a guard refuses one move: the delete itself refuses, and nothing changes
+create function public._t14_refuse() returns trigger language plpgsql as $$
+begin
+  if old.author_user_id = '99999999-0000-0000-0000-000000000009' and new.author_user_id is distinct from old.author_user_id then
+    raise exception using errcode = '42501', message = 'T14 test guard';
+  end if;
+  return new;
+end $$;
+create trigger _t14_refuse before update on public.case_notes for each row execute function public._t14_refuse();
+set role service_role;
+do $$
+declare r jsonb;
+begin
+  r := public.account_purge_prepare('99999999-0000-0000-0000-000000000009');
+  if (r->>'ok')::boolean or r->>'blocked' <> 'firm_assets_left' then
+    raise exception 'T14b FAIL: prepare let N through with a firm note that cannot move: %', r;
+  end if;
 end $$;
 reset role;
 do $$
 begin
-  if (select owner_user_id from public.hearings where case_request_id = 'case-r') <> '77777777-0000-0000-0000-000000000007' then
-    raise exception 'T11b FAIL: the purge path did not move the hearing to the firm owner';
+  begin
+    delete from auth.users where id = '99999999-0000-0000-0000-000000000009';
+    raise exception 'T14b FAIL: N was deleted with a firm note that could not move';
+  exception when insufficient_privilege then
+    if sqlerrm not like 'ACCOUNT_DELETE_FIRM_ASSETS_LEFT%' then raise; end if;
+  end;
+  if pg_temp.t14_snapshot() <> (select before from _t14) then
+    raise exception 'T14b FAIL: the refused delete changed N''s rows: % → %', (select before from _t14), pg_temp.t14_snapshot();
   end if;
-  raise notice 'T11b PASS: on the purge path (service role) the hearing moves to the firm owner — nothing is lost';
+  raise notice 'T14b PASS: a firm row the transfer cannot move refuses the delete (ACCOUNT_DELETE_FIRM_ASSETS_LEFT) and prepare reports it blocked; nothing changed';
+end $$;
+drop trigger _t14_refuse on public.case_notes;
+drop function public._t14_refuse();
+set session authorization supabase_auth_admin;
+delete from auth.users where id = '99999999-0000-0000-0000-000000000009';
+reset session authorization;
+do $$
+declare o text := '00000000-0000-0000-0000-00000000000f';
+begin
+  if pg_temp.t14_snapshot() <> format('case-n:%s:%s | bbbbbbbb-0000-0000-0000-000000000021:%s | 301:%s | %s | trail=5 | notes_to_O=%s | user=0',
+                                      o, o, o, o, o, (select n + 1 from _t13) + 0) then
+    raise exception 'T14c FAIL: after the delete N''s firm rows are %', pg_temp.t14_snapshot();
+  end if;
+  raise notice 'T14c PASS: the delete that succeeds moves N''s case, note, document and hearing to O, with 5 trail rows and one notice';
 end $$;
 
 select 'account_deletion.test.sql: ALL PASS';

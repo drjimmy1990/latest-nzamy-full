@@ -22,46 +22,67 @@
 --      The receiving owner reads the rows addressed to him.
 --   3. public.transfer_firm_assets(user, firm, reason) — moves the departing
 --      member's firm rows (own firm_id, or the firm of their case) to
---      firm_profiles.owner_user_id. Never deletes. Columns in §3's table.
+--      firm_profiles.owner_user_id — only for a firm he is (or was) a member of
+--      (a firm_members row, any status); a client's rows on a firm case follow
+--      the personal rules. Never deletes. Columns in §3's table.
 --   4. Keep rules on EVERY deletion path — BEFORE DELETE trigger on auth.users
---      (deleteUser, the Supabase dashboard, the UAT teardown):
+--      (deleteUser, the Supabase dashboard, the UAT teardown). It is the ONLY
+--      place they write: in the delete's own transaction, so a refused or
+--      failed delete rolls every move back:
 --        a. refuse (42501 ACCOUNT_DELETE_ENTITY_OWNER) the owner of a firm /
 --           company / government body / NGO that still has other members —
 --           firm_profiles.owner_user_id is ON DELETE CASCADE, the firm would go;
---        b. transfer the firm assets;
+--        b. transfer the firm assets; a firm row still his afterwards (a guard
+--           refused the move) refuses the delete (42501
+--           ACCOUNT_DELETE_FIRM_ASSETS_LEFT) — nothing is lost;
 --        c. keep the user's documents on a case that has ANOTHER participant
 --           (or under legal hold): owner_user_id := null, the row and its file
 --           stay for the other party (design note Q3);
---        d. snapshot the buyer (display_name, email, user_type) into
+--        d. snapshot the buyer (display_name, email — auth.users.email first,
+--           profiles.email only when it is empty — and user_type) into
 --           payment_orders.metadata.buyer_snapshot on every paid / refunded
 --           order — payment_orders.user_id is SET NULL by its FK, and the tax
 --           invoice must still say who bought.
 --   5. firm_members: AFTER UPDATE, status → 'removed' transfers that member's
 --      rows of that firm to its owner and notifies him (a count, no content).
 --      A removed member no longer reaches them through can_access_case_row's
---      owner arm (the live leak this closes). Suspension moves nothing.
+--      owner arm (the live leak this closes), nor their files through the
+--      Storage API once 71_AFTER_70 (the documents SELECT policy, run as
+--      supabase_admin) calls storage_object_held_by_other (§8b) — the bytes
+--      stay in his folder, the policy follows the row. Suspension moves nothing.
 --   6. The freeze hides the public profile at the source: lawyer_profiles /
 --      provider_profiles cannot be marketplace_visible while a request is
 --      active (the 20261017_44 test_accounts technique). The value before the
 --      freeze is kept on the request and restored by a cancel.
 --   7. Functions (SECURITY DEFINER, search_path ''):
 --        authenticated: request_account_deletion(reason), cancel_account_deletion()
---                       — no user id parameter: they act on auth.uid() only.
+--                       — no user id parameter: they act on auth.uid() only. The
+--                       cancel lifts only a freeze the user asked for
+--                       (requested_by = self); an admin's freeze is lifted by an
+--                       admin. storage_object_held_by_other(name) — called by the
+--                       documents bucket's SELECT policy.
 --        service_role:  account_deletion_request_for / account_deletion_cancel_for
---                       (admin freeze / restore), account_purge_claim(limit),
+--                       (admin freeze / restore; an auth user with no profiles
+--                       row too), account_purge_claim(limit),
 --                       account_purge_claim_user(user, actor) («حذف نهائي الآن»),
---                       account_purge_prepare(user), account_purge_finish(...),
---                       transfer_firm_assets(...).
+--                       account_purge_prepare(user) (a dry run, writes nothing),
+--                       account_purge_storage_paths(user) (after the delete),
+--                       account_purge_finish(...), transfer_firm_assets(...).
 --   8. entitlement_requests.decided_by → ON DELETE SET NULL (it was the only NO
 --      ACTION key to auth.users in the repo; an admin who decided a request
 --      could not be deleted). The constraint is found by its column.
 --
 -- THE PURGE (code: /api/v1/cron/account-purge and «حذف نهائي الآن»)
---   claim → prepare (block check, keep rules, storage paths that NO kept row
---   references — never by folder prefix) → auth.admin.deleteUser (the
---   trigger re-runs the keep rules) → Storage remove (after the delete: a
---   refused delete leaves the account blocked and restorable, with its files)
---   → finish.
+--   claim → prepare (a dry run: block check and a rolled-back preview of the
+--   keep rules; writes nothing) → auth.admin.deleteUser (the trigger runs the
+--   keep rules, in the delete's transaction) → account_purge_storage_paths
+--   (only now: his folders' objects that NO surviving row references) →
+--   Storage remove → finish. A refused delete leaves the account blocked and
+--   restorable, with its rows and its files untouched.
+--
+-- NOT DONE HERE (B2): a card the user saved at Moyasar (payment_methods token)
+--   is deleted from our table with the account, not at Moyasar; B2 (renewals)
+--   must call Moyasar's token delete in the purge, and skip a frozen account.
 --
 -- DEPLOY ORDER — THIS FILE FIRST, THEN THE CODE. The code answers «غير متاح»
 --   / keeps the old behaviour while these objects are missing.
@@ -81,7 +102,10 @@
 --   drop trigger if exists trg_firm_members_removed_transfer on public.firm_members;
 --   drop trigger if exists trg_lawyer_profiles_account_frozen_unlisted on public.lawyer_profiles;
 --   drop trigger if exists trg_provider_profiles_account_frozen_unlisted on public.provider_profiles;
---   then the functions; keep the two tables (they are records).
+--   then the functions; keep the two tables (they are records). The
+--   "documents select own" policy of 71_AFTER_70 depends on
+--   storage_object_held_by_other: re-run file 17 (the policies without that
+--   guard) first, or the drop is refused.
 -- =============================================================================
 
 begin;
@@ -234,8 +258,12 @@ end $$;
 -- ── 3. transfer_firm_assets ──────────────────────────────────────────────────
 -- The rows a member owns or wrote that belong to a firm — by their own firm_id
 -- or by the firm of their case (service_requests.firm_id) — move to that
--- firm's owner. p_firm null = every firm; p_dry = count only (the purge guard).
--- A table or column missing on this database is skipped.
+-- firm's owner. ONLY a firm the user is (or was) a member of: a firm_members
+-- row for him, any status. A client's own request on a firm case, or his
+-- document on it, is not a firm asset of his — it follows the personal rules
+-- (his request's FK nulls, his document is kept for the firm, Q3). p_firm null
+-- = every such firm; p_dry = count only (the purge guard). A table or column
+-- missing on this database is skipped.
 create or replace function public.firm_asset_specs()
 returns table (tbl text, pk text, col text, firm_expr text, needs text[], extra text, guarded boolean)
 language sql
@@ -276,26 +304,36 @@ $$;
 comment on function public.firm_asset_specs() is
   '20261026_70: the firm-asset columns transfer_firm_assets moves to the firm owner (table, pk, user column, firm expression over alias t, required columns, extra condition, counted by the purge guard).';
 
+-- pg_attribute (one catalog index probe per column), not information_schema
+-- (a view that joins and privilege-filters every column of the database): the
+-- purge asks this ~80 times per account.
 create or replace function public.firm_asset_spec_ready(p_needs text[], p_tbl text, p_col text, p_pk text)
 returns boolean
-language plpgsql
+language sql
 stable
 set search_path = ''
 as $$
-declare
-  need text;
-begin
-  if to_regclass('public.' || p_tbl) is null then return false; end if;
-  foreach need in array p_needs || array[p_tbl || '.' || p_col, p_tbl || '.' || p_pk] loop
-    if not exists (select 1 from information_schema.columns
-                    where table_schema = 'public'
-                      and table_name = split_part(need, '.', 1)
-                      and column_name = split_part(need, '.', 2)) then
-      return false;
-    end if;
-  end loop;
-  return true;
-end;
+  select to_regclass('public.' || p_tbl) is not null
+     and not exists (
+       select 1
+         from unnest(p_needs || array[p_tbl || '.' || p_col, p_tbl || '.' || p_pk]) as need
+        where not exists (
+          select 1 from pg_catalog.pg_attribute a
+           where a.attrelid = to_regclass('public.' || split_part(need, '.', 1))
+             and a.attname = split_part(need, '.', 2)
+             and a.attnum > 0 and not a.attisdropped));
+$$;
+
+-- The same probe for one column (the optional columns the functions below read).
+create or replace function public.account_column_exists(p_tbl text, p_col text)
+returns boolean
+language sql
+stable
+set search_path = ''
+as $$
+  select exists (select 1 from pg_catalog.pg_attribute a
+                  where a.attrelid = to_regclass('public.' || p_tbl)
+                    and a.attname = p_col and a.attnum > 0 and not a.attisdropped);
 $$;
 
 create or replace function public.transfer_firm_assets(p_user uuid, p_firm uuid, p_reason text, p_dry boolean default false)
@@ -327,7 +365,8 @@ begin
       if not spec.guarded then continue; end if;
       execute format(
         'select count(*) from public.%1$I t join public.firm_profiles fp on fp.id = %3$s
-          where t.%2$I = $1 and fp.owner_user_id is distinct from $1 and ($2::uuid is null or fp.id = $2) %4$s',
+          where t.%2$I = $1 and fp.owner_user_id is distinct from $1 and ($2::uuid is null or fp.id = $2)
+            and exists (select 1 from public.firm_members m where m.firm_id = fp.id and m.user_id = $1) %4$s',
         spec.tbl, spec.col, spec.firm_expr, spec.extra)
         into n using p_user, p_firm;
     else
@@ -343,7 +382,8 @@ begin
              from public.firm_profiles fp
             where t.%2$I = $1 and fp.id = %3$s
               and fp.owner_user_id is distinct from $1
-              and ($2::uuid is null or fp.id = $2) %4$s
+              and ($2::uuid is null or fp.id = $2)
+              and exists (select 1 from public.firm_members m where m.firm_id = fp.id and m.user_id = $1) %4$s
            returning t.%5$I::text as row_id, fp.id as firm_id, fp.owner_user_id as to_user)
          insert into public.firm_asset_transfers (firm_id, from_user_id, to_user_id, table_name, row_id, column_name, reason)
          select firm_id, $1, to_user, %6$L, row_id, %7$L, $3 from moved',
@@ -369,8 +409,7 @@ begin
        where t.from_user_id = p_user and t.reason = p_reason and t.created_at = now()
        group by t.to_user_id
     loop
-      if exists (select 1 from information_schema.columns
-                  where table_schema = 'public' and table_name = 'notifications' and column_name = 'href') then
+      if public.account_column_exists('notifications', 'href') then
         insert into public.notifications (user_id, title, body, href)
         values (o.to_user_id,
                 case when p_reason = 'member_removed' then 'انتقلت إليك ملفات عضو أُخرج من المكتب'
@@ -431,7 +470,10 @@ begin
 end;
 $$;
 
-create or replace function public.account_keep_rules(p_user uuid)
+-- p_email: auth.users.email, passed by the auth.users trigger — profiles.email
+-- may be empty (an OAuth sign-up), the auth row is the one that is never.
+drop function if exists public.account_keep_rules(uuid);
+create or replace function public.account_keep_rules(p_user uuid, p_email text default null)
 returns jsonb
 language plpgsql
 security definer
@@ -448,8 +490,7 @@ begin
 
   -- c. documents on a case someone else is on (or under legal hold) stay
   if to_regclass('public.attachments') is not null then
-    if exists (select 1 from information_schema.columns
-                where table_schema = 'public' and table_name = 'attachments' and column_name = 'legal_hold') then
+    if public.account_column_exists('attachments', 'legal_hold') then
       hold_sql := ' or a.legal_hold';
     end if;
     execute format(
@@ -471,7 +512,7 @@ begin
        set metadata = coalesce(po.metadata, '{}'::jsonb) || jsonb_build_object('buyer_snapshot', jsonb_build_object(
              'user_id',      p_user,
              'display_name', prof->>'display_name',
-             'email',        prof->>'email',
+             'email',        coalesce(nullif(btrim(p_email), ''), prof->>'email'),
              'user_type',    prof->>'user_type',
              'captured_at',  now(),
              'reason',       'account_deleted'))
@@ -485,10 +526,15 @@ begin
 end;
 $$;
 
-comment on function public.account_keep_rules(uuid) is
+comment on function public.account_keep_rules(uuid, text) is
   '20261026_70: what survives an account (owner ٢٩٨) — firm assets to the firm owner, documents on a shared case kept for the other party, the buyer snapshotted onto paid invoices. Idempotent.';
 
 -- Every deletion path: deleteUser, the Supabase dashboard, a teardown script.
+-- THE ONLY PLACE THE KEEP RULES WRITE. They run in the transaction of the
+-- DELETE itself, so a delete that is refused or fails after them (a NO ACTION
+-- key, a later trigger, GoTrue's own error) rolls every move back: a frozen
+-- member whose purge fails is still restorable with his work. The purge's
+-- prepare step only previews them (account_purge_prepare: a rolled-back run).
 create or replace function public.account_delete_keep_rules()
 returns trigger
 language plpgsql
@@ -497,13 +543,24 @@ set search_path = ''
 as $$
 declare
   v_block text;
+  v_left  jsonb;
 begin
   v_block := public.account_entity_owner_block(old.id);
   if v_block is not null then
     raise exception using errcode = '42501',
       message = format('ACCOUNT_DELETE_ENTITY_OWNER: account %s owns a %s that still has members — remove them or transfer the %s first (owner ٢٩٨, 20261026_70)', old.id, v_block, v_block);
   end if;
-  perform public.account_keep_rules(old.id);
+  -- auth.users.email read through to_jsonb: a database whose auth.users has
+  -- no such column (the Docker stub) still deletes.
+  perform public.account_keep_rules(old.id, to_jsonb(old)->>'email');
+  -- A firm row still pointing at him after the moves (a guard refused one)
+  -- would go with the cascade: refuse the delete, nothing is lost.
+  v_left := public.transfer_firm_assets(old.id, null, 'account_deleted', true);
+  if coalesce((v_left->>'total')::int, 0) > 0 then
+    raise exception using errcode = '42501',
+      message = format('ACCOUNT_DELETE_FIRM_ASSETS_LEFT: account %s still owns %s firm row(s) the transfer did not move (%s) — nothing was deleted (20261026_70)',
+                       old.id, v_left->>'total', v_left->'by_column');
+  end if;
   return old;
 end;
 $$;
@@ -685,7 +742,11 @@ begin
 end;
 $$;
 
-create or replace function public.account_deletion_close(p_user uuid, p_actor uuid)
+-- p_self_only: the user's own «استعادة الحساب» lifts only a freeze HE asked
+-- for. A freeze the administration made (requested_by = 'admin') is lifted by
+-- an admin's «استعادة» only (pending the owner's answer; design note Q8).
+drop function if exists public.account_deletion_close(uuid, uuid);
+create or replace function public.account_deletion_close(p_user uuid, p_actor uuid, p_self_only boolean default false)
 returns boolean
 language plpgsql
 security definer
@@ -698,6 +759,7 @@ begin
   update public.account_deletion_requests
      set status = 'cancelled', cancelled_at = now(), cancelled_by = p_actor
    where user_id = p_user and status in ('requested', 'blocked')
+     and (not p_self_only or requested_by = 'self')
   returning prior_listing into v_prior;
   if not found then return false; end if;
   perform public.account_freeze_lift(p_user, v_prior);
@@ -711,9 +773,13 @@ language sql
 security definer
 set search_path = ''
 as $$
-  select public.account_deletion_close(auth.uid(), auth.uid());
+  select public.account_deletion_close(auth.uid(), auth.uid(), true);
 $$;
 
+-- An auth user with no profiles row (a half-finished sign-up) can be frozen
+-- too: the account is the auth.users row. A self request already open becomes
+-- the administration's (requested_by = 'admin'), so the user cannot lift it;
+-- requested_at stays, so purge_after does not move.
 create or replace function public.account_deletion_request_for(p_user uuid, p_actor uuid, p_reason text)
 returns jsonb
 language plpgsql
@@ -722,15 +788,23 @@ set search_path = ''
 as $$
 declare
   v_type text;
+  r      public.account_deletion_requests;
 begin
-  select user_type into v_type from public.profiles where id = p_user;
-  if not found then
-    raise exception using errcode = 'P0002', message = 'ACCOUNT_DELETION_NO_PROFILE';
+  if p_user is null or not exists (select 1 from auth.users u where u.id = p_user) then
+    raise exception using errcode = 'P0002', message = 'ACCOUNT_DELETION_NO_USER';
   end if;
+  select user_type into v_type from public.profiles where id = p_user;
   if v_type = 'admin' then
     raise exception using errcode = '42501', message = 'ACCOUNT_DELETION_ADMIN';
   end if;
-  return public.account_deletion_json(public.account_deletion_open(p_user, 'admin', p_actor, p_reason));
+  r := public.account_deletion_open(p_user, 'admin', p_actor, p_reason);
+  if r.requested_by <> 'admin' then
+    update public.account_deletion_requests
+       set requested_by = 'admin', requested_by_user = p_actor
+     where id = r.id
+    returning * into r;
+  end if;
+  return public.account_deletion_json(r);
 end;
 $$;
 
@@ -740,7 +814,7 @@ language sql
 security definer
 set search_path = ''
 as $$
-  select public.account_deletion_close(p_user, p_actor);
+  select public.account_deletion_close(p_user, p_actor, false);
 $$;
 
 
@@ -785,8 +859,11 @@ begin
     if r.status = 'purging' and r.purge_started_at >= now() - interval '1 hour' then
       raise exception using errcode = '55000', message = 'ACCOUNT_PURGE_IN_PROGRESS';
     end if;
+    -- the administration's now: a purge that ends blocked or failed stays
+    -- frozen until an admin restores it
     update public.account_deletion_requests
-       set status = 'purging', purge_started_at = now(), last_error = null
+       set status = 'purging', purge_started_at = now(), last_error = null,
+           requested_by = 'admin', requested_by_user = p_actor
      where id = r.id;
     return r.id;
   end if;
@@ -795,7 +872,12 @@ begin
 end;
 $$;
 
--- Block check, keep rules, then the storage objects nothing kept refers to.
+-- A DRY RUN. It writes nothing: the keep rules run inside a block that is
+-- rolled back (PL/pgSQL variables keep what was read inside it), so a refused
+-- or failed deleteUser afterwards leaves every row exactly as it was. The
+-- moves happen only in the auth.users trigger, in the delete's own
+-- transaction. Blocked: an entity owner with members, or a firm row the
+-- transfer would not move (a guard refuses it on this path).
 create or replace function public.account_purge_prepare(p_user uuid)
 returns jsonb
 language plpgsql
@@ -806,49 +888,83 @@ declare
   v_block  text;
   v_keep   jsonb;
   v_left   jsonb;
-  v_paths  text[];
-  q        text;
-  keepers  text := '';
 begin
   v_block := public.account_entity_owner_block(p_user);
   if v_block is not null then
     return jsonb_build_object('ok', false, 'blocked', 'entity_owner', 'kind', v_block);
   end if;
 
-  v_keep := public.account_keep_rules(p_user);
+  begin
+    v_keep := public.account_keep_rules(p_user);
+    -- Nothing firm-scoped may still point at the user (a move that silently
+    -- matched nothing must not become a deletion).
+    v_left := public.transfer_firm_assets(p_user, null, 'account_deleted', true);
+    raise exception using errcode = 'P0001', message = '20261026_70: account_purge_prepare dry run';
+  exception when raise_exception then
+    if sqlerrm <> '20261026_70: account_purge_prepare dry run' then raise; end if;
+  end;
 
-  -- Nothing firm-scoped may still point at the user (a move that silently
-  -- matched nothing must not become a deletion).
-  v_left := public.transfer_firm_assets(p_user, null, 'account_deleted', true);
   if coalesce((v_left->>'total')::int, 0) > 0 then
     return jsonb_build_object('ok', false, 'blocked', 'firm_assets_left', 'left', v_left);
   end if;
-
-  q := 'select coalesce(array_agg(distinct p order by p), ''{}'') from (';
-  q := q || 'select a.storage_path as p from public.attachments a where a.owner_user_id = $1';
-  if exists (select 1 from information_schema.columns
-              where table_schema = 'public' and table_name = 'law_article_notes' and column_name = 'audio_path') then
-    q := q || ' union all select n.audio_path from public.law_article_notes n where n.user_id = $1';
-  end if;
-  if exists (select 1 from information_schema.columns
-              where table_schema = 'public' and table_name = 'lawyer_profiles' and column_name = 'licence_image_path') then
-    q := q || ' union all select lp.licence_image_path from public.lawyer_profiles lp where lp.user_id = $1';
-  end if;
-  if to_regclass('storage.objects') is not null then
-    q := q || ' union all select o.name from storage.objects o where o.bucket_id = ''documents''
-                 and (o.name like $1::text || ''/%'' or o.name like ''licences/'' || $1::text || ''/%'')';
-  end if;
-  if to_regclass('public.contract_versions') is not null then
-    keepers := keepers || ' and not exists (select 1 from public.contract_versions cv where cv.storage_path = x.p)';
-  end if;
-  q := q || ') x where x.p is not null and x.p <> ''''
-            and not exists (select 1 from public.attachments a2
-                             where a2.storage_path = x.p and a2.owner_user_id is distinct from $1)' || keepers;
-  execute q into v_paths using p_user;
-
-  return jsonb_build_object('ok', true, 'keep', v_keep, 'storage_paths', to_jsonb(v_paths));
+  return jsonb_build_object('ok', true, 'dry_run', true, 'keep_preview', v_keep);
 end;
 $$;
+
+-- AFTER deleteUser: the documents-bucket objects of a deleted account that no
+-- surviving row refers to. Only his folders (uid/… and licences/uid/…), and
+-- never an object a kept row points at — an attachment (a firm document moved
+-- to the owner, a document kept for the other party of a case), a contract
+-- version or document, a document share. Refuses while the account exists, so
+-- it can never list a live account's files. Idempotent: a re-run after a crash
+-- lists what is still there.
+--
+-- The folder match is LIKE with a literal prefix (format %L), so the planner
+-- can use a prefix index on storage.objects.name — name_prefix_search
+-- (text_pattern_ops) on Supabase, or (bucket_id, name) under the C collation —
+-- and it is correct under any collation, which a >= / < range is not.
+create or replace function public.account_purge_storage_paths(p_user uuid)
+returns text[]
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_paths text[];
+  keepers text := '';
+begin
+  if p_user is null then return '{}'; end if;
+  if exists (select 1 from auth.users u where u.id = p_user) then
+    raise exception using errcode = '55000', message = 'ACCOUNT_PURGE_USER_EXISTS: the account still exists — its files are not listed';
+  end if;
+  if to_regclass('storage.objects') is null then return '{}'; end if;
+
+  if public.account_column_exists('attachments', 'storage_path') then
+    keepers := keepers || ' and not exists (select 1 from public.attachments k where k.storage_path = o.name)';
+  end if;
+  if public.account_column_exists('contract_versions', 'storage_path') then
+    keepers := keepers || ' and not exists (select 1 from public.contract_versions k where k.storage_path = o.name)';
+  end if;
+  if public.account_column_exists('contracts', 'document_path') then
+    keepers := keepers || ' and not exists (select 1 from public.contracts k where k.document_path = o.name)';
+  end if;
+  if public.account_column_exists('document_shares', 'document_path') then
+    keepers := keepers || ' and not exists (select 1 from public.document_shares k where k.document_path = o.name)';
+  end if;
+
+  execute format(
+    'select coalesce(array_agg(o.name order by o.name), ''{}'')
+       from storage.objects o
+      where o.bucket_id = ''documents''
+        and (o.name like %L or o.name like %L) %s',
+    p_user::text || '/%', 'licences/' || p_user::text || '/%', keepers)
+    into v_paths;
+  return v_paths;
+end;
+$$;
+
+comment on function public.account_purge_storage_paths(uuid) is
+  '20261026_70: after deleteUser, the documents-bucket objects under the deleted account''s folders that no surviving row (attachments, contract_versions, contracts.document_path, document_shares) refers to. Refuses (55000) while the account exists.';
 
 create or replace function public.account_purge_finish(p_request uuid, p_outcome text, p_report jsonb, p_error text)
 returns void
@@ -874,6 +990,69 @@ begin
   end if;
 end;
 $$;
+
+
+-- ── 8b. Raw Storage reads follow the rows ────────────────────────────────────
+-- The documents bucket's SELECT policy lets a session read its own folder
+-- ({uid}/…). A firm document a member uploaded stays in HIS folder when the
+-- transfer moves its row to the firm owner — so, without this, a removed
+-- member could still fetch the bytes straight from the Storage API. The
+-- policy file (SQL_batch_2026-10-26_owner_answers/71_AFTER_70_…, the canonical
+-- supabase/storage_policies_documents.sql) adds `and not
+-- public.storage_object_held_by_other(name)` to "documents select own".
+--
+-- SECURITY DEFINER on purpose: a plain subquery in the policy would run under
+-- the caller's RLS, and the removed member can no longer SEE the row that
+-- withholds the file — `not exists` would be true and the bytes would flow.
+-- True when the object is:
+--   * an attachment whose owner is someone else (or no one: kept for the other
+--     party of a case after a purge);
+--   * a contract version / contract document of a contract the caller can no
+--     longer manage (can_manage_contract: the owner or an active member of
+--     the contract's firm). contract_versions.uploaded_by is history and is
+--     not moved, so the contract decides.
+-- Works with or without 20261026_65 (path / owner freeze on attachments and
+-- contract_versions): it reads the rows, it adds no trigger.
+create or replace function public.storage_object_held_by_other(p_name text)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+  if p_name is null then return false; end if;
+  if exists (select 1 from public.attachments a
+              where a.storage_path = p_name and a.owner_user_id is distinct from auth.uid()) then
+    return true;
+  end if;
+  if to_regprocedure('public.can_manage_contract(text)') is not null then
+    if to_regclass('public.contract_versions') is not null and exists (
+         select 1 from public.contract_versions cv
+          where cv.storage_path = p_name and not public.can_manage_contract(cv.contract_id)) then
+      return true;
+    end if;
+    if public.account_column_exists('contracts', 'document_path') and exists (
+         select 1 from public.contracts c
+          where c.document_path = p_name and not public.can_manage_contract(c.id)) then
+      return true;
+    end if;
+  end if;
+  return false;
+end;
+$$;
+
+comment on function public.storage_object_held_by_other(text) is
+  '20261026_70: true when a documents-bucket object belongs to a row the caller no longer holds (an attachment owned by someone else or no one; a contract version / document of a contract he cannot manage). The bucket''s "documents select own" policy refuses it (71_AFTER_70 / supabase/storage_policies_documents.sql).';
+
+-- The policy asks this once per object row; the lookups are by path.
+create index if not exists idx_attachments_storage_path on public.attachments (storage_path);
+do $$
+begin
+  if public.account_column_exists('contract_versions', 'storage_path') then
+    create index if not exists idx_contract_versions_storage_path on public.contract_versions (storage_path);
+  end if;
+end $$;
 
 
 -- ── 9. entitlement_requests.decided_by: SET NULL ─────────────────────────────
@@ -915,7 +1094,8 @@ begin
     'public.firm_asset_spec_ready(text[], text, text, text)',
     'public.transfer_firm_assets(uuid, uuid, text, boolean)',
     'public.account_entity_owner_block(uuid)',
-    'public.account_keep_rules(uuid)',
+    'public.account_keep_rules(uuid, text)',
+    'public.account_column_exists(text, text)',
     'public.account_delete_keep_rules()',
     'public.firm_member_removed_transfer()',
     'public.account_frozen_never_listed()',
@@ -924,7 +1104,7 @@ begin
     'public.account_deletion_requests_dates()',
     'public.account_deletion_open(uuid, text, uuid, text, text)',
     'public.account_deletion_json(public.account_deletion_requests)',
-    'public.account_deletion_close(uuid, uuid)',
+    'public.account_deletion_close(uuid, uuid, boolean)',
     'public.request_account_deletion(text)',
     'public.cancel_account_deletion()',
     'public.account_deletion_request_for(uuid, uuid, text)',
@@ -932,7 +1112,9 @@ begin
     'public.account_purge_claim(int)',
     'public.account_purge_claim_user(uuid, uuid)',
     'public.account_purge_prepare(uuid)',
-    'public.account_purge_finish(uuid, text, jsonb, text)'
+    'public.account_purge_storage_paths(uuid)',
+    'public.account_purge_finish(uuid, text, jsonb, text)',
+    'public.storage_object_held_by_other(text)'
   ] loop
     execute format('revoke all on function %s from public', f);
     if exists (select 1 from pg_roles where rolname = 'anon') then
@@ -946,6 +1128,8 @@ begin
   if exists (select 1 from pg_roles where rolname = 'authenticated') then
     grant execute on function public.request_account_deletion(text) to authenticated;
     grant execute on function public.cancel_account_deletion() to authenticated;
+    -- evaluated by the documents bucket's SELECT policy for every session read
+    grant execute on function public.storage_object_held_by_other(text) to authenticated;
   end if;
   if exists (select 1 from pg_roles where rolname = 'service_role') then
     foreach f in array array[
@@ -955,7 +1139,9 @@ begin
       'public.account_purge_claim(int)',
       'public.account_purge_claim_user(uuid, uuid)',
       'public.account_purge_prepare(uuid)',
-      'public.account_purge_finish(uuid, text, jsonb, text)'
+      'public.account_purge_storage_paths(uuid)',
+      'public.account_purge_finish(uuid, text, jsonb, text)',
+      'public.storage_object_held_by_other(text)'
     ] loop
       execute format('grant execute on function %s to service_role', f);
     end loop;
@@ -965,7 +1151,7 @@ end $$;
 comment on function public.request_account_deletion(text) is
   '20261026_70 (owner ٢٩٨): the caller freezes his own account for 60 days. No user id parameter — auth.uid() only. Refuses admins (42501) and owners of an entity with members (55000).';
 comment on function public.cancel_account_deletion() is
-  '20261026_70 (owner ٢٩٨): the caller restores his own frozen account while the purge has not started.';
+  '20261026_70 (owner ٢٩٨): the caller restores his own frozen account while the purge has not started — only a freeze he asked for (requested_by = self); an admin''s freeze is lifted by an admin.';
 
 
 -- ── 11. Verify — raises, so a half-applied file cannot look applied ──────────
@@ -996,7 +1182,9 @@ begin
   end loop;
   if exists (select 1 from pg_roles where rolname = 'authenticated') then
     foreach f in array array['public.transfer_firm_assets(uuid, uuid, text, boolean)', 'public.account_purge_prepare(uuid)',
-                             'public.account_deletion_request_for(uuid, uuid, text)', 'public.account_purge_claim(int)'] loop
+                             'public.account_deletion_request_for(uuid, uuid, text)', 'public.account_purge_claim(int)',
+                             'public.account_purge_storage_paths(uuid)', 'public.account_deletion_close(uuid, uuid, boolean)',
+                             'public.account_keep_rules(uuid, text)'] loop
       if has_function_privilege('authenticated', f, 'EXECUTE') then
         raise exception '20261026_70 verify: authenticated may execute %', f;
       end if;
@@ -1004,6 +1192,9 @@ begin
     if not has_function_privilege('authenticated', 'public.request_account_deletion(text)', 'EXECUTE')
        or not has_function_privilege('authenticated', 'public.cancel_account_deletion()', 'EXECUTE') then
       raise exception '20261026_70 verify: authenticated cannot request / cancel its own deletion';
+    end if;
+    if not has_function_privilege('authenticated', 'public.storage_object_held_by_other(text)', 'EXECUTE') then
+      raise exception '20261026_70 verify: authenticated cannot execute storage_object_held_by_other — the documents SELECT policy would fail every read';
     end if;
   end if;
   if not exists (select 1 from pg_trigger where tgrelid = 'auth.users'::regclass
@@ -1018,6 +1209,10 @@ begin
      and not exists (select 1 from pg_trigger where tgrelid = 'public.lawyer_profiles'::regclass
                       and tgname = 'trg_lawyer_profiles_account_frozen_unlisted' and not tgisinternal) then
     raise exception '20261026_70 verify: lawyer_profiles has no frozen-account unlisting trigger';
+  end if;
+  if to_regprocedure('public.account_deletion_close(uuid, uuid)') is not null
+     or to_regprocedure('public.account_keep_rules(uuid)') is not null then
+    raise exception '20261026_70 verify: an old overload of account_deletion_close / account_keep_rules is still there';
   end if;
   if to_regclass('public.entitlement_requests') is not null and exists (
        select 1 from pg_constraint con
