@@ -324,7 +324,10 @@ export async function POST(request: NextRequest) {
       .from("attachments")
       .select("id, storage_path")
       .lt("deleted_at", cutoffIso)
-      .eq("legal_hold", false);
+      .eq("legal_hold", false)
+      // N3.9 (owner directive ٥, 20261025_51): case documents are archived for
+      // good, never purged — only personal vault documents leave the bin.
+      .is("request_id", null);
 
     if (purgeQueryError) {
       console.error("[cron/deadlines] purge query failed:", purgeQueryError.message, purgeQueryError.code);

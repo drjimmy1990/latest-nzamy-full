@@ -10,6 +10,7 @@ import {
   type CaseNoteRow,
 } from "./_shared";
 import { resolveCaseTeamFirmId, resolveFirmVisibilityFirmId } from "./_resolveFirmVisibility";
+import { liveRowsOnly } from "@/lib/services/archivedRows";
 
 /**
  * /api/v1/cases/[id]/notes — owner item 65 remainder ("the case file cannot
@@ -40,11 +41,18 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
     const { user, supabase } = auth;
     const { id } = await context.params;
 
-    const { data, error, count } = await supabase
-      .from("case_notes")
-      .select(CASE_NOTE_SELECT, { count: "exact" })
-      .eq("request_id", id)
-      .order("created_at", { ascending: false });
+    // Live notes only — archived ones (N3.9, 20261025_51) are listed by
+    // /api/v1/cases/[id]/archived to the people who may restore them. RLS
+    // already hides another writer's archive from a colleague; the filter
+    // keeps a supervisor's normal list free of it too.
+    const { data, error, count } = await liveRowsOnly((excludeArchived) => {
+      let q = supabase
+        .from("case_notes")
+        .select(CASE_NOTE_SELECT, { count: "exact" })
+        .eq("request_id", id);
+      if (excludeArchived) q = q.is("deleted_at", null);
+      return q.order("created_at", { ascending: false });
+    });
 
     if (error) {
       console.error("[cases/notes GET] query failed:", error.message, error.code);

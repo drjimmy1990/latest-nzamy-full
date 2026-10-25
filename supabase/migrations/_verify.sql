@@ -3559,3 +3559,59 @@ begin
   raise notice '_verify: 20261025_50 OK — show_services / show_education / show_courts default true, lawyer-writable, not readable by the API roles';
 end $$;
 -- <<< verify:profile_visibility
+
+-- >>> verify:soft_delete_case_records
+-- 2026-10-25 — 20261025_51_soft_delete_case_notes_docs.sql (P6 N3.9, owner
+-- directive ٥). Read-only, safe to repeat. Before _51 runs it only reports;
+-- after, it raises when a session could hard-delete a case note or a case
+-- document again, write the archive columns directly, edit the trail, or when
+-- the archive split of the case_notes SELECT policy is gone (a 20261017_41
+-- re-run puts the old policies back).
+do $$
+declare n int; r text; f text;
+begin
+  if not exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'case_notes' and column_name = 'deleted_at') then
+    raise notice '_verify: 20261025_51 is not applied yet — a session can still hard-delete a case note through REST, and the new code's «أرشفة» answers 503; run 16_BEFORE_DEPLOY_20261025_51_soft_delete_case_notes_docs.sql';
+    return;
+  end if;
+  if exists (select 1 from pg_policy where polrelid = 'public.case_notes'::regclass and polcmd in ('d', '*')) then
+    raise exception '_verify: a DELETE policy is back on case_notes (20261017_41 re-run after 20261025_51? re-run 20261025_51)';
+  end if;
+  if not exists (select 1 from pg_policy where polrelid = 'public.case_notes'::regclass and polcmd = 'r'
+                   and pg_get_expr(polqual, polrelid) ilike '%can_supervise_case_records%'
+                   and pg_get_expr(polqual, polrelid) ilike '%deleted_at IS NULL%') then
+    raise exception '_verify: the case_notes SELECT policy lost its archive split — colleagues read archived notes (re-run 20261025_51)';
+  end if;
+  foreach r in array array['anon', 'authenticated'] loop
+    if has_table_privilege(r, 'public.case_notes', 'DELETE') or has_table_privilege(r, 'public.attachments', 'DELETE') then
+      raise exception '_verify: % can DELETE case_notes or attachments — owner directive ٥ says archive only (re-run 20261025_51)', r;
+    end if;
+    if has_column_privilege(r, 'public.case_notes', 'deleted_at', 'UPDATE')
+       or has_column_privilege(r, 'public.case_notes', 'deleted_by', 'UPDATE') then
+      raise exception '_verify: % can write case_notes.deleted_at/deleted_by directly (re-run 20261025_51)', r;
+    end if;
+  end loop;
+  foreach f in array array['INSERT', 'UPDATE', 'DELETE'] loop
+    foreach r in array array['anon', 'authenticated', 'service_role'] loop
+      if has_table_privilege(r, 'public.case_record_history', f) then
+        raise exception '_verify: % holds % on case_record_history — the trail must be append-only (re-run 20261025_51)', r, f;
+      end if;
+    end loop;
+  end loop;
+  select count(*) into n from pg_trigger
+   where not tgisinternal and tgname in ('trg_case_notes_archive_stamp', 'trg_case_notes_archive_trail',
+                                         'trg_attachments_archive_stamp', 'trg_attachments_archive_trail');
+  if n <> 4 then
+    raise exception '_verify: % of the 4 archive triggers exist — no trail / no owner notification (re-run 20261025_51)', n;
+  end if;
+  foreach f in array array['public.archive_case_note(uuid)', 'public.restore_case_note(uuid)',
+                           'public.restore_case_document(bigint)', 'public.can_supervise_case_records(text)'] loop
+    if to_regprocedure(f) is null or not has_function_privilege('authenticated', f, 'EXECUTE')
+       or has_function_privilege('anon', f, 'EXECUTE') then
+      raise exception '_verify: % is missing, not callable by sessions, or open to guests (re-run 20261025_51)', f;
+    end if;
+  end loop;
+  raise notice '_verify: 20261025_51 OK — case notes and documents archive instead of delete, supervisors restore, append-only trail, owner notified';
+end $$;
+-- <<< verify:soft_delete_case_records

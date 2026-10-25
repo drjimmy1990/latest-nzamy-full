@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
+import { liveRowsOnly } from "@/lib/services/archivedRows";
 
 /**
  * GET /api/v1/cases/shared-notes?ids=<id>,<id>,… — owner decision ١٦٩:
@@ -33,11 +34,16 @@ export async function GET(request: NextRequest) {
 
     const counts: Record<string, number> = {};
     for (let i = 0; i < ids.length; i += BATCH) {
-      const { data, error } = await supabase
-        .from("case_notes")
-        .select("request_id")
-        .in("request_id", ids.slice(i, i + BATCH))
-        .in("visibility", ["case_team", "firm"]);
+      // Archived notes (N3.9) are nobody's shared note any more.
+      const batch = ids.slice(i, i + BATCH);
+      const { data, error } = await liveRowsOnly((excludeArchived) => {
+        const q = supabase
+          .from("case_notes")
+          .select("request_id")
+          .in("request_id", batch)
+          .in("visibility", ["case_team", "firm"]);
+        return excludeArchived ? q.is("deleted_at", null) : q;
+      });
       if (error) {
         console.error("[cases/shared-notes GET] query failed:", error.message, error.code);
         return NextResponse.json({ error: "تعذّر قراءة الملاحظات المشتركة." }, { status: 500 });

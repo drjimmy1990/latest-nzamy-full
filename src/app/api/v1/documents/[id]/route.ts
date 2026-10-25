@@ -60,7 +60,7 @@ export async function DELETE(
     // only returns rows the caller owns or participates in.
     const { data: doc, error: fetchError } = await supabase
       .from("attachments")
-      .select("id, storage_path, deleted_at, legal_hold")
+      .select("id, storage_path, deleted_at, legal_hold, request_id")
       .eq("id", id)
       .maybeSingle();
 
@@ -81,6 +81,16 @@ export async function DELETE(
       }
       if (doc.legal_hold) {
         return NextResponse.json({ error: "الملف تحت حجز قانوني ولا يمكن حذفه" }, { status: 409 });
+      }
+      // N3.9 (owner directive ٥): a document filed on a case is never purged
+      // from the app — it stays archived, restorable from the case's
+      // «المحذوفات», and the cron's 30-day purge skips it too. Only a personal
+      // vault document (no case) keeps the Phase 6 permanent delete.
+      if (doc.request_id) {
+        return NextResponse.json(
+          { error: "مستندات القضايا لا تُحذف نهائياً — يبقى المستند مؤرشفاً ويمكن استرجاعه من «المحذوفات» في ملف القضية" },
+          { status: 409 },
+        );
       }
 
       const admin = await createServiceClient();

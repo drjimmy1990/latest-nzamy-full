@@ -12,6 +12,7 @@
 
 import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
 import { listOk, listFailed, listFromApi, type ListRead } from "@/lib/services/listRead";
+import type { ArchivedView } from "@/lib/services/archivedView";
 
 /**
  * Owner decision ١٦٩ (migration 20261017_41): `private` = the author alone;
@@ -70,9 +71,30 @@ export async function updateCaseNote(
   return res.data;
 }
 
+/**
+ * ARCHIVES the note — it is not deleted (N3.9, owner directive ٥,
+ * migration 20261025_51). The author alone may archive; the case's
+ * supervisors (firm owner, case lead) can restore it from «المحذوفات»
+ * (`getCaseArchive` / `restoreArchived` below). Throws the route's Arabic
+ * message on failure, including the 503 «الأرشفة غير متاحة بعد…» before the
+ * migration runs.
+ */
 export async function deleteCaseNote(caseId: string, noteId: string): Promise<void> {
   if (!isSupabaseMode) throw new Error("الملاحظات غير متاحة في وضع العرض التجريبي");
   await apiMutate<void>(`${base(caseId)}/${encodeURIComponent(noteId)}`, "DELETE");
+}
+
+/** «المحذوفات» of a case: archived notes and documents the caller may restore. */
+export async function getCaseArchive(caseId: string): Promise<ArchivedView> {
+  if (!isSupabaseMode) return { available: false, notes: [], documents: [] };
+  const res = await apiGet<{ data: ArchivedView }>(`/api/v1/cases/${encodeURIComponent(caseId)}/archived`);
+  return res?.data ?? { available: false, notes: [], documents: [] };
+}
+
+/** One-click restore of an archived note or document. Throws the route's Arabic message. */
+export async function restoreArchived(caseId: string, kind: "note" | "document", id: string): Promise<void> {
+  if (!isSupabaseMode) throw new Error("الاسترجاع غير متاح في وضع العرض التجريبي");
+  await apiMutate(`/api/v1/cases/${encodeURIComponent(caseId)}/archived`, "POST", { kind, id });
 }
 
 /**

@@ -4,6 +4,7 @@ import { hydrateAuthorNames, type CaseNoteRow } from "@/app/api/v1/cases/[id]/no
 import { buildCaseTimeline, type TimelineNote } from "@/lib/caseTimeline/buildCaseTimeline";
 import { degreeFromDb } from "@/lib/services/caseStageVocabulary";
 import { ledgerActivityTitle } from "@/lib/ledger/ledgerInput";
+import { liveRowsOnly } from "@/lib/services/archivedRows";
 
 /**
  * GET /api/v1/cases/[id]/timeline — the case file's «السجل الزمني» (N3.7,
@@ -46,7 +47,11 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
       supabase.from("hearings").select("id, owner_user_id, hearing_date, hearing_time, title, status, location").eq("case_request_id", id).limit(500),
       supabase.from("case_stages").select("id, owner_user_id, degree, court_name, opened_on, closed_on, outcome, created_at").eq("case_request_id", id).limit(100),
       supabase.from("legal_ledger_entries").select("id, direction, channel, title, notes, occurred_at").eq("case_request_id", id).is("archived_at", null).limit(500),
-      supabase.from("case_notes").select("id, author_user_id, body, visibility, created_at").eq("request_id", id).limit(500),
+      // Archived notes (N3.9) leave the timeline; they live in «المحذوفات».
+      liveRowsOnly((excludeArchived) => {
+        const q = supabase.from("case_notes").select("id, author_user_id, body, visibility, created_at").eq("request_id", id);
+        return (excludeArchived ? q.is("deleted_at", null) : q).limit(500);
+      }),
       supabase.from("dashboard_notes").select("id, author_user_id, body, visibility, created_at").eq("case_request_id", id).limit(200),
       caseFirm
         ? supabase.from("firm_members").select("user_id").eq("firm_id", caseFirm).eq("status", "active")
