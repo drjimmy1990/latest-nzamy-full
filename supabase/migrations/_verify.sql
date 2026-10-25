@@ -3976,10 +3976,74 @@ begin
   end if;
   select count(*) into badges from public.lawyer_profiles where founder_badge;
   select count(*) into grants from public.library_access_grants where plan_ref = 'lib-founder';
-  raise notice '_verify: 20261026_01 OK — no signup trigger gives the founder badge or library days; already given and kept until the owner answers ٢٧٨: % badge(s), % lib-founder grant(s)',
+  raise notice '_verify: 20261026_01 OK — no signup trigger gives the founder badge or library days; held now: % badge(s) (20261026_02 removes the unpaid ones, owner ٢٧٨ (أ)), % lib-founder grant(s) (kept until they run out)',
     badges, grants;
 end $$;
 -- <<< verify:founder_no_signup_grant
+
+-- >>> verify:founder_badges_unpaid_removed — supabase/tests/rls/founder_badges_unpaid_removed.test.sql
+-- 2026-10-26 — 20261026_02_founder_badges_unpaid_removed.sql (owner ٢٧٨ (أ),
+-- 26-Oct answers: the unpaid founder badges given on a free signup are taken
+-- away; the 90 library days already given stay until they run out).
+-- Read-only, safe to repeat. NOTICEs while the file has not run, and NOTICEs
+-- (never raises) the number of founder badges still held: whether one is paid
+-- is P3's to say, and P3's table does not exist yet. RAISES only when the file
+-- ran (its marker is on the founder_badge column comment) but its audit table
+-- founder_badge_removals is gone, or when that table is open to sessions. A
+-- re-run of 20261026_01 rewrites the comment without the marker: this section
+-- then reads "not applied" — re-run 20261026_02 after it.
+do $$
+declare
+  fix      constant text := 'run SQL_batch_2026-10-26_owner_answers/02_NOW_AFTER_01_20261026_02_founder_badges_unpaid_removed.sql again';
+  marker   boolean;
+  badges   bigint;
+  removals bigint;
+  grants   bigint;
+  running  bigint;
+  r        text;
+  p        text;
+begin
+  if not exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'lawyer_profiles'
+                    and column_name = 'founder_badge') then
+    raise notice '_verify: 20261026_02 skipped — no founder_badge column (20261021_50 never applied), so no founder badge was ever given';
+    return;
+  end if;
+  select count(*) into badges from public.lawyer_profiles where founder_badge;
+  select coalesce(col_description('public.lawyer_profiles'::regclass,
+           (select attnum from pg_attribute
+             where attrelid = 'public.lawyer_profiles'::regclass and attname = 'founder_badge')), '')
+         like '%20261026_02%'
+    into marker;
+  if to_regclass('public.founder_badge_removals') is null then
+    if marker then
+      raise exception '_verify: 20261026_02 ran (the founder_badge comment carries its marker) but public.founder_badge_removals is missing — the record of whose unpaid badge was removed is lost; %', fix;
+    end if;
+    raise notice '_verify: 20261026_02 is not applied yet — % founder badge(s) are still held, all unpaid until P3 (owner ٢٧٨ (أ) takes them away). Run 02_NOW_AFTER_01_20261026_02_founder_badges_unpaid_removed.sql after 01', badges;
+    return;
+  end if;
+  if not (select relrowsecurity from pg_class where oid = 'public.founder_badge_removals'::regclass)
+     or exists (select 1 from pg_policy where polrelid = 'public.founder_badge_removals'::regclass) then
+    raise exception '_verify: 20261026_02 — founder_badge_removals must have RLS on and no policies; %', fix;
+  end if;
+  foreach r in array array['anon', 'authenticated'] loop
+    foreach p in array array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE'] loop
+      if has_table_privilege(r, 'public.founder_badge_removals', p) then
+        raise exception '_verify: 20261026_02 — % holds % on founder_badge_removals (service role only); %', r, p, fix;
+      end if;
+    end loop;
+  end loop;
+  select count(*) into removals from public.founder_badge_removals;
+  select count(*), count(*) filter (where ends_at > now()) into grants, running
+    from public.library_access_grants
+   where plan_ref = 'lib-founder' and source = 'founder_campaign';
+  if badges <> 0 then
+    raise notice '_verify: 20261026_02 — % founder badge(s) are held. Before P3 sells the paid founder membership none should be; re-run 20261026_02 (it clears only badges without a paid founder order)', badges;
+  end if;
+  raise notice '_verify: 20261026_02 OK — % unpaid founder badge removal(s) recorded; % badge(s) held now; library days kept: % lib-founder grant(s), % still running',
+    removals, badges, grants, running;
+end $$;
+-- <<< verify:founder_badges_unpaid_removed
 
 -- >>> verify:billing_cycles — supabase/tests/rls/billing_cycles.test.sql
 -- 2026-10-26 — 20261026_10_billing_cycles.sql (owner answers of 25 Oct, P1:

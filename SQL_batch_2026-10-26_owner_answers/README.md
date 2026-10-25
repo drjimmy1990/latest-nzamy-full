@@ -2,14 +2,15 @@
 
 **الحالة:** لم يُنفَّذ شيء من هذه الدفعة على الإنتاج بعد. كل SQL على الإنتاج ينفذه المستخدم في محرر Supabase، بعد نسخة احتياطية ومراجعة نتيجة كل ملف.
 
-*English, short:* run `01_NOW_…` in the Supabase SQL editor **now** — it needs no code deploy. Run `10_BEFORE_DEPLOY_…` (P1, quarterly and half-yearly billing) before deploying this batch's code; P2 must not deploy without it. Later files of this batch are added here as they are built.
+*English, short:* run `01_NOW_…` in the Supabase SQL editor **now** — it needs no code deploy — then `02_NOW_AFTER_01_…` (owner ٢٧٨ (أ): the unpaid founder badges go, the library days stay). Run `10_BEFORE_DEPLOY_…` (P1, quarterly and half-yearly billing) before deploying this batch's code; P2 must not deploy without it. Later files of this batch are added here as they are built.
 
 ## ترتيب التنفيذ (ملخص)
 
 | # | الملف | متى | ملاحظة |
 |:--:|---|---|---|
 | 1 | `01_NOW_20261026_01_founder_no_signup_grant.sql` | **الآن، وقبل أي نشر** | يوقف منح شارة المؤسس وأيام المكتبة عند التسجيل. لا يحتاج نشر كود. نفّذه قبل نشر كود هذه الدفعة، لأن النشر لا يتحقق منه تلقائياً |
-| 2 | `10_BEFORE_DEPLOY_20261026_10_billing_cycles.sql` | **قبل نشر كود الدفعة** | يسمح بدورتي الاشتراك الربع السنوية والنصف السنوية في الطلبات والاشتراكات، ويضيف عمودَي سعرهما للباقات. لا يغيّر أي سعر. `_verify.sql` يكتفي بتنبيه ما دام لم يُنفَّذ، لكن المرحلة P2 لا تُنشر قبله |
+| 2 | `02_NOW_AFTER_01_20261026_02_founder_badges_unpaid_removed.sql` | **الآن، بعد 01 مباشرة** | قرار المالك ٢٧٨ (أ): يسحب شارة «المحامي المؤسس» غير المدفوعة ممن سجّلوا منذ بدء الحملة، ويُبقي أيام المكتبة الـ ٩٠ حتى تنتهي. يتوقف دون أي تغيير إن لم يُنفَّذ 01 قبله. لا يحتاج نشر كود |
+| 3 | `10_BEFORE_DEPLOY_20261026_10_billing_cycles.sql` | **قبل نشر كود الدفعة** | يسمح بدورتي الاشتراك الربع السنوية والنصف السنوية في الطلبات والاشتراكات، ويضيف عمودَي سعرهما للباقات. لا يغيّر أي سعر. `_verify.sql` يكتفي بتنبيه ما دام لم يُنفَّذ، لكن المرحلة P2 لا تُنشر قبله |
 | — | `11_…` فما بعد | لاحقاً | محجوزة للمراحل التالية من هذه الدفعة |
 
 ## 01: إيقاف منح «المحامي المؤسس» عند التسجيل (P0، عاجل)
@@ -21,7 +22,7 @@
 **ماذا يفعل:**
 - يحذف المشغّل `trg_lawyer_profiles_founder` ودالته `lawyer_profile_founder_campaign()`. بعدها لا يمنح التسجيل شارة ولا أيام مكتبة.
 - **يُبقي** عمود `founder_badge`، والدالة `founder_campaign_active()`، والإعداد `founder_campaign` بقيمته كما هي. تحتاجها عضوية المحامي المؤسس المدفوعة (المرحلة P3).
-- **لا يمس** الشارات وأيام المكتبة التي مُنحت قبل تنفيذه. مصيرها ينتظر جواب المالك عن السؤال ٢٧٨.
+- **لا يمس** الشارات وأيام المكتبة التي مُنحت قبل تنفيذه. أجاب المالك عن السؤال ٢٧٨ بالخيار (أ): الملف `02` التالي يسحب الشارات غير المدفوعة ويُبقي أيام المكتبة.
 - يعدّل وصف العمود ووصف الإعداد ليقولا الحقيقة: لا شيء يُمنح عند التسجيل، والشارة لاحقاً بالعضوية المدفوعة فقط.
 
 **التنفيذ:**
@@ -51,6 +52,46 @@ docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1
 **الشريط (البنر):** نص «سجّل الآن واحصل على ٣ أشهر من المكتبة القانونية مجاناً وشارة المؤسس» يُخفى مع **نشر الكود** لا مع هذا الملف: الكود الجديد لا يعرض شريط المؤسس حتى تُتاح العضوية المدفوعة. بين تنفيذ الملف والنشر يبقى الشريط يعد بهدية لم تعد تُمنح. إن أردتم إخفاءه فوراً، أفرغوا تاريخي «حملة المحامي المؤسس» في `/dashboard/admin/settings` واحفظوا. لا شيء آخر يقرأ هذين التاريخين الآن. القرار لكم، ويمكن إعادة التاريخين لاحقاً.
 
 **للتراجع** (يعيد منح الهدية عند التسجيل، فلا يكون إلا بموافقة مكتوبة من المالك): أعد تنفيذ `supabase/migrations/20261021_50_founder_campaign.sql`، واحذف قسم `verify:founder_no_signup_grant` من `_verify.sql`، وإلا فشل التحقق اليدوي التالي.
+
+## 02: سحب شارة «المحامي المؤسس» غير المدفوعة (السؤال ٢٧٨، بعد 01)
+
+`02_NOW_AFTER_01_20261026_02_founder_badges_unpaid_removed.sql` نسخة مطابقة من `supabase/migrations/20261026_02_founder_badges_unpaid_removed.sql`.
+
+**لماذا:** جواب المالك عن السؤال ٢٧٨ (الخيار أ، ٢٦ أكتوبر): من سجّلوا منذ بدء الحملة تُسحب منهم الشارة غير المدفوعة، وتبقى لهم أيام المكتبة الـ ٩٠ حتى تنتهي مدتها. العضوية المدفوعة لم تُبنَ بعد (المرحلة P3)، فكل شارة موجودة اليوم غير مدفوعة.
+
+**ماذا يفعل:**
+- يتوقف **دون أي تغيير** إن كان المشغّل `trg_lawyer_profiles_founder` ما زال موجوداً، برسالة تطلب تنفيذ `01_NOW_…` أولاً.
+- ينشئ جدول سجلّ صغيراً `founder_badge_removals`: من سُحبت شارته ومتى. لا يقرؤه إلا مفتاح الخدمة.
+- يسجّل فيه كل من يحمل الشارة **بلا طلب دفع مدفوع لعضوية المؤسس**، ثم يُطفئ شارتهم. اليوم هذا يعني كل الشارات.
+- **لا يمس** جدول `library_access_grants` إطلاقاً. أيام المكتبة تنتهي وحدها في موعدها. يتحقق الملف من ذلك بنفسه، ويتراجع عن كل شيء إن تغيّر صف واحد.
+
+**التنفيذ:**
+1. بعد نجاح `01`، افتح محرر SQL في Supabase، والصق محتوى الملف كاملاً، ونفّذه.
+2. يجب أن تظهر في نهايته الرسالة `20261026_02 verify: OK`، ومعها عدد الشارات المسحوبة وعدد منح المكتبة `lib-founder` الباقية.
+3. إن توقف بالرسالة `canceling statement due to lock timeout` فلم يتغير شيء. أعد التنفيذ بعد لحظات.
+4. للتأكد:
+
+```sql
+select count(*) from public.lawyer_profiles where founder_badge;
+-- المتوقع: 0
+
+select count(*) from public.founder_badge_removals;
+-- عدد من سُحبت منهم الشارة — للمالك
+
+select count(*) from public.library_access_grants
+ where plan_ref = 'lib-founder' and ends_at > now();
+-- منح المكتبة الباقية: لم يتغير
+```
+
+**الملف قابل لإعادة التشغيل**، داخل `begin … commit`، ومهلة القفل فيه ٥ ثوانٍ، وينتهي بـ `notify pgrst, 'reload schema'`. إعادة تشغيله لا تغيّر شيئاً، إلا أن تعود شارة لمن لم يدفع فيطفئها مجدداً.
+
+**تنبيه للمرحلة P3:** الملف يُبقي الشارة لمن له طلب في `payment_orders` حالته `paid` واسم بنده يحوي `founder`. إن بيعت العضوية المدفوعة بطريقة أخرى فيجب تعديل هذه القاعدة في الملف نفسه قبل أي إعادة تشغيل بعد P3.
+
+**التحقق اليدوي:** `deploy.sh` **لا** يشغّل `_verify.sql`. نفّذه بيدك كما في قسم 01، ويجب أن يظهر `_verify: 20261026_02 OK`. يكتفي القسم بتنبيه ما دام الملف لم يُنفَّذ، ويذكر عدد الشارات الباقية دون أن يتوقف. يتوقف بخطأ فقط إن نُفِّذ الملف ثم اختفى جدول السجلّ، أو صار الجدول مفتوحاً للجلسات.
+
+*English:* clears every `lawyer_profiles.founder_badge` that has no paid founder order (`payment_orders` status `paid`, `item_id` containing `founder`; none exists before P3, so today that is every badge), recording each user id in the service-role-only `founder_badge_removals`. It never writes `library_access_grants` (hash-checked inside the transaction). It refuses to run before 01. Expect `20261026_02 verify: OK`. Idempotent. Docker-proved: 02 run three times, a no-op re-run, and a paid badge kept after a P3-shaped order: `supabase/tests/rls/founder_badges_unpaid_removed.test.sql`.
+
+**للتراجع** (يعيد الشارات غير المدفوعة، فلا يكون إلا بموافقة مكتوبة من المالك): الأمر في رأس الملف، تحت `ROLLBACK`.
 
 ## 10: الدورتان الربع سنوية والنصف سنوية (P1، قبل النشر)
 
