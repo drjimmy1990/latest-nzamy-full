@@ -13,6 +13,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import PrincipleBlock from "./_principle-block";
 import IdentityPanel from "./_identity-panel";
+import VolumeSelector from "./_volume-selector";
 import { cleanPrincipleText } from "./_principle-text";
 import { PrintWatermark } from "@/app/laws/components/PrintWatermark";
 
@@ -683,7 +684,18 @@ export default function JudicialPrinciplesPage() {
                 </div>
               )}
               <h1 className="text-2xl font-black">{collection.title}</h1>
-              {((collection.yearHijri && collection.yearHijri !== 0) || (collection.part && collection.part !== 0)) && (
+              {/* N2.4: in a series the volume label replaces «الجزء: 1» (the
+                  loader stores part 1 on every volume of the owner's series). */}
+              {(() => {
+                const vol = collection.series?.volumes.find((v) => v.id === collection.series?.currentId);
+                return vol ? (
+                  <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1">
+                    {collection.yearHijri && collection.yearHijri !== 0 ? <>{isRTL ? "مجموعة مبادئ وقرارات قضائية لعام:" : "Rulings collection for year:"} {collection.yearHijri}هـ | </> : null}
+                    {vol.label}
+                  </p>
+                ) : null;
+              })()}
+              {!collection.series && ((collection.yearHijri && collection.yearHijri !== 0) || (collection.part && collection.part !== 0)) && (
                 <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1">
                   {collection.yearHijri && collection.yearHijri !== 0 && (
                     <>{isRTL ? "مجموعة مبادئ وقرارات قضائية لعام:" : "Rulings collection for year:"} {collection.yearHijri}هـ</>
@@ -716,6 +728,10 @@ export default function JudicialPrinciplesPage() {
             </div>
           </div>
         </div>
+
+        {collection.series && (
+          <VolumeSelector series={collection.series} hasFullAccess={Boolean(collection.paywall?.hasFullAccess)} isDark={isDark} />
+        )}
 
         {/* ــ شريط وضع القراءة وحجم الخط والعودة ــ */}
         <div className={`relative z-45 flex flex-wrap items-center justify-between gap-4 mb-4 print:hidden ${isDark ? "text-zinc-500" : "text-slate-400"}`}>

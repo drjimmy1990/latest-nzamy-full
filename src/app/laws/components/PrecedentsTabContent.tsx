@@ -21,6 +21,8 @@ import {
   EmptyState,
 } from "./ListItems";
 import { ResultsSkeleton } from "./ResultsSkeleton";
+import { CollectionSeriesCard, type CatalogueCollectionRow } from "./CollectionSeriesCard";
+import { groupCollectionVolumes } from "@/lib/library/precedentVolumes";
 
 interface PrecedentsTabContentProps {
   isDark: boolean;
@@ -91,6 +93,24 @@ export function PrecedentsTabContent({
   searchFailed = false,
 }: PrecedentsTabContentProps) {
   const router = useRouter();
+
+  // N2.4: the volumes of a tagged series (same series_id) become one card;
+  // every other collection keeps its own card, in the catalogue's order.
+  const collectionEntries = groupCollectionVolumes<CatalogueCollectionRow & { col: any }>(
+    filteredCollections.map((col) => ({
+      id: col.id,
+      title: col.title,
+      part: col.partNumber ?? null,
+      series_id: col.series_id ?? null,
+      free: col.free,
+      ruling_count: col.rulingCount,
+      court: col.court,
+      track: col.track,
+      year: col.year,
+      desc: col.desc,
+      col,
+    })),
+  );
 
   // Digit normalizer and Hijri year parser
   function parseYear(yearStr: string): number {
@@ -357,11 +377,26 @@ export function PrecedentsTabContent({
             <Gavel size={13} />
             {isRTL ? "مجموعات ومدونات المبادئ القضائية" : "Judicial Collections & Digests"}
             <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-700"}`}>
-              {filteredCollections.length}
+              {collectionEntries.length}
             </span>
           </p>
           <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" : "flex flex-col gap-4"}>
-            {filteredCollections.map((col, idx) => {
+            {collectionEntries.map((entry, idx) => {
+              if (entry.kind === "series") {
+                return (
+                  <CollectionSeriesCard
+                    key={`series:${entry.key}`}
+                    series={entry}
+                    isDark={isDark}
+                    muted={muted}
+                    layoutMode={layoutMode}
+                    viewerHasFullAccess={viewerHasFullAccess}
+                    setShowPaywall={setShowPaywall}
+                    index={idx}
+                  />
+                );
+              }
+              const col = entry.row.col;
               const isColFree = col.free || viewerHasFullAccess;
               return (
                 <motion.div

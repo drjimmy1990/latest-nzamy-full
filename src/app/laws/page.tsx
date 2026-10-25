@@ -1181,6 +1181,9 @@ export default function LegalLibraryPage() {
         progress: col.progress || 0,
         rulingCount: col.ruling_count || 0,
         part: col.part ? `المجلد ${col.part}` : undefined,
+        // N2.4: the grouping key and the raw columns precedentVolumes reads.
+        series_id: col.series_id ?? null,
+        partNumber: typeof col.part === "number" ? col.part : null,
       }))
     : (isSupabaseMode ? [] : DEMO_PRECEDENTS_COLLECTIONS)) as any[];
 

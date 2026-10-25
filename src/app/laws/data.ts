@@ -302,6 +302,10 @@ export interface JudicialPrinciplesSystem {
   sourceId: string;
   principles: JudicialPrincipleItem[];
   volumes?: JudicialPrinciplesVolume[];
+  /** N2.4: the other volumes of its tagged series (null when it stands alone). */
+  series?: import("@/lib/library/precedentVolumes").CollectionSeriesInfo | null;
+  /** The route's paywall summary (hasFullAccess drives the volume locks). */
+  paywall?: { hasFullAccess?: boolean };
 }
 
 // ─── نظام الشركات ─────────────────────────────────────────────────────────────

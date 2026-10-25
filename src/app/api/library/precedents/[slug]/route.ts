@@ -5,6 +5,10 @@ import { effectiveFreeLimit } from '@/lib/library/previewLimit';
 import { libraryGate } from '@/lib/library-gate';
 import { isFreeLibraryItem } from '@/lib/library-item-access';
 import { isPrincipleLocked, planPrincipleWindow } from './_window';
+import { buildCollectionSeries, type CollectionSeriesInfo } from '@/lib/library/precedentVolumes';
+
+/** A runaway guard for one series' volumes (the largest today: 30). */
+const SERIES_MAX_VOLUMES = 200;
 
 /**
  * GET /api/library/precedents/[slug]?offset=0&limit=100
@@ -47,7 +51,7 @@ export async function GET(
     const { data: collection, error: collError } = await supabase
       .schema('library')
       .from('judicial_collections')
-      .select('id, title, court, year_hijri, part, source_id, track, description, ruling_count, free')
+      .select('id, title, court, year_hijri, part, source_id, series_id, track, description, ruling_count, free')
       .eq('id', slug)
       .maybeSingle();
 
@@ -57,6 +61,27 @@ export async function GET(
     }
     if (!collection) {
       return NextResponse.json({ error: 'لم يُعثر على مجموعة المبادئ هذه' }, { status: 404 });
+    }
+
+    // N2.4: the other volumes of a tagged series, for the reader's volume
+    // selector. Catalogue columns only (all on the anon allow-list); each
+    // volume keeps its own `free`. A failed lookup only hides the selector.
+    let series: CollectionSeriesInfo | null = null;
+    const seriesId = typeof collection.series_id === 'string' ? collection.series_id.trim() : '';
+    if (seriesId) {
+      const siblings = await supabase
+        .schema('library')
+        .from('judicial_collections')
+        .select('id, title, part, series_id, free, ruling_count')
+        .eq('series_id', seriesId)
+        .order('part', { ascending: true })
+        .order('id', { ascending: true })
+        .limit(SERIES_MAX_VOLUMES);
+      if (siblings.error) {
+        console.warn('[Precedents API] series volumes lookup failed:', siblings.error);
+      } else {
+        series = buildCollectionSeries(siblings.data ?? [], collection.id);
+      }
     }
 
     // Check user authentication
@@ -127,6 +152,8 @@ export async function GET(
       yearHijri: collection.year_hijri,
       part: collection.part,
       sourceId: collection.source_id,
+      seriesId: seriesId || null,
+      series,
       track: collection.track,
       description: collection.description,
       rulingCount: collection.ruling_count,

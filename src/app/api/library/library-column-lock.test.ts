@@ -820,7 +820,7 @@ test("routes that need locked columns read them with the service role and keep m
   assert.match(search, /fetchLawTitleHitsChecked\(supabase, \{/);
 
   const precedent = read("src/app/api/library/precedents/[slug]/route.ts");
-  assert.match(precedent, /\.from\('judicial_collections'\)\s*\.select\('id, title, court, year_hijri, part, source_id, track, description, ruling_count, free'\)/);
+  assert.match(precedent, /\.from\('judicial_collections'\)\s*\.select\('id, title, court, year_hijri, part, source_id, series_id, track, description, ruling_count, free'\)/);
   // The window (text, judgment, paragraphs) and its count fallback run as the
   // service role; the per-principle mask is the paywall.
   assert.match(precedent, /const serverOnly = await createServiceClient\(\);\s*const principlesQuery = await serverOnly\s*\.schema\('library'\)\s*\.from\('principles'\)/);
