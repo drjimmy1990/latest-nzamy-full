@@ -42,6 +42,11 @@
 --                    (20261019_20) — «المستشار المسؤول»;
 --        firm_owner  firm_profiles.owner_user_id of the case's firm, or of the
 --                    hearing's own firm_id when it has no case.
+--      The lead, consultant and firm_owner arms apply only when the hearing's
+--      OWNER belongs to that firm (an active member, or its owner): the owner
+--      writes case_request_id and firm_id himself, the hearings insert policy
+--      checks only owner_user_id, and a foreign key ignores RLS — without this
+--      an outsider's own hearing would put his text in a firm's bells.
 --      One row per (hearing, recipient), first arm wins. The client is never a
 --      recipient (no arm reads requester_user_id outside the firm-membership
 --      test). SECURITY INVOKER, search_path ''; EXECUTE for service_role only
@@ -149,7 +154,7 @@ stable
 security invoker
 set search_path = ''
 as $$
-  with h as (
+  with base as (
     select h.id, h.owner_user_id, h.case_request_id, h.title, h.hearing_date,
            h.hearing_time, h.court_name, h.location, h.created_at,
            sr.firm_id                      as case_firm_id,
@@ -159,13 +164,33 @@ as $$
       left join public.service_requests sr on sr.id = h.case_request_id
      where h.status = 'scheduled'
        and h.hearing_date between p_from and p_to
+  ), h as (
+    -- The hearing's case_request_id and firm_id are written by its owner, and
+    -- the only insert rule on hearings is owner_user_id = auth.uid() (a foreign
+    -- key ignores RLS). So a firm's people are reminded only when the OWNER of
+    -- the hearing belongs to that firm — an active member, or its owner.
+    -- Otherwise an outsider could put a title of his choosing in their bells.
+    select b.*,
+           (b.case_firm_id is not null and (
+              exists (select 1 from public.firm_members m
+                       where m.firm_id = b.case_firm_id and m.user_id = b.owner_user_id and m.status = 'active')
+              or exists (select 1 from public.firm_profiles fp
+                          where fp.id = b.case_firm_id and fp.owner_user_id = b.owner_user_id)
+           )) as owner_in_case_firm,
+           (b.owner_firm_id is not null and (
+              exists (select 1 from public.firm_members m
+                       where m.firm_id = b.owner_firm_id and m.user_id = b.owner_user_id and m.status = 'active')
+              or exists (select 1 from public.firm_profiles fp
+                          where fp.id = b.owner_firm_id and fp.owner_user_id = b.owner_user_id)
+           )) as owner_in_owner_firm
+      from base b
   ), arms as (
     select h.id, h.owner_user_id as uid, 'owner'::text as via, 1 as rank from h
     union all
     select h.id, h.lead_user_id, 'lead', 2
       from h
      where h.lead_user_id is not null
-       and h.case_firm_id is not null
+       and h.owner_in_case_firm
        and exists (select 1 from public.firm_members m
                     where m.firm_id = h.case_firm_id
                       and m.user_id = h.lead_user_id
@@ -177,13 +202,15 @@ as $$
         on t.request_id = h.case_request_id and t.firm_id = h.case_firm_id
       join public.firm_members m
         on m.firm_id = t.firm_id and m.user_id = t.user_id and m.status = 'active'
-     where m.role in ('legal_consultant', 'in_house_counsel', 'external_of_counsel')
-        or exists (select 1 from public.lawyer_profiles lp
-                    where lp.user_id = t.user_id and lp.practice_kind = 'consultant')
+     where h.owner_in_case_firm
+       and (m.role in ('legal_consultant', 'in_house_counsel', 'external_of_counsel')
+            or exists (select 1 from public.lawyer_profiles lp
+                        where lp.user_id = t.user_id and lp.practice_kind = 'consultant'))
     union all
     select h.id, fp.owner_user_id, 'firm_owner', 4
       from h
       join public.firm_profiles fp on fp.id = h.owner_firm_id
+     where h.owner_in_owner_firm
   )
   select distinct on (a.id, a.uid)
          a.id, a.uid, a.via, h.case_request_id, h.title, h.hearing_date,
@@ -195,7 +222,7 @@ as $$
 $$;
 
 comment on function public.hearing_reminder_targets(date, date) is
-  '20261025_30: one row per (scheduled hearing dated p_from..p_to, recipient). Recipients: the hearing owner; the case lead (assigned_to) while an active member of the case firm; case-team consultants (consultant firm role or practice_kind) while active members; the firm owner (case firm, else the hearing firm). Never the client. Service role only.';
+  '20261025_30: one row per (scheduled hearing dated p_from..p_to, recipient). Recipients: the hearing owner; and, only when that owner belongs to the firm (active member or owner): the case lead (assigned_to) while an active member of the case firm, case-team consultants (consultant firm role or practice_kind) while active members, the firm owner (case firm, else the hearing firm). Never the client. Service role only.';
 
 revoke all on function public.hearing_reminder_targets(date, date) from public;
 revoke all on function public.hearing_reminder_targets(date, date) from anon;

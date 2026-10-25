@@ -23,8 +23,14 @@
 -- the membership helpers; phase5 is notification_outbox; phase3 + case_notes +
 -- 20261017_41 are case_team_members.
 --
--- NEGATIVE CONTROL (must FAIL) — the chain without the two 20261025_30 lines:
---   → T1 aborts: function public.hearing_reminder_targets(date, date) does not exist.
+-- NEGATIVE CONTROLS (must FAIL):
+--   * the chain without the two 20261025_30 lines
+--     → T1 aborts: function public.hearing_reminder_targets(date, date) does not exist.
+--   * the first draft of the function, which did not check that the hearing's
+--     owner belongs to the firm it names (recorded 2026-10-25)
+--     → "T1 FAIL: recipients are … C:consultant@b007 G:owner@b007 L:lead@b007
+--       O:firm_owner@b007 P:consultant@b007 G:owner@b008 O:firm_owner@b008":
+--       an outsider's own hearing put his chosen title in F's bells.
 --
 -- People (firm F, owner O):
 --   O  owner of F (managing_partner)        L  lawyer of F, lead of case-f
@@ -93,6 +99,17 @@ insert into public.hearings (id, case_request_id, firm_id, owner_user_id, kind, 
 insert into public.deadlines (id, owner_user_id, title, trigger_date, due_date) values
   ('00000000-0000-0000-0000-00000000d001','00000000-0000-0000-0000-0000000000a8','مهلة اعتراض','2026-10-20','2026-11-19');
 
+-- G — an outsider with a session — writes two hearings through his own token:
+-- one pointing at firm F's case, one carrying only F's firm_id. The insert
+-- policy only checks owner_user_id, and a foreign key ignores RLS, so both
+-- rows are accepted. They must remind G himself and nobody at F.
+set role app_user;
+select set_config('test.uid', '00000000-0000-0000-0000-0000000000a9', false);
+insert into public.hearings (id, case_request_id, firm_id, owner_user_id, kind, title, hearing_date, hearing_time, status) values
+  ('00000000-0000-0000-0000-00000000b007','case-f', null,'00000000-0000-0000-0000-0000000000a9','judicial','عنوان يختاره الغريب','2026-11-14','09:00','scheduled'),
+  ('00000000-0000-0000-0000-00000000b008', null,'ffffffff-0000-0000-0000-0000000000f1','00000000-0000-0000-0000-0000000000a9','appointment','موعد على مكتب غيره','2026-11-14','10:00','scheduled');
+reset role;
+
 -- ── T1 the recipient rule, read as the scheduler (service_role) ─────────────
 set role service_role;
 do $$
@@ -105,11 +122,13 @@ begin
   want := 'C:consultant@b001 L:lead@b001 O:firm_owner@b001 P:consultant@b001 Y:owner@b001 '
        || 'S:owner@b002 '
        || 'L:owner@b004 O:firm_owner@b004 '
-       || 'L:owner@b006 O:firm_owner@b006';
+       || 'L:owner@b006 O:firm_owner@b006 '
+       || 'G:owner@b007 '
+       || 'G:owner@b008';
   if got is distinct from want then
     raise exception 'T1 FAIL: recipients are % — expected %', got, want;
   end if;
-  raise notice 'T1 PASS: owner, verified lead, case-team consultants (role or practice kind) and firm owner; never the client, the advocate colleague, the unverified or suspended lead, a cancelled or out-of-window hearing';
+  raise notice 'T1 PASS: owner, verified lead, case-team consultants (role or practice kind) and firm owner; never the client, the advocate colleague, the unverified or suspended lead, a cancelled or out-of-window hearing — and an outsider''s hearing on F''s case or firm reminds only himself';
 end $$;
 
 do $$
