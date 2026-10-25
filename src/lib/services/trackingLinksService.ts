@@ -7,7 +7,7 @@
 "use client";
 
 import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
-import type { TrackingLifetime, TrackingLinkState } from "@/lib/tracking/trackingLinkState";
+import type { TrackingLifetime, TrackingLinkState, TrackingPauseReason } from "@/lib/tracking/trackingLinkState";
 
 export interface TrackingLink {
   id: string;
@@ -18,8 +18,12 @@ export interface TrackingLink {
   lifetime: TrackingLifetime | null;
   expiresAt: string | null;
   pausedAt: string | null;
+  /** manual | expired | locked (20 wrong digit tries — probably leaked); null when live. */
+  pausedReason: TrackingPauseReason | null;
   state: TrackingLinkState;
   lockedUntil: string | null;
+  /** The caller may re-activate it; null when the server did not say (then: maker or issuer). */
+  mayResume: boolean | null;
 }
 
 export interface TrackingLinksList {

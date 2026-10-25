@@ -144,16 +144,47 @@ test("v2: the gate and the unlock RPCs live in the one server module; nothing in
 test("v2: the page asks the gate first, shows no case data to paused/expired/revoked links, and the digits before the snapshot", () => {
   const page = read("app/track/[token]/page.tsx");
   const gateAt = page.indexOf("await readTrackingGate(token)");
-  const unlockAt = page.indexOf("await isTrackingUnlocked(token)");
+  const unlockAt = page.indexOf("await isTrackingUnlocked(token, gate.epoch)");
   const snapAt = page.indexOf("await readTrackingView(token)");
   assert.ok(gateAt > 0 && unlockAt > gateAt && snapAt > unlockAt, "gate → unlock cookie → snapshot");
-  assert.match(page, /if \(gate === "none"\) notFound\(\);/);
-  assert.match(page, /gate === "paused" \|\| gate === "expired" \|\| gate === "unavailable"/);
+  assert.match(page, /if \(gate\.state === "none"\) notFound\(\);/);
+  assert.match(page, /gate\.state === "paused" \|\| gate\.state === "expired" \|\| gate\.state === "unavailable"/);
   assert.match(page, /الرابط موقوف مؤقتاً — تواصل مع محاميك/);
   assert.match(page, /<TrackingUnlockForm token=\{token\} \/>/);
   const form = read("app/track/[token]/TrackingUnlockForm.tsx");
   assert.match(form, /^"use client";/m);
   assert.doesNotMatch(form, /\bphone\w*\s*[:=?.(]|createServiceClient|\.rpc\(/, "the form knows nothing about the phone");
+});
+
+test("review 2026-10-26: no v1 fallback — the snapshot is read only for an active link with a cookie of its current epoch", () => {
+  const page = read("app/track/[token]/page.tsx");
+  const mod = read("lib/tracking/trackingSnapshot.server.ts");
+  assert.doesNotMatch(page, /"v1"/, "the page has no v1 branch");
+  assert.doesNotMatch(mod, /"v1"/, "the server module never answers v1");
+  assert.match(page, /const read = gate\.state === "active" \? await readTrackingView\(token\) : \(\{ state: "error" \} as const\);/);
+  assert.equal((page.match(/readTrackingView\(/g) ?? []).length, 1, "called once, behind the active + cookie guard");
+  // the missing gate fails closed to «unavailable», never to the snapshot
+  const gate = /export async function readTrackingGate[\s\S]*?\n\}\n/.exec(mod);
+  assert.ok(gate, "readTrackingGate is defined");
+  assert.match(gate[0], /isMissingRpcError\(error, "case_tracking_gate"\)\) \{[\s\S]*?return \{ state: "unavailable", epoch: null \};/);
+  assert.doesNotMatch(gate[0], /readTrackingView|case_tracking_snapshot/);
+  // the cookie is checked against the gate's epoch, and signed with the unlock's
+  assert.match(mod, /verifyUnlock\(jar\.get\(UNLOCK_COOKIE_NAME\)\?\.value, sha256Hex\(token\), epoch, Date\.now\(\), cookieKey\(\)\)/);
+  const route = read("app/api/v1/track/[token]/unlock/route.ts");
+  assert.match(route, /unlockCookieFor\(token, unlock\.epoch, Date\.now\(\)\)/);
+});
+
+test("review 2026-10-26: the lawyer sees why a link paused itself and is told to replace it; re-activate follows the server's may_resume", () => {
+  const panel = read("components/dashboard/caseTracking/CaseTrackingLinksPanel.tsx");
+  assert.match(panel, /trackingBadgeLabelAr\(l\.state, l\.pausedReason\)/);
+  assert.match(panel, /LOCKED_PAUSE_HINT_AR/);
+  assert.match(panel, /const mayResume = l\.mayResume \?\? may;/);
+  assert.match(panel, /v2 && mayResume && \(l\.state === "paused" \|\| l\.state === "expired"\)/);
+  const shared = read("app/api/v1/cases/[id]/tracking-links/_shared.ts");
+  assert.match(shared, /may_resume/);
+  assert.match(read("app/api/v1/cases/[id]/tracking-links/[linkId]/route.ts"), /case "not_allowed":/);
+  // the client page never names the reason (no oracle): it knows only paused
+  assert.doesNotMatch(read("app/track/[token]/page.tsx"), /["']locked["']|pausedReason|محاولات خاطئة/);
 });
 
 test("v2: the unlock route — generic denial, the strict bucket, and the cookie's flags", () => {
@@ -165,7 +196,8 @@ test("v2: the unlock route — generic denial, the strict bucket, and the cookie
   const mod = read("lib/tracking/trackingSnapshot.server.ts");
   assert.match(mod, /httpOnly: true,/);
   assert.match(mod, /secure: true,/);
-  assert.match(mod, /sameSite: "strict"/);
+  assert.match(mod, /sameSite: "lax"/, "Lax: the client taps the link in WhatsApp / SMS (a cross-site navigation); the cookie only opens a read-only GET page");
+  assert.doesNotMatch(mod, /sameSite: "(strict|none)"/);
   assert.match(mod, /path: unlockCookiePath\(token\)/);
   assert.match(mod, /unlockCookieKey\(process\.env\.SUPABASE_SERVICE_ROLE_KEY\)/);
   assert.ok(read("lib/rateLimitRoutes.ts").includes(String.raw`TRACKING_UNLOCK_RE = /^\/api\/v1\/track\/[^/]+\/unlock$/`), "the unlock POST has its own route matcher");

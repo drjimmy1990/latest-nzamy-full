@@ -37,6 +37,8 @@ import {
  *
  * Before 20261026_62 (v1 database): no lifetime, no states, no phone check —
  * the v1 behaviour, and `v2: false` so the screen hides what cannot work.
+ * Nothing leaks from it: the public /track page fails closed on that
+ * database (every link «unavailable») until 20261026_62 runs.
  */
 
 export async function GET(_request: NextRequest, context: { params: Promise<{ id: string }> }) {

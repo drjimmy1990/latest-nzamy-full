@@ -3,11 +3,15 @@ import assert from "node:assert/strict";
 import {
   type TrackingStateInput,
   LIFETIME_LABEL_AR,
+  LOCKED_PAUSE_HINT_AR,
+  LOCKED_PAUSE_LABEL_AR,
   STATE_LABEL_AR,
   TRACKING_LIFETIMES,
   effectiveTrackingState,
   isTrackingLifetime,
+  isTrackingPauseReason,
   normalizeUnlockDigits,
+  trackingBadgeLabelAr,
 } from "./trackingLinkState.ts";
 
 const NOW = Date.parse("2026-10-26T12:00:00Z");
@@ -20,7 +24,7 @@ test("lifetimes: exactly the owner's four (٢٧٦), each with an Arabic label", 
   assert.equal(isTrackingLifetime("stage"), true);
 });
 
-test("state order: revoked > paused > expired > active (same vectors as the Docker test's T9)", () => {
+test("state order: revoked > paused > expired > active (same vectors as the Docker test's T1)", () => {
   const cases: Array<[Partial<TrackingStateInput>, string]> = [
     [{}, "active"],
     [{ expiresAt: "2026-10-27T00:00:00Z" }, "active"],
@@ -29,6 +33,7 @@ test("state order: revoked > paused > expired > active (same vectors as the Dock
     [{ stageEnded: true }, "expired"],
     [{ pausedAt: "2026-10-20T00:00:00Z", pausedReason: "manual" }, "paused"],
     [{ pausedAt: "2026-10-20T00:00:00Z", pausedReason: "expired" }, "expired"],
+    [{ pausedAt: "2026-10-20T00:00:00Z", pausedReason: "locked" }, "paused"], // 20 wrong tries: an ordinary pause to the client
     [{ pausedAt: "2026-10-20T00:00:00Z", pausedReason: "manual", expiresAt: "2026-10-01T00:00:00Z" }, "paused"],
     [{ revokedAt: "2026-10-21T00:00:00Z", pausedAt: "2026-10-20T00:00:00Z", pausedReason: "manual" }, "revoked"],
     [{ revokedAt: "2026-10-21T00:00:00Z", expiresAt: "2026-10-01T00:00:00Z" }, "revoked"],
@@ -52,7 +57,20 @@ test("digits: ASCII, Arabic-Indic and Persian digits, spaces and dashes allowed;
   }
 });
 
-test("a missing v2 function (PGRST202 / 42883 naming it) is 'v1 database'; anything else is an error", async () => {
+test("a 'locked' pause (20 wrong tries) is a pause to everyone but the lawyer, whose badge warns of a leak", () => {
+  assert.equal(isTrackingPauseReason("locked"), true);
+  assert.equal(isTrackingPauseReason("manual"), true);
+  assert.equal(isTrackingPauseReason("expired"), true);
+  for (const bad of [null, "", "LOCKED", "revoked", 1]) assert.equal(isTrackingPauseReason(bad), false, String(bad));
+  assert.equal(LOCKED_PAUSE_LABEL_AR, "موقوف — محاولات خاطئة كثيرة");
+  assert.equal(LOCKED_PAUSE_HINT_AR, "يبدو أن الرابط تسرّب إلى غير الموكل — يُفضّل إلغاؤه وإنشاء رابط جديد");
+  assert.equal(trackingBadgeLabelAr("paused", "locked"), LOCKED_PAUSE_LABEL_AR);
+  assert.equal(trackingBadgeLabelAr("paused", "manual"), STATE_LABEL_AR.paused);
+  assert.equal(trackingBadgeLabelAr("paused", null), STATE_LABEL_AR.paused);
+  assert.equal(trackingBadgeLabelAr("revoked", "locked"), STATE_LABEL_AR.revoked, "a cancelled link says cancelled");
+});
+
+test("a missing v2 function (PGRST202 / 42883 naming it) is 'missing'; anything else is an error", async () => {
   const { isMissingRpcError } = await import("./trackingLinkState.ts");
   assert.equal(isMissingRpcError({ code: "PGRST202", message: "Could not find the function public.case_tracking_gate(p_token_hash) in the schema cache" }, "case_tracking_gate"), true);
   assert.equal(isMissingRpcError({ code: "42883", message: "function public.case_tracking_gate(text) does not exist" }, "case_tracking_gate"), true);

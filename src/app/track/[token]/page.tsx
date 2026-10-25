@@ -16,8 +16,12 @@
 // get a neutral page with no case data. A live link first asks for the last
 // 4 digits of the client's mobile on the case file (TrackingUnlockForm →
 // POST /api/v1/track/<token>/unlock, compared in SQL); the httpOnly cookie
-// it sets is checked here on every view. Before 20261026_62 runs, the gate
-// answers "v1" and the page behaves as it did (no digits asked).
+// it sets is checked here on every view against the link's CURRENT unlock
+// epoch (the gate's), so a pause, a re-activation or a new phone number asks
+// for the digits again. The snapshot is read ONLY for an active link with a
+// valid cookie. Everything else fails closed: before 20261026_62 runs (the
+// gate is missing) every link shows «هذا الرابط لم يعد متاحاً»; a database
+// error shows the temporary-error card — neither shows any case data.
 
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -49,17 +53,17 @@ export default async function CaseTrackingPage({ params }: { params: Promise<{ t
   const card = "mx-auto w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-white/[0.08] dark:bg-zinc-900";
 
   const gate = await readTrackingGate(token);
-  if (gate === "none") notFound();
-  if (gate === "paused" || gate === "expired" || gate === "unavailable") {
+  if (gate.state === "none") notFound();
+  if (gate.state === "paused" || gate.state === "expired" || gate.state === "unavailable") {
     return (
       <main className={shell} dir="rtl">
         <div className={card} role="status">
           <p className="text-xs font-bold text-[#8a6d2c] dark:text-[#C8A762]">متابعة القضية</p>
           <h1 className="mt-1 text-lg font-bold text-slate-800 dark:text-white">
-            {gate === "unavailable" ? "هذا الرابط لم يعد متاحاً" : "الرابط موقوف مؤقتاً — تواصل مع محاميك"}
+            {gate.state === "unavailable" ? "هذا الرابط لم يعد متاحاً" : "الرابط موقوف مؤقتاً — تواصل مع محاميك"}
           </h1>
           <p className="mt-2 text-sm text-slate-600 dark:text-zinc-300">
-            {gate === "unavailable"
+            {gate.state === "unavailable"
               ? "تواصل مع محاميك ليرسل إليك رابطاً جديداً."
               : "يستطيع محاميك إعادة تفعيل الرابط نفسه متى شاء، فتعود إليك المتابعة من هنا."}
           </p>
@@ -67,7 +71,7 @@ export default async function CaseTrackingPage({ params }: { params: Promise<{ t
       </main>
     );
   }
-  if (gate === "active" && !(await isTrackingUnlocked(token))) {
+  if (gate.state === "active" && !(await isTrackingUnlocked(token, gate.epoch))) {
     return (
       <main className={shell} dir="rtl">
         <div className={card}>
@@ -82,7 +86,9 @@ export default async function CaseTrackingPage({ params }: { params: Promise<{ t
     );
   }
 
-  const read = gate === "error" ? ({ state: "error" } as const) : await readTrackingView(token);
+  // Only an active link whose cookie matches its current epoch gets this far;
+  // anything else (an error, an unexpected answer) never reaches the snapshot.
+  const read = gate.state === "active" ? await readTrackingView(token) : ({ state: "error" } as const);
   if (read.state === "none") notFound();
 
   if (read.state === "error") {

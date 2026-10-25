@@ -45,6 +45,29 @@ export const STATE_LABEL_AR: Record<TrackingLinkState, string> = {
   revoked: "ملغى",
 };
 
+/**
+ * Why a link is paused (20261026_62). The client never sees the reason — a
+ * 'locked' link answers his page exactly like a manual pause (no oracle);
+ * only the lawyer's list tells them apart.
+ *   manual   the lawyer paused it;
+ *   expired  its lifetime or its stage ended;
+ *   locked   20 wrong digit tries since the last right answer — the link has
+ *            most likely reached someone other than the client.
+ */
+export type TrackingPauseReason = "manual" | "expired" | "locked";
+
+export function isTrackingPauseReason(v: unknown): v is TrackingPauseReason {
+  return v === "manual" || v === "expired" || v === "locked";
+}
+
+export const LOCKED_PAUSE_LABEL_AR = "موقوف — محاولات خاطئة كثيرة";
+export const LOCKED_PAUSE_HINT_AR = "يبدو أن الرابط تسرّب إلى غير الموكل — يُفضّل إلغاؤه وإنشاء رابط جديد";
+
+/** The lawyer's badge: the state's word, or the leak warning for a 'locked' pause. */
+export function trackingBadgeLabelAr(state: TrackingLinkState, pausedReason: TrackingPauseReason | null | undefined): string {
+  return state === "paused" && pausedReason === "locked" ? LOCKED_PAUSE_LABEL_AR : STATE_LABEL_AR[state];
+}
+
 export function isTrackingLinkState(v: unknown): v is TrackingLinkState {
   return v === "active" || v === "paused" || v === "expired" || v === "revoked";
 }
@@ -94,12 +117,13 @@ export function normalizeUnlockDigits(input: unknown): string | null {
 }
 
 /**
- * Deploy order (D2): the code may reach production before 20261026_62.
+ * A function the database does not have (20261026_62 not run yet).
  * PostgREST answers a function it does not know with PGRST202 ("Could not
  * find the function public.<name>(…) in the schema cache"); Postgres itself
- * with 42883. Either, naming `fn`, means "v1 database": the routes and the
- * page then behave as v1 (no lifetime, no pause, no digits). Any other
- * error stays an error.
+ * with 42883. Either, naming `fn`, is "missing". The lawyer routes then hide
+ * the v2 controls; the public /track page FAILS CLOSED on it (every link
+ * «unavailable», never the snapshot without the digits). Any other error
+ * stays an error.
  */
 export function isMissingRpcError(error: { code?: string; message?: string } | null | undefined, fn: string): boolean {
   if (!error || !fn) return false;

@@ -8,7 +8,11 @@
  *            ends. Refused while the case file has no client mobile — the
  *            client opens the link with its last 4 digits.
  *   states   نشط · موقوف مؤقتاً · منتهي — موقوف · ملغى (the state SQL
- *            computed; a stage link ends with its stage).
+ *            computed; a stage link ends with its stage), and «موقوف —
+ *            محاولات خاطئة كثيرة» when 20 wrong digit tries paused it (the
+ *            client sees an ordinary pause), with the advice to cancel it.
+ *            Re-activate shows only when the server says the caller may
+ *            (a colleague's manual pause: its maker, pauser or the lead).
  *   actions  إيقاف مؤقت · إعادة تفعيل (asks a new lifetime; the SAME link) ·
  *            إلغاء نهائي (confirmed; never comes back).
  *
@@ -30,8 +34,9 @@ import {
 import {
   DEFAULT_TRACKING_LIFETIME,
   LIFETIME_LABEL_AR,
-  STATE_LABEL_AR,
+  LOCKED_PAUSE_HINT_AR,
   TRACKING_LIFETIMES,
+  trackingBadgeLabelAr,
   type TrackingLifetime,
   type TrackingLinkState,
 } from "@/lib/tracking/trackingLinkState";
@@ -41,7 +46,8 @@ const when = (iso: string | null) => (iso && !Number.isNaN(Date.parse(iso)) ? WH
 
 const NO_PHONE_AR = "أضف رقم جوال الموكل في ملف القضية أولاً — يفتح الموكل الرابط بآخر ٤ أرقام منه (من بطاقة الموكل المرتبطة بالقضية، أو من حسابه إن كان هو مقدّم الطلب).";
 
-function badgeClass(state: TrackingLinkState, isDark: boolean): string {
+function badgeClass(state: TrackingLinkState, isDark: boolean, leaked: boolean): string {
+  if (leaked) return isDark ? "bg-red-500/15 text-red-300 border-red-400/30" : "bg-red-50 text-red-800 border-red-200";
   switch (state) {
     case "active":
       return isDark ? "bg-emerald-500/15 text-emerald-300 border-emerald-400/30" : "bg-emerald-50 text-emerald-800 border-emerald-200";
@@ -234,14 +240,16 @@ export default function CaseTrackingLinksPanel({ caseId, isDark }: { caseId: str
           <ul className="space-y-2">
             {links.map((l) => {
               const may = l.mine || canIssue;
+              const mayResume = l.mayResume ?? may;
+              const leaked = l.state === "paused" && l.pausedReason === "locked";
               const isPending = pending?.id === l.id;
               return (
                 <li key={l.id} className={`rounded-xl border px-3 py-2 text-[12px] ${isDark ? "border-white/[0.06]" : "border-slate-100"} ${l.state === "revoked" ? "opacity-70" : ""}`}>
                   <div className="flex items-start justify-between gap-3 flex-wrap">
                     <div className="min-w-0">
                       <p className={`flex items-center gap-2 font-semibold ${strong}`}>
-                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold ${badgeClass(l.state, isDark)}`}>
-                          {STATE_LABEL_AR[l.state]}
+                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold ${badgeClass(l.state, isDark, leaked)}`}>
+                          {trackingBadgeLabelAr(l.state, l.pausedReason)}
                         </span>
                         رابط أُنشئ {when(l.createdAt) ?? "—"}{l.mine ? "" : " (زميل)"}
                       </p>
@@ -259,7 +267,12 @@ export default function CaseTrackingLinksPanel({ caseId, isDark }: { caseId: str
                           </>
                         )}
                       </p>
-                      {l.lockedUntil && l.state !== "revoked" && (
+                      {leaked && (
+                        <p role="note" className={`mt-1 flex items-start gap-1 text-[11px] font-semibold ${isDark ? "text-red-300" : "text-red-800"}`}>
+                          <Warning size={12} className="mt-0.5 shrink-0" aria-hidden="true" /> {LOCKED_PAUSE_HINT_AR}
+                        </p>
+                      )}
+                      {l.lockedUntil && l.state === "active" && (
                         <p className={`mt-0.5 flex items-center gap-1 text-[11px] font-semibold ${isDark ? "text-amber-300" : "text-amber-800"}`}>
                           <LockSimple size={11} aria-hidden="true" /> أُدخلت أرقام خاطئة ٥ مرات — التحقق موقوف حتى {when(l.lockedUntil)}
                         </p>
@@ -273,7 +286,7 @@ export default function CaseTrackingLinksPanel({ caseId, isDark }: { caseId: str
                             <Pause size={12} aria-hidden="true" /> إيقاف مؤقت
                           </button>
                         )}
-                        {v2 && (l.state === "paused" || l.state === "expired") && (
+                        {v2 && mayResume && (l.state === "paused" || l.state === "expired") && (
                           <button type="button" disabled={busy} className={ghostBtn}
                             onClick={() => { setError(null); setPending({ id: l.id, kind: "resume", lifetime: l.lifetime ?? DEFAULT_TRACKING_LIFETIME }); }}>
                             <Play size={12} aria-hidden="true" /> إعادة تفعيل

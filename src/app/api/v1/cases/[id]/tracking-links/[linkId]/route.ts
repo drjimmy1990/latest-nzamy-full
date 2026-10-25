@@ -19,8 +19,10 @@ import { NO_STAGE_AR, NO_STORE, TRACKING_LINK_SELECT, readTrackingLinks, toTrack
  * Pause / resume: public.tracking_link_pause / tracking_link_resume
  * (20261026_62), SECURITY DEFINER, called with the session; they apply the
  * revoke policy's rule themselves (maker or issuer), touch only the state
- * columns, and refuse a revoked link. Before 20261026_62 they do not exist:
- * 503 with a plain message.
+ * columns, and refuse a revoked link. A colleague's MANUAL pause is lifted
+ * only by the link's maker, the one who paused it or the case's lead
+ * ("not_allowed" → 403); an expiry or a pause after 20 wrong digit tries by
+ * any issuer. Before 20261026_62 they do not exist: 503 with a plain message.
  */
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -88,6 +90,11 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         return NextResponse.json({ error: NO_STAGE_AR, code: "no_stage" }, { status: 409, headers: NO_STORE });
       case "bad_lifetime":
         return NextResponse.json({ error: "اختر مدة الرابط عند إعادة تفعيله." }, { status: 400, headers: NO_STORE });
+      case "not_allowed":
+        return NextResponse.json(
+          { error: "أوقف هذا الرابطَ زميلٌ يدوياً — يعيد تفعيله منشئ الرابط أو من أوقفه أو المحامي المسؤول عن القضية.", code: "paused_by_colleague" },
+          { status: 403, headers: NO_STORE },
+        );
       default:
         return NextResponse.json(
           { error: "الإيقاف وإعادة التفعيل متاحان لمنشئ الرابط وللمحامي المسؤول وفريق القضية ومن يملك صلاحية قضايا المكتب." },

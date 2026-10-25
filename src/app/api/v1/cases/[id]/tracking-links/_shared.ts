@@ -16,8 +16,10 @@ import {
   isMissingRpcError,
   isTrackingLifetime,
   isTrackingLinkState,
+  isTrackingPauseReason,
   type TrackingLifetime,
   type TrackingLinkState,
+  type TrackingPauseReason,
 } from "@/lib/tracking/trackingLinkState";
 
 export const TRACKING_LINK_SELECT = "id, owner_user_id, created_at, revoked_at, last_viewed_at";
@@ -55,14 +57,25 @@ export interface TrackingLinkDto {
   lifetime: TrackingLifetime | null;
   expiresAt: string | null;
   pausedAt: string | null;
+  /** manual | expired | locked (20 wrong digit tries — probably leaked); null when live. */
+  pausedReason: TrackingPauseReason | null;
   state: TrackingLinkState;
   /** The client's digits check is locked (5 wrong tries) until this instant. */
   lockedUntil: string | null;
+  /** The caller may re-activate it (a colleague's manual pause: maker, pauser or lead only); null when unknown. */
+  mayResume: boolean | null;
 }
 
-/** `sqlState` is public.case_tracking_link_states' answer (it knows stage ends); else the TS mirror. */
-export function toTrackingLinkDto(row: TrackingLinkRow, uid: string, sqlState?: string | null): TrackingLinkDto {
+/** One row of public.case_tracking_link_states. */
+export interface TrackingLinkSqlState {
+  state: string;
+  mayResume: boolean | null;
+}
+
+/** `sql` is public.case_tracking_link_states' answer (it knows stage ends and who may resume); else the TS mirror. */
+export function toTrackingLinkDto(row: TrackingLinkRow, uid: string, sql?: TrackingLinkSqlState | null): TrackingLinkDto {
   const now = Date.now();
+  const sqlState = sql?.state;
   const state = isTrackingLinkState(sqlState)
     ? sqlState
     : effectiveTrackingState(
@@ -85,19 +98,22 @@ export function toTrackingLinkDto(row: TrackingLinkRow, uid: string, sqlState?: 
     lifetime: isTrackingLifetime(row.lifetime) ? row.lifetime : null,
     expiresAt: row.expires_at ?? null,
     pausedAt: row.paused_at ?? null,
+    pausedReason: isTrackingPauseReason(row.paused_reason) ? row.paused_reason : null,
     state,
     lockedUntil: locked,
+    mayResume: typeof sql?.mayResume === "boolean" ? sql.mayResume : null,
   };
 }
 
 export type TrackingLinksRead =
-  | { ok: true; v2: boolean; rows: TrackingLinkRow[]; states: Map<string, string> }
+  | { ok: true; v2: boolean; rows: TrackingLinkRow[]; states: Map<string, TrackingLinkSqlState> }
   | { ok: false };
 
 /**
  * A case's links (or one link, `linkId`) through the caller's session (RLS),
  * newest first, with the states SQL computed (public.case_tracking_link_states,
- * which knows when a «stage» link's stage has ended). v1 database → the v1
+ * which knows when a «stage» link's stage has ended and whether the caller
+ * may re-activate each link). v1 database → the v1
  * columns and no states (the DTO then derives active / revoked).
  */
 export async function readTrackingLinks(supabase: SupabaseClient, caseId: string, linkId?: string): Promise<TrackingLinksRead> {
@@ -116,7 +132,7 @@ export async function readTrackingLinks(supabase: SupabaseClient, caseId: string
     console.error("[tracking-links] read failed:", res.error.message, res.error.code);
     return { ok: false };
   }
-  const states = new Map<string, string>();
+  const states = new Map<string, TrackingLinkSqlState>();
   if (v2) {
     const st = await supabase.rpc("case_tracking_link_states", { p_request: caseId });
     if (st.error) {
@@ -124,7 +140,9 @@ export async function readTrackingLinks(supabase: SupabaseClient, caseId: string
         console.error("[tracking-links] states failed:", st.error.message, st.error.code);
       }
     } else {
-      for (const r of (st.data ?? []) as Array<{ link_id: string; state: string }>) states.set(r.link_id, r.state);
+      for (const r of (st.data ?? []) as Array<{ link_id: string; state: string; may_resume?: boolean | null }>) {
+        states.set(r.link_id, { state: r.state, mayResume: typeof r.may_resume === "boolean" ? r.may_resume : null });
+      }
     }
   }
   return { ok: true, v2, rows: (res.data ?? []) as unknown as TrackingLinkRow[], states };
