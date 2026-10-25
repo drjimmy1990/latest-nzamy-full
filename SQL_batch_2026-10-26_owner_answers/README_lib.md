@@ -1,10 +1,10 @@
 # دفعة 2026-10-26 — المكتبة (L-A «مجلداتي»، L-B أجزاء كتب الفقه، ترتيب البحث حسب الصلة)
 
-**الحالة:** لم يُنفَّذ على الإنتاج بعد. كل SQL على الإنتاج ينفذه المستخدم في المحرر، بعد نسخة احتياطية ومراجعة نتيجة الملف.
+**الترتيب:** ترتيب تنفيذ الدفعة كاملاً في `README.md` (جدول واحد، ومعه ما يُرسل بعد كل ملف). هذا الملف يشرح ملفات المكتبة فقط (50، 51، 52). كل SQL على الإنتاج ينفذه المستخدم في المحرر، بعد نسخة احتياطية ومراجعة نتيجة الملف.
 
 | # | الملف | متى |
 |:--:|---|---|
-| 50 | `50_ANY_TIME_20261026_50_smart_folders_grants.sql` | **في أي وقت**، قبل نشر الكود أو بعده |
+| 50 | `50_ANY_TIME_20261026_50_smart_folders_grants.sql` | **في أي وقت**، قبل نشر الكود أو بعده — **إلا** إن كان ملف المالك الأصلي `20261025_01` قد نُفِّذ يوماً على الإنتاج: فنفّذ 50 **مع النشر**، لأنه يسحب الكتابة المباشرة التي ما زالت طرق المجلدات في الكود المنشور اليوم تستعملها |
 | 51 | `51_ANY_TIME_20261026_51_feqh_books_series.sql` | **في أي وقت**، ويُفضَّل **قبل** تحميل المكتبة التالي (قرار المالك ٢٦٢) |
 | 52 | `52_BEFORE_DEPLOY_20261026_52_library_search_relevance.sql` | **قبل نشر الكود** يُفضَّل، وآمن في أي ترتيب (قرار المالك ٢٧٧) |
 
@@ -70,7 +70,7 @@ alter table library.smart_folder_items validate constraint smart_folder_items_ti
    - يعمل داخل `begin … commit`.
    - قابل لإعادة التشغيل.
    - ينتهي بـ `notify pgrst, 'reload schema'`.
-2. شغّل `supabase/migrations/_verify.sql` (أحدث نسخة)، ويجب أن يظهر `_verify: 20261026_50 OK`.
+2. بعد النشر شغّل `supabase/migrations/_verify.sql` بيدك (الأمر في `README.md`؛ `deploy.sh` لا يشغّله)، ويجب أن يظهر `_verify: 20261026_50 OK`.
    - قبل التنفيذ يظهر تنبيه «not applied yet» دون خطأ.
    - بعد التنفيذ يتوقف الفحص بخطأ في ثلاث حالات:
      - عادت للزائر صلاحية على أحد الجدولين، كأن تُعاد `20260922_01`.
@@ -89,7 +89,7 @@ alter table library.smart_folder_items validate constraint smart_folder_items_ti
 
 ## English (short)
 
-`50_ANY_TIME_20261026_50_smart_folders_grants.sql` is an exact copy of `supabase/migrations/20261026_50_smart_folders_grants.sql`. **Run it any time, before or after the deploy.** The code works without it, because the folder routes now write through the service role and check ownership and input limits themselves.
+`50_ANY_TIME_20261026_50_smart_folders_grants.sql` is an exact copy of `supabase/migrations/20261026_50_smart_folders_grants.sql`. **Run it any time, before or after the deploy** — unless the owner's original `20261025_01` grant file ever ran on production: then run 50 together with the deploy, because it removes the direct writes that the folder routes of the code deployed today still use. The new code works without it, because the folder routes now write through the service role and check ownership and input limits themselves.
 
 What it does:
 - Locks the two folder tables: anon gets nothing, authenticated gets SELECT only, service_role gets everything.

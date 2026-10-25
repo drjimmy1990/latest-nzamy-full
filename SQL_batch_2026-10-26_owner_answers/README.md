@@ -1,25 +1,57 @@
 # دفعة 2026-10-26 (أجوبة المالك ٢٥ أكتوبر): ترتيب التنفيذ والنشر
 
-**الحالة:** لم يُنفَّذ شيء من هذه الدفعة على الإنتاج بعد. كل SQL على الإنتاج ينفذه المستخدم في محرر Supabase، بعد نسخة احتياطية ومراجعة نتيجة كل ملف.
+كل SQL على الإنتاج ينفذه المستخدم، بعد نسخة احتياطية ومراجعة نتيجة كل ملف. هذا الجدول هو **الترتيب الوحيد** لهذه الدفعة؛ ملفات `README_dash.md` و`README_lib.md` و`README_account.md` تشرح ملفاتها فقط وتحيل إليه. الترتيب جُرِّب كاملاً من أوله إلى آخره في Docker محلي.
 
-*English, short:* run `01_NOW_…` in the Supabase SQL editor **now** — it needs no code deploy — then `02_NOW_AFTER_01_…` (owner ٢٧٨ (أ): the unpaid founder badges go, the library days stay). Run `10_BEFORE_DEPLOY_…` (P1, quarterly and half-yearly billing) and `20_BEFORE_DEPLOY_…` (P7, coupons server only) before deploying this batch's code. Nothing checks it at deploy time (`deploy.sh` does not run `_verify.sql`), so P2 must refuse quarterly / half-yearly in code until the database accepts them. Later files of this batch are added here as they are built.
+## ترتيب التنفيذ (جدول واحد)
 
-## ترتيب التنفيذ (ملخص)
+**من أين:**
+- **محرر SQL** = محرر SQL في لوحة Supabase (دور `postgres`): الصق محتوى الملف كاملاً ونفّذه.
+- **`supabase_admin`** = على الخادم، لأن سياسات التخزين لا تُنشأ من المحرر (يجيب `42501`):
 
-| # | الملف | متى | ملاحظة |
-|:--:|---|---|---|
-| 1 | `01_NOW_20261026_01_founder_no_signup_grant.sql` | **الآن، وقبل أي نشر** | يوقف منح شارة المؤسس وأيام المكتبة عند التسجيل. لا يحتاج نشر كود. نفّذه قبل نشر كود هذه الدفعة، لأن النشر لا يتحقق منه تلقائياً |
-| 2 | `02_NOW_AFTER_01_20261026_02_founder_badges_unpaid_removed.sql` | **الآن، بعد 01 مباشرة** | قرار المالك ٢٧٨ (أ): يسحب شارة «المحامي المؤسس» غير المدفوعة ممن سجّلوا منذ بدء الحملة، ويُبقي أيام المكتبة الـ ٩٠ حتى تنتهي. يتوقف دون أي تغيير إن لم يُنفَّذ 01 قبله. لا يحتاج نشر كود |
-| 3 | `10_BEFORE_DEPLOY_20261026_10_billing_cycles.sql` | **قبل نشر كود الدفعة** | يسمح بدورتي الاشتراك الربع السنوية والنصف السنوية في الطلبات والاشتراكات، ويضيف عمودَي سعرهما للباقات. لا يغيّر أي سعر. النشر لا يتحقق منه تلقائياً، فنفّذه قبل النشر |
-| 4 | `20_BEFORE_DEPLOY_20261026_20_coupons_server_only.sql` | **قبل نشر كود الدفعة** | P7: أكواد الخصم تُتحقَّق في الخادم فقط. يُغلق قراءة الأكواد على الجميع، ويضيف قواعد المالك (حد أدنى، سقف ٢٥٪، مرة لكل مستخدم، طلب دفع واحد مفتوح للكود، لا خصم على شحن النقاط)، ويوقف الكود القديم `LAUNCH2026` دون تغيير قيمه. الكود يعمل قبله وبعده، لكن الأكواد تبقى مقروءة للجميع حتى يُنفَّذ. قبله: استعلام قراءة للأكواد الفعّالة تُرسل نتيجته للمالك |
-| 5 | `65_…` ثم `66_…` | الآن (ثغرتان مفتوحتان اليوم) | مسار لوحة التحكم: ربط مسار الملف بصاحبه. التفاصيل في `README_dash.md` |
-| 6 | `72_BEFORE_DEPLOY_20261026_72_file_folder_owner.sql` | **قبل نشر كود الدفعة**، بعد 65 و66 | يجعل 65 و70 يعملان معاً: المستند المنقول لصاحب المكتب يبقى قابلاً للتحميل. القسم أدناه |
-| 7 | `70_…` ثم `71_…` (بدور `supabase_admin`) | 70 قبل النشر، و71 بعده | حذف الحساب (D6). التفاصيل في `README_account.md` |
-| — | `11_…` فما بعد | لاحقاً | محجوزة للمراحل التالية من هذه الدفعة |
+```bash
+cd /www/wwwroot/nzamy/latest-nzamy-full/SQL_batch_2026-10-26_owner_answers && docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < <file>
+```
+
+ضع اسم الملف مكان `<file>`.
+
+| # | الملف | من أين | متى | أرسل لنا |
+|:--:|---|---|---|---|
+| 1 | `01_NOW_20261026_01_founder_no_signup_grant.sql` | محرر SQL | **الآن**، قبل أي نشر. «قد يكون نُفِّذ — إن نُفِّذ فلا تُعِده» | السطر `20261026_01 verify: OK …` (فيه عدد الشارات ومنح المكتبة) |
+| 2 | `02_NOW_AFTER_01_20261026_02_founder_badges_unpaid_removed.sql` | محرر SQL | **الآن**، بعد 01. «قد يكون نُفِّذ — إن نُفِّذ فلا تُعِده» | السطر `20261026_02 verify: OK …` |
+| 3 | `10_BEFORE_DEPLOY_20261026_10_billing_cycles.sql` | محرر SQL | قبل النشر | السطر `20261026_10 verify: OK …` |
+| 4 | `20_BEFORE_DEPLOY_20261026_20_coupons_server_only.sql` | محرر SQL | قبل النشر | نتيجة استعلام القراءة الذي **قبله** (قسم 20 أدناه)، ثم السطر `20261026_20 verify: OK …` والسطران `20261026_20: switched off …` و`20261026_20: active codes besides NZAMY50 / NEWCLIENT …` |
+| 5 | `50_ANY_TIME_20261026_50_smart_folders_grants.sql` | محرر SQL | في أي وقت — **إلا** إن كان ملف المالك الأصلي `20261025_01` (صلاحيات الكتابة على المجلدات) قد نُفِّذ يوماً على الإنتاج: فنفّذ 50 **مع النشر** (يسحب الكتابة المباشرة التي ما زالت طرق المجلدات في الكود المنشور اليوم تستعملها) | السطر `20261026_50 verify: OK …` |
+| 6 | `51_ANY_TIME_20261026_51_feqh_books_series.sql` | محرر SQL | في أي وقت، وقبل تحميل المكتبة التالي | السطر `20261026_51 OK …` |
+| 7 | `52_BEFORE_DEPLOY_20261026_52_library_search_relevance.sql` | محرر SQL | قبل النشر | السطر `20261026_52 verify: OK …` |
+| 8 | `62_BEFORE_DEPLOY_20261026_62_tracking_links_v2.sql` | محرر SQL | قبل النشر | السطر `20261026_62 verify: OK …` |
+| 9 | `63_BEFORE_DEPLOY_20261026_63_branding_vault.sql` | محرر SQL | قبل النشر | السطر `20261026_63 verify: OK …` |
+| 10 | `64_AFTER_63_storage_policies_branding.sql` | **`supabase_admin`** (الأمر أعلاه) | بعد 63 مباشرة | السطر `storage_policies_branding: OK …` |
+| 11 | `65_BEFORE_DEPLOY_20261026_65_attachments_path_ownership.sql` | محرر SQL | الآن (ثغرة مفتوحة اليوم). «قد يكون نُفِّذ — إن نُفِّذ فلا تُعِده» | السطر `20261026_65 verify: OK …` |
+| 12 | `66_NOW_20261026_66_document_shares_path_ownership.sql` | محرر SQL | الآن، بعد 65. «قد يكون نُفِّذ — إن نُفِّذ فلا تُعِده» | السطر `20261026_66 verify: OK …` |
+| 13 | `72_BEFORE_DEPLOY_20261026_72_file_folder_owner.sql` | محرر SQL | قبل النشر، بعد 65 و66، **وقبل 70** | السطر `20261026_72 verify: OK …` |
+| 14 | `70_BEFORE_DEPLOY_20261026_70_account_deletion.sql` | محرر SQL | قبل النشر، بعد 72. قبله: استعلام القراءة في `README_account.md` | نتيجة استعلام القراءة، ثم السطر `20261026_70 verify: OK …` |
+| 15 | `71_AFTER_70_storage_policies_documents_select.sql` | **`supabase_admin`** (الأمر أعلاه) | بعد 70، وقبل النشر | السطر `storage_policies_documents: OK …` |
+| 16 | **نشر الكود** | الخادم | بعد كل ما سبق | — |
+| 17 | `supabase/migrations/_verify.sql` | **`supabase_admin`**، بيدك | بعد النشر | كل الأسطر `_verify: 20261026_… OK` (الأمر تحت الجدول) |
+
+**ملاحظات على الترتيب:**
+- **إن أُعيد تنفيذ 66 بعد 72 فأعد تنفيذ 72** (66 يعيد فحص المشاركة القديم). ولا تُعِد ملف دفعة 2026-10-25 رقم 17 بعد 71.
+- ملفا المالك الأصليان `20261025_01_smart_folders_authenticated_grants.sql` و`20261019_vault_lawyer_branding.sql` **لا يُنفَّذان**؛ 50 و63 يحلان محلهما.
+- كل ملف قابل لإعادة التشغيل وينتهي بسطر تحقق. إن توقف أحدها بالرسالة `canceling statement due to lock timeout` فلم يتغير شيء: أعد تنفيذه بعد لحظات.
+
+**بعد النشر: `_verify.sql` بيدك.** سكربت النشر `deploy.sh` **لا** يشغّل `_verify.sql`، فشغّله من المجلد نفسه:
+
+```bash
+cd /www/wwwroot/nzamy/latest-nzamy-full/SQL_batch_2026-10-26_owner_answers && docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < ../supabase/migrations/_verify.sql 2>&1 | grep -E "_verify: (20261026_|71_AFTER_70)|ERROR"
+```
+
+المتوقع سطر `OK` لكل قسم من أقسام 20261026، وهي: `_verify: 20261026_01 OK`، `_02`، `_10`، `_20`، `_50`، `_51`، `_52`، `_62`، `_63`، `_65`، `_66`، `_70`، `_72`، ثم `_verify: 71_AFTER_70 OK`، ولا سطر `ERROR`. أرسل لنا الناتج كما هو.
+
+*English, short:* one run order for the whole batch, verified end to end in Docker: 01 → 02 → 10 → 20 → 50 → 51 → 52 → 62 → 63 → 64 (as `supabase_admin`) → 65 → 66 → 72 → 70 → 71 (as `supabase_admin`) → deploy → `_verify.sql` by hand. 01, 02, 65 and 66 may already have run — do not re-run them if they did. 50 runs any time, unless the owner's original `20261025_01` grant file ever ran on production: then run 50 together with the deploy, because it removes the direct writes main's folder routes still use. `deploy.sh` does not run `_verify.sql`: run it with the command above and expect an OK line for every 20261026 section plus `_verify: 71_AFTER_70 OK`.
 
 ## 65 → 66 → 72 → 70 → 71: ملفات المستندات وحذف الحساب معاً (قبل النشر)
 
-خمسة ملفات من مسارين، تعمل معاً بهذا الترتيب. التفاصيل: 65 و66 في `README_dash.md`، و70 و71 في `README_account.md`، و72 هنا.
+خمسة ملفات من مسارين، تعمل معاً بهذا الترتيب (وهو جزء من الجدول الواحد أعلاه). التفاصيل: 65 و66 في `README_dash.md`، و70 و71 في `README_account.md`، و72 هنا.
 
 | الترتيب | الملف | من أين | متى |
 |:--:|---|---|---|
