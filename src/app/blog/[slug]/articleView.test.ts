@@ -69,6 +69,12 @@ test("N1.7: a blank line renders nothing; blocks carry their own margins", () =>
   assert.equal((code.match(/\$\{listItemSpacing\(lines, i\)\}/g) ?? []).length, 2, "numbered and bullet lists");
 });
 
+test("N1.7: lines with no blank line between them are one paragraph, joined by <br>", () => {
+  assert.match(code, /const end = proseRunEnd\(lines, i, toc\?\.start\);/);
+  assert.match(code, /lines\.slice\(i, end\)\.map\(\(l\) => markdownBoldToSafeHtml\(l\)\)\.join\("<br>"\)/);
+  assert.match(code, /i = end;/);
+});
+
 test("N1.7: `---` still renders its rule (owner §38: the renderer does not swallow it)", () => {
   assert.match(code, /if \(\/\^-\{3,\}\$\/\.test\(line\.trim\(\)\)\) \{ out\.push\(<hr /);
 });

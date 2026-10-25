@@ -88,3 +88,31 @@ export function isListLine(line: string | undefined): boolean {
 export function listItemSpacing(lines: readonly string[], i: number): "mb-1.5" | "mb-4" {
   return isListLine(lines[i + 1]) ? "mb-1.5" : "mb-4";
 }
+
+/**
+ * N1.7 — a line that only RenderContent's default-paragraph branch renders.
+ * Conservative on purpose: anything another branch might take (a `#` heading
+ * of any level, a `>` quote or callout, a `---` rule, a list line) or a blank
+ * line is not prose, so a run never swallows a line that would have rendered
+ * as its own block.
+ */
+export function isProseLine(line: string | undefined): boolean {
+  if (line === undefined || line.trim() === "") return false;
+  if (line.startsWith("#") || line.startsWith(">")) return false;
+  if (/^-{3,}$/.test(line.trim())) return false;
+  return !isListLine(line);
+}
+
+/**
+ * N1.7 — the end (exclusive) of the run of prose lines that starts at
+ * `start`, which RenderContent prints as one paragraph with a <br> between its
+ * lines. Lines written one under the other with no blank line are one block
+ * (a «**س:**» question over its «**ج:**» answer, hard-wrapped prose); a blank
+ * line starts a new paragraph. `stopAt` is the TOC's first line, which
+ * RenderContent renders as its own unit.
+ */
+export function proseRunEnd(lines: readonly string[], start: number, stopAt?: number): number {
+  let end = start + 1;
+  while (end < lines.length && end !== stopAt && isProseLine(lines[end])) end++;
+  return end;
+}

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { altAnchor, findToc, isListLine, listItemSpacing, nextActiveTocId, slugify } from "./_article-md.ts";
+import { altAnchor, findToc, isListLine, isProseLine, listItemSpacing, nextActiveTocId, proseRunEnd, slugify } from "./_article-md.ts";
 
 test("slugify and altAnchor are unchanged by the move out of ArticleView", () => {
   assert.equal(slugify("أولاً: الأساس النظامي (المادة 77)"), "أولاً-الأساس-النظامي-المادة-77");
@@ -54,4 +54,36 @@ test("N1.7: items are tight, the last one of a run gets a paragraph's gap", () =
   assert.equal(listItemSpacing(lines, 4), "mb-1.5");
   assert.equal(listItemSpacing(lines, 5), "mb-4");
   assert.equal(listItemSpacing(["- آخر سطر"], 0), "mb-4");
+});
+
+// ─── N1.7: consecutive prose lines are one paragraph ─────────────────────────
+// 598 of the 624 corpus articles have lines that follow each other with no
+// blank line (a «**س:**» question over its «**ج:**» answer, the two footer
+// lines, hard-wrapped prose). Before N1.7 they sat 8px apart and a blank line
+// added a <br/>; with a 16px margin per line, the same-block and new-block gaps
+// became the same. A run of prose lines is now one <p>, its lines joined by <br>.
+
+test("N1.7: prose lines are what only the default-paragraph branch renders", () => {
+  for (const l of ["نص", "**س: متى يجوز ذلك؟**", "**ج:** يجوز", "*فريق نظامي القانوني*", "وبناءً على ذلك:"]) {
+    assert.equal(isProseLine(l), true, l);
+  }
+  for (const l of ["", "  ", "\r", undefined, "# ع", "## ع", "### ع", "#### ع", "> اقتباس", ">[!NOTE]", "---", "- بند", "* بند", "    *   **المادة (429):** نص", "1. أولاً"]) {
+    assert.equal(isProseLine(l), false, String(l));
+  }
+});
+
+test("N1.7: a run ends at a blank line, a heading, a list, a quote or a rule", () => {
+  const lines = ["**س: سؤال؟**", "**ج:** جواب", "", "نص", "## عنوان", "سطر", "- بند", "سطر", "> اقتباس", "سطر", "---"];
+  assert.equal(proseRunEnd(lines, 0), 2, "question + answer");
+  assert.equal(proseRunEnd(lines, 3), 4, "a heading");
+  assert.equal(proseRunEnd(lines, 5), 6, "a list");
+  assert.equal(proseRunEnd(lines, 7), 8, "a quote");
+  assert.equal(proseRunEnd(lines, 9), 10, "a rule");
+  assert.equal(proseRunEnd(["أ", "ب", "ج"], 0), 3, "the end of the article");
+});
+
+test("N1.7: a run stops at the TOC's first line", () => {
+  assert.equal(proseRunEnd(["مقدمة", "## جدول المحتويات", "- [أ](#أ)"], 0, 1), 1);
+  assert.equal(proseRunEnd(["أ", "ب", "ج"], 0, 2), 2);
+  assert.equal(proseRunEnd(["أ", "ب"], 0, undefined), 2);
 });

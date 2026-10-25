@@ -15,7 +15,7 @@ import Image from "next/image";
 import { markdownBoldToSafeHtml } from "@/utils/sanitize";
 import type { PlatformBlogArticle } from "@/constants/platformContent";
 import { classifyBlockquote, CALLOUT_CLASSES, type CalloutKind } from "./_callouts";
-import { altAnchor, findToc, listItemSpacing, nextActiveTocId, slugify, type Toc, type TocItem } from "./_article-md";
+import { altAnchor, findToc, listItemSpacing, nextActiveTocId, proseRunEnd, slugify, type Toc, type TocItem } from "./_article-md";
 
 // ─── Markdown renderer (lightweight + callouts) ──────────────────────────────
 // Which blockquote is a note, a warning or a quoted statute — and its colours
@@ -234,9 +234,14 @@ const RenderContent = memo(function RenderContent({ md, isDark, toc }: { md: str
     // the last item of a list mb-4 — and `---` still renders its <hr>.
     if (line.trim() === "") { i++; continue; }
 
-    // Default paragraph
-    out.push(<p key={key++} className={`text-sm leading-relaxed mb-4 ${isDark ? "text-gray-300" : "text-gray-700"}`} dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(line) }} />);
-    i++;
+    // Default paragraph. Lines written one under the other with no blank line
+    // are one block (a «**س:**» question over its «**ج:**» answer, hard-wrapped
+    // prose): one <p>, a <br> between its lines, so they do not get the gap
+    // that separates paragraphs (./_article-md.ts proseRunEnd).
+    const end = proseRunEnd(lines, i, toc?.start);
+    const html = lines.slice(i, end).map((l) => markdownBoldToSafeHtml(l)).join("<br>");
+    out.push(<p key={key++} className={`text-sm leading-relaxed mb-4 ${isDark ? "text-gray-300" : "text-gray-700"}`} dangerouslySetInnerHTML={{ __html: html }} />);
+    i = end;
   }
 
   return <div className={`prose prose-sm max-w-none ${isDark ? "prose-invert" : ""}`}>{out}</div>;
