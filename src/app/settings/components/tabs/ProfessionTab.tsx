@@ -53,6 +53,10 @@ interface RoleProfileFields {
   // Owner decision ١٦٨ — migration 20261016_05. Absent from the GET until that
   // migration runs; the switch is shown and sent only when the key is present.
   show_hourly_rate?: boolean | null;
+  // N3.8 — migration 20261025_50, same key-presence rule.
+  show_services?: boolean | null;
+  show_education?: boolean | null;
+  show_courts?: boolean | null;
   specialties?: string[] | null;
   hourly_rate?: number | null;
 }
@@ -97,6 +101,9 @@ export function ProfessionTab() {
   // null = the column does not exist yet (20261016_05 not applied): no switch,
   // nothing sent — sending an unknown column fails the whole PATCH.
   const [showHourlyRate, setShowHourlyRate] = useState<boolean | null>(null);
+  // N3.8 (20261025_50): null = the columns do not exist yet — no switches,
+  // nothing sent.
+  const [sections, setSections] = useState<{ services: boolean; education: boolean; courts: boolean } | null>(null);
   const [hourlyRate, setHourlyRate] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
 
@@ -119,6 +126,11 @@ export function ProfessionTab() {
         setAcceptingClients(r.is_accepting_clients ?? true);
         setShowContact(r.show_contact ?? false);
         setShowHourlyRate("show_hourly_rate" in r ? r.show_hourly_rate === true : null);
+        setSections(
+          "show_services" in r && "show_education" in r && "show_courts" in r
+            ? { services: r.show_services !== false, education: r.show_education !== false, courts: r.show_courts !== false }
+            : null,
+        );
         setHourlyRate(r.hourly_rate != null ? String(r.hourly_rate) : "");
         setSelected(r.specialties ?? []);
         setBlocked(null);
@@ -152,6 +164,9 @@ export function ProfessionTab() {
         specialties: selected,
         hourly_rate: hourlyRate.trim() ? Number(hourlyRate) : null,
         ...(showHourlyRate === null ? {} : { show_hourly_rate: showHourlyRate }),
+        ...(sections === null
+          ? {}
+          : { show_services: sections.services, show_education: sections.education, show_courts: sections.courts }),
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -240,6 +255,28 @@ export function ProfessionTab() {
               checked={showHourlyRate}
               onChange={() => setShowHourlyRate((v) => !v)}
             />
+          )}
+          {sections !== null && (
+            <>
+              <ToggleRow
+                label="إظهار قسم «الخدمات» في ملفي العام"
+                description="عند إيقافه لا تظهر قائمة خدماتك وأسعارها للزوار"
+                checked={sections.services}
+                onChange={() => setSections((v) => (v ? { ...v, services: !v.services } : v))}
+              />
+              <ToggleRow
+                label="إظهار «المؤهلات العلمية» في ملفي العام"
+                description="عند إيقافه لا تظهر شهاداتك وجهاتها للزوار"
+                checked={sections.education}
+                onChange={() => setSections((v) => (v ? { ...v, education: !v.education } : v))}
+              />
+              <ToggleRow
+                label="إظهار «المحاكم التي أترافع أمامها» في ملفي العام"
+                description="عند إيقافه لا تظهر قائمة المحاكم للزوار. التقييمات تظهر دائماً ولا يمكن إخفاؤها"
+                checked={sections.courts}
+                onChange={() => setSections((v) => (v ? { ...v, courts: !v.courts } : v))}
+              />
+            </>
           )}
         </div>
       </div>

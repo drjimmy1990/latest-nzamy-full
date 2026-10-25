@@ -60,6 +60,7 @@ const AR = {
   // saudiMobileMessage() via ./_phone.ts — appendix 03 §(a).
   badOnboardingFlag: "قيمة حالة إكمال الإعداد غير صالحة.",
   badRateVisibility: "قيمة خيار إظهار السعر غير صالحة.",
+  badSectionVisibility: "قيمة خيار إظهار القسم غير صالحة.",
   lawyerFieldsOnly: "هذه الحقول متاحة لحسابات المحامين فقط.",
   saveFailed: "تعذّر حفظ التعديلات. حاول مرة أخرى.",
   badSlug: "قيمة الرابط غير صالحة.",
@@ -527,6 +528,11 @@ export async function PATCH(request: Request) {
     // Owner decision ١٦٨ — migration 20261016_05_lawyer_show_hourly_rate.sql.
     // The public lawyer APIs show hourly_rate only when this is true.
     "show_hourly_rate",
+    // N3.8 — migration 20261025_50_profile_visibility.sql. The public profile
+    // (GET /api/v1/lawyers/[id]) hides the section when one is false.
+    "show_services",
+    "show_education",
+    "show_courts",
     // Phase 7 (item 128 · 130 · 133) — contracts in lawyerProfileFields.ts /
     // contactSanitizer.ts; columns added by
     // supabase/migrations/20260907_phase7_profile_services_reviews.sql.
@@ -567,6 +573,12 @@ export async function PATCH(request: Request) {
   if ("show_hourly_rate" in body && typeof body.show_hourly_rate !== "boolean") {
     // lawyer_profiles.show_hourly_rate is `boolean not null default false`.
     return NextResponse.json({ error: AR.badRateVisibility }, { status: 400 });
+  }
+  for (const key of ["show_services", "show_education", "show_courts"] as const) {
+    // boolean not null default true (20261025_50).
+    if (key in body && typeof body[key] !== "boolean") {
+      return NextResponse.json({ error: AR.badSectionVisibility }, { status: 400 });
+    }
   }
 
   if ("onboarding_completed" in body && typeof body.onboarding_completed !== "boolean") {

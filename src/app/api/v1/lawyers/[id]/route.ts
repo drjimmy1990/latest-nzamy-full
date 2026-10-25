@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { withholdHiddenRate } from "@/lib/lawyers/publicRate";
 import { founderBadgeFrom } from "@/lib/lawyers/founderBadge";
+import { ALL_SECTIONS_SHOWN, PROFILE_VISIBILITY_COLUMNS, applyProfileVisibility, profileVisibilityFrom } from "@/lib/lawyers/profileVisibility";
 import type { LawyerService } from "@/lib/services/lawyerServicesService";
 import type { Review, ReviewStats } from "@/lib/services/reviewsService";
 import type { EducationEntry } from "@/lib/services/lawyerProfileFields";
@@ -255,9 +256,11 @@ export async function GET(
   let services: LawyerService[] | null = [];
   let reviewStats: ReviewStats | null = null;
   let reviews: Review[] | null = [];
+  // No lawyer id → nothing was read, so nothing is hidden either.
+  let visibilityApplied = ALL_SECTIONS_SHOWN;
 
   if (lawyerUserId) {
-    const [servicesRes, statsRes, reviewsRes, founderBadge] = await Promise.all([
+    const [servicesRes, statsRes, reviewsRes, founderBadge, visibility] = await Promise.all([
       supabase
         .from("lawyer_services")
         .select(
@@ -291,7 +294,15 @@ export async function GET(
         supabase.from("lawyer_profiles").select("founder_badge").eq("user_id", lawyerUserId).maybeSingle(),
         "lawyers/[id] GET",
       ),
+      // N3.8 (20261025_50): the lawyer's own section switches, in their own
+      // read for the same reason as founder_badge — before the migration the
+      // columns are absent and the read falls back to "every section shown".
+      profileVisibilityFrom(
+        supabase.from("lawyer_profiles").select(PROFILE_VISIBILITY_COLUMNS).eq("user_id", lawyerUserId).maybeSingle(),
+        "lawyers/[id] GET",
+      ),
     ]);
+    visibilityApplied = visibility;
 
     // Sent only when true (a new column reaches the client only when set).
     if (founderBadge) row.founder_badge = true;
@@ -341,6 +352,9 @@ export async function GET(
   row.services = services;
   row.reviewStats = reviewStats;
   row.reviews = reviews;
+  // Last, so nothing above can put a hidden section back. Reviews are not a
+  // switch: they are clients' words, not the lawyer's own content.
+  applyProfileVisibility(row, lp, visibilityApplied);
 
   return NextResponse.json({ data: row });
 }

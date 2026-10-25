@@ -734,7 +734,9 @@ BEGIN
              'languages','headline_ar','license_issued_on','office_address',
              'display_mode','updated_at',
              -- 20261016_05 (owner decision ١٦٨); checked in (b) only once the column exists
-             'show_hourly_rate']::text[],
+             'show_hourly_rate',
+             -- 20261025_50 (N3.8, profile section switches); same rule
+             'show_services','show_education','show_courts']::text[],
        ARRAY['verification_status','credit_balance','credit_package','credit_expiry',
              'free_briefs_remaining','active_roles','metadata','user_id']::text[],
        'lawyers update own profile'),
@@ -799,7 +801,7 @@ BEGIN
     --     PATCH /api/v1/profile and PATCH /api/v1/settings/preferences would
     --     start answering an Arabic 500 on a 42501.
     FOREACH c IN ARRAY spec.allowed LOOP
-      CONTINUE WHEN c = 'show_hourly_rate'
+      CONTINUE WHEN c IN ('show_hourly_rate', 'show_services', 'show_education', 'show_courts')
                 AND NOT EXISTS (SELECT 1 FROM information_schema.columns
                                  WHERE table_schema = 'public' AND table_name = spec.tbl
                                    AND column_name = c);
@@ -3523,3 +3525,37 @@ begin
   raise notice '_verify: 20261025_32 OK — case_tracking_links: hashed, scoped, issued by lead/team/case roles only, revoke-only; case_tracking_snapshot service-only';
 end $$;
 -- <<< verify:case_tracking_links
+
+-- >>> verify:profile_visibility
+-- 2026-10-25 — 20261025_50_profile_visibility.sql (P6 N3.8). Read-only, safe
+-- to repeat. Before _50 runs it only reports; after, it raises when a switch
+-- lost its default, its UPDATE grant, or became readable/writable by a guest.
+do $$
+declare c text; r text;
+begin
+  if not exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'lawyer_profiles' and column_name = 'show_services') then
+    raise notice '_verify: 20261025_50 is not applied yet — the profile switches «الخدمات / المؤهلات / المحاكم» are not saved (every section shows); run 15_BEFORE_DEPLOY_20261025_50_profile_visibility.sql';
+    return;
+  end if;
+  foreach c in array array['show_services', 'show_education', 'show_courts'] loop
+    if not exists (select 1 from information_schema.columns
+                    where table_schema = 'public' and table_name = 'lawyer_profiles' and column_name = c
+                      and is_nullable = 'NO' and column_default = 'true') then
+      raise exception '_verify: lawyer_profiles.% is missing or not NOT NULL DEFAULT true (re-run 20261025_50)', c;
+    end if;
+    if not has_column_privilege('authenticated', 'public.lawyer_profiles', c, 'UPDATE') then
+      raise exception '_verify: authenticated cannot UPDATE lawyer_profiles.% — the switch answers «تعذّر حفظ» (20260922_03 re-run after 20261025_50? re-run 20261025_50)', c;
+    end if;
+    foreach r in array array['anon', 'authenticated'] loop
+      if has_column_privilege(r, 'public.lawyer_profiles', c, 'SELECT') then
+        raise exception '_verify: % can read lawyer_profiles.% through REST (re-run 20261016_10, then 20261025_50)', r, c;
+      end if;
+    end loop;
+    if has_column_privilege('anon', 'public.lawyer_profiles', c, 'UPDATE') then
+      raise exception '_verify: anon can UPDATE lawyer_profiles.% (re-run 20261025_50)', c;
+    end if;
+  end loop;
+  raise notice '_verify: 20261025_50 OK — show_services / show_education / show_courts default true, lawyer-writable, not readable by the API roles';
+end $$;
+-- <<< verify:profile_visibility
