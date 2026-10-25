@@ -38,12 +38,11 @@ export function ResultView({ outputType, isDark, onReset, onEdit }: {
     <BetaReviewGate toolId="legal-opinion.result" toolName="الرأي القانوني المدعوم بالنصوص والسوابق" reviewScope="legal-data">
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
       {/* Stats Bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         {[
           { label: "النوع", value: opConfig.title, color: opConfig.color, bg: opConfig.bg },
           { label: "النصوص", value: `${MOCK_RESULT.laws.length} نصوص`, color: "text-blue-500", bg: "bg-blue-500/10" },
           { label: "السوابق", value: `${MOCK_RESULT.precedents.length} سابقة`, color: "text-purple-500", bg: "bg-purple-500/10" },
-          { label: "جودة AI", value: "٩٤٪", color: "text-emerald-500", bg: "bg-emerald-500/10" },
         ].map((st, i) => (
           <div key={i} className={`rounded-xl p-3 text-center border ${isDark ? "border-white/[0.06]" : "border-slate-100"} ${st.bg}`}>
             <p className={`text-[10px] mb-1 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{st.label}</p>
@@ -149,12 +148,6 @@ export function ResultView({ outputType, isDark, onReset, onEdit }: {
                   <div className="flex items-center gap-2 mb-2 flex-wrap">
                     <span className={`text-[12px] font-black ${isDark ? "text-zinc-200" : "text-slate-800"}`}>{law.article}</span>
                     <span className={`text-[10px] px-2 py-0.5 rounded-full ${isDark ? "bg-zinc-800 text-zinc-400" : "bg-slate-100 text-slate-500"}`}>{law.system}</span>
-                    <div className={`ms-auto flex items-center gap-1.5 flex-1 max-w-[100px]`}>
-                      <div className={`h-1 flex-1 rounded-full ${isDark ? "bg-zinc-800" : "bg-slate-100"}`}>
-                        <motion.div initial={{ width: 0 }} animate={{ width: `${law.relevance}%` }} transition={{ delay: 0.3 + i * 0.1, duration: 0.7 }} className="h-full rounded-full bg-[#0B3D2E]" />
-                      </div>
-                      <span className="text-[10px] font-mono font-bold text-[#C8A762] flex-shrink-0">{law.relevance}٪</span>
-                    </div>
                   </div>
                   <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-600"}`}>{law.text}</p>
                 </div>
@@ -209,7 +202,6 @@ export function ResultView({ outputType, isDark, onReset, onEdit }: {
                       <div className="flex flex-col gap-1">
                         <div className="flex items-center gap-2">
                           <span className={`text-[12px] font-black ${isDark ? "text-emerald-400" : "text-[#0B3D2E]"}`}>{th.agent}</span>
-                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600 border border-amber-200/50"}`}>{th.model}</span>
                         </div>
                         <span className={`text-[10px] font-medium ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{th.role}</span>
                       </div>

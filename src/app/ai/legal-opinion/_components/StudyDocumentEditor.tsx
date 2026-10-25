@@ -18,7 +18,6 @@ interface StudySection {
   type: SectionType;
   title: string;
   body: string;
-  quality: number; // 0-100 AI confidence
   saved: boolean;
   edited: boolean;
 }
@@ -28,27 +27,27 @@ interface StudySection {
 function buildInitialSections(draft: string): StudySection[] {
   return [
     {
-      id: "s1", type: "analysis", quality: 96, saved: false, edited: false,
+      id: "s1", type: "analysis", saved: false, edited: false,
       title: "الأساس النظامي",
       body: "يُعدّ نظام العمل السعودي (م/٥١) والمادة ٧٧ الأساس الرئيسي للموضوع المعروض. المبدأ القضائي رقم ٨٩/٣ من المحكمة العليا يدعم الموقف القانوني في هذه الحالة.",
     },
     {
-      id: "s2", type: "analysis", quality: 91, saved: false, edited: false,
+      id: "s2", type: "analysis", saved: false, edited: false,
       title: "تحليل الوقائع والمطابقة",
       body: "بمطابقة الوقائع مع المادة ٧٧، يتبيّن أن إنهاء العقد تم دون سبب مشروع موثّق، وهو ما يُعرّض صاحب العمل للمسؤولية القانونية الكاملة بموجب النظام.",
     },
     {
-      id: "s3", type: "risk", quality: 88, saved: false, edited: false,
+      id: "s3", type: "risk", saved: false, edited: false,
       title: "المخاطر والدفوع المحتملة",
       body: "• الدفع الأول: قد يدّعي الخصم بعدم القدرة المالية لاحتساب التعويض الكامل.\n• الدفع الثاني: احتمالية انقضاء مدة التقادم (٣ سنوات من انتهاء العقد) — التحرك الفوري ضرورة قصوى.",
     },
     {
-      id: "s4", type: "recommendation", quality: 99, saved: false, edited: false,
+      id: "s4", type: "recommendation", saved: false, edited: false,
       title: "التوصية",
       body: "يُوصى بتقديم الدعوى أمام المحكمة العمالية مدعّمةً بمستندات إثبات الأجر وكشف الرواتب وخطاب الفصل، مع التحرك الفوري تجنباً لمشكلة التقادم.",
     },
     {
-      id: "s5", type: "conclusion", quality: 94, saved: false, edited: false,
+      id: "s5", type: "conclusion", saved: false, edited: false,
       title: "الخلاصة",
       body: "الحق النظامي ثابت وواضح استناداً إلى المادة ٧٧ ومبدأ المحكمة العليا ٨٩/٣. يُنصح بالتحرك القانوني الفوري.",
     },
@@ -96,7 +95,7 @@ function SectionCard({
     const refined = `[تم التنقيح بناءً على: "${aiInstruction.trim()}"]
 
 ${section.body}`;
-    onUpdate(section.id, { body: refined, edited: true, quality: Math.min(100, section.quality + 2) });
+    onUpdate(section.id, { body: refined, edited: true });
     setLocalBody(refined);
     setAiInstruction("");
     setAiLoading(false);
@@ -169,16 +168,6 @@ ${section.body}`;
             )}
           </span>
         )}
-
-        {/* Quality score */}
-        <div className={`flex-shrink-0 flex items-center gap-1 text-[10px] font-mono font-bold ${
-          section.quality >= 90 ? "text-emerald-500" : section.quality >= 75 ? "text-amber-500" : "text-red-500"
-        }`}>
-          <span className={`w-1.5 h-1.5 rounded-full ${
-            section.quality >= 90 ? "bg-emerald-500" : section.quality >= 75 ? "bg-amber-500" : "bg-red-500"
-          }`} />
-          {section.quality}٪
-        </div>
 
         {/* Actions */}
         <div className="flex items-center gap-1 flex-shrink-0">
@@ -409,7 +398,6 @@ export function StudyDocumentEditor({ draft, isDark }: Props) {
       type,
       title: SECTION_META[type].label + " جديد",
       body: "",
-      quality: 0,
       saved: false,
       edited: false,
     };

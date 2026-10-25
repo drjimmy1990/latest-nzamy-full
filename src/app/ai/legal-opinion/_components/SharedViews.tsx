@@ -55,8 +55,6 @@ import { Database } from "@phosphor-icons/react";
 
 export function SourceBadge({ source, isDark }: { source: string; isDark: boolean }) {
   const configs: Record<string, { label: string; color: string; bg: string }> = {
-    gemini: { label: "Gemini", color: "text-blue-500", bg: "bg-blue-500/10 border-blue-500/20" },
-    claude:  { label: "Claude",  color: "text-purple-500", bg: "bg-purple-500/10 border-purple-500/20" },
     nzamy:   { label: "نظامي DB", color: isDark ? "text-emerald-400" : "text-emerald-700", bg: isDark ? "bg-emerald-900/30 border-emerald-700/30" : "bg-emerald-50 border-emerald-200" },
   };
   const cfg = configs[source] ?? configs["nzamy"];
