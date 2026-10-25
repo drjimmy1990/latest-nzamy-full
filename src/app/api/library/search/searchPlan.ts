@@ -5,7 +5,7 @@
  * without a network (see searchPlan.test.ts). route.ts runs the queries and
  * hands the outcomes to these functions.
  */
-import { normalizeSearch } from '../../../../utils/normalizeArabic.ts';
+import { normalizeSearch, toArabicIndicDigits, toWesternDigits } from '../../../../utils/normalizeArabic.ts';
 
 export type SearchSectionName = 'laws' | 'precedents' | 'orders' | 'feqh';
 export const SEARCH_SECTION_NAMES: readonly SearchSectionName[] = ['laws', 'precedents', 'orders', 'feqh'];
@@ -741,6 +741,20 @@ export function nizamTitleFor(rawQuery: string): string | null {
   const phrase = rawQuery.trim().replace(/\s+/g, ' ');
   if (normalizeSearch(phrase.split(' ')[0]) === NIZAM_WORD) return null;
   return `${PRIMARY_LAW_TYPE} ${phrase}`;
+}
+
+/**
+ * Distinct numeral-script variants of a raw query (typed first, then Western
+ * 0-9 and Arabic-Indic ٠-٩) so ILIKE / equality title lookups match across
+ * numeral scripts without changing non-digit queries.
+ */
+export function titleDigitVariantQueries(rawQuery: string): string[] {
+  if (!/[0-9٠-٩۰-۹]/.test(rawQuery)) return [rawQuery];
+  const out: string[] = [];
+  for (const v of [rawQuery, toWesternDigits(rawQuery), toArabicIndicDigits(rawQuery)]) {
+    if (!out.includes(v)) out.push(v);
+  }
+  return out;
 }
 
 /** Reorder rows to follow `ids` (the ranked order); rows whose id is not listed are dropped. */

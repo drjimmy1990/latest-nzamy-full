@@ -34,14 +34,21 @@ export { normalizeDigits } from './normalizeDigits.ts';
  * Example:
  *   normalizeSearch('الإثبات ١٤٤٤') → 'الاثبات 1444'
  */
+const ARABIC_INDIC_DIGITS = '٠١٢٣٤٥٦٧٨٩';
+const EXTENDED_ARABIC_INDIC_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
+
+export function toWesternDigits(text: string): string {
+  return text
+    .replace(/[٠-٩]/g, (d) => String(ARABIC_INDIC_DIGITS.indexOf(d)))
+    .replace(/[۰-۹]/g, (d) => String(EXTENDED_ARABIC_INDIC_DIGITS.indexOf(d)));
+}
+
+export function toArabicIndicDigits(text: string): string {
+  return toWesternDigits(text).replace(/[0-9]/g, (d) => ARABIC_INDIC_DIGITS[Number(d)]);
+}
+
 export function normalizeSearch(text: string): string {
-  // First normalize Arabic characters
-  let result = normalizeArabic(text);
-  // Then normalize digits (Arabic-Indic → Western)
-  result = result
-    .replace(/[٠١٢٣٤٥٦٧٨٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
-    .replace(/[۰۱۲۳۴۵۶۷۸۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)));
-  return result;
+  return toWesternDigits(normalizeArabic(text));
 }
 
 /**
@@ -172,13 +179,16 @@ export const MAX_QUERY_SPELLING_VARIANTS = 48;
 /**
  * The spellings of one query word that the stored text may use (T28-11: «نظام
  * الاثبات» found nothing because the corpus writes «الإثبات»). The FTS index
- * is built with `library.arabic` = `simple`, which does no Arabic folding, so
- * the query names each plausible stored spelling instead:
+ * is built with `library.arabic` = `simple`, which does no Arabic or numeral
+ * folding, so the query names each plausible stored spelling instead:
  *   - the alef that opens the word, or follows its «ال»: ا / أ / إ / آ
  *     («اثبات» → «إثبات», «الاثبات» → «الإثبات», «الغاء» → «إلغاء», «الا» → «إلا»);
- *   - a final ة ↔ ه and a final ى ↔ ي (words of 3+ letters).
+ *   - a final ة ↔ ه and a final ى ↔ ي (words of 3+ letters);
+ *   - bidirectional numeral forms: Arabic-Indic (٠-٩) ↔ Western (0-9) (plus
+ *     Extended Arabic-Indic ۰-۹ → both), so «١٤٤٥» matches stored «1445» and
+ *     «1445» matches stored «١٤٤٥».
  * Hamza on waw/yaa (ؤ/ئ) is left alone. The word as typed is always first;
- * a word with no such letter comes back alone, unchanged.
+ * a word with no variant letter or digit comes back alone, unchanged.
  */
 export function arabicSpellingVariants(word: string): string[] {
   const chars = Array.from(word);
@@ -201,32 +211,46 @@ export function arabicSpellingVariants(word: string): string[] {
   if (chars.length >= 3 && FINAL_SWAP[chars[last]]) {
     slots.push({ at: last, options: [chars[last], FINAL_SWAP[chars[last]]] });
   }
-  if (slots.length === 0) return [word];
 
-  // Every combination, fewest changed letters first (then generation order).
-  let combos: Array<{ chars: string[]; changes: number }> = [{ chars, changes: 0 }];
-  for (const slot of slots) {
-    const next: typeof combos = [];
-    for (const combo of combos) {
-      slot.options.forEach((option, i) => {
-        const copy = [...combo.chars];
-        copy[slot.at] = option;
-        next.push({ chars: copy, changes: combo.changes + (i > 0 ? 1 : 0) });
-      });
+  let letterVariants: string[];
+  if (slots.length === 0) {
+    letterVariants = [word];
+  } else {
+    // Every combination, fewest changed letters first (then generation order).
+    let combos: Array<{ chars: string[]; changes: number }> = [{ chars, changes: 0 }];
+    for (const slot of slots) {
+      const next: typeof combos = [];
+      for (const combo of combos) {
+        slot.options.forEach((option, i) => {
+          const copy = [...combo.chars];
+          copy[slot.at] = option;
+          next.push({ chars: copy, changes: combo.changes + (i > 0 ? 1 : 0) });
+        });
+      }
+      combos = next;
     }
-    combos = next;
+    const ordered = combos
+      .map((combo, i) => ({ ...combo, i }))
+      .filter((combo) => combo.changes <= maxChanges)
+      .sort((a, b) => a.changes - b.changes || a.i - b.i);
+    letterVariants = [];
+    for (const combo of ordered) {
+      const spelled = combo.chars.join('');
+      if (!letterVariants.includes(spelled)) letterVariants.push(spelled);
+      if (letterVariants.length >= MAX_SPELLING_VARIANTS) break;
+    }
   }
-  const ordered = combos
-    .map((combo, i) => ({ ...combo, i }))
-    .filter((combo) => combo.changes <= maxChanges)
-    .sort((a, b) => a.changes - b.changes || a.i - b.i);
-  const out: string[] = [];
-  for (const combo of ordered) {
-    const spelled = combo.chars.join('');
-    if (!out.includes(spelled)) out.push(spelled);
-    if (out.length >= MAX_SPELLING_VARIANTS) break;
+
+  if (!SEARCH_DIGIT.test(word)) return letterVariants;
+
+  const withDigits: string[] = [];
+  for (const v of letterVariants) {
+    for (const form of [v, toWesternDigits(v), toArabicIndicDigits(v)]) {
+      if (!withDigits.includes(form)) withDigits.push(form);
+      if (withDigits.length >= MAX_SPELLING_VARIANTS) return withDigits;
+    }
   }
-  return out;
+  return withDigits;
 }
 
 function isLiteralSlash(input: string, index: number, termStart: number): boolean {
@@ -449,6 +473,31 @@ export function parseSearchQuery(query: string): ParsedSearchQuery {
       .filter((token): token is Extract<SearchQueryToken, { kind: 'operand' }> => token.kind === 'operand')
       .map((token) => token.plain),
   };
+}
+
+/**
+ * Parse a live-typed autocomplete query into a tsquery with full Arabic
+ * spelling and bidirectional numeral expansion, falling back to plain words
+ * when the user is mid-typing an operator (e.g. an unclosed quote or trailing `+`).
+ */
+export function parseAutocompleteQuery(query: string): ParsedSearchQuery {
+  const raw = query.trim();
+  if (!raw) return { raw: '', tsquery: '', plainTerms: [] };
+  try {
+    return parseSearchQuery(raw);
+  } catch (err) {
+    if (!(err instanceof SearchQuerySyntaxError)) throw err;
+    const cleaned = raw
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ')
+      .replace(/["*+/\\-]+/g, ' ')
+      .trim();
+    if (!cleaned) return { raw, tsquery: '', plainTerms: [] };
+    try {
+      return parseSearchQuery(cleaned);
+    } catch {
+      return { raw, tsquery: '', plainTerms: [] };
+    }
+  }
 }
 
 /**

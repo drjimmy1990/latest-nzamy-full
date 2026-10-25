@@ -1,36 +1,33 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 
 /**
  * GET /api/library/folders — List user's smart folders
  * POST /api/library/folders — Create a new smart folder
+ * PATCH /api/library/folders — Update a user-owned smart folder
+ * DELETE /api/library/folders — Delete a user-owned smart folder or folder item
+ *
+ * Authentication runs on the request cookie client (`supabase.auth.getUser()`).
+ * Database reads/writes run through `createServiceClient()` with explicit
+ * `user_id = user.id` ownership filters on every query because live
+ * `library` table-level grants only gave `authenticated` SELECT (no INSERT,
+ * UPDATE, or DELETE), which broke «حفظ في مجلداتي» with 42501.
  */
 
 export async function GET() {
   try {
     const supabase = await createClient();
-    
-    // Get current user
+
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // `*` already carries `is_pinned` (library.smart_folders, migration
-    // 20260906) straight through as the raw column — there is no mapper in
-    // this route, so the frontend's `apiFolder.is_pinned ?? false`
-    // (SmartFolders.tsx mapApiFolderToSmartFolder) reads it as-is.
-    //
-    // The embedded item select carries title/title_en/cat_id too — migration
-    // 20260701_smart_folder_items_display_cols.sql added those columns
-    // specifically "so a saved item can render its title/category without a
-    // second lookup", and POST /api/library/folders/items writes them.
-    // Without them here, mapApiFolderToSmartFolder's `item.title ||
-    // item.entity_id` fallback silently renders the raw slug instead of the
-    // real title on every reload.
-    const { data: folders, error } = await supabase
+    const serverOnly = await createServiceClient();
+
+    const { data: folders, error } = await serverOnly
       .schema('library')
       .from('smart_folders')
       .select(`
@@ -55,7 +52,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const supabase = await createClient();
-    
+
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
     if (!user) {
@@ -63,18 +60,21 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { name, color, icon } = body;
+    const rawName = typeof body?.name === 'string' ? body.name.trim() : '';
+    const { color, icon } = body ?? {};
 
-    if (!name) {
+    if (!rawName) {
       return NextResponse.json({ error: 'name is required' }, { status: 400 });
     }
 
-    const { data: folder, error } = await supabase
+    const serverOnly = await createServiceClient();
+
+    const { data: folder, error } = await serverOnly
       .schema('library')
       .from('smart_folders')
       .insert({
         user_id: user.id,
-        name,
+        name: rawName,
         color: color || '#C8A762',
         icon: icon || '📁',
       })
@@ -96,7 +96,7 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const supabase = await createClient();
-    
+
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
     if (!user) {
@@ -104,7 +104,7 @@ export async function PATCH(request: Request) {
     }
 
     const body = await request.json();
-    const { folderId, name, color, icon, isPinned } = body;
+    const { folderId, name, color, icon, isPinned } = body ?? {};
 
     if (!folderId) {
       return NextResponse.json({ error: 'folderId is required' }, { status: 400 });
@@ -114,12 +114,14 @@ export async function PATCH(request: Request) {
     }
 
     const updates: Record<string, unknown> = {};
-    if (name) updates.name = name;
+    if (typeof name === 'string' && name.trim()) updates.name = name.trim();
     if (color) updates.color = color;
     if (icon) updates.icon = icon;
     if (isPinned !== undefined) updates.is_pinned = isPinned;
 
-    const { data: folder, error } = await supabase
+    const serverOnly = await createServiceClient();
+
+    const { data: folder, error } = await serverOnly
       .schema('library')
       .from('smart_folders')
       .update(updates)
@@ -143,22 +145,22 @@ export async function PATCH(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const supabase = await createClient();
-    
+
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const serverOnly = await createServiceClient();
+
     const { searchParams } = new URL(request.url);
     const folderId = searchParams.get('folderId');
     const itemId = searchParams.get('itemId');
 
     if (itemId) {
-      // Delete a single item from a folder.
       // IDOR guard: verify the item belongs to a smart_folder owned by this user
-      // before deleting. Mirrors the folder-level DELETE's `.eq('user_id', user.id)`.
-      const { data: item, error: lookupError } = await supabase
+      const { data: item, error: lookupError } = await serverOnly
         .schema('library')
         .from('smart_folder_items')
         .select('id, folder_id')
@@ -173,7 +175,7 @@ export async function DELETE(request: Request) {
         return NextResponse.json({ error: 'Item not found' }, { status: 404 });
       }
 
-      const { data: ownerFolder, error: folderError } = await supabase
+      const { data: ownerFolder, error: folderError } = await serverOnly
         .schema('library')
         .from('smart_folders')
         .select('id')
@@ -189,7 +191,7 @@ export async function DELETE(request: Request) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
       }
 
-      const { error } = await supabase
+      const { error } = await serverOnly
         .schema('library')
         .from('smart_folder_items')
         .delete()
@@ -202,8 +204,7 @@ export async function DELETE(request: Request) {
     }
 
     if (folderId) {
-      // Delete entire folder (cascade deletes items)
-      const { error } = await supabase
+      const { error } = await serverOnly
         .schema('library')
         .from('smart_folders')
         .delete()

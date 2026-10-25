@@ -5,7 +5,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mapApiFolderToSmartFolder, type ApiSmartFolderRow } from "./smartFolderApiMapper.ts";
+import { mapApiFolderToSmartFolder, resolveSavedItemHref, type ApiSmartFolderRow } from "./smartFolderApiMapper.ts";
 
 test("mapApiFolderToSmartFolder maps a full row, items included", () => {
   const row: ApiSmartFolderRow = {
@@ -99,4 +99,17 @@ test("mapApiFolderToSmartFolder: an item missing title/title_en/cat_id falls bac
     type: "law",
     _itemDbId: "item-2",
   });
+});
+
+test("resolveSavedItemHref routes saved laws, collections, orders and Arabic-slug books cleanly", () => {
+  assert.equal(resolveSavedItemHref({ slug: "labor-law", type: "law" }), "/laws/labor-law");
+  assert.equal(resolveSavedItemHref({ slug: "sjc-principles-1", type: "precedent" }), "/precedents/sjc-principles-1");
+  assert.equal(resolveSavedItemHref({ slug: "decree-42", type: "order" }), "/laws/orders/decree-42");
+  assert.equal(
+    resolveSavedItemHref({ slug: "الروض المربع", type: "book" }),
+    `/book/${encodeURIComponent("الروض المربع")}`,
+  );
+  // Already percent-encoded slugs are not double-encoded
+  const encoded = encodeURIComponent("الروض المربع");
+  assert.equal(resolveSavedItemHref({ slug: encoded, type: "book" }), `/book/${encoded}`);
 });

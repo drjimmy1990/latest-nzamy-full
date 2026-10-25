@@ -8,6 +8,7 @@ import {
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { SmartFolder, FOLDER_COLORS } from "./SmartFolderTypes";
+import { resolveSavedItemHref } from "./smartFolderApiMapper";
 
 interface FolderIconProps {
   icon: SmartFolder["icon"];
@@ -287,11 +288,7 @@ export default function FolderCard({
             <div className={`p-3 space-y-2 ${isDark ? "bg-black/10" : "bg-gray-50/20"}`}>
               {folder.laws.map((law, li) => {
                 const t = law.type || "law";
-                const href = 
-                  t === "book" ? `/book/${law.slug}` :
-                  t === "order" ? `/laws/orders/${law.slug}` :
-                  t === "precedent" ? `/precedents/judgment/${law.slug}` :
-                  `/laws/${law.slug}`;
+                const href = resolveSavedItemHref(law);
                 
                 return (
                   <div

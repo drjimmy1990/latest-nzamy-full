@@ -35,6 +35,7 @@ import {
   titlePhrasePattern,
   foldLettersForIlike,
   titlePrefixPattern,
+  titleDigitVariantQueries,
   titleStemPatterns,
   uncountedPage,
   type LawTitleCandidate,
@@ -496,4 +497,10 @@ test("the fold stays positional — «هيئة» no longer matches «لائحة�
   assert.equal(toRe(titlePhrasePattern("الهيئة")!).test("اللائحة التنفيذية لنظام العمل"), false);
   assert.ok(toRe(titlePhrasePattern("الهيئه")!).test("نظام الهيئة العامة"));
   assert.equal(foldLettersForIlike("العمل"), "العمل");
+});
+
+test("titleDigitVariantQueries emits typed, Western and Arabic-Indic query forms for title lookups", () => {
+  assert.deepEqual(titleDigitVariantQueries("نظام العمل"), ["نظام العمل"]);
+  assert.deepEqual(titleDigitVariantQueries("قرار ١٤٤٥"), ["قرار ١٤٤٥", "قرار 1445"]);
+  assert.deepEqual(titleDigitVariantQueries("قرار 1445"), ["قرار 1445", "قرار ١٤٤٥"]);
 });

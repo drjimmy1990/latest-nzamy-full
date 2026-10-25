@@ -41,9 +41,13 @@ import {
 } from './searchPlan';
 import { fetchLawTitleHitsChecked, type LawTitleHitsResult } from './lawTitleHits';
 import { fetchBookTitleHits } from './bookTitleHits';
+import { fetchCollectionTitleHits } from './collectionTitleHits';
 
 /** Book-title hits listed above the fiqh passages on page 1. */
 const BOOK_TITLE_HITS_MAX = 3;
+/** Judicial-collection title hits listed on page 1 of precedents / all. */
+const COLLECTION_TITLE_HITS_ALL = 3;
+const COLLECTION_TITLE_HITS_PRECEDENTS = 12;
 
 /**
  * POST /api/library/search
@@ -562,6 +566,14 @@ export async function POST(request: Request) {
       const { from, size } = window('precedents');
       const signal = AbortSignal.timeout(SECTION_BUDGET_MS);
       try {
+        const titleCollectionsPromise = fetchCollectionTitleHits(supabase, parsed.raw, {
+          track: filters.track,
+          source: filters.source,
+          year: filters.year,
+          court: filters.court,
+          max: section === 'precedents' ? COLLECTION_TITLE_HITS_PRECEDENTS : COLLECTION_TITLE_HITS_ALL,
+          signal,
+        });
         const precQuery = (head = false) => {
           let q = serverOnly
             .schema('library')
@@ -612,6 +624,30 @@ export async function POST(request: Request) {
             .abortSignal(signal);
         const settled = await settlePage('precedents', res as unknown as RowsResult, () => precQuery(true).abortSignal(signal));
         if (!settled) return { ok: false };
+        const titleCollections = await titleCollectionsPromise;
+        if (titleCollections.error) console.warn('[Search] collection title lookup failed:', titleCollections.error);
+        const collectionItems: SearchResultItem[] = titleCollections.hits.map((col) => {
+          const isFree = Boolean(col.free) || hasFullAccess;
+          return {
+            id: `collection:${col.id}`,
+            section: 'precedents',
+            title: col.title,
+            snippet: truncateWithHighlight(col.description || col.court || '', isFree ? parsed.plainTerms : [], snippetLen(isFree)),
+            locked: !isFree,
+            meta: {
+              kind: 'collection',
+              collectionSlug: col.id,
+              court: col.court,
+              track: col.track,
+              sourceId: col.source_id,
+              year: col.year_hijri,
+              rulingCount: col.ruling_count,
+              part: col.part,
+              free: Boolean(col.free),
+              progress: col.progress,
+            },
+          };
+        });
         const precResults = settled.rows;
         const results: SearchResultItem[] = precResults.map((r: Record<string, unknown>) => {
           const isFree = isFreeLibraryItem({ contentType: 'principles', itemId: r.id as string, hasFullAccess, freeItemsByType, whitelistedLawSlugs: whitelistedSlugs });
@@ -637,10 +673,20 @@ export async function POST(request: Request) {
           };
         });
         const deduped = dedupeResults(results);
+        const pageRows = deduped.slice(0, size);
+        const withCollections = from === 0 ? [...collectionItems, ...pageRows] : pageRows;
+        const collectionCount = collectionItems.length;
         return {
           ok: true,
-          results: deduped.slice(0, size),
-          ...sectionCount({ estimate: settled.count, offset: from, rawRows: precResults.length, requested: fetchSizeFor(size), listedWhenComplete: deduped.length }),
+          results: section === 'precedents' ? withCollections : withCollections.slice(0, size),
+          ...sectionCount({
+            estimate: settled.count,
+            offset: from,
+            rawRows: precResults.length,
+            requested: fetchSizeFor(size),
+            extra: collectionCount,
+            listedWhenComplete: collectionCount + deduped.length,
+          }),
         };
       } catch (e) {
         console.error('[Search] Precedents error:', e);

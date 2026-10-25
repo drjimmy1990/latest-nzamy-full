@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { libraryGate } from '@/lib/library-gate';
-import { LIBRARY_FTS_CONFIG } from '@/utils/normalizeArabic';
+import { LIBRARY_FTS_CONFIG, parseAutocompleteQuery } from '@/utils/normalizeArabic';
 import { fetchLawTitleHits } from '../search/lawTitleHits';
 import { fetchBookTitleHits } from '../search/bookTitleHits';
+import { fetchCollectionTitleHits } from '../search/collectionTitleHits';
 import { buildAutocompleteBody, uniformCountsExact, type FacetResult, type TopMatch } from './facets';
 
 /** Client-side ceiling; the anon statement_timeout (~3s) normally fires first. */
@@ -29,8 +30,9 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const query = searchParams.get('q')?.trim();
+    const parsed = query && query.length >= 2 ? parseAutocompleteQuery(query) : null;
 
-    if (!query || query.length < 2) {
+    if (!query || query.length < 2 || !parsed || !parsed.tsquery) {
       return NextResponse.json({
         counts: { laws: 0, precedents: 0, orders: 0, feqh: 0 },
         countsExact: uniformCountsExact(true),
@@ -42,48 +44,33 @@ export async function GET(request: Request) {
     const supabase = await createClient();
     const signal = AbortSignal.timeout(AUTOCOMPLETE_BUDGET_MS);
     // Full-text search on the generated `fts` tsvector columns (GIN-indexed),
-    // built with `to_tsvector('library.arabic', ...)`. Queried with
-    // LIBRARY_FTS_CONFIG, which yields the same lexemes as that config but is
-    // expressible in a PostgREST filter — 'library.arabic' itself is a parse
-    // error and made every autocomplete return nothing. The config does not
-    // normalize Arabic forms, so the raw query is used as-is.
-    const ftsQuery = query;
-    const plainTerms = query.split(/\s+/).filter(Boolean);
+    // built with `to_tsvector('library.arabic', ...)`. `parseAutocompleteQuery`
+    // emits a raw tsquery with full Arabic spelling + bidirectional numeral
+    // expansion (٠-٩ ↔ 0-9) while tolerating partial operator syntax mid-typing.
+    const ftsQuery = parsed.tsquery;
+    const plainTerms = parsed.plainTerms;
 
-    // T28-21 (migration 20260929_01): library.articles is server-only, so its
-    // count runs as the service role. Only a number leaves this route for it —
-    // no article row or text is selected (head: true). Principles likewise
-    // since owner decision ١٧١ (migration 20261016_01): their `fts` and text
-    // are server-only, so their count and top matches run as the service role
-    // and only a 120-character opening of a principle leaves the route (the
-    // precedent page shows 150 of a locked one). The fiqh blocks likewise since
-    // owner answer ١٨٣ (migration 20261018_02): their `fts` is server-only,
-    // so their count runs as the service role (a number only; the book matches
-    // come from feqh_books titles). Everything else stays on the request
-    // client: migration 20261004_01 keeps `fts` and every laws / decrees
-    // column read here on the anon allow-list.
     const serverOnly = await createServiceClient();
 
     const count = (table: string, client: typeof supabase | typeof serverOnly = supabase) => client
       .schema('library')
       .from(table)
       .select('id', { count: 'estimated', head: true })
-      .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG, type: 'plain' })
+      .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG })
       .abortSignal(signal);
 
     // Run all queries in parallel for speed
-    const [lawsCount, precedentsCount, ordersCount, feqhCount, topLaws, topPrecedents, topOrders, topBooks] = await Promise.all([
+    const [lawsCount, precedentsCount, ordersCount, feqhCount, topLaws, topPrecedents, topOrders, topBooks, topCollections] = await Promise.all([
       count('articles', serverOnly),
       count('principles', serverOnly),
       count('decrees_circulars'),
       count('feqh_blocks', serverOnly),
 
       // Top 2 law matches — title-first (the Labor Law for «نظام العمل»),
-      // falling back to plain full-text matches when no title carries the query.
+      // falling back to full-text matches when no title carries the query.
       (async (): Promise<FacetResult<Record<string, unknown>>> => {
         const ranked = await fetchLawTitleHits(supabase, {
           ftsQuery,
-          ftsType: 'plain',
           rawQuery: query,
           terms: plainTerms,
           max: 2,
@@ -94,7 +81,7 @@ export async function GET(request: Request) {
           .schema('library')
           .from('laws')
           .select('slug, title, type')
-          .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG, type: 'plain' })
+          .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG })
           .order('slug')
           .limit(4)
           .abortSignal(signal);
@@ -109,7 +96,7 @@ export async function GET(request: Request) {
         .schema('library')
         .from('principles')
         .select('id, principle_number, issuing_body, text')
-        .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG, type: 'plain' })
+        .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG })
         .order('id')
         .limit(2)
         .abortSignal(signal),
@@ -119,20 +106,28 @@ export async function GET(request: Request) {
         .schema('library')
         .from('decrees_circulars')
         .select('id, title, type, ref')
-        .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG, type: 'plain' })
+        .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG })
         .order('id')
         .limit(4)
         .abortSignal(signal),
 
-      // Books whose title carries the query («إعلام الموقعين» found the
-      // book's quotations, never the book). Public catalogue columns.
+      // Books whose title carries the query. Public catalogue columns.
       fetchBookTitleHits(supabase, query, 2, signal),
+
+      // Judicial collections whose title carries the query («المبادئ والقرارات»).
+      fetchCollectionTitleHits(supabase, query, { max: 2, signal }),
     ]);
 
     const lawMatches: TopMatch[] = ((topLaws.data ?? []) as Record<string, unknown>[]).map((law) => ({
       title: law.title as string,
       section: 'laws',
       slug: law.slug as string,
+    }));
+    const collectionMatches: TopMatch[] = topCollections.hits.map((col) => ({
+      title: col.title,
+      section: 'precedents',
+      slug: col.id,
+      snippet: col.court || undefined,
     }));
     const precedentMatches: TopMatch[] = ((topPrecedents.data ?? []) as Record<string, unknown>[]).map((p) => {
       const text = p.text as string;
@@ -156,16 +151,21 @@ export async function GET(request: Request) {
       snippet: [b.author, b.volumesLabel].filter(Boolean).join(' · ') || undefined,
     }));
 
+    const mergedPrecedentsCount = precedentsCount.error
+      ? precedentsCount
+      : { count: (precedentsCount.count ?? 0) + topCollections.hits.length, error: null };
+
     const built = buildAutocompleteBody({
       counts: {
         laws: lawsCount,
-        precedents: precedentsCount,
+        precedents: mergedPrecedentsCount,
         orders: ordersCount,
         feqh: feqhCount,
       },
       matches: [
-        // A book named by the query is the strongest suggestion: first.
+        // Catalogue titles named by the query are the strongest suggestions: first.
         { result: { count: null, error: topBooks.error }, items: bookMatches },
+        { result: { count: null, error: topCollections.error }, items: collectionMatches },
         { result: topLaws, items: lawMatches },
         { result: topPrecedents, items: precedentMatches },
         { result: topOrders, items: orderMatches },

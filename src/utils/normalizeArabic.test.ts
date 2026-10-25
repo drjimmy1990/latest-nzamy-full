@@ -5,8 +5,11 @@ import {
   arabicSpellingVariants,
   MAX_QUERY_SPELLING_VARIANTS,
   MAX_SPELLING_VARIANTS,
+  parseAutocompleteQuery,
   parseSearchQuery,
   SearchQuerySyntaxError,
+  toArabicIndicDigits,
+  toWesternDigits,
 } from './normalizeArabic.ts';
 
 // «العمل» is an ال-word: its opening alef may be a hamza («إلغاء» typed
@@ -34,11 +37,16 @@ test('parseSearchQuery treats slash as OR and preserves AND precedence', () => {
   );
 });
 
-test('parseSearchQuery does not split compact decree references or dates on slash', () => {
+test('parseSearchQuery does not split compact decree references or dates on slash and expands numerals both ways', () => {
   assert.deepEqual(parseSearchQuery('مرسوم م/١٤ ١٤٤٤/٠٢/٠٣'), {
     raw: 'مرسوم م/١٤ ١٤٤٤/٠٢/٠٣',
-    tsquery: "(('مرسوم' & 'م/١٤') & '١٤٤٤/٠٢/٠٣')",
+    tsquery: "(('مرسوم' & ('م/١٤' | 'م/14')) & ('١٤٤٤/٠٢/٠٣' | '1444/02/03'))",
     plainTerms: ['مرسوم', 'م/١٤', '١٤٤٤/٠٢/٠٣'],
+  });
+  assert.deepEqual(parseSearchQuery('مرسوم م/14 1444/02/03'), {
+    raw: 'مرسوم م/14 1444/02/03',
+    tsquery: "(('مرسوم' & ('م/14' | 'م/١٤')) & ('1444/02/03' | '١٤٤٤/٠٢/٠٣'))",
+    plainTerms: ['مرسوم', 'م/14', '1444/02/03'],
   });
 });
 
@@ -65,13 +73,28 @@ test('parseSearchQuery quotes and escapes tsquery metacharacters inside a term',
   assert.equal(parseSearchQuery("قرار'|!():*").tsquery, "'قرار\\'|!():':*");
 });
 
-test('parseSearchQuery keeps the word as typed first and never folds it away (digits untouched)', () => {
+test('parseSearchQuery keeps the word as typed first and expands Arabic-Indic ↔ Western digits', () => {
   // The simple FTS index stores source spellings: the typed word always stays
-  // in its group, first; the other spellings are added, never substituted.
+  // in its group, first; the other spellings (and alternate numeral script) are added, never substituted.
   assert.equal(
     parseSearchQuery('إجراءات اللائحة ١٤٤٤').tsquery,
-    "((('إجراءات' | 'اجراءات' | 'أجراءات' | 'آجراءات') & ('اللائحة' | 'اللائحه' | 'أللائحة' | 'إللائحة' | 'آللائحة')) & '١٤٤٤')",
+    "((('إجراءات' | 'اجراءات' | 'أجراءات' | 'آجراءات') & ('اللائحة' | 'اللائحه' | 'أللائحة' | 'إللائحة' | 'آللائحة')) & ('١٤٤٤' | '1444'))",
   );
+  assert.equal(parseSearchQuery('1445').tsquery, "('1445' | '١٤٤٥')");
+  assert.equal(parseSearchQuery('١٤٤٥').tsquery, "('١٤٤٥' | '1445')");
+  assert.equal(parseSearchQuery('۱۴۴۵').tsquery, "('۱۴۴۵' | '1445' | '١٤٤٥')");
+  assert.equal(toWesternDigits('المادة ١٥ لعام ١٤٤٥'), 'المادة 15 لعام 1445');
+  assert.equal(toArabicIndicDigits('المادة 15 لعام 1445'), 'المادة ١٥ لعام ١٤٤٥');
+});
+
+test('parseAutocompleteQuery expands Arabic spellings and digits without failing on partial operator syntax', () => {
+  assert.equal(parseAutocompleteQuery('١٤٤٥').tsquery, "('١٤٤٥' | '1445')");
+  assert.equal(
+    parseAutocompleteQuery('"المبادئ والقرارات').tsquery,
+    "(('المبادئ' | 'ألمبادئ' | 'إلمبادئ' | 'آلمبادئ') & 'والقرارات')",
+  );
+  assert.equal(parseAutocompleteQuery('نظام +').tsquery, "'نظام'");
+  assert.equal(parseAutocompleteQuery('""').tsquery, '');
 });
 
 test('T28-11: «نظام الاثبات» finds the stored «الإثبات» (alef after ال)', () => {

@@ -560,7 +560,13 @@ export default function JudicialPrinciplesPage() {
     if (!q) return collection.principles;
     
     const normalize = (s: string) =>
-      s.replace(/[أإآا]/g, "ا").replace(/[ةه]/g, "ه").replace(/[يى]/g, "ي").toLowerCase();
+      s
+        .replace(/[أإآا]/g, "ا")
+        .replace(/[ةه]/g, "ه")
+        .replace(/[يى]/g, "ي")
+        .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
+        .replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
+        .toLowerCase();
     const nq = normalize(q);
 
     return collection.principles.filter(p => {

@@ -197,6 +197,12 @@ function isLawTitleHit(row: unknown): boolean {
   return r.meta?.kind === "law" || String(r.id ?? "").startsWith("law:");
 }
 
+/** A judicial-collection header hit (`collection:<id>`, meta.kind 'collection') prepended on page 1. */
+function isCollectionTitleHit(row: unknown): boolean {
+  const r = (row && typeof row === "object" ? row : {}) as { id?: unknown; meta?: { kind?: unknown } };
+  return r.meta?.kind === "collection" || String(r.id ?? "").startsWith("collection:");
+}
+
 /**
  * Whether a single-section search can load page `page + 1`.
  *
@@ -229,6 +235,9 @@ export function searchPagingState(
   } else if (section === "laws") {
     const counted = opts.lawCountIncludesTitleHits ? rows.length : rows.filter((r) => !isLawTitleHit(r)).length;
     moreExist = counted < d.value;
+  } else if (section === "precedents") {
+    const collectionHits = rows.filter(isCollectionTitleHit).length;
+    moreExist = page * limit < Math.max(0, d.value - collectionHits);
   } else {
     moreExist = page * limit < d.value;
   }

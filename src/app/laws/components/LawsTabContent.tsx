@@ -633,19 +633,21 @@ export function LawsTabContent({
             </span>
           </p>
           <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-4" : "flex flex-col gap-4 mb-4"}>
-            {filteredCollections.slice(0, 3).map((col, idx) => (
+            {filteredCollections.slice(0, 3).map((col, idx) => {
+              const isColFree = col.free || viewerHasFullAccess;
+              return (
               <motion.div
                 key={col.id}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.05 }}
                 className={`group relative rounded-2xl border p-5 transition-all ${
-                  col.free
+                  isColFree
                     ? `hover:border-[#0B3D2E]/40 cursor-pointer ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`
                     : `${isDark ? "bg-[#161b22]/60 border-[#2d3748]/60" : "bg-gray-50 border-gray-200/80"}`
                 } ${layoutMode === "grid" ? "min-h-[340px] h-full flex flex-col" : ""}`}
               >
-                {!col.free && (
+                {!isColFree && (
                   <div
                     className={`absolute inset-0 rounded-2xl ${isDark ? "bg-[#0c0f12]/30" : "bg-white/30"} backdrop-blur-[1px] z-10 flex items-center justify-center cursor-pointer`}
                     onClick={() => setShowPaywall(true)}
@@ -660,9 +662,9 @@ export function LawsTabContent({
                 )}
 
                 <Link
-                  href={col.free ? `/precedents/${col.slug}` : "#"}
+                  href={isColFree ? `/precedents/${col.slug}` : "#"}
                   onClick={(e) => {
-                    if (!col.free) {
+                    if (!isColFree) {
                       e.preventDefault();
                       setShowPaywall(true);
                     }
@@ -671,7 +673,7 @@ export function LawsTabContent({
                 >
                   {layoutMode === "grid" ? (
                     <>
-                      <div className={!col.free ? "opacity-40 filter blur-[2px]" : ""}>
+                      <div className={!isColFree ? "opacity-40 filter blur-[2px]" : ""}>
                         <div className="flex items-center justify-between mb-4">
                           <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg ${
                             col.track === "ordinary"
@@ -705,7 +707,7 @@ export function LawsTabContent({
                         <p className={`text-xs mb-5 line-clamp-2 leading-relaxed ${muted}`}>{col.desc}</p>
                       </div>
 
-                      <div className={!col.free ? "opacity-40 filter blur-[2px]" : ""}>
+                      <div className={!isColFree ? "opacity-40 filter blur-[2px]" : ""}>
                         <div className={`grid grid-cols-2 gap-3 mb-4 p-2.5 rounded-xl border ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"}`}>
                           <div className="flex flex-col">
                             <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "عدد المبادئ" : "Principles Count"}</span>
@@ -739,7 +741,7 @@ export function LawsTabContent({
                     </>
                   ) : (
                     <>
-                      <div className={`flex-1 ${!col.free ? "opacity-40 filter blur-[2px]" : ""}`}>
+                      <div className={`flex-1 ${!isColFree ? "opacity-40 filter blur-[2px]" : ""}`}>
                         <div className="flex items-center gap-2 mb-2 flex-wrap">
                           <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg ${
                             col.track === "ordinary"
@@ -772,7 +774,7 @@ export function LawsTabContent({
                         <p className={`text-xs line-clamp-2 leading-relaxed ${muted}`}>{col.desc}</p>
                       </div>
 
-                      <div className={`flex flex-col sm:flex-row items-stretch sm:items-center gap-8 md:shrink-0 ${!col.free ? "opacity-40 filter blur-[2px]" : ""}`}>
+                      <div className={`flex flex-col sm:flex-row items-stretch sm:items-center gap-8 md:shrink-0 ${!isColFree ? "opacity-40 filter blur-[2px]" : ""}`}>
                         <div className={`grid grid-cols-2 gap-4 p-4 rounded-xl border min-w-[220px] ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"}`}>
                           <div className="flex flex-col">
                             <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "عدد المبادئ" : "Principles Count"}</span>
@@ -806,7 +808,8 @@ export function LawsTabContent({
                   )}
                 </Link>
               </motion.div>
-            ))}
+              );
+            })}
           </div>
           {filteredCollections.length > 3 && (
             <button

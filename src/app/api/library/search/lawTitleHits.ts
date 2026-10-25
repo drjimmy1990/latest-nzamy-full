@@ -5,6 +5,7 @@ import {
   queryTermWords,
   queryWantsTitleHits,
   rankLawTitleCandidates,
+  titleDigitVariantQueries,
   titlePhrasePattern,
   titlePrefixPattern,
   titleStemPatterns,
@@ -62,9 +63,8 @@ export interface LawTitleHitsResult {
  * `simple` config does not split), titles that start with the phrase, the
  * exact title «نظام <phrase>», and titles holding every query word without
  * its «ال» («الجرائم المعلوماتية» → «نظام مكافحة جرائم المعلوماتية»).
- * Every lookup has a deterministic order, so the same query yields the same
- * candidates (and the same hits) on every request. searchPlan.rankLawTitleCandidates
- * scores them in JS.
+ * When `rawQuery` carries numerals, alternate Arabic-Indic / Western digit
+ * title lookups run alongside so «١٤٤٣» matches «1443» titles and vice versa.
  */
 export async function fetchLawTitleHitsChecked(
   supabase: LibraryClient,
@@ -102,10 +102,11 @@ export async function fetchLawTitleHitsChecked(
     base().textSearch('fts', opts.ftsQuery, tsOpts).eq('type', 'نظام').order('slug').limit(CANDIDATES_PER_QUERY),
     base().textSearch('fts', opts.ftsQuery, tsOpts).order('slug').limit(CANDIDATES_PER_QUERY),
   ];
-  // Index 2 when present: the title-contains lookup (counted when guarded).
-  if (contains) lookups.push(base(guardBroad).ilike('title', contains).order('title').order('slug').limit(CANDIDATES_PER_QUERY));
-  // Shortest-first is not expressible; title order puts «نظام العمل» ahead of
-  // «نظام العمل التطوعي» among titles starting with the phrase.
+  const countedIndices: number[] = [];
+  if (contains) {
+    if (guardBroad) countedIndices.push(lookups.length);
+    lookups.push(base(guardBroad).ilike('title', contains).order('title').order('slug').limit(CANDIDATES_PER_QUERY));
+  }
   if (prefix) lookups.push(base().ilike('title', prefix).order('title').order('slug').limit(CANDIDATES_PER_QUERY));
   if (nizamTitle) lookups.push(base().eq('title', nizamTitle).order('slug').limit(CANDIDATES_PER_QUERY));
   if (stems) {
@@ -114,14 +115,35 @@ export async function fetchLawTitleHitsChecked(
     lookups.push(q.order('title').order('slug').limit(CANDIDATES_PER_QUERY));
   }
 
+  for (const altRaw of titleDigitVariantQueries(opts.rawQuery).slice(1)) {
+    const altContains = titlePhrasePattern(altRaw);
+    const altPrefix = titlePrefixPattern(altRaw);
+    const altNizam = nizamTitleFor(altRaw);
+    const altStems = titleStemPatterns(altRaw);
+    if (altContains) {
+      if (guardBroad) countedIndices.push(lookups.length);
+      lookups.push(base(guardBroad).ilike('title', altContains).order('title').order('slug').limit(CANDIDATES_PER_QUERY));
+    }
+    if (altPrefix) lookups.push(base().ilike('title', altPrefix).order('title').order('slug').limit(CANDIDATES_PER_QUERY));
+    if (altNizam) lookups.push(base().eq('title', altNizam).order('slug').limit(CANDIDATES_PER_QUERY));
+    if (altStems) {
+      let q = base();
+      for (const p of altStems) q = q.ilike('title', p);
+      lookups.push(q.order('title').order('slug').limit(CANDIDATES_PER_QUERY));
+    }
+  }
+
   const settled = await Promise.allSettled(lookups);
 
   if (guardBroad) {
-    const counted = settled[2];
-    const titleCount = counted?.status === 'fulfilled' && !counted.value.error ? counted.value.count : null;
-    // Unknown count → no hits (a boost is never worth an arbitrary pick).
-    if (typeof titleCount !== 'number') return { hits: [], complete: false };
-    if (titleCount > (opts.broadSingleTermMax as number)) return { hits: [], complete: true };
+    let totalTitleCount = 0;
+    for (const idx of countedIndices) {
+      const counted = settled[idx];
+      const c = counted?.status === 'fulfilled' && !counted.value.error ? counted.value.count : null;
+      if (typeof c !== 'number') return { hits: [], complete: false };
+      totalTitleCount += c;
+    }
+    if (totalTitleCount > (opts.broadSingleTermMax as number)) return { hits: [], complete: true };
   }
 
   let complete = true;

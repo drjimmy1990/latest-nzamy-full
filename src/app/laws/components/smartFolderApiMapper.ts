@@ -68,3 +68,18 @@ export function mapApiFolderToSmartFolder(apiFolder: ApiSmartFolderRow): SmartFo
         : Date.now(),
   };
 }
+
+/**
+ * Resolve the canonical reader route for a saved folder item.
+ * Judicial collections saved from `/precedents/[slug]` store `type: "precedent"`
+ * and must open `/precedents/<slug>` (not `/precedents/judgment/<slug>`).
+ */
+export function resolveSavedItemHref(item: { slug: string; type?: string | null }): string {
+  const raw = String(item.slug ?? "");
+  const safe = /%[0-9A-Fa-f]{2}/.test(raw) ? raw : encodeURIComponent(raw);
+  const t = item.type || "law";
+  if (t === "book") return `/book/${safe}`;
+  if (t === "order") return `/laws/orders/${safe}`;
+  if (t === "precedent") return `/precedents/${safe}`;
+  return `/laws/${safe}`;
+}

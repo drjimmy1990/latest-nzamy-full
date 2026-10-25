@@ -291,3 +291,9 @@ test("N2.3: the reader page draws its buttons from READER_LAYERS and its parts f
   assert.match(page, /emptyLayerNote\(activeBlock, viewLayer, isRTL\)/);
   assert.match(page, /aria-pressed=\{viewLayer === layer\.id\}/);
 });
+
+test("TOC filter matches Arabic-Indic and Western digits bidirectionally", () => {
+  const st = fromApiBook(sentinelBook);
+  assert.deepEqual(filterToc(st.book.chapters, st.blocksBySection, "461").map((c) => c.id), ["c461"]);
+  assert.deepEqual(filterToc(st.book.chapters, st.blocksBySection, "٤").map((c) => c.id), ["c0", "c461"]);
+});

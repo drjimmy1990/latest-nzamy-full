@@ -1,13 +1,14 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 
 /**
  * POST /api/library/folders/items — add one item to a user-owned smart folder.
  *
- * Auth + ownership mirror the DELETE-item check in ../route.ts. RLS
- * ("Users can add to own folders", 20260626_legal_library_schema.sql) enforces
- * ownership as defense-in-depth; the explicit check returns a clean 403.
+ * Authenticates via the request cookie client (`supabase.auth.getUser()`),
+ * verifies folder ownership (`smart_folders.user_id = user.id`), and writes via
+ * `createServiceClient()` so saves succeed even when `authenticated` lacks
+ * table-level INSERT/UPDATE grants on `library.smart_folder_items`.
  * Idempotent: upserts on (folder_id, entity_type, entity_id).
  */
 export async function POST(request: Request) {
@@ -33,8 +34,10 @@ export async function POST(request: Request) {
       );
     }
 
+    const serverOnly = await createServiceClient();
+
     // Ownership guard (mirrors the DELETE-item check in ../route.ts).
-    const { data: ownerFolder, error: folderError } = await supabase
+    const { data: ownerFolder, error: folderError } = await serverOnly
       .schema('library')
       .from('smart_folders')
       .select('id')
@@ -50,7 +53,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const { data: item, error } = await supabase
+    const { data: item, error } = await serverOnly
       .schema('library')
       .from('smart_folder_items')
       .upsert(

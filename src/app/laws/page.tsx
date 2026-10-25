@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { normalizeArabic } from "@/utils/normalizeArabic";
+import { normalizeArabic, normalizeSearch } from "@/utils/normalizeArabic";
 import { stripMarkdownMarks } from "@/lib/text/stripMarkdownMarks";
 import { withoutLeadingHeadings } from "./components/summaryClamp";
 import { groupLawSearchCards } from "./lawSearchGroups";
@@ -793,7 +793,7 @@ export default function LegalLibraryPage() {
 
   const muted       = isDark ? "text-gray-400" : "text-gray-500";
   const q           = search.toLowerCase().trim();
-  const nq          = normalizeArabic(q);
+  const nq          = normalizeSearch(q);
 
   // ─── Search autocomplete suggestions (API-backed with demo fallback) ────────
   const searchSuggestions = nq.length >= 2 ? (() => {
@@ -809,21 +809,46 @@ export default function LegalLibraryPage() {
     PhosphorIcons; // reference to prevent unused warning if any
 
     DEMO_PRINCIPLES.forEach(p => {
-      if ((normalizeArabic(p.text).includes(nq) || normalizeArabic(p.source).includes(nq)) && (activeType === "all" || activeType === "precedents"))
+      if ((normalizeSearch(p.text).includes(nq) || normalizeSearch(p.source).includes(nq)) && (activeType === "all" || activeType === "precedents"))
         results.push({ label: stripMarkdownMarks(p.text).substring(0, 60) + "...", type: "precedents", typeLabel: isRTL ? "مبدأ" : "Principle" });
     });
     return results.slice(0, 6);
   })() : [];
 
-  // Highlight utility. Its output goes to dangerouslySetInnerHTML, so the
-  // suggestion text (a library title) is HTML-escaped before <mark> is added.
+  // Highlight utility. Its output goes to dangerouslySetInnerHTML, so every
+  // text slice is HTML-escaped individually while matching folds Arabic
+  // letters and bidirectional numerals (٠-٩ ↔ 0-9) on the raw text first.
   function highlightText(text: string, term: string): string {
-    const safe = text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
-    if (!term || term.length < 2) return safe;
-    // Highlight based on normalized representation
-    const nTerm = normalizeArabic(term);
-    const escaped = nTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return safe.replace(new RegExp(`(${escaped})`, "gi"), "<mark class=\"bg-yellow-300/80 text-yellow-900 rounded px-0.5\">$1</mark>");
+    const escapeHtml = (s: string) =>
+      s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+    if (!term || term.length < 2) return escapeHtml(text);
+    const nTerm = normalizeSearch(term);
+    if (!nTerm) return escapeHtml(text);
+    const DIGIT_CLASSES = [
+      "[0٠۰]", "[1١۱]", "[2٢۲]", "[3٣۳]", "[4٤۴]",
+      "[5٥۵]", "[6٦۶]", "[7٧۷]", "[8٨۸]", "[9٩۹]",
+    ];
+    const pattern = Array.from(nTerm)
+      .map((ch) => {
+        if (ch === "ا") return "[اأإآ]";
+        if (ch === "ه") return "[هة]";
+        if (ch === "ي") return "[يى]";
+        if (ch >= "0" && ch <= "9") return DIGIT_CLASSES[Number(ch)];
+        return ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      })
+      .join("[ً-ْٰـ]*");
+    const regex = new RegExp(pattern, "gi");
+    let out = "";
+    let last = 0;
+    let m: RegExpExecArray | null;
+    while ((m = regex.exec(text)) !== null) {
+      if (m[0].length === 0) { regex.lastIndex += 1; continue; }
+      if (m.index > last) out += escapeHtml(text.slice(last, m.index));
+      out += `<mark class="bg-yellow-300/80 text-yellow-900 rounded px-0.5">${escapeHtml(m[0])}</mark>`;
+      last = m.index + m[0].length;
+    }
+    if (last < text.length) out += escapeHtml(text.slice(last));
+    return out || escapeHtml(text);
   }
 
   // Helper to map principle sourceId to judicial track
@@ -1121,7 +1146,7 @@ export default function LegalLibraryPage() {
         const inCat  = activeCat === "all" || s.cat === activeCat;
         const inDoc  = docSubType === "all" || s.doc_type === docSubType ||
                        (s.sub_types && s.sub_types.includes(docSubType));
-        const inQ   = !nq || normalizeArabic(s.title).includes(nq) || normalizeArabic(s.desc).includes(nq);
+        const inQ   = !nq || normalizeSearch(s.title).includes(nq) || normalizeSearch(s.desc).includes(nq);
         return inCat && inDoc && inQ;
       });
 
@@ -1132,26 +1157,30 @@ export default function LegalLibraryPage() {
 
   // ─── Filter: Principles ───────────────────────────────────────────────────────
   const filteredPrinciples = isSearchActive
-    ? (searchResults?.precedents ?? []).map((r: any) => ({
-        id: String(r.id),
-        sourceId: r.meta?.collectionSlug || 'supreme',
-        collectionId: r.meta?.collectionSlug != null ? String(r.meta.collectionSlug) : '',
-        // Search meta carries no principle number yet; shown only if it arrives.
-        principleNum: realPrincipleNumber(r.meta?.principleNumber) ?? undefined,
-        source: r.meta?.court || '',
-        srcAbbr: courtBadge(r.meta?.court),
-        text: stripMarkdownMarks(r.snippet || r.title),
-        ref: r.meta?.decisionNumber || '—',
-        year: r.meta?.year ? String(r.meta.year) : "",
-        subject: 'civil' as any,
-        cat: 'SA-03',
-        _isSearchResult: true,
-      }))
+    ? (searchResults?.precedents ?? []).map((r: any) => (
+        r?.meta?.kind === 'collection'
+          ? null
+          : {
+              id: String(r.id),
+              sourceId: r.meta?.collectionSlug || 'supreme',
+              collectionId: r.meta?.collectionSlug != null ? String(r.meta.collectionSlug) : '',
+              // Search meta carries no principle number yet; shown only if it arrives.
+              principleNum: realPrincipleNumber(r.meta?.principleNumber) ?? undefined,
+              source: r.meta?.court || '',
+              srcAbbr: courtBadge(r.meta?.court),
+              text: stripMarkdownMarks(r.snippet || r.title),
+              ref: r.meta?.decisionNumber || '—',
+              year: r.meta?.year ? String(r.meta.year) : "",
+              subject: 'civil' as any,
+              cat: 'SA-03',
+              _isSearchResult: true,
+            }
+      )).filter(Boolean) as any[]
     : principlesList.filter(p => {
         const inCat    = activeCat === "all" || p.cat === activeCat;
         const inTrack  = matchesPrecTrack(p.sourceId, precTrack);
         const inSrc    = precSource  === "all" || p.sourceId === precSource;
-        const inQ      = !nq || normalizeArabic(p.text).includes(nq) || normalizeArabic(p.source).includes(nq) || normalizeArabic(p.ref).includes(nq);
+        const inQ      = !nq || normalizeSearch(p.text).includes(nq) || normalizeSearch(p.source).includes(nq) || normalizeSearch(p.ref).includes(nq);
         return inCat && inTrack && inSrc && inQ;
       });
 
@@ -1162,7 +1191,7 @@ export default function LegalLibraryPage() {
     : precedentsList.filter(pr => {
         const inCat  = activeCat === "all" || pr.cat === activeCat;
         const inTrack = matchesPrecedentTrack(pr.court, precTrack);
-        const inQ    = !nq || normalizeArabic(pr.summary).includes(nq) || normalizeArabic(pr.court).includes(nq) || normalizeArabic(pr.relevance).includes(nq);
+        const inQ    = !nq || normalizeSearch(pr.summary).includes(nq) || normalizeSearch(pr.court).includes(nq) || normalizeSearch(pr.relevance).includes(nq);
         const inHashtag = !selectedHashtag || pr.hashtags?.includes(selectedHashtag);
         return inCat && inTrack && inQ && inHashtag;
       });
@@ -1187,13 +1216,28 @@ export default function LegalLibraryPage() {
       }))
     : (isSupabaseMode ? [] : DEMO_PRECEDENTS_COLLECTIONS)) as any[];
 
-  // Collections have no standalone API search results, so do not show local
-  // collections beside a pending, failed, or text-search response.
+  // Judicial collections returned by POST /api/library/search (`meta.kind === 'collection'`).
+  // Fail-closed: never fall back to local `collectionsList` while a search is active/pending/failed.
   const filteredCollections = isSearchActive
-    ? [] as any[]
+    ? (searchResults?.precedents ?? [])
+        .filter((r: any) => r?.meta?.kind === "collection")
+        .map((r: any) => ({
+          id: String(r.meta?.collectionSlug || r.id),
+          slug: String(r.meta?.collectionSlug || r.id),
+          title: r.title,
+          court: r.meta?.court || "—",
+          track: r.meta?.track || "ordinary",
+          year: r.meta?.year || "—",
+          desc: stripMarkdownMarks(r.snippet || ""),
+          free: !r.locked,
+          progress: r.meta?.progress || 0,
+          rulingCount: r.meta?.rulingCount || 0,
+          part: r.meta?.part ? `المجلد ${r.meta.part}` : undefined,
+          _isSearchResult: true,
+        }))
     : collectionsList.filter((col: any) => {
         const inTrack = precTrack === "all" || col.track === precTrack;
-        const inQ = !nq || normalizeArabic(col.title).includes(nq) || normalizeArabic(col.court).includes(nq) || normalizeArabic(col.desc || "").includes(nq);
+        const inQ = !nq || normalizeSearch(col.title).includes(nq) || normalizeSearch(col.court).includes(nq) || normalizeSearch(col.desc || "").includes(nq);
         return inTrack && inQ;
       });
 
@@ -1214,7 +1258,7 @@ export default function LegalLibraryPage() {
       }))
     : ordersList.filter(o => {
         const inCat = activeCat === "all" || o.cat === activeCat;
-        const inQ   = !nq || normalizeArabic(o.title).includes(nq) || (o.summary && normalizeArabic(o.summary).includes(nq)) || normalizeArabic(o.ref).includes(nq);
+        const inQ   = !nq || normalizeSearch(o.title).includes(nq) || (o.summary && normalizeSearch(o.summary).includes(nq)) || normalizeSearch(o.ref).includes(nq);
         const inIssuer = orderIssuer === "all" || o.issuer === orderIssuer || o.issuer === ISSUER_MAP[orderIssuer]?.ar;
         const inHashtag = !selectedHashtag || o.hashtags?.includes(selectedHashtag);
         return inCat && inQ && inIssuer && inHashtag;
@@ -1263,15 +1307,15 @@ export default function LegalLibraryPage() {
             matchesSub = book.category === feqhSubCat;
           }
           const matchesQuery = !nq || 
-            normalizeArabic(book.title).includes(nq) || 
-            normalizeArabic(book.author).includes(nq) || 
-            (book.desc && normalizeArabic(book.desc).includes(nq));
+            normalizeSearch(book.title).includes(nq) || 
+            normalizeSearch(book.author).includes(nq) || 
+            (book.desc && normalizeSearch(book.desc).includes(nq));
           return matchesType && matchesSub && matchesQuery && matchesCatTab;
         } else {
           const matchesQuery = !nq || 
-            normalizeArabic(book.title).includes(nq) || 
-            normalizeArabic(book.author).includes(nq) || 
-            (book.desc && normalizeArabic(book.desc).includes(nq));
+            normalizeSearch(book.title).includes(nq) || 
+            normalizeSearch(book.author).includes(nq) || 
+            (book.desc && normalizeSearch(book.desc).includes(nq));
           return matchesQuery && matchesCatTab;
         }
       });
@@ -1279,10 +1323,10 @@ export default function LegalLibraryPage() {
   const hasResults = (type: ContentType) => {
     if (type === "laws")       return filteredLaws.length > 0;
     if (type === "orders")     return filteredOrders.length > 0;
-    if (type === "precedents") return filteredPrinciples.length > 0 || filteredPrecedents.length > 0;
+    if (type === "precedents") return filteredCollections.length > 0 || filteredPrinciples.length > 0 || filteredPrecedents.length > 0;
     if (type === "feqh")       return filteredFeqhBooks.length > 0;
     return filteredLaws.length > 0 || filteredOrders.length > 0 ||
-           filteredPrinciples.length > 0 || filteredPrecedents.length > 0 ||
+           filteredCollections.length > 0 || filteredPrinciples.length > 0 || filteredPrecedents.length > 0 ||
            filteredFeqhBooks.length > 0;
   };
 

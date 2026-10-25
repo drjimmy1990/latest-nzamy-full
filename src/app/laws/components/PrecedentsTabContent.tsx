@@ -655,8 +655,8 @@ export function PrecedentsTabContent({
         </div>
       )}
 
-      {/* Empty state — only for a settled read, never for a failed search */}
-      {filteredPrinciples.length === 0 && filteredPrecedents.length === 0 && !searchFailed && (
+      {/* Empty state — only for a settled read with no matching principles, precedents, or visible collections */}
+      {filteredPrinciples.length === 0 && filteredPrecedents.length === 0 && (precMode === "precedents" || filteredCollections.length === 0) && !searchFailed && (
         <EmptyState
           type="no-results"
           catId={activeCat}
