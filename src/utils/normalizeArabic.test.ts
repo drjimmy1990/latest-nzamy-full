@@ -3,6 +3,9 @@ import test from 'node:test';
 
 import {
   arabicSpellingVariants,
+  AUTOCOMPLETE_MAX_INPUT,
+  AUTOCOMPLETE_MAX_TERMS,
+  AUTOCOMPLETE_MIN_PREFIX,
   MAX_QUERY_SPELLING_VARIANTS,
   MAX_SPELLING_VARIANTS,
   parseAutocompleteQuery,
@@ -95,6 +98,93 @@ test('parseAutocompleteQuery expands Arabic spellings and digits without failing
   );
   assert.equal(parseAutocompleteQuery('نظام +').tsquery, "'نظام'");
   assert.equal(parseAutocompleteQuery('""').tsquery, '');
+});
+
+// Autocomplete reaches service-role queries with no statement_timeout: its
+// tsquery holds positive words only, AND-ed, never a user's `!` / `|`, and no
+// prefix on a stem under AUTOCOMPLETE_MIN_PREFIX letters (review of ecf0b357).
+const BACKSLASH = String.fromCharCode(92);
+function assertBoundedPositive(input: string) {
+  const { tsquery, plainTerms } = parseAutocompleteQuery(input);
+  // Outside the quoted lexemes only ( ) & | and :* may appear.
+  const outside = tsquery.replace(/'(?:[^'\\]|\\.)*'/g, 'L');
+  assert.match(outside, /^[L()&|:* ]*$/, `${JSON.stringify(input)} → ${tsquery}`);
+  assert.ok(!outside.includes('!'), `no negation in ${tsquery}`);
+  // Every | sits inside one word's spelling group: (L | L …) with no & inside.
+  for (const group of outside.match(/\([^()]*\)/g) ?? []) {
+    assert.ok(!(group.includes('|') && group.includes('&')), `mixed group ${group} in ${tsquery}`);
+  }
+  assert.ok(plainTerms.length <= AUTOCOMPLETE_MAX_TERMS);
+  assert.ok(tsquery.length < 4000, `bounded: ${tsquery.length}`);
+  return { tsquery, plainTerms };
+}
+
+test('parseAutocompleteQuery drops negated words and never flips them positive', () => {
+  assert.deepEqual(parseAutocompleteQuery('a / -b'), { raw: 'a / -b', tsquery: "'a'", plainTerms: ['a'] });
+  assert.deepEqual(parseAutocompleteQuery('-نظام'), { raw: '-نظام', tsquery: '', plainTerms: [] });
+  assert.equal(parseAutocompleteQuery('نظام -العمل').tsquery, "'نظام'");
+  assert.deepEqual(parseAutocompleteQuery('نظام -العمل').plainTerms, ['نظام']);
+  assert.equal(parseAutocompleteQuery('--نظام عقد').tsquery, "'عقد'");
+  assert.equal(parseAutocompleteQuery('-"نظام العمل" عقد').tsquery, "'عقد'");
+  // An unclosed negated phrase drops every word after it.
+  assert.equal(parseAutocompleteQuery('عقد -"نظام العمل').tsquery, "'عقد'");
+  for (const input of ['-x', '-"x y"', '- x', '-x -y']) {
+    const { tsquery, plainTerms } = assertBoundedPositive(input);
+    if (input === '- x') {
+      assert.equal(tsquery, "'x'"); // a lone «-» negates nothing
+    } else {
+      assert.equal(tsquery, '');
+      assert.deepEqual(plainTerms, []);
+    }
+  }
+});
+
+test('parseAutocompleteQuery AND-s the words — `/` and `+` separate, never OR', () => {
+  assert.equal(parseAutocompleteQuery('نظام/لائحة').tsquery, "('نظام' & ('لائحة' | 'لائحه'))");
+  assert.equal(parseAutocompleteQuery('a + b').tsquery, "('a' & 'b')");
+  assert.equal(parseAutocompleteQuery('"نظام العمل').tsquery, `('نظام' & ${AMAL})`);
+  // a date and a royal-decree reference stay one word, with their digit forms
+  assert.equal(parseAutocompleteQuery('1444/10/20').tsquery, "('1444/10/20' | '١٤٤٤/١٠/٢٠')");
+  assert.equal(parseAutocompleteQuery('م/14').tsquery, "('م/14' | 'م/١٤')");
+});
+
+test('parseAutocompleteQuery keeps a prefix only on a stem of 3+ letters, «ال» not counted', () => {
+  assert.equal(AUTOCOMPLETE_MIN_PREFIX, 3);
+  assert.equal(parseAutocompleteQuery('ا*').tsquery, "'ا'");
+  assert.equal(parseAutocompleteQuery('ال*').tsquery, "('ال' | 'أل' | 'إل' | 'آل')");
+  assert.equal(parseAutocompleteQuery('الع*').tsquery, "('الع' | 'ألع' | 'إلع' | 'آلع')");
+  assert.equal(parseAutocompleteQuery('ab*').tsquery, "'ab'");
+  assert.equal(parseAutocompleteQuery('عقد*').tsquery, "'عقد':*");
+  assert.equal(parseAutocompleteQuery('عقد**').tsquery, "'عقد':*");
+  assert.equal(parseAutocompleteQuery('العمل*').tsquery, "('العمل':* | 'ألعمل':* | 'إلعمل':* | 'آلعمل':*)");
+  assert.equal(parseAutocompleteQuery('a*b').tsquery, "'ab'");
+  for (const input of ['ا*', 'ال*', 'الع*', 'x*', '12*', 'ab* cd*']) {
+    assert.ok(!assertBoundedPositive(input).tsquery.includes(':*'), input);
+  }
+});
+
+test('parseAutocompleteQuery turns tsquery syntax into separators and bounds the input', () => {
+  for (const input of ["'", BACKSLASH, ':', '&|!', '()', '"', '""', '+', '/', '-', '*', '!', '<->', ':*', `${BACKSLASH}'`]) {
+    assert.deepEqual(assertBoundedPositive(input), { tsquery: '', plainTerms: [] }, JSON.stringify(input));
+  }
+  assert.equal(parseAutocompleteQuery('a:b').tsquery, "('a' & 'b')");
+  assert.equal(parseAutocompleteQuery("o'neil").tsquery, "('o' & 'neil')");
+  assert.equal(parseAutocompleteQuery(`a${BACKSLASH}' | !b`).tsquery, "('a' & 'b')");
+  assert.equal(parseAutocompleteQuery('(نظام) & (عقد)').tsquery, "('نظام' & 'عقد')");
+  assert.equal(parseAutocompleteQuery('"نظام').tsquery, "'نظام'");
+  assert.equal(parseAutocompleteQuery('نظام"عقد').tsquery, "('نظام' & 'عقد')");
+  assert.equal(parseAutocompleteQuery('نظام\u0000عقد').tsquery, "('نظام' & 'عقد')");
+
+  // 200 characters of one run: no word anyone types — nothing is sent.
+  assert.equal(parseAutocompleteQuery('x'.repeat(200)).tsquery, '');
+  // Many words: at most AUTOCOMPLETE_MAX_TERMS, from the first AUTOCOMPLETE_MAX_INPUT characters.
+  const many = Array.from({ length: 60 }, (_, i) => `الإثبات${i}`).join(' ');
+  const parsed = assertBoundedPositive(many);
+  assert.equal(parsed.plainTerms.length, AUTOCOMPLETE_MAX_TERMS);
+  assert.equal(parsed.tsquery.split(' & ').length, AUTOCOMPLETE_MAX_TERMS);
+  assertBoundedPositive(`${'-'.repeat(100)}${'"'.repeat(100)}`);
+  assertBoundedPositive(Array.from({ length: 200 }, (_, i) => `'&|!()":*${BACKSLASH}/-+`[i % 13]).join(''));
+  assert.equal(AUTOCOMPLETE_MAX_INPUT, 200);
 });
 
 test('T28-11: «نظام الاثبات» finds the stored «الإثبات» (alef after ال)', () => {

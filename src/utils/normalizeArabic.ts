@@ -475,29 +475,118 @@ export function parseSearchQuery(query: string): ParsedSearchQuery {
   };
 }
 
+/** Characters of input the autocomplete builder reads; the rest is ignored. */
+export const AUTOCOMPLETE_MAX_INPUT = 200;
+/** Most words one autocomplete tsquery carries. */
+export const AUTOCOMPLETE_MAX_TERMS = 6;
+/** Longest word kept, in characters; a longer run is not a word anyone types. */
+export const AUTOCOMPLETE_MAX_TERM_LENGTH = 50;
 /**
- * Parse a live-typed autocomplete query into a tsquery with full Arabic
- * spelling and bidirectional numeral expansion, falling back to plain words
- * when the user is mid-typing an operator (e.g. an unclosed quote or trailing `+`).
+ * Fewest letters / digits a prefix stem needs before its `:*` is kept, a
+ * leading «ال» not counted: «ا*», «ال*» or «الع*» would match most of the
+ * vocabulary, so such a stem is searched as the word itself.
+ */
+export const AUTOCOMPLETE_MIN_PREFIX = 3;
+
+const CONTROL_CHARACTERS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
+
+function prefixStemLength(stem: string): number {
+  const letters = Array.from(stem.replace(/[^\p{L}\p{N}]/gu, ''));
+  const counted = letters.length > 2 && letters[0] === 'ا' && letters[1] === 'ل' ? letters.slice(2) : letters;
+  return counted.length;
+}
+
+/**
+ * Autocomplete's tsquery: the POSITIVE words of a live-typed query, AND-ed,
+ * each one an OR-group of its own stored spellings and numeral forms
+ * (arabicSpellingVariants — the owner's «digits both ways» feature).
+ *
+ * The facet counts and the top principles run as the service role, which has
+ * no statement_timeout (20261004_01, 20261018_02, 20261025_41): a query the
+ * GIN index cannot serve keeps running in Postgres after the route stopped
+ * waiting. So, unlike parseSearchQuery, this never emits an operator a user
+ * typed:
+ *   - `-word` and `-"…"` are dropped — never flipped to positive (`a | !b`
+ *     cannot use the index);
+ *   - `/` (OR) and `+` (AND) are separators; the words are always AND-ed;
+ *     a date `1444/10/20` and a reference `م/14` stay one word (isLiteralSlash);
+ *   - quotes delimit words only (no `<->`), an unclosed quote is fine;
+ *   - `*` keeps a prefix only at the end of a stem of AUTOCOMPLETE_MIN_PREFIX
+ *     letters or more; any other `*` is removed;
+ *   - every other punctuation, tsquery syntax included (`' \ : & | ! ( ) < >`),
+ *     separates words; a piece with no letter or digit is dropped;
+ *   - at most AUTOCOMPLETE_MAX_TERMS words from the first
+ *     AUTOCOMPLETE_MAX_INPUT characters, each word at most
+ *     AUTOCOMPLETE_MAX_TERM_LENGTH long, within MAX_QUERY_SPELLING_VARIANTS.
+ * Every lexeme is quoted (quoteTsqueryLexeme). `plainTerms` lists the kept
+ * words only, so a negated word reaches no title lookup either.
+ * Its counts can differ from the full search's for a query with `/`, `-` or a
+ * phrase — the full search applies the operators.
  */
 export function parseAutocompleteQuery(query: string): ParsedSearchQuery {
   const raw = query.trim();
-  if (!raw) return { raw: '', tsquery: '', plainTerms: [] };
-  try {
-    return parseSearchQuery(raw);
-  } catch (err) {
-    if (!(err instanceof SearchQuerySyntaxError)) throw err;
-    const cleaned = raw
-      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ')
-      .replace(/["*+/\\-]+/g, ' ')
-      .trim();
-    if (!cleaned) return { raw, tsquery: '', plainTerms: [] };
-    try {
-      return parseSearchQuery(cleaned);
-    } catch {
-      return { raw, tsquery: '', plainTerms: [] };
+  const input = Array.from(raw.replace(CONTROL_CHARACTERS, ' ')).slice(0, AUTOCOMPLETE_MAX_INPUT).join('');
+  const words: Array<{ word: string; prefix: boolean }> = [];
+  const keep = (term: string) => {
+    const wildcard = term.endsWith('*');
+    const pieces = term.replace(/\*/g, '').split(/[^\p{L}\p{M}\p{N}/]+/u);
+    pieces.forEach((piece, i) => {
+      if (!/[\p{L}\p{N}]/u.test(piece) || Array.from(piece).length > AUTOCOMPLETE_MAX_TERM_LENGTH) return;
+      const prefix = wildcard && i === pieces.length - 1 && prefixStemLength(piece) >= AUTOCOMPLETE_MIN_PREFIX;
+      if (!words.some((w) => w.word === piece && w.prefix === prefix)) words.push({ word: piece, prefix });
+    });
+  };
+
+  let index = 0;
+  let inPhrase = false;
+  let phraseNegated = false;
+  while (index < input.length && words.length < AUTOCOMPLETE_MAX_TERMS) {
+    const character = input[index];
+    if (/\s/.test(character) || character === '+' || character === '/') {
+      index += 1;
+      continue;
     }
+    if (character === '"') {
+      inPhrase = !inPhrase;
+      phraseNegated = false;
+      index += 1;
+      continue;
+    }
+    let negated = inPhrase && phraseNegated;
+    if (character === '-') {
+      while (input[index] === '-') index += 1;
+      if (input[index] === '"' && !inPhrase) {
+        inPhrase = true;
+        phraseNegated = true;
+        index += 1;
+        continue;
+      }
+      negated = true;
+    }
+    const termStart = index;
+    while (index < input.length) {
+      const c = input[index];
+      if (/\s/.test(c) || c === '+' || c === '"') break;
+      if (c === '/' && !isLiteralSlash(input, index, termStart)) break;
+      index += 1;
+    }
+    if (!negated && index > termStart) keep(input.slice(termStart, index));
   }
+
+  let variantBudget = MAX_QUERY_SPELLING_VARIANTS;
+  const groups = words.slice(0, AUTOCOMPLETE_MAX_TERMS).map(({ word, prefix }) => {
+    const suffix = prefix ? ':*' : '';
+    let spellings = arabicSpellingVariants(word);
+    if (spellings.length - 1 > variantBudget) spellings = [word];
+    variantBudget -= spellings.length - 1;
+    if (spellings.length === 1) return `${quoteTsqueryLexeme(word)}${suffix}`;
+    return `(${spellings.map((s) => `${quoteTsqueryLexeme(s)}${suffix}`).join(' | ')})`;
+  });
+  return {
+    raw,
+    tsquery: groups.length > 1 ? `(${groups.join(' & ')})` : (groups[0] ?? ''),
+    plainTerms: words.slice(0, AUTOCOMPLETE_MAX_TERMS).map((w) => w.word),
+  };
 }
 
 /**

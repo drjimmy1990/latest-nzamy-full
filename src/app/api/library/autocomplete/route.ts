@@ -5,10 +5,25 @@ import { LIBRARY_FTS_CONFIG, parseAutocompleteQuery } from '@/utils/normalizeAra
 import { fetchLawTitleHits } from '../search/lawTitleHits';
 import { fetchBookTitleHits } from '../search/bookTitleHits';
 import { fetchCollectionTitleHits } from '../search/collectionTitleHits';
+import { isMissingFunctionError, rpcPageResult } from '../search/searchPlan';
 import { buildAutocompleteBody, uniformCountsExact, type FacetResult, type TopMatch } from './facets';
 
-/** Client-side ceiling; the anon statement_timeout (~3s) normally fires first. */
+/**
+ * Client-side ceiling. It only ends this route's wait: aborting does not stop
+ * the query in Postgres. The anon statement_timeout (~3s) bounds the queries
+ * on the request client (decrees, laws, catalogue titles) — NOT the articles
+ * and fiqh counts, which run as the service role with no statement_timeout
+ * (20261004_01, 20261018_02, 20261025_41). What keeps those cheap is the
+ * tsquery itself: parseAutocompleteQuery sends positive words only, AND-ed,
+ * with no short prefix — always a GIN-index lookup. The principles count and
+ * top two go through library.search_principles_page (4s, 20261017_20).
+ */
 const AUTOCOMPLETE_BUDGET_MS = 4000;
+
+/** Principles window with its own statement_timeout (20261017_20); remembered as missing for 10 minutes. */
+const PRINCIPLES_RPC = 'search_principles_page';
+const PRINCIPLES_RPC_RETRY_MS = 10 * 60 * 1000;
+let principlesRpcMissingUntil = 0;
 
 /**
  * GET /api/library/autocomplete?q=بطلان
@@ -16,8 +31,9 @@ const AUTOCOMPLETE_BUDGET_MS = 4000;
  * Returns section counts + top 6 matching items.
  *
  * Counts are `estimated` (exact under 1000 matches, planner estimate above):
- * four exact counts over 10^4-10^5-row match sets cost 1-3.5s under the anon
- * role's ~3s statement_timeout. A count whose query FAILED is returned as
+ * four exact counts over 10^4-10^5-row match sets cost 1-3.5s. The principles
+ * count is the exact total from library.search_principles_page (4s limit);
+ * it is still reported exact only up to 1000. A count whose query FAILED is returned as
  * null, never as 0 (LIB-10): 0 claims "no results in this section".
  * `countsExact[section]` is true only for a proven-exact count (<= 1000);
  * a failed section is also listed in `degraded` (SEARCH COUNTS CONTRACT).
@@ -45,10 +61,14 @@ export async function GET(request: Request) {
     const signal = AbortSignal.timeout(AUTOCOMPLETE_BUDGET_MS);
     // Full-text search on the generated `fts` tsvector columns (GIN-indexed),
     // built with `to_tsvector('library.arabic', ...)`. `parseAutocompleteQuery`
-    // emits a raw tsquery with full Arabic spelling + bidirectional numeral
-    // expansion (٠-٩ ↔ 0-9) while tolerating partial operator syntax mid-typing.
+    // emits the POSITIVE words only, AND-ed, each with its Arabic spellings and
+    // both numeral forms (٠-٩ ↔ 0-9): no `!`, no `|` between words, no prefix
+    // on a 1–2 letter stem — a `-word` is dropped, never searched for.
     const ftsQuery = parsed.tsquery;
     const plainTerms = parsed.plainTerms;
+    // The title lookups read the raw text: give them the kept words only, so
+    // a negated word («-نظام») never surfaces a title either.
+    const titleQuery = plainTerms.join(' ');
 
     const serverOnly = await createServiceClient();
 
@@ -59,15 +79,52 @@ export async function GET(request: Request) {
       .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG })
       .abortSignal(signal);
 
-    // Run all queries in parallel for speed. Round trips per request: 4 counts
+    // Principles: the count and the top two in one call through
+    // library.search_principles_page (20261017_20): it collects the matches
+    // through the GIN index first, under its own 4s statement_timeout. The
+    // inline id-ordered limit-2 query below made a rare word walk the whole
+    // primary key as the service role (no statement_timeout) — measured in
+    // Docker on 110k rows: 109,991 rows removed by the filter. The inline pair
+    // stays only while the function is missing (PGRST202 / 42883).
+    const principlesFacet = async (): Promise<{ count: FacetResult; top: FacetResult<Record<string, unknown>> }> => {
+      if (Date.now() >= principlesRpcMissingUntil) {
+        const rpc = await serverOnly
+          .schema('library')
+          .rpc(PRINCIPLES_RPC, { p_tsquery: ftsQuery, p_offset: 0, p_fetch: 2 })
+          .abortSignal(signal);
+        if (!isMissingFunctionError(rpc.error)) {
+          const page = rpcPageResult(rpc);
+          const error = page.error ?? (page.data && page.count !== null ? null : { message: 'invalid search_principles_page answer' });
+          return { count: { count: page.count, error }, top: { data: page.data, error } };
+        }
+        principlesRpcMissingUntil = Date.now() + PRINCIPLES_RPC_RETRY_MS;
+      }
+      const [principlesCount, principlesTop] = await Promise.all([
+        count('principles', serverOnly),
+        // Top 2 principle matches (server-only since 20261016_01)
+        serverOnly
+          .schema('library')
+          .from('principles')
+          .select('id, principle_number, issuing_body, text')
+          .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG })
+          .order('id')
+          .limit(2)
+          .abortSignal(signal),
+      ]);
+      return { count: principlesCount, top: principlesTop as FacetResult<Record<string, unknown>> };
+    };
+
+    // Run all queries in parallel for speed. Round trips per request: 3 counts
+    // + 1 principles call (count and top two; 2 round trips while its
+    // function is missing)
     // + law titles (≤ 6 lookups, ≤ 14 when the query has digits — see
     // MAX_TITLE_DIGIT_VARIANTS — plus 1 full-text fallback, run after them,
     // when fewer than 2 title hits)
-    // + 1 principles + 1 decrees + 1 book titles + 1 collection titles.
-    // Without digits ≤ 15 (was ≤ 14 before collection titles); with ≤ 23.
-    const [lawsCount, precedentsCount, ordersCount, feqhCount, topLaws, topPrecedents, topOrders, topBooks, topCollections] = await Promise.all([
+    // + 1 decrees + 1 book titles + 1 collection titles.
+    // Without digits ≤ 14; with ≤ 22.
+    const [lawsCount, principles, ordersCount, feqhCount, topLaws, topOrders, topBooks, topCollections] = await Promise.all([
       count('articles', serverOnly),
-      count('principles', serverOnly),
+      principlesFacet(),
       count('decrees_circulars'),
       count('feqh_blocks', serverOnly),
 
@@ -76,7 +133,7 @@ export async function GET(request: Request) {
       (async (): Promise<FacetResult<Record<string, unknown>>> => {
         const ranked = await fetchLawTitleHits(supabase, {
           ftsQuery,
-          rawQuery: query,
+          rawQuery: titleQuery,
           terms: plainTerms,
           max: 2,
           signal,
@@ -96,16 +153,6 @@ export async function GET(request: Request) {
         };
       })(),
 
-      // Top 2 principle matches (server-only since 20261016_01)
-      serverOnly
-        .schema('library')
-        .from('principles')
-        .select('id, principle_number, issuing_body, text')
-        .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG })
-        .order('id')
-        .limit(2)
-        .abortSignal(signal),
-
       // Top 2 decree matches
       supabase
         .schema('library')
@@ -117,11 +164,13 @@ export async function GET(request: Request) {
         .abortSignal(signal),
 
       // Books whose title carries the query. Public catalogue columns.
-      fetchBookTitleHits(supabase, query, 2, signal),
+      fetchBookTitleHits(supabase, titleQuery, 2, signal),
 
       // Judicial collections whose title carries the query («المبادئ والقرارات»).
-      fetchCollectionTitleHits(supabase, query, { max: 2, signal }),
+      fetchCollectionTitleHits(supabase, titleQuery, { max: 2, signal }),
     ]);
+    const precedentsCount = principles.count;
+    const topPrecedents = principles.top;
 
     const lawMatches: TopMatch[] = ((topLaws.data ?? []) as Record<string, unknown>[]).map((law) => ({
       title: law.title as string,
