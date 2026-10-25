@@ -10,14 +10,22 @@
  *   syncFreezeMetadata      the gates' cached copy (app_metadata) ← the table
  *   freezeAccountWith       admin «تجميد ثم حذف بعد ٦٠ يوماً»
  *   cancelAccountFreezeWith admin «استعادة الحساب المجمّد»
- *   purgeAccountWith        one claimed request: prepare → deleteUser → Storage
- *                           → finish. The cron and «حذف نهائي الآن» both use it.
+ *   purgeAccountWith        one claimed request: prepare (a dry run) →
+ *                           deleteUser → the file list → Storage → finish. The
+ *                           cron and «حذف نهائي الآن» both use it.
+ *   purgeNowWith            «حذف نهائي الآن» after its claim: the gates' copy
+ *                           says frozen BEFORE the purge runs, and stays frozen
+ *                           whenever the account survives it (blocked / retry).
  *
- * ── WHY deleteUser BEFORE THE STORAGE REMOVE ───────────────────────────────
+ * ── WHY NOTHING IS WRITTEN BEFORE deleteUser ───────────────────────────────
  * A refused deleteUser ends the request as `blocked`, and a blocked account
- * can still be restored. If its files had already been removed, it would come
- * back with documents that point at nothing. So the bytes go only once the
- * account is gone. A failed remove after that is recorded on the request
+ * can still be restored. So `account_purge_prepare` is a dry run: the keep
+ * rules (firm rows to the firm owner, documents kept for the other party, the
+ * buyer on the invoices) run only inside the auth.users trigger, in the
+ * delete's own transaction — a refused delete rolls them back. The files to
+ * remove are listed only AFTER the delete (`account_purge_storage_paths`,
+ * which refuses while the account exists), from what no surviving row
+ * references. A failed list or remove is recorded on the request
  * (`storage_failed`) for a hand clean-up; the rows are already gone.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -29,7 +37,7 @@ import {
   frozenAppMetadata,
   isMissingAccountDeletionSchema,
   type PurgeOutcome,
-} from "@/lib/auth/accountFreeze";
+} from "../auth/accountFreeze.ts";
 
 export const DELETION_SCHEMA_MISSING_AR =
   "تجميد الحساب غير متاح بعد: لم يُنفَّذ ملف قاعدة البيانات 20261026_70 (حذف الحساب).";
@@ -195,23 +203,37 @@ export async function purgeAccountWith(
     await finish(admin, args.requestId, outcome, {}, `prepare: ${prep.error.code ?? ""} ${prep.error.message}`);
     return { ...run, outcome, reason: "prepare_failed" };
   }
-  const prepared = (prep.data ?? {}) as { ok?: boolean; blocked?: string; storage_paths?: unknown; keep?: unknown };
+  const prepared = (prep.data ?? {}) as { ok?: boolean; blocked?: string; keep_preview?: unknown };
   if (!prepared.ok) {
     await finish(admin, args.requestId, "blocked", { prepare: prepared }, `blocked: ${prepared.blocked ?? "unknown"}`);
     return { ...run, outcome: "blocked", reason: prepared.blocked ?? "unknown" };
   }
-  const paths = Array.isArray(prepared.storage_paths)
-    ? prepared.storage_paths.filter((p): p is string => typeof p === "string" && p.length > 0)
-    : [];
 
   const { error: deleteError } = await admin.auth.admin.deleteUser(args.userId);
   if (deleteError) {
     const verdict = classifyDeleteUserError(deleteError.message);
     if (verdict.outcome !== "purged") {
-      await finish(admin, args.requestId, verdict.outcome, { keep: prepared.keep ?? null }, `deleteUser: ${verdict.reason}: ${deleteError.message}`);
+      await finish(admin, args.requestId, verdict.outcome, { preview: prepared.keep_preview ?? null }, `deleteUser: ${verdict.reason}: ${deleteError.message}`);
       return { ...run, outcome: verdict.outcome, reason: verdict.reason };
     }
   }
+
+  // Only now, with the account gone: what of his folders no kept row uses.
+  const listed = await admin.rpc("account_purge_storage_paths", { p_user: args.userId });
+  if (listed.error) {
+    console.error("[accountDeletion] listing the files failed:", args.requestId, listed.error.code, listed.error.message);
+    await finish(
+      admin,
+      args.requestId,
+      "purged",
+      { preview: prepared.keep_preview ?? null, storage_removed: 0, storage_failed: "list_failed" },
+      null,
+    );
+    return { ...run, outcome: "purged", reason: "storage_list_failed" };
+  }
+  const paths = Array.isArray(listed.data)
+    ? (listed.data as unknown[]).filter((p): p is string => typeof p === "string" && p.length > 0)
+    : [];
 
   const failed: string[] = [];
   for (let i = 0; i < paths.length; i += REMOVE_CHUNK) {
@@ -230,8 +252,54 @@ export async function purgeAccountWith(
     admin,
     args.requestId,
     "purged",
-    { keep: prepared.keep ?? null, storage_removed: run.storageRemoved, storage_failed: failed },
+    { preview: prepared.keep_preview ?? null, storage_removed: run.storageRemoved, storage_failed: failed },
     null,
   );
   return { ...run, outcome: "purged" };
+}
+
+export type PurgeNowResult =
+  | { ok: true; run: PurgeRun }
+  /** The account survived the purge; the gates' copy is frozen (or the request was cancelled when it could not be). */
+  | { ok: false; run: PurgeRun; frozen: boolean };
+
+/** The active request's purge date, for the gates' copy. Null when unreadable or none. */
+async function activePurgeAfter(admin: SupabaseClient, userId: string): Promise<{ active: boolean; purgeAfter: string | null }> {
+  const active = await readActiveRequest(admin, userId);
+  if (!active.ok || !active.request) return { active: false, purgeAfter: null };
+  return { active: true, purgeAfter: active.request.purge_after ?? null };
+}
+
+/**
+ * «حذف نهائي الآن» once `account_purge_claim_user` holds the request. The
+ * account is frozen in the gates' copy BEFORE the purge (it signs in only to
+ * /account-frozen while it runs), and stays frozen when the purge does not end
+ * it (blocked, or retry: the row is back to `requested` with its own
+ * purge_after). Never a `requested` / `blocked` row whose user is not frozen:
+ * when the copy cannot be written, the request is cancelled instead (the
+ * admin is told), exactly as freezeAccountWith undoes a failed freeze.
+ */
+export async function purgeNowWith(
+  admin: SupabaseClient,
+  args: { requestId: string; userId: string; actorId: string },
+): Promise<PurgeNowResult> {
+  const before = await activePurgeAfter(admin, args.userId);
+  const early = await syncFreezeMetadata(admin, args.userId, { frozen: true, purgeAfter: before.purgeAfter });
+  if (!early.ok) console.error("[accountDeletion] purge now: freezing app_metadata first failed:", early.error);
+
+  const run = await purgeAccountWith(admin, { requestId: args.requestId, userId: args.userId });
+  if (run.outcome === "purged") return { ok: true, run };
+
+  const after = await activePurgeAfter(admin, args.userId);
+  if (!after.active) {
+    // Nothing holds the account any more (cancelled meanwhile): lift the copy.
+    await syncFreezeMetadata(admin, args.userId, { frozen: false, purgeAfter: null });
+    return { ok: false, run, frozen: false };
+  }
+  const synced = await syncFreezeMetadata(admin, args.userId, { frozen: true, purgeAfter: after.purgeAfter });
+  if (synced.ok) return { ok: false, run, frozen: true };
+
+  console.error("[accountDeletion] purge now: the account survived but app_metadata could not be frozen — cancelling the request:", synced.error);
+  await admin.rpc("account_deletion_cancel_for", { p_user: args.userId, p_actor: args.actorId });
+  return { ok: false, run, frozen: false };
 }

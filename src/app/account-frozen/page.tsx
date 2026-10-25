@@ -4,14 +4,17 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowCounterClockwise, SignOut, Snowflake, WarningCircle } from "@phosphor-icons/react";
 import { createClient } from "@/lib/supabase/client";
-import { FREEZE_DAYS, frozenUntilAr } from "@/lib/auth/accountFreeze";
+import { ADMIN_FREEZE_AR, FREEZE_DAYS, frozenUntilAr, isAdminFreeze } from "@/lib/auth/accountFreeze";
 import { toArabicDigits } from "@/lib/services/arabicCount";
 
 /**
  * /account-frozen — D6 (owner ٢٩٨). The one page a frozen account opens:
  * src/proxy.ts sends every protected page here while the account's deletion
  * is pending. It says until when, and offers «استعادة الحساب» (POST
- * /api/v1/me/account-deletion/cancel) and sign-out.
+ * /api/v1/me/account-deletion/cancel) and sign-out. A freeze the
+ * administration made (requestedBy "admin") has no restore button: it says
+ * «تم تجميد الحساب بقرار من الإدارة — تواصل مع الدعم» (the database refuses
+ * the user's own cancel of it).
  *
  * Not a PROTECTED prefix, so the proxy never redirects it (no loop); it reads
  * its state from GET /api/v1/me/account-deletion, which is not behind
@@ -21,11 +24,15 @@ type Status =
   | { kind: "loading" }
   | { kind: "signed_out" }
   | { kind: "active" }
-  | { kind: "frozen"; purgeAfter: string | null; status: string }
+  | { kind: "frozen"; purgeAfter: string | null; status: string; byAdmin: boolean }
   | { kind: "error"; message: string };
 
 interface StatusBody {
-  data?: { available: boolean; frozen: boolean; request: { purgeAfter: string; status: string } | null };
+  data?: {
+    available: boolean;
+    frozen: boolean;
+    request: { purgeAfter: string; status: string; requestedBy?: string | null } | null;
+  };
   error?: string;
 }
 
@@ -43,7 +50,12 @@ export default function AccountFrozenPage() {
         if (res.status === 401) return setState({ kind: "signed_out" });
         if (!res.ok || !body.data) return setState({ kind: "error", message: body.error ?? "تعذّر قراءة حالة الحساب الآن." });
         if (!body.data.frozen || !body.data.request) return setState({ kind: "active" });
-        setState({ kind: "frozen", purgeAfter: body.data.request.purgeAfter, status: body.data.request.status });
+        setState({
+          kind: "frozen",
+          purgeAfter: body.data.request.purgeAfter,
+          status: body.data.request.status,
+          byAdmin: isAdminFreeze(body.data.request.requestedBy),
+        });
       })
       .catch(() => {
         if (!cancelled) setState({ kind: "error", message: "تعذّر الاتصال الآن. تحقق من اتصالك ثم أعد تحميل الصفحة." });
@@ -125,6 +137,18 @@ export default function AccountFrozenPage() {
             </div>
             {state.status === "purging" ? (
               <p>انتهت مهلة الاستعادة ويجري حذف الحساب نهائياً الآن.</p>
+            ) : state.byAdmin ? (
+              <>
+                <p className="font-bold">{ADMIN_FREEZE_AR}</p>
+                <p>
+                  ملفك العام مخفي، ولا يمكن استخدام المنصة.{" "}
+                  {until ? `في ${until} يُحذف الحساب نهائياً` : "بعد انتهاء المهلة يُحذف الحساب نهائياً"} ما لم ترفع
+                  الإدارة التجميد.{" "}
+                  <Link href="/contact" className="font-semibold text-royal hover:underline dark:text-emerald-400">
+                    تواصل مع الدعم
+                  </Link>
+                </p>
+              </>
             ) : (
               <>
                 <p>
@@ -142,7 +166,7 @@ export default function AccountFrozenPage() {
               </div>
             )}
             <div className="flex flex-wrap gap-2">
-              {state.status !== "purging" && (
+              {state.status !== "purging" && !state.byAdmin && (
                 <button
                   type="button"
                   disabled={busy}

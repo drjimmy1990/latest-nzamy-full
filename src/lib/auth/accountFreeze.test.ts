@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import {
   ACCOUNT_FREEZE_KEY,
   ACCOUNT_FROZEN_PATH,
+  ADMIN_FREEZE_AR,
   ADMIN_PURGE_CONFIRM_AR,
   DELETE_CONFIRM_PHRASE_AR,
   activeAppMetadata,
@@ -17,6 +18,7 @@ import {
   freezeStateFromUser,
   frozenAppMetadata,
   frozenUntilAr,
+  isAdminFreeze,
   isMissingAccountDeletionSchema,
   phraseMatches,
 } from "./accountFreeze.ts";
@@ -89,6 +91,14 @@ test("database refusals become Arabic", () => {
   assert.match(deletionErrorAr("ACCOUNT_PURGE_IN_PROGRESS"), /جارٍ/);
   assert.match(deletionErrorAr("something else"), /تعذّر/);
   assert.match(deletionErrorAr(undefined), /تعذّر/);
+  assert.match(deletionErrorAr("ACCOUNT_DELETION_NO_USER"), /غير موجود/);
+  assert.match(deletionErrorAr("ACCOUNT_DELETE_FIRM_ASSETS_LEFT: account …"), /لم يتغير شيء/);
+});
+
+test("an admin freeze is the administration's: only requested_by 'admin' counts, and the copy says so", () => {
+  assert.equal(isAdminFreeze("admin"), true);
+  for (const v of ["self", null, undefined, "", "ADMIN"]) assert.equal(isAdminFreeze(v), false, String(v));
+  assert.equal(ADMIN_FREEZE_AR, "تم تجميد الحساب بقرار من الإدارة — تواصل مع الدعم");
 });
 
 test("a deleteUser failure: a key or the entity guard blocks for good, anything else retries", () => {
@@ -103,6 +113,10 @@ test("a deleteUser failure: a key or the entity guard blocks for good, anything 
   // GoTrue hides the database's reason behind this text; a refusal by the
   // database is deterministic (a key, a trigger), so it is not retried daily.
   assert.deepEqual(classifyDeleteUserError("Database error deleting user"), { outcome: "blocked", reason: "database_refused" });
+  assert.deepEqual(classifyDeleteUserError("ACCOUNT_DELETE_FIRM_ASSETS_LEFT: account x still owns 1 firm row(s)"), {
+    outcome: "blocked",
+    reason: "firm_assets_left",
+  });
   assert.deepEqual(classifyDeleteUserError("fetch failed"), { outcome: "retry", reason: "delete_failed" });
   assert.deepEqual(classifyDeleteUserError("User not found"), { outcome: "purged", reason: "already_gone" });
 });

@@ -31,6 +31,19 @@ export const ADMIN_PURGE_CONFIRM_AR = "حذف نهائي";
 export const ACCOUNT_FROZEN_AR =
   "حسابك مجمّد بطلب حذف. استعده أولاً من صفحة «حسابك مجمّد» لتعود إلى استخدام المنصة.";
 
+/**
+ * A freeze the administration made (requested_by = "admin"): the user cannot
+ * lift it himself (20261026_70 account_deletion_close is self-only for him);
+ * only an admin's «استعادة» does. The frozen page shows this with no restore
+ * button.
+ */
+export const ADMIN_FREEZE_AR = "تم تجميد الحساب بقرار من الإدارة — تواصل مع الدعم";
+
+/** True when the request is the administration's (not the user's own). */
+export function isAdminFreeze(requestedBy: unknown): boolean {
+  return requestedBy === "admin";
+}
+
 /** Days of the frozen recovery period (owner ٢٩٨). The database is the authority: purge_after = requested_at + 60 days. */
 export const FREEZE_DAYS = 60;
 
@@ -103,6 +116,12 @@ export function deletionErrorAr(message: string | null | undefined): string {
   if (m.includes("ACCOUNT_DELETION_NO_PROFILE")) {
     return "لا يوجد ملف لهذا الحساب.";
   }
+  if (m.includes("ACCOUNT_DELETION_NO_USER")) {
+    return "هذا الحساب غير موجود.";
+  }
+  if (m.includes("ACCOUNT_DELETE_FIRM_ASSETS_LEFT")) {
+    return "لم يُحذف الحساب: بقيت سجلات مكتب لم يمكن نقلها لصاحب المكتب، فلم يتغير شيء.";
+  }
   return "تعذّر تنفيذ طلب حذف الحساب الآن. أعد المحاولة بعد قليل.";
 }
 
@@ -118,6 +137,7 @@ export function classifyDeleteUserError(message: string | null | undefined): { o
   const m = (typeof message === "string" ? message : "").toLowerCase();
   if (m.includes("user not found")) return { outcome: "purged", reason: "already_gone" };
   if (m.includes("account_delete_entity_owner")) return { outcome: "blocked", reason: "entity_owner" };
+  if (m.includes("account_delete_firm_assets_left")) return { outcome: "blocked", reason: "firm_assets_left" };
   if (m.includes("foreign key")) return { outcome: "blocked", reason: "foreign_key" };
   if (m.includes("database error")) return { outcome: "blocked", reason: "database_refused" };
   return { outcome: "retry", reason: "delete_failed" };

@@ -103,6 +103,18 @@ test("self-service routes: own session only, outside assertRole, metadata writte
   assert.ok(cancel.indexOf('supabase.rpc("cancel_account_deletion")') < cancel.indexOf("frozen: false"), "cancel, then lift");
 });
 
+test("an admin freeze: /cancel answers 409 with the support copy, the frozen page offers no restore", () => {
+  const cancel = codeOnly(read("app/api/v1/me/account-deletion/cancel/route.ts"));
+  const adminAt = cancel.indexOf("isAdminFreeze(still.request.requested_by)");
+  const liftAt = cancel.indexOf("frozen: false");
+  assert.ok(adminAt > -1 && adminAt < liftAt, "an admin freeze is answered before the copy is lifted");
+  assert.ok(cancel.slice(adminAt, adminAt + 200).includes("ADMIN_FREEZE_AR") && cancel.slice(adminAt, adminAt + 200).includes("status: 409"));
+  const page = codeOnly(read("app/account-frozen/page.tsx"));
+  assert.ok(page.includes("isAdminFreeze(body.data.request.requestedBy)"), "the page reads who froze the account");
+  assert.ok(page.includes('state.status !== "purging" && !state.byAdmin && ('), "no restore button on an admin freeze");
+  assert.ok(page.includes("{ADMIN_FREEZE_AR}"), "it says the administration froze it");
+});
+
 test("cron: fails closed on CRON_SECRET, and the purge deletes the account before its files", () => {
   const cron = codeOnly(read("app/api/v1/cron/account-purge/route.ts"));
   const authAt = cron.indexOf('cronSecretMatches(request.headers.get("x-cron-secret"), process.env.CRON_SECRET)');
@@ -114,9 +126,12 @@ test("cron: fails closed on CRON_SECRET, and the purge deletes the account befor
   const lib = codeOnly(read("lib/accountDeletion/accountDeletionServer.ts"));
   const prepareAt = lib.indexOf('rpc("account_purge_prepare"');
   const deleteAt = lib.indexOf("auth.admin.deleteUser(");
+  const listAt = lib.indexOf('rpc("account_purge_storage_paths"');
   const removeAt = lib.indexOf(".storage.from(STORAGE_BUCKET).remove(");
-  assert.ok(prepareAt > -1 && prepareAt < deleteAt && deleteAt < removeAt, "prepare → deleteUser → Storage");
-  assert.equal(/\.list\(/.test(lib), false, "never lists a folder to delete it — only the prepared paths");
+  assert.ok(prepareAt > -1 && prepareAt < deleteAt && deleteAt < listAt && listAt < removeAt,
+    "prepare (a dry run) → deleteUser → the file list → Storage");
+  assert.equal(/storage_paths/.test(lib.slice(prepareAt, deleteAt)), false, "prepare decides no file");
+  assert.equal(/\.list\(/.test(lib), false, "never lists a folder to delete it — only the database's after-delete list");
   // a prepare error the database answered is blocked, never re-claimed daily
   const prepErr = lib.slice(lib.indexOf("if (prep.error) {"), lib.indexOf("const prepared ="));
   assert.ok(prepErr.includes('prep.error.code ? "blocked" : "retry"'), "a coded prepare error is terminal");

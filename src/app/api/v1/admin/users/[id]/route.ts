@@ -17,7 +17,7 @@ import {
 import {
   cancelAccountFreezeWith,
   freezeAccountWith,
-  purgeAccountWith,
+  purgeNowWith,
 } from "@/lib/accountDeletion/accountDeletionServer";
 
 /**
@@ -388,11 +388,17 @@ export async function PATCH(
  *        first. 503 before 20261026_70 runs.
  *   ?mode=cancel  «استعادة الحساب المجمّد» — cancels the freeze.
  *   ?mode=purge   «حذف نهائي الآن», body { confirm: «حذف نهائي» }, super_admin
- *        only. Runs the cron's own purgeAccountWith (keep rules first: firm
- *        rows to the firm owner, documents on a shared case kept, the buyer
- *        snapshotted onto paid invoices), so nothing here is a bare
- *        deleteUser — except before 20261026_70 runs, when the old immediate
- *        delete is kept as it was.
+ *        only. purgeNowWith runs the cron's own purgeAccountWith (the keep
+ *        rules run inside the delete: firm rows to the firm owner, documents
+ *        on a shared case kept, the buyer snapshotted onto paid invoices), so
+ *        nothing here is a bare deleteUser — except before 20261026_70 runs,
+ *        when the old immediate delete is kept as it was. The account is
+ *        frozen in app_metadata before the purge, and stays frozen when the
+ *        purge does not end it; when that cannot be written the request is
+ *        cancelled (never a pending request on an open account).
+ *   An auth user with no profiles row can be frozen and purged too (404 only
+ *   when the id is in neither table). An admin's freeze is the
+ *   administration's: the user cannot lift it from /account-frozen.
  *
  * Unchanged: an admin cannot delete his own account from here (the audit
  * row's actor would be gone), and the last super admin cannot be deleted
@@ -427,7 +433,7 @@ export async function DELETE(
   try {
     // Who is being deleted, read first: afterwards the profile is gone and the
     // audit row is the only trace of it.
-    const { data: target, error: targetError } = await adminClient
+    const { data: profileRow, error: targetError } = await adminClient
       .from("profiles")
       .select("email, display_name, user_type")
       .eq("id", userId)
@@ -438,6 +444,22 @@ export async function DELETE(
     if (targetError) {
       console.error("[admin/users/[id]] DELETE: reading the account failed:", targetError.code, targetError.message);
       return NextResponse.json({ error: STAFF_CHECK_UNAVAILABLE_AR }, { status: 503 });
+    }
+
+    // An auth user with no profiles row (a sign-up that never finished) is
+    // still an account to freeze or purge: read it from auth. Only an id that
+    // is in neither is "not found". No profile means no user_type, so never an
+    // admin (an admin's role lives on profiles + platform_staff).
+    let target: { email: string | null; display_name: string | null; user_type: string | null; no_profile?: true } | null =
+      profileRow ?? null;
+    if (!target) {
+      const { data: authUser, error: authUserError } = await adminClient.auth.admin.getUserById(userId);
+      if (authUser?.user) {
+        target = { email: authUser.user.email ?? null, display_name: null, user_type: null, no_profile: true };
+      } else if (authUserError && !/not.?found/i.test(authUserError.message ?? "") && authUserError.status !== 404) {
+        console.error("[admin/users/[id]] DELETE: reading the auth user failed:", authUserError.message);
+        return NextResponse.json({ error: STAFF_CHECK_UNAVAILABLE_AR }, { status: 503 });
+      }
     }
 
     // ── restore a frozen account ──────────────────────────────────────────
@@ -522,18 +544,23 @@ export async function DELETE(
         return NextResponse.json({ error: deleteError.message }, { status: 500 });
       }
     } else {
-      const run = await purgeAccountWith(adminClient, { requestId: claimedId as string, userId });
-      if (run.outcome !== "purged") {
+      // The account is frozen (app_metadata) before the purge runs and stays
+      // frozen when it survives it — never a pending request on an account
+      // that still opens the platform.
+      const now = await purgeNowWith(adminClient, { requestId: claimedId as string, userId, actorId: gate.userId });
+      if (!now.ok) {
+        const { run } = now;
         await logAdminAction({
           actorId: gate.userId,
           action: "user_deletion_blocked",
           targetType: "profile",
           targetId: userId,
           before: { ...target, staff_role: previousRole },
-          after: { outcome: run.outcome, reason: run.reason ?? null },
+          after: { outcome: run.outcome, reason: run.reason ?? null, frozen: now.frozen },
         });
-        const error =
-          run.outcome === "blocked"
+        const error = !now.frozen
+          ? "لم يُحذف الحساب، وتعذّر تجميده، فأُلغي طلب الحذف وبقي الحساب نشطاً. أعد المحاولة لاحقاً."
+          : run.outcome === "blocked"
             ? "لم يُحذف الحساب: صاحب مكتب أو جهة لها أعضاء، أو بيانات تمنع الحذف. بقي الحساب مجمّداً وسُجّل السبب على طلب الحذف."
             : "تعذّر إكمال الحذف الآن، وبقي الحساب مجمّداً. أعد المحاولة لاحقاً.";
         return NextResponse.json({ error }, { status: run.outcome === "blocked" ? 409 : 500 });

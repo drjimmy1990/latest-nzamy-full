@@ -243,6 +243,7 @@ const WRITE_MARKERS = [
   "freezeAccountWith(",
   "cancelAccountFreezeWith(",
   "purgeAccountWith(",
+  "purgeNowWith(",
 ];
 
 function firstWriteAt(body: string): number {
@@ -539,7 +540,7 @@ test("users DELETE (D6, owner ٢٩٨): freeze by default, restore, and purge onl
 
   const freezeAt = body.indexOf("freezeAccountWith(");
   const cancelAt = body.indexOf("cancelAccountFreezeWith(");
-  const purgeAt = body.indexOf("purgeAccountWith(");
+  const purgeAt = body.indexOf("purgeNowWith(");
   const claimAt = body.indexOf('.rpc("account_purge_claim_user"');
   const phraseAt = body.indexOf("phraseMatches(body?.confirm, ADMIN_PURGE_CONFIRM_AR)");
   const lastSuperAt = body.indexOf("checkStaffRoleChange(");
