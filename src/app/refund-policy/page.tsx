@@ -8,6 +8,8 @@ import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import { markdownBoldToSafeHtml } from "@/utils/sanitize";
 import {
+  afterWithdrawalLineAr,
+  afterWithdrawalLineEn,
   arNumber,
   INSTANT_CANCEL_MINUTES,
   promoPointsLinesAr,
@@ -72,7 +74,8 @@ const sections = {
         // Owner answer ١٨٠ — the rule for digital plans, in his words.
         "**الاشتراكات والوحدات الرقمية**: يحق للمشترك ممارسة حق العدول واسترداد كامل قيمة الاشتراك الرقمي خلال (١٤) يوماً من تاريخ السداد وفق نظام التجارة الإلكترونية ولائحته، بشرط عدم استهلاك أكثر من ٥٪ من رصيد وحدات الاستخدام (النقاط) أو تصدير مذكرات مدفوعة.",
         "يُرد المبلغ إلى وسيلة الدفع الأصلية، وبما لا يتجاوز المدد المبيّنة في القسم ٧ أدناه.",
-        "بعد انقضاء مدة العدول: يمكن إلغاء التجديد التلقائي في أي وقت من إعدادات الحساب، ويستمر الوصول للخدمة حتى نهاية الفترة المدفوعة بالفعل دون استرداد جزئي عن الفترة المتبقية.",
+        // No auto-renewal and no cancel control exist yet (SUBSCRIPTIONS_AUTO_RENEW).
+        afterWithdrawalLineAr(),
         // Owner ٢٨٨ (C): two reminders before an automatic renewal — shown once B2 sends them.
         ...renewalReminderLinesAr(),
         "الترقية بين الباقات لا تستوجب رسوم استرداد؛ يُحتسب فرق السعر تناسبياً على الفاتورة التالية.",
@@ -161,7 +164,7 @@ const sections = {
         `**Instant cancellation of a purchase made by mistake** (requested from support): within (${INSTANT_CANCEL_MINUTES}) minutes of payment you may cancel the purchase for a full refund, provided no point has been used (0 points) and no file has been exported.`,
         "**Subscriptions and digital units**: the subscriber may exercise the right of withdrawal and recover the full value of the digital subscription within (14) days of payment under the E-Commerce Law and its Regulation, provided no more than 5% of the usage units (points) has been consumed and no paid memos have been exported.",
         "Refunds go to the original payment method, within the periods set out in Section 7 below.",
-        "After the withdrawal period ends: automatic renewal can be cancelled at any time from account settings, and access continues until the end of the period already paid for, with no partial refund for the remaining period.",
+        afterWithdrawalLineEn(),
         ...renewalReminderLinesEn(),
         "Upgrading between plans does not require a refund; the price difference is pro-rated on the next invoice.",
         ...promoPointsLinesEn(),

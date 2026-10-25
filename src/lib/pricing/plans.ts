@@ -212,15 +212,17 @@ export const INDIVIDUALS_PYRAMID_PLANS: Record<string, PricingPlan> = {
     descEn: "Your preventive legal shield — licensed lawyer consultations and contract reviews",
     featuresAr: [
       "كل مزايا الباقة الذكية (ذكاء اصطناعي مفتوح)",
-      "٤ استشارات قانونية سنوية (مرئية/هاتفية) مع محامٍ مرخّص",
-      "مراجعة وتدقيق عقدين (٢) سنوياً لضمان خلوها من الثغرات",
+      // Final review, item 4: no code counts these allowances; the team
+      // applies them by hand on a request (see pricing.individuals.ts).
+      "٤ استشارات قانونية سنوية (مرئية/هاتفية) مع محامٍ مرخّص — تُطبَّق بطلب يراجعه الفريق",
+      "مراجعة وتدقيق عقدين (٢) سنوياً لضمان خلوها من الثغرات — تُطبَّق بطلب يراجعه الفريق",
       "فحص وقائي تعاقدي وتنبيهات بالمخاطر القانونية",
       "خصم ١٥٪ على أتعاب أي قضايا أو ترافع إضافي",
     ],
     featuresEn: [
       "All Smart AI features included",
-      "4 annual consultations (video/phone) with licensed lawyers",
-      "2 contract reviews per year for clause risk protection",
+      "4 annual consultations (video/phone) with licensed lawyers — applied on a request the team reviews",
+      "2 contract reviews per year for clause risk protection — applied on a request the team reviews",
       "Preventive contract health check",
       "15% ongoing discount on additional legal litigation services",
     ],
@@ -248,7 +250,7 @@ export const INDIVIDUALS_PYRAMID_PLANS: Record<string, PricingPlan> = {
       "كل مزايا الباقتين الذكية والوقائية",
       "تمثيل قضائي وترافع أمام المحاكم لقضية مؤهلة سنوياً",
       "صياغة لوائح الدعوى والمذكرات الجوابية والاعتراضية",
-      "استشارات غير محدودة طوال فترة التقاضي في القضية المقبولة",
+      "استشارات غير محدودة طوال فترة التقاضي في القضية المقبولة — تُطبَّق بطلب يراجعه الفريق",
       "⚠️ خضوع القضية لقواعد الاكتتاب والتحقق المسبق قبل البدء",
       // Owner answer ١٧٦ (line 16): the family option.
       "التغطية العائلية: التابع الأول ٣١٩ ر.س، والثاني ٢٧٩ ر.س، والثالث فأكثر ٢٣٩ ر.س شهرياً (خصم ٢٠٪ / ٣٠٪ / ٤٠٪)",
@@ -260,7 +262,7 @@ export const INDIVIDUALS_PYRAMID_PLANS: Record<string, PricingPlan> = {
       "All Smart AI & Preventive features included",
       "Court representation for 1 qualified eligible case per year",
       "Drafting statements of claim, responses and appeals",
-      "Unlimited consultations throughout active case duration",
+      "Unlimited consultations throughout active case duration — applied on a request the team reviews",
       "⚠️ Subject to legal underwriting review and intake qualification",
       "Family cover: first dependant SAR 319, second SAR 279, third and beyond SAR 239 a month (20% / 30% / 40% off)",
       "Shared family cap on litigation fees: SAR 35,000–50,000 a year",

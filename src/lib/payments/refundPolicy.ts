@@ -38,6 +38,14 @@ export const CONSULTATION_CANCEL_HOURS = 24;
 export const PROMO_POINTS_VALIDITY_DAYS = 90;
 export const RENEWAL_REMINDER_DAYS: readonly number[] = Object.freeze([7, 3]);
 
+/**
+ * Off: no subscription renews automatically today. The grant writes
+ * auto_renew = false (grant_plan_subscription, 20261025_10) and nothing
+ * charges a saved card at the period's end — the plan simply ends, and the
+ * subscriber buys again if he wants to. Payments B2 builds the renewal, the
+ * reminders AND a cancel control; only then is this flag turned on.
+ */
+export const SUBSCRIPTIONS_AUTO_RENEW = false;
 /** Off until B2 sends the two renewal reminders (owner ٢٨٨). */
 export const SHOW_RENEWAL_REMINDERS = false;
 /** Off until something expires promotional / welcome points after 90 days. */
@@ -120,6 +128,19 @@ export function renewalRemindersAr(): string {
 }
 
 // ── the lines the page shows only while true (spread into section ٣) ──────
+
+/** Section ٣, after the withdrawal period: what happens at the end of a paid period. */
+export function afterWithdrawalLineAr(autoRenew: boolean = SUBSCRIPTIONS_AUTO_RENEW): string {
+  return autoRenew
+    ? "بعد انقضاء مدة العدول: يمكن إلغاء التجديد التلقائي في أي وقت من إعدادات الحساب، ويستمر الوصول للخدمة حتى نهاية الفترة المدفوعة بالفعل دون استرداد جزئي عن الفترة المتبقية."
+    : "بعد انقضاء مدة العدول: لا تتجدد الاشتراكات تلقائياً حالياً — ينتهي الاشتراك بنهاية الفترة المدفوعة ولا يُخصم منك أي مبلغ بعدها إلا إذا اشتريت اشتراكاً جديداً بنفسك، فلا يلزمك إلغاء شيء لإيقافه. ويستمر الوصول للخدمة حتى نهاية الفترة المدفوعة بالفعل دون استرداد جزئي عن الفترة المتبقية.";
+}
+
+export function afterWithdrawalLineEn(autoRenew: boolean = SUBSCRIPTIONS_AUTO_RENEW): string {
+  return autoRenew
+    ? "After the withdrawal period ends: automatic renewal can be cancelled at any time from account settings, and access continues until the end of the period already paid for, with no partial refund for the remaining period."
+    : "After the withdrawal period ends: subscriptions do not renew automatically today — a subscription ends with the period paid for and nothing is charged after it unless you buy a new one yourself, so there is nothing to cancel to stop it. Access continues until the end of the period already paid for, with no partial refund for the remaining period.";
+}
 
 export function renewalReminderLinesAr(show: boolean = SHOW_RENEWAL_REMINDERS): string[] {
   return show ? [`**تذكير التجديد**: قبل أي تجديد تلقائي لاشتراك نرسل لك ${renewalRemindersAr()}، لتتمكن من إلغائه قبل الخصم.`] : [];

@@ -113,8 +113,12 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
           "تدقيق ومقارنة بنود العقود",
         ],
         platform: [
-          "٤ استشارات قانونية سنوية (مرئية/هاتفية) مع محامٍ مرخّص",
-          "مراجعة وتدقيق عقدين (٢) سنوياً لضمان خلوها من الثغرات",
+          // Final review, item 4: nothing counts these allowances in code — a
+          // subscriber asks through «اطلب خدمة» and the team applies them by
+          // hand (service requests are reviewed, not paid online). P5 redoes
+          // the individual plans when the owner's revised pricing arrives.
+          "٤ استشارات قانونية سنوية (مرئية/هاتفية) مع محامٍ مرخّص — تُطبَّق بطلب يراجعه الفريق",
+          "مراجعة وتدقيق عقدين (٢) سنوياً لضمان خلوها من الثغرات — تُطبَّق بطلب يراجعه الفريق",
           "خصم مستمر ١٥٪ على أتعاب الترافع وكافة القضايا",
           "مراجعة دورية لملفك العقدي والقانوني",
         ],
@@ -147,7 +151,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
         ],
         platform: [
           "تمثيل قضائي وترافع أمام المحاكم لقضية مؤهلة سنوياً",
-          "استشارات غير محدودة طوال فترة التقاضي في القضية المقبولة",
+          "استشارات غير محدودة طوال فترة التقاضي في القضية المقبولة — تُطبَّق بطلب يراجعه الفريق",
           "⚠️ تخضع القضية للفحص المهني وضوابط الاكتتاب قبل التفعيل",
           // Owner answer ١٧٦ (line 16): the family option.
           "التغطية العائلية: التابع الأول ٣١٩ ر.س، والثاني ٢٧٩ ر.س، والثالث فأكثر ٢٣٩ ر.س شهرياً (خصم ٢٠٪ / ٣٠٪ / ٤٠٪)",
@@ -244,8 +248,8 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
           "Clause-by-clause comparison and audit",
         ],
         platform: [
-          "4 annual consultations (video/phone) with licensed lawyers",
-          "2 contract reviews per year for clause risk protection",
+          "4 annual consultations (video/phone) with licensed lawyers — applied on a request the team reviews",
+          "2 contract reviews per year for clause risk protection — applied on a request the team reviews",
           "Permanent 15% discount on additional litigation services",
           "Periodic contractual portfolio review",
         ],
@@ -276,7 +280,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
         ],
         platform: [
           "Court representation for 1 qualified eligible case per year",
-          "Unlimited consultations throughout active case duration",
+          "Unlimited consultations throughout active case duration — applied on a request the team reviews",
           "⚠️ Subject to legal underwriting review and intake qualification",
           "Family cover: first dependant SAR 319, second SAR 279, third and beyond SAR 239 a month (20% / 30% / 40% off)",
           "Shared family cap on litigation fees: SAR 35,000–50,000 a year",
@@ -299,7 +303,7 @@ export const comparisonIndividuals: { ar: ComparisonCategory[]; en: ComparisonCa
       rows: [
         { feature: "الذكاء الاصطناعي القانوني",   "pay-per-piece": "محدود",          "ind-ai": "غير محدود",            "ind-preventive": "غير محدود",            "ind-litigation": "غير محدود" },
         { feature: "الاستشهاد بالمواد النظامية",  "pay-per-piece": true,            "ind-ai": true,                   "ind-preventive": true,                   "ind-litigation": true },
-        { feature: "فحص وتدقيق العقود",          "pay-per-piece": "حسب قائمة الخدمات", "ind-ai": "خصم ١٠٪",              "ind-preventive": "عقدان مجاناً/سنة",     "ind-litigation": "شامل عقود النزاع" },
+        { feature: "فحص وتدقيق العقود",          "pay-per-piece": "حسب قائمة الخدمات", "ind-ai": "خصم ١٠٪",              "ind-preventive": "عقدان مجاناً/سنة (بطلب يراجعه الفريق)",     "ind-litigation": "شامل عقود النزاع" },
         { feature: "صياغة الخطابات والإنذارات",   "pay-per-piece": "حسب الخدمة",     "ind-ai": true,                   "ind-preventive": true,                   "ind-litigation": true },
       ],
     },
@@ -307,7 +311,7 @@ export const comparisonIndividuals: { ar: ComparisonCategory[]; en: ComparisonCa
       category: "المحامي المرخّص والتمثيل القضائي",
       icon: Gavel,
       rows: [
-        { feature: "استشارات مع محامٍ مرخّص",    "pay-per-piece": "حسب قائمة الخدمات", "ind-ai": "سعر تفضيلي",           "ind-preventive": "٤ استشارات/سنة",       "ind-litigation": "غير محدودة للقضية" },
+        { feature: "استشارات مع محامٍ مرخّص",    "pay-per-piece": "حسب قائمة الخدمات", "ind-ai": "سعر تفضيلي",           "ind-preventive": "٤ استشارات/سنة (بطلب يراجعه الفريق)",       "ind-litigation": "غير محدودة للقضية (بطلب يراجعه الفريق)" },
         { feature: "خصم أتعاب الترافع والقضايا", "pay-per-piece": "-",              "ind-ai": "٥٪",                   "ind-preventive": "١٥٪",                  "ind-litigation": "قضية مشمولة بالكامل" },
         { feature: "تمثيل قضائي وترافع بالمحاكم", "pay-per-piece": "أتعاب متفق عليها","ind-ai": "-",                   "ind-preventive": "بخصم ١٥٪",             "ind-litigation": "قضية مؤهلة سنوياً" },
         { feature: "ضوابط القبول والاكتتاب",      "pay-per-piece": "فحص تعارض",     "ind-ai": "بدون اكتتاب",            "ind-preventive": "بدون اكتتاب",            "ind-litigation": "تخضع للفحص المهني" },
@@ -339,7 +343,7 @@ export const comparisonIndividuals: { ar: ComparisonCategory[]; en: ComparisonCa
       rows: [
         { feature: "Legal AI Queries",            "pay-per-piece": "Limited",       "ind-ai": "Unlimited",            "ind-preventive": "Unlimited",            "ind-litigation": "Unlimited" },
         { feature: "Statutory Article Citations", "pay-per-piece": true,            "ind-ai": true,                   "ind-preventive": true,                   "ind-litigation": true },
-        { feature: "Contract Audit & Review",     "pay-per-piece": "Per the service list","ind-ai": "10% off",            "ind-preventive": "2 free/year",          "ind-litigation": "Case contracts included" },
+        { feature: "Contract Audit & Review",     "pay-per-piece": "Per the service list","ind-ai": "10% off",            "ind-preventive": "2 free/year (on request, team-reviewed)",          "ind-litigation": "Case contracts included" },
         { feature: "Notice & Letter Drafting",    "pay-per-piece": "Per service",   "ind-ai": true,                   "ind-preventive": true,                   "ind-litigation": true },
       ],
     },
@@ -347,7 +351,7 @@ export const comparisonIndividuals: { ar: ComparisonCategory[]; en: ComparisonCa
       category: "Licensed Lawyers & Court Cases",
       icon: Gavel,
       rows: [
-        { feature: "Lawyer Consultations",        "pay-per-piece": "Per the service list","ind-ai": "Discounted rate",      "ind-preventive": "4 sessions/year",      "ind-litigation": "Unlimited for case" },
+        { feature: "Lawyer Consultations",        "pay-per-piece": "Per the service list","ind-ai": "Discounted rate",      "ind-preventive": "4 sessions/year (on request, team-reviewed)",      "ind-litigation": "Unlimited for case (on request, team-reviewed)" },
         { feature: "Litigation Fees Discount",    "pay-per-piece": "-",             "ind-ai": "5%",                   "ind-preventive": "15%",                  "ind-litigation": "Fully covered case" },
         { feature: "Court Representation",        "pay-per-piece": "Agreed fee",    "ind-ai": "-",                    "ind-preventive": "15% off fee",          "ind-litigation": "1 eligible case/year" },
         { feature: "Underwriting & Intake Check", "pay-per-piece": "Conflict check","ind-ai": "No underwriting",   "ind-preventive": "No underwriting",   "ind-litigation": "Requires review gate" },

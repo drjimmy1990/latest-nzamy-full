@@ -12,6 +12,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
+  afterWithdrawalLineAr,
+  afterWithdrawalLineEn,
   arNumber,
   CONSULTATION_CANCEL_HOURS,
   INSTANT_CANCEL_MINUTES,
@@ -25,6 +27,7 @@ import {
   renewalRemindersAr,
   SHOW_PROMO_POINTS_VALIDITY,
   SHOW_RENEWAL_REMINDERS,
+  SUBSCRIPTIONS_AUTO_RENEW,
   topupValidityAr,
   topupValidityEn,
   topupValidityMonths,
@@ -147,4 +150,25 @@ test("٢٨٩: no Escrow / حساب الضمان wording a reader sees on the ref
     assert.ok(!/escrow/i.test(text), `${name}: Escrow`);
     assert.ok(!text.includes("حساب الضمان"), `${name}: حساب الضمان`);
   }
+});
+
+// ── final review, item 4: no auto-renewal promise the code does not keep ────
+
+test("no subscription renews automatically, so the page promises no cancel control", () => {
+  assert.equal(SUBSCRIPTIONS_AUTO_RENEW, false);
+  // The grant writes auto_renew = false; nothing charges a saved card at the period's end.
+  const grant = readFileSync(join(ROOT, "supabase", "migrations", "20261025_10_grant_plan_atomic.sql"), "utf8");
+  assert.match(grant, /p_period_start, p_period_end,\s+false, p_payment_method/);
+  assert.match(afterWithdrawalLineAr(), /لا تتجدد الاشتراكات تلقائياً/);
+  assert.match(afterWithdrawalLineEn(), /do not renew automatically/);
+  for (const line of [afterWithdrawalLineAr(), afterWithdrawalLineEn()]) {
+    assert.equal(/إعدادات الحساب|account settings/.test(line), false, line);
+  }
+  const page = visible(PAGE);
+  assert.equal(page.includes("إلغاء التجديد التلقائي"), false);
+  assert.equal(page.includes("automatic renewal can be cancelled"), false);
+  assert.match(page, /afterWithdrawalLineAr\(\)/);
+  assert.match(page, /afterWithdrawalLineEn\(\)/);
+  // kept for the day B2 builds the renewal and its cancel control
+  assert.match(afterWithdrawalLineAr(true), /إلغاء التجديد التلقائي/);
 });
