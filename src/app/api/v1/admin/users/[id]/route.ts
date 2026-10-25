@@ -4,10 +4,21 @@ import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 import { readAdminBalance } from "@/lib/payments/pointsAdmin";
 import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
-import { STAFF_CHECK_UNAVAILABLE_AR, usersPatchActions } from "@/lib/auth/staffDecision";
+import { STAFF_CHECK_UNAVAILABLE_AR, STAFF_ONLY_AR, usersPatchActions } from "@/lib/auth/staffDecision";
 import type { StaffAction } from "@/lib/auth/staffRoles";
 import { isAssignableUserType } from "@/lib/auth/userTypes";
 import { checkStaffRoleChange } from "@/lib/auth/platformStaffServer";
+import {
+  ADMIN_PURGE_CONFIRM_AR,
+  deletionErrorAr,
+  isMissingAccountDeletionSchema,
+  phraseMatches,
+} from "@/lib/auth/accountFreeze";
+import {
+  cancelAccountFreezeWith,
+  freezeAccountWith,
+  purgeAccountWith,
+} from "@/lib/accountDeletion/accountDeletionServer";
 
 /**
  * GET /api/v1/admin/users/[id] — Fetch single user with full details
@@ -366,13 +377,27 @@ export async function PATCH(
 }
 
 /**
- * DELETE /api/v1/admin/users/[id] — Delete user account
+ * DELETE /api/v1/admin/users/[id] — account deletion from the console (D6,
+ * owner ٢٩٨). Three modes, one staff action (users.delete, super_admin only
+ * in STAFF_MATRIX):
  *
- * Requires: a staff role with users.delete (owner ٢١٠). An admin cannot
- * delete their own account from here (controller ruling on Task 3.3): the
- * audit row could not even be written, its actor would be gone. The last
- * super admin cannot be deleted either (Task 3.4); a deleted admin's
- * platform_staff row goes with the auth user (ON DELETE CASCADE).
+ *   (no mode) / ?mode=freeze  «تجميد ثم حذف بعد ٦٠ يوماً» — the default. The
+ *        account is frozen (it signs in only to /account-frozen), its public
+ *        profile is hidden, and the daily /api/v1/cron/account-purge deletes it
+ *        once 60 days have passed. An admin account is refused: demote it
+ *        first. 503 before 20261026_70 runs.
+ *   ?mode=cancel  «استعادة الحساب المجمّد» — cancels the freeze.
+ *   ?mode=purge   «حذف نهائي الآن», body { confirm: «حذف نهائي» }, super_admin
+ *        only. Runs the cron's own purgeAccountWith (keep rules first: firm
+ *        rows to the firm owner, documents on a shared case kept, the buyer
+ *        snapshotted onto paid invoices), so nothing here is a bare
+ *        deleteUser — except before 20261026_70 runs, when the old immediate
+ *        delete is kept as it was.
+ *
+ * Unchanged: an admin cannot delete his own account from here (the audit
+ * row's actor would be gone), and the last super admin cannot be deleted
+ * (Task 3.4); a deleted admin's platform_staff row goes with the auth user
+ * (ON DELETE CASCADE).
  */
 export async function DELETE(
   request: NextRequest,
@@ -387,6 +412,14 @@ export async function DELETE(
   // the same account.
   if (userId.toLowerCase() === gate.userId.toLowerCase()) {
     return NextResponse.json({ error: "لا يمكنك حذف حسابك من لوحة الإدارة" }, { status: 400 });
+  }
+
+  const mode = request.nextUrl.searchParams.get("mode") ?? "freeze";
+  if (mode !== "freeze" && mode !== "cancel" && mode !== "purge") {
+    return NextResponse.json({ error: "وضع الحذف غير معروف" }, { status: 400 });
+  }
+  if (mode === "purge" && gate.role !== "super_admin") {
+    return NextResponse.json({ error: STAFF_ONLY_AR }, { status: 403 });
   }
 
   const adminClient = await createServiceClient();
@@ -407,6 +440,60 @@ export async function DELETE(
       return NextResponse.json({ error: STAFF_CHECK_UNAVAILABLE_AR }, { status: 503 });
     }
 
+    // ── restore a frozen account ──────────────────────────────────────────
+    if (mode === "cancel") {
+      const restored = await cancelAccountFreezeWith(adminClient, { userId, actorId: gate.userId });
+      if (!restored.ok) {
+        return NextResponse.json({ error: restored.error }, { status: restored.status });
+      }
+      await logAdminAction({
+        actorId: gate.userId,
+        action: "user_deletion_cancelled",
+        targetType: "profile",
+        targetId: userId,
+        before: target ? { ...target, deletion: "frozen" } : null,
+        after: { deletion: restored.cancelled ? "cancelled" : "none" },
+      });
+      return NextResponse.json({ success: true, message: "استُعيد الحساب وأُلغي طلب حذفه" });
+    }
+
+    if (!target) {
+      return NextResponse.json({ error: "المستخدم غير موجود" }, { status: 404 });
+    }
+
+    // ── the default: freeze for 60 days ───────────────────────────────────
+    if (mode === "freeze") {
+      if (target.user_type === "admin") {
+        return NextResponse.json(
+          { error: "حساب مشرف: أزل صلاحية الإدارة أولاً، ثم جمّد الحساب" },
+          { status: 400 },
+        );
+      }
+      const frozen = await freezeAccountWith(adminClient, { userId, actorId: gate.userId, reason: "admin" });
+      if (!frozen.ok) {
+        return NextResponse.json({ error: frozen.error }, { status: frozen.status });
+      }
+      await logAdminAction({
+        actorId: gate.userId,
+        action: "user_deletion_requested",
+        targetType: "profile",
+        targetId: userId,
+        before: target,
+        after: { deletion: "frozen", purge_after: frozen.request?.purge_after ?? null },
+      });
+      return NextResponse.json({
+        success: true,
+        message: "جُمِّد الحساب، ويُحذف نهائياً بعد ٦٠ يوماً ما لم يُستعد",
+        data: { purgeAfter: frozen.request?.purge_after ?? null },
+      });
+    }
+
+    // ── purge now (super_admin, typed confirmation) ───────────────────────
+    const body = (await request.json().catch(() => null)) as { confirm?: unknown } | null;
+    if (!phraseMatches(body?.confirm, ADMIN_PURGE_CONFIRM_AR)) {
+      return NextResponse.json({ error: `اكتب «${ADMIN_PURGE_CONFIRM_AR}» لتأكيد الحذف النهائي` }, { status: 400 });
+    }
+
     // The last super admin stays (owner ٢١٠): 400, or 503 when unreadable.
     // Only an admin holds a role, so deleting anyone else reads nothing here.
     let previousRole: string | null = null;
@@ -418,13 +505,39 @@ export async function DELETE(
       previousRole = change.previousRole;
     }
 
-    // Delete user from auth (cascades to profiles, subscriptions, lawyer_profiles etc.)
-    const { error: deleteError } = await adminClient.auth.admin.deleteUser(userId);
-    if (deleteError) {
-      return NextResponse.json(
-        { error: deleteError.message },
-        { status: 500 },
-      );
+    const { data: claimedId, error: claimError } = await adminClient.rpc("account_purge_claim_user", {
+      p_user: userId,
+      p_actor: gate.userId,
+    });
+    if (claimError && !isMissingAccountDeletionSchema(claimError.code)) {
+      const status = claimError.code === "55000" ? 409 : 500;
+      return NextResponse.json({ error: deletionErrorAr(claimError.message) }, { status });
+    }
+
+    if (claimError) {
+      // Before 20261026_70: the old immediate delete, as it was (cascades to
+      // profiles, subscriptions, lawyer_profiles etc.).
+      const { error: deleteError } = await adminClient.auth.admin.deleteUser(userId);
+      if (deleteError) {
+        return NextResponse.json({ error: deleteError.message }, { status: 500 });
+      }
+    } else {
+      const run = await purgeAccountWith(adminClient, { requestId: claimedId as string, userId });
+      if (run.outcome !== "purged") {
+        await logAdminAction({
+          actorId: gate.userId,
+          action: "user_deletion_blocked",
+          targetType: "profile",
+          targetId: userId,
+          before: { ...target, staff_role: previousRole },
+          after: { outcome: run.outcome, reason: run.reason ?? null },
+        });
+        const error =
+          run.outcome === "blocked"
+            ? "لم يُحذف الحساب: صاحب مكتب أو جهة لها أعضاء، أو بيانات تمنع الحذف. بقي الحساب مجمّداً وسُجّل السبب على طلب الحذف."
+            : "تعذّر إكمال الحذف الآن، وبقي الحساب مجمّداً. أعد المحاولة لاحقاً.";
+        return NextResponse.json({ error }, { status: run.outcome === "blocked" ? 409 : 500 });
+      }
     }
 
     await logAdminAction({
@@ -432,13 +545,13 @@ export async function DELETE(
       action: "user_deleted",
       targetType: "profile",
       targetId: userId,
-      before: target ? { ...target, staff_role: previousRole } : null,
+      before: { ...target, staff_role: previousRole },
       after: null,
     });
 
     return NextResponse.json({
       success: true,
-      message: "تم حذف المستخدم بنجاح",
+      message: "تم حذف المستخدم نهائياً",
     });
   } catch (err) {
     console.error("[admin/users/[id]] DELETE error:", err);
@@ -448,4 +561,3 @@ export async function DELETE(
     );
   }
 }
-
