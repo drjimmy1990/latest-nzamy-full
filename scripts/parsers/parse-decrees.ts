@@ -33,6 +33,7 @@ import {
 import { filterMeta, assertManifestLoadable } from "./manifest";
 import { writeParseReport, printCapped, bindParseReportToOutput } from "./lib/report";
 import { classifyInstrument, type InstrumentType } from "./lib/instrument";
+import { decreeSummaries } from "../../src/lib/library/decreeSummary";
 
 /** Documents whose instrument could not be determined — counted, never guessed. */
 const unknownInstruments: string[] = [];
@@ -279,6 +280,10 @@ function parseCircularMd(filePath: string): ParsedDecree | null {
     articles.push({ number: 1, text: body.trim() });
   }
 
+  // N2.8: the short موجز from the body's <details> block (front matter's
+  // summary_brief when there is none); the full summary stays apart.
+  const summaries = decreeSummaries(meta, body);
+
   // Extract preamble (text before first article marker)
   let preamble = "";
   const firstArt = body.indexOf("<!-- ARTICLE_START");
@@ -301,8 +306,8 @@ function parseCircularMd(filePath: string): ParsedDecree | null {
     // rather than `ref`/`reference`; مراسيم use `decree_date`, circulars `issue_date_hijri`.
     ref: String(meta.ref || meta.reference || meta.tameem_number || meta.decree_number || ""),
     date: String(meta.date || meta.issue_date_hijri || meta.decree_date || ""),
-    summary: String(meta.summary || ""),
-    summary_brief: String(meta.summary_brief || ""),
+    summary: summaries.summary,
+    summary_brief: summaries.summary_brief,
     preamble,
     cat: String(meta.cat || meta.section_code || ""),
     articles,
