@@ -75,6 +75,7 @@ import {
   isDocumentTimeoutError,
 } from "@/lib/services/documentService";
 import CaseGraphView from "../../kanban/CaseGraphView";
+import ZipDownloadButton from "@/components/attachments/ZipDownloadButton";
 // Owner decision ١٩ — «ملخص احترافي»: degree, next hearing, final ruling.
 import { ClientCaseSummaryCard } from "@/components/cases/ClientCaseSummaryCard";
 
@@ -351,6 +352,11 @@ export default function BusinessCaseDetailPage() {
                   {downloadError}
                 </div>
               )}
+
+              {/* «تحميل الكل (ZIP)» (owner ٢٥٦) — the same live list this tab shows. */}
+              <div className="mb-4 flex justify-end empty:hidden">
+                <ZipDownloadButton scope="case" id={data.id} sizes={documents.map((d) => d.file_size)} isDark={isDark} />
+              </div>
 
               {documents.length === 0 ? (
                 <div className={`${cardStyle} rounded-3xl p-12 text-center`}>

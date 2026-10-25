@@ -201,7 +201,7 @@ export default function TeamTab() {
                 type="email"
                 value={inviteEmail}
                 onChange={(e) => setInviteEmail(e.target.value)}
-                placeholder="name@nzamy.com"
+                placeholder="name@nezamy.sa"
                 className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl px-3 py-2 text-[12px] text-zinc-200 outline-none focus:border-[#C8A762]"
               />
             </div>

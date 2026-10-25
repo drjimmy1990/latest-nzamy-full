@@ -77,6 +77,30 @@ export function isTrackingPageRoute(method: string, pathname: string): boolean {
   return (method === "GET" || method === "HEAD") && TRACKING_PAGE_RE.test(pathname);
 }
 
+// The client's 4-digit check on a tracking link (D2, owner ٢٧٦). The database
+// locks a link after 5 wrong tries; this pair of buckets caps one visitor
+// walking many links. It is NOT the strict bucket: that one keys on the
+// proxy-resolved IP alone, which may be one Cloudflare edge shared by many
+// clients (see libraryReadClientKey), so the proxy keys it like the tracking
+// page — the visitor key plus a wider per-IP ceiling. POST only.
+export const TRACKING_UNLOCK_RE = /^\/api\/v1\/track\/[^/]+\/unlock$/;
+
+/** True for a POST of /api/v1/track/<one segment>/unlock. */
+export function isTrackingUnlockRoute(method: string, pathname: string): boolean {
+  return method === "POST" && TRACKING_UNLOCK_RE.test(pathname);
+}
+
+// «تحميل الكل (ZIP)» (D3, owner ٢٥٦): one GET reads up to 200 files / 500 MB
+// out of Storage, so it gets its own bucket — the general bucket counts only
+// writes. Keyed like the tracking buckets (visitor key plus a wider per-IP
+// ceiling), for the same shared-edge reason. The exact path only.
+export const ATTACHMENTS_ZIP_RE = /^\/api\/v1\/attachments\/zip$/;
+
+/** True for a GET/HEAD of /api/v1/attachments/zip. */
+export function isAttachmentsZipRoute(method: string, pathname: string): boolean {
+  return (method === "GET" || method === "HEAD") && ATTACHMENTS_ZIP_RE.test(pathname);
+}
+
 /**
  * The key for the library-read bucket. nezamy.sa is served through Cloudflare
  * (Server: cloudflare, CF-RAY on every response, 2026-09-29), and nothing in

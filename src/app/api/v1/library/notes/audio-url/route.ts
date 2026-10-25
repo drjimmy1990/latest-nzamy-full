@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
 import { createServiceClient } from "@/lib/supabase/server";
+import { isPathInOwnerFolder } from "@/lib/storagePathOwnership";
 
 /**
  * GET /api/v1/library/notes/audio-url?page=<id> — a 5-minute signed link
@@ -38,6 +39,14 @@ export async function GET(request: NextRequest) {
 
     const audioPath = (note as { audio_path: string | null } | null)?.audio_path ?? null;
     if (!audioPath) {
+      return NextResponse.json({ url: null });
+    }
+    // The note row is the caller's, but its audio_path is a column he can
+    // write through raw PostgREST ("article notes owner", FOR ALL). Signing
+    // uses the service role, so only a memo in his own folder
+    // (`<uid>/notes/…`, uploadNoteAudio) is signed — never another user's file.
+    if (!isPathInOwnerFolder(audioPath, user.id)) {
+      console.error(`[library/notes/audio-url GET] audio_path outside the caller's folder: user=${user.id} page=${pageId}`);
       return NextResponse.json({ url: null });
     }
 

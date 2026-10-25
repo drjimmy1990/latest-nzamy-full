@@ -112,6 +112,9 @@ export const FIRM_ROUTE_RULES: readonly Rule<AffiliationRole>[] = [
   { path: "/dashboard/firm/consultations", match: "prefix", label: "الاستشارات", allowedRoles: [...FIRM_LEGAL_ROLES, "legal_secretary", "office_admin"] },
   { path: "/dashboard/firm/client-portal", match: "prefix", label: "بوابة العميل", allowedRoles: ["managing_partner", "partner", "office_admin"] },
   { path: "/dashboard/firm/branding", match: "prefix", label: "هوية البوابة", allowedRoles: ["managing_partner", "office_admin"] },
+  // Owner decision ٢٥٦ (D4): the firm letterhead — the same two roles the
+  // database lets manage the firm's vault (can_manage_branding_vault, 63).
+  { path: "/dashboard/firm/letterhead", match: "prefix", label: "الورق المروّس", allowedRoles: ["managing_partner", "office_admin"] },
   { path: "/dashboard/firm/team/roles", match: "prefix", label: "الأدوار والصلاحيات", allowedRoles: ["managing_partner", "office_admin"] },
   { path: "/dashboard/firm/team/timesheets", match: "prefix", label: "سجلات الساعات", allowedRoles: [...FIRM_TEAM_ADMIN_ROLES, "partner", "senior_lawyer"] },
   { path: "/dashboard/firm/team", match: "prefix", label: "فريق المكتب", allowedRoles: FIRM_TEAM_ADMIN_ROLES },

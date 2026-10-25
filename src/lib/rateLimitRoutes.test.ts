@@ -11,6 +11,8 @@ import {
   libraryReadClientKey,
   isTrackingPageRoute,
   isCouponValidateRoute,
+  isTrackingUnlockRoute,
+  isAttachmentsZipRoute,
 } from "./rateLimitRoutes.ts";
 
 // ─── isStrictRateLimitedRoute ────────────────────────────────────────────────
@@ -147,4 +149,25 @@ test("isCouponValidateRoute: POST /api/v1/coupons/validate only — its own buck
   assert.equal(isStrictRateLimitedRoute("POST", "/api/v1/coupons/validate"), false);
   // still in the general bucket too
   assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/coupons/validate"), true);
+});
+
+test("isTrackingUnlockRoute: the tracking link's 4-digit check (D2), POST, one token segment — not the shared-IP strict bucket", () => {
+  const token = "a".repeat(64);
+  assert.equal(isTrackingUnlockRoute("POST", `/api/v1/track/${token}/unlock`), true);
+  assert.equal(isTrackingUnlockRoute("GET", `/api/v1/track/${token}/unlock`), false);
+  assert.equal(isTrackingUnlockRoute("POST", `/api/v1/track/${token}/x/unlock`), false);
+  assert.equal(isTrackingUnlockRoute("POST", `/api/v1/track/${token}`), false);
+  assert.equal(isTrackingUnlockRoute("POST", `/track/${token}/unlock`), false);
+  assert.equal(isStrictRateLimitedRoute("POST", `/api/v1/track/${token}/unlock`), false);
+  assert.equal(isGeneralRateLimitedApiPath("POST", `/api/v1/track/${token}/unlock`), true, "the general write bucket still applies");
+});
+
+test("isAttachmentsZipRoute: the ZIP download (D3), GET and HEAD, the exact path only — its own bucket, not the write bucket", () => {
+  assert.equal(isAttachmentsZipRoute("GET", "/api/v1/attachments/zip"), true);
+  assert.equal(isAttachmentsZipRoute("HEAD", "/api/v1/attachments/zip"), true);
+  assert.equal(isAttachmentsZipRoute("POST", "/api/v1/attachments/zip"), false);
+  assert.equal(isAttachmentsZipRoute("GET", "/api/v1/attachments/zip/x"), false);
+  assert.equal(isAttachmentsZipRoute("GET", "/api/v1/attachments"), false);
+  assert.equal(isAttachmentsZipRoute("GET", "/api/v1/attachments/zipper"), false);
+  assert.equal(isGeneralRateLimitedApiPath("GET", "/api/v1/attachments/zip"), false, "reads are not in the general bucket");
 });

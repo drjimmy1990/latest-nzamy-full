@@ -2,6 +2,7 @@ import { NextResponse, NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
 import { createServiceClient } from "@/lib/supabase/server";
 import { storageObjectHeldByCaseDocument } from "@/lib/services/caseDocumentObject";
+import { isPathInOwnerFolder } from "@/lib/storagePathOwnership";
 import { dbErrorResponse } from "../../../_shared";
 
 /**
@@ -62,7 +63,7 @@ export async function DELETE(_request: NextRequest, context: { params: Promise<{
       .delete()
       .eq("id", vid)
       .eq("contract_id", id)
-      .select("id, storage_path");
+      .select("id, storage_path, uploaded_by");
 
     if (error) {
       console.error("[lawyer/contracts versions DELETE] delete failed:", error.message, error.code);
@@ -70,7 +71,7 @@ export async function DELETE(_request: NextRequest, context: { params: Promise<{
       return NextResponse.json({ error: message }, { status: httpStatus });
     }
 
-    const deletedRow = (deletedRows ?? [])[0] as { id: string; storage_path: string } | undefined;
+    const deletedRow = (deletedRows ?? [])[0] as { id: string; storage_path: string; uploaded_by: string | null } | undefined;
     if (!deletedRow) return NextResponse.json({ error: "النسخة غير موجودة" }, { status: 404 });
 
     // If this was the contract's current version, point it at the newest
@@ -89,7 +90,11 @@ export async function DELETE(_request: NextRequest, context: { params: Promise<{
       const service = await createServiceClient();
       // The path is client-supplied at upload: a case document may point at
       // the same object, and then its bytes stay (caseDocumentObject.ts, N3.9).
-      if (await storageObjectHeldByCaseDocument(service, deletedRow.storage_path)) {
+      if (!isPathInOwnerFolder(deletedRow.storage_path, deletedRow.uploaded_by)) {
+        // Before 20261026_65 a version row could point at anybody's file;
+        // the service role must not remove someone else's object.
+        console.error("[lawyer/contracts versions DELETE] object kept — storage_path is outside the uploader's folder:", vid);
+      } else if (await storageObjectHeldByCaseDocument(service, deletedRow.storage_path)) {
         console.error("[lawyer/contracts versions DELETE] object kept — a case document points at it:", vid);
       } else {
         const { error: removeErr } = await service.storage.from("documents").remove([deletedRow.storage_path]);

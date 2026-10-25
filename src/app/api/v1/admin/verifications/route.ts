@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import type { VerificationStatus } from "@/types/database";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 import { toPracticeKind } from "@/lib/auth/practiceKind";
+import { isOwnLicencePath } from "@/lib/storagePathOwnership";
 
 /**
  * GET /api/v1/admin/verifications — List verification requests
@@ -81,7 +82,7 @@ export async function GET(request: NextRequest) {
   // with 42703, while `*` simply leaves them out (→ null / 'advocate').
   const lawyerRows = (lawyerData ?? []) as Record<string, unknown>[];
   const licenceImageUrls = await Promise.all(
-    lawyerRows.map((lp) => signLicenceImage(adminClient, lp.licence_image_path)),
+    lawyerRows.map((lp) => signLicenceImage(adminClient, lp.licence_image_path, lp.user_id)),
   );
 
   // ── Fetch provider verifications ───────────────────────────────────────────
@@ -210,12 +211,23 @@ export async function GET(request: NextRequest) {
  * A 10-minute signed link to a lawyer's licence image in the private
  * `documents` bucket, or null — no path, an object that is gone, or any
  * signing error. Never throws: one bad row must not 500 the whole queue.
+ *
+ * Only a key in that lawyer's own `licences/<user_id>/` folder is signed —
+ * the shape POST /api/v1/lawyer/licence-image writes. Sessions cannot write
+ * the column (20261019_20, checked again by 20261026_66); this keeps a column
+ * that ever became writable from making an admin's browser open another
+ * user's file through the service role.
  */
 async function signLicenceImage(
   adminClient: Awaited<ReturnType<typeof createServiceClient>>,
   path: unknown,
+  lawyerUserId: unknown,
 ): Promise<string | null> {
   if (typeof path !== "string" || path === "") return null;
+  if (!isOwnLicencePath(path, lawyerUserId)) {
+    console.error("[admin/verifications GET] licence_image_path outside licences/<that lawyer>/ — not signed:", lawyerUserId);
+    return null;
+  }
   try {
     const { data, error } = await adminClient.storage
       .from("documents")

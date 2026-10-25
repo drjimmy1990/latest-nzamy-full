@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { documentsDbErrorResponse, isValidAttachmentId } from "../_shared";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 import { storageObjectHeldByCaseDocument } from "@/lib/services/caseDocumentObject";
+import { isPathInOwnerFolder } from "@/lib/storagePathOwnership";
 
 /**
  * DELETE /api/v1/documents/[id] — soft delete by default; permanent with
@@ -61,7 +62,7 @@ export async function DELETE(
     // only returns rows the caller owns or participates in.
     const { data: doc, error: fetchError } = await supabase
       .from("attachments")
-      .select("id, storage_path, deleted_at, legal_hold, request_id")
+      .select("id, owner_user_id, storage_path, deleted_at, legal_hold, request_id")
       .eq("id", id)
       .maybeSingle();
 
@@ -102,7 +103,14 @@ export async function DELETE(
       if (held) {
         console.error("[documents DELETE permanent] object kept — a case document points at it:", id);
       }
-      if (doc.storage_path && !held) {
+      // Only the uploader's own object is removed (service role): before
+      // 20261026_65 a vault row could be re-pointed at anybody's file, and
+      // this delete would then destroy it. Such a row goes; the bytes stay.
+      const ownObject = isPathInOwnerFolder(doc.storage_path, doc.owner_user_id);
+      if (doc.storage_path && !ownObject) {
+        console.error("[documents DELETE permanent] object kept — storage_path is outside the owner's folder:", id);
+      }
+      if (doc.storage_path && !held && ownObject) {
         const { error: removeError } = await admin.storage.from("documents").remove([doc.storage_path]);
         if (removeError) {
           // Logged, not fatal: an orphaned storage object is this codebase's

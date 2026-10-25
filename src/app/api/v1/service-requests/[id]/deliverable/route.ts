@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { mayDownloadRequestFiles } from "@/lib/requestFileAccess";
+import { isPathInOwnerFolder } from "@/lib/storagePathOwnership";
 
 /**
  * GET /api/v1/service-requests/[id]/deliverable
@@ -33,10 +35,9 @@ export async function GET(
   const { data: profile } = await admin
     .from("profiles").select("user_type").eq("id", user.id).single();
 
-  const allowed =
-    order.requester_user_id === user.id ||
-    order.assigned_to === user.id ||
-    profile?.user_type === "admin";
+  // requester / assignee / admin — shared with the ZIP route (attachments/zip)
+  // so the two answers cannot drift apart.
+  const allowed = mayDownloadRequestFiles(order, user.id, profile?.user_type as string | undefined);
 
   if (!allowed) return NextResponse.json({ error: "غير مصرح" }, { status: 403 });
 
@@ -69,7 +70,7 @@ export async function GET(
 
   const { data: attachment } = await admin
     .from("attachments")
-    .select("request_id, storage_path, file_name")
+    .select("request_id, owner_user_id, storage_path, file_name")
     .eq("id", deliverable.documentId)
     .maybeSingle();
 
@@ -92,6 +93,15 @@ export async function GET(
   if (attachment.request_id !== id) {
     console.error(
       `[deliverable] attachment/order mismatch: order=${id} documentId=${deliverable.documentId} attachment.request_id=${attachment.request_id}`,
+    );
+    return NextResponse.json(NO_DOCUMENT, { status: 404 });
+  }
+
+  // The file must sit in its uploader's own folder — see the same check in
+  // attachments/[attachmentId]/route.ts (security review 2026-10-26, finding 1).
+  if (!isPathInOwnerFolder(attachment.storage_path, attachment.owner_user_id)) {
+    console.error(
+      `[deliverable] storage_path outside the owner's folder: order=${id} documentId=${deliverable.documentId}`,
     );
     return NextResponse.json(NO_DOCUMENT, { status: 404 });
   }

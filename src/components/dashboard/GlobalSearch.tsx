@@ -102,7 +102,7 @@ function ContentTypeIcon({ type }: { type: PersonalContentKind }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export function GlobalSearch() {
   const { isDark, lang } = useTheme();
-  const { userType: sessionUserType, subRole, active_roles, governmentRole, businessRole, businessMembership, affiliation, isDemoBypass, dashboardMode, country, practiceKind, staffRole } = useUser();
+  const { userType: sessionUserType, subRole, active_roles, governmentRole, businessRole, businessMembership, affiliation, isDemoBypass, country, practiceKind, staffRole } = useUser();
   const pathname = usePathname() ?? "/";
   const isAr = lang === "ar";
   const router = useRouter();
@@ -134,7 +134,7 @@ export function GlobalSearch() {
   // Gather all tools for this user — the same list as the sidebar, so a
   // consultant (Art. 18) finds no pleading or hearings tool here either, and
   // an admin only the tools of their staff role (owner ٢١٠).
-  const groups = getSidebarByUserType(userType, dashboardMode, subRole, active_roles ?? [], governmentRole, businessRole, affiliation?.role, isDemoBypass, country, practiceKind, staffRole);
+  const groups = getSidebarByUserType(userType, "full", subRole, active_roles ?? [], governmentRole, businessRole, affiliation?.role, isDemoBypass, country, practiceKind, staffRole);
   const allTools = extractTools(groups, hasClientGroup);
 
   // ── The account's own content ─────────────────────────────────────────────

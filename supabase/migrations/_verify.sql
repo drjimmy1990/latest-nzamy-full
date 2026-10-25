@@ -4236,3 +4236,286 @@ begin
   raise notice '_verify: 20261026_20 OK — coupons and coupon_usage are server only; 25 %% cap and top-up exclusion hold; once per user / once per order / one open order per (buyer, coupon) guarded; used_count follows coupon_usage; the owner''s two codes received his rules';
 end $$;
 -- <<< verify:coupons_server_only
+
+-- >>> verify:tracking_links_v2 — supabase/tests/rls/tracking_links_v2.test.sql
+-- 2026-10-26 — 20261026_62_tracking_links_v2.sql (D2, owner ٢٧٦). Read-only,
+-- safe to repeat. Before _62 runs it only reports; after, it raises when the
+-- lifetime / pause / wrong-count / epoch columns or the born, epoch, stage or
+-- phone triggers are missing, the 'locked' pause is not allowed, the gate or
+-- the unlock does not answer jsonb (state + unlock epoch), sessions can write
+-- a state column directly, the phone digits or the unlock are callable by a
+-- session, or the snapshot lost its state gate (20261025_32 re-run after
+-- 20261026_62 puts the v1 snapshot back).
+do $$
+declare r text; c text;
+begin
+  if to_regclass('public.case_tracking_links') is null then
+    raise notice '_verify: 20261026_62 waits for 20261025_32 (no case_tracking_links yet)';
+    return;
+  end if;
+  if not exists (select 1 from pg_attribute where attrelid = 'public.case_tracking_links'::regclass
+                  and attname = 'paused_reason' and not attisdropped) then
+    raise notice '_verify: 20261026_62 is not applied yet — tracking links have no lifetime, no pause and no 4-digit check, and the new code shows every /track link as unavailable until it runs; run 62_BEFORE_DEPLOY_20261026_62_tracking_links_v2.sql';
+    return;
+  end if;
+  foreach c in array array['lifetime', 'expires_at', 'stage_id', 'paused_at', 'failed_attempts', 'locked_until',
+                           'wrong_total', 'unlock_epoch', 'paused_by'] loop
+    if not exists (select 1 from pg_attribute where attrelid = 'public.case_tracking_links'::regclass and attname = c and not attisdropped) then
+      raise exception '_verify: case_tracking_links.% is missing (re-run 20261026_62)', c;
+    end if;
+  end loop;
+  foreach c in array array['trg_case_tracking_links_born:public.case_tracking_links',
+                           'trg_case_tracking_links_epoch:public.case_tracking_links',
+                           'trg_case_stages_end_tracking_links:public.case_stages',
+                           'trg_lawyer_clients_tracking_phone:public.lawyer_clients',
+                           'trg_profiles_tracking_phone:public.profiles',
+                           'trg_service_requests_tracking_phone:public.service_requests'] loop
+    if not exists (select 1 from pg_trigger where tgname = split_part(c, ':', 1)
+                     and tgrelid = to_regclass(split_part(c, ':', 2)) and not tgisinternal) then
+      raise exception '_verify: trigger % is missing — links could be born paused, keep old unlocks, or outlive their stage (re-run 20261026_62)', c;
+    end if;
+  end loop;
+  if coalesce((select pg_get_constraintdef(oid) from pg_constraint
+                where conrelid = 'public.case_tracking_links'::regclass and conname = 'case_tracking_links_paused_shape'), '')
+       not like '%''locked''%' then
+    raise exception '_verify: case_tracking_links_paused_shape does not allow the ''locked'' pause — 20 wrong tries would fail instead of pausing (re-run 20261026_62)';
+  end if;
+  foreach r in array array['public.case_tracking_gate(text)', 'public.case_tracking_unlock(text, text)'] loop
+    if to_regprocedure(r) is null or pg_get_function_result(to_regprocedure(r)) is distinct from 'jsonb' then
+      raise exception '_verify: % is missing or does not answer jsonb — the /track page shows every link as unavailable (re-run 20261026_62)', r;
+    end if;
+  end loop;
+  foreach c in array array['lifetime', 'expires_at', 'stage_id', 'paused_at', 'paused_reason', 'failed_attempts', 'locked_until', 'token_hash',
+                           'wrong_total', 'unlock_epoch', 'paused_by'] loop
+    if has_column_privilege('authenticated', 'public.case_tracking_links', c, 'UPDATE') then
+      raise exception '_verify: sessions can UPDATE case_tracking_links.% directly (re-run 20261026_62)', c;
+    end if;
+  end loop;
+  foreach c in array array['wrong_total', 'unlock_epoch'] loop
+    if has_column_privilege('authenticated', 'public.case_tracking_links', c, 'SELECT') then
+      raise exception '_verify: sessions can read case_tracking_links.% (re-run 20261026_62)', c;
+    end if;
+  end loop;
+  foreach r in array array['public.case_client_phone_last4(text)', 'public.case_tracking_gate(text)',
+                           'public.case_tracking_unlock(text, text)', 'public.tracking_link_state(uuid)',
+                           'public.tracking_link_may_resume(uuid, uuid)'] loop
+    if to_regprocedure(r) is null or has_function_privilege('authenticated', r, 'EXECUTE') or has_function_privilege('anon', r, 'EXECUTE') then
+      raise exception '_verify: % is missing or callable by sessions (re-run 20261026_62)', r;
+    end if;
+  end loop;
+  if has_function_privilege('service_role', 'public.case_client_phone_last4(text)', 'EXECUTE') then
+    raise exception '_verify: the service role can read the client''s phone digits (re-run 20261026_62)';
+  end if;
+  foreach r in array array['public.case_tracking_gate(text)', 'public.case_tracking_unlock(text, text)'] loop
+    if not has_function_privilege('service_role', r, 'EXECUTE') then
+      raise exception '_verify: service_role cannot EXECUTE % — every /track page fails (re-run 20261026_62)', r;
+    end if;
+  end loop;
+  foreach r in array array['public.tracking_link_pause(uuid)', 'public.tracking_link_resume(uuid, text)',
+                           'public.case_tracking_link_states(text)', 'public.case_tracking_has_phone(text)'] loop
+    if to_regprocedure(r) is null or not has_function_privilege('authenticated', r, 'EXECUTE') or has_function_privilege('anon', r, 'EXECUTE') then
+      raise exception '_verify: % is missing, not callable by sessions, or open to guests (re-run 20261026_62)', r;
+    end if;
+  end loop;
+  if coalesce((select prosrc from pg_proc where oid = to_regprocedure('public.case_tracking_snapshot(text)')), '')
+       not like '%tracking_link_state(v_link.id)%' then
+    raise exception '_verify: case_tracking_snapshot lost the pause / expiry gate — 20261025_32 was re-run after 20261026_62; re-run 20261026_62';
+  end if;
+  raise notice '_verify: 20261026_62 OK — tracking links: lifetimes (a stage link pauses with its stage), pause not delete, resume by maker or issuer (a manual pause: maker, pauser or lead), 4-digit unlock service-only with a pause at 20 wrong, unlock epoch on pause / resume / phone change, phone digits readable by no role, snapshot shows active links only';
+end $$;
+-- <<< verify:tracking_links_v2
+
+-- >>> verify:branding_vault — supabase/tests/rls/branding_vault.test.sql
+-- 2026-10-26 — 20261026_63_branding_vault.sql (D4, owner ٢٥٦) and the
+-- hand-applied supabase/storage_policies_branding.sql. Read-only, safe to
+-- repeat. Before 63 runs it only reports; after, it raises when RLS is off,
+-- the policy set changed (a DELETE / ALL policy, or not exactly 3), guests
+-- hold anything, sessions can write logo_path or the owner columns or delete
+-- a vault, the two helpers are not definer / not callable by sessions /
+-- callable by guests, or the bucket is public or accepts more than
+-- png/jpeg/webp up to 1 MB. The four Storage policies are a manual step
+-- (supabase_admin), so their absence is a WARNING.
+do $$
+declare r text; c text;
+begin
+  if to_regclass('public.branding_vaults') is null then
+    raise notice '_verify: 20261026_63 is not applied yet — the letterhead pages show «يتطلب تحديث قاعدة البيانات» and save nothing; run 63_BEFORE_DEPLOY_20261026_63_branding_vault.sql, then 64_AFTER_63_storage_policies_branding.sql as supabase_admin';
+    return;
+  end if;
+  if not (select relrowsecurity from pg_class where oid = 'public.branding_vaults'::regclass) then
+    raise exception '_verify: RLS is off on branding_vaults (re-run 20261026_63)';
+  end if;
+  if (select count(*) from pg_policy where polrelid = 'public.branding_vaults'::regclass) <> 3
+     or exists (select 1 from pg_policy where polrelid = 'public.branding_vaults'::regclass and polcmd in ('d', '*')) then
+    raise exception '_verify: branding_vaults does not carry exactly the 3 policies of 20261026_63 (re-run 20261026_63)';
+  end if;
+  foreach c in array array['SELECT', 'INSERT', 'UPDATE', 'DELETE'] loop
+    if has_table_privilege('anon', 'public.branding_vaults', c) then
+      raise exception '_verify: guests hold % on branding_vaults (re-run 20261026_63)', c;
+    end if;
+  end loop;
+  if has_table_privilege('authenticated', 'public.branding_vaults', 'DELETE') then
+    raise exception '_verify: sessions can DELETE a branding vault (re-run 20261026_63)';
+  end if;
+  foreach c in array array['logo_path', 'lawyer_user_id', 'firm_id'] loop
+    if has_column_privilege('authenticated', 'public.branding_vaults', c, 'UPDATE') then
+      raise exception '_verify: sessions can UPDATE branding_vaults.% — a vault could point at another owner''s logo (re-run 20261026_63)', c;
+    end if;
+  end loop;
+  if has_column_privilege('authenticated', 'public.branding_vaults', 'logo_path', 'INSERT') then
+    raise exception '_verify: sessions can INSERT branding_vaults.logo_path (re-run 20261026_63)';
+  end if;
+  foreach r in array array['public.can_manage_branding_vault(uuid, uuid)', 'public.can_manage_branding_object(text)'] loop
+    if to_regprocedure(r) is null
+       or not (select prosecdef from pg_proc where oid = to_regprocedure(r))
+       or not has_function_privilege('authenticated', r, 'EXECUTE')
+       or has_function_privilege('anon', r, 'EXECUTE') then
+      raise exception '_verify: % is missing, not SECURITY DEFINER, not callable by sessions, or open to guests (re-run 20261026_63)', r;
+    end if;
+  end loop;
+  if to_regclass('storage.buckets') is not null then
+    if not exists (select 1 from storage.buckets where id = 'branding') then
+      raise warning '_verify: 20261026_63 — the bucket «branding» is missing; logo uploads fail. Run 64_AFTER_63_storage_policies_branding.sql as supabase_admin.';
+    elsif exists (select 1 from storage.buckets where id = 'branding'
+                   and (public or coalesce(file_size_limit, 0) = 0 or file_size_limit > 1048576
+                        or allowed_mime_types is null
+                        or not (allowed_mime_types <@ array['image/png', 'image/jpeg', 'image/webp']))) then
+      raise exception '_verify: bucket «branding» is public, has no 1 MB limit, or accepts more than png/jpeg/webp (re-run 20261026_63 or storage_policies_branding.sql)';
+    end if;
+  end if;
+  if to_regclass('storage.objects') is not null
+     and (select count(*) from pg_policy p
+           where p.polrelid = 'storage.objects'::regclass
+             and p.polname in ('branding select own', 'branding insert own', 'branding update own', 'branding delete own')
+             and (coalesce(pg_get_expr(p.polqual, p.polrelid), '') || ' ' || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), ''))
+                 ~ 'can_manage_branding_object') <> 4 then
+    raise warning '_verify: 20261026_63 — the four owner-only Storage policies of bucket «branding» are not all there. The app still works (its routes use the service role after an RLS check), but a session calling the Storage API directly is not confined. Run 64_AFTER_63_storage_policies_branding.sql as supabase_admin.';
+  end if;
+  raise notice '_verify: 20261026_63 OK — branding vaults: one lawyer or one firm per row, read/write by the lawyer or the firm''s owner / managing partner / office admin only, logo_path server-only, no session delete, private bucket branding (1 MB, png/jpeg/webp)';
+end $$;
+-- <<< verify:branding_vault
+
+-- >>> verify:attachments_path_ownership — supabase/tests/rls/attachments_path_ownership.test.sql
+-- 2026-10-26 — 20261026_65_attachments_path_ownership.sql (security review,
+-- finding 1). Read-only, safe to repeat. Before 65 runs it only reports (the
+-- hole is open); after, it raises when a session guard trigger is missing,
+-- disabled, DEFINER or not the first BEFORE trigger, when attachments carries
+-- any INSERT policy but 65's own, or when the helpers are missing / open to
+-- guests. Rows written before 65 whose file is outside the writer's folder
+-- are a WARNING (the routes no longer serve them; worth a look).
+do $$
+declare t text; first_before text; n int; r text;
+begin
+  if to_regprocedure('public.guard_attachment_session_writes()') is null then
+    raise notice '_verify: 20261026_65 is not applied yet — a session can still register an attachments / contract_versions row pointing at another user''s file, which the download routes then sign with the service role. Run 65_BEFORE_DEPLOY_20261026_65_attachments_path_ownership.sql';
+    return;
+  end if;
+  foreach t in array array['public.attachments', 'public.contract_versions'] loop
+    if to_regclass(t) is null then continue; end if;
+    select tg.tgname into first_before
+      from pg_trigger tg
+     where tg.tgrelid = t::regclass and not tg.tgisinternal and (tg.tgtype & 2) = 2 and tg.tgenabled <> 'D'
+     order by tg.tgname limit 1;
+    if first_before is distinct from (case t when 'public.attachments' then 'trg_00_attachments_session_guard'
+                                             else 'trg_00_contract_versions_session_guard' end) then
+      raise exception '_verify: the path-ownership guard on % is missing, disabled or not the first BEFORE trigger (first: %) (re-run 20261026_65)', t, first_before;
+    end if;
+  end loop;
+  if exists (select 1 from pg_proc where proname in ('guard_attachment_session_writes', 'guard_contract_version_session_writes')
+              and pronamespace = 'public'::regnamespace and prosecdef) then
+    raise exception '_verify: a path-ownership guard is SECURITY DEFINER — it would let every session through (re-run 20261026_65)';
+  end if;
+  select count(*) into n from pg_policy where polrelid = 'public.attachments'::regclass and polcmd = 'a';
+  if n <> 1 or not exists (select 1 from pg_policy where polrelid = 'public.attachments'::regclass
+                            and polname = 'attachments insert own file on own request') then
+    raise exception '_verify: public.attachments carries % INSERT policies — an old one is back (re-run 20261026_65)', n;
+  end if;
+  foreach r in array array['public.storage_path_in_folder(text, uuid)', 'public.can_attach_to_request(text)'] loop
+    if to_regprocedure(r) is null
+       or not has_function_privilege('authenticated', r, 'EXECUTE')
+       or has_function_privilege('anon', r, 'EXECUTE') then
+      raise exception '_verify: % is missing, not callable by sessions, or open to guests (re-run 20261026_65)', r;
+    end if;
+  end loop;
+  select count(*) into n from public.attachments a where not public.storage_path_in_folder(a.storage_path, a.owner_user_id);
+  if n > 0 then
+    raise warning '_verify: 20261026_65 — % attachments row(s) point outside their owner''s folder; the download routes no longer serve them. List: select id, request_id, owner_user_id, storage_path, created_at from public.attachments where not public.storage_path_in_folder(storage_path, owner_user_id);', n;
+  end if;
+  if to_regclass('public.contract_versions') is not null then
+    select count(*) into n from public.contract_versions v where not public.storage_path_in_folder(v.storage_path, v.uploaded_by);
+    if n > 0 then
+      raise warning '_verify: 20261026_65 — % contract_versions row(s) point outside their uploader''s folder (or the uploader''s account is gone); the download routes no longer serve them.', n;
+    end if;
+  end if;
+  raise notice '_verify: 20261026_65 OK — attachments / contract_versions written by a session stay in the writer''s own folder, attachments only on a request the caller filed or is assigned to, file / uploader / request fixed after insert';
+end $$;
+-- <<< verify:attachments_path_ownership
+
+-- >>> verify:document_shares_path_ownership — supabase/tests/rls/document_shares_path_ownership.test.sql
+-- 2026-10-26 — 20261026_66_document_shares_path_ownership.sql (security
+-- review, the document_shares half of finding 1). Read-only, safe to repeat.
+-- Before 66 runs it only reports (the hole is open); after, it raises when the
+-- session guard is missing, disabled, DEFINER or not the first BEFORE trigger,
+-- when the FOR ALL owner_write policy is back or document_shares carries any
+-- INSERT policy but 66's own, when can_share_attachment is missing / open to
+-- guests, or when a session can write lawyer_profiles.licence_image_path.
+-- Live shares that fail the rule are a WARNING (most likely a forged row).
+do $$
+declare first_before text; n int; r text;
+begin
+  if to_regclass('public.document_shares') is null then
+    raise notice '_verify: 20261026_66 — public.document_shares does not exist here; nothing to check';
+    return;
+  end if;
+  if to_regprocedure('public.guard_document_share_session_writes()') is null then
+    raise notice '_verify: 20261026_66 is not applied yet — a session can still insert a document_shares row with any document_path, which /api/v1/share/[token]/verify signs with the service role. Run 66_NOW_20261026_66_document_shares_path_ownership.sql';
+    return;
+  end if;
+  select tg.tgname into first_before
+    from pg_trigger tg
+   where tg.tgrelid = 'public.document_shares'::regclass and not tg.tgisinternal and (tg.tgtype & 2) = 2 and tg.tgenabled <> 'D'
+   order by tg.tgname limit 1;
+  if first_before is distinct from 'trg_00_document_shares_session_guard' then
+    raise exception '_verify: the share guard on public.document_shares is missing, disabled or not the first BEFORE trigger (first: %) (re-run 20261026_66)', first_before;
+  end if;
+  if (select prosecdef from pg_proc where oid = 'public.guard_document_share_session_writes()'::regprocedure) then
+    raise exception '_verify: the share guard is SECURITY DEFINER — it would let every session through (re-run 20261026_66)';
+  end if;
+  if exists (select 1 from pg_policy where polrelid = 'public.document_shares'::regclass and polname = 'document_shares_owner_write') then
+    raise exception '_verify: the FOR ALL policy document_shares_owner_write is back on public.document_shares (re-run 20261026_66)';
+  end if;
+  select count(*) into n from pg_policy where polrelid = 'public.document_shares'::regclass and polcmd = 'a';
+  if n <> 1 or not exists (select 1 from pg_policy where polrelid = 'public.document_shares'::regclass
+                            and polname = 'document_shares insert own share of own file') then
+    raise exception '_verify: public.document_shares carries % INSERT policies — an old one is back (re-run 20261026_66)', n;
+  end if;
+  r := 'public.can_share_attachment(text, text)';
+  if to_regprocedure(r) is null
+     or not (select prosecdef from pg_proc where oid = to_regprocedure(r))
+     or not has_function_privilege('authenticated', r, 'EXECUTE')
+     or has_function_privilege('anon', r, 'EXECUTE') then
+    raise exception '_verify: % is missing, not DEFINER, not callable by sessions, or open to guests (re-run 20261026_66)', r;
+  end if;
+  if exists (select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'lawyer_profiles' and column_name = 'licence_image_path') then
+    foreach r in array array['anon', 'authenticated'] loop
+      if has_column_privilege(r, 'public.lawyer_profiles', 'licence_image_path', 'INSERT, UPDATE') then
+        raise exception '_verify: % can write lawyer_profiles.licence_image_path — the admin queue signs it with the service role (re-run 20261016_10, then 20261019_20)', r;
+      end if;
+    end loop;
+  end if;
+  select count(*) into n
+    from public.document_shares s
+   where (s.expires_at is null or s.expires_at > now())
+     and not exists (select 1 from public.attachments a
+                      where a.id::text = s.document_id
+                        and a.storage_path = s.document_path
+                        and a.owner_user_id = s.owner_id
+                        and a.deleted_at is null
+                        and public.storage_path_in_folder(a.storage_path, a.owner_user_id));
+  if n > 0 then
+    raise warning '_verify: 20261026_66 — % live document_shares row(s) do not point at a live document of their own owner, in his folder (most likely forged; the deployed verify route refuses them). List: select s.id, s.owner_id, s.document_id, s.document_path, s.created_at, s.expires_at from public.document_shares s where (s.expires_at is null or s.expires_at > now()) and not exists (select 1 from public.attachments a where a.id::text = s.document_id and a.storage_path = s.document_path and a.owner_user_id = s.owner_id and a.deleted_at is null and public.storage_path_in_folder(a.storage_path, a.owner_user_id));', n;
+  end if;
+  raise notice '_verify: 20261026_66 OK — document_shares written by a session: own share of an own live document in its own folder, hash-only, owner / document / file / token fixed; licence_image_path not writable by a session';
+end $$;
+-- <<< verify:document_shares_path_ownership
