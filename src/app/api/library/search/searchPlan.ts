@@ -744,6 +744,17 @@ export function nizamTitleFor(rawQuery: string): string | null {
 }
 
 /**
+ * Most numeral-script forms of one query: as typed, Western 0-9, Arabic-Indic
+ * ٠-٩. Each form past the first adds up to 4 law-title lookups in
+ * lawTitleHits (contains, prefix, «نظام …» equality, stems), so this cap is
+ * what bounds that fan-out: ≤ 6 lookups without digits, ≤ 14 with — all in
+ * one Promise.allSettled, i.e. one round of wall time against the ~3s anon
+ * statement timeout. Typing in one script gives 2 forms (+4 lookups); only
+ * mixed or Extended Arabic-Indic (۰-۹) input reaches 3 (+8).
+ */
+export const MAX_TITLE_DIGIT_VARIANTS = 3;
+
+/**
  * Distinct numeral-script variants of a raw query (typed first, then Western
  * 0-9 and Arabic-Indic ٠-٩) so ILIKE / equality title lookups match across
  * numeral scripts without changing non-digit queries.
@@ -754,7 +765,7 @@ export function titleDigitVariantQueries(rawQuery: string): string[] {
   for (const v of [rawQuery, toWesternDigits(rawQuery), toArabicIndicDigits(rawQuery)]) {
     if (!out.includes(v)) out.push(v);
   }
-  return out;
+  return out.slice(0, MAX_TITLE_DIGIT_VARIANTS);
 }
 
 /** Reorder rows to follow `ids` (the ranked order); rows whose id is not listed are dropped. */

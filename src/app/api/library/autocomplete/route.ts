@@ -59,7 +59,12 @@ export async function GET(request: Request) {
       .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG })
       .abortSignal(signal);
 
-    // Run all queries in parallel for speed
+    // Run all queries in parallel for speed. Round trips per request: 4 counts
+    // + law titles (≤ 6 lookups, ≤ 14 when the query has digits — see
+    // MAX_TITLE_DIGIT_VARIANTS — plus 1 full-text fallback, run after them,
+    // when fewer than 2 title hits)
+    // + 1 principles + 1 decrees + 1 book titles + 1 collection titles.
+    // Without digits ≤ 15 (was ≤ 14 before collection titles); with ≤ 23.
     const [lawsCount, precedentsCount, ordersCount, feqhCount, topLaws, topPrecedents, topOrders, topBooks, topCollections] = await Promise.all([
       count('articles', serverOnly),
       count('principles', serverOnly),

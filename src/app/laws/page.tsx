@@ -8,6 +8,7 @@ import { withoutLeadingHeadings } from "./components/summaryClamp";
 import { groupLawSearchCards } from "./lawSearchGroups";
 import { courtBadge } from "./principleCardFields";
 import { realPrincipleNumber } from "./principleLink";
+import { highlightSearchHtml as highlightText } from "./highlightSearchHtml";
 import {
   MagnifyingGlass, Faders, CaretDown, Check,
 } from "@phosphor-icons/react";
@@ -815,41 +816,8 @@ export default function LegalLibraryPage() {
     return results.slice(0, 6);
   })() : [];
 
-  // Highlight utility. Its output goes to dangerouslySetInnerHTML, so every
-  // text slice is HTML-escaped individually while matching folds Arabic
-  // letters and bidirectional numerals (٠-٩ ↔ 0-9) on the raw text first.
-  function highlightText(text: string, term: string): string {
-    const escapeHtml = (s: string) =>
-      s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
-    if (!term || term.length < 2) return escapeHtml(text);
-    const nTerm = normalizeSearch(term);
-    if (!nTerm) return escapeHtml(text);
-    const DIGIT_CLASSES = [
-      "[0٠۰]", "[1١۱]", "[2٢۲]", "[3٣۳]", "[4٤۴]",
-      "[5٥۵]", "[6٦۶]", "[7٧۷]", "[8٨۸]", "[9٩۹]",
-    ];
-    const pattern = Array.from(nTerm)
-      .map((ch) => {
-        if (ch === "ا") return "[اأإآ]";
-        if (ch === "ه") return "[هة]";
-        if (ch === "ي") return "[يى]";
-        if (ch >= "0" && ch <= "9") return DIGIT_CLASSES[Number(ch)];
-        return ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      })
-      .join("[ً-ْٰـ]*");
-    const regex = new RegExp(pattern, "gi");
-    let out = "";
-    let last = 0;
-    let m: RegExpExecArray | null;
-    while ((m = regex.exec(text)) !== null) {
-      if (m[0].length === 0) { regex.lastIndex += 1; continue; }
-      if (m.index > last) out += escapeHtml(text.slice(last, m.index));
-      out += `<mark class="bg-yellow-300/80 text-yellow-900 rounded px-0.5">${escapeHtml(m[0])}</mark>`;
-      last = m.index + m[0].length;
-    }
-    if (last < text.length) out += escapeHtml(text.slice(last));
-    return out || escapeHtml(text);
-  }
+  // Highlight utility (./highlightSearchHtml): its output goes to
+  // dangerouslySetInnerHTML, so every slice is HTML-escaped there.
 
   // Helper to map principle sourceId to judicial track
   function matchesPrecTrack(sourceId: string, track: string): boolean {

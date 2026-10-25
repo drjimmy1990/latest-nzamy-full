@@ -115,6 +115,9 @@ export async function fetchLawTitleHitsChecked(
     lookups.push(q.order('title').order('slug').limit(CANDIDATES_PER_QUERY));
   }
 
+  // Round trips: the lookups above are ≤ 6; each extra numeral form adds ≤ 4,
+  // and titleDigitVariantQueries returns ≤ MAX_TITLE_DIGIT_VARIANTS (3) forms,
+  // so ≤ 14 lookups in all — one parallel round (Promise.allSettled below).
   for (const altRaw of titleDigitVariantQueries(opts.rawQuery).slice(1)) {
     const altContains = titlePhrasePattern(altRaw);
     const altPrefix = titlePrefixPattern(altRaw);

@@ -1,6 +1,14 @@
 import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import {
+  checkFolderName,
+  checkFolderPatch,
+  folderColorOrDefault,
+  folderIconOrDefault,
+  isUuid,
+  readJsonObject,
+} from './validate';
 
 /**
  * GET /api/library/folders — List user's smart folders
@@ -13,6 +21,8 @@ import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
  * `user_id = user.id` ownership filters on every query because live
  * `library` table-level grants only gave `authenticated` SELECT (no INSERT,
  * UPDATE, or DELETE), which broke «حفظ في مجلداتي» with 42501.
+ * Because RLS no longer guards these writes, every body field is checked in
+ * ./validate (name 1–80, colour #RRGGBB, icon ≤ 8, ids are UUIDs).
  */
 
 export async function GET() {
@@ -59,12 +69,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const body = await request.json();
-    const rawName = typeof body?.name === 'string' ? body.name.trim() : '';
-    const { color, icon } = body ?? {};
-
-    if (!rawName) {
-      return NextResponse.json({ error: 'name is required' }, { status: 400 });
+    const body = await readJsonObject(request);
+    if (!body) {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    }
+    const name = checkFolderName(body.name);
+    if (!name.ok) {
+      return NextResponse.json({ error: name.error }, { status: 400 });
     }
 
     const serverOnly = await createServiceClient();
@@ -74,9 +85,9 @@ export async function POST(request: Request) {
       .from('smart_folders')
       .insert({
         user_id: user.id,
-        name: rawName,
-        color: color || '#C8A762',
-        icon: icon || '📁',
+        name: name.value,
+        color: folderColorOrDefault(body.color),
+        icon: folderIconOrDefault(body.icon),
       })
       .select()
       .single();
@@ -103,21 +114,15 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const body = await request.json();
-    const { folderId, name, color, icon, isPinned } = body ?? {};
-
-    if (!folderId) {
-      return NextResponse.json({ error: 'folderId is required' }, { status: 400 });
+    const body = await readJsonObject(request);
+    if (!body) {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
     }
-    if (isPinned !== undefined && typeof isPinned !== 'boolean') {
-      return NextResponse.json({ error: 'قيمة التثبيت يجب أن تكون true أو false' }, { status: 400 });
+    const patch = checkFolderPatch(body);
+    if (!patch.ok) {
+      return NextResponse.json({ error: patch.error }, { status: 400 });
     }
-
-    const updates: Record<string, unknown> = {};
-    if (typeof name === 'string' && name.trim()) updates.name = name.trim();
-    if (color) updates.color = color;
-    if (icon) updates.icon = icon;
-    if (isPinned !== undefined) updates.is_pinned = isPinned;
+    const { folderId, updates } = patch.value;
 
     const serverOnly = await createServiceClient();
 
@@ -128,11 +133,15 @@ export async function PATCH(request: Request) {
       .eq('id', folderId)
       .eq('user_id', user.id)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) {
       console.error('[Folders PATCH] Error:', error);
       return NextResponse.json({ error: 'Failed to update folder' }, { status: 500 });
+    }
+    if (!folder) {
+      // Not this user's folder (or gone) — same answer either way.
+      return NextResponse.json({ error: 'Folder not found' }, { status: 404 });
     }
 
     return NextResponse.json({ folder });
@@ -152,11 +161,14 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const serverOnly = await createServiceClient();
-
     const { searchParams } = new URL(request.url);
     const folderId = searchParams.get('folderId');
     const itemId = searchParams.get('itemId');
+    if ((itemId !== null && !isUuid(itemId)) || (itemId === null && folderId !== null && !isUuid(folderId))) {
+      return NextResponse.json({ error: 'folderId / itemId must be an id' }, { status: 400 });
+    }
+
+    const serverOnly = await createServiceClient();
 
     if (itemId) {
       // IDOR guard: verify the item belongs to a smart_folder owned by this user

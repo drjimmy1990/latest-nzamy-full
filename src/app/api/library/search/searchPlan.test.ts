@@ -36,6 +36,7 @@ import {
   foldLettersForIlike,
   titlePrefixPattern,
   titleDigitVariantQueries,
+  MAX_TITLE_DIGIT_VARIANTS,
   titleStemPatterns,
   uncountedPage,
   type LawTitleCandidate,
@@ -503,4 +504,24 @@ test("titleDigitVariantQueries emits typed, Western and Arabic-Indic query forms
   assert.deepEqual(titleDigitVariantQueries("نظام العمل"), ["نظام العمل"]);
   assert.deepEqual(titleDigitVariantQueries("قرار ١٤٤٥"), ["قرار ١٤٤٥", "قرار 1445"]);
   assert.deepEqual(titleDigitVariantQueries("قرار 1445"), ["قرار 1445", "قرار ١٤٤٥"]);
+});
+
+test("digit variants are capped (bounded title-lookup fan-out) and keep the ILIKE allow-list", () => {
+  assert.equal(MAX_TITLE_DIGIT_VARIANTS, 3);
+  // Mixed scripts and Extended Arabic-Indic are the only inputs that reach 3.
+  assert.deepEqual(titleDigitVariantQueries("قرار ١٤٤5"), ["قرار ١٤٤5", "قرار 1445", "قرار ١٤٤٥"]);
+  assert.deepEqual(titleDigitVariantQueries("م/۱۴"), ["م/۱۴", "م/14", "م/١٤"]);
+  for (const q of ["قرار ١٤٤5", "م/۱۴", "1445", "٢٠ لعام ١٤٤٣", "نظام العمل 1"]) {
+    assert.ok(titleDigitVariantQueries(q).length <= MAX_TITLE_DIGIT_VARIANTS, q);
+  }
+  // A variant only swaps digits, so it passes the same ILIKE allow-list as the
+  // query itself: filter syntax gets no title pattern in any script.
+  for (const q of ["1445%", "1445_", "1445*", "1445,id.eq.x", "(1445)", "1445\\", "١٤٤٥.", "1445 نظام"]) {
+    const typed = titlePhrasePattern(q);
+    for (const v of titleDigitVariantQueries(q)) {
+      assert.equal(titlePhrasePattern(v) === null, typed === null, `${q} → ${v}`);
+      const pat = titlePhrasePattern(v);
+      if (pat) assert.match(pat.slice(1, -1), /^[\p{L}\p{N} _]+$/u, v);
+    }
+  }
 });

@@ -566,6 +566,9 @@ export async function POST(request: Request) {
       const { from, size } = window('precedents');
       const signal = AbortSignal.timeout(SECTION_BUDGET_MS);
       try {
+        // +1 round trip for this section (one fixed select of ≤ 500 public
+        // catalogue rows, matched in JS), started before the principles query
+        // so the two run in parallel.
         const titleCollectionsPromise = fetchCollectionTitleHits(supabase, parsed.raw, {
           track: filters.track,
           source: filters.source,

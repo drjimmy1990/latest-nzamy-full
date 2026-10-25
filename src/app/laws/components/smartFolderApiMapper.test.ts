@@ -113,3 +113,16 @@ test("resolveSavedItemHref routes saved laws, collections, orders and Arabic-slu
   const encoded = encodeURIComponent("الروض المربع");
   assert.equal(resolveSavedItemHref({ slug: encoded, type: "book" }), `/book/${encoded}`);
 });
+
+test("resolveSavedItemHref encodes exactly once (apiSlug) — encoded, plain and malformed ids", () => {
+  const plain = "فتح القدير - الجزء 03";
+  const once = encodeURIComponent(plain);
+  assert.equal(resolveSavedItemHref({ slug: plain, type: "book" }), `/book/${once}`);
+  assert.equal(resolveSavedItemHref({ slug: once, type: "book" }), `/book/${once}`);
+  // A stray «%» next to an encoded run used to be trusted as-is.
+  assert.equal(resolveSavedItemHref({ slug: "100% %D9%85", type: "book" }), `/book/${encodeURIComponent("100% %D9%85")}`);
+  // Path syntax in an id stays inside one segment.
+  assert.equal(resolveSavedItemHref({ slug: "../../admin?x=1#y", type: "precedent" }), `/precedents/${encodeURIComponent("../../admin?x=1#y")}`);
+  assert.equal(resolveSavedItemHref({ slug: "//evil.example", type: "law" }), "/laws/%2F%2Fevil.example");
+  assert.equal(resolveSavedItemHref({ slug: "", type: null }), "/laws/");
+});
