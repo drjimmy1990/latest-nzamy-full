@@ -390,7 +390,11 @@ begin
         spec.tbl, spec.col, spec.firm_expr, spec.extra, spec.pk, spec.tbl, spec.col)
         using p_user, p_firm, p_reason;
       get diagnostics n = row_count;
-      exception when insufficient_privilege then
+      exception when insufficient_privilege or unique_violation then
+        -- unique_violation: a unique key over the moved column that the owner
+        -- already holds (none in the repo today besides deadline_rules' code,
+        -- which the spec skips; lawyer_clients' keys are firm_id IS NULL only).
+        -- Refused like a guard: the removal still succeeds, the delete refuses.
         refused := refused || jsonb_build_object(spec.tbl || '.' || spec.col, sqlerrm);
         n := 0;
       end;

@@ -64,6 +64,10 @@
 --   6. old 70, fixtures + T14 (preview check removed) → "T14 FAIL: prepare
 --      changed N's rows: …:9999…  → …:0000…000f … trail=5 notes_to_O=1":
 --      the old prepare committed the moves before deleteUser.
+--   7. 70 of commit 95089d73 (catches only 42501), fixtures + T16 → the
+--      member-removal UPDATE fails: "duplicate key value violates unique
+--      constraint _t16_hearing_owner_title" — the firm owner could not remove
+--      the member at all.
 --
 -- People:
 --   O  firm owner of F (managing partner by the 20260903_phase2 trigger)
@@ -855,5 +859,40 @@ begin
   end if;
   raise notice 'T14c PASS: the delete that succeeds moves N''s case, note, document and hearing to O, with 5 trail rows and one notice';
 end $$;
+
+-- ── T16 a unique key the owner already holds never fails a removal ─────────
+-- (the reviewer's uniq probe: no such key on a moved column in the repo
+-- today, so one is made here.) The move is refused like a guard's; the
+-- removal commits; the colliding row stays with the member, the rest moves.
+insert into auth.users (id) values ('16161616-0000-0000-0000-000000000016');
+insert into public.profiles (id, user_type, display_name, email) values
+  ('16161616-0000-0000-0000-000000000016', 'lawyer', 'P محامٍ', 'p@example.test');
+insert into public.firm_members (firm_id, user_id, role, status, accepted_at) values
+  ('ffffffff-0000-0000-0000-0000000000f1', '16161616-0000-0000-0000-000000000016', 'lawyer', 'active', now());
+insert into public.service_requests (id, requester_user_id, assigned_to, title, firm_id) values
+  ('case-p', '16161616-0000-0000-0000-000000000016', '16161616-0000-0000-0000-000000000016', 'قضية P', 'ffffffff-0000-0000-0000-0000000000f1');
+insert into public.hearings (case_request_id, firm_id, owner_user_id, title, hearing_date) values
+  ('case-p', 'ffffffff-0000-0000-0000-0000000000f1', '16161616-0000-0000-0000-000000000016', 'جلسة مكررة', current_date + 9),
+  ('case-p', 'ffffffff-0000-0000-0000-0000000000f1', '00000000-0000-0000-0000-00000000000f', 'جلسة مكررة', current_date + 9);
+create unique index _t16_hearing_owner_title on public.hearings (owner_user_id, title);
+set role authenticated;
+select set_config('test.uid', '00000000-0000-0000-0000-00000000000f', false);
+update public.firm_members set status = 'removed'
+ where user_id = '16161616-0000-0000-0000-000000000016' and firm_id = 'ffffffff-0000-0000-0000-0000000000f1';
+reset role;
+do $$
+begin
+  if (select status from public.firm_members where user_id = '16161616-0000-0000-0000-000000000016') <> 'removed' then
+    raise exception 'T16 FAIL: the removal did not commit';
+  end if;
+  if (select requester_user_id from public.service_requests where id = 'case-p') <> '00000000-0000-0000-0000-00000000000f' then
+    raise exception 'T16 FAIL: the case did not move to O';
+  end if;
+  if not exists (select 1 from public.hearings where case_request_id = 'case-p' and owner_user_id = '16161616-0000-0000-0000-000000000016') then
+    raise exception 'T16 FAIL: the colliding hearing should have stayed with P';
+  end if;
+  raise notice 'T16 PASS: a unique key the owner already holds is refused like a guard — the removal commits, the case moves, the colliding row stays';
+end $$;
+drop index public._t16_hearing_owner_title;
 
 select 'account_deletion.test.sql: ALL PASS';
