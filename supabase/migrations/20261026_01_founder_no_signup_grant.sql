@@ -47,9 +47,9 @@
 --
 -- DEPLOY ORDER — ANY TIME, NO CODE DEPLOY NEEDED. Run it NOW: every lawyer
 --   who signs up before it runs gets the badge and the library days. No code
---   calls the trigger function. Once _verify.sql of this batch is on the
---   server, it RAISES (and deploy.sh stops) while the trigger is still there
---   — so run this file before deploying.
+--   calls the trigger function. NOTE: deploy.sh does NOT run _verify.sql
+--   (removed in 6223b221), so nothing stops a deploy if this file is skipped;
+--   run it BEFORE deploying, then run _verify.sql by hand (README).
 --
 -- RE-RUN HAZARD
 --   20261021_50 is idempotent and re-creates the trigger. If it is ever
@@ -63,7 +63,7 @@
 --   the function, the trigger and the old column comment; the setting keeps
 --   its current value and this file's description). A deliberate rollback
 --   also means removing the verify:founder_no_signup_grant section from
---   _verify.sql, which otherwise stops deploy.sh while the trigger exists.
+--   _verify.sql, which otherwise raises (when run by hand) while the trigger exists.
 -- =============================================================================
 
 begin;

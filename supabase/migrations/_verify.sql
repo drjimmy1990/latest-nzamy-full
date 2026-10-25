@@ -1,8 +1,8 @@
--- _verify.sql — READ-ONLY schema/RLS assertions run by deploy.sh.
+-- _verify.sql — READ-ONLY schema/RLS assertions run BY HAND after each SQL batch (deploy.sh stopped running it in 6223b221).
 -- This is NOT a migration (leading underscore keeps it out of `supabase db push`).
 -- Confirms the prerequisite migrations 20260616 + 20260630 actually landed in
 -- the live DB. Every statement is a SELECT, or a DO block whose only effect is
--- RAISE; nothing is written. A RAISE makes deploy.sh stop — that is the point
+-- RAISE; nothing is written. A RAISE stops the manual run — that is the point
 -- of the 2026-09-21 section at the bottom, which covers the objects a bulk
 -- apply can silently skip (and the one step that is not a migration at all).
 
@@ -38,7 +38,7 @@ SELECT 'platform_settings.payments_gateway seeded' AS check,
 -- =============================================================================
 -- 2026-09-21 — WP-1 additions (plan §3, UAT-SEC-001 · UAT-SUB-001 ·
 -- UAT-STORAGE-001 · UAT-TEAM-001 · UAT-BIZ-001 · UAT-COST-001)
--- Same contract as above: reads only. The DO blocks RAISE so deploy.sh stops
+-- Same contract as above: reads only. The DO blocks RAISE so the manual run stops
 -- when a file in the apply order was skipped.
 -- =============================================================================
 
@@ -121,7 +121,7 @@ SELECT 'authenticated/anon write grants on subscriptions+credit_transactions (ex
            AND grantee IN ('authenticated', 'anon')
            AND privilege_type IN ('INSERT', 'UPDATE', 'DELETE')) AS present;
 
--- ── hard gates: deploy.sh stops here when something above is missing ───────
+-- ── hard gates: the manual run stops here when something above is missing ───────
 DO $$
 DECLARE
   n       int;
@@ -3941,7 +3941,7 @@ end $$;
 -- 25 Oct, P0: no founder badge, seat or library days on a free signup).
 -- Read-only, safe to repeat. Unlike most sections this one RAISES before its
 -- file has run: after the owner's 25-Oct answer no state with the signup
--- trigger is acceptable, so deploy.sh stops until 01_NOW_20261026_01 has
+-- trigger is acceptable, so the manual run raises until 01_NOW_20261026_01 has
 -- run (it needs no code deploy — run it first). It also raises when the
 -- trigger or its function comes back, e.g. after a re-run of 20261021_50
 -- (re-run 20261026_01 after it). Only a database without 20261021_50 at all

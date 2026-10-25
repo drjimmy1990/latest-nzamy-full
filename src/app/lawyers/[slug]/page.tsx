@@ -543,8 +543,8 @@ export default function LawyerProfilePage() {
                         <SealCheck size={12} weight="fill" />
                         {isRTL ? "موثّق" : "Verified"}
                       </span>
-                      {/* Real: lawyer_profiles.founder_badge, set only by the
-                          signup trigger during the founder campaign (20261021_50). */}
+                      {/* Real: lawyer_profiles.founder_badge, set only by the service role
+                          (paid founder membership, P3; the signup trigger is gone, 20261026_01). */}
                       {p.founder_badge === true && (
                         <span
                           className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold text-white"
