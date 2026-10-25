@@ -31,7 +31,7 @@ export async function GET(request: Request) {
       admin.from("payment_webhook_events").select("event_id,type,payment_id,live,received_at,outcome").eq("outcome","no_order").order("received_at",{ ascending: false }).limit(50),
     ]);
     if (orders.error || orphanEvents.error) return NextResponse.json({ error: "قائمة المدفوعات غير متاحة مؤقتاً" }, { status: 503 });
-    const safeOrders = (orders.data ?? []).map(({ metadata, ...order }) => ({ ...order, flags: { paid_unmatched: metadata?.paid_unmatched ?? null, already_entitled: metadata?.already_entitled === true, no_user: metadata?.no_user === true, refund_pending: !!metadata?.refund_job && metadata.refund_job.state !== "done" } }));
+    const safeOrders = (orders.data ?? []).map(({ metadata, ...order }) => ({ ...order, flags: { paid_unmatched: metadata?.paid_unmatched ?? null, already_entitled: metadata?.already_entitled === true, no_user: metadata?.no_user === true, coupon_reused: metadata?.coupon_reused === true, refund_pending: !!metadata?.refund_job && metadata.refund_job.state !== "done" } }));
     return NextResponse.json({ orders: safeOrders, orphanEvents: orphanEvents.data ?? [], canRefund: gate.role === "super_admin" }, { headers: { "Cache-Control": "private, no-store" } });
   } catch { return NextResponse.json({ error: "قائمة المدفوعات غير متاحة مؤقتاً" }, { status: 503 }); }
 }
