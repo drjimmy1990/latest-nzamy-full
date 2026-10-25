@@ -27,6 +27,13 @@
 2. شغّل `supabase/migrations/_verify.sql` (أحدث نسخة). يجب أن يظهر `_verify: 20261026_62 OK`. قبل التنفيذ يظهر تنبيه «not applied yet» دون خطأ.
 3. انشر الكود.
 
+**الفترة بين تنفيذ الملف ونشر الكود:** في هذه الفترة يعمل الكود القديم مع قاعدة البيانات الجديدة.
+- **الروابط الموقوفة والمنتهية لا تُفتح**، لأن دالة العرض نفسها ترفضها.
+- **الروابط النشطة تُفتح دون طلب الأرقام**، كما في الإصدار الأول، لأن الصفحة القديمة لا تعرف خطوة التحقق.
+- **شاشة المحامي القديمة قد تُنشئ رابطاً لقضية بلا رقم جوال.** هذا الرابط لن يُفتح بعد النشر حتى يُضاف الرقم.
+
+لهذا اجعل الفترة قصيرة: انشر مباشرة بعد ظهور `verify: OK`.
+
 **إن نُشر الكود قبل الملف:** لا شيء ينكسر.
 - تعمل صفحة `/track` كما في الإصدار الأول، دون طلب الأرقام.
 - يُنشأ الرابط بلا مدة.
@@ -72,6 +79,8 @@ What it adds:
 - The client's 4-digit unlock against the case-file mobile: the attached client card first, else a non-worker requester's account phone. It is compared in SQL, and 5 wrong tries lock the link for 15 minutes.
 
 Run it before deploying. The code also works before it, as v1: no digits, no lifetime, no pause.
+
+Keep the window between the SQL run and the deploy short. During it, the old page shows active links without asking for the digits, which is v1 behaviour. Paused and expired links stay hidden. The old create screen can also make a link on a case with no mobile, and that link stays unopenable until a number is added.
 
 Effects on existing data:
 - Existing links get 30 days from the run.
