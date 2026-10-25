@@ -103,9 +103,25 @@ test("the route: streams each file, at most two archives per account in flight, 
   assert.match(route, /export function HEAD\(\) \{\s*return new Response\(null, \{ status: 405/, "HEAD never runs GET");
   assert.match(route, /finally \{[\s\S]*release\?\.\(\)/, "every early exit frees the slot");
   assert.match(route, /userType === "admin" && !isParty \? admin : supabase/);
-  // the uploader columns the own-folder filter needs
-  assert.match(route, /select\("request_id, owner_user_id, file_name, storage_path, size_bytes, deleted_at"\)/);
-  assert.match(route, /size_bytes, uploaded_by"\)/);
+  // the uploader and folder columns the own-folder filter needs (20261026_72)
+  assert.match(route, /select\("request_id, owner_user_id, folder_owner_id, file_name, storage_path, size_bytes, deleted_at"\)/);
+  assert.match(route, /size_bytes, uploaded_by, folder_owner_id"\)/);
+});
+
+test("the routes that SERVE a file check the folder it was written in, so a document 20261026_70 moved to the firm owner is still served (20261026_72)", () => {
+  for (const [f, call] of [
+    ["src/app/api/v1/service-requests/[id]/attachments/[attachmentId]/route.ts", "fileFolderOwner(attachment.folder_owner_id, attachment.owner_user_id)"],
+    ["src/app/api/v1/service-requests/[id]/deliverable/route.ts", "fileFolderOwner(attachment.folder_owner_id, attachment.owner_user_id)"],
+    ["src/app/api/v1/lawyer/contracts/[id]/versions/[vid]/url/route.ts", "fileFolderOwner(row.folder_owner_id, row.uploaded_by)"],
+    ["src/app/api/v1/client/contracts/[id]/versions/[vid]/url/route.ts", "fileFolderOwner(version.folder_owner_id, version.uploaded_by)"],
+    ["src/app/api/v1/share/route.ts", "fileFolderOwner(attachment.folder_owner_id, attachment.owner_user_id)"],
+    ["src/app/api/v1/documents/[id]/copy/route.ts", "fileFolderOwner(source.folder_owner_id, source.owner_user_id)"],
+  ] as const) {
+    const src = read(f);
+    assert.ok(src.includes(call), `${f} checks ${call}`);
+    assert.match(src, /\.select\("[^"]*folder_owner_id[^"]*"\)/, `${f} selects folder_owner_id`);
+  }
+  assert.match(read("src/app/api/v1/share/[token]/verify/route.ts"), /select\("id, owner_user_id, folder_owner_id, storage_path, deleted_at"\)/);
 });
 
 test("every route that signs a documents path with the service role checks the uploader's folder (security review, finding 1)", () => {
