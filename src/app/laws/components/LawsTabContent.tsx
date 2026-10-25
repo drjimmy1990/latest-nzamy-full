@@ -253,10 +253,10 @@ export function LawsTabContent({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 8 }}
     >
-      {/* No sort bar: laws arrive server-ordered by section, title, slug. A
-          «الأحدث/الأقدم» order needs a normalized issue date — issue_date_hijri
-          is free text in 14 formats, 1,279 of 5,901 blank («الأقدم» page 1 was
-          50/50 undated; «الأحدث» led with «17/3/1447هـ» and «1473-13-36»). */}
+      {/* No sort bar: laws arrive server-ordered (N2.5, /api/library/init):
+          merged regulation first, then the latest amendment, then the issue
+          date, newest first — on integer Hijri keys that migration 20261025_40
+          builds from the free-text dates. Before it runs: section, title. */}
       {(activeType === "all" || activeType === "laws") && searchDegraded.includes("laws") && (
         <DegradedSectionNotice section="laws" isDark={isDark} />
       )}

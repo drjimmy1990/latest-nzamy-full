@@ -7,6 +7,11 @@
  * before the migration the cards show no موجز and the laws section is not
  * marked degraded. Any other error is returned as it came.
  *
+ * readWithOptionalFeatures is the general form (N2.5): several pending
+ * migrations, each a "feature" with its columns (in the select, a filter or
+ * the order), applied in any order. A missing-column answer naming one of a
+ * feature's columns drops that feature only, and the read runs again.
+ *
  * Pure (no imports): `node --test` loads it directly.
  */
 
@@ -20,6 +25,36 @@ export function isMissingColumnError(error: PgErrorLike | null | undefined, colu
   if (!error || !column) return false;
   if (error.code !== "42703" && error.code !== "PGRST204") return false;
   return String(error.message ?? "").includes(column);
+}
+
+export interface OptionalFeature {
+  /** What the caller tests for in `run`'s set. */
+  key: string;
+  /** The columns the feature names; a 42703 / PGRST204 for any of them drops it. */
+  columns: readonly string[];
+}
+
+/**
+ * Runs `run` with every requested feature on; when the database answers that
+ * one of a feature's columns does not exist, runs it again without that
+ * feature. At most one extra read per feature. `wanted` (default: all) is the
+ * features this read asks for — a viewer who gets no موجز never names it.
+ */
+export async function readWithOptionalFeatures<R extends { error: PgErrorLike | null }>(
+  run: (on: ReadonlySet<string>) => PromiseLike<R>,
+  features: readonly OptionalFeature[],
+  wanted: readonly string[] = features.map((f) => f.key),
+): Promise<R> {
+  const on = new Set(features.filter((f) => wanted.includes(f.key)).map((f) => f.key));
+  for (;;) {
+    const res = await run(on);
+    const dropped = features.find(
+      (f) => on.has(f.key) && f.columns.some((c) => isMissingColumnError(res.error, c)),
+    );
+    if (!dropped) return res;
+    console.warn(`[optionalColumn] ${dropped.columns.join(", ")} not in the database yet — read without it (apply its migration)`);
+    on.delete(dropped.key);
+  }
 }
 
 export async function selectWithOptionalColumn<R extends { error: PgErrorLike | null }>(

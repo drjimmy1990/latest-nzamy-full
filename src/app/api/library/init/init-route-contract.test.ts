@@ -36,6 +36,34 @@ test("every paged section carries a deterministic order", () => {
   }
 });
 
+test("N2.5: the laws catalogue is ordered in SQL — merged, amendment, issue (desc, nulls last), then title, slug", () => {
+  const n = source.replace(/\r\n/g, "\n");
+  const lawsCall = n.slice(n.indexOf('fetchSection("laws"'), n.indexOf('shouldFetch("decrees")'));
+  assert.match(
+    lawsCall,
+    /if \(on\.has\("sort"\)\) \{\s*return out\s*\.order\("has_merged_regulation", DESC_NULLS_LAST\)\s*\.order\(LAW_SORT_KEYS\[0\], DESC_NULLS_LAST\)\s*\.order\(LAW_SORT_KEYS\[1\], DESC_NULLS_LAST\)\s*\.order\("title"\)\s*\.order\("slug"\);/,
+  );
+  assert.match(n, /const LAW_SORT_KEYS = \["latest_amendment_key", "issue_date_key"\] as const;/);
+  assert.match(n, /const DESC_NULLS_LAST = \{ ascending: false, nullsFirst: false \} as const;/);
+  // Before 20261025_40 the old order still pages deterministically.
+  assert.match(lawsCall, /return out\.order\("section_code"\)\.order\("title"\)\.order\("slug"\);/);
+  // Every viewer gets the order; the موجز only through the ٢٦٠ flag.
+  assert.match(lawsCall, /wanted: lawSummaryVisible\(hasFullAccess\) \? \["summary", "sort"\] : \["sort"\]/);
+  // No in-page JS sort of the laws rows.
+  assert.doesNotMatch(n.slice(n.indexOf("const lawsRows")), /lawsRows[^;]*\.sort\(/);
+});
+
+test("N2.5: the sort keys are locked dates — ordered by, never selected or sent", () => {
+  const n = source.replace(/\r\n/g, "\n");
+  const list = n.match(/const LAW_LIST_COLUMNS =\n\s*"([^"]*)"/)?.[1] ?? "";
+  assert.ok(list.includes("slug"), "LAW_LIST_COLUMNS found");
+  for (const key of ["latest_amendment_key", "issue_date_key", "latest_update"]) {
+    assert.doesNotMatch(list, new RegExp(`\\b${key}\\b`));
+  }
+  // The select callback only ever adds the موجز column.
+  assert.match(n, /fetchSection\("laws", \(on\) => \(on\.has\("summary"\) \? `\$\{LAW_LIST_COLUMNS\}, \$\{LAW_SUMMARY_COLUMN\}` : LAW_LIST_COLUMNS\)/);
+});
+
 test("collections are read whole through selectAllPages, not one 50-row page", () => {
   assert.match(source, /selectAllPages<Record<string, unknown>>\(\s*\(f, t\)\s*=>\s*supabase\s*\.schema\("library"\)\s*\.from\("judicial_collections"\)/);
   assert.match(source, /hasMore: false, page, limit: data\.length/);

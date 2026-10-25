@@ -69,6 +69,9 @@ const LIVE_COLUMNS: Record<LockedTable, string[]> = {
     "enabling_article",
     // 20261025_20 (N2.2): generated from preamble, locked like it (no grant).
     "summary_brief",
+    // 20261025_40 (N2.5): the catalogue sort keys, generated from
+    // latest_update / issue_date_hijri, locked like them (no grant).
+    "latest_amendment_key", "issue_date_key",
   ],
   judicial_collections: [
     "id", "title", "court", "year_hijri", "part", "source_id", "track", "description", "ruling_count",
@@ -432,8 +435,8 @@ test("the allow-lists: every live column is either allowed or locked, and the lo
     [
       "article_status_summary", "boe_source_url", "effective_date_note", "enactment_article_number",
       "enactment_clause_text", "enactment_period_days", "gazette_issue_number",
-      "gazette_publication_date", "gazette_url", "issue_date_gregorian", "issue_date_hijri", "issuing_body",
-      "issuing_instrument", "latest_update", "law_guid", "official_source_url", "preamble",
+      "gazette_publication_date", "gazette_url", "issue_date_gregorian", "issue_date_hijri", "issue_date_key",
+      "issuing_body", "issuing_instrument", "latest_amendment_key", "latest_update", "law_guid", "official_source_url", "preamble",
       "publication_date_gregorian", "publication_date_hijri", "summary_brief", "supersedes_law_ref",
       "supersedes_law_title",
     ],
@@ -698,8 +701,10 @@ test("reads the scanner cannot see (dynamic table names, a client parameter) are
   assert.match(init, /client: typeof supabase \| typeof serverOnly = supabase/);
   assert.match(init, /const serverOnly = await createServiceClient\(\);/);
   const lawsCall = init.slice(init.indexOf('fetchSection("laws"'), init.indexOf('shouldFetch("decrees")'));
-  // N2.2: the optional summary_brief column rides on the same service-role read.
-  assert.match(lawsCall, /\}, serverOnly, \{ column: LAW_SUMMARY_COLUMN, without: LAW_LIST_COLUMNS \}\)\s*: Promise\.resolve\(emptySection\(\)\)/);
+  // N2.2: the optional summary_brief column rides on the same service-role
+  // read; N2.5: so does the order by the locked sort keys (20261025_40).
+  assert.match(lawsCall, /\}, serverOnly, \{\s*features: LAW_OPTIONAL_FEATURES,/);
+  assert.match(lawsCall, /\.order\(LAW_SORT_KEYS\[0\], DESC_NULLS_LAST\)/);
   const principlesStart = /fetchSection\(\s*"principles"/.exec(init);
   assert.ok(principlesStart, "the principles section");
   const principlesCall = init.slice(principlesStart.index, init.indexOf('shouldFetch("books")'));

@@ -3436,3 +3436,79 @@ BEGIN
   RAISE NOTICE '_verify: 20261025_20 OK — summary_brief generated and locked; % law(s) carry a موجز, % preamble(s) have a 📝 موجز summary (the difference is empty or unclosed blocks)', briefs, marked;
 END $$;
 -- <<< verify:law_summary_brief
+
+-- ====================================================================
+-- 2026-10-25 — 20261025_40_law_sort_key.sql (owner-free P5, N2.5)
+-- ====================================================================
+-- library.laws.latest_amendment_key / issue_date_key are the latest
+-- amendment date and the issue date as sortable Hijri YYYYMMDD integers,
+-- STORED GENERATED from library.hijri_date_sort_key(text). /api/library/init
+-- orders the catalogue by them (service role) and never selects them. Locked
+-- like the dates they come from: no API role reads them or runs the parser.
+-- Keyed on the columns' existence, so a run before the migration passes with
+-- a NOTICE. Read-only.
+-- >>> verify:law_sort_key — supabase/tests/rls/law_sort_key.test.sql
+-- extracts the lines between these two markers; keep them.
+SELECT '20261025_40 applied (library.laws catalogue sort keys)' AS check,
+       EXISTS (SELECT 1 FROM pg_attribute
+                WHERE attrelid = 'library.laws'::regclass AND attname = 'latest_amendment_key' AND NOT attisdropped) AS present;
+
+DO $$
+DECLARE
+  r        text;
+  c        text;
+  gen      text;
+  missing  text := '';
+  merged   bigint;
+  amended  bigint;
+  issued   bigint;
+  dated    bigint;
+BEGIN
+  SELECT attgenerated::text INTO gen FROM pg_attribute
+   WHERE attrelid = 'library.laws'::regclass AND attname = 'latest_amendment_key' AND NOT attisdropped;
+  IF gen IS NULL THEN
+    RAISE NOTICE '_verify: 20261025_40 is not applied yet — /laws keeps the old order (section, title); run SQL_batch_2026-10-25_owner_free/21_BEFORE_DEPLOY_20261025_40_law_sort_key.sql';
+    RETURN;
+  END IF;
+  FOREACH c IN ARRAY ARRAY['latest_amendment_key', 'issue_date_key'] LOOP
+    SELECT attgenerated::text INTO gen FROM pg_attribute
+     WHERE attrelid = 'library.laws'::regclass AND attname = c AND NOT attisdropped;
+    IF gen IS DISTINCT FROM 's' THEN
+      missing := missing || format(' %s is missing or not a generated column (re-create it with 20261025_40);', c);
+      CONTINUE;
+    END IF;
+    FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+      IF has_column_privilege(r, 'library.laws', c, 'SELECT') THEN
+        missing := missing || format(' %s can read library.laws.%s — it is the locked date as a number; revoke it, the code never selects it;', r, c);
+      END IF;
+    END LOOP;
+  END LOOP;
+  IF to_regprocedure('library.hijri_date_sort_key(text)') IS NULL THEN
+    missing := missing || ' library.hijri_date_sort_key(text) is missing (re-run 20261025_40);';
+  ELSE
+    FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+      IF has_function_privilege(r, 'library.hijri_date_sort_key(text)', 'EXECUTE') THEN
+        missing := missing || format(' %s can EXECUTE hijri_date_sort_key (re-run 20261025_40);', r);
+      END IF;
+    END LOOP;
+    IF NOT has_function_privilege('service_role', 'library.hijri_date_sort_key(text)', 'EXECUTE') THEN
+      missing := missing || ' service_role cannot EXECUTE hijri_date_sort_key — every law write by the loader fails (re-run 20261025_40);';
+    END IF;
+    IF NOT has_function_privilege('postgres', 'library.hijri_date_sort_key(text)', 'EXECUTE') THEN
+      missing := missing || ' postgres cannot EXECUTE hijri_date_sort_key — every law write from the SQL editor / psql fails (re-run 20261025_40);';
+    END IF;
+  END IF;
+  IF to_regclass('library.idx_laws_catalogue_order') IS NULL THEN
+    missing := missing || ' index library.idx_laws_catalogue_order is missing (re-run 20261025_40);';
+  END IF;
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: 20261025_40 is broken —%', missing;
+  END IF;
+  SELECT count(*) FILTER (WHERE has_merged_regulation),
+         count(*) FILTER (WHERE latest_amendment_key IS NOT NULL),
+         count(*) FILTER (WHERE issue_date_key IS NOT NULL),
+         count(*) FILTER (WHERE nullif(btrim(coalesce(issue_date_hijri, '')), '') IS NOT NULL)
+    INTO merged, amended, issued, dated FROM library.laws;
+  RAISE NOTICE '_verify: 20261025_40 OK — sort keys generated and locked; % merged law(s) lead the catalogue, % carry an amendment key, % an issue key (of % with any issue_date_hijri text — the rest are not a readable Hijri date)', merged, amended, issued, dated;
+END $$;
+-- <<< verify:law_sort_key
