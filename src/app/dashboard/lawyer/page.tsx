@@ -65,6 +65,7 @@ import {
 import { apiGet, isSupabaseMode } from "@/lib/services/api";
 import { profileShareState, type ProfileShareState } from "./_components/profileShareTargets";
 import ShareProfileModal from "./_components/ShareProfileModal";
+import StickyNotesWall from "@/components/dashboard/notes/StickyNotesWall";
 import { formatTimeOfDayAr } from "./hearings/_timeOfDay";
 import { describeRequestEvent, type ActivityBadge } from "@/lib/events";
 import { orderReference } from "@/lib/services/orderReference";
@@ -972,6 +973,9 @@ export default function LawyerDashboardPage() {
           managing_partner and partner only. So a lawyer reading THIS dashboard
           has no secondment surface at all, and there is no data behind one
           either — which is why nothing is rendered here. ──────────────────── */}
+
+      {/* ── حائط الملاحظات (N3.4, owner §٤٧ ٣) — real rows only, empty state, no seed notes ── */}
+      <StickyNotesWall />
 
       {/* ── Second Grid: Tasks + Hearings + Deadlines ──
           A consultant keeps only the tasks card, full width (Art. 18). */}

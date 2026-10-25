@@ -57,7 +57,7 @@ export default function LegalCanvas({ caseId }: { caseId?: string }) {
   const { isDark } = useTheme();
   return (
     <div className="overflow-hidden rounded-2xl" style={{ height: "580px" }}>
-      <CaseGraphView isDark={isDark} isGlobal={false} caseId={caseId} />
+      <CaseGraphView isDark={isDark} isGlobal={false} caseId={caseId} enableCaseImport />
     </div>
   );
 }

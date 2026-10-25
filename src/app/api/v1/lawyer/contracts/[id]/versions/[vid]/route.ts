@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
 import { createServiceClient } from "@/lib/supabase/server";
+import { storageObjectHeldByCaseDocument } from "@/lib/services/caseDocumentObject";
 import { dbErrorResponse } from "../../../_shared";
 
 /**
@@ -86,8 +87,14 @@ export async function DELETE(_request: NextRequest, context: { params: Promise<{
     // Best-effort object removal — the row is already gone either way.
     try {
       const service = await createServiceClient();
-      const { error: removeErr } = await service.storage.from("documents").remove([deletedRow.storage_path]);
-      if (removeErr) console.error("[lawyer/contracts versions DELETE] storage remove failed:", removeErr.message);
+      // The path is client-supplied at upload: a case document may point at
+      // the same object, and then its bytes stay (caseDocumentObject.ts, N3.9).
+      if (await storageObjectHeldByCaseDocument(service, deletedRow.storage_path)) {
+        console.error("[lawyer/contracts versions DELETE] object kept — a case document points at it:", vid);
+      } else {
+        const { error: removeErr } = await service.storage.from("documents").remove([deletedRow.storage_path]);
+        if (removeErr) console.error("[lawyer/contracts versions DELETE] storage remove failed:", removeErr.message);
+      }
     } catch (removeThrow) {
       console.error("[lawyer/contracts versions DELETE] storage remove threw:", removeThrow);
     }

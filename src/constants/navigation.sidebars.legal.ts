@@ -16,6 +16,7 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
     items: [
       { label: "الجلسات والمهل القضائية", labelEn: "Hearings & Deadlines", href: "/dashboard/lawyer/hearings", icon: "CalendarCheck" },
       { label: "جميع القضايا",       labelEn: "All Cases",      href: "/dashboard/lawyer/cases",     icon: "Gavel" },
+      { label: "خريطة القضايا",      labelEn: "Cases Map",      href: "/dashboard/lawyer/graph",     icon: "TreeStructure" },
       { label: "مهامي",              labelEn: "My Tasks",       href: "/dashboard/lawyer/tasks",     icon: "CheckSquare" },
       { label: "سجل النشاط",        labelEn: "Activity Log",   href: "/dashboard/lawyer/activity",  icon: "ClockCounterClockwise" },
     ],
@@ -187,6 +188,7 @@ export const LAWYER_SIDEBAR_LITE: SidebarGroup[] = [
     items: [
       { label: "الجلسات والمهل القضائية", labelEn: "Hearings & Deadlines", href: "/dashboard/lawyer/hearings", icon: "CalendarCheck" },
       { label: "جميع القضايا",   labelEn: "All Cases", href: "/dashboard/lawyer/cases",    icon: "Gavel" },
+      { label: "خريطة القضايا",  labelEn: "Cases Map", href: "/dashboard/lawyer/graph",    icon: "TreeStructure" },
       { label: "مهامي",          labelEn: "My Tasks",  href: "/dashboard/lawyer/tasks",    icon: "CheckSquare" },
     ],
   },
@@ -229,6 +231,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     title: "القضايا والملفات", titleEn: "Cases",
     items: [
       { label: "جميع القضايا",   labelEn: "All Cases",    href: "/dashboard/firm/cases",         icon: "Gavel" },
+      { label: "خريطة قضايا المكتب", labelEn: "Cases Map", href: "/dashboard/firm/graph",        icon: "TreeStructure" },
       { label: "الجلسات",         labelEn: "Hearings",     href: "/dashboard/firm/hearings", badge: "قريباً",      icon: "CalendarCheck" },
       { label: "توزيع القضايا",   labelEn: "Assignments",  href: "/dashboard/firm/cases/assign", badge: "قريباً",  icon: "ArrowsSplit" },
       { label: "مهام الفريق",     labelEn: "Team Tasks",   href: "/dashboard/firm/tasks", badge: "قريباً",         icon: "CheckSquare" },

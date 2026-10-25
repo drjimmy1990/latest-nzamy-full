@@ -26,6 +26,7 @@ import HijriDateWidget from "@/components/HijriDateWidget";
 import UpgradeModal from "@/components/UpgradeModal";
 import { GlobalSearch } from "@/components/dashboard/GlobalSearch";
 import { isSharedClientIntakePath } from "@/lib/auth/routeAccess";
+import { QuickAddSidebarItem } from "@/components/dashboard/quickAdd/QuickAdd";
 
 import {
   inferUserTypeFromPath,
@@ -191,6 +192,10 @@ export default function SharedSidebar() {
           <DashboardModeToggle isAr={isAr} mode={mode} onModeChange={handleModeChange} />
         </div>
       )}
+
+      {/* «+ إضافة سريعة» (N3.3) — renders only inside the lawyer/firm
+          layouts' QuickAddProvider; every other dashboard is unchanged. */}
+      <QuickAddSidebarItem onBeforeOpen={() => setMobileOpen(false)} />
 
       {/* Nav groups */}
       {/* `pb-8` is not decoration. This scroll region's bottom edge is flush

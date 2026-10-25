@@ -99,6 +99,8 @@ export const FIRM_ROUTE_RULES: readonly Rule<AffiliationRole>[] = [
   { path: "/dashboard/firm", match: "exact", label: "لوحة المكتب", allowedRoles: ALL_FIRM_ROLES },
   { path: "/dashboard/firm/cases/assign", match: "prefix", label: "توزيع القضايا", allowedRoles: ["managing_partner", "partner", "senior_lawyer"] },
   { path: "/dashboard/firm/cases", match: "prefix", label: "قضايا المكتب", allowedRoles: FIRM_CASE_VIEW_ROLES },
+  // N3.11 — a read-only map of the same cases (RLS), so the same roles.
+  { path: "/dashboard/firm/graph", match: "prefix", label: "خريطة قضايا المكتب", allowedRoles: FIRM_CASE_VIEW_ROLES },
   { path: "/dashboard/firm/hearings", match: "prefix", label: "جلسات المكتب", allowedRoles: [...FIRM_LITIGATION_ROLES, "trainee", "legal_secretary"] },
   { path: "/dashboard/firm/tasks", match: "prefix", label: "مهام الفريق", allowedRoles: [...FIRM_LEGAL_ROLES, "trainee", "legal_secretary"] },
   { path: "/dashboard/firm/activity", match: "prefix", label: "سجل النشاط", allowedRoles: ["managing_partner", "partner", "senior_lawyer", "legal_secretary", "office_admin", "compliance_manager"] },

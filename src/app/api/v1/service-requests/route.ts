@@ -8,6 +8,7 @@ import { dispatchToN8n } from "@/lib/n8n/dispatch";
 import { buildWebhookPayload } from "@/lib/n8n/payload";
 import { recordNotification } from "@/lib/notify";
 import { stripInternalNotes } from "@/lib/services/internalNotes";
+import { isKnownReceiver, ownRequestsOrFilter } from "@/lib/services/ownRequestsFilter";
 import { checkOrderIntake, intakeErrorMessageAr } from "@/lib/services/intakeGuard";
 import { validateServiceRequestCreate } from "@/lib/services/serviceRequestIntake";
 import { resolveServiceRequestEntityScope } from "@/lib/auth/serviceRequestEntityScope";
@@ -95,6 +96,38 @@ async function resolveActiveEntityIds(supabase: SupabaseClient, userId: string) 
 }
 
 /**
+ * Every firm and business whose rows the list may show: ALL active
+ * memberships plus the entities the caller owns (resolveActiveEntityIds keeps
+ * the first of each, which is what POST needs, not a list). A failed lookup is
+ * logged and leaves that arm out — the list then shows his personal rows,
+ * the same degrade the route always had.
+ */
+async function resolveListScopeIds(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<{ firmIds: string[]; businessIds: string[] }> {
+  const [firmM, firmO, bizM, bizO] = await Promise.all([
+    supabase.from("firm_members").select("firm_id").eq("user_id", userId).eq("status", "active"),
+    supabase.from("firm_profiles").select("id").eq("owner_user_id", userId),
+    supabase.from("business_members").select("business_id").eq("user_id", userId).eq("status", "active"),
+    supabase.from("business_profiles").select("id").eq("owner_user_id", userId),
+  ]);
+  const pick = (res: { data: unknown; error: { message: string; code?: string } | null }, key: string, label: string): string[] => {
+    if (res.error) {
+      console.error(`[service-requests GET] ${label} lookup failed:`, res.error.message, res.error.code);
+      return [];
+    }
+    return ((res.data ?? []) as Array<Record<string, unknown>>)
+      .map((r) => r[key])
+      .filter((v): v is string => typeof v === "string");
+  };
+  return {
+    firmIds: [...pick(firmM, "firm_id", "firm membership"), ...pick(firmO, "id", "owned firm")],
+    businessIds: [...pick(bizM, "business_id", "business membership"), ...pick(bizO, "id", "owned business")],
+  };
+}
+
+/**
  * Map a raw service_requests row (snake_case) to the WorkflowRequest shape
  * (camelCase) expected by the frontend. Keeps `events` separate (only set by
  * the [id] GET route).
@@ -156,20 +189,19 @@ export async function GET(request: NextRequest) {
     // because RLS then added AND (requester_user_id = uid OR assigned_to = uid)
     // correctly — the real root was the INSERT writing requester_user_id from
     // auth (correct), but GetByReceiver never scoped to the user's own uid.
-    if (receiver) {
-      query = query.or(
-        `receiver.eq.${receiver},requester_user_id.eq.${user.id}`
-      );
-    } else {
-      const entityIds = await resolveActiveEntityIds(supabase, user.id);
-      // Entity rows are protected by RLS. Adding the old personal WHERE here
-      // would remove colleagues' rows after RLS had correctly admitted them.
-      if (!entityIds.firmId && !entityIds.businessId) {
-        query = query.or(
-          `requester_user_id.eq.${user.id},assigned_to.eq.${user.id}`
-        );
-      }
+    //
+    // The caller's OWN work only (ownRequestsFilter.ts): RLS also admits the
+    // open marketplace — every unassigned pending request — to a verified
+    // lawyer, and both this branch's `receiver` arm and the entity-member
+    // branch (which used to add no filter at all) passed those rows straight
+    // into «القضايا», CasePicker, the consultations page and the firm cases
+    // list. The filter keeps colleagues' rows through explicit firm /
+    // business arms, so nothing RLS admits for a real reason is dropped.
+    if (receiver && !isKnownReceiver(receiver)) {
+      return NextResponse.json({ error: "قيمة receiver غير معروفة" }, { status: 400 });
     }
+    const scope = await resolveListScopeIds(supabase, user.id);
+    query = query.or(ownRequestsOrFilter({ uid: user.id, receiver, ...scope }));
 
     if (requesterUserId) {
       query = query.eq("requester_user_id", requesterUserId);

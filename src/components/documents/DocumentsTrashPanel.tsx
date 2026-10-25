@@ -217,6 +217,13 @@ export function DocumentsTrashPanel({
                 >
                   <ArrowClockwise size={12} weight="bold" className="inline" /> استعادة
                 </button>
+                {/* A case document is never purged (N3.9, owner directive ٥):
+                    DELETE ?permanent=1 refuses it, so no button promises it. */}
+                {d.request_id ? (
+                  <span className={`flex-shrink-0 text-[10px] ${muted}`} title="مستندات القضايا تبقى مؤرشفة ولا تُحذف نهائياً">
+                    مستند قضية — لا يُحذف نهائياً
+                  </span>
+                ) : (
                 <button
                   type="button"
                   onClick={() => handlePurge(d)}
@@ -227,6 +234,7 @@ export function DocumentsTrashPanel({
                 >
                   <Trash size={12} weight="bold" className="inline" /> حذف نهائي
                 </button>
+                )}
               </li>
             );
           })}

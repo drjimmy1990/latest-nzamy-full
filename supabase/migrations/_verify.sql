@@ -734,7 +734,9 @@ BEGIN
              'languages','headline_ar','license_issued_on','office_address',
              'display_mode','updated_at',
              -- 20261016_05 (owner decision ١٦٨); checked in (b) only once the column exists
-             'show_hourly_rate']::text[],
+             'show_hourly_rate',
+             -- 20261025_50 (N3.8, profile section switches); same rule
+             'show_services','show_education','show_courts']::text[],
        ARRAY['verification_status','credit_balance','credit_package','credit_expiry',
              'free_briefs_remaining','active_roles','metadata','user_id']::text[],
        'lawyers update own profile'),
@@ -799,7 +801,7 @@ BEGIN
     --     PATCH /api/v1/profile and PATCH /api/v1/settings/preferences would
     --     start answering an Arabic 500 on a 42501.
     FOREACH c IN ARRAY spec.allowed LOOP
-      CONTINUE WHEN c = 'show_hourly_rate'
+      CONTINUE WHEN c IN ('show_hourly_rate', 'show_services', 'show_education', 'show_courts')
                 AND NOT EXISTS (SELECT 1 FROM information_schema.columns
                                  WHERE table_schema = 'public' AND table_name = spec.tbl
                                    AND column_name = c);
@@ -1372,6 +1374,12 @@ BEGIN
       missing := missing || format(' %s holds table-level SELECT on lawyer_profiles again (self-host schema or a GRANT ALL re-applied? re-run 20261016_10);', r);
     END IF;
     FOREACH col IN ARRAY public_cols LOOP
+      -- 20261025_50 (N3.8) takes education / courts back from the API roles
+      -- (the profile switches); its own section below checks they stay locked.
+      CONTINUE WHEN col IN ('education', 'courts')
+                AND EXISTS (SELECT 1 FROM information_schema.columns
+                             WHERE table_schema = 'public' AND table_name = 'lawyer_profiles'
+                               AND column_name = 'show_education');
       IF NOT has_column_privilege(r, 'public.lawyer_profiles', col, 'SELECT') THEN
         missing := missing || format(' %s cannot read public column lawyer_profiles.%s;', r, col);
       END IF;
@@ -3320,7 +3328,7 @@ begin
 end $$;
 -- <<< verify:points_admin_adjustment_reason
 
--- ====================================================================
+-- =============================================================
 -- 2026-10-25 — 20261025_10_grant_plan_atomic.sql (owner-free P2, N4.1)
 -- ====================================================================
 -- A paid plan is granted in ONE transaction: grant_plan_subscription takes a
@@ -3569,3 +3577,325 @@ BEGIN
   RAISE NOTICE '_verify: 20261025_41 OK — search_scoped_page: INVOKER, statement_timeout 4s, search_path empty, service_role only';
 END $$;
 -- <<< verify:search_scoped_page
+=======
+-- >>> verify:hearing_reminders
+-- 2026-10-25 — 20261025_30_hearing_reminders.sql (P4 N3.2). Read-only, safe to
+-- repeat. Before _30 runs it only reports; after, it raises when the hearing
+-- once-only key, the one-source CHECK, the cascade, the outbox UPDATE policy's
+-- WITH CHECK or the service-only recipient function is missing or open to sessions.
+do $$
+declare r text; fn regprocedure;
+begin
+  if not exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'notification_outbox' and column_name = 'hearing_id') then
+    raise notice '_verify: 20261025_30 is not applied yet — no hearing reminders are queued; run 10_BEFORE_DEPLOY_20261025_30_hearing_reminders.sql';
+    return;
+  end if;
+  if not exists (select 1 from pg_constraint
+                  where conrelid = 'public.notification_outbox'::regclass and contype = 'u'
+                    and conname = 'uq_notification_outbox_hearing_once'
+                    and pg_get_constraintdef(oid) = 'UNIQUE (hearing_id, recipient_user_id, channel, kind)') then
+    raise exception '_verify: uq_notification_outbox_hearing_once is missing or not (hearing_id, recipient_user_id, channel, kind) — the scheduler''s upsert fails (re-run 20261025_30)';
+  end if;
+  if not exists (select 1 from pg_constraint
+                  where conrelid = 'public.notification_outbox'::regclass and contype = 'u'
+                    and conname = 'uq_notification_outbox_once'
+                    and pg_get_constraintdef(oid) = 'UNIQUE (deadline_id, recipient_user_id, channel, kind)') then
+    raise exception '_verify: the deadline once-only key uq_notification_outbox_once changed — deadline reminders would double';
+  end if;
+  if not exists (select 1 from pg_constraint
+                  where conrelid = 'public.notification_outbox'::regclass and contype = 'c'
+                    and conname = 'notification_outbox_one_source') then
+    raise exception '_verify: notification_outbox_one_source CHECK is missing (re-run 20261025_30)';
+  end if;
+  if not exists (select 1 from pg_constraint
+                  where conrelid = 'public.notification_outbox'::regclass and contype = 'f'
+                    and confrelid = 'public.hearings'::regclass and confdeltype = 'c') then
+    raise exception '_verify: notification_outbox.hearing_id does not cascade from public.hearings (re-run 20261025_30)';
+  end if;
+  fn := to_regprocedure('public.hearing_reminder_targets(date,date)');
+  if fn is null then
+    raise exception '_verify: public.hearing_reminder_targets(date, date) is missing (re-run 20261025_30)';
+  end if;
+  foreach r in array array['anon','authenticated'] loop
+    if has_function_privilege(r, fn, 'EXECUTE') then
+      raise exception '_verify: % can EXECUTE hearing_reminder_targets — sessions could list other lawyers'' hearings (re-run 20261025_30)', r;
+    end if;
+  end loop;
+  if not has_function_privilege('service_role', fn, 'EXECUTE') then
+    raise exception '_verify: service_role cannot EXECUTE hearing_reminder_targets — no hearing reminder is queued (re-run 20261025_30)';
+  end if;
+  if not exists (select 1 from pg_policies
+                  where schemaname = 'public' and tablename = 'notification_outbox'
+                    and policyname = 'outbox cancellable by deadline owner' and cmd = 'UPDATE'
+                    and with_check like '%hearing_id IS NULL%'
+                    and with_check like '%can_access_case_row%') then
+    raise exception '_verify: the outbox UPDATE policy does not re-test the new row (no hearing_id, an accessible deadline) — a deadline owner could rewrite his row into someone''s hearing reminder (re-run 20261025_30)';
+  end if;
+  if not exists (select 1 from pg_proc where oid = fn and not prosecdef and proconfig @> array['search_path=""']) then
+    raise exception '_verify: hearing_reminder_targets is not SECURITY INVOKER with search_path '''' (re-run 20261025_30)';
+  end if;
+  raise notice '_verify: 20261025_30 OK — hearing reminders keyed once per (hearing, recipient, channel, kind), one source per row, cascade from hearings, recipients listed by the service role only';
+end $$;
+-- <<< verify:hearing_reminders
+
+-- >>> verify:dashboard_notes
+-- 2026-10-25 — 20261025_31_dashboard_notes.sql (P4 N3.4). Read-only, safe to
+-- repeat. Before _31 runs it only reports; after, it raises when the notes
+-- table, its RLS, the case-worker rule on its write policies or the
+-- service-only case_worker_ok is missing or open to sessions.
+do $$
+declare bad text; n int;
+begin
+  if to_regclass('public.dashboard_notes') is null then
+    raise notice '_verify: 20261025_31 is not applied yet — the sticky notes wall cannot save; run 12_BEFORE_DEPLOY_20261025_31_dashboard_notes.sql';
+    return;
+  end if;
+  if not (select relrowsecurity from pg_class where oid = 'public.dashboard_notes'::regclass) then
+    raise exception '_verify: RLS is off on public.dashboard_notes (re-run 20261025_31)';
+  end if;
+  select count(*) into n from pg_policy where polrelid = 'public.dashboard_notes'::regclass;
+  if n <> 4 then
+    raise exception '_verify: public.dashboard_notes carries % policies, expected 4 (re-run 20261025_31)', n;
+  end if;
+  select string_agg(policyname, ', ') into bad
+    from pg_policies
+   where schemaname = 'public' and tablename = 'dashboard_notes' and cmd in ('INSERT', 'UPDATE')
+     and (coalesce(with_check, '') not like '%is_case_worker%' or coalesce(with_check, '') not like '%case_note_scope_ok%');
+  if bad is not null then
+    raise exception '_verify: dashboard_notes write policies without the case-worker and scope rule: % — a note could be planted into another case or firm (re-run 20261025_31)', bad;
+  end if;
+  if to_regprocedure('public.case_worker_ok(text,uuid)') is null
+     or to_regprocedure('public.is_case_worker(text)') is null
+     or to_regprocedure('public.case_row_scope_ok(text,uuid)') is null then
+    raise exception '_verify: a case-worker helper of 20261025_31 is missing (re-run 20261025_31)';
+  end if;
+  if has_function_privilege('authenticated', 'public.case_worker_ok(text,uuid)', 'EXECUTE')
+     or has_function_privilege('anon', 'public.case_worker_ok(text,uuid)', 'EXECUTE') then
+    raise exception '_verify: sessions can EXECUTE case_worker_ok — they could probe other accounts'' access to a case (re-run 20261025_31)';
+  end if;
+  if has_table_privilege('anon', 'public.dashboard_notes', 'SELECT')
+     or has_column_privilege('authenticated', 'public.dashboard_notes', 'author_user_id', 'UPDATE') then
+    raise exception '_verify: dashboard_notes privileges are open (anon SELECT or author_user_id UPDATE) (re-run 20261025_31)';
+  end if;
+  raise notice '_verify: 20261025_31 OK — dashboard_notes RLS with the case-worker and scope rule on every write; case_worker_ok service-only';
+end $$;
+-- <<< verify:dashboard_notes
+
+-- >>> verify:legal_ledger
+-- 2026-10-25 — 20261025_33_legal_ledger.sql (P4 N3.7). Read-only, safe to
+-- repeat. Before _33 runs it only reports; after, it raises when the register
+-- lost its RLS, its case/firm scope rule, its column locks, or gained a
+-- session DELETE.
+do $$
+declare bad text; n int; col text;
+begin
+  if to_regclass('public.legal_ledger_entries') is null then
+    raise notice '_verify: 20261025_33 is not applied yet — the outgoing/incoming register cannot save; run 14_BEFORE_DEPLOY_20261025_33_legal_ledger.sql';
+    return;
+  end if;
+  if not (select relrowsecurity from pg_class where oid = 'public.legal_ledger_entries'::regclass) then
+    raise exception '_verify: RLS is off on public.legal_ledger_entries (re-run 20261025_33)';
+  end if;
+  select count(*) into n from pg_policy where polrelid = 'public.legal_ledger_entries'::regclass;
+  if n <> 3 then
+    raise exception '_verify: public.legal_ledger_entries carries % policies, expected 3 (re-run 20261025_33)', n;
+  end if;
+  select string_agg(policyname, ', ') into bad
+    from pg_policies
+   where schemaname = 'public' and tablename = 'legal_ledger_entries' and cmd in ('INSERT', 'UPDATE')
+     and coalesce(with_check, '') not like '%case_row_scope_ok%';
+  if bad is not null then
+    raise exception '_verify: ledger write policies without case_row_scope_ok: % — an entry could be planted into another firm or case (re-run 20261025_33)', bad;
+  end if;
+  if has_table_privilege('authenticated', 'public.legal_ledger_entries', 'DELETE')
+     or exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'legal_ledger_entries' and cmd in ('DELETE', 'ALL')) then
+    raise exception '_verify: sessions can DELETE ledger entries — owner directive 5 says archive only (re-run 20261025_33)';
+  end if;
+  foreach col in array array['case_request_id', 'firm_id', 'created_by'] loop
+    if has_column_privilege('authenticated', 'public.legal_ledger_entries', col, 'UPDATE') then
+      raise exception '_verify: authenticated can UPDATE legal_ledger_entries.% — an entry could be moved (re-run 20261025_33)', col;
+    end if;
+  end loop;
+  if has_table_privilege('anon', 'public.legal_ledger_entries', 'SELECT') then
+    raise exception '_verify: anon can read the ledger (re-run 20261025_33)';
+  end if;
+  raise notice '_verify: 20261025_33 OK — legal_ledger_entries: RLS with case_row_scope_ok on every write, case/firm/writer locked, archive only, no guest read';
+end $$;
+-- <<< verify:legal_ledger
+
+-- >>> verify:case_tracking_links
+-- 2026-10-25 — 20261025_32_case_tracking_links.sql (P4 N3.6). Read-only,
+-- safe to repeat. Before _32 runs it only reports; after, it raises when the
+-- links table lost its RLS or its scope rule, exposes the token hash or lets
+-- sessions un-revoke / delete, or when the public snapshot is open to sessions.
+do $$
+declare n int; r text;
+begin
+  if to_regclass('public.case_tracking_links') is null then
+    raise notice '_verify: 20261025_32 is not applied yet — the client tracking link cannot be created; run 13_BEFORE_DEPLOY_20261025_32_case_tracking_links.sql';
+    return;
+  end if;
+  if not (select relrowsecurity from pg_class where oid = 'public.case_tracking_links'::regclass) then
+    raise exception '_verify: RLS is off on public.case_tracking_links (re-run 20261025_32)';
+  end if;
+  select count(*) into n from pg_policy where polrelid = 'public.case_tracking_links'::regclass;
+  if n <> 3 then
+    raise exception '_verify: public.case_tracking_links carries % policies, expected 3 (re-run 20261025_32)', n;
+  end if;
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'case_tracking_links'
+                   and cmd = 'INSERT' and with_check like '%case_row_scope_ok%') then
+    raise exception '_verify: the tracking-link INSERT policy lacks case_row_scope_ok — a link could be made on someone else''s case (re-run 20261025_32)';
+  end if;
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'case_tracking_links'
+                   and cmd = 'INSERT' and with_check like '%can_issue_tracking_link%')
+     or not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'case_tracking_links'
+                      and cmd = 'UPDATE' and qual like '%can_issue_tracking_link%') then
+    raise exception '_verify: tracking links are not limited to the case lead, team and case roles — any firm member could hand a case to a guest (re-run 20261025_32)';
+  end if;
+  if to_regprocedure('public.tracking_link_maker_ok(text, uuid)') is null
+     or has_function_privilege('authenticated', 'public.tracking_link_maker_ok(text, uuid)', 'EXECUTE') then
+    raise exception '_verify: public.tracking_link_maker_ok is missing or open to sessions (re-run 20261025_32)';
+  end if;
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'case_tracking_links'
+                   and cmd = 'UPDATE' and with_check ilike '%revoked_at IS NOT NULL%') then
+    raise exception '_verify: a revoked tracking link could be brought back (re-run 20261025_32)';
+  end if;
+  if has_column_privilege('authenticated', 'public.case_tracking_links', 'token_hash', 'SELECT')
+     or has_column_privilege('authenticated', 'public.case_tracking_links', 'last_viewed_at', 'UPDATE')
+     or has_table_privilege('authenticated', 'public.case_tracking_links', 'DELETE')
+     or has_table_privilege('anon', 'public.case_tracking_links', 'SELECT') then
+    raise exception '_verify: case_tracking_links privileges are open (hash read, view stamp, delete or guest read) (re-run 20261025_32)';
+  end if;
+  if to_regprocedure('public.case_tracking_snapshot(text)') is null then
+    raise exception '_verify: public.case_tracking_snapshot(text) is missing — /track pages answer 404 (re-run 20261025_32)';
+  end if;
+  foreach r in array array['anon', 'authenticated'] loop
+    if has_function_privilege(r, 'public.case_tracking_snapshot(text)', 'EXECUTE') then
+      raise exception '_verify: % can EXECUTE case_tracking_snapshot (re-run 20261025_32)', r;
+    end if;
+  end loop;
+  if not has_function_privilege('service_role', 'public.case_tracking_snapshot(text)', 'EXECUTE') then
+    raise exception '_verify: service_role cannot EXECUTE case_tracking_snapshot — every /track page answers 404 (re-run 20261025_32)';
+  end if;
+  raise notice '_verify: 20261025_32 OK — case_tracking_links: hashed, scoped, issued by lead/team/case roles only, revoke-only; case_tracking_snapshot service-only';
+end $$;
+-- <<< verify:case_tracking_links
+
+-- >>> verify:profile_visibility
+-- 2026-10-25 — 20261025_50_profile_visibility.sql (P6 N3.8). Read-only, safe
+-- to repeat. Before _50 runs it only reports; after, it raises when a switch
+-- lost its default, its UPDATE grant, or became readable/writable by a guest.
+do $$
+declare c text; r text;
+begin
+  if not exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'lawyer_profiles' and column_name = 'show_services') then
+    raise notice '_verify: 20261025_50 is not applied yet — the profile switches «الخدمات / المؤهلات / المحاكم» are not saved (every section shows); run 15_BEFORE_DEPLOY_20261025_50_profile_visibility.sql';
+    return;
+  end if;
+  foreach c in array array['show_services', 'show_education', 'show_courts'] loop
+    if not exists (select 1 from information_schema.columns
+                    where table_schema = 'public' and table_name = 'lawyer_profiles' and column_name = c
+                      and is_nullable = 'NO' and column_default = 'true') then
+      raise exception '_verify: lawyer_profiles.% is missing or not NOT NULL DEFAULT true (re-run 20261025_50)', c;
+    end if;
+    if not has_column_privilege('authenticated', 'public.lawyer_profiles', c, 'UPDATE') then
+      raise exception '_verify: authenticated cannot UPDATE lawyer_profiles.% — the switch answers «تعذّر حفظ» (20260922_03 re-run after 20261025_50? re-run 20261025_50)', c;
+    end if;
+    foreach r in array array['anon', 'authenticated'] loop
+      if has_column_privilege(r, 'public.lawyer_profiles', c, 'SELECT') then
+        raise exception '_verify: % can read lawyer_profiles.% through REST (re-run 20261016_10, then 20261025_50)', r, c;
+      end if;
+    end loop;
+    if has_column_privilege('anon', 'public.lawyer_profiles', c, 'UPDATE') then
+      raise exception '_verify: anon can UPDATE lawyer_profiles.% (re-run 20261025_50)', c;
+    end if;
+  end loop;
+  -- The raw sections behind the switches (education, courts, the services list).
+  foreach c in array array['education', 'courts'] loop
+    foreach r in array array['anon', 'authenticated'] loop
+      if has_column_privilege(r, 'public.lawyer_profiles', c, 'SELECT') then
+        raise exception '_verify: % can read lawyer_profiles.% through REST — a switched-off section is still public (20261016_10 re-run after 20261025_50? re-run 20261025_50)', r, c;
+      end if;
+    end loop;
+  end loop;
+  if to_regclass('public.lawyer_services') is not null and not exists (
+       select 1 from pg_policy where polrelid = 'public.lawyer_services'::regclass
+          and polname = 'lawyer services public read'
+          and pg_get_expr(polqual, polrelid) ~ 'lawyer_shows_services') then
+    raise exception '_verify: "lawyer services public read" ignores show_services — guests read a hidden price list (20260907 re-run after 20261025_50? re-run 20261025_50)';
+  end if;
+  raise notice '_verify: 20261025_50 OK — show_services / show_education / show_courts default true, lawyer-writable, not readable by the API roles; education / courts locked, the guest services list follows show_services';
+end $$;
+-- <<< verify:profile_visibility
+
+-- >>> verify:soft_delete_case_records
+-- 2026-10-25 — 20261025_51_soft_delete_case_notes_docs.sql (P6 N3.9, owner
+-- directive ٥). Read-only, safe to repeat. Before _51 runs it only reports;
+-- after, it raises when a session could hard-delete a case note or a case
+-- document again, write the archive columns directly, edit the trail, or when
+-- the archive split of the case_notes SELECT policy is gone (a 20261017_41
+-- re-run puts the old policies back).
+do $$
+declare n int; r text; f text;
+begin
+  if not exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'case_notes' and column_name = 'deleted_at') then
+    raise notice '_verify: 20261025_51 is not applied yet — a session can still hard-delete a case note through REST, and the new code''s «أرشفة» answers 503; run 16_BEFORE_DEPLOY_20261025_51_soft_delete_case_notes_docs.sql';
+    return;
+  end if;
+  if exists (select 1 from pg_policy where polrelid = 'public.case_notes'::regclass and polcmd in ('d', '*')) then
+    raise exception '_verify: a DELETE policy is back on case_notes (20261017_41 re-run after 20261025_51? re-run 20261025_51)';
+  end if;
+  if not exists (select 1 from pg_policy where polrelid = 'public.case_notes'::regclass and polcmd = 'r'
+                   and pg_get_expr(polqual, polrelid) ilike '%can_supervise_case_records%'
+                   and pg_get_expr(polqual, polrelid) ilike '%deleted_at IS NULL%') then
+    raise exception '_verify: the case_notes SELECT policy lost its archive split — colleagues read archived notes (re-run 20261025_51)';
+  end if;
+  foreach r in array array['anon', 'authenticated'] loop
+    if has_table_privilege(r, 'public.case_notes', 'DELETE') or has_table_privilege(r, 'public.attachments', 'DELETE') then
+      raise exception '_verify: % can DELETE case_notes or attachments — owner directive ٥ says archive only (re-run 20261025_51)', r;
+    end if;
+    if has_column_privilege(r, 'public.case_notes', 'deleted_at', 'UPDATE')
+       or has_column_privilege(r, 'public.case_notes', 'deleted_by', 'UPDATE') then
+      raise exception '_verify: % can write case_notes.deleted_at/deleted_by directly (re-run 20261025_51)', r;
+    end if;
+  end loop;
+  foreach f in array array['INSERT', 'UPDATE', 'DELETE'] loop
+    foreach r in array array['anon', 'authenticated', 'service_role'] loop
+      if has_table_privilege(r, 'public.case_record_history', f) then
+        raise exception '_verify: % holds % on case_record_history — the trail must be append-only (re-run 20261025_51)', r, f;
+      end if;
+    end loop;
+  end loop;
+  select count(*) into n from pg_trigger
+   where not tgisinternal and tgname in ('trg_case_notes_archive_stamp', 'trg_case_notes_archive_trail',
+                                         'trg_attachments_archive_stamp', 'trg_attachments_archive_trail');
+  if n <> 4 then
+    raise exception '_verify: % of the 4 archive triggers exist — no trail / no owner notification (re-run 20261025_51)', n;
+  end if;
+  if coalesce((select prosrc from pg_proc where oid = to_regprocedure('public.case_record_archive_stamp()')), '')
+     not ilike '%cannot leave its case%' then
+    raise exception '_verify: case_record_archive_stamp lacks the case-document freeze — a participant can detach a case document and purge it as a vault document (re-run 20261025_51)';
+  end if;
+  foreach f in array array['public.archive_case_note(uuid)', 'public.restore_case_note(uuid)',
+                           'public.restore_case_document(bigint)', 'public.can_supervise_case_records(text)'] loop
+    if to_regprocedure(f) is null or not has_function_privilege('authenticated', f, 'EXECUTE')
+       or has_function_privilege('anon', f, 'EXECUTE') then
+      raise exception '_verify: % is missing, not callable by sessions, or open to guests (re-run 20261025_51)', f;
+    end if;
+  end loop;
+  -- The file bytes: the hand-applied storage policies (supabase/
+  -- storage_policies_documents.sql) must refuse a case document's object. A
+  -- WARNING, not an exception — it is a manual step outside the migrations.
+  if to_regclass('storage.objects') is not null and exists (
+       select 1 from pg_policy p
+        where p.polrelid = 'storage.objects'::regclass
+          and p.polname in ('documents delete own', 'documents update own')
+          and coalesce(pg_get_expr(p.polqual, p.polrelid), '') !~ 'storage_object_is_case_document') then
+    raise warning '_verify: 20261025_51 — the storage policies "documents delete own" / "documents update own" still let the uploader delete or overwrite a CASE document''s file through the Storage API (the row stays, the bytes go). Re-apply supabase/storage_policies_documents.sql as supabase_storage_admin.';
+  end if;
+  raise notice '_verify: 20261025_51 OK — case notes and documents archive instead of delete, supervisors restore, append-only trail, owner notified';
+end $$;
+-- <<< verify:soft_delete_case_records

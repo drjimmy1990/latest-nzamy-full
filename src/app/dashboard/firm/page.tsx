@@ -17,6 +17,7 @@ import { readWorkflowRequestsByReceiver, type WorkflowRequest } from "@/lib/work
 import { isDemoMode } from "@/lib/runtimeMode";
 import { OnboardingBanner } from "@/components/OnboardingBanner";
 import { FirmProfileReadinessPanel } from "@/components/dashboard/firm/FirmProfileReadinessPanel";
+import StickyNotesWall from "@/components/dashboard/notes/StickyNotesWall";
 
 // ─── Mock KPIs ────────────────────────────────────────────────────────────────
 const STATS = [
@@ -139,6 +140,10 @@ export default function FirmDashboardPage() {
           )}
         </div>
       </div>
+
+      {/* ── حائط الملاحظات (N3.4) — the firm account's own notes and those its
+          members share with the firm; real rows only, shown outside demo mode too. ── */}
+      <StickyNotesWall caseHrefBase="/dashboard/firm/cases/" />
 
       {/* Owner decision ١١٥: the KPI cards, «البنود العاجلة» and «آخر النشاطات»
           below are fixtures (STATS / URGENT_ITEMS / MY_ITEMS / RECENT_ACTIVITY) —

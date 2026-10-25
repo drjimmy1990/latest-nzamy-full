@@ -1,4 +1,5 @@
 import { orderReference } from "./services/orderReference.ts";
+import { ledgerActivityTitle } from "./ledger/ledgerInput.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
@@ -176,6 +177,9 @@ export const RequestEvent = {
   // which sets payload.auto = true so the feed can say the clock started itself.
   DEADLINE_CREATED: "deadline.created",
   DEADLINE_STATUS_CHANGED: "deadline.status_changed",
+  // N3.7 (2026-10-25): سجل الصادر والوارد — written by POST /api/v1/lawyer/ledger
+  // with the case's firm, so the office tab of the activity log shows it.
+  LEDGER_ENTRY_ADDED: "ledger.entry_added",
   PAYMENT_CREATED: "payment.created",
 } as const;
 
@@ -381,6 +385,8 @@ export function describeActivityEvent(opts: {
       const suffix = statusAr ? ` — ${statusAr}` : "";
       return { title: title ? `تحديث حالة مهلة: ${title}${suffix}` : `تحديث حالة مهلة${suffix}`, badge: "deadline" };
     }
+    case RequestEvent.LEDGER_ENTRY_ADDED:
+      return { title: ledgerActivityTitle(payload.direction, payload.channel, payload.title), badge: "notice" };
     default:
       return { title: "نشاط جديد مسجَّل", badge: "notice" };
   }

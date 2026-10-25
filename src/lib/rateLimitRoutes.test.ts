@@ -9,6 +9,7 @@ import {
   isGeneralRateLimitedApiPath,
   isLibraryReadRateLimitedRoute,
   libraryReadClientKey,
+  isTrackingPageRoute,
 } from "./rateLimitRoutes.ts";
 
 // ─── isStrictRateLimitedRoute ────────────────────────────────────────────────
@@ -118,4 +119,18 @@ test("libraryReadClientKey: Cloudflare's visitor address wins; otherwise the pro
   assert.equal(libraryReadClientKey(h({}), "172.70.1.1"), "172.70.1.1");
   assert.equal(libraryReadClientKey(h({ "cf-connecting-ip": "  " }), "172.70.1.1"), "172.70.1.1");
   assert.equal(libraryReadClientKey(h({ "cf-connecting-ip": "x".repeat(200) }), "f").length, 64);
+});
+
+// ─── isTrackingPageRoute (N3.6) ──────────────────────────────────────────────
+
+test("isTrackingPageRoute: the public case tracking page, GET and HEAD, one token segment", () => {
+  const token = "a".repeat(64);
+  assert.equal(isTrackingPageRoute("GET", `/track/${token}`), true);
+  assert.equal(isTrackingPageRoute("HEAD", `/track/${token}`), true);
+  assert.equal(isTrackingPageRoute("GET", "/track/anything-a-scanner-tries"), true, "a guessing script is counted whatever it sends");
+  assert.equal(isTrackingPageRoute("POST", `/track/${token}`), false);
+  assert.equal(isTrackingPageRoute("GET", "/track"), false);
+  assert.equal(isTrackingPageRoute("GET", `/track/${token}/x`), false);
+  assert.equal(isTrackingPageRoute("GET", "/tracker"), false);
+  assert.equal(isTrackingPageRoute("GET", "/ai/tracker"), false);
 });

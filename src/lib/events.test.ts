@@ -166,3 +166,10 @@ test("an unrecognised outcome token still names the badge, never a blank suffix"
   assert.equal(out.title, "تم تسجيل نتيجة درجة تقاضٍ");
   assert.equal(out.badge, "stage");
 });
+
+test("a ledger entry reads as its direction, title and channel in the activity feeds (N3.7)", () => {
+  const out = describeActivityEvent({ kind: RequestEvent.LEDGER_ENTRY_ADDED, payload: { direction: "in", channel: "whatsapp", title: "صورة الهوية" } });
+  assert.equal(out.title, "قيد وارد: صورة الهوية (واتساب)");
+  assert.equal(out.badge, "notice");
+  assert.equal(describeActivityEvent({ kind: "ledger.entry_added" }).title, "قيد في سجل الصادر والوارد");
+});

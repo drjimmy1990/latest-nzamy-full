@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { documentsDbErrorResponse, isValidAttachmentId } from "../_shared";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { storageObjectHeldByCaseDocument } from "@/lib/services/caseDocumentObject";
 
 /**
  * DELETE /api/v1/documents/[id] — soft delete by default; permanent with
@@ -60,7 +61,7 @@ export async function DELETE(
     // only returns rows the caller owns or participates in.
     const { data: doc, error: fetchError } = await supabase
       .from("attachments")
-      .select("id, storage_path, deleted_at, legal_hold")
+      .select("id, storage_path, deleted_at, legal_hold, request_id")
       .eq("id", id)
       .maybeSingle();
 
@@ -82,10 +83,26 @@ export async function DELETE(
       if (doc.legal_hold) {
         return NextResponse.json({ error: "الملف تحت حجز قانوني ولا يمكن حذفه" }, { status: 409 });
       }
+      // N3.9 (owner directive ٥): a document filed on a case is never purged
+      // from the app — it stays archived, restorable from the case's
+      // «المحذوفات», and the cron's 30-day purge skips it too. Only a personal
+      // vault document (no case) keeps the Phase 6 permanent delete.
+      if (doc.request_id) {
+        return NextResponse.json(
+          { error: "مستندات القضايا لا تُحذف نهائياً — يبقى المستند مؤرشفاً ويمكن استرجاعه من «المحذوفات» في ملف القضية" },
+          { status: 409 },
+        );
+      }
 
       const admin = await createServiceClient();
 
-      if (doc.storage_path) {
+      // A case document may point at the same object (two rows, one path):
+      // its bytes stay; only this vault row goes (caseDocumentObject.ts).
+      const held = doc.storage_path ? await storageObjectHeldByCaseDocument(admin, doc.storage_path) : false;
+      if (held) {
+        console.error("[documents DELETE permanent] object kept — a case document points at it:", id);
+      }
+      if (doc.storage_path && !held) {
         const { error: removeError } = await admin.storage.from("documents").remove([doc.storage_path]);
         if (removeError) {
           // Logged, not fatal: an orphaned storage object is this codebase's

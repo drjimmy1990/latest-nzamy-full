@@ -10,6 +10,7 @@ import {
   type CaseNoteRow,
 } from "../_shared";
 import { resolveCaseTeamFirmId, resolveFirmVisibilityFirmId } from "../_resolveFirmVisibility";
+import { ARCHIVE_UNAVAILABLE_AR, isMissingFunctionError } from "@/lib/services/archivedRows";
 
 /**
  * PATCH /api/v1/cases/[id]/notes/[noteId]
@@ -95,9 +96,14 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 }
 
 /**
- * DELETE /api/v1/cases/[id]/notes/[noteId]
- * `count: "exact"` on the delete tells "deleted" apart from "matched
- * nothing" (RLS-refused or genuinely absent) without a second round-trip.
+ * DELETE /api/v1/cases/[id]/notes/[noteId] — ARCHIVES the note (N3.9, owner
+ * directive ٥: no hard delete). public.archive_case_note (20261025_51) lets the
+ * author archive his own live note; the row stays, the firm owner is notified
+ * (unless the note was private) and the case's supervisors can restore it from
+ * «المحذوفات». Sessions hold no DELETE privilege on case_notes any more.
+ *
+ * Before 20261025_51 runs the function is missing: the answer is a 503 that
+ * says so — never a hard delete in its place.
  */
 export async function DELETE(_request: NextRequest, context: { params: Promise<{ id: string; noteId: string }> }) {
   try {
@@ -106,24 +112,38 @@ export async function DELETE(_request: NextRequest, context: { params: Promise<{
     const { supabase } = auth;
     const { id, noteId } = await context.params;
 
-    const { error, count } = await supabase
+    // The note must belong to THIS case: the function takes only the id, so
+    // the path's case is checked first through RLS (a note the caller cannot
+    // read answers 404 like a missing one).
+    const { data: own, error: readError } = await supabase
       .from("case_notes")
-      .delete({ count: "exact" })
+      .select("id")
       .eq("id", noteId)
-      .eq("request_id", id);
-
-    if (error) {
-      console.error("[cases/notes DELETE] query failed:", error.message, error.code);
-      return NextResponse.json({ error: "تعذّر حذف الملاحظة." }, { status: 500 });
+      .eq("request_id", id)
+      .maybeSingle();
+    if (readError) {
+      console.error("[cases/notes DELETE] read failed:", readError.message, readError.code);
+      return NextResponse.json({ error: "تعذّر أرشفة الملاحظة." }, { status: 500 });
     }
-
-    if (!count) {
+    if (!own) {
       return NextResponse.json({ error: "الملاحظة غير موجودة." }, { status: 404 });
     }
 
-    return new NextResponse(null, { status: 204 });
+    const { data: archived, error } = await supabase.rpc("archive_case_note", { p_note: noteId });
+    if (error) {
+      if (isMissingFunctionError(error)) {
+        return NextResponse.json({ error: ARCHIVE_UNAVAILABLE_AR }, { status: 503 });
+      }
+      console.error("[cases/notes DELETE] archive failed:", error.message, error.code);
+      return NextResponse.json({ error: "تعذّر أرشفة الملاحظة." }, { status: 500 });
+    }
+    if (archived !== true) {
+      return NextResponse.json({ error: "لا يؤرشف الملاحظة إلا كاتبها." }, { status: 403 });
+    }
+
+    return NextResponse.json({ archived: true });
   } catch (err) {
     console.error("[cases/notes DELETE] Unexpected error:", err);
-    return NextResponse.json({ error: "تعذّر حذف الملاحظة." }, { status: 500 });
+    return NextResponse.json({ error: "تعذّر أرشفة الملاحظة." }, { status: 500 });
   }
 }

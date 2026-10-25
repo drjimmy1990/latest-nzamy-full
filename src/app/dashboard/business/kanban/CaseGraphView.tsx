@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle, CircleNotch, Crosshair, Info, LinkSimple, ArrowsOutSimple, Lock, LockOpen, Rows, Export, NotePencil, Warning, FrameCorners, TrashSimple, Palette } from "@phosphor-icons/react";
+import { CheckCircle, CircleNotch, Crosshair, Info, LinkSimple, ArrowsOutSimple, Lock, LockOpen, Rows, Export, NotePencil, Warning, FrameCorners, TrashSimple, Palette, ArrowCounterClockwise, ArrowClockwise, Graph, DownloadSimple, Lightning } from "@phosphor-icons/react";
 import {
   EDGE_CONFIG,
   TYPE_CONFIG,
@@ -15,6 +15,10 @@ import {
 } from "./_graph-model";
 import { useCaseGraphState } from "./_use-case-graph-state";
 import { SidebarLauncher, AiAnalysisPanel, OverlaysBundle } from "./CaseGraphOverlays";
+import { LinkCardBody, ChecklistCardBody } from "./CaseGraphCardExtras";
+import CaseImportDrawer from "./CaseImportDrawer";
+import { normalizeLoadedEdges, normalizeLoadedNodes } from "./_graph-sanitize";
+import { candidatesToNodes, type ImportCandidate } from "./_graph-import";
 import { getCaseGraph, saveCaseGraph } from "@/lib/services/caseGraphService";
 import { toArabicDigits } from "@/lib/services/arabicCount";
 
@@ -32,6 +36,7 @@ export default function CaseGraphView({
   initialNodes: seedNodes,
   initialEdges: seedEdges,
   caseId,
+  enableCaseImport = false,
 }: {
   isDark: boolean;
   isGlobal?: boolean;
@@ -46,6 +51,12 @@ export default function CaseGraphView({
    * to key a save on; those keep the honest "not saved" chip.
    */
   caseId?: string;
+  /**
+   * Shows «استيراد من القضية» (N3.5). Only the lawyer and firm case files pass
+   * it: the drawer reads the lawyer hearings / case-stages routes, which the
+   * corporate case file and the marketplace workspace cannot call.
+   */
+  enableCaseImport?: boolean;
 }) {
   const {
     nodes, setNodes, edges, setEdges,
@@ -61,7 +72,20 @@ export default function CaseGraphView({
     handleCanvasPointerDown, handlePointerDown, handlePointerMove, handlePointerUp, startDrawingEdge, handleNodePointerUp,
     handleContextMenu, handleNodeContextMenu, handleNodeTextChange, handleEdgeLabelChange,
     fitToView,
+    undo, redo, canUndo, canRedo, resetGraph, autoLayout,
   } = useCaseGraphState({ initialNodes: seedNodes, initialEdges: seedEdges });
+
+  const [showImport, setShowImport] = useState(false);
+  const canImport = enableCaseImport && !!caseId;
+  const importCandidates = (chosen: ImportCandidate[]) => {
+    if (chosen.length === 0) return;
+    const stamp = Date.now();
+    // One recorded setNodes call → one undo step for the whole import.
+    setNodes((prev) => [...prev, ...candidatesToNodes(chosen, prev, (() => {
+      let i = 0;
+      return () => `n_${stamp}_${i++}`;
+    })())]);
+  };
 
   const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null);
   // No legend existed for the six node-type colours or the three edge-line
@@ -80,6 +104,8 @@ export default function CaseGraphView({
   const [loadState, setLoadState] = useState<"loading" | "ready" | "readError">(caseId ? "loading" : "ready");
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "saveError">("idle");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The change the debounce is still holding, if any — flushed on unmount.
+  const pendingSave = useRef<{ nodes: GraphNode[]; edges: GraphEdge[]; viewport: { pan: { x: number; y: number }; scale: number } } | null>(null);
   // Guards the autosave effect from firing on the very first render after a
   // load — without this, seeding `nodes`/`edges` from the fetched graph would
   // immediately re-save the same data it just read, and a case with no saved
@@ -103,8 +129,11 @@ export default function CaseGraphView({
         if (cancelled) return;
         if (saved) {
           skipNextAutosave.current = true;
-          setNodes(saved.nodes as GraphNode[]);
-          setEdges(saved.edges as GraphEdge[]);
+          // resetGraph, not setNodes: loading is not an undoable step (the
+          // first Ctrl+Z would otherwise empty the board and autosave would
+          // write the empty board over the case). The saved jsonb is
+          // normalised on the way in — see ./_graph-sanitize.ts.
+          resetGraph(normalizeLoadedNodes(saved.nodes), normalizeLoadedEdges(saved.edges));
           const vp = saved.viewport as { pan?: { x: number; y: number }; scale?: number } | null;
           if (vp?.pan) setPan(vp.pan);
           if (typeof vp?.scale === "number") setScale(vp.scale);
@@ -117,7 +146,7 @@ export default function CaseGraphView({
         if (!cancelled) setLoadState("readError");
       });
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- setNodes/setEdges/setPan/setScale are stable setters from useState/useCaseGraphState
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- resetGraph/setPan/setScale are stable (useCallback with no deps / useState setters)
   }, [caseId]);
 
   // Fit-to-view, once, the first time this board actually has cards on it and
@@ -142,9 +171,12 @@ export default function CaseGraphView({
       return;
     }
     if (saveTimer.current) clearTimeout(saveTimer.current);
+    const payload = { nodes, edges, viewport: { pan, scale } };
+    pendingSave.current = payload;
     saveTimer.current = setTimeout(() => {
+      pendingSave.current = null;
       setSaveState("saving");
-      saveCaseGraph(caseId, { nodes, edges, viewport: { pan, scale } })
+      saveCaseGraph(caseId, payload)
         .then(() => setSaveState("saved"))
         .catch((err) => {
           console.error("[CaseGraphView] autosave failed:", err);
@@ -153,6 +185,19 @@ export default function CaseGraphView({
     }, 1500);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   }, [caseId, loadState, nodes, edges, pan, scale]);
+
+  // Leaving the board (closing fullscreen, switching tab) must not drop the
+  // last change still waiting out the 1.5 s debounce: flush it on unmount.
+  // caseGraphService orders it before the next board's read of the same case.
+  useEffect(() => {
+    return () => {
+      const payload = pendingSave.current;
+      pendingSave.current = null;
+      if (caseId && payload) {
+        saveCaseGraph(caseId, payload).catch((err) => console.error("[CaseGraphView] flush on unmount failed:", err));
+      }
+    };
+  }, [caseId]);
 
   // `isWorkspaceEmpty` gates the LAUNCHER, and the launcher is a global-workspace
   // affordance only — keep it off the case-file mounts. Since the seed fallback
@@ -334,6 +379,33 @@ export default function CaseGraphView({
               {/* Reframes every card into view — the recovery for a card dragged
                   off-frame that fit-to-view also runs once automatically on
                   load (see the effect above). */}
+              {/* Undo / redo (N3.5) — Ctrl/⌘+Z and Ctrl/⌘+Shift+Z (or Ctrl+Y),
+                  40 steps, never past the saved board that was loaded. */}
+              <button onClick={undo} disabled={!canUndo}
+                className={`p-2 rounded-xl transition-colors disabled:opacity-30 disabled:pointer-events-none ${isDark ? "hover:bg-white/[0.08] text-zinc-400" : "hover:bg-zinc-100 text-zinc-500"}`}
+                title="تراجع (Ctrl+Z)" aria-label="تراجع">
+                <ArrowCounterClockwise size={15} />
+              </button>
+              <button onClick={redo} disabled={!canRedo}
+                className={`p-2 rounded-xl transition-colors disabled:opacity-30 disabled:pointer-events-none ${isDark ? "hover:bg-white/[0.08] text-zinc-400" : "hover:bg-zinc-100 text-zinc-500"}`}
+                title="إعادة (Ctrl+Shift+Z)" aria-label="إعادة">
+                <ArrowClockwise size={15} />
+              </button>
+              {/* «ترتيب تلقائي» (N3.10) — a seeded force layout; one undo step. */}
+              <button onClick={autoLayout} disabled={nodes.length < 2}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition-colors text-[12px] border disabled:opacity-40 ${isDark ? "border-white/10 text-zinc-300 hover:bg-white/[0.06]" : "border-zinc-200 text-zinc-600 hover:bg-zinc-100"}`}
+                title="إعادة توزيع البطاقات تلقائياً حسب الروابط بينها — يمكن التراجع عنه">
+                <Graph size={14} />
+                ترتيب تلقائي
+              </button>
+              {canImport && (
+                <button onClick={() => setShowImport(v => !v)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition-colors text-[12px] border ${showImport ? (isDark ? "border-[#C8A762]/40 bg-[#C8A762]/10 text-[#C8A762]" : "border-[#C8A762]/50 bg-amber-50 text-amber-700") : (isDark ? "border-white/10 text-zinc-300 hover:bg-white/[0.06]" : "border-zinc-200 text-zinc-600 hover:bg-zinc-100")}`}
+                  title="إضافة جلسات القضية ومستنداتها وأطرافها ودرجات التقاضي كبطاقات">
+                  <DownloadSimple size={14} />
+                  استيراد من القضية
+                </button>
+              )}
               <button onClick={fitToView} disabled={nodes.length === 0}
                 className={`p-2 rounded-xl transition-colors disabled:opacity-30 disabled:pointer-events-none ${isDark ? "hover:bg-white/[0.08] text-zinc-400" : "hover:bg-zinc-100 text-zinc-500"}`}
                 title="تأطير كل البطاقات داخل الشاشة">
@@ -454,6 +526,7 @@ export default function CaseGraphView({
                     } : {}),
                   }}
                   className={`node-element rounded-2xl border cursor-grab active:cursor-grabbing shadow-sm transition-shadow
+                    ${node.urgent ? "nz-urgent-glow" : ""}
                     ${ isSelected
                         ? "shadow-xl ring-2 ring-[#C8A762]/80 ring-offset-1"
                         : isHovered ? "shadow-md ring-1 ring-black/5" : ""
@@ -480,6 +553,13 @@ export default function CaseGraphView({
 
                       {/* Title + meta */}
                       <div className="flex-1 min-w-0">
+                        {/* «مستعجل» is also TEXT, not only the glow: the glow is
+                            motion, switched off under prefers-reduced-motion. */}
+                        {node.urgent && (
+                          <span className={`inline-flex items-center gap-0.5 mb-0.5 me-1 px-1.5 rounded-full text-[8px] font-bold ${isDark ? "bg-red-500/15 text-red-400" : "bg-red-50 text-red-700"}`}>
+                            <Lightning size={8} weight="fill" /> مستعجل
+                          </span>
+                        )}
                         {node.meta && <span className="block text-[8px] font-bold text-[#C8A762] mb-0.5 truncate">{node.meta}</span>}
                         <input
                           type="text"
@@ -505,6 +585,17 @@ export default function CaseGraphView({
                         </div>
                       )}
                     </div>
+
+                    {node.type === "link" && (
+                      <LinkCardBody node={node} isDark={isDark} onUrlChange={(v) => handleNodeTextChange(node.id, "url", v)} />
+                    )}
+                    {node.type === "checklist" && (
+                      <ChecklistCardBody
+                        node={node}
+                        isDark={isDark}
+                        onChange={(list) => setNodes(prev => prev.map(n => n.id === node.id ? { ...n, checklist: list } : n))}
+                      />
+                    )}
 
                     {/* Desc textarea */}
                     <div className="relative px-3 pt-1.5 pb-2 flex-1 flex flex-col gap-1.5">
@@ -536,7 +627,7 @@ export default function CaseGraphView({
                                 <textarea
                                   autoFocus
                                   value={node.notes || ""}
-                                  onChange={e => handleNodeTextChange(node.id, "notes" as any, e.target.value)}
+                                  onChange={e => handleNodeTextChange(node.id, "notes", e.target.value)}
                                   onBlur={() => { if (!node.notes || node.notes.length === 0) setExpandedNoteId(null); }}
                                   placeholder="ملاحظات..."
                                   rows={2}
@@ -703,6 +794,16 @@ export default function CaseGraphView({
           </>
         )}
 
+        {canImport && showImport && caseId && (
+          <CaseImportDrawer
+            caseId={caseId}
+            isDark={isDark}
+            nodes={nodes}
+            onImport={importCandidates}
+            onClose={() => setShowImport(false)}
+          />
+        )}
+
         {/* Edge Drop Menu — appears when arrow is dropped on empty canvas */}
         {edgeDropMenu && (
           <div
@@ -846,6 +947,12 @@ export default function CaseGraphView({
               <button onClick={() => { setNodes(prev => prev.map(n => n.id === nodeMenu.nodeId ? {...n, desc: "*" + n.desc + "*"} : n)); setNodeMenu(null); }}
                 className={`w-full text-start px-3 py-2 text-xs font-semibold rounded-lg flex items-center gap-2 ${isDark ? "text-zinc-300 hover:bg-zinc-700" : "text-zinc-600 hover:bg-zinc-100"}`}>
                 <span className="italic text-sm">I</span> مائل
+              </button>
+              <div className={`my-1 border-t ${isDark ? "border-zinc-700" : "border-zinc-100"}`} />
+              <button onClick={() => { setNodes(prev => prev.map(n => n.id === nodeMenu.nodeId ? { ...n, urgent: !n.urgent } : n)); setNodeMenu(null); }}
+                className={`w-full text-start px-3 py-2 text-xs font-semibold rounded-lg flex items-center gap-2 ${isDark ? "text-zinc-300 hover:bg-zinc-700" : "text-zinc-600 hover:bg-zinc-100"}`}>
+                <Lightning size={13} className={isDark ? "text-red-400" : "text-red-600"} />
+                {nd.urgent ? "إلغاء «مستعجل»" : "تمييز كمستعجل (توهّج)"}
               </button>
               <div className={`my-1 border-t ${isDark ? "border-zinc-700" : "border-zinc-100"}`} />
               <button onClick={() => { setNodes(prev => prev.filter(n => n.id !== nodeMenu.nodeId)); setEdges(prev => prev.filter(e => e.from !== nodeMenu.nodeId && e.to !== nodeMenu.nodeId)); setNodeMenu(null); }}

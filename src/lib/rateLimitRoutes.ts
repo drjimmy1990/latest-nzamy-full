@@ -50,6 +50,17 @@ export function isLibraryReadRateLimitedRoute(method: string, pathname: string):
   return LIBRARY_READ_RATE_LIMITED_ROUTES.some((r) => r.method === method && r.re.test(pathname));
 }
 
+// The client's case tracking page (N3.6, /track/[token]) is public and keyed
+// only by an unguessable 256-bit token. A per-client ceiling keeps a script
+// from walking tokens or hammering the service-role read behind it; a client
+// opening his link a few times a day never comes near it. GET and HEAD.
+export const TRACKING_PAGE_RE = /^\/track\/[^/]+$/;
+
+/** True for a GET/HEAD of /track/<one segment>. */
+export function isTrackingPageRoute(method: string, pathname: string): boolean {
+  return (method === "GET" || method === "HEAD") && TRACKING_PAGE_RE.test(pathname);
+}
+
 /**
  * The key for the library-read bucket. nezamy.sa is served through Cloudflare
  * (Server: cloudflare, CF-RAY on every response, 2026-09-29), and nothing in

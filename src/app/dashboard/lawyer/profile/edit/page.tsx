@@ -37,6 +37,11 @@ type Form = {
   // Owner decision ١٦٨: the rate is hidden from the public profile unless the
   // lawyer turns this on (lawyer_profiles.show_hourly_rate, 20261016_05).
   show_hourly_rate: boolean;
+  // N3.8 (20261025_50): which sections of the public profile a visitor sees.
+  // On by default; reviews have no switch.
+  show_services: boolean;
+  show_education: boolean;
+  show_courts: boolean;
   // Phase 7 (items 128 · 130 · 133) — contracts in lawyerProfileFields.ts.
   slug: string;
   headline_ar: string;
@@ -46,7 +51,9 @@ type Form = {
 };
 
 /** The three boolean fields, narrowed so the toggle list needs no casts. */
-type BooleanFormKey = "marketplace_visible" | "is_accepting_clients" | "show_contact" | "show_hourly_rate";
+type BooleanFormKey =
+  | "marketplace_visible" | "is_accepting_clients" | "show_contact" | "show_hourly_rate"
+  | "show_services" | "show_education" | "show_courts";
 
 // lawyer_profiles.headline_ar's own limit (src/app/api/v1/profile/route.ts
 // MAX_HEADLINE_LENGTH) — not exported from there, so mirrored here for the
@@ -93,6 +100,7 @@ const EMPTY: Form = {
   license_number: "", bar_association: "", city: "",
   marketplace_visible: false, is_accepting_clients: true, show_contact: false,
   show_hourly_rate: false,
+  show_services: true, show_education: true, show_courts: true,
   slug: "", headline_ar: "", education: [], courts: [], languages: ["ar"],
 };
 
@@ -116,6 +124,7 @@ type ProfileApiResponse = {
     city?: string | null; marketplace_visible?: boolean | null;
     is_accepting_clients?: boolean | null; show_contact?: boolean | null;
     show_hourly_rate?: boolean | null;
+    show_services?: boolean | null; show_education?: boolean | null; show_courts?: boolean | null;
     verification_status?: VerificationStatus | null;
     // Phase 7 — same columns PATCH /api/v1/profile allowlists.
     slug?: string | null; headline_ar?: string | null;
@@ -235,6 +244,9 @@ export default function LawyerProfileEditPage() {
   // 20261016_05). Shown and sent only once the GET proves the column exists —
   // the same deploy-order guard as `newFieldsAvailable`.
   const [rateToggleAvailable, setRateToggleAvailable] = useState(false);
+  // The three section switches (N3.8, 20261025_50): same key-presence guard —
+  // the own-row read is select("*"), so the keys appear once the migration ran.
+  const [sectionTogglesAvailable, setSectionTogglesAvailable] = useState(false);
   // Distinguishes "this slug is already taken" (a 409 discovered only by
   // trying to save — a race with another lawyer's save, not something the
   // client-side format check in `slugErr` below can ever catch) from every
@@ -307,6 +319,9 @@ export default function LawyerProfileEditPage() {
           is_accepting_clients: r.is_accepting_clients ?? true,
           show_contact: r.show_contact ?? false,
           show_hourly_rate: r.show_hourly_rate ?? false,
+          show_services: r.show_services !== false,
+          show_education: r.show_education !== false,
+          show_courts: r.show_courts !== false,
           slug: r.slug ?? "",
           headline_ar: r.headline_ar ?? "",
           education: sanitizeEducation(r.education),
@@ -324,6 +339,7 @@ export default function LawyerProfileEditPage() {
         setNewFieldsAvailable("slug" in r);
         // Same rule for the rate switch (20261016_05): key presence.
         setRateToggleAvailable("show_hourly_rate" in r);
+        setSectionTogglesAvailable("show_services" in r && "show_education" in r && "show_courts" in r);
         setBlocked(null);
         setLoaded(true);
       } else {
@@ -417,6 +433,11 @@ export default function LawyerProfileEditPage() {
         show_contact: form.show_contact,
       };
       if (rateToggleAvailable) body.show_hourly_rate = form.show_hourly_rate;
+      if (sectionTogglesAvailable) {
+        body.show_services = form.show_services;
+        body.show_education = form.show_education;
+        body.show_courts = form.show_courts;
+      }
       // Phase 7 columns — keys exactly as PATCH /api/v1/profile allowlists
       // them (src/app/api/v1/profile/route.ts lawyerFields) — included ONLY
       // once the migration that adds them is confirmed live (see
@@ -552,6 +573,25 @@ export default function LawyerProfileEditPage() {
           label: "إظهار سعر الاستشارة / الساعة في الملف العام",
           hint: "مخفي افتراضياً. لا يظهر سعرك للزوار ما لم تفعّل هذا الخيار.",
         }]
+      : []),
+    ...(sectionTogglesAvailable
+      ? [
+          {
+            key: "show_services" as const,
+            label: "إظهار قسم «الخدمات» في الملف العام",
+            hint: "عند إيقافه لا تظهر قائمة خدماتك وأسعارها للزوار.",
+          },
+          {
+            key: "show_education" as const,
+            label: "إظهار «المؤهلات العلمية» في الملف العام",
+            hint: "عند إيقافه لا تظهر شهاداتك وجهاتها للزوار.",
+          },
+          {
+            key: "show_courts" as const,
+            label: "إظهار «المحاكم التي أترافع أمامها» في الملف العام",
+            hint: "عند إيقافه لا تظهر قائمة المحاكم للزوار. التقييمات تظهر دائماً ولا يمكن إخفاؤها.",
+          },
+        ]
       : []),
   ];
 

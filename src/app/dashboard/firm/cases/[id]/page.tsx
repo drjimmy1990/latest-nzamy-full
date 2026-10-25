@@ -41,7 +41,7 @@ import {
   FileText, ChartLine, Plus, Download, UploadSimple,
   ArrowUpRight, CheckCircle, Warning, Scales,
   CheckSquare, FolderOpen, Eye, Graph, Spinner, ArrowClockwise, Timer,
-  ChatDots, PencilSimple, Trash, User,
+  ChatDots, PencilSimple, Archive, User,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
@@ -85,6 +85,7 @@ import AddDeadlineModal from "../../../lawyer/_components/AddDeadlineModal";
 import DeadlineCard from "../../../lawyer/_components/DeadlineCard";
 import RecordStageOutcomeModal from "../../../lawyer/_components/RecordStageOutcomeModal";
 import LegalCanvas from "./LegalCanvas";
+import CaseArchivePanel from "@/components/dashboard/caseArchive/CaseArchivePanel";
 import {
   getCaseNotes,
   addCaseNote,
@@ -635,19 +636,30 @@ export default function FirmCaseDetailsPage() {
     }
   };
 
+  // «حذف» is an ARCHIVE now (N3.9, owner directive ٥, 20261025_51); the firm
+  // owner restores from «المحذوفات» below.
+  const [archiveKey, setArchiveKey] = useState(0);
   const removeCaseNote = async (noteId: string) => {
+    if (!window.confirm("أرشفة هذه الملاحظة؟ لن تُحذف نهائياً — تبقى في «المحذوفات» ويمكن استرجاعها.")) return;
     setDeletingNoteId(noteId);
     setNoteError(null);
     try {
       await deleteCaseNote(id, noteId);
       loadCaseNotes();
+      setArchiveKey((k) => k + 1);
     } catch (e) {
-      console.error("[firm case detail] deleteCaseNote failed:", e);
-      setNoteError(e instanceof Error && e.message ? e.message : "تعذّر حذف الملاحظة.");
+      console.error("[firm case detail] archive note failed:", e);
+      setNoteError(e instanceof Error && e.message ? e.message : "تعذّرت أرشفة الملاحظة.");
     } finally {
       setDeletingNoteId(null);
     }
   };
+
+  const refreshCaseDetail = useCallback(() => {
+    getServiceRequestDetail(id)
+      .then((r) => { if (r) setRequest(r); })
+      .catch((e) => console.error("[firm case detail] refetch after restore failed:", e));
+  }, [id]);
 
   // ── Documents ──
   const handleUpload = async (file: File) => {
@@ -1359,7 +1371,7 @@ export default function FirmCaseDetailsPage() {
                               </button>
                               <button onClick={() => removeCaseNote(note.id)} disabled={deletingNoteId === note.id}
                                 className={`flex items-center gap-1 text-[10px] font-bold disabled:opacity-40 ${isDark ? "text-zinc-500 hover:text-red-400" : "text-slate-400 hover:text-red-500"}`}>
-                                <Trash size={11} /> حذف
+                                <Archive size={11} /> أرشفة
                               </button>
                             </div>
                           )}
@@ -1369,6 +1381,14 @@ export default function FirmCaseDetailsPage() {
                   ))
                 )}
               </div>
+
+              {/* «المحذوفات» — what the reader may restore (N3.9). */}
+              <CaseArchivePanel
+                caseId={id}
+                isDark={isDark}
+                reloadKey={archiveKey}
+                onRestored={(kind) => { if (kind === "note") loadCaseNotes(); else refreshCaseDetail(); }}
+              />
             </div>
           )}
 

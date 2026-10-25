@@ -43,6 +43,8 @@ export const CASE_EVENT_LABELS: Record<string, string> = {
   "deadline.created":               "إضافة مهلة",
   "deadline.status_changed":        "تحديث حالة مهلة",
   "payment.created":                "تسجيل دفعة",
+  // N3.7 (2026-10-25): سجل الصادر والوارد.
+  "ledger.entry_added":             "قيد صادر أو وارد",
   // legacy free-text tokens still present on older rows
   "created":        "إنشاء القضية",
   "status_change":  "تغيير الحالة",
