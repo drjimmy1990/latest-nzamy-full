@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
 import { isValidAttachmentId } from "../documents/_shared";
 import { generateShareToken, generatePasscode, sha256Hex } from "@/lib/services/shareSecrets";
+import { isPathInOwnerFolder } from "@/lib/storagePathOwnership";
 
 /**
  * POST /api/v1/share — owner item 174. Mints a real `document_shares` row
@@ -84,7 +85,7 @@ export async function POST(request: NextRequest) {
     // separate 409: RLS itself has no notion of the bin.
     const { data: attachment, error: fetchError } = await supabase
       .from("attachments")
-      .select("id, file_name, storage_path")
+      .select("id, owner_user_id, file_name, storage_path")
       .eq("id", attachmentId)
       .is("deleted_at", null)
       .maybeSingle();
@@ -99,6 +100,14 @@ export async function POST(request: NextRequest) {
     const storagePath = String(attachment.storage_path ?? "");
     if (!storagePath) {
       return NextResponse.json({ error: "لا يوجد ملف مرتبط بهذا المستند" }, { status: 409 });
+    }
+    // The share's verify route signs this path with the service role, so the
+    // file must sit in its uploader's own folder — before 20261026_65 a row
+    // could point at anybody's file (security review 2026-10-26, finding 1).
+    // The same "not found" a hidden row gets.
+    if (!isPathInOwnerFolder(storagePath, attachment.owner_user_id)) {
+      console.error(`[share POST] storage_path outside the owner's folder: attachment=${attachment.id}`);
+      return NextResponse.json({ error: "المستند غير موجود" }, { status: 404 });
     }
 
     const token = generateShareToken();

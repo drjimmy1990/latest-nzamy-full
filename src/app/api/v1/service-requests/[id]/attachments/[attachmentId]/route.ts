@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 import { mayDownloadRequestFiles } from "@/lib/requestFileAccess";
+import { isPathInOwnerFolder } from "@/lib/storagePathOwnership";
 
 /**
  * GET /api/v1/service-requests/[id]/attachments/[attachmentId]
@@ -65,7 +66,7 @@ export async function GET(
 
   const { data: attachment } = await admin
     .from("attachments")
-    .select("request_id, storage_path, file_name")
+    .select("request_id, owner_user_id, storage_path, file_name")
     .eq("id", attachmentId)
     .maybeSingle();
 
@@ -88,6 +89,17 @@ export async function GET(
   if (attachment.request_id !== id) {
     console.error(
       `[attachments] attachment/order mismatch: order=${id} attachmentId=${attachmentId} attachment.request_id=${attachment.request_id}`,
+    );
+    return NextResponse.json(NOT_FOUND, { status: 404 });
+  }
+
+  // The file must sit in its uploader's own folder. The signing below uses
+  // the service role, and before 20261026_65 a session could register a row
+  // pointing at anybody's file (security review 2026-10-26, finding 1). Same
+  // "not found" as above.
+  if (!isPathInOwnerFolder(attachment.storage_path, attachment.owner_user_id)) {
+    console.error(
+      `[attachments] storage_path outside the owner's folder: order=${id} attachmentId=${attachmentId}`,
     );
     return NextResponse.json(NOT_FOUND, { status: 404 });
   }

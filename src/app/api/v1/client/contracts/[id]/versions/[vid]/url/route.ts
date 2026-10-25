@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
 import { createServiceClient } from "@/lib/supabase/server";
+import { isPathInOwnerFolder } from "@/lib/storagePathOwnership";
 
 /**
  * GET /api/v1/client/contracts/[id]/versions/[vid]/url — a 5-minute signed
@@ -40,7 +41,7 @@ export async function GET(
 
     const { data: version, error: versionError } = await supabase
       .from("contract_versions")
-      .select("id, contract_id, storage_path")
+      .select("id, contract_id, storage_path, uploaded_by")
       .eq("id", vid)
       .maybeSingle();
     if (versionError) {
@@ -52,6 +53,13 @@ export async function GET(
     // leaking which half failed.
     if (!version || version.contract_id !== id) {
       console.error(`[client/contracts/versions/url GET] version/contract mismatch: contract=${id} version=${vid}`);
+      return NextResponse.json({ error: "النسخة غير موجودة" }, { status: 404 });
+    }
+    // The file must sit in its uploader's own folder: signing uses the service
+    // role, and before 20261026_65 a version row could point at anybody's file
+    // (security review 2026-10-26, finding 1). Same 404.
+    if (!isPathInOwnerFolder(version.storage_path, version.uploaded_by)) {
+      console.error(`[client/contracts/versions/url GET] storage_path outside the uploader's folder: contract=${id} version=${vid}`);
       return NextResponse.json({ error: "النسخة غير موجودة" }, { status: 404 });
     }
 
