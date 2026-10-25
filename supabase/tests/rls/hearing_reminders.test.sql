@@ -34,7 +34,9 @@
 --   * 20260904_phase5's UPDATE policy, whose WITH CHECK tests the status only
 --     (recorded 2026-10-25, before section 5 of the migration)
 --     → "T6d FAIL: a deadline owner turned his deadline row into a hearing
---       reminder". _verify's hearing section raises on the same policy.
+--       reminder"; with T6d left out, "T6e FAIL: a deadline owner moved his
+--       row onto someone else's deadline". _verify's hearing section raises on
+--       the same policy.
 --
 -- People (firm F, owner O):
 --   O  owner of F (managing_partner)        L  lawyer of F, lead of case-f
@@ -289,6 +291,27 @@ begin
   update public.notification_outbox set status = 'pending'
    where deadline_id = '00000000-0000-0000-0000-00000000d001';
   raise notice 'T6f PASS: the deadline owner still cancels (and re-arms) his own deadline reminder';
+end $$;
+-- T6g: the app's own deadline path, enqueueDeadlineReminders, is a PostgREST
+-- upsert (INSERT … ON CONFLICT DO UPDATE) with the user client — checked by
+-- the UPDATE policy's USING on the stored row and WITH CHECK on the result.
+-- Same columns baseRow writes, against S's existing row: one row re-armed.
+do $$
+declare n int;
+begin
+  insert into public.notification_outbox
+    (deadline_id, recipient_user_id, channel, kind, scheduled_for, payload, status, attempts, last_error, sent_at)
+  values ('00000000-0000-0000-0000-00000000d001','00000000-0000-0000-0000-0000000000a8','in_app','hearing_reminder_3d',
+          '2026-11-13T03:00:00Z','{"title":"مهلة اعتراض","dueDate":"2026-11-19"}','pending',0,null,null)
+  on conflict (deadline_id, recipient_user_id, channel, kind) do update set
+    scheduled_for = excluded.scheduled_for, payload = excluded.payload, status = excluded.status,
+    attempts = excluded.attempts, last_error = excluded.last_error, sent_at = excluded.sent_at;
+  get diagnostics n = row_count;
+  if n <> 1 then raise exception 'T6g FAIL: the deadline upsert touched % rows (expected 1)', n; end if;
+  select count(*) into n from public.notification_outbox
+   where deadline_id = '00000000-0000-0000-0000-00000000d001' and scheduled_for = '2026-11-13T03:00:00Z' and status = 'pending';
+  if n <> 1 then raise exception 'T6g FAIL: the re-dated deadline reminder was not re-armed'; end if;
+  raise notice 'T6g PASS: the deadline owner''s upsert (enqueueDeadlineReminders) still re-arms his row under the new WITH CHECK';
 end $$;
 reset role;
 
