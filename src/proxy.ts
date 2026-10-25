@@ -16,6 +16,9 @@ import { routeAccessRuleFor, isProtectedApiPath } from "@/lib/auth/routeAccess";
 // arms read, which is what keeps the two gates from drifting apart.
 import { entityMembershipKindForPath } from "@/lib/auth/entityMembership";
 import { resolveAuthOutcome, AUTH_UNAVAILABLE_AR } from "@/lib/auth/resolveAuthOutcome";
+// D6 (owner ٢٩٨): a frozen account opens nothing but /account-frozen. Pure; it
+// reads the user `getUser()` already returned (app_metadata), no query.
+import { freezeStateFromUser, ACCOUNT_FROZEN_PATH, ACCOUNT_FROZEN_AR } from "@/lib/auth/accountFreeze";
 import { isSupabaseMode, isDemoMode } from "@/lib/runtimeMode";
 import {
   RateLimiter,
@@ -269,6 +272,10 @@ export default async function proxy(req: NextRequest) {
       return NextResponse.json({ error: AUTH_UNAVAILABLE_AR }, { status: 503 });
     }
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // D6: a frozen account (a pending deletion) is refused every gated API.
+    if (freezeStateFromUser(user).frozen) {
+      return NextResponse.json({ error: ACCOUNT_FROZEN_AR, code: "account_frozen" }, { status: 403 });
+    }
     return apiResponse;
   }
 
@@ -417,6 +424,19 @@ export default async function proxy(req: NextRequest) {
       loginUrl.pathname = "/login";
       loginUrl.searchParams.set("from", pathname);
       return NextResponse.redirect(loginUrl);
+    }
+
+    // ─── D6 (owner ٢٩٨): a frozen account sees only the frozen page ────────
+    // Before the early return below, so no protected page skips it. The state
+    // is app_metadata (service-role written), never user_metadata. The
+    // refreshed sb-* cookies ride on the redirect.
+    if (freezeStateFromUser(user).frozen) {
+      const frozenUrl = req.nextUrl.clone();
+      frozenUrl.pathname = ACCOUNT_FROZEN_PATH;
+      frozenUrl.search = "";
+      const frozenRedirect = NextResponse.redirect(frozenUrl);
+      supabaseResponse.cookies.getAll().forEach((cookie) => frozenRedirect.cookies.set(cookie));
+      return frozenRedirect;
     }
 
     // ─── One read of `profiles`, shared by both gates below ─────────────────

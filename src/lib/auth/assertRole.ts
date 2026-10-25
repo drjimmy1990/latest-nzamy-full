@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { isAuthUnavailable, authUnavailableResponse } from '@/lib/auth/apiAuth';
+import { freezeStateFromUser, ACCOUNT_FROZEN_AR } from '@/lib/auth/accountFreeze';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
 
 type Ok = { ok: true; user: User; userType: string; supabase: SupabaseClient };
@@ -36,6 +37,19 @@ export async function assertRole(allowed?: string[]): Promise<Ok | Err> {
       response: NextResponse.json(
         { error: 'غير مصرح — يرجى تسجيل الدخول' },
         { status: 401 },
+      ),
+    };
+  }
+
+  // D6 (owner ٢٩٨): a frozen account (a pending deletion) is refused here, the
+  // one gate most API routes share. It reads app_metadata from the user just
+  // returned (no query); /api/v1/me/account-deletion does not use assertRole.
+  if (freezeStateFromUser(user).frozen) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: ACCOUNT_FROZEN_AR, code: 'account_frozen' },
+        { status: 403 },
       ),
     };
   }
