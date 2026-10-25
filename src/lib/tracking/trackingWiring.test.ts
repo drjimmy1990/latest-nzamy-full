@@ -101,7 +101,9 @@ test("the insert and revoke policies and the snapshot use the maker rule; the PO
   assert.match(MIGRATION_32, /if not public\.tracking_link_maker_ok\(v_link\.case_request_id, v_link\.owner_user_id\) then/);
   const post = read("app/api/v1/cases/[id]/tracking-links/route.ts");
   assert.match(post, /\.rpc\("can_issue_tracking_link", \{ p_request: id \}\)/);
-  assert.ok(post.indexOf('rpc("can_issue_tracking_link"') < post.indexOf('.from("case_tracking_links")\n      .insert('), "checked before the insert");
+  const insertAt = post.indexOf('.from("case_tracking_links").insert(');
+  assert.ok(insertAt > 0, "the POST inserts the link");
+  assert.ok(post.indexOf('rpc("can_issue_tracking_link"') < insertAt, "checked before the insert");
 });
 
 test("the tracking bucket also counts the proxy's own client IP (X-Real-IP first), not only CF-Connecting-IP", () => {
@@ -116,4 +118,69 @@ test("/track/<token> answers with X-Robots-Tag noindex, no-store and no-referrer
   assert.match(block[0], /\{ key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" \}/);
   assert.match(block[0], /\{ key: "Cache-Control", value: "private, no-store, max-age=0" \}/);
   assert.match(block[0], /\{ key: "Referrer-Policy", value: "no-referrer" \}/);
+});
+
+// ─── v2 (D2, owner ٢٧٦, 20261026_62) ─────────────────────────────────────────
+
+const walkSrc = (match: (src: string) => boolean): string[] => {
+  const hits: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      const full = join(dir, name);
+      if (statSync(full).isDirectory()) { if (name !== "node_modules") walk(full); continue; }
+      if (!/\.(ts|tsx)$/.test(name) || /\.test\.ts$/.test(name)) continue;
+      if (match(readFileSync(full, "utf8"))) hits.push(relative(SRC, full).replace(/\\/g, "/"));
+    }
+  };
+  walk(SRC);
+  return hits.sort();
+};
+
+test("v2: the gate and the unlock RPCs live in the one server module; nothing in the app names the phone function", () => {
+  assert.deepEqual(walkSrc((t) => /rpc\(\s*["'`]case_tracking_(gate|unlock)/.test(t)), ["lib/tracking/trackingSnapshot.server.ts"]);
+  assert.deepEqual(walkSrc((t) => /case_client_phone_last4/.test(t)), [], "the phone digits are read by SQL only");
+});
+
+test("v2: the page asks the gate first, shows no case data to paused/expired/revoked links, and the digits before the snapshot", () => {
+  const page = read("app/track/[token]/page.tsx");
+  const gateAt = page.indexOf("await readTrackingGate(token)");
+  const unlockAt = page.indexOf("await isTrackingUnlocked(token)");
+  const snapAt = page.indexOf("await readTrackingView(token)");
+  assert.ok(gateAt > 0 && unlockAt > gateAt && snapAt > unlockAt, "gate → unlock cookie → snapshot");
+  assert.match(page, /if \(gate === "none"\) notFound\(\);/);
+  assert.match(page, /gate === "paused" \|\| gate === "expired" \|\| gate === "unavailable"/);
+  assert.match(page, /الرابط موقوف مؤقتاً — تواصل مع محاميك/);
+  assert.match(page, /<TrackingUnlockForm token=\{token\} \/>/);
+  const form = read("app/track/[token]/TrackingUnlockForm.tsx");
+  assert.match(form, /^"use client";/m);
+  assert.doesNotMatch(form, /\bphone\w*\s*[:=?.(]|createServiceClient|\.rpc\(/, "the form knows nothing about the phone");
+});
+
+test("v2: the unlock route — generic denial, the strict bucket, and the cookie's flags", () => {
+  const route = read("app/api/v1/track/[token]/unlock/route.ts");
+  assert.doesNotMatch(route, /createServiceClient|\.rpc\(|\.from\(/, "the route only calls the server module");
+  assert.match(route, /unlockTracking\(token, digits\)/);
+  assert.match(route, /normalizeUnlockDigits\(body\?\.digits\)/);
+  assert.match(route, /if \(result !== "ok"\) return NextResponse\.json\(\{ error: DENIED \}/, "wrong digits, unknown and paused links: one answer");
+  const mod = read("lib/tracking/trackingSnapshot.server.ts");
+  assert.match(mod, /httpOnly: true,/);
+  assert.match(mod, /secure: true,/);
+  assert.match(mod, /sameSite: "strict"/);
+  assert.match(mod, /path: unlockCookiePath\(token\)/);
+  assert.match(mod, /unlockCookieKey\(process\.env\.SUPABASE_SERVICE_ROLE_KEY\)/);
+  assert.ok(read("lib/rateLimitRoutes.ts").includes(String.raw`/^\/api\/v1\/track\/[^/]+\/unlock$/`), "the unlock POST is in the strict bucket");
+});
+
+test("v2: creation refuses a case with no client mobile before inserting; pause/resume go through the RPCs with the session", () => {
+  const post = read("app/api/v1/cases/[id]/tracking-links/route.ts");
+  const phoneAt = post.indexOf('rpc("case_tracking_has_phone"', post.indexOf("export async function POST"));
+  assert.ok(phoneAt > 0 && phoneAt < post.indexOf('.from("case_tracking_links").insert('), "phone checked before the insert");
+  assert.match(post, /\{ error: NO_PHONE_AR, code: "no_phone" \}, \{ status: 409/);
+  assert.match(read("app/api/v1/cases/[id]/tracking-links/_shared.ts"), /أضف رقم جوال الموكل في ملف القضية أولاً/);
+  const patch = read("app/api/v1/cases/[id]/tracking-links/[linkId]/route.ts");
+  assert.match(patch, /supabase\.rpc\("tracking_link_pause", \{ p_link: linkId \}\)/);
+  assert.match(patch, /supabase\.rpc\("tracking_link_resume", \{ p_link: linkId, p_lifetime: body\?\.lifetime \}\)/);
+  const panel = read("components/dashboard/caseTracking/CaseTrackingLinksPanel.tsx");
+  for (const w of ["إيقاف مؤقت", "إعادة تفعيل", "إلغاء نهائي", "نعم، ألغِ الرابط نهائياً"]) assert.ok(panel.includes(w), w);
+  assert.doesNotMatch(panel, /text-(gray|slate)-(100|200)\b/, "no gray-100/200 text (dark-mode trap: those are surfaces)");
 });
