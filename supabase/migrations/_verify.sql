@@ -6,6 +6,12 @@
 -- of the 2026-09-21 section at the bottom, which covers the objects a bulk
 -- apply can silently skip (and the one step that is not a migration at all).
 
+-- Pin the search path so pg_get_expr prints auth.uid() / storage.foldername()
+-- schema-qualified whoever runs this file: as supabase_admin (whose path
+-- includes auth) the storage-policy gates below read "uid()" and count 0
+-- (2026-10-26). Same path as the SQL editor role.
+SET search_path = public, extensions;
+
 SELECT 'lawyer_profiles.is_accepting_clients' AS check,
        EXISTS (SELECT 1 FROM information_schema.columns
                WHERE table_schema = 'public' AND table_name = 'lawyer_profiles'
