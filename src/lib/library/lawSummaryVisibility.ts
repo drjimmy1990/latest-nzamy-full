@@ -11,8 +11,10 @@
  *     non-subscriber (T28-22, its decree text);
  *   - the T28-22 rows of the card — the issuing / amending instrument, the
  *     issue and publication dates, the official links and the gazette — are
- *     subscribers' (cardForViewer below drops them for anyone else; the
- *     sidebar shows one «للمشتركين» row in their place).
+ *     subscribers'. cardForViewer below gives anyone else an ALLOWLIST: the
+ *     النوع / الحالة / الجهة المصدرة rows only, their values cleaned; the
+ *     sidebar shows one «للمشتركين» row in place of the rest. The law's
+ *     official link is public (owner ٢٩٧) and travels on its own field.
  *
  * library.laws.summary_brief stays column-locked for the anon key: the
  * catalogue (/api/library/init) and the law route read it, and the preamble
@@ -22,6 +24,7 @@
  */
 
 import { extractLawPreambleBlocks, isHollowPreamble, type LawMetadataCard, type LawCardField } from "./lawPreambleBlocks.ts";
+import { LAW_CARD_PRIMARY_FIELDS, type LawCardFieldId } from "./lawCardFields.ts";
 
 export type LawSummaryAudience = "subscribers" | "everyone";
 
@@ -34,58 +37,92 @@ export function lawSummaryVisible(isSubscriber: boolean, audience: LawSummaryAud
 }
 
 /**
- * Card rows that are T28-22 official metadata: an issuing or amending
- * instrument, an issue / publication date, an official link or the gazette.
+ * A guest's card is an ALLOWLIST (review of b0317922, 2026-10-26): a blocklist
+ * of keys and value shapes kept leaking on last_owner — «قرار وزاري 5595»,
+ * «تعميم (19/3227)», a key «الرقم», «22 رمضان 1442هـ», «2019/12/01م»,
+ * «1442.9.22», «م/14» with a hidden U+200F, «www.boe.gov.sa/…», keys «سنة الإصدار» /
+ * «السند النظامي» / «صك الإصدار».
+ *
+ * A guest receives ONLY the rows of the always-shown fields (owner ٢٦١ / ٢٩٧,
+ * LAW_CARD_PRIMARY_FIELDS) that are not subscribers': النوع، الحالة، الجهة
+ * المصدرة. تاريخ الإصدار and آخر تعديل are T28-22 rows (subscribers); every
+ * other row is dropped. The sidebar's one «للمشتركين» row stands in for them.
  */
-const OFFICIAL_META_KEY = /أداة|قرار|مرسوم|أمر|تاريخ|نشر|المصدر الرسمي|^المصدر$|رابط|وثيقة|PDF|جريدة|أم القرى|آخر تعديل|آخر تحديث|الموقع الرسمي/i;
+const GUEST_FIELD_IDS: ReadonlySet<LawCardFieldId> = new Set<LawCardFieldId>(["type", "status", "issuer"]);
 
-const D = "[0-9٠-٩۰-۹]";
-const HIJRI_YEAR = "(?:1[34]|١[٣٤]|۱[۳۴])" + D + "{2}";
-/**
- * A value that cites an instrument or dates one, whatever its key (owner ٢٦٠
- * opened the card to guests, 2026-10-26; measured on last_owner: 171 of
- * 1,583 guest cards still carried one under keys like «اللوائح المدمجة»,
- * «يحل محل», «السند النظامي»):
- *   - an instrument number: «رقم (512)», «رقم 575», «رقم ١٤١», «م/51»;
- *   - a full Hijri date, year first or day first: «1442/9/22هـ», «19/4/1446هـ»;
- *   - a link (the official pages are T28-26 subscribers' rows).
- * A bare year («لعام 1446هـ», part of many law names) is not a date here.
- */
-const CITES_INSTRUMENT = new RegExp(
-  [
-    `رقم\\s*\\(?\\s*${D}`,
-    `م\\s*\\/\\s*${D}`,
-    `${HIJRI_YEAR}\\s*[\\/\\-]\\s*${D}{1,2}`,
-    `${D}{1,2}\\s*[\\/\\-]\\s*${D}{1,2}\\s*[\\/\\-]\\s*${HIJRI_YEAR}`,
-    // «قرار 212/1440هـ», «بالقرار 2568/1440»: a number over its year.
-    `${D}+\\s*\\/\\s*${HIJRI_YEAR}`,
-    // «قرار 15169651», «المرسوم 51»: an instrument word, then its number.
-    `(?:قرار|مرسوم|أمر)\\S*\\s+\\(?${D}`,
-    // «قرار مجلس إدارة الهيئة، صفر 1446هـ»: an instrument and its month.
-    `(?:قرار|مرسوم|أمر)[^\\n]{0,60}(?:محرم|صفر|ربيع|جمادى|رجب|شعبان|رمضان|شوال|ذو القعدة|ذي القعدة|ذو الحجة|ذي الحجة)\\S*\\s+(?:\\S+\\s+)?${HIJRI_YEAR}`,
-    "https?:\\/\\/",
-  ].join("|"),
-  "i",
+/** The card keys a guest may receive (exact, after trimming) — read from the one field list. */
+export const GUEST_CARD_KEYS: ReadonlySet<string> = new Set(
+  LAW_CARD_PRIMARY_FIELDS.filter((f) => GUEST_FIELD_IDS.has(f.id)).flatMap((f) => f.keys),
 );
 
-/**
- * The document's kind is not official metadata, though «نوع الوثيقة» contains
- * «وثيقة»: 231 cards of last_owner (2026-10-25) name the type that way, and a
- * guest's card lost its type with it (owner ٢٦١: النوع is always shown).
- */
-const TYPE_KEYS = new Set(["نوع التشريع", "نوع الوثيقة", "نوع المستند"]);
+const ISSUER_KEYS: ReadonlySet<string> = new Set(LAW_CARD_PRIMARY_FIELDS.find((f) => f.id === "issuer")?.keys ?? []);
 
-function publicField(f: LawCardField): boolean {
-  if (CITES_INSTRUMENT.test(f.value)) return false;
-  return TYPE_KEYS.has(f.key.trim()) || !OFFICIAL_META_KEY.test(f.key);
+/** Bidi controls: LRM / RLM / ALM, the embeddings and overrides, the isolates. */
+const BIDI_CONTROLS = /[\u200E\u200F\u061C\u202A-\u202E\u2066-\u2069]/g;
+
+/**
+ * A pipeline note left at the end of an issuer value: «مجلس الوزراء — تحقَّق
+ * منه 2026-07-28» (3 cards of last_owner, 2026-10-26). Removed for EVERY
+ * viewer: it is a note of the export, not the issuer.
+ */
+const PIPELINE_NOTE = /\s*[—–-]+\s*تحق[\u064B-\u0652]*ق[\u064B-\u0652]*\s+منه(?:\s+[0-9٠-٩]{4}-[0-9٠-٩]{1,2}-[0-9٠-٩]{1,2})?\s*$/u;
+
+/**
+ * What a guest's value may not carry: any digit (Western, Arabic-Indic,
+ * Persian — every instrument number and every date has one) or a link / bare
+ * domain (the official link is sent on its own, `officialLink`).
+ */
+const GUEST_UNSAFE = /[0-9٠-٩۰-۹]|https?:|www\.|[a-z0-9-]+\.(?:sa|com|net|org|gov|edu)\b/i;
+
+function issuerTidy(f: LawCardField): LawCardField {
+  if (!ISSUER_KEYS.has(f.key.trim())) return f;
+  const value = f.value.replace(PIPELINE_NOTE, "");
+  return value === f.value ? f : { key: f.key, value };
 }
 
-/** The card as this viewer may see it: whole for a subscriber, without T28-22 rows otherwise. */
+/**
+ * An allowed row's value as a guest may see it, or null when it cannot be
+ * made safe. Fails closed: whatever survives the trimming below and still
+ * holds a digit or a link drops the row.
+ *   «ساري — معدّل، آخر تعديل بمرسوم ملكي (م/21) وتاريخ 1447/01/26هـ» → «ساري»;
+ *   «هيئة الحكومة الرقمية (dga.gov.sa)» → «هيئة الحكومة الرقمية»;
+ *   «مُستبدَل بتنظيم إعانة البحث عن عمل 1442هـ» → dropped.
+ */
+export function guestCardValue(value: string): string | null {
+  let s = value.replace(BIDI_CONTROLS, "");
+  // A markdown link reads as its text; a bare link goes.
+  s = s.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/(?:https?:\/\/|www\.)\S*/gi, "");
+  // «ساري — معدّل بقرار … رقم (5)»: the clause after a spaced dash, when it cites.
+  const dash = s.match(/\s[—–-]\s/);
+  if (dash && dash.index !== undefined && GUEST_UNSAFE.test(s.slice(dash.index))) s = s.slice(0, dash.index);
+  // «(تنفيذاً … م/68 وتاريخ …)»: a parenthesis that cites.
+  s = s.replace(/\s*\([^()]*\)/g, (group) => (GUEST_UNSAFE.test(group) ? "" : group));
+  // «قرار رقم (5)» → «قرار»: no word left waiting for the number it lost.
+  s = s.replace(/(?:\s+(?:رقم|بالرقم|وتاريخ|بتاريخ|تاريخ))+\s*$/u, "");
+  s = s.replace(/\s+/g, " ").replace(/[\s،؛:,;—–-]+$/u, "").trim();
+  if (!s || GUEST_UNSAFE.test(s)) return null;
+  return s;
+}
+
+function guestRows(rows: readonly LawCardField[]): LawCardField[] {
+  const out: LawCardField[] = [];
+  for (const row of rows) {
+    if (!GUEST_CARD_KEYS.has(row.key.trim())) continue;
+    const value = guestCardValue(issuerTidy(row).value);
+    if (value) out.push({ key: row.key, value });
+  }
+  return out;
+}
+
+/**
+ * The card as this viewer may see it: whole for a subscriber (the issuer's
+ * pipeline note removed), the allowlisted rows only otherwise.
+ */
 export function cardForViewer(card: LawMetadataCard | null, isSubscriber: boolean): LawMetadataCard | null {
   if (!card) return null;
-  if (isSubscriber) return card;
-  const main = card.main.filter(publicField);
-  const more = card.more.filter(publicField);
+  if (isSubscriber) return { main: card.main.map(issuerTidy), more: card.more.map(issuerTidy) };
+  const main = guestRows(card.main);
+  const more = guestRows(card.more);
   return main.length || more.length ? { main, more } : null;
 }
 

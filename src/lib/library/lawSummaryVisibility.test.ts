@@ -8,7 +8,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { LAW_SUMMARY_AUDIENCE, cardForViewer, lawReaderExtras, lawSummaryVisible } from "./lawSummaryVisibility.ts";
+import { GUEST_CARD_KEYS, LAW_SUMMARY_AUDIENCE, cardForViewer, guestCardValue, lawReaderExtras, lawSummaryVisible } from "./lawSummaryVisibility.ts";
+import { LAW_CARD_PRIMARY_FIELDS } from "./lawCardFields.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.join(here, "../../..");
@@ -59,6 +60,8 @@ test("a guest (default audience) gets the موجز and the card without its T28-
   assert.deepEqual(out.metadata_card, {
     main: [
       { key: "نوع التشريع", value: "نظام" },
+      // The status, without the clause that cites the amending decision.
+      { key: "حالة التشريع", value: "ساري" },
       { key: "الجهة المصدرة", value: "مجلس الوزراء" },
     ],
     more: [],
@@ -119,6 +122,7 @@ test("«everyone» + a non-subscriber: the card loses its T28-22 rows (decree, d
   assert.equal(out.summary, "ينظم النظام علاقات العمل.");
   assert.deepEqual(out.metadata_card?.main, [
     { key: "نوع التشريع", value: "نظام" },
+    { key: "حالة التشريع", value: "ساري" },
     { key: "الجهة المصدرة", value: "مجلس الوزراء" },
   ]);
 });
@@ -175,31 +179,95 @@ test("a guest keeps the card's type row even when its key is «نوع الوثي
     ],
     more: [],
   };
-  assert.deepEqual(cardForViewer(card, false)?.main, [{ key: "نوع الوثيقة", value: "لائحة تنفيذية" }]);
+  assert.deepEqual(cardForViewer(card, false)?.main, [
+    { key: "نوع الوثيقة", value: "لائحة تنفيذية" },
+    { key: "نوع المستند", value: "قرار" },
+  ]);
 });
 
-test("a guest's card drops every row that cites or dates an instrument, whatever its key (corpus values)", () => {
-  const leaking = [
-    { key: "اللوائح المدمجة", value: "اللائحة التنفيذية (قرار مجلس الوزراء رقم 201 وتاريخ 1431/06/10هـ)" },
-    { key: "استُبدلت بـ", value: "اللائحة التنفيذية لنظام المحاماة لعام 1446هـ (القرار الوزاري رقم 676 وتاريخ 19/4/1446هـ)" },
-    { key: "رقم المستند / المرجع", value: "قرار مجلس الخدمة المدنية رقم ١٤١" },
-    { key: "تلغي", value: "لائحة المعونة القضائية (قرار المجلس 1439/8/8هـ)" },
-    { key: "الجهة السابقة (قبل الدمج المؤسسي)", value: "المركز الوطني للتنافسية (قرار 212/1440هـ)" },
-    { key: "اللوائح المدمجة", value: "شروط رخص المياه السطحية (قرار 15169651)" },
-    { key: "قواعد تصديق الوثائق", value: "قرار مجلس إدارة الهيئة، صفر 1446هـ (أغسطس 2024م)" },
-    { key: "الموقع الرسمي", value: "[الهيئة](https://gaca.gov.sa)" },
-    { key: "آخر تعديل", value: "بموجب اللائحة الأحدث" },
-    { key: "موقع الهيئة العامة للطيران المدني", value: "https://gaca.gov.sa" },
+// ── The guest card is an ALLOWLIST (review of b0317922, 2026-10-26) ─────────
+
+test("GUEST_CARD_KEYS is النوع / الحالة / الجهة المصدرة from the one field list — never the dates", () => {
+  const expected = LAW_CARD_PRIMARY_FIELDS.filter((f) => f.id === "type" || f.id === "status" || f.id === "issuer").flatMap((f) => f.keys);
+  assert.deepEqual([...GUEST_CARD_KEYS].sort(), [...expected].sort());
+  for (const f of LAW_CARD_PRIMARY_FIELDS.filter((x) => x.id === "issueDate" || x.id === "lastAmendment")) {
+    for (const key of f.keys) assert.ok(!GUEST_CARD_KEYS.has(key), key);
+  }
+});
+
+test("the allowlist is what protects: an innocent row under any other key is dropped for a guest", () => {
+  // None of these values cites or dates anything: a blocklist kept every one.
+  const innocent = [
+    { key: "ملاحظة", value: "نص" },
+    { key: "التصنيف", value: "القسم الإجرائي" },
+    { key: "الموضوع", value: "تنظيم مهنة المحاماة" },
+    { key: "اللوائح المدمجة", value: "اللائحة التنفيذية" },
+    { key: "السند النظامي", value: "نظام التعاملات الإلكترونية" },
+    { key: "صك الإصدار", value: "صك" },
+    { key: "سنة الإصدار", value: "غير محدد" },
+    { key: "الرقم", value: "غير متوفر" },
+    { key: "تاريخ الإصدار", value: "غير متوفر" },
+    { key: "آخر تعديل", value: "لا يوجد" },
   ];
-  const kept = [
-    { key: "نوع التشريع", value: "لائحة تنفيذية" },
-    { key: "الجهة المصدرة", value: "مجلس الوزراء" },
-    { key: "حالة التشريع", value: "ملغى — مُستبدَل باللائحة التنفيذية لنظام المحاماة لعام 1446هـ" },
-    { key: "الموضوع", value: "إجراءات مكافحة المخدرات على المستوى الدولي لعام 1436هـ" },
-    { key: "عدد المواد", value: "245" },
-  ];
-  const out = cardForViewer({ main: [...kept, ...leaking], more: leaking }, false);
-  assert.deepEqual(out, { main: kept, more: [] });
+  assert.equal(cardForViewer({ main: innocent, more: innocent }, false), null);
+  const out = cardForViewer({ main: [{ key: "نوع التشريع", value: "نظام" }, ...innocent], more: innocent }, false);
+  assert.deepEqual(out, { main: [{ key: "نوع التشريع", value: "نظام" }], more: [] });
   // A subscriber still gets everything.
-  assert.equal(cardForViewer({ main: leaking, more: [] }, true)?.main.length, leaking.length);
+  assert.equal(cardForViewer({ main: innocent, more: [] }, true)?.main.length, innocent.length);
+});
+
+const RLM = String.fromCharCode(0x200f);
+const LRM = String.fromCharCode(0x200e);
+const ALM = String.fromCharCode(0x061c);
+const UNSAFE = /[0-9٠-٩۰-۹]|https?:|www\.|\.(?:sa|com|gov)\b/i;
+const BIDI = new RegExp(`[${RLM}${LRM}${ALM}]`);
+
+test("the reviewer's probe values, under an allowed key, never reach a guest with a digit, a link or a bidi mark", () => {
+  const values = [
+    "قرار وزاري 5595", "بقرار وزير العدل 921", "تعميم (19/3227)", "قرارات وزارية (59510، 484، 25)",
+    "م/١٤", `م${RLM}/14`, "المرسوم الملكي م 14", "22 رمضان 1442هـ", "١٥ شوال ١٤٢٨هـ", "2021/05/04م",
+    "04-05-2021", "1442.9.22", "2019/12/01م", "www.boe.gov.sa/ViewSystem", "laws.boe.gov.sa",
+    "[الرابط](https://boe.gov.sa)", "٢٧-٠٥-١٣٩٩هـ", "الصادر في ١٤٤٢/٣/٢هـ", "الموافقة السامية ذات الرقم ٤٥٦",
+  ];
+  for (const key of GUEST_CARD_KEYS) {
+    for (const v of values) {
+      for (const value of [v, `مجلس الوزراء ${v}`, `ساري — ${v}`, `وزارة العدل (${v})`]) {
+        const sent = JSON.stringify(cardForViewer({ main: [{ key, value }], more: [] }, false));
+        assert.ok(!UNSAFE.test(sent) && !BIDI.test(sent), `${key}: ${value} → ${sent}`);
+      }
+    }
+  }
+});
+
+test("allowed values are cleaned for a guest, from last_owner's own shapes", () => {
+  const cases: Array<[string, string, string | null]> = [
+    ["حالة التشريع", "ساري — معدّل، آخر تعديل بمرسوم ملكي (م/21) وتاريخ 1447/01/26هـ", "ساري"],
+    ["حالة التشريع", "ملغى — مُستبدَل بنظام البيئة (قرار مجلس الوزراء رقم 729 وتاريخ 16/11/1441هـ)", "ملغى"],
+    ["حالة التشريع", "ساري — معدّل", "ساري — معدّل"],
+    ["حالة التشريع", "مُستبدَل بتنظيم إعانة البحث عن عمل 1442هـ", null],
+    ["الجهة المصدرة", "وزير المالية (تنفيذاً لنظام ضريبة الدخل، المرسوم الملكي رقم م/1 وتاريخ 1425/01/15هـ)", "وزير المالية"],
+    ["الجهة المصدرة", "هيئة الحكومة الرقمية (dga.gov.sa)", "هيئة الحكومة الرقمية"],
+    ["الجهة المصدرة", "الهيئة العامة للطيران المدني (GACA)", "الهيئة العامة للطيران المدني (GACA)"],
+    ["الجهة المصدرة", "[هيئة الخبراء](https://laws.boe.gov.sa/x)", "هيئة الخبراء"],
+    ["الجهة المصدرة", `مجلس${RLM} الوزراء${LRM}`, "مجلس الوزراء"],
+  ];
+  for (const [key, value, expected] of cases) {
+    const out = cardForViewer({ main: [{ key, value }], more: [] }, false);
+    assert.deepEqual(out?.main[0]?.value ?? null, expected, value);
+  }
+  assert.equal(guestCardValue("ساري"), "ساري");
+});
+
+test("the issuer's pipeline note «— تحقَّق منه YYYY-MM-DD» is removed for EVERY viewer", () => {
+  const card = {
+    main: [{ key: "الجهة المصدرة", value: "مجلس الوزراء — تحقَّق منه 2026-07-28" }],
+    more: [{ key: "الجهة الإدارية المصدرة", value: "وزير العدل — تحقق منه" }, { key: "الموضوع", value: "عام — تحقَّق منه 2026-07-28" }],
+  };
+  for (const isSubscriber of [true, false]) {
+    const out = cardForViewer(card, isSubscriber);
+    assert.equal(out?.main[0].value, "مجلس الوزراء", String(isSubscriber));
+    assert.equal(out?.more[0].value, "وزير العدل", String(isSubscriber));
+  }
+  // Only the issuer's: a subscriber's other rows are as the file has them.
+  assert.equal(cardForViewer(card, true)?.more[1].value, "عام — تحقَّق منه 2026-07-28");
 });
