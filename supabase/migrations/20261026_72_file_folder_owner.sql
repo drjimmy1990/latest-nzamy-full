@@ -2,8 +2,11 @@
 -- Migration: 20261026_72_file_folder_owner.sql
 -- Integration of the 2026-10-26 batch: 20261026_65 / 66 (path ownership, the
 -- dash track) MEET 20261026_70 / 71 (account deletion D6, owner ٢٩٨).
--- Requires 20261026_65. Runs before or after 66 and 70 (re-run it after a
--- re-run of 66 — see NOT AFTER THIS FILE).
+-- Requires 20261026_65. Run it after 66 and BEFORE 70: an account deleted
+-- between 70 and 72 leaves its document on a shared case with owner null and
+-- no trail row, and this file cannot learn that document's folder (a 70 run
+-- first is otherwise recovered from firm_asset_transfers). Re-run it after a
+-- re-run of 66 — see NOT AFTER THIS FILE.
 -- =============================================================================
 --
 -- THE CONFLICT
@@ -67,7 +70,8 @@
 --
 -- DEPLOY ORDER — BEFORE THE CODE DEPLOY. The deployed routes select
 --   folder_owner_id; before this file they answer «تعذّر» on every file
---   download. The file itself needs no code: run it any time after 65.
+--   download. The file itself needs no code: run it any time after 65 / 66
+--   and before 70.
 --
 -- NOT AFTER THIS FILE WITHOUT CARE
 --   * Re-running 20261026_66 puts back its can_share_attachment (owner's
@@ -336,6 +340,14 @@ begin
      and position('folder_owner_id' in (select prosrc from pg_proc where oid = 'public.can_share_attachment(text, text)'::regprocedure)) = 0 then
     raise exception '20261026_72 verify: can_share_attachment does not read folder_owner_id';
   end if;
+  -- the ZIP, contract-version, copy and share routes read the column through
+  -- the session client: a column-level SELECT grant without it fails them all
+  foreach t in array array['public.attachments', 'public.contract_versions'] loop
+    if exists (select 1 from pg_roles where rolname = 'authenticated')
+       and not has_column_privilege('authenticated', t, 'folder_owner_id', 'SELECT') then
+      raise exception '20261026_72 verify: authenticated cannot SELECT %.folder_owner_id — the session-client routes would fail every download (grant it)', t;
+    end if;
+  end loop;
   select count(*) into n from public.attachments
    where folder_owner_id is null and public.storage_path_in_folder(storage_path, owner_user_id);
   if n > 0 then

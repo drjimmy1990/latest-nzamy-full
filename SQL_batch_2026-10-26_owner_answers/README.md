@@ -25,7 +25,7 @@
 |:--:|---|---|---|
 | 1 | `65_BEFORE_DEPLOY_20261026_65_attachments_path_ownership.sql` | محرر SQL | الآن (ثغرة مفتوحة اليوم). إن كان نُفِّذ فلا تُعِده |
 | 2 | `66_NOW_20261026_66_document_shares_path_ownership.sql` | محرر SQL | الآن، بعد 65. إن كان نُفِّذ فلا تُعِده |
-| 3 | `72_BEFORE_DEPLOY_20261026_72_file_folder_owner.sql` | محرر SQL | **قبل نشر الكود**، بعد 65 و66 |
+| 3 | `72_BEFORE_DEPLOY_20261026_72_file_folder_owner.sql` | محرر SQL | **قبل نشر الكود**، بعد 65 و66، **وقبل 70** (إن حُذف حساب بينهما يبقى مستنده على القضية بلا صاحب ولا سجلّ نقل، فلا يعرف 72 مجلده) |
 | 4 | `70_BEFORE_DEPLOY_20261026_70_account_deletion.sql` | محرر SQL | قبل نشر الكود |
 | 5 | `71_AFTER_70_storage_policies_documents_select.sql` | على الخادم بدور `supabase_admin` (الأمر في `README_account.md`) | بعد 70 |
 
@@ -85,7 +85,8 @@ docker exec -i supabase-db psql -U supabase_admin -d postgres < supabase/migrati
 سلسلة واحدة بترتيب الإنتاج، تنفّذ كل ملف مرتين، ثم تشغّل اختبارات حذف الحساب ومسارات المرفقات وروابط المشاركة واختبار التكامل. كل اختبار في معاملة تُلغى بعده. الأمر في رأس `supabase/tests/rls/batch_2026_10_26_integration.test.sql`، وفيه أيضاً ثلاثة اختبارات سلبية مسجّلة.
 
 *English:*
-- **Order.** 65 → 66 → **72** → 70 → 71. Run 72 in the SQL editor **before the code deploy**: the routes select `attachments.folder_owner_id` / `contract_versions.folder_owner_id`. It needs 65; it runs before or after 70.
+- **Order.** 65 → 66 → **72** → 70 → 71. Run 72 in the SQL editor **before the code deploy**: the routes select `attachments.folder_owner_id` / `contract_versions.folder_owner_id`. It needs 65.
+- **72 before 70.** An account deleted between 70 and 72 leaves its document on a shared case with owner null and no trail row, so 72 cannot learn its folder.
 - **What 72 does.** It records the folder each file was written in. Session-fixed, CHECKed against the path, backfilled (also from `firm_asset_transfers` if 70 ran first). A document 70 moves to the firm owner, keeps for the other party (owner null) or whose uploader is deleted stays servable.
 - **Blocking.** A session cannot register a path another account's row holds (`storage_object_held_by_other`).
 - **Sharing.** `can_share_attachment` (66) checks the recorded folder.

@@ -4763,6 +4763,12 @@ begin
      and position('folder_owner_id' in (select prosrc from pg_proc where oid = 'public.can_share_attachment(text, text)'::regprocedure)) = 0 then
     raise exception '_verify: 20261026_72 — can_share_attachment does not read folder_owner_id: 20261026_66 was re-run after 72, and a firm owner cannot share an inherited document (re-run 20261026_72)';
   end if;
+  foreach t in array array['public.attachments', 'public.contract_versions'] loop
+    if exists (select 1 from pg_roles where rolname = 'authenticated')
+       and not has_column_privilege('authenticated', t, 'folder_owner_id', 'SELECT') then
+      raise exception '_verify: 20261026_72 — authenticated cannot SELECT %.folder_owner_id: the ZIP / contract-version / copy / share routes read it through the session client and fail every download (grant it)', t;
+    end if;
+  end loop;
   execute 'select count(*) from public.attachments where folder_owner_id is null and public.storage_path_in_folder(storage_path, owner_user_id)' into n;
   if n > 0 then
     raise exception '_verify: 20261026_72 — % attachments row(s) in their owner''s folder have no folder_owner_id (re-run 20261026_72)', n;
