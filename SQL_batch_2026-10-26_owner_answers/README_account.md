@@ -98,6 +98,12 @@ docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1
 
 صاحب المكتب الذي له أعضاء، أو مفتاح يمنع الحذف، يصير طلبه `blocked` ويبقى الحساب مجمّداً حتى يقرر المالك. ولا تكرر المهمة المحاولة كل يوم. الرد JSON بالأعداد: `claimed` و`purged` و`blocked` و`retry`.
 
+## تنبيهات
+
+- **إخفاء الملف العام «فوراً»** يتم في قاعدة البيانات. لكن نسخة صفحة خزّنها nginx (`proxy_cache_dir`) قد تبقى ظاهرة حتى تنتهي مدة تخزينها. `deploy.sh` يفرغ هذا التخزين عند كل نشر.
+- **حذف حسابات الاختبار (UAT):** المشغّل الجديد يرفض حذف صاحب مكتب أو شركة أو جهة ما زال لها أعضاء. احذف الأعضاء أولاً، ثم أصحاب المكاتب.
+- **مكتب استشارات:** إن كان صاحب المكتب «مستشاراً» (`practice_kind = consultant`) فقاعدة المادة ١٨ تمنع نقل جلسات العضو المُخرَج إليه من جلسة صاحب المكتب. ينجح الإخراج، وتبقى تلك الجلسات مع العضو حتى ينقلها الحذف النهائي (السؤال ٧ للمالك).
+
 ## للتراجع
 
 الأوامر في رأس الملف تحت `ROLLBACK`. الجدولان يبقيان لأنهما سجل.
@@ -110,4 +116,4 @@ docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1
   - Frozen lawyer and provider profiles are unlisted.
 - **Foreign key.** `entitlement_requests.decided_by` becomes SET NULL.
 - **Safety.** It deletes nothing. It is idempotent.
-- **Tested.** Docker-proved twice (T1–T10, plus a negative control): `supabase/tests/rls/account_deletion.test.sql`.
+- **Tested.** Docker-proved twice (T1–T11, with two negative controls; the chain includes the live lawyer_profiles and the Art. 18 guard): `supabase/tests/rls/account_deletion.test.sql`.

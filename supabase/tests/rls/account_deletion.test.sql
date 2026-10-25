@@ -6,10 +6,15 @@
 -- CHAIN (run.sh, postgres:16; stubs.sql loads first by itself). The migration
 -- runs TWICE (idempotent). From the repo root:
 --   T=supabase/tests/rls; M=supabase/migrations; bash $T/run.sh \
+--     $T/prelude_lawyer_profiles_live.sql \
+--     $T/prelude_signup_metadata_live.sql \
+--     $M/20261016_10_lawyer_profiles_select_column_lock.sql \
+--     $M/20261019_20_lawyer_practice_kind.sql \
 --     $T/prelude_case_tables_real.sql \
 --     $M/20260903_phase1_case_tables.sql \
 --     $M/20260903_phase2_clients_and_firm_membership.sql \
 --     $M/20260904_phase5_deadline_radar.sql \
+--     $M/20261019_21_consultant_court_write_guard.sql \
 --     $M/20260905_phase3_consultations_and_contracts.sql \
 --     $M/20260910_case_notes.sql \
 --     $M/20261017_41_notes_visibility_case_team.sql \
@@ -21,6 +26,7 @@
 --     $M/20260627_platform_settings.sql \
 --     $M/20261019_10_library_access_grants.sql \
 --     $M/20261022_10_payments_core.sql \
+--     $M/20260706_entitlement_requests.sql \
 --     $T/prelude_storage_objects_stub.sql \
 --     $M/20261026_70_account_deletion.sql \
 --     $M/20261026_70_account_deletion.sql \
@@ -32,6 +38,11 @@
 -- Recorded 2026-10-26: "T9 FAIL: case-l lost its lead (assigned_to /
 -- requester not moved to O)", exit 3 — the cascade nulls the case's lead and
 -- deletes his notes, document, hearing, task and client card.
+-- NEGATIVE CONTROL 2 (must FAIL): the full chain with the 20261026_70 of
+-- commit a82c0d5c (no 42501 catch in transfer_firm_assets) → T11 stops at
+-- the member-removal UPDATE with the Art. 18 refusal «هذه الأداة للمحامي
+-- المرخّص بالترافع…», exit 3 (recorded 2026-10-26): a consultant firm owner
+-- could not remove a lawyer at all.
 --
 -- People:
 --   O  firm owner of F (managing partner by the 20260903_phase2 trigger)
@@ -42,6 +53,11 @@
 --   C  independent client of I (case-i)
 --   X  a stranger
 --   A  admin
+--   Q  owner of firm F3, a legal consultant (practice_kind) — T11
+--   R  lawyer, member of F3                               — T11
+-- The live lawyer_profiles (prelude + 20261016_10 + 20261019_20) and the
+-- Art. 18 guard of 20261019_21 are in the chain on purpose: the guard reads
+-- the SESSION's role, so it judges the firm owner's member-removal PATCH.
 -- Every assertion RAISES on failure.
 \set ON_ERROR_STOP 1
 \pset format unaligned
@@ -447,6 +463,60 @@ begin
     raise exception 'T10 FAIL: the decided request went with the admin';
   end if;
   raise notice 'T10 PASS: entitlement_requests.decided_by is SET NULL, the request stays';
+end $$;
+
+-- ── T11 a consultant firm owner removes a lawyer: the removal never fails ────
+-- 20261019_21 refuses a session moving a hearing to a consultant. The removal
+-- still succeeds; the hearing is reported refused and stays with R; the purge
+-- (service role) moves it later, so nothing is lost.
+insert into auth.users (id) values
+  ('77777777-0000-0000-0000-000000000007'), ('88888888-0000-0000-0000-000000000008');
+insert into public.profiles (id, user_type, display_name, email) values
+  ('77777777-0000-0000-0000-000000000007', 'firm',   'Q مكتب استشارات', 'q@example.test'),
+  ('88888888-0000-0000-0000-000000000008', 'lawyer', 'R محامٍ',          'r@example.test');
+insert into public.lawyer_profiles (user_id, practice_kind) values ('77777777-0000-0000-0000-000000000007', 'consultant');
+insert into public.firm_profiles (id, owner_user_id, name_ar) values
+  ('ffffffff-0000-0000-0000-0000000000f3', '77777777-0000-0000-0000-000000000007', 'مكتب الاستشارات');
+insert into public.firm_members (firm_id, user_id, role, status, accepted_at) values
+  ('ffffffff-0000-0000-0000-0000000000f3', '88888888-0000-0000-0000-000000000008', 'lawyer', 'active', now());
+insert into public.service_requests (id, requester_user_id, assigned_to, title, firm_id) values
+  ('case-r', '88888888-0000-0000-0000-000000000008', '88888888-0000-0000-0000-000000000008', 'قضية R', 'ffffffff-0000-0000-0000-0000000000f3');
+insert into public.hearings (case_request_id, firm_id, owner_user_id, title, hearing_date) values
+  ('case-r', 'ffffffff-0000-0000-0000-0000000000f3', '88888888-0000-0000-0000-000000000008', 'جلسة قضية R', current_date + 3);
+insert into public.case_notes (id, request_id, author_user_id, firm_id, visibility, body) values
+  ('bbbbbbbb-0000-0000-0000-000000000011', 'case-r', '88888888-0000-0000-0000-000000000008', 'ffffffff-0000-0000-0000-0000000000f3', 'firm', 'مذكرة R');
+set role authenticated;
+select set_config('test.uid', '77777777-0000-0000-0000-000000000007', false);
+update public.firm_members set status = 'removed'
+ where user_id = '88888888-0000-0000-0000-000000000008' and firm_id = 'ffffffff-0000-0000-0000-0000000000f3';
+reset role;
+do $$
+begin
+  if (select status from public.firm_members where user_id = '88888888-0000-0000-0000-000000000008') <> 'removed' then
+    raise exception 'T11 FAIL: the removal did not commit';
+  end if;
+  if (select author_user_id from public.case_notes where id = 'bbbbbbbb-0000-0000-0000-000000000011') <> '77777777-0000-0000-0000-000000000007' then
+    raise exception 'T11 FAIL: the note did not move to Q';
+  end if;
+  if (select owner_user_id from public.hearings where case_request_id = 'case-r') <> '88888888-0000-0000-0000-000000000008' then
+    raise exception 'T11 FAIL: the Art. 18 guard was expected to keep the hearing with R on the session path';
+  end if;
+  raise notice 'T11 PASS: a consultant owner''s removal of a lawyer succeeds; the hearing the Art. 18 guard refuses stays with R, the note moves';
+end $$;
+set role service_role;
+do $$
+declare r jsonb;
+begin
+  r := public.account_purge_prepare('88888888-0000-0000-0000-000000000008');
+  if not (r->>'ok')::boolean then raise exception 'T11b FAIL: prepare refused R: %', r; end if;
+end $$;
+reset role;
+do $$
+begin
+  if (select owner_user_id from public.hearings where case_request_id = 'case-r') <> '77777777-0000-0000-0000-000000000007' then
+    raise exception 'T11b FAIL: the purge path did not move the hearing to the firm owner';
+  end if;
+  raise notice 'T11b PASS: on the purge path (service role) the hearing moves to the firm owner — nothing is lost';
 end $$;
 
 select 'account_deletion.test.sql: ALL PASS';

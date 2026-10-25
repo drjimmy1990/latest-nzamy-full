@@ -309,6 +309,7 @@ declare
   n      int;
   total  int := 0;
   counts jsonb := '{}'::jsonb;
+  refused jsonb := '{}'::jsonb;
   o      record;
 begin
   if p_user is null then
@@ -330,6 +331,12 @@ begin
         spec.tbl, spec.col, spec.firm_expr, spec.extra)
         into n using p_user, p_firm;
     else
+      -- A guard trigger may refuse a move on a SESSION's path (the firm
+      -- owner's member-removal PATCH): 20261019_21 refuses court rows whose
+      -- new owner is a consultant. The removal must not fail over it; the row
+      -- stays where it was and is reported as refused. On the purge path the
+      -- writer is service_role / GoTrue and those guards let the move through.
+      begin
       execute format(
         'with moved as (
            update public.%1$I t set %2$I = fp.owner_user_id
@@ -343,6 +350,10 @@ begin
         spec.tbl, spec.col, spec.firm_expr, spec.extra, spec.pk, spec.tbl, spec.col)
         using p_user, p_firm, p_reason;
       get diagnostics n = row_count;
+      exception when insufficient_privilege then
+        refused := refused || jsonb_build_object(spec.tbl || '.' || spec.col, sqlerrm);
+        n := 0;
+      end;
     end if;
     if n > 0 then
       counts := counts || jsonb_build_object(spec.tbl || '.' || spec.col, n);
@@ -376,7 +387,7 @@ begin
     end loop;
   end if;
 
-  return jsonb_build_object('total', total, 'by_column', counts);
+  return jsonb_build_object('total', total, 'by_column', counts, 'refused', refused);
 end;
 $$;
 

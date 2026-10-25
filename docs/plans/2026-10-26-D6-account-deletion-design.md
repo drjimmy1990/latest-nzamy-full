@@ -198,6 +198,15 @@ Membership rows (`case_team_members`, `firm_members`) are access, not assets, an
 
 ---
 
+## Residuals (stated, not hidden)
+
+- **Art. 18 guard (20261019_21) on the removal path.** The guard reads the *session's* role, so when the firm owner's own PATCH removes a member, it refuses moving a hearing, case stage or court deadline to an owner who is a **consultant**. `transfer_firm_assets` catches that 42501. The removal still succeeds, the refused rows stay with the removed member and are reported as `refused`, and the purge (service role, which the guard lets through) moves them later. Until then, the removed member keeps reaching those rows through `can_access_case_row`'s owner arm (Q7). Docker T11 covers this; a negative control shows the removal failing outright without the catch.
+- **Direct REST during the freeze.** The gates cover protected pages, the lawyer/admin/firm APIs and `assertRole`. A direct PostgREST call with the user's own JWT still reaches his own rows (RLS), and so does a route that does its own `getUser()` without `assertRole`.
+- **«Hidden immediately».** This holds at the source: `marketplace_visible` is forced false, so the directory API, `/lawyers/[slug]`, reviews and anon REST stop listing the account on their next read. The lawyer pages use no ISR. A copy that the nginx proxy cache (`/www/server/nginx/proxy_cache_dir`) already holds can be served until it expires. `deploy.sh` purges it on each deploy.
+- **`last_error` is visible to the user.** It sits on his own request row, which his RLS allows him to read.
+- **The bare `deleteUser`.** It remains in the admin route only for the case where `account_purge_claim_user` does not exist, i.e. before 20261026_70 runs.
+- **UAT teardown.** The auth.users trigger refuses to delete an owner of a firm, company, NGO or government body that still has members, including during the 146-account UAT teardown. Remove the members first, then the owners.
+
 ## 4. Open questions for the owner (safe defaults chosen)
 
 1. **A firm, company or NGO owner deleting his own account.** Default: the self-request is refused while the entity has other members. An admin freeze is allowed, but the purge is `blocked` and the account stays frozen. Ownership has to be transferred first, and no screen does that yet.
@@ -206,3 +215,4 @@ Membership rows (`case_team_members`, `firm_members`) are access, not assets, an
 4. **How long the buyer snapshot on invoices is kept.** VAT practice is 6 years. Today it is kept with no end date. Confirm the period with the accountant.
 5. **Company (`business_members`) members.** ٢٩٨ names law offices and firms. Should the same transfer apply to corporate legal teams?
 6. **B2 auto-renew** must skip accounts with an active deletion request. Nothing charges today.
+7. **A consultant firm owner and court rows.** Art. 18 refuses a consultant's hearings. When a lawyer member leaves a consultancy firm, who should hold his hearings and court deadlines? Default: they stay with the departed member until the purge moves them to the owner.
