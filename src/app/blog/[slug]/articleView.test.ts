@@ -59,3 +59,16 @@ test("N1.6: both TOCs use gold for hover and the active entry, in light and dark
   assert.match(code, /return `hover:text-\[#C8A762\] \$\{isDark/);
   assert.equal((code.match(/aria-current=\{/g) ?? []).length, 2, "both lists mark the active entry");
 });
+
+// ─── N1.7: no <br/> per blank line ───────────────────────────────────────────
+
+test("N1.7: a blank line renders nothing; blocks carry their own margins", () => {
+  assert.doesNotMatch(code, /<br\s+key=/, "no <br/> element per blank line");
+  assert.match(code, /if \(line\.trim\(\) === ""\) \{ i\+\+; continue; \}/);
+  assert.match(code, /text-sm leading-relaxed mb-4 /, "paragraphs get a real bottom margin");
+  assert.equal((code.match(/\$\{listItemSpacing\(lines, i\)\}/g) ?? []).length, 2, "numbered and bullet lists");
+});
+
+test("N1.7: `---` still renders its rule (owner §38: the renderer does not swallow it)", () => {
+  assert.match(code, /if \(\/\^-\{3,\}\$\/\.test\(line\.trim\(\)\)\) \{ out\.push\(<hr /);
+});

@@ -15,7 +15,7 @@ import Image from "next/image";
 import { markdownBoldToSafeHtml } from "@/utils/sanitize";
 import type { PlatformBlogArticle } from "@/constants/platformContent";
 import { classifyBlockquote, CALLOUT_CLASSES, type CalloutKind } from "./_callouts";
-import { altAnchor, findToc, nextActiveTocId, slugify, type Toc, type TocItem } from "./_article-md";
+import { altAnchor, findToc, listItemSpacing, nextActiveTocId, slugify, type Toc, type TocItem } from "./_article-md";
 
 // ─── Markdown renderer (lightweight + callouts) ──────────────────────────────
 // Which blockquote is a note, a warning or a quoted statute — and its colours
@@ -193,7 +193,7 @@ const RenderContent = memo(function RenderContent({ md, isDark, toc }: { md: str
     }
 
     // Numbered lists
-    if (line.match(/^\d+\. /)) { out.push(<p key={key++} className={`ms-4 mb-1 text-sm ${isDark ? "text-gray-300" : "text-gray-700"}`} dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(line) }} />); i++; continue; }
+    if (line.match(/^\d+\. /)) { out.push(<p key={key++} className={`ms-4 ${listItemSpacing(lines, i)} text-sm ${isDark ? "text-gray-300" : "text-gray-700"}`} dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(line) }} />); i++; continue; }
 
     // Bullet lists (- or *), including indented sub-levels. The corpus nests
     // statutory citations two levels deep ("    *   **المادة (429):** …"); those
@@ -204,7 +204,7 @@ const RenderContent = memo(function RenderContent({ md, isDark, toc }: { md: str
       const depth = Math.min(2, Math.floor(bullet[1].length / 2));
       const marker = ["•", "◦", "▪"][depth];
       const indent = ["ms-4", "ms-9", "ms-14"][depth];
-      out.push(<p key={key++} className={`${indent} mb-1 text-sm ${isDark ? "text-gray-300" : "text-gray-700"}`} dangerouslySetInnerHTML={{ __html: `${marker} ` + markdownBoldToSafeHtml(bullet[2]) }} />);
+      out.push(<p key={key++} className={`${indent} ${listItemSpacing(lines, i)} text-sm ${isDark ? "text-gray-300" : "text-gray-700"}`} dangerouslySetInnerHTML={{ __html: `${marker} ` + markdownBoldToSafeHtml(bullet[2]) }} />);
       i++; continue;
     }
 
@@ -228,11 +228,14 @@ const RenderContent = memo(function RenderContent({ md, isDark, toc }: { md: str
       continue;
     }
 
-    // Empty lines
-    if (line.trim() === "") { out.push(<br key={key++} />); i++; continue; }
+    // Empty lines separate blocks and render nothing (N1.7): a <br/> per blank
+    // line stacked on the paragraph margin and left large uneven gaps. The
+    // blocks carry their own margins — paragraphs mb-4, headings mt-*/mb-*,
+    // the last item of a list mb-4 — and `---` still renders its <hr>.
+    if (line.trim() === "") { i++; continue; }
 
     // Default paragraph
-    out.push(<p key={key++} className={`text-sm leading-relaxed mb-2 ${isDark ? "text-gray-300" : "text-gray-700"}`} dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(line) }} />);
+    out.push(<p key={key++} className={`text-sm leading-relaxed mb-4 ${isDark ? "text-gray-300" : "text-gray-700"}`} dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(line) }} />);
     i++;
   }
 

@@ -1,6 +1,7 @@
 /**
  * _article-md.ts — the pure parts of the blog article renderer (ArticleView):
- * heading anchors, the in-article TOC and the TOC's active section (N1.6).
+ * heading anchors, the in-article TOC, the TOC's active section (N1.6) and
+ * list spacing (N1.7).
  *
  * Pure: no runtime imports, so `node --test` loads it directly
  * (./_article-md.test.ts). ArticleView.tsx itself cannot load under node.
@@ -74,3 +75,16 @@ export function nextActiveTocId(order: readonly string[], visible: ReadonlySet<s
   return prev !== null && order.includes(prev) ? prev : null;
 }
 
+/** A bullet or numbered list line, as RenderContent reads it. */
+export function isListLine(line: string | undefined): boolean {
+  return line !== undefined && (/^\d+\. /.test(line) || /^(\s*)[-*]\s+/.test(line));
+}
+
+/**
+ * N1.7 — the bottom margin of list line `i`: tight between items, a paragraph's
+ * gap after the last item of a run, so the text that follows does not sit on
+ * the list. A blank line ends the run (it renders nothing now).
+ */
+export function listItemSpacing(lines: readonly string[], i: number): "mb-1.5" | "mb-4" {
+  return isListLine(lines[i + 1]) ? "mb-1.5" : "mb-4";
+}
