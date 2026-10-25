@@ -177,3 +177,29 @@ test("a guest keeps the card's type row even when its key is «نوع الوثي
   };
   assert.deepEqual(cardForViewer(card, false)?.main, [{ key: "نوع الوثيقة", value: "لائحة تنفيذية" }]);
 });
+
+test("a guest's card drops every row that cites or dates an instrument, whatever its key (corpus values)", () => {
+  const leaking = [
+    { key: "اللوائح المدمجة", value: "اللائحة التنفيذية (قرار مجلس الوزراء رقم 201 وتاريخ 1431/06/10هـ)" },
+    { key: "استُبدلت بـ", value: "اللائحة التنفيذية لنظام المحاماة لعام 1446هـ (القرار الوزاري رقم 676 وتاريخ 19/4/1446هـ)" },
+    { key: "رقم المستند / المرجع", value: "قرار مجلس الخدمة المدنية رقم ١٤١" },
+    { key: "تلغي", value: "لائحة المعونة القضائية (قرار المجلس 1439/8/8هـ)" },
+    { key: "الجهة السابقة (قبل الدمج المؤسسي)", value: "المركز الوطني للتنافسية (قرار 212/1440هـ)" },
+    { key: "اللوائح المدمجة", value: "شروط رخص المياه السطحية (قرار 15169651)" },
+    { key: "قواعد تصديق الوثائق", value: "قرار مجلس إدارة الهيئة، صفر 1446هـ (أغسطس 2024م)" },
+    { key: "الموقع الرسمي", value: "[الهيئة](https://gaca.gov.sa)" },
+    { key: "آخر تعديل", value: "بموجب اللائحة الأحدث" },
+    { key: "موقع الهيئة العامة للطيران المدني", value: "https://gaca.gov.sa" },
+  ];
+  const kept = [
+    { key: "نوع التشريع", value: "لائحة تنفيذية" },
+    { key: "الجهة المصدرة", value: "مجلس الوزراء" },
+    { key: "حالة التشريع", value: "ملغى — مُستبدَل باللائحة التنفيذية لنظام المحاماة لعام 1446هـ" },
+    { key: "الموضوع", value: "إجراءات مكافحة المخدرات على المستوى الدولي لعام 1436هـ" },
+    { key: "عدد المواد", value: "245" },
+  ];
+  const out = cardForViewer({ main: [...kept, ...leaking], more: leaking }, false);
+  assert.deepEqual(out, { main: kept, more: [] });
+  // A subscriber still gets everything.
+  assert.equal(cardForViewer({ main: leaking, more: [] }, true)?.main.length, leaking.length);
+});

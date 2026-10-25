@@ -37,9 +37,36 @@ export function lawSummaryVisible(isSubscriber: boolean, audience: LawSummaryAud
  * Card rows that are T28-22 official metadata: an issuing or amending
  * instrument, an issue / publication date, an official link or the gazette.
  */
-const OFFICIAL_META_KEY = /أداة|قرار|مرسوم|أمر|تاريخ|نشر|المصدر الرسمي|^المصدر$|رابط|وثيقة|PDF|جريدة|أم القرى/i;
-/** A value that cites an instrument by number («… بقرار وزير العدل رقم (512)»). */
-const CITES_INSTRUMENT = /رقم\s*\(|م\s*\/\s*\d/;
+const OFFICIAL_META_KEY = /أداة|قرار|مرسوم|أمر|تاريخ|نشر|المصدر الرسمي|^المصدر$|رابط|وثيقة|PDF|جريدة|أم القرى|آخر تعديل|آخر تحديث|الموقع الرسمي/i;
+
+const D = "[0-9٠-٩۰-۹]";
+const HIJRI_YEAR = "(?:1[34]|١[٣٤]|۱[۳۴])" + D + "{2}";
+/**
+ * A value that cites an instrument or dates one, whatever its key (owner ٢٦٠
+ * opened the card to guests, 2026-10-26; measured on last_owner: 171 of
+ * 1,583 guest cards still carried one under keys like «اللوائح المدمجة»,
+ * «يحل محل», «السند النظامي»):
+ *   - an instrument number: «رقم (512)», «رقم 575», «رقم ١٤١», «م/51»;
+ *   - a full Hijri date, year first or day first: «1442/9/22هـ», «19/4/1446هـ»;
+ *   - a link (the official pages are T28-26 subscribers' rows).
+ * A bare year («لعام 1446هـ», part of many law names) is not a date here.
+ */
+const CITES_INSTRUMENT = new RegExp(
+  [
+    `رقم\\s*\\(?\\s*${D}`,
+    `م\\s*\\/\\s*${D}`,
+    `${HIJRI_YEAR}\\s*[\\/\\-]\\s*${D}{1,2}`,
+    `${D}{1,2}\\s*[\\/\\-]\\s*${D}{1,2}\\s*[\\/\\-]\\s*${HIJRI_YEAR}`,
+    // «قرار 212/1440هـ», «بالقرار 2568/1440»: a number over its year.
+    `${D}+\\s*\\/\\s*${HIJRI_YEAR}`,
+    // «قرار 15169651», «المرسوم 51»: an instrument word, then its number.
+    `(?:قرار|مرسوم|أمر)\\S*\\s+\\(?${D}`,
+    // «قرار مجلس إدارة الهيئة، صفر 1446هـ»: an instrument and its month.
+    `(?:قرار|مرسوم|أمر)[^\\n]{0,60}(?:محرم|صفر|ربيع|جمادى|رجب|شعبان|رمضان|شوال|ذو القعدة|ذي القعدة|ذو الحجة|ذي الحجة)\\S*\\s+(?:\\S+\\s+)?${HIJRI_YEAR}`,
+    "https?:\\/\\/",
+  ].join("|"),
+  "i",
+);
 
 /**
  * The document's kind is not official metadata, though «نوع الوثيقة» contains
