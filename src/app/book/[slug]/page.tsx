@@ -52,6 +52,7 @@ import {
   emptyLinks, filterToc, findBlock, fromApiBook, fromNestedBook, linkRun, loadedBlocks,
   mergeSectionBlocks, neighbour, normalizeBlock, runFromCursorResponse,
   type BlocksBySection, type BookLinks, type CompleteSections, type ReaderBook, type ReaderState,
+  READER_LAYERS, emptyLayerNote, layerShows, type ReaderLayer,
 } from "./_reader-model";
 import { isDemoMode } from "@/lib/runtimeMode";
 
@@ -140,7 +141,8 @@ export default function FeqhBookPage() {
 
   // Reader states
   const [activeBlockId, setActiveBlockId] = useState<string>("");
-  const [viewLayer, setViewLayer] = useState<"all" | "matn-only" | "sharh-only">("all");
+  // N2.3: the four layers of the owner preview (_reader-model.ts READER_LAYERS).
+  const [viewLayer, setViewLayer] = useState<ReaderLayer>("all");
   const [fontSize, setFontSize] = useState<"normal" | "large" | "xlarge">("large");
   const [isReadingMode, setIsReadingMode] = useState(false);
   const [copiedText, setCopiedText] = useState(false);
@@ -694,27 +696,26 @@ export default function FeqhBookPage() {
               {isRTL ? "العودة إلى المكتبة القانونية" : "Back to Legal Library"}
             </Link>
 
-            <div className={`inline-flex p-1 rounded-xl ${isDark ? "bg-zinc-900 border border-white/[0.05]" : "bg-slate-200"}`}>
-              <button
-                onClick={() => setViewLayer("all")}
-                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  viewLayer === "all"
-                    ? isDark ? "bg-[#0B3D2E] text-white shadow" : "bg-white text-zinc-900 shadow-sm"
-                    : "text-slate-500 dark:text-zinc-400 hover:opacity-85"
-                }`}
-              >
-                {isRTL ? "التجربة الكاملة" : "Full View"}
-              </button>
-              <button
-                onClick={() => setViewLayer("matn-only")}
-                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  viewLayer === "matn-only"
-                    ? isDark ? "bg-[#0B3D2E] text-white shadow" : "bg-white text-zinc-900 shadow-sm"
-                    : "text-slate-500 dark:text-zinc-400 hover:opacity-85"
-                }`}
-              >
-                {isRTL ? "المتن فقط" : "Matn Only"}
-              </button>
+            <div
+              role="group"
+              aria-label={isRTL ? "طبقات النص" : "Text layers"}
+              className={`inline-flex flex-wrap p-1 rounded-xl ${isDark ? "bg-zinc-900 border border-white/[0.05]" : "bg-slate-200"}`}
+            >
+              {READER_LAYERS.map((layer) => (
+                <button
+                  key={layer.id}
+                  type="button"
+                  aria-pressed={viewLayer === layer.id}
+                  onClick={() => setViewLayer(layer.id)}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    viewLayer === layer.id
+                      ? isDark ? "bg-[#0B3D2E] text-white shadow" : "bg-white text-zinc-900 shadow-sm"
+                      : "text-slate-500 dark:text-zinc-400 hover:opacity-85"
+                  }`}
+                >
+                  {isRTL ? layer.ar : layer.en}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -824,7 +825,7 @@ export default function FeqhBookPage() {
                 </div>
 
                 {/* Matn Section */}
-                {(viewLayer === "all" || viewLayer === "matn-only") && activeBlock.matn && (
+                {layerShows(viewLayer, "matn") && activeBlock.matn && (
                   <div className="mb-6 relative">
                     <div className="absolute top-2 right-2 flex items-center gap-1 text-[9px] font-black uppercase text-amber-600 dark:text-amber-500 tracking-wider">
                       <BookmarkSimple size={10} weight="fill" />
@@ -838,6 +839,13 @@ export default function FeqhBookPage() {
                   </div>
                 )}
 
+                {/* N2.3: a single-layer view of a block with no text in that layer. */}
+                {emptyLayerNote(activeBlock, viewLayer, isRTL) && (
+                  <p role="note" className="mb-6 px-4 py-3 rounded-xl border text-xs font-bold text-center border-slate-200 text-slate-600 dark:border-white/[0.07] dark:text-zinc-400">
+                    {emptyLayerNote(activeBlock, viewLayer, isRTL)}
+                  </p>
+                )}
+
                 {activeBlock.locked && (
                   <div className="mb-6 flex items-center gap-2 px-4 py-3 rounded-xl border border-amber-500/20 bg-amber-500/[0.05] text-xs font-bold text-amber-700 dark:text-amber-400">
                     <Lock size={14} weight="fill" />
@@ -846,7 +854,7 @@ export default function FeqhBookPage() {
                 )}
 
                 {/* Sharh Section */}
-                {viewLayer === "all" && activeBlock.sharh && (
+                {layerShows(viewLayer, "sharh") && activeBlock.sharh && (
                   <div className="mb-8 relative">
                     <div className="flex items-center gap-1 text-[9px] font-black uppercase text-[#0B3D2E] dark:text-[#C8A762] tracking-wider mb-2.5">
                       <FileText size={11} weight="fill" />
@@ -861,7 +869,7 @@ export default function FeqhBookPage() {
                 )}
 
                 {/* Hashiyah Section */}
-                {viewLayer === "all" && activeBlock.hashiyah && activeBlock.hashiyah.length > 0 && (
+                {layerShows(viewLayer, "hashiyah") && activeBlock.hashiyah && activeBlock.hashiyah.length > 0 && (
                   <div className="border-t pt-5 mt-6 border-slate-200 dark:border-white/[0.05]">
                     <h4 className="text-xs font-black text-slate-500 dark:text-zinc-400 mb-3 uppercase tracking-wider flex items-center gap-1.5">
                       <ListNumbers size={14} />

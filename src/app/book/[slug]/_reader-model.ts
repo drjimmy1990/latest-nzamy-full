@@ -445,3 +445,47 @@ export function filterToc(chapters: ReaderChapter[], map: BlocksBySection, query
 export function chapterOfSection(chapters: ReaderChapter[], sectionId: string): ReaderChapter | null {
   return chapters.find((ch) => ch.sections.some((s) => s.id === sectionId)) ?? null;
 }
+
+// ── Text layers (N2.3) ───────────────────────────────────────────────────────
+
+/**
+ * The reader's layer switch: the whole block, or one of its three layers
+ * (feqh_blocks.matn / sharh / hashiyah). The owner preview (2026-10-22) names
+ * the four buttons «التجربة الكاملة | المتن فقط | الشرح فقط | الحاشية فقط».
+ */
+export type ReaderLayer = "all" | "matn-only" | "sharh-only" | "hashiyah-only";
+export type ReaderLayerPart = "matn" | "sharh" | "hashiyah";
+
+export const READER_LAYERS: ReadonlyArray<{ id: ReaderLayer; ar: string; en: string }> = [
+  { id: "all", ar: "التجربة الكاملة", en: "Full View" },
+  { id: "matn-only", ar: "المتن فقط", en: "Matn Only" },
+  { id: "sharh-only", ar: "الشرح فقط", en: "Sharh Only" },
+  { id: "hashiyah-only", ar: "الحاشية فقط", en: "Hashiyah Only" },
+];
+
+/** Does `layer` show this part of a block? */
+export function layerShows(layer: ReaderLayer, part: ReaderLayerPart): boolean {
+  if (layer === "all") return true;
+  return layer === `${part}-only`;
+}
+
+function hasPart(block: Pick<ReaderBlock, "matn" | "sharh" | "hashiyah">, part: ReaderLayerPart): boolean {
+  if (part === "hashiyah") return block.hashiyah.some((h) => h.trim() !== "");
+  return block[part].trim() !== "";
+}
+
+/** The parts of `block` the reader draws under `layer` (only parts with text). */
+export function visibleParts(block: Pick<ReaderBlock, "matn" | "sharh" | "hashiyah">, layer: ReaderLayer): ReaderLayerPart[] {
+  return (["matn", "sharh", "hashiyah"] as const).filter((p) => layerShows(layer, p) && hasPart(block, p));
+}
+
+/**
+ * The honest one-liner for a single-layer view of a block that has no text in
+ * that layer (instead of an empty card), or null when there is something to
+ * show. A locked block says nothing here: its lock notice covers it.
+ */
+export function emptyLayerNote(block: Pick<ReaderBlock, "matn" | "sharh" | "hashiyah" | "locked">, layer: ReaderLayer, isRTL = true): string | null {
+  if (layer === "all" || block.locked || visibleParts(block, layer).length > 0) return null;
+  const name = { "matn-only": ["متن", "matn"], "sharh-only": ["شرح", "sharh"], "hashiyah-only": ["حاشية", "hashiyah"] }[layer];
+  return isRTL ? `لا يوجد ${name[0]} في هذا الموضع.` : `No ${name[1]} at this point.`;
+}

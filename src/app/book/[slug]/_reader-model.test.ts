@@ -246,3 +246,48 @@ test("series (T28-24): the API's volume list reaches the reader; anything malfor
   assert.equal(noCurrent?.currentId, "المغني - الجزء 02"); // falls back to the book id
   assert.equal(noCurrent?.volumes.length, 3);              // empty id and duplicate dropped
 });
+
+// ── N2.3: the four layer buttons ─────────────────────────────────────────────
+import { READER_LAYERS, emptyLayerNote, layerShows, visibleParts } from "./_reader-model.ts";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const layerBlock = { matn: "قال المصنف", sharh: "قال الشارح", hashiyah: ["حاشية ١", " "], locked: false };
+
+test("N2.3: four layers, in the owner preview's order and words", () => {
+  assert.deepEqual(READER_LAYERS.map((l) => l.id), ["all", "matn-only", "sharh-only", "hashiyah-only"]);
+  assert.deepEqual(READER_LAYERS.map((l) => l.ar), ["التجربة الكاملة", "المتن فقط", "الشرح فقط", "الحاشية فقط"]);
+});
+
+test("N2.3: each single layer shows exactly its own part; «all» shows all three", () => {
+  assert.deepEqual(visibleParts(layerBlock, "all"), ["matn", "sharh", "hashiyah"]);
+  assert.deepEqual(visibleParts(layerBlock, "matn-only"), ["matn"]);
+  assert.deepEqual(visibleParts(layerBlock, "sharh-only"), ["sharh"]);
+  assert.deepEqual(visibleParts(layerBlock, "hashiyah-only"), ["hashiyah"]);
+  assert.equal(layerShows("sharh-only", "matn"), false);
+  assert.equal(layerShows("hashiyah-only", "hashiyah"), true);
+});
+
+test("N2.3: a layer the block lacks gives an honest note, not an empty card", () => {
+  const noSharh = { matn: "متن", sharh: "  ", hashiyah: [] as string[], locked: false };
+  assert.deepEqual(visibleParts(noSharh, "sharh-only"), []);
+  assert.equal(emptyLayerNote(noSharh, "sharh-only"), "لا يوجد شرح في هذا الموضع.");
+  assert.equal(emptyLayerNote(noSharh, "hashiyah-only"), "لا يوجد حاشية في هذا الموضع.");
+  assert.equal(emptyLayerNote(noSharh, "matn-only"), null);
+  assert.equal(emptyLayerNote(noSharh, "all"), null);
+  // A locked block's lock notice already says why there is no text.
+  assert.equal(emptyLayerNote({ ...noSharh, locked: true }, "sharh-only"), null);
+});
+
+test("N2.3: the reader page draws its buttons from READER_LAYERS and its parts from layerShows", () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const page = readFileSync(path.join(here, "page.tsx"), "utf8");
+  assert.match(page, /useState<ReaderLayer>\("all"\)/);
+  assert.match(page, /READER_LAYERS\.map\(/);
+  for (const part of ["matn", "sharh", "hashiyah"]) {
+    assert.ok(page.includes(`layerShows(viewLayer, "${part}")`), `the ${part} section is gated by layerShows`);
+  }
+  assert.match(page, /emptyLayerNote\(activeBlock, viewLayer, isRTL\)/);
+  assert.match(page, /aria-pressed=\{viewLayer === layer\.id\}/);
+});
