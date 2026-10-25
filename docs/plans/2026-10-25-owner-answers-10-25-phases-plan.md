@@ -298,3 +298,34 @@ Each has the default we use until he answers.
     - top-ups up to 10,000 return (removed under ١٧٤/١٧٩);
     - top-up validity becomes 12 months for all (was ٢٤٩);
     - individuals become VAT-exclusive (was ٢٤٨).
+
+---
+
+## Progress (2026-10-26, branch `batch/2026-10-26-owner-answers`)
+
+✅ = built and reviewed on the branch. **Nothing is deployed, and no SQL file of this batch has run on prod.** Run order: `SQL_batch_2026-10-26_owner_answers/README.md`. Owner report: `تقرير_للمالك_٢٠٢٦-١٠-٢٦_تنفيذ_أجوبة_٢٥_أكتوبر.md`. New questions ٢٩٩–٣٢١: `أسئلة_للمالك_دفعة_٢٦_أكتوبر.md`.
+
+| Phase | Status | Commits |
+|---|---|---|
+| P0: no founder grant on signup (20261026_01) | ✅ made | bd5852bb, 4ea293e3, a8d42d51, 15d074c0 |
+| P0b: unpaid founder badges removed, library days kept (٢٧٨ أ, 20261026_02) | ✅ made | 56eedd30 |
+| P1: price book, VAT-exclusive, quarterly / half-yearly groundwork (20261026_10), professionals' monthly retired, no plan points (٢٩١) | ✅ made (no q/s prices yet) | 57fd9ac9, 5e4b193e, 32b83306, d3f913b0, 199808a3, 5ec7347e, 5d7bc83d, b4491c86, f904fa07, 4f56367f, 6ae757cf, 7816fb9d, 55cce552 |
+| P2: lawyer and Art. 18 plans, top-ups 500–10,000 | ⏳ waiting for the revised pricing doc (q ٢٩٩, ٣٠٠, ٣٠٢) | — |
+| P3: paid founder membership (2,996, 1,096 seats), launch prices in cards (٢٩٠) | ⏳ waiting for the revised pricing doc (q ٢٩٩, ٣٠٣) | — |
+| P4: AI tool point prices | ⏳ waiting for the revised pricing doc; the charge itself is payments B2 | — |
+| P5: individuals (insurance 549 / 365, family add-on, smart plan) | ⏳ waiting for the revised pricing doc (q ٣٠١, ٣٠٢) | — |
+| P6: firms, companies, NGOs, providers, commissions (٢٨١), Escrow copy in marketplace pages (٢٨٩), academy prices out (٢٨٢) | ⏳ waiting for the revised pricing doc | — |
+| P7: server-side coupons (20261026_20), WhatsApp chat prices, refund page | ✅ made (NEWCLIENT unusable until a single-service checkout exists; reminders hidden until B2) | 4b5817b8, 6d7f3318, f6752e88, b0d1cbe2, 9fcba108, c529f5ab, 2c900b39, 9f786f40, f66f2fde, b89dba53, 7988cce3, 98b9c5f5 |
+| D1: ٢٦٤ sidebar toggle gone; ٢٧١ / ٢٧٢ sweep; ٢٦٨ checked (hourly rate already hidden by default since ١٦٨) | ✅ made | 98c8d9f7, a15a4314 |
+| D2: tracking link v2 (٢٧٦, 20261026_62) | ✅ made | 29aa631b, e09438b2, 6efa400d, 847680cb, fbbf7c97, eaf3b764, 0e22c0ef, 1a589305, 45e92b2e, e90e8cab |
+| D3: ZIP download (٢٥٦) | ✅ made | 1ded9bb0, fbaa3184, 3e915e20, aa15f519 |
+| D4: letterhead, branding vault, wordmark and smart QR (٢٥٦, 20261026_63 + 64) | ✅ made | 5f0d6f48, b2689620, 59445b35, 0e9de847, 3b1721e6 |
+| D5: Google Calendar live sync (٢٦٦) | ⏳ ops: needs a verified Google Cloud app | — |
+| D6: account deletion (٢٩٨, 20261026_70 + 71) | ✅ made (ops: daily n8n POST /api/v1/cron/account-purge) | 0e0b66ea, a7f048e4, a82c0d5c, cc934afe, 00c57643, 61b210cf, 23fa982c, 50290bdc, 5cb01e6f, 95089d73, 1865ac1c, da7fb661, d596a789, 6bdae14a, f055839f, 7174d4a3, ca1af107 |
+| L-A: the owner's three library fixes + hardening (20261026_50) | ✅ made | ecf0b357, 0764d6e3, 62a5e1d4, d1ced0bc |
+| L-B: ٢٥٩ / ٢٦٠ / ٢٦١ / ٢٦٢ / ٢٦٣ / ٢٧٧ / ٢٩٧ (20261026_51, 52) | ✅ made (٢٦٢ data arrives with his next export; run 51 before that load) | 1d1d85f8, 64be7e90, b8077b03, 750a1194, 8f46ddd5, b0317922, 31e54fe5, fe1024dc, 9e0be047, 91f76bd6, ab82de0c, fb69d226, 72f918e9, 81295e33, 9dddfbc2, 71c12c22 |
+| Security: attachments path ownership (20261026_65) | ✅ made (hole live today: run now) | 3cf9bd17, ef360b4d, b47aa066, d5fcc239 |
+| Security: share links (20261026_66) | ✅ made (hole live today: run now, after 65) | d55acf09, bf8d318a, 70aad707, 4517988b |
+| Security: file folder owner, so 65 and 70 work together (20261026_72; order 65 → 66 → 72 → 70 → 71) | ✅ made | 9b0c6480, c655ecae, 04f79a24, 1359d538 |
+
+Docs and merges, not counted above: d9e2f409, 9196a79d (docs); f9acf72f, 092c7acf, 4ec75de8 (track merges).
