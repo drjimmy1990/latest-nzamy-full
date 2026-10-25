@@ -3990,3 +3990,63 @@ begin
   raise notice '_verify: 20261026_51 OK — feqh_books.series_id / volume_number in place (% book rows carry a series)', n;
 end $$;
 -- <<< verify:feqh_books_series
+
+-- >>> verify:search_relevance — supabase/tests/rls/library_search_relevance.test.sql
+-- 2026-10-26 — 20261026_52_library_search_relevance.sql (owner ٢٧٧ (أ): search
+-- results by relevance in every section, on every page). Read-only, safe to
+-- repeat; it calls none of the functions. Before the file runs this only
+-- reports (the search route lists by id, as before); after, it raises when one
+-- of the four windows is missing, lost its 4s limit or its relevance order, or
+-- an API role can call it (three return server-only text).
+do $$
+declare
+  fns constant text[] := array[
+    'library.search_law_articles_relevance(text, integer, integer, text, text, text)',
+    'library.search_principles_relevance(text, integer, integer, text, text, integer, text)',
+    'library.search_feqh_relevance(text, integer, integer)',
+    'library.search_decrees_relevance(text, integer, integer, text, text, text[])'];
+  fn      text;
+  cfg     text[];
+  definer boolean;
+  body    text;
+  r       text;
+  n       int := 0;
+  missing text := '';
+begin
+  foreach fn in array fns loop
+    if to_regprocedure(fn) is not null then n := n + 1; end if;
+  end loop;
+  if n = 0 then
+    raise notice '_verify: 20261026_52 is not applied yet — search lists every section by id, as before; run SQL_batch_2026-10-26_owner_answers/52_BEFORE_DEPLOY_20261026_52_library_search_relevance.sql';
+    return;
+  end if;
+  foreach fn in array fns loop
+    if to_regprocedure(fn) is null then
+      missing := missing || format(' %s is missing (that section lists by id);', fn);
+      continue;
+    end if;
+    select p.proconfig, p.prosecdef, p.prosrc into cfg, definer, body from pg_proc p where p.oid = to_regprocedure(fn);
+    if definer then
+      missing := missing || format(' %s is SECURITY DEFINER;', fn);
+    end if;
+    if cfg is null or not ('statement_timeout=4s' = any (cfg)) or not ('search_path=""' = any (cfg)) then
+      missing := missing || format(' %s: proconfig %s lacks statement_timeout=4s / search_path='''';', fn, coalesce(cfg::text, 'NULL'));
+    end if;
+    if body !~ 'ts_rank_cd' or body !~ 'order by o\.rank desc nulls last, o\.id' then
+      missing := missing || format(' %s no longer orders by relevance;', fn);
+    end if;
+    foreach r in array array['anon', 'authenticated'] loop
+      if has_function_privilege(r, fn, 'EXECUTE') then
+        missing := missing || format(' %s can EXECUTE %s;', r, fn);
+      end if;
+    end loop;
+    if not has_function_privilege('service_role', fn, 'EXECUTE') then
+      missing := missing || format(' service_role cannot EXECUTE %s (the search route calls it with the service role);', fn);
+    end if;
+  end loop;
+  if missing <> '' then
+    raise exception '_verify: 20261026_52 is broken (re-run 20261026_52) —%', missing;
+  end if;
+  raise notice '_verify: 20261026_52 OK — four relevance windows (laws, precedents, fiqh, orders): INVOKER, statement_timeout 4s, ts_rank_cd order, service_role only';
+end $$;
+-- <<< verify:search_relevance

@@ -45,7 +45,7 @@ const LAW_SUMMARY_COLUMN = "summary_brief";
  * selected — no viewer receives one. The index idx_laws_catalogue_recency is
  * in exactly this order. Before the migration the order falls back to the
  * old section → title → slug (readWithOptionalFeatures). Catalogue only:
- * /api/library/search keeps its own order (owner ٢٧٧ open).
+ * /api/library/search orders by relevance (owner ٢٧٧ (أ), 20261026_52).
  */
 const LAW_SORT_KEY = "catalogue_recency_key";
 const LAW_OPTIONAL_FEATURES: readonly OptionalFeature[] = [

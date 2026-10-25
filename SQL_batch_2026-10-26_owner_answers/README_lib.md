@@ -1,4 +1,4 @@
-# دفعة 2026-10-26 — المكتبة (L-A «مجلداتي»، L-B أجزاء كتب الفقه)
+# دفعة 2026-10-26 — المكتبة (L-A «مجلداتي»، L-B أجزاء كتب الفقه، ترتيب البحث حسب الصلة)
 
 **الحالة:** لم يُنفَّذ على الإنتاج بعد. كل SQL على الإنتاج ينفذه المستخدم في المحرر، بعد نسخة احتياطية ومراجعة نتيجة الملف.
 
@@ -6,6 +6,7 @@
 |:--:|---|---|
 | 50 | `50_ANY_TIME_20261026_50_smart_folders_grants.sql` | **في أي وقت**، قبل نشر الكود أو بعده |
 | 51 | `51_ANY_TIME_20261026_51_feqh_books_series.sql` | **في أي وقت**، ويُفضَّل **قبل** تحميل المكتبة التالي (قرار المالك ٢٦٢) |
+| 52 | `52_BEFORE_DEPLOY_20261026_52_library_search_relevance.sql` | **قبل نشر الكود** يُفضَّل، وآمن في أي ترتيب (قرار المالك ٢٧٧) |
 
 `50_ANY_TIME_20261026_50_smart_folders_grants.sql` نسخة مطابقة من `supabase/migrations/20261026_50_smart_folders_grants.sql`.
 
@@ -134,3 +135,48 @@ alter table library.feqh_books drop column if exists series_id, drop column if e
 ### English (short)
 
 Adds `library.feqh_books.series_id varchar(150)` and `volume_number int` (1–9999), both nullable, a partial index on `series_id`, no grant changes (table-level SELECT already covers them). Any time; the code reads them as optional and the owner loader strips both keys while the columns are missing, so books still load — but series are only kept after this file runs, so run it before the next library load.
+
+---
+
+## ٥٢ — ترتيب نتائج البحث حسب الصلة (قرار المالك ٢٧٧ (أ))
+
+`52_BEFORE_DEPLOY_20261026_52_library_search_relevance.sql` نسخة مطابقة من `supabase/migrations/20261026_52_library_search_relevance.sql` (فُحصت بـ `cmp`).
+
+**ماذا يضيف:** أربع دوال بحث، واحدة لكل قسم: الأنظمة (المواد)، والمبادئ، والفقه، والأوامر والتعاميم. كل دالة ترتّب النتائج حسب صلتها بكلمات البحث (`ts_rank_cd`)، ثم بالمعرّف عند التساوي، **في كل صفحة**. التصفح بلا بحث لا يتغير: يبقى بترتيب التاريخ الرسمي.
+
+**لماذا:** كان البحث يعرض النتائج بترتيب المعرّف في كل الأقسام. دالة الترتيب القديمة `20260925_01` (لمعاينة «الكل» فقط) موسومة «لا تُنفَّذ» لبطئها، فالإنتاج اليوم لا يرتّب شيئاً.
+
+**حدّ الترتيب ٥٬٠٠٠ نتيجة:**
+
+- الترتيب يقرأ نص كل نتيجة مطابقة، فكلفته تكبر مع عدد النتائج.
+- إذا طابق البحث **٥٬٠٠٠ نتيجة أو أقل** في قسم: ترتيب حسب الصلة في كل الصفحات.
+- إذا طابق **أكثر من ٥٬٠٠٠** (كلمة شائعة جداً وحدها): يبقى ترتيب المعرّف كما اليوم، في كل صفحات ذلك البحث. لا تُرتَّب صفحة أولى ثم تُعرض الثانية بترتيب آخر.
+- يذكر الرد لكل قسم الترتيب الذي استُعمل (`order`: `relevance` أو `id`).
+- القياس (Docker، ١١٠ آلاف مادة اصطناعية): نحو ٩٠ ملّي ثانية لثلاثة آلاف نتيجة، وأقل من حدّ الأربع ثوانٍ بكثير. **لم يُقَس على الإنتاج.**
+
+**الصلاحيات:** كأخواتها. `SECURITY INVOKER`، ومهلة ٤ ثوانٍ داخل الدالة، وتنفيذها لحساب الخادم (`service_role`) فقط. لا تغيير على الاشتراك ولا على ما يُخفى عن غير المشترك.
+
+**متى:** يُفضَّل **قبل** نشر الكود، فيبدأ الترتيب من أول طلب. لكنه آمن في أي ترتيب: الكود يستدعي الدالة الجديدة أولاً، وإن لم توجد (`PGRST202`) عاد إلى ترتيب اليوم.
+
+**النتيجة المتوقعة:**
+
+- آخر الملف: `20261026_52 verify: OK — four relevance windows …`.
+- ثم شغّل `supabase/migrations/_verify.sql` بنفسك: `_verify: 20261026_52 OK — …`. سكربت النشر `deploy.sh` **لا** يشغّل `_verify.sql`.
+
+**التراجع** (يعود البحث إلى ترتيب المعرّف خلال عشر دقائق):
+
+```sql
+begin;
+  drop function if exists library.search_law_articles_relevance(text, integer, integer, text, text, text);
+  drop function if exists library.search_principles_relevance(text, integer, integer, text, text, integer, text);
+  drop function if exists library.search_feqh_relevance(text, integer, integer);
+  drop function if exists library.search_decrees_relevance(text, integer, integer, text, text, text[]);
+commit;
+notify pgrst, 'reload schema';
+```
+
+**اختبار Docker:** `supabase/tests/rls/library_search_relevance.test.sql` مع `prelude_search_relevance_fixture.sql` (أمر التشغيل في رأسه؛ الملف يُنفَّذ مرتين). نُفِّذ مرتين محلياً: T1–T7 PASS. يثبت T7 بخطة التنفيذ (`EXPLAIN`) وعدّادات الفهرس أن الكلمة النادرة والشائعة تستعملان فهرس GIN في الأقسام الأربعة، بلا مرور على المفتاح الأساسي. والضبط السلبي (دون الملف) يفشل عند T1.
+
+### English (short)
+
+Four relevance windows (laws/articles, principles, fiqh blocks, decrees), each `ts_rank_cd(fts, q, 1) desc, id` on every page, same parameters and rows as the existing id-order windows (decrees: the inline select's public columns), `SECURITY INVOKER`, `statement_timeout 4s`, service_role only. A query matching more than 5,000 rows of a section keeps the id order on every page (`ranked: false`) — ranking de-TOASTs every match. Prefer running it before the deploy; the code falls back to today's order while it is missing. deploy.sh does not run `_verify.sql`; run section `verify:search_relevance` by hand.

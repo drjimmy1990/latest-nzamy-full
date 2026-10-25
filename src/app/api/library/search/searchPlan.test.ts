@@ -15,6 +15,8 @@ import {
   isPastEndError,
   isTimeoutError,
   isMissingFunctionError,
+  combineSearchOutcomes,
+  rpcPageOrder,
   rpcPageResult,
   lawFetchWindow,
   lawPageArticles,
@@ -24,7 +26,6 @@ import {
   pastEndTotal,
   queryWantsTitleHits,
   rankLawTitleCandidates,
-  rankedLawOrderApplies,
   readPage,
   resolveSectionCount,
   scoreLawTitle,
@@ -362,9 +363,23 @@ test("section=laws pages: no slot for a missing hit, every article listed once, 
   assert.deepEqual(lawFetchWindow(2, 50, 0), { from: 50, size: 50 });
 });
 
-test("the ranked RPC orders only the section=all preview", () => {
-  assert.equal(rankedLawOrderApplies("all"), true);
-  for (const s of ["laws", "precedents", "orders", "feqh"] as const) assert.equal(rankedLawOrderApplies(s), false);
+test("owner ٢٧٧: a relevance window's order comes from its own `ranked` flag", () => {
+  assert.equal(rpcPageOrder({ data: { count: 3, ranked: true, rows: [] }, error: null }), "relevance");
+  // above the function's ranking cap, a sibling id window, a failure, junk
+  assert.equal(rpcPageOrder({ data: { count: 7500, ranked: false, rows: [] }, error: null }), "id");
+  assert.equal(rpcPageOrder({ data: { count: 3, rows: [] }, error: null }), "id");
+  assert.equal(rpcPageOrder({ data: { ranked: true }, error: { code: "57014" } }), "id");
+  assert.equal(rpcPageOrder({ data: null, error: null }), "id");
+  assert.equal(rpcPageOrder({ data: { ranked: "true" }, error: null }), "id");
+});
+
+test("owner ٢٧٧: the body names each answered section's order; a degraded one has none", () => {
+  const ok = (order?: "relevance" | "id") => ({ ok: true as const, results: [], count: 1, exact: true, ...(order ? { order } : {}) });
+  const all = combineSearchOutcomes("all", { laws: ok("relevance"), precedents: ok("id"), orders: { ok: false }, feqh: ok() }, { page: 1, query: "q" });
+  assert.equal(all.status, 200);
+  assert.deepEqual(all.body.order, { laws: "relevance", precedents: "id", feqh: "id" });
+  const one = combineSearchOutcomes("feqh", { feqh: ok("relevance") }, { page: 2, query: "q" });
+  assert.deepEqual(one.body.order, { feqh: "relevance" });
 });
 
 // The literal error supabase-js returned for orders «الحسابات البنكية» page 2 (self-hosted, 2026-09-25).

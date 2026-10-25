@@ -13,16 +13,24 @@ import test from "node:test";
 
 const routeSource = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 
-test("every library.articles read (window RPC, page, head count, ranked RPC, by-id refetch) uses the service-role client", () => {
+test("every library.articles read (relevance window, id window, page, head count) uses the service-role client", () => {
   assert.match(routeSource, /import \{ createClient, createServiceClient \} from '@\/lib\/supabase\/server';/);
   assert.match(routeSource, /const serverOnly = await createServiceClient\(\);/);
-  // The lawQuery builder (the window RPC's missing-function fallback) and the by-id refetch.
+  // The lawQuery builder (the window RPCs' missing-function fallback). The
+  // ranked by-id refetch (20260925_01) is gone: the window itself is ranked.
   const fromArticles = [...routeSource.matchAll(/(\w+)\s*\.schema\('library'\)\s*\.from\('articles'\)/g)].map((m) => m[1]);
-  assert.deepEqual(fromArticles, ["serverOnly", "serverOnly"], "the lawQuery builder and the by-id refetch");
-  // Both article RPCs: the window (20261019_41) and the ranked order (20260925_01).
-  const articleRpcs = [...routeSource.matchAll(/(\w+)\s*\.schema\('library'\)\s*\.rpc\((LAWS_RPC|RANKED_RPC),/g)].map((m) => `${m[1]}:${m[2]}`);
-  assert.deepEqual(articleRpcs, ["serverOnly:RANKED_RPC", "serverOnly:LAWS_RPC"]);
-  assert.match(routeSource, /await serverOnly\s*\.schema\('library'\)\s*\.rpc\(RANKED_RPC,/);
+  assert.deepEqual(fromArticles, ["serverOnly"], "the lawQuery builder");
+  assert.doesNotMatch(routeSource, /RANKED_RPC|search_law_articles_ranked/);
+  // Both article windows: relevance (20261026_52, through relevancePage with
+  // the service client) and the id order (20261019_41).
+  const articleRpcs = [...routeSource.matchAll(/(\w+)\s*\.schema\('library'\)\s*\.rpc\((LAWS_RPC|RELEVANCE_RPC\[name\]),/g)].map((m) => `${m[1]}:${m[2]}`);
+  assert.deepEqual(articleRpcs, ["client:RELEVANCE_RPC[name]", "serverOnly:LAWS_RPC"]);
+  assert.match(routeSource, /async function relevancePage\(\s*client: ServiceClient,/);
+  assert.match(routeSource, /type ServiceClient = Awaited<ReturnType<typeof createServiceClient>>;/);
+  for (const name of ["laws", "precedents", "orders", "feqh"]) {
+    assert.ok(routeSource.includes(`relevancePage(serverOnly, '${name}', {`), `${name} relevance window on the service client`);
+  }
+  assert.doesNotMatch(routeSource, /relevancePage\(supabase,/);
   // The head-count fallback goes through the same builder, so it moves with it.
   assert.match(routeSource, /lawQuery\(false, true\)\.abortSignal\(signal\)/);
   // Decrees, fiqh and the law title lookups stay on the request client:

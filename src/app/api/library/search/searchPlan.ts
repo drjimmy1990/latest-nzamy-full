@@ -102,8 +102,16 @@ export interface SearchResultItem {
  * response carries it per section as `countsExact` (SEARCH COUNTS CONTRACT).
  */
 export type SectionOutcome =
-  | { ok: true; results: SearchResultItem[]; count: number; exact: boolean }
+  | { ok: true; results: SearchResultItem[]; count: number; exact: boolean; order?: SectionOrder }
   | { ok: false };
+
+/**
+ * How a section's counted rows are ordered (owner ٢٧٧ (أ)): 'relevance' when
+ * its window came from a 20261026_52 function that ranked it, 'id' otherwise
+ * (the function is missing, or the query matched more rows than it ranks).
+ * Title / collection / book hits above page 1 are not part of either order.
+ */
+export type SectionOrder = 'relevance' | 'id';
 
 /** Arabic, user-facing. The UI shows its own copy by status; this is for API clients. */
 export const SEARCH_UNAVAILABLE_MESSAGE = 'تعذّر تنفيذ البحث مؤقتاً. حاول مرة أخرى بعد قليل.';
@@ -328,6 +336,18 @@ export function rpcPageResult(res: { data: unknown; error: unknown }): {
 }
 
 /**
+ * The order of a 20261026_52 relevance window: its `"ranked": true` means
+ * relevance (ts_rank_cd desc, id) on every page of that query; anything else
+ * — `false` above the function's ranking cap, or a sibling id-order window —
+ * is the id order.
+ */
+export function rpcPageOrder(res: { data: unknown; error: unknown }): SectionOrder {
+  if (res.error) return 'id';
+  const body = res.data as { ranked?: unknown } | null;
+  return body && typeof body === 'object' && body.ranked === true ? 'relevance' : 'id';
+}
+
+/**
  * Title key for de-duplication: Arabic-normalised, with the seeder's
  * `_0`/`_1` copy suffix removed («نظام العمل التطوعي_0» is the same law as
  * «نظام العمل التطوعي»).
@@ -408,7 +428,8 @@ export function dedupeResults<T extends SearchResultItem>(items: readonly T[]): 
  * the page was re-read without one (uncountedPage, «أكثر من ٥٠»), or, for a
  * section in `degraded`, no count at all. `total` is then a floor too.
  * `countsEstimated`/`countsExactUpTo` are the round-1 fields, kept for older
- * clients.
+ * clients. `order[section]` says how each answered section's rows are ordered
+ * ('relevance' or 'id', SectionOrder).
  */
 export function combineSearchOutcomes(
   section: 'all' | SearchSectionName,
@@ -422,6 +443,8 @@ export function combineSearchOutcomes(
   const countsExact: Record<SearchSectionName, boolean> = { laws: true, precedents: true, orders: true, feqh: true };
   const results: SearchResultItem[] = [];
   const degraded: SearchSectionName[] = [];
+  // Only the sections that answered (a degraded one has no order).
+  const order: Partial<Record<SearchSectionName, SectionOrder>> = {};
 
   for (const name of requested) {
     const outcome = outcomes[name];
@@ -433,6 +456,7 @@ export function combineSearchOutcomes(
     }
     counts[name] = outcome.count;
     countsExact[name] = outcome.exact === true;
+    order[name] = outcome.order ?? 'id';
     results.push(...outcome.results);
   }
 
@@ -453,6 +477,7 @@ export function combineSearchOutcomes(
       query: meta.query,
       degraded,
       countsExact,
+      order,
       countsEstimated: true,
       countsExactUpTo: COUNTS_EXACT_UP_TO,
     },
@@ -615,15 +640,6 @@ export function lawPageArticles<T>(rows: readonly T[], page: number, limit: numb
   if (page <= 1) return rows.slice(0, limit - k);
   const skip = maxSlots - k;
   return rows.slice(skip, skip + limit);
-}
-
-/**
- * The ranked-order RPC (migration 20260925_01) orders only the section=all
- * preview. section=laws pages must all come from one order (`id`): a ranked
- * page 1 followed by id-ordered pages 2+ would repeat and skip rows.
- */
-export function rankedLawOrderApplies(section: 'all' | SearchSectionName): boolean {
-  return section === 'all';
 }
 
 /**

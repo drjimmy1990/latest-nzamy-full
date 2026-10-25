@@ -13,16 +13,18 @@
  *      1420 (Docker T3b).
  *   3. Only the laws are date-ordered; decrees list by id, books and
  *      judicial collections by title.
- *   4. Search: the section=all preview ranks law articles (ts_rank_cd +
- *      title, page 1); a single-section search and later pages list matches
- *      by primary key after the title hits.
+ *   4. Search (changed by 20261026_52): every section, on every page, lists
+ *      its matches by relevance — ts_rank_cd(fts, q, 1) desc, then the
+ *      primary key — after the title hits of page 1. A query matching more
+ *      than 5,000 rows of a section (one very common word) keeps the id order
+ *      on every page of it, and so does a section while its function is
+ *      missing; the response's `order` names which one each section used.
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { rankedLawOrderApplies } from "../search/searchPlan.ts";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "../../../../..");
 const read = (p: string) => readFileSync(path.join(root, p), "utf8").replace(/\r\n/g, "\n");
@@ -45,10 +47,24 @@ test("٢٧٧ browse: /api/library/init orders laws merged → newest official da
   assert.match(init, /fetchSection\("decrees_circulars", DECREE_LIST_COLUMNS, "decrees", \(q\) => q\.order\("id"\)\)/);
 });
 
-test("٢٧٧ search: relevance ranking applies to the section=all preview only", () => {
-  assert.equal(rankedLawOrderApplies("all"), true);
-  assert.equal(rankedLawOrderApplies("laws"), false);
-  const rpc = read("supabase/migrations/20260925_01_library_search_law_articles_ranked.sql");
-  assert.match(rpc, /ts_rank_cd\(a\.fts, q\.tsq\)/);
-  assert.match(rpc, /order by rank desc, a\.id/);
+test("٢٧٧ search: every section ranks by relevance on every page (20261026_52)", () => {
+  const sql = read("supabase/migrations/20261026_52_library_search_relevance.sql");
+  for (const [fn, alias] of [
+    ["search_law_articles_relevance", "a"],
+    ["search_principles_relevance", "p"],
+    ["search_feqh_relevance", "b"],
+    ["search_decrees_relevance", "d"],
+  ]) {
+    const start = sql.indexOf(`create or replace function library.${fn}(`);
+    const body = sql.slice(start, sql.indexOf("$$;", start));
+    assert.ok(start > -1, fn);
+    // normalization 1 (rank / (1 + log length)) is pinned: 0 favours long scanned pages
+    assert.ok(body.includes(`pg_catalog.ts_rank_cd(${alias}.fts, (select pg_catalog.to_tsquery('simple'::regconfig, p_tsquery)), 1) as rank`), `${fn}: ts_rank_cd(fts, q, 1)`);
+    assert.ok(body.includes("order by o.rank desc nulls last, o.id"), `${fn}: relevance, then the primary key`);
+    assert.ok(body.includes("where (select t.n from total t) <= 5000"), `${fn}: the ranking cap`);
+    assert.ok(body.includes("'ranked', (select t.n <= 5000 from total t)"), `${fn}: says whether it ranked`);
+  }
+  const route = read("src/app/api/library/search/route.ts");
+  assert.ok(!route.includes("rankedLawOrderApplies"), "no preview-only ranking any more");
+  assert.match(route, /const RELEVANCE_RPC: Record<SearchSectionName, string> = \{/);
 });
