@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { createContext, memo, useContext, useEffect, useMemo, useState } from "react";
 import {
   Clock, Eye, Share, BookmarkSimple, ArrowRight,
   Newspaper, ChatCircle, SealCheck, Scales,
@@ -15,6 +15,7 @@ import Image from "next/image";
 import { markdownBoldToSafeHtml } from "@/utils/sanitize";
 import type { PlatformBlogArticle } from "@/constants/platformContent";
 import { classifyBlockquote, CALLOUT_CLASSES, type CalloutKind } from "./_callouts";
+import { altAnchor, findToc, nextActiveTocId, slugify, type Toc, type TocItem } from "./_article-md";
 
 // ─── Markdown renderer (lightweight + callouts) ──────────────────────────────
 // Which blockquote is a note, a warning or a quoted statute — and its colours
@@ -29,63 +30,57 @@ const CALLOUT_ICONS: Record<CalloutKind, typeof Info> = {
   legal: Scales,
 };
 
-/** Convert heading text to a URL-safe anchor ID (works with Arabic text). */
-function slugify(text: string): string {
-  return text
-    .trim()
-    .replace(/[()（）\[\]「」『』【】،,.:;؛!?؟"'`~@#$%^&*+=<>{}|\\\/]/g, "") // strip punctuation
-    .replace(/\s+/g, "-") // spaces → hyphens
-    .replace(/-{2,}/g, "-") // collapse multiple hyphens
-    .replace(/^-|-$/g, ""); // trim leading/trailing hyphens
+// ─── TOC: active section (N1.6, owner §38) ───────────────────────────────────
+// Hover, click and the section being read light up gold #C8A762 in both
+// themes. The active id comes from an IntersectionObserver in ArticleView (no
+// scroll listener, no layout reads) and reaches the inline (mobile) TOC
+// through this context, so a change re-renders the two TOC lists only — the
+// memoised article body is not rebuilt.
+const ActiveTocContext = createContext<{ activeId: string | null; select: (id: string) => void }>({
+  activeId: null,
+  select: () => {},
+});
+
+const TOC_GOLD = "text-[#C8A762]";
+
+function tocLinkClass(active: boolean, isDark: boolean): string {
+  if (active) return `${TOC_GOLD} font-bold`;
+  return `hover:text-[#C8A762] ${isDark ? "text-gray-300" : "text-gray-700"}`;
+}
+
+function InlineTocList({ items, isDark }: { items: TocItem[]; isDark: boolean }) {
+  const { activeId, select } = useContext(ActiveTocContext);
+  return (
+    <ul className="mb-6 space-y-1.5">
+      {items.map((t, j) => (
+        <li key={j} className="flex items-start gap-2">
+          <span className="text-[#C8A762] mt-0.5">•</span>
+          <a
+            href={`#${t.href}`}
+            onClick={() => select(t.href)}
+            aria-current={activeId === t.href ? "location" : undefined}
+            className={`text-sm leading-snug transition ${tocLinkClass(activeId === t.href, isDark)}`}
+          >
+            {t.text}
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 /**
- * The in-article TOC ships hand-generated anchors, and that generator drops
- * Arabic diacritics ("…بمضي 60 يوماً" → "…-60-يوما") while slugify keeps them,
- * so those links land nowhere. Return the diacritic-free variant so the heading
- * can carry it as a second id — additive, so anchors that already match are
- * untouched.
+ * The element an IntersectionObserver should watch for a TOC id: the heading.
+ * Some TOC links point at the empty diacritic-free anchor span emitted right
+ * before a heading (pushAltAnchor); its sibling is the heading itself.
  */
-function altAnchor(text: string, id: string): string | null {
-  const stripped = slugify(text.replace(/[ً-ْـٰ]/g, ""));
-  return stripped && stripped !== id ? stripped : null;
+function tocTarget(id: string): Element | null {
+  const el = document.getElementById(id);
+  if (el && el.tagName === "SPAN" && el.nextElementSibling) return el.nextElementSibling;
+  return el;
 }
 
-interface TocItem { text: string; href: string; }
-interface Toc { items: TocItem[]; start: number; end: number; }
-
-/**
- * Every article in the corpus ships its own "## جدول المحتويات (TOC)" list. On
- * desktop we lift it into the sticky sidebar, so the inline copy is hidden
- * there and shown only on mobile (where the sidebar itself is hidden).
- *
- * Returns the parsed links plus the [start, end) line range of the block, so
- * RenderContent can wrap exactly those lines. `end` swallows the closing `---`
- * when present — otherwise desktop would render two rules back to back with
- * nothing between them.
- *
- * Splits with the same `md.trim().split("\n")` RenderContent uses, so the
- * indices line up.
- */
-function findToc(md: string): Toc | null {
-  const lines = md.trim().split("\n");
-  const start = lines.findIndex((l) => /^##\s+.*جدول المحتويات/.test(l));
-  if (start === -1) return null;
-
-  const items: TocItem[] = [];
-  let end = start + 1;
-  for (; end < lines.length; end++) {
-    if (lines[end].trim() === "") continue;
-    const m = /^\s*[-*]\s+\[([^\]]+)\]\(#([^)]+)\)\s*$/.exec(lines[end]);
-    if (!m) break;
-    items.push({ text: m[1].trim(), href: m[2].trim() });
-  }
-  if (/^-{3,}$/.test((lines[end] ?? "").trim())) end++;
-
-  return items.length ? { items, start, end } : null;
-}
-
-function RenderContent({ md, isDark, toc }: { md: string; isDark: boolean; toc: Toc | null }) {
+const RenderContent = memo(function RenderContent({ md, isDark, toc }: { md: string; isDark: boolean; toc: Toc | null }) {
   const lines = md.trim().split("\n");
   const out: React.ReactNode[] = [];
   let i = 0;
@@ -106,16 +101,7 @@ function RenderContent({ md, isDark, toc }: { md: string; isDark: boolean; toc: 
           <h2 className={`text-lg font-bold mt-8 mb-3 ${isDark ? "text-white" : "text-gray-900"}`}>
             {lines[toc.start].replace(/^##\s+/, "")}
           </h2>
-          <ul className="mb-6 space-y-1.5">
-            {toc.items.map((t, j) => (
-              <li key={j} className="flex items-start gap-2">
-                <span className="text-[#C8A762] mt-0.5">•</span>
-                <a href={`#${t.href}`} className={`text-sm leading-snug hover:text-[#C8A762] transition ${isDark ? "text-gray-300" : "text-gray-700"}`}>
-                  {t.text}
-                </a>
-              </li>
-            ))}
-          </ul>
+          <InlineTocList items={toc.items} isDark={isDark} />
         </div>,
       );
       i = toc.end;
@@ -251,7 +237,7 @@ function RenderContent({ md, isDark, toc }: { md: string; isDark: boolean; toc: 
   }
 
   return <div className={`prose prose-sm max-w-none ${isDark ? "prose-invert" : ""}`}>{out}</div>;
-}
+});
 
 /** First letter of a name, past an «أ.»/«د.»/«م.» title (charAt(2) printed a space or a dot). */
 function initialOf(name: string): string {
@@ -278,11 +264,44 @@ export default function ArticleView({
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
+  // N1.6 — hooks stay above the `mounted` early return.
+  const toc = useMemo(() => findToc(article.content), [article.content]);
+  const [activeTocId, setActiveTocId] = useState<string | null>(null);
+  const activeToc = useMemo(() => ({ activeId: activeTocId, select: setActiveTocId }), [activeTocId]);
+
+  // Scroll-spy: an IntersectionObserver on each TOC heading. The band starts
+  // under the fixed 96px nav and ends at 40% of the viewport, so the heading
+  // being read — not one about to scroll in — is the active one.
+  useEffect(() => {
+    if (!mounted || !toc || typeof IntersectionObserver === "undefined") return;
+    const order = toc.items.map((t) => t.href);
+    const idOf = new Map<Element, string>();
+    for (const id of order) {
+      const el = tocTarget(id);
+      if (el && !idOf.has(el)) idOf.set(el, id);
+    }
+    if (idOf.size === 0) return;
+    const visible = new Set<string>();
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const id = idOf.get(entry.target);
+          if (!id) continue;
+          if (entry.isIntersecting) visible.add(id);
+          else visible.delete(id);
+        }
+        setActiveTocId((prev) => nextActiveTocId(order, visible, prev));
+      },
+      { rootMargin: "-96px 0px -60% 0px", threshold: 0 },
+    );
+    idOf.forEach((_, el) => io.observe(el));
+    return () => io.disconnect();
+  }, [mounted, toc]);
+
   if (!mounted) return null;
 
   const muted = isDark ? "text-gray-400" : "text-gray-500";
   const card = `rounded-2xl border p-6 ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`;
-  const toc = findToc(article.content);
   const authorName = isRTL ? article.author.name : article.author.nameEn;
   // The author's own title from the row (author_credentials), or nothing —
   // never a made-up «محامٍ متخصص في …» for a consultant.
@@ -362,7 +381,9 @@ export default function ArticleView({
 
             {/* Content */}
             <div className={`${card} mb-6`}>
-              <RenderContent md={article.content} isDark={isDark} toc={toc} />
+              <ActiveTocContext.Provider value={activeToc}>
+                <RenderContent md={article.content} isDark={isDark} toc={toc} />
+              </ActiveTocContext.Provider>
             </div>
 
             {/* Share + Save */}
@@ -437,12 +458,21 @@ export default function ArticleView({
               <div className={`rounded-2xl border p-5 ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`}>
                 <p className={`text-xs font-bold uppercase tracking-wider mb-3 ${muted}`}>{isRTL ? "جدول المحتويات" : "Contents"}</p>
                 <nav className="space-y-2">
-                  {toc.items.map((t, i) => (
-                    <a key={i} href={`#${t.href}`} className="flex items-start gap-2 group">
-                      <span className="text-[#C8A762] text-xs mt-px flex-shrink-0">•</span>
-                      <span className={`text-xs leading-snug group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition ${isDark ? "text-gray-300" : "text-gray-700"}`}>{t.text}</span>
-                    </a>
-                  ))}
+                  {toc.items.map((t, i) => {
+                    const active = activeTocId === t.href;
+                    return (
+                      <a
+                        key={i}
+                        href={`#${t.href}`}
+                        onClick={() => setActiveTocId(t.href)}
+                        aria-current={active ? "location" : undefined}
+                        className="flex items-start gap-2 group"
+                      >
+                        <span className="text-[#C8A762] text-xs mt-px flex-shrink-0">•</span>
+                        <span className={`text-xs leading-snug transition ${active ? `${TOC_GOLD} font-bold` : `group-hover:text-[#C8A762] ${isDark ? "text-gray-300" : "text-gray-700"}`}`}>{t.text}</span>
+                      </a>
+                    );
+                  })}
                 </nav>
               </div>
             )}
