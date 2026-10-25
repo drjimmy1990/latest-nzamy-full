@@ -3328,7 +3328,7 @@ begin
 end $$;
 -- <<< verify:points_admin_adjustment_reason
 
--- =============================================================
+-- ====================================================================
 -- 2026-10-25 — 20261025_10_grant_plan_atomic.sql (owner-free P2, N4.1)
 -- ====================================================================
 -- A paid plan is granted in ONE transaction: grant_plan_subscription takes a
@@ -3577,7 +3577,7 @@ BEGIN
   RAISE NOTICE '_verify: 20261025_41 OK — search_scoped_page: INVOKER, statement_timeout 4s, search_path empty, service_role only';
 END $$;
 -- <<< verify:search_scoped_page
-=======
+
 -- >>> verify:hearing_reminders
 -- 2026-10-25 — 20261025_30_hearing_reminders.sql (P4 N3.2). Read-only, safe to
 -- repeat. Before _30 runs it only reports; after, it raises when the hearing
