@@ -16,14 +16,24 @@ import { buildAutocompleteBody, uniformCountsExact, type FacetResult, type TopMa
  * (20261004_01, 20261018_02, 20261025_41). What keeps those cheap is the
  * tsquery itself: parseAutocompleteQuery sends positive words only, AND-ed,
  * with no short prefix — always a GIN-index lookup. The principles count and
- * top two go through library.search_principles_page (4s, 20261017_20).
+ * top two go through a principles window function with its own 4s limit
+ * (PRINCIPLES_RPCS).
  */
 const AUTOCOMPLETE_BUDGET_MS = 4000;
 
-/** Principles window with its own statement_timeout (20261017_20); remembered as missing for 10 minutes. */
-const PRINCIPLES_RPC = 'search_principles_page';
+/**
+ * Principles windows with their own 4s statement_timeout, in the order tried:
+ * the relevance window (20261026_52: one GIN scan, its top two the most
+ * relevant), then the id window (20261017_20, whose collection join reads
+ * every principle once the library holds hundreds of collections). Each is
+ * remembered as missing for 10 minutes after a PGRST202 / 42883.
+ */
+const PRINCIPLES_RPCS = ['search_principles_relevance', 'search_principles_page'] as const;
 const PRINCIPLES_RPC_RETRY_MS = 10 * 60 * 1000;
-let principlesRpcMissingUntil = 0;
+const principlesRpcMissingUntil: Record<(typeof PRINCIPLES_RPCS)[number], number> = {
+  search_principles_relevance: 0,
+  search_principles_page: 0,
+};
 
 /**
  * GET /api/library/autocomplete?q=بطلان
@@ -79,25 +89,27 @@ export async function GET(request: Request) {
       .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG })
       .abortSignal(signal);
 
-    // Principles: the count and the top two in one call through
-    // library.search_principles_page (20261017_20): it collects the matches
-    // through the GIN index first, under its own 4s statement_timeout. The
-    // inline id-ordered limit-2 query below made a rare word walk the whole
-    // primary key as the service role (no statement_timeout) — measured in
-    // Docker on 110k rows: 109,991 rows removed by the filter. The inline pair
-    // stays only while the function is missing (PGRST202 / 42883).
+    // Principles: the count and the top two in one call through a principles
+    // window function (PRINCIPLES_RPCS), under its own 4s statement_timeout.
+    // The inline id-ordered limit-2 query below made a rare word walk the
+    // whole primary key as the service role (no statement_timeout) — measured
+    // in Docker on 110k rows: 109,991 rows removed by the filter. The inline
+    // pair stays only while both functions are missing (PGRST202 / 42883).
+    // The window's count is exact: for a common word it costs what the
+    // search's precedents count costs (bounded at 4s), on every keystroke.
     const principlesFacet = async (): Promise<{ count: FacetResult; top: FacetResult<Record<string, unknown>> }> => {
-      if (Date.now() >= principlesRpcMissingUntil) {
+      for (const fn of PRINCIPLES_RPCS) {
+        if (Date.now() < principlesRpcMissingUntil[fn]) continue;
         const rpc = await serverOnly
           .schema('library')
-          .rpc(PRINCIPLES_RPC, { p_tsquery: ftsQuery, p_offset: 0, p_fetch: 2 })
+          .rpc(fn, { p_tsquery: ftsQuery, p_offset: 0, p_fetch: 2 })
           .abortSignal(signal);
         if (!isMissingFunctionError(rpc.error)) {
           const page = rpcPageResult(rpc);
-          const error = page.error ?? (page.data && page.count !== null ? null : { message: 'invalid search_principles_page answer' });
+          const error = page.error ?? (page.data && page.count !== null ? null : { message: `invalid ${fn} answer` });
           return { count: { count: page.count, error }, top: { data: page.data, error } };
         }
-        principlesRpcMissingUntil = Date.now() + PRINCIPLES_RPC_RETRY_MS;
+        principlesRpcMissingUntil[fn] = Date.now() + PRINCIPLES_RPC_RETRY_MS;
       }
       const [principlesCount, principlesTop] = await Promise.all([
         count('principles', serverOnly),

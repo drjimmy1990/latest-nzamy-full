@@ -51,8 +51,14 @@ insert into library.principles (id, collection_id, principle_number, issuing_bod
   ('rel-p-3', 'rel-col-1', '3', 'المحكمة التجارية', 'التزام تعويض الطرف', 1442),
   ('rel-p-4', 'rel-col-1', '4', 'المحكمة التجارية', 'التزام تعويض الطرف', 1444);
 
+-- 300 more collections, as on the live library (hundreds): the generic plan
+-- of a join to them is what 20261026_52 must not loop over.
+insert into library.judicial_collections (id, title, court, track, source_id)
+  select 'rel-col-bulk-' || lpad(c::text, 3, '0'), 'مجموعة ' || c, 'محكمة ' || (c % 9), 'general', 'src-bulk'
+    from generate_series(1, 300) c;
+
 insert into library.principles (id, collection_id, principle_number, issuing_body, text, year_hijri)
-  select 'rel-p-bulk-' || lpad(g::text, 5, '0'), case when g % 2 = 0 then 'rel-col-1' else 'rel-col-2' end,
+  select 'rel-p-bulk-' || lpad(g::text, 5, '0'), 'rel-col-bulk-' || lpad((1 + g % 300)::text, 3, '0'),
          g::text, 'جهة', pg_temp.marks(g), 1440 + g % 5
     from generate_series(1, 22000) g;
 

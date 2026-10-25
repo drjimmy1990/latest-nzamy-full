@@ -66,7 +66,18 @@
 --     lookups — and is skipped entirely (a one-time filter) above the cap.
 --   * Full-text config 'simple' = LIBRARY_FTS_CONFIG; never library.arabic.
 --   * library.laws is read only for a section / law-type filter (as in
---     20261019_41); the principles join their collection as 20261017_20 does.
+--     20261019_41). The principles' collection is read the same way — only
+--     for a track / source / court filter, as a semi-join after the GIN scan.
+--     20261017_20 joins every match to its collection instead, and its
+--     generic plan loops over the collections: in Docker, with 2 collections
+--     it BitmapAnd-ed the GIN index once per collection; with 302 it no
+--     longer used the GIN index at all — it read every principle through
+--     idx_principles_collection_id and tested `fts @@` row by row (22,002
+--     heap blocks = the whole table; 32 ms against 7 ms for the ids here, on
+--     synthetic rows — on the live library that reads all the server-only
+--     text). principles.collection_id is NOT NULL with a foreign key, so
+--     dropping the join keeps the same rows; the page still joins each row to
+--     its collection.
 --
 -- TIME LIMIT AND SECURITY — the siblings' (read 20261017_20's header)
 --   `set statement_timeout = '4s'`, applied by PostgREST v12+ before the call
@@ -208,12 +219,14 @@ as $$
   with matched as materialized (
     select p.id
       from library.principles p
-      join library.judicial_collections jc on jc.id = p.collection_id
      where p.fts @@ pg_catalog.to_tsquery('simple'::regconfig, p_tsquery)
-       and (p_track  is null or jc.track     = p_track)
-       and (p_source is null or jc.source_id = p_source)
-       and (p_year   is null or p.year_hijri = p_year)
-       and (p_court  is null or jc.court     = p_court)
+       and (p_year is null or p.year_hijri = p_year)
+       and ((p_track is null and p_source is null and p_court is null)
+            or p.collection_id in (select jc.id
+                                     from library.judicial_collections jc
+                                    where (p_track  is null or jc.track     = p_track)
+                                      and (p_source is null or jc.source_id = p_source)
+                                      and (p_court  is null or jc.court     = p_court)))
   ),
   total as materialized (
     select pg_catalog.count(*)::integer as n from matched

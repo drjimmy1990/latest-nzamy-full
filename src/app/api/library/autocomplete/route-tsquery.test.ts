@@ -16,14 +16,16 @@ test("autocomplete builds its tsquery with parseAutocompleteQuery only — never
   assert.doesNotMatch(auto, /type: 'plain'|type: 'websearch'/);
 });
 
-test("autocomplete's principles count and top two go through the timed search_principles_page", () => {
-  assert.match(auto, /const PRINCIPLES_RPC = 'search_principles_page';/);
-  assert.match(auto, /\.rpc\(PRINCIPLES_RPC, \{ p_tsquery: ftsQuery, p_offset: 0, p_fetch: 2 \}\)/);
-  // The inline pair runs only after a missing-function answer.
-  const rpcAt = auto.indexOf(".rpc(PRINCIPLES_RPC");
-  const missingAt = auto.indexOf("principlesRpcMissingUntil = Date.now() + PRINCIPLES_RPC_RETRY_MS;");
+test("autocomplete's principles count and top two go through a timed principles window", () => {
+  // relevance window first (20261026_52: one GIN scan), then the id window (20261017_20)
+  assert.match(auto, /const PRINCIPLES_RPCS = \['search_principles_relevance', 'search_principles_page'\] as const;/);
+  assert.match(auto, /for \(const fn of PRINCIPLES_RPCS\) \{/);
+  assert.match(auto, /\.rpc\(fn, \{ p_tsquery: ftsQuery, p_offset: 0, p_fetch: 2 \}\)/);
+  // The inline pair runs only after both answered missing-function.
+  const rpcAt = auto.indexOf(".rpc(fn,");
+  const missingAt = auto.indexOf("principlesRpcMissingUntil[fn] = Date.now() + PRINCIPLES_RPC_RETRY_MS;");
   const inlineAt = auto.indexOf(".from('principles')");
-  assert.ok(rpcAt > 0 && rpcAt < missingAt && missingAt < inlineAt, "RPC first, inline only after PGRST202 / 42883");
+  assert.ok(rpcAt > 0 && rpcAt < missingAt && missingAt < inlineAt, "RPCs first, inline only after PGRST202 / 42883");
   assert.match(auto, /if \(!isMissingFunctionError\(rpc\.error\)\) \{/);
 });
 

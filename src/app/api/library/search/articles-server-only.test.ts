@@ -33,10 +33,12 @@ test("every library.articles read (relevance window, id window, page, head count
   assert.doesNotMatch(routeSource, /relevancePage\(supabase,/);
   // The head-count fallback goes through the same builder, so it moves with it.
   assert.match(routeSource, /lawQuery\(false, true\)\.abortSignal\(signal\)/);
-  // Decrees, fiqh and the law title lookups stay on the request client:
-  // 20261004_01 keeps fts and the columns they read on the anon allow-list, so
-  // a public search stays under anon's statement_timeout. Principles moved to
-  // the service role with 20261016_01 (their text and fts are server-only).
+  // The law title lookups, and the decrees / fiqh inline queries (only the
+  // fallbacks of their window functions since 20261026_52 / 20261018_02), stay
+  // on the request client: 20261004_01 keeps fts and the columns they read on
+  // the anon allow-list, so they stay under anon's statement_timeout.
+  // Principles moved to the service role with 20261016_01 (their text and fts
+  // are server-only).
   assert.match(routeSource, /fetchLawTitleHitsChecked\(supabase, \{/);
   for (const table of ["decrees_circulars", "feqh_blocks"]) {
     assert.match(routeSource, new RegExp(String.raw`supabase\s*\.schema\('library'\)\s*\.from\('${table}'\)`));

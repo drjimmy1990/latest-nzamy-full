@@ -254,7 +254,7 @@ begin
 end $$;
 
 -- T7 the plan, for a rare and a common word in every section: the matches
--- come from the GIN index; the primary key is only probed for the rows that
+-- come from ONE scan of the GIN index; the primary key is only probed for the rows that
 -- are ranked (≤ 5,000) and the page — never walked. Two proofs:
 --   (a) EXPLAIN ANALYZE of the function's own body (pg_proc.prosrc) prepared
 --       as a generic plan — how a SQL function's statements are planned;
@@ -313,7 +313,7 @@ begin
       if plan ~ 'Rows Removed by Filter: [0-9]{4,}' then
         raise exception 'T7 FAIL (a) %: % filters thousands of rows (a primary-key walk):%', spec.fn, word, E'\n' || plan;
       end if;
-      if spec.fn = 'search_law_articles_relevance' then
+      if spec.fn in ('search_law_articles_relevance', 'search_principles_relevance') then
         raise notice 'T7 plan of % for %:%', spec.fn, word, E'\n' || plan;
       end if;
 
@@ -323,8 +323,10 @@ begin
       execute format('select (library.%s(%s) ->> ''count'')::int', spec.fn, args) into n;
       gin_after := pg_stat_get_xact_numscans(format('library.idx_%s_fts', spec.tbl)::regclass);
       pk_after  := pg_stat_get_xact_tuples_returned(format('library.%s_pkey', spec.tbl)::regclass);
-      if gin_after <= gin_before then
-        raise exception 'T7 FAIL (b) %: % did not scan idx_%_fts', spec.fn, word, spec.tbl;
+      -- exactly one GIN scan: never one per collection (the sibling 20261017_20
+      -- loops over judicial_collections, BitmapAnd-ing the GIN index each time)
+      if gin_after - gin_before <> 1 then
+        raise exception 'T7 FAIL (b) %: % scanned idx_%_fts % times (expected once)', spec.fn, word, spec.tbl, gin_after - gin_before;
       end if;
       if pk_after - pk_before > (case when n <= 5000 then n else 0 end) + 50 then
         raise exception 'T7 FAIL (b) %: % read % primary-key entries for % matches', spec.fn, word, pk_after - pk_before, n;
@@ -334,7 +336,19 @@ begin
     end loop;
     deallocate t7;
   end loop;
-  raise notice 'T7 PASS: rare and common words, all four sections — GIN bitmap scan, no table scan, no primary-key walk';
+  -- a collection filter reads judicial_collections once, still one GIN scan
+  gin_before := pg_stat_get_xact_numscans('library.idx_principles_fts'::regclass);
+  n := (library.search_principles_relevance('''شائعة''', 0, 50, p_track => 'general') ->> 'count')::int;
+  gin_after := pg_stat_get_xact_numscans('library.idx_principles_fts'::regclass);
+  if gin_after - gin_before <> 1 or n <> 5500 then
+    raise exception 'T7 FAIL: principles with a track filter: % GIN scans, % matches', gin_after - gin_before, n;
+  end if;
+  -- the sibling, same fixture, for the record (not asserted: it is unchanged)
+  gin_before := pg_stat_get_xact_numscans('library.idx_principles_fts'::regclass);
+  perform library.search_principles_page('''شائعة''', 0, 50);
+  gin_after := pg_stat_get_xact_numscans('library.idx_principles_fts'::regclass);
+  raise notice 'T7 search_principles_relevance with p_track: 1 GIN scan; the sibling search_principles_page: % GIN scans for the same word (its join loops over the 302 collections and tests fts on every principle)', gin_after - gin_before;
+  raise notice 'T7 PASS: rare and common words, all four sections — one GIN bitmap scan per call, no table scan, no primary-key walk';
 end $$;
 
 select 'library_search_relevance: ALL PASS' as result;
