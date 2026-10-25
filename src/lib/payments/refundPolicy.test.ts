@@ -1,6 +1,10 @@
 /**
  * refundPolicy.test.ts — the refund page's numbers and the refund code agree
- * (P7; owner ١٨٠, ٢٨٨, ٢٨٩ and the 26-Oct pack validity; pricing doc §13ج).
+ * (P7; owner ١٨٠, ٢٨٨, ٢٨٩ and the 26-Oct pack validity; pricing doc §13ج),
+ * and the page says nothing checkout contradicts (P7 review, finding 3): the
+ * top-up validity is the price book's, the renewal reminders and the 90-day
+ * promotional points stay hidden until they are true, and the 90-minute
+ * cancel is asked of support.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -12,14 +16,23 @@ import {
   CONSULTATION_CANCEL_HOURS,
   INSTANT_CANCEL_MINUTES,
   PROMO_POINTS_VALIDITY_DAYS,
+  monthsAr,
+  promoPointsLinesAr,
+  promoPointsLinesEn,
   RENEWAL_REMINDER_DAYS,
+  renewalReminderLinesAr,
+  renewalReminderLinesEn,
   renewalRemindersAr,
-  TOPUP_VALIDITY_MONTHS,
+  SHOW_PROMO_POINTS_VALIDITY,
+  SHOW_RENEWAL_REMINDERS,
   topupValidityAr,
   topupValidityEn,
+  topupValidityMonths,
   WITHDRAWAL_DAYS,
   WITHDRAWAL_MAX_POINTS_USED_PCT,
 } from "./refundPolicy.ts";
+import { PRICE_BOOK, type BookEntry } from "../pricing/priceBook.ts";
+import { quote } from "./catalog.ts";
 import { refundDecision, VOID_WINDOW_MS } from "./refundDecision.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..", "..");
@@ -36,10 +49,51 @@ test("the owner's numbers", () => {
   assert.equal(CONSULTATION_CANCEL_HOURS, 24);
   assert.equal(PROMO_POINTS_VALIDITY_DAYS, 90);
   assert.deepEqual(RENEWAL_REMINDER_DAYS, [7, 3]);
-  assert.deepEqual(
-    TOPUP_VALIDITY_MONTHS.map((t) => [t.sar, t.months]),
-    [[500, 3], [1000, 6], [2500, 12], [5000, 12], [10000, 12]],
-  );
+});
+
+test("finding 3: the top-up validity is the price book's on-sale packs — what checkout sells today", () => {
+  const packs = topupValidityMonths();
+  assert.deepEqual(packs.map((t) => [t.sar, t.months]), [[100, 3], [250, 3], [500, 6], [1000, 12]]);
+  for (const { sar } of packs) {
+    const entry = Object.values(PRICE_BOOK).find((e) => e.kind === "topup" && e.prices.once?.sar === sar)!;
+    const q = quote(entry.id, "once");
+    assert.ok(q.ok && q.netHalalas === sar * 100, `checkout sells ${entry.id} at ${sar}`);
+  }
+  // the owner's 26-Oct packs (P2) reach the page by changing the book only
+  const p2: Record<string, BookEntry> = {};
+  for (const [sar, months] of [[500, 3], [1000, 6], [2500, 12], [5000, 12], [10000, 12]] as const) {
+    p2[`topup-${sar}`] = { ...PRICE_BOOK["topup-500"], id: `topup-${sar}`, prices: { once: { sar } }, pointsValidityMonths: months };
+  }
+  p2["topup-old"] = { ...PRICE_BOOK["topup-100"], id: "topup-old", retired: true };
+  assert.equal(topupValidityAr(p2), "حزمة ٥٠٠ ر.س: ٣ أشهر؛ حزمة ١٬٠٠٠ ر.س: ٦ أشهر؛ حزم ٢٬٥٠٠ و٥٬٠٠٠ و١٠٬٠٠٠ ر.س: ١٢ شهراً");
+  assert.equal(topupValidityEn(p2), "SAR 500: 3 months; SAR 1,000: 6 months; SAR 2,500, 5,000 and 10,000: 12 months");
+});
+
+test("finding 3: the renewal reminders (B2) and the 90-day promotional points (not enforced) are off and render nothing", () => {
+  assert.equal(SHOW_RENEWAL_REMINDERS, false);
+  assert.equal(SHOW_PROMO_POINTS_VALIDITY, false);
+  assert.deepEqual(renewalReminderLinesAr(), []);
+  assert.deepEqual(renewalReminderLinesEn(), []);
+  assert.deepEqual(promoPointsLinesAr(), []);
+  assert.deepEqual(promoPointsLinesEn(), []);
+  // kept for the day they are true
+  assert.ok(renewalReminderLinesAr(true)[0].includes(renewalRemindersAr()));
+  assert.ok(promoPointsLinesAr(true)[0].includes(`(${arNumber(PROMO_POINTS_VALIDITY_DAYS)}) يوماً`));
+  assert.ok(promoPointsLinesEn(true)[0].includes(`(${PROMO_POINTS_VALIDITY_DAYS}) days`));
+  assert.ok(renewalReminderLinesEn(true)[0].includes("7 days"));
+  // and the page carries neither sentence in its own text
+  const text = visible(PAGE);
+  for (const gone of ["تذكير التجديد", "النقاط الترويجية", "Renewal reminders", "Promotional points", "٢٬٥٠٠", "2,500"]) {
+    assert.ok(!text.includes(gone), gone);
+  }
+});
+
+test("finding 3: the 90-minute instant cancel is asked of support (no self-service button), in the section and the banner", () => {
+  const text = visible(PAGE);
+  assert.ok(text.includes("**الإلغاء الفوري عند الشراء بالخطأ** (تُطلب من الدعم)"));
+  assert.ok(text.includes("(requested from support): within"));
+  assert.ok(text.includes("من الشراء بالخطأ (يُطلب من الدعم)"));
+  assert.ok(text.includes("purchase made by mistake (requested from support)"));
 });
 
 test("the 90-minute instant cancel is the refund code's void window — a change to one fails here", () => {
@@ -60,7 +114,7 @@ test("the ≤ 5 % withdrawal rule is the refund code's warning threshold", () =>
 
 test("the page agrees with refundPolicy.ts: new sentences built from it, the owner's verbatim clauses carry the same numbers", () => {
   // the P7 sentences are built from the constants, not typed
-  for (const name of ["INSTANT_CANCEL_MINUTES", "WITHDRAWAL_DAYS", "PROMO_POINTS_VALIDITY_DAYS", "RENEWAL_REMINDER_DAYS", "renewalRemindersAr()", "topupValidityAr()", "topupValidityEn()"]) {
+  for (const name of ["INSTANT_CANCEL_MINUTES", "WITHDRAWAL_DAYS", "...renewalReminderLinesAr()", "...renewalReminderLinesEn()", "...promoPointsLinesAr()", "...promoPointsLinesEn()", "topupValidityAr()", "topupValidityEn()"]) {
     assert.ok(PAGE.includes(name), name);
   }
   const text = visible(PAGE);
@@ -80,8 +134,9 @@ test("the page agrees with refundPolicy.ts: new sentences built from it, the own
 });
 
 test("the sentences the page shows", () => {
-  assert.equal(topupValidityAr(), "حزمة ٥٠٠ ر.س: ٣ أشهر؛ حزمة ١٬٠٠٠ ر.س: ٦ أشهر؛ حزم ٢٬٥٠٠ و٥٬٠٠٠ و١٠٬٠٠٠ ر.س: ١٢ شهراً");
-  assert.equal(topupValidityEn(), "SAR 500: 3 months; SAR 1,000: 6 months; SAR 2,500, 5,000 and 10,000: 12 months");
+  assert.equal(topupValidityAr(), "حزمتا ١٠٠ و٢٥٠ ر.س: ٣ أشهر؛ حزمة ٥٠٠ ر.س: ٦ أشهر؛ حزمة ١٬٠٠٠ ر.س: ١٢ شهراً");
+  assert.equal(topupValidityEn(), "SAR 100 and 250: 3 months; SAR 500: 6 months; SAR 1,000: 12 months");
+  assert.deepEqual([1, 2, 3, 10, 11, 12].map(monthsAr), ["شهر واحد", "شهران", "٣ أشهر", "١٠ أشهر", "١١ شهراً", "١٢ شهراً"]);
   assert.equal(renewalRemindersAr(), "تذكيراً أول قبل ٧ أيام، وتذكيراً ثانياً قبل ٣ أيام من موعد التجديد");
   assert.equal(arNumber(10000), "١٠٬٠٠٠");
 });
