@@ -62,6 +62,7 @@ import {
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
+import { getFirmRouteDecision } from "@/constants/entityRouteAccess";
 import { apiGet } from "@/lib/services/api";
 import type { WorkflowRequest } from "@/lib/workflowStore";
 import { workflowToCase, STATUS_CONFIG, TYPE_LABELS } from "@/constants/lawyerCasesData";
@@ -107,6 +108,10 @@ const STATUS_CHIPS: (CaseStatus | "all")[] = ["all", "active", "pending", "close
 export default function FirmCasesPage() {
   const { isDark } = useTheme();
   const user = useUser();
+  // N1.9: the «الجلسات» button only for roles the hearings route admits (a
+  // consultant, in-house or of-counsel member is refused there, Art. 18).
+  const firmRole = user.affiliation?.entityType === "firm" ? user.affiliation.role : undefined;
+  const canOpenHearings = user.userType === "admin" || getFirmRouteDecision("/dashboard/firm/hearings", firmRole).allowed;
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<CaseStatus | "all">("all");
@@ -268,10 +273,12 @@ export default function FirmCasesPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Link href="/dashboard/firm/hearings"
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-colors ${isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-            <CalendarCheck size={15} />الجلسات
-          </Link>
+          {canOpenHearings && (
+            <Link href="/dashboard/firm/hearings"
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-colors ${isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+              <CalendarCheck size={15} />الجلسات
+            </Link>
+          )}
           <button onClick={() => setShowAddCase(true)}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors">
             <Plus size={15} weight="bold" />قضية جديدة

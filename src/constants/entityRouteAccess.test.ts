@@ -63,3 +63,34 @@ test("N1.9: no non-litigation role is offered a Hearings link it cannot open", (
     assert.equal(line[1].includes('"Hearings"'), false, role);
   }
 });
+
+// ─── Links agree with the rule, for every firm role ──────────────────────────
+
+const FIRM_ROLES = [
+  "managing_partner", "partner", "senior_lawyer", "lawyer", "trainee", "legal_secretary", "office_admin",
+  "finance_manager", "hr_manager", "compliance_manager", "external_of_counsel", "legal_consultant", "in_house_counsel",
+] as const;
+
+test("N1.9: every firm role offered a Hearings sidebar link can open the page", () => {
+  const src = readFileSync(new URL("./navigation.sidebars.ts", import.meta.url), "utf8");
+  for (const role of FIRM_ROLES) {
+    const line = new RegExp(`^  ${role}: \\[(.*)\\],\\r?$`, "m").exec(src);
+    assert.ok(line, `${role} has a sidebar list`);
+    if (line[1].includes('"Hearings"')) {
+      assert.equal(getFirmRouteDecision("/dashboard/firm/hearings", role).allowed, true, role);
+    }
+  }
+});
+
+test("N1.9: the floating shortcut to today's hearings is not offered to office_admin", () => {
+  // office_admin was never admitted to /dashboard/firm/hearings; legal_secretary is.
+  assert.equal(getFirmRouteDecision("/dashboard/firm/hearings", "office_admin").allowed, false);
+  const src = readFileSync(new URL("../components/floating/constants/floatingServices.tsx", import.meta.url), "utf8");
+  assert.match(src, /\.\.\.\(role === "legal_secretary" \? \[\{ key: "firm-admin-hearings"/);
+});
+
+test("N1.9: the firm cases page shows its «الجلسات» button only to roles the hearings rule admits", () => {
+  const src = readFileSync(new URL("../app/dashboard/firm/cases/page.tsx", import.meta.url), "utf8");
+  assert.match(src, /const canOpenHearings = user\.userType === "admin" \|\| getFirmRouteDecision\("\/dashboard\/firm\/hearings", firmRole\)\.allowed;/);
+  assert.match(src, /\{canOpenHearings && \(\s*<Link href="\/dashboard\/firm\/hearings"/);
+});

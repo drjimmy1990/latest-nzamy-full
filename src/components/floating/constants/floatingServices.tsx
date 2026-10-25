@@ -344,7 +344,8 @@ function getFirmServices(user: ServiceSession): ServiceItem[] {
 
   if (role === "legal_secretary" || role === "office_admin") {
     return addSupport([
-      { key: "firm-admin-hearings", icon: <CalendarCheck {...iconProps} />, label: "جلسات اليوم", sub: "مواعيد وتنبيهات ومحاضر", href: "/dashboard/firm/hearings" },
+      // The hearings route admits legal_secretary, not office_admin (entityRouteAccess.ts).
+      ...(role === "legal_secretary" ? [{ key: "firm-admin-hearings", icon: <CalendarCheck {...iconProps} />, label: "جلسات اليوم", sub: "مواعيد وتنبيهات ومحاضر", href: "/dashboard/firm/hearings" }] : []),
       { key: "firm-admin-clients", icon: <AddressBook {...iconProps} />, label: "العملاء والاستشارات", sub: "مواعيد وبيانات تواصل", href: "/dashboard/firm/clients" },
       { key: "firm-admin-docs", icon: <FileText {...iconProps} />, label: "المستندات والأرشيف", sub: "رفع وفرز ومتابعة", href: "/dashboard/firm/documents" },
       { key: "firm-admin-secretary", icon: <Robot {...iconProps} />, label: "السكرتير الذكي", sub: "قريباً — غير متاح بعد", badge: "قريباً", href: "/ai/secretary" },
