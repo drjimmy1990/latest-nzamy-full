@@ -99,6 +99,18 @@ const nextConfig: NextConfig = {
           { key: "Cache-Control", value: "no-store, must-revalidate" },
         ],
       },
+      {
+        // The client case tracking page (N3.6): the token IS the URL. The page
+        // already sets robots/referrer meta tags and is dynamic; these headers
+        // also reach crawlers that read no HTML, and caches in front of Next
+        // (a cached copy would keep a revoked link working).
+        source: "/track/:token",
+        headers: [
+          { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
+          { key: "Cache-Control", value: "private, no-store, max-age=0" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+        ],
+      },
     ];
   },
 

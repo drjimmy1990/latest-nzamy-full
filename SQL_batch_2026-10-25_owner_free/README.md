@@ -59,7 +59,7 @@
   - فيها زر «إنشاء حساب على منصة نظامي لحفظ القضية ومتابعتها».
 - يقبل الخادم ٣٠ فتحاً في الدقيقة للزائر الواحد، و٣٠٠ في الدقيقة لعنوان IP الواحد كما يراه الخادم (حدّ لا يتجاوزه من يزوّر ترويسة Cloudflare).
 - **تأكد من وجود `SUPABASE_SERVICE_ROLE_KEY` على الخادم**، فبدونه تظهر كل روابط المتابعة «غير موجودة».
-- **تحقق من أن nginx لا يخزّن `/track/` مؤقتاً**: الصفحة ترسل `Cache-Control: private, no-cache, no-store`. إن كان إعداد `proxy_cache` يتجاهل هذه الترويسة (`proxy_ignore_headers Cache-Control`) فأضف للمسار `location ^~ /track/ { proxy_no_cache 1; proxy_cache_bypass 1; … }`. بدون ذلك يبقى الرابط الموقوف يعمل من النسخة المخزّنة.
+- **تحقق من أن nginx لا يخزّن `/track/` مؤقتاً**: الصفحة ترسل `Cache-Control: private, no-store, max-age=0` و`X-Robots-Tag: noindex, nofollow, noarchive` و`Referrer-Policy: no-referrer` (من `next.config.ts`، وتحقّقنا منها على `next start`). إن كان إعداد `proxy_cache` يتجاهل هذه الترويسة (`proxy_ignore_headers Cache-Control`) فأضف للمسار `location ^~ /track/ { proxy_no_cache 1; proxy_cache_bypass 1; … }`. بدون ذلك يبقى الرابط الموقوف يعمل من النسخة المخزّنة.
 - كل ملف من 12 و13 و14 ينتهي بـ `notify pgrst, 'reload schema';` بعد `commit;`، فيرى PostgREST الجداول والدالة الجديدة فوراً دون إعادة تشغيل.
 
 ## P4 — سجل الصادر والوارد القانوني

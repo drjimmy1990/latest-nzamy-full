@@ -108,3 +108,12 @@ test("the tracking bucket also counts the proxy's own client IP (X-Real-IP first
   const proxy = read("proxy.ts");
   assert.match(proxy, /rateLimiter\.check\("tracking-page-ip", ip, TRACKING_PAGE_IP_RATE_LIMIT\)/);
 });
+
+test("/track/<token> answers with X-Robots-Tag noindex, no-store and no-referrer headers, not only meta tags", () => {
+  const config = readFileSync(join(SRC, "../next.config.ts"), "utf8");
+  const block = /source: "\/track\/:token",[\s\S]*?\],/.exec(config);
+  assert.ok(block, "next.config.ts has a /track/:token headers block");
+  assert.match(block[0], /\{ key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" \}/);
+  assert.match(block[0], /\{ key: "Cache-Control", value: "private, no-store, max-age=0" \}/);
+  assert.match(block[0], /\{ key: "Referrer-Policy", value: "no-referrer" \}/);
+});
