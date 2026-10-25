@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import SharedSidebar from "@/components/dashboard/SharedSidebar";
 import { UserTypeGuard } from "@/components/dashboard/UserTypeGuard";
+import { QuickAddProvider } from "@/components/dashboard/quickAdd/QuickAdd";
 
 /**
  * Lawyer Dashboard Layout
@@ -29,6 +30,10 @@ export default function LawyerDashboardLayout({
 
   return (
     <UserTypeGuard allowedTypes={["lawyer", "firm", "provider", "admin"]}>
+      {/* «+ إضافة سريعة» (N3.3): the floating button, the sidebar item and
+          Alt+N. Signed-in lawyer and firm sessions only — the provider's
+          /notifications reuse of this layout gets none of it. */}
+      <QuickAddProvider scope="lawyer">
       <div className="min-h-[100dvh] bg-surface dark:bg-dark-bg" dir="rtl" suppressHydrationWarning>
         {/* Sidebar */}
         <SharedSidebar />
@@ -41,6 +46,7 @@ export default function LawyerDashboardLayout({
         </div>
 
           </div>
+      </QuickAddProvider>
     </UserTypeGuard>
   );
 }

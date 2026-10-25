@@ -8,6 +8,7 @@ import { useUser, setDemoSession } from "@/hooks/useUser";
 import { isDemoUiEnabled } from "@/lib/runtimeMode";
 import { UserCircle, ArrowDown } from "@phosphor-icons/react";
 import { UserTypeGuard } from "@/components/dashboard/UserTypeGuard";
+import { QuickAddProvider } from "@/components/dashboard/quickAdd/QuickAdd";
 import type { FirmRole } from "@/types/firmBackendReady";
 import { FIRM_ROLES, FirmRoleContext } from "./firmRoleContext";
 
@@ -50,11 +51,14 @@ export default function FirmDashboardLayout({
   }, [sessionRole]);
 
   const roleConfig = FIRM_ROLES.find((r) => r.role === activeRole)!;
+  // Quick add reads the SESSION role, never the demo switcher's.
+  const sessionRoleConfig = FIRM_ROLES.find((r) => r.role === sessionRole)!;
   const RoleIcon = roleConfig.icon;
 
   return (
     <UserTypeGuard allowedTypes={["firm", "admin"]}>
       <FirmRoleContext.Provider value={roleConfig}>
+      <QuickAddProvider scope="firm" firmRole={sessionRole} canAddCase={sessionRoleConfig.can.addNewCase}>
         <div className="min-h-[100dvh] bg-surface dark:bg-dark-bg" dir={isAr ? "rtl" : "ltr"} suppressHydrationWarning>
         <SharedSidebar />
 
@@ -186,6 +190,7 @@ export default function FirmDashboardLayout({
         </div>
 
               </div>
+      </QuickAddProvider>
     </FirmRoleContext.Provider>
     </UserTypeGuard>
   );
