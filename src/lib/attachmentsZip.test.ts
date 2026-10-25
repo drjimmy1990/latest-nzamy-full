@@ -18,7 +18,9 @@ import {
   visibleRequestFiles,
   visibleContractFiles,
   buildZipStream,
+  createInFlightLimiter,
   ZipTooLargeError,
+  ZIP_MAX_IN_FLIGHT_PER_USER,
   ZIP_FALLBACK_NAME,
   ZIP_FAILURES_NAME,
   ZIP_RESPONSE_HEADERS,
@@ -120,12 +122,12 @@ test("mayDownloadRequestFiles: requester, assignee, admin — nobody else", () =
 
 test("visibleRequestFiles: a client never gets an archived document, a vault document or another request's file", () => {
   const rows = [
-    { request_id: "REQ-1", file_name: "صحيفة.pdf", storage_path: "u1/a.pdf", size_bytes: 10, deleted_at: null },
-    { request_id: "REQ-1", file_name: "مؤرشف.pdf", storage_path: "u1/b.pdf", size_bytes: 10, deleted_at: "2026-10-20T10:00:00Z" },
-    { request_id: null, file_name: "خزنة المحامي.pdf", storage_path: "l1/vault.pdf", size_bytes: 10, deleted_at: null },
-    { request_id: "REQ-2", file_name: "قضية أخرى.pdf", storage_path: "u2/c.pdf", size_bytes: 10, deleted_at: null },
-    { request_id: "REQ-1", file_name: "بلا مسار.pdf", storage_path: "", size_bytes: 10, deleted_at: null },
-    { request_id: "REQ-1", file_name: "حكم.pdf", storage_path: "l1/d.pdf", size_bytes: "2048", deleted_at: undefined },
+    { request_id: "REQ-1", owner_user_id: "u1", file_name: "صحيفة.pdf", storage_path: "u1/a.pdf", size_bytes: 10, deleted_at: null },
+    { request_id: "REQ-1", owner_user_id: "u1", file_name: "مؤرشف.pdf", storage_path: "u1/b.pdf", size_bytes: 10, deleted_at: "2026-10-20T10:00:00Z" },
+    { request_id: null, owner_user_id: "l1", file_name: "خزنة المحامي.pdf", storage_path: "l1/vault.pdf", size_bytes: 10, deleted_at: null },
+    { request_id: "REQ-2", owner_user_id: "u2", file_name: "قضية أخرى.pdf", storage_path: "u2/c.pdf", size_bytes: 10, deleted_at: null },
+    { request_id: "REQ-1", owner_user_id: "u1", file_name: "بلا مسار.pdf", storage_path: "", size_bytes: 10, deleted_at: null },
+    { request_id: "REQ-1", owner_user_id: "l1", file_name: "حكم.pdf", storage_path: "l1/d.pdf", size_bytes: "2048", deleted_at: undefined },
   ];
   assert.deepEqual(visibleRequestFiles(rows, "REQ-1"), [
     { name: "صحيفة.pdf", storagePath: "u1/a.pdf", size: 10 },
@@ -134,15 +136,41 @@ test("visibleRequestFiles: a client never gets an archived document, a vault doc
   assert.deepEqual(visibleRequestFiles(null, "REQ-1"), []);
 });
 
+test("visibleRequestFiles: a row whose file is outside its uploader's folder never goes in (security review, finding 1)", () => {
+  const rows = [
+    // the attack: the client's row on his own request, pointing at the victim's file
+    { request_id: "REQ-1", owner_user_id: "u1", file_name: "سري.pdf", storage_path: "victim/1-secret.pdf", size_bytes: 1, deleted_at: null },
+    // traversal out of his folder
+    { request_id: "REQ-1", owner_user_id: "u1", file_name: "سري.pdf", storage_path: "u1/../victim/1-secret.pdf", size_bytes: 1, deleted_at: null },
+    // no owner (the 20260518 policy allowed it)
+    { request_id: "REQ-1", owner_user_id: null, file_name: "بلا مالك.pdf", storage_path: "victim/2.pdf", size_bytes: 1, deleted_at: null },
+    { request_id: "REQ-1", file_name: "بلا مالك.pdf", storage_path: "u1/3.pdf", size_bytes: 1, deleted_at: null },
+    // the honest one
+    { request_id: "REQ-1", owner_user_id: "u1", file_name: "صحيفة.pdf", storage_path: "u1/4.pdf", size_bytes: 1, deleted_at: null },
+  ];
+  assert.deepEqual(visibleRequestFiles(rows, "REQ-1"), [{ name: "صحيفة.pdf", storagePath: "u1/4.pdf", size: 1 }]);
+});
+
 test("visibleContractFiles: bound to the contract, numbered by version", () => {
   const rows = [
-    { contract_id: "C1", version_no: 2, file_name: "عقد.pdf", storage_path: "l1/v2.pdf", size_bytes: 5 },
-    { contract_id: "C1", version_no: 1, file_name: "عقد.pdf", storage_path: "l1/v1.pdf", size_bytes: null },
-    { contract_id: "C2", version_no: 1, file_name: "غيره.pdf", storage_path: "l2/v1.pdf", size_bytes: 5 },
+    { contract_id: "C1", version_no: 2, file_name: "عقد.pdf", storage_path: "l1/contracts/C1/v2.pdf", size_bytes: 5, uploaded_by: "l1" },
+    { contract_id: "C1", version_no: 1, file_name: "عقد.pdf", storage_path: "l1/contracts/C1/v1.pdf", size_bytes: null, uploaded_by: "l1" },
+    { contract_id: "C2", version_no: 1, file_name: "غيره.pdf", storage_path: "l2/v1.pdf", size_bytes: 5, uploaded_by: "l2" },
   ];
   assert.deepEqual(visibleContractFiles(rows, "C1"), [
-    { name: "النسخة 2 - عقد.pdf", storagePath: "l1/v2.pdf", size: 5 },
-    { name: "النسخة 1 - عقد.pdf", storagePath: "l1/v1.pdf", size: null },
+    { name: "النسخة 2 - عقد.pdf", storagePath: "l1/contracts/C1/v2.pdf", size: 5 },
+    { name: "النسخة 1 - عقد.pdf", storagePath: "l1/contracts/C1/v1.pdf", size: null },
+  ]);
+});
+
+test("visibleContractFiles: only a file in its uploader's folder; no uploader, no file", () => {
+  const rows = [
+    { contract_id: "C1", version_no: 3, file_name: "سري.pdf", storage_path: "victim/1-secret.pdf", size_bytes: 1, uploaded_by: "l1" },
+    { contract_id: "C1", version_no: 2, file_name: "عقد.pdf", storage_path: "l1/contracts/C1/v2.pdf", size_bytes: 1, uploaded_by: null },
+    { contract_id: "C1", version_no: 1, file_name: "عقد.pdf", storage_path: "l1/contracts/C1/v1.pdf", size_bytes: 1, uploaded_by: "l1" },
+  ];
+  assert.deepEqual(visibleContractFiles(rows, "C1"), [
+    { name: "النسخة 1 - عقد.pdf", storagePath: "l1/contracts/C1/v1.pdf", size: 1 },
   ]);
 });
 
@@ -245,6 +273,9 @@ test("buildZipStream: a file that cannot be read is skipped and listed in a note
   const note = strFromU8(entries[ZIP_FAILURES_NAME]);
   assert.match(note, /مفقود\.pdf/);
   assert.match(note, /يرمي\.pdf/);
+  // A count, and the display names only — never a storage path (no existence oracle).
+  assert.match(note, /تعذّر تحميل 2 من 3 ملفات/);
+  assert.doesNotMatch(note, /missing|throws|\bok\b/);
   assert.deepEqual(errors, ["throws"]);
 });
 
@@ -280,4 +311,48 @@ test("buildZipStream: an aborted request stops the work", async () => {
   );
   await assert.rejects(collect(stream));
   assert.equal(opened, 1);
+});
+
+test("buildZipStream: onSettled fires exactly once — on close, on error, on cancel", async () => {
+  const one: ZipSourceFile[] = [{ name: "a.pdf", storagePath: "a", size: 1 }];
+  let closed = 0;
+  await collect(buildZipStream(one, async () => new Uint8Array([1]), { onSettled: () => { closed += 1; } }));
+  assert.equal(closed, 1);
+
+  let errored = 0;
+  await assert.rejects(
+    collect(buildZipStream(one, async () => new Uint8Array(600), { maxBytes: 10, onSettled: () => { errored += 1; } })),
+  );
+  assert.equal(errored, 1);
+
+  let cancelled = 0;
+  const stream = buildZipStream(
+    [{ name: "a", storagePath: "a", size: 1 }, { name: "b", storagePath: "b", size: 1 }],
+    async () => new Uint8Array(100),
+    { onSettled: () => { cancelled += 1; } },
+  );
+  const reader = stream.getReader();
+  await reader.read();
+  await reader.cancel();
+  await reader.cancel().catch(() => {});
+  assert.equal(cancelled, 1);
+});
+
+test("createInFlightLimiter: two archives per account, a release frees one slot once", () => {
+  assert.equal(ZIP_MAX_IN_FLIGHT_PER_USER, 2);
+  const limiter = createInFlightLimiter(ZIP_MAX_IN_FLIGHT_PER_USER);
+  const a = limiter.acquire("u1");
+  const b = limiter.acquire("u1");
+  assert.ok(a && b);
+  assert.equal(limiter.acquire("u1"), null, "a third archive for the same account waits");
+  assert.ok(limiter.acquire("u2"), "another account is not affected");
+  a!();
+  a!(); // idempotent — must not free b's slot too
+  assert.equal(limiter.inFlight("u1"), 1);
+  const c = limiter.acquire("u1");
+  assert.ok(c);
+  assert.equal(limiter.acquire("u1"), null);
+  b!();
+  c!();
+  assert.equal(limiter.inFlight("u1"), 0);
 });

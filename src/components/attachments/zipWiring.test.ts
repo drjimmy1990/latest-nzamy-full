@@ -91,6 +91,40 @@ test("the route: request gate shared with the per-file routes, soft-delete filte
   }
 });
 
+test("the route: streams each file, at most two archives per account in flight, admins listed with the service client", () => {
+  const route = read("src/app/api/v1/attachments/zip/route.ts");
+  // storage-js's plain download() buffers the whole file into a Blob.
+  assert.match(route, /\.download\(file\.storagePath, undefined, \{ signal: request\.signal \}\)\s*\.asStream\(\)/);
+  assert.doesNotMatch(route, /data\.stream\(\)/);
+  assert.match(route, /createInFlightLimiter\(ZIP_MAX_IN_FLIGHT_PER_USER\)/);
+  assert.match(route, /inFlight\.acquire\(userId\)/);
+  assert.match(route, /status: 429/);
+  assert.match(route, /onSettled: release/);
+  assert.match(route, /finally \{[\s\S]*release\?\.\(\)/, "every early exit frees the slot");
+  assert.match(route, /userType === "admin" && !isParty \? admin : supabase/);
+  // the uploader columns the own-folder filter needs
+  assert.match(route, /select\("request_id, owner_user_id, file_name, storage_path, size_bytes, deleted_at"\)/);
+  assert.match(route, /size_bytes, uploaded_by"\)/);
+});
+
+test("every route that signs a documents path with the service role checks the uploader's folder (security review, finding 1)", () => {
+  for (const [f, owner] of [
+    ["src/app/api/v1/service-requests/[id]/attachments/[attachmentId]/route.ts", "attachment.owner_user_id"],
+    ["src/app/api/v1/service-requests/[id]/deliverable/route.ts", "attachment.owner_user_id"],
+    ["src/app/api/v1/lawyer/contracts/[id]/versions/[vid]/url/route.ts", "row.uploaded_by"],
+    ["src/app/api/v1/client/contracts/[id]/versions/[vid]/url/route.ts", "version.uploaded_by"],
+    ["src/app/api/v1/share/route.ts", "attachment.owner_user_id"],
+    ["src/app/api/v1/library/notes/audio-url/route.ts", "user.id"],
+  ] as const) {
+    const src = read(f);
+    const check = src.indexOf(`isPathInOwnerFolder(`);
+    assert.ok(check > 0, `${f} calls isPathInOwnerFolder`);
+    assert.ok(src.includes(`, ${owner})`), `${f} checks against ${owner}`);
+    const sign = src.search(/createSignedUrl\(|from\("document_shares"\)/);
+    assert.ok(sign > check, `${f} checks before it signs / stores the path`);
+  }
+});
+
 test("the proxy rate-limits the ZIP route in its own bucket", () => {
   const proxy = read("src/proxy.ts");
   assert.match(proxy, /isAttachmentsZipRoute\(method, pathname\)/);

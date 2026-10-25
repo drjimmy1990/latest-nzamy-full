@@ -19,6 +19,7 @@
 import { Zip, ZipPassThrough } from "fflate";
 import { ZIP_MAX_BYTES, type ZipScope } from "./attachmentsZipShared.ts";
 import { orderReference } from "./services/orderReference.ts";
+import { isPathInOwnerFolder } from "./storagePathOwnership.ts";
 
 // ─── entry names ──────────────────────────────────────────────────────────────
 
@@ -145,6 +146,7 @@ export interface ZipSourceFile {
 
 export interface AttachmentRowLike {
   request_id?: unknown;
+  owner_user_id?: unknown;
   file_name?: unknown;
   storage_path?: unknown;
   size_bytes?: unknown;
@@ -164,13 +166,18 @@ function sizeOf(v: unknown): number | null {
  * documents» SELECT policy (20261025_51), which returns binned rows to an
  * RLS read without that filter — can never put an archived document, a vault
  * document (request_id null) or another request's file into the archive.
+ *
+ * And the file must sit in its uploader's own folder (`owner_user_id/…`,
+ * storagePathOwnership.ts): the bytes are read with the service role, and a
+ * row written before 20261026_65 could point anywhere — that is the
+ * cross-user download the security review found. Such a row is left out.
  */
 export function visibleRequestFiles(rows: readonly AttachmentRowLike[] | null | undefined, requestId: string): ZipSourceFile[] {
   const out: ZipSourceFile[] = [];
   for (const row of rows ?? []) {
     if (!row || row.request_id !== requestId) continue;
     if (row.deleted_at !== null && row.deleted_at !== undefined) continue;
-    if (typeof row.storage_path !== "string" || row.storage_path.trim() === "") continue;
+    if (!isPathInOwnerFolder(row.storage_path, row.owner_user_id)) continue;
     out.push({
       name: typeof row.file_name === "string" ? row.file_name : "",
       storagePath: row.storage_path,
@@ -182,6 +189,7 @@ export function visibleRequestFiles(rows: readonly AttachmentRowLike[] | null | 
 
 export interface ContractVersionRowLike {
   contract_id?: unknown;
+  uploaded_by?: unknown;
   version_no?: unknown;
   file_name?: unknown;
   storage_path?: unknown;
@@ -192,13 +200,15 @@ export interface ContractVersionRowLike {
  * The file versions of ONE contract, newest first as the screens list them,
  * each prefixed «النسخة n - » so two versions that share a file name stay
  * apart and in order. Bound to `contractId` row by row, the same binding the
- * two per-version URL routes apply (`row.contract_id !== id` → 404 there).
+ * two per-version URL routes apply (`row.contract_id !== id` → 404 there),
+ * and — like visibleRequestFiles — only a file in its uploader's own folder
+ * (`uploaded_by/…`).
  */
 export function visibleContractFiles(rows: readonly ContractVersionRowLike[] | null | undefined, contractId: string): ZipSourceFile[] {
   const out: ZipSourceFile[] = [];
   for (const row of rows ?? []) {
     if (!row || row.contract_id !== contractId) continue;
-    if (typeof row.storage_path !== "string" || row.storage_path.trim() === "") continue;
+    if (!isPathInOwnerFolder(row.storage_path, row.uploaded_by)) continue;
     const fileName = sanitizeZipEntryName(row.file_name);
     const n = typeof row.version_no === "number" ? row.version_no : null;
     out.push({
@@ -228,6 +238,11 @@ export interface ZipStreamOptions {
   signal?: AbortSignal;
   /** Called once per file that could not be read (logging only). */
   onFileError?: (file: ZipSourceFile, err: unknown) => void;
+  /**
+   * Called exactly once when the stream is done with: closed, errored or
+   * cancelled by the reader. The route frees its in-flight slot here.
+   */
+  onSettled?: () => void;
 }
 
 /**
@@ -238,7 +253,8 @@ export interface ZipStreamOptions {
  * A file that cannot be opened, or breaks off half-way, does NOT kill the
  * archive — the headers are long gone by then and the person would get
  * nothing. It is skipped (a broken-off one is closed short) and named in a
- * small «ملفات_تعذر_تحميلها.txt» at the end. Passing `maxBytes` is the one
+ * small «ملفات_تعذر_تحميلها.txt» at the end — a count and the names the
+ * person already saw on the page, never a storage path. Passing `maxBytes` is the one
  * failure that does end the stream with an error: the caps were checked on the
  * listed sizes before the response started, and only a file whose size was
  * missing or wrong can get here.
@@ -333,7 +349,7 @@ export function buildZipStream(
       ended = true;
       if (failures.length) {
         const text =
-          "﻿تعذّر تحميل الملفات التالية وقت إنشاء هذا الملف المضغوط. حمّلها من الصفحة كلًّا على حدة:\r\n\r\n" +
+          `﻿تعذّر تحميل ${failures.length} من ${files.length} ملفات وقت إنشاء هذا الملف المضغوط. حمّلها من الصفحة كلًّا على حدة:\r\n\r\n` +
           failures.map((f) => `- ${f}`).join("\r\n") +
           "\r\n";
         const note = new ZipPassThrough(failuresName);
@@ -343,6 +359,17 @@ export function buildZipStream(
       zip.end();
     }
   }
+
+  let settled = false;
+  const settle = () => {
+    if (settled) return;
+    settled = true;
+    try {
+      options.onSettled?.();
+    } catch {
+      /* the hook must not break the stream */
+    }
+  };
 
   const cleanup = () => {
     try {
@@ -369,14 +396,56 @@ export function buildZipStream(
         const out = pending;
         pending = [];
         for (const c of out) controller.enqueue(c);
-        if (finished && pending.length === 0) controller.close();
+        if (finished && pending.length === 0) {
+          controller.close();
+          settle();
+        }
       } catch (err) {
         cleanup();
         controller.error(err);
+        settle();
       }
     },
     cancel() {
       cleanup();
+      settle();
     },
   });
+}
+
+// ─── in-flight cap ───────────────────────────────────────────────────────────
+
+/** At most this many archives stream at once for one account, per server process. */
+export const ZIP_MAX_IN_FLIGHT_PER_USER = 2;
+
+export const ZIP_BUSY_AR =
+  "يجري تجهيز ملفين مضغوطين لك الآن. انتظر حتى يكتمل أحدهما ثم حاول مرة أخرى.";
+
+/**
+ * A per-key counter of archives being streamed. `acquire` answers a release
+ * function (idempotent — calling it twice frees one slot, once) or null when
+ * the key already holds `max` slots. Per process, like the rate limiter in
+ * src/proxy.ts: it bounds what one account can make one server hold open,
+ * not a cluster-wide quota.
+ */
+export function createInFlightLimiter(max: number) {
+  const counts = new Map<string, number>();
+  return {
+    acquire(key: string): (() => void) | null {
+      const n = counts.get(key) ?? 0;
+      if (n >= max) return null;
+      counts.set(key, n + 1);
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        const left = (counts.get(key) ?? 1) - 1;
+        if (left <= 0) counts.delete(key);
+        else counts.set(key, left);
+      };
+    },
+    inFlight(key: string): number {
+      return counts.get(key) ?? 0;
+    },
+  };
 }

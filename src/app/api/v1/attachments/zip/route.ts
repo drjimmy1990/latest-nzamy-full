@@ -8,9 +8,12 @@ import { checkZipCaps, isZipScope, type ZipScope } from "@/lib/attachmentsZipSha
 import {
   archiveFileName,
   buildZipStream,
+  createInFlightLimiter,
   visibleContractFiles,
   visibleRequestFiles,
   zipContentDisposition,
+  ZIP_BUSY_AR,
+  ZIP_MAX_IN_FLIGHT_PER_USER,
   ZIP_RESPONSE_HEADERS,
   type ZipSourceFile,
 } from "@/lib/attachmentsZip";
@@ -32,7 +35,10 @@ import {
  *             with deliverable/route.ts); 404 for no order, 403 otherwise.
  *     files = service-requests/[id]/route.ts's attachments list — the caller's
  *             own RLS client, `request_id = id`, `deleted_at is null` — then
- *             visibleRequestFiles() re-checks both on every row. The gate AND
+ *             visibleRequestFiles() re-checks both on every row. An admin who
+ *             is not a party has no attachments SELECT policy of his own, so
+ *             he is listed with the service client, same filters, same row
+ *             checks. The gate AND
  *             the list, never one alone: the list alone would let a case
  *             supervisor's «archived documents» SELECT policy (20261025_51)
  *             through if the filter were ever dropped; the gate alone would
@@ -45,6 +51,12 @@ import {
  *     = client/contracts/[id]/versions/[vid]/url/route.ts — assertRole(), the
  *       contract read with `client_user_id = auth.uid()`, then its versions.
  *
+ * OWN FOLDER ONLY — a row goes in only when its file sits in its uploader's
+ * folder (`owner_user_id/…`; contract versions `uploaded_by/…`;
+ * src/lib/storagePathOwnership.ts, the twin of 20261026_65). The bytes are
+ * read with the service role, and before 65 a session could register a row
+ * pointing at anybody's file.
+ *
  * Deleted documents never go in: the soft-deleted ones by the filter above;
  * a hard-deleted contract version has no row. Bytes are read with the service
  * client, exactly as every per-file route signs with it (Storage RLS on
@@ -55,10 +67,15 @@ import {
  * CAPS — at most 200 files and 500 MB of listed sizes, refused with an Arabic
  * 413 before a byte is sent; sizes the tables do not know are counted while
  * streaming and the stream errors past 500 MB. Rate-limited in src/proxy.ts
- * (isAttachmentsZipRoute, src/lib/rateLimitRoutes.ts).
+ * (isAttachmentsZipRoute, src/lib/rateLimitRoutes.ts). At most
+ * ZIP_MAX_IN_FLIGHT_PER_USER archives stream at once per account and server
+ * process (Arabic 429 beyond that); the slot is freed when the stream closes,
+ * errors or is cancelled, and on every exit before the stream starts.
  *
  * The response streams (attachmentsZip.ts buildZipStream): one file at a time,
- * stored not deflated, never the whole archive in memory.
+ * stored not deflated, never the whole archive in memory — and each file is
+ * read as a stream too (`download().asStream()`, storage-js 2.107; a plain
+ * `download()` buffers the whole file into a Blob first).
  */
 
 export const dynamic = "force-dynamic";
@@ -70,7 +87,9 @@ const NO_FILES = { error: "لا توجد مرفقات لتحميلها" } as con
 // else is refused before it reaches a query.
 const ID_SHAPE = /^[A-Za-z0-9_-]{1,100}$/;
 
-type Listing = { files: ZipSourceFile[] } | { response: NextResponse };
+type Listing = { files: ZipSourceFile[]; userId: string } | { response: NextResponse };
+
+const inFlight = createInFlightLimiter(ZIP_MAX_IN_FLIGHT_PER_USER);
 
 /** case / request / consultation — see the header. */
 async function listRequestFiles(requestId: string): Promise<Listing> {
@@ -89,13 +108,16 @@ async function listRequestFiles(requestId: string): Promise<Listing> {
 
   const { data: profile } = await admin
     .from("profiles").select("user_type").eq("id", user.id).single();
-  if (!mayDownloadRequestFiles(order, user.id, profile?.user_type as string | undefined)) {
+  const userType = profile?.user_type as string | undefined;
+  if (!mayDownloadRequestFiles(order, user.id, userType)) {
     return { response: NextResponse.json({ error: "غير مصرح" }, { status: 403 }) };
   }
 
-  const { data: rows, error } = await supabase
+  const isParty = order.requester_user_id === user.id || order.assigned_to === user.id;
+  const lister = userType === "admin" && !isParty ? admin : supabase;
+  const { data: rows, error } = await lister
     .from("attachments")
-    .select("request_id, file_name, storage_path, size_bytes, deleted_at")
+    .select("request_id, owner_user_id, file_name, storage_path, size_bytes, deleted_at")
     .eq("request_id", requestId)
     .is("deleted_at", null)
     .order("created_at", { ascending: false });
@@ -103,27 +125,27 @@ async function listRequestFiles(requestId: string): Promise<Listing> {
     console.error("[attachments/zip] attachments read failed:", error.message, error.code);
     return { response: NextResponse.json({ error: "تعذّرت قراءة المرفقات. حاول مرة أخرى." }, { status: 500 }) };
   }
-  return { files: visibleRequestFiles(rows, requestId) };
+  return { files: visibleRequestFiles(rows, requestId), userId: user.id };
 }
 
-async function readContractVersions(supabase: SupabaseClient, contractId: string): Promise<Listing> {
+async function readContractVersions(supabase: SupabaseClient, contractId: string, userId: string): Promise<Listing> {
   const { data: rows, error } = await supabase
     .from("contract_versions")
-    .select("contract_id, version_no, file_name, storage_path, size_bytes")
+    .select("contract_id, version_no, file_name, storage_path, size_bytes, uploaded_by")
     .eq("contract_id", contractId)
     .order("version_no", { ascending: false });
   if (error) {
     console.error("[attachments/zip] contract_versions read failed:", error.message, error.code);
     return { response: NextResponse.json({ error: "تعذّر تحميل نسخ العقد." }, { status: 500 }) };
   }
-  return { files: visibleContractFiles(rows, contractId) };
+  return { files: visibleContractFiles(rows, contractId), userId };
 }
 
 /** contract — the lawyer / firm side, see the header. */
 async function listLawyerContractFiles(contractId: string): Promise<Listing> {
   const auth = await assertRole(["lawyer", "firm"]);
   if (!auth.ok) return { response: auth.response };
-  return readContractVersions(auth.supabase, contractId);
+  return readContractVersions(auth.supabase, contractId, auth.user.id);
 }
 
 /** client_contract — the client's own share, see the header. */
@@ -140,7 +162,7 @@ async function listClientContractFiles(contractId: string): Promise<Listing> {
     console.error("[attachments/zip] client contract lookup failed:", error.message, error.code);
   }
   if (!contract) return { response: NextResponse.json({ error: "العقد غير موجود" }, { status: 404 }) };
-  return readContractVersions(auth.supabase, contractId);
+  return readContractVersions(auth.supabase, contractId, auth.user.id);
 }
 
 function listFiles(scope: ZipScope, id: string): Promise<Listing> {
@@ -157,6 +179,8 @@ function listFiles(scope: ZipScope, id: string): Promise<Listing> {
 }
 
 export async function GET(request: NextRequest) {
+  // The in-flight slot, until the stream takes it over (onSettled).
+  let release: (() => void) | null = null;
   try {
     const params = request.nextUrl.searchParams;
     const scope = params.get("scope");
@@ -167,38 +191,52 @@ export async function GET(request: NextRequest) {
 
     const listing = await listFiles(scope, id);
     if ("response" in listing) return listing.response;
-    const { files } = listing;
+    const { files, userId } = listing;
 
     if (files.length === 0) return NextResponse.json(NO_FILES, { status: 404 });
     const caps = checkZipCaps(files.map((f) => f.size));
     if (!caps.ok) return NextResponse.json({ error: caps.message, reason: caps.reason }, { status: 413 });
 
+    release = inFlight.acquire(userId);
+    if (!release) return NextResponse.json({ error: ZIP_BUSY_AR }, { status: 429 });
+
     const service = await createServiceClient();
     const stream = buildZipStream(
       files,
       async (file) => {
-        const { data, error } = await service.storage.from("documents").download(file.storagePath);
+        // The response body as it arrives — not a Blob of the whole file.
+        // The request's signal reaches the storage fetch.
+        const { data, error } = await service.storage
+          .from("documents")
+          .download(file.storagePath, undefined, { signal: request.signal })
+          .asStream();
         if (error || !data) {
           console.error("[attachments/zip] storage download failed:", file.storagePath, error?.message);
           return null;
         }
-        return data.stream() as ReadableStream<Uint8Array>;
+        return data as ReadableStream<Uint8Array>;
       },
       {
         signal: request.signal,
         onFileError: (file, err) => console.error("[attachments/zip] file read failed:", file.storagePath, err),
+        onSettled: release,
       },
     );
 
-    return new Response(stream, {
+    const response = new Response(stream, {
       status: 200,
       headers: {
         ...ZIP_RESPONSE_HEADERS,
         "Content-Disposition": zipContentDisposition(archiveFileName(scope, id)),
       },
     });
+    release = null; // the stream owns the slot now
+    return response;
   } catch (err) {
     console.error("[attachments/zip GET] Unexpected error:", err);
     return NextResponse.json({ error: "خطأ غير متوقع" }, { status: 500 });
+  } finally {
+    // Any exit before the stream took the slot over gives it back.
+    release?.();
   }
 }
