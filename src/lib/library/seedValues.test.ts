@@ -131,3 +131,36 @@ test("label(): a refused page or volume keeps its verbatim text in the label twi
   assert.equal(r.label("feqh_blocks", "volume_label", "b6", null, "س".repeat(70), 60)?.length, 60);
   assert.ok(r.snapshot().truncated.some((t) => t.field === "volume_label" && t.key === "b6"));
 });
+
+// ── What changed against the old safeInt (measured, not asserted) ──────────
+// The seeder's old rule, verbatim from before N2.7:
+function oldSafeInt(v: unknown, fallback: number | null): number | null {
+  const n = typeof v === "number" ? v : parseInt(String(v ?? ""), 10);
+  return Number.isFinite(n) && n >= -2147483648 && n <= 2147483647 ? n : fallback;
+}
+
+test("old safeInt vs values.int: identical for plain integers and empty input; the differences are listed", () => {
+  const same: unknown[] = [12, 0, -3, "12", " 12 ", "1434", "1434هـ", "1434 ه", null, undefined, "", "abc", NaN, Infinity, 3e10, "99999999999"];
+  for (const v of same) {
+    const r = createSeedValueReport();
+    assert.equal(r.int("t", "f", "k", v, null), oldSafeInt(v, null), `same for ${String(v)}`);
+  }
+  // Every input whose stored value changes, old → new:
+  const changed: Array<[unknown, number | null, number | null]> = [
+    // refused handling (the point of N2.7): a range or trailing text no longer loads as its first number
+    ["1439-1441", 1439, null],
+    ["12-13", 12, null],
+    ["12أ", 12, null],
+    ["12.5", 12, null],
+    // NOT refused handling: Arabic-Indic / Persian digits now read as the number (were NaN → fallback)
+    ["١٤٣٤", null, 1434],
+    ["۱۲", null, 12],
+    // a fractional number used to reach the integer column as 12.5 (a 22P02 for the batch)
+    [12.5, 12.5, null],
+  ];
+  for (const [v, before, after] of changed) {
+    const r = createSeedValueReport();
+    assert.equal(oldSafeInt(v, null), before, `old ${String(v)}`);
+    assert.equal(r.int("t", "f", "k", v, null), after, `new ${String(v)}`);
+  }
+});
