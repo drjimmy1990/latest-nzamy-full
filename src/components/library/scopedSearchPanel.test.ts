@@ -14,6 +14,8 @@ const PANEL = read("ScopedSearchPanel.tsx");
 const LAW = read("../../app/laws/[slug]/page.tsx");
 const COLLECTION = read("../../app/precedents/[slug]/page.tsx");
 const BOOK = read("../../app/book/[slug]/page.tsx");
+const FLOATING = read("../FloatingButtons.tsx");
+const HOOK = read("../../hooks/useDraftCart.ts");
 
 test("the panel posts to the scoped route, renders text as text, and gives locked hits no copy or draft", () => {
   assert.match(PANEL, /fetch\("\/api\/library\/scoped-search", \{\s*method: "POST"/);
@@ -38,10 +40,20 @@ test("each reader mounts the panel on its own document, keyed so a new volume st
   for (const page of [LAW, COLLECTION, BOOK]) assert.match(page, /onAddToDraft=\{/);
 });
 
-test("the book reader has the draft cart: the shared hook, the drawer, and «add» only for a block it may read", () => {
-  assert.match(BOOK, /const \{ cart, setCart, saveError, clearSaveError \} = useDraftCart\(\);/);
-  assert.match(BOOK, /<DraftDrawer cart=\{cart\} onRemoveArticle=\{removeFromCart\} onClearAll=\{clearCart\}/);
+test("the book reader has the draft cart: the shared hook, the global drawer, and «add» only for a block it may read", () => {
+  assert.match(BOOK, /const \{ cart, setCart \} = useDraftCart\(\);/);
+  // The drawer and the save-error notice are FloatingButtons' (one shared
+  // store): the page opens that drawer instead of mounting a second copy.
+  assert.match(BOOK, /window\.dispatchEvent\(new Event\("nzamy-open-cart"\)\)/);
+  assert.doesNotMatch(BOOK, /<DraftDrawer/);
+  assert.match(FLOATING, /window\.addEventListener\("nzamy-open-cart", handler\)/);
+  assert.match(FLOATING, /if \(pathname\.startsWith\("\/book\/"\)\) \{/);
   assert.match(BOOK, /\{activeBlock && !activeBlock\.locked && \(/);
   assert.match(BOOK, /addEntryToCart\(blockCartEntry\(/);
-  assert.match(BOOK, /role="alert"/);
+});
+
+test("every cart caller shares one store (the FAB and the readers cannot diverge)", () => {
+  assert.match(HOOK, /useSyncExternalStore\(subscribe, getSnapshot, getServerSnapshot\)/);
+  assert.match(HOOK, /let store: DraftCartStore \| null = null;/);
+  assert.doesNotMatch(HOOK, /useState</);
 });

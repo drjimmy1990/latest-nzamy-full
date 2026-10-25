@@ -7,7 +7,7 @@ import {
   BookOpen, Lock, Sparkle,
   ArrowRight, Check, Copy, Scales, Gavel,
   BookBookmark, ListNumbers,
-  FileText, BookmarkSimple, CaretLeft, CaretRight, Stack, Printer, Plus, Warning, X
+  FileText, BookmarkSimple, CaretLeft, CaretRight, Stack, Printer, Plus
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -24,7 +24,7 @@ import { LibraryAI, CommunityQuestionModal } from "@/app/laws/[slug]/_ai-compone
 import { getLawMeta } from "@/app/laws/law-metadata-map";
 // N2.6: the book reader gets the draft cart the law and collection readers have.
 import { useDraftCart } from "@/hooks/useDraftCart";
-import { DraftDrawer, type CartEntry } from "@/components/laws/DraftDrawer";
+import type { CartEntry } from "@/components/laws/DraftDrawer";
 import ScopedSearchPanel from "@/components/library/ScopedSearchPanel";
 import { blockCartEntry } from "@/lib/library/scopedHitActions";
 
@@ -161,14 +161,14 @@ export default function FeqhBookPage() {
   const [jumpError, setJumpError] = useState(false);
   const [copiedCitation, setCopiedCitation] = useState(false);
 
-  // N2.6: the draft cart («مسودة التجميع»), shared with the other readers.
-  const { cart, setCart, saveError, clearSaveError } = useDraftCart();
-  const [showCart, setShowCart] = useState(false);
+  // N2.6: the draft cart («مسودة التجميع») — the tab's one shared cart
+  // (useDraftCart). Its drawer and save-error notice are the global
+  // FloatingButtons' (root layout): the «المسودة» button below opens that
+  // drawer, so this page mounts no second copy of either.
+  const { cart, setCart } = useDraftCart();
   const addEntryToCart = useCallback((entry: CartEntry) => {
     setCart((prev) => (prev.find((e) => e.articleId === entry.articleId) ? prev : [...prev, entry]));
   }, [setCart]);
-  const removeFromCart = useCallback((id: string) => setCart((prev) => prev.filter((e) => e.articleId !== id)), [setCart]);
-  const clearCart = useCallback(() => setCart([]), [setCart]);
 
   // Listen to open folder modal from mobile trigger stacked FAB
   useEffect(() => {
@@ -714,7 +714,8 @@ export default function FeqhBookPage() {
                 )}
                 <button
                   type="button"
-                  onClick={() => setShowCart(true)}
+                  onClick={() => window.dispatchEvent(new Event("nzamy-open-cart"))}
+                  aria-label={isRTL ? `فتح المسودة (${cart.length})` : `Open draft (${cart.length})`}
                   className="relative px-4 py-2.5 text-xs font-bold bg-[#C8A762] text-[#0B3D2E] rounded-xl hover:opacity-90 transition flex items-center gap-1.5"
                 >
                   <Stack size={14} />
@@ -1078,26 +1079,6 @@ export default function FeqhBookPage() {
           />
         )}
       </AnimatePresence>
-      {/* N2.6: the draft cart drawer. */}
-      <AnimatePresence>
-        {showCart && (
-          <DraftDrawer cart={cart} onRemoveArticle={removeFromCart} onClearAll={clearCart} onClose={() => setShowCart(false)} isDark={isDark} isRTL={isRTL} />
-        )}
-      </AnimatePresence>
-      {saveError && (
-        <div
-          role="alert"
-          className={`fixed top-24 inset-x-0 mx-auto w-fit max-w-[92vw] z-[10002] px-4 py-2.5 rounded-xl shadow-lg text-sm font-semibold flex items-center gap-2 print:hidden ${
-            isDark ? "bg-red-950/90 text-red-200 border border-red-800/60" : "bg-red-50 text-red-700 border border-red-200"
-          }`}
-        >
-          <Warning size={16} weight="fill" />
-          <span>{saveError}</span>
-          <button type="button" onClick={clearSaveError} aria-label={isRTL ? "إغلاق" : "Close"} className="opacity-70 hover:opacity-100">
-            <X size={14} weight="bold" />
-          </button>
-        </div>
-      )}
       <PrintWatermark isRTL={isRTL} />
     </div>
   );
