@@ -131,7 +131,18 @@ test("cron: fails closed on CRON_SECRET, and the purge deletes the account befor
   assert.ok(prepareAt > -1 && prepareAt < deleteAt && deleteAt < listAt && listAt < removeAt,
     "prepare (a dry run) → deleteUser → the file list → Storage");
   assert.equal(/storage_paths/.test(lib.slice(prepareAt, deleteAt)), false, "prepare decides no file");
-  assert.equal(/\.list\(/.test(lib), false, "never lists a folder to delete it — only the database's after-delete list");
+  // The documents folder is never listed to delete it — a firm file 70 moved
+  // to the owner stays in the member's folder; only the database's
+  // after-delete list (what no surviving row references) decides. The one
+  // listing is the branding bucket's u/<id>/ folder (final review, item 3):
+  // it holds only that lawyer's own vault logos, whose row cascades with him
+  // (63's CHECK ties a vault's logo_path to its owner's folder); f/<firm>/ is never listed.
+  const lists = [...lib.matchAll(/\.list\(/g)];
+  assert.equal(lists.length, 1, "one listing only");
+  assert.equal(/storage\.from\(STORAGE_BUCKET\)\.list\(/.test(lib), false, "the documents bucket is never listed");
+  assert.ok(lib.includes("const folder = `u/${userId.toLowerCase()}`;"), "the listing is the lawyer's own branding folder");
+  assert.ok(lib.includes("admin.storage.from(BRANDING_BUCKET)"), "on the branding bucket");
+  assert.ok(lib.indexOf("removeLawyerBrandingWith(admin, args.userId)") > deleteAt, "and only after the account is deleted");
   // a prepare error the database answered is blocked, never re-claimed daily
   const prepErr = lib.slice(lib.indexOf("if (prep.error) {"), lib.indexOf("const prepared ="));
   assert.ok(prepErr.includes('prep.error.code ? "blocked" : "retry"'), "a coded prepare error is terminal");
