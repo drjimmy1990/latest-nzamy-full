@@ -100,6 +100,7 @@ test("the route: streams each file, at most two archives per account in flight, 
   assert.match(route, /inFlight\.acquire\(userId\)/);
   assert.match(route, /status: 429/);
   assert.match(route, /onSettled: release/);
+  assert.match(route, /export function HEAD\(\) \{\s*return new Response\(null, \{ status: 405/, "HEAD never runs GET");
   assert.match(route, /finally \{[\s\S]*release\?\.\(\)/, "every early exit frees the slot");
   assert.match(route, /userType === "admin" && !isParty \? admin : supabase/);
   // the uploader columns the own-folder filter needs

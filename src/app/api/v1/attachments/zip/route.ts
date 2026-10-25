@@ -178,6 +178,16 @@ function listFiles(scope: ZipScope, id: string): Promise<Listing> {
   }
 }
 
+/**
+ * HEAD is refused rather than left to Next, which answers it by running GET:
+ * that would take an in-flight slot and open storage reads for a body nobody
+ * reads. The button is a plain <a download> (no prefetch); this closes the
+ * other way in.
+ */
+export function HEAD() {
+  return new Response(null, { status: 405, headers: { Allow: "GET" } });
+}
+
 export async function GET(request: NextRequest) {
   // The in-flight slot, until the stream takes it over (onSettled).
   let release: (() => void) | null = null;
