@@ -7,7 +7,7 @@ const cases = [
   ["active", "ساري", "Active", "effective"],
   ["partially_active", "ساري جزئياً", "Partially active", "caution"],
   ["deferred_effective", "مؤجّل النفاذ", "Effectiveness deferred", "caution"],
-  ["issued_publication_unverified", "صدر — لم يُتحقّق من النشر", "Issued — publication not verified", "caution"],
+  ["issued_publication_unverified", "صدر", "Issued", "caution"],
   ["suspended", "موقوف السريان", "Suspended", "caution"],
   ["repealed", "ملغى", "Repealed", "repealed"],
   ["superseded_duplicate", "نسخة مكررة مهجورة — النص المعتمد في أداة أخرى", "Superseded duplicate — see the authoritative document", "unverified"],
@@ -35,7 +35,7 @@ test("owner ٢٥٩: the «not verified» wording is gone from every library surf
   ];
   for (const f of files) {
     const src = readFileSync(new URL(f, import.meta.url), "utf8");
-    assert.doesNotMatch(src, /لم يُتحقّق من الحالة|لم يتحقق من الحالة|Status not verified/, f);
+    assert.doesNotMatch(src, /لم يُتحقّق من (?:الحالة|النشر)|لم يتحقق من (?:الحالة|النشر)|Status not verified|publication not verified/, f);
   }
   const sidebar = readFileSync(new URL("[slug]/_sidebar.tsx", import.meta.url), "utf8");
   // The badge renders nothing for an unrecorded status instead of a default.

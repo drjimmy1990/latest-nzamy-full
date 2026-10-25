@@ -104,11 +104,128 @@ export function guestCardValue(value: string): string | null {
   return s;
 }
 
+/**
+ * Owner answer ٢٥٩ (أ): no text that says our data is unverified or
+ * incomplete — for EVERY viewer. The export's status rows carry the
+ * pipeline's own notes: «ساري (بحاجة تحقق حي — …)», «ساري جزئياً — راجع
+ * التنبيه أدناه», «… (راجع «المزيد»)». A status row shows its status words only.
+ */
+
+/** ⚠️ ✅ 🚫 and the like, with their variation selector. */
+const PICTOGRAPHS = /[\p{Extended_Pictographic}\uFE0F]/gu;
+
+/** A card key as compared: no ⚠️ / ✅ marks, no bold, spaces collapsed. */
+function normalCardKey(key: string): string {
+  return key.replace(PICTOGRAPHS, "").replace(/\*/g, "").replace(/\s+/g, " ").trim();
+}
+
+/** «حالة المراجعة» / «حالة الاكتمال»: the export's review notes («ملف جزئي…»), not the law's status. Dropped. */
+const REVIEW_NOTE_KEYS: ReadonlySet<string> = new Set(["حالة المراجعة", "حالة الاكتمال"]);
+
+/** A status row: «حالة التشريع», «الحالة», «حالة الوثيقة», «الحالة التشريعية», «حالة النفاذ» … */
+function isStatusKey(key: string): boolean {
+  const k = normalCardKey(key);
+  return !REVIEW_NOTE_KEYS.has(k) && /^(?:ال)?حالة(?:\s|$)/u.test(k);
+}
+
+const DIGITS = /[0-9\u0660-\u0669\u06F0-\u06F9]/g;
+/** Tashkeel, superscript alef, tatweel. */
+const ARABIC_MARKS = /[\u064B-\u065F\u0670\u0640]/g;
+/**
+ * A verification / pipeline note («بحاجة تحقق», «لم يُتحقّق», «غير مؤكَّد»,
+ * «يحتاج», «راجع …», «انظر …»), on text with its marks removed. Whole words
+ * where a substring would bite: «راجع» is inside «والمراجعة».
+ */
+const NOTE_WORDS = /تحقق|مؤكد|موثق|(?<!\p{L})(?:ي|ت)حتاج(?!\p{L})|(?<!\p{L})(?:و|ف)?(?:راجع|انظر)(?!\p{L})/u;
+const unmarked = (s: string) => s.replace(ARABIC_MARKS, "");
+const hasNoteWord = (s: string) => NOTE_WORDS.test(unmarked(s));
+/** A note word, or a digit (a citation's number or date). */
+const notesOrCites = (s: string) => hasNoteWord(s) || /[0-9\u0660-\u0669\u06F0-\u06F9]/.test(s);
+/** «معدّل» / «معدَّلة»: the one qualifier kept from a clause that goes on to cite. */
+const AMENDED = /^معدل(?:ة)?$/u;
+
+/** The segments («،» / «؛») of a clause up to the first that notes or cites. */
+function cleanSegments(clause: string): { kept: string[]; whole: boolean } {
+  const segments = clause.split(/\s*[،؛]\s*/);
+  const kept: string[] = [];
+  for (const seg of segments) {
+    if (notesOrCites(seg)) {
+      // «معدّل بمرسوم ملكي رقم (م/123) …», «معدّل (المواد 4 و5 و6)» → «معدّل».
+      const first = seg.trim().split(/[\s(]/)[0] ?? "";
+      if (!kept.length && AMENDED.test(unmarked(first))) kept.push(first);
+      return { kept, whole: false };
+    }
+    kept.push(seg);
+  }
+  return { kept, whole: true };
+}
+
+/**
+ * A status value as everyone sees it: the status words, with no verification
+ * note, cross-reference or citation. Null when nothing is left (a value that
+ * was only a note, «لم يُتحقّق من الحالة»).
+ *   «ساري (بحاجة تحقق حي — لا رقم/تاريخ إصدار مؤكَّد …)» → «ساري»;
+ *   «ساري جزئياً — راجع التنبيه أدناه» → «ساري جزئياً»;
+ *   «ساري — معدّل، آخر تعديل بـ المرسوم الملكي رقم (م/93) وتاريخ …» → «ساري — معدّل»;
+ *   «ملغى — مُستبدَل بنظام … (المرسوم الملكي وتاريخ 27/7/1442هـ)» → «ملغى»;
+ *   «صدر — لم يُتحقّق من النشر» → «صدر».
+ */
+export function cardStatusValue(value: string): string | null {
+  let s = value.replace(BIDI_CONTROLS, "").replace(PICTOGRAPHS, "");
+  s = s.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/(?:https?:\/\/|www\.)\S*/gi, "");
+  // An aside that is a note goes first, inner parentheses outwards — some
+  // hold a dash of their own: «(بحاجة تحقق حي — لا رقم/تاريخ …)».
+  for (let prev = ""; prev !== s; ) {
+    prev = s;
+    s = s.replace(/\s*\(([^()]*)\)/g, (group, inner: string) => (hasNoteWord(inner) ? "" : group));
+  }
+  const [head, ...clauses] = s.split(/\s[—–-]\s/);
+  // «لم يُتحقّق من الحالة»: a note, not a status.
+  if (hasNoteWord(head)) return null;
+  // The head is the status. Its segments up to the first that cites; a head
+  // that is one citing segment («مُستبدَل بتنظيم … 1442هـ») stays as it is,
+  // less its cited parentheses — guestCardValue still drops it for a guest.
+  const headSegments = cleanSegments(head);
+  const kept = headSegments.kept.length ? [headSegments.kept.join("، ")] : [head.replace(/\s*\([^()]*\)/g, (g) => (notesOrCites(g) ? "" : g))];
+  // Each later clause likewise; a clause that starts with a note or a
+  // citation ends the value («— راجع …», «— نفاذه 1448/…»).
+  if (headSegments.whole) {
+    for (const clause of clauses) {
+      const { kept: segs, whole } = cleanSegments(clause);
+      if (segs.length) kept.push(segs.join("، "));
+      if (!whole) break;
+    }
+  }
+  s = kept.join(" — ");
+  s = s.replace(/(?:\s+(?:رقم|بالرقم|وتاريخ|بتاريخ|تاريخ))+\s*$/u, "");
+  s = s.replace(/\s+/g, " ").replace(/[\s،؛:,;—–-]+$/u, "").trim();
+  return s || null;
+}
+
+/** A row with its status cleaned (null drops it); every other row as it is. */
+function statusTidy(f: LawCardField): LawCardField | null {
+  if (REVIEW_NOTE_KEYS.has(normalCardKey(f.key))) return null;
+  if (!isStatusKey(f.key)) return f;
+  const value = cardStatusValue(f.value);
+  if (!value) return null;
+  return value === f.value ? f : { key: f.key, value };
+}
+
+function subscriberRows(rows: readonly LawCardField[]): LawCardField[] {
+  const out: LawCardField[] = [];
+  for (const row of rows) {
+    const tidy = statusTidy(issuerTidy(row));
+    if (tidy) out.push(tidy);
+  }
+  return out;
+}
+
 function guestRows(rows: readonly LawCardField[]): LawCardField[] {
   const out: LawCardField[] = [];
   for (const row of rows) {
     if (!GUEST_CARD_KEYS.has(row.key.trim())) continue;
-    const value = guestCardValue(issuerTidy(row).value);
+    const tidy = statusTidy(issuerTidy(row));
+    const value = tidy ? guestCardValue(tidy.value) : null;
     if (value) out.push({ key: row.key, value });
   }
   return out;
@@ -116,11 +233,12 @@ function guestRows(rows: readonly LawCardField[]): LawCardField[] {
 
 /**
  * The card as this viewer may see it: whole for a subscriber (the issuer's
- * pipeline note removed), the allowlisted rows only otherwise.
+ * pipeline note removed, status rows cleaned, review-note rows dropped), the
+ * allowlisted rows only otherwise.
  */
 export function cardForViewer(card: LawMetadataCard | null, isSubscriber: boolean): LawMetadataCard | null {
   if (!card) return null;
-  if (isSubscriber) return { main: card.main.map(issuerTidy), more: card.more.map(issuerTidy) };
+  if (isSubscriber) return { main: subscriberRows(card.main), more: subscriberRows(card.more) };
   const main = guestRows(card.main);
   const more = guestRows(card.more);
   return main.length || more.length ? { main, more } : null;

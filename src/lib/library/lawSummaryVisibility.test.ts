@@ -8,8 +8,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { GUEST_CARD_KEYS, LAW_SUMMARY_AUDIENCE, cardForViewer, guestCardValue, lawReaderExtras, lawSummaryVisible } from "./lawSummaryVisibility.ts";
-import { LAW_CARD_PRIMARY_FIELDS } from "./lawCardFields.ts";
+import { GUEST_CARD_KEYS, LAW_SUMMARY_AUDIENCE, cardForViewer, cardStatusValue, guestCardValue, lawReaderExtras, lawSummaryVisible } from "./lawSummaryVisibility.ts";
+import { LAW_CARD_PRIMARY_FIELDS, lawCardLayout } from "./lawCardFields.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.join(here, "../../..");
@@ -60,8 +60,8 @@ test("a guest (default audience) gets the موجز and the card without its T28-
   assert.deepEqual(out.metadata_card, {
     main: [
       { key: "نوع التشريع", value: "نظام" },
-      // The status, without the clause that cites the amending decision.
-      { key: "حالة التشريع", value: "ساري" },
+      // The status words (owner ٢٥٩): «معدّل» stays, the decision it cites does not.
+      { key: "حالة التشريع", value: "ساري — معدّل" },
       { key: "الجهة المصدرة", value: "مجلس الوزراء" },
     ],
     more: [],
@@ -122,7 +122,7 @@ test("«everyone» + a non-subscriber: the card loses its T28-22 rows (decree, d
   assert.equal(out.summary, "ينظم النظام علاقات العمل.");
   assert.deepEqual(out.metadata_card?.main, [
     { key: "نوع التشريع", value: "نظام" },
-    { key: "حالة التشريع", value: "ساري" },
+    { key: "حالة التشريع", value: "ساري — معدّل" },
     { key: "الجهة المصدرة", value: "مجلس الوزراء" },
   ]);
 });
@@ -241,7 +241,7 @@ test("the reviewer's probe values, under an allowed key, never reach a guest wit
 
 test("allowed values are cleaned for a guest, from last_owner's own shapes", () => {
   const cases: Array<[string, string, string | null]> = [
-    ["حالة التشريع", "ساري — معدّل، آخر تعديل بمرسوم ملكي (م/21) وتاريخ 1447/01/26هـ", "ساري"],
+    ["حالة التشريع", "ساري — معدّل، آخر تعديل بمرسوم ملكي (م/21) وتاريخ 1447/01/26هـ", "ساري — معدّل"],
     ["حالة التشريع", "ملغى — مُستبدَل بنظام البيئة (قرار مجلس الوزراء رقم 729 وتاريخ 16/11/1441هـ)", "ملغى"],
     ["حالة التشريع", "ساري — معدّل", "ساري — معدّل"],
     ["حالة التشريع", "مُستبدَل بتنظيم إعانة البحث عن عمل 1442هـ", null],
@@ -270,4 +270,73 @@ test("the issuer's pipeline note «— تحقَّق منه YYYY-MM-DD» is remov
   }
   // Only the issuer's: a subscriber's other rows are as the file has them.
   assert.equal(cardForViewer(card, true)?.more[1].value, "عام — تحقَّق منه 2026-07-28");
+});
+
+// ── Owner ٢٥٩ (أ): no «unverified» note in a status, for EVERY viewer ───────
+
+test("cardStatusValue: the status words only — notes, cross-references and citations go (last_owner's own values)", () => {
+  const cases: Array<[string, string | null]> = [
+    ["ساري (بحاجة تحقق حي — لا رقم/تاريخ إصدار مؤكَّد في المصدر المستخرَج)", "ساري"],
+    ["ساري (أداة الإصدار وتاريخها بحاجة تحقق حي — راجع «المزيد»)", "ساري"],
+    ["ساري جزئياً — راجع التنبيه أدناه", "ساري جزئياً"],
+    ["ساري — \u26A0\uFE0F صدر نظام بديل، نُشر ولم يسرِ بعد (راجع «المزيد»)", "ساري — صدر نظام بديل، نُشر ولم يسرِ بعد"],
+    ["ساري — معدّل، آخر تعديل بـ المرسوم الملكي رقم (م/93) وتاريخ 1443/10/01هـ (الموافق 2022-05-02م)", "ساري — معدّل"],
+    ["ساري — معدّل بمرسوم ملكي رقم (م/123) وتاريخ 1447/06/10هـ", "ساري — معدّل"],
+    ["ساري — معدَّلة بالقرار رقم (2022-15-1) وتاريخ 1443/07/01هـ", "ساري — معدَّلة"],
+    ["ساري — معدّل (المواد 4 و5 و6)", "ساري — معدّل"],
+    ["ساري — معدّل", "ساري — معدّل"],
+    ["ملغى — مُستبدَل بنظام مهنة المحاسبة والمراجعة (المرسوم الملكي وتاريخ 27/7/1442هـ)", "ملغى"],
+    ["صادر ولم يدخل حيز النفاذ بعد — نفاذه 1448/02/28هـ (2026-08-12م)", "صادر ولم يدخل حيز النفاذ بعد"],
+    ["ملغاة بالكامل بموجب سياسة ترخيص المنشأة القانونية، صفر 1446هـ (الموافق أغسطس 2024م)", "ملغاة بالكامل بموجب سياسة ترخيص المنشأة القانونية"],
+    ["\uD83D\uDEAB ملغاة", "ملغاة"],
+    ["\u2705 نافذ", "نافذ"],
+    ["صدر — لم يُتحقّق من النشر", "صدر"],
+    ["صدر — غير مؤكَّد النشر", "صدر"],
+    ["ساري — يحتاج مراجعة", "ساري"],
+    ["لم يُتحقّق من الحالة", null],
+    ["بحاجة تحقق حي", null],
+    ["ساري", "ساري"],
+  ];
+  for (const [value, expected] of cases) assert.equal(cardStatusValue(value), expected, value);
+});
+
+test("a status row is cleaned for a guest AND a subscriber; «حالة المراجعة» / «حالة الاكتمال» rows are dropped", () => {
+  const card = {
+    main: [
+      { key: "حالة التشريع", value: "ساري (بحاجة تحقق حي — لا رقم/تاريخ إصدار مؤكَّد في المصدر المستخرَج)" },
+      { key: "\u26A0\uFE0F حالة المراجعة", value: "ملف مُستخرَج حديثاً من PDF حي (2026-07-23)؛ يُوصى بمراجعة قبل الاعتماد — راجع `review_note`" },
+      { key: "الجهة المصدرة", value: "مجلس الوزراء" },
+    ],
+    more: [
+      { key: "حالة النفاذ", value: "\u26A0\uFE0F لم يدخل حيز التنفيذ بعد — يعمل به بعد 90 يوماً من تاريخ نشره (المادة 15)" },
+      { key: "**\u26A0\uFE0F حالة الاكتمال**", value: "**ملف جزئي — راجع حقل `source_note`" },
+      { key: "الحالة", value: "لم يُتحقّق من الحالة" },
+      { key: "مادة الإحالة", value: "راجع المادة (5)" },
+    ],
+  };
+  for (const isSubscriber of [true, false]) {
+    const out = cardForViewer(card, isSubscriber);
+    assert.deepEqual(out?.main.find((r) => r.key === "حالة التشريع")?.value, "ساري", String(isSubscriber));
+    const sent = JSON.stringify(out);
+    for (const note of ["بحاجة تحقق", "حالة المراجعة", "حالة الاكتمال", "ملف جزئي", "لم يُتحقّق", "مؤكَّد"]) {
+      assert.ok(!sent.includes(note), `${note} (${isSubscriber})`);
+    }
+  }
+  const sub = cardForViewer(card, true);
+  assert.deepEqual(sub?.more, [
+    { key: "حالة النفاذ", value: "لم يدخل حيز التنفيذ بعد" },
+    // Not a status key: a subscriber's other rows are as the file has them.
+    { key: "مادة الإحالة", value: "راجع المادة (5)" },
+  ]);
+});
+
+test("with a recorded status, the file's cleaned status row equal to the badge is not repeated behind «المزيد»", () => {
+  const out = lawReaderExtras(
+    PREAMBLE.replace("ساري — معدّل، آخر تحديث بقرار وزير العدل رقم (512)", "ساري (بحاجة تحقق حي — لا رقم/تاريخ إصدار مؤكَّد في المصدر المستخرَج)"),
+    true,
+  );
+  assert.ok(out.metadata_card);
+  const layout = lawCardLayout(out.metadata_card, { status: { labelAr: "ساري", labelEn: "Active", tone: "effective" } });
+  assert.equal(layout.primary.find((f) => f.id === "status")?.source, "db");
+  assert.ok(!layout.more.some((f) => f.key === "حالة التشريع"), JSON.stringify(layout.more));
 });

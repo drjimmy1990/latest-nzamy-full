@@ -9,12 +9,14 @@ type LawStatusTone = "effective" | "caution" | "repealed" | "unverified";
  * shown — no «لم يُتحقّق …» badge, no invented «ساري»; the status row is
  * simply absent (lawStatusPresentation returns null).
  * Archival file states are deliberately not legal repeal or suspension.
+ * issued_publication_unverified reads «صدر» (owner ٢٥٩ (أ): nothing that says
+ * our data is unverified; the exact wording is an open owner question).
  */
 const STATUS_VIEW: Record<Exclude<LawStatus, "status_undeclared">, { ar: string; en: string; tone: LawStatusTone }> = {
   active: { ar: "ساري", en: "Active", tone: "effective" },
   partially_active: { ar: "ساري جزئياً", en: "Partially active", tone: "caution" },
   deferred_effective: { ar: "مؤجّل النفاذ", en: "Effectiveness deferred", tone: "caution" },
-  issued_publication_unverified: { ar: "صدر — لم يُتحقّق من النشر", en: "Issued — publication not verified", tone: "caution" },
+  issued_publication_unverified: { ar: "صدر", en: "Issued", tone: "caution" },
   suspended: { ar: "موقوف السريان", en: "Suspended", tone: "caution" },
   repealed: { ar: "ملغى", en: "Repealed", tone: "repealed" },
   superseded_duplicate: { ar: "نسخة مكررة مهجورة — النص المعتمد في أداة أخرى", en: "Superseded duplicate — see the authoritative document", tone: "unverified" },
