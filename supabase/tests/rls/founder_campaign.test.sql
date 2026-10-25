@@ -2,6 +2,11 @@
 -- ٢٢٥: every lawyer who signs up between 25 Oct 2026 and 25 Jan 2027, Riyadh
 -- dates, gets 3 months of the library and the founder badge).
 --
+-- HISTORICAL since 20261026_01 (owner answers of 25 Oct: no badge or library
+-- days on a free signup), which drops this file's trigger. This chain stops
+-- before 20261026_01 and still proves what 20261021_50 did on live;
+-- founder_no_signup_grant.test.sql proves the trigger is gone after it.
+--
 -- CHAIN (run.sh, postgres:16; stubs.sql loads first by itself). The migration
 -- runs TWICE (idempotent), with an admin edit of the setting between the runs.
 -- From the repo root:

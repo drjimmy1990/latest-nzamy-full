@@ -2674,6 +2674,7 @@ BEGIN
   RAISE NOTICE '_verify: 20261019_41 OK — library.search_law_articles_page: INVOKER, statement_timeout 4s, service_role only';
 END $$;
 
+-- >>> verify:founder_campaign — supabase/tests/rls/founder_campaign.test.sql, founder_no_signup_grant.test.sql
 -- ====================================================================
 -- 2026-10-21 — 20261021_50_founder_campaign.sql (owner ٢١٨ / dates ٢٢٥)
 -- ====================================================================
@@ -2685,8 +2686,16 @@ END $$;
 -- and one lib-founder library grant during the campaign. Keyed on the
 -- founder_badge column (information_schema, never has_column_privilege on a
 -- missing column), so a run before the migration passes with a NOTICE.
+-- 20261026_01 (owner, 25 Oct: no badge or library days on a free signup)
+-- drops the trigger and its function. Once its marker ("20261026_01" in the
+-- founder_badge column comment or in the founder_campaign setting
+-- description) is there, this section checks only what stays
+-- (the setting, the column and its grants, founder_campaign_active()); the
+-- 20261026_01 section below raises if the trigger or the function is back.
 -- RE-RUN HAZARD: a re-run of 20261016_10 revokes founder_badge's SELECT
--- grant; re-run 20261019_20 and 20261021_50 after it.
+-- grant; re-run 20261019_20 and 20261026_01 after it (before 20261026_01:
+-- 20261021_50). A re-run of 20261021_50 re-creates the signup grant: re-run
+-- 20261026_01 after it.
 SELECT '20261021_50 applied (founder campaign: setting + badge + signup grant)' AS check,
        EXISTS (SELECT 1 FROM information_schema.columns
                 WHERE table_schema = 'public' AND table_name = 'lawyer_profiles'
@@ -2703,20 +2712,35 @@ DECLARE
   definer boolean;
   owner   text;
   v       jsonb;
+  retired boolean;
+  rerun   text;
   missing text := '';
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns
                   WHERE table_schema = 'public' AND table_name = 'lawyer_profiles'
                     AND column_name = 'founder_badge') THEN
-    RAISE NOTICE '_verify: 20261021_50 is not applied yet — lawyers who sign up get neither the founder badge nor the 3 months of library (the campaign starts 25 Oct 2026, Riyadh)';
+    RAISE NOTICE '_verify: 20261021_50 is not applied yet — no founder_badge column and no founder_campaign setting (since 20261026_01 nothing is granted on signup anyway)';
     RETURN;
   END IF;
+
+  -- 20261026_01 ran: the signup trigger is retired on purpose. Its two
+  -- markers: the founder_badge column comment (a 20261021_50 re-run resets
+  -- it) and the founder_campaign setting description (a re-run keeps it —
+  -- the seed is `on conflict do nothing` — so the re-run is still caught).
+  retired := coalesce(col_description(tbl::regclass,
+               (SELECT attnum FROM pg_attribute
+                 WHERE attrelid = tbl::regclass AND attname = 'founder_badge' AND NOT attisdropped)), '')
+             LIKE '%20261026_01%'
+          OR coalesce((SELECT description FROM public.platform_settings WHERE key = 'founder_campaign'), '')
+             LIKE '%20261026_01%';
+  rerun := CASE WHEN retired THEN 're-run 20261026_01' ELSE 're-run 20261021_50' END;
 
   -- the setting
   SELECT value INTO v FROM public.platform_settings WHERE key = 'founder_campaign';
   IF v IS NULL OR jsonb_typeof(v) <> 'object'
      OR NOT (v ? 'starts_on') OR NOT (v ? 'ends_on') OR NOT (v ? 'library_days') THEN
-    missing := missing || format(' platform_settings founder_campaign is missing or not {starts_on, ends_on, library_days}: %s (re-run 20261021_50 to re-seed the owner''s dates);', coalesce(v::text, 'no row'));
+    missing := missing || format(' platform_settings founder_campaign is missing or not {starts_on, ends_on, library_days}: %s (re-run 20261021_50 to re-seed the owner''s dates%s);', coalesce(v::text, 'no row'),
+      CASE WHEN retired THEN ', then 20261026_01' ELSE '' END);
   END IF;
 
   -- the column
@@ -2733,14 +2757,15 @@ BEGIN
   -- the privileges on founder_badge
   FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
     IF NOT has_column_privilege(r, tbl, 'founder_badge', 'SELECT') THEN
-      missing := missing || format(' %s cannot SELECT founder_badge — a public profile cannot show the founder badge (a re-run of 20261016_10 revokes this grant: re-run 20261021_50 after it);', r);
+      missing := missing || format(' %s cannot SELECT founder_badge — a public profile cannot show the founder badge (a re-run of 20261016_10 revokes this grant: %s after it);', r, rerun);
     END IF;
     IF has_column_privilege(r, tbl, 'founder_badge', 'INSERT, UPDATE, REFERENCES') THEN
-      missing := missing || format(' %s can write founder_badge (a lawyer could give himself the badge — a GRANT re-applied? re-run 20261016_10, 20261019_20, then 20261021_50);', r);
+      missing := missing || format(' %s can write founder_badge (a lawyer could give himself the badge — a GRANT re-applied? re-run 20261016_10, 20261019_20, then %s);', r,
+        CASE WHEN retired THEN '20261026_01' ELSE '20261021_50' END);
     END IF;
   END LOOP;
 
-  -- founder_campaign_active
+  -- founder_campaign_active (kept by 20261026_01 for P3)
   SELECT p.proconfig, p.prosecdef INTO cfg, definer FROM pg_proc p WHERE p.oid = to_regprocedure(fn_act);
   IF NOT coalesce(definer, false) THEN
     missing := missing || ' founder_campaign_active is missing or not SECURITY DEFINER (re-run 20261021_50);';
@@ -2755,52 +2780,62 @@ BEGIN
       END IF;
     END LOOP;
   END IF;
-
-  -- the trigger function
-  SELECT p.proconfig, p.prosecdef, pg_get_userbyid(p.proowner)
-    INTO cfg, definer, owner
-    FROM pg_proc p WHERE p.oid = to_regprocedure(fn_trg);
-  IF NOT coalesce(definer, false) THEN
-    missing := missing || ' lawyer_profile_founder_campaign is missing or not SECURITY DEFINER (re-run 20261021_50);';
-  END IF;
-  IF cfg IS NULL OR NOT ('search_path=""' = ANY (cfg)) THEN
-    missing := missing || format(' lawyer_profile_founder_campaign proconfig %s lacks search_path='''' (re-run 20261021_50);', coalesce(cfg::text, 'NULL'));
-  END IF;
-  IF to_regprocedure(fn_trg) IS NOT NULL THEN
-    FOREACH r IN ARRAY ARRAY['public', 'anon', 'authenticated'] LOOP
-      IF has_function_privilege(r, fn_trg, 'EXECUTE') THEN
-        missing := missing || format(' %s can EXECUTE lawyer_profile_founder_campaign (re-run 20261021_50);', r);
-      END IF;
-    END LOOP;
-  END IF;
-  IF owner IS NOT NULL
-     AND NOT (has_table_privilege(owner, 'public.platform_settings', 'SELECT')
-              AND has_table_privilege(owner, 'public.library_access_grants', 'SELECT')
-              AND has_table_privilege(owner, 'public.library_access_grants', 'INSERT')
-              AND has_table_privilege(owner, 'public.lawyer_profiles', 'SELECT')) THEN
-    missing := missing || format(' the function owner %s cannot read platform_settings / lawyer_profiles or read and insert library_access_grants — the founder grant silently does nothing;', owner);
+  IF retired AND missing <> '' THEN
+    missing := missing || ' (after any re-run of 20261021_50, re-run 20261026_01 — it re-creates the signup grant);';
   END IF;
 
-  -- the trigger
-  IF NOT EXISTS (SELECT 1 FROM pg_trigger t
-                  WHERE t.tgrelid = tbl::regclass
-                    AND t.tgname = 'trg_lawyer_profiles_founder'
-                    AND NOT t.tgisinternal
-                    AND (t.tgtype & 7) = 7          -- FOR EACH ROW | BEFORE | INSERT
-                    AND (t.tgtype & 16) = 0         -- not on UPDATE
-                    AND t.tgfoid = to_regprocedure(fn_trg)) THEN
-    missing := missing || ' trg_lawyer_profiles_founder is missing or not BEFORE INSERT FOR EACH ROW on lawyer_profile_founder_campaign() (re-run 20261021_50);';
-  ELSIF EXISTS (SELECT 1 FROM pg_trigger
-                 WHERE tgrelid = tbl::regclass AND tgname = 'trg_lawyer_profiles_founder' AND tgenabled = 'D') THEN
-    missing := missing || ' trg_lawyer_profiles_founder is DISABLED — new lawyers get neither the badge nor the library grant (re-run 20261021_50);';
+  -- the trigger function and the trigger — only until 20261026_01 retires them
+  IF NOT retired THEN
+    SELECT p.proconfig, p.prosecdef, pg_get_userbyid(p.proowner)
+      INTO cfg, definer, owner
+      FROM pg_proc p WHERE p.oid = to_regprocedure(fn_trg);
+    IF NOT coalesce(definer, false) THEN
+      missing := missing || ' lawyer_profile_founder_campaign is missing or not SECURITY DEFINER (re-run 20261021_50, or run 20261026_01 if it was dropped on purpose);';
+    END IF;
+    IF cfg IS NULL OR NOT ('search_path=""' = ANY (cfg)) THEN
+      missing := missing || format(' lawyer_profile_founder_campaign proconfig %s lacks search_path='''' (re-run 20261021_50);', coalesce(cfg::text, 'NULL'));
+    END IF;
+    IF to_regprocedure(fn_trg) IS NOT NULL THEN
+      FOREACH r IN ARRAY ARRAY['public', 'anon', 'authenticated'] LOOP
+        IF has_function_privilege(r, fn_trg, 'EXECUTE') THEN
+          missing := missing || format(' %s can EXECUTE lawyer_profile_founder_campaign (re-run 20261021_50);', r);
+        END IF;
+      END LOOP;
+    END IF;
+    IF owner IS NOT NULL
+       AND NOT (has_table_privilege(owner, 'public.platform_settings', 'SELECT')
+                AND has_table_privilege(owner, 'public.library_access_grants', 'SELECT')
+                AND has_table_privilege(owner, 'public.library_access_grants', 'INSERT')
+                AND has_table_privilege(owner, 'public.lawyer_profiles', 'SELECT')) THEN
+      missing := missing || format(' the function owner %s cannot read platform_settings / lawyer_profiles or read and insert library_access_grants — the founder grant silently does nothing;', owner);
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger t
+                    WHERE t.tgrelid = tbl::regclass
+                      AND t.tgname = 'trg_lawyer_profiles_founder'
+                      AND NOT t.tgisinternal
+                      AND (t.tgtype & 7) = 7          -- FOR EACH ROW | BEFORE | INSERT
+                      AND (t.tgtype & 16) = 0         -- not on UPDATE
+                      AND t.tgfoid = to_regprocedure(fn_trg)) THEN
+      missing := missing || ' trg_lawyer_profiles_founder is missing or not BEFORE INSERT FOR EACH ROW on lawyer_profile_founder_campaign() (re-run 20261021_50, or run 20261026_01 if it was dropped on purpose);';
+    ELSIF EXISTS (SELECT 1 FROM pg_trigger
+                   WHERE tgrelid = tbl::regclass AND tgname = 'trg_lawyer_profiles_founder' AND tgenabled = 'D') THEN
+      missing := missing || ' trg_lawyer_profiles_founder is DISABLED — new lawyers get neither the badge nor the library grant (re-run 20261021_50, or run 20261026_01 to retire it);';
+    END IF;
   END IF;
 
   IF missing <> '' THEN
     RAISE EXCEPTION '_verify: the 20261021_50 founder campaign is broken —%', missing;
   END IF;
-  RAISE NOTICE '_verify: 20261021_50 OK — founder_campaign = %; campaign active now (Riyadh): %; founder_badge readable by anon/authenticated, not writable by a session; trg_lawyer_profiles_founder enabled (definer %)',
-    v, public.founder_campaign_active(), owner;
+  IF retired THEN
+    RAISE NOTICE '_verify: 20261021_50 OK — founder_campaign = %; campaign active now (Riyadh): %; founder_badge readable by anon/authenticated, not writable by a session; the signup trigger is retired by 20261026_01 (checked in its own section)',
+      v, public.founder_campaign_active();
+  ELSE
+    RAISE NOTICE '_verify: 20261021_50 OK — founder_campaign = %; campaign active now (Riyadh): %; founder_badge readable by anon/authenticated, not writable by a session; trg_lawyer_profiles_founder enabled (definer %) — run 20261026_01 NOW, the owner no longer gives the badge on signup',
+      v, public.founder_campaign_active(), owner;
+  END IF;
 END $$;
+-- <<< verify:founder_campaign
 
 -- ====================================================================
 -- 2026-10-22 — 20261022_10_payments_core.sql (Moyasar payments B1)
@@ -3899,3 +3934,59 @@ begin
   raise notice '_verify: 20261025_51 OK — case notes and documents archive instead of delete, supervisors restore, append-only trail, owner notified';
 end $$;
 -- <<< verify:soft_delete_case_records
+
+-- >>> verify:founder_no_signup_grant — supabase/tests/rls/founder_no_signup_grant.test.sql
+-- 2026-10-26 — 20261026_01_founder_no_signup_grant.sql (owner answers of
+-- 25 Oct, P0: no founder badge, seat or library days on a free signup).
+-- Read-only, safe to repeat. Keyed on the marker "20261026_01" in the
+-- lawyer_profiles.founder_badge column comment OR in the founder_campaign
+-- setting description. Before the file runs it only reports. After, it raises
+-- when the signup trigger or its function is back. A re-run of 20261021_50
+-- re-creates both and resets the column comment, but keeps the description
+-- (its seed is `on conflict do nothing`), so the re-run is caught here. The
+-- badges and lib-founder grants already given are counted, never changed
+-- (owner question ٢٧٨).
+do $$
+declare
+  marked boolean;
+  badges bigint;
+  grants bigint;
+begin
+  if not exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'lawyer_profiles'
+                    and column_name = 'founder_badge') then
+    raise notice '_verify: 20261026_01 is not applied yet — and 20261021_50 is not either, so no signup grant exists to stop';
+    return;
+  end if;
+  marked := coalesce(col_description('public.lawyer_profiles'::regclass,
+              (select attnum from pg_attribute
+                where attrelid = 'public.lawyer_profiles'::regclass
+                  and attname = 'founder_badge' and not attisdropped)), '')
+            like '%20261026_01%'
+         or coalesce((select description from public.platform_settings where key = 'founder_campaign'), '')
+            like '%20261026_01%';
+  if not marked then
+    raise notice '_verify: 20261026_01 is not applied yet — every lawyer who signs up during the founder campaign still gets the founder badge and the library days; run SQL_batch_2026-10-26_owner_answers/01_NOW_20261026_01_founder_no_signup_grant.sql NOW';
+    return;
+  end if;
+  if exists (select 1 from pg_trigger
+              where tgrelid = 'public.lawyer_profiles'::regclass and tgname = 'trg_lawyer_profiles_founder') then
+    raise exception '_verify: trg_lawyer_profiles_founder is back on lawyer_profiles — new lawyers get the founder badge and library days on signup again (20261021_50 re-run? re-run 20261026_01 after it)';
+  end if;
+  if to_regprocedure('public.lawyer_profile_founder_campaign()') is not null then
+    raise exception '_verify: public.lawyer_profile_founder_campaign() is back (re-run 20261026_01)';
+  end if;
+  if exists (select 1 from pg_trigger t join pg_proc p on p.oid = t.tgfoid
+              where t.tgrelid = 'public.lawyer_profiles'::regclass and not t.tgisinternal
+                and p.proname ilike '%founder%') then
+    raise exception '_verify: a trigger on lawyer_profiles runs a *founder* function — the founder badge must not come from a signup (20261026_01)';
+  end if;
+  if to_regprocedure('public.founder_campaign_active(timestamptz)') is null then
+    raise exception '_verify: founder_campaign_active(timestamptz) is gone — 20261026_01 keeps it for the paid founder membership (P3); re-run 20261021_50, then 20261026_01';
+  end if;
+  select count(*) into badges from public.lawyer_profiles where founder_badge;
+  select count(*) into grants from public.library_access_grants where plan_ref = 'lib-founder';
+  raise notice '_verify: 20261026_01 OK — no signup trigger gives the founder badge or library days; already given and kept until the owner answers ٢٧٨: % badge(s), % lib-founder grant(s)',
+    badges, grants;
+end $$;
+-- <<< verify:founder_no_signup_grant
