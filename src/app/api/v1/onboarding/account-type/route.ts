@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 import {
   canClaimAccountType,
   sectorRowValuesFor,
@@ -273,6 +273,9 @@ export async function POST(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: AR.unauthorized }, { status: 401 });
     }
+    // D6 (owner ٢٩٨): a frozen account (a pending deletion) changes nothing.
+    const frozen = frozenAccountResponse(user);
+    if (frozen) return frozen;
 
     // Read the caller's own profile through the RLS-scoped client, never the
     // service client, and keyed on the session's user id — no id from the body

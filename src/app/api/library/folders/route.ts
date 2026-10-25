@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 
 /**
  * GET /api/library/folders — List user's smart folders
@@ -61,6 +61,9 @@ export async function POST(request: Request) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    // D6 (owner ٢٩٨): a frozen account (a pending deletion) changes nothing.
+    const frozen = frozenAccountResponse(user);
+    if (frozen) return frozen;
 
     const body = await request.json();
     const { name, color, icon } = body;
@@ -102,6 +105,9 @@ export async function PATCH(request: Request) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    // D6 (owner ٢٩٨): a frozen account (a pending deletion) changes nothing.
+    const frozen = frozenAccountResponse(user);
+    if (frozen) return frozen;
 
     const body = await request.json();
     const { folderId, name, color, icon, isPinned } = body;
@@ -149,6 +155,9 @@ export async function DELETE(request: Request) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    // D6 (owner ٢٩٨): a frozen account (a pending deletion) changes nothing.
+    const frozen = frozenAccountResponse(user);
+    if (frozen) return frozen;
 
     const { searchParams } = new URL(request.url);
     const folderId = searchParams.get('folderId');

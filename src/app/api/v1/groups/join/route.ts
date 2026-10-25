@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 
 /**
  * POST /api/v1/groups/join — Join a group using a join code
@@ -21,6 +21,9 @@ export async function POST(request: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  // D6 (owner ٢٩٨): a frozen account (a pending deletion) changes nothing.
+  const frozen = frozenAccountResponse(user);
+  if (frozen) return frozen;
 
   const body = await request.json().catch(() => ({} as { code?: string }));
   const code = typeof body?.code === "string" ? body.code.trim() : "";

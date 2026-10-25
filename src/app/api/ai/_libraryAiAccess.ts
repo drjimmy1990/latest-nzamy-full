@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getUserTier, isPlatformAdmin, TIER_RANK } from '@/lib/access-control';
-import { isAuthUnavailable, authUnavailableResponse } from '@/lib/auth/apiAuth';
+import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from '@/lib/auth/apiAuth';
 import { libraryAiDecision } from './libraryAiDecision';
 
 /**
@@ -43,6 +43,9 @@ export async function libraryAiAccess(): Promise<NextResponse | null> {
       { status: 401 },
     );
   }
+  // D6 (owner ٢٩٨): a frozen account (a pending deletion) uses no assistant.
+  const frozen = frozenAccountResponse(user);
+  if (frozen) return frozen;
 
   const [tier, isAdmin] = await Promise.all([getUserTier(user.id), isPlatformAdmin(user.id)]);
   const decision = libraryAiDecision({ signedIn: true, tier, isAdmin }, TIER_RANK);

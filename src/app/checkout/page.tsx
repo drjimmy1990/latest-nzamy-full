@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { ACCOUNT_FROZEN_PATH, freezeStateFromUser } from "@/lib/auth/accountFreeze";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import MoyasarCheckout from "@/components/payments/MoyasarCheckout";
@@ -90,6 +91,9 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect(`/login?next=${encodeURIComponent(selfHref)}`);
+  // D6 (owner ٢٩٨): a frozen account (a pending deletion) buys nothing; it
+  // opens only /account-frozen. /checkout is not a PROTECTED proxy prefix.
+  if (freezeStateFromUser(user).frozen) redirect(ACCOUNT_FROZEN_PATH);
 
   // Test mode is for platform staff and test accounts only (B1 final review):
   // anyone else sees the gateway as off, exactly as GET /api/v1/payments/status.

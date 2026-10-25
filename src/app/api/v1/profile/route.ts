@@ -31,7 +31,7 @@ import {
 // here without updating 20260826_corporate_identity_persisted.sql breaks the
 // signup trigger silently.
 import { normalizeCrNumber, isLegalRepCapacity } from "@/app/register/client/components/_corporateIdentity";
-import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 import { profilePhoneDecision } from "./_phone";
 import {
   resolveBusinessProfileScope,
@@ -472,6 +472,9 @@ export async function PATCH(request: Request) {
   if (!user) {
     return NextResponse.json({ error: AR.unauthorized }, { status: 401 });
   }
+  // D6 (owner ٢٩٨): a frozen account (a pending deletion) changes nothing.
+  const frozen = frozenAccountResponse(user);
+  if (frozen) return frozen;
 
   // A body that is not a JSON object would throw on the `in` checks below and
   // surface as an English Next.js error page.

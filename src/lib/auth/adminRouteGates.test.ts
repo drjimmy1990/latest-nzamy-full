@@ -240,6 +240,10 @@ const WRITE_MARKERS = [
   "dispatchOrderNotice(",
   "adjustPointsWith(",
   "refundOrderWith(",
+  "freezeAccountWith(",
+  "cancelAccountFreezeWith(",
+  "purgeAccountWith(",
+  "purgeNowWith(",
 ];
 
 function firstWriteAt(body: string): number {
@@ -523,4 +527,43 @@ test("logAdminAction: service-role insert, actor_email looked up, retried withou
   assert.ok(src.includes("buildAdminAuditRow(input, null)"), "the retry drops actor_email");
   assert.ok(/\}\s*catch\s*\(/.test(src), "every failure is caught and logged");
   assert.equal(/\bthrow\b/.test(src), false, "logAdminAction never throws");
+});
+
+test("users DELETE (D6, owner ٢٩٨): freeze by default, restore, and purge only for a super admin with the typed phrase", () => {
+  const body = handler("users/[id]/route.ts", "DELETE");
+  const gateAt = body.indexOf('await requireStaff("users.delete")');
+  const modeAt = body.indexOf('request.nextUrl.searchParams.get("mode") ?? "freeze"');
+  assert.ok(modeAt > gateAt, "the mode defaults to freeze, read after the gate");
+  const superAt = body.indexOf('mode === "purge" && gate.role !== "super_admin"');
+  assert.ok(superAt > modeAt, "purge is refused to anyone but a super admin");
+  assert.ok(body.slice(superAt, superAt + 160).includes("status: 403"), "as a 403");
+
+  const freezeAt = body.indexOf("freezeAccountWith(");
+  const cancelAt = body.indexOf("cancelAccountFreezeWith(");
+  const purgeAt = body.indexOf("purgeNowWith(");
+  const claimAt = body.indexOf('.rpc("account_purge_claim_user"');
+  const phraseAt = body.indexOf("phraseMatches(body?.confirm, ADMIN_PURGE_CONFIRM_AR)");
+  const lastSuperAt = body.indexOf("checkStaffRoleChange(");
+  assert.ok(freezeAt > -1 && cancelAt > -1 && purgeAt > -1, "the three modes go through the shared library");
+  assert.ok(phraseAt > freezeAt && phraseAt < lastSuperAt, "the typed phrase is checked on the purge arm, before anything else there");
+  assert.ok(lastSuperAt < claimAt && claimAt < purgeAt, "last-super-admin rule, then the claim, then the cron's purge");
+
+  // the bare deleteUser survives only on the arm where 20261026_70 is missing
+  const deleteAt = body.indexOf("auth.admin.deleteUser(");
+  const legacy = body.slice(body.lastIndexOf("if (claimError)", deleteAt), deleteAt);
+  assert.ok(legacy.includes("if (claimError)"), "deleteUser is reached only when the claim function is missing");
+  assert.equal(countOf(body, "auth.admin.deleteUser("), 1, "one legacy deleteUser, nowhere else");
+
+  // an admin account is not frozen
+  const adminFreeze = body.slice(body.indexOf('if (mode === "freeze")'), freezeAt);
+  assert.ok(adminFreeze.includes('target.user_type === "admin"'), "an admin target is refused before the freeze");
+  for (const action of ['"user_deletion_requested"', '"user_deletion_cancelled"', '"user_deletion_blocked"', '"user_deleted"']) {
+    assert.ok(body.includes(action), `the audit row ${action}`);
+  }
+});
+
+test("users.delete is a super_admin action only (the freeze and the purge both need it)", () => {
+  for (const role of Object.keys(STAFF_MATRIX) as StaffRole[]) {
+    assert.equal(STAFF_MATRIX[role].has("users.delete"), role === "super_admin", role);
+  }
 });

@@ -7,9 +7,20 @@
 --     `npx supabase db push` and the Dashboard SQL Editor fail with
 --     ERROR 42501 (must be owner of table objects) when they try to
 --     CREATE POLICY on it. It must be applied by hand, as
---     `supabase_storage_admin` (or through the Dashboard UI), and
---     `supabase/migrations/_verify.sql` raises if it was skipped — so a deploy
---     cannot quietly leave the bucket open.
+--     `supabase_storage_admin` / `supabase_admin` (or through the Dashboard
+--     UI). `supabase/migrations/_verify.sql`, run by hand after a deploy
+--     (deploy.sh does NOT run it), raises if it was skipped.
+--
+-- ⚠️  WHICH COPY TO RUN — this file is the canonical one. Its batch copies:
+--       SQL_batch_2026-10-25_owner_free/17_AFTER_16_storage_policies_documents.sql
+--         — the version BEFORE the D6 SELECT guard. Superseded: do not re-run
+--           it after 71 (it would put back a SELECT policy without the guard;
+--           _verify.sql then raises).
+--       SQL_batch_2026-10-26_owner_answers/71_AFTER_70_storage_policies_documents_select.sql
+--         — byte-identical (`cmp`) to this file. Run it after 20261026_70.
+--     Order on a database that has run neither: 16 (20261025_51) → 17 → 70
+--     (20261026_70) → 71. Running only 71 at the end gives the same result:
+--     every policy is dropped and re-created by this file.
 --
 -- WHAT UAT-20260915 FOUND
 --     evidence/uat-20260915/document-storage-isolation.json — user B downloaded
@@ -110,13 +121,6 @@ end $$;
 -- 3. The four owner-only policies
 -- ─────────────────────────────────────────────────────────────────────────────
 
--- SELECT — owners can read their own documents
-drop policy if exists "documents select own" on storage.objects;
-create policy "documents select own"
-  on storage.objects for select
-  to authenticated
-  using (bucket_id = 'documents' and auth.uid()::text = (storage.foldername(name))[1]);
-
 -- INSERT — owners can upload into their own folder
 drop policy if exists "documents insert own" on storage.objects;
 create policy "documents insert own"
@@ -124,6 +128,16 @@ create policy "documents insert own"
   to authenticated
   with check (bucket_id = 'documents' and auth.uid()::text = (storage.foldername(name))[1]);
 
+-- SELECT — owners can read their own documents, EXCEPT an object whose row
+-- now belongs to someone else (D6, owner ٢٩٨, 20261026_70): a firm document a
+-- removed member uploaded stays in his folder while its attachments row moved
+-- to the firm owner. public.storage_object_held_by_other (SECURITY DEFINER —
+-- an inline subquery here would run under the member's own RLS, see nothing,
+-- and let the bytes through) refuses it, and a contract version / document of
+-- a contract he can no longer manage. Before 20261026_70 the policy is created
+-- WITHOUT that guard and a NOTICE says so — re-apply this file after it
+-- (_verify.sql raises while 20261026_70 is there and the guard is not).
+--
 -- UPDATE / DELETE — owners can overwrite, move or delete their own documents,
 -- EXCEPT the file of a CASE document (owner directive ٥, N3.9): those bytes
 -- stay, like the attachments row that points at them. The guard calls
@@ -134,9 +148,21 @@ create policy "documents insert own"
 -- DELETE ?permanent=1) bypasses RLS and is unaffected.
 do $$
 declare
-  own   text := 'bucket_id = ''documents'' and auth.uid()::text = (storage.foldername(name))[1]';
-  guard text := '';
+  own        text := 'bucket_id = ''documents'' and auth.uid()::text = (storage.foldername(name))[1]';
+  guard      text := '';
+  read_guard text := '';
 begin
+  if to_regprocedure('public.storage_object_held_by_other(text)') is not null then
+    read_guard := ' and not public.storage_object_held_by_other(name)';
+  else
+    raise notice 'storage_policies_documents: 20261026_70 has not run — "documents select own" is created WITHOUT the held-by-other guard (a removed firm member can still read the firm files he uploaded); re-apply this file after it';
+  end if;
+
+  -- SELECT — owners can read their own documents (not one whose row is someone else's)
+  execute 'drop policy if exists "documents select own" on storage.objects';
+  execute format('create policy "documents select own" on storage.objects for select to authenticated '
+                 'using (%s%s)', own, read_guard);
+
   if to_regprocedure('public.storage_object_is_case_document(text)') is not null then
     guard := ' and not public.storage_object_is_case_document(name)';
   else
@@ -155,8 +181,8 @@ begin
 end $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 4. Read back — this is the same assertion supabase/migrations/_verify.sql
---    makes on every deploy
+-- 4. Read back — the same assertion supabase/migrations/_verify.sql makes when
+--    it is run (by hand; deploy.sh does not run it)
 -- ─────────────────────────────────────────────────────────────────────────────
 select pol.polname                                 as policy_name,
        pol.polcmd                                  as cmd,
@@ -194,6 +220,13 @@ begin
          );
   if n_other <> 0 then
     raise exception 'storage_policies_documents: % other policy on storage.objects can still match bucket documents', n_other;
+  end if;
+
+  if to_regprocedure('public.storage_object_held_by_other(text)') is not null and not exists (
+       select 1 from pg_policy
+        where polrelid = 'storage.objects'::regclass and polname = 'documents select own'
+          and coalesce(pg_get_expr(polqual, polrelid), '') like '%storage_object_held_by_other%') then
+    raise exception 'storage_policies_documents: "documents select own" lacks the 20261026_70 held-by-other guard';
   end if;
 
   raise notice 'storage_policies_documents: OK — 4 owner-only policies, nothing else can match bucket documents';

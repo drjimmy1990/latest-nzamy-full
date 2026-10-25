@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { buildWebhookPayload } from "@/lib/n8n/payload";
 import { dispatchToN8n } from "@/lib/n8n/dispatch";
 import { RequestEvent, type RequestEventName } from "@/lib/events";
-import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 
 /**
  * POST /api/v1/n8n/trigger
@@ -28,6 +28,9 @@ export async function POST(request: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  // D6 (owner ٢٩٨): a frozen account (a pending deletion) changes nothing.
+  const frozen = frozenAccountResponse(user);
+  if (frozen) return frozen;
 
   let body: { requestId?: string; event?: string };
   try {

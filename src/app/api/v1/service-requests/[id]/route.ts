@@ -6,7 +6,7 @@ import { buildWebhookPayload } from "@/lib/n8n/payload";
 import { recordNotification } from "@/lib/notify";
 import { stripInternalNotes } from "@/lib/services/internalNotes";
 import { canRequesterCancel } from "@/lib/services/orderTransitions";
-import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 import {
   evaluateOrderEditability,
   validateEditedDescription,
@@ -424,6 +424,9 @@ export async function PATCH(
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  // D6 (owner ٢٩٨): a frozen account (a pending deletion) changes nothing.
+  const frozen = frozenAccountResponse(user);
+  if (frozen) return frozen;
 
   const { id } = await context.params;
   const body = await request.json();
@@ -1185,6 +1188,9 @@ export async function POST(
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  // D6 (owner ٢٩٨): a frozen account (a pending deletion) changes nothing.
+  const frozen = frozenAccountResponse(user);
+  if (frozen) return frozen;
 
   const { id } = await context.params;
 

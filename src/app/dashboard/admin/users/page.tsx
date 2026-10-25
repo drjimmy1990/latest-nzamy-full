@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import {
   Users, MagnifyingGlass, Check, X, Warning, Question,
-  Clock, CheckCircle, Pencil, Trash, Crown, User,
+  Clock, CheckCircle, Pencil, Trash, Crown, User, ArrowCounterClockwise,
   Buildings, Gavel, Robot, ArrowsDownUp, Plus, CaretDown,
   SealCheck, LockSimple, DotsThree, Eye, SpinnerGap, ShieldCheck,
   Scales, Storefront, Bank, Handshake, Stamp
@@ -26,6 +26,7 @@ import { useUser } from "@/hooks/useUser";
 import type { StaffRole } from "@/lib/auth/staffRoles";
 import { staffMaySee } from "@/lib/auth/adminNavAccess";
 import { apiErrorText } from "@/lib/services/apiErrorText";
+import { ADMIN_PURGE_CONFIRM_AR } from "@/lib/auth/accountFreeze";
 
 // ─── Types & Data ─────────────────────────────────────────────────────────────
 
@@ -340,20 +341,44 @@ function UserRow({
     }
   };
 
-  const handleDelete = async () => {
-    if (!confirm("⚠️ تحذير: هل أنت متأكد من حذف هذا المستخدم نهائياً؟ لا يمكن التراجع عن هذا الإجراء.")) return;
+  // D6 (owner ٢٩٨): «حذف» freezes the account for 60 days by default; the
+  // daily purge job deletes it after that. «حذف نهائي الآن» is a super-admin
+  // action that needs the typed phrase. Before 20261026_70 runs the freeze
+  // answers with the API's own reason, and the immediate delete still works.
+  const deletionCall = async (mode: "freeze" | "cancel" | "purge", body?: unknown, fallback = "فشل الإجراء") => {
     setActionLoading(true);
     try {
-      const res = await fetch(`/api/v1/admin/users/${user.id}`, {
+      const res = await fetch(`/api/v1/admin/users/${user.id}?mode=${mode}`, {
         method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: body !== undefined ? JSON.stringify(body) : undefined,
       });
-      if (!res.ok) throw new Error(apiErrorText(res.status, await res.json().catch(() => null), "فشل حذف المستخدم"));
+      const json = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(apiErrorText(res.status, json, fallback));
+      if (json && typeof json.message === "string") alert(json.message);
       onUpdate();
     } catch (err) {
       alert(err instanceof Error ? err.message : "حدث خطأ");
     } finally {
       setActionLoading(false);
     }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm("تجميد الحساب بقرار من الإدارة ثم حذفه نهائياً بعد ٦٠ يوماً؟ يُخفى ملفه العام فوراً. لا يستطيع صاحبه رفع هذا التجميد بنفسه (يرى «تم تجميد الحساب بقرار من الإدارة — تواصل مع الدعم»)؛ تُرفعه الإدارة فقط بـ«استعادة حساب مجمّد» خلال المهلة. ملفات المكتب تنتقل لصاحبه والفواتير الضريبية تبقى.")) return;
+    await deletionCall("freeze", undefined, "فشل تجميد الحساب");
+  };
+
+  const handleRestore = async () => {
+    if (!confirm("استعادة هذا الحساب المجمّد وإلغاء طلب حذفه؟")) return;
+    await deletionCall("cancel", undefined, "فشل استعادة الحساب");
+  };
+
+  const handlePurgeNow = async () => {
+    const typed = prompt(`⚠️ حذف نهائي فوري لا يمكن التراجع عنه. ملفات المكتب تنتقل لصاحبه والفواتير الضريبية تبقى، وكل ما سواها يُحذف. إن تعذّر الحذف يبقى الحساب مجمّداً بقرار الإدارة.
+اكتب «${ADMIN_PURGE_CONFIRM_AR}» للتأكيد:`);
+    if (typed === null) return;
+    await deletionCall("purge", { confirm: typed }, "فشل حذف المستخدم");
   };
 
   return (
@@ -445,7 +470,13 @@ function UserRow({
                   { label: "تعديل الخطة", icon: Crown, onClick: () => router.push(`/dashboard/admin/users/${user.id}?tab=subscription`) },
                   // Owner ٢١٠: deleting a user is a super_admin action.
                   ...(staffMaySee(staffRole, "users.delete")
-                    ? [{ label: "حذف المستخدم", icon: Trash, danger: true, onClick: handleDelete }]
+                    ? [
+                        { label: "تجميد ثم حذف بعد ٦٠ يوماً", icon: Trash, danger: true, onClick: handleDelete },
+                        { label: "استعادة حساب مجمّد", icon: ArrowCounterClockwise, onClick: handleRestore },
+                        ...(staffRole === "super_admin" || staffRole === null
+                          ? [{ label: "حذف نهائي الآن", icon: Trash, danger: true, onClick: handlePurgeNow }]
+                          : []),
+                      ]
                     : []),
                 ].map(item => {
                   const Icon = item.icon;

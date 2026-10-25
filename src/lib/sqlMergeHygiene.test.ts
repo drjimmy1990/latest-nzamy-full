@@ -1,12 +1,13 @@
 /**
- * sqlMergeHygiene.test.ts — the SQL the user pastes into the editor (and that
- * deploy.sh runs) carries no merge leftovers.
+ * sqlMergeHygiene.test.ts — the SQL the user pastes into the editor (and
+ * _verify.sql, which he runs by hand; deploy.sh does not) carries no merge
+ * leftovers.
  *
  * The 2026-10-25 batch merged two tracks that both appended sections to the
  * end of supabase/migrations/_verify.sql. The resolution kept one bare
  * `=======` line, which psql glued onto the next statement: a syntax error
- * that skipped the hearing-reminders check, and under ON_ERROR_STOP (deploy.sh)
- * stopped _verify.sql before every section after it. No unit or RLS test ran
+ * that skipped the hearing-reminders check, and under ON_ERROR_STOP (the manual
+ * run's `-v ON_ERROR_STOP=1`) stopped _verify.sql before every section after it. No unit or RLS test ran
  * _verify.sql top to bottom, so nothing caught it. This guard does, without a
  * database: no conflict marker in any SQL file, and every
  * `-- >>> verify:<name>` block in _verify.sql is opened once and closed once.
@@ -72,7 +73,8 @@ test("_verify.sql: every verify block is opened once and closed once, in order",
   for (const name of ["grant_plan_atomic", "hearing_reminders", "dashboard_notes", "legal_ledger", "case_tracking_links",
     "profile_visibility", "soft_delete_case_records", "law_summary_brief", "law_sort_key", "search_scoped_page",
     "founder_campaign", "founder_no_signup_grant", "founder_badges_unpaid_removed", "billing_cycles", "coupons_server_only",
-    "tracking_links_v2", "branding_vault", "attachments_path_ownership", "document_shares_path_ownership"]) {
+    "tracking_links_v2", "branding_vault", "attachments_path_ownership", "document_shares_path_ownership",
+    "account_deletion", "storage_documents_read_guard"]) {
     assert.ok(opened.has(name), `verify:${name} is present`);
   }
 });

@@ -47,7 +47,8 @@
 --   (d) the chain up to prelude_founder_no_signup_grant_before.sql, then
 --       "$D/v01.sql" → it raises "trg_lawyer_profiles_founder is on
 --       lawyer_profiles … run SQL_batch_2026-10-26_owner_answers/01_NOW…":
---       deploy.sh stops until the file has run.
+--       a manual _verify run raises until the file has run (deploy.sh does
+--       not run _verify.sql).
 --
 -- Actors: f1 badge + grant from before the fix (prelude) · f2 advocate and
 -- f3 consultant signing up after the fix, inside the window · b1 / b2

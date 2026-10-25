@@ -17,6 +17,7 @@ import { useUser } from "@/hooks/useUser";
 import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
 import { createClient } from "@/lib/supabase/client";
 import { EmptyPanel, SectionTitle, LocalActionStatus } from "./_shared";
+import { AccountDeletionPanel } from "./AccountDeletionPanel";
 import {
   validateNewPassword,
   arabicAuthError,
@@ -304,24 +305,31 @@ export function SecurityTab() {
         />
       </div>
 
-      {/* Danger zone — account deletion needs a human, not a form on this
-          page: there is no self-service deletion endpoint. */}
+      {/* Danger zone — D6 (owner ٢٩٨): self-service deletion with a 60-day
+          freeze. Before 20261026_70 runs (and in demo mode) the panel shows
+          the old «تواصل مع الدعم» fallback below, unchanged. */}
       <div>
         <SectionTitle>منطقة الخطر</SectionTitle>
-        <EmptyPanel
-          icon={<ShieldCheck size={28} />}
-          title="حذف الحساب يحتاج إلى تواصل مع الدعم"
-          description={
-            "لا يوجد حذف ذاتي للحساب من هذه الصفحة حالياً. لطلب حذف حسابك تواصل مع فريق الدعم."
+        <AccountDeletionPanel
+          fallback={
+            <>
+              <EmptyPanel
+                icon={<ShieldCheck size={28} />}
+                title="حذف الحساب يحتاج إلى تواصل مع الدعم"
+                description={
+                  "لا يوجد حذف ذاتي للحساب من هذه الصفحة حالياً. لطلب حذف حسابك تواصل مع فريق الدعم."
+                }
+              />
+              <Link
+                href="/contact"
+                className="mt-3 inline-flex items-center gap-2 text-xs font-semibold text-royal dark:text-emerald-400 hover:underline"
+              >
+                <Headset size={14} />
+                التواصل مع الدعم
+              </Link>
+            </>
           }
         />
-        <Link
-          href="/contact"
-          className="mt-3 inline-flex items-center gap-2 text-xs font-semibold text-royal dark:text-emerald-400 hover:underline"
-        >
-          <Headset size={14} />
-          التواصل مع الدعم
-        </Link>
       </div>
     </div>
   );

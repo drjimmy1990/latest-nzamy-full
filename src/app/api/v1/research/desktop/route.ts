@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { validateTitle } from "@/app/api/v1/research/items/_shared";
-import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 
 /**
  * Helper: get or create the user's "desktop" research session.
@@ -97,6 +97,9 @@ export async function POST(request: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  // D6 (owner ٢٩٨): a frozen account (a pending deletion) changes nothing.
+  const frozen = frozenAccountResponse(user);
+  if (frozen) return frozen;
 
   const body = await request.json();
 
@@ -151,6 +154,9 @@ export async function DELETE() {
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  // D6 (owner ٢٩٨): a frozen account (a pending deletion) changes nothing.
+  const frozen = frozenAccountResponse(user);
+  if (frozen) return frozen;
 
   try {
     const sessionId = await getOrCreateDesktopSession(supabase, user.id);
