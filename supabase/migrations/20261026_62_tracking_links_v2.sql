@@ -15,12 +15,22 @@
 --                        link lives forever any more);
 --        expires_at      the end of a day-lifetime; NULL exactly when 'stage';
 --        stage_id        the stage a 'stage' link lives through;
---        paused_at, paused_reason ('manual' | 'expired') — both or neither;
---        failed_attempts, locked_until — the per-link digits limiter.
+--        paused_at, paused_reason ('manual' | 'expired' | 'locked') — both
+--                        or neither; paused_by — who paused it by hand (set
+--                        only for 'manual');
+--        failed_attempts, locked_until — the per-link digits limiter;
+--        wrong_total     wrong tries since the last right answer, NOT reset
+--                        by the 15-minute lock
+--                        (only by a right answer or a resume): at 20 the link
+--                        pauses itself as 'locked';
+--        unlock_epoch    bumped on every pause, resume and change of the phone
+--                        behind the link; the unlock cookie carries it, so an
+--                        old cookie stops opening the link.
 --      A BEFORE INSERT trigger computes expires_at / stage_id from lifetime and
 --      forces a new link live and unlocked, whoever inserts. Sessions INSERT
 --      `lifetime` (added to the column grant) and SELECT the new state
---      columns — never failed_attempts, never stage_id writes.
+--      columns — never failed_attempts / wrong_total / unlock_epoch /
+--      paused_by, never stage_id writes.
 --
 --   2. The state, computed — public.tracking_link_effective_state(…) (pure)
 --      and public.tracking_link_state(link id):
@@ -38,11 +48,18 @@
 --      public.tracking_link_resume(link, lifetime), SECURITY DEFINER, callable
 --      by sessions, allowed to exactly those the revoke policy allows (the
 --      link's maker, or anyone who may issue a link on the case —
---      can_issue_tracking_link). They touch only the state columns; token,
---      case, owner and firm never change; a revoked link is never resumed.
---      Resume sets a NEW lifetime (and so a new expiry / stage) and clears the
---      digits lock. Revoke stays the v1 column-privileged UPDATE (unchanged).
+--      can_issue_tracking_link). A MANUAL pause is resumed only by the
+--      link's maker, the one who paused it, or the case's lead
+--      (service_requests.assigned_to) — an 'expired' or 'locked' pause by
+--      anyone of the revoke policy (public.tracking_link_may_resume).
+--      They touch only the state columns; token, case, owner and firm never
+--      change; a revoked link is never resumed. Resume sets a NEW lifetime
+--      (and so a new expiry / stage) and clears the digits lock and the wrong
+--      count. Revoke stays the v1 column-privileged UPDATE (unchanged).
 --      The UPDATE policy and grants are NOT widened.
+--      A 'stage' link is paused (expired) the moment its stage ends — a
+--      trigger on case_stages (insert, close / reorder, delete) — so opening
+--      the stage again does not revive it; the lawyer resumes it.
 --
 --   4. The phone — public.case_client_phone_last4(case), no session or
 --      service grant (only the definer functions here read it). Source, first
@@ -59,22 +76,28 @@
 --      warning, true only for those who may issue a link.
 --
 --   5. The public side (service_role only):
---        case_tracking_gate(token_hash) → 'none' | 'unavailable' | 'paused'
---          | 'expired' | 'active'. No case data, no view stamp. 'unavailable'
---          = revoked, or the maker may no longer issue it. An expiry it sees
---          is written down (paused_at, paused_reason 'expired').
---        case_tracking_unlock(token_hash, digits) → 'ok' | 'denied' |
---          'locked'. ONE locked row, one statement per outcome: 5 wrong tries
---          lock the link for 15 minutes; while locked even the right digits
---          are refused; success resets the counter. Unknown, malformed,
---          paused, expired, revoked and no-phone links all answer 'denied'.
+--        case_tracking_gate(token_hash) → jsonb {state, epoch}: state 'none'
+--          | 'unavailable' | 'paused' | 'expired' | 'active'; epoch (the
+--          unlock_epoch) only when 'active'. No case data, no view stamp.
+--          'unavailable' = revoked, or the maker may no longer issue it. An
+--          expiry it sees is written down (paused_at, paused_reason
+--          'expired'). A 'locked' pause answers 'paused' like a manual one.
+--        case_tracking_unlock(token_hash, digits) → jsonb {result, epoch}:
+--          'ok' (with the epoch the cookie must carry) | 'denied' | 'locked'.
+--          ONE locked row, one statement per outcome: 5 wrong tries lock the
+--          link for 15 minutes; while locked even the right digits are
+--          refused (and not counted); 20 wrong since the last right answer
+--          pause it ('locked');
+--          success resets both counters. Unknown, malformed, paused, expired,
+--          revoked and no-phone links all answer 'denied'.
 --        case_tracking_snapshot(token_hash) — REPLACED with the same output
 --          (keys, whitelist and every v1 check) plus: NULL unless the link's
 --          state is 'active'. The digits check is the app's (a signed cookie
 --          — src/lib/tracking/trackingUnlockCookie.ts) before it calls this.
 --
--- DEPLOY ORDER: run BEFORE the new code ideally; the code also works before
--- it (v1 behaviour: no digits, no lifetime) — see the README.
+-- DEPLOY ORDER: run BEFORE the new code. The new code FAILS CLOSED without
+-- it: every /track link shows «هذا الرابط لم يعد متاحاً» until this file runs
+-- (no case data, no digits skipped) — see the README.
 -- !! Re-running 20261025_32 AFTER this file puts the v1 snapshot back (no
 --    pause/expiry check). Re-run this file after it if that ever happens.
 --
@@ -112,7 +135,10 @@ alter table public.case_tracking_links
   add column if not exists paused_at       timestamptz,
   add column if not exists paused_reason   text,
   add column if not exists failed_attempts int  not null default 0,
-  add column if not exists locked_until    timestamptz;
+  add column if not exists locked_until    timestamptz,
+  add column if not exists wrong_total     int  not null default 0,
+  add column if not exists unlock_epoch    int  not null default 0,
+  add column if not exists paused_by       uuid references auth.users(id) on delete set null;
 
 -- Links made before this file: 30 days from now (re-run: nothing matches).
 update public.case_tracking_links
@@ -128,13 +154,16 @@ alter table public.case_tracking_links add constraint case_tracking_links_expiry
 alter table public.case_tracking_links drop constraint if exists case_tracking_links_paused_shape;
 alter table public.case_tracking_links add constraint case_tracking_links_paused_shape
   check ((paused_at is null) = (paused_reason is null)
-         and (paused_reason is null or paused_reason in ('manual', 'expired')));
+         and (paused_reason is null or paused_reason in ('manual', 'expired', 'locked'))
+         and (paused_by is null or paused_reason = 'manual'));
 alter table public.case_tracking_links drop constraint if exists case_tracking_links_attempts_check;
 alter table public.case_tracking_links add constraint case_tracking_links_attempts_check
-  check (failed_attempts between 0 and 5);
+  check (failed_attempts between 0 and 5 and wrong_total between 0 and 20 and unlock_epoch >= 0);
 
 comment on column public.case_tracking_links.lifetime is '٢٧٦: 7d | 30d | 90d | stage (حتى انتهاء المرحلة). Chosen at creation and at re-activation.';
-comment on column public.case_tracking_links.paused_reason is '٢٧٦: manual (the lawyer) | expired (its lifetime ended). A paused link keeps its URL; resume re-activates it.';
+comment on column public.case_tracking_links.paused_reason is '٢٧٦: manual (the lawyer) | expired (its lifetime or stage ended) | locked (20 wrong digit tries in a row — the link probably leaked). A paused link keeps its URL; resume re-activates it.';
+comment on column public.case_tracking_links.wrong_total is '20261026_62: wrong digit tries since the last right answer or resume; the 15-minute lock does not reset it. At 20 the link pauses itself (locked).';
+comment on column public.case_tracking_links.unlock_epoch is '20261026_62: bumped on every pause, resume and change of the phone behind the link; the signed unlock cookie carries it, so an older cookie no longer opens the link.';
 
 
 -- ── 2. Helpers: digits, interval, current stage, stage end, state ───────────
@@ -260,6 +289,30 @@ as $$
      and public.case_client_phone_last4(p_request) is not null;
 $$;
 
+-- Who may re-activate link p_link (see header §3). The revoke policy's
+-- people (maker, or may issue on the case); a MANUAL pause only by the maker,
+-- the one who paused it, or the case's lead — and the lead and the pauser
+-- must still be allowed to issue (on a firm case assigned_to alone is not
+-- trusted: tracking_link_maker_ok checks the active membership).
+create or replace function public.tracking_link_may_resume(p_link uuid, p_user uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select coalesce((
+    select l.revoked_at is null
+       and (l.owner_user_id = p_user or public.tracking_link_maker_ok(l.case_request_id, p_user))
+       and (l.paused_reason is distinct from 'manual'
+            or l.owner_user_id = p_user
+            or l.paused_by = p_user
+            or exists (select 1 from public.service_requests sr
+                        where sr.id = l.case_request_id and sr.assigned_to = p_user))
+      from public.case_tracking_links l
+     where l.id = p_link and p_user is not null), false);
+$$;
+
 
 -- ── 3. A new link: lifetime → expiry / stage, born live and unlocked ────────
 create or replace function public.case_tracking_links_born()
@@ -272,8 +325,11 @@ begin
   new.lifetime        := coalesce(new.lifetime, '30d');
   new.paused_at       := null;
   new.paused_reason   := null;
+  new.paused_by       := null;
   new.failed_attempts := 0;
   new.locked_until    := null;
+  new.wrong_total     := 0;
+  new.unlock_epoch    := 0;
   if new.lifetime = 'stage' then
     new.stage_id := public.tracking_link_current_stage(new.case_request_id);
     if new.stage_id is null or public.tracking_link_stage_ended(new.case_request_id, new.stage_id) then
@@ -293,6 +349,27 @@ drop trigger if exists trg_case_tracking_links_born on public.case_tracking_link
 create trigger trg_case_tracking_links_born
   before insert on public.case_tracking_links
   for each row execute function public.case_tracking_links_born();
+
+-- Every pause and every re-activation, whoever writes it (the RPCs, the gate,
+-- the unlock's 'locked', the stage trigger), moves the unlock epoch: a cookie
+-- signed before it no longer opens the link.
+create or replace function public.case_tracking_links_epoch()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if new.paused_at is distinct from old.paused_at then
+    new.unlock_epoch := greatest(new.unlock_epoch, old.unlock_epoch + 1);
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_case_tracking_links_epoch on public.case_tracking_links;
+create trigger trg_case_tracking_links_epoch
+  before update on public.case_tracking_links
+  for each row execute function public.case_tracking_links_epoch();
 
 
 -- ── 4. Pause / resume (sessions; the revoke policy's people) ────────────────
@@ -315,7 +392,7 @@ begin
     return 'revoked';
   end if;
   if v.paused_at is null then
-    update public.case_tracking_links set paused_at = now(), paused_reason = 'manual' where id = v.id;
+    update public.case_tracking_links set paused_at = now(), paused_reason = 'manual', paused_by = auth.uid() where id = v.id;
   end if;
   return 'ok';
 end;
@@ -342,6 +419,10 @@ begin
   if v.revoked_at is not null then
     return 'revoked';
   end if;
+  -- a colleague's MANUAL pause: only the maker, the pauser or the case's lead
+  if not public.tracking_link_may_resume(v.id, auth.uid()) then
+    return 'not_allowed';
+  end if;
   if p_lifetime = 'stage' then
     v_stage := public.tracking_link_current_stage(v.case_request_id);
     if v_stage is null or public.tracking_link_stage_ended(v.case_request_id, v_stage) then
@@ -354,23 +435,28 @@ begin
          stage_id        = v_stage,
          paused_at       = null,
          paused_reason   = null,
+         paused_by       = null,
          failed_attempts = 0,
-         locked_until    = null
+         wrong_total     = 0,
+         locked_until    = null,
+         unlock_epoch    = unlock_epoch + 1
    where id = v.id;
   return 'ok';
 end;
 $$;
 
 -- The lawyer list's states, for the links the caller may see (the SELECT
--- policy's rule). Only ids and states.
-create or replace function public.case_tracking_link_states(p_request text)
-returns table (link_id uuid, state text)
+-- policy's rule). Only ids, states and whether the caller may re-activate it.
+-- (Its result columns changed in this file: drop before re-creating.)
+drop function if exists public.case_tracking_link_states(text);
+create function public.case_tracking_link_states(p_request text)
+returns table (link_id uuid, state text, may_resume boolean)
 language sql
 stable
 security definer
 set search_path = ''
 as $$
-  select l.id, public.tracking_link_state(l.id)
+  select l.id, public.tracking_link_state(l.id), public.tracking_link_may_resume(l.id, auth.uid())
     from public.case_tracking_links l
    where l.case_request_id = p_request
      and auth.uid() is not null
@@ -379,8 +465,13 @@ $$;
 
 
 -- ── 5. The public side (service role) ────────────────────────────────────────
-create or replace function public.case_tracking_gate(p_token_hash text)
-returns text
+-- Both answer jsonb since the review of 2026-10-26 (they returned text in the
+-- first draft of this file): drop before re-creating. §6 grants them again.
+drop function if exists public.case_tracking_gate(text);
+drop function if exists public.case_tracking_unlock(text, text);
+
+create function public.case_tracking_gate(p_token_hash text)
+returns jsonb
 language plpgsql
 volatile
 security definer
@@ -389,27 +480,30 @@ as $$
 declare v record; v_state text;
 begin
   if p_token_hash is null or p_token_hash !~ '^[0-9a-f]{64}$' then
-    return 'none';
+    return jsonb_build_object('state', 'none');
   end if;
-  select l.id, l.case_request_id, l.owner_user_id, l.paused_at
+  select l.id, l.case_request_id, l.owner_user_id, l.paused_at, l.unlock_epoch
     into v from public.case_tracking_links l where l.token_hash = p_token_hash;
   if not found then
-    return 'none';
+    return jsonb_build_object('state', 'none');
   end if;
   v_state := public.tracking_link_state(v.id);
   if v_state = 'revoked' or not public.tracking_link_maker_ok(v.case_request_id, v.owner_user_id) then
-    return 'unavailable';
+    return jsonb_build_object('state', 'unavailable');
   end if;
   if v_state = 'expired' and v.paused_at is null then
-    update public.case_tracking_links set paused_at = now(), paused_reason = 'expired'
+    update public.case_tracking_links set paused_at = now(), paused_reason = 'expired', paused_by = null
      where id = v.id and paused_at is null and revoked_at is null;
   end if;
-  return v_state;
+  if v_state = 'active' then
+    return jsonb_build_object('state', 'active', 'epoch', v.unlock_epoch);
+  end if;
+  return jsonb_build_object('state', v_state);
 end;
 $$;
 
-create or replace function public.case_tracking_unlock(p_token_hash text, p_digits text)
-returns text
+create function public.case_tracking_unlock(p_token_hash text, p_digits text)
+returns jsonb
 language plpgsql
 volatile
 security definer
@@ -418,32 +512,46 @@ as $$
 declare v record; v_last4 text; v_in text;
 begin
   if p_token_hash is null or p_token_hash !~ '^[0-9a-f]{64}$' then
-    return 'denied';
+    return jsonb_build_object('result', 'denied');
   end if;
-  select l.id, l.case_request_id, l.owner_user_id, l.failed_attempts, l.locked_until
+  select l.id, l.case_request_id, l.owner_user_id, l.failed_attempts, l.wrong_total, l.locked_until, l.unlock_epoch
     into v from public.case_tracking_links l where l.token_hash = p_token_hash for update;
   if not found then
-    return 'denied';
+    return jsonb_build_object('result', 'denied');
   end if;
   if v.locked_until is not null and v.locked_until > now() then
-    return 'locked';
+    return jsonb_build_object('result', 'locked');
   end if;
   if public.tracking_link_state(v.id) <> 'active'
      or not public.tracking_link_maker_ok(v.case_request_id, v.owner_user_id) then
-    return 'denied';
+    return jsonb_build_object('result', 'denied');
   end if;
   v_in    := public.tracking_phone_digits(left(coalesce(p_digits, ''), 20));
   v_last4 := public.case_client_phone_last4(v.case_request_id);
   if v_last4 is not null and v_in is not null and length(v_in) = 4 and v_in = v_last4 then
-    update public.case_tracking_links set failed_attempts = 0, locked_until = null where id = v.id;
-    return 'ok';
+    update public.case_tracking_links set failed_attempts = 0, wrong_total = 0, locked_until = null where id = v.id;
+    return jsonb_build_object('result', 'ok', 'epoch', v.unlock_epoch);
+  end if;
+  -- 20 wrong since the last right answer: the link has most likely reached
+  -- someone other than the client. Pause it (the epoch trigger ends every
+  -- cookie); the client sees the same neutral page as a manual pause.
+  if v.wrong_total + 1 >= 20 then
+    update public.case_tracking_links
+       set failed_attempts = 0, wrong_total = 20, locked_until = null,
+           paused_at = now(), paused_reason = 'locked', paused_by = null
+     where id = v.id;
+    return jsonb_build_object('result', 'locked');
   end if;
   if v.failed_attempts + 1 >= 5 then
-    update public.case_tracking_links set failed_attempts = 0, locked_until = now() + interval '15 minutes' where id = v.id;
-    return 'locked';
+    update public.case_tracking_links
+       set failed_attempts = 0, wrong_total = v.wrong_total + 1, locked_until = now() + interval '15 minutes'
+     where id = v.id;
+    return jsonb_build_object('result', 'locked');
   end if;
-  update public.case_tracking_links set failed_attempts = v.failed_attempts + 1 where id = v.id;
-  return 'denied';
+  update public.case_tracking_links
+     set failed_attempts = v.failed_attempts + 1, wrong_total = v.wrong_total + 1
+   where id = v.id;
+  return jsonb_build_object('result', 'denied');
 end;
 $$;
 
@@ -531,11 +639,102 @@ $$;
 comment on function public.case_tracking_snapshot(text) is
   '20261025_32 + 20261026_62: the client tracking page''s ONE read. Live, ACTIVE (not paused / expired) link + maker still allowed to issue it → {title, case_number, court, stage, hearings[{date,time,court}]} from rows written by case workers only; else NULL. Stamps last_viewed_at. Service role only.';
 comment on function public.case_tracking_unlock(text, text) is
-  '20261026_62: the client''s 4-digit check against the case file''s mobile. ok | denied | locked (5 wrong → 15 min). Service role only.';
+  '20261026_62: the client''s 4-digit check against the case file''s mobile. {result: ok | denied | locked, epoch (ok only)}; 5 wrong → 15 min, 20 wrong since the last right answer → paused (locked). Service role only.';
 comment on function public.case_tracking_gate(text) is
-  '20261026_62: none | unavailable | paused | expired | active for a token hash — no case data, no view stamp; writes an expiry it sees as paused (expired). Service role only.';
+  '20261026_62: {state: none | unavailable | paused | expired | active, epoch (active only)} for a token hash — no case data, no view stamp; writes an expiry it sees as paused (expired). Service role only.';
 comment on function public.case_client_phone_last4(text) is
   '20261026_62: last 4 digits of the client mobile on the case file (attached client card, else a non-worker requester''s account). Granted to nobody: only this file''s definer functions read it.';
+
+
+-- ── 5b. Triggers outside the table: stage ends, phone changes ──────────────
+-- A 'stage' link is paused (expired) as soon as its stage ends, not when the
+-- page is next opened — otherwise re-opening the stage would revive it. Only
+-- the case(s) of the changed row, only live stage links. A stage whose closing
+-- date had already passed counts as ended even if the update now clears it.
+create or replace function public.case_stages_end_tracking_links()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_new_case   text;
+  v_old_case   text;
+  v_old_stage  uuid;
+  v_old_closed boolean := false;
+begin
+  if tg_op <> 'DELETE' then
+    v_new_case := new.case_request_id;
+  end if;
+  if tg_op <> 'INSERT' then
+    v_old_case  := old.case_request_id;
+    v_old_stage := old.id;
+  end if;
+  if tg_op = 'UPDATE' then
+    v_old_closed := old.closed_on is not null and old.closed_on <= (now() at time zone 'Asia/Riyadh')::date;
+  end if;
+  update public.case_tracking_links l
+     set paused_at = now(), paused_reason = 'expired', paused_by = null
+   where l.case_request_id in (v_new_case, v_old_case)
+     and l.lifetime = 'stage'
+     and l.revoked_at is null
+     and l.paused_at is null
+     and (public.tracking_link_stage_ended(l.case_request_id, l.stage_id)
+          or (v_old_closed and l.stage_id = v_old_stage));
+  return null;
+end;
+$$;
+
+drop trigger if exists trg_case_stages_end_tracking_links on public.case_stages;
+create trigger trg_case_stages_end_tracking_links
+  after insert or delete or update of closed_on, position, opened_on, case_request_id, owner_user_id
+  on public.case_stages
+  for each row execute function public.case_stages_end_tracking_links();
+
+-- The digits behind a link changed (the client card's phone, the requester's
+-- account phone, or the card / requester attached to the case): bump the
+-- epoch of the case's live links, so an unlock made with the old number ends.
+create or replace function public.tracking_links_phone_changed()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if tg_table_name = 'lawyer_clients' then
+    update public.case_tracking_links l set unlock_epoch = l.unlock_epoch + 1
+     where l.revoked_at is null
+       and l.case_request_id in (select sr.id from public.service_requests sr where sr.lawyer_client_id = new.id);
+  elsif tg_table_name = 'profiles' then
+    update public.case_tracking_links l set unlock_epoch = l.unlock_epoch + 1
+     where l.revoked_at is null
+       and l.case_request_id in (select sr.id from public.service_requests sr where sr.requester_user_id = new.id);
+  elsif tg_table_name = 'service_requests' then
+    update public.case_tracking_links l set unlock_epoch = l.unlock_epoch + 1
+     where l.revoked_at is null and l.case_request_id = new.id;
+  end if;
+  return null;
+end;
+$$;
+
+drop trigger if exists trg_lawyer_clients_tracking_phone on public.lawyer_clients;
+create trigger trg_lawyer_clients_tracking_phone
+  after update of phone on public.lawyer_clients
+  for each row when (old.phone is distinct from new.phone)
+  execute function public.tracking_links_phone_changed();
+
+drop trigger if exists trg_profiles_tracking_phone on public.profiles;
+create trigger trg_profiles_tracking_phone
+  after update of phone on public.profiles
+  for each row when (old.phone is distinct from new.phone)
+  execute function public.tracking_links_phone_changed();
+
+drop trigger if exists trg_service_requests_tracking_phone on public.service_requests;
+create trigger trg_service_requests_tracking_phone
+  after update of lawyer_client_id, requester_user_id on public.service_requests
+  for each row when (old.lawyer_client_id is distinct from new.lawyer_client_id
+                     or old.requester_user_id is distinct from new.requester_user_id)
+  execute function public.tracking_links_phone_changed();
 
 
 -- ── 6. Privileges ────────────────────────────────────────────────────────────
@@ -545,7 +744,9 @@ begin
   -- internal: no one but the definer functions
   foreach f in array array['public.case_client_phone_last4(text)', 'public.tracking_link_current_stage(text)',
                            'public.tracking_link_stage_ended(text, uuid)', 'public.tracking_link_state(uuid)',
-                           'public.case_tracking_links_born()'] loop
+                           'public.tracking_link_may_resume(uuid, uuid)',
+                           'public.case_tracking_links_born()', 'public.case_tracking_links_epoch()',
+                           'public.case_stages_end_tracking_links()', 'public.tracking_links_phone_changed()'] loop
     execute format('revoke all on function %s from public', f);
     if exists (select 1 from pg_roles where rolname = 'anon') then execute format('revoke all on function %s from anon', f); end if;
     if exists (select 1 from pg_roles where rolname = 'authenticated') then execute format('revoke all on function %s from authenticated', f); end if;
@@ -592,9 +793,30 @@ end $$;
 do $$
 declare r text; c text;
 begin
-  foreach c in array array['lifetime', 'expires_at', 'stage_id', 'paused_at', 'paused_reason', 'failed_attempts', 'locked_until'] loop
+  foreach c in array array['lifetime', 'expires_at', 'stage_id', 'paused_at', 'paused_reason', 'failed_attempts', 'locked_until',
+                           'wrong_total', 'unlock_epoch', 'paused_by'] loop
     if not exists (select 1 from pg_attribute where attrelid = 'public.case_tracking_links'::regclass and attname = c and not attisdropped) then
       raise exception '20261026_62 verify: case_tracking_links.% is missing', c;
+    end if;
+  end loop;
+  if coalesce((select pg_get_constraintdef(oid) from pg_constraint
+                where conrelid = 'public.case_tracking_links'::regclass and conname = 'case_tracking_links_paused_shape'), '')
+       not like '%''locked''%' then
+    raise exception '20261026_62 verify: case_tracking_links_paused_shape does not allow the ''locked'' pause';
+  end if;
+  foreach r in array array['public.case_tracking_gate(text)', 'public.case_tracking_unlock(text, text)'] loop
+    if pg_get_function_result(to_regprocedure(r)) is distinct from 'jsonb' then
+      raise exception '20261026_62 verify: % does not answer jsonb (state / result + unlock epoch)', r;
+    end if;
+  end loop;
+  foreach c in array array['trg_case_tracking_links_epoch:public.case_tracking_links',
+                           'trg_case_stages_end_tracking_links:public.case_stages',
+                           'trg_lawyer_clients_tracking_phone:public.lawyer_clients',
+                           'trg_profiles_tracking_phone:public.profiles',
+                           'trg_service_requests_tracking_phone:public.service_requests'] loop
+    if not exists (select 1 from pg_trigger where tgname = split_part(c, ':', 1)
+                     and tgrelid = to_regclass(split_part(c, ':', 2)) and not tgisinternal) then
+      raise exception '20261026_62 verify: trigger % is missing', c;
     end if;
   end loop;
   if (select count(*) from pg_policy where polrelid = 'public.case_tracking_links'::regclass) <> 3 then
@@ -602,18 +824,20 @@ begin
   end if;
   if exists (select 1 from pg_roles where rolname = 'authenticated') then
     foreach c in array array['token_hash', 'case_request_id', 'owner_user_id', 'firm_id', 'lifetime', 'expires_at', 'stage_id',
-                             'paused_at', 'paused_reason', 'failed_attempts', 'locked_until', 'last_viewed_at'] loop
+                             'paused_at', 'paused_reason', 'failed_attempts', 'locked_until', 'last_viewed_at',
+                             'wrong_total', 'unlock_epoch', 'paused_by'] loop
       if has_column_privilege('authenticated', 'public.case_tracking_links', c, 'UPDATE') then
         raise exception '20261026_62 verify: sessions can UPDATE case_tracking_links.% directly (only revoked_at; state goes through the RPCs)', c;
       end if;
     end loop;
-    foreach c in array array['token_hash', 'failed_attempts', 'stage_id'] loop
+    foreach c in array array['token_hash', 'failed_attempts', 'stage_id', 'wrong_total', 'unlock_epoch'] loop
       if has_column_privilege('authenticated', 'public.case_tracking_links', c, 'SELECT') then
         raise exception '20261026_62 verify: sessions can read case_tracking_links.%', c;
       end if;
     end loop;
     foreach r in array array['public.case_client_phone_last4(text)', 'public.case_tracking_gate(text)',
-                             'public.case_tracking_unlock(text, text)', 'public.tracking_link_state(uuid)'] loop
+                             'public.case_tracking_unlock(text, text)', 'public.tracking_link_state(uuid)',
+                             'public.tracking_link_may_resume(uuid, uuid)'] loop
       if has_function_privilege('authenticated', r, 'EXECUTE') then
         raise exception '20261026_62 verify: sessions can EXECUTE %', r;
       end if;
@@ -645,7 +869,7 @@ begin
                    and tgrelid = 'public.case_tracking_links'::regclass and not tgisinternal) then
     raise exception '20261026_62 verify: the born trigger is missing — a link could be inserted paused, locked or without an expiry';
   end if;
-  raise notice '20261026_62 verify: OK — lifetimes 7d/30d/90d/stage, paused not deleted, resume by maker or issuer only, revoke one-way, 4-digit unlock with a 5-try / 15-min lock, phone digits readable by no role, snapshot shows active links only';
+  raise notice '20261026_62 verify: OK — lifetimes 7d/30d/90d/stage (a stage link pauses when its stage ends), paused not deleted, resume by maker or issuer (a manual pause: maker, pauser or lead), revoke one-way, 4-digit unlock with a 5-try / 15-min lock and a pause at 20 wrong, unlock epoch on pause / resume / phone change, phone digits readable by no role, snapshot shows active links only';
 end $$;
 
 commit;

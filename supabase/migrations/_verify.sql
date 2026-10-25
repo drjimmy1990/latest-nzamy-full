@@ -3903,9 +3903,11 @@ end $$;
 -- >>> verify:tracking_links_v2 — supabase/tests/rls/tracking_links_v2.test.sql
 -- 2026-10-26 — 20261026_62_tracking_links_v2.sql (D2, owner ٢٧٦). Read-only,
 -- safe to repeat. Before _62 runs it only reports; after, it raises when the
--- lifetime / pause columns or the born trigger are missing, sessions can
--- write a state column directly, the phone digits or the unlock are callable
--- by a session, or the snapshot lost its state gate (20261025_32 re-run after
+-- lifetime / pause / wrong-count / epoch columns or the born, epoch, stage or
+-- phone triggers are missing, the 'locked' pause is not allowed, the gate or
+-- the unlock does not answer jsonb (state + unlock epoch), sessions can write
+-- a state column directly, the phone digits or the unlock are callable by a
+-- session, or the snapshot lost its state gate (20261025_32 re-run after
 -- 20261026_62 puts the v1 snapshot back).
 do $$
 declare r text; c text;
@@ -3916,25 +3918,50 @@ begin
   end if;
   if not exists (select 1 from pg_attribute where attrelid = 'public.case_tracking_links'::regclass
                   and attname = 'paused_reason' and not attisdropped) then
-    raise notice '_verify: 20261026_62 is not applied yet — tracking links have no lifetime, no pause and no 4-digit check (the page runs as v1); run 62_BEFORE_DEPLOY_20261026_62_tracking_links_v2.sql';
+    raise notice '_verify: 20261026_62 is not applied yet — tracking links have no lifetime, no pause and no 4-digit check, and the new code shows every /track link as unavailable until it runs; run 62_BEFORE_DEPLOY_20261026_62_tracking_links_v2.sql';
     return;
   end if;
-  foreach c in array array['lifetime', 'expires_at', 'stage_id', 'paused_at', 'failed_attempts', 'locked_until'] loop
+  foreach c in array array['lifetime', 'expires_at', 'stage_id', 'paused_at', 'failed_attempts', 'locked_until',
+                           'wrong_total', 'unlock_epoch', 'paused_by'] loop
     if not exists (select 1 from pg_attribute where attrelid = 'public.case_tracking_links'::regclass and attname = c and not attisdropped) then
       raise exception '_verify: case_tracking_links.% is missing (re-run 20261026_62)', c;
     end if;
   end loop;
-  if not exists (select 1 from pg_trigger where tgname = 'trg_case_tracking_links_born'
-                   and tgrelid = 'public.case_tracking_links'::regclass and not tgisinternal) then
-    raise exception '_verify: trg_case_tracking_links_born is missing — a link could be born paused or without an expiry (re-run 20261026_62)';
+  foreach c in array array['trg_case_tracking_links_born:public.case_tracking_links',
+                           'trg_case_tracking_links_epoch:public.case_tracking_links',
+                           'trg_case_stages_end_tracking_links:public.case_stages',
+                           'trg_lawyer_clients_tracking_phone:public.lawyer_clients',
+                           'trg_profiles_tracking_phone:public.profiles',
+                           'trg_service_requests_tracking_phone:public.service_requests'] loop
+    if not exists (select 1 from pg_trigger where tgname = split_part(c, ':', 1)
+                     and tgrelid = to_regclass(split_part(c, ':', 2)) and not tgisinternal) then
+      raise exception '_verify: trigger % is missing — links could be born paused, keep old unlocks, or outlive their stage (re-run 20261026_62)', c;
+    end if;
+  end loop;
+  if coalesce((select pg_get_constraintdef(oid) from pg_constraint
+                where conrelid = 'public.case_tracking_links'::regclass and conname = 'case_tracking_links_paused_shape'), '')
+       not like '%''locked''%' then
+    raise exception '_verify: case_tracking_links_paused_shape does not allow the ''locked'' pause — 20 wrong tries would fail instead of pausing (re-run 20261026_62)';
   end if;
-  foreach c in array array['lifetime', 'expires_at', 'stage_id', 'paused_at', 'paused_reason', 'failed_attempts', 'locked_until', 'token_hash'] loop
+  foreach r in array array['public.case_tracking_gate(text)', 'public.case_tracking_unlock(text, text)'] loop
+    if to_regprocedure(r) is null or pg_get_function_result(to_regprocedure(r)) is distinct from 'jsonb' then
+      raise exception '_verify: % is missing or does not answer jsonb — the /track page shows every link as unavailable (re-run 20261026_62)', r;
+    end if;
+  end loop;
+  foreach c in array array['lifetime', 'expires_at', 'stage_id', 'paused_at', 'paused_reason', 'failed_attempts', 'locked_until', 'token_hash',
+                           'wrong_total', 'unlock_epoch', 'paused_by'] loop
     if has_column_privilege('authenticated', 'public.case_tracking_links', c, 'UPDATE') then
       raise exception '_verify: sessions can UPDATE case_tracking_links.% directly (re-run 20261026_62)', c;
     end if;
   end loop;
+  foreach c in array array['wrong_total', 'unlock_epoch'] loop
+    if has_column_privilege('authenticated', 'public.case_tracking_links', c, 'SELECT') then
+      raise exception '_verify: sessions can read case_tracking_links.% (re-run 20261026_62)', c;
+    end if;
+  end loop;
   foreach r in array array['public.case_client_phone_last4(text)', 'public.case_tracking_gate(text)',
-                           'public.case_tracking_unlock(text, text)', 'public.tracking_link_state(uuid)'] loop
+                           'public.case_tracking_unlock(text, text)', 'public.tracking_link_state(uuid)',
+                           'public.tracking_link_may_resume(uuid, uuid)'] loop
     if to_regprocedure(r) is null or has_function_privilege('authenticated', r, 'EXECUTE') or has_function_privilege('anon', r, 'EXECUTE') then
       raise exception '_verify: % is missing or callable by sessions (re-run 20261026_62)', r;
     end if;
@@ -3957,6 +3984,6 @@ begin
        not like '%tracking_link_state(v_link.id)%' then
     raise exception '_verify: case_tracking_snapshot lost the pause / expiry gate — 20261025_32 was re-run after 20261026_62; re-run 20261026_62';
   end if;
-  raise notice '_verify: 20261026_62 OK — tracking links: lifetimes, pause not delete, resume by maker or issuer, 4-digit unlock service-only, phone digits readable by no role, snapshot shows active links only';
+  raise notice '_verify: 20261026_62 OK — tracking links: lifetimes (a stage link pauses with its stage), pause not delete, resume by maker or issuer (a manual pause: maker, pauser or lead), 4-digit unlock service-only with a pause at 20 wrong, unlock epoch on pause / resume / phone change, phone digits readable by no role, snapshot shows active links only';
 end $$;
 -- <<< verify:tracking_links_v2
