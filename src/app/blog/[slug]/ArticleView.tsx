@@ -282,7 +282,6 @@ export default function ArticleView({
 
   const muted = isDark ? "text-gray-400" : "text-gray-500";
   const card = `rounded-2xl border p-6 ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`;
-  const authorUrl = article.author.url || null;
   const toc = findToc(article.content);
   const authorName = isRTL ? article.author.name : article.author.nameEn;
   // The author's own title from the row (author_credentials), or nothing —
@@ -291,11 +290,17 @@ export default function ArticleView({
 
   // Booking stays on the platform. This went to the author's external URL
   // (target=_blank) or to /contact; /book/consultation is the booking flow.
-  // The label does not promise THIS author — the team assigns the lawyer.
+  // The label does not promise THIS author — the team assigns the lawyer
+  // (owner §38: «اطلب استشارة قانونية عبر منصة نظامي» + the packages page).
   const AuthorCtaLink = () => (
-    <Link href="/book/consultation" className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#0B3D2E] text-white text-sm font-bold rounded-xl hover:bg-[#0a3328] transition">
-      {isRTL ? "احجز استشارة قانونية" : "Book a legal consultation"} <ArrowLeft size={14} className={isRTL ? "rotate-180" : ""} />
-    </Link>
+    <div className="flex flex-wrap items-center gap-3">
+      <Link href="/book/consultation" className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#0B3D2E] text-white text-sm font-bold rounded-xl hover:bg-[#0a3328] transition">
+        {isRTL ? "اطلب استشارة قانونية عبر منصة نظامي" : "Request a legal consultation through Nezamy"} <ArrowLeft size={14} className={isRTL ? "rotate-180" : ""} />
+      </Link>
+      <Link href="/services/consultations" className={`text-sm font-bold underline-offset-4 hover:underline transition ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
+        {isRTL ? "استعرض باقات الاستشارات" : "Browse consultation packages"}
+      </Link>
+    </div>
   );
 
   return (
@@ -341,28 +346,18 @@ export default function ArticleView({
                 {isRTL ? article.title : article.titleEn}
               </h1>
 
-              {/* Author */}
-              {authorUrl ? (
-                <a href={authorUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 group">
-                  <div className="w-10 h-10 rounded-xl bg-[#0B3D2E] flex items-center justify-center text-white text-base font-bold">{initialOf(authorName)}</div>
-                  <div>
-                    <p className={`text-sm font-bold group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition flex items-center gap-1.5 ${isDark ? "text-zinc-200" : "text-gray-800"}`}>
-                      {authorName} {authorTitle ? <SealCheck size={14} color="#C8A762" weight="fill" /> : null}
-                    </p>
-                    {authorTitle && <p className={`text-xs ${muted}`}>{authorTitle}</p>}
-                  </div>
-                </a>
-              ) : (
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#0B3D2E] flex items-center justify-center text-white text-base font-bold">{initialOf(authorName)}</div>
-                  <div>
-                    <p className={`text-sm font-bold flex items-center gap-1.5 ${isDark ? "text-zinc-200" : "text-gray-800"}`}>
-                      {authorName} {authorTitle ? <SealCheck size={14} color="#C8A762" weight="fill" /> : null}
-                    </p>
-                    {authorTitle && <p className={`text-xs ${muted}`}>{authorTitle}</p>}
-                  </div>
+              {/* Author — plain text. N1.5 (owner §38): the name linked to
+                  the author's own site in a new tab; consultations are asked
+                  through the platform, never routed to the writer. */}
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[#0B3D2E] flex items-center justify-center text-white text-base font-bold">{initialOf(authorName)}</div>
+                <div>
+                  <p className={`text-sm font-bold flex items-center gap-1.5 ${isDark ? "text-zinc-200" : "text-gray-800"}`}>
+                    {authorName} {authorTitle ? <SealCheck size={14} color="#C8A762" weight="fill" /> : null}
+                  </p>
+                  {authorTitle && <p className={`text-xs ${muted}`}>{authorTitle}</p>}
                 </div>
-              )}
+              </div>
             </div>
 
             {/* Content */}
