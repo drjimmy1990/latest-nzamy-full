@@ -55,9 +55,10 @@
 --      Two checkouts in two tabs with one code (different items) can no
 --      longer both carry it. An abandoned order stops counting once it is
 --      closed (cancelled): the checkout closes a buyer's couponed order once
---      its intent has expired and no payment reached it, and every other
---      close (superseded, refused intent, failed payment, void) already
---      leaves the set.
+--      its intent has expired and Moyasar lists no payment for it beyond a
+--      failed one (one an abandoned 3-D Secure payment reached: after the
+--      sweep's 7-day lookback), and every other close (superseded, refused
+--      intent, failed payment, void) already leaves the set.
 --   6. A trigger keeps coupons.used_count = the number of coupon_usage rows
 --      added since, minus the rows removed (a void inside the 90-minute
 --      window releases its row; never below 0). max_uses is checked against

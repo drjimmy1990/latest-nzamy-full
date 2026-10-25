@@ -445,25 +445,41 @@ test("sortOpenCouponOrders: payable other-item orders and reached ones block; th
     row("other-fresh", {}),
     row("same-fresh", { item_id: "ind-preventive" }),
     row("reached-old", { created_at: at(300), moyasar_payment_id: "pay" }),
+    row("reached-6d", { created_at: at(6 * 24 * 60), moyasar_payment_id: "pay6" }),
+    row("reached-8d", { created_at: at(8 * 24 * 60), moyasar_payment_id: "pay8" }),
     row("expired", { created_at: at(65) }),
     row("young", { created_at: at(64) }),
     row("paid", { status: "paid" }),
     row("bad-date", { created_at: "not a date" }),
   ];
   const { blocking, stale } = sortOpenCouponOrders(rows, "ind-preventive", now);
-  assert.deepEqual(blocking.map((r) => r.id), ["other-fresh", "reached-old", "young", "bad-date"]);
-  assert.deepEqual(stale.map((r) => r.id), ["expired"]);
+  assert.deepEqual(blocking.map((r) => r.id), ["other-fresh", "reached-old", "reached-6d", "young", "bad-date"]);
+  assert.deepEqual(stale.map((r) => r.id), ["reached-8d", "expired"]);
   assert.equal(COUPON_OPEN_ORDER_LIFETIME_MS, 65 * 60 * 1000);
 });
 
-test("staleOrderClosable: no intent ever sent, or only failed payments listed; anything else (or no listing) keeps it open", () => {
-  assert.equal(staleOrderClosable({ status: "created", moyasar_intent_id: null }, null), true);
-  assert.equal(staleOrderClosable({ status: "initiated", moyasar_intent_id: "pi" }, []), true);
-  assert.equal(staleOrderClosable({ status: "initiated", moyasar_intent_id: "pi" }, [{ status: "failed" }]), true);
-  for (const s of ["paid", "initiated", "authorized", "captured", "verified"]) {
-    assert.equal(staleOrderClosable({ status: "initiated", moyasar_intent_id: "pi" }, [{ status: "failed" }, { status: s }]), false, s);
+test("staleOrderClosable: no intent ever sent, or only failed payments listed; past the 7-day lookback also abandoned 3-D Secure (initiated); anything else keeps it open", () => {
+  const now = NOW.getTime();
+  const at = (min: number) => new Date(now - min * 60_000).toISOString();
+  const expired = { status: "initiated", moyasar_intent_id: "pi", moyasar_payment_id: null, created_at: at(70) };
+  assert.equal(staleOrderClosable({ ...expired, status: "created", moyasar_intent_id: null }, null, now), true);
+  assert.equal(staleOrderClosable(expired, [], now), true);
+  assert.equal(staleOrderClosable(expired, [{ status: "failed" }], now), true);
+  for (const s of ["paid", "initiated", "authorized", "captured", "refunded", "voided", "verified"]) {
+    assert.equal(staleOrderClosable(expired, [{ status: "failed" }, { status: s }], now), false, s);
   }
-  assert.equal(staleOrderClosable({ status: "initiated", moyasar_intent_id: "pi" }, null), false);
+  assert.equal(staleOrderClosable(expired, null, now), false);
+  // a reached order past the sweep's lookback (it only gets here then)
+  const reached = { ...expired, moyasar_payment_id: "pay", created_at: at(8 * 24 * 60) };
+  assert.equal(staleOrderClosable(reached, [{ status: "initiated" }], now), true, "abandoned 3-D Secure, 8 days");
+  assert.equal(staleOrderClosable(reached, [{ status: "failed" }], now), true);
+  for (const s of ["paid", "authorized", "captured", "refunded", "voided"]) {
+    assert.equal(staleOrderClosable(reached, [{ status: "initiated" }, { status: s }], now), false, s);
+  }
+  assert.equal(staleOrderClosable(reached, [], now), false, "Moyasar lists nothing for a reached order: keep it for an admin");
+  assert.equal(staleOrderClosable(reached, null, now), false);
+  // younger than the lookback, an initiated payment keeps it
+  assert.equal(staleOrderClosable({ ...reached, created_at: at(6 * 24 * 60) }, [{ status: "initiated" }], now), false);
 });
 
 test("isCouponOrderConflict names only the coupon guard", () => {

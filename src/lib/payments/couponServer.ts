@@ -26,7 +26,10 @@
  *     order whose intent has expired (COUPON_OPEN_ORDER_LIFETIME_MS) does not
  *     count for the preview; checkout closes it ('cancelled') once Moyasar
  *     lists no payment for it beyond a failed one, refuses when it lists
- *     one, and answers 503 when it cannot tell.
+ *     one, and answers 503 when it cannot tell. An order a payment reached
+ *     (3-D Secure abandoned) blocks for the sweep's 7-day lookback, then is
+ *     closed the same way when Moyasar lists only failed / initiated
+ *     payments for it — a code is never locked for good.
  *   - validateCouponWith — the preview behind POST /api/v1/coupons/validate:
  *     the same steps as checkout (account type, audience, the book's quote)
  *     and the same priceWithCoupon, so the preview equals the charge.
@@ -52,7 +55,7 @@ import {
   type CouponRow,
   type DiscountedQuote,
 } from "./couponRules.ts";
-import { isMissingPaymentsObject } from "./fulfillDecision.ts";
+import { isMissingPaymentsObject, SWEEP_LOOKBACK_MS } from "./fulfillDecision.ts";
 import { isMissingFeatureColumn } from "../library/optionalColumn.ts";
 import { bookEntry, PRICE_BOOK, type BookEntry } from "../pricing/priceBook.ts";
 import { SUPERSEDE_WINDOW_MS } from "./checkoutRules.ts";
@@ -184,11 +187,14 @@ export interface OpenCouponOrderRow {
 
 /**
  * The buyer's open orders carrying the coupon, sorted:
- *   - blocking: a payment already reached it (the sweep / webhook settles
- *     it), or it is still payable (younger than the intent lifetime) and is
- *     for ANOTHER item;
- *   - stale: expired and no payment id — abandoned unless Moyasar says
- *     otherwise;
+ *   - blocking: still payable (younger than the intent lifetime) and for
+ *     ANOTHER item; or a payment already reached it (moyasar_payment_id — a
+ *     3-D Secure page still open, say) and it is younger than the sweep's
+ *     lookback (SWEEP_LOOKBACK_MS, 7 days): the sweep / webhook may still
+ *     settle it;
+ *   - stale: expired with no payment id; or reached and older than the
+ *     sweep's lookback — nothing settles it any more, so it must not lock the
+ *     code forever. Closed only after staleOrderClosable;
  *   - the rest (the same item, still fresh) are checkout's supersede step.
  */
 export function sortOpenCouponOrders(
@@ -200,13 +206,15 @@ export function sortOpenCouponOrders(
   const stale: OpenCouponOrderRow[] = [];
   for (const r of rows ?? []) {
     if (r.status !== "created" && r.status !== "initiated") continue;
-    if (r.moyasar_payment_id) {
-      blocking.push(r);
-      continue;
-    }
     const created = Date.parse(r.created_at);
     // an unreadable date is treated as fresh: never closed on a guess
-    const expired = Number.isFinite(created) && nowMs - created >= COUPON_OPEN_ORDER_LIFETIME_MS;
+    const age = Number.isFinite(created) ? nowMs - created : 0;
+    if (r.moyasar_payment_id) {
+      if (age >= SWEEP_LOOKBACK_MS) stale.push(r);
+      else blocking.push(r);
+      continue;
+    }
+    const expired = age >= COUPON_OPEN_ORDER_LIFETIME_MS;
     if (expired) stale.push(r);
     else if (r.item_id !== itemId) blocking.push(r);
   }
@@ -214,19 +222,29 @@ export function sortOpenCouponOrders(
 }
 
 /**
- * An expired open order may be closed only when no payment can still land on
- * it: no intent ever left the server ('created', no intent id), or Moyasar
- * lists nothing for the order beyond failed payments. Any other listed
- * payment (paid, initiated / 3-D Secure, authorized …) keeps it open — the
- * sweep and the webhook look only at open orders.
+ * A stale open order may be closed only when no payment can still settle it:
+ *   - no intent ever left the server ('created', no intent / payment id);
+ *   - or Moyasar lists only failed payments for the order;
+ *   - or, once the order is older than the sweep's lookback (7 days — past
+ *     it nothing tries to settle the order), only failed and `initiated`
+ *     ones (a 3-D Secure page abandoned long ago).
+ * A paid / authorized / captured / refunded / voided payment (or any other
+ * status) keeps it open for an admin; so does a reached order that Moyasar
+ * lists nothing for, or a listing that failed. A very late paid webhook on a
+ * closed order still leaves metadata.paid_unmatched for an admin
+ * (fulfillCore).
  */
 export function staleOrderClosable(
-  row: Pick<OpenCouponOrderRow, "status" | "moyasar_intent_id">,
+  row: Pick<OpenCouponOrderRow, "status" | "moyasar_intent_id" | "moyasar_payment_id" | "created_at">,
   listed: ReadonlyArray<{ status: string }> | null,
+  nowMs: number,
 ): boolean {
-  if (row.status === "created" && !row.moyasar_intent_id) return true;
+  if (row.status === "created" && !row.moyasar_intent_id && !row.moyasar_payment_id) return true;
   if (!listed) return false;
-  return listed.every((p) => p.status === "failed");
+  if (row.moyasar_payment_id && listed.length === 0) return false;
+  const created = Date.parse(row.created_at);
+  const pastLookback = Number.isFinite(created) && nowMs - created >= SWEEP_LOOKBACK_MS;
+  return listed.every((p) => p.status === "failed" || (pastLookback && p.status === "initiated"));
 }
 
 type PendingOutcome = "clear" | "pending" | "unknown";
@@ -253,7 +271,7 @@ async function otherOpenOrders(
 
   for (const row of stale) {
     let listed: Array<{ status: string }> | null = null;
-    if (!(row.status === "created" && !row.moyasar_intent_id)) {
+    if (!(row.status === "created" && !row.moyasar_intent_id && !row.moyasar_payment_id)) {
       const r = await input.gateway.listPaymentsByOrder(row.id);
       if (!r.ok) {
         console.warn("[coupons] listing an expired order's payments failed:", row.id, r.status);
@@ -261,14 +279,17 @@ async function otherOpenOrders(
       }
       listed = r.data;
     }
-    if (!staleOrderClosable(row, listed)) return "pending";
-    const { error: closeErr } = await admin
+    if (!staleOrderClosable(row, listed, input.now.getTime())) return "pending";
+    const close = admin
       .from("payment_orders")
       .update({ status: "cancelled" })
       .eq("id", row.id)
       .eq("user_id", input.userId)
-      .in("status", ["created", "initiated"])
-      .is("moyasar_payment_id", null);
+      .in("status", ["created", "initiated"]);
+    // only the payment id that was judged (a new one landing meanwhile keeps it open)
+    const { error: closeErr } = row.moyasar_payment_id
+      ? await close.eq("moyasar_payment_id", row.moyasar_payment_id)
+      : await close.is("moyasar_payment_id", null);
     if (closeErr) {
       console.error("[coupons] closing an expired couponed order failed:", row.id, closeErr.code);
       return "unknown";

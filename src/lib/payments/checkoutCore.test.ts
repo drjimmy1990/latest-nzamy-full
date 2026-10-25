@@ -706,3 +706,37 @@ test("coupon tries: every checkout refusal spends one; a spent budget answers 42
     }
   }
 });
+
+test("coupon: an abandoned 3-D Secure order (a payment reached it) blocks for the sweep's 7 days, then is closed when Moyasar lists only failed / initiated payments", async () => {
+  const days = (d: number) => minutesAgo(d * 24 * 60);
+  {
+    // 6 days: the sweep may still settle it — refused, not even listed
+    const reached = openRow({ created_at: days(6), moyasar_payment_id: "pay_3ds" });
+    const { client: admin, log } = couponDb("individual", { openRows: [reached] });
+    const m = moyasar({ listed: () => ["initiated"] });
+    const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW }, input(NZ_INPUT));
+    assert.equal(r.status, 400);
+    assert.deepEqual(r.body, { error: COUPON_PENDING_AR });
+    assert.equal(m.listedFor.length, 0);
+    assert.equal(closes(log, reached.id).length, 0);
+  }
+  {
+    // 8 days, only the abandoned initiated payment: closed on that payment id, the checkout goes on
+    const reached = openRow({ created_at: days(8), moyasar_payment_id: "pay_3ds" });
+    const { client: admin, log } = couponDb("individual", { openRows: [reached] });
+    const m = moyasar({ listed: () => ["initiated", "failed"] });
+    const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW }, input(NZ_INPUT));
+    assert.equal(r.status, 200);
+    const [close] = closes(log, reached.id);
+    assert.ok(close && has(close, "eq", "moyasar_payment_id", "pay_3ds") && !has(close, "is", "moyasar_payment_id"));
+  }
+  for (const listed of [["paid"], ["initiated", "authorized"], []]) {
+    // a payment that may have taken money, or Moyasar knowing nothing of it: kept for an admin
+    const reached = openRow({ created_at: days(8), moyasar_payment_id: "pay_3ds" });
+    const { client: admin, log } = couponDb("individual", { openRows: [reached] });
+    const m = moyasar({ listed: () => listed });
+    const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW }, input(NZ_INPUT));
+    assert.equal(r.status, 400, JSON.stringify(listed));
+    assert.equal(closes(log, reached.id).length, 0, JSON.stringify(listed));
+  }
+});
