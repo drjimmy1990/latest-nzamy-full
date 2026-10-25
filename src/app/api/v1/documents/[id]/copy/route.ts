@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { isPathInOwnerFolder } from "@/lib/storagePathOwnership";
 
 /**
  * POST /api/v1/documents/[id]/copy — take a copy of a document the caller
@@ -75,6 +76,14 @@ export async function POST(
   // possible) must not produce an attachment pointing at nothing.
   if (!storagePath) {
     return NextResponse.json({ error: "لا يوجد ملف مرتبط بهذا المستند" }, { status: 409 });
+  }
+  // The copy runs with the service role and lands in the caller's folder, so
+  // the SOURCE must be his own file: before 20261026_65 an owner could
+  // re-point a vault row at anybody's object, and this copy would then hand
+  // him the bytes (security review 2026-10-26, finding 1).
+  if (!isPathInOwnerFolder(storagePath, source.owner_user_id)) {
+    console.error(`[documents copy] source storage_path outside the owner's folder: id=${id}`);
+    return NextResponse.json({ error: "المستند غير موجود" }, { status: 404 });
   }
 
   const admin = await createServiceClient();

@@ -108,20 +108,26 @@ test("the route: streams each file, at most two archives per account in flight, 
 });
 
 test("every route that signs a documents path with the service role checks the uploader's folder (security review, finding 1)", () => {
-  for (const [f, owner] of [
-    ["src/app/api/v1/service-requests/[id]/attachments/[attachmentId]/route.ts", "attachment.owner_user_id"],
-    ["src/app/api/v1/service-requests/[id]/deliverable/route.ts", "attachment.owner_user_id"],
-    ["src/app/api/v1/lawyer/contracts/[id]/versions/[vid]/url/route.ts", "row.uploaded_by"],
-    ["src/app/api/v1/client/contracts/[id]/versions/[vid]/url/route.ts", "version.uploaded_by"],
-    ["src/app/api/v1/share/route.ts", "attachment.owner_user_id"],
-    ["src/app/api/v1/library/notes/audio-url/route.ts", "user.id"],
+  // [file, the owner the path is checked against, the service-role use that must come after]
+  for (const [f, owner, use] of [
+    ["src/app/api/v1/service-requests/[id]/attachments/[attachmentId]/route.ts", "attachment.owner_user_id", /createSignedUrl\(/],
+    ["src/app/api/v1/service-requests/[id]/deliverable/route.ts", "attachment.owner_user_id", /createSignedUrl\(/],
+    ["src/app/api/v1/lawyer/contracts/[id]/versions/[vid]/url/route.ts", "row.uploaded_by", /createSignedUrl\(/],
+    ["src/app/api/v1/client/contracts/[id]/versions/[vid]/url/route.ts", "version.uploaded_by", /createSignedUrl\(/],
+    ["src/app/api/v1/share/route.ts", "attachment.owner_user_id", /from\("document_shares"\)/],
+    ["src/app/api/v1/library/notes/audio-url/route.ts", "user.id", /createSignedUrl\(/],
+    // copy and remove: the service role reading into the caller's folder, or destroying an object
+    ["src/app/api/v1/documents/[id]/copy/route.ts", "source.owner_user_id", /\.copy\(/],
+    ["src/app/api/v1/documents/[id]/route.ts", "doc.owner_user_id", /\.remove\(/],
+    ["src/app/api/v1/lawyer/contracts/[id]/versions/[vid]/route.ts", "deletedRow.uploaded_by", /\.remove\(/],
+    ["src/app/api/v1/cron/deadlines/route.ts", "row.owner_user_id", /\.remove\(\[row\.storage_path\]\)/],
   ] as const) {
     const src = read(f);
     const check = src.indexOf(`isPathInOwnerFolder(`);
     assert.ok(check > 0, `${f} calls isPathInOwnerFolder`);
     assert.ok(src.includes(`, ${owner})`), `${f} checks against ${owner}`);
-    const sign = src.search(/createSignedUrl\(|from\("document_shares"\)/);
-    assert.ok(sign > check, `${f} checks before it signs / stores the path`);
+    const at = src.search(use);
+    assert.ok(at > check, `${f} checks before ${use}`);
   }
 });
 
