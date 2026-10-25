@@ -6,6 +6,8 @@
  *   - `officialMetaLocked` — true for a non-subscriber; `issuanceDecree`,
  *     `issuanceDate` and `source` then arrive as ''.
  *   - `officialSourceUrl`  — the official page, subscribers only.
+ *   - `officialLink`       — the same official page for EVERY viewer (owner
+ *                            ٢٩٧: beside «الجهة المصدرة»), '' when none.
  *   - `gazette`            — {issueNumber, publicationDate, url} | null
  *                            (Umm al-Qura issue; null on every law today).
  *   - `replacedBy`         — {slug, title} | null (the law that replaced a
@@ -32,6 +34,11 @@ export interface LawOfficialMeta {
   /** True when the viewer is not a subscriber and the official fields were withheld. */
   locked: boolean;
   officialSourceUrl: string | null;
+  /**
+   * Owner ٢٩٧: the law's page at its official source, beside «الجهة المصدرة»
+   * — public, so kept when `locked`. http(s) only.
+   */
+  officialLink: string | null;
   gazette: LawGazette | null;
   replacedBy: { slug: string; title: string } | null;
 }
@@ -39,6 +46,7 @@ export interface LawOfficialMeta {
 export const EMPTY_OFFICIAL_META: LawOfficialMeta = {
   locked: false,
   officialSourceUrl: null,
+  officialLink: null,
   gazette: null,
   replacedBy: null,
 };
@@ -97,6 +105,7 @@ export function parseOfficialMeta(data: unknown): LawOfficialMeta {
   return {
     locked,
     officialSourceUrl: locked ? null : httpUrlOrNull(d.officialSourceUrl),
+    officialLink: httpUrlOrNull(d.officialLink),
     gazette,
     replacedBy,
   };
@@ -113,14 +122,17 @@ export function gazetteIssueLabel(g: Pick<LawGazette, "issueNumber">): string {
  * links that site, and the Umm al-Qura issue unless a card row already cites
  * the gazette. Keys are not matched loosely: «الجهة المصدرة» (the issuer, on
  * nearly every V2 card) contains «المصدر» and once hid the link everywhere.
+ * Nor is the link repeated when the card already shows it beside «الجهة
+ * المصدرة» (`shownLink`, owner ٢٩٧).
  */
 export function dbOfficialRowsUnderCard(
   rows: ReadonlyArray<{ key: string; value: string }>,
   meta: Pick<LawOfficialMeta, "officialSourceUrl" | "gazette">,
+  shownLink: string | null = null,
 ): { sourceUrl: string; gazette: LawGazette | null } {
   const url = meta.officialSourceUrl ?? "";
   const host = url ? urlHostname(url) : "";
-  const cardLinksSite = !!url && rows.some((f) => f.value.includes(url) || (host !== url && f.value.includes(`//${host}`)));
+  const cardLinksSite = !!url && (url === shownLink || rows.some((f) => f.value.includes(url) || (host !== url && f.value.includes(`//${host}`))));
   const cardCitesGazette = rows.some((f) => f.value.includes("أم القرى") || f.key.includes("الجريدة"));
   return {
     sourceUrl: url && !cardLinksSite ? url : "",

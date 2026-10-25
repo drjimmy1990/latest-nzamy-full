@@ -44,7 +44,8 @@ test("under the file's card a subscriber still gets the DB official link / gazet
   assert.match(SIDEBAR, /if \(metaLocked \|\| !officialMeta\) return null;/);
   // The rule itself is dbOfficialRowsUnderCard (_official-meta.test.ts), not a loose key match:
   // «الجهة المصدرة» contains «المصدر» and hid the link on nearly every card.
-  assert.match(SIDEBAR, /const \{ sourceUrl, gazette \} = dbOfficialRowsUnderCard\(rows, officialMeta\);/);
+  // (owner ٢٩٧: not repeated when the issuer row already shows that link).
+  assert.match(SIDEBAR, /const \{ sourceUrl, gazette \} = dbOfficialRowsUnderCard\(rows, officialMeta, officialLink\);/);
   assert.doesNotMatch(SIDEBAR, /f\.key\.includes\("المصدر"\)/);
 });
 

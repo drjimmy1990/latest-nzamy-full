@@ -109,6 +109,17 @@ export function lawOfficialMeta(law: LawOfficialColumns, isSubscriber: boolean):
 }
 
 /**
+ * Owner ٢٩٧ (2026-10-26): «الجهة المصدرة» carries a clickable official link
+ * that opens the law's page at its official source, when there is one. The
+ * link is public — every viewer, guests included — unlike T28-22's metadata
+ * above: it is the same official_source_url (http/https only), sent on its
+ * own field so `officialSourceUrl` and `officialMetaLocked` keep their meaning.
+ */
+export function lawOfficialLink(law: Pick<LawOfficialColumns, "official_source_url">): string {
+  return httpUrl(law.official_source_url);
+}
+
+/**
  * A catalogue row (/api/library/init) for a non-subscriber: the decree and
  * its date are nulled, everything else — status included — is kept. Returns
  * a copy; the input row is not modified.

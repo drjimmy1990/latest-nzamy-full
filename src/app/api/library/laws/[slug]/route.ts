@@ -8,7 +8,7 @@ import { lawStatusForDetail } from '@/app/laws/law-status';
 import { resolveParentLawLink, type ParentLawCandidate } from './_resolve-parent-law';
 import { orderLawChapters } from './_order-chapters';
 import { articleDisplayLabel, articleLocatorText } from './_article-label';
-import { lawOfficialMeta, TIER_SHAPED_CACHE_CONTROL } from './_official-meta';
+import { lawOfficialLink, lawOfficialMeta, TIER_SHAPED_CACHE_CONTROL } from './_official-meta';
 import { splitStoredPreamble } from '@/lib/library/splitPreamble';
 import { lawReaderExtras } from '@/lib/library/lawSummaryVisibility';
 import { selectAllPages } from '@/lib/supabase/selectAllPages';
@@ -350,6 +350,9 @@ export async function GET(
       issuanceDate: officialMeta.issuanceDate,
       source: officialMeta.source,
       officialSourceUrl: officialMeta.officialSourceUrl,
+      // Owner ٢٩٧: the law's official page, for EVERY viewer (beside الجهة
+      // المصدرة); '' when the law has no http(s) official_source_url.
+      officialLink: lawOfficialLink(law),
       // {issueNumber, publicationDate, url} from the gazette_* columns only;
       // null when they are all empty (every law, 2026-09-28) or when locked.
       gazette: officialMeta.gazette,

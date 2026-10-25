@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Stack, BookOpen, Scroll, CalendarBlank, Buildings, Tag, FolderSimple, Lock, Crown, CaretDown
 } from "@phosphor-icons/react";
@@ -99,6 +99,9 @@ export default function SidebarPanel({
   // those are suppressed too — otherwise the lock would hold for most laws and
   // leak for the mapped ones.
   const metaLocked = officialMeta?.locked === true;
+  // Owner ٢٩٧: the law's official page beside «الجهة المصدرة» — public, so
+  // shown to guests too (parseOfficialMeta keeps it when locked). http(s) only.
+  const officialLink = officialMeta?.officialLink ?? null;
   const issuanceDecree = metaLocked ? "" : (law.issuanceDecree || lawMeta.issuanceDecree || "");
   const border = isDark ? "border-white/[0.07]" : "border-slate-200";
   const card = `rounded-2xl border ${isDark ? "bg-zinc-900" : "bg-white shadow-sm"}`;
@@ -204,6 +207,19 @@ export default function SidebarPanel({
     return parts.length > 0 ? parts : val;
   };
 
+  const renderOfficialLink = (url: string) => (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      dir="ltr"
+      data-card-field="official-link"
+      className={`inline-block mt-0.5 text-[10px] leading-tight break-all underline decoration-dotted ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
+    >
+      {isRTL ? `الرابط الرسمي ↗ ${urlHostname(url)}` : `Official page ↗ ${urlHostname(url)}`}
+    </a>
+  );
+
   const getFieldIcon = (key: string) => {
     if (key.includes("نوع") || key.includes("تصنيف") || key.includes("التصنيف")) return <Tag size={10} className={muted} />;
     if (key.includes("حالة") || key.includes("سريان") || key.includes("نفاذ")) return <span className="w-1.5 h-1.5 rounded-full bg-slate-400 mt-1 flex-shrink-0" />;
@@ -223,7 +239,7 @@ export default function SidebarPanel({
    */
   const renderDbOfficialRows = (rows: { key: string; value: string }[]) => {
     if (metaLocked || !officialMeta) return null;
-    const { sourceUrl, gazette } = dbOfficialRowsUnderCard(rows, officialMeta);
+    const { sourceUrl, gazette } = dbOfficialRowsUnderCard(rows, officialMeta, officialLink);
     if (!sourceUrl && !gazette) return null;
     return (
       <>
@@ -287,7 +303,7 @@ export default function SidebarPanel({
       const dbOfficialRows = renderDbOfficialRows([...law.metadata_card.main, ...law.metadata_card.more]);
       const parentLaw = renderParentLaw();
       const hasMore = layout.more.length > 0 || !!dbOfficialRows || !!parentLaw;
-      const renderRow = (key: string, value: string, idx: number | string) => (
+      const renderRow = (key: string, value: string, idx: number | string, extra?: ReactNode) => (
         <div key={idx} className="flex gap-1.5 items-start">
           {getFieldIcon(key)}
           <div className="flex-1 min-w-0">
@@ -295,6 +311,7 @@ export default function SidebarPanel({
             <p className={`text-[10px] font-semibold leading-tight break-words whitespace-pre-line ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>
               {renderValue(value)}
             </p>
+            {extra}
           </div>
         </div>
       );
@@ -329,8 +346,14 @@ export default function SidebarPanel({
                   </div>
                 );
               }
-              return renderRow(f.key, f.value, f.id);
+              return renderRow(f.key, f.value, f.id, f.id === "issuer" && officialLink ? renderOfficialLink(officialLink) : undefined);
             })}
+            {officialLink && !layout.primary.some((f) => f.id === "issuer") && (
+              <div className="flex gap-1.5 items-start" data-card-field="issuer-link">
+                {getFieldIcon("رابط")}
+                <div className="flex-1 min-w-0">{renderOfficialLink(officialLink)}</div>
+              </div>
+            )}
 
             {/* Owner ٢٦٠: the card reaches every viewer; for a non-subscriber the
                 API removed its T28-22 rows (decree, dates, official links), so
@@ -490,7 +513,14 @@ export default function SidebarPanel({
               <div>
                 <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{isRTL ? "الجهة المصدرة" : "Authority"}</p>
                 <p className={`text-[10px] font-semibold leading-tight ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{lawMeta.issuing_authority}</p>
+                {officialLink && renderOfficialLink(officialLink)}
               </div>
+            </div>
+          )}
+          {officialLink && !lawMeta.issuing_authority && (
+            <div className="flex gap-1.5 items-start" data-card-field="issuer-link">
+              <BookOpen size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
+              <div className="min-w-0">{renderOfficialLink(officialLink)}</div>
             </div>
           )}
           {!metaLocked && law.source && (
@@ -519,7 +549,7 @@ export default function SidebarPanel({
 
           {/* T28-26: the official page, only as the server sent it (http/https),
               and not repeated when it is the same link as «المصدر» above. */}
-          {!metaLocked && officialMeta?.officialSourceUrl && officialMeta.officialSourceUrl !== law.source && (
+          {!metaLocked && officialMeta?.officialSourceUrl && officialMeta.officialSourceUrl !== law.source && officialMeta.officialSourceUrl !== officialLink && (
             <div className="flex gap-1.5 items-start">
               <BookOpen size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
               <div className="min-w-0">

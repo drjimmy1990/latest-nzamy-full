@@ -3,10 +3,12 @@
  * which wait behind «المزيد» (owner answer ٢٦١: five fields always, the rest
  * behind one button).
  *
- * THE LIST is LAW_CARD_PRIMARY_FIELDS below. Owner question ٢٩٧ asks which
- * five; until he answers, it is the default he was offered (أ): النوع، تاريخ
- * الإصدار، آخر تعديل، الحالة، الجهة المصدرة. Changing the five is a change to
- * that one array (drop, add or reorder an entry).
+ * THE LIST is LAW_CARD_PRIMARY_FIELDS below. Owner ٢٩٧ (answered 2026-10-26,
+ * option أ): النوع، تاريخ الإصدار، آخر تعديل، الحالة، الجهة المصدرة — the
+ * last with a clickable official link when the law has one (the route's
+ * `officialLink`, public). Changing the five is a change to that one array
+ * (drop, add or reorder an entry). A guest's card keeps only the النوع /
+ * الحالة / الجهة المصدرة rows (GUEST_CARD_KEYS, lawSummaryVisibility.ts).
  *
  * Each field names the card keys it reads, matched EXACTLY (after trimming):
  * «تاريخ النشر» is a publication date and never fills «تاريخ الإصدار». The
@@ -41,7 +43,7 @@ export interface LawCardFieldSpec {
   keys: readonly string[];
 }
 
-/** Owner ٢٦١ / ٢٩٧ (default أ): the fields always shown, in display order. */
+/** Owner ٢٦١ / ٢٩٧ (أ): the fields always shown, in display order. */
 export const LAW_CARD_PRIMARY_FIELDS: readonly LawCardFieldSpec[] = [
   { id: "type", label: "النوع", keys: ["نوع التشريع", "نوع الوثيقة", "نوع المستند"] },
   { id: "issueDate", label: "تاريخ الإصدار", keys: ["تاريخ الإصدار", "تاريخ الإصدار (هجري)", "تاريخ الإصدار (ميلادي)"] },
