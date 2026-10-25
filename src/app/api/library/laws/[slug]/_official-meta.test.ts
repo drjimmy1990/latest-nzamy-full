@@ -1,8 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   TIER_SHAPED_CACHE_CONTROL,
   gazetteFor,
+  lawOfficialLink,
   lawOfficialMeta,
   maskListOfficialFields,
 } from "./_official-meta.ts";
@@ -82,4 +86,19 @@ test("catalogue rows: decree and date nulled for a non-subscriber, status and th
 
 test("tier-shaped responses are never stored by a shared cache", () => {
   assert.equal(TIER_SHAPED_CACHE_CONTROL, "private, no-store");
+});
+
+test("owner ٢٩٧: the official link is the http(s) official_source_url, whoever the viewer is", () => {
+  const law = { ...WITH_BOE, official_source_url: "https://laws.boe.gov.sa/BoeLaws/Laws/LawDetails/bf8b/1" };
+  assert.equal(lawOfficialLink(law), "https://laws.boe.gov.sa/BoeLaws/Laws/LawDetails/bf8b/1");
+  // T28-22's mask is unchanged: officialSourceUrl stays a subscriber's field.
+  assert.equal(lawOfficialMeta(law, false).officialSourceUrl, "");
+  for (const bad of ["", null, undefined, "javascript:alert(1)", "laws.boe.gov.sa/x", "ftp://x.sa/a", " "]) {
+    assert.equal(lawOfficialLink({ official_source_url: bad }), "", String(bad));
+  }
+});
+
+test("the law route sends officialLink to every viewer, outside the T28-22 mask", () => {
+  const route = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "route.ts"), "utf8");
+  assert.match(route, /officialLink: lawOfficialLink\(law\),/);
 });

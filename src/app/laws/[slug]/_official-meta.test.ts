@@ -91,3 +91,35 @@ test("under the file's card: the DB official link shows unless a card row alread
   // Nothing in the database: nothing to add.
   assert.deepEqual(dbOfficialRowsUnderCard(issuerOnly, { officialSourceUrl: null, gazette: null }), { sourceUrl: "", gazette: null });
 });
+
+test("owner ٢٩٧: officialLink is public — kept on a locked response — and http(s) only", () => {
+  const m = parseOfficialMeta({ officialMetaLocked: true, officialSourceUrl: "https://laws.boe.gov.sa/x", officialLink: "https://laws.boe.gov.sa/x" });
+  assert.equal(m.locked, true);
+  assert.equal(m.officialSourceUrl, null);
+  assert.equal(m.officialLink, "https://laws.boe.gov.sa/x");
+  for (const bad of ["javascript:alert(1)", "//evil.example/x", "laws.boe.gov.sa", "", 7, null]) {
+    assert.equal(parseOfficialMeta({ officialLink: bad }).officialLink, null, String(bad));
+  }
+});
+
+test("under the file's card: the DB link is not repeated when the issuer row already shows it", () => {
+  const url = "https://laws.boe.gov.sa/BoeLaws/Laws/LawDetails/5d33/1";
+  const meta = { officialSourceUrl: url, gazette: null };
+  const issuerOnly = [{ key: "الجهة المصدرة", value: "مجلس الوزراء" }];
+  assert.equal(dbOfficialRowsUnderCard(issuerOnly, meta, url).sourceUrl, "");
+  assert.equal(dbOfficialRowsUnderCard(issuerOnly, meta, "https://other.gov.sa/x").sourceUrl, url);
+  assert.equal(dbOfficialRowsUnderCard(issuerOnly, meta).sourceUrl, url);
+});
+
+test("the sidebar puts the official link on «الجهة المصدرة» as a new-tab link, for every viewer", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { fileURLToPath } = await import("node:url");
+  const src = readFileSync(fileURLToPath(new URL("./_sidebar.tsx", import.meta.url)), "utf8");
+  const link = src.slice(src.indexOf("const renderOfficialLink"), src.indexOf("const getFieldIcon"));
+  assert.match(link, /target="_blank"/);
+  assert.match(link, /rel="noopener noreferrer"/);
+  assert.match(src, /const officialLink = officialMeta\?\.officialLink \?\? null;/);
+  // Not behind metaLocked: the issuer row and the stand-alone row.
+  assert.match(src, /f\.id === "issuer" && officialLink \? renderOfficialLink\(officialLink\)/);
+  assert.match(src, /\{officialLink && !layout\.primary\.some\(\(f\) => f\.id === "issuer"\) && \(/);
+});

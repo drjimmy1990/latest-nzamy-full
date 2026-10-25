@@ -178,3 +178,17 @@ test("/laws uses the laws labels and counts the grouped cards it renders", () =>
   assert.match(page, /if \(pagingSection === "laws"\) return lawsLoadMoreLabel\(pagingRows\.length, lawCards\.length, d, !!searchPaging\?\.lawCountIncludesTitleHits\);/);
   assert.match(page, /const lawCards = isSearchActive \? groupLawSearchCards\(filteredLaws\) : filteredLaws;/);
 });
+
+test("precedents: collection title hits on page 1 do not trigger a phantom page 2", () => {
+  const colHits = [
+    { id: "collection:sjc-1", meta: { kind: "collection" } },
+    { id: "collection:sjc-2", meta: { kind: "collection" } },
+  ];
+  // 2 collection hits + 0 principle rows (total = 2) -> no page 2
+  assert.equal(searchPagingState(exactInfo("precedents", 2), "precedents", 1, colHits).hasMore, false);
+  // 2 collection hits + 50 principle rows (total = 52) -> all 50 principles loaded on page 1 -> no page 2
+  assert.equal(searchPagingState(exactInfo("precedents", 52), "precedents", 1, [...colHits, ...rows(50)]).hasMore, false);
+  // 2 collection hits + 55 principle rows (total = 57) -> page 1 hasMore true, page 2 hasMore false
+  assert.equal(searchPagingState(exactInfo("precedents", 57), "precedents", 1, [...colHits, ...rows(50)]).hasMore, true);
+  assert.equal(searchPagingState(exactInfo("precedents", 57), "precedents", 2, [...colHits, ...rows(55)]).hasMore, false);
+});

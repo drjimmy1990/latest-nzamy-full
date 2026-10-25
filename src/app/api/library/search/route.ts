@@ -27,9 +27,8 @@ import {
   lawSlugBatches,
   lawTitleSlots,
   lawWindowNeedsJoin,
-  orderRowsByIds,
-  rankedLawOrderApplies,
   readPage,
+  rpcPageOrder,
   rpcPageResult,
   sectionCount,
   shouldRetryLawsWithoutHistory,
@@ -37,13 +36,18 @@ import {
   uncountedPage,
   type SearchResultItem,
   type SearchSectionName,
+  type SectionOrder,
   type SectionOutcome,
 } from './searchPlan';
 import { fetchLawTitleHitsChecked, type LawTitleHitsResult } from './lawTitleHits';
 import { fetchBookTitleHits } from './bookTitleHits';
+import { fetchCollectionTitleHits } from './collectionTitleHits';
 
 /** Book-title hits listed above the fiqh passages on page 1. */
 const BOOK_TITLE_HITS_MAX = 3;
+/** Judicial-collection title hits listed on page 1 of precedents / all. */
+const COLLECTION_TITLE_HITS_ALL = 3;
+const COLLECTION_TITLE_HITS_PRECEDENTS = 12;
 
 /**
  * POST /api/library/search
@@ -55,10 +59,14 @@ const BOOK_TITLE_HITS_MAX = 3;
  * - counts are `estimated` (exact under 1000 matches, planner estimate above);
  *   searchPlan.sectionCount turns them into what the section lists, and
  *   `countsExact` says per section whether that number is proven exact;
- * - every section query is ordered by `id` (the table's primary key), so a
- *   page is a stable window: the same request returns the same rows and
- *   consecutive pages neither repeat nor skip rows. The ranked RPC orders
- *   only the section=all preview (searchPlan.rankedLawOrderApplies);
+ * - owner ٢٧٧ (أ): a search lists every section by relevance, on every page
+ *   (migration 20261026_52: ts_rank_cd desc, then the primary key). A query
+ *   matching more rows than the function ranks (5,000), and every section
+ *   while its function is missing, lists by `id` (the primary key) as
+ *   before. Either way the order is total, so a page is a stable window: the
+ *   same request returns the same rows and consecutive pages neither repeat
+ *   nor skip rows. `order[section]` in the body says which order a section
+ *   used (searchPlan.SectionOrder);
  * - a page past the end of the match set is an empty page with the proven
  *   total (PostgREST PGRST103, searchPlan.readPage), never a 503;
  * - section=all degrades: a failed section is reported in `degraded` and the
@@ -85,7 +93,10 @@ function searchUnavailableResponse(status = 503) {
 }
 
 /**
- * Client-side ceiling per section. For orders the anon role's
+ * Client-side ceiling per section. Every section's window first goes through
+ * its 20261026_52 relevance function (service role, its own 4s
+ * statement_timeout); what follows describes today's windows, used while that
+ * function is missing. For orders the anon role's
  * statement_timeout (~3s) normally cancels a slow query first; this bounds a
  * hung connection. The fiqh window reads server-only text since 20261018_02
  * and goes through library.search_feqh_page, whose own 4s statement_timeout
@@ -103,11 +114,42 @@ function searchUnavailableResponse(status = 503) {
  */
 const SECTION_BUDGET_MS = 4500;
 
-/** Ranked-order RPC (migration 20260925_01); remembered as missing for 10 minutes. */
-const RANKED_RPC = 'search_law_articles_ranked';
-const RANKED_RPC_RETRY_MS = 10 * 60 * 1000;
-const RANKED_RPC_BUDGET_MS = 1500;
-let rankedRpcMissingUntil = 0;
+/**
+ * Owner ٢٧٧ (أ): the relevance windows (migration 20261026_52), one per
+ * section, with the same parameters and rows as the id-order windows below
+ * (orders: the inline select's columns) and the same 4s statement_timeout.
+ * Each is called first; while one is missing (isMissingFunctionError,
+ * remembered for 10 minutes) its section uses today's window. Any other
+ * answer — a 57014 included — is the page: it is never retried with another
+ * window (that would double the wait past SECTION_BUDGET_MS).
+ */
+const RELEVANCE_RPC: Record<SearchSectionName, string> = {
+  laws: 'search_law_articles_relevance',
+  precedents: 'search_principles_relevance',
+  orders: 'search_decrees_relevance',
+  feqh: 'search_feqh_relevance',
+};
+const RELEVANCE_RPC_RETRY_MS = 10 * 60 * 1000;
+const relevanceRpcMissingUntil: Record<SearchSectionName, number> = { laws: 0, precedents: 0, orders: 0, feqh: 0 };
+
+type ServiceClient = Awaited<ReturnType<typeof createServiceClient>>;
+type RpcPage = ReturnType<typeof rpcPageResult>;
+
+/** A section's relevance window, or null when its function is missing (then the caller uses today's window). */
+async function relevancePage(
+  client: ServiceClient,
+  name: SearchSectionName,
+  args: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<{ res: RpcPage; order: SectionOrder } | null> {
+  if (Date.now() < relevanceRpcMissingUntil[name]) return null;
+  const rpcRes = await client.schema('library').rpc(RELEVANCE_RPC[name], args).abortSignal(signal);
+  if (isMissingFunctionError(rpcRes.error)) {
+    relevanceRpcMissingUntil[name] = Date.now() + RELEVANCE_RPC_RETRY_MS;
+    return null;
+  }
+  return { res: rpcPageResult(rpcRes), order: rpcPageOrder(rpcRes) };
+}
 
 /** Precedents window with its own statement_timeout (migration 20261017_20, fix plan N18). */
 const PRINCIPLES_RPC = 'search_principles_page';
@@ -318,39 +360,6 @@ export async function POST(request: Request) {
           return res as unknown as RowsResult;
         };
 
-        // Ranked ids: the section=all preview only. section=laws keeps the
-        // id order on every page (a ranked page 1 would not continue into an
-        // id-ordered page 2). null → use the plain order.
-        const rankedIds = async (): Promise<string[] | null> => {
-          if (!rankedLawOrderApplies(section) || from !== 0 || Date.now() < rankedRpcMissingUntil) return null;
-          // SECURITY INVOKER over library.articles: it must run as the role
-          // that can read the table (anon gets 42501 after 20260929_01).
-          const { data, error } = await serverOnly
-            .schema('library')
-            .rpc(RANKED_RPC, {
-              p_tsquery: ftsQuery,
-              p_section_code: filters.category ?? null,
-              p_status: filters.status ?? null,
-              p_law_type: filters.lawType ?? null,
-              p_limit: size,
-              p_offset: from,
-            })
-            // Ranking is an improvement, not a requirement: give it a short
-            // budget of its own so it can never hold the section near the
-            // statement timeout (the plain order is used instead).
-            .abortSignal(AbortSignal.any([signal, AbortSignal.timeout(RANKED_RPC_BUDGET_MS)]));
-          if (error) {
-            if (error.code === 'PGRST202' || error.code === '42883') {
-              rankedRpcMissingUntil = Date.now() + RANKED_RPC_RETRY_MS;
-            } else {
-              console.warn('[Search] ranked law search failed; using unranked order:', error);
-            }
-            return null;
-          }
-          if (!Array.isArray(data)) return null;
-          return (data as Array<{ id?: unknown }>).map((r) => String(r.id)).filter(Boolean);
-        };
-
         // The window through library.search_law_articles_page (migration
         // 20261019_41), whose 4s statement_timeout PostgREST applies before the
         // call — the inline query runs as the service role, which has no
@@ -360,7 +369,18 @@ export async function POST(request: Request) {
         // not there yet (isMissingFunctionError, remembered for 10 minutes). A
         // 57014 from the function fails the section like any other error; it
         // is never retried inline.
-        const lawWindow = async (): Promise<{ res: RowsResult; viaRpc: boolean }> => {
+        const lawWindow = async (): Promise<{ res: RowsResult; viaRpc: boolean; order?: SectionOrder }> => {
+          // Owner ٢٧٧: the relevance window (20261026_52) first — the same
+          // arguments and rows as LAWS_RPC; the rows below are today's order.
+          const relevance = await relevancePage(serverOnly, 'laws', {
+            p_tsquery: ftsQuery,
+            p_offset: from,
+            p_fetch: fetchSizeFor(size),
+            p_status: filters.status ?? null,
+            p_section_code: filters.category ?? null,
+            p_law_type: filters.lawType ?? null,
+          }, signal);
+          if (relevance) return { res: relevance.res as unknown as RowsResult, viaRpc: true, order: relevance.order };
           if (Date.now() >= lawsRpcMissingUntil) {
             const rpcRes = await serverOnly
               .schema('library')
@@ -387,12 +407,8 @@ export async function POST(request: Request) {
           return { res, viaRpc: false };
         };
 
-        const [{ res: base, viaRpc }, ranked, title] = await Promise.all([
+        const [{ res: base, viaRpc, order }, title] = await Promise.all([
           lawWindow(),
-          rankedIds().catch((e) => {
-            console.warn('[Search] ranked law search threw; using unranked order:', e);
-            return null;
-          }),
           fetchLawTitleHitsChecked(supabase, {
             ftsQuery,
             rawQuery: parsed.raw,
@@ -440,26 +456,11 @@ export async function POST(request: Request) {
           return attachLaws(rows, lookups.flatMap((l) => l.data as unknown as Record<string, unknown>[]));
         };
 
-        let articleRows: Record<string, unknown>[] | null = null;
-        if (ranked && ranked.length > 0) {
-          const byIds = await serverOnly
-            .schema('library')
-            .from('articles')
-            .select(LAW_COLUMNS(true))
-            .in('id', ranked)
-            .abortSignal(signal);
-          if (!byIds.error && Array.isArray(byIds.data)) {
-            articleRows = orderRowsByIds(byIds.data as unknown as Record<string, unknown>[], ranked);
-          } else {
-            console.warn('[Search] ranked rows fetch failed; using unranked order:', byIds.error);
-          }
-        }
-        if (!articleRows) {
-          // The RPC's rows carry no embed (20261019_41): their laws are always
-          // attached here; only the inline joined window arrives with them.
-          articleRows = joinLaws && !viaRpc ? lawResults : await withLaws(lawResults);
-          if (!articleRows) return { ok: false };
-        }
+        // The RPCs' rows carry no embed (20261019_41, 20261026_52): their laws
+        // are always attached here; only the inline joined window arrives with
+        // them. attachLaws keeps the window's order.
+        const articleRows = joinLaws && !viaRpc ? lawResults : await withLaws(lawResults);
+        if (!articleRows) return { ok: false };
 
         const titleHits = title.hits;
         const lawTitleItems: SearchResultItem[] = titleHits.map((law) => {
@@ -542,6 +543,7 @@ export async function POST(request: Request) {
         return {
           ok: true,
           results,
+          order: order ?? 'id',
           ...sectionCount({
             estimate: settled.count,
             offset: from,
@@ -562,6 +564,17 @@ export async function POST(request: Request) {
       const { from, size } = window('precedents');
       const signal = AbortSignal.timeout(SECTION_BUDGET_MS);
       try {
+        // +1 round trip for this section (one fixed select of ≤ 500 public
+        // catalogue rows, matched in JS), started before the principles query
+        // so the two run in parallel.
+        const titleCollectionsPromise = fetchCollectionTitleHits(supabase, parsed.raw, {
+          track: filters.track,
+          source: filters.source,
+          year: filters.year,
+          court: filters.court,
+          max: section === 'precedents' ? COLLECTION_TITLE_HITS_PRECEDENTS : COLLECTION_TITLE_HITS_ALL,
+          signal,
+        });
         const precQuery = (head = false) => {
           let q = serverOnly
             .schema('library')
@@ -588,7 +601,17 @@ export async function POST(request: Request) {
         // case only: the function is not there yet (isMissingFunctionError,
         // remembered for 10 minutes). A 57014 from the function fails the
         // section like any other error; it is never retried unbounded.
-        const rpcRes = Date.now() < principlesRpcMissingUntil
+        // Owner ٢٧٧: the relevance window (20261026_52) first, same arguments.
+        const relevance = await relevancePage(serverOnly, 'precedents', {
+          p_tsquery: ftsQuery,
+          p_offset: from,
+          p_fetch: fetchSizeFor(size),
+          p_track: filters.track ?? null,
+          p_source: filters.source ?? null,
+          p_year: filters.year ?? null,
+          p_court: filters.court ?? null,
+        }, signal);
+        const rpcRes = relevance !== null || Date.now() < principlesRpcMissingUntil
           ? null
           : await serverOnly
             .schema('library')
@@ -604,14 +627,40 @@ export async function POST(request: Request) {
             .abortSignal(signal);
         const rpcMissing = rpcRes !== null && isMissingFunctionError(rpcRes.error);
         if (rpcMissing) principlesRpcMissingUntil = Date.now() + PRINCIPLES_RPC_RETRY_MS;
-        const res = rpcRes !== null && !rpcMissing
-          ? rpcPageResult(rpcRes)
-          : await precQuery()
-            .order('id')
-            .range(from, from + fetchSizeFor(size) - 1)
-            .abortSignal(signal);
+        const res = relevance !== null
+          ? relevance.res
+          : rpcRes !== null && !rpcMissing
+            ? rpcPageResult(rpcRes)
+            : await precQuery()
+              .order('id')
+              .range(from, from + fetchSizeFor(size) - 1)
+              .abortSignal(signal);
         const settled = await settlePage('precedents', res as unknown as RowsResult, () => precQuery(true).abortSignal(signal));
         if (!settled) return { ok: false };
+        const titleCollections = await titleCollectionsPromise;
+        if (titleCollections.error) console.warn('[Search] collection title lookup failed:', titleCollections.error);
+        const collectionItems: SearchResultItem[] = titleCollections.hits.map((col) => {
+          const isFree = Boolean(col.free) || hasFullAccess;
+          return {
+            id: `collection:${col.id}`,
+            section: 'precedents',
+            title: col.title,
+            snippet: truncateWithHighlight(col.description || col.court || '', isFree ? parsed.plainTerms : [], snippetLen(isFree)),
+            locked: !isFree,
+            meta: {
+              kind: 'collection',
+              collectionSlug: col.id,
+              court: col.court,
+              track: col.track,
+              sourceId: col.source_id,
+              year: col.year_hijri,
+              rulingCount: col.ruling_count,
+              part: col.part,
+              free: Boolean(col.free),
+              progress: col.progress,
+            },
+          };
+        });
         const precResults = settled.rows;
         const results: SearchResultItem[] = precResults.map((r: Record<string, unknown>) => {
           const isFree = isFreeLibraryItem({ contentType: 'principles', itemId: r.id as string, hasFullAccess, freeItemsByType, whitelistedLawSlugs: whitelistedSlugs });
@@ -637,10 +686,21 @@ export async function POST(request: Request) {
           };
         });
         const deduped = dedupeResults(results);
+        const pageRows = deduped.slice(0, size);
+        const withCollections = from === 0 ? [...collectionItems, ...pageRows] : pageRows;
+        const collectionCount = collectionItems.length;
         return {
           ok: true,
-          results: deduped.slice(0, size),
-          ...sectionCount({ estimate: settled.count, offset: from, rawRows: precResults.length, requested: fetchSizeFor(size), listedWhenComplete: deduped.length }),
+          results: section === 'precedents' ? withCollections : withCollections.slice(0, size),
+          order: relevance?.order ?? 'id',
+          ...sectionCount({
+            estimate: settled.count,
+            offset: from,
+            rawRows: precResults.length,
+            requested: fetchSizeFor(size),
+            extra: collectionCount,
+            listedWhenComplete: collectionCount + deduped.length,
+          }),
         };
       } catch (e) {
         console.error('[Search] Precedents error:', e);
@@ -667,10 +727,24 @@ export async function POST(request: Request) {
           return q;
         };
 
-        const res = await orderQuery()
-          .order('id')
-          .range(from, from + fetchSizeFor(size) - 1)
-          .abortSignal(signal);
+        // Owner ٢٧٧: the relevance window (20261026_52) first, as the service
+        // role with its 4s statement_timeout (the same public columns). The
+        // request-client query stays for one case only: the function is
+        // missing (then anon's ~3s statement_timeout bounds it, as before).
+        const relevance = await relevancePage(serverOnly, 'orders', {
+          p_tsquery: ftsQuery,
+          p_offset: from,
+          p_fetch: fetchSizeFor(size),
+          p_issuer: filters.issuer ?? null,
+          p_type: filters.type ?? null,
+          p_categories: filters.category ? categoryStoredSpellings(filters.category) : null,
+        }, signal);
+        const res = relevance !== null
+          ? relevance.res
+          : await orderQuery()
+            .order('id')
+            .range(from, from + fetchSizeFor(size) - 1)
+            .abortSignal(signal);
         const settled = await settlePage('orders', res as unknown as RowsResult, () => orderQuery(true).abortSignal(signal));
         if (!settled) return { ok: false };
         const orderResults = settled.rows;
@@ -698,6 +772,7 @@ export async function POST(request: Request) {
         return {
           ok: true,
           results: deduped.slice(0, size),
+          order: relevance?.order ?? 'id',
           ...sectionCount({ estimate: settled.count, offset: from, rawRows: orderResults.length, requested: fetchSizeFor(size), listedWhenComplete: deduped.length }),
         };
       } catch (e) {
@@ -734,7 +809,10 @@ export async function POST(request: Request) {
         // remembered for 10 minutes) — the lock and the function ship in the
         // same migration, so that query still runs under anon's 3s limit. A
         // 57014 from the function fails the section; it is never retried.
-        const feqhWindow = async (): Promise<{ res: unknown; viaRpc: boolean }> => {
+        const feqhWindow = async (): Promise<{ res: unknown; viaRpc: boolean; order?: SectionOrder }> => {
+          // Owner ٢٧٧: the relevance window (20261026_52) first, same arguments.
+          const relevance = await relevancePage(serverOnly, 'feqh', { p_tsquery: ftsQuery, p_offset: from, p_fetch: fetchSizeFor(size) }, signal);
+          if (relevance) return { res: relevance.res, viaRpc: true, order: relevance.order };
           if (Date.now() >= feqhRpcMissingUntil) {
             const rpcRes = await serverOnly
               .schema('library')
@@ -754,7 +832,7 @@ export async function POST(request: Request) {
         // passage search alone never surfaced «إعلام الموقعين» itself, nor
         // «السنهوري»'s books). Page 1 only: they are a header, not counted
         // rows (see the return below).
-        const [{ res, viaRpc }, titleBooks] = await Promise.all([
+        const [{ res, viaRpc, order }, titleBooks] = await Promise.all([
           feqhWindow(),
           from === 0
             ? fetchBookTitleHits(supabase, parsed.raw, BOOK_TITLE_HITS_MAX, signal)
@@ -828,6 +906,7 @@ export async function POST(request: Request) {
         return {
           ok: true,
           results: section === 'feqh' ? withBooks : withBooks.slice(0, size),
+          order: order ?? 'id',
           ...sectionCount({ estimate: settled.count, offset: from, rawRows: feqhResults.length, requested: fetchSizeFor(size), listedWhenComplete: deduped.length }),
         };
       } catch (e) {

@@ -99,3 +99,24 @@ export async function selectWithOptionalColumn<R extends { error: PgErrorLike | 
   console.warn(`[optionalColumn] ${column} is not in the database yet — read without it (apply its migration)`);
   return run(without);
 }
+
+/**
+ * Which of `columns` the database does not have yet — for a WRITER, not a
+ * read: the owner's loader (seed-library-from-owner.mjs) probes the columns a
+ * pending migration adds (feqh_books.series_id / volume_number, 20261026_51)
+ * and drops those keys from its rows, so a load before the SQL still writes
+ * every book (owner ٢٦٢). `probe(column)` is one tiny read naming the column
+ * (`select(column).limit(1)`); only a missing-column answer marks it missing —
+ * any other error leaves the key in, and the write reports its own error.
+ */
+export async function missingOptionalColumns(
+  columns: readonly string[],
+  probe: (column: string) => PromiseLike<{ error: PgErrorLike | null }>,
+): Promise<string[]> {
+  const missing: string[] = [];
+  for (const column of columns) {
+    const { error } = await probe(column);
+    if (isMissingFeatureColumn(error, column)) missing.push(column);
+  }
+  return missing;
+}

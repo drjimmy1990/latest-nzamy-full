@@ -5,7 +5,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mapApiFolderToSmartFolder, type ApiSmartFolderRow } from "./smartFolderApiMapper.ts";
+import { mapApiFolderToSmartFolder, resolveSavedItemHref, type ApiSmartFolderRow } from "./smartFolderApiMapper.ts";
 
 test("mapApiFolderToSmartFolder maps a full row, items included", () => {
   const row: ApiSmartFolderRow = {
@@ -99,4 +99,30 @@ test("mapApiFolderToSmartFolder: an item missing title/title_en/cat_id falls bac
     type: "law",
     _itemDbId: "item-2",
   });
+});
+
+test("resolveSavedItemHref routes saved laws, collections, orders and Arabic-slug books cleanly", () => {
+  assert.equal(resolveSavedItemHref({ slug: "labor-law", type: "law" }), "/laws/labor-law");
+  assert.equal(resolveSavedItemHref({ slug: "sjc-principles-1", type: "precedent" }), "/precedents/sjc-principles-1");
+  assert.equal(resolveSavedItemHref({ slug: "decree-42", type: "order" }), "/laws/orders/decree-42");
+  assert.equal(
+    resolveSavedItemHref({ slug: "الروض المربع", type: "book" }),
+    `/book/${encodeURIComponent("الروض المربع")}`,
+  );
+  // Already percent-encoded slugs are not double-encoded
+  const encoded = encodeURIComponent("الروض المربع");
+  assert.equal(resolveSavedItemHref({ slug: encoded, type: "book" }), `/book/${encoded}`);
+});
+
+test("resolveSavedItemHref encodes exactly once (apiSlug) — encoded, plain and malformed ids", () => {
+  const plain = "فتح القدير - الجزء 03";
+  const once = encodeURIComponent(plain);
+  assert.equal(resolveSavedItemHref({ slug: plain, type: "book" }), `/book/${once}`);
+  assert.equal(resolveSavedItemHref({ slug: once, type: "book" }), `/book/${once}`);
+  // A stray «%» next to an encoded run used to be trusted as-is.
+  assert.equal(resolveSavedItemHref({ slug: "100% %D9%85", type: "book" }), `/book/${encodeURIComponent("100% %D9%85")}`);
+  // Path syntax in an id stays inside one segment.
+  assert.equal(resolveSavedItemHref({ slug: "../../admin?x=1#y", type: "precedent" }), `/precedents/${encodeURIComponent("../../admin?x=1#y")}`);
+  assert.equal(resolveSavedItemHref({ slug: "//evil.example", type: "law" }), "/laws/%2F%2Fevil.example");
+  assert.equal(resolveSavedItemHref({ slug: "", type: null }), "/laws/");
 });

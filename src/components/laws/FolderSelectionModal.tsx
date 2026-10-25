@@ -8,6 +8,8 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
+import { useNoSessionCookie } from "@/app/laws/components/useNoSessionCookie";
+import { normalizeSearch } from "@/utils/normalizeArabic";
 import { getPreferences, type RecentSession } from "@/lib/services/preferencesService";
 import { SmartFolder, ALL_LIBRARY_DOCS } from "@/app/laws/components/SmartFolders";
 import {
@@ -49,12 +51,8 @@ const FOLDER_COLORS = [
 ];
 
 // ─── localStorage helpers ──────────────────────────────────────────────────
-// Guests' only store (they have no account) — THE RULE OF THIS PHASE. Every
-// call site below is gated on `!isAuthenticated`: signed-in users' data
-// lives on the server only, never mirrored here, so it can't survive a
-// browser cleanup or leak to the next guest on a shared machine. Same-tab
-// agreement between this component and SmartFolders.tsx comes from the
-// `nzamy_smart_folders_changed` CustomEvent (dispatchFoldersChanged) alone.
+// Guests' only store (they have no account) — signed-in users' data lives on
+// the server only, never mirrored here.
 
 function loadFoldersFromLocalStorage(): SmartFolder[] | null {
   try {
@@ -80,11 +78,16 @@ export default function FolderSelectionModal({
   currentDoc
 }: FolderSelectionModalProps) {
   const { isDark, isRTL } = useTheme();
-  const { isLoggedIn: isAuthenticated } = useUser();
+  const user = useUser();
+  const isAuthenticated = user.isLoggedIn;
+  const noSessionCookie = useNoSessionCookie();
+  const authPending = user.loading && !noSessionCookie;
 
   const [folders, setFolders] = useState<SmartFolder[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [creatingFolder, setCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [folderQuery, setFolderQuery] = useState("");
   const [managingFolder, setManagingFolder] = useState<SmartFolder | null>(null);
@@ -96,6 +99,8 @@ export default function FolderSelectionModal({
 
   // ─── Load folders — API for signed-in users, localStorage for guests ─────
   const loadFolders = useCallback(async () => {
+    if (authPending) return;
+    setActionError(null);
     if (isAuthenticated) {
       setIsLoading(true);
       setLoadFailed(false);
@@ -105,9 +110,7 @@ export default function FolderSelectionModal({
           const data = await res.json();
           const mapped: SmartFolder[] = (data.folders || []).map(mapApiFolderToSmartFolder);
           setFolders(mapped);
-          // Signed-in: the server is the record of truth — do not mirror it
-          // into localStorage (THE RULE OF THIS PHASE; see SmartFolders.tsx's
-          // own loadFolders for the same reasoning).
+          if (mapped.length === 0) setShowCreateForm(true);
         } else {
           console.error("[FolderSelectionModal] Failed to load folders via API");
           setLoadFailed(true);
@@ -119,18 +122,16 @@ export default function FolderSelectionModal({
         setIsLoading(false);
       }
     } else {
-      setFolders(loadFoldersFromLocalStorage() ?? []);
+      const local = loadFoldersFromLocalStorage() ?? [];
+      setFolders(local);
+      if (local.length === 0) setShowCreateForm(true);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, authPending]);
 
-  // Load on open (and whenever auth status resolves while open) rather than
-  // once on mount — this modal stays mounted across opens in some callers.
   useEffect(() => {
-    if (isOpen) loadFolders();
-  }, [isOpen, loadFolders]);
+    if (isOpen && !authPending) loadFolders();
+  }, [isOpen, authPending, loadFolders]);
 
-  // Listen to folder updates dispatched here or by SmartFolders.tsx, so the
-  // two never disagree about the list within one tab.
   useEffect(() => {
     const handleUpdate = (e: Event) => {
       const detail = (e as CustomEvent<SmartFolder[]>).detail;
@@ -142,20 +143,16 @@ export default function FolderSelectionModal({
 
   const updateFoldersState = useCallback((updated: SmartFolder[]) => {
     setFolders(updated);
-    // Guests only — signed-in users' data lives on the server (see loadFolders).
     if (!isAuthenticated) saveFoldersToLocalStorage(updated);
     dispatchFoldersChanged(updated);
   }, [isAuthenticated]);
 
-  // Check if item is in folder
   const isItemInFolder = useCallback((folder: SmartFolder, doc: typeof currentDoc) => {
     return folder.laws.some(item => item.slug === doc.slug && (item.type || "law") === doc.type);
   }, []);
 
-  // ─── Recent items — server preferences for signed-in users, this browser's
-  // own history for guests (no account to read it from). ────────────────────
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || authPending) return;
     let cancelled = false;
     (async () => {
       if (isAuthenticated) {
@@ -171,12 +168,11 @@ export default function FolderSelectionModal({
       }
     })();
     return () => { cancelled = true; };
-  }, [isOpen, isAuthenticated]);
+  }, [isOpen, isAuthenticated, authPending]);
 
-  // ─── Toggle one document in one folder — shared by the primary "quick add"
-  // view (always `currentDoc`) and the "manage content" sub-view (any doc:
-  // a folder item, a recent session, or a library search hit). ──────────────
   const toggleItemInFolder = useCallback(async (folder: SmartFolder, doc: ToggleDoc) => {
+    if (!doc.slug) return;
+    setActionError(null);
     const docType = doc.type || "law";
     const existingItem = folder.laws.find(item => item.slug === doc.slug && (item.type || "law") === docType);
     const exists = !!existingItem;
@@ -202,15 +198,13 @@ export default function FolderSelectionModal({
     try {
       if (exists) {
         if (!dbItemId) {
-          // A locally-created item with no DB row (e.g. a stale localStorage
-          // fallback entry) — nothing to delete server-side; re-sync instead
-          // of silently leaving the two out of step.
           await loadFolders();
           return;
         }
         const res = await fetch(`/api/library/folders?itemId=${encodeURIComponent(dbItemId)}`, { method: "DELETE" });
         if (!res.ok) {
           console.error("[FolderSelectionModal] Failed to remove item via API");
+          setActionError(isRTL ? "تعذّرت إزالة المستند من المجلد. أعد المحاولة." : "Failed to remove document from folder.");
           await loadFolders();
         }
       } else {
@@ -228,54 +222,54 @@ export default function FolderSelectionModal({
         });
         if (!res.ok) {
           console.error("[FolderSelectionModal] Failed to add item via API");
+          setActionError(isRTL ? "تعذّر حفظ المستند في المجلد. أعد المحاولة." : "Failed to save document to folder.");
           await loadFolders();
           return;
         }
         const data = await res.json();
         const dbId: string | undefined = data.item?.id;
         if (dbId) {
-          // Attach the DB item id so a later removal can target it directly,
-          // without a full re-fetch.
           const withId = (f: SmartFolder): SmartFolder => f.id !== folder.id ? f : {
             ...f,
             laws: f.laws.map(l => (l.slug === doc.slug && (l.type || "law") === docType)
               ? ({ ...l, _itemDbId: dbId } as SmartFolderLawItem)
               : l),
           };
-          // Signed-in only in this branch (see the `if (!isAuthenticated)
-          // return;` above) — server already has it, don't mirror to
-          // localStorage (THE RULE OF THIS PHASE).
-          setFolders(prev => prev.map(withId));
+          setFolders(prev => {
+            const synced = prev.map(withId);
+            dispatchFoldersChanged(synced);
+            return synced;
+          });
           setManagingFolder(prev => prev && prev.id === folder.id ? withId(prev) : prev);
         }
       }
     } catch (err) {
       console.error("[FolderSelectionModal] API error toggling item:", err);
+      setActionError(isRTL ? "تعذّر الاتصال بالخادم لحفظ التغييرات." : "Connection error while saving changes.");
       await loadFolders();
     }
-  }, [folders, isAuthenticated, updateFoldersState, loadFolders]);
+  }, [folders, isAuthenticated, isRTL, updateFoldersState, loadFolders]);
 
-  // Toggle item in folder (main view)
   const handleToggleFolder = (folderId: string) => {
-    if (!currentDoc) return;
+    if (!currentDoc?.slug) return;
     const folder = folders.find(f => f.id === folderId);
     if (!folder) return;
     toggleItemInFolder(folder, currentDoc);
   };
 
-  // Toggle item in modal search/recent lists
   const handleToggleItemInModal = (doc: ToggleDoc) => {
     if (!managingFolder) return;
     toggleItemInFolder(managingFolder, doc);
   };
 
-  // Create folder inside modal
   const handleCreateFolder = async () => {
-    if (!newFolderName.trim() || !currentDoc) return;
+    if (!newFolderName.trim() || !currentDoc || creatingFolder) return;
     const name = newFolderName.trim();
     const color = newFolderColor;
+    setActionError(null);
 
     if (isAuthenticated) {
+      setCreatingFolder(true);
       try {
         const res = await fetch("/api/library/folders", {
           method: "POST",
@@ -284,39 +278,43 @@ export default function FolderSelectionModal({
         });
         if (!res.ok) {
           console.error("[FolderSelectionModal] Failed to create folder via API");
+          setActionError(isRTL ? "تعذّر إنشاء المجلد. يرجى المحاولة مرة أخرى." : "Failed to create folder. Please try again.");
           return;
         }
         const data = await res.json();
-        let newFolder = mapApiFolderToSmartFolder(data.folder); // laws: []
+        let newFolder = mapApiFolderToSmartFolder(data.folder);
 
-        // Auto-add the current document — mirrors the guest path below, but
-        // needs its own request since folder creation has no "with item"
-        // endpoint.
-        const itemRes = await fetch("/api/library/folders/items", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            folderId: newFolder.id,
-            entityType: currentDoc.type || "law",
-            entityId: currentDoc.slug,
-            title: currentDoc.title,
-            titleEn: currentDoc.titleEn,
-            catId: currentDoc.catId,
-          }),
-        });
-        if (itemRes.ok) {
-          const itemData = await itemRes.json();
-          const withDbId: SmartFolderLawItem = { ...currentDoc, _itemDbId: itemData.item?.id };
-          newFolder = { ...newFolder, laws: [withDbId] };
-        } else {
-          console.error("[FolderSelectionModal] Folder created but failed to add the initial item");
+        if (currentDoc.slug) {
+          const itemRes = await fetch("/api/library/folders/items", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              folderId: newFolder.id,
+              entityType: currentDoc.type || "law",
+              entityId: currentDoc.slug,
+              title: currentDoc.title,
+              titleEn: currentDoc.titleEn,
+              catId: currentDoc.catId,
+            }),
+          });
+          if (itemRes.ok) {
+            const itemData = await itemRes.json();
+            const withDbId: SmartFolderLawItem = { ...currentDoc, _itemDbId: itemData.item?.id };
+            newFolder = { ...newFolder, laws: [withDbId] };
+          } else {
+            console.error("[FolderSelectionModal] Folder created but failed to add the initial item");
+            setActionError(isRTL ? "تم إنشاء المجلد ولكن تعذّرت إضافة المستند تلقائياً. اضغط على المجلد لإضافته." : "Folder created, but adding the document failed. Click the folder to retry.");
+          }
         }
 
-        updateFoldersState([...folders, newFolder]);
+        updateFoldersState([newFolder, ...folders]);
         setNewFolderName("");
         setShowCreateForm(false);
       } catch (err) {
         console.error("[FolderSelectionModal] API error creating folder:", err);
+        setActionError(isRTL ? "تعذّر الاتصال بالخادم لإنشاء المجلد." : "Connection error while creating folder.");
+      } finally {
+        setCreatingFolder(false);
       }
       return;
     }
@@ -328,15 +326,31 @@ export default function FolderSelectionModal({
       color,
       icon: "default",
       isDefault: false,
-      laws: [currentDoc], // auto-add current document!
+      laws: currentDoc.slug ? [currentDoc] : [],
       lastModified: Date.now()
     };
-    updateFoldersState([...folders, newFolder]);
+    updateFoldersState([newFolder, ...folders]);
     setNewFolderName("");
     setShowCreateForm(false);
   };
 
   if (!isOpen) return null;
+
+  const normalizedFolderQuery = normalizeSearch(folderQuery);
+  const matchingFolders = folders.filter(
+    f => !normalizedFolderQuery
+      || normalizeSearch(f.name).includes(normalizedFolderQuery)
+      || normalizeSearch(f.nameEn).includes(normalizedFolderQuery),
+  );
+
+  const normalizedModalQuery = normalizeSearch(modalQuery);
+  const matchingModalDocs = ALL_LIBRARY_DOCS
+    .filter(doc => activeTab === "all" || doc.type === activeTab)
+    .filter(doc =>
+      !normalizedModalQuery
+      || normalizeSearch(doc.title).includes(normalizedModalQuery)
+      || normalizeSearch(doc.titleEn).includes(normalizedModalQuery),
+    );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 print:hidden">
@@ -348,6 +362,25 @@ export default function FolderSelectionModal({
           isDark ? "bg-[#161b22] border-white/10 text-white" : "bg-white border-slate-200 text-gray-900"
         }`}
       >
+        {actionError && (
+          <div
+            role="alert"
+            className={`mb-3 px-3 py-2 rounded-xl border text-xs flex items-center justify-between gap-2 ${
+              isDark
+                ? "bg-red-950/40 border-red-500/30 text-red-300"
+                : "bg-red-50 border-red-200 text-red-700"
+            }`}
+          >
+            <span className="flex items-center gap-1.5">
+              <WarningCircle size={15} weight="fill" className="flex-shrink-0" />
+              {actionError}
+            </span>
+            <button onClick={() => setActionError(null)} className="opacity-70 hover:opacity-100">
+              <X size={13} weight="bold" />
+            </button>
+          </div>
+        )}
+
         {managingFolder ? (
           // ── Sub-view: Manage Folder Content ──
           <>
@@ -419,7 +452,6 @@ export default function FolderSelectionModal({
 
             {/* Scrollable list */}
             <div className="flex-1 overflow-y-auto space-y-4 pr-1">
-              {/* Folder Items */}
               {!modalQuery && (
                 <div className="space-y-2">
                   <span className={`block text-[10px] font-bold tracking-wider uppercase ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
@@ -461,7 +493,6 @@ export default function FolderSelectionModal({
                 </div>
               )}
 
-              {/* Recent viewed items */}
               {!modalQuery && activeTab === "all" && recentSessions.length > 0 && (
                 <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-white/[0.04]">
                   <span className={`block text-[10px] font-bold tracking-wider uppercase ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
@@ -498,50 +529,44 @@ export default function FolderSelectionModal({
                 </div>
               )}
 
-              {/* Search results from ALL_LIBRARY_DOCS */}
               {modalQuery && (
                 <div className="space-y-2">
                   <span className={`block text-[10px] font-bold tracking-wider uppercase ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
                     {isRTL ? "نتائج البحث في المكتبة" : "Library Search Results"}
                   </span>
                   <div className="space-y-2">
-                    {ALL_LIBRARY_DOCS
-                      .filter(doc => activeTab === "all" || doc.type === activeTab)
-                      .filter(doc => doc.title.includes(modalQuery) || doc.titleEn.toLowerCase().includes(modalQuery.toLowerCase()))
-                      .map((doc: any) => {
-                        const inFolder = managingFolder.laws.some(item => item.slug === doc.slug && (item.type || "law") === doc.type);
-                        return (
-                          <div
-                            key={`search-${doc.type}-${doc.slug}`}
-                            onClick={() => handleToggleItemInModal(doc)}
-                            className={`flex items-center justify-between p-2.5 rounded-xl border cursor-pointer transition-all ${
-                              inFolder
-                                ? isDark ? "bg-[#0B3D2E]/10 border-emerald-500/30 text-emerald-400" : "bg-emerald-50 border-emerald-200 text-emerald-900"
-                                : isDark ? "bg-white/[0.02] border-white/5 text-gray-300 hover:bg-white/5" : "bg-slate-50 border-slate-200 text-gray-700 hover:bg-slate-100"
-                            }`}
-                          >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <div className="flex-shrink-0">
-                                {doc.type === "order" ? <Scroll size={13} className="text-emerald-500" /> :
-                                 doc.type === "precedent" ? <Gavel size={13} className="text-purple-500" /> :
-                                 doc.type === "book" ? <BookOpen size={13} className="text-amber-500" /> :
-                                 <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: managingFolder.color }} />}
-                              </div>
-                              <span className="text-xs font-semibold truncate">{isRTL ? doc.title : doc.titleEn}</span>
+                    {matchingModalDocs.map((doc: any) => {
+                      const inFolder = managingFolder.laws.some(item => item.slug === doc.slug && (item.type || "law") === doc.type);
+                      return (
+                        <div
+                          key={`search-${doc.type}-${doc.slug}`}
+                          onClick={() => handleToggleItemInModal(doc)}
+                          className={`flex items-center justify-between p-2.5 rounded-xl border cursor-pointer transition-all ${
+                            inFolder
+                              ? isDark ? "bg-[#0B3D2E]/10 border-emerald-500/30 text-emerald-400" : "bg-emerald-50 border-emerald-200 text-emerald-900"
+                              : isDark ? "bg-white/[0.02] border-white/5 text-gray-300 hover:bg-white/5" : "bg-slate-50 border-slate-200 text-gray-700 hover:bg-slate-100"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="flex-shrink-0">
+                              {doc.type === "order" ? <Scroll size={13} className="text-emerald-500" /> :
+                               doc.type === "precedent" ? <Gavel size={13} className="text-purple-500" /> :
+                               doc.type === "book" ? <BookOpen size={13} className="text-amber-500" /> :
+                               <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: managingFolder.color }} />}
                             </div>
-                            <div className={`w-5 h-5 rounded-md border flex items-center justify-center flex-shrink-0 ${
-                              inFolder
-                                ? "bg-emerald-500 border-emerald-500 text-white"
-                                : isDark ? "border-white/20" : "border-gray-300"
-                            }`}>
-                              {inFolder ? <Check size={12} weight="bold" /> : <Plus size={10} weight="bold" />}
-                            </div>
+                            <span className="text-xs font-semibold truncate">{isRTL ? doc.title : doc.titleEn}</span>
                           </div>
-                        );
-                      })}
-                    {ALL_LIBRARY_DOCS
-                      .filter(doc => activeTab === "all" || doc.type === activeTab)
-                      .filter(doc => doc.title.includes(modalQuery) || doc.titleEn.toLowerCase().includes(modalQuery.toLowerCase())).length === 0 && (
+                          <div className={`w-5 h-5 rounded-md border flex items-center justify-center flex-shrink-0 ${
+                            inFolder
+                              ? "bg-emerald-500 border-emerald-500 text-white"
+                              : isDark ? "border-white/20" : "border-gray-300"
+                          }`}>
+                            {inFolder ? <Check size={12} weight="bold" /> : <Plus size={10} weight="bold" />}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {matchingModalDocs.length === 0 && (
                       <p className="text-[11px] text-center text-gray-500 py-6">
                         {isRTL ? "لم يتم العثور على نتائج للبحث." : "No results found."}
                       </p>
@@ -573,26 +598,26 @@ export default function FolderSelectionModal({
               </button>
             </div>
 
-            {/* Filter input */}
-            <div className="relative mb-3 flex-shrink-0">
-              <input
-                type="text"
-                value={folderQuery}
-                onChange={e => setFolderQuery(e.target.value)}
-                placeholder={isRTL ? "تصفية المجلدات باسم المجلد..." : "Filter folders by name..."}
-                className={`w-full text-xs pl-3 pr-8 py-2 rounded-xl border outline-none ${
-                  isDark
-                    ? "bg-[#0c0f12] border-white/5 text-white placeholder-gray-600 focus:border-[#C8A762]/40"
-                    : "bg-slate-50 border-slate-200 text-gray-900 placeholder-gray-400 focus:border-[#0B3D2E]"
-                }`}
-              />
-              <MagnifyingGlass size={14} className={`absolute top-1/2 -translate-y-1/2 ${isRTL ? "left-3" : "right-3"} text-gray-400`} />
-            </div>
+            {folders.length > 0 && (
+              <div className="relative mb-3 flex-shrink-0">
+                <input
+                  type="text"
+                  value={folderQuery}
+                  onChange={e => setFolderQuery(e.target.value)}
+                  placeholder={isRTL ? "تصفية المجلدات باسم المجلد..." : "Filter folders by name..."}
+                  className={`w-full text-xs pl-3 pr-8 py-2 rounded-xl border outline-none ${
+                    isDark
+                      ? "bg-[#0c0f12] border-white/5 text-white placeholder-gray-600 focus:border-[#C8A762]/40"
+                      : "bg-slate-50 border-slate-200 text-gray-900 placeholder-gray-400 focus:border-[#0B3D2E]"
+                  }`}
+                />
+                <MagnifyingGlass size={14} className={`absolute top-1/2 -translate-y-1/2 ${isRTL ? "left-3" : "right-3"} text-gray-400`} />
+              </div>
+            )}
 
             {/* List */}
             <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-1 flex-1">
-              {/* Loading skeleton — a request in flight, not an empty list. */}
-              {isLoading && folders.length === 0 && (
+              {(isLoading || authPending) && folders.length === 0 && (
                 <div className="space-y-2">
                   {[1, 2, 3].map(i => (
                     <div key={i} className={`h-12 rounded-xl animate-pulse ${isDark ? "bg-white/[0.04]" : "bg-gray-100"}`} />
@@ -600,8 +625,7 @@ export default function FolderSelectionModal({
                 </div>
               )}
 
-              {/* The read failed — say so, offer a retry. Not "no folders". */}
-              {!isLoading && loadFailed && (
+              {!isLoading && !authPending && loadFailed && (
                 <div className="py-8 flex flex-col items-center gap-2 text-center">
                   <WarningCircle size={26} weight="duotone" className="text-amber-500" />
                   <p className={`text-xs font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>تعذّرت قراءة مجلداتك</p>
@@ -616,58 +640,57 @@ export default function FolderSelectionModal({
                 </div>
               )}
 
-              {!loadFailed && (!isLoading || folders.length > 0) && folders
-                .filter(f => f.name.includes(folderQuery) || f.nameEn.toLowerCase().includes(folderQuery.toLowerCase()))
-                .map(folder => {
-                  const inFolder = isItemInFolder(folder, currentDoc);
-                  return (
+              {!loadFailed && ((!isLoading && !authPending) || folders.length > 0) && matchingFolders.map(folder => {
+                const inFolder = isItemInFolder(folder, currentDoc);
+                return (
+                  <div
+                    key={folder.id}
+                    className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
+                      inFolder
+                        ? isDark ? "bg-[#0B3D2E]/10 border-emerald-500/30 text-emerald-400" : "bg-emerald-50 border-emerald-200 text-emerald-900"
+                        : isDark ? "bg-white/[0.02] border-white/5 text-gray-300 hover:bg-white/5" : "bg-slate-50 border-slate-200 text-gray-700 hover:bg-slate-100"
+                    }`}
+                  >
                     <div
-                      key={folder.id}
-                      className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
-                        inFolder
-                          ? isDark ? "bg-[#0B3D2E]/10 border-emerald-500/30 text-emerald-400" : "bg-emerald-50 border-emerald-200 text-emerald-900"
-                          : isDark ? "bg-white/[0.02] border-white/5 text-gray-300 hover:bg-white/5" : "bg-slate-50 border-slate-200 text-gray-700 hover:bg-slate-100"
-                      }`}
+                      onClick={() => handleToggleFolder(folder.id)}
+                      className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer"
                     >
+                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: folder.color }} />
+                      <span className="text-xs font-bold truncate">{isRTL ? folder.name : folder.nameEn}</span>
+                      <span className="text-[9px] px-1 rounded bg-white/5 text-zinc-500 font-mono flex-shrink-0">
+                        {folder.laws.length}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2.5">
+                      <button
+                        onClick={() => setManagingFolder(folder)}
+                        className={`p-1 rounded-lg transition ${
+                          isDark ? "hover:bg-white/5 text-gray-500 hover:text-white" : "hover:bg-slate-200 text-slate-400 hover:text-gray-800"
+                        }`}
+                        title={isRTL ? "إدارة محتوى المجلد" : "Manage folder content"}
+                      >
+                        <Plus size={13} weight="bold" />
+                      </button>
                       <div
                         onClick={() => handleToggleFolder(folder.id)}
-                        className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer"
+                        className={`w-5 h-5 rounded-md border flex items-center justify-center cursor-pointer ${
+                          inFolder
+                            ? "bg-emerald-500 border-emerald-500 text-white"
+                            : isDark ? "border-white/20" : "border-gray-300"
+                        }`}
                       >
-                        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: folder.color }} />
-                        <span className="text-xs font-bold truncate">{isRTL ? folder.name : folder.nameEn}</span>
-                        <span className="text-[9px] px-1 rounded bg-white/5 text-zinc-500 font-mono flex-shrink-0">
-                          {folder.laws.length}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2.5">
-                        {/* Manage content inside modal button */}
-                        <button
-                          onClick={() => setManagingFolder(folder)}
-                          className={`p-1 rounded-lg transition ${
-                            isDark ? "hover:bg-white/5 text-gray-500 hover:text-white" : "hover:bg-slate-200 text-slate-400 hover:text-gray-800"
-                          }`}
-                          title={isRTL ? "إدارة محتوى المجلد" : "Manage folder content"}
-                        >
-                          <Plus size={13} weight="bold" />
-                        </button>
-                        <div
-                          onClick={() => handleToggleFolder(folder.id)}
-                          className={`w-5 h-5 rounded-md border flex items-center justify-center cursor-pointer ${
-                            inFolder
-                              ? "bg-emerald-500 border-emerald-500 text-white"
-                              : isDark ? "border-white/20" : "border-gray-300"
-                          }`}
-                        >
-                          {inFolder && <Check size={12} weight="bold" />}
-                        </div>
+                        {inFolder && <Check size={12} weight="bold" />}
                       </div>
                     </div>
-                  );
-                })}
+                  </div>
+                );
+              })}
 
-              {!isLoading && !loadFailed && folders.filter(f => f.name.includes(folderQuery) || f.nameEn.toLowerCase().includes(folderQuery.toLowerCase())).length === 0 && (
-                <p className={`text-xs text-center py-6 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-                  {isRTL ? "لا توجد مجلدات مطابقة." : "No matching folders found."}
+              {!isLoading && !authPending && !loadFailed && matchingFolders.length === 0 && (
+                <p className={`text-xs text-center py-4 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
+                  {folders.length === 0
+                    ? (isRTL ? "لا توجد لديك مجلدات بعد — أنشئ أول مجلد لحفظ هذا المستند فيه مباشرة:" : "No folders yet — create your first folder below to save this document:")
+                    : (isRTL ? "لا توجد مجلدات مطابقة." : "No matching folders found.")}
                 </p>
               )}
             </div>
@@ -679,35 +702,49 @@ export default function FolderSelectionModal({
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
+                      autoFocus
                       value={newFolderName}
                       onChange={e => setNewFolderName(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleCreateFolder();
+                        } else if (e.key === "Escape") {
+                          setShowCreateForm(false);
+                        }
+                      }}
                       placeholder={isRTL ? "اسم مجلد جديد..." : "New folder name..."}
                       className={`flex-1 text-xs px-3 py-2 rounded-xl border outline-none ${
-                        isDark ? "bg-[#0c0f12] border-white/5 text-white" : "bg-slate-50 border-slate-200 text-gray-900"
+                        isDark ? "bg-[#0c0f12] border-white/5 text-white focus:border-[#C8A762]/40" : "bg-slate-50 border-slate-200 text-gray-900 focus:border-[#0B3D2E]"
                       }`}
                     />
                     <button
                       onClick={handleCreateFolder}
-                      disabled={!newFolderName.trim()}
+                      disabled={!newFolderName.trim() || creatingFolder}
                       className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${
-                        newFolderName.trim()
+                        newFolderName.trim() && !creatingFolder
                           ? "bg-[#0B3D2E] text-white"
                           : isDark ? "bg-white/5 text-gray-600 cursor-not-allowed" : "bg-gray-100 text-gray-400 cursor-not-allowed"
                       }`}
                     >
-                      {isRTL ? "إنشاء" : "Create"}
+                      {creatingFolder
+                        ? (isRTL ? "جارٍ الحفظ..." : "Saving...")
+                        : (isRTL ? "إنشاء وحفظ" : "Create & Save")}
                     </button>
-                    <button
-                      onClick={() => setShowCreateForm(false)}
-                      className={`text-xs ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-gray-400 hover:text-gray-600"}`}
-                    >
-                      {isRTL ? "إلغاء" : "Cancel"}
-                    </button>
+                    {folders.length > 0 && (
+                      <button
+                        onClick={() => setShowCreateForm(false)}
+                        className={`text-xs ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-gray-400 hover:text-gray-600"}`}
+                      >
+                        {isRTL ? "إلغاء" : "Cancel"}
+                      </button>
+                    )}
                   </div>
                   <div className="flex gap-1.5 overflow-x-auto pb-1">
                     {FOLDER_COLORS.map(c => (
                       <button
                         key={c.id}
+                        type="button"
                         onClick={() => setNewFolderColor(c.hex)}
                         className={`w-5 h-5 rounded-full transition-all duration-200 flex-shrink-0 flex items-center justify-center ${
                           newFolderColor === c.hex ? "ring-2 ring-offset-2 scale-110" : "hover:scale-110"

@@ -3,7 +3,8 @@ import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { checkLibraryAccess } from '@/lib/access-control';
 import { libraryGate } from '@/lib/library-gate';
 import { selectAllPages } from '@/lib/supabase/selectAllPages';
-import { buildBookSeries, type BookSeriesInfo, type VolumeRow } from '@/lib/library/bookVolumes';
+import { BOOK_SERIES_FEATURE, bookVolumeColumns, buildBookSeries, type BookSeriesInfo, type VolumeRow } from '@/lib/library/bookVolumes';
+import { readWithOptionalFeatures } from '@/lib/library/optionalColumn';
 import { FREE_PAGES, FREE_PAGES_SCAN, feqhLockFrom, type BlockPlace } from '@/lib/library/freePages';
 import { cleanBookText, firstBlockOrderBySection, normalizeHashiyah, planBlocksPage, planBlocksRequest, shapeToc } from './_shape';
 
@@ -84,15 +85,18 @@ export async function GET(
     // a failure means no switcher, never a failed book.
     const seriesPromise: Promise<BookSeriesInfo | null> = includeToc
       ? (async () => {
-          const res = await selectAllPages<VolumeRow>((from, to) =>
-            supabase
-              .schema('library')
-              .from('feqh_books')
-              .select('id, title, total_volumes, author')
-              .order('id', { ascending: true })
-              .range(from, to) as unknown as
-              Promise<{ data: VolumeRow[] | null; error: { message: string } | null }>,
-          );
+          // Owner ٢٦٢: with series_id / volume_number when the database has
+          // them (20261026_51); before it, the same read without them.
+          const res = await readWithOptionalFeatures((on) =>
+            selectAllPages<VolumeRow>((from, to) =>
+              supabase
+                .schema('library')
+                .from('feqh_books')
+                .select(bookVolumeColumns(on))
+                .order('id', { ascending: true })
+                .range(from, to) as unknown as
+                Promise<{ data: VolumeRow[] | null; error: { message: string } | null }>,
+            ), [BOOK_SERIES_FEATURE]);
           if (res.error) {
             console.warn(`[Books] series lookup failed for "${slug}" — no volume switcher:`, res.error);
             return null;

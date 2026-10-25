@@ -6,6 +6,7 @@ import { libraryGate } from '@/lib/library-gate';
 import { isFreeLibraryItem } from '@/lib/library-item-access';
 import { isPrincipleLocked, planPrincipleWindow } from './_window';
 import { buildCollectionSeries, type CollectionSeriesInfo } from '@/lib/library/precedentVolumes';
+import { withCleanCardRows } from '@/lib/library/lawSummaryVisibility';
 
 /** A runaway guard for one series' volumes (the largest today: 30). */
 const SERIES_MAX_VOLUMES = 200;
@@ -193,7 +194,13 @@ export async function GET(
           session_date: p.session_date,
           decision_number: p.decision_number,
           reference: p.reference,
-          text: isLocked ? truncate(p.text, 150) : p.text,
+          // Owner ٢٥٩ (أ): the card table a court precedent's text opens with
+          // («بطاقة تعريف السابقة القضائية») without its «غير متوفر» rows, for
+          // every viewer — cleaned first, then cut: the 150-character rule stands.
+          text: (() => {
+            const text = typeof p.text === 'string' ? withCleanCardRows(p.text) : p.text;
+            return isLocked ? truncate(text, 150) : text;
+          })(),
           // The page indexes and searches on this; it was never sent, so the
           // page threw on `.slice` of undefined.
           classification_keywords: Array.isArray(p.classification_keywords)

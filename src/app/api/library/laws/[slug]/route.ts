@@ -8,9 +8,9 @@ import { lawStatusForDetail } from '@/app/laws/law-status';
 import { resolveParentLawLink, type ParentLawCandidate } from './_resolve-parent-law';
 import { orderLawChapters } from './_order-chapters';
 import { articleDisplayLabel, articleLocatorText } from './_article-label';
-import { lawOfficialMeta, TIER_SHAPED_CACHE_CONTROL } from './_official-meta';
+import { lawOfficialLink, lawOfficialMeta, TIER_SHAPED_CACHE_CONTROL } from './_official-meta';
 import { splitStoredPreamble } from '@/lib/library/splitPreamble';
-import { lawReaderExtras } from '@/lib/library/lawSummaryVisibility';
+import { lawReaderExtras, withCleanCardRows } from '@/lib/library/lawSummaryVisibility';
 import { selectAllPages } from '@/lib/supabase/selectAllPages';
 
 /**
@@ -282,11 +282,12 @@ export async function GET(
     // (src/lib/library/splitPreamble.ts).
     const { preamble, regulationPreamble } = splitStoredPreamble(law.preamble);
     // N2.1: the موجز and the identity card, lifted out of the law part of the
-    // preamble for the reader's موجز box and sidebar card. Sent only when
-    // LAW_SUMMARY_AUDIENCE lets this viewer see them (owner ٢٦٠ open:
-    // subscribers — hasFullLibraryAccess, never the whitelist, the preamble's
-    // own rule); the preamble shown then leaves them out, so nothing appears
-    // twice (src/lib/library/lawSummaryVisibility.ts).
+    // preamble for the reader's موجز box and sidebar card. Owner ٢٦٠ (أ):
+    // LAW_SUMMARY_AUDIENCE = everyone; a non-subscriber's card loses its
+    // T28-22 rows (cardForViewer — keyed on hasFullLibraryAccess, never the
+    // whitelist). The preamble shown leaves them out, so the card is in the
+    // side column only and the ديباجة in the middle column only
+    // (src/lib/library/lawSummaryVisibility.ts).
     const readerExtras = lawReaderExtras(preamble, isSubscriber);
 
     // ── Build the flat "اللائحة وحدها" view — one sorted list per secondary
@@ -349,6 +350,9 @@ export async function GET(
       issuanceDate: officialMeta.issuanceDate,
       source: officialMeta.source,
       officialSourceUrl: officialMeta.officialSourceUrl,
+      // Owner ٢٩٧: the law's official page, for EVERY viewer (beside الجهة
+      // المصدرة); '' when the law has no http(s) official_source_url.
+      officialLink: lawOfficialLink(law),
       // {issueNumber, publicationDate, url} from the gazette_* columns only;
       // null when they are all empty (every law, 2026-09-28) or when locked.
       gazette: officialMeta.gazette,
@@ -372,8 +376,12 @@ export async function GET(
       // the decree itself — measured on 5,477 laws, 2026-09-28. Sending it to
       // a non-subscriber would undo the masking above, so it goes with it.
       preamble: officialMeta.officialMetaLocked ? '' : readerExtras.preamble,
-      regulationPreamble: officialMeta.officialMetaLocked ? '' : regulationPreamble,
-      preambleLocked: officialMeta.officialMetaLocked && !!(preamble.trim() || regulationPreamble.trim()),
+      // Owner ٢٥٩ (أ): the regulation's own card, if it carries one, as the law card's rows.
+      regulationPreamble: officialMeta.officialMetaLocked ? '' : withCleanCardRows(regulationPreamble),
+      // Owner ٢٦٠: the card and the موجز are lifted out for every viewer now,
+      // so a lock row is promised only for the ديباجة text left after them —
+      // never for a preamble that was only the card and the law's title.
+      preambleLocked: officialMeta.officialMetaLocked && !!(readerExtras.preamble.trim() || regulationPreamble.trim()),
       // N2.1: omitted (not empty) for a viewer the flag does not admit.
       ...(readerExtras.summary ? { summary: readerExtras.summary, summaryLabel: readerExtras.summaryLabel } : {}),
       ...(readerExtras.metadata_card ? { metadata_card: readerExtras.metadata_card } : {}),

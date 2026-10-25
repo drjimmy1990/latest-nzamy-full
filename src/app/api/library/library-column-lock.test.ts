@@ -798,7 +798,7 @@ test("routes that need locked columns read them with the service role and keep m
   assert.match(decree, /await supabase\s*\.schema\('library'\)\s*\.from\('decrees_circulars'\)\s*\.select\(DECREE_COLUMNS\)\s*\.eq\('id', id\)/);
   assert.match(decree, /serverOnly\s*\.schema\('library'\)\s*\.from\('decrees_circulars'\)\s*\.select\('preamble'\)\s*\.eq\('id', id\)/);
   assert.match(decree, /const \[probe, isSubscriber\] = await Promise\.all\(\[\s*checkLibraryAccess\(userId, id, 0, "decrees"\),\s*hasFullLibraryAccess\(userId\),\s*\]\);/);
-  assert.match(decree, /preamble: isSubscriber \? preamble : '',/);
+  assert.match(decree, /preamble: isSubscriber \? withCleanCardRows\(preamble\) : '',/);
   assert.match(decree, /preambleLocked: !isSubscriber && preamble\.trim\(\) !== '',/);
   assert.doesNotMatch(decree, /decree\.preamble|\.select\('\*'\)/);
   assert.match(decree, /'Cache-Control': TIER_SHAPED_CACHE_CONTROL/);
@@ -825,7 +825,7 @@ test("routes that need locked columns read them with the service role and keep m
   // service role; the per-principle mask is the paywall.
   assert.match(precedent, /const serverOnly = await createServiceClient\(\);\s*const principlesQuery = await serverOnly\s*\.schema\('library'\)\s*\.from\('principles'\)/);
   assert.match(precedent, /const head = await serverOnly\s*\.schema\('library'\)\s*\.from\('principles'\)/);
-  assert.match(precedent, /text: isLocked \? truncate\(p\.text, 150\) : p\.text,/);
+  assert.match(precedent, /return isLocked \? truncate\(text, 150\) : text;/);
   assert.match(precedent, /paragraphs: isLocked\s*\? \[\]/);
   assert.match(precedent, /details: isLocked \? null : \{/);
 });

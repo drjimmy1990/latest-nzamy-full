@@ -15,6 +15,8 @@ import {
   isPastEndError,
   isTimeoutError,
   isMissingFunctionError,
+  combineSearchOutcomes,
+  rpcPageOrder,
   rpcPageResult,
   lawFetchWindow,
   lawPageArticles,
@@ -24,7 +26,6 @@ import {
   pastEndTotal,
   queryWantsTitleHits,
   rankLawTitleCandidates,
-  rankedLawOrderApplies,
   readPage,
   resolveSectionCount,
   scoreLawTitle,
@@ -35,6 +36,8 @@ import {
   titlePhrasePattern,
   foldLettersForIlike,
   titlePrefixPattern,
+  titleDigitVariantQueries,
+  MAX_TITLE_DIGIT_VARIANTS,
   titleStemPatterns,
   uncountedPage,
   type LawTitleCandidate,
@@ -360,9 +363,23 @@ test("section=laws pages: no slot for a missing hit, every article listed once, 
   assert.deepEqual(lawFetchWindow(2, 50, 0), { from: 50, size: 50 });
 });
 
-test("the ranked RPC orders only the section=all preview", () => {
-  assert.equal(rankedLawOrderApplies("all"), true);
-  for (const s of ["laws", "precedents", "orders", "feqh"] as const) assert.equal(rankedLawOrderApplies(s), false);
+test("owner ٢٧٧: a relevance window's order comes from its own `ranked` flag", () => {
+  assert.equal(rpcPageOrder({ data: { count: 3, ranked: true, rows: [] }, error: null }), "relevance");
+  // above the function's ranking cap, a sibling id window, a failure, junk
+  assert.equal(rpcPageOrder({ data: { count: 7500, ranked: false, rows: [] }, error: null }), "id");
+  assert.equal(rpcPageOrder({ data: { count: 3, rows: [] }, error: null }), "id");
+  assert.equal(rpcPageOrder({ data: { ranked: true }, error: { code: "57014" } }), "id");
+  assert.equal(rpcPageOrder({ data: null, error: null }), "id");
+  assert.equal(rpcPageOrder({ data: { ranked: "true" }, error: null }), "id");
+});
+
+test("owner ٢٧٧: the body names each answered section's order; a degraded one has none", () => {
+  const ok = (order?: "relevance" | "id") => ({ ok: true as const, results: [], count: 1, exact: true, ...(order ? { order } : {}) });
+  const all = combineSearchOutcomes("all", { laws: ok("relevance"), precedents: ok("id"), orders: { ok: false }, feqh: ok() }, { page: 1, query: "q" });
+  assert.equal(all.status, 200);
+  assert.deepEqual(all.body.order, { laws: "relevance", precedents: "id", feqh: "id" });
+  const one = combineSearchOutcomes("feqh", { feqh: ok("relevance") }, { page: 2, query: "q" });
+  assert.deepEqual(one.body.order, { feqh: "relevance" });
 });
 
 // The literal error supabase-js returned for orders «الحسابات البنكية» page 2 (self-hosted, 2026-09-25).
@@ -496,4 +513,30 @@ test("the fold stays positional — «هيئة» no longer matches «لائحة�
   assert.equal(toRe(titlePhrasePattern("الهيئة")!).test("اللائحة التنفيذية لنظام العمل"), false);
   assert.ok(toRe(titlePhrasePattern("الهيئه")!).test("نظام الهيئة العامة"));
   assert.equal(foldLettersForIlike("العمل"), "العمل");
+});
+
+test("titleDigitVariantQueries emits typed, Western and Arabic-Indic query forms for title lookups", () => {
+  assert.deepEqual(titleDigitVariantQueries("نظام العمل"), ["نظام العمل"]);
+  assert.deepEqual(titleDigitVariantQueries("قرار ١٤٤٥"), ["قرار ١٤٤٥", "قرار 1445"]);
+  assert.deepEqual(titleDigitVariantQueries("قرار 1445"), ["قرار 1445", "قرار ١٤٤٥"]);
+});
+
+test("digit variants are capped (bounded title-lookup fan-out) and keep the ILIKE allow-list", () => {
+  assert.equal(MAX_TITLE_DIGIT_VARIANTS, 3);
+  // Mixed scripts and Extended Arabic-Indic are the only inputs that reach 3.
+  assert.deepEqual(titleDigitVariantQueries("قرار ١٤٤5"), ["قرار ١٤٤5", "قرار 1445", "قرار ١٤٤٥"]);
+  assert.deepEqual(titleDigitVariantQueries("م/۱۴"), ["م/۱۴", "م/14", "م/١٤"]);
+  for (const q of ["قرار ١٤٤5", "م/۱۴", "1445", "٢٠ لعام ١٤٤٣", "نظام العمل 1"]) {
+    assert.ok(titleDigitVariantQueries(q).length <= MAX_TITLE_DIGIT_VARIANTS, q);
+  }
+  // A variant only swaps digits, so it passes the same ILIKE allow-list as the
+  // query itself: filter syntax gets no title pattern in any script.
+  for (const q of ["1445%", "1445_", "1445*", "1445,id.eq.x", "(1445)", "1445\\", "١٤٤٥.", "1445 نظام"]) {
+    const typed = titlePhrasePattern(q);
+    for (const v of titleDigitVariantQueries(q)) {
+      assert.equal(titlePhrasePattern(v) === null, typed === null, `${q} → ${v}`);
+      const pat = titlePhrasePattern(v);
+      if (pat) assert.match(pat.slice(1, -1), /^[\p{L}\p{N} _]+$/u, v);
+    }
+  }
 });

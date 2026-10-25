@@ -206,3 +206,98 @@ test("a book-title search hit keeps the series size the API sent", () => {
   assert.equal(cards[0].volumesLabel, "4 مجلدات");
   assert.equal(cards[1].volumesLabel, "");
 });
+
+// ── Owner ٢٦٢: the source's series_id / volume_number (20261026_51) ─────────
+
+test("series_id groups the volumes whatever their titles say; volume_number orders and labels them", async () => {
+  const { groupBookVolumes, buildBookSeries } = await import("./bookVolumes.ts");
+  const rows = [
+    { id: "w-3", title: "الوسيط — التأمينات", author: "السنهوري", series_id: "sanhuri-alwasit", volume_number: 10 },
+    { id: "w-1", title: "الوسيط — مصادر الالتزام", author: "السنهوري", series_id: "sanhuri-alwasit", volume_number: 1 },
+    { id: "solo", title: "كتاب منفرد", author: "x" },
+  ];
+  const entries = groupBookVolumes(rows);
+  assert.equal(entries.length, 2);
+  const series = entries[0];
+  assert.equal(series.kind, "series");
+  if (series.kind === "series") {
+    assert.deepEqual(series.volumes.map((v) => v.id), ["w-1", "w-3"]);
+    assert.equal(series.key, "series:sanhuri-alwasit\u0000السنهوري");
+  }
+  const info = buildBookSeries(rows, "w-3");
+  assert.deepEqual(info?.volumes.map((v) => [v.id, v.label]), [["w-1", "الجزء 1"], ["w-3", "الجزء 10"]]);
+  assert.equal(buildBookSeries(rows, "solo"), null);
+});
+
+test("an untagged volume joins the tagged series of the same base title and author — not split in two", async () => {
+  const { groupBookVolumes } = await import("./bookVolumes.ts");
+  const rows = [
+    { id: "i-1", title: "الإنصاف — الجزء 1", author: "المرداوي", series_id: "mardawi-insaf" },
+    { id: "i-2", title: "الإنصاف — الجزء 2", author: "المرداوي" },
+    { id: "i-3", title: "الإنصاف — الجزء 3", author: "المرداوي", series_id: "mardawi-insaf" },
+  ];
+  const entries = groupBookVolumes(rows);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].kind === "series" && entries[0].count, 3);
+});
+
+test("two different tags on one base title: no adoption, the untagged row keeps the title rule", async () => {
+  const { groupBookVolumes } = await import("./bookVolumes.ts");
+  const rows = [
+    { id: "a-1", title: "المغني — الجزء 1", author: "ابن قدامة", series_id: "s-a" },
+    { id: "b-1", title: "المغني — الجزء 2", author: "ابن قدامة", series_id: "s-b" },
+    { id: "u-1", title: "المغني — الجزء 3", author: "ابن قدامة" },
+  ];
+  const entries = groupBookVolumes(rows);
+  assert.deepEqual(entries.map((e) => e.kind), ["single", "single", "single"]);
+});
+
+test("a lone tagged volume is a single book; no series_id anywhere → today's title rule, same keys", async () => {
+  const { groupBookVolumes } = await import("./bookVolumes.ts");
+  assert.deepEqual(groupBookVolumes([{ id: "x", title: "الفروع — الجزء 1", author: "ابن مفلح", series_id: "furu" }]).map((e) => e.kind), ["single"]);
+  const untagged = groupBookVolumes([
+    { id: "f-1", title: "الفروع — الجزء 1", author: "ابن مفلح" },
+    { id: "f-2", title: "الفروع — الجزء 2", author: "ابن مفلح" },
+  ]);
+  assert.equal(untagged.length, 1);
+  assert.equal(untagged[0].kind === "series" && untagged[0].key, "الفروع\u0000ابن مفلح");
+});
+
+test("every volume-grouping read names series_id / volume_number as an optional feature", async () => {
+  const { readFileSync } = await import("node:fs");
+  const pathMod = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const root = pathMod.join(pathMod.dirname(fileURLToPath(import.meta.url)), "../../..");
+  const read = (p: string) => readFileSync(pathMod.join(root, p), "utf8");
+  const { bookVolumeColumns, BOOK_SERIES_FEATURE } = await import("./bookVolumes.ts");
+  assert.equal(bookVolumeColumns(new Set()), "id, title, total_volumes, author");
+  assert.equal(bookVolumeColumns(new Set([BOOK_SERIES_FEATURE.key])), "id, title, total_volumes, author, series_id, volume_number");
+  for (const f of [
+    "src/app/api/library/books/[slug]/route.ts",
+    "src/app/api/library/scoped-search/route.ts",
+    "src/app/api/library/search/bookTitleHits.ts",
+    "src/app/api/library/init/route.ts",
+  ]) {
+    const src = read(f);
+    assert.match(src, /bookVolumeColumns\(on/, f);
+    assert.match(src, /BOOK_SERIES_FEATURE/, f);
+  }
+});
+
+test("a series_id reused for another work (another author) never merges the two", async () => {
+  const { groupBookVolumes, buildBookSeries } = await import("./bookVolumes.ts");
+  const rows = [
+    { id: "a-1", title: "الوسيط — الجزء 1", author: "السنهوري", series_id: "alwasit", volume_number: 1 },
+    { id: "b-1", title: "الوسيط — الجزء 1", author: "الزحيلي", series_id: "alwasit", volume_number: 1 },
+    { id: "a-2", title: "الوسيط — الجزء 2", author: " السنهوري ", series_id: "alwasit", volume_number: 2 },
+    { id: "b-2", title: "الوسيط — الجزء 2", author: "الزحيلي", series_id: "alwasit", volume_number: 2 },
+    // Untagged: adopts the tag of the volumes by the same author only.
+    { id: "a-3", title: "الوسيط — الجزء 3", author: "السنهوري" },
+  ];
+  const entries = groupBookVolumes(rows);
+  assert.deepEqual(
+    entries.map((e) => (e.kind === "series" ? [e.author, e.volumes.map((v) => v.id)] : ["single", e.book.id])),
+    [["السنهوري", ["a-1", "a-2", "a-3"]], ["الزحيلي", ["b-1", "b-2"]]],
+  );
+  assert.deepEqual(buildBookSeries(rows, "b-2")?.volumes.map((v) => v.id), ["b-1", "b-2"]);
+});

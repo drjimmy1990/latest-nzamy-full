@@ -576,7 +576,13 @@ function LawSystemPageContent() {
     const q = jumpQuery.trim();
     if (!q) return null; // null = no filter, show full chapter tree
     const normalize = (s: string) =>
-      s.replace(/[أإآا]/g, "ا").replace(/[ةه]/g, "ه").replace(/[يى]/g, "ي").toLowerCase();
+      s
+        .replace(/[أإآا]/g, "ا")
+        .replace(/[ةه]/g, "ه")
+        .replace(/[يى]/g, "ي")
+        .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
+        .replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
+        .toLowerCase();
     const nq = normalize(q);
     return allArticles.filter(a => {
       const mergedReg = getMergedReg(a);

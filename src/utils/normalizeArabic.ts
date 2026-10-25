@@ -34,14 +34,21 @@ export { normalizeDigits } from './normalizeDigits.ts';
  * Example:
  *   normalizeSearch('الإثبات ١٤٤٤') → 'الاثبات 1444'
  */
+const ARABIC_INDIC_DIGITS = '٠١٢٣٤٥٦٧٨٩';
+const EXTENDED_ARABIC_INDIC_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
+
+export function toWesternDigits(text: string): string {
+  return text
+    .replace(/[٠-٩]/g, (d) => String(ARABIC_INDIC_DIGITS.indexOf(d)))
+    .replace(/[۰-۹]/g, (d) => String(EXTENDED_ARABIC_INDIC_DIGITS.indexOf(d)));
+}
+
+export function toArabicIndicDigits(text: string): string {
+  return toWesternDigits(text).replace(/[0-9]/g, (d) => ARABIC_INDIC_DIGITS[Number(d)]);
+}
+
 export function normalizeSearch(text: string): string {
-  // First normalize Arabic characters
-  let result = normalizeArabic(text);
-  // Then normalize digits (Arabic-Indic → Western)
-  result = result
-    .replace(/[٠١٢٣٤٥٦٧٨٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
-    .replace(/[۰۱۲۳۴۵۶۷۸۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)));
-  return result;
+  return toWesternDigits(normalizeArabic(text));
 }
 
 /**
@@ -172,13 +179,16 @@ export const MAX_QUERY_SPELLING_VARIANTS = 48;
 /**
  * The spellings of one query word that the stored text may use (T28-11: «نظام
  * الاثبات» found nothing because the corpus writes «الإثبات»). The FTS index
- * is built with `library.arabic` = `simple`, which does no Arabic folding, so
- * the query names each plausible stored spelling instead:
+ * is built with `library.arabic` = `simple`, which does no Arabic or numeral
+ * folding, so the query names each plausible stored spelling instead:
  *   - the alef that opens the word, or follows its «ال»: ا / أ / إ / آ
  *     («اثبات» → «إثبات», «الاثبات» → «الإثبات», «الغاء» → «إلغاء», «الا» → «إلا»);
- *   - a final ة ↔ ه and a final ى ↔ ي (words of 3+ letters).
+ *   - a final ة ↔ ه and a final ى ↔ ي (words of 3+ letters);
+ *   - bidirectional numeral forms: Arabic-Indic (٠-٩) ↔ Western (0-9) (plus
+ *     Extended Arabic-Indic ۰-۹ → both), so «١٤٤٥» matches stored «1445» and
+ *     «1445» matches stored «١٤٤٥».
  * Hamza on waw/yaa (ؤ/ئ) is left alone. The word as typed is always first;
- * a word with no such letter comes back alone, unchanged.
+ * a word with no variant letter or digit comes back alone, unchanged.
  */
 export function arabicSpellingVariants(word: string): string[] {
   const chars = Array.from(word);
@@ -201,32 +211,46 @@ export function arabicSpellingVariants(word: string): string[] {
   if (chars.length >= 3 && FINAL_SWAP[chars[last]]) {
     slots.push({ at: last, options: [chars[last], FINAL_SWAP[chars[last]]] });
   }
-  if (slots.length === 0) return [word];
 
-  // Every combination, fewest changed letters first (then generation order).
-  let combos: Array<{ chars: string[]; changes: number }> = [{ chars, changes: 0 }];
-  for (const slot of slots) {
-    const next: typeof combos = [];
-    for (const combo of combos) {
-      slot.options.forEach((option, i) => {
-        const copy = [...combo.chars];
-        copy[slot.at] = option;
-        next.push({ chars: copy, changes: combo.changes + (i > 0 ? 1 : 0) });
-      });
+  let letterVariants: string[];
+  if (slots.length === 0) {
+    letterVariants = [word];
+  } else {
+    // Every combination, fewest changed letters first (then generation order).
+    let combos: Array<{ chars: string[]; changes: number }> = [{ chars, changes: 0 }];
+    for (const slot of slots) {
+      const next: typeof combos = [];
+      for (const combo of combos) {
+        slot.options.forEach((option, i) => {
+          const copy = [...combo.chars];
+          copy[slot.at] = option;
+          next.push({ chars: copy, changes: combo.changes + (i > 0 ? 1 : 0) });
+        });
+      }
+      combos = next;
     }
-    combos = next;
+    const ordered = combos
+      .map((combo, i) => ({ ...combo, i }))
+      .filter((combo) => combo.changes <= maxChanges)
+      .sort((a, b) => a.changes - b.changes || a.i - b.i);
+    letterVariants = [];
+    for (const combo of ordered) {
+      const spelled = combo.chars.join('');
+      if (!letterVariants.includes(spelled)) letterVariants.push(spelled);
+      if (letterVariants.length >= MAX_SPELLING_VARIANTS) break;
+    }
   }
-  const ordered = combos
-    .map((combo, i) => ({ ...combo, i }))
-    .filter((combo) => combo.changes <= maxChanges)
-    .sort((a, b) => a.changes - b.changes || a.i - b.i);
-  const out: string[] = [];
-  for (const combo of ordered) {
-    const spelled = combo.chars.join('');
-    if (!out.includes(spelled)) out.push(spelled);
-    if (out.length >= MAX_SPELLING_VARIANTS) break;
+
+  if (!SEARCH_DIGIT.test(word)) return letterVariants;
+
+  const withDigits: string[] = [];
+  for (const v of letterVariants) {
+    for (const form of [v, toWesternDigits(v), toArabicIndicDigits(v)]) {
+      if (!withDigits.includes(form)) withDigits.push(form);
+      if (withDigits.length >= MAX_SPELLING_VARIANTS) return withDigits;
+    }
   }
-  return out;
+  return withDigits;
 }
 
 function isLiteralSlash(input: string, index: number, termStart: number): boolean {
@@ -448,6 +472,120 @@ export function parseSearchQuery(query: string): ParsedSearchQuery {
     plainTerms: tokens
       .filter((token): token is Extract<SearchQueryToken, { kind: 'operand' }> => token.kind === 'operand')
       .map((token) => token.plain),
+  };
+}
+
+/** Characters of input the autocomplete builder reads; the rest is ignored. */
+export const AUTOCOMPLETE_MAX_INPUT = 200;
+/** Most words one autocomplete tsquery carries. */
+export const AUTOCOMPLETE_MAX_TERMS = 6;
+/** Longest word kept, in characters; a longer run is not a word anyone types. */
+export const AUTOCOMPLETE_MAX_TERM_LENGTH = 50;
+/**
+ * Fewest letters / digits a prefix stem needs before its `:*` is kept, a
+ * leading «ال» not counted: «ا*», «ال*» or «الع*» would match most of the
+ * vocabulary, so such a stem is searched as the word itself.
+ */
+export const AUTOCOMPLETE_MIN_PREFIX = 3;
+
+const CONTROL_CHARACTERS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
+
+function prefixStemLength(stem: string): number {
+  const letters = Array.from(stem.replace(/[^\p{L}\p{N}]/gu, ''));
+  const counted = letters.length > 2 && letters[0] === 'ا' && letters[1] === 'ل' ? letters.slice(2) : letters;
+  return counted.length;
+}
+
+/**
+ * Autocomplete's tsquery: the POSITIVE words of a live-typed query, AND-ed,
+ * each one an OR-group of its own stored spellings and numeral forms
+ * (arabicSpellingVariants — the owner's «digits both ways» feature).
+ *
+ * The facet counts and the top principles run as the service role, which has
+ * no statement_timeout (20261004_01, 20261018_02, 20261025_41): a query the
+ * GIN index cannot serve keeps running in Postgres after the route stopped
+ * waiting. So, unlike parseSearchQuery, this never emits an operator a user
+ * typed:
+ *   - `-word` and `-"…"` are dropped — never flipped to positive (`a | !b`
+ *     cannot use the index);
+ *   - `/` (OR) and `+` (AND) are separators; the words are always AND-ed;
+ *     a date `1444/10/20` and a reference `م/14` stay one word (isLiteralSlash);
+ *   - quotes delimit words only (no `<->`), an unclosed quote is fine;
+ *   - `*` keeps a prefix only at the end of a stem of AUTOCOMPLETE_MIN_PREFIX
+ *     letters or more; any other `*` is removed;
+ *   - every other punctuation, tsquery syntax included (`' \ : & | ! ( ) < >`),
+ *     separates words; a piece with no letter or digit is dropped;
+ *   - at most AUTOCOMPLETE_MAX_TERMS words from the first
+ *     AUTOCOMPLETE_MAX_INPUT characters, each word at most
+ *     AUTOCOMPLETE_MAX_TERM_LENGTH long, within MAX_QUERY_SPELLING_VARIANTS.
+ * Every lexeme is quoted (quoteTsqueryLexeme). `plainTerms` lists the kept
+ * words only, so a negated word reaches no title lookup either.
+ * Its counts can differ from the full search's for a query with `/`, `-` or a
+ * phrase — the full search applies the operators.
+ */
+export function parseAutocompleteQuery(query: string): ParsedSearchQuery {
+  const raw = query.trim();
+  const input = Array.from(raw.replace(CONTROL_CHARACTERS, ' ')).slice(0, AUTOCOMPLETE_MAX_INPUT).join('');
+  const words: Array<{ word: string; prefix: boolean }> = [];
+  const keep = (term: string) => {
+    const wildcard = term.endsWith('*');
+    const pieces = term.replace(/\*/g, '').split(/[^\p{L}\p{M}\p{N}/]+/u);
+    pieces.forEach((piece, i) => {
+      if (!/[\p{L}\p{N}]/u.test(piece) || Array.from(piece).length > AUTOCOMPLETE_MAX_TERM_LENGTH) return;
+      const prefix = wildcard && i === pieces.length - 1 && prefixStemLength(piece) >= AUTOCOMPLETE_MIN_PREFIX;
+      if (!words.some((w) => w.word === piece && w.prefix === prefix)) words.push({ word: piece, prefix });
+    });
+  };
+
+  let index = 0;
+  let inPhrase = false;
+  let phraseNegated = false;
+  while (index < input.length && words.length < AUTOCOMPLETE_MAX_TERMS) {
+    const character = input[index];
+    if (/\s/.test(character) || character === '+' || character === '/') {
+      index += 1;
+      continue;
+    }
+    if (character === '"') {
+      inPhrase = !inPhrase;
+      phraseNegated = false;
+      index += 1;
+      continue;
+    }
+    let negated = inPhrase && phraseNegated;
+    if (character === '-') {
+      while (input[index] === '-') index += 1;
+      if (input[index] === '"' && !inPhrase) {
+        inPhrase = true;
+        phraseNegated = true;
+        index += 1;
+        continue;
+      }
+      negated = true;
+    }
+    const termStart = index;
+    while (index < input.length) {
+      const c = input[index];
+      if (/\s/.test(c) || c === '+' || c === '"') break;
+      if (c === '/' && !isLiteralSlash(input, index, termStart)) break;
+      index += 1;
+    }
+    if (!negated && index > termStart) keep(input.slice(termStart, index));
+  }
+
+  let variantBudget = MAX_QUERY_SPELLING_VARIANTS;
+  const groups = words.slice(0, AUTOCOMPLETE_MAX_TERMS).map(({ word, prefix }) => {
+    const suffix = prefix ? ':*' : '';
+    let spellings = arabicSpellingVariants(word);
+    if (spellings.length - 1 > variantBudget) spellings = [word];
+    variantBudget -= spellings.length - 1;
+    if (spellings.length === 1) return `${quoteTsqueryLexeme(word)}${suffix}`;
+    return `(${spellings.map((s) => `${quoteTsqueryLexeme(s)}${suffix}`).join(' | ')})`;
+  });
+  return {
+    raw,
+    tsquery: groups.length > 1 ? `(${groups.join(' & ')})` : (groups[0] ?? ''),
+    plainTerms: words.slice(0, AUTOCOMPLETE_MAX_TERMS).map((w) => w.word),
   };
 }
 

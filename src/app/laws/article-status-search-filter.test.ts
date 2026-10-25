@@ -4,13 +4,14 @@ import test from "node:test";
 
 const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
 const statusValues = [
-  "active", "amended", "repealed", "suspended", "added", "merged", "status_undeclared",
+  "active", "amended", "repealed", "suspended", "added", "merged",
 ];
 
-test("law text search exposes exactly the API's seven article-status values plus an all option", () => {
+test("law text search exposes the six recorded article statuses plus an all option (owner ٢٥٩: no «not verified» choice)", () => {
   for (const value of statusValues) {
     assert.match(pageSource, new RegExp(`value: "${value}"`));
   }
+  assert.doesNotMatch(pageSource, /value: "status_undeclared"/);
   assert.match(pageSource, /All article statuses/);
   assert.match(pageSource, /حالة المادة/);
   assert.match(pageSource, /activeType === "laws" && search\.trim\(\)\.length >= 2/);

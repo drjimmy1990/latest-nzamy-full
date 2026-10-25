@@ -1399,6 +1399,14 @@ async function seedFeqh(
       investigator: book.investigator || "",
       total_volumes: book.total_volumes || 1,
       total_pages: book.total_pages || 0,
+      // Owner ٢٦٢: the series label and this volume's number as the file
+      // states them (parse-feqh.ts, seriesFields.ts) — null when it does not.
+      // Written on every row (one key set per batch). REQUIRES migration
+      // 20261026_51_feqh_books_series.sql for a live write from this script;
+      // the owner's loader (seed-library-from-owner.mjs) drops both keys
+      // while the columns are missing, so a load before the SQL still works.
+      series_id: book.series_id ? cap("feqh_books", "series_id", bookId, String(book.series_id), 150) : null,
+      volume_number: values.int("feqh_books", "volume_number", bookId, book.volume_number, null, null),
     });
 
     const chapters = (book.chapters || []) as any[];

@@ -144,7 +144,9 @@ test("route: the volume series (T28-24) is read only with the TOC, best-effort, 
   const src = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
   // Section and cursor loads (toc=0) never re-read feqh_books.
   assert.match(src, /const seriesPromise: Promise<BookSeriesInfo \| null> = includeToc\s*\?/);
-  assert.match(src, /from\('feqh_books'\)\s*\.select\('id, title, total_volumes, author'\)/);
+  // Owner ٢٦٢: the catalogue columns, plus series_id / volume_number once 20261026_51 ran.
+  assert.match(src, /from\('feqh_books'\)\s*\.select\(bookVolumeColumns\(on\)\)/);
+  assert.match(src, /readWithOptionalFeatures\(\(on\) =>[\s\S]*?\[BOOK_SERIES_FEATURE\]\)/);
   assert.match(src, /buildBookSeries\(res\.data, String\(book\.id\)\)/);
   // A failed lookup is a warning and null — never a response of its own.
   const block = src.slice(src.indexOf("const seriesPromise"), src.indexOf("// Check user authentication"));

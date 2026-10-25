@@ -4237,6 +4237,157 @@ begin
 end $$;
 -- <<< verify:coupons_server_only
 
+-- >>> verify:smart_folders_grants — supabase/tests/rls/smart_folders_grants.test.sql
+-- 2026-10-26 — 20261026_50_smart_folders_grants.sql (L-A, the owner's «حفظ في
+-- مجلداتي» fix of 2026-10-25). Read-only, safe to repeat. Keyed on the UPDATE
+-- policy the migration adds: before it runs this only reports (the folder
+-- routes already write through the service role); after, it raises when a
+-- guest holds any privilege on the two tables, a signed-in user can write them
+-- straight through PostgREST, the routes' writer lost a privilege, or a limit
+-- is gone.
+do $$
+declare
+  t text;
+  p text;
+  n int;
+begin
+  if not exists (select 1 from pg_policy
+                  where polrelid = 'library.smart_folder_items'::regclass
+                    and polname = 'Users can update own folder items') then
+    raise notice '_verify: 20261026_50 is not applied yet — «مجلداتي» works (the routes use the service role), but anon may still hold SELECT on the folder tables and authenticated any write a restore granted; run SQL_batch_2026-10-26_owner_answers/50_ANY_TIME_20261026_50_smart_folders_grants.sql';
+    return;
+  end if;
+  foreach t in array array['library.smart_folders', 'library.smart_folder_items'] loop
+    if not (select relrowsecurity from pg_class where oid = t::regclass) then
+      raise exception '_verify: RLS is off on % (re-run 20261026_50)', t;
+    end if;
+    foreach p in array array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'] loop
+      if has_table_privilege('anon', t, p) then
+        raise exception '_verify: anon holds % on % — guests keep folders in the browser only (20260922_01 re-run after 20261026_50? re-run 20261026_50)', p, t;
+      end if;
+      if p <> 'SELECT' and has_table_privilege('authenticated', t, p) then
+        raise exception '_verify: authenticated holds % on % — a signed-in user can write it through PostgREST around the folder routes'' limits (re-run 20261026_50)', p, t;
+      end if;
+      if p in ('SELECT', 'INSERT', 'UPDATE', 'DELETE') and not has_table_privilege('service_role', t, p) then
+        raise exception '_verify: service_role lacks % on % — «حفظ في مجلداتي» fails (re-run 20261026_50)', p, t;
+      end if;
+    end loop;
+    if has_any_column_privilege('anon', t, 'SELECT, INSERT, UPDATE, REFERENCES') then
+      raise exception '_verify: anon holds a column privilege on % (re-run 20261026_50)', t;
+    end if;
+    if has_any_column_privilege('authenticated', t, 'INSERT, UPDATE, REFERENCES') then
+      raise exception '_verify: authenticated holds a column-level write on % (re-run 20261026_50)', t;
+    end if;
+  end loop;
+  select count(*) into n from pg_constraint
+   where conname in ('smart_folders_name_length', 'smart_folders_color_hex', 'smart_folders_icon_length',
+                     'smart_folder_items_entity_type', 'smart_folder_items_entity_id_length',
+                     'smart_folder_items_title_length', 'smart_folder_items_title_en_length')
+     and conrelid in ('library.smart_folders'::regclass, 'library.smart_folder_items'::regclass);
+  if n <> 7 then
+    raise exception '_verify: % of the 7 smart-folder limits exist (re-run 20261026_50)', n;
+  end if;
+  select count(*) into n from pg_constraint
+   where conname like 'smart\_folder%' and contype = 'c' and not convalidated
+     and conrelid in ('library.smart_folders'::regclass, 'library.smart_folder_items'::regclass);
+  raise notice '_verify: 20261026_50 OK — smart folders: anon none, authenticated SELECT only, service_role writes, 7 limits (% still NOT VALID: old rows unchecked)', n;
+end $$;
+-- <<< verify:smart_folders_grants
+
+-- >>> verify:feqh_books_series — supabase/tests/rls/feqh_books_series.test.sql
+-- 2026-10-26 — 20261026_51_feqh_books_series.sql (L-B, owner ٢٦٢: a fiqh
+-- book's series and volume number). Read-only, safe to repeat. Before the
+-- file runs this only reports (the code falls back to the title rule); after,
+-- it raises when a column, a limit or the catalogue's read of them is gone.
+do $$
+declare
+  n int;
+begin
+  select count(*) into n from information_schema.columns
+   where table_schema = 'library' and table_name = 'feqh_books'
+     and column_name in ('series_id', 'volume_number');
+  if n = 0 then
+    raise notice '_verify: 20261026_51 is not applied yet — fiqh series still come from the titles, and a library load drops series_id / volume_number; run SQL_batch_2026-10-26_owner_answers/51_ANY_TIME_20261026_51_feqh_books_series.sql';
+    return;
+  end if;
+  if n <> 2 then
+    raise exception '_verify: only % of feqh_books.series_id / volume_number exist (re-run 20261026_51)', n;
+  end if;
+  select count(*) into n from pg_constraint
+   where conrelid = 'library.feqh_books'::regclass
+     and conname in ('feqh_books_volume_number_range', 'feqh_books_series_id_not_blank');
+  if n <> 2 then
+    raise exception '_verify: % of the 2 feqh_books series limits exist (re-run 20261026_51)', n;
+  end if;
+  if not has_column_privilege('anon', 'library.feqh_books', 'series_id', 'SELECT')
+     or not has_column_privilege('anon', 'library.feqh_books', 'volume_number', 'SELECT') then
+    raise exception '_verify: anon cannot read feqh_books.series_id / volume_number — the catalogue and the reader read them with the request client';
+  end if;
+  select count(*) into n from library.feqh_books where series_id is not null;
+  raise notice '_verify: 20261026_51 OK — feqh_books.series_id / volume_number in place (% book rows carry a series)', n;
+end $$;
+-- <<< verify:feqh_books_series
+
+-- >>> verify:search_relevance — supabase/tests/rls/library_search_relevance.test.sql
+-- 2026-10-26 — 20261026_52_library_search_relevance.sql (owner ٢٧٧ (أ): search
+-- results by relevance in every section, on every page). Read-only, safe to
+-- repeat; it calls none of the functions. Before the file runs this only
+-- reports (the search route lists by id, as before); after, it raises when one
+-- of the four windows is missing, lost its 4s limit or its relevance order, or
+-- an API role can call it (three return server-only text).
+do $$
+declare
+  fns constant text[] := array[
+    'library.search_law_articles_relevance(text, integer, integer, text, text, text)',
+    'library.search_principles_relevance(text, integer, integer, text, text, integer, text)',
+    'library.search_feqh_relevance(text, integer, integer)',
+    'library.search_decrees_relevance(text, integer, integer, text, text, text[])'];
+  fn      text;
+  cfg     text[];
+  definer boolean;
+  body    text;
+  r       text;
+  n       int := 0;
+  missing text := '';
+begin
+  foreach fn in array fns loop
+    if to_regprocedure(fn) is not null then n := n + 1; end if;
+  end loop;
+  if n = 0 then
+    raise notice '_verify: 20261026_52 is not applied yet — search lists every section by id, as before; run SQL_batch_2026-10-26_owner_answers/52_BEFORE_DEPLOY_20261026_52_library_search_relevance.sql';
+    return;
+  end if;
+  foreach fn in array fns loop
+    if to_regprocedure(fn) is null then
+      missing := missing || format(' %s is missing (that section lists by id);', fn);
+      continue;
+    end if;
+    select p.proconfig, p.prosecdef, p.prosrc into cfg, definer, body from pg_proc p where p.oid = to_regprocedure(fn);
+    if definer then
+      missing := missing || format(' %s is SECURITY DEFINER;', fn);
+    end if;
+    if cfg is null or not ('statement_timeout=4s' = any (cfg)) or not ('search_path=""' = any (cfg)) then
+      missing := missing || format(' %s: proconfig %s lacks statement_timeout=4s / search_path='''';', fn, coalesce(cfg::text, 'NULL'));
+    end if;
+    if body !~ 'ts_rank_cd' or body !~ 'order by o\.rank desc nulls last, o\.id' then
+      missing := missing || format(' %s no longer orders by relevance;', fn);
+    end if;
+    foreach r in array array['anon', 'authenticated'] loop
+      if has_function_privilege(r, fn, 'EXECUTE') then
+        missing := missing || format(' %s can EXECUTE %s;', r, fn);
+      end if;
+    end loop;
+    if not has_function_privilege('service_role', fn, 'EXECUTE') then
+      missing := missing || format(' service_role cannot EXECUTE %s (the search route calls it with the service role);', fn);
+    end if;
+  end loop;
+  if missing <> '' then
+    raise exception '_verify: 20261026_52 is broken (re-run 20261026_52) —%', missing;
+  end if;
+  raise notice '_verify: 20261026_52 OK — four relevance windows (laws, precedents, fiqh, orders): INVOKER, statement_timeout 4s, ts_rank_cd order, service_role only';
+end $$;
+-- <<< verify:search_relevance
+
 -- >>> verify:tracking_links_v2 — supabase/tests/rls/tracking_links_v2.test.sql
 -- 2026-10-26 — 20261026_62_tracking_links_v2.sql (D2, owner ٢٧٦). Read-only,
 -- safe to repeat. Before _62 runs it only reports; after, it raises when the

@@ -120,8 +120,17 @@ test("every section query has a deterministic primary-key order and reports coun
   assert.match(routeSource, /q\.in\('category', categoryStoredSpellings\(filters\.category\)\)/);
 });
 
-test("ranking vs paging: section=laws never takes its order from the ranked RPC", () => {
-  assert.match(routeSource, /if \(!rankedLawOrderApplies\(section\) \|\| from !== 0/);
+test("ranking vs paging (owner ٢٧٧): every page of every section comes from one window function", () => {
+  // The preview-only ranked RPC (20260925_01) and its by-id refetch are gone:
+  // page 1 and page n of a section read the same relevance window
+  // (20261026_52), so a ranked page 1 never continues into an id-ordered page 2.
+  assert.doesNotMatch(routeSource, /rankedLawOrderApplies|rankedIds|RANKED_RPC|orderRowsByIds/);
+  assert.match(routeSource, /const RELEVANCE_RPC: Record<SearchSectionName, string> = \{\s*laws: 'search_law_articles_relevance',\s*precedents: 'search_principles_relevance',\s*orders: 'search_decrees_relevance',\s*feqh: 'search_feqh_relevance',\s*\};/);
+  // Only a missing function falls back (remembered 10 minutes); a 57014 is the page.
+  assert.match(routeSource, /if \(isMissingFunctionError\(rpcRes\.error\)\) \{\s*relevanceRpcMissingUntil\[name\] = Date\.now\(\) \+ RELEVANCE_RPC_RETRY_MS;\s*return null;\s*\}\s*return \{ res: rpcPageResult\(rpcRes\), order: rpcPageOrder\(rpcRes\) \};/);
+  // Each section reports the order it used.
+  assert.equal((routeSource.match(/order: order \?\? 'id',/g) ?? []).length, 2, "laws and feqh");
+  assert.equal((routeSource.match(/order: relevance\?\.order \?\? 'id',/g) ?? []).length, 2, "precedents and orders");
   // Every section=laws page places its rows by the same title-hit count.
   assert.match(routeSource, /lawPageArticles\(articleItems, page, limit, titleMax, k\)/);
   assert.match(routeSource, /if \(section === 'laws' && page > 1 && !title\.complete\) \{[\s\S]{0,200}return \{ ok: false \};/);
@@ -144,8 +153,6 @@ test("the laws window joins laws only for a law-column filter, and attaches them
   assert.match(routeSource, /const joinLaws = lawWindowNeedsJoin\(filters\);/);
   assert.match(routeSource, /\.select\(LAW_COLUMNS\(withHistory, joinLaws\), \{ count: 'estimated', head \}\)/);
   assert.match(routeSource, /law_slug\$\{embed \? `,\s*laws!inner \( \$\{LAW_FIELDS\} \)` : ''\}/);
-  // The ranked by-id fetch keeps its embed (primary-key lookups).
-  assert.match(routeSource, /\.select\(LAW_COLUMNS\(true\)\)\s*\.in\('id', ranked\)/);
   // Without the join, each window row gets its law from one lookup per batch
   // of slugs; a failed lookup fails the section instead of listing hits with
   // no law title.
@@ -176,13 +183,13 @@ test("laws run through the time-limited RPC and fall back only when it is missin
   );
   // The inline query, and its original_text retry, run only after that branch.
   const start = routeSource.indexOf("const lawWindow = async");
-  const end = routeSource.indexOf("const [{ res: base, viaRpc }, ranked, title] = await Promise.all([");
+  const end = routeSource.indexOf("const [{ res: base, viaRpc, order }, title] = await Promise.all([");
   assert.ok(start > -1 && end > start, "lawWindow() and its call");
   const win = routeSource.slice(start, end);
   const rpcAt = win.indexOf(".rpc(LAWS_RPC");
   assert.ok(rpcAt > -1 && rpcAt < win.indexOf("await runLawQuery(true)"), "the RPC comes before the inline query");
   assert.ok(win.indexOf("await runLawQuery(true)") < win.indexOf("shouldRetryLawsWithoutHistory(res.error)"));
-  assert.match(routeSource, /const \[\{ res: base, viaRpc \}, ranked, title\] = await Promise\.all\(\[\s*lawWindow\(\),/);
+  assert.match(routeSource, /const \[\{ res: base, viaRpc, order \}, title\] = await Promise\.all\(\[\s*lawWindow\(\),/);
   assert.doesNotMatch(routeSource, /shouldRetryWithoutCount\(rpcRes/);
   assert.doesNotMatch(routeSource, /shouldRetryLawsWithoutHistory\(rpcRes/);
   // The route's arguments are the migration's parameters.
@@ -229,7 +236,8 @@ test("precedents run through the time-limited RPC and fall back only when it is 
   // The inline query runs only when the function is missing; any other RPC
   // error (57014 above all) goes to settlePage and fails the section.
   assert.match(routeSource, /const rpcMissing = rpcRes !== null && isMissingFunctionError\(rpcRes\.error\);/);
-  assert.match(routeSource, /const res = rpcRes !== null && !rpcMissing\s*\? rpcPageResult\(rpcRes\)\s*: await precQuery\(\)/);
+  assert.match(routeSource, /const res = relevance !== null\s*\? relevance\.res\s*: rpcRes !== null && !rpcMissing\s*\? rpcPageResult\(rpcRes\)\s*: await precQuery\(\)/);
+  assert.match(routeSource, /const rpcRes = relevance !== null \|\| Date\.now\(\) < principlesRpcMissingUntil/);
   assert.match(routeSource, /if \(rpcMissing\) principlesRpcMissingUntil = Date\.now\(\) \+ PRINCIPLES_RPC_RETRY_MS;/);
   assert.doesNotMatch(routeSource, /shouldRetryWithoutCount\(rpcRes/);
 });

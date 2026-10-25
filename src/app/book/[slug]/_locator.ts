@@ -84,12 +84,20 @@ export function formatLocator(
  * now that 116,828 blocks carry a real volume, that default would silently hide
  * every match outside volume 1.
  */
+function foldLocatorDigits(token: string | null): string | null {
+  if (token === null) return null;
+  return token
+    .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
+    .replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
+    .trim();
+}
+
 export function matchesLocator(
   b: BlockLocator,
   targetVol: string | null,
   targetPage: string | null,
 ): boolean {
-  if (targetPage !== null && pageToken(b) !== targetPage) return false;
-  if (targetVol !== null && volumeToken(b) !== targetVol) return false;
+  if (targetPage !== null && foldLocatorDigits(pageToken(b)) !== foldLocatorDigits(targetPage)) return false;
+  if (targetVol !== null && foldLocatorDigits(volumeToken(b)) !== foldLocatorDigits(targetVol)) return false;
   return targetVol !== null || targetPage !== null;
 }

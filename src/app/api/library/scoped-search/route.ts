@@ -5,7 +5,8 @@ import { libraryGate } from '@/lib/library-gate';
 import { isFreeLibraryItem } from '@/lib/library-item-access';
 import { parseSearchQuery, SearchQuerySyntaxError, LIBRARY_FTS_CONFIG } from '@/utils/normalizeArabic';
 import { selectAllPages } from '@/lib/supabase/selectAllPages';
-import { buildBookSeries, type VolumeRow } from '@/lib/library/bookVolumes';
+import { BOOK_SERIES_FEATURE, bookVolumeColumns, buildBookSeries, type VolumeRow } from '@/lib/library/bookVolumes';
+import { readWithOptionalFeatures } from '@/lib/library/optionalColumn';
 import { buildCollectionSeries, type CollectionVolumeRow } from '@/lib/library/precedentVolumes';
 import { TIER_SHAPED_CACHE_CONTROL } from '../laws/[slug]/_official-meta';
 import { isMissingFunctionError } from '../search/searchPlan';
@@ -101,13 +102,15 @@ async function resolveScope(supabase: Client, kind: ScopedKind, id: string): Pro
     return { scope: { kind, id: data.id, title, detail: data.court ?? null, volumes }, error: null };
   }
 
-  // book: the series is recovered from the catalogue titles (bookVolumes.ts),
-  // as the books route does for its volume switcher.
+  // book: the series is the source's series_id when the database has it
+  // (owner ٢٦٢, 20261026_51), else recovered from the catalogue titles
+  // (bookVolumes.ts) — as the books route does for its volume switcher.
   const { data: book, error } = await lib().from('feqh_books').select('id, title, author').eq('id', id).maybeSingle();
   if (error || !book) return { scope: null, error };
-  const all = await selectAllPages<VolumeRow>((from, to) =>
-    lib().from('feqh_books').select('id, title, total_volumes, author').order('id', { ascending: true }).range(from, to),
-  );
+  const all = await readWithOptionalFeatures((on) =>
+    selectAllPages<VolumeRow>((from, to) =>
+      lib().from('feqh_books').select(bookVolumeColumns(on)).order('id', { ascending: true }).range(from, to),
+    ), [BOOK_SERIES_FEATURE]);
   if (all.error) return { scope: null, error: all.error };
   const series = buildBookSeries(all.data, String(book.id));
   return {

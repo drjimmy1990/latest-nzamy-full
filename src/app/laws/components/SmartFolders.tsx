@@ -21,6 +21,7 @@ import { useNoSessionCookie } from "./useNoSessionCookie";
 // testable with `node --test`: it is "use client" JSX.
 import { mapApiFolderToSmartFolder } from "./smartFolderApiMapper";
 import { isDemoMode } from "@/lib/runtimeMode";
+import { normalizeSearch } from "@/utils/normalizeArabic";
 
 // Re-export for project compatibility
 export type { LawRef, SmartFolder, LibraryDoc };
@@ -68,6 +69,7 @@ export default function SmartFolders({
   const [isMounted, setIsMounted] = useState(false);
   const [isExpandedView, setIsExpandedView] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // Folder content management state
   const [managingFolder, setManagingFolder] = useState<SmartFolder | null>(null);
@@ -278,8 +280,8 @@ export default function SmartFolders({
   // ─── CREATE folder ─────────────────────────────────────────────────────────
 
   const handleCreate = useCallback(async (name: string, color: string) => {
+    setActionError(null);
     if (isAuthenticated) {
-      // Create via API, then refresh
       try {
         const res = await fetch("/api/library/folders", {
           method: "POST",
@@ -291,8 +293,6 @@ export default function SmartFolders({
           const newFolder = mapApiFolderToSmartFolder(data.folder);
           setFolders(prev => {
             const next = [...prev, newFolder];
-            // Signed-in only in this branch — server already has it, don't
-            // also mirror to localStorage (see loadFolders).
             dispatchFoldersChanged(next);
             return next;
           });
@@ -300,17 +300,16 @@ export default function SmartFolders({
           setExpandedId(newFolder.id);
         } else {
           console.error("[SmartFolders] Failed to create folder via API");
-          // Fallback: create locally
-          createFolderLocally(name, color);
+          setActionError(isRTL ? "تعذّر إنشاء المجلد. يرجى المحاولة مرة أخرى." : "Failed to create folder. Please try again.");
         }
       } catch (err) {
         console.error("[SmartFolders] API error creating folder:", err);
-        createFolderLocally(name, color);
+        setActionError(isRTL ? "تعذّر الاتصال بالخادم لإنشاء المجلد." : "Connection error while creating folder.");
       }
     } else {
       createFolderLocally(name, color);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, isRTL]);
 
   /** Guest / fallback: create folder in localStorage only */
   const createFolderLocally = useCallback((name: string, color: string) => {
@@ -470,12 +469,11 @@ export default function SmartFolders({
             });
           } else {
             console.error("[SmartFolders] Failed to add item via API");
-            // Fallback: add locally
-            addItemLocally(doc);
+            setActionError(isRTL ? "تعذّر حفظ المستند في المجلد. يرجى المحاولة مرة أخرى." : "Failed to save document to folder.");
           }
         } catch (err) {
           console.error("[SmartFolders] API error adding item:", err);
-          addItemLocally(doc);
+          setActionError(isRTL ? "تعذّر الاتصال بالخادم لحفظ المستند." : "Connection error while saving document.");
         }
       } else {
         addItemLocally(doc);
@@ -523,12 +521,9 @@ export default function SmartFolders({
       list = list.filter(d => d.type === activeTab);
     }
     if (modalQuery.trim()) {
-      const q = modalQuery.toLowerCase().trim();
-      const normalize = (s: string) =>
-        s.replace(/[أإآا]/g, "ا").replace(/[ةه]/g, "ه").replace(/[يى]/g, "ي").toLowerCase();
-      const nq = normalize(q);
+      const nq = normalizeSearch(modalQuery);
       list = list.filter(d =>
-        normalize(d.title).includes(nq) || d.titleEn.toLowerCase().includes(nq) || d.catId.toLowerCase().includes(nq)
+        normalizeSearch(d.title).includes(nq) || normalizeSearch(d.titleEn).includes(nq) || normalizeSearch(d.catId).includes(nq)
       );
     }
     return list;
@@ -591,6 +586,22 @@ export default function SmartFolders({
             {isRTL ? "مجلد جديد" : "New Folder"}
           </button>
         </div>
+
+        {actionError && (
+          <div
+            role="alert"
+            className={`mx-5 mb-3 px-3 py-2 rounded-xl border text-xs flex items-center justify-between gap-2 ${
+              isDark
+                ? "bg-red-950/40 border-red-500/30 text-red-300"
+                : "bg-red-50 border-red-200 text-red-700"
+            }`}
+          >
+            <span>{actionError}</span>
+            <button onClick={() => setActionError(null)} className="opacity-70 hover:opacity-100">
+              <X size={13} weight="bold" />
+            </button>
+          </div>
+        )}
 
         {/* Folder List */}
         <div className={`px-5 pb-5 space-y-2 border-t ${isDark ? "border-[#2d3748]" : "border-gray-100"}`}>

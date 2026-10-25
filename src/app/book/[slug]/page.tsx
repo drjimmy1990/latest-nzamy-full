@@ -623,6 +623,15 @@ export default function FeqhBookPage() {
               <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1.5">
                 {isRTL ? "المؤلف:" : "Author:"} {book.author} | {isRTL ? "التحقيق:" : "Investigation:"} {book.investigator}
               </p>
+              {/* Owner ٢٦٣: the book's موجز, so a lawyer sees at once what the
+                  reference is about. Catalogue text (feqh_books.description),
+                  shown to every viewer like the card. */}
+              {book.description && (
+                <p data-book-summary className="mt-2 max-w-3xl text-xs leading-relaxed whitespace-pre-line text-slate-600 dark:text-zinc-300">
+                  <span className="font-bold text-amber-700 dark:text-[#C8A762]">{isRTL ? "موجز: " : "Summary: "}</span>
+                  {book.description}
+                </p>
+              )}
               {/* Volume switcher: one book, many volumes (T28-24). A native
                   select — الإنصاف has 31 volumes, too many for chips — plus
                   the neighbouring volumes for reading straight on. Outside the

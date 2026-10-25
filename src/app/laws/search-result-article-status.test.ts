@@ -11,8 +11,8 @@ test("law search rows retain the article status returned by the search API", () 
   assert.doesNotMatch(pageSource, /lawStatus:\s*r\.meta\?\.status/);
 });
 
-test("only an unverified article status is labelled, without borrowing a parent-law status", () => {
-  assert.equal(articleStatusNotice("status_undeclared", true), "لم يُتحقّق من الحالة");
+test("no article status is labelled (owner ٢٥٩), and the cards never borrow a parent-law status", () => {
+  assert.equal(articleStatusNotice("status_undeclared", true), null);
   assert.equal(articleStatusNotice("active", true), null);
   assert.match(cardsSource, /sys\._isSearchResult && sys\.articleStatus === "status_undeclared"/);
   assert.match(cardsSource, /حالة المادة: \$\{searchArticleStatusNotice\}/);

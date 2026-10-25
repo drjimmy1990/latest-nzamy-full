@@ -12,6 +12,7 @@
  */
 
 import type { SmartFolder, LawRef } from "./SmartFolderTypes";
+import { apiSlug } from "../../../utils/apiSlug.ts";
 
 export interface ApiSmartFolderItemRow {
   id: string;
@@ -67,4 +68,22 @@ export function mapApiFolderToSmartFolder(apiFolder: ApiSmartFolderRow): SmartFo
         ? new Date(apiFolder.created_at).getTime()
         : Date.now(),
   };
+}
+
+/**
+ * Resolve the canonical reader route for a saved folder item.
+ * Judicial collections saved from `/precedents/[slug]` store `type: "precedent"`
+ * and must open `/precedents/<slug>` (not `/precedents/judgment/<slug>`).
+ */
+export function resolveSavedItemHref(item: { slug: string; type?: string | null }): string {
+  // apiSlug decodes once and encodes once, so a stored id that is already
+  // percent-encoded (precedent and book pages save the raw useParams() value)
+  // and a plain Arabic id give the same single-encoded segment; a malformed
+  // «%» is encoded rather than trusted.
+  const safe = apiSlug(String(item.slug ?? ""));
+  const t = item.type || "law";
+  if (t === "book") return `/book/${safe}`;
+  if (t === "order") return `/laws/orders/${safe}`;
+  if (t === "precedent") return `/precedents/${safe}`;
+  return `/laws/${safe}`;
 }

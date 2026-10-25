@@ -33,16 +33,19 @@ test("the page maps summary + summaryLabel and draws the box ABOVE the preamble"
 
 test("the sidebar card's badge is never an invented «نظام»", () => {
   assert.doesNotMatch(SIDEBAR, /\?\.value \|\| \(isRTL \? "نظام" : "Law"\)/);
-  assert.match(SIDEBAR, /typeRow\?\.value \|\| law\.documentType \|\| ""/);
-  assert.match(SIDEBAR, /if \(item === typeRow\) return null;/);
+  assert.match(SIDEBAR, /typeField\?\.value \|\| law\.documentType \|\| ""/);
+  // The type is the badge, not repeated as a row (owner ٢٦١ layout).
+  assert.match(SIDEBAR, /if \(f\.id === "type"\) return null;/);
 });
 
 test("under the file's card a subscriber still gets the DB official link / gazette when the card has no row for them", () => {
-  assert.match(SIDEBAR, /\{renderDbOfficialRows\(\[\.\.\.law\.metadata_card\.main, \.\.\.law\.metadata_card\.more\]\)\}/);
+  assert.match(SIDEBAR, /const dbOfficialRows = renderDbOfficialRows\(\[\.\.\.law\.metadata_card\.main, \.\.\.law\.metadata_card\.more\]\);/);
+  assert.match(SIDEBAR, /\{dbOfficialRows\}/);
   assert.match(SIDEBAR, /if \(metaLocked \|\| !officialMeta\) return null;/);
   // The rule itself is dbOfficialRowsUnderCard (_official-meta.test.ts), not a loose key match:
   // «الجهة المصدرة» contains «المصدر» and hid the link on nearly every card.
-  assert.match(SIDEBAR, /const \{ sourceUrl, gazette \} = dbOfficialRowsUnderCard\(rows, officialMeta\);/);
+  // (owner ٢٩٧: not repeated when the issuer row already shows that link).
+  assert.match(SIDEBAR, /const \{ sourceUrl, gazette \} = dbOfficialRowsUnderCard\(rows, officialMeta, officialLink\);/);
   assert.doesNotMatch(SIDEBAR, /f\.key\.includes\("المصدر"\)/);
 });
 

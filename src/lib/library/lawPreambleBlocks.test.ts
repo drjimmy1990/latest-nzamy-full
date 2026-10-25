@@ -236,3 +236,72 @@ test("isHollowPreamble: the «لم تتوفر ديباجة» placeholder only wh
     "the issuing decision after the comma is text",
   );
 });
+
+test("owner ٢٦٠: a card whose table sits under a sub-heading is lifted (23 files in last_owner)", () => {
+  const p = [
+    "### 📊 بطاقة تعريف نظام وبيانات التشريع",
+    "",
+    "### ⚖️ معلومات التشريع الأساسية",
+    "| الحقل | القيمة |",
+    "| :--- | :--- |",
+    "| **نوع التشريع** | نظام |",
+    "| **حالة التشريع** | ساري |",
+    "",
+    "<details>",
+    "<summary>➕ المزيد من بيانات التشريع</summary>",
+    "",
+    "| الحقل | القيمة |",
+    "| :--- | :--- |",
+    "| **التصنيف** | دستوري |",
+    "",
+    "</details>",
+    "",
+    "## ديباجة النظام",
+    "",
+    "بعون الله تعالى",
+  ].join("\n");
+  const out = extractLawPreambleBlocks(p);
+  assert.deepEqual(out.metadataCard, {
+    main: [{ key: "نوع التشريع", value: "نظام" }, { key: "حالة التشريع", value: "ساري" }],
+    more: [{ key: "التصنيف", value: "دستوري" }],
+  });
+  assert.equal(out.rest, "## ديباجة النظام\n\nبعون الله تعالى");
+});
+
+test("owner ٢٦٠: a second card is lifted too; its rows join «المزيد», none repeated", () => {
+  const p = [
+    "### 📊 بطاقة تعريف لائحة تنفيذية",
+    "",
+    "| الحقل | القيمة |",
+    "| :--- | :--- |",
+    "| **نوع التشريع** | لائحة تنفيذية |",
+    "",
+    "## ديباجة اللائحة",
+    "",
+    "نص الديباجة.",
+    "",
+    "<details>",
+    "<summary>📊 بطاقة تعريف القرار وبيانات التعديلات</summary>",
+    "",
+    "| الحقل | القيمة |",
+    "| :--- | :--- |",
+    "| **نوع التشريع** | لائحة تنفيذية |",
+    "| **أداة آخر تعديل** | قرار رقم (5) |",
+    "",
+    "</details>",
+  ].join("\n");
+  const out = extractLawPreambleBlocks(p);
+  assert.deepEqual(out.metadataCard, {
+    main: [{ key: "نوع التشريع", value: "لائحة تنفيذية" }],
+    more: [{ key: "أداة آخر تعديل", value: "قرار رقم (5)" }],
+  });
+  assert.equal(out.rest, "## ديباجة اللائحة\n\nنص الديباجة.");
+});
+
+test("a second 📊 heading is never read as the first card's sub-heading", () => {
+  const p = "### 📊 بطاقة تعريف نظام\n\n### 📊 بطاقة تعريف أخرى\n\n| الحقل | القيمة |\n| :--- | :--- |\n| **نوع التشريع** | نظام |";
+  const out = extractLawPreambleBlocks(p);
+  // The first heading has no table of its own; the second is the card.
+  assert.deepEqual(out.metadataCard?.main, [{ key: "نوع التشريع", value: "نظام" }]);
+  assert.equal(out.rest, "### 📊 بطاقة تعريف نظام");
+});

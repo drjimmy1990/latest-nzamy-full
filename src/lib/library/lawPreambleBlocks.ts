@@ -128,11 +128,13 @@ function detailsEnd(text: string, start: number): number {
   return -1;
 }
 
-function splitRow(line: string): string[] {
+/** A table line's cells, outer pipes dropped. */
+export function splitRow(line: string): string[] {
   return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
 }
 
-function isSeparatorRow(cells: string[]): boolean {
+/** «| :--- | :--- |». */
+export function isSeparatorRow(cells: string[]): boolean {
   return cells.length > 0 && cells.every((c) => /^:?-{2,}:?$/.test(c));
 }
 
@@ -177,12 +179,22 @@ function tableFields(text: string): LawCardField[] {
     const cells = splitRow(lines[i]);
     if (isSeparatorRow(cells)) continue;
     if (i + 1 < lines.length && isSeparatorRow(splitRow(lines[i + 1]))) continue; // a header row
-    if (cells.length < 2) continue;
-    const key = cleanKey(cells[0]);
-    const value = cleanValue(cells.slice(1).join(" | "));
-    if (isShownField(key, value)) out.push({ key, value });
+    const field = cardFieldOfCells(cells);
+    if (field) out.push(field);
   }
   return out;
+}
+
+/**
+ * A data row's field as the card reads it, or null when the card does not
+ * show the row: fewer than two cells, a placeholder value («غير متوفر في
+ * المصدر», «لا يوجد»), a pipeline key.
+ */
+export function cardFieldOfCells(cells: string[]): LawCardField | null {
+  if (cells.length < 2) return null;
+  const key = cleanKey(cells[0]);
+  const value = cleanValue(cells.slice(1).join(" | "));
+  return isShownField(key, value) ? { key, value } : null;
 }
 
 interface CardHit extends Range {
@@ -190,12 +202,22 @@ interface CardHit extends Range {
 }
 
 /** `### 📊 بطاقة تعريف …` + its table (+ the ➕ table right after it). */
+/** The first `📊 بطاقة تعريف` heading that has a table under it. */
 function cardFromHeading(text: string): CardHit | null {
-  const m = CARD_HEADING.exec(text);
-  if (!m) return null;
+  const all = new RegExp(CARD_HEADING.source, "gm");
+  for (let m = all.exec(text); m; m = all.exec(text)) {
+    const hit = cardAtHeading(text, m);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function cardAtHeading(text: string, m: RegExpExecArray): CardHit | null {
   let pos = m.index + m[0].length;
   const tableStart = pos;
-  // Blank lines, then consecutive table lines.
+  // Blank lines and sub-headings («### ⚖️ معلومات التشريع الأساسية»: 23 files
+  // in last_owner, 2026-10-25, whose card stayed in the ديباجة), then
+  // consecutive table lines. Another 📊 heading is never a sub-heading.
   const lineRe = /\n([^\n]*)/g;
   lineRe.lastIndex = pos;
   let sawTable = false;
@@ -206,7 +228,7 @@ function cardFromHeading(text: string): CardHit | null {
       pos = l.index + l[0].length;
       continue;
     }
-    if (!sawTable && line === "") continue;
+    if (!sawTable && (line === "" || (/^#{1,6}\s/.test(line) && !line.includes("📊")))) continue;
     break;
   }
   if (!sawTable) return null;
@@ -247,11 +269,47 @@ function cardFromDetails(text: string): CardHit | null {
   return { start: m.index, end, card: { main, more } };
 }
 
-function findCard(text: string): CardHit | null {
-  const a = cardFromHeading(text);
-  const b = cardFromDetails(text);
-  if (a && b) return a.start <= b.start ? a : b;
-  return a ?? b;
+function firstCardFrom(text: string, from: number): CardHit | null {
+  const tail = text.slice(from);
+  const a = cardFromHeading(tail);
+  const b = cardFromDetails(tail);
+  const hit = a && b ? (a.start <= b.start ? a : b) : (a ?? b);
+  return hit ? { start: hit.start + from, end: hit.end + from, card: hit.card } : null;
+}
+
+/**
+ * Every card of the preamble, in file order, without overlaps. A few files
+ * carry a second card after the first («📊 بطاقة تعريف القرار وبيانات
+ * التعديلات»: 5 in last_owner, 2026-10-25). Owner answer ٢٦٠: the card is in
+ * the side column only, so the second one is lifted too and its rows join
+ * the first card's «المزيد» rows (a row already there, same key and value,
+ * is not repeated).
+ */
+function findCards(text: string): { card: LawMetadataCard; ranges: Range[] } | null {
+  const hits: CardHit[] = [];
+  for (let hit = firstCardFrom(text, 0); hit; hit = firstCardFrom(text, hit.end)) hits.push(hit);
+  if (hits.length === 0) return null;
+  const [first, ...others] = hits;
+  const more = [...first.card.more];
+  const rowId = (f: LawCardField) => `${f.key}\u0000${f.value}`;
+  const seen = new Set([...first.card.main, ...more].map(rowId));
+  for (const h of others) {
+    for (const f of [...h.card.main, ...h.card.more]) {
+      if (seen.has(rowId(f))) continue;
+      seen.add(rowId(f));
+      more.push(f);
+    }
+  }
+  return { card: { main: first.card.main, more }, ranges: hits.map(({ start, end }) => ({ start, end })) };
+}
+
+/**
+ * Where the identity cards sit in `preamble` (offsets into the text with
+ * «\r\n» read as «\n»), the same blocks extractLawPreambleBlocks lifts: for a
+ * reader that shows the preamble as it is (a decree's ديباجة).
+ */
+export function lawCardRanges(preamble: unknown): Array<{ start: number; end: number }> {
+  return findCards(normalise(preamble))?.ranges ?? [];
 }
 
 // ── The preamble without the lifted blocks ──────────────────────────────────
@@ -343,14 +401,14 @@ export function extractLawPreambleBlocks(preamble: unknown): LawPreambleBlocks {
   const text = normalise(preamble);
   const summaryHit = findSummary(text);
   const summary = summaryHit ? unquote(summaryHit.body) : "";
-  const cardHit = findCard(text);
+  const cards = findCards(text);
   const ranges: Range[] = [];
   if (summaryHit && summary) ranges.push(summaryHit);
-  if (cardHit) ranges.push(cardHit);
+  if (cards) ranges.push(...cards.ranges);
   return {
     summary,
     summaryLabel: summary && summaryHit ? summaryHit.label : "",
-    metadataCard: cardHit ? cardHit.card : null,
+    metadataCard: cards ? cards.card : null,
     rest: withoutRanges(text, ranges),
   };
 }

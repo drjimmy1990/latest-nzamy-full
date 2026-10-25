@@ -78,6 +78,8 @@ export interface ReaderBook {
   school: string;
   investigator: string;
   publisher: string;
+  /** Owner ٢٦٣: the book's short summary (feqh_books.description); "" when none. */
+  description: string;
   /** feqh_books.total_volumes — this row's own volume number, NOT a series size. */
   totalVolumes: number;
   /** The series this volume belongs to, or null for a single book. */
@@ -158,6 +160,7 @@ function bookMeta(api: Row, chapters: ReaderChapter[]): ReaderBook {
     school: str(api.school),
     investigator: str(api.investigator),
     publisher: str(api.publisher),
+    description: str(api.description).trim(),
     totalVolumes: numOrNull(api.totalVolumes) ?? 0,
     series: parseSeries(api.series, id),
     chapters,
@@ -415,7 +418,13 @@ export function neighbour(
 }
 
 const norm = (s: string) =>
-  s.replace(/[أإآا]/g, "ا").replace(/[ةه]/g, "ه").replace(/[يى]/g, "ي").toLowerCase();
+  s
+    .replace(/[أإآا]/g, "ا")
+    .replace(/[ةه]/g, "ه")
+    .replace(/[يى]/g, "ي")
+    .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
+    .replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
+    .toLowerCase();
 
 /**
  * Filter the TOC by a query: a chapter whose title matches keeps all its

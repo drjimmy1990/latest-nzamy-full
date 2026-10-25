@@ -8,6 +8,7 @@ import { EXEC_REGULATION_TYPE, toSectionCode } from "@/app/laws/lawsIndexFacets"
 import { maskListOfficialFields, TIER_SHAPED_CACHE_CONTROL } from "@/app/api/library/laws/[slug]/_official-meta";
 import { lawSummaryVisible } from "@/lib/library/lawSummaryVisibility";
 import { readWithOptionalFeatures, type OptionalFeature } from "@/lib/library/optionalColumn";
+import { BOOK_SERIES_FEATURE, bookVolumeColumns } from "@/lib/library/bookVolumes";
 
 /**
  * Card columns only (LIB-16). `select('*')` shipped every list row's `fts`
@@ -26,8 +27,8 @@ const LAW_LIST_COLUMNS =
 /**
  * N2.2: the law's موجز for the card (library.laws.summary_brief, generated from
  * the preamble by migration 20261025_20) — the موجز text only, never the
- * preamble. Read only for viewers LAW_SUMMARY_AUDIENCE admits (owner ٢٦٠ open:
- * subscribers); locked for the anon key like the preamble, so it rides on the
+ * preamble. Read for the viewers LAW_SUMMARY_AUDIENCE admits (owner ٢٦٠ (أ):
+ * everyone); locked for the anon key like the preamble, so it rides on the
  * service-role read below. Before the migration the read falls back to
  * LAW_LIST_COLUMNS (selectWithOptionalColumn) and the cards show no موجز.
  */
@@ -44,7 +45,7 @@ const LAW_SUMMARY_COLUMN = "summary_brief";
  * selected — no viewer receives one. The index idx_laws_catalogue_recency is
  * in exactly this order. Before the migration the order falls back to the
  * old section → title → slug (readWithOptionalFeatures). Catalogue only:
- * /api/library/search keeps its own order (owner ٢٧٧ open).
+ * /api/library/search orders by relevance (owner ٢٧٧ (أ), 20261026_52).
  */
 const LAW_SORT_KEY = "catalogue_recency_key";
 const LAW_OPTIONAL_FEATURES: readonly OptionalFeature[] = [
@@ -52,8 +53,10 @@ const LAW_OPTIONAL_FEATURES: readonly OptionalFeature[] = [
   { key: "sort", columns: [LAW_SORT_KEY] },
 ];
 const DESC_NULLS_LAST = { ascending: false, nullsFirst: false } as const;
+// `summary` (owner ٢٦٣): the card shows the short موجز, else the source's
+// summary — both are catalogue text, on the anon allow-list of 20261019_40.
 const DECREE_LIST_COLUMNS =
-  "id, title, type, issuer, ref, date, summary_brief, category, hashtags, instrument_ar";
+  "id, title, type, issuer, ref, date, summary_brief, summary, category, hashtags, instrument_ar";
 const BOOK_LIST_COLUMNS =
   "id, title, author, school, type, category, description, investigator, total_volumes, total_pages";
 const COLLECTION_LIST_COLUMNS =
@@ -273,7 +276,8 @@ export async function GET(request: Request) {
             return out.order("section_code").order("title").order("slug");
           }, serverOnly, {
             features: LAW_OPTIONAL_FEATURES,
-            // The موجز only for viewers the ٢٦٠ flag admits; the order for all.
+            // The موجز for the viewers the ٢٦٠ flag admits (answered: everyone,
+            // the guest too); the order for all.
             wanted: lawSummaryVisible(hasFullAccess) ? ["summary", "sort"] : ["sort"],
           })
         : Promise.resolve(emptySection()),
@@ -293,7 +297,15 @@ export async function GET(request: Request) {
           )
         : Promise.resolve(emptySection()),
       shouldFetch("books")
-        ? fetchSection("feqh_books", BOOK_LIST_COLUMNS, "books", (q) => q.order("title").order("id"))
+        ? fetchSection(
+            "feqh_books",
+            // Owner ٢٦٢: the series pair when the database has it (20261026_51).
+            (on) => bookVolumeColumns(on, BOOK_LIST_COLUMNS),
+            "books",
+            (q) => q.order("title").order("id"),
+            supabase,
+            { features: [BOOK_SERIES_FEATURE], wanted: [BOOK_SERIES_FEATURE.key] },
+          )
         : Promise.resolve(emptySection()),
       shouldFetch("collections")
         ? fetchAllCollections()
@@ -315,7 +327,10 @@ export async function GET(request: Request) {
     const decreesRows = decrees.data as unknown as Record<string, unknown>[];
     decrees.data = decreesRows.map((row) => {
       const isFree = hasFullAccess || ((freeItemsByType.decrees as string[]) ?? []).includes(row.id as string);
-      return { ...(isFree ? row : stripFields({ ...row }, ["summary_brief", "content", "text"])), free: isFree, locked: !isFree };
+      // Owner ٢٦٣ (and ٢٦٠'s rule for the laws): the موجز is for everyone —
+      // a locked card keeps summary_brief / summary (the decree route sends
+      // both to every viewer too); only the text stays out.
+      return { ...(isFree ? row : stripFields({ ...row }, ["content", "text"])), free: isFree, locked: !isFree };
     }) as any;
 
     const principlesRows = principles.data as unknown as Record<string, unknown>[];

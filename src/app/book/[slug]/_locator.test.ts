@@ -102,4 +102,10 @@ test('an empty query matches nothing', () => {
   assert.ok(!matchesLocator({ vol: 3, page: 47 }, null, null));
 });
 
+test('matchesLocator folds Arabic-Indic and Extended Arabic digits bidirectionally', () => {
+  assert.ok(matchesLocator({ vol: 3, page: 47 }, '٣', '٤٧'));
+  assert.ok(matchesLocator({ vol: 3, page: 47 }, '۳', '۴۷'));
+  assert.ok(matchesLocator({ vol: null, volLabel: '٣', page: null, pageLabel: '٤٧' }, '3', '47'));
+});
+
 console.log(`✔ _locator: ${passed} tests passed`);

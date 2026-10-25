@@ -1,14 +1,18 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
+import { checkFolderItem, readJsonObject } from '../validate';
 
 /**
  * POST /api/library/folders/items — add one item to a user-owned smart folder.
  *
- * Auth + ownership mirror the DELETE-item check in ../route.ts. RLS
- * ("Users can add to own folders", 20260626_legal_library_schema.sql) enforces
- * ownership as defense-in-depth; the explicit check returns a clean 403.
+ * Authenticates via the request cookie client (`supabase.auth.getUser()`),
+ * verifies folder ownership (`smart_folders.user_id = user.id`), and writes via
+ * `createServiceClient()` so saves succeed even when `authenticated` lacks
+ * table-level INSERT/UPDATE grants on `library.smart_folder_items`.
  * Idempotent: upserts on (folder_id, entity_type, entity_id).
+ * Body rules (../validate): folderId a UUID, entityType law|order|precedent|book,
+ * entityId 1–200 chars, title / titleEn ≤ 300, catId ≤ 30 (else dropped).
  */
 export async function POST(request: Request) {
   try {
@@ -26,18 +30,20 @@ export async function POST(request: Request) {
     const frozen = frozenAccountResponse(user);
     if (frozen) return frozen;
 
-    const body = await request.json();
-    const { folderId, entityType, entityId, title, titleEn, catId } = body ?? {};
-
-    if (!folderId || !entityType || !entityId) {
-      return NextResponse.json(
-        { error: 'folderId, entityType and entityId are required' },
-        { status: 400 },
-      );
+    const body = await readJsonObject(request);
+    if (!body) {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
     }
+    const checked = checkFolderItem(body);
+    if (!checked.ok) {
+      return NextResponse.json({ error: checked.error }, { status: 400 });
+    }
+    const { folderId, entityType, entityId, title, titleEn, catId } = checked.value;
+
+    const serverOnly = await createServiceClient();
 
     // Ownership guard (mirrors the DELETE-item check in ../route.ts).
-    const { data: ownerFolder, error: folderError } = await supabase
+    const { data: ownerFolder, error: folderError } = await serverOnly
       .schema('library')
       .from('smart_folders')
       .select('id')
@@ -53,7 +59,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const { data: item, error } = await supabase
+    const { data: item, error } = await serverOnly
       .schema('library')
       .from('smart_folder_items')
       .upsert(
@@ -61,9 +67,9 @@ export async function POST(request: Request) {
           folder_id: folderId,
           entity_type: entityType,
           entity_id: entityId,
-          title: title ?? null,
-          title_en: titleEn ?? null,
-          cat_id: catId ?? null,
+          title,
+          title_en: titleEn,
+          cat_id: catId,
         },
         { onConflict: 'folder_id,entity_type,entity_id' },
       )
