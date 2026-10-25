@@ -132,6 +132,20 @@ test("every route that signs a documents path with the service role checks the u
   }
 });
 
+test("the share link and the licence queue check the stored path before signing it (security review, finding 1; 20261026_66)", () => {
+  for (const [f, check] of [
+    // a share row's document_path: a live attachment of the share's owner, in his folder
+    ["src/app/api/v1/share/[token]/verify/route.ts", "isShareServable(share, attachment)"],
+    // a licence image: licences/<that lawyer>/…
+    ["src/app/api/v1/admin/verifications/route.ts", "isOwnLicencePath(path, lawyerUserId)"],
+  ] as const) {
+    const src = read(f);
+    const at = src.indexOf(check);
+    assert.ok(at > 0, `${f} calls ${check}`);
+    assert.ok(src.search(/createSignedUrl\(/) > at, `${f} checks before createSignedUrl`);
+  }
+});
+
 test("the proxy rate-limits the ZIP route in its own bucket", () => {
   const proxy = read("src/proxy.ts");
   assert.match(proxy, /isAttachmentsZipRoute\(method, pathname\)/);
