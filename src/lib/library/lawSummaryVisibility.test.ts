@@ -142,7 +142,7 @@ test("owner ٢٦٠ opens nothing else in the law route: ديباجة, official m
   const route = read("src/app/api/library/laws/[slug]/route.ts");
   // The ديباجة (and the regulation's) stay blank for a non-subscriber.
   assert.match(route, /preamble: officialMeta\.officialMetaLocked \? '' : readerExtras\.preamble,/);
-  assert.match(route, /regulationPreamble: officialMeta\.officialMetaLocked \? '' : regulationPreamble,/);
+  assert.match(route, /regulationPreamble: officialMeta\.officialMetaLocked \? '' : withCleanCardRows\(regulationPreamble\),/);
   // T28-22 mask still keyed on the subscriber flag.
   assert.match(route, /const officialMeta = lawOfficialMeta\(law, isSubscriber\);/);
   // Article text: the same free limit (owner ١٨٤) and full-access predicate.
@@ -477,11 +477,47 @@ test("withCleanCardRows returns the same string when there is nothing to clean",
   assert.equal(withCleanCardRows(""), "");
 });
 
-test("the decree route cleans the card in the subscriber branch only; the lock is read off the stored preamble", () => {
+test("the decree route cleans the preamble's card in the subscriber branch only, and a page only once it is unlocked", () => {
   const route = read("src/app/api/library/decrees/[id]/route.ts");
   assert.match(route, /preamble: isSubscriber \? withCleanCardRows\(preamble\) : ''/);
+  // The lock is read off the stored preamble; the page lock (١٨٣) is decided before any cleaning.
   assert.match(route, /preambleLocked: !isSubscriber && preamble\.trim\(\) !== ''/);
-  assert.equal(route.match(/withCleanCardRows\(/g)?.length, 1);
+  assert.match(route, /idx < unlockedCount && typeof p\.content === 'string' \? withCleanCardRows\(p\.content\) : ''/);
+  assert.match(route, /const unlockedCount = free === -1 \? pages\.length : Math\.min\(free, pages\.length\);/);
+  assert.equal(route.match(/withCleanCardRows\(/g)?.length, 2);
+});
+
+test("a second card the reader cannot lift («🗂️ البطاقة التعريفية …») leaves the law preamble with clean rows", () => {
+  const preamble = [
+    "### 📊 بطاقة تعريف نظام",
+    "",
+    "| الحقل | القيمة |",
+    "| :--- | :--- |",
+    "| **نوع التشريع** | نظام |",
+    "",
+    "***",
+    "",
+    "<details>",
+    "<summary>🗂️ البطاقة التعريفية للنظام وبيانات التشريع</summary>",
+    "",
+    "### 🔄 بيانات آخر تحديث",
+    "| الحقل | القيمة |",
+    "|:--- |:--- |",
+    "| **أداة إصدار آخر تحديث** | لا توجد تعديلات لاحقة |",
+    "| **تاريخ أداة آخر تحديث** | — |",
+    "| **مرفق أداة آخر تحديث (PDF)** | غير متوفر |",
+    "",
+    "</details>",
+    "",
+    "## ديباجة النظام",
+    "",
+    "بعد الاطلاع على …",
+  ].join("\n");
+  const out = lawReaderExtras(preamble, true).preamble;
+  assert.ok(!out.includes("غير متوفر"), out);
+  assert.ok(!out.includes("تاريخ أداة آخر تحديث"), out);
+  assert.ok(out.includes("| **أداة إصدار آخر تحديث** | لا توجد تعديلات لاحقة |"), out);
+  assert.ok(out.includes("بعد الاطلاع على …"), out);
 });
 
 test("the precedents route cleans a principle's card before the 150-character cut", () => {

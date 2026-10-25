@@ -128,9 +128,11 @@ export async function GET(
         totalItems: pages.length,
       },
       // A locked page is an empty string: the reader shows a lock card for
-      // every page at or past unlockedCount.
+      // every page at or past unlockedCount. A page that opens with the card
+      // (a file with no ARTICLE_START: its whole body is page 1) has its rows
+      // cleaned like the preamble's (owner ٢٥٩) — after the lock decision.
       articles: pages.map((p: Record<string, unknown>, idx: number) =>
-        idx < unlockedCount && typeof p.content === 'string' ? p.content : ''),
+        idx < unlockedCount && typeof p.content === 'string' ? withCleanCardRows(p.content) : ''),
       unlockedCount,
       hashtags: decree.hashtags || [],
       official_url: decree.official_url || '',

@@ -455,7 +455,32 @@ export function cardForViewer(card: LawMetadataCard | null, isSubscriber: boolea
  * الحكم», with or without 📊 — in principles.text the table sometimes sits on
  * the heading line itself («… الحكم | الحقل | القيمة | | :--- | …»).
  */
-const ANY_CARD_HEADING = /^[ \t]*#{1,6}[^\n]*بطاقة تعريف[^\n]*$/gm;
+const ANY_CARD_HEADING = /^[ \t]*#{1,6}[^\n]*(?:بطاقة تعريف|البطاقة التعريفية)[^\n]*$/gm;
+/**
+ * A card in a toggle whose summary has no 📊, so lawCardRanges does not lift
+ * it: «<details><summary>🗂️ البطاقة التعريفية للنظام وبيانات التشريع</summary>»
+ * — a second card some laws carry, which stays in the preamble a subscriber reads.
+ */
+const ANY_CARD_DETAILS = /<details[^>]*>\s*<summary>[^<]*(?:بطاقة تعريف|البطاقة التعريفية)[^<]*<\/summary>/g;
+
+/** A «بطاقة تعريف» / «البطاقة التعريفية» toggle, to its own closing `</details>`. */
+function cardDetailsBlocks(text: string): Array<{ start: number; end: number }> {
+  const out: Array<{ start: number; end: number }> = [];
+  for (const m of text.matchAll(ANY_CARD_DETAILS)) {
+    const start = m.index ?? 0;
+    const tag = /<details\b[^>]*>|<\/details>/g;
+    tag.lastIndex = start;
+    let depth = 0;
+    for (let t = tag.exec(text); t; t = tag.exec(text)) {
+      depth += t[0] === "</details>" ? -1 : 1;
+      if (depth === 0) {
+        out.push({ start, end: t.index + t[0].length });
+        break;
+      }
+    }
+  }
+  return out;
+}
 
 /** A «بطاقة تعريف» heading and the blank / table lines right under it. */
 function cardHeadingBlocks(text: string): Array<{ start: number; end: number }> {
@@ -564,14 +589,17 @@ function cleanCardBlock(block: string): string {
  * decree's ديباجة (the decree route, subscribers only: owner ٢٢١) and a
  * precedent's text (principles.text, whose «بطاقة تعريف السابقة القضائية»
  * table the reader prints): every card row as the law card gives it
- * (rowTidy). Only the card blocks are touched — lawCardRanges' 📊 cards and
- * any «بطاقة تعريف» heading with its table — never a table of the text
- * itself. A text with nothing to clean comes back as it was (same string).
+ * (rowTidy) — and the law's own preamble, where a second card the reader
+ * cannot lift («🗂️ البطاقة التعريفية …») stays (lawReaderExtras), and a
+ * decree page that opens with the card. Only the card blocks are touched —
+ * lawCardRanges' 📊 cards, any «بطاقة تعريف» / «البطاقة التعريفية» toggle
+ * or heading with its table — never a table of the text itself. A text
+ * with nothing to clean comes back as it was (same string).
  */
 export function withCleanCardRows(input: string): string {
-  if (typeof input !== "string" || !input.includes("بطاقة تعريف")) return input;
+  if (typeof input !== "string" || !/بطاقة تعريف|البطاقة التعريفية/.test(input)) return input;
   const text = input.replace(/\r\n/g, "\n");
-  const ranges = [...lawCardRanges(text), ...cardHeadingBlocks(text)].sort((a, b) => a.start - b.start);
+  const ranges = [...lawCardRanges(text), ...cardDetailsBlocks(text), ...cardHeadingBlocks(text)].sort((a, b) => a.start - b.start);
   let out = "";
   let at = 0;
   for (const r of ranges) {
@@ -609,7 +637,8 @@ export function lawReaderExtras(
   // With the card and the موجز gone, what is left is often only the law's H1
   // and an empty ديباجة toggle: no box rather than one that opens on the title.
   const lifted = !!blocks.summary || !!blocks.metadataCard;
-  const out: LawReaderExtras = { preamble: lifted && isHollowPreamble(blocks.rest) ? "" : blocks.rest };
+  // A card left in the text («🗂️ البطاقة التعريفية …»): its rows as the card's (owner ٢٥٩).
+  const out: LawReaderExtras = { preamble: lifted && isHollowPreamble(blocks.rest) ? "" : withCleanCardRows(blocks.rest) };
   if (blocks.summary) {
     out.summary = blocks.summary;
     out.summaryLabel = blocks.summaryLabel;

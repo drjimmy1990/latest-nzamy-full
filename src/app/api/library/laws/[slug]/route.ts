@@ -10,7 +10,7 @@ import { orderLawChapters } from './_order-chapters';
 import { articleDisplayLabel, articleLocatorText } from './_article-label';
 import { lawOfficialLink, lawOfficialMeta, TIER_SHAPED_CACHE_CONTROL } from './_official-meta';
 import { splitStoredPreamble } from '@/lib/library/splitPreamble';
-import { lawReaderExtras } from '@/lib/library/lawSummaryVisibility';
+import { lawReaderExtras, withCleanCardRows } from '@/lib/library/lawSummaryVisibility';
 import { selectAllPages } from '@/lib/supabase/selectAllPages';
 
 /**
@@ -376,7 +376,8 @@ export async function GET(
       // the decree itself — measured on 5,477 laws, 2026-09-28. Sending it to
       // a non-subscriber would undo the masking above, so it goes with it.
       preamble: officialMeta.officialMetaLocked ? '' : readerExtras.preamble,
-      regulationPreamble: officialMeta.officialMetaLocked ? '' : regulationPreamble,
+      // Owner ٢٥٩ (أ): the regulation's own card, if it carries one, as the law card's rows.
+      regulationPreamble: officialMeta.officialMetaLocked ? '' : withCleanCardRows(regulationPreamble),
       // Owner ٢٦٠: the card and the موجز are lifted out for every viewer now,
       // so a lock row is promised only for the ديباجة text left after them —
       // never for a preamble that was only the card and the law's title.
