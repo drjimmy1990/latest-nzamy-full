@@ -115,3 +115,89 @@ test("the seeder does not write the block twice when the file kept it in its pre
   assert.equal(stored, filePreamble);
   assert.deepEqual(splitStoredPreamble(stored), { preamble: "# نظام\n\n***\n## المواد", regulationPreamble: "قرار" });
 });
+
+// ─── Rows loaded by the OLD seeder (no marker): `${preamble}\n***\n${reg}` ──
+// Live rows keep that shape until the owner's next load. The old seeder
+// appended the parser's trimmed regulation_preamble after a tight `\n***\n` at
+// the very END of the trimmed preamble (git show 58ab027c:scripts/seed-library.ts).
+// Measured over the owner corpus (last_owner, 1,529 laws): the two rows of that
+// shape split back exactly, and no plain preamble splits.
+
+/** The old seeder's join, verbatim. */
+const oldSeederJoin = (preamble: string, reg: string) => preamble + (reg ? `\n***\n${reg}` : "");
+
+/** Shaped like civil-service-law: the law preamble ends with `</details>` + `---`. */
+const CIVIL_SERVICE_LAW = [
+  "<details>",
+  "<summary>📜 ديباجة المرسوم الملكي</summary>",
+  "",
+  "يقرر ما يلي: الموافقة على نظام الخدمة المدنية بالصيغة المرافقة لهذا.",
+  "",
+  "**النائب الثاني لرئيس مجلس الوزراء**",
+  "",
+  "</details>",
+  "",
+  "***",
+  "",
+  "# نظام الخدمة المدنية",
+  "",
+  "---",
+].join("\n");
+const CIVIL_SERVICE_REG = [
+  "**اللائحة التنفيذية للموارد البشرية في الخدمة المدنية**",
+  "*(صادرة بقرار وزير الخدمة المدنية رقم 1550 وتاريخ 1440/06/09هـ)*",
+  "## الباب الأول: التعريفات والأحكام العامة",
+].join("\n");
+
+/** Shaped like nazaha-anti-corruption-commission-law: the regulation preamble is a level-5 heading. */
+const NAZAHA_LAW = "# نظام هيئة الرقابة ومكافحة الفساد\n\n***\n\n<details>\n<summary>ديباجة</summary>\n\nرئيس مجلس الوزراء\n\n</details>\n\n\n## المواد";
+const NAZAHA_REG = "##### ديباجة النظام الملكي رقم (أ/303) وتاريخ 1446/07/30ه\nبسم الله الرحمن الرحيم\nأمرنا بما هو آت:\nسلمان بن عبدالعزيز آل سعود\n---";
+
+test("legacy row: an old-seeder join (civil-service shape) splits back exactly", () => {
+  const out = splitStoredPreamble(oldSeederJoin(CIVIL_SERVICE_LAW, CIVIL_SERVICE_REG));
+  assert.equal(out.preamble, CIVIL_SERVICE_LAW);
+  assert.equal(out.regulationPreamble, CIVIL_SERVICE_REG);
+});
+
+test("legacy row: an old-seeder join (nazaha shape, ##### ديباجة) splits back exactly", () => {
+  const out = splitStoredPreamble(oldSeederJoin(NAZAHA_LAW, NAZAHA_REG));
+  assert.equal(out.preamble, NAZAHA_LAW);
+  assert.equal(out.regulationPreamble, NAZAHA_REG);
+});
+
+test("legacy row: an empty law preamble joined by the old seeder still splits", () => {
+  assert.deepEqual(splitStoredPreamble(oldSeederJoin("", CIVIL_SERVICE_REG)), { preamble: "", regulationPreamble: CIVIL_SERVICE_REG });
+});
+
+test("legacy fallback: a tight template seam before «## المواد» is not a regulation", () => {
+  // نظام العمل / نظام الانضباط الوظيفي: the last `***` is tight on both sides.
+  const text = "<details>\n<summary>ديباجة</summary>\n\nرئيس مجلس الوزراء\n\n</details>\n***\n## المواد";
+  assert.deepEqual(splitStoredPreamble(text), { preamble: text, regulationPreamble: "" });
+});
+
+test("legacy fallback: the treaty template's «[نص ديباجة القرار …]» rules are not a regulation", () => {
+  // Section 29: tight `***` rules around a placeholder line that says ديباجة.
+  const text = "<details>\n<summary>📄 ديباجة القرار والتمهيد</summary>\n***\n[نص ديباجة القرار مستخرج بصرياً]\n***\n</details>\n\n### الصفحة 1\nبعون الله تعالى";
+  assert.deepEqual(splitStoredPreamble(text), { preamble: text, regulationPreamble: "" });
+  // …even if the placeholder were the tail.
+  const tail = "<summary>📄 ديباجة القرار والتمهيد</summary>\n***\n[نص ديباجة القرار مستخرج بصرياً]";
+  assert.deepEqual(splitStoredPreamble(tail), { preamble: tail, regulationPreamble: "" });
+});
+
+test("legacy fallback: plain prose after a tight *** stays in the law preamble", () => {
+  // GCC rules: «…المواثيق\n***\nوافق المجلس الأعلى…» — no heading, no لائحة.
+  const text = "واتساقاً مع المواثيق\n***\nوافق المجلس الأعلى لمجلس التعاون لدول الخليج العربية في دورته (44)";
+  assert.deepEqual(splitStoredPreamble(text), { preamble: text, regulationPreamble: "" });
+  // A heading that names neither لائحة nor ديباجة does not split either.
+  const heading = "# نظام\n***\n## الباب الأول: أحكام عامة";
+  assert.deepEqual(splitStoredPreamble(heading), { preamble: heading, regulationPreamble: "" });
+});
+
+test("legacy fallback: a *** with blank lines around it (the template's rule) never splits", () => {
+  const text = "# نظام\n\n***\n\n**اللائحة التنفيذية**\nنص";
+  assert.deepEqual(splitStoredPreamble(text), { preamble: text, regulationPreamble: "" });
+});
+
+test("the precious-metals shape stays whole under the fallback too", () => {
+  assert.deepEqual(splitStoredPreamble(PRECIOUS_METALS), { preamble: PRECIOUS_METALS.trim(), regulationPreamble: "" });
+});

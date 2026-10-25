@@ -274,9 +274,11 @@ export async function GET(
     });
 
     // The law's preamble and its regulation's preamble share one column. N1.2:
-    // split ONLY on the REGULATION_PREAMBLE marker — the file template's own
-    // `***` rules (موجز / identity card / H1) are not a regulation boundary,
-    // and splitting on them labelled the card «اللائحة التنفيذية».
+    // split on the REGULATION_PREAMBLE marker — the file template's own `***`
+    // rules (موجز / identity card / H1) are not a regulation boundary, and
+    // splitting on them labelled the card «اللائحة التنفيذية». Rows the old
+    // seeder joined with `***` still split, by their exact shape
+    // (src/lib/library/splitPreamble.ts).
     const { preamble, regulationPreamble } = splitStoredPreamble(law.preamble);
 
     // ── Build the flat "اللائحة وحدها" view — one sorted list per secondary
