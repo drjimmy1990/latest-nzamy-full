@@ -16,7 +16,7 @@ test("cyclePrice reads the column of each cycle (numeric strings included)", () 
   assert.equal(cyclePrice(null, "monthly"), null);
 });
 
-test("monthlyEquivalent: the cycle's own price over its months, else the monthly price", () => {
+test("monthlyEquivalent: the cycle's own price over its months; an unpriced quarter / half → yearly / 12; else monthly", () => {
   assert.equal(monthlyEquivalent(lawyer, "monthly"), 399);
   assert.equal(monthlyEquivalent(lawyer, "yearly"), 3990 / 12);
   assert.equal(monthlyEquivalent(firmQ, "quarterly"), 2990 / 3);
@@ -24,7 +24,10 @@ test("monthlyEquivalent: the cycle's own price over its months, else the monthly
   assert.equal(monthlyEquivalent(firmQ, "yearly"), 9900 / 12);
   // the old rule for anything else
   assert.equal(monthlyEquivalent(lawyer, "custom"), 399);
-  assert.equal(monthlyEquivalent(lawyer, "quarterly"), 399, "an unpriced cycle falls back to the monthly price");
+  assert.equal(monthlyEquivalent(lawyer, "quarterly"), 3990 / 12, "an unpriced quarter counts at the yearly rate, never the full monthly price");
+  assert.equal(monthlyEquivalent(lawyer, "semiannual"), 3990 / 12);
+  assert.equal(monthlyEquivalent({ price_monthly: 399 }, "quarterly"), 399, "no yearly price either: the monthly price");
+  assert.equal(monthlyEquivalent({ price_yearly: 3990 }, "monthly"), 0, "a monthly subscription never borrows the yearly rate");
   assert.equal(monthlyEquivalent(firmQ, "custom"), 0);
   assert.equal(monthlyEquivalent(null, "yearly"), 0);
 });

@@ -35,17 +35,29 @@ export function cyclePrice(row: PlanPriceRow | null | undefined, cycle: string):
 }
 
 /**
- * The monthly equivalent of a subscription for MRR: the price of its own
- * cycle divided by the cycle's months (yearly / 12, quarterly / 3,
- * semiannual / 6). A cycle the row does not price, or a 'custom' grant, falls
- * back to price_monthly — the rule these screens used before the new cycles.
- * 0 when nothing is priced.
+ * The monthly equivalent of a subscription for MRR, in this order:
+ *   1. the price of its own cycle over the cycle's months (yearly / 12,
+ *      quarterly / 3, semiannual / 6);
+ *   2. a quarterly or half-yearly subscription whose plan row has no price
+ *      for that cycle (a row from before 20261026_10, or an admin grant on a
+ *      plan not sold in it): price_yearly / 12 — the nearest committed
+ *      price. The full monthly price would count it at the dearest rate
+ *      there is (399 a month for a plan sold at 3,990 a year);
+ *   3. otherwise price_monthly: a monthly subscription on a row with no
+ *      monthly price falls through to here and gets 0, and a 'custom' admin
+ *      grant keeps the rule these screens used before the new cycles.
+ * 0 when nothing is priced. The amount actually paid lives on the order
+ * (payment_orders.total_halalas); this is the list price, as before.
  */
 export function monthlyEquivalent(row: PlanPriceRow | null | undefined, billingCycle: string | null | undefined): number {
   if (!row) return 0;
   const cycle = typeof billingCycle === "string" ? billingCycle : "";
   const own = cyclePrice(row, cycle);
   if (own !== null && isCycle(cycle)) return own / CYCLE_MONTHS[cycle];
+  if (cycle === "quarterly" || cycle === "semiannual") {
+    const yearly = positive(row.price_yearly);
+    if (yearly !== null) return yearly / CYCLE_MONTHS.yearly;
+  }
   return positive(row.price_monthly) ?? 0;
 }
 

@@ -994,13 +994,20 @@ export default function UserProfilePage() {
     type: tx.kind === "admin_adjustment" ? "pay" as const : "ai" as const,
   }));
 
-  /* ── Build payments from subscription history ──────────────────────────── */
-  const PAYMENTS = subHistory.map(s => ({
-    date: formatDate(s.created_at),
-    amount: cyclePrice(s.subscription_plans, s.billing_cycle) ?? s.subscription_plans?.price_monthly ?? 0,
-    status: s.status,
-    tier: s.subscription_plans?.name_ar ?? s.tier,
-  }));
+  /* ── Build the subscription history rows ───────────────────────────────── */
+  // The plan's LIST price for the row's cycle, labelled «سعر الباقة» — not what
+  // was paid (the order total lives in payment_orders and can differ: VAT,
+  // an older price, an admin grant). A cycle the plan row does not price shows
+  // «—», never the monthly price under another cycle.
+  const PAYMENTS = subHistory.map(s => {
+    const listPrice = cyclePrice(s.subscription_plans, s.billing_cycle);
+    return {
+      date: formatDate(s.created_at),
+      priceLabel: listPrice !== null ? `سعر الباقة: ${listPrice} ر.س/${cycleUnitAr(s.billing_cycle)}` : "سعر الباقة: —",
+      status: s.status,
+      tier: s.subscription_plans?.name_ar ?? s.tier,
+    };
+  });
 
   return (
     <div className="max-w-6xl mx-auto space-y-5" dir="rtl">
@@ -1294,7 +1301,7 @@ export default function UserProfilePage() {
                 <div key={i} className={`flex items-center justify-between py-2.5 ${i<PAYMENTS.length-1?`border-b ${isDark?"border-white/[0.04]":"border-slate-50"}`:""}`}>
                   <span className={`text-[12px] ${isDark?"text-zinc-400":"text-slate-500"}`}>{p.date}</span>
                   <span className={`text-[11px] ${isDark?"text-zinc-400":"text-slate-500"}`}>{p.tier}</span>
-                  <span className={`text-[12px] font-bold ${isDark?"text-white":"text-slate-700"}`}>{p.amount} ر.س</span>
+                  <span className={`text-[12px] font-bold ${isDark?"text-white":"text-slate-700"}`}>{p.priceLabel}</span>
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                     p.status === "active" ? "text-emerald-400 bg-emerald-500/10" :
                     p.status === "cancelled" ? "text-red-400 bg-red-500/10" :
