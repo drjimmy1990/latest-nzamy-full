@@ -27,6 +27,16 @@
  * which refuses while the account exists), from what no surviving row
  * references. A failed list or remove is recorded on the request
  * (`storage_failed`) for a hand clean-up; the rows are already gone.
+ *
+ * ── THE LETTERHEAD LOGO ────────────────────────────────────────────────────
+ * The lawyer's own letterhead vault (20261026_63) goes with his profile (its
+ * FK cascades), but its logo lives in the private `branding` bucket under
+ * `u/<his id>/`, which account_purge_storage_paths (the `documents` bucket)
+ * does not list. After the delete, every object in that folder is removed —
+ * the current logo and any an earlier upload left (each upload takes a fresh
+ * name). A firm's vault (`f/<firm id>/`) belongs to the firm and is never
+ * touched by a member's purge. A failed list (63 not run: no bucket) or
+ * remove is recorded on the request like the documents' (`branding_failed`).
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -38,12 +48,14 @@ import {
   isMissingAccountDeletionSchema,
   type PurgeOutcome,
 } from "../auth/accountFreeze.ts";
+import { BRANDING_BUCKET } from "../branding/brandingVault.ts";
 
 export const DELETION_SCHEMA_MISSING_AR =
   "تجميد الحساب غير متاح بعد: لم يُنفَّذ ملف قاعدة البيانات 20261026_70 (حذف الحساب).";
 
 const STORAGE_BUCKET = "documents";
 const REMOVE_CHUNK = 100;
+const BRANDING_LIST_PAGE = 100;
 
 export interface DeletionRequestView {
   id: string;
@@ -184,6 +196,47 @@ async function finish(
 }
 
 /**
+ * After the account is gone: every object under `u/<userId>/` in the
+ * `branding` bucket (the lawyer's letterhead logo, current and replaced).
+ * Never `f/…` — a firm's logo is the firm's. Lists the whole folder first,
+ * then removes it, so paging is not shifted by the removals.
+ */
+export async function removeLawyerBrandingWith(
+  admin: SupabaseClient,
+  userId: string,
+): Promise<{ removed: number; failed: string[] | "list_failed" }> {
+  const folder = `u/${userId.toLowerCase()}`;
+  const bucket = admin.storage.from(BRANDING_BUCKET);
+  const paths: string[] = [];
+  for (let offset = 0; ; offset += BRANDING_LIST_PAGE) {
+    const { data, error } = await bucket.list(folder, { limit: BRANDING_LIST_PAGE, offset });
+    if (error) {
+      console.error("[accountDeletion] listing the letterhead logo folder failed:", folder, error.message);
+      return { removed: 0, failed: "list_failed" };
+    }
+    const page = (data ?? []) as Array<{ name?: unknown; id?: unknown }>;
+    for (const entry of page) {
+      // A sub-folder comes back with id null; the vault writes none.
+      if (typeof entry.name === "string" && entry.name && entry.id !== null) paths.push(`${folder}/${entry.name}`);
+    }
+    if (page.length < BRANDING_LIST_PAGE) break;
+  }
+  let removed = 0;
+  const failed: string[] = [];
+  for (let i = 0; i < paths.length; i += REMOVE_CHUNK) {
+    const chunk = paths.slice(i, i + REMOVE_CHUNK);
+    const { error } = await bucket.remove(chunk);
+    if (error) {
+      console.error("[accountDeletion] letterhead logo remove failed:", folder, error.message);
+      failed.push(...chunk);
+    } else {
+      removed += chunk.length;
+    }
+  }
+  return { removed, failed };
+}
+
+/**
  * One claimed request (status `purging`). Idempotent: a re-run after a crash
  * re-prepares (the keep rules are idempotent) and deleteUser of a user who is
  * already gone counts as purged.
@@ -222,11 +275,20 @@ export async function purgeAccountWith(
   const listed = await admin.rpc("account_purge_storage_paths", { p_user: args.userId });
   if (listed.error) {
     console.error("[accountDeletion] listing the files failed:", args.requestId, listed.error.code, listed.error.message);
+    const branding = await removeLawyerBrandingWith(admin, args.userId);
+    run.storageRemoved += branding.removed;
+    run.storageFailed += Array.isArray(branding.failed) ? branding.failed.length : 0;
     await finish(
       admin,
       args.requestId,
       "purged",
-      { preview: prepared.keep_preview ?? null, storage_removed: 0, storage_failed: "list_failed" },
+      {
+        preview: prepared.keep_preview ?? null,
+        storage_removed: 0,
+        storage_failed: "list_failed",
+        branding_removed: branding.removed,
+        branding_failed: branding.failed,
+      },
       null,
     );
     return { ...run, outcome: "purged", reason: "storage_list_failed" };
@@ -247,12 +309,23 @@ export async function purgeAccountWith(
     }
   }
   run.storageFailed = failed.length;
+  const documentsRemoved = run.storageRemoved;
+
+  const branding = await removeLawyerBrandingWith(admin, args.userId);
+  run.storageRemoved += branding.removed;
+  run.storageFailed += Array.isArray(branding.failed) ? branding.failed.length : 0;
 
   await finish(
     admin,
     args.requestId,
     "purged",
-    { preview: prepared.keep_preview ?? null, storage_removed: run.storageRemoved, storage_failed: failed },
+    {
+      preview: prepared.keep_preview ?? null,
+      storage_removed: documentsRemoved,
+      storage_failed: failed,
+      branding_removed: branding.removed,
+      branding_failed: branding.failed,
+    },
     null,
   );
   return { ...run, outcome: "purged" };

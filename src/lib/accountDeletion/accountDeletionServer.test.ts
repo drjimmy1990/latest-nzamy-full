@@ -11,6 +11,10 @@
  *     the surviving request's purge_after after it, and the request cancelled
  *     when that copy cannot be written.
  *
+ *   * the lawyer's letterhead logo (`branding` bucket, `u/<id>/`) goes after
+ *     the delete too; a firm's (`f/<firm>/`) is never touched (final review,
+ *     item 3).
+ *
  * RUN: node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test src/lib/accountDeletion/accountDeletionServer.test.ts
  */
 import test from "node:test";
@@ -31,6 +35,9 @@ interface World {
   paths?: string[];
   activeAfter?: "requested" | "blocked" | null;
   updateFails?: boolean;
+  /** Objects in the branding bucket, keyed by folder ("u/<id>"); a missing key lists nothing. */
+  branding?: Record<string, Array<{ name: string; id: string | null }>>;
+  brandingListError?: string;
 }
 
 function harness(world: World) {
@@ -77,6 +84,12 @@ function harness(world: World) {
   c.storage = {
     from(bucket: string) {
       return {
+        async list(folder: string, opts: { limit: number; offset: number }) {
+          events.push(`list:${bucket}:${folder}:${opts.offset}`);
+          if (bucket === "branding" && world.brandingListError) return { data: null, error: { message: world.brandingListError } };
+          const all = bucket === "branding" ? (world.branding?.[folder] ?? []) : [];
+          return { data: all.slice(opts.offset, opts.offset + opts.limit), error: null };
+        },
         async remove(paths: string[]) {
           events.push(`remove:${bucket}:${paths.join(",")}`);
           return { data: null, error: null };
@@ -99,16 +112,17 @@ test("purge: prepare → deleteUser → the file list → remove → finish purg
     `deleteUser:${USER}`,
     "rpc:account_purge_storage_paths",
     `remove:documents:${USER}/1-vault.pdf,${USER}/9-orphan.pdf`,
+    `list:branding:u/${USER}:0`,
     "rpc:account_purge_finish",
   ]);
   assert.equal(finishOf(h.log)[0].p_outcome, "purged");
 });
 
 test("purge: a refused delete lists and removes no file, and ends blocked", async () => {
-  const h = harness({ deleteError: "Database error deleting user" });
+  const h = harness({ deleteError: "Database error deleting user", branding: { [`u/${USER}`]: [{ name: "logo-abcdefgh.png", id: "o1" }] } });
   const run = await purgeAccountWith(h.admin, { requestId: REQ, userId: USER });
   assert.equal(run.outcome, "blocked");
-  assert.equal(h.events.some((e) => e.startsWith("remove:") || e === "rpc:account_purge_storage_paths"), false);
+  assert.equal(h.events.some((e) => e.startsWith("remove:") || e.startsWith("list:") || e === "rpc:account_purge_storage_paths"), false);
   assert.equal(finishOf(h.log)[0].p_outcome, "blocked");
 });
 
@@ -164,4 +178,66 @@ test("purge now: a purged account is simply gone", async () => {
   const res = await purgeNowWith(h.admin, { requestId: REQ, userId: USER, actorId: ACTOR });
   assert.equal(res.ok, true);
   assert.equal(h.events.includes("rpc:account_deletion_cancel_for"), false);
+});
+
+// ── the letterhead logo (final review, item 3) ─────────────────────────────
+
+const FIRM = "f1f1f1f1-0000-0000-0000-0000000000f1";
+
+test("purge: the lawyer's letterhead logos (u/<id>/) are removed after the delete; the firm's (f/…) are never listed", async () => {
+  const h = harness({
+    paths: [`${USER}/1-vault.pdf`],
+    branding: {
+      [`u/${USER}`]: [
+        { name: "logo-current1.png", id: "o1" },
+        { name: "logo-replaced0.webp", id: "o2" },
+      ],
+      [`f/${FIRM}`]: [{ name: "logo-firm0001.png", id: "o3" }],
+    },
+  });
+  const run = await purgeAccountWith(h.admin, { requestId: REQ, userId: USER });
+  assert.equal(run.outcome, "purged");
+  assert.equal(run.storageRemoved, 3, "the document and both logos");
+  const deletedAt = h.events.indexOf(`deleteUser:${USER}`);
+  const removeLogos = h.events.indexOf(`remove:branding:u/${USER}/logo-current1.png,u/${USER}/logo-replaced0.webp`);
+  assert.ok(removeLogos > deletedAt, "the logos go only after the account is deleted");
+  assert.equal(h.events.some((e) => e.includes("f/")), false, "a firm's vault is not the member's");
+  const report = finishOf(h.log)[0].p_report as Record<string, unknown>;
+  assert.equal(report.storage_removed, 1);
+  assert.equal(report.branding_removed, 2);
+  assert.deepEqual(report.branding_failed, []);
+});
+
+test("purge: the logo folder is paged through before anything is removed", async () => {
+  const many = Array.from({ length: 130 }, (_, i) => ({ name: `logo-p${String(i).padStart(8, "0")}.png`, id: `o${i}` }));
+  const h = harness({ paths: [], branding: { [`u/${USER}`]: many } });
+  const run = await purgeAccountWith(h.admin, { requestId: REQ, userId: USER });
+  assert.equal(run.storageRemoved, 130);
+  const lists = h.events.filter((e) => e.startsWith("list:branding:"));
+  assert.deepEqual(lists, [`list:branding:u/${USER}:0`, `list:branding:u/${USER}:100`]);
+  const firstRemove = h.events.findIndex((e) => e.startsWith("remove:branding:"));
+  assert.ok(firstRemove > h.events.lastIndexOf(lists[1]), "removal starts after the last page");
+});
+
+test("purge: a branding list that fails (63 not run: no bucket) still ends purged, recorded as branding_failed", async () => {
+  const h = harness({ paths: [], brandingListError: "Bucket not found" });
+  const run = await purgeAccountWith(h.admin, { requestId: REQ, userId: USER });
+  assert.equal(run.outcome, "purged");
+  const report = finishOf(h.log)[0].p_report as Record<string, unknown>;
+  assert.equal(report.branding_failed, "list_failed");
+  assert.equal(report.branding_removed, 0);
+});
+
+test("purge: a failed documents list still removes the letterhead logos", async () => {
+  const h = harness({ branding: { [`u/${USER}`]: [{ name: "logo-current1.png", id: "o1" }] } });
+  const c = h.admin as unknown as { rpc: (fn: string, a: unknown) => unknown };
+  const realRpc = c.rpc.bind(c);
+  c.rpc = (fn: string, a: unknown) =>
+    fn === "account_purge_storage_paths" ? Promise.resolve({ data: null, error: { code: "57014", message: "timeout" } }) : realRpc(fn, a);
+  const run = await purgeAccountWith(h.admin, { requestId: REQ, userId: USER });
+  assert.equal(run.outcome, "purged");
+  assert.ok(h.events.includes(`remove:branding:u/${USER}/logo-current1.png`));
+  const report = finishOf(h.log)[0].p_report as Record<string, unknown>;
+  assert.equal(report.storage_failed, "list_failed");
+  assert.equal(report.branding_removed, 1);
 });
