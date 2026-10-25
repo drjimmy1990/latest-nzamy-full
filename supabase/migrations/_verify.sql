@@ -3375,3 +3375,61 @@ BEGIN
   RAISE NOTICE '_verify: 20261025_10 OK — grant_plan_subscription: per-user lock, stale check, cancel + insert in one transaction; SECURITY DEFINER, search_path = '''', service role only';
 END $$;
 -- <<< verify:grant_plan_atomic
+
+-- ====================================================================
+-- 2026-10-25 — 20261025_20_law_summary_brief.sql (owner-free P3, N2.2)
+-- ====================================================================
+-- library.laws.summary_brief is the موجز of the preamble, a STORED GENERATED
+-- column (library.law_summary_brief(preamble)); the /laws cards read it
+-- through the service role, for subscribers (owner ٢٦٠ open). Locked like the
+-- preamble: no API role reads it or runs the function. Keyed on the column's
+-- existence, so a run before the migration passes with a NOTICE. Read-only.
+-- >>> verify:law_summary_brief — supabase/tests/rls/law_summary_brief.test.sql
+-- extracts the lines between these two markers; keep them.
+SELECT '20261025_20 applied (library.laws.summary_brief)' AS check,
+       EXISTS (SELECT 1 FROM pg_attribute
+                WHERE attrelid = 'library.laws'::regclass AND attname = 'summary_brief' AND NOT attisdropped) AS present;
+
+DO $$
+DECLARE
+  r        text;
+  gen      text;
+  missing  text := '';
+  briefs   bigint;
+  marked   bigint;
+BEGIN
+  SELECT attgenerated::text INTO gen FROM pg_attribute
+   WHERE attrelid = 'library.laws'::regclass AND attname = 'summary_brief' AND NOT attisdropped;
+  IF gen IS NULL THEN
+    RAISE NOTICE '_verify: 20261025_20 is not applied yet — the /laws cards show no موجز (the code reads the list without it); run SQL_batch_2026-10-25_owner_free/20_BEFORE_DEPLOY_20261025_20_law_summary_brief.sql';
+    RETURN;
+  END IF;
+  IF gen <> 's' THEN
+    missing := missing || ' summary_brief is not a generated column (re-create it with 20261025_20);';
+  END IF;
+  IF to_regprocedure('library.law_summary_brief(text)') IS NULL THEN
+    missing := missing || ' library.law_summary_brief(text) is missing (re-run 20261025_20);';
+  ELSE
+    FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+      IF has_function_privilege(r, 'library.law_summary_brief(text)', 'EXECUTE') THEN
+        missing := missing || format(' %s can EXECUTE law_summary_brief (re-run 20261025_20);', r);
+      END IF;
+    END LOOP;
+    IF NOT has_function_privilege('service_role', 'library.law_summary_brief(text)', 'EXECUTE') THEN
+      missing := missing || ' service_role cannot EXECUTE law_summary_brief — every law write by the loader fails (re-run 20261025_20);';
+    END IF;
+  END IF;
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF has_column_privilege(r, 'library.laws', 'summary_brief', 'SELECT') THEN
+      missing := missing || format(' %s can read library.laws.summary_brief — the موجز is for subscribers (owner ٢٦٠); revoke it, the code never needs it;', r);
+    END IF;
+  END LOOP;
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: 20261025_20 is broken —%', missing;
+  END IF;
+  SELECT count(*) FILTER (WHERE summary_brief IS NOT NULL),
+         count(*) FILTER (WHERE preamble ~ '<summary>[^<]*📝[^<]*موجز')
+    INTO briefs, marked FROM library.laws;
+  RAISE NOTICE '_verify: 20261025_20 OK — summary_brief generated and locked; % law(s) carry a موجز, % preamble(s) have a 📝 موجز summary (the difference is empty or unclosed blocks)', briefs, marked;
+END $$;
+-- <<< verify:law_summary_brief

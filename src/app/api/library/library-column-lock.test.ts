@@ -67,6 +67,8 @@ const LIVE_COLUMNS: Record<LockedTable, string[]> = {
     "enactment_period_days", "enactment_clause_text", "enactment_article_number", "supersedes_law_ref",
     "supersedes_law_slug", "supersedes_law_title", "instrument_id", "parent_law_id", "parent_law",
     "enabling_article",
+    // 20261025_20 (N2.2): generated from preamble, locked like it (no grant).
+    "summary_brief",
   ],
   judicial_collections: [
     "id", "title", "court", "year_hijri", "part", "source_id", "track", "description", "ruling_count",
@@ -432,7 +434,8 @@ test("the allow-lists: every live column is either allowed or locked, and the lo
       "enactment_clause_text", "enactment_period_days", "gazette_issue_number",
       "gazette_publication_date", "gazette_url", "issue_date_gregorian", "issue_date_hijri", "issuing_body",
       "issuing_instrument", "latest_update", "law_guid", "official_source_url", "preamble",
-      "publication_date_gregorian", "publication_date_hijri", "supersedes_law_ref", "supersedes_law_title",
+      "publication_date_gregorian", "publication_date_hijri", "summary_brief", "supersedes_law_ref",
+      "supersedes_law_title",
     ],
   );
   assert.deepEqual(LOCKED.judicial_collections, ["metadata"]);
@@ -695,7 +698,8 @@ test("reads the scanner cannot see (dynamic table names, a client parameter) are
   assert.match(init, /client: typeof supabase \| typeof serverOnly = supabase/);
   assert.match(init, /const serverOnly = await createServiceClient\(\);/);
   const lawsCall = init.slice(init.indexOf('fetchSection("laws"'), init.indexOf('shouldFetch("decrees")'));
-  assert.match(lawsCall, /\}, serverOnly\)\s*: Promise\.resolve\(emptySection\(\)\)/);
+  // N2.2: the optional summary_brief column rides on the same service-role read.
+  assert.match(lawsCall, /\}, serverOnly, \{ column: LAW_SUMMARY_COLUMN, without: LAW_LIST_COLUMNS \}\)\s*: Promise\.resolve\(emptySection\(\)\)/);
   const principlesStart = /fetchSection\(\s*"principles"/.exec(init);
   assert.ok(principlesStart, "the principles section");
   const principlesCall = init.slice(principlesStart.index, init.indexOf('shouldFetch("books")'));

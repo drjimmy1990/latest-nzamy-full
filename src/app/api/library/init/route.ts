@@ -6,6 +6,8 @@ import { isFreeLibraryItem } from "@/lib/library-item-access";
 import { selectAllPages } from "@/lib/supabase/selectAllPages";
 import { EXEC_REGULATION_TYPE, toSectionCode } from "@/app/laws/lawsIndexFacets";
 import { maskListOfficialFields, TIER_SHAPED_CACHE_CONTROL } from "@/app/api/library/laws/[slug]/_official-meta";
+import { lawSummaryVisible } from "@/lib/library/lawSummaryVisibility";
+import { selectWithOptionalColumn } from "@/lib/library/optionalColumn";
 
 /**
  * Card columns only (LIB-16). `select('*')` shipped every list row's `fts`
@@ -21,6 +23,15 @@ import { maskListOfficialFields, TIER_SHAPED_CACHE_CONTROL } from "@/app/api/lib
  */
 const LAW_LIST_COLUMNS =
   "slug, title, title_en, description, type, section_code, section_name, issuing_instrument, issue_date_hijri, total_articles, status, has_merged_regulation";
+/**
+ * N2.2: the law's موجز for the card (library.laws.summary_brief, generated from
+ * the preamble by migration 20261025_20) — the موجز text only, never the
+ * preamble. Read only for viewers LAW_SUMMARY_AUDIENCE admits (owner ٢٦٠ open:
+ * subscribers); locked for the anon key like the preamble, so it rides on the
+ * service-role read below. Before the migration the read falls back to
+ * LAW_LIST_COLUMNS (selectWithOptionalColumn) and the cards show no موجز.
+ */
+const LAW_SUMMARY_COLUMN = "summary_brief";
 const DECREE_LIST_COLUMNS =
   "id, title, type, issuer, ref, date, summary_brief, category, hashtags, instrument_ar";
 const BOOK_LIST_COLUMNS =
@@ -111,19 +122,28 @@ export async function GET(request: Request) {
     // or skip rows between «تحميل المزيد» clicks.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     type Shape = (q: any) => any;
+    type SectionRead = { data: unknown[] | null; count: number | null; error: { code?: string; message?: string } | null };
     const fetchSection = async (
       table: string,
       selectClause: string,
       sectionName: string,
       shape: Shape,
-      client: typeof supabase | typeof serverOnly = supabase
+      client: typeof supabase | typeof serverOnly = supabase,
+      // A column a pending migration adds: read again without it when the
+      // database does not have it yet (code deployed before the SQL).
+      optional?: { column: string; without: string }
     ) => {
-      const { data, count, error } = await shape(
-        client
-          .schema("library")
-          .from(table)
-          .select(selectClause, { count: "exact" })
-      ).range(from, to);
+      const { data, count, error } = await selectWithOptionalColumn<SectionRead>(
+        (cols) => shape(
+          client
+            .schema("library")
+            .from(table)
+            .select(cols, { count: "exact" })
+        ).range(from, to),
+        selectClause,
+        optional?.without ?? selectClause,
+        optional?.column ?? "",
+      );
 
       if (error) {
         console.error(`[Library Init API] ${sectionName} error:`, error);
@@ -209,7 +229,7 @@ export async function GET(request: Request) {
 
     const [laws, decrees, principles, books, collections] = await Promise.all([
       shouldFetch("laws")
-        ? fetchSection("laws", LAW_LIST_COLUMNS, "laws", (q) => {
+        ? fetchSection("laws", lawSummaryVisible(hasFullAccess) ? `${LAW_LIST_COLUMNS}, ${LAW_SUMMARY_COLUMN}` : LAW_LIST_COLUMNS, "laws", (q) => {
             let out = q;
             if (lawSectionCode) out = out.eq("section_code", lawSectionCode);
             if (lawType) {
@@ -222,7 +242,7 @@ export async function GET(request: Request) {
             }
             // Browse order mirrors the chip order: section, then title.
             return out.order("section_code").order("title").order("slug");
-          }, serverOnly)
+          }, serverOnly, { column: LAW_SUMMARY_COLUMN, without: LAW_LIST_COLUMNS })
         : Promise.resolve(emptySection()),
       shouldFetch("decrees")
         ? fetchSection("decrees_circulars", DECREE_LIST_COLUMNS, "decrees", (q) => q.order("id"))

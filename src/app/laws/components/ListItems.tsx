@@ -12,6 +12,7 @@ import { LEGAL_TAXONOMY } from "@/constants/taxonomies";
 import { SECTION_30 } from "../lawsIndexFacets";
 import { principleYear } from "../principleCardFields";
 import { principleHref } from "../principleLink";
+import { ClampedSummary } from "./ClampedSummary";
 
 /**
  * A catalogue principle row. `collectionId` is set by /laws for database rows
@@ -376,9 +377,9 @@ export function PrecedentRow({ pr, isDark, idx, isRTL = true, onClick, onHashtag
           <h4 className={`text-[13px] font-black mb-1 leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>
             {highlightText(pr.relevance, q, isDark)}
           </h4>
-          <p className={`text-[12.5px] leading-relaxed line-clamp-2 ${isDark ? "text-gray-400" : "text-gray-600"}`}>
+          <ClampedSummary text={pr.summary_brief || ""} isDark={isDark} isRTL={isRTL} textClassName="text-[12.5px]">
             {highlightText(pr.summary_brief || "", q, isDark)}
-          </p>
+          </ClampedSummary>
         </div>
       </div>
 
@@ -527,7 +528,7 @@ export function OrderRow({ o, isDark, idx, isRTL = true, onClick, onHashtagClick
             <span className={`text-[10px] ${isDark ? "text-gray-600" : "text-slate-400"}`}>{o.date}</span>
           </div>
           <p className={`text-[13px] font-bold mb-1.5 ${isDark ? "text-white" : "text-gray-900"}`}>{o.title}</p>
-          <p className={`text-[12.5px] leading-relaxed mb-3 ${isDark ? "text-gray-400" : "text-gray-600"}`}>{o.summary_brief}</p>
+          <ClampedSummary text={o.summary_brief || ""} isDark={isDark} isRTL={isRTL} className="mb-3" textClassName="text-[12.5px]" />
           <p className={`text-[10px] ${isDark ? "text-gray-600" : "text-slate-400"}`}>{issuerLabel}</p>
           
 
@@ -684,9 +685,9 @@ export function PrecedentCard({ pr, isDark, idx, isRTL = true, onClick, onHashta
         <h4 className={`text-[13px] font-bold mb-1 line-clamp-2 ${isDark ? "text-white" : "text-gray-900"}`}>
           {highlightText(pr.relevance, q, isDark)}
         </h4>
-        <p className={`text-[12.5px] leading-relaxed line-clamp-3 ${isDark ? "text-gray-400" : "text-gray-600"}`}>
+        <ClampedSummary text={pr.summary_brief || ""} isDark={isDark} isRTL={isRTL} textClassName="text-[12.5px]">
           {highlightText(pr.summary_brief || "", q, isDark)}
-        </p>
+        </ClampedSummary>
       </div>
 
       <div className="pt-3 border-t border-slate-100 dark:border-white/[0.04]">
@@ -717,7 +718,7 @@ export function OrderCard({ o, isDark, idx, isRTL = true, onClick, onHashtagClic
         </div>
         
         <h4 className={`text-[13px] font-bold mb-1.5 line-clamp-2 ${isDark ? "text-white" : "text-gray-900"}`}>{o.title}</h4>
-        <p className={`text-[12.5px] leading-relaxed line-clamp-3 ${isDark ? "text-gray-400" : "text-gray-600"}`}>{o.summary_brief}</p>
+        <ClampedSummary text={o.summary_brief || ""} isDark={isDark} isRTL={isRTL} textClassName="text-[12.5px]" />
       </div>
 
       <div className="pt-3 border-t border-slate-100 dark:border-white/[0.04]">

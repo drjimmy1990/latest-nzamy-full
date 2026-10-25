@@ -903,6 +903,9 @@ export default function LegalLibraryPage() {
         titleEn: law.title_en || "",
         desc: law.description || "",
         descEn: law.description_en || "",
+        // N2.2: the موجز (library.laws.summary_brief), sent by /api/library/init
+        // only to viewers the ٢٦٠ flag admits. This mapping is a whitelist.
+        summaryBrief: stripMarkdownMarks(law.summary_brief || ""),
         free: law.free ?? true,
         locked: law.locked ?? false,
         progress: 100,

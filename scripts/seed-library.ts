@@ -712,6 +712,9 @@ export async function seedLaws(
       // N1.2: joined under the REGULATION_PREAMBLE marker, never `***` — the
       // file template uses `***` rules itself (src/lib/library/splitPreamble.ts).
       preamble: joinStoredPreamble(law.preamble, law.regulation_preamble),
+      // N2.2: library.laws.summary_brief (the card's موجز) is GENERATED from
+      // this preamble by 20261025_20 — never send it: a generated column
+      // refuses a value, and every loader fills it by writing the preamble.
       has_merged_regulation: law.has_executive_reg || false,
       status: (law.law_status || "status_undeclared").substring(0, 30),
       boe_source_url: String(law.boe_source_url || law.boe_url || "").substring(0, 500),

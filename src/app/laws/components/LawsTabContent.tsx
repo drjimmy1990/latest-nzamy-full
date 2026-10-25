@@ -23,6 +23,8 @@ import { articleStatusNotice } from "../data";
 import { isRepealedLawStatus } from "../law-status";
 import { OfficialMetaLockedRow } from "./OfficialMetaLockedRow";
 import { ResultsSkeleton } from "./ResultsSkeleton";
+import { ClampedSummary } from "./ClampedSummary";
+import { lawCardSummaryText } from "./summaryClamp";
 import {
   PrincipleCard,
   PrincipleRow,
@@ -235,7 +237,6 @@ export function LawsTabContent({
   searchFailed = false,
 }: LawsTabContentProps) {
   const router = useRouter();
-  const [expandedDesc, setExpandedDesc] = useState<Record<string, boolean>>({});
 
   if (resultsPending) {
     return (
@@ -458,29 +459,13 @@ export function LawsTabContent({
                         {keywordChips}
                       </div>
 
-                      {/* Expandable Abstract Description — unlocked laws only */}
-                      {isUnlocked && (() => {
-                        const description = isRTL ? sys.desc : sys.descEn || sys.desc;
-                        const isExpanded = !!expandedDesc[sys.id];
-                        const isLong = description && description.length > 100;
-                        const shownDesc = isExpanded ? description : (isLong ? description.slice(0, 100) + "..." : description);
-                        return (
-                          <p className={`text-[11.5px] leading-relaxed mb-3 ${muted}`}>
-                            {shownDesc}
-                            {isLong && (
-                              <button
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  setExpandedDesc(prev => ({ ...prev, [sys.id]: !prev[sys.id] }));
-                                }}
-                                className="ms-1 font-bold text-[#0B3D2E] dark:text-[#C8A762] hover:underline shrink-0"
-                              >
-                                {isExpanded ? (isRTL ? "عرض أقل" : "Show less") : (isRTL ? "إظهار المزيد" : "Show more")}
-                              </button>
-                            )}
-                          </p>
-                        );
+                      {/* N2.2: the law's موجز in two lines + «قراءة المزيد» in place.
+                          The API sends summary_brief only to viewers the ٢٦٠ flag
+                          admits; a description is shown to unlocked laws only, and
+                          never when it is just the title again. */}
+                      {(() => {
+                        const text = lawCardSummaryText(sys.summaryBrief, isUnlocked ? (isRTL ? sys.desc : sys.descEn || sys.desc) : "", sys.title);
+                        return text ? <ClampedSummary text={text} isDark={isDark} isRTL={isRTL} className="mb-3" textClassName="text-[11.5px]" /> : null;
                       })()}
 
                       {matchedArticlesList}
@@ -587,29 +572,10 @@ export function LawsTabContent({
                           {keywordChips}
                         </div>
 
-                        {/* Short Description — unlocked laws only */}
-                        {isUnlocked && (() => {
-                          const description = isRTL ? sys.desc : sys.descEn || sys.desc;
-                          const isExpanded = !!expandedDesc[sys.id];
-                          const isLong = description && description.length > 100;
-                          const shownDesc = isExpanded ? description : (isLong ? description.slice(0, 100) + "..." : description);
-                          return (
-                            <p className={`text-[11px] leading-relaxed ${muted}`}>
-                              {shownDesc}
-                              {isLong && (
-                                <button
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    setExpandedDesc(prev => ({ ...prev, [sys.id]: !prev[sys.id] }));
-                                  }}
-                                  className="ms-1 font-bold text-[#0B3D2E] dark:text-[#C8A762] hover:underline"
-                                >
-                                  {isExpanded ? (isRTL ? "عرض أقل" : "Show less") : (isRTL ? "إظهار المزيد" : "Show more")}
-                                </button>
-                              )}
-                            </p>
-                          );
+                        {/* N2.2: the موجز in two lines (same rule as the grid card). */}
+                        {(() => {
+                          const text = lawCardSummaryText(sys.summaryBrief, isUnlocked ? (isRTL ? sys.desc : sys.descEn || sys.desc) : "", sys.title);
+                          return text ? <ClampedSummary text={text} isDark={isDark} isRTL={isRTL} textClassName="text-[11px]" /> : null;
                         })()}
                         {matchedArticlesList && <div className="mt-2">{matchedArticlesList}</div>}
                       </div>
