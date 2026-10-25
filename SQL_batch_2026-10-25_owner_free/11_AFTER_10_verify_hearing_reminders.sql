@@ -4,8 +4,8 @@
 -- >>> verify:hearing_reminders
 -- 2026-10-25 — 20261025_30_hearing_reminders.sql (P4 N3.2). Read-only, safe to
 -- repeat. Before _30 runs it only reports; after, it raises when the hearing
--- once-only key, the one-source CHECK, the cascade or the service-only
--- recipient function is missing or open to sessions.
+-- once-only key, the one-source CHECK, the cascade, the outbox UPDATE policy's
+-- WITH CHECK or the service-only recipient function is missing or open to sessions.
 do $$
 declare r text; fn regprocedure;
 begin
@@ -47,6 +47,13 @@ begin
   end loop;
   if not has_function_privilege('service_role', fn, 'EXECUTE') then
     raise exception '_verify: service_role cannot EXECUTE hearing_reminder_targets — no hearing reminder is queued (re-run 20261025_30)';
+  end if;
+  if not exists (select 1 from pg_policies
+                  where schemaname = 'public' and tablename = 'notification_outbox'
+                    and policyname = 'outbox cancellable by deadline owner' and cmd = 'UPDATE'
+                    and with_check like '%hearing_id IS NULL%'
+                    and with_check like '%can_access_case_row%') then
+    raise exception '_verify: the outbox UPDATE policy does not re-test the new row (no hearing_id, an accessible deadline) — a deadline owner could rewrite his row into someone''s hearing reminder (re-run 20261025_30)';
   end if;
   if not exists (select 1 from pg_proc where oid = fn and not prosecdef and proconfig @> array['search_path=""']) then
     raise exception '_verify: hearing_reminder_targets is not SECURITY INVOKER with search_path '''' (re-run 20261025_30)';

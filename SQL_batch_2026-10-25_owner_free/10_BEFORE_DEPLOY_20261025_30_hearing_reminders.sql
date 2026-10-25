@@ -53,10 +53,21 @@
 --      — the scheduler (/api/v1/cron/deadlines) is its only caller, and a
 --      session must not be able to list another lawyer's hearings through it.
 --
--- NOT CHANGED: the three outbox policies of 20260904_phase5. A session can
--- still read the rows addressed to it (the recipient arm), and can neither
--- insert nor update a hearing row: both write policies require a deadline the
--- caller may access, and the CHECK forbids a row with both. Hearing reminders
+--   5. The UPDATE policy of 20260904_phase5 («outbox cancellable by deadline
+--      owner») is recreated with a WITH CHECK that re-tests the NEW row: still
+--      no hearing_id, and still a deadline the writer may access. Its USING
+--      was evaluated on the old row only and its WITH CHECK tested only the
+--      status, so a deadline owner could UPDATE his own row into a hearing row
+--      (deadline_id → null, hearing_id → anyone's hearing, recipient → anyone)
+--      and the scheduler would deliver that hearing's title, date and court;
+--      the same gap let him move a row onto another user's deadline. Legit
+--      cancels and re-arms of one's own deadline rows still pass (Docker T6f).
+--
+-- NOT CHANGED: the select and insert outbox policies of 20260904_phase5. A
+-- session can still read the rows addressed to it (the recipient arm), and can
+-- neither insert nor update a hearing row: both write policies require a
+-- deadline the caller may access, the update policy (5) forbids a hearing_id
+-- on the new row, and the CHECK forbids a row with both. Hearing reminders
 -- are queued and delivered by the service-role scheduler only.
 --
 -- WHEN THE REMINDERS FIRE — src/lib/calendar/hearingReminderStages.ts (one
@@ -66,10 +77,13 @@
 --
 -- IDEMPOTENT: add column if not exists; each constraint is added only when a
 -- constraint of that name is absent; create index if not exists; create or
--- replace function; revoke/grant are repeatable. Run twice in Docker by
+-- replace function; revoke/grant are repeatable; drop policy if exists before
+-- create policy. Run twice in Docker by
 -- supabase/tests/rls/hearing_reminders.test.sql.
 --
 -- ROLLBACK (manual): drop function public.hearing_reminder_targets(date, date);
+-- recreate the phase5 update policy with `with check (status in ('pending',
+-- 'cancelled'))` only (not recommended: that reopens the gap in 5);
 -- alter table public.notification_outbox drop constraint
 -- uq_notification_outbox_hearing_once, drop constraint
 -- notification_outbox_one_source, drop column hearing_id. Rows queued for
@@ -228,5 +242,21 @@ revoke all on function public.hearing_reminder_targets(date, date) from public;
 revoke all on function public.hearing_reminder_targets(date, date) from anon;
 revoke all on function public.hearing_reminder_targets(date, date) from authenticated;
 grant execute on function public.hearing_reminder_targets(date, date) to service_role;
+
+
+-- ── 5. The outbox UPDATE policy re-tests the new row ─────────────────────────
+drop policy if exists "outbox cancellable by deadline owner" on public.notification_outbox;
+create policy "outbox cancellable by deadline owner" on public.notification_outbox
+  for update using (
+    exists (select 1 from public.deadlines d
+             where d.id = notification_outbox.deadline_id
+               and public.can_access_case_row(d.owner_user_id, d.firm_id))
+  ) with check (
+    status in ('pending', 'cancelled')
+    and hearing_id is null
+    and exists (select 1 from public.deadlines d
+                 where d.id = notification_outbox.deadline_id
+                   and public.can_access_case_row(d.owner_user_id, d.firm_id))
+  );
 
 commit;

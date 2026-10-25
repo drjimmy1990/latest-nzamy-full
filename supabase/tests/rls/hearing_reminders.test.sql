@@ -31,6 +31,10 @@
 --     → "T1 FAIL: recipients are … C:consultant@b007 G:owner@b007 L:lead@b007
 --       O:firm_owner@b007 P:consultant@b007 G:owner@b008 O:firm_owner@b008":
 --       an outsider's own hearing put his chosen title in F's bells.
+--   * 20260904_phase5's UPDATE policy, whose WITH CHECK tests the status only
+--     (recorded 2026-10-25, before section 5 of the migration)
+--     → "T6d FAIL: a deadline owner turned his deadline row into a hearing
+--       reminder". _verify's hearing section raises on the same policy.
 --
 -- People (firm F, owner O):
 --   O  owner of F (managing_partner)        L  lawyer of F, lead of case-f
@@ -97,7 +101,8 @@ insert into public.hearings (id, case_request_id, firm_id, owner_user_id, kind, 
   ('00000000-0000-0000-0000-00000000b005','case-f','ffffffff-0000-0000-0000-0000000000f1','00000000-0000-0000-0000-0000000000a1','judicial','جلسة بعيدة','2026-12-30','09:00','scheduled'),
   ('00000000-0000-0000-0000-00000000b006','case-u','ffffffff-0000-0000-0000-0000000000f1','00000000-0000-0000-0000-0000000000a1','judicial','جلسة الموقوف','2026-11-13','11:00','scheduled');
 insert into public.deadlines (id, owner_user_id, title, trigger_date, due_date) values
-  ('00000000-0000-0000-0000-00000000d001','00000000-0000-0000-0000-0000000000a8','مهلة اعتراض','2026-10-20','2026-11-19');
+  ('00000000-0000-0000-0000-00000000d001','00000000-0000-0000-0000-0000000000a8','مهلة اعتراض','2026-10-20','2026-11-19'),
+  ('00000000-0000-0000-0000-00000000d002','00000000-0000-0000-0000-0000000000a1','مهلة غيره','2026-10-20','2026-11-19');
 
 -- G — an outsider with a session — writes two hearings through his own token:
 -- one pointing at firm F's case, one carrying only F's firm_id. The insert
@@ -248,6 +253,42 @@ begin
   get diagnostics n = row_count;
   if n <> 0 then raise exception 'T6c FAIL: a recipient deleted % hearing rows', n; end if;
   raise notice 'T6c PASS: a recipient can neither update nor delete a hearing reminder';
+end $$;
+-- T6d: S owns deadline d001 and may cancel its reminder (USING), but the
+-- phase5 WITH CHECK tested only the status, so the same UPDATE could turn his
+-- deadline row into a hearing row for any hearing, addressed to anyone — the
+-- scheduler would then deliver that hearing's title, date and court.
+select set_config('test.uid', '00000000-0000-0000-0000-0000000000a8', false);
+do $$ begin
+  update public.notification_outbox
+     set deadline_id = null,
+         hearing_id = '00000000-0000-0000-0000-00000000b001',
+         recipient_user_id = '00000000-0000-0000-0000-0000000000a8',
+         kind = 'hearing_reminder_morning',
+         scheduled_for = '2026-11-10T04:00:00Z'
+   where deadline_id = '00000000-0000-0000-0000-00000000d001';
+  raise exception 'T6d FAIL: a deadline owner turned his deadline row into a hearing reminder';
+exception when insufficient_privilege or check_violation then
+  raise notice 'T6d PASS: a deadline row cannot be rewritten into a hearing row (WITH CHECK)';
+end $$;
+do $$ begin
+  update public.notification_outbox
+     set deadline_id = '00000000-0000-0000-0000-00000000d002'
+   where deadline_id = '00000000-0000-0000-0000-00000000d001';
+  raise exception 'T6e FAIL: a deadline owner moved his row onto someone else''s deadline';
+exception when insufficient_privilege or check_violation then
+  raise notice 'T6e PASS: a row cannot be moved onto a deadline its writer cannot access';
+end $$;
+do $$
+declare n int;
+begin
+  update public.notification_outbox set status = 'cancelled'
+   where deadline_id = '00000000-0000-0000-0000-00000000d001' and status = 'pending';
+  get diagnostics n = row_count;
+  if n <> 1 then raise exception 'T6f FAIL: the deadline owner cancelled % of his rows (expected 1)', n; end if;
+  update public.notification_outbox set status = 'pending'
+   where deadline_id = '00000000-0000-0000-0000-00000000d001';
+  raise notice 'T6f PASS: the deadline owner still cancels (and re-arms) his own deadline reminder';
 end $$;
 reset role;
 
