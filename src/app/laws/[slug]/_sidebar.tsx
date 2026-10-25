@@ -172,7 +172,14 @@ export default function SidebarPanel({
         parts.push(val.substring(lastIndex, match.index));
       }
       const text = match[1];
-      const url = match[2];
+      const url = match[2].trim();
+      // Card values come from the library files: only an http(s) link is a
+      // link; anything else (a relative file path, a script URL) is its text.
+      if (!/^https?:\/\/\S+$/i.test(url)) {
+        parts.push(text);
+        lastIndex = linkRegex.lastIndex;
+        continue;
+      }
       parts.push(
         <a
           key={match.index}
@@ -207,13 +214,21 @@ export default function SidebarPanel({
 
   const renderIdentity = () => {
     if (law.metadata_card) {
+      // The badge is the card's own type row (V2 «نوع التشريع», older cards
+      // «نوع الوثيقة»), else library.laws.type — never an invented «نظام».
+      // That row is not repeated in the list below.
+      const typeRow = law.metadata_card.main.find(f => f.key === "نوع التشريع")
+        ?? law.metadata_card.main.find(f => f.key === "نوع الوثيقة");
+      const typeBadge = (typeRow?.value || law.documentType || "").trim();
       return (
         <div className={`${card} ${border} p-3`}>
           {/* نوع الوثيقة + القسم */}
           <div className="flex items-center gap-1.5 mb-2.5 flex-wrap">
+            {typeBadge && (
             <span className="text-[9px] font-black px-2 py-0.5 rounded-full border border-[#C8A762]/20 text-[#C8A762] bg-[#C8A762]/5">
-              {law.metadata_card.main.find(f => f.key === "نوع التشريع")?.value || (isRTL ? "نظام" : "Law")}
+              {typeBadge}
             </span>
+            )}
             {(lawMeta.section_name || law.metadata_card.more.find(f => f.key === "التصنيف")?.value) && (
               <span className={`text-[9px] px-2 py-0.5 rounded-full border ${isDark ? "border-white/10 text-zinc-500" : "border-slate-200 text-slate-500"}`}>
                 {lawMeta.section_name || law.metadata_card.more.find(f => f.key === "التصنيف")?.value}
@@ -224,6 +239,7 @@ export default function SidebarPanel({
           {/* حقول البطاقة */}
           <div className="space-y-2">
             {law.metadata_card.main.map((item, idx) => {
+              if (item === typeRow) return null;
               const val = (item.value || "").trim();
               if (!val || val === "لا يوجد" || val === "غير متوفر" || val === "غير محدد" || val === "لا يتوفر" || val === "غير متوفرة" || val === "غير مبينة") {
                 return null;
@@ -233,7 +249,7 @@ export default function SidebarPanel({
                   {getFieldIcon(item.key)}
                   <div className="flex-1 min-w-0">
                     <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{item.key}</p>
-                    <p className={`text-[10px] font-semibold leading-tight break-words ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>
+                    <p className={`text-[10px] font-semibold leading-tight break-words whitespace-pre-line ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>
                       {renderValue(item.value)}
                     </p>
                   </div>
@@ -261,7 +277,7 @@ export default function SidebarPanel({
                           {getFieldIcon(item.key)}
                           <div className="flex-1 min-w-0">
                             <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{item.key}</p>
-                            <p className={`text-[10px] font-semibold leading-tight break-words ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>
+                            <p className={`text-[10px] font-semibold leading-tight break-words whitespace-pre-line ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>
                               {renderValue(item.value)}
                             </p>
                           </div>

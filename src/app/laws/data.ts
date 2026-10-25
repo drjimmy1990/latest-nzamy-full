@@ -200,10 +200,15 @@ export interface LawSystem {
   regulation_decree?: string;               // رقم أداة اللائحة التنفيذية
   boe_url?: string;                         // رابط هيئة الخبراء
   law_status?: LawStatus;                   // حالة النظام (مختلف عن ArticleStatus)
+  /** N2.1: the file's identity card (subscribers only, owner ٢٦٠); absent when the preamble has none. */
   metadata_card?: {
     main: { key: string; value: string }[];
     more: { key: string; value: string }[];
   };
+  /** N2.1: the موجز as Markdown, lifted out of the preamble; '' / absent when there is none. */
+  summary?: string;
+  /** The file's own label for it («📝 موجز المستند (خلاصة سريعة)», «📝 موجز الذكاء الاصطناعي»). */
+  summaryLabel?: string;
 }
 
 // ─── Feqh Book & Principles Types ──────────────────────────────────────────────

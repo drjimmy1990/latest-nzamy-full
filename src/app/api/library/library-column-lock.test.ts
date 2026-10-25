@@ -765,7 +765,8 @@ test("routes that need locked columns read them with the service role and keep m
   const law = read("src/app/api/library/laws/[slug]/route.ts");
   assert.match(law, /const \{ data: law, error: lawError \} = await serverOnly\s*\.schema\('library'\)\s*\.from\('laws'\)\s*\.select\(LAW_DETAIL_COLUMNS\)/);
   assert.match(law, /const officialMeta = lawOfficialMeta\(law, isSubscriber\);/);
-  assert.match(law, /preamble: officialMeta\.officialMetaLocked \? '' : preamble,/);
+  // N2.1: the preamble shown is the one with the موجز / card lifted out, still masked.
+  assert.match(law, /preamble: officialMeta\.officialMetaLocked \? '' : readerExtras\.preamble,/);
   // The replacedBy / parent lookups stay on the request client, on allowed columns.
   assert.match(law, /await supabase\s*\.schema\('library'\)\s*\.from\('laws'\)\s*\.select\('slug,title'\)\s*\.eq\('supersedes_law_slug', slug\)/);
   assert.match(law, /await supabase\s*\.schema\('library'\)\s*\.from\('laws'\)\s*\.select\('slug,title,status,type,instrument_id'\)\s*\.eq\('instrument_id', parentInstrumentId\)/);
