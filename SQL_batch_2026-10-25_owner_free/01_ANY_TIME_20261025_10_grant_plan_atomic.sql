@@ -57,8 +57,9 @@
 --   the refunded row's started_at — both are p_now here, one parameter.
 --
 -- WHO CAN DO WHAT
---   SECURITY DEFINER, search_path pinned to public, pg_temp (every name in the
---   body is schema-qualified anyway). EXECUTE for service_role only (revoked
+--   SECURITY DEFINER, search_path = '' like the other payments functions
+--   (20261022_30/_32): every name in the body is schema-qualified, and
+--   pg_catalog is always searched first. EXECUTE for service_role only (revoked
 --   from PUBLIC, anon, authenticated): only the server grants a paid plan.
 --   A raising verify at the end checks the function, its settings, its body's
 --   load-bearing pieces and the effective EXECUTE privileges.
@@ -71,7 +72,9 @@
 --   The new grantPurchase.ts calls this function. Without it the call answers
 --   PGRST202 / 42883 and the grant reports missing: the order stays paid but
 --   unfulfilled and the sweep retries — no plan is lost, but no plan purchase
---   completes until this file has run. Run it first, then _verify.sql.
+--   completes until this file has run. The retries are bounded: after
+--   SWEEP_MAX_ATTEMPTS (20 runs, ~3h20m) the sweep marks the order
+--   sweep_gave_up for an admin. Run it first, then _verify.sql.
 --
 -- ROLLBACK
 --   drop function if exists public.grant_plan_subscription(uuid, uuid, text,
@@ -109,7 +112,7 @@ returns jsonb
 language plpgsql
 volatile
 security definer
-set search_path = public, pg_temp
+set search_path = ''
 as $$
 declare
   existing     record;
@@ -158,7 +161,9 @@ begin
     raise exception 'grant_plan_stale: the user''s running plans changed since the window was computed'
       using errcode = '40001';
   end if;
-  select coalesce(pg_catalog.jsonb_agg(e.elem -> 'id' order by e.ord), '[]'::jsonb) into running_ids
+  -- replaced_ids in the canonical (lowercase) uuid text the refund restore
+  -- compares against s.id::text, in the caller's order
+  select coalesce(pg_catalog.jsonb_agg(((e.elem ->> 'id')::uuid)::text order by e.ord), '[]'::jsonb) into running_ids
     from pg_catalog.jsonb_array_elements(p_running) with ordinality as e(elem, ord);
 
   -- 4. cancel every active row (lapsed ones included)
@@ -204,8 +209,8 @@ begin
   end if;
   select proconfig, prosecdef, pg_get_function_result(oid), prosrc into cfg, definer, ret, src
     from pg_proc where oid = to_regprocedure(fn);
-  if not coalesce(definer, false) or cfg is null or not ('search_path=public, pg_temp' = any (cfg)) then
-    missing := missing || ' the grant is not SECURITY DEFINER with search_path public, pg_temp;';
+  if not coalesce(definer, false) or cfg is null or not ('search_path=""' = any (cfg)) then
+    missing := missing || ' the grant is not SECURITY DEFINER with search_path = '''';';
   end if;
   if ret is distinct from 'jsonb' then
     missing := missing || format(' the grant returns %s (expected jsonb);', ret);
@@ -230,7 +235,7 @@ begin
   if missing <> '' then
     raise exception '20261025_10 verify:%', missing;
   end if;
-  raise notice '20261025_10 verify: OK — grant_plan_subscription: per-user lock, stale check, cancel + insert in one transaction; SECURITY DEFINER, search_path public, pg_temp, service role only';
+  raise notice '20261025_10 verify: OK — grant_plan_subscription: per-user lock, stale check, cancel + insert in one transaction; SECURITY DEFINER, search_path = '''', service role only';
 end $$;
 
 commit;

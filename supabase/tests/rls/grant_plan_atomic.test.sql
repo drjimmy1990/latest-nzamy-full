@@ -149,11 +149,16 @@ begin
   res := public.grant_plan_subscription(
     '00000000-0000-0000-0000-00000000d201', '00000000-0000-0000-0000-00000000e002',
     'ind-preventive', 'pro', 'yearly', t, t + interval '1 year', null, t,
-    jsonb_build_array(jsonb_build_object('id', '00000000-0000-0000-0000-00000000c201', 'tier', 'ai', 'current_period_end', a1_end)));
+    -- an upper-case id: still the same row for the stale check, and recorded
+    -- in replaced_ids as the lowercase text the refund restore compares
+    jsonb_build_array(jsonb_build_object('id', '00000000-0000-0000-0000-00000000C201', 'tier', 'ai', 'current_period_end', a1_end)));
   select * into s from public.subscriptions where id = (res ->> 'subscription_id')::uuid;
   if (res ->> 'inserted')::boolean is not true or s.current_period_start <> t or s.current_period_end <> t + interval '1 year'
      or s.billing_cycle <> 'yearly' or s.tier <> 'pro' then
     raise exception 'T3 FAIL: %', row_to_json(s);
+  end if;
+  if s.metadata -> 'replaced_ids' <> jsonb_build_array('00000000-0000-0000-0000-00000000c201') then
+    raise exception 'T3 FAIL: replaced_ids must be the canonical uuid text, got %', s.metadata -> 'replaced_ids';
   end if;
   if (select status from public.subscriptions where id = '00000000-0000-0000-0000-00000000c201') <> 'cancelled' then
     raise exception 'T3 FAIL: the replaced ai row is still active';
@@ -187,9 +192,13 @@ begin
       null;
     end;
   end loop;
+  -- Sanity only: each refused call ran in its own savepoint, which the
+  -- handler rolled back, so this cannot catch a write by itself. That a
+  -- refusal writes nothing is T5's transactional rollback; what T4 proves is
+  -- that every stale p_running raises 40001 (a P0001 FAIL escapes the handler).
   if (select status from public.subscriptions where id = '00000000-0000-0000-0000-00000000c301') <> 'active'
      or exists (select 1 from public.subscriptions where metadata ->> 'order_id' = '00000000-0000-0000-0000-00000000d301') then
-    raise exception 'T4 FAIL: a refused grant wrote something';
+    raise exception 'T4 FAIL: the fixture changed after the refusals';
   end if;
   -- JavaScript reads the end at millisecond precision: that must NOT be stale
   res := public.grant_plan_subscription(
@@ -200,7 +209,7 @@ begin
   if (res ->> 'inserted')::boolean is not true then
     raise exception 'T4 FAIL: a millisecond-precision end was treated as stale: %', res;
   end if;
-  raise notice 'T4 PASS: unseen / moved / re-tiered / vanished running rows → 40001, nothing written; millisecond ends match';
+  raise notice 'T4 PASS: unseen / moved / re-tiered / vanished running rows → 40001 each; millisecond ends match';
 end $$;
 reset role;
 
@@ -232,9 +241,20 @@ select public.grant_plan_subscription(
      from public.subscriptions where id = '00000000-0000-0000-0000-00000000c401'));
 \set ON_ERROR_STOP 1
 reset role;
+-- The call must have failed ON THE INSERT (step 5), i.e. after the cancel
+-- (step 4) ran — not earlier (a stale 40001, an argument error, a privilege
+-- error), which would leave the old row active without proving the rollback.
+-- psql's error state is bridged into the DO block through set_config.
+select set_config('test.t5_sqlstate', :'LAST_ERROR_SQLSTATE', false) as t5_state,
+       set_config('test.t5_message', :'LAST_ERROR_MESSAGE', false) as t5_message \gset
 
 do $$
 begin
+  if current_setting('test.t5_sqlstate') <> '23514'
+     or position('test_grant_insert_failure' in current_setting('test.t5_message')) = 0 then
+    raise exception 'T5 FAIL: the call must fail on the insert''s CHECK (23514 test_grant_insert_failure), got % %',
+      current_setting('test.t5_sqlstate'), current_setting('test.t5_message');
+  end if;
   if (select status from public.subscriptions where id = '00000000-0000-0000-0000-00000000c401') <> 'active'
      or (select cancelled_at from public.subscriptions where id = '00000000-0000-0000-0000-00000000c401') is not null then
     raise exception 'T5 FAIL: the previous plan was left cancelled after the failed insert';
@@ -242,7 +262,7 @@ begin
   if exists (select 1 from public.subscriptions where metadata ->> 'order_id' = '00000000-0000-0000-0000-00000000d401') then
     raise exception 'T5 FAIL: the failed order has a row';
   end if;
-  raise notice 'T5 PASS: an error after the cancel rolled everything back — the previous plan is still active';
+  raise notice 'T5 PASS: the insert failed (23514) after the cancel ran, and everything rolled back — the previous plan is still active';
 end $$;
 drop trigger test_trace_cancel on public.subscriptions;
 drop function public.test_trace_cancel();

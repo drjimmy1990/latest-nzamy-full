@@ -3325,7 +3325,7 @@ end $$;
 -- ====================================================================
 -- A paid plan is granted in ONE transaction: grant_plan_subscription takes a
 -- per-user lock, re-checks the running rows, cancels the active rows and
--- inserts the order's row — SECURITY DEFINER, search_path public, pg_temp,
+-- inserts the order's row — SECURITY DEFINER, search_path = '',
 -- EXECUTE for service_role only. Keyed on the function's existence, so a run
 -- before the migration passes with a NOTICE. Read-only, safe to repeat.
 -- >>> verify:grant_plan_atomic — supabase/tests/rls/grant_plan_atomic.test.sql
@@ -3349,8 +3349,8 @@ BEGIN
   END IF;
   SELECT proconfig, prosecdef, pg_get_function_result(oid), prosrc INTO cfg, definer, ret, src
     FROM pg_proc WHERE oid = to_regprocedure(fn);
-  IF NOT coalesce(definer, false) OR cfg IS NULL OR NOT ('search_path=public, pg_temp' = ANY (cfg)) THEN
-    missing := missing || ' the grant is not SECURITY DEFINER with search_path public, pg_temp (re-run 20261025_10);';
+  IF NOT coalesce(definer, false) OR cfg IS NULL OR NOT ('search_path=""' = ANY (cfg)) THEN
+    missing := missing || ' the grant is not SECURITY DEFINER with search_path = '''' (re-run 20261025_10);';
   END IF;
   IF ret IS DISTINCT FROM 'jsonb' THEN
     missing := missing || format(' the grant returns %s, expected jsonb (re-run 20261025_10);', ret);
@@ -3372,6 +3372,6 @@ BEGIN
   IF missing <> '' THEN
     RAISE EXCEPTION '_verify: the 20261025_10 grant is broken —%', missing;
   END IF;
-  RAISE NOTICE '_verify: 20261025_10 OK — grant_plan_subscription: per-user lock, stale check, cancel + insert in one transaction; SECURITY DEFINER, search_path public, pg_temp, service role only';
+  RAISE NOTICE '_verify: 20261025_10 OK — grant_plan_subscription: per-user lock, stale check, cancel + insert in one transaction; SECURITY DEFINER, search_path = '''', service role only';
 END $$;
 -- <<< verify:grant_plan_atomic
