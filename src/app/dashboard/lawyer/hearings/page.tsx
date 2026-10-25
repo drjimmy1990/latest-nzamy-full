@@ -11,7 +11,7 @@ import {
   MagnifyingGlass, CaretDown, Star, CheckSquare,
   Hourglass, CaretRight, CaretLeft, X,
   User, ArrowRight, List, CalendarBlank,
-  ArrowSquareOut, Scales, ArrowClockwise, CircleNotch,
+  ArrowSquareOut, Scales, ArrowClockwise, CircleNotch, DownloadSimple,
 } from "@phosphor-icons/react";
 
 // ─── Hijri day label ──────────────────────────────────────────────────────────
@@ -89,6 +89,7 @@ import { useUser } from "@/hooks/useUser";
 import AddHearingModal from "../_components/AddHearingModal";
 import ConsultantGate from "@/components/dashboard/ConsultantGate";
 import { formatTimeOfDayAr, parseTimeOfDay } from "./_timeOfDay";
+import { buildHearingIcs, hearingIcsFilename } from "@/lib/calendar/hearingIcs";
 import { formatDurationAr, HEARING_DURATION_LABEL_AR } from "@/lib/services/item59Labels";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -421,6 +422,36 @@ function googleCalUrl(ev: CalEvent): string | null {
   return `https://calendar.google.com/calendar/render?${p.toString()}`;
 }
 
+/**
+ * «تنزيل ملف التقويم (.ics)» — the same event the Google link describes, as an
+ * RFC 5545 file with the four reminders of hearingReminderStages.ts (owner ٤٦
+ * part ٢). Floating time like the Google link; see src/lib/calendar/hearingIcs.ts.
+ * Built in the browser from the row already on screen: nothing is fetched and
+ * nothing is stored. A day that does not parse yields no file.
+ */
+function downloadHearingIcs(ev: CalEvent): boolean {
+  const description = [ev.notes||"", ev.client?`الموكل: ${ev.client}`:"", ev.caseName?`القضية: ${ev.caseName}`:"", "منصة نظامي القانونية"].filter(Boolean).join("\n");
+  const ics = buildHearingIcs({
+    uid: `hearing-${ev.id}`,
+    title: ev.title,
+    date: ev.date,
+    time: ev.time ?? null,
+    durationMinutes: ev.durationMinutes ?? null,
+    location: ev.location ?? "",
+    description,
+  });
+  if (!ics) return false;
+  const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = hearingIcsFilename(ev.date);
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+  return true;
+}
+
 function groupByDate(events: CalEvent[]): [string,CalEvent[]][] {
   const deadlines = events.filter(e => e.type==="deadline");
   const rest = events.filter(e => e.type!=="deadline");
@@ -576,6 +607,14 @@ function EventCard({ev,isDark}:{ev:CalEvent;isDark:boolean}) {
                   className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg transition-colors ${isDark?"bg-blue-500/10 text-blue-400 hover:bg-blue-500/20":"bg-blue-50 text-blue-600 hover:bg-blue-100"}`}>
                   <CalendarBlank size={9}/>أضف لـ Google<ArrowSquareOut size={8}/>
                 </a>
+              )}
+              {calUrl&&(
+                <button type="button" onClick={()=>downloadHearingIcs(ev)}
+                  aria-label={`تنزيل ملف التقويم (.ics) لموعد ${ev.title} مع أربعة تنبيهات`}
+                  title="ملف تقويم لـ Apple وOutlook وGoogle، فيه أربعة تنبيهات: قبل أسبوع، قبل ثلاثة أيام، مساء اليوم السابق، صباح يوم الجلسة"
+                  className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold ${isDark?"bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20":"bg-emerald-50 text-emerald-700 hover:bg-emerald-100"}`}>
+                  <DownloadSimple size={9}/>تنزيل ملف التقويم (.ics)
+                </button>
               )}
             </div>
           </div>
