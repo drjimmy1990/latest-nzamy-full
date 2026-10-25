@@ -10,6 +10,7 @@ import { OfficialMetaLockedRow } from "../components/OfficialMetaLockedRow";
 import { dbOfficialRowsUnderCard, gazetteIssueLabel, urlHostname, type LawOfficialMeta } from "./_official-meta";
 import { buildChapterTree } from "./_chapter-tree";
 import { jumpToReaderAnchor } from "./_reader-anchors";
+import { lawCardLayout } from "@/lib/library/lawCardFields";
 
 // ك-13: نفس دمج regulations[]→{ref,text} المستعمل بـpage.tsx — يحافظ على
 // سلوك عرض الشارة/الاسم المدموج بلا تغيير، بمصدر بيانات جديد فقط.
@@ -272,12 +273,31 @@ export default function SidebarPanel({
 
   const renderIdentity = () => {
     if (law.metadata_card) {
-      // The badge is the card's own type row (V2 «نوع التشريع», older cards
-      // «نوع الوثيقة»), else library.laws.type — never an invented «نظام».
-      // That row is not repeated in the list below.
-      const typeRow = law.metadata_card.main.find(f => f.key === "نوع التشريع")
-        ?? law.metadata_card.main.find(f => f.key === "نوع الوثيقة");
-      const typeBadge = (typeRow?.value || law.documentType || "").trim();
+      // Owner ٢٦١: five fields always shown (LAW_CARD_PRIMARY_FIELDS — the
+      // one list), every other row behind one «المزيد». The type is the
+      // badge: the card's own type row, else library.laws.type — never an
+      // invented «نظام». The status is the recorded one (owner ٢٥٩: none
+      // recorded → none shown).
+      const layout = lawCardLayout(law.metadata_card, {
+        status: lawStatusPresentation(law.law_status),
+        issueDate: metaLocked ? "" : law.issuanceDate,
+      });
+      const typeField = layout.primary.find(f => f.id === "type");
+      const typeBadge = (typeField?.value || law.documentType || "").trim();
+      const dbOfficialRows = renderDbOfficialRows([...law.metadata_card.main, ...law.metadata_card.more]);
+      const parentLaw = renderParentLaw();
+      const hasMore = layout.more.length > 0 || !!dbOfficialRows || !!parentLaw;
+      const renderRow = (key: string, value: string, idx: number | string) => (
+        <div key={idx} className="flex gap-1.5 items-start">
+          {getFieldIcon(key)}
+          <div className="flex-1 min-w-0">
+            <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{key}</p>
+            <p className={`text-[10px] font-semibold leading-tight break-words whitespace-pre-line ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>
+              {renderValue(value)}
+            </p>
+          </div>
+        </div>
+      );
       return (
         <div className={`${card} ${border} p-3`}>
           {/* نوع الوثيقة + القسم */}
@@ -294,58 +314,23 @@ export default function SidebarPanel({
             )}
           </div>
 
-          {/* حقول البطاقة */}
+          {/* الحقول الظاهرة دائماً */}
           <div className="space-y-2">
-            {law.metadata_card.main.map((item, idx) => {
-              if (item === typeRow) return null;
-              const val = (item.value || "").trim();
-              if (!val || val === "لا يوجد" || val === "غير متوفر" || val === "غير محدد" || val === "لا يتوفر" || val === "غير متوفرة" || val === "غير مبينة") {
-                return null;
-              }
-              return (
-                <div key={idx} className="flex gap-1.5 items-start">
-                  {getFieldIcon(item.key)}
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{item.key}</p>
-                    <p className={`text-[10px] font-semibold leading-tight break-words whitespace-pre-line ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>
-                      {renderValue(item.value)}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* المزيد من بيانات التشريع */}
-            {law.metadata_card.more && law.metadata_card.more.length > 0 && (() => {
-              const visibleMore = law.metadata_card.more.filter(item => {
-                const val = (item.value || "").trim();
-                return val && val !== "لا يوجد" && val !== "غير متوفر" && val !== "غير محدد" && val !== "لا يتوفر" && val !== "غير متوفرة" && val !== "غير مبينة";
-              });
-              if (visibleMore.length === 0) return null;
-              return (
-                <div className="border-t border-dashed border-slate-100 dark:border-white/[0.05] pt-2.5 mt-2.5">
-                  <details className="group">
-                    <summary className="list-none flex items-center justify-between text-[10px] font-black text-[#C8A762] cursor-pointer hover:underline focus:outline-none">
-                      <span>{isRTL ? "➕ المزيد من بيانات التشريع" : "➕ More Details"}</span>
-                      <span className="transition-transform duration-200 group-open:rotate-180 text-[8px]">▼</span>
-                    </summary>
-                    <div className="mt-2.5 space-y-2 pl-0.5">
-                      {visibleMore.map((item, idx) => (
-                        <div key={idx} className="flex gap-1.5 items-start">
-                          {getFieldIcon(item.key)}
-                          <div className="flex-1 min-w-0">
-                            <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{item.key}</p>
-                            <p className={`text-[10px] font-semibold leading-tight break-words whitespace-pre-line ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>
-                              {renderValue(item.value)}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
+            {layout.primary.map((f) => {
+              if (f.id === "type") return null;
+              if (f.id === "status" && f.source === "db") {
+                return (
+                  <div key="status" className="flex gap-1.5 items-start" data-card-field="status">
+                    {getFieldIcon("حالة")}
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{isRTL ? "الحالة" : "Status"}</p>
+                      {renderLawStatus()}
                     </div>
-                  </details>
-                </div>
-              );
-            })()}
+                  </div>
+                );
+              }
+              return renderRow(f.key, f.value, f.id);
+            })}
 
             {/* Owner ٢٦٠: the card reaches every viewer; for a non-subscriber the
                 API removed its T28-22 rows (decree, dates, official links), so
@@ -353,9 +338,23 @@ export default function SidebarPanel({
             {metaLocked && (
               <OfficialMetaLockedRow isDark={isDark} onUnlock={() => setShowPaywall(true)} className="w-full" />
             )}
-            {renderDbOfficialRows([...law.metadata_card.main, ...law.metadata_card.more])}
-            {renderParentLaw()}
-            {renderLawStatus()}
+
+            {/* المزيد: every other row of the card */}
+            {hasMore && (
+              <div className="border-t border-dashed border-slate-100 dark:border-white/[0.05] pt-2.5 mt-2.5">
+                <details className="group">
+                  <summary className="list-none flex items-center justify-between text-[10px] font-black text-[#C8A762] cursor-pointer hover:underline focus:outline-none">
+                    <span>{isRTL ? "➕ المزيد من بيانات التشريع" : "➕ More Details"}</span>
+                    <span className="transition-transform duration-200 group-open:rotate-180 text-[8px]">▼</span>
+                  </summary>
+                  <div className="mt-2.5 space-y-2 pl-0.5">
+                    {layout.more.map((item, idx) => renderRow(item.key, item.value, idx))}
+                    {dbOfficialRows}
+                    {parentLaw}
+                  </div>
+                </details>
+              </div>
+            )}
 
             {/* زر حفظ في مجلداتي */}
             <div className="border-t border-dashed border-slate-100 dark:border-white/[0.05] pt-2.5 mt-2.5">

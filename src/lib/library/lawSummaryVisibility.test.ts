@@ -162,6 +162,18 @@ test("the catalogue sends the موجز to everyone through the same flag, from t
 
 test("the sidebar card says «للمشتركين» once for the rows a guest does not get", () => {
   const sidebar = read("src/app/laws/[slug]/_sidebar.tsx");
-  const cardBranch = sidebar.slice(sidebar.indexOf("if (law.metadata_card) {"), sidebar.indexOf("renderDbOfficialRows([...law.metadata_card.main"));
+  const cardBranch = sidebar.slice(sidebar.indexOf("if (law.metadata_card) {"), sidebar.indexOf("زر حفظ في مجلداتي"));
   assert.match(cardBranch, /\{metaLocked && \(\s*<OfficialMetaLockedRow/);
+});
+
+test("a guest keeps the card's type row even when its key is «نوع الوثيقة» (owner ٢٦١)", () => {
+  const card = {
+    main: [
+      { key: "نوع الوثيقة", value: "لائحة تنفيذية" },
+      { key: "وثيقة النظام (PDF)", value: "[PDF](https://example.gov.sa/a.pdf)" },
+      { key: "نوع المستند", value: "قرار رقم (5)" },
+    ],
+    more: [],
+  };
+  assert.deepEqual(cardForViewer(card, false)?.main, [{ key: "نوع الوثيقة", value: "لائحة تنفيذية" }]);
 });

@@ -41,8 +41,16 @@ const OFFICIAL_META_KEY = /أداة|قرار|مرسوم|أمر|تاريخ|نشر
 /** A value that cites an instrument by number («… بقرار وزير العدل رقم (512)»). */
 const CITES_INSTRUMENT = /رقم\s*\(|م\s*\/\s*\d/;
 
+/**
+ * The document's kind is not official metadata, though «نوع الوثيقة» contains
+ * «وثيقة»: 231 cards of last_owner (2026-10-25) name the type that way, and a
+ * guest's card lost its type with it (owner ٢٦١: النوع is always shown).
+ */
+const TYPE_KEYS = new Set(["نوع التشريع", "نوع الوثيقة", "نوع المستند"]);
+
 function publicField(f: LawCardField): boolean {
-  return !OFFICIAL_META_KEY.test(f.key) && !CITES_INSTRUMENT.test(f.value);
+  if (CITES_INSTRUMENT.test(f.value)) return false;
+  return TYPE_KEYS.has(f.key.trim()) || !OFFICIAL_META_KEY.test(f.key);
 }
 
 /** The card as this viewer may see it: whole for a subscriber, without T28-22 rows otherwise. */
