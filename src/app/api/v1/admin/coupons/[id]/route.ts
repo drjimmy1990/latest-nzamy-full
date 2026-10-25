@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
+import { adminDiscountPatch } from "@/lib/payments/couponAdminRules";
 
 /**
  * PATCH /api/v1/admin/coupons/[id] — Update a coupon (e.g. enable/disable).
@@ -15,6 +16,12 @@ import { logAdminAction } from "@/lib/auth/adminAudit";
  *   startsAt?: string         — valid_from
  *   expiresAt?: string        — valid_until
  *   eligibleRoles?: string[]  — eligible_user_types (client => individual)
+ *   minOrderAmount?: number   — min_order_amount (> 0 on a discount coupon)
+ *
+ * P7 review (finding 2): a discount coupon never gets a minimum of 0 nor a
+ * percentage above 25, and is never switched ON while its minimum is 0 (the
+ * old seed's LAUNCH2026, or a code made before the rule) —
+ * couponAdminRules.adminDiscountPatch, 400 with the reason.
  *
  * Owner ٢١٠: PATCH needs a staff role with settings.write, DELETE one with
  * coupons.delete; each successful change is audited.
@@ -67,6 +74,12 @@ export async function PATCH(
     if (nextActive !== undefined) {
       updateData.active = nextActive;
     }
+
+    const discount = adminDiscountPatch(existing as Record<string, unknown>, body, nextActive);
+    if (!discount.ok) {
+      return NextResponse.json({ error: discount.error }, { status: 400 });
+    }
+    Object.assign(updateData, discount.fields);
 
     if (body.value !== undefined) {
       updateData.discount_value = Number(body.value) || 0;

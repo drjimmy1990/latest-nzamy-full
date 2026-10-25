@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin, requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
+import { adminDiscountFields } from "@/lib/payments/couponAdminRules";
+import { couponsAvailable } from "@/lib/payments/couponServer";
 
 /**
  * Coupons admin API — backs src/app/dashboard/admin/subscriptions/coupons/page.tsx
@@ -61,9 +63,17 @@ export async function GET() {
  *
  * Accepts the page's AdminCoupon-ish payload and maps it to the real columns:
  *   code, couponType, discountType, value, pointsGranted, planGranted,
- *   usageLimit, startsAt, expiresAt, status, eligibleRoles[]
+ *   usageLimit, startsAt, expiresAt, status, eligibleRoles[],
+ *   minOrderAmount, maxDiscountPct?, excludedKinds?
  *
  * Needs a staff role with settings.write, and is audited (owner ٢١٠).
+ *
+ * P7 review (finding 2): checkout honours every active discount coupon, so a
+ * discount coupon (fixed / percentage) is refused (400) without a minimum
+ * order net > 0, with a cap above 25 % or a percentage above 25, and always
+ * excludes top-ups — couponAdminRules.adminDiscountFields. Before 20261026_20
+ * runs (couponsAvailable false) the two new columns are not sent; the rules
+ * still apply.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -104,6 +114,14 @@ export async function POST(request: NextRequest) {
       : [];
     const eligibleUserTypes = eligibleRoles.map(roleToUserType);
 
+    const adminClient = await createServiceClient();
+    const discount = adminDiscountFields(dbDiscountType, body, {
+      withNewColumns: await couponsAvailable(adminClient),
+    });
+    if (!discount.ok) {
+      return NextResponse.json({ error: discount.error }, { status: 400 });
+    }
+
     const usageLimitRaw = Number(body.usageLimit);
     const maxUses = Number.isFinite(usageLimitRaw) && usageLimitRaw > 0 ? Math.floor(usageLimitRaw) : null;
 
@@ -124,9 +142,9 @@ export async function POST(request: NextRequest) {
         created_by_admin: gate.userId,
         status,
       },
+      ...discount.fields,
     };
 
-    const adminClient = await createServiceClient();
     const { data, error } = await adminClient
       .from("coupons")
       .insert(insertRow)

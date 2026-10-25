@@ -84,6 +84,7 @@ function mapRowToCoupon(row: Record<string, unknown>): AdminCoupon {
     couponType,
     discountType,
     value: Number(row.discount_value ?? 0),
+    minOrderAmount: Number(row.min_order_amount ?? 0),
     pointsGranted: Number(row.points_granted ?? 0),
     planGranted: typeof row.plan_granted === "string" ? row.plan_granted : undefined,
     usedCount: Number(row.used_count ?? 0),
@@ -139,6 +140,8 @@ const EMPTY_COUPON: AdminCoupon = {
   couponType: "discount",
   discountType: "percentage",
   value: 10,
+  // P7: a discount coupon needs a minimum (the server refuses 0) — the admin types it
+  minOrderAmount: 0,
   pointsGranted: 0,
   usedCount: 0,
   usageLimit: 100,
@@ -389,7 +392,13 @@ export default function AdminCouponsPage() {
                     </select>
                   </Field>
                   <Field label="القيمة">
-                    <input type="number" value={draft.value} min={1} onChange={(event) => setDraft({ ...draft, value: Number(event.target.value) })} className={inputClass(isDark)} />
+                    <input type="number" value={draft.value} min={1} max={draft.discountType === "percentage" ? 25 : undefined} onChange={(event) => setDraft({ ...draft, value: Number(event.target.value) })} className={inputClass(isDark)} />
+                  </Field>
+                  {/* P7 review: checkout honours every active discount coupon;
+                      the server refuses one without a minimum, a cap above
+                      25 % and any coupon on point top-ups. */}
+                  <Field label="الحد الأدنى للطلب قبل الضريبة (ر.س) — مطلوب">
+                    <input type="number" value={draft.minOrderAmount ?? 0} min={1} required onChange={(event) => setDraft({ ...draft, minOrderAmount: Number(event.target.value) })} className={inputClass(isDark)} />
                   </Field>
                 </>
               ) : (

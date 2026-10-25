@@ -33,6 +33,8 @@ export interface AdminCoupon {
   expiresAt: string;
   status: AdminCouponStatus;
   eligibleRoles: AdminEligibleRole[];
+  /** صافي الطلب الأدنى قبل الضريبة (ر.س) — مطلوب لكوبون الخصم (P7) */
+  minOrderAmount?: number;
   // 🆕 حقول التتبع — Backend-ready
   couponType?: AdminCouponType;
   pointsGranted?: number;
