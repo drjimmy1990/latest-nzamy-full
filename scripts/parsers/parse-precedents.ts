@@ -30,6 +30,7 @@ import { parseFrontmatter } from "./lib/frontmatter";
 import { applyExclusions, formatExclusionSummary } from "./lib/exclusions";
 import { writeParseReport, printCapped, bindParseReportToOutput } from "./lib/report";
 import { classifyCourt, type JudicialTrack } from "./lib/court";
+import { COLLECTION_VOLUME_KEYS, readSeriesId, readVolumeNumber } from "../../src/lib/library/seriesFields";
 
 /** Collected per run so YAML problems are reported, never swallowed. */
 const frontmatterWarnings: string[] = [];
@@ -105,8 +106,10 @@ export interface ParsedPrincipleCollection {
    * The source's own `collection_id` frontmatter value, when present — a
    * SERIES label shared by every volume of a multi-part work (e.g. every
    * موج-rulings-1434 volume file carries the same one). Grouping/display
-   * only; never used as `id`/`slug` (see parsePrecedentContainer). Absent
-   * for parsePrincipleCollection() output, which has no such series concept.
+   * only; never used as `id`/`slug` (see parsePrecedentContainer). Owner
+   * ٢٦٢: read for parsePrincipleCollection() output too (98 and the 97
+   * principle files), from `series_id` or `collection_id` (seriesFields.ts);
+   * absent when the file names no series.
    */
   series_id?: string;
   /** ب-139: container/collection-level flag — the source's `needs_human_review`
@@ -409,11 +412,14 @@ function parsePrincipleCollection(filePath: string): ParsedPrincipleCollection |
     court_type: courtInfo.court || "",
     track: courtInfo.track,
     year_hijri: Number(meta.year_hijri || meta.hijri_year || 0),
-    part: Number(meta.part || meta.volume || 1),
+    // Owner ٢٦٢: volume_number / part_number when the file states one, then
+    // part / volume as before; 1 when none is readable (seriesFields.ts).
+    part: readVolumeNumber(meta, COLLECTION_VOLUME_KEYS) ?? 1,
     source_id: String(meta.source_id || ""),
     total_principles: principles.length,
     principles,
     metadata: meta,
+    series_id: readSeriesId(meta) ?? undefined,
     needs_human_review: meta.needs_human_review === true || String(meta.needs_human_review ?? "").trim() === "true",
     review_reason: String(meta.review_reason ?? "").trim(),
   };
@@ -606,7 +612,8 @@ function parsePrecedentContainer(filePath: string): ParsedPrincipleCollection | 
   // survives separately as `series_id`, for grouping/display only — never as
   // a primary key.
   const containerId = String(meta.slug || meta.id || safeFallbackId(filePath, fileId));
-  const seriesId = meta.collection_id ? String(meta.collection_id) : undefined;
+  // Owner ٢٦٢: `series_id` (his agent's name) or `collection_id` (manifest).
+  const seriesId = readSeriesId(meta) ?? undefined;
 
   const inherited = {
     issuing_body: String(meta.issuing_body || ""),
@@ -663,7 +670,11 @@ function parsePrecedentContainer(filePath: string): ParsedPrincipleCollection | 
     court_type: courtInfo.court || inherited.issuing_body,
     track: courtInfo.track,
     year_hijri: Number(meta.year_hijri || 0),
-    part: Number(meta.part || 1),
+    // Owner ٢٦٢: the volume number the file states (volume_number /
+    // part_number — the 97 volume files carry part_number and part_label,
+    // no `part`), else 1 as before; precedentVolumes.ts shows a number only
+    // when the volumes' numbers tell them apart.
+    part: readVolumeNumber(meta, COLLECTION_VOLUME_KEYS) ?? 1,
     source_id: String(meta.source_id || inherited.source || ""),
     total_principles: principles.length,
     principles,

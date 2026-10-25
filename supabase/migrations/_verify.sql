@@ -3956,3 +3956,37 @@ begin
   raise notice '_verify: 20261026_50 OK — smart folders: anon none, authenticated SELECT only, service_role writes, 7 limits (% still NOT VALID: old rows unchecked)', n;
 end $$;
 -- <<< verify:smart_folders_grants
+
+-- >>> verify:feqh_books_series — supabase/tests/rls/feqh_books_series.test.sql
+-- 2026-10-26 — 20261026_51_feqh_books_series.sql (L-B, owner ٢٦٢: a fiqh
+-- book's series and volume number). Read-only, safe to repeat. Before the
+-- file runs this only reports (the code falls back to the title rule); after,
+-- it raises when a column, a limit or the catalogue's read of them is gone.
+do $$
+declare
+  n int;
+begin
+  select count(*) into n from information_schema.columns
+   where table_schema = 'library' and table_name = 'feqh_books'
+     and column_name in ('series_id', 'volume_number');
+  if n = 0 then
+    raise notice '_verify: 20261026_51 is not applied yet — fiqh series still come from the titles, and a library load drops series_id / volume_number; run SQL_batch_2026-10-26_owner_answers/51_ANY_TIME_20261026_51_feqh_books_series.sql';
+    return;
+  end if;
+  if n <> 2 then
+    raise exception '_verify: only % of feqh_books.series_id / volume_number exist (re-run 20261026_51)', n;
+  end if;
+  select count(*) into n from pg_constraint
+   where conrelid = 'library.feqh_books'::regclass
+     and conname in ('feqh_books_volume_number_range', 'feqh_books_series_id_not_blank');
+  if n <> 2 then
+    raise exception '_verify: % of the 2 feqh_books series limits exist (re-run 20261026_51)', n;
+  end if;
+  if not has_column_privilege('anon', 'library.feqh_books', 'series_id', 'SELECT')
+     or not has_column_privilege('anon', 'library.feqh_books', 'volume_number', 'SELECT') then
+    raise exception '_verify: anon cannot read feqh_books.series_id / volume_number — the catalogue and the reader read them with the request client';
+  end if;
+  select count(*) into n from library.feqh_books where series_id is not null;
+  raise notice '_verify: 20261026_51 OK — feqh_books.series_id / volume_number in place (% book rows carry a series)', n;
+end $$;
+-- <<< verify:feqh_books_series

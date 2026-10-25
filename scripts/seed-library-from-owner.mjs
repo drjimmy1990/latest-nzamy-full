@@ -67,6 +67,7 @@ process.emitWarning = (warning, ...rest) => {
 const { stripInternalContentKeys } = await import("../src/lib/library/internalContentFields.ts");
 const { liveWriteDecision, parseSeedOwnerArgs, SEED_OWNER_USAGE } = await import("../src/lib/library/seedOwnerArgs.ts");
 const { fetchWithTimeout } = await import("../src/lib/library/fetchWithTimeout.ts");
+const { missingOptionalColumns } = await import("../src/lib/library/optionalColumn.ts");
 
 // Leave from the top level without a synchronous process.exit right after the
 // dynamic .ts imports: on Windows that aborts Node itself (libuv
@@ -186,7 +187,10 @@ const TABLES = [
   { name: "judicial_collections", pkey: "id", batchSize: 100, stripKeys: [] },
   { name: "principles", pkey: "id", batchSize: 100, stripKeys: ["needs_human_review", "review_reason"] },
   { name: "principle_paragraphs", pkey: "id", batchSize: 200, stripKeys: [] },
-  { name: "feqh_books", pkey: "id", batchSize: 100, stripKeys: [] },
+  // series_id / volume_number (owner ٢٦٢) come with migration 20261026_51;
+  // until it runs they are dropped from every row (seedTable's probe), so
+  // the books still load — without their series, as today.
+  { name: "feqh_books", pkey: "id", batchSize: 100, stripKeys: [], optionalColumns: ["series_id", "volume_number"] },
   { name: "feqh_chapters", pkey: "id", batchSize: 200, stripKeys: [] },
   { name: "feqh_sections", pkey: "id", batchSize: 200, stripKeys: [] },
   { name: "feqh_blocks", pkey: "id", batchSize: 100, stripKeys: ["is_synthetic_page"] },
@@ -213,6 +217,17 @@ async function seedTable(tableConfig) {
   const stat = fs.statSync(filePath);
   const sizeMB = (stat.size / (1024 * 1024)).toFixed(1);
   console.log(`\n📦 Processing library.${tableConfig.name} (${sizeMB} MB)${isDry ? " [DRY RUN]" : ""}...`);
+
+  // Columns a pending migration adds: probed once (a one-row read), dropped
+  // from every row when the database does not have them yet.
+  const stripKeys = [...tableConfig.stripKeys];
+  if (!isDry && tableConfig.optionalColumns?.length) {
+    const missing = await missingOptionalColumns(tableConfig.optionalColumns, (c) => supabase.from(tableConfig.name).select(c).limit(1));
+    if (missing.length) {
+      console.warn(`  ⚠️ library.${tableConfig.name} has no ${missing.join(", ")} yet — loading without ${missing.length > 1 ? "them" : "it"} (run its SQL, then load again to keep them).`);
+      stripKeys.push(...missing);
+    }
+  }
 
   const fileStream = fs.createReadStream(filePath);
   const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
@@ -267,7 +282,7 @@ async function seedTable(tableConfig) {
       continue;
     }
 
-    for (const key of tableConfig.stripKeys) {
+    for (const key of stripKeys) {
       delete row[key];
     }
     // Internal editorial/review notes never reach a public row — neither as a

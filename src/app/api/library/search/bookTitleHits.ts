@@ -1,6 +1,7 @@
 import type { createClient } from '@/lib/supabase/server';
 import { normalizeSearch } from '../../../../utils/normalizeArabic.ts';
-import { groupBookVolumes, volumesCountLabel, type VolumeRow } from '../../../../lib/library/bookVolumes.ts';
+import { BOOK_SERIES_FEATURE, bookVolumeColumns, groupBookVolumes, volumesCountLabel, type VolumeRow } from '../../../../lib/library/bookVolumes.ts';
+import { readWithOptionalFeatures } from '../../../../lib/library/optionalColumn.ts';
 
 type LibraryClient = Awaited<ReturnType<typeof createClient>>;
 
@@ -111,17 +112,21 @@ export async function fetchBookTitleHits(
   signal?: AbortSignal,
 ): Promise<{ hits: BookTitleHit[]; error: unknown }> {
   if (max <= 0 || queryWords(rawQuery).length === 0) return { hits: [], error: null };
-  let q = supabase
-    .schema('library')
-    .from('feqh_books')
-    .select('id, title, author, total_volumes')
-    .order('id')
-    .limit(BOOK_TITLE_ROWS_MAX);
-  if (signal) q = q.abortSignal(signal);
+  // Owner ٢٦٢: series_id / volume_number when the database has them (20261026_51).
+  const read = (on: ReadonlySet<string>) => {
+    let q = supabase
+      .schema('library')
+      .from('feqh_books')
+      .select(bookVolumeColumns(on, 'id, title, author, total_volumes'))
+      .order('id')
+      .limit(BOOK_TITLE_ROWS_MAX);
+    if (signal) q = q.abortSignal(signal);
+    return q;
+  };
   try {
-    const { data, error } = await q;
+    const { data, error } = await readWithOptionalFeatures(read, [BOOK_SERIES_FEATURE]);
     if (error) return { hits: [], error };
-    return { hits: matchBookTitles((data ?? []) as VolumeRow[], rawQuery, max), error: null };
+    return { hits: matchBookTitles((data ?? []) as unknown as VolumeRow[], rawQuery, max), error: null };
   } catch (error) {
     // Never fail the whole search/autocomplete over the book titles.
     return { hits: [], error };

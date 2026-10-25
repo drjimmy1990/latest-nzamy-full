@@ -8,6 +8,7 @@ import { EXEC_REGULATION_TYPE, toSectionCode } from "@/app/laws/lawsIndexFacets"
 import { maskListOfficialFields, TIER_SHAPED_CACHE_CONTROL } from "@/app/api/library/laws/[slug]/_official-meta";
 import { lawSummaryVisible } from "@/lib/library/lawSummaryVisibility";
 import { readWithOptionalFeatures, type OptionalFeature } from "@/lib/library/optionalColumn";
+import { BOOK_SERIES_FEATURE, bookVolumeColumns } from "@/lib/library/bookVolumes";
 
 /**
  * Card columns only (LIB-16). `select('*')` shipped every list row's `fts`
@@ -52,8 +53,10 @@ const LAW_OPTIONAL_FEATURES: readonly OptionalFeature[] = [
   { key: "sort", columns: [LAW_SORT_KEY] },
 ];
 const DESC_NULLS_LAST = { ascending: false, nullsFirst: false } as const;
+// `summary` (owner ٢٦٣): the card shows the short موجز, else the source's
+// summary — both are catalogue text, on the anon allow-list of 20261019_40.
 const DECREE_LIST_COLUMNS =
-  "id, title, type, issuer, ref, date, summary_brief, category, hashtags, instrument_ar";
+  "id, title, type, issuer, ref, date, summary_brief, summary, category, hashtags, instrument_ar";
 const BOOK_LIST_COLUMNS =
   "id, title, author, school, type, category, description, investigator, total_volumes, total_pages";
 const COLLECTION_LIST_COLUMNS =
@@ -294,7 +297,15 @@ export async function GET(request: Request) {
           )
         : Promise.resolve(emptySection()),
       shouldFetch("books")
-        ? fetchSection("feqh_books", BOOK_LIST_COLUMNS, "books", (q) => q.order("title").order("id"))
+        ? fetchSection(
+            "feqh_books",
+            // Owner ٢٦٢: the series pair when the database has it (20261026_51).
+            (on) => bookVolumeColumns(on, BOOK_LIST_COLUMNS),
+            "books",
+            (q) => q.order("title").order("id"),
+            supabase,
+            { features: [BOOK_SERIES_FEATURE], wanted: [BOOK_SERIES_FEATURE.key] },
+          )
         : Promise.resolve(emptySection()),
       shouldFetch("collections")
         ? fetchAllCollections()
@@ -316,7 +327,10 @@ export async function GET(request: Request) {
     const decreesRows = decrees.data as unknown as Record<string, unknown>[];
     decrees.data = decreesRows.map((row) => {
       const isFree = hasFullAccess || ((freeItemsByType.decrees as string[]) ?? []).includes(row.id as string);
-      return { ...(isFree ? row : stripFields({ ...row }, ["summary_brief", "content", "text"])), free: isFree, locked: !isFree };
+      // Owner ٢٦٣ (and ٢٦٠'s rule for the laws): the موجز is for everyone —
+      // a locked card keeps summary_brief / summary (the decree route sends
+      // both to every viewer too); only the text stays out.
+      return { ...(isFree ? row : stripFields({ ...row }, ["content", "text"])), free: isFree, locked: !isFree };
     }) as any;
 
     const principlesRows = principles.data as unknown as Record<string, unknown>[];

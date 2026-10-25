@@ -1,10 +1,11 @@
-# دفعة 2026-10-26 — المكتبة (L-A): ملف «مجلداتي»
+# دفعة 2026-10-26 — المكتبة (L-A «مجلداتي»، L-B أجزاء كتب الفقه)
 
 **الحالة:** لم يُنفَّذ على الإنتاج بعد. كل SQL على الإنتاج ينفذه المستخدم في المحرر، بعد نسخة احتياطية ومراجعة نتيجة الملف.
 
 | # | الملف | متى |
 |:--:|---|---|
 | 50 | `50_ANY_TIME_20261026_50_smart_folders_grants.sql` | **في أي وقت**، قبل نشر الكود أو بعده |
+| 51 | `51_ANY_TIME_20261026_51_feqh_books_series.sql` | **في أي وقت**، ويُفضَّل **قبل** تحميل المكتبة التالي (قرار المالك ٢٦٢) |
 
 `50_ANY_TIME_20261026_50_smart_folders_grants.sql` نسخة مطابقة من `supabase/migrations/20261026_50_smart_folders_grants.sql`.
 
@@ -99,3 +100,35 @@ It deliberately does **not** grant INSERT/UPDATE/DELETE to `authenticated`, whic
 Expected results:
 - The file ends with `20261026_50 verify: OK`.
 - Then `_verify.sql` prints `_verify: 20261026_50 OK`.
+
+---
+
+## ٥١ — سلسلة كتاب الفقه ورقم مجلده (L-B، قرار المالك ٢٦٢)
+
+`51_ANY_TIME_20261026_51_feqh_books_series.sql` نسخة مطابقة من `supabase/migrations/20261026_51_feqh_books_series.sql`.
+
+**ماذا يضيف:** عمودين في `library.feqh_books`:
+
+- `series_id`: معرّف العمل الذي تشترك فيه مجلداته (`series_id` أو `collection_id` في ملف المصدر).
+- `volume_number`: رقم المجلد كما في الملف (`volume_number` أو `current_volume`)، من ١ إلى ٩٩٩٩.
+
+القيمة الفارغة (NULL) تعني أن الملف لم يذكرها، فيبقى تجميع الأجزاء بالعنوان كما هو اليوم. لا تغيير في الصلاحيات: قراءة الفهرس عامة كما كانت.
+
+**متى:** في أي وقت. الكود يعمل قبله (يقرأ العمودين اختيارياً)، وسكربت التحميل `seed-library-from-owner.mjs` يحذف المفتاحين من الصفوف ما دام العمودان غير موجودين، فلا يسقط أي كتاب. لكن **السلسلة لا تُحفظ إلا بعد تنفيذه**، فنفّذه قبل التحميل التالي. في ملفات المالك اليوم ١٣٧ ملف فقه تحمل `collection_id`.
+
+**النتيجة المتوقعة:**
+
+- آخر الملف: `20261026_51 OK — feqh_books.series_id and volume_number in place`.
+- ثم `_verify.sql`: `_verify: 20261026_51 OK — … (N book rows carry a series)`؛ قبل التحميل يكون N صفراً.
+
+**التراجع:**
+
+```sql
+alter table library.feqh_books drop column if exists series_id, drop column if exists volume_number;
+```
+
+**اختبار Docker:** `supabase/tests/rls/feqh_books_series.test.sql` (أمر التشغيل في رأسه؛ الملف يُنفَّذ مرتين). نُفِّذ مرتين محلياً: T1–T5 PASS، والضبط السلبي (دون الملف) يفشل عند T1.
+
+### English (short)
+
+Adds `library.feqh_books.series_id varchar(150)` and `volume_number int` (1–9999), both nullable, a partial index on `series_id`, no grant changes (table-level SELECT already covers them). Any time; the code reads them as optional and the owner loader strips both keys while the columns are missing, so books still load — but series are only kept after this file runs, so run it before the next library load.

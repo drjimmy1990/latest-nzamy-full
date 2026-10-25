@@ -535,13 +535,16 @@ export default function OrderReaderPage() {
                 : isDark ? "bg-[#161b22]/40 border-white/[0.06]" : "bg-white border-gray-200"
             }`}>
 
-              {/* Summary */}
+              {/* Summary — owner ٢٦٣: the source's summary, else the short
+                  موجز; no empty box when the decree has neither. */}
+              {(order.summary || order.summary_brief) && (
               <div className={`p-4 rounded-2xl mb-6 text-xs leading-relaxed ${
                 isDark ? "bg-white/[0.02]" : "bg-slate-50"
               } border border-dashed ${isDark ? "border-white/10" : "border-gray-200"} whitespace-pre-wrap`}>
                 <span className="font-bold text-[#C8A762]">{isRTL ? "موجز المستند:\n" : "Document Summary:\n"}</span>
-                <span className={isDark ? "text-gray-300" : "text-gray-600"} dangerouslySetInnerHTML={{ __html: formatBold(order.summary || "") }}></span>
+                <span className={isDark ? "text-gray-300" : "text-gray-600"} dangerouslySetInnerHTML={{ __html: formatBold(order.summary || order.summary_brief || "") }}></span>
               </div>
+              )}
 
               {/* Preamble — subscribers only (owner answer ٢٢١): for everyone
                   else the API sends no text and preambleLocked, and the

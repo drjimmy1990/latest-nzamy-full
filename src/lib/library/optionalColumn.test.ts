@@ -224,3 +224,28 @@ test("readWithOptionalFeatures: 42501 on a feature column (a grant problem) is r
   assert.equal(out.error?.code, "42501");
   assert.equal(calls.length, 1);
 });
+
+test("missingOptionalColumns: only a missing-column answer marks a column missing (owner ٢٦٢ loader)", async () => {
+  const { missingOptionalColumns } = await import("./optionalColumn.ts");
+  const answers: Record<string, { error: { code?: string; message?: string } | null }> = {
+    series_id: { error: { code: "42703", message: "column feqh_books.series_id does not exist" } },
+    volume_number: { error: null },
+    other: { error: { code: "57014", message: "canceling statement due to statement timeout" } },
+  };
+  const asked: string[] = [];
+  const probe = async (c: string) => {
+    asked.push(c);
+    return answers[c];
+  };
+  assert.deepEqual(await missingOptionalColumns(["series_id", "volume_number", "other"], probe), ["series_id"]);
+  assert.deepEqual(asked, ["series_id", "volume_number", "other"]);
+  assert.deepEqual(await missingOptionalColumns([], probe), []);
+});
+
+test("the owner loader probes feqh_books' optional columns and drops them only when missing", () => {
+  const src = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "../../../scripts/seed-library-from-owner.mjs"), "utf8");
+  assert.match(src, /name: "feqh_books"[^\n]*optionalColumns: \["series_id", "volume_number"\]/);
+  assert.match(src, /missingOptionalColumns\(tableConfig\.optionalColumns, \(c\) => supabase\.from\(tableConfig\.name\)\.select\(c\)\.limit\(1\)\)/);
+  // Never in a dry run: no DB call at all.
+  assert.match(src, /if \(!isDry && tableConfig\.optionalColumns\?\.length\)/);
+});

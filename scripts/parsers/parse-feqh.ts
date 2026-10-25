@@ -29,6 +29,7 @@ import { applyExclusions, formatExclusionSummary } from "./lib/exclusions";
 import { writeParseReport, printCapped, bindParseReportToOutput } from "./lib/report";
 import { parseLocator } from "./lib/feqh-locator";
 import { filterMeta } from "./manifest";
+import { BOOK_VOLUME_KEYS, readSeriesId, readSourceSummary, readVolumeNumber } from "../../src/lib/library/seriesFields";
 
 /** Collected per run so YAML problems are reported, never swallowed. */
 const frontmatterWarnings: string[] = [];
@@ -92,6 +93,19 @@ export interface ParsedFeqhBook {
   total_volumes: number;
   total_pages: number;
   total_chapters: number;
+  /**
+   * Owner ٢٦٣: the book's short summary — the front matter's `summary`, else
+   * a «📝 موجز» <details> block (seriesFields.ts readSourceSummary). Loaded
+   * into feqh_books.description (the catalogue card's text); "" when absent.
+   */
+  description: string;
+  /**
+   * Owner ٢٦٢: the work's series label (`series_id` / `collection_id`) and
+   * this volume's number (`volume_number` / `current_volume` …). null when
+   * the file states none — never derived from the title here.
+   */
+  series_id: string | null;
+  volume_number: number | null;
   toc: string[];
   chapters: FeqhChapter[];
   metadata: Record<string, unknown>;
@@ -317,10 +331,24 @@ function parseSingleBook(filePath: string): ParsedFeqhBook | null {
     const fmMatch = raw.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n/);
     if (fmMatch) {
       body = raw.slice(fmMatch[0].length);
-      for (const line of fmMatch[1].split(/\r?\n/)) {
+      const fmLines = fmMatch[1].split(/\r?\n/);
+      for (let li = 0; li < fmLines.length; li++) {
+        const line = fmLines[li];
         const m = line.match(/^(\w[\w_]*)\s*:\s*(.*)/);
         if (m) {
           let val: unknown = m[2].trim();
+          // Owner ٢٦٣: a `summary` may span lines (`summary: |`, `summary: >`
+          // or a wrapped plain value). Only this key reads its indented
+          // continuation lines, so no other field changes.
+          if (m[1] === "summary") {
+            const cont: string[] = [];
+            while (li + 1 < fmLines.length && (/^\s+\S/.test(fmLines[li + 1]) || (fmLines[li + 1].trim() === "" && /^[|>]/.test(String(val))))) {
+              cont.push(fmLines[++li].trim());
+            }
+            const head = String(val);
+            if (/^[|>][-+]?$/.test(head)) val = cont.join(head.startsWith("|") ? "\n" : " ").trim();
+            else if (cont.length) val = [head, ...cont].join(" ").trim();
+          }
           if (typeof val === "string" && /^["'].*["']$/.test(val)) val = (val as string).slice(1, -1);
           if (typeof val === "string" && /^\d+$/.test(val)) val = parseInt(val, 10);
           meta[m[1]] = val;
@@ -344,7 +372,10 @@ function parseSingleBook(filePath: string): ParsedFeqhBook | null {
   // Strip <details>...</details> blocks (card-v2 campaign identity card, wrapped
   // variant) before line-splitting — it's metadata for a human reader, not book
   // content, and would otherwise become a bogus first chapter full of table markup.
-  const cleanedBody = bodyAfterToc.replace(/<details>[\s\S]*?<\/details>/g, "");
+  // `<details open>` too: the owner's agent may add a «📝 موجز» block
+  // (٢٦٣), read below as the description, never as book text. No fiqh file
+  // carries an attribute on <details> today (last_owner, 2026-10-25).
+  const cleanedBody = bodyAfterToc.replace(/<details\b[^>]*>[\s\S]*?<\/details>/g, "");
   const lines = cleanedBody.split(/\r?\n/);
 
   // Scan for first page header to extract book info
@@ -561,6 +592,9 @@ function parseSingleBook(filePath: string): ParsedFeqhBook | null {
     total_volumes: maxVolume,
     total_pages: totalPages,
     total_chapters: chapters.length,
+    description: readSourceSummary(meta, body),
+    series_id: readSeriesId(meta),
+    volume_number: readVolumeNumber(meta, BOOK_VOLUME_KEYS),
     toc,
     chapters,
     metadata: meta,

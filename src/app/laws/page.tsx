@@ -934,8 +934,9 @@ export default function LegalLibraryPage() {
         issuer: d.issuer || "—",
         ref: d.ref || "—",
         date: d.date || "—",
-        summary: stripMarkdownMarks(d.summary_brief || d.title || ""),
-        summary_brief: stripMarkdownMarks(d.summary_brief),
+        // Owner ٢٦٣: the short موجز, else the source's `summary`.
+        summary: stripMarkdownMarks(d.summary_brief || d.summary || d.title || ""),
+        summary_brief: stripMarkdownMarks(d.summary_brief || d.summary),
         // decrees_circulars.category holds bare codes, padded or not ('02',
         // '8', '30'); comparing them raw against 'SA-NN' never matched (LIB-09).
         // No code → no category, not a guessed «التجاري».
@@ -1037,6 +1038,10 @@ export default function LegalLibraryPage() {
           // «نسبة التحصيل 100%» on every card (owner test 2026-09-28, T28-05).
           progress: 0,
           volCount: b.total_volumes || 1,
+          // Owner ٢٦٢: the source's series and volume number (20261026_51),
+          // when /api/library/init carries them — the card groups by them.
+          seriesId: typeof b.series_id === "string" ? b.series_id : null,
+          volumeNumber: typeof b.volume_number === "number" ? b.volume_number : null,
           lastUpdated: ""
         };
       })

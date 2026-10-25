@@ -27,6 +27,14 @@ export interface VolumeRow {
   /** feqh_books.total_volumes — in practice this row's own volume number. */
   total_volumes?: number | null;
   author?: string | null;
+  /**
+   * Owner ٢٦٢ (20261026_51): the series label the source gives every volume
+   * of one work (series_id / collection_id). When set, it — not the title —
+   * decides the series. Absent / null: the title rule below.
+   */
+  series_id?: string | null;
+  /** Owner ٢٦٢: this volume's number as the source states it; a fallback to the title's. */
+  volume_number?: number | null;
 }
 
 export interface BookSeriesGroup<T extends VolumeRow> {
@@ -196,7 +204,8 @@ function validVolume(n: unknown): n is number {
 export function volumeSortKey(row: VolumeRow): [number, number, number, string] {
   const v = parseVolume(row.title, row.id);
   const rank = v.kind === "foreword" ? 0 : v.kind === "intro" ? 1 : 2;
-  const part = rank < 2 ? 0 : v.part ?? (validVolume(row.total_volumes) ? row.total_volumes : Number.MAX_SAFE_INTEGER);
+  const stated = validVolume(row.volume_number) ? row.volume_number : validVolume(row.total_volumes) ? row.total_volumes : null;
+  const part = rank < 2 ? 0 : v.part ?? stated ?? Number.MAX_SAFE_INTEGER;
   const sub = v.sub ?? 0;
   return [rank, part, sub, row.id];
 }
@@ -216,6 +225,48 @@ function seriesKeyOf(row: VolumeRow): string {
   return `${base}\u0000${(row.author ?? "").trim()}`;
 }
 
+function taggedSeries(row: VolumeRow): string | null {
+  const s = typeof row.series_id === "string" ? row.series_id.trim() : "";
+  return s ? s : null;
+}
+
+/**
+ * Each row's grouping key, or null for a row that stands alone.
+ *   - A row the source tags (series_id) groups by that tag, whatever its title.
+ *   - An untagged row whose title names a volume groups by base title + author
+ *     (the title rule) — or joins the tagged series whose tagged volumes all
+ *     share that base title + author, so a work tagged on most of its files
+ *     is not split in two.
+ *   - Any other row: null.
+ */
+function groupKeys<T extends VolumeRow>(rows: readonly T[]): Map<T, string | null> {
+  const tagByTitleKey = new Map<string, string | null>();
+  for (const row of rows) {
+    const tag = taggedSeries(row);
+    if (!tag || !isVolumeTitle(row.title)) continue;
+    const k = seriesKeyOf(row);
+    const seen = tagByTitleKey.get(k);
+    tagByTitleKey.set(k, seen === undefined || seen === tag ? tag : null); // two tags: ambiguous, adopt none
+  }
+  const out = new Map<T, string | null>();
+  for (const row of rows) {
+    const tag = taggedSeries(row);
+    if (tag) {
+      out.set(row, `series:${tag}`);
+      continue;
+    }
+    if (!isVolumeTitle(row.title)) {
+      out.set(row, null);
+      continue;
+    }
+    const k = seriesKeyOf(row);
+    const adopted = tagByTitleKey.get(k);
+    // The title rule's key is today's (base title + author), unchanged.
+    out.set(row, adopted ? `series:${adopted}` : k);
+  }
+  return out;
+}
+
 /**
  * Rows → catalogue entries, in the order each entry first appears. Rows whose
  * title names a volume and that share a base title AND author become one
@@ -225,13 +276,14 @@ function seriesKeyOf(row: VolumeRow): string {
 export function groupBookVolumes<T extends VolumeRow>(rows: readonly T[]): BookCatalogueEntry<T>[] {
   const groups = new Map<string, T[]>();
   const order: Array<{ key: string; row: T }> = [];
-  for (const row of rows) {
-    if (!row || typeof row.title !== "string") continue;
-    if (!isVolumeTitle(row.title)) {
+  const valid = rows.filter((row): row is T => !!row && typeof row.title === "string");
+  const keys = groupKeys(valid);
+  for (const row of valid) {
+    const key = keys.get(row) ?? null;
+    if (key === null) {
       order.push({ key: `single:${row.id}`, row });
       continue;
     }
-    const key = seriesKeyOf(row);
     const list = groups.get(key);
     if (list) list.push(row);
     else {
@@ -260,14 +312,13 @@ export function groupBookVolumes<T extends VolumeRow>(rows: readonly T[]): BookC
  */
 export function buildBookSeries(rows: readonly VolumeRow[], currentId: string): BookSeriesInfo | null {
   const current = rows.find((r) => r && r.id === currentId);
-  if (!current || !isVolumeTitle(current.title)) return null;
-  const key = seriesKeyOf(current);
-  const entry = groupBookVolumes(rows.filter((r) => r && typeof r.title === "string" && isVolumeTitle(r.title) && seriesKeyOf(r) === key))
-    .find((e): e is BookSeriesGroup<VolumeRow> => e.kind === "series");
+  if (!current || typeof current.title !== "string") return null;
+  const entry = groupBookVolumes(rows)
+    .find((e): e is BookSeriesGroup<VolumeRow> => e.kind === "series" && e.volumes.some((v) => v.id === currentId));
   if (!entry) return null;
   return {
     title: entry.title,
-    volumes: entry.volumes.map((v) => ({ id: v.id, label: volumeLabel(v.title, v.id, v.total_volumes), title: v.title })),
+    volumes: entry.volumes.map((v) => ({ id: v.id, label: volumeLabel(v.title, v.id, v.volume_number ?? v.total_volumes), title: v.title })),
     currentId,
   };
 }
@@ -286,6 +337,9 @@ export interface CatalogueBook {
   _isSearchResult?: boolean;
   /** A book-title search hit names its series size (the API's «٤ مجلدات»). */
   searchVolumesLabel?: string | null;
+  /** Owner ٢٦٢: feqh_books.series_id / volume_number (20261026_51), when the list carries them. */
+  seriesId?: string | null;
+  volumeNumber?: number | null;
 }
 
 /**
@@ -309,7 +363,7 @@ export function toCatalogueCards<T extends CatalogueBook>(books: readonly T[]): 
   if (books.some((b) => b._isSearchResult)) {
     return books.map((b) => ({ key: b.id, book: b, title: b.title, volumesLabel: b.searchVolumesLabel ?? "" }));
   }
-  const rows = books.map((b) => ({ id: b.slug, title: b.title, total_volumes: b.volCount ?? null, author: b.author ?? null, book: b }));
+  const rows = books.map((b) => ({ id: b.slug, title: b.title, total_volumes: b.volCount ?? null, author: b.author ?? null, series_id: b.seriesId ?? null, volume_number: b.volumeNumber ?? null, book: b }));
   return groupBookVolumes(rows).map((entry): CatalogueCard<T> => {
     if (entry.kind === "single") {
       const b = entry.book.book;
@@ -335,4 +389,17 @@ export function volumesCountLabel(n: number): string {
   if (n === 2) return "مجلدان";
   if (n <= 10) return `${n} مجلدات`;
   return `${n} مجلدًا`;
+}
+
+/**
+ * Owner ٢٦٢: feqh_books.series_id / volume_number come with migration
+ * 20261026_51. Every read that groups volumes names them through this
+ * optional feature (readWithOptionalFeatures, optionalColumn.ts): before the
+ * SQL the read runs again without them and the title rule applies, as today.
+ */
+export const BOOK_SERIES_FEATURE = { key: "bookSeries", columns: ["series_id", "volume_number"] } as const;
+
+/** The columns groupBookVolumes reads, with the series pair when `on` has it. */
+export function bookVolumeColumns(on: ReadonlySet<string>, base = "id, title, total_volumes, author"): string {
+  return on.has(BOOK_SERIES_FEATURE.key) ? `${base}, series_id, volume_number` : base;
 }
