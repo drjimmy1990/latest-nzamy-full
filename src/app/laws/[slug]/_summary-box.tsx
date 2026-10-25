@@ -4,7 +4,7 @@
  * N2.1 — the law's موجز as a toggle above the preamble and the articles
  * (`<details open>`: the reader closes or opens it with one click). The text
  * is lifted out of library.laws.preamble by the law route, which sends it only
- * to the viewers LAW_SUMMARY_AUDIENCE admits (owner ٢٦٠ open: subscribers);
+ * to the viewers LAW_SUMMARY_AUDIENCE admits (owner ٢٦٠ (أ): everyone);
  * the preamble the page shows no longer contains it.
  *
  * The label is the file's own («📝 موجز المستند (خلاصة سريعة)», «📝 موجز

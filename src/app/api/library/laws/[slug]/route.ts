@@ -282,11 +282,12 @@ export async function GET(
     // (src/lib/library/splitPreamble.ts).
     const { preamble, regulationPreamble } = splitStoredPreamble(law.preamble);
     // N2.1: the موجز and the identity card, lifted out of the law part of the
-    // preamble for the reader's موجز box and sidebar card. Sent only when
-    // LAW_SUMMARY_AUDIENCE lets this viewer see them (owner ٢٦٠ open:
-    // subscribers — hasFullLibraryAccess, never the whitelist, the preamble's
-    // own rule); the preamble shown then leaves them out, so nothing appears
-    // twice (src/lib/library/lawSummaryVisibility.ts).
+    // preamble for the reader's موجز box and sidebar card. Owner ٢٦٠ (أ):
+    // LAW_SUMMARY_AUDIENCE = everyone; a non-subscriber's card loses its
+    // T28-22 rows (cardForViewer — keyed on hasFullLibraryAccess, never the
+    // whitelist). The preamble shown leaves them out, so the card is in the
+    // side column only and the ديباجة in the middle column only
+    // (src/lib/library/lawSummaryVisibility.ts).
     const readerExtras = lawReaderExtras(preamble, isSubscriber);
 
     // ── Build the flat "اللائحة وحدها" view — one sorted list per secondary
@@ -373,7 +374,10 @@ export async function GET(
       // a non-subscriber would undo the masking above, so it goes with it.
       preamble: officialMeta.officialMetaLocked ? '' : readerExtras.preamble,
       regulationPreamble: officialMeta.officialMetaLocked ? '' : regulationPreamble,
-      preambleLocked: officialMeta.officialMetaLocked && !!(preamble.trim() || regulationPreamble.trim()),
+      // Owner ٢٦٠: the card and the موجز are lifted out for every viewer now,
+      // so a lock row is promised only for the ديباجة text left after them —
+      // never for a preamble that was only the card and the law's title.
+      preambleLocked: officialMeta.officialMetaLocked && !!(readerExtras.preamble.trim() || regulationPreamble.trim()),
       // N2.1: omitted (not empty) for a viewer the flag does not admit.
       ...(readerExtras.summary ? { summary: readerExtras.summary, summaryLabel: readerExtras.summaryLabel } : {}),
       ...(readerExtras.metadata_card ? { metadata_card: readerExtras.metadata_card } : {}),

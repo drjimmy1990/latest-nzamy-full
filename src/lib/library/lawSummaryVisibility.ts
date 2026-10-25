@@ -1,17 +1,22 @@
 /**
  * Who sees a law's موجز and identity card (N2.1 / N2.2).
  *
- * Owner question ٢٦٠ is open: «الموجز والبطاقة للعموم أم للمشتركين؟». Until he
- * answers, both follow today's preamble rule (T28-22): SUBSCRIBERS only —
- * hasFullLibraryAccess (a Pro+ tier, an active library grant, or an admin),
- * never the per-law whitelist, which opens a law's text, not its preamble.
+ * Owner answer ٢٦٠ (أ), 2026-10-25: the موجز and the card's public fields are
+ * for EVERYONE — guests included. LAW_SUMMARY_AUDIENCE = "everyone".
  *
- * ٢٦٠ is a one-line change: set LAW_SUMMARY_AUDIENCE to "everyone". Nothing
- * else moves — library.laws.summary_brief stays column-locked for the anon
- * key, because /api/library/init reads the laws list with the service role.
- * The card carries T28-22 fields (the issuing decree, dates, official links),
- * so a non-subscriber's card in the "everyone" branch drops those rows
- * (cardForViewer below) and the preamble itself stays locked as today.
+ * What stays as it was (nothing else opens):
+ *   - the article text and its paywall (hasFullAccess / effectiveFreeLimit
+ *     ١٨٤ in the law route, the server-only article tables of 20260929_01);
+ *   - the ديباجة itself: the law route still sends `preamble: ''` to a
+ *     non-subscriber (T28-22, its decree text);
+ *   - the T28-22 rows of the card — the issuing / amending instrument, the
+ *     issue and publication dates, the official links and the gazette — are
+ *     subscribers' (cardForViewer below drops them for anyone else; the
+ *     sidebar shows one «للمشتركين» row in their place).
+ *
+ * library.laws.summary_brief stays column-locked for the anon key: the
+ * catalogue (/api/library/init) and the law route read it, and the preamble
+ * it is cut from, with the service role and send only these fields.
  *
  * Pure: `node --test` loads it directly.
  */
@@ -20,8 +25,8 @@ import { extractLawPreambleBlocks, isHollowPreamble, type LawMetadataCard, type 
 
 export type LawSummaryAudience = "subscribers" | "everyone";
 
-/** THE flag for owner question ٢٦٠. */
-export const LAW_SUMMARY_AUDIENCE: LawSummaryAudience = "subscribers";
+/** THE flag for owner question ٢٦٠ — answered (أ): everyone. */
+export const LAW_SUMMARY_AUDIENCE: LawSummaryAudience = "everyone";
 
 /** May this viewer see the موجز and the card? `isSubscriber` = hasFullLibraryAccess. */
 export function lawSummaryVisible(isSubscriber: boolean, audience: LawSummaryAudience = LAW_SUMMARY_AUDIENCE): boolean {

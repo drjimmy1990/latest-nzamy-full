@@ -1,6 +1,7 @@
 /**
- * Owner question ٢٦٠ (open): the موجز and the card are for subscribers until
- * he answers, and the answer is the single flag LAW_SUMMARY_AUDIENCE.
+ * Owner answer ٢٦٠ (أ): the موجز and the card's public fields are for
+ * everyone — the single flag LAW_SUMMARY_AUDIENCE. The ديباجة, the card's
+ * T28-22 rows and the article text keep their locks (pinned below).
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -35,21 +36,39 @@ const PREAMBLE = [
   "# نظام العمل",
 ].join("\n");
 
-test("the default audience is subscribers (today's preamble rule, T28-22)", () => {
-  assert.equal(LAW_SUMMARY_AUDIENCE, "subscribers");
+test("owner ٢٦٠ (أ): the default audience is everyone, guests included", () => {
+  assert.equal(LAW_SUMMARY_AUDIENCE, "everyone");
   assert.equal(lawSummaryVisible(true), true);
-  assert.equal(lawSummaryVisible(false), false);
+  assert.equal(lawSummaryVisible(false), true);
 });
 
-test("«everyone» opens it to every viewer", () => {
-  assert.equal(lawSummaryVisible(false, "everyone"), true);
-  assert.equal(lawSummaryVisible(true, "everyone"), true);
+test("the «subscribers» audience still admits only a subscriber", () => {
+  assert.equal(lawSummaryVisible(false, "subscribers"), false);
+  assert.equal(lawSummaryVisible(true, "subscribers"), true);
 });
 
-test("a non-subscriber gets no summary / card keys at all, and the preamble untouched", () => {
-  const out = lawReaderExtras(PREAMBLE, false);
+test("«subscribers» + a non-subscriber: no summary / card keys at all, and the preamble untouched", () => {
+  const out = lawReaderExtras(PREAMBLE, false, "subscribers");
   assert.deepEqual(Object.keys(out), ["preamble"]);
   assert.equal(out.preamble, PREAMBLE);
+});
+
+test("a guest (default audience) gets the موجز and the card without its T28-22 rows", () => {
+  const out = lawReaderExtras(PREAMBLE, false);
+  assert.equal(out.summary, "ينظم النظام علاقات العمل.");
+  assert.deepEqual(out.metadata_card, {
+    main: [
+      { key: "نوع التشريع", value: "نظام" },
+      { key: "الجهة المصدرة", value: "مجلس الوزراء" },
+    ],
+    more: [],
+  });
+  // The decree («أداة الإصدار»), the publication date, the official link and
+  // the status row that cites the amending decision by number are not sent.
+  const sent = JSON.stringify(out.metadata_card);
+  for (const hidden of ["أداة الإصدار", "تاريخ النشر", "المصدر الرسمي", "512", "م/51", "boe.gov.sa"]) {
+    assert.ok(!sent.includes(hidden), hidden);
+  }
 });
 
 test("a subscriber gets the موجز, the whole card, and a preamble without them", () => {
@@ -113,4 +132,36 @@ test("the law route uses this flag on the subscriber flag (hasFullLibraryAccess)
   const route = read("src/app/api/library/laws/[slug]/route.ts");
   assert.match(route, /lawReaderExtras\(\s*preamble,\s*isSubscriber\s*\)/);
   assert.match(route, /hasFullLibraryAccess\(userId\)/);
+});
+
+test("owner ٢٦٠ opens nothing else in the law route: ديباجة, official metadata and article text keep their locks", () => {
+  const route = read("src/app/api/library/laws/[slug]/route.ts");
+  // The ديباجة (and the regulation's) stay blank for a non-subscriber.
+  assert.match(route, /preamble: officialMeta\.officialMetaLocked \? '' : readerExtras\.preamble,/);
+  assert.match(route, /regulationPreamble: officialMeta\.officialMetaLocked \? '' : regulationPreamble,/);
+  // T28-22 mask still keyed on the subscriber flag.
+  assert.match(route, /const officialMeta = lawOfficialMeta\(law, isSubscriber\);/);
+  // Article text: the same free limit (owner ١٨٤) and full-access predicate.
+  assert.match(route, /const freeLimit = effectiveFreeLimit\(firstLockedCheck, articles\.length\);/);
+  assert.match(route, /const hasFullAccess = isSubscriber \|\| isWhitelisted;/);
+  assert.match(route, /formatArticleWithPaywall\(a, hasFullAccess, freeLimit, !officialMeta\.officialMetaLocked\)/);
+  assert.match(route, /const parentLocked = isArticleLocked\(article, hasFullAccess, freeLimit\);/);
+  // The lock row is promised only for ديباجة text left once the card and the موجز are out.
+  assert.match(route, /preambleLocked: officialMeta\.officialMetaLocked && !!\(readerExtras\.preamble\.trim\(\) \|\| regulationPreamble\.trim\(\)\)/);
+});
+
+test("the catalogue sends the موجز to everyone through the same flag, from the service-role read", () => {
+  const init = read("src/app/api/library/init/route.ts");
+  assert.match(init, /wanted: lawSummaryVisible\(hasFullAccess\) \? \["summary", "sort"\] : \["sort"\]/);
+  // Read on the service-role client (summary_brief is column-locked for anon).
+  assert.match(init, /fetchSection\("laws",[\s\S]*?\}, serverOnly, \{/);
+  // Locked law rows still lose the body fields; the official fields stay masked.
+  assert.match(init, /stripFields\(\{ \.\.\.row \}, \["preamble", "description", "article_status_summary"\]\)/);
+  assert.match(init, /maskListOfficialFields\(shaped, hasFullAccess\)/);
+});
+
+test("the sidebar card says «للمشتركين» once for the rows a guest does not get", () => {
+  const sidebar = read("src/app/laws/[slug]/_sidebar.tsx");
+  const cardBranch = sidebar.slice(sidebar.indexOf("if (law.metadata_card) {"), sidebar.indexOf("renderDbOfficialRows([...law.metadata_card.main"));
+  assert.match(cardBranch, /\{metaLocked && \(\s*<OfficialMetaLockedRow/);
 });

@@ -347,6 +347,12 @@ export default function SidebarPanel({
               );
             })()}
 
+            {/* Owner ٢٦٠: the card reaches every viewer; for a non-subscriber the
+                API removed its T28-22 rows (decree, dates, official links), so
+                one row says they are for subscribers — no silent gap. */}
+            {metaLocked && (
+              <OfficialMetaLockedRow isDark={isDark} onUnlock={() => setShowPaywall(true)} className="w-full" />
+            )}
             {renderDbOfficialRows([...law.metadata_card.main, ...law.metadata_card.more])}
             {renderParentLaw()}
             {renderLawStatus()}

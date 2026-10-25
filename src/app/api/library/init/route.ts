@@ -26,8 +26,8 @@ const LAW_LIST_COLUMNS =
 /**
  * N2.2: the law's موجز for the card (library.laws.summary_brief, generated from
  * the preamble by migration 20261025_20) — the موجز text only, never the
- * preamble. Read only for viewers LAW_SUMMARY_AUDIENCE admits (owner ٢٦٠ open:
- * subscribers); locked for the anon key like the preamble, so it rides on the
+ * preamble. Read for the viewers LAW_SUMMARY_AUDIENCE admits (owner ٢٦٠ (أ):
+ * everyone); locked for the anon key like the preamble, so it rides on the
  * service-role read below. Before the migration the read falls back to
  * LAW_LIST_COLUMNS (selectWithOptionalColumn) and the cards show no موجز.
  */
@@ -273,7 +273,8 @@ export async function GET(request: Request) {
             return out.order("section_code").order("title").order("slug");
           }, serverOnly, {
             features: LAW_OPTIONAL_FEATURES,
-            // The موجز only for viewers the ٢٦٠ flag admits; the order for all.
+            // The موجز for the viewers the ٢٦٠ flag admits (answered: everyone,
+            // the guest too); the order for all.
             wanted: lawSummaryVisible(hasFullAccess) ? ["summary", "sort"] : ["sort"],
           })
         : Promise.resolve(emptySection()),

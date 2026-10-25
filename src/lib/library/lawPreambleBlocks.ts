@@ -190,12 +190,22 @@ interface CardHit extends Range {
 }
 
 /** `### 📊 بطاقة تعريف …` + its table (+ the ➕ table right after it). */
+/** The first `📊 بطاقة تعريف` heading that has a table under it. */
 function cardFromHeading(text: string): CardHit | null {
-  const m = CARD_HEADING.exec(text);
-  if (!m) return null;
+  const all = new RegExp(CARD_HEADING.source, "gm");
+  for (let m = all.exec(text); m; m = all.exec(text)) {
+    const hit = cardAtHeading(text, m);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function cardAtHeading(text: string, m: RegExpExecArray): CardHit | null {
   let pos = m.index + m[0].length;
   const tableStart = pos;
-  // Blank lines, then consecutive table lines.
+  // Blank lines and sub-headings («### ⚖️ معلومات التشريع الأساسية»: 23 files
+  // in last_owner, 2026-10-25, whose card stayed in the ديباجة), then
+  // consecutive table lines. Another 📊 heading is never a sub-heading.
   const lineRe = /\n([^\n]*)/g;
   lineRe.lastIndex = pos;
   let sawTable = false;
@@ -206,7 +216,7 @@ function cardFromHeading(text: string): CardHit | null {
       pos = l.index + l[0].length;
       continue;
     }
-    if (!sawTable && line === "") continue;
+    if (!sawTable && (line === "" || (/^#{1,6}\s/.test(line) && !line.includes("📊")))) continue;
     break;
   }
   if (!sawTable) return null;
@@ -247,11 +257,38 @@ function cardFromDetails(text: string): CardHit | null {
   return { start: m.index, end, card: { main, more } };
 }
 
-function findCard(text: string): CardHit | null {
-  const a = cardFromHeading(text);
-  const b = cardFromDetails(text);
-  if (a && b) return a.start <= b.start ? a : b;
-  return a ?? b;
+function firstCardFrom(text: string, from: number): CardHit | null {
+  const tail = text.slice(from);
+  const a = cardFromHeading(tail);
+  const b = cardFromDetails(tail);
+  const hit = a && b ? (a.start <= b.start ? a : b) : (a ?? b);
+  return hit ? { start: hit.start + from, end: hit.end + from, card: hit.card } : null;
+}
+
+/**
+ * Every card of the preamble, in file order, without overlaps. A few files
+ * carry a second card after the first («📊 بطاقة تعريف القرار وبيانات
+ * التعديلات»: 5 in last_owner, 2026-10-25). Owner answer ٢٦٠: the card is in
+ * the side column only, so the second one is lifted too and its rows join
+ * the first card's «المزيد» rows (a row already there, same key and value,
+ * is not repeated).
+ */
+function findCards(text: string): { card: LawMetadataCard; ranges: Range[] } | null {
+  const hits: CardHit[] = [];
+  for (let hit = firstCardFrom(text, 0); hit; hit = firstCardFrom(text, hit.end)) hits.push(hit);
+  if (hits.length === 0) return null;
+  const [first, ...others] = hits;
+  const more = [...first.card.more];
+  const rowId = (f: LawCardField) => `${f.key}\u0000${f.value}`;
+  const seen = new Set([...first.card.main, ...more].map(rowId));
+  for (const h of others) {
+    for (const f of [...h.card.main, ...h.card.more]) {
+      if (seen.has(rowId(f))) continue;
+      seen.add(rowId(f));
+      more.push(f);
+    }
+  }
+  return { card: { main: first.card.main, more }, ranges: hits.map(({ start, end }) => ({ start, end })) };
 }
 
 // ── The preamble without the lifted blocks ──────────────────────────────────
@@ -343,14 +380,14 @@ export function extractLawPreambleBlocks(preamble: unknown): LawPreambleBlocks {
   const text = normalise(preamble);
   const summaryHit = findSummary(text);
   const summary = summaryHit ? unquote(summaryHit.body) : "";
-  const cardHit = findCard(text);
+  const cards = findCards(text);
   const ranges: Range[] = [];
   if (summaryHit && summary) ranges.push(summaryHit);
-  if (cardHit) ranges.push(cardHit);
+  if (cards) ranges.push(...cards.ranges);
   return {
     summary,
     summaryLabel: summary && summaryHit ? summaryHit.label : "",
-    metadataCard: cardHit ? cardHit.card : null,
+    metadataCard: cards ? cards.card : null,
     rest: withoutRanges(text, ranges),
   };
 }
