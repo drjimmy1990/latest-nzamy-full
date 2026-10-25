@@ -18,7 +18,7 @@
  * (checkoutView.test.ts).
  */
 
-import { sellableItem, type Billing, type PayableItem, type VatMode } from "./catalog.ts";
+import { resolveItem, sellableItem, type Billing, type PayableItem, type VatMode } from "./catalog.ts";
 import type { CheckoutResponse } from "./checkoutRules.ts";
 import { VAT_NOTICE } from "../pricing/vatNotice.ts";
 import { BILLING_LABEL_AR, isBilling } from "../pricing/priceBook.ts";
@@ -99,17 +99,24 @@ function first(v: string | readonly string[] | undefined): string | null {
   return typeof s === "string" && s.length > 0 && s.length <= 64 ? s : null;
 }
 
-/** `?item=&billing=` of /checkout: an item on sale, with a billing it is sold in. */
+/**
+ * `?item=&billing=` of /checkout: an item on sale, with a billing it is sold
+ * in. A refusal says `notForSale` when the book knows the item and either it
+ * is retired or this billing is a retired cycle of it (lawyer-pro monthly):
+ * the page then says «لم يعد هذا المنتج متاحاً للشراء», as the POST's 410.
+ */
 export function parseCheckoutQuery(
   item: string | readonly string[] | undefined,
   billing: string | readonly string[] | undefined,
-): { ok: true; itemId: string; billing: Billing } | { ok: false } {
+): { ok: true; itemId: string; billing: Billing } | { ok: false; notForSale?: true } {
   const itemId = first(item);
   const b = first(billing);
   if (!itemId || !b || !isBilling(b)) return { ok: false };
   const sold = sellableItem(itemId);
-  if (!sold || !Object.hasOwn(sold.prices, b)) return { ok: false };
-  return { ok: true, itemId, billing: b };
+  if (sold && Object.hasOwn(sold.prices, b)) return { ok: true, itemId, billing: b };
+  const known = resolveItem(itemId);
+  if (known && Object.hasOwn(known.listedPrices, b)) return { ok: false, notForSale: true };
+  return { ok: false };
 }
 
 // ── what the screen says ────────────────────────────────────────────────────

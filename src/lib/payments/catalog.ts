@@ -135,8 +135,9 @@ export type QuoteResult =
 
 /**
  * The price of selling `itemId` in `billing` now: VAT-exclusive, 15 % on top.
- * A retired or coming-soon item is `not_for_sale`; a billing it is not sold
- * in (never listed, or retired) is `billing_not_offered`.
+ * A retired or coming-soon item, or a RETIRED cycle of an item still on sale
+ * (listed, no longer sold — lawyer-pro monthly), is `not_for_sale` (checkout
+ * 410); a billing the book never listed for it is `billing_not_offered` (400).
  */
 export function quote(
   itemId: string,
@@ -147,7 +148,10 @@ export function quote(
   if (!item) return { ok: false, error: "unknown_item" };
   if (!item.onSale) return { ok: false, error: "not_for_sale" };
   const netHalalas = Object.hasOwn(item.prices, billing) ? item.prices[billing] : undefined;
-  if (netHalalas === undefined) return { ok: false, error: "billing_not_offered" };
+  if (netHalalas === undefined) {
+    const listed = Object.hasOwn(item.listedPrices, billing);
+    return { ok: false, error: listed ? "not_for_sale" : "billing_not_offered" };
+  }
   const vatHalalas = Math.round((netHalalas * VAT_PERCENT) / 100);
   return { ok: true, item, vatMode: "exclusive", netHalalas, vatHalalas, totalHalalas: netHalalas + vatHalalas };
 }

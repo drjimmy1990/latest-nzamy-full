@@ -17,7 +17,8 @@ const card = (id: string, extra: Partial<CardPriceFields> = {}): CardPriceFields
 
 test("a book card's price is the book's, in each cycle it is sold", () => {
   assert.deepEqual(cardPrice(card("lawyer-pro"), "yearly", "ar"), { price: "٣٬٩٩٠", period: "ر.س / سنة" });
-  assert.deepEqual(cardPrice(card("lawyer-pro"), "monthly", "ar"), { price: "٣٩٩", period: "ر.س / شهر" });
+  assert.equal(cardPrice(card("lawyer-pro"), "monthly", "ar"), null, "the professionals' monthly cycle is retired");
+  assert.deepEqual(cardPrice(card("ind-ai"), "monthly", "ar"), { price: "٣٩", period: "ر.س / شهر" });
   assert.deepEqual(cardPrice(card("ind-ai", { periodYearly: "SAR / year" }), "yearly", "en"), { price: "390", period: "SAR / year" });
   assert.equal(cardPrice(card("lawyer-pro"), "quarterly", "ar"), null, "no quarterly price yet: the card is not shown in that cycle");
 });

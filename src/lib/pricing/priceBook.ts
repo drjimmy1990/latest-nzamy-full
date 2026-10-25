@@ -140,9 +140,13 @@ function plan(
   prices: Partial<Record<Cycle, number>>,
   tier: ServerTierLiteral,
   buyers: readonly string[],
+  retiredCycles: readonly Cycle[] = [],
 ): BookEntry {
   const listed: Partial<Record<Billing, BookPrice>> = {};
-  for (const c of CYCLES) if (prices[c] !== undefined) listed[c] = { sar: prices[c]! };
+  for (const c of CYCLES) {
+    if (prices[c] === undefined) continue;
+    listed[c] = retiredCycles.includes(c) ? { sar: prices[c]!, retired: true } : { sar: prices[c]! };
+  }
   return freezeEntry({ id, kind: "plan", labelAr, prices: listed, tier, buyers: [...buyers] });
 }
 
@@ -171,16 +175,20 @@ function topup(id: string, labelAr: string, sar: number, points: number, months:
 }
 
 /**
- * The book. Prices are today's (P1 changes none). P2 retires lawyer-pro and
- * consultant-independent and adds the lib/erp/bundle paths; P6 retires the
- * firms' monthly cycle; P5 adds the individuals' quarterly and half-yearly
- * prices — see docs/plans/2026-10-26-P1-price-book-design.md §6.
+ * The book. Prices are today's (P1 changes none). The professionals' MONTHLY
+ * cycle is retired (the owner confirmed on 26 Oct 2026 that the 399 monthly
+ * plan is cancelled; professionals never pay monthly — pricing doc §2 rule 1):
+ * checkout refuses it (410), while monthly orders and subscriptions already
+ * made still resolve for fulfilment, receipts, refunds, admin and renewal.
+ * P2 retires lawyer-pro and consultant-independent and adds the lib/erp/bundle
+ * paths; P6 adds the firms' quarterly and half-yearly prices; P5 adds the
+ * individuals' — see docs/plans/2026-10-26-P1-price-book-design.md §6.
  */
 export const PRICE_BOOK: Readonly<Record<string, BookEntry>> = Object.freeze({
-  "lawyer-pro": plan("lawyer-pro", "المحامي المحترف", { monthly: 399, yearly: 3990 }, "pro", ["lawyer"]),
-  "consultant-independent": plan("consultant-independent", "المستشار القانوني المستقل", { monthly: 399, yearly: 3990 }, "pro", ["lawyer", "provider"]),
-  "firm-basic": plan("firm-basic", "مكتب المحاماة", { monthly: 990, yearly: 9900 }, "corp", ["firm"]),
-  "firm-enterprise": plan("firm-enterprise", "شركة المحاماة", { monthly: 1490, yearly: 14900 }, "enterprise", ["firm"]),
+  "lawyer-pro": plan("lawyer-pro", "المحامي المحترف", { monthly: 399, yearly: 3990 }, "pro", ["lawyer"], ["monthly"]),
+  "consultant-independent": plan("consultant-independent", "المستشار القانوني المستقل", { monthly: 399, yearly: 3990 }, "pro", ["lawyer", "provider"], ["monthly"]),
+  "firm-basic": plan("firm-basic", "مكتب المحاماة", { monthly: 990, yearly: 9900 }, "corp", ["firm"], ["monthly"]),
+  "firm-enterprise": plan("firm-enterprise", "شركة المحاماة", { monthly: 1490, yearly: 14900 }, "enterprise", ["firm"], ["monthly"]),
   "ind-ai": plan("ind-ai", "الباقة الذكية", { monthly: 39, yearly: 390 }, "ai", ["individual"]),
   "ind-preventive": plan("ind-preventive", "الباقة الوقائية", { monthly: 149, yearly: 1490 }, "pro", ["individual"]),
   "ind-litigation": plan("ind-litigation", "التأمين القانوني", { monthly: 399, yearly: 3990 }, "max", ["individual"]),

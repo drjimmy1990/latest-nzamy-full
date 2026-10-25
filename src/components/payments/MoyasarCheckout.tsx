@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatHalalas, type Billing } from "@/lib/payments/catalog";
-import type { CheckoutResponse } from "@/lib/payments/checkoutRules";
+import { NOT_FOR_SALE_AR, type CheckoutResponse } from "@/lib/payments/checkoutRules";
 import {
   intentNeedsRefresh,
   moyasarInitConfig,
@@ -35,6 +35,8 @@ import {
  *      starts a new one (needsNewCheckout). 3-D Secure failures land on
  *      /payments/result, whose retry link comes back here.
  * 401 → /login and back here; 403 / 503 / 400 → the server's Arabic copy.
+ * 403 (not this account type) and 410 (retired item or cycle, «لم يعد هذا
+ * المنتج متاحاً للشراء») are final: «العودة إلى الباقات», never a retry.
  */
 
 type Phase =
@@ -43,6 +45,7 @@ type Phase =
   | { kind: "ready"; resp: CheckoutResponse }
   | { kind: "error"; message: string; audience: boolean };
 
+// `audience`: a final refusal — 403 (account type) or 410 (no longer sold).
 type StartResult =
   | { ok: true; resp: CheckoutResponse }
   | { ok: false; message: string; audience: boolean };
@@ -79,9 +82,11 @@ async function startCheckout(itemId: string, billing: Billing): Promise<StartRes
     return resp ? { ok: true, resp } : { ok: false, message: START_FAILED_AR, audience: false };
   }
   const error = (body as { error?: unknown } | null)?.error;
+  const serverCopy = typeof error === "string" && error ? error : null;
+  if (res.status === 410) return { ok: false, message: serverCopy ?? NOT_FOR_SALE_AR, audience: true };
   return {
     ok: false,
-    message: typeof error === "string" && error ? error : START_FAILED_AR,
+    message: serverCopy ?? START_FAILED_AR,
     audience: res.status === 403,
   };
 }

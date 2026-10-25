@@ -33,7 +33,9 @@ import {
 // ── checkoutHref ────────────────────────────────────────────────────────────
 
 test("checkoutHref: a signed-in buyer with the gateway on goes to /checkout", () => {
-  assert.equal(checkoutHref("lawyer-pro", "monthly", true, true), "/checkout?item=lawyer-pro&billing=monthly");
+  assert.equal(checkoutHref("lawyer-pro", "yearly", true, true), "/checkout?item=lawyer-pro&billing=yearly");
+  assert.equal(checkoutHref("lawyer-pro", "monthly", true, true), null, "the professionals' monthly cycle is retired (owner, 26 Oct)");
+  assert.equal(checkoutHref("ind-ai", "monthly", true, true), "/checkout?item=ind-ai&billing=monthly", "individuals keep monthly");
   assert.equal(checkoutHref("firm-basic", "yearly", true, true), "/checkout?item=firm-basic&billing=yearly");
   assert.equal(checkoutHref("ind-litigation", "yearly", true, true), "/checkout?item=ind-litigation&billing=yearly");
 });
@@ -46,9 +48,9 @@ test("checkoutHref: top-ups and library plans are paid once, whatever the /prici
 });
 
 test("checkoutHref: null keeps today's request flow (gateway off, guest, or not sold online)", () => {
-  assert.equal(checkoutHref("lawyer-pro", "monthly", false, true), null, "gateway off (owner ٢٤٦)");
-  assert.equal(checkoutHref("lawyer-pro", "monthly", true, false), null, "guest");
-  assert.equal(checkoutHref("lawyer-pro", "monthly", false, false), null);
+  assert.equal(checkoutHref("lawyer-pro", "yearly", false, true), null, "gateway off (owner ٢٤٦)");
+  assert.equal(checkoutHref("lawyer-pro", "yearly", true, false), null, "guest");
+  assert.equal(checkoutHref("lawyer-pro", "yearly", false, false), null);
   for (const id of ["provider-pro", "lib-firm-small", "lib-firm-enterprise", "micro-shield", "gov-department", "free", "", "constructor", "__proto__"]) {
     assert.equal(checkoutHref(id, "monthly", true, true), null, id);
   }
@@ -93,6 +95,13 @@ test("parseCheckoutQuery accepts an item and a billing it offers", () => {
   ] as const) {
     assert.deepEqual(parseCheckoutQuery(item, billing), { ok: false }, `${item} ${billing}`);
   }
+});
+
+test("parseCheckoutQuery: a retired cycle (lawyer-pro monthly) is «no longer sold», not «unknown»", () => {
+  for (const id of ["lawyer-pro", "consultant-independent", "firm-basic", "firm-enterprise"]) {
+    assert.deepEqual(parseCheckoutQuery(id, "monthly"), { ok: false, notForSale: true }, id);
+  }
+  assert.deepEqual(parseCheckoutQuery("ind-ai", "monthly"), { ok: true, itemId: "ind-ai", billing: "monthly" });
 });
 
 // ── what the screen says ────────────────────────────────────────────────────
@@ -159,15 +168,15 @@ test("buyButtonAction: checkout / wait / request", () => {
     kind: "checkout",
     href: "/checkout?item=topup-500&billing=once",
   });
-  assert.deepEqual(buyButtonAction("lawyer-pro", "monthly", off, true), { kind: "request" }, "gateway off (٢٤٦)");
+  assert.deepEqual(buyButtonAction("lawyer-pro", "yearly", off, true), { kind: "request" }, "gateway off (٢٤٦)");
   // a sellable item is not turned into a request while the status is unknown
-  assert.deepEqual(buyButtonAction("lawyer-pro", "monthly", loading, true), { kind: "wait" });
+  assert.deepEqual(buyButtonAction("lawyer-pro", "yearly", loading, true), { kind: "wait" });
   assert.deepEqual(buyButtonAction("lib-q1", "once", loading, true), { kind: "wait" });
   // items not sold online never wait on the gateway
   assert.deepEqual(buyButtonAction("provider-pro", "monthly", loading, true), { kind: "request" });
   assert.deepEqual(buyButtonAction("lib-firm-small", "monthly", on, true), { kind: "request" });
   // guests are the caller's business (register / login navigation)
-  assert.deepEqual(buyButtonAction("lawyer-pro", "monthly", on, false), { kind: "request" });
+  assert.deepEqual(buyButtonAction("lawyer-pro", "yearly", on, false), { kind: "request" });
 });
 
 // ── the Moyasar form ────────────────────────────────────────────────────────

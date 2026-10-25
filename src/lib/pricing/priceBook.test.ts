@@ -69,13 +69,31 @@ test("P1 changes no price: the book holds today's prices, in whole SAR", () => {
   }
 });
 
-test("nothing in the book is retired, coming soon or launch-priced yet (P2–P7 add them)", () => {
+const PROFESSIONAL_MONTHLY_RETIRED = ["lawyer-pro", "consultant-independent", "firm-basic", "firm-enterprise"];
+
+test("no entry is retired, coming soon or launch-priced yet; only the professionals' monthly cycle is retired", () => {
   for (const entry of Object.values(PRICE_BOOK)) {
     assert.equal(entry.retired, undefined, entry.id);
     assert.equal(entry.comingSoon, undefined, entry.id);
     assert.equal(entry.launchPrices, undefined, entry.id);
     assert.ok(isOnSale(entry), entry.id);
-    for (const p of Object.values(entry.prices)) assert.equal(p!.retired, undefined, entry.id);
+    for (const [billing, p] of Object.entries(entry.prices)) {
+      const retired = billing === "monthly" && PROFESSIONAL_MONTHLY_RETIRED.includes(entry.id);
+      assert.equal(p!.retired, retired ? true : undefined, `${entry.id} ${billing}`);
+    }
+  }
+});
+
+test("the professionals' monthly cycle (owner, 26 Oct: 399/month cancelled) is not sold, but renews as 'retired' with its old price", () => {
+  for (const [id, sar] of [["lawyer-pro", 399], ["consultant-independent", 399], ["firm-basic", 990], ["firm-enterprise", 1490]] as const) {
+    const entry = PRICE_BOOK[id];
+    assert.deepEqual(offeredBillings(entry), ["yearly"], id);
+    assert.equal(offeredSar(entry, "monthly"), null, id);
+    assert.deepEqual(renewalPrice(id, "monthly"), { status: "retired", sar }, `${id}: B2 must notify, never renew it silently`);
+    assert.throws(() => bookSar(id, "monthly"), id);
+  }
+  for (const id of ["ind-ai", "ind-preventive", "ind-litigation"]) {
+    assert.deepEqual(offeredBillings(PRICE_BOOK[id]), ["monthly", "yearly"], `${id}: individuals keep monthly`);
   }
 });
 
@@ -159,6 +177,7 @@ test("bookPriceText / bookSar read a sold price and throw for anything else", ()
   assert.equal(bookPriceText("lib-q2", "once", "en"), "2,750");
   assert.equal(bookSar("ind-ai", "monthly"), 39);
   assert.throws(() => bookPriceText("lawyer-pro", "quarterly", "ar"));
+  assert.throws(() => bookPriceText("lawyer-pro", "monthly", "ar"), "a retired cycle is not sold");
   assert.throws(() => bookPriceText("lib-q1", "monthly", "ar"));
   assert.throws(() => bookSar("nope", "yearly"));
 });

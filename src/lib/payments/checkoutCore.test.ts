@@ -60,7 +60,7 @@ function db(userType: string | null = "lawyer", over?: FakeHandler) {
 const input = (over: Partial<CheckoutInput> = {}): CheckoutInput => ({
   user: { id: USER, email: "buyer@example.test" },
   itemId: "lawyer-pro",
-  billing: "monthly",
+  billing: "yearly",
   origin: "https://nezamy.sa",
   publishableKey: "pk_test_x",
   ...over,
@@ -73,7 +73,7 @@ test("happy path: the quote's price, a created order, the intent, the guarded st
   const { client: admin, log } = db("lawyer");
   const m = moyasar();
   const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW }, input());
-  const q = quote("lawyer-pro", "monthly");
+  const q = quote("lawyer-pro", "yearly");
   assert.ok(q.ok);
   assert.equal(r.status, 200);
   assert.deepEqual(r.body, {
@@ -88,7 +88,7 @@ test("happy path: the quote's price, a created order, the intent, the guarded st
     callbackUrl: `https://nezamy.sa/payments/result?order=${NEW_ORDER}`,
     expiresAt: null,
   });
-  assert.equal(q.totalHalalas, 45885);
+  assert.equal(q.totalHalalas, 458850);
 
   const [ins] = inserts(log);
   assert.deepEqual(ins.payload, {
@@ -96,10 +96,10 @@ test("happy path: the quote's price, a created order, the intent, the guarded st
     merchant: "platform",
     kind: "plan",
     item_id: "lawyer-pro",
-    billing: "monthly",
-    net_halalas: 39900,
-    vat_halalas: 5985,
-    total_halalas: 45885,
+    billing: "yearly",
+    net_halalas: 399000,
+    vat_halalas: 59850,
+    total_halalas: 458850,
     vat_mode: "exclusive",
     currency: "SAR",
     status: "created",
@@ -109,7 +109,7 @@ test("happy path: the quote's price, a created order, the intent, the guarded st
 
   assert.deepEqual(m.intents, [
     {
-      amountHalalas: 45885,
+      amountHalalas: 458850,
       description: "NEZAMY — المحامي المحترف",
       callbackUrl: `https://nezamy.sa/payments/result?order=${NEW_ORDER}`,
       metadata: { order_id: NEW_ORDER },
@@ -280,6 +280,16 @@ test("retire, never delete: a retired plan is refused at checkout (410, no order
   const { client: admin, log } = db("lawyer");
   const m = moyasar();
   const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW, catalog }, input({ billing: "yearly" }));
+  assert.equal(r.status, 410);
+  assert.deepEqual(r.body, { error: NOT_FOR_SALE_AR });
+  assert.equal(inserts(log).length, 0, "no order");
+  assert.equal(m.intents.length, 0, "no intent");
+});
+
+test("a retired CYCLE (lawyer-pro monthly, owner 26 Oct) is refused with 410 from the real book — no order, no intent", async () => {
+  const { client: admin, log } = db("lawyer");
+  const m = moyasar();
+  const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW }, input({ billing: "monthly" }));
   assert.equal(r.status, 410);
   assert.deepEqual(r.body, { error: NOT_FOR_SALE_AR });
   assert.equal(inserts(log).length, 0, "no order");

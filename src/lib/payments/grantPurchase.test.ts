@@ -258,6 +258,15 @@ test("retired: an order in a retired CYCLE (firm-basic monthly) is still fulfill
   assert.equal(grantArgs(log).p_period_end, "2026-11-22T08:00:00.000Z");
 });
 
+test("the real book: a lawyer-pro MONTHLY order (cycle retired 26 Oct) paid before still fulfils for one month, no points", async () => {
+  const { client, log } = planDb([]);
+  const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS }, order("lawyer-pro", "plan", "monthly"), { now: NOW });
+  assert.deepEqual(r, { ok: true, alreadyEntitled: false });
+  assert.equal(grantArgs(log).p_billing, "monthly");
+  assert.equal(grantArgs(log).p_period_end, "2026-11-22T08:00:00.000Z");
+  assert.equal(lots(log).length, 0);
+});
+
 test("a quarterly order runs 3 months; a half-yearly one 6", async () => {
   const quarterly = buildCatalog({
     ...PRICE_BOOK,

@@ -42,11 +42,12 @@ const STATUS_LABEL: Record<AdminPricingStatus, string> = {
 
 // Every price on this screen is READ from the price book
 // (src/lib/pricing/priceBook.ts) — the source checkout charges from — never a
-// second copy: the subscription (monthly / yearly) and the four top-ups (one
-// price, points with the bonus).
+// second copy: the subscriptions (yearly — the professionals' monthly cycle is
+// retired, so its column shows «-») and the four top-ups (one price, points
+// with the bonus).
 const topupNumbers = (id: string) => ({ price: bookSar(id, "once"), credits: PRICE_BOOK[id].points ?? 0 });
 const LAWYER_PLAN_NUMBERS: Record<string, { price: number; yearly?: number; credits: number }> = {
-  "lawyer-pro": { price: bookSar("lawyer-pro", "monthly"), yearly: bookSar("lawyer-pro", "yearly"), credits: 0 }, // no points with a plan (owner ٢٩١)
+  "lawyer-pro": { price: 0, yearly: bookSar("lawyer-pro", "yearly"), credits: 0 }, // monthly retired; no points with a plan (owner ٢٩١)
   "topup-100": topupNumbers("topup-100"),
   "topup-250": topupNumbers("topup-250"),
   "topup-500": topupNumbers("topup-500"),
@@ -58,8 +59,8 @@ const FIRM_PLAN_NUMBERS: Record<string, { monthly: number; yearly: number; credi
   // 5 seats; no firm points. Extra seats go through sales (owner answer ٢١٧,
   // 2026-10-18), so no seat price is set here. The two plans /pricing sells
   // are the only rows: the retired middle tiers had no plan to look up.
-  "firm-basic": { monthly: bookSar("firm-basic", "monthly"), yearly: bookSar("firm-basic", "yearly"), credits: 0, baseSeats: 3, extraSeatYearly: null, maxSeats: null },
-  "firm-enterprise": { monthly: bookSar("firm-enterprise", "monthly"), yearly: bookSar("firm-enterprise", "yearly"), credits: 0, baseSeats: 5, extraSeatYearly: null, maxSeats: null },
+  "firm-basic": { monthly: 0, yearly: bookSar("firm-basic", "yearly"), credits: 0, baseSeats: 3, extraSeatYearly: null, maxSeats: null },
+  "firm-enterprise": { monthly: 0, yearly: bookSar("firm-enterprise", "yearly"), credits: 0, baseSeats: 5, extraSeatYearly: null, maxSeats: null },
 };
 
 const INITIAL_PRICING: AdminPricingItem[] = [
@@ -89,7 +90,7 @@ const INITIAL_PRICING: AdminPricingItem[] = [
     billingMetric: "seat",
     status: "beta",
     betaLocked: true,
-    notes: `${plan.desc} النموذج: اشتراك شهري أو سنوي + مقاعد. ${plan.pricingFormulaLabel ?? ""}`,
+    notes: `${plan.desc} النموذج: اشتراك سنوي + مقاعد. ${plan.pricingFormulaLabel ?? ""}`,
   })),
   {
     id: "individual-quick-question",
@@ -317,7 +318,7 @@ export default function PricingPage() {
                     <p className={`text-[10px] mt-1 max-w-sm ${muted}`}>{item.notes}</p>
                   </td>
                   <td className={`px-4 py-4 text-xs font-bold ${isDark ? "text-zinc-300" : "text-slate-600"}`}>{SCOPE_LABEL[item.scope]}</td>
-                  <td className={`px-4 py-4 text-sm font-mono ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>{item.priceMonthly.toLocaleString("ar-SA")}</td>
+                  <td className={`px-4 py-4 text-sm font-mono ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>{item.priceMonthly ? item.priceMonthly.toLocaleString("ar-SA") : "-"}</td>
                   <td className={`px-4 py-4 text-sm font-mono ${muted}`}>{item.priceYearly ? item.priceYearly.toLocaleString("ar-SA") : "-"}</td>
                   <td className={`px-4 py-4 text-sm font-mono ${muted}`}>{item.includedCredits ?? "-"}</td>
                   <td className={`px-4 py-4 text-xs font-mono ${muted}`}>

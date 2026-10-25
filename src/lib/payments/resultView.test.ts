@@ -14,6 +14,7 @@ import {
   paymentResultView,
   pendingView,
   resultViewWithoutPayment,
+  retryHrefFor,
   type ResultOrder,
 } from "./resultView.ts";
 
@@ -21,12 +22,12 @@ const order: ResultOrder = {
   id: "11111111-1111-4111-8111-111111111111",
   kind: "plan",
   item_id: "lawyer-pro",
-  billing: "monthly",
+  billing: "yearly",
   status: "initiated",
   receipt_number: null,
 };
 
-const RETRY = "/checkout?item=lawyer-pro&billing=monthly";
+const RETRY = "/checkout?item=lawyer-pro&billing=yearly";
 const RECEIPT = `/dashboard/billing/receipt/${order.id}`;
 
 test("granted: «تم الدفع وتفعيل …», the receipt number and the receipt link", () => {
@@ -187,4 +188,9 @@ test("autoRefreshDecision: a clock that is not a number, or runs backwards, stop
   assert.equal(autoRefreshDecision({ view, startedAt: Number.NaN, now: 5 }), "stop");
   assert.equal(autoRefreshDecision({ view, startedAt: 10, now: Number.POSITIVE_INFINITY }), "stop");
   assert.equal(autoRefreshDecision({ view, startedAt: 10_000, now: 5_000 }), "stop");
+});
+
+test("an order in a retired cycle (lawyer-pro monthly) gets no retry link: checkout would refuse it (410)", () => {
+  assert.equal(retryHrefFor({ item_id: "lawyer-pro", billing: "monthly" }), undefined);
+  assert.equal(retryHrefFor({ item_id: "lawyer-pro", billing: "yearly" }), "/checkout?item=lawyer-pro&billing=yearly");
 });

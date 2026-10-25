@@ -14,8 +14,9 @@
  *      same-rank purchases stack, so a plan sold outside its audience would
  *      buy that audience's access cheaper.
  *   3. quote(itemId, billing) — the price book's price, VAT-exclusive (٢٥٨),
- *      never the browser's. Unknown item or billing → 400; a retired item
- *      (still resolvable for old orders, never sold) → 410
+ *      never the browser's. Unknown item, or a billing the book never listed
+ *      for it → 400; a retired item, or a retired cycle of one (lawyer-pro
+ *      monthly — still resolvable for old orders, never sold) → 410
  *      «لم يعد هذا المنتج متاحاً للشراء».
  *   4. The buyer's earlier open orders for the same item that no payment has
  *      reached (last SUPERSEDE_WINDOW_MS): the intent is cancelled at Moyasar
@@ -47,6 +48,7 @@ import {
   callbackUrlFor,
   cancelOrderAfterIntentCancel,
   intentDescription,
+  NOT_FOR_SALE_AR,
   ordersToSupersede,
   SUPERSEDE_WINDOW_MS,
   type CheckoutResponse,
@@ -57,7 +59,7 @@ export const CHECKOUT_FAILED_AR = "تعذّر بدء عملية الدفع، ح�
 export const AUDIENCE_REFUSED_AR = "هذه الباقة غير متاحة لنوع حسابك";
 export const UNKNOWN_ITEM_AR = "هذا المنتج غير متاح للدفع الإلكتروني";
 export const BILLING_NOT_OFFERED_AR = "مدة الاشتراك هذه غير متاحة لهذا المنتج";
-export const NOT_FOR_SALE_AR = "لم يعد هذا المنتج متاحاً للشراء";
+export { NOT_FOR_SALE_AR };
 
 export interface CheckoutDeps {
   admin: SupabaseClient;

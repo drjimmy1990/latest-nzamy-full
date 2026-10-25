@@ -52,14 +52,30 @@ const EXPECTED_IDS = [
 
 // ─── quote ───────────────────────────────────────────────────────────────────
 
-test("lawyer-pro monthly: VAT added on top (exclusive)", () => {
-  const q = quote("lawyer-pro", "monthly");
+test("lawyer-pro yearly: VAT added on top (exclusive)", () => {
+  const q = quote("lawyer-pro", "yearly");
   assert.ok(q.ok);
   assert.equal(q.vatMode, "exclusive");
-  assert.equal(q.netHalalas, 39900);
-  assert.equal(q.vatHalalas, 5985);
-  assert.equal(q.totalHalalas, 45885);
+  assert.equal(q.netHalalas, 399000);
+  assert.equal(q.vatHalalas, 59850);
+  assert.equal(q.totalHalalas, 458850);
   assert.equal(q.item.id, "lawyer-pro");
+});
+
+test("the professionals' monthly cycle is retired (owner, 26 Oct): not sold, still listed for old orders", () => {
+  for (const [id, monthly] of [
+    ["lawyer-pro", 39900],
+    ["consultant-independent", 39900],
+    ["firm-basic", 99000],
+    ["firm-enterprise", 149000],
+  ] as const) {
+    assert.deepEqual(quote(id, "monthly"), { ok: false, error: "not_for_sale" }, `${id}: checkout answers 410`);
+    assert.equal(resolveItem(id)!.listedPrices.monthly, monthly, `${id}: receipts, refunds and admin still read it`);
+    assert.equal(resolveItem(id)!.onSale, true, `${id}: the yearly cycle still sells`);
+    assert.ok(quote(id, "yearly").ok, id);
+  }
+  // individuals keep monthly (§2 rule 1)
+  for (const id of ["ind-ai", "ind-preventive", "ind-litigation"]) assert.ok(quote(id, "monthly").ok, id);
 });
 
 test("٢٥٨: the individuals' plans are VAT-exclusive now — 39 is the net, 44.85 is charged", () => {
@@ -122,11 +138,12 @@ test("PAYABLE_ITEMS holds exactly the sold ids, each keyed by its own id", () =>
 });
 
 test("prices and grants as the owner set them (net halalas)", () => {
-  const expected: Record<string, { prices: Partial<Record<Billing, number>>; tier?: ServerTierLiteral }> = {
-    "lawyer-pro":             { prices: { monthly: 39900, yearly: 399000 },   tier: "pro" },
-    "consultant-independent": { prices: { monthly: 39900, yearly: 399000 },   tier: "pro" },
-    "firm-basic":             { prices: { monthly: 99000, yearly: 990000 },   tier: "corp" },
-    "firm-enterprise":        { prices: { monthly: 149000, yearly: 1490000 }, tier: "enterprise" },
+  // `retiredMonthly`: the monthly price stays listed (old orders), not sold.
+  const expected: Record<string, { prices: Partial<Record<Billing, number>>; tier?: ServerTierLiteral; retiredMonthly?: number }> = {
+    "lawyer-pro":             { prices: { yearly: 399000 },   tier: "pro", retiredMonthly: 39900 },
+    "consultant-independent": { prices: { yearly: 399000 },   tier: "pro", retiredMonthly: 39900 },
+    "firm-basic":             { prices: { yearly: 990000 },   tier: "corp", retiredMonthly: 99000 },
+    "firm-enterprise":        { prices: { yearly: 1490000 },  tier: "enterprise", retiredMonthly: 149000 },
     "ind-ai":                 { prices: { monthly: 3900, yearly: 39000 },     tier: "ai" },
     "ind-preventive":         { prices: { monthly: 14900, yearly: 149000 },   tier: "pro" },
     "ind-litigation":         { prices: { monthly: 39900, yearly: 399000 },   tier: "max" },
@@ -141,7 +158,8 @@ test("prices and grants as the owner set them (net halalas)", () => {
   for (const [id, want] of Object.entries(expected)) {
     const item = PAYABLE_ITEMS[id];
     assert.deepEqual(item.prices, want.prices, id);
-    assert.deepEqual(item.listedPrices, want.prices, `${id}: nothing retired yet`);
+    const listed = want.retiredMonthly ? { monthly: want.retiredMonthly, ...want.prices } : want.prices;
+    assert.deepEqual(item.listedPrices, listed, `${id}: the listed prices (retired cycles included)`);
     assert.equal(item.tier, want.tier, id);
     assert.equal(item.onSale, true, id);
     assert.ok(item.labelAr.trim().length > 0, `${id} has an Arabic label`);
@@ -263,12 +281,12 @@ test("the catalog is frozen: no code can patch a price at runtime", () => {
   }
   // Test files are ES modules, so this runs in strict mode and must throw.
   assert.throws(() => {
-    (PAYABLE_ITEMS["lawyer-pro"].prices as { monthly?: number }).monthly = 1;
+    (PAYABLE_ITEMS["lawyer-pro"].prices as { yearly?: number }).yearly = 1;
   }, TypeError);
   assert.throws(() => {
     (PAYABLE_ITEMS as Record<string, unknown>)["free-stuff"] = {};
   }, TypeError);
-  assert.equal(PAYABLE_ITEMS["lawyer-pro"].prices.monthly, 39900);
+  assert.equal(PAYABLE_ITEMS["lawyer-pro"].prices.yearly, 399000);
   assert.equal(Object.hasOwn(PAYABLE_ITEMS, "free-stuff"), false);
 });
 
@@ -296,7 +314,8 @@ test("a retired cycle is refused; the item's other cycles still sell", () => {
   const firm = sellableItem("firm-cyc", RETIRED_CATALOG)!;
   assert.deepEqual(firm.prices, { yearly: 990000 });
   assert.deepEqual(firm.listedPrices, { monthly: 99000, yearly: 990000 });
-  assert.deepEqual(quote("firm-cyc", "monthly", RETIRED_CATALOG), { ok: false, error: "billing_not_offered" });
+  assert.deepEqual(quote("firm-cyc", "monthly", RETIRED_CATALOG), { ok: false, error: "not_for_sale" }, "a retired cycle is 410, not 400");
+  assert.deepEqual(quote("firm-cyc", "quarterly", RETIRED_CATALOG), { ok: false, error: "billing_not_offered" }, "a never-listed cycle stays 400");
   assert.ok(quote("firm-cyc", "yearly", RETIRED_CATALOG).ok);
 });
 

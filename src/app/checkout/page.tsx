@@ -8,7 +8,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getPaymentGatewayStatus } from "@/lib/access-control";
 import { viewerGatewayState } from "@/lib/payments/testModeAccess";
 import { MOYASAR_DISABLED_MESSAGE_AR } from "@/lib/payments/moyasarConfig";
-import { AUDIENCE_REFUSED_AR, UNKNOWN_ITEM_AR } from "@/lib/payments/checkoutCore";
+import { AUDIENCE_REFUSED_AR, NOT_FOR_SALE_AR, UNKNOWN_ITEM_AR } from "@/lib/payments/checkoutCore";
 import { buyerAllowed, formatHalalas, sellableItem } from "@/lib/payments/catalog";
 import {
   billingLabelAr,
@@ -76,7 +76,7 @@ function Notice({ title }: { title: string }) {
 export default async function CheckoutPage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
   const parsed = parseCheckoutQuery(sp.item, sp.billing);
-  if (!parsed.ok) return <Notice title={UNKNOWN_ITEM_AR} />;
+  if (!parsed.ok) return <Notice title={parsed.notForSale ? NOT_FOR_SALE_AR : UNKNOWN_ITEM_AR} />;
 
   const item = sellableItem(parsed.itemId)!; // parseCheckoutQuery accepted only an item on sale
   const selfHref = `/checkout?item=${encodeURIComponent(parsed.itemId)}&billing=${parsed.billing}`;

@@ -10,6 +10,13 @@
 import type { Billing, VatMode } from "./catalog.ts";
 import { isBilling } from "../pricing/priceBook.ts";
 
+/**
+ * The 410 copy: a retired item, or a retired cycle of one (lawyer-pro
+ * monthly). Here, not in checkoutCore.ts, because the client checkout
+ * (MoyasarCheckout.tsx) shows it too and checkoutCore.ts pulls node:crypto.
+ */
+export const NOT_FOR_SALE_AR = "لم يعد هذا المنتج متاحاً للشراء";
+
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 

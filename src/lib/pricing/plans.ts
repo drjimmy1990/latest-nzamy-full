@@ -283,7 +283,10 @@ export const INDEPENDENT_CONSULTANT_PLAN: PricingPlan = {
   id: "consultant-independent",
   nameAr: "المستشار القانوني المستقل",
   nameEn: "Independent Legal Consultant",
-  priceMonthly: bookSar("consultant-independent", "monthly"),
+  // The monthly cycle is retired (professionals never pay monthly, owner
+  // 26 Oct 2026): 0 = not sold monthly. Nothing renders this plan's prices;
+  // checkout charges from the book.
+  priceMonthly: 0,
   priceYearly: bookSar("consultant-independent", "yearly"),
   periodMonthlyAr: "ر.س / شهر",
   periodYearlyAr: "ر.س / سنة",

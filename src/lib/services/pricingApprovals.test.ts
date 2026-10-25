@@ -19,8 +19,9 @@ const providerRegistration = readFileSync(
 // owner question ٢٠٨), and the free-memo offers are gone.
 test("the lawyer tab is the subscription (no points) plus four top-ups", () => {
   // The prices are the price book's (P1: the card reads them by id).
-  assert.equal(bookSar("lawyer-pro", "monthly"), 399);
+  // Yearly only: the 399 monthly price is retired (owner, 26 Oct 2026).
   assert.equal(bookSar("lawyer-pro", "yearly"), 3990);
+  assert.throws(() => bookSar("lawyer-pro", "monthly"));
   assert.match(lawyers, /id: "lawyer-pro"/);
   // Owner ٢٩١ (26 Oct 2026): the subscription comes with no points.
   assert.doesNotMatch(lawyers, /LAWYER_PRO_MONTHLY_POINTS|١٬٥٠٠ نقطة كل شهر|1,500 points every month/);

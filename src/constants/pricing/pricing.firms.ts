@@ -4,9 +4,11 @@ import { bookPriceText } from "../../lib/pricing/priceBook";
 
 // ─── Law firms (owner answer ١٧٥, 2026-10-16) ─────────────────────────────────
 // Two plans replace the four yearly tiers:
-// - «مكتب المحاماة» (Firm Pro): 990 SAR/month or 9,900 SAR/year, 3 seats.
-// - «شركة المحاماة» (Enterprise): 1,490 SAR/month or 14,900 SAR/year, 5 seats.
-// The yearly price is ten months. Extra seats go through sales (owner answer
+// - «مكتب المحاماة» (Firm Pro): 9,900 SAR/year, 3 seats.
+// - «شركة المحاماة» (Enterprise): 14,900 SAR/year, 5 seats.
+// The monthly cycle (990 / 1,490) is retired: professionals never pay monthly
+// (owner, 26 Oct 2026), so «السنوي بسعر عشرة أشهر» is gone with it — it
+// compared against a price no longer sold. Extra seats go through sales (owner answer
 // ٢١٧, 2026-10-18): each card links «مقاعد إضافية: تواصل مع المبيعات» to
 // /contact?type=firm-seats and quotes no seat price. The sales team's
 // negotiating range stays in the CRM, never on a public page. No included
@@ -32,7 +34,7 @@ export const plansFirms: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: [],
         platform: ["٣ مقاعد مشمولة", "القضايا والجلسات والمهل", "الموكّلون والاستشارات والعقود", "أعضاء المكتب وصلاحياتهم"],
-        support: ["السنوي بسعر عشرة أشهر"],
+        support: [],
       },
       salesLine: { label: "مقاعد إضافية: تواصل مع المبيعات", href: "/contact?type=firm-seats" },
     },
@@ -53,7 +55,7 @@ export const plansFirms: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: [],
         platform: ["٥ مقاعد مشمولة", "القضايا والجلسات والمهل", "الموكّلون والاستشارات والعقود", "أعضاء الشركة وصلاحياتهم"],
-        support: ["السنوي بسعر عشرة أشهر"],
+        support: [],
       },
       salesLine: { label: "مقاعد إضافية: تواصل مع المبيعات", href: "/contact?type=firm-seats" },
     },
@@ -76,7 +78,7 @@ export const plansFirms: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: [],
         platform: ["3 seats included", "Cases, hearings and deadlines", "Clients, consultations and contracts", "Members and their permissions"],
-        support: ["Yearly priced at ten months"],
+        support: [],
       },
       salesLine: { label: "Extra seats: contact sales", href: "/contact?type=firm-seats" },
     },
@@ -97,7 +99,7 @@ export const plansFirms: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: [],
         platform: ["5 seats included", "Cases, hearings and deadlines", "Clients, consultations and contracts", "Members and their permissions"],
-        support: ["Yearly priced at ten months"],
+        support: [],
       },
       salesLine: { label: "Extra seats: contact sales", href: "/contact?type=firm-seats" },
     },
