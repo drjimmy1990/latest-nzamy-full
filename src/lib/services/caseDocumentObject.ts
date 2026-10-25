@@ -52,3 +52,49 @@ export async function storageObjectHeldByCaseDocument(client: unknown, path: str
     return true;
   }
 }
+
+interface RowsByPathReader {
+  from(table: string): {
+    select(cols: string): {
+      eq(col: string, v: unknown): {
+        neq(col: string, v: unknown): { limit(n: number): PromiseLike<{ data: unknown; error: { message: string; code?: string } | null }> };
+        limit(n: number): PromiseLike<{ data: unknown; error: { message: string; code?: string } | null }>;
+      };
+    };
+  };
+}
+
+/**
+ * Does any OTHER row — an attachments row or a contract version, live or in
+ * the bin — still name this documents path? Then the service role must keep
+ * the bytes (final review, item 1). The delete paths remove a file from the
+ * folder it was WRITTEN in (folder_owner_id), and two rows can share one
+ * path in that folder: 20261026_70 moves a removed member's vault copy of a
+ * firm contract version to the firm owner, so the owner's vault row and the
+ * member's contract version both point at the member's file. Purging one must
+ * not take the other's bytes. `self` is the row being deleted (excluded; a
+ * row already deleted needs no exclusion). Fail safe: an unreadable answer
+ * keeps the bytes.
+ */
+export async function storageObjectHeldByAnotherRow(
+  client: unknown,
+  path: string,
+  self: { table: "attachments" | "contract_versions"; id: string | number },
+): Promise<boolean> {
+  try {
+    const reader = client as RowsByPathReader;
+    for (const table of ["attachments", "contract_versions"] as const) {
+      const byPath = reader.from(table).select("id").eq("storage_path", path);
+      const { data, error } = await (table === self.table ? byPath.neq("id", self.id) : byPath).limit(1);
+      if (error) {
+        console.error("[caseDocumentObject] other-row lookup failed — keeping the object:", table, path, error.message, error.code);
+        return true;
+      }
+      if (Array.isArray(data) && data.length > 0) return true;
+    }
+    return false;
+  } catch (err) {
+    console.error("[caseDocumentObject] other-row lookup threw — keeping the object:", path, err);
+    return true;
+  }
+}

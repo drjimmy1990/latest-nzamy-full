@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { documentsDbErrorResponse, isValidAttachmentId } from "../_shared";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
-import { storageObjectHeldByCaseDocument } from "@/lib/services/caseDocumentObject";
+import { storageObjectHeldByAnotherRow, storageObjectHeldByCaseDocument } from "@/lib/services/caseDocumentObject";
 import { isMissingFolderOwnerColumn, isRemovableWithRow } from "@/lib/storagePathOwnership";
 
 /**
@@ -121,10 +121,20 @@ export async function DELETE(
 
       // A case document may point at the same object (two rows, one path):
       // its bytes stay; only this vault row goes (caseDocumentObject.ts).
-      const held = doc.storage_path ? await storageObjectHeldByCaseDocument(admin, doc.storage_path) : false;
-      if (held) {
+      const byCase = doc.storage_path ? await storageObjectHeldByCaseDocument(admin, doc.storage_path) : false;
+      if (byCase) {
         console.error("[documents DELETE permanent] object kept — a case document points at it:", id);
       }
+      // Nor while any other row names the file: a firm contract version and
+      // the vault copy 20261026_70 moved to the firm owner share one path in
+      // the member's folder (caseDocumentObject.ts, storageObjectHeldByAnotherRow).
+      const byOther = doc.storage_path && !byCase
+        ? await storageObjectHeldByAnotherRow(admin, doc.storage_path, { table: "attachments", id })
+        : false;
+      if (byOther) {
+        console.error("[documents DELETE permanent] object kept — another row names the same file:", id);
+      }
+      const held = byCase || byOther;
       // Only an object in the folder it was written in is removed (service
       // role): before 20261026_65 a vault row could be re-pointed at anybody's
       // file, and this delete would then destroy it — such a row goes, the

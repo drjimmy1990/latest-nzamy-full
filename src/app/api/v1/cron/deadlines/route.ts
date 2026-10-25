@@ -4,7 +4,7 @@ import { recordNotification } from "@/lib/notify";
 import { daysUntil, parseIsoDate } from "@/lib/services/deadlineEngine";
 import { toArabicDigits, countPhraseAr } from "@/lib/services/arabicCount";
 import { purgeCutoffIso } from "@/lib/services/attachmentPurge";
-import { storageObjectHeldByCaseDocument } from "@/lib/services/caseDocumentObject";
+import { storageObjectHeldByAnotherRow, storageObjectHeldByCaseDocument } from "@/lib/services/caseDocumentObject";
 import { isMissingFolderOwnerColumn, isRemovableWithRow } from "@/lib/storagePathOwnership";
 import { deliverHearingReminders, queueHearingReminders } from "@/lib/hearingReminders";
 
@@ -353,10 +353,20 @@ export async function POST(request: NextRequest) {
         try {
           // A case document may share this vault row's object: keep the
           // bytes then, purge only the row (caseDocumentObject.ts, N3.9).
-          const held = row.storage_path ? await storageObjectHeldByCaseDocument(admin, row.storage_path) : false;
-          if (held) {
+          const byCase = row.storage_path ? await storageObjectHeldByCaseDocument(admin, row.storage_path) : false;
+          if (byCase) {
             console.error("[cron/deadlines] purge kept the object — a case document points at it:", row.id);
           }
+          // Nor while any other row names the file (a firm contract version
+          // and the vault copy 70 moved to the owner share one path); a second
+          // binned row on the same path, purged later in this loop, removes it.
+          const byOther = row.storage_path && !byCase
+            ? await storageObjectHeldByAnotherRow(admin, row.storage_path, { table: "attachments", id: row.id })
+            : false;
+          if (byOther) {
+            console.error("[cron/deadlines] purge kept the object — another row names the same file:", row.id);
+          }
+          const held = byCase || byOther;
           // Only an object in the folder it was written in: before
           // 20261026_65 a vault row could be re-pointed at anybody's file,
           // binned, and left for this purge to delete (security review

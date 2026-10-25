@@ -1,7 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
 import { createServiceClient } from "@/lib/supabase/server";
-import { storageObjectHeldByCaseDocument } from "@/lib/services/caseDocumentObject";
+import { storageObjectHeldByAnotherRow, storageObjectHeldByCaseDocument } from "@/lib/services/caseDocumentObject";
 import { isMissingFolderOwnerColumn, isRemovableWithRow } from "@/lib/storagePathOwnership";
 import { dbErrorResponse } from "../../../_shared";
 
@@ -105,11 +105,15 @@ export async function DELETE(_request: NextRequest, context: { params: Promise<{
         // Before 20261026_65 a version row could point at anybody's file;
         // the service role must not remove someone else's object. The folder
         // is folder_owner_id, not uploaded_by: a deleted uploader leaves
-        // uploaded_by null (its FK) and the file in his folder — kept, its
-        // bytes would outlive every row that names them.
+        // uploaded_by null (its FK) and the file in his folder, and judged by
+        // uploaded_by its bytes would outlive every row that names them.
         console.error("[lawyer/contracts versions DELETE] object kept — storage_path is outside the folder it was written in:", vid);
       } else if (await storageObjectHeldByCaseDocument(service, deletedRow.storage_path)) {
         console.error("[lawyer/contracts versions DELETE] object kept — a case document points at it:", vid);
+      } else if (await storageObjectHeldByAnotherRow(service, deletedRow.storage_path, { table: "contract_versions", id: vid })) {
+        // A vault copy of this file (70 moves a removed member's copy to the
+        // firm owner) still names the path: its bytes stay with it.
+        console.error("[lawyer/contracts versions DELETE] object kept — another row names the same file:", vid);
       } else {
         const { error: removeErr } = await service.storage.from("documents").remove([deletedRow.storage_path]);
         if (removeErr) console.error("[lawyer/contracts versions DELETE] storage remove failed:", removeErr.message);
