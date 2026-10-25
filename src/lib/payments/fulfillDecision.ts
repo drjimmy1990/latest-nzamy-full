@@ -166,11 +166,10 @@ export function pickPaidPayment<
  * How long after the claim a paid, unfulfilled order is left to the call that
  * claimed it. Only the sweep resumes, and only after this: a callback and a
  * webhook arriving together must not both run the grant. The plan grant is
- * guarded twice anyway — its check-before-insert on
- * subscriptions.metadata->>'order_id' and the partial UNIQUE index
- * subscriptions_order_id_key (20261022_30) — but two concurrent grants would
- * still each cancel the other's freshly inserted row before one re-activates
- * it; the delay keeps them apart.
+ * guarded anyway — grant_plan_subscription (20261025_10) serialises a user's
+ * grants under a per-user lock and re-checks subscriptions.metadata->>'order_id',
+ * backed by the partial UNIQUE index subscriptions_order_id_key (20261022_30) —
+ * and the delay keeps the other grants (library, points) apart as well.
  */
 export const RESUME_AFTER_MS = 10 * 60 * 1000;
 

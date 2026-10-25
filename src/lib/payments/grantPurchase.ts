@@ -9,8 +9,11 @@
  *   plan    → a `subscriptions` row: plan_id = item.id, tier = item.tier,
  *             billing_cycle = order.billing, auto_renew false (B2 turns it on),
  *             payment_method_id = the saved card's row, metadata {order_id,
- *             method: 'moyasar'}; the user's active rows are cancelled first,
- *             as grantEntitlement does, and user_metadata.tier is stamped.
+ *             method: 'moyasar', replaced_ids}; the user's active rows are
+ *             cancelled and the row inserted in ONE transaction by the
+ *             grant_plan_subscription RPC (20261025_10), so an error between
+ *             the two never leaves the user without their previous plan; then
+ *             user_metadata.tier is stamped.
  *             The window (planWindow, ./fulfillDecision.ts): one month or one
  *             year from now; on the SAME rank it starts at the end of the
  *             running row, so the remaining days carry over. Lapsed rows (period
@@ -27,10 +30,10 @@
  *
  * EXACTLY ONCE: every grant is keyed on the order, so a retry (the sweep, or a
  * second caller) never grants twice —
- *   subscriptions: the order's row is looked up first, and the partial UNIQUE
- *     index on metadata->>'order_id' (20261022_30) backs it: a 23505 on the
- *     insert means another call inserted it; that row is re-activated (this
- *     call's cancel may have caught it) and the grant counts as done;
+ *   subscriptions: the order's row is looked up first; grant_plan_subscription
+ *     takes a per-user lock and looks again, answering inserted = false when
+ *     another call wrote it (the grant counts as done); the partial UNIQUE
+ *     index on metadata->>'order_id' (20261022_30) backs both;
  *   library_access_grants.order_id UNIQUE (23505 = already granted);
  *   points_lots UNIQUE (order_id, source) (23505 = already credited).
  *
@@ -164,44 +167,33 @@ async function grantPlan(
     });
     if (decision.keepExisting) return { ok: true, alreadyEntitled: true };
 
-    const nowIso = now.toISOString();
-    const { error: cancelErr } = await admin
-      .from("subscriptions")
-      .update({ status: "cancelled", cancelled_at: nowIso, updated_at: nowIso })
-      .eq("user_id", order.user_id)
-      .eq("status", "active");
-    if (cancelErr) return failure("subscriptions cancel", cancelErr);
-
-    const { error: insertErr } = await admin.from("subscriptions").insert({
-      user_id: order.user_id,
-      plan_id: item.id,
-      tier,
-      billing_cycle: order.billing,
-      status: "active",
-      started_at: nowIso,
-      current_period_start: window.start.toISOString(),
-      current_period_end: window.end.toISOString(),
-      auto_renew: false,
-      payment_method_id: paymentMethodId,
-      metadata: { order_id: order.id, method: "moyasar", replaced_ids: window.running.map(row => row.id) },
+    // ONE transaction (grant_plan_subscription, 20261025_10): under a per-user
+    // lock it re-checks that the running rows are still the ones this window
+    // was computed from, cancels every active row and inserts the order's row.
+    // An error anywhere rolls the cancel back, so the previous plan survives.
+    const { data: granted, error: grantErr } = await admin.rpc("grant_plan_subscription", {
+      p_order: order.id,
+      p_user: order.user_id,
+      p_plan_id: item.id,
+      p_tier: tier,
+      p_billing: order.billing,
+      p_period_start: window.start.toISOString(),
+      p_period_end: window.end.toISOString(),
+      p_payment_method: paymentMethodId,
+      p_now: now.toISOString(),
+      p_running: window.running.map(row => ({ id: row.id, tier: row.tier, current_period_end: row.current_period_end ?? null })),
     });
-    if (insertErr && insertErr.code === "23505") {
-      // subscriptions_order_id_key: another call inserted this order's row
-      // first, and the cancel above may have caught it — re-activate it.
-      const { data: again, error: againErr } = await admin
-        .from("subscriptions")
-        .update({ status: "active", cancelled_at: null, updated_at: nowIso })
-        .eq("user_id", order.user_id)
-        .eq("metadata->>order_id", order.id)
-        .select("current_period_end");
-      if (againErr) return failure("subscriptions re-activate", againErr);
-      const row = Array.isArray(again) ? (again[0] as { current_period_end?: string | null } | undefined) : undefined;
-      // No row: the 23505 was not this order's subscription after all — a
-      // failure, so fulfilled_at stays null and the sweep retries.
-      if (!row) return { ok: false, error: "subscriptions re-activate: the order's row was not found after a 23505" };
-      periodEnd = row.current_period_end ? new Date(row.current_period_end) : periodEnd;
-    } else if (insertErr) {
-      return failure("subscriptions insert", insertErr);
+    // 40001 grant_plan_stale: the user's plans changed since the read above —
+    // a failure, so fulfilled_at stays null and the sweep retries with a fresh read.
+    if (grantErr) return failure("grant_plan_subscription", grantErr);
+    const result = (granted ?? null) as { inserted?: boolean; current_period_end?: string | null } | null;
+    if (!result || typeof result.inserted !== "boolean") {
+      return { ok: false, error: "grant_plan_subscription: no result" };
+    }
+    // inserted false: another call already wrote this order's row (a retry) —
+    // the grant counts as done, with that row's period.
+    if (!result.inserted) {
+      periodEnd = result.current_period_end ? new Date(result.current_period_end) : periodEnd;
     }
 
     // Keep auth metadata in sync (useSubscription hydration); the row is the truth.

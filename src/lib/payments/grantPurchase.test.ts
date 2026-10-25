@@ -2,7 +2,10 @@
  * grantPurchase.test.ts — behaviour of grantPurchase against a fake service
  * client (fix round 1 of B1 Task 5): lapsed plans never block, the same rank
  * stacks, a higher running rank is kept, every grant is keyed on the order
- * and its 23505 means "already done".
+ * and its 23505 means "already done". Since 20261025_10 the plan's cancel +
+ * insert is ONE call, grant_plan_subscription: these tests pin what is sent to
+ * it (the window, the running rows, the order) and how its answer is read;
+ * supabase/tests/rls/grant_plan_atomic.test.sql runs the function itself.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -26,13 +29,20 @@ function planDb(active: Array<{ id: string; tier: string; current_period_end: st
     if (q.table === "subscriptions" && q.op === "select" && has(q, "eq", "status", "active")) {
       return { data: active.map((a) => ({ ...a, status: "active" })) };
     }
+    if (q.table === "grant_plan_subscription" && q.op === "rpc") {
+      const p = q.payload as { p_period_end: string };
+      return { data: { inserted: true, subscription_id: "new-sub", current_period_end: p.p_period_end } };
+    }
     return { data: null };
   });
 }
 
-const inserts = (log: FakeQuery[]) => log.filter((q) => q.table === "subscriptions" && q.op === "insert");
-const cancels = (log: FakeQuery[]) =>
-  log.filter((q) => q.table === "subscriptions" && q.op === "update" && (q.payload as { status?: string }).status === "cancelled");
+/** The atomic cancel + insert calls (grant_plan_subscription, 20261025_10). */
+const grants = (log: FakeQuery[]) => log.filter((q) => q.table === "grant_plan_subscription" && q.op === "rpc");
+const grantArgs = (log: FakeQuery[]) => grants(log)[0].payload as Record<string, unknown>;
+/** grantPlan never writes subscriptions directly any more. */
+const directWrites = (log: FakeQuery[]) =>
+  log.filter((q) => q.table === "subscriptions" && (q.op === "insert" || q.op === "update"));
 const lots = (log: FakeQuery[]) => log.filter((q) => q.table === "credit_points" && q.op === "rpc");
 
 function order(item_id: string, kind: string, billing: string) {
@@ -43,14 +53,19 @@ test("a lapsed max row (status still active, period ended) never blocks: ind-ai 
   const { client, log } = planDb([{ id: "old-max", tier: "max", current_period_end: inDays(-3) }]);
   const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS }, order("ind-ai", "plan", "monthly"), { now: NOW });
   assert.deepEqual(r, { ok: true, alreadyEntitled: false });
-  assert.equal(cancels(log).length, 1, "the lapsed row is cancelled");
-  const ins = inserts(log)[0].payload as Record<string, unknown>;
-  assert.equal(ins.tier, "ai");
-  assert.equal(ins.plan_id, "ind-ai");
-  assert.equal(ins.current_period_start, NOW.toISOString());
-  assert.equal(ins.current_period_end, "2026-11-22T08:00:00.000Z");
-  assert.equal(ins.auto_renew, false);
-  assert.deepEqual(ins.metadata, { order_id: ORDER, method: "moyasar", replaced_ids: [] });
+  assert.equal(grants(log).length, 1, "one atomic call (it cancels the lapsed row with the others)");
+  assert.equal(directWrites(log).length, 0, "no separate cancel or insert request");
+  const args = grantArgs(log);
+  assert.equal(args.p_tier, "ai");
+  assert.equal(args.p_plan_id, "ind-ai");
+  assert.equal(args.p_billing, "monthly");
+  assert.equal(args.p_order, ORDER);
+  assert.equal(args.p_user, USER);
+  assert.equal(args.p_now, NOW.toISOString(), "started_at / cancelled_at = now (the refund restore matches them)");
+  assert.equal(args.p_period_start, NOW.toISOString());
+  assert.equal(args.p_period_end, "2026-11-22T08:00:00.000Z");
+  assert.equal(args.p_payment_method, null);
+  assert.deepEqual(args.p_running, [], "a lapsed row is not running, so it is not in replaced_ids");
   assert.equal(lots(log).length, 0, "ind-ai comes with no monthly points");
 });
 
@@ -58,8 +73,26 @@ test("a running higher rank is kept: nothing cancelled, nothing inserted, alread
   const { client, log } = planDb([{ id: "max", tier: "max", current_period_end: inDays(10) }]);
   const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS }, order("ind-ai", "plan", "monthly"), { now: NOW });
   assert.deepEqual(r, { ok: true, alreadyEntitled: true });
-  assert.equal(cancels(log).length, 0);
-  assert.equal(inserts(log).length, 0);
+  assert.equal(grants(log).length, 0);
+  assert.equal(directWrites(log).length, 0);
+});
+
+test("an open-ended plan of the same rank is kept (the refund-review path): no grant call", async () => {
+  const { client, log } = planDb([{ id: "pro-open", tier: "pro", current_period_end: null }]);
+  const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS }, order("lawyer-pro", "plan", "monthly"), { now: NOW });
+  assert.deepEqual(r, { ok: true, alreadyEntitled: true });
+  assert.equal(grants(log).length, 0);
+  assert.equal(lots(log).length, 0);
+});
+
+test("a higher tier starts now and replaces the running lower one", async () => {
+  const { client, log } = planDb([{ id: "ai-m", tier: "ai", current_period_end: inDays(20) }]);
+  const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS }, order("lawyer-pro", "plan", "monthly"), { now: NOW });
+  assert.deepEqual(r, { ok: true, alreadyEntitled: false });
+  const args = grantArgs(log);
+  assert.equal(args.p_period_start, NOW.toISOString(), "no carry-over across ranks");
+  assert.equal(args.p_period_end, addMonthsUtc(NOW, 1).toISOString());
+  assert.deepEqual(args.p_running, [{ id: "ai-m", tier: "ai", current_period_end: inDays(20) }]);
 });
 
 test("same rank, monthly with 20 days left + another monthly → the new period runs from the old end, + 1 month", async () => {
@@ -71,12 +104,12 @@ test("same rank, monthly with 20 days left + another monthly → the new period 
     { now: NOW, paymentMethodId: "pm-1" },
   );
   assert.deepEqual(r, { ok: true, alreadyEntitled: false }, "a same-rank repurchase stacks, never a refund review");
-  const ins = inserts(log)[0].payload as Record<string, unknown>;
+  const args = grantArgs(log);
   const expectedEnd = addMonthsUtc(new Date(oldEnd), 1).toISOString();
-  assert.equal(ins.current_period_start, new Date(oldEnd).toISOString());
-  assert.equal(ins.current_period_end, expectedEnd);
-  assert.equal(ins.payment_method_id, "pm-1");
-  assert.deepEqual((ins.metadata as { replaced_ids: string[] }).replaced_ids, ["pro-m"]);
+  assert.equal(args.p_period_start, new Date(oldEnd).toISOString());
+  assert.equal(args.p_period_end, expectedEnd);
+  assert.equal(args.p_payment_method, "pm-1");
+  assert.deepEqual(args.p_running, [{ id: "pro-m", tier: "pro", current_period_end: oldEnd }], "replaced_ids = the running row");
   const lot = lots(log)[0].payload as Record<string, unknown>;
   assert.equal(lot.p_source, "plan_monthly");
   assert.equal(lot.p_points, 1500);
@@ -89,8 +122,7 @@ test("same rank, a yearly plan held + a monthly bought → the yearly end + 1 mo
   const { client, log } = planDb([{ id: "pro-y", tier: "pro", current_period_end: yearEnd }]);
   const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS }, order("ind-preventive", "plan", "monthly"), { now: NOW });
   assert.deepEqual(r, { ok: true, alreadyEntitled: false });
-  const ins = inserts(log)[0].payload as Record<string, unknown>;
-  assert.equal(ins.current_period_end, addMonthsUtc(new Date(yearEnd), 1).toISOString());
+  assert.equal(grantArgs(log).p_period_end, addMonthsUtc(new Date(yearEnd), 1).toISOString());
 });
 
 test("the order's subscription already exists → no cancel, no insert; the points are still credited once", async () => {
@@ -101,23 +133,52 @@ test("the order's subscription already exists → no cancel, no insert; the poin
   );
   const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS }, order("lawyer-pro", "plan", "monthly"), { now: NOW });
   assert.deepEqual(r, { ok: true, alreadyEntitled: false });
-  assert.equal(cancels(log).length + inserts(log).length, 0);
+  assert.equal(grants(log).length + directWrites(log).length, 0);
   assert.equal(lots(log).length, 1);
 });
 
-test("a 23505 on the plan insert (another call inserted it) re-activates the order's row and counts as done", async () => {
-  const { client, log } = planDb([], (q) => {
-    if (q.table === "subscriptions" && q.op === "insert") return { error: { code: "23505", message: "subscriptions_order_id_key" } };
-    if (q.table === "subscriptions" && q.op === "update" && (q.payload as { status?: string }).status === "active") {
-      return { data: [{ current_period_end: "2027-10-22T08:00:00.000Z" }] };
-    }
-    return undefined;
-  });
-  const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS }, order("ind-ai", "plan", "yearly"), { now: NOW });
+test("the grant call answers inserted=false (another call wrote the order's row) → done, its period used, points once", async () => {
+  const { client, log } = planDb([], (q) =>
+    q.table === "grant_plan_subscription"
+      ? { data: { inserted: false, subscription_id: "s-other", current_period_end: "2026-11-30T08:00:00+00:00" } }
+      : undefined,
+  );
+  const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS }, order("lawyer-pro", "plan", "monthly"), { now: NOW });
   assert.deepEqual(r, { ok: true, alreadyEntitled: false });
-  const again = log.find((q) => q.table === "subscriptions" && q.op === "update" && (q.payload as { status?: string }).status === "active");
-  assert.ok(again, "the order's row is re-activated");
-  assert.ok(has(again!, "eq", "metadata->>order_id", ORDER));
+  assert.equal(directWrites(log).length, 0, "nothing is re-activated");
+  assert.equal(lots(log).length, 1);
+  const lot = lots(log)[0].payload as Record<string, unknown>;
+  assert.equal(lot.p_expires_at, new Date("2026-11-30T08:00:00+00:00").toISOString(), "the lot follows the existing row's end");
+});
+
+test("a stale grant (40001: the running plans changed) is a FAILURE, not missing — the sweep retries", async () => {
+  const { client, log } = planDb([{ id: "pro-m", tier: "pro", current_period_end: inDays(5) }], (q) =>
+    q.table === "grant_plan_subscription" ? { error: { code: "40001", message: "grant_plan_stale" } } : undefined,
+  );
+  const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS }, order("lawyer-pro", "plan", "monthly"), { now: NOW });
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.notEqual(r.missing, true);
+  assert.equal(lots(log).length, 0, "no points for a plan that was not granted");
+});
+
+test("the grant function not applied yet (PGRST202) → ok:false, missing; no fallback to separate writes", async () => {
+  const { client, log } = planDb([], (q) =>
+    q.table === "grant_plan_subscription" ? { error: { code: "PGRST202", message: "function not found" } } : undefined,
+  );
+  const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS }, order("ind-ai", "plan", "yearly"), { now: NOW });
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.equal(r.missing, true);
+  assert.equal(directWrites(log).length, 0);
+});
+
+test("a grant error after the cancel (e.g. a failed insert) is a failure; nothing else is written", async () => {
+  const { client, log } = planDb([{ id: "pro-m", tier: "pro", current_period_end: inDays(5) }], (q) =>
+    q.table === "grant_plan_subscription" ? { error: { code: "23503", message: "subscriptions_plan_id_fkey" } } : undefined,
+  );
+  const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS }, order("lawyer-pro", "plan", "monthly"), { now: NOW });
+  assert.equal(r.ok, false);
+  assert.equal(directWrites(log).length, 0);
+  assert.equal(lots(log).length, 0);
 });
 
 test("a points 23505 (the order's lot exists) is already credited → ok", async () => {
@@ -156,12 +217,8 @@ test("a missing points function → ok:false, missing (the sweep retries later)"
   if (!r.ok) assert.equal(r.missing, true);
 });
 
-test("a 23505 on the plan insert whose re-activation finds no row is a grant FAILURE (fulfilled_at stays null)", async () => {
-  const { client } = planDb([], (q) => {
-    if (q.table === "subscriptions" && q.op === "insert") return { error: { code: "23505", message: "subscriptions_order_id_key" } };
-    if (q.table === "subscriptions" && q.op === "update" && (q.payload as { status?: string }).status === "active") return { data: [] };
-    return undefined;
-  });
+test("a grant call that answers nothing usable is a failure", async () => {
+  const { client } = planDb([], (q) => (q.table === "grant_plan_subscription" ? { data: null } : undefined));
   const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS }, order("ind-ai", "plan", "yearly"), { now: NOW });
   assert.equal(r.ok, false);
 });
