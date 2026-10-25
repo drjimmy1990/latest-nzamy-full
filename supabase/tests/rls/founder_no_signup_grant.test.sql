@@ -4,9 +4,10 @@
 --
 -- CHAIN (run.sh, postgres:16; stubs.sql loads first by itself). 20261026_01
 -- runs TWICE (idempotent). The two _verify blocks are extracted from
--- _verify.sql between their markers; they run before 20261026_01 (they must
--- only NOTICE) and after its second run (they must pass). From the repo root,
--- in Git Bash:
+-- _verify.sql between their markers. Before 20261026_01 only the 20261021_50
+-- block runs (it must pass, telling to run 20261026_01); the 20261026_01
+-- block RAISES there by design — negative control (d). Both run after the
+-- second 20261026_01 run and must pass. From the repo root, in Git Bash:
 --   T=supabase/tests/rls; M=supabase/migrations; D=$(mktemp -d)
 --   sed -n '/^-- >>> verify:founder_campaign/,/^-- <<< verify:founder_campaign/p' $M/_verify.sql > "$D/v50.sql"
 --   sed -n '/^-- >>> verify:founder_no_signup_grant/,/^-- <<< verify:founder_no_signup_grant/p' $M/_verify.sql > "$D/v01.sql"
@@ -20,7 +21,7 @@
 --     $M/20261019_20_lawyer_practice_kind.sql \
 --     $M/20261021_50_founder_campaign.sql \
 --     $T/prelude_founder_no_signup_grant_before.sql \
---     "$D/v50.sql" "$D/v01.sql" \
+--     "$D/v50.sql" \
 --     $M/20261026_01_founder_no_signup_grant.sql \
 --     $M/20261026_01_founder_no_signup_grant.sql \
 --     "$D/v50.sql" "$D/v01.sql" \
@@ -35,15 +36,18 @@
 --       blocks) → "T0 FAIL: trg_lawyer_profiles_founder still exists".
 --       With T0 and T1 cut out (sed), T2 fails on f2's badge — the old
 --       trigger really is what T2 would catch.
---   (b) 20261021_50 re-run after 20261026_01, then "$D/v01.sql" → v01
---       raises "_verify: trg_lawyer_profiles_founder is back …": the re-run
---       resets the column comment, but the setting description keeps the
---       20261026_01 marker (the seed is `on conflict do nothing`).
+--   (b) 20261021_50 re-run after 20261026_01, then "$D/v50.sql" (passes:
+--       the setting description keeps the 20261026_01 marker, the seed is
+--       `on conflict do nothing`) and "$D/v01.sql" → v01 raises.
 --   (c) after 20261026_01, re-create only the trigger name
 --         create trigger trg_lawyer_profiles_founder before insert on
 --           public.lawyer_profiles for each row execute function
 --           public.lawyer_profile_from_signup();  -- any function will do
 --       then "$D/v01.sql" → it raises the same way.
+--   (d) the chain up to prelude_founder_no_signup_grant_before.sql, then
+--       "$D/v01.sql" → it raises "trg_lawyer_profiles_founder is on
+--       lawyer_profiles … run SQL_batch_2026-10-26_owner_answers/01_NOW…":
+--       deploy.sh stops until the file has run.
 --
 -- Actors: f1 badge + grant from before the fix (prelude) · f2 advocate and
 -- f3 consultant signing up after the fix, inside the window · b1 / b2

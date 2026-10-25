@@ -47,8 +47,9 @@
 --
 -- DEPLOY ORDER — ANY TIME, NO CODE DEPLOY NEEDED. Run it NOW: every lawyer
 --   who signs up before it runs gets the badge and the library days. No code
---   calls the trigger function. Once the code of this batch is deployed,
---   _verify.sql RAISES while the trigger is still there.
+--   calls the trigger function. Once _verify.sql of this batch is on the
+--   server, it RAISES (and deploy.sh stops) while the trigger is still there
+--   — so run this file before deploying.
 --
 -- RE-RUN HAZARD
 --   20261021_50 is idempotent and re-creates the trigger. If it is ever
@@ -60,7 +61,9 @@
 -- ROLLBACK (puts the signup gift back — only with the owner's written yes)
 --   re-run supabase/migrations/20261021_50_founder_campaign.sql (it re-creates
 --   the function, the trigger and the old column comment; the setting keeps
---   its current value).
+--   its current value and this file's description). A deliberate rollback
+--   also means removing the verify:founder_no_signup_grant section from
+--   _verify.sql, which otherwise stops deploy.sh while the trigger exists.
 -- =============================================================================
 
 begin;

@@ -2691,7 +2691,8 @@ END $$;
 -- founder_badge column comment or in the founder_campaign setting
 -- description) is there, this section checks only what stays
 -- (the setting, the column and its grants, founder_campaign_active()); the
--- 20261026_01 section below raises if the trigger or the function is back.
+-- 20261026_01 section below raises whenever the trigger or the function
+-- exists.
 -- RE-RUN HAZARD: a re-run of 20261016_10 revokes founder_badge's SELECT
 -- grant; re-run 20261019_20 and 20261026_01 after it (before 20261026_01:
 -- 20261021_50). A re-run of 20261021_50 re-creates the signup grant: re-run
@@ -3938,19 +3939,19 @@ end $$;
 -- >>> verify:founder_no_signup_grant — supabase/tests/rls/founder_no_signup_grant.test.sql
 -- 2026-10-26 — 20261026_01_founder_no_signup_grant.sql (owner answers of
 -- 25 Oct, P0: no founder badge, seat or library days on a free signup).
--- Read-only, safe to repeat. Keyed on the marker "20261026_01" in the
--- lawyer_profiles.founder_badge column comment OR in the founder_campaign
--- setting description. Before the file runs it only reports. After, it raises
--- when the signup trigger or its function is back. A re-run of 20261021_50
--- re-creates both and resets the column comment, but keeps the description
--- (its seed is `on conflict do nothing`), so the re-run is caught here. The
--- badges and lib-founder grants already given are counted, never changed
--- (owner question ٢٧٨).
+-- Read-only, safe to repeat. Unlike most sections this one RAISES before its
+-- file has run: after the owner's 25-Oct answer no state with the signup
+-- trigger is acceptable, so deploy.sh stops until 01_NOW_20261026_01 has
+-- run (it needs no code deploy — run it first). It also raises when the
+-- trigger or its function comes back, e.g. after a re-run of 20261021_50
+-- (re-run 20261026_01 after it). Only a database without 20261021_50 at all
+-- (no founder_badge column) passes with a NOTICE. The badges and lib-founder
+-- grants already given are counted, never changed (owner question ٢٧٨).
 do $$
 declare
-  marked boolean;
   badges bigint;
   grants bigint;
+  fix    constant text := 'run SQL_batch_2026-10-26_owner_answers/01_NOW_20261026_01_founder_no_signup_grant.sql (20261021_50 re-run? re-run 20261026_01 after it)';
 begin
   if not exists (select 1 from information_schema.columns
                   where table_schema = 'public' and table_name = 'lawyer_profiles'
@@ -3958,23 +3959,12 @@ begin
     raise notice '_verify: 20261026_01 is not applied yet — and 20261021_50 is not either, so no signup grant exists to stop';
     return;
   end if;
-  marked := coalesce(col_description('public.lawyer_profiles'::regclass,
-              (select attnum from pg_attribute
-                where attrelid = 'public.lawyer_profiles'::regclass
-                  and attname = 'founder_badge' and not attisdropped)), '')
-            like '%20261026_01%'
-         or coalesce((select description from public.platform_settings where key = 'founder_campaign'), '')
-            like '%20261026_01%';
-  if not marked then
-    raise notice '_verify: 20261026_01 is not applied yet — every lawyer who signs up during the founder campaign still gets the founder badge and the library days; run SQL_batch_2026-10-26_owner_answers/01_NOW_20261026_01_founder_no_signup_grant.sql NOW';
-    return;
-  end if;
   if exists (select 1 from pg_trigger
               where tgrelid = 'public.lawyer_profiles'::regclass and tgname = 'trg_lawyer_profiles_founder') then
-    raise exception '_verify: trg_lawyer_profiles_founder is back on lawyer_profiles — new lawyers get the founder badge and library days on signup again (20261021_50 re-run? re-run 20261026_01 after it)';
+    raise exception '_verify: trg_lawyer_profiles_founder is on lawyer_profiles — every lawyer who signs up during the founder campaign gets the founder badge and library days, which the owner stopped on 25 Oct; %', fix;
   end if;
   if to_regprocedure('public.lawyer_profile_founder_campaign()') is not null then
-    raise exception '_verify: public.lawyer_profile_founder_campaign() is back (re-run 20261026_01)';
+    raise exception '_verify: public.lawyer_profile_founder_campaign() exists — the founder signup grant is half removed; %', fix;
   end if;
   if exists (select 1 from pg_trigger t join pg_proc p on p.oid = t.tgfoid
               where t.tgrelid = 'public.lawyer_profiles'::regclass and not t.tgisinternal
