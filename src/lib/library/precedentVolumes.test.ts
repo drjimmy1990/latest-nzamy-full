@@ -128,3 +128,18 @@ test("the owner corpus' two series shapes (2026-10-25) get volumes 1..N, part = 
     assert.equal(collectionVolumeLabel(entry.volumes[n - 1]), `المجلد ${n}`);
   }
 });
+
+test("a row listed twice (the same id) is one volume, not a series of two copies", () => {
+  const rows = [vol("moj-1434-v01", { part: null }), vol("moj-1434-v01", { part: null }), vol("solo", { series_id: null })];
+  const entries = groupCollectionVolumes(rows);
+  assert.deepEqual(entries.map((e) => e.kind), ["single", "single"]);
+  const two = groupCollectionVolumes([vol("moj-1434-v01"), vol("moj-1434-v02"), vol("moj-1434-v01")]);
+  assert.equal(two.length, 1);
+  assert.equal(two[0].kind, "series");
+  if (two[0].kind === "series") {
+    assert.deepEqual(two[0].volumes.map((v) => [v.row.id, v.number]), [["moj-1434-v01", 1], ["moj-1434-v02", 2]]);
+    assert.equal(two[0].rulingCount, 20);
+  }
+  const info = buildCollectionSeries([vol("moj-1434-v01"), vol("moj-1434-v02"), vol("moj-1434-v02")], "moj-1434-v02");
+  assert.deepEqual(info?.volumes.map((v) => v.id), ["moj-1434-v01", "moj-1434-v02"]);
+});

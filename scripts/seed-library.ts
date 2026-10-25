@@ -1410,7 +1410,9 @@ async function seedFeqh(
         id: chId,
         book_id: bookId,
         title: ch.title || "",
-        volume_number: values.int("feqh_chapters", "volume_number", chId, ch.pages?.[0]?.volume ?? ch.sections?.[0]?.pages?.[0]?.volume, 1),
+        // No volume stated → 1, as always; a refused one («3-4») → NULL
+        // (the column is nullable), never an invented volume 1 (N2.7).
+        volume_number: values.int("feqh_chapters", "volume_number", chId, ch.pages?.[0]?.volume ?? ch.sections?.[0]?.pages?.[0]?.volume, 1, null),
         order_index: ci,
       });
 

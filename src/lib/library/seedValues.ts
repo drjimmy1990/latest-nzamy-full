@@ -103,15 +103,27 @@ export function createSeedValueReport() {
       }
       return value.substring(0, max);
     },
-    /** parseStrictInt with the caller's fallback for empty and rejected input; rejections are reported. */
-    int(table: string, field: string, key: unknown, raw: unknown, fallback: number | null): number | null {
+    /**
+     * parseStrictInt with the caller's fallback for empty input; a refused
+     * value stores `onRefused` (default: the same fallback) and is reported.
+     * A column whose empty-input default is a guess (feqh_chapters.volume_number
+     * = 1) passes null here, so a refused «3-4» is not stored as volume 1.
+     */
+    int(
+      table: string,
+      field: string,
+      key: unknown,
+      raw: unknown,
+      fallback: number | null,
+      onRefused: number | null = fallback,
+    ): number | null {
       const p = parseStrictInt(raw);
       if (p.rejected !== null) {
         const k = `${table}\u0000${field}\u0000${String(key)}`;
         if (!intRejected.has(k)) {
-          intRejected.set(k, { table, field, key: String(key), raw: String(raw), reason: p.rejected, stored: fallback });
+          intRejected.set(k, { table, field, key: String(key), raw: String(raw), reason: p.rejected, stored: onRefused });
         }
-        return fallback;
+        return onRefused;
       }
       return p.value ?? fallback;
     },

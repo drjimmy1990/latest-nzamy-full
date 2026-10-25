@@ -84,6 +84,17 @@ test("summary: identity cuts are named apart", () => {
   assert.match(lines, /principles\.year_hijri p: «1420-1425»/);
 });
 
+test("int(): a refused value can store something else than the empty-input default (a chapter's volume never becomes 1)", () => {
+  const r = createSeedValueReport();
+  // empty / absent → the column's old default, as before
+  assert.equal(r.int("feqh_chapters", "volume_number", "ch1", undefined, 1, null), 1);
+  assert.equal(r.int("feqh_chapters", "volume_number", "ch1", "", 1, null), 1);
+  // a range is refused → NULL, not an invented volume 1
+  assert.equal(r.int("feqh_chapters", "volume_number", "ch2", "3-4", 1, null), null);
+  assert.equal(r.int("feqh_chapters", "volume_number", "ch3", "2", 1, null), 2);
+  assert.deepEqual(r.snapshot().intRejected.map((e) => [e.key, e.stored]), [["ch2", null]]);
+});
+
 test("the seeder: no silent parseInt, no bare .substring cap, the report reaches its result", () => {
   assert.doesNotMatch(SEEDER, /function safeInt\(/, "the lenient safeInt is gone");
   assert.doesNotMatch(SEEDER, /parseInt\(/);
@@ -98,6 +109,8 @@ test("the seeder: no silent parseInt, no bare .substring cap, the report reaches
   for (const field of ["year_hijri", "volume_number", "page_number"]) {
     assert.match(SEEDER, new RegExp(`${field}: values\\.int\\(`), `${field} goes through values.int`);
   }
+  // a chapter's refused volume is NULL (the column is nullable), never the empty-input 1
+  assert.match(SEEDER, /volume_number: values\.int\("feqh_chapters", "volume_number", chId, [^,]*(?:,[^,]*)?, 1, null\),/);
   assert.match(SEEDER, /values\.reset\(\);/);
   assert.match(SEEDER, /value_report: seedValueReportJson\(valueReport, finishedAt\.toISOString\(\)\)/);
   assert.match(SEEDER, /seed-value-report\.json/);

@@ -166,8 +166,13 @@ function seriesKey(row: CollectionVolumeRow): string | null {
 export function groupCollectionVolumes<T extends CollectionVolumeRow>(rows: readonly T[]): CollectionCatalogueEntry<T>[] {
   const groups = new Map<string, T[]>();
   const order: Array<{ key: string | null; row: T }> = [];
+  // A row listed twice (overlapping pages of a list) is one collection: the
+  // first copy stands, so a lone volume never turns into a "series" of two.
+  const seen = new Set<string>();
   for (const row of rows) {
     if (!row || typeof row.id !== "string") continue;
+    if (seen.has(row.id)) continue;
+    seen.add(row.id);
     const key = seriesKey(row);
     if (key === null) {
       order.push({ key: null, row });
