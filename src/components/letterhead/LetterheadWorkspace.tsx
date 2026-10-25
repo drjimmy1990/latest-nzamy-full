@@ -178,7 +178,9 @@ export default function LetterheadWorkspace({ scope }: { scope: BrandingScope })
       const res = await fetch(`/api/v1/branding/logo?scope=${scope}`, { method: "POST", body: form });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setLogoState({ kind: "error", message: (body as { error?: string }).error ?? "تعذّر رفع الشعار" });
+        // nginx answers an oversized body itself, with an HTML 413 (no JSON).
+        const fallback = res.status === 413 ? "حجم الشعار يتجاوز ١ ميجابايت" : "تعذّر رفع الشعار";
+        setLogoState({ kind: "error", message: (body as { error?: string }).error ?? fallback });
         return;
       }
       setLogoUrl((body as { logoUrl: string | null }).logoUrl);
