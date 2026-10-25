@@ -97,6 +97,8 @@ test("isLibraryReadRateLimitedRoute: search (POST) and the two article-text GET 
   assert.equal(isLibraryReadRateLimitedRoute("GET", "/api/library/autocomplete"), true);
   assert.equal(isLibraryReadRateLimitedRoute("GET", "/api/library/laws/labor-law"), true);
   assert.equal(isLibraryReadRateLimitedRoute("GET", "/api/library/laws/%D9%86%D8%B8%D8%A7%D9%85"), true);
+  // N2.6: the in-document search reads the server-only text as the service role too.
+  assert.equal(isLibraryReadRateLimitedRoute("POST", "/api/library/scoped-search"), true);
 });
 
 test("isLibraryReadRateLimitedRoute: other methods and other library routes do not", () => {
@@ -106,6 +108,8 @@ test("isLibraryReadRateLimitedRoute: other methods and other library routes do n
   assert.equal(isLibraryReadRateLimitedRoute("GET", "/api/library/laws/a/b"), false);
   assert.equal(isLibraryReadRateLimitedRoute("GET", "/api/library/books/x"), false);
   assert.equal(isLibraryReadRateLimitedRoute("GET", "/api/library/searchx"), false);
+  assert.equal(isLibraryReadRateLimitedRoute("GET", "/api/library/scoped-search"), false);
+  assert.equal(isLibraryReadRateLimitedRoute("POST", "/api/library/scoped-searchx"), false);
 });
 
 test("libraryReadClientKey: Cloudflare's visitor address wins; otherwise the proxy's resolved IP", () => {

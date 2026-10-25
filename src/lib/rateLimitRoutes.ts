@@ -31,7 +31,7 @@ export function isStrictRateLimitedRoute(method: string, pathname: string): bool
   return method === "POST" && STRICT_RATE_LIMITED_ROUTES.some((re) => re.test(pathname));
 }
 
-// The law reader, search and autocomplete read article text with the service
+// The law reader, search, scoped search and autocomplete read article text with the service
 // role since 20260929_01 (article text is server-only), which also drops the
 // database's anon statement timeout. A per-client ceiling keeps one client
 // from walking the corpus or queueing slow searches (plan P0-27).
@@ -40,6 +40,9 @@ export const LIBRARY_READ_RATE_LIMITED_ROUTES: ReadonlyArray<{ method: string; r
   { method: "POST", re: /^\/api\/library\/search$/ }, // POST /api/library/search
   { method: "GET", re: /^\/api\/library\/autocomplete$/ }, // GET /api/library/autocomplete
   { method: "GET", re: /^\/api\/library\/laws\/[^/]+$/ }, // GET /api/library/laws/[slug]
+  // N2.6: search inside one law / collection series / book series — the
+  // same server-only text, read as the service role.
+  { method: "POST", re: /^\/api\/library\/scoped-search$/ }, // POST /api/library/scoped-search
 ];
 
 /** True for a request to one of the article-text library routes above. */
