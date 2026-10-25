@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { LAW_SUMMARY_BRIEF_MAX_CHARS, extractLawPreambleBlocks, lawSummaryBrief } from "./lawPreambleBlocks.ts";
+import { LAW_SUMMARY_BRIEF_MAX_CHARS, extractLawPreambleBlocks, isHollowPreamble, lawSummaryBrief } from "./lawPreambleBlocks.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_SQL = readFileSync(
@@ -196,4 +196,19 @@ test("a heading with no table under it is not a card", () => {
   const out = extractLawPreambleBlocks(p);
   assert.equal(out.metadataCard, null);
   assert.equal(out.rest, p);
+});
+
+test("isHollowPreamble: headings, rules, details wrappers and the placeholder only", () => {
+  assert.equal(isHollowPreamble(extractLawPreambleBlocks(byslug("sb-01").preamble).rest), true);
+  assert.equal(isHollowPreamble(extractLawPreambleBlocks(byslug("sb-04").preamble).rest), true);
+  const emptyToggle = [
+    "# نظام", "", "***", "", "## ديباجة النظام", "<details>", "<summary>📜 ديباجة</summary>", "",
+    "لم تتوفر ديباجة في المصدر المستخدم.", "", "</details>",
+  ];
+  assert.equal(isHollowPreamble(emptyToggle.join("\n")), true);
+  assert.equal(isHollowPreamble(emptyToggle.join("\r\n")), true);
+  assert.equal(isHollowPreamble(extractLawPreambleBlocks(byslug("sb-03").preamble).rest), false, "the decree text keeps it");
+  assert.equal(isHollowPreamble("# نظام\n\nإن مجلس الوزراء…"), false);
+  assert.equal(isHollowPreamble("| أ | ب |"), false);
+  assert.equal(isHollowPreamble(""), true);
 });

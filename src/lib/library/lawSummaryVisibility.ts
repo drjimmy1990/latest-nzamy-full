@@ -16,7 +16,7 @@
  * Pure: `node --test` loads it directly.
  */
 
-import { extractLawPreambleBlocks, type LawMetadataCard, type LawCardField } from "./lawPreambleBlocks.ts";
+import { extractLawPreambleBlocks, isHollowPreamble, type LawMetadataCard, type LawCardField } from "./lawPreambleBlocks.ts";
 
 export type LawSummaryAudience = "subscribers" | "everyone";
 
@@ -71,7 +71,10 @@ export function lawReaderExtras(
 ): LawReaderExtras {
   if (!lawSummaryVisible(isSubscriber, audience)) return { preamble: lawPreamble };
   const blocks = extractLawPreambleBlocks(lawPreamble);
-  const out: LawReaderExtras = { preamble: blocks.rest };
+  // With the card and the موجز gone, what is left is often only the law's H1
+  // and an empty ديباجة toggle: no box rather than one that opens on the title.
+  const lifted = !!blocks.summary || !!blocks.metadataCard;
+  const out: LawReaderExtras = { preamble: lifted && isHollowPreamble(blocks.rest) ? "" : blocks.rest };
   if (blocks.summary) {
     out.summary = blocks.summary;
     out.summaryLabel = blocks.summaryLabel;

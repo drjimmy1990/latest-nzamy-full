@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { clampOverflows, lawCardSummaryText, summaryToggleLabel } from "./summaryClamp.ts";
+import { clampOverflows, lawCardSummaryText, summaryToggleLabel, withoutLeadingHeadings } from "./summaryClamp.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const read = (f: string) => readFileSync(path.join(here, f), "utf8").replace(/\r\n/g, "\n");
@@ -49,5 +49,14 @@ test("the law cards (grid and list) and the decree / precedent cards use it", ()
   const items = read("ListItems.tsx");
   assert.equal(items.match(/<ClampedSummary /g)?.length, 4);
   const page = read("../page.tsx");
-  assert.match(page, /summaryBrief: stripMarkdownMarks\(law\.summary_brief \|\| ""\),/);
+  assert.match(page, /summaryBrief: stripMarkdownMarks\(withoutLeadingHeadings\(law\.summary_brief\)\),/);
+});
+
+test("a موجز that opens with its own heading: the card starts at the text", () => {
+  const brief = ["### 🎯 ملخص محتوى المستند والهدف منه", "لائحة الوظائف الصحية الصادرة عن مجلس الخدمة المدنية."].join("\n");
+  assert.equal(withoutLeadingHeadings(brief), "لائحة الوظائف الصحية الصادرة عن مجلس الخدمة المدنية.");
+  const middle = "نص بلا عنوان\n### عنوان في الوسط";
+  assert.equal(withoutLeadingHeadings(middle), middle);
+  assert.equal(withoutLeadingHeadings("### عنوان فقط"), "### عنوان فقط");
+  assert.equal(withoutLeadingHeadings(null), "");
 });

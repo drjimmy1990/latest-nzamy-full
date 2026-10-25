@@ -57,7 +57,37 @@ test("a subscriber gets the موجز, the whole card, and a preamble without the
   assert.equal(out.summary, "ينظم النظام علاقات العمل.");
   assert.equal(out.summaryLabel, "📝 موجز النظام");
   assert.equal(out.metadata_card?.main.length, 6);
-  assert.equal(out.preamble, "# نظام العمل");
+  // Only the H1 is left: no «الديباجة» box that opens on the law's title.
+  assert.equal(out.preamble, "");
+});
+
+test("prose left after the blocks keeps the preamble; an empty ديباجة toggle alone does not", () => {
+  const withDecree = `${PREAMBLE}
+
+**قرار مجلس الوزراء رقم (219) وتاريخ 1426/8/22هـ**
+
+إن مجلس الوزراء…`;
+  assert.equal(
+    lawReaderExtras(withDecree, true).preamble,
+    "# نظام العمل\n\n**قرار مجلس الوزراء رقم (219) وتاريخ 1426/8/22هـ**\n\nإن مجلس الوزراء…",
+  );
+  const emptyToggle = `${PREAMBLE}
+
+***
+
+## ديباجة النظام
+
+<details>
+<summary>📜 ديباجة نظام العمل</summary>
+
+لم تتوفر ديباجة في المصدر المستخدم.
+
+</details>`;
+  assert.equal(lawReaderExtras(emptyToggle, true).preamble, "");
+});
+
+test("a preamble with nothing lifted is never emptied, hollow or not", () => {
+  assert.equal(lawReaderExtras("# نظام العمل", true).preamble, "# نظام العمل");
 });
 
 test("a preamble with no blocks gives a subscriber the preamble only", () => {

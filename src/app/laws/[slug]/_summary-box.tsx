@@ -31,7 +31,9 @@ export function LawSummaryBox({
     <details
       open
       data-testid="law-document-summary-box"
-      className={`group rounded-2xl border overflow-hidden ${
+      // Not printed, like the preamble: a printout carries the statute, not an
+      // editorial summary («… وليس ترجمة رسمية»).
+      className={`group rounded-2xl border overflow-hidden print:hidden ${
         isDark ? "bg-zinc-900 border-[#C8A762]/20" : "bg-amber-50/40 border-amber-200/70 shadow-sm"
       }`}
     >

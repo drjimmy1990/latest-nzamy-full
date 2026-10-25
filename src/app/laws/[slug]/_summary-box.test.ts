@@ -37,6 +37,15 @@ test("the sidebar card's badge is never an invented «نظام»", () => {
   assert.match(SIDEBAR, /if \(item === typeRow\) return null;/);
 });
 
+test("under the file's card a subscriber still gets the DB official link / gazette when the card has no row for them", () => {
+  assert.match(SIDEBAR, /\{renderDbOfficialRows\(\[\.\.\.law\.metadata_card\.main, \.\.\.law\.metadata_card\.more\]\)\}/);
+  assert.match(SIDEBAR, /if \(metaLocked \|\| !officialMeta\) return null;/);
+});
+
+test("the موجز box is not printed, like the preamble", () => {
+  assert.match(BOX, /overflow-hidden print:hidden/);
+});
+
 test("a card value's link is a link only when it is http(s)", () => {
   assert.match(SIDEBAR, /if \(!\/\^https\?:\\\/\\\/\\S\+\$\/i\.test\(url\)\) \{\n\s*parts\.push\(text\);/);
 });

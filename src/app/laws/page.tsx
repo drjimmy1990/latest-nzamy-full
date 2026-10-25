@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { normalizeArabic } from "@/utils/normalizeArabic";
 import { stripMarkdownMarks } from "@/lib/text/stripMarkdownMarks";
+import { withoutLeadingHeadings } from "./components/summaryClamp";
 import { groupLawSearchCards } from "./lawSearchGroups";
 import { courtBadge } from "./principleCardFields";
 import { realPrincipleNumber } from "./principleLink";
@@ -905,7 +906,7 @@ export default function LegalLibraryPage() {
         descEn: law.description_en || "",
         // N2.2: the موجز (library.laws.summary_brief), sent by /api/library/init
         // only to viewers the ٢٦٠ flag admits. This mapping is a whitelist.
-        summaryBrief: stripMarkdownMarks(law.summary_brief || ""),
+        summaryBrief: stripMarkdownMarks(withoutLeadingHeadings(law.summary_brief)),
         free: law.free ?? true,
         locked: law.locked ?? false,
         progress: 100,

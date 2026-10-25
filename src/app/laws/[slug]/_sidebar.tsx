@@ -212,6 +212,65 @@ export default function SidebarPanel({
     return <Scroll size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />;
   };
 
+  /**
+   * N2.1: the official link and the gazette issue from the database
+   * (subscribers, T28-26) — under the file's card only when the card has no
+   * row of its own for them, so a subscriber loses nothing the fallback card
+   * showed and nothing is said twice.
+   */
+  const renderDbOfficialRows = (rows: { key: string; value: string }[]) => {
+    if (metaLocked || !officialMeta) return null;
+    const hasSourceRow = rows.some((f) => f.key.includes("المصدر") || f.key.includes("رابط"));
+    const hasGazetteRow = rows.some((f) => f.value.includes("أم القرى") || f.key.includes("الجريدة"));
+    const sourceUrl = !hasSourceRow ? officialMeta.officialSourceUrl : "";
+    const gazette = !hasGazetteRow ? officialMeta.gazette : null;
+    if (!sourceUrl && !gazette) return null;
+    return (
+      <>
+        {sourceUrl && (
+          <div className="flex gap-1.5 items-start">
+            <BookOpen size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
+            <div className="min-w-0">
+              <p className={`text-[8px] uppercase tracking-wider ${muted}`}>المصدر الرسمي</p>
+              <a
+                href={sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                dir="ltr"
+                className={`block text-[10px] leading-tight break-all underline decoration-dotted ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
+              >
+                {urlHostname(sourceUrl)}
+              </a>
+            </div>
+          </div>
+        )}
+        {gazette && (
+          <div className="flex gap-1.5 items-start">
+            <CalendarBlank size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
+            <div className="min-w-0">
+              <p className={`text-[8px] uppercase tracking-wider ${muted}`}>النشر في الجريدة الرسمية</p>
+              <p className={`text-[10px] font-semibold leading-tight break-words ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>
+                {gazette.url ? (
+                  <a
+                    href={gazette.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`underline decoration-dotted ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
+                  >
+                    {gazetteIssueLabel(gazette)}
+                  </a>
+                ) : (
+                  gazetteIssueLabel(gazette)
+                )}
+                {gazette.publicationDate && <span className={`font-normal ${muted}`}>{` · ${gazette.publicationDate}`}</span>}
+              </p>
+            </div>
+          </div>
+        )}
+      </>
+    );
+  };
+
   const renderIdentity = () => {
     if (law.metadata_card) {
       // The badge is the card's own type row (V2 «نوع التشريع», older cards
@@ -289,6 +348,7 @@ export default function SidebarPanel({
               );
             })()}
 
+            {renderDbOfficialRows([...law.metadata_card.main, ...law.metadata_card.more])}
             {renderParentLaw()}
             {renderLawStatus()}
 

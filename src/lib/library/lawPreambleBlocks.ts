@@ -289,6 +289,28 @@ function withoutRanges(text: string, ranges: Range[]): string {
 }
 
 /**
+ * True when a preamble holds no prose: only headings, `***` rules, `<details>`
+ * / `<summary>` wrappers and the files' «لم تتوفر ديباجة …» placeholder. After
+ * the card and the موجز are lifted out, 382 of the 1,432 corpus preambles are
+ * just that (the law's H1 + «## ديباجة النظام» + an empty ديباجة toggle) — a
+ * «الديباجة» box that opens on the law's own title. Any other line is prose
+ * and keeps the preamble.
+ */
+export function isHollowPreamble(text: unknown): boolean {
+  return normalise(text).split("\n").every((line) => {
+    const s = line.trim();
+    return (
+      s === "" ||
+      /^#{1,6}\s/.test(s) ||
+      SEPARATOR_LINE.test(s) ||
+      /^<\/?details[^>]*>$/.test(s) ||
+      /^<summary>[^<]*<\/summary>$/.test(s) ||
+      /^(?:لم تتوفر ديباجة|لا توجد ديباجة)/.test(s)
+    );
+  });
+}
+
+/**
  * The موجز and the identity card of a law's preamble (the law part from
  * splitStoredPreamble — never the regulation preamble), and the preamble
  * without them.
