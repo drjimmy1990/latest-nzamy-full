@@ -65,7 +65,7 @@ interface BookEntry {
 | Layer | What changes |
 |---|---|
 | Types | `Billing` gains `quarterly` and `semiannual` in `catalog.ts`, `checkoutRules.ts`, `checkoutView.ts`, `pricing.types.ts`, `priceDisplay.ts` and `types/database.ts`. They all import one union from the book. |
-| Plan window | `planPeriodEnd` gives 1 / 3 / 6 / 12 calendar months on the **Riyadh** calendar day, clamped to month end. 31 Jan +1 → 28/29 Feb; 31 Aug +6 → 28 Feb. Against the old UTC rule, only purchases made 21:00–24:00 UTC (already the next day in Riyadh) **near a month end** end on a different day: a monthly period by −1, +1 or +3 days, a yearly one by +1 day, about once in two years (29 Feb). Every other purchase ends exactly as before. Ends already stored (`subscriptions.current_period_end`) are never rewritten. Top-up lot expiry stays on UTC. |
+| Plan window | `planPeriodEnd` gives 1 / 3 / 6 / 12 calendar months on the **Riyadh** calendar day, clamped to month end. 31 Jan +1 → 28/29 Feb; 31 Aug +6 → 28 Feb. Against the old UTC rule, only purchases made 21:00–24:00 UTC (already the next day in Riyadh) **near a month end** end on a different day: a monthly period by −1, +1 or +3 days, a yearly one by +1 day, once in two years. Every other purchase ends exactly as before. Ends already stored (`subscriptions.current_period_end`) are never rewritten. Top-up lot expiry stays on UTC. |
 | Labels | «شهري / ربع سنوي / نصف سنوي / سنوي / دفعة واحدة» on checkout, receipts and admin. |
 | `/pricing` | The cycle toggle shows the cycles the audience's policy allows that the cards on screen actually price: professionals get ربع سنوي / نصف سنوي / سنوي, individuals get شهري too. With one cycle the toggle is hidden. |
 
