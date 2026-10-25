@@ -882,7 +882,10 @@ export default function JudicialPrinciplesPage() {
                   type="text"
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  placeholder={isRTL ? "البحث في نصوص المبادئ أو التصنيفات المرتبطة..." : "Search inside principles or tags..."}
+                  // N2.6 review: a FILTER of the principles loaded on this page —
+                  // the «بحث في كل المجلدات» panel above searches the server.
+                  placeholder={isRTL ? "تصفية المبادئ المعروضة في هذا المجلد..." : "Filter the principles shown in this volume..."}
+                  aria-label={isRTL ? "تصفية المبادئ المعروضة في هذا المجلد" : "Filter the principles shown in this volume"}
                   dir={isRTL ? "rtl" : "ltr"}
                   className="flex-1 bg-transparent text-xs outline-none"
                 />

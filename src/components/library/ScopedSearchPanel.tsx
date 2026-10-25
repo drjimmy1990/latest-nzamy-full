@@ -18,7 +18,7 @@ import Link from "next/link";
 import { Check, Copy, Lock, MagnifyingGlass, MapPin, Plus, X } from "@phosphor-icons/react";
 import type { CartEntry } from "@/components/laws/DraftDrawer";
 import type { ArticleBody, BlockBody, PrincipleBody, ScopedHit } from "@/app/api/library/scoped-search/scopedSearch";
-import { highlightSegments, hitCartEntry, hitCopy, type ScopeInfo } from "@/lib/library/scopedHitActions";
+import { highlightSegments, hitCartEntry, hitCopy, scopedPanelTitle, type ScopeInfo } from "@/lib/library/scopedHitActions";
 import { cleanPrincipleText } from "@/app/precedents/[slug]/_principle-text";
 
 const PAGE_SIZE = 20;
@@ -191,17 +191,25 @@ export default function ScopedSearchPanel({
       data-testid="scoped-search-panel"
     >
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-        <h2 id={`${inputId}-title`} className={`text-sm font-black flex items-center gap-1.5 ${isDark ? "text-white" : "text-gray-900"}`}>
-          <MagnifyingGlass size={15} aria-hidden="true" />
-          البحث داخل {documentLabel}
-        </h2>
+        <div className="min-w-0">
+          <h2 id={`${inputId}-title`} className={`text-sm font-black flex items-center gap-1.5 ${isDark ? "text-white" : "text-gray-900"}`}>
+            <MagnifyingGlass size={15} aria-hidden="true" />
+            {scopedPanelTitle(scope, volumeCount)}
+          </h2>
+          {/* Apart from the reader's own filter / jump boxes, which act on
+              what is loaded on the page: this asks the server for the whole
+              document. */}
+          <p className={`text-[11px] mt-0.5 ${muted}`}>
+            يبحث في {documentLabel} كله{volumeCount > 1 ? ` بكل مجلداته (${volumeCount})` : ""}، لا في الصفحة المعروضة وحدها.
+          </p>
+        </div>
         <span className={`text-[10px] font-bold px-2 py-1 rounded-lg ${isDark ? "bg-[#0B3D2E]/40 text-emerald-300" : "bg-emerald-50 text-[#0B3D2E]"}`}>
           {volumeCount > 1 ? `شامل كل المجلدات (${volumeCount})` : `داخل ${documentLabel} فقط`}
         </span>
       </div>
 
       <form onSubmit={onSubmit} className="flex gap-2" role="search">
-        <label htmlFor={inputId} className="sr-only">نص البحث داخل {documentLabel}</label>
+        <label htmlFor={inputId} className="sr-only">{scopedPanelTitle(scope, volumeCount)}: نص البحث</label>
         <input
           id={inputId}
           type="search"
@@ -234,7 +242,7 @@ export default function ScopedSearchPanel({
         )}
       </form>
 
-      <div className="flex flex-wrap items-center gap-1.5 mt-2" aria-label="معاملات البحث">
+      <div className="flex flex-wrap items-center gap-1.5 mt-2" role="group" aria-label="معاملات البحث">
         <span className={`text-[10px] font-bold ${muted}`}>المعاملات:</span>
         {OPERATORS.map((op) => (
           <button
@@ -249,13 +257,15 @@ export default function ScopedSearchPanel({
         ))}
       </div>
 
-      <p id={statusId} role="status" aria-live="polite" className={`text-[11px] font-bold mt-3 ${error ? "text-red-600 dark:text-red-400" : muted}`}>
+      <p id={statusId} role="status" aria-live="polite" className={`text-[11px] font-bold mt-3 ${error ? (isDark ? "text-red-400" : "text-red-600") : muted}`}>
         {error
           ? error
           : data
             ? data.count === 0
               ? `لا نتائج لـ «${data.query}» داخل ${documentLabel}.`
-              : `${data.count} نتيجة${volumeCount > 1 ? " في كل المجلدات" : ""} — معروضة كاملة أدناه بترتيب القراءة${results.length < data.count ? ` (${results.length} منها حتى الآن)` : ""}.`
+              : `${data.count} نتيجة${volumeCount > 1 ? " في كل المجلدات" : ""} — معروضة أدناه بترتيب القراءة${results.length < data.count ? ` (${results.length} منها حتى الآن)` : ""}.${
+                  !data.hasMore && results.length < data.count ? " تُعرض أول النتائج فقط؛ أضف كلمات أدق لتضييق البحث." : ""
+                }`
             : ""}
       </p>
 

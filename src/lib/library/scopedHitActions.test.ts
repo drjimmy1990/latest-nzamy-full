@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { hitCartEntry, hitCopy, principleReference, type ScopeInfo } from "./scopedHitActions.ts";
+import { hitCartEntry, hitCopy, principleReference, scopedPanelTitle, type ScopeInfo } from "./scopedHitActions.ts";
 import type { ScopedHit } from "../../app/api/library/scoped-search/scopedSearch.ts";
 
 const lawScope: ScopeInfo = { kind: "law", id: "competition", title: "نظام المنافسات", detail: "نظام", volumes: [{ id: "competition", label: null }] };
@@ -94,4 +94,13 @@ test("highlightSegments: every occurrence, longest first, prefix star dropped, r
   assert.deepEqual(highlightSegments("a (b) c", ["(b)"]), [{ text: "a ", hit: false }, { text: "(b)", hit: true }, { text: " c", hit: false }]);
   assert.deepEqual(highlightSegments("نص", ["ن"]), [{ text: "نص", hit: false }]);
   assert.deepEqual(highlightSegments("", ["فسخ"]), []);
+});
+
+test("the panel names what it searches, apart from the reader's own filter / jump boxes", () => {
+  assert.equal(scopedPanelTitle("law:competition", 1), "بحث في نص النظام كاملاً");
+  assert.equal(scopedPanelTitle("collection:v2", 30), "بحث في كل المجلدات");
+  assert.equal(scopedPanelTitle("collection:v2", 1), "بحث في كل مبادئ المجموعة");
+  assert.equal(scopedPanelTitle("book:mughni-4", 12), "بحث في كل المجلدات");
+  assert.equal(scopedPanelTitle("book:mughni-4", 1), "بحث في نص الكتاب كاملاً");
+  assert.equal(scopedPanelTitle("unknown", 1), "بحث في نص المستند كاملاً");
 });

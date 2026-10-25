@@ -241,3 +241,19 @@ export function highlightSegments(text: string, terms: readonly string[]): TextS
   if (last < text.length) out.push({ text: text.slice(last), hit: false });
   return out;
 }
+
+/**
+ * The in-document search panel's heading (N2.6 review): what it searches,
+ * so it reads apart from each reader's own box — the collection reader's
+ * filter of the loaded principles, the book's index search and page jump,
+ * the law's article jump. Those act on what is on the page; this one asks
+ * the server for the whole document, every volume of a series.
+ */
+export function scopedPanelTitle(scope: string, volumeCount: number): string {
+  const kind = scope.slice(0, Math.max(0, scope.indexOf(":")));
+  if (kind === "law") return "بحث في نص النظام كاملاً";
+  if ((kind === "collection" || kind === "book") && volumeCount > 1) return "بحث في كل المجلدات";
+  if (kind === "collection") return "بحث في كل مبادئ المجموعة";
+  if (kind === "book") return "بحث في نص الكتاب كاملاً";
+  return "بحث في نص المستند كاملاً";
+}

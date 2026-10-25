@@ -10,6 +10,7 @@ import { buildCollectionSeries, type CollectionVolumeRow } from '@/lib/library/p
 import { TIER_SHAPED_CACHE_CONTROL } from '../laws/[slug]/_official-meta';
 import { isMissingFunctionError } from '../search/searchPlan';
 import {
+  SCOPED_MAX_DEPTH,
   shapeHit,
   validateScopedRequest,
   type ScopedKind,
@@ -286,7 +287,8 @@ export async function POST(request: Request) {
         count,
         page: req.page,
         limit: req.limit,
-        hasMore: from + rows.length < count,
+        // No «more» past the depth validateScopedRequest refuses (page_too_deep).
+        hasMore: from + rows.length < count && (req.page + 1) * req.limit <= SCOPED_MAX_DEPTH,
         viewer: { hasFullAccess },
       },
       { headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } },
