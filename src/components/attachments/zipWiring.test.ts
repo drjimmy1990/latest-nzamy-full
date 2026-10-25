@@ -140,8 +140,10 @@ test("every route that signs a documents path with the service role checks the u
     ["src/app/api/v1/cron/deadlines/route.ts", "row.owner_user_id", /\.remove\(\[row\.storage_path\]\)/],
   ] as const) {
     const src = read(f);
-    const check = src.indexOf(`isPathInOwnerFolder(`);
-    assert.ok(check > 0, `${f} calls isPathInOwnerFolder`);
+    // The three delete paths check the folder the file was written in
+    // (isRemovableWithRow, falling back to the writer below): storageDeletePaths.wiring.test.ts.
+    const check = src.search(/isPathInOwnerFolder\(|isRemovableWithRow\(/);
+    assert.ok(check > 0, `${f} calls isPathInOwnerFolder / isRemovableWithRow`);
     assert.ok(src.includes(`, ${owner})`), `${f} checks against ${owner}`);
     const at = src.search(use);
     assert.ok(at > check, `${f} checks before ${use}`);
