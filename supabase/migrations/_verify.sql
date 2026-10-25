@@ -3899,3 +3899,60 @@ begin
   raise notice '_verify: 20261025_51 OK — case notes and documents archive instead of delete, supervisors restore, append-only trail, owner notified';
 end $$;
 -- <<< verify:soft_delete_case_records
+
+-- >>> verify:smart_folders_grants — supabase/tests/rls/smart_folders_grants.test.sql
+-- 2026-10-26 — 20261026_50_smart_folders_grants.sql (L-A, the owner's «حفظ في
+-- مجلداتي» fix of 2026-10-25). Read-only, safe to repeat. Keyed on the UPDATE
+-- policy the migration adds: before it runs this only reports (the folder
+-- routes already write through the service role); after, it raises when a
+-- guest holds any privilege on the two tables, a signed-in user can write them
+-- straight through PostgREST, the routes' writer lost a privilege, or a limit
+-- is gone.
+do $$
+declare
+  t text;
+  p text;
+  n int;
+begin
+  if not exists (select 1 from pg_policy
+                  where polrelid = 'library.smart_folder_items'::regclass
+                    and polname = 'Users can update own folder items') then
+    raise notice '_verify: 20261026_50 is not applied yet — «مجلداتي» works (the routes use the service role), but anon may still hold SELECT on the folder tables and authenticated any write a restore granted; run SQL_batch_2026-10-26_owner_answers/50_ANY_TIME_20261026_50_smart_folders_grants.sql';
+    return;
+  end if;
+  foreach t in array array['library.smart_folders', 'library.smart_folder_items'] loop
+    if not (select relrowsecurity from pg_class where oid = t::regclass) then
+      raise exception '_verify: RLS is off on % (re-run 20261026_50)', t;
+    end if;
+    foreach p in array array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'] loop
+      if has_table_privilege('anon', t, p) then
+        raise exception '_verify: anon holds % on % — guests keep folders in the browser only (20260922_01 re-run after 20261026_50? re-run 20261026_50)', p, t;
+      end if;
+      if p <> 'SELECT' and has_table_privilege('authenticated', t, p) then
+        raise exception '_verify: authenticated holds % on % — a signed-in user can write it through PostgREST around the folder routes'' limits (re-run 20261026_50)', p, t;
+      end if;
+      if p in ('SELECT', 'INSERT', 'UPDATE', 'DELETE') and not has_table_privilege('service_role', t, p) then
+        raise exception '_verify: service_role lacks % on % — «حفظ في مجلداتي» fails (re-run 20261026_50)', p, t;
+      end if;
+    end loop;
+    if has_any_column_privilege('anon', t, 'SELECT, INSERT, UPDATE, REFERENCES') then
+      raise exception '_verify: anon holds a column privilege on % (re-run 20261026_50)', t;
+    end if;
+    if has_any_column_privilege('authenticated', t, 'INSERT, UPDATE, REFERENCES') then
+      raise exception '_verify: authenticated holds a column-level write on % (re-run 20261026_50)', t;
+    end if;
+  end loop;
+  select count(*) into n from pg_constraint
+   where conname in ('smart_folders_name_length', 'smart_folders_color_hex', 'smart_folders_icon_length',
+                     'smart_folder_items_entity_type', 'smart_folder_items_entity_id_length',
+                     'smart_folder_items_title_length', 'smart_folder_items_title_en_length')
+     and conrelid in ('library.smart_folders'::regclass, 'library.smart_folder_items'::regclass);
+  if n <> 7 then
+    raise exception '_verify: % of the 7 smart-folder limits exist (re-run 20261026_50)', n;
+  end if;
+  select count(*) into n from pg_constraint
+   where conname like 'smart\_folder%' and contype = 'c' and not convalidated
+     and conrelid in ('library.smart_folders'::regclass, 'library.smart_folder_items'::regclass);
+  raise notice '_verify: 20261026_50 OK — smart folders: anon none, authenticated SELECT only, service_role writes, 7 limits (% still NOT VALID: old rows unchecked)', n;
+end $$;
+-- <<< verify:smart_folders_grants
