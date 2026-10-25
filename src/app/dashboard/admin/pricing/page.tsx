@@ -46,7 +46,7 @@ const STATUS_LABEL: Record<AdminPricingStatus, string> = {
 // price, points with the bonus).
 const topupNumbers = (id: string) => ({ price: bookSar(id, "once"), credits: PRICE_BOOK[id].points ?? 0 });
 const LAWYER_PLAN_NUMBERS: Record<string, { price: number; yearly?: number; credits: number }> = {
-  "lawyer-pro": { price: bookSar("lawyer-pro", "monthly"), yearly: bookSar("lawyer-pro", "yearly"), credits: 1500 },
+  "lawyer-pro": { price: bookSar("lawyer-pro", "monthly"), yearly: bookSar("lawyer-pro", "yearly"), credits: 0 }, // no points with a plan (owner ٢٩١)
   "topup-100": topupNumbers("topup-100"),
   "topup-250": topupNumbers("topup-250"),
   "topup-500": topupNumbers("topup-500"),

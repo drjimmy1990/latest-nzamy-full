@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -15,8 +15,6 @@ import {
   fulfilmentNoticeAr,
   fulfillDecision,
   isMissingPaymentsObject,
-  MONTHLY_POINTS_PLAN_IDS,
-  PLAN_MONTHLY_POINTS,
   planPeriodEnd,
   paidUnmatchedReason,
   pickPaidPayment,
@@ -202,15 +200,41 @@ test("planWindow: a quarterly or half-yearly plan runs 3 or 6 months, and stacks
   assert.equal(stacked?.end.toISOString(), "2027-03-31T09:00:00.000Z");
 });
 
-test("the monthly points come with lawyer-pro and consultant-independent only (both cards promise 1,500 a month)", () => {
-  assert.deepEqual([...MONTHLY_POINTS_PLAN_IDS].sort(), ["consultant-independent", "lawyer-pro"]);
-  const lawyers = readFileSync(join(import.meta.dirname, "../../constants/pricing/pricing.lawyers.ts"), "utf8");
-  const providers = readFileSync(join(import.meta.dirname, "../../constants/pricing/pricing.providers.ts"), "utf8");
-  const pinned = /export const LAWYER_PRO_MONTHLY_POINTS = (\d+);/.exec(lawyers);
-  assert.ok(pinned, "LAWYER_PRO_MONTHLY_POINTS is gone from pricing.lawyers.ts");
-  assert.equal(PLAN_MONTHLY_POINTS, Number(pinned[1]), "PLAN_MONTHLY_POINTS drifted from LAWYER_PRO_MONTHLY_POINTS");
-  const consultant = providers.slice(providers.indexOf('id: "consultant-independent"'));
-  assert.ok(consultant.includes("١٬٥٠٠ نقطة كل شهر"), "the consultant card no longer promises 1,500 points a month");
+// Owner ٢٩١ (26 Oct 2026): standard subscriptions open with 0 points; points
+// come from top-ups only. No plan copy may promise points every month.
+const MONTHLY_POINTS_PROMISE =
+  /نقطة كل شهر|نقاط كل شهر|نقطة شهرياً|نقاط شهرياً|نقطة في الشهر|١٬٥٠٠ كل شهر|رصيد الشهر التالي|نقاط الشهر|points every month|points a month|points per month|points\/month|1,500 \/ month|next month's points|month's points/;
+
+function sourceFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const name of readdirSync(dir)) {
+    const p = join(dir, name);
+    if (statSync(p).isDirectory()) out.push(...sourceFiles(p));
+    else if (/\.(ts|tsx)$/.test(name) && !/\.test\.ts$/.test(name)) out.push(p);
+  }
+  return out;
+}
+
+test("no pricing or plan copy promises points every month (owner ٢٩١: points by top-up only)", () => {
+  const src = join(import.meta.dirname, "../..");
+  const dirs = ["constants/pricing", "app/pro", "app/register", "app/pricing", "lib/pricing", "components/pricing"];
+  const bad: string[] = [];
+  let scanned = 0;
+  for (const d of dirs) {
+    for (const file of sourceFiles(join(src, d))) {
+      scanned++;
+      readFileSync(file, "utf8").split("\n").forEach((line, i) => {
+        if (MONTHLY_POINTS_PROMISE.test(line)) bad.push(`${file.slice(src.length + 1)}:${i + 1}`);
+      });
+    }
+  }
+  assert.ok(scanned > 10, `only ${scanned} files scanned — the directories moved`);
+  assert.deepEqual(bad, []);
+});
+
+test("grantPurchase credits no lot for a plan (no PLAN_MONTHLY_POINTS any more)", () => {
+  const grant = readFileSync(join(import.meta.dirname, "grantPurchase.ts"), "utf8");
+  assert.doesNotMatch(grant, /PLAN_MONTHLY_POINTS|MONTHLY_POINTS_PLAN_IDS|source: "plan_monthly"/);
 });
 
 // ── resuming a paid order the sweep finds unfulfilled ───────────────────────

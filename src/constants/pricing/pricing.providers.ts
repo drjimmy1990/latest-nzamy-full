@@ -51,15 +51,16 @@ export const plansProviders: { ar: Plan[]; en: Plan[] } = {
       id: "consultant-independent", name: "مستشار مستقل", badge: "المادة ١٨",
       // Owner answer ١٧٣ (2026-10-16): the same price and point use as
       // «المحامي المحترف»; the difference is the dashboard rights (Art. 18).
+      // Yearly only, with no points (owner ٢٩١): points come from top-ups.
       periodMonthly: "ر.س / شهر", periodYearly: "ر.س / سنة",
       desc: "للمستشارين القانونيين المستقلين: دراسة الأنظمة وصياغة العقود والاستشارات، بلا ترافع ولا إدارة جلسات (المادة ١٨ من نظام المحاماة).",
       target: "المستشارون القانونيون المستقلون", cta: "اشترك الآن",
       ctaHref: "/register/provider?type=consultant&plan=independent", highlighted: false, color: "border-purple-300",
       commissionPct: 5,
       features: {
-        ai: ["١٬٥٠٠ نقطة كل شهر، بتكلفة أدوات باقة المحامي نفسها", "صياغة العقود وتدقيقها: ١٠ نقاط", "المساعد القانوني والتشريع المقارن: ٥ نقاط", null],
+        ai: ["النقاط بحزم الشحن المستقلة، بتكلفة أدوات باقة المحامي نفسها", "صياغة العقود وتدقيقها: ١٠ نقاط", "المساعد القانوني والتشريع المقارن: ٥ نقاط", null],
         platform: ["العملاء والملفات الاستشارية والتقويم", "ملف مهني للمستشار", "🚫 لا ترافع ولا إدارة جلسات (المادة ١٨)", null],
-        support: ["السنوي بسعر عشرة أشهر"],
+        support: [],
       },
     },
   ],
@@ -113,9 +114,9 @@ export const plansProviders: { ar: Plan[]; en: Plan[] } = {
       ctaHref: "/register/provider?type=consultant&plan=independent", highlighted: false, color: "border-purple-300",
       commissionPct: 5,
       features: {
-        ai: ["1,500 points every month, at the lawyer plan's tool costs", "Contract drafting and review: 10 points", "Legal assistant and comparative law: 5 points", null],
+        ai: ["Points from separate top-ups, at the lawyer plan's tool costs", "Contract drafting and review: 10 points", "Legal assistant and comparative law: 5 points", null],
         platform: ["Clients, advisory files and calendar", "Consultant profile", "🚫 No pleading or hearing management (Art. 18)", null],
-        support: ["Yearly priced at ten months"],
+        support: [],
       },
     },
   ],

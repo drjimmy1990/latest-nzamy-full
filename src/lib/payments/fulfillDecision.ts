@@ -299,20 +299,9 @@ export function planWindow<T extends ActivePlanRow>(input: {
   return end ? { start, end, running } : null;
 }
 
-/**
- * The points a month those plans come with — LAWYER_PRO_MONTHLY_POINTS in
- * src/constants/pricing/pricing.lawyers.ts. Mirrored here, not imported: that
- * file imports @phosphor-icons/react (React context), which a route handler
- * must not load. fulfillDecision.test.ts fails if the two drift apart.
- */
-export const PLAN_MONTHLY_POINTS = 1500;
-
-/**
- * The plans that come with 1,500 points a month (PLAN_MONTHLY_POINTS):
- * the lawyer card says so (pricing.lawyers.ts) and the independent
- * consultant's card promises the same (pricing.providers.ts, owner ١٧٣).
- */
-export const MONTHLY_POINTS_PLAN_IDS: ReadonlySet<string> = new Set(["lawyer-pro", "consultant-independent"]);
+// No plan comes with points (owner ٢٩١, 26 Oct 2026): PLAN_MONTHLY_POINTS
+// and MONTHLY_POINTS_PLAN_IDS are gone. 'plan_monthly' lots credited before
+// that stay valid until they expire (points_lots.source keeps the value).
 
 // ── deploy order ────────────────────────────────────────────────────────────
 

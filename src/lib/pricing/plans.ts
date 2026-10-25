@@ -253,7 +253,6 @@ export const INDIVIDUALS_PYRAMID_PLANS: Record<string, PricingPlan> = {
       // Owner answer ١٧٦ (line 16): the family option.
       "التغطية العائلية: التابع الأول ٣١٩ ر.س، والثاني ٢٧٩ ر.س، والثالث فأكثر ٢٣٩ ر.س شهرياً (خصم ٢٠٪ / ٣٠٪ / ٤٠٪)",
       "سقف عائلي مشترك لأتعاب الترافع: ٣٥٬٠٠٠–٥٠٬٠٠٠ ر.س سنوياً",
-      "للأسرة: رصيد استشارات وقائية مشترك، و٣٬٠٠٠–٥٬٠٠٠ نقطة شهرياً",
       "لكل فرد بالغ حسابه الخاص، لا يطّلع عليه بقية أفراد الأسرة",
       "تُضاف التغطية العائلية بطلب يراجعه الفريق",
     ],
@@ -265,7 +264,6 @@ export const INDIVIDUALS_PYRAMID_PLANS: Record<string, PricingPlan> = {
       "⚠️ Subject to legal underwriting review and intake qualification",
       "Family cover: first dependant SAR 319, second SAR 279, third and beyond SAR 239 a month (20% / 30% / 40% off)",
       "Shared family cap on litigation fees: SAR 35,000–50,000 a year",
-      "For the family: a shared pool of preventive consultations and 3,000–5,000 points a month",
       "Each adult keeps a private account the rest of the family cannot see",
       "Family cover is added on request, after the team reviews it",
     ],

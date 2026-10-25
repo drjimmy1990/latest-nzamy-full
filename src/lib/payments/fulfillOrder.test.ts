@@ -96,8 +96,8 @@ test("grantPurchase keys every grant on the order", () => {
   assert.match(plan, /p_now: now\.toISOString\(\),/, "one timestamp for started_at and cancelled_at (refund restore)");
   assert.match(plan, /p_running: window\.running\.map\(/, "replaced_ids = the running rows only");
   assert.match(plan, /if \(grantErr\) return failure\("grant_plan_subscription", grantErr\)/);
-  assert.match(plan, /source: "plan_monthly"/);
-  assert.match(plan, /points: PLAN_MONTHLY_POINTS/);
+  // Owner ٢٩١: a plan grants no points — grantPlan credits no lot at all.
+  assert.doesNotMatch(plan, /credit_points|creditOrderLot|plan_monthly/);
 
   assert.match(grant, /source: "purchase",\s*orderId: order\.id/, "library grants carry the order");
   assert.match(grant, /grant\.code === "23505"\) return \{ ok: true/, "library 23505 = already granted");

@@ -2,11 +2,11 @@ import { Lightning, Gavel } from "@phosphor-icons/react";
 import { Plan, ComparisonCategory } from "./pricing.types";
 
 // ─── Lawyers: one subscription + point top-ups (owner answers ١٧٤ / ١٧٨, 2026-10-16) ─
-// - «المحامي المحترف»: 399 SAR/month or 3,990 SAR/year (ten months), with
-//   1,500 points every month.
-// - Top-ups are extra point packs for a subscriber who uses up the month's
-//   points: 1 SAR = 1 point, plus a bonus on the larger packs
-//   (100→100, 250→300, 500→700, 1,000→1,500).
+// - «المحامي المحترف»: 3,990 SAR/year. The 399 monthly price is retired
+//   (owner, 26 Oct 2026: professionals never pay monthly), and the plan comes
+//   with NO points (owner ٢٩١: standard subscriptions open with 0 points).
+// - Points come from top-ups only: 1 SAR = 1 point, plus a bonus on the
+//   larger packs (100→100, 250→300, 500→700, 1,000→1,500).
 // - Top-up points expire: 3, 3, 6 and 12 months from purchase (owner ٢٤٩),
 //   as src/lib/payments/catalog.ts grants them; each card's `desc` says so.
 // - Points are prepaid usage units for Nezamy's own AI tools only. They are
@@ -18,23 +18,21 @@ import { Plan, ComparisonCategory } from "./pricing.types";
 // The independent consultant pays the same (owner answer ١٧٣); see
 // pricing.providers.ts.
 
-export const LAWYER_PRO_MONTHLY_POINTS = 1500;
-
 export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
   ar: [
     {
       id: "lawyer-pro", name: "المحامي المحترف", badge: null,
       periodMonthly: "ر.س / شهر", periodYearly: "ر.س / سنة",
-      desc: "اشتراك يتضمن ١٬٥٠٠ نقطة كل شهر لأدوات الذكاء الاصطناعي", target: "محامٍ مرخّص",
+      desc: "اشتراك سنوي لإدارة الممارسة؛ نقاط أدوات الذكاء الاصطناعي بحزم الشحن", target: "محامٍ مرخّص",
       cta: "اشترك الآن", ctaHref: "/register/provider?plan=lawyer-pro", highlighted: true, color: "border-royal/20",
       features: {
         ai: [
-          "١٬٥٠٠ نقطة كل شهر",
+          "النقاط بحزم الشحن المستقلة",
           "صياغة المذكرات واللوائح: ١٥ نقطة",
           "صياغة العقود وتدقيقها: ١٠ نقاط",
         ],
         platform: ["إدارة القضايا والجلسات والمهل", "الموكّلون والاستشارات والعقود"],
-        support: ["السنوي بسعر عشرة أشهر"],
+        support: [],
       },
     },
     {
@@ -70,16 +68,16 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
     {
       id: "lawyer-pro", name: "Professional Lawyer", badge: null,
       periodMonthly: "SAR / month", periodYearly: "SAR / year",
-      desc: "Subscription with 1,500 AI points every month", target: "Licensed lawyer",
+      desc: "Yearly practice-management subscription; AI points come from top-ups", target: "Licensed lawyer",
       cta: "Subscribe", ctaHref: "/register/provider?plan=lawyer-pro", highlighted: true, color: "border-royal/20",
       features: {
         ai: [
-          "1,500 points every month",
+          "Points from separate top-ups",
           "Briefs and pleadings: 15 points",
           "Contract drafting and review: 10 points",
         ],
         platform: ["Cases, hearings and deadlines", "Clients, consultations and contracts"],
-        support: ["Yearly priced at ten months"],
+        support: [],
       },
     },
     {
@@ -208,9 +206,9 @@ export const lawyerServicesTable: ServiceCategory[] = [
 export const comparisonLawyers: { ar: ComparisonCategory[]; en: ComparisonCategory[] } = {
   ar: [
     { category: "الاشتراك وحزم الشحن", icon: Lightning, rows: [
-      { feature: "النقاط",      "lawyer-pro": "١٬٥٠٠ كل شهر", "topup-100": "١٠٠",   "topup-250": "٣٠٠",      "topup-500": "٧٠٠",      "topup-1000": "١٬٥٠٠" },
+      { feature: "النقاط",      "lawyer-pro": "بالشحن",       "topup-100": "١٠٠",   "topup-250": "٣٠٠",      "topup-500": "٧٠٠",      "topup-1000": "١٬٥٠٠" },
       { feature: "نقاط مجانية", "lawyer-pro": "—",            "topup-100": "—",     "topup-250": "+٥٠",      "topup-500": "+٢٠٠",     "topup-1000": "+٥٠٠" },
-      { feature: "سعر النقطة",  "lawyer-pro": "نحو ٠٫٢٧ ر.س", "topup-100": "١ ر.س", "topup-250": "نحو ٠٫٨٣ ر.س", "topup-500": "نحو ٠٫٧١ ر.س", "topup-1000": "نحو ٠٫٦٧ ر.س" },
+      { feature: "سعر النقطة",  "lawyer-pro": "—",           "topup-100": "١ ر.س", "topup-250": "نحو ٠٫٨٣ ر.س", "topup-500": "نحو ٠٫٧١ ر.س", "topup-1000": "نحو ٠٫٦٧ ر.س" },
     ]},
     { category: "المنصة", icon: Gavel, rows: [
       { feature: "إدارة القضايا والجلسات والمهل", "lawyer-pro": true, "topup-100": "مع الاشتراك", "topup-250": "مع الاشتراك", "topup-500": "مع الاشتراك", "topup-1000": "مع الاشتراك" },
@@ -218,9 +216,9 @@ export const comparisonLawyers: { ar: ComparisonCategory[]; en: ComparisonCatego
   ],
   en: [
     { category: "Subscription & top-ups", icon: Lightning, rows: [
-      { feature: "Points",          "lawyer-pro": "1,500 / month",  "topup-100": "100",   "topup-250": "300",            "topup-500": "700",            "topup-1000": "1,500" },
+      { feature: "Points",          "lawyer-pro": "Top-ups",        "topup-100": "100",   "topup-250": "300",            "topup-500": "700",            "topup-1000": "1,500" },
       { feature: "Free points",     "lawyer-pro": "—",              "topup-100": "—",     "topup-250": "+50",            "topup-500": "+200",           "topup-1000": "+500" },
-      { feature: "Price per point", "lawyer-pro": "About SAR 0.27", "topup-100": "SAR 1", "topup-250": "About SAR 0.83", "topup-500": "About SAR 0.71", "topup-1000": "About SAR 0.67" },
+      { feature: "Price per point", "lawyer-pro": "—",              "topup-100": "SAR 1", "topup-250": "About SAR 0.83", "topup-500": "About SAR 0.71", "topup-1000": "About SAR 0.67" },
     ]},
     { category: "Platform", icon: Gavel, rows: [
       { feature: "Cases, hearings and deadlines", "lawyer-pro": true, "topup-100": "With the subscription", "topup-250": "With the subscription", "topup-500": "With the subscription", "topup-1000": "With the subscription" },

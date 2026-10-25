@@ -21,10 +21,11 @@
  *             guards the rest: a higher-ranked running plan (or an open-ended
  *             one of the same rank) is never replaced — the result is
  *             `alreadyEntitled` and the order is left paid for an admin refund.
- *             lawyer-pro and consultant-independent also get a plan_monthly lot
- *             of PLAN_MONTHLY_POINTS (= LAWYER_PRO_MONTHLY_POINTS) expiring at
- *             the period end (monthly) or after one month (yearly; B2 tops up
- *             the later months).
+ *             A plan grants NO points (owner ٢٩١, 26 Oct 2026: standard
+ *             subscriptions open with 0 points; points come from top-ups
+ *             only). Until then lawyer-pro and consultant-independent orders
+ *             got one 'plan_monthly' lot of 1,500 points; those lots stay as
+ *             they are and are read like any other lot (balance, refunds).
  *   library → grantLibraryAccess({ source: 'purchase', orderId }).
  *   topup   → credit_points(user, points, 'purchase', now + validity months, order).
  *
@@ -48,13 +49,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { planGrantDecision, type ActivePlanRow, type TierRankTable } from "../entitlementGrantRules.ts";
 import type { LibraryGrantSource, LibraryPlanRef } from "../libraryAccess.ts";
 import { resolveItem, type PayableItem } from "./catalog.ts";
-import {
-  addMonthsUtc,
-  isMissingPaymentsObject,
-  MONTHLY_POINTS_PLAN_IDS,
-  PLAN_MONTHLY_POINTS,
-  planWindow,
-} from "./fulfillDecision.ts";
+import { addMonthsUtc, isMissingPaymentsObject, planWindow } from "./fulfillDecision.ts";
 
 /** The columns of a claimed payment_orders row a grant reads. */
 export interface PurchaseOrder {
@@ -94,9 +89,6 @@ export interface GrantPurchaseDeps {
 
 type DbError = { code?: string; message?: string } | null;
 
-/** A lot must outlive the call by at least this much, or it is not credited. */
-const MIN_LOT_LIFETIME_MS = 60 * 1000;
-
 function failure(step: string, error: DbError): { ok: false; error: string; missing?: boolean } {
   const missing = isMissingPaymentsObject(error?.code);
   return { ok: false, error: `${step}: ${error?.code ?? ""} ${error?.message ?? "unknown error"}`.trim(), missing };
@@ -104,7 +96,7 @@ function failure(step: string, error: DbError): { ok: false; error: string; miss
 
 async function creditOrderLot(
   admin: SupabaseClient,
-  input: { userId: string; points: number; source: "purchase" | "plan_monthly"; expiresAt: Date; orderId: string },
+  input: { userId: string; points: number; source: "purchase"; expiresAt: Date; orderId: string },
 ): Promise<{ ok: true } | { ok: false; error: string; missing?: boolean }> {
   const { error } = await admin.rpc("credit_points", {
     p_user: input.userId,
@@ -140,12 +132,9 @@ async function grantPlan(
     .limit(1);
   if (existingErr) return failure("subscriptions read", existingErr);
 
-  let periodEnd: Date | null;
-  const done = Array.isArray(existing) ? (existing[0] as { current_period_end?: string | null } | undefined) : undefined;
+  const done = Array.isArray(existing) && existing.length > 0;
 
-  if (done) {
-    periodEnd = done.current_period_end ? new Date(done.current_period_end) : null;
-  } else {
+  if (!done) {
     const { data: activeRows, error: activeErr } = await admin
       .from("subscriptions")
       .select("id, tier, status, current_period_end")
@@ -162,7 +151,6 @@ async function grantPlan(
       ranks: deps.ranks,
     });
     if (!window) return { ok: false, error: `plan order with billing ${order.billing}` };
-    periodEnd = window.end;
 
     // Only the rows still running are protected; a lapsed row is cancelled below.
     const decision = planGrantDecision({
@@ -197,10 +185,7 @@ async function grantPlan(
       return { ok: false, error: "grant_plan_subscription: no result" };
     }
     // inserted false: another call already wrote this order's row (a retry) —
-    // the grant counts as done, with that row's period.
-    if (!result.inserted) {
-      periodEnd = result.current_period_end ? new Date(result.current_period_end) : periodEnd;
-    }
+    // the grant counts as done.
 
     // Keep auth metadata in sync (useSubscription hydration); the row is the truth.
     try {
@@ -210,22 +195,9 @@ async function grantPlan(
     }
   }
 
-  if (MONTHLY_POINTS_PLAN_IDS.has(item.id)) {
-    const expiresAt = order.billing === "monthly" && periodEnd ? periodEnd : addMonthsUtc(now, 1);
-    if (expiresAt.getTime() - now.getTime() > MIN_LOT_LIFETIME_MS) {
-      const lot = await creditOrderLot(admin, {
-        userId: order.user_id,
-        points: PLAN_MONTHLY_POINTS,
-        source: "plan_monthly",
-        expiresAt,
-        orderId: order.id,
-      });
-      if (!lot.ok) return lot;
-    } else {
-      console.warn("[payments] grantPurchase: the plan period already ended; no monthly points for order", order.id);
-    }
-  }
-
+  // No points with a plan (owner ٢٩١): an order fulfilled from now on — a
+  // retry of an older one included — credits no lot. Lots credited before
+  // stay as they are.
   return { ok: true, alreadyEntitled: false };
 }
 

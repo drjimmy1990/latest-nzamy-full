@@ -112,11 +112,7 @@ test("same rank, monthly with 20 days left + another monthly → the new period 
   assert.equal(args.p_period_end, expectedEnd);
   assert.equal(args.p_payment_method, "pm-1");
   assert.deepEqual(args.p_running, [{ id: "pro-m", tier: "pro", current_period_end: oldEnd }], "replaced_ids = the running row");
-  const lot = lots(log)[0].payload as Record<string, unknown>;
-  assert.equal(lot.p_source, "plan_monthly");
-  assert.equal(lot.p_points, 1500);
-  assert.equal(lot.p_order, ORDER);
-  assert.equal(lot.p_expires_at, expectedEnd);
+  assert.equal(lots(log).length, 0, "a plan comes with no points (owner ٢٩١)");
 });
 
 test("same rank, a yearly plan held + a monthly bought → the yearly end + 1 month", async () => {
@@ -127,7 +123,7 @@ test("same rank, a yearly plan held + a monthly bought → the yearly end + 1 mo
   assert.equal(grantArgs(log).p_period_end, addMonthsUtc(new Date(yearEnd), 1).toISOString());
 });
 
-test("the order's subscription already exists → no cancel, no insert; the points are still credited once", async () => {
+test("the order's subscription already exists → no cancel, no insert, no points", async () => {
   const { client, log } = planDb([], (q) =>
     q.table === "subscriptions" && q.op === "select" && has(q, "eq", "metadata->>order_id", ORDER)
       ? { data: [{ id: "s1", current_period_end: inDays(30) }] }
@@ -136,10 +132,10 @@ test("the order's subscription already exists → no cancel, no insert; the poin
   const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS }, order("lawyer-pro", "plan", "monthly"), { now: NOW });
   assert.deepEqual(r, { ok: true, alreadyEntitled: false });
   assert.equal(grants(log).length + directWrites(log).length, 0);
-  assert.equal(lots(log).length, 1);
+  assert.equal(lots(log).length, 0, "a retry of an older order credits no plan lot either");
 });
 
-test("the grant call answers inserted=false (another call wrote the order's row) → done, its period used, points once", async () => {
+test("the grant call answers inserted=false (another call wrote the order's row) → done, no points", async () => {
   const { client, log } = planDb([], (q) =>
     q.table === "grant_plan_subscription"
       ? { data: { inserted: false, subscription_id: "s-other", current_period_end: "2026-11-30T08:00:00+00:00" } }
@@ -148,9 +144,7 @@ test("the grant call answers inserted=false (another call wrote the order's row)
   const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS }, order("lawyer-pro", "plan", "monthly"), { now: NOW });
   assert.deepEqual(r, { ok: true, alreadyEntitled: false });
   assert.equal(directWrites(log).length, 0, "nothing is re-activated");
-  assert.equal(lots(log).length, 1);
-  const lot = lots(log)[0].payload as Record<string, unknown>;
-  assert.equal(lot.p_expires_at, new Date("2026-11-30T08:00:00+00:00").toISOString(), "the lot follows the existing row's end");
+  assert.equal(lots(log).length, 0);
 });
 
 test("a stale grant (40001: the running plans changed) is a FAILURE, not missing — the sweep retries", async () => {
@@ -238,7 +232,7 @@ const RETIRED = buildCatalog({
   },
 });
 
-test("retired: a paid order for a retired plan is still fulfilled — the plan row and its monthly points", async () => {
+test("retired: a paid order for a retired plan is still fulfilled — the plan row, no points", async () => {
   const { client, log } = planDb([]);
   const r = await grantPurchase(
     { admin: client, grantLibrary: noLibrary, ranks: RANKS, catalog: RETIRED },
@@ -250,7 +244,7 @@ test("retired: a paid order for a retired plan is still fulfilled — the plan r
   assert.equal(args.p_plan_id, "lawyer-pro");
   assert.equal(args.p_tier, "pro");
   assert.equal(args.p_period_end, "2027-10-22T08:00:00.000Z");
-  assert.equal(lots(log).length, 1, "the plan's monthly points still come with it");
+  assert.equal(lots(log).length, 0, "no plan comes with points (owner ٢٩١)");
 });
 
 test("retired: an order in a retired CYCLE (firm-basic monthly) is still fulfilled", async () => {

@@ -56,6 +56,7 @@ const features = {
 // API / SSO / account-manager promises are gone.
 // Extra seats go through sales (owner answer ٢١٧, 2026-10-18), and the office
 // plan no longer says it includes the lawyer plan: firm plans bundle no points.
+// No plan bundles points (owner ٢٩١, 26 Oct 2026): points come from top-ups.
 const plans = [
   {
     name: { ar: "المحامي المحترف", en: "Professional Lawyer" },
@@ -63,8 +64,8 @@ const plans = [
     unit: { ar: "ر.س/سنة", en: "SAR/yr" },
     desc: { ar: "للمحامي المرخّص", en: "For a licensed lawyer" },
     features: {
-      ar: ["١٬٥٠٠ نقطة كل شهر", "القضايا والجلسات والمهل", "الموكّلون والاستشارات والعقود"],
-      en: ["1,500 points every month", "Cases, hearings and deadlines", "Clients, consultations and contracts"],
+      ar: ["القضايا والجلسات والمهل", "الموكّلون والاستشارات والعقود", "النقاط بحزم الشحن المستقلة"],
+      en: ["Cases, hearings and deadlines", "Clients, consultations and contracts", "Points from separate top-ups"],
     },
     highlight: false,
   },

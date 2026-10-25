@@ -17,12 +17,13 @@ const providerRegistration = readFileSync(
 // Owner answers ١٧٤ / ١٧٨ / ١٧٩ (2026-10-16): one subscription and four top-ups.
 // The library is no longer bundled into the packs (whether lawyers get it is
 // owner question ٢٠٨), and the free-memo offers are gone.
-test("the lawyer tab is the 399 subscription with 1,500 points plus four top-ups", () => {
+test("the lawyer tab is the subscription (no points) plus four top-ups", () => {
   // The prices are the price book's (P1: the card reads them by id).
   assert.equal(bookSar("lawyer-pro", "monthly"), 399);
   assert.equal(bookSar("lawyer-pro", "yearly"), 3990);
   assert.match(lawyers, /id: "lawyer-pro"/);
-  assert.match(lawyers, /LAWYER_PRO_MONTHLY_POINTS = 1500/);
+  // Owner ٢٩١ (26 Oct 2026): the subscription comes with no points.
+  assert.doesNotMatch(lawyers, /LAWYER_PRO_MONTHLY_POINTS|١٬٥٠٠ نقطة كل شهر|1,500 points every month/);
   const topups: Array<[string, number, string]> = [
     ["topup-100", 100, "١٠٠ نقطة"],
     ["topup-250", 250, "٣٠٠ نقطة"],
@@ -197,9 +198,13 @@ test("٢١٣/١٧٦: ind-litigation is «التأمين القانوني» at 39
   assert.doesNotMatch(ar, /price(Monthly|Yearly):/);
   // Dependants at 20 / 30 / 40% off: ٣١٩, ٢٧٩, then ٢٣٩ from the third on.
   assert.match(ar, /٣١٩ ر\.س[^"]*٢٧٩ ر\.س[^"]*٢٣٩ ر\.س/);
-  for (const line of ["٣٥٬٠٠٠–٥٠٬٠٠٠ ر.س سنوياً", "٣٬٠٠٠–٥٬٠٠٠ نقطة شهرياً", "تُضاف التغطية العائلية بطلب يراجعه الفريق"]) {
+  for (const line of ["٣٥٬٠٠٠–٥٠٬٠٠٠ ر.س سنوياً", "تُضاف التغطية العائلية بطلب يراجعه الفريق"]) {
     assert.ok(ar.includes(line), `ar: «${line}»`);
   }
+  // The family's «٣٬٠٠٠–٥٬٠٠٠ نقطة شهرياً» is gone: nothing ever credited it,
+  // and points come from top-ups only (owner ٢٩١, 26 Oct 2026).
+  assert.doesNotMatch(ar, /نقطة شهرياً/);
+  assert.doesNotMatch(en, /points a month/);
   assert.match(ar, /footnote: "\* تطبق الشروط والأحكام"/);
 
   assert.match(en, /name: "Legal Insurance"/);

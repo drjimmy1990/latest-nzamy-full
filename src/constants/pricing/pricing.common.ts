@@ -36,7 +36,8 @@ export const billingNotes: Record<AudienceTab, BillingNote> = {
   ngo:         { icon: "💚", textAr: "اشتراك سنوي — أسعار مخفضة لدعم القطاع الثالث", textEn: "Annual subscription — discounted rates for the third sector" },
   government:  { icon: "🏛", textAr: "عقد سنوي — ترخيص مؤسسي رسمي", textEn: "Annual contract — official institutional license" },
   // §2 rule 1: professionals are offered quarterly / half-yearly / yearly — no monthly on /pricing.
-  lawyers:     { icon: "🪙", textAr: "اشتراك سنوي بـ١٬٥٠٠ نقطة كل شهر، وحزم شحن إضافية عند الحاجة", textEn: "Yearly subscription with 1,500 points a month, plus top-ups when needed" },
+  // Owner ٢٩١ (26 Oct 2026): a subscription comes with no points; points come from top-ups only.
+  lawyers:     { icon: "🪙", textAr: "اشتراك سنوي، والنقاط بحزم شحن مستقلة عند الحاجة", textEn: "Yearly subscription; points come from separate top-ups when needed" },
   firms:       { icon: "🏢", textAr: "اشتراك سنوي بمقاعد مشمولة للمكتب أو الشركة", textEn: "Yearly subscription with seats included for the office or firm" },
   providers:   { icon: "🤝", textAr: "مجاني مع عمولة — أو اشترك سنوياً لتقليل العمولة والاحتفاظ بأرباحك", textEn: "Free with commission — or subscribe annually to reduce commission and keep more earnings" },
 };
@@ -46,7 +47,7 @@ export const faqs: { ar: FaqItem[]; en: FaqItem[] } = {
   ar: [
     { q: "هل يمكنني إلغاء اشتراكي في أي وقت؟", a: "نعم، يمكنك الإلغاء في أي وقت دون رسوم إضافية. يبقى اشتراكك فعالاً حتى نهاية الفترة المدفوعة." },
     { q: "ما الفرق بين الصائغ القانوني ومحترف العقود؟", a: "الصائغ القانوني متخصص في إنتاج المذكرات القانونية واللوائح والاعتراضات للقضايا، بينما محترف العقود يُعنى بصياغة العقود التجارية ومراجعتها واكتشاف الثغرات فيها." },
-    { q: "ماذا يحدث عند الوصول للحد الشهري؟", a: `عند نفاد نقاط الشهر تشتري حزمة شحن إضافية تبدأ من ${bookPriceText("topup-100", "once", "ar")} ر.س، أو تنتظر رصيد الشهر التالي. وتكلفة كل أداة بالنقاط معلنة في جدول الأسعار.` },
+    { q: "ماذا يحدث عند نفاد نقاطي؟", a: `النقاط لا تأتي مع الاشتراك ولا تتجدد كل شهر: تشتري حزمة شحن تبدأ من ${bookPriceText("topup-100", "once", "ar")} ر.س، ولكل حزمة مدة صلاحية معلنة. وتكلفة كل أداة بالنقاط معلنة في جدول الأسعار.` },
     { q: "هل يمكنني الترقية أو التغيير بين الباقات؟", a: "يمكنك طلب الترقية أو التغيير في أي وقت؛ يراجع الفريق الطلب ويفعّله يدوياً." },
     { q: "هل الترافع يعني حضور المحامي أمام المحكمة فعلياً؟", a: "نعم، الترافع في باقات الشركات يعني حضور محامٍ مرخّص من مكتب نظامي أو من مكتب شريك معتمد أمام المحكمة فعلياً." },
     { q: "كيف تعمل خدمة 'الدفع بالعمل القانوني'؟", a: "لا تحتاج اشتراكاً. تختار الخدمة، وتدفع أتعابها لمكتب المحاماة المرخّص مباشرة عبر بوابة دفع مرخّصة من البنك المركزي. ولا تحتفظ المنصة بأي أموال." },
@@ -56,7 +57,7 @@ export const faqs: { ar: FaqItem[]; en: FaqItem[] } = {
   en: [
     { q: "Can I cancel my subscription at any time?", a: "Yes, cancel anytime with no extra fees. Your subscription remains active until the end of the paid period." },
     { q: "What's the difference between Legal Drafter and Contract Expert?", a: "Legal Drafter creates legal memos, briefs, and objections for cases. Contract Expert handles drafting and reviewing commercial contracts to detect gaps and risks." },
-    { q: "What happens when I reach my monthly limit?", a: `When the month's points run out, buy an extra top-up from SAR ${bookPriceText("topup-100", "once", "en")} or wait for next month's points. Each tool's cost in points is listed in the price table.` },
+    { q: "What happens when my points run out?", a: `Points do not come with the subscription and do not renew each month: buy a top-up from SAR ${bookPriceText("topup-100", "once", "en")}; each top-up has a stated validity. Each tool's cost in points is listed in the price table.` },
     { q: "Can I upgrade or change my plan?", a: "You can request an upgrade or a change at any time; the team reviews the request and activates it manually." },
     { q: "Does litigation mean actual court presence?", a: "Yes, litigation in company plans means a certified Nezamy network lawyer physically attends court, managed via the Professional Marketplace." },
     { q: "How does the Pay-Per-Use service work?", a: "No subscription needed. Choose the service and pay the fee directly to the licensed law office through a SAMA-licensed payment gateway. The platform holds no funds." },
