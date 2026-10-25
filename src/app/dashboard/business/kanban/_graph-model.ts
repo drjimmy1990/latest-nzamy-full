@@ -1,12 +1,24 @@
 import {
-  User, FileText, Scales, CalendarBlank, MagnifyingGlass, Record,
+  User, FileText, Scales, CalendarBlank, MagnifyingGlass, Record, LinkSimple, ListChecks,
   type Icon,
 } from "@phosphor-icons/react";
 
-export type NodeType = "person" | "doc" | "law" | "event" | "evidence" | "custom";
+export type NodeType = "person" | "doc" | "law" | "event" | "evidence" | "custom" | "link" | "checklist";
 export type EdgeType = "support" | "conflict" | "neutral";
 
 export interface Point { x: number; y: number; }
+
+/** One line of a «قائمة مهام» card (N3.5). */
+export interface ChecklistItem { id: string; text: string; done: boolean; }
+
+/**
+ * A card imported through «استيراد من القضية» (N3.5) points at the row it came
+ * from instead of copying it: `ref_id` is that row's id, `label` the text it
+ * had when imported. Stored as-is in case_graphs.nodes (jsonb), so the keys are
+ * snake_case like the table's other columns.
+ */
+export type NodeRefType = "hearing" | "document" | "party" | "stage";
+export interface NodeRef { ref_type: NodeRefType; ref_id: string; label: string; }
 
 export interface GraphNode {
   id: string;
@@ -21,6 +33,14 @@ export interface GraphNode {
   customColor?: string;
   groupId?: string;
   notes?: string;
+  /** «مستعجل» — the card pulses (and carries a text badge) until switched off. */
+  urgent?: boolean;
+  /** `link` cards: an http(s) address. Re-checked on every render (safeExternalUrl). */
+  url?: string;
+  /** `checklist` cards. */
+  checklist?: ChecklistItem[];
+  /** Cards imported from the case file. */
+  ref?: NodeRef;
 }
 
 export interface NodeGroup {
@@ -50,6 +70,8 @@ export const TYPE_CONFIG: Record<NodeType, { icon: Icon; bg: string; text: strin
   event:    { icon: CalendarBlank, bg: "bg-purple-500/10 border-purple-500/30",    text: "text-purple-500",  label: "حدث/جلسة" },
   evidence: { icon: MagnifyingGlass, bg: "bg-orange-500/10 border-orange-500/30",  text: "text-orange-500",  label: "دليل إثبات" },
   custom:   { icon: Record,        bg: "bg-zinc-500/10 border-zinc-500/30",        text: "text-zinc-500",    label: "ملاحظة حرة" },
+  link:     { icon: LinkSimple,    bg: "bg-sky-500/10 border-sky-500/30",          text: "text-sky-500",     label: "رابط" },
+  checklist:{ icon: ListChecks,    bg: "bg-teal-500/10 border-teal-500/30",        text: "text-teal-500",    label: "قائمة مهام" },
 };
 
 export const EDGE_CONFIG: Record<EdgeType, { color: string; dash: string }> = {

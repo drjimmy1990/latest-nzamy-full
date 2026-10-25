@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
 import {
   NODE_H,
   NODE_W,
@@ -8,6 +8,27 @@ import {
   type Point,
 } from "./_graph-model";
 import { toArabicDigits } from "@/lib/services/arabicCount";
+import {
+  canRedo,
+  canUndo,
+  emptyHistory,
+  historyShortcut,
+  isEditableTarget,
+  pushHistory,
+  redoHistory,
+  undoHistory,
+  type History,
+} from "./_graph-history";
+import { forceLayout } from "./_graph-layout";
+
+/** One undo step: everything the user edits on the board (not the camera). */
+interface GraphSnapshot {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  groups: NodeGroup[];
+}
+
+type Updater<T> = T | ((prev: T) => T);
 
 export function useCaseGraphState({
   initialNodes: seedNodes,
@@ -27,8 +48,12 @@ export function useCaseGraphState({
   // every caller; a caller with real material passes it in `initialNodes`.
   const defaultNodes = seedNodes ?? [];
   const defaultEdges = seedEdges ?? [];
-  const [nodes, setNodes] = useState<GraphNode[]>(defaultNodes);
-  const [edges, setEdges] = useState<GraphEdge[]>(defaultEdges);
+  // The raw setters are for continuous gestures (a drag, a resize, typing),
+  // which record ONE undo step at their start — see `beginGesture` below. Every
+  // other change goes through the recording `setNodes` / `setEdges` /
+  // `setGroups` defined further down, which is also what this hook returns.
+  const [nodes, setNodesRaw] = useState<GraphNode[]>(defaultNodes);
+  const [edges, setEdgesRaw] = useState<GraphEdge[]>(defaultEdges);
   const [draggedNode, setDraggedNode] = useState<string | null>(null);
   const [drawingEdgeFrom, setDrawingEdgeFrom] = useState<string | null>(null);
   const [mousePos, setMousePos] = useState<Point>({x: 0, y: 0});
@@ -61,7 +86,105 @@ export function useCaseGraphState({
   }, []);
 
   // ── Groups (lock/unlock) ────────────────────────────────────────────────────
-  const [groups, setGroups] = useState<NodeGroup[]>([]);
+  const [groups, setGroupsRaw] = useState<NodeGroup[]>([]);
+
+  // ── Undo / redo (N3.5) ──────────────────────────────────────────────────────
+  // 40 whole-board snapshots (./_graph-history.ts). `snapshotRef` always holds
+  // the last RENDERED board, i.e. the state before whatever the current event
+  // handler is about to change.
+  const [history, setHistory] = useState<History<GraphSnapshot>>(emptyHistory);
+  const historyRef = useRef(history);
+  const snapshotRef = useRef<GraphSnapshot>({ nodes, edges, groups });
+  // Synced after every commit and before the next event can run.
+  useLayoutEffect(() => {
+    historyRef.current = history;
+    snapshotRef.current = { nodes, edges, groups };
+  });
+  // Several setters called by one handler (delete a card = nodes + edges) are
+  // ONE step: the flag swallows every checkpoint after the first until the
+  // handler's synchronous work is done.
+  const checkpointPending = useRef(false);
+  // Typing into one field is one step, however many keystrokes it takes.
+  const typingKey = useRef<string | null>(null);
+  // The board as it was when a drag/resize began; pushed when it ends, and only
+  // if the gesture actually moved something.
+  const gestureStart = useRef<GraphSnapshot | null>(null);
+
+  const checkpoint = useCallback(() => {
+    typingKey.current = null;
+    if (checkpointPending.current) return;
+    checkpointPending.current = true;
+    const before = snapshotRef.current;
+    setHistory((h) => pushHistory(h, before));
+    queueMicrotask(() => { checkpointPending.current = false; });
+  }, []);
+
+  const setNodes = useCallback((u: Updater<GraphNode[]>) => { checkpoint(); setNodesRaw(u); }, [checkpoint]);
+  const setEdges = useCallback((u: Updater<GraphEdge[]>) => { checkpoint(); setEdgesRaw(u); }, [checkpoint]);
+  const setGroups = useCallback((u: Updater<NodeGroup[]>) => { checkpoint(); setGroupsRaw(u); }, [checkpoint]);
+
+  const beginGesture = useCallback(() => {
+    typingKey.current = null;
+    gestureStart.current = snapshotRef.current;
+  }, []);
+  const endGesture = useCallback(() => {
+    const start = gestureStart.current;
+    gestureStart.current = null;
+    if (start && start.nodes !== snapshotRef.current.nodes) {
+      setHistory((h) => pushHistory(h, start));
+    }
+  }, []);
+
+  const applySnapshot = useCallback((snap: GraphSnapshot) => {
+    setNodesRaw(snap.nodes);
+    setEdgesRaw(snap.edges);
+    setGroupsRaw(snap.groups);
+  }, []);
+
+  const undo = useCallback(() => {
+    const r = undoHistory(historyRef.current, snapshotRef.current);
+    if (!r) return;
+    typingKey.current = null;
+    setHistory(r.history);
+    applySnapshot(r.state);
+  }, [applySnapshot]);
+
+  const redo = useCallback(() => {
+    const r = redoHistory(historyRef.current, snapshotRef.current);
+    if (!r) return;
+    typingKey.current = null;
+    setHistory(r.history);
+    applySnapshot(r.state);
+  }, [applySnapshot]);
+
+  /**
+   * Replace the whole board WITHOUT an undo step and forget the history — used
+   * when the saved graph is loaded. Undo must never reach back past the load:
+   * the first Ctrl+Z would empty the board and the autosave would then write
+   * that empty board over the case's real one.
+   */
+  const resetGraph = useCallback((nextNodes: GraphNode[], nextEdges: GraphEdge[]) => {
+    setNodesRaw(nextNodes);
+    setEdgesRaw(nextEdges);
+    setHistory(emptyHistory());
+    typingKey.current = null;
+    gestureStart.current = null;
+  }, []);
+
+  // ── «ترتيب تلقائي» (N3.10) ──────────────────────────────────────────────────
+  // A seeded force layout over the cards on the board (./_graph-layout.ts) —
+  // one undo step. The frame is refit once the new positions have rendered.
+  const pendingFit = useRef(false);
+  const autoLayout = useCallback(() => {
+    const current = snapshotRef.current.nodes;
+    if (current.length < 2) return;
+    const positions = forceLayout(current, snapshotRef.current.edges);
+    pendingFit.current = true;
+    setNodes((prev) => prev.map((n) => {
+      const p = positions.get(n.id);
+      return p ? { ...n, pos: p } : n;
+    }));
+  }, [setNodes]);
 
   const createGroup = useCallback(() => {
     if (selectedNodeIds.size < 2) return;
@@ -76,16 +199,16 @@ export function useCaseGraphState({
     };
     setGroups(prev => [...prev, newGroup]);
     setNodes(prev => prev.map(n => selectedNodeIds.has(n.id) ? { ...n, groupId: gid } : n));
-  }, [selectedNodeIds, groups.length]);
+  }, [selectedNodeIds, groups.length, setGroups, setNodes]);
 
   const dissolveGroup = useCallback((gid: string) => {
     setGroups(prev => prev.filter(g => g.id !== gid));
     setNodes(prev => prev.map(n => n.groupId === gid ? { ...n, groupId: undefined } : n));
-  }, []);
+  }, [setGroups, setNodes]);
 
   const toggleGroupLock = useCallback((gid: string) => {
     setGroups(prev => prev.map(g => g.id === gid ? { ...g, locked: !g.locked } : g));
-  }, []);
+  }, [setGroups]);
 
   // ── Edge context menu ───────────────────────────────────────────────────────
   const [edgeMenu, setEdgeMenu] = useState<{edgeId: string; x: number; y: number} | null>(null);
@@ -97,7 +220,7 @@ export function useCaseGraphState({
   const updateEdgeStyle = useCallback((edgeId: string, updates: Partial<GraphEdge>) => {
     setEdges(prev => prev.map(e => e.id === edgeId ? { ...e, ...updates } : e));
     setEdgeMenu(null);
-  }, []);
+  }, [setEdges]);
 
   // ── Text summary of the board ───────────────────────────────────────────────
   //
@@ -151,12 +274,13 @@ export function useCaseGraphState({
     e.stopPropagation();
     e.preventDefault();
     (e.target as Element).setPointerCapture(e.pointerId);
+    beginGesture();
     setResizingNode({ id: nodeId, dir });
-  }, []);
+  }, [beginGesture]);
 
   const handleResizeMove = useCallback((e: PointerEvent) => {
     if (!resizingNode) return;
-    setNodes(prev => prev.map(n => {
+    setNodesRaw(prev => prev.map(n => {
       if (n.id !== resizingNode.id) return n;
       
       let newW = n.w ?? 220;
@@ -190,7 +314,8 @@ export function useCaseGraphState({
 
   const handleResizeEnd = useCallback(() => {
     setResizingNode(null);
-  }, []);
+    endGesture();
+  }, [endGesture]);
 
   const pointerDownPos = useRef<Point>({ x: 0, y: 0 });
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -219,8 +344,16 @@ export function useCaseGraphState({
   // Keyboard: Ctrl+C copy, Ctrl+V paste, Delete remove, Ctrl+G group, Escape deselect
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      const tag = (document.activeElement as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      // Inside a field the browser's own text undo applies, not the board's.
+      if (isEditableTarget(document.activeElement as HTMLElement | null)) return;
+      if (isEditableTarget(e.target as HTMLElement | null)) return;
+
+      const shortcut = historyShortcut(e);
+      if (shortcut) {
+        e.preventDefault();
+        if (shortcut === "undo") undo(); else redo();
+        return;
+      }
 
       // Ctrl+G → create group from selection
       if ((e.ctrlKey || e.metaKey) && e.key === "g") {
@@ -253,7 +386,7 @@ export function useCaseGraphState({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [selectedNodeIds, clipboard, nodes, createGroup]);
+  }, [selectedNodeIds, clipboard, nodes, createGroup, setNodes, setEdges, undo, redo]);
 
   // THREE SIMULATIONS USED TO LIVE HERE. All three are removed rather than
   // relabelled, because each of them wrote or implied content that no part of this
@@ -305,6 +438,7 @@ export function useCaseGraphState({
   const handlePointerDown = (id: string, e: PointerEvent) => {
     if (drawingEdgeFrom) return;
     (e.target as Element).setPointerCapture(e.pointerId);
+    beginGesture();
     setDraggedNode(id);
     pointerDownPos.current = { x: e.clientX, y: e.clientY };
 
@@ -343,12 +477,12 @@ export function useCaseGraphState({
 
       if (group && group.locked) {
         // Move all nodes in this group
-        setNodes(prev => prev.map(n => group.nodeIds.includes(n.id) ? { ...n, pos: { x: n.pos.x + dx, y: n.pos.y + dy } } : n));
+        setNodesRaw(prev => prev.map(n => group.nodeIds.includes(n.id) ? { ...n, pos: { x: n.pos.x + dx, y: n.pos.y + dy } } : n));
       } else if (selectedNodeIds.size > 1 && selectedNodeIds.has(draggedNode)) {
         // Move all selected nodes together
-        setNodes(prev => prev.map(n => selectedNodeIds.has(n.id) ? { ...n, pos: { x: n.pos.x + dx, y: n.pos.y + dy } } : n));
+        setNodesRaw(prev => prev.map(n => selectedNodeIds.has(n.id) ? { ...n, pos: { x: n.pos.x + dx, y: n.pos.y + dy } } : n));
       } else {
-        setNodes(prev => prev.map(n => n.id === draggedNode ? { ...n, pos: { x: n.pos.x + dx, y: n.pos.y + dy } } : n));
+        setNodesRaw(prev => prev.map(n => n.id === draggedNode ? { ...n, pos: { x: n.pos.x + dx, y: n.pos.y + dy } } : n));
       }
     } else if (isPanning) {
       setPan(prev => ({ x: prev.x + e.movementX, y: prev.y + e.movementY }));
@@ -372,6 +506,7 @@ export function useCaseGraphState({
     setDraggedNode(null);
     setDrawingEdgeFrom(null);
     setIsPanning(false);
+    endGesture();
   };
 
   const startDrawingEdge = (nodeId: string, e: PointerEvent) => {
@@ -397,6 +532,7 @@ export function useCaseGraphState({
     }
     setDrawingEdgeFrom(null);
     setDraggedNode(null);
+    endGesture();
   };
 
   const handleContextMenu = (e: MouseEvent) => {
@@ -414,12 +550,23 @@ export function useCaseGraphState({
     setNodeMenu({ nodeId, x: e.clientX, y: e.clientY });
   };
 
-  const handleNodeTextChange = (id: string, field: "title" | "desc", text: string) => {
-    setNodes(prev => prev.map(n => n.id === id ? { ...n, [field]: text } : n));
+  // Typing: one undo step per field, however many keystrokes. The step is
+  // recorded on the first keystroke into a field; any other change in between
+  // (checkpoint() clears typingKey) starts a new one.
+  const recordTyping = (key: string) => {
+    if (typingKey.current === key) return;
+    checkpoint();
+    typingKey.current = key;
+  };
+
+  const handleNodeTextChange = (id: string, field: "title" | "desc" | "notes" | "url", text: string) => {
+    recordTyping(`node:${id}:${field}`);
+    setNodesRaw(prev => prev.map(n => n.id === id ? { ...n, [field]: text } : n));
   };
 
   const handleEdgeLabelChange = (edgeId: string, text: string) => {
-    setEdges(prev => prev.map(e => e.id === edgeId ? { ...e, label: text } : e));
+    recordTyping(`edge:${edgeId}`);
+    setEdgesRaw(prev => prev.map(e => e.id === edgeId ? { ...e, label: text } : e));
   };
 
   /**
@@ -461,6 +608,12 @@ export function useCaseGraphState({
       y: rect.height / 2 - centerY * nextScale,
     });
   }, [nodes]);
+
+  useEffect(() => {
+    if (!pendingFit.current) return;
+    pendingFit.current = false;
+    fitToView();
+  }, [nodes, fitToView]);
 
   return {
     nodes,
@@ -525,5 +678,12 @@ export function useCaseGraphState({
     handleNodeTextChange,
     handleEdgeLabelChange,
     fitToView,
+    // Undo / redo (N3.5) and auto layout (N3.10)
+    undo,
+    redo,
+    canUndo: canUndo(history),
+    canRedo: canRedo(history),
+    resetGraph,
+    autoLayout,
   };
 }

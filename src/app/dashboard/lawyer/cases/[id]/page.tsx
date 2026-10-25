@@ -2016,7 +2016,7 @@ export default function CaseDetailPage() {
                 </button>
               </div>
               <div className="h-[calc(100%-48px)]">
-                <CaseGraphView isDark={isDark} isGlobal={false} caseId={id} />
+                <CaseGraphView isDark={isDark} isGlobal={false} caseId={id} enableCaseImport />
               </div>
               {graphFullscreen && (
                 <div className="fixed inset-0 z-[200] flex flex-col" style={{ background: isDark ? "#0f0f0f" : "#f8f8f8" }}>
@@ -2033,7 +2033,7 @@ export default function CaseDetailPage() {
                     </button>
                   </div>
                   <div className="flex-1">
-                    <CaseGraphView isDark={isDark} isGlobal={false} caseId={id} />
+                    <CaseGraphView isDark={isDark} isGlobal={false} caseId={id} enableCaseImport />
                   </div>
                 </div>
               )}
