@@ -93,10 +93,28 @@ test("the seeder: no silent parseInt, no bare .substring cap, the report reaches
   const bare = code.match(/\.substring\(0,/g) ?? [];
   assert.equal(bare.length, 1, `bare .substring caps left: ${bare.length}`);
   assert.match(SEEDER, /return `\$\{lawId\.substring\(0, Math\.max\(0, 150 - core\.length\)\)\}\$\{core\}`;/);
+  assert.match(SEEDER, /page_label: values\.label\("feqh_blocks", "page_label", `\$\{secId\}__blk-\$\{pi\}`, pg\.page_label, pg\.page_number, 60\)/);
+  assert.match(SEEDER, /volume_label: values\.label\("feqh_blocks", "volume_label", `\$\{secId\}__blk-\$\{pi\}`, pg\.volume_label, pg\.volume, 60\)/);
   for (const field of ["year_hijri", "volume_number", "page_number"]) {
     assert.match(SEEDER, new RegExp(`${field}: values\\.int\\(`), `${field} goes through values.int`);
   }
   assert.match(SEEDER, /values\.reset\(\);/);
   assert.match(SEEDER, /value_report: seedValueReportJson\(valueReport, finishedAt\.toISOString\(\)\)/);
   assert.match(SEEDER, /seed-value-report\.json/);
+});
+
+test("label(): a refused page or volume keeps its verbatim text in the label twin; nothing else changes", () => {
+  const r = createSeedValueReport();
+  // the source's own label always wins
+  assert.equal(r.label("feqh_blocks", "page_label", "b1", "مقدمة", "12-13", 60), "مقدمة");
+  // a range refused by the integer column survives in the label
+  assert.equal(r.int("feqh_blocks", "page_number", "b2", "12-13", null), null);
+  assert.equal(r.label("feqh_blocks", "page_label", "b2", null, "12-13", 60), "12-13");
+  // a whole number, or no value: the label exactly as it came
+  assert.equal(r.label("feqh_blocks", "page_label", "b3", null, "218", 60), null);
+  assert.equal(r.label("feqh_blocks", "page_label", "b4", "", 218, 60), "");
+  assert.equal(r.label("feqh_blocks", "page_label", "b5", undefined, undefined, 60), null);
+  // the label column is varchar(60): a longer verbatim value is cut and reported
+  assert.equal(r.label("feqh_blocks", "volume_label", "b6", null, "س".repeat(70), 60)?.length, 60);
+  assert.ok(r.snapshot().truncated.some((t) => t.field === "volume_label" && t.key === "b6"));
 });

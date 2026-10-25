@@ -102,3 +102,29 @@ test("buildCollectionSeries: the reader's selector, or null for a stand-alone co
   assert.equal(buildCollectionSeries(rows, "missing"), null);
   assert.equal(buildCollectionSeries([{ id: "a", title: "t", series_id: null }, { id: "b", title: "t", series_id: null }], "a"), null);
 });
+
+test("the owner corpus' two series shapes (2026-10-25) get volumes 1..N, part = 1 on every row", () => {
+  // moj-rulings-collection-1434: `id: moj-rulings-1434-vNN`, collection_title without a volume
+  const rulings = Array.from({ length: 30 }, (_, i) => ({
+    id: `moj-rulings-1434-v${String(30 - i).padStart(2, "0")}`,
+    title: "مجموعة الأحكام القضائية لعام 1434هـ",
+    part: 1,
+    series_id: "moj-rulings-collection-1434",
+  }));
+  // moj-judgments-1434: no slug / id — the parser's filename fallback id; title
+  // here WITHOUT its volume, so only the id can tell the volumes apart
+  const judgments = Array.from({ length: 14 }, (_, i) => ({
+    id: `97 - السوابق القضائية__وزارة_العدل_المجموعة_1435_المجلد_${String(14 - i).padStart(2, "0")}`,
+    title: "مجموعة الأحكام القضائية لعام 1435 هـ",
+    part: 1,
+    series_id: "moj-judgments-1435",
+  }));
+  const out = groupCollectionVolumes([...rulings, ...judgments]);
+  assert.equal(out.length, 2);
+  for (const [entry, n] of [[out[0], 30], [out[1], 14]] as const) {
+    assert.equal(entry.kind, "series");
+    if (entry.kind !== "series") continue;
+    assert.deepEqual(entry.volumes.map((v) => v.number), Array.from({ length: n }, (_, i) => i + 1));
+    assert.equal(collectionVolumeLabel(entry.volumes[n - 1]), `المجلد ${n}`);
+  }
+});

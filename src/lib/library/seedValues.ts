@@ -115,6 +115,21 @@ export function createSeedValueReport() {
       }
       return p.value ?? fallback;
     },
+    /**
+     * The verbatim twin of an integer column (feqh_blocks.page_label /
+     * volume_label): the source's own label when it has one; else, when the
+     * integer was refused («12-13», «7-1»), the raw value — so a page range
+     * keeps showing as written («ص 12-13») instead of vanishing with the
+     * number. Never a guess: with no refusal the label is returned as it came.
+     */
+    label(table: string, field: string, key: unknown, label: unknown, raw: unknown, max: number): string | null {
+      const own = typeof label === "string" ? label.trim() : label === null || label === undefined ? "" : String(label).trim();
+      if (own) return this.cap(table, field, key, String(label), max);
+      // Nothing refused: the label exactly as before («» stays «», absent stays null).
+      if (parseStrictInt(raw).rejected === null) return typeof label === "string" ? label : null;
+      const verbatim = String(raw).trim();
+      return verbatim ? this.cap(table, field, key, verbatim, max) : null;
+    },
     reset(): void {
       truncated.clear();
       intRejected.clear();

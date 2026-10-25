@@ -1436,8 +1436,9 @@ async function seedFeqh(
             page_number: values.int("feqh_blocks", "page_number", `${dummySecId}__blk-${pi}`, pg.page_number, null),
             // Verbatim locator tokens, so a non-numeric one ("مقدمة", "7-1",
             // "None") is shown as the source wrote it, not coerced to a number.
-            page_label: pg.page_label ?? null,
-            volume_label: pg.volume_label ?? null,
+            // N2.7: a refused page / volume («12-13») keeps its verbatim text here.
+            page_label: values.label("feqh_blocks", "page_label", `${dummySecId}__blk-${pi}`, pg.page_label, pg.page_number, 60),
+            volume_label: values.label("feqh_blocks", "volume_label", `${dummySecId}__blk-${pi}`, pg.volume_label, pg.volume, 60),
             // ب-126: true only for the genuine no-locator-available fallback —
             // never for a heading that fell mid-page (that reuses the real page's
             // own identity now, see parse-feqh.ts flushPage()).
@@ -1481,8 +1482,9 @@ async function seedFeqh(
             page_number: values.int("feqh_blocks", "page_number", `${secId}__blk-${pi}`, pg.page_number, null),
             // Verbatim locator tokens, so a non-numeric one ("مقدمة", "7-1",
             // "None") is shown as the source wrote it, not coerced to a number.
-            page_label: pg.page_label ?? null,
-            volume_label: pg.volume_label ?? null,
+            // N2.7: a refused page / volume («12-13») keeps its verbatim text here.
+            page_label: values.label("feqh_blocks", "page_label", `${secId}__blk-${pi}`, pg.page_label, pg.page_number, 60),
+            volume_label: values.label("feqh_blocks", "volume_label", `${secId}__blk-${pi}`, pg.volume_label, pg.volume, 60),
             // ب-126: true only for the genuine no-locator-available fallback —
             // never for a heading that fell mid-page (that reuses the real page's
             // own identity now, see parse-feqh.ts flushPage()).

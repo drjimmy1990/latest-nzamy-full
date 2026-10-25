@@ -13,7 +13,8 @@
  * apart. In the owner corpus (2026-10-25) the series files carry
  * `part_label: المجلد الخامس` and no `part`, so the loader stores part = 1 on
  * every volume. Then the number comes from the id (`moj-rulings-1434-v05`),
- * then from «المجلد …» in the title. If that still does not give every volume
+ * («-v05», or «المجلد_05» in a filename-derived id), then from «المجلد …» in
+ * the title. If that still does not give every volume
  * its own number, no number is shown: the volumes keep id order and their
  * own title — a number is never invented.
  *
@@ -101,11 +102,14 @@ export function arabicOrdinalNumber(s: string): number | null {
 }
 
 const ID_VOLUME = /(?:^|[-_])v(?:ol)?0*(\d{1,3})$/i;
+/** A filename-derived id (parser fallback): «97 - السوابق القضائية__وزارة_العدل_المجموعة_1434_المجلد_01». */
+const ID_VOLUME_WORD = /المجلد[_\s]+(\d{1,3})(?!\d)/;
 const TITLE_VOLUME = /المجلد\s+(.+)$/;
 const TITLE_VOLUME_TAIL = /\s*[-—–]\s*المجلد\s+.*$/;
 
 function numberFromIdOrTitle(row: CollectionVolumeRow): number | null {
-  const byId = ID_VOLUME.exec(String(row.id ?? ""));
+  const id = String(row.id ?? "");
+  const byId = ID_VOLUME.exec(id) ?? ID_VOLUME_WORD.exec(id);
   if (byId) {
     const n = Number(byId[1]);
     if (n > 0) return n;
