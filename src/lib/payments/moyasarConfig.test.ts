@@ -277,3 +277,17 @@ test("N1.1: a shape reason never carries the key", () => {
     assert.equal(/sk_(test|live)_|pk_(test|live)_|XzYQ|\*\*\*/.test(text), false);
   }
 });
+
+test("N1.1: key bodies of the lengths Moyasar's own docs show (21, 24, 40) are valid", () => {
+  // Moyasar does not publish a fixed key length; its API docs show bodies of
+  // 21 («sk_test_5cD4…»), 24 («sk_test_Mrtw…») and 40 («pk_test_AQpx…»)
+  // characters. Shape-only placeholders of those lengths — never real keys.
+  const T = { status: "test", provider: "moyasar" };
+  for (const len of [16, 21, 24, 40]) {
+    const body = "Ab3".repeat(30).slice(0, len);
+    const env = { secretKey: `sk_test_${body}`, publishableKey: `pk_test_${body}`, webhookSecret: "whsec_placeholder_456" };
+    assert.equal(resolveMoyasarConfig(T, env, false).enabled, true, `body ${len}`);
+  }
+  // The 14 visible characters of a masked key, stars dropped, are still too short.
+  assert.equal(resolveMoyasarConfig(T, { ...TEST_ENV, secretKey: "sk_test_XzYQHba5GfKfNP" }, false).enabled, false);
+});

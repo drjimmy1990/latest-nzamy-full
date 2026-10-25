@@ -50,13 +50,15 @@ const clean = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
 
 /**
  * The body of a Moyasar key — what follows `sk_test_`, `pk_live_` … — is
- * judged by length and characters. ASSUMPTION: the keys the owner's dashboard
- * shows have a 40-character body (a 14-character visible prefix plus 26 mask
- * stars); Moyasar does not publish a fixed length, so the bound is kept wide
- * (20–80) and only catches a truncated or run-on paste. `_` and `-` are
- * allowed so a key format we have not seen is not refused outright.
+ * judged by length and characters. Moyasar does not publish a fixed length:
+ * the keys the owner's dashboard shows have a 40-character body (a
+ * 14-character visible prefix plus 26 mask stars), and Moyasar's API docs show
+ * bodies of 21, 24 and 40 characters. So the bound is kept wide (16–80): it
+ * only catches a truncated paste (the 14 visible characters alone) or a run-on
+ * one. `_` and `-` are allowed so a key format we have not seen is not
+ * refused outright.
  */
-export const MOYASAR_KEY_BODY = /^[A-Za-z0-9_-]{20,80}$/;
+export const MOYASAR_KEY_BODY = /^[A-Za-z0-9_-]{16,80}$/;
 
 /** Mask characters a dashboard uses to hide a key («sk_live_wBm…****»). */
 const MASK_CHARS = /[*•●]/;
