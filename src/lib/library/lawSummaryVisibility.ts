@@ -23,7 +23,16 @@
  * Pure: `node --test` loads it directly.
  */
 
-import { extractLawPreambleBlocks, isHollowPreamble, type LawMetadataCard, type LawCardField } from "./lawPreambleBlocks.ts";
+import {
+  cardFieldOfCells,
+  extractLawPreambleBlocks,
+  isHollowPreamble,
+  isSeparatorRow,
+  lawCardRanges,
+  splitRow,
+  type LawMetadataCard,
+  type LawCardField,
+} from "./lawPreambleBlocks.ts";
 import { LAW_CARD_PRIMARY_FIELDS, type LawCardFieldId } from "./lawCardFields.ts";
 
 export type LawSummaryAudience = "subscribers" | "everyone";
@@ -107,16 +116,17 @@ function normalCardKey(key: string): string {
 /**
  * Rows about the export's own file, not the law — dropped for EVERY viewer
  * (keys as normalCardKey gives them; counts over last_owner, 2026-10-26):
- *   «حالة المراجعة» / «حالة الاكتمال»: the review notes («ملف جزئي…»);
+ *   «حالة المراجعة» / «حالة الاكتمال» / «حالة اكتمال النص المستخرج»: the
+ *   review notes («ملف جزئي…», «نص مقروء جزئياً — تلف في ترميز …»);
  *   «تاريخ الاستخراج» (42), «طريقة التفريغ» («Gemini Vision OCR…»),
- *   «الملف الأصلي (PDF)» (30): how the file was made;
+ *   «الملف الأصلي (PDF)» (30), «عدد الصفحات المستخرجة» (2): how the file was made;
  *   «معيار التنسيق» (44) / «معيار الهيكلة» (10): «(V3.3 Zero-Details Protocol)»;
  *   «ملاحظة تحقق», «ملاحظة هيكلية», «⚠️ ملاحظة تكرار محتمل», «ملاحظة
  *   التحديث» («هذا الملف يوثّق …»): notes on our file.
  */
 const PIPELINE_ROW_KEYS: ReadonlySet<string> = new Set([
-  "حالة المراجعة", "حالة الاكتمال",
-  "تاريخ الاستخراج", "طريقة التفريغ", "الملف الأصلي (PDF)",
+  "حالة المراجعة", "حالة الاكتمال", "حالة اكتمال النص المستخرج",
+  "تاريخ الاستخراج", "طريقة التفريغ", "الملف الأصلي (PDF)", "عدد الصفحات المستخرجة",
   "معيار التنسيق", "معيار الهيكلة",
   "ملاحظة تحقق", "ملاحظة هيكلية", "ملاحظة تكرار محتمل", "ملاحظة التحديث",
 ]);
@@ -208,6 +218,10 @@ export function cardStatusValue(value: string): string | null {
  * marks removed. Anchored phrases, never a bare «تحقق» or «المرجح»: «قائمة
  * التحقق», «عند التحقق من دخل العميل», «لا يتحقق الالتزام بها», «ومطابقتها
  * للنص المرجح» are the law's own words.
+ *
+ * Not notes: «تقريباً», «تقديري», «يقدَّر», «المرجَّح» on a date or a gazette
+ * number. They say the date is approximate; without them an approximate date
+ * reads as exact (review of 81295e33).
  */
 const GAP_NOTE = new RegExp(
   [
@@ -221,14 +235,16 @@ const GAP_NOTE = new RegExp(
     "(?<!\\p{L})مؤكد\\S*\\s+(?:عبر|حيا|بمصدر)", // «(مؤكَّد عبر البوابة الحية …)»
     "^\\s*(?:ال)?مؤكد\\S*\\s*$", // an aside that is only «(مؤكَّد)»
     "(?:أثناء|عند|وقت)\\s+الاستخراج|المصدر\\s+المستخرج|الفرونت|review_|(?<![A-Za-z])OCR(?![A-Za-z])|المكتبة_القانونية",
-    "(?<!\\p{L})(?:تقديري|تقريبا)(?!\\p{L})", // «(تقديري، راجع …)», «(تقريباً، مشتق من …)»
-    "رقم\\s+[0-9٠-٩]+\\s+المرجح|(?<!\\p{L})مرجح\\s+(?:إن|بثقة)", // «(عدد أم القرى رقم 4963 المرجَّح)»
+    "(?<!\\p{L})مرجح\\s+(?:إن|بثقة)", // «(محوّل المنصة مرجّح إن اختلف ±يوم)», «مرجَّح بثقة عالية»
     "غير\\s+محسوب", // «؛ المقابل الهجري غير محسوب»
     "بحسب\\s+(?:ال)?(?:مصدر|صفحة)",
     "(?:مصدر|نص|ديباجة)\\s+(?:المتاح|المستخدم)", // «غير مذكور في المصدر المستخدم», «بالمصدر المتاح»
-    "(?:غير\\s+مذكور|لم\\s+يرد)\\s+في\\s+(?:ال)?(?:مصدر|نص|غلاف)",
+    "(?:غير\\s+(?:مذكور|مسجل)|لم\\s+يرد)\\s+في\\s+(?:ال)?(?:مصدر|نص|غلاف)", // «تاريخ النشر غير مسجَّل في المصدر»
     "تعذر\\s+(?:احتساب|تحديد)",
-    "أفضل\\s+تقدير|(?<!\\p{L})يقدر(?!\\p{L})|أقرب\\s+تصنيف|هذه\\s+الجولة",
+    "أفضل\\s+تقدير|أقرب\\s+تصنيف|هذه\\s+الجولة", // «بأفضل تقدير متاح» is stripped in place (BEST_ESTIMATE)
+    "الرابط\\s+المسجل", // «(الرابط المسجَّل سابقاً لا يفتح الوثيقة …)»: our link, not the law
+    "(?:في|من)\\s+النص\\s+المستخرج", // «؛ الرقم المرجعي وتاريخ الإصدار غير واضحين في النص المستخرج» (09-20 export)
+    "(?<!\\p{L})(?:و|ف)?(?:راجع|انظر)\\s+(?:ال)?(?:ملاحظة|حقل)", // «(تقديري، راجع ملاحظة تاريخ النفاذ)»
   ].join("|"),
   "u",
 );
@@ -240,12 +256,18 @@ const hasGapNote = (s: string) => GAP_NOTE.test(unmarked(s));
  */
 const VERIFY_STAMP = /تح\p{M}*ق\p{M}*ق\p{M}*\s+(?:مباشر|حي)\s+(?:بتاريخ\s+)?[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}(?:\s+من\s+[^:،؛.()]+:)?\s*/gu;
 /**
- * «تقريباً» right after a date or after «الموافق» is the date's qualifier:
- * the qualifier goes, the date stays (as «غير مؤكد» on a date row) —
- * «2024-06-05م تقريباً — وفق المادة (16) …», «الموافق تقريباً 1987-08-30م».
+ * «مؤكَّد عبر ncar.gov.sa و…» leading an aside that goes on to cite: the lead
+ * goes, the citation stays — «(مؤكَّد عبر ncar.gov.sa وجريدة أم القرى العدد
+ * 4746 وتاريخ 1440/01/18هـ)» → «(جريدة أم القرى العدد 4746 وتاريخ 1440/01/18هـ)».
  */
-const ABOUT_AFTER_DATE = /([0-9٠-٩](?:هـ|ه|م)?)\s+تقريبا\p{M}*(?!\p{L})/gu;
-const ABOUT_AFTER_EQUALS = /(الموافق)\s+تقريبا\p{M}*\s+(?=[0-9٠-٩])/gu;
+const VERIFIED_VIA_LEAD = /م\p{M}*ؤ\p{M}*ك\p{M}*د\p{M}*\s+عبر\s+[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+\s+و(?=\p{L})/gu;
+/** «… الموافق 2025-12-14م بأفضل تقدير متاح»: the filler words go, the estimate stays. */
+const BEST_ESTIMATE = /\s*(?:ب|و)?أ\p{M}*فضل\s+تقدير\p{M}*(?:\s+متاح\p{M}*)?/gu;
+/**
+ * Legal substance in an aside: a digit (an article, a date, a number), an
+ * article / clause reference or a statutory period, on text without marks.
+ */
+const SUBSTANCE = /[0-9٠-٩]|(?<!\p{L})(?:ال)?(?:مادة|مواد|بند|فقرة)|(?<!\p{L})(?:يوما|أيام|شهرا|شهر|شهرين|أشهر|سنة|سنتين|سنوات)(?!\p{L})/u;
 
 /** Where a clause ends (outside any «(…)» / «[…]»): a spaced dash, «؛», a spaced «·», a sentence's «. ». */
 const CLAUSE_SEP = /\s+[—–-]+\s+|\s*؛\s*|\s+·\s+|(?<=\.)\s+/y;
@@ -260,14 +282,82 @@ function closingParen(s: string, open: number): number {
   return -1;
 }
 
+/** `s` split at each top-level match of `sep` (outside «(…)» / «[…]»), each piece with the separator before it. */
+function splitOutside(s: string, sep: RegExp): Array<{ sep: string; text: string }> {
+  const out: Array<{ sep: string; text: string }> = [];
+  let depth = 0;
+  let start = 0;
+  let before = "";
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === "(" || c === "[") depth++;
+    else if ((c === ")" || c === "]") && depth > 0) depth--;
+    else if (depth === 0) {
+      sep.lastIndex = i;
+      const m = sep.exec(s);
+      if (m && m[0]) {
+        out.push({ sep: before, text: s.slice(start, i) });
+        before = m[0];
+        start = i + m[0].length;
+        i = start - 1;
+      }
+    }
+  }
+  out.push({ sep: before, text: s.slice(start) });
+  return out;
+}
+
+/** The top-level «(…)» asides of `s` (a link's target excluded), and `s` without them. */
+function topLevelAsides(s: string): { asides: string[]; outside: string } {
+  const asides: string[] = [];
+  let outside = "";
+  for (let i = 0; i < s.length; ) {
+    const close = s[i] === "(" ? closingParen(s, i) : -1;
+    if (close < 0) {
+      outside += s[i++];
+      continue;
+    }
+    if (s[i - 1] === "]") outside += s.slice(i, close + 1);
+    else asides.push(s.slice(i + 1, close).trim());
+    i = close + 1;
+  }
+  return { asides, outside };
+}
+
+const SEGMENT_SEP = /\s*،\s*/y;
+
 /**
- * `text` less its gap notes: stamps and a date's «تقريباً» go where they
- * stand; an aside «(…)» is cleaned inside out and goes when nothing is left
- * of it; then a clause or sentence that still notes goes whole. A markdown
+ * A clause that notes, less the note (owner ٢٥٩, review of 81295e33: never
+ * drop legal content with a note). Its «،» segments are kept up to the first
+ * that notes — «المادة (21) تنص على النفاذ من تاريخ النشر، وتاريخ النشر
+ * الفعلي غير مؤكَّد …» → «المادة (21) تنص على النفاذ من تاريخ النشر». When
+ * the clause OPENS with the note and the note carries an aside of substance,
+ * the aside is what stays: «لم تُعثر عليها في المكتبة بعد (تصدر خلال 60
+ * يوماً … وفق المادة 56)» → «تصدر خلال 60 يوماً … وفق المادة 56».
+ */
+function clauseLessNote(clause: string): string {
+  const segments = splitOutside(clause, SEGMENT_SEP);
+  const firstNote = segments.findIndex((seg) => hasGapNote(seg.text));
+  if (firstNote > 0) {
+    return segments
+      .slice(0, firstNote)
+      .map((seg, i) => (i ? seg.sep : "") + seg.text)
+      .join("");
+  }
+  const { asides, outside } = topLevelAsides(segments[0]?.text ?? "");
+  if (!hasGapNote(outside)) return "";
+  // Words and substance: a bare «(2026-07-22)» after «تم التحقق المباشر» is the stamp's date.
+  return asides.filter((a) => /\p{L}{2}/u.test(a) && !hasGapNote(a) && SUBSTANCE.test(unmarked(a))).join(" ");
+}
+
+/**
+ * `text` less its gap notes: stamps go where they stand; an aside «(…)» is
+ * cleaned inside out and goes when nothing is left of it; then a clause or
+ * sentence that still notes loses its note (clauseLessNote). A markdown
  * link's target «](…)» is never touched.
  */
 function withoutGapNotes(input: string): string {
-  const text = input.replace(VERIFY_STAMP, "").replace(ABOUT_AFTER_DATE, "$1").replace(ABOUT_AFTER_EQUALS, "$1 ");
+  const text = input.replace(VERIFY_STAMP, "").replace(VERIFIED_VIA_LEAD, "").replace(BEST_ESTIMATE, "");
   let s = "";
   for (let i = 0; i < text.length; ) {
     if (text[i] !== "(") {
@@ -289,30 +379,11 @@ function withoutGapNotes(input: string): string {
     }
     i = close + 1;
   }
-  const clauses: Array<{ sep: string; text: string }> = [];
-  let depth = 0;
-  let start = 0;
-  let sep = "";
-  for (let i = 0; i < s.length; i++) {
-    const c = s[i];
-    if (c === "(" || c === "[") depth++;
-    else if ((c === ")" || c === "]") && depth > 0) depth--;
-    else if (depth === 0) {
-      CLAUSE_SEP.lastIndex = i;
-      const m = CLAUSE_SEP.exec(s);
-      if (m && m[0]) {
-        clauses.push({ sep, text: s.slice(start, i) });
-        sep = m[0];
-        start = i + m[0].length;
-        i = start - 1;
-      }
-    }
-  }
-  clauses.push({ sep, text: s.slice(start) });
   let out = "";
-  for (const c of clauses) {
-    if (!c.text.trim() || hasGapNote(c.text)) continue;
-    out += out ? c.sep + c.text : c.text;
+  for (const c of splitOutside(s, CLAUSE_SEP)) {
+    const kept = hasGapNote(c.text) ? clauseLessNote(c.text).replace(EDGE_PUNCT, "") : c.text;
+    if (!kept.trim()) continue;
+    out += out ? c.sep + kept : kept;
   }
   return out.replace(EDGE_PUNCT, "").trim();
 }
@@ -324,7 +395,9 @@ function withoutGapNotes(input: string): string {
  *   «24 ربيع الآخر 1435هـ — تحقَّق منه 2026-07-28» → «24 ربيع الآخر 1435هـ»;
  *   «1372/01/24هـ (التحويل الميلادي الدقيق غير مؤكد — راجع …)» → «1372/01/24هـ»;
  *   «غير متوفر في المصدر — يعمل به بعد تسعين يوماً من نشره (المادة 49)» → «يعمل به …»;
- *   «غير متوفر (الرابط المسجَّل سابقاً لا يفتح الوثيقة؛ لم يُعثر على بديل …)» → null.
+ *   «غير متوفر (الرابط المسجَّل سابقاً لا يفتح الوثيقة؛ لم يُعثر على بديل …)» → null;
+ *   «لم تُعثر عليها في المكتبة بعد (تصدر خلال 60 يوماً … وفق المادة 56)» → «تصدر خلال 60 يوماً … وفق المادة 56»;
+ *   «2024-06-05م تقريباً — وفق المادة (16) …» → as it is (an approximate date says so).
  * English in brackets stays outside a status row: a term's gloss in a subject
  * («(Red Teaming)»), an acronym «(GACA)», an identifier «(TC05)», «(PDF)».
  */
@@ -373,6 +446,142 @@ export function cardForViewer(card: LawMetadataCard | null, isSubscriber: boolea
   const main = guestRows(card.main);
   const more = guestRows(card.more);
   return main.length || more.length ? { main, more } : null;
+}
+
+// ── The same rows where a reader shows the card's Markdown as it is ────────
+
+/**
+ * A precedent's card heading: «### بطاقة تعريف السابقة القضائية وبيانات
+ * الحكم», with or without 📊 — in principles.text the table sometimes sits on
+ * the heading line itself («… الحكم | الحقل | القيمة | | :--- | …»).
+ */
+const ANY_CARD_HEADING = /^[ \t]*#{1,6}[^\n]*بطاقة تعريف[^\n]*$/gm;
+
+/** A «بطاقة تعريف» heading and the blank / table lines right under it. */
+function cardHeadingBlocks(text: string): Array<{ start: number; end: number }> {
+  const out: Array<{ start: number; end: number }> = [];
+  for (const m of text.matchAll(ANY_CARD_HEADING)) {
+    const start = m.index ?? 0;
+    let end = start + m[0].length;
+    let sawTable = m[0].includes("|");
+    const lineRe = /\n([^\n]*)/y;
+    lineRe.lastIndex = end;
+    for (let l = lineRe.exec(text); l; l = lineRe.exec(text)) {
+      const line = l[1].trim();
+      if (line.startsWith("|")) sawTable = true;
+      else if (line !== "" || sawTable) break;
+      end = lineRe.lastIndex;
+    }
+    if (sawTable) out.push({ start, end });
+  }
+  return out;
+}
+
+/** The rows of a table line: one, or several when the source collapsed the table onto one line. */
+function rowsOfLine(tablePart: string): string[] {
+  const parts = tablePart.trim().split(/\|[ \t]+\|/);
+  return parts.map((p, i) => (i ? "|" : "") + p + (i < parts.length - 1 ? "|" : ""));
+}
+
+/**
+ * One card block with every data row as rowTidy gives it: a placeholder or
+ * file row out, notes removed, a status its words only, an unchanged row
+ * byte for byte. A table left without data rows loses its header too, and
+ * so does the sub-heading right above it («### 🔄 بيانات آخر تحديث»).
+ */
+function cleanCardBlock(block: string): string {
+  type Line = { text: string; table: boolean; data: number; kept: number; drop: boolean };
+  const lines = block.split("\n");
+  const out: Line[] = [];
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li];
+    const bar = line.indexOf("|");
+    if (bar < 0) {
+      out.push({ text: line, table: false, data: 0, kept: 0, drop: false });
+      continue;
+    }
+    const prefix = line.slice(0, bar);
+    const rows = rowsOfLine(line.slice(bar));
+    // The line's last row is a header when the next line opens with a separator.
+    const next = lines[li + 1] ?? "";
+    const nextFirst = next.trim().startsWith("|") ? rowsOfLine(next.slice(next.indexOf("|")))[0] : null;
+    const kept: string[] = [];
+    let data = 0;
+    let keptData = 0;
+    for (let ri = 0; ri < rows.length; ri++) {
+      const cells = splitRow(rows[ri]);
+      const following = ri + 1 < rows.length ? rows[ri + 1] : nextFirst;
+      if (cells.length < 2 || isSeparatorRow(cells) || (following !== null && isSeparatorRow(splitRow(following)))) {
+        kept.push(rows[ri]); // a header, a separator, or not a key | value row
+        continue;
+      }
+      data++;
+      const field = cardFieldOfCells(cells);
+      const tidy = field ? rowTidy(field) : null;
+      if (!field || !tidy) continue; // a placeholder, a file row, or only a note
+      keptData++;
+      kept.push(tidy.value === field.value ? rows[ri] : `| ${cells[0]} | ${tidy.value.replace(/\n/g, "<br>")} |`);
+    }
+    if (data === 0) {
+      out.push({ text: line, table: !prefix.trim(), data, kept: keptData, drop: false });
+      continue;
+    }
+    // A collapsed table on a heading line with no data row left: the heading text stays.
+    const rowsText = keptData === 0 ? "" : kept.join(" ");
+    const text = prefix.trim() ? (rowsText ? prefix + rowsText : prefix.replace(/\s+$/, "")) : rowsText;
+    out.push({ text, table: !prefix.trim(), data, kept: keptData, drop: text === "" });
+  }
+  // A multi-line table that lost every data row: header, separator and its sub-heading go.
+  for (let i = 0; i < out.length; ) {
+    if (!out[i].table) {
+      i++;
+      continue;
+    }
+    let j = i;
+    let data = 0;
+    let kept = 0;
+    for (; j < out.length && out[j].table; j++) {
+      data += out[j].data;
+      kept += out[j].kept;
+    }
+    if (data > 0 && kept === 0) {
+      for (let k = i; k < j; k++) out[k].drop = true;
+      let h = i - 1;
+      while (h >= 0 && (out[h].drop || out[h].text.trim() === "")) h--;
+      if (h >= 0 && /^[ \t]*#{1,6}\s/.test(out[h].text) && !out[h].text.includes("بطاقة تعريف")) out[h].drop = true;
+    }
+    i = j;
+  }
+  return out
+    .filter((l) => !l.drop)
+    .map((l) => l.text)
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n");
+}
+
+/**
+ * Owner ٢٥٩ (أ) where a reader shows the card's Markdown as it is — a
+ * decree's ديباجة (the decree route, subscribers only: owner ٢٢١) and a
+ * precedent's text (principles.text, whose «بطاقة تعريف السابقة القضائية»
+ * table the reader prints): every card row as the law card gives it
+ * (rowTidy). Only the card blocks are touched — lawCardRanges' 📊 cards and
+ * any «بطاقة تعريف» heading with its table — never a table of the text
+ * itself. A text with nothing to clean comes back as it was (same string).
+ */
+export function withCleanCardRows(input: string): string {
+  if (typeof input !== "string" || !input.includes("بطاقة تعريف")) return input;
+  const text = input.replace(/\r\n/g, "\n");
+  const ranges = [...lawCardRanges(text), ...cardHeadingBlocks(text)].sort((a, b) => a.start - b.start);
+  let out = "";
+  let at = 0;
+  for (const r of ranges) {
+    if (r.end <= at) continue;
+    const start = Math.max(r.start, at);
+    out += text.slice(at, start) + cleanCardBlock(text.slice(start, r.end));
+    at = r.end;
+  }
+  out += text.slice(at);
+  return out === text ? input : out;
 }
 
 export interface LawReaderExtras {

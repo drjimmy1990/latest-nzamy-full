@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { GUEST_CARD_KEYS, LAW_SUMMARY_AUDIENCE, cardForViewer, cardRowValue, cardStatusValue, guestCardValue, lawReaderExtras, lawSummaryVisible } from "./lawSummaryVisibility.ts";
+import { GUEST_CARD_KEYS, LAW_SUMMARY_AUDIENCE, cardForViewer, cardRowValue, cardStatusValue, guestCardValue, lawReaderExtras, lawSummaryVisible, withCleanCardRows } from "./lawSummaryVisibility.ts";
 import { LAW_CARD_PRIMARY_FIELDS, lawCardLayout } from "./lawCardFields.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -287,12 +287,9 @@ test("cardRowValue: the export's gap and verification notes go, the rest stays (
     ["2025/02/09م (بحسب صفحة اللوائح الحية على بوابة الهيئة، تم التحقق 2026-07-19)", "2025/02/09م"],
     // «غير مؤكَّد» on a date: the qualifier goes, the date stays.
     ["1372/01/24هـ (التحويل الميلادي الدقيق غير مؤكد — راجع ملاحظة المراجعة البشرية في الفرونت-ماتر)", "1372/01/24هـ"],
-    ["1960-06-25م (تاريخ عام تقديري من BOE، اليوم/الشهر الدقيقان غير مؤكَّدين)", "1960-06-25م"],
+    ["1960-06-25م (تاريخ عام تقديري من BOE، اليوم/الشهر الدقيقان غير مؤكَّدين)", "1960-06-25م (تاريخ عام تقديري من BOE)"],
     ["المادة (15): بعد 18 شهراً من تاريخ النشر في الجريدة الرسمية (تاريخ النشر الفعلي غير مؤكَّد من المصدر)", "المادة (15): بعد 18 شهراً من تاريخ النشر في الجريدة الرسمية"],
     ["لائحة صادرة عن مؤسسة النقد العربي السعودي (رقم القرار غير مؤكَّد من مصدر أولي)", "لائحة صادرة عن مؤسسة النقد العربي السعودي"],
-    // «تقريباً» after a date is its qualifier, the same way.
-    ["2024-06-05م تقريباً — وفق المادة (16): بعد (180) يوماً من تاريخ النشر", "2024-06-05م — وفق المادة (16): بعد (180) يوماً من تاريخ النشر"],
-    ["1445/02/14هـ (الموافق تقريباً 2023-08-30م)", "1445/02/14هـ (الموافق 2023-08-30م)"],
     // «غير متوفر» / «لم يُعثر»: the note goes; a value that was only a note goes.
     ["غير متوفر في المصدر — يعمل به بعد تسعين يوماً من نشره (المادة 49)", "يعمل به بعد تسعين يوماً من نشره (المادة 49)"],
     ["1442/01/19ه (البند حادي عشر: نافذة من تاريخ النشر؛ لم يُعثر على تاريخ نشر منفصل)", "1442/01/19ه (البند حادي عشر: نافذة من تاريخ النشر)"],
@@ -307,7 +304,6 @@ test("cardRowValue: the export's gap and verification notes go, the rest stays (
       "صدر مرسوم ملكي رقم (م/237) بنظام جديد. تحقق مباشر 2026-07-19 من بوابة هيئة الخبراء: نُشر بالفعل بتاريخ 1447/11/14هـ.",
       "صدر مرسوم ملكي رقم (م/237) بنظام جديد. نُشر بالفعل بتاريخ 1447/11/14هـ.",
     ],
-    ["1444/06/06هـ (عدد أم القرى رقم 4963 المرجَّح)", "1444/06/06هـ"],
   ];
   for (const [value, expected] of cases) assert.equal(cardRowValue(value), expected, value);
 });
@@ -332,6 +328,167 @@ test("cardRowValue leaves the law's own words alone — «التحقق», «ال
   }
 });
 
+// Review of 81295e33: an approximate date keeps its qualifier, and a note
+// never takes legal content (an article, a date, a period, a number) with it.
+
+test("cardRowValue keeps «تقريباً» / «تقديري» / «المرجَّح»: without them an approximate date reads as exact", () => {
+  for (const value of [
+    "2024-06-05م تقريباً — وفق المادة (16): بعد (180) يوماً من تاريخ النشر",
+    "1445/02/14هـ (الموافق تقريباً 2023-08-30م)",
+    "1447/08/22هـ (الموافق 2026-02-10م تقريباً)",
+    "2006-02-28م تقريباً (60 يوماً بعد النشر)",
+    "2025-12-12م (تقريباً، مشتق من تاريخ الإصدار المؤكَّد)",
+    "1444/06/06هـ (عدد أم القرى رقم 4963 المرجَّح)",
+  ]) {
+    assert.equal(cardRowValue(value), value, value);
+  }
+  const cases: Array<[string, string]> = [
+    // The date's own note goes; its «تقريباً» stays.
+    ["بعد (30) يوماً من تاريخ النشر (م17) — الموافق تقريباً 1987-08-30م (التحويل الهجري الدقيق غير مؤكَّد)", "بعد (30) يوماً من تاريخ النشر (م17) — الموافق تقريباً 1987-08-30م"],
+    ["2021-01-10م تقريباً — بعد (30) يوماً من تاريخ النشر (المادة 18)؛ المقابل الهجري غير محسوب", "2021-01-10م تقريباً — بعد (30) يوماً من تاريخ النشر (المادة 18)"],
+    ["1423/9/26هـ (تقديري، راجع ملاحظة تاريخ النفاذ)", "1423/9/26هـ (تقديري)"],
+    // «بأفضل تقدير متاح»: filler words; the estimated date is the law's.
+    [
+      "من تاريخ نشرها في موقع الهيئة (المادة العاشرة) — يقدَّر بتاريخ الاعتماد 1447/06/23هـ الموافق 2025-12-14م بأفضل تقدير متاح",
+      "من تاريخ نشرها في موقع الهيئة (المادة العاشرة) — يقدَّر بتاريخ الاعتماد 1447/06/23هـ الموافق 2025-12-14م",
+    ],
+  ];
+  for (const [value, expected] of cases) assert.equal(cardRowValue(value), expected, value);
+});
+
+test("cardRowValue drops the note words only — the article, the period, the gazette number stay", () => {
+  const cases: Array<[string, string | null]> = [
+    // A note head with the law inside its aside: the aside is the value.
+    [
+      "غير متوفر في المصدر (المادة (19): تُنشر في الجريدة الرسمية ويُعمل بها بعد ستة أشهر من تاريخ نشرها؛ تاريخ النشر غير مسجَّل في المصدر)",
+      "المادة (19): تُنشر في الجريدة الرسمية ويُعمل بها بعد ستة أشهر من تاريخ نشرها",
+    ],
+    ["لم تُعثر عليها في المكتبة بعد (تصدر خلال 60 يوماً من موافقة المجلس وفق المادة 56)", "تصدر خلال 60 يوماً من موافقة المجلس وفق المادة 56"],
+    // A clause that goes on to note: the segments before the note stay.
+    [
+      "غير متوفر في المصدر — المادة (21) تنص على النفاذ من تاريخ النشر، وتاريخ النشر الفعلي غير مؤكَّد من مصدر أولي مستقل",
+      "المادة (21) تنص على النفاذ من تاريخ النشر",
+    ],
+    ["ملحق (1) — نموذج عقد الرعاية (مُشار إليه بالمادة 7، غير متوفر نصه في المصدر المستخرَج)", "ملحق (1) — نموذج عقد الرعاية (مُشار إليه بالمادة 7)"],
+    // «مؤكَّد عبر <site> و…»: the lead goes, the gazette issue and its date stay.
+    [
+      "عُدّلت بالمرسومين (م/6) وتاريخ 1440/01/02هـ (مؤكَّد عبر ncar.gov.sa وجريدة أم القرى العدد 4746 وتاريخ 1440/01/18هـ) و(م/113) وتاريخ 1443/11/09هـ",
+      "عُدّلت بالمرسومين (م/6) وتاريخ 1440/01/02هـ (جريدة أم القرى العدد 4746 وتاريخ 1440/01/18هـ) و(م/113) وتاريخ 1443/11/09هـ",
+    ],
+    // A stamp's bare date is never unwrapped as if it were the law.
+    [
+      "صدر تحديث شامل للائحة بقرار المحافظ رقم (179/م ش ت). تم التحقق المباشر (2026-07-22) من نص اللائحة: جميع الاستشهادات صحيحة، بما فيها أبواب التحصيل",
+      "صدر تحديث شامل للائحة بقرار المحافظ رقم (179/م ش ت).",
+    ],
+    // A note about our own link, figures and all, is still only a note.
+    ["غير متوفر (الرابط المسجَّل سابقاً يفتح النظام الأساسي لعام 1432هـ وليس تعديل 1447هـ المحدد؛ لم يُعثر على بديل صحيح عند التحقق 2026-07-19)", null],
+    ["غير متوفر (نموذج إجرائي داخلي للهيئة)", null],
+  ];
+  for (const [value, expected] of cases) assert.equal(cardRowValue(value), expected, value);
+});
+
+test("the «تاريخ السريان (النفاذ) محسوباً» row keeps its article once the note goes", () => {
+  const card = {
+    main: [{ key: "نوع التشريع", value: "لائحة" }],
+    more: [{ key: "تاريخ السريان (النفاذ) محسوباً", value: "غير متوفر في المصدر — المادة (21) تنص على النفاذ من تاريخ النشر، وتاريخ النشر الفعلي غير مؤكَّد من مصدر أولي مستقل" }],
+  };
+  assert.deepEqual(cardForViewer(card, true)?.more, [{ key: "تاريخ السريان (النفاذ) محسوباً", value: "المادة (21) تنص على النفاذ من تاريخ النشر" }]);
+});
+
+// ── The same rows where the reader prints the card's Markdown ─────────────
+
+const DECREE_PREAMBLE = [
+  "<details>",
+  "<summary>📊 بطاقة تعريف القرار والبيانات التنظيمية</summary>",
+  "",
+  "### ⚖️ معلومات التشريع الأساسية",
+  "| الحقل | القيمة |",
+  "| :--- | :--- |",
+  "| **نوع التشريع** | قرار مجلس الوزراء |",
+  "| **تاريخ الإصدار** | ٢٥/٠٢/١٤٤٧هـ |",
+  "| **تاريخ النشر في الجريدة الرسمية** | غير متوفر |",
+  "",
+  "### 🔗 روابط وبوابات التشريع",
+  "| البوابة | الرابط |",
+  "| :--- | :--- |",
+  "| **رابط هيئة الخبراء** | غير متوفر |",
+  "| **رابط بوابة وزارة العدل** | غير متوفر |",
+  "",
+  "</details>",
+  "",
+  "### 📊 بطاقة تعريف قرار مجلس الوزراء",
+  "",
+  "| الحقل | القيمة |",
+  "| :--- | :--- |",
+  "| **حالة التشريع** | ساري (Active) |",
+  "| **أداة الإصدار** | قرار مجلس الوزراء رقم (157) وتاريخ 1447/02/25هـ — تحقَّق منه 2026-07-19 |",
+  "| **المصدر الرسمي** | غير متوفر (الرابط المسجَّل سابقاً لا يفتح الوثيقة؛ لم يُعثر على بديل صحيح عند التحقق 2026-07-19) |",
+  "| **تاريخ الاستخراج** | 2026-06-12 |",
+  "",
+  "# القرار",
+  "",
+  "## ديباجة القرار",
+  "| البند | المبلغ |",
+  "| :--- | :--- |",
+  "| رسم التسجيل | غير متوفر |",
+].join("\n");
+
+test("withCleanCardRows: a decree's card rows as the law card gives them; the decree's own table is untouched", () => {
+  const out = withCleanCardRows(DECREE_PREAMBLE);
+  for (const word of ["المصدر الرسمي", "لم يُعثر", "تحقَّق منه", "تاريخ الاستخراج", "تاريخ النشر في الجريدة الرسمية", "روابط وبوابات", "رابط هيئة الخبراء", "Active"]) {
+    assert.ok(!out.includes(word), word);
+  }
+  assert.ok(out.includes("| **نوع التشريع** | قرار مجلس الوزراء |"));
+  assert.ok(out.includes("| **تاريخ الإصدار** | ٢٥/٠٢/١٤٤٧هـ |"));
+  assert.ok(out.includes("| **حالة التشريع** | ساري |"));
+  assert.ok(out.includes("| **أداة الإصدار** | قرار مجلس الوزراء رقم (157) وتاريخ 1447/02/25هـ |"));
+  // Not a card: the ديباجة's own table keeps every row, its «غير متوفر» too.
+  assert.ok(out.endsWith("## ديباجة القرار\n| البند | المبلغ |\n| :--- | :--- |\n| رسم التسجيل | غير متوفر |"), out);
+});
+
+test("withCleanCardRows: a precedent card collapsed onto its heading line loses its placeholder rows only", () => {
+  const text =
+    "## سابقة قضائية رقم 3432937\n\n### بطاقة تعريف السابقة القضائية وبيانات الحكم | الحقل | القيمة | | :--- | :--- | | **الجهة المصدرة** | المحكمة العامة | | **رقم القضية** | 32255222 | | **ملخص القضية** | غير متوفر |\n\n### ملخص القضية\n\nنص الحكم.";
+  assert.equal(
+    withCleanCardRows(text),
+    "## سابقة قضائية رقم 3432937\n\n### بطاقة تعريف السابقة القضائية وبيانات الحكم | الحقل | القيمة | | :--- | :--- | | **الجهة المصدرة** | المحكمة العامة | | **رقم القضية** | 32255222 |\n\n### ملخص القضية\n\nنص الحكم.",
+  );
+});
+
+test("withCleanCardRows on the 09-20 export's circular cards: the number stays, the extraction notes go", () => {
+  const out = withCleanCardRows(
+    [
+      "### 📊 بطاقة تعريف التعميم",
+      "",
+      "| الحقل | القيمة |",
+      "| :--- | :--- |",
+      "| **رقم التعميم وتاريخه** | تعميم رقم 31 في أرشيف تعاميم الهيئة؛ الرقم المرجعي وتاريخ الإصدار غير واضحين في النص المستخرج (تلف في ترويسة المستند الأصلي بسبب مشكلة OCR) |",
+      "| **حالة اكتمال النص المستخرج** | نص مقروء جزئياً — تلف في ترميز الأحرف العربية (bidi corruption)، انظر التنبيه أعلاه |",
+      "| **المصدر الرسمي** | — |",
+    ].join("\n"),
+  );
+  assert.equal(out, "### 📊 بطاقة تعريف التعميم\n\n| الحقل | القيمة |\n| :--- | :--- |\n| **رقم التعميم وتاريخه** | تعميم رقم 31 في أرشيف تعاميم الهيئة |");
+});
+
+test("withCleanCardRows returns the same string when there is nothing to clean", () => {
+  const clean = "### 📊 بطاقة تعريف النظام\r\n\r\n| الحقل | القيمة |\r\n| :--- | :--- |\r\n| **نوع التشريع** | نظام |\r\n";
+  assert.equal(withCleanCardRows(clean), clean);
+  assert.equal(withCleanCardRows("إن مجلس الوزراء…"), "إن مجلس الوزراء…");
+  assert.equal(withCleanCardRows(""), "");
+});
+
+test("the decree route cleans the card in the subscriber branch only; the lock is read off the stored preamble", () => {
+  const route = read("src/app/api/library/decrees/[id]/route.ts");
+  assert.match(route, /preamble: isSubscriber \? withCleanCardRows\(preamble\) : ''/);
+  assert.match(route, /preambleLocked: !isSubscriber && preamble\.trim\(\) !== ''/);
+  assert.equal(route.match(/withCleanCardRows\(/g)?.length, 1);
+});
+
+test("the precedents route cleans a principle's card before the 150-character cut", () => {
+  const route = read("src/app/api/library/precedents/[slug]/route.ts");
+  assert.match(route, /const text = typeof p\.text === 'string' \? withCleanCardRows\(p\.text\) : p\.text;\s*return isLocked \? truncate\(text, 150\) : text;/);
+});
+
 test("the export's file rows are dropped for EVERY viewer; a status row loses its English gloss", () => {
   const card = {
     main: [
@@ -345,6 +502,7 @@ test("the export's file rows are dropped for EVERY viewer; a status row loses it
       { key: "معيار الهيكلة", value: "نظام المطويات للحيثيات والوقائع (Rule 20 BOG Protocol)" },
       { key: "الملف الأصلي (PDF)", value: "المبادئ والقرارات القانونية.pdf" },
       { key: "طريقة التفريغ", value: "تفريغ بصري حرفي (Gemini Vision OCR Page-by-Page)" },
+      { key: "عدد الصفحات المستخرجة", value: "4" },
       { key: "ملاحظة تحقق", value: "رقم القرار (448) مرجَّح بثقة عالية" },
       { key: "ملاحظة هيكلية", value: "رُقّمت وحداته كصفحات (PAGE)" },
       { key: "⚠️ ملاحظة تكرار محتمل", value: "نفس أداة الإصدار — راجع حقل `review_reason`" },
@@ -357,7 +515,7 @@ test("the export's file rows are dropped for EVERY viewer; a status row loses it
   for (const isSubscriber of [true, false]) {
     const out = cardForViewer(card, isSubscriber);
     const sent = JSON.stringify(out);
-    for (const word of ["تاريخ الاستخراج", "معيار", "الملف الأصلي", "طريقة التفريغ", "ملاحظة", "غير متوفر", "لم يُعثر", "active", "BOE"]) {
+    for (const word of ["تاريخ الاستخراج", "معيار", "الملف الأصلي", "طريقة التفريغ", "المستخرجة", "ملاحظة", "غير متوفر", "لم يُعثر", "active", "BOE"]) {
       assert.ok(!sent.includes(word), `${word} (${isSubscriber})`);
     }
     assert.equal(out?.main.find((r) => r.key === "حالة التشريع")?.value, "نشط", String(isSubscriber));

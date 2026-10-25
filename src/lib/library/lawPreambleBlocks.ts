@@ -128,11 +128,13 @@ function detailsEnd(text: string, start: number): number {
   return -1;
 }
 
-function splitRow(line: string): string[] {
+/** A table line's cells, outer pipes dropped. */
+export function splitRow(line: string): string[] {
   return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
 }
 
-function isSeparatorRow(cells: string[]): boolean {
+/** «| :--- | :--- |». */
+export function isSeparatorRow(cells: string[]): boolean {
   return cells.length > 0 && cells.every((c) => /^:?-{2,}:?$/.test(c));
 }
 
@@ -177,12 +179,22 @@ function tableFields(text: string): LawCardField[] {
     const cells = splitRow(lines[i]);
     if (isSeparatorRow(cells)) continue;
     if (i + 1 < lines.length && isSeparatorRow(splitRow(lines[i + 1]))) continue; // a header row
-    if (cells.length < 2) continue;
-    const key = cleanKey(cells[0]);
-    const value = cleanValue(cells.slice(1).join(" | "));
-    if (isShownField(key, value)) out.push({ key, value });
+    const field = cardFieldOfCells(cells);
+    if (field) out.push(field);
   }
   return out;
+}
+
+/**
+ * A data row's field as the card reads it, or null when the card does not
+ * show the row: fewer than two cells, a placeholder value («غير متوفر في
+ * المصدر», «لا يوجد»), a pipeline key.
+ */
+export function cardFieldOfCells(cells: string[]): LawCardField | null {
+  if (cells.length < 2) return null;
+  const key = cleanKey(cells[0]);
+  const value = cleanValue(cells.slice(1).join(" | "));
+  return isShownField(key, value) ? { key, value } : null;
 }
 
 interface CardHit extends Range {
@@ -289,6 +301,15 @@ function findCards(text: string): { card: LawMetadataCard; ranges: Range[] } | n
     }
   }
   return { card: { main: first.card.main, more }, ranges: hits.map(({ start, end }) => ({ start, end })) };
+}
+
+/**
+ * Where the identity cards sit in `preamble` (offsets into the text with
+ * «\r\n» read as «\n»), the same blocks extractLawPreambleBlocks lifts: for a
+ * reader that shows the preamble as it is (a decree's ديباجة).
+ */
+export function lawCardRanges(preamble: unknown): Array<{ start: number; end: number }> {
+  return findCards(normalise(preamble))?.ranges ?? [];
 }
 
 // ── The preamble without the lifted blocks ──────────────────────────────────

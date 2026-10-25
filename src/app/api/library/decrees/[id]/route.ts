@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { checkLibraryAccess, hasFullLibraryAccess } from '@/lib/access-control';
 import { libraryGate } from '@/lib/library-gate';
 import { freeDecreePages } from '@/lib/library/freePages';
+import { withCleanCardRows } from '@/lib/library/lawSummaryVisibility';
 import { TIER_SHAPED_CACHE_CONTROL } from '../../laws/[slug]/_official-meta';
 
 /**
@@ -28,6 +29,11 @@ const DECREE_COLUMNS = 'id, title, type, issuer, ref, date, summary, summary_bri
  * grant, or an admin — never the free-item whitelist, the rule for a law's
  * official metadata). Everyone else gets `preamble: ''`, and
  * `preambleLocked: true` when the decree has one (the reader's lock card).
+ *
+ * Owner ٢٥٩ (أ): the reader prints the preamble as it is, its identity card
+ * included, so a subscriber's preamble goes out with the card rows the law
+ * card shows (withCleanCardRows): no «المصدر الرسمي => غير متوفر …», no
+ * placeholder or file row. The lock is decided on the stored preamble.
  */
 export async function GET(
   _request: Request,
@@ -113,7 +119,7 @@ export async function GET(
       cat: decree.category,
       // Owner answer ٢٢١: the text for subscribers; for everyone else nothing,
       // and a lock card when there is a preamble to lock.
-      preamble: isSubscriber ? preamble : '',
+      preamble: isSubscriber ? withCleanCardRows(preamble) : '',
       preambleLocked: !isSubscriber && preamble.trim() !== '',
       paywall: {
         isWhitelisted,

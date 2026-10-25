@@ -21,7 +21,7 @@ test("init reads summary + summary_brief for the decree cards and strips only th
 test("the decree route keeps its page paywall and its subscriber-only preamble", () => {
   const route = read("src/app/api/library/decrees/[id]/route.ts");
   assert.match(route, /const free = freeDecreePages\(probe, pages\.length\);/);
-  assert.match(route, /preamble: isSubscriber \? preamble : '',/);
+  assert.match(route, /preamble: isSubscriber \? withCleanCardRows\(preamble\) : '',/);
 });
 
 test("the card falls back to the source summary; the decree page shows one box, none when both are empty", () => {
