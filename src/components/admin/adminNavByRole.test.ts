@@ -170,8 +170,9 @@ test("filterNavGroupsByRole keeps the group's own fields", () => {
 
 // ─── ADMIN_SIDEBAR (SharedSidebar / GlobalSearch) ─────────────────────────────
 
-test("ADMIN_SIDEBAR: super_admin and a null role see all 35 items", () => {
-  assert.equal(hrefsOf(ADMIN_SIDEBAR).length, 35, "ADMIN_SIDEBAR has 35 items");
+// 34 since the Escrow link went (owner ٢٨٩: the platform holds no funds).
+test("ADMIN_SIDEBAR: super_admin and a null role see all 34 items", () => {
+  assert.equal(hrefsOf(ADMIN_SIDEBAR).length, 34, "ADMIN_SIDEBAR has 34 items");
   assert.deepEqual(adminSidebarForRole("super_admin"), ADMIN_SIDEBAR);
   assert.deepEqual(adminSidebarForRole(null), ADMIN_SIDEBAR);
 });
