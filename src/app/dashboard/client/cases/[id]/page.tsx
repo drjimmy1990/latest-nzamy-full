@@ -25,6 +25,7 @@ import { caseEventLabel } from "@/lib/services/caseEventLabels";
 // Owner decisions ١٥/١٩ — the litigation summary (degree, next hearing, final
 // ruling) from the fixed server projection /api/v1/client/cases/[id]/summary.
 import { ClientCaseSummaryCard } from "@/components/cases/ClientCaseSummaryCard";
+import ZipDownloadButton from "@/components/attachments/ZipDownloadButton";
 
 // Where the REQUEST itself stands (service_requests.status), worded for the
 // client. This used to drive a five-step «مرفوعة / قيد التداول / جلسات / حكم /
@@ -54,7 +55,7 @@ interface CaseData {
   lawyer: { name: string; type: string; phone: string; rating: number };
   fee: { total: number; paid: number };
   timeline: TimelineEvent[];
-  documents: { name: string; date: string; type: string }[];
+  documents: { name: string; date: string; type: string; size: number | null }[];
   aiInsight?: string;
   sharedTasks?: { title: string; status: "todo" | "doing" | "done"; visibleToClient: true }[];
   team?: { name: string; role: string; initials: string }[];
@@ -119,6 +120,7 @@ function toCaseData(r: ServiceRequestDetail): CaseData {
     name: a.name,
     date: formatDate(a.created_at),
     type: (a.mime_type ?? "").includes("pdf") ? "PDF" : "ملف",
+    size: a.file_size ?? null,
   }));
 
   // Payment
@@ -440,6 +442,10 @@ export default function ClientCaseDetailPage() {
           {showDocs && (
             <motion.div initial={{ height:0, opacity:0 }} animate={{ height:"auto", opacity:1 }} exit={{ height:0, opacity:0 }} transition={{ duration:0.2 }} className="overflow-hidden">
               <div className={`border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"} p-3 space-y-1`}>
+                {/* «تحميل الكل (ZIP)» (owner ٢٥٦) — the documents listed here, nothing more. */}
+                <div className="flex justify-end pb-1 empty:hidden">
+                  <ZipDownloadButton scope="case" id={data.id} sizes={data.documents.map((d) => d.size)} isDark={isDark} />
+                </div>
                 {data.documents.length === 0 ? (
                   <p className={`text-center text-[11px] py-4 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>لا توجد مستندات</p>
                 ) : (

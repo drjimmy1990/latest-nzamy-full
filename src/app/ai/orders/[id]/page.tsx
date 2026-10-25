@@ -29,6 +29,7 @@ import { useUser } from "@/hooks/useUser";
 import { RevisionPanel } from "./_components/RevisionPanel";
 import { OPEN_ORDER_STATUSES } from "./_components/openOrderStatuses";
 import { orderReference } from "@/lib/services/orderReference";
+import ZipDownloadButton from "@/components/attachments/ZipDownloadButton";
 
 type LoadState = "loading" | "error" | "not_found" | "loaded";
 
@@ -293,6 +294,18 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           status — it's a record of what was submitted, not a status
           indicator, so it stays visible on delivered/cancelled orders too. */}
       <OrderSummary order={order} isDark={isDark} />
+
+      {/* «تحميل الكل (ZIP)» (owner ٢٥٦): every live file on the order — the
+          client's uploads and the delivered document — counted from the
+          detail route's own list, the one the ZIP route reuses. */}
+      <div className="flex justify-end empty:hidden">
+        <ZipDownloadButton
+          scope="request"
+          id={order.id}
+          sizes={(order.attachments ?? []).map((a) => a.file_size)}
+          isDark={isDark}
+        />
+      </div>
 
       {/* Task 6, Step 4 — always-available actions, plus Task 7's cancel
           control (self-guarded: renders nothing once the order is no

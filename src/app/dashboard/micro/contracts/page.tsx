@@ -44,6 +44,7 @@ import {
 import { contractExpiryState, paymentScheduleTotals, isPaymentOverdue } from "@/lib/services/contractDates";
 import { formatGregorianAr } from "@/app/dashboard/lawyer/_components/DeadlineCard";
 import { toArabicDigits } from "@/lib/services/arabicCount";
+import ZipDownloadButton from "@/components/attachments/ZipDownloadButton";
 
 // ─── formatting ────────────────────────────────────────────────────────────────
 
@@ -435,6 +436,10 @@ export default function MicroContractsPage() {
                         <p className={`text-[12.5px] text-center py-8 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>لا نسخ مرفوعة لهذا العقد بعد.</p>
                       ) : (
                         <div className="space-y-2.5">
+                          {/* «تحميل الكل (ZIP)» (owner ٢٥٦) — the versions shared with this client. */}
+                          <div className="flex justify-end empty:hidden">
+                            <ZipDownloadButton scope="client_contract" id={detail.id} sizes={detail.versions.map((v) => v.sizeBytes)} isDark={isDark} />
+                          </div>
                           {detail.versions.map((v) => (
                             <div key={v.id} className={`p-3.5 rounded-xl border flex items-center gap-3 ${isDark ? "border-white/5 bg-white/[0.02]" : "border-zinc-100 bg-zinc-50/50"}`}>
                               <div className="min-w-0 flex-1">

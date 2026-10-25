@@ -73,6 +73,7 @@ import {
   type CaseNoteVisibility,
 } from "@/lib/services/caseNotesService";
 import { getCaseTeam, addCaseTeamMember, removeCaseTeamMember } from "@/lib/services/caseTeamService";
+import ZipDownloadButton from "@/components/attachments/ZipDownloadButton";
 import {
   NoteScopePicker,
   NoteScopeLine,
@@ -1885,6 +1886,9 @@ export default function CaseDetailPage() {
             <div className="space-y-3">
               <div className="flex justify-between items-center">
                 <p className={`text-[12px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{countPhraseAr(documents.length, DOCUMENTS_COUNT)}</p>
+                <div className="flex items-center gap-2">
+                {/* «تحميل الكل (ZIP)» (owner ٢٥٦) — the same live list this tab shows. */}
+                <ZipDownloadButton scope="case" id={id} sizes={documents.map((d) => d.file_size)} isDark={isDark} />
                 <label className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border cursor-pointer transition-all ${uploading ? "opacity-60 pointer-events-none" : ""} ${isDark ? "border-white/[0.06] text-zinc-500 hover:text-zinc-300" : "border-slate-100 text-slate-500 hover:border-royal/20 hover:text-royal"}`}>
                   <UploadSimple size={12} />{uploading ? "جاري الرفع..." : "رفع مستند"}
                   <input
@@ -1898,6 +1902,7 @@ export default function CaseDetailPage() {
                     }}
                   />
                 </label>
+                </div>
               </div>
               {uploadError && (
                 <div className={`p-3 rounded-xl border text-[12px] ${isDark ? "border-red-500/20 bg-red-500/10 text-red-400" : "border-red-200 bg-red-50 text-red-600"}`}>

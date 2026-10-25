@@ -37,6 +37,7 @@ import { toArabicDigits, countPhraseAr, type ArabicCountForms } from "@/lib/serv
 // is already in.
 import { getReviewableRequests, type ReviewableRequest } from "@/lib/services/reviewsService";
 import ReviewForm from "@/components/reviews/ReviewForm";
+import { RequestZipDownloadButton } from "@/components/attachments/ZipDownloadButton";
 
 // ─── Types & Configurations ──────────────────────────────────────────────────
 
@@ -1108,6 +1109,12 @@ export default function ConsultationRoomPage() {
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* «تحميل الكل (ZIP)» (owner ٢٥٦): this request's files, the same
+                ones its order page lists; nothing below two. */}
+            <div className="flex justify-end empty:hidden">
+              <RequestZipDownloadButton scope="consultation" requestId={consultation.id} isDark={isDark} />
             </div>
 
             {/* «حالة الاستشارة» — additive: a real consultations row, when one

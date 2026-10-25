@@ -49,6 +49,13 @@ export interface ServiceOrder {
    * and the demo backend omit it.
    */
   assigned_to?: string | null;
+  /**
+   * The order's live attachment rows, as GET /api/v1/service-requests/[id]
+   * sends them beside `data` (the deleted_at-filtered list). Read only for the
+   * «تحميل الكل (ZIP)» count (owner ٢٥٦), which must count what the ZIP route
+   * will carry — not `metadata.attachments`, the client's intake list.
+   */
+  attachments?: Array<{ file_size?: number | null }>;
   metadata: {
     service?: ServiceKey;
     serviceTitleAr?: string;

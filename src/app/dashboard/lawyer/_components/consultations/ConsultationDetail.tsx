@@ -22,6 +22,7 @@ import {
   type ConsultationStatus,
 } from "@/lib/services/consultationVocabulary";
 import ConsultationActionModal, { type ConsultationAction } from "./ConsultationActionModal";
+import { RequestZipDownloadButton } from "@/components/attachments/ZipDownloadButton";
 
 /**
  * ConsultationDetail.tsx
@@ -336,6 +337,12 @@ export default function ConsultationDetail({ consultationId, isDark, basePath }:
               <p className={`text-[13px] leading-relaxed whitespace-pre-wrap ${isDark ? "text-zinc-300" : "text-slate-700"}`}>{consultation.description}</p>
             </motion.div>
           )}
+
+          {/* «تحميل الكل (ZIP)» (owner ٢٥٦): the files of the request this
+              consultation was born from; renders nothing below two. */}
+          <div className="flex justify-end empty:hidden">
+            <RequestZipDownloadButton scope="consultation" requestId={consultation.requestId} isDark={isDark} />
+          </div>
 
           {/* Delivered opinion */}
           {consultation.opinionText && (

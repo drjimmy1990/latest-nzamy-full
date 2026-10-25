@@ -29,6 +29,7 @@ import { formatGregorianAr } from "../DeadlineCard";
 import ContractFormModal from "./ContractFormModal";
 import UploadVersionModal from "./UploadVersionModal";
 import { PartyFormModal, ObligationFormModal, PaymentFormModal } from "./ContractChildForms";
+import ZipDownloadButton from "@/components/attachments/ZipDownloadButton";
 
 /**
  * ContractDetail.tsx
@@ -422,7 +423,9 @@ export default function ContractDetail({ contractId, isDark, basePath }: Props) 
       {/* ── النسخ ── */}
       {tab === "versions" && (
         <div className="space-y-2.5">
-          <div className="flex justify-end">
+          <div className="flex justify-end items-center gap-2">
+            {/* «تحميل الكل (ZIP)» (owner ٢٥٦) — every version listed below. */}
+            <ZipDownloadButton scope="contract" id={contractId} sizes={detail.versions.map((v) => v.sizeBytes)} isDark={isDark} />
             <button
               onClick={() => setShowUpload(true)}
               className="flex items-center gap-1.5 rounded-xl bg-[#0B3D2E] px-3.5 py-2 text-[12px] font-bold text-[#C8A762] hover:bg-[#092e22] transition"
