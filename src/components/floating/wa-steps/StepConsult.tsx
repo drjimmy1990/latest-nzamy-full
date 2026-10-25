@@ -15,6 +15,8 @@ import {
 import { rowBtnClass, staggerListVariants, staggerItemVariants } from "./WaShared";
 import type { WaStep, UserCategory } from "../types";
 import type { FloatingActorContext } from "../roleContext";
+import { useClientPricingCatalog } from "@/hooks/useClientPricingCatalog";
+import { WA_VAT_NOTICE_AR, consultServiceId, waPrice } from "../waChatPrices";
 
 /**
  * What `calDay` carries to the office: «الجمعة 28 أغسطس», not «الجمعة».
@@ -73,6 +75,8 @@ export default function StepConsult({
   // keeps yesterday's first card until it is reloaded, which is a day, not the
   // five months the hard-coded April table was out by.
   const calendarDays = useMemo(() => buildConsultationDays(new Date()), []);
+  // P7: the provider prices are the catalogue's (admin_pricing_catalog merged), never literals.
+  const { catalog } = useClientPricingCatalog();
 
   // ── consult-timing ──
   if (step === "consult-timing") {
@@ -159,19 +163,22 @@ export default function StepConsult({
   // ── consult-instant-provider ──
   if (step === "consult-instant-provider") {
     const isTextMode = selections.modality === "text";
+    // P7: both price lines are the catalogue's (waChatPrices.ts), never literals.
+    const aiPrice = waPrice(catalog, consultServiceId("ai", selections.modality));
+    const lawyerPrice = waPrice(catalog, consultServiceId("lawyer", selections.modality));
     const providers = [
       ...(isTextMode ? [{
         icon: <Robot size={20} weight="fill" />, label: "ذكاء نظامي",
-        price: "٥٠ ر.س للجلسة", sub: "أو مجاناً بالاشتراك الشهري", val: "ai",
+        price: aiPrice.text, sub: aiPrice.note ?? "", val: "ai",
         borderClass: "border-emerald-400 dark:border-emerald-500",
         badgeClass: "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400", badge: "AI",
       }] : []),
       {
         // The second copy of the same untrue promise, and the worse one: it
-        // sat directly under «٧٠٠ ر.س», so it read as a response time the
-        // client had paid for. No rota, no paging, no fifteen minutes.
+        // sat directly under the lawyer's price, so it read as a response time
+        // the client had paid for. No rota, no paging, no fifteen minutes.
         icon: <Gavel size={20} weight="fill" />, label: "محامي متخصص",
-        price: "٧٠٠ ر.س", sub: "تقدير غير مُلزِم — يؤكد الفريق الأتعاب والموعد قبل البدء", val: "lawyer",
+        price: lawyerPrice.text, sub: "تقدير غير مُلزِم — يؤكد الفريق الأتعاب والموعد قبل البدء", val: "lawyer",
         borderClass: "border-[#C8A762] dark:border-[#C8A762]",
         badgeClass: "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400", badge: "محامي",
       },
@@ -203,6 +210,9 @@ export default function StepConsult({
             </div>
           </motion.button>
         ))}
+        <motion.p variants={staggerItemVariants} className={`text-[11px] font-medium text-center ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+          {WA_VAT_NOTICE_AR}
+        </motion.p>
       </motion.div>
     );
   }

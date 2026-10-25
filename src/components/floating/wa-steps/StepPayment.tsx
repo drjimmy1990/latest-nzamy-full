@@ -4,6 +4,8 @@ import { motion } from "framer-motion";
 import { AppleLogo, Bank, CreditCard, DeviceMobile } from "@phosphor-icons/react";
 import { staggerListVariants, staggerItemVariants } from "./WaShared";
 import type { WaStep } from "../types";
+import { useClientPricingCatalog } from "@/hooks/useClientPricingCatalog";
+import { WA_VAT_NOTICE_AR, waPrice, waServiceId } from "../waChatPrices";
 
 interface Props {
   step: WaStep;
@@ -23,6 +25,10 @@ const PAYMENT_METHODS = [
 ];
 
 export default function StepPayment({ step, isDark, history, selections, onNavigate, onSelect, onPaymentComplete }: Props) {
+  // P7: the price line is the catalogue's (admin_pricing_catalog merged —
+  // the same source as the service pages), never a literal (waChatPrices.ts).
+  const { catalog } = useClientPricingCatalog();
+
   // ── payment-summary ──
   if (step === "payment-summary") {
     const serviceName = (() => {
@@ -33,14 +39,11 @@ export default function StepPayment({ step, isDark, history, selections, onNavig
       return "خدمة قانونية";
     })();
 
-    const price = (() => {
-      if (selections.provider === "ai") return "٥٠ ر.س";
-      if (selections.provider === "lawyer") return "٧٠٠ ر.س";
-      if (selections.contractService === "ai-review") return "١٥٠ ر.س";
-      if (selections.contractService === "lawyer-review") return "٤٩٩ ر.س";
-      return "يتم التحديد";
-    })();
-    const requiresPaymentChoice = price !== "يتم التحديد";
+    const priced = waPrice(catalog, waServiceId(selections));
+    const price = priced.text;
+    // The catalogue decides whether this is a paid service, not the wording
+    // of the price line (a free AI question no longer goes to «طريقة الدفع»).
+    const requiresPaymentChoice = priced.requiresPayment;
 
     const modalityLabel: Record<string, string> = { voice: "صوت", video: "فيديو", text: "كتابة", person: "حضوري" };
 
@@ -67,6 +70,11 @@ export default function StepPayment({ step, isDark, history, selections, onNavig
             </div>
           ))}
         </motion.dl>
+        {requiresPaymentChoice ? (
+          <motion.p variants={staggerItemVariants} className={`text-[11px] font-medium text-center ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+            {WA_VAT_NOTICE_AR}
+          </motion.p>
+        ) : null}
         <motion.p variants={staggerItemVariants} className="text-[11px] font-bold text-[#0B3D2E] dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800/40 rounded-xl px-3 py-2 text-center">
           {/* Two sentences replaced, both false.
               «بعد الاستشارة ستصلك نسخة PDF على واتساب بملخص الجلسة» — nothing
