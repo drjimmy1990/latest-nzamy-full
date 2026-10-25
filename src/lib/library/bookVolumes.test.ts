@@ -222,7 +222,7 @@ test("series_id groups the volumes whatever their titles say; volume_number orde
   assert.equal(series.kind, "series");
   if (series.kind === "series") {
     assert.deepEqual(series.volumes.map((v) => v.id), ["w-1", "w-3"]);
-    assert.equal(series.key, "series:sanhuri-alwasit");
+    assert.equal(series.key, "series:sanhuri-alwasit\u0000السنهوري");
   }
   const info = buildBookSeries(rows, "w-3");
   assert.deepEqual(info?.volumes.map((v) => [v.id, v.label]), [["w-1", "الجزء 1"], ["w-3", "الجزء 10"]]);
@@ -282,4 +282,22 @@ test("every volume-grouping read names series_id / volume_number as an optional 
     assert.match(src, /bookVolumeColumns\(on/, f);
     assert.match(src, /BOOK_SERIES_FEATURE/, f);
   }
+});
+
+test("a series_id reused for another work (another author) never merges the two", async () => {
+  const { groupBookVolumes, buildBookSeries } = await import("./bookVolumes.ts");
+  const rows = [
+    { id: "a-1", title: "الوسيط — الجزء 1", author: "السنهوري", series_id: "alwasit", volume_number: 1 },
+    { id: "b-1", title: "الوسيط — الجزء 1", author: "الزحيلي", series_id: "alwasit", volume_number: 1 },
+    { id: "a-2", title: "الوسيط — الجزء 2", author: " السنهوري ", series_id: "alwasit", volume_number: 2 },
+    { id: "b-2", title: "الوسيط — الجزء 2", author: "الزحيلي", series_id: "alwasit", volume_number: 2 },
+    // Untagged: adopts the tag of the volumes by the same author only.
+    { id: "a-3", title: "الوسيط — الجزء 3", author: "السنهوري" },
+  ];
+  const entries = groupBookVolumes(rows);
+  assert.deepEqual(
+    entries.map((e) => (e.kind === "series" ? [e.author, e.volumes.map((v) => v.id)] : ["single", e.book.id])),
+    [["السنهوري", ["a-1", "a-2", "a-3"]], ["الزحيلي", ["b-1", "b-2"]]],
+  );
+  assert.deepEqual(buildBookSeries(rows, "b-2")?.volumes.map((v) => v.id), ["b-1", "b-2"]);
 });

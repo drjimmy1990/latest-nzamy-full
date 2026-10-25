@@ -231,8 +231,18 @@ function taggedSeries(row: VolumeRow): string | null {
 }
 
 /**
+ * A tagged series' key: the tag AND the author. A series_id the source reuses
+ * for another work (another author) never merges the two (review of
+ * 20261026_51, 2026-10-26).
+ */
+function taggedKey(tag: string, row: VolumeRow): string {
+  return `series:${tag}\u0000${(row.author ?? "").trim().replace(/\s+/g, " ")}`;
+}
+
+/**
  * Each row's grouping key, or null for a row that stands alone.
- *   - A row the source tags (series_id) groups by that tag, whatever its title.
+ *   - A row the source tags (series_id) groups by that tag + its author,
+ *     whatever its title.
  *   - An untagged row whose title names a volume groups by base title + author
  *     (the title rule) — or joins the tagged series whose tagged volumes all
  *     share that base title + author, so a work tagged on most of its files
@@ -252,7 +262,7 @@ function groupKeys<T extends VolumeRow>(rows: readonly T[]): Map<T, string | nul
   for (const row of rows) {
     const tag = taggedSeries(row);
     if (tag) {
-      out.set(row, `series:${tag}`);
+      out.set(row, taggedKey(tag, row));
       continue;
     }
     if (!isVolumeTitle(row.title)) {
@@ -262,7 +272,7 @@ function groupKeys<T extends VolumeRow>(rows: readonly T[]): Map<T, string | nul
     const k = seriesKeyOf(row);
     const adopted = tagByTitleKey.get(k);
     // The title rule's key is today's (base title + author), unchanged.
-    out.set(row, adopted ? `series:${adopted}` : k);
+    out.set(row, adopted ? taggedKey(adopted, row) : k);
   }
   return out;
 }
