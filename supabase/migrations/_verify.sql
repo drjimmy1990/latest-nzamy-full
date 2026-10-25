@@ -4136,3 +4136,63 @@ begin
   raise notice '_verify: 20261026_10 OK — payment_orders and subscriptions accept quarterly and semiannual; subscription_plans has price_quarterly / price_semiannual';
 end $$;
 -- <<< verify:billing_cycles
+
+-- >>> verify:coupons_server_only — supabase/tests/rls/coupons_server_only.test.sql
+-- 2026-10-26 — 20261026_20_coupons_server_only.sql (owner answers of 25 Oct,
+-- P7: coupons checked on the server only; pricing doc §13أ). Read-only, safe
+-- to repeat. NOTICEs while the file has not run (no max_discount_pct column):
+-- the code then hides the coupon field and refuses a coupon at checkout, but
+-- the old policy still lets anyone read the codes. RAISES when the file ran
+-- (the column exists) but a policy or a session privilege came back on
+-- coupons / coupon_usage, a unique guard is gone, or a coupon exceeds the 25 %
+-- cap / applies to top-ups. A MANUAL check: deploy.sh does not run this file.
+do $$
+declare
+  fix     constant text := 'run SQL_batch_2026-10-26_owner_answers/20_BEFORE_DEPLOY_20261026_20_coupons_server_only.sql again';
+  missing text := '';
+  t       text;
+  r       text;
+  p       text;
+begin
+  if to_regclass('public.coupons') is null or to_regclass('public.coupon_usage') is null then
+    raise notice '_verify: 20261026_20 skipped — public.coupons / public.coupon_usage not present';
+    return;
+  end if;
+  if not exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'coupons' and column_name = 'max_discount_pct') then
+    raise notice '_verify: 20261026_20 is not applied yet — coupons are still readable by anyone through the REST API (policy «anyone can read active coupons»), and the checkout coupon field stays hidden. Run 20_BEFORE_DEPLOY_20261026_20_coupons_server_only.sql';
+    return;
+  end if;
+  foreach t in array array['public.coupons', 'public.coupon_usage'] loop
+    if not (select relrowsecurity from pg_class where oid = t::regclass) then
+      missing := missing || format(' %s has RLS off;', t);
+    end if;
+    if exists (select 1 from pg_policy where polrelid = t::regclass) then
+      missing := missing || format(' %s has a policy again;', t);
+    end if;
+    foreach r in array array['anon', 'authenticated'] loop
+      foreach p in array array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE'] loop
+        if has_table_privilege(r, t, p) then
+          missing := missing || format(' %s holds %s on %s;', r, p, t);
+        end if;
+      end loop;
+    end loop;
+  end loop;
+  if not exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'coupons' and column_name = 'excluded_kinds') then
+    missing := missing || ' coupons.excluded_kinds is missing;';
+  elsif exists (select 1 from public.coupons where max_discount_pct > 25 or not ('topup' = any (excluded_kinds))) then
+    missing := missing || ' a coupon exceeds the 25 % cap or applies to top-ups;';
+  end if;
+  if to_regclass('public.coupon_usage_coupon_user_key') is null then
+    missing := missing || ' the unique (coupon_id, user_id) guard is missing;';
+  end if;
+  if to_regclass('public.coupon_usage_order_key') is null then
+    missing := missing || ' the unique order_id guard is missing;';
+  end if;
+  if missing <> '' then
+    raise exception '_verify: 20261026_20 —% %', missing, fix;
+  end if;
+  raise notice '_verify: 20261026_20 OK — coupons and coupon_usage are server only; 25 %% cap and top-up exclusion hold; once per user / once per order guarded';
+end $$;
+-- <<< verify:coupons_server_only

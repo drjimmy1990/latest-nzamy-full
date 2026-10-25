@@ -2,7 +2,7 @@
 
 **الحالة:** لم يُنفَّذ شيء من هذه الدفعة على الإنتاج بعد. كل SQL على الإنتاج ينفذه المستخدم في محرر Supabase، بعد نسخة احتياطية ومراجعة نتيجة كل ملف.
 
-*English, short:* run `01_NOW_…` in the Supabase SQL editor **now** — it needs no code deploy — then `02_NOW_AFTER_01_…` (owner ٢٧٨ (أ): the unpaid founder badges go, the library days stay). Run `10_BEFORE_DEPLOY_…` (P1, quarterly and half-yearly billing) before deploying this batch's code. Nothing checks it at deploy time (`deploy.sh` does not run `_verify.sql`), so P2 must refuse quarterly / half-yearly in code until the database accepts them. Later files of this batch are added here as they are built.
+*English, short:* run `01_NOW_…` in the Supabase SQL editor **now** — it needs no code deploy — then `02_NOW_AFTER_01_…` (owner ٢٧٨ (أ): the unpaid founder badges go, the library days stay). Run `10_BEFORE_DEPLOY_…` (P1, quarterly and half-yearly billing) and `20_BEFORE_DEPLOY_…` (P7, coupons server only) before deploying this batch's code. Nothing checks it at deploy time (`deploy.sh` does not run `_verify.sql`), so P2 must refuse quarterly / half-yearly in code until the database accepts them. Later files of this batch are added here as they are built.
 
 ## ترتيب التنفيذ (ملخص)
 
@@ -11,6 +11,7 @@
 | 1 | `01_NOW_20261026_01_founder_no_signup_grant.sql` | **الآن، وقبل أي نشر** | يوقف منح شارة المؤسس وأيام المكتبة عند التسجيل. لا يحتاج نشر كود. نفّذه قبل نشر كود هذه الدفعة، لأن النشر لا يتحقق منه تلقائياً |
 | 2 | `02_NOW_AFTER_01_20261026_02_founder_badges_unpaid_removed.sql` | **الآن، بعد 01 مباشرة** | قرار المالك ٢٧٨ (أ): يسحب شارة «المحامي المؤسس» غير المدفوعة ممن سجّلوا منذ بدء الحملة، ويُبقي أيام المكتبة الـ ٩٠ حتى تنتهي. يتوقف دون أي تغيير إن لم يُنفَّذ 01 قبله. لا يحتاج نشر كود |
 | 3 | `10_BEFORE_DEPLOY_20261026_10_billing_cycles.sql` | **قبل نشر كود الدفعة** | يسمح بدورتي الاشتراك الربع السنوية والنصف السنوية في الطلبات والاشتراكات، ويضيف عمودَي سعرهما للباقات. لا يغيّر أي سعر. النشر لا يتحقق منه تلقائياً، فنفّذه قبل النشر |
+| 4 | `20_BEFORE_DEPLOY_20261026_20_coupons_server_only.sql` | **قبل نشر كود الدفعة** | P7: أكواد الخصم تُتحقَّق في الخادم فقط. يُغلق قراءة الأكواد على الجميع، ويضيف قواعد المالك (حد أدنى، سقف ٢٥٪، مرة لكل مستخدم، لا خصم على شحن النقاط). الكود يعمل قبله وبعده، لكن الأكواد تبقى مقروءة للجميع حتى يُنفَّذ |
 | — | `11_…` فما بعد | لاحقاً | محجوزة للمراحل التالية من هذه الدفعة |
 
 ## 01: إيقاف منح «المحامي المؤسس» عند التسجيل (P0، عاجل)
@@ -124,3 +125,55 @@ select count(*) from public.library_access_grants
 *English:* widens the `payment_orders.billing` and `subscriptions.billing_cycle` checks to monthly / quarterly / semiannual / yearly (+ `once` / `custom`), and adds the nullable `subscription_plans.price_quarterly` / `price_semiannual` columns. It writes no price and touches no row. Expect `20261026_10 verify: OK`. Idempotent. Run it before this batch deploys. Nothing enforces that: `deploy.sh` does not run `_verify.sql`, so P2's code must refuse quarterly / half-yearly until a runtime probe shows the database accepts them. Docker-proved twice, with a restore-shaped narrowing between the runs: `supabase/tests/rls/billing_cycles.test.sql`.
 
 **للتراجع** (فقط ما دام لا يوجد طلب أو اشتراك بدورة ربع أو نصف سنوية): الأوامر في رأس الملف، تحت `ROLLBACK`.
+
+## 20: أكواد الخصم في الخادم فقط (P7، قبل النشر)
+
+`20_BEFORE_DEPLOY_20261026_20_coupons_server_only.sql` نسخة مطابقة من `supabase/migrations/20261026_20_coupons_server_only.sql`.
+
+**لماذا:** وثيقة التسعير (٢٥ أكتوبر، §١٣أ) وجواب المالك ٢٧٩. قبل هذا الملف:
+- كان أي زائر يستطيع قراءة كل أكواد الخصم الفعّالة وقيمها عبر واجهة البيانات (السياسة «anyone can read active coupons»)، وكانت صفحة المحفظة تعرض القائمة كاملة لكل عميل.
+- كان أي مستخدم مسجّل يستطيع أن يكتب لنفسه صفوفاً في سجل استخدام الكوبونات.
+- لم تكن أي من قواعد المالك مطبّقة.
+
+**ماذا يفعل:**
+- يحذف كل السياسات على جدولي `coupons` و`coupon_usage`، ويسحب كل صلاحيات الزوار والمستخدمين المسجّلين عليهما. لا يقرؤهما ولا يكتب فيهما إلا الخادم بمفتاح الخدمة.
+- يضيف عمودين:
+  - `max_discount_pct`: سقف الخصم، ٢٥٪ من صافي الطلب قبل الضريبة، ولا يقبل أكثر منه.
+  - `excluded_kinds`: أنواع الطلبات المستثناة، وفيها شحن النقاط دائماً.
+- يمنع استخدام الكوبون أكثر من مرة للمستخدم الواحد، وأكثر من مرة للطلب الواحد.
+- يضبط الكودين اللذين حدّدهما المالك:
+  - `NZAMY50`: خصم ٥٠ ر.س، بحد أدنى ٢٠٠ ر.س من صافي الطلب قبل الضريبة.
+  - `NEWCLIENT`: خصم ٧٥ ر.س لأول طلب خدمة مفردة، بحد أدنى ٣٠٠ ر.س. **ملاحظة:** الدفع الإلكتروني اليوم يبيع الباقات والمكتبة وشحن النقاط فقط، ولا يبيع خدمة مفردة، فلا يمكن استخدام هذا الكود في الدفع الإلكتروني بعد.
+  - لا يغيّر حالة التفعيل ولا التواريخ إن كان المشرف عدّلها، ولا ينشئ أي كود آخر. الكود القديم `LAUNCH2026` يبقى كما هو، ويخضع للسقف والاستثناء الجديدين.
+- يتوقف **دون أي تغيير** إن وجد في سجل الاستخدام صفين لنفس الكوبون ونفس المستخدم، أو لنفس الطلب، ويذكرهما.
+
+**كيف يُطبَّق الخصم في الكود:**
+- يُحسب الخصم داخل إنشاء طلب الدفع، فيُخزَّن الطلب بصافيه بعد الخصم.
+- تُحسب الضريبة ١٥٪ على الصافي بعد الخصم.
+- يُطالَب ميسّر بهذا الإجمالي نفسه، والاسترداد يعيد المبلغ المدفوع فعلاً.
+- يُسجَّل استخدام الكوبون عند نجاح الدفع فقط، فالطلب الذي فشل دفعه لا يستهلك الكوبون.
+
+**التنفيذ:**
+1. افتح محرر SQL في Supabase، والصق محتوى الملف كاملاً، ونفّذه.
+2. يجب أن تظهر في نهايته الرسالة `20261026_20 verify: OK`.
+3. إن توقف بالرسالة `canceling statement due to lock timeout` فلم يتغير شيء. أعد التنفيذ بعد لحظات.
+4. للتأكد:
+
+```sql
+select code, discount_type, discount_value, min_order_amount, max_discount_pct, excluded_kinds, active
+  from public.coupons order by code;
+-- NZAMY50: fixed 50، حد أدنى 200، سقف 25، {topup}
+-- NEWCLIENT: fixed 75، حد أدنى 300، سقف 25، {plan,library,topup}
+```
+
+**الملف قابل لإعادة التشغيل**، داخل `begin … commit`، ومهلة القفل فيه ٥ ثوانٍ، وينتهي بـ `notify pgrst, 'reload schema'`.
+
+**قبل النشر وبعده:** الكود يعمل قبل الملف وبعده. قبله يُخفى حقل الكوبون في صفحة الدفع، ويُرفض أي كود يُرسل للدفع (فلا يُحصَّل السعر كاملاً من عميل ينتظر خصماً). وصفحة المحفظة لم تعد تقرأ الأكواد أصلاً. **لكن الأكواد تبقى مقروءة لأي زائر عبر واجهة البيانات حتى يُنفَّذ هذا الملف**، فنفّذه قبل النشر أو معه.
+
+**لا شيء يوقف النشر:** `deploy.sh` **لا** يشغّل `_verify.sql`. قسم `verify:coupons_server_only` فحص يدوي فقط، بالأمر المذكور في قسم 01:
+- **يكتفي بتنبيه** ما دام الملف لم يُنفَّذ؛
+- **يتوقف بخطأ** إن عادت سياسة أو صلاحية، أو اختفى أحد قيدَي «مرة واحدة».
+
+*English:* drops every policy on `coupons` / `coupon_usage` and revokes anon / authenticated (service role only); adds `max_discount_pct` (≤ 25) and `excluded_kinds` (always `topup`), unique guards on `(coupon_id, user_id)` and `order_id`, and a trigger that keeps `used_count`; sets the owner's rules on NZAMY50 (50 SAR, min 200 net) and NEWCLIENT (75 SAR, min 300 net, single services only — not usable online until checkout sells one). Creates no other code; LAUNCH2026 keeps its values. Stops unchanged on duplicate redemptions. Expect `20261026_20 verify: OK`. Idempotent. Docker-proved twice, with the old policies and loosened rules restored between the runs: `supabase/tests/rls/coupons_server_only.test.sql`.
+
+**للتراجع** (يعيد الأكواد مقروءة للجميع، فلا يكون إلا بموافقة المالك): الأوامر في رأس الملف، تحت `ROLLBACK`.
