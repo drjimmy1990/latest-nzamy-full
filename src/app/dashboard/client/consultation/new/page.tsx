@@ -312,8 +312,7 @@ export default function NewConsultationPage() {
   const canGoStep3 = specialty !== null && activeTopic.trim().length > 5;
   const serviceId = path === "ai" ? "ai-consult" : getConsultationModeServiceId(mode);
   const service = getClientServiceById(serviceId, catalog);
-  // `requiresPayment`, not the raw basePrice — the same rule quoteClientService()
-  // applies in pricingRepository.ts and the requests wizard applies at
+  // `requiresPayment`, not the raw basePrice — the same rule the requests wizard applies at
   // requests/new/page.tsx. Reading basePrice raw priced the free daily AI
   // question at ٤٩ and put it behind the disabled payment gate, which is how the
   // only free service on the platform became permanently unorderable.

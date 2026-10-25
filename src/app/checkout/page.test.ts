@@ -79,7 +79,10 @@ test("/checkout: one consent line under the form, linking the terms and the refu
 test("MoyasarCheckout POSTs the checkout from the click, never from an effect", () => {
   assert.match(form, /^"use client";/);
   assert.match(form, /fetch\("\/api\/v1\/payments\/checkout", \{\s*method: "POST"/);
-  assert.match(form, /JSON\.stringify\(\{ itemId, billing \}\)/);
+  // with a coupon (P7) the code rides along; without one the body is unchanged
+  assert.match(form, /JSON\.stringify\(couponCode \? \{ itemId, billing, couponCode \} : \{ itemId, billing \}\)/);
+  // the refresh near its expiry sends the same coupon, never dropping the discount
+  assert.equal(form.match(/startCheckout\(itemId, billing, couponCode\.current\)/g)?.length, 2);
   assert.match(form, /onClick=\{onStart\}/);
   // a double press is ignored by an in-flight ref, set before the POST
   assert.match(form, /if \(inFlight\.current \|\| current\.current\) return;\s*inFlight\.current = true;/);

@@ -18,6 +18,15 @@
  *      for it → 400; a retired item, or a retired cycle of one (lawyer-pro
  *      monthly — still resolvable for old orders, never sold) → 410
  *      «لم يعد هذا المنتج متاحاً للشراء».
+ *   3b. A coupon code, when sent (P7, couponServer.priceWithCoupon): applied
+ *      to the quote's net before VAT, VAT recomputed on the discounted net.
+ *      Refused (unknown / used / below the minimum / not for this item) →
+ *      400 with the Arabic reason, nothing written; coupons not available
+ *      yet (20261026_20 not run) or unreadable → 503 — never the full price
+ *      to a buyer who expected a discount. The order stores the DISCOUNTED
+ *      net / VAT / total and metadata.coupon {id, code, discount_halalas,
+ *      list_net_halalas}; the intent charges that total, so fulfilment's
+ *      paid-vs-stored check and refunds need nothing new.
  *   4. The buyer's earlier open orders for the same item that no payment has
  *      reached (last SUPERSEDE_WINDOW_MS): the intent is cancelled at Moyasar
  *      first and the order closed only when that worked, or when it never had
@@ -44,6 +53,8 @@ import type { MoyasarClient } from "./moyasarClient.ts";
 import { buyerAllowed, PAYABLE_ITEMS, quote, resolveItem, type Billing, type PayableItem } from "./catalog.ts";
 import { isMissingPaymentsObject } from "./fulfillDecision.ts";
 import { MOYASAR_DISABLED_MESSAGE_AR } from "./moyasarConfig.ts";
+import { priceWithCoupon } from "./couponServer.ts";
+import type { BookEntry } from "../pricing/priceBook.ts";
 import {
   callbackUrlFor,
   cancelOrderAfterIntentCancel,
@@ -68,6 +79,8 @@ export interface CheckoutDeps {
   now?: () => Date;
   /** The halala catalogue; PAYABLE_ITEMS unless a test passes a fixture (e.g. a retired item). */
   catalog?: Readonly<Record<string, PayableItem>>;
+  /** The price book behind the catalogue (the "already discounted" check); PRICE_BOOK unless a test passes one. */
+  book?: Readonly<Record<string, BookEntry>>;
 }
 
 export interface CheckoutInput {
@@ -77,6 +90,8 @@ export interface CheckoutInput {
   /** resolveCallbackOrigin(NEXT_PUBLIC_SITE_URL, mode).origin */
   origin: string;
   publishableKey: string;
+  /** A normalised coupon code (parseCheckoutBody), or null / absent for none. */
+  couponCode?: string | null;
 }
 
 export type CheckoutReply =
@@ -166,6 +181,33 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
     return fail(400, q.error === "unknown_item" ? UNKNOWN_ITEM_AR : BILLING_NOT_OFFERED_AR);
   }
 
+  // 3b. the coupon, on the net before VAT
+  let net = q.netHalalas;
+  let vat = q.vatHalalas;
+  let total = q.totalHalalas;
+  let couponMeta: Record<string, unknown> | null = null;
+  let couponQuote: { listNet: number; discount: number; couponCode: string } | null = null;
+  if (input.couponCode) {
+    const priced = await priceWithCoupon(admin, {
+      code: input.couponCode,
+      userId: user.id,
+      userType,
+      item: q.item,
+      netHalalas: q.netHalalas,
+      now: deps.now?.() ?? new Date(),
+      book: deps.book,
+    });
+    if (!priced.ok) return fail(priced.status, priced.error);
+    ({ netHalalas: net, vatHalalas: vat, totalHalalas: total } = priced.quote);
+    couponMeta = {
+      id: priced.coupon.id,
+      code: priced.coupon.code,
+      discount_halalas: priced.quote.discountHalalas,
+      list_net_halalas: priced.quote.listNetHalalas,
+    };
+    couponQuote = { listNet: priced.quote.listNetHalalas, discount: priced.quote.discountHalalas, couponCode: priced.coupon.code };
+  }
+
   // 4. earlier open orders for the same item
   const superseded = await supersedeEarlierOrders(deps, user.id, q.item.id);
   if (superseded.missing) {
@@ -183,14 +225,14 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
       kind: q.item.kind,
       item_id: q.item.id,
       billing: input.billing,
-      net_halalas: q.netHalalas,
-      vat_halalas: q.vatHalalas,
-      total_halalas: q.totalHalalas,
+      net_halalas: net,
+      vat_halalas: vat,
+      total_halalas: total,
       vat_mode: q.vatMode,
       currency: "SAR",
       status: "created",
       source: "checkout",
-      metadata: { user_email: user.email ?? null },
+      metadata: couponMeta ? { user_email: user.email ?? null, coupon: couponMeta } : { user_email: user.email ?? null },
     })
     .select("id")
     .single();
@@ -208,7 +250,7 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
 
   // 6. the intent
   const intent = await client.createIntent({
-    amountHalalas: q.totalHalalas,
+    amountHalalas: total,
     description: descriptionAr,
     callbackUrl,
     metadata: { order_id: orderId },
@@ -242,10 +284,10 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
       intentId: intent.data.id,
       clientSecret: intent.data.clientSecret,
       publishableKey: input.publishableKey,
-      amountHalalas: q.totalHalalas,
+      amountHalalas: total,
       descriptionAr,
       saveCard: q.item.saveCard,
-      quote: { net: q.netHalalas, vat: q.vatHalalas, total: q.totalHalalas, vatMode: q.vatMode },
+      quote: { net, vat, total, vatMode: q.vatMode, ...(couponQuote ?? {}) },
       callbackUrl,
       expiresAt: intent.data.expiresAt,
     },

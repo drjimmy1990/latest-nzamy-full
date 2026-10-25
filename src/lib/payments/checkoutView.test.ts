@@ -22,6 +22,8 @@ import {
   needsNewCheckout,
   parseCheckoutQuery,
   parseCheckoutResponse,
+  parseCouponPreview,
+  couponFieldShown,
   quoteVatNotice,
   refreshDecision,
   INTENT_EXPIRY_MARGIN_MS,
@@ -359,4 +361,32 @@ test("refreshDecision: the same charge proceeds; a changed total stops for the p
   assert.equal(refreshDecision(RESPONSE, { ...fresh, amountHalalas: 46000, quote: { ...RESPONSE.quote, total: 46000 } }), "confirm");
   assert.equal(refreshDecision(RESPONSE, { ...fresh, quote: { ...RESPONSE.quote, net: 39901, vat: 5984 } }), "confirm");
   assert.equal(refreshDecision(RESPONSE, { ...fresh, quote: { ...RESPONSE.quote, vatMode: "inclusive" } }), "confirm");
+});
+
+// ── the coupon (P7) ─────────────────────────────────────────────────────────
+
+test("parseCheckoutResponse: a couponed quote keeps listNet / discount / couponCode only when listNet − discount = net", () => {
+  const net = RESPONSE.quote.net;
+  const couponed = { ...RESPONSE, quote: { ...RESPONSE.quote, listNet: net + 5000, discount: 5000, couponCode: "NZAMY50" } };
+  assert.deepEqual(parseCheckoutResponse(JSON.parse(JSON.stringify(couponed))), couponed);
+  // inconsistent figures or a partial set are not this server's answer
+  assert.equal(parseCheckoutResponse({ ...couponed, quote: { ...couponed.quote, listNet: net + 4000 } }), null);
+  assert.equal(parseCheckoutResponse({ ...couponed, quote: { ...couponed.quote, couponCode: undefined } }), null);
+  assert.equal(parseCheckoutResponse({ ...couponed, quote: { ...couponed.quote, discount: 0, listNet: net } }), null);
+});
+
+test("parseCouponPreview: the validate answer, checked (discount > 0, listNet − discount = net, net + VAT = total)", () => {
+  const ok = { code: "NZAMY50", quote: { listNet: 149000, discount: 5000, net: 144000, vat: 21600, total: 165600 } };
+  assert.deepEqual(parseCouponPreview(ok), { code: "NZAMY50", listNet: 149000, discount: 5000, net: 144000, vat: 21600, total: 165600 });
+  assert.equal(parseCouponPreview({ ...ok, quote: { ...ok.quote, total: 165601 } }), null);
+  assert.equal(parseCouponPreview({ ...ok, quote: { ...ok.quote, net: 144001 } }), null);
+  assert.equal(parseCouponPreview({ error: "x" }), null);
+  assert.equal(parseCouponPreview(null), null);
+});
+
+test("couponFieldShown: only once the coupon columns exist, and never for a point top-up", () => {
+  assert.equal(couponFieldShown({ kind: "plan" }, true), true);
+  assert.equal(couponFieldShown({ kind: "library" }, true), true);
+  assert.equal(couponFieldShown({ kind: "topup" }, true), false);
+  assert.equal(couponFieldShown({ kind: "plan" }, false), false);
 });

@@ -9,7 +9,8 @@ import { checkoutModeAllowed } from "@/lib/payments/testModeAccess";
 
 /**
  * POST /api/v1/payments/checkout — starts one online payment (Moyasar
- * payments B1, Task 6). Body `{ itemId, billing }`; signed-in only.
+ * payments B1, Task 6). Body `{ itemId, billing, couponCode? }` (the coupon:
+ * P7, applied inside the order by startCheckoutWith); signed-in only.
  *
  * This file does the request-bound checks and builds the clients:
  *   1. 401 without a session; 400 for a body that is not {itemId, billing}.
@@ -95,6 +96,7 @@ export async function POST(request: NextRequest) {
         user: { id: user.id, email: user.email ?? null },
         itemId: parsed.itemId,
         billing: parsed.billing,
+        couponCode: parsed.couponCode ?? null,
         origin: origin.origin,
         publishableKey: cfg.publishableKey,
       },

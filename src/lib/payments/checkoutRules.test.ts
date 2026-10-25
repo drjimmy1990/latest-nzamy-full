@@ -26,6 +26,21 @@ test("parseCheckoutBody accepts {itemId, billing} and nothing priced", () => {
   assert.deepEqual(withPrice, { ok: true, itemId: "topup-100", billing: "once" });
 });
 
+test("parseCheckoutBody: an optional couponCode is normalised; empty / null means none; a malformed one refuses the body (P7)", () => {
+  assert.deepEqual(parseCheckoutBody({ itemId: "ind-ai", billing: "yearly", couponCode: " nzamy50 " }), {
+    ok: true,
+    itemId: "ind-ai",
+    billing: "yearly",
+    couponCode: "NZAMY50",
+  });
+  for (const none of [null, ""]) {
+    assert.deepEqual(parseCheckoutBody({ itemId: "ind-ai", billing: "yearly", couponCode: none }), { ok: true, itemId: "ind-ai", billing: "yearly" });
+  }
+  for (const bad of [5, "x", "NZ AMY", "x".repeat(40), {}]) {
+    assert.deepEqual(parseCheckoutBody({ itemId: "ind-ai", billing: "yearly", couponCode: bad }), { ok: false }, JSON.stringify(bad));
+  }
+});
+
 test("parseCheckoutBody reads the two new cycles too (whether the item sells them is quote's question)", () => {
   for (const billing of ["quarterly", "semiannual", "yearly"]) {
     assert.deepEqual(parseCheckoutBody({ itemId: "lawyer-pro", billing }), { ok: true, itemId: "lawyer-pro", billing });

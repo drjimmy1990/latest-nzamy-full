@@ -9,6 +9,7 @@
 
 import type { Billing, VatMode } from "./catalog.ts";
 import { isBilling } from "../pricing/priceBook.ts";
+import { normalizeCouponCode } from "./couponRules.ts";
 
 /**
  * The 410 copy: a retired item, or a retired cycle of one (lawyer-pro
@@ -21,17 +22,27 @@ const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
 /**
- * The body is `{ itemId, billing }` and nothing else is read: the price is the
- * catalog's (quote), never the browser's.
+ * The body is `{ itemId, billing }` (+ an optional `couponCode`, P7) and
+ * nothing else is read: the price is the catalog's (quote), never the
+ * browser's, and the discount is the server's (couponServer). A couponCode
+ * that is not a well-formed code (couponRules.normalizeCouponCode) refuses
+ * the body; an empty / null one means no coupon. `couponCode` is returned
+ * only when one was sent.
  */
-export function parseCheckoutBody(body: unknown): { ok: true; itemId: string; billing: Billing } | { ok: false } {
+export function parseCheckoutBody(
+  body: unknown,
+): { ok: true; itemId: string; billing: Billing; couponCode?: string } | { ok: false } {
   if (!isPlainObject(body)) return { ok: false };
   const { itemId, billing } = body;
   if (typeof itemId !== "string" || itemId.length === 0 || itemId.length > 64) return { ok: false };
   // monthly / quarterly / semiannual / yearly / once — whether the item is
   // sold in it is quote()'s question, answered 400 there.
   if (!isBilling(billing)) return { ok: false };
-  return { ok: true, itemId, billing };
+  const rawCoupon = body.couponCode;
+  if (rawCoupon === undefined || rawCoupon === null || rawCoupon === "") return { ok: true, itemId, billing };
+  const couponCode = normalizeCouponCode(rawCoupon);
+  if (!couponCode) return { ok: false };
+  return { ok: true, itemId, billing, couponCode };
 }
 
 /**
@@ -154,7 +165,20 @@ export interface CheckoutResponse {
   descriptionAr: string;
   /** Plans keep the card for renewal (owner ٢٤٦); one-off items do not. */
   saveCard: boolean;
-  quote: { net: number; vat: number; total: number; vatMode: VatMode };
+  /**
+   * The charged amounts. With a coupon (P7) `net` is AFTER the discount and
+   * VAT is on it; `listNet` (the book's net), `discount` and `couponCode`
+   * are then present and listNet − discount = net.
+   */
+  quote: {
+    net: number;
+    vat: number;
+    total: number;
+    vatMode: VatMode;
+    listNet?: number;
+    discount?: number;
+    couponCode?: string;
+  };
   /**
    * The intent's callback_url, `<NEXT_PUBLIC_SITE_URL>/payments/result?order=<orderId>`
    * — the browser hands it to Moyasar.init (the form requires one) instead of

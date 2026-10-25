@@ -31,6 +31,19 @@ export function isStrictRateLimitedRoute(method: string, pathname: string): bool
   return method === "POST" && STRICT_RATE_LIMITED_ROUTES.some((re) => re.test(pathname));
 }
 
+// POST /api/v1/coupons/validate (P7) answers whether a coupon code exists for
+// this buyer — a guessing oracle. Its own bucket, not the strict one: the
+// strict bucket is shared per address by the four routes above, so ten coupon
+// tries would also lock a visitor out of the contact form and invite
+// acceptance. Checkout itself also applies a code (with the same refusal
+// sentence) and stays in the general bucket only.
+export const COUPON_VALIDATE_RE = /^\/api\/v1\/coupons\/validate$/;
+
+/** True for POST /api/v1/coupons/validate. */
+export function isCouponValidateRoute(method: string, pathname: string): boolean {
+  return method === "POST" && COUPON_VALIDATE_RE.test(pathname);
+}
+
 // The law reader, search, scoped search and autocomplete read article text with the service
 // role since 20260929_01 (article text is server-only), which also drops the
 // database's anon statement timeout. A per-client ceiling keeps one client

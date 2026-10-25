@@ -4,20 +4,10 @@ import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 
 // ─── Shape mappers ──────────────────────────────────────────────────────────
 // wallet_transactions.kind CHECK: credit | debit | pending | reversal
-// coupons.discount_type CHECK: percentage | fixed | points_grant | plan_upgrade
 // The rows are mapped to the shape محفظتي renders here — not in the page — so
 // every consumer of /api/v1/wallet gets the same shape.
 
 type TxType = "credit" | "debit" | "system";
-type CouponType = "admin" | "provider" | "referral";
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-const COUPON_STYLE: Record<CouponType, { labelAr: string; labelEn: string; color: string }> = {
-  admin: { labelAr: "مكافأة المنصة", labelEn: "Platform Reward", color: "from-emerald-500 to-teal-400" },
-  provider: { labelAr: "عرض محامي", labelEn: "Lawyer Promo", color: "from-indigo-500 to-blue-400" },
-  referral: { labelAr: "خصم إحالة", labelEn: "Referral Discount", color: "from-amber-500 to-amber-400" },
-};
 
 /** ٥٠ — Arabic-Indic digits, two decimals at most. */
 function toArDigits(n: number): string {
@@ -55,58 +45,6 @@ function mapTransaction(row: Record<string, unknown>) {
     amountEn: `${sign}${amount.toLocaleString("en-US")} SAR`,
     descAr: String(row.description ?? ""),
     date: formatDateAr(String(row.created_at)),
-  };
-}
-
-function couponDiscountAr(row: Record<string, unknown>): string {
-  const value = Number(row.discount_value ?? 0);
-  switch (String(row.discount_type ?? "")) {
-    case "percentage":
-      return `${toArDigits(value)}٪`;
-    case "fixed":
-      return `${toArDigits(value)} ر.س`;
-    case "points_grant":
-      return `${toArDigits(Number(row.points_granted ?? 0))} نقطة`;
-    default:
-      return "ترقية";
-  }
-}
-
-function couponDescAr(row: Record<string, unknown>): string {
-  const value = Number(row.discount_value ?? 0);
-  switch (String(row.discount_type ?? "")) {
-    case "percentage":
-      return `خصم ${toArDigits(value)}٪ على خدمتك القادمة`;
-    case "fixed":
-      return `خصم ${toArDigits(value)} ر.س على خدمتك القادمة`;
-    case "points_grant":
-      return `${toArDigits(Number(row.points_granted ?? 0))} نقطة تُضاف إلى رصيدك`;
-    default:
-      return "ترقية إلى باقة اشتراك أعلى";
-  }
-}
-
-function mapCoupon(row: Record<string, unknown>, usageCount: number) {
-  const meta = (row.metadata as Record<string, unknown> | null) ?? {};
-  const type: CouponType = meta.type === "provider" || meta.type === "referral" ? meta.type : "admin";
-  const style = COUPON_STYLE[type];
-  const validUntil = row.valid_until ? new Date(String(row.valid_until)) : null;
-  const perUserLimit = Number(row.max_uses_per_user ?? 1);
-  return {
-    code: String(row.code ?? ""),
-    labelAr: style.labelAr,
-    labelEn: style.labelEn,
-    descAr: typeof meta.descAr === "string" ? meta.descAr : couponDescAr(row),
-    discount: couponDiscountAr(row),
-    // Open-ended coupons carry no expiry line at all — «ينتهي …» needs a date.
-    expiry: validUntil ? formatDateAr(validUntil.toISOString()) : "",
-    daysRemaining: validUntil
-      ? Math.max(0, Math.ceil((validUntil.getTime() - Date.now()) / DAY_MS))
-      : 0,
-    type,
-    providerName: type === "provider" && typeof meta.providerName === "string" ? meta.providerName : undefined,
-    used: perUserLimit > 0 && usageCount >= perUserLimit,
-    color: style.color,
   };
 }
 
@@ -215,25 +153,11 @@ export async function GET() {
     );
   }
 
-  // Get active coupons
-  const { data: coupons } = await supabase
-    .from("coupons")
-    .select("*")
-    .eq("active", true)
-    .or(`valid_until.is.null,valid_until.gte.${new Date().toISOString()}`);
-
-  // How many times this user already redeemed each of them
-  const usageByCoupon = new Map<string, number>();
-  if ((coupons ?? []).length > 0) {
-    const { data: usage } = await supabase
-      .from("coupon_usage")
-      .select("coupon_id")
-      .eq("user_id", user.id);
-    for (const row of usage ?? []) {
-      const key = String(row.coupon_id);
-      usageByCoupon.set(key, (usageByCoupon.get(key) ?? 0) + 1);
-    }
-  }
+  // No coupon list (P7, 20261026_20): this route used to read every active
+  // code from public.coupons with the user's session and send the whole
+  // platform-wide list to every client. Coupon codes are server only now —
+  // no session may read them — and are checked when typed at checkout
+  // (POST /api/v1/coupons/validate). The key stays, empty, for the page.
 
   return NextResponse.json({
     data: {
@@ -248,11 +172,8 @@ export async function GET() {
       // «يُعرض أحدث ٥٠ حركة من ٢٣٠».
       transactions: txRows.map(mapTransaction),
       transactionsTotal: typeof txCount === "number" ? txCount : null,
-      // NO count on `coupons`: that query has no `.limit()` of its own, so
-      // there is no cap of ours to report. It is still subject to PostgREST's
-      // server-side max-rows like every uncapped read in this app, which is a
-      // platform-wide question and not this route's to answer alone.
-      coupons: (coupons ?? []).map((c) => mapCoupon(c, usageByCoupon.get(String(c.id)) ?? 0)),
+      // Always empty since P7 — see above.
+      coupons: [],
     }
   });
 }

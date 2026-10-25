@@ -18,8 +18,12 @@
  *      rows: another call already did → 'already_done';
  *   4. save the card token (plans only) — before the grant, because the
  *      subscription row points at the saved card;
- *   5. grantPurchase (./grantPurchase.ts), then fulfilled_at = now() — only
- *      while it is still null, so exactly one call stamps it;
+ *   5. grantPurchase (./grantPurchase.ts); the coupon the order carried (P7,
+ *      metadata.coupon) is recorded in coupon_usage — only now that the order
+ *      is paid, idempotent per order, never blocking the grant (a coupon paid
+ *      twice by one buyer through two open checkouts is still fulfilled and
+ *      marked metadata.coupon_reused for admin review); then fulfilled_at =
+ *      now() — only while it is still null, so exactly one call stamps it;
  *   6. the Arabic in-app notification, sent by the call that stamped.
  *
  * A grant failure after the claim leaves fulfilled_at null; the sweep resumes
@@ -50,6 +54,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { MoyasarClient, MoyasarPayment } from "./moyasarClient.ts";
 import { resolveItem } from "./catalog.ts";
 import { grantPurchase, type GrantPurchaseDeps } from "./grantPurchase.ts";
+import { recordCouponUsage } from "./couponServer.ts";
 import {
   fulfilmentNoticeAr,
   fulfillDecision,
@@ -279,6 +284,11 @@ async function finish(
     if (granted.missing) logMissingOnce("grant", { code: "missing", message: granted.error });
     else console.error("[payments] fulfillOrder: the grant failed; the sweep will retry:", order.id, granted.error);
     return { outcome: "pending", reason: granted.missing ? "schema_missing" : "grant_failed", receiptNumber };
+  }
+
+  // P7: a coupon is consumed only by a PAID order (couponServer.ts).
+  if ((await recordCouponUsage(admin, order)) === "reused") {
+    await mergeOrderMetadata(admin, order.id, { coupon_reused: true });
   }
 
   // Masked payment details exist only so the receipt can show the last four.

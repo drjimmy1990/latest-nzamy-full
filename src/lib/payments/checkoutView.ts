@@ -224,6 +224,13 @@ export function parseCheckoutResponse(body: unknown): CheckoutResponse | null {
   if (!b.callbackUrl.endsWith(`?order=${encodeURIComponent(b.orderId)}`)) return null;
   const expiresAt = b.expiresAt === undefined || b.expiresAt === null ? null : b.expiresAt;
   if (expiresAt !== null && !isText(expiresAt)) return null;
+  // P7: a couponed quote carries listNet / discount / couponCode, all three,
+  // and listNet − discount must be the charged net.
+  const hasCoupon = q.discount !== undefined || q.listNet !== undefined || q.couponCode !== undefined;
+  if (hasCoupon) {
+    if (!isInt(q.listNet) || !isInt(q.discount) || !isText(q.couponCode)) return null;
+    if (q.discount <= 0 || q.listNet - q.discount !== q.net) return null;
+  }
   return {
     orderId: b.orderId,
     intentId: b.intentId,
@@ -232,7 +239,17 @@ export function parseCheckoutResponse(body: unknown): CheckoutResponse | null {
     amountHalalas: b.amountHalalas,
     descriptionAr: b.descriptionAr,
     saveCard: b.saveCard,
-    quote: { net: q.net, vat: q.vat, total: q.total, vatMode: q.vatMode },
+    quote: hasCoupon
+      ? {
+          net: q.net,
+          vat: q.vat,
+          total: q.total,
+          vatMode: q.vatMode,
+          listNet: q.listNet as number,
+          discount: q.discount as number,
+          couponCode: q.couponCode as string,
+        }
+      : { net: q.net, vat: q.vat, total: q.total, vatMode: q.vatMode },
     callbackUrl: b.callbackUrl,
     expiresAt,
   };
@@ -399,4 +416,35 @@ export function moyasarInitConfig(
       validate_merchant_url: "https://api.moyasar.com/v1/applepay/initiate",
     },
   };
+}
+
+// ── the coupon field (P7) ───────────────────────────────────────────────────
+
+/** What POST /api/v1/coupons/validate answers (halalas), checked like the checkout response. */
+export interface CouponPreview {
+  code: string;
+  listNet: number;
+  discount: number;
+  net: number;
+  vat: number;
+  total: number;
+}
+
+export function parseCouponPreview(body: unknown): CouponPreview | null {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return null;
+  const b = body as Record<string, unknown>;
+  const q = b.quote as Record<string, unknown> | null | undefined;
+  if (!isText(b.code) || typeof q !== "object" || q === null) return null;
+  if (!isInt(q.listNet) || !isInt(q.discount) || !isInt(q.net) || !isInt(q.vat) || !isInt(q.total)) return null;
+  if (q.discount <= 0 || q.listNet - q.discount !== q.net || q.net + q.vat !== q.total) return null;
+  return { code: b.code, listNet: q.listNet, discount: q.discount, net: q.net, vat: q.vat, total: q.total };
+}
+
+/**
+ * Whether /checkout shows the coupon field: once 20261026_20 has run
+ * (couponServer.couponsAvailable) and never for a point top-up (no coupon
+ * ever applies to one — owner, pricing doc §13أ.3).
+ */
+export function couponFieldShown(item: Pick<PayableItem, "kind">, couponsReady: boolean): boolean {
+  return couponsReady && item.kind !== "topup";
 }

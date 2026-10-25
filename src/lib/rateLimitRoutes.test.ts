@@ -10,6 +10,7 @@ import {
   isLibraryReadRateLimitedRoute,
   libraryReadClientKey,
   isTrackingPageRoute,
+  isCouponValidateRoute,
 } from "./rateLimitRoutes.ts";
 
 // ─── isStrictRateLimitedRoute ────────────────────────────────────────────────
@@ -133,4 +134,17 @@ test("isTrackingPageRoute: the public case tracking page, GET and HEAD, one toke
   assert.equal(isTrackingPageRoute("GET", `/track/${token}/x`), false);
   assert.equal(isTrackingPageRoute("GET", "/tracker"), false);
   assert.equal(isTrackingPageRoute("GET", "/ai/tracker"), false);
+});
+
+// ─── isCouponValidateRoute (P7) ─────────────────────────────────────────────
+
+test("isCouponValidateRoute: POST /api/v1/coupons/validate only — its own bucket, not the shared strict one", () => {
+  assert.equal(isCouponValidateRoute("POST", "/api/v1/coupons/validate"), true);
+  assert.equal(isCouponValidateRoute("GET", "/api/v1/coupons/validate"), false);
+  assert.equal(isCouponValidateRoute("POST", "/api/v1/coupons/validate/x"), false);
+  assert.equal(isCouponValidateRoute("POST", "/api/v1/coupons"), false);
+  // not in the strict bucket (ten coupon guesses must not lock out the contact form)
+  assert.equal(isStrictRateLimitedRoute("POST", "/api/v1/coupons/validate"), false);
+  // still in the general bucket too
+  assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/coupons/validate"), true);
 });

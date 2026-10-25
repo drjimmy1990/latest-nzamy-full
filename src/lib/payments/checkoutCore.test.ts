@@ -303,3 +303,209 @@ test("a cycle the item is not sold in (quarterly before P2) is refused with 400"
   assert.equal(r.status, 400);
   assert.equal(inserts(log).length, 0);
 });
+
+// ── coupons (P7, owner answers of 25 Oct; pricing doc §13أ) ─────────────────
+
+const COUPON_ID = "00000000-0000-0000-0000-0000000c0050";
+const NZAMY50_ROW = {
+  id: COUPON_ID,
+  code: "NZAMY50",
+  discount_type: "fixed",
+  discount_value: "50.00",
+  min_order_amount: "200.00",
+  eligible_user_types: [],
+  max_uses: null,
+  used_count: 0,
+  valid_from: "2026-06-01T00:00:00Z",
+  valid_until: "2027-12-31T23:59:59Z",
+  active: true,
+  max_discount_pct: "25.00",
+  excluded_kinds: ["topup"],
+};
+const NEWCLIENT_ROW = { ...NZAMY50_ROW, code: "NEWCLIENT", discount_value: 75, min_order_amount: 300, excluded_kinds: ["plan", "library", "topup"] };
+
+/** db() plus the coupon tables: `paidWithCoupon` = a paid order of this buyer already carried it. */
+function couponDb(
+  userType: string,
+  opts: {
+    row?: Record<string, unknown> | null;
+    paidWithCoupon?: boolean;
+    usage?: boolean;
+    couponErr?: { code: string; message: string };
+  } = {},
+) {
+  return db(userType, (q) => {
+    if (q.table === "coupons") {
+      if (opts.couponErr) return { error: opts.couponErr };
+      return { data: opts.row === undefined ? NZAMY50_ROW : opts.row };
+    }
+    if (q.table === "coupon_usage") return { data: opts.usage ? [{ id: 1 }] : [] };
+    if (q.table === "payment_orders" && q.op === "select" && has(q, "eq", "metadata->coupon->>id")) {
+      return { data: opts.paidWithCoupon ? [{ id: "earlier" }] : [] };
+    }
+    return undefined;
+  });
+}
+
+test("coupon: NZAMY50 on the 1,490 SAR plan — the stored order and the intent carry the DISCOUNTED net, VAT on it, and the coupon", async () => {
+  const { client: admin, log } = couponDb("individual");
+  const m = moyasar();
+  const r = await startCheckoutWith(
+    { admin, client: m.client, now: () => NOW },
+    input({ itemId: "ind-preventive", billing: "yearly", couponCode: "NZAMY50" }),
+  );
+  assert.equal(r.status, 200);
+  // 1,490 − 50 = 1,440 net; VAT 216; total 1,656
+  const [ins] = inserts(log);
+  const p = ins.payload as Record<string, unknown>;
+  assert.equal(p.net_halalas, 144000);
+  assert.equal(p.vat_halalas, 21600);
+  assert.equal(p.total_halalas, 165600);
+  assert.deepEqual(p.metadata, {
+    user_email: "buyer@example.test",
+    coupon: { id: COUPON_ID, code: "NZAMY50", discount_halalas: 5000, list_net_halalas: 149000 },
+  });
+  // the amount charged is the stored total — fulfilment compares the paid amount to it
+  assert.equal(m.intents[0].amountHalalas, 165600);
+  if (r.status !== 200) throw new Error("unreachable");
+  assert.equal(r.body.amountHalalas, 165600);
+  assert.deepEqual(r.body.quote, {
+    net: 144000,
+    vat: 21600,
+    total: 165600,
+    vatMode: "exclusive",
+    listNet: 149000,
+    discount: 5000,
+    couponCode: "NZAMY50",
+  });
+  // the coupon is NOT consumed at checkout: nothing is written to coupon_usage
+  assert.equal(log.filter((q) => q.table === "coupon_usage" && q.op === "insert").length, 0);
+});
+
+test("coupon: below the minimum (a 149 SAR monthly plan, NZAMY50 needs 200) is refused — no order, no intent", async () => {
+  const { client: admin, log } = couponDb("individual");
+  const m = moyasar();
+  const r = await startCheckoutWith(
+    { admin, client: m.client, now: () => NOW },
+    input({ itemId: "ind-preventive", billing: "monthly", couponCode: "NZAMY50" }),
+  );
+  assert.equal(r.status, 400);
+  assert.deepEqual(r.body, { error: "يتطلب هذا الكود طلباً بقيمة ٢٠٠ ر.س على الأقل قبل الضريبة" });
+  assert.equal(inserts(log).length, 0);
+  assert.equal(m.intents.length, 0);
+});
+
+test("coupon: the cap — a 500 SAR coupon on the 390 SAR plan takes 25 % (97.50), never more", async () => {
+  const { client: admin, log } = couponDb("individual", { row: { ...NZAMY50_ROW, discount_value: 500, min_order_amount: 0 } });
+  const r = await startCheckoutWith(
+    { admin, client: moyasar().client, now: () => NOW },
+    input({ itemId: "ind-ai", billing: "yearly", couponCode: "NZAMY50" }),
+  );
+  assert.equal(r.status, 200);
+  const p = inserts(log)[0].payload as Record<string, number>;
+  assert.equal(p.net_halalas, 39000 - 9750);
+  assert.equal(p.vat_halalas, Math.round((39000 - 9750) * 0.15));
+  assert.equal(p.total_halalas, p.net_halalas + p.vat_halalas);
+});
+
+test("coupon: once per user — a PAID earlier order with it refuses the second (generic sentence); a FAILED one does not count", async () => {
+  {
+    const { client: admin, log } = couponDb("individual", { paidWithCoupon: true });
+    const r = await startCheckoutWith(
+      { admin, client: moyasar().client, now: () => NOW },
+      input({ itemId: "ind-preventive", billing: "yearly", couponCode: "NZAMY50" }),
+    );
+    assert.equal(r.status, 400);
+    assert.deepEqual(r.body, { error: "كود الخصم غير صالح أو منتهي الصلاحية" });
+    assert.equal(inserts(log).length, 0);
+    // the use is read from PAID / REFUNDED orders of this buyer only
+    const read = log.find((q) => q.table === "payment_orders" && has(q, "eq", "metadata->coupon->>id", COUPON_ID));
+    assert.ok(read && has(read, "eq", "user_id", USER));
+    assert.deepEqual(read.filters.find(([k, c]) => k === "in" && c === "status")?.[2], ["paid", "refunded"]);
+  }
+  {
+    // the ledger row alone also refuses it
+    const { client: admin } = couponDb("individual", { usage: true });
+    const r = await startCheckoutWith(
+      { admin, client: moyasar().client, now: () => NOW },
+      input({ itemId: "ind-preventive", billing: "yearly", couponCode: "NZAMY50" }),
+    );
+    assert.equal(r.status, 400);
+  }
+  {
+    // a failed / cancelled first order is not paid: the paid-orders read finds nothing, the coupon applies
+    const { client: admin } = couponDb("individual", { paidWithCoupon: false });
+    const r = await startCheckoutWith(
+      { admin, client: moyasar().client, now: () => NOW },
+      input({ itemId: "ind-preventive", billing: "yearly", couponCode: "NZAMY50" }),
+    );
+    assert.equal(r.status, 200);
+  }
+});
+
+test("coupon: never on a point top-up, and NEWCLIENT (single services) not on a plan or the library — 400, no order", async () => {
+  const cases: Array<[Record<string, unknown> & { code: string }, string, "once" | "yearly"]> = [
+    [NZAMY50_ROW, "topup-1000", "once"],
+    [NEWCLIENT_ROW, "ind-litigation", "yearly"],
+    [NEWCLIENT_ROW, "lib-q1", "once"],
+  ];
+  for (const [row, itemId, billing] of cases) {
+    const { client: admin, log } = couponDb("individual", { row });
+    const m = moyasar();
+    const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW }, input({ itemId, billing, couponCode: row.code }));
+    assert.equal(r.status, 400, itemId);
+    assert.deepEqual(r.body, { error: "كود الخصم لا ينطبق على هذا المنتج" }, itemId);
+    assert.equal(inserts(log).length, 0, itemId);
+    assert.equal(m.intents.length, 0, itemId);
+  }
+});
+
+test("coupon: ٢٧٩ no stacking — an item already at a launch price takes no coupon", async () => {
+  const book = {
+    ...PRICE_BOOK,
+    "ind-preventive": { ...PRICE_BOOK["ind-preventive"], launchPrices: [{ campaignId: "launch", prices: { yearly: 990 } }] },
+  };
+  const { client: admin, log } = couponDb("individual");
+  const r = await startCheckoutWith(
+    { admin, client: moyasar().client, now: () => NOW, book },
+    input({ itemId: "ind-preventive", billing: "yearly", couponCode: "NZAMY50" }),
+  );
+  assert.equal(r.status, 400);
+  assert.deepEqual(r.body, { error: "كود الخصم لا ينطبق على هذا المنتج" });
+  assert.equal(inserts(log).length, 0);
+});
+
+test("coupon: an unknown code is the generic 400; before 20261026_20 (no max_discount_pct) a code is 503, never the full price", async () => {
+  {
+    const { client: admin, log } = couponDb("individual", { row: null });
+    const r = await startCheckoutWith(
+      { admin, client: moyasar().client, now: () => NOW },
+      input({ itemId: "ind-preventive", billing: "yearly", couponCode: "GUESS1" }),
+    );
+    assert.equal(r.status, 400);
+    assert.deepEqual(r.body, { error: "كود الخصم غير صالح أو منتهي الصلاحية" });
+    assert.equal(inserts(log).length, 0);
+  }
+  {
+    const { client: admin, log } = couponDb("individual", {
+      couponErr: { code: "42703", message: "column coupons.max_discount_pct does not exist" },
+    });
+    const m = moyasar();
+    const r = await startCheckoutWith(
+      { admin, client: m.client, now: () => NOW },
+      input({ itemId: "ind-preventive", billing: "yearly", couponCode: "NZAMY50" }),
+    );
+    assert.equal(r.status, 503);
+    assert.deepEqual(r.body, { error: "أكواد الخصم غير متاحة حالياً" });
+    assert.equal(inserts(log).length, 0);
+    assert.equal(m.intents.length, 0);
+  }
+});
+
+test("coupon: no couponCode — nothing reads the coupon tables and the order is exactly as before", async () => {
+  const { client: admin, log } = couponDb("individual");
+  const r = await startCheckoutWith({ admin, client: moyasar().client, now: () => NOW }, input({ itemId: "ind-preventive", billing: "yearly" }));
+  assert.equal(r.status, 200);
+  assert.equal(log.filter((q) => q.table === "coupons" || q.table === "coupon_usage").length, 0);
+  assert.deepEqual((inserts(log)[0].payload as { metadata: unknown }).metadata, { user_email: "buyer@example.test" });
+});

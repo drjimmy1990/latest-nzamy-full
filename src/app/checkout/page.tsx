@@ -10,9 +10,11 @@ import { viewerGatewayState } from "@/lib/payments/testModeAccess";
 import { MOYASAR_DISABLED_MESSAGE_AR } from "@/lib/payments/moyasarConfig";
 import { AUDIENCE_REFUSED_AR, NOT_FOR_SALE_AR, UNKNOWN_ITEM_AR } from "@/lib/payments/checkoutCore";
 import { buyerAllowed, formatHalalas, sellableItem } from "@/lib/payments/catalog";
+import { couponsAvailable } from "@/lib/payments/couponServer";
 import {
   billingLabelAr,
   checkoutItemNotes,
+  couponFieldShown,
   gatewayAllowsCheckout,
   listedVatNotice,
   parseCheckoutQuery,
@@ -31,7 +33,9 @@ import {
  *   - otherwise the item, its listed price and the VAT sentence, the notes
  *     the catalog backs (top-up points and validity, library access length,
  *     the ind-litigation coverage — firm plans promise no seats), and
- *     MoyasarCheckout, which starts the payment and shows the server's quote.
+ *     MoyasarCheckout, which starts the payment and shows the server's quote;
+ *   - the coupon field (P7) only once 20261026_20 has run (couponsAvailable,
+ *     a service-role probe) and never for a point top-up.
  */
 
 export const dynamic = "force-dynamic";
@@ -118,6 +122,15 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
   const listed = item.prices[parsed.billing];
   const notes = checkoutItemNotes(item);
 
+  let couponsReady = false;
+  if (item.kind !== "topup") {
+    try {
+      couponsReady = await couponsAvailable(await createServiceClient());
+    } catch {
+      couponsReady = false;
+    }
+  }
+
   return (
     <Shell>
       <section className="rounded-2xl border border-zinc-200 bg-white p-6 text-zinc-900 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 sm:p-8">
@@ -142,7 +155,11 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
         ) : null}
 
         <div className="mt-7">
-          <MoyasarCheckout itemId={parsed.itemId} billing={parsed.billing} />
+          <MoyasarCheckout
+            itemId={parsed.itemId}
+            billing={parsed.billing}
+            couponsEnabled={couponFieldShown(item, couponsReady)}
+          />
         </div>
 
         {/* Controller ruling (Task 7 fix round 1): one line, no checkbox. */}

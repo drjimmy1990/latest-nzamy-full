@@ -9,6 +9,8 @@ import {
   intentNeedsRefresh,
   moyasarInitConfig,
   parseCheckoutResponse,
+  parseCouponPreview,
+  type CouponPreview,
   quoteVatNotice,
   refreshDecision,
 } from "@/lib/payments/checkoutView";
@@ -34,6 +36,12 @@ import {
  *      intent_not_fulfillable — the held checkout is dropped and «متابعة الدفع»
  *      starts a new one (needsNewCheckout). 3-D Secure failures land on
  *      /payments/result, whose retry link comes back here.
+ *   5. The coupon field (P7, shown when the page says so): «تطبيق» asks
+ *      POST /api/v1/coupons/validate for the server's figures and shows the
+ *      discount line; «متابعة الدفع» then sends the code with the checkout,
+ *      which applies it inside the order (the same rule — the preview is the
+ *      charge). The field locks once the intent exists; a refreshed intent
+ *      sends the same code.
  * 401 → /login and back here; 403 / 503 / 400 → the server's Arabic copy.
  * 403 (not this account type) and 410 (retired item or cycle, «لم يعد هذا
  * المنتج متاحاً للشراء») are final: «العودة إلى الباقات», never a retry.
@@ -58,13 +66,17 @@ const REFRESH_FAILED_AR = "انتهت مهلة جلسة الدفع ولم نتم
 const TOTAL_CHANGED_AR = "تغيّر المبلغ المستحق منذ عرضه. راجع الإجمالي الجديد أعلاه ثم اضغط زر الدفع مرة أخرى.";
 const NEW_CHECKOUT_AR = "لم يكتمل الدفع بجلسة الدفع هذه. اضغط «متابعة الدفع» لبدء محاولة جديدة.";
 
-async function startCheckout(itemId: string, billing: Billing): Promise<StartResult | "signed-out"> {
+async function startCheckout(
+  itemId: string,
+  billing: Billing,
+  couponCode: string | null,
+): Promise<StartResult | "signed-out"> {
   let res: Response;
   try {
     res = await fetch("/api/v1/payments/checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ itemId, billing }),
+      body: JSON.stringify(couponCode ? { itemId, billing, couponCode } : { itemId, billing }),
       cache: "no-store",
     });
   } catch {
@@ -96,13 +108,59 @@ function loginHref(): string {
   return `/login?next=${encodeURIComponent(`${window.location.pathname}${window.location.search}`)}`;
 }
 
+const COUPON_CHECK_FAILED_AR = "تعذّر التحقق من كود الخصم، حاول مرة أخرى بعد قليل";
+
+type CouponCheck = { ok: true; preview: CouponPreview } | { ok: false; message: string } | "signed-out";
+
+async function checkCoupon(code: string, itemId: string, billing: Billing): Promise<CouponCheck> {
+  let res: Response;
+  try {
+    res = await fetch("/api/v1/coupons/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, itemId, billing }),
+      cache: "no-store",
+    });
+  } catch {
+    return { ok: false, message: COUPON_CHECK_FAILED_AR };
+  }
+  if (res.status === 401) return "signed-out";
+  let body: unknown = null;
+  try {
+    body = await res.json();
+  } catch {
+    body = null;
+  }
+  if (res.ok) {
+    const preview = parseCouponPreview(body);
+    return preview ? { ok: true, preview } : { ok: false, message: COUPON_CHECK_FAILED_AR };
+  }
+  const error = (body as { error?: unknown } | null)?.error;
+  return { ok: false, message: typeof error === "string" && error ? error : COUPON_CHECK_FAILED_AR };
+}
+
 const NOTICE_CLASS =
   "rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200";
 
-export default function MoyasarCheckout({ itemId, billing }: { itemId: string; billing: Billing }) {
+export default function MoyasarCheckout({
+  itemId,
+  billing,
+  couponsEnabled = false,
+}: {
+  itemId: string;
+  billing: Billing;
+  /** Show the coupon field (the page: 20261026_20 has run, not a top-up). */
+  couponsEnabled?: boolean;
+}) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [notice, setNotice] = useState<string | null>(null);
+  const [couponInput, setCouponInput] = useState("");
+  const [coupon, setCoupon] = useState<CouponPreview | null>(null);
+  const [couponMessage, setCouponMessage] = useState<string | null>(null);
+  const [couponChecking, setCouponChecking] = useState(false);
+  /** The applied code, read by the intent refresh (it must send the same one). */
+  const couponCode = useRef<string | null>(null);
   /** The checkout the form pays with, and when it was received. */
   const current = useRef<{ resp: CheckoutResponse; at: number } | null>(null);
   /** A checkout POST is running: a second press is ignored. */
@@ -116,7 +174,7 @@ export default function MoyasarCheckout({ itemId, billing }: { itemId: string; b
     setNotice(null);
     setPhase({ kind: "starting" });
     try {
-      const result = await startCheckout(itemId, billing);
+      const result = await startCheckout(itemId, billing, couponCode.current);
       if (result === "signed-out") {
         router.push(loginHref());
         return;
@@ -130,6 +188,38 @@ export default function MoyasarCheckout({ itemId, billing }: { itemId: string; b
     } finally {
       inFlight.current = false;
     }
+  }
+
+  async function onApplyCoupon() {
+    const code = couponInput.trim().toUpperCase();
+    if (!code || couponChecking || phase.kind !== "idle") return;
+    setCouponChecking(true);
+    setCouponMessage(null);
+    try {
+      const checked = await checkCoupon(code, itemId, billing);
+      if (checked === "signed-out") {
+        router.push(loginHref());
+        return;
+      }
+      if (!checked.ok) {
+        setCoupon(null);
+        couponCode.current = null;
+        setCouponMessage(checked.message);
+        return;
+      }
+      setCoupon(checked.preview);
+      couponCode.current = checked.preview.code;
+    } finally {
+      setCouponChecking(false);
+    }
+  }
+
+  function onRemoveCoupon() {
+    if (phase.kind !== "idle" && phase.kind !== "error") return;
+    setCoupon(null);
+    couponCode.current = null;
+    setCouponInput("");
+    setCouponMessage(null);
   }
 
   const ready = phase.kind === "ready" ? phase.resp : null;
@@ -147,7 +237,7 @@ export default function MoyasarCheckout({ itemId, billing }: { itemId: string; b
       const held = current.current;
       if (!held) return null;
       if (!intentNeedsRefresh(held.resp, held.at, Date.now())) return held.resp;
-      const fresh = await startCheckout(itemId, billing);
+      const fresh = await startCheckout(itemId, billing, couponCode.current);
       if (fresh === "signed-out") {
         router.push(loginHref());
         return null;
@@ -204,6 +294,73 @@ export default function MoyasarCheckout({ itemId, billing }: { itemId: string; b
     })();
   }, [ready, itemId, billing, router]);
 
+  const couponBox = couponsEnabled ? (
+    <div className="rounded-2xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-700 dark:bg-zinc-900">
+      <label htmlFor="nz-coupon" className="block font-semibold text-zinc-800 dark:text-zinc-200">
+        كود الخصم
+      </label>
+      {coupon ? (
+        <div className="mt-2 space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <span className="font-bold text-[#0B3D2E] dark:text-[#C8A762]" dir="ltr">
+              {coupon.code}
+            </span>
+            {phase.kind === "idle" || phase.kind === "error" ? (
+              <button
+                type="button"
+                onClick={onRemoveCoupon}
+                className="text-xs font-semibold text-zinc-600 underline underline-offset-2 dark:text-zinc-400"
+              >
+                إزالة الكود
+              </button>
+            ) : null}
+          </div>
+          <dl className="space-y-1 text-zinc-700 dark:text-zinc-300">
+            <div className="flex justify-between gap-4">
+              <dt>السعر قبل الخصم</dt>
+              <dd>{formatHalalas(coupon.listNet)}</dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt>الخصم</dt>
+              <dd className="font-semibold text-emerald-700 dark:text-emerald-400">− {formatHalalas(coupon.discount)}</dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt>المبلغ قبل الضريبة بعد الخصم</dt>
+              <dd>{formatHalalas(coupon.net)}</dd>
+            </div>
+          </dl>
+          <p className="text-xs text-zinc-600 dark:text-zinc-400">تُحسب ضريبة القيمة المضافة على المبلغ بعد الخصم.</p>
+        </div>
+      ) : (
+        <div className="mt-2 flex gap-2">
+          <input
+            id="nz-coupon"
+            dir="ltr"
+            value={couponInput}
+            onChange={(e) => setCouponInput(e.target.value)}
+            maxLength={32}
+            autoComplete="off"
+            disabled={phase.kind !== "idle" || couponChecking}
+            className="min-w-0 flex-1 rounded-xl border border-zinc-300 bg-white px-3 py-2 uppercase text-zinc-900 dark:border-zinc-600 dark:bg-zinc-950 dark:text-zinc-100"
+          />
+          <button
+            type="button"
+            onClick={onApplyCoupon}
+            disabled={phase.kind !== "idle" || couponChecking || couponInput.trim() === ""}
+            className="shrink-0 rounded-xl border border-[#0B3D2E] px-4 py-2 font-bold text-[#0B3D2E] disabled:opacity-50 dark:border-[#C8A762] dark:text-[#C8A762]"
+          >
+            {couponChecking ? "جارٍ التحقق…" : "تطبيق"}
+          </button>
+        </div>
+      )}
+      {couponMessage ? (
+        <p className="mt-2 text-xs font-medium text-red-700 dark:text-red-400" role="alert">
+          {couponMessage}
+        </p>
+      ) : null}
+    </div>
+  ) : null;
+
   if (phase.kind === "error") {
     return (
       <div className="rounded-2xl border border-red-300 bg-red-50 p-5 text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200" role="alert">
@@ -233,6 +390,7 @@ export default function MoyasarCheckout({ itemId, billing }: { itemId: string; b
   if (!ready) {
     return (
       <div className="space-y-4">
+        {couponBox}
         {notice ? (
           <p className={NOTICE_CLASS} role="alert">
             {notice}
@@ -253,6 +411,20 @@ export default function MoyasarCheckout({ itemId, billing }: { itemId: string; b
   return (
     <div className="space-y-5">
       <dl className="divide-y divide-zinc-200 rounded-2xl border border-zinc-200 bg-white text-sm dark:divide-zinc-700 dark:border-zinc-700 dark:bg-zinc-900">
+        {ready.quote.discount && ready.quote.listNet !== undefined ? (
+          <>
+            <div className="flex items-center justify-between gap-4 px-5 py-3">
+              <dt className="text-zinc-600 dark:text-zinc-400">السعر قبل الخصم</dt>
+              <dd className="font-semibold text-zinc-900 dark:text-zinc-100">{formatHalalas(ready.quote.listNet)}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-4 px-5 py-3">
+              <dt className="text-zinc-600 dark:text-zinc-400">
+                الخصم (<span dir="ltr">{ready.quote.couponCode}</span>)
+              </dt>
+              <dd className="font-semibold text-emerald-700 dark:text-emerald-400">− {formatHalalas(ready.quote.discount)}</dd>
+            </div>
+          </>
+        ) : null}
         <div className="flex items-center justify-between gap-4 px-5 py-3">
           <dt className="text-zinc-600 dark:text-zinc-400">المبلغ قبل الضريبة</dt>
           <dd className="font-semibold text-zinc-900 dark:text-zinc-100">{formatHalalas(ready.quote.net)}</dd>

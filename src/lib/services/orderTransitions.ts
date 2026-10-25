@@ -32,8 +32,9 @@
  *     ai-letter, contract-analyze, ai-case-eval) with
  *     `status: finalTotal > 0 ? "pending_payment" : "pending_assignment"`.
  *     Which branch fires was NOT traced — all five of those entries carry
- *     `requiresPayment: false`, but `finalTotal` comes from
- *     `quoteClientService`, not from `basePrice` directly. Treat this one as
+ *     `requiresPayment: false`, but `finalTotal` came from the (since
+ *     removed, P7) client-side `quoteClientService`, not from `basePrice`
+ *     directly. Treat this one as
  *     "produces pending_assignment, and possibly pending_payment"; the
  *     consultation booking above is the case that is certain.
  *

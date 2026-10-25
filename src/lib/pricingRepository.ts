@@ -15,24 +15,6 @@ import {
 
 export type PricingCatalogSource = "admin-seed" | "backend";
 
-export type ClientServiceQuoteInput = {
-  couponCode?: string;
-  useWallet?: boolean;
-  walletBalance?: number;
-  source?: PricingCatalogSource;
-};
-
-export type ClientServiceQuote = {
-  serviceId: string;
-  originalPrice: number;
-  discount: number;
-  walletUsed: number;
-  finalTotal: number;
-  couponApplied: boolean;
-  couponError: string | null;
-  source: PricingCatalogSource;
-};
-
 export type AdminPricingCatalogRow = {
   service_id: string;
   category_id: ClientServiceCategoryId;
@@ -56,10 +38,11 @@ export type AdminPricingCatalogRow = {
   };
 };
 
-const VALID_COUPONS: Record<string, number> = {
-  NZAMY50: 50,
-  NEWCLIENT: 75,
-};
+// Coupons are NOT here. A client-side map (VALID_COUPONS) and the
+// quoteClientService() that read it used to accept NZAMY50 / NEWCLIENT with no
+// minimum and no cap, in the browser. Since P7 (owner answers of 25 Oct 2026,
+// pricing doc §13أ) a coupon is checked and applied on the server only:
+// src/lib/payments/couponRules.ts + couponServer.ts, inside the checkout order.
 
 export function getClientServiceById(
   serviceId: string | null | undefined,
@@ -103,45 +86,6 @@ export function formatClientServicePrice(service: Pick<ClientServiceCatalogItem,
     per_page: `يبدأ من ${amount} ر.س`,
   };
   return labels[service.priceMode];
-}
-
-export function quoteClientService(
-  serviceId: string,
-  input: ClientServiceQuoteInput = {},
-  catalog: ClientServiceCatalogItem[] = CLIENT_SERVICE_CATALOG,
-): ClientServiceQuote {
-  const service = getClientServiceById(serviceId, catalog);
-  const originalPrice = service.requiresPayment ? service.basePrice : 0;
-  const couponCode = input.couponCode?.trim().toUpperCase() ?? "";
-  const walletBalance = Math.max(0, input.walletBalance ?? 0);
-  let couponApplied = false;
-  let couponError: string | null = null;
-  let discount = 0;
-
-  if (couponCode) {
-    const couponValue = VALID_COUPONS[couponCode];
-    if (couponValue) {
-      couponApplied = true;
-      discount = Math.min(couponValue, originalPrice);
-    } else {
-      couponError = "كود الخصم غير صالح أو منتهي.";
-    }
-  }
-
-  const walletUsed = input.useWallet
-    ? Math.min(walletBalance, Math.max(0, originalPrice - discount))
-    : 0;
-
-  return {
-    serviceId: service.serviceId,
-    originalPrice,
-    discount,
-    walletUsed,
-    finalTotal: Math.max(0, originalPrice - discount - walletUsed),
-    couponApplied,
-    couponError,
-    source: input.source ?? "admin-seed",
-  };
 }
 
 export function mergeAdminPricingCatalogRows(rows: AdminPricingCatalogRow[]): ClientServiceCatalogItem[] {
