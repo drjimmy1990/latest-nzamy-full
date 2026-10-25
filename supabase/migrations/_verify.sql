@@ -4437,14 +4437,29 @@ begin
       raise exception '_verify: % is missing, not callable by sessions, or open to guests (re-run 20261026_65)', r;
     end if;
   end loop;
-  select count(*) into n from public.attachments a where not public.storage_path_in_folder(a.storage_path, a.owner_user_id);
+  -- After 20261026_72 the routes read the folder the file was written in
+  -- (folder_owner_id): a document 70 moved to the firm owner, kept for the
+  -- other party or left by a deleted uploader is NOT outside its folder.
+  if exists (select 1 from pg_attribute where attrelid = 'public.attachments'::regclass
+              and attname = 'folder_owner_id' and not attisdropped) then
+    execute 'select count(*) from public.attachments a
+              where not public.storage_path_in_folder(a.storage_path, coalesce(a.folder_owner_id, a.owner_user_id))' into n;
+  else
+    select count(*) into n from public.attachments a where not public.storage_path_in_folder(a.storage_path, a.owner_user_id);
+  end if;
   if n > 0 then
-    raise warning '_verify: 20261026_65 — % attachments row(s) point outside their owner''s folder; the download routes no longer serve them. List: select id, request_id, owner_user_id, storage_path, created_at from public.attachments where not public.storage_path_in_folder(storage_path, owner_user_id);', n;
+    raise warning '_verify: 20261026_65 — % attachments row(s) point outside the folder they were written in; the download routes no longer serve them. List (after 72): select id, request_id, owner_user_id, folder_owner_id, storage_path, created_at from public.attachments where not public.storage_path_in_folder(storage_path, coalesce(folder_owner_id, owner_user_id));', n;
   end if;
   if to_regclass('public.contract_versions') is not null then
-    select count(*) into n from public.contract_versions v where not public.storage_path_in_folder(v.storage_path, v.uploaded_by);
+    if exists (select 1 from pg_attribute where attrelid = 'public.contract_versions'::regclass
+                and attname = 'folder_owner_id' and not attisdropped) then
+      execute 'select count(*) from public.contract_versions v
+                where not public.storage_path_in_folder(v.storage_path, coalesce(v.folder_owner_id, v.uploaded_by))' into n;
+    else
+      select count(*) into n from public.contract_versions v where not public.storage_path_in_folder(v.storage_path, v.uploaded_by);
+    end if;
     if n > 0 then
-      raise warning '_verify: 20261026_65 — % contract_versions row(s) point outside their uploader''s folder (or the uploader''s account is gone); the download routes no longer serve them.', n;
+      raise warning '_verify: 20261026_65 — % contract_versions row(s) point outside the folder they were written in (before 72: or the uploader''s account is gone); the download routes no longer serve them.', n;
     end if;
   end if;
   raise notice '_verify: 20261026_65 OK — attachments / contract_versions written by a session stay in the writer''s own folder, attachments only on a request the caller filed or is assigned to, file / uploader / request fixed after insert';
@@ -4504,15 +4519,21 @@ begin
       end if;
     end loop;
   end if;
-  select count(*) into n
-    from public.document_shares s
-   where (s.expires_at is null or s.expires_at > now())
-     and not exists (select 1 from public.attachments a
-                      where a.id::text = s.document_id
-                        and a.storage_path = s.document_path
-                        and a.owner_user_id = s.owner_id
-                        and a.deleted_at is null
-                        and public.storage_path_in_folder(a.storage_path, a.owner_user_id));
+  -- the folder the file was written in (folder_owner_id, 20261026_72) once it is recorded
+  execute format(
+    'select count(*)
+       from public.document_shares s
+      where (s.expires_at is null or s.expires_at > now())
+        and not exists (select 1 from public.attachments a
+                         where a.id::text = s.document_id
+                           and a.storage_path = s.document_path
+                           and a.owner_user_id = s.owner_id
+                           and a.deleted_at is null
+                           and public.storage_path_in_folder(a.storage_path, %s))',
+    case when exists (select 1 from pg_attribute where attrelid = 'public.attachments'::regclass
+                       and attname = 'folder_owner_id' and not attisdropped)
+         then 'coalesce(a.folder_owner_id, a.owner_user_id)' else 'a.owner_user_id' end)
+    into n;
   if n > 0 then
     raise warning '_verify: 20261026_66 — % live document_shares row(s) do not point at a live document of their own owner, in his folder (most likely forged; the deployed verify route refuses them). List: select s.id, s.owner_id, s.document_id, s.document_path, s.created_at, s.expires_at from public.document_shares s where (s.expires_at is null or s.expires_at > now()) and not exists (select 1 from public.attachments a where a.id::text = s.document_id and a.storage_path = s.document_path and a.owner_user_id = s.owner_id and a.deleted_at is null and public.storage_path_in_folder(a.storage_path, a.owner_user_id));', n;
   end if;
@@ -4680,3 +4701,76 @@ begin
   raise notice '_verify: 71_AFTER_70 OK — the documents SELECT policy refuses objects whose row belongs to someone else';
 end $$;
 -- <<< verify:storage_documents_read_guard
+
+-- >>> verify:file_folder_owner — supabase/tests/rls/batch_2026_10_26_integration.test.sql
+-- 2026-10-26 — 20261026_72_file_folder_owner.sql (where 65/66 meet 70/71):
+-- attachments / contract_versions keep the folder their file was written in,
+-- so a document 70 moves to the firm owner (or keeps for the other party, or
+-- whose uploader is deleted) is still served by the routes, and a session
+-- cannot register a path another account's row holds. Read-only, safe to
+-- repeat. NOTICE while 72 has not run (the deployed routes select
+-- folder_owner_id and fail every file download until it runs: run 72 BEFORE
+-- the deploy). RAISES when it ran but a trigger is missing / disabled /
+-- DEFINER / not right after 65's guard, when 66 was re-run after it
+-- (can_share_attachment without folder_owner_id), when a row in its owner's
+-- folder has no folder_owner_id, or when 70's movers are owned by a role the
+-- path guards do not trust.
+do $$
+declare
+  t text; pos int; expect text; n int; rec record;
+begin
+  -- 70's movers pass 65 / 72 only as postgres / supabase_admin: inside a
+  -- SECURITY DEFINER function current_user is its owner.
+  for rec in
+    select p.oid::regprocedure::text as f, pg_get_userbyid(p.proowner) as o, p.prosecdef as d
+      from pg_proc p
+     where p.pronamespace = 'public'::regnamespace
+       and p.proname in ('transfer_firm_assets', 'account_keep_rules', 'account_delete_keep_rules', 'firm_member_removed_transfer')
+  loop
+    if not rec.d or rec.o not in ('postgres', 'supabase_admin') then
+      raise exception '_verify: 20261026_70 — % is owned by % (definer: %): the path guards of 65 / 72 refuse its moves, member removals keep the files with the member and purges end blocked (re-run 20261026_70 as postgres)', rec.f, rec.o, rec.d;
+    end if;
+  end loop;
+
+  if to_regprocedure('public.stamp_attachment_folder_owner()') is null then
+    if to_regprocedure('public.guard_attachment_session_writes()') is null then
+      raise notice '_verify: 20261026_72 waits for 20261026_65';
+    else
+      raise notice '_verify: 20261026_72 is not applied yet — the deployed download / ZIP / share routes read attachments.folder_owner_id and fail until it runs, and a document 70 moves to the firm owner cannot be served. Run 72_BEFORE_DEPLOY_20261026_72_file_folder_owner.sql BEFORE the deploy';
+    end if;
+    return;
+  end if;
+  foreach t in array array['public.attachments', 'public.contract_versions'] loop
+    expect := case t when 'public.attachments' then 'trg_01_attachments_folder_owner' else 'trg_01_contract_versions_folder_owner' end;
+    select s.p into pos from (
+      select row_number() over (order by tg.tgname) as p, tg.tgname
+        from pg_trigger tg
+       where tg.tgrelid = t::regclass and not tg.tgisinternal and (tg.tgtype & 2) = 2 and tg.tgenabled <> 'D') s
+     where s.tgname = expect;
+    if pos is distinct from 2 then
+      raise exception '_verify: 20261026_72 — % is missing, disabled or not right after 65''s guard on % (position %) (re-run 20261026_72)', expect, t, pos;
+    end if;
+  end loop;
+  if exists (select 1 from pg_proc where pronamespace = 'public'::regnamespace and prosecdef
+              and proname in ('stamp_attachment_folder_owner', 'stamp_contract_version_folder_owner')) then
+    raise exception '_verify: 20261026_72 — a folder-owner trigger is SECURITY DEFINER (re-run 20261026_72)';
+  end if;
+  if not exists (select 1 from pg_constraint where conrelid = 'public.attachments'::regclass and conname = 'attachments_folder_owner_check')
+     or not exists (select 1 from pg_constraint where conrelid = 'public.contract_versions'::regclass and conname = 'contract_versions_folder_owner_check') then
+    raise exception '_verify: 20261026_72 — a folder_owner_id CHECK is missing (re-run 20261026_72)';
+  end if;
+  if to_regprocedure('public.can_share_attachment(text, text)') is not null
+     and position('folder_owner_id' in (select prosrc from pg_proc where oid = 'public.can_share_attachment(text, text)'::regprocedure)) = 0 then
+    raise exception '_verify: 20261026_72 — can_share_attachment does not read folder_owner_id: 20261026_66 was re-run after 72, and a firm owner cannot share an inherited document (re-run 20261026_72)';
+  end if;
+  execute 'select count(*) from public.attachments where folder_owner_id is null and public.storage_path_in_folder(storage_path, owner_user_id)' into n;
+  if n > 0 then
+    raise exception '_verify: 20261026_72 — % attachments row(s) in their owner''s folder have no folder_owner_id (re-run 20261026_72)', n;
+  end if;
+  execute 'select count(*) from public.contract_versions where folder_owner_id is null and public.storage_path_in_folder(storage_path, uploaded_by)' into n;
+  if n > 0 then
+    raise exception '_verify: 20261026_72 — % contract_versions row(s) in their uploader''s folder have no folder_owner_id (re-run 20261026_72)', n;
+  end if;
+  raise notice '_verify: 20261026_72 OK — attachments / contract_versions keep the folder their file was written in; moved, kept and orphaned-uploader files stay servable; a session cannot register a path another account''s row holds; 70''s movers owned by a trusted role';
+end $$;
+-- <<< verify:file_folder_owner

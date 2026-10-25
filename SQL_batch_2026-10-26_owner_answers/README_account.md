@@ -4,8 +4,11 @@
 
 | الترتيب | الملف | من أين | متى |
 |---|---|---|---|
+| 0 | `72_BEFORE_DEPLOY_20261026_72_file_folder_owner.sql` (بعد 65 و66) | محرر SQL في Supabase | قبل نشر الكود، والأفضل قبل 70 — انظر `README.md`، قسم «65 → 66 → 72 → 70 → 71» |
 | 1 | `70_BEFORE_DEPLOY_20261026_70_account_deletion.sql` | محرر SQL في Supabase | قبل نشر الكود |
 | 2 | `71_AFTER_70_storage_policies_documents_select.sql` | على الخادم بدور `supabase_admin` (الأمر أدناه)، **لا** من محرر SQL | بعد 70، ويجوز قبل النشر أو بعده |
+
+بدون 72 ينتقل مستند العضو لصاحب المكتب، لكن روابط التحميل ترفضه لأن ملفه في مجلد العضو. الترتيب الكامل للملفات الخمسة في `README.md`.
 
 *English, short:* run the read-only FK query below first. Then run `70_BEFORE_DEPLOY_…` in the SQL editor **before** deploying the D6 code (expect `20261026_70 verify: OK`). Then run `71_AFTER_70_…` on the server as `supabase_admin` (storage policies cannot be created from the SQL editor; expect `storage_policies_documents: OK`). Deploy, run `_verify.sql` by hand (deploy.sh does **not** run it; expect `_verify: 20261026_70 OK` and `_verify: 71_AFTER_70 OK`), and add the daily n8n job. The code is safe before the files run, because it keeps the old behaviour.
 
