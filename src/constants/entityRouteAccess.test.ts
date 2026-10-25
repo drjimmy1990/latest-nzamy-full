@@ -94,3 +94,23 @@ test("N1.9: the firm cases page shows its «الجلسات» button only to role
   assert.match(src, /const canOpenHearings = user\.userType === "admin" \|\| getFirmRouteDecision\("\/dashboard\/firm\/hearings", firmRole\)\.allowed;/);
   assert.match(src, /\{canOpenHearings && \(\s*<Link href="\/dashboard\/firm\/hearings"/);
 });
+
+// ─── Owner ٢٥٦ (D4): the firm letterhead link, for exactly the roles that may open it ──
+
+test("D4: the firm Letterhead link is offered to exactly the roles the route and the vault API allow", () => {
+  const src = readFileSync(new URL("./navigation.sidebars.ts", import.meta.url), "utf8");
+  // The vault API (brandingServer.ts): the firm owner, managing_partner and
+  // office_admin (FIRM_BRANDING_ROLES). managing_partner gets the full
+  // sidebar (getFirmSidebar), so no list names it.
+  const vaultRoles = new Set(["managing_partner", "office_admin"]);
+  for (const role of FIRM_ROLES) {
+    const allowed = getFirmRouteDecision("/dashboard/firm/letterhead", role).allowed;
+    assert.equal(allowed, vaultRoles.has(role), `${role}: the route rule agrees with the vault API`);
+    if (role === "managing_partner") continue;
+    const line = new RegExp(`^  ${role}: \\[(.*)\\],\\r?$`, "m").exec(src);
+    assert.ok(line, `${role} has a sidebar list`);
+    assert.equal(line[1].includes('"Letterhead"'), allowed, `${role}: offered the link ⇔ may open it`);
+  }
+  const fallback = /^  default: \[(.*)\],\r?$/m.exec(src);
+  assert.ok(fallback && !fallback[1].includes('"Letterhead"'), "an unknown firm role is not offered it");
+});
