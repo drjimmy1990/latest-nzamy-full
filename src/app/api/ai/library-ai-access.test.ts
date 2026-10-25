@@ -132,7 +132,7 @@ test("the gate reads the session with getUser, never the unverified getSession",
 test("an auth outage is a 503, checked before the guest 401", () => {
   assert.match(
     gateSource,
-    /import \{ isAuthUnavailable, authUnavailableResponse \} from '@\/lib\/auth\/apiAuth';/,
+    /import \{ isAuthUnavailable, authUnavailableResponse, frozenAccountResponse \} from '@\/lib\/auth\/apiAuth';/,
   );
   const unavailable = at(
     gateSource,
@@ -145,6 +145,11 @@ test("an auth outage is a 503, checked before the guest 401", () => {
     gateSource,
     /if \(!user\) \{\s*return NextResponse\.json\(\s*\{ error: 'غير مصرح — يرجى تسجيل الدخول' \},\s*\{ status: 401 \},\s*\);/,
   );
+  // D6: a frozen account (a pending deletion) is refused after the 401, before
+  // any service-role tier read.
+  const frozen = at(gateSource, "const frozen = frozenAccountResponse(user);", "gate");
+  const tier = at(gateSource, "getUserTier(user.id)", "gate");
+  assert.ok(guest < frozen && frozen < tier, "401 → frozen → tier");
 });
 
 test("a signed-in user below pro who is not an admin is a 403, decided after the 401", () => {

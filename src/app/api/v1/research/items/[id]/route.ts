@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { isValidUuid, validateTitle, dbErrorResponse } from "../_shared";
-import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 
 /**
  * /api/v1/research/items/[id] — one `research_items` row, addressed on its
@@ -30,6 +30,9 @@ export async function PATCH(
   if (!user) {
     return NextResponse.json({ error: "غير مصرح — يرجى تسجيل الدخول" }, { status: 401 });
   }
+  // D6 (owner ٢٩٨): a frozen account (a pending deletion) changes nothing.
+  const frozen = frozenAccountResponse(user);
+  if (frozen) return frozen;
 
   const { id } = await context.params;
   if (!isValidUuid(id)) {
@@ -107,6 +110,9 @@ export async function DELETE(
   if (!user) {
     return NextResponse.json({ error: "غير مصرح — يرجى تسجيل الدخول" }, { status: 401 });
   }
+  // D6 (owner ٢٩٨): a frozen account (a pending deletion) changes nothing.
+  const frozen = frozenAccountResponse(user);
+  if (frozen) return frozen;
 
   const { id } = await context.params;
   if (!isValidUuid(id)) {

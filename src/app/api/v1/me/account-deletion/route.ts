@@ -41,7 +41,7 @@ function view(row: DeletionRequestView | null) {
 
 export async function GET() {
   const supabase = await createClient();
-  const auth = await requireApiUser(supabase, { error: "غير مصرح — يرجى تسجيل الدخول" });
+  const auth = await requireApiUser(supabase, { error: "غير مصرح — يرجى تسجيل الدخول" }, { allowFrozen: true });
   if (auth instanceof NextResponse) return auth;
   const { user } = auth;
   const frozen = freezeStateFromUser(user);
@@ -75,7 +75,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
-  const auth = await requireApiUser(supabase, { error: "غير مصرح — يرجى تسجيل الدخول" });
+  const auth = await requireApiUser(supabase, { error: "غير مصرح — يرجى تسجيل الدخول" }, { allowFrozen: true });
   if (auth instanceof NextResponse) return auth;
   const { user } = auth;
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { documentsDbErrorResponse, isValidAttachmentId } from "../_shared";
-import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 import { storageObjectHeldByCaseDocument } from "@/lib/services/caseDocumentObject";
 
 /**
@@ -47,6 +47,9 @@ export async function DELETE(
     if (!user) {
       return NextResponse.json({ error: "غير مصرح — يرجى تسجيل الدخول" }, { status: 401 });
     }
+    // D6 (owner ٢٩٨): a frozen account (a pending deletion) changes nothing.
+    const frozen = frozenAccountResponse(user);
+    if (frozen) return frozen;
 
     const { id } = await params;
     // attachments.id is a bigserial, not a uuid — reject before it reaches PostgREST.

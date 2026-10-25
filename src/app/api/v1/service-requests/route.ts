@@ -13,7 +13,7 @@ import { checkOrderIntake, intakeErrorMessageAr } from "@/lib/services/intakeGua
 import { validateServiceRequestCreate } from "@/lib/services/serviceRequestIntake";
 import { resolveServiceRequestEntityScope } from "@/lib/auth/serviceRequestEntityScope";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 
 async function resolveActiveEntityIds(supabase: SupabaseClient, userId: string) {
   const [firmResult, businessResult, ownedFirmResult, ownedBusinessResult] = await Promise.all([
@@ -290,6 +290,9 @@ export async function POST(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    // D6 (owner ٢٩٨): a frozen account (a pending deletion) changes nothing.
+    const frozen = frozenAccountResponse(user);
+    if (frozen) return frozen;
 
     const body = await request.json();
 

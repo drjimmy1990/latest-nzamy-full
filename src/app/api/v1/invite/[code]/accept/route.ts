@@ -3,7 +3,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import type { ServerTier } from "@/lib/access-control";
 import { colleagueInviteTrialDays } from "@/lib/libraryAccess";
 import { grantLibraryAccess } from "@/lib/libraryAccessServer";
-import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 
 /**
  * POST /api/v1/invite/[code]/accept — Accept a colleague/trial invitation.
@@ -95,6 +95,9 @@ export async function POST(
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    // D6 (owner ٢٩٨): a frozen account (a pending deletion) changes nothing.
+    const frozen = frozenAccountResponse(user);
+    if (frozen) return frozen;
 
     const admin = await createServiceClient();
     const { data: row, error: lookupError } = await admin

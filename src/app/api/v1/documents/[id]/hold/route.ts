@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { documentsDbErrorResponse, isValidAttachmentId } from "../../_shared";
-import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 
 const MAX_HOLD_REASON_LEN = 300;
 
@@ -35,6 +35,9 @@ export async function PATCH(
     if (!user) {
       return NextResponse.json({ error: "غير مصرح — يرجى تسجيل الدخول" }, { status: 401 });
     }
+    // D6 (owner ٢٩٨): a frozen account (a pending deletion) changes nothing.
+    const frozen = frozenAccountResponse(user);
+    if (frozen) return frozen;
 
     const { id } = await params;
     if (!isValidAttachmentId(id)) {

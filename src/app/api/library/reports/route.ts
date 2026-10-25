@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { frozenAccountResponse } from "@/lib/auth/apiAuth";
 
 /**
  * POST /api/library/reports
@@ -11,6 +12,9 @@ export async function POST(request: Request) {
     
     const { data: { user } } = await supabase.auth.getUser();
     // Allow anonymous reports but track user_id if authenticated
+    // D6 (owner ٢٩٨): a frozen account (a pending deletion) changes nothing.
+    const frozen = frozenAccountResponse(user);
+    if (frozen) return frozen;
 
     const body = await request.json();
     const { entityType, entityId, reportType, description } = body;

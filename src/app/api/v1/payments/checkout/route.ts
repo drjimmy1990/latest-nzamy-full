@@ -6,6 +6,7 @@ import { createMoyasarClient, type MoyasarClient } from "@/lib/payments/moyasarC
 import { parseCheckoutBody, resolveCallbackOrigin } from "@/lib/payments/checkoutRules";
 import { startCheckoutWith } from "@/lib/payments/checkoutCore";
 import { checkoutModeAllowed } from "@/lib/payments/testModeAccess";
+import { frozenAccountResponse } from "@/lib/auth/apiAuth";
 
 /**
  * POST /api/v1/payments/checkout — starts one online payment (Moyasar
@@ -41,6 +42,9 @@ export async function POST(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return reply({ error: "سجّل الدخول لإتمام الدفع" }, 401);
+  // D6 (owner ٢٩٨): a frozen account (a pending deletion) changes nothing.
+  const frozen = frozenAccountResponse(user);
+  if (frozen) return frozen;
 
   let raw: unknown;
   try {

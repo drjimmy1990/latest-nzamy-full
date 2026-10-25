@@ -17,7 +17,7 @@ import { readActiveRequest, syncFreezeMetadata } from "@/lib/accountDeletion/acc
  */
 export async function POST() {
   const supabase = await createClient();
-  const auth = await requireApiUser(supabase, { error: "غير مصرح — يرجى تسجيل الدخول" });
+  const auth = await requireApiUser(supabase, { error: "غير مصرح — يرجى تسجيل الدخول" }, { allowFrozen: true });
   if (auth instanceof NextResponse) return auth;
   const { user } = auth;
 

@@ -5,6 +5,7 @@ import {
   AUTH_UNAVAILABLE_AR,
   type AuthErrorLike,
 } from "@/lib/auth/resolveAuthOutcome";
+import { freezeStateFromUser, ACCOUNT_FROZEN_AR } from "@/lib/auth/accountFreeze";
 
 /**
  * The API half of resolveAuthOutcome: one place that decides what an HTTP
@@ -57,6 +58,7 @@ export function isAuthUnavailable(
 export async function requireApiUser(
   supabase: SupabaseClient,
   unauthorizedBody: Record<string, unknown> = { error: "Unauthorized" },
+  options: { allowFrozen?: boolean } = {},
 ): Promise<{ user: User } | NextResponse> {
   const {
     data: { user },
@@ -67,5 +69,33 @@ export async function requireApiUser(
   if (outcome === "unavailable") return authUnavailableResponse();
   if (!user) return NextResponse.json(unauthorizedBody, { status: 401 });
 
+  // D6: a frozen account is refused unless the route is one of the few it
+  // must still reach (its own deletion status and «استعادة الحساب»).
+  if (!options.allowFrozen) {
+    const frozen = frozenAccountResponse(user);
+    if (frozen) return frozen;
+  }
+
   return { user };
+}
+
+/**
+ * D6 (owner ٢٩٨): the 403 a frozen account (a pending deletion) gets from a
+ * route that writes, or null to go on. For the routes that do their own
+ * `getUser()` instead of assertRole (which refuses a frozen account itself):
+ *
+ *   if (!user) return …401…;
+ *   const frozen = frozenAccountResponse(user);
+ *   if (frozen) return frozen;
+ *
+ * Reads only `app_metadata.account_deletion` of the user getUser() returned
+ * (no query). Anything but status "frozen" — no claim, a malformed one — is
+ * NOT frozen, so no ordinary account is ever locked out by it.
+ */
+export function frozenAccountResponse(user: unknown): NextResponse | null {
+  if (!freezeStateFromUser(user).frozen) return null;
+  return NextResponse.json(
+    { error: ACCOUNT_FROZEN_AR, code: "account_frozen" },
+    { status: 403, headers: { "Cache-Control": "no-store" } },
+  );
 }
