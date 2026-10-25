@@ -52,8 +52,14 @@
 --      service today, so it cannot be used online yet). Both: 25 % cap, once
 --      per user. A missing row is created with the old seed's dates; an
 --      existing row keeps its active flag and dates (an admin may have
---      switched it off). No other code is created or changed (LAUNCH2026 from
---      the old seed keeps its values; the defaults of step 4 bind it).
+--      switched it off). No other code is created.
+--   7b. Every OTHER active code not created on the admin coupons page
+--      (metadata.created_by_admin) is SWITCHED OFF, values kept, named in a
+--      NOTICE and stamped metadata.switched_off: before P7 nothing redeemed a
+--      code, after the deploy checkout honours every active row, and the old
+--      seed's LAUNCH2026 (25 % off, 500 uses, no minimum, public until now)
+--      is not one of the owner's two. An admin may switch it back on from the
+--      coupons page; a re-run skips a stamped row, so it does not undo that.
 --   8. Every new column, index and the trigger carry the literal
 --      "20261026_20" — the marker _verify.sql reads. Raising verify; then
 --      `notify pgrst` after commit.
@@ -75,6 +81,7 @@
 --   alter table public.coupons drop column max_discount_pct, drop column excluded_kinds;
 --   create policy "anyone can read active coupons" on public.coupons for select using (active = true);
 --   grant select on public.coupons to anon, authenticated;
+--   update public.coupons set active = true where metadata->>'switched_off' like '%20261026_20%';  -- only with the owner's yes
 --   and remove the verify:coupons_server_only section from _verify.sql.
 -- =============================================================================
 
@@ -213,6 +220,36 @@ on conflict (code) do update
        metadata          = public.coupons.metadata || excluded.metadata,
        updated_at        = now();
 
+-- ── 6b. Every other seeded code is switched off (values kept) ──────────────
+-- Before P7 nothing could redeem a code; from the deploy on, checkout honours
+-- every ACTIVE row. The owner approved two codes (§13أ). LAUNCH2026 (old seed:
+-- 25 % off, 500 uses, no minimum — and readable by anyone until now) and any
+-- other row put in by SQL would go live silently, so they are switched off
+-- here: active = false, nothing else changed, the code named in a NOTICE and
+-- stamped metadata.switched_off. Coupons an admin created on the coupons page
+-- (metadata.created_by_admin) are his deliberate choice and are left alone.
+-- An admin may switch any of these back on from the coupons page; a re-run
+-- skips a row that carries the stamp, so it does not undo that.
+do $$
+declare
+  off text;
+begin
+  with switched as (
+    update public.coupons
+       set active     = false,
+           metadata   = metadata || jsonb_build_object('switched_off',
+                          '20261026_20 — not one of the owner''s two codes (pricing doc 25 Oct §13أ); values kept; an admin may switch it back on'),
+           updated_at = now()
+     where active
+       and code not in ('NZAMY50', 'NEWCLIENT')
+       and not (metadata ? 'created_by_admin')
+       and coalesce(metadata->>'switched_off', '') not like '%20261026_20%'
+    returning code
+  )
+  select string_agg(code, ', ' order by code) into off from switched;
+  raise notice '20261026_20: switched off (not the owner''s codes; values kept): %', coalesce(off, 'none');
+end $$;
+
 -- ── 7. Verify — raises, so the transaction rolls back ────────────────────────
 do $$
 declare
@@ -277,10 +314,17 @@ begin
     end if;
   end loop;
 
+  if exists (select 1 from public.coupons
+              where active and code not in ('NZAMY50', 'NEWCLIENT')
+                and not (metadata ? 'created_by_admin')
+                and coalesce(metadata->>'switched_off', '') not like '%20261026_20%') then
+    missing := missing || ' a seeded code other than the owner''s two is still active;';
+  end if;
+
   if missing <> '' then
     raise exception '20261026_20 verify:%', missing;
   end if;
-  raise notice '20261026_20 verify: OK — coupons and coupon_usage are server only (no policy, no anon / authenticated privilege); 25 %% cap and top-up exclusion on every coupon; once per user and once per order guarded; NZAMY50 (50 SAR, min 200) and NEWCLIENT (75 SAR, min 300, single services) carry the owner''s rules';
+  raise notice '20261026_20 verify: OK — coupons and coupon_usage are server only (no policy, no anon / authenticated privilege); 25 %% cap and top-up exclusion on every coupon; once per user and once per order guarded; NZAMY50 (50 SAR, min 200) and NEWCLIENT (75 SAR, min 300, single services) carry the owner''s rules; other seeded codes switched off';
 end $$;
 
 commit;

@@ -4193,6 +4193,13 @@ begin
   if missing <> '' then
     raise exception '_verify: 20261026_20 —% %', missing, fix;
   end if;
+  -- Live codes other than the owner's two (switched back on by an admin, or
+  -- created on the coupons page): named for a look, never an error.
+  select string_agg(code, ', ' order by code) into p
+    from public.coupons where active and code not in ('NZAMY50', 'NEWCLIENT');
+  if p is not null then
+    raise notice '_verify: 20261026_20 — active codes besides NZAMY50 / NEWCLIENT (checkout honours them): %', p;
+  end if;
   raise notice '_verify: 20261026_20 OK — coupons and coupon_usage are server only; 25 %% cap and top-up exclusion hold; once per user / once per order guarded';
 end $$;
 -- <<< verify:coupons_server_only

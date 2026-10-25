@@ -135,7 +135,7 @@ begin
   raise notice 'T4 PASS: once per (coupon, user) and once per order are refused by unique guards; another user redeems; used_count follows';
 end $$;
 
--- T5 the owner's rules on his two codes; LAUNCH2026 kept; an admin's off switch kept
+-- T5 the owner's rules on his two codes; the other seeded codes switched off (values kept); admin choices kept
 do $$
 declare k record;
 begin
@@ -157,10 +157,22 @@ begin
      or k.excluded_kinds <> '{topup}' then
     raise exception 'T5 FAIL: LAUNCH2026 was changed beyond the new defaults: %', row_to_json(k);
   end if;
-  if (select count(*) from public.coupons) <> 3 then
+  -- switched off by the first run (B3), switched back on by an admin, and the
+  -- second run respected that (the stamp)
+  if not k.active or coalesce(k.metadata->>'switched_off', '') not like '%20261026_20%' then
+    raise exception 'T5 FAIL: LAUNCH2026 — the admin re-activation was undone or the stamp is gone: %', row_to_json(k);
+  end if;
+  if (select active from public.coupons where code = 'OLDPROMO') then
+    raise exception 'T5 FAIL: OLDPROMO (seeded by SQL, not the owner''s) is active';
+  end if;
+  if not (select active from public.coupons where code = 'ADMIN10')
+     or (select metadata ? 'switched_off' from public.coupons where code = 'ADMIN10') then
+    raise exception 'T5 FAIL: ADMIN10 (created on the admin page) was touched';
+  end if;
+  if (select count(*) from public.coupons) <> 5 then
     raise exception 'T5 FAIL: a coupon code was invented (% rows)', (select count(*) from public.coupons);
   end if;
-  raise notice 'T5 PASS: NZAMY50 50 SAR / min 200, NEWCLIENT 75 SAR / min 300 / single services; LAUNCH2026 untouched; no code invented; admin off switch kept';
+  raise notice 'T5 PASS: NZAMY50 50 SAR / min 200, NEWCLIENT 75 SAR / min 300 / single services; LAUNCH2026 and OLDPROMO switched off with values kept, an admin re-activation survives a re-run; admin-created ADMIN10 untouched; no code invented; admin off switch kept';
 end $$;
 
 -- T6 the database refuses a cap above 25 % and a coupon on top-ups

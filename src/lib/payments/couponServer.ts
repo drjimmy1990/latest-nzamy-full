@@ -36,6 +36,7 @@ import {
   type DiscountedQuote,
 } from "./couponRules.ts";
 import { isMissingPaymentsObject } from "./fulfillDecision.ts";
+import { isMissingFeatureColumn } from "../library/optionalColumn.ts";
 import { bookEntry, PRICE_BOOK, type BookEntry } from "../pricing/priceBook.ts";
 
 export const COUPON_COLUMNS =
@@ -43,12 +44,12 @@ export const COUPON_COLUMNS =
 
 type DbError = { code?: string; message?: string } | null | undefined;
 
-/** The columns 20261026_20 adds; an error naming one means it has not run. */
+/**
+ * The columns 20261026_20 adds; an error naming one means it has not run
+ * (the tolerant-read test of src/lib/library/optionalColumn.ts).
+ */
 function namesNewColumn(error: DbError): boolean {
-  if (!error) return false;
-  if (error.code !== "42703" && error.code !== "PGRST204" && error.code !== "PGRST100") return false;
-  const m = String(error.message ?? "");
-  return m.includes("max_discount_pct") || m.includes("excluded_kinds");
+  return isMissingFeatureColumn(error, "max_discount_pct") || isMissingFeatureColumn(error, "excluded_kinds");
 }
 
 /** True once 20261026_20 has run. Any error → false (the field stays hidden). */

@@ -32,6 +32,12 @@ end $$;
 reset role;
 delete from public.coupon_usage where order_id = 'self-written';
 
+-- a code put in by SQL (must be switched off) and one an admin created on the
+-- coupons page (left alone)
+insert into public.coupons (code, discount_type, discount_value, active, metadata) values
+  ('OLDPROMO', 'fixed', 30, true, '{}'),
+  ('ADMIN10', 'percentage', 10, true, '{"created_by_admin": "00000000-0000-0000-0000-0000000000c1"}');
+
 -- the redemption the migration must keep
 insert into public.coupon_usage (coupon_id, user_id, order_id, discount_applied)
 values ((select id from public.coupons where code = 'LAUNCH2026'), '00000000-0000-0000-0000-0000000000c1', 'kept-order', 10);
