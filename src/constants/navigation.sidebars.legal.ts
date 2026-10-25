@@ -64,6 +64,8 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
     items: [
       { label: "مدير العقود",    labelEn: "Contracts",       href: "/dashboard/lawyer/contracts", icon: "FileText" },
       { label: "المستندات",      labelEn: "Documents",        href: "/dashboard/lawyer/documents", icon: "FolderOpen" },
+      // Owner decision ٢٥٦ — the official letterhead (D4).
+      { label: "الورق المروّس",  labelEn: "Letterhead",       href: "/dashboard/lawyer/letterhead", icon: "Stamp" },
       // badge «قريباً» — /ai/vault renders DashboardComingSoon (its mock
       // documents and mock lawyer card were removed, owner decision 28 Sep).
       { label: "الخزنة",         labelEn: "The Vault",        href: "/ai/vault",                    icon: "Vault", badge: "قريباً" },
@@ -198,6 +200,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     title: "العقود", titleEn: "Contracts",
     items: [
       { label: "مدير العقود",     labelEn: "Contract Manager", href: "/dashboard/firm/contracts",  icon: "FileText" },
+      { label: "الورق المروّس",   labelEn: "Letterhead",       href: "/dashboard/firm/letterhead", icon: "Stamp" },
       { label: "النماذج القياسية",labelEn: "Templates",         href: "/dashboard/firm/templates", badge: "قريباً",  icon: "CopySimple" },
       { label: "المستندات",        labelEn: "Documents",         href: "/dashboard/firm/documents", badge: "قريباً",  icon: "FolderOpen" },
       { label: "الأرشيف الموحّد",   labelEn: "Unified Archive",   href: "/dashboard/firm/archive", badge: "قريباً",    icon: "Archive" },
