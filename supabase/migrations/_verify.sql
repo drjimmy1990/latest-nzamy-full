@@ -4057,3 +4057,59 @@ begin
   raise notice '_verify: 20261026_63 OK — branding vaults: one lawyer or one firm per row, read/write by the lawyer or the firm''s owner / managing partner / office admin only, logo_path server-only, no session delete, private bucket branding (1 MB, png/jpeg/webp)';
 end $$;
 -- <<< verify:branding_vault
+
+-- >>> verify:attachments_path_ownership — supabase/tests/rls/attachments_path_ownership.test.sql
+-- 2026-10-26 — 20261026_65_attachments_path_ownership.sql (security review,
+-- finding 1). Read-only, safe to repeat. Before 65 runs it only reports (the
+-- hole is open); after, it raises when a session guard trigger is missing,
+-- disabled, DEFINER or not the first BEFORE trigger, when attachments carries
+-- any INSERT policy but 65's own, or when the helpers are missing / open to
+-- guests. Rows written before 65 whose file is outside the writer's folder
+-- are a WARNING (the routes no longer serve them; worth a look).
+do $$
+declare t text; first_before text; n int; r text;
+begin
+  if to_regprocedure('public.guard_attachment_session_writes()') is null then
+    raise notice '_verify: 20261026_65 is not applied yet — a session can still register an attachments / contract_versions row pointing at another user''s file, which the download routes then sign with the service role. Run 65_BEFORE_DEPLOY_20261026_65_attachments_path_ownership.sql';
+    return;
+  end if;
+  foreach t in array array['public.attachments', 'public.contract_versions'] loop
+    if to_regclass(t) is null then continue; end if;
+    select tg.tgname into first_before
+      from pg_trigger tg
+     where tg.tgrelid = t::regclass and not tg.tgisinternal and (tg.tgtype & 2) = 2 and tg.tgenabled <> 'D'
+     order by tg.tgname limit 1;
+    if first_before is distinct from (case t when 'public.attachments' then 'trg_00_attachments_session_guard'
+                                             else 'trg_00_contract_versions_session_guard' end) then
+      raise exception '_verify: the path-ownership guard on % is missing, disabled or not the first BEFORE trigger (first: %) (re-run 20261026_65)', t, first_before;
+    end if;
+  end loop;
+  if exists (select 1 from pg_proc where proname in ('guard_attachment_session_writes', 'guard_contract_version_session_writes')
+              and pronamespace = 'public'::regnamespace and prosecdef) then
+    raise exception '_verify: a path-ownership guard is SECURITY DEFINER — it would let every session through (re-run 20261026_65)';
+  end if;
+  select count(*) into n from pg_policy where polrelid = 'public.attachments'::regclass and polcmd = 'a';
+  if n <> 1 or not exists (select 1 from pg_policy where polrelid = 'public.attachments'::regclass
+                            and polname = 'attachments insert own file on own request') then
+    raise exception '_verify: public.attachments carries % INSERT policies — an old one is back (re-run 20261026_65)', n;
+  end if;
+  foreach r in array array['public.storage_path_in_folder(text, uuid)', 'public.can_attach_to_request(text)'] loop
+    if to_regprocedure(r) is null
+       or not has_function_privilege('authenticated', r, 'EXECUTE')
+       or has_function_privilege('anon', r, 'EXECUTE') then
+      raise exception '_verify: % is missing, not callable by sessions, or open to guests (re-run 20261026_65)', r;
+    end if;
+  end loop;
+  select count(*) into n from public.attachments a where not public.storage_path_in_folder(a.storage_path, a.owner_user_id);
+  if n > 0 then
+    raise warning '_verify: 20261026_65 — % attachments row(s) point outside their owner''s folder; the download routes no longer serve them. List: select id, request_id, owner_user_id, storage_path, created_at from public.attachments where not public.storage_path_in_folder(storage_path, owner_user_id);', n;
+  end if;
+  if to_regclass('public.contract_versions') is not null then
+    select count(*) into n from public.contract_versions v where not public.storage_path_in_folder(v.storage_path, v.uploaded_by);
+    if n > 0 then
+      raise warning '_verify: 20261026_65 — % contract_versions row(s) point outside their uploader''s folder (or the uploader''s account is gone); the download routes no longer serve them.', n;
+    end if;
+  end if;
+  raise notice '_verify: 20261026_65 OK — attachments / contract_versions written by a session stay in the writer''s own folder, attachments only on a request the caller filed or is assigned to, file / uploader / request fixed after insert';
+end $$;
+-- <<< verify:attachments_path_ownership

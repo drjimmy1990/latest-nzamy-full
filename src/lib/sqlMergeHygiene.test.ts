@@ -71,7 +71,7 @@ test("_verify.sql: every verify block is opened once and closed once, in order",
   assert.equal(open, null, `verify:${open} is never closed`);
   for (const name of ["grant_plan_atomic", "hearing_reminders", "dashboard_notes", "legal_ledger", "case_tracking_links",
     "profile_visibility", "soft_delete_case_records", "law_summary_brief", "law_sort_key", "search_scoped_page",
-    "tracking_links_v2", "branding_vault"]) {
+    "tracking_links_v2", "branding_vault", "attachments_path_ownership"]) {
     assert.ok(opened.has(name), `verify:${name} is present`);
   }
 });

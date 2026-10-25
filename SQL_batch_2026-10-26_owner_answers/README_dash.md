@@ -192,3 +192,72 @@ T=supabase/tests/rls; M=supabase/migrations; bash $T/run.sh \
 ```
 
 **English summary.** Run `63_BEFORE_DEPLOY_20261026_63_branding_vault.sql` in the SQL editor before the deploy, then `64_AFTER_63_storage_policies_branding.sql` as `supabase_admin` (storage.objects is owned by supabase_storage_admin; the editor's postgres role gets 42501). 63 adds `branding_vaults` (exactly one of `lawyer_user_id` / `firm_id`), managed only by the lawyer himself or the firm's owner / active managing partner / active office admin (`can_manage_branding_vault`, SECURITY DEFINER); `logo_path` is server-only (column grants + a CHECK tying it to the vault's own folder); no session DELETE; licence numbers are not stored (read from the verified profile at print time). It upserts the private `branding` bucket (1 MB, png/jpeg/webp, no SVG). 64 adds four owner-only Storage policies over `u/<uid>/…` and `f/<firm id>/…` (`can_manage_branding_object`, false for any malformed name) and drops any other policy that could match the bucket. Code deployed before 63 shows «يتطلب تحديث قاعدة البيانات» and saves nothing; without 64 the app still works (service role after an RLS check) and `_verify` warns. The owner's old `20261019_vault_lawyer_branding.sql` must not be run. Server check: the logo upload goes through nginx (≤ 1 MB plus multipart overhead); make sure `client_max_body_size` (already required at 6m by the licence-image upload) covers `/api/v1/branding/logo`, not only the licence route.
+
+---
+
+## 65: ربط مسار الملف بصاحبه (إصلاح أمني — المراجعة المستقلة، البند ١)
+
+`65_BEFORE_DEPLOY_20261026_65_attachments_path_ownership.sql` نسخة مطابقة من `supabase/migrations/20261026_65_attachments_path_ownership.sql`.
+
+**هذه ثغرة مفتوحة على الإنتاج اليوم — نفّذ الملف قريباً، ولا تنتظر النشر.** لا يحتاج نشر كود: كل طرق الرفع في التطبيق تلتزم بالقاعدة أصلاً (فُحصت واحدة واحدة، القائمة أدناه)، فيُغلق الملف الثغرة للصفوف الجديدة لحظة تنفيذه.
+
+**الثغرة:** روابط تحميل المستندات (المرفق الواحد، المستند المسلَّم، نسخة العقد، «تحميل الكل (ZIP)»، ورابط المشاركة) توقّع مسار الملف المسجّل في الجدول بصلاحية الخادم الكاملة. وقاعدة البيانات لم تكن تربط هذا المسار بمن سجّله. فكان يمكن لأي مستخدم مسجّل، عبر واجهة قاعدة البيانات مباشرة، أن:
+- يسجّل صفاً على طلبه هو يشير إلى ملف مستخدم آخر، ثم يحمّله؛
+- يغيّر مسار مستند في خزنته ليشير إلى ملف غيره؛
+- يضع ملفاً في قضية شخص آخر يعرف رقم طلبها.
+
+**القاعدة بعد الملف** (للجلسات فقط؛ الخادم بصلاحية `service_role` لا يتأثر):
+- `attachments`: المستخدم يسجّل المستند باسمه هو، والملف داخل مجلده هو (`<معرّفه>/…`)، وعلى طلب هو صاحبه أو المحامي المسند إليه، أو بلا طلب (الخزنة). بعد التسجيل لا يتغيّر المسار ولا صاحب المستند ولا الطلب.
+- `contract_versions`: النسخة يسجّلها رافعها باسمه، والملف في مجلده. بعد التسجيل لا يتغيّر المسار ولا العقد ولا الرافع.
+- يحذف الملف **كل** سياسات الإدراج القديمة على `attachments` (منها سياسة 20260518 التي كانت تقبل أي صاحب وأي مسار) ويضع سياسة واحدة. يطبع أسماء ما حذفه.
+- فهرس جديد على `service_requests (requester_user_id)`.
+
+**الصفوف القديمة لا تُعدَّل.** لكن روابط التحميل في الكود الجديد ترفض أي صف مساره خارج مجلد صاحبه. إن ظهر في نهاية الملف تحذير بعدد صفوف كهذه، فشغّل الاستعلام المطبوع معه وأرسل النتيجة للمراجعة: قد يكون صفاً مزوّراً.
+
+**طرق الرفع التي فُحصت:**
+
+| الطريق | من يكتب | شكل المسار |
+|---|---|---|
+| `POST /api/v1/documents` (كل رفع مستند، ومنه تسليم المشرف ومستندات القضية) | الجلسة | `<uid>/<ms>-<name>`، والطلب يفحصه الطريق نفسه (صاحب الطلب أو المسند إليه) |
+| `POST /api/v1/lawyer/contracts/[id]/versions` | الجلسة | `<uid>/contracts/<id>/<ms>-<name>`، `uploaded_by` = المستخدم |
+| الأرشفة والاسترجاع والحجز القانوني | الجلسة | تعدّل `deleted_at` / `deleted_by` / `legal_hold` / `hold_reason` فقط |
+| `documents/[id]/copy`، ربط المستند بالطلب، تنظيف السلة | `service_role` | لا تتأثر |
+
+**ترتيب التنفيذ:** في أي وقت، قبل النشر أو بعده. يجب أن تظهر في نهايته `20261026_65 verify: OK`. وفي `_verify.sql` (يدوياً، الأمر في قسم 62): `_verify: 20261026_65 OK`.
+
+**تنبيه:** أي جهة خارج هذا المستودع تكتب في الجدولين **بجلسة مستخدم** (تطبيق جوال، أو سير عمل n8n بتوكن مستخدم) تخضع للقاعدة نفسها. ما يكتب بمفتاح `service_role` لا يتأثر.
+
+**ما لا يغلقه هذا الملف (للمتابعة):** جدول `document_shares` — سياسته تسمح للمستخدم بإدراج رابط مشاركة بأي مسار ملف وبرمز يختاره، وصفحة التحقق من الرابط توقّعه بصلاحية الخادم. هذه ثغرة من النوع نفسه وتحتاج ملفاً مستقلاً.
+
+**للتراجع (يدوياً):** الأوامر في رأس الملف.
+
+### الاختبار (Docker محلي فقط)
+
+```bash
+M=supabase/migrations; T=supabase/tests/rls; bash $T/run.sh \
+  $M/20260903_phase2_clients_and_firm_membership.sql $M/20260904_phase5_deadline_radar.sql \
+  $M/20260905_phase3_consultations_and_contracts.sql $M/20260910_case_notes.sql \
+  $M/20261017_41_notes_visibility_case_team.sql \
+  $T/prelude_attachments_live.sql $T/prelude_attachments_stray_insert_policies.sql \
+  $M/20261025_51_soft_delete_case_notes_docs.sql \
+  $M/20261026_65_attachments_path_ownership.sql $M/20261026_65_attachments_path_ownership.sql \
+  $T/attachments_path_ownership.test.sql
+```
+
+---
+
+**English summary.** `65_BEFORE_DEPLOY_20261026_65_attachments_path_ownership.sql` is identical to `supabase/migrations/20261026_65_attachments_path_ownership.sql`. **It closes a hole that is live on production today, so run it soon; it needs no code deploy** — every upload path in the app already complies (table above).
+
+The hole: the download routes sign `storage_path` with the service role, and nothing tied that column to its writer. Through raw PostgREST a session could register an attachments row on its own request pointing at another user's file, re-point a vault document, or plant a file into a case whose id it knew (and the 20260518 INSERT policy accepted any owner and any path).
+
+After 65, for sessions only (`postgres` / `service_role` / `supabase_admin` pass, as in 20261018_04):
+- attachments: insert as yourself, a file in your own folder, on no request or one you filed / are assigned to; `storage_path`, `owner_user_id` and `request_id` never change.
+- contract_versions: insert as yourself (`uploaded_by` = you), a file in your own folder; `storage_path`, `contract_id` and `uploaded_by` never change (`uploaded_by` may go to NULL — the FK's ON DELETE SET NULL).
+- Enforced by SECURITY INVOKER triggers (`trg_00_…`, first BEFORE triggers) and one replacement INSERT policy. Every other INSERT policy on attachments is dropped by catalogue scan, and the dropped names are printed.
+- An index on `service_requests (requester_user_id)`.
+
+Existing rows are not rewritten. The new routes refuse any row whose path is outside its writer's folder, and the file warns with a count and a query if any exist. Writers outside this repo that use a user JWT are guarded the same way.
+
+Not closed here: `document_shares` (FOR ALL, `owner_id = auth.uid()`) lets a session insert any `document_path` with a token it chose, and `/api/v1/share/[token]/verify` signs it with the service role. That is the same class of hole and needs its own file.
+
+`deploy.sh` does not run `_verify.sql`; when you run it by hand, expect `_verify: 20261026_65 OK`.
