@@ -14,30 +14,30 @@ const key = (over: Partial<Parameters<typeof isQuickAddShortcut>[0]> = {}) => ({
   code: "KeyN", key: "n", altKey: true, ctrlKey: false, metaKey: false, shiftKey: false, repeat: false, isComposing: false, ...over,
 });
 
-test("the item list: case, hearing, client, task, deadline — each id once", () => {
-  assert.deepEqual(QUICK_ADD_ITEMS.map((i) => i.id), ["case", "hearing", "client", "task", "deadline"]);
+test("the item list: case, hearing, client, task, deadline, note — each id once", () => {
+  assert.deepEqual(QUICK_ADD_ITEMS.map((i) => i.id), ["case", "hearing", "client", "task", "deadline", "note"]);
   for (const item of QUICK_ADD_ITEMS) assert.ok(item.labelAr.length > 0 && item.routes.lawyer && item.routes.firm, item.id);
   assert.equal(QUICK_ADD_SHORTCUT_LABEL, "Alt+N");
 });
 
 test("an advocate on the lawyer dashboard gets every item", () => {
-  assert.deepEqual(ids({ scope: "lawyer", practiceKind: "advocate" }), ["case", "hearing", "client", "task", "deadline"]);
-  assert.deepEqual(ids({ scope: "lawyer" }), ["case", "hearing", "client", "task", "deadline"], "no practice kind = advocate");
+  assert.deepEqual(ids({ scope: "lawyer", practiceKind: "advocate" }), ["case", "hearing", "client", "task", "deadline", "note"]);
+  assert.deepEqual(ids({ scope: "lawyer" }), ["case", "hearing", "client", "task", "deadline", "note"], "no practice kind = advocate");
 });
 
 test("a consultant (Art. 18) gets no hearing and no deadline, on either dashboard", () => {
-  assert.deepEqual(ids({ scope: "lawyer", practiceKind: "consultant" }), ["case", "client", "task"]);
-  assert.deepEqual(ids({ scope: "firm", practiceKind: "consultant", firmRole: "managing_partner", canAddCase: true }), ["case", "client", "task"]);
+  assert.deepEqual(ids({ scope: "lawyer", practiceKind: "consultant" }), ["case", "client", "task", "note"]);
+  assert.deepEqual(ids({ scope: "firm", practiceKind: "consultant", firmRole: "managing_partner", canAddCase: true }), ["case", "client", "task", "note"]);
 });
 
 test("firm items follow the firm route rules of the session role", () => {
-  assert.deepEqual(ids({ scope: "firm", firmRole: "managing_partner", canAddCase: true }), ["case", "hearing", "client", "task", "deadline"]);
+  assert.deepEqual(ids({ scope: "firm", firmRole: "managing_partner", canAddCase: true }), ["case", "hearing", "client", "task", "deadline", "note"]);
   // legal_consultant: cases and tasks yes, hearings (Art. 18) no; this role may not add a case.
-  assert.deepEqual(ids({ scope: "firm", firmRole: "legal_consultant", canAddCase: false }), ["client", "task"]);
+  assert.deepEqual(ids({ scope: "firm", firmRole: "legal_consultant", canAddCase: false }), ["client", "task", "note"]);
   // a trainee may open the firm diary (hearings) and tasks, not clients.
-  assert.deepEqual(ids({ scope: "firm", firmRole: "trainee", canAddCase: false }), ["hearing", "task", "deadline"]);
-  // finance: clients only.
-  assert.deepEqual(ids({ scope: "firm", firmRole: "finance_manager", canAddCase: false }), ["client"]);
+  assert.deepEqual(ids({ scope: "firm", firmRole: "trainee", canAddCase: false }), ["hearing", "task", "deadline", "note"]);
+  // finance: clients, and a note — the wall is on the firm dashboard every role opens.
+  assert.deepEqual(ids({ scope: "firm", firmRole: "finance_manager", canAddCase: false }), ["client", "note"]);
 });
 
 test("only lawyer and firm sessions that are signed in get quick add at all", () => {

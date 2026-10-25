@@ -5,10 +5,9 @@
  * creating any record without leaving the page, toggled by Alt+N.
  *
  * Every item opens a modal that already exists (AddCaseModal, AddHearingModal,
- * AddClientModal, AddTaskModal, AddDeadlineModal). The note and ledger items
- * are added when P4 builds those records: one entry in QUICK_ADD_ITEMS plus its
- * renderer in QuickAdd.tsx (a Record keyed by the id, so the compiler asks for
- * it).
+ * AddClientModal, AddTaskModal, AddDeadlineModal, NoteEditorModal). Each new
+ * item is one entry in QUICK_ADD_ITEMS plus its renderer in QuickAdd.tsx (a
+ * Record keyed by the id, so the compiler asks for it).
  *
  * WHO SEES AN ITEM — no new rule is invented here; each item names the route
  * of the screen it belongs to and is shown only to someone who may open it:
@@ -26,7 +25,7 @@ import { getFirmRouteDecision } from "../../../constants/entityRouteAccess.ts";
 import { isConsultantBlockedPath } from "../../../lib/auth/practiceKind.ts";
 import type { AffiliationRole } from "@/hooks/useUser";
 
-export type QuickAddItemId = "case" | "hearing" | "client" | "task" | "deadline";
+export type QuickAddItemId = "case" | "hearing" | "client" | "task" | "deadline" | "note";
 export type QuickAddScope = "lawyer" | "firm";
 
 export interface QuickAddItemDef {
@@ -47,6 +46,9 @@ export const QUICK_ADD_ITEMS: readonly QuickAddItemDef[] = [
   // The firm has no deadlines page of its own; its deadlines live on the case
   // page and in the diary, so the item follows the firm diary's (litigation) rule.
   { id: "deadline", labelAr: "مهلة نظامية", hintAr: "مهلة طعن أو اعتراض تُحسب تلقائياً", routes: { lawyer: "/dashboard/lawyer/deadlines", firm: "/dashboard/firm/hearings" } },
+  // N3.4: the sticky notes wall sits on the dashboard home, which every firm
+  // role and every practice kind opens.
+  { id: "note", labelAr: "ملاحظة", hintAr: "ملاحظة لاصقة على حائط لوحتك", routes: { lawyer: "/dashboard/lawyer", firm: "/dashboard/firm" } },
 ];
 
 export const QUICK_ADD_SHORTCUT_LABEL = "Alt+N";

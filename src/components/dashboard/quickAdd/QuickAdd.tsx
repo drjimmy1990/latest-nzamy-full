@@ -20,7 +20,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  Plus, Scales, CalendarCheck, UserPlus, CheckSquare, Hourglass, X, Lightning,
+  Plus, Scales, CalendarCheck, UserPlus, CheckSquare, Hourglass, X, Lightning, Note,
   type Icon,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
@@ -30,6 +30,7 @@ import AddHearingModal from "@/app/dashboard/lawyer/_components/AddHearingModal"
 import AddTaskModal from "@/app/dashboard/lawyer/_components/AddTaskModal";
 import AddDeadlineModal from "@/app/dashboard/lawyer/_components/AddDeadlineModal";
 import AddClientModal from "@/components/dashboard/lawyer/AddClientModal";
+import NoteEditorModal from "@/components/dashboard/notes/NoteEditorModal";
 import {
   QUICK_ADD_ARIA_SHORTCUT,
   QUICK_ADD_SHORTCUT_LABEL,
@@ -48,6 +49,7 @@ const ICONS: Record<QuickAddItemId, Icon> = {
   client: UserPlus,
   task: CheckSquare,
   deadline: Hourglass,
+  note: Note,
 };
 
 interface QuickAddApi {
@@ -161,6 +163,8 @@ export function QuickAddProvider({ scope, firmRole, canAddCase, children }: Prov
     client: () => <AddClientModal key="qa-client" isDark={isDark} onClose={closeModal} onCreated={() => {}} />,
     task: () => <AddTaskModal key="qa-task" onClose={closeModal} isDark={isDark} />,
     deadline: () => <AddDeadlineModal key="qa-deadline" onClose={closeModal} isDark={isDark} onCreated={() => { refreshed(); closeModal(); }} />,
+    // The note service fires its own event; the wall re-reads on it.
+    note: () => <NoteEditorModal key="qa-note" isDark={isDark} onClose={closeModal} />,
   };
 
   const api = useMemo<QuickAddApi | null>(() => (available ? { toggle, open: menuOpen } : null), [available, toggle, menuOpen]);

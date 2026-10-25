@@ -3380,3 +3380,46 @@ begin
   raise notice '_verify: 20261025_30 OK — hearing reminders keyed once per (hearing, recipient, channel, kind), one source per row, cascade from hearings, recipients listed by the service role only';
 end $$;
 -- <<< verify:hearing_reminders
+
+-- >>> verify:dashboard_notes
+-- 2026-10-25 — 20261025_31_dashboard_notes.sql (P4 N3.4). Read-only, safe to
+-- repeat. Before _31 runs it only reports; after, it raises when the notes
+-- table, its RLS, the case-worker rule on its write policies or the
+-- service-only case_worker_ok is missing or open to sessions.
+do $$
+declare bad text; n int;
+begin
+  if to_regclass('public.dashboard_notes') is null then
+    raise notice '_verify: 20261025_31 is not applied yet — the sticky notes wall cannot save; run 12_BEFORE_DEPLOY_20261025_31_dashboard_notes.sql';
+    return;
+  end if;
+  if not (select relrowsecurity from pg_class where oid = 'public.dashboard_notes'::regclass) then
+    raise exception '_verify: RLS is off on public.dashboard_notes (re-run 20261025_31)';
+  end if;
+  select count(*) into n from pg_policy where polrelid = 'public.dashboard_notes'::regclass;
+  if n <> 4 then
+    raise exception '_verify: public.dashboard_notes carries % policies, expected 4 (re-run 20261025_31)', n;
+  end if;
+  select string_agg(policyname, ', ') into bad
+    from pg_policies
+   where schemaname = 'public' and tablename = 'dashboard_notes' and cmd in ('INSERT', 'UPDATE')
+     and (coalesce(with_check, '') not like '%is_case_worker%' or coalesce(with_check, '') not like '%case_note_scope_ok%');
+  if bad is not null then
+    raise exception '_verify: dashboard_notes write policies without the case-worker and scope rule: % — a note could be planted into another case or firm (re-run 20261025_31)', bad;
+  end if;
+  if to_regprocedure('public.case_worker_ok(text,uuid)') is null
+     or to_regprocedure('public.is_case_worker(text)') is null
+     or to_regprocedure('public.case_row_scope_ok(text,uuid)') is null then
+    raise exception '_verify: a case-worker helper of 20261025_31 is missing (re-run 20261025_31)';
+  end if;
+  if has_function_privilege('authenticated', 'public.case_worker_ok(text,uuid)', 'EXECUTE')
+     or has_function_privilege('anon', 'public.case_worker_ok(text,uuid)', 'EXECUTE') then
+    raise exception '_verify: sessions can EXECUTE case_worker_ok — they could probe other accounts'' access to a case (re-run 20261025_31)';
+  end if;
+  if has_table_privilege('anon', 'public.dashboard_notes', 'SELECT')
+     or has_column_privilege('authenticated', 'public.dashboard_notes', 'author_user_id', 'UPDATE') then
+    raise exception '_verify: dashboard_notes privileges are open (anon SELECT or author_user_id UPDATE) (re-run 20261025_31)';
+  end if;
+  raise notice '_verify: 20261025_31 OK — dashboard_notes RLS with the case-worker and scope rule on every write; case_worker_ok service-only';
+end $$;
+-- <<< verify:dashboard_notes
