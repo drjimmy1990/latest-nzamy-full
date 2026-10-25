@@ -171,9 +171,11 @@ export default function AdminSettingsPage() {
   const [libraryMessage, setLibraryMessage] = useState<string>("");
   const [confirmCloseLibrary, setConfirmCloseLibrary] = useState(false);
 
-  // Founder-lawyer campaign dates (owner ٢١٨ / ٢٢٥, 20261021_50). An empty
-  // field saves as null = the campaign is off. library_days is not edited
-  // here; the loaded value is kept (90 when it is missing or out of range).
+  // Founder campaign dates (owner ٢١٨ / ٢٢٥, 20261021_50). An empty field
+  // saves as null = the campaign is off. library_days is not edited here; the
+  // loaded value is kept (90 when it is missing or out of range). Since
+  // 20261026_01 (owner, 25 Oct) a signup earns nothing from these dates; the
+  // paid founder membership (P3) will use them.
   const [founderStartsOn, setFounderStartsOn] = useState("");
   const [founderEndsOn, setFounderEndsOn] = useState("");
   const [founderLibraryDays, setFounderLibraryDays] = useState(90);
@@ -1106,7 +1108,7 @@ export default function AdminSettingsPage() {
             </div>
           </div>
           <p className={`text-xs ${muted}`}>
-            كل محامٍ يسجّل بين التاريخين (شاملاً اليومين) يحصل على {founderLibraryDays} يوماً من المكتبة القانونية وشارة «المحامي المؤسس»، ويظهر شريط الحملة للزوار في الفترة نفسها. إفراغ أي من التاريخين يوقف الحملة.
+            بقرار المالك (٢٥ أكتوبر) لا يمنح التسجيل المجاني شارة «المحامي المؤسس» ولا أيام المكتبة، فلا يُمنح عدد أيام المكتبة المحفوظ ({founderLibraryDays} يوماً) لأحد عند التسجيل. ستُمنح الشارة بعضوية المحامي المؤسس المدفوعة بعد توثيق الرخصة، ولا يظهر شريط الحملة للزوار حتى تُتاح هذه العضوية. التاريخان محفوظان لها، وإفراغ أي منهما يوقف الحملة.
           </p>
         </div>
       </motion.div>

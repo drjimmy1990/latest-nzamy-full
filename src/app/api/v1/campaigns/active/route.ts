@@ -1,14 +1,24 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { founderCampaignFromSetting, riyadhDay, type Campaign } from "@/lib/pricing/campaigns";
+import {
+  FOUNDER_MEMBERSHIP_ON_SALE,
+  founderCampaignFromSetting,
+  riyadhDay,
+  type Campaign,
+} from "@/lib/pricing/campaigns";
 
 /**
  * GET /api/v1/campaigns/active → { campaign: Campaign | null } — public.
  *
- * The founder-lawyer campaign (owner ٢١٨, dates ٢٢٥) when today, in Riyadh,
- * is between the admin-set `founder_campaign` dates (both included); else
- * null. PromotionalCampaignBanner falls back to the code `CAMPAIGNS` when this
+ * The founder campaign (owner ٢١٨, dates ٢٢٥) when today, in Riyadh, is
+ * between the admin-set `founder_campaign` dates (both included); else null.
+ * PromotionalCampaignBanner falls back to the code `CAMPAIGNS` when this
  * answers null or fails.
+ *
+ * Owner answers of 25 Oct (P0): a free signup never earns the founder badge,
+ * seat or library days, so until the paid founder membership ships (phase P3)
+ * `FOUNDER_MEMBERSHIP_ON_SALE` is false and this route answers
+ * `{ campaign: null }` without reading the setting.
  *
  * platform_settings has no public read, so the service client reads the one
  * key; only the derived banner copy and dates leave this route.
@@ -38,6 +48,8 @@ function answer(campaign: Campaign | null) {
 }
 
 export async function GET() {
+  // P3 flips FOUNDER_MEMBERSHIP_ON_SALE when the paid membership can be bought.
+  if (!FOUNDER_MEMBERSHIP_ON_SALE) return answer(null);
   try {
     const supabase = await createServiceClient();
     const { data, error } = await supabase

@@ -6,12 +6,17 @@
  * between its start and end dates.
  *
  * Two sources, in this order:
- *   1. The founder-lawyer campaign (owner ٢١٨, dates ٢٢٥): its dates are the
+ *   1. The founder campaign (owner ٢١٨, dates ٢٢٥): its dates are the
  *      platform setting `founder_campaign`, which the admin edits in
  *      /dashboard/admin/settings. GET /api/v1/campaigns/active turns that
- *      setting into a `Campaign` with `founderCampaignFromSetting`. The banner
- *      shows exactly when the signup trigger grants (founder_campaign_active()
- *      in 20261021_50): same date rules, Riyadh day, both ends included.
+ *      setting into a `Campaign` with `founderCampaignFromSetting` — but only
+ *      once `FOUNDER_MEMBERSHIP_ON_SALE` is true. The owner decided on 25 Oct
+ *      that a free signup never earns the founder badge, seat or library days
+ *      (20261026_01 dropped the signup trigger of 20261021_50); only a
+ *      verified licence plus a paid founder membership does, and that
+ *      membership is built in phase P3. Until then the route answers no
+ *      campaign at all. Same date rules as founder_campaign_active(): Riyadh
+ *      day, both ends included.
  *   2. `CAMPAIGNS` below — a code-dated list, used only when the route fails
  *      or returns nothing. It stays EMPTY until the owner dates another offer:
  *      a banner must not promise what nobody grants.
@@ -50,14 +55,27 @@ export function activeCampaign(now: Date, campaigns: readonly Campaign[] = CAMPA
   return live[0] ?? null;
 }
 
-// ── The founder-lawyer campaign (owner ٢١٨, dates ٢٢٥; 20261021_50) ──────────
+// ── The founder campaign (owner ٢١٨, dates ٢٢٥; 25-Oct answers, 20261026_01) ──
 
-/** The owner's copy, verbatim. */
+/**
+ * False until the paid founder membership exists (phase P3: verified licence
+ * + payment, 1,096 paid seats). While false, GET /api/v1/campaigns/active
+ * answers `{ campaign: null }` without reading the setting, so no banner
+ * promises a founder offer nobody can buy. P3 flips it in the same change
+ * that ships the membership checkout.
+ */
+export const FOUNDER_MEMBERSHIP_ON_SALE: boolean = false;
+
+/**
+ * The paid-membership copy P3 will show. It never promises a gift for
+ * registering (owner, 25 Oct: no badge, seat or library days on a free
+ * signup). /pricing has no `?audience=` handling, so the CTA is plain /pricing.
+ */
 export const FOUNDER_CAMPAIGN_COPY = {
-  badgeAr: "فترة المحامي المؤسس",
-  messageAr: "سجّل الآن واحصل على ٣ أشهر من المكتبة القانونية مجاناً وشارة المؤسس",
-  ctaAr: "سجّل محامياً",
-  ctaHref: "/register/provider?type=lawyer",
+  badgeAr: "عضوية المحامي المؤسس",
+  messageAr: "عضوية المحامي المؤسس السنوية — مقاعد محدودة (١٬٠٩٦ مقعداً مدفوعاً) لمن يوثّق رخصته ويُتم السداد",
+  ctaAr: "اعرف التفاصيل",
+  ctaHref: "/pricing",
 } as const;
 
 const DAY_RE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
@@ -80,8 +98,8 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * The founder campaign live on `today` (a Riyadh `YYYY-MM-DD`), or null.
  *
  * As tolerant as founder_campaign_active(): only `starts_on` / `ends_on`
- * matter (`library_days` and any other key are ignored), so the banner shows
- * exactly when the trigger grants. Null when either date is null, missing or
+ * matter (`library_days` and any other key are ignored), so the banner follows
+ * the same dates as the database. Null when either date is null, missing or
  * not a real day, when `ends_on` is before `starts_on`, when `today` is
  * outside them, or when the value is not an object.
  */
@@ -98,7 +116,9 @@ const FOUNDER_SETTING_KEYS = new Set(["starts_on", "ends_on", "library_days"]);
 /**
  * The admin write check for `founder_campaign` (api/v1/admin/settings). Strict
  * where the reader is tolerant: the reader treats a malformed date as "off",
- * so a typo saved here would silently stop the campaign. Returns the Arabic
+ * so a typo saved here would silently stop the campaign. `library_days` is
+ * still required in the shape, but since 20261026_01 nothing grants it on
+ * signup (P3 decides whether the paid membership uses it). Returns the Arabic
  * reason, or null when the value is acceptable.
  */
 export function founderCampaignSettingIssue(value: unknown): string | null {

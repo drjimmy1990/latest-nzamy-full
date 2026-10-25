@@ -2,6 +2,12 @@
  * «المحامي المؤسس» (owner ٢١٨ / ٢٢٥) — the tolerant read of
  * `lawyer_profiles.founder_badge`, added by 20261021_50.
  *
+ * Who sets it: from 20261021_50 a signup trigger did, during the campaign;
+ * 20261026_01 dropped that trigger (owner, 25 Oct: no badge on a free
+ * signup). From now on only the paid founder membership (phase P3: verified
+ * licence + payment) sets it, through the service role. Badges already given
+ * stay until the owner answers question ٢٧٨, so this read still shows them.
+ *
  * Each caller builds its own explicit query — `.from("lawyer_profiles")
  * .select("founder_badge")…maybeSingle()`, never `select("*")` and never
  * inside a wider select — and hands it here. Until the user runs that

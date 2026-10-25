@@ -4,6 +4,8 @@ import {
   activeCampaign,
   campaignFromApi,
   CAMPAIGNS,
+  FOUNDER_CAMPAIGN_COPY,
+  FOUNDER_MEMBERSHIP_ON_SALE,
   founderCampaignFromSetting,
   founderCampaignSettingIssue,
   riyadhDay,
@@ -47,18 +49,50 @@ test("founder campaign: null dates mean the campaign is off", () => {
   assert.equal(founderCampaignFromSetting({ starts_on: null, ends_on: "2027-01-25", library_days: 90 }, "2026-11-01"), null);
 });
 
-test("founder campaign: shows on the first and the last day, both included, with the owner's copy", () => {
+test("founder campaign: shows on the first and the last day, both included, with the paid-membership copy", () => {
   for (const today of ["2026-10-25", "2027-01-25"]) {
     const c = founderCampaignFromSetting(SEEDED, today);
     assert.ok(c, today);
     assert.equal(c.startsOn, "2026-10-25");
     assert.equal(c.endsOn, "2027-01-25");
-    assert.equal(c.badgeAr, "فترة المحامي المؤسس");
-    assert.equal(c.messageAr, "سجّل الآن واحصل على ٣ أشهر من المكتبة القانونية مجاناً وشارة المؤسس");
-    assert.equal(c.ctaAr, "سجّل محامياً");
-    assert.equal(c.ctaHref, "/register/provider?type=lawyer");
+    assert.equal(c.badgeAr, "عضوية المحامي المؤسس");
+    assert.equal(c.messageAr, "عضوية المحامي المؤسس السنوية — مقاعد محدودة (١٬٠٩٦ مقعداً مدفوعاً) لمن يوثّق رخصته ويُتم السداد");
+    assert.equal(c.ctaAr, "اعرف التفاصيل");
+    assert.equal(c.ctaHref, "/pricing");
     assert.equal(c.id, "founder-2026-10-25");
   }
+});
+
+// ── Owner answers of 25 Oct (P0): no founder badge, seat or library days on a
+// free signup. Until the paid founder membership exists (P3) no banner may
+// promise any founder offer, and no copy may promise a signup gift. ─────────
+
+test("founder membership is not on sale yet (P3), so the route answers no campaign", () => {
+  assert.equal(FOUNDER_MEMBERSHIP_ON_SALE, false);
+});
+
+test("the founder copy promises no signup gift — no free library days, no badge for registering", () => {
+  const all = Object.values(FOUNDER_CAMPAIGN_COPY).join(" ");
+  assert.doesNotMatch(all, /سجّل|سجل الآن|مجان|٣ أشهر|3 أشهر|ثلاثة أشهر|شارة المؤسس/);
+  assert.match(FOUNDER_CAMPAIGN_COPY.messageAr, /يوثّق رخصته ويُتم السداد/);
+  assert.match(FOUNDER_CAMPAIGN_COPY.ctaHref, /^\/pricing$/, "the CTA is a page that exists (no ?audience= handling on /pricing)");
+});
+
+test("GET /api/v1/campaigns/active returns null before reading the setting while the membership is not on sale", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const route = readFileSync(join(import.meta.dirname, "../../app/api/v1/campaigns/active/route.ts"), "utf8");
+  const gate = route.indexOf("if (!FOUNDER_MEMBERSHIP_ON_SALE) return answer(null);");
+  assert.ok(gate > 0, "the route checks FOUNDER_MEMBERSHIP_ON_SALE");
+  assert.ok(gate < route.indexOf('.from("platform_settings")'), "the gate comes before the settings read");
+});
+
+test("the admin settings page no longer says a signup earns the library days and the badge", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const page = readFileSync(join(import.meta.dirname, "../../app/dashboard/admin/settings/page.tsx"), "utf8");
+  assert.doesNotMatch(page, /يسجّل بين التاريخين[^<]*يحصل على/);
+  assert.match(page, /لا يمنح التسجيل المجاني/);
 });
 
 test("founder campaign: null the day before and the day after", () => {

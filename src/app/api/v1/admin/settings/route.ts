@@ -20,9 +20,10 @@ const ALLOWED_SETTINGS_KEYS = [
   "payments_gateway",
   "library_status",
   // Owner ٢١٨ / ٢٢٥ (20261021_50): {"starts_on","ends_on": "YYYY-MM-DD" | null,
-  // "library_days": number}. Read by founder_campaign_active() and the
-  // BEFORE INSERT trigger on lawyer_profiles; malformed dates read as "off" —
-  // so the write is validated below.
+  // "library_days": number}. Read by founder_campaign_active(); malformed
+  // dates read as "off" — so the write is validated below. Since 20261026_01
+  // (owner, 25 Oct) no signup trigger reads it: nothing is granted on signup,
+  // and library_days is unused until the paid founder membership (P3).
   "founder_campaign",
   // Moyasar B1 (20261022_10): the receipt's issuer —
   // {"legal_name_ar","cr_number","vat_number","address_ar": string | null}.
@@ -89,7 +90,7 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   points_enforcement: (value) =>
     typeof value === "boolean" ? null : "قيمة points_enforcement يجب أن تكون true أو false",
   // A malformed date reads as "campaign off" in founder_campaign_active(), so a
-  // typo would silently stop the founder grants — refuse it here instead.
+  // typo would silently stop the campaign — refuse it here instead.
   // Pure, so src/lib/pricing/campaigns.test.ts covers it.
   founder_campaign: founderCampaignSettingIssue,
 };
