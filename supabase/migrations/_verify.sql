@@ -4051,8 +4051,10 @@ end $$;
 -- while the file has not run: the P1 code sells nothing quarterly or
 -- half-yearly yet, so the old checks refuse nothing it sends. RAISES when the
 -- file ran only partly, or when a check was narrowed or doubled again (a
--- schema restore — re-run 20261026_10). P2, the first quarterly price, makes
--- the not-applied case raise too.
+-- schema restore — re-run 20261026_10). A MANUAL check: deploy.sh does not
+-- run this file, so it gates nothing. P2, the first quarterly price, must
+-- refuse those cycles in code until a runtime probe shows the database
+-- accepts them (docs/plans/2026-10-26-P1-price-book-design.md §6).
 do $$
 declare
   fix     constant text := 'run SQL_batch_2026-10-26_owner_answers/10_BEFORE_DEPLOY_20261026_10_billing_cycles.sql again';

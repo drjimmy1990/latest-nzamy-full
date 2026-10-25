@@ -51,10 +51,13 @@
 --   quarterly or half-yearly price yet, so no order or subscription can name
 --   a cycle the old checks refuse, and the admin plan reads embed
 --   `subscription_plans ( * )`, which works with or without the new columns.
---   _verify.sql (section verify:billing_cycles) only NOTICEs while this file
---   has not run, and RAISES when it ran only partly or a check was narrowed
---   again. P2 (the first quarterly price) must NOT deploy before this file
---   has run; P2 turns that NOTICE into a raise.
+--   NOTHING GATES THE DEPLOY: deploy.sh does not run _verify.sql (removed in
+--   6223b221). Its section verify:billing_cycles is a MANUAL check: it only
+--   NOTICEs while this file has not run, and RAISES when it ran only partly
+--   or a check was narrowed again. So P2 (the first quarterly or half-yearly
+--   price) must refuse those cycles IN CODE until a runtime probe shows the
+--   database accepts them (docs/plans/2026-10-26-P1-price-book-design.md §6,
+--   "P2 requirement"); making the _verify NOTICE a raise would stop nothing.
 --
 -- RE-RUN HAZARD
 --   20261022_10 and 20260603_phase1_003 create their tables with

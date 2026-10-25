@@ -2,7 +2,7 @@
 
 **الحالة:** لم يُنفَّذ شيء من هذه الدفعة على الإنتاج بعد. كل SQL على الإنتاج ينفذه المستخدم في محرر Supabase، بعد نسخة احتياطية ومراجعة نتيجة كل ملف.
 
-*English, short:* run `01_NOW_…` in the Supabase SQL editor **now** — it needs no code deploy — then `02_NOW_AFTER_01_…` (owner ٢٧٨ (أ): the unpaid founder badges go, the library days stay). Run `10_BEFORE_DEPLOY_…` (P1, quarterly and half-yearly billing) before deploying this batch's code; P2 must not deploy without it. Later files of this batch are added here as they are built.
+*English, short:* run `01_NOW_…` in the Supabase SQL editor **now** — it needs no code deploy — then `02_NOW_AFTER_01_…` (owner ٢٧٨ (أ): the unpaid founder badges go, the library days stay). Run `10_BEFORE_DEPLOY_…` (P1, quarterly and half-yearly billing) before deploying this batch's code. Nothing checks it at deploy time (`deploy.sh` does not run `_verify.sql`), so P2 must refuse quarterly / half-yearly in code until the database accepts them. Later files of this batch are added here as they are built.
 
 ## ترتيب التنفيذ (ملخص)
 
@@ -10,7 +10,7 @@
 |:--:|---|---|---|
 | 1 | `01_NOW_20261026_01_founder_no_signup_grant.sql` | **الآن، وقبل أي نشر** | يوقف منح شارة المؤسس وأيام المكتبة عند التسجيل. لا يحتاج نشر كود. نفّذه قبل نشر كود هذه الدفعة، لأن النشر لا يتحقق منه تلقائياً |
 | 2 | `02_NOW_AFTER_01_20261026_02_founder_badges_unpaid_removed.sql` | **الآن، بعد 01 مباشرة** | قرار المالك ٢٧٨ (أ): يسحب شارة «المحامي المؤسس» غير المدفوعة ممن سجّلوا منذ بدء الحملة، ويُبقي أيام المكتبة الـ ٩٠ حتى تنتهي. يتوقف دون أي تغيير إن لم يُنفَّذ 01 قبله. لا يحتاج نشر كود |
-| 3 | `10_BEFORE_DEPLOY_20261026_10_billing_cycles.sql` | **قبل نشر كود الدفعة** | يسمح بدورتي الاشتراك الربع السنوية والنصف السنوية في الطلبات والاشتراكات، ويضيف عمودَي سعرهما للباقات. لا يغيّر أي سعر. `_verify.sql` يكتفي بتنبيه ما دام لم يُنفَّذ، لكن المرحلة P2 لا تُنشر قبله |
+| 3 | `10_BEFORE_DEPLOY_20261026_10_billing_cycles.sql` | **قبل نشر كود الدفعة** | يسمح بدورتي الاشتراك الربع السنوية والنصف السنوية في الطلبات والاشتراكات، ويضيف عمودَي سعرهما للباقات. لا يغيّر أي سعر. النشر لا يتحقق منه تلقائياً، فنفّذه قبل النشر |
 | — | `11_…` فما بعد | لاحقاً | محجوزة للمراحل التالية من هذه الدفعة |
 
 ## 01: إيقاف منح «المحامي المؤسس» عند التسجيل (P0، عاجل)
@@ -113,12 +113,14 @@ select count(*) from public.library_access_grants
 
 **الملف قابل لإعادة التشغيل**، داخل `begin … commit`، ومهلة القفل فيه ٥ ثوانٍ، وينتهي بـ `notify pgrst, 'reload schema'`.
 
-**قبل النشر وبعده:** كود P1 يعمل قبل الملف وبعده، لأنه لا يبيع أي باقة بدورة ربع أو نصف سنوية بعد. وقسم `verify:billing_cycles` في `_verify.sql`:
+**قبل النشر وبعده:** كود P1 يعمل قبل الملف وبعده، لأنه لا يبيع أي باقة بدورة ربع أو نصف سنوية بعد.
+
+**لا شيء يوقف النشر:** `deploy.sh` **لا** يشغّل `_verify.sql`، كما في قسم 01. قسم `verify:billing_cycles` فيه فحص يدوي فقط، تشغّله بالأمر المذكور في قسم 01:
 - **يكتفي بتنبيه** ما دام الملف لم يُنفَّذ؛
 - **يتوقف بخطأ** إن نُفِّذ جزئياً أو عاد قيد ضيّق، كأن تُستعاد نسخة قديمة من المخطط. الحل حينها: أعد تنفيذ الملف.
 
-**المرحلة P2** (أول سعر ربع سنوي) **لا تُنشر قبل تنفيذه.**
+**المرحلة P2** (أول سعر ربع سنوي أو نصف سنوي): نفّذ هذا الملف قبل نشرها. ولأن النشر لا يتحقق منه، يجب أن يرفض كود P2 نفسه البيع بهاتين الدورتين إلى أن يتأكد فحصٌ وقت التشغيل أن قاعدة البيانات تقبلهما.
 
-*English:* widens the `payment_orders.billing` and `subscriptions.billing_cycle` checks to monthly / quarterly / semiannual / yearly (+ `once` / `custom`), and adds the nullable `subscription_plans.price_quarterly` / `price_semiannual` columns. It writes no price and touches no row. Expect `20261026_10 verify: OK`. Idempotent. Run it before this batch deploys; P2 must not deploy without it. Docker-proved twice, with a restore-shaped narrowing between the runs: `supabase/tests/rls/billing_cycles.test.sql`.
+*English:* widens the `payment_orders.billing` and `subscriptions.billing_cycle` checks to monthly / quarterly / semiannual / yearly (+ `once` / `custom`), and adds the nullable `subscription_plans.price_quarterly` / `price_semiannual` columns. It writes no price and touches no row. Expect `20261026_10 verify: OK`. Idempotent. Run it before this batch deploys. Nothing enforces that: `deploy.sh` does not run `_verify.sql`, so P2's code must refuse quarterly / half-yearly until a runtime probe shows the database accepts them. Docker-proved twice, with a restore-shaped narrowing between the runs: `supabase/tests/rls/billing_cycles.test.sql`.
 
 **للتراجع** (فقط ما دام لا يوجد طلب أو اشتراك بدورة ربع أو نصف سنوية): الأوامر في رأس الملف، تحت `ROLLBACK`.
