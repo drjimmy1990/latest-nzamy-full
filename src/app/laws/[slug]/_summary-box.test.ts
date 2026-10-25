@@ -40,6 +40,10 @@ test("the sidebar card's badge is never an invented «نظام»", () => {
 test("under the file's card a subscriber still gets the DB official link / gazette when the card has no row for them", () => {
   assert.match(SIDEBAR, /\{renderDbOfficialRows\(\[\.\.\.law\.metadata_card\.main, \.\.\.law\.metadata_card\.more\]\)\}/);
   assert.match(SIDEBAR, /if \(metaLocked \|\| !officialMeta\) return null;/);
+  // The rule itself is dbOfficialRowsUnderCard (_official-meta.test.ts), not a loose key match:
+  // «الجهة المصدرة» contains «المصدر» and hid the link on nearly every card.
+  assert.match(SIDEBAR, /const \{ sourceUrl, gazette \} = dbOfficialRowsUnderCard\(rows, officialMeta\);/);
+  assert.doesNotMatch(SIDEBAR, /f\.key\.includes\("المصدر"\)/);
 });
 
 test("the موجز box is not printed, like the preamble", () => {

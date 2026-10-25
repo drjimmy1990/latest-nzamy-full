@@ -106,3 +106,24 @@ export function parseOfficialMeta(data: unknown): LawOfficialMeta {
 export function gazetteIssueLabel(g: Pick<LawGazette, "issueNumber">): string {
   return `أم القرى، العدد ${g.issueNumber}`;
 }
+
+/**
+ * N2.1 — what the sidebar adds under the FILE's identity card from the
+ * database (subscribers, T28-26): the official link unless a card row already
+ * links that site, and the Umm al-Qura issue unless a card row already cites
+ * the gazette. Keys are not matched loosely: «الجهة المصدرة» (the issuer, on
+ * nearly every V2 card) contains «المصدر» and once hid the link everywhere.
+ */
+export function dbOfficialRowsUnderCard(
+  rows: ReadonlyArray<{ key: string; value: string }>,
+  meta: Pick<LawOfficialMeta, "officialSourceUrl" | "gazette">,
+): { sourceUrl: string; gazette: LawGazette | null } {
+  const url = meta.officialSourceUrl ?? "";
+  const host = url ? urlHostname(url) : "";
+  const cardLinksSite = !!url && rows.some((f) => f.value.includes(url) || (host !== url && f.value.includes(`//${host}`)));
+  const cardCitesGazette = rows.some((f) => f.value.includes("أم القرى") || f.key.includes("الجريدة"));
+  return {
+    sourceUrl: url && !cardLinksSite ? url : "",
+    gazette: meta.gazette && !cardCitesGazette ? meta.gazette : null,
+  };
+}

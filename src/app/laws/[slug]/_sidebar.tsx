@@ -7,7 +7,7 @@ import {
 import type { LawSystem, LawArticle } from "../data";
 import { lawStatusPresentation } from "../law-status";
 import { OfficialMetaLockedRow } from "../components/OfficialMetaLockedRow";
-import { gazetteIssueLabel, urlHostname, type LawOfficialMeta } from "./_official-meta";
+import { dbOfficialRowsUnderCard, gazetteIssueLabel, urlHostname, type LawOfficialMeta } from "./_official-meta";
 import { buildChapterTree } from "./_chapter-tree";
 import { jumpToReaderAnchor } from "./_reader-anchors";
 
@@ -220,10 +220,7 @@ export default function SidebarPanel({
    */
   const renderDbOfficialRows = (rows: { key: string; value: string }[]) => {
     if (metaLocked || !officialMeta) return null;
-    const hasSourceRow = rows.some((f) => f.key.includes("المصدر") || f.key.includes("رابط"));
-    const hasGazetteRow = rows.some((f) => f.value.includes("أم القرى") || f.key.includes("الجريدة"));
-    const sourceUrl = !hasSourceRow ? officialMeta.officialSourceUrl : "";
-    const gazette = !hasGazetteRow ? officialMeta.gazette : null;
+    const { sourceUrl, gazette } = dbOfficialRowsUnderCard(rows, officialMeta);
     if (!sourceUrl && !gazette) return null;
     return (
       <>
