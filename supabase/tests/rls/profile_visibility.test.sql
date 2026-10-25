@@ -115,4 +115,72 @@ begin
   raise notice 'T4 PASS: the service role reads the switches; show_contact / show_hourly_rate / bio grants intact; no self-verification';
 end $$;
 
+-- T5: the raw data behind the switches is not public through REST either.
+-- b1 switched every section off in T2.
+do $$
+declare
+  n   int;
+  uid uuid;
+begin
+  -- a guest: education / courts are 42501, the other public columns still read
+  perform set_config('test.uid', '', true);
+  execute 'set local role anon';
+  begin
+    perform education from public.lawyer_profiles;
+    raise exception 'T5 FAIL: a guest read lawyer_profiles.education through REST';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform courts from public.lawyer_profiles;
+    raise exception 'T5 FAIL: a guest read lawyer_profiles.courts through REST';
+  exception when insufficient_privilege then null;
+  end;
+  select count(*) into n from public.lawyer_profiles where slug = 'verified-lawyer' and verification_status = 'verified';
+  if n <> 1 then raise exception 'T5 FAIL: a guest lost the other public columns (% rows)', n; end if;
+  -- the price list of a lawyer who switched it off is not listed to guests
+  select count(*) into n from public.lawyer_services where lawyer_user_id = '00000000-0000-0000-0000-0000000000b1';
+  if n <> 0 then raise exception 'T5 FAIL: a guest reads the services of a lawyer who hid them (% rows)', n; end if;
+  reset role;
+
+  -- a signed-in client: same answer, and no 42501 from the policy
+  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000c1', true);
+  execute 'set local role authenticated';
+  select count(*) into n from public.lawyer_services where lawyer_user_id = '00000000-0000-0000-0000-0000000000b1';
+  if n <> 0 then raise exception 'T5 FAIL: a client reads hidden services (% rows)', n; end if;
+  begin
+    perform courts from public.lawyer_profiles;
+    raise exception 'T5 FAIL: a session read lawyer_profiles.courts through REST';
+  exception when insufficient_privilege then null;
+  end;
+  reset role;
+
+  -- the lawyer himself: still manages his own list and still SAVES the two
+  -- columns (the PATCH /api/v1/profile shape: RETURNING user_id only)
+  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000b1', true);
+  execute 'set local role authenticated';
+  select count(*) into n from public.lawyer_services where lawyer_user_id = '00000000-0000-0000-0000-0000000000b1';
+  if n <> 1 then raise exception 'T5 FAIL: the lawyer lost his own services list (% rows)', n; end if;
+  update public.lawyer_profiles
+     set education = '[{"degree":"بكالوريوس","institution":"جامعة","year":2010}]'::jsonb, courts = '{general}'
+   where user_id = '00000000-0000-0000-0000-0000000000b1'
+  returning user_id into uid;
+  if uid is null then raise exception 'T5 FAIL: the lawyer can no longer save education / courts'; end if;
+  reset role;
+
+  -- switched back on: guests see the list again
+  update public.lawyer_profiles set show_services = true where user_id = '00000000-0000-0000-0000-0000000000b1';
+  perform set_config('test.uid', '', true);
+  execute 'set local role anon';
+  select count(*) into n from public.lawyer_services where lawyer_user_id = '00000000-0000-0000-0000-0000000000b1';
+  reset role;
+  if n <> 1 then raise exception 'T5 FAIL: with show_services on, a guest does not see the list (% rows)', n; end if;
+  -- an unverified lawyer stays hidden whatever his switch says
+  perform set_config('test.uid', '', true);
+  execute 'set local role anon';
+  select count(*) into n from public.lawyer_services where lawyer_user_id = '00000000-0000-0000-0000-0000000000b2';
+  reset role;
+  if n <> 0 then raise exception 'T5 FAIL: a pending lawyer''s services are public'; end if;
+  raise notice 'T5 PASS: education / courts are 42501 to guests and sessions; hidden services are not listed; the lawyer still manages and saves his own';
+end $$;
+
 \echo 'profile_visibility.test.sql: ALL PASS'

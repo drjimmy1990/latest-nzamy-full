@@ -19,10 +19,28 @@
 --   3. NO SELECT grant to anon/authenticated: like show_contact and
 --      show_hourly_rate, the switches are read by the Next routes with the
 --      service role (GET /api/v1/profile for the lawyer, GET /api/v1/lawyers/[id]
---      for the public profile). 20261016_10's SELECT column lock is untouched.
---   4. Verify block — raises (and so rolls back) unless the columns exist as
+--      for the public profile). 20261016_10's SELECT column lock is NARROWED by
+--      item 4 (education, courts).
+--   4. The raw data behind the switches is protected too, or a switch would
+--      only be a promise of the platform's own pages:
+--        * REVOKE SELECT (education, courts) from anon and authenticated —
+--          two of the 13 public columns of 20261016_10. Every reader of them
+--          is a Next route on the service role (GET /api/v1/lawyers/[id], the
+--          /lawyers/[slug] layout, GET /api/v1/profile); no session-client
+--          query names them (grepped 2026-10-25: src/**, both columns).
+--          A lawyer still SAVES them: UPDATE needs no SELECT on a SET column,
+--          and PATCH /api/v1/profile returns user_id only.
+--        * "lawyer services public read" on lawyer_services also requires
+--          public.lawyer_shows_services(lawyer_user_id) — SECURITY DEFINER,
+--          because Postgres checks the caller's column privileges inside a
+--          policy, and show_services is not readable by the API roles (an
+--          inline lp.show_services would turn every guest read into 42501).
+--          The lawyer's own management list ("lawyer services owner read")
+--          is unchanged.
+--   5. Verify block — raises (and so rolls back) unless the columns exist as
 --      NOT NULL DEFAULT true, authenticated can update them and anon cannot,
---      and neither API role can READ them.
+--      neither API role can READ them or education / courts, and the services
+--      guest policy reads the switch.
 --
 -- WHAT DOES NOT CHANGE, ON PURPOSE
 --   * The licence and bar association keep following show_contact.
@@ -31,14 +49,11 @@
 --   * The directory list (/api/v1/lawyers) shows none of the three sections,
 --     so it needs no switch.
 --
--- KNOWN LIMIT — say it plainly
---   The switches hide the sections in the platform's own API and pages. They
---   do NOT stop a REST client holding the public anon key: lawyer_profiles.
---   education and .courts are among the 13 public columns of 20261016_10, and
---   "lawyer services public read" on lawyer_services is a guest policy. Closing
---   that needs those two column grants revoked and the services policy to read
---   a switch — an owner decision (open question in the P6 report), not done
---   here.
+-- WHAT A REST CLIENT WITH THE ANON KEY STILL SEES
+--   Nothing of the three sections: education / courts are no longer readable
+--   by anon or authenticated at all (switch on or off — the pages read them
+--   with the service role), and a lawyer's services are listed to guests only
+--   while show_services is on.
 --
 -- CODE THAT GOES WITH IT (same branch)
 --   * GET /api/v1/lawyers/[id] reads the switches in their OWN query
@@ -60,10 +75,16 @@
 --   * Re-running 20261016_10 raises in its own verify («authenticated can
 --     UPDATE lawyer_profiles.show_services»): its self-service list predates
 --     this file. It never needs a re-run once applied; if it must be re-run,
---     do it before this one. _verify.sql's 20260922_03 section lists the three
---     columns as allowed.
+--     do it before this one — it RE-GRANTS SELECT on education / courts, so
+--     re-run this file after it (_verify.sql's profile_visibility section
+--     raises until then). _verify.sql's 20260922_03 section lists the three
+--     columns as allowed; its 20261016_10 section stops expecting education /
+--     courts to be public once show_education exists.
 --
 -- ROLLBACK
+--   grant select (education, courts) on public.lawyer_profiles to anon, authenticated;
+--   re-create "lawyer services public read" from 20260907 (without the switch);
+--   drop function if exists public.lawyer_shows_services(uuid);
 --   alter table public.lawyer_profiles
 --     drop column if exists show_services,
 --     drop column if exists show_education,
@@ -102,7 +123,51 @@ comment on column public.lawyer_profiles.show_courts is
 grant update (show_services, show_education, show_courts) on public.lawyer_profiles to authenticated;
 revoke update (show_services, show_education, show_courts) on public.lawyer_profiles from anon;
 
--- ── 3. Verify — raises, so the transaction rolls back ────────────────────────
+-- ── 3. The raw data behind the switches ──────────────────────────────────────
+revoke select (education, courts) on public.lawyer_profiles from anon, authenticated, public;
+
+create or replace function public.lawyer_shows_services(p_lawyer uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (select 1 from public.lawyer_profiles lp
+                  where lp.user_id = p_lawyer and lp.show_services);
+$$;
+
+comment on function public.lawyer_shows_services(uuid) is
+  'N3.8 (20261025_50): whether the lawyer lists his services on the public profile — read by the "lawyer services public read" policy (DEFINER: show_services is not readable by the API roles).';
+
+revoke all on function public.lawyer_shows_services(uuid) from public;
+do $$
+declare r text;
+begin
+  foreach r in array array['anon', 'authenticated', 'service_role'] loop
+    if exists (select 1 from pg_roles where rolname = r) then
+      execute format('grant execute on function public.lawyer_shows_services(uuid) to %I', r);
+    end if;
+  end loop;
+end $$;
+
+-- The guest read of the price list follows the switch. Same gate as 20260907
+-- (an ACTIVE service of a VERIFIED, LISTED lawyer), plus show_services.
+do $$
+begin
+  if to_regclass('public.lawyer_services') is not null then
+    drop policy if exists "lawyer services public read" on public.lawyer_services;
+    create policy "lawyer services public read" on public.lawyer_services for select
+      using (active
+             and exists (select 1 from public.lawyer_profiles lp
+                          where lp.user_id = lawyer_user_id
+                            and lp.verification_status = 'verified'
+                            and lp.marketplace_visible = true)
+             and public.lawyer_shows_services(lawyer_user_id));
+  end if;
+end $$;
+
+-- ── 4. Verify — raises, so the transaction rolls back ────────────────────────
 do $$
 declare
   c       text;
@@ -132,10 +197,29 @@ begin
   if has_table_privilege('authenticated', 'public.lawyer_profiles', 'UPDATE') then
     missing := missing || ' authenticated holds table-level UPDATE on lawyer_profiles;';
   end if;
+  foreach c in array array['education', 'courts'] loop
+    foreach r in array array['anon', 'authenticated'] loop
+      if has_column_privilege(r, 'public.lawyer_profiles', c, 'SELECT') then
+        missing := missing || format(' %s can still SELECT lawyer_profiles.%s (a switched-off section stays readable through REST);', r, c);
+      end if;
+    end loop;
+    if not has_column_privilege('authenticated', 'public.lawyer_profiles', c, 'UPDATE') then
+      missing := missing || format(' authenticated cannot UPDATE lawyer_profiles.%s (the lawyer could not save it);', c);
+    end if;
+  end loop;
+  if not coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.lawyer_shows_services(uuid)')), false) then
+    missing := missing || ' lawyer_shows_services is missing or not SECURITY DEFINER (the guest policy would hit 42501);';
+  end if;
+  if to_regclass('public.lawyer_services') is not null and not exists (
+       select 1 from pg_policy where polrelid = 'public.lawyer_services'::regclass
+          and polname = 'lawyer services public read'
+          and pg_get_expr(polqual, polrelid) ~ 'lawyer_shows_services') then
+    missing := missing || ' "lawyer services public read" does not read show_services;';
+  end if;
   if missing <> '' then
     raise exception '20261025_50 verify:%', missing;
   end if;
-  raise notice '20261025_50 verify: OK — show_services / show_education / show_courts (default true); the lawyer can switch them, anon cannot, and neither API role can read them';
+  raise notice '20261025_50 verify: OK — show_services / show_education / show_courts (default true); the lawyer can switch them, anon cannot, and neither API role can read them; education / courts are service-role reads only; the guest services list follows show_services';
 end $$;
 
 commit;

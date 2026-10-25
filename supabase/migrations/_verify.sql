@@ -1374,6 +1374,12 @@ BEGIN
       missing := missing || format(' %s holds table-level SELECT on lawyer_profiles again (self-host schema or a GRANT ALL re-applied? re-run 20261016_10);', r);
     END IF;
     FOREACH col IN ARRAY public_cols LOOP
+      -- 20261025_50 (N3.8) takes education / courts back from the API roles
+      -- (the profile switches); its own section below checks they stay locked.
+      CONTINUE WHEN col IN ('education', 'courts')
+                AND EXISTS (SELECT 1 FROM information_schema.columns
+                             WHERE table_schema = 'public' AND table_name = 'lawyer_profiles'
+                               AND column_name = 'show_education');
       IF NOT has_column_privilege(r, 'public.lawyer_profiles', col, 'SELECT') THEN
         missing := missing || format(' %s cannot read public column lawyer_profiles.%s;', r, col);
       END IF;
@@ -3556,7 +3562,21 @@ begin
       raise exception '_verify: anon can UPDATE lawyer_profiles.% (re-run 20261025_50)', c;
     end if;
   end loop;
-  raise notice '_verify: 20261025_50 OK — show_services / show_education / show_courts default true, lawyer-writable, not readable by the API roles';
+  -- The raw sections behind the switches (education, courts, the services list).
+  foreach c in array array['education', 'courts'] loop
+    foreach r in array array['anon', 'authenticated'] loop
+      if has_column_privilege(r, 'public.lawyer_profiles', c, 'SELECT') then
+        raise exception '_verify: % can read lawyer_profiles.% through REST — a switched-off section is still public (20261016_10 re-run after 20261025_50? re-run 20261025_50)', r, c;
+      end if;
+    end loop;
+  end loop;
+  if to_regclass('public.lawyer_services') is not null and not exists (
+       select 1 from pg_policy where polrelid = 'public.lawyer_services'::regclass
+          and polname = 'lawyer services public read'
+          and pg_get_expr(polqual, polrelid) ~ 'lawyer_shows_services') then
+    raise exception '_verify: "lawyer services public read" ignores show_services — guests read a hidden price list (20260907 re-run after 20261025_50? re-run 20261025_50)';
+  end if;
+  raise notice '_verify: 20261025_50 OK — show_services / show_education / show_courts default true, lawyer-writable, not readable by the API roles; education / courts locked, the guest services list follows show_services';
 end $$;
 -- <<< verify:profile_visibility
 
