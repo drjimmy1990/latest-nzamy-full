@@ -3512,3 +3512,51 @@ BEGIN
   RAISE NOTICE '_verify: 20261025_40 OK — sort keys generated and locked; % merged law(s) lead the catalogue, % carry an amendment key, % an issue key (of % with any issue_date_hijri text — the rest are not a readable Hijri date)', merged, amended, issued, dated;
 END $$;
 -- <<< verify:law_sort_key
+
+-- ====================================================================
+-- 2026-10-25 — 20261025_41_library_search_scoped_page.sql (owner-free P5, N2.6)
+-- ====================================================================
+-- library.search_scoped_page is the window of POST /api/library/scoped-search
+-- (the search inside one law / judicial collection series / fiqh book
+-- series): SECURITY INVOKER, statement_timeout 4s, search_path '', EXECUTE
+-- for service_role only (it returns the server-only text; the route applies
+-- the paywall). Keyed on the function's existence, so a run before the
+-- migration passes with a NOTICE. Read-only.
+-- >>> verify:search_scoped_page — supabase/tests/rls/library_search_scoped_page.test.sql
+-- extracts the lines between these two markers; keep them.
+SELECT '20261025_41 applied (library.search_scoped_page)' AS check,
+       to_regprocedure('library.search_scoped_page(text, text[], text, integer, integer)') IS NOT NULL AS present;
+
+DO $$
+DECLARE
+  fn      constant text := 'library.search_scoped_page(text, text[], text, integer, integer)';
+  cfg     text[];
+  definer boolean;
+  r       text;
+  missing text := '';
+BEGIN
+  IF to_regprocedure(fn) IS NULL THEN
+    RAISE NOTICE '_verify: 20261025_41 is not applied yet — the in-document search runs its window inline (no 4s database limit); run SQL_batch_2026-10-25_owner_free/22_ANY_TIME_20261025_41_library_search_scoped_page.sql';
+    RETURN;
+  END IF;
+  SELECT p.proconfig, p.prosecdef INTO cfg, definer FROM pg_proc p WHERE p.oid = to_regprocedure(fn);
+  IF definer THEN
+    missing := missing || ' it is SECURITY DEFINER (re-run 20261025_41);';
+  END IF;
+  IF cfg IS NULL OR NOT ('statement_timeout=4s' = ANY (cfg)) OR NOT ('search_path=""' = ANY (cfg)) THEN
+    missing := missing || format(' proconfig %s lacks statement_timeout=4s / search_path='''' (re-run 20261025_41);', coalesce(cfg::text, 'NULL'));
+  END IF;
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF has_function_privilege(r, fn, 'EXECUTE') THEN
+      missing := missing || format(' %s can EXECUTE it — it returns the server-only text (re-run 20261025_41);', r);
+    END IF;
+  END LOOP;
+  IF NOT has_function_privilege('service_role', fn, 'EXECUTE') THEN
+    missing := missing || ' service_role cannot EXECUTE it — the in-document search falls back to its inline query (re-run 20261025_41);';
+  END IF;
+  IF missing <> '' THEN
+    RAISE EXCEPTION '_verify: 20261025_41 is broken —%', missing;
+  END IF;
+  RAISE NOTICE '_verify: 20261025_41 OK — search_scoped_page: INVOKER, statement_timeout 4s, search_path empty, service_role only';
+END $$;
+-- <<< verify:search_scoped_page

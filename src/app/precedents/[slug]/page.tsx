@@ -14,6 +14,8 @@ import Link from "next/link";
 import PrincipleBlock from "./_principle-block";
 import IdentityPanel from "./_identity-panel";
 import VolumeSelector from "./_volume-selector";
+import ScopedSearchPanel from "@/components/library/ScopedSearchPanel";
+import type { CartEntry } from "@/components/laws/DraftDrawer";
 import { cleanPrincipleText } from "./_principle-text";
 import { PrintWatermark } from "@/app/laws/components/PrintWatermark";
 
@@ -207,6 +209,10 @@ export default function JudicialPrinciplesPage() {
   const removePrincipleFromCart = (id: string) => setCart(prev => prev.filter(e => e.articleId !== id));
 
   const clearAll = () => setCart([]);
+  // N2.6: a principle found by the in-document search, keyed by its own id
+  // (the entry addPrincipleToCart builds for the same principle).
+  const addScopedEntry = (entry: CartEntry) =>
+    setCart(prev => prev.find(e => e.articleId === entry.articleId) ? prev : [...prev, entry]);
   const removeArticle = (id: string) => setCart(prev => prev.filter(e => e.articleId !== id));
 
 
@@ -732,6 +738,18 @@ export default function JudicialPrinciplesPage() {
         {collection.series && (
           <VolumeSelector series={collection.series} hasFullAccess={Boolean(collection.paywall?.hasFullAccess)} isDark={isDark} />
         )}
+
+        {/* N2.6: search every volume of the series (or this collection alone)
+            with the library's operators; the matches stack here in full. */}
+        <ScopedSearchPanel
+          key={`collection:${collection.id}`}
+          scope={`collection:${collection.id}`}
+          documentLabel="هذه المجموعة"
+          volumeCount={collection.series?.volumes.length ?? 1}
+          isDark={isDark}
+          onAddToDraft={addScopedEntry}
+          inDraft={(id) => cart.some(e => e.articleId === id)}
+        />
 
         {/* ــ شريط وضع القراءة وحجم الخط والعودة ــ */}
         <div className={`relative z-45 flex flex-wrap items-center justify-between gap-4 mb-4 print:hidden ${isDark ? "text-zinc-500" : "text-slate-400"}`}>

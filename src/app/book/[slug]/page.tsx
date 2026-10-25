@@ -7,7 +7,7 @@ import {
   BookOpen, Lock, Sparkle,
   ArrowRight, Check, Copy, Scales, Gavel,
   BookBookmark, ListNumbers,
-  FileText, BookmarkSimple, CaretLeft, CaretRight, Stack, Printer
+  FileText, BookmarkSimple, CaretLeft, CaretRight, Stack, Printer, Plus, Warning, X
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -22,6 +22,11 @@ import { ResearchWorkspace } from "@/components/ResearchWorkspace";
 import FolderSelectionModal from "@/components/laws/FolderSelectionModal";
 import { LibraryAI, CommunityQuestionModal } from "@/app/laws/[slug]/_ai-components";
 import { getLawMeta } from "@/app/laws/law-metadata-map";
+// N2.6: the book reader gets the draft cart the law and collection readers have.
+import { useDraftCart } from "@/hooks/useDraftCart";
+import { DraftDrawer, type CartEntry } from "@/components/laws/DraftDrawer";
+import ScopedSearchPanel from "@/components/library/ScopedSearchPanel";
+import { blockCartEntry } from "@/lib/library/scopedHitActions";
 
 function getSelectedTextWithin(containerId: string): string {
   if (typeof window === "undefined") return "";
@@ -155,6 +160,15 @@ export default function FeqhBookPage() {
   const [quickJumpQuery, setQuickJumpQuery] = useState("");
   const [jumpError, setJumpError] = useState(false);
   const [copiedCitation, setCopiedCitation] = useState(false);
+
+  // N2.6: the draft cart («مسودة التجميع»), shared with the other readers.
+  const { cart, setCart, saveError, clearSaveError } = useDraftCart();
+  const [showCart, setShowCart] = useState(false);
+  const addEntryToCart = useCallback((entry: CartEntry) => {
+    setCart((prev) => (prev.find((e) => e.articleId === entry.articleId) ? prev : [...prev, entry]));
+  }, [setCart]);
+  const removeFromCart = useCallback((id: string) => setCart((prev) => prev.filter((e) => e.articleId !== id)), [setCart]);
+  const clearCart = useCallback(() => setCart([]), [setCart]);
 
   // Listen to open folder modal from mobile trigger stacked FAB
   useEffect(() => {
@@ -679,6 +693,36 @@ export default function FeqhBookPage() {
                   {copiedText ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
                   {isRTL ? "نسخ الموضع" : "Copy Content"}
                 </button>
+                {/* N2.6: the open block into the draft — only a block whose text this viewer has. */}
+                {activeBlock && !activeBlock.locked && (
+                  <button
+                    type="button"
+                    onClick={() => addEntryToCart(blockCartEntry(
+                      { id: activeBlock.id, topic: activeBlock.topic, matn: activeBlock.matn, sharh: activeBlock.sharh, hashiyah: activeBlock.hashiyah,
+                        vol: activeBlock.vol, page: activeBlock.page, volLabel: activeBlock.volLabel, pageLabel: activeBlock.pageLabel },
+                      citeTitle,
+                    ))}
+                    disabled={cart.some((e) => e.articleId === activeBlock.id)}
+                    aria-pressed={cart.some((e) => e.articleId === activeBlock.id)}
+                    className={`px-4 py-2.5 text-xs font-bold border rounded-xl transition flex items-center gap-1.5 ${
+                      isDark ? "border-white/[0.07] text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    {cart.some((e) => e.articleId === activeBlock.id) ? <Check size={14} /> : <Plus size={14} />}
+                    {cart.some((e) => e.articleId === activeBlock.id) ? "الموضع في المسودة" : "إضافة الموضع للمسودة"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowCart(true)}
+                  className="relative px-4 py-2.5 text-xs font-bold bg-[#C8A762] text-[#0B3D2E] rounded-xl hover:opacity-90 transition flex items-center gap-1.5"
+                >
+                  <Stack size={14} />
+                  {isRTL ? "المسودة" : "Draft"}
+                  {cart.length > 0 && (
+                    <span className="ms-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[#0B3D2E] text-white text-[10px] font-black flex items-center justify-center">{cart.length}</span>
+                  )}
+                </button>
             </div>
           </div>
         </div>
@@ -757,6 +801,18 @@ export default function FeqhBookPage() {
             </div>
           </div>
         </div>
+
+        {/* N2.6: search every volume of the book with the library's operators;
+            the matching passages stack here in full (paywall by the route). */}
+        <ScopedSearchPanel
+          key={`book:${book.id}`}
+          scope={`book:${book.id}`}
+          documentLabel="هذا الكتاب"
+          volumeCount={series?.volumes.length ?? 1}
+          isDark={isDark}
+          onAddToDraft={addEntryToCart}
+          inDraft={(id) => cart.some((e) => e.articleId === id)}
+        />
 
         {/* Workspace Layout */}
         <div className={isReadingMode ? "flex gap-6 items-start justify-center" : "grid grid-cols-1 lg:grid-cols-12 gap-6 items-start w-full"}>
@@ -1022,6 +1078,26 @@ export default function FeqhBookPage() {
           />
         )}
       </AnimatePresence>
+      {/* N2.6: the draft cart drawer. */}
+      <AnimatePresence>
+        {showCart && (
+          <DraftDrawer cart={cart} onRemoveArticle={removeFromCart} onClearAll={clearCart} onClose={() => setShowCart(false)} isDark={isDark} isRTL={isRTL} />
+        )}
+      </AnimatePresence>
+      {saveError && (
+        <div
+          role="alert"
+          className={`fixed top-24 inset-x-0 mx-auto w-fit max-w-[92vw] z-[10002] px-4 py-2.5 rounded-xl shadow-lg text-sm font-semibold flex items-center gap-2 print:hidden ${
+            isDark ? "bg-red-950/90 text-red-200 border border-red-800/60" : "bg-red-50 text-red-700 border border-red-200"
+          }`}
+        >
+          <Warning size={16} weight="fill" />
+          <span>{saveError}</span>
+          <button type="button" onClick={clearSaveError} aria-label={isRTL ? "إغلاق" : "Close"} className="opacity-70 hover:opacity-100">
+            <X size={14} weight="bold" />
+          </button>
+        </div>
+      )}
       <PrintWatermark isRTL={isRTL} />
     </div>
   );

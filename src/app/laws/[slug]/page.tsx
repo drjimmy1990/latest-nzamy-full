@@ -43,6 +43,7 @@ import { buildChapterTree } from "./_chapter-tree";
 import { READER_SCROLL_MARGIN_TOP, buildRegulationAnchors, regulationCardId } from "./_reader-anchors";
 import { ResearchWorkspace } from "@/components/ResearchWorkspace";
 import { apiSlug } from '@/utils/apiSlug';
+import ScopedSearchPanel from "@/components/library/ScopedSearchPanel";
 
 function LawSystemPageContent() {
   const { isDark, isRTL }  = useTheme();
@@ -639,6 +640,14 @@ function LawSystemPageContent() {
 
   const clearAll = useCallback(() => setCart([]), [setCart]);
 
+  // N2.6: a hit of the in-document search goes into the same cart, keyed by
+  // the article's own id (the same entry the article card adds).
+  const addScopedEntry = useCallback((entry: CartEntry) => {
+    setCart(prev => prev.find(e => e.articleId === entry.articleId)
+      ? prev.map(e => e.articleId === entry.articleId ? { ...e, isArticleAdded: true } : e)
+      : [...prev, entry]);
+  }, [setCart]);
+
   const muted  = isDark ? "text-zinc-400" : "text-slate-600";
   const border = isDark ? "border-white/[0.07]" : "border-slate-200";
   const card   = `rounded-2xl border ${isDark ? "bg-zinc-900" : "bg-white shadow-sm"}`;
@@ -1003,6 +1012,20 @@ function LawSystemPageContent() {
             {/* N2.1: the موجز, lifted out of the preamble (it no longer repeats there). */}
             {viewMode !== "appendix" && (
               <LawSummaryBox summary={law.summary} label={law.summaryLabel} isDark={isDark} isRTL={isRTL} />
+            )}
+
+            {/* N2.6: search inside this law with the library's operators; the
+                matching articles stack here in full (paywall applied by the route). */}
+            {viewMode !== "appendix" && (
+              <ScopedSearchPanel
+                key={`law:${law.slug || slug}`}
+                scope={`law:${law.slug || decodeURIComponent(apiSlug(slug))}`}
+                documentLabel="هذا النظام"
+                isDark={isDark}
+                onAddToDraft={addScopedEntry}
+                inDraft={(id) => cart.some(e => e.articleId === id && e.isArticleAdded)}
+                onLocked={() => setShowPaywall(true)}
+              />
             )}
 
             {/* Preamble */}
