@@ -4134,3 +4134,112 @@ begin
   raise notice '_verify: 20261026_10 OK — payment_orders and subscriptions accept quarterly and semiannual; subscription_plans has price_quarterly / price_semiannual';
 end $$;
 -- <<< verify:billing_cycles
+
+-- >>> verify:account_deletion — supabase/tests/rls/account_deletion.test.sql
+-- 2026-10-26 — 20261026_70_account_deletion.sql (D6, owner ٢٩٨: 60-day freeze
+-- then purge; a firm member's case files, office notes and client documents
+-- move to the firm owner, never deleted). Read-only, safe to repeat. NOTICE
+-- while the file has not run (the code keeps the old behaviour: no
+-- self-service deletion, the admin «حذف نهائي» deletes at once). RAISES when
+-- it ran only partly or a guard was dropped since (a schema restore — re-run
+-- 20261026_70). Also NOTICEs a key that blocks deleteUser, and any CASCADE key
+-- from a table with a firm_id that transfer_firm_assets does not move.
+do $$
+declare
+  fix     constant text := 'run SQL_batch_2026-10-26_owner_answers/70_BEFORE_DEPLOY_20261026_70_account_deletion.sql again';
+  missing text := '';
+  r       text;
+  p       text;
+  n       int;
+  rec     record;
+begin
+  if to_regclass('public.account_deletion_requests') is null then
+    raise notice '_verify: 20261026_70 is not applied yet — no self-service account deletion; the admin «حذف نهائي» still deletes at once and a firm member''s rows go with his account. Run 70_BEFORE_DEPLOY_20261026_70_account_deletion.sql before deploying D6';
+    return;
+  end if;
+  if coalesce(obj_description('public.account_deletion_requests'::regclass, 'pg_class'), '') not like '%20261026_70%' then
+    missing := missing || ' account_deletion_requests has lost its 20261026_70 comment;';
+  end if;
+  if to_regclass('public.firm_asset_transfers') is null then
+    missing := missing || ' public.firm_asset_transfers is missing;';
+  elsif not coalesce((select relrowsecurity from pg_class where oid = 'public.firm_asset_transfers'::regclass), false) then
+    missing := missing || ' RLS is off on firm_asset_transfers;';
+  end if;
+  if not coalesce((select relrowsecurity from pg_class where oid = 'public.account_deletion_requests'::regclass), false) then
+    missing := missing || ' RLS is off on account_deletion_requests;';
+  end if;
+  foreach r in array array['anon', 'authenticated'] loop
+    if not exists (select 1 from pg_roles where rolname = r) then continue; end if;
+    foreach p in array array['INSERT', 'UPDATE', 'DELETE'] loop
+      if has_table_privilege(r, 'public.account_deletion_requests', p) then
+        missing := missing || format(' %s holds %s on account_deletion_requests;', r, p);
+      end if;
+    end loop;
+  end loop;
+  if to_regprocedure('public.transfer_firm_assets(uuid,uuid,text,boolean)') is null
+     or to_regprocedure('public.account_purge_prepare(uuid)') is null
+     or to_regprocedure('public.request_account_deletion(text)') is null
+     or to_regprocedure('public.cancel_account_deletion()') is null then
+    missing := missing || ' a D6 function is missing;';
+  elsif exists (select 1 from pg_roles where rolname = 'authenticated')
+        and (has_function_privilege('authenticated', 'public.transfer_firm_assets(uuid,uuid,text,boolean)', 'EXECUTE')
+          or has_function_privilege('authenticated', 'public.account_purge_prepare(uuid)', 'EXECUTE')) then
+    missing := missing || ' authenticated may execute a service-role D6 function;';
+  end if;
+  if not exists (select 1 from pg_trigger where tgrelid = 'auth.users'::regclass
+                  and tgname = 'trg_auth_users_account_keep_rules' and not tgisinternal and tgenabled <> 'D') then
+    missing := missing || ' the keep-rules trigger on auth.users is missing or disabled (a deleted member would take the firm''s rows with him);';
+  end if;
+  if not exists (select 1 from pg_trigger where tgrelid = 'public.firm_members'::regclass
+                  and tgname = 'trg_firm_members_removed_transfer' and not tgisinternal and tgenabled <> 'D') then
+    missing := missing || ' the member-removal transfer trigger on firm_members is missing or disabled;';
+  end if;
+  if to_regclass('public.lawyer_profiles') is not null
+     and not exists (select 1 from pg_trigger where tgrelid = 'public.lawyer_profiles'::regclass
+                      and tgname = 'trg_lawyer_profiles_account_frozen_unlisted' and not tgisinternal) then
+    missing := missing || ' lawyer_profiles has no frozen-account unlisting trigger;';
+  end if;
+  if to_regclass('public.entitlement_requests') is not null and exists (
+       select 1 from pg_constraint con
+         join pg_attribute a on a.attrelid = con.conrelid and a.attnum = any (con.conkey)
+        where con.conrelid = 'public.entitlement_requests'::regclass and con.contype = 'f'
+          and a.attname = 'decided_by' and con.confdeltype <> 'n') then
+    missing := missing || ' entitlement_requests.decided_by blocks account deletion again;';
+  end if;
+  if missing <> '' then
+    raise exception '_verify: 20261026_70 —% %', missing, fix;
+  end if;
+
+  -- A NO ACTION / RESTRICT key to auth.users or profiles makes deleteUser
+  -- fail; the purge then marks that account blocked.
+  for rec in
+    select format('%s.%s', con.conrelid::regclass, a.attname) as k
+      from pg_constraint con
+      join pg_attribute a on a.attrelid = con.conrelid and a.attnum = any (con.conkey)
+     where con.contype = 'f' and con.confdeltype in ('a', 'r')
+       and con.confrelid in ('auth.users'::regclass, 'public.profiles'::regclass)
+  loop
+    raise notice '_verify: 20261026_70 — % refuses account deletion (NO ACTION / RESTRICT); the purge marks such accounts blocked', rec.k;
+  end loop;
+  -- A CASCADE key on a table with a firm_id that is not in the transfer list.
+  for rec in
+    select distinct format('%s.%s', con.conrelid::regclass, a.attname) as k
+      from pg_constraint con
+      join pg_class c on c.oid = con.conrelid
+      join pg_namespace ns on ns.oid = c.relnamespace and ns.nspname = 'public'
+      join pg_attribute a on a.attrelid = con.conrelid and a.attnum = any (con.conkey)
+     where con.contype = 'f' and con.confdeltype = 'c'
+       and con.confrelid in ('auth.users'::regclass, 'public.profiles'::regclass)
+       and exists (select 1 from pg_attribute fa
+                    where fa.attrelid = con.conrelid and fa.attname = 'firm_id' and not fa.attisdropped)
+       and not exists (select 1 from public.firm_asset_specs() s where s.tbl = c.relname and s.col = a.attname)
+       and c.relname not in ('firm_members', 'case_team_members')
+  loop
+    raise notice '_verify: 20261026_70 — % CASCADEs with the account but transfer_firm_assets does not move it; add it to firm_asset_specs() if it is a firm asset', rec.k;
+  end loop;
+
+  select count(*) into n from public.account_deletion_requests where status in ('requested', 'purging', 'blocked');
+  raise notice '_verify: 20261026_70 OK — account deletion: 60-day freeze, keep rules on auth.users delete, member removal moves firm rows to the owner; % active request(s), % blocked',
+    n, (select count(*) from public.account_deletion_requests where status = 'blocked');
+end $$;
+-- <<< verify:account_deletion
