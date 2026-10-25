@@ -65,3 +65,12 @@ test("the panel is labelled apart from each reader's own box; «more» stops at 
   const ROUTE = read("../../app/api/library/scoped-search/route.ts");
   assert.match(ROUTE, /hasMore: from \+ rows\.length < count && \(req\.page \+ 1\) \* req\.limit <= SCOPED_MAX_DEPTH,/);
 });
+
+test("one save-error notice per tab: FloatingButtons shows the shared saveError; no reader renders a second", () => {
+  assert.match(FLOATING, /\{saveError && \(/);
+  const ORDERS = read("../../app/laws/orders/[slug]/page.tsx");
+  for (const [name, page] of [["law", LAW], ["collection", COLLECTION], ["book", BOOK], ["orders", ORDERS]] as const) {
+    assert.doesNotMatch(page, /\{saveError && \(/, `${name} reader renders its own save-error toast`);
+    assert.doesNotMatch(page, /clearSaveError/, `${name} reader reads clearSaveError`);
+  }
+});

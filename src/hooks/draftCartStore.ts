@@ -177,7 +177,8 @@ export function createDraftCartStore(deps: DraftCartDeps) {
     hydrate,
     setCart(updater: CartEntry[] | ((prev: CartEntry[]) => CartEntry[])): void {
       if (hydrating) {
-        void hydrating.then(() => apply(updater));
+        const run = () => apply(updater);
+        void hydrating.then(run, run); // the edit lands even if the hydrate failed
         return;
       }
       apply(updater);

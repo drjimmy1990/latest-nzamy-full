@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight, Crown, Scroll, Check, Copy, FolderSimple,
   TextT, NotePencil, Bookmark, Trash, CheckCircle, Warning, Lock,
-  Plus, X, FolderSimplePlus, MagnifyingGlass, Gavel, BookOpen, Stack, Scales, Printer
+  Plus, FolderSimplePlus, MagnifyingGlass, Gavel, BookOpen, Stack, Scales, Printer
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useUser } from "@/hooks/useUser";
@@ -93,7 +93,7 @@ export default function OrderReaderPage() {
   const [showFolderModal, setShowFolderModal] = useState(false);
 
   // Draft Cart
-  const { cart, setCart, saveError, clearSaveError } = useDraftCart();
+  const { cart, setCart } = useDraftCart();
   const [copiedDraftId, setCopiedDraftId] = useState<string | null>(null);
   const [showCart, setShowCart] = useState(false);
 
@@ -785,27 +785,8 @@ export default function OrderReaderPage() {
         </>
       )}
 
-      {/* Item 94: the server is the store for a signed-in cart — surface a
-          failed sync instead of silently losing it. */}
-      {saveError && (
-        <div
-          role="alert"
-          className={`fixed top-24 inset-x-0 mx-auto w-fit max-w-[92vw] z-[10002] px-4 py-2.5 rounded-xl shadow-lg text-sm font-semibold flex items-center gap-2 print:hidden ${
-            isDark ? "bg-red-950/90 text-red-200 border border-red-800/60" : "bg-red-50 text-red-700 border border-red-200"
-          }`}
-        >
-          <Warning size={16} weight="fill" />
-          <span>{saveError}</span>
-          <button
-            type="button"
-            onClick={clearSaveError}
-            aria-label={isRTL ? "إغلاق" : "Close"}
-            className="opacity-70 hover:opacity-100"
-          >
-            <X size={14} weight="bold" />
-          </button>
-        </div>
-      )}
+      {/* Item 94: a failed cart save is shown once, by the global
+          FloatingButtons (the cart is one shared store, useDraftCart). */}
       <PrintWatermark isRTL={isRTL} />
     </div>
   );
