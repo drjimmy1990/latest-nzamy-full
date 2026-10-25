@@ -180,6 +180,8 @@ test("copy: Arabic digits, the 12-hour clock, and no court line when none is rec
   assert.equal(c.body, "موعد الجلسة اليوم — ٢٠٢٦-١١-١٠ الساعة ٠١:٣٠ م.");
 });
 
+const MAX_ROWS = 1000;
+
 /** A fake service client for the I/O wrapper: rpc pages, outbox read, upsert, cancel. */
 function fakeAdmin(targets: HearingTarget[], stored: ExistingHearingOutboxRow[] = []) {
   const calls: { op: string; arg?: unknown; opts?: unknown }[] = [];
@@ -191,7 +193,23 @@ function fakeAdmin(targets: HearingTarget[], stored: ExistingHearingOutboxRow[] 
     from(table: string) {
       return {
         select() {
-          return { in(_c: string, ids: string[]) { calls.push({ op: `read:${table}`, arg: ids.length }); return { eq() { return Promise.resolve({ data: stored.filter((s) => ids.includes(s.hearing_id)), error: null }); } }; } };
+          // PostgREST answers at most MAX_ROWS rows per request (self-hosted: 1000),
+          // whatever the request asks for.
+          const result = (ids: string[], from = 0, to = Number.MAX_SAFE_INTEGER) => {
+            const all = stored.filter((s) => ids.includes(s.hearing_id)).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+            return Promise.resolve({ data: all.slice(from, Math.min(to + 1, from + MAX_ROWS)), error: null });
+          };
+          return {
+            in(_c: string, ids: string[]) {
+              calls.push({ op: `read:${table}`, arg: ids.length });
+              const q = Object.assign(result(ids), {
+                eq() { return q; },
+                order() { return q; },
+                range(from: number, to: number) { calls.push({ op: `range:${table}`, arg: [from, to] }); return result(ids, from, to); },
+              });
+              return q;
+            },
+          };
         },
         upsert(rows: unknown[], opts: unknown) { calls.push({ op: `upsert:${table}`, arg: rows.length, opts }); return Promise.resolve({ error: null }); },
         update(patch: unknown) {
@@ -209,7 +227,7 @@ test("queueHearingReminders: one rpc page, one read, one upsert on the hearing k
     [existing({ id: "gone", recipient_user_id: "u-left", kind: "hearing_reminder_eve" })],
   );
   const res = await queueHearingReminders(client, new Date("2026-10-25T10:00:00Z"));
-  assert.deepEqual(res, { queued: 8, cancelled: 1, error: null });
+  assert.deepEqual(res, { queued: 8, cancelled: 1, error: null, recipientsChecked: true });
   const upsert = calls.find((c) => c.op === "upsert:notification_outbox");
   assert.deepEqual(upsert?.opts, { onConflict: HEARING_OUTBOX_CONFLICT_KEY });
   assert.equal(HEARING_OUTBOX_CONFLICT_KEY, "hearing_id,recipient_user_id,channel,kind");
@@ -220,7 +238,58 @@ test("queueHearingReminders: one rpc page, one read, one upsert on the hearing k
 test("queueHearingReminders: an rpc error (migration not applied yet) is reported, never thrown", async () => {
   const client = { rpc() { return { range() { return Promise.resolve({ data: null, error: { message: "function does not exist", code: "PGRST202" } }); } }; } };
   const res = await queueHearingReminders(client as unknown as Parameters<typeof queueHearingReminders>[0], new Date());
-  assert.deepEqual(res, { queued: 0, cancelled: 0, error: "function does not exist" });
+  assert.deepEqual(res, { queued: 0, cancelled: 0, error: "function does not exist", recipientsChecked: false });
+});
+
+test("queueHearingReminders: more stored rows than one PostgREST page never re-arms a sent reminder", async () => {
+  // 300 recipients × 4 stages = 1200 rows, all already sent for the right
+  // schedule. A single unpaged read gets 1000 back and would re-queue 200.
+  const now = new Date("2026-10-25T10:00:00Z");
+  const targets = Array.from({ length: 300 }, (_, i) => target({ recipient_user_id: `u-${String(i).padStart(3, "0")}` }));
+  const stored = planHearingReminders(targets, now).map((p, i) =>
+    existing({ id: `s${String(i).padStart(5, "0")}`, recipient_user_id: p.recipient_user_id, kind: p.kind, status: "sent", scheduled_for: p.scheduled_for }),
+  );
+  assert.equal(stored.length, 1200);
+  const { client, calls } = fakeAdmin(targets, stored);
+  const res = await queueHearingReminders(client, now);
+  assert.deepEqual(res, { queued: 0, cancelled: 0, error: null, recipientsChecked: true });
+  assert.equal(calls.some((c) => c.op === "upsert:notification_outbox"), false);
+  assert.ok(calls.filter((c) => c.op === "range:notification_outbox").length >= 2, "the read is paged");
+});
+
+test("queueHearingReminders: a failed cancel leaves recipientsChecked false; a failed upsert does not", async () => {
+  const base = fakeAdmin([target()], [existing({ id: "gone", recipient_user_id: "u-left", kind: "hearing_reminder_eve" })]);
+  const failing = (what: "upsert" | "cancel") => ({
+    rpc: base.client.rpc.bind(base.client),
+    from(table: string) {
+      const real = base.client.from(table);
+      return {
+        select: real.select.bind(real),
+        upsert: what === "upsert" ? () => Promise.resolve({ error: { message: "boom", code: "X" } }) : real.upsert.bind(real),
+        update: what === "cancel"
+          ? () => ({ in() { return { eq() { return Promise.resolve({ error: { message: "nope", code: "X" } }); } }; } })
+          : real.update.bind(real),
+      };
+    },
+  }) as unknown as Parameters<typeof queueHearingReminders>[0];
+  const now = new Date("2026-10-25T10:00:00Z");
+  const cancelFailed = await queueHearingReminders(failing("cancel"), now);
+  assert.equal(cancelFailed.recipientsChecked, false);
+  const upsertFailed = await queueHearingReminders(failing("upsert"), now);
+  assert.equal(upsertFailed.recipientsChecked, true);
+  assert.equal(upsertFailed.error, "boom");
+});
+
+test("delivery after a scheduler outage: a stage overtaken by a later due stage is cancelled, not sent with stale copy", () => {
+  const row7 = { kind: "hearing_reminder_7d", channel: "in_app" as const, scheduled_for: "2026-11-03T06:00:00Z", payload: { via: "owner" } };
+  const row3 = { kind: "hearing_reminder_3d", channel: "in_app" as const, scheduled_for: "2026-11-07T06:00:00Z", payload: { via: "owner" } };
+  const afterOutage = new Date("2026-11-08T10:00:00Z"); // two days before: the 3d stage is due too
+  assert.deepEqual(checkHearingDelivery(row7, hearing, afterOutage), { ok: false, status: "cancelled", reason: "superseded by a later reminder" });
+  assert.equal(checkHearingDelivery(row3, hearing, afterOutage).ok, true, "the latest due stage is still sent");
+  // A late eve reminder (23:00 Riyadh) is still useful: the morning stage is not due yet.
+  const eve = { kind: "hearing_reminder_eve", channel: "in_app" as const, scheduled_for: "2026-11-09T17:00:00Z", payload: { via: "owner" } };
+  assert.equal(checkHearingDelivery(eve, hearing, new Date("2026-11-09T20:00:00Z")).ok, true);
+  assert.equal(checkHearingDelivery(eve, hearing, new Date("2026-11-10T04:30:00Z")).ok, false, "after 07:00 the morning stage has taken over");
 });
 
 test("deliverHearingReminders: sends a valid row, cancels a stale one, and never touches deadline rows", async () => {

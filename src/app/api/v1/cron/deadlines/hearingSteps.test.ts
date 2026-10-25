@@ -21,6 +21,10 @@ test("hearings are queued, then delivered, in the same run and before the purge"
   assert.ok(q > 0 && d > q && purge > d, "queue → deliver → purge");
 });
 
+test("hearing delivery runs only after a queue step that re-checked the recipients", () => {
+  assert.match(src, /const hearingDelivery = hearingQueue\.recipientsChecked\s*\?\s*await deliverHearingReminders\(admin/);
+});
+
 test("the run still fails closed on the cron secret", () => {
   assert.match(src, /if \(!secret \|\| request\.headers\.get\("x-cron-secret"\) !== secret\)/);
 });

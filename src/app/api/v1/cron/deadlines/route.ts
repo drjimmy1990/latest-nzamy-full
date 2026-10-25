@@ -303,8 +303,13 @@ export async function POST(request: NextRequest) {
 
   // ── (b2) HEARINGS ──────────────────────────────────────────────────────
   // queue first, so a stage that fell due since the last run is sent now.
+  // Delivery re-checks the hearing but not the recipient — the queue step's
+  // sweep does — so a run whose sweep failed delivers nothing (fail closed:
+  // a removed consultant or suspended member is never reminded on a stale list).
   const hearingQueue = await queueHearingReminders(admin, new Date());
-  const hearingDelivery = await deliverHearingReminders(admin, new Date());
+  const hearingDelivery = hearingQueue.recipientsChecked
+    ? await deliverHearingReminders(admin, new Date())
+    : { sent: 0, cancelled: 0, failed: 0, error: "skipped: the queue step could not re-check recipients" };
   if (hearingQueue.error) console.error("[cron/deadlines] hearing queue:", hearingQueue.error);
   if (hearingDelivery.error) console.error("[cron/deadlines] hearing delivery:", hearingDelivery.error);
 

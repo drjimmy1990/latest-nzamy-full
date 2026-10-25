@@ -14,6 +14,17 @@
  * «the previous day 20:00» is (hearing_date − 1 calendar day) 20:00 +03:00,
  * whatever the hearing's own hour.
  *
+ * Accounts outside the Kingdom: the platform also has Egyptian lawyers, and
+ * nothing on a hearing or a profile records a zone. Cairo is UTC+2 in winter
+ * and UTC+3 under its summer time, so reading Riyadh can only move a Cairo
+ * reminder up to ONE HOUR EARLY (20:00 Riyadh = 19:00 Cairo in winter), never
+ * late, and the «already started» cut-off likewise falls an hour early, never
+ * after the start. This is the deadline reminders' rule too (06:00 Riyadh for
+ * every account, deadlineReminders.ts). The .ics download instead uses
+ * floating time, so a calendar app rings at the wall clock in the device's
+ * own zone; the two channels can differ by that hour for a Cairo user, and
+ * agree for every user in the Kingdom. Changing it needs a zone column.
+ *
  * WHO — public.hearing_reminder_targets (20261025_30_hearing_reminders.sql):
  * the hearing owner, the case lead while an active member of the case's firm,
  * case-team consultants, and the firm owner. Never the client.
@@ -38,8 +49,12 @@
  *   DELIVER every due pending hearing row. The hearing is re-read and the
  *           stage recomputed first: a hearing no longer scheduled, re-dated,
  *           or already started cancels the row instead of sending a wrong
- *           reminder. Hearing rows are a separate step from the deadline rows,
- *           so neither can starve the other's 200-row window.
+ *           reminder, and so does a stage overtaken by a later stage that is
+ *           also due (after a scheduler outage only the latest is sent).
+ *           Recipients are NOT re-checked here — the queue step's sweep does
+ *           that, so the scheduler delivers only when the queue step reports
+ *           `recipientsChecked`. Hearing rows are a separate step from the
+ *           deadline rows, so neither can starve the other's 200-row window.
  *
  * Never throws: every failure is logged and reported in the result.
  */
@@ -67,7 +82,9 @@ export const HEARING_QUEUE_GRACE_MINUTES = 120;
 export const HEARING_OUTBOX_CONFLICT_KEY = "hearing_id,recipient_user_id,channel,kind";
 export const MAX_HEARING_DELIVER_PER_RUN = 200;
 
+/** PostgREST's max-rows (self-hosted: 1000) — no read here may assume more per request. */
 const RPC_PAGE = 1000;
+const READ_PAGE = 1000;
 const ID_CHUNK = 150;
 const WRITE_CHUNK = 200;
 
@@ -303,13 +320,20 @@ export function checkHearingDelivery(
   if (!hearing) return { ok: false, status: "cancelled", reason: "hearing not found" };
   if (hearing.status !== "scheduled") return { ok: false, status: "cancelled", reason: "hearing is no longer scheduled" };
   const key = row.kind.startsWith(HEARING_KIND_PREFIX) ? (row.kind.slice(HEARING_KIND_PREFIX.length) as HearingStageKey) : null;
-  const stage = key ? hearingStageTargets(hearing.hearing_date, hhmm(hearing.hearing_time), stages).find((s) => s.key === key) : undefined;
+  const all = hearingStageTargets(hearing.hearing_date, hhmm(hearing.hearing_time), stages);
+  const stage = key ? all.find((s) => s.key === key) : undefined;
   if (!key || !stage) return { ok: false, status: "cancelled", reason: "schedule changed" };
-  if (!sameInstant(new Date(riyadhInstantMs(stage.at)).toISOString(), row.scheduled_for)) {
+  const at = riyadhInstantMs(stage.at);
+  if (!sameInstant(new Date(at).toISOString(), row.scheduled_for)) {
     return { ok: false, status: "cancelled", reason: "schedule changed" };
   }
   const cutoff = hearingCutoffMs(hearing.hearing_date, hearing.hearing_time);
   if (cutoff === null || now.getTime() >= cutoff) return { ok: false, status: "cancelled", reason: "hearing already started" };
+  // After a scheduler outage several stages fall due at once; only the
+  // latest is true («بعد أسبوع» two days before the hearing is not).
+  if (all.some((s) => { const t = riyadhInstantMs(s.at); return t > at && t <= now.getTime(); })) {
+    return { ok: false, status: "cancelled", reason: "superseded by a later reminder" };
+  }
   const via = (row.payload as { via?: unknown } | null)?.via;
   const copy = buildHearingReminderCopy(key, hearing, stages);
   return { ok: true, ...copy, href: hearingReminderHref(typeof via === "string" ? via : "owner", hearing.case_request_id) };
@@ -325,12 +349,21 @@ export interface QueueResult {
   queued: number;
   cancelled: number;
   error: string | null;
+  /**
+   * True when this run read the current recipients and the stored rows and
+   * cancelled every pending row of a recipient no longer in the set. The
+   * delivery step re-checks the hearing but not the recipient, so the
+   * scheduler delivers only after a run where this is true. A failed upsert
+   * does not clear it: the rows already stored were still swept.
+   */
+  recipientsChecked: boolean;
 }
 
 /** QUEUE step. `admin` is the service client. */
 export async function queueHearingReminders(admin: SupabaseClient, now: Date = new Date()): Promise<QueueResult> {
   let queued = 0;
   let cancelled = 0;
+  const fail = (error: string): QueueResult => ({ queued, cancelled, error, recipientsChecked: false });
   try {
     const { from, to } = hearingWindow(now);
     const targets: HearingTarget[] = [];
@@ -340,33 +373,43 @@ export async function queueHearingReminders(admin: SupabaseClient, now: Date = n
         .range(offset, offset + RPC_PAGE - 1);
       if (error) {
         console.error("[hearingReminders] targets rpc failed:", error.message, error.code);
-        return { queued: 0, cancelled: 0, error: error.message };
+        return fail(error.message);
       }
       const page = (data ?? []) as HearingTarget[];
       targets.push(...page);
       if (page.length < RPC_PAGE) break;
     }
-    if (targets.length === 0) return { queued: 0, cancelled: 0, error: null };
+    if (targets.length === 0) return { queued: 0, cancelled: 0, error: null, recipientsChecked: true };
 
     const plan = planHearingReminders(targets, now);
     const hearingIds = Array.from(new Set(targets.map((t) => t.hearing_id)));
     const stored: ExistingHearingOutboxRow[] = [];
+    // Paged: 150 hearings × recipients × 4 stages passes PostgREST's
+    // max-rows, and a row missing here reads as «never queued» — a SENT
+    // reminder would be re-armed and sent twice.
     for (const ids of chunks(hearingIds, ID_CHUNK)) {
-      const { data, error } = await admin
-        .from("notification_outbox")
-        .select("id, hearing_id, recipient_user_id, kind, status, scheduled_for")
-        .in("hearing_id", ids)
-        .eq("channel", "in_app");
-      if (error) {
-        // Without the stored rows a sent reminder could be re-armed; stop here.
-        console.error("[hearingReminders] outbox read failed:", error.message, error.code);
-        return { queued: 0, cancelled: 0, error: error.message };
+      for (let offset = 0; ; offset += READ_PAGE) {
+        const { data, error } = await admin
+          .from("notification_outbox")
+          .select("id, hearing_id, recipient_user_id, kind, status, scheduled_for")
+          .in("hearing_id", ids)
+          .eq("channel", "in_app")
+          .order("id", { ascending: true })
+          .range(offset, offset + READ_PAGE - 1);
+        if (error) {
+          // Without the stored rows a sent reminder could be re-armed; stop here.
+          console.error("[hearingReminders] outbox read failed:", error.message, error.code);
+          return fail(error.message);
+        }
+        const page = (data ?? []) as ExistingHearingOutboxRow[];
+        stored.push(...page);
+        if (page.length < READ_PAGE) break;
       }
-      stored.push(...((data ?? []) as ExistingHearingOutboxRow[]));
     }
 
     const { upserts, cancelIds } = reconcileHearingOutbox(plan, stored);
     let firstError: string | null = null;
+    let swept = true;
     for (const rows of chunks(upserts, WRITE_CHUNK)) {
       const { error } = await admin.from("notification_outbox").upsert(rows, { onConflict: HEARING_OUTBOX_CONFLICT_KEY });
       if (error) {
@@ -381,14 +424,15 @@ export async function queueHearingReminders(admin: SupabaseClient, now: Date = n
       if (error) {
         console.error("[hearingReminders] outbox cancel failed:", error.message, error.code);
         firstError ??= error.message;
+        swept = false;
       } else {
         cancelled += ids.length;
       }
     }
-    return { queued, cancelled, error: firstError };
+    return { queued, cancelled, error: firstError, recipientsChecked: swept };
   } catch (err) {
     console.error("[hearingReminders] queue threw:", err);
-    return { queued, cancelled, error: err instanceof Error ? err.message : String(err) };
+    return fail(err instanceof Error ? err.message : String(err));
   }
 }
 
