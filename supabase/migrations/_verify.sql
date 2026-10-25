@@ -3490,6 +3490,16 @@ begin
     raise exception '_verify: the tracking-link INSERT policy lacks case_row_scope_ok — a link could be made on someone else''s case (re-run 20261025_32)';
   end if;
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'case_tracking_links'
+                   and cmd = 'INSERT' and with_check like '%can_issue_tracking_link%')
+     or not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'case_tracking_links'
+                      and cmd = 'UPDATE' and qual like '%can_issue_tracking_link%') then
+    raise exception '_verify: tracking links are not limited to the case lead, team and case roles — any firm member could hand a case to a guest (re-run 20261025_32)';
+  end if;
+  if to_regprocedure('public.tracking_link_maker_ok(text, uuid)') is null
+     or has_function_privilege('authenticated', 'public.tracking_link_maker_ok(text, uuid)', 'EXECUTE') then
+    raise exception '_verify: public.tracking_link_maker_ok is missing or open to sessions (re-run 20261025_32)';
+  end if;
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'case_tracking_links'
                    and cmd = 'UPDATE' and with_check ilike '%revoked_at IS NOT NULL%') then
     raise exception '_verify: a revoked tracking link could be brought back (re-run 20261025_32)';
   end if;
@@ -3510,6 +3520,6 @@ begin
   if not has_function_privilege('service_role', 'public.case_tracking_snapshot(text)', 'EXECUTE') then
     raise exception '_verify: service_role cannot EXECUTE case_tracking_snapshot — every /track page answers 404 (re-run 20261025_32)';
   end if;
-  raise notice '_verify: 20261025_32 OK — case_tracking_links: hashed, scoped, revoke-only; case_tracking_snapshot service-only';
+  raise notice '_verify: 20261025_32 OK — case_tracking_links: hashed, scoped, issued by lead/team/case roles only, revoke-only; case_tracking_snapshot service-only';
 end $$;
 -- <<< verify:case_tracking_links

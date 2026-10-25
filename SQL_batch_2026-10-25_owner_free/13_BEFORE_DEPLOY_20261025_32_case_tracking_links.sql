@@ -25,11 +25,26 @@
 --        INSERT  owner_user_id = auth.uid(), case_row_scope_ok(case,
 --                firm_id) — the maker works on the case (on a firm case an
 --                ACTIVE member of its firm; never the client who filed it, never
---                a free-text assignee), firm_id is the case's own — and the
---                link is born live (revoked_at and last_viewed_at NULL);
---        UPDATE  revoke only: column privilege on revoked_at alone, and WITH
---                CHECK revoked_at IS NOT NULL (no un-revoking).
+--                a free-text assignee), firm_id is the case's own — AND
+--                can_issue_tracking_link(case) (see 2b), and the link is born
+--                live (revoked_at and last_viewed_at NULL);
+--        UPDATE  revoke only: the link's maker, or anyone who may issue a link
+--                on the case (2b); column privilege on revoked_at alone, and
+--                WITH CHECK revoked_at IS NOT NULL (no un-revoking).
 --        No DELETE: a revoked link stays as the record that it existed.
+--
+--   2b. Who may ISSUE a link (review 2026-10-25). Working on the case is not
+--      enough: on a firm case every active member works on it, a finance, HR
+--      or office-admin member and a trainee included, and a link hands the
+--      case to a guest. public.tracking_link_maker_ok(p_request, p_user)
+--      (service role only) is true on a FIRM case for an ACTIVE member of the
+--      case's firm who is its lead (assigned_to), its filer
+--      (requester_user_id), on its case team (case_team_members), or whose
+--      firm role may open the firm's cases — the /dashboard/firm/cases roles
+--      of src/constants/entityRouteAccess.ts (trackingWiring.test.ts pins the
+--      two lists together) — and for the firm's owner. On a SOLO case it is
+--      case_worker_ok. public.can_issue_tracking_link(p_request) is the same
+--      rule for auth.uid(), for the policies and the API's early 403.
 --
 --   3. Column privileges: authenticated SELECTs every column but token_hash;
 --      INSERTs id, case_request_id, owner_user_id, firm_id, token_hash;
@@ -38,8 +53,9 @@
 --   4. public.case_tracking_snapshot(p_token_hash text) returns jsonb — THE
 --      public read, service_role only (the /track/[token] page calls it). It
 --      returns NULL for a malformed, unknown or revoked token, or when the
---      link's maker no longer works on the case (a suspended member's links
---      die with his membership). Otherwise exactly:
+--      link's maker may no longer issue it (tracking_link_maker_ok: a
+--      suspended member's links die with his membership, and a lawyer moved
+--      to a role outside the case roles loses his live links). Otherwise exactly:
 --        { title, case_number, court, stage, hearings: [{ date, time, court }] }
 --          title        service_requests.title
 --          case_number  the current stage's court_case_no
@@ -64,7 +80,9 @@
 -- supabase/tests/rls/case_tracking_links.test.sql.
 --
 -- ROLLBACK (manual): drop function public.case_tracking_snapshot(text); drop
--- table public.case_tracking_links. Every link stops working at once.
+-- table public.case_tracking_links; drop function
+-- public.can_issue_tracking_link(text), public.tracking_link_maker_ok(text,
+-- uuid). Every link stops working at once.
 -- =============================================================================
 
 begin;
@@ -79,6 +97,79 @@ begin
   end if;
   if to_regclass('public.hearings') is null or to_regclass('public.case_stages') is null then
     raise exception '20261025_32: public.hearings / public.case_stages are missing — apply 20260903_phase1_case_tables.sql first';
+  end if;
+  if to_regclass('public.case_team_members') is null then
+    raise exception '20261025_32: public.case_team_members is missing — apply 20261017_41_notes_visibility_case_team.sql first';
+  end if;
+end $$;
+
+
+-- ── 0b. Who may issue a link ─────────────────────────────────────────────────
+-- The role list is the /dashboard/firm/cases rule of
+-- src/constants/entityRouteAccess.ts (FIRM_CASE_VIEW_ROLES); a unit test
+-- (src/lib/tracking/trackingWiring.test.ts) fails when the two drift.
+create or replace function public.tracking_link_maker_ok(p_request text, p_user uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select p_request is not null and p_user is not null and exists (
+    select 1
+      from public.service_requests sr
+     where sr.id = p_request
+       and case
+             when sr.firm_id is not null then
+               exists (select 1 from public.firm_members m
+                        where m.firm_id = sr.firm_id
+                          and m.user_id = p_user
+                          and m.status  = 'active'
+                          and (sr.assigned_to = p_user
+                               or sr.requester_user_id = p_user
+                               or m.role in ('managing_partner', 'partner', 'senior_lawyer', 'lawyer', 'legal_consultant',
+                                             'in_house_counsel', 'external_of_counsel', 'legal_secretary', 'compliance_manager')
+                               or exists (select 1 from public.case_team_members t
+                                           where t.request_id = sr.id and t.user_id = p_user and t.firm_id = sr.firm_id)))
+               or exists (select 1 from public.firm_profiles fp
+                           where fp.id = sr.firm_id and fp.owner_user_id = p_user)
+             else
+               public.case_worker_ok(p_request, p_user)
+           end
+  );
+$$;
+
+comment on function public.tracking_link_maker_ok(text, uuid) is
+  '20261025_32: p_user may issue (and keep alive) a client tracking link on case p_request. Firm case: an ACTIVE member of the case firm who is its lead, its filer, on its case team, or holds a /dashboard/firm/cases role (entityRouteAccess.ts) — or the firm owner. Solo case: case_worker_ok. Service role only.';
+
+create or replace function public.can_issue_tracking_link(p_request text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select public.tracking_link_maker_ok(p_request, auth.uid());
+$$;
+
+comment on function public.can_issue_tracking_link(text) is
+  '20261025_32: the caller (auth.uid()) may issue a client tracking link on case p_request — public.tracking_link_maker_ok for the session.';
+
+revoke all on function public.tracking_link_maker_ok(text, uuid) from public;
+revoke all on function public.can_issue_tracking_link(text) from public;
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    revoke all on function public.tracking_link_maker_ok(text, uuid) from anon;
+    revoke all on function public.can_issue_tracking_link(text) from anon;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    revoke all on function public.tracking_link_maker_ok(text, uuid) from authenticated;
+    grant execute on function public.can_issue_tracking_link(text) to authenticated;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    grant execute on function public.tracking_link_maker_ok(text, uuid) to service_role;
+    grant execute on function public.can_issue_tracking_link(text) to service_role;
   end if;
 end $$;
 
@@ -118,12 +209,13 @@ create policy "tracking links creatable by case workers" on public.case_tracking
     and revoked_at is null
     and last_viewed_at is null
     and public.case_row_scope_ok(case_request_id, firm_id)
+    and public.can_issue_tracking_link(case_request_id)
   );
 
 drop policy if exists "tracking links revocable by maker or case workers" on public.case_tracking_links;
 create policy "tracking links revocable by maker or case workers" on public.case_tracking_links
   for update to authenticated
-  using (owner_user_id = auth.uid() or public.is_case_worker(case_request_id))
+  using (owner_user_id = auth.uid() or public.can_issue_tracking_link(case_request_id))
   with check (revoked_at is not null);
 
 
@@ -175,7 +267,7 @@ begin
   if not found then
     return null;
   end if;
-  if not public.case_worker_ok(v_link.case_request_id, v_link.owner_user_id) then
+  if not public.tracking_link_maker_ok(v_link.case_request_id, v_link.owner_user_id) then
     return null;
   end if;
 
@@ -226,7 +318,7 @@ end;
 $$;
 
 comment on function public.case_tracking_snapshot(text) is
-  '20261025_32: the client tracking page''s ONE read. Live link + maker still a case worker → {title, case_number, court, stage, hearings[{date,time,court}]} from rows written by case workers only; else NULL. Stamps last_viewed_at. Service role only.';
+  '20261025_32: the client tracking page''s ONE read. Live link + maker still allowed to issue it (tracking_link_maker_ok) → {title, case_number, court, stage, hearings[{date,time,court}]} from rows written by case workers only; else NULL. Stamps last_viewed_at. Service role only.';
 
 revoke all on function public.case_tracking_snapshot(text) from public;
 do $$
@@ -260,9 +352,30 @@ begin
   select string_agg(p.polname, ', ') into bad
     from pg_policy p
    where p.polrelid = 'public.case_tracking_links'::regclass and p.polcmd = 'a'
-     and coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '') !~ 'case_row_scope_ok';
+     and (coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '') !~ 'case_row_scope_ok'
+          or coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '') !~ 'can_issue_tracking_link');
   if bad is not null then
-    raise exception '20261025_32 verify: the insert policy lacks case_row_scope_ok: %', bad;
+    raise exception '20261025_32 verify: the insert policy lacks case_row_scope_ok / can_issue_tracking_link: %', bad;
+  end if;
+  if exists (select 1 from pg_policy where polrelid = 'public.case_tracking_links'::regclass and polcmd = 'w'
+               and coalesce(pg_get_expr(polqual, polrelid), '') !~ 'can_issue_tracking_link') then
+    raise exception '20261025_32 verify: the revoke policy is not limited to the maker or those who may issue a link';
+  end if;
+  foreach r in array array['public.tracking_link_maker_ok(text, uuid)', 'public.can_issue_tracking_link(text)'] loop
+    if to_regprocedure(r) is null then
+      raise exception '20261025_32 verify: % is missing', r;
+    end if;
+    if not (select prosecdef from pg_proc where oid = to_regprocedure(r)) then
+      raise exception '20261025_32 verify: % is not SECURITY DEFINER', r;
+    end if;
+    if has_function_privilege('public', r, 'EXECUTE')
+       or (exists (select 1 from pg_roles where rolname = 'anon') and has_function_privilege('anon', r, 'EXECUTE')) then
+      raise exception '20261025_32 verify: % is executable by PUBLIC/anon', r;
+    end if;
+  end loop;
+  if exists (select 1 from pg_roles where rolname = 'authenticated')
+     and has_function_privilege('authenticated', 'public.tracking_link_maker_ok(text, uuid)', 'EXECUTE') then
+    raise exception '20261025_32 verify: a session can EXECUTE tracking_link_maker_ok — it could probe other accounts'' authority on a case';
   end if;
   if not exists (select 1 from pg_policy where polrelid = 'public.case_tracking_links'::regclass and polcmd = 'w'
                    and pg_get_expr(polwithcheck, polrelid) ilike '%revoked_at IS NOT NULL%') then
@@ -292,7 +405,7 @@ begin
      and has_table_privilege('anon', 'public.case_tracking_links', 'SELECT') then
     raise exception '20261025_32 verify: anon can read case_tracking_links';
   end if;
-  raise notice '20261025_32 verify: OK — case_tracking_links: hashed tokens hidden from sessions, case_row_scope_ok on insert, revoke-only update, no delete; case_tracking_snapshot service-only';
+  raise notice '20261025_32 verify: OK — case_tracking_links: hashed tokens hidden from sessions, case_row_scope_ok + can_issue_tracking_link on insert, revoke-only update by maker or issuer, no delete; case_tracking_snapshot and tracking_link_maker_ok service-only';
 end $$;
 
 commit;

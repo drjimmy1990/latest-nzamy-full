@@ -17,11 +17,12 @@ export interface TrackingLink {
 
 const base = (caseId: string) => `/api/v1/cases/${encodeURIComponent(caseId)}/tracking-links`;
 
-export async function getTrackingLinks(caseId: string): Promise<TrackingLink[]> {
-  if (!isSupabaseMode) return [];
-  const body = await apiGet<{ data: TrackingLink[] }>(base(caseId));
+/** The case's links, and whether the caller may create (and revoke) them. */
+export async function getTrackingLinks(caseId: string): Promise<{ links: TrackingLink[]; canIssue: boolean }> {
+  if (!isSupabaseMode) return { links: [], canIssue: false };
+  const body = await apiGet<{ data: TrackingLink[]; canIssue?: boolean }>(base(caseId));
   if (!Array.isArray(body?.data)) throw new Error("تعذّر تحميل روابط المتابعة.");
-  return body.data;
+  return { links: body.data, canIssue: body.canIssue === true };
 }
 
 /** Creates a link and returns its full URL — shown once; only its hash is stored. */

@@ -68,3 +68,43 @@ test("robots disallows /track/, the proxy rate-limits it, and the old /cases/[id
   assert.match(proxy, /rateLimiter\.check\("tracking-page", key, TRACKING_PAGE_RATE_LIMIT\)/);
   assert.match(read("app/cases/[id]/page.tsx"), /notFound\(\);/);
 });
+
+// ─── Who may issue a link (review 2026-10-25) ────────────────────────────────
+// Any active firm member used to pass (case_row_scope_ok alone): a finance or
+// HR member, an office admin or a trainee could hand a firm case to a guest.
+// Now: the lead, the filer, the case team, the firm owner, or a member whose
+// firm role may open the firm's cases (/dashboard/firm/cases in
+// entityRouteAccess.ts). The SQL role list must stay that route's list.
+
+const MIGRATION_32 = readFileSync(join(SRC, "../supabase/migrations/20261025_32_case_tracking_links.sql"), "utf8");
+
+test("tracking_link_maker_ok carries exactly the roles that may open /dashboard/firm/cases", async () => {
+  const { FIRM_ROUTE_RULES } = await import("../../constants/entityRouteAccess.ts");
+  const rule = FIRM_ROUTE_RULES.find((r) => r.path === "/dashboard/firm/cases");
+  assert.ok(rule, "the firm cases route rule exists");
+  const fn = /create or replace function public\.tracking_link_maker_ok\(p_request text, p_user uuid\)[\s\S]*?\n\$\$;/.exec(MIGRATION_32);
+  assert.ok(fn, "20261025_32 defines public.tracking_link_maker_ok(text, uuid)");
+  const list = /m\.role in \(([^)]*)\)/.exec(fn[0]);
+  assert.ok(list, "the predicate tests m.role in (…)");
+  const sqlRoles = [...list[1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]).sort();
+  assert.deepEqual(sqlRoles, [...rule.allowedRoles].sort());
+});
+
+test("the insert and revoke policies and the snapshot use the maker rule; the POST route checks it first", () => {
+  const insert = /create policy "tracking links creatable by case workers"[\s\S]*?;\n/.exec(MIGRATION_32);
+  assert.ok(insert);
+  assert.match(insert[0], /public\.can_issue_tracking_link\(case_request_id\)/);
+  assert.match(insert[0], /public\.case_row_scope_ok\(case_request_id, firm_id\)/);
+  const revoke = /create policy "tracking links revocable by maker or case workers"[\s\S]*?;\n/.exec(MIGRATION_32);
+  assert.ok(revoke);
+  assert.match(revoke[0], /using \(owner_user_id = auth\.uid\(\) or public\.can_issue_tracking_link\(case_request_id\)\)/);
+  assert.match(MIGRATION_32, /if not public\.tracking_link_maker_ok\(v_link\.case_request_id, v_link\.owner_user_id\) then/);
+  const post = read("app/api/v1/cases/[id]/tracking-links/route.ts");
+  assert.match(post, /\.rpc\("can_issue_tracking_link", \{ p_request: id \}\)/);
+  assert.ok(post.indexOf('rpc("can_issue_tracking_link"') < post.indexOf('.from("case_tracking_links")\n      .insert('), "checked before the insert");
+});
+
+test("the tracking bucket also counts the proxy's own client IP (X-Real-IP first), not only CF-Connecting-IP", () => {
+  const proxy = read("proxy.ts");
+  assert.match(proxy, /rateLimiter\.check\("tracking-page-ip", ip, TRACKING_PAGE_IP_RATE_LIMIT\)/);
+});

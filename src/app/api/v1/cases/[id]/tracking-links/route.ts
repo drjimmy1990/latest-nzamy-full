@@ -15,9 +15,11 @@ import {
  * tracking link (N3.6, owner §٤٥ axis 6; public.case_tracking_links,
  * 20261025_32). Session client: RLS lists a case's links to the people who
  * work on it, and refuses a link on a case the caller does not work on, or
- * under a firm that is not the case's (case_row_scope_ok).
+ * under a firm that is not the case's (case_row_scope_ok), or from a member
+ * who may not issue one (can_issue_tracking_link — checked here first too).
  *
- * GET  → { data: TrackingLinkDto[] } newest first.
+ * GET  → { data: TrackingLinkDto[], canIssue } newest first; `canIssue` says
+ *        whether the caller may create (and revoke) links on this case.
  * POST → { data, path } — `path` (/track/<token>) is the ONLY time the token
  *        exists outside the client's hands: only its sha256 is stored, so the
  *        screen says to copy it now; a lost link is revoked and replaced.
@@ -30,18 +32,22 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
     const { user, supabase } = auth;
     const { id } = await context.params;
 
-    const { data, error } = await supabase
-      .from("case_tracking_links")
-      .select(TRACKING_LINK_SELECT)
-      .eq("case_request_id", id)
-      .order("created_at", { ascending: false })
-      .limit(50);
+    const [{ data, error }, issue] = await Promise.all([
+      supabase
+        .from("case_tracking_links")
+        .select(TRACKING_LINK_SELECT)
+        .eq("case_request_id", id)
+        .order("created_at", { ascending: false })
+        .limit(50),
+      supabase.rpc("can_issue_tracking_link", { p_request: id }),
+    ]);
     if (error) {
       console.error("[tracking-links GET] failed:", error.message, error.code);
       return NextResponse.json({ error: "تعذّر تحميل روابط المتابعة." }, { status: 500, headers: NO_STORE });
     }
+    if (issue.error) console.error("[tracking-links GET] authority check failed:", issue.error.message, issue.error.code);
     return NextResponse.json(
-      { data: ((data ?? []) as TrackingLinkRow[]).map((r) => toTrackingLinkDto(r, user.id)) },
+      { data: ((data ?? []) as TrackingLinkRow[]).map((r) => toTrackingLinkDto(r, user.id)), canIssue: issue.data === true },
       { headers: NO_STORE },
     );
   } catch (err) {
@@ -65,6 +71,22 @@ export async function POST(_request: NextRequest, context: { params: Promise<{ i
       return NextResponse.json({ error: "تعذّر التحقق من القضية." }, { status: 500, headers: NO_STORE });
     }
     if (!caseRow) return NextResponse.json({ error: "القضية غير موجودة." }, { status: 404, headers: NO_STORE });
+
+    // Who may hand the case to a guest (20261025_32 §0b): the lead, the filer,
+    // the case team, the firm owner, or a member whose firm role may open the
+    // firm's cases — not every active member. The insert policy re-checks it;
+    // this only answers early and plainly.
+    const { data: mayIssue, error: issueError } = await supabase.rpc("can_issue_tracking_link", { p_request: id });
+    if (issueError) {
+      console.error("[tracking-links POST] authority check failed:", issueError.message, issueError.code);
+      return NextResponse.json({ error: "تعذّر التحقق من صلاحيتك على القضية." }, { status: 500, headers: NO_STORE });
+    }
+    if (mayIssue !== true) {
+      return NextResponse.json(
+        { error: "إنشاء رابط المتابعة متاح للمحامي المسؤول وفريق القضية ومن يملك صلاحية قضايا المكتب." },
+        { status: 403, headers: NO_STORE },
+      );
+    }
 
     const { count, error: countError } = await supabase
       .from("case_tracking_links")

@@ -27,9 +27,17 @@
 --     owner) → "T4 FAIL: a suspended member's link still opens the case".
 --   * the UPDATE policy with no WITH CHECK → "T6c FAIL: a revoked link was
 --     brought back".
+--   * the insert policy without can_issue_tracking_link (case_row_scope_ok
+--     alone, as first written) → "T0h FAIL: an office admin who is neither
+--     lead nor on the case team created a link".
+--   * the snapshot re-checking the maker with case_worker_ok instead of
+--     tracking_link_maker_ok → "T4b FAIL: a link outlived its maker's place
+--     on the case team".
 --
 -- People: firm F (owner O)  L lawyer of F, lead of case-f   Y legal secretary of F
 --         U lawyer of F (later SUSPENDED)   M2 lawyer of firm F2
+--         A office admin of F (no case role; later on case-f's team)
+--         T trainee of F, lead of case-g (another F case)
 --         S solo lawyer (case-s)   K the client of case-f   G an outsider lawyer
 -- Tokens are sha256 hex strings; the test writes them as fixed 64-hex values.
 -- Every assertion RAISES on failure.
@@ -40,6 +48,7 @@
 insert into auth.users (id) values
   ('00000000-0000-0000-0000-0000000000a0'), ('00000000-0000-0000-0000-0000000000a1'),
   ('00000000-0000-0000-0000-0000000000a2'), ('00000000-0000-0000-0000-0000000000a4'),
+  ('00000000-0000-0000-0000-0000000000a3'), ('00000000-0000-0000-0000-0000000000a5'),
   ('00000000-0000-0000-0000-0000000000b0'), ('00000000-0000-0000-0000-0000000000b1'),
   ('00000000-0000-0000-0000-0000000000c1'), ('00000000-0000-0000-0000-0000000000c2'),
   ('00000000-0000-0000-0000-0000000000c3');
@@ -48,6 +57,8 @@ insert into public.profiles (id, user_type, display_name) values
   ('00000000-0000-0000-0000-0000000000a1','lawyer','L'),
   ('00000000-0000-0000-0000-0000000000a2','individual','Y'),
   ('00000000-0000-0000-0000-0000000000a4','lawyer','U'),
+  ('00000000-0000-0000-0000-0000000000a3','individual','A'),
+  ('00000000-0000-0000-0000-0000000000a5','individual','T'),
   ('00000000-0000-0000-0000-0000000000b0','firm','O2'),
   ('00000000-0000-0000-0000-0000000000b1','lawyer','M2'),
   ('00000000-0000-0000-0000-0000000000c1','lawyer','S'),
@@ -60,11 +71,14 @@ insert into public.firm_members (firm_id, user_id, role, status, accepted_at) va
   ('ffffffff-0000-0000-0000-0000000000f1','00000000-0000-0000-0000-0000000000a1','lawyer','active', now()),
   ('ffffffff-0000-0000-0000-0000000000f1','00000000-0000-0000-0000-0000000000a2','legal_secretary','active', now()),
   ('ffffffff-0000-0000-0000-0000000000f1','00000000-0000-0000-0000-0000000000a4','lawyer','active', now()),
+  ('ffffffff-0000-0000-0000-0000000000f1','00000000-0000-0000-0000-0000000000a3','office_admin','active', now()),
+  ('ffffffff-0000-0000-0000-0000000000f1','00000000-0000-0000-0000-0000000000a5','trainee','active', now()),
   ('ffffffff-0000-0000-0000-0000000000f2','00000000-0000-0000-0000-0000000000b1','lawyer','active', now());
 insert into public.service_requests (id, requester_user_id, title, assigned_to, firm_id, metadata) values
   ('case-f','00000000-0000-0000-0000-0000000000c2','دعوى مطالبة مالية','00000000-0000-0000-0000-0000000000a1','ffffffff-0000-0000-0000-0000000000f1',
    '{"court":"المحكمة التجارية بالرياض","fees":"50000","client_phone":"+966500000000","national_id":"1010101010"}'),
-  ('case-s','00000000-0000-0000-0000-0000000000c1','قضية منفردة', null, null, '{"court":"المحكمة العامة بجدة"}');
+  ('case-s','00000000-0000-0000-0000-0000000000c1','قضية منفردة', null, null, '{"court":"المحكمة العامة بجدة"}'),
+  ('case-g','00000000-0000-0000-0000-0000000000c2','قضية يتولاها متدرب','00000000-0000-0000-0000-0000000000a5','ffffffff-0000-0000-0000-0000000000f1', '{}');
 
 -- Live stages and hearings on case-f, written by F's people (as postgres).
 insert into public.case_stages (id, case_request_id, firm_id, owner_user_id, degree, court_name, court_case_no, judge_name, position, outcome, notes) values
@@ -144,7 +158,49 @@ begin
     values ('case-f','00000000-0000-0000-0000-0000000000a1','ffffffff-0000-0000-0000-0000000000f1', 'not-a-hash');
     raise exception 'T0g FAIL: a non-hash token was stored';
   exception when check_violation then null; end;
-  raise notice 'T0 PASS: case workers create links (firm lawyer, solo lawyer); the client, an outsider, another firm, a wrong firm, another name and a foreign solo case cannot; only a 64-hex hash is stored';
+
+  -- Working on a firm case is not enough to hand it to a guest (review 2026-10-25).
+  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000a3', true);
+  if public.can_issue_tracking_link('case-f') then
+    raise exception 'T0h FAIL: can_issue_tracking_link says yes for an office admin with no case role';
+  end if;
+  begin
+    insert into public.case_tracking_links (case_request_id, owner_user_id, firm_id, token_hash)
+    values ('case-f','00000000-0000-0000-0000-0000000000a3','ffffffff-0000-0000-0000-0000000000f1', repeat('d', 64));
+    raise exception 'T0h FAIL: an office admin who is neither lead nor on the case team created a link';
+  exception when insufficient_privilege then null; end;
+  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000a5', true);
+  begin
+    insert into public.case_tracking_links (case_request_id, owner_user_id, firm_id, token_hash)
+    values ('case-f','00000000-0000-0000-0000-0000000000a5','ffffffff-0000-0000-0000-0000000000f1', repeat('d', 64));
+    raise exception 'T0i FAIL: a trainee created a link on a firm case he does not lead';
+  exception when insufficient_privilege then null; end;
+  insert into public.case_tracking_links (id, case_request_id, owner_user_id, firm_id, token_hash) values
+    ('00000000-0000-0000-0000-00000000f005','case-g','00000000-0000-0000-0000-0000000000a5','ffffffff-0000-0000-0000-0000000000f1', repeat('2', 64));
+  -- Y (legal secretary) holds a firm-cases role: still allowed.
+  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000a2', true);
+  if not public.can_issue_tracking_link('case-f') then
+    raise exception 'T0j FAIL: a legal secretary (a /dashboard/firm/cases role) may not issue a link';
+  end if;
+  -- the client: no
+  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000c2', true);
+  if public.can_issue_tracking_link('case-f') or public.can_issue_tracking_link('case-g') then
+    raise exception 'T0k FAIL: the client may issue a link';
+  end if;
+  raise notice 'T0 PASS: case workers create links (firm lawyer, solo lawyer, a trainee leading his case); the client, an outsider, another firm, a wrong firm, another name, a foreign solo case, an office admin with no case role and a trainee off the case cannot; only a 64-hex hash is stored';
+end $$;
+reset role;
+
+-- An office admin put on case-f's team may issue a link there.
+insert into public.case_team_members (request_id, user_id, firm_id, added_by) values
+  ('case-f','00000000-0000-0000-0000-0000000000a3','ffffffff-0000-0000-0000-0000000000f1','00000000-0000-0000-0000-0000000000a1');
+set role app_user;
+do $$
+begin
+  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000a3', true);
+  insert into public.case_tracking_links (id, case_request_id, owner_user_id, firm_id, token_hash) values
+    ('00000000-0000-0000-0000-00000000f004','case-f','00000000-0000-0000-0000-0000000000a3','ffffffff-0000-0000-0000-0000000000f1', repeat('1', 64));
+  raise notice 'T0l PASS: a case-team member issues a link whatever his firm role';
 end $$;
 reset role;
 
@@ -249,6 +305,27 @@ do $$ begin
 end $$;
 reset role;
 
+-- A team member's link lives while he is on the team, and dies when he leaves it.
+set role service_role;
+do $$ begin
+  if public.case_tracking_snapshot(repeat('1', 64)) is null then
+    raise exception 'T4b FAIL: a case-team member''s live link returned nothing';
+  end if;
+  if public.case_tracking_snapshot(repeat('2', 64)) is null then
+    raise exception 'T4b FAIL: the trainee lead''s live link returned nothing';
+  end if;
+end $$;
+reset role;
+delete from public.case_team_members where request_id = 'case-f' and user_id = '00000000-0000-0000-0000-0000000000a3';
+set role service_role;
+do $$ begin
+  if public.case_tracking_snapshot(repeat('1', 64)) is not null then
+    raise exception 'T4b FAIL: a link outlived its maker''s place on the case team';
+  end if;
+  raise notice 'T4b PASS: a link opens while its maker may issue it (team member, trainee lead) and stops when he leaves the team';
+end $$;
+reset role;
+
 -- ── T5 who sees the links ────────────────────────────────────────────────────
 set role app_user;
 do $$
@@ -256,8 +333,8 @@ declare got text; want text; who text; uid uuid;
 begin
   for who, uid, want in
     select * from (values
-      ('L',  '00000000-0000-0000-0000-0000000000a1'::uuid, 'f001 f002'),
-      ('Y',  '00000000-0000-0000-0000-0000000000a2'::uuid, 'f001 f002'),
+      ('L',  '00000000-0000-0000-0000-0000000000a1'::uuid, 'f001 f002 f004 f005'),
+      ('Y',  '00000000-0000-0000-0000-0000000000a2'::uuid, 'f001 f002 f004 f005'),
       ('U',  '00000000-0000-0000-0000-0000000000a4'::uuid, 'f002'),
       ('S',  '00000000-0000-0000-0000-0000000000c1'::uuid, 'f003'),
       ('M2', '00000000-0000-0000-0000-0000000000b1'::uuid, ''),
@@ -304,9 +381,19 @@ begin
   update public.case_tracking_links set revoked_at = now() where id = '00000000-0000-0000-0000-00000000f001';
   get diagnostics n = row_count;
   if n <> 0 then raise exception 'T6f FAIL: an outsider revoked firm F''s link'; end if;
+  -- a trainee off case-f sees its links (he works on the firm's cases) but may not revoke them
+  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000a5', true);
+  update public.case_tracking_links set revoked_at = now() where id = '00000000-0000-0000-0000-00000000f001';
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'T6g FAIL: a trainee off the case revoked its link'; end if;
+  -- the office admin, off the team now, may still revoke the link HE made
+  perform set_config('test.uid', '00000000-0000-0000-0000-0000000000a3', true);
+  update public.case_tracking_links set revoked_at = now() where id = '00000000-0000-0000-0000-00000000f004';
+  get diagnostics n = row_count;
+  if n <> 1 then raise exception 'T6h FAIL: a maker could not revoke his own link'; end if;
   perform set_config('test.uid', '00000000-0000-0000-0000-0000000000a1', true);
   update public.case_tracking_links set revoked_at = now() where id = '00000000-0000-0000-0000-00000000f001';
-  raise notice 'T6 PASS: a case worker revokes; nobody un-revokes, rewrites the hash or the view stamp, or deletes; an outsider cannot touch the link';
+  raise notice 'T6 PASS: one who may issue links revokes, and a maker his own; nobody un-revokes, rewrites the hash or the view stamp, or deletes; an outsider or a trainee off the case cannot revoke';
 end $$;
 reset role;
 

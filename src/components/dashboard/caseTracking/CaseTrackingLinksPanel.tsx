@@ -23,6 +23,7 @@ const when = (iso: string | null) => (iso && !Number.isNaN(Date.parse(iso)) ? WH
 
 export default function CaseTrackingLinksPanel({ caseId, isDark }: { caseId: string; isDark: boolean }) {
   const [links, setLinks] = useState<TrackingLink[]>([]);
+  const [canIssue, setCanIssue] = useState(false);
   const [state, setState] = useState<"loading" | "error" | "ready">("loading");
   const [fresh, setFresh] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -31,7 +32,9 @@ export default function CaseTrackingLinksPanel({ caseId, isDark }: { caseId: str
 
   const load = useCallback(() => {
     setState("loading");
-    getTrackingLinks(caseId).then((l) => { setLinks(l); setState("ready"); }).catch(() => setState("error"));
+    getTrackingLinks(caseId)
+      .then((r) => { setLinks(r.links); setCanIssue(r.canIssue); setState("ready"); })
+      .catch(() => setState("error"));
   }, [caseId]);
 
   useEffect(() => { load(); }, [load]);
@@ -87,11 +90,19 @@ export default function CaseTrackingLinksPanel({ caseId, isDark }: { caseId: str
             يرى الموكل منه عنوان القضية ورقمها والمحكمة والمرحلة الحالية والجلسات القادمة فقط — لا الملاحظات ولا المذكرات ولا المستندات.
           </p>
         </div>
-        <button type="button" onClick={create} disabled={busy}
-          className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-bold bg-[#0B3D2E] text-white hover:bg-[#092e22] disabled:opacity-60 dark:bg-[#C8A762] dark:text-[#0B3D2E] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A762]">
-          <LinkSimple size={13} aria-hidden="true" /> {busy ? "جارٍ الإنشاء…" : "إنشاء رابط جديد"}
-        </button>
+        {canIssue && (
+          <button type="button" onClick={create} disabled={busy}
+            className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-bold bg-[#0B3D2E] text-white hover:bg-[#092e22] disabled:opacity-60 dark:bg-[#C8A762] dark:text-[#0B3D2E] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A762]">
+            <LinkSimple size={13} aria-hidden="true" /> {busy ? "جارٍ الإنشاء…" : "إنشاء رابط جديد"}
+          </button>
+        )}
       </div>
+
+      {state === "ready" && !canIssue && (
+        <p className={`mt-3 text-[12px] ${muted}`}>
+          إنشاء روابط المتابعة وإيقافها للمحامي المسؤول وفريق القضية ومن يملك صلاحية قضايا المكتب.
+        </p>
+      )}
 
       {error && <p role="alert" className="mt-3 text-[12px] font-semibold text-red-600 dark:text-red-400">{error}</p>}
 
@@ -138,7 +149,7 @@ export default function CaseTrackingLinksPanel({ caseId, isDark }: { caseId: str
                     )}
                   </p>
                 </div>
-                {!l.revokedAt && (
+                {!l.revokedAt && (l.mine || canIssue) && (
                   <button type="button" onClick={() => revoke(l.id)}
                     className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-bold ${isDark ? "border-red-400/30 text-red-300 hover:bg-red-500/10" : "border-red-200 text-red-700 hover:bg-red-50"}`}>
                     <Prohibit size={12} aria-hidden="true" /> إيقاف
