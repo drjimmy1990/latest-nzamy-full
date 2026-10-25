@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { mayDownloadRequestFiles } from "@/lib/requestFileAccess";
 
 /**
  * GET /api/v1/service-requests/[id]/attachments/[attachmentId]
@@ -36,10 +37,9 @@ export async function GET(
   const { data: profile } = await admin
     .from("profiles").select("user_type").eq("id", user.id).single();
 
-  const allowed =
-    order.requester_user_id === user.id ||
-    order.assigned_to === user.id ||
-    profile?.user_type === "admin";
+  // requester / assignee / admin — shared with the ZIP route (attachments/zip)
+  // so the two answers cannot drift apart.
+  const allowed = mayDownloadRequestFiles(order, user.id, profile?.user_type as string | undefined);
 
   if (!allowed) return NextResponse.json({ error: "غير مصرح" }, { status: 403 });
 
