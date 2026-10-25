@@ -173,8 +173,8 @@ Membership rows (`case_team_members`, `firm_members`) are access, not assets, an
   - Auth is `x-cron-secret` = `CRON_SECRET`, compared timing-safe with `cronSecretMatches`. It fails closed when the variable is unset.
   - Per claimed request, in order:
     1. `prepare`, which runs the keep rules and returns the storage paths;
-    2. remove those storage objects;
-    3. `auth.admin.deleteUser`, where the trigger re-runs the keep rules;
+    2. `auth.admin.deleteUser`, where the trigger re-runs the keep rules;
+    3. remove those storage objects, only now: a refused delete leaves the request `blocked`, and a blocked account can still be restored, so its files must still be there. A failed remove is recorded on the request as `storage_failed`;
     4. `finish`.
   - An entity owner, or a `23503`, ends as `blocked` with the error, and is never retried in a loop.
   - It logs counts.

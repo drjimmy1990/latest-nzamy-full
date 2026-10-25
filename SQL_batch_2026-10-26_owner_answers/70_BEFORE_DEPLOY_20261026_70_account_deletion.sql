@@ -58,8 +58,10 @@
 --
 -- THE PURGE (code: /api/v1/cron/account-purge and «حذف نهائي الآن»)
 --   claim → prepare (block check, keep rules, storage paths that NO kept row
---   references — never by folder prefix) → Storage remove → auth.admin.
---   deleteUser (the trigger re-runs the keep rules) → finish.
+--   references — never by folder prefix) → auth.admin.deleteUser (the
+--   trigger re-runs the keep rules) → Storage remove (after the delete: a
+--   refused delete leaves the account blocked and restorable, with its files)
+--   → finish.
 --
 -- DEPLOY ORDER — THIS FILE FIRST, THEN THE CODE. The code answers «غير متاح»
 --   / keeps the old behaviour while these objects are missing.
