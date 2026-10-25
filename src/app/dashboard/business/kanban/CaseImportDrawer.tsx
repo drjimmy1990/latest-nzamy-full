@@ -29,7 +29,10 @@ import { getServiceRequestDetail } from "@/lib/services/casesService";
 import { extractCaseParties } from "@/lib/services/caseParties";
 import { toArabicDigits } from "@/lib/services/arabicCount";
 
-type SourceRead = { state: "loading" } | { state: "failed" } | { state: "ok"; items: ImportCandidate[] };
+type SourceRead =
+  | { state: "loading" }
+  | { state: "failed" }
+  | { state: "ok"; items: ImportCandidate[]; partial?: string };
 
 interface Section {
   id: "hearings" | "stages" | "documents" | "parties";
@@ -37,6 +40,8 @@ interface Section {
   empty: string;
   failed: string;
 }
+
+const HEARINGS_LIMIT = 200;
 
 const SECTIONS: Section[] = [
   { id: "hearings", title: "جلسات القضية", empty: "لا جلسات مسجّلة لهذه القضية.", failed: "تعذّرت قراءة الجلسات." },
@@ -72,8 +77,12 @@ export default function CaseImportDrawer({
     const set = (id: Section["id"], r: SourceRead) => {
       if (!cancelled) setReads((prev) => ({ ...prev, [id]: r }));
     };
-    getLawyerHearings({ caseId })
-      .then(({ hearings }) => set("hearings", { state: "ok", items: hearingCandidates(hearings) }))
+    getLawyerHearings({ caseId, limit: HEARINGS_LIMIT })
+      .then(({ hearings, truncated }) => set("hearings", {
+        state: "ok",
+        items: hearingCandidates(hearings),
+        partial: truncated ? `تُعرض أول ${toArabicDigits(hearings.length)} جلسة فقط من جلسات هذه القضية.` : undefined,
+      }))
       .catch(() => set("hearings", { state: "failed" }));
     getCaseStages(caseId)
       .then(({ items }) => set("stages", { state: "ok", items: stageCandidates(items) }))
@@ -184,6 +193,9 @@ export default function CaseImportDrawer({
                     );
                   })}
                 </ul>
+              )}
+              {r.state === "ok" && r.partial && (
+                <p className={`mt-1.5 text-[10px] ${isDark ? "text-amber-400" : "text-amber-700"}`}>{r.partial}</p>
               )}
               {s.id === "parties" && r.state === "ok" && !r.items.some((c) => c.desc === "الطرف الآخر") && (
                 <p className={`mt-1.5 text-[10px] leading-relaxed ${muted}`}>

@@ -2030,8 +2030,14 @@ export default function CaseDetailPage() {
                   <ArrowsOut size={14} />
                 </button>
               </div>
+              {/* ONE live board at a time. Both mounts listen to the keyboard
+                  (undo, delete, paste) and both autosave, so a hidden inline
+                  board kept alive under the fullscreen one would undo with it
+                  and then save its stale copy over the lawyer's work. */}
               <div className="h-[calc(100%-48px)]">
-                <CaseGraphView isDark={isDark} isGlobal={false} caseId={id} enableCaseImport />
+                {!graphFullscreen && (
+                  <CaseGraphView isDark={isDark} isGlobal={false} caseId={id} enableCaseImport />
+                )}
               </div>
               {graphFullscreen && (
                 <div className="fixed inset-0 z-[200] flex flex-col" style={{ background: isDark ? "#0f0f0f" : "#f8f8f8" }}>

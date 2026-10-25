@@ -104,6 +104,8 @@ export default function CaseGraphView({
   const [loadState, setLoadState] = useState<"loading" | "ready" | "readError">(caseId ? "loading" : "ready");
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "saveError">("idle");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The change the debounce is still holding, if any — flushed on unmount.
+  const pendingSave = useRef<{ nodes: GraphNode[]; edges: GraphEdge[]; viewport: { pan: { x: number; y: number }; scale: number } } | null>(null);
   // Guards the autosave effect from firing on the very first render after a
   // load — without this, seeding `nodes`/`edges` from the fetched graph would
   // immediately re-save the same data it just read, and a case with no saved
@@ -169,9 +171,12 @@ export default function CaseGraphView({
       return;
     }
     if (saveTimer.current) clearTimeout(saveTimer.current);
+    const payload = { nodes, edges, viewport: { pan, scale } };
+    pendingSave.current = payload;
     saveTimer.current = setTimeout(() => {
+      pendingSave.current = null;
       setSaveState("saving");
-      saveCaseGraph(caseId, { nodes, edges, viewport: { pan, scale } })
+      saveCaseGraph(caseId, payload)
         .then(() => setSaveState("saved"))
         .catch((err) => {
           console.error("[CaseGraphView] autosave failed:", err);
@@ -180,6 +185,19 @@ export default function CaseGraphView({
     }, 1500);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   }, [caseId, loadState, nodes, edges, pan, scale]);
+
+  // Leaving the board (closing fullscreen, switching tab) must not drop the
+  // last change still waiting out the 1.5 s debounce: flush it on unmount.
+  // caseGraphService orders it before the next board's read of the same case.
+  useEffect(() => {
+    return () => {
+      const payload = pendingSave.current;
+      pendingSave.current = null;
+      if (caseId && payload) {
+        saveCaseGraph(caseId, payload).catch((err) => console.error("[CaseGraphView] flush on unmount failed:", err));
+      }
+    };
+  }, [caseId]);
 
   // `isWorkspaceEmpty` gates the LAUNCHER, and the launcher is a global-workspace
   // affordance only — keep it off the case-file mounts. Since the seed fallback

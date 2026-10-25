@@ -63,3 +63,16 @@ test("the import drawer is only on the lawyer and firm case files", () => {
   const business = readFileSync(join(here, "../cases/[id]/page.tsx"), "utf8");
   assert.doesNotMatch(business, /enableCaseImport/);
 });
+
+test("one live board per case page: the inline canvas unmounts while fullscreen is open", () => {
+  const lawyer = readFileSync(join(here, "../../lawyer/cases/[id]/page.tsx"), "utf8");
+  assert.match(lawyer, /\{!graphFullscreen && \(\s*<CaseGraphView isDark=\{isDark\} isGlobal=\{false\} caseId=\{id\} enableCaseImport \/>/);
+});
+
+test("a change still in the autosave debounce is flushed on unmount, and a read waits for it", () => {
+  assert.match(view, /flush on unmount failed/);
+  assert.match(view, /pendingSave\.current = payload;/);
+  const svc = readFileSync(join(here, "../../../../lib/services/caseGraphService.ts"), "utf8");
+  const get = svc.slice(svc.indexOf("export async function getCaseGraph"), svc.indexOf("export async function saveCaseGraph"));
+  assert.match(get, /const pending = inflight\.get\(caseId\);\s*if \(pending\) await pending/);
+});
