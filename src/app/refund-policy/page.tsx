@@ -7,6 +7,28 @@ import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import { markdownBoldToSafeHtml } from "@/utils/sanitize";
+import {
+  arNumber,
+  INSTANT_CANCEL_MINUTES,
+  PROMO_POINTS_VALIDITY_DAYS,
+  RENEWAL_REMINDER_DAYS,
+  renewalRemindersAr,
+  topupValidityAr,
+  topupValidityEn,
+  WITHDRAWAL_DAYS,
+} from "@/lib/payments/refundPolicy";
+
+// The policy's numbers live in src/lib/payments/refundPolicy.ts. The new
+// sentences (P7: the 90-minute instant cancel, the points validity, the
+// renewal reminders) are built from those constants here. The owner's two
+// clauses of ١٨٠ stay word for word as he wrote them (pricingHonesty.test.ts
+// pins the text); refundPolicy.test.ts pins their 14 days / 5 % / 24 hours to
+// the same constants and to the refund code (refundDecision.ts).
+const AR = {
+  minutes: arNumber(INSTANT_CANCEL_MINUTES),
+  days: arNumber(WITHDRAWAL_DAYS),
+  promoDays: arNumber(PROMO_POINTS_VALIDITY_DAYS),
+};
 
 // ─── Sections ────────────────────────────────────────────────────────────────
 
@@ -14,8 +36,11 @@ const sections = {
   // Owner answer ١٨٠ (2026-10-16): sections ٢ and ٣ carry his two clauses
   // verbatim. Professional fees are a direct contract between the client and
   // the licensed law office through a SAMA-licensed gateway; the platform
-  // holds no funds, so there is no Escrow, no commission deducted on payout
-  // and no platform refund of those fees (section ٤ says so).
+  // holds no funds, so there is no intermediary account, no commission
+  // deducted on payout and no platform refund of those fees (section ٤ says
+  // so). Owner ٢٨٩: no «Escrow / حساب الضمان» wording anywhere.
+  // P7 (owner answers of 25–26 Oct, pricing doc §13ج): section ٣ adds the
+  // 90-minute instant cancel, the points validity and the renewal reminders.
   ar: [
     {
       id: "scope",
@@ -35,13 +60,20 @@ const sections = {
     },
     {
       id: "subscriptions",
-      title: "٣. استرداد اشتراكات الباقات",
+      title: "٣. استرداد الاشتراكات والنقاط",
       content: [
+        // Pricing doc §13ج.1 — the instant cancel of a purchase made by mistake.
+        `**الإلغاء الفوري عند الشراء بالخطأ**: خلال (${AR.minutes}) دقيقة من السداد يحق لك إلغاء الشراء واسترداد كامل المبلغ، بشرط عدم استخدام أي نقطة (٠ نقطة) وعدم تصدير أي ملف.`,
         // Owner answer ١٨٠ — the rule for digital plans, in his words.
         "**الاشتراكات والوحدات الرقمية**: يحق للمشترك ممارسة حق العدول واسترداد كامل قيمة الاشتراك الرقمي خلال (١٤) يوماً من تاريخ السداد وفق نظام التجارة الإلكترونية ولائحته، بشرط عدم استهلاك أكثر من ٥٪ من رصيد وحدات الاستخدام (النقاط) أو تصدير مذكرات مدفوعة.",
         "يُرد المبلغ إلى وسيلة الدفع الأصلية، وبما لا يتجاوز المدد المبيّنة في القسم ٧ أدناه.",
         "بعد انقضاء مدة العدول: يمكن إلغاء التجديد التلقائي في أي وقت من إعدادات الحساب، ويستمر الوصول للخدمة حتى نهاية الفترة المدفوعة بالفعل دون استرداد جزئي عن الفترة المتبقية.",
+        // Owner ٢٨٨ (C): two reminders before an automatic renewal.
+        `**تذكير التجديد**: قبل أي تجديد تلقائي لاشتراك نرسل لك ${renewalRemindersAr()}، لتتمكن من إلغائه قبل الخصم.`,
         "الترقية بين الباقات لا تستوجب رسوم استرداد؛ يُحتسب فرق السعر تناسبياً على الفاتورة التالية.",
+        // Pricing doc §13ج.4 and the owner's 26-Oct pack validity.
+        `**صلاحية النقاط الترويجية**: النقاط الترحيبية والترويجية المجانية صالحة (${AR.promoDays}) يوماً من تاريخ منحها.`,
+        `**صلاحية نقاط الشحن المدفوعة**: بحسب الحزمة — ${topupValidityAr()}، من تاريخ الشراء.`,
       ],
     },
     {
@@ -118,12 +150,16 @@ const sections = {
     },
     {
       id: "subscriptions",
-      title: "3. Subscription Plan Refunds",
+      title: "3. Refunds of Subscriptions and Points",
       content: [
+        `**Instant cancellation of a purchase made by mistake**: within (${INSTANT_CANCEL_MINUTES}) minutes of payment you may cancel the purchase for a full refund, provided no point has been used (0 points) and no file has been exported.`,
         "**Subscriptions and digital units**: the subscriber may exercise the right of withdrawal and recover the full value of the digital subscription within (14) days of payment under the E-Commerce Law and its Regulation, provided no more than 5% of the usage units (points) has been consumed and no paid memos have been exported.",
         "Refunds go to the original payment method, within the periods set out in Section 7 below.",
         "After the withdrawal period ends: automatic renewal can be cancelled at any time from account settings, and access continues until the end of the period already paid for, with no partial refund for the remaining period.",
+        `**Renewal reminders**: before any automatic renewal of a subscription we send you a first reminder ${RENEWAL_REMINDER_DAYS[0]} days and a second reminder ${RENEWAL_REMINDER_DAYS[1]} days before the renewal date, so you can cancel it before you are charged.`,
         "Upgrading between plans does not require a refund; the price difference is pro-rated on the next invoice.",
+        `**Promotional points**: welcome and promotional points granted free of charge are valid for (${PROMO_POINTS_VALIDITY_DAYS}) days from the day they are granted.`,
+        `**Paid top-up points**: valid according to the pack — ${topupValidityEn()} — from the date of purchase.`,
       ],
     },
     {
@@ -204,12 +240,12 @@ export default function RefundPolicyPage() {
               {isRTL ? "سياسة الاسترجاع والاستبدال" : "Refund & Exchange Policy"}
             </h1>
             <p className={`mt-3 text-sm ${isDark ? "text-gray-400" : "text-slate-500"}`}>
-              {isRTL ? "آخر تحديث: ١٦ أكتوبر ٢٠٢٦" : "Last updated: October 16, 2026"}
+              {isRTL ? "آخر تحديث: ٢٦ أكتوبر ٢٠٢٦" : "Last updated: October 26, 2026"}
             </p>
             <div className={`mx-auto mt-4 max-w-lg rounded-xl border px-4 py-3 text-sm ${isDark ? "border-yellow-500/20 bg-yellow-500/5 text-yellow-300" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
               {isRTL
-                ? "حق العدول عن الاشتراكات وفق نظام التجارة الإلكترونية، واسترداد كامل أو جزئي لأتعاب الخدمات الفردية وفق الشروط أدناه."
-                : "A right of withdrawal on subscriptions under the Saudi E-Commerce Law, and full or partial refunds for individual service fees per the terms below."}
+                ? `إلغاء فوري خلال ${AR.minutes} دقيقة من الشراء بالخطأ، وحق العدول عن الاشتراكات خلال ${AR.days} يوماً وفق نظام التجارة الإلكترونية، واسترداد أتعاب الخدمات الفردية وفق الشروط أدناه.`
+                : `An instant cancel within ${INSTANT_CANCEL_MINUTES} minutes of a purchase made by mistake, a ${WITHDRAWAL_DAYS}-day right of withdrawal on subscriptions under the Saudi E-Commerce Law, and refunds for individual service fees per the terms below.`}
             </div>
           </motion.div>
         </div>
