@@ -162,7 +162,9 @@ export const ADMIN_SIDEBAR: SidebarGroup[] = [
     title: "العمليات المالية", titleEn: "Financial Operations",
     items: [
       { label: "الدفع والاسترداد", labelEn: "Payments and Refunds", href: "/dashboard/admin/subscriptions/orders", icon: "CreditCard" },
-      { label: "إدارة الضمان",       labelEn: "Escrow",          href: "/dashboard/admin/escrow",                 icon: "Vault",              badge: "جديد" },
+      // No «إدارة الضمان / Escrow» link (owner ٢٨٩): the platform holds no
+      // funds and no Split Payment is built. /dashboard/admin/escrow is a mock
+      // page kept only behind its URL until the owner decides to delete it.
       { label: "طلبات السحب",        labelEn: "Payouts",         href: "/dashboard/admin/payouts",                icon: "ArrowSquareOut",     badge: "جديد" },
       { label: "النزاعات",           labelEn: "Disputes",        href: "/dashboard/admin/disputes",               icon: "Scales",             badge: "جديد" },
     ],

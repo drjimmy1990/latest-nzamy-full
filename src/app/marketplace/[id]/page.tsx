@@ -411,7 +411,7 @@ export default function MarketplaceDetailPage() {
                   )}
                   <div className={`flex items-start gap-2 text-xs p-3 rounded-xl ${isDark ? "bg-blue-500/5 border border-blue-500/20 text-blue-300" : "bg-blue-50 border border-blue-100 text-blue-700"}`}>
                     <Info size={13} className="mt-0.5 flex-shrink-0" weight="fill" />
-                    عمولة المنصة 15% تُخصم من العرض المقبول عند إفراج الضمان المالي.
+                    عمولة المنصة 15% من العرض المقبول.
                   </div>
                   <motion.button
                     whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
@@ -459,7 +459,7 @@ export default function MarketplaceDetailPage() {
               </motion.div>
             )}
 
-            {/* Escrow guarantee */}
+            {/* About the platform — owner ٢٨٩: no hold-and-release (Split Payment) promise. */}
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -467,12 +467,12 @@ export default function MarketplaceDetailPage() {
               className={`${card} p-4`}>
               <div className="flex items-center gap-2 mb-3">
                 <Shield size={16} weight="fill" className="text-emerald-500" />
-                <p className={`text-xs font-bold ${isDark ? "text-zinc-200" : "text-gray-700"}`}>ضمان المنصة</p>
+                <p className={`text-xs font-bold ${isDark ? "text-zinc-200" : "text-gray-700"}`}>عن المنصة</p>
               </div>
               <ul className={`text-xs space-y-2 ${muted}`}>
                 <li className="flex items-start gap-1.5">
                   <CheckCircle size={11} className="text-emerald-500 mt-0.5 flex-shrink-0" weight="fill" />
-                  المبلغ محمي بنظام Escrow حتى اكتمال الخدمة
+                  يُدفع المبلغ عبر بوابة دفع مرخّصة، ولا تحتفظ به المنصة
                 </li>
                 <li className="flex items-start gap-1.5">
                   <CheckCircle size={11} className="text-emerald-500 mt-0.5 flex-shrink-0" weight="fill" />

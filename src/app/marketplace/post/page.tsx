@@ -478,7 +478,7 @@ export default function MarketplacePostPage() {
                       <Info size={16} className="text-blue-500 flex-shrink-0 mt-0.5" weight="fill" />
                       <p className={`text-xs ${isDark ? "text-blue-300" : "text-blue-700"}`}>
                         <span className="font-bold">عمولة المنصة:</span> 15% من قيمة الصفقة يدفعها مزوّد الخدمة — لا تُخصم من ميزانيتك.
-                        تحمي المنصة حقك عبر نظام الضمان المالي (Escrow).
+                        يُدفع المبلغ عبر بوابة دفع مرخّصة من البنك المركزي، ولا تحتفظ المنصة بأي أموال في حساب وسيط.
                       </p>
                     </div>
                   </div>
@@ -524,11 +524,11 @@ export default function MarketplacePostPage() {
                       </div>
                     </div>
 
-                    {/* Escrow guarantee note */}
+                    {/* Payment note — owner ٢٨٩: no hold-and-release promise until one is built. */}
                     <div className={`rounded-xl p-4 flex items-start gap-3 ${isDark ? "bg-emerald-500/5 border border-emerald-500/20" : "bg-emerald-50 border border-emerald-100"}`}>
                       <Shield size={18} className="text-emerald-500 flex-shrink-0 mt-0.5" weight="fill" />
                       <p className={`text-xs ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>
-                        <span className="font-bold">ضمانك معنا:</span> مبلغ الطلب محمي بنظام Escrow — لن يُفرج عنه للمزوّد إلا بعد تأكيدك باكتمال الخدمة.
+                        <span className="font-bold">الدفع:</span> يُدفع مبلغ الطلب عبر بوابة دفع مرخّصة، ولا تحتفظ المنصة بالمبلغ ولا تحجزه لحين اكتمال الخدمة.
                       </p>
                     </div>
 

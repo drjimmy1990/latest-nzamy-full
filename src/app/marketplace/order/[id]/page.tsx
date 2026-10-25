@@ -37,7 +37,7 @@ const MOCK_ORDER = {
 };
 
 const INITIAL_MESSAGES: ChatMessage[] = [
-  { id: 1, from: "system", text: "✅ تم قبول العرض وإيداع المبلغ في حساب الضمان. يمكنكم الآن التواصل مباشرة.", time: "١٥ مارس، ١٤:٠٠" },
+  { id: 1, from: "system", text: "✅ تم قبول العرض. يمكنكم الآن التواصل مباشرة.", time: "١٥ مارس، ١٤:٠٠" },
   { id: 2, from: "provider", text: "أهلاً أ. عبدالله، تسلّمت الطلب. هل يمكنك إرسال أي مسودة أو نقاط رئيسية تريد توظيفها في العقد؟", time: "١٥ مارس، ١٤:١٥", read: true },
   { id: 3, from: "client", text: "أهلاً أ. سعد. نعم سأرسل لك ملف Word فيه النقاط المتفق عليها مع الطرف الثاني.", time: "١٥ مارس، ١٤:٣٠" },
   { id: 4, from: "client", text: "نقاط العقد الرئيسية.docx", time: "١٥ مارس، ١٤:٣٥", attachment: "نقاط العقد الرئيسية.docx" },
@@ -117,14 +117,14 @@ export default function OrderChatPage({ params }: { params: Promise<{ id: string
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {/* Escrow badge */}
+          {/* Order value — owner ٢٨٩: the platform holds no money, so nothing is «محجوز». */}
           <div className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border ${isDark ? "border-[#C8A762]/30 bg-[#C8A762]/8 text-[#C8A762]" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
-            <Money size={12} /> {order.budget.toLocaleString("ar-SA")} ر.س محجوز
+            <Money size={12} /> قيمة الطلب {order.budget.toLocaleString("ar-SA")} ر.س
           </div>
           <motion.button onClick={() => setShowApproveModal(true)}
             whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 text-white text-[12px] font-bold shadow-md shadow-emerald-500/20">
-            <ShieldCheck size={14} weight="fill" /> اعتماد وإطلاق الضمان
+            <ShieldCheck size={14} weight="fill" /> اعتماد اكتمال الخدمة
           </motion.button>
         </div>
       </motion.div>
@@ -279,9 +279,9 @@ export default function OrderChatPage({ params }: { params: Promise<{ id: string
 
           {/* Financial summary */}
           <div className={`${card} p-4`}>
-            <p className={`text-[10px] font-bold uppercase tracking-wider mb-3 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>حساب الضمان (Escrow)</p>
+            <p className={`text-[10px] font-bold uppercase tracking-wider mb-3 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>قيمة الطلب</p>
             <div className={`rounded-xl p-3 mb-3 ${isDark ? "bg-[#C8A762]/8 border border-[#C8A762]/20" : "bg-amber-50 border border-amber-200/50"}`}>
-              <p className={`text-[11px] mb-1 ${isDark ? "text-[#C8A762]/70" : "text-amber-600/70"}`}>محجوز بانتظار الاعتماد</p>
+              <p className={`text-[11px] mb-1 ${isDark ? "text-[#C8A762]/70" : "text-amber-600/70"}`}>بانتظار اعتماد اكتمال الخدمة</p>
               <p className="text-xl font-bold font-mono text-[#C8A762]">{order.budget.toLocaleString("ar-SA")} ر.س</p>
             </div>
             <div className={`flex items-center gap-1.5 text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
@@ -293,7 +293,7 @@ export default function OrderChatPage({ params }: { params: Promise<{ id: string
           <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
             onClick={() => setShowApproveModal(true)}
             className="w-full py-3 rounded-xl bg-emerald-600 text-white font-bold text-[13px] flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20">
-            <ShieldCheck size={16} weight="fill" /> اعتمد الخدمة وأطلق الضمان
+            <ShieldCheck size={16} weight="fill" /> اعتمد اكتمال الخدمة
           </motion.button>
         </div>
       </div>
@@ -311,9 +311,9 @@ export default function OrderChatPage({ params }: { params: Promise<{ id: string
                 <div className="w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-3">
                   <ShieldCheck size={32} className="text-emerald-500" weight="fill" />
                 </div>
-                <h3 className={`text-lg font-bold ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>اعتماد الخدمة وإطلاق الضمان</h3>
+                <h3 className={`text-lg font-bold ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>اعتماد اكتمال الخدمة</h3>
                 <p className={`text-[12px] mt-1 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-                  بالاعتماد، سيُحوَّل مبلغ <strong className="text-emerald-500">{order.budget.toLocaleString("ar")} ر.س</strong> من حساب الضمان إلى {order.providerName}.
+                  باعتمادك تُسجَّل الخدمة مكتملة لدى {order.providerName}. لا تحتفظ المنصة بمبلغ الطلب ولا تحوّله؛ يُدفع عبر بوابة دفع مرخّصة.
                 </p>
               </div>
               <div className={`flex items-start gap-2 p-3 rounded-xl mb-4 ${isDark ? "bg-amber-500/8 border border-amber-500/20" : "bg-amber-50 border border-amber-200"}`}>
@@ -329,7 +329,7 @@ export default function OrderChatPage({ params }: { params: Promise<{ id: string
                 </button>
                 <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
                   className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-[13px]">
-                  ✅ اعتماد وإطلاق الضمان
+                  ✅ اعتماد اكتمال الخدمة
                 </motion.button>
               </div>
             </motion.div>

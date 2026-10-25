@@ -129,7 +129,7 @@ export default function MyMarketplaceDashboard(props: Props) {
                 سوق التعاقد المهني والإسناد (Marketplace B2B)
               </h1>
               <p className={`text-xs ${muted}`}>
-                إسناد الجلسات والمهام القضائية بين المحامين المرخصين بنظام الضمان المالي المعتمد (Escrow)
+                إسناد الجلسات والمهام القضائية بين المحامين المرخصين
               </p>
             </div>
           </div>
@@ -145,17 +145,14 @@ export default function MyMarketplaceDashboard(props: Props) {
           </div>
         </div>
 
-        {/* Escrow Guarantee Banner */}
+        {/* Payment banner — owner ٢٨٩: the platform holds and releases no fees. */}
         <div className={`p-4 rounded-2xl border ${isDark ? "bg-blue-500/10 border-blue-500/30 text-blue-300" : "bg-blue-50 border-blue-200 text-blue-900"} flex items-center justify-between`}>
           <div className="flex items-center gap-3">
             <ShieldCheck size={24} weight="duotone" className="text-blue-500 shrink-0" />
             <div className="text-xs">
-              <span className="font-bold">حماية الضمان المالي (Escrow Protected):</span> تُحجز أتعاب المهمة في محفظة الضمان المالي قبل بدء العمل، ولا تُحرر للمحامي المسند إليه إلا بعد إتمام المهمة ورفع المحضر المعتمد، مع فحص تعارض المصالح آلياً.
+              <span className="font-bold">الأتعاب:</span> لا تحتفظ المنصة بأتعاب المهمة ولا تحجزها أو تحررها، مع فحص تعارض المصالح آلياً.
             </div>
           </div>
-          <span className="text-[10px] font-bold px-2 py-1 rounded bg-blue-500/20 text-blue-400 shrink-0">
-            ضمان ١٠٠٪
-          </span>
         </div>
 
         {/* Navigation Tabs */}
@@ -309,7 +306,7 @@ export default function MyMarketplaceDashboard(props: Props) {
                   محادثة آمنة
                 </button>
                 <button className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold">
-                  قبول العرض وحجز الضمان (Escrow)
+                  قبول العرض
                 </button>
               </div>
             </div>
