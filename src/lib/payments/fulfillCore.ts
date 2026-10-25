@@ -20,8 +20,10 @@
  *      subscription row points at the saved card;
  *   5. grantPurchase (./grantPurchase.ts); the coupon the order carried (P7,
  *      metadata.coupon) is recorded in coupon_usage — only now that the order
- *      is paid, idempotent per order, never blocking the grant (a coupon paid
- *      twice by one buyer through two open checkouts is still fulfilled and
+ *      is paid, only for a live payment and only when the grant happened
+ *      (not «already entitled»), idempotent per order, never blocking the
+ *      grant (a coupon paid twice by one buyer — which checkout and
+ *      payment_orders_coupon_once_key now refuse — is still fulfilled and
  *      marked metadata.coupon_reused for admin review); then fulfilled_at =
  *      now() — only while it is still null, so exactly one call stamps it;
  *   6. the Arabic in-app notification, sent by the call that stamped.
@@ -286,8 +288,10 @@ async function finish(
     return { outcome: "pending", reason: granted.missing ? "schema_missing" : "grant_failed", receiptNumber };
   }
 
-  // P7: a coupon is consumed only by a PAID order (couponServer.ts).
-  if ((await recordCouponUsage(admin, order)) === "reused") {
+  // P7: a coupon is consumed only by a PAID, LIVE order that actually
+  // granted something (couponServer.ts): an «already entitled» order bought
+  // nothing and a test-mode payment is not a sale, so neither uses it up.
+  if (!granted.alreadyEntitled && (await recordCouponUsage(admin, order)) === "reused") {
     await mergeOrderMetadata(admin, order.id, { coupon_reused: true });
   }
 

@@ -27,6 +27,17 @@
  *      net / VAT / total and metadata.coupon {id, code, discount_halalas,
  *      list_net_halalas}; the intent charges that total, so fulfilment's
  *      paid-vs-stored check and refunds need nothing new.
+ *      The buyer's OTHER open orders carrying the same code (P7 review,
+ *      finding 1; couponServer.priceWithCoupon): a payable one for another
+ *      item, or one a payment reached → 400 «هذا الكود مستخدم في طلب آخر قيد
+ *      الدفع — أكمل ذلك الطلب أو ألغِه»; one whose intent expired is closed
+ *      here once Moyasar lists no payment for it beyond a failed one (503 when
+ *      Moyasar cannot be asked). The database backstop
+ *      payment_orders_coupon_once_key (20261026_20) turns a race between two
+ *      tabs into the same 400 at step 5.
+ *      Coupon tries are budgeted per buyer (couponAttempts.ts, finding 4):
+ *      a spent budget answers 429 before anything is read, and every coupon
+ *      refusal here spends one try — the same budget as the preview route.
  *   4. The buyer's earlier open orders for the same item that no payment has
  *      reached (last SUPERSEDE_WINDOW_MS): the intent is cancelled at Moyasar
  *      first and the order closed only when that worked, or when it never had
@@ -53,7 +64,8 @@ import type { MoyasarClient } from "./moyasarClient.ts";
 import { buyerAllowed, PAYABLE_ITEMS, quote, resolveItem, type Billing, type PayableItem } from "./catalog.ts";
 import { isMissingPaymentsObject } from "./fulfillDecision.ts";
 import { MOYASAR_DISABLED_MESSAGE_AR } from "./moyasarConfig.ts";
-import { priceWithCoupon } from "./couponServer.ts";
+import { COUPON_PENDING_AR, isCouponOrderConflict, priceWithCoupon } from "./couponServer.ts";
+import { COUPON_ATTEMPTS, RATE_LIMITED_AR, type CouponAttemptBudget } from "./couponAttempts.ts";
 import type { BookEntry } from "../pricing/priceBook.ts";
 import {
   callbackUrlFor,
@@ -74,7 +86,9 @@ export { NOT_FOR_SALE_AR };
 
 export interface CheckoutDeps {
   admin: SupabaseClient;
-  client: Pick<MoyasarClient, "createIntent" | "cancelIntent">;
+  client: Pick<MoyasarClient, "createIntent" | "cancelIntent" | "listPaymentsByOrder">;
+  /** The per-buyer coupon try budget (couponAttempts.ts); the shared one unless a test passes its own. */
+  attempts?: CouponAttemptBudget;
   /** The clock (tests pin it). */
   now?: () => Date;
   /** The halala catalogue; PAYABLE_ITEMS unless a test passes a fixture (e.g. a retired item). */
@@ -96,7 +110,7 @@ export interface CheckoutInput {
 
 export type CheckoutReply =
   | { status: 200; body: CheckoutResponse }
-  | { status: 400 | 403 | 410 | 503; body: { error: string } };
+  | { status: 400 | 403 | 410 | 429 | 503; body: { error: string } };
 
 const OPEN = ["created", "initiated"];
 
@@ -108,7 +122,7 @@ function logMissingOnce(step: string, code: string | undefined): void {
   console.warn(`[payments/checkout] ${step}: a B1 migration is not applied yet (${code ?? "?"}); answering 503`);
 }
 
-const fail = (status: 400 | 403 | 410 | 503, error: string): CheckoutReply => ({ status, body: { error } });
+const fail = (status: 400 | 403 | 410 | 429 | 503, error: string): CheckoutReply => ({ status, body: { error } });
 
 /** Step 4 — best-effort: a failure here never blocks the new checkout. */
 async function supersedeEarlierOrders(
@@ -150,6 +164,10 @@ async function supersedeEarlierOrders(
 export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput): Promise<CheckoutReply> {
   const { admin, client } = deps;
   const { user } = input;
+  const attempts = deps.attempts ?? COUPON_ATTEMPTS;
+
+  // 0. a buyer who spent his coupon tries is answered before any read
+  if (input.couponCode && !attempts.check(user.id).ok) return fail(429, RATE_LIMITED_AR);
 
   // 1. the buyer's account type
   const { data: profile, error: profileErr } = await admin
@@ -196,8 +214,12 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
       netHalalas: q.netHalalas,
       now: deps.now?.() ?? new Date(),
       book: deps.book,
+      gateway: client,
     });
-    if (!priced.ok) return fail(priced.status, priced.error);
+    if (!priced.ok) {
+      if (priced.status === 400) attempts.spend(user.id);
+      return fail(priced.status, priced.error);
+    }
     ({ netHalalas: net, vatHalalas: vat, totalHalalas: total } = priced.quote);
     couponMeta = {
       id: priced.coupon.id,
@@ -238,6 +260,11 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
     .single();
   const orderId = (inserted as { id?: unknown } | null)?.id;
   if (insertErr || typeof orderId !== "string" || !orderId) {
+    if (couponMeta && isCouponOrderConflict(insertErr)) {
+      // another tab opened an order carrying this code meanwhile (20261026_20)
+      attempts.spend(user.id);
+      return fail(400, COUPON_PENDING_AR);
+    }
     if (insertErr && isMissingPaymentsObject(insertErr.code)) {
       logMissingOnce("order insert", insertErr.code);
       return fail(503, MOYASAR_DISABLED_MESSAGE_AR);

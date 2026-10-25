@@ -35,8 +35,11 @@ export function isStrictRateLimitedRoute(method: string, pathname: string): bool
 // this buyer — a guessing oracle. Its own bucket, not the strict one: the
 // strict bucket is shared per address by the four routes above, so ten coupon
 // tries would also lock a visitor out of the contact form and invite
-// acceptance. Checkout itself also applies a code (with the same refusal
-// sentence) and stays in the general bucket only.
+// acceptance. The proxy's bucket is only a per-address ceiling (X-Real-IP);
+// the real budget is per signed-in user inside the route
+// (src/lib/payments/couponAttempts.ts), and checkout's coupon refusals spend
+// the same budget, so guessing through checkout is limited too. Checkout
+// itself stays in the general bucket at the proxy.
 export const COUPON_VALIDATE_RE = /^\/api\/v1\/coupons\/validate$/;
 
 /** True for POST /api/v1/coupons/validate. */

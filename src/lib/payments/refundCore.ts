@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { MoyasarClient } from "./moyasarClient.ts";
 import { refundDecision } from "./refundDecision.ts";
 import { BILLING_ORDER_COLUMNS } from "./billingCore.ts";
+import { releaseCouponUsage } from "./couponServer.ts";
 interface RefundRow { id: string; user_id: string | null; merchant: string; kind: string; status: string; total_halalas: number; paid_at: string | null; fulfilled_at: string | null; moyasar_payment_id: string | null; live: boolean | null; metadata: Record<string, unknown> }
 interface RefundJob { token: string; state: string; method: "void" | "refund"; actor_id: string }
 export interface RefundDeps {
@@ -77,6 +78,11 @@ export async function refundOrderWith(deps: RefundDeps, orderId: string, actorId
     }
     const finished = await deps.admin.rpc("finish_payment_refund", { p_order: order.id, p_token: job.token, p_method: job.method });
     if (finished.error || !finished.data?.done) return unavailable();
+    // P7 review (finding 5): a void inside the 90-minute window gives the
+    // coupon back (its coupon_usage row goes; the voided order leaves the
+    // counted set). A later refund keeps it used. Never fails the refund;
+    // runs on a duplicate finish too (idempotent).
+    if (job.method === "void" && order.metadata?.coupon) await releaseCouponUsage(deps.admin, order.id);
     if (order.user_id && order.kind === "plan") {
       try { await deps.syncTier(order.user_id, finished.data.tier ?? "free"); }
       catch { console.error("[refund] tier metadata sync failed:", order.id); }

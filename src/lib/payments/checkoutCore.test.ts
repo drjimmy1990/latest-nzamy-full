@@ -9,6 +9,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { fakeDb, has, type FakeHandler, type FakeQuery } from "./fakeDb.test-helper.ts";
+import { createCouponAttemptBudget } from "./couponAttempts.ts";
+import { COUPON_PENDING_AR } from "./couponServer.ts";
 import { AUDIENCE_REFUSED_AR, CHECKOUT_FAILED_AR, NOT_FOR_SALE_AR, startCheckoutWith, type CheckoutDeps, type CheckoutInput } from "./checkoutCore.ts";
 import { buildCatalog, quote } from "./catalog.ts";
 import { PRICE_BOOK } from "../pricing/priceBook.ts";
@@ -24,10 +26,24 @@ interface FakeMoyasar {
   cancelled: string[];
 }
 
-function moyasar(opts: { intentOk?: boolean; cancelOk?: (id: string) => boolean } = {}): FakeMoyasar {
+function moyasar(
+  opts: {
+    intentOk?: boolean;
+    cancelOk?: (id: string) => boolean;
+    /** listPaymentsByOrder's answer: the statuses Moyasar lists for the order, or false for a failed listing. */
+    listed?: (orderId: string) => string[] | false;
+  } = {},
+): FakeMoyasar & { listedFor: string[] } {
   const intents: FakeMoyasar["intents"] = [];
   const cancelled: string[] = [];
+  const listedFor: string[] = [];
   const client = {
+    async listPaymentsByOrder(orderId: string) {
+      listedFor.push(orderId);
+      const statuses = opts.listed ? opts.listed(orderId) : [];
+      if (statuses === false) return { ok: false as const, status: 502, type: "network", message: "x" };
+      return { ok: true as const, data: statuses.map((status, i) => ({ id: `p${i}`, status, metadata: { order_id: orderId } })) };
+    },
     async createIntent(input: FakeMoyasar["intents"][number]) {
       intents.push(input);
       return opts.intentOk === false
@@ -41,7 +57,7 @@ function moyasar(opts: { intentOk?: boolean; cancelOk?: (id: string) => boolean 
         : { ok: true as const, data: { id, status: "canceled" } };
     },
   } as unknown as CheckoutDeps["client"];
-  return { client, intents, cancelled };
+  return { client, intents, cancelled, listedFor };
 }
 
 /** Answers: a profile of `userType`, no earlier orders, insert → NEW_ORDER, stamp → one row. */
@@ -332,6 +348,11 @@ function couponDb(
     paidWithCoupon?: boolean;
     usage?: boolean;
     couponErr?: { code: string; message: string };
+    /** The buyer's paid / refunded orders carrying the coupon (overrides paidWithCoupon). */
+    paidRows?: Array<Record<string, unknown>>;
+    /** The buyer's OPEN orders carrying the coupon. */
+    openRows?: Array<Record<string, unknown>>;
+    insertErr?: { code: string; message: string };
   } = {},
 ) {
   return db(userType, (q) => {
@@ -340,12 +361,28 @@ function couponDb(
       return { data: opts.row === undefined ? NZAMY50_ROW : opts.row };
     }
     if (q.table === "coupon_usage") return { data: opts.usage ? [{ id: 1 }] : [] };
+    if (q.table === "payment_orders" && q.op === "insert" && opts.insertErr) return { error: opts.insertErr };
     if (q.table === "payment_orders" && q.op === "select" && has(q, "eq", "metadata->coupon->>id")) {
-      return { data: opts.paidWithCoupon ? [{ id: "earlier" }] : [] };
+      const statuses = q.filters.find(([k, c]) => k === "in" && c === "status")?.[2] as string[] | undefined;
+      if (statuses?.includes("created")) return { data: opts.openRows ?? [] };
+      return { data: opts.paidRows ?? (opts.paidWithCoupon ? [{ id: "earlier", live: true, metadata: {} }] : []) };
     }
     return undefined;
   });
 }
+
+const minutesAgo = (m: number) => new Date(NOW.getTime() - m * 60 * 1000).toISOString();
+const openRow = (over: Record<string, unknown> = {}) => ({
+  id: "00000000-0000-0000-0000-0000000c0de1",
+  item_id: "lib-q1",
+  status: "initiated",
+  created_at: minutesAgo(5),
+  moyasar_intent_id: "pi_other",
+  moyasar_payment_id: null,
+  ...over,
+});
+const closes = (log: FakeQuery[], id: string) =>
+  updates(log).filter((q) => has(q, "eq", "id", id) && (q.payload as { status?: string }).status === "cancelled");
 
 test("coupon: NZAMY50 on the 1,490 SAR plan — the stored order and the intent carry the DISCOUNTED net, VAT on it, and the coupon", async () => {
   const { client: admin, log } = couponDb("individual");
@@ -508,4 +545,164 @@ test("coupon: no couponCode — nothing reads the coupon tables and the order is
   assert.equal(r.status, 200);
   assert.equal(log.filter((q) => q.table === "coupons" || q.table === "coupon_usage").length, 0);
   assert.deepEqual((inserts(log)[0].payload as { metadata: unknown }).metadata, { user_email: "buyer@example.test" });
+});
+
+// ── P7 review, finding 1: one code, one open order ──────────────────────────
+
+const NZ_INPUT = { itemId: "ind-preventive", billing: "yearly" as const, couponCode: "NZAMY50" };
+
+test("coupon twice in two tabs: a payable open order of ANOTHER item carrying the code refuses it — 400, no order, no intent, nothing closed", async () => {
+  const { client: admin, log } = couponDb("individual", { openRows: [openRow()] });
+  const m = moyasar();
+  const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW }, input(NZ_INPUT));
+  assert.equal(r.status, 400);
+  assert.deepEqual(r.body, { error: COUPON_PENDING_AR });
+  assert.equal(COUPON_PENDING_AR, "هذا الكود مستخدم في طلب آخر قيد الدفع — أكمل ذلك الطلب أو ألغِه");
+  assert.equal(inserts(log).length, 0);
+  assert.equal(m.intents.length, 0);
+  assert.equal(closes(log, openRow().id).length, 0);
+  // the read is this buyer's OPEN orders carrying this coupon
+  const read = log.find(
+    (q) =>
+      q.table === "payment_orders" &&
+      has(q, "eq", "metadata->coupon->>id", COUPON_ID) &&
+      ((q.filters.find(([k, c]) => k === "in" && c === "status")?.[2] as string[] | undefined) ?? []).includes("initiated"),
+  );
+  assert.ok(read && has(read, "eq", "user_id", USER));
+});
+
+test("coupon: reopening checkout of the SAME item with the code is not refused — the earlier order is superseded", async () => {
+  const same = openRow({ item_id: "ind-preventive", moyasar_intent_id: "pi_same" });
+  const { client: admin } = couponDb("individual", { openRows: [same] });
+  const m = moyasar();
+  const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW }, input(NZ_INPUT));
+  assert.equal(r.status, 200);
+  assert.equal(m.listedFor.length, 0, "a fresh order is never listed at Moyasar");
+});
+
+test("coupon: an open order a payment already reached refuses the code even after its intent expired; it is never closed", async () => {
+  const reached = openRow({ created_at: minutesAgo(120), moyasar_payment_id: "pay_inflight" });
+  const { client: admin, log } = couponDb("individual", { openRows: [reached] });
+  const m = moyasar();
+  const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW }, input(NZ_INPUT));
+  assert.equal(r.status, 400);
+  assert.deepEqual(r.body, { error: COUPON_PENDING_AR });
+  assert.equal(closes(log, reached.id).length, 0);
+});
+
+test("coupon: an expired order that never had an intent is closed without asking Moyasar, and the checkout goes on", async () => {
+  const abandoned = openRow({ status: "created", moyasar_intent_id: null, created_at: minutesAgo(90) });
+  const { client: admin, log } = couponDb("individual", { openRows: [abandoned] });
+  const m = moyasar();
+  const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW }, input(NZ_INPUT));
+  assert.equal(r.status, 200);
+  assert.equal(m.listedFor.length, 0);
+  const [close] = closes(log, abandoned.id);
+  assert.ok(close, "closed");
+  assert.ok(has(close, "eq", "user_id", USER) && has(close, "is", "moyasar_payment_id", null));
+  assert.deepEqual(close.filters.find(([k, c]) => k === "in" && c === "status")?.[2], ["created", "initiated"]);
+  assert.ok(log.indexOf(close) < log.indexOf(inserts(log)[0]), "closed before the new order");
+});
+
+test("coupon: an expired intent is closed only when Moyasar lists nothing for it but failed payments; a live payment keeps it; a failed listing is 503", async () => {
+  const expired = openRow({ created_at: minutesAgo(70) });
+  {
+    const { client: admin, log } = couponDb("individual", { openRows: [expired] });
+    const m = moyasar({ listed: () => ["failed"] });
+    const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW }, input(NZ_INPUT));
+    assert.equal(r.status, 200);
+    assert.deepEqual(m.listedFor, [expired.id]);
+    assert.equal(closes(log, expired.id).length, 1);
+  }
+  for (const status of ["paid", "initiated", "authorized"]) {
+    const { client: admin, log } = couponDb("individual", { openRows: [expired] });
+    const m = moyasar({ listed: () => ["failed", status] });
+    const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW }, input(NZ_INPUT));
+    assert.equal(r.status, 400, status);
+    assert.deepEqual(r.body, { error: COUPON_PENDING_AR }, status);
+    assert.equal(closes(log, expired.id).length, 0, status);
+    assert.equal(inserts(log).length, 0, status);
+  }
+  {
+    const { client: admin, log } = couponDb("individual", { openRows: [expired] });
+    const m = moyasar({ listed: () => false });
+    const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW }, input(NZ_INPUT));
+    assert.equal(r.status, 503);
+    assert.equal(closes(log, expired.id).length, 0);
+    assert.equal(inserts(log).length, 0);
+  }
+});
+
+test("coupon: the database backstop — a unique violation of payment_orders_coupon_once_key at the insert is the same 400; another 23505 is not", async () => {
+  {
+    const { client: admin } = couponDb("individual", {
+      insertErr: { code: "23505", message: 'duplicate key value violates unique constraint "payment_orders_coupon_once_key"' },
+    });
+    const m = moyasar();
+    const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW }, input(NZ_INPUT));
+    assert.equal(r.status, 400);
+    assert.deepEqual(r.body, { error: COUPON_PENDING_AR });
+    assert.equal(m.intents.length, 0);
+  }
+  {
+    const { client: admin } = couponDb("individual", {
+      insertErr: { code: "23505", message: 'duplicate key value violates unique constraint "payment_orders_receipt_number_key"' },
+    });
+    const r = await startCheckoutWith({ admin, client: moyasar().client, now: () => NOW }, input(NZ_INPUT));
+    assert.equal(r.status, 503);
+    assert.deepEqual(r.body, { error: CHECKOUT_FAILED_AR });
+  }
+});
+
+test("coupon (finding 5): an earlier test-mode payment or an «already entitled» order did not use the code up; a live paid one did", async () => {
+  for (const paidRows of [
+    [{ id: "t", live: false, metadata: { coupon: {} } }],
+    [{ id: "e", live: true, metadata: { coupon: {}, already_entitled: true } }],
+  ]) {
+    const { client: admin } = couponDb("individual", { paidRows });
+    const r = await startCheckoutWith({ admin, client: moyasar().client, now: () => NOW }, input(NZ_INPUT));
+    assert.equal(r.status, 200, JSON.stringify(paidRows));
+  }
+  const { client: admin } = couponDb("individual", { paidRows: [{ id: "l", live: true, metadata: { coupon: {} } }] });
+  const r = await startCheckoutWith({ admin, client: moyasar().client, now: () => NOW }, input(NZ_INPUT));
+  assert.equal(r.status, 400);
+});
+
+// ── P7 review, finding 4: the per-buyer try budget ──────────────────────────
+
+test("coupon tries: every checkout refusal spends one; a spent budget answers 429 before any read; a success and a code-less checkout spend nothing", async () => {
+  const attempts = createCouponAttemptBudget({ max: 2, clock: () => NOW.getTime() });
+  for (let i = 0; i < 2; i++) {
+    const { client: admin } = couponDb("individual", { row: null });
+    const r = await startCheckoutWith(
+      { admin, client: moyasar().client, now: () => NOW, attempts },
+      input({ ...NZ_INPUT, couponCode: `GUESS${i}` }),
+    );
+    assert.equal(r.status, 400);
+  }
+  {
+    const { client: admin, log } = couponDb("individual");
+    const r = await startCheckoutWith({ admin, client: moyasar().client, now: () => NOW, attempts }, input(NZ_INPUT));
+    assert.equal(r.status, 429);
+    assert.deepEqual(r.body, { error: "طلبات كثيرة — حاول بعد قليل." });
+    assert.equal(log.length, 0, "nothing read");
+  }
+  {
+    // the same buyer still checks out without a code
+    const { client: admin } = couponDb("individual");
+    const r = await startCheckoutWith(
+      { admin, client: moyasar().client, now: () => NOW, attempts },
+      input({ itemId: "ind-preventive", billing: "yearly" }),
+    );
+    assert.equal(r.status, 200);
+  }
+  {
+    // a success spends nothing
+    const fresh = createCouponAttemptBudget({ max: 1, clock: () => NOW.getTime() });
+    for (let i = 0; i < 3; i++) {
+      const { client: admin } = couponDb("individual");
+      const r = await startCheckoutWith({ admin, client: moyasar().client, now: () => NOW, attempts: fresh }, input(NZ_INPUT));
+      assert.equal(r.status, 200, `try ${i}`);
+    }
+  }
 });

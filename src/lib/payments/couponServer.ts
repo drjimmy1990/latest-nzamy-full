@@ -13,18 +13,35 @@
  *     from payment_orders (a PAID or REFUNDED order of this buyer whose
  *     metadata.coupon.id is this coupon — written in the same insert as the
  *     order, so it cannot be lost) and from coupon_usage (the ledger
- *     fulfilment writes). A failed or cancelled order never consumed it.
+ *     fulfilment writes). A failed, cancelled or voided order never consumed
+ *     it, nor did a test-mode payment (live = false) or a paid order that
+ *     granted nothing (metadata.already_entitled) — the same set the
+ *     database's payment_orders_coupon_once_key counts (20261026_20).
+ *   - then, when the coupon applies: the buyer's OTHER open orders carrying
+ *     it (P7 review, finding 1). A fresh one (its intent still payable) for
+ *     another item, or one a payment already reached, refuses the code —
+ *     COUPON_PENDING_AR — so two tabs cannot both pay with one code. The
+ *     same item's fresh open orders are left to checkout's supersede step
+ *     (and the database guard answers the same 400 if one survives). An
+ *     order whose intent has expired (COUPON_OPEN_ORDER_LIFETIME_MS) does not
+ *     count for the preview; checkout closes it ('cancelled') once Moyasar
+ *     lists no payment for it beyond a failed one, refuses when it lists
+ *     one, and answers 503 when it cannot tell.
  *   - validateCouponWith — the preview behind POST /api/v1/coupons/validate:
  *     the same steps as checkout (account type, audience, the book's quote)
  *     and the same priceWithCoupon, so the preview equals the charge.
  *   - recordCouponUsage — fulfilment's half: one coupon_usage row for a paid
- *     order that carried a coupon, idempotent (unique order_id, 20261026_20).
- *     It never blocks what the buyer paid for.
+ *     LIVE order that carried a coupon and was granted, idempotent (unique
+ *     order_id, 20261026_20). It never blocks what the buyer paid for.
+ *   - releaseCouponUsage — the refund route's half: a void inside the
+ *     90-minute window removes the order's row (the trigger lowers
+ *     used_count); a later refund keeps the coupon used.
  *
  * Relative imports only (type-only for Supabase), so `node --test` loads it.
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { MoyasarClient } from "./moyasarClient.ts";
 import { buyerAllowed, formatHalalas, PAYABLE_ITEMS, quote, resolveItem, type Billing, type PayableItem } from "./catalog.ts";
 import {
   applyDiscount,
@@ -38,6 +55,8 @@ import {
 import { isMissingPaymentsObject } from "./fulfillDecision.ts";
 import { isMissingFeatureColumn } from "../library/optionalColumn.ts";
 import { bookEntry, PRICE_BOOK, type BookEntry } from "../pricing/priceBook.ts";
+import { SUPERSEDE_WINDOW_MS } from "./checkoutRules.ts";
+import { COUPON_ATTEMPTS, RATE_LIMITED_AR, type CouponAttemptBudget } from "./couponAttempts.ts";
 
 export const COUPON_COLUMNS =
   "id, code, discount_type, discount_value, min_order_amount, eligible_user_types, max_uses, used_count, valid_from, valid_until, active, max_discount_pct, excluded_kinds";
@@ -78,6 +97,24 @@ export function itemIsDiscounted(itemId: string, book: Readonly<Record<string, B
   return !!entry?.launchPrices && entry.launchPrices.length > 0;
 }
 
+/** The code sits on another of the buyer's orders that may still be paid. */
+export const COUPON_PENDING_AR = "هذا الكود مستخدم في طلب آخر قيد الدفع — أكمل ذلك الطلب أو ألغِه";
+
+/** The database's backstop (20261026_20): one counted order per (buyer, coupon). */
+export const COUPON_ORDER_INDEX = "payment_orders_coupon_once_key";
+
+/** True for the unique violation of COUPON_ORDER_INDEX (and of no other key). */
+export function isCouponOrderConflict(error: DbError): boolean {
+  return error?.code === "23505" && typeof error.message === "string" && error.message.includes(COUPON_ORDER_INDEX);
+}
+
+/**
+ * An intent lives one hour from creation (checkoutRules.SUPERSEDE_WINDOW_MS
+ * adds a margin): after that no one can pay with it, so an open order older
+ * than this that no payment reached is abandoned.
+ */
+export const COUPON_OPEN_ORDER_LIFETIME_MS = SUPERSEDE_WINDOW_MS;
+
 export type CouponPricing =
   | { ok: true; coupon: { id: string; code: string }; quote: DiscountedQuote }
   | { ok: false; status: 400 | 503; error: string };
@@ -90,27 +127,155 @@ export interface CouponPricingInput {
   netHalalas: number;
   now: Date;
   book?: Readonly<Record<string, BookEntry>>;
+  /**
+   * Checkout passes its Moyasar client: an expired open order carrying the
+   * code is then closed when no payment reached it. The preview passes
+   * nothing (undefined) and only ignores such an order; null = checkout with
+   * no way to ask Moyasar (answers 503 rather than guess).
+   */
+  gateway?: Pick<MoyasarClient, "listPaymentsByOrder"> | null;
 }
 
 const unavailable = (): CouponPricing => ({ ok: false, status: 503, error: COUPONS_UNAVAILABLE_AR });
+
+/**
+ * Whether a paid / refunded order consumed its coupon: not a test-mode
+ * payment (live = false) and not one that granted nothing (already_entitled).
+ * Decided here, not in a PostgREST filter: a `neq` on a JSON key drops every
+ * row where the key is absent — nearly every order.
+ */
+export function orderConsumedCoupon(row: { live?: boolean | null; metadata?: Record<string, unknown> | null }): boolean {
+  if (row.live === false) return false;
+  return row.metadata?.already_entitled !== true;
+}
 
 /** null = could not tell (an error): the caller refuses rather than guesses. */
 async function alreadyUsed(admin: SupabaseClient, couponId: string, userId: string): Promise<boolean | null> {
   const [orders, usage] = await Promise.all([
     admin
       .from("payment_orders")
-      .select("id")
+      .select("id, live, metadata")
       .eq("user_id", userId)
       .in("status", ["paid", "refunded"])
       .eq("metadata->coupon->>id", couponId)
-      .limit(1),
+      .limit(50),
     admin.from("coupon_usage").select("id").eq("coupon_id", couponId).eq("user_id", userId).limit(1),
   ]);
   if (orders.error || usage.error) {
     console.error("[coupons] reading earlier use failed:", orders.error?.code ?? usage.error?.code);
     return null;
   }
-  return (Array.isArray(orders.data) && orders.data.length > 0) || (Array.isArray(usage.data) && usage.data.length > 0);
+  const rows = Array.isArray(orders.data)
+    ? (orders.data as Array<{ live?: boolean | null; metadata?: Record<string, unknown> | null }>)
+    : [];
+  return rows.some(orderConsumedCoupon) || (Array.isArray(usage.data) && usage.data.length > 0);
+}
+
+// ── the buyer's other open orders carrying the code (finding 1) ────────────
+
+export interface OpenCouponOrderRow {
+  id: string;
+  item_id: string;
+  status: string;
+  created_at: string;
+  moyasar_intent_id: string | null;
+  moyasar_payment_id: string | null;
+}
+
+/**
+ * The buyer's open orders carrying the coupon, sorted:
+ *   - blocking: a payment already reached it (the sweep / webhook settles
+ *     it), or it is still payable (younger than the intent lifetime) and is
+ *     for ANOTHER item;
+ *   - stale: expired and no payment id — abandoned unless Moyasar says
+ *     otherwise;
+ *   - the rest (the same item, still fresh) are checkout's supersede step.
+ */
+export function sortOpenCouponOrders(
+  rows: readonly OpenCouponOrderRow[] | null | undefined,
+  itemId: string,
+  nowMs: number,
+): { blocking: OpenCouponOrderRow[]; stale: OpenCouponOrderRow[] } {
+  const blocking: OpenCouponOrderRow[] = [];
+  const stale: OpenCouponOrderRow[] = [];
+  for (const r of rows ?? []) {
+    if (r.status !== "created" && r.status !== "initiated") continue;
+    if (r.moyasar_payment_id) {
+      blocking.push(r);
+      continue;
+    }
+    const created = Date.parse(r.created_at);
+    // an unreadable date is treated as fresh: never closed on a guess
+    const expired = Number.isFinite(created) && nowMs - created >= COUPON_OPEN_ORDER_LIFETIME_MS;
+    if (expired) stale.push(r);
+    else if (r.item_id !== itemId) blocking.push(r);
+  }
+  return { blocking, stale };
+}
+
+/**
+ * An expired open order may be closed only when no payment can still land on
+ * it: no intent ever left the server ('created', no intent id), or Moyasar
+ * lists nothing for the order beyond failed payments. Any other listed
+ * payment (paid, initiated / 3-D Secure, authorized …) keeps it open — the
+ * sweep and the webhook look only at open orders.
+ */
+export function staleOrderClosable(
+  row: Pick<OpenCouponOrderRow, "status" | "moyasar_intent_id">,
+  listed: ReadonlyArray<{ status: string }> | null,
+): boolean {
+  if (row.status === "created" && !row.moyasar_intent_id) return true;
+  if (!listed) return false;
+  return listed.every((p) => p.status === "failed");
+}
+
+type PendingOutcome = "clear" | "pending" | "unknown";
+
+async function otherOpenOrders(
+  admin: SupabaseClient,
+  input: { couponId: string; userId: string; itemId: string; now: Date; gateway?: CouponPricingInput["gateway"] },
+): Promise<PendingOutcome> {
+  const { data, error } = await admin
+    .from("payment_orders")
+    .select("id, item_id, status, created_at, moyasar_intent_id, moyasar_payment_id")
+    .eq("user_id", input.userId)
+    .in("status", ["created", "initiated"])
+    .eq("metadata->coupon->>id", input.couponId)
+    .limit(20);
+  if (error) {
+    console.error("[coupons] reading the buyer's open orders failed:", error.code);
+    return "unknown";
+  }
+  const { blocking, stale } = sortOpenCouponOrders(data as OpenCouponOrderRow[] | null, input.itemId, input.now.getTime());
+  if (blocking.length > 0) return "pending";
+  if (stale.length === 0 || input.gateway === undefined) return "clear"; // the preview: checkout closes them
+  if (input.gateway === null) return "unknown";
+
+  for (const row of stale) {
+    let listed: Array<{ status: string }> | null = null;
+    if (!(row.status === "created" && !row.moyasar_intent_id)) {
+      const r = await input.gateway.listPaymentsByOrder(row.id);
+      if (!r.ok) {
+        console.warn("[coupons] listing an expired order's payments failed:", row.id, r.status);
+        return "unknown";
+      }
+      listed = r.data;
+    }
+    if (!staleOrderClosable(row, listed)) return "pending";
+    const { error: closeErr } = await admin
+      .from("payment_orders")
+      .update({ status: "cancelled" })
+      .eq("id", row.id)
+      .eq("user_id", input.userId)
+      .in("status", ["created", "initiated"])
+      .is("moyasar_payment_id", null);
+    if (closeErr) {
+      console.error("[coupons] closing an expired couponed order failed:", row.id, closeErr.code);
+      return "unknown";
+    }
+    console.info("[coupons] closed an expired couponed order no payment reached:", row.id);
+  }
+  return "clear";
 }
 
 /** The coupon applied to one quote, or the refusal (same sentence for every unknown / used code). */
@@ -137,6 +302,16 @@ export async function priceWithCoupon(admin: SupabaseClient, input: CouponPricin
     now: input.now,
   });
   if (!decision.ok) return { ok: false, status: 400, error: couponRefusalAr(decision, formatHalalas) };
+
+  const pending = await otherOpenOrders(admin, {
+    couponId: row.id,
+    userId: input.userId,
+    itemId: input.item.id,
+    now: input.now,
+    gateway: input.gateway,
+  });
+  if (pending === "unknown") return unavailable();
+  if (pending === "pending") return { ok: false, status: 400, error: COUPON_PENDING_AR };
   return {
     ok: true,
     coupon: { id: row.id, code: row.code },
@@ -155,6 +330,8 @@ export interface ValidateInput {
 
 export interface ValidateDeps {
   admin: SupabaseClient;
+  /** The per-buyer try budget (couponAttempts.ts); the shared one unless a test passes its own. */
+  attempts?: CouponAttemptBudget;
   now?: () => Date;
   catalog?: Readonly<Record<string, PayableItem>>;
   book?: Readonly<Record<string, BookEntry>>;
@@ -165,12 +342,17 @@ export type ValidateReply =
       status: 200;
       body: { code: string; quote: { listNet: number; discount: number; net: number; vat: number; total: number } };
     }
-  | { status: 400 | 403 | 503; body: { error: string } };
+  | { status: 400 | 403 | 429 | 503; body: { error: string } };
 
 const PREVIEW_FAILED_AR = "تعذّر التحقق من كود الخصم، حاول مرة أخرى بعد قليل";
 
 export async function validateCouponWith(deps: ValidateDeps, input: ValidateInput): Promise<ValidateReply> {
   const { admin } = deps;
+  // every preview spends a try (finding 4): the answer is an oracle
+  const attempts = deps.attempts ?? COUPON_ATTEMPTS;
+  if (!attempts.check(input.userId).ok) return { status: 429, body: { error: RATE_LIMITED_AR } };
+  attempts.spend(input.userId);
+
   const { data: profile, error: profileErr } = await admin
     .from("profiles")
     .select("user_type")
@@ -223,10 +405,14 @@ export function orderCoupon(
   };
 }
 
-export type CouponUsageOutcome = "none" | "recorded" | "already_recorded" | "reused" | "not_recorded";
+export type CouponUsageOutcome = "none" | "test_mode" | "recorded" | "already_recorded" | "reused" | "not_recorded";
 
 /**
- * One coupon_usage row for a PAID order that carried a coupon. Idempotent:
+ * One coupon_usage row for a PAID order that carried a coupon. Only a LIVE
+ * payment consumes it (`live` is set by the claim): a test-mode payment
+ * (staff / test accounts) never records a use nor counts toward used_count
+ * ("test_mode"). The caller records only when the grant happened — never for
+ * an «already entitled» order, which bought nothing. Idempotent:
  * the unique order_id guard makes a retry a no-op ("already_recorded"). A
  * unique (coupon, user) conflict from ANOTHER order means the buyer paid two
  * couponed orders opened at the same time ("reused"): the order is still
@@ -237,10 +423,11 @@ export type CouponUsageOutcome = "none" | "recorded" | "already_recorded" | "reu
  */
 export async function recordCouponUsage(
   admin: SupabaseClient,
-  order: { id: string; user_id: string | null; metadata: Record<string, unknown> | null },
+  order: { id: string; user_id: string | null; live?: boolean | null; metadata: Record<string, unknown> | null },
 ): Promise<CouponUsageOutcome> {
   const coupon = orderCoupon(order.metadata);
   if (!coupon || !order.user_id) return "none";
+  if (order.live !== true) return "test_mode";
   try {
     const { error } = await admin.from("coupon_usage").insert({
       coupon_id: coupon.id,
@@ -264,5 +451,26 @@ export async function recordCouponUsage(
   } catch (err) {
     console.error("[coupons] recording the coupon use threw:", order.id, err instanceof Error ? err.message : err);
     return "not_recorded";
+  }
+}
+
+/**
+ * The void path of a refund (inside the 90-minute window): the order's
+ * coupon_usage row is removed, so the coupon is the buyer's again (the
+ * trigger lowers used_count; a voided order is outside the counted set). A
+ * refund after the window keeps it used. Idempotent (deleting nothing is
+ * fine); never fails the refund.
+ */
+export async function releaseCouponUsage(admin: SupabaseClient, orderId: string): Promise<boolean> {
+  try {
+    const { error } = await admin.from("coupon_usage").delete().eq("order_id", orderId);
+    if (!error) return true;
+    if (!isMissingPaymentsObject(error.code)) {
+      console.error("[coupons] releasing a voided order's coupon failed:", orderId, error.code, error.message);
+    }
+    return false;
+  } catch (err) {
+    console.error("[coupons] releasing a voided order's coupon threw:", orderId, err instanceof Error ? err.message : err);
+    return false;
   }
 }

@@ -66,9 +66,13 @@ const GENERAL_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 120 };
 const LIBRARY_READ_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 300 };
 // The public case tracking page (N3.6, /track/[token]): a client opens it a
 // few times a day; 30 a minute per visitor stops a script walking tokens.
-// P7: coupon guesses — 20 tries per 10 minutes per client is plenty for a
-// buyer typing a code and fixing a typo.
-const COUPON_VALIDATE_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 20 };
+// P7: coupon guesses. The real budget is per signed-in user, inside the
+// route (src/lib/payments/couponAttempts.ts: 20 tries / 10 min, shared with
+// checkout's coupon refusals). This is only the per-address ceiling in front
+// of it, keyed on the proxy-resolved IP (X-Real-IP first) — never on
+// CF-Connecting-IP, which anyone reaching the origin directly can forge. It
+// is wide because X-Real-IP may be one Cloudflare edge shared by many buyers.
+const COUPON_VALIDATE_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 200 };
 const TRACKING_PAGE_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 30 };
 // The same page per proxy-resolved IP (X-Real-IP first, as every other bucket).
 // CF-Connecting-IP is forgeable by anyone reaching the origin directly, so the
@@ -125,8 +129,7 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
     }
 
     if (isCouponMatch) {
-      const key = libraryReadClientKey((name) => req.headers.get(name), ip);
-      const decision = rateLimiter.check("coupon-validate", key, COUPON_VALIDATE_RATE_LIMIT);
+      const decision = rateLimiter.check("coupon-validate-ip", ip, COUPON_VALIDATE_IP_RATE_LIMIT);
       if (!decision.allowed) return rateLimitResponse(decision);
     }
 

@@ -11,7 +11,7 @@ export type FakeError = { code?: string; message?: string } | null;
 
 export interface FakeQuery {
   table: string;
-  op: "select" | "insert" | "update" | "rpc";
+  op: "select" | "insert" | "update" | "delete" | "rpc";
   payload?: unknown;
   filters: Array<[string, string, unknown]>;
   columns?: string;
@@ -44,6 +44,10 @@ export function fakeDb(handler: FakeHandler) {
       update(payload: unknown) {
         q.op = "update";
         q.payload = payload;
+        return chain;
+      },
+      delete() {
+        q.op = "delete";
         return chain;
       },
       eq(c: string, v: unknown) { q.filters.push(["eq", c, v]); return chain; },

@@ -14,9 +14,13 @@ import { COUPON_INVALID_AR, COUPONS_UNAVAILABLE_AR, normalizeCouponCode } from "
  * PAID (fulfilment).
  *
  * Unknown, expired, used-up, already-used and wrong-audience codes all answer
- * the same 400 (COUPON_INVALID_AR). Rate-limited per client in src/proxy.ts
- * (its own "coupon" bucket, src/lib/rateLimitRoutes.ts). Before 20261026_20
- * runs: 503 «أكواد الخصم غير متاحة حالياً».
+ * the same 400 (COUPON_INVALID_AR); a code the buyer holds on another open
+ * order answers COUPON_PENDING_AR. Rate-limited per SIGNED-IN USER inside
+ * validateCouponWith (couponAttempts.ts: 20 previews / 10 min, the budget
+ * checkout's coupon refusals also spend → 429), with a per-address ceiling in
+ * src/proxy.ts (X-Real-IP, its own "coupon" bucket,
+ * src/lib/rateLimitRoutes.ts). Before 20261026_20 runs: 503 «أكواد الخصم غير
+ * متاحة حالياً».
  */
 
 function reply(body: object, status = 200) {
