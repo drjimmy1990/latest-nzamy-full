@@ -59,3 +59,7 @@ alter table public.attachments add constraint attachments_hold_blocks_delete_che
   check (not (legal_hold and deleted_at is not null));
 
 alter table public.notifications add column if not exists href text;
+
+-- request_id is nullable on the live table (20260628_documents_upload.sql:13-14):
+-- personal vault documents carry no case.
+alter table public.attachments alter column request_id drop not null;

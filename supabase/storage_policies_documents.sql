@@ -124,20 +124,35 @@ create policy "documents insert own"
   to authenticated
   with check (bucket_id = 'documents' and auth.uid()::text = (storage.foldername(name))[1]);
 
--- UPDATE — owners can update their own documents
-drop policy if exists "documents update own" on storage.objects;
-create policy "documents update own"
-  on storage.objects for update
-  to authenticated
-  using (bucket_id = 'documents' and auth.uid()::text = (storage.foldername(name))[1])
-  with check (bucket_id = 'documents' and auth.uid()::text = (storage.foldername(name))[1]);
+-- UPDATE / DELETE — owners can overwrite, move or delete their own documents,
+-- EXCEPT the file of a CASE document (owner directive ٥, N3.9): those bytes
+-- stay, like the attachments row that points at them. The guard calls
+-- public.storage_object_is_case_document (20261025_51). On a database where
+-- that file has not run yet the two policies are created WITHOUT the guard and
+-- a NOTICE says so — re-apply this file after 20261025_51 (_verify.sql warns
+-- until then). The service role (cron purge of personal vault documents,
+-- DELETE ?permanent=1) bypasses RLS and is unaffected.
+do $$
+declare
+  own   text := 'bucket_id = ''documents'' and auth.uid()::text = (storage.foldername(name))[1]';
+  guard text := '';
+begin
+  if to_regprocedure('public.storage_object_is_case_document(text)') is not null then
+    guard := ' and not public.storage_object_is_case_document(name)';
+  else
+    raise notice 'storage_policies_documents: 20261025_51 has not run — "documents update own" / "documents delete own" are created WITHOUT the case-document guard; re-apply this file after it';
+  end if;
 
--- DELETE — owners can delete their own documents
-drop policy if exists "documents delete own" on storage.objects;
-create policy "documents delete own"
-  on storage.objects for delete
-  to authenticated
-  using (bucket_id = 'documents' and auth.uid()::text = (storage.foldername(name))[1]);
+  -- UPDATE — owners can update their own documents (not a case document's file)
+  execute 'drop policy if exists "documents update own" on storage.objects';
+  execute format('create policy "documents update own" on storage.objects for update to authenticated '
+                 'using (%s%s) with check (%s)', own, guard, own);
+
+  -- DELETE — owners can delete their own documents (not a case document's file)
+  execute 'drop policy if exists "documents delete own" on storage.objects';
+  execute format('create policy "documents delete own" on storage.objects for delete to authenticated '
+                 'using (%s%s)', own, guard);
+end $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 4. Read back — this is the same assertion supabase/migrations/_verify.sql

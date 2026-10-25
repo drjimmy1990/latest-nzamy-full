@@ -21,6 +21,11 @@
 --         hard-deleted a case note").
 --   NC2 — the chain without prelude_attachments_live.sql → the migration
 --         refuses: "attachments.deleted_at is missing".
+--   NC3 — the 20261025_51 of commit 4753b25c (no case-document freeze) →
+--         "T11 FAIL: the uploader moved a case document out of its case".
+--   NC4 — `… 20261025_51, 20261017_41` then only the verify:soft_delete_case_
+--         records section of _verify.sql → it raises "a DELETE policy is back
+--         on case_notes" (20261017_41's own verify passes on that re-run).
 --
 -- People (firm F, owner O — managing partner by the 20260903_phase2 trigger):
 --   L  lawyer of F, lead of case-x and case-solo
@@ -427,6 +432,74 @@ begin
    where record_id = current_setting('test.doc2') and actor_user_id = '11111111-0000-0000-0000-000000000001';
   if n <> 1 then raise exception 'T10 FAIL: the trail lost the actor'; end if;
   raise notice 'T10 PASS: deleting the archiving account succeeds; the document stays archived and the trail keeps the actor';
+end $$;
+
+-- ── T11 a case document cannot be detached from its case (then purged as a
+--        vault document) nor pointed at another file; binding still works ──
+set role authenticated;
+select set_config('test.uid', '22222222-0000-0000-0000-000000000002', false);
+do $$
+declare vault bigint; n int;
+begin
+  -- S uploaded test.doc2 to case-x; "attachments owner update" admits him.
+  begin
+    update public.attachments set request_id = null where id = current_setting('test.doc2')::bigint;
+    raise exception 'T11 FAIL: the uploader moved a case document out of its case (DELETE ?permanent=1 / the cron would then purge it)';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update public.attachments set storage_path = '22222222-0000-0000-0000-000000000002/other.pdf'
+     where id = current_setting('test.doc2')::bigint;
+    raise exception 'T11 FAIL: the uploader re-pointed a case document at another file';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update public.attachments set request_id = 'case-solo' where id = current_setting('test.doc2')::bigint;
+    raise exception 'T11 FAIL: a case document moved to another case';
+  exception when insufficient_privilege then null;
+  end;
+  -- a personal vault document of S, then bound to case-x the way POST
+  -- /api/v1/service-requests does it (service role, null → id)
+  insert into public.attachments (request_id, owner_user_id, file_name, storage_path)
+  values (null, '22222222-0000-0000-0000-000000000002', 'خزنة.pdf', '22222222-0000-0000-0000-000000000002/خزنة.pdf')
+  returning id into vault;
+  update public.attachments set file_name = 'خزنة-٢.pdf', storage_path = '22222222-0000-0000-0000-000000000002/خزنة-٢.pdf'
+   where id = vault;
+  get diagnostics n = row_count;
+  if n <> 1 then raise exception 'T11 FAIL: a vault document (no case) can no longer be edited by its owner'; end if;
+  perform set_config('test.vault', vault::text, false);
+end $$;
+reset role;
+do $$
+declare n int;
+begin
+  execute 'set local role service_role';
+  update public.attachments set request_id = 'case-x' where id = current_setting('test.vault')::bigint and request_id is null;
+  get diagnostics n = row_count;
+  reset role;
+  if n <> 1 then raise exception 'T11 FAIL: binding a vault document to a case (null → id) is refused'; end if;
+  raise notice 'T11 PASS: a case document keeps its case and its file (42501); a vault document is still editable and bindable';
+end $$;
+
+-- ── T12 a notification that cannot be written never blocks the archive ─────
+do $$
+declare ok boolean; n int;
+begin
+  insert into public.case_notes (id, request_id, author_user_id, firm_id, visibility, body) values
+    ('aaaaaaaa-0000-0000-0000-000000000012', 'case-x', '33333333-0000-0000-0000-000000000003',
+     'ffffffff-0000-0000-0000-0000000000f1', 'firm', 'ملاحظة T12');
+  -- schema drift stand-in: every new notification row is refused
+  alter table public.notifications add constraint t12_refuse_all check (false) not valid;
+  perform set_config('test.uid', '33333333-0000-0000-0000-000000000003', true);
+  execute 'set local role authenticated';
+  select public.archive_case_note('aaaaaaaa-0000-0000-0000-000000000012') into ok;
+  reset role;
+  alter table public.notifications drop constraint t12_refuse_all;
+  if not ok then raise exception 'T12 FAIL: the archive did not happen'; end if;
+  select count(*) into n from public.case_record_history
+   where record_id = 'aaaaaaaa-0000-0000-0000-000000000012' and action = 'archived';
+  if n <> 1 then raise exception 'T12 FAIL: the trail row is missing'; end if;
+  raise notice 'T12 PASS: with notifications refusing every row, the archive and its trail row still commit';
 end $$;
 
 \echo 'soft_delete_case_records.test.sql: ALL PASS'

@@ -3572,7 +3572,7 @@ declare n int; r text; f text;
 begin
   if not exists (select 1 from information_schema.columns
                   where table_schema = 'public' and table_name = 'case_notes' and column_name = 'deleted_at') then
-    raise notice '_verify: 20261025_51 is not applied yet — a session can still hard-delete a case note through REST, and the new code's «أرشفة» answers 503; run 16_BEFORE_DEPLOY_20261025_51_soft_delete_case_notes_docs.sql';
+    raise notice '_verify: 20261025_51 is not applied yet — a session can still hard-delete a case note through REST, and the new code''s «أرشفة» answers 503; run 16_BEFORE_DEPLOY_20261025_51_soft_delete_case_notes_docs.sql';
     return;
   end if;
   if exists (select 1 from pg_policy where polrelid = 'public.case_notes'::regclass and polcmd in ('d', '*')) then
@@ -3605,6 +3605,10 @@ begin
   if n <> 4 then
     raise exception '_verify: % of the 4 archive triggers exist — no trail / no owner notification (re-run 20261025_51)', n;
   end if;
+  if coalesce((select prosrc from pg_proc where oid = to_regprocedure('public.case_record_archive_stamp()')), '')
+     not ilike '%cannot leave its case%' then
+    raise exception '_verify: case_record_archive_stamp lacks the case-document freeze — a participant can detach a case document and purge it as a vault document (re-run 20261025_51)';
+  end if;
   foreach f in array array['public.archive_case_note(uuid)', 'public.restore_case_note(uuid)',
                            'public.restore_case_document(bigint)', 'public.can_supervise_case_records(text)'] loop
     if to_regprocedure(f) is null or not has_function_privilege('authenticated', f, 'EXECUTE')
@@ -3612,6 +3616,16 @@ begin
       raise exception '_verify: % is missing, not callable by sessions, or open to guests (re-run 20261025_51)', f;
     end if;
   end loop;
+  -- The file bytes: the hand-applied storage policies (supabase/
+  -- storage_policies_documents.sql) must refuse a case document's object. A
+  -- WARNING, not an exception — it is a manual step outside the migrations.
+  if to_regclass('storage.objects') is not null and exists (
+       select 1 from pg_policy p
+        where p.polrelid = 'storage.objects'::regclass
+          and p.polname in ('documents delete own', 'documents update own')
+          and coalesce(pg_get_expr(p.polqual, p.polrelid), '') !~ 'storage_object_is_case_document') then
+    raise warning '_verify: 20261025_51 — the storage policies "documents delete own" / "documents update own" still let the uploader delete or overwrite a CASE document''s file through the Storage API (the row stays, the bytes go). Re-apply supabase/storage_policies_documents.sql as supabase_storage_admin.';
+  end if;
   raise notice '_verify: 20261025_51 OK — case notes and documents archive instead of delete, supervisors restore, append-only trail, owner notified';
 end $$;
 -- <<< verify:soft_delete_case_records

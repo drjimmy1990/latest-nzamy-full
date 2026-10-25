@@ -45,6 +45,9 @@
 --        * deleted_by is stamped by a trigger from the session (the existing
 --          "attachments owner update" policy lets a participant write any
 --          column, so a client-supplied deleted_by could name someone else);
+--        * a case document keeps its request_id and storage_path (same
+--          trigger, 42501): otherwise a participant could set request_id to
+--          null and purge the "vault" document with DELETE ?permanent=1;
 --        * a supervisor reads the ARCHIVED documents of his cases (new SELECT
 --          policy) and restores them with public.restore_case_document(id);
 --        * DELETE / TRUNCATE revoked from anon and authenticated (no policy ever
@@ -64,10 +67,24 @@
 --
 -- NOT AFTER THIS FILE WITHOUT CARE
 --   Re-running 20261017_41 puts back its four case_notes policies (archived
---   firm notes readable by colleagues again, an author DELETE policy). The
---   DELETE privilege stays revoked, but re-run THIS file right after it.
---   20261017_41's own verify expects 4 case_notes policies and will raise after
---   this file (3 policies): it never needs a re-run once applied.
+--   firm notes readable by colleagues again, an author DELETE policy). It
+--   re-creates its 4 policies, so its own verify (expects 4) PASSES and the
+--   re-run commits; it grants no DELETE, so the privilege stays revoked and no
+--   session can actually delete. Re-run THIS file right after it — _verify.sql
+--   (verify:soft_delete_case_records) raises on the DELETE policy until then.
+--
+-- WHAT THIS FILE DOES NOT CLOSE (ops / owner, see the README)
+--   * The file BYTES in Storage: the hand-applied "documents delete own" policy
+--     on storage.objects still lets the uploader remove his object through the
+--     Storage API, leaving the attachments row pointing at nothing.
+--     supabase/storage_policies_documents.sql carries the narrowed policy;
+--     applying it is a manual step (supabase_storage_admin).
+--   * Deleting an ACCOUNT (admin «حذف المستخدم», service role) cascades:
+--     case_notes.author_user_id and attachments.owner_user_id are ON DELETE
+--     CASCADE, so that account's case notes and uploaded case documents go
+--     with it, without a trail row. (service_requests.requester_user_id is
+--     SET NULL; no RLS policy lets a session delete a service_requests row, which would
+--     cascade to both tables.) Changing those keys is an owner decision.
 --
 -- DEPLOY ORDER — THIS FILE FIRST, THEN THE CODE
 --   The new note routes call archive_case_note / restore_case_note; before this
@@ -189,6 +206,23 @@ security definer
 set search_path = ''
 as $$
 begin
+  -- A case document stays on its case and on its file. "attachments owner
+  -- update" lets a participant write any column, so without this a PATCH of
+  -- request_id = null turned a case document into a personal vault document,
+  -- which DELETE ?permanent=1 and the 30-day cron then purge for good; and a
+  -- rewritten storage_path could point the archived record at another file.
+  -- Binding a vault document to a case (null → id, the service-role bind of
+  -- POST /api/v1/service-requests) is unaffected. Nested for the same reason
+  -- as the case_notes block below: case_notes has no storage_path.
+  if tg_table_name = 'attachments' then
+    if old.request_id is not null
+       and (new.request_id is distinct from old.request_id
+            or new.storage_path is distinct from old.storage_path) then
+      raise exception 'a case document cannot leave its case or change its file'
+        using errcode = '42501';
+    end if;
+  end if;
+
   if old.deleted_at is null and new.deleted_at is not null then
     new.deleted_by := coalesce(auth.uid(), new.deleted_by);
   elsif old.deleted_at is not null and new.deleted_at is null then
@@ -286,17 +320,24 @@ begin
       v_firm_own := null;
     end if;
     if v_firm_own is not null and v_firm_own is distinct from v_actor then
-      select nullif(btrim(p.display_name), '') into v_name from public.profiles p where p.id = v_actor;
-      insert into public.notifications (user_id, title, body, href)
-      values (
-        v_firm_own,
-        case when v_kind = 'case_note' then 'أُرشفت ملاحظة على قضية' else 'أُرشف مستند من قضية' end,
-        format('%s أرشف %s في القضية «%s». يمكنك استرجاعه من «المحذوفات» في ملف القضية.',
-               coalesce(v_name, 'أحد أعضاء المكتب'),
-               case when v_kind = 'case_note' then 'ملاحظة' else 'مستنداً' end,
-               coalesce(nullif(btrim(v_title), ''), 'بلا عنوان')),
-        '/dashboard/firm/cases/' || v_request
-      );
+      -- The notification is a courtesy: if it cannot be written (a schema
+      -- drift on public.notifications), the archive and its trail row above
+      -- still stand. The trail insert is deliberately NOT wrapped.
+      begin
+        select nullif(btrim(p.display_name), '') into v_name from public.profiles p where p.id = v_actor;
+        insert into public.notifications (user_id, title, body, href)
+        values (
+          v_firm_own,
+          case when v_kind = 'case_note' then 'أُرشفت ملاحظة على قضية' else 'أُرشف مستند من قضية' end,
+          format('%s أرشف %s في القضية «%s». يمكنك استرجاعه من «المحذوفات» في ملف القضية.',
+                 coalesce(v_name, 'أحد أعضاء المكتب'),
+                 case when v_kind = 'case_note' then 'ملاحظة' else 'مستنداً' end,
+                 coalesce(nullif(btrim(v_title), ''), 'بلا عنوان')),
+          '/dashboard/firm/cases/' || v_request
+        );
+      exception when others then
+        raise warning '20261025_51: archive notification to the firm owner not written (%): %', sqlstate, sqlerrm;
+      end;
     end if;
   end if;
   return null;
@@ -370,10 +411,32 @@ begin
 end;
 $$;
 
+-- Is this storage object (bucket `documents`, name = attachments.storage_path)
+-- the file of a CASE document? Read by the hand-applied storage policies
+-- "documents delete own" / "documents update own"
+-- (supabase/storage_policies_documents.sql) so the uploader can no longer
+-- remove or overwrite a case document's bytes through the Storage API. DEFINER
+-- so the answer does not depend on which attachments rows the caller may read.
+create or replace function public.storage_object_is_case_document(p_name text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select p_name is not null and exists (
+    select 1 from public.attachments a
+     where a.storage_path = p_name and a.request_id is not null);
+$$;
+
+comment on function public.storage_object_is_case_document(text) is
+  '20261025_51: true when a case document (attachments.request_id set) points at this storage object — the documents bucket''s DELETE/UPDATE policies refuse it to sessions.';
+
 do $$
 declare f text;
 begin
   foreach f in array array[
+    'public.storage_object_is_case_document(text)',
     'public.can_supervise_case_records(text)',
     'public.archive_case_note(uuid)',
     'public.restore_case_note(uuid)',
@@ -387,6 +450,7 @@ begin
     end if;
   end loop;
   foreach f in array array[
+    'public.storage_object_is_case_document(text)',
     'public.can_supervise_case_records(text)',
     'public.archive_case_note(uuid)',
     'public.restore_case_note(uuid)',
@@ -605,7 +669,7 @@ begin
     end loop;
   end if;
 
-  foreach f in array array['public.can_supervise_case_records(text)', 'public.archive_case_note(uuid)',
+  foreach f in array array['public.storage_object_is_case_document(text)', 'public.can_supervise_case_records(text)', 'public.archive_case_note(uuid)',
                            'public.restore_case_note(uuid)', 'public.restore_case_document(bigint)'] loop
     if not (select prosecdef from pg_proc where oid = to_regprocedure(f)) then
       raise exception '20261025_51 verify: % is not SECURITY DEFINER', f;
@@ -621,6 +685,10 @@ begin
                                          'trg_attachments_archive_stamp', 'trg_attachments_archive_trail');
   if n <> 4 then
     raise exception '20261025_51 verify: % of the 4 archive triggers exist', n;
+  end if;
+  if (select prosrc from pg_proc where oid = to_regprocedure('public.case_record_archive_stamp()'))
+     not ilike '%cannot leave its case%' then
+    raise exception '20261025_51 verify: case_record_archive_stamp lacks the case-document freeze (request_id / storage_path)';
   end if;
   if not exists (select 1 from pg_policy where polrelid = 'public.attachments'::regclass
                    and polname = 'archived case documents readable by case supervisors') then
