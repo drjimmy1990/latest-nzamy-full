@@ -13,6 +13,11 @@
 // The catalog row in lawyerAiCatalog.ts carries `comingSoon` (hub badge
 // «قريباً»), and the nav rows carry the same badge. The previous UI is one
 // `git show` away when a real transcription service exists.
+//
+// Handing the text to the drafter (N1.8): src/components/ai/SendToDrafterButton.tsx
+// is ready to mount beside the REAL transcript once this tool is enabled
+// (`<SendToDrafterButton text={…} sourceLabel="…" />`). It is deliberately
+// not mounted while the page is «قريباً» — there is no real text to send.
 
 import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 

@@ -23,6 +23,11 @@
 //
 // ClientMediaPanel.tsx and InputPhase.tsx beside this file were used only by
 // the old flow; they stay on disk (owner decision ٤) and leave the bundle.
+//
+// Handing the text to the drafter (N1.8): src/components/ai/SendToDrafterButton.tsx
+// is ready to mount beside the REAL transcript once this tool is enabled
+// (`<SendToDrafterButton text={…} sourceLabel="…" />`). It is deliberately
+// not mounted while the page is «قريباً» — there is no real text to send.
 
 import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 

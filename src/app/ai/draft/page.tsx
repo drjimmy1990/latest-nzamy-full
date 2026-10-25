@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { Check, ArrowRight, ArrowLeft } from "@phosphor-icons/react";
@@ -11,6 +11,10 @@ import { DraftPreStep } from "@/components/draft/DraftPreStep";
 import { StepIdentify }  from "@/components/draft/steps/StepIdentify";
 import { StepCase }      from "@/components/draft/steps/StepCase";
 import { StepSubmit }    from "@/components/draft/steps/StepSubmit";
+import { TranscriptHandoffNotice } from "@/components/draft/TranscriptHandoffNotice";
+import {
+  TRANSCRIPT_FROM_PARAM, consumeTranscriptHandoff, discardTranscriptHandoff, sessionStorageOrNull,
+} from "@/lib/ai/transcriptHandoff";
 
 // Labels shown as badge in wizard header when ?mode= param is present
 const MODE_BADGE_LABELS: Record<string, string> = {
@@ -30,6 +34,34 @@ export default function AIDraftPage() {
   // "pre" = show chooser, "draft" = show the wizard
   // If a mode param is provided skip the chooser and go straight to draft
   const [preMode, setPreMode] = useState<"pre" | "draft">(modeParam ? "draft" : "pre");
+
+  // ?from=transcript (N1.8): a transcript handed over by SendToDrafterButton.
+  // Consumed once in an effect (storage is browser-only; reading it during
+  // render would break hydration) and cleared by the read. It only PREFILLS
+  // the facts field and opens the wizard — never submits. The wizard still
+  // starts at step 1, whose choices the order needs. With nothing to consume
+  // (reload, expiry, private mode) the page behaves as usual.
+  const fromTranscript = searchParams.get("from") === TRANSCRIPT_FROM_PARAM;
+  const [transcriptNotice, setTranscriptNotice] = useState<{ sourceLabel: string; truncated: boolean } | null>(null);
+  const { setCaseText } = s;
+  useEffect(() => {
+    if (!fromTranscript) {
+      // Opened some other way (a login redirect keeps only the path): drop
+      // any leftover transcript instead of leaving it in the tab.
+      discardTranscriptHandoff(sessionStorageOrNull());
+      return;
+    }
+    const handoff = consumeTranscriptHandoff(sessionStorageOrNull());
+    // StrictMode runs this twice; the second run finds nothing and must not
+    // undo the first, so state is only ever set on a hit.
+    if (!handoff) return;
+    setCaseText(handoff.text);
+    // A one-time read of browser storage after mount — it cannot run during
+    // render (no storage on the server), so the state is set here.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPreMode("draft");
+    setTranscriptNotice({ sourceLabel: handoff.sourceLabel, truncated: handoff.truncated });
+  }, [fromTranscript, setCaseText]);
 
   const card = isDark
     ? "bg-zinc-900 border border-white/[0.06] rounded-2xl"
@@ -70,6 +102,15 @@ export default function AIDraftPage() {
           <p className={`text-[13px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>صياغة جديدة — ٣ خطوات</p>
         </div>
       </div>
+
+      {transcriptNotice && (
+        <TranscriptHandoffNotice
+          isDark={isDark}
+          sourceLabel={transcriptNotice.sourceLabel}
+          truncated={transcriptNotice.truncated}
+          onDismiss={() => setTranscriptNotice(null)}
+        />
+      )}
 
       {/* Progress stepper */}
       <div className={`${card} p-4 shadow-sm`}>
