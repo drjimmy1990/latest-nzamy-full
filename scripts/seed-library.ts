@@ -35,6 +35,12 @@ import {
 } from "./seed-library.live-preflight";
 import { stripInternalContentKeys } from "../src/lib/library/internalContentFields";
 import { joinStoredPreamble } from "../src/lib/library/splitPreamble";
+import {
+  createSeedValueReport,
+  seedValueReportJson,
+  summarizeSeedValueReport,
+  type SeedValueReport,
+} from "../src/lib/library/seedValues";
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Types — Imported from parser output shapes
@@ -59,6 +65,8 @@ interface SeedResult {
   duration_ms: number;
   stats: SeedStats[];
   errors: string[];
+  /** N2.7: every varchar cut and every refused integer of this run. */
+  value_report?: ReturnType<typeof seedValueReportJson>;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -433,10 +441,17 @@ export function resolveDecreePageIds(legacyIds: readonly string[]): string[] {
   });
 }
 
-// Clamp to the PostgreSQL int4 range. Source data sometimes puts a case/ruling
-// number (17+ digits) into an integer column (year_hijri/order_index) → 22003
-// "out of range for type integer". Out-of-range/NaN → fallback instead of a crash.
-const INT4_MAX = 2147483647;
+/**
+ * N2.7 (the owner's «الميثاق» ٢ and ٣): integer columns take a whole integer
+ * inside the int4 range, or the fallback — never the first number of a range
+ * («1439-1441» used to load as 1439) — and every varchar cap is reported, not
+ * silent. The cut itself is the old `.substring(0, max)`, so the loaded values
+ * and ids are unchanged. See src/lib/library/seedValues.ts. Reset per
+ * seedLibrary() run; the report lands in seed-result.json and
+ * seed-value-report.json.
+ */
+const values = createSeedValueReport();
+const cap = values.cap;
 
 /**
  * Instrument types the decrees_circulars CHECK constraint accepts. MUST stay in
@@ -480,10 +495,6 @@ export function resolveArticleIdentityStatus(article: Record<string, unknown>): 
     return resolveSeedArticleStatus(article.status_legacy_identity);
   }
   return status;
-}
-function safeInt(v: unknown, fallback: number | null): number | null {
-  const n = typeof v === "number" ? v : parseInt(String(v ?? ""), 10);
-  return Number.isFinite(n) && n >= -2147483648 && n <= INT4_MAX ? n : fallback;
 }
 
 /** Source-order rank for every article in a law, independent of printed numbers. */
@@ -686,17 +697,17 @@ export async function seedLaws(
     if (lawId.includes("EXTRACTION_REPORT")) continue;
 
     lawRows.push({
-      slug: lawId.substring(0, 200),
+      slug: cap("laws", "slug", lawId, lawId, 200),
       title: law.title,
       title_en: law.title_en || "",
-      type: (law.type || "نظام").substring(0, 50),
+      type: cap("laws", "type", lawId, law.type || "نظام", 50),
       description: law.description || law.title || "",
-      section_code: String(law.section_code || "").substring(0, 20),
-      section_name: String(law.section_name || "").substring(0, 200),
-      issuing_body: String(law.issuing_body || "").substring(0, 200),
-      issuing_instrument: String(law.issuance_decree || "").substring(0, 200),
-      issue_date_hijri: String(law.issuance_date || "").substring(0, 20),
-      issue_date_gregorian: String(law.issue_date_gregorian || "").substring(0, 20),
+      section_code: cap("laws", "section_code", lawId, String(law.section_code || ""), 20),
+      section_name: cap("laws", "section_name", lawId, String(law.section_name || ""), 200),
+      issuing_body: cap("laws", "issuing_body", lawId, String(law.issuing_body || ""), 200),
+      issuing_instrument: cap("laws", "issuing_instrument", lawId, String(law.issuance_decree || ""), 200),
+      issue_date_hijri: cap("laws", "issue_date_hijri", lawId, String(law.issuance_date || ""), 20),
+      issue_date_gregorian: cap("laws", "issue_date_gregorian", lawId, String(law.issue_date_gregorian || ""), 20),
       // ك-12 (2026-08-24): the parser now extracts all 5 effective-date-family
       // fields (see ParsedLaw in parse-laws.ts), but only 2 of the 5 have a
       // real DB column today — publication_date_hijri/effective_date_hijri
@@ -718,9 +729,9 @@ export async function seedLaws(
       // N2.5: so are latest_amendment_key / issue_date_key (20261025_40), from
       // latest_update and issue_date_hijri below — never send them either.
       has_merged_regulation: law.has_executive_reg || false,
-      status: (law.law_status || "status_undeclared").substring(0, 30),
-      boe_source_url: String(law.boe_source_url || law.boe_url || "").substring(0, 500),
-      official_source_url: String(law.official_source_url || "").substring(0, 500),
+      status: cap("laws", "status", lawId, law.law_status || "status_undeclared", 30),
+      boe_source_url: cap("laws", "boe_source_url", lawId, String(law.boe_source_url || law.boe_url || ""), 500),
+      official_source_url: cap("laws", "official_source_url", lawId, String(law.official_source_url || ""), 500),
       // ب-114: jsonb column — pass the structured object through as-is. The prior
       // String(...).substring(500) both stringified it to "[object Object]" and could
       // truncate mid-structure, corrupting the JSON; article_status_summary is only
@@ -733,12 +744,12 @@ export async function seedLaws(
       latest_update: (law.latest_update && typeof law.latest_update === "object")
         ? law.latest_update
         : null,
-      law_guid: String(law.law_guid || "").substring(0, 100),
+      law_guid: cap("laws", "law_guid", lawId, String(law.law_guid || ""), 100),
       // Registry identity and parent linkage are deliberately separate from
       // BOE's law_guid namespace. Empty source values become SQL NULL so a
       // partial UNIQUE index can reject only real identity collisions.
-      instrument_id: String(law.instrument_id || "").trim().substring(0, 100) || null,
-      parent_law_id: String(law.parent_law_id || "").trim().substring(0, 100) || null,
+      instrument_id: cap("laws", "instrument_id", lawId, String(law.instrument_id || "").trim(), 100) || null,
+      parent_law_id: cap("laws", "parent_law_id", lawId, String(law.parent_law_id || "").trim(), 100) || null,
       parent_law: String(law.parent_law || "").trim() || null,
       enabling_article: String(law.enabling_article || "").trim() || null,
       // needs_human_review / review_reason are no longer written as columns
@@ -759,7 +770,7 @@ export async function seedLaws(
       const chapterId = plan.chapterIds[ci];
       chapterRows.push({
         id: chapterId,
-        law_slug: lawId.substring(0, 200),
+        law_slug: cap("chapters", "law_slug", chapterId, lawId, 200),
         number: ch.number || 0,
         title: ch.title || "",
         order_index: ch.number || 0,
@@ -788,12 +799,12 @@ export async function seedLaws(
 
         articleRows.push({
           id: artId,
-          law_slug: lawId.substring(0, 200),
+          law_slug: cap("articles", "law_slug", artId, lawId, 200),
           chapter_id: chapterId,
-          number: String(art.number || "0").substring(0, 20),
-          number_text: (art.number_text || "").substring(0, 50),
+          number: cap("articles", "number", artId, String(art.number || "0"), 20),
+          number_text: cap("articles", "number_text", artId, art.number_text || "", 50),
           title: art.title || "",
-          status: resolveSeedArticleStatus(art.status).substring(0, 30),
+          status: cap("articles", "status", artId, resolveSeedArticleStatus(art.status), 30),
           text: art.text || "",
           free: art.free !== false,
           executive_reg_text: regs.map(r => r.text || "").join("\n\n") || null,
@@ -823,9 +834,9 @@ export async function seedLaws(
             // article_amendments.id is `uuid`; article_id (→ articles.id, text) stays.
             id: toUuid(`${artId}__amd-${ai}`),
             article_id: artId,
-            date: (amends[ai].date || "").substring(0, 30),
+            date: cap("article_amendments", "date", `${artId}#amd-${ai}`, amends[ai].date || "", 30),
             source: amends[ai].decree || "",
-            type: (amends[ai].type || "تعديل").substring(0, 50),
+            type: cap("article_amendments", "type", `${artId}#amd-${ai}`, amends[ai].type || "تعديل", 50),
             summary: amends[ai].summary || "",
             full_text: amends[ai].original_text || null,
           });
@@ -837,13 +848,13 @@ export async function seedLaws(
             // article_regulations.id is `uuid`; article_id (→ articles.id) stays.
             id: toUuid(`${artId}__reg-${ri}`),
             article_id: artId,
-            law_slug: lawId.substring(0, 200),
-            system_article_number: String(art.number || "0").substring(0, 20),
-            ref: String(r.ref || "").substring(0, 300),
-            reg_num: r.regNum != null ? String(r.regNum).substring(0, 50) : null,
-            sort_key: String(r.sortKey || "99999").substring(0, 50),
+            law_slug: cap("article_regulations", "law_slug", `${artId}#reg-${ri}`, lawId, 200),
+            system_article_number: cap("article_regulations", "system_article_number", `${artId}#reg-${ri}`, String(art.number || "0"), 20),
+            ref: cap("article_regulations", "ref", `${artId}#reg-${ri}`, String(r.ref || ""), 300),
+            reg_num: r.regNum != null ? cap("article_regulations", "reg_num", `${artId}#reg-${ri}`, String(r.regNum), 50) : null,
+            sort_key: cap("article_regulations", "sort_key", `${artId}#reg-${ri}`, String(r.sortKey || "99999"), 50),
             text: r.text || "",
-            status: (r.status || "active").substring(0, 30),
+            status: cap("article_regulations", "status", `${artId}#reg-${ri}`, r.status || "active", 30),
             is_secondary_display: r.isSecondaryDisplay === true,
           });
         }
@@ -960,7 +971,7 @@ export async function seedDecrees(
       date: dec.date || "",
       summary: dec.summary || "",
       summary_brief: dec.summary_brief || "",
-      category: (dec.cat || "").substring(0, 100),
+      category: cap("decrees_circulars", "category", decId, dec.cat || "", 100),
       preamble: dec.preamble || "",
       hashtags: dec.hashtags || [],
       official_url: dec.official_url || "",
@@ -1066,11 +1077,11 @@ export async function seedPrecedents(
   // or FTS while the private persistence/rights contract remains unverified.
   const privateDetailRows: Record<string, unknown>[] = [];
   const collectionId = (coll: Record<string, unknown>): string =>
-    String(coll.id || coll.slug).substring(0, 100);
+    cap("judicial_collections", "id", String(coll.id || coll.slug), String(coll.id || coll.slug), 100);
   const legacyCollectionPrincipleId = (collId: string, pr: Record<string, unknown>, pri: number): string =>
-    `${collId}__pr-${pr.number ?? pri}`.substring(0, 150);
+    cap("principles", "id", `${collId}__pr-${pr.number ?? pri}`, `${collId}__pr-${pr.number ?? pri}`, 150);
   const legacyStandalonePrincipleId = (prec: Record<string, unknown>): string =>
-    String(prec.slug || prec.id).substring(0, 150);
+    cap("principles", "id", String(prec.slug || prec.id), String(prec.slug || prec.id), 150);
 
   // Allocate before emitting either parent or child rows. The same resolved id
   // is used by principle_paragraphs.principle_id, so no child can remain
@@ -1111,7 +1122,7 @@ export async function seedPrecedents(
 
   /** Deterministic, stable collection id for a (track, court) pair. */
   const groupCollectionId = (key: string): string =>
-    `prec-${toUuid(key)}`.substring(0, 100);
+    cap("judicial_collections", "id", key, `prec-${toUuid(key)}`, 100);
 
   for (const [key, members] of precGroups) {
     const [track, court] = key.split("::");
@@ -1124,7 +1135,7 @@ export async function seedPrecedents(
       year_hijri: null,
       part: 1,
       source_id: "moj",
-      track: track.substring(0, 50),
+      track: cap("judicial_collections", "track", groupCollectionId(key), track, 50),
       description: court
         ? `مجموعة الأحكام والسوابق الصادرة عن ${court}`
         : "أحكام وسوابق لم تُحدَّد جهة إصدارها في المصدر",
@@ -1142,13 +1153,13 @@ export async function seedPrecedents(
       id: collId,
       title: coll.title || "",
       court: coll.court || "",
-      year_hijri: safeInt(coll.year_hijri, null),
+      year_hijri: values.int("judicial_collections", "year_hijri", collId, coll.year_hijri, null),
       part: coll.part || 1,
       source_id: coll.source_id || "",
       // `track` is DERIVED by the parser (lib/court.ts), not read from source —
       // no source file has ever carried a `track` field, which is why this
       // column was empty for 94 of 95 collections in production.
-      track: String(coll.track || "unknown").substring(0, 50),
+      track: cap("judicial_collections", "track", collId, String(coll.track || "unknown"), 50),
       description: coll.description || "",
       ruling_count: coll.total_principles || 0,
       free: coll.free !== false,
@@ -1156,7 +1167,7 @@ export async function seedPrecedents(
       // Grouping/display label only (e.g. all volumes of one year's ministry
       // collection) — never the row's identity. See parse-precedents.ts
       // parsePrecedentContainer for why id/slug must never be this value.
-      series_id: coll.series_id ? String(coll.series_id).substring(0, 150) : null,
+      series_id: coll.series_id ? cap("judicial_collections", "series_id", collId, String(coll.series_id), 150) : null,
       // Previously dropped entirely even though parsePrincipleCollection()
       // already returns the full source frontmatter here (see ب-88 sibling
       // finding, 06 §"إصلاحات مصاحبة بالسيدر" item 5).
@@ -1184,7 +1195,7 @@ export async function seedPrecedents(
       principleRows.push({
         id: prId,
         collection_id: collId,
-        principle_number: String(pr.number || "").substring(0, 50),
+        principle_number: cap("principles", "principle_number", prId, String(pr.number || ""), 50),
         issuing_body: pr.issuing_body || "",
         session_date: pr.session_date || "",
         decision_number: pr.decision_number || "",
@@ -1194,7 +1205,7 @@ export async function seedPrecedents(
         facts: pr.details?.facts || "",
         reasons: pr.details?.reasons || "",
         ruling: pr.details?.ruling || "",
-        year_hijri: safeInt(pr.year_hijri, null),
+        year_hijri: values.int("principles", "year_hijri", prId, pr.year_hijri, null),
         // Source position, not the printed ruling number. Printed values may be
         // zero, null, repeated, or non-sequential; this narrow pass leaves
         // `principle_number` untouched while `pri` makes detail first-N deterministic.
@@ -1243,7 +1254,7 @@ export async function seedPrecedents(
       id: precId,
       // Its own court's collection, not the single fabricated commercial one.
       collection_id: groupCollectionId(precedentGroupKey(prec as Record<string, unknown>)),
-      principle_number: String(prec.ruling_number || "").substring(0, 50),
+      principle_number: cap("principles", "principle_number", precId, String(prec.ruling_number || ""), 50),
       issuing_body: prec.court || prec.court_type || "",
       session_date: prec.date || "",
       decision_number: prec.case_number || "",
@@ -1253,7 +1264,7 @@ export async function seedPrecedents(
       facts: prec.facts || "",
       reasons: prec.reasons || "",
       ruling: prec.ruling || "",
-      year_hijri: safeInt(prec.year, null),
+      year_hijri: values.int("principles", "year_hijri", precId, prec.year, null),
       order_index: pi,
       // parseCourtPrecedent() already extracts these (meta.hashtags/body
       // #tags, meta.is_redacted, full frontmatter) — only the seeder dropped
@@ -1363,7 +1374,7 @@ async function seedFeqh(
   const blockRows: Record<string, unknown>[] = [];
 
   for (const book of books) {
-    const bookId = String(book.id || book.slug).substring(0, 100);
+    const bookId = cap("feqh_books", "id", String(book.id || book.slug), String(book.id || book.slug), 100);
     // Book-global reading position for the paywall.
     //
     // order_index was the page index WITHIN a section (`pi`). Almost every
@@ -1382,8 +1393,8 @@ async function seedFeqh(
       title: book.title || "",
       author: book.author || "",
       school: book.school || "",
-      type: (book.type || "sharia").substring(0, 30),
-      category: (book.category || "").substring(0, 100),
+      type: cap("feqh_books", "type", bookId, book.type || "sharia", 30),
+      category: cap("feqh_books", "category", bookId, book.category || "", 100),
       description: book.description || "",
       investigator: book.investigator || "",
       total_volumes: book.total_volumes || 1,
@@ -1399,7 +1410,7 @@ async function seedFeqh(
         id: chId,
         book_id: bookId,
         title: ch.title || "",
-        volume_number: safeInt(ch.pages?.[0]?.volume ?? ch.sections?.[0]?.pages?.[0]?.volume, 1),
+        volume_number: values.int("feqh_chapters", "volume_number", chId, ch.pages?.[0]?.volume ?? ch.sections?.[0]?.pages?.[0]?.volume, 1),
         order_index: ci,
       });
 
@@ -1417,12 +1428,12 @@ async function seedFeqh(
         for (let pi = 0; pi < directPages.length; pi++) {
           const pg = directPages[pi];
           blockRows.push({
-            id: `${dummySecId}__blk-${pi}`.substring(0, 150),
+            id: cap("feqh_blocks", "id", `${dummySecId}__blk-${pi}`, `${dummySecId}__blk-${pi}`, 150),
             section_id: dummySecId,
             topic: ch.title || "",
             // null volume means the source states none — do not invent 1.
-            volume_number: safeInt(pg.volume, null),
-            page_number: safeInt(pg.page_number, null),
+            volume_number: values.int("feqh_blocks", "volume_number", `${dummySecId}__blk-${pi}`, pg.volume, null),
+            page_number: values.int("feqh_blocks", "page_number", `${dummySecId}__blk-${pi}`, pg.page_number, null),
             // Verbatim locator tokens, so a non-numeric one ("مقدمة", "7-1",
             // "None") is shown as the source wrote it, not coerced to a number.
             page_label: pg.page_label ?? null,
@@ -1462,12 +1473,12 @@ async function seedFeqh(
         for (let pi = 0; pi < secPages.length; pi++) {
           const pg = secPages[pi];
           blockRows.push({
-            id: `${secId}__blk-${pi}`.substring(0, 150),
+            id: cap("feqh_blocks", "id", `${secId}__blk-${pi}`, `${secId}__blk-${pi}`, 150),
             section_id: secId,
             topic: sec.title || "",
             // null volume means the source states none — do not invent 1.
-            volume_number: safeInt(pg.volume, null),
-            page_number: safeInt(pg.page_number, null),
+            volume_number: values.int("feqh_blocks", "volume_number", `${secId}__blk-${pi}`, pg.volume, null),
+            page_number: values.int("feqh_blocks", "page_number", `${secId}__blk-${pi}`, pg.page_number, null),
             // Verbatim locator tokens, so a non-numeric one ("مقدمة", "7-1",
             // "None") is shown as the source wrote it, not coerced to a number.
             page_label: pg.page_label ?? null,
@@ -1556,6 +1567,7 @@ export async function seedLibrary(options: {
   const startedAt = new Date();
   const allStats: SeedStats[] = [];
   const errors: string[] = [];
+  values.reset();
   if (options.drySeedJsonlDir && !options.dryRun) {
     throw new Error("Dry-seed JSONL export is permitted only with dryRun: true.");
   }
@@ -1736,6 +1748,21 @@ export async function seedLibrary(options: {
     console.error(`  ⚠ could not write needs_human_review report: ${(e as Error).message}\n`);
   }
 
+  // N2.7: no silent truncation, no range read as its first number.
+  const valueReport: SeedValueReport = values.snapshot();
+  console.log("╔══════════════════════════════════════════════════╗");
+  console.log("║   ✂️  Truncated values / refused integers         ║");
+  console.log("╠══════════════════════════════════════════════════╣");
+  for (const line of summarizeSeedValueReport(valueReport)) console.log(`  ${line}`);
+  console.log("╚══════════════════════════════════════════════════╝");
+  const valueReportPath = path.join(auditOutputDir, "seed-value-report.json");
+  try {
+    fs.writeFileSync(valueReportPath, JSON.stringify(seedValueReportJson(valueReport, finishedAt.toISOString()), null, 2), "utf-8");
+    console.log(`  Every entry: ${valueReportPath}\n`);
+  } catch (e) {
+    console.error(`  ⚠ could not write the value report: ${(e as Error).message}\n`);
+  }
+
   if (errors.length > 0) {
     console.log("📝 Errors:\n");
     for (const err of errors.slice(0, 20)) {
@@ -1757,6 +1784,7 @@ export async function seedLibrary(options: {
     duration_ms: durationMs,
     stats: allStats,
     errors,
+    value_report: seedValueReportJson(valueReport, finishedAt.toISOString()),
   };
 }
 

@@ -33,6 +33,7 @@ process.emitWarning = (warning, ...rest) => {
   return emitWarning.call(process, warning, ...rest);
 };
 const { LIBRARY_ROW_TABLES, diffKeys, diffVerdict, rowKey } = await import("../src/lib/library/rowsDiff.ts");
+const { hashRowFiles } = await import("../src/lib/library/fileHash.ts");
 
 // See seed-library-from-owner.mjs: a synchronous exit right after the .ts
 // imports aborts Node on Windows; exit a moment later instead.
@@ -184,11 +185,20 @@ try {
 }
 
 const verdict = diffVerdict(diffs);
+// N2.7: the report names the exact bytes it judged — the SHA-256 of every
+// JSONL file read. If a rows file changes after this diff, its hash no longer
+// matches and this verdict does not carry over to it.
+const tableNames = tables.map((t) => t.name);
 const report = {
   generated_at: new Date().toISOString(),
   rows_dir: rowsDir,
   compared_with: oldDir ?? `live:${base}`,
   verdict,
+  hash_algorithm: "sha256",
+  inputs: {
+    rows: await hashRowFiles(rowsDir, tableNames, fs.existsSync, path.join),
+    old: oldDir ? await hashRowFiles(oldDir, tableNames, fs.existsSync, path.join) : null,
+  },
   missing_files: missing,
   tables: diffs,
 };
@@ -209,5 +219,6 @@ if (verdict === "needs-team") {
 }
 if (missing.length) console.log(`  Note: no file for ${missing.join(", ")} — the loader would skip those tables.`);
 console.log(`  Report: ${outFile}`);
+console.log(`  Input SHA-256 (${Object.keys(report.inputs.rows).length} file(s)) recorded in the report — reload only these exact files.`);
 console.log("═".repeat(78));
 await quit(verdict === "needs-team" ? 3 : 0);
