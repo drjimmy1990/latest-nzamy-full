@@ -3980,3 +3980,80 @@ begin
     badges, grants;
 end $$;
 -- <<< verify:founder_no_signup_grant
+
+-- >>> verify:billing_cycles — supabase/tests/rls/billing_cycles.test.sql
+-- 2026-10-26 — 20261026_10_billing_cycles.sql (owner answers of 25 Oct, P1:
+-- quarterly and half-yearly billing). Read-only, safe to repeat. NOTICEs
+-- while the file has not run: the P1 code sells nothing quarterly or
+-- half-yearly yet, so the old checks refuse nothing it sends. RAISES when the
+-- file ran only partly, or when a check was narrowed or doubled again (a
+-- schema restore — re-run 20261026_10). P2, the first quarterly price, makes
+-- the not-applied case raise too.
+do $$
+declare
+  fix     constant text := 'run SQL_batch_2026-10-26_owner_answers/10_BEFORE_DEPLOY_20261026_10_billing_cycles.sql again';
+  marker  boolean;
+  missing text := '';
+  spec    record;
+  att     smallint;
+  defs    text;
+  n       int;
+  v       text;
+begin
+  if to_regclass('public.payment_orders') is null or to_regclass('public.subscriptions') is null
+     or to_regclass('public.subscription_plans') is null then
+    raise notice '_verify: 20261026_10 skipped — payment_orders / subscriptions / subscription_plans not all present';
+    return;
+  end if;
+  select coalesce(obj_description(c.oid, 'pg_constraint'), '') like '%20261026_10%' into marker
+    from pg_constraint c
+   where c.conrelid = 'public.payment_orders'::regclass and c.conname = 'payment_orders_billing_check';
+  if not coalesce(marker, false)
+     and not exists (select 1 from information_schema.columns
+                      where table_schema = 'public' and table_name = 'subscription_plans'
+                        and column_name in ('price_quarterly', 'price_semiannual')) then
+    raise notice '_verify: 20261026_10 is not applied yet — quarterly / half-yearly orders would be refused; nothing sells them before P2. Run 10_BEFORE_DEPLOY_20261026_10_billing_cycles.sql before P2 deploys';
+    return;
+  end if;
+
+  for spec in
+    select * from (values
+      ('payment_orders', 'billing',       'payment_orders_billing_check',
+       array['monthly', 'quarterly', 'semiannual', 'yearly', 'once'],   array['weekly', 'custom']),
+      ('subscriptions',  'billing_cycle', 'subscriptions_billing_cycle_check',
+       array['monthly', 'quarterly', 'semiannual', 'yearly', 'custom'], array['weekly', 'once'])
+    ) as t(tbl, col, con, yes, no)
+  loop
+    select attnum into att from pg_attribute
+     where attrelid = ('public.' || spec.tbl)::regclass and attname = spec.col and not attisdropped;
+    select count(*), string_agg(pg_get_constraintdef(oid), ' | ') into n, defs
+      from pg_constraint
+     where conrelid = ('public.' || spec.tbl)::regclass and contype = 'c' and conkey = array[att];
+    if n <> 1 then
+      missing := missing || format(' %s.%s has %s CHECK constraints (expected exactly %s);', spec.tbl, spec.col, n, spec.con);
+      continue;
+    end if;
+    foreach v in array spec.yes loop
+      if position(quote_literal(v) in defs) = 0 then
+        missing := missing || format(' %s.%s refuses %s;', spec.tbl, spec.col, v);
+      end if;
+    end loop;
+    foreach v in array spec.no loop
+      if position(quote_literal(v) in defs) > 0 then
+        missing := missing || format(' %s.%s accepts %s;', spec.tbl, spec.col, v);
+      end if;
+    end loop;
+  end loop;
+  foreach v in array array['price_quarterly', 'price_semiannual'] loop
+    if not exists (select 1 from information_schema.columns
+                    where table_schema = 'public' and table_name = 'subscription_plans'
+                      and column_name = v and data_type = 'numeric' and is_nullable = 'YES') then
+      missing := missing || format(' subscription_plans.%s is missing or not a nullable numeric;', v);
+    end if;
+  end loop;
+  if missing <> '' then
+    raise exception '_verify: 20261026_10 —% %', missing, fix;
+  end if;
+  raise notice '_verify: 20261026_10 OK — payment_orders and subscriptions accept quarterly and semiannual; subscription_plans has price_quarterly / price_semiannual';
+end $$;
+-- <<< verify:billing_cycles

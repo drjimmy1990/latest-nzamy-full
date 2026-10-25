@@ -2,14 +2,15 @@
 
 **الحالة:** لم يُنفَّذ شيء من هذه الدفعة على الإنتاج بعد. كل SQL على الإنتاج ينفذه المستخدم في محرر Supabase، بعد نسخة احتياطية ومراجعة نتيجة كل ملف.
 
-*English, short:* run `01_NOW_…` in the Supabase SQL editor **now** — it needs no code deploy. Files numbered 10 and up belong to later phases of this batch (P1 onward) and will be added here as they are built.
+*English, short:* run `01_NOW_…` in the Supabase SQL editor **now** — it needs no code deploy. Run `10_BEFORE_DEPLOY_…` (P1, quarterly and half-yearly billing) before deploying this batch's code; P2 must not deploy without it. Later files of this batch are added here as they are built.
 
 ## ترتيب التنفيذ (ملخص)
 
 | # | الملف | متى | ملاحظة |
 |:--:|---|---|---|
 | 1 | `01_NOW_20261026_01_founder_no_signup_grant.sql` | **الآن، وقبل أي نشر** | يوقف منح شارة المؤسس وأيام المكتبة عند التسجيل. لا يحتاج نشر كود، لكن `_verify.sql` الجديد يوقف النشر حتى يُنفَّذ |
-| — | `10_…` فما بعد | لاحقاً | محجوزة لمراحل P1 وما بعدها من هذه الدفعة |
+| 2 | `10_BEFORE_DEPLOY_20261026_10_billing_cycles.sql` | **قبل نشر كود الدفعة** | يسمح بدورتي الاشتراك الربع السنوية والنصف السنوية في الطلبات والاشتراكات، ويضيف عمودَي سعرهما للباقات. لا يغيّر أي سعر. `_verify.sql` يكتفي بتنبيه ما دام لم يُنفَّذ، لكن المرحلة P2 لا تُنشر قبله |
+| — | `11_…` فما بعد | لاحقاً | محجوزة للمراحل التالية من هذه الدفعة |
 
 ## 01: إيقاف منح «المحامي المؤسس» عند التسجيل (P0، عاجل)
 
@@ -44,3 +45,33 @@ select count(*) from public.lawyer_profiles where founder_badge;
 **الشريط (البنر):** نص «سجّل الآن واحصل على ٣ أشهر من المكتبة القانونية مجاناً وشارة المؤسس» يُخفى مع **نشر الكود** لا مع هذا الملف: الكود الجديد لا يعرض شريط المؤسس حتى تُتاح العضوية المدفوعة. بين تنفيذ الملف والنشر يبقى الشريط يعد بهدية لم تعد تُمنح. إن أردتم إخفاءه فوراً، أفرغوا تاريخي «حملة المحامي المؤسس» في `/dashboard/admin/settings` واحفظوا. لا شيء آخر يقرأ هذين التاريخين الآن. القرار لكم، ويمكن إعادة التاريخين لاحقاً.
 
 **للتراجع** (يعيد منح الهدية عند التسجيل، فلا يكون إلا بموافقة مكتوبة من المالك): أعد تنفيذ `supabase/migrations/20261021_50_founder_campaign.sql`، واحذف قسم `verify:founder_no_signup_grant` من `_verify.sql`، وإلا توقف النشر التالي.
+
+## 10: الدورتان الربع سنوية والنصف سنوية (P1، قبل النشر)
+
+`10_BEFORE_DEPLOY_20261026_10_billing_cycles.sql` نسخة مطابقة من `supabase/migrations/20261026_10_billing_cycles.sql`.
+
+**لماذا:** وثيقة التسعير المعتمدة (٢٥ أكتوبر، القاعدة ١) تبيع المحامين والمكاتب والشركات والمنشآت والجمعيات ومقدمي الخدمات اشتراكاً ربع سنوي (٣ أشهر) أو نصف سنوي (٦ أشهر) أو سنوي، وتتيح للأفراد الشهري أيضاً. الكود يعرف الدورتين الجديدتين منذ P1، لكن قاعدة البيانات ترفضهما في موضعين:
+- قيد `payment_orders_billing_check` في طلبات الدفع (شهري / سنوي / دفعة واحدة فقط).
+- قيد `billing_cycle` في جدول الاشتراكات. بدون هذا الملف يُدفع الطلب الربع سنوي ولا يُفعَّل الاشتراك أبداً.
+
+**ماذا يفعل:**
+- يوسّع القيدين إلى: شهري، ربع سنوي، نصف سنوي، سنوي، ودفعة واحدة للطلبات. ويبقى «مخصص» للاشتراكات التي يمنحها المشرف.
+- يضيف للباقات عمودَي `price_quarterly` و`price_semiannual`، فارغين لكل الباقات. **لا يغيّر أي سعر** ولا يمس أي صف قائم.
+- يتوقف دون أي تغيير إن وجد صفاً بقيمة دورة غير معروفة، ويذكر القيمة.
+
+**التنفيذ:**
+1. افتح محرر SQL في Supabase، والصق محتوى الملف كاملاً، ونفّذه.
+2. يجب أن تظهر في نهايته الرسالة `20261026_10 verify: OK`.
+3. إن توقف بالرسالة `canceling statement due to lock timeout` فلم يتغير شيء. أعد التنفيذ بعد لحظات.
+
+**الملف قابل لإعادة التشغيل**، داخل `begin … commit`، ومهلة القفل فيه ٥ ثوانٍ، وينتهي بـ `notify pgrst, 'reload schema'`.
+
+**قبل النشر وبعده:** كود P1 يعمل قبل الملف وبعده، لأنه لا يبيع أي باقة بدورة ربع أو نصف سنوية بعد. وقسم `verify:billing_cycles` في `_verify.sql`:
+- **يكتفي بتنبيه** ما دام الملف لم يُنفَّذ؛
+- **يتوقف بخطأ** إن نُفِّذ جزئياً أو عاد قيد ضيّق، كأن تُستعاد نسخة قديمة من المخطط. الحل حينها: أعد تنفيذ الملف.
+
+**المرحلة P2** (أول سعر ربع سنوي) **لا تُنشر قبل تنفيذه.**
+
+*English:* widens the `payment_orders.billing` and `subscriptions.billing_cycle` checks to monthly / quarterly / semiannual / yearly (+ `once` / `custom`), and adds the nullable `subscription_plans.price_quarterly` / `price_semiannual` columns. It writes no price and touches no row. Expect `20261026_10 verify: OK`. Idempotent. Run it before this batch deploys; P2 must not deploy without it. Docker-proved twice, with a restore-shaped narrowing between the runs: `supabase/tests/rls/billing_cycles.test.sql`.
+
+**للتراجع** (فقط ما دام لا يوجد طلب أو اشتراك بدورة ربع أو نصف سنوية): الأوامر في رأس الملف، تحت `ROLLBACK`.

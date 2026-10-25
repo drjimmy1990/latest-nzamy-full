@@ -353,3 +353,22 @@ test("formatHalalas refuses anything that is not a non-negative integer of halal
     assert.throws(() => formatHalalas(bad), RangeError, String(bad));
   }
 });
+
+// ─── the subscription_plans seed (20261022_10 §6) mirrors the book ───────────
+
+test("the subscription_plans seed holds the book's monthly / yearly price for each plan sold online", () => {
+  const sql = readFileSync(new URL("../../../supabase/migrations/20261022_10_payments_core.sql", import.meta.url), "utf8");
+  const seed = sql.slice(sql.indexOf("insert into public.subscription_plans"), sql.indexOf("on conflict (id) do update set", sql.indexOf("insert into public.subscription_plans")));
+  const rows = [...seed.matchAll(/\('([a-z-]+)',\s*'[a-z]+',\s*'[a-z]+',\s*'[^']*',\s*'[^']*',\s*(\d+),\s*(\d+)\)/g)];
+  const plans = Object.values(PAYABLE_ITEMS).filter((i) => i.kind === "plan");
+  assert.equal(rows.length, plans.length, "one seed row per plan in the book");
+  for (const [, id, monthly, yearly] of rows) {
+    const item = PAYABLE_ITEMS[id];
+    assert.ok(item && item.kind === "plan", `${id} is a book plan`);
+    assert.equal(Number(monthly) * 100, item.listedPrices.monthly, `${id} monthly`);
+    assert.equal(Number(yearly) * 100, item.listedPrices.yearly, `${id} yearly`);
+    // 20261026_10 adds price_quarterly / price_semiannual as null: the book has none yet
+    assert.equal(item.listedPrices.quarterly, undefined, id);
+    assert.equal(item.listedPrices.semiannual, undefined, id);
+  }
+});
