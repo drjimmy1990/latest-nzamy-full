@@ -33,6 +33,35 @@ export function fileFolderOwner(folderOwnerId: unknown, writerId: unknown): unkn
   return typeof folderOwnerId === "string" && folderOwnerId ? folderOwnerId : writerId;
 }
 
+/**
+ * May the SERVICE role remove this row's file when the row itself is deleted?
+ * True when the path sits in the folder the file was written in
+ * (fileFolderOwner) — NOT the row's current owner. The three delete paths
+ * (documents/[id] permanent delete, the cron's 30-day bin purge, a contract
+ * version's delete) used the current owner: after 20261026_70 moves a removed
+ * member's firm document to the firm owner, the file stays in the member's
+ * folder, the owner bins it, the row goes and the bytes stayed — no row held
+ * the path any more, so the member's own-folder Storage SELECT (20261026_71)
+ * let him download the firm's file again. With folder_owner_id the bytes go
+ * with the row; without it (a pre-65 row, or 72 not run yet) the writer's
+ * folder decides, as before.
+ */
+export function isRemovableWithRow(path: unknown, folderOwnerId: unknown, writerId: unknown): path is string {
+  return isPathInOwnerFolder(path, fileFolderOwner(folderOwnerId, writerId));
+}
+
+/**
+ * The read error of a select naming folder_owner_id before 20261026_72 has
+ * run: the column is not there yet. Only that error lets a delete path retry
+ * without the column (and fall back to the writer's folder); an RLS refusal,
+ * a timeout or any other error never does.
+ */
+export function isMissingFolderOwnerColumn(error: { code?: unknown; message?: unknown } | null | undefined): boolean {
+  if (!error) return false;
+  if (error.code !== "42703" && error.code !== "PGRST204") return false;
+  return typeof error.message === "string" && error.message.includes("folder_owner_id");
+}
+
 export function isPathInOwnerFolder(path: unknown, ownerId: unknown): path is string {
   if (typeof path !== "string" || typeof ownerId !== "string") return false;
   if (!path || !ownerId) return false;

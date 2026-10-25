@@ -3,7 +3,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { documentsDbErrorResponse, isValidAttachmentId } from "../_shared";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 import { storageObjectHeldByCaseDocument } from "@/lib/services/caseDocumentObject";
-import { isPathInOwnerFolder } from "@/lib/storagePathOwnership";
+import { isMissingFolderOwnerColumn, isRemovableWithRow } from "@/lib/storagePathOwnership";
 
 /**
  * DELETE /api/v1/documents/[id] — soft delete by default; permanent with
@@ -62,12 +62,31 @@ export async function DELETE(
     const permanent = searchParams.get("permanent") === "1";
 
     // RLS-scoped read: this is also the ownership check — attachments_select_policy
-    // only returns rows the caller owns or participates in.
-    const { data: doc, error: fetchError } = await supabase
+    // only returns rows the caller owns or participates in. folder_owner_id
+    // (20261026_72) names the folder the file was written in; before 72 has
+    // run the column is not there, and only then the read is retried without
+    // it (the writer's folder decides, the rule before 72).
+    const DOC_COLUMNS = "id, owner_user_id, storage_path, deleted_at, legal_hold, request_id";
+    let fetched = await supabase
       .from("attachments")
-      .select("id, owner_user_id, storage_path, deleted_at, legal_hold, request_id")
+      .select(`${DOC_COLUMNS}, folder_owner_id`)
       .eq("id", id)
       .maybeSingle();
+    if (isMissingFolderOwnerColumn(fetched.error)) {
+      fetched = await supabase.from("attachments").select(DOC_COLUMNS).eq("id", id).maybeSingle();
+    }
+    const { data: doc, error: fetchError } = fetched as {
+      data: {
+        id: string;
+        owner_user_id: string | null;
+        storage_path: string | null;
+        deleted_at: string | null;
+        legal_hold: boolean | null;
+        request_id: string | null;
+        folder_owner_id?: string | null;
+      } | null;
+      error: { message: string; code?: string } | null;
+    };
 
     if (fetchError) {
       console.error("[documents DELETE] fetch failed:", fetchError.message, fetchError.code);
@@ -106,12 +125,16 @@ export async function DELETE(
       if (held) {
         console.error("[documents DELETE permanent] object kept — a case document points at it:", id);
       }
-      // Only the uploader's own object is removed (service role): before
-      // 20261026_65 a vault row could be re-pointed at anybody's file, and
-      // this delete would then destroy it. Such a row goes; the bytes stay.
-      const ownObject = isPathInOwnerFolder(doc.storage_path, doc.owner_user_id);
+      // Only an object in the folder it was written in is removed (service
+      // role): before 20261026_65 a vault row could be re-pointed at anybody's
+      // file, and this delete would then destroy it — such a row goes, the
+      // bytes stay. The folder is folder_owner_id, not the row's current
+      // owner: a document 20261026_70 moved to the firm owner still sits in
+      // the removed member's folder, and keeping its bytes once the row is
+      // gone would hand them back to that member (71's own-folder SELECT).
+      const ownObject = isRemovableWithRow(doc.storage_path, doc.folder_owner_id, doc.owner_user_id);
       if (doc.storage_path && !ownObject) {
-        console.error("[documents DELETE permanent] object kept — storage_path is outside the owner's folder:", id);
+        console.error("[documents DELETE permanent] object kept — storage_path is outside the folder it was written in:", id);
       }
       if (doc.storage_path && !held && ownObject) {
         const { error: removeError } = await admin.storage.from("documents").remove([doc.storage_path]);

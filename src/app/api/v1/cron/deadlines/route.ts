@@ -5,7 +5,7 @@ import { daysUntil, parseIsoDate } from "@/lib/services/deadlineEngine";
 import { toArabicDigits, countPhraseAr } from "@/lib/services/arabicCount";
 import { purgeCutoffIso } from "@/lib/services/attachmentPurge";
 import { storageObjectHeldByCaseDocument } from "@/lib/services/caseDocumentObject";
-import { isPathInOwnerFolder } from "@/lib/storagePathOwnership";
+import { isMissingFolderOwnerColumn, isRemovableWithRow } from "@/lib/storagePathOwnership";
 import { deliverHearingReminders, queueHearingReminders } from "@/lib/hearingReminders";
 
 /**
@@ -322,19 +322,33 @@ export async function POST(request: NextRequest) {
     // .lt("deleted_at", cutoffIso) already excludes untouched rows: SQL
     // evaluates `NULL < x` as NULL (not true), so no separate
     // .not("deleted_at", "is", null) is needed alongside it.
-    const { data: purgeRows, error: purgeQueryError } = await admin
-      .from("attachments")
-      .select("id, owner_user_id, storage_path")
-      .lt("deleted_at", cutoffIso)
-      .eq("legal_hold", false)
-      // N3.9 (owner directive ٥, 20261025_51): case documents are archived for
-      // good, never purged — only personal vault documents leave the bin.
-      .is("request_id", null);
+    // folder_owner_id (20261026_72): the folder the file was written in.
+    // Before 72 has run the column is not there — only then the query is
+    // retried without it, and the owner's folder decides (the rule before 72).
+    const purgeQuery = (columns: string) =>
+      admin
+        .from("attachments")
+        .select(columns)
+        .lt("deleted_at", cutoffIso)
+        .eq("legal_hold", false)
+        // N3.9 (owner directive ٥, 20261025_51): case documents are archived for
+        // good, never purged — only personal vault documents leave the bin.
+        .is("request_id", null);
+    let purgeResult = await purgeQuery("id, owner_user_id, storage_path, folder_owner_id");
+    if (isMissingFolderOwnerColumn(purgeResult.error)) {
+      purgeResult = await purgeQuery("id, owner_user_id, storage_path");
+    }
+    const { data: purgeRows, error: purgeQueryError } = purgeResult;
 
     if (purgeQueryError) {
       console.error("[cron/deadlines] purge query failed:", purgeQueryError.message, purgeQueryError.code);
     } else {
-      const rows = (purgeRows ?? []) as Array<{ id: string; owner_user_id: string | null; storage_path: string | null }>;
+      const rows = (purgeRows ?? []) as unknown as Array<{
+        id: string;
+        owner_user_id: string | null;
+        storage_path: string | null;
+        folder_owner_id?: string | null;
+      }>;
       for (const row of rows) {
         try {
           // A case document may share this vault row's object: keep the
@@ -343,12 +357,16 @@ export async function POST(request: NextRequest) {
           if (held) {
             console.error("[cron/deadlines] purge kept the object — a case document points at it:", row.id);
           }
-          // Only the uploader's own object: before 20261026_65 a vault row
-          // could be re-pointed at anybody's file, binned, and left for this
-          // purge to delete (security review 2026-10-26, finding 1).
-          const ownObject = isPathInOwnerFolder(row.storage_path, row.owner_user_id);
+          // Only an object in the folder it was written in: before
+          // 20261026_65 a vault row could be re-pointed at anybody's file,
+          // binned, and left for this purge to delete (security review
+          // 2026-10-26, finding 1). The folder is folder_owner_id, not the
+          // current owner: a document 20261026_70 moved to the firm owner
+          // stays in the removed member's folder, and bytes kept after the
+          // row is gone would be his to download again (71's own-folder SELECT).
+          const ownObject = isRemovableWithRow(row.storage_path, row.folder_owner_id, row.owner_user_id);
           if (row.storage_path && !ownObject) {
-            console.error("[cron/deadlines] purge kept the object — storage_path is outside the owner's folder:", row.id);
+            console.error("[cron/deadlines] purge kept the object — storage_path is outside the folder it was written in:", row.id);
           }
           if (row.storage_path && !held && ownObject) {
             const { error: removeErr } = await admin.storage.from("documents").remove([row.storage_path]);

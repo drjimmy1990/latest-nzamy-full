@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { fileFolderOwner, isOwnLicencePath, isPathInOwnerFolder, isShareServable } from "./storagePathOwnership.ts";
+import {
+  fileFolderOwner,
+  isMissingFolderOwnerColumn,
+  isOwnLicencePath,
+  isPathInOwnerFolder,
+  isRemovableWithRow,
+  isShareServable,
+} from "./storagePathOwnership.ts";
 
 const U = "c0000000-0000-0000-0000-00000000000c";
 const V = "70000000-0000-0000-0000-00000000007a";
@@ -87,4 +94,41 @@ test("isOwnLicencePath: only licences/<that lawyer>/<file>", () => {
   assert.equal(isOwnLicencePath(`licences/${U}/`, U), false);
   assert.equal(isOwnLicencePath(null, U), false);
   assert.equal(isOwnLicencePath(`licences/${U}/1.png`, null), false);
+});
+
+// ── the delete paths: the bytes go with the row (final review, item 1) ──────
+// MEMBER wrote the file in his folder; 20261026_70 moved the row to the firm
+// OWNER; folder_owner_id (20261026_72) still names MEMBER.
+const MEMBER = "a0000000-0000-0000-0000-0000000000a1";
+const OWNER = "b0000000-0000-0000-0000-0000000000b1";
+
+test("isRemovableWithRow: a document 70 moved to the firm owner is removed from the member's folder", () => {
+  assert.equal(isRemovableWithRow(`${MEMBER}/1-firm.pdf`, MEMBER, OWNER), true);
+  // The old rule (the row's current owner) kept it: the leak this closes.
+  assert.equal(isPathInOwnerFolder(`${MEMBER}/1-firm.pdf`, OWNER), false);
+});
+
+test("isRemovableWithRow: a contract version whose uploader was deleted (uploaded_by null) is removed from his folder", () => {
+  assert.equal(isRemovableWithRow(`${MEMBER}/contracts/c1/1-v.pdf`, MEMBER, null), true);
+});
+
+test("isRemovableWithRow: with no recorded folder the writer decides — a pre-65 forgery is kept", () => {
+  assert.equal(isRemovableWithRow(`${MEMBER}/1-own.pdf`, null, MEMBER), true);
+  assert.equal(isRemovableWithRow(`${MEMBER}/1-not-yours.pdf`, null, OWNER), false);
+  assert.equal(isRemovableWithRow(`${MEMBER}/1-v.pdf`, null, null), false);
+  assert.equal(isRemovableWithRow(`${MEMBER}/1-v.pdf`, undefined, null), false);
+  assert.equal(isRemovableWithRow(`${MEMBER}/../${OWNER}/1.pdf`, MEMBER, MEMBER), false);
+});
+
+test("isMissingFolderOwnerColumn: only folder_owner_id missing lets a delete path retry without it", () => {
+  assert.equal(isMissingFolderOwnerColumn({ code: "42703", message: "column attachments.folder_owner_id does not exist" }), true);
+  assert.equal(
+    isMissingFolderOwnerColumn({ code: "PGRST204", message: "Could not find the 'folder_owner_id' column of 'contract_versions' in the schema cache" }),
+    true,
+  );
+  assert.equal(isMissingFolderOwnerColumn({ code: "42703", message: "column attachments.other does not exist" }), false);
+  assert.equal(isMissingFolderOwnerColumn({ code: "42501", message: "permission denied for column folder_owner_id" }), false);
+  assert.equal(isMissingFolderOwnerColumn({ code: "57014", message: "canceling statement due to statement timeout" }), false);
+  assert.equal(isMissingFolderOwnerColumn(null), false);
+  assert.equal(isMissingFolderOwnerColumn({ code: "42703" }), false);
 });
