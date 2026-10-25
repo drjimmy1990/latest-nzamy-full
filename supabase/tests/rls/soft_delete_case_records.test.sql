@@ -63,7 +63,10 @@ insert into public.case_notes (id, request_id, author_user_id, firm_id, visibili
   ('aaaaaaaa-0000-0000-0000-000000000001', 'case-x', '22222222-0000-0000-0000-000000000002', 'ffffffff-0000-0000-0000-0000000000f1', 'firm',    'مذكرة السكرتير السرية-١'),
   ('aaaaaaaa-0000-0000-0000-000000000002', 'case-x', '33333333-0000-0000-0000-000000000003', 'ffffffff-0000-0000-0000-0000000000f1', 'private', 'ملاحظة خاصة بـ M'),
   ('aaaaaaaa-0000-0000-0000-000000000003', 'case-z', '11111111-0000-0000-0000-000000000001', 'ffffffff-0000-0000-0000-0000000000f1', 'firm',    'ملاحظة L على قضية العميل'),
-  ('aaaaaaaa-0000-0000-0000-000000000004', 'case-solo', '11111111-0000-0000-0000-000000000001', null, 'private', 'ملاحظة القضية الفردية');
+  ('aaaaaaaa-0000-0000-0000-000000000004', 'case-solo', '11111111-0000-0000-0000-000000000001', null, 'private', 'ملاحظة القضية الفردية'),
+  -- M's note to case-x's team. The team is L (lead and filer); M writes as an
+  -- active firm member. O owns the firm but is NOT on this team.
+  ('aaaaaaaa-0000-0000-0000-000000000005', 'case-x', '33333333-0000-0000-0000-000000000003', 'ffffffff-0000-0000-0000-0000000000f1', 'case_team', 'ملاحظة فريق القضية');
 
 set role authenticated;
 
@@ -174,6 +177,42 @@ begin
   select count(*) into n from public.notifications where user_id = '00000000-0000-0000-0000-00000000000f';
   if n <> 1 then raise exception 'T5b FAIL: archiving a private note notified the owner (% rows)', n; end if;
 end $$;
+
+-- ── T5c an archived CASE-TEAM note stays with the team (owner ١٦٩) ─────────
+set role authenticated;
+select set_config('test.uid', '33333333-0000-0000-0000-000000000003', false);
+do $$
+declare ok boolean;
+begin
+  select public.archive_case_note('aaaaaaaa-0000-0000-0000-000000000005') into ok;
+  if not ok then raise exception 'T5c FAIL: M could not archive his case-team note'; end if;
+end $$;
+select set_config('test.uid', '00000000-0000-0000-0000-00000000000f', false);
+do $$
+declare n int; ok boolean;
+begin
+  select count(*) into n from public.case_notes where id = 'aaaaaaaa-0000-0000-0000-000000000005';
+  if n <> 0 then raise exception 'T5c FAIL: the firm owner, not on the team, reads an archived case-team note'; end if;
+  select count(*) into n from public.case_record_history where record_id = 'aaaaaaaa-0000-0000-0000-000000000005';
+  if n <> 0 then raise exception 'T5c FAIL: the firm owner reads the trail (and body) of a case-team note'; end if;
+  select public.restore_case_note('aaaaaaaa-0000-0000-0000-000000000005') into ok;
+  if ok then raise exception 'T5c FAIL: the firm owner restored a case-team note of a team he is not on'; end if;
+end $$;
+select set_config('test.uid', '11111111-0000-0000-0000-000000000001', false);
+do $$
+declare n int;
+begin
+  select count(*) into n from public.case_notes where id = 'aaaaaaaa-0000-0000-0000-000000000005' and deleted_at is not null;
+  if n <> 1 then raise exception 'T5c FAIL: the lead (on the team) cannot see the archived case-team note'; end if;
+end $$;
+reset role;
+do $$
+declare n int;
+begin
+  select count(*) into n from public.notifications where user_id = '00000000-0000-0000-0000-00000000000f';
+  if n <> 1 then raise exception 'T5c FAIL: the owner was notified of a case-team note of a team he is not on (% rows)', n; end if;
+  raise notice 'T5c PASS: an archived case-team note stays with the team: the off-team owner neither sees, traces, restores nor is told; the lead sees it';
+end $$;
 set role authenticated;
 select set_config('test.uid', '55555555-0000-0000-0000-000000000005', false);
 do $$
@@ -215,6 +254,26 @@ begin
   select count(*) into n from public.case_notes where id = 'aaaaaaaa-0000-0000-0000-000000000001' and deleted_at is null;
   if n <> 1 then raise exception 'T6 FAIL: the restored firm note is not back for M'; end if;
   raise notice 'T6 PASS: the restored firm note reads normally again';
+end $$;
+
+-- ── T6b the author still edits a LIVE note — the exact PATCH shape of
+--       /api/v1/cases/[id]/notes/[noteId] (body, visibility, firm_id, then
+--       RETURNING the CASE_NOTE_SELECT columns), under the new column grant
+select set_config('test.uid', '22222222-0000-0000-0000-000000000002', false);
+do $$
+declare rec record;
+begin
+  update public.case_notes
+     set body = 'مذكرة بعد الاسترجاع', visibility = 'firm', firm_id = 'ffffffff-0000-0000-0000-0000000000f1'
+   where id = 'aaaaaaaa-0000-0000-0000-000000000001' and request_id = 'case-x'
+  returning id, request_id, author_user_id, firm_id, visibility, body, created_at, updated_at into rec;
+  if rec.id is null then raise exception 'T6b FAIL: the author could not edit his restored note'; end if;
+  begin
+    update public.case_notes set request_id = 'case-z' where id = 'aaaaaaaa-0000-0000-0000-000000000001';
+    raise exception 'T6b FAIL: a note was moved to another case';
+  exception when insufficient_privilege then null;
+  end;
+  raise notice 'T6b PASS: the PATCH shape works under the column grant; request_id cannot move';
 end $$;
 
 -- ── T7 a client never supervises: L archives his note on the client's case ──
@@ -330,6 +389,44 @@ begin
     reset role;
   end loop;
   raise notice 'T9 PASS: no API role (service_role included) can insert, update or delete case_record_history';
+end $$;
+
+-- ── T10 deleting the archiving account is not blocked (FK ON DELETE SET NULL)
+set role authenticated;
+select set_config('test.uid', '22222222-0000-0000-0000-000000000002', false);
+do $$
+declare doc bigint;
+begin
+  insert into public.attachments (request_id, owner_user_id, file_name, storage_path)
+  values ('case-x', '22222222-0000-0000-0000-000000000002', 'مذكرة.docx', 'case-x/مذكرة.docx')
+  returning id into doc;
+  perform set_config('test.doc2', doc::text, false);
+end $$;
+-- L (the case lead, a participant) archives S's upload
+select set_config('test.uid', '11111111-0000-0000-0000-000000000001', false);
+do $$
+declare n int;
+begin
+  update public.attachments set deleted_at = now() where id = current_setting('test.doc2')::bigint;
+  get diagnostics n = row_count;
+  if n <> 1 then raise exception 'T10 FAIL: the lead could not archive the document'; end if;
+end $$;
+reset role;
+do $$
+declare n int;
+begin
+  begin
+    delete from auth.users where id = '11111111-0000-0000-0000-000000000001';
+  exception when others then
+    raise exception 'T10 FAIL: deleting the account that archived a document fails (%): the stamp trigger fights ON DELETE SET NULL', sqlerrm;
+  end;
+  select count(*) into n from public.attachments
+   where id = current_setting('test.doc2')::bigint and deleted_at is not null and deleted_by is null;
+  if n <> 1 then raise exception 'T10 FAIL: the document lost its archive, or deleted_by still names the deleted account'; end if;
+  select count(*) into n from public.case_record_history
+   where record_id = current_setting('test.doc2') and actor_user_id = '11111111-0000-0000-0000-000000000001';
+  if n <> 1 then raise exception 'T10 FAIL: the trail lost the actor'; end if;
+  raise notice 'T10 PASS: deleting the archiving account succeeds; the document stays archived and the trail keeps the actor';
 end $$;
 
 \echo 'soft_delete_case_records.test.sql: ALL PASS'

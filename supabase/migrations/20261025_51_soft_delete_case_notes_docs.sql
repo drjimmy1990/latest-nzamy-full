@@ -27,12 +27,16 @@
 -- WHAT CHANGES
 --   1. case_notes: deleted_at / deleted_by.
 --        ARCHIVE  public.archive_case_note(note)  — the author only, a live note.
---        RESTORE  public.restore_case_note(note)  — the author; or, for a note
---                 that was not private, a supervisor of its case.
+--        RESTORE  public.restore_case_note(note)  — the author; a supervisor of
+--                 its case for a `firm` note; for a `case_team` note only a
+--                 supervisor who is ON the case team.
 --        SELECT   live notes: exactly the 20261017_41 rule. Archived notes:
---                 the author, and — never for a PRIVATE note (owner ١٦٩
---                 «خاصة بي فقط») — a supervisor. A colleague who could read a
---                 firm/case-team note no longer sees it once archived.
+--                 the author, and a supervisor under the same scope rule —
+--                 never a PRIVATE note (owner ١٦٩ «خاصة بي فقط»), and a
+--                 case-team note only to a supervisor on that team (a firm
+--                 owner outside the team never read it live, so he does not
+--                 read it archived). A colleague who could read a firm /
+--                 case-team note no longer sees it once archived.
 --        UPDATE   the author, live notes only; column grant body / visibility /
 --                 firm_id — deleted_at / deleted_by move through the two
 --                 functions only.
@@ -54,9 +58,9 @@
 --      UPDATE or DELETE it (service_role included); plain columns, no foreign
 --      keys, so deleting a case or an account never rewrites the trail.
 --   4. A notification row (public.notifications: user_id, title, body, href)
---      to the firm's owner when someone else archives a firm case's document
---      or non-private note. The text names the actor and the case, never the
---      note's content.
+--      to the firm's owner when someone else archives a firm case's document,
+--      a `firm` note, or a `case_team` note of a team the owner is on. The
+--      text names the actor and the case, never the note's content.
 --
 -- NOT AFTER THIS FILE WITHOUT CARE
 --   Re-running 20261017_41 puts back its four case_notes policies (archived
@@ -190,7 +194,13 @@ begin
   elsif old.deleted_at is not null and new.deleted_at is null then
     new.deleted_by := null;
   elsif old.deleted_at is not null and new.deleted_at is not null then
-    new.deleted_by := old.deleted_by;
+    -- Pinned against a rewrite, but a NULL is let through: that is the
+    -- foreign key's ON DELETE SET NULL when the archiving account is deleted
+    -- (reverting it would block the account deletion). The trail keeps the
+    -- actor either way.
+    if new.deleted_by is not null then
+      new.deleted_by := old.deleted_by;
+    end if;
     new.deleted_at := old.deleted_at;
     -- Nested, not `and`-ed: on attachments `new.body` does not exist, and a
     -- PL/pgSQL expression is planned as a whole.
@@ -269,6 +279,12 @@ begin
 
   if v_action = 'archived' and v_firm is not null and coalesce(v_vis, '') <> 'private' then
     select fp.owner_user_id into v_firm_own from public.firm_profiles fp where fp.id = v_firm;
+    -- A case-team note concerns the owner only when he is on that team
+    -- (case_team_user_ids answers for the actor, an active member here).
+    if v_vis = 'case_team' and not exists (
+         select 1 from public.case_team_user_ids(v_request) t where t.user_id = v_firm_own) then
+      v_firm_own := null;
+    end if;
     if v_firm_own is not null and v_firm_own is distinct from v_actor then
       select nullif(btrim(p.display_name), '') into v_name from public.profiles p where p.id = v_actor;
       insert into public.notifications (user_id, title, body, href)
@@ -305,8 +321,8 @@ begin
 end;
 $$;
 
--- Restore a case note: its author, or a supervisor of the case for a note
--- that was not private.
+-- Restore a case note: its author; a supervisor of the case for a firm note;
+-- for a case-team note, a supervisor who is on that case team.
 create or replace function public.restore_case_note(p_note uuid)
 returns boolean
 language plpgsql
@@ -320,7 +336,9 @@ begin
      set deleted_at = null, deleted_by = null
    where cn.id = p_note and cn.deleted_at is not null
      and (cn.author_user_id = auth.uid()
-          or (cn.visibility <> 'private' and public.can_supervise_case_records(cn.request_id)));
+          or (cn.visibility = 'firm' and public.can_supervise_case_records(cn.request_id))
+          or (cn.visibility = 'case_team' and public.can_supervise_case_records(cn.request_id)
+              and public.is_case_team_member(cn.request_id)));
   get diagnostics n = row_count;
   return n = 1;
 end;
@@ -412,7 +430,9 @@ create policy "case notes readable by author, team or firm" on public.case_notes
         or (visibility = 'case_team' and public.is_case_team_member(request_id))))
     or (deleted_at is not null and (
         author_user_id = auth.uid()
-        or (visibility <> 'private' and public.can_supervise_case_records(request_id))))
+        or (visibility = 'firm' and public.can_supervise_case_records(request_id))
+        or (visibility = 'case_team' and public.can_supervise_case_records(request_id)
+            and public.is_case_team_member(request_id))))
   );
 
 drop policy if exists "case notes insertable by author" on public.case_notes;
@@ -488,7 +508,10 @@ create policy "case record history readable by actor, writer or supervisor" on p
   using (
     actor_user_id = auth.uid()
     or record_owner = auth.uid()
-    or (coalesce(record_visibility, '') <> 'private' and public.can_supervise_case_records(request_id))
+    or (record_kind = 'case_document' and public.can_supervise_case_records(request_id))
+    or (record_visibility = 'firm' and public.can_supervise_case_records(request_id))
+    or (record_visibility = 'case_team' and public.can_supervise_case_records(request_id)
+        and public.is_case_team_member(request_id))
   );
 
 revoke all on public.case_record_history from public;

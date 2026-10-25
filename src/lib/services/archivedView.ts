@@ -4,7 +4,8 @@
  *
  * Everything the route returns is restorable by the caller: 20261025_51 makes
  * the archived-row SELECT rule and the restore rule the same people (for a
- * note: its author, or a supervisor of the case unless it was private; for a
+ * note: its author, or a supervisor of the case — for a firm note; for a
+ * case-team note only a supervisor on that team; never a private note; for a
  * document: its uploader, a participant, or a supervisor). So there is no
  * per-row "can restore" flag to drift from the database's answer.
  *
