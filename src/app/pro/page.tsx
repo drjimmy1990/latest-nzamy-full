@@ -26,6 +26,7 @@ import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import { VAT_NOTICE } from "@/lib/pricing/vatNotice";
+import { bookPriceText } from "@/lib/pricing/priceBook";
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
@@ -48,43 +49,45 @@ const features = {
   ],
 };
 
-// Owner answers ١٧٤ / ١٧٥ (2026-10-16): 399 for the lawyer, 990 for a law
-// office (3 seats), 1,490 for a law firm (5 seats); yearly is ten months.
-// The old 299 / 799 prices and the API / SSO / account-manager promises are gone.
+// Prices come from the price book (src/lib/pricing/priceBook.ts). The pricing
+// doc of 25 Oct, §2 rule 1: professionals are offered quarterly / half-yearly /
+// yearly, never monthly — so the yearly price is the one shown (until P2/P6
+// add the quarterly and half-yearly ones). The old 299 / 799 prices and the
+// API / SSO / account-manager promises are gone.
 // Extra seats go through sales (owner answer ٢١٧, 2026-10-18), and the office
 // plan no longer says it includes the lawyer plan: firm plans bundle no points.
 const plans = [
   {
     name: { ar: "المحامي المحترف", en: "Professional Lawyer" },
-    price: { ar: "٣٩٩", en: "399" },
-    unit: { ar: "ر.س/شهر", en: "SAR/mo" },
+    price: { ar: bookPriceText("lawyer-pro", "yearly", "ar"), en: bookPriceText("lawyer-pro", "yearly", "en") },
+    unit: { ar: "ر.س/سنة", en: "SAR/yr" },
     desc: { ar: "للمحامي المرخّص", en: "For a licensed lawyer" },
     features: {
-      ar: ["١٬٥٠٠ نقطة كل شهر", "القضايا والجلسات والمهل", "الموكّلون والاستشارات والعقود", "السنوي ٣٬٩٩٠ ر.س"],
-      en: ["1,500 points every month", "Cases, hearings and deadlines", "Clients, consultations and contracts", "Yearly SAR 3,990"],
+      ar: ["١٬٥٠٠ نقطة كل شهر", "القضايا والجلسات والمهل", "الموكّلون والاستشارات والعقود"],
+      en: ["1,500 points every month", "Cases, hearings and deadlines", "Clients, consultations and contracts"],
     },
     highlight: false,
   },
   {
     name: { ar: "مكتب المحاماة", en: "Law Office" },
-    price: { ar: "٩٩٠", en: "990" },
-    unit: { ar: "ر.س/شهر", en: "SAR/mo" },
+    price: { ar: bookPriceText("firm-basic", "yearly", "ar"), en: bookPriceText("firm-basic", "yearly", "en") },
+    unit: { ar: "ر.س/سنة", en: "SAR/yr" },
     desc: { ar: "٣ مقاعد مشمولة", en: "3 seats included" },
     features: {
-      ar: ["٣ مقاعد مشمولة", "القضايا والجلسات والمهل", "أعضاء المكتب وصلاحياتهم", "السنوي ٩٬٩٠٠ ر.س"],
-      en: ["3 seats included", "Cases, hearings and deadlines", "Members and their permissions", "Yearly SAR 9,900"],
+      ar: ["٣ مقاعد مشمولة", "القضايا والجلسات والمهل", "أعضاء المكتب وصلاحياتهم"],
+      en: ["3 seats included", "Cases, hearings and deadlines", "Members and their permissions"],
     },
     salesLine: { ar: "مقاعد إضافية: تواصل مع المبيعات", en: "Extra seats: contact sales", href: "/contact?type=firm-seats" },
     highlight: true,
   },
   {
     name: { ar: "شركة المحاماة", en: "Law Firm" },
-    price: { ar: "١٬٤٩٠", en: "1,490" },
-    unit: { ar: "ر.س/شهر", en: "SAR/mo" },
+    price: { ar: bookPriceText("firm-enterprise", "yearly", "ar"), en: bookPriceText("firm-enterprise", "yearly", "en") },
+    unit: { ar: "ر.س/سنة", en: "SAR/yr" },
     desc: { ar: "٥ مقاعد مشمولة", en: "5 seats included" },
     features: {
-      ar: ["ما في باقة مكتب المحاماة", "٥ مقاعد مشمولة", "السنوي ١٤٬٩٠٠ ر.س"],
-      en: ["Everything in Law Office", "5 seats included", "Yearly SAR 14,900"],
+      ar: ["ما في باقة مكتب المحاماة", "٥ مقاعد مشمولة"],
+      en: ["Everything in Law Office", "5 seats included"],
     },
     salesLine: { ar: "مقاعد إضافية: تواصل مع المبيعات", en: "Extra seats: contact sales", href: "/contact?type=firm-seats" },
     highlight: false,

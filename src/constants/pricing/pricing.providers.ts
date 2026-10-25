@@ -51,7 +51,7 @@ export const plansProviders: { ar: Plan[]; en: Plan[] } = {
       id: "consultant-independent", name: "مستشار مستقل", badge: "المادة ١٨",
       // Owner answer ١٧٣ (2026-10-16): the same price and point use as
       // «المحامي المحترف»; the difference is the dashboard rights (Art. 18).
-      priceMonthly: "٣٩٩", priceYearly: "٣٬٩٩٠", periodMonthly: "ر.س / شهر", periodYearly: "ر.س / سنة",
+      periodMonthly: "ر.س / شهر", periodYearly: "ر.س / سنة",
       desc: "للمستشارين القانونيين المستقلين: دراسة الأنظمة وصياغة العقود والاستشارات، بلا ترافع ولا إدارة جلسات (المادة ١٨ من نظام المحاماة).",
       target: "المستشارون القانونيون المستقلون", cta: "اشترك الآن",
       ctaHref: "/register/provider?type=consultant&plan=independent", highlighted: false, color: "border-purple-300",
@@ -107,7 +107,7 @@ export const plansProviders: { ar: Plan[]; en: Plan[] } = {
     // Arabic page with the same React key as the Arabic consultant card.
     {
       id: "consultant-independent", name: "Independent Consultant", badge: "Article 18",
-      priceMonthly: "399", priceYearly: "3,990", periodMonthly: "SAR / month", periodYearly: "SAR / year",
+      periodMonthly: "SAR / month", periodYearly: "SAR / year",
       desc: "For independent legal consultants: statutory research, contract drafting and advice — no pleading or hearing management (Article 18).",
       target: "Independent Legal Consultants", cta: "Subscribe Now",
       ctaHref: "/register/provider?type=consultant&plan=independent", highlighted: false, color: "border-purple-300",

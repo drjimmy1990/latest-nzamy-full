@@ -5,6 +5,7 @@ import { Info, ArrowLeft } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import { resolveAdvisoryHandoff } from "./advisoryHandoff";
+import { useClientPricingCatalog } from "@/hooks/useClientPricingCatalog";
 
 /**
  * Owner item ١٨ / س٣ — how the instant tools describe themselves.
@@ -73,7 +74,9 @@ export default function AdvisoryTemplateNotice({
 }) {
   const { isDark } = useTheme();
   const user = useUser();
-  const handoff = resolveAdvisoryHandoff(handoffServiceId);
+  // The same catalogue the request forms read (admin_pricing_catalog over the code fallback).
+  const { catalog } = useClientPricingCatalog();
+  const handoff = resolveAdvisoryHandoff(handoffServiceId, catalog);
 
   const isSpecialist = SPECIALIST_TYPES.includes(user.userType as string);
   /** Offer the paid human review — everyone except the specialists themselves. */

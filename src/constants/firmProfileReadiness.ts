@@ -10,6 +10,7 @@ import type {
   FirmSize,
   FirmStructure,
 } from "@/types/firmBackendReady";
+import { bookSar } from "@/lib/pricing/priceBook";
 
 export const FIRM_SIZE_LABEL: Record<FirmSize, string> = {
   solo_office: "مكتب شريك واحد",
@@ -60,7 +61,7 @@ export const FIRM_ROLE_LABEL: Record<FirmRole, string> = {
 export const FIRM_PLAN_CONTRACTS: FirmPlanContract[] = [
   {
     plan: "firm-basic",
-    annualPrice: 9900,
+    annualPrice: bookSar("firm-basic", "yearly"),
     includedSeats: 3,
     extraSeatAnnualPrice: null,
     includedAnnualPoints: 0,
@@ -69,7 +70,7 @@ export const FIRM_PLAN_CONTRACTS: FirmPlanContract[] = [
   },
   {
     plan: "firm-enterprise",
-    annualPrice: 14900,
+    annualPrice: bookSar("firm-enterprise", "yearly"),
     includedSeats: 5,
     extraSeatAnnualPrice: null,
     includedAnnualPoints: 0,

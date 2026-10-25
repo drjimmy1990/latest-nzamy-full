@@ -17,6 +17,7 @@ import { PricingFAQ }          from "@/components/pricing/PricingFAQ";
 import { PricingCTA }          from "@/components/pricing/PricingCTA";
 import { GovernmentRolesInfo } from "@/components/pricing/GovernmentRolesInfo";
 import { audienceTabsView, extraPlanIdsFor, withExtraPlans } from "@/lib/pricing/audienceForUserType";
+import { displayCycle, offeredCycles } from "@/lib/pricing/cardPrice";
 
 // Which package families the audience bar offers (owner, 2026-10-24): a
 // member sees only their own account type's family — the bar is locked to it
@@ -60,6 +61,10 @@ export default function PricingPage() {
   const extraPlanIds   = tabsView.kind === "locked" ? extraPlanIdsFor(userType, practiceKind, libraryMode) : [];
   const cardPlanList   = withExtraPlans(planList, extraPlanIds, getPlanList("providers", isAr));
   const comparisonList = getComparisonList(audience, isAr);
+  // The cycle toggle (§2 rule 1): the audience's allowed cycles that a card on
+  // screen prices; the cards are drawn in the picked cycle while it is offered.
+  const cycles         = offeredCycles(audience, cardPlanList);
+  const shownBilling   = displayCycle(cycles, billing);
   const faqList        = isAr ? faqs.ar : faqs.en;
 
   // Reset library mode when switching away from lawyers/firms
@@ -75,7 +80,7 @@ export default function PricingPage() {
 
         {/* Hero + audience tabs + billing toggle + company filters */}
         <PricingHero
-          isAr={isAr} billing={billing} setBilling={setBilling}
+          isAr={isAr} billing={shownBilling} setBilling={setBilling} cycles={cycles}
           audience={audience} setAudience={handleSetAudience}
           companySize={companySize} setCompanySize={setCompanySize}
           hasLegalDept={hasLegalDept} setHasLegalDept={setHasLegalDept}
@@ -88,7 +93,7 @@ export default function PricingPage() {
 
         {/* Plan cards + enterprise + SME + quarterly */}
         <PricingCards
-          planList={cardPlanList} billing={billing}
+          planList={cardPlanList} billing={shownBilling}
           isAr={isAr} audience={audience}
           libraryMode={libraryMode}
         />

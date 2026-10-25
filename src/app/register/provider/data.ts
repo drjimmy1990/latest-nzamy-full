@@ -1,5 +1,6 @@
 import { Gavel, Buildings, Stamp, Shield, Scales, Briefcase } from "@phosphor-icons/react";
 import { ProviderType } from "./types";
+import { bookPriceText } from "@/lib/pricing/priceBook";
 
 export const providerTypes = {
   ar: [
@@ -43,20 +44,21 @@ export const plans = {
     {
       id: "ai",
       name: "المحامي المحترف",
-      price: "٣٩٩",
-      period: "ر.س / شهر · ١٬٥٠٠ نقطة",
-      desc: "اشتراك شهري بنقاط لأدوات الذكاء الاصطناعي",
-      features: ["كل مميزات إدارة الممارسة", "١٬٥٠٠ نقطة كل شهر", "حزم شحن إضافية من ١٠٠ ر.س", "أسعار الأدوات بالنقاط حسب قائمة الأسعار", "السنوي ٣٬٩٩٠ ر.س"],
+      // §2 rule 1 (25 Oct): professionals are offered yearly (quarterly / half-yearly from P2), not monthly.
+      price: bookPriceText("lawyer-pro", "yearly", "ar"),
+      period: "ر.س / سنة · ١٬٥٠٠ نقطة كل شهر",
+      desc: "اشتراك سنوي بنقاط لأدوات الذكاء الاصطناعي",
+      features: ["كل مميزات إدارة الممارسة", "١٬٥٠٠ نقطة كل شهر", `حزم شحن إضافية من ${bookPriceText("topup-100", "once", "ar")} ر.س`, "أسعار الأدوات بالنقاط حسب قائمة الأسعار"],
       cta: "اشترك الآن",
       highlighted: true,
     },
     {
       id: "pro",
       name: "إدارة مكتب المحاماة",
-      price: "٩٩٠",
-      period: "ر.س / شهر · ٣ مقاعد",
+      price: bookPriceText("firm-basic", "yearly", "ar"),
+      period: "ر.س / سنة · ٣ مقاعد",
       desc: "إدارة المكتب بمقاعده وصلاحيات أعضائه",
-      features: ["إدارة القضايا والجلسات والمهام", "٣ مقاعد مشمولة", "صلاحيات أعضاء المكتب", "شركة المحاماة: ١٬٤٩٠ ر.س/شهر بخمسة مقاعد", "مقاعد إضافية: تواصل مع المبيعات", "السنوي ٩٬٩٠٠ ر.س"],
+      features: ["إدارة القضايا والجلسات والمهام", "٣ مقاعد مشمولة", "صلاحيات أعضاء المكتب", `شركة المحاماة: ${bookPriceText("firm-enterprise", "yearly", "ar")} ر.س/سنة بخمسة مقاعد`, "مقاعد إضافية: تواصل مع المبيعات"],
       cta: "ابدأ كمكتب",
       highlighted: false,
     },
@@ -75,20 +77,20 @@ export const plans = {
     {
       id: "ai",
       name: "Professional Lawyer",
-      price: "399",
-      period: "SAR / month · 1,500 points",
-      desc: "Monthly subscription with AI tool points",
-      features: ["All practice-management features", "1,500 points every month", "Extra top-ups from SAR 100", "Tool prices in points per the price list", "Yearly SAR 3,990"],
+      price: bookPriceText("lawyer-pro", "yearly", "en"),
+      period: "SAR / year · 1,500 points a month",
+      desc: "Yearly subscription with AI tool points",
+      features: ["All practice-management features", "1,500 points every month", `Extra top-ups from SAR ${bookPriceText("topup-100", "once", "en")}`, "Tool prices in points per the price list"],
       cta: "Subscribe",
       highlighted: true,
     },
     {
       id: "pro",
       name: "Law Firm Management",
-      price: "990",
-      period: "SAR / month · 3 seats",
+      price: bookPriceText("firm-basic", "yearly", "en"),
+      period: "SAR / year · 3 seats",
       desc: "Office management with seats and member permissions",
-      features: ["Cases, hearings, and tasks", "3 seats included", "Firm member permissions", "Law firm: SAR 1,490/month with 5 seats", "Extra seats: contact sales", "Yearly SAR 9,900"],
+      features: ["Cases, hearings, and tasks", "3 seats included", "Firm member permissions", `Law firm: SAR ${bookPriceText("firm-enterprise", "yearly", "en")}/year with 5 seats`, "Extra seats: contact sales"],
       cta: "Start as an office",
       highlighted: false,
     },

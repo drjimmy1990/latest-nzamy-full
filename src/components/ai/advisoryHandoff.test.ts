@@ -21,3 +21,24 @@ test("an unknown service id still produces a usable link, never an empty href", 
   assert.ok(out.href.startsWith("/"));
   assert.ok(out.serviceLabel.length > 0);
 });
+
+test("P1: the handoff reads the catalogue it is given — an admin_pricing_catalog edit is never ignored", async () => {
+  const { mergeAdminPricingCatalogRows } = await import("../../lib/pricingRepository.ts");
+  const fromDb = mergeAdminPricingCatalogRows([
+    {
+      service_id: "written-opinion",
+      category_id: "consultation",
+      label_ar: "رأي قانوني مكتوب (معدّل)",
+      base_price: 900,
+      price_mode: "fixed",
+      receiver_type: "lawyer",
+      beta_visibility: "public",
+      requires_payment: true,
+      enabled: true,
+      metadata: { route: "/dashboard/client/consultation/new?type=written-opinion" },
+    },
+  ]);
+  const out = resolveAdvisoryHandoff("written-opinion", fromDb);
+  assert.equal(out.serviceLabel, "رأي قانوني مكتوب (معدّل)");
+  assert.match(out.priceLabel, /٩٠٠/);
+});

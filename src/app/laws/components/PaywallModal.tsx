@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Crown, CheckCircle, Scales, ListBullets, Gavel, X, BookOpen, Books, BookmarkSimple, Scroll } from "@phosphor-icons/react";
 import Link from "next/link";
 import { VAT_NOTICE } from "@/lib/pricing/vatNotice";
+import { bookPriceText } from "@/lib/pricing/priceBook";
 
 // ─── Types & Constants ─────────────────────────────────────────────────────────
 
@@ -38,7 +39,7 @@ export const PLANS = [
   {
     id: "lib-q1",
     name: "المكتبة القانونية — ربع سنوي", nameEn: "Legal Library — Quarterly",
-    price: "١٬٥٠٠", priceEn: "1,500", period: "٣ أشهر", periodEn: "/ 3 months",
+    price: bookPriceText("lib-q1", "once", "ar"), priceEn: bookPriceText("lib-q1", "once", "en"), period: "٣ أشهر", periodEn: "/ 3 months",
     desc: "وصول كامل للأنظمة واللوائح والمبادئ القضائية لمدة ٣ أشهر", descEn: "Full access to laws, regulations and judicial principles for 3 months",
     features: [
       "الوصول الكامل لمواد الأنظمة واللوائح",
@@ -55,8 +56,8 @@ export const PLANS = [
   {
     id: "lib-annual",
     name: "المكتبة القانونية — سنوي", nameEn: "Legal Library — Annual",
-    price: "٥٬٠٠٠", priceEn: "5,000", period: "سنوياً", periodEn: "/ year",
-    desc: "الاشتراك المعتمد الكامل لـ ١٢ شهراً — ٥٬٠٠٠ ر.س/سنة مع تصدير PDF", descEn: "Canonical full annual access for 12 months with PDF export",
+    price: bookPriceText("lib-annual", "once", "ar"), priceEn: bookPriceText("lib-annual", "once", "en"), period: "سنوياً", periodEn: "/ year",
+    desc: `الاشتراك المعتمد الكامل لـ ١٢ شهراً — ${bookPriceText("lib-annual", "once", "ar")} ر.س/سنة مع تصدير PDF`, descEn: "Canonical full annual access for 12 months with PDF export",
     features: [
       "وصول كامل وغير محدود للأنظمة واللوائح والمبادئ القضائية",
       "تصدير نصوص ومواد الأنظمة بصيغة PDF",

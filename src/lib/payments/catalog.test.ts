@@ -3,11 +3,8 @@
  * price book (src/lib/pricing/priceBook.ts), and its VAT quote: always
  * VAT-exclusive (pricing doc §2 rule 5, answer ٢٥٨).
  *
- * The consistency tests hold PAYABLE_ITEMS to the prices the site shows:
- *   - src/lib/pricing/plans.ts is pure, so it is imported;
- *   - src/constants/pricing/*.ts import phosphor icons and React, so they are
- *     read as text (the pattern pricingHonesty.test.ts uses), comments
- *     stripped, and each display string parsed with parseDisplayedAmount.
+ * The consistency test holds PAYABLE_ITEMS to src/lib/pricing/plans.ts (which
+ * itself reads the book); the /pricing cards' derivation is in cardPrice.test.ts.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -25,7 +22,6 @@ import {
   type ServerTierLiteral,
 } from "./catalog.ts";
 import { PRICE_BOOK, type BookEntry } from "../pricing/priceBook.ts";
-import { parseDisplayedAmount } from "../pricing/priceDisplay.ts";
 import {
   INDEPENDENT_CONSULTANT_PLAN,
   INDIVIDUALS_PYRAMID_PLANS,
@@ -313,78 +309,15 @@ test("resolveItem / sellableItem never resolve an inherited key", () => {
 
 // ─── consistency with the prices the site shows ──────────────────────────────
 
-function code(path: string): string {
-  return readFileSync(new URL(`../../${path}`, import.meta.url), "utf8")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/(^|[^:"'\\])\/\/.*$/gm, "$1");
-}
-
-/** The [priceMonthly, priceYearly] display strings of every `id: "<id>"` entry. */
-function displayedPrices(path: string, id: string): Array<[string, string]> {
-  const text = code(path);
-  const marker = `id: "${id}"`;
-  const out: Array<[string, string]> = [];
-  let at = text.indexOf(marker);
-  while (at !== -1) {
-    const next = text.indexOf(`id: "`, at + marker.length);
-    const block = text.slice(at, next === -1 ? undefined : next);
-    const m = block.match(/priceMonthly:\s*"([^"]*)"/);
-    const y = block.match(/priceYearly:\s*"([^"]*)"/);
-    assert.ok(m && y, `${path} ${id}: price fields not found`);
-    out.push([m[1], y[1]]);
-    at = text.indexOf(marker, at + marker.length);
-  }
-  return out;
-}
-
-const CONSTANTS_FILE: Record<string, string> = {
-  "lawyer-pro": "constants/pricing/pricing.lawyers.ts",
-  "topup-100": "constants/pricing/pricing.lawyers.ts",
-  "topup-250": "constants/pricing/pricing.lawyers.ts",
-  "topup-500": "constants/pricing/pricing.lawyers.ts",
-  "topup-1000": "constants/pricing/pricing.lawyers.ts",
-  "firm-basic": "constants/pricing/pricing.firms.ts",
-  "firm-enterprise": "constants/pricing/pricing.firms.ts",
-  "ind-ai": "constants/pricing/pricing.individuals.ts",
-  "ind-preventive": "constants/pricing/pricing.individuals.ts",
-  "ind-litigation": "constants/pricing/pricing.individuals.ts",
-  "lib-q1": "constants/pricing/pricing.library.ts",
-  "lib-q2": "constants/pricing/pricing.library.ts",
-  "lib-annual": "constants/pricing/pricing.library.ts",
-  "consultant-independent": "constants/pricing/pricing.providers.ts",
-};
+// The /pricing cards read their prices from the price book by id; that
+// derivation is held in src/lib/pricing/cardPrice.test.ts (no card of a book
+// id carries a price string in src/constants/pricing).
 
 const NUMERIC_PLAN: Record<string, PricingPlan> = {
   ...STANDALONE_LIBRARY_PLANS,
   ...INDIVIDUALS_PYRAMID_PLANS,
   [INDEPENDENT_CONSULTANT_PLAN.id]: INDEPENDENT_CONSULTANT_PLAN,
 };
-
-test("every catalog price equals the Arabic and English display price in src/constants/pricing", () => {
-  for (const item of Object.values(PAYABLE_ITEMS)) {
-    const path = CONSTANTS_FILE[item.id];
-    assert.ok(path, `${item.id} has no constants file mapped`);
-    const entries = displayedPrices(path, item.id);
-    assert.equal(entries.length, 2, `${path}: ${item.id} should appear once in Arabic and once in English`);
-    for (const [monthlyText, yearlyText] of entries) {
-      const monthly = parseDisplayedAmount(monthlyText);
-      const yearly = parseDisplayedAmount(yearlyText);
-      assert.notEqual(monthly, null, `${path} ${item.id}: priceMonthly «${monthlyText}» is unparseable`);
-      assert.notEqual(yearly, null, `${path} ${item.id}: priceYearly «${yearlyText}» is unparseable`);
-      if (monthly === null || yearly === null) continue;
-      if (item.prices.once !== undefined) {
-        assert.equal(monthly * 100, item.prices.once, `${item.id} once vs priceMonthly «${monthlyText}»`);
-        assert.equal(yearly * 100, item.prices.once, `${item.id} once vs priceYearly «${yearlyText}»`);
-      }
-      if (item.prices.monthly !== undefined) {
-        assert.equal(monthly * 100, item.prices.monthly, `${item.id} monthly vs «${monthlyText}»`);
-      }
-      if (item.prices.yearly !== undefined) {
-        assert.equal(yearly * 100, item.prices.yearly, `${item.id} yearly vs «${yearlyText}»`);
-      }
-    }
-  }
-});
 
 test("every catalog price equals the numeric price in src/lib/pricing/plans.ts where the plan exists there", () => {
   let checked = 0;

@@ -21,6 +21,7 @@ import { LIBRARY_STAT_KEYS, LIBRARY_STAT_LABELS, formatLibraryCount } from "@/li
 import { useLibraryStats } from "@/lib/library/useLibraryStats";
 import { useLibraryFullAccess } from "@/lib/library/useLibraryFullAccess";
 import { VAT_NOTICE } from "@/lib/pricing/vatNotice";
+import { bookPriceText } from "@/lib/pricing/priceBook";
 
 // ─── Bilingual ──────────────────────────────────────────────────────────────
 
@@ -46,7 +47,7 @@ const txt = {
     exploreFree: "تصفح المجاني",
     perMonth: "/شهر",
     perYear: "/سنة",
-    // Owner ٢٤٨: the library's VAT depends on the buyer (catalog.ts, vat "buyer").
+    // Owner ٢٥٨: every price is VAT-exclusive, the library included — one sentence.
     vatNote: VAT_NOTICE.exclusive.ar,
     plans: [
       {
@@ -69,8 +70,8 @@ const txt = {
       {
         id: "lib-q1",
         name: "ربع سنوي (٣ أشهر)",
-        price: "١٬٥٠٠ ر.س / ٣ أشهر",
-        priceYearly: "١٬٥٠٠ ر.س / ٣ أشهر",
+        price: `${bookPriceText("lib-q1", "once", "ar")} ر.س / ٣ أشهر`,
+        priceYearly: `${bookPriceText("lib-q1", "once", "ar")} ر.س / ٣ أشهر`,
         desc: "وصول كامل للمكتبة والبحث بالنص الكامل",
         icon: MagnifyingGlass,
         color: "from-[#0B3D2E] to-emerald-600",
@@ -85,8 +86,8 @@ const txt = {
       {
         id: "lib-q2",
         name: "نصف سنوي (٦ أشهر)",
-        price: "٢٬٧٥٠ ر.س / ٦ أشهر",
-        priceYearly: "٢٬٧٥٠ ر.س / ٦ أشهر",
+        price: `${bookPriceText("lib-q2", "once", "ar")} ر.س / ٦ أشهر`,
+        priceYearly: `${bookPriceText("lib-q2", "once", "ar")} ر.س / ٦ أشهر`,
         desc: "يضيف السوابق والمبادئ القضائية والبحث بالمواد والبنود",
         icon: Scales,
         color: "from-[#C8A762] to-amber-600",
@@ -102,8 +103,8 @@ const txt = {
       {
         id: "lib-annual",
         name: "سنوي (١٢ شهر)",
-        price: "٥٬٠٠٠ ر.س / سنة",
-        priceYearly: "٥٬٠٠٠ ر.س / سنة",
+        price: `${bookPriceText("lib-annual", "once", "ar")} ر.س / سنة`,
+        priceYearly: `${bookPriceText("lib-annual", "once", "ar")} ر.س / سنة`,
         desc: "اشتراك لمدة ١٢ شهراً للاستخدام المستمر",
         icon: Buildings,
         color: "from-purple-700 to-purple-500",
@@ -164,8 +165,8 @@ const txt = {
       {
         id: "lib-q1",
         name: "Quarterly (3 Months)",
-        price: "SAR 1,500 / 3 Months",
-        priceYearly: "SAR 1,500 / 3 Months",
+        price: `SAR ${bookPriceText("lib-q1", "once", "en")} / 3 Months`,
+        priceYearly: `SAR ${bookPriceText("lib-q1", "once", "en")} / 3 Months`,
         desc: "Full library access with full-text search",
         icon: MagnifyingGlass,
         color: "from-[#0B3D2E] to-emerald-600",
@@ -180,8 +181,8 @@ const txt = {
       {
         id: "lib-q2",
         name: "Semi-Annual (6 Months)",
-        price: "SAR 2,750 / 6 Months",
-        priceYearly: "SAR 2,750 / 6 Months",
+        price: `SAR ${bookPriceText("lib-q2", "once", "en")} / 6 Months`,
+        priceYearly: `SAR ${bookPriceText("lib-q2", "once", "en")} / 6 Months`,
         desc: "Adds judicial precedents, principles and article-level search",
         icon: Scales,
         color: "from-[#C8A762] to-amber-600",
@@ -197,8 +198,8 @@ const txt = {
       {
         id: "lib-annual",
         name: "Annual (12 Months)",
-        price: "SAR 5,000 / Year",
-        priceYearly: "SAR 5,000 / Year",
+        price: `SAR ${bookPriceText("lib-annual", "once", "en")} / Year`,
+        priceYearly: `SAR ${bookPriceText("lib-annual", "once", "en")} / Year`,
         desc: "A 12-month subscription for ongoing use",
         icon: Buildings,
         color: "from-purple-700 to-purple-500",

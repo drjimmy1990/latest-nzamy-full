@@ -24,7 +24,7 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
   ar: [
     {
       id: "lawyer-pro", name: "المحامي المحترف", badge: null,
-      priceMonthly: "٣٩٩", priceYearly: "٣٬٩٩٠", periodMonthly: "ر.س / شهر", periodYearly: "ر.س / سنة",
+      periodMonthly: "ر.س / شهر", periodYearly: "ر.س / سنة",
       desc: "اشتراك يتضمن ١٬٥٠٠ نقطة كل شهر لأدوات الذكاء الاصطناعي", target: "محامٍ مرخّص",
       cta: "اشترك الآن", ctaHref: "/register/provider?plan=lawyer-pro", highlighted: true, color: "border-royal/20",
       features: {
@@ -39,28 +39,28 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
     },
     {
       id: "topup-100", name: "شحن ١٠٠", badge: null,
-      priceMonthly: "١٠٠", priceYearly: "١٠٠", periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
+      periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
       desc: "١٠٠ نقطة · صالحة ٣ أشهر", target: "شحن إضافي للمشترك",
       cta: "اشحن الآن", ctaHref: "/register/provider?plan=topup-100", highlighted: false, color: "border-blue-200/60 dark:border-blue-500/20",
       features: { ai: ["١٠٠ نقطة", "١ ر.س للنقطة"], platform: [], support: [] },
     },
     {
       id: "topup-250", name: "شحن ٢٥٠", badge: null,
-      priceMonthly: "٢٥٠", priceYearly: "٢٥٠", periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
+      periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
       desc: "٣٠٠ نقطة · صالحة ٣ أشهر", target: "شحن إضافي للمشترك", bonusLabel: "+٥٠ نقطة مجاناً",
       cta: "اشحن الآن", ctaHref: "/register/provider?plan=topup-250", highlighted: false, color: "border-emerald-200/60 dark:border-emerald-500/20",
       features: { ai: ["٣٠٠ نقطة", "نحو ٠٫٨٣ ر.س للنقطة"], platform: [], support: [] },
     },
     {
       id: "topup-500", name: "شحن ٥٠٠", badge: null,
-      priceMonthly: "٥٠٠", priceYearly: "٥٠٠", periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
+      periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
       desc: "٧٠٠ نقطة · صالحة ٦ أشهر", target: "شحن إضافي للمشترك", bonusLabel: "+٢٠٠ نقطة مجاناً",
       cta: "اشحن الآن", ctaHref: "/register/provider?plan=topup-500", highlighted: false, color: "border-gold/20",
       features: { ai: ["٧٠٠ نقطة", "نحو ٠٫٧١ ر.س للنقطة"], platform: [], support: [] },
     },
     {
       id: "topup-1000", name: "شحن ١٬٠٠٠", badge: null,
-      priceMonthly: "١٬٠٠٠", priceYearly: "١٬٠٠٠", periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
+      periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
       desc: "١٬٥٠٠ نقطة · صالحة ١٢ شهراً", target: "شحن إضافي للمشترك", bonusLabel: "+٥٠٠ نقطة مجاناً",
       cta: "اشحن الآن", ctaHref: "/register/provider?plan=topup-1000", highlighted: false, color: "border-[#C8A762]/25",
       features: { ai: ["١٬٥٠٠ نقطة", "نحو ٠٫٦٧ ر.س للنقطة"], platform: [], support: [] },
@@ -69,7 +69,7 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
   en: [
     {
       id: "lawyer-pro", name: "Professional Lawyer", badge: null,
-      priceMonthly: "399", priceYearly: "3,990", periodMonthly: "SAR / month", periodYearly: "SAR / year",
+      periodMonthly: "SAR / month", periodYearly: "SAR / year",
       desc: "Subscription with 1,500 AI points every month", target: "Licensed lawyer",
       cta: "Subscribe", ctaHref: "/register/provider?plan=lawyer-pro", highlighted: true, color: "border-royal/20",
       features: {
@@ -84,28 +84,28 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
     },
     {
       id: "topup-100", name: "Top-up 100", badge: null,
-      priceMonthly: "100", priceYearly: "100", periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
+      periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
       desc: "100 points · valid for 3 months", target: "Extra points for subscribers",
       cta: "Top up", ctaHref: "/register/provider?plan=topup-100", highlighted: false, color: "border-blue-200/60 dark:border-blue-500/20",
       features: { ai: ["100 points", "SAR 1 per point"], platform: [], support: [] },
     },
     {
       id: "topup-250", name: "Top-up 250", badge: null,
-      priceMonthly: "250", priceYearly: "250", periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
+      periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
       desc: "300 points · valid for 3 months", target: "Extra points for subscribers", bonusLabel: "+50 free points",
       cta: "Top up", ctaHref: "/register/provider?plan=topup-250", highlighted: false, color: "border-emerald-200/60 dark:border-emerald-500/20",
       features: { ai: ["300 points", "About SAR 0.83 per point"], platform: [], support: [] },
     },
     {
       id: "topup-500", name: "Top-up 500", badge: null,
-      priceMonthly: "500", priceYearly: "500", periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
+      periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
       desc: "700 points · valid for 6 months", target: "Extra points for subscribers", bonusLabel: "+200 free points",
       cta: "Top up", ctaHref: "/register/provider?plan=topup-500", highlighted: false, color: "border-gold/20",
       features: { ai: ["700 points", "About SAR 0.71 per point"], platform: [], support: [] },
     },
     {
       id: "topup-1000", name: "Top-up 1,000", badge: null,
-      priceMonthly: "1,000", priceYearly: "1,000", periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
+      periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
       desc: "1,500 points · valid for 12 months", target: "Extra points for subscribers", bonusLabel: "+500 free points",
       cta: "Top up", ctaHref: "/register/provider?plan=topup-1000", highlighted: false, color: "border-[#C8A762]/25",
       features: { ai: ["1,500 points", "About SAR 0.67 per point"], platform: [], support: [] },

@@ -6,9 +6,11 @@ import Link from "next/link";
 import { SectionTitle } from "./_shared";
 import { useUser, type UserTier } from "@/hooks/useUser";
 import { PricingCards } from "@/components/pricing/PricingCards";
-import { audiencesWithBillingToggle, getPlanList } from "@/constants/pricingData";
+import { getPlanList } from "@/constants/pricingData";
 import type { AudienceTab, Billing } from "@/constants/pricingData";
 import { audienceForUserType, extraPlanIdsFor, withExtraPlans } from "@/lib/pricing/audienceForUserType";
+import { displayCycle, offeredCycles } from "@/lib/pricing/cardPrice";
+import { BILLING_LABEL_AR, isCycle } from "@/lib/pricing/priceBook";
 import { currentPlanLabelAr } from "@/lib/pricing/currentPlanLabel";
 import { PointsBalanceCard } from "@/components/payments/PointsBalanceCard";
 import { useBillingData } from "@/components/payments/useBillingData";
@@ -124,16 +126,17 @@ function AccountPlans({ audience, extraPlanIds }: { audience: AudienceTab; extra
 
   const hasLibrary = audience === "lawyers" || audience === "firms";
   const libraryMode = hasLibrary && libraryModeState;
-  // Same rule as /pricing (PricingHero): annual-only families get no toggle
-  // and stay on "monthly", which is what /pricing hands their buy buttons.
-  const showBillingToggle = audiencesWithBillingToggle.includes(audience);
-  const effectiveBilling: Billing = showBillingToggle ? billing : "monthly";
   // Library mode lists the library plans only (extraPlanIdsFor's rule).
   const planList = withExtraPlans(
     getPlanList(audience, true, { libraryMode }),
     libraryMode ? [] : extraPlanIds,
     getPlanList("providers", true),
   );
+  // Same rule as /pricing: the audience's allowed cycles that a card here
+  // prices (offeredCycles); a toggle only with two or more.
+  const cycles = offeredCycles(audience, planList);
+  const showBillingToggle = cycles.length >= 2;
+  const effectiveBilling: Billing = displayCycle(cycles, billing);
 
   return (
     <div>
@@ -152,12 +155,9 @@ function AccountPlans({ audience, extraPlanIds }: { audience: AudienceTab; extra
         {showBillingToggle && (
           <PillGroup
             label="مدة الاشتراك"
-            value={billing}
-            onChange={(v) => setBilling(v === "yearly" ? "yearly" : "monthly")}
-            options={[
-              { id: "monthly", label: "شهري" },
-              { id: "yearly", label: "سنوي" },
-            ]}
+            value={effectiveBilling}
+            onChange={(v) => { if (isCycle(v)) setBilling(v); }}
+            options={cycles.map((c) => ({ id: c, label: BILLING_LABEL_AR[c] }))}
           />
         )}
       </div>

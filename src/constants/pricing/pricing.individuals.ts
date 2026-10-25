@@ -1,5 +1,9 @@
 import { Brain, Gavel, Users, UsersThree, ShieldCheck, Scales, Sparkle } from "@phosphor-icons/react";
 import { Plan, ComparisonCategory } from "./pricing.types";
+import { bookPriceText, bookSar, formatSarAmount } from "../../lib/pricing/priceBook";
+
+/** Twelve months of the monthly price: the «بدلاً من» reference beside the yearly price (yearly view only). */
+const twelveMonths = (id: string, lang: "ar" | "en") => formatSarAmount(bookSar(id, "monthly") * 12, lang);
 
 // ─── Plans: Individuals Pricing Pyramid (Owner & Council Decisions 165/168) ──
 // 1. pay-per-piece: الدفع بالعمل القانوني المقطوع (بدون اشتراك)
@@ -52,9 +56,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       name: "الباقة الذكية (AI الذاتي)",
       badge: "١٫٢٥ ر.س يومياً",
       bonusLabel: "وفر شهرين عند الدفع السنوي",
-      priceMonthly: "٣٩",
-      priceYearly: "٣٩٠",
-      priceOriginal: "٤٦٨",
+      priceOriginal: twelveMonths("ind-ai", "ar"),
       periodMonthly: "ر.س / شهر",
       periodYearly: "ر.س / سنة",
       desc: "مستشارك القانوني الذكي — إجابات نظامية وصياغة خطابات وإنذارات",
@@ -90,9 +92,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       // the card's emphasis without making one.
       badge: null,
       bonusLabel: "وفر شهرين عند الدفع السنوي",
-      priceMonthly: "١٤٩",
-      priceYearly: "١٬٤٩٠",
-      priceOriginal: "١٬٧٨٨",
+      priceOriginal: twelveMonths("ind-preventive", "ar"),
       periodMonthly: "ر.س / شهر",
       periodYearly: "ر.س / سنة",
       desc: "درعك الوقائي لحماية حقوقك وتعاملاتك اليومية — استشارات مع محامين مرخصين ومراجعة عقود",
@@ -125,9 +125,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       name: "التأمين القانوني",
       badge: "تخضع لقواعد الاكتتاب والقبول",
       bonusLabel: "تمثيل وترافع أمام المحاكم",
-      priceMonthly: "٣٩٩",
-      priceYearly: "٣٬٩٩٠",
-      priceOriginal: "٤٬٧٨٨",
+      priceOriginal: twelveMonths("ind-litigation", "ar"),
       periodMonthly: "ر.س / شهر",
       periodYearly: "ر.س / سنة",
       desc: "تمثيل قضائي وترافع معتمد أمام المحاكم، مع خيار تغطية عائلية — تخضع للتدقيق المهني المسبق وخلو النزاع من التعارض",
@@ -196,9 +194,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       name: "Smart AI Self-Service",
       badge: "Daily Peace of Mind",
       bonusLabel: "Save 2 months on annual billing",
-      priceMonthly: "39",
-      priceYearly: "390",
-      priceOriginal: "468",
+      priceOriginal: twelveMonths("ind-ai", "en"),
       periodMonthly: "SAR / month",
       periodYearly: "SAR / year",
       desc: "Your AI legal assistant — statutory answers and draft notices",
@@ -228,9 +224,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       name: "Preventive Legal Shield",
       badge: null,
       bonusLabel: "Save 2 months on annual billing",
-      priceMonthly: "149",
-      priceYearly: "1,490",
-      priceOriginal: "1,788",
+      priceOriginal: twelveMonths("ind-preventive", "en"),
       periodMonthly: "SAR / month",
       periodYearly: "SAR / year",
       desc: "Your preventive legal shield — licensed lawyer consultations and contract reviews",
@@ -261,9 +255,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       name: "Legal Insurance",
       badge: "Subject to Underwriting",
       bonusLabel: "Full Court Representation",
-      priceMonthly: "399",
-      priceYearly: "3,990",
-      priceOriginal: "4,788",
+      priceOriginal: twelveMonths("ind-litigation", "en"),
       periodMonthly: "SAR / month",
       periodYearly: "SAR / year",
       desc: "Court representation & litigation defense, with a family cover option — subject to underwriting review and conflict checks",
@@ -332,8 +324,8 @@ export const comparisonIndividuals: { ar: ComparisonCategory[]; en: ComparisonCa
       category: "التكلفة والدعم",
       icon: ShieldCheck,
       rows: [
-        { feature: "سعر الاشتراك الشهري",         "pay-per-piece": "صفر ر.س",       "ind-ai": "٣٩ ر.س",               "ind-preventive": "١٤٩ ر.س",              "ind-litigation": "٣٩٩ ر.س" },
-        { feature: "سعر الاشتراك السنوي",         "pay-per-piece": "صفر ر.س",       "ind-ai": "٣٩٠ ر.س",              "ind-preventive": "١٬٤٩٠ ر.س",            "ind-litigation": "٣٬٩٩٠ ر.س" },
+        { feature: "سعر الاشتراك الشهري",         "pay-per-piece": "صفر ر.س",       "ind-ai": `${bookPriceText("ind-ai", "monthly", "ar")} ر.س`, "ind-preventive": `${bookPriceText("ind-preventive", "monthly", "ar")} ر.س`, "ind-litigation": `${bookPriceText("ind-litigation", "monthly", "ar")} ر.س` },
+        { feature: "سعر الاشتراك السنوي",         "pay-per-piece": "صفر ر.س",       "ind-ai": `${bookPriceText("ind-ai", "yearly", "ar")} ر.س`, "ind-preventive": `${bookPriceText("ind-preventive", "yearly", "ar")} ر.س`, "ind-litigation": `${bookPriceText("ind-litigation", "yearly", "ar")} ر.س` },
         { feature: "مستوى الدعم الفني",           "pay-per-piece": "دعم للطلب",     "ind-ai": "دعم عبر المنصة",       "ind-preventive": "واتساب",        "ind-litigation": "مدير قضية مخصص" },
       ],
     },
@@ -372,8 +364,8 @@ export const comparisonIndividuals: { ar: ComparisonCategory[]; en: ComparisonCa
       category: "Pricing & Support",
       icon: ShieldCheck,
       rows: [
-        { feature: "Monthly Subscription Price",  "pay-per-piece": "0 SAR",         "ind-ai": "39 SAR",               "ind-preventive": "149 SAR",              "ind-litigation": "399 SAR" },
-        { feature: "Annual Subscription Price",   "pay-per-piece": "0 SAR",         "ind-ai": "390 SAR",              "ind-preventive": "1,490 SAR",            "ind-litigation": "3,990 SAR" },
+        { feature: "Monthly Subscription Price",  "pay-per-piece": "0 SAR",         "ind-ai": `${bookPriceText("ind-ai", "monthly", "en")} SAR`, "ind-preventive": `${bookPriceText("ind-preventive", "monthly", "en")} SAR`, "ind-litigation": `${bookPriceText("ind-litigation", "monthly", "en")} SAR` },
+        { feature: "Annual Subscription Price",   "pay-per-piece": "0 SAR",         "ind-ai": `${bookPriceText("ind-ai", "yearly", "en")} SAR`, "ind-preventive": `${bookPriceText("ind-preventive", "yearly", "en")} SAR`, "ind-litigation": `${bookPriceText("ind-litigation", "yearly", "en")} SAR` },
         { feature: "Support Level",               "pay-per-piece": "Order support", "ind-ai": "Platform support",      "ind-preventive": "WhatsApp",    "ind-litigation": "Dedicated case manager" },
       ],
     },

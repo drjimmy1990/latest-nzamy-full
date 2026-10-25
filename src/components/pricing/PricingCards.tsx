@@ -17,6 +17,7 @@ import { requestEntitlement } from "@/lib/services/entitlementService";
 import { referencePriceFor } from "@/lib/pricing/priceDisplay";
 import { planEntitlementRequest } from "@/lib/pricing/planRequest";
 import { vatNoticeFor } from "@/lib/pricing/vatNotice";
+import { cardPrice } from "@/lib/pricing/cardPrice";
 
 interface PricingCardsProps {
   planList: Plan[];
@@ -64,8 +65,11 @@ function SpotlightCard({
   }
   function onMouseLeave() { mouseX.set(0); mouseY.set(0); }
 
-  const price = billing === "monthly" ? plan.priceMonthly : plan.priceYearly;
-  const period = billing === "monthly" ? plan.periodMonthly : plan.periodYearly;
+  // A price-book card reads the book (src/lib/pricing/cardPrice.ts); other
+  // cards keep their display strings. null = not sold in this cycle.
+  const shown = cardPrice(plan, billing, isAr ? "ar" : "en");
+  const price = shown?.price ?? "";
+  const period = shown?.period ?? "";
   // Yearly view only — see referencePriceFor (src/lib/pricing/priceDisplay.ts).
   const referencePrice = referencePriceFor(plan, billing);
   const { bonusLabel } = plan;
@@ -469,8 +473,10 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
   const isLawyer         = audience === "lawyers";
   const showEnterpriseRow = audience === "companies";
   const showSMESection    = false; // Removed as there is a dedicated Micro tab now
-  // One VAT sentence per section, under its prices (owner ٢٣٩ / ٢٤٨).
+  // One VAT sentence per section, under its prices (owner ٢٥٨).
   const vatNotice = vatNoticeFor(audience, libraryMode);
+  // A card the book does not sell in this cycle is not shown (cardPrice null).
+  const shownPlans = planList.filter((plan) => cardPrice(plan, billing, isAr ? "ar" : "en") !== null);
 
   const { isLoggedIn, loading: sessionLoading } = useUser();
   const payments = usePaymentsStatus();
@@ -519,9 +525,9 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
       <div className="mx-auto max-w-[1200px] px-4">
 
         {isLawyer && !libraryMode ? (
-          <LawyerCreditsLayout planList={planList} billing={billing} isAr={isAr} onSubscribe={handleSubscribe} />
+          <LawyerCreditsLayout planList={shownPlans} billing={billing} isAr={isAr} onSubscribe={handleSubscribe} />
         ) : (
-          <DefaultLayout planList={planList} billing={billing} isAr={isAr} onSubscribe={handleSubscribe} />
+          <DefaultLayout planList={shownPlans} billing={billing} isAr={isAr} onSubscribe={handleSubscribe} />
         )}
 
         <p className="mt-6 text-center text-xs font-medium text-ink-muted dark:text-gray-400">

@@ -1,5 +1,6 @@
 import { Users, ShieldCheck } from "@phosphor-icons/react";
 import { Plan, ComparisonCategory } from "./pricing.types";
+import { bookPriceText } from "../../lib/pricing/priceBook";
 
 // ─── Law firms (owner answer ١٧٥, 2026-10-16) ─────────────────────────────────
 // Two plans replace the four yearly tiers:
@@ -18,7 +19,7 @@ export const plansFirms: { ar: Plan[]; en: Plan[] } = {
       id: "firm-basic",
       name: "مكتب المحاماة",
       badge: null,
-      priceMonthly: "٩٩٠", priceYearly: "٩٬٩٠٠", periodMonthly: "ر.س / شهر", periodYearly: "ر.س / سنة",
+      periodMonthly: "ر.س / شهر", periodYearly: "ر.س / سنة",
       desc: "مكتب محاماة يدير قضاياه وموكّليه وفريقه في مكان واحد.",
       target: "مكتب محاماة",
       cta: "ابدأ كمكتب",
@@ -39,7 +40,7 @@ export const plansFirms: { ar: Plan[]; en: Plan[] } = {
       id: "firm-enterprise",
       name: "شركة المحاماة",
       badge: null,
-      priceMonthly: "١٬٤٩٠", priceYearly: "١٤٬٩٠٠", periodMonthly: "ر.س / شهر", periodYearly: "ر.س / سنة",
+      periodMonthly: "ر.س / شهر", periodYearly: "ر.س / سنة",
       desc: "شركة محاماة بفريق أكبر تحتاج المقاعد والصلاحيات نفسها على نطاق أوسع.",
       target: "شركة محاماة",
       cta: "ابدأ كشركة",
@@ -62,7 +63,7 @@ export const plansFirms: { ar: Plan[]; en: Plan[] } = {
       id: "firm-basic",
       name: "Law Office",
       badge: null,
-      priceMonthly: "990", priceYearly: "9,900", periodMonthly: "SAR / month", periodYearly: "SAR / year",
+      periodMonthly: "SAR / month", periodYearly: "SAR / year",
       desc: "A law office running its cases, clients and team in one place.",
       target: "Law office",
       cta: "Start as an office",
@@ -83,7 +84,7 @@ export const plansFirms: { ar: Plan[]; en: Plan[] } = {
       id: "firm-enterprise",
       name: "Law Firm",
       badge: null,
-      priceMonthly: "1,490", priceYearly: "14,900", periodMonthly: "SAR / month", periodYearly: "SAR / year",
+      periodMonthly: "SAR / month", periodYearly: "SAR / year",
       desc: "A larger law firm needing the same seats and permissions at a wider scale.",
       target: "Law firm",
       cta: "Start as a firm",
@@ -109,8 +110,8 @@ export const comparisonFirms: { ar: ComparisonCategory[]; en: ComparisonCategory
       category: "الاشتراك والمقاعد",
       icon: Users,
       rows: [
-        { feature: "السعر", "firm-basic": "٩٩٠ ر.س / شهر", "firm-enterprise": "١٬٤٩٠ ر.س / شهر" },
-        { feature: "السنوي", "firm-basic": "٩٬٩٠٠ ر.س", "firm-enterprise": "١٤٬٩٠٠ ر.س" },
+        // §2 rule 1: a firm is offered quarterly / half / yearly — no monthly row.
+        { feature: "السنوي", "firm-basic": `${bookPriceText("firm-basic", "yearly", "ar")} ر.س`, "firm-enterprise": `${bookPriceText("firm-enterprise", "yearly", "ar")} ر.س` },
         { feature: "المقاعد المشمولة", "firm-basic": "٣", "firm-enterprise": "٥" },
       ],
     },
@@ -128,8 +129,7 @@ export const comparisonFirms: { ar: ComparisonCategory[]; en: ComparisonCategory
       category: "Subscription & seats",
       icon: Users,
       rows: [
-        { feature: "Price", "firm-basic": "SAR 990 / month", "firm-enterprise": "SAR 1,490 / month" },
-        { feature: "Yearly", "firm-basic": "SAR 9,900", "firm-enterprise": "SAR 14,900" },
+        { feature: "Yearly", "firm-basic": `SAR ${bookPriceText("firm-basic", "yearly", "en")}`, "firm-enterprise": `SAR ${bookPriceText("firm-enterprise", "yearly", "en")}` },
         { feature: "Seats included", "firm-basic": "3", "firm-enterprise": "5" },
       ],
     },

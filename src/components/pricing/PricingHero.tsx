@@ -3,12 +3,19 @@
 import { motion } from "framer-motion";
 import { Crown, Buildings, Briefcase, ShieldCheck, BookOpen } from "@phosphor-icons/react";
 import type { AudienceTab, Billing, CompanySize } from "@/constants/pricingData";
-import { audienceTabs as audienceTabsList, audiencesWithBillingToggle, billingNotes } from "@/constants/pricingData";
+import { audienceTabs as audienceTabsList, billingNotes } from "@/constants/pricingData";
+import { BILLING_LABEL_AR, BILLING_LABEL_EN } from "@/lib/pricing/priceBook";
 
 interface PricingHeroProps {
   isAr: boolean;
   billing: Billing;
   setBilling: (b: Billing) => void;
+  /**
+   * The cycles the toggle offers (offeredCycles, src/lib/pricing/cardPrice.ts):
+   * the audience's allowed cycles that a card on screen prices. The toggle
+   * shows only when there are two or more.
+   */
+  cycles: readonly Billing[];
   audience: AudienceTab;
   setAudience: (a: AudienceTab) => void;
   companySize: CompanySize;
@@ -37,12 +44,12 @@ function findAudienceTab(audience: AudienceTab) {
 }
 
 export function PricingHero({
-  isAr, billing, setBilling, audience, setAudience,
+  isAr, billing, setBilling, cycles, audience, setAudience,
   companySize, setCompanySize, hasLegalDept, setHasLegalDept,
   libraryMode, setLibraryMode, audienceTabs = "all",
 }: PricingHeroProps) {
   const note = billingNotes[audience];
-  const showBillingToggle = audiencesWithBillingToggle.includes(audience);
+  const showBillingToggle = cycles.length >= 2;
   const ownTab = audienceTabs === "own" ? findAudienceTab(audience) : null;
 
   return (
@@ -114,18 +121,18 @@ export function PricingHero({
           </motion.div>
         )}
 
-        {/* Billing toggle — only for audiences that support monthly/yearly */}
+        {/* Cycle toggle — only when the cards on screen are priced in two or more cycles */}
         {showBillingToggle && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
             className="mt-3 inline-flex items-center gap-1 rounded-2xl border border-slate-200/50 bg-white p-1.5 dark:border-white/10 dark:bg-dark-card"
           >
-            {(["monthly", "yearly"] as const).map(b => (
+            {cycles.map(b => (
               <button key={b} onClick={() => setBilling(b)}
                 className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-medium transition-all ${
                   billing === b ? "bg-royal text-white shadow-sm" : "text-ink-muted hover:text-ink dark:text-gray-400 dark:hover:text-white"
                 }`}
               >
-                {b === "monthly" ? (isAr ? "شهري" : "Monthly") : (isAr ? "سنوي" : "Yearly")}
+                {isAr ? BILLING_LABEL_AR[b] : BILLING_LABEL_EN[b]}
                 {/* No «-15%» pill: annual is 10× monthly on every plan behind
                     this toggle, so the saving is two months (≈17%), not 15%.
                     Each card's own bonusLabel already states it. */}

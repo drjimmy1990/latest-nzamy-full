@@ -1,15 +1,26 @@
 import React from "react";
+import type { Cycle } from "../../lib/pricing/priceBook";
 
 export type AudienceTab = "individuals" | "companies" | "lawyers" | "firms" | "micro" | "ngo" | "government" | "providers";
-export type Billing     = "monthly" | "yearly";
+/** The /pricing cycle toggle: monthly / quarterly / semiannual / yearly (src/lib/pricing/priceBook.ts). */
+export type Billing     = Cycle;
 export type CompanySize = "small" | "medium" | "large";
 
 export interface PlanFeatures { ai: (string | null)[]; platform: (string | null)[]; support: (string | null)[]; }
 
 export interface Plan {
   id: string; name: string; badge: string | null;
-  priceMonthly: string; priceYearly: string;
+  /**
+   * Display prices of a card the price book does NOT sell online (biz-*,
+   * providers, the firm library…). A card whose id is a price-book entry
+   * carries no price here: the card reads it from the book by id and cycle
+   * (src/lib/pricing/cardPrice.ts), so a page can never show a price
+   * checkout does not charge.
+   */
+  priceMonthly?: string; priceYearly?: string;
   periodMonthly: string; periodYearly: string;
+  /** Period text for the quarterly / half-yearly cycles; «ر.س / ٣ أشهر» / «ر.س / ٦ أشهر» when unset. */
+  periodQuarterly?: string; periodSemiannual?: string;
   desc: string; target: string; cta: string; ctaHref: string;
   bonusLabel?: string; // e.g. "+١٠٠٪ نقاط مجانية" — shown as prominent pill
   priceOriginal?: string;
@@ -41,15 +52,6 @@ export interface ComparisonRow { feature: string; [planId: string]: boolean | st
 export interface ComparisonCategory { category: string; icon: React.ElementType; rows: ComparisonRow[]; }
 
 export interface FaqItem { q: string; a: string; }
-
-export interface PayPerUseItem {
-  id: string;
-  labelAr: string; labelEn: string;
-  priceAr: string; priceEn: string;
-  noteAr: string; noteEn: string;
-  icon: React.ElementType;
-  free?: boolean;
-}
 
 /** Billing info callout shown per audience tab */
 export interface BillingNote {

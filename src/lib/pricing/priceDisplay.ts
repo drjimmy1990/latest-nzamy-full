@@ -6,7 +6,9 @@
  * directly (priceDisplay.test.ts).
  */
 
-export type BillingCycle = "monthly" | "yearly";
+import type { Cycle } from "./priceBook.ts";
+
+export type BillingCycle = Cycle;
 
 /**
  * The struck-through «بدلاً من …» reference price for a card, or null.

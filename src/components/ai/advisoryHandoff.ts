@@ -1,4 +1,5 @@
 import { getClientServiceById, formatClientServicePrice } from "../../lib/pricingRepository.ts";
+import type { ClientServiceCatalogItem } from "../../constants/clientServiceCatalog.ts";
 
 /**
  * Owner item ١٨ / س٣ — «توصيفها كقوالب استرشادية + زر مراجعة واعتماد المحامي».
@@ -9,11 +10,13 @@ import { getClientServiceById, formatClientServicePrice } from "../../lib/pricin
  * product is the fabrication this whole pass exists to remove; his ruling is
  * to relabel it as a guidance template and put the human path one click away.
  *
- * The destination is resolved from CLIENT_SERVICE_CATALOG rather than
- * hardcoded here. That catalog already owns the route, the Arabic label and
- * the price of every human service, and the admin pricing screen can change
- * them — a second copy of «٢٥٠ ر.س» in a component would go stale the first
- * time it did.
+ * The destination is resolved from the per-service catalogue rather than
+ * hardcoded here. That catalogue owns the route, the Arabic label and the
+ * price of every human service. Its truth is the admin_pricing_catalog table
+ * (merged over CLIENT_SERVICE_CATALOG by /api/client-pricing — P1 design
+ * note §1), so the caller passes the fetched catalogue
+ * (useClientPricingCatalog): resolving from the code constant alone would make
+ * an admin edit of the table silently do nothing here.
  */
 export interface AdvisoryHandoff {
   /** Where «طلب التدقيق والاعتماد من محامي المكتب» goes. */
@@ -24,8 +27,8 @@ export interface AdvisoryHandoff {
   priceLabel: string;
 }
 
-export function resolveAdvisoryHandoff(serviceId: string): AdvisoryHandoff {
-  const service = getClientServiceById(serviceId);
+export function resolveAdvisoryHandoff(serviceId: string, catalog?: ClientServiceCatalogItem[]): AdvisoryHandoff {
+  const service = getClientServiceById(serviceId, catalog);
   return {
     // Every human service in the catalog carries a route; `general` (the
     // catalog's own fallback, returned when the id is unknown) does too, so

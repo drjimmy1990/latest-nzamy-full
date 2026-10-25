@@ -18,6 +18,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import { LAWYER_AI_TOOLS } from "@/constants/lawyerAiCatalog";
 import { plansLawyers } from "@/constants/pricing/pricing.lawyers";
 import { plansFirms } from "@/constants/pricing/pricing.firms";
+import { bookSar, PRICE_BOOK } from "@/lib/pricing/priceBook";
 import type { AdminPricingItem, AdminPricingScope, AdminPricingStatus } from "@/types/adminBackendReady";
 
 const SCOPE_LABEL: Record<AdminPricingScope, string> = {
@@ -39,14 +40,17 @@ const STATUS_LABEL: Record<AdminPricingStatus, string> = {
   disabled: "معطل",
 };
 
-// Owner answers ١٧٤ / ١٧٨ (2026-10-16): the subscription (monthly / yearly) and
-// the four top-ups (one price, points with the bonus).
+// Every price on this screen is READ from the price book
+// (src/lib/pricing/priceBook.ts) — the source checkout charges from — never a
+// second copy: the subscription (monthly / yearly) and the four top-ups (one
+// price, points with the bonus).
+const topupNumbers = (id: string) => ({ price: bookSar(id, "once"), credits: PRICE_BOOK[id].points ?? 0 });
 const LAWYER_PLAN_NUMBERS: Record<string, { price: number; yearly?: number; credits: number }> = {
-  "lawyer-pro": { price: 399, yearly: 3990, credits: 1500 },
-  "topup-100": { price: 100, credits: 100 },
-  "topup-250": { price: 250, credits: 300 },
-  "topup-500": { price: 500, credits: 700 },
-  "topup-1000": { price: 1000, credits: 1500 },
+  "lawyer-pro": { price: bookSar("lawyer-pro", "monthly"), yearly: bookSar("lawyer-pro", "yearly"), credits: 1500 },
+  "topup-100": topupNumbers("topup-100"),
+  "topup-250": topupNumbers("topup-250"),
+  "topup-500": topupNumbers("topup-500"),
+  "topup-1000": topupNumbers("topup-1000"),
 };
 
 const FIRM_PLAN_NUMBERS: Record<string, { monthly: number; yearly: number; credits: number; baseSeats: number; extraSeatYearly: number | null; maxSeats: number | null }> = {
@@ -54,8 +58,8 @@ const FIRM_PLAN_NUMBERS: Record<string, { monthly: number; yearly: number; credi
   // 5 seats; no firm points. Extra seats go through sales (owner answer ٢١٧,
   // 2026-10-18), so no seat price is set here. The two plans /pricing sells
   // are the only rows: the retired middle tiers had no plan to look up.
-  "firm-basic": { monthly: 990, yearly: 9900, credits: 0, baseSeats: 3, extraSeatYearly: null, maxSeats: null },
-  "firm-enterprise": { monthly: 1490, yearly: 14900, credits: 0, baseSeats: 5, extraSeatYearly: null, maxSeats: null },
+  "firm-basic": { monthly: bookSar("firm-basic", "monthly"), yearly: bookSar("firm-basic", "yearly"), credits: 0, baseSeats: 3, extraSeatYearly: null, maxSeats: null },
+  "firm-enterprise": { monthly: bookSar("firm-enterprise", "monthly"), yearly: bookSar("firm-enterprise", "yearly"), credits: 0, baseSeats: 5, extraSeatYearly: null, maxSeats: null },
 };
 
 const INITIAL_PRICING: AdminPricingItem[] = [

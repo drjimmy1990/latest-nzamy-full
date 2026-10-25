@@ -3,6 +3,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 // A namespace import, so a missing export fails its own test, not the file.
 import * as catalog from "../../constants/lawyerAiCatalog.ts";
+import { bookSar } from "../pricing/priceBook.ts";
 
 const lawyers = readFileSync(new URL("../../constants/pricing/pricing.lawyers.ts", import.meta.url), "utf8");
 const pricingCards = readFileSync(new URL("../../components/pricing/PricingCards.tsx", import.meta.url), "utf8");
@@ -17,16 +18,20 @@ const providerRegistration = readFileSync(
 // The library is no longer bundled into the packs (whether lawyers get it is
 // owner question ٢٠٨), and the free-memo offers are gone.
 test("the lawyer tab is the 399 subscription with 1,500 points plus four top-ups", () => {
-  assert.match(lawyers, /id: "lawyer-pro"[\s\S]*?priceMonthly: "٣٩٩", priceYearly: "٣٬٩٩٠"/);
+  // The prices are the price book's (P1: the card reads them by id).
+  assert.equal(bookSar("lawyer-pro", "monthly"), 399);
+  assert.equal(bookSar("lawyer-pro", "yearly"), 3990);
+  assert.match(lawyers, /id: "lawyer-pro"/);
   assert.match(lawyers, /LAWYER_PRO_MONTHLY_POINTS = 1500/);
-  const topups: Array<[string, string, string]> = [
-    ["topup-100", "١٠٠", "١٠٠ نقطة"],
-    ["topup-250", "٢٥٠", "٣٠٠ نقطة"],
-    ["topup-500", "٥٠٠", "٧٠٠ نقطة"],
-    ["topup-1000", "١٬٠٠٠", "١٬٥٠٠ نقطة"],
+  const topups: Array<[string, number, string]> = [
+    ["topup-100", 100, "١٠٠ نقطة"],
+    ["topup-250", 250, "٣٠٠ نقطة"],
+    ["topup-500", 500, "٧٠٠ نقطة"],
+    ["topup-1000", 1000, "١٬٥٠٠ نقطة"],
   ];
   for (const [id, price, points] of topups) {
-    assert.match(lawyers, new RegExp(`id: "${id}"[\\s\\S]*?priceMonthly: "${price}"[\\s\\S]*?desc: "${points}( · [^"]*)?"`), id);
+    assert.equal(bookSar(id, "once"), price, id);
+    assert.match(lawyers, new RegExp(`id: "${id}"[\\s\\S]*?desc: "${points}( · [^"]*)?"`), id);
   }
   assert.doesNotMatch(lawyers, /lawyer-(basic|advanced|elite|royal)|مشمولة مجاناً|مذكرة مجانية|مذكرة ثانية|أول ٥٠٠/);
   assert.doesNotMatch(lawyers, /محفظة|رصيد نقدي/);
@@ -186,7 +191,10 @@ test("٢١٣/١٧٦: ind-litigation is «التأمين القانوني» at 39
   const ar = planBlock(individuals, 0, "ind-litigation");
   const en = planBlock(individuals, enAt, "ind-litigation");
   assert.match(ar, /name: "التأمين القانوني"/);
-  assert.match(ar, /priceMonthly: "٣٩٩",\s*priceYearly: "٣٬٩٩٠"/);
+  // 399 / 3,990 are the price book's (the card reads them by id).
+  assert.equal(bookSar("ind-litigation", "monthly"), 399);
+  assert.equal(bookSar("ind-litigation", "yearly"), 3990);
+  assert.doesNotMatch(ar, /price(Monthly|Yearly):/);
   // Dependants at 20 / 30 / 40% off: ٣١٩, ٢٧٩, then ٢٣٩ from the third on.
   assert.match(ar, /٣١٩ ر\.س[^"]*٢٧٩ ر\.س[^"]*٢٣٩ ر\.س/);
   for (const line of ["٣٥٬٠٠٠–٥٠٬٠٠٠ ر.س سنوياً", "٣٬٠٠٠–٥٬٠٠٠ نقطة شهرياً", "تُضاف التغطية العائلية بطلب يراجعه الفريق"]) {
@@ -195,13 +203,13 @@ test("٢١٣/١٧٦: ind-litigation is «التأمين القانوني» at 39
   assert.match(ar, /footnote: "\* تطبق الشروط والأحكام"/);
 
   assert.match(en, /name: "Legal Insurance"/);
-  assert.match(en, /priceMonthly: "399",\s*priceYearly: "3,990"/);
+  assert.doesNotMatch(en, /price(Monthly|Yearly):/);
   assert.match(en, /SAR 319[^"]*SAR 279[^"]*SAR 239/);
   assert.match(en, /footnote: "\* Terms and conditions apply"/);
 
   const canonical = planBlock(plansTs, 0, "ind-litigation");
   assert.match(canonical, /nameAr: "التأمين القانوني"/);
-  assert.match(canonical, /priceMonthly: 399,\s*priceYearly: 3990/);
+  assert.match(canonical, /priceMonthly: bookSar\("ind-litigation", "monthly"\),\s*priceYearly: bookSar\("ind-litigation", "yearly"\)/);
   assert.match(canonical, /٣١٩ ر\.س[^"]*٢٧٩ ر\.س[^"]*٢٣٩ ر\.س/);
   assert.ok(canonical.includes("تُضاف التغطية العائلية بطلب يراجعه الفريق"));
   assert.match(canonical, /footnoteAr: "\* تطبق الشروط والأحكام"/);
@@ -226,9 +234,12 @@ test("retired shield and group plans are removed", () => {
 test("provider registration no longer sells the retired monthly AI plans", () => {
   assert.doesNotMatch(providerRegistration, /AI قانوني غير محدود|Unlimited legal AI/);
   assert.doesNotMatch(providerRegistration, /price: "١٩٩"|price: "٤٩٩"|price: "199"|price: "499"/);
-  // Owner answer ١٧٥: the firm ERP is 990/month for 3 seats, not 17,988/year.
+  // Owner answer ١٧٥: the firm ERP is 990/month for 3 seats, not 17,988/year;
+  // since the 25-Oct rule 1 professionals see the yearly price, read from the book.
   assert.doesNotMatch(providerRegistration, /١٧٬٩٨٨|17,988/);
-  assert.match(providerRegistration, /price: "٩٩٠"/);
+  assert.match(providerRegistration, /price: bookPriceText\("firm-basic", "yearly", "ar"\)/);
+  assert.match(providerRegistration, /price: bookPriceText\("lawyer-pro", "yearly", "ar"\)/);
+  assert.doesNotMatch(providerRegistration, /price: "[٠-٩0-9]/, "no literal price on a plan the book sells");
   assert.match(providerRegistration, /ERP مجاني للمحامي الفرد/);
   assert.doesNotMatch(providerRegistration, /محفظة/);
 });
@@ -285,7 +296,7 @@ test("٢١٧: no stale firm price or seat price is left on the firm surfaces", (
   assert.doesNotMatch(admin, /"firm-growth"|"firm-scale"/, "admin pricing: plans that no longer exist");
   const readiness = readFileSync(new URL("../../constants/firmProfileReadiness.ts", import.meta.url), "utf8");
   const contracts = readiness.slice(readiness.indexOf("export const FIRM_PLAN_CONTRACTS"), readiness.indexOf("export const FIRM_ROLE_CONTRACTS"));
-  assert.match(contracts, /plan: "firm-basic",\s*annualPrice: 9900,\s*includedSeats: 3,\s*extraSeatAnnualPrice: null,\s*includedAnnualPoints: 0,/);
-  assert.match(contracts, /plan: "firm-enterprise",\s*annualPrice: 14900,\s*includedSeats: 5,\s*extraSeatAnnualPrice: null,\s*includedAnnualPoints: 0,/);
+  assert.match(contracts, /plan: "firm-basic",\s*annualPrice: bookSar\("firm-basic", "yearly"\),\s*includedSeats: 3,\s*extraSeatAnnualPrice: null,\s*includedAnnualPoints: 0,/);
+  assert.match(contracts, /plan: "firm-enterprise",\s*annualPrice: bookSar\("firm-enterprise", "yearly"\),\s*includedSeats: 5,\s*extraSeatAnnualPrice: null,\s*includedAnnualPoints: 0,/);
   assert.doesNotMatch(contracts, /firm-growth|firm-scale/);
 });

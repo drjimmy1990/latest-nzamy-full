@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { parseDisplayedAmount, referencePriceFor } from "./priceDisplay.ts";
+import { bookSar } from "./priceBook.ts";
 
 test("referencePriceFor: never on the monthly view", () => {
   assert.equal(referencePriceFor({ priceOriginal: "٤٦٨" }, "monthly"), null);
@@ -33,42 +34,27 @@ test("parseDisplayedAmount refuses text, open-ended and mixed-digit amounts", ()
   assert.equal(parseDisplayedAmount(""), null);
 });
 
-// ── The catalogue invariant the yearly «بدلاً من» line relies on ───────────
+// ── The invariant the yearly «بدلاً من» line relies on ───────────────────────
 //
-// pricing.individuals.ts imports phosphor icons at runtime, so it is read as
-// text: each plan object is cut at `id: "…"` and its three price fields read.
+// The individuals' reference price is derived from the price book —
+// pricing.individuals.ts writes `priceOriginal: twelveMonths("<id>", lang)` —
+// so it is always exactly 12 × the monthly price; the book must keep the
+// yearly price below it for the struck-through line to be true.
 
 const individuals = readFileSync(
   new URL("../../constants/pricing/pricing.individuals.ts", import.meta.url),
   "utf8",
 );
 
-function planBlocks(source: string): string[] {
-  const plansPart = source.split("export const comparisonIndividuals")[0];
-  return plansPart.split(/\n\s*\{\s*\r?\n\s*id: "/).slice(1);
-}
-
-function field(block: string, name: string): string | null {
-  const m = block.match(new RegExp(`\\b${name}: "([^"]*)"`));
-  return m ? m[1] : null;
-}
-
-test("every individuals reference price is exactly 12 × the monthly price, above the annual one", () => {
-  const blocks = planBlocks(individuals);
-  // Four plans × two languages since the 699 family plan merged into «التأمين القانوني» (owner ٢١٣/١٧٦).
-  assert.ok(blocks.length >= 8, `expected the ar + en plan lists, found ${blocks.length} plans`);
-  let checked = 0;
-  for (const block of blocks) {
-    const original = field(block, "priceOriginal");
-    if (original === null) continue;
-    const id = block.slice(0, block.indexOf('"'));
-    const monthly = parseDisplayedAmount(field(block, "priceMonthly") ?? "");
-    const yearly = parseDisplayedAmount(field(block, "priceYearly") ?? "");
-    const reference = parseDisplayedAmount(original);
-    assert.ok(monthly && yearly && reference, `${id}: unreadable price fields`);
-    assert.equal(reference, monthly! * 12, `${id}: «بدلاً من ${original}» is not 12 × the monthly price`);
-    assert.ok(yearly! < reference!, `${id}: the annual price is not below the reference price`);
-    checked++;
+test("every individuals reference price is 12 × the book's monthly price, above the book's yearly one", () => {
+  const ids = ["ind-ai", "ind-preventive", "ind-litigation"];
+  for (const id of ids) {
+    for (const lang of ["ar", "en"]) {
+      assert.ok(individuals.includes(`priceOriginal: twelveMonths("${id}", "${lang}")`), `${id} ${lang}: the reference is derived from the book`);
+    }
+    assert.ok(bookSar(id, "yearly") < bookSar(id, "monthly") * 12, `${id}: the yearly price is not below 12 × monthly`);
   }
-  assert.equal(checked, 6, "three paid plans × two languages carry a reference price");
+  assert.match(individuals, /const twelveMonths = \(id: string, lang: "ar" \| "en"\) => formatSarAmount\(bookSar\(id, "monthly"\) \* 12, lang\);/);
+  assert.equal((individuals.match(/priceOriginal:/g) ?? []).length, 6, "three paid plans × two languages carry a reference price");
+  assert.doesNotMatch(individuals, /priceOriginal: "/, "no literal reference price");
 });

@@ -23,6 +23,13 @@
  * ─────────────────────────────────────────────────────────────
  */
 
+import { bookSar, formatSarAmount } from "./priceBook.ts";
+
+/**
+ * The numeric prices below are READ from the price book (src/lib/pricing/
+ * priceBook.ts); none is written here. For a one-payment library pass both
+ * fields carry the one price.
+ */
 export interface PricingPlan {
   id: string;
   nameAr: string;
@@ -57,8 +64,8 @@ export const STANDALONE_LIBRARY_PLANS: Record<string, PricingPlan> = {
     id: "lib-q1",
     nameAr: "المكتبة القانونية — ربع سنوي",
     nameEn: "Legal Library — Quarterly",
-    priceMonthly: 1500,
-    priceYearly: 1500,
+    priceMonthly: bookSar("lib-q1", "once"),
+    priceYearly: bookSar("lib-q1", "once"),
     periodMonthlyAr: "ر.س / ٣ أشهر",
     periodYearlyAr: "ر.س / ٣ أشهر",
     periodMonthlyEn: "SAR / 3 months",
@@ -88,8 +95,8 @@ export const STANDALONE_LIBRARY_PLANS: Record<string, PricingPlan> = {
     id: "lib-q2",
     nameAr: "المكتبة القانونية — نصف سنوي",
     nameEn: "Legal Library — Half-year",
-    priceMonthly: 2750,
-    priceYearly: 2750,
+    priceMonthly: bookSar("lib-q2", "once"),
+    priceYearly: bookSar("lib-q2", "once"),
     periodMonthlyAr: "ر.س / ٦ أشهر",
     periodYearlyAr: "ر.س / ٦ أشهر",
     periodMonthlyEn: "SAR / 6 months",
@@ -117,8 +124,8 @@ export const STANDALONE_LIBRARY_PLANS: Record<string, PricingPlan> = {
     id: "lib-annual",
     nameAr: "المكتبة القانونية — سنوي",
     nameEn: "Legal Library — Annual",
-    priceMonthly: 5000,
-    priceYearly: 5000,
+    priceMonthly: bookSar("lib-annual", "once"),
+    priceYearly: bookSar("lib-annual", "once"),
     periodMonthlyAr: "ر.س / سنة",
     periodYearlyAr: "ر.س / سنة",
     periodMonthlyEn: "SAR / year",
@@ -128,8 +135,8 @@ export const STANDALONE_LIBRARY_PLANS: Record<string, PricingPlan> = {
     // went with it. `highlighted` keeps the emphasis.
     badgeAr: null,
     badgeEn: null,
-    descAr: "الاشتراك السنوي المعتمد للمحترفين والمكاتب — ٥٬٠٠٠ ر.س/سنة مع كامل التحديثات وتصدير النصوص",
-    descEn: "Canonical annual subscription for professionals & firms — 5,000 SAR/year with all updates & exports",
+    descAr: `الاشتراك السنوي المعتمد للمحترفين والمكاتب — ${formatSarAmount(bookSar("lib-annual", "once"), "ar")} ر.س/سنة مع كامل التحديثات وتصدير النصوص`,
+    descEn: `Canonical annual subscription for professionals & firms — ${formatSarAmount(bookSar("lib-annual", "once"), "en")} SAR/year with all updates & exports`,
     featuresAr: [
       "وصول كامل وغير محدود للأنظمة واللوائح والمبادئ القضائية",
       "محرك البحث القانوني المتقدم مع تصدير بصيغة PDF",
@@ -158,8 +165,8 @@ export const INDIVIDUALS_PYRAMID_PLANS: Record<string, PricingPlan> = {
     id: "ind-ai",
     nameAr: "الباقة الذكية (AI الذاتي)",
     nameEn: "AI Self-Service Plan",
-    priceMonthly: 39,
-    priceYearly: 390,
+    priceMonthly: bookSar("ind-ai", "monthly"),
+    priceYearly: bookSar("ind-ai", "yearly"),
     periodMonthlyAr: "ر.س / شهر",
     periodYearlyAr: "ر.س / سنة (شهرين مجاناً)",
     periodMonthlyEn: "SAR / month",
@@ -192,8 +199,8 @@ export const INDIVIDUALS_PYRAMID_PLANS: Record<string, PricingPlan> = {
     id: "ind-preventive",
     nameAr: "الباقة الوقائية (الاستشارات والعقود)",
     nameEn: "Preventive Legal Plan",
-    priceMonthly: 149,
-    priceYearly: 1490,
+    priceMonthly: bookSar("ind-preventive", "monthly"),
+    priceYearly: bookSar("ind-preventive", "yearly"),
     periodMonthlyAr: "ر.س / شهر",
     periodYearlyAr: "ر.س / سنة (شهرين مجاناً)",
     periodMonthlyEn: "SAR / month",
@@ -227,8 +234,8 @@ export const INDIVIDUALS_PYRAMID_PLANS: Record<string, PricingPlan> = {
     id: "ind-litigation",
     nameAr: "التأمين القانوني",
     nameEn: "Legal Insurance",
-    priceMonthly: 399,
-    priceYearly: 3990,
+    priceMonthly: bookSar("ind-litigation", "monthly"),
+    priceYearly: bookSar("ind-litigation", "yearly"),
     periodMonthlyAr: "ر.س / شهر",
     periodYearlyAr: "ر.س / سنة (شهرين مجاناً)",
     periodMonthlyEn: "SAR / month",
@@ -278,8 +285,8 @@ export const INDEPENDENT_CONSULTANT_PLAN: PricingPlan = {
   id: "consultant-independent",
   nameAr: "المستشار القانوني المستقل",
   nameEn: "Independent Legal Consultant",
-  priceMonthly: 399,
-  priceYearly: 3990,
+  priceMonthly: bookSar("consultant-independent", "monthly"),
+  priceYearly: bookSar("consultant-independent", "yearly"),
   periodMonthlyAr: "ر.س / شهر",
   periodYearlyAr: "ر.س / سنة",
   periodMonthlyEn: "SAR / month",
