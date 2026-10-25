@@ -21,8 +21,12 @@ import { isPathInOwnerFolder } from "@/lib/storagePathOwnership";
  * to recover the passcode later: the panel that calls this must show it
  * once and say so.
  *
- * Any signed-in account may share a document it can read — this is not
- * role-gated beyond "authenticated" (assertRole() with no allow-list).
+ * Any signed-in account may share a document it OWNS (it uploaded it) —
+ * not role-gated beyond "authenticated" (assertRole() with no allow-list).
+ * A document it can only read (the other side's file on a shared case) is
+ * not shareable: the link would hand that file to anyone holding it. The
+ * database holds the same rule for raw PostgREST writes
+ * (20261026_66_document_shares_path_ownership.sql).
  */
 export async function POST(request: NextRequest) {
   try {
@@ -109,6 +113,13 @@ export async function POST(request: NextRequest) {
       console.error(`[share POST] storage_path outside the owner's folder: attachment=${attachment.id}`);
       return NextResponse.json({ error: "المستند غير موجود" }, { status: 404 });
     }
+    // Only the uploader shares his document — the rule 20261026_66 enforces
+    // in the database (the insert would answer 42501). Both callers (the
+    // lawyer documents page, the contracts review hook) share the user's own
+    // files; the same "not found" a hidden row gets.
+    if (attachment.owner_user_id !== user.id) {
+      return NextResponse.json({ error: "المستند غير موجود" }, { status: 404 });
+    }
 
     const token = generateShareToken();
     const passcode = withPasscode ? generatePasscode() : null;
@@ -116,10 +127,10 @@ export async function POST(request: NextRequest) {
     const passcodeHash = passcode ? sha256Hex(passcode) : null;
     const expiresAt = new Date(Date.now() + expiresInHours * 60 * 60 * 1000).toISOString();
 
-    // The RLS-scoped client, on purpose: document_shares_owner_write
-    // (20260706_content_and_ops.sql) already grants INSERT with
-    // owner_id = auth.uid(), so that policy is the authority for who may
-    // create a share row — a service-role insert would just bypass it for
+    // The RLS-scoped client, on purpose: "document_shares insert own share of
+    // own file" (20261026_66; document_shares_owner_write before it) grants
+    // INSERT with owner_id = auth.uid() on the caller's own live document,
+    // so that policy is the authority for who may create a share row — a service-role insert would just bypass it for
     // no reason. `token`/`passcode` are omitted, so the row gets NULL in
     // both (20260909 migration dropped the NOT NULL on `token`).
     const { data: created, error: insertError } = await supabase

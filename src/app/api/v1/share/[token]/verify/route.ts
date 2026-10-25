@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { createServiceClient } from "@/lib/supabase/server";
 import { sha256Hex } from "@/lib/services/shareSecrets";
+import { isShareServable } from "@/lib/storagePathOwnership";
+import { isValidAttachmentId } from "../../../documents/_shared";
 
 /**
  * POST /api/v1/share/[token]/verify — owner item 174. Looked up by
@@ -16,9 +18,17 @@ import { sha256Hex } from "@/lib/services/shareSecrets";
  * that URL directly rather than being handed a document_id to fetch itself,
  * since an anonymous share-link visitor has no RLS session to fetch with.
  *
+ * The share is signed only while it points at a LIVE document of its own
+ * owner: an attachments row whose id is document_id, whose storage_path is
+ * document_path, uploaded by the share's owner into his own folder, not in
+ * the bin (isShareServable). Before 20261026_66 a session could insert a
+ * share with any document_path through raw PostgREST, and this route signed
+ * it with the service role; 66 stops new rows, this check stops old ones —
+ * and a share of a document deleted or binned since stops opening.
+ *
  * Responses:
  *   404 { error } — no share row for this token, or its document was never
- *        attached to a storage object
+ *        attached to a storage object, or is no longer servable (see below)
  *   410 { error } — link has expired
  *   401 { error } — passcode mismatch
  *   500 { error } — the storage sign step itself failed
@@ -48,7 +58,7 @@ export async function POST(
     const supabase = await createServiceClient();
     const { data: share, error } = await supabase
       .from("document_shares")
-      .select("document_path, title, passcode_hash, expires_at")
+      .select("owner_id, document_id, document_path, title, passcode_hash, expires_at")
       .eq("token_hash", sha256Hex(token))
       .maybeSingle();
 
@@ -89,6 +99,28 @@ export async function POST(
 
     const documentPath = share.document_path as string | null;
     if (!documentPath) {
+      return NextResponse.json({ error: "لا يوجد مستند مرتبط بهذا الرابط" }, { status: 404 });
+    }
+
+    // After the passcode check, so a stranger without it learns nothing about
+    // the document. attachments.id is a bigserial: a non-numeric document_id
+    // is no document at all (and would only make PostgREST error).
+    const documentId = typeof share.document_id === "string" ? share.document_id : "";
+    if (!isValidAttachmentId(documentId)) {
+      console.error("[share verify POST] share has no valid document_id — not served");
+      return NextResponse.json({ error: "لا يوجد مستند مرتبط بهذا الرابط" }, { status: 404 });
+    }
+    const { data: attachment, error: attachmentError } = await supabase
+      .from("attachments")
+      .select("id, owner_user_id, storage_path, deleted_at")
+      .eq("id", documentId)
+      .maybeSingle();
+    if (attachmentError) {
+      console.error("[share verify POST] attachments lookup failed:", attachmentError.message, attachmentError.code);
+      return NextResponse.json({ error: "تعذر فتح المستند" }, { status: 500 });
+    }
+    if (!isShareServable(share, attachment)) {
+      console.error(`[share verify POST] share not served — its document is gone, binned, not the owner's, or outside his folder: document=${documentId}`);
       return NextResponse.json({ error: "لا يوجد مستند مرتبط بهذا الرابط" }, { status: 404 });
     }
 

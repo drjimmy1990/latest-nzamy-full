@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isPathInOwnerFolder } from "./storagePathOwnership.ts";
+import { isOwnLicencePath, isPathInOwnerFolder, isShareServable } from "./storagePathOwnership.ts";
 
 const U = "c0000000-0000-0000-0000-00000000000c";
 const V = "70000000-0000-0000-0000-00000000007a";
@@ -31,4 +31,38 @@ test("isPathInOwnerFolder: a missing owner or path is refused", () => {
   assert.equal(isPathInOwnerFolder(null, U), false);
   assert.equal(isPathInOwnerFolder("", U), false);
   assert.equal(isPathInOwnerFolder(42, U), false);
+});
+
+const LIVE = { id: 900, owner_user_id: U, storage_path: `${U}/1-own.pdf`, deleted_at: null };
+const SHARE = { owner_id: U, document_id: "900", document_path: `${U}/1-own.pdf` };
+
+test("isShareServable: the route's own share of the owner's live document", () => {
+  assert.equal(isShareServable(SHARE, LIVE), true);
+  assert.equal(isShareServable(SHARE, { ...LIVE, deleted_at: undefined }), true);
+});
+
+test("isShareServable: forged, moved, binned, foreign or missing documents are refused", () => {
+  assert.equal(isShareServable(SHARE, null), false);
+  assert.equal(isShareServable(SHARE, { ...LIVE, deleted_at: "2026-10-26T00:00:00Z" }), false);
+  assert.equal(isShareServable({ ...SHARE, document_path: `${V}/1-secret.pdf` }, LIVE), false);
+  assert.equal(isShareServable({ ...SHARE, document_id: "901" }, LIVE), false);
+  assert.equal(isShareServable({ ...SHARE, document_id: null }, LIVE), false);
+  assert.equal(isShareServable({ ...SHARE, owner_id: V }, LIVE), false);
+  // a pre-65 attachments row pointing outside its owner's folder
+  const forged = { ...LIVE, storage_path: `${V}/1-secret.pdf` };
+  assert.equal(isShareServable({ ...SHARE, document_path: `${V}/1-secret.pdf` }, forged), false);
+  // another user's document, shared by a case participant before 66
+  const theirs = { ...LIVE, owner_user_id: V, storage_path: `${V}/1-case.pdf` };
+  assert.equal(isShareServable({ ...SHARE, document_path: `${V}/1-case.pdf` }, theirs), false);
+});
+
+test("isOwnLicencePath: only licences/<that lawyer>/<file>", () => {
+  assert.equal(isOwnLicencePath(`licences/${U}/1730000000000-licence.png`, U), true);
+  assert.equal(isOwnLicencePath(`licences/${V}/1-licence.png`, U), false);
+  assert.equal(isOwnLicencePath(`${U}/1-licence.png`, U), false);
+  assert.equal(isOwnLicencePath(`licences/${U}/../${V}/1-secret.pdf`, U), false);
+  assert.equal(isOwnLicencePath(`licences/${U}`, U), false);
+  assert.equal(isOwnLicencePath(`licences/${U}/`, U), false);
+  assert.equal(isOwnLicencePath(null, U), false);
+  assert.equal(isOwnLicencePath(`licences/${U}/1.png`, null), false);
 });
