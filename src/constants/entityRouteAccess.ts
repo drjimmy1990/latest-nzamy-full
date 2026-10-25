@@ -85,6 +85,12 @@ const ALL_FIRM_ROLES = [
 ] as const satisfies readonly AffiliationRole[];
 
 const FIRM_LEGAL_ROLES = ["managing_partner", "partner", "senior_lawyer", "lawyer", "legal_consultant", "in_house_counsel", "external_of_counsel"] as const;
+// Art. 18 of نظام المحاماة (owner ١٧٣ / ٢١٩, N1.9): a legal consultant, an
+// in-house counsel or an external of-counsel member does not plead or manage
+// hearings — the line the database draws for consultants in
+// 20261019_21_consultant_court_write_guard.sql. Only the court routes below
+// use this list; every other legal rule keeps FIRM_LEGAL_ROLES.
+const FIRM_LITIGATION_ROLES = ["managing_partner", "partner", "senior_lawyer", "lawyer"] as const;
 const FIRM_CASE_VIEW_ROLES = [...FIRM_LEGAL_ROLES, "legal_secretary", "compliance_manager"] as const;
 const FIRM_TEAM_ADMIN_ROLES = ["managing_partner", "office_admin", "hr_manager"] as const;
 const FIRM_BILLING_ROLES = ["managing_partner", "partner", "finance_manager", "office_admin"] as const;
@@ -93,7 +99,7 @@ export const FIRM_ROUTE_RULES: readonly Rule<AffiliationRole>[] = [
   { path: "/dashboard/firm", match: "exact", label: "لوحة المكتب", allowedRoles: ALL_FIRM_ROLES },
   { path: "/dashboard/firm/cases/assign", match: "prefix", label: "توزيع القضايا", allowedRoles: ["managing_partner", "partner", "senior_lawyer"] },
   { path: "/dashboard/firm/cases", match: "prefix", label: "قضايا المكتب", allowedRoles: FIRM_CASE_VIEW_ROLES },
-  { path: "/dashboard/firm/hearings", match: "prefix", label: "جلسات المكتب", allowedRoles: [...FIRM_LEGAL_ROLES, "trainee", "legal_secretary"] },
+  { path: "/dashboard/firm/hearings", match: "prefix", label: "جلسات المكتب", allowedRoles: [...FIRM_LITIGATION_ROLES, "trainee", "legal_secretary"] },
   { path: "/dashboard/firm/tasks", match: "prefix", label: "مهام الفريق", allowedRoles: [...FIRM_LEGAL_ROLES, "trainee", "legal_secretary"] },
   { path: "/dashboard/firm/activity", match: "prefix", label: "سجل النشاط", allowedRoles: ["managing_partner", "partner", "senior_lawyer", "legal_secretary", "office_admin", "compliance_manager"] },
   { path: "/dashboard/firm/contracts", match: "prefix", label: "العقود", allowedRoles: [...FIRM_LEGAL_ROLES, "legal_secretary"] },
@@ -119,7 +125,7 @@ export const FIRM_ROUTE_RULES: readonly Rule<AffiliationRole>[] = [
   { path: "/dashboard/firm/wallet", match: "prefix", label: "محفظة المكتب", allowedRoles: FIRM_BILLING_ROLES },
   { path: "/dashboard/firm/analytics", match: "prefix", label: "التحليلات", allowedRoles: ["managing_partner", "partner", "senior_lawyer", "finance_manager", "hr_manager", "compliance_manager"] },
   { path: "/dashboard/firm/achievements", match: "prefix", label: "الإنجازات", allowedRoles: FIRM_TEAM_ADMIN_ROLES },
-  { path: "/dashboard/firm/procedures-expert", match: "prefix", label: "المرشد القضائي", allowedRoles: FIRM_LEGAL_ROLES },
+  { path: "/dashboard/firm/procedures-expert", match: "prefix", label: "المرشد القضائي", allowedRoles: FIRM_LITIGATION_ROLES },
   { path: "/dashboard/firm/circuits-emails", match: "prefix", label: "الدوائر والإيميلات", allowedRoles: [...FIRM_LEGAL_ROLES, "legal_secretary"] },
   { path: "/dashboard/firm/of-counsel", match: "prefix", label: "مستشارون خارجيون", allowedRoles: ["managing_partner", "partner"] },
   { path: "/dashboard/firm/secondment", match: "prefix", label: "إعارة محام", allowedRoles: ["managing_partner", "partner"] },

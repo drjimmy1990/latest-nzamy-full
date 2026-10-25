@@ -329,7 +329,7 @@ const FIRM_ROLE_ALLOWED_ITEMS: Record<AffiliationRole | "default", string[]> = {
   finance_manager: ["Overview", "Clients", "Revenue", "Fees", "Reports", "Analytics", "Legal Calculator", "Report Generator", "Notifications", "Settings"],
   hr_manager: ["Overview", "Team", "Timesheets", "Trainees", "Attendance", "Achievements", "HR Advisor", "Report Generator", "Notifications", "Settings"],
   compliance_manager: ["Overview", "All Cases", "Activity Log", "Documents", "Conflict Check", "Client KYC", "Chinese Walls", "Health Check 360°", "Governance", "Governance Matrix", "Compliance Monitor", "Law Monitor", "Report Generator", "Legal Library", "Notifications", "Settings"],
-  external_of_counsel: ["Overview", "All Cases", "Hearings", "Team Tasks", "Documents", "Shared Rooms", "Quick Legal Q&A", "Legal Drafter", "My AI Orders", "Doc Analyzer", "Legal Library", "Notifications", "Settings"],
+  external_of_counsel: ["Overview", "All Cases", "Team Tasks", "Documents", "Shared Rooms", "Quick Legal Q&A", "Legal Drafter", "My AI Orders", "Doc Analyzer", "Legal Library", "Notifications", "Settings"],
   default: ["Overview", "All Cases", "Hearings", "Team Tasks", "Contract Manager", "Documents", "Clients", "Consultations", "Quick Legal Q&A", "Legal Drafter", "Contract Pro", "My AI Orders", "Doc Analyzer", "Legal Library", "Notifications", "Settings"],
 };
 
