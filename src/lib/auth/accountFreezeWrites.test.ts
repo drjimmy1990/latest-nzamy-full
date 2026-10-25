@@ -90,6 +90,30 @@ test("every API write a session makes refuses a frozen account", () => {
   assert.deepEqual(offenders, [], "these handlers write for a session without refusing a frozen account");
 });
 
+test("no blind spot: no session read hides in a helper above the handlers, no session-client write goes ungated", () => {
+  const hidden: string[] = [];
+  const ungated: string[] = [];
+  for (const file of routes(API)) {
+    const rel = relative(API, file).split(sep).join("/");
+    const src = readFileSync(file, "utf8");
+    const code = src
+      .replace(/\r\n/g, "\n")
+      .split("\n")
+      .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
+      .join("\n");
+    const first = code.search(/^export (?:async )?function (GET|POST|PUT|PATCH|DELETE)\b/m);
+    if (first > -1 && /auth\.getUser\(/.test(code.slice(0, first))) hidden.push(rel);
+    if (rel in ALLOWED) continue;
+    for (const h of handlers(src)) {
+      if (!MUTATING.has(h.method)) continue;
+      const anyGate = GATES.some((g) => g.test(h.body)) || /requireApiUser\(|auth\.getUser\(|answerInvitation\(/.test(h.body);
+      if (!anyGate && /\bcreateClient\(/.test(h.body)) ungated.push(`${rel} ${h.method}`);
+    }
+  }
+  assert.deepEqual(hidden, [], "a getUser() above the first handler is invisible to the per-handler scan");
+  assert.deepEqual(ungated, [], "a session-client write with no gate at all");
+});
+
 test("frozenAccountResponse comes after the 401, before the handler reads its body", () => {
   for (const rel of ["v1/payments/checkout/route.ts", "v1/service-requests/route.ts", "v1/community/posts/route.ts"]) {
     const post = handlers(readFileSync(join(API, ...rel.split("/")), "utf8")).find((h) => h.method === "POST");
