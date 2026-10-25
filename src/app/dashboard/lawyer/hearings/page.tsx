@@ -448,7 +448,9 @@ function downloadHearingIcs(ev: CalEvent): boolean {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
+  // Not 0: Safari and older Firefox read the blob after click() returns, and
+  // a URL revoked on the next tick can cancel the download.
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
   return true;
 }
 
