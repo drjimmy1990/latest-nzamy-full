@@ -102,7 +102,10 @@ test("no blind spot: no session read hides in a helper above the handlers, no se
       .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
       .join("\n");
     const first = code.search(/^export (?:async )?function (GET|POST|PUT|PATCH|DELETE)\b/m);
-    if (first > -1 && /auth\.getUser\(/.test(code.slice(0, first))) hidden.push(rel);
+    // Only a file that exports a write can hide one there: a read-only route
+    // (the ZIP's per-scope helpers above its GET) has no write to miss.
+    const writes = /^export (?:async )?function (POST|PUT|PATCH|DELETE)\b/m.test(code);
+    if (first > -1 && writes && /auth\.getUser\(/.test(code.slice(0, first))) hidden.push(rel);
     if (rel in ALLOWED) continue;
     for (const h of handlers(src)) {
       if (!MUTATING.has(h.method)) continue;

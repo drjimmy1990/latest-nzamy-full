@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { frozenAccountResponse } from "@/lib/auth/apiAuth";
 import { parseCheckoutBody } from "@/lib/payments/checkoutRules";
 import { validateCouponWith } from "@/lib/payments/couponServer";
 import { COUPON_INVALID_AR, COUPONS_UNAVAILABLE_AR, normalizeCouponCode } from "@/lib/payments/couponRules";
@@ -33,6 +34,10 @@ export async function POST(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return reply({ error: "سجّل الدخول لاستخدام كود الخصم" }, 401);
+  // D6 (owner ٢٩٨): a frozen account (a pending deletion) cannot pay, so it
+  // spends no coupon tries either.
+  const frozen = frozenAccountResponse(user);
+  if (frozen) return frozen;
 
   let raw: unknown;
   try {
