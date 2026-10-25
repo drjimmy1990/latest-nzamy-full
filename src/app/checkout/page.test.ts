@@ -61,7 +61,7 @@ test("/checkout: a guest goes to /login?next=<this page>; the gateway and the au
 
 test("/checkout shows the listed price, the VAT sentence and the catalog notes", () => {
   assert.match(page, /formatHalalas\(listed\)/);
-  assert.match(page, /listedVatNotice\(item, userType\)/);
+  assert.match(page, /listedVatNotice\(item\)/);
   assert.match(page, /checkoutItemNotes\(item\)/);
   assert.doesNotMatch(page, /مقعد|مقاعد/);
 });

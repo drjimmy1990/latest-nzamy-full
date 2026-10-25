@@ -1,14 +1,12 @@
 /**
- * vatNotice.ts — the VAT sentence each /pricing audience section shows under
- * its prices (owner answers ٢٣٩ / ٢٤٨, Moyasar B1).
+ * vatNotice.ts — the one VAT sentence every price list and checkout shows
+ * (pricing doc 25 Oct 2026, §2 rule 5 and §13ب.2; answer ٢٥٨).
  *
- * It says what the server charges (src/lib/payments/catalog.ts):
- *   - lawyers, consultants, firms and every establishment pay VAT on top
- *     (BUSINESS_USER_TYPES buy VAT-exclusive);
- *   - the individuals' prices include VAT;
- *   - the library depends on the buyer, so its plans state both rules —
- *     except the firms' library plans (lib-firm-*), which only establishments
- *     buy, so they carry the business sentence.
+ * Every price on the platform is VAT-exclusive — individuals, students and
+ * the library included — and 15 % is added at checkout and on the tax
+ * invoice (src/lib/payments/catalog.ts `quote`). ٢٥٨ replaces ٢٤٨'s three
+ * sentences (business on top / individuals inclusive / library by buyer)
+ * with this single one.
  *
  * Pure: no `@/` imports and no runtime imports, so `node --test` loads it
  * (pricingHonesty.test.ts).
@@ -18,28 +16,19 @@ import type { AudienceTab } from "../../constants/pricing/pricing.types.ts";
 export type VatNotice = { readonly ar: string; readonly en: string };
 
 export const VAT_NOTICE = {
-  /** The owner's sentence, verbatim (٢٤٨). */
+  /** The owner's sentence, verbatim (§13ب.2). */
   exclusive: {
-    ar: "الأسعار غير شاملة ضريبة القيمة المضافة ١٥٪ وتُضاف عند الدفع ويصدر بها فاتورة ضريبية رسمية",
-    en: "Prices exclude 15% VAT, added at checkout with an official tax invoice",
-  },
-  inclusive: {
-    ar: "الأسعار شاملة ضريبة القيمة المضافة",
-    en: "Prices include VAT",
-  },
-  library: {
-    ar: "للأفراد: شامل الضريبة · للمحامين والمنشآت: غير شامل الضريبة",
-    en: "For individuals: VAT included · For lawyers and establishments: VAT excluded",
+    ar: "جميع الأسعار المعروضة غير شاملة لضريبة القيمة المضافة ١٥٪ (تُضاف عند السداد وإصدار الفاتورة الضريبية)",
+    en: "All prices shown exclude 15% VAT (added at checkout and on the tax invoice)",
   },
 } as const satisfies Record<string, VatNotice>;
 
 /**
- * The sentence for one /pricing section. Library mode exists on the lawyers
- * and firms tabs only (getPlanList). On the lawyers tab it shows the library
- * plans anyone buys, so both rules; on the firms tab it shows the firm library
- * plans, so the business sentence like the rest of that tab.
+ * The sentence for one /pricing section — the same for every audience and
+ * mode since ٢٥٨. Kept as a function so the section reads it the one way.
  */
 export function vatNoticeFor(audience: AudienceTab, libraryMode: boolean | undefined): VatNotice {
-  if (libraryMode && audience === "lawyers") return VAT_NOTICE.library;
-  return audience === "individuals" ? VAT_NOTICE.inclusive : VAT_NOTICE.exclusive;
+  void audience;
+  void libraryMode;
+  return VAT_NOTICE.exclusive;
 }

@@ -1,6 +1,7 @@
 /**
- * catalog.test.ts — the server price catalog and its VAT quote
- * (owner answers ٢٣٩ / ٢٤٨ / ٢٤٩).
+ * catalog.test.ts — the halala catalogue checkout charges, derived from the
+ * price book (src/lib/pricing/priceBook.ts), and its VAT quote: always
+ * VAT-exclusive (pricing doc §2 rule 5, answer ٢٥٨).
  *
  * The consistency tests hold PAYABLE_ITEMS to the prices the site shows:
  *   - src/lib/pricing/plans.ts is pure, so it is imported;
@@ -13,14 +14,17 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import type { ServerTier } from "../access-control.ts";
 import {
-  BUSINESS_USER_TYPES,
+  buildCatalog,
   buyerAllowed,
   PAYABLE_ITEMS,
   formatHalalas,
   quote,
+  resolveItem,
+  sellableItem,
   type Billing,
   type ServerTierLiteral,
 } from "./catalog.ts";
+import { PRICE_BOOK, type BookEntry } from "../pricing/priceBook.ts";
 import { parseDisplayedAmount } from "../pricing/priceDisplay.ts";
 import {
   INDEPENDENT_CONSULTANT_PLAN,
@@ -52,8 +56,8 @@ const EXPECTED_IDS = [
 
 // ─── quote ───────────────────────────────────────────────────────────────────
 
-test("lawyer-pro monthly for a lawyer: VAT added on top (exclusive)", () => {
-  const q = quote("lawyer-pro", "monthly", "lawyer");
+test("lawyer-pro monthly: VAT added on top (exclusive)", () => {
+  const q = quote("lawyer-pro", "monthly");
   assert.ok(q.ok);
   assert.equal(q.vatMode, "exclusive");
   assert.equal(q.netHalalas, 39900);
@@ -62,78 +66,54 @@ test("lawyer-pro monthly for a lawyer: VAT added on top (exclusive)", () => {
   assert.equal(q.item.id, "lawyer-pro");
 });
 
-test("ind-ai monthly for a client: VAT inside the shown price (inclusive)", () => {
-  const q = quote("ind-ai", "monthly", "client");
-  assert.ok(q.ok);
-  assert.equal(q.vatMode, "inclusive");
-  assert.equal(q.totalHalalas, 3900);
-  assert.equal(q.netHalalas, 3391); // round(3900 · 100 / 115)
-  assert.equal(q.vatHalalas, 509);
-});
-
-test("lib-q1: a business buyer pays VAT on top, anyone else pays the shown price", () => {
-  const lawyer = quote("lib-q1", "once", "lawyer");
-  assert.ok(lawyer.ok);
-  assert.equal(lawyer.vatMode, "exclusive");
-  assert.equal(lawyer.netHalalas, 150000);
-  assert.equal(lawyer.vatHalalas, 22500);
-  assert.equal(lawyer.totalHalalas, 172500);
-
-  for (const buyer of ["client", null]) {
-    const q = quote("lib-q1", "once", buyer);
-    assert.ok(q.ok, `buyer ${buyer}`);
-    assert.equal(q.vatMode, "inclusive", `buyer ${buyer}`);
-    assert.equal(q.totalHalalas, 150000, `buyer ${buyer}`);
-    assert.equal(q.netHalalas + q.vatHalalas, 150000, `buyer ${buyer}`);
-  }
-});
-
-test("lib-q1 for a micro establishment: VAT on top (controller ruling on ٢٤٨)", () => {
-  const q = quote("lib-q1", "once", "micro");
+test("٢٥٨: the individuals' plans are VAT-exclusive now — 39 is the net, 44.85 is charged", () => {
+  const q = quote("ind-ai", "monthly");
   assert.ok(q.ok);
   assert.equal(q.vatMode, "exclusive");
+  assert.equal(q.netHalalas, 3900);
+  assert.equal(q.vatHalalas, 585);
+  assert.equal(q.totalHalalas, 4485);
+});
+
+test("٢٥٨: the library is VAT-exclusive for every buyer (no more buyer-dependent mode)", () => {
+  const q = quote("lib-q1", "once");
+  assert.ok(q.ok);
+  assert.equal(q.vatMode, "exclusive");
+  assert.equal(q.netHalalas, 150000);
+  assert.equal(q.vatHalalas, 22500);
   assert.equal(q.totalHalalas, 172500);
 });
 
-test("every business user type gets the exclusive library price", () => {
-  for (const buyer of BUSINESS_USER_TYPES) {
-    const q = quote("lib-annual", "once", buyer);
-    assert.ok(q.ok);
-    assert.equal(q.vatMode, "exclusive", buyer);
-    assert.equal(q.totalHalalas, 575000, buyer);
+test("٢٥٨: nothing sold today is quoted inclusive; the listed price is always the net", () => {
+  for (const item of Object.values(PAYABLE_ITEMS)) {
+    for (const billing of Object.keys(item.prices) as Billing[]) {
+      const q = quote(item.id, billing);
+      assert.ok(q.ok, `${item.id} ${billing}`);
+      assert.equal(q.vatMode, "exclusive", `${item.id} ${billing}`);
+      assert.equal(q.netHalalas, item.prices[billing], `${item.id} ${billing}`);
+    }
   }
 });
 
-test("a fixed VAT mode ignores the buyer", () => {
-  const indForLawyer = quote("ind-ai", "monthly", "lawyer");
-  assert.ok(indForLawyer.ok);
-  assert.equal(indForLawyer.vatMode, "inclusive");
-  assert.equal(indForLawyer.totalHalalas, 3900);
-
-  const proForNobody = quote("lawyer-pro", "monthly", null);
-  assert.ok(proForNobody.ok);
-  assert.equal(proForNobody.vatMode, "exclusive");
-  assert.equal(proForNobody.totalHalalas, 45885);
-});
-
 test("unknown ids, inherited object keys and unoffered billing are refused", () => {
-  assert.deepEqual(quote("nope", "monthly", "lawyer"), { ok: false, error: "unknown_item" });
-  assert.deepEqual(quote("constructor", "monthly", "lawyer"), { ok: false, error: "unknown_item" });
-  assert.deepEqual(quote("__proto__", "monthly", "lawyer"), { ok: false, error: "unknown_item" });
-  assert.deepEqual(quote("lib-q1", "monthly", "lawyer"), { ok: false, error: "billing_not_offered" });
-  assert.deepEqual(quote("topup-100", "yearly", "lawyer"), { ok: false, error: "billing_not_offered" });
-  assert.deepEqual(quote("lawyer-pro", "once", "lawyer"), { ok: false, error: "billing_not_offered" });
+  assert.deepEqual(quote("nope", "monthly"), { ok: false, error: "unknown_item" });
+  assert.deepEqual(quote("constructor", "monthly"), { ok: false, error: "unknown_item" });
+  assert.deepEqual(quote("__proto__", "monthly"), { ok: false, error: "unknown_item" });
+  assert.deepEqual(quote("lib-q1", "monthly"), { ok: false, error: "billing_not_offered" });
+  assert.deepEqual(quote("topup-100", "yearly"), { ok: false, error: "billing_not_offered" });
+  assert.deepEqual(quote("lawyer-pro", "once"), { ok: false, error: "billing_not_offered" });
+  // no item offers the new cycles yet (P2+ adds them once 20261026_10 has run)
+  assert.deepEqual(quote("lawyer-pro", "quarterly"), { ok: false, error: "billing_not_offered" });
+  assert.deepEqual(quote("ind-ai", "semiannual"), { ok: false, error: "billing_not_offered" });
 });
 
 test("every offered price quotes to net + vat = total, in whole halalas", () => {
   for (const item of Object.values(PAYABLE_ITEMS)) {
     for (const billing of Object.keys(item.prices) as Billing[]) {
-      for (const buyer of ["lawyer", "individual", null]) {
-        const q = quote(item.id, billing, buyer);
-        assert.ok(q.ok, `${item.id} ${billing}`);
-        assert.ok(Number.isInteger(q.netHalalas) && Number.isInteger(q.vatHalalas));
-        assert.equal(q.netHalalas + q.vatHalalas, q.totalHalalas, `${item.id} ${billing}`);
-      }
+      const q = quote(item.id, billing);
+      assert.ok(q.ok, `${item.id} ${billing}`);
+      assert.ok(Number.isInteger(q.netHalalas) && Number.isInteger(q.vatHalalas));
+      assert.equal(q.netHalalas + q.vatHalalas, q.totalHalalas, `${item.id} ${billing}`);
     }
   }
 });
@@ -145,30 +125,52 @@ test("PAYABLE_ITEMS holds exactly the sold ids, each keyed by its own id", () =>
   for (const [key, item] of Object.entries(PAYABLE_ITEMS)) assert.equal(item.id, key);
 });
 
-test("prices, grants and VAT mode as the owner set them", () => {
-  const expected: Record<string, { prices: Partial<Record<Billing, number>>; tier?: ServerTierLiteral; vat: string }> = {
-    "lawyer-pro":             { prices: { monthly: 39900, yearly: 399000 },   tier: "pro",        vat: "exclusive" },
-    "consultant-independent": { prices: { monthly: 39900, yearly: 399000 },   tier: "pro",        vat: "exclusive" },
-    "firm-basic":             { prices: { monthly: 99000, yearly: 990000 },   tier: "corp",       vat: "exclusive" },
-    "firm-enterprise":        { prices: { monthly: 149000, yearly: 1490000 }, tier: "enterprise", vat: "exclusive" },
-    "ind-ai":                 { prices: { monthly: 3900, yearly: 39000 },     tier: "ai",         vat: "inclusive" },
-    "ind-preventive":         { prices: { monthly: 14900, yearly: 149000 },   tier: "pro",        vat: "inclusive" },
-    "ind-litigation":         { prices: { monthly: 39900, yearly: 399000 },   tier: "max",        vat: "inclusive" },
-    "lib-q1":                 { prices: { once: 150000 }, vat: "buyer" },
-    "lib-q2":                 { prices: { once: 275000 }, vat: "buyer" },
-    "lib-annual":             { prices: { once: 500000 }, vat: "buyer" },
-    "topup-100":              { prices: { once: 10000 },  vat: "exclusive" },
-    "topup-250":              { prices: { once: 25000 },  vat: "exclusive" },
-    "topup-500":              { prices: { once: 50000 },  vat: "exclusive" },
-    "topup-1000":             { prices: { once: 100000 }, vat: "exclusive" },
+test("prices and grants as the owner set them (net halalas)", () => {
+  const expected: Record<string, { prices: Partial<Record<Billing, number>>; tier?: ServerTierLiteral }> = {
+    "lawyer-pro":             { prices: { monthly: 39900, yearly: 399000 },   tier: "pro" },
+    "consultant-independent": { prices: { monthly: 39900, yearly: 399000 },   tier: "pro" },
+    "firm-basic":             { prices: { monthly: 99000, yearly: 990000 },   tier: "corp" },
+    "firm-enterprise":        { prices: { monthly: 149000, yearly: 1490000 }, tier: "enterprise" },
+    "ind-ai":                 { prices: { monthly: 3900, yearly: 39000 },     tier: "ai" },
+    "ind-preventive":         { prices: { monthly: 14900, yearly: 149000 },   tier: "pro" },
+    "ind-litigation":         { prices: { monthly: 39900, yearly: 399000 },   tier: "max" },
+    "lib-q1":                 { prices: { once: 150000 } },
+    "lib-q2":                 { prices: { once: 275000 } },
+    "lib-annual":             { prices: { once: 500000 } },
+    "topup-100":              { prices: { once: 10000 } },
+    "topup-250":              { prices: { once: 25000 } },
+    "topup-500":              { prices: { once: 50000 } },
+    "topup-1000":             { prices: { once: 100000 } },
   };
   for (const [id, want] of Object.entries(expected)) {
     const item = PAYABLE_ITEMS[id];
     assert.deepEqual(item.prices, want.prices, id);
+    assert.deepEqual(item.listedPrices, want.prices, `${id}: nothing retired yet`);
     assert.equal(item.tier, want.tier, id);
-    assert.equal(item.vat, want.vat, id);
+    assert.equal(item.onSale, true, id);
     assert.ok(item.labelAr.trim().length > 0, `${id} has an Arabic label`);
   }
+});
+
+test("derivation: every catalog item IS its price-book entry, in halalas — no second copy of a number", () => {
+  assert.deepEqual(Object.keys(PAYABLE_ITEMS).sort(), Object.keys(PRICE_BOOK).sort());
+  for (const [id, entry] of Object.entries(PRICE_BOOK)) {
+    const item = PAYABLE_ITEMS[id];
+    assert.equal(item.labelAr, entry.labelAr, id);
+    assert.equal(item.kind, entry.kind, id);
+    assert.equal(item.tier, entry.tier, id);
+    assert.deepEqual(item.buyers, entry.buyers, id);
+    assert.equal(item.points, entry.points, id);
+    assert.equal(item.pointsValidityMonths, entry.pointsValidityMonths, id);
+    assert.equal(item.libraryDays, entry.libraryDays, id);
+    assert.equal(item.libraryPlanRef, entry.libraryPlanRef, id);
+    for (const [billing, p] of Object.entries(entry.prices)) {
+      assert.equal(item.listedPrices[billing as Billing], p!.sar * 100, `${id} ${billing}`);
+    }
+  }
+  // catalog.ts itself carries no price literal any more
+  const src = readFileSync(new URL("./catalog.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(src, /\b(399|3990|990|9900|1490|14900|1500|2750|5000)\b/, "a price literal in catalog.ts");
 });
 
 test("library items grant days of access and point to their library plan", () => {
@@ -255,18 +257,12 @@ test("buyerAllowed: the audience check checkout runs before quoting", () => {
   }
 });
 
-test("BUSINESS_USER_TYPES is the owner's list plus micro establishments", () => {
-  assert.deepEqual(
-    [...BUSINESS_USER_TYPES],
-    ["lawyer", "provider", "firm", "corporate", "business", "government", "ngo", "micro"],
-  );
-});
-
 test("the catalog is frozen: no code can patch a price at runtime", () => {
   assert.ok(Object.isFrozen(PAYABLE_ITEMS));
   for (const item of Object.values(PAYABLE_ITEMS)) {
     assert.ok(Object.isFrozen(item), item.id);
     assert.ok(Object.isFrozen(item.prices), `${item.id}.prices`);
+    assert.ok(Object.isFrozen(item.listedPrices), `${item.id}.listedPrices`);
     if (Array.isArray(item.buyers)) assert.ok(Object.isFrozen(item.buyers), `${item.id}.buyers`);
   }
   // Test files are ES modules, so this runs in strict mode and must throw.
@@ -278,6 +274,41 @@ test("the catalog is frozen: no code can patch a price at runtime", () => {
   }, TypeError);
   assert.equal(PAYABLE_ITEMS["lawyer-pro"].prices.monthly, 39900);
   assert.equal(Object.hasOwn(PAYABLE_ITEMS, "free-stuff"), false);
+});
+
+// ─── retire, never delete ────────────────────────────────────────────────────
+
+const RETIRED_BOOK: Readonly<Record<string, BookEntry>> = {
+  ...PRICE_BOOK,
+  "old-pro": { id: "old-pro", kind: "plan", labelAr: "باقة متقاعدة", buyers: ["lawyer"], tier: "pro", retired: true, prices: { monthly: { sar: 399 }, yearly: { sar: 3990 } } },
+  "firm-cyc": { id: "firm-cyc", kind: "plan", labelAr: "مكتب بلا شهري", buyers: ["firm"], tier: "corp", prices: { monthly: { sar: 990, retired: true }, yearly: { sar: 9900 } } },
+};
+const RETIRED_CATALOG = buildCatalog(RETIRED_BOOK);
+
+test("a retired item still resolves (fulfilment, receipts, admin) but is never sold", () => {
+  const old = resolveItem("old-pro", RETIRED_CATALOG)!;
+  assert.equal(old.labelAr, "باقة متقاعدة");
+  assert.equal(old.onSale, false);
+  assert.deepEqual(old.prices, {}, "no billing is sold");
+  assert.deepEqual(old.listedPrices, { monthly: 39900, yearly: 399000 }, "the last prices stay listed");
+  assert.equal(sellableItem("old-pro", RETIRED_CATALOG), undefined);
+  assert.deepEqual(quote("old-pro", "yearly", RETIRED_CATALOG), { ok: false, error: "not_for_sale" });
+  assert.equal(old.saveCard, true, "still a plan");
+});
+
+test("a retired cycle is refused; the item's other cycles still sell", () => {
+  const firm = sellableItem("firm-cyc", RETIRED_CATALOG)!;
+  assert.deepEqual(firm.prices, { yearly: 990000 });
+  assert.deepEqual(firm.listedPrices, { monthly: 99000, yearly: 990000 });
+  assert.deepEqual(quote("firm-cyc", "monthly", RETIRED_CATALOG), { ok: false, error: "billing_not_offered" });
+  assert.ok(quote("firm-cyc", "yearly", RETIRED_CATALOG).ok);
+});
+
+test("resolveItem / sellableItem never resolve an inherited key", () => {
+  for (const id of ["constructor", "__proto__", "toString", ""]) {
+    assert.equal(resolveItem(id), undefined, id);
+    assert.equal(sellableItem(id), undefined, id);
+  }
 });
 
 // ─── consistency with the prices the site shows ──────────────────────────────

@@ -47,7 +47,7 @@ const txt = {
     perMonth: "/شهر",
     perYear: "/سنة",
     // Owner ٢٤٨: the library's VAT depends on the buyer (catalog.ts, vat "buyer").
-    vatNote: VAT_NOTICE.library.ar,
+    vatNote: VAT_NOTICE.exclusive.ar,
     plans: [
       {
         id: "free",
@@ -142,7 +142,7 @@ const txt = {
     exploreFree: "Browse Free",
     perMonth: "/mo",
     perYear: "/yr",
-    vatNote: VAT_NOTICE.library.en,
+    vatNote: VAT_NOTICE.exclusive.en,
     plans: [
       {
         id: "free",

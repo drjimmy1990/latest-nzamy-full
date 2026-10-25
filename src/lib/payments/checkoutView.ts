@@ -18,9 +18,10 @@
  * (checkoutView.test.ts).
  */
 
-import { PAYABLE_ITEMS, quote, type Billing, type PayableItem, type VatMode } from "./catalog.ts";
+import { sellableItem, type Billing, type PayableItem, type VatMode } from "./catalog.ts";
 import type { CheckoutResponse } from "./checkoutRules.ts";
 import { VAT_NOTICE } from "../pricing/vatNotice.ts";
+import { BILLING_LABEL_AR, isBilling } from "../pricing/priceBook.ts";
 
 // ── the buy buttons ─────────────────────────────────────────────────────────
 
@@ -38,8 +39,9 @@ export function checkoutBillingFor(item: Pick<PayableItem, "prices">, billing: B
 /**
  * `/checkout?item=<id>&billing=<b>` for a signed-in buyer while the gateway is
  * on, for an item sold online; null keeps the existing request flow (guests,
- * gateway off, and every plan that is not in PAYABLE_ITEMS — /contact CTAs,
- * the firm library, provider tiers…).
+ * gateway off, every plan that is not sold online — /contact CTAs, the firm
+ * library, provider tiers… — and a retired item, which still resolves for old
+ * orders but is never sold).
  */
 export function checkoutHref(
   planId: string,
@@ -48,8 +50,9 @@ export function checkoutHref(
   signedIn: boolean,
 ): string | null {
   if (!gatewayEnabled || !signedIn) return null;
-  if (!Object.hasOwn(PAYABLE_ITEMS, planId)) return null;
-  const chosen = checkoutBillingFor(PAYABLE_ITEMS[planId], billing);
+  const item = sellableItem(planId);
+  if (!item) return null;
+  const chosen = checkoutBillingFor(item, billing);
   if (!chosen) return null;
   return `/checkout?item=${encodeURIComponent(planId)}&billing=${chosen}`;
 }
@@ -91,24 +94,22 @@ export function buyButtonAction(
 
 // ── the query string ────────────────────────────────────────────────────────
 
-const BILLINGS: ReadonlySet<string> = new Set<Billing>(["monthly", "yearly", "once"]);
-
 function first(v: string | readonly string[] | undefined): string | null {
   const s = Array.isArray(v) ? v[0] : v;
   return typeof s === "string" && s.length > 0 && s.length <= 64 ? s : null;
 }
 
-/** `?item=&billing=` of /checkout: an item PAYABLE_ITEMS sells, with a billing it offers. */
+/** `?item=&billing=` of /checkout: an item on sale, with a billing it is sold in. */
 export function parseCheckoutQuery(
   item: string | readonly string[] | undefined,
   billing: string | readonly string[] | undefined,
 ): { ok: true; itemId: string; billing: Billing } | { ok: false } {
   const itemId = first(item);
   const b = first(billing);
-  if (!itemId || !b || !BILLINGS.has(b)) return { ok: false };
-  if (!Object.hasOwn(PAYABLE_ITEMS, itemId)) return { ok: false };
-  if (!Object.hasOwn(PAYABLE_ITEMS[itemId].prices, b)) return { ok: false };
-  return { ok: true, itemId, billing: b as Billing };
+  if (!itemId || !b || !isBilling(b)) return { ok: false };
+  const sold = sellableItem(itemId);
+  if (!sold || !Object.hasOwn(sold.prices, b)) return { ok: false };
+  return { ok: true, itemId, billing: b };
 }
 
 // ── what the screen says ────────────────────────────────────────────────────
@@ -169,31 +170,24 @@ export function checkoutItemNotes(item: PayableItem): string[] {
   return [];
 }
 
-/** «اشتراك شهري» / «اشتراك سنوي» / «دفعة واحدة» */
+/** «اشتراك شهري» / «اشتراك ربع سنوي» / «اشتراك نصف سنوي» / «اشتراك سنوي» / «دفعة واحدة» */
 export function billingLabelAr(billing: Billing): string {
-  if (billing === "monthly") return "اشتراك شهري";
-  if (billing === "yearly") return "اشتراك سنوي";
-  return "دفعة واحدة";
+  return billing === "once" ? BILLING_LABEL_AR.once : `اشتراك ${BILLING_LABEL_AR[billing]}`;
 }
 
 /**
- * The VAT sentence beside the listed price, before the server has quoted.
- * The library's mode depends on the buyer: with the buyer's account type the
- * sentence is the one the server will charge; without it, both rules.
+ * The VAT sentence beside the listed price, before the server has quoted:
+ * the one notice (٢٥٨) — every price is VAT-exclusive, whoever buys.
  */
-export function listedVatNotice(item: PayableItem, buyerUserType: string | null): string {
-  if (item.vat === "buyer") {
-    if (buyerUserType === null) return VAT_NOTICE.library.ar;
-    const listed = Object.keys(item.prices)[0] as Billing | undefined;
-    const q = listed ? quote(item.id, listed, buyerUserType) : null;
-    return q && q.ok ? quoteVatNotice(q.vatMode) : VAT_NOTICE.library.ar;
-  }
-  return quoteVatNotice(item.vat);
+export function listedVatNotice(item: PayableItem): string {
+  void item;
+  return VAT_NOTICE.exclusive.ar;
 }
 
-/** The VAT sentence for the mode POST /api/v1/payments/checkout quoted. */
+/** The VAT sentence for the quote POST /api/v1/payments/checkout returned (always exclusive since ٢٥٨). */
 export function quoteVatNotice(mode: VatMode): string {
-  return mode === "exclusive" ? VAT_NOTICE.exclusive.ar : VAT_NOTICE.inclusive.ar;
+  void mode;
+  return VAT_NOTICE.exclusive.ar;
 }
 
 // ── the checkout answer ─────────────────────────────────────────────────────
@@ -216,7 +210,8 @@ export function parseCheckoutResponse(body: unknown): CheckoutResponse | null {
   if (!isInt(b.amountHalalas) || b.amountHalalas < 100 || !isText(b.descriptionAr)) return null;
   if (typeof b.saveCard !== "boolean") return null;
   if (typeof q !== "object" || q === null || !isInt(q.net) || !isInt(q.vat) || !isInt(q.total)) return null;
-  if (q.vatMode !== "exclusive" && q.vatMode !== "inclusive") return null;
+  // ٢٥٨: the server quotes every item VAT-exclusive; anything else is not this server's answer.
+  if (q.vatMode !== "exclusive") return null;
   if (q.total !== b.amountHalalas) return null;
   if (!isText(b.callbackUrl) || !/^https?:\/\/[^/?#]+\/payments\/result\?order=/.test(b.callbackUrl)) return null;
   if (!b.callbackUrl.endsWith(`?order=${encodeURIComponent(b.orderId)}`)) return null;

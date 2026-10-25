@@ -40,7 +40,9 @@ export default async function ReceiptPage({ params }: { params: Promise<{ orderI
         {view.testNotice ? <p className={`mb-5 font-bold ${NOTICE}`}>{view.testNotice}</p> : null}
         <div className="flex flex-wrap items-start justify-between gap-5 border-b border-zinc-200 pb-6 dark:border-zinc-800 print:border-zinc-300!"><div><p className="font-extrabold text-[#0B3D2E] dark:text-[#C8A762] print:text-[#0B3D2E]!">نظامي</p><h1 className="mt-3 text-3xl font-extrabold">{view.title}</h1></div><div className="text-sm"><p dir="ltr" className="font-mono">{view.number}</p><p className="mt-2">{view.date}</p><p className="mt-2 font-semibold">{view.status}</p></div></div>
         {view.company ? <address className="mt-6 space-y-1 text-sm not-italic"><p className="font-bold">{view.company.legal_name_ar}</p><p>السجل التجاري: <bdi>{view.company.cr_number}</bdi></p><p>الرقم الضريبي: <bdi>{view.company.vat_number}</bdi></p><p>{view.company.address_ar}</p></address> : <p className={`mt-6 text-sm ${NOTICE}`}>{view.companyNotice}</p>}
-        <p className="my-8 text-lg font-bold">{view.item}</p>
+        <p className="mt-8 text-lg font-bold">{view.item}</p>
+        {view.billing ? <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400 print:text-black!">مدة الاشتراك: {view.billing}</p> : null}
+        <div className="mb-8" />
         <dl className="space-y-4 text-sm">{[["المبلغ قبل الضريبة", view.net], [view.vatLabel, view.vat], ["الإجمالي", view.total]].map(([label, amount]) => <div key={label} className="flex justify-between gap-4"><dt>{label}</dt><dd className="font-bold">{amount}</dd></div>)}</dl>
         {result.order.refunded_halalas > 0 ? <p className="mt-5 text-sm font-semibold">المبلغ المسترد: {view.refunded}</p> : null}
         <p className="mt-8 text-sm">طريقة الدفع: {view.lastFour ? `بطاقة تنتهي بـ ${view.lastFour}` : "تفاصيل البطاقة غير متاحة"}</p>

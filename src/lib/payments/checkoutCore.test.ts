@@ -9,8 +9,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { fakeDb, has, type FakeHandler, type FakeQuery } from "./fakeDb.test-helper.ts";
-import { AUDIENCE_REFUSED_AR, CHECKOUT_FAILED_AR, startCheckoutWith, type CheckoutDeps, type CheckoutInput } from "./checkoutCore.ts";
-import { quote } from "./catalog.ts";
+import { AUDIENCE_REFUSED_AR, CHECKOUT_FAILED_AR, NOT_FOR_SALE_AR, startCheckoutWith, type CheckoutDeps, type CheckoutInput } from "./checkoutCore.ts";
+import { buildCatalog, quote } from "./catalog.ts";
+import { PRICE_BOOK } from "../pricing/priceBook.ts";
 import { MOYASAR_DISABLED_MESSAGE_AR } from "./moyasarConfig.ts";
 
 const NOW = new Date("2026-10-22T08:00:00.000Z");
@@ -72,7 +73,7 @@ test("happy path: the quote's price, a created order, the intent, the guarded st
   const { client: admin, log } = db("lawyer");
   const m = moyasar();
   const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW }, input());
-  const q = quote("lawyer-pro", "monthly", "lawyer");
+  const q = quote("lawyer-pro", "monthly");
   assert.ok(q.ok);
   assert.equal(r.status, 200);
   assert.deepEqual(r.body, {
@@ -123,8 +124,8 @@ test("happy path: the quote's price, a created order, the intent, the guarded st
   assert.ok(log.indexOf(ins) < log.indexOf(stamp));
 });
 
-test("the library is priced by the buyer's type: inclusive for an individual, exclusive for a lawyer", async () => {
-  for (const [type, total, mode] of [["individual", 150000, "inclusive"], ["lawyer", 172500, "exclusive"]] as const) {
+test("٢٥٨: the library is VAT-exclusive for every buyer — an individual pays VAT on top like a lawyer", async () => {
+  for (const [type, total, mode] of [["individual", 172500, "exclusive"], ["lawyer", 172500, "exclusive"]] as const) {
     const { client: admin, log } = db(type);
     const r = await startCheckoutWith({ admin, client: moyasar().client, now: () => NOW }, input({ itemId: "lib-q1", billing: "once" }));
     assert.equal(r.status, 200, type);
@@ -269,4 +270,26 @@ test("the response carries the intent's callback URL (from the server origin) an
   assert.equal(r.body.callbackUrl, `https://nezamy.sa/payments/result?order=${NEW_ORDER}`);
   assert.equal(m.intents.at(-1)?.callbackUrl, r.body.callbackUrl);
   assert.equal(r.body.expiresAt, "2026-10-22T11:00:00.000Z");
+});
+
+test("retire, never delete: a retired plan is refused at checkout (410, no order, no intent)", async () => {
+  const catalog = buildCatalog({
+    ...PRICE_BOOK,
+    "lawyer-pro": { ...PRICE_BOOK["lawyer-pro"], retired: true },
+  });
+  const { client: admin, log } = db("lawyer");
+  const m = moyasar();
+  const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW, catalog }, input({ billing: "yearly" }));
+  assert.equal(r.status, 410);
+  assert.deepEqual(r.body, { error: NOT_FOR_SALE_AR });
+  assert.equal(inserts(log).length, 0, "no order");
+  assert.equal(m.intents.length, 0, "no intent");
+});
+
+test("a cycle the item is not sold in (quarterly before P2) is refused with 400", async () => {
+  const { client: admin, log } = db("lawyer");
+  const m = moyasar();
+  const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW }, input({ billing: "quarterly" }));
+  assert.equal(r.status, 400);
+  assert.equal(inserts(log).length, 0);
 });

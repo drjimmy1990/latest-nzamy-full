@@ -143,7 +143,7 @@ export function PaywallModal({ isOpen, onClose, isRTL, isDark, freeLimit }: {
           </div>
           {/* The library's VAT depends on the buyer (owner ٢٤٨). */}
           <p className={`text-center text-xs font-medium px-6 pb-2 ${isDark ? "text-gray-400" : "text-gray-500"}`} dir={isRTL ? "rtl" : "ltr"}>
-            {isRTL ? VAT_NOTICE.library.ar : VAT_NOTICE.library.en}
+            {isRTL ? VAT_NOTICE.exclusive.ar : VAT_NOTICE.exclusive.en}
           </p>
           <p className={`text-center text-xs pb-5 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
             {isRTL ? "بدون عقود — يمكن الإلغاء في أي وقت" : "No contracts — cancel anytime"}

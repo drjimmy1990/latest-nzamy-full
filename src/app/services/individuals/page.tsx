@@ -25,6 +25,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import { services, faqs } from "@/constants/servicesData";
 import { ServiceCard, FAQItem } from "@/components/services/ServiceComponents";
 import { INDIVIDUALS_PYRAMID_PLANS } from "@/lib/pricing/plans";
+import { VAT_NOTICE } from "@/lib/pricing/vatNotice";
 import { Warning, UsersThree, Sparkle } from "@phosphor-icons/react";
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -443,6 +444,10 @@ export default function IndividualsPage() {
                 );
               })}
             </div>
+            {/* Owner ٢٥٨: every price is VAT-exclusive; one sentence under the plans. */}
+            <p className="mt-6 text-center text-xs font-medium text-ink-muted dark:text-gray-400">
+              {isAr ? VAT_NOTICE.exclusive.ar : VAT_NOTICE.exclusive.en}
+            </p>
           </div>
         </section>
 

@@ -12,6 +12,7 @@
 
 import { createHash, timingSafeEqual } from "node:crypto";
 import { planEndsAtMs, tierRank, type ActivePlanRow, type TierRankTable } from "../entitlementGrantRules.ts";
+import { CYCLE_MONTHS, isCycle } from "../pricing/priceBook.ts";
 
 export type FulfillMode = "test" | "live";
 
@@ -233,11 +234,32 @@ export function addMonthsUtc(from: Date, months: number): Date {
   return d;
 }
 
-/** The end of a plan bought now: one month (monthly) or one year (yearly). */
-export function planPeriodEnd(now: Date, billing: string): Date | null {
-  if (billing === "monthly") return addMonthsUtc(now, 1);
-  if (billing === "yearly") return addMonthsUtc(now, 12);
-  return null;
+/**
+ * Asia/Riyadh is UTC+3 all year (the kingdom keeps no daylight saving), so a
+ * fixed offset is its wall clock exactly — no Intl round trip needed.
+ */
+const RIYADH_OFFSET_MS = 3 * 60 * 60 * 1000;
+
+/**
+ * `months` calendar months after `from` on the RIYADH calendar, clamped to the
+ * end of a shorter month: 31 Jan 10:00 Riyadh + 1 → 28 (29) Feb 10:00 Riyadh.
+ * It differs from addMonthsUtc only between 21:00 and 24:00 UTC, when Riyadh
+ * is already on the next day — e.g. 2026-01-30T22:00Z is 31 Jan 01:00 in
+ * Riyadh, so + 1 month lands on 28 Feb 01:00 Riyadh (2026-02-27T22:00Z),
+ * where the UTC rule gives 2026-02-28T22:00Z (already 1 Mar in Riyadh).
+ */
+export function addMonthsRiyadh(from: Date, months: number): Date {
+  const wall = new Date(from.getTime() + RIYADH_OFFSET_MS);
+  return new Date(addMonthsUtc(wall, months).getTime() - RIYADH_OFFSET_MS);
+}
+
+/**
+ * The end of a plan period starting at `start`: 1, 3, 6 or 12 calendar months
+ * on the Riyadh calendar (monthly / quarterly / semiannual / yearly). null for
+ * "once" and anything that is not a cycle.
+ */
+export function planPeriodEnd(start: Date, billing: string): Date | null {
+  return isCycle(billing) ? addMonthsRiyadh(start, CYCLE_MONTHS[billing]) : null;
 }
 
 /**

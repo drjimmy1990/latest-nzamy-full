@@ -48,7 +48,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { MoyasarClient, MoyasarPayment } from "./moyasarClient.ts";
-import { PAYABLE_ITEMS } from "./catalog.ts";
+import { resolveItem } from "./catalog.ts";
 import { grantPurchase, type GrantPurchaseDeps } from "./grantPurchase.ts";
 import {
   fulfilmentNoticeAr,
@@ -260,11 +260,12 @@ async function finish(
     return { outcome: "rejected", reason: "order_has_no_user", receiptNumber };
   }
 
-  if (!Object.hasOwn(PAYABLE_ITEMS, order.item_id)) {
+  // resolve, not sell: a paid order for a retired item is still fulfilled
+  const item = resolveItem(order.item_id, deps.catalog);
+  if (!item) {
     console.error("[payments] fulfillOrder: paid order for an item the catalog does not know:", order.id, order.item_id);
     return { outcome: "pending", reason: "unknown_item", receiptNumber };
   }
-  const item = PAYABLE_ITEMS[order.item_id];
 
   const token = payment?.source?.token;
   const paymentMethodId = item.saveCard && token && client ? await saveCard(admin, client, order, token) : null;
@@ -328,7 +329,7 @@ async function finish(
 async function resume(deps: FulfilDeps, order: OrderRow): Promise<FulfillResult> {
   let client: GatewayClient | null = null;
   let payment: MoyasarPayment | null = null;
-  const item = Object.hasOwn(PAYABLE_ITEMS, order.item_id) ? PAYABLE_ITEMS[order.item_id] : null;
+  const item = resolveItem(order.item_id, deps.catalog) ?? null;
   if (item?.saveCard && order.moyasar_payment_id && (order.merchant ?? "platform") === "platform") {
     try {
       client = await deps.gateway();

@@ -12,7 +12,7 @@
  * Pure: relative imports only, so `node --test` loads it
  * (currentPlanLabel.test.ts).
  */
-import { PAYABLE_ITEMS } from "../payments/catalog.ts";
+import { resolveItem } from "../payments/catalog.ts";
 import { TIER_LABELS_AR } from "../../hooks/featureAccess.ts";
 import type { PracticeKind } from "../auth/practiceKind.ts";
 import type { UserTier } from "../../hooks/useUser.ts";
@@ -42,6 +42,7 @@ export function currentPlanLabelAr(
         ? SOLD_PLAN_ID[userType]
         : undefined;
   const itemId = table?.[tier];
-  const item = itemId && Object.hasOwn(PAYABLE_ITEMS, itemId) ? PAYABLE_ITEMS[itemId] : undefined;
+  // resolve, not sell: a holder of a retired plan still sees its name
+  const item = itemId ? resolveItem(itemId) : undefined;
   return item?.labelAr ?? TIER_LABELS_AR[tier];
 }

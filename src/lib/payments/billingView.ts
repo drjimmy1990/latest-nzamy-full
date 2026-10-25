@@ -1,9 +1,12 @@
-import { formatHalalas, PAYABLE_ITEMS } from "./catalog.ts";
+import { formatHalalas, PAYABLE_ITEMS, resolveItem, type PayableItem } from "./catalog.ts";
+import { BILLING_LABEL_AR, isBilling } from "../pricing/priceBook.ts";
 import { isBillingCompanyComplete } from "./moyasarConfig.ts";
 
 export interface BillingOrder {
   id: string;
   item_id: string;
+  /** monthly / quarterly / semiannual / yearly / once (payment_orders.billing). */
+  billing?: string | null;
   net_halalas: number;
   vat_halalas: number;
   total_halalas: number;
@@ -49,8 +52,13 @@ export function cardLabel(lastFour: unknown): string {
   return typeof lastFour === "string" && /^\d{4}$/.test(lastFour)
     ? `بطاقة تنتهي بـ ${arabicDigits(lastFour)}` : "بطاقة محفوظة";
 }
-export function billingItemAr(itemId: string): string {
-  return Object.hasOwn(PAYABLE_ITEMS, itemId) ? PAYABLE_ITEMS[itemId].labelAr : "عملية شراء";
+export function billingItemAr(itemId: string, catalog: Readonly<Record<string, PayableItem>> = PAYABLE_ITEMS): string {
+  // resolve, not sell: a receipt for a retired plan keeps the plan's name
+  return resolveItem(itemId, catalog)?.labelAr ?? "عملية شراء";
+}
+/** «شهري» / «ربع سنوي» / «نصف سنوي» / «سنوي» / «دفعة واحدة» for an order's billing; null when unknown. */
+export function orderBillingAr(billing: string | null | undefined): string | null {
+  return isBilling(billing) ? BILLING_LABEL_AR[billing] : null;
 }
 export function orderStatusAr(status: string): string {
   const labels: Record<string, string> = { created: "قيد التجهيز", initiated: "بانتظار الدفع", paid: "مدفوع", failed: "لم يكتمل الدفع", refunded: "مسترد", voided: "ملغى لدى مزوّد الدفع", cancelled: "ملغى" };
@@ -76,6 +84,7 @@ export function receiptView(order: BillingOrder, company: unknown) {
     number: order.receipt_number,
     date: billingDateAr(order.paid_at),
     item: billingItemAr(order.item_id),
+    billing: orderBillingAr(order.billing),
     net: formatHalalas(order.net_halalas),
     vatLabel: "ضريبة القيمة المضافة ١٥٪",
     vat: formatHalalas(order.vat_halalas),

@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { receiptView, cardLabel, orderStatusAr, hasReceipt, parseBillingResponse, pointsSummary, cardBrandAr, cardTitleAr } from "./billingView.ts";
+import { receiptView, cardLabel, orderStatusAr, hasReceipt, parseBillingResponse, pointsSummary, cardBrandAr, cardTitleAr, billingItemAr, orderBillingAr } from "./billingView.ts";
+import { buildCatalog } from "./catalog.ts";
+import { PRICE_BOOK } from "../pricing/priceBook.ts";
 
 const order = { id: "order-1", item_id: "lawyer-pro", net_halalas: 39900, vat_halalas: 5985, total_halalas: 45885, currency: "SAR", receipt_number: "NZ-2026-000001", paid_at: "2026-10-22T10:00:00Z", status: "paid", refunded_halalas: 0, last_four: "1111" };
 const company = { legal_name_ar: "منشأة الاختبار", cr_number: "1234567890", vat_number: "300000000000003", address_ar: "الرياض" };
@@ -104,4 +106,21 @@ test("cardTitleAr: the brand beside the last four, or the last four alone", () =
   assert.equal(cardTitleAr(card), "مدى · بطاقة تنتهي بـ ٤٢٤٢");
   assert.equal(cardTitleAr({ brand: null, last_four: "4242" }), "بطاقة تنتهي بـ ٤٢٤٢");
   assert.equal(cardTitleAr({ brand: "visa", last_four: null }), "فيزا · بطاقة محفوظة");
+});
+
+test("receipts and admin name every billing cycle in Arabic, and nothing for an unknown one", () => {
+  assert.equal(orderBillingAr("monthly"), "شهري");
+  assert.equal(orderBillingAr("quarterly"), "ربع سنوي");
+  assert.equal(orderBillingAr("semiannual"), "نصف سنوي");
+  assert.equal(orderBillingAr("yearly"), "سنوي");
+  assert.equal(orderBillingAr("once"), "دفعة واحدة");
+  for (const bad of [null, undefined, "", "custom", "constructor"]) assert.equal(orderBillingAr(bad), null, String(bad));
+  assert.equal(receiptView({ ...order, billing: "quarterly" }, null)?.billing, "ربع سنوي");
+  assert.equal(receiptView(order, null)?.billing, null, "an order row without billing shows no cycle line");
+});
+
+test("retire, never delete: a receipt and the admin list keep a retired plan's name", () => {
+  const retired = buildCatalog({ ...PRICE_BOOK, "lawyer-pro": { ...PRICE_BOOK["lawyer-pro"], retired: true } });
+  assert.equal(billingItemAr("lawyer-pro", retired), "المحامي المحترف");
+  assert.equal(billingItemAr("never-sold", retired), "عملية شراء");
 });

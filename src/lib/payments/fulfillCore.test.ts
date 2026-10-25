@@ -11,6 +11,8 @@ import { findPaidPaymentWith, fulfillOrderWith, type FulfilDeps, type GatewayCli
 import type { MoyasarPayment } from "./moyasarClient.ts";
 import type { GrantLibraryFn } from "./grantPurchase.ts";
 import { fakeDb, has, RANKS, type FakeHandler, type FakeQuery } from "./fakeDb.test-helper.ts";
+import { buildCatalog } from "./catalog.ts";
+import { PRICE_BOOK } from "../pricing/priceBook.ts";
 
 const NOW = new Date("2026-10-22T08:00:00.000Z");
 const USER = "00000000-0000-0000-0000-00000000u001";
@@ -367,4 +369,16 @@ test("a payment without a source object still grants (no throw on source.number)
   const r = await fulfillOrderWith(d, INPUT);
   assert.equal(r.outcome, "granted");
   assert.ok(!log.some((q) => q.table === "merge_payment_order_metadata" && JSON.stringify(q.payload).includes("payment_method")));
+});
+
+test("retire, never delete: a paid order for an item retired since is still granted, stamped and notified", async () => {
+  const catalog = buildCatalog({ ...PRICE_BOOK, "topup-100": { ...PRICE_BOOK["topup-100"], retired: true } });
+  const { client, log } = happyDb();
+  const { d, notices } = deps(client, gateway(paymentOf()), { catalog });
+  const r = await fulfillOrderWith(d, INPUT);
+  assert.deepEqual(r, { outcome: "granted", receiptNumber: "NZ-2026-000001" });
+  assert.equal(log.filter((q) => q.table === "credit_points").length, 1, "the points are credited");
+  assert.equal(stamps(log).length, 1);
+  assert.equal(notices.length, 1);
+  assert.ok(notices[0].body.includes("شحن ١٠٠"), "the notice names the retired item");
 });

@@ -9,7 +9,7 @@ import { getPaymentGatewayStatus } from "@/lib/access-control";
 import { viewerGatewayState } from "@/lib/payments/testModeAccess";
 import { MOYASAR_DISABLED_MESSAGE_AR } from "@/lib/payments/moyasarConfig";
 import { AUDIENCE_REFUSED_AR, UNKNOWN_ITEM_AR } from "@/lib/payments/checkoutCore";
-import { buyerAllowed, formatHalalas, PAYABLE_ITEMS } from "@/lib/payments/catalog";
+import { buyerAllowed, formatHalalas, sellableItem } from "@/lib/payments/catalog";
 import {
   billingLabelAr,
   checkoutItemNotes,
@@ -19,7 +19,7 @@ import {
 } from "@/lib/payments/checkoutView";
 
 /**
- * /checkout?item=<id>&billing=<b> — pay for one PAYABLE_ITEMS item online
+ * /checkout?item=<id>&billing=<b> — pay for one item on sale (the price book) online
  * (Moyasar payments B1, Task 7). Arabic only. A server component, per request:
  *   - an unknown item, or a billing it does not offer → «هذا المنتج غير متاح
  *     للدفع الإلكتروني» and a link to /pricing;
@@ -78,7 +78,7 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
   const parsed = parseCheckoutQuery(sp.item, sp.billing);
   if (!parsed.ok) return <Notice title={UNKNOWN_ITEM_AR} />;
 
-  const item = PAYABLE_ITEMS[parsed.itemId];
+  const item = sellableItem(parsed.itemId)!; // parseCheckoutQuery accepted only an item on sale
   const selfHref = `/checkout?item=${encodeURIComponent(parsed.itemId)}&billing=${parsed.billing}`;
 
   const supabase = await createClient();
@@ -128,7 +128,7 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
         {listed !== undefined ? (
           <p className="mt-5 text-2xl font-extrabold text-[#0B3D2E] dark:text-[#C8A762]">{formatHalalas(listed)}</p>
         ) : null}
-        <p className="mt-1 text-xs font-medium text-zinc-600 dark:text-zinc-400">{listedVatNotice(item, userType)}</p>
+        <p className="mt-1 text-xs font-medium text-zinc-600 dark:text-zinc-400">{listedVatNotice(item)}</p>
 
         {notes.length > 0 ? (
           <ul className="mt-5 space-y-2 text-sm text-zinc-700 dark:text-zinc-300">

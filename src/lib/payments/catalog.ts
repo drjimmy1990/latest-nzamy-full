@@ -1,41 +1,54 @@
 /**
- * catalog.ts — the one server-side price catalog for online payment, and the
- * VAT quote (owner answers ٢٣٩ / ٢٤٨ / ٢٤٩).
+ * catalog.ts — what checkout charges, in halalas, derived from the one price
+ * book (src/lib/pricing/priceBook.ts), and the VAT quote.
  *
  * Every amount is an integer number of halalas (1 SAR = 100 halalas). The
- * server charges what this file says, never a price sent by the browser.
+ * server charges what the book says, never a price sent by the browser. No
+ * number lives here: catalog.test.ts holds every item to its book entry.
  *
- * VAT is 15 %:
- *   - "exclusive" — the listed price is the net; VAT is added on top
- *     (lawyers, consultants, firms, top-ups);
- *   - "inclusive" — the listed price is what the buyer pays; VAT is inside it
- *     (individuals' plans);
- *   - "buyer"     — the library: exclusive for a business buyer
- *     (BUSINESS_USER_TYPES), inclusive for anyone else, a guest included.
+ * VAT is 15 %, always on top (pricing doc §2 rule 5, answer ٢٥٨ — it replaces
+ * the inclusive individuals' plans and the buyer-dependent library of ٢٤٨):
+ * the listed price is the net, VAT is added at checkout and on the receipt.
+ * `VatMode` keeps "inclusive" only because orders paid before ٢٥٨ carry it in
+ * payment_orders.vat_mode; nothing sold today is quoted inclusive.
  *
- * The listed prices are the ones shown in src/lib/pricing/plans.ts and
- * src/constants/pricing/*.ts; catalog.test.ts fails if they drift apart.
+ * Two views of the same items (retire, never delete):
+ *   - PAYABLE_ITEMS — RESOLVE: every book entry, retired ones included.
+ *     Fulfilment, receipts, labels, refunds and admin views look items up
+ *     here, because orders and subscriptions keep pointing at retired ids.
+ *   - sellableItem() / quote() — SELL: only what is on sale, in the billings
+ *     still sold. Checkout and every buy link go through these.
  *
- * Pure: no runtime imports, so `node --test` loads it directly.
+ * Pure: relative imports only, so `node --test` loads it directly.
  */
 
-export type ItemKind = "plan" | "library" | "topup";
-export type Billing = "monthly" | "yearly" | "once";
+import {
+  PRICE_BOOK,
+  BILLINGS,
+  isOnSale,
+  offeredBillings,
+  type Billing,
+  type BookEntry,
+  type BookItemKind,
+  type LibraryPlanRef,
+  type ServerTierLiteral,
+} from "../pricing/priceBook.ts";
+
+export type { Billing, LibraryPlanRef, ServerTierLiteral };
+export type ItemKind = BookItemKind;
 export type VatMode = "exclusive" | "inclusive";
-
-/** The paid tiers a plan grants — a subset of ServerTier in src/lib/access-control.ts. */
-export type ServerTierLiteral = "ai" | "pro" | "max" | "corp" | "enterprise";
-
-export type LibraryPlanRef = "lib-q1" | "lib-q2" | "lib-annual";
 
 /** Frozen at runtime too: this is the price authority, nothing may patch it. */
 export type PayableItem = Readonly<{
   id: string;
   kind: ItemKind;
   labelAr: string;
-  /** Halalas, as listed (net for exclusive VAT, gross for inclusive). */
+  /** Halalas before VAT, for the billings SOLD today (retired cycles left out). */
   prices: Readonly<Partial<Record<Billing, number>>>;
-  vat: VatMode | "buyer";
+  /** Halalas before VAT for every billing the book lists, retired ones included (renewal lookup, admin). */
+  listedPrices: Readonly<Partial<Record<Billing, number>>>;
+  /** False for a retired or coming-soon entry: resolvable, never sold. */
+  onSale: boolean;
   tier?: ServerTierLiteral;
   libraryPlanRef?: LibraryPlanRef;
   libraryDays?: number;
@@ -45,104 +58,69 @@ export type PayableItem = Readonly<{
   saveCard: boolean;
   /**
    * The `profiles.user_type` values that may buy this item online, or "any".
-   * Access is gated by tier rank and same-rank purchases stack, so a plan
-   * sold to the wrong audience would buy another audience's access cheaper
-   * (a lawyer taking ind-preventive's `pro` for 149 instead of lawyer-pro).
    * Checkout refuses a buyer outside the list (buyerAllowed).
    */
   buyers: Readonly<string[]> | "any";
 }>;
 
-function freezeItem(item: PayableItem): PayableItem {
-  Object.freeze(item.prices);
-  if (Array.isArray(item.buyers)) Object.freeze(item.buyers);
-  return Object.freeze(item);
-}
-
 export const VAT_PERCENT = 15;
 
 const SAR = 100;
 
-function plan(
+function toPayable(entry: BookEntry): PayableItem {
+  const sold = new Set<Billing>(offeredBillings(entry));
+  const prices: Partial<Record<Billing, number>> = {};
+  const listedPrices: Partial<Record<Billing, number>> = {};
+  for (const b of BILLINGS) {
+    const p = Object.hasOwn(entry.prices, b) ? entry.prices[b] : undefined;
+    if (!p) continue;
+    listedPrices[b] = p.sar * SAR;
+    if (sold.has(b)) prices[b] = p.sar * SAR;
+  }
+  const item: PayableItem = {
+    id: entry.id,
+    kind: entry.kind,
+    labelAr: entry.labelAr,
+    prices: Object.freeze(prices),
+    listedPrices: Object.freeze(listedPrices),
+    onSale: isOnSale(entry),
+    ...(entry.tier ? { tier: entry.tier } : {}),
+    ...(entry.libraryPlanRef ? { libraryPlanRef: entry.libraryPlanRef } : {}),
+    ...(entry.libraryDays !== undefined ? { libraryDays: entry.libraryDays } : {}),
+    ...(entry.points !== undefined ? { points: entry.points } : {}),
+    ...(entry.pointsValidityMonths !== undefined ? { pointsValidityMonths: entry.pointsValidityMonths } : {}),
+    saveCard: entry.kind === "plan",
+    buyers: entry.buyers === "any" ? "any" : Object.freeze([...entry.buyers]),
+  };
+  return Object.freeze(item);
+}
+
+/** The halala catalogue of a book (tests build one from a fixture book). */
+export function buildCatalog(book: Readonly<Record<string, BookEntry>>): Readonly<Record<string, PayableItem>> {
+  const out: Record<string, PayableItem> = {};
+  for (const [id, entry] of Object.entries(book)) out[id] = toPayable(entry);
+  return Object.freeze(out);
+}
+
+/** RESOLVE: every item the book knows, retired ones included. */
+export const PAYABLE_ITEMS: Readonly<Record<string, PayableItem>> = buildCatalog(PRICE_BOOK);
+
+/** The item for an id, retired included, or undefined (never an inherited key). */
+export function resolveItem(
   id: string,
-  labelAr: string,
-  monthlySar: number,
-  yearlySar: number,
-  tier: ServerTierLiteral,
-  vat: VatMode,
-  buyers: readonly string[],
-): PayableItem {
-  return freezeItem({
-    id,
-    kind: "plan",
-    labelAr,
-    prices: { monthly: monthlySar * SAR, yearly: yearlySar * SAR },
-    vat,
-    tier,
-    saveCard: true,
-    buyers: [...buyers],
-  });
+  catalog: Readonly<Record<string, PayableItem>> = PAYABLE_ITEMS,
+): PayableItem | undefined {
+  return Object.hasOwn(catalog, id) ? catalog[id] : undefined;
 }
 
-function library(id: LibraryPlanRef, labelAr: string, sar: number, days: number): PayableItem {
-  return freezeItem({
-    id,
-    kind: "library",
-    labelAr,
-    prices: { once: sar * SAR },
-    vat: "buyer",
-    libraryPlanRef: id,
-    libraryDays: days,
-    saveCard: false,
-    buyers: "any",
-  });
+/** SELL: the item for an id only while it is on sale, or undefined. */
+export function sellableItem(
+  id: string,
+  catalog: Readonly<Record<string, PayableItem>> = PAYABLE_ITEMS,
+): PayableItem | undefined {
+  const item = resolveItem(id, catalog);
+  return item && item.onSale ? item : undefined;
 }
-
-function topup(id: string, labelAr: string, sar: number, points: number, months: number): PayableItem {
-  return freezeItem({
-    id,
-    kind: "topup",
-    labelAr,
-    prices: { once: sar * SAR },
-    vat: "exclusive",
-    points,
-    pointsValidityMonths: months,
-    saveCard: false,
-    buyers: "any",
-  });
-}
-
-export const PAYABLE_ITEMS: Readonly<Record<string, PayableItem>> = Object.freeze({
-  "lawyer-pro": plan("lawyer-pro", "المحامي المحترف", 399, 3990, "pro", "exclusive", ["lawyer"]),
-  "consultant-independent": plan("consultant-independent", "المستشار القانوني المستقل", 399, 3990, "pro", "exclusive", ["lawyer", "provider"]),
-  "firm-basic": plan("firm-basic", "مكتب المحاماة", 990, 9900, "corp", "exclusive", ["firm"]),
-  "firm-enterprise": plan("firm-enterprise", "شركة المحاماة", 1490, 14900, "enterprise", "exclusive", ["firm"]),
-  "ind-ai": plan("ind-ai", "الباقة الذكية", 39, 390, "ai", "inclusive", ["individual"]),
-  "ind-preventive": plan("ind-preventive", "الباقة الوقائية", 149, 1490, "pro", "inclusive", ["individual"]),
-  "ind-litigation": plan("ind-litigation", "التأمين القانوني", 399, 3990, "max", "inclusive", ["individual"]),
-  "lib-q1": library("lib-q1", "المكتبة القانونية — ربع سنوي", 1500, 90),
-  "lib-q2": library("lib-q2", "المكتبة القانونية — نصف سنوي", 2750, 180),
-  "lib-annual": library("lib-annual", "المكتبة القانونية — سنوي", 5000, 365),
-  "topup-100": topup("topup-100", "شحن ١٠٠ (١٠٠ نقطة)", 100, 100, 3),
-  "topup-250": topup("topup-250", "شحن ٢٥٠ (٣٠٠ نقطة)", 250, 300, 3),
-  "topup-500": topup("topup-500", "شحن ٥٠٠ (٧٠٠ نقطة)", 500, 700, 6),
-  "topup-1000": topup("topup-1000", "شحن ١٬٠٠٠ (١٬٥٠٠ نقطة)", 1000, 1500, 12),
-});
-
-/**
- * `profiles.user_type` values that buy the library VAT-exclusive (owner ٢٤٨:
- * establishments pay VAT on top). `micro` accounts are small establishments.
- */
-export const BUSINESS_USER_TYPES = [
-  "lawyer",
-  "provider",
-  "firm",
-  "corporate",
-  "business",
-  "government",
-  "ngo",
-  "micro",
-] as const;
 
 export type QuoteResult =
   | {
@@ -153,29 +131,25 @@ export type QuoteResult =
       vatHalalas: number;
       totalHalalas: number;
     }
-  | { ok: false; error: "unknown_item" | "billing_not_offered" };
+  | { ok: false; error: "unknown_item" | "not_for_sale" | "billing_not_offered" };
 
-function isBusinessBuyer(userType: string | null): boolean {
-  return userType !== null && (BUSINESS_USER_TYPES as readonly string[]).includes(userType);
-}
-
-export function quote(itemId: string, billing: Billing, buyerUserType: string | null): QuoteResult {
-  if (!Object.hasOwn(PAYABLE_ITEMS, itemId)) return { ok: false, error: "unknown_item" };
-  const item = PAYABLE_ITEMS[itemId];
-  const listed = Object.hasOwn(item.prices, billing) ? item.prices[billing] : undefined;
-  if (listed === undefined) return { ok: false, error: "billing_not_offered" };
-
-  const vatMode: VatMode =
-    item.vat === "buyer" ? (isBusinessBuyer(buyerUserType) ? "exclusive" : "inclusive") : item.vat;
-
-  if (vatMode === "exclusive") {
-    const netHalalas = listed;
-    const vatHalalas = Math.round((netHalalas * VAT_PERCENT) / 100);
-    return { ok: true, item, vatMode, netHalalas, vatHalalas, totalHalalas: netHalalas + vatHalalas };
-  }
-  const totalHalalas = listed;
-  const netHalalas = Math.round((totalHalalas * 100) / (100 + VAT_PERCENT));
-  return { ok: true, item, vatMode, netHalalas, vatHalalas: totalHalalas - netHalalas, totalHalalas };
+/**
+ * The price of selling `itemId` in `billing` now: VAT-exclusive, 15 % on top.
+ * A retired or coming-soon item is `not_for_sale`; a billing it is not sold
+ * in (never listed, or retired) is `billing_not_offered`.
+ */
+export function quote(
+  itemId: string,
+  billing: Billing,
+  catalog: Readonly<Record<string, PayableItem>> = PAYABLE_ITEMS,
+): QuoteResult {
+  const item = resolveItem(itemId, catalog);
+  if (!item) return { ok: false, error: "unknown_item" };
+  if (!item.onSale) return { ok: false, error: "not_for_sale" };
+  const netHalalas = Object.hasOwn(item.prices, billing) ? item.prices[billing] : undefined;
+  if (netHalalas === undefined) return { ok: false, error: "billing_not_offered" };
+  const vatHalalas = Math.round((netHalalas * VAT_PERCENT) / 100);
+  return { ok: true, item, vatMode: "exclusive", netHalalas, vatHalalas, totalHalalas: netHalalas + vatHalalas };
 }
 
 /**

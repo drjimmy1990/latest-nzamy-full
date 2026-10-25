@@ -18,7 +18,7 @@
  * Pure: relative imports only, so `node --test` loads it.
  */
 
-import { PAYABLE_ITEMS } from "./catalog.ts";
+import { resolveItem, sellableItem } from "./catalog.ts";
 import { fulfilmentNoticeAr } from "./fulfillDecision.ts";
 
 export interface ResultOrder {
@@ -62,7 +62,8 @@ const CONTACT_SENTENCE = "إن خُصم مبلغ من بطاقتك فتواصل 
 const NO_GATEWAY_MESSAGE = "payment_failed";
 
 function labelOf(itemId: string): string {
-  return Object.hasOwn(PAYABLE_ITEMS, itemId) ? PAYABLE_ITEMS[itemId].labelAr : "طلبك";
+  // resolve, not sell: an order for a retired item keeps its name
+  return resolveItem(itemId)?.labelAr ?? "طلبك";
 }
 
 function noticeKind(kind: string): "plan" | "library" | "topup" {
@@ -71,8 +72,8 @@ function noticeKind(kind: string): "plan" | "library" | "topup" {
 
 /** /checkout for the order's own item and billing — only while that item is still sold so. */
 export function retryHrefFor(order: Pick<ResultOrder, "item_id" | "billing">): string | undefined {
-  if (!Object.hasOwn(PAYABLE_ITEMS, order.item_id)) return undefined;
-  if (!Object.hasOwn(PAYABLE_ITEMS[order.item_id].prices, order.billing)) return undefined;
+  const sold = sellableItem(order.item_id);
+  if (!sold || !Object.hasOwn(sold.prices, order.billing)) return undefined;
   return `/checkout?item=${encodeURIComponent(order.item_id)}&billing=${encodeURIComponent(order.billing)}`;
 }
 

@@ -9,7 +9,7 @@
  * `.limit(1).maybeSingle()` with no order returned whichever the planner
  * found first. The rule here is deterministic:
  *   1. among the candidates (sorted by id, ascending), the first whose id is a
- *      plan sold today (a key of PAYABLE_ITEMS);
+ *      plan on sale today (sellableItem — a retired plan no longer wins);
  *   2. otherwise the lowest id;
  *   3. no candidate → null (the caller keeps its own fallback).
  *
@@ -19,7 +19,7 @@
  * Pure: relative imports only, so `node --test` loads it directly.
  */
 
-import { PAYABLE_ITEMS } from "./catalog.ts";
+import { sellableItem } from "./catalog.ts";
 
 export function pickPlanRow(
   rows: ReadonlyArray<{ id: string | null | undefined }> | null | undefined,
@@ -29,6 +29,6 @@ export function pickPlanRow(
     .filter((id): id is string => typeof id === "string" && id.length > 0)
     .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   if (ids.length === 0) return null;
-  const sold = ids.find((id) => Object.prototype.hasOwnProperty.call(PAYABLE_ITEMS, id));
+  const sold = ids.find((id) => sellableItem(id) !== undefined);
   return sold ?? ids[0];
 }

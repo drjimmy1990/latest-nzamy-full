@@ -26,6 +26,12 @@ test("parseCheckoutBody accepts {itemId, billing} and nothing priced", () => {
   assert.deepEqual(withPrice, { ok: true, itemId: "topup-100", billing: "once" });
 });
 
+test("parseCheckoutBody reads the two new cycles too (whether the item sells them is quote's question)", () => {
+  for (const billing of ["quarterly", "semiannual", "yearly"]) {
+    assert.deepEqual(parseCheckoutBody({ itemId: "lawyer-pro", billing }), { ok: true, itemId: "lawyer-pro", billing });
+  }
+});
+
 test("parseCheckoutBody refuses a missing or ill-typed item or billing", () => {
   for (const body of [
     null,
@@ -39,6 +45,8 @@ test("parseCheckoutBody refuses a missing or ill-typed item or billing", () => {
     { itemId: "x".repeat(65), billing: "monthly" },
     { itemId: "lawyer-pro", billing: "weekly" },
     { itemId: "lawyer-pro", billing: "Monthly" },
+    { itemId: "lawyer-pro", billing: "custom" },
+    { itemId: "lawyer-pro", billing: "biannual" },
   ]) {
     assert.deepEqual(parseCheckoutBody(body), { ok: false }, JSON.stringify(body));
   }

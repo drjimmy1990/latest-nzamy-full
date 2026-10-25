@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   try {
     const admin = await createServiceClient();
-    let query = admin.from("payment_orders").select("id,user_id,merchant,item_id,kind,status,total_halalas,refunded_halalas,receipt_number,created_at,paid_at,fulfilled_at,live,metadata").order("created_at", { ascending: false }).limit(100);
+    let query = admin.from("payment_orders").select("id,user_id,merchant,item_id,kind,billing,status,total_halalas,refunded_halalas,receipt_number,created_at,paid_at,fulfilled_at,live,metadata").order("created_at", { ascending: false }).limit(100);
     const status = params.get("status");
     if (status) {
       if (!["created","initiated","paid","failed","refunded","voided","cancelled"].includes(status)) return NextResponse.json({ error: "الحالة غير صالحة" }, { status: 400 });

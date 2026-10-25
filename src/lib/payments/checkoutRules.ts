@@ -8,8 +8,7 @@
  */
 
 import type { Billing, VatMode } from "./catalog.ts";
-
-const BILLINGS: ReadonlySet<string> = new Set<Billing>(["monthly", "yearly", "once"]);
+import { isBilling } from "../pricing/priceBook.ts";
 
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -22,8 +21,10 @@ export function parseCheckoutBody(body: unknown): { ok: true; itemId: string; bi
   if (!isPlainObject(body)) return { ok: false };
   const { itemId, billing } = body;
   if (typeof itemId !== "string" || itemId.length === 0 || itemId.length > 64) return { ok: false };
-  if (typeof billing !== "string" || !BILLINGS.has(billing)) return { ok: false };
-  return { ok: true, itemId, billing: billing as Billing };
+  // monthly / quarterly / semiannual / yearly / once — whether the item is
+  // sold in it is quote()'s question, answered 400 there.
+  if (!isBilling(billing)) return { ok: false };
+  return { ok: true, itemId, billing };
 }
 
 /**

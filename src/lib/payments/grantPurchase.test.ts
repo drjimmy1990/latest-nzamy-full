@@ -13,6 +13,8 @@ import assert from "node:assert/strict";
 import { grantPurchase, type GrantLibraryFn } from "./grantPurchase.ts";
 import { addMonthsUtc } from "./fulfillDecision.ts";
 import { fakeDb, has, RANKS, type FakeHandler, type FakeQuery } from "./fakeDb.test-helper.ts";
+import { buildCatalog } from "./catalog.ts";
+import { PRICE_BOOK } from "../pricing/priceBook.ts";
 
 const NOW = new Date("2026-10-22T08:00:00.000Z");
 const inDays = (d: number) => new Date(NOW.getTime() + d * 86_400_000).toISOString();
@@ -220,5 +222,72 @@ test("a missing points function → ok:false, missing (the sweep retries later)"
 test("a grant call that answers nothing usable is a failure", async () => {
   const { client } = planDb([], (q) => (q.table === "grant_plan_subscription" ? { data: null } : undefined));
   const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS }, order("ind-ai", "plan", "yearly"), { now: NOW });
+  assert.equal(r.ok, false);
+});
+
+// ── retire, never delete (P1) ───────────────────────────────────────────────
+
+
+/** The book as P2 will have it: lawyer-pro retired, firm-basic monthly retired. */
+const RETIRED = buildCatalog({
+  ...PRICE_BOOK,
+  "lawyer-pro": { ...PRICE_BOOK["lawyer-pro"], retired: true },
+  "firm-basic": {
+    ...PRICE_BOOK["firm-basic"],
+    prices: { monthly: { sar: 990, retired: true }, yearly: { sar: 9900 } },
+  },
+});
+
+test("retired: a paid order for a retired plan is still fulfilled — the plan row and its monthly points", async () => {
+  const { client, log } = planDb([]);
+  const r = await grantPurchase(
+    { admin: client, grantLibrary: noLibrary, ranks: RANKS, catalog: RETIRED },
+    order("lawyer-pro", "plan", "yearly"),
+    { now: NOW },
+  );
+  assert.deepEqual(r, { ok: true, alreadyEntitled: false });
+  const args = grantArgs(log);
+  assert.equal(args.p_plan_id, "lawyer-pro");
+  assert.equal(args.p_tier, "pro");
+  assert.equal(args.p_period_end, "2027-10-22T08:00:00.000Z");
+  assert.equal(lots(log).length, 1, "the plan's monthly points still come with it");
+});
+
+test("retired: an order in a retired CYCLE (firm-basic monthly) is still fulfilled", async () => {
+  const { client, log } = planDb([]);
+  const r = await grantPurchase(
+    { admin: client, grantLibrary: noLibrary, ranks: RANKS, catalog: RETIRED },
+    order("firm-basic", "plan", "monthly"),
+    { now: NOW },
+  );
+  assert.deepEqual(r, { ok: true, alreadyEntitled: false });
+  assert.equal(grantArgs(log).p_period_end, "2026-11-22T08:00:00.000Z");
+});
+
+test("a quarterly order runs 3 months; a half-yearly one 6", async () => {
+  const quarterly = buildCatalog({
+    ...PRICE_BOOK,
+    "firm-basic": { ...PRICE_BOOK["firm-basic"], prices: { quarterly: { sar: 2990 }, semiannual: { sar: 5490 } } },
+  });
+  for (const [billing, end] of [["quarterly", "2027-01-22T08:00:00.000Z"], ["semiannual", "2027-04-22T08:00:00.000Z"]] as const) {
+    const { client, log } = planDb([]);
+    const r = await grantPurchase(
+      { admin: client, grantLibrary: noLibrary, ranks: RANKS, catalog: quarterly },
+      order("firm-basic", "plan", billing),
+      { now: NOW },
+    );
+    assert.deepEqual(r, { ok: true, alreadyEntitled: false }, billing);
+    assert.equal(grantArgs(log).p_billing, billing);
+    assert.equal(grantArgs(log).p_period_end, end, billing);
+  }
+});
+
+test("an item the book never knew is still refused (unknown item), retired or not", async () => {
+  const { client } = planDb([]);
+  const r = await grantPurchase(
+    { admin: client, grantLibrary: noLibrary, ranks: RANKS, catalog: RETIRED },
+    order("lawyer-gold", "plan", "yearly"),
+    { now: NOW },
+  );
   assert.equal(r.ok, false);
 });

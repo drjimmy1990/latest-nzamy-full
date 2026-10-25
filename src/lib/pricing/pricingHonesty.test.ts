@@ -24,7 +24,7 @@ import test from "node:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { LAWYER_AI_TOOLS, TOOL_POINT_LABELS, getLawyerAiBadge } from "../../constants/lawyerAiCatalog.ts";
 import type { AudienceTab } from "../../constants/pricing/pricing.types.ts";
-import { BUSINESS_USER_TYPES, PAYABLE_ITEMS } from "../payments/catalog.ts";
+import { PAYABLE_ITEMS } from "../payments/catalog.ts";
 import { VAT_NOTICE, vatNoticeFor } from "./vatNotice.ts";
 import { USER_TYPE_TO_AUDIENCE } from "./audienceForUserType.ts";
 
@@ -583,48 +583,38 @@ test("٢٠٣: the colleague-invite page names the legal library and the length t
   assert.doesNotMatch(invite, /\$\{trialLengthLabel\(trialDays, true\)\} كاملة|of full access/);
 });
 
-// ── Owner ٢٣٩ / ٢٤٨ / ٢٤٩ (Moyasar B1, task 10): VAT per audience, top-up validity ──
-// The screens say what the server charges (src/lib/payments/catalog.ts):
-// lawyers, consultants, firms and every establishment pay VAT on top; the
-// individuals' prices include it; the library depends on the buyer. Each
-// pricing section states its rule once, under its prices — not per card.
+// ── Owner ٢٥٨ (25 Oct, pricing doc §2 rule 5 and §13ب.2): one VAT sentence ──
+// Every price is VAT-exclusive — individuals and the library included — and
+// the screens say what the server charges (src/lib/payments/catalog.ts). It
+// replaces ٢٤٨'s three sentences (exclusive / inclusive / by buyer). Each
+// pricing section states it once, under its prices — not per card.
 
-const VAT_EXCLUSIVE_AR = "الأسعار غير شاملة ضريبة القيمة المضافة ١٥٪ وتُضاف عند الدفع ويصدر بها فاتورة ضريبية رسمية";
-const VAT_EXCLUSIVE_EN = "Prices exclude 15% VAT, added at checkout with an official tax invoice";
-const VAT_INCLUSIVE_AR = "الأسعار شاملة ضريبة القيمة المضافة";
-const VAT_INCLUSIVE_EN = "Prices include VAT";
-const VAT_LIBRARY_AR = "للأفراد: شامل الضريبة · للمحامين والمنشآت: غير شامل الضريبة";
-const VAT_LIBRARY_EN = "For individuals: VAT included · For lawyers and establishments: VAT excluded";
+const VAT_ONE_AR = "جميع الأسعار المعروضة غير شاملة لضريبة القيمة المضافة ١٥٪ (تُضاف عند السداد وإصدار الفاتورة الضريبية)";
+const VAT_ONE_EN = "All prices shown exclude 15% VAT (added at checkout and on the tax invoice)";
+/** ٢٤٨'s sentences, superseded by ٢٥٨: none may come back. */
+const SUPERSEDED_VAT = [
+  "الأسعار غير شاملة ضريبة القيمة المضافة ١٥٪ وتُضاف عند الدفع ويصدر بها فاتورة ضريبية رسمية",
+  "الأسعار شاملة ضريبة القيمة المضافة",
+  "للأفراد: شامل الضريبة · للمحامين والمنشآت: غير شامل الضريبة",
+  "Prices include VAT",
+  "For individuals: VAT included",
+];
 
-test("٢٤٨: the three VAT sentences are the owner's, verbatim, with their English twins", () => {
-  assert.deepEqual(VAT_NOTICE.exclusive, { ar: VAT_EXCLUSIVE_AR, en: VAT_EXCLUSIVE_EN });
-  assert.deepEqual(VAT_NOTICE.inclusive, { ar: VAT_INCLUSIVE_AR, en: VAT_INCLUSIVE_EN });
-  assert.deepEqual(VAT_NOTICE.library, { ar: VAT_LIBRARY_AR, en: VAT_LIBRARY_EN });
+test("٢٥٨: one VAT sentence, the owner's §13ب.2 wording verbatim, with its English twin", () => {
+  assert.deepEqual(Object.keys(VAT_NOTICE), ["exclusive"]);
+  assert.deepEqual(VAT_NOTICE.exclusive, { ar: VAT_ONE_AR, en: VAT_ONE_EN });
 });
 
-test("٢٤٨: each /pricing audience section carries its own VAT sentence", () => {
-  const exclusive: AudienceTab[] = ["lawyers", "firms", "providers", "companies", "micro", "ngo", "government"];
-  for (const audience of exclusive) {
-    assert.deepEqual(vatNoticeFor(audience, false), VAT_NOTICE.exclusive, audience);
+test("٢٥٨: every /pricing audience and mode carries the same sentence — individuals and the library included", () => {
+  const audiences: AudienceTab[] = ["individuals", "lawyers", "firms", "providers", "companies", "micro", "ngo", "government"];
+  for (const audience of audiences) {
+    for (const libraryMode of [false, true, undefined]) {
+      assert.deepEqual(vatNoticeFor(audience, libraryMode), VAT_NOTICE.exclusive, `${audience} ${libraryMode}`);
+    }
   }
-  assert.deepEqual(vatNoticeFor("individuals", false), VAT_NOTICE.inclusive);
-  // Library mode exists on the lawyers and firms tabs only (getPlanList). The
-  // lawyers' library plans are the ones anyone buys, so both rules apply; the
-  // firms' library plans (lib-firm-*) are sold to establishments only, so the
-  // business sentence (controller ruling, task 10 fix round 1).
-  assert.deepEqual(vatNoticeFor("lawyers", true), VAT_NOTICE.library);
-  assert.deepEqual(vatNoticeFor("firms", true), VAT_NOTICE.exclusive);
-  assert.deepEqual(vatNoticeFor("individuals", true), VAT_NOTICE.inclusive);
-  assert.deepEqual(vatNoticeFor("companies", true), VAT_NOTICE.exclusive);
-
-  // The exclusive rule covers exactly the business buyers the server charges
-  // VAT on top (BUSINESS_USER_TYPES), mapped to their tabs as /pricing and
-  // Settings → «الاشتراك والباقة» do (src/lib/pricing/audienceForUserType.ts).
-  const entries = Object.entries(USER_TYPE_TO_AUDIENCE).map(([u, a]) => [`${u}:${a}`, u, a as string] as const);
-  assert.ok(entries.length >= 8, `USER_TYPE_TO_AUDIENCE maps only ${entries.length} user types — entries were lost`);
-  for (const [, userType, audience] of entries) {
-    const expected = (BUSINESS_USER_TYPES as readonly string[]).includes(userType) ? VAT_NOTICE.exclusive : VAT_NOTICE.inclusive;
-    assert.deepEqual(vatNoticeFor(audience as AudienceTab, false), expected, `${userType} → ${audience}`);
+  // …and every user type's family (Settings → «الاشتراك والباقة» too).
+  for (const audience of Object.values(USER_TYPE_TO_AUDIENCE)) {
+    assert.deepEqual(vatNoticeFor(audience as AudienceTab, false), VAT_NOTICE.exclusive, audience as string);
   }
 
   // PricingCards renders the sentence once for the whole section, after the
@@ -636,30 +626,53 @@ test("٢٤٨: each /pricing audience section carries its own VAT sentence", () =
   assert.doesNotMatch(cards, /لا تشمل ضريبة|Prices exclude VAT\./, "the old paraphrase under the points table");
 });
 
-test("٢٤٨: /laws/subscribe shows the library VAT sentence and its English twin", () => {
+test("٢٥٨: no price surface keeps a superseded VAT sentence or a second copy of the new one", () => {
+  for (const path of [
+    "components/pricing/PricingCards.tsx",
+    "app/laws/subscribe/page.tsx",
+    "app/laws/components/PaywallModal.tsx",
+    "app/pro/page.tsx",
+    "app/checkout/page.tsx",
+    "components/payments/MoyasarCheckout.tsx",
+    "app/services/individuals/page.tsx",
+    "lib/payments/checkoutView.ts",
+    "constants/pricing/pricing.common.ts",
+  ]) {
+    const text = code(path);
+    for (const old of SUPERSEDED_VAT) assert.ok(!text.includes(old), `${path}: «${old}»`);
+    assert.ok(!text.includes(VAT_ONE_AR) && !text.includes(VAT_ONE_EN), `${path}: a second copy of the sentence (read VAT_NOTICE)`);
+  }
+});
+
+test("٢٥٨: /laws/subscribe shows the one sentence and its English twin", () => {
   const subscribe = code("app/laws/subscribe/page.tsx");
   assert.match(subscribe, /import \{ VAT_NOTICE \} from "@\/lib\/pricing\/vatNotice";/);
-  assert.ok(subscribe.includes("vatNote: VAT_NOTICE.library.ar,"), "Arabic library sentence");
-  assert.ok(subscribe.includes("vatNote: VAT_NOTICE.library.en,"), "English library sentence");
-  assert.ok(!subscribe.includes(VAT_LIBRARY_AR) && !subscribe.includes(VAT_LIBRARY_EN), "no second copy of the sentence");
+  assert.ok(subscribe.includes("vatNote: VAT_NOTICE.exclusive.ar,"), "Arabic sentence");
+  assert.ok(subscribe.includes("vatNote: VAT_NOTICE.exclusive.en,"), "English sentence");
   assert.equal(subscribe.split("{t.vatNote}").length - 1, 1, "rendered once, under the plans");
 });
 
-test("٢٤٨: the /laws paywall shows the library VAT sentence once, under its plans", () => {
+test("٢٥٨: the /laws paywall shows the one sentence once, under its plans", () => {
   const paywall = code("app/laws/components/PaywallModal.tsx");
   assert.match(paywall, /import \{ VAT_NOTICE \} from "@\/lib\/pricing\/vatNotice";/);
-  const render = "{isRTL ? VAT_NOTICE.library.ar : VAT_NOTICE.library.en}";
-  assert.equal(paywall.split(render).length - 1, 1, "one library sentence");
+  const render = "{isRTL ? VAT_NOTICE.exclusive.ar : VAT_NOTICE.exclusive.en}";
+  assert.equal(paywall.split(render).length - 1, 1, "one sentence");
   const modal = paywall.slice(paywall.indexOf("export function PaywallModal"));
   assert.ok(modal.indexOf(render) > modal.indexOf("{PLANS.map("), "under the plan grid");
 });
 
-test("٢٤٨: /pro shows the business VAT sentence once, under its lawyer and firm prices", () => {
+test("٢٥٨: /pro shows the one sentence once, under its lawyer and firm prices", () => {
   const pro = code("app/pro/page.tsx");
   assert.match(pro, /import \{ VAT_NOTICE \} from "@\/lib\/pricing\/vatNotice";/);
   const render = "{isRTL ? VAT_NOTICE.exclusive.ar : VAT_NOTICE.exclusive.en}";
-  assert.equal(pro.split(render).length - 1, 1, "one business sentence");
+  assert.equal(pro.split(render).length - 1, 1, "one sentence");
   assert.ok(pro.indexOf(render) > pro.indexOf("{plans.map("), "under the price cards");
+});
+
+test("٢٥٨: /services/individuals shows the one sentence under its plan prices", () => {
+  const page = code("app/services/individuals/page.tsx");
+  assert.match(page, /import \{ VAT_NOTICE \} from "@\/lib\/pricing\/vatNotice";/);
+  assert.equal(page.split("{isAr ? VAT_NOTICE.exclusive.ar : VAT_NOTICE.exclusive.en}").length - 1, 1);
 });
 
 /**

@@ -47,7 +47,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { planGrantDecision, type ActivePlanRow, type TierRankTable } from "../entitlementGrantRules.ts";
 import type { LibraryGrantSource, LibraryPlanRef } from "../libraryAccess.ts";
-import { PAYABLE_ITEMS, type PayableItem } from "./catalog.ts";
+import { resolveItem, type PayableItem } from "./catalog.ts";
 import {
   addMonthsUtc,
   isMissingPaymentsObject,
@@ -84,6 +84,12 @@ export interface GrantPurchaseDeps {
   grantLibrary: GrantLibraryFn;
   /** TIER_RANK (src/lib/access-control.ts). */
   ranks: TierRankTable;
+  /**
+   * The halala catalogue (PAYABLE_ITEMS unless a test passes a fixture). Looked
+   * up with resolveItem — RETIRED items included: an order paid for a plan
+   * that has since been retired is still fulfilled.
+   */
+  catalog?: Readonly<Record<string, PayableItem>>;
 }
 
 type DbError = { code?: string; message?: string } | null;
@@ -230,10 +236,8 @@ export async function grantPurchase(
 ): Promise<GrantPurchaseResult> {
   try {
     if (!order.user_id) return { ok: false, error: "order has no user" };
-    if (!Object.hasOwn(PAYABLE_ITEMS, order.item_id)) {
-      return { ok: false, error: `unknown item ${order.item_id}` };
-    }
-    const item = PAYABLE_ITEMS[order.item_id];
+    const item = resolveItem(order.item_id, deps.catalog);
+    if (!item) return { ok: false, error: `unknown item ${order.item_id}` };
     if (item.kind !== order.kind) {
       return { ok: false, error: `order kind ${order.kind} does not match item kind ${item.kind}` };
     }

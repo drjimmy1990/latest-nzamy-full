@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
+  addMonthsRiyadh,
   addMonthsUtc,
   cronSecretMatches,
   fulfilmentNoticeAr,
@@ -146,11 +147,59 @@ test("addMonthsUtc clamps to the end of a shorter month", () => {
   assert.equal(addMonthsUtc(new Date("2026-10-22T08:00:00Z"), 12).toISOString(), "2027-10-22T08:00:00.000Z");
 });
 
-test("planPeriodEnd: one month for monthly, one year for yearly, nothing else", () => {
+test("planPeriodEnd: 1 / 3 / 6 / 12 calendar months for the four cycles, nothing else", () => {
   const now = new Date("2026-10-22T08:00:00Z");
   assert.equal(planPeriodEnd(now, "monthly")?.toISOString(), "2026-11-22T08:00:00.000Z");
+  assert.equal(planPeriodEnd(now, "quarterly")?.toISOString(), "2027-01-22T08:00:00.000Z");
+  assert.equal(planPeriodEnd(now, "semiannual")?.toISOString(), "2027-04-22T08:00:00.000Z");
   assert.equal(planPeriodEnd(now, "yearly")?.toISOString(), "2027-10-22T08:00:00.000Z");
-  assert.equal(planPeriodEnd(now, "once"), null);
+  for (const b of ["once", "custom", "biannual", "", "Monthly"]) assert.equal(planPeriodEnd(now, b), null, b);
+});
+
+test("planPeriodEnd clamps to month end on the Riyadh calendar (daytime = the UTC answer)", () => {
+  const cases: Array<[string, string, string]> = [
+    ["2026-01-31T10:00:00Z", "monthly", "2026-02-28T10:00:00.000Z"], // 31 Jan + 1
+    ["2028-01-31T10:00:00Z", "monthly", "2028-02-29T10:00:00.000Z"], // leap year
+    ["2026-08-31T09:00:00Z", "semiannual", "2027-02-28T09:00:00.000Z"], // 31 Aug + 6
+    ["2026-11-30T09:00:00Z", "quarterly", "2027-02-28T09:00:00.000Z"], // 30 Nov + 3
+    ["2028-02-29T09:00:00Z", "yearly", "2029-02-28T09:00:00.000Z"], // 29 Feb + 12
+  ];
+  for (const [from, billing, want] of cases) {
+    assert.equal(planPeriodEnd(new Date(from), billing)?.toISOString(), want, `${from} ${billing}`);
+  }
+});
+
+test("planPeriodEnd near midnight: Riyadh (UTC+3) is already on the next day, so its month end decides", () => {
+  const cases: Array<[string, string, string]> = [
+    // 30 Jan 22:00Z = 31 Jan 01:00 Riyadh → 28 Feb 01:00 Riyadh (the UTC rule: 28 Feb 22:00Z, already 1 Mar in Riyadh)
+    ["2026-01-30T22:00:00Z", "monthly", "2026-02-27T22:00:00.000Z"],
+    // 30 Aug 21:30Z = 31 Aug 00:30 Riyadh → 28 Feb 00:30 Riyadh
+    ["2026-08-30T21:30:00Z", "semiannual", "2027-02-27T21:30:00.000Z"],
+    // 29 Nov 21:00Z = 30 Nov 00:00 Riyadh → 28 Feb 00:00 Riyadh
+    ["2026-11-29T21:00:00Z", "quarterly", "2027-02-27T21:00:00.000Z"],
+    // 28 Feb 2028 22:00Z = 29 Feb 01:00 Riyadh → 28 Feb 2029 01:00 Riyadh
+    ["2028-02-28T22:00:00Z", "yearly", "2029-02-27T22:00:00.000Z"],
+  ];
+  for (const [from, billing, want] of cases) {
+    assert.equal(planPeriodEnd(new Date(from), billing)?.toISOString(), want, `${from} ${billing}`);
+  }
+  // addMonthsRiyadh is the same rule; addMonthsUtc keeps the UTC day (top-up lots use it)
+  assert.equal(addMonthsRiyadh(new Date("2026-01-30T22:00:00Z"), 1).toISOString(), "2026-02-27T22:00:00.000Z");
+  assert.equal(addMonthsUtc(new Date("2026-01-30T22:00:00Z"), 1).toISOString(), "2026-02-28T22:00:00.000Z");
+});
+
+test("planWindow: a quarterly or half-yearly plan runs 3 or 6 months, and stacks on the same rank", () => {
+  const q = planWindow({ now: NOW, billing: "quarterly", tier: "pro", activeRows: [], ranks: RANKS });
+  assert.equal(q?.end.toISOString(), "2027-01-22T08:00:00.000Z");
+  const s = planWindow({ now: NOW, billing: "semiannual", tier: "pro", activeRows: [], ranks: RANKS });
+  assert.equal(s?.end.toISOString(), "2027-04-22T08:00:00.000Z");
+  const held = "2026-12-31T09:00:00.000Z";
+  const stacked = planWindow({
+    now: NOW, billing: "quarterly", tier: "pro", ranks: RANKS,
+    activeRows: [{ id: "y", tier: "pro", current_period_end: held }],
+  });
+  assert.equal(stacked?.start.toISOString(), held);
+  assert.equal(stacked?.end.toISOString(), "2027-03-31T09:00:00.000Z");
 });
 
 test("the monthly points come with lawyer-pro and consultant-independent only (both cards promise 1,500 a month)", () => {

@@ -27,6 +27,7 @@ import {
   INTENT_EXPIRY_MARGIN_MS,
   INTENT_REFRESH_MS,
   LITIGATION_COVERAGE_AR,
+  billingLabelAr,
 } from "./checkoutView.ts";
 
 // ── checkoutHref ────────────────────────────────────────────────────────────
@@ -86,6 +87,9 @@ test("parseCheckoutQuery accepts an item and a billing it offers", () => {
     ["lawyer-pro", "once"],
     ["topup-100", "monthly"],
     ["lawyer-pro", "weekly"],
+    // a real cycle the item is not sold in (no quarterly price before P2)
+    ["lawyer-pro", "quarterly"],
+    ["ind-ai", "semiannual"],
   ] as const) {
     assert.deepEqual(parseCheckoutQuery(item, billing), { ok: false }, `${item} ${billing}`);
   }
@@ -93,20 +97,22 @@ test("parseCheckoutQuery accepts an item and a billing it offers", () => {
 
 // ── what the screen says ────────────────────────────────────────────────────
 
-test("listedVatNotice: the item's own rule; the library states both before the buyer is known", () => {
-  assert.equal(listedVatNotice(PAYABLE_ITEMS["lawyer-pro"], null), VAT_NOTICE.exclusive.ar);
-  assert.equal(listedVatNotice(PAYABLE_ITEMS["firm-enterprise"], "firm"), VAT_NOTICE.exclusive.ar);
-  assert.equal(listedVatNotice(PAYABLE_ITEMS["topup-500"], "individual"), VAT_NOTICE.exclusive.ar);
-  assert.equal(listedVatNotice(PAYABLE_ITEMS["ind-preventive"], "individual"), VAT_NOTICE.inclusive.ar);
-  assert.equal(listedVatNotice(PAYABLE_ITEMS["lib-q1"], null), VAT_NOTICE.library.ar);
-  // a known buyer gets the rule the server will charge
-  assert.equal(listedVatNotice(PAYABLE_ITEMS["lib-q1"], "lawyer"), VAT_NOTICE.exclusive.ar);
-  assert.equal(listedVatNotice(PAYABLE_ITEMS["lib-q1"], "individual"), VAT_NOTICE.inclusive.ar);
+test("٢٥٨: listedVatNotice is the one exclusive sentence for every item — individuals and the library included", () => {
+  for (const item of Object.values(PAYABLE_ITEMS)) {
+    assert.equal(listedVatNotice(item), VAT_NOTICE.exclusive.ar, item.id);
+  }
 });
 
-test("quoteVatNotice: the sentence for the mode the server quoted", () => {
+test("٢٥٨: quoteVatNotice is the same sentence", () => {
   assert.equal(quoteVatNotice("exclusive"), VAT_NOTICE.exclusive.ar);
-  assert.equal(quoteVatNotice("inclusive"), VAT_NOTICE.inclusive.ar);
+});
+
+test("billingLabelAr names every cycle in Arabic", () => {
+  assert.equal(billingLabelAr("monthly"), "اشتراك شهري");
+  assert.equal(billingLabelAr("quarterly"), "اشتراك ربع سنوي");
+  assert.equal(billingLabelAr("semiannual"), "اشتراك نصف سنوي");
+  assert.equal(billingLabelAr("yearly"), "اشتراك سنوي");
+  assert.equal(billingLabelAr("once"), "دفعة واحدة");
 });
 
 test("checkoutItemNotes: ind-litigation states the main-subscriber coverage verbatim", () => {
@@ -310,6 +316,8 @@ test("parseCheckoutResponse keeps a well-formed answer and refuses anything else
     { ...RESPONSE, amountHalalas: 458.85 },
     { ...RESPONSE, saveCard: "yes" },
     { ...RESPONSE, quote: { ...RESPONSE.quote, vatMode: "buyer" } },
+    // ٢٥٨: this server never quotes inclusive
+    { ...RESPONSE, quote: { ...RESPONSE.quote, vatMode: "inclusive" } },
     { ...RESPONSE, quote: { ...RESPONSE.quote, total: 1 } },
     { ...RESPONSE, quote: null },
     { ...RESPONSE, callbackUrl: undefined },

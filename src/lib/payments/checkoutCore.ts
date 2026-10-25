@@ -7,14 +7,16 @@
  * Moyasar client.
  *
  *   1. profiles.user_type through the service role. A read error OR a missing
- *      row → 503: the type decides who may buy (buyerAllowed) and the
- *      library's VAT mode, and a guess could under-charge VAT.
+ *      row → 503: the type decides who may buy (buyerAllowed), and a guess
+ *      could sell a plan to the wrong audience.
  *   2. buyerAllowed(item, userType) BEFORE quoting → 403
  *      «هذه الباقة غير متاحة لنوع حسابك». Access is gated by tier rank and
  *      same-rank purchases stack, so a plan sold outside its audience would
  *      buy that audience's access cheaper.
- *   3. quote(itemId, billing, userType) — the catalog's price, never the
- *      browser's. Unknown item or billing → 400.
+ *   3. quote(itemId, billing) — the price book's price, VAT-exclusive (٢٥٨),
+ *      never the browser's. Unknown item or billing → 400; a retired item
+ *      (still resolvable for old orders, never sold) → 410
+ *      «لم يعد هذا المنتج متاحاً للشراء».
  *   4. The buyer's earlier open orders for the same item that no payment has
  *      reached (last SUPERSEDE_WINDOW_MS): the intent is cancelled at Moyasar
  *      first and the order closed only when that worked, or when it never had
@@ -38,7 +40,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { MoyasarClient } from "./moyasarClient.ts";
-import { buyerAllowed, PAYABLE_ITEMS, quote, type Billing } from "./catalog.ts";
+import { buyerAllowed, PAYABLE_ITEMS, quote, resolveItem, type Billing, type PayableItem } from "./catalog.ts";
 import { isMissingPaymentsObject } from "./fulfillDecision.ts";
 import { MOYASAR_DISABLED_MESSAGE_AR } from "./moyasarConfig.ts";
 import {
@@ -55,12 +57,15 @@ export const CHECKOUT_FAILED_AR = "تعذّر بدء عملية الدفع، ح�
 export const AUDIENCE_REFUSED_AR = "هذه الباقة غير متاحة لنوع حسابك";
 export const UNKNOWN_ITEM_AR = "هذا المنتج غير متاح للدفع الإلكتروني";
 export const BILLING_NOT_OFFERED_AR = "مدة الاشتراك هذه غير متاحة لهذا المنتج";
+export const NOT_FOR_SALE_AR = "لم يعد هذا المنتج متاحاً للشراء";
 
 export interface CheckoutDeps {
   admin: SupabaseClient;
   client: Pick<MoyasarClient, "createIntent" | "cancelIntent">;
   /** The clock (tests pin it). */
   now?: () => Date;
+  /** The halala catalogue; PAYABLE_ITEMS unless a test passes a fixture (e.g. a retired item). */
+  catalog?: Readonly<Record<string, PayableItem>>;
 }
 
 export interface CheckoutInput {
@@ -74,7 +79,7 @@ export interface CheckoutInput {
 
 export type CheckoutReply =
   | { status: 200; body: CheckoutResponse }
-  | { status: 400 | 403 | 503; body: { error: string } };
+  | { status: 400 | 403 | 410 | 503; body: { error: string } };
 
 const OPEN = ["created", "initiated"];
 
@@ -86,7 +91,7 @@ function logMissingOnce(step: string, code: string | undefined): void {
   console.warn(`[payments/checkout] ${step}: a B1 migration is not applied yet (${code ?? "?"}); answering 503`);
 }
 
-const fail = (status: 400 | 403 | 503, error: string): CheckoutReply => ({ status, body: { error } });
+const fail = (status: 400 | 403 | 410 | 503, error: string): CheckoutReply => ({ status, body: { error } });
 
 /** Step 4 — best-effort: a failure here never blocks the new checkout. */
 async function supersedeEarlierOrders(
@@ -147,12 +152,17 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
   const userType = typeof rawType === "string" ? rawType : null;
 
   // 2. the audience, before any price
-  if (!Object.hasOwn(PAYABLE_ITEMS, input.itemId)) return fail(400, UNKNOWN_ITEM_AR);
-  if (!buyerAllowed(PAYABLE_ITEMS[input.itemId], userType)) return fail(403, AUDIENCE_REFUSED_AR);
+  const catalog = deps.catalog ?? PAYABLE_ITEMS;
+  const known = resolveItem(input.itemId, catalog);
+  if (!known) return fail(400, UNKNOWN_ITEM_AR);
+  if (!buyerAllowed(known, userType)) return fail(403, AUDIENCE_REFUSED_AR);
 
   // 3. the price
-  const q = quote(input.itemId, input.billing, userType);
-  if (!q.ok) return fail(400, q.error === "unknown_item" ? UNKNOWN_ITEM_AR : BILLING_NOT_OFFERED_AR);
+  const q = quote(input.itemId, input.billing, catalog);
+  if (!q.ok) {
+    if (q.error === "not_for_sale") return fail(410, NOT_FOR_SALE_AR);
+    return fail(400, q.error === "unknown_item" ? UNKNOWN_ITEM_AR : BILLING_NOT_OFFERED_AR);
+  }
 
   // 4. earlier open orders for the same item
   const superseded = await supersedeEarlierOrders(deps, user.id, q.item.id);
