@@ -289,25 +289,49 @@ function withoutRanges(text: string, ranges: Range[]): string {
 }
 
 /**
- * True when a preamble holds no prose: only headings, `***` rules, `<details>`
- * / `<summary>` wrappers and the files' «لم تتوفر ديباجة …» placeholder. After
- * the card and the موجز are lifted out, 382 of the 1,432 corpus preambles are
- * just that (the law's H1 + «## ديباجة النظام» + an empty ديباجة toggle) — a
- * «الديباجة» box that opens on the law's own title. Any other line is prose
- * and keeps the preamble.
+ * True when a preamble holds no prose: only title headings (isTitleHeading),
+ * `***` rules, `<details>` / `<summary>` wrappers and the files' bare «لم تتوفر
+ * ديباجة …» placeholder. After the card and the موجز are lifted out, 274 of
+ * the 1,389 last_owner preambles (2026-10-25) are just that (the law's H1 +
+ * «## ديباجة النظام» + an empty ديباجة toggle) — a «الديباجة» box that opens
+ * on the law's own title. Any other line is prose and keeps the preamble:
+ * when in doubt it is kept, since a wrong «hollow» deletes text for the reader.
  */
 export function isHollowPreamble(text: unknown): boolean {
   return normalise(text).split("\n").every((line) => {
     const s = line.trim();
     return (
       s === "" ||
-      /^#{1,6}\s/.test(s) ||
+      isTitleHeading(s) ||
       SEPARATOR_LINE.test(s) ||
       /^<\/?details[^>]*>$/.test(s) ||
       /^<summary>[^<]*<\/summary>$/.test(s) ||
-      /^(?:لم تتوفر ديباجة|لا توجد ديباجة)/.test(s)
+      // The placeholder alone; «…، وصدرت اللائحة بقرار …» goes on with text.
+      /^(?:لم تتوفر ديباجة|لا توجد ديباجة)[^،\n]*$/.test(s)
     );
   });
+}
+
+/** Longest heading line read as a bare title (corpus median 38, real titles < 150). */
+const TITLE_HEADING_MAX_CHARS = 200;
+
+/**
+ * A heading line that is only a title. Some files carry the whole preamble on
+ * the H1 line (newlines collapsed: «# نظام البريد --- ## ديباجة النظام
+ * <details> … مرسوم ملكي رقم …», ~100 files in last_owner 2026-10-25), so a
+ * line with a tag, an inline rule followed by more text, a second heading,
+ * a blockquote mark or more than TITLE_HEADING_MAX_CHARS characters is text.
+ */
+function isTitleHeading(s: string): boolean {
+  if (!/^#{1,6}\s/.test(s)) return false;
+  if (Array.from(s).length > TITLE_HEADING_MAX_CHARS) return false;
+  const body = s.replace(/^#{1,6}\s+/, "");
+  return !(
+    /<\/?[a-z]/i.test(body) ||
+    /(?:^|\s)(?:\*{3,}|-{3,}|_{3,})\s+\S/.test(body) ||
+    /(?:^|\s)#{1,6}\s/.test(body) ||
+    /(?:^|\s)>\s/.test(body)
+  );
 }
 
 /**

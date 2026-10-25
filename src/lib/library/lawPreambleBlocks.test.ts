@@ -212,3 +212,27 @@ test("isHollowPreamble: headings, rules, details wrappers and the placeholder on
   assert.equal(isHollowPreamble("| أ | ب |"), false);
   assert.equal(isHollowPreamble(""), true);
 });
+
+test("isHollowPreamble: a file whose preamble is ONE line under `#` (collapsed newlines) keeps it", () => {
+  // Shape of «نظام البريد» and ~100 logistics / GACAR files in last_owner
+  // 2026-10-25: title, rule, ديباجة heading, <details> and the decree text all
+  // on the H1 line. Dropping it lost the royal decree for subscribers.
+  const collapsed = "# نظام البريد --- ## ديباجة النظام <details> <summary>📜 ديباجة نظام البريد</summary> بسم الله الرحمن الرحيم مرسوم ملكي رقم (م/22) وتاريخ 1443/3/8هـ </details>";
+  assert.equal(isHollowPreamble(collapsed), false);
+  assert.equal(isHollowPreamble("# تنظيم الفحص الفني 1431ه > 🚫 **[ملغى — استُبدل بالكامل بتنظيم (الصادر بتاريخ 17/3/1447هـ)]**"), false, "an inline repeal notice is prose");
+  assert.equal(isHollowPreamble("### الصفحة 1 اللائحة التنفيذية لنشاط الوساطة في نقل الركاب بالسيارات عبر التطبيقات الإلكترونية رقم قرار مجلس الإدارة (1/2/3) وتاريخ 1445/01/01هـ وقد قرر المجلس ما يلي من الأحكام: أولاً الموافقة على اللائحة بالصيغة المرافقة، ثانياً يعمل بها من تاريخ نشرها في الجريدة الرسمية"), false, "a long heading line is collapsed text");
+  assert.equal(isHollowPreamble("# GACAR PART 39 – AIRWORTHINESS DIRECTIVES # الجزء 39 *** ## صفحات القواعد"), false, "two headings on one line");
+  // A title with a trailing rule is still only a title.
+  assert.equal(isHollowPreamble("# الجزء 1 - التعريفات والاختصارات (GACAR Part 1) ***"), true);
+  assert.equal(isHollowPreamble("# الصيغه النموذجية لوثيقة التأمين الصحي الالزامي للعمالة المنزلية و من في حكمهم الذين يزيد عددهـم على (4)"), true);
+});
+
+test("isHollowPreamble: the «لم تتوفر ديباجة» placeholder only when it says nothing else", () => {
+  assert.equal(isHollowPreamble("## ديباجة\n\nلم تتوفر ديباجة في المصدر المستخدم."), true);
+  assert.equal(isHollowPreamble("## ديباجة\n\nلم تتوفر ديباجة تفصيلية خارج المقدمة والتمهيد."), true);
+  assert.equal(
+    isHollowPreamble("## ديباجة\n\nلم تتوفر ديباجة تفصيلية في المصدر المستخدم، وصدرت اللائحة بقرار من مجلس إدارة الهيئة السعودية للمحامين."),
+    false,
+    "the issuing decision after the comma is text",
+  );
+});
