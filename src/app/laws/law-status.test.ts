@@ -21,15 +21,25 @@ test("all eight schema lifecycle and archival statuses keep distinct, honest bad
   }
 });
 
-test("missing, unknown, and obsolete tokens never assert activity or suspension", () => {
+test("missing, unknown, and obsolete tokens never assert activity — and show nothing (owner ٢٥٩)", () => {
   for (const raw of [null, undefined, "", "  ", "status_undeclared", "partially_amended", "UNKNOWN", 0, "__proto__"]) {
     assert.equal(lawStatusForDetail(raw), "status_undeclared");
-    assert.deepEqual(lawStatusPresentation(raw), {
-      labelAr: "لم يُتحقّق من الحالة",
-      labelEn: "Status not verified",
-      tone: "unverified",
-    });
+    assert.equal(lawStatusPresentation(raw), null, String(raw));
   }
+});
+
+test("owner ٢٥٩: the «not verified» wording is gone from every library surface", () => {
+  const files = [
+    "law-status.ts", "data.ts", "page.tsx", "[slug]/_sidebar.tsx", "[slug]/_article-components.tsx",
+    "components/LawsTabContent.tsx", "../../lib/library/monitorFeed.ts",
+  ];
+  for (const f of files) {
+    const src = readFileSync(new URL(f, import.meta.url), "utf8");
+    assert.doesNotMatch(src, /لم يُتحقّق من الحالة|لم يتحقق من الحالة|Status not verified/, f);
+  }
+  const sidebar = readFileSync(new URL("[slug]/_sidebar.tsx", import.meta.url), "utf8");
+  // The badge renders nothing for an unrecorded status instead of a default.
+  assert.match(sidebar, /const status = lawStatusPresentation\(law\.law_status\);\s*\/\/[^\n]*\n\s*if \(!status\) return null;/);
 });
 
 test("isRepealedLawStatus: only an exact «repealed» status reads as repealed (T28-23)", () => {
@@ -39,7 +49,7 @@ test("isRepealedLawStatus: only an exact «repealed» status reads as repealed (
     assert.equal(isRepealedLawStatus(raw), false, String(raw));
   }
   // The card badge and the reader banner share the sidebar's label.
-  assert.equal(lawStatusPresentation("repealed").labelAr, "ملغى");
+  assert.equal(lawStatusPresentation("repealed")?.labelAr, "ملغى");
 });
 
 test("API, page, both sidebar card branches, and regulation status do not retain active fallbacks", () => {

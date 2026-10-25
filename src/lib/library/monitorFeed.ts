@@ -290,7 +290,8 @@ function lawBase(row: MonitorLawRow) {
     title: clean(row.title) ?? row.slug,
     typeLabel: clean(row.type),
     status,
-    statusLabel: status ? lawStatusPresentation(status).labelAr : null,
+    // Owner ٢٥٩: no label for a law with no recorded status.
+    statusLabel: status ? lawStatusPresentation(status)?.labelAr ?? null : null,
     href: lawHref(row.slug),
   };
 }

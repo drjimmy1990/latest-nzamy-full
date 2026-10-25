@@ -8,11 +8,16 @@ export type ArticleStatus =
   | "merged"
   | "status_undeclared";
 
-/** A reader-facing notice only; it does not infer a lifecycle or repeal date. */
-export function articleStatusNotice(status: ArticleStatus, isRTL: boolean): string | null {
-  return status === "status_undeclared"
-    ? isRTL ? "لم يُتحقّق من الحالة" : "Status not verified"
-    : null;
+/**
+ * A reader-facing notice on an article's status. Owner answer ٢٥٩ (أ): an
+ * article with no recorded status shows nothing — the old «لم يُتحقّق من …»
+ * notice is gone, and no status is invented in its place. Every other status
+ * keeps its own presentation (the repeal toggle, the badges), so there is no
+ * notice left to give: always null. Kept as the one switch its three callers
+ * (the reader and both search cards) read.
+ */
+export function articleStatusNotice(_status: ArticleStatus, _isRTL: boolean): string | null {
+  return null;
 }
 
 /** Historical-text toggle is exclusively for an explicit repeal status. */

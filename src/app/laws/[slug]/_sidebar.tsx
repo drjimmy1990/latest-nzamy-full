@@ -108,6 +108,8 @@ export default function SidebarPanel({
 
   const renderLawStatus = () => {
     const status = lawStatusPresentation(law.law_status);
+    // Owner ٢٥٩: no recorded status → no row (never «ساري» by default).
+    if (!status) return null;
     const dotColor = status.tone === "effective" ? "bg-emerald-500"
       : status.tone === "repealed" ? "bg-red-500"
       : status.tone === "caution" ? "bg-amber-500" : "bg-slate-400";
@@ -115,7 +117,7 @@ export default function SidebarPanel({
       : status.tone === "repealed" ? "text-red-500"
       : status.tone === "caution" ? "text-amber-500" : (isDark ? "text-zinc-400" : "text-slate-500");
     return (
-      <div className="flex items-start gap-1.5 pt-1" data-law-status={law.law_status ?? "status_undeclared"}>
+      <div className="flex items-start gap-1.5 pt-1" data-law-status={law.law_status}>
         <span className={`w-1.5 h-1.5 mt-1 rounded-full flex-shrink-0 ${dotColor}`} />
         <span className={`text-[9px] font-bold ${textColor}`}>{isRTL ? status.labelAr : status.labelEn}</span>
       </div>

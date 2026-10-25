@@ -118,7 +118,6 @@ const ARTICLE_STATUS_FILTER_OPTIONS = [
   { value: "suspended", ar: "موقوفة", en: "Suspended" },
   { value: "added", ar: "مضافة", en: "Added" },
   { value: "merged", ar: "مدمجة", en: "Merged" },
-  { value: "status_undeclared", ar: "لم يُتحقّق من الحالة", en: "Status not verified" },
 ] as const;
 
 type ArticleStatusFilter = (typeof ARTICLE_STATUS_FILTER_OPTIONS)[number]["value"];
