@@ -610,8 +610,8 @@ function EventCard({ev,isDark}:{ev:CalEvent;isDark:boolean}) {
               )}
               {calUrl&&(
                 <button type="button" onClick={()=>downloadHearingIcs(ev)}
-                  aria-label={`تنزيل ملف التقويم (.ics) لموعد ${ev.title} مع أربعة تنبيهات`}
-                  title="ملف تقويم لـ Apple وOutlook وGoogle، فيه أربعة تنبيهات: قبل أسبوع، قبل ثلاثة أيام، مساء اليوم السابق، صباح يوم الجلسة"
+                  aria-label={`تنزيل ملف التقويم (.ics) لموعد ${ev.title}، مع أربعة تنبيهات لتقويم Apple وOutlook`}
+                  title="ملف تقويم فيه أربعة تنبيهات (قبل أسبوع، قبل ثلاثة أيام، مساء اليوم السابق، صباح يوم الجلسة) يعمل بها تقويم Apple وOutlook. تقويم Google يستورد الموعد ويطبّق تنبيهاته الافتراضية بدلاً منها."
                   className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold ${isDark?"bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20":"bg-emerald-50 text-emerald-700 hover:bg-emerald-100"}`}>
                   <DownloadSimple size={9}/>تنزيل ملف التقويم (.ics)
                 </button>

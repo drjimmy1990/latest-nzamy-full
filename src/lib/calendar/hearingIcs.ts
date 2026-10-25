@@ -1,9 +1,11 @@
 /**
  * hearingIcs.ts — one hearing as an iCalendar (.ics) file, RFC 5545.
  * ─────────────────────────────────────────────────────────────────────────
- * Owner ٤٦ part ٢: a calendar file that Apple Calendar, Outlook and Google
- * Calendar import, with four reminders. The reminders are the shared stages of
- * hearingReminderStages.ts — the same constant the in-platform reminders use.
+ * Owner ٤٦ part ٢: a calendar file with four reminders. The reminders are the
+ * shared stages of hearingReminderStages.ts — the same constant the
+ * in-platform reminders use. Apple Calendar and Outlook honour the VALARMs;
+ * Google Calendar imports the event but drops them and applies the
+ * calendar's own default notifications, which the button's tooltip says.
  *
  * ── Floating time, on purpose ────────────────────────────────────────────
  * DTSTART/DTEND carry no `Z` and no TZID: a hearing row stores a wall-clock
