@@ -105,8 +105,19 @@
 -- create or replace; repeatable grants. Run twice in Docker by
 -- supabase/tests/rls/tracking_links_v2.test.sql.
 --
--- ROLLBACK (manual): re-run 20261025_32 (restores the v1 snapshot), then drop
--- the functions below and the new columns. Links keep their tokens.
+-- TRIGGERS ON PLATFORM TABLES: besides case_tracking_links (born, epoch),
+-- this file attaches AFTER triggers to public.case_stages
+-- (trg_case_stages_end_tracking_links), public.lawyer_clients
+-- (trg_lawyer_clients_tracking_phone), public.profiles
+-- (trg_profiles_tracking_phone) and public.service_requests
+-- (trg_service_requests_tracking_phone). Each only updates
+-- case_tracking_links rows of the changed case.
+--
+-- ROLLBACK (manual), IN THIS ORDER: re-run 20261025_32 (restores the v1
+-- snapshot); drop the six triggers above FIRST (plpgsql records no column
+-- dependency, so dropping a column under a live trigger succeeds and then
+-- breaks every stage write, profile phone edit and card change); then the
+-- functions below; then the new columns. Links keep their tokens.
 -- =============================================================================
 
 begin;

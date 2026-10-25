@@ -24,6 +24,7 @@
     - يرى المحامي «موقوف — محاولات خاطئة كثيرة»، مع تنبيه: «يبدو أن الرابط تسرّب إلى غير الموكل — يُفضّل إلغاؤه وإنشاء رابط جديد».
   - تُقبل الأرقام العربية (٤٥٦٧) والفارسية.
 - **لا يُنشأ رابط لقضية بلا رقم جوال.** تظهر للمحامي رسالة: «أضف رقم جوال الموكل في ملف القضية أولاً».
+- **مشغّلات على جداول المنصة:** يضيف الملف مشغّلات (triggers) على `case_stages` و`lawyer_clients` و`profiles` و`service_requests`. كل منها يحدّث روابط المتابعة للقضية المعنية فقط. اعرف ذلك قبل النسخة الاحتياطية، وانظر ترتيب التراجع أدناه.
 
 **الكود:** بعد النجاح يضع الخادم كوكي `nz_track_unlock` لمدة ١٢ ساعة، لهذا الرابط وحده (`Path=/track/<token>`، httpOnly، Secure، `SameSite=Lax`).
 - `Lax` لا `Strict`: الموكل يفتح الرابط من واتساب أو الرسائل، و`Strict` يُسقط الكوكي في هذه الحالة فيطلب الأرقام في كل مرة. الكوكي لا يفتح إلا صفحة عرض للقراءة فقط.
@@ -85,7 +86,12 @@
   - إن حدث، فأعد تنفيذ هذا الملف (62).
 - الملف قابل لإعادة التشغيل، داخل `begin … commit`، وينتهي بـ `notify pgrst, 'reload schema'`.
 
-**للتراجع (يدوياً):** أعد تنفيذ 13 (يرجع العرض للإصدار الأول)، ثم احذف دوال هذا الملف ومشغّلاته (triggers) وأعمدته الجديدة. الروابط تبقى بنفس رموزها. انتبه: الكود الجديد يفشل مغلقاً بعد التراجع (كل الروابط «غير متاحة») حتى يُرجَع الكود أيضاً.
+**للتراجع (يدوياً)، بهذا الترتيب:**
+1. أعد تنفيذ 13 (يرجع العرض للإصدار الأول).
+2. احذف **المشغّلات (triggers) أولاً**: `trg_case_tracking_links_born`، `trg_case_tracking_links_epoch`، `trg_case_stages_end_tracking_links`، `trg_lawyer_clients_tracking_phone`، `trg_profiles_tracking_phone`، `trg_service_requests_tracking_phone`. لو حُذف عمود قبلها لنجح الحذف بصمت، ثم تفشل كل كتابة على المراحل وكل تعديل لجوال حساب أو بطاقة موكل.
+3. ثم دوال هذا الملف، ثم أعمدته الجديدة.
+
+الروابط تبقى بنفس رموزها. انتبه: الكود الجديد يفشل مغلقاً بعد التراجع (كل الروابط «غير متاحة») حتى يُرجَع الكود أيضاً.
 
 ### الاختبار (Docker محلي فقط)
 
@@ -115,6 +121,8 @@ What it adds:
 Order: run 62 BEFORE deploying.
 - If the code is deployed first, every tracking link shows «هذا الرابط لم يعد متاحاً» (unavailable) until 62 runs. The page fails closed: there is no fallback to v1 without the digits.
 - Between running 62 and the deploy, the old page still shows active links without the digits, which is today's v1 behaviour. Paused and expired links stay hidden. Keep that window short.
+
+It adds triggers to four platform tables (`case_stages`, `lawyer_clients`, `profiles`, `service_requests`); each only touches the tracking links of the changed case. Rollback order: re-run 13, drop the six triggers FIRST, then the functions, then the columns.
 
 Effects on existing data:
 - Existing links get 30 days from the run.
