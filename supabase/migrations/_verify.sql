@@ -4051,6 +4051,19 @@ begin
       missing := missing || format(' subscription_plans.%s is missing or not a nullable numeric;', v);
     end if;
   end loop;
+  -- A CHECK over several columns that includes a billing column is not
+  -- replaced by 20261026_10 (its own verify probes them with rolled-back
+  -- rows; this read-only section can only name them for a look).
+  for defs in
+    select format('%s.%s: %s', c.conrelid::regclass, c.conname, pg_get_constraintdef(c.oid))
+      from pg_constraint c
+      join pg_attribute a on a.attrelid = c.conrelid and a.attnum = any (c.conkey)
+     where c.contype = 'c' and cardinality(c.conkey) > 1
+       and ((c.conrelid = 'public.payment_orders'::regclass and a.attname = 'billing')
+         or (c.conrelid = 'public.subscriptions'::regclass and a.attname = 'billing_cycle'))
+  loop
+    raise notice '_verify: 20261026_10 — a multi-column CHECK touches a billing column; make sure it accepts quarterly / semiannual: %', defs;
+  end loop;
   if missing <> '' then
     raise exception '_verify: 20261026_10 —% %', missing, fix;
   end if;

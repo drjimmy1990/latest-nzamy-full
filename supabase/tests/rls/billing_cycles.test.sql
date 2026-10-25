@@ -37,6 +37,10 @@
 --       and the second "$B" → "T0 FAIL: …";
 --   (b) the chain cut after prelude_billing_cycles_between_runs.sql, then
 --       "$B" → the _verify block raises "… has 2 CHECK constraints …".
+--   (c) the chain with $R/prelude_billing_cycles_multicolumn_trap.sql right
+--       before the first 20261026_10 → its verify probe raises "20261026_10
+--       verify: a quarterly order is still refused by a CHECK …" (a check over
+--       two columns is not replaced, so the probe must catch it).
 --
 -- Every assertion RAISES on failure.
 
@@ -170,4 +174,16 @@ begin
   update public.subscription_plans set price_quarterly = 2990, price_semiannual = 5490 where id = 'firm-basic';
   update public.subscription_plans set price_quarterly = null, price_semiannual = null where id = 'firm-basic';
   raise notice 'T4 PASS: price_quarterly / price_semiannual exist, null for every plan, refuse a negative price; existing prices unchanged';
+end $$;
+
+-- T5 the migration's probes kept nothing
+do $$
+begin
+  if exists (select 1 from public.payment_orders where item_id = '20261026_10-probe') then
+    raise exception 'T5 FAIL: a probe order of 20261026_10''s verify was kept';
+  end if;
+  if (select count(*) from public.subscriptions where billing_cycle in ('quarterly', 'semiannual')) <> 2 then
+    raise exception 'T5 FAIL: expected only T2''s two subscriptions in the new cycles (a probe row was kept?)';
+  end if;
+  raise notice 'T5 PASS: both runs'' verify probes were rolled back — no probe order or subscription remains';
 end $$;

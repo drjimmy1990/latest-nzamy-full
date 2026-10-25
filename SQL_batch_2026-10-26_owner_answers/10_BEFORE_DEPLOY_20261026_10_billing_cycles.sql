@@ -40,7 +40,11 @@
 --      half-yearly price yet (P2 / P5 / P6 add them with their own SQL).
 --   6. Both checks and both columns carry a comment with the literal
 --      "20261026_10" — the marker _verify.sql reads.
---   7. Raising verify, then `notify pgrst` after commit.
+--   7. Raising verify — it also PROBES the real behaviour: one quarterly and
+--      one semiannual row of payment_orders and of subscriptions, each inside
+--      a subtransaction that is always rolled back (nothing is kept), so a
+--      CHECK over several columns that still refuses the new cycles is caught
+--      too — then `notify pgrst` after commit.
 --
 -- DEPLOY ORDER — BEFORE THE DEPLOY OF THIS BATCH (file 10_BEFORE_DEPLOY_…).
 --   The P1 code works before AND after it: no item of the price book has a
@@ -235,10 +239,39 @@ begin
     end if;
   end loop;
 
+  -- A CHECK over several columns that includes the billing column is not
+  -- replaced above. Probe the real behaviour instead of reading definitions:
+  -- one quarterly and one semiannual row of each table, inside a
+  -- subtransaction that is always rolled back (nothing is kept).
+  foreach v in array array['quarterly', 'semiannual'] loop
+    begin
+      insert into public.payment_orders (user_id, kind, item_id, billing, net_halalas, vat_halalas, total_halalas, vat_mode, status)
+      values (null, 'plan', '20261026_10-probe', v, 100, 15, 115, 'exclusive', 'cancelled');
+      raise exception using errcode = 'P0001', message = '20261026_10-probe-ok';
+    exception
+      when check_violation then
+        missing := missing || format(' a %s order is still refused by a CHECK (%s);', v, sqlerrm);
+      when raise_exception then
+        if sqlerrm <> '20261026_10-probe-ok' then raise; end if;
+    end;
+    if exists (select 1 from public.profiles) and exists (select 1 from public.subscription_plans where id = 'lawyer-pro') then
+      begin
+        insert into public.subscriptions (user_id, plan_id, tier, billing_cycle, status)
+        values ((select id from public.profiles limit 1), 'lawyer-pro', 'pro', v, 'cancelled');
+        raise exception using errcode = 'P0001', message = '20261026_10-probe-ok';
+      exception
+        when check_violation then
+          missing := missing || format(' a %s subscription is still refused by a CHECK (%s);', v, sqlerrm);
+        when raise_exception then
+          if sqlerrm <> '20261026_10-probe-ok' then raise; end if;
+      end;
+    end if;
+  end loop;
+
   if missing <> '' then
     raise exception '20261026_10 verify:%', missing;
   end if;
-  raise notice '20261026_10 verify: OK — payment_orders and subscriptions accept quarterly and semiannual; subscription_plans has price_quarterly / price_semiannual (null for every plan until a later phase prices them)';
+  raise notice '20261026_10 verify: OK — payment_orders and subscriptions accept quarterly and semiannual (probed with rolled-back rows); subscription_plans has price_quarterly / price_semiannual (null for every plan until a later phase prices them)';
 end $$;
 
 commit;
