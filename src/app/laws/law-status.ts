@@ -11,6 +11,12 @@ type LawStatusTone = "effective" | "caution" | "repealed" | "unverified";
  * Archival file states are deliberately not legal repeal or suspension.
  * issued_publication_unverified reads «صدر» (owner ٢٥٩ (أ): nothing that says
  * our data is unverified; the exact wording is an open owner question).
+ * The two archival states describe the export's own files («نسخة مكررة
+ * مهجورة — النص المعتمد في أداة أخرى», «مدمج في الأداة الأم — ليس ملفاً
+ * مستقلاً»); a reader is told only the fact about the law: «نسخة مكررة» and
+ * «مدمج في نظام آخر». The duplicate keeps its row rather than none: without
+ * it a superseded copy reads exactly like an authoritative law, and the
+ * parent-law resolver already refuses to link to it.
  */
 const STATUS_VIEW: Record<Exclude<LawStatus, "status_undeclared">, { ar: string; en: string; tone: LawStatusTone }> = {
   active: { ar: "ساري", en: "Active", tone: "effective" },
@@ -19,8 +25,8 @@ const STATUS_VIEW: Record<Exclude<LawStatus, "status_undeclared">, { ar: string;
   issued_publication_unverified: { ar: "صدر", en: "Issued", tone: "caution" },
   suspended: { ar: "موقوف السريان", en: "Suspended", tone: "caution" },
   repealed: { ar: "ملغى", en: "Repealed", tone: "repealed" },
-  superseded_duplicate: { ar: "نسخة مكررة مهجورة — النص المعتمد في أداة أخرى", en: "Superseded duplicate — see the authoritative document", tone: "unverified" },
-  merged_into_parent: { ar: "مدمج في الأداة الأم — ليس ملفاً مستقلاً", en: "Merged into parent — not an independent document", tone: "unverified" },
+  superseded_duplicate: { ar: "نسخة مكررة", en: "Duplicate copy", tone: "unverified" },
+  merged_into_parent: { ar: "مدمج في نظام آخر", en: "Merged into another law", tone: "unverified" },
 };
 
 /** Unknown, empty and legacy tokens do not become an assertion of legal effect. */

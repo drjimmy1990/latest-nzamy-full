@@ -10,8 +10,8 @@ const cases = [
   ["issued_publication_unverified", "صدر", "Issued", "caution"],
   ["suspended", "موقوف السريان", "Suspended", "caution"],
   ["repealed", "ملغى", "Repealed", "repealed"],
-  ["superseded_duplicate", "نسخة مكررة مهجورة — النص المعتمد في أداة أخرى", "Superseded duplicate — see the authoritative document", "unverified"],
-  ["merged_into_parent", "مدمج في الأداة الأم — ليس ملفاً مستقلاً", "Merged into parent — not an independent document", "unverified"],
+  ["superseded_duplicate", "نسخة مكررة", "Duplicate copy", "unverified"],
+  ["merged_into_parent", "مدمج في نظام آخر", "Merged into another law", "unverified"],
 ] as const;
 
 test("all eight schema lifecycle and archival statuses keep distinct, honest badges", () => {
@@ -36,6 +36,11 @@ test("owner ٢٥٩: the «not verified» wording is gone from every library surf
   for (const f of files) {
     const src = readFileSync(new URL(f, import.meta.url), "utf8");
     assert.doesNotMatch(src, /لم يُتحقّق من (?:الحالة|النشر)|لم يتحقق من (?:الحالة|النشر)|Status not verified|publication not verified/, f);
+  }
+  // The archival labels speak of the law, not of our files.
+  for (const raw of ["superseded_duplicate", "merged_into_parent"]) {
+    const label = lawStatusPresentation(raw);
+    assert.doesNotMatch(`${label?.labelAr} ${label?.labelEn}`, /مهجورة|الأداة الأم|أداة أخرى|ملفاً|parent|independent document/, raw);
   }
   const sidebar = readFileSync(new URL("[slug]/_sidebar.tsx", import.meta.url), "utf8");
   // The badge renders nothing for an unrecorded status instead of a default.

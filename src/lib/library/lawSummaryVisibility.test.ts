@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { GUEST_CARD_KEYS, LAW_SUMMARY_AUDIENCE, cardForViewer, cardStatusValue, guestCardValue, lawReaderExtras, lawSummaryVisible } from "./lawSummaryVisibility.ts";
+import { GUEST_CARD_KEYS, LAW_SUMMARY_AUDIENCE, cardForViewer, cardRowValue, cardStatusValue, guestCardValue, lawReaderExtras, lawSummaryVisible } from "./lawSummaryVisibility.ts";
 import { LAW_CARD_PRIMARY_FIELDS, lawCardLayout } from "./lawCardFields.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -212,8 +212,11 @@ test("the allowlist is what protects: an innocent row under any other key is dro
   assert.equal(cardForViewer({ main: innocent, more: innocent }, false), null);
   const out = cardForViewer({ main: [{ key: "نوع التشريع", value: "نظام" }, ...innocent], more: innocent }, false);
   assert.deepEqual(out, { main: [{ key: "نوع التشريع", value: "نظام" }], more: [] });
-  // A subscriber still gets everything.
-  assert.equal(cardForViewer({ main: innocent, more: [] }, true)?.main.length, innocent.length);
+  // A subscriber still gets everything — but a «غير متوفر» that is only a gap note (owner ٢٥٩).
+  assert.deepEqual(
+    cardForViewer({ main: innocent, more: [] }, true)?.main,
+    innocent.filter((r) => r.value !== "غير متوفر"),
+  );
 });
 
 const RLM = String.fromCharCode(0x200f);
@@ -258,7 +261,7 @@ test("allowed values are cleaned for a guest, from last_owner's own shapes", () 
   assert.equal(guestCardValue("ساري"), "ساري");
 });
 
-test("the issuer's pipeline note «— تحقَّق منه YYYY-MM-DD» is removed for EVERY viewer", () => {
+test("the pipeline note «— تحقَّق منه YYYY-MM-DD» is removed from every row, for EVERY viewer", () => {
   const card = {
     main: [{ key: "الجهة المصدرة", value: "مجلس الوزراء — تحقَّق منه 2026-07-28" }],
     more: [{ key: "الجهة الإدارية المصدرة", value: "وزير العدل — تحقق منه" }, { key: "الموضوع", value: "عام — تحقَّق منه 2026-07-28" }],
@@ -268,8 +271,103 @@ test("the issuer's pipeline note «— تحقَّق منه YYYY-MM-DD» is remov
     assert.equal(out?.main[0].value, "مجلس الوزراء", String(isSubscriber));
     assert.equal(out?.more[0].value, "وزير العدل", String(isSubscriber));
   }
-  // Only the issuer's: a subscriber's other rows are as the file has them.
-  assert.equal(cardForViewer(card, true)?.more[1].value, "عام — تحقَّق منه 2026-07-28");
+  // Not only the issuer's (owner ٢٥٩, 2026-10-26): a date, an instrument, a subject.
+  assert.equal(cardForViewer(card, true)?.more[1].value, "عام");
+});
+
+// ── Owner ٢٥٩ (أ): no gap / verification note in ANY row ───────────────────
+
+test("cardRowValue: the export's gap and verification notes go, the rest stays (last_owner's own values)", () => {
+  const cases: Array<[string, string | null]> = [
+    // «— تحقَّق منه …» on a date / an instrument.
+    ["24 ربيع الآخر 1435هـ — تحقَّق منه 2026-07-28", "24 ربيع الآخر 1435هـ"],
+    ["٥ شوّال ١٤٤١هـ (قرار وزير العدل رقم 8056) — تحقَّق منه 2026-07-19", "٥ شوّال ١٤٤١هـ (قرار وزير العدل رقم 8056)"],
+    ["قرار مجلس الوزراء رقم (162) وتاريخ 24 ربيع الآخر 1435هـ — تحقَّق منه 2026-07-28", "قرار مجلس الوزراء رقم (162) وتاريخ 24 ربيع الآخر 1435هـ"],
+    ["لا يوجد — لم تُعدَّل أي مادة منذ صدور النظام (تحقُّق حي 2026-07-20)", "لا يوجد — لم تُعدَّل أي مادة منذ صدور النظام"],
+    ["2025/02/09م (بحسب صفحة اللوائح الحية على بوابة الهيئة، تم التحقق 2026-07-19)", "2025/02/09م"],
+    // «غير مؤكَّد» on a date: the qualifier goes, the date stays.
+    ["1372/01/24هـ (التحويل الميلادي الدقيق غير مؤكد — راجع ملاحظة المراجعة البشرية في الفرونت-ماتر)", "1372/01/24هـ"],
+    ["1960-06-25م (تاريخ عام تقديري من BOE، اليوم/الشهر الدقيقان غير مؤكَّدين)", "1960-06-25م"],
+    ["المادة (15): بعد 18 شهراً من تاريخ النشر في الجريدة الرسمية (تاريخ النشر الفعلي غير مؤكَّد من المصدر)", "المادة (15): بعد 18 شهراً من تاريخ النشر في الجريدة الرسمية"],
+    ["لائحة صادرة عن مؤسسة النقد العربي السعودي (رقم القرار غير مؤكَّد من مصدر أولي)", "لائحة صادرة عن مؤسسة النقد العربي السعودي"],
+    // «تقريباً» after a date is its qualifier, the same way.
+    ["2024-06-05م تقريباً — وفق المادة (16): بعد (180) يوماً من تاريخ النشر", "2024-06-05م — وفق المادة (16): بعد (180) يوماً من تاريخ النشر"],
+    ["1445/02/14هـ (الموافق تقريباً 2023-08-30م)", "1445/02/14هـ (الموافق 2023-08-30م)"],
+    // «غير متوفر» / «لم يُعثر»: the note goes; a value that was only a note goes.
+    ["غير متوفر في المصدر — يعمل به بعد تسعين يوماً من نشره (المادة 49)", "يعمل به بعد تسعين يوماً من نشره (المادة 49)"],
+    ["1442/01/19ه (البند حادي عشر: نافذة من تاريخ النشر؛ لم يُعثر على تاريخ نشر منفصل)", "1442/01/19ه (البند حادي عشر: نافذة من تاريخ النشر)"],
+    ["الملك (بصيغة تصديق عالي) — ديباجة الإصدار الأصلي غير متوفرة في المصدر المستخدم لمزيد من التفصيل", "الملك (بصيغة تصديق عالي)"],
+    ["[هيئة الخبراء](https://laws.boe.gov.sa/BoeLaws/Laws/LawDetails/x/1) · الموقع الرسمي: غير متوفر", "[هيئة الخبراء](https://laws.boe.gov.sa/BoeLaws/Laws/LawDetails/x/1)"],
+    ["[infath.gov.sa](https://infath.gov.sa/) (رابط مباشر لنص الدليل نفسه غير متاح على الموقع الرسمي)", "[infath.gov.sa](https://infath.gov.sa/)"],
+    ["غير متوفر (الرابط المسجَّل سابقاً لا يفتح الوثيقة؛ لم يُعثر على بديل صحيح عند التحقق 2026-07-19)", null],
+    ["غير متوفرهـ", null],
+    ["غير متاح في المصدر الحي", null],
+    // A stamp inside a sentence goes; the sentence stays.
+    [
+      "صدر مرسوم ملكي رقم (م/237) بنظام جديد. تحقق مباشر 2026-07-19 من بوابة هيئة الخبراء: نُشر بالفعل بتاريخ 1447/11/14هـ.",
+      "صدر مرسوم ملكي رقم (م/237) بنظام جديد. نُشر بالفعل بتاريخ 1447/11/14هـ.",
+    ],
+    ["1444/06/06هـ (عدد أم القرى رقم 4963 المرجَّح)", "1444/06/06هـ"],
+  ];
+  for (const [value, expected] of cases) assert.equal(cardRowValue(value), expected, value);
+});
+
+test("cardRowValue leaves the law's own words alone — «التحقق», «المرجح», English terms, links", () => {
+  for (const value of [
+    "قائمة التحقق - تقييم هيكل دليل التدريب",
+    "ضوابط تصنيف الخدمات الحكومية الرقمية الحساسة ومستويات التحقق",
+    "امتداد للضوابط الأساسية للأمن السيبراني (ECC-1:2018) — لا يتحقق الالتزام بها إلا بالالتزام المستمر بـECC أولاً",
+    "500 ريال + 575 ريال (رسوم تحقق شهادة أجنبية، لمرة واحدة عند الحاجة)",
+    "تعميم بشأن التحقق من هوية العملاء عبر مصدر موثوق",
+    "تعميم بشأن التأكيد على بذل العناية الواجبة عند التحقق من دخل العميل قبل منح التمويل",
+    "تعميم بشأن التحقق من السمات الحيوية (biometric authentication) عند بدء/إنشاء العلاقة 'عن بعد'",
+    "أمر سامي بشأن إلزام الجهات الحكومية بالعناية بدقة ترجمة النسخ العربية للاتفاقيات ومطابقتها للنص المرجح",
+    "تخفيض معدل الأصول المرجحة بأوزان المخاطر المتعلقة بالتمويل العقاري",
+    "الهيئة العامة للطيران المدني (GACA) - قطاع سلامة الطيران والاستدامة البيئية",
+    "[بوابة دار الوثائق الوطنية (ncar)](https://ncar.gov.sa)",
+    "مواصفة قياسية خليجية معتمدة من اللجنة الفنية الخليجية رقم (TC05)",
+    "الهيئة العامة للغذاء والدواء (sfda.gov.sa)",
+  ]) {
+    assert.equal(cardRowValue(value), value, value);
+  }
+});
+
+test("the export's file rows are dropped for EVERY viewer; a status row loses its English gloss", () => {
+  const card = {
+    main: [
+      { key: "نوع التشريع", value: "نظام" },
+      { key: "حالة التشريع", value: "نشط (active)" },
+      { key: "الجهة المصدرة", value: "الملك (بصيغة تصديق عالي) — ديباجة الإصدار الأصلي غير متوفرة في المصدر المستخدم" },
+    ],
+    more: [
+      { key: "تاريخ الاستخراج", value: "2026-06-12" },
+      { key: "معيار التنسيق", value: "بنية مسطحة بدون مطويات (V3.3 Zero-Details Protocol)" },
+      { key: "معيار الهيكلة", value: "نظام المطويات للحيثيات والوقائع (Rule 20 BOG Protocol)" },
+      { key: "الملف الأصلي (PDF)", value: "المبادئ والقرارات القانونية.pdf" },
+      { key: "طريقة التفريغ", value: "تفريغ بصري حرفي (Gemini Vision OCR Page-by-Page)" },
+      { key: "ملاحظة تحقق", value: "رقم القرار (448) مرجَّح بثقة عالية" },
+      { key: "ملاحظة هيكلية", value: "رُقّمت وحداته كصفحات (PAGE)" },
+      { key: "⚠️ ملاحظة تكرار محتمل", value: "نفس أداة الإصدار — راجع حقل `review_reason`" },
+      { key: "ملاحظة التحديث", value: "هذا الملف يوثّق إصدار 2016م." },
+      { key: "المصدر الرسمي", value: "غير متوفر (الرابط المسجَّل سابقاً لا يفتح الوثيقة؛ لم يُعثر على بديل صحيح عند التحقق 2026-07-19)" },
+      { key: "حالة المستند", value: "جاري العمل على النظام (بحسب المصدر الرسمي BOE)" },
+      { key: "الموضوع", value: "تعميم بشأن الإطار التنظيمي (Red Teaming)" },
+    ],
+  };
+  for (const isSubscriber of [true, false]) {
+    const out = cardForViewer(card, isSubscriber);
+    const sent = JSON.stringify(out);
+    for (const word of ["تاريخ الاستخراج", "معيار", "الملف الأصلي", "طريقة التفريغ", "ملاحظة", "غير متوفر", "لم يُعثر", "active", "BOE"]) {
+      assert.ok(!sent.includes(word), `${word} (${isSubscriber})`);
+    }
+    assert.equal(out?.main.find((r) => r.key === "حالة التشريع")?.value, "نشط", String(isSubscriber));
+    assert.equal(out?.main.find((r) => r.key === "الجهة المصدرة")?.value, "الملك (بصيغة تصديق عالي)", String(isSubscriber));
+  }
+  assert.deepEqual(cardForViewer(card, true)?.more, [
+    { key: "حالة المستند", value: "جاري العمل على النظام" },
+    // Outside a status row an English term is the law's own: it stays.
+    { key: "الموضوع", value: "تعميم بشأن الإطار التنظيمي (Red Teaming)" },
+  ]);
 });
 
 // ── Owner ٢٥٩ (أ): no «unverified» note in a status, for EVERY viewer ───────
