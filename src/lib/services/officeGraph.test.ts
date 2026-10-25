@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildOfficeGraph, isCaseRow, type OfficeCaseInput } from "./officeGraph.ts";
+import { buildOfficeGraph, isCaseRow, officeCaseOrFilter, type OfficeCaseInput } from "./officeGraph.ts";
 
 const kase = (id: string, o: Partial<OfficeCaseInput> = {}): OfficeCaseInput => ({
   id, title: `قضية ${id}`, status: "assigned", lawyerClientId: null, requester: { name: "" }, metadata: {}, ...o,
@@ -64,4 +64,15 @@ test("nothing recorded, nothing drawn: a case without parties is a lone node, no
   assert.equal(g.edges.length, 0);
   assert.equal(g.nodes[0].label, "قضية x");
   assert.equal(buildOfficeGraph([kase("y", { title: "  " })], []).nodes[0].label, "قضية بلا عنوان");
+});
+
+test("officeCaseOrFilter: own rows and own firms only — never the open marketplace", () => {
+  const uid = "11111111-0000-0000-0000-000000000001";
+  const f1 = "ffffffff-0000-0000-0000-0000000000f1";
+  assert.equal(officeCaseOrFilter(uid, []), `requester_user_id.eq.${uid},assigned_to.eq.${uid}`);
+  assert.equal(
+    officeCaseOrFilter(uid, [f1, f1, "x),or(id.neq.0"]),
+    `requester_user_id.eq.${uid},assigned_to.eq.${uid},firm_id.in.(${f1})`,
+    "duplicates folded, anything that is not a uuid dropped",
+  );
 });

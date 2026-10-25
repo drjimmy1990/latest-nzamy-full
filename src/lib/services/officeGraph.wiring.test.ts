@@ -28,6 +28,10 @@ test("the route reads through the caller's RLS client and writes nothing", () =>
   assert.doesNotMatch(route, /\.(insert|update|upsert|delete|rpc)\(/);
   assert.doesNotMatch(route, /from\("case_graphs"\)/);
   assert.doesNotMatch(route, /export async function (POST|PUT|PATCH|DELETE)/);
+  // RLS lets a verified lawyer read the open marketplace too: the query is
+  // scoped to his own rows and firms, and to lawyer/firm receivers.
+  assert.match(route, /\.or\(officeCaseOrFilter\(user\.id, firmIds\)\)/);
+  assert.match(route, /\.in\("receiver", \[\.\.\.OFFICE_CASE_RECEIVERS\]\)/);
 });
 
 test("every firm role that opens «قضايا المكتب» opens the map, and is offered it; the others neither", () => {

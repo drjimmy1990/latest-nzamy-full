@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
-import { buildOfficeGraph, isCaseRow, type OfficeCaseInput, type OfficeClientInput } from "@/lib/services/officeGraph";
+import {
+  OFFICE_CASE_RECEIVERS,
+  buildOfficeGraph,
+  isCaseRow,
+  officeCaseOrFilter,
+  type OfficeCaseInput,
+  type OfficeClientInput,
+} from "@/lib/services/officeGraph";
 
 /**
  * GET /api/v1/lawyer/office-graph — «خريطة قضايا المكتب» (N3.11).
@@ -41,13 +48,32 @@ export async function GET() {
     // legal secretary is not a "lawyer" account) — the case-file gate.
     const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
-    const { supabase } = auth;
+    const { supabase, user } = auth;
+
+    // The caller's firms: his active memberships and the firms he owns.
+    const [membersRes, ownedRes] = await Promise.all([
+      supabase.from("firm_members").select("firm_id").eq("user_id", user.id).eq("status", "active"),
+      supabase.from("firm_profiles").select("id").eq("owner_user_id", user.id),
+    ]);
+    if (membersRes.error || ownedRes.error) {
+      const e = membersRes.error ?? ownedRes.error;
+      console.error("[lawyer/office-graph GET] firm lookup failed:", e?.message, e?.code);
+      return NextResponse.json({ error: "تعذّرت قراءة قضايا المكتب وموكّليه." }, { status: 500 });
+    }
+    const firmIds = [
+      ...((membersRes.data ?? []) as Array<{ firm_id: string }>).map((r) => r.firm_id),
+      ...((ownedRes.data ?? []) as Array<{ id: string }>).map((r) => r.id),
+    ];
 
     const [casesRes, clientsRes] = await Promise.all([
       supabase
         .from("service_requests")
         .select("id, title, status, type, lawyer_client_id, requester, metadata", { count: "exact" })
         .eq("type", "service")
+        .in("receiver", [...OFFICE_CASE_RECEIVERS])
+        // His own work only — see officeCaseOrFilter (RLS also admits the
+        // open marketplace to a verified lawyer).
+        .or(officeCaseOrFilter(user.id, firmIds))
         .order("created_at", { ascending: false })
         .limit(CASE_CAP),
       supabase

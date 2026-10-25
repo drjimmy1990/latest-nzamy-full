@@ -84,6 +84,26 @@ export function isCaseRow(type: string, metadata: Record<string, unknown> | null
   return true;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Receivers a lawyer's or a firm's own case carries. */
+export const OFFICE_CASE_RECEIVERS = ["lawyer", "firm"] as const;
+
+/**
+ * The PostgREST `or=` filter of the rows that are the caller's OWN work: he
+ * filed it, it is assigned to him, or it belongs to one of his firms. RLS
+ * alone is not that set: "service_requests_select_policy" also lets a
+ * verified lawyer read every unassigned pending marketplace request, which
+ * must not be drawn as one of his cases (and its client as a name clash).
+ * Ids that are not uuids are dropped, so nothing else reaches the filter.
+ */
+export function officeCaseOrFilter(uid: string, firmIds: string[]): string {
+  const ids = [...new Set(firmIds.filter((id) => UUID_RE.test(id)))];
+  const arms = [`requester_user_id.eq.${uid}`, `assigned_to.eq.${uid}`];
+  if (ids.length > 0) arms.push(`firm_id.in.(${ids.join(",")})`);
+  return arms.join(",");
+}
+
 export function buildOfficeGraph(cases: OfficeCaseInput[], clients: OfficeClientInput[]): OfficeGraph {
   const nodes = new Map<string, OfficeNode>();
   const edges: OfficeEdge[] = [];
