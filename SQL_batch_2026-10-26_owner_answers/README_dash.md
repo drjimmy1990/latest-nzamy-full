@@ -212,7 +212,7 @@ T=supabase/tests/rls; M=supabase/migrations; bash $T/run.sh \
 - يحذف الملف **كل** سياسات الإدراج القديمة على `attachments` (منها سياسة 20260518 التي كانت تقبل أي صاحب وأي مسار) ويضع سياسة واحدة. يطبع أسماء ما حذفه.
 - فهرس جديد على `service_requests (requester_user_id)`.
 
-**الصفوف القديمة لا تُعدَّل.** لكن روابط التحميل في الكود الجديد ترفض أي صف مساره خارج مجلد صاحبه. إن ظهر في نهاية الملف تحذير بعدد صفوف كهذه، فشغّل الاستعلام المطبوع معه وأرسل النتيجة للمراجعة: قد يكون صفاً مزوّراً.
+**الصفوف القديمة لا تُعدَّل.** لكن روابط التحميل في الكود الجديد ترفض أي صف مساره خارج مجلد صاحبه. ولا ينسخ الخادم ملف صف كهذا ولا يحذفه: النسخ يجيب «غير موجود»، والحذف النهائي وتنظيف السلة بعد ٣٠ يوماً يحذفان الصف ويُبقيان الملف. إن ظهر في نهاية الملف تحذير بعدد صفوف كهذه، فشغّل الاستعلام المطبوع معه وأرسل النتيجة للمراجعة: قد يكون صفاً مزوّراً.
 
 **طرق الرفع التي فُحصت:**
 
@@ -223,7 +223,11 @@ T=supabase/tests/rls; M=supabase/migrations; bash $T/run.sh \
 | الأرشفة والاسترجاع والحجز القانوني | الجلسة | تعدّل `deleted_at` / `deleted_by` / `legal_hold` / `hold_reason` فقط |
 | `documents/[id]/copy`، ربط المستند بالطلب، تنظيف السلة | `service_role` | لا تتأثر |
 
-**ترتيب التنفيذ:** في أي وقت، قبل النشر أو بعده. يجب أن تظهر في نهايته `20261026_65 verify: OK`. وفي `_verify.sql` (يدوياً، الأمر في قسم 62): `_verify: 20261026_65 OK`.
+**ترتيب التنفيذ:** نفّذه **قبل نشر الكود** (يعمل أيضاً بعده، لكن قبله أفضل). يجب أن تظهر في نهايته `20261026_65 verify: OK`. وفي `_verify.sql` (يدوياً، الأمر في قسم 62): `_verify: 20261026_65 OK`.
+
+لماذا قبل النشر: تحذير العدّ في نهاية الملف هو الإشارة الوحيدة المبكرة إلى الملفات التي سيتوقف الكود الجديد عن تقديمها. بعد النشر يظهر «غير موجود» لنوعين من الصفوف:
+- صف قديم مساره خارج مجلد صاحبه (مزوّر، أو كتبه كاتب قديم بشكل مسار مختلف)؛
+- نسخة عقد حُذف حساب رافعها (`uploaded_by` فارغ).
 
 **تنبيه:** أي جهة خارج هذا المستودع تكتب في الجدولين **بجلسة مستخدم** (تطبيق جوال، أو سير عمل n8n بتوكن مستخدم) تخضع للقاعدة نفسها. ما يكتب بمفتاح `service_role` لا يتأثر.
 
@@ -257,6 +261,8 @@ After 65, for sessions only (`postgres` / `service_role` / `supabase_admin` pass
 - An index on `service_requests (requester_user_id)`.
 
 Existing rows are not rewritten. The new routes refuse any row whose path is outside its writer's folder, and the file warns with a count and a query if any exist. Writers outside this repo that use a user JWT are guarded the same way.
+
+Order: run it BEFORE the code deploy (it also works after). Its warning count is the only early signal of which files the new routes will stop serving. After the deploy, two kinds of row answer «not found»: an old row whose path is outside its owner's folder (forged, or an old writer's key shape), and a contract version whose uploader's account was deleted (`uploaded_by` null). The new routes also never copy or remove such a row's object with the service role: copy answers 404, and the permanent delete / 30-day purge drop the row but keep the bytes.
 
 Not closed here: `document_shares` (FOR ALL, `owner_id = auth.uid()`) lets a session insert any `document_path` with a token it chose, and `/api/v1/share/[token]/verify` signs it with the service role. That is the same class of hole and needs its own file.
 
