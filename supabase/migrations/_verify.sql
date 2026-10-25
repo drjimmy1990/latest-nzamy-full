@@ -3418,6 +3418,9 @@ BEGIN
     IF NOT has_function_privilege('service_role', 'library.law_summary_brief(text)', 'EXECUTE') THEN
       missing := missing || ' service_role cannot EXECUTE law_summary_brief — every law write by the loader fails (re-run 20261025_20);';
     END IF;
+    IF NOT has_function_privilege('postgres', 'library.law_summary_brief(text)', 'EXECUTE') THEN
+      missing := missing || ' postgres cannot EXECUTE law_summary_brief — every law write from the SQL editor / psql fails (re-run 20261025_20);';
+    END IF;
   END IF;
   FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
     IF has_column_privilege(r, 'library.laws', 'summary_brief', 'SELECT') THEN

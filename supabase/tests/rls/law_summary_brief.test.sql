@@ -154,3 +154,27 @@ begin
   end if;
   raise notice 'T6 PASS: own </details>, card ignored, 2,000-character cap, NULL in → NULL out';
 end $$;
+
+-- T7 the writing role computes the column: a role that may write library.laws
+-- but not EXECUTE the function cannot write a law row. This is why 20261025_20
+-- grants EXECUTE to postgres as well as service_role (on a self-host, the file
+-- may run as supabase_admin, which then owns the function). Here postgres is
+-- the owner and a superuser, so that grant itself cannot be told apart: the
+-- verify block of the file checks it on the real server.
+create role nz_t7_writer nologin;
+grant usage on schema library to nz_t7_writer;
+grant insert, update, select on library.laws to nz_t7_writer;
+set role nz_t7_writer;
+do $$
+begin
+  begin
+    insert into library.laws (slug, title, type, section_code, preamble) values ('t7', 'ت', 'نظام', '00', 'x');
+    raise exception 'T7 FAIL: a writer without EXECUTE computed summary_brief';
+  exception when insufficient_privilege then null;
+  end;
+  raise notice 'T7 PASS: a writer without EXECUTE on law_summary_brief cannot write a law row (42501)';
+end $$;
+reset role;
+revoke all on library.laws from nz_t7_writer;
+revoke all on schema library from nz_t7_writer;
+drop role nz_t7_writer;

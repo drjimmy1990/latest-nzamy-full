@@ -37,9 +37,14 @@
 --   to NO API role, and /api/library/init reads it with the service role and
 --   sends it per viewer. If ٢٦٠ makes it public, only that flag changes — do
 --   NOT grant this column (20261004_01's verify sweep would then fail).
---   The function is EXECUTE for service_role only: the API roles cannot call
---   it as an RPC. (The generated column is computed with the privileges of
---   the role that writes the row — service_role or postgres.)
+--   The function is EXECUTE for service_role and postgres only: the API roles
+--   cannot call it as an RPC. The generated column is computed with the
+--   privileges of the role that WRITES the row, so every role that writes
+--   library.laws needs EXECUTE: service_role (the loaders, the admin routes)
+--   and postgres (the SQL editor, psql, a self-host restore). postgres is
+--   granted explicitly: when this file runs as supabase_admin (self-host
+--   editor), supabase_admin owns the function and postgres would otherwise
+--   fail every write with "permission denied for function law_summary_brief".
 --
 -- WHAT IT DOES (idempotent — safe to run any number of times)
 --   0. Refuses to run unless 20261004_01's lock is in force (anon /
@@ -47,10 +52,16 @@
 --      new column would be readable by the public key).
 --   1. create or replace library.law_summary_brief(text): IMMUTABLE, PARALLEL
 --      SAFE, search_path = ''. EXECUTE revoked from PUBLIC / anon /
---      authenticated, granted to service_role.
+--      authenticated, granted to service_role and postgres.
 --   2. add column if not exists summary_brief text generated always as
 --      (library.law_summary_brief(preamble)) stored — this rewrites
---      library.laws under an ACCESS EXCLUSIVE lock (seconds; /laws waits).
+--      library.laws and rebuilds its indexes (the fts GIN among them) under
+--      an ACCESS EXCLUSIVE lock; every library read waits meanwhile.
+--      Measured in Docker (postgres 16, 6,128 rows built from the 1,389 real
+--      last_owner preambles ×4, ≈ prod size): see the README of the batch.
+--      `lock_timeout = 5s`: if a long read holds library.laws, the file stops
+--      with "canceling statement due to lock timeout" (nothing changed —
+--      re-run it) instead of queueing and freezing the library behind it.
 --   3. verify block — RAISES (whole transaction rolls back) unless the column
 --      is generated from the function, no API role can read it or run the
 --      function, service_role can do both, and the function gives the
@@ -70,6 +81,8 @@
 -- =============================================================================
 
 begin;
+
+set local lock_timeout = '5s';
 
 -- 0. the column lock must be in force
 do $$
@@ -128,7 +141,8 @@ comment on function library.law_summary_brief(text) is
   'N2.2 (20261025_20): the موجز text of a law preamble for library.laws.summary_brief. Twin of lawSummaryBrief() in src/lib/library/lawPreambleBlocks.ts.';
 
 revoke all on function library.law_summary_brief(text) from public, anon, authenticated;
-grant execute on function library.law_summary_brief(text) to service_role;
+-- Every role that writes library.laws computes the column (see PRIVILEGES).
+grant execute on function library.law_summary_brief(text) to service_role, postgres;
 
 -- 2. the column
 alter table library.laws
@@ -165,6 +179,9 @@ begin
   if not has_column_privilege('service_role', 'library.laws', 'summary_brief', 'SELECT')
      or not has_function_privilege('service_role', 'library.law_summary_brief(text)', 'EXECUTE') then
     raise exception '20261025_20 verify: service_role cannot read summary_brief or run law_summary_brief';
+  end if;
+  if not has_function_privilege('postgres', 'library.law_summary_brief(text)', 'EXECUTE') then
+    raise exception '20261025_20 verify: postgres cannot run law_summary_brief — every write to library.laws as postgres would fail';
   end if;
   probe := library.law_summary_brief(E'<details open>\r\n<summary>📝 موجز المستند (خلاصة سريعة)</summary>\r\n\r\n> **الموضوع:** نص الموجز.\r\n\r\n</details>\r\n\r\n<details>\r\n<summary>📜 ديباجة</summary>\r\nنص\r\n</details>');
   if probe is distinct from '**الموضوع:** نص الموجز.' then
