@@ -83,7 +83,7 @@ A firm-case document uploaded by a member lives under **the member's own folder*
 
 - **Firm Owner / managing partner** = `firm_profiles.owner_user_id`. The trigger `ensure_firm_owner_membership` (20260903_phase2) also makes him a `managing_partner` row in `firm_members`. `FIRM_ROLE_ALLOWED_ITEMS`/`managing_partner` in the navigation is the same person.
 - **The case anchor** is a `service_requests` row. A firm case has `service_requests.firm_id`.
-- **A firm asset** is a row that is owned or written by the departing member **and** belongs to firm F. It belongs to F either through its own `firm_id` or through its case (`service_requests.firm_id`). The transfer covers these columns:
+- **A firm asset** is a row that is owned or written by the departing member **and** belongs to firm F. It belongs to F either through its own `firm_id` or through its case (`service_requests.firm_id`). Only a firm the user is (or was) a **member** of counts: a `firm_members` row for him, any status. A client's own request on a firm case, and his document on it, are not his firm assets; they follow the personal rules (the request's FK nulls, the document is detached and kept for the firm). The transfer covers these columns:
 
 | table | columns moved to the firm owner | firm from |
 |---|---|---|
@@ -125,21 +125,23 @@ Membership rows (`case_team_members`, `firm_members`) are access, not assets, an
 - **`public.firm_asset_transfers`**: the trail described in §2.
 - **Functions.** All are SECURITY DEFINER with `search_path ''`. Execute is revoked from PUBLIC/anon.
   - For a session (authenticated):
-    - `request_account_deletion(reason)` and `cancel_account_deletion()`. They take **no user id**: they act on `auth.uid()`. So nobody can request or cancel someone else's deletion, by construction.
+    - `request_account_deletion(reason)` and `cancel_account_deletion()`. They take **no user id**: they act on `auth.uid()`. So nobody can request or cancel someone else's deletion, by construction. The cancel lifts only a request the user made himself (`requested_by = 'self'`); an admin freeze, or a self request an admin then freezes (it becomes `requested_by = 'admin'`, its date kept), is lifted only by an admin (Q8).
+    - `storage_object_held_by_other(name)`, SECURITY DEFINER, called by the documents bucket's SELECT policy (file 71). True for an object whose attachment is someone else's (or no one's), or a contract version / contract document of a contract the caller cannot manage. A plain subquery in the policy would run under the caller's RLS and see nothing.
     - The request refuses an admin, and an owner of a firm, company, NGO or government entity that has other non-removed members.
   - For the service role:
-    - `account_deletion_request_for(user, actor, reason)` and `account_deletion_cancel_for(user, actor)`: admin freeze and restore.
+    - `account_deletion_request_for(user, actor, reason)` and `account_deletion_cancel_for(user, actor)`: admin freeze and restore. An auth user with no `profiles` row can be frozen too.
     - `account_purge_claim(limit)`: claims due rows atomically with `update … where status='requested' and purge_after <= now()`. A purge that died mid-way is re-claimed after an hour.
     - `account_purge_claim_user(user, actor)`: «حذف نهائي الآن».
-    - `account_purge_prepare(user)`: the keep rules, a hold check, and the storage paths. It aborts while any firm-scoped row still points at the user.
+    - `account_purge_prepare(user)`: a **dry run**. The block check, and a preview of the keep rules run inside a block that is rolled back. It writes nothing. It reports `blocked` while any firm-scoped row would still point at the user.
+    - `account_purge_storage_paths(user)`: after the delete only (it refuses while the account exists). The objects under `uid/…` and `licences/uid/…` that no surviving row references (attachments, contract_versions, contracts.document_path, document_shares). LIKE with a literal prefix, so `name_prefix_search` serves it.
     - `account_purge_finish(request, outcome, report, error)`.
     - `transfer_firm_assets(user, firm)`.
 - **The freeze hides the public profile at the source.** A BEFORE INSERT/UPDATE trigger on `lawyer_profiles` and `provider_profiles` forces `marketplace_visible = false` while an active request exists. It is the 20261017_44 `test_accounts` technique, so the directory, `/lawyers/[slug]`, the community widgets, reviews and anon REST all follow without code. A cancel restores `prior_listing`.
-- **Keep rules on every deletion path.** A BEFORE DELETE trigger on `auth.users` runs on the cron, «حذف نهائي», the Supabase dashboard, and the UAT teardown. It:
+- **Keep rules on every deletion path.** A BEFORE DELETE trigger on `auth.users` runs on the cron, «حذف نهائي», the Supabase dashboard, and the UAT teardown. It is the only place they write, in the delete's own transaction, so a refused or failed delete rolls every move back. After the moves it refuses the delete (42501 `ACCOUNT_DELETE_FIRM_ASSETS_LEFT`) if a firm row is still the user's. It:
   1. refuses (42501) to delete an entity owner who has other non-removed members, because the cascade would delete the firm;
   2. transfers the firm assets of every firm the user's rows belong to;
   3. detaches the user's documents on a **non-firm case that has another participant**, setting `owner_user_id` to null, so a client's file with his lawyer, or a lawyer's file with his client, stays with the other party (Q3);
-  4. snapshots the buyer onto every `paid`/`refunded` `payment_orders` row: `metadata.buyer_snapshot` with display_name, email, user_type and when. It never overwrites an earlier snapshot.
+  4. snapshots the buyer onto every `paid`/`refunded` `payment_orders` row: `metadata.buyer_snapshot` with display_name, email (from `auth.users`, `profiles.email` only when that is empty), user_type and when. It never overwrites an earlier snapshot.
 - **Member removal.** An AFTER UPDATE trigger on `firm_members`, firing when `status` becomes `removed`, runs `transfer_firm_assets(user, firm)` and notifies the owner with a count, never content. A *suspension* moves nothing, because it is reversible. A *freeze* moves nothing either: a cancel could not undo a move.
 - `entitlement_requests.decided_by` becomes ON DELETE SET NULL. The constraint name is looked up, not assumed.
 - Re-runnable, inside `begin … commit`, with `lock_timeout`, a verify block, and `notify pgrst`.
@@ -172,10 +174,11 @@ Membership rows (`case_team_members`, `firm_members`) are access, not assets, an
 - **Cron.** `POST /api/v1/cron/account-purge`:
   - Auth is `x-cron-secret` = `CRON_SECRET`, compared timing-safe with `cronSecretMatches`. It fails closed when the variable is unset.
   - Per claimed request, in order:
-    1. `prepare`, which runs the keep rules and returns the storage paths;
-    2. `auth.admin.deleteUser`, where the trigger re-runs the keep rules;
-    3. remove those storage objects, only now: a refused delete leaves the request `blocked`, and a blocked account can still be restored, so its files must still be there. A failed remove is recorded on the request as `storage_failed`;
+    1. `prepare`, a dry run (block check and preview; writes nothing);
+    2. `auth.admin.deleteUser`, where the trigger runs the keep rules in the delete's transaction;
+    3. `account_purge_storage_paths`, then remove those objects, only now: a refused delete leaves the request `blocked` with every row and file as it was, and a blocked account can still be restored. A failed list or remove is recorded on the request as `storage_failed`;
     4. `finish`.
+  - «حذف نهائي الآن» (`purgeNowWith`) writes the frozen copy to `app_metadata` before the purge and re-writes it, with the surviving request's `purge_after`, when the purge ends `blocked` or `retry`. If it cannot be written, the request is cancelled: never a pending request on an account that still opens the platform.
   - An entity owner, or a `23503`, ends as `blocked` with the error, and is never retried in a loop.
   - It logs counts.
   - n8n runs it daily: Schedule Trigger → HTTP Request `POST https://nezamy.sa/api/v1/cron/account-purge` with header `x-cron-secret`.
@@ -191,17 +194,19 @@ Membership rows (`case_team_members`, `firm_members`) are access, not assets, an
 ### Deploy order
 
 1. Run the read-only FK query from the README on prod.
-2. Run `70_BEFORE_DEPLOY_20261026_70_account_deletion.sql`.
-3. Deploy the code.
-4. Run `_verify.sql` by hand: expect `_verify: 20261026_70 OK`.
-5. Add the daily n8n schedule. `CRON_SECRET` is already set for the deadlines job.
+2. Run `70_BEFORE_DEPLOY_20261026_70_account_deletion.sql` in the SQL editor.
+3. Run `71_AFTER_70_storage_policies_documents_select.sql` on the server as `supabase_admin` (`docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < …`). It is the canonical `supabase/storage_policies_documents.sql`; file 17 of 2026-10-25 is superseded and must not be re-run after it.
+4. Deploy the code.
+5. Run `_verify.sql` by hand: expect `_verify: 20261026_70 OK` and `_verify: 71_AFTER_70 OK`.
+6. Add the daily n8n schedule. `CRON_SECRET` is already set for the deadlines job.
 
 ---
 
 ## Residuals (stated, not hidden)
 
-- **Art. 18 guard (20261019_21) on the removal path.** The guard reads the *session's* role, so when the firm owner's own PATCH removes a member, it refuses moving a hearing, case stage or court deadline to an owner who is a **consultant**. `transfer_firm_assets` catches that 42501. The removal still succeeds, the refused rows stay with the removed member and are reported as `refused`, and the purge (service role, which the guard lets through) moves them later. Until then, the removed member keeps reaching those rows through `can_access_case_row`'s owner arm (Q7). Docker T11 covers this; a negative control shows the removal failing outright without the catch.
-- **Direct REST during the freeze.** The gates cover protected pages, the lawyer/admin/firm APIs and `assertRole`. A direct PostgREST call with the user's own JWT still reaches his own rows (RLS), and so does a route that does its own `getUser()` without `assertRole`.
+- **Art. 18 guard (20261019_21) on the removal path.** The guard reads the *session's* role, so when the firm owner's own PATCH removes a member, it refuses moving a hearing, case stage or court deadline to an owner who is a **consultant**. `transfer_firm_assets` catches that 42501. The removal still succeeds, the refused rows stay with the removed member and are reported as `refused`, and the purge's delete (GoTrue's `supabase_auth_admin`, which the guard lets through) moves them later. Until then, the removed member keeps reaching those rows through `can_access_case_row`'s owner arm (Q7). Docker T11/T11b cover this (T11b deletes as `supabase_auth_admin`); a negative control shows the removal failing outright without the catch.
+- **Direct REST during the freeze.** The gates cover protected pages, `/checkout`, the lawyer/admin/firm APIs, `assertRole`, `requireApiUser`, and `frozenAccountResponse(user)` in every write handler that does its own `getUser()` (`accountFreezeWrites.test.ts` walks all routes). A direct PostgREST call with the user's own JWT still reaches his own rows (RLS).
+- **Card tokens at Moyasar.** The purge deletes our `payment_methods` rows, not the token at Moyasar. B2 adds the Moyasar token delete to the purge (with Q6).
 - **«Hidden immediately».** This holds at the source: `marketplace_visible` is forced false, so the directory API, `/lawyers/[slug]`, reviews and anon REST stop listing the account on their next read. The lawyer pages use no ISR. A copy that the nginx proxy cache (`/www/server/nginx/proxy_cache_dir`) already holds can be served until it expires. `deploy.sh` purges it on each deploy.
 - **`last_error` is visible to the user.** It sits on his own request row, which his RLS allows him to read.
 - **The bare `deleteUser`.** It remains in the admin route only for the case where `account_purge_claim_user` does not exist, i.e. before 20261026_70 runs.
@@ -216,3 +221,4 @@ Membership rows (`case_team_members`, `firm_members`) are access, not assets, an
 5. **Company (`business_members`) members.** ٢٩٨ names law offices and firms. Should the same transfer apply to corporate legal teams?
 6. **B2 auto-renew** must skip accounts with an active deletion request. Nothing charges today.
 7. **A consultant firm owner and court rows.** Art. 18 refuses a consultant's hearings. When a lawyer member leaves a consultancy firm, who should hold his hearings and court deadlines? Default: they stay with the departed member until the purge moves them to the owner.
+8. **Who lifts an admin freeze.** Default: only an admin («استعادة حساب مجمّد»). The user sees «تم تجميد الحساب بقرار من الإدارة — تواصل مع الدعم» with no restore button. A user's own request stays his to cancel.

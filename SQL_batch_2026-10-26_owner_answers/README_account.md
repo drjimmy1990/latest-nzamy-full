@@ -1,8 +1,13 @@
 # حذف الحساب (D6، قرار المالك ٢٩٨): ترتيب التنفيذ والنشر
 
-**الحالة:** لم يُنفَّذ على الإنتاج بعد. ينفذه المستخدم في محرر Supabase بعد نسخة احتياطية.
+**الحالة:** لم يُنفَّذ على الإنتاج بعد. ملفان، ينفذهما المستخدم بعد نسخة احتياطية:
 
-*English, short:* run the read-only FK query below first. Then run `70_BEFORE_DEPLOY_20261026_70_account_deletion.sql` **before** deploying the D6 code. Expect `20261026_70 verify: OK`. Then deploy, run `_verify.sql` by hand (expect `_verify: 20261026_70 OK`), and add the daily n8n job. The code is safe before the file runs, because it keeps the old behaviour.
+| الترتيب | الملف | من أين | متى |
+|---|---|---|---|
+| 1 | `70_BEFORE_DEPLOY_20261026_70_account_deletion.sql` | محرر SQL في Supabase | قبل نشر الكود |
+| 2 | `71_AFTER_70_storage_policies_documents_select.sql` | على الخادم بدور `supabase_admin` (الأمر أدناه)، **لا** من محرر SQL | بعد 70، ويجوز قبل النشر أو بعده |
+
+*English, short:* run the read-only FK query below first. Then run `70_BEFORE_DEPLOY_…` in the SQL editor **before** deploying the D6 code (expect `20261026_70 verify: OK`). Then run `71_AFTER_70_…` on the server as `supabase_admin` (storage policies cannot be created from the SQL editor; expect `storage_policies_documents: OK`). Deploy, run `_verify.sql` by hand (deploy.sh does **not** run it; expect `_verify: 20261026_70 OK` and `_verify: 71_AFTER_70 OK`), and add the daily n8n job. The code is safe before the files run, because it keeps the old behaviour.
 
 ## ماذا يفعل الملف
 
@@ -21,10 +26,13 @@
    - ملاحظات القضايا ومستنداتها.
    - العقود والاستشارات.
 
-   ويُسجَّل كل نقل في جدول `firm_asset_transfers`: من كتب السجل، ولمن انتقل، ومتى. ويصل لصاحب المكتب إشعار بعدد السجلات، دون محتواها. وبعد الإخراج لا يعود العضو يرى هذه السجلات. قبل هذا الملف كان العضو المُخرَج يراها ما دام هو مالكها.
+   ويُسجَّل كل نقل في جدول `firm_asset_transfers`: من كتب السجل، ولمن انتقل، ومتى. ويصل لصاحب المكتب إشعار بعدد السجلات، دون محتواها. وبعد الإخراج لا يعود العضو يرى هذه السجلات، ولا يستطيع تنزيل ملفاتها مباشرة من التخزين **بعد تنفيذ الملف 71** (الملف يبقى في مجلده، لكن سياسة القراءة تتبع صاحب السجل). قبل هذا الملف كان العضو المُخرَج يراها ما دام هو مالكها.
 
-**الحماية على كل طرق الحذف**، بما فيها لوحة Supabase وسكربتات التنظيف: مشغّل `BEFORE DELETE` على `auth.users`.
-- ينقل أصول المكتب قبل أي حذف.
+   يُنقل فقط ما يخص مكتباً **كان المستخدم عضواً فيه** (له صف في `firm_members` بأي حالة). العميل الذي له طلب على قضية مكتب ليس عضواً: إن حُذف حسابه يبقى طلبه بلا صاحب، ويبقى مستنده للمكتب، ولا يصل لصاحب المكتب إشعار «عضو حُذف حسابه».
+3. **من يرفع التجميد:** المستخدم الذي طلب الحذف بنفسه يستعيد حسابه في أي وقت خلال المهلة. أما التجميد الذي قامت به الإدارة فلا يرفعه صاحب الحساب: يرى «تم تجميد الحساب بقرار من الإدارة — تواصل مع الدعم» دون زر استعادة، وترفعه الإدارة فقط بـ«استعادة حساب مجمّد» (افتراض بانتظار جواب المالك).
+
+**الحماية على كل طرق الحذف**، بما فيها لوحة Supabase وسكربتات التنظيف: مشغّل `BEFORE DELETE` على `auth.users`. هو **وحده** ينقل ويحفظ، داخل عملية الحذف نفسها: إن فشل الحذف أو رُفض لا يتغير أي سجل، ويبقى الحساب قابلاً للاستعادة بكل ملفاته.
+- ينقل أصول المكتب قبل أي حذف. إن بقي سجل مكتب لم يمكن نقله **يرفض** الحذف (`ACCOUNT_DELETE_FIRM_ASSETS_LEFT`) فلا يضيع شيء.
 - **يرفض** حذف صاحب مكتب أو شركة أو جهة ما زال لها أعضاء آخرون، لأن حذفه يحذف المكتب كله. الرسالة: `ACCOUNT_DELETE_ENTITY_OWNER`.
 - يُبقي مستندات الحساب المحذوف على قضية فيها طرف آخر لذلك الطرف (السؤال ٣ للمالك).
 
@@ -65,6 +73,20 @@ select count(*) from public.account_deletion_requests;
 
 **الملف قابل لإعادة التشغيل**، داخل `begin … commit`، ومهلة القفل فيه ٥ ثوانٍ، وينتهي بـ `notify pgrst, 'reload schema'`. **لا يحذف أي حساب ولا أي صف.**
 
+## الملف 71: سياسة قراءة ملفات التخزين
+
+`71_AFTER_70_storage_policies_documents_select.sql` نسخة مطابقة (`cmp`) من `supabase/storage_policies_documents.sql`. يعيد إنشاء سياسات حاوية `documents` الأربع كما كانت، ويضيف إلى سياسة القراءة شرطاً واحداً: لا يقرأ المستخدم ملفاً في مجلده إذا كان سجلّه لغيره (مستند انتقل لصاحب المكتب، أو نسخة عقد لم يعد يديره). الشرط دالة `storage_object_held_by_other` من الملف 70، لذلك يُنفَّذ **بعد 70**.
+
+سياسات التخزين لا تُنشأ من محرر SQL (جدول `storage.objects` ليس ملك دوره). نفّذه على الخادم من مجلد المشروع:
+
+```bash
+docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < SQL_batch_2026-10-26_owner_answers/71_AFTER_70_storage_policies_documents_select.sql
+```
+
+- المتوقع في نهايته: `storage_policies_documents: OK — 4 owner-only policies, nothing else can match bucket documents`.
+- إن نُفِّذ قبل 70 تُنشأ سياسة القراءة بلا الشرط مع رسالة، فأعد تنفيذه بعد 70.
+- **لا تُعِد تنفيذ الملف 17** من دفعة 2026-10-25 بعد 71: ذلك الملف قديم ويعيد سياسة القراءة بلا الشرط. `_verify.sql` يتوقف بخطأ إن حدث ذلك، والحل إعادة تنفيذ 71.
+
 ## النشر والتحقق
 
 - **قبل الملف** يعمل الكود الجديد كما كان:
@@ -81,7 +103,9 @@ select count(*) from public.account_deletion_requests;
 docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < supabase/migrations/_verify.sql 2>&1 | grep -E "_verify: 20261026_70|ERROR"
 ```
 
-يجب أن يظهر `_verify: 20261026_70 OK`. يكتفي القسم بتنبيه ما دام الملف لم يُنفَّذ. ويتوقف بخطأ إن نُفِّذ جزئياً أو حُذف أحد المشغّلات، والحل حينها إعادة تنفيذ الملف.
+يجب أن يظهر `_verify: 20261026_70 OK`. يكتفي القسم بتنبيه ما دام الملف لم يُنفَّذ. ويتوقف بخطأ إن نُفِّذ جزئياً أو حُذف أحد المشغّلات أو كانت المنفَّذة نسخة أقدم من 70، والحل حينها إعادة تنفيذ الملف.
+
+ويجب أن يظهر أيضاً `_verify: 71_AFTER_70 OK` (غيّر النمط في الأمر إلى `"_verify: 20261026_70|_verify: 71_AFTER_70|ERROR"`). يتوقف بخطأ ما دام 70 منفَّذاً و71 لم يُنفَّذ، أو نُفِّذ 17 بعده.
 
 ## مهمة الحذف اليومية (n8n)
 
@@ -91,10 +115,14 @@ docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1
 - **HTTP Request:** `POST https://nezamy.sa/api/v1/cron/account-purge`، مع الترويسة `x-cron-secret: <CRON_SECRET>`.
 
 تحذف المهمة فقط الطلبات التي مضى عليها ٦٠ يوماً ولم تُلغَ. لكل طلب، بالترتيب:
-1. تنقل أصول المكتب.
-2. تحذف الحساب.
-3. تحذف ملفات التخزين الشخصية، بعد حذف الحساب لا قبله: إن رُفض الحذف يبقى الحساب قابلاً للاستعادة بملفاته. **لا تحذف بمجلد كامل أبداً**: الملف الذي يشير إليه سجل باقٍ يبقى.
+1. تفحص دون أن تغيّر شيئاً: هل هو صاحب مكتب له أعضاء، وهل سيبقى سجل مكتب لا يمكن نقله.
+2. تحذف الحساب. النقل لصاحب المكتب وحفظ المستندات المشتركة واسم المشتري على الفواتير تتم **داخل** الحذف نفسه: إن رُفض الحذف لا يتغير شيء.
+3. بعد الحذف فقط تطلب قائمة الملفات من قاعدة البيانات، ثم تحذف ملفات التخزين الشخصية. **لا تحذف بمجلد كامل أبداً**: الملف الذي يشير إليه سجل باقٍ يبقى.
 4. تسجّل النتيجة على الطلب.
+
+«حذف نهائي الآن» من لوحة الإدارة يجمّد الحساب قبل الحذف، فإن لم يكتمل الحذف (مرفوض أو تعذّر) يبقى الحساب مجمّداً بقرار الإدارة. وإن تعذّر حتى تجميده يُلغى الطلب ويُبلَّغ المشرف، فلا يبقى طلب حذف على حساب مفتوح.
+
+**أثناء التجميد** لا يستطيع الحساب الدفع ولا النشر في المجتمع ولا إنشاء طلب خدمة ولا أي كتابة أخرى من الواجهة: صفحة `/checkout` تحوّله إلى «حسابك مجمّد»، وكل واجهة برمجية تكتب ترفضه (403).
 
 صاحب المكتب الذي له أعضاء، أو مفتاح يمنع الحذف، يصير طلبه `blocked` ويبقى الحساب مجمّداً حتى يقرر المالك. ولا تكرر المهمة المحاولة كل يوم. الرد JSON بالأعداد: `claimed` و`purged` و`blocked` و`retry`.
 
@@ -103,6 +131,8 @@ docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1
 - **إخفاء الملف العام «فوراً»** يتم في قاعدة البيانات. لكن نسخة صفحة خزّنها nginx (`proxy_cache_dir`) قد تبقى ظاهرة حتى تنتهي مدة تخزينها. `deploy.sh` يفرغ هذا التخزين عند كل نشر.
 - **حذف حسابات الاختبار (UAT):** المشغّل الجديد يرفض حذف صاحب مكتب أو شركة أو جهة ما زال لها أعضاء. احذف الأعضاء أولاً، ثم أصحاب المكاتب.
 - **مكتب استشارات:** إن كان صاحب المكتب «مستشاراً» (`practice_kind = consultant`) فقاعدة المادة ١٨ تمنع نقل جلسات العضو المُخرَج إليه من جلسة صاحب المكتب. ينجح الإخراج، وتبقى تلك الجلسات مع العضو حتى ينقلها الحذف النهائي (السؤال ٧ للمالك).
+
+- **بطاقات الدفع المحفوظة لدى ميسّر:** الحذف يحذف صفها من جدولنا (`payment_methods`)، لكنه لا يحذف الرمز (token) لدى ميسّر نفسه. يُضاف ذلك مع B2 (التجديد التلقائي)، ومعه: لا تجديد لحساب مجمّد.
 
 ## للتراجع
 
@@ -116,4 +146,6 @@ docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1
   - Frozen lawyer and provider profiles are unlisted.
 - **Foreign key.** `entitlement_requests.decided_by` becomes SET NULL.
 - **Safety.** It deletes nothing. It is idempotent.
-- **Tested.** Docker-proved twice (T1–T11, with two negative controls; the chain includes the live lawyer_profiles and the Art. 18 guard): `supabase/tests/rls/account_deletion.test.sql`.
+- **Storage (file 71).** The documents bucket's SELECT policy calls `storage_object_held_by_other(name)` (SECURITY DEFINER), so a removed member cannot download the firm files left in his folder. Run as `supabase_admin`, after 70; never re-run 17 after it.
+- **Purge.** `account_purge_prepare` is a dry run; the moves happen only inside the delete; the files are listed after it (`account_purge_storage_paths`).
+- **Tested.** Docker-proved (T1–T15 with the migration run twice; six negative controls recorded in the header): `supabase/tests/rls/account_deletion.test.sql`.
