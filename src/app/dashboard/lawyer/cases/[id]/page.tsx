@@ -32,6 +32,7 @@ import RecordStageOutcomeModal from "../../_components/RecordStageOutcomeModal";
 import DeadlineCard, { daysLeftChip } from "../../_components/DeadlineCard";
 import { ConsultantBlockedNote } from "@/components/dashboard/ConsultantGate";
 import CaseTimeline from "@/components/dashboard/caseTimeline/CaseTimeline";
+import CaseTrackingLinksPanel from "@/components/dashboard/caseTracking/CaseTrackingLinksPanel";
 import dynamic from "next/dynamic";
 import {
   itemsOf,
@@ -1411,6 +1412,13 @@ export default function CaseDetailPage() {
                   )}
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* ── رابط متابعة للموكل (N3.6) — create, copy once, revoke ── */}
+          {activeTab === "overview" && (
+            <div className="mt-5">
+              <CaseTrackingLinksPanel caseId={id} isDark={isDark} />
             </div>
           )}
 

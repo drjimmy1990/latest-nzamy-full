@@ -3465,3 +3465,51 @@ begin
   raise notice '_verify: 20261025_33 OK — legal_ledger_entries: RLS with case_row_scope_ok on every write, case/firm/writer locked, archive only, no guest read';
 end $$;
 -- <<< verify:legal_ledger
+
+-- >>> verify:case_tracking_links
+-- 2026-10-25 — 20261025_32_case_tracking_links.sql (P4 N3.6). Read-only,
+-- safe to repeat. Before _32 runs it only reports; after, it raises when the
+-- links table lost its RLS or its scope rule, exposes the token hash or lets
+-- sessions un-revoke / delete, or when the public snapshot is open to sessions.
+do $$
+declare n int; r text;
+begin
+  if to_regclass('public.case_tracking_links') is null then
+    raise notice '_verify: 20261025_32 is not applied yet — the client tracking link cannot be created; run 13_BEFORE_DEPLOY_20261025_32_case_tracking_links.sql';
+    return;
+  end if;
+  if not (select relrowsecurity from pg_class where oid = 'public.case_tracking_links'::regclass) then
+    raise exception '_verify: RLS is off on public.case_tracking_links (re-run 20261025_32)';
+  end if;
+  select count(*) into n from pg_policy where polrelid = 'public.case_tracking_links'::regclass;
+  if n <> 3 then
+    raise exception '_verify: public.case_tracking_links carries % policies, expected 3 (re-run 20261025_32)', n;
+  end if;
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'case_tracking_links'
+                   and cmd = 'INSERT' and with_check like '%case_row_scope_ok%') then
+    raise exception '_verify: the tracking-link INSERT policy lacks case_row_scope_ok — a link could be made on someone else''s case (re-run 20261025_32)';
+  end if;
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'case_tracking_links'
+                   and cmd = 'UPDATE' and with_check ilike '%revoked_at IS NOT NULL%') then
+    raise exception '_verify: a revoked tracking link could be brought back (re-run 20261025_32)';
+  end if;
+  if has_column_privilege('authenticated', 'public.case_tracking_links', 'token_hash', 'SELECT')
+     or has_column_privilege('authenticated', 'public.case_tracking_links', 'last_viewed_at', 'UPDATE')
+     or has_table_privilege('authenticated', 'public.case_tracking_links', 'DELETE')
+     or has_table_privilege('anon', 'public.case_tracking_links', 'SELECT') then
+    raise exception '_verify: case_tracking_links privileges are open (hash read, view stamp, delete or guest read) (re-run 20261025_32)';
+  end if;
+  if to_regprocedure('public.case_tracking_snapshot(text)') is null then
+    raise exception '_verify: public.case_tracking_snapshot(text) is missing — /track pages answer 404 (re-run 20261025_32)';
+  end if;
+  foreach r in array array['anon', 'authenticated'] loop
+    if has_function_privilege(r, 'public.case_tracking_snapshot(text)', 'EXECUTE') then
+      raise exception '_verify: % can EXECUTE case_tracking_snapshot (re-run 20261025_32)', r;
+    end if;
+  end loop;
+  if not has_function_privilege('service_role', 'public.case_tracking_snapshot(text)', 'EXECUTE') then
+    raise exception '_verify: service_role cannot EXECUTE case_tracking_snapshot — every /track page answers 404 (re-run 20261025_32)';
+  end if;
+  raise notice '_verify: 20261025_32 OK — case_tracking_links: hashed, scoped, revoke-only; case_tracking_snapshot service-only';
+end $$;
+-- <<< verify:case_tracking_links

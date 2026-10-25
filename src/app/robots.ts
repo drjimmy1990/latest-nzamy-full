@@ -14,6 +14,8 @@ export default function robots(): MetadataRoute.Robots {
           "/ai/settings",
           "/ai/vault",
           "/ai/share-history",
+          // Client case tracking links (N3.6): private, token-keyed, noindex.
+          "/track/",
           "/_next/",
         ],
       },

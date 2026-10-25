@@ -27,6 +27,7 @@ import {
   isStrictRateLimitedRoute,
   isGeneralRateLimitedApiPath,
   isLibraryReadRateLimitedRoute,
+  isTrackingPageRoute,
   libraryReadClientKey,
 } from "@/lib/rateLimitRoutes";
 import { hasValidSaudiMobile } from "@/lib/services/saudiMobile";
@@ -62,6 +63,9 @@ const GENERAL_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 120 };
 // researcher can reach ~2 a second while typing; 300 a minute per visitor is
 // above a person and well below a scraper walking thousands of laws.
 const LIBRARY_READ_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 300 };
+// The public case tracking page (N3.6, /track/[token]): a client opens it a
+// few times a day; 30 a minute per visitor stops a script walking tokens.
+const TRACKING_PAGE_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 30 };
 
 // The actual route tables (which paths/methods match which bucket) live in
 // src/lib/rateLimitRoutes.ts, pure and tested on their own — see that file's
@@ -93,8 +97,9 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
     const isStrictMatch = isStrictRateLimitedRoute(method, pathname);
     const isGeneralMatch = isGeneralRateLimitedApiPath(method, pathname);
     const isLibraryReadMatch = isLibraryReadRateLimitedRoute(method, pathname);
+    const isTrackingMatch = isTrackingPageRoute(method, pathname);
 
-    if (!isStrictMatch && !isGeneralMatch && !isLibraryReadMatch) return null;
+    if (!isStrictMatch && !isGeneralMatch && !isLibraryReadMatch && !isTrackingMatch) return null;
 
     const ip = resolveClientIp((name) => req.headers.get(name));
 
@@ -111,6 +116,13 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
     if (isLibraryReadMatch) {
       const key = libraryReadClientKey((name) => req.headers.get(name), ip);
       const decision = rateLimiter.check("library-read", key, LIBRARY_READ_RATE_LIMIT);
+      if (!decision.allowed) return rateLimitResponse(decision);
+    }
+
+    if (isTrackingMatch) {
+      // Same visitor key as the library bucket (Cloudflare's CF-Connecting-IP).
+      const key = libraryReadClientKey((name) => req.headers.get(name), ip);
+      const decision = rateLimiter.check("tracking-page", key, TRACKING_PAGE_RATE_LIMIT);
       if (!decision.allowed) return rateLimitResponse(decision);
     }
 
