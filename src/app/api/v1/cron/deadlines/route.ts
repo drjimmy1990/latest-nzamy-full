@@ -4,6 +4,7 @@ import { recordNotification } from "@/lib/notify";
 import { daysUntil, parseIsoDate } from "@/lib/services/deadlineEngine";
 import { toArabicDigits, countPhraseAr } from "@/lib/services/arabicCount";
 import { purgeCutoffIso } from "@/lib/services/attachmentPurge";
+import { deliverHearingReminders, queueHearingReminders } from "@/lib/hearingReminders";
 
 /**
  * POST /api/v1/cron/deadlines — the رادار المهل scheduler (Phase 5,
@@ -19,6 +20,14 @@ import { purgeCutoffIso } from "@/lib/services/attachmentPurge";
  *       and are `failed` with `last_error: 'channel not configured'` when
  *       that env var is unset — this never pretends to have sent something
  *       it didn't.
+ *   (b2) HEARINGS — P4 N3.2 (20261025_30_hearing_reminders.sql): queue the
+ *       in-app reminders of every scheduled hearing dated Riyadh today .. +8
+ *       days (7d, 3d, the previous evening 20:00, the morning 07:00 —
+ *       src/lib/calendar/hearingReminderStages.ts), then deliver the due ones.
+ *       Two steps of their own, each in its own try/catch and with its own
+ *       200-row window: a database without the migration fails only these,
+ *       and hearing rows can never crowd deadline rows out of (b). All of it
+ *       lives in src/lib/hearingReminders.ts.
  *   (c) PURGE   — `attachments` rows soft-deleted more than
  *       PURGE_AFTER_DAYS (30) ago, carrying no legal_hold, are purged for
  *       real: the storage object is removed, then the row is deleted.
@@ -178,6 +187,10 @@ export async function POST(request: NextRequest) {
       .from("notification_outbox")
       .select("id, deadline_id, recipient_user_id, channel, kind, attempts, deadlines(id, title, due_date, case_request_id)")
       .eq("status", "pending")
+      // Deadline rows only. Hearing rows (deadline_id null, 20261025_30) are
+      // the hearing step's; left here they would be skipped without an update
+      // and, sorted by scheduled_for, eventually fill this 200-row window.
+      .not("deadline_id", "is", null)
       .lte("scheduled_for", nowIso)
       .order("scheduled_for", { ascending: true })
       .limit(MAX_DELIVER_PER_RUN);
@@ -288,6 +301,13 @@ export async function POST(request: NextRequest) {
     console.error("[cron/deadlines] DELIVER step threw:", err);
   }
 
+  // ── (b2) HEARINGS ──────────────────────────────────────────────────────
+  // queue first, so a stage that fell due since the last run is sent now.
+  const hearingQueue = await queueHearingReminders(admin, new Date());
+  const hearingDelivery = await deliverHearingReminders(admin, new Date());
+  if (hearingQueue.error) console.error("[cron/deadlines] hearing queue:", hearingQueue.error);
+  if (hearingDelivery.error) console.error("[cron/deadlines] hearing delivery:", hearingDelivery.error);
+
   // ── (c) PURGE ──────────────────────────────────────────────────────────
   let purged = 0;
   try {
@@ -328,5 +348,14 @@ export async function POST(request: NextRequest) {
     console.error("[cron/deadlines] PURGE step threw:", err);
   }
 
-  return NextResponse.json({ enqueued, sent, failed, missed, skipped, purged });
+  return NextResponse.json({
+    enqueued, sent, failed, missed, skipped, purged,
+    hearings: {
+      queued: hearingQueue.queued,
+      cancelled: hearingQueue.cancelled + hearingDelivery.cancelled,
+      sent: hearingDelivery.sent,
+      failed: hearingDelivery.failed,
+      ok: !hearingQueue.error && !hearingDelivery.error,
+    },
+  });
 }
