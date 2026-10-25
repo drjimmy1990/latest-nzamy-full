@@ -12,6 +12,9 @@
 --   sed -n '/^-- >>> verify:coupons_server_only/,/^-- <<< verify:coupons_server_only/p' $M/_verify.sql > "$B"
 --   bash $R/run.sh \
 --     $M/20260603_phase1_003_subscriptions_billing.sql \
+--     $M/20260627_platform_settings.sql \
+--     $M/20261019_10_library_access_grants.sql \
+--     $M/20261022_10_payments_core.sql \
 --     $R/prelude_coupons_server_only_before.sql \
 --     "$B" \
 --     $M/20261026_20_coupons_server_only.sql \
@@ -21,8 +24,13 @@
 --     $R/coupons_server_only.test.sql
 -- Why each link: 20260603_phase1_003 creates coupons / coupon_usage with the
 -- open policies and seeds NZAMY50 / NEWCLIENT / LAUNCH2026 with the old
--- values; the "before" prelude proves the gap (B1 anon lists the codes, B2 a
--- session writes its own usage row) and leaves one redemption to keep.
+-- values; 20260627 + 20261019_10 + 20261022_10 (the payments_core chain)
+-- create public.payment_orders, which the one-order-per-(buyer, coupon)
+-- guard indexes; the "before" prelude proves the gap (B1 anon lists the
+-- codes, B2 a session writes its own usage row) and leaves one redemption and
+-- one open couponed order to keep. The between-runs prelude restores the old
+-- policies, drops the payment_orders guard, makes the used_count trigger
+-- insert-only, and makes admin edits the second run must KEEP.
 --
 -- NEGATIVE CONTROLS (each must FAIL):
 --   (a) the chain without the two 20261026_20 files, the between-runs prelude
@@ -31,7 +39,13 @@
 --       first 20261026_20 → the migration raises "20261026_20: coupon_usage
 --       holds more than one row for: …" (nothing changed);
 --   (c) the chain cut after prelude_coupons_server_only_between_runs.sql, then
---       "$B" → the _verify block raises "… has a policy again; …".
+--       "$B" → the _verify block raises "… has a policy again; … the
+--       one-order-per-(buyer, coupon) guard on payment_orders is missing; …
+--       trg_coupon_usage_count (after insert or delete) is missing …";
+--   (d) $R/prelude_coupons_server_only_duplicate_orders_trap.sql right before
+--       the first 20261026_20 → the migration raises "20261026_20:
+--       payment_orders holds more than one open / paid / refunded order of
+--       one buyer carrying one coupon: …" (nothing changed).
 --
 -- Every assertion RAISES on failure.
 
@@ -139,15 +153,18 @@ end $$;
 do $$
 declare k record;
 begin
+  -- the owner's rules were written by the first run (B3); the admin's later
+  -- edits (between the runs) survive the second run
   select * into k from public.coupons where code = 'NZAMY50';
-  if k.discount_type <> 'fixed' or k.discount_value <> 50 or k.min_order_amount <> 200
-     or k.max_uses_per_user <> 1 or k.max_discount_pct <> 25 or k.excluded_kinds <> '{topup}' then
-    raise exception 'T5 FAIL: NZAMY50 is %', row_to_json(k);
+  if k.discount_type <> 'fixed' or k.discount_value <> 50 or k.min_order_amount <> 250
+     or k.max_uses_per_user <> 3 or k.max_discount_pct <> 25 or k.excluded_kinds <> '{topup}'
+     or coalesce(k.metadata->>'owner_rules', '') not like '%20261026_20%' then
+    raise exception 'T5 FAIL: NZAMY50 — the second run reverted the admin edit (min 250, 3 per user) or lost the stamp: %', row_to_json(k);
   end if;
   select * into k from public.coupons where code = 'NEWCLIENT';
   if k.discount_value <> 75 or k.min_order_amount <> 300 or k.max_discount_pct <> 25
-     or not (k.excluded_kinds @> '{plan,library,topup}' and '{plan,library,topup}' @> k.excluded_kinds) then
-    raise exception 'T5 FAIL: NEWCLIENT is %', row_to_json(k);
+     or k.excluded_kinds <> '{topup}' then
+    raise exception 'T5 FAIL: NEWCLIENT — the second run reverted the admin edit (excluded {topup}): %', row_to_json(k);
   end if;
   if k.active then
     raise exception 'T5 FAIL: the second run switched NEWCLIENT back on (an admin had switched it off)';
@@ -172,7 +189,7 @@ begin
   if (select count(*) from public.coupons) <> 5 then
     raise exception 'T5 FAIL: a coupon code was invented (% rows)', (select count(*) from public.coupons);
   end if;
-  raise notice 'T5 PASS: NZAMY50 50 SAR / min 200, NEWCLIENT 75 SAR / min 300 / single services; LAUNCH2026 and OLDPROMO switched off with values kept, an admin re-activation survives a re-run; admin-created ADMIN10 untouched; no code invented; admin off switch kept';
+  raise notice 'T5 PASS: the owner''s rules written once and stamped; admin edits to NZAMY50 / NEWCLIENT survive a re-run; LAUNCH2026 and OLDPROMO switched off with values kept, an admin re-activation survives a re-run; admin-created ADMIN10 untouched; no code invented; admin off switch kept';
 end $$;
 
 -- T6 the database refuses a cap above 25 % and a coupon on top-ups
@@ -204,4 +221,93 @@ begin
     if sqlerrm <> 't6-rollback' then raise; end if;
   end;
   raise notice 'T6 PASS: cap > 25 %%, a coupon on top-ups and an unknown kind are refused; a new admin coupon gets the defaults';
+end $$;
+
+-- T7 one open / paid / refunded order per (buyer, coupon) — the checkout's backstop
+do $$
+declare
+  nz  text := (select id::text from public.coupons where code = 'NZAMY50');
+  c1  uuid := '00000000-0000-0000-0000-0000000000c1';
+  c2  uuid := '00000000-0000-0000-0000-0000000000c2';
+  cpn jsonb;
+  o1  uuid;
+begin
+  cpn := jsonb_build_object('coupon', jsonb_build_object('id', nz, 'code', 'NZAMY50', 'discount_halalas', 5000));
+  if (select count(*) from public.payment_orders where metadata->'coupon'->>'code' = 'KEPT') <> 1 then
+    raise exception 'T7 FAIL: the open couponed order made before 20261026_20 is gone';
+  end if;
+  insert into public.payment_orders (user_id, kind, item_id, billing, net_halalas, vat_halalas, total_halalas, vat_mode, status, metadata)
+  values (c2, 'plan', 'ind-preventive', 'yearly', 144000, 21600, 165600, 'exclusive', 'initiated', cpn) returning id into o1;
+  -- a second tab, another item, the same code
+  begin
+    insert into public.payment_orders (user_id, kind, item_id, billing, net_halalas, vat_halalas, total_halalas, vat_mode, status, metadata)
+    values (c2, 'library', 'lib-q1', 'once', 145000, 21750, 166750, 'exclusive', 'created', cpn);
+    raise exception 'T7 FAIL: one buyer opened two orders carrying NZAMY50';
+  exception when unique_violation then
+    if sqlerrm not like '%payment_orders_coupon_once_key%' then raise; end if;
+  end;
+  -- paid counts too
+  update public.payment_orders set status = 'paid', live = true where id = o1;
+  begin
+    insert into public.payment_orders (user_id, kind, item_id, billing, net_halalas, vat_halalas, total_halalas, vat_mode, status, metadata)
+    values (c2, 'library', 'lib-q1', 'once', 145000, 21750, 166750, 'exclusive', 'created', cpn);
+    raise exception 'T7 FAIL: a buyer opened a couponed order while a paid one carries the code';
+  exception when unique_violation then null;
+  end;
+  -- refunded counts too
+  update public.payment_orders set status = 'refunded' where id = o1;
+  begin
+    insert into public.payment_orders (user_id, kind, item_id, billing, net_halalas, vat_halalas, total_halalas, vat_mode, status, metadata)
+    values (c2, 'library', 'lib-q1', 'once', 145000, 21750, 166750, 'exclusive', 'created', cpn);
+    raise exception 'T7 FAIL: a refunded order no longer holds its coupon';
+  exception when unique_violation then null;
+  end;
+  -- a void (or any close) releases it
+  update public.payment_orders set status = 'voided' where id = o1;
+  insert into public.payment_orders (user_id, kind, item_id, billing, net_halalas, vat_halalas, total_halalas, vat_mode, status, metadata)
+  values (c2, 'library', 'lib-q1', 'once', 145000, 21750, 166750, 'exclusive', 'created', cpn) returning id into o1;
+  -- a test-mode payment and an «already entitled» order do not count
+  update public.payment_orders set status = 'paid', live = false where id = o1;
+  insert into public.payment_orders (user_id, kind, item_id, billing, net_halalas, vat_halalas, total_halalas, vat_mode, status, metadata)
+  values (c2, 'plan', 'ind-preventive', 'yearly', 144000, 21600, 165600, 'exclusive', 'paid', cpn || '{"already_entitled": true}')
+  returning id into o1;
+  update public.payment_orders set live = true where id = o1;
+  insert into public.payment_orders (user_id, kind, item_id, billing, net_halalas, vat_halalas, total_halalas, vat_mode, status, metadata)
+  values (c2, 'plan', 'ind-preventive', 'yearly', 144000, 21600, 165600, 'exclusive', 'initiated', cpn);
+  -- another buyer, and orders without a coupon, are untouched
+  insert into public.payment_orders (user_id, kind, item_id, billing, net_halalas, vat_halalas, total_halalas, vat_mode, status, metadata)
+  values (c1, 'plan', 'ind-preventive', 'yearly', 144000, 21600, 165600, 'exclusive', 'initiated', cpn);
+  insert into public.payment_orders (user_id, kind, item_id, billing, net_halalas, vat_halalas, total_halalas, vat_mode, status)
+  values (c2, 'plan', 'ind-preventive', 'yearly', 149000, 22350, 171350, 'exclusive', 'initiated'),
+         (c2, 'plan', 'ind-preventive', 'yearly', 149000, 22350, 171350, 'exclusive', 'initiated');
+  raise notice 'T7 PASS: a second open / paid / refunded couponed order of one buyer is refused (payment_orders_coupon_once_key); a closed order releases the code; test-mode and «already entitled» orders do not count; other buyers and uncouponed orders untouched';
+end $$;
+
+-- T8 used_count follows deletes (a void releases its redemption), never below 0
+do $$
+declare
+  ad uuid := (select id from public.coupons where code = 'ADMIN10');
+  n0 int  := (select used_count from public.coupons where code = 'ADMIN10');
+begin
+  insert into public.coupon_usage (coupon_id, user_id, order_id) values (ad, '00000000-0000-0000-0000-0000000000c2', 'void-me');
+  if (select used_count from public.coupons where id = ad) <> n0 + 1 then
+    raise exception 'T8 FAIL: used_count did not rise on insert';
+  end if;
+  delete from public.coupon_usage where order_id = 'void-me';
+  if (select used_count from public.coupons where id = ad) <> n0 then
+    raise exception 'T8 FAIL: used_count did not fall on delete (% after, % before)', (select used_count from public.coupons where id = ad), n0;
+  end if;
+  insert into public.coupon_usage (coupon_id, user_id, order_id) values (ad, '00000000-0000-0000-0000-0000000000c2', 'void-me');
+  update public.coupons set used_count = 0 where id = ad;
+  delete from public.coupon_usage where order_id = 'void-me';
+  if (select used_count from public.coupons where id = ad) <> 0 then
+    raise exception 'T8 FAIL: used_count went below 0';
+  end if;
+  -- deleting a coupon cascades its usage rows without an error
+  insert into public.coupon_usage (coupon_id, user_id, order_id) values (ad, '00000000-0000-0000-0000-0000000000c2', 'cascade');
+  delete from public.coupons where id = ad;
+  if exists (select 1 from public.coupon_usage where order_id = 'cascade') then
+    raise exception 'T8 FAIL: the usage row outlived its coupon';
+  end if;
+  raise notice 'T8 PASS: used_count +1 on insert, −1 on delete, floored at 0; deleting a coupon cascades cleanly';
 end $$;

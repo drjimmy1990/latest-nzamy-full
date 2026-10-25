@@ -41,3 +41,9 @@ insert into public.coupons (code, discount_type, discount_value, active, metadat
 -- the redemption the migration must keep
 insert into public.coupon_usage (coupon_id, user_id, order_id, discount_applied)
 values ((select id from public.coupons where code = 'LAUNCH2026'), '00000000-0000-0000-0000-0000000000c1', 'kept-order', 10);
+
+-- an open couponed order (one per buyer and code) the payment_orders guard
+-- must build over and keep
+insert into public.payment_orders (user_id, kind, item_id, billing, net_halalas, vat_halalas, total_halalas, vat_mode, status, metadata)
+values ('00000000-0000-0000-0000-0000000000c1', 'plan', 'ind-ai', 'yearly', 29250, 4388, 33638, 'exclusive', 'initiated',
+        jsonb_build_object('coupon', jsonb_build_object('id', (select id::text from public.coupons where code = 'LAUNCH2026'), 'code', 'KEPT')));

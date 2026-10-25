@@ -4144,8 +4144,13 @@ end $$;
 -- the code then hides the coupon field and refuses a coupon at checkout, but
 -- the old policy still lets anyone read the codes. RAISES when the file ran
 -- (the column exists) but a policy or a session privilege came back on
--- coupons / coupon_usage, a unique guard is gone, or a coupon exceeds the 25 %
--- cap / applies to top-ups. A MANUAL check: deploy.sh does not run this file.
+-- coupons / coupon_usage, a unique guard is gone (coupon_usage's two, or
+-- payment_orders_coupon_once_key), the used_count trigger no longer fires on
+-- insert and delete, a coupon exceeds the 25 % cap / applies to top-ups, or
+-- NZAMY50 / NEWCLIENT is missing or never received the owner's rules (the
+-- metadata.owner_rules stamp). NOTICEs (never raises) an owner code whose
+-- values were changed on the admin coupons page since, and every other live
+-- code. A MANUAL check: deploy.sh does not run this file.
 do $$
 declare
   fix     constant text := 'run SQL_batch_2026-10-26_owner_answers/20_BEFORE_DEPLOY_20261026_20_coupons_server_only.sql again';
@@ -4190,8 +4195,36 @@ begin
   if to_regclass('public.coupon_usage_order_key') is null then
     missing := missing || ' the unique order_id guard is missing;';
   end if;
+  if to_regclass('public.payment_orders_coupon_once_key') is null then
+    missing := missing || ' the one-order-per-(buyer, coupon) guard on payment_orders is missing;';
+  end if;
+  -- used_count follows coupon_usage both ways (tgtype: 1 row, 4 insert, 8 delete)
+  if not exists (select 1 from pg_trigger
+                  where tgrelid = 'public.coupon_usage'::regclass and tgname = 'trg_coupon_usage_count' and not tgisinternal
+                    and tgenabled <> 'D' and (tgtype & 1) = 1 and (tgtype & 2) = 0 and (tgtype & 4) = 4 and (tgtype & 8) = 8) then
+    missing := missing || ' trg_coupon_usage_count (after insert or delete) is missing or disabled — used_count no longer follows coupon_usage;';
+  end if;
+  -- the owner's two codes received his rules (the stamp); a later admin edit
+  -- of their values is named below, never an error
+  foreach t in array array['NZAMY50', 'NEWCLIENT'] loop
+    if not exists (select 1 from public.coupons
+                    where code = t and coalesce(metadata->>'owner_rules', '') like '%20261026_20%') then
+      missing := missing || format(' %s is missing or never received the owner''s rules;', t);
+    end if;
+  end loop;
   if missing <> '' then
     raise exception '_verify: 20261026_20 —% %', missing, fix;
+  end if;
+  select string_agg(format('%s (%s %s, min %s, cap %s, excluded %s)', code, discount_type, discount_value,
+                           min_order_amount, max_discount_pct, excluded_kinds), '; ' order by code) into p
+    from public.coupons
+   where (code = 'NZAMY50' and not (discount_type = 'fixed' and discount_value = 50 and min_order_amount = 200
+                                    and max_uses_per_user = 1 and max_discount_pct = 25 and excluded_kinds = '{topup}'))
+      or (code = 'NEWCLIENT' and not (discount_type = 'fixed' and discount_value = 75 and min_order_amount = 300
+                                      and max_uses_per_user = 1 and max_discount_pct = 25
+                                      and excluded_kinds @> '{plan,library,topup}' and '{plan,library,topup}' @> excluded_kinds));
+  if p is not null then
+    raise notice '_verify: 20261026_20 — owner code(s) changed on the admin coupons page since his rules were written (NZAMY50: fixed 50, min 200; NEWCLIENT: fixed 75, min 300, single services): % — confirm with the owner', p;
   end if;
   -- Live codes other than the owner's two (switched back on by an admin, or
   -- created on the coupons page): named for a look, never an error.
@@ -4200,6 +4233,6 @@ begin
   if p is not null then
     raise notice '_verify: 20261026_20 — active codes besides NZAMY50 / NEWCLIENT (checkout honours them): %', p;
   end if;
-  raise notice '_verify: 20261026_20 OK — coupons and coupon_usage are server only; 25 %% cap and top-up exclusion hold; once per user / once per order guarded';
+  raise notice '_verify: 20261026_20 OK — coupons and coupon_usage are server only; 25 %% cap and top-up exclusion hold; once per user / once per order / one open order per (buyer, coupon) guarded; used_count follows coupon_usage; the owner''s two codes received his rules';
 end $$;
 -- <<< verify:coupons_server_only

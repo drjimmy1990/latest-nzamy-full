@@ -11,7 +11,7 @@
 | 1 | `01_NOW_20261026_01_founder_no_signup_grant.sql` | **الآن، وقبل أي نشر** | يوقف منح شارة المؤسس وأيام المكتبة عند التسجيل. لا يحتاج نشر كود. نفّذه قبل نشر كود هذه الدفعة، لأن النشر لا يتحقق منه تلقائياً |
 | 2 | `02_NOW_AFTER_01_20261026_02_founder_badges_unpaid_removed.sql` | **الآن، بعد 01 مباشرة** | قرار المالك ٢٧٨ (أ): يسحب شارة «المحامي المؤسس» غير المدفوعة ممن سجّلوا منذ بدء الحملة، ويُبقي أيام المكتبة الـ ٩٠ حتى تنتهي. يتوقف دون أي تغيير إن لم يُنفَّذ 01 قبله. لا يحتاج نشر كود |
 | 3 | `10_BEFORE_DEPLOY_20261026_10_billing_cycles.sql` | **قبل نشر كود الدفعة** | يسمح بدورتي الاشتراك الربع السنوية والنصف السنوية في الطلبات والاشتراكات، ويضيف عمودَي سعرهما للباقات. لا يغيّر أي سعر. النشر لا يتحقق منه تلقائياً، فنفّذه قبل النشر |
-| 4 | `20_BEFORE_DEPLOY_20261026_20_coupons_server_only.sql` | **قبل نشر كود الدفعة** | P7: أكواد الخصم تُتحقَّق في الخادم فقط. يُغلق قراءة الأكواد على الجميع، ويضيف قواعد المالك (حد أدنى، سقف ٢٥٪، مرة لكل مستخدم، لا خصم على شحن النقاط)، ويوقف الكود القديم `LAUNCH2026` دون تغيير قيمه. الكود يعمل قبله وبعده، لكن الأكواد تبقى مقروءة للجميع حتى يُنفَّذ |
+| 4 | `20_BEFORE_DEPLOY_20261026_20_coupons_server_only.sql` | **قبل نشر كود الدفعة** | P7: أكواد الخصم تُتحقَّق في الخادم فقط. يُغلق قراءة الأكواد على الجميع، ويضيف قواعد المالك (حد أدنى، سقف ٢٥٪، مرة لكل مستخدم، طلب دفع واحد مفتوح للكود، لا خصم على شحن النقاط)، ويوقف الكود القديم `LAUNCH2026` دون تغيير قيمه. الكود يعمل قبله وبعده، لكن الأكواد تبقى مقروءة للجميع حتى يُنفَّذ. قبله: استعلام قراءة للأكواد الفعّالة تُرسل نتيجته للمالك |
 | — | `11_…` فما بعد | لاحقاً | محجوزة للمراحل التالية من هذه الدفعة |
 
 ## 01: إيقاف منح «المحامي المؤسس» عند التسجيل (P0، عاجل)
@@ -141,28 +141,46 @@ select count(*) from public.library_access_grants
   - `max_discount_pct`: سقف الخصم، ٢٥٪ من صافي الطلب قبل الضريبة، ولا يقبل أكثر منه.
   - `excluded_kinds`: أنواع الطلبات المستثناة، وفيها شحن النقاط دائماً.
 - يمنع استخدام الكوبون أكثر من مرة للمستخدم الواحد، وأكثر من مرة للطلب الواحد.
+- يمنع أن يحمل المستخدم الواحد الكوبون نفسه في **أكثر من طلب دفع مفتوح أو مدفوع** في الوقت نفسه (قيد `payment_orders_coupon_once_key`). كان يمكن فتح صفحتي دفع لمنتجين مختلفين بالكود نفسه ودفع الاثنتين بالخصم. لا تُحسب الطلبات المغلقة، ولا الدفع التجريبي، ولا الطلب الذي دُفع ولم يُمنح فيه شيء لأن صاحبه يملك باقة أعلى.
+- يُبقي عدّاد الاستخدام `used_count` مطابقاً لسجل الاستخدام: يزيد عند التسجيل، **وينقص عند الحذف** (إلغاء العملية خلال ٩٠ دقيقة يُعيد الكوبون لصاحبه)، ولا ينزل تحت الصفر.
 - يضبط الكودين اللذين حدّدهما المالك:
   - `NZAMY50`: خصم ٥٠ ر.س، بحد أدنى ٢٠٠ ر.س من صافي الطلب قبل الضريبة.
   - `NEWCLIENT`: خصم ٧٥ ر.س لأول طلب خدمة مفردة، بحد أدنى ٣٠٠ ر.س. **ملاحظة:** الدفع الإلكتروني اليوم يبيع الباقات والمكتبة وشحن النقاط فقط، ولا يبيع خدمة مفردة، فلا يمكن استخدام هذا الكود في الدفع الإلكتروني بعد.
   - لا يغيّر حالة التفعيل ولا التواريخ إن كان المشرف عدّلها، ولا ينشئ أي كود آخر.
+  - **تُكتب قواعد المالك مرة واحدة فقط**، ويُختم الصف بذلك (`metadata.owner_rules`). إعادة تنفيذ الملف لا تكتبها ثانية، فأي تعديل يجريه المشرف بعدها من صفحة الكوبونات يبقى. إن اختلفت قيم الكود عن قواعد المالك يذكر الملف ذلك في رسالة، ولا يتوقف.
 - **يوقف كل كود فعّال آخر** أُدخل بغير صفحة الكوبونات في لوحة المشرف، **دون تغيير قيمته**، ويذكر أسماءها في رسالة. السبب: قبل هذه الدفعة لم يكن أي كود يُستبدل فعلاً، وبعد النشر يقبل الدفع كل كود فعّال. أهم هذه الأكواد `LAUNCH2026` من البيانات الأولى القديمة (خصم ٢٥٪، ٥٠٠ استخدام، بلا حد أدنى، وكان مقروءاً للجميع)، وهو ليس من كودَي المالك.
   - **انقل للمالك** أسماء الأكواد التي تظهر في الرسالة `20261026_20: switched off …`.
   - يستطيع المشرف إعادة تفعيل أي منها من صفحة الكوبونات. وإعادة تنفيذ الملف لا تُلغي ذلك.
   - الأكواد التي أنشأها المشرف من صفحة الكوبونات لا تُمس.
+- **يذكر في رسالة كل كود يبقى فعّالاً** غير كودَي المالك (أنشأه المشرف، أو أعاد تفعيله)، مع نوعه وقيمته وحده الأدنى وعدد استخداماته: الدفع يقبله بعد النشر. الرسالة تبدأ بـ `20261026_20: active codes besides NZAMY50 / NEWCLIENT`.
 - يتوقف **دون أي تغيير** إن وجد في سجل الاستخدام صفين لنفس الكوبون ونفس المستخدم، أو لنفس الطلب، ويذكرهما.
 
 **كيف يُطبَّق الخصم في الكود:**
 - يُحسب الخصم داخل إنشاء طلب الدفع، فيُخزَّن الطلب بصافيه بعد الخصم.
 - تُحسب الضريبة ١٥٪ على الصافي بعد الخصم.
 - يُطالَب ميسّر بهذا الإجمالي نفسه، والاسترداد يعيد المبلغ المدفوع فعلاً.
-- يُسجَّل استخدام الكوبون عند نجاح الدفع فقط، فالطلب الذي فشل دفعه لا يستهلك الكوبون.
+- يُسجَّل استخدام الكوبون عند نجاح الدفع **ومنح ما دُفع له** فقط. الطلب الذي فشل دفعه، أو دُفع ولم يُمنح فيه شيء، أو كان دفعاً تجريبياً، لا يستهلك الكوبون. إلغاء العملية خلال ٩٠ دقيقة يُعيده، والاسترداد بعدها لا يُعيده.
+- لا يقبل الدفع الكود إن كان المستخدم يحمله في طلب آخر مفتوح لم تنتهِ مهلته («هذا الكود مستخدم في طلب آخر قيد الدفع — أكمل ذلك الطلب أو ألغِه»). الطلب المفتوح الذي انتهت مهلته ولم يصله دفع يُغلق تلقائياً عند المحاولة التالية.
+- إنشاء كوبون خصم جديد من لوحة المشرف يتطلب الآن حداً أدنى للطلب، ولا يقبل سقفاً فوق ٢٥٪، ويستثني شحن النقاط دائماً.
+
+**قبل التنفيذ (قراءة فقط، لا تغيّر شيئاً):** نفّذ هذا الاستعلام، **وأرسل نتيجته للمالك**. هذه هي الأكواد الفعّالة اليوم، وبعد النشر يقبلها الدفع كلها ما لم يوقفها الملف:
+
+```sql
+select code, discount_type, discount_value, min_order_amount, max_uses, used_count,
+       metadata->>'created_by_admin' as created_by_admin, valid_until
+  from public.coupons where active order by code;
+-- created_by_admin غير فارغ = أنشأه المشرف من صفحة الكوبونات (يبقى فعّالاً)
+```
 
 **التنفيذ:**
 1. افتح محرر SQL في Supabase، والصق محتوى الملف كاملاً، ونفّذه.
 2. يجب أن تظهر في نهايته الرسالة `20261026_20 verify: OK`.
 3. إن توقف بالرسالة `canceling statement due to lock timeout` فلم يتغير شيء. أعد التنفيذ بعد لحظات.
-4. انقل للمالك سطر `20261026_20: switched off (…): …` (الأكواد التي أُوقفت).
-5. للتأكد:
+4. إن توقف بالرسالة `payment_orders holds more than one open / paid / refunded order of one buyer carrying one coupon` فلم يتغير شيء: راجع الطلبات المذكورة قبل إعادة التنفيذ.
+5. انقل للمالك سطرين:
+   - `20261026_20: switched off (…): …` (الأكواد التي أُوقفت).
+   - `20261026_20: active codes besides NZAMY50 / NEWCLIENT …` (الأكواد التي تبقى فعّالة، بقيمها).
+6. للتأكد:
 
 ```sql
 select code, discount_type, discount_value, min_order_amount, max_discount_pct, excluded_kinds, active
@@ -178,8 +196,9 @@ select code, discount_type, discount_value, min_order_amount, max_discount_pct, 
 
 **لا شيء يوقف النشر:** `deploy.sh` **لا** يشغّل `_verify.sql`. قسم `verify:coupons_server_only` فحص يدوي فقط، بالأمر المذكور في قسم 01:
 - **يكتفي بتنبيه** ما دام الملف لم يُنفَّذ؛
-- **يتوقف بخطأ** إن عادت سياسة أو صلاحية، أو اختفى أحد قيدَي «مرة واحدة».
+- **يتوقف بخطأ** إن عادت سياسة أو صلاحية، أو اختفى أحد قيود «مرة واحدة» الثلاثة، أو توقف العدّاد عن متابعة الإضافة والحذف، أو غاب أحد كودَي المالك أو لم تُكتب قواعده عليه؛
+- **ينبّه فقط** إن عدّل المشرف قيم كود من كودَي المالك بعد كتابة قواعده، ويذكر كل كود فعّال آخر.
 
-*English:* drops every policy on `coupons` / `coupon_usage` and revokes anon / authenticated (service role only); adds `max_discount_pct` (≤ 25) and `excluded_kinds` (always `topup`), unique guards on `(coupon_id, user_id)` and `order_id`, and a trigger that keeps `used_count`; sets the owner's rules on NZAMY50 (50 SAR, min 200 net) and NEWCLIENT (75 SAR, min 300 net, single services only — not usable online until checkout sells one). Creates no other code. Every OTHER active code not created on the admin coupons page (LAUNCH2026 from the old seed: 25 %, 500 uses, no minimum) is switched off with its values kept and named in a NOTICE — before P7 nothing redeemed a code, after the deploy checkout honours every active row; an admin may switch one back on and a re-run does not undo that. Stops unchanged on duplicate redemptions. Expect `20261026_20 verify: OK`. Idempotent. Docker-proved twice, with the old policies and loosened rules restored between the runs: `supabase/tests/rls/coupons_server_only.test.sql`.
+*English:* drops every policy on `coupons` / `coupon_usage` and revokes anon / authenticated (service role only); adds `max_discount_pct` (≤ 25) and `excluded_kinds` (always `topup`), unique guards on `(coupon_id, user_id)` and `order_id`, a unique guard of one open / paid / refunded order per (buyer, coupon) on `payment_orders` (`payment_orders_coupon_once_key`; test-mode and already-entitled orders excluded), and a trigger that keeps `used_count` on insert AND delete (a void releases a redemption; floored at 0); writes the owner's rules ONCE on NZAMY50 (50 SAR, min 200 net) and NEWCLIENT (75 SAR, min 300 net, single services only — not usable online until checkout sells one) and stamps `metadata.owner_rules`, so a re-run keeps later admin edits (named in a NOTICE, never an error). Creates no other code; a NOTICE lists every code that stays active besides the two, with its values — send it and the read-only pre-run query's result to the owner. Every OTHER active code not created on the admin coupons page (LAUNCH2026 from the old seed: 25 %, 500 uses, no minimum) is switched off with its values kept and named in a NOTICE — before P7 nothing redeemed a code, after the deploy checkout honours every active row; an admin may switch one back on and a re-run does not undo that. Stops unchanged on duplicate redemptions or duplicate open couponed orders. Expect `20261026_20 verify: OK`. Idempotent. Docker-proved twice, with the old policies, an insert-only trigger and a dropped order guard restored between the runs and admin edits that must survive the second run, plus four negative controls: `supabase/tests/rls/coupons_server_only.test.sql`.
 
 **للتراجع** (يعيد الأكواد مقروءة للجميع، فلا يكون إلا بموافقة المالك): الأوامر في رأس الملف، تحت `ROLLBACK`.
