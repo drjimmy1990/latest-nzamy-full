@@ -16,6 +16,15 @@
  * `requiresPayment`, not the wording of the price line. The VAT sentence is
  * the platform's one notice (vatNotice.ts).
  *
+ * «مشمول في الباقة» (price mode `included`) is true only for a subscriber
+ * whose plan includes the service. The chat is shown to guests and to every
+ * client and does not know the viewer's plan, so it never says it to them
+ * (P7 review, finding 6): an included service shows its catalogue price for
+ * a viewer without the plan — the same formatClientServicePrice of the
+ * entry's basePrice — or «يُحدَّد بعد المراجعة» when the catalogue has no
+ * price for it. A caller that KNOWS the viewer's plan includes it passes
+ * `viewerIncluded: true`. No number is typed here.
+ *
  * waChatPrices.test.ts fails on any digit followed by «ر.س» in the two step
  * components, so a literal price cannot come back.
  *
@@ -52,25 +61,48 @@ export function waServiceId(selections: Record<string, string>): string | null {
   return consultServiceId(selections.provider, selections.modality) ?? contractServiceId(selections.contractService);
 }
 
+/** An included service with no catalogue price, for a viewer without the plan. */
+export const WA_PRICE_AFTER_REVIEW_AR = "يُحدَّد بعد المراجعة";
+
 export interface WaPrice {
-  /** «٢٥٠ ر.س», «يبدأ من ٨٠٠ ر.س», «مجانا», «مشمول في الباقة», … — formatClientServicePrice. */
+  /** «٢٥٠ ر.س», «يبدأ من ٨٠٠ ر.س», «مجانا», «مشمول في الباقة» (subscribers only), … — formatClientServicePrice. */
   text: string;
   /** The catalogue's note (e.g. a free daily question), or null. */
   note: string | null;
   /** The catalogue says this service is paid: the chat offers the payment-method step. */
   requiresPayment: boolean;
+  /** The line names an amount (the VAT sentence goes with it). */
+  showsAmount: boolean;
 }
 
-const UNSET: WaPrice = { text: "يتم التحديد", note: null, requiresPayment: false };
+const UNSET: WaPrice = { text: "يتم التحديد", note: null, requiresPayment: false, showsAmount: false };
 
-/** The price line for a catalogue service id, or «يتم التحديد» for none. */
-export function waPrice(catalog: ClientServiceCatalogItem[], serviceId: string | null): WaPrice {
+const AMOUNT_MODES = new Set(["fixed", "starting_from", "per_page"]);
+
+/**
+ * The price line for a catalogue service id, or «يتم التحديد» for none. An
+ * `included` service reads «مشمول في الباقة» only with `viewerIncluded`;
+ * otherwise its catalogue price as a fixed amount, or «يُحدَّد بعد المراجعة».
+ */
+export function waPrice(
+  catalog: ClientServiceCatalogItem[],
+  serviceId: string | null,
+  opts: { viewerIncluded?: boolean } = {},
+): WaPrice {
   if (!serviceId) return UNSET;
   const service = getClientServiceById(serviceId, catalog);
   if (service.serviceId !== serviceId) return UNSET;
-  return {
-    text: formatClientServicePrice(service),
+  const base = {
     note: service.priceNote ?? null,
     requiresPayment: service.requiresPayment === true,
   };
+  if (service.priceMode === "included" && opts.viewerIncluded !== true) {
+    const priced = Number.isFinite(service.basePrice) && service.basePrice > 0;
+    return {
+      ...base,
+      text: priced ? formatClientServicePrice({ basePrice: service.basePrice, priceMode: "fixed" }) : WA_PRICE_AFTER_REVIEW_AR,
+      showsAmount: priced,
+    };
+  }
+  return { ...base, text: formatClientServicePrice(service), showsAmount: AMOUNT_MODES.has(service.priceMode) };
 }

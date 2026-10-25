@@ -70,7 +70,7 @@ export default function StepPayment({ step, isDark, history, selections, onNavig
             </div>
           ))}
         </motion.dl>
-        {requiresPaymentChoice ? (
+        {requiresPaymentChoice || priced.showsAmount ? (
           <motion.p variants={staggerItemVariants} className={`text-[11px] font-medium text-center ${isDark ? "text-gray-400" : "text-gray-500"}`}>
             {WA_VAT_NOTICE_AR}
           </motion.p>
