@@ -117,7 +117,7 @@ async function listRequestFiles(requestId: string): Promise<Listing> {
   const lister = userType === "admin" && !isParty ? admin : supabase;
   const { data: rows, error } = await lister
     .from("attachments")
-    .select("request_id, owner_user_id, file_name, storage_path, size_bytes, deleted_at")
+    .select("request_id, owner_user_id, folder_owner_id, file_name, storage_path, size_bytes, deleted_at")
     .eq("request_id", requestId)
     .is("deleted_at", null)
     .order("created_at", { ascending: false });
@@ -131,7 +131,7 @@ async function listRequestFiles(requestId: string): Promise<Listing> {
 async function readContractVersions(supabase: SupabaseClient, contractId: string, userId: string): Promise<Listing> {
   const { data: rows, error } = await supabase
     .from("contract_versions")
-    .select("contract_id, version_no, file_name, storage_path, size_bytes, uploaded_by")
+    .select("contract_id, version_no, file_name, storage_path, size_bytes, uploaded_by, folder_owner_id")
     .eq("contract_id", contractId)
     .order("version_no", { ascending: false });
   if (error) {

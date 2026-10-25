@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
-import { isPathInOwnerFolder } from "@/lib/storagePathOwnership";
+import { fileFolderOwner, isPathInOwnerFolder } from "@/lib/storagePathOwnership";
 
 /**
  * POST /api/v1/documents/[id]/copy — take a copy of a document the caller
@@ -65,7 +65,7 @@ export async function POST(
   // established, and only to write.
   const { data: source } = await supabase
     .from("attachments")
-    .select("id, owner_user_id, file_name, storage_path, mime_type, size_bytes")
+    .select("id, owner_user_id, folder_owner_id, file_name, storage_path, mime_type, size_bytes")
     .eq("id", id)
     .eq("owner_user_id", user.id)
     .maybeSingle();
@@ -84,7 +84,7 @@ export async function POST(
   // the SOURCE must be his own file: before 20261026_65 an owner could
   // re-point a vault row at anybody's object, and this copy would then hand
   // him the bytes (security review 2026-10-26, finding 1).
-  if (!isPathInOwnerFolder(storagePath, source.owner_user_id)) {
+  if (!isPathInOwnerFolder(storagePath, fileFolderOwner(source.folder_owner_id, source.owner_user_id))) {
     console.error(`[documents copy] source storage_path outside the owner's folder: id=${id}`);
     return NextResponse.json({ error: "المستند غير موجود" }, { status: 404 });
   }

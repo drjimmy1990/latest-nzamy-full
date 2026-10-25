@@ -174,6 +174,28 @@ test("visibleContractFiles: only a file in its uploader's folder; no uploader, n
   ]);
 });
 
+test("visibleRequestFiles / visibleContractFiles: a file moved to the firm owner, or left by a deleted uploader, is served from the folder it was written in (20261026_72)", () => {
+  const rows = [
+    // 20261026_70 moved the member m1's case document to the firm owner f1; the bytes stay in m1's folder
+    { request_id: "REQ-1", owner_user_id: "f1", folder_owner_id: "m1", file_name: "مذكرة.pdf", storage_path: "m1/1-memo.pdf", size_bytes: 1, deleted_at: null },
+    // a deleted account's document kept for the other party (owner null)
+    { request_id: "REQ-1", owner_user_id: null, folder_owner_id: "d1", file_name: "سند.pdf", storage_path: "d1/2-deed.pdf", size_bytes: 1, deleted_at: null },
+    // a folder_owner_id is still checked against the path
+    { request_id: "REQ-1", owner_user_id: "f1", folder_owner_id: "m1", file_name: "سري.pdf", storage_path: "victim/1-secret.pdf", size_bytes: 1, deleted_at: null },
+  ];
+  assert.deepEqual(visibleRequestFiles(rows, "REQ-1"), [
+    { name: "مذكرة.pdf", storagePath: "m1/1-memo.pdf", size: 1 },
+    { name: "سند.pdf", storagePath: "d1/2-deed.pdf", size: 1 },
+  ]);
+  const versions = [
+    { contract_id: "C1", version_no: 2, file_name: "عقد.pdf", storage_path: "l1/contracts/C1/v2.pdf", size_bytes: 1, uploaded_by: null, folder_owner_id: "l1" },
+    { contract_id: "C1", version_no: 1, file_name: "سري.pdf", storage_path: "victim/1-secret.pdf", size_bytes: 1, uploaded_by: null, folder_owner_id: "l1" },
+  ];
+  assert.deepEqual(visibleContractFiles(versions, "C1"), [
+    { name: "النسخة 2 - عقد.pdf", storagePath: "l1/contracts/C1/v2.pdf", size: 1 },
+  ]);
+});
+
 // ─── names and headers of the archive ────────────────────────────────────────
 
 test("archiveFileName: Arabic label + the human reference, never a raw uuid", () => {

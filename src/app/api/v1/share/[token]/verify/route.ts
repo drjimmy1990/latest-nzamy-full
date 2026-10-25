@@ -112,7 +112,7 @@ export async function POST(
     }
     const { data: attachment, error: attachmentError } = await supabase
       .from("attachments")
-      .select("id, owner_user_id, storage_path, deleted_at")
+      .select("id, owner_user_id, folder_owner_id, storage_path, deleted_at")
       .eq("id", documentId)
       .maybeSingle();
     if (attachmentError) {

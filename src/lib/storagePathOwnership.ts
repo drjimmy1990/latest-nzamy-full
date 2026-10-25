@@ -19,6 +19,20 @@
  * Pure: no `@/` import, so `node --test` loads it directly.
  */
 
+/**
+ * Whose folder a row's file was written in: `folder_owner_id` (20261026_72),
+ * else the row's writer column (owner_user_id / uploaded_by) for a row that
+ * has none. They differ once 20261026_70 moves a firm member's document to
+ * the firm owner, keeps a deleted account's case document for the other party
+ * (owner null), or nulls a deleted uploader — the file stays where it was
+ * written, and the database (not a session) recorded that folder. A row with
+ * no folder_owner_id is one whose file was never in its writer's folder (a
+ * pre-65 row), so the fallback still refuses it.
+ */
+export function fileFolderOwner(folderOwnerId: unknown, writerId: unknown): unknown {
+  return typeof folderOwnerId === "string" && folderOwnerId ? folderOwnerId : writerId;
+}
+
 export function isPathInOwnerFolder(path: unknown, ownerId: unknown): path is string {
   if (typeof path !== "string" || typeof ownerId !== "string") return false;
   if (!path || !ownerId) return false;
@@ -33,21 +47,22 @@ export function isPathInOwnerFolder(path: unknown, ownerId: unknown): path is st
  * of public.can_share_attachment (20261026_66), applied to the share's owner
  * rather than the caller: the share points at a LIVE attachments row (not in
  * the bin) whose id is the share's document_id, whose storage_path is the
- * share's document_path, whose uploader is the share's owner, and whose file
- * sits in that uploader's folder. Before 66 a session could insert a share
+ * share's document_path, whose owner is the share's owner, and whose file
+ * sits in the folder it was written in (fileFolderOwner: a document 70 moved
+ * to the firm owner stays in the member's folder). Before 66 a session could insert a share
  * with any path through raw PostgREST; this refuses such rows, and shares of
  * documents deleted or binned since.
  */
 export function isShareServable(
   share: { owner_id?: unknown; document_id?: unknown; document_path?: unknown },
-  attachment: { id?: unknown; owner_user_id?: unknown; storage_path?: unknown; deleted_at?: unknown } | null | undefined,
+  attachment: { id?: unknown; owner_user_id?: unknown; storage_path?: unknown; deleted_at?: unknown; folder_owner_id?: unknown } | null | undefined,
 ): boolean {
   if (!attachment) return false;
   if (typeof share.document_id !== "string" || String(attachment.id ?? "") !== share.document_id) return false;
   if (typeof share.document_path !== "string" || attachment.storage_path !== share.document_path) return false;
   if (typeof share.owner_id !== "string" || attachment.owner_user_id !== share.owner_id) return false;
   if (attachment.deleted_at !== null && attachment.deleted_at !== undefined) return false;
-  return isPathInOwnerFolder(attachment.storage_path, attachment.owner_user_id);
+  return isPathInOwnerFolder(attachment.storage_path, fileFolderOwner(attachment.folder_owner_id, attachment.owner_user_id));
 }
 
 /**

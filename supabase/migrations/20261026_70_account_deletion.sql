@@ -405,6 +405,55 @@ begin
     end if;
   end loop;
 
+  -- His VAULT rows (request_id null) on a firm file: a member may register a
+  -- personal row on the path of his own case document or contract version
+  -- (POST /api/v1/documents checks only that the path is in his folder), and
+  -- the service-role routes serve a vault row (copy, share). Left with him,
+  -- that row would hand a removed member the firm file 71 withholds. It goes
+  -- with the file, to the same owner — never deleted. Not counted by the dry
+  -- run: on a purge the duplicate cascading away loses nothing (the firm row
+  -- keeps the bytes, 8: account_purge_storage_paths).
+  if not p_dry and public.firm_asset_spec_ready(array['attachments.storage_path', 'service_requests.firm_id'],
+                                                 'attachments', 'owner_user_id', 'id') then
+    begin
+      execute format(
+        'with dup as (
+           select distinct on (v.id) v.id, fp.id as firm_id, fp.owner_user_id as to_user
+             from public.attachments v
+             join public.firm_profiles fp
+               on fp.owner_user_id is distinct from $1
+              and ($2::uuid is null or fp.id = $2)
+              and exists (select 1 from public.firm_members m where m.firm_id = fp.id and m.user_id = $1)
+            where v.owner_user_id = $1 and v.request_id is null
+              and (exists (select 1 from public.attachments o
+                             join public.service_requests sr on sr.id = o.request_id
+                            where o.storage_path = v.storage_path and o.id <> v.id
+                              and sr.firm_id = fp.id and o.owner_user_id = fp.owner_user_id)%s)
+            order by v.id, fp.id),
+         moved as (
+           update public.attachments t set owner_user_id = dup.to_user
+             from dup where t.id = dup.id
+           returning t.id::text as row_id, dup.firm_id, dup.to_user)
+         insert into public.firm_asset_transfers (firm_id, from_user_id, to_user_id, table_name, row_id, column_name, reason)
+         select firm_id, $1, to_user, ''attachments'', row_id, ''owner_user_id'', $3 from moved',
+        case when public.firm_asset_spec_ready(array['contracts.firm_id', 'contracts.request_id', 'contract_versions.contract_id'],
+                                               'contract_versions', 'storage_path', 'id')
+             then ' or exists (select 1 from public.contract_versions cv join public.contracts c on c.id = cv.contract_id
+                              where cv.storage_path = v.storage_path
+                                and coalesce(c.firm_id, (select sr.firm_id from public.service_requests sr where sr.id = c.request_id)) = fp.id)'
+             else '' end)
+        using p_user, p_firm, p_reason;
+      get diagnostics n = row_count;
+    exception when insufficient_privilege or unique_violation then
+      refused := refused || jsonb_build_object('attachments.owner_user_id (vault copies of firm files)', sqlerrm);
+      n := 0;
+    end;
+    if n > 0 then
+      counts := counts || jsonb_build_object('attachments.owner_user_id (vault copies of firm files)', n);
+      total := total + n;
+    end if;
+  end if;
+
   -- One notification per receiving owner, with a count and never the content.
   if not p_dry and total > 0 and to_regclass('public.notifications') is not null then
     for o in
@@ -1016,7 +1065,10 @@ $$;
 --     the contract's firm). contract_versions.uploaded_by is history and is
 --     not moved, so the contract decides.
 -- Works with or without 20261026_65 (path / owner freeze on attachments and
--- contract_versions): it reads the rows, it adds no trigger.
+-- contract_versions): it reads the rows, it adds no trigger. 20261026_72 calls
+-- it on every session INSERT there, so a removed member cannot register the
+-- firm's files left in his folder again; and 72's folder_owner_id is what
+-- keeps a moved document servable to its new owner from the member's folder.
 create or replace function public.storage_object_held_by_other(p_name text)
 returns boolean
 language plpgsql
@@ -1240,6 +1292,31 @@ begin
   end;
 
   raise notice '20261026_70 verify: OK — account_deletion_requests (60-day freeze, own-row read, function-only writes), firm_asset_transfers trail, keep rules on auth.users delete, member removal moves firm rows to the owner, frozen accounts unlisted, entitlement_requests.decided_by SET NULL';
+end $$;
+
+-- The moves pass 20261026_65's path guard (and 72's) because those triggers
+-- judge current_user, and inside these SECURITY DEFINER functions that is
+-- their OWNER — trusted only when it is postgres / supabase_admin. Owned by
+-- any other role, the firm owner's member removal would keep every document
+-- with the member and every purge of a member would end blocked
+-- (ACCOUNT_DELETE_FIRM_ASSETS_LEFT). Docker:
+-- supabase/tests/rls/batch_2026_10_26_integration.test.sql.
+do $$
+declare
+  rec record;
+begin
+  for rec in
+    select p.oid::regprocedure::text as f, pg_get_userbyid(p.proowner) as o, p.prosecdef as d
+      from pg_proc p
+     where p.oid in ('public.transfer_firm_assets(uuid, uuid, text, boolean)'::regprocedure,
+                     'public.account_keep_rules(uuid, text)'::regprocedure,
+                     'public.account_delete_keep_rules()'::regprocedure,
+                     'public.firm_member_removed_transfer()'::regprocedure)
+  loop
+    if not rec.d or rec.o not in ('postgres', 'supabase_admin') then
+      raise exception '20261026_70 verify: % is owned by % (definer: %) — the attachments / contract_versions path guards (20261026_65, 72) would refuse its moves; run this file as postgres', rec.f, rec.o, rec.d;
+    end if;
+  end loop;
 end $$;
 
 commit;

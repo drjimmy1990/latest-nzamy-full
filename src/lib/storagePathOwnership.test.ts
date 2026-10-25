@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isOwnLicencePath, isPathInOwnerFolder, isShareServable } from "./storagePathOwnership.ts";
+import { fileFolderOwner, isOwnLicencePath, isPathInOwnerFolder, isShareServable } from "./storagePathOwnership.ts";
 
 const U = "c0000000-0000-0000-0000-00000000000c";
 const V = "70000000-0000-0000-0000-00000000007a";
@@ -54,6 +54,28 @@ test("isShareServable: forged, moved, binned, foreign or missing documents are r
   // another user's document, shared by a case participant before 66
   const theirs = { ...LIVE, owner_user_id: V, storage_path: `${V}/1-case.pdf` };
   assert.equal(isShareServable({ ...SHARE, document_path: `${V}/1-case.pdf` }, theirs), false);
+});
+
+const F = "0f000000-0000-0000-0000-00000000000f";
+
+test("fileFolderOwner: the recorded folder first, the writer otherwise", () => {
+  assert.equal(fileFolderOwner(U, F), U);
+  assert.equal(fileFolderOwner(null, F), F);
+  assert.equal(fileFolderOwner(undefined, F), F);
+  assert.equal(fileFolderOwner("", F), F);
+  assert.equal(fileFolderOwner(null, null), null);
+});
+
+test("isShareServable: the firm owner's share of a document 20261026_70 moved to him from a member's folder (20261026_72)", () => {
+  const moved = { id: 900, owner_user_id: F, folder_owner_id: U, storage_path: `${U}/1-own.pdf`, deleted_at: null };
+  assert.equal(isShareServable({ ...SHARE, owner_id: F }, moved), true);
+  // the member's old share of it stops working: the document is no longer his
+  assert.equal(isShareServable(SHARE, moved), false);
+  // without the recorded folder the move looks like a forgery and is refused
+  assert.equal(isShareServable({ ...SHARE, owner_id: F }, { ...moved, folder_owner_id: null }), false);
+  // a recorded folder that is not the path's is refused
+  assert.equal(isShareServable({ ...SHARE, owner_id: F, document_path: `${V}/1-secret.pdf` },
+                               { ...moved, storage_path: `${V}/1-secret.pdf` }), false);
 });
 
 test("isOwnLicencePath: only licences/<that lawyer>/<file>", () => {

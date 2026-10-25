@@ -19,7 +19,7 @@
 import { Zip, ZipPassThrough } from "fflate";
 import { ZIP_MAX_BYTES, type ZipScope } from "./attachmentsZipShared.ts";
 import { orderReference } from "./services/orderReference.ts";
-import { isPathInOwnerFolder } from "./storagePathOwnership.ts";
+import { fileFolderOwner, isPathInOwnerFolder } from "./storagePathOwnership.ts";
 
 // ─── entry names ──────────────────────────────────────────────────────────────
 
@@ -147,6 +147,8 @@ export interface ZipSourceFile {
 export interface AttachmentRowLike {
   request_id?: unknown;
   owner_user_id?: unknown;
+  /** 20261026_72: the folder the file was written in (see fileFolderOwner). */
+  folder_owner_id?: unknown;
   file_name?: unknown;
   storage_path?: unknown;
   size_bytes?: unknown;
@@ -177,7 +179,7 @@ export function visibleRequestFiles(rows: readonly AttachmentRowLike[] | null | 
   for (const row of rows ?? []) {
     if (!row || row.request_id !== requestId) continue;
     if (row.deleted_at !== null && row.deleted_at !== undefined) continue;
-    if (!isPathInOwnerFolder(row.storage_path, row.owner_user_id)) continue;
+    if (!isPathInOwnerFolder(row.storage_path, fileFolderOwner(row.folder_owner_id, row.owner_user_id))) continue;
     out.push({
       name: typeof row.file_name === "string" ? row.file_name : "",
       storagePath: row.storage_path,
@@ -190,6 +192,8 @@ export function visibleRequestFiles(rows: readonly AttachmentRowLike[] | null | 
 export interface ContractVersionRowLike {
   contract_id?: unknown;
   uploaded_by?: unknown;
+  /** 20261026_72: the folder the file was written in (see fileFolderOwner). */
+  folder_owner_id?: unknown;
   version_no?: unknown;
   file_name?: unknown;
   storage_path?: unknown;
@@ -208,7 +212,7 @@ export function visibleContractFiles(rows: readonly ContractVersionRowLike[] | n
   const out: ZipSourceFile[] = [];
   for (const row of rows ?? []) {
     if (!row || row.contract_id !== contractId) continue;
-    if (!isPathInOwnerFolder(row.storage_path, row.uploaded_by)) continue;
+    if (!isPathInOwnerFolder(row.storage_path, fileFolderOwner(row.folder_owner_id, row.uploaded_by))) continue;
     const fileName = sanitizeZipEntryName(row.file_name);
     const n = typeof row.version_no === "number" ? row.version_no : null;
     out.push({

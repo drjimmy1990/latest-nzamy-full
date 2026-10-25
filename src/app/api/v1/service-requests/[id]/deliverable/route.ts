@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 import { mayDownloadRequestFiles } from "@/lib/requestFileAccess";
-import { isPathInOwnerFolder } from "@/lib/storagePathOwnership";
+import { fileFolderOwner, isPathInOwnerFolder } from "@/lib/storagePathOwnership";
 
 /**
  * GET /api/v1/service-requests/[id]/deliverable
@@ -70,7 +70,7 @@ export async function GET(
 
   const { data: attachment } = await admin
     .from("attachments")
-    .select("request_id, owner_user_id, storage_path, file_name")
+    .select("request_id, owner_user_id, folder_owner_id, storage_path, file_name")
     .eq("id", deliverable.documentId)
     .maybeSingle();
 
@@ -99,7 +99,7 @@ export async function GET(
 
   // The file must sit in its uploader's own folder — see the same check in
   // attachments/[attachmentId]/route.ts (security review 2026-10-26, finding 1).
-  if (!isPathInOwnerFolder(attachment.storage_path, attachment.owner_user_id)) {
+  if (!isPathInOwnerFolder(attachment.storage_path, fileFolderOwner(attachment.folder_owner_id, attachment.owner_user_id))) {
     console.error(
       `[deliverable] storage_path outside the owner's folder: order=${id} documentId=${deliverable.documentId}`,
     );
