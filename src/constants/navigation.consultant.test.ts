@@ -3,9 +3,9 @@
  *
  * An independent legal consultant (مستشار قانوني) may not plead or manage
  * hearings, so his sidebar carries none of the tools on
- * CONSULTANT_BLOCKED_PREFIXES, in any of the three lawyer variants (full, lite
- * and the Saudi one). Everything else he keeps, and an advocate's sidebar is
- * exactly what it was before practice_kind existed.
+ * CONSULTANT_BLOCKED_PREFIXES, in either lawyer variant (full and the Saudi
+ * one; the lite sidebar is gone since owner ٢٦٤). Everything else he keeps, and
+ * an advocate's sidebar is exactly what it was before practice_kind existed.
  *
  * Run: npx -y node@22 --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test src/constants/navigation.consultant.test.ts
  */
@@ -40,7 +40,6 @@ function hrefsOf(groups: SidebarGroup[]): string[] {
 
 const VARIANTS: Array<{ name: string; mode: "light" | "full"; country: string | null }> = [
   { name: "full", mode: "full", country: null },
-  { name: "lite", mode: "light", country: null },
   { name: "full, Saudi", mode: "full", country: "SA" },
 ];
 

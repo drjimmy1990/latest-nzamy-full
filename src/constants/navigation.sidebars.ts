@@ -8,11 +8,9 @@ import {
   adminSidebarForRole,
   CORPORATE_SIDEBAR,
   FIRM_SIDEBAR,
-  FIRM_SIDEBAR_LITE,
   GOVERNMENT_SIDEBAR,
   INDIVIDUAL_SIDEBAR,
   LAWYER_SIDEBAR,
-  LAWYER_SIDEBAR_LITE,
   MICRO_SIDEBAR,
   NGO_SIDEBAR,
   PROVIDER_SIDEBAR,
@@ -23,11 +21,9 @@ export {
   adminSidebarForRole,
   CORPORATE_SIDEBAR,
   FIRM_SIDEBAR,
-  FIRM_SIDEBAR_LITE,
   GOVERNMENT_SIDEBAR,
   INDIVIDUAL_SIDEBAR,
   LAWYER_SIDEBAR,
-  LAWYER_SIDEBAR_LITE,
   MICRO_SIDEBAR,
   NGO_SIDEBAR,
   PROVIDER_SIDEBAR,
@@ -235,7 +231,7 @@ function mergeAddonSections(
   return [...base, ...addons];
 }
 
-// ── Helper: get sidebar by userType + dashboardMode + subRole + active_roles
+// ── Helper: get sidebar by userType + subRole + active_roles
 const GOVERNMENT_ROLE_TOOL_SECTION: Record<GovernmentRole, string> = {
   judge: "Judge Tools",
   prosecutor: "Prosecutor Tools",
@@ -333,16 +329,12 @@ const FIRM_ROLE_ALLOWED_ITEMS: Record<AffiliationRole | "default", string[]> = {
   default: ["Overview", "All Cases", "Hearings", "Team Tasks", "Contract Manager", "Documents", "Clients", "Consultations", "Quick Legal Q&A", "Legal Drafter", "Contract Pro", "My AI Orders", "Doc Analyzer", "Legal Library", "Notifications", "Settings"],
 };
 
-function getFirmSidebar(
-  affiliationRole?: AffiliationRole | null,
-  dashboardMode: "light" | "full" = "full",
-): SidebarGroup[] {
+function getFirmSidebar(affiliationRole?: AffiliationRole | null): SidebarGroup[] {
   const role = affiliationRole ?? "managing_partner";
-  const source = dashboardMode === "light" ? FIRM_SIDEBAR_LITE : FIRM_SIDEBAR;
-  if (role === "managing_partner" && dashboardMode === "full") return FIRM_SIDEBAR;
+  if (role === "managing_partner") return FIRM_SIDEBAR;
 
   const allowedItems = new Set(FIRM_ROLE_ALLOWED_ITEMS[role] ?? FIRM_ROLE_ALLOWED_ITEMS.default);
-  return filterSidebarByLabels(source, allowedItems);
+  return filterSidebarByLabels(FIRM_SIDEBAR, allowedItems);
 }
 
 /**
@@ -365,7 +357,15 @@ export function withoutConsultantBlockedItems(groups: SidebarGroup[]): SidebarGr
 
 export function getSidebarByUserType(
   userType: UserType,
-  dashboardMode: "light" | "full" = "full",
+  /**
+   * Owner ٢٦٤ (2026-10-25): the «مبسّطة / كاملة» toggle is gone and every
+   * sidebar is the full one. This slot stays only to keep the positions of
+   * the arguments after it (subRole is a string too, so dropping it would
+   * silently bind a caller's "full" to subRole). Its value is ignored — a
+   * stale "light" left in preferences or display_mode gets the full list.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- see the doc comment
+  _dashboardMode: "light" | "full" = "full",
   subRole?: string | null,
   activeRoles?: string[],
   governmentRole?: GovernmentRole | null,
@@ -390,14 +390,6 @@ export function getSidebarByUserType(
   // Bailiff/Gov Reviewer: provider with subRole = "bailiff" gets a dedicated sidebar
   if (userType === "provider" && subRole === "bailiff") return GOV_REVIEWER_SIDEBAR;
 
-  // Lite mode: return stripped-down sidebars for lawyers & firms
-  if (dashboardMode === "light") {
-    if (userType === "lawyer") {
-      return isConsultant ? withoutConsultantBlockedItems(LAWYER_SIDEBAR_LITE) : LAWYER_SIDEBAR_LITE;
-    }
-    if (userType === "firm") return getFirmSidebar(affiliationRole, "light");
-  }
-
   let base: SidebarGroup[];
   switch (userType) {
     case "admin":      base = adminSidebarForRole(staffRole); break;
@@ -420,7 +412,7 @@ export function getSidebarByUserType(
       break;
     }
     case "firm": {
-      base = getFirmSidebar(affiliationRole, dashboardMode);
+      base = getFirmSidebar(affiliationRole);
       if (country === "SA") {
         base = base.map(group => {
           if (group.title === "ذكاء نظامي" || group.titleEn === "Nezamy AI") {

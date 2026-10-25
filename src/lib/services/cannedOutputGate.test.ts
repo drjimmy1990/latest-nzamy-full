@@ -255,9 +255,10 @@ test("every nav row to a gated page is badged «قريباً» — the files nav
   }
   assert.ok(seen >= 19, `found only ${seen} rows — the parser broke`);
   assert.deepEqual(wrong, []);
-  // The two LAWYER rows to /ai/analyze (the firm rows use ?source=firm).
+  // The LAWYER row to /ai/analyze (the firm rows use ?source=firm). There were
+  // two until owner ٢٦٤ removed LAWYER_SIDEBAR_LITE, which carried the second.
   const lawyerAnalyze = navRows("constants/navigation.sidebars.legal.ts").filter((r) => r.href === "/ai/analyze");
-  assert.equal(lawyerAnalyze.length, 2);
+  assert.equal(lawyerAnalyze.length, 1);
   for (const r of lawyerAnalyze) assert.equal(r.badge, "قريباً");
 });
 

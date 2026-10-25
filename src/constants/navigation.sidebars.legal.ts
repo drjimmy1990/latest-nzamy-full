@@ -176,50 +176,6 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
   },
 ];
 
-// ── Lawyer Sidebar LITE (عرض يومي مختصر — ليس اشتراكاً أو باقة) ─────────────
-export const LAWYER_SIDEBAR_LITE: SidebarGroup[] = [
-  {
-    items: [
-      { label: "نظرة عامة", labelEn: "Overview", href: "/dashboard/lawyer", icon: "SquaresFour" },
-    ],
-  },
-  {
-    title: "الجلسات والقضايا", titleEn: "Hearings & Cases",
-    items: [
-      { label: "الجلسات والمهل القضائية", labelEn: "Hearings & Deadlines", href: "/dashboard/lawyer/hearings", icon: "CalendarCheck" },
-      { label: "جميع القضايا",   labelEn: "All Cases", href: "/dashboard/lawyer/cases",    icon: "Gavel" },
-      { label: "خريطة القضايا",  labelEn: "Cases Map", href: "/dashboard/lawyer/graph",    icon: "TreeStructure" },
-      { label: "مهامي",          labelEn: "My Tasks",  href: "/dashboard/lawyer/tasks",    icon: "CheckSquare" },
-    ],
-  },
-  {
-    title: "ذكاء نظامي — أساسية", titleEn: "Nezamy AI — Core",
-    collapsible: true,
-    defaultOpen: true,
-    items: [
-      { label: "الموجز القضائي",           labelEn: "ParaLegal (AI Briefing)", href: "/ai/case-brief",     icon: "Scan",         badge: "جديد" },
-      { label: "سؤال قانوني سريع",  labelEn: "Quick Q&A",       href: "/ai/assistant",  icon: "ChatCircle",   badge: "جديد" },
-      { label: "الصائغ القانوني",   labelEn: "Legal Drafter",   href: "/ai/draft",         icon: "PencilSimple", divider: true },
-      { label: "محترف العقود",      labelEn: "Contract Pro",    href: "/ai/contracts",     icon: "FileText" },
-      { label: "الرأي الفصل",       labelEn: "Legal Opinion",   href: "/ai/legal-opinion", icon: "Lightbulb" },
-      { label: "عصارة المرفقات",    labelEn: "Doc Analyzer",    href: "/ai/analyze",       icon: "MagnifyingGlass", badge: "قريباً" },
-    ],
-  },
-  {
-    title: "العملاء", titleEn: "Clients",
-    items: [
-      { label: "دليل العملاء", labelEn: "Clients", href: "/dashboard/lawyer/clients", icon: "AddressBook" },
-    ],
-  },
-  {
-    items: [
-      { label: "طلباتي",       labelEn: "My Requests", href: "/marketplace", icon: "Storefront", divider: true },
-      { label: "المكتبة القانونية", labelEn: "Legal Library", href: "/laws",              icon: "BookOpen" },
-      { label: "الإعدادات",    labelEn: "Settings",     href: "/settings",    icon: "GearSix" },
-    ],
-  },
-];
-
 // ── Firm Sidebar (شركة محاماة) ────────────────────────────────────────────────
 export const FIRM_SIDEBAR: SidebarGroup[] = [
   {
@@ -397,58 +353,6 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
       { label: "أكاديمية نظامي",   labelEn: "Nezamy Academy",  href: "/academy",       icon: "GraduationCap", badge: "جديد" },
       { label: "الإشعارات",         labelEn: "Notifications", href: "/notifications", icon: "Bell" },
       { label: "الإعدادات",          labelEn: "Settings",      href: "/settings",      icon: "GearSix" },
-    ],
-  },
-];
-
-// ── Firm Sidebar LITE (عرض يومي مختصر — ليس اشتراكاً أو باقة) ───────────────
-export const FIRM_SIDEBAR_LITE: SidebarGroup[] = [
-  {
-    items: [
-      { label: "نظرة عامة", labelEn: "Overview", href: "/dashboard/firm", icon: "SquaresFour" },
-    ],
-  },
-  {
-    title: "العمل اليومي", titleEn: "Daily Work",
-    items: [
-      { label: "جميع القضايا", labelEn: "All Cases", href: "/dashboard/firm/cases", icon: "Gavel" },
-      { label: "الجلسات", labelEn: "Hearings", href: "/dashboard/firm/hearings", badge: "قريباً", icon: "CalendarCheck" },
-      { label: "مهام الفريق", labelEn: "Team Tasks", href: "/dashboard/firm/tasks", badge: "قريباً", icon: "CheckSquare" },
-    ],
-  },
-  {
-    title: "العملاء والمستندات", titleEn: "Clients & Documents",
-    items: [
-      { label: "دليل العملاء", labelEn: "Clients", href: "/dashboard/firm/clients", icon: "AddressBook" },
-      { label: "مدير العقود", labelEn: "Contract Manager", href: "/dashboard/firm/contracts", icon: "FileText" },
-      { label: "المستندات", labelEn: "Documents", href: "/dashboard/firm/documents", badge: "قريباً", icon: "FolderOpen" },
-    ],
-  },
-  {
-    title: "الفريق", titleEn: "Team",
-    items: [
-      { label: "أعضاء الفريق", labelEn: "Team", href: "/dashboard/firm/team", icon: "Users", gateKey: "firm-team" },
-      { label: "الصلاحيات والأدوار", labelEn: "Roles", href: "/dashboard/firm/team/roles", icon: "Key", gateKey: "firm-team" },
-    ],
-  },
-  {
-    title: "ذكاء نظامي — أساسية", titleEn: "Nezamy AI — Core",
-    collapsible: true,
-    defaultOpen: true,
-    items: [
-      { label: "الموجز القضائي", labelEn: "ParaLegal (AI Briefing)", href: "/ai/case-brief", icon: "Scan", badge: "جديد" },
-      { label: "سؤال قانوني سريع", labelEn: "Quick Legal Q&A", href: "/ai/quick-answer", icon: "ChatCircle", badge: "جديد" },
-      { label: "الصائغ القانوني", labelEn: "Legal Drafter", href: "/ai/draft", icon: "PencilSimple", divider: true },
-      { label: "محترف العقود", labelEn: "Contract Pro", href: "/ai/contracts", icon: "FileText" },
-      { label: "مراجع العقود", labelEn: "Contract Reviewer", href: "/ai/contract-reviewer", icon: "MagnifyingGlass", badge: "جديد" },
-      { label: "فاحص المستندات", labelEn: "Doc Analyzer", href: "/ai/analyze?source=firm", icon: "MagnifyingGlass", gateKey: "firm-ai", badge: "قريباً" },
-    ],
-  },
-  {
-    items: [
-      { label: "طلباتي في السوق", labelEn: "My Requests", href: "/dashboard/firm/marketplace", icon: "Storefront", divider: true, gateKey: "firm-marketplace" },
-      { label: "المكتبة القانونية", labelEn: "Legal Library", href: "/laws", icon: "BookOpen" },
-      { label: "الإعدادات", labelEn: "Settings", href: "/settings", icon: "GearSix" },
     ],
   },
 ];
