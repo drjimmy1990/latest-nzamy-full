@@ -1147,7 +1147,12 @@ export default function UserProfilePage() {
               <>
                 <div className="grid grid-cols-3 gap-4 mb-5">
                   {[
-                    { label:"الباقة الحالية", val:`${activeSub.subscription_plans?.name_ar ?? activeSub.tier} — ${cyclePrice(activeSub.subscription_plans, activeSub.billing_cycle) ?? activeSub.subscription_plans?.price_monthly ?? 0} ر.س/${cycleUnitAr(activeSub.billing_cycle)}` },
+                    { label:"الباقة الحالية", val: (() => {
+                      // The cycle's own price and unit; without one, the monthly price «/شهر» (never a monthly price under a longer unit).
+                      const own = cyclePrice(activeSub.subscription_plans, activeSub.billing_cycle);
+                      const price = own ?? activeSub.subscription_plans?.price_monthly ?? 0;
+                      return `${activeSub.subscription_plans?.name_ar ?? activeSub.tier} — ${price} ر.س/${own !== null ? cycleUnitAr(activeSub.billing_cycle) : "شهر"}`;
+                    })() },
                     { label:"تاريخ التجديد", val: formatDate(activeSub.current_period_end) },
                     { label:"دورة الفوترة", val: subscriptionCycleAr(activeSub.billing_cycle) },
                   ].map((r,i)=>(

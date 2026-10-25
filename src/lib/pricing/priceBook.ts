@@ -255,8 +255,10 @@ export function formatSarAmount(sar: number, lang: "ar" | "en"): string {
 /**
  * The displayed amount of a book price sold today, e.g. («lawyer-pro»,
  * "yearly", "ar") → «٣٬٩٩٠». Throws for an id or billing the book does not
- * sell: a page that asks for one is a bug, and the honesty tests load every
- * page that calls this.
+ * sell (retired, coming soon, never listed). Most callers run at module scope,
+ * so such a page would fail to load: bookCallSites.test.ts lists every literal
+ * call site and fails when one names a price the book no longer sells — the
+ * phase that retires a price updates those pages in the same change.
  */
 export function bookPriceText(id: string, billing: Billing, lang: "ar" | "en"): string {
   const entry = bookEntry(id);

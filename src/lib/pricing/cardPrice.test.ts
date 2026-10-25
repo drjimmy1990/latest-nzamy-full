@@ -121,3 +121,20 @@ test("derivation: the price tables read the book too (firms, individuals compari
     }
   }
 });
+
+test("١٧٩: no price card reads a launch price — launch prices live in the dated campaign banner only", () => {
+  const surfaces = [
+    "lib/pricing/cardPrice.ts",
+    "components/pricing/PricingCards.tsx",
+    "components/pricing/PricingHero.tsx",
+    "app/pricing/page.tsx",
+    "app/pro/page.tsx",
+    "app/laws/subscribe/page.tsx",
+    "app/laws/components/PaywallModal.tsx",
+    ...CONSTANTS,
+    "constants/pricing/pricing.common.ts",
+  ];
+  for (const path of surfaces) assert.doesNotMatch(code(path), /launchPrices?/, path);
+  // and the book has none yet, so nothing could leak
+  for (const entry of Object.values(PRICE_BOOK)) assert.equal(entry.launchPrices, undefined, entry.id);
+});

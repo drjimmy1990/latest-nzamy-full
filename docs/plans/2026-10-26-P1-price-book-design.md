@@ -90,3 +90,21 @@ The user runs `10_BEFORE_DEPLOY_20261026_10_billing_cycles.sql`, then deploys. *
 | P5 | `ind-*` q/s prices and new yearly prices, then the `admin_pricing_catalog` reseed SQL. |
 | P6 | Firm monthly → `retired`, plus q/s; online entries for `micro`, `biz-*`, `dept-*`, NGO, providers and `lib-firm-*`. |
 | P7 | Coupons on the server; the WhatsApp chat (`StepPayment.tsx`, `StepConsult.tsx`) reads the book and the per-service catalogue. |
+
+## 7. Left open by P1 (each belongs to a later phase)
+
+- **Per-service prices still copied in code.** These figures do not read `admin_pricing_catalog`, so an admin edit of the table does not reach them:
+  - `src/constants/servicesData.ts` (the `/services/individuals` service cards);
+  - the marketing pages under `src/app/services/*`: consultations, contracts, the business pages, corporate.
+
+  P5 moves them onto the catalogue it reseeds. The /pricing pay-per-piece card no longer shows any figure: two of its four contradicted the table (٢٥٠ against 500 for `video-short`, ١,٥٠٠ against 1,000 for `defense`).
+- **The VAT sentence is not yet on these price pages:**
+  - `services/corporate/*`;
+  - `services/business/*`;
+  - `services/consultations`;
+  - `services/contracts`;
+  - `services/page.tsx`;
+  - `academy` and `academy/[slug]`.
+
+  P5 and P6 rewrite those prices and add the sentence with them. Marketplace budgets are fees between the parties, not platform prices.
+- **Derived claims that P5 must recompute:** the `ind-ai` badge «١٫٢٥ ر.س يومياً», and «وفر شهرين» on the individuals' yearly price.

@@ -35,10 +35,14 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       isBetaHidden: false,
       features: {
         ai: [
-          "استشارة مرئية مع محامٍ مرخّص (٣٠ دقيقة) = ٢٥٠ ر.س",
-          "صياغة مذكرة رد / جوابية = ١,٥٠٠ ر.س",
-          "مراجعة وتدقيق عقد = ٨٠٠ ر.س",
-          "لائحة استئناف / نقض = تبدأ من ٣,٠٠٠ ر.س",
+          // No per-service figure here: those prices live in admin_pricing_catalog
+          // (P1 design note §1) and two of the old ones contradicted it
+          // (٢٥٠ for a 30-minute video call vs 500; ١,٥٠٠ for a reply brief vs 1,000).
+          // The service list the CTA opens shows the current figure.
+          "استشارة مرئية أو حضورية مع محامٍ مرخّص",
+          "صياغة المذكرات الجوابية ولوائح الدعوى والاستئناف",
+          "مراجعة العقود وتدقيقها",
+          "سعر كل خدمة معروض في قائمة الخدمات قبل الطلب",
         ],
         platform: [
           "تمثيل قضائي وترافع مخصص من محامٍ مرخّص",
@@ -175,10 +179,10 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       isBetaHidden: false,
       features: {
         ai: [
-          "Video consultation with a licensed lawyer (30 min) = SAR 250",
-          "Statement of defense / reply brief drafting = SAR 1,500",
-          "Contract review & legal audit = SAR 800",
-          "Appeals & cassation briefs = Starts at SAR 3,000",
+          "Video or in-person consultation with a licensed lawyer",
+          "Reply briefs, statements of claim and appeals",
+          "Contract review & legal audit",
+          "Each service's price is shown in the service list before you order",
         ],
         platform: [
           "Full court representation by licensed Saudi attorneys",
@@ -297,7 +301,7 @@ export const comparisonIndividuals: { ar: ComparisonCategory[]; en: ComparisonCa
       rows: [
         { feature: "الذكاء الاصطناعي القانوني",   "pay-per-piece": "محدود",          "ind-ai": "غير محدود",            "ind-preventive": "غير محدود",            "ind-litigation": "غير محدود" },
         { feature: "الاستشهاد بالمواد النظامية",  "pay-per-piece": true,            "ind-ai": true,                   "ind-preventive": true,                   "ind-litigation": true },
-        { feature: "فحص وتدقيق العقود",          "pay-per-piece": "٨٠٠ ر.س/عقد",    "ind-ai": "خصم ١٠٪",              "ind-preventive": "عقدان مجاناً/سنة",     "ind-litigation": "شامل عقود النزاع" },
+        { feature: "فحص وتدقيق العقود",          "pay-per-piece": "حسب قائمة الخدمات", "ind-ai": "خصم ١٠٪",              "ind-preventive": "عقدان مجاناً/سنة",     "ind-litigation": "شامل عقود النزاع" },
         { feature: "صياغة الخطابات والإنذارات",   "pay-per-piece": "حسب الخدمة",     "ind-ai": true,                   "ind-preventive": true,                   "ind-litigation": true },
       ],
     },
@@ -305,7 +309,7 @@ export const comparisonIndividuals: { ar: ComparisonCategory[]; en: ComparisonCa
       category: "المحامي المرخّص والتمثيل القضائي",
       icon: Gavel,
       rows: [
-        { feature: "استشارات مع محامٍ مرخّص",    "pay-per-piece": "٢٥٠ ر.س/جلسة",   "ind-ai": "سعر تفضيلي",           "ind-preventive": "٤ استشارات/سنة",       "ind-litigation": "غير محدودة للقضية" },
+        { feature: "استشارات مع محامٍ مرخّص",    "pay-per-piece": "حسب قائمة الخدمات", "ind-ai": "سعر تفضيلي",           "ind-preventive": "٤ استشارات/سنة",       "ind-litigation": "غير محدودة للقضية" },
         { feature: "خصم أتعاب الترافع والقضايا", "pay-per-piece": "-",              "ind-ai": "٥٪",                   "ind-preventive": "١٥٪",                  "ind-litigation": "قضية مشمولة بالكامل" },
         { feature: "تمثيل قضائي وترافع بالمحاكم", "pay-per-piece": "أتعاب متفق عليها","ind-ai": "-",                   "ind-preventive": "بخصم ١٥٪",             "ind-litigation": "قضية مؤهلة سنوياً" },
         { feature: "ضوابط القبول والاكتتاب",      "pay-per-piece": "فحص تعارض",     "ind-ai": "بدون اكتتاب",            "ind-preventive": "بدون اكتتاب",            "ind-litigation": "تخضع للفحص المهني" },
@@ -337,7 +341,7 @@ export const comparisonIndividuals: { ar: ComparisonCategory[]; en: ComparisonCa
       rows: [
         { feature: "Legal AI Queries",            "pay-per-piece": "Limited",       "ind-ai": "Unlimited",            "ind-preventive": "Unlimited",            "ind-litigation": "Unlimited" },
         { feature: "Statutory Article Citations", "pay-per-piece": true,            "ind-ai": true,                   "ind-preventive": true,                   "ind-litigation": true },
-        { feature: "Contract Audit & Review",     "pay-per-piece": "SAR 800/contract","ind-ai": "10% off",            "ind-preventive": "2 free/year",          "ind-litigation": "Case contracts included" },
+        { feature: "Contract Audit & Review",     "pay-per-piece": "Per the service list","ind-ai": "10% off",            "ind-preventive": "2 free/year",          "ind-litigation": "Case contracts included" },
         { feature: "Notice & Letter Drafting",    "pay-per-piece": "Per service",   "ind-ai": true,                   "ind-preventive": true,                   "ind-litigation": true },
       ],
     },
@@ -345,7 +349,7 @@ export const comparisonIndividuals: { ar: ComparisonCategory[]; en: ComparisonCa
       category: "Licensed Lawyers & Court Cases",
       icon: Gavel,
       rows: [
-        { feature: "Lawyer Consultations",        "pay-per-piece": "SAR 250/session","ind-ai": "Discounted rate",      "ind-preventive": "4 sessions/year",      "ind-litigation": "Unlimited for case" },
+        { feature: "Lawyer Consultations",        "pay-per-piece": "Per the service list","ind-ai": "Discounted rate",      "ind-preventive": "4 sessions/year",      "ind-litigation": "Unlimited for case" },
         { feature: "Litigation Fees Discount",    "pay-per-piece": "-",             "ind-ai": "5%",                   "ind-preventive": "15%",                  "ind-litigation": "Fully covered case" },
         { feature: "Court Representation",        "pay-per-piece": "Agreed fee",    "ind-ai": "-",                    "ind-preventive": "15% off fee",          "ind-litigation": "1 eligible case/year" },
         { feature: "Underwriting & Intake Check", "pay-per-piece": "Conflict check","ind-ai": "No underwriting",   "ind-preventive": "No underwriting",   "ind-litigation": "Requires review gate" },

@@ -74,14 +74,7 @@ export async function GET(
       .select(
         `
         *,
-        subscription_plans (
-          id,
-          name_ar,
-          name_en,
-          tier,
-          price_monthly,
-          price_yearly
-        )
+        subscription_plans ( * )
       `,
       )
       .eq("user_id", userId)
