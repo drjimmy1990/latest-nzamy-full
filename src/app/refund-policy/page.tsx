@@ -18,6 +18,8 @@ import {
   renewalReminderLinesEn,
   topupValidityAr,
   topupValidityEn,
+  upgradeProrationLinesAr,
+  upgradeProrationLinesEn,
   WITHDRAWAL_DAYS,
 } from "@/lib/payments/refundPolicy";
 
@@ -78,7 +80,8 @@ const sections = {
         afterWithdrawalLineAr(),
         // Owner ٢٨٨ (C): two reminders before an automatic renewal — shown once B2 sends them.
         ...renewalReminderLinesAr(),
-        "الترقية بين الباقات لا تستوجب رسوم استرداد؛ يُحتسب فرق السعر تناسبياً على الفاتورة التالية.",
+        // No pro-rata on an upgrade yet (SHOW_UPGRADE_PRORATION, payments B2).
+        ...upgradeProrationLinesAr(),
         // Pricing doc §13ج.4 — shown once promotional points actually expire.
         ...promoPointsLinesAr(),
         // The price book's packs (what checkout sells), not a typed list.
@@ -166,7 +169,7 @@ const sections = {
         "Refunds go to the original payment method, within the periods set out in Section 7 below.",
         afterWithdrawalLineEn(),
         ...renewalReminderLinesEn(),
-        "Upgrading between plans does not require a refund; the price difference is pro-rated on the next invoice.",
+        ...upgradeProrationLinesEn(),
         ...promoPointsLinesEn(),
         `**Paid top-up points**: valid according to the pack — ${topupValidityEn()} — from the date of purchase.`,
       ],

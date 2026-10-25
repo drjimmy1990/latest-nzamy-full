@@ -46,6 +46,12 @@ export const RENEWAL_REMINDER_DAYS: readonly number[] = Object.freeze([7, 3]);
  * reminders AND a cancel control; only then is this flag turned on.
  */
 export const SUBSCRIPTIONS_AUTO_RENEW = false;
+/**
+ * Off: an upgrade is not pro-rated today. A higher plan starts now at its own
+ * price (fulfillDecision.ts: "pro-rata is B2"), and with no renewal there is
+ * no "next invoice" to carry a difference. Shown once B2 builds it.
+ */
+export const SHOW_UPGRADE_PRORATION = false;
 /** Off until B2 sends the two renewal reminders (owner ٢٨٨). */
 export const SHOW_RENEWAL_REMINDERS = false;
 /** Off until something expires promotional / welcome points after 90 days. */
@@ -152,6 +158,14 @@ export function renewalReminderLinesEn(show: boolean = SHOW_RENEWAL_REMINDERS): 
         `**Renewal reminders**: before any automatic renewal of a subscription we send you a first reminder ${RENEWAL_REMINDER_DAYS[0]} days and a second reminder ${RENEWAL_REMINDER_DAYS[1]} days before the renewal date, so you can cancel it before you are charged.`,
       ]
     : [];
+}
+
+export function upgradeProrationLinesAr(show: boolean = SHOW_UPGRADE_PRORATION): string[] {
+  return show ? ["الترقية بين الباقات لا تستوجب رسوم استرداد؛ يُحتسب فرق السعر تناسبياً على الفاتورة التالية."] : [];
+}
+
+export function upgradeProrationLinesEn(show: boolean = SHOW_UPGRADE_PRORATION): string[] {
+  return show ? ["Upgrading between plans does not require a refund; the price difference is pro-rated on the next invoice."] : [];
 }
 
 export function promoPointsLinesAr(show: boolean = SHOW_PROMO_POINTS_VALIDITY): string[] {

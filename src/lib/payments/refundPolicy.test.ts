@@ -28,6 +28,9 @@ import {
   SHOW_PROMO_POINTS_VALIDITY,
   SHOW_RENEWAL_REMINDERS,
   SUBSCRIPTIONS_AUTO_RENEW,
+  SHOW_UPGRADE_PRORATION,
+  upgradeProrationLinesAr,
+  upgradeProrationLinesEn,
   topupValidityAr,
   topupValidityEn,
   topupValidityMonths,
@@ -171,4 +174,17 @@ test("no subscription renews automatically, so the page promises no cancel contr
   assert.match(page, /afterWithdrawalLineEn\(\)/);
   // kept for the day B2 builds the renewal and its cancel control
   assert.match(afterWithdrawalLineAr(true), /إلغاء التجديد التلقائي/);
+});
+
+test("no upgrade is pro-rated today, so the page promises no pro-rata on a next invoice", () => {
+  assert.equal(SHOW_UPGRADE_PRORATION, false);
+  const decision = readFileSync(join(ROOT, "src", "lib", "payments", "fulfillDecision.ts"), "utf8");
+  assert.match(decision, /pro-rata is B2/);
+  assert.deepEqual(upgradeProrationLinesAr(), []);
+  assert.deepEqual(upgradeProrationLinesEn(), []);
+  const page = visible(PAGE);
+  assert.equal(page.includes("تناسبياً على الفاتورة التالية"), false);
+  assert.equal(page.includes("pro-rated on the next invoice"), false);
+  // kept for the day B2 builds it
+  assert.match(upgradeProrationLinesAr(true)[0], /تناسبياً/);
 });
