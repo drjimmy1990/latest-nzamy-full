@@ -36,14 +36,17 @@ test("every paged section carries a deterministic order", () => {
   }
 });
 
-test("N2.5: the laws catalogue is ordered in SQL — merged, amendment, issue (desc, nulls last), then title, slug", () => {
+test("N2.5: the laws catalogue is ordered in SQL — merged, then the newest of (amendment, issue) (desc, nulls last), then title, slug", () => {
   const n = source.replace(/\r\n/g, "\n");
   const lawsCall = n.slice(n.indexOf('fetchSection("laws"'), n.indexOf('shouldFetch("decrees")'));
   assert.match(
     lawsCall,
-    /if \(on\.has\("sort"\)\) \{\s*return out\s*\.order\("has_merged_regulation", DESC_NULLS_LAST\)\s*\.order\(LAW_SORT_KEYS\[0\], DESC_NULLS_LAST\)\s*\.order\(LAW_SORT_KEYS\[1\], DESC_NULLS_LAST\)\s*\.order\("title"\)\s*\.order\("slug"\);/,
+    /if \(on\.has\("sort"\)\) \{\s*return out\s*\.order\("has_merged_regulation", DESC_NULLS_LAST\)\s*\.order\(LAW_SORT_KEY, DESC_NULLS_LAST\)\s*\.order\("title"\)\s*\.order\("slug"\);/,
   );
-  assert.match(n, /const LAW_SORT_KEYS = \["latest_amendment_key", "issue_date_key"\] as const;/);
+  // ONE combined key (20261025_40: greatest(amendment, issue)), matching
+  // idx_laws_catalogue_recency column for column.
+  assert.match(n, /const LAW_SORT_KEY = "catalogue_recency_key";/);
+  assert.match(n, /\{ key: "sort", columns: \[LAW_SORT_KEY\] \}/);
   assert.match(n, /const DESC_NULLS_LAST = \{ ascending: false, nullsFirst: false \} as const;/);
   // Before 20261025_40 the old order still pages deterministically.
   assert.match(lawsCall, /return out\.order\("section_code"\)\.order\("title"\)\.order\("slug"\);/);
@@ -53,11 +56,11 @@ test("N2.5: the laws catalogue is ordered in SQL — merged, amendment, issue (d
   assert.doesNotMatch(n.slice(n.indexOf("const lawsRows")), /lawsRows[^;]*\.sort\(/);
 });
 
-test("N2.5: the sort keys are locked dates — ordered by, never selected or sent", () => {
+test("N2.5: the sort key is the locked dates — ordered by, never selected or sent", () => {
   const n = source.replace(/\r\n/g, "\n");
   const list = n.match(/const LAW_LIST_COLUMNS =\n\s*"([^"]*)"/)?.[1] ?? "";
   assert.ok(list.includes("slug"), "LAW_LIST_COLUMNS found");
-  for (const key of ["latest_amendment_key", "issue_date_key", "latest_update"]) {
+  for (const key of ["catalogue_recency_key", "latest_update"]) {
     assert.doesNotMatch(list, new RegExp(`\\b${key}\\b`));
   }
   // The select callback only ever adds the موجز column.
@@ -175,4 +178,10 @@ test("the assistant keeps its own rule: no full-library flag shows or hides it (
       }
     });
   }
+});
+
+test("N2.5: the owner loader never sends the generated sort key (a generated column refuses a value)", () => {
+  const loader = fs.readFileSync(path.join(here, "../../../../../scripts/seed-library-from-owner.mjs"), "utf8");
+  const laws = loader.match(/\{ name: "laws", [^\n]*stripKeys: \[([^\]]*)\]/)?.[1] ?? "";
+  for (const key of ["summary_brief", "catalogue_recency_key"]) assert.match(laws, new RegExp(`"${key}"`));
 });

@@ -172,10 +172,11 @@ if (!fs.existsSync(ROWS_DIR) || !fs.statSync(ROWS_DIR).isDirectory()) {
 // 14 Tables in FK-safe dependency order
 const TABLES = [
   // summary_brief: GENERATED from preamble since 20261025_20 (N2.2), and
-  // latest_amendment_key / issue_date_key from latest_update / issue_date_hijri
-  // since 20261025_40 (N2.5) — a row that carries one (an export of a live
-  // table) would fail the whole batch.
-  { name: "laws", pkey: "slug", batchSize: 100, stripKeys: ["needs_human_review", "review_reason", "summary_brief", "latest_amendment_key", "issue_date_key"] },
+  // catalogue_recency_key from latest_update / issue_date_hijri since
+  // 20261025_40 (N2.5) — a row that carries one (an export of a live table)
+  // would fail the whole batch. latest_amendment_key / issue_date_key were an
+  // unreleased draft of 40; stripped too, in case an export carries them.
+  { name: "laws", pkey: "slug", batchSize: 100, stripKeys: ["needs_human_review", "review_reason", "summary_brief", "catalogue_recency_key", "latest_amendment_key", "issue_date_key"] },
   { name: "chapters", pkey: "id", batchSize: 200, stripKeys: [] },
   { name: "articles", pkey: "id", batchSize: 100, stripKeys: [] },
   { name: "article_amendments", pkey: "id", batchSize: 200, stripKeys: [] },

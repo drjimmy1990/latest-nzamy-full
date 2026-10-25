@@ -254,9 +254,10 @@ export function LawsTabContent({
       exit={{ opacity: 0, y: 8 }}
     >
       {/* No sort bar: laws arrive server-ordered (N2.5, /api/library/init):
-          merged regulation first, then the latest amendment, then the issue
-          date, newest first — on integer Hijri keys that migration 20261025_40
-          builds from the free-text dates. Before it runs: section, title. */}
+          merged regulation first, then newest first by the later of the
+          latest amendment and the issue date — one integer Hijri key that
+          migration 20261025_40 builds from the free-text dates. Before it
+          runs: section, title. */}
       {(activeType === "all" || activeType === "laws") && searchDegraded.includes("laws") && (
         <DegradedSectionNotice section="laws" isDark={isDark} />
       )}

@@ -726,8 +726,8 @@ export async function seedLaws(
       // N2.2: library.laws.summary_brief (the card's موجز) is GENERATED from
       // this preamble by 20261025_20 — never send it: a generated column
       // refuses a value, and every loader fills it by writing the preamble.
-      // N2.5: so are latest_amendment_key / issue_date_key (20261025_40), from
-      // latest_update and issue_date_hijri below — never send them either.
+      // N2.5: so is catalogue_recency_key (20261025_40), from latest_update
+      // and issue_date_hijri below — never send it either.
       has_merged_regulation: law.has_executive_reg || false,
       status: cap("laws", "status", lawId, law.law_status || "status_undeclared", 30),
       boe_source_url: cap("laws", "boe_source_url", lawId, String(law.boe_source_url || law.boe_url || ""), 500),

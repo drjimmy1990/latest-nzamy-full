@@ -3449,39 +3449,42 @@ END $$;
 -- a NOTICE. Read-only.
 -- >>> verify:law_sort_key — supabase/tests/rls/law_sort_key.test.sql
 -- extracts the lines between these two markers; keep them.
-SELECT '20261025_40 applied (library.laws catalogue sort keys)' AS check,
+SELECT '20261025_40 applied (library.laws catalogue recency key)' AS check,
        EXISTS (SELECT 1 FROM pg_attribute
-                WHERE attrelid = 'library.laws'::regclass AND attname = 'latest_amendment_key' AND NOT attisdropped) AS present;
+                WHERE attrelid = 'library.laws'::regclass AND attname = 'catalogue_recency_key' AND NOT attisdropped) AS present;
 
 DO $$
 DECLARE
   r        text;
-  c        text;
   gen      text;
+  expr     text;
+  def      text;
   missing  text := '';
   merged   bigint;
+  keyed    bigint;
   amended  bigint;
-  issued   bigint;
   dated    bigint;
 BEGIN
-  SELECT attgenerated::text INTO gen FROM pg_attribute
-   WHERE attrelid = 'library.laws'::regclass AND attname = 'latest_amendment_key' AND NOT attisdropped;
-  IF gen IS NULL THEN
+  SELECT a.attgenerated::text, pg_get_expr(d.adbin, d.adrelid) INTO gen, expr
+    FROM pg_attribute a
+    LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+   WHERE a.attrelid = 'library.laws'::regclass AND a.attname = 'catalogue_recency_key' AND NOT a.attisdropped;
+  IF NOT FOUND THEN
     RAISE NOTICE '_verify: 20261025_40 is not applied yet — /laws keeps the old order (section, title); run SQL_batch_2026-10-25_owner_free/21_BEFORE_DEPLOY_20261025_40_law_sort_key.sql';
     RETURN;
   END IF;
-  FOREACH c IN ARRAY ARRAY['latest_amendment_key', 'issue_date_key'] LOOP
-    SELECT attgenerated::text INTO gen FROM pg_attribute
-     WHERE attrelid = 'library.laws'::regclass AND attname = c AND NOT attisdropped;
-    IF gen IS DISTINCT FROM 's' THEN
-      missing := missing || format(' %s is missing or not a generated column (re-create it with 20261025_40);', c);
-      CONTINUE;
+  IF gen IS DISTINCT FROM 's'
+     OR expr !~* '^GREATEST\(library\.hijri_date_sort_key\(.*latest_update.*\), library\.hijri_date_sort_key\(.*issue_date_hijri.*\)\)$' THEN
+    missing := missing || format(' catalogue_recency_key is not generated as greatest(amendment, issue) (generated=%s, expr=%s) — drop it and re-run 20261025_40;', coalesce(gen, 'NULL'), coalesce(expr, 'NULL'));
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'library.laws'::regclass AND NOT attisdropped
+               AND attname IN ('latest_amendment_key', 'issue_date_key')) THEN
+    missing := missing || ' a draft key column (latest_amendment_key / issue_date_key) is still on library.laws (re-run 20261025_40);';
+  END IF;
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF has_column_privilege(r, 'library.laws', 'catalogue_recency_key', 'SELECT') THEN
+      missing := missing || format(' %s can read library.laws.catalogue_recency_key — it is the locked dates as a number; revoke it, the code never selects it;', r);
     END IF;
-    FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
-      IF has_column_privilege(r, 'library.laws', c, 'SELECT') THEN
-        missing := missing || format(' %s can read library.laws.%s — it is the locked date as a number; revoke it, the code never selects it;', r, c);
-      END IF;
-    END LOOP;
   END LOOP;
   IF to_regprocedure('library.hijri_date_sort_key(text)') IS NULL THEN
     missing := missing || ' library.hijri_date_sort_key(text) is missing (re-run 20261025_40);';
@@ -3498,18 +3501,24 @@ BEGIN
       missing := missing || ' postgres cannot EXECUTE hijri_date_sort_key — every law write from the SQL editor / psql fails (re-run 20261025_40);';
     END IF;
   END IF;
-  IF to_regclass('library.idx_laws_catalogue_order') IS NULL THEN
-    missing := missing || ' index library.idx_laws_catalogue_order is missing (re-run 20261025_40);';
+  IF to_regclass('library.idx_laws_catalogue_recency') IS NULL THEN
+    missing := missing || ' index library.idx_laws_catalogue_recency is missing (re-run 20261025_40);';
+  ELSE
+    def := pg_get_indexdef('library.idx_laws_catalogue_recency'::regclass);
+    IF def !~ '\(has_merged_regulation DESC NULLS LAST, catalogue_recency_key DESC NULLS LAST, title, slug\)$' THEN
+      missing := missing || format(' index library.idx_laws_catalogue_recency is %s, not the route''s order (drop it, re-run 20261025_40);', def);
+    END IF;
   END IF;
   IF missing <> '' THEN
     RAISE EXCEPTION '_verify: 20261025_40 is broken —%', missing;
   END IF;
   SELECT count(*) FILTER (WHERE has_merged_regulation),
-         count(*) FILTER (WHERE latest_amendment_key IS NOT NULL),
-         count(*) FILTER (WHERE issue_date_key IS NOT NULL),
-         count(*) FILTER (WHERE nullif(btrim(coalesce(issue_date_hijri, '')), '') IS NOT NULL)
-    INTO merged, amended, issued, dated FROM library.laws;
-  RAISE NOTICE '_verify: 20261025_40 OK — sort keys generated and locked; % merged law(s) lead the catalogue, % carry an amendment key, % an issue key (of % with any issue_date_hijri text — the rest are not a readable Hijri date)', merged, amended, issued, dated;
+         count(*) FILTER (WHERE catalogue_recency_key IS NOT NULL),
+         count(*) FILTER (WHERE library.hijri_date_sort_key(latest_update ->> 'date_hijri') IS NOT NULL),
+         count(*) FILTER (WHERE nullif(btrim(coalesce(issue_date_hijri, '')), '') IS NOT NULL
+                             OR nullif(btrim(coalesce(latest_update ->> 'date_hijri', '')), '') IS NOT NULL)
+    INTO merged, keyed, amended, dated FROM library.laws;
+  RAISE NOTICE '_verify: 20261025_40 OK — recency key generated and locked; % merged law(s) lead the catalogue; % law(s) carry a key (% of them with a readable amendment date), of % with any date text — the rest are not a readable Hijri date and sort last', merged, keyed, amended, dated;
 END $$;
 -- <<< verify:law_sort_key
 
