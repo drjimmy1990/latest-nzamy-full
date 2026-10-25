@@ -4,6 +4,7 @@ import { recordNotification } from "@/lib/notify";
 import { daysUntil, parseIsoDate } from "@/lib/services/deadlineEngine";
 import { toArabicDigits, countPhraseAr } from "@/lib/services/arabicCount";
 import { purgeCutoffIso } from "@/lib/services/attachmentPurge";
+import { storageObjectHeldByCaseDocument } from "@/lib/services/caseDocumentObject";
 import { deliverHearingReminders, queueHearingReminders } from "@/lib/hearingReminders";
 
 /**
@@ -335,7 +336,13 @@ export async function POST(request: NextRequest) {
       const rows = (purgeRows ?? []) as Array<{ id: string; storage_path: string | null }>;
       for (const row of rows) {
         try {
-          if (row.storage_path) {
+          // A case document may share this vault row's object: keep the
+          // bytes then, purge only the row (caseDocumentObject.ts, N3.9).
+          const held = row.storage_path ? await storageObjectHeldByCaseDocument(admin, row.storage_path) : false;
+          if (held) {
+            console.error("[cron/deadlines] purge kept the object — a case document points at it:", row.id);
+          }
+          if (row.storage_path && !held) {
             const { error: removeErr } = await admin.storage.from("documents").remove([row.storage_path]);
             if (removeErr) {
               console.error("[cron/deadlines] purge storage remove failed:", row.id, removeErr.message);
