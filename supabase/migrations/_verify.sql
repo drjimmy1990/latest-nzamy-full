@@ -4113,3 +4113,72 @@ begin
   raise notice '_verify: 20261026_65 OK — attachments / contract_versions written by a session stay in the writer''s own folder, attachments only on a request the caller filed or is assigned to, file / uploader / request fixed after insert';
 end $$;
 -- <<< verify:attachments_path_ownership
+
+-- >>> verify:document_shares_path_ownership — supabase/tests/rls/document_shares_path_ownership.test.sql
+-- 2026-10-26 — 20261026_66_document_shares_path_ownership.sql (security
+-- review, the document_shares half of finding 1). Read-only, safe to repeat.
+-- Before 66 runs it only reports (the hole is open); after, it raises when the
+-- session guard is missing, disabled, DEFINER or not the first BEFORE trigger,
+-- when the FOR ALL owner_write policy is back or document_shares carries any
+-- INSERT policy but 66's own, when can_share_attachment is missing / open to
+-- guests, or when a session can write lawyer_profiles.licence_image_path.
+-- Live shares that fail the rule are a WARNING (most likely a forged row).
+do $$
+declare first_before text; n int; r text;
+begin
+  if to_regclass('public.document_shares') is null then
+    raise notice '_verify: 20261026_66 — public.document_shares does not exist here; nothing to check';
+    return;
+  end if;
+  if to_regprocedure('public.guard_document_share_session_writes()') is null then
+    raise notice '_verify: 20261026_66 is not applied yet — a session can still insert a document_shares row with any document_path, which /api/v1/share/[token]/verify signs with the service role. Run 66_NOW_20261026_66_document_shares_path_ownership.sql';
+    return;
+  end if;
+  select tg.tgname into first_before
+    from pg_trigger tg
+   where tg.tgrelid = 'public.document_shares'::regclass and not tg.tgisinternal and (tg.tgtype & 2) = 2 and tg.tgenabled <> 'D'
+   order by tg.tgname limit 1;
+  if first_before is distinct from 'trg_00_document_shares_session_guard' then
+    raise exception '_verify: the share guard on public.document_shares is missing, disabled or not the first BEFORE trigger (first: %) (re-run 20261026_66)', first_before;
+  end if;
+  if (select prosecdef from pg_proc where oid = 'public.guard_document_share_session_writes()'::regprocedure) then
+    raise exception '_verify: the share guard is SECURITY DEFINER — it would let every session through (re-run 20261026_66)';
+  end if;
+  if exists (select 1 from pg_policy where polrelid = 'public.document_shares'::regclass and polname = 'document_shares_owner_write') then
+    raise exception '_verify: the FOR ALL policy document_shares_owner_write is back on public.document_shares (re-run 20261026_66)';
+  end if;
+  select count(*) into n from pg_policy where polrelid = 'public.document_shares'::regclass and polcmd = 'a';
+  if n <> 1 or not exists (select 1 from pg_policy where polrelid = 'public.document_shares'::regclass
+                            and polname = 'document_shares insert own share of own file') then
+    raise exception '_verify: public.document_shares carries % INSERT policies — an old one is back (re-run 20261026_66)', n;
+  end if;
+  r := 'public.can_share_attachment(text, text)';
+  if to_regprocedure(r) is null
+     or not (select prosecdef from pg_proc where oid = to_regprocedure(r))
+     or not has_function_privilege('authenticated', r, 'EXECUTE')
+     or has_function_privilege('anon', r, 'EXECUTE') then
+    raise exception '_verify: % is missing, not DEFINER, not callable by sessions, or open to guests (re-run 20261026_66)', r;
+  end if;
+  if exists (select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'lawyer_profiles' and column_name = 'licence_image_path') then
+    foreach r in array array['anon', 'authenticated'] loop
+      if has_column_privilege(r, 'public.lawyer_profiles', 'licence_image_path', 'INSERT, UPDATE') then
+        raise exception '_verify: % can write lawyer_profiles.licence_image_path — the admin queue signs it with the service role (re-run 20261016_10, then 20261019_20)', r;
+      end if;
+    end loop;
+  end if;
+  select count(*) into n
+    from public.document_shares s
+   where (s.expires_at is null or s.expires_at > now())
+     and not exists (select 1 from public.attachments a
+                      where a.id::text = s.document_id
+                        and a.storage_path = s.document_path
+                        and a.owner_user_id = s.owner_id
+                        and a.deleted_at is null
+                        and public.storage_path_in_folder(a.storage_path, a.owner_user_id));
+  if n > 0 then
+    raise warning '_verify: 20261026_66 — % live document_shares row(s) do not point at a live document of their own owner, in his folder (most likely forged; the deployed verify route refuses them). List: select s.id, s.owner_id, s.document_id, s.document_path, s.created_at, s.expires_at from public.document_shares s where (s.expires_at is null or s.expires_at > now()) and not exists (select 1 from public.attachments a where a.id::text = s.document_id and a.storage_path = s.document_path and a.owner_user_id = s.owner_id and a.deleted_at is null and public.storage_path_in_folder(a.storage_path, a.owner_user_id));', n;
+  end if;
+  raise notice '_verify: 20261026_66 OK — document_shares written by a session: own share of an own live document in its own folder, hash-only, owner / document / file / token fixed; licence_image_path not writable by a session';
+end $$;
+-- <<< verify:document_shares_path_ownership
