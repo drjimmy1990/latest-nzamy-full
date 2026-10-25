@@ -3987,3 +3987,73 @@ begin
   raise notice '_verify: 20261026_62 OK — tracking links: lifetimes (a stage link pauses with its stage), pause not delete, resume by maker or issuer (a manual pause: maker, pauser or lead), 4-digit unlock service-only with a pause at 20 wrong, unlock epoch on pause / resume / phone change, phone digits readable by no role, snapshot shows active links only';
 end $$;
 -- <<< verify:tracking_links_v2
+
+-- >>> verify:branding_vault — supabase/tests/rls/branding_vault.test.sql
+-- 2026-10-26 — 20261026_63_branding_vault.sql (D4, owner ٢٥٦) and the
+-- hand-applied supabase/storage_policies_branding.sql. Read-only, safe to
+-- repeat. Before 63 runs it only reports; after, it raises when RLS is off,
+-- the policy set changed (a DELETE / ALL policy, or not exactly 3), guests
+-- hold anything, sessions can write logo_path or the owner columns or delete
+-- a vault, the two helpers are not definer / not callable by sessions /
+-- callable by guests, or the bucket is public or accepts more than
+-- png/jpeg/webp up to 1 MB. The four Storage policies are a manual step
+-- (supabase_admin), so their absence is a WARNING.
+do $$
+declare r text; c text;
+begin
+  if to_regclass('public.branding_vaults') is null then
+    raise notice '_verify: 20261026_63 is not applied yet — the letterhead pages show «يتطلب تحديث قاعدة البيانات» and save nothing; run 63_BEFORE_DEPLOY_20261026_63_branding_vault.sql, then 64_AFTER_63_storage_policies_branding.sql as supabase_admin';
+    return;
+  end if;
+  if not (select relrowsecurity from pg_class where oid = 'public.branding_vaults'::regclass) then
+    raise exception '_verify: RLS is off on branding_vaults (re-run 20261026_63)';
+  end if;
+  if (select count(*) from pg_policy where polrelid = 'public.branding_vaults'::regclass) <> 3
+     or exists (select 1 from pg_policy where polrelid = 'public.branding_vaults'::regclass and polcmd in ('d', '*')) then
+    raise exception '_verify: branding_vaults does not carry exactly the 3 policies of 20261026_63 (re-run 20261026_63)';
+  end if;
+  foreach c in array array['SELECT', 'INSERT', 'UPDATE', 'DELETE'] loop
+    if has_table_privilege('anon', 'public.branding_vaults', c) then
+      raise exception '_verify: guests hold % on branding_vaults (re-run 20261026_63)', c;
+    end if;
+  end loop;
+  if has_table_privilege('authenticated', 'public.branding_vaults', 'DELETE') then
+    raise exception '_verify: sessions can DELETE a branding vault (re-run 20261026_63)';
+  end if;
+  foreach c in array array['logo_path', 'lawyer_user_id', 'firm_id'] loop
+    if has_column_privilege('authenticated', 'public.branding_vaults', c, 'UPDATE') then
+      raise exception '_verify: sessions can UPDATE branding_vaults.% — a vault could point at another owner''s logo (re-run 20261026_63)', c;
+    end if;
+  end loop;
+  if has_column_privilege('authenticated', 'public.branding_vaults', 'logo_path', 'INSERT') then
+    raise exception '_verify: sessions can INSERT branding_vaults.logo_path (re-run 20261026_63)';
+  end if;
+  foreach r in array array['public.can_manage_branding_vault(uuid, uuid)', 'public.can_manage_branding_object(text)'] loop
+    if to_regprocedure(r) is null
+       or not (select prosecdef from pg_proc where oid = to_regprocedure(r))
+       or not has_function_privilege('authenticated', r, 'EXECUTE')
+       or has_function_privilege('anon', r, 'EXECUTE') then
+      raise exception '_verify: % is missing, not SECURITY DEFINER, not callable by sessions, or open to guests (re-run 20261026_63)', r;
+    end if;
+  end loop;
+  if to_regclass('storage.buckets') is not null then
+    if not exists (select 1 from storage.buckets where id = 'branding') then
+      raise warning '_verify: 20261026_63 — the bucket «branding» is missing; logo uploads fail. Run 64_AFTER_63_storage_policies_branding.sql as supabase_admin.';
+    elsif exists (select 1 from storage.buckets where id = 'branding'
+                   and (public or coalesce(file_size_limit, 0) = 0 or file_size_limit > 1048576
+                        or allowed_mime_types is null
+                        or not (allowed_mime_types <@ array['image/png', 'image/jpeg', 'image/webp']))) then
+      raise exception '_verify: bucket «branding» is public, has no 1 MB limit, or accepts more than png/jpeg/webp (re-run 20261026_63 or storage_policies_branding.sql)';
+    end if;
+  end if;
+  if to_regclass('storage.objects') is not null
+     and (select count(*) from pg_policy p
+           where p.polrelid = 'storage.objects'::regclass
+             and p.polname in ('branding select own', 'branding insert own', 'branding update own', 'branding delete own')
+             and (coalesce(pg_get_expr(p.polqual, p.polrelid), '') || ' ' || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), ''))
+                 ~ 'can_manage_branding_object') <> 4 then
+    raise warning '_verify: 20261026_63 — the four owner-only Storage policies of bucket «branding» are not all there. The app still works (its routes use the service role after an RLS check), but a session calling the Storage API directly is not confined. Run 64_AFTER_63_storage_policies_branding.sql as supabase_admin.';
+  end if;
+  raise notice '_verify: 20261026_63 OK — branding vaults: one lawyer or one firm per row, read/write by the lawyer or the firm''s owner / managing partner / office admin only, logo_path server-only, no session delete, private bucket branding (1 MB, png/jpeg/webp)';
+end $$;
+-- <<< verify:branding_vault

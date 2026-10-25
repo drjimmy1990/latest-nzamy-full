@@ -140,3 +140,53 @@ It flags a re-run of 20261025_32 after this file, which would restore the v1 sna
 Server checks before the deploy:
 - Run `curl -sI https://nezamy.sa/track/test | grep -iE "cache-control|x-cache"` twice. It must show `no-store`, and the second run must not show `HIT`. If it shows `HIT`, add a `proxy_no_cache` / bypass rule for `/track/` before deploying.
 - nginx `real_ip` should trust Cloudflare's published ranges, so `X-Real-IP` is the visitor and not the edge. Otherwise an attacker can exhaust a shared edge's per-IP bucket.
+
+---
+
+## 63 + 64: خزنة الهوية والورق المروّس (D4، قرار المالك ٢٥٦)
+
+| الترتيب | الملف | بأي دور | متى |
+|---|---|---|---|
+| 1 | `63_BEFORE_DEPLOY_20261026_63_branding_vault.sql` | محرر SQL (postgres) | قبل نشر الكود |
+| 2 | `64_AFTER_63_storage_policies_branding.sql` | **`supabase_admin`** من الخادم (لا يكفي محرر SQL) | بعد 63 مباشرة |
+
+`63_…` نسخة مطابقة من `supabase/migrations/20261026_63_branding_vault.sql`، و`64_…` نسخة مطابقة من `supabase/storage_policies_branding.sql`.
+
+**الشرط المسبق:** جداول المكاتب من المرحلة الثانية (`firm_profiles` و`firm_members`، نُفِّذ ✓). يتوقف 63 برسالة واضحة إن لم يجدها. **لا يُستعمل** ملف المالك القديم `20261019_vault_lawyer_branding.sql`: يقرأ عموداً غير موجود (`profiles.role`)، و63 يحلّ محله.
+
+**ماذا يضيف 63:**
+- جدول `branding_vaults`: صف واحد لكل صاحب ورق مروّس — **إما** محامٍ فرد **وإما** مكتب محاماة، لا الاثنان معاً. فيه: اسم المكتب بالعربية والإنجليزية، العنوان، الهاتف، البريد، الموقع، لون التمييز (الافتراضي ذهبي المنصة `#C8A762`)، ومسار شعار المكتب إن رُفع.
+- **رقم الترخيص لا يُخزَّن هنا.** يُقرأ من الملف الموثّق (`lawyer_profiles` / `firm_profiles`) ولا يُطبع إلا إذا كانت حالة التوثيق «موثّق».
+- **من يقرأ ويكتب:**
+  - خزنة المحامي: المحامي نفسه فقط، وحسابه حساب محامٍ.
+  - خزنة المكتب: مالك المكتب، أو عضو **نشط** بدور «الشريك المدير» أو «مدير المكتب» — نفس من تسمح لهم لوحة المكتب بصفحة الهوية اليوم.
+  - لا أحد غيرهم: لا زميل، ولا موكل، ولا زائر، ولا المشرف.
+- **مسار الشعار** يكتبه الخادم وحده بعد التحقق من الصلاحية، لا الجلسة. ولا تحذف الجلسة الخزنة (المسح = تفريغ الحقول).
+- **حاوية تخزين `branding`** خاصة (غير عامة): ١ ميجابايت، PNG وJPEG وWebP فقط. **SVG مرفوض** لأنه قد يحمل نصاً برمجياً. الخادم يفحص أيضاً بصمة الملف الفعلية، لا امتداده فقط.
+- إن رفض المحرر الكتابة في `storage.buckets` تظهر رسالة تحذير لا خطأ، والملف 64 ينشئ الحاوية نفسها.
+- ينتهي بالرسالة `20261026_63 verify: OK`.
+
+**ماذا يضيف 64:** أربع سياسات تخزين للحاوية `branding` (قراءة/رفع/تعديل/حذف) تحصر كل جلسة في مجلد خزنتها: `u/<معرّف المحامي>/…` أو `f/<معرّف المكتب>/…`، ويحذف أي سياسة أخرى قد تطابق هذه الحاوية (يطبع قائمتها أولاً — احفظها). لا يمسّ سياسات `documents` ولا أي حاوية أخرى؛ وإعادة تنفيذ الملف 17 بعده لا تمسّ سياساته (مُختبَر). ينتهي بالرسالة `storage_policies_branding: OK`.
+
+```bash
+docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < 64_AFTER_63_storage_policies_branding.sql
+```
+
+**إن نُشر الكود قبل 63:** لا يتعطّل شيء. صفحتا «الورق المروّس» تعرضان «يتطلب تحديث قاعدة البيانات» ولا تحفظان شيئاً، ويبقى الخطاب قابلاً للطباعة بالاسم من الملف الشخصي دون شعار المكتب.
+**إن لم يُنفَّذ 64:** التطبيق يعمل (الرفع والعرض عبر الخادم بعد فحص الصلاحية)، لكن `_verify.sql` يُظهر تحذيراً حتى يُنفَّذ.
+
+`_verify.sql` (يدوياً، الأمر في قسم 62): يجب أن يظهر `_verify: 20261026_63 OK`.
+
+**للتراجع (يدوياً):** احذف سياسات التخزين الأربع `branding … own`، ثم الجدول `branding_vaults`، ثم الدوال `can_manage_branding_object` و`can_manage_branding_vault` و`branding_vaults_touch`. الحاوية `branding` تُفرَّغ وتُحذف من Studio إن أردت.
+
+### الاختبار (Docker محلي فقط)
+
+```bash
+T=supabase/tests/rls; M=supabase/migrations; bash $T/run.sh \
+  $T/prelude_storage_objects_stub.sql $T/prelude_storage_buckets_stub.sql \
+  $M/20261026_63_branding_vault.sql $M/20261026_63_branding_vault.sql \
+  supabase/storage_policies_branding.sql supabase/storage_policies_branding.sql \
+  $T/branding_vault.test.sql
+```
+
+**English summary.** Run `63_BEFORE_DEPLOY_20261026_63_branding_vault.sql` in the SQL editor before the deploy, then `64_AFTER_63_storage_policies_branding.sql` as `supabase_admin` (storage.objects is owned by supabase_storage_admin; the editor's postgres role gets 42501). 63 adds `branding_vaults` (exactly one of `lawyer_user_id` / `firm_id`), managed only by the lawyer himself or the firm's owner / active managing partner / active office admin (`can_manage_branding_vault`, SECURITY DEFINER); `logo_path` is server-only (column grants + a CHECK tying it to the vault's own folder); no session DELETE; licence numbers are not stored (read from the verified profile at print time). It upserts the private `branding` bucket (1 MB, png/jpeg/webp, no SVG). 64 adds four owner-only Storage policies over `u/<uid>/…` and `f/<firm id>/…` (`can_manage_branding_object`, false for any malformed name) and drops any other policy that could match the bucket. Code deployed before 63 shows «يتطلب تحديث قاعدة البيانات» and saves nothing; without 64 the app still works (service role after an RLS check) and `_verify` warns. The owner's old `20261019_vault_lawyer_branding.sql` must not be run.
