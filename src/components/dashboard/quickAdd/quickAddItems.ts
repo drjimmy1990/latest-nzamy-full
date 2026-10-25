@@ -5,9 +5,10 @@
  * creating any record without leaving the page, toggled by Alt+N.
  *
  * Every item opens a modal that already exists (AddCaseModal, AddHearingModal,
- * AddClientModal, AddTaskModal, AddDeadlineModal, NoteEditorModal). Each new
- * item is one entry in QUICK_ADD_ITEMS plus its renderer in QuickAdd.tsx (a
- * Record keyed by the id, so the compiler asks for it).
+ * AddClientModal, AddTaskModal, AddDeadlineModal, NoteEditorModal,
+ * LedgerEntryModal). Each new item is one entry in QUICK_ADD_ITEMS plus its
+ * renderer in QuickAdd.tsx (a Record keyed by the id, so the compiler asks for
+ * it).
  *
  * WHO SEES AN ITEM — no new rule is invented here; each item names the route
  * of the screen it belongs to and is shown only to someone who may open it:
@@ -25,7 +26,7 @@ import { getFirmRouteDecision } from "../../../constants/entityRouteAccess.ts";
 import { isConsultantBlockedPath } from "../../../lib/auth/practiceKind.ts";
 import type { AffiliationRole } from "@/hooks/useUser";
 
-export type QuickAddItemId = "case" | "hearing" | "client" | "task" | "deadline" | "note";
+export type QuickAddItemId = "case" | "hearing" | "client" | "task" | "deadline" | "note" | "ledger";
 export type QuickAddScope = "lawyer" | "firm";
 
 export interface QuickAddItemDef {
@@ -49,6 +50,9 @@ export const QUICK_ADD_ITEMS: readonly QuickAddItemDef[] = [
   // N3.4: the sticky notes wall sits on the dashboard home, which every firm
   // role and every practice kind opens.
   { id: "note", labelAr: "ملاحظة", hintAr: "ملاحظة لاصقة على حائط لوحتك", routes: { lawyer: "/dashboard/lawyer", firm: "/dashboard/firm" } },
+  // N3.7: an entry belongs to a case — the firm item follows the firm case
+  // files' rule; the lawyer's register lives in the activity log's third tab.
+  { id: "ledger", labelAr: "قيد صادر/وارد", hintAr: "مستند أو مراسلة صدرت أو وردت على قضية", routes: { lawyer: "/dashboard/lawyer/activity", firm: "/dashboard/firm/cases" } },
 ];
 
 export const QUICK_ADD_SHORTCUT_LABEL = "Alt+N";

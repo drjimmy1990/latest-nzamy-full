@@ -13,6 +13,7 @@ import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 import { apiGet, isSupabaseMode } from "@/lib/services/api";
 import { listFailed, listOk, listViewState } from "@/lib/services/listRead";
+import ActivityTabs from "./_components/ActivityTabs";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 // The first eight are the demo vocabulary; the last four are what real
@@ -266,7 +267,12 @@ function toActivity(d:ActivityApiItem):Activity{
 }
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
+// N3.7: the page is three tabs (ActivityTabs); this personal feed is the first.
 export default function ActivityLogPage() {
+  return <ActivityTabs personal={<PersonalActivityFeed />} />;
+}
+
+function PersonalActivityFeed() {
   const {isDark} = useTheme();
   const [search,setSearch] = useState("");
   const [typeFilter,setTypeFilter] = useState<ActivityType|"all">("all");

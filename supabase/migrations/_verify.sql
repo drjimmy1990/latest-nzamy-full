@@ -3423,3 +3423,45 @@ begin
   raise notice '_verify: 20261025_31 OK — dashboard_notes RLS with the case-worker and scope rule on every write; case_worker_ok service-only';
 end $$;
 -- <<< verify:dashboard_notes
+
+-- >>> verify:legal_ledger
+-- 2026-10-25 — 20261025_33_legal_ledger.sql (P4 N3.7). Read-only, safe to
+-- repeat. Before _33 runs it only reports; after, it raises when the register
+-- lost its RLS, its case/firm scope rule, its column locks, or gained a
+-- session DELETE.
+do $$
+declare bad text; n int; col text;
+begin
+  if to_regclass('public.legal_ledger_entries') is null then
+    raise notice '_verify: 20261025_33 is not applied yet — the outgoing/incoming register cannot save; run 14_BEFORE_DEPLOY_20261025_33_legal_ledger.sql';
+    return;
+  end if;
+  if not (select relrowsecurity from pg_class where oid = 'public.legal_ledger_entries'::regclass) then
+    raise exception '_verify: RLS is off on public.legal_ledger_entries (re-run 20261025_33)';
+  end if;
+  select count(*) into n from pg_policy where polrelid = 'public.legal_ledger_entries'::regclass;
+  if n <> 3 then
+    raise exception '_verify: public.legal_ledger_entries carries % policies, expected 3 (re-run 20261025_33)', n;
+  end if;
+  select string_agg(policyname, ', ') into bad
+    from pg_policies
+   where schemaname = 'public' and tablename = 'legal_ledger_entries' and cmd in ('INSERT', 'UPDATE')
+     and coalesce(with_check, '') not like '%case_row_scope_ok%';
+  if bad is not null then
+    raise exception '_verify: ledger write policies without case_row_scope_ok: % — an entry could be planted into another firm or case (re-run 20261025_33)', bad;
+  end if;
+  if has_table_privilege('authenticated', 'public.legal_ledger_entries', 'DELETE')
+     or exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'legal_ledger_entries' and cmd in ('DELETE', 'ALL')) then
+    raise exception '_verify: sessions can DELETE ledger entries — owner directive 5 says archive only (re-run 20261025_33)';
+  end if;
+  foreach col in array array['case_request_id', 'firm_id', 'created_by'] loop
+    if has_column_privilege('authenticated', 'public.legal_ledger_entries', col, 'UPDATE') then
+      raise exception '_verify: authenticated can UPDATE legal_ledger_entries.% — an entry could be moved (re-run 20261025_33)', col;
+    end if;
+  end loop;
+  if has_table_privilege('anon', 'public.legal_ledger_entries', 'SELECT') then
+    raise exception '_verify: anon can read the ledger (re-run 20261025_33)';
+  end if;
+  raise notice '_verify: 20261025_33 OK — legal_ledger_entries: RLS with case_row_scope_ok on every write, case/firm/writer locked, archive only, no guest read';
+end $$;
+-- <<< verify:legal_ledger

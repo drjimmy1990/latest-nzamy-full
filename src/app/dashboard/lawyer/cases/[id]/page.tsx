@@ -31,6 +31,7 @@ import AddDeadlineModal from "../../_components/AddDeadlineModal";
 import RecordStageOutcomeModal from "../../_components/RecordStageOutcomeModal";
 import DeadlineCard, { daysLeftChip } from "../../_components/DeadlineCard";
 import { ConsultantBlockedNote } from "@/components/dashboard/ConsultantGate";
+import CaseTimeline from "@/components/dashboard/caseTimeline/CaseTimeline";
 import dynamic from "next/dynamic";
 import {
   itemsOf,
@@ -246,6 +247,8 @@ const toArabicDigits = (n: number | string) => String(n).replace(/\d/g, d => AR_
 
 const TABS = [
   { id: "overview",  label: "نظرة عامة",  icon: Gavel },
+  // N3.7 (owner §٤٥ axis 1): hearings, stages, ledger entries and notes on one line.
+  { id: "timeline",  label: "السجل الزمني", icon: Clock },
   { id: "tasks",     label: "المهام",      icon: CheckSquare },
   { id: "hearings",  label: "الجلسات",     icon: CalendarCheck },
   { id: "stages",    label: "درجات التقاضي", icon: Scales },
@@ -2028,6 +2031,9 @@ export default function CaseDetailPage() {
               )}
             </div>
           )}
+
+          {/* ── السجل الزمني (N3.7) — its own component and route ── */}
+          {activeTab === "timeline" && <CaseTimeline caseId={id} isDark={isDark} />}
 
           {/* ── Notes ── */}
           {activeTab === "notes" && (
