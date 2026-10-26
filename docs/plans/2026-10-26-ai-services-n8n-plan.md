@@ -357,6 +357,29 @@ Webhook  POST nzamy-ai/<tool> · Authentication: Header Auth («NZAMY AI · inbo
 - a set of 10 sample questions or cases reviewed by a lawyer before the tool goes `live`.
 
 ### Wave 0: foundation (prerequisite for everything)
+
+> **Status 2026-10-27 (branch `feat/ai-wave0`):**
+>
+> **Built:**
+> - `ai_runs` and its money functions (Docker-tested, with a negative control);
+> - the run pipeline, the n8n client and the callback;
+> - the sweeper and the retention cron;
+> - the admin runs page with tool switches;
+> - `useAiRun`;
+> - the constant-time secret fixes and the contact secret;
+> - on n8n.asra3.com: three credentials (placeholders) and two **self-contained** test workflows, `echo-fast` and `echo-job`.
+>
+> **Moved out of wave 0:**
+> - `retrieval.ts` and the retrieval check: before wave 2, the first tool that reads the library;
+> - `pageCount.ts`: wave 3, the first tool that reads files;
+> - the sidebar «سؤال قانوني سريع» fix: wave 2, when `/ai/quick-answer` is built;
+> - the `communicate` redirect: wave 1, when the page is wired.
+>
+> **Not done, by decision:** the blanket `/ai/*` login gate. The tool pages are public in `sitemap.ts` for search, and the API already refuses guests (401) before anything is charged.
+>
+> **Still open for wave 0:** the timing check. Once the Anthropic key is in n8n, run 20 deep-tier calls with a full-size package and record p95.
+>
+> **Deviation from §4.2:** each tool's workflow is self-contained; there are no Execute-Workflow sub-workflows. The workflows will move from asra3 to our own n8n, where workflow ids change and sub-workflow links would break.
 **A0, app:**
 - **Data:** the `ai_runs` migration with `ai_start_run` and `ai_refund_run` (§3).
 - **Routes:** the routes in §2.4, including `/api/v1/ai/callback`.

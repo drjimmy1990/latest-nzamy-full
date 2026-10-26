@@ -4943,7 +4943,7 @@ end $$;
 -- repeat. Before 20261027_10 runs it only reports; after, it raises when a
 -- session could write runs or move points, or a function lost its settings.
 do $$
-declare fn text; role_name text; col text;
+declare fn text; role_name text; col text; fn_owner text;
 begin
   if to_regclass('public.ai_runs') is null then
     raise notice '_verify: 20261027_10 is not applied yet — no AI runs table'; return;
@@ -4988,6 +4988,15 @@ begin
                   and pg_get_constraintdef(oid) like '%usage_refund%') then
     raise exception '_verify: 20261027_10 — points_ledger_reason_check does not allow usage_refund: every AI refund fails (re-run 20261027_10)';
   end if;
+  -- ai_start_run / ai_fail_run run as their owner: the owner must be able to
+  -- run debit_points (service_role only), or every charged run fails 42501.
+  foreach fn in array array['public.ai_start_run(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb)',
+                            'public.ai_fail_run(uuid,text,text)'] loop
+    select pg_get_userbyid(proowner) into fn_owner from pg_proc where oid = to_regprocedure(fn);
+    if fn_owner is null or not has_function_privilege(fn_owner, 'public.debit_points(uuid,int,text,text)', 'EXECUTE') then
+      raise exception '_verify: 20261027_10 — %, the owner of %, cannot EXECUTE debit_points — every charged AI run fails; give them the same owner', coalesce(fn_owner, '(missing)'), fn;
+    end if;
+  end loop;
   raise notice '_verify: 20261027_10 OK — ai_runs own-row read without input / usage; only the server starts, fails, sweeps and clears runs; refunds allowed in the ledger';
 end $$;
 -- <<< verify:ai_runs

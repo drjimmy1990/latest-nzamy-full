@@ -22,8 +22,8 @@ The Docker test is `supabase/tests/rls/ai_runs.test.sql`. Its chain is in the fi
 | 4 | `_verify.sql` by hand (command below) | Server, `supabase_admin` | The line `_verify: 20261027_10 OK …` |
 | 5 | Paste the 3 secret values into the n8n credentials (below) | n8n.asra3.com | Just say "done". **Never paste the keys in chat** |
 | 6 | Tell me, and I switch the two test workflows on in n8n | — | — |
-| 7 | Run the round-trip test (below) | `/dashboard/admin/ai-usage` | A screenshot of the result and the runs table |
-| 8 | Add the two schedules in n8n (below) | n8n | — |
+| 7 | Add the two schedules in n8n (below), **before** any charge test: the sweeper is what refunds a run left stuck | n8n | — |
+| 8 | Run the round-trip test (below) | `/dashboard/admin/ai-usage` | A screenshot of the result and the runs table |
 
 ### Step 2: server env
 The values of the two keys are in **`.env.ai-keys`** at the root of your local checkout. It's ignored by git, and I generated it; it was never printed.
@@ -51,7 +51,12 @@ In n8n, go to **Credentials**, open each one, and replace the value:
 | `NZAMY AI · callback` | `X-Nzamy-Key` | `NZAMY_AI_CALLBACK_KEY` from `.env.ai-keys` |
 | `NZAMY Anthropic (x-api-key)` | `x-api-key` | your Anthropic API key (console.anthropic.com → API keys). **Set a monthly spend limit there too** |
 
-### Step 7: the round-trip test
+### Step 7: schedules in n8n
+Both are `POST` with header `x-cron-secret: <CRON_SECRET>`:
+- every 10 minutes: `https://nezamy.sa/api/v1/cron/ai-sweep` (fails and refunds runs stuck past their deadline);
+- daily at 03:30: `https://nezamy.sa/api/v1/cron/ai-sweep?task=retention` (clears inputs and outputs older than 90 days).
+
+### Step 8: the round-trip test
 1. In `/dashboard/admin/ai-usage`, set `echo-fast` and `echo-job` to **مفعّلة** and press **حفظ**.
 2. Type a word and press **echo-fast**. The answer should come back in about a second, and a row should appear as «نجح».
 3. Press **echo-job**. The status goes «running», then «done» within a few seconds; it arrives through the callback.
@@ -67,11 +72,6 @@ In n8n, go to **Credentials**, open each one, and replace the value:
 
    4. Expect `chargedPoints: 1`, and the balance drops to 9.
 6. When done, set both echo tools back to **متوقفة**, and `points_enforcement` back to off. Charging stays off during the free trial (decision D1).
-
-### Step 8: schedules in n8n
-Both are `POST` with header `x-cron-secret: <CRON_SECRET>`:
-- every 10 minutes: `https://nezamy.sa/api/v1/cron/ai-sweep` (fails and refunds runs stuck past their deadline);
-- daily at 03:30: `https://nezamy.sa/api/v1/cron/ai-sweep?task=retention` (clears inputs and outputs older than 90 days).
 
 ## Also in this deploy (no SQL)
 - `/api/v1/cron/deadlines` and `/api/v1/n8n/callback` now compare their secrets in constant time (`cronSecretMatches`).

@@ -305,7 +305,7 @@ grant execute on function public.ai_runs_retention() to service_role;
 
 -- ── 7. verify ────────────────────────────────────────────────────────────────
 do $$
-declare fn text;
+declare fn text; fn_owner text;
 begin
   foreach fn in array array[
     'public.ai_start_run(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb)',
@@ -322,6 +322,15 @@ begin
      or has_column_privilege('authenticated', 'public.ai_runs', 'input', 'SELECT') then
     raise exception '20261027_10 verify: authenticated can write ai_runs or read its input';
   end if;
+  -- ai_start_run / ai_fail_run run as their owner: the owner must be able to
+  -- run debit_points (service_role only), or every charged run fails 42501.
+  foreach fn in array array['public.ai_start_run(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb)',
+                            'public.ai_fail_run(uuid,text,text)'] loop
+    select pg_get_userbyid(proowner) into fn_owner from pg_proc where oid = to_regprocedure(fn);
+    if fn_owner is null or not has_function_privilege(fn_owner, 'public.debit_points(uuid,int,text,text)', 'EXECUTE') then
+      raise exception '20261027_10 verify: %, the owner of %, cannot EXECUTE debit_points — every charged AI run fails; give them the same owner', coalesce(fn_owner, '(missing)'), fn;
+    end if;
+  end loop;
   raise notice '20261027_10 verify: OK — ai_runs (% rows), start / fail / sweep / retention service role only; points_enforcement = %',
     (select count(*) from public.ai_runs),
     coalesce((select value::text from public.platform_settings where key = 'points_enforcement'), 'no row');
