@@ -171,3 +171,8 @@ test("isAttachmentsZipRoute: the ZIP download (D3), GET and HEAD, the exact path
   assert.equal(isAttachmentsZipRoute("GET", "/api/v1/attachments/zipper"), false);
   assert.equal(isGeneralRateLimitedApiPath("GET", "/api/v1/attachments/zip"), false, "reads are not in the general bucket");
 });
+test("isGeneralRateLimitedApiPath: n8n's AI callback is exempt, the browser's AI runs route is not", () => {
+  assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/ai/callback"), false);
+  assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/ai/runs"), true);
+  assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/ai/callback/x"), true);
+});

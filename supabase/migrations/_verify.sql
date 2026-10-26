@@ -4937,3 +4937,57 @@ begin
   raise notice '_verify: 20261026_72 OK — attachments / contract_versions keep the folder their file was written in; moved, kept and orphaned-uploader files stay servable; a session cannot register a path another account''s row holds; 70''s movers owned by a trusted role';
 end $$;
 -- <<< verify:file_folder_owner
+
+-- >>> verify:ai_runs — supabase/tests/rls/ai_runs.test.sql
+-- 2026-10-27 — 20261027_10_ai_runs.sql (AI services wave 0). Read-only, safe to
+-- repeat. Before 20261027_10 runs it only reports; after, it raises when a
+-- session could write runs or move points, or a function lost its settings.
+do $$
+declare fn text; role_name text; col text;
+begin
+  if to_regclass('public.ai_runs') is null then
+    raise notice '_verify: 20261027_10 is not applied yet — no AI runs table'; return;
+  end if;
+  foreach fn in array array[
+    'public.ai_start_run(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb)',
+    'public.ai_fail_run(uuid,text,text)', 'public.ai_sweep_runs()', 'public.ai_runs_retention()'] loop
+    if to_regprocedure(fn) is null then
+      raise exception '_verify: 20261027_10 — % is missing (re-run 20261027_10)', fn;
+    end if;
+    if not exists (select 1 from pg_proc where oid = to_regprocedure(fn) and prosecdef and proconfig @> array['search_path=""']) then
+      raise exception '_verify: 20261027_10 — % is not SECURITY DEFINER with search_path '''' (re-run 20261027_10)', fn;
+    end if;
+    foreach role_name in array array['anon','authenticated'] loop
+      if exists (select 1 from pg_roles where rolname = role_name) and has_function_privilege(role_name, fn, 'EXECUTE') then
+        raise exception '_verify: 20261027_10 — % can EXECUTE % (re-run 20261027_10)', role_name, fn;
+      end if;
+    end loop;
+    if exists (select 1 from pg_roles where rolname = 'service_role') and not has_function_privilege('service_role', fn, 'EXECUTE') then
+      raise exception '_verify: 20261027_10 — service_role cannot EXECUTE %: every AI run fails (re-run 20261027_10)', fn;
+    end if;
+  end loop;
+  if not (select relrowsecurity from pg_class where oid = 'public.ai_runs'::regclass) then
+    raise exception '_verify: 20261027_10 — RLS is off on public.ai_runs (re-run 20261027_10)';
+  end if;
+  foreach role_name in array array['anon','authenticated'] loop
+    if exists (select 1 from pg_roles where rolname = role_name)
+       and (has_table_privilege(role_name, 'public.ai_runs', 'INSERT') or has_table_privilege(role_name, 'public.ai_runs', 'UPDATE')
+            or has_table_privilege(role_name, 'public.ai_runs', 'DELETE')) then
+      raise exception '_verify: 20261027_10 — % can write public.ai_runs (re-run 20261027_10)', role_name;
+    end if;
+  end loop;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    foreach col in array array['input','usage','model','source_ids','error_message'] loop
+      if has_column_privilege('authenticated', 'public.ai_runs', col, 'SELECT') then
+        raise exception '_verify: 20261027_10 — authenticated can read ai_runs.% (re-run 20261027_10)', col;
+      end if;
+    end loop;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'points_ledger_reason_check'
+                  and conrelid = 'public.points_ledger'::regclass
+                  and pg_get_constraintdef(oid) like '%usage_refund%') then
+    raise exception '_verify: 20261027_10 — points_ledger_reason_check does not allow usage_refund: every AI refund fails (re-run 20261027_10)';
+  end if;
+  raise notice '_verify: 20261027_10 OK — ai_runs own-row read without input / usage; only the server starts, fails, sweeps and clears runs; refunds allowed in the ledger';
+end $$;
+-- <<< verify:ai_runs

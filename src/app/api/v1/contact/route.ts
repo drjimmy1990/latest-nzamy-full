@@ -77,7 +77,12 @@ export async function POST(request: NextRequest) {
       try {
         await fetch(`${base.replace(/\/$/, "")}/contact`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            // The same shared secret as every other outbound n8n call (src/lib/n8n/dispatch.ts).
+            ...(process.env.N8N_WEBHOOK_SECRET ? { "X-Webhook-Secret": process.env.N8N_WEBHOOK_SECRET } : {}),
+          },
+          signal: AbortSignal.timeout(5000),
           body: JSON.stringify({
             name: name || null,
             email,

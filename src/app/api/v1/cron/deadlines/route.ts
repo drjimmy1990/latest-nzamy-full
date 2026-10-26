@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
+import { cronSecretMatches } from "@/lib/payments/fulfillDecision";
 import { recordNotification } from "@/lib/notify";
 import { daysUntil, parseIsoDate } from "@/lib/services/deadlineEngine";
 import { toArabicDigits, countPhraseAr } from "@/lib/services/arabicCount";
@@ -129,8 +130,7 @@ function buildDeadlineCopy(
 }
 
 export async function POST(request: NextRequest) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret || request.headers.get("x-cron-secret") !== secret) {
+  if (!cronSecretMatches(request.headers.get("x-cron-secret"), process.env.CRON_SECRET)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

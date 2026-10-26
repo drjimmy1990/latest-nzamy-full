@@ -26,5 +26,5 @@ test("hearing delivery runs only after a queue step that re-checked the recipien
 });
 
 test("the run still fails closed on the cron secret", () => {
-  assert.match(src, /if \(!secret \|\| request\.headers\.get\("x-cron-secret"\) !== secret\)/);
+  assert.match(src, /if \(!cronSecretMatches\(request\.headers\.get\("x-cron-secret"\), process\.env\.CRON_SECRET\)\)/);
 });

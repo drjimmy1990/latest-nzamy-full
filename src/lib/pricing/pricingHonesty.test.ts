@@ -466,9 +466,12 @@ test("T1.6: the invite-code copy promises the library for 30 days, not Pro or sm
   assert.match(subscribe, /If you have an invitation code, it opens the full legal library for 30 days as soon as you redeem it — no waiting\./);
 });
 
-test("P1 item 1: the admin AI-usage pages are honest coming-soon pages", () => {
+test("P1 item 1: the admin AI-usage pages show real runs or say they are coming", () => {
+  // AI wave 0 (20261027_10): the main page now reads real rows from ai_runs.
+  const main = code("app/dashboard/admin/ai-usage/page.tsx");
+  assert.match(main, /fetch\("\/api\/v1\/admin\/ai-runs"/);
+  assert.doesNotMatch(main, /TOP_CONSUMERS|Telemetry/, "the AI-usage page: invented figures");
   for (const path of [
-    "app/dashboard/admin/ai-usage/page.tsx",
     "app/dashboard/admin/ai-usage/credits/page.tsx",
     "app/dashboard/admin/ai-usage/reports/page.tsx",
   ]) {

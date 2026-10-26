@@ -4,6 +4,8 @@ import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
 import { founderCampaignSettingIssue } from "@/lib/pricing/campaigns";
+import { aiToolsSettingIssue } from "@/lib/ai/aiToolsConfig";
+import { AI_TOOLS } from "@/lib/ai/tools";
 import {
   billingCompanySettingIssue,
   isBillingCompanyComplete,
@@ -31,6 +33,10 @@ const ALLOWED_SETTINGS_KEYS = [
   "billing_company",
   // Moyasar B1: boolean switch for points enforcement.
   "points_enforcement",
+  // AI wave 0 (20261027_10): per-tool runtime switches —
+  // {"<tool>": {"mode": "off"|"review"|"live", "daily_limit": int}}.
+  // A tool not named keeps its default in src/lib/ai/tools.ts ("off").
+  "ai_tools",
 ] as const;
 
 /**
@@ -93,6 +99,8 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   // typo would silently stop the campaign — refuse it here instead.
   // Pure, so src/lib/pricing/campaigns.test.ts covers it.
   founder_campaign: founderCampaignSettingIssue,
+  // Pure, so src/lib/ai/runCore.test.ts covers it.
+  ai_tools: (value) => aiToolsSettingIssue(value, Object.keys(AI_TOOLS)),
 };
 
 /** A read error or a missing row counts as incomplete, so live stays refused. */

@@ -178,7 +178,7 @@ export const ADMIN_SIDEBAR: SidebarGroup[] = [
   {
     title: "استخدام الذكاء الاصطناعي", titleEn: "AI Usage",
     items: [
-      { label: "إحصائيات AI",         labelEn: "AI Analytics",    href: "/dashboard/admin/ai-usage",              icon: "Robot", badge: "قريباً" },
+      { label: "تشغيلات AI",         labelEn: "AI Runs",         href: "/dashboard/admin/ai-usage",              icon: "Robot" },
       { label: "استهلاك الذكاء الاصطناعي",labelEn: "AI Usage",      href: "/dashboard/admin/ai-usage/credits",       icon: "Coins", badge: "قريباً" },
       { label: "تقارير الجودة",       labelEn: "Quality",           href: "/dashboard/admin/ai-usage/reports",       icon: "ChartLineUp", badge: "قريباً" },
     ],

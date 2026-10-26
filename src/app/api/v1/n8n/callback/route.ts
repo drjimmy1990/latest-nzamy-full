@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { recordEvent } from "@/lib/events";
+import { cronSecretMatches } from "@/lib/payments/fulfillDecision";
 
 const VALID_STATUSES = new Set(["sent", "failed", "read"]);
 
@@ -11,14 +12,14 @@ const VALID_STATUSES = new Set(["sent", "failed", "read"]);
  * session. Fails CLOSED — a missing/unset `N8N_WEBHOOK_SECRET` rejects every
  * call rather than accepting unauthenticated ones (an empty string is also
  * falsy, so `.env.example`'s default of `N8N_WEBHOOK_SECRET=` rejects too).
+ * Compared through cronSecretMatches (SHA-256 + timingSafeEqual).
  *
  * `orderId` and `status` are only ever attributed to `request_events` via
  * `actorName: "n8n"` — there is no `actorUserId` because n8n is not an
  * `auth.users` row (see the note on `recordEvent` in `src/lib/events.ts`).
  */
 export async function POST(request: NextRequest) {
-  const secret = process.env.N8N_WEBHOOK_SECRET;
-  if (!secret || request.headers.get("x-webhook-secret") !== secret) {
+  if (!cronSecretMatches(request.headers.get("x-webhook-secret"), process.env.N8N_WEBHOOK_SECRET)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

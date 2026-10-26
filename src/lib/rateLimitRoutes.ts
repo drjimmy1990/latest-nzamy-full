@@ -125,7 +125,12 @@ export function libraryReadClientKey(
  * six times) and is guarded by the webhook secret instead. The exact path only
  * — the rest of /api/v1/payments/ (checkout included) stays limited.
  */
-export const RATE_LIMIT_EXEMPT_API_PATHS: ReadonlySet<string> = new Set(["/api/v1/payments/webhook"]);
+export const RATE_LIMIT_EXEMPT_API_PATHS: ReadonlySet<string> = new Set([
+  "/api/v1/payments/webhook",
+  // n8n's AI job results (20261027_10): one address, key-authenticated;
+  // throttling it would leave paid runs to time out and be refunded.
+  "/api/v1/ai/callback",
+]);
 
 /**
  * True for any mutating request (POST/PUT/PATCH/DELETE) under /api/v1, except
