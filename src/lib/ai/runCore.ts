@@ -140,7 +140,7 @@ function sanitizeUsage(raw: unknown): Record<string, unknown> | null {
 
 export async function settleRunWith(
   admin: SupabaseClient,
-  ctx: { spec: AiToolSpec; runId: string; sources: SourceMap; review: boolean },
+  ctx: { spec: AiToolSpec; runId: string; sources: SourceMap; review: boolean; input: Record<string, unknown> },
   raw: unknown,
 ): Promise<SettleOutcome> {
   const fail = async (code: string, message: string): Promise<SettleOutcome> => {
@@ -156,7 +156,7 @@ export async function settleRunWith(
   }
   if (raw.status !== "succeeded") return fail("bad_reply", "the result has no final status");
 
-  const output = ctx.spec.validateOutput(raw.output);
+  const output = ctx.spec.validateOutput(raw.output, ctx.input);
   if (!output) return fail("schema_invalid", "the output does not match the tool's shape");
 
   const citations = mapCitations(raw.citations, ctx.sources);
@@ -286,7 +286,11 @@ export async function startRunWith(
     class: spec.class,
     model_tier: spec.tier,
     locale: "ar",
-    actor: { role: actor.userType, practice_kind: actor.practiceKind, display_name: null },
+    actor: {
+      role: actor.userType,
+      practice_kind: actor.practiceKind,
+      display_name: spec.sendsDisplayName ? actor.displayName : null,
+    },
     input: checked.input,
     sources: [],
     case: null,
@@ -323,7 +327,7 @@ export async function startRunWith(
   // A job tool must answer 202; callN8n never returns a result for async.
   const settled = await settleRunWith(
     admin,
-    { spec, runId: run.run_id, sources, review: runtime.mode === "review" },
+    { spec, runId: run.run_id, sources, review: runtime.mode === "review", input: checked.input },
     outcome.result,
   );
   if (settled.kind === "succeeded") {
@@ -353,14 +357,16 @@ export async function callbackWith(admin: SupabaseClient, body: unknown): Promis
   const runId = body.run_id;
   const { data, error } = await admin
     .from("ai_runs")
-    .select("id, tool, status, class, source_ids")
+    .select("id, tool, status, class, source_ids, input")
     .eq("id", runId)
     .maybeSingle();
   if (error) {
     console.error("[ai/callback] run read failed:", runId, error.code, error.message);
     return { status: 503, body: { error: "unavailable" } };
   }
-  const run = data as { id: string; tool: string; status: string; class: string; source_ids: unknown } | null;
+  const run = data as
+    | { id: string; tool: string; status: string; class: string; source_ids: unknown; input: unknown }
+    | null;
   if (!run) return { status: 404, body: { error: "unknown run" } };
 
   if (body.status === "progress") {
@@ -382,6 +388,7 @@ export async function callbackWith(admin: SupabaseClient, body: unknown): Promis
   const { data: setting } = await admin.from("platform_settings").select("value").eq("key", "ai_tools").maybeSingle();
   const review = resolveToolRuntime(spec, (setting as { value?: unknown } | null)?.value ?? null).mode === "review";
   const sources = (isPlainObject(run.source_ids) ? run.source_ids : {}) as SourceMap;
-  const settled = await settleRunWith(admin, { spec, runId, sources, review }, body);
+  const input = (isPlainObject(run.input) ? run.input : {}) as Record<string, unknown>;
+  const settled = await settleRunWith(admin, { spec, runId, sources, review, input }, body);
   return { status: 200, body: { ok: true, final: settled.kind === "succeeded" ? settled.status : settled.kind } };
 }

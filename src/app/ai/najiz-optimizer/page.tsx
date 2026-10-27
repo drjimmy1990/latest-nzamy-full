@@ -12,7 +12,7 @@ import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
 import ConsultantGate from "@/components/dashboard/ConsultantGate";
-import { MOCK_DRAFT } from "@/components/draft/draftConstants";
+import { useAiRun } from "@/hooks/useAiRun";
 
 // ─── Najiz Optimizer Core Logic ───────────────────────────────────────────────
 // Implements: Najiz_Legal_Memo_Optimizer_v5
@@ -139,16 +139,25 @@ function NajizOptimizerPage() {
   const [result,    setResult]        = useState<string | null>(null);
   const [report,    setReport]        = useState<OptimizationReport | null>(null);
   const [copied,    setCopied]        = useState(false);
+  const [aiShortened, setAiShortened] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // R5 (plan §5 L2): only when the free rules leave the memo over the limit.
+  // The server refuses a memo already within 9,000 characters, and fails (and
+  // refunds) any result that drops an article or a numbered reference.
+  const ai = useAiRun();
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get("source") === "draft") {
-        setInputText(MOCK_DRAFT);
-      }
-    }
-  }, []);
+    const text = ai.phase === "done" && typeof ai.output?.text === "string" ? ai.output.text : null;
+    if (!text) return;
+    setResult(text);
+    setReport((r) => (r ? { ...r, finalLength: text.length, isUnderLimit: text.length <= MAX_CHARS } : r));
+    setAiShortened(true);
+  }, [ai.phase, ai.output]);
+
+  function handleShorten() {
+    if (!result || ai.busy) return;
+    void ai.start("najiz-optimizer", { text: result });
+  }
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/70"
@@ -162,6 +171,8 @@ function NajizOptimizerPage() {
     const { result: r, report: rep } = runNajizOptimizer(inputText);
     setResult(r);
     setReport(rep);
+    setAiShortened(false);
+    ai.reset();
   }
 
   function handleCopy() {
@@ -175,6 +186,8 @@ function NajizOptimizerPage() {
     setInputText("");
     setResult(null);
     setReport(null);
+    setAiShortened(false);
+    ai.reset();
     setTimeout(() => textareaRef.current?.focus(), 50);
   }
 
@@ -204,7 +217,7 @@ function NajizOptimizerPage() {
               </span>
             </div>
             <p className={`text-[13px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-              منقّح نصوص بقواعد ثابتة لمذكرات ناجز، لا يستخدم الذكاء الاصطناعي ولا يعيد الصياغة — إزالة الرموز · حذف الحقول الفارغة · ضبط الحروف
+              منقّح نصوص بقواعد ثابتة لمذكرات ناجز، مجاناً ودون ذكاء اصطناعي — إزالة الرموز · حذف الحقول الفارغة · ضبط الحروف. وإن بقي النص فوق الحد فلك أن تطلب اختصاره بالذكاء الاصطناعي
             </p>
           </div>
         </div>
@@ -221,7 +234,7 @@ function NajizOptimizerPage() {
         <div className={`text-[12px] space-y-0.5 ${isDark ? "text-blue-300" : "text-blue-700"}`}>
           <p className="font-bold">القواعد المُطبَّقة (Najiz_Legal_Memo_Optimizer_v5)</p>
           <p className={isDark ? "text-blue-400/70" : "text-blue-600/80"}>
-            R1 إزالة الرموز غير المسموح بها · R2 حذف الإيموجي · R3 حذف الحقول الفارغة · R4 تنسيق القوائم · R5 تقليص اختياري إذا تجاوز ١٠,٠٠٠ حرف
+            R1 إزالة الرموز غير المسموح بها · R2 حذف الإيموجي · R3 حذف الحقول الفارغة · R4 تنسيق القوائم · R5 اختصار اختياري بالذكاء الاصطناعي إذا بقي النص فوق ١٠,٠٠٠ حرف
           </p>
         </div>
       </motion.div>
@@ -325,7 +338,30 @@ function NajizOptimizerPage() {
                   {report.wasSummarized && (
                     <div className={`flex items-start gap-2 rounded-xl p-2.5 border text-[11px] ${isDark ? "border-amber-700/25 bg-amber-900/10 text-amber-400" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
                       <Warning size={13} weight="fill" className="flex-shrink-0 mt-0.5" />
-                      تم تفعيل بروتوكول الاختصار R5 — تمت إزالة العبارات الحشو مع الحفاظ الكامل على النصوص النظامية والمبادئ القضائية
+                      حُذفت عبارات ربط متكررة (وحيث إن، ولما كان…) لتقليص النص، دون مساس بالنصوص النظامية والمبادئ القضائية
+                    </div>
+                  )}
+                  {!report.isUnderLimit && !aiShortened && (
+                    <div className={`rounded-xl border p-3 space-y-2 ${isDark ? "border-[#C8A762]/25 bg-[#C8A762]/5" : "border-amber-200 bg-amber-50/60"}`}>
+                      <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>ما زال النص فوق {MAX_CHARS.toLocaleString()} حرف</p>
+                      <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                        R5: يختصره الذكاء الاصطناعي إلى {TARGET_CHARS.toLocaleString()} حرف أو أقل، ويُرفض الناتج وتُعاد نقاطك إن سقطت منه أي مادة أو رقم حكم أو قرار. يُرسَل النص إلى مزوّد ذكاء اصطناعي خارج المملكة.
+                      </p>
+                      <button onClick={handleShorten} disabled={ai.busy}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#0B3D2E] text-white text-[12px] font-bold shadow-sm disabled:opacity-50">
+                        <Sparkle size={13} weight="fill" className="text-[#C8A762]" />
+                        {ai.busy ? "جارٍ الاختصار…" : "اختصر بالذكاء الاصطناعي (٥ نقاط)"}
+                      </button>
+                      {ai.phase === "error" && ai.error && (
+                        <p role="alert" className={`text-[11px] ${isDark ? "text-red-400" : "text-red-600"}`}>{ai.error}</p>
+                      )}
+                    </div>
+                  )}
+                  {aiShortened && (
+                    <div className={`flex items-start gap-2 rounded-xl p-2.5 border text-[11px] ${isDark ? "border-emerald-700/25 bg-emerald-900/10 text-emerald-400" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
+                      <CheckCircle size={13} weight="fill" className="flex-shrink-0 mt-0.5" />
+                      اختُصر النص بالذكاء الاصطناعي (R5)، وتحقق النظام من بقاء كل المراجع
+                      {Array.isArray(ai.output?.kept_refs) ? ` (${ai.output.kept_refs.length})` : ""}. راجعه قبل رفعه.
                     </div>
                   )}
                 </div>

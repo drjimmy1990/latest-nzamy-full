@@ -2,13 +2,13 @@
 
 import { motion } from "framer-motion";
 import { useState } from "react";
-import BetaReviewGate from "@/components/BetaReviewGate";
 import {
   Envelope, PencilSimple, Sparkle, Copy,
   CheckCircle, CaretDown, WhatsappLogo, ArrowRight,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
+import { useAiRun } from "@/hooks/useAiRun";
 
 // ─── Communication types ──────────────────────────────────────────────────────
 
@@ -22,31 +22,6 @@ const COMM_TYPES = [
 
 const TONES = ["رسمي جداً", "رسمي", "دبلوماسي", "حازم", "تسوية ودية"];
 
-// ─── Mock output ──────────────────────────────────────────────────────────────
-
-const MOCK_LETTER = `السيد/ [اسم المستلم] المحترم
-
-تحية طيبة وبعد،
-
-يسعدني التواصل معكم بخصوص [موضوع الرسالة]، وذلك إشارةً إلى [المرجع إن وجد].
-
-نودّ إفادتكم بأن شركتنا _الزهراني للمقاولات_ قد استكملت مراجعة الملف المقدّم من سيادتكم، وخلصت إلى ما يلي:
-
-أولاً: [النقطة الأولى بوضوح وإيجاز]
-ثانياً: [النقطة الثانية]
-ثالثاً: [النقطة الثالثة إن وجدت]
-
-لذا نرجو التكرم بالردّ خلال مدة أقصاها [المدة] من تاريخ هذا الخطاب.
-
-ولمزيد من التنسيق، يُرجى التواصل على البريد الإلكتروني: legal@zahrani.sa
-
-وتفضّلوا بقبول وافر التحية والتقدير،
-
-[الاسم]
-[المسمى الوظيفي]
-[الشركة]
-[التاريخ]`;
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AICommunicatePage() {
@@ -56,17 +31,22 @@ export default function AICommunicatePage() {
   const [recipient, setRecipient] = useState("");
   const [subject, setSubject] = useState("");
   const [context, setContext] = useState("");
-  const [output, setOutput] = useState<string | null>(null);
-  const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
+  // The real tool (plan §5 L1): the server checks the role, the input and the
+  // points, then n8n writes the message. No canned letter, no timer.
+  const run = useAiRun();
+  const generating = run.busy;
+  const output = run.phase === "done" && typeof run.output?.text === "string" ? run.output.text : null;
 
-  async function generate() {
-    if (!context.trim()) return;
-    setGenerating(true);
-    setOutput(null);
-    await new Promise(r => setTimeout(r, 2000));
-    setOutput(MOCK_LETTER);
-    setGenerating(false);
+  function generate() {
+    if (!context.trim() || generating) return;
+    void run.start("communicate", {
+      type: commType,
+      tone,
+      recipient: recipient.trim() || null,
+      subject: subject.trim() || null,
+      body: context.trim(),
+    });
   }
 
   const selectedType = COMM_TYPES.find(t => t.id === commType)!;
@@ -131,6 +111,7 @@ export default function AICommunicatePage() {
               <textarea value={context} onChange={e => setContext(e.target.value)}
                 placeholder="مثال: أريد إرسال إنذار رسمي لعميل متأخر في السداد بمبلغ ٢٢ ألف ريال منذ ٦ أشهر، وطلب السداد خلال أسبوعين وإلا سيتم اللجوء للقضاء..."
                 rows={4}
+                maxLength={3000}
                 className={`w-full resize-none rounded-xl border p-3 text-[13px] outline-none leading-relaxed ${isDark ? "border-white/[0.08] bg-zinc-800/60 text-zinc-200 placeholder:text-zinc-600 focus:border-[#C8A762]/40" : "border-zinc-200 bg-zinc-50 text-zinc-800 placeholder:text-zinc-400 focus:border-[#0B3D2E]/40"}`}
               />
             </div>
@@ -140,6 +121,12 @@ export default function AICommunicatePage() {
               <Sparkle size={14} weight="fill" className="text-[#C8A762]" />
               {generating ? "جارٍ الكتابة..." : "اكتب الرسالة"}
             </motion.button>
+            {run.phase === "error" && run.error && (
+              <p role="alert" className={`text-[12px] leading-relaxed ${isDark ? "text-red-400" : "text-red-600"}`}>{run.error}</p>
+            )}
+            <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+              يُرسَل ما تكتبه إلى مزوّد ذكاء اصطناعي خارج المملكة لمعالجته؛ لا تُدخل بيانات شخصية لا تلزم الرسالة.
+            </p>
           </div>
         </div>
 
@@ -160,9 +147,10 @@ export default function AICommunicatePage() {
                     {copied ? "تم" : "نسخ"}
                   </motion.button>
                   {commType === "wa" && (
-                    <button className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] bg-[#25D366] text-white font-semibold">
-                      <WhatsappLogo size={11} /> أرسل
-                    </button>
+                    <a href={`https://wa.me/?text=${encodeURIComponent(output)}`} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] bg-[#25D366] text-white font-semibold">
+                      <WhatsappLogo size={11} /> أرسل عبر واتساب
+                    </a>
                   )}
                 </div>
               )}
@@ -184,7 +172,7 @@ export default function AICommunicatePage() {
                   </p>
                 </div>
               ) : (
-                <BetaReviewGate toolId="communicate.result" toolName="المتحدث الذكي" reviewScope="legal-data">
+                <>
                   <div className={`rounded-2xl p-5 ${isDark ? "bg-zinc-800/40 border border-white/[0.05]" : "bg-zinc-50 border border-zinc-100"}`}>
                     <pre className={`whitespace-pre-wrap font-sans text-[13px] leading-relaxed ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{output}</pre>
                   </div>
@@ -195,7 +183,10 @@ export default function AICommunicatePage() {
                     showHumanReview
                     className="justify-start mt-2"
                   />
-                </BetaReviewGate>
+                  {run.chargedPoints > 0 && (
+                    <p className={`mt-2 text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>خُصمت {run.chargedPoints} نقاط</p>
+                  )}
+                </>
               )}
             </div>
           </div>

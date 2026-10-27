@@ -245,3 +245,88 @@ test("a job tool is refused before any charge when there is no https callback UR
   assert.deepEqual(rpcs(log), []);
   assert.equal(seen.length, 0);
 });
+
+// ── wave 1 ───────────────────────────────────────────────────────────────────
+
+const W1_ON = { communicate: { mode: "live" }, "najiz-optimizer": { mode: "live" } };
+const MEMO = `${"وحيث إن المدعى عليه أخل بالتزامه التعاقدي إخلالاً جسيماً. ".repeat(160)}استناداً إلى المادة (٧٧) من نظام العمل والحكم رقم ٤٤٣٠١٢٣`;
+
+test("communicate: the letter tool signs with the user's name, the echo tool does not", async () => {
+  const actor = { ...LAWYER, displayName: "أ. سارة" };
+  const seen: Array<{ path: string; body: Record<string, unknown> }> = [];
+  const { client, log } = db({ setting: W1_ON });
+  const input = { type: "letter", tone: "رسمي", recipient: " شركة النور ", subject: "", body: "طلب سداد المستحقات" };
+  const r = await startRunWith(client as never, deps(okReply({ text: "السادة شركة النور المحترمين" }), seen as never), actor, body({ tool: "communicate", input }));
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.output, { text: "السادة شركة النور المحترمين" });
+  assert.equal(seen[0].path, "nzamy-ai/communicate");
+  assert.equal((seen[0].body.actor as Record<string, unknown>).display_name, "أ. سارة");
+  assert.deepEqual(seen[0].body.input, { type: "letter", tone: "رسمي", recipient: "شركة النور", subject: null, body: "طلب سداد المستحقات" });
+  assert.equal((log.find((q) => q.table === "ai_start_run")!.payload as Record<string, unknown>).p_price, 5);
+
+  const echoSeen: Array<{ body: Record<string, unknown> }> = [];
+  const { client: c2 } = db();
+  await startRunWith(c2 as never, deps(okReply(), echoSeen as never), actor, body());
+  assert.equal((echoSeen[0].body.actor as Record<string, unknown>).display_name, null);
+});
+
+test("communicate: bad type, tone or body is refused before any charge", async () => {
+  const good = { type: "email", tone: "حازم", body: "نص" };
+  for (const input of [
+    { ...good, type: "sms" },
+    { ...good, tone: "ساخر" },
+    { ...good, body: "   " },
+    { ...good, body: "ب".repeat(3001) },
+    { ...good, recipient: "ج".repeat(151) },
+    "نص",
+  ]) {
+    const { client, log } = db({ setting: W1_ON });
+    const r = await startRunWith(client as never, deps(okReply({ text: "x" })), LAWYER, body({ tool: "communicate", input }));
+    assert.equal(r.status, 422, JSON.stringify(input).slice(0, 60));
+    assert.deepEqual(rpcs(log), []);
+  }
+});
+
+test("najiz R5: a memo within 9,000 characters is refused, a consultant is refused, a longer one is sent with its references", async () => {
+  {
+    const { client, log } = db({ setting: W1_ON });
+    const r = await startRunWith(client as never, deps(okReply({ text: "x" })), LAWYER, body({ tool: "najiz-optimizer", input: { text: "قصير ".repeat(100) } }));
+    assert.equal(r.status, 422);
+    assert.deepEqual(rpcs(log), []);
+  }
+  {
+    const { client, log } = db({ setting: W1_ON });
+    const r = await startRunWith(client as never, deps(okReply({ text: "x" })), { ...LAWYER, practiceKind: "consultant" }, body({ tool: "najiz-optimizer", input: { text: MEMO } }));
+    assert.equal(r.status, 403);
+    assert.equal(r.body.code, "consultant_blocked");
+    assert.deepEqual(rpcs(log), []);
+  }
+  {
+    const seen: Array<{ body: Record<string, unknown> }> = [];
+    const { client } = db({ setting: W1_ON });
+    const short = "وفق المادة 77 والحكم رقم 4430123 يلزم المدعى عليه بالسداد.";
+    const r = await startRunWith(client as never, deps(okReply({ text: short, kept_citations: ["anything"] }), seen as never), LAWYER, body({ tool: "najiz-optimizer", input: { text: MEMO } }));
+    assert.equal(r.status, 200);
+    assert.deepEqual((seen[0].body.input as Record<string, unknown>).must_keep, ["مادة 77", "رقم 4430123"]);
+    assert.deepEqual(r.body.output, { text: short, kept_refs: ["مادة 77", "رقم 4430123"] }, "the app's list, not the model's");
+  }
+});
+
+test("najiz R5: an output that drops a reference or is still too long fails and refunds", async () => {
+  for (const text of ["يلزم المدعى عليه بالسداد وفق المادة 77.", `المادة 77 والحكم رقم 4430123 ${"ن".repeat(9000)}`]) {
+    const { client, log } = db({ setting: W1_ON });
+    const r = await startRunWith(client as never, deps(okReply({ text })), LAWYER, body({ tool: "najiz-optimizer", input: { text: MEMO } }));
+    assert.equal(r.status, 502);
+    assert.equal((log.find((q) => q.table === "ai_fail_run")!.payload as Record<string, unknown>).p_code, "schema_invalid");
+  }
+});
+
+test("the callback checks a job's output against the input stored on the run", () => {
+  const spec = AI_TOOLS["najiz-optimizer"];
+  const input = spec.validateInput({ text: MEMO });
+  assert.ok(input.ok);
+  if (!input.ok) return;
+  assert.equal(spec.validateOutput({ text: "المادة 77 والحكم رقم 4430123" }, input.input) !== null, true);
+  assert.equal(spec.validateOutput({ text: "المادة 77 والحكم رقم 4430123" }, {}), null, "no stored input: nothing is proven");
+  assert.equal(spec.validateOutput({ text: "الحكم رقم 4430123" }, input.input), null);
+});

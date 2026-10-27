@@ -426,6 +426,21 @@ echo-job:  app → n8n → Respond 202 → Claude → callback → app settles �
   - Only then consider the optional mid-run retrieval route (§2.4).
 
 ### Wave 1: text only, fast (no retrieval)
+
+> **Status 2026-10-27 (branch `feat/ai-wave1`): built, off by default.**
+>
+> - **L1 المتحدث الذكي:**
+>   - the `communicate` entry in `tools.ts`, with the signature from `display_name` (`sendsDisplayName`);
+>   - the page wired to `useAiRun`;
+>   - the 301 to legal-opinion, the invented letter, `BetaReviewGate` and the dead WhatsApp button are gone.
+> - **L2 منقح ناجز R5:**
+>   - R1–R4 stay free and instant in the browser;
+>   - AI R5 is a separate button, shown only while the cleaned memo is over 10,000 characters;
+>   - `legalRefs.ts` extracts every article and «رقم» reference before the webhook, and the output check recomputes them from the stored input (`validateOutput(raw, input)`);
+>   - the `MOCK_DRAFT` handoff is removed.
+> - **n8n:** `communicate` (`z9IsIwKfr40hEE4e`) and `najiz-optimizer` (`b3SSd5YoQmIjCgna`), both inactive, built from `n8n/ai/workflows.mjs`; the steps are in `n8n/ai/README.md`.
+> - **Price:** منقح ناجز is **5** in `tools.ts`, matching the pricing table (owner ٢١٦: ٥–٨), not the 15 below.
+> - **Not run yet:** the Claude path. It needs the Anthropic key, and the Code nodes are tested locally only.
 | # | Tool | Page | Price | Model | Input → output |
 |:-:|---|---|:-:|---|---|
 | L1 | **المتحدث الذكي** | `/ai/communicate` | 5 | Haiku | `{type: letter\|email\|wa\|notice\|reply, tone (5), recipient?, subject, body}` → `{text}` |
