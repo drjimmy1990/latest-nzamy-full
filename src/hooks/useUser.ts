@@ -12,12 +12,15 @@
 
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
 import { getPermissions } from "@/hooks/userPermissions";
-import { isDbUserType } from "@/lib/auth/userTypes";
-import { mergeMembershipReads } from "@/lib/auth/entityMembership";
-import type { ActiveEntityMemberships } from "@/lib/auth/entityMembership";
-import { normalizeGovernmentRole } from "@/hooks/governmentRole";
+import { GUEST_SESSION } from "@/hooks/userSession";
+import {
+  createUserSessionStore,
+  LOADING_SNAPSHOT,
+  type UserSessionSnapshot,
+  type UserSessionStore,
+} from "@/hooks/userSessionStore";
 import { toPracticeKind, type PracticeKind } from "@/lib/auth/practiceKind";
 import { toStaffRole, type StaffRole } from "@/lib/auth/staffRoles";
 import { createClient } from "@/lib/supabase/client";
@@ -25,7 +28,6 @@ import {
   isSupabaseMode as isSupabaseBackend,
   BACKEND_MODE as RESOLVED_BACKEND_MODE,
 } from "@/lib/runtimeMode";
-import type { User } from "@supabase/supabase-js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -311,18 +313,6 @@ const DEFAULT_SESSION: UserSession = {
   permissions:   getPermissions("lawyer", "max"),
 };
 
-const GUEST_SESSION: UserSession = {
-  isLoggedIn:    false,
-  userType:      null,
-  subRole:       null,
-  name:          "",
-  tier:          "free",
-  credits:       0,
-  creditsMax:    0,
-  dashboardMode: "light",
-  permissions:   [],
-};
-
 function readSessionFromStorage(): UserSession {
   if (typeof window === "undefined") return GUEST_SESSION;  // SSR: always guest
   try {
@@ -455,565 +445,49 @@ export interface UseUserReturn extends UserSession {
   staffRole: StaffRole | null;
 }
 
-// ─── Map Supabase user → UserSession ─────────────────────────────────────────
-
-/**
- * The outcome of reading `profiles.user_type` for one user.
- *
- * `missing` and `unavailable` are kept apart on purpose. `missing` means the
- * query succeeded and came back with no usable type — no row at all, or a row
- * whose `user_type` is null or empty. Either way that is a data problem, and it
- * now surfaces as `userType: null` + `profileState: "missing"` rather than as a
- * silent demotion to `"individual"` (see mapSupabaseUser).
- * `unavailable` means the query itself failed — offline, RLS error, timeout — and
- * says nothing whatever about who the user is. It must never look like an answer.
- */
-type ProfileTypeRead =
-  | { status: "found"; userType: string }
-  | { status: "missing" }
-  | { status: "unavailable" };
-
-type EntityMembershipRead =
-  | { status: "found"; memberships: ActiveEntityMemberships; degraded: boolean }
-  | { status: "unavailable" };
-
-function relationName(value: unknown, field: string): string {
-  const row = Array.isArray(value) ? value[0] : value;
-  if (!row || typeof row !== "object") return "";
-  const name = (row as Record<string, unknown>)[field];
-  return typeof name === "string" ? name : "";
+// ── Supabase Mode ────────────────────────────────────────────────────────────
+//
+// The tab's one session store (src/hooks/userSessionStore.ts has the rules),
+// created on first use in the browser. Every useUser() caller subscribes to
+// it, so a page makes one getUser(), one profile + membership read and holds
+// one auth listener, however many components — and nested gates — ask.
+let store: UserSessionStore | null = null;
+function userSessionStore(): UserSessionStore {
+  if (!store) store = createUserSessionStore({ createClient });
+  return store;
 }
 
-async function readEntityMemberships(
-  supabase: ReturnType<typeof createClient>,
-  userId: string,
-): Promise<EntityMembershipRead> {
-  try {
-    const [firmResult, businessResult, ownedFirmResult, ownedBusinessResult] = await Promise.all([
-      supabase
-        .from("firm_members")
-        .select("firm_id, role, firm_profiles(name_ar)")
-        .eq("user_id", userId)
-        .eq("status", "active")
-        .limit(1)
-        .maybeSingle(),
-      supabase
-        .from("business_members")
-        .select("business_id, role, business_profiles(company_name_ar)")
-        .eq("user_id", userId)
-        .eq("status", "active")
-        .limit(1)
-        .maybeSingle(),
-      supabase
-        .from("firm_profiles")
-        .select("id, name_ar")
-        .eq("owner_user_id", userId)
-        .limit(1)
-        .maybeSingle(),
-      supabase
-        .from("business_profiles")
-        .select("id, company_name_ar")
-        .eq("owner_user_id", userId)
-        .limit(1)
-        .maybeSingle(),
-    ]);
-
-    // WP-6 B-8. Each read is now evaluated INDEPENDENTLY — mirroring
-    // `resolveActiveEntityIds` (src/app/api/v1/service-requests/route.ts),
-    // which logs each error and nulls only the failing query. This function
-    // used to collapse all four on any one error, so a recursive
-    // `business_members` policy (42P17, UAT-TEAM-001) discarded the caller's
-    // own `business_profiles` row, read successfully from a different table
-    // under a different policy, and threw an owner out of their own dashboard
-    // on a cold load. The merge itself lives in `mergeMembershipReads` so
-    // every combination of the four is unit-tested without a database.
-    for (const [label, result] of [
-      ["firm_members", firmResult],
-      ["business_members", businessResult],
-      ["firm_profiles", ownedFirmResult],
-      ["business_profiles", ownedBusinessResult],
-    ] as const) {
-      if (result.error) {
-        console.error(`[useUser] ${label} membership lookup failed:`, result.error.message, result.error.code);
-      }
-    }
-
-    const firm = firmResult.data as Record<string, unknown> | null;
-    const ownedFirm = ownedFirmResult.data as Record<string, unknown> | null;
-    const business = businessResult.data as Record<string, unknown> | null;
-    const ownedBusiness = ownedBusinessResult.data as Record<string, unknown> | null;
-
-    return mergeMembershipReads({
-      firmMember: {
-        failed: Boolean(firmResult.error),
-        summary:
-          firm && typeof firm.firm_id === "string" && typeof firm.role === "string"
-            ? {
-                entityId: firm.firm_id,
-                entityName: relationName(firm.firm_profiles, "name_ar"),
-                role: firm.role,
-              }
-            : null,
-      },
-      ownedFirm: {
-        failed: Boolean(ownedFirmResult.error),
-        summary:
-          ownedFirm && typeof ownedFirm.id === "string"
-            ? {
-                entityId: ownedFirm.id,
-                entityName: typeof ownedFirm.name_ar === "string" ? ownedFirm.name_ar : "",
-                role: "managing_partner",
-              }
-            : null,
-      },
-      businessMember: {
-        failed: Boolean(businessResult.error),
-        summary:
-          business && typeof business.business_id === "string" && typeof business.role === "string"
-            ? {
-                entityId: business.business_id,
-                entityName: relationName(business.business_profiles, "company_name_ar"),
-                role: business.role,
-              }
-            : null,
-      },
-      ownedBusiness: {
-        failed: Boolean(ownedBusinessResult.error),
-        summary:
-          ownedBusiness && typeof ownedBusiness.id === "string"
-            ? {
-                entityId: ownedBusiness.id,
-                entityName:
-                  typeof ownedBusiness.company_name_ar === "string" ? ownedBusiness.company_name_ar : "",
-                role: "owner",
-              }
-            : null,
-      },
-    });
-  } catch {
-    // A THROW is different from a per-query error: nothing was read at all.
-    return { status: "unavailable" };
-  }
-}
+const subscribeSession = (listener: () => void): (() => void) => {
+  if (!isSupabaseMode) return () => {};
+  // Owner decision ١١٥: a real session starts without demo markers. Cleared on
+  // every mount, as before — a local write, not a read.
+  clearDemoSessionMarkers();
+  return userSessionStore().subscribe(listener);
+};
+const getSessionSnapshot = (): UserSessionSnapshot =>
+  isSupabaseMode ? userSessionStore().getSnapshot() : LOADING_SNAPSHOT;
+// The server, and the hydration pass, render a loading guest — as before.
+const getServerSessionSnapshot = (): UserSessionSnapshot => LOADING_SNAPSHOT;
 
 /**
- * Reads `profiles.user_type` for one user through the RLS-scoped browser
- * client. The row is reachable only because of the "users read own profile"
- * policy (supabase/migrations/20260603_phase1_001_profiles.sql:65-67): the
- * `.eq("id", …)` selects it, RLS is what keeps every other row out of reach.
- *
- * `maybeSingle()` rather than `single()`: `single()` reports "no row" as an
- * error, which would collapse `missing` and `unavailable` into one case.
+ * Re-read the signed-in user now (userSessionStore.ts `refresh`). For a write
+ * made on the server that fires no auth event in this tab — a settled payment
+ * writing the tier into user_metadata — which newly mounted useUser() callers
+ * used to pick up on their own before the session was shared. Every caller
+ * re-renders when it lands. A no-op in demo mode and before the first read.
  */
-async function readProfileUserType(
-  supabase: ReturnType<typeof createClient>,
-  userId: string,
-): Promise<ProfileTypeRead> {
-  try {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("user_type")
-      .eq("id", userId)
-      .maybeSingle();
-
-    if (error) return { status: "unavailable" };
-
-    const value: unknown = data?.user_type;
-    if (typeof value !== "string" || value.length === 0) return { status: "missing" };
-    return { status: "found", userType: value };
-  } catch {
-    // A thrown fetch is a transport failure, never a statement about the user.
-    return { status: "unavailable" };
-  }
-}
-
-type PracticeKindRead =
-  | { status: "found"; practiceKind: PracticeKind }
-  | { status: "unavailable" };
-
-/** The deploy-order rule: a missing column is logged once, not on every read. */
-let practiceKindFailureLogged = false;
-
-/**
- * Art. 18 — reads `lawyer_profiles.practice_kind` for one lawyer with its OWN
- * query. The column is never added to another select, so on a database where
- * 20261019_20 has not run yet (42703) only this field falls back, to
- * 'advocate', and the profile and membership reads are untouched. No row reads
- * as 'advocate' too. The row is reachable through the "lawyers read own
- * profile" policy; user_id and practice_kind are both in the column grant.
- */
-async function readPracticeKind(
-  supabase: ReturnType<typeof createClient>,
-  userId: string,
-): Promise<PracticeKindRead> {
-  try {
-    const { data, error } = await supabase
-      .from("lawyer_profiles")
-      .select("practice_kind")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (error) {
-      if (!practiceKindFailureLogged) {
-        practiceKindFailureLogged = true;
-        console.warn("[useUser] lawyer_profiles.practice_kind read failed; the lawyer is treated as an advocate:", error.message, error.code);
-      }
-      return { status: "unavailable" };
-    }
-    return { status: "found", practiceKind: toPracticeKind(data?.practice_kind) };
-  } catch {
-    return { status: "unavailable" };
-  }
-}
-
-/** The deploy-order rule: a missing function is logged once, not on every read. */
-let staffRoleFailureLogged = false;
-
-/**
- * Owner ٢١٠ — an admin's staff role through public.staff_role() (20261019_30:
- * SECURITY DEFINER, EXECUTE granted to authenticated; it answers the caller's
- * own role while their profile is an admin). Any failure is null, logged once:
- * before the migration the function is missing (PGRST202 / 42883).
- */
-async function readStaffRole(supabase: ReturnType<typeof createClient>): Promise<StaffRole | null> {
-  try {
-    const { data, error } = await supabase.rpc("staff_role");
-    if (error) {
-      if (!staffRoleFailureLogged) {
-        staffRoleFailureLogged = true;
-        console.warn("[useUser] staff_role() read failed; the admin nav stays complete (the server still enforces roles):", error.message, error.code);
-      }
-      return null;
-    }
-    return toStaffRole(data);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Builds the browser-side session.
- *
- * `resolvedUserType` is the account type the caller has already decided on, and
- * `user_type` is the ONLY field on this session that comes from `profiles`. The
- * caller passes `profiles.user_type` when the row was read, the previously
- * resolved type when the read was `unavailable` for this same signed-in user,
- * and `null` when neither applies.
- *
- * Everything else below — tier, sub-role, credits, display mode, affiliation
- * and the sector fields — still comes from `user_metadata`, unchanged.
- */
-function mapSupabaseUser(
-  user: User | null,
-  resolvedUserType: string | null,
-  memberships: ActiveEntityMemberships = {},
-  profileState: ProfileState = "ok",
-  membershipState: MembershipState = "ok",
-  practiceKind: PracticeKind = "advocate",
-  staffRole: StaffRole | null = null,
-): UserSession {
-  if (!user) return GUEST_SESSION;
-
-  const meta = user.user_metadata ?? {};
-  // profiles.user_type is the only trusted browser role. user_metadata is
-  // writable by the account holder, so it must never create an admin or entity
-  // session when the profile read is unavailable.
-  //
-  // `missing` no longer falls back to "individual". That fallback is what
-  // turned a real lawyer whose row could not be resolved into a client account,
-  // at which point <UserTypeGuard> refused them their own dashboard with
-  // «صلاحيات غير كافية» — UAT-LIVE-AI-001, and the "client-side demotion" of
-  // docs/audits/2026-09-20-profiles-uat/02-auth-session-audit.md §4. A profile
-  // that is absent or typeless is an INCOMPLETE PROFILE, not a different
-  // account type, and the session now says so: userType stays null and
-  // `profileState: "missing"` carries the reason, which UserTypeGuard renders
-  // as «ملفك غير مكتمل» with a link to /onboarding.
-  //
-  // `unavailable` is untouched: applyUser carries the previously resolved type
-  // forward for this same signed-in user, so only a first load with the network
-  // already down reaches the "individual" fallback.
-  const userType: UserType =
-    profileState === "missing"
-      ? null
-      : resolvedUserType !== null && isDbUserType(resolvedUserType)
-        ? resolvedUserType
-        : "individual";
-
-  const tier = (meta.tier ?? "free") as UserTier;
-  const subRole = (meta.sub_role ?? meta.provider_sub_role ?? null) as SubRole;
-
-  return {
-    isLoggedIn:    true,
-    userId:        user.id,
-    userType,
-    profileState,
-    membershipState,
-    subRole,
-    name:          meta.display_name ?? meta.full_name ?? user.email ?? "",
-    avatar:        meta.avatar_url,
-    tier,
-    credits:       meta.credit_balance ?? 0,
-    creditsMax:    meta.credits_max ?? 0,
-    dashboardMode: meta.display_mode ?? "full",
-    permissions:   getPermissions(userType, tier),
-    businessType:       meta.business_type,
-    providerSpecialties: meta.provider_specialties,
-    affiliation: memberships.firm
-      ? {
-          entityName: memberships.firm.entityName,
-          entityType: "firm",
-          role: memberships.firm.role as AffiliationRole,
-        }
-      : undefined,
-    firmMembership: memberships.firm as UserSession["firmMembership"],
-    // user_metadata is writable by the account holder and the database allows
-    // roles the app has no screen for (clerk, admin); an unrecognised value is
-    // dropped here so every consumer's `?? "gov_counsel"` default applies.
-    governmentRole:     normalizeGovernmentRole(meta.government_role),
-    officerSpecialty:    meta.officer_specialty,
-    businessRole: (memberships.business?.role ?? meta.business_role) as BusinessRole | undefined,
-    businessMembership: memberships.business as UserSession["businessMembership"],
-    active_roles:       meta.active_roles,
-    country:       meta.country_code ?? "SA",
-    // Only a lawyer can be a consultant (Art. 18).
-    practiceKind:  userType === "lawyer" ? practiceKind : "advocate",
-    // Only an admin holds a staff role (owner ٢١٠).
-    staffRole:     userType === "admin" ? staffRole : null,
-  };
+export function refreshUserSession(): Promise<void> {
+  return isSupabaseMode && store ? store.refresh() : Promise.resolve();
 }
 
 export function useUser(): UseUserReturn {
+  // Supabase mode: the shared session. Demo mode never subscribes.
+  const shared = useSyncExternalStore(subscribeSession, getSessionSnapshot, getServerSessionSnapshot);
+
+  // Demo mode only — kept per instance, as before (localStorage, no network).
   const [session, setSession] = useState<UserSession>(GUEST_SESSION);
   const [demoKey, setDemoKey]  = useState<string>("");
   const [loading, setLoading]  = useState(true);
-
-  // ── Supabase Mode ──────────────────────────────────────────────────────────
-  //
-  // This returns its cleanup SYNCHRONOUSLY; it used to return a promise of one.
-  // The `cancelled` flag below is why: reached through a promise, the flag could
-  // only be flipped once the async body had already finished — precisely when it
-  // is too late to be worth anything. That matters more now than it did, because
-  // the body makes two round trips (the user, then the profile) instead of one.
-  const initSupabase = useCallback((): (() => void) | undefined => {
-    if (!isSupabaseMode) return;
-
-    // Owner decision ١١٥: a real session starts without demo markers.
-    clearDemoSessionMarkers();
-
-    let cancelled = false;
-    let unsubscribe: (() => void) | undefined;
-
-    // Monotonic counter over auth events. Every profile read remembers the value
-    // it started with and discards its own result if a newer event has arrived
-    // in the meantime. This is what stops a profile read that is still in flight
-    // from re-populating a session after the user has already signed out.
-    let latestEvent = 0;
-
-    // The user id the last setSession put on screen, or null for a guest.
-    // Used to tell a token refresh for the person already rendered (resolve it
-    // quietly, no spinner) from a switch to a different person or an arrival
-    // from signed-out (hold `loading` until the profile has been read).
-    let renderedUserId: string | null = null;
-
-    /** Resolve one signed-in user into a session — profile first, then render. */
-    const applyUser = async (
-      supabase: ReturnType<typeof createClient>,
-      authUser: User,
-      eventId: number,
-    ) => {
-      // practice_kind is read for a lawyer only, so it waits for the profile
-      // read — while still overlapping the four membership reads.
-      const profileRead = readProfileUserType(supabase, authUser.id);
-      const [read, membershipRead, practiceRead, staffRead] = await Promise.all([
-        profileRead,
-        readEntityMemberships(supabase, authUser.id),
-        profileRead.then((r) =>
-          r.status === "found" && r.userType === "lawyer" ? readPracticeKind(supabase, authUser.id) : null,
-        ),
-        // Owner ٢١٠: the staff role, for an admin only (undefined: not read).
-        profileRead.then((r) =>
-          r.status === "found" && r.userType === "admin" ? readStaffRole(supabase) : undefined,
-        ),
-      ]);
-      // Superseded or unmounted: drop this result and leave `loading` alone —
-      // whichever event overtook this one is responsible for releasing it.
-      if (cancelled || eventId !== latestEvent) return;
-
-      setSession(prev => {
-        // Carry the previously resolved type forward on `unavailable` ONLY, and
-        // only for the same signed-in user. Without this, a token refresh while
-        // the network is down would downgrade a lawyer to "individual" and
-        // UserTypeGuard would throw them off their own dashboard — a regression
-        // this change must not introduce. `missing` deliberately does not carry:
-        // a row that is absent, or present with no type, is exactly what the
-        // "individual" fallback exists for, and papering over it would hide a
-        // real data problem.
-        const carried =
-          read.status === "unavailable" && prev.isLoggedIn && prev.userId === authUser.id
-            ? prev.userType
-            : null;
-
-        const carriedMemberships: ActiveEntityMemberships =
-          membershipRead.status === "unavailable" && prev.isLoggedIn && prev.userId === authUser.id
-            ? {
-                ...(prev.firmMembership ? { firm: prev.firmMembership } : {}),
-                ...(prev.businessMembership ? { business: prev.businessMembership } : {}),
-              }
-            : {};
-
-        // A carried type means the previous, successful read still stands for
-        // this same user, so the session is "ok" — not "unavailable".
-        const profileState: ProfileState =
-          read.status === "found" || carried !== null
-            ? "ok"
-            : read.status === "missing"
-              ? "missing"
-              : "unavailable";
-
-        // WP-6 B-9. «you have no role» and «we could not read your role» are
-        // different answers, and the settings policy now denies by default, so
-        // the session has to carry which one this is. `degraded` means at
-        // least one of the four membership reads failed, so businessRole /
-        // affiliation may be an undercount; a carried-forward previous session
-        // is likewise not a fresh answer.
-        const membershipState: MembershipState =
-          membershipRead.status === "found"
-            ? membershipRead.degraded
-              ? "degraded"
-              : "ok"
-            : Object.keys(carriedMemberships).length > 0
-              ? "degraded"
-              : "unavailable";
-
-        // Art. 18. A failed practice_kind read, or a profile read that failed
-        // altogether, carries the previous answer forward for this same user,
-        // the way the type is carried above — a token refresh on a bad network
-        // must not flip a consultant to an advocate and back. With nothing to
-        // carry (a first load) it is 'advocate', today's behaviour.
-        const practiceKind: PracticeKind =
-          practiceRead?.status === "found"
-            ? practiceRead.practiceKind
-            : (practiceRead?.status === "unavailable" || read.status === "unavailable") &&
-                prev.isLoggedIn && prev.userId === authUser.id
-              ? toPracticeKind(prev.practiceKind)
-              : "advocate";
-
-        // Owner ٢١٠. A profile read that failed carries the previous staff
-        // role forward for this same user, like the type; any other failure
-        // is null (the full admin nav — the server still enforces).
-        const staffRole: StaffRole | null =
-          staffRead !== undefined
-            ? staffRead
-            : read.status === "unavailable" && prev.isLoggedIn && prev.userId === authUser.id
-              ? (prev.staffRole ?? null)
-              : null;
-
-        return mapSupabaseUser(
-          authUser,
-          read.status === "found" ? read.userType : carried,
-          membershipRead.status === "found" ? membershipRead.memberships : carriedMemberships,
-          profileState,
-          membershipState,
-          practiceKind,
-          staffRole,
-        );
-      });
-
-      renderedUserId = authUser.id;
-      setLoading(false);
-    };
-
-    // The event id the mount claimed, so the `finally` below can tell whether
-    // it is still the most recent thing to have happened.
-    let mountEvent = 0;
-
-    void (async () => {
-      try {
-        const supabase = createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-        if (cancelled) return;
-
-        if (user) {
-          // Both round trips finish before the FIRST setSession of a signed-in
-          // user, so there is no intermediate render that reports the wrong
-          // type — no "individual" flash to bounce a lawyer off their dashboard.
-          mountEvent = ++latestEvent;
-          await applyUser(supabase, user, mountEvent);
-        } else {
-          setSession(GUEST_SESSION);
-        }
-        if (cancelled) return;
-
-        // Listen for auth state changes (login, logout, token refresh)
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(
-          (_event, authSession) => {
-            const authUser = authSession?.user ?? null;
-            latestEvent += 1;
-
-            if (!authUser) {
-              // Sign-out, or a session that has gone away. Clear it here and
-              // now: the counter was bumped a line above, so any profile read
-              // still in flight will drop its result instead of restoring the
-              // account that just signed out.
-              renderedUserId = null;
-              setSession(GUEST_SESSION);
-              setLoading(false);
-              return;
-            }
-
-            // A different person than the one on screen — a sign-in arriving
-            // after mount, or an account switch. The session currently
-            // rendered describes somebody else (for a sign-in, it is the guest
-            // session, whose userType is null), and `loading` was already
-            // released by the mount above. Without this, consumers would see
-            // that stale session as settled for one tick plus one profile
-            // round trip: UserTypeGuard.tsx:32-34 would find null in
-            // `allowedTypes`, and flash "صلاحيات غير كافية" at a user who is
-            // in fact signed in. Hold the spinner instead, and release it in
-            // applyUser once the profile has actually been read.
-            //
-            // A token refresh for the person already rendered takes the other
-            // path: no flip, no spinner, the profile is re-read silently and
-            // the session only changes if the answer changed.
-            if (renderedUserId !== authUser.id) setLoading(true);
-
-            // Deferred out of the callback instead of awaited inside it. The
-            // Supabase auth client holds its lock for as long as the callback
-            // runs, and awaiting another Supabase call in there can deadlock it.
-            const eventId = latestEvent;
-            setTimeout(() => {
-              if (cancelled || eventId !== latestEvent) return;
-              void applyUser(supabase, authUser, eventId);
-            }, 0);
-          },
-        );
-
-        if (cancelled) {
-          subscription.unsubscribe();
-          return;
-        }
-        unsubscribe = () => subscription.unsubscribe();
-      } catch {
-        renderedUserId = null;
-        if (!cancelled) setSession(GUEST_SESSION);
-      } finally {
-        // Released on every path the mount can take, the throw above included:
-        // a hook stuck on `loading: true` leaves UserTypeGuard spinning
-        // forever. Skipped only when an auth event has already overtaken the
-        // mount — that event raised the spinner deliberately and its own
-        // applyUser releases it, so releasing here would undo it. As written
-        // there is no `await` between subscribing and this line, so the
-        // subscription cannot in fact fire first; the guard is here so that
-        // stops being something this block depends on.
-        if (!cancelled && latestEvent === mountEvent) setLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      unsubscribe?.();
-    };
-  }, []);
 
   // ── Demo Mode ──────────────────────────────────────────────────────────────
   const initDemo = useCallback(() => {
@@ -1041,23 +515,26 @@ export function useUser(): UseUserReturn {
   }, []);
 
   useEffect(() => {
-    // Both branches now hand back their cleanup synchronously.
-    return isSupabaseMode ? initSupabase() : initDemo();
-  }, [initSupabase, initDemo]);
+    return isSupabaseMode ? undefined : initDemo();
+  }, [initDemo]);
 
+  const current = isSupabaseMode ? shared.session : session;
+  const isLoading = isSupabaseMode ? shared.loading : loading;
+
+  // Always "" in Supabase mode: only initDemo ever sets it.
   const isDemoBypass = _DEMO_BYPASS_KEYS.includes(demoKey);
 
   // Art. 18: only a lawyer can be a consultant, and a demo or literal session
   // without the field reads as an advocate.
   const practiceKind: PracticeKind =
-    session.userType === "lawyer" ? toPracticeKind(session.practiceKind) : "advocate";
+    current.userType === "lawyer" ? toPracticeKind(current.practiceKind) : "advocate";
 
   // Owner ٢١٠: only an admin holds a staff role; a demo or literal session
   // without the field reads as null (today's full admin nav).
   const staffRole: StaffRole | null =
-    session.userType === "admin" ? toStaffRole(session.staffRole) : null;
+    current.userType === "admin" ? toStaffRole(current.staffRole) : null;
 
-  return { ...session, practiceKind, staffRole, isDemoBypass, loading };
+  return { ...current, practiceKind, staffRole, isDemoBypass, loading: isLoading };
 }
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
