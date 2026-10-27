@@ -469,6 +469,17 @@ const getSessionSnapshot = (): UserSessionSnapshot =>
 // The server, and the hydration pass, render a loading guest — as before.
 const getServerSessionSnapshot = (): UserSessionSnapshot => LOADING_SNAPSHOT;
 
+/**
+ * Re-read the signed-in user now (userSessionStore.ts `refresh`). For a write
+ * made on the server that fires no auth event in this tab — a settled payment
+ * writing the tier into user_metadata — which newly mounted useUser() callers
+ * used to pick up on their own before the session was shared. Every caller
+ * re-renders when it lands. A no-op in demo mode and before the first read.
+ */
+export function refreshUserSession(): Promise<void> {
+  return isSupabaseMode && store ? store.refresh() : Promise.resolve();
+}
+
 export function useUser(): UseUserReturn {
   // Supabase mode: the shared session. Demo mode never subscribes.
   const shared = useSyncExternalStore(subscribeSession, getSessionSnapshot, getServerSessionSnapshot);

@@ -33,6 +33,10 @@ function fakeSupabase(opts: { types: Record<string, string>; signedIn: string | 
   const callbacks: AuthCallback[] = [];
   /** Set to hold every `profiles` read until released. */
   let profileGate: Promise<void> | null = null;
+  /** Set to make getUser() answer with an error (a network failure). */
+  let getUserFails = false;
+  /** Set to hold getUser() until released. */
+  let getUserGate: Promise<void> | null = null;
 
   const builder = (table: string) => {
     const filters: Record<string, unknown> = {};
@@ -57,7 +61,10 @@ function fakeSupabase(opts: { types: Record<string, string>; signedIn: string | 
     auth: {
       getUser: async () => {
         calls.getUser += 1;
-        return { data: { user: current } };
+        const answer = current; // what the server said when asked
+        if (getUserGate) await getUserGate;
+        if (getUserFails) return { data: { user: null }, error: { message: "fetch failed" } };
+        return { data: { user: answer }, error: null };
       },
       onAuthStateChange: (cb: AuthCallback) => {
         callbacks.push(cb);
@@ -89,6 +96,10 @@ function fakeSupabase(opts: { types: Record<string, string>; signedIn: string | 
     },
     /** The session goes away without an event reaching the store yet. */
     dropSession: () => { current = null; },
+    /** A server-side write to user_metadata: no auth event reaches the tab. */
+    setMetadata: (meta: Record<string, unknown>) => { if (current) current = { ...current, user_metadata: meta }; },
+    failGetUser: (fails: boolean) => { getUserFails = fails; },
+    holdGetUser: () => { const d = deferred(); getUserGate = d.promise; return () => { getUserGate = null; d.resolve(); }; },
     listeners: () => callbacks.length,
   };
 }
@@ -261,5 +272,55 @@ test("a thrown mount releases loading as a guest, and the next subscriber retrie
   await settle();
   assert.equal(attempts, 2);
   assert.equal(store.getSnapshot().session.userId, "u1");
+  store.dispose();
+});
+
+test("refresh() picks up a server-side tier change that fired no auth event", async () => {
+  const { sb, store } = harness({ types: { u1: "lawyer" } });
+  for (let i = 0; i < 3; i++) store.subscribe(() => {});
+  await settle();
+  assert.equal(store.getSnapshot().session.tier, "free");
+
+  sb.setMetadata({ tier: "pro" }); // what a settled payment's updateUserById does
+  const refreshing = store.refresh();
+  assert.equal(store.getSnapshot().loading, false, "quiet: no spinner");
+  await refreshing;
+  assert.equal(store.getSnapshot().session.tier, "pro");
+  assert.equal(sb.calls.getUser, 2);
+  assert.equal(sb.calls.from.profiles, 2, "one re-read, not one per subscriber");
+  store.dispose();
+});
+
+test("refresh() before the first read, or on a failed read, changes nothing", async () => {
+  const { sb, store } = harness();
+  await store.refresh(); // not started: no subscriber yet
+  assert.equal(sb.total(), 0);
+
+  store.subscribe(() => {});
+  await store.refresh(); // the mount read is in flight and already fresh
+  await settle();
+  assert.equal(sb.calls.getUser, 1);
+
+  sb.failGetUser(true);
+  await store.refresh();
+  await settle();
+  assert.equal(store.getSnapshot().session.userId, "u1", "a network failure is not a sign-out");
+  assert.equal(store.getSnapshot().loading, false);
+  store.dispose();
+});
+
+test("a sign-out during refresh() wins over the refresh's answer", async () => {
+  const { sb, store } = harness();
+  store.subscribe(() => {});
+  await settle();
+
+  const release = sb.holdGetUser();
+  const refreshing = store.refresh(); // getUser in flight; it will still answer u1
+  sb.emit("SIGNED_OUT", null);
+  assert.equal(store.getSnapshot().session.isLoggedIn, false);
+  release();
+  await refreshing;
+  await settle();
+  assert.equal(store.getSnapshot().session.isLoggedIn, false, "the refresh did not restore the user");
   store.dispose();
 });

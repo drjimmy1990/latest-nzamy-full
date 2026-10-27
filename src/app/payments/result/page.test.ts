@@ -112,6 +112,11 @@ test("ResultAutoRefresh: a chained 3 s timeout, the next one only after the prev
   assert.match(poller, /if \(!refresh \|\| !polling\) return null;/);
 });
 
+test("ResultAutoRefresh: leaving a pending render re-reads the shared session (the tier fired no auth event)", () => {
+  assert.match(poller, /import \{ refreshUserSession \} from "@\/hooks\/useUser"/);
+  assert.match(poller, /useEffect\(\(\) => \(\) => \{\s*if \(startedAt\.current !== null\) void refreshUserSession\(\);\s*\}, \[\]\);/);
+});
+
 test("the receipt page has the site Navbar and a button-styled way back, both hidden when printing", () => {
   assert.match(receipt, /import Navbar from "@\/components\/Navbar"/);
   assert.match(receipt, /<div className="print:hidden"><Navbar \/><\/div>/);

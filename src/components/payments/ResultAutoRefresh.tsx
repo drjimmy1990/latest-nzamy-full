@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AUTO_REFRESH_INTERVAL_MS, autoRefreshDecision } from "@/lib/payments/autoRefresh";
+import { refreshUserSession } from "@/hooks/useUser";
 
 /**
  * ResultAutoRefresh — /payments/result confirms on its own while the outcome
@@ -18,12 +19,22 @@ import { AUTO_REFRESH_INTERVAL_MS, autoRefreshDecision } from "@/lib/payments/au
  * final render (granted, failed, already done…) unmounts it, which cancels
  * the next refresh. After the window it stops and hides its line; the manual
  * «تحديث الصفحة» link stays.
+ *
+ * That final render is also where the server granted the purchase: the tier
+ * lands in user_metadata with no auth event in this tab, so on unmount after
+ * a pending render it re-reads the shared session (refreshUserSession) — the dashboard
+ * the page links to must not keep the pre-payment tier.
  */
 export default function ResultAutoRefresh({ refresh }: { refresh: boolean }) {
   const router = useRouter();
   const startedAt = useRef<number | null>(null);
   const [polling, setPolling] = useState(refresh);
   const [refreshing, startRefresh] = useTransition();
+
+  // startedAt is set once this page has been pending: re-read on the way out.
+  useEffect(() => () => {
+    if (startedAt.current !== null) void refreshUserSession();
+  }, []);
 
   useEffect(() => {
     if (!refresh || !polling || refreshing) return;

@@ -56,6 +56,14 @@ export interface UserSessionStoreDeps {
 export interface UserSessionStore {
   subscribe: (listener: () => void) => () => void;
   getSnapshot: () => UserSessionSnapshot;
+  /**
+   * Re-read the signed-in user now, quietly (no spinner). For a server-side
+   * write that fires no auth event in this tab — e.g. the tier a settled
+   * payment writes into user_metadata — which every newly mounted useUser()
+   * used to pick up on its own. A no-op until the session has resolved (the
+   * read in flight is already fresh); a failed read keeps what is on screen.
+   */
+  refresh: () => Promise<void>;
   /** Tests only: drop the auth listener and ignore every read still in flight. */
   dispose: () => void;
 }
@@ -321,6 +329,29 @@ export function createUserSessionStore(deps: UserSessionStoreDeps): UserSessionS
       };
     },
     getSnapshot: () => snapshot,
+    async refresh() {
+      if (!started || disposed || snapshot.loading) return;
+      // Claimed before the read, like an auth event: a sign-out that arrives
+      // while it is in flight bumps the counter, and this result is dropped.
+      // Nothing raised the spinner (loading was false), so a dropped or
+      // failed refresh has nothing to release.
+      const eventId = ++latestEvent;
+      try {
+        const supabase = deps.createClient();
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (disposed || error || eventId !== latestEvent) return;
+        if (!user) {
+          renderedUserId = null;
+          setSession(GUEST_SESSION);
+          setLoading(false);
+          return;
+        }
+        // The same person: no spinner, as for a token refresh.
+        await applyUser(supabase, user, eventId);
+      } catch {
+        /* keep the session on screen; the next auth event re-reads */
+      }
+    },
     dispose() {
       disposed = true;
       unsubscribe?.();
