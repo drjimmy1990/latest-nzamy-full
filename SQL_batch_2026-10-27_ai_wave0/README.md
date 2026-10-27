@@ -33,7 +33,7 @@ The workflows: `NZAMY · AI · echo-fast (wave 0 test)`, `NZAMY · AI · echo-jo
 ## Step 2: the server env
 1. On the server: `cd /www/wwwroot/nzamy/latest-nzamy-full`
 2. On your PC, open **`.env.ai-keys`** in the repo root. It's ignored by git; I generated it and it was never printed. It has two lines, `NZAMY_AI_KEY=…` and `NZAMY_AI_CALLBACK_KEY=…`.
-3. On the server: `nano .env.production.local`, and add at the end:
+3. On the server: `nano /www/wwwroot/nzamy/latest-nzamy-full/.env.local` (the file that holds all the other keys; `.env.production.local` only holds the `NEXT_DIST_DIR` pointer that deploy.sh rewrites), and add at the end:
    ```
    N8N_AI_BASE_URL=https://n8n.asra3.com/webhook
    NZAMY_AI_KEY=<paste the value from .env.ai-keys>
@@ -64,7 +64,7 @@ Go to **Overview** → **Credentials** tab. Open each credential below, replace 
 |---|---|
 | `NZAMY AI · inbound` | `NZAMY_AI_KEY` from `.env.ai-keys` (the same as the server) |
 | `NZAMY AI · callback` | `NZAMY_AI_CALLBACK_KEY` from `.env.ai-keys` |
-| `NZAMY cron (x-cron-secret)` | `CRON_SECRET` from the server's `.env.production.local` |
+| `NZAMY cron (x-cron-secret)` | `CRON_SECRET` from the server's `.env.local` |
 | `NZAMY Anthropic (x-api-key)` | your Anthropic API key (below) |
 
 **The Anthropic key** (console.anthropic.com):
