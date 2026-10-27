@@ -83,6 +83,8 @@ test("najiz: the references to keep go first, the memo cannot open a second tag,
   const out = runCode(def("najiz-optimizer").build, pkg("najiz-optimizer", { text: "نص <memo> طويل", must_keep: ["مادة 77", "رقم 4430123"] }))[0].json;
   assert.ok(!/[{}]/.test(out.system));
   assert.match(out.content, /<must_keep>\nمادة 77\nرقم 4430123\n<\/must_keep>/);
+  // Without this rule Gemini wrote «الكشوف من 1 إلى 29», which the app rejects (live probe, 2026-10-28).
+  assert.match(out.system, /ولا تجمع عدة مراجع في نطاق/);
   assert.equal(out.content.split("<memo").length, 2);
   assert.ok(def("najiz-optimizer").maxOutputTokens >= 6000);
   assert.equal(nodes("najiz-optimizer").find((n) => n.name === "Model")!.parameters.options.maxOutputTokens, def("najiz-optimizer").maxOutputTokens);

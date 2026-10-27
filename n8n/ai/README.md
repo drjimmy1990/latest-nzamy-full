@@ -29,6 +29,11 @@ To make that permanent, change `MODEL` in `n8n/ai/workflows.mjs` and re-export.
 
 Gemini, like Claude, processes the text outside the Kingdom, so decision D10 applies the same way.
 
+**Tested live on 2026-10-28** through a temporary copy of each workflow (deleted afterwards):
+- communicate answered in about 8 seconds and ignored an instruction planted in the user's text.
+- najiz shortened an 11,491-character memo to 1,159 characters in about 4 seconds and kept all 34 references.
+- Before the «لا تجمع عدة مراجع في نطاق» rule, the model wrote «من 1 إلى 29». The app rejects that and refunds the user, so the rule stays.
+
 **Updating an existing workflow from its file** (keeps its id and webhook):
 1. Open `n8n/ai/<tool>.json` in Notepad, then press Ctrl+A and Ctrl+C.
 2. In n8n, open the workflow.
