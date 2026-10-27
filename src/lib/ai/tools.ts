@@ -51,6 +51,8 @@ export interface AiToolSpec {
   retrieval?: RetrievalLimits & {
     /** The input field the searches are written from. */
     from: string;
+    /** The input field naming an article to send first, whatever the searches find (L5 «اشرح لي»). */
+    pinFrom?: string;
   };
   validateInput: (raw: unknown) => InputCheck;
   /**
@@ -186,6 +188,38 @@ function quickAnswerOutput(raw: unknown): Record<string, unknown> | null {
   return answer ? { answer } : null;
 }
 
+/**
+ * Every account type: the library assistant is the library's, not the
+ * lawyers' (owner ٢٠٦ / ٢٠٧ / ٢٠٩). Who may use it is the tier rule (Pro or
+ * higher, or an admin), which the run route checks for every library tool.
+ */
+const LIBRARY_ROLES = ["individual", "lawyer", "firm", "corporate", "provider", "micro", "government", "ngo"] as const;
+
+export const LIBRARY_MESSAGE_MAX = 4000;
+export const LIBRARY_REPLY_MAX = 6000;
+/** Article ids are slugs such as `labor-law__art-80` (library.articles.id). */
+const ARTICLE_ID = /^[\p{L}\p{N}_.\-]{1,200}$/u;
+
+/** L5 مساعد المكتبة: a question inside /laws, optionally about the article the user has open. */
+function libraryAssistantInput(raw: unknown): InputCheck {
+  if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
+  const message = boundedText(raw.message, LIBRARY_MESSAGE_MAX);
+  if (!message || message.length < 2) return { ok: false, error: "اكتب سؤالك (حتى ٤٬٠٠٠ حرف)" };
+  if (raw.article_id === undefined || raw.article_id === null || raw.article_id === "") {
+    return { ok: true, input: { message, article_id: null } };
+  }
+  if (typeof raw.article_id !== "string" || !ARTICLE_ID.test(raw.article_id)) {
+    return { ok: false, error: "معرّف المادة غير صالح" };
+  }
+  return { ok: true, input: { message, article_id: raw.article_id } };
+}
+
+function libraryAssistantOutput(raw: unknown): Record<string, unknown> | null {
+  if (!isPlainObject(raw)) return null;
+  const reply = boundedText(raw.reply, LIBRARY_REPLY_MAX);
+  return reply ? { reply } : null;
+}
+
 export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
   "echo-fast": {
     id: "echo-fast",
@@ -256,6 +290,21 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     retrieval: { from: "question", laws: 8, principles: 4 },
     validateInput: quickAnswerInput,
     validateOutput: quickAnswerOutput,
+  },
+  "library-assistant": {
+    id: "library-assistant",
+    n8nPath: "nzamy-ai/library-assistant",
+    class: "fast",
+    tier: "fast",
+    roles: LIBRARY_ROLES,
+    consultantBlocked: false,
+    // Owner ٢٥٧: 5 points flat, the chat and «اشرح لي» alike.
+    price: () => 5,
+    dailyLimit: 60,
+    defaultMode: "off",
+    retrieval: { from: "message", pinFrom: "article_id", laws: 6, principles: 3 },
+    validateInput: libraryAssistantInput,
+    validateOutput: libraryAssistantOutput,
   },
 };
 

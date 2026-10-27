@@ -156,6 +156,30 @@ test("quick-answer: the [S…] markers become the citations, each once, in order
   assert.deepEqual(none.citations, [], "no marker: the app refunds it as ungrounded");
 });
 
+test("library-assistant: the open article is marked open, the message is the question, the reply cites", () => {
+  const body = {
+    ...pkg("library-assistant", { message: "اشرح لي هذه المادة", article_id: "labor__art-80" }),
+    sources: [
+      { sid: "S1", kind: "article", title: "نظام العمل — الثمانون", text: "لا يجوز…", pinned: true },
+      { sid: "S2", kind: "article", title: "نظام العمل — السابعة والسبعون", text: "إذا أنهي العقد…" },
+    ],
+  };
+  const out = runCode(def("library-assistant").build, body)[0].json;
+  assert.ok(!/[{}]/.test(out.system));
+  assert.match(out.system, /open="yes"/);
+  assert.match(out.content, /<source id="S1" kind="article" title="[^"]*" open="yes">/);
+  assert.doesNotMatch(out.content, /<source id="S2"[^>]*open=/);
+  assert.match(out.content, /<question>\nاشرح لي هذه المادة\n<\/question>$/);
+
+  const r = runCode(def("library-assistant").parse, body, { output: "لا يجوز فسخ العقد إلا في الحالات المذكورة [S1]." })[0].json;
+  assert.deepEqual(r.citations, ["S1"]);
+  assert.ok(AI_TOOLS["library-assistant"].validateOutput(r.output, {}));
+
+  // quick-answer never sends a pinned source, so its tags carry no open mark.
+  const qa = runCode(def("quick-answer").build, { ...pkg("quick-answer", { question: "س" }), sources: [{ sid: "S1", kind: "article", title: "ت", text: "ن" }] })[0].json;
+  assert.doesNotMatch(qa.content, /open=/);
+});
+
 test("model error: a failed model call becomes a failed result", () => {
   const r = runCode(CODE.modelError, pkg("communicate", {}), { error: { message: "API key not valid" } })[0].json;
   assert.equal(r.status, "failed");

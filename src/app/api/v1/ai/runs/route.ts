@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
         callbackUrl: callbackUrl(),
         n8n: (call) => callN8n({ ...call, baseUrl: process.env.N8N_AI_BASE_URL, key: process.env.NZAMY_AI_KEY }),
         libraryAccess,
-        retrieve: (queries, limits) => retrieveLibrary(admin, queries, limits),
+        retrieve: (queries, limits, pin) => retrieveLibrary(admin, queries, limits, pin),
       },
       actor,
       body,

@@ -29,7 +29,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { CONSULTANT_BLOCKED_MESSAGE, type PracticeKind } from "../auth/practiceKind.ts";
 import { resolveToolRuntime } from "./aiToolsConfig.ts";
 import type { N8nCall, N8nOutcome } from "./n8nClient.ts";
-import { cleanQueries, type PackageSource, type RetrievalLimits, type Retrieved } from "./retrieval.ts";
+import { cleanQueries, type PackageSource, type RetrievalLimits, type RetrievalPin, type Retrieved } from "./retrieval.ts";
 import {
   DEFAULT_JOB_DEADLINE_SECONDS,
   FAST_DEADLINE_SECONDS,
@@ -62,7 +62,7 @@ export interface StartRunDeps {
    */
   libraryAccess?: () => Promise<RouteReply | null>;
   /** Library tools only: the searches → the texts (retrieval.retrieveLibrary). */
-  retrieve?: (queries: string[], limits: RetrievalLimits) => Promise<Retrieved>;
+  retrieve?: (queries: string[], limits: RetrievalLimits, pin: RetrievalPin) => Promise<Retrieved>;
   /** The clock for the fast tools' time budget, in ms (tests replace it). */
   clock?: () => number;
 }
@@ -323,7 +323,9 @@ export async function startRunWith(
   // too; every way out below refunds.
   let pkgSources: PackageSource[] = [];
   if (spec.retrieval && deps.retrieve) {
-    const { from, laws, principles } = spec.retrieval;
+    const { from, pinFrom, laws, principles } = spec.retrieval;
+    const pinned = pinFrom ? checked.input[pinFrom] : null;
+    const pin: RetrievalPin = typeof pinned === "string" && pinned ? { articleId: pinned } : {};
     const asked = await deps.n8n({
       path: LIB_QUERIES_PATH,
       mode: "sync",
@@ -335,13 +337,14 @@ export async function startRunWith(
       reply && reply.run_id === run.run_id && reply.status === "succeeded" && isPlainObject(reply.output)
         ? cleanQueries(reply.output.queries)
         : [];
-    if (queries.length === 0) {
+    // An open article is a source even when the writer found nothing to search.
+    if (queries.length === 0 && !pin.articleId) {
       await failRun(admin, run.run_id, "no_queries", asked.kind === "failed" ? asked.detail : "the search writer returned no searches");
       return { status: 502, body: { error: AI_COPY.failed, code: "tool_failed", runId: run.run_id } };
     }
     let found: Retrieved;
     try {
-      found = await deps.retrieve(queries, { laws, principles });
+      found = await deps.retrieve(queries, { laws, principles }, pin);
     } catch (err) {
       console.error("[ai] retrieval threw for", run.run_id, err);
       found = { sources: [], map: {} };

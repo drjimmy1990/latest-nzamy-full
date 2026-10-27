@@ -456,7 +456,7 @@ L2 notes:
 
 ### Wave 2: question and answer over the library (fast, retrieval)
 
-> **Status 2026-10-28 (branch `feat/ai-wave2`): L3 built, off by default. L4–L6 next.**
+> **Status 2026-10-28 (branch `feat/ai-wave2`): L3 and L5 built, off by default. L4 and L6 next.**
 > - **Retrieval** (`src/lib/ai/retrieval.ts`). n8n `lib-queries` writes 2–4 short searches from the question, then the app runs them through the `20261026_52` relevance functions and keeps 8 articles and 4 principles as `S1…Sn`.
 >   - Measured on prod: the question's own words ANDed match almost nothing.
 >   - ORed, they match more than 5,000 rows, and above that the functions stop ranking by relevance.
@@ -465,6 +465,10 @@ L2 notes:
 >   - cited the texts it was given;
 >   - refused an unrelated question;
 >   - ignored a planted instruction.
+> - **L5** مساعد المكتبة, inside `/laws`: 5 points, every account type.
+>   - The chat (`LibraryAI`) and the «اشرح لي» window (`ArticleExplainModal`) both call the pipeline (`_library-assistant.ts`).
+>   - «اشرح لي» sends the open article as S1 (`retrieval` `pinFrom`), whatever the search finds.
+>   - The old `/api/ai/library-chat` and `/api/ai/explain-article` routes are unused now; prod never configured their webhooks (both answered 503 on 2026-10-28).
 > - **Open (owner):** whether lawyers below Pro may use the library tools. Today the rule is the library assistant's (owner ٢٠٦ / ٢٠٧ / ٢٠٩).
 | # | Tool | Page | Price | Model | Input → output |
 |:-:|---|---|:-:|---|---|

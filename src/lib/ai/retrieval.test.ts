@@ -65,6 +65,18 @@ function fakeAdmin(pages: Record<string, unknown>) {
           return { abortSignal: () => Promise.resolve(res) };
         },
         from(table: string) {
+          if (table === "articles") {
+            // The open article, read by id (L5 «اشرح لي»).
+            return {
+              select: () => ({
+                eq: (_c: string, id: string) => ({
+                  abortSignal: () => ({
+                    maybeSingle: () => Promise.resolve({ data: pages.pinned && (pages.pinned as { id: string }).id === id ? pages.pinned : null, error: null }),
+                  }),
+                }),
+              }),
+            };
+          }
           assert.equal(table, "laws");
           return { select: () => ({ in: (_c: string, slugs: string[]) => Promise.resolve({ data: slugs.map((s) => ({ slug: s, title: `نظام ${s}` })), error: null }) }) };
         },
@@ -85,6 +97,24 @@ test("retrieveLibrary runs every search on both sections and drops an unranked w
   assert.ok(calls.every((c) => typeof c.args.p_tsquery === "string" && c.args.p_offset === 0));
   assert.deepEqual(out.sources.map((s) => s.kind), ["article"]);
   assert.equal(out.sources[0].title, "نظام x — المادة 1");
+});
+
+test("an open article is S1 and marked, the searches fill the rest without repeating it", async () => {
+  const { admin } = fakeAdmin({
+    pinned: { id: "x__art-9", law_slug: "x", number: 9, text: "المادة المفتوحة" },
+    search_law_articles_relevance: { ranked: true, rows: [{ id: "x__art-9", law_slug: "x", number: 9, text: "المادة المفتوحة" }, { id: "y__art-1", law_slug: "y", number: 1, text: "أخرى" }] },
+    search_principles_relevance: { ranked: true, rows: [] },
+  });
+  const out = await retrieveLibrary(admin as never, ["شرح"], { laws: 6, principles: 3 }, { articleId: "x__art-9" });
+  assert.deepEqual(out.sources.map((s) => [s.sid, s.pinned ?? false]), [["S1", true], ["S2", false]]);
+  assert.equal(out.map.S1.id, "x__art-9");
+
+  // With no searches at all, the open article alone is still something to answer from.
+  const alone = await retrieveLibrary(admin as never, [], { laws: 6, principles: 3 }, { articleId: "x__art-9" });
+  assert.equal(alone.sources.length, 1);
+  // An id that does not exist pins nothing.
+  const missing = await retrieveLibrary(admin as never, [], { laws: 6, principles: 3 }, { articleId: "nope" });
+  assert.equal(missing.sources.length, 0);
 });
 
 test("a failed search costs only its own hits; nothing found is an empty result", async () => {

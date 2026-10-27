@@ -1,12 +1,13 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { useState } from "react";
 import { motion } from "framer-motion";
 import {
-  ChatCircleDots, CaretLeft, Sparkle, BookOpen, Scales, MagnifyingGlass, Copy, CheckCircle,
+  ChatCircleDots, CaretLeft, Sparkle, MagnifyingGlass, Copy, CheckCircle,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
+import { asCitations, CitedText, SourceList, stripCitationMarkers } from "@/components/ai/CitedAnswer";
 import { useAiRun } from "@/hooks/useAiRun";
 import { QUICK_ANSWER_QUESTION_MAX } from "@/lib/ai/tools";
 
@@ -18,49 +19,6 @@ import { QUICK_ANSWER_QUESTION_MAX } from "@/lib/ai/tools";
  * page shows the answer and links each [S…] marker to its text; it never
  * shows an answer of its own.
  */
-
-interface Citation {
-  sid: string;
-  kind: string;
-  title: string;
-  url: string;
-}
-
-const asCitations = (raw: unknown[]): Citation[] =>
-  raw.filter(
-    (c): c is Citation =>
-      typeof c === "object" && c !== null &&
-      typeof (c as Citation).sid === "string" && typeof (c as Citation).url === "string" && typeof (c as Citation).title === "string",
-  );
-
-/** The answer with each [S…] marker as a numbered link; a marker the server dropped is dropped here too. */
-function AnswerText({ text, cites, isDark }: { text: string; cites: Citation[]; isDark: boolean }) {
-  const bySid = new Map(cites.map((c, i) => [c.sid, { ...c, n: i + 1 }]));
-  return (
-    <p className={`whitespace-pre-wrap text-[14px] leading-loose ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>
-      {text.split(/(\[S\d{1,3}\])/g).map((part, i) => {
-        const m = /^\[(S\d{1,3})\]$/.exec(part);
-        if (!m) return <Fragment key={i}>{part}</Fragment>;
-        const c = bySid.get(m[1]);
-        if (!c) return null;
-        return (
-          <a
-            key={i}
-            href={c.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            title={c.title}
-            className={`mx-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-md px-1 align-super text-[10px] font-black ${
-              isDark ? "bg-[#C8A762]/15 text-[#C8A762] hover:bg-[#C8A762]/25" : "bg-[#0B3D2E]/10 text-[#0B3D2E] hover:bg-[#0B3D2E]/20"
-            }`}
-          >
-            {c.n}
-          </a>
-        );
-      })}
-    </p>
-  );
-}
 
 export default function QuickAnswerPage() {
   const { isDark } = useTheme();
@@ -174,7 +132,7 @@ export default function QuickAnswerPage() {
             <span className={`text-[13px] font-semibold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>الإجابة</span>
             <button
               onClick={() => {
-                navigator.clipboard.writeText(answer.replace(/\[S\d{1,3}\]/g, ""));
+                navigator.clipboard.writeText(stripCitationMarkers(answer));
                 setCopied(true);
                 setTimeout(() => setCopied(false), 1500);
               }}
@@ -187,32 +145,16 @@ export default function QuickAnswerPage() {
             </button>
           </div>
           <div className="p-5 space-y-5">
-            <AnswerText text={answer} cites={cites} isDark={isDark} />
+            <CitedText
+              text={answer}
+              cites={cites}
+              isDark={isDark}
+              className={`text-[14px] leading-loose ${isDark ? "text-zinc-200" : "text-zinc-800"}`}
+            />
 
             <div>
               <h2 className={`mb-2 text-[12px] font-bold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>المصادر</h2>
-              <ol className="space-y-1.5">
-                {cites.map((c, i) => (
-                  <li key={c.sid}>
-                    <a
-                      href={c.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={`flex items-start gap-2 rounded-xl border px-3 py-2 text-[12px] transition-colors ${
-                        isDark ? "border-white/[0.06] hover:bg-white/[0.03] text-zinc-300" : "border-zinc-100 hover:bg-zinc-50 text-zinc-700"
-                      }`}
-                    >
-                      <span className={`mt-0.5 font-black ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>{i + 1}</span>
-                      {c.kind === "principle" ? (
-                        <Scales size={14} className="mt-0.5 shrink-0 text-amber-500" />
-                      ) : (
-                        <BookOpen size={14} className="mt-0.5 shrink-0 text-blue-500" />
-                      )}
-                      <span className="leading-relaxed">{c.title}</span>
-                    </a>
-                  </li>
-                ))}
-              </ol>
+              <SourceList cites={cites} isDark={isDark} />
             </div>
 
             <p className={`text-[11px] leading-relaxed ${muted}`}>

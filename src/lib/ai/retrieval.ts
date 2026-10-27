@@ -38,6 +38,13 @@ export interface PackageSource {
   kind: "article" | "principle";
   title: string;
   text: string;
+  /** The article the user has open (L5 «اشرح لي»): always S1, whatever the searches found. */
+  pinned?: true;
+}
+
+/** An article the answer must start from, read by id rather than found by a search. */
+export interface RetrievalPin {
+  articleId?: string;
 }
 
 /** The run's source map entry (runCore.SourceMap): what a citation resolves to. */
@@ -111,7 +118,12 @@ const STATUS_NOTE: Record<string, string> = { repealed: "مادة ملغاة", a
 const clip = (s: string) => (s.length > SOURCE_TEXT_MAX ? `${s.slice(0, SOURCE_TEXT_MAX)}…` : s);
 
 /** Rows and law titles → the package texts and the run's source map, S1… in order. */
-export function buildSources(articles: Row[], principles: Row[], lawTitles: Map<string, string>): Retrieved {
+export function buildSources(
+  articles: Row[],
+  principles: Row[],
+  lawTitles: Map<string, string>,
+  pinnedId: string | null = null,
+): Retrieved {
   const sources: PackageSource[] = [];
   const map: Record<string, SourceRef> = {};
   let n = 0;
@@ -127,7 +139,13 @@ export function buildSources(articles: Row[], principles: Row[], lawTitles: Map<
     // The model must know a repealed or amended text is not the law in force.
     const status = STATUS_NOTE[str(a.status)];
     const sid = `S${++n}`;
-    sources.push({ sid, kind: "article", title: status ? `${title} (${status})` : title, text: clip(text) });
+    sources.push({
+      sid,
+      kind: "article",
+      title: status ? `${title} (${status})` : title,
+      text: clip(text),
+      ...(pinnedId !== null && id === pinnedId ? { pinned: true as const } : {}),
+    });
     map[sid] = { kind: "article", id, title, url: `/laws/${apiSlug(slug)}#${encodeURIComponent(id)}` };
   }
   for (const p of principles) {
@@ -176,10 +194,26 @@ async function rankedRows(
  * library matched; the caller refunds rather than let the model answer from
  * memory.
  */
+const ARTICLE_COLUMNS = "id, number, number_text, status, text, original_text, law_slug";
+
+/** One article by id, or null (missing, unreadable, or over the budget). */
+async function pinnedArticle(admin: SupabaseClient, id: string, signal: AbortSignal): Promise<Row | null> {
+  const { data, error } = await admin
+    .schema("library")
+    .from("articles")
+    .select(ARTICLE_COLUMNS)
+    .eq("id", id)
+    .abortSignal(signal)
+    .maybeSingle();
+  if (error && !signal.aborted) console.warn("[ai/retrieval] pinned article", error.code, error.message);
+  return (data as Row | null) ?? null;
+}
+
 export async function retrieveLibrary(
   admin: SupabaseClient,
   queries: string[],
   limits: RetrievalLimits,
+  pin: RetrievalPin = {},
   budgetMs = RETRIEVAL_BUDGET_MS,
 ): Promise<Retrieved> {
   const ctrl = new AbortController();
@@ -194,7 +228,8 @@ export async function retrieveLibrary(
         }
       })
       .filter(Boolean);
-    const [lawLists, principleLists] = await Promise.all([
+    const [pinned, lawLists, principleLists] = await Promise.all([
+      pin.articleId ? pinnedArticle(admin, pin.articleId, ctrl.signal) : Promise.resolve(null),
       limits.laws > 0
         ? Promise.all(parsed.map((t) => rankedRows(admin, "search_law_articles_relevance", t, FETCH_PER_QUERY.laws, ctrl.signal)))
         : Promise.resolve([] as Row[][]),
@@ -202,7 +237,10 @@ export async function retrieveLibrary(
         ? Promise.all(parsed.map((t) => rankedRows(admin, "search_principles_relevance", t, FETCH_PER_QUERY.principles, ctrl.signal)))
         : Promise.resolve([] as Row[][]),
     ]);
-    const articles = interleave(lawLists, limits.laws);
+    // The open article first; the searches fill the rest without repeating it.
+    const articles = pinned
+      ? [pinned, ...interleave(lawLists, limits.laws + 1).filter((a) => str(a.id) !== str(pinned.id))].slice(0, limits.laws + 1)
+      : interleave(lawLists, limits.laws);
     const principles = interleave(principleLists, limits.principles);
 
     const slugs = [...new Set(articles.map((a) => str(a.law_slug)).filter(Boolean))];
@@ -212,7 +250,7 @@ export async function retrieveLibrary(
       if (error) console.warn("[ai/retrieval] law titles", error.code, error.message);
       for (const l of (data ?? []) as Row[]) titles.set(str(l.slug), str(l.title));
     }
-    return buildSources(articles, principles, titles);
+    return buildSources(articles, principles, titles, pinned ? str(pinned.id) : null);
   } finally {
     clearTimeout(timer);
   }
