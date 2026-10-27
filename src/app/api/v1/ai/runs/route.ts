@@ -3,7 +3,10 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireApiUser } from "@/lib/auth/apiAuth";
 import { practiceKindFromRead } from "@/lib/auth/courtPracticeDecision";
 import { callN8n } from "@/lib/ai/n8nClient";
-import { startRunWith, type RunActor } from "@/lib/ai/runCore";
+import { retrieveLibrary } from "@/lib/ai/retrieval";
+import { startRunWith, type RouteReply, type RunActor } from "@/lib/ai/runCore";
+import { libraryGate } from "@/lib/library-gate";
+import { libraryAiAccess } from "@/app/api/ai/_libraryAiAccess";
 
 /**
  * /api/v1/ai/runs — the AI tools (docs/plans/2026-10-26-ai-services-n8n-plan.md
@@ -26,6 +29,18 @@ export const runtime = "nodejs";
 
 const NO_STORE = { "Cache-Control": "private, no-store" };
 const SIGN_IN = { error: "سجّل الدخول لاستخدام أدوات الذكاء الاصطناعي" };
+
+/**
+ * A library tool's gate: the library's closed switch (admins pass), then the
+ * assistant's rule, Pro or higher or a platform admin (owner ٢٠٦ / ٢٠٧ / ٢٠٩),
+ * the same two checks as /api/ai/library-chat.
+ */
+async function libraryAccess(): Promise<RouteReply | null> {
+  const refused = (await libraryGate()) ?? (await libraryAiAccess());
+  if (!refused) return null;
+  const body = (await refused.json().catch(() => ({}))) as Record<string, unknown>;
+  return { status: refused.status, body: { ...body, code: body.libraryClosed ? "library_closed" : "library_tier" } };
+}
 
 function callbackUrl(): string {
   const site = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/+$/, "") ?? "";
@@ -73,6 +88,8 @@ export async function POST(request: NextRequest) {
       {
         callbackUrl: callbackUrl(),
         n8n: (call) => callN8n({ ...call, baseUrl: process.env.N8N_AI_BASE_URL, key: process.env.NZAMY_AI_KEY }),
+        libraryAccess,
+        retrieve: (queries, limits) => retrieveLibrary(admin, queries, limits),
       },
       actor,
       body,

@@ -11,6 +11,7 @@
  * Pure: no imports outside src/lib/ai, so `node --test` runs it.
  */
 import { extractLegalRefs, missingLegalRefs } from "./legalRefs.ts";
+import type { RetrievalLimits } from "./retrieval.ts";
 
 export type AiToolClass = "fast" | "job";
 export type AiModelTier = "fast" | "deep";
@@ -41,6 +42,16 @@ export interface AiToolSpec {
   jobDeadlineSeconds?: number;
   /** Letter-type tools sign with the user's name (plan §2.2); every other tool gets null. */
   sendsDisplayName?: boolean;
+  /**
+   * Wave 2: the tool answers from library texts the app retrieves (retrieval.ts).
+   * Such a tool passes the library gate and the assistant's tier rule before
+   * the charge, is refunded when nothing in the library matches, and fails
+   * (refunded) when its answer cites none of the texts it was given.
+   */
+  retrieval?: RetrievalLimits & {
+    /** The input field the searches are written from. */
+    from: string;
+  };
   validateInput: (raw: unknown) => InputCheck;
   /**
    * The output that may be stored and shown, or null when it breaks the tool's
@@ -153,6 +164,28 @@ function najizOutput(raw: unknown, input: Record<string, unknown>): Record<strin
   return { text, kept_refs: required };
 }
 
+// ── wave 2: answers from the library (plan §5, «Wave 2») ────────────────────
+
+/** n8n's search writer: a question → 2–4 short library searches (retrieval.ts). */
+export const LIB_QUERIES_PATH = "nzamy-ai/lib-queries";
+
+export const QUICK_ANSWER_QUESTION_MAX = 1000;
+export const QUICK_ANSWER_MAX = 6000;
+
+/** L3 سؤال قانوني سريع: one question → a short answer cited to library texts. */
+function quickAnswerInput(raw: unknown): InputCheck {
+  if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
+  const question = boundedText(raw.question, QUICK_ANSWER_QUESTION_MAX);
+  if (!question || question.length < 8) return { ok: false, error: "اكتب سؤالك (من ٨ إلى ١٬٠٠٠ حرف)" };
+  return { ok: true, input: { question } };
+}
+
+function quickAnswerOutput(raw: unknown): Record<string, unknown> | null {
+  if (!isPlainObject(raw)) return null;
+  const answer = boundedText(raw.answer, QUICK_ANSWER_MAX);
+  return answer ? { answer } : null;
+}
+
 export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
   "echo-fast": {
     id: "echo-fast",
@@ -209,6 +242,20 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     defaultMode: "off",
     validateInput: najizInput,
     validateOutput: najizOutput,
+  },
+  "quick-answer": {
+    id: "quick-answer",
+    n8nPath: "nzamy-ai/quick-answer",
+    class: "fast",
+    tier: "fast",
+    roles: ["lawyer", "firm"],
+    consultantBlocked: false,
+    price: () => 20,
+    dailyLimit: 30,
+    defaultMode: "off",
+    retrieval: { from: "question", laws: 8, principles: 4 },
+    validateInput: quickAnswerInput,
+    validateOutput: quickAnswerOutput,
   },
 };
 

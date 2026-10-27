@@ -455,6 +455,17 @@ L2 notes:
 - Fix the handoff from the drafter, which currently loads `MOCK_DRAFT` (`?source=draft`).
 
 ### Wave 2: question and answer over the library (fast, retrieval)
+
+> **Status 2026-10-28 (branch `feat/ai-wave2`): L3 built, off by default. L4–L6 next.**
+> - **Retrieval** (`src/lib/ai/retrieval.ts`). n8n `lib-queries` writes 2–4 short searches from the question, then the app runs them through the `20261026_52` relevance functions and keeps 8 articles and 4 principles as `S1…Sn`.
+>   - Measured on prod: the question's own words ANDed match almost nothing.
+>   - ORed, they match more than 5,000 rows, and above that the functions stop ranking by relevance.
+> - **Pipeline** (`runCore`). A tool with `retrieval` in its registry entry passes the library gate and the Pro-or-admin rule before the charge. The searches run after the charge. The run is refunded with `no_sources` when nothing matches, and with `ungrounded` when the answer cites none of the texts it was given.
+> - **L3** `/ai/quick-answer`: 20 points, lawyer and firm. A live Gemini probe:
+>   - cited the texts it was given;
+>   - refused an unrelated question;
+>   - ignored a planted instruction.
+> - **Open (owner):** whether lawyers below Pro may use the library tools. Today the rule is the library assistant's (owner ٢٠٦ / ٢٠٧ / ٢٠٩).
 | # | Tool | Page | Price | Model | Input → output |
 |:-:|---|---|:-:|---|---|
 | L3 | **سؤال قانوني سريع** | `/ai/quick-answer` (build the screen; reuse the assistant's chat bubble and source chips) | 20 | Haiku | `{question}` → `{answer, sources: [{kind,id}], confidence_note?}`. Retrieval: `laws` 8, `principles` 4 |
