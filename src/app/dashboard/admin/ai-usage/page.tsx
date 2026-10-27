@@ -21,7 +21,7 @@ interface ToolRow {
   class: "fast" | "job";
   tier: string;
   price: number;
-  mode: "off" | "review" | "live";
+  mode: "off" | "staff" | "review" | "live";
   dailyLimit: number;
   defaultMode: string;
   defaultDailyLimit: number;
@@ -43,7 +43,7 @@ interface RunRow {
   duration_ms: number | null;
 }
 
-const MODE_LABEL: Record<string, string> = { off: "متوقفة", review: "بمراجعة", live: "مفعّلة" };
+const MODE_LABEL: Record<string, string> = { off: "متوقفة", staff: "للمشرفين فقط", review: "بمراجعة", live: "مفعّلة" };
 const STATUS_LABEL: Record<string, string> = { running: "قيد التنفيذ", review: "بانتظار المراجعة", succeeded: "نجح", failed: "فشل" };
 const STATUS_TONE: Record<string, string> = {
   running: "text-amber-300",
@@ -169,7 +169,7 @@ export default function AdminAIUsagePage() {
                   <td>
                     <select value={t.mode} onChange={(e) => update(t.id, { mode: e.target.value as ToolRow["mode"] })}
                       className="rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-100">
-                      {(["off", "review", "live"] as const).map((m) => <option key={m} value={m}>{MODE_LABEL[m]}</option>)}
+                      {(["off", "staff", "review", "live"] as const).map((m) => <option key={m} value={m}>{MODE_LABEL[m]}</option>)}
                     </select>
                   </td>
                   <td>

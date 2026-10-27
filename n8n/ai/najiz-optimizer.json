@@ -47,9 +47,7 @@
         480,
         300
       ],
-      "retryOnFail": true,
-      "maxTries": 2,
-      "waitBetweenTries": 2000,
+      "retryOnFail": false,
       "onError": "continueErrorOutput",
       "parameters": {
         "method": "POST",

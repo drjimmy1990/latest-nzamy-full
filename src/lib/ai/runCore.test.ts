@@ -330,3 +330,20 @@ test("the callback checks a job's output against the input stored on the run", (
   assert.equal(spec.validateOutput({ text: "المادة 77 والحكم رقم 4430123" }, {}), null, "no stored input: nothing is proven");
   assert.equal(spec.validateOutput({ text: "الحكم رقم 4430123" }, input.input), null);
 });
+
+test("staff mode runs the tool for an admin and refuses everyone else before any charge", async () => {
+  const staff = { communicate: { mode: "staff" } };
+  const input = { type: "letter", tone: "رسمي", body: "نص" };
+  {
+    const { client, log } = db({ setting: staff });
+    const r = await startRunWith(client as never, deps(okReply({ text: "x" })), LAWYER, body({ tool: "communicate", input }));
+    assert.equal(r.status, 423);
+    assert.deepEqual(rpcs(log), []);
+  }
+  {
+    const { client } = db({ setting: staff });
+    const r = await startRunWith(client as never, deps(okReply({ text: "x" })), { ...LAWYER, userType: "admin" }, body({ tool: "communicate", input }));
+    assert.equal(r.status, 200);
+  }
+  assert.equal(aiToolsSettingIssue({ communicate: { mode: "staff" } }, Object.keys(AI_TOOLS)), null);
+});

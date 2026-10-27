@@ -77,7 +77,7 @@ const content = '<request>\n'
   + (sender ? '\n<sender>' + esc(sender) + '</sender>' : '');
 return [{ json: { claude_request: {
   model: b.model_tier === 'deep' ? 'claude-sonnet-5-5' : 'claude-haiku-5-5',
-  max_tokens: 2000,
+  max_tokens: 3500,
   system: [{ type: 'text', text: system }],
   messages: [{ role: 'user', content }],
   output_config: { effort: 'low', format: { type: 'json_schema', schema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: false } } },
@@ -143,7 +143,9 @@ export function toWorkflow(def) {
       },
       {
         id: "w3", name: "Claude", type: "n8n-nodes-base.httpRequest", typeVersion: 4.2, position: [480, 300],
-        retryOnFail: true, maxTries: 2, waitBetweenTries: 2000, onError: "continueErrorOutput",
+        // No retry: a second try would outlast the app's 50 s wait and only spend tokens;
+        // the app refunds a failure and the user can run it again.
+        retryOnFail: false, onError: "continueErrorOutput",
         parameters: {
           method: "POST",
           url: "https://api.anthropic.com/v1/messages",

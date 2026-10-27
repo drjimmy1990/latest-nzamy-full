@@ -37,13 +37,15 @@ Wave 1 has no SQL and no new server variables.
    tail -f /root/deploy-wave1.log
    ```
 2. **n8n** (https://n8n.asra3.com): open each of the two workflows above and flip **Active** on. This works only after wave-0 step 5 (the four secret values) is done.
-3. **Switch the tools on for the test** at `https://nezamy.sa/dashboard/admin/ai-usage` (as admin): set `communicate` and `najiz-optimizer` to **مفعّلة**, then press **حفظ**.
+3. **Switch the tools on for admins only** at `https://nezamy.sa/dashboard/admin/ai-usage` (as admin): set `communicate` and `najiz-optimizer` to **للمشرفين فقط**, then press **حفظ**.
+   - In this mode only admin accounts can run the tools. Lawyers still get «هذه الأداة غير متاحة حالياً», so no lawyer's data goes to the AI provider before the notice (decision D10) is published.
+   - **Don't choose مفعّلة yet.** That opens the tools to every lawyer, and while charging is off they would be free.
 4. **Test المتحدث الذكي.** Open `https://nezamy.sa/ai/communicate` in a **private window**. Browsers keep the old redirect to `/ai/legal-opinion`, and a private window has no memory of it.
    - Pick «رسالة واتساب», write two lines, and press «اكتب الرسالة».
    - A real message should appear in a few seconds, and «أرسل عبر واتساب» opens WhatsApp with the text.
 5. **Test منقح ناجز.** Open `https://nezamy.sa/ai/najiz-optimizer` and paste a memo longer than 10,000 characters that cites a few articles («المادة (٧٧)») and judgment numbers («الحكم رقم ...»).
    - Press «تنقيح وتهيئة للناجز». This is free and instant.
    - The card «ما زال النص فوق ١٠٬٠٠٠ حرف» appears. Press «اختصر بالذكاء الاصطناعي».
-   - The result is 9,000 characters or fewer, followed by the line «تحقق النظام من بقاء كل المراجع».
-6. **Switch both back to متوقفة → حفظ.** They stay off for lawyers until the AI-provider notice (decision D10) is in the privacy policy and the terms.
+   - The result is 9,000 characters or fewer, followed by the line «تحقق النظام من بقاء المراجع المكتوبة بالأرقام». The check covers only references written with digits; a spelled-out «المادة الخامسة» is not checked.
+6. **Afterwards**, leave both on «للمشرفين فقط» or set them back to «متوقفة» → حفظ. They open to lawyers («مفعّلة») only after the AI-provider notice (D10) is in the privacy policy and the terms.
 7. Send us a screenshot of each result and of the «آخر التشغيلات» table.

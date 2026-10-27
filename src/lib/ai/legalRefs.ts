@@ -13,6 +13,9 @@
  *   رقم 4430123      — any «رقم» followed by a number: decisions, judgments,
  *   رقم م/51           principles, royal decrees (م/51), circulars (13/ت/1234)
  *
+ * Only references written with digits are found; a spelled-out article
+ * («المادة الخامسة والسبعون») is not, and the screens say so.
+ *
  * Pure, no imports, so `node --test` runs it.
  */
 
@@ -25,11 +28,13 @@ function normalise(text: string): string {
   return text
     .replace(/[\u0660-\u0669\u06F0-\u06F9]/g, (d) => DIGITS[d] ?? d)
     .replace(/[\u0640\u064B-\u0652\u0670]/g, "") // tatweel, harakat, dagger alif
-    .replace(/[\u00A0\u200B-\u200F\u202A-\u202E]/g, " ");
+    // NBSP, zero-width marks, bidi embeddings and isolates, BOM: text pasted from Word or Najiz.
+    .replace(/[\u00A0\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, " ");
 }
 
 // «المادة» in any of its attached forms, then an optional «رقم» and bracket.
-const ARTICLE = /(?:^|[^\u0600-\u06FF])(?:[وفبلك]{0,3})(?:ال)?ماد(?:ة|تين|تان)\s*(?:رقم\s*)?[(\[]?\s*(\d{1,4})(?!\d)/g;
+// Only a LETTER before it rules a match out («عمادة»); an Arabic comma or semicolon does not («٧٧،والمادة ٨٠»).
+const ARTICLE = /(?:^|[^\u0621-\u064A\u0671-\u06D3])(?:[وفبلك]{0,3})(?:ال)?ماد(?:ة|تين|تان)\s*(?:رقم\s*)?[(\[]?\s*(\d{1,4})(?!\d)/g;
 // «رقم» then a number, optionally with letters between slashes: م/51, 13/ت/1234, 4430123.
 const NUMBERED = /رقم\s*[(\[]?\s*((?:[\u0600-\u06FF]{1,2}\s*\/\s*)?\d[\d]*(?:\s*[\/\-]\s*(?:[\u0600-\u06FF]{1,2}|\d+))*)/g;
 

@@ -214,7 +214,10 @@ export async function startRunWith(
   }
 
   const runtime = resolveToolRuntime(spec, await readAiToolsSetting(admin));
-  if (runtime.mode === "off") return { status: 423, body: { error: AI_COPY.off, code: "tool_off" } };
+  // "staff": only admins, so a tool can be tried on production before it opens.
+  if (runtime.mode === "off" || (runtime.mode === "staff" && !isAdmin)) {
+    return { status: 423, body: { error: AI_COPY.off, code: "tool_off" } };
+  }
 
   const checked = spec.validateInput(req.input);
   if (!checked.ok) return { status: 422, body: { error: checked.error, code: "invalid_input" } };

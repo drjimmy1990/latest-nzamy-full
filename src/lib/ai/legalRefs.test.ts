@@ -17,6 +17,16 @@ test("words that only contain the letters are not articles; «رقم» without a
   assert.deepEqual(extractLegalRefs("زيادة 50 ألفاً وعمادة 3 ورقم الهوية غير مذكور"), []);
 });
 
+test("an Arabic comma or semicolon right before a reference does not hide it", () => {
+  assert.deepEqual(extractLegalRefs("وفق المادة ٧٧،والمادة ٨٠؛وللمادة ٩١"), ["مادة 77", "مادة 80", "مادة 91"]);
+});
+
+test("bidi isolates, zero-width marks and a BOM from pasted text do not hide a reference", () => {
+  const c = (n: number) => String.fromCharCode(n); // BOM, LRI/PDI, RLM, NBSP
+  const text = `${c(0xfeff)}المادة ${c(0x2066)}٧٧${c(0x2069)} والحكم رقم${c(0x200f)} ٥٥٥ والمادة${c(0xa0)}(١٢)`;
+  assert.deepEqual(extractLegalRefs(text), ["مادة 77", "مادة 12", "رقم 555"]);
+});
+
 test("diacritics and tatweel do not hide a reference", () => {
   assert.deepEqual(extractLegalRefs("المـــادَّة ٧٧"), ["مادة 77"]);
 });

@@ -9,10 +9,13 @@ import {
 import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
 import { useAiRun } from "@/hooks/useAiRun";
+import { COMMUNICATE_TONES, type CommunicateType } from "@/lib/ai/tools";
 
 // ─── Communication types ──────────────────────────────────────────────────────
 
-const COMM_TYPES = [
+// The ids and tones come from the tool registry, so the page can only send
+// values the server accepts.
+const COMM_TYPES: ReadonlyArray<{ id: CommunicateType; label: string; channel: string }> = [
   { id: "letter", label: "خطاب رسمي",      channel: "بريد/طباعة" },
   { id: "email",  label: "بريد إلكتروني",  channel: "Email" },
   { id: "wa",     label: "رسالة واتساب",   channel: "WhatsApp" },
@@ -20,14 +23,14 @@ const COMM_TYPES = [
   { id: "reply",  label: "رد على شكوى",    channel: "موجّه" },
 ];
 
-const TONES = ["رسمي جداً", "رسمي", "دبلوماسي", "حازم", "تسوية ودية"];
+const TONES = COMMUNICATE_TONES;
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AICommunicatePage() {
   const { isDark } = useTheme();
-  const [commType, setCommType] = useState("letter");
-  const [tone, setTone] = useState("رسمي");
+  const [commType, setCommType] = useState<CommunicateType>("letter");
+  const [tone, setTone] = useState<string>(COMMUNICATE_TONES[1]);
   const [recipient, setRecipient] = useState("");
   const [subject, setSubject] = useState("");
   const [context, setContext] = useState("");

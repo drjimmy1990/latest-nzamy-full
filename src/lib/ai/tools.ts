@@ -14,7 +14,8 @@ import { extractLegalRefs, missingLegalRefs } from "./legalRefs.ts";
 
 export type AiToolClass = "fast" | "job";
 export type AiModelTier = "fast" | "deep";
-export type AiToolMode = "off" | "review" | "live";
+/** staff: live for admins only, to test a tool on production before anyone else sees it. */
+export type AiToolMode = "off" | "staff" | "review" | "live";
 
 export type InputCheck =
   | { ok: true; input: Record<string, unknown> }
@@ -88,6 +89,7 @@ const ECHO_ROLES = ["lawyer", "firm"] as const;
 // must be disclosed before a tool goes live. An admin switches them on.
 
 export const COMMUNICATE_TYPES = ["letter", "email", "wa", "notice", "reply"] as const;
+export type CommunicateType = (typeof COMMUNICATE_TYPES)[number];
 export const COMMUNICATE_TONES = ["رسمي جداً", "رسمي", "دبلوماسي", "حازم", "تسوية ودية"] as const;
 export const COMMUNICATE_BODY_MAX = 3000;
 export const COMMUNICATE_TEXT_MAX = 6000;
@@ -135,7 +137,7 @@ function najizInput(raw: unknown): InputCheck {
     return { ok: false, error: "النص ضمن الحد بعد التنقيح؛ لا يحتاج إلى اختصار" };
   }
   if (text.length > NAJIZ_INPUT_MAX) return { ok: false, error: "النص أطول من ٤٠٬٠٠٠ حرف؛ قسّمه إلى مذكرتين" };
-  return { ok: true, input: { text, must_keep: extractLegalRefs(text).slice(0, 300) } };
+  return { ok: true, input: { text, must_keep: extractLegalRefs(text) } };
 }
 
 function najizOutput(raw: unknown, input: Record<string, unknown>): Record<string, unknown> | null {
