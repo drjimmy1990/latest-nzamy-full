@@ -16,14 +16,18 @@
  *       citations that name an id the app sent.
  *
  * The relevance functions are service-role only (they return server-only
- * text), so `admin` must be the service-role client.
+ * text), so `admin` is typed as the service-role client (ServiceClient, the
+ * alias library-column-lock.test.ts recognises).
  *
  * Pure: relative imports only (type-only for Supabase), so `node --test` runs it.
  */
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { createServiceClient } from "../supabase/server.ts";
 import { parseSearchQuery } from "../../utils/normalizeArabic.ts";
 import { articleDisplayLabel } from "../../app/api/library/laws/[slug]/_article-label.ts";
 import { apiSlug } from "../../utils/apiSlug.ts";
+
+/** The service-role client: the relevance functions and the article text are service-role only. */
+type ServiceClient = Awaited<ReturnType<typeof createServiceClient>>;
 
 export interface RetrievalLimits {
   /** Articles kept, at most. */
@@ -167,7 +171,7 @@ export function buildSources(
 type RpcRows = { rows: Row[]; ranked: boolean };
 
 async function rankedRows(
-  admin: SupabaseClient,
+  admin: ServiceClient,
   fn: string,
   tsquery: string,
   fetch: number,
@@ -197,7 +201,7 @@ async function rankedRows(
 const ARTICLE_COLUMNS = "id, number, number_text, status, text, original_text, law_slug";
 
 /** One article by id, or null (missing, unreadable, or over the budget). */
-async function pinnedArticle(admin: SupabaseClient, id: string, signal: AbortSignal): Promise<Row | null> {
+async function pinnedArticle(admin: ServiceClient, id: string, signal: AbortSignal): Promise<Row | null> {
   const { data, error } = await admin
     .schema("library")
     .from("articles")
@@ -210,7 +214,7 @@ async function pinnedArticle(admin: SupabaseClient, id: string, signal: AbortSig
 }
 
 export async function retrieveLibrary(
-  admin: SupabaseClient,
+  admin: ServiceClient,
   queries: string[],
   limits: RetrievalLimits,
   pin: RetrievalPin = {},

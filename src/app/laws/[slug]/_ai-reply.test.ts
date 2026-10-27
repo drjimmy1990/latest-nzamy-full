@@ -92,20 +92,22 @@ test("the new copy is Arabic, with no Latin letters (it names no plan)", () => {
   }
 });
 
-test("LibraryAI asks libraryAiRefusal on a non-ok answer and keeps «قيد التفعيل» otherwise", () => {
-  assert.match(componentSource, /import \{ libraryAiRefusal, type LibraryAiAction \} from "\.\/_ai-reply";/);
+test("LibraryAI and «اشرح لي» ask the pipeline through askLibrary, and show its refusal's link", () => {
+  // Wave 2 L5: both call /api/v1/ai/runs via _library-assistant.ts, which maps
+  // 401 / 403 library_tier to libraryAiRefusal (library-assistant.test.ts).
+  assert.match(componentSource, /import \{ askLibrary \} from "\.\/_library-assistant";/);
+  assert.doesNotMatch(componentSource, /\/api\/ai\/library-chat|\/api\/ai\/explain-article/);
   const start = componentSource.indexOf("export function LibraryAI(");
   const end = componentSource.indexOf("export function ArticleExplainModal(");
   assert.ok(start > -1 && end > start);
   const libraryAi = componentSource.slice(start, end);
+  const explain = componentSource.slice(end);
 
-  assert.match(
-    libraryAi,
-    /const refusal = libraryAiRefusal\(res\.status, window\.location\.pathname \+ window\.location\.search\);\s*if \(refusal\) \{\s*reply = refusal\.text;\s*action = refusal\.action;\s*\} else \{\s*reply = isRTL\s*\?\s*"الذكاء الاصطناعي قيد التفعيل وقريباً سيتوفر\./,
-  );
-  // The refusal is decided only on the non-ok arm, after the fetch.
-  assert.ok(libraryAi.indexOf("if (res.ok) {") < libraryAi.indexOf("const refusal = libraryAiRefusal("));
-  // The action reaches the message and is rendered as a link.
-  assert.match(libraryAi, /setMsgs\(m => \[\.\.\.m, \{ role: "ai", text: reply, action \}\]\);/);
-  assert.match(libraryAi, /\{m\.action && \(\s*<Link href=\{m\.action\.href\}[^>]*>\s*\{m\.action\.label\}\s*<\/Link>\s*\)\}/);
+  assert.match(libraryAi, /await askLibrary\(\{ message: query \}, window\.location\.pathname \+ window\.location\.search\);/);
+  assert.match(explain, /await askLibrary\(\s*\{ message: query, articleId: article\.id \},\s*window\.location\.pathname \+ window\.location\.search,\s*\);/);
+  for (const part of [libraryAi, explain]) {
+    // The action reaches the message and is rendered as a link.
+    assert.match(part, /setMsgs\(m => \[\.\.\.m, \{ role: "ai", text: reply, action, cites \}\]\);/);
+    assert.match(part, /\{m\.action && \(\s*<Link href=\{m\.action\.href\}[^>]*>\s*\{m\.action\.label\}\s*<\/Link>\s*\)\}/);
+  }
 });
