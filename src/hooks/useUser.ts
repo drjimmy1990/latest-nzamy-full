@@ -12,17 +12,15 @@
 
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
 import { getPermissions } from "@/hooks/userPermissions";
-import type { ActiveEntityMemberships } from "@/lib/auth/entityMembership";
+import { GUEST_SESSION } from "@/hooks/userSession";
 import {
-  GUEST_SESSION,
-  mapSupabaseUser,
-  readEntityMemberships,
-  readPracticeKind,
-  readProfileUserType,
-  readStaffRole,
-} from "@/hooks/userSession";
+  createUserSessionStore,
+  LOADING_SNAPSHOT,
+  type UserSessionSnapshot,
+  type UserSessionStore,
+} from "@/hooks/userSessionStore";
 import { toPracticeKind, type PracticeKind } from "@/lib/auth/practiceKind";
 import { toStaffRole, type StaffRole } from "@/lib/auth/staffRoles";
 import { createClient } from "@/lib/supabase/client";
@@ -30,7 +28,6 @@ import {
   isSupabaseMode as isSupabaseBackend,
   BACKEND_MODE as RESOLVED_BACKEND_MODE,
 } from "@/lib/runtimeMode";
-import type { User } from "@supabase/supabase-js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -448,238 +445,38 @@ export interface UseUserReturn extends UserSession {
   staffRole: StaffRole | null;
 }
 
+// ── Supabase Mode ────────────────────────────────────────────────────────────
+//
+// The tab's one session store (src/hooks/userSessionStore.ts has the rules),
+// created on first use in the browser. Every useUser() caller subscribes to
+// it, so a page makes one getUser(), one profile + membership read and holds
+// one auth listener, however many components — and nested gates — ask.
+let store: UserSessionStore | null = null;
+function userSessionStore(): UserSessionStore {
+  if (!store) store = createUserSessionStore({ createClient });
+  return store;
+}
+
+const subscribeSession = (listener: () => void): (() => void) => {
+  if (!isSupabaseMode) return () => {};
+  // Owner decision ١١٥: a real session starts without demo markers. Cleared on
+  // every mount, as before — a local write, not a read.
+  clearDemoSessionMarkers();
+  return userSessionStore().subscribe(listener);
+};
+const getSessionSnapshot = (): UserSessionSnapshot =>
+  isSupabaseMode ? userSessionStore().getSnapshot() : LOADING_SNAPSHOT;
+// The server, and the hydration pass, render a loading guest — as before.
+const getServerSessionSnapshot = (): UserSessionSnapshot => LOADING_SNAPSHOT;
+
 export function useUser(): UseUserReturn {
+  // Supabase mode: the shared session. Demo mode never subscribes.
+  const shared = useSyncExternalStore(subscribeSession, getSessionSnapshot, getServerSessionSnapshot);
+
+  // Demo mode only — kept per instance, as before (localStorage, no network).
   const [session, setSession] = useState<UserSession>(GUEST_SESSION);
   const [demoKey, setDemoKey]  = useState<string>("");
   const [loading, setLoading]  = useState(true);
-
-  // ── Supabase Mode ──────────────────────────────────────────────────────────
-  //
-  // This returns its cleanup SYNCHRONOUSLY; it used to return a promise of one.
-  // The `cancelled` flag below is why: reached through a promise, the flag could
-  // only be flipped once the async body had already finished — precisely when it
-  // is too late to be worth anything. That matters more now than it did, because
-  // the body makes two round trips (the user, then the profile) instead of one.
-  const initSupabase = useCallback((): (() => void) | undefined => {
-    if (!isSupabaseMode) return;
-
-    // Owner decision ١١٥: a real session starts without demo markers.
-    clearDemoSessionMarkers();
-
-    let cancelled = false;
-    let unsubscribe: (() => void) | undefined;
-
-    // Monotonic counter over auth events. Every profile read remembers the value
-    // it started with and discards its own result if a newer event has arrived
-    // in the meantime. This is what stops a profile read that is still in flight
-    // from re-populating a session after the user has already signed out.
-    let latestEvent = 0;
-
-    // The user id the last setSession put on screen, or null for a guest.
-    // Used to tell a token refresh for the person already rendered (resolve it
-    // quietly, no spinner) from a switch to a different person or an arrival
-    // from signed-out (hold `loading` until the profile has been read).
-    let renderedUserId: string | null = null;
-
-    /** Resolve one signed-in user into a session — profile first, then render. */
-    const applyUser = async (
-      supabase: ReturnType<typeof createClient>,
-      authUser: User,
-      eventId: number,
-    ) => {
-      // practice_kind is read for a lawyer only, so it waits for the profile
-      // read — while still overlapping the four membership reads.
-      const profileRead = readProfileUserType(supabase, authUser.id);
-      const [read, membershipRead, practiceRead, staffRead] = await Promise.all([
-        profileRead,
-        readEntityMemberships(supabase, authUser.id),
-        profileRead.then((r) =>
-          r.status === "found" && r.userType === "lawyer" ? readPracticeKind(supabase, authUser.id) : null,
-        ),
-        // Owner ٢١٠: the staff role, for an admin only (undefined: not read).
-        profileRead.then((r) =>
-          r.status === "found" && r.userType === "admin" ? readStaffRole(supabase) : undefined,
-        ),
-      ]);
-      // Superseded or unmounted: drop this result and leave `loading` alone —
-      // whichever event overtook this one is responsible for releasing it.
-      if (cancelled || eventId !== latestEvent) return;
-
-      setSession(prev => {
-        // Carry the previously resolved type forward on `unavailable` ONLY, and
-        // only for the same signed-in user. Without this, a token refresh while
-        // the network is down would downgrade a lawyer to "individual" and
-        // UserTypeGuard would throw them off their own dashboard — a regression
-        // this change must not introduce. `missing` deliberately does not carry:
-        // a row that is absent, or present with no type, is exactly what the
-        // "individual" fallback exists for, and papering over it would hide a
-        // real data problem.
-        const carried =
-          read.status === "unavailable" && prev.isLoggedIn && prev.userId === authUser.id
-            ? prev.userType
-            : null;
-
-        const carriedMemberships: ActiveEntityMemberships =
-          membershipRead.status === "unavailable" && prev.isLoggedIn && prev.userId === authUser.id
-            ? {
-                ...(prev.firmMembership ? { firm: prev.firmMembership } : {}),
-                ...(prev.businessMembership ? { business: prev.businessMembership } : {}),
-              }
-            : {};
-
-        // A carried type means the previous, successful read still stands for
-        // this same user, so the session is "ok" — not "unavailable".
-        const profileState: ProfileState =
-          read.status === "found" || carried !== null
-            ? "ok"
-            : read.status === "missing"
-              ? "missing"
-              : "unavailable";
-
-        // WP-6 B-9. «you have no role» and «we could not read your role» are
-        // different answers, and the settings policy now denies by default, so
-        // the session has to carry which one this is. `degraded` means at
-        // least one of the four membership reads failed, so businessRole /
-        // affiliation may be an undercount; a carried-forward previous session
-        // is likewise not a fresh answer.
-        const membershipState: MembershipState =
-          membershipRead.status === "found"
-            ? membershipRead.degraded
-              ? "degraded"
-              : "ok"
-            : Object.keys(carriedMemberships).length > 0
-              ? "degraded"
-              : "unavailable";
-
-        // Art. 18. A failed practice_kind read, or a profile read that failed
-        // altogether, carries the previous answer forward for this same user,
-        // the way the type is carried above — a token refresh on a bad network
-        // must not flip a consultant to an advocate and back. With nothing to
-        // carry (a first load) it is 'advocate', today's behaviour.
-        const practiceKind: PracticeKind =
-          practiceRead?.status === "found"
-            ? practiceRead.practiceKind
-            : (practiceRead?.status === "unavailable" || read.status === "unavailable") &&
-                prev.isLoggedIn && prev.userId === authUser.id
-              ? toPracticeKind(prev.practiceKind)
-              : "advocate";
-
-        // Owner ٢١٠. A profile read that failed carries the previous staff
-        // role forward for this same user, like the type; any other failure
-        // is null (the full admin nav — the server still enforces).
-        const staffRole: StaffRole | null =
-          staffRead !== undefined
-            ? staffRead
-            : read.status === "unavailable" && prev.isLoggedIn && prev.userId === authUser.id
-              ? (prev.staffRole ?? null)
-              : null;
-
-        return mapSupabaseUser(
-          authUser,
-          read.status === "found" ? read.userType : carried,
-          membershipRead.status === "found" ? membershipRead.memberships : carriedMemberships,
-          profileState,
-          membershipState,
-          practiceKind,
-          staffRole,
-        );
-      });
-
-      renderedUserId = authUser.id;
-      setLoading(false);
-    };
-
-    // The event id the mount claimed, so the `finally` below can tell whether
-    // it is still the most recent thing to have happened.
-    let mountEvent = 0;
-
-    void (async () => {
-      try {
-        const supabase = createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-        if (cancelled) return;
-
-        if (user) {
-          // Both round trips finish before the FIRST setSession of a signed-in
-          // user, so there is no intermediate render that reports the wrong
-          // type — no "individual" flash to bounce a lawyer off their dashboard.
-          mountEvent = ++latestEvent;
-          await applyUser(supabase, user, mountEvent);
-        } else {
-          setSession(GUEST_SESSION);
-        }
-        if (cancelled) return;
-
-        // Listen for auth state changes (login, logout, token refresh)
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(
-          (_event, authSession) => {
-            const authUser = authSession?.user ?? null;
-            latestEvent += 1;
-
-            if (!authUser) {
-              // Sign-out, or a session that has gone away. Clear it here and
-              // now: the counter was bumped a line above, so any profile read
-              // still in flight will drop its result instead of restoring the
-              // account that just signed out.
-              renderedUserId = null;
-              setSession(GUEST_SESSION);
-              setLoading(false);
-              return;
-            }
-
-            // A different person than the one on screen — a sign-in arriving
-            // after mount, or an account switch. The session currently
-            // rendered describes somebody else (for a sign-in, it is the guest
-            // session, whose userType is null), and `loading` was already
-            // released by the mount above. Without this, consumers would see
-            // that stale session as settled for one tick plus one profile
-            // round trip: UserTypeGuard.tsx:32-34 would find null in
-            // `allowedTypes`, and flash "صلاحيات غير كافية" at a user who is
-            // in fact signed in. Hold the spinner instead, and release it in
-            // applyUser once the profile has actually been read.
-            //
-            // A token refresh for the person already rendered takes the other
-            // path: no flip, no spinner, the profile is re-read silently and
-            // the session only changes if the answer changed.
-            if (renderedUserId !== authUser.id) setLoading(true);
-
-            // Deferred out of the callback instead of awaited inside it. The
-            // Supabase auth client holds its lock for as long as the callback
-            // runs, and awaiting another Supabase call in there can deadlock it.
-            const eventId = latestEvent;
-            setTimeout(() => {
-              if (cancelled || eventId !== latestEvent) return;
-              void applyUser(supabase, authUser, eventId);
-            }, 0);
-          },
-        );
-
-        if (cancelled) {
-          subscription.unsubscribe();
-          return;
-        }
-        unsubscribe = () => subscription.unsubscribe();
-      } catch {
-        renderedUserId = null;
-        if (!cancelled) setSession(GUEST_SESSION);
-      } finally {
-        // Released on every path the mount can take, the throw above included:
-        // a hook stuck on `loading: true` leaves UserTypeGuard spinning
-        // forever. Skipped only when an auth event has already overtaken the
-        // mount — that event raised the spinner deliberately and its own
-        // applyUser releases it, so releasing here would undo it. As written
-        // there is no `await` between subscribing and this line, so the
-        // subscription cannot in fact fire first; the guard is here so that
-        // stops being something this block depends on.
-        if (!cancelled && latestEvent === mountEvent) setLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      unsubscribe?.();
-    };
-  }, []);
 
   // ── Demo Mode ──────────────────────────────────────────────────────────────
   const initDemo = useCallback(() => {
@@ -707,23 +504,26 @@ export function useUser(): UseUserReturn {
   }, []);
 
   useEffect(() => {
-    // Both branches now hand back their cleanup synchronously.
-    return isSupabaseMode ? initSupabase() : initDemo();
-  }, [initSupabase, initDemo]);
+    return isSupabaseMode ? undefined : initDemo();
+  }, [initDemo]);
 
+  const current = isSupabaseMode ? shared.session : session;
+  const isLoading = isSupabaseMode ? shared.loading : loading;
+
+  // Always "" in Supabase mode: only initDemo ever sets it.
   const isDemoBypass = _DEMO_BYPASS_KEYS.includes(demoKey);
 
   // Art. 18: only a lawyer can be a consultant, and a demo or literal session
   // without the field reads as an advocate.
   const practiceKind: PracticeKind =
-    session.userType === "lawyer" ? toPracticeKind(session.practiceKind) : "advocate";
+    current.userType === "lawyer" ? toPracticeKind(current.practiceKind) : "advocate";
 
   // Owner ٢١٠: only an admin holds a staff role; a demo or literal session
   // without the field reads as null (today's full admin nav).
   const staffRole: StaffRole | null =
-    session.userType === "admin" ? toStaffRole(session.staffRole) : null;
+    current.userType === "admin" ? toStaffRole(current.staffRole) : null;
 
-  return { ...session, practiceKind, staffRole, isDemoBypass, loading };
+  return { ...current, practiceKind, staffRole, isDemoBypass, loading: isLoading };
 }
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
