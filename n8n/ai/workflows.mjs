@@ -5,45 +5,58 @@
  * our own n8n, where workflow ids change.
  *
  *   Webhook (Header Auth «NZAMY AI · inbound», respond with node)
- *    → Build Claude request (Code)  → Claude (HTTP, error output) → Parse → Respond 200
- *                                                └─ Model error ───────────→ Respond 200
+ *    → Build prompt (Code) → Write (AI Agent, error output) → Parse → Respond 200
+ *                              ↑ Model (chat-model sub-node)    └─ Model error → Respond 200
+ *
+ * The model is a plug-in sub-node of the Agent: today Google Gemini (the
+ * credential already on the instance), later Claude or any other provider by
+ * swapping that one node. The Agent has no tools: it is one model call.
  *
  * The app has already checked the user, the role, the input and the points
  * before the webhook; n8n only writes. Every reply is a result body (§2.3), so
  * a model failure still answers the app with `status: "failed"` and the app
- * refunds.
+ * refunds. The app checks every output again (tools.ts validateOutput).
  *
  *   node scripts/n8n-ai-export.mjs     writes n8n/ai/<tool>.json (import files)
  *   src/lib/ai/n8nWorkflows.test.ts    runs every Code node against fake data
  *
  * The code strings are String.raw so their escapes reach n8n unchanged.
  * Credential ids are the ones on n8n.asra3.com; after an import into another
- * instance, re-select the two credentials on the Webhook and Claude nodes.
+ * instance, re-select the credentials on the Webhook and Model nodes.
  */
 
 export const CREDENTIALS = {
   inbound: { id: "T8LjmjhlZf6mNVeC", name: "NZAMY AI · inbound" },
-  anthropic: { id: "PJV8iDPVPFc8zhg9", name: "NZAMY Anthropic (x-api-key)" },
+  gemini: { id: "5p0YKMLaCVAAMklV", name: "Google Gemini(PaLM) Api account" },
 };
 
-export const ANTHROPIC_VERSION = "2026-10-21";
+/** The chat model every tool uses today (the instance's working Gemini credential). */
+export const MODEL = {
+  type: "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+  typeVersion: 1,
+  modelName: "models/gemini-3.1-flash-lite",
+  credentialKey: "googlePalmApi",
+  credential: CREDENTIALS.gemini,
+};
+const MODEL_ID = MODEL.modelName.replace(/^models\//, "");
 
-// The same for every tool: stop reasons first, then the JSON text block.
-const PARSE = String.raw`const b = $('Webhook').first().json.body;
-const r = $json;
+// The model answers in plain text (no JSON mode needed on any provider). Parse
+// strips a Markdown fence if the model added one and wraps the text in the
+// tool's output shape. `output` is the Agent's field.
+const parse = (shape) => String.raw`const b = $('Webhook').first().json.body;
 const fail = (code, message) => [{ json: { run_id: b.run_id, status: 'failed', output: null, citations: [], usage: null, error: { code, message } } }];
-if (r.stop_reason === 'refusal') return fail('model_refused', 'the model declined');
-if (r.stop_reason === 'max_tokens') return fail('output_truncated', 'max_tokens reached');
-const t = (r.content || []).find(c => c.type === 'text');
-if (!t) return fail('schema_invalid', 'no text block');
-let out;
-try { out = JSON.parse(t.text); } catch (e) { return fail('schema_invalid', 'the model did not return JSON'); }
-if (!out || typeof out !== 'object' || Array.isArray(out)) return fail('schema_invalid', 'the output is not an object');
-return [{ json: { run_id: b.run_id, status: 'succeeded', output: out, citations: [], usage: { model: r.model, input_tokens: r.usage?.input_tokens ?? 0, output_tokens: r.usage?.output_tokens ?? 0, cache_read_tokens: r.usage?.cache_read_input_tokens ?? 0 }, error: null } }];`;
+let t = typeof $json.output === 'string' ? $json.output : (typeof $json.text === 'string' ? $json.text : '');
+t = t.trim().replace(/^${"```"}[A-Za-z]*[ \t]*\n?/, '').replace(/\n?${"```"}\s*$/, '').trim();
+if (!t) return fail('schema_invalid', 'the model returned no text');
+return [{ json: { run_id: b.run_id, status: 'succeeded', output: ${shape}, citations: [], usage: { model: '${MODEL_ID}', input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 }, error: null } }];`;
 
 const MODEL_ERROR = String.raw`const b = $('Webhook').first().json.body;
 const msg = String($json.error?.message ?? $json.message ?? 'model call failed').slice(0, 300);
 return [{ json: { run_id: b.run_id, status: 'failed', output: null, citations: [], usage: null, error: { code: 'model_error', message: msg } } }];`;
+
+// The system text goes through a LangChain prompt template inside the Agent,
+// where { and } are variables: the rules must never contain braces (tested).
+// The user's text is passed as the input value, not as a template, so it may.
 
 // ── L1 المتحدث الذكي ─────────────────────────────────────────────────────────
 const COMMUNICATE_BUILD = String.raw`const b = $('Webhook').first().json.body;
@@ -64,7 +77,7 @@ const system = [
   'لا تخترع أسماء أو جهات أو مبالغ أو تواريخ أو أرقام هواتف أو بريداً أو أرقام مواد أو أحكام غير مذكورة؛ ضع مكان أي معلومة ناقصة قوسين مربعين مثل [التاريخ].',
   'لا تذكر نسباً مئوية ولا احتمالات.',
   'إن وُجد <sender> فوقّع باسمه، وإلا فاكتب [الاسم].',
-  'أعد JSON فيه الحقل text وحده: نص الرسالة كاملاً.',
+  'أعد نص الرسالة وحده، كاملاً، بلا مقدمة ولا تعليق ولا تنسيق Markdown.',
 ].join('\n');
 const sender = b.actor && typeof b.actor.display_name === 'string' ? b.actor.display_name : '';
 const content = '<request>\n'
@@ -75,13 +88,7 @@ const content = '<request>\n'
   + 'ما يريد المستخدم قوله:\n' + esc(i.body) + '\n'
   + '</request>'
   + (sender ? '\n<sender>' + esc(sender) + '</sender>' : '');
-return [{ json: { claude_request: {
-  model: b.model_tier === 'deep' ? 'claude-sonnet-5-5' : 'claude-haiku-5-5',
-  max_tokens: 3500,
-  system: [{ type: 'text', text: system }],
-  messages: [{ role: 'user', content }],
-  output_config: { effort: 'low', format: { type: 'json_schema', schema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: false } } },
-} } }];`;
+return [{ json: { system, content } }];`;
 
 // ── L2 منقح ناجز R5 ──────────────────────────────────────────────────────────
 const NAJIZ_BUILD = String.raw`const b = $('Webhook').first().json.body;
@@ -95,17 +102,11 @@ const system = [
   'لا تضف وقائع أو حججاً أو مواد أو أحكاماً ليست في الأصل، ولا تغيّر الأسماء والمبالغ والتواريخ.',
   'احذف التكرار والحشو وعبارات الربط الزائدة، وادمج الفقرات المتشابهة، وأبقِ الطلبات الختامية كاملة.',
   'لا تستخدم إلا هذه الرموز: ( , ~ ^ / @ ? # ) - * ! . : ولا إيموجي.',
-  'أعد JSON فيه text (المذكرة المختصرة كاملة) وkept_citations (المراجع التي أبقيتها).',
+  'أعد المذكرة المختصرة وحدها، كاملة، بلا مقدمة ولا تعليق ولا تنسيق Markdown.',
 ].join('\n');
 const content = '<must_keep>\n' + (keep.length ? keep.join('\n') : 'لا مراجع') + '\n</must_keep>\n'
   + '<memo length="' + String(i.text || '').length + '">\n' + esc(i.text) + '\n</memo>';
-return [{ json: { claude_request: {
-  model: b.model_tier === 'deep' ? 'claude-sonnet-5-5' : 'claude-haiku-5-5',
-  max_tokens: 8000,
-  system: [{ type: 'text', text: system }],
-  messages: [{ role: 'user', content }],
-  output_config: { effort: 'low', format: { type: 'json_schema', schema: { type: 'object', properties: { text: { type: 'string' }, kept_citations: { type: 'array', items: { type: 'string' } } }, required: ['text', 'kept_citations'], additionalProperties: false } } },
-} } }];`;
+return [{ json: { system, content } }];`;
 
 export const AI_WORKFLOWS = [
   {
@@ -114,6 +115,8 @@ export const AI_WORKFLOWS = [
     path: "nzamy-ai/communicate",
     webhookId: "cca66893-a19c-4dd0-8972-bf02befd8ca8",
     build: COMMUNICATE_BUILD,
+    parse: parse("{ text: t }"),
+    maxOutputTokens: 3500,
   },
   {
     tool: "najiz-optimizer",
@@ -121,10 +124,13 @@ export const AI_WORKFLOWS = [
     path: "nzamy-ai/najiz-optimizer",
     webhookId: "f36ca8c1-b0e8-42f4-8f5d-6a7274e65d68",
     build: NAJIZ_BUILD,
+    // kept_citations is display-only; the app recomputes the references itself.
+    parse: parse("{ text: t, kept_citations: [] }"),
+    maxOutputTokens: 8000,
   },
 ];
 
-export const CODE = { parse: PARSE, modelError: MODEL_ERROR };
+export const CODE = { modelError: MODEL_ERROR };
 
 /** The importable n8n workflow for one tool definition. */
 export function toWorkflow(def) {
@@ -138,46 +144,43 @@ export function toWorkflow(def) {
         credentials: { httpHeaderAuth: CREDENTIALS.inbound },
       },
       {
-        id: "w2", name: "Build Claude request", type: "n8n-nodes-base.code", typeVersion: 2, position: [240, 300],
+        id: "w2", name: "Build prompt", type: "n8n-nodes-base.code", typeVersion: 2, position: [240, 300],
         parameters: { jsCode: def.build },
       },
       {
-        id: "w3", name: "Claude", type: "n8n-nodes-base.httpRequest", typeVersion: 4.2, position: [480, 300],
-        // No retry: a second try would outlast the app's 50 s wait and only spend tokens;
-        // the app refunds a failure and the user can run it again.
-        retryOnFail: false, onError: "continueErrorOutput",
+        id: "w3", name: "Write", type: "@n8n/n8n-nodes-langchain.agent", typeVersion: 3, position: [480, 300],
+        // A model failure goes to the error output, so the app still gets an answer.
+        // No retry: a second try would outlast the app's 50 s wait.
+        onError: "continueErrorOutput",
         parameters: {
-          method: "POST",
-          url: "https://api.anthropic.com/v1/messages",
-          authentication: "genericCredentialType",
-          genericAuthType: "httpHeaderAuth",
-          sendHeaders: true,
-          headerParameters: { parameters: [{ name: "anthropic-version", value: ANTHROPIC_VERSION }] },
-          sendBody: true,
-          specifyBody: "json",
-          jsonBody: "={{ JSON.stringify($json.claude_request) }}",
-          // Under the app's 50 s wait, so a slow model still answers with a clean failure.
-          options: { timeout: 45000 },
+          promptType: "define",
+          text: "={{ $json.content }}",
+          options: { systemMessage: "={{ $json.system }}" },
         },
-        credentials: { httpHeaderAuth: CREDENTIALS.anthropic },
       },
       {
-        id: "w4", name: "Parse result", type: "n8n-nodes-base.code", typeVersion: 2, position: [720, 220],
-        parameters: { jsCode: PARSE },
+        id: "w4", name: "Model", type: MODEL.type, typeVersion: MODEL.typeVersion, position: [480, 520],
+        parameters: { modelName: MODEL.modelName, options: { maxOutputTokens: def.maxOutputTokens, temperature: 0.2 } },
+        credentials: { [MODEL.credentialKey]: MODEL.credential },
       },
       {
-        id: "w5", name: "Model error", type: "n8n-nodes-base.code", typeVersion: 2, position: [720, 400],
+        id: "w5", name: "Parse result", type: "n8n-nodes-base.code", typeVersion: 2, position: [760, 220],
+        parameters: { jsCode: def.parse },
+      },
+      {
+        id: "w6", name: "Model error", type: "n8n-nodes-base.code", typeVersion: 2, position: [760, 400],
         parameters: { jsCode: MODEL_ERROR },
       },
       {
-        id: "w6", name: "Respond", type: "n8n-nodes-base.respondToWebhook", typeVersion: 1.5, position: [960, 300],
+        id: "w7", name: "Respond", type: "n8n-nodes-base.respondToWebhook", typeVersion: 1.5, position: [1000, 300],
         parameters: { respondWith: "firstIncomingItem", options: { responseCode: 200 } },
       },
     ],
     connections: {
-      Webhook: { main: [[{ node: "Build Claude request", type: "main", index: 0 }]] },
-      "Build Claude request": { main: [[{ node: "Claude", type: "main", index: 0 }]] },
-      Claude: { main: [[{ node: "Parse result", type: "main", index: 0 }], [{ node: "Model error", type: "main", index: 0 }]] },
+      Webhook: { main: [[{ node: "Build prompt", type: "main", index: 0 }]] },
+      "Build prompt": { main: [[{ node: "Write", type: "main", index: 0 }]] },
+      Model: { ai_languageModel: [[{ node: "Write", type: "ai_languageModel", index: 0 }]] },
+      Write: { main: [[{ node: "Parse result", type: "main", index: 0 }], [{ node: "Model error", type: "main", index: 0 }]] },
       "Parse result": { main: [[{ node: "Respond", type: "main", index: 0 }]] },
       "Model error": { main: [[{ node: "Respond", type: "main", index: 0 }]] },
     },

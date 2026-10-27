@@ -6,7 +6,7 @@ One self-contained workflow per AI tool. The plan is `docs/plans/2026-10-26-ai-s
 |---|---|
 | `n8n/ai/workflows.mjs` | The single source: every tool's Code nodes and the shared workflow shape |
 | `n8n/ai/<tool>.json` | The import file, written by `node scripts/n8n-ai-export.mjs` |
-| `src/lib/ai/n8nWorkflows.test.ts` | Runs every Code node against fake packages and fake Claude replies |
+| `src/lib/ai/n8nWorkflows.test.ts` | Runs every Code node against fake packages and fake model replies |
 
 On n8n.asra3.com (all created **inactive**):
 
@@ -15,12 +15,30 @@ On n8n.asra3.com (all created **inactive**):
 | L1 المتحدث الذكي | `NZAMY · AI · communicate (L1 المتحدث الذكي)` | `z9IsIwKfr40hEE4e` | `nzamy-ai/communicate` |
 | L2 منقح ناجز R5 | `NZAMY · AI · najiz-optimizer (L2 منقح ناجز R5)` | `b3SSd5YoQmIjCgna` | `nzamy-ai/najiz-optimizer` |
 
-Both use the same two credentials as wave 0: `NZAMY AI · inbound` and `NZAMY Anthropic (x-api-key)`. **No new credential is needed.**
+**The model.** Each workflow calls the model through an **AI Agent** node (no tools, one call) with a chat-model sub-node named **Model**.
+- Today that is **Google Gemini** (`models/gemini-3.1-flash-lite`), on the instance's existing credential `Google Gemini(PaLM) Api account`.
+- The other credential is `NZAMY AI · inbound`, on the Webhook.
+- **No Anthropic key is needed.**
+
+**Switching to Claude later** takes one node, with no app change:
+1. Delete the **Model** node.
+2. Add an **Anthropic Chat Model** node with an Anthropic credential.
+3. Connect it to the Agent's *Chat Model* input.
+
+To make that permanent, change `MODEL` in `n8n/ai/workflows.mjs` and re-export.
+
+Gemini, like Claude, processes the text outside the Kingdom, so decision D10 applies the same way.
+
+**Updating an existing workflow from its file** (keeps its id and webhook):
+1. Open `n8n/ai/<tool>.json` in Notepad, then press Ctrl+A and Ctrl+C.
+2. In n8n, open the workflow.
+3. Click the empty canvas, press Ctrl+A, then Delete.
+4. Press Ctrl+V, then **Save**.
 
 **Moving to our own n8n:**
 1. Workflows → Import from File, then pick `n8n/ai/<tool>.json`.
 2. Open the **Webhook** node and select the inbound credential.
-3. Open the **Claude** node and select the Anthropic credential.
+3. Open the **Model** node and select the Gemini (or other model) credential.
 4. Save, then switch the workflow on.
 
 ---
@@ -36,7 +54,7 @@ Wave 1 has no SQL and no new server variables.
    ```bash
    tail -f /root/deploy-wave1.log
    ```
-2. **n8n** (https://n8n.asra3.com): open each of the two workflows above and flip **Active** on. This works only after wave-0 step 5 (the four secret values) is done.
+2. **n8n** (https://n8n.asra3.com): open each of the two workflows above and flip **Active** on. This needs the inbound key (wave-0 step 5, first row) but not the Anthropic key.
 3. **Switch the tools on for admins only** at `https://nezamy.sa/dashboard/admin/ai-usage` (as admin): set `communicate` and `najiz-optimizer` to **للمشرفين فقط**, then press **حفظ**.
    - In this mode only admin accounts can run the tools. Lawyers still get «هذه الأداة غير متاحة حالياً», so no lawyer's data goes to the AI provider before the notice (decision D10) is published.
    - **Don't choose مفعّلة yet.** That opens the tools to every lawyer, and while charging is off they would be free.
