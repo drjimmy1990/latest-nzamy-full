@@ -50,8 +50,7 @@ const fail = (code, message) => [{ json: { run_id: b.run_id, status: 'failed', o
 let t = typeof $json.output === 'string' ? $json.output : (typeof $json.text === 'string' ? $json.text : '');
 t = t.trim().replace(/^${"```"}[A-Za-z]*[ \t]*\n?/, '').replace(/\n?${"```"}\s*$/, '').trim();
 if (!t) return fail('schema_invalid', 'the model returned no text');
-${before}
-return [{ json: { run_id: b.run_id, status: 'succeeded', output: ${shape}, citations: ${citations}, usage: { model: '${MODEL_ID}', input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 }, error: null } }];`;
+${before ? `${before}\n` : ""}return [{ json: { run_id: b.run_id, status: 'succeeded', output: ${shape}, citations: ${citations}, usage: { model: '${MODEL_ID}', input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 }, error: null } }];`;
 
 const MODEL_ERROR = String.raw`const b = $('Webhook').first().json.body;
 const msg = String($json.error?.message ?? $json.message ?? 'model call failed').slice(0, 300);
