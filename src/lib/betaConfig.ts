@@ -129,7 +129,6 @@ export const LEGAL_DATA_REVIEW_GATED_TOOLS: LegalDataReviewGatedTool[] = [
   { id: "ngo.report-generator", route: "/ai/ngo/report-generator", label: "NGO statutory report generator", risk: "legal-data", teardown: "Remove the result wrapper after NGO reporting source validation is live." },
   { id: "micro.result", route: "/ai/micro", label: "Micro-business legal document generator", risk: "legal-data", teardown: "Remove the result wrapper after micro legal templates are backend-backed." },
   { id: "analyze.smart.result", route: "/ai/analyze", label: "Smart legal position analysis", risk: "legal-data", teardown: "Remove the result wrapper after client analysis QA is live." },
-  { id: "case-brief.result", route: "/ai/case-brief", label: "Case brief/paralegal output", risk: "rag", teardown: "Remove the result wrapper after case-brief RAG validation is live." },
   { id: "brief-check.result", route: "/ai/brief-check", label: "Brief source and precedent checker", risk: "rag", teardown: "Remove the result wrapper after precedent checking is production-verified." },
   { id: "quick-answer.result", route: "/ai/quick-answer", label: "Quick legal answer", risk: "rag", teardown: "Remove the result wrapper after sourced legal Q&A is production-verified." },
   { id: "consult.result", route: "/ai/consult", label: "AI legal consultation answer", risk: "rag", teardown: "Remove the message-level wrapper after legal consult citations are production-verified." },

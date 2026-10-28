@@ -489,6 +489,34 @@ L2 notes:
 | L6 | **بطاقة الكانفاس الذكية** | case graph | 10 | Haiku | `{case rows the user imported, selected cards}` → `{nodes: GraphNode[1..3]}`. Each `law` node must resolve to a library id. Manual cards stay free |
 
 ### Wave 3: documents (jobs, file reading)
+
+> **Status 2026-10-28 (branch `feat/ai-wave3`): L7 and L8 built, off by default.**
+> - **Files** (`src/lib/ai/aiFiles.ts`, new dependency `pdf-lib` 1.17.1, pinned):
+>   - only the user's own vault rows (`attachments.owner_user_id`, `deleted_at` null);
+>   - PDF and images only;
+>   - at most 5 files, 22 MB and 30 pages;
+>   - an encrypted or broken PDF is refused;
+>   - a 15-minute signed link per file.
+>
+>   Every refusal happens before the charge. The plan's shared-case access (`requestFileAccess.ts`) is a follow-up.
+> - **Model:** Gemini «Analyze Document» (n8n `googleGemini` node).
+>   - A probe read a **scanned** Arabic memo correctly and returned valid BriefResult JSON in 6 s.
+>   - The job workflow answers 202, downloads the files (a failed download calls back `download_failed`), reads, parses the JSON and calls back.
+>   - Tested end to end through a temporary relay and callback catcher, both deleted.
+> - **L7** lives on `/ai/case-brief` («الموجز القضائي», which owner ٢٨٣ merged into عصارة المرفقات):
+>   - canned report, timer and BetaReviewGate removed;
+>   - the vault upload and the job polling wired in;
+>   - 30 / 150 points by pages;
+>   - the server rebuilds the BriefResult field by field, and no link comes from the model.
+>
+>   `/ai/analyze`'s lawyer half (AttachmentSqueezer) stays «قريباً». Pointing it at the case-brief tool is a follow-up that changes its honesty gates on purpose.
+> - **L8** on `/ai/brief-check`: one PDF memo, 200 points, consultants blocked.
+>   - It runs beside the team order, which is unchanged (owner Q77). The full revision stays a team order.
+>   - The model reports the findings and every article the memo cites **as written**.
+>   - On the callback, `citationCheck.ts` (a `runCore` output enricher) matches each one against the library and sets ok, amended, repealed, not_found (law or article) or unchecked (a failed read).
+>     - The law names are spelling-tolerant: alef, hamza, taa marbuta and alif maqsura match each other, and a year suffix is ignored.
+>     - It picks the best edition that has the article.
+>   - Probe: the scanned memo gave four real findings, and both cited articles were listed as written.
 | # | Tool | Page | Price | Model | Input → output |
 |:-:|---|---|:-:|---|---|
 | L7 | **عصارة المرفقات** (includes the former الموجز القضائي, ٢٨٣) | `/ai/analyze`; lawyers get the `case-brief` screen, which has the richest output shape | 30 for 1–5 pages, 150 for 6–30 pages with OCR (metered) | Sonnet | `{role_note, want_gaps: bool}` + files → `BriefResult` (below) |

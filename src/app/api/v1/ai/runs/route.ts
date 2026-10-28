@@ -4,6 +4,7 @@ import { requireApiUser } from "@/lib/auth/apiAuth";
 import { practiceKindFromRead } from "@/lib/auth/courtPracticeDecision";
 import { callN8n } from "@/lib/ai/n8nClient";
 import { retrieveLibrary } from "@/lib/ai/retrieval";
+import { resolveAiFiles } from "@/lib/ai/aiFiles";
 import { startRunWith, type RouteReply, type RunActor } from "@/lib/ai/runCore";
 import { libraryGate } from "@/lib/library-gate";
 import { libraryAiAccess } from "@/app/api/ai/_libraryAiAccess";
@@ -90,6 +91,7 @@ export async function POST(request: NextRequest) {
         n8n: (call) => callN8n({ ...call, baseUrl: process.env.N8N_AI_BASE_URL, key: process.env.NZAMY_AI_KEY }),
         libraryAccess,
         retrieve: (queries, limits, pin) => retrieveLibrary(admin, queries, limits, pin),
+        resolveFiles: (userId, fileIds, rules) => resolveAiFiles(admin, userId, fileIds, rules),
       },
       actor,
       body,

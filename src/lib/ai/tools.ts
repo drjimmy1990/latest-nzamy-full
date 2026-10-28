@@ -12,6 +12,7 @@
  */
 import { extractLegalRefs, missingLegalRefs } from "./legalRefs.ts";
 import type { RetrievalLimits } from "./retrieval.ts";
+import type { FileRules } from "./aiFiles.ts";
 
 export type AiToolClass = "fast" | "job";
 export type AiModelTier = "fast" | "deep";
@@ -46,6 +47,12 @@ export interface AiToolSpec {
    * `price` gets the 0-based `turn`. A conversation holds `maxMessages` runs.
    */
   conversation?: { maxMessages: number; historyPairs: number; field: string; replyField: string };
+  /**
+   * Wave 3: the tool reads the user's vault files (aiFiles.ts). The files are
+   * checked, counted and signed before the charge, and `price` gets the total
+   * `pages`. A tool without this refuses any fileIds.
+   */
+  files?: FileRules;
   /** Letter-type tools sign with the user's name (plan §2.2); every other tool gets null. */
   sendsDisplayName?: boolean;
   /**
@@ -292,6 +299,119 @@ function canvasCardOutput(raw: unknown): Record<string, unknown> | null {
   return { cards };
 }
 
+// ── wave 3: documents (plan §5, «Wave 3») ───────────────────────────────────
+
+/** L7: the owner's two tiers (٢٨٣), and the limits checked before the charge. */
+export const CASE_BRIEF_SMALL_PAGES = 5;
+export const CASE_BRIEF_PRICES = { small: 30, large: 150 } as const;
+export const CASE_BRIEF_FILES: FileRules = { max: 5, maxPages: 30, maxBytes: 22 * 1024 * 1024 };
+
+const BRIEF_KINDS = ["error", "warning", "info"] as const;
+const BRIEF_LEVELS = ["strong", "medium", "weak"] as const;
+const BRIEF_PRIORITIES = ["critical", "high", "normal"] as const;
+const BRIEF_REQUEST_TYPES = ["document", "info", "witness", "financial"] as const;
+const NOT_STATED = "غير مذكور";
+
+const text = (v: unknown, max: number, fallback = ""): string => boundedText(v, max) ?? fallback;
+const oneOf = <T extends string>(v: unknown, list: readonly T[], fallback: T): T =>
+  (list as readonly unknown[]).includes(v) ? (v as T) : fallback;
+const listOf = <T>(v: unknown, max: number, map: (x: unknown) => T | null): T[] =>
+  (Array.isArray(v) ? v : []).map(map).filter((x): x is T => x !== null).slice(0, max);
+
+/** L7 عصارة المرفقات / الموجز القضائي: who the lawyer acts for, and whether to list what to ask the client for. */
+function caseBriefInput(raw: unknown): InputCheck {
+  if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
+  const roleNote = boundedText(raw.role_note, 1000);
+  if (!roleNote || roleNote.length < 3) return { ok: false, error: "اكتب صفتك في القضية ومن تمثّل (حتى ١٬٠٠٠ حرف)" };
+  return { ok: true, input: { role_note: roleNote, want_requests: raw.want_requests !== false } };
+}
+
+/**
+ * The model's BriefResult, rebuilt field by field: every string bounded, every
+ * level from its fixed list, no field the screen does not show. No link comes
+ * from the model (the old mock's options[].tool.href is not part of the shape).
+ */
+function caseBriefOutput(raw: unknown): Record<string, unknown> | null {
+  if (!isPlainObject(raw) || !isPlainObject(raw.caseCard)) return null;
+  const story = boundedText(raw.story, 4000);
+  if (!story) return null;
+  const c = raw.caseCard;
+  return {
+    caseCard: {
+      type: text(c.type, 200, NOT_STATED),
+      stage: text(c.stage, 200, NOT_STATED),
+      position: text(c.position, 300, NOT_STATED),
+      parties: text(c.parties, 600, NOT_STATED),
+      court: text(c.court, 300, NOT_STATED),
+      caseNo: text(c.caseNo, 120, NOT_STATED),
+      claim: text(c.claim, 800, NOT_STATED),
+    },
+    story,
+    highlights: listOf(raw.highlights, 12, (h) =>
+      isPlainObject(h) && boundedText(h.text, 500) ? { kind: oneOf(h.kind, BRIEF_KINDS, "info"), text: text(h.text, 500) } : null,
+    ),
+    assessment: oneOf(raw.assessment, BRIEF_LEVELS, "medium"),
+    assessmentReason: text(raw.assessmentReason, 1000),
+    options: listOf(raw.options, 6, (o) =>
+      isPlainObject(o) && boundedText(o.label, 200) ? { label: text(o.label, 200), requires: text(o.requires, 400) } : null,
+    ),
+    questions: listOf(raw.questions, 12, (q) => boundedText(q, 400)),
+    clientRequests: listOf(raw.clientRequests, 12, (r) =>
+      isPlainObject(r) && boundedText(r.request, 400)
+        ? {
+            request: text(r.request, 400),
+            reason: text(r.reason, 500),
+            priority: oneOf(r.priority, BRIEF_PRIORITIES, "normal"),
+            type: oneOf(r.type, BRIEF_REQUEST_TYPES, "document"),
+          }
+        : null,
+    ),
+  };
+}
+
+/** L8: one memo, the gaps report (the full revision stays a team order). */
+export const BRIEF_CHECK_PRICE = 200;
+export const BRIEF_CHECK_FILES: FileRules = { max: 1, maxPages: 30, maxBytes: 22 * 1024 * 1024 };
+const FINDING_SEVERITIES = ["high", "medium", "low"] as const;
+
+/** L8 مراجعة وتدقيق مذكرة: the client's capacity and the case's frame for the memo's gaps report. */
+function briefCheckInput(raw: unknown): InputCheck {
+  if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
+  const capacity = boundedText(raw.client_capacity, 100);
+  if (!capacity) return { ok: false, error: "اختر صفة موكّلك" };
+  const optional = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
+  return {
+    ok: true,
+    input: { client_capacity: capacity, court: optional(raw.court, 150), case_type: optional(raw.case_type, 150), notes: optional(raw.notes, 2000) },
+  };
+}
+
+/**
+ * The model's report: the findings, a summary, and `cited` — what the memo
+ * cites, as written. runCore's enricher (citationCheck.ts) then replaces
+ * `cited` with the library's verdict on each one, so the stored result never
+ * carries the model's opinion on whether an article exists.
+ */
+function briefCheckOutput(raw: unknown): Record<string, unknown> | null {
+  if (!isPlainObject(raw)) return null;
+  const summary = boundedText(raw.summary, 3000);
+  if (!summary) return null;
+  return {
+    summary,
+    findings: listOf(raw.findings, 25, (f) =>
+      isPlainObject(f) && boundedText(f.issue, 800)
+        ? {
+            severity: oneOf(f.severity, FINDING_SEVERITIES, "medium"),
+            location: text(f.location, 200, "عام"),
+            issue: text(f.issue, 800),
+            fix: text(f.fix, 800),
+          }
+        : null,
+    ),
+    cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 40) : [],
+  };
+}
+
 export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
   "echo-fast": {
     id: "echo-fast",
@@ -408,6 +528,38 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     retrieval: { from: "text", laws: 6, principles: 0 },
     validateInput: canvasCardInput,
     validateOutput: canvasCardOutput,
+  },
+  "case-brief": {
+    id: "case-brief",
+    n8nPath: "nzamy-ai/case-brief",
+    class: "job",
+    tier: "deep",
+    roles: ["lawyer", "firm"],
+    consultantBlocked: false,
+    // Owner ٢٨٣: 30 points for 1–5 pages, 150 for 6–30 (scanned pages included).
+    price: (_input, ctx) => ((ctx.pages ?? 0) <= CASE_BRIEF_SMALL_PAGES ? CASE_BRIEF_PRICES.small : CASE_BRIEF_PRICES.large),
+    dailyLimit: 5,
+    defaultMode: "off",
+    jobDeadlineSeconds: 15 * 60,
+    files: CASE_BRIEF_FILES,
+    validateInput: caseBriefInput,
+    validateOutput: caseBriefOutput,
+  },
+  "brief-check": {
+    id: "brief-check",
+    n8nPath: "nzamy-ai/brief-check",
+    class: "job",
+    tier: "deep",
+    roles: ["lawyer", "firm"],
+    // CONSULTANT_BLOCKED_PREFIXES has /ai/brief-check (Art. 18).
+    consultantBlocked: true,
+    price: () => BRIEF_CHECK_PRICE,
+    dailyLimit: 5,
+    defaultMode: "off",
+    jobDeadlineSeconds: 15 * 60,
+    files: BRIEF_CHECK_FILES,
+    validateInput: briefCheckInput,
+    validateOutput: briefCheckOutput,
   },
 };
 
