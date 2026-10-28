@@ -5,20 +5,23 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   CloudArrowUp, X, Robot, FileMagnifyingGlass, Warning,
   CheckCircle, ArrowSquareOut, Scales, BookOpen, Clock,
-  SealWarning, Lightbulb, ArrowRight, ChatCircleDots,
+  SealWarning, Lightbulb, ChatCircleDots,
   FileText, PencilSimple, MagnifyingGlass, Brain, Gavel,
   ListChecks, Copy, UserCircle, CurrencyCircleDollar, UsersThree,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
-import BetaReviewGate from "@/components/BetaReviewGate";
 import Link from "next/link";
+import { useAiRun } from "@/hooks/useAiRun";
+import { uploadDocumentFile } from "@/lib/services/documentService";
+import { CASE_BRIEF_FILES, CASE_BRIEF_PRICES, CASE_BRIEF_SMALL_PAGES } from "@/lib/ai/tools";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 type BriefStep = "intake" | "processing" | "result";
 
 interface ClientRequest {
+  /** Its place in the list, 1-based, for the badge. */
   id: number;
   /** الطلب الموجّه للعميل */
   request: string;
@@ -44,91 +47,34 @@ interface BriefResult {
   highlights: Array<{ kind: "error" | "warning" | "info"; text: string }>;
   assessment: "strong" | "medium" | "weak";
   assessmentReason: string;
-  options: Array<{ label: string; requires: string; tool?: { href: string; label: string } }>;
+  // No link comes from the model: the server's shape has none (tools.ts caseBriefOutput).
+  options: Array<{ label: string; requires: string }>;
   questions: string[];
   /** الطلبات الذكية التي يجب توجيهها للعميل — مشتقة من الثغرات المكتشفة */
   clientRequests: ClientRequest[];
 }
 
-// ─── Mock result ───────────────────────────────────────────────────────────────
+/** One file the lawyer added: uploaded to their vault first, then sent by id. */
+interface BriefFile {
+  key: string;
+  name: string;
+  status: "uploading" | "ready" | "error";
+  id?: string;
+  error?: string;
+}
 
-const MOCK_RESULT: BriefResult = {
-  caseCard: {
-    type: "تجاري",
-    stage: "استئناف",
-    position: "المستأنف (المحكوم عليه ابتدائياً)",
-    parties: "شركة الأمل للمقاولات (مستأنفة) ضد شركة البناء الذهبي (مستأنف عليها)",
-    court: "محكمة الاستئناف التجارية — الرياض",
-    caseNo: "١٢٤٥/ق/١٤٤٦",
-    claim: "٢,٣٠٠,٠٠٠ ريال سعودي",
-  },
-  story:
-    "أبرمت شركة الأمل للمقاولات عقداً مع شركة البناء الذهبي لتنفيذ مشروع بناء بمبلغ ٤ ملايين ريال. أوقفت شركة البناء الذهبي العمل بعد ٧ أشهر مدّعيةً تأخر الدفعات، فيما ردّت الأمل بأن التأخر ناتج عن قصور في التنفيذ. قضت المحكمة الابتدائية بإلزام الأمل بدفع ٢,٣٠٠,٠٠٠ ريال تعويضاً عن إنهاء العقد، وهو ما تطعن فيه الأمل استئنافاً.",
-  highlights: [
-    { kind: "error", text: "لم تُقدّم شركة الأمل تقرير خبير مضاد رغم اعتماد الحكم الابتدائي على تقرير الخبير المنتدب بالكامل — نقطة ضعف جوهرية." },
-    { kind: "warning", text: "الميعاد النظامي لتقديم لائحة الاستئناف: ٣٠ يوماً من تاريخ الحكم. تأكّد من حساب المدة بدقة." },
-    { kind: "warning", text: "محضر الجلسة يتضمن إقراراً ضمنياً من ممثل الأمل بتأخر الدفعة الثالثة — قد يُستخدم ضد الموقف." },
-    { kind: "info", text: "عقد المقاولة يتضمن بند تحكيم SCCA — لم يُستند إليه في الدفوع الابتدائية، يمكن إثارة الاختصاص." },
-  ],
-  assessment: "medium",
-  assessmentReason: "الموقف متوسط: وجود قصور في التنفيذ موثّق، لكن غياب الخبير المضاد يُضعف الطعن في التقدير المالي.",
-  options: [
-    { label: "إعداد لائحة استئناف", requires: "صك الحكم الابتدائي + عقد المقاولة + محاضر الجلسات", tool: { href: "/ai/draft", label: "الصائغ القانوني" } },
-    { label: "طلب تعيين خبير مضاد", requires: "تقرير الخبير المنتدب + بيان القصور التقني" },
-    { label: "إثارة دفع بعدم الاختصاص (التحكيم)", requires: "نص بند التحكيم في العقد", tool: { href: "/ai/legal-opinion", label: "الرأي الفصل" } },
-    { label: "التسوية قبل الجلسة الأولى", requires: "تقييم الموقف التفاوضي + مبلغ التسوية المقبول" },
-  ],
-  questions: [
-    "هل صدر الحكم الابتدائي بتاريخ محدد؟ لحساب ميعاد الاستئناف بدقة.",
-    "هل يوجد توثيق لمراسلات المطالبة بالدفعات قبل إيقاف العمل؟",
-    "هل توجد صور أو محاضر توثّق قصور التنفيذ المدّعى به؟",
-  ],
-  // ── الطلبات الذكية من العميل — مشتقة من الثغرات المكتشفة في أوراق القضية
-  clientRequests: [
-    {
-      id: 1,
-      request: "أرسل لي تقرير الخبير الهندسي المستقل الذي يوثّق قصور التنفيذ في المراحل المنجزة",
-      reason: "الحكم اعتمد على تقرير خبير الخصم فقط — نحتاج تقريراً مضاداً لدحض التقدير المالي",
-      priority: "critical",
-      type: "document",
-    },
-    {
-      id: 2,
-      request: "وفّر لي كل المراسلات (واتساب، بريد، رسائل) التي تُثبت أنك أخطرت الطرف الآخر بقصور التنفيذ قبل توقف العمل",
-      reason: "محضر الجلسة يحتوي إقراراً ضمنياً بتأخر الدفعات — نحتاج أدلة مضادة تُثبت السبب الأصلي",
-      priority: "critical",
-      type: "document",
-    },
-    {
-      id: 3,
-      request: "أرسل لي سجلات سداد كل الدفعات مع تواريخها (إيصالات تحويل بنكي أو شيكات)",
-      reason: "الإثبات الفعلي لتسلسل الدفعات سيحدد هل التأخر كان قبل أو بعد توقف العمل",
-      priority: "high",
-      type: "financial",
-    },
-    {
-      id: 4,
-      request: "هل يوجد شاهد من داخل الموقع (مهندس إشراف / مقاول منسّق) يمكنه توثيق حالة البناء لحظة الإيقاف؟",
-      reason: "شاهد عياني يُعزّز الدفع بالقصور التقني بشكل أقوى من الأوراق وحدها",
-      priority: "high",
-      type: "witness",
-    },
-    {
-      id: 5,
-      request: "أرسل لي النسخة الكاملة لعقد المقاولة مع كل الملاحق والاتفاقيات الإضافية",
-      reason: "بند التحكيم SCCA موجود في العقد — نحتاج النص الحرفي لتحديد ما إذا كان ملزماً للطرفين",
-      priority: "normal",
-      type: "document",
-    },
-    {
-      id: 6,
-      request: "وفّر لي صوراً موثّقة (بتاريخ) من موقع البناء تُظهر نسبة الأعمال المنجزة",
-      reason: "الأدلة البصرية المؤرخة تدعم تقدير نسبة الإنجاز الفعلية وتُشكّك في تقدير الخبير المنتدب",
-      priority: "normal",
-      type: "document",
-    },
-  ],
-};
+const ACCEPTED = ".pdf,.png,.jpg,.jpeg,.webp";
+const ACCEPTED_MIME = /^(application\/pdf|image\/(png|jpe?g|webp))$/;
+
+/** The server's brief, with each client request numbered for its badge. */
+function asBrief(output: Record<string, unknown> | null): BriefResult | null {
+  if (!output || typeof output.story !== "string") return null;
+  const brief = output as unknown as BriefResult;
+  return {
+    ...brief,
+    clientRequests: (Array.isArray(brief.clientRequests) ? brief.clientRequests : []).map((r, i) => ({ ...r, id: i + 1 })),
+  };
+}
 
 const RELATED_TOOLS = [
   { id: "draft", href: "/ai/draft", label: "الصائغ القانوني", desc: "صياغة مذكرات ولوائح", icon: PencilSimple },
@@ -151,11 +97,17 @@ const ASSESS_CFG = {
 
 export default function CaseBriefPage() {
   const { isDark } = useTheme();
-  const [step,       setStep]       = useState<BriefStep>("intake");
   const [chatInput,  setChatInput]  = useState("");
-  const [files,      setFiles]      = useState<string[]>([]);
+  const [files,      setFiles]      = useState<BriefFile[]>([]);
   const [dragging,   setDragging]   = useState(false);
-  const [result,     setResult]     = useState<BriefResult | null>(null);
+  // L7 (plan §5 wave 3): a background job. The server checks the files,
+  // counts their pages, charges the tier, and n8n reads them; the hook polls
+  // until the brief is back.
+  const run = useAiRun();
+  // The page follows the job: its brief, its wait, or the form (with the
+  // server's reason after a refusal) — never a canned report.
+  const result = run.phase === "done" ? asBrief(run.output) : null;
+  const step: BriefStep = result ? "result" : run.busy ? "processing" : "intake";
   const [copied,     setCopied]     = useState(false);
   const [generateClientRequests, setGenerateClientRequests] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -165,18 +117,30 @@ export default function CaseBriefPage() {
     ? "bg-zinc-900 border border-white/[0.06] rounded-2xl"
     : "bg-white border border-zinc-200/70 rounded-2xl shadow-sm";
 
+  // Each file goes to the lawyer's vault (its own row, owner-checked by the
+  // server) as soon as it is chosen; the run sends the vault ids.
   function handleFiles(newFiles: FileList | null) {
     if (!newFiles) return;
-    const names = Array.from(newFiles).map(f => f.name);
-    setFiles(prev => [...prev, ...names]);
+    for (const f of Array.from(newFiles)) {
+      const key = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      if (!ACCEPTED_MIME.test(f.type)) {
+        setFiles(prev => [...prev, { key, name: f.name, status: "error", error: "PDF أو صورة فقط (ملف Word: احفظه PDF)" }]);
+        continue;
+      }
+      setFiles(prev => [...prev, { key, name: f.name, status: "uploading" }]);
+      uploadDocumentFile(f)
+        .then(doc => setFiles(prev => prev.map(x => (x.key === key ? { ...x, status: "ready", id: doc.id } : x))))
+        .catch((err: Error) => setFiles(prev => prev.map(x => (x.key === key ? { ...x, status: "error", error: err.message || "تعذّر الرفع" } : x))));
+    }
   }
 
-  async function runBrief() {
-    if (files.length === 0) return;
-    setStep("processing");
-    await new Promise(r => setTimeout(r, 3500));
-    setResult(MOCK_RESULT);
-    setStep("result");
+  const readyIds = files.filter(f => f.status === "ready" && f.id).map(f => f.id as string);
+  const uploading = files.some(f => f.status === "uploading");
+  const canRun = readyIds.length > 0 && readyIds.length <= CASE_BRIEF_FILES.max && !uploading && chatInput.trim().length >= 3;
+
+  function runBrief() {
+    if (!canRun) return;
+    void run.start("case-brief", { role_note: chatInput.trim(), want_requests: generateClientRequests }, { fileIds: readyIds });
   }
 
   const assess = result ? ASSESS_CFG[result.assessment] : null;
@@ -242,6 +206,17 @@ export default function CaseBriefPage() {
               </label>
             </div>
 
+            {run.phase === "error" && run.error && (
+              <p role="alert" className={`rounded-2xl border px-4 py-3 text-[12px] leading-relaxed ${isDark ? "border-red-900/40 bg-red-900/10 text-red-400" : "border-red-200 bg-red-50 text-red-600"}`}>
+                {run.error}
+              </p>
+            )}
+            {run.phase === "review" && (
+              <p role="status" className={`rounded-2xl border px-4 py-3 text-[12px] ${isDark ? "border-amber-900/40 bg-amber-900/10 text-amber-400" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+                الإحاطة جاهزة وتنتظر مراجعة الفريق قبل عرضها.
+              </p>
+            )}
+
             {/* Chat Input */}
             <div className={`rounded-3xl border p-4 transition-all ${isDark ? "border-white/[0.08] bg-zinc-900 focus-within:border-[#C8A762]/50 focus-within:bg-[#C8A762]/[0.02]" : "border-zinc-200 bg-white focus-within:border-[#0B3D2E]/50 focus-within:bg-[#0B3D2E]/[0.02] shadow-sm"}`}>
               <textarea
@@ -265,23 +240,28 @@ export default function CaseBriefPage() {
                   : isDark ? "border-white/[0.08] hover:border-[#C8A762]/30" : "border-zinc-200 hover:border-[#0B3D2E]/30"
               }`}
             >
-              <input ref={inputRef} type="file" multiple className="hidden" accept=".pdf,.doc,.docx,.txt" onChange={e => handleFiles(e.target.files)} />
+              <input ref={inputRef} type="file" multiple className="hidden" accept={ACCEPTED} onChange={e => { handleFiles(e.target.files); e.target.value = ""; }} />
               <div className={`mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl ${isDark ? "bg-white/[0.05]" : "bg-zinc-100"}`}>
                 <CloudArrowUp size={28} className={isDark ? "text-zinc-500" : "text-zinc-400"} />
               </div>
               <p className={`font-bold text-[14px] mb-1 ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>ارفع أوراق القضية هنا</p>
-              <p className={`text-[12px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>PDF · Word · TXT — يمكنك رفع ملفات متعددة</p>
+              <p className={`text-[12px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
+                PDF أو صور (والصفحات الممسوحة تُقرأ) — حتى {CASE_BRIEF_FILES.max.toLocaleString("ar-SA")} ملفات و{CASE_BRIEF_FILES.maxPages.toLocaleString("ar-SA")} صفحة
+              </p>
             </div>
 
             {/* Files list */}
             {files.length > 0 && (
               <div className={`${card} p-4 space-y-2`}>
                 <p className={`text-[11px] font-black uppercase tracking-wider mb-3 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>{files.length} ملف مرفق</p>
-                {files.map((f, i) => (
-                  <div key={i} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl ${isDark ? "bg-white/[0.03]" : "bg-zinc-50"}`}>
+                {files.map((f) => (
+                  <div key={f.key} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl ${isDark ? "bg-white/[0.03]" : "bg-zinc-50"}`}>
                     <FileText size={14} className={isDark ? "text-zinc-500" : "text-zinc-400"} />
-                    <p className={`flex-1 text-[12px] truncate ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{f}</p>
-                    <button onClick={() => setFiles(prev => prev.filter((_, j) => j !== i))} className={`w-5 h-5 flex items-center justify-center rounded ${isDark ? "hover:bg-white/[0.07] text-zinc-600" : "hover:bg-zinc-200 text-zinc-400"}`}>
+                    <p className={`flex-1 text-[12px] truncate ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{f.name}</p>
+                    <span className={`text-[10px] ${f.status === "error" ? "text-red-500" : f.status === "ready" ? "text-emerald-500" : isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+                      {f.status === "uploading" ? "جارٍ الرفع..." : f.status === "ready" ? "جاهز" : f.error}
+                    </span>
+                    <button onClick={() => setFiles(prev => prev.filter(x => x.key !== f.key))} className={`w-5 h-5 flex items-center justify-center rounded ${isDark ? "hover:bg-white/[0.07] text-zinc-600" : "hover:bg-zinc-200 text-zinc-400"}`}>
                       <X size={10} />
                     </button>
                   </div>
@@ -293,12 +273,15 @@ export default function CaseBriefPage() {
             <motion.button
               whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }}
               onClick={runBrief}
-              disabled={files.length === 0 || !chatInput.trim()}
+              disabled={!canRun || run.busy}
               className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl bg-[#0B3D2E] text-[#C8A762] font-bold text-[15px] disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
             >
               <Robot size={18} weight="duotone" />
               ابدأ الإحاطة
             </motion.button>
+            <p className={`text-[11px] leading-relaxed text-center ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+              {CASE_BRIEF_PRICES.small.toLocaleString("ar-SA")} نقطة حتى {CASE_BRIEF_SMALL_PAGES.toLocaleString("ar-SA")} صفحات، و{CASE_BRIEF_PRICES.large.toLocaleString("ar-SA")} نقطة حتى {CASE_BRIEF_FILES.maxPages.toLocaleString("ar-SA")} صفحة · تُحفظ الملفات في مستنداتك، وتُرسل نسخة منها إلى مزوّد ذكاء اصطناعي خارج المملكة لقراءتها.
+            </p>
           </motion.div>
         )}
 
@@ -312,7 +295,7 @@ export default function CaseBriefPage() {
             <div>
               <p className={`font-bold text-[16px] ${isDark ? "text-white" : "text-zinc-800"}`}>الباراليجل يقرأ الأوراق...</p>
               <p className={`text-[12px] mt-1 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-                تحديد الأطراف · ترتيب الوقائع · رصد المواعيد الحرجة · تقييم الموقف
+                قد يستغرق ذلك دقيقة أو أكثر حسب عدد الصفحات — يمكنك البقاء في الصفحة.
               </p>
             </div>
             <div className={`h-1.5 w-64 rounded-full overflow-hidden ${isDark ? "bg-white/[0.06]" : "bg-zinc-100"}`}>
@@ -328,8 +311,6 @@ export default function CaseBriefPage() {
         {/* Step: Result */}
         {step === "result" && result && assess && (
           <motion.div key="result" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
-            <BetaReviewGate toolId="case-brief.result" toolName="إحاطة القضية القانونية" reviewScope="legal-data">
-
             {/* Case card */}
             <div className={`${card} p-5`}>
               <p className={`text-[11px] font-black uppercase tracking-wider mb-3 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>بطاقة القضية</p>
@@ -386,6 +367,9 @@ export default function CaseBriefPage() {
               </div>
               <p className={`mt-2 text-[12px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{result.assessmentReason}</p>
               <p className={`mt-1 text-[10px] italic ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>تقييم مبدئي قائم على المعطيات المتاحة — وليس حكماً نهائياً.</p>
+              {run.chargedPoints > 0 && (
+                <p className={`mt-1 text-[10px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>خُصمت {run.chargedPoints.toLocaleString("ar-SA")} نقطة</p>
+              )}
 
               {/* Result Actions */}
               <div className={`mt-4 pt-3 border-t ${isDark ? "border-white/[0.05]" : "border-zinc-100"}`}>
@@ -409,12 +393,6 @@ export default function CaseBriefPage() {
                       <p className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{i + 1}. {opt.label}</p>
                       <p className={`text-[11px] mt-0.5 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>يتطلب: {opt.requires}</p>
                     </div>
-                    {opt.tool && (
-                      <Link href={opt.tool.href}
-                        className="flex-shrink-0 flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-lg bg-[#0B3D2E]/10 text-[#0B3D2E] dark:bg-[#C8A762]/10 dark:text-[#C8A762] hover:opacity-80 transition-opacity">
-                        {opt.tool.label} <ArrowRight size={10} />
-                      </Link>
-                    )}
                   </div>
                 </div>
               ))}
@@ -437,7 +415,7 @@ export default function CaseBriefPage() {
             </div>
 
             {/* Smart Client Requests — ما يجب طلبه من العميل */}
-            {generateClientRequests && result.clientRequests && result.clientRequests.length > 0 && (() => {
+            {result.clientRequests && result.clientRequests.length > 0 && (() => {
               const priorityCfg = {
                 critical: { label: "عاجل جداً", bg: isDark ? "bg-red-900/20" : "bg-red-50", border: isDark ? "border-red-800/40" : "border-red-200", dot: "bg-red-500", text: isDark ? "text-red-400" : "text-red-600" },
                 high:     { label: "مهم",       bg: isDark ? "bg-amber-900/15" : "bg-amber-50", border: isDark ? "border-amber-800/30" : "border-amber-200", dot: "bg-amber-500", text: isDark ? "text-amber-400" : "text-amber-600" },
@@ -530,8 +508,6 @@ export default function CaseBriefPage() {
               );
             })()}
 
-            </BetaReviewGate>
-
             {/* Related tools */}
             <div className={`${card} p-5`}>
               <p className={`text-[11px] font-black uppercase tracking-wider mb-3 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>الخطوة التالية — الأدوات ذات الصلة</p>
@@ -555,7 +531,7 @@ export default function CaseBriefPage() {
             </div>
 
             {/* Reset */}
-            <button onClick={() => { setStep("intake"); setFiles([]); setChatInput(""); setResult(null); }}
+            <button onClick={() => { setFiles([]); setChatInput(""); run.reset(); }}
               className={`w-full py-3 rounded-2xl border text-[13px] font-medium transition-colors ${isDark ? "border-white/[0.07] text-zinc-400 hover:bg-white/[0.04]" : "border-zinc-200 text-zinc-500 hover:bg-zinc-50"}`}>
               إحاطة قضية جديدة
             </button>

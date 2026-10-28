@@ -30,6 +30,7 @@ import { CONSULTANT_BLOCKED_MESSAGE, type PracticeKind } from "../auth/practiceK
 import { resolveToolRuntime } from "./aiToolsConfig.ts";
 import type { N8nCall, N8nOutcome } from "./n8nClient.ts";
 import { cleanQueries, type PackageSource, type RetrievalLimits, type RetrievalPin, type Retrieved } from "./retrieval.ts";
+import type { AiFile, FileRules, FilesCheck } from "./aiFiles.ts";
 import {
   DEFAULT_JOB_DEADLINE_SECONDS,
   FAST_DEADLINE_SECONDS,
@@ -63,6 +64,8 @@ export interface StartRunDeps {
   libraryAccess?: () => Promise<RouteReply | null>;
   /** Library tools only: the searches → the texts (retrieval.retrieveLibrary). */
   retrieve?: (queries: string[], limits: RetrievalLimits, pin: RetrievalPin) => Promise<Retrieved>;
+  /** File tools only: the caller's vault files checked, counted and signed (aiFiles.resolveAiFiles). */
+  resolveFiles?: (userId: string, fileIds: unknown, rules: FileRules) => Promise<FilesCheck>;
   /** The clock for the fast tools' time budget, in ms (tests replace it). */
   clock?: () => number;
 }
@@ -250,7 +253,7 @@ export async function startRunWith(
   if (typeof req.idempotencyKey !== "string" || !IDEMPOTENCY_KEY.test(req.idempotencyKey)) {
     return { status: 422, body: { error: AI_COPY.key, code: "invalid_key" } };
   }
-  if (req.fileIds !== undefined && !(Array.isArray(req.fileIds) && req.fileIds.length === 0)) {
+  if (!spec.files && req.fileIds !== undefined && !(Array.isArray(req.fileIds) && req.fileIds.length === 0)) {
     return { status: 422, body: { error: AI_COPY.noFiles, code: "files_not_accepted" } };
   }
 
@@ -315,7 +318,23 @@ export async function startRunWith(
     }
   }
 
-  const pages: number | null = null;
+  // A file tool: every predictable refusal (type, size, pages, an unreadable
+  // PDF, someone else's file) happens here, before the charge, and the page
+  // total sets the price.
+  let files: AiFile[] = [];
+  let pages: number | null = null;
+  if (spec.files) {
+    if (!deps.resolveFiles) {
+      console.error("[ai] a file tool without resolveFiles:", spec.id);
+      return { status: 503, body: { error: AI_COPY.notReady, code: "not_ready" } };
+    }
+    const got = await deps.resolveFiles(actor.userId, req.fileIds, spec.files);
+    if (!got.ok) {
+      return { status: got.code === "files_unavailable" ? 503 : 422, body: { error: got.error, code: got.code } };
+    }
+    files = got.files;
+    pages = got.pages;
+  }
   const price = spec.price(checked.input, { pages, turn });
   const now = deps.now?.() ?? new Date();
   const deadline = new Date(
@@ -336,7 +355,7 @@ export async function startRunWith(
     p_deadline: deadline.toISOString(),
     p_exempt: isAdmin,
     p_input: checked.input,
-    p_file_ids: [],
+    p_file_ids: files.map((f) => f.id),
     p_pages: pages,
     p_conversation: conversationId,
     p_source_ids: sources,
@@ -435,7 +454,7 @@ export async function startRunWith(
     sources: pkgSources,
     case: null,
     history,
-    files: [],
+    files,
     respond: sync ? { mode: "sync" } : { mode: "async", callback_url: deps.callbackUrl },
     deadline_at: deadline.toISOString(),
   };
