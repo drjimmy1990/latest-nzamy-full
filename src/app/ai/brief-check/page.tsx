@@ -27,13 +27,22 @@
  *
  * Price: none is shown, the same as the four wizard services — their orders
  * are placed with payment `{0, not_required}` and their pages name no price.
+ *
+ * AI GAPS REPORT (plan §5 L8, wave 3): beside the team order, a PDF memo with
+ * «تقرير بالثغرات» can be checked at once by the `brief-check` job (200 points,
+ * consultants blocked like the page). The report and the library's verdict on
+ * each cited article render under the form (_BriefCheckReport.tsx). The team
+ * order and its full revision are unchanged.
  */
 
 import { useRef, useState } from "react";
 import Link from "next/link";
 import {
-  FileMagnifyingGlass, CloudArrowUp, X, Warning, PaperPlaneTilt, SignIn, Paperclip,
+  FileMagnifyingGlass, CloudArrowUp, X, Warning, PaperPlaneTilt, SignIn, Paperclip, Sparkle,
 } from "@phosphor-icons/react";
+import { useAiRun } from "@/hooks/useAiRun";
+import { BRIEF_CHECK_PRICE } from "@/lib/ai/tools";
+import BriefCheckReportView, { asBriefCheckReport } from "./_BriefCheckReport";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import ConsultantGate from "@/components/dashboard/ConsultantGate";
@@ -77,6 +86,8 @@ function AIBriefCheckPage() {
   const [confirmed, setConfirmed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
+  const ai = useAiRun();
+  const report = ai.phase === "done" ? asBriefCheckReport(ai.output) : null;
 
   // Uploading and ordering both need a session. `loading` is its own state:
   // treating "not yet known" as signed out would flash the sign-in prompt at
@@ -136,6 +147,20 @@ function AIBriefCheckPage() {
       setErrors([briefReviewSubmitErrorAr(raw)]);
       setSubmitting(false);
     }
+  }
+
+  // The AI report needs a PDF (Gemini does not open Word) and the client's capacity.
+  const capacity = clientRole === "other" ? clientRoleOther.trim() : (BRIEF_CLIENT_ROLES.find(r => r.id === clientRole)?.label ?? "");
+  const memoIsPdf = !!memo && /\.pdf$/i.test(memo.name);
+  const canRunAi = reviewScope === "gaps_report" && memoIsPdf && !!capacity && !uploading && !ai.busy;
+
+  function runAiReport() {
+    if (!canRunAi || !memo) return;
+    void ai.start(
+      "brief-check",
+      { client_capacity: capacity, court: courtType.trim() || null, case_type: caseType.trim() || null, notes: notes.trim() || null },
+      { fileIds: [memo.documentId] },
+    );
   }
 
   const card = isDark ? "bg-zinc-900 border border-white/[0.06] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
@@ -313,8 +338,31 @@ function AIBriefCheckPage() {
             <PaperPlaneTilt size={15} />
             {submitting ? "جارٍ الإرسال…" : uploading ? "انتظر اكتمال رفع المذكرة…" : "إرسال الطلب"}
           </button>
+
+          {reviewScope === "gaps_report" && (
+            <div className={`rounded-2xl border p-4 space-y-2 ${isDark ? "border-[#C8A762]/20 bg-[#C8A762]/[0.04]" : "border-[#0B3D2E]/15 bg-[#0B3D2E]/[0.03]"}`}>
+              <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>أو: تقرير فوري بالذكاء الاصطناعي</p>
+              <p className={hint}>
+                يقرأ المذكرة الآن ويعرض ثغراتها هنا، وتتحقق المنصة من كل مادة تستشهد بها في مكتبة الأنظمة · {BRIEF_CHECK_PRICE.toLocaleString("ar-SA")} نقطة · PDF فقط ·
+                تُرسل نسخة من المذكرة إلى مزوّد ذكاء اصطناعي خارج المملكة لقراءتها.
+              </p>
+              {memo && !memoIsPdf && <p className="text-[11px] text-amber-500">التقرير الفوري يقرأ PDF فقط — احفظ المذكرة PDF، أو أرسلها للفريق.</p>}
+              <button
+                onClick={runAiReport}
+                disabled={!canRunAi}
+                className={`flex w-full items-center justify-center gap-2 rounded-xl border px-6 py-2.5 text-[13px] font-bold disabled:opacity-40 ${isDark ? "border-[#C8A762]/40 text-[#C8A762]" : "border-[#0B3D2E]/30 text-[#0B3D2E]"}`}
+              >
+                <Sparkle size={14} weight="fill" />
+                {ai.busy ? "جارٍ قراءة المذكرة… (دقيقة أو أكثر)" : "اعرض تقرير الثغرات الآن"}
+              </button>
+              {ai.phase === "error" && ai.error && <p role="alert" className="text-[11px] text-red-500">{ai.error}</p>}
+              {ai.phase === "review" && <p role="status" className={hint}>التقرير جاهز وينتظر مراجعة الفريق قبل عرضه.</p>}
+            </div>
+          )}
         </div>
       )}
+
+      {report && <BriefCheckReportView report={report} isDark={isDark} chargedPoints={ai.chargedPoints} />}
     </div>
   );
 }

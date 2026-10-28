@@ -67,11 +67,11 @@ The plan this follows is `docs/plans/2026-10-26-ai-services-n8n-plan.md` (sectio
 
 Admins can use every tool, and admins are never charged.
 
-### Wave 3: documents (in progress)
+### Wave 3: documents
 | Tool | Page | Points | Who |
 |---|---|:-:|---|
 | **L7 عصارة المرفقات / الموجز القضائي**: upload the case papers (PDF or photos, scanned pages included). A background job then returns the case card, the story, the highlights, the assessment (strong / medium / weak), the options, the questions, and what to ask the client for | `/ai/case-brief` | 30 up to 5 pages · 150 up to 30 pages | lawyers, firms |
-| L8 مراجعة وتدقيق مذكرة | `/ai/brief-check` | 200 | next |
+| **L8 مراجعة وتدقيق مذكرة**: an instant gaps report for a PDF memo. The platform checks every cited article in the library: in force, amended, repealed or not found. The team order is unchanged | `/ai/brief-check` | 200 | lawyers, firms (not consultants) |
 
 **L7 needs one extra step when you deploy it:** run `npm install` before `deploy.sh`, for the new page-counting package `pdf-lib`. The full steps are in `n8n/ai/README.md` («Wave 3, L7»).
 
@@ -86,6 +86,7 @@ Admins can use every tool, and admins are never charged.
 | `NZAMY · AI · assistant (L4 المستشار الذكي)` | `iPXmJCQQ1QGzrIRf` |
 | `NZAMY · AI · canvas-card (L6 بطاقة الكانفاس الذكية)` | `1g4hsswaWsaafkN5` |
 | `NZAMY · AI · case-brief (L7 عصارة المرفقات)`, a job that doesn't save successful runs | `snPDkKndPA9wjIKr` |
+| `NZAMY · AI · brief-check (L8 مراجعة وتدقيق مذكرة)`, a job that doesn't save successful runs | `bu9guzNEhaLbyAPd` |
 | `NZAMY · AI · schedules (sweep 10 min + retention daily)` | `8Skwnqn9WIPOxcml` |
 | `NZAMY · AI · echo-fast (wave 0 test)` / `echo-job` | `m8vLkLlOrmWj6qeO` / `9qqzoHhFfhY3Esdj` |
 

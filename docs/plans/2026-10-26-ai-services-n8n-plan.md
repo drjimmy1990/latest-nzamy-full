@@ -490,7 +490,7 @@ L2 notes:
 
 ### Wave 3: documents (jobs, file reading)
 
-> **Status 2026-10-28 (branch `feat/ai-wave3`): L7 built, off by default. L8 next.**
+> **Status 2026-10-28 (branch `feat/ai-wave3`): L7 and L8 built, off by default.**
 > - **Files** (`src/lib/ai/aiFiles.ts`, new dependency `pdf-lib` 1.17.1, pinned):
 >   - only the user's own vault rows (`attachments.owner_user_id`, `deleted_at` null);
 >   - PDF and images only;
@@ -510,6 +510,13 @@ L2 notes:
 >   - the server rebuilds the BriefResult field by field, and no link comes from the model.
 >
 >   `/ai/analyze`'s lawyer half (AttachmentSqueezer) stays «قريباً». Pointing it at the case-brief tool is a follow-up that changes its honesty gates on purpose.
+> - **L8** on `/ai/brief-check`: one PDF memo, 200 points, consultants blocked.
+>   - It runs beside the team order, which is unchanged (owner Q77). The full revision stays a team order.
+>   - The model reports the findings and every article the memo cites **as written**.
+>   - On the callback, `citationCheck.ts` (a `runCore` output enricher) matches each one against the library and sets ok, amended, repealed, not_found (law or article) or unchecked (a failed read).
+>     - The law names are spelling-tolerant: alef, hamza, taa marbuta and alif maqsura match each other, and a year suffix is ignored.
+>     - It picks the best edition that has the article.
+>   - Probe: the scanned memo gave four real findings, and both cited articles were listed as written.
 | # | Tool | Page | Price | Model | Input → output |
 |:-:|---|---|:-:|---|---|
 | L7 | **عصارة المرفقات** (includes the former الموجز القضائي, ٢٨٣) | `/ai/analyze`; lawyers get the `case-brief` screen, which has the richest output shape | 30 for 1–5 pages, 150 for 6–30 pages with OCR (metered) | Sonnet | `{role_note, want_gaps: bool}` + files → `BriefResult` (below) |

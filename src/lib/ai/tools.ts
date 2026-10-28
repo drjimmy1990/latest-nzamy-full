@@ -369,6 +369,49 @@ function caseBriefOutput(raw: unknown): Record<string, unknown> | null {
   };
 }
 
+/** L8: one memo, the gaps report (the full revision stays a team order). */
+export const BRIEF_CHECK_PRICE = 200;
+export const BRIEF_CHECK_FILES: FileRules = { max: 1, maxPages: 30, maxBytes: 22 * 1024 * 1024 };
+const FINDING_SEVERITIES = ["high", "medium", "low"] as const;
+
+/** L8 مراجعة وتدقيق مذكرة: the client's capacity and the case's frame for the memo's gaps report. */
+function briefCheckInput(raw: unknown): InputCheck {
+  if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
+  const capacity = boundedText(raw.client_capacity, 100);
+  if (!capacity) return { ok: false, error: "اختر صفة موكّلك" };
+  const optional = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
+  return {
+    ok: true,
+    input: { client_capacity: capacity, court: optional(raw.court, 150), case_type: optional(raw.case_type, 150), notes: optional(raw.notes, 2000) },
+  };
+}
+
+/**
+ * The model's report: the findings, a summary, and `cited` — what the memo
+ * cites, as written. runCore's enricher (citationCheck.ts) then replaces
+ * `cited` with the library's verdict on each one, so the stored result never
+ * carries the model's opinion on whether an article exists.
+ */
+function briefCheckOutput(raw: unknown): Record<string, unknown> | null {
+  if (!isPlainObject(raw)) return null;
+  const summary = boundedText(raw.summary, 3000);
+  if (!summary) return null;
+  return {
+    summary,
+    findings: listOf(raw.findings, 25, (f) =>
+      isPlainObject(f) && boundedText(f.issue, 800)
+        ? {
+            severity: oneOf(f.severity, FINDING_SEVERITIES, "medium"),
+            location: text(f.location, 200, "عام"),
+            issue: text(f.issue, 800),
+            fix: text(f.fix, 800),
+          }
+        : null,
+    ),
+    cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 40) : [],
+  };
+}
+
 export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
   "echo-fast": {
     id: "echo-fast",
@@ -501,6 +544,22 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     files: CASE_BRIEF_FILES,
     validateInput: caseBriefInput,
     validateOutput: caseBriefOutput,
+  },
+  "brief-check": {
+    id: "brief-check",
+    n8nPath: "nzamy-ai/brief-check",
+    class: "job",
+    tier: "deep",
+    roles: ["lawyer", "firm"],
+    // CONSULTANT_BLOCKED_PREFIXES has /ai/brief-check (Art. 18).
+    consultantBlocked: true,
+    price: () => BRIEF_CHECK_PRICE,
+    dailyLimit: 5,
+    defaultMode: "off",
+    jobDeadlineSeconds: 15 * 60,
+    files: BRIEF_CHECK_FILES,
+    validateInput: briefCheckInput,
+    validateOutput: briefCheckOutput,
   },
 };
 

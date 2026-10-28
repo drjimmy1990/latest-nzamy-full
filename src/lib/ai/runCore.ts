@@ -31,6 +31,15 @@ import { resolveToolRuntime } from "./aiToolsConfig.ts";
 import type { N8nCall, N8nOutcome } from "./n8nClient.ts";
 import { cleanQueries, type PackageSource, type RetrievalLimits, type RetrievalPin, type Retrieved } from "./retrieval.ts";
 import type { AiFile, FileRules, FilesCheck } from "./aiFiles.ts";
+import { enrichBriefCheck } from "./citationCheck.ts";
+
+/**
+ * Tools whose result the app completes from its own data before storing it.
+ * L8: the library decides each cited article's status, never the model.
+ */
+const OUTPUT_ENRICHERS: Readonly<Record<string, (admin: SupabaseClient, output: Record<string, unknown>) => Promise<Record<string, unknown>>>> = {
+  "brief-check": (admin, output) => enrichBriefCheck(admin as never, output),
+};
 import {
   DEFAULT_JOB_DEADLINE_SECONDS,
   FAST_DEADLINE_SECONDS,
@@ -182,8 +191,18 @@ export async function settleRunWith(
   }
   if (raw.status !== "succeeded") return fail("bad_reply", "the result has no final status");
 
-  const output = ctx.spec.validateOutput(raw.output, ctx.input);
-  if (!output) return fail("schema_invalid", "the output does not match the tool's shape");
+  const checked = ctx.spec.validateOutput(raw.output, ctx.input);
+  if (!checked) return fail("schema_invalid", "the output does not match the tool's shape");
+  const enrich = OUTPUT_ENRICHERS[ctx.spec.id];
+  let output = checked;
+  if (enrich) {
+    try {
+      output = await enrich(admin, checked);
+    } catch (err) {
+      console.error("[ai] enriching the result failed for", ctx.runId, err);
+      return fail("store_failed", "the result could not be completed");
+    }
+  }
 
   const citations = mapCitations(raw.citations, ctx.sources);
   // A library tool's answer stands on the texts it was given or not at all:

@@ -20,6 +20,7 @@ On n8n.asra3.com (all created **inactive**):
 | L4 المستشار الذكي | `NZAMY · AI · assistant (L4 المستشار الذكي)` | `iPXmJCQQ1QGzrIRf` | `nzamy-ai/assistant` |
 | L6 بطاقة الكانفاس الذكية | `NZAMY · AI · canvas-card (L6 بطاقة الكانفاس الذكية)` | `1g4hsswaWsaafkN5` | `nzamy-ai/canvas-card` |
 | L7 عصارة المرفقات (job) | `NZAMY · AI · case-brief (L7 عصارة المرفقات)` | `snPDkKndPA9wjIKr` | `nzamy-ai/case-brief` |
+| L8 مراجعة وتدقيق مذكرة (job) | `NZAMY · AI · brief-check (L8 مراجعة وتدقيق مذكرة)` | `bu9guzNEhaLbyAPd` | `nzamy-ai/brief-check` |
 
 **Wave 3: document jobs.** The page uploads each file to the user's vault (an `attachments` row), then sends the ids. Before anything is charged, `src/lib/ai/aiFiles.ts`:
 1. keeps only the user's own files, not in the bin;
@@ -106,9 +107,9 @@ Wave 1 has no SQL and no new server variables.
 
 ---
 
-## Wave 3, L7 عصارة المرفقات / الموجز القضائي: your steps
+## Wave 3, L7 عصارة المرفقات and L8 مراجعة وتدقيق مذكرة: your steps
 
-L7 adds one npm package (`pdf-lib`, to count pages). No SQL.
+Wave 3 adds one npm package (`pdf-lib`, to count pages). No SQL.
 
 1. **Install the new package, then deploy** (server):
    ```bash
@@ -118,13 +119,23 @@ L7 adds one npm package (`pdf-lib`, to count pages). No SQL.
    tail -f /root/deploy-wave3.log
    ```
 2. **n8n:** nothing to do. `case-brief` is on.
-3. **Open it for admins only** at `https://nezamy.sa/dashboard/admin/ai-usage`: set `case-brief` to **للمشرفين فقط**, then press **حفظ**.
+3. **Open them for admins only** at `https://nezamy.sa/dashboard/admin/ai-usage`: set `case-brief` and `brief-check` to **للمشرفين فقط**, then press **حفظ**.
 4. **Test** at `https://nezamy.sa/ai/case-brief` (admin):
    - Write who you act for, e.g. «وكيل المدعي في دعوى عمالية».
    - Add one or two PDFs, or a phone photo of a page. Each shows «جاهز» once it is in your vault.
    - Press «ابدأ الإحاطة». Expect «الباراليجل يقرأ الأوراق...» for 10–60 seconds. Then the case card, the story, the highlights, the assessment (strong / medium / weak), the options, the questions, and the client requests.
    - A Word file shows «PDF أو صورة فقط». More than 30 pages is refused before any charge.
-5. **Who:** lawyers and firms. 30 points up to 5 pages, 150 up to 30 pages.
+5. **Test L8** at `https://nezamy.sa/ai/brief-check` (admin):
+   - Upload a **PDF** memo that cites some articles, e.g. «المادة (77) من نظام العمل».
+   - Pick the client's capacity, then «تقرير بالثغرات».
+   - Press «اعرض تقرير الثغرات الآن». After 10–60 seconds, three blocks appear under the form:
+     - the summary;
+     - the gaps, by severity;
+     - «المواد المستشهد بها». There, the platform marks each cited article from the library: «سارية», «معدّلة», «ملغاة», «لا توجد مادة بهذا الرقم» or «لم يُعثر على النظام». Each found article links to its text.
+   - The «إرسال الطلب» team order and the full revision work as before.
+6. **Who and price:**
+   - **L7:** lawyers and firms. 30 points up to 5 pages, 150 up to 30 pages.
+   - **L8:** lawyers and firms, not consultants (Art. 18). 200 points.
 
 ## Wave 2 (L3, L4, L5, L6): your steps
 
