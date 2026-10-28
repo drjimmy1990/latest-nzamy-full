@@ -102,7 +102,7 @@
         400
       ],
       "parameters": {
-        "jsCode": "const b = $('Webhook').first().json.body;\nconst msg = String($json.error?.message ?? $json.message ?? 'model call failed').slice(0, 300);\nreturn [{ json: { run_id: b.run_id, status: 'failed', output: null, citations: [], usage: null, error: { code: 'model_error', message: msg } } }];"
+        "jsCode": "const b = $('Webhook').first().json.body;\nconst e = $json.error;\nconst msg = String((typeof e === 'string' ? e : e?.message) ?? $json.message ?? 'model call failed').slice(0, 300);\nreturn [{ json: { run_id: b.run_id, status: 'failed', output: null, citations: [], usage: null, error: { code: 'model_error', message: msg } } }];"
       }
     },
     {

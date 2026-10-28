@@ -85,6 +85,8 @@ export const AI_COPY = {
   timeout: "استغرق الطلب وقتاً أطول من المسموح، وأُعيدت نقاطك — حاول مرة أخرى",
   noSources: "لم أجد في مكتبة الأنظمة نصوصاً تتعلق بسؤالك، وأُعيدت نقاطك — جرّب صياغة أخرى",
   ungrounded: "لم تُجب نصوص المكتبة التي وجدتها عن سؤالك، وأُعيدت نقاطك — جرّب صياغة أخرى",
+  conversation: "معرّف المحادثة غير صالح — ابدأ محادثة جديدة",
+  conversationFull: "اكتملت هذه المحادثة — ابدأ محادثة جديدة لتكمل",
 } as const;
 
 /** The search writer's wait: short, so the answer keeps most of the fast budget. */
@@ -269,8 +271,52 @@ export async function startRunWith(
     if (denied) return denied;
   }
 
+  // A chat tool: the conversation's earlier turns, read from ai_runs for this
+  // user only, so a conversation id from another account reads as a new one.
+  let conversationId: string | null = null;
+  let history: Array<{ role: "user" | "assistant"; text: string }> = [];
+  let turn = 0;
+  if (spec.conversation) {
+    const cid = req.conversationId;
+    if (cid !== undefined && cid !== null && (typeof cid !== "string" || !UUID.test(cid))) {
+      return { status: 422, body: { error: AI_COPY.conversation, code: "invalid_conversation" } };
+    }
+    conversationId = typeof cid === "string" ? cid.toLowerCase() : globalThis.crypto.randomUUID();
+    if (typeof cid === "string") {
+      const prior = await admin
+        .from("ai_runs")
+        .select("input, output, status")
+        .eq("user_id", actor.userId)
+        .eq("tool", spec.id)
+        .eq("conversation_id", conversationId)
+        .in("status", ["running", "review", "succeeded"])
+        .order("created_at", { ascending: true })
+        .limit(spec.conversation.maxMessages + 1);
+      if (prior.error) {
+        console.error("[ai] conversation read failed:", spec.id, prior.error.code, prior.error.message);
+        return { status: 503, body: { error: AI_COPY.unavailable, code: "unavailable" } };
+      }
+      const rows = (Array.isArray(prior.data) ? prior.data : []) as Array<{ input: unknown; output: unknown; status: string }>;
+      turn = rows.length;
+      if (turn >= spec.conversation.maxMessages) {
+        return { status: 409, body: { error: AI_COPY.conversationFull, code: "conversation_full", conversationId } };
+      }
+      const { field, replyField, historyPairs } = spec.conversation;
+      history = rows
+        .filter((r) => r.status === "succeeded" && isPlainObject(r.input) && isPlainObject(r.output))
+        .slice(-historyPairs)
+        .flatMap((r) => {
+          const q = (r.input as Record<string, unknown>)[field];
+          const a = (r.output as Record<string, unknown>)[replyField];
+          return typeof q === "string" && typeof a === "string"
+            ? [{ role: "user" as const, text: q }, { role: "assistant" as const, text: a }]
+            : [];
+        });
+    }
+  }
+
   const pages: number | null = null;
-  const price = spec.price(checked.input, { pages });
+  const price = spec.price(checked.input, { pages, turn });
   const now = deps.now?.() ?? new Date();
   const deadline = new Date(
     now.getTime() + 1000 * (spec.class === "fast" ? FAST_DEADLINE_SECONDS : spec.jobDeadlineSeconds ?? DEFAULT_JOB_DEADLINE_SECONDS),
@@ -292,7 +338,7 @@ export async function startRunWith(
     p_input: checked.input,
     p_file_ids: [],
     p_pages: pages,
-    p_conversation: null,
+    p_conversation: conversationId,
     p_source_ids: sources,
   });
   if (error) {
@@ -317,7 +363,7 @@ export async function startRunWith(
     return { status: 409, body: { error: AI_COPY.duplicate, code: "duplicate", runId: run.run_id, status: run.status } };
   }
 
-  const charged = { chargedPoints: run.charged_points };
+  const charged = { chargedPoints: run.charged_points, ...(conversationId ? { conversationId } : {}) };
 
   // Charged first, so the daily limit and the balance hold for the searches
   // too; every way out below refunds.
@@ -329,7 +375,15 @@ export async function startRunWith(
     const asked = await deps.n8n({
       path: LIB_QUERIES_PATH,
       mode: "sync",
-      body: { v: 1, run_id: run.run_id, tool: "lib-queries", input: { text: String(checked.input[from] ?? "") } },
+      // A follow-up («وما مدته؟») is searched together with the question before it.
+      body: {
+        v: 1,
+        run_id: run.run_id,
+        tool: "lib-queries",
+        input: {
+          text: [...history.filter((h) => h.role === "user").slice(-1).map((h) => h.text), String(checked.input[from] ?? "")].join("\n"),
+        },
+      },
       timeoutMs: LIB_QUERIES_TIMEOUT_MS,
     });
     const reply = asked.kind === "result" && isPlainObject(asked.result) ? asked.result : null;
@@ -380,7 +434,7 @@ export async function startRunWith(
     input: checked.input,
     sources: pkgSources,
     case: null,
-    history: [],
+    history,
     files: [],
     respond: sync ? { mode: "sync" } : { mode: "async", callback_url: deps.callbackUrl },
     deadline_at: deadline.toISOString(),

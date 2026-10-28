@@ -456,7 +456,7 @@ L2 notes:
 
 ### Wave 2: question and answer over the library (fast, retrieval)
 
-> **Status 2026-10-28 (branch `feat/ai-wave2`): L3 and L5 built, off by default. L4 and L6 next.**
+> **Status 2026-10-28 (branch `feat/ai-wave2`): L3–L6 built, off by default.**
 > - **Retrieval** (`src/lib/ai/retrieval.ts`). n8n `lib-queries` writes 2–4 short searches from the question, then the app runs them through the `20261026_52` relevance functions and keeps 8 articles and 4 principles as `S1…Sn`.
 >   - Measured on prod: the question's own words ANDed match almost nothing.
 >   - ORed, they match more than 5,000 rows, and above that the functions stop ranking by relevance.
@@ -469,6 +469,17 @@ L2 notes:
 >   - The chat (`LibraryAI`) and the «اشرح لي» window (`ArticleExplainModal`) both call the pipeline (`_library-assistant.ts`).
 >   - «اشرح لي» sends the open article as S1 (`retrieval` `pinFrom`), whatever the search finds.
 >   - The old `/api/ai/library-chat` and `/api/ai/explain-article` routes are unused now; prod never configured their webhooks (both answered 503 on 2026-10-28).
+> - **L4** المستشار الذكي, `/ai/assistant`: lawyer and firm. D3 is built as default:
+>   - 100 points on a conversation's first message, then four free messages.
+>   - A sixth message gets `409 conversation_full`.
+>   - The earlier turns are read from `ai_runs` (this user's rows only, by `conversation_id`) and sent as `history`.
+>   - A follow-up is searched together with the question before it.
+>   - Retrieval covers laws and principles only. Decrees and fiqh can join when their relevance functions are wired in `retrieval.ts`.
+> - **L6** بطاقة الكانفاس الذكية, the case board's «اقترح سنداً نظامياً»: lawyer and firm, 10 points.
+>   - The selected cards (up to 8) are searched, and the model picks up to three articles as `S3 | why` lines.
+>   - The board builds each law card from the server's citation, its library title and link. So every AI law card resolves to a library id.
+>   - No pick («لا_يوجد») is refunded as ungrounded.
+> - **n8n error node:** the Model error node now keeps the provider's reason. The AI Agent passes the error as a string, so an outage reads «Service unavailable…» instead of «model call failed». All 7 live workflows were patched.
 > - **Open (owner):** whether lawyers below Pro may use the library tools. Today the rule is the library assistant's (owner ٢٠٦ / ٢٠٧ / ٢٠٩).
 | # | Tool | Page | Price | Model | Input → output |
 |:-:|---|---|:-:|---|---|

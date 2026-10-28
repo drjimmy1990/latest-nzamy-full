@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle, CircleNotch, Crosshair, Info, LinkSimple, ArrowsOutSimple, Lock, LockOpen, Rows, Export, NotePencil, Warning, FrameCorners, TrashSimple, Palette, ArrowCounterClockwise, ArrowClockwise, Graph, DownloadSimple, Lightning } from "@phosphor-icons/react";
+import { CheckCircle, CircleNotch, Crosshair, Info, LinkSimple, ArrowsOutSimple, Lock, LockOpen, Rows, Export, NotePencil, Warning, FrameCorners, TrashSimple, Palette, ArrowCounterClockwise, ArrowClockwise, Graph, DownloadSimple, Lightning, Scales } from "@phosphor-icons/react";
 import {
   EDGE_CONFIG,
   TYPE_CONFIG,
@@ -19,6 +19,7 @@ import { LinkCardBody, ChecklistCardBody } from "./CaseGraphCardExtras";
 import CaseImportDrawer from "./CaseImportDrawer";
 import { normalizeLoadedEdges, normalizeLoadedNodes } from "./_graph-sanitize";
 import { candidatesToNodes, type ImportCandidate } from "./_graph-import";
+import { askCanvasCard, suggestionsToNodes } from "./_graph-ai-card";
 import { getCaseGraph, saveCaseGraph } from "@/lib/services/caseGraphService";
 import { toArabicDigits } from "@/lib/services/arabicCount";
 
@@ -86,6 +87,31 @@ export default function CaseGraphView({
       return () => `n_${stamp}_${i++}`;
     })())]);
   };
+
+  // «اقترح سنداً نظامياً» (plan §5 L6, owner ٢٩١): the selected cards → up to
+  // three law cards, each built from a library text the server sent. 10 points;
+  // manual cards stay free. Only on the case files that can import (lawyer, firm).
+  const [aiCard, setAiCard] = useState<{ busy: boolean; note: string | null }>({ busy: false, note: null });
+  async function suggestLawCards() {
+    const chosen = nodes.filter((n) => selectedNodeIds.has(n.id));
+    if (chosen.length === 0 || aiCard.busy) return;
+    setAiCard({ busy: true, note: null });
+    const answer = await askCanvasCard(chosen.slice(0, 8));
+    if (!answer.ok) {
+      setAiCard({ busy: false, note: answer.error ?? null });
+      return;
+    }
+    const stamp = Date.now();
+    let i = 0;
+    const made = suggestionsToNodes(answer.suggestions, nodes, selectedNodeIds, () => `n_ai_${stamp}_${i++}`, window.location.origin);
+    // One recorded setNodes call → one undo step, as for the import.
+    if (made.length > 0) setNodes((prev) => [...prev, ...made]);
+    const paid = answer.chargedPoints ? ` · خُصمت ${toArabicDigits(answer.chargedPoints)} نقاط` : "";
+    setAiCard({
+      busy: false,
+      note: made.length > 0 ? `أُضيفت ${toArabicDigits(made.length)} بطاقة نظامية مقترحة — راجعها${paid}` : `المواد المقترحة على اللوحة من قبل${paid}`,
+    });
+  }
 
   const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null);
   // No legend existed for the six node-type colours or the three edge-line
@@ -331,6 +357,24 @@ export default function CaseGraphView({
                 <Export size={13} />
                 {selectedNodeIds.size > 0 ? `ملخص (${toArabicDigits(selectedNodeIds.size)})` : "ملخص نصي"}
               </button>
+              {canImport && (
+                <button
+                  onClick={() => void suggestLawCards()}
+                  disabled={selectedNodeIds.size === 0 || aiCard.busy}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition-colors text-[12px] border disabled:opacity-40 ${isDark ? "border-[#C8A762]/30 text-[#C8A762] hover:bg-[#C8A762]/10" : "border-[#C8A762]/50 text-amber-700 hover:bg-amber-50"}`}
+                  title={selectedNodeIds.size > 0
+                    ? "يبحث في مكتبة الأنظمة عن مواد تتصل بالبطاقات المختارة ويضيفها بطاقات (١٠ نقاط)"
+                    : "اختر بطاقة أو أكثر أولاً"}
+                >
+                  {aiCard.busy ? <CircleNotch size={13} className="animate-spin" /> : <Scales size={13} />}
+                  {aiCard.busy ? "جارٍ البحث..." : "اقترح سنداً نظامياً"}
+                </button>
+              )}
+              {aiCard.note && (
+                <span role="status" className={`max-w-[260px] truncate text-[11px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`} title={aiCard.note}>
+                  {aiCard.note}
+                </span>
+              )}
               <div className={`w-px mx-1 my-1 self-stretch ${isDark ? "bg-white/10" : "bg-zinc-200"}`} />
               {/* Multi-select indicator + Group */}
               {selectedNodeIds.size > 0 && (() => {
