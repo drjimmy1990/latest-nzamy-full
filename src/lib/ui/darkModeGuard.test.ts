@@ -30,7 +30,6 @@ const INVERTED = "the dark-theme branch of a primary button that is deliberately
  */
 const ALLOW: [string, string | null, string][] = [
   // toggle-switch thumbs
-  ["app/ai/analyze-strength/page.tsx", "rounded-full bg-white shadow transition-all", TOGGLE],
   ["app/ai/case-brief/page.tsx", "w-4 rounded-full bg-white shadow-sm", TOGGLE],
   ["app/ai/debt-collection/page.tsx", "w-4 h-4 rounded-full bg-white shadow-sm", TOGGLE],
   ["app/ai/legal-opinion/_components/LetterWorkflow.tsx", "rounded-full bg-white shadow transition-all", TOGGLE],

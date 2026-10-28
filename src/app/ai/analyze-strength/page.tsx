@@ -1,553 +1,320 @@
 "use client";
 
-import { motion, AnimatePresence } from "framer-motion";
-import { useState, useCallback, useRef } from "react";
-import BetaReviewGate from "@/components/BetaReviewGate";
+/**
+ * محلل قوة الموقف — L10 (plan §5, wave 4): a real `analyze-strength` job.
+ *
+ * This page used to wait a `setTimeout(2500)` and show the same hard-coded
+ * case (an overall score of 68, dimension scores, risks with likelihood
+ * percentages) whatever the lawyer typed, behind BetaReviewGate. Nothing read
+ * the file. Now the summary, the evidence notes, what the opponent said and
+ * the uploaded case files go to the job (250 points), and its answer renders
+ * in four tabs with LEVELS IN WORDS: owner ١٩٣ bans any chance of winning, so
+ * there is no score, no percentage and no likelihood. Every article the
+ * answer relies on is checked against the library by the platform.
+ *
+ * The «ذاكرة المكتب» switch had nothing behind it and is gone; the opponent's
+ * memo is a real file or pasted text.
+ */
+
+import { useRef, useState } from "react";
+import Link from "next/link";
 import {
-  ChartBar, Shield, Target, Scales,
-  Warning, CheckCircle, Minus, ArrowRight,
-  Gauge, Books, Users, Clock,
-  Lightning, ShieldStar, Crosshair, TrendUp,
-  CloudArrowUp, Plus, X, BookOpen,
-  Brain, Sword, FileText,
-  PaperclipHorizontal, UploadSimple, FileArrowUp,
+  Gauge, Crosshair, TrendUp, Sword, Shield, Warning, CheckCircle, Lightbulb,
+  CloudArrowUp, Paperclip, X, Sparkle, SignIn, ArrowsCounterClockwise,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { useUser } from "@/hooks/useUser";
+import { useAiRun } from "@/hooks/useAiRun";
+import { useOrderAttachments } from "@/hooks/useOrderAttachments";
 import { VoiceInput } from "@/components/ui/VoiceInput";
 import AiResultActions from "@/components/AiResultActions";
+import CitationCheckList, { asCitationVerdicts } from "@/components/ai/CitationCheckList";
+import { AI_READABLE_ACCEPT, isAiReadable, splitAiReadable } from "@/components/ai/aiReadable";
+import { CASE_SUMMARY_MAX, CASE_SUMMARY_MIN, WAVE4_FILES, WAVE4_PRICE } from "@/lib/ai/tools";
+import { asStrengthReport, strengthReportText, LEVEL_LABEL, RISK_LABEL, type StrengthReport } from "./_report";
 
-import { TabKey, Attachment } from "./types";
-import { ANALYSIS, OPPONENT_MOVES, DEVIL_ADVOCATE, RISKS_MATRIX, TABS } from "./data";
-import { ScoreGauge } from "./components/ScoreGauge";
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
+type TabKey = "strength" | "opponent" | "risks" | "devil";
+const TABS: { key: TabKey; label: string; icon: typeof Gauge }[] = [
+  { key: "strength", label: "قوة الأسانيد", icon: Gauge },
+  { key: "opponent", label: "توقعات الخصم", icon: Crosshair },
+  { key: "risks", label: "المخاطر الإجرائية", icon: TrendUp },
+  { key: "devil", label: "محامي الشيطان", icon: Sword },
+];
+const ROLES = [
+  { id: "plaintiff", label: "مدّعٍ / موكلي مدّعٍ" },
+  { id: "defendant", label: "مدّعى عليه / دفاع" },
+  { id: "other", label: "غير ذلك" },
+] as const;
+const LEVEL_TONE = { strong: "text-emerald-500", medium: "text-amber-500", weak: "text-red-500" } as const;
+const RISK_TONE = {
+  high: "border-red-500/25 bg-red-500/10 text-red-500",
+  medium: "border-amber-500/25 bg-amber-500/10 text-amber-500",
+  low: "border-blue-500/25 bg-blue-500/10 text-blue-500",
+} as const;
+const DEVIL_LABEL = { critical: "حرج", high: "مرتفع", medium: "متوسط" } as const;
 
 export default function AIStrengthPage() {
   const { isDark } = useTheme();
-  const [caseDesc, setCaseDesc] = useState("");
-  const [analyzed, setAnalyzed] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
+  const user = useUser();
+  const ai = useAiRun();
+  const { attachments, uploading, attachError, attachFile, removeAttachment, clearAttachError } = useOrderAttachments();
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const [role, setRole] = useState<string>("");
+  const [summary, setSummary] = useState("");
+  const [evidence, setEvidence] = useState("");
+  const [opponent, setOpponent] = useState("");
+  const [fileError, setFileError] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("strength");
 
-  const [caseFile, setCaseFile] = useState<string | null>(null);
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [hasOpponentMemo, setHasOpponentMemo] = useState(false);
-  const [useFirmMemory, setUseFirmMemory] = useState(false);
-  const [bulkUpload, setBulkUpload] = useState(false);
+  const signedIn = !user.loading && user.isLoggedIn;
+  const report = ai.phase === "done" ? asStrengthReport(ai.output) : null;
+  const { ids: fileIds } = splitAiReadable(attachments);
+  const summaryOk = summary.trim().length >= CASE_SUMMARY_MIN;
+  const canRun = signedIn && !!role && summaryOk && !uploading && !ai.busy;
 
-  const caseFileRef  = useRef<HTMLInputElement>(null);
-  const attachRefs   = useRef<(HTMLInputElement | null)[]>([]);
-
-  function addAtt() { setAttachments(prev => [...prev, { id: Date.now(), description: "", file: null }]); }
-  function removeAtt(id: number) { setAttachments(prev => prev.filter(a => a.id !== id)); }
-  function updateAtt(id: number, field: "description" | "file", val: string | null) {
-    setAttachments(prev => prev.map(a => a.id === id ? { ...a, [field]: val } : a));
+  async function pickFiles(files: File[]) {
+    setFileError("");
+    clearAttachError();
+    let count = attachments.length;
+    for (const f of files) {
+      if (!isAiReadable(f.name)) { setFileError("المحلل يقرأ PDF والصور فقط — احفظ ملف Word بصيغة PDF ثم أرفقه"); continue; }
+      if (count >= WAVE4_FILES.max) { setFileError(`الحد ${WAVE4_FILES.max.toLocaleString("ar-SA")} ملفات`); break; }
+      try { await attachFile(f); count++; } catch { /* attachFile set attachError */ }
+    }
   }
 
-  const analyze = useCallback(async () => {
-    if (!caseDesc.trim()) return;
-    setAnalyzing(true);
-    await new Promise(r => setTimeout(r, 2500));
-    setAnalyzed(true);
-    setAnalyzing(false);
-  }, [caseDesc]);
+  function run() {
+    if (!canRun) return;
+    setActiveTab("strength");
+    void ai.start(
+      "analyze-strength",
+      { role, case_summary: summary.trim(), evidence_notes: evidence.trim() || null, opponent_points: opponent.trim() || null },
+      { fileIds },
+    );
+  }
 
   const card = isDark ? "bg-zinc-900 border border-white/[0.06] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
+  const label = `block text-[12px] font-semibold mb-2 ${isDark ? "text-zinc-300" : "text-zinc-700"}`;
+  const hint = `text-[11px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`;
+  const field = `w-full resize-none rounded-xl border p-3.5 text-[13px] outline-none leading-relaxed ${isDark
+    ? "border-white/[0.07] bg-zinc-950 text-zinc-200 placeholder:text-zinc-600 focus:border-[#C8A762]/40"
+    : "border-zinc-200 bg-zinc-50 text-zinc-800 placeholder:text-zinc-400 focus:border-[#0B3D2E]/40"}`;
+  const pill = (active: boolean) => `rounded-xl border px-3.5 py-2 text-[12px] font-semibold transition-colors ${active
+    ? isDark ? "border-[#C8A762]/50 bg-[#C8A762]/10 text-[#C8A762]" : "border-[#0B3D2E]/40 bg-[#0B3D2E]/5 text-[#0B3D2E]"
+    : isDark ? "border-white/[0.07] text-zinc-400 hover:border-white/20" : "border-zinc-200 text-zinc-600 hover:border-zinc-300"}`;
 
   return (
-    <div className={`p-5 md:p-7 max-w-6xl mx-auto space-y-5 ${isDark ? "text-zinc-100" : "text-zinc-900"}`} dir="rtl">
-      {/* Header */}
+    <div className={`p-5 md:p-7 max-w-5xl mx-auto space-y-5 ${isDark ? "text-zinc-100" : "text-zinc-900"}`} dir="rtl">
       <div>
-        <div className="flex items-center gap-2 mb-1">
-          <h1 className={`text-xl font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>محلل الموقف والخصم</h1>
-          <span className="rounded-full bg-[#C8A762]/15 border border-[#C8A762]/30 px-2.5 py-0.5 text-[10px] font-bold text-[#C8A762]">PRO</span>
-        </div>
-        <p className={`text-[13px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-          قيّم قوة أسانيدك + توقّع حجج الخصم + حدد المخاطر الإجرائية — تحليل شامل قبل الترافع
+        <h1 className={`text-xl font-bold mb-1 ${isDark ? "text-white" : "text-zinc-900"}`}>محلل الموقف والخصم</h1>
+        <p className={`text-[13px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+          قوة الأسانيد · تحركات الخصم المتوقعة · المخاطر الإجرائية · محامي الشيطان — تحليل قبل الترافع، بلا نسب ولا توقّع للحكم
         </p>
       </div>
 
-      {!analyzed ? (
-        /* ── Input workflow ── */
-        <div className="space-y-4">
+      {user.loading && <p className={hint}>جارٍ التحقق من الجلسة…</p>}
+      {!user.loading && !user.isLoggedIn && (
+        <div className={`${card} p-6 space-y-3`}>
+          <p className={`text-[14px] font-bold ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>سجّل الدخول لتحليل قضيتك</p>
+          <Link href="/login?from=%2Fai%2Fanalyze-strength" className="inline-flex items-center gap-2 rounded-xl bg-[#0B3D2E] px-5 py-2.5 text-[12px] font-bold text-white">
+            <SignIn size={14} /> تسجيل الدخول
+          </Link>
+        </div>
+      )}
 
-          {/* 1. Case file upload */}
-          <div className={`${card} p-5 shadow-sm`}>
-            <div className="flex items-center gap-2 mb-1">
-              <p className={`text-[13px] font-bold ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>ملف القضية</p>
-              <span className={`text-[10px] px-2 py-0.5 rounded-full border ${isDark ? "border-orange-500/30 bg-orange-900/15 text-orange-400" : "border-orange-300 bg-orange-50 text-orange-700"}`}>ارفع ملف القضية أولاً</span>
-            </div>
-
-            <div
-              className={`mt-3 rounded-xl border-2 border-dashed p-5 text-center cursor-pointer transition-colors ${caseFile
-                ? isDark ? "border-emerald-700/30 bg-emerald-900/8" : "border-emerald-200 bg-emerald-50"
-                : isDark ? "border-white/[0.08] hover:border-[#C8A762]/30" : "border-zinc-200 hover:border-[#C8A762]/40"
-              }`}
-              onClick={() => caseFileRef.current?.click()}
-            >
-              <input ref={caseFileRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.jpg,.png"
-                onChange={e => { const f = e.target.files?.[0]; if (f) setCaseFile(f.name); }} />
-              {caseFile ? (
-                <div className="flex items-center justify-center gap-2">
-                  <UploadSimple size={14} className="text-emerald-500" />
-                  <span className={`text-[12px] font-medium truncate ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>{caseFile}</span>
-                  <button onClick={e => { e.stopPropagation(); setCaseFile(null); }}><X size={13} className="text-emerald-500" /></button>
-                </div>
-              ) : (
-                <>
-                  <CloudArrowUp size={22} className={`mx-auto mb-2 ${isDark ? "text-zinc-600" : "text-zinc-400"}`} />
-                  <p className={`text-[12px] font-semibold mb-0.5 ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>ارفع ملف القضية</p>
-                  <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>PDF · Word · صور — اسحب وأفلت أو اضغط للاختيار</p>
-                </>
-              )}
-            </div>
-
-            <p className={`text-center text-[11px] my-3 ${isDark ? "text-zinc-700" : "text-zinc-300"}`}>أو</p>
-
-            <div className="relative">
-              <textarea
-                value={caseDesc} onChange={e => setCaseDesc(e.target.value)}
-                placeholder={caseFile ? "أضف ملاحظات إضافية (اختياري)..." : "اكتب ملخص القضية: الأطراف · الوقائع · التسلسل الزمني · الأدلة المتاحة · الشهود · الأساس القانوني..."}
-                rows={5}
-                className={`w-full resize-none rounded-xl border p-4 pe-14 text-[13px] outline-none leading-relaxed ${isDark ? "border-white/[0.07] bg-zinc-800/50 text-zinc-200 placeholder:text-zinc-600 focus:border-[#C8A762]/40" : "border-zinc-200 bg-zinc-50 text-zinc-800 placeholder:text-zinc-400 focus:border-[#0B3D2E]/40"}`}
-              />
-              <div className="absolute bottom-3 start-3">
-                <VoiceInput onTranscript={(t) => setCaseDesc(prev => prev ? `${prev} ${t}` : t)} compact />
-              </div>
+      {signedIn && !report && (
+        <div className={`${card} p-5 md:p-6 space-y-6`}>
+          <div>
+            <p className={label}>١. صفة موكّلك</p>
+            <div className="flex flex-wrap gap-2">
+              {ROLES.map(r => <button key={r.id} type="button" onClick={() => setRole(r.id)} className={pill(role === r.id)}>{r.label}</button>)}
             </div>
           </div>
 
-          {/* 2. Supporting attachments */}
-          <div className={`${card} p-5 shadow-sm space-y-4`}>
-            <div className="flex items-center gap-2">
-              <PaperclipHorizontal size={14} className={isDark ? "text-zinc-500" : "text-zinc-400"} />
-              <p className={`text-[13px] font-bold ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>هل لديك مرفقات تدعم موقفك؟</p>
+          <div>
+            <p className={label}>٢. ملخص القضية</p>
+            <div className="relative">
+              <textarea value={summary} onChange={e => setSummary(e.target.value)} maxLength={CASE_SUMMARY_MAX} rows={6}
+                placeholder="الأطراف · الوقائع وتواريخها · الطلبات · الأدلة المتاحة · الشهود · ما تستند إليه نظاماً"
+                className={`${field} pe-14`} />
+              <div className="absolute bottom-3 start-3">
+                <VoiceInput onTranscript={t => setSummary(p => (p ? `${p} ${t}` : t))} compact />
+              </div>
             </div>
-
-            {!bulkUpload ? (
-              <div className="space-y-3">
-                {attachments.length === 0 && (
-                  <div className={`rounded-xl p-4 flex items-center gap-3 ${isDark ? "bg-white/[0.02] border border-white/[0.05]" : "bg-zinc-50 border border-zinc-100"}`}>
-                    <Plus size={14} className={isDark ? "text-zinc-600" : "text-zinc-300"} />
-                    <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>لا توجد مرفقات — اضغط "إضافة مرفق" لإضافة أدلة ومستندات داعمة</p>
-                  </div>
-                )}
-
-                {attachments.map((att, idx) => (
-                  <motion.div key={att.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-                    className={`rounded-xl border p-4 space-y-3 ${isDark ? "border-[#C8A762]/20 bg-[#C8A762]/5" : "border-amber-200 bg-amber-50/50"}`}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold ${isDark ? "bg-[#C8A762]/20 text-[#C8A762]" : "bg-amber-200 text-amber-800"}`}>{idx + 1}</span>
-                        <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>المرفق رقم {idx + 1}</p>
-                      </div>
-                      <button onClick={() => removeAtt(att.id)}>
-                        <X size={14} className={isDark ? "text-zinc-600 hover:text-zinc-400" : "text-zinc-400 hover:text-zinc-600"} />
-                      </button>
-                    </div>
-
-                    <div className="relative">
-                      <textarea
-                        value={att.description}
-                        onChange={e => updateAtt(att.id, "description", e.target.value)}
-                        placeholder="اشرح هذا المرفق وما الذي تعوّل عليه فيه (الدليل، التاريخ، الصلة بالقضية...)"
-                        rows={2}
-                        className={`w-full resize-none rounded-xl border px-3 py-2 pe-14 text-[12px] outline-none leading-relaxed ${isDark ? "border-white/[0.08] bg-zinc-800/60 text-zinc-100 placeholder:text-zinc-600" : "border-zinc-200 bg-white text-zinc-800 placeholder:text-zinc-400"}`}
-                      />
-                      <div className="absolute bottom-2 start-2">
-                        <VoiceInput onTranscript={(t) => updateAtt(att.id, "description", att.description ? `${att.description} ${t}` : t)} compact />
-                      </div>
-                    </div>
-
-                    {att.file ? (
-                      <div className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[11px] ${isDark ? "bg-emerald-900/15 border border-emerald-700/25" : "bg-emerald-50 border border-emerald-200"}`}>
-                        <UploadSimple size={11} className="text-emerald-500" />
-                        <span className={`flex-1 truncate ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>{att.file}</span>
-                        <button onClick={() => updateAtt(att.id, "file", null)}><X size={11} /></button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => attachRefs.current[idx]?.click()}
-                        className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-semibold border transition-colors ${isDark ? "border-white/[0.08] text-zinc-500 hover:border-[#C8A762]/30 hover:text-[#C8A762]" : "border-zinc-200 text-zinc-400 hover:border-amber-400 hover:text-amber-600"}`}>
-                        <PaperclipHorizontal size={13} /> ارفع ملف الدليل
-                      </button>
-                    )}
-                    <input ref={el => { attachRefs.current[idx] = el; }} type="file" className="hidden" accept=".pdf,.doc,.docx,.jpg,.png"
-                      onChange={e => { const f = e.target.files?.[0]; if (f) updateAtt(att.id, "file", f.name); }} />
-                  </motion.div>
-                ))}
-
-                <div className="flex items-center gap-3 flex-wrap">
-                  <motion.button whileTap={{ scale: 0.96 }}
-                    onClick={addAtt}
-                    className={`flex items-center gap-2 rounded-xl border px-4 py-2.5 text-[12px] font-bold transition-colors ${isDark ? "border-[#C8A762]/30 text-[#C8A762] hover:bg-[#C8A762]/10" : "border-amber-300 text-amber-700 hover:bg-amber-100"}`}>
-                    <Plus size={13} /> إضافة مرفق
-                  </motion.button>
-                  <button onClick={() => setBulkUpload(true)}
-                    className={`text-[11px] underline transition-colors ${isDark ? "text-zinc-600 hover:text-zinc-400" : "text-zinc-400 hover:text-zinc-600"}`}>
-                    أو ارفع كافة المرفقات دفعةً واحدة
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <div className={`rounded-xl border-2 border-dashed p-4 text-center cursor-pointer transition-all ${isDark ? "border-white/[0.08] hover:border-[#C8A762]/30" : "border-zinc-200 hover:border-amber-300"}`}>
-                  <FileArrowUp size={18} className={`mx-auto mb-1 ${isDark ? "text-zinc-600" : "text-zinc-400"}`} />
-                  <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>ارفع المذكرة أو الحكم، وAI سيقرؤه تلقائياً</p>
-                  <p className={`text-[10px] mt-0.5 flex items-center justify-center gap-1 ${isDark ? "text-amber-600" : "text-amber-500"}`}><Warning size={12} weight="fill" /> يتطلب وقتاً أطول للتحليل وليس الأمثل</p>
-                </div>
-                <button onClick={() => setBulkUpload(false)}
-                  className={`text-[11px] underline ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
-                  عودة للإضافة الفردية
-                </button>
-              </div>
+            {summary.trim().length > 0 && !summaryOk && (
+              <p className="mt-1 text-[11px] text-amber-500">اكتب {CASE_SUMMARY_MIN.toLocaleString("ar-SA")} حرفاً على الأقل</p>
             )}
           </div>
 
-          {/* 3. Opponent memo (optional) */}
-          <div className={`${card} p-4 shadow-sm`}>
-            <div className="flex items-center gap-3">
-              <div className={`flex h-9 w-9 items-center justify-center rounded-xl flex-shrink-0 ${isDark ? "bg-red-900/20" : "bg-red-50"}`}>
-                <FileText size={17} weight="duotone" className="text-red-500" />
-              </div>
-              <div className="flex-1">
-                <p className={`text-[13px] font-bold ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>هل لديك مذكرة الخصم أو دفاعه؟</p>
-                <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>ارفعها وسيحللها AI من منظور الخصم الكامل</p>
-              </div>
-              <button onClick={() => setHasOpponentMemo(v => !v)}
-                className={`relative h-6 w-11 rounded-full transition-colors flex-shrink-0 ${hasOpponentMemo ? "bg-red-500" : isDark ? "bg-zinc-700" : "bg-zinc-300"}`}>
-                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${hasOpponentMemo ? "start-5" : "start-0.5"}`} />
-              </button>
+          <div>
+            <p className={label}>٣. مستندات القضية (اختياري)</p>
+            <div
+              role="button" tabIndex={0}
+              onClick={() => { if (!uploading) fileRef.current?.click(); }}
+              onKeyDown={e => { if ((e.key === "Enter" || e.key === " ") && !uploading) { e.preventDefault(); fileRef.current?.click(); } }}
+              className={`rounded-2xl border-2 border-dashed p-5 text-center ${uploading ? "cursor-wait" : "cursor-pointer"} ${isDark ? "border-white/[0.08] hover:border-[#C8A762]/30" : "border-zinc-200 hover:border-[#0B3D2E]/30"}`}
+            >
+              <input ref={fileRef} type="file" multiple className="hidden" accept={AI_READABLE_ACCEPT}
+                onChange={e => { const files = Array.from(e.target.files ?? []); e.target.value = ""; void pickFiles(files); }} />
+              <CloudArrowUp size={22} className={`mx-auto mb-2 ${uploading ? "text-[#C8A762]" : isDark ? "text-zinc-500" : "text-zinc-400"}`} />
+              <p className={`text-[12px] font-semibold ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>{uploading ? "جارٍ الرفع…" : "العقد، الصحيفة، مذكرة الخصم، المراسلات…"}</p>
+              <p className={hint}>PDF أو صور (والممسوحة تُقرأ) · حتى {WAVE4_FILES.max.toLocaleString("ar-SA")} ملفات و{WAVE4_FILES.maxPages.toLocaleString("ar-SA")} صفحة</p>
             </div>
-            <AnimatePresence>
-              {hasOpponentMemo && (
-                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden mt-3">
-                  <div className={`rounded-xl border-2 border-dashed p-5 text-center cursor-pointer transition-colors ${isDark ? "border-red-700/30 hover:border-red-600/40" : "border-red-200 hover:border-red-300"}`}>
-                    <CloudArrowUp size={18} className="mx-auto mb-1.5 text-red-500" />
-                    <p className={`text-[12px] font-semibold ${isDark ? "text-red-300" : "text-red-700"}`}>ارفع مذكرة الخصم / دفاعه</p>
-                    <p className={`text-[10px] mt-0.5 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>PDF · Word · صور</p>
+            {attachments.length > 0 && (
+              <div className="mt-2 space-y-1.5">
+                {attachments.map(a => (
+                  <div key={a.documentId} className={`flex items-center gap-2 rounded-xl px-3 py-2 text-[12px] ${isDark ? "bg-white/[0.03] text-zinc-300" : "bg-zinc-50 text-zinc-700"}`}>
+                    <Paperclip size={13} className="text-[#C8A762]" />
+                    <span className="min-w-0 flex-1 truncate">{a.name}</span>
+                    <button type="button" aria-label={`إزالة ${a.name}`} onClick={() => removeAttachment(a.documentId)}><X size={13} /></button>
                   </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                ))}
+              </div>
+            )}
+            {(fileError || attachError) && <p className="mt-1 text-[11px] text-red-500">{fileError || attachError}</p>}
           </div>
 
-          {/* 4. Firm memory */}
-          <div className={`${card} p-4 shadow-sm`}>
-            <div className="flex items-center gap-3">
-              <div className={`flex h-9 w-9 items-center justify-center rounded-xl flex-shrink-0 ${isDark ? "bg-[#C8A762]/10" : "bg-amber-50"}`}>
-                <BookOpen size={17} weight="duotone" className="text-[#C8A762]" />
-              </div>
-              <div className="flex-1">
-                <p className={`text-[13px] font-bold ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>استخدم ذاكرة مكتبك</p>
-                <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>AI يجمع قاعدة نظامي + سوابق مكتبك لتحليل أعمق وحجج أقوى</p>
-              </div>
-              <button onClick={() => setUseFirmMemory(v => !v)}
-                className={`relative h-6 w-11 rounded-full transition-colors flex-shrink-0 ${useFirmMemory ? "bg-[#0B3D2E]" : isDark ? "bg-zinc-700" : "bg-zinc-300"}`}>
-                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${useFirmMemory ? "start-5" : "start-0.5"}`} />
-              </button>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div>
+              <p className={label}>٤. ما تعوّل عليه في أدلتك (اختياري)</p>
+              <textarea value={evidence} onChange={e => setEvidence(e.target.value)} maxLength={3000} rows={4}
+                placeholder="مثلاً: العقد موثق، والمراسلات تثبت الإنذار، والشاهد حاضر" className={field} />
+            </div>
+            <div>
+              <p className={label}>٥. ما قاله الخصم أو ما في مذكرته (اختياري)</p>
+              <textarea value={opponent} onChange={e => setOpponent(e.target.value)} maxLength={4000} rows={4}
+                placeholder="الصق دفوع الخصم، أو أرفق مذكرته في المستندات" className={field} />
             </div>
           </div>
 
-          {/* 5. Analyze CTA */}
-          <div className="flex justify-between items-center">
-            <span className={`text-[12px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>متاح ضمن الباقة</span>
-            <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
-              onClick={analyze} disabled={!caseDesc.trim() || analyzing}
-              className="flex items-center gap-2 rounded-xl bg-[#0B3D2E] px-6 py-2.5 text-[13px] font-bold text-white shadow-md disabled:opacity-40">
-              <ChartBar size={15} />
-              {analyzing ? "جارٍ التحليل الشامل..." : "حلّل الموقف"}
-            </motion.button>
+          <div className="space-y-2">
+            <button type="button" onClick={run} disabled={!canRun}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#0B3D2E] to-[#1a6b50] py-3 text-[13px] font-bold text-white shadow-md disabled:opacity-40">
+              <Sparkle size={15} weight="fill" />
+              {ai.busy ? "جارٍ التحليل… (دقيقة أو أكثر)" : `حلّل الموقف الآن (${WAVE4_PRICE.toLocaleString("ar-SA")} نقطة)`}
+            </button>
+            <p className={hint}>
+              تُرسل نسخة من الملخص والمستندات إلى مزوّد ذكاء اصطناعي خارج المملكة لقراءتها. تحليل مبدئي؛ القرار للمحامي.
+            </p>
+            {ai.phase === "error" && ai.error && <p role="alert" className="text-[12px] text-red-500">{ai.error}</p>}
+            {ai.phase === "review" && <p role="status" className={hint}>التحليل جاهز وينتظر مراجعة الفريق قبل عرضه.</p>}
           </div>
-        </div>
-      ) : (
-        <div className="space-y-5">
-        <BetaReviewGate toolId="analyze-strength.result" toolName="محلل الموقف والخصم" reviewScope="legal-data">
-          {/* ── Tab bar ── */}
-          <div className={`rounded-xl p-1 flex gap-1 ${isDark ? "bg-zinc-800/60" : "bg-zinc-100"}`}>
-            {TABS.map(tab => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.key;
-              const isDevil = tab.key === "devil";
-              return (
-                <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-                  className={`relative flex-1 flex items-center justify-center gap-1.5 rounded-lg px-3 py-2.5 text-[11px] font-semibold transition-all ${
-                    isActive
-                      ? isDevil
-                        ? "bg-red-600 text-white shadow-md"
-                        : isDark ? "bg-[#0B3D2E] text-white shadow-md" : "bg-white text-[#0B3D2E] shadow-sm"
-                      : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-zinc-400 hover:text-zinc-700"
-                  }`}>
-                  <Icon size={14} weight={isActive ? "fill" : "regular"} />
-                  {tab.label}
-                  {isDevil && !isActive && (
-                    <span className="absolute -top-1 -start-1 h-2 w-2 rounded-full bg-red-500" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* ── Unified result actions ── */}
-          <AiResultActions
-            text={[
-              `تقرير محلل الموقف والخصم`,
-              `مؤشر قوة الأسانيد: ${ANALYSIS.overallScore}/100`,
-              `الحكم: ${ANALYSIS.verdict}`,
-              ``,
-              `نقاط القوة:\n${ANALYSIS.strengths.map((s: string) => `• ${s}`).join("\n")}`,
-              ``,
-              `نقاط الضعف:\n${ANALYSIS.weaknesses.map((w: string) => `• ${w}`).join("\n")}`,
-              ``,
-              `التوصيات:\n${ANALYSIS.recommendations.map((r: string) => `• ${r}`).join("\n")}`,
-              ``,
-              `توقعات الخصم (${OPPONENT_MOVES.length} حركة):\n${OPPONENT_MOVES.map((m: { move: string; counter: string }) => `• هجوم: ${m.move}\n  الدفع: ${m.counter}`).join("\n")}`,
-            ].join("\n")}
-            filename="case-strength-analysis"
-            showVault
-            showHumanReview
-            className="justify-start"
-          />
-
-          {/* ── Tab: قوة موقفك ── */}
-          {activeTab === "strength" && (
-            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
-              <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-                <div className={`${card} p-6 shadow-sm flex flex-col items-center text-center`}>
-                  <p className={`text-[11px] font-bold uppercase tracking-wider mb-4 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>مؤشر قوة الأسانيد</p>
-                  <ScoreGauge score={ANALYSIS.overallScore} isDark={isDark} />
-                  <div className={`mt-4 rounded-2xl px-4 py-2.5 border ${isDark ? "border-amber-700/30 bg-amber-900/20" : "border-amber-200 bg-amber-50"}`}>
-                    <p className={`text-[12px] leading-relaxed ${isDark ? "text-amber-300" : "text-amber-800"}`}>{ANALYSIS.verdict}</p>
-                  </div>
-                </div>
-                <div className={`xl:col-span-2 ${card} p-5 shadow-sm`}>
-                  <p className={`text-[11px] font-bold uppercase tracking-wider mb-4 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>تقييم حسب المحور</p>
-                  <div className="space-y-3">
-                    {ANALYSIS.dimensions.map((d, i) => {
-                      const Icon = d.icon;
-                      const color = d.score >= 75 ? "bg-emerald-500" : d.score >= 50 ? "bg-amber-500" : "bg-red-500";
-                      return (
-                        <div key={d.key} className="flex items-center gap-3">
-                          <Icon size={14} className={isDark ? "text-zinc-500 flex-shrink-0" : "text-zinc-400 flex-shrink-0"} />
-                          <span className={`text-[12px] w-36 flex-shrink-0 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{d.label}</span>
-                          <div className={`h-1.5 flex-1 rounded-full ${isDark ? "bg-white/[0.06]" : "bg-zinc-100"}`}>
-                            <motion.div initial={{ width: 0 }} animate={{ width: `${d.score}%` }}
-                              transition={{ delay: 0.1 + i * 0.07, duration: 0.8 }}
-                              className={`h-full rounded-full ${color}`} />
-                          </div>
-                          <span className={`font-mono text-[12px] font-bold w-8 text-center flex-shrink-0 ${d.score >= 75 ? "text-emerald-500" : d.score >= 50 ? "text-amber-500" : "text-red-500"}`}>
-                            {d.score}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                {[
-                  { title: "نقاط القوة", items: ANALYSIS.strengths, icon: CheckCircle, color: "text-emerald-500", bg: isDark ? "border-emerald-700/30 bg-emerald-900/15" : "border-emerald-200 bg-emerald-50" },
-                  { title: "نقاط الضعف", items: ANALYSIS.weaknesses, icon: Warning, color: "text-red-500", bg: isDark ? "border-red-700/30 bg-red-900/15" : "border-red-100 bg-red-50" },
-                  { title: "التوصيات", items: ANALYSIS.recommendations, icon: Target, color: "text-[#C8A762]", bg: isDark ? "border-[#C8A762]/20 bg-[#C8A762]/5" : "border-amber-200 bg-amber-50" },
-                ].map(({ title, items, icon: Icon, color, bg }) => (
-                  <div key={title} className={`rounded-2xl p-4 border ${bg}`}>
-                    <div className="flex items-center gap-2 mb-3">
-                      <Icon size={15} className={color} weight={title === "التوصيات" ? "duotone" : "fill"} />
-                      <h3 className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-800"}`}>{title}</h3>
-                    </div>
-                    <ul className="space-y-2">
-                      {items.map((item, i) => (
-                        <li key={i} className={`flex items-start gap-2 text-[12px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-                          <Minus size={10} className={`flex-shrink-0 mt-1 ${color}`} />
-                          {item}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          )}
-
-          {/* ── Tab: توقعات الخصم ── */}
-          {activeTab === "opponent" && (
-            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-              <div className={`rounded-2xl p-4 border ${isDark ? "border-purple-700/30 bg-purple-900/15" : "border-purple-200 bg-purple-50"}`}>
-                <div className="flex items-center gap-2">
-                  <ShieldStar size={16} className="text-purple-500" />
-                  <p className={`text-[13px] font-bold ${isDark ? "text-purple-300" : "text-purple-800"}`}>
-                    تم رصد {OPPONENT_MOVES.length} هجمات محتملة من الخصم مع الدفوع الموصى بها
-                  </p>
-                </div>
-              </div>
-              <div className="space-y-3">
-                {OPPONENT_MOVES.map((m, i) => (
-                  <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}
-                    className={`${card} p-5 shadow-sm`}>
-                    <div className="flex items-start gap-3 mb-3">
-                      <div className={`flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-xl ${m.type === "attack" ? "bg-red-500/10" : "bg-blue-500/10"}`}>
-                        {m.type === "attack" ? <Warning size={15} className="text-red-500" /> : <Target size={15} className="text-blue-500" />}
-                      </div>
-                      <div>
-                        <p className={`text-[10px] font-bold uppercase tracking-wider mb-1 ${m.type === "attack" ? "text-red-500" : "text-blue-500"}`}>
-                          {m.type === "attack" ? `هجوم #${i + 1} — الخصم` : "دفاع — الخصم"}
-                        </p>
-                        <p className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{m.move}</p>
-                      </div>
-                    </div>
-                    <div className={`rounded-xl p-3 border ${isDark ? "border-emerald-700/30 bg-emerald-900/15" : "border-emerald-200 bg-emerald-50"}`}>
-                      <div className="flex items-start gap-2">
-                        <Lightning size={12} className="flex-shrink-0 mt-0.5 text-emerald-500" />
-                        <div>
-                          <p className="text-[10px] font-bold text-emerald-500 mb-0.5">الدفع المضاد الموصى به</p>
-                          <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{m.counter}</p>
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            </motion.div>
-          )}
-
-          {/* ── Tab: الفرص والمخاطر ── */}
-          {activeTab === "risks" && (
-            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {[
-                  { label: "قوة الأسانيد", value: `${ANALYSIS.overallScore}/100`, color: "text-[#C8A762]", bg: isDark ? "bg-[#C8A762]/5 border-[#C8A762]/20" : "bg-amber-50 border-amber-200" },
-                  { label: "هجمات الخصم المتوقعة", value: `${OPPONENT_MOVES.length}`, color: "text-red-500", bg: isDark ? "bg-red-500/5 border-red-700/20" : "bg-red-50 border-red-200" },
-                  { label: "مخاطر عالية", value: `${RISKS_MATRIX.filter(r => r.impact >= 80).length}`, color: "text-orange-500", bg: isDark ? "bg-orange-500/5 border-orange-700/20" : "bg-orange-50 border-orange-200" },
-                  { label: "فرص متاحة", value: `${ANALYSIS.strengths.length}`, color: "text-emerald-500", bg: isDark ? "bg-emerald-500/5 border-emerald-700/20" : "bg-emerald-50 border-emerald-200" },
-                ].map((stat, i) => (
-                  <div key={i} className={`rounded-xl border p-3 text-center ${stat.bg}`}>
-                    <p className={`text-[10px] font-semibold mb-1 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{stat.label}</p>
-                    <p className={`text-xl font-bold ${stat.color}`}>{stat.value}</p>
-                  </div>
-                ))}
-              </div>
-              <div className={`${card} p-5 shadow-sm`}>
-                <p className={`text-[11px] font-bold uppercase tracking-wider mb-4 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>مصفوفة المخاطر</p>
-                <div className="space-y-3">
-                  {RISKS_MATRIX.map((risk, i) => {
-                    const severity = (risk.likelihood / 100) * (risk.impact / 100);
-                    const severityColor = severity >= 0.5 ? "bg-red-500" : severity >= 0.25 ? "bg-amber-500" : "bg-emerald-500";
-                    const severityLabel = severity >= 0.5 ? "حرج" : severity >= 0.25 ? "متوسط" : "منخفض";
-                    return (
-                      <motion.div key={i} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
-                        className={`rounded-xl border p-4 ${isDark ? "border-white/[0.06] bg-zinc-800/40" : "border-zinc-200/70 bg-zinc-50"}`}>
-                        <div className="flex items-start justify-between gap-3 mb-2">
-                          <div className="flex items-center gap-2">
-                            <div className={`h-2 w-2 rounded-full ${severityColor}`} />
-                            <p className={`text-[13px] font-semibold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{risk.risk}</p>
-                          </div>
-                          <span className={`flex-shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold ${
-                            severityColor === "bg-red-500" ? "bg-red-500/15 text-red-500" :
-                            severityColor === "bg-amber-500" ? "bg-amber-500/15 text-amber-500" :
-                            "bg-emerald-500/15 text-emerald-500"
-                          }`}>{severityLabel}</span>
-                        </div>
-                        <div className="flex gap-4 mb-2">
-                          <div className="flex items-center gap-1">
-                            <span className={`text-[10px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>الاحتمالية:</span>
-                            <span className={`text-[11px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{risk.likelihood}%</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <span className={`text-[10px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>التأثير:</span>
-                            <span className={`text-[11px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{risk.impact}%</span>
-                          </div>
-                        </div>
-                        <div className={`rounded-lg p-2.5 border ${isDark ? "border-emerald-700/20 bg-emerald-900/10" : "border-emerald-200/70 bg-emerald-50/50"}`}>
-                          <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-                            <span className="font-bold text-emerald-500">التخفيف: </span>{risk.mitigation}
-                          </p>
-                        </div>
-                      </motion.div>
-                    );
-                  })}
-                </div>
-              </div>
-            </motion.div>
-          )}
-
-          {/* ── Tab: محاكي الخصم ── */}
-          {activeTab === "devil" && (
-            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-              {/* Intro */}
-              <div className={`rounded-2xl p-4 border ${isDark ? "border-red-700/30 bg-red-900/15" : "border-red-200 bg-red-50"}`}>
-                <div className="flex items-center gap-2 mb-1">
-                  <Brain size={16} className="text-red-500" weight="duotone" />
-                  <p className={`text-[13px] font-bold ${isDark ? "text-red-300" : "text-red-800"}`}>محاكي الخصم — AI يتقمص دور خصمك الكامل</p>
-                </div>
-                <p className={`text-[12px] leading-relaxed ${isDark ? "text-red-400/70" : "text-red-600/80"}`}>
-                  AI يهاجم موقفك كما سيفعل الخصم الذكي — الثغرات، الاستراتيجية، والطعون المحتملة
-                </p>
-              </div>
-
-              {/* Devil cards */}
-              <div className="space-y-3">
-                {DEVIL_ADVOCATE.map((item, i) => (
-                  <motion.div key={i}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.12 }}
-                    className={`${card} p-5 shadow-sm border-s-4 ${
-                      item.severity === "critical"
-                        ? "border-s-red-600"
-                        : item.severity === "high"
-                        ? "border-s-orange-500"
-                        : "border-s-amber-400"
-                    }`}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                        item.severity === "critical"
-                          ? isDark ? "bg-red-900/40 text-red-400" : "bg-red-100 text-red-700"
-                          : item.severity === "high"
-                          ? isDark ? "bg-orange-900/40 text-orange-400" : "bg-orange-100 text-orange-700"
-                          : isDark ? "bg-amber-900/40 text-amber-400" : "bg-amber-100 text-amber-700"
-                      }`}>
-                        {item.severity === "critical" ? <span className="flex items-center gap-1"><Warning size={10} weight="bold" /> حرج</span> : item.severity === "high" ? "↑ عالي" : "متوسط"}
-                      </span>
-                      <p className={`text-[13px] font-bold ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>{item.label}</p>
-                    </div>
-                    <p className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>{item.text}</p>
-                  </motion.div>
-                ))}
-              </div>
-
-              {/* Ask a specific question */}
-              <div className={`${card} p-4 shadow-sm`}>
-                <p className={`text-[12px] font-semibold mb-2 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
-                  اسأل محاكي الخصم عن نقطة بعينها
-                </p>
-                <div className="relative">
-                  <textarea
-                    placeholder="مثال: ما أضعف نقطة في حجتي بشأن المادة ٧٧؟ أو: كيف يمكن للخصم تفنيد الدليل الرئيسي؟"
-                    rows={2}
-                    className={`w-full resize-none rounded-xl border p-3 pe-14 text-[12px] outline-none leading-relaxed ${isDark ? "border-white/[0.07] bg-zinc-800/50 text-zinc-200 placeholder:text-zinc-600" : "border-zinc-200 bg-zinc-50 text-zinc-800 placeholder:text-zinc-400"}`}
-                  />
-                  <div className="absolute bottom-2 start-3">
-                    <VoiceInput onTranscript={() => {}} compact />
-                  </div>
-                </div>
-                <button className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-[12px] font-bold py-2.5 transition-colors">
-                  <Brain size={13} /> حاكِ الخصم
-                </button>
-              </div>
-            </motion.div>
-          )}
-
-          {/* Reset button */}
-          <div className="flex justify-end">
-            <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-              onClick={() => { setAnalyzed(false); setCaseDesc(""); setActiveTab("strength"); setAttachments([]); setHasOpponentMemo(false); }}
-              className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-[13px] font-semibold border ${isDark ? "border-white/[0.07] bg-zinc-800 text-zinc-300" : "border-zinc-200 bg-zinc-50 text-zinc-600"}`}>
-              <ArrowRight size={14} /> تحليل قضية جديدة
-            </motion.button>
-          </div>
-        </BetaReviewGate>
         </div>
       )}
+
+      {report && (
+        <StrengthReportView report={report} isDark={isDark} activeTab={activeTab} setActiveTab={setActiveTab}
+          chargedPoints={ai.chargedPoints} onReset={ai.reset} />
+      )}
+    </div>
+  );
+}
+
+function StrengthReportView({ report, isDark, activeTab, setActiveTab, chargedPoints, onReset }: {
+  report: StrengthReport; isDark: boolean; activeTab: TabKey; setActiveTab: (t: TabKey) => void; chargedPoints: number; onReset: () => void;
+}) {
+  const card = isDark ? "bg-zinc-900 border border-white/[0.06] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
+  const head = `text-[11px] font-black uppercase tracking-wider ${isDark ? "text-zinc-500" : "text-zinc-400"}`;
+  const body = isDark ? "text-zinc-300" : "text-zinc-700";
+  const empty = <p className={`text-[12px] ${body}`}>لا شيء في هذا القسم.</p>;
+  const g = report.grounds;
+  const bullets = (title: string, items: string[], Icon: typeof Shield, tone: string) => (
+    <div className={`${card} p-5 space-y-2`}>
+      <p className={head}>{title}</p>
+      {items.length === 0 ? empty : items.map((s, i) => (
+        <p key={i} className={`flex items-start gap-2 text-[13px] leading-relaxed ${body}`}><Icon size={14} weight="fill" className={`mt-1 flex-shrink-0 ${tone}`} />{s}</p>
+      ))}
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        {TABS.map(t => {
+          const active = activeTab === t.key;
+          return (
+            <button key={t.key} type="button" onClick={() => setActiveTab(t.key)} aria-pressed={active}
+              className={`flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-[12px] font-semibold ${active
+                ? isDark ? "border-[#C8A762]/50 bg-[#C8A762]/10 text-[#C8A762]" : "border-[#0B3D2E]/40 bg-[#0B3D2E]/5 text-[#0B3D2E]"
+                : isDark ? "border-white/[0.07] text-zinc-400" : "border-zinc-200 text-zinc-600"}`}>
+              <t.icon size={14} /> {t.label}
+            </button>
+          );
+        })}
+        <button type="button" onClick={onReset} className={`ms-auto flex items-center gap-1 text-[11px] font-bold ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+          <ArrowsCounterClockwise size={12} /> تحليل جديد
+        </button>
+      </div>
+
+      <AiResultActions text={strengthReportText(report)} filename="nzamy-strength-analysis" collectorSource="other" />
+
+      {activeTab === "strength" && (
+        <div className="space-y-4">
+          <div className={`${card} p-5`}>
+            <p className={head}>قوة الأسانيد</p>
+            <p className={`mt-1 text-[18px] font-bold ${LEVEL_TONE[g.level]}`}>{LEVEL_LABEL[g.level]}</p>
+            <p className={`mt-2 text-[13px] leading-relaxed ${body}`}>{g.summary}</p>
+          </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {bullets("نقاط القوة", g.strengths, CheckCircle, "text-emerald-500")}
+            {bullets("نقاط الضعف", g.weaknesses, Warning, "text-red-500")}
+          </div>
+          {bullets("ما يقوّي موقفك", g.recommendations, Lightbulb, "text-[#C8A762]")}
+        </div>
+      )}
+
+      {activeTab === "opponent" && (
+        <div className={`${card} p-5 space-y-3`}>
+          {report.opponent.length === 0 ? empty : report.opponent.map((m, i) => (
+            <div key={i} className={`rounded-xl border p-3.5 ${isDark ? "border-white/[0.06]" : "border-zinc-100"}`}>
+              <span className={`text-[10px] font-bold ${m.kind === "attack" ? "text-red-500" : "text-blue-500"}`}>{m.kind === "attack" ? "هجوم" : "دفاع"}</span>
+              <p className={`mt-1 text-[13px] leading-relaxed ${body}`}>{m.move}</p>
+              {m.counter && <p className={`mt-1.5 text-[12px] leading-relaxed ${isDark ? "text-emerald-400/90" : "text-emerald-700"}`}>الرد: {m.counter}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {activeTab === "risks" && (
+        <div className={`${card} p-5 space-y-3`}>
+          {report.risks.length === 0 ? empty : report.risks.map((r, i) => (
+            <div key={i} className={`rounded-xl border p-3.5 ${isDark ? "border-white/[0.06]" : "border-zinc-100"}`}>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`rounded-lg border px-2 py-0.5 text-[10px] font-bold ${RISK_TONE[r.level] ?? RISK_TONE.medium}`}>{RISK_LABEL[r.level] ?? "متوسط"}</span>
+                <p className={`text-[13px] font-semibold ${body}`}>{r.risk}</p>
+              </div>
+              {r.mitigation && <p className={`mt-1.5 text-[12px] leading-relaxed ${isDark ? "text-emerald-400/90" : "text-emerald-700"}`}>الوقاية: {r.mitigation}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {activeTab === "devil" && (
+        <div className={`${card} p-5 space-y-3`}>
+          {report.devil.length === 0 ? empty : report.devil.map((d, i) => (
+            <div key={i} className={`rounded-xl border p-3.5 ${isDark ? "border-white/[0.06]" : "border-zinc-100"}`}>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`rounded-lg border px-2 py-0.5 text-[10px] font-bold ${d.severity === "critical" ? RISK_TONE.high : RISK_TONE.medium}`}>{DEVIL_LABEL[d.severity] ?? "مرتفع"}</span>
+                <p className={`text-[13px] font-semibold ${body}`}>{d.label}</p>
+              </div>
+              <p className={`mt-1.5 text-[13px] leading-relaxed ${body}`}>{d.text}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <CitationCheckList
+        items={asCitationVerdicts(report.citation_check)}
+        isDark={isDark}
+        title="المواد التي استند إليها التحليل — تحقّقت منها المنصة في مكتبة الأنظمة"
+        empty="لم يستند التحليل إلى مواد نظامية مرقّمة."
+      />
+
+      <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+        تحليل آلي مبدئي لا يتوقع الحكم؛ المحكمة تحكم بقناعتها والقرار للمحامي. حالة كل مادة من مكتبة نظامي لا من الذكاء الاصطناعي.
+        {chargedPoints > 0 && <> · خُصمت {chargedPoints.toLocaleString("ar-SA")} نقطة</>}
+      </p>
     </div>
   );
 }

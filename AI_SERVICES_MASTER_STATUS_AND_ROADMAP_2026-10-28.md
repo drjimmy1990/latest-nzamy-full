@@ -23,6 +23,8 @@ This is the one file to return to after the owner's review. It covers:
 
 | Item | State |
 |---|---|
+| Wave 4 | **L9 and L10 built on branch `feat/ai-wave4`** (worktree `D:
+zwti2`), not merged. Their two n8n workflows are exported (`n8n/ai/wargaming.json`, `n8n/ai/analyze-strength.json`) but **not created on n8n yet**: the n8n connection was down. See §6 |
 | Code | **Waves 0–3 are merged into `main`**. Pushed up to `4039de86`. After it come two docs-only commits, committed locally and **not pushed yet**: the owner guide and this file |
 | Production | Last confirmed deploy is **`7266a948`** (wave 0 + wave 1 code). **Everything after it is not deployed**: the Gemini workflows change, the useUser fix, waves 2 and 3 |
 | Database | Wave 0 SQL (`ai_runs`, `ai_start_run`, `ai_fail_run`, …) **run on prod**, `_verify` OK. Waves 1–3 need **no SQL** |
@@ -118,6 +120,8 @@ cd /www/wwwroot/nzamy/latest-nzamy-full && git pull && npm install && nohup bash
 | L6 | بطاقة الكانفاس الذكية | `canvas-card` | case board «اقترح سنداً نظامياً» | fast + library | 10 | lawyer, firm (Pro+) | `1g4hsswaWsaafkN5` |
 | L7 | عصارة المرفقات / الموجز القضائي | `case-brief` | `/ai/case-brief` | job + files | 30 (≤5 pages) / 150 (≤30) | lawyer, firm | `snPDkKndPA9wjIKr` |
 | L8 | مراجعة وتدقيق مذكرة (gaps report) | `brief-check` | `/ai/brief-check` (beside the team order) | job + files + enricher | 200 | lawyer, firm (not consultants) | `bu9guzNEhaLbyAPd` |
+| L9 | المحاكي الشامل (wave 4) | `wargaming` | `/ai/wargaming` (beside the team order) | job + optional files + enricher | 250 | lawyer, firm (not consultants) | not created yet |
+| L10 | محلل الموقف والخصم (wave 4) | `analyze-strength` | `/ai/analyze-strength` | job + optional files + enricher | 250 | lawyer, firm | not created yet |
 | — | Schedules (sweep + retention) | — | — | cron | — | — | `8Skwnqn9WIPOxcml` |
 
 **n8n credentials:**
@@ -198,7 +202,17 @@ The owner's priority is **lawyer services first**, then individual tools.
 | L9 | **المحاكي الشامل** | `/ai/wargaming` | 250 | One pass per chosen target (adversary / court direction / memo critique / pleading practice) → `SimPoint{source, severity, title, detail, counter}`. **No probability.** Memo critique reads the memo file (reuse `aiFiles`). Retrieval: principles + laws. Consultants blocked (already on the Art. 18 list) |
 | L10 | **محلل قوة الموقف** | `/ai/analyze-strength` | 250 | Four tabs: strengths and weaknesses, adversary moves, risks, adversary simulator. **Qualitative levels**, not the invented scores (D5, rule ١٩٣). Make the file inputs real uploads (today they are names only) |
 
-**Reuses:** the document-job shape (wave 3), retrieval (wave 2), and the enricher pattern (L8). Both pages have mocks and BetaReviewGate today, to remove as in L4 and L7.
+**Built 2026-10-28 on `feat/ai-wave4`** (details in the plan's wave 4 status block and `n8n/ai/README.md` «Wave 4»):
+- files are optional;
+- the n8n job branches to the AI Agent when there are no files;
+- no number anywhere;
+- no library retrieval: the prompt forbids naming judgments, and the cited articles go through the L8 library check instead;
+- the L10 mock and its BetaReviewGate are gone.
+
+**Still to do for wave 4:**
+1. Create both workflows on n8n and live-probe them, with and without files. The Agent branch has the JSON shape (with braces) in its user text, which has not been probed yet. If it fails, describe the shape in words.
+2. Merge and push on the user's go.
+3. Deploy, then set both tools to «للمشرفين فقط».
 
 ### Wave 5: document writing (one shared engine)
 The engine:

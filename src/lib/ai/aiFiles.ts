@@ -31,6 +31,11 @@ export interface FileRules {
   maxPages: number;
   /** Bytes over all files, at most. */
   maxBytes: number;
+  /**
+   * Wave 4: the tool also runs on the user's text alone. No fileIds (or an
+   * empty list) skips the file step; any list given is checked in full.
+   */
+  optional?: boolean;
 }
 
 export interface AiFile {

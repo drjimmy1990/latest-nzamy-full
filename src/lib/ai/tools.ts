@@ -412,6 +412,144 @@ function briefCheckOutput(raw: unknown): Record<string, unknown> | null {
   };
 }
 
+// ── wave 4: case analysis (plan §5, «Wave 4») ───────────────────────────────
+// Both read the lawyer's summary, and the case files when there are any. No
+// number anywhere: owner ١٩٣ bans a chance of winning on every tool, so levels
+// are words and the court target describes what the court will examine, never
+// how it will rule. Cited articles go through the library check (runCore).
+
+export const WAVE4_PRICE = 250;
+export const WAVE4_FILES: FileRules = { max: 6, maxPages: 30, maxBytes: 22 * 1024 * 1024, optional: true };
+export const CASE_SUMMARY_MIN = 20;
+export const CASE_SUMMARY_MAX = 6000;
+
+export const WARGAMING_ROLES = ["plaintiff", "defendant", "advisor"] as const;
+export const WARGAMING_TARGETS = ["opponent", "court", "critique", "plea"] as const;
+export type WargamingTarget = (typeof WARGAMING_TARGETS)[number];
+const SEVERITIES = ["high", "medium", "low"] as const;
+const optionalText = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
+
+/** The case summary: CASE_SUMMARY_MIN..MAX characters, or null. */
+function caseSummary(v: unknown): string | null {
+  const t = boundedText(v, CASE_SUMMARY_MAX);
+  return t && t.length >= CASE_SUMMARY_MIN ? t : null;
+}
+const SUMMARY_ERROR = `اكتب ملخص القضية (من ${CASE_SUMMARY_MIN.toLocaleString("ar-SA")} إلى ${CASE_SUMMARY_MAX.toLocaleString("ar-SA")} حرف)`;
+
+/**
+ * L9 المحاكي الشامل: the case, the targets, and for «نقض المذكرة» the memo —
+ * pasted (memo_text) or among the files (memo_in_files, set by the screen
+ * when the memo's own upload is sent).
+ */
+function wargamingInput(raw: unknown): InputCheck {
+  if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
+  if (!(WARGAMING_ROLES as readonly unknown[]).includes(raw.role)) return { ok: false, error: "اختر صفة موكّلك" };
+  const area = boundedText(raw.area, 150);
+  if (!area) return { ok: false, error: "اختر تخصص القضية" };
+  const summary = caseSummary(raw.case_summary);
+  if (!summary) return { ok: false, error: SUMMARY_ERROR };
+  const targets = Array.isArray(raw.targets) ? WARGAMING_TARGETS.filter((t) => (raw.targets as unknown[]).includes(t)) : [];
+  if (targets.length === 0) return { ok: false, error: "اختر هدفاً واحداً على الأقل" };
+  const memoText = optionalText(raw.memo_text, 15000);
+  const memoInFiles = raw.memo_in_files === true;
+  if (targets.includes("critique") && !memoText && !memoInFiles) {
+    return { ok: false, error: "«نقض المذكرة» يحتاج نص المذكرة أو ملفها" };
+  }
+  return {
+    ok: true,
+    input: {
+      role: raw.role,
+      area,
+      case_summary: summary,
+      targets,
+      memo_text: targets.includes("critique") ? memoText : null,
+      memo_in_files: targets.includes("critique") && memoInFiles,
+    },
+  };
+}
+
+/** The simulation's points, kept only for the targets asked for; the plea script only when «تدريب المرافعة» was. */
+function wargamingOutput(raw: unknown, input: Record<string, unknown>): Record<string, unknown> | null {
+  if (!isPlainObject(raw)) return null;
+  const summary = boundedText(raw.summary, 3000);
+  if (!summary) return null;
+  const asked = (Array.isArray(input.targets) ? input.targets : []) as string[];
+  const points = listOf(raw.points, 30, (p) =>
+    isPlainObject(p) && asked.includes(String(p.source)) && boundedText(p.title, 300) && boundedText(p.detail, 1500)
+      ? {
+          source: p.source as WargamingTarget,
+          severity: oneOf(p.severity, SEVERITIES, "medium"),
+          title: text(p.title, 300),
+          detail: text(p.detail, 1500),
+          counter: text(p.counter, 1500),
+        }
+      : null,
+  );
+  if (points.length === 0) return null;
+  return {
+    summary,
+    points,
+    plea_script: asked.includes("plea") ? text(raw.plea_script, 6000) : "",
+    cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 40) : [],
+  };
+}
+
+export const STRENGTH_ROLES = ["plaintiff", "defendant", "other"] as const;
+const LEVELS = ["strong", "medium", "weak"] as const;
+const MOVE_KINDS = ["attack", "defense"] as const;
+const DEVIL_SEVERITIES = ["critical", "high", "medium"] as const;
+
+/** L10 محلل قوة الموقف: the case, the evidence notes and what the opponent has said, if any. */
+function analyzeStrengthInput(raw: unknown): InputCheck {
+  if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
+  if (!(STRENGTH_ROLES as readonly unknown[]).includes(raw.role)) return { ok: false, error: "اختر صفة موكّلك" };
+  const summary = caseSummary(raw.case_summary);
+  if (!summary) return { ok: false, error: SUMMARY_ERROR };
+  return {
+    ok: true,
+    input: {
+      role: raw.role,
+      case_summary: summary,
+      evidence_notes: optionalText(raw.evidence_notes, 3000),
+      opponent_points: optionalText(raw.opponent_points, 4000),
+    },
+  };
+}
+
+/** Four tabs of words: the grounds' level, the opponent's moves, the procedural risks, the devil's advocate. */
+function analyzeStrengthOutput(raw: unknown): Record<string, unknown> | null {
+  if (!isPlainObject(raw) || !isPlainObject(raw.grounds)) return null;
+  const g = raw.grounds;
+  const summary = boundedText(g.summary, 2000);
+  if (!summary) return null;
+  const lines = (v: unknown) => listOf(v, 8, (s) => boundedText(s, 500));
+  return {
+    grounds: {
+      level: oneOf(g.level, LEVELS, "medium"),
+      summary,
+      strengths: lines(g.strengths),
+      weaknesses: lines(g.weaknesses),
+      recommendations: lines(g.recommendations),
+    },
+    opponent: listOf(raw.opponent, 10, (m) =>
+      isPlainObject(m) && boundedText(m.move, 600)
+        ? { kind: oneOf(m.kind, MOVE_KINDS, "attack"), move: text(m.move, 600), counter: text(m.counter, 800) }
+        : null,
+    ),
+    risks: listOf(raw.risks, 10, (r) =>
+      isPlainObject(r) && boundedText(r.risk, 400)
+        ? { risk: text(r.risk, 400), level: oneOf(r.level, SEVERITIES, "medium"), mitigation: text(r.mitigation, 600) }
+        : null,
+    ),
+    devil: listOf(raw.devil, 6, (d) =>
+      isPlainObject(d) && boundedText(d.text, 1000)
+        ? { label: text(d.label, 150, "ملاحظة"), text: text(d.text, 1000), severity: oneOf(d.severity, DEVIL_SEVERITIES, "high") }
+        : null,
+    ),
+    cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 40) : [],
+  };
+}
+
 export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
   "echo-fast": {
     id: "echo-fast",
@@ -560,6 +698,37 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     files: BRIEF_CHECK_FILES,
     validateInput: briefCheckInput,
     validateOutput: briefCheckOutput,
+  },
+  wargaming: {
+    id: "wargaming",
+    n8nPath: "nzamy-ai/wargaming",
+    class: "job",
+    tier: "deep",
+    roles: ["lawyer", "firm"],
+    // CONSULTANT_BLOCKED_PREFIXES has /ai/wargaming (Art. 18).
+    consultantBlocked: true,
+    price: () => WAVE4_PRICE,
+    dailyLimit: 5,
+    defaultMode: "off",
+    jobDeadlineSeconds: 15 * 60,
+    files: WAVE4_FILES,
+    validateInput: wargamingInput,
+    validateOutput: wargamingOutput,
+  },
+  "analyze-strength": {
+    id: "analyze-strength",
+    n8nPath: "nzamy-ai/analyze-strength",
+    class: "job",
+    tier: "deep",
+    roles: ["lawyer", "firm"],
+    consultantBlocked: false,
+    price: () => WAVE4_PRICE,
+    dailyLimit: 5,
+    defaultMode: "off",
+    jobDeadlineSeconds: 15 * 60,
+    files: WAVE4_FILES,
+    validateInput: analyzeStrengthInput,
+    validateOutput: analyzeStrengthOutput,
   },
 };
 

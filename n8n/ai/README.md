@@ -21,6 +21,8 @@ On n8n.asra3.com (all created **inactive**):
 | L6 بطاقة الكانفاس الذكية | `NZAMY · AI · canvas-card (L6 بطاقة الكانفاس الذكية)` | `1g4hsswaWsaafkN5` | `nzamy-ai/canvas-card` |
 | L7 عصارة المرفقات (job) | `NZAMY · AI · case-brief (L7 عصارة المرفقات)` | `snPDkKndPA9wjIKr` | `nzamy-ai/case-brief` |
 | L8 مراجعة وتدقيق مذكرة (job) | `NZAMY · AI · brief-check (L8 مراجعة وتدقيق مذكرة)` | `bu9guzNEhaLbyAPd` | `nzamy-ai/brief-check` |
+| L9 المحاكي الشامل (job) | `NZAMY · AI · wargaming (L9 المحاكي الشامل)` | not created yet | `nzamy-ai/wargaming` |
+| L10 محلل قوة الموقف (job) | `NZAMY · AI · analyze-strength (L10 محلل قوة الموقف)` | not created yet | `nzamy-ai/analyze-strength` |
 
 **Wave 3: document jobs.** The page uploads each file to the user's vault (an `attachments` row), then sends the ids. Before anything is charged, `src/lib/ai/aiFiles.ts`:
 1. keeps only the user's own files, not in the bin;
@@ -106,6 +108,53 @@ Wave 1 has no SQL and no new server variables.
 7. Send us a screenshot of each result and of the «آخر التشغيلات» table.
 
 ---
+
+## Wave 4, L9 المحاكي الشامل and L10 محلل قوة الموقف: your steps
+
+**What they are.** Two 250-point jobs that read the lawyer's case summary, plus the case files when there are any (files are **optional**; PDF and images only, up to 6 files and 30 pages).
+- No number anywhere: no score, no percentage, no chance of winning (owner ١٩٣). Levels are words.
+- The court target describes what the court will examine and ask, never how it will rule.
+- The prompt forbids naming judgments or precedents. Every law article the answer relies on is checked against the library by the app, as in L8.
+
+**The workflow** is the L7/L8 job with one branch added after «Accepted 202»:
+- **with files:** Download → Gemini «Analyze Document»;
+- **without files:** the same prompt goes to the AI Agent.
+
+Both meet at the same parse, error and callback nodes. Without the branch, n8n would stop at «Files» (no items) and never call back.
+
+No SQL. No new npm package.
+
+1. **Deploy** (server):
+   ```bash
+   cd /www/wwwroot/nzamy/latest-nzamy-full && git pull && npm install && nohup bash deploy.sh > /root/deploy-wave4.log 2>&1 &
+   ```
+   ```bash
+   tail -f /root/deploy-wave4.log
+   ```
+2. **n8n:** the two workflows are created and live-tested from here once the n8n connection is back (Claude does it). Nothing for you to do unless you'd rather import them yourself:
+   1. Workflows → **Import from File**, then pick `n8n/ai/wargaming.json` (then `n8n/ai/analyze-strength.json`).
+   2. Open **Webhook** and select `NZAMY AI · inbound`.
+   3. Open **Model** and **Read**, and select `Google Gemini(PaLM) Api account` in each.
+   4. Open **Callback** and select `NZAMY AI · callback`.
+   5. **Save**, then switch it on.
+3. **Open them for admins only** at `https://nezamy.sa/dashboard/admin/ai-usage`: set `wargaming` and `analyze-strength` to **للمشرفين فقط**, then press **حفظ**.
+4. **Test L10** at `https://nezamy.sa/ai/analyze-strength` (admin):
+   - Pick the client's capacity and write a case summary of at least 20 characters.
+   - Optionally add a PDF or a photo, notes on the evidence, and what the opponent said.
+   - Press «حلّل الموقف الآن (٢٥٠ نقطة)». After 10–60 seconds, four tabs appear:
+     - «قوة الأسانيد»: strong / medium / weak in words, why, strengths, weaknesses, and what strengthens the position;
+     - «توقعات الخصم»: moves and replies;
+     - «المخاطر الإجرائية»: high / medium / low;
+     - «محامي الشيطان».
+   - Under them, the articles the analysis relies on, each with the library's verdict.
+   - Try once with no file and once with a file. Both must answer.
+5. **Test L9** at `https://nezamy.sa/ai/wargaming` (admin, not a consultant account):
+   - Fill the case, pick targets (try «محاكاة الخصم» and «اتجاه المحكمة»), and go to «مراجعة وإرسال».
+   - Under the team order there is «أو: محاكاة فورية بالذكاء الاصطناعي». Press «شغّل المحاكاة الآن (٢٥٠ نقطة)».
+   - The points appear grouped by target, each with its severity and «ما تفعله». The plea script appears only if «تدريب المرافعة» was picked.
+   - With «نقض المذكرة», paste the memo or attach it as PDF. A Word memo goes to the team order only, and the page says so.
+   - «إرسال الطلب» (the team order) works as before.
+6. **Who and price:** lawyers and firms, 250 points each. L9 is blocked for consultants (Art. 18); L10 is not.
 
 ## Wave 3, L7 عصارة المرفقات and L8 مراجعة وتدقيق مذكرة: your steps
 
