@@ -209,6 +209,11 @@ The owner's priority is **lawyer services first**, then individual tools.
 - no library retrieval: the prompt forbids naming judgments, and the cited articles go through the L8 library check instead;
 - the L10 mock and its BetaReviewGate are gone.
 
+**Price conflict (put to the owner in the guide's question ٥):**
+- The registry charges **250** for each, from the owner's 25-Oct price list.
+- `/pricing` and the hub badge still show wargaming at «١٥–٢٠» (owner ٢١٦, older). They come from `lawyerServicesTable` and `TOOL_POINT_LABELS`, which `pricingApprovals.test.ts` keeps equal; left unchanged until he answers.
+- analyze-strength is now `betaStatus: "priced"`, with no badge, instead of «free in beta».
+
 **Still to do for wave 4:**
 1. Create both workflows on n8n and live-probe them, with and without files. The Agent branch has the JSON shape (with braces) in its user text, which has not been probed yet. If it fails, describe the shape in words.
 2. Merge and push on the user's go.
