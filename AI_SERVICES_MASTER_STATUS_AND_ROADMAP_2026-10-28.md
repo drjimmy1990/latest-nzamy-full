@@ -23,7 +23,7 @@ This is the one file to return to after the owner's review. It covers:
 
 | Item | State |
 |---|---|
-| Code | **`main` = `6eb9d040`**. Waves 0–3 are merged. `4039de86` is pushed; `6eb9d040` (the owner guide) is committed locally and **not pushed yet** |
+| Code | **Waves 0–3 are merged into `main`**. Pushed up to `4039de86`. After it come two docs-only commits, committed locally and **not pushed yet**: the owner guide and this file |
 | Production | Last confirmed deploy is **`7266a948`** (wave 0 + wave 1 code). **Everything after it is not deployed**: the Gemini workflows change, the useUser fix, waves 2 and 3 |
 | Database | Wave 0 SQL (`ai_runs`, `ai_start_run`, `ai_fail_run`, …) **run on prod**, `_verify` OK. Waves 1–3 need **no SQL** |
 | Server env | `N8N_AI_BASE_URL`, `NZAMY_AI_KEY`, `NZAMY_AI_CALLBACK_KEY` are in `/www/wwwroot/nzamy/latest-nzamy-full/.env.local` (checked). `CRON_SECRET` is present |
@@ -37,7 +37,7 @@ This is the one file to return to after the owner's review. It covers:
 cd /www/wwwroot/nzamy/latest-nzamy-full && git pull && npm install && nohup bash deploy.sh > /root/deploy-20261028.log 2>&1 &
 ```
 - `npm install` is required, because wave 3 adds `pdf-lib` 1.17.1 (pinned).
-- Expect `✔ Deployed 6eb9d040`, or `4039de86` if `6eb9d040` was not pushed. The site code is the same in both.
+- Expect `✔ Deployed 4039de86`, or the newer docs commit if those are pushed first. The site code is the same either way.
 - Then, at `https://nezamy.sa/dashboard/admin/ai-usage`, set the 8 tools to «للمشرفين فقط» and press «حفظ».
 - The owner tests with the Arabic guide.
 
