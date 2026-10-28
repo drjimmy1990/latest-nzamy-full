@@ -8,7 +8,9 @@ import {
 } from "@phosphor-icons/react";
 import type { LawArticle } from "../data";
 import { LiteMarkdown } from "../components/AiTabContent";
-import { libraryAiRefusal, type LibraryAiAction } from "./_ai-reply";
+import type { LibraryAiAction } from "./_ai-reply";
+import { askLibrary } from "./_library-assistant";
+import { asCitations, CitedText, SourceList, type Citation } from "@/components/ai/CitedAnswer";
 
 
 const QUICK_PROMPTS = [
@@ -29,7 +31,18 @@ const QUICK_PROMPTS_EN = [
   "Extract the financial statement articles",
 ];
 
-interface AIMessage { role: "user" | "ai"; text: string; action?: LibraryAiAction; }
+interface AIMessage { role: "user" | "ai"; text: string; action?: LibraryAiAction; cites?: Citation[]; }
+
+/** An assistant reply: cited text with its sources when it has them, the page's light Markdown otherwise. */
+function AiReplyBody({ m, isDark }: { m: AIMessage; isDark: boolean }) {
+  if (!m.cites || m.cites.length === 0) return <LiteMarkdown text={m.text} />;
+  return (
+    <div className="space-y-2">
+      <CitedText text={m.text} cites={m.cites} isDark={isDark} className="leading-relaxed" />
+      <SourceList cites={m.cites} isDark={isDark} compact />
+    </div>
+  );
+}
 
 type SpeechRecognitionEventLike = {
   results: ArrayLike<ArrayLike<{ transcript: string }>>;
@@ -104,48 +117,13 @@ export function LibraryAI({ isDark, isRTL = true }: { isDark: boolean; isRTL?: b
     setMsgs(m => [...m, { role: "user", text: query }]);
     setLoading(true);
 
-    // Honest AI: call the n8n-backed /api/ai/library-chat route.
-    // When the webhook is not configured (503) or the call fails, show a
-    // clear "قريباً / coming soon" message instead of fabricating an answer.
-    let reply = "";
-    let action: LibraryAiAction | undefined;
-    try {
-      const res = await fetch("/api/ai/library-chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: query, context: {} }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const incoming =
-          (data && (data.reply || data.explanation || data.message)) ||
-          (data && typeof data === "string" ? data : "");
-        reply =
-          typeof incoming === "string" && incoming.trim().length > 0
-            ? incoming
-            : isRTL
-              ? "لم أتلقَّ رداً صالحاً من الخدمة حالياً."
-              : "No valid reply from the AI service right now.";
-      } else {
-        // A guest (401), a tier below pro (403) or the rate limit (429) is told
-        // what to do, not "coming soon"; anything else keeps «قيد التفعيل».
-        const refusal = libraryAiRefusal(res.status, window.location.pathname + window.location.search);
-        if (refusal) {
-          reply = refusal.text;
-          action = refusal.action;
-        } else {
-          reply = isRTL
-            ? "الذكاء الاصطناعي قيد التفعيل وقريباً سيتوفر.\nحالياً يمكنك تصفح المواد والاستعانة بالفهرس والمبادئ والسوابق."
-            : "The AI assistant is being activated and will be available soon.\nFor now, browse the articles, index, principles, and precedents.";
-        }
-      }
-    } catch {
-      reply = isRTL
-        ? "الذكاء الاصطناعي قيد التفعيل وقريباً سيتوفر.\nحالياً يمكنك تصفح المواد والاستعانة بالفهرس والمبادئ والسوابق."
-        : "The AI assistant is being activated and will be available soon.\nFor now, browse the articles, index, principles, and precedents.";
-    }
-
-    setMsgs(m => [...m, { role: "ai", text: reply, action }]);
+    // The library assistant on the AI pipeline (plan §5 L5): the server's
+    // reply with its citations, or the refusal it gave; never an invented answer.
+    const answer = await askLibrary({ message: query }, window.location.pathname + window.location.search);
+    const reply = answer.text;
+    const action = answer.action;
+    const cites = asCitations(answer.citations);
+    setMsgs(m => [...m, { role: "ai", text: reply, action, cites }]);
     setLoading(false);
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
   };
@@ -193,7 +171,7 @@ export function LibraryAI({ isDark, isRTL = true }: { isDark: boolean; isRTL?: b
                         {m.role === "ai" && (
                           <p className={`text-[10px] font-bold mb-1 ${isDark ? "text-[#C8A762]" : "text-amber-700"}`}>{isRTL ? "✦ ذكاء نظامي" : "✦ Nezamy AI"}</p>
                         )}
-                        {m.role === "ai" ? <LiteMarkdown text={m.text} /> : <p className="whitespace-pre-wrap">{m.text}</p>}
+                        {m.role === "ai" ? <AiReplyBody m={m} isDark={isDark} /> : <p className="whitespace-pre-wrap">{m.text}</p>}
                         {m.action && (
                           <Link href={m.action.href} className="inline-block mt-2 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-[#0B3D2E] text-white hover:opacity-90 transition">
                             {m.action.label}
@@ -250,8 +228,8 @@ export function ArticleExplainModal({ article, isDark, onClose, isRTL = true }: 
     {
       role: "ai",
       text: isRTL
-        ? `أهلاً بك. أنا المساعد الذكي لنظام الشركات. هل تريدني أن أشرح لك ${article.num} المتضمنة لـ "${article.title}" أم لديك استفسار محدد حولها؟`
-        : `Welcome. I am the smart assistant for the Companies Law. Would you like an explanation of ${article.num} (${article.title}), or do you have a specific question about it?`
+        ? `أهلاً بك. هل تريدني أن أشرح لك ${article.num} المتضمنة لـ "${article.title}" أم لديك استفسار محدد حولها؟ أجيب من نصوص المكتبة وحدها، وأذكر مصدر كل جملة.`
+        : `Welcome. Would you like an explanation of ${article.num} (${article.title}), or do you have a specific question about it? I answer from the library's texts only and cite each one.`
     }
   ]);
   const [loading, setLoading] = useState(false);
@@ -291,15 +269,16 @@ export function ArticleExplainModal({ article, isDark, onClose, isRTL = true }: 
     setInput("");
     setMsgs(m => [...m, { role: "user", text: query }]);
     setLoading(true);
-    // Honest gate: the article-explanation AI is not yet activated.
-    // Show a clear "قريباً / coming soon" message instead of fabricating an
-    // explanation. When the n8n explain-article webhook is wired and the
-    // lawSlug is plumbed through, this can call /api/ai/explain-article.
-    await new Promise(r => setTimeout(r, 600));
-    const reply = isRTL
-      ? "شرح المواد بالذكاء الاصطناعي قيد التفعيل وقريباً سيتوفر.\nحالياً يمكنك الاعتماد على نص المادة أعلاه، والفهرس، والمبادئ والسوابق المرتبطة."
-      : "AI article explanation is being activated and will be available soon.\nFor now, rely on the article text above, the index, and related principles/precedents.";
-    setMsgs(m => [...m, { role: "ai", text: reply }]);
+    // «اشرح لي» on the AI pipeline (plan §5 L5): the open article is sent as
+    // the first source, whatever the library search finds around it.
+    const answer = await askLibrary(
+      { message: query, articleId: article.id },
+      window.location.pathname + window.location.search,
+    );
+    const reply = answer.text;
+    const action = answer.action;
+    const cites = asCitations(answer.citations);
+    setMsgs(m => [...m, { role: "ai", text: reply, action, cites }]);
     setLoading(false);
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
   };
@@ -340,7 +319,12 @@ export function ArticleExplainModal({ article, isDark, onClose, isRTL = true }: 
                 {m.role === "ai" && (
                   <p className={`text-[10px] font-bold mb-1.5 flex items-center gap-1 ${isDark ? "text-[#C8A762]" : "text-amber-700"}`}><Sparkle size={10} weight="fill" /> {isRTL ? "مساعد الفهم" : "Explanation assistant"}</p>
                 )}
-                {m.role === "ai" ? <LiteMarkdown text={m.text} /> : <p className="whitespace-pre-wrap">{m.text}</p>}
+                {m.role === "ai" ? <AiReplyBody m={m} isDark={isDark} /> : <p className="whitespace-pre-wrap">{m.text}</p>}
+                {m.action && (
+                  <Link href={m.action.href} className="inline-block mt-2 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-[#0B3D2E] text-white hover:opacity-90 transition">
+                    {m.action.label}
+                  </Link>
+                )}
               </div>
             </div>
           ))}

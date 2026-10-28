@@ -6,8 +6,11 @@
  *   startRunWith     the browser's POST /api/v1/ai/runs, after the route has
  *                    signed the user in and refused a frozen account:
  *                      tool → role → Art. 18 → mode → input → key → files
+ *                      → [library tool: the library gate + tier rule]
  *                      → ai_start_run (daily limit + balance + debit, one
- *                        transaction) → the package → n8n
+ *                        transaction)
+ *                      → [library tool: searches → texts, refunded when none]
+ *                      → the package → n8n
  *                    fast tool: n8n's reply is settled here, in the request;
  *                    job tool:  n8n's 202 leaves the run `running`.
  *   settleRunWith    a result (the fast reply or the job callback) → the
@@ -26,10 +29,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { CONSULTANT_BLOCKED_MESSAGE, type PracticeKind } from "../auth/practiceKind.ts";
 import { resolveToolRuntime } from "./aiToolsConfig.ts";
 import type { N8nCall, N8nOutcome } from "./n8nClient.ts";
+import { cleanQueries, type PackageSource, type RetrievalLimits, type RetrievalPin, type Retrieved } from "./retrieval.ts";
 import {
   DEFAULT_JOB_DEADLINE_SECONDS,
   FAST_DEADLINE_SECONDS,
   FAST_TIMEOUT_MS,
+  LIB_QUERIES_PATH,
   getAiTool,
   type AiToolSpec,
 } from "./tools.ts";
@@ -51,6 +56,15 @@ export interface StartRunDeps {
   n8n: (call: Pick<N8nCall, "path" | "mode" | "body" | "timeoutMs">) => Promise<N8nOutcome>;
   callbackUrl: string;
   now?: () => Date;
+  /**
+   * Library tools only: the library gate and the assistant's tier rule, before
+   * the charge. A reply refuses the run; null lets it go on.
+   */
+  libraryAccess?: () => Promise<RouteReply | null>;
+  /** Library tools only: the searches → the texts (retrieval.retrieveLibrary). */
+  retrieve?: (queries: string[], limits: RetrievalLimits, pin: RetrievalPin) => Promise<Retrieved>;
+  /** The clock for the fast tools' time budget, in ms (tests replace it). */
+  clock?: () => number;
 }
 
 /** The source map stored on the run: short id in the prompt → the library item. */
@@ -69,7 +83,16 @@ export const AI_COPY = {
   unavailable: "تعذّر بدء الأداة الآن — حاول بعد قليل",
   failed: "تعذّر إكمال الطلب، وأُعيدت نقاطك",
   timeout: "استغرق الطلب وقتاً أطول من المسموح، وأُعيدت نقاطك — حاول مرة أخرى",
+  noSources: "لم أجد في مكتبة الأنظمة نصوصاً تتعلق بسؤالك، وأُعيدت نقاطك — جرّب صياغة أخرى",
+  ungrounded: "لم تُجب نصوص المكتبة التي وجدتها عن سؤالك، وأُعيدت نقاطك — جرّب صياغة أخرى",
+  conversation: "معرّف المحادثة غير صالح — ابدأ محادثة جديدة",
+  conversationFull: "اكتملت هذه المحادثة — ابدأ محادثة جديدة لتكمل",
 } as const;
+
+/** The search writer's wait: short, so the answer keeps most of the fast budget. */
+const LIB_QUERIES_TIMEOUT_MS = 15_000;
+/** The least time the answer is given, whatever the searches took. */
+const MIN_ANSWER_MS = 15_000;
 
 /** Error codes n8n may report; anything else is recorded as model_error. */
 const N8N_ERROR_CODES: ReadonlySet<string> = new Set([
@@ -160,6 +183,9 @@ export async function settleRunWith(
   if (!output) return fail("schema_invalid", "the output does not match the tool's shape");
 
   const citations = mapCitations(raw.citations, ctx.sources);
+  // A library tool's answer stands on the texts it was given or not at all:
+  // with no citation that resolves, it is the model's memory, not the library.
+  if (ctx.spec.retrieval && citations.length === 0) return fail("ungrounded", "the answer cites none of the sources sent");
   const usage = sanitizeUsage(raw.usage);
   const status = ctx.review ? "review" : "succeeded";
   const { data, error } = await admin
@@ -234,13 +260,70 @@ export async function startRunWith(
     return { status: 503, body: { error: AI_COPY.notReady, code: "not_ready" } };
   }
 
+  // A library tool quotes server-only, paywalled texts: the library's own
+  // gate and the assistant's tier rule apply before anything is charged.
+  if (spec.retrieval) {
+    if (!deps.libraryAccess || !deps.retrieve) {
+      console.error("[ai] a library tool without libraryAccess / retrieve:", spec.id);
+      return { status: 503, body: { error: AI_COPY.notReady, code: "not_ready" } };
+    }
+    const denied = await deps.libraryAccess();
+    if (denied) return denied;
+  }
+
+  // A chat tool: the conversation's earlier turns, read from ai_runs for this
+  // user only, so a conversation id from another account reads as a new one.
+  let conversationId: string | null = null;
+  let history: Array<{ role: "user" | "assistant"; text: string }> = [];
+  let turn = 0;
+  if (spec.conversation) {
+    const cid = req.conversationId;
+    if (cid !== undefined && cid !== null && (typeof cid !== "string" || !UUID.test(cid))) {
+      return { status: 422, body: { error: AI_COPY.conversation, code: "invalid_conversation" } };
+    }
+    conversationId = typeof cid === "string" ? cid.toLowerCase() : globalThis.crypto.randomUUID();
+    if (typeof cid === "string") {
+      const prior = await admin
+        .from("ai_runs")
+        .select("input, output, status")
+        .eq("user_id", actor.userId)
+        .eq("tool", spec.id)
+        .eq("conversation_id", conversationId)
+        .in("status", ["running", "review", "succeeded"])
+        .order("created_at", { ascending: true })
+        .limit(spec.conversation.maxMessages + 1);
+      if (prior.error) {
+        console.error("[ai] conversation read failed:", spec.id, prior.error.code, prior.error.message);
+        return { status: 503, body: { error: AI_COPY.unavailable, code: "unavailable" } };
+      }
+      const rows = (Array.isArray(prior.data) ? prior.data : []) as Array<{ input: unknown; output: unknown; status: string }>;
+      turn = rows.length;
+      if (turn >= spec.conversation.maxMessages) {
+        return { status: 409, body: { error: AI_COPY.conversationFull, code: "conversation_full", conversationId } };
+      }
+      const { field, replyField, historyPairs } = spec.conversation;
+      history = rows
+        .filter((r) => r.status === "succeeded" && isPlainObject(r.input) && isPlainObject(r.output))
+        .slice(-historyPairs)
+        .flatMap((r) => {
+          const q = (r.input as Record<string, unknown>)[field];
+          const a = (r.output as Record<string, unknown>)[replyField];
+          return typeof q === "string" && typeof a === "string"
+            ? [{ role: "user" as const, text: q }, { role: "assistant" as const, text: a }]
+            : [];
+        });
+    }
+  }
+
   const pages: number | null = null;
-  const price = spec.price(checked.input, { pages });
+  const price = spec.price(checked.input, { pages, turn });
   const now = deps.now?.() ?? new Date();
   const deadline = new Date(
     now.getTime() + 1000 * (spec.class === "fast" ? FAST_DEADLINE_SECONDS : spec.jobDeadlineSeconds ?? DEFAULT_JOB_DEADLINE_SECONDS),
   );
-  const sources: SourceMap = {};
+  const clock = deps.clock ?? (() => Date.now());
+  const startedAt = clock();
+  let sources: SourceMap = {};
 
   const { data, error } = await admin.rpc("ai_start_run", {
     p_user: actor.userId,
@@ -255,7 +338,7 @@ export async function startRunWith(
     p_input: checked.input,
     p_file_ids: [],
     p_pages: pages,
-    p_conversation: null,
+    p_conversation: conversationId,
     p_source_ids: sources,
   });
   if (error) {
@@ -280,6 +363,60 @@ export async function startRunWith(
     return { status: 409, body: { error: AI_COPY.duplicate, code: "duplicate", runId: run.run_id, status: run.status } };
   }
 
+  const charged = { chargedPoints: run.charged_points, ...(conversationId ? { conversationId } : {}) };
+
+  // Charged first, so the daily limit and the balance hold for the searches
+  // too; every way out below refunds.
+  let pkgSources: PackageSource[] = [];
+  if (spec.retrieval && deps.retrieve) {
+    const { from, pinFrom, laws, principles } = spec.retrieval;
+    const pinned = pinFrom ? checked.input[pinFrom] : null;
+    const pin: RetrievalPin = typeof pinned === "string" && pinned ? { articleId: pinned } : {};
+    const asked = await deps.n8n({
+      path: LIB_QUERIES_PATH,
+      mode: "sync",
+      // A follow-up («وما مدته؟») is searched together with the question before it.
+      body: {
+        v: 1,
+        run_id: run.run_id,
+        tool: "lib-queries",
+        input: {
+          text: [...history.filter((h) => h.role === "user").slice(-1).map((h) => h.text), String(checked.input[from] ?? "")].join("\n"),
+        },
+      },
+      timeoutMs: LIB_QUERIES_TIMEOUT_MS,
+    });
+    const reply = asked.kind === "result" && isPlainObject(asked.result) ? asked.result : null;
+    const queries =
+      reply && reply.run_id === run.run_id && reply.status === "succeeded" && isPlainObject(reply.output)
+        ? cleanQueries(reply.output.queries)
+        : [];
+    // An open article is a source even when the writer found nothing to search.
+    if (queries.length === 0 && !pin.articleId) {
+      await failRun(admin, run.run_id, "no_queries", asked.kind === "failed" ? asked.detail : "the search writer returned no searches");
+      return { status: 502, body: { error: AI_COPY.failed, code: "tool_failed", runId: run.run_id } };
+    }
+    let found: Retrieved;
+    try {
+      found = await deps.retrieve(queries, { laws, principles }, pin);
+    } catch (err) {
+      console.error("[ai] retrieval threw for", run.run_id, err);
+      found = { sources: [], map: {} };
+    }
+    if (found.sources.length === 0) {
+      await failRun(admin, run.run_id, "no_sources", `no library text matched: ${queries.join(" | ")}`);
+      return { status: 422, body: { error: AI_COPY.noSources, code: "no_sources", runId: run.run_id } };
+    }
+    sources = found.map as SourceMap;
+    pkgSources = found.sources;
+    const stored = await admin.from("ai_runs").update({ source_ids: sources }).eq("id", run.run_id).eq("status", "running");
+    if (stored.error) {
+      console.error("[ai] storing the sources failed for", run.run_id, stored.error.code, stored.error.message);
+      await failRun(admin, run.run_id, "store_failed", "the sources could not be stored");
+      return { status: 502, body: { error: AI_COPY.failed, code: "tool_failed", runId: run.run_id } };
+    }
+  }
+
   const sync = spec.class === "fast";
   const pkg = {
     v: 1,
@@ -295,9 +432,9 @@ export async function startRunWith(
       display_name: spec.sendsDisplayName ? actor.displayName : null,
     },
     input: checked.input,
-    sources: [],
+    sources: pkgSources,
     case: null,
-    history: [],
+    history,
     files: [],
     respond: sync ? { mode: "sync" } : { mode: "async", callback_url: deps.callbackUrl },
     deadline_at: deadline.toISOString(),
@@ -307,9 +444,9 @@ export async function startRunWith(
     path: spec.n8nPath,
     mode: sync ? "sync" : "async",
     body: pkg,
-    timeoutMs: sync ? FAST_TIMEOUT_MS : 20_000,
+    // The searches spent part of the fast budget (nginx cuts at 60 s).
+    timeoutMs: sync ? Math.max(MIN_ANSWER_MS, FAST_TIMEOUT_MS - (clock() - startedAt)) : 20_000,
   });
-  const charged = { chargedPoints: run.charged_points };
 
   if (outcome.kind === "failed") {
     await failRun(admin, run.run_id, outcome.code === "timeout" ? "timeout" : outcome.code, outcome.detail);
@@ -347,6 +484,9 @@ export async function startRunWith(
   }
   if (settled.kind === "stale") {
     return { status: 504, body: { error: AI_COPY.timeout, code: "timeout", runId: run.run_id } };
+  }
+  if (settled.code === "ungrounded") {
+    return { status: 422, body: { error: AI_COPY.ungrounded, code: "ungrounded", runId: run.run_id } };
   }
   return { status: 502, body: { error: AI_COPY.failed, code: "tool_failed", runId: run.run_id } };
 }

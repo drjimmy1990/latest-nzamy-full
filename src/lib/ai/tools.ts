@@ -11,6 +11,7 @@
  * Pure: no imports outside src/lib/ai, so `node --test` runs it.
  */
 import { extractLegalRefs, missingLegalRefs } from "./legalRefs.ts";
+import type { RetrievalLimits } from "./retrieval.ts";
 
 export type AiToolClass = "fast" | "job";
 export type AiModelTier = "fast" | "deep";
@@ -32,15 +33,33 @@ export interface AiToolSpec {
   /** Art. 18: a consultant (practice_kind) may not run it. */
   consultantBlocked: boolean;
   /** The price in points, from the validated input (metered tools read `pages`). */
-  price: (input: Record<string, unknown>, ctx: { pages: number | null }) => number;
+  price: (input: Record<string, unknown>, ctx: { pages: number | null; turn?: number }) => number;
   /** Runs per user per Riyadh day while nothing else limits them (plan §1.2). */
   dailyLimit: number;
   /** The mode until an admin sets one in platform_settings.ai_tools. */
   defaultMode: AiToolMode;
   /** Job tools: how long until the sweeper fails and refunds the run. */
   jobDeadlineSeconds?: number;
+  /**
+   * A chat tool (L4): runs share a conversation_id, the earlier turns are read
+   * back from ai_runs (never taken from the browser) and sent as `history`, and
+   * `price` gets the 0-based `turn`. A conversation holds `maxMessages` runs.
+   */
+  conversation?: { maxMessages: number; historyPairs: number; field: string; replyField: string };
   /** Letter-type tools sign with the user's name (plan §2.2); every other tool gets null. */
   sendsDisplayName?: boolean;
+  /**
+   * Wave 2: the tool answers from library texts the app retrieves (retrieval.ts).
+   * Such a tool passes the library gate and the assistant's tier rule before
+   * the charge, is refunded when nothing in the library matches, and fails
+   * (refunded) when its answer cites none of the texts it was given.
+   */
+  retrieval?: RetrievalLimits & {
+    /** The input field the searches are written from. */
+    from: string;
+    /** The input field naming an article to send first, whatever the searches find (L5 «اشرح لي»). */
+    pinFrom?: string;
+  };
   validateInput: (raw: unknown) => InputCheck;
   /**
    * The output that may be stored and shown, or null when it breaks the tool's
@@ -153,6 +172,126 @@ function najizOutput(raw: unknown, input: Record<string, unknown>): Record<strin
   return { text, kept_refs: required };
 }
 
+// ── wave 2: answers from the library (plan §5, «Wave 2») ────────────────────
+
+/** n8n's search writer: a question → 2–4 short library searches (retrieval.ts). */
+export const LIB_QUERIES_PATH = "nzamy-ai/lib-queries";
+
+export const QUICK_ANSWER_QUESTION_MAX = 1000;
+export const QUICK_ANSWER_MAX = 6000;
+
+/** L3 سؤال قانوني سريع: one question → a short answer cited to library texts. */
+function quickAnswerInput(raw: unknown): InputCheck {
+  if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
+  const question = boundedText(raw.question, QUICK_ANSWER_QUESTION_MAX);
+  if (!question || question.length < 8) return { ok: false, error: "اكتب سؤالك (من ٨ إلى ١٬٠٠٠ حرف)" };
+  return { ok: true, input: { question } };
+}
+
+function quickAnswerOutput(raw: unknown): Record<string, unknown> | null {
+  if (!isPlainObject(raw)) return null;
+  const answer = boundedText(raw.answer, QUICK_ANSWER_MAX);
+  return answer ? { answer } : null;
+}
+
+/**
+ * Every account type: the library assistant is the library's, not the
+ * lawyers' (owner ٢٠٦ / ٢٠٧ / ٢٠٩). Who may use it is the tier rule (Pro or
+ * higher, or an admin), which the run route checks for every library tool.
+ */
+const LIBRARY_ROLES = ["individual", "lawyer", "firm", "corporate", "provider", "micro", "government", "ngo"] as const;
+
+export const LIBRARY_MESSAGE_MAX = 4000;
+export const LIBRARY_REPLY_MAX = 6000;
+/** Article ids are slugs such as `labor-law__art-80` (library.articles.id). */
+const ARTICLE_ID = /^[\p{L}\p{N}_.\-]{1,200}$/u;
+
+/** L5 مساعد المكتبة: a question inside /laws, optionally about the article the user has open. */
+function libraryAssistantInput(raw: unknown): InputCheck {
+  if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
+  const message = boundedText(raw.message, LIBRARY_MESSAGE_MAX);
+  if (!message || message.length < 2) return { ok: false, error: "اكتب سؤالك (حتى ٤٬٠٠٠ حرف)" };
+  if (raw.article_id === undefined || raw.article_id === null || raw.article_id === "") {
+    return { ok: true, input: { message, article_id: null } };
+  }
+  if (typeof raw.article_id !== "string" || !ARTICLE_ID.test(raw.article_id)) {
+    return { ok: false, error: "معرّف المادة غير صالح" };
+  }
+  return { ok: true, input: { message, article_id: raw.article_id } };
+}
+
+function libraryAssistantOutput(raw: unknown): Record<string, unknown> | null {
+  if (!isPlainObject(raw)) return null;
+  const reply = boundedText(raw.reply, LIBRARY_REPLY_MAX);
+  return reply ? { reply } : null;
+}
+
+export const ASSISTANT_CONTEXTS = ["general", "case", "contract", "research"] as const;
+export type AssistantContext = (typeof ASSISTANT_CONTEXTS)[number];
+export const ASSISTANT_MESSAGE_MAX = 4000;
+export const ASSISTANT_REPLY_MAX = 8000;
+/** D3: one price buys a conversation of this many messages; the next starts a new one. */
+export const ASSISTANT_MESSAGES_PER_CONVERSATION = 5;
+export const ASSISTANT_CONVERSATION_PRICE = 100;
+
+/** L4 المستشار الذكي: a lawyer's chat, each message answered from the library. */
+function assistantInput(raw: unknown): InputCheck {
+  if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
+  const context = raw.context === undefined ? "general" : raw.context;
+  if (!(ASSISTANT_CONTEXTS as readonly unknown[]).includes(context)) return { ok: false, error: "اختر نوع السياق" };
+  const message = boundedText(raw.message, ASSISTANT_MESSAGE_MAX);
+  if (!message || message.length < 2) return { ok: false, error: "اكتب رسالتك (حتى ٤٬٠٠٠ حرف)" };
+  return { ok: true, input: { context, message } };
+}
+
+function assistantOutput(raw: unknown): Record<string, unknown> | null {
+  if (!isPlainObject(raw)) return null;
+  const reply = boundedText(raw.reply, ASSISTANT_REPLY_MAX);
+  return reply ? { reply } : null;
+}
+
+/** L6: the cards the lawyer selected, as the model reads them. */
+export const CANVAS_CARDS_MAX = 8;
+export const CANVAS_SUGGESTIONS_MAX = 3;
+const CANVAS_CARD_TYPES = ["person", "doc", "law", "event", "evidence", "custom", "link", "checklist"] as const;
+const CANVAS_TEXT_MAX = 2000;
+
+/**
+ * L6 بطاقة الكانفاس الذكية: the selected cards of a case board → 1–3 law cards,
+ * each tied to a library text the app sent (owner ٢٩١: manual cards stay free).
+ * `text` is what the searches are written from.
+ */
+function canvasCardInput(raw: unknown): InputCheck {
+  if (!isPlainObject(raw) || !Array.isArray(raw.cards)) return { ok: false, error: "اختر بطاقة واحدة على الأقل" };
+  const cards: Array<{ type: string; title: string; desc: string }> = [];
+  for (const c of raw.cards.slice(0, CANVAS_CARDS_MAX)) {
+    if (!isPlainObject(c)) continue;
+    const title = boundedText(c.title, 200);
+    if (!title) continue;
+    const type = (CANVAS_CARD_TYPES as readonly unknown[]).includes(c.type) ? String(c.type) : "custom";
+    const desc = typeof c.desc === "string" ? c.desc.trim().slice(0, 400) : "";
+    cards.push({ type, title, desc });
+  }
+  if (cards.length === 0) return { ok: false, error: "اختر بطاقة واحدة على الأقل فيها عنوان" };
+  const text = cards.map((c) => [c.title, c.desc].filter(Boolean).join(": ")).join("\n").slice(0, CANVAS_TEXT_MAX);
+  return { ok: true, input: { cards, text } };
+}
+
+function canvasCardOutput(raw: unknown): Record<string, unknown> | null {
+  if (!isPlainObject(raw) || !Array.isArray(raw.cards)) return null;
+  const cards: Array<{ sid: string; why: string }> = [];
+  for (const c of raw.cards) {
+    if (!isPlainObject(c) || typeof c.sid !== "string" || !/^S\d{1,3}$/.test(c.sid)) continue;
+    const why = boundedText(c.why, 300);
+    if (!why || cards.some((x) => x.sid === c.sid)) continue;
+    cards.push({ sid: c.sid, why });
+    if (cards.length >= CANVAS_SUGGESTIONS_MAX) break;
+  }
+  // No pick («لا_يوجد») is a valid shape with no citation: runCore refunds it
+  // as ungrounded, with the message that says nothing matched.
+  return { cards };
+}
+
 export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
   "echo-fast": {
     id: "echo-fast",
@@ -209,6 +348,66 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     defaultMode: "off",
     validateInput: najizInput,
     validateOutput: najizOutput,
+  },
+  "quick-answer": {
+    id: "quick-answer",
+    n8nPath: "nzamy-ai/quick-answer",
+    class: "fast",
+    tier: "fast",
+    roles: ["lawyer", "firm"],
+    consultantBlocked: false,
+    price: () => 20,
+    dailyLimit: 30,
+    defaultMode: "off",
+    retrieval: { from: "question", laws: 8, principles: 4 },
+    validateInput: quickAnswerInput,
+    validateOutput: quickAnswerOutput,
+  },
+  "library-assistant": {
+    id: "library-assistant",
+    n8nPath: "nzamy-ai/library-assistant",
+    class: "fast",
+    tier: "fast",
+    roles: LIBRARY_ROLES,
+    consultantBlocked: false,
+    // Owner ٢٥٧: 5 points flat, the chat and «اشرح لي» alike.
+    price: () => 5,
+    dailyLimit: 60,
+    defaultMode: "off",
+    retrieval: { from: "message", pinFrom: "article_id", laws: 6, principles: 3 },
+    validateInput: libraryAssistantInput,
+    validateOutput: libraryAssistantOutput,
+  },
+  assistant: {
+    id: "assistant",
+    n8nPath: "nzamy-ai/assistant",
+    class: "fast",
+    tier: "deep",
+    roles: ["lawyer", "firm"],
+    consultantBlocked: false,
+    // D3: the conversation's first message pays for up to five.
+    price: (_input, ctx) => ((ctx.turn ?? 0) === 0 ? ASSISTANT_CONVERSATION_PRICE : 0),
+    dailyLimit: 60,
+    defaultMode: "off",
+    retrieval: { from: "message", laws: 8, principles: 4 },
+    conversation: { maxMessages: ASSISTANT_MESSAGES_PER_CONVERSATION, historyPairs: 3, field: "message", replyField: "reply" },
+    validateInput: assistantInput,
+    validateOutput: assistantOutput,
+  },
+  "canvas-card": {
+    id: "canvas-card",
+    n8nPath: "nzamy-ai/canvas-card",
+    class: "fast",
+    tier: "fast",
+    // The case board's «استيراد من القضية» is the lawyer and firm case files'.
+    roles: ["lawyer", "firm"],
+    consultantBlocked: false,
+    price: () => 10,
+    dailyLimit: 40,
+    defaultMode: "off",
+    retrieval: { from: "text", laws: 6, principles: 0 },
+    validateInput: canvasCardInput,
+    validateOutput: canvasCardOutput,
   },
 };
 

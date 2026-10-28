@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import BetaReviewGate from "@/components/BetaReviewGate";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Robot, PaperPlaneTilt, Microphone, Stop, Copy, Check,
@@ -11,17 +10,23 @@ import {
   Lightbulb, ShieldCheck, Warning,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { asCitations, CitedText, SourceList, stripCitationMarkers, type Citation } from "@/components/ai/CitedAnswer";
+import { ASSISTANT_CONVERSATION_PRICE, ASSISTANT_MESSAGES_PER_CONVERSATION, type AssistantContext } from "@/lib/ai/tools";
+import { askAssistant } from "./_assistant-client";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type Role = "user" | "assistant";
-type Context = "general" | "case" | "contract" | "research";
+type Context = AssistantContext;
 
 interface Message {
   id: string;
   role: Role;
   content: string;
   timestamp: Date;
-  sources?: { label: string; ref: string }[];
+  /** The server's citations: only texts it sent, resolved to titles and links. */
+  cites?: Citation[];
+  /** A refusal or an error, not an answer. */
+  failed?: boolean;
   thinking?: boolean;
 }
 
@@ -49,128 +54,13 @@ const QUICK_PROMPTS: QuickPrompt[] = [
   { icon: Warning,   label: "مخاطر",          text: "ما المخاطر القانونية لشراكة تجارية بدون عقد رسمي؟",                        color: "text-orange-400"  },
 ];
 
-// Mock responses per context
-function getMockResponse(userMessage: string, context: Context): { content: string; sources?: { label: string; ref: string }[] } {
-  const responses = [
-    {
-      content: `بناءً على تحليلي للوضع القانوني في ضوء **نظام العمل السعودي الصادر بالمرسوم الملكي م/٥١**:
-
-## الموقف القانوني
-
-أولاً، يعدّ **التأخر في صرف الأجور** مخالفةً صريحةً للمادة (90) من نظام العمل التي توجب صرف الراتب في تاريخه المحدد.
-
-ثانياً، في حال الإنذار الرسمي الموثّق، يحق للعامل وفق **المادة (81)** إنهاء العقد دون إشعار مسبق مع استحقاق كامل **مكافأة نهاية الخدمة** والتعويض عن الفترة المتبقية.
-
-## التوصيات
-
-- **توثيق الإنذارات** بصورة خطية موثقة أمام الجهات الرسمية
-- **التقدم بشكوى** عبر منصة مساند أو هيئة العمل
-- المطالبة بـ **المبالغ المستحقة + الفائدة وفق أحكام التأخير**
-
-الحكم الأرجح: **لصالح العامل** في حال توفر الإنذار الرسمي والتوثيق الكافي.`,
-      sources: [
-        { label: "نظام العمل السعودي — المادة (٨١)",  ref: "م/٥١ — ١٤٢٦هـ" },
-        { label: "نظام العمل السعودي — المادة (٩٠)",  ref: "م/٥١ — ١٤٢٦هـ" },
-        { label: "قرار وزير الموارد البشرية رقم ٥١٢٠٩", ref: "١٤٤٢هـ"       },
-      ],
-    },
-    {
-      content: `فيما يخص **صياغة البنود الاحترازية** لعقد الإيجار التجاري، أقترح الآتي:
-
-## بنود الحماية المقترحة
-
-**البند الأول — الإخلاء عند التأخر:**
-> يُعدّ المستأجر مخلاً بالتزاماته إذا تأخر في سداد الإيجار عن الموعد المحدد أكثر من خمسة عشر (١٥) يوماً، ويحق للمؤجر حينئذٍ إعذاره خطياً، وعند مضي سبعة (٧) أيام دون استجابة يحق له اللجوء لإخلاء العين فوراً.
-
-**البند الثاني — الغرامة التأخيرية:**
-> يستحق عن كل يوم تأخير في السداد غرامةٌ يومية قدرها (٢٪) من قيمة الإيجار الشهري، لا تتجاوز نسبتها الإجمالية (١٠٪) من قيمة العقد السنوي.
-
-**البند الثالث — الضمان:**
-> يُودع المستأجر ضماناً نقدياً قدره إيجار شهرين كاملين يُصادَر كلياً في حال الإخلال الجسيم.`,
-      sources: [
-        { label: "نظام الإيجار — اللائحة التنفيذية",   ref: "١٤٣٩هـ" },
-        { label: "قرار هيئة العقار رقم ١١٢",           ref: "١٤٤٣هـ" },
-      ],
-    },
-    {
-      content: `**استراتيجية الدفاع في قضية الفسخ التعسفي** تقوم على ثلاثة محاور:
-
-## المحور الأول — بطلان الفسخ
-
-يستلزم إثبات أن الفسخ جاء دون سبب مشروع وفق **المادة (٧٤) من نظام العمل**. ويتحقق ذلك بـ:
-- الطعن في أسباب الفسخ المُدّعاة وإثبات انعدامها أو عدم جسامتها
-- إثبات أن الإجراءات التأديبية لم تُستنفد قبل الفسخ
-
-## المحور الثاني — التعويض
-
-حتى في حال قبول الفسخ، يستحق الموظف **وفق المادة (٨٠)**:
-- مكافأة نهاية خدمة كاملة
-- راتب فترة الإشعار (لا تقل عن ٦٠ يوماً)
-- تعويض عادل يقدّره ديوان المظالم
-
-## المحور الثالث — المطالبة العكسية
-
-إن وُجدت مستحقات متأخرة (راتب، بدلات)، يُدرج بها في الدعوى للضغط على الطرف الآخر للتسوية.`,
-      sources: [
-        { label: "نظام العمل — المادة (٧٤)",  ref: "م/٥١" },
-        { label: "نظام العمل — المادة (٨٠)",  ref: "م/٥١" },
-        { label: "مبدأ قضائي ديوان المظالم ٢٤١٥", ref: "١٤٤١هـ" },
-      ],
-    },
-  ];
-  return responses[Math.floor(Math.random() * responses.length)];
-}
-
-// ─── Markdown-like renderer (simple) ──────────────────────────────────────────
-function RenderContent({ content, isDark }: { content: string; isDark: boolean }) {
-  const lines = content.split("\n");
-  return (
-    <div className="space-y-1.5 leading-relaxed">
-      {lines.map((line, i) => {
-        if (line.startsWith("## ")) {
-          return <p key={i} className={`text-[13px] font-black mt-2 ${isDark ? "text-white" : "text-zinc-900"}`}>{line.slice(3)}</p>;
-        }
-        if (line.startsWith("**") && line.endsWith("**")) {
-          return <p key={i} className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{line.slice(2, -2)}</p>;
-        }
-        if (line.startsWith("> ")) {
-          return (
-            <div key={i} className={`border-r-2 border-[#C8A762] pr-3 my-1.5 ${isDark ? "bg-white/[0.02]" : "bg-slate-50"} rounded-l-lg py-1.5`}>
-              <p className={`text-[11px] leading-relaxed dir-auto ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{line.slice(2)}</p>
-            </div>
-          );
-        }
-        if (line.startsWith("- ") || line.startsWith("• ")) {
-          return (
-            <div key={i} className="flex items-start gap-2">
-              <span className="text-[#C8A762] mt-1 flex-shrink-0 text-[10px]">•</span>
-              <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-600"}`}>{line.slice(2)}</p>
-            </div>
-          );
-        }
-        // bold inline
-        if (line.includes("**")) {
-          const parts = line.split(/\*\*(.*?)\*\*/g);
-          return (
-            <p key={i} className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
-              {parts.map((part, j) => j % 2 === 1 ? <strong key={j} className={isDark ? "text-zinc-200 font-bold" : "text-zinc-800 font-bold"}>{part}</strong> : part)}
-            </p>
-          );
-        }
-        if (!line.trim()) return <div key={i} className="h-1" />;
-        return <p key={i} className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-600"}`}>{line}</p>;
-      })}
-    </div>
-  );
-}
-
 // ─── Message bubble ────────────────────────────────────────────────────────────
 function MessageBubble({ msg, isDark }: { msg: Message; isDark: boolean }) {
   const [copied, setCopied] = useState(false);
   const isUser = msg.role === "user";
 
   function copy() {
-    navigator.clipboard.writeText(msg.content);
+    navigator.clipboard.writeText(stripCitationMarkers(msg.content));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
@@ -215,20 +105,16 @@ function MessageBubble({ msg, isDark }: { msg: Message; isDark: boolean }) {
         }`}>
           {isUser
             ? <p className="text-[13px] leading-relaxed">{msg.content}</p>
-            : <RenderContent content={msg.content} isDark={isDark} />
+            : msg.cites && msg.cites.length > 0
+              ? <CitedText text={msg.content} cites={msg.cites} isDark={isDark} className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-300" : "text-slate-700"}`} />
+              : <p className={`text-[12px] leading-relaxed whitespace-pre-wrap ${msg.failed ? (isDark ? "text-amber-400" : "text-amber-700") : isDark ? "text-zinc-400" : "text-slate-600"}`}>{msg.content}</p>
           }
         </div>
 
-        {/* Sources */}
-        {!isUser && msg.sources && msg.sources.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 px-1">
-            {msg.sources.map((s, i) => (
-              <span key={i} className={`flex items-center gap-1 text-[9px] font-medium px-2 py-0.5 rounded-full border ${
-                isDark ? "border-blue-700/20 bg-blue-900/10 text-blue-400" : "border-blue-200 bg-blue-50 text-blue-600"
-              }`}>
-                <BookOpen size={9} />{s.label}
-              </span>
-            ))}
+        {/* Sources: the library texts this reply cites */}
+        {!isUser && msg.cites && msg.cites.length > 0 && (
+          <div className="w-full px-1">
+            <SourceList cites={msg.cites} isDark={isDark} compact />
           </div>
         )}
 
@@ -323,6 +209,11 @@ export default function AssistantPage() {
   const [loading,     setLoading]     = useState(false);
   const [context,     setContext]     = useState<Context>("general");
   const [showCtxMenu, setShowCtxMenu] = useState(false);
+  // D3: the server keeps the conversation; the page only carries its id and
+  // counts the answered messages to show where the five end.
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [answered, setAnswered] = useState(0);
+  const [charged, setCharged] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef  = useRef<HTMLTextAreaElement>(null);
   const ctxRef    = useRef<HTMLDivElement>(null);
@@ -362,18 +253,22 @@ export default function AssistantPage() {
     if (inputRef.current) inputRef.current.style.height = "auto";
     setLoading(true);
 
-    // Simulate AI response delay
-    await new Promise(r => setTimeout(r, 1800 + Math.random() * 1000));
-
-    const { content: respContent, sources } = getMockResponse(content, context);
+    // The real assistant (plan §5 L4): the server searches the library for this
+    // message, answers from what it found, and keeps the conversation.
+    const answer = await askAssistant({ message: content, context, conversationId });
+    if (answer.conversationId) setConversationId(answer.conversationId);
+    if (answer.ok) {
+      setAnswered(n => n + 1);
+      if (answer.chargedPoints) setCharged(c => c + (answer.chargedPoints ?? 0));
+    }
     const aiMsg: Message = {
       id: (Date.now() + 1).toString(),
       role: "assistant",
-      content: respContent,
+      content: answer.text,
       timestamp: new Date(),
-      sources,
+      cites: asCitations(answer.citations),
+      failed: !answer.ok,
     };
-
     setMessages(prev => prev.filter(m => m.id !== "thinking").concat(aiMsg));
     setLoading(false);
   }
@@ -385,12 +280,21 @@ export default function AssistantPage() {
     }
   }
 
+  // A new conversation: the next message starts (and pays for) a fresh five.
   function clearChat() {
     setMessages([]);
+    setConversationId(null);
+    setAnswered(0);
+    setCharged(0);
   }
 
   function downloadChat() {
-    const text = messages.map(m => `[${m.role === "user" ? "أنت" : "نظامي"}] ${m.content}`).join("\n\n---\n\n");
+    const text = messages
+      .map(m => {
+        const sources = m.cites && m.cites.length > 0 ? "\n\nالمصادر:\n" + m.cites.map((c, i) => `${i + 1}. ${c.title}`).join("\n") : "";
+        return `[${m.role === "user" ? "أنت" : "نظامي"}] ${stripCitationMarkers(m.content)}${sources}`;
+      })
+      .join("\n\n---\n\n");
     const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement("a"); a.href = url; a.download = "nezamy-chat.txt"; a.click();
@@ -478,13 +382,7 @@ export default function AssistantPage() {
       <div className={`flex-1 overflow-y-auto px-4 py-4 space-y-4 scrollbar-thin ${isDark ? "bg-zinc-950/60" : "bg-slate-50/60"}`}>
         {!hasChat
           ? <WelcomeScreen onPrompt={t => { setInput(t); sendMessage(t); }} isDark={isDark} />
-          : messages.map(msg =>
-              msg.role === "assistant" && !msg.thinking ? (
-                <BetaReviewGate key={msg.id} toolId="assistant.result" toolName="نظامي أسيستنت" reviewScope="legal-data">
-                  <MessageBubble msg={msg} isDark={isDark} />
-                </BetaReviewGate>
-              ) : <MessageBubble key={msg.id} msg={msg} isDark={isDark} />
-            )
+          : messages.map(msg => <MessageBubble key={msg.id} msg={msg} isDark={isDark} />)
         }
         <div ref={bottomRef} />
       </div>
@@ -547,8 +445,19 @@ export default function AssistantPage() {
         </div>
 
         {/* Footer hint */}
-        <p className={`text-center text-[10px] mt-2 ${isDark ? "text-zinc-700" : "text-slate-400"}`}>
-          نظامي أسيستنت يُقدم معلومات قانونية استرشادية ولا يُغني عن محامٍ معتمد
+        <p className={`text-center text-[10px] mt-2 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+          {ASSISTANT_CONVERSATION_PRICE.toLocaleString("ar-SA")} نقطة لكل محادثة من {ASSISTANT_MESSAGES_PER_CONVERSATION.toLocaleString("ar-SA")} رسائل
+          {hasChat && <> · الرسالة {Math.min(answered + 1, ASSISTANT_MESSAGES_PER_CONVERSATION).toLocaleString("ar-SA")} من {ASSISTANT_MESSAGES_PER_CONVERSATION.toLocaleString("ar-SA")}</>}
+          {charged > 0 && <> · خُصمت {charged.toLocaleString("ar-SA")} نقطة</>}
+          {answered >= ASSISTANT_MESSAGES_PER_CONVERSATION && (
+            <>
+              {" · "}
+              <button onClick={clearChat} className="font-bold underline">ابدأ محادثة جديدة</button>
+            </>
+          )}
+        </p>
+        <p className={`text-center text-[10px] mt-1 ${isDark ? "text-zinc-700" : "text-slate-400"}`}>
+          إجابات من نصوص مكتبة نظامي وحدها، تُعالَج لدى مزوّد ذكاء اصطناعي خارج المملكة؛ لا تُغني عن مراجعة النص الرسمي ولا عن محامٍ مرخّص.
         </p>
       </div>
     </div>
