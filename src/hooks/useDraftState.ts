@@ -114,7 +114,9 @@ export function useDraftState(initialMode = "") {
     ];
   }
 
-  function buildIntake(): Record<string, unknown> {
+  // aiDraft: the AI's pleading, when the lawyer orders the team's optional
+  // review of it (L14) — carried in the notes so the team reviews that text.
+  function buildIntake(aiDraft = ""): Record<string, unknown> {
     return {
       schemaVersion: 1,
       service: "draft",
@@ -128,14 +130,14 @@ export function useDraftState(initialMode = "") {
       // screen and then silently dropped here — never reaching the admin.
       // Folded into the same free-text field lawyerNotes/submitNotes already
       // join, rather than dropping it (Task C6).
-      lawyerNotes: [notesText, lawyerNotes, submitNotes].filter(Boolean).join("\n\n"),
+      lawyerNotes: [notesText, lawyerNotes, submitNotes, aiDraft && `مسودة الذكاء الاصطناعي المطلوب مراجعتها:\n${aiDraft}`].filter(Boolean).join("\n\n"),
       attachments: uploadedAttachments,
     };
   }
 
-  async function submitOrder(): Promise<void> {
+  async function submitOrder(aiDraft = ""): Promise<void> {
     setSubmitErrors([]);
-    const intake = buildIntake();
+    const intake = buildIntake(aiDraft);
     const check = validateDraftIntake(intake);
     if (!check.ok) { setSubmitErrors(check.errors); return; }
 
@@ -199,7 +201,8 @@ export function useDraftState(initialMode = "") {
       }
       return !!(clientRole && memoType && legalBranch && memoSubType);
     }
-    if (step === "case")     return caseText.trim().length > 10 || !!caseFile;
+    // The facts typed (as validateDraftIntake asks) or in an attached file.
+    if (step === "case")     return caseText.trim().length >= 30 || uploadedAttachments.length > 0;
     return true;
   }
 

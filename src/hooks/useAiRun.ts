@@ -12,6 +12,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
  *
  * Errors are the server's Arabic message (402 points, 429 daily limit, 423
  * tool off, 504 timeout with points refunded…), never an invented result.
+ *
+ * A conversation tool answers with its `conversationId`; it is kept so the
+ * page can send the next turn into the same conversation.
  */
 
 export type AiRunPhase = "idle" | "starting" | "running" | "done" | "review" | "error";
@@ -25,6 +28,7 @@ export interface AiRunState {
   step: string | null;
   error: string | null;
   code: string | null;
+  conversationId: string | null;
 }
 
 const IDLE: AiRunState = {
@@ -36,6 +40,7 @@ const IDLE: AiRunState = {
   step: null,
   error: null,
   code: null,
+  conversationId: null,
 };
 
 const POLL_MS = 3000;
@@ -114,13 +119,14 @@ export function useAiRun() {
         if (!alive.current) return;
         const runId = typeof json.runId === "string" ? json.runId : null;
         const chargedPoints = typeof json.chargedPoints === "number" ? json.chargedPoints : 0;
+        const conversationId = typeof json.conversationId === "string" ? json.conversationId : opts.conversationId ?? null;
         if (res.status === 202 && runId) {
-          setState({ ...IDLE, phase: "running", runId, chargedPoints });
+          setState({ ...IDLE, phase: "running", runId, chargedPoints, conversationId });
           poll(runId, Date.now());
           return;
         }
         if (res.ok && json.status === "review") {
-          setState({ ...IDLE, phase: "review", runId, chargedPoints });
+          setState({ ...IDLE, phase: "review", runId, chargedPoints, conversationId });
           return;
         }
         if (res.ok) {
@@ -129,6 +135,7 @@ export function useAiRun() {
             phase: "done",
             runId,
             chargedPoints,
+            conversationId,
             output: (json.output as Record<string, unknown>) ?? null,
             citations: Array.isArray(json.citations) ? json.citations : [],
           });
@@ -138,6 +145,7 @@ export function useAiRun() {
           ...IDLE,
           phase: "error",
           runId,
+          conversationId,
           code: typeof json.code === "string" ? json.code : null,
           error: typeof json.error === "string" ? json.error : FALLBACK_ERROR,
         });

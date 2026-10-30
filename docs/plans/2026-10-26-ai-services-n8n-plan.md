@@ -607,6 +607,33 @@ L8 notes:
 >   - the common editor and DOCX/PDF export with the letterhead;
 >   - more than the page's 38 types.
 > - **Price disagreement (pricing files not edited):** the registry charges 1,000 (this plan), but `/pricing` (`TOOL_POINT_LABELS["ai:contracts"]` = «١٠») and the `lawyerServicesTable` row «صياغة العقود وتدقيقها ومصفوفة المخاطر» say 10 points. This needs the owner's call.
+
+> **Status 2026-10-30 — L14 built on `feat/ai-l14-drafter` (not merged, not deployed):**
+> - **Tool `legal-drafter`:** a job for lawyers and firms. Consultants are refused (Art. 18). Off by default. Library retrieval, the L8 citation check, optional files (PDF and images).
+> - **Two runs of one conversation:**
+>   - (A) «issues»: facts, issues, proposed defences, requests and what is missing. Charged the kind's price: 500, 1,000 or 1,500 (`src/lib/ai/draftKinds.ts`).
+>   - The lawyer keeps, rejects or edits each item.
+>   - (B) «draft»: written from what the lawyer kept. Free. A failed draft is retried free.
+>   - `runCore` refuses B before A has succeeded, refuses a change of kind, and refuses a third run.
+> - **n8n:** workflow **`hhmOLkcaPj3bojmh`** «NZAMY · AI · legal-drafter (L14 الصائغ القانوني)». It has the wave 4 `caseJob` shape, is active, and was live-tested on 30 Oct with a temp workflow (since deleted):
+>   - (A) Agent branch: 3 issues and 2 defences, citations [S1, S2];
+>   - (B) Agent branch: 3 sections, only the confirmed requests, `[....]` for unknown names;
+>   - (A) file branch: read a PDF and invented nothing.
+> - **Supersedes D9 per the owner's 30-Oct direction (NOTE-22):** generation is automatic. The team's review is a separate, optional order. «سيتولى فريق نظامي إعداد المذكرة يدوياً» is removed.
+> - **The pre-L14 fixes below are done:**
+>   - specialist modes submit;
+>   - attachments stand in for typed facts;
+>   - «مذكرة تعقيب» is added;
+>   - consultants are refused on the page and in the service-requests POST;
+>   - the price keys on the kind.
+> - **Not in L14:**
+>   - outline-then-sections drafting (one call writes the whole pleading);
+>   - the versioned editor;
+>   - letterhead DOCX/PDF (the export is .txt plus an HTML-based Word `.doc`);
+>   - `review` release mode (B needs A `succeeded`, so the tool must run in staff/live);
+>   - the specialist modes stay a team order.
+>   - Price conflict for the owner: NOTE-22 says appeal 800, this plan says 1,000, and `pricing.lawyers.ts` shows the drafter at 15 points.
+>   - Retrieval requires Pro tier or higher (`libraryAiAccess`).
 Shared engine:
 
 ```
@@ -661,7 +688,7 @@ Fix the drafter before L14:
 | D6 | Retention of inputs and outputs | **90 days**, then cleared; money facts kept |
 | D7 | Anthropic account and a monthly spend cap | The user opens the account. Cap set in the Anthropic console. The app alerts admins at 80% of a monthly budget we set |
 | D8 | Library search for retrieval | **Full-text now** (existing RPCs). Embeddings later if quality needs them |
-| D9 | Drafter (L14) output: always reviewed by a person before delivery? | **Yes, at launch** (owner policy «draft.final»). Revisit after a month |
+| D9 | Drafter (L14) output: always reviewed by a person before delivery? | **Yes, at launch** (owner policy «draft.final»). Revisit after a month. **30 Oct: the owner's latest direction (NOTE-22) overrides this. Generation is automatic; a person's review is a separate, optional order (L14 status, wave 5)** |
 | D10 | **Personal data leaves the Kingdom.** Case files, memos and scans go to Anthropic's servers outside Saudi Arabia. That is a cross-border transfer under the Saudi Personal Data Protection Law (PDPL) | **Required before any tool goes `live`:** a disclosure in the privacy policy and terms, and a one-line notice on each AI screen. Ask the owner, and check whether Anthropic offers zero data retention for this account. Until then, run tools only in `off` or for staff |
 | D11 | Prices: this plan uses the 25-Oct document plus his 26-Oct answers; his revised pricing document hasn't arrived | Re-check every price when it arrives. While D1 keeps charging off, nothing is blocked |
 

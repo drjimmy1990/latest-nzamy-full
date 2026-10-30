@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { validateDraftIntake, SERVICE_TYPE_BY_KEY } from "./orderIntake.ts";
+import { isPleadingDraftIntake, validateDraftIntake, SERVICE_TYPE_BY_KEY } from "./orderIntake.ts";
 
 const valid = {
   schemaVersion: 1,
@@ -28,6 +28,31 @@ test("rejects caseText shorter than 30 characters", () => {
   const r = validateDraftIntake({ ...valid, caseText: "قصير" });
   assert.equal(r.ok, false);
   if (!r.ok) assert.ok(r.errors.some((e) => e.includes("الوقائع")));
+});
+
+test("short or empty facts pass when the documents carry them", () => {
+  const r = validateDraftIntake({ ...valid, caseText: "", attachments: [{ documentId: 7, name: "لائحة.pdf", size: 10 }] });
+  assert.equal(r.ok, true);
+  if (r.ok) assert.equal(r.value.caseText, "");
+});
+
+test("a specialist mode needs neither a client role nor a branch", () => {
+  for (const memoType of ["arbitration", "notary", "report", "minutes"]) {
+    const r = validateDraftIntake({ ...valid, memoType, memoSubType: "x", clientRole: "", legalBranch: "" });
+    assert.equal(r.ok, true, memoType);
+    if (r.ok) assert.equal("clientRole" in r.value, false, "no role is stored for it");
+  }
+  const pleading = validateDraftIntake({ ...valid, clientRole: "", legalBranch: "" });
+  assert.equal(pleading.ok, false, "a pleading still needs both");
+  if (!pleading.ok) assert.equal(pleading.errors.length, 2);
+});
+
+test("a pleading draft order is told apart from a specialist one (Art. 18 gate)", () => {
+  assert.equal(isPleadingDraftIntake(valid), true);
+  assert.equal(isPleadingDraftIntake({ ...valid, memoType: "appeal" }), true);
+  assert.equal(isPleadingDraftIntake({ ...valid, memoType: "notary" }), false);
+  assert.equal(isPleadingDraftIntake({ ...valid, service: "contracts" }), false);
+  assert.equal(isPleadingDraftIntake(null), false);
 });
 
 test("rejects an unknown clientRole", () => {

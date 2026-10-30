@@ -10,6 +10,8 @@ import { recordNotification } from "@/lib/notify";
 import { stripInternalNotes } from "@/lib/services/internalNotes";
 import { isKnownReceiver, ownRequestsOrFilter } from "@/lib/services/ownRequestsFilter";
 import { checkOrderIntake, intakeErrorMessageAr } from "@/lib/services/intakeGuard";
+import { isPleadingDraftIntake } from "@/lib/services/orderIntake";
+import { assertCourtPractice } from "@/lib/auth/assertCourtPractice";
 import { validateServiceRequestCreate } from "@/lib/services/serviceRequestIntake";
 import { resolveServiceRequestEntityScope } from "@/lib/auth/serviceRequestEntityScope";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -379,6 +381,14 @@ export async function POST(request: NextRequest) {
         { error: intakeErrorMessageAr(intakeCheck.errors) },
         { status: 400 },
       );
+    }
+
+    // Art. 18: a legal consultant does not plead, so he may not order a
+    // pleading from الصائغ القانوني either (the page hides it; this is the
+    // server's half). The specialist documents stay open to him.
+    if (intakeCheck.kind === "ok" && intakeCheck.service === "draft" && isPleadingDraftIntake((requestData.metadata as { intake?: unknown }).intake)) {
+      const refused = await assertCourtPractice(supabase, user.id);
+      if (refused) return refused;
     }
 
     // Task 6d follow-up — clamp the creation-time status. Without this, a
