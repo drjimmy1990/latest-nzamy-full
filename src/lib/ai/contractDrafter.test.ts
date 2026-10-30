@@ -10,7 +10,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { fakeDb, type FakeQuery } from "../payments/fakeDb.test-helper.ts";
 import { callbackWith, startRunWith, type RunActor, type StartRunDeps } from "./runCore.ts";
-import { AI_TOOLS, CONTRACT_DRAFT_PRICE, CONTRACT_TYPES } from "./tools.ts";
+import { AI_TOOLS, CONTRACT_DRAFT_PRICE, CONTRACT_FIELD_MAX, CONTRACT_TYPES } from "./tools.ts";
 import { asContractDraft, contractDraftFields, contractDraftText } from "../../app/ai/contract-drafter/_components/contractDraft.ts";
 
 const RUN = "11111111-2222-4333-8444-555555555555";
@@ -70,16 +70,21 @@ test("the registry entry: a 500-point job, off by default, no files, lawyers and
   assert.deepEqual([...CONTRACT_TYPES], ["rent", "service", "employment", "partnership", "sale", "other"]);
 });
 
-test("input: a known type and at least two filled fields; blanks dropped, long values bounded, 15 fields at most", () => {
+test("input: a known type and at least two filled fields; blanks left out; too long or too many is refused, never cut", () => {
   const v = AI_TOOLS["contract-drafter"].validateInput;
   assert.equal(v({ ...input, type: "loan" }).ok, false);
   assert.equal(v({ type: "rent" }).ok, false);
   assert.equal(v({ type: "rent", fields: [{ label: "اسم المؤجر", value: "محمد" }] }).ok, false);
-  const r = v({ type: "rent", fields: [...input.fields, { label: "ملاحظات", value: "   " }, "x", { label: "", value: "y" }] });
+  const r = v({ type: "rent", fields: [...input.fields, { label: "ملاحظات", value: "   " }, "x", { label: "بلا قيمة" }] });
   assert.deepEqual(r.ok && r.input, input);
-  const many = Array.from({ length: 30 }, (_, i) => ({ label: `حقل ${i}`, value: "قيمة" }));
-  const m = v({ type: "other", fields: many });
-  assert.equal(m.ok && (m.input.fields as unknown[]).length, 15);
+  assert.equal(v({ type: "rent", fields: [...input.fields, { label: "", value: "y" }] }).ok, false, "a value with no label");
+  const long = v({ type: "rent", fields: [...input.fields, { label: "ملاحظات إضافية", value: "ب".repeat(CONTRACT_FIELD_MAX + 1) }] });
+  assert.equal(long.ok, false);
+  assert.match(!long.ok ? long.error : "", /«ملاحظات إضافية» أطول من/);
+  const edge = v({ type: "rent", fields: [...input.fields, { label: "ملاحظات", value: "ب".repeat(CONTRACT_FIELD_MAX) }] });
+  assert.equal(edge.ok, true);
+  const many = Array.from({ length: 16 }, (_, i) => ({ label: `حقل ${i}`, value: "قيمة" }));
+  assert.equal(v({ type: "other", fields: many }).ok, false);
 });
 
 test("output: a title and two sections at least; cited kept for the enricher", () => {
@@ -92,6 +97,12 @@ test("output: a title and two sections at least; cited kept for the enricher", (
   assert.equal(v({ ...draft, title: "" }, input), null);
   assert.equal(v({ ...draft, sections: [{ heading: "x" }, { body: "y" }] }, input), null);
   assert.deepEqual((v({ title: "t", sections: draft.sections }, input) as Record<string, any>).cited, []);
+  // All or nothing: one bad or over-long clause refuses (and refunds) the whole draft.
+  const long = { heading: "البند الثالث: الالتزامات", body: "ب".repeat(12001) };
+  assert.equal(v({ ...draft, sections: [...draft.sections, long] }, input), null);
+  assert.equal(v({ ...draft, sections: [...draft.sections, { heading: "البند الثالث", body: "" }] }, input), null);
+  assert.equal(v({ ...draft, preamble: "ت".repeat(4001) }, input), null);
+  assert.equal((v({ ...draft, sections: [...draft.sections, { ...long, body: "ب".repeat(12000) }] }, input) as Record<string, any>).sections.length, 3);
 });
 
 test("a lawyer and an individual both start the job: charged 500, sent to n8n with no files", async () => {

@@ -126,10 +126,10 @@ export function StepDetailsForm({ selectedType, formData, onChange, onBack, onNe
                   <CaretDown size={16} weight="bold" className={`absolute top-1/2 -translate-y-1/2 ${isRTL ? "left-4" : "right-4"} pointer-events-none ${isDark ? "text-zinc-500" : "text-zinc-400"}`} />
                 </div>
               ) : field.type === "textarea" ? (
-                <textarea rows={4} value={formData[field.id] || ""} onChange={e => onChange(field.id, e.target.value)} placeholder={field.placeholder}
+                <textarea rows={4} maxLength={2000} value={formData[field.id] || ""} onChange={e => onChange(field.id, e.target.value)} placeholder={field.placeholder}
                   className={`w-full rounded-2xl border px-4 py-3 text-[14px] outline-none focus:ring-2 focus:ring-[#0B3D2E] resize-none transition-all shadow-sm ${isDark ? "border-white/10 bg-zinc-800 text-white placeholder:text-zinc-600" : "border-zinc-200 bg-zinc-50 text-zinc-900 placeholder:text-zinc-400"}`} />
               ) : (
-                <input type={field.type} value={formData[field.id] || ""} onChange={e => onChange(field.id, e.target.value)} placeholder={field.placeholder}
+                <input type={field.type} maxLength={2000} value={formData[field.id] || ""} onChange={e => onChange(field.id, e.target.value)} placeholder={field.placeholder}
                   className={`w-full rounded-2xl border px-4 py-3 text-[14px] outline-none focus:ring-2 focus:ring-[#0B3D2E] transition-all shadow-sm ${isDark ? "border-white/10 bg-zinc-800 text-white placeholder:text-zinc-600" : "border-zinc-200 bg-zinc-50 text-zinc-900 placeholder:text-zinc-400"}`} />
               )}
             </div>

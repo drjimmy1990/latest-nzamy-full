@@ -141,7 +141,8 @@ No SQL. No new npm package.
    - Tick the agreement box and press the generate button. The button shows its spinner and a line says the AI is writing (about 30–90 seconds).
    - The draft appears under «مسوّدة عقدك جاهزة ✓»: a title, a preamble and numbered sections. Details you left out appear as `[....]`.
    - Under the text: the articles the contract relies on, each with the library's verdict, and «خُصمت ٥٠٠ نقطة».
-   - Press «رجوع», change one field and generate again: a second, new draft, charged again.
+   - Press «رجوع», change one field and generate again: a second, new draft, charged again. «رجوع» discards the draft on screen and there is no results page yet, so copy it or save it to the vault first.
+   - A field over 2,000 characters cannot be typed (the form caps it); the server refuses one too, before any charge. A draft with any empty or over-long clause is refused as a whole and refunded, never shown with a clause missing.
    - Try «عقد عمل» too: it should cite نظام العمل.
 5. **Turned off** (the default): the button returns the server's message and charges nothing.
 
