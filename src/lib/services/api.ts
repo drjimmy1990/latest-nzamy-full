@@ -34,8 +34,57 @@ export const isSupabaseMode = typeof window !== "undefined" && backendIsSupabase
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
+/**
+ * Opt-in per call (owner handoff 2026-10-30, CODE-F23). Without `timeoutMs`
+ * a call behaves exactly as it always has — no timeout — so none of the ~85
+ * existing callers changes. An app-wide default is NOT set here.
+ */
+export interface ApiCallOptions {
+  /** Give up waiting after this many milliseconds and throw ApiTimeoutError. */
+  timeoutMs?: number;
+}
+
+/**
+ * The wait was abandoned; the outcome is UNKNOWN. Aborting the fetch does not
+ * cancel the server: a write may still have been applied. A caller must never
+ * retry a write on its own after this — only with the same idempotency key,
+ * and only when the person asks.
+ */
+export class ApiTimeoutError extends Error {
+  readonly uncertain = true;
+  constructor(message = "لم يصل رد الخادم في الوقت المحدد — لا نعرف إن كان الطلب قد نُفِّذ.") {
+    super(message);
+    this.name = "ApiTimeoutError";
+  }
+}
+
+/** fetch + body read under one deadline when `timeoutMs` is set. */
+async function fetchJsonWithin<T>(
+  input: string,
+  init: RequestInit,
+  options: ApiCallOptions | undefined,
+  read: (response: Response) => Promise<T>,
+): Promise<T> {
+  const timeoutMs = options?.timeoutMs;
+  if (!timeoutMs || timeoutMs <= 0) return read(await fetch(input, init));
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await read(await fetch(input, { ...init, signal: controller.signal }));
+  } catch (err) {
+    if (controller.signal.aborted) throw new ApiTimeoutError();
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Generic typed fetch to internal API routes */
-export async function apiGet<T>(path: string, params?: Record<string, string | number | boolean | undefined>): Promise<T> {
+export async function apiGet<T>(
+  path: string,
+  params?: Record<string, string | number | boolean | undefined>,
+  options?: ApiCallOptions,
+): Promise<T> {
   const url = new URL(path, window.location.origin);
   if (params) {
     for (const [key, value] of Object.entries(params)) {
@@ -44,7 +93,7 @@ export async function apiGet<T>(path: string, params?: Record<string, string | n
       }
     }
   }
-  const response = await fetch(url.toString(), {
+  return fetchJsonWithin(url.toString(), {
     headers: { "Content-Type": "application/json; charset=utf-8" },
     // `same-origin` is already the browser default; it is written out because
     // every /api/v1 route authenticates from the `sb-<ref>-auth-token*` cookies
@@ -55,12 +104,13 @@ export async function apiGet<T>(path: string, params?: Record<string, string | n
     // cookies and come back 401.
     credentials: "same-origin",
     cache: "no-store",
+  }, options, async (response) => {
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({ error: "Request failed" }));
+      throw new Error(errorBody.error || `API error: ${response.status}`);
+    }
+    return response.json() as Promise<T>;
   });
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({ error: "Request failed" }));
-    throw new Error(errorBody.error || `API error: ${response.status}`);
-  }
-  return response.json() as Promise<T>;
 }
 
 /** Generic typed POST/PATCH/PUT/DELETE to internal API routes */
@@ -68,6 +118,7 @@ export async function apiMutate<T>(
   path: string,
   method: "POST" | "PATCH" | "PUT" | "DELETE",
   body?: unknown,
+  options?: ApiCallOptions,
 ): Promise<T> {
   // Owner decision ١١٥: demo mode is local-only end to end. Whatever a demo
   // screen tries to save, it never reaches a server — so demo data cannot land
@@ -76,7 +127,7 @@ export async function apiMutate<T>(
   if (isDemoMode) {
     throw new Error("وضع العرض التجريبي محلي بالكامل: لا يُرسَل أي حفظ أو تعديل إلى الخادم.");
   }
-  const response = await fetch(path, {
+  return fetchJsonWithin(path, {
     method,
     headers: { "Content-Type": "application/json; charset=utf-8" },
     // Same reasoning as apiGet above. `cache: "no-store"` joins it here: a
@@ -86,14 +137,15 @@ export async function apiMutate<T>(
     credentials: "same-origin",
     cache: "no-store",
     body: body !== undefined ? JSON.stringify(body) : undefined,
+  }, options, async (response) => {
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({ error: "Request failed" }));
+      throw new Error(errorBody.error || `API error: ${response.status}`);
+    }
+    // Some endpoints return 204 No Content
+    if (response.status === 204) return undefined as T;
+    return response.json() as Promise<T>;
   });
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({ error: "Request failed" }));
-    throw new Error(errorBody.error || `API error: ${response.status}`);
-  }
-  // Some endpoints return 204 No Content
-  if (response.status === 204) return undefined as T;
-  return response.json() as Promise<T>;
 }
 
 // ─── Dual-mode wrapper ────────────────────────────────────────────────────────

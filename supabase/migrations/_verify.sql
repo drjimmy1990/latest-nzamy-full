@@ -5040,3 +5040,72 @@ begin
   raise notice '_verify: 20261030_10 OK — notes keep their original author; a consulting office keeps a removed lawyer''s court rows with him; tax invoices never deleted';
 end $$;
 -- <<< verify:accounts_firms_owner_answers
+-- >>> verify:invoice_collections — supabase/tests/rls/invoice_collections.test.sql
+-- 2026-10-30 — 20261030_10_invoice_collections_atomic.sql (owner handoff
+-- CODE-F02 / LIVE-F36). Read-only, safe to repeat. Before 20261030_10 runs it
+-- only reports; after, it raises when a signed-in session could record a
+-- payment or write the ledger, or the function lost its settings.
+do $$
+declare fn constant text := 'public.record_invoice_collection(text,uuid,bigint,text,bigint,text)'; role_name text;
+begin
+  if to_regclass('public.invoice_collections') is null then
+    raise notice '_verify: 20261030_10 is not applied yet — invoice payments are still stored by overwrite'; return;
+  end if;
+  if to_regprocedure(fn) is null then
+    raise exception '_verify: 20261030_10 — % is missing (re-run 20261030_10)', fn;
+  end if;
+  if not exists (select 1 from pg_proc where oid = to_regprocedure(fn) and prosecdef and proconfig @> array['search_path=""']) then
+    raise exception '_verify: 20261030_10 — % is not SECURITY DEFINER with search_path '''' (re-run 20261030_10)', fn;
+  end if;
+  foreach role_name in array array['anon','authenticated'] loop
+    if exists (select 1 from pg_roles where rolname = role_name) then
+      if has_function_privilege(role_name, fn, 'EXECUTE') then
+        raise exception '_verify: 20261030_10 — % can EXECUTE % (re-run 20261030_10)', role_name, fn;
+      end if;
+      if has_table_privilege(role_name, 'public.invoice_collections', 'INSERT')
+         or has_table_privilege(role_name, 'public.invoice_collections', 'UPDATE')
+         or has_table_privilege(role_name, 'public.invoice_collections', 'DELETE') then
+        raise exception '_verify: 20261030_10 — % can write public.invoice_collections (re-run 20261030_10)', role_name;
+      end if;
+    end if;
+  end loop;
+  if exists (select 1 from pg_roles where rolname = 'service_role') and not has_function_privilege('service_role', fn, 'EXECUTE') then
+    raise exception '_verify: 20261030_10 — service_role cannot EXECUTE %: every payment the lawyer records answers 503 (re-run 20261030_10)', fn;
+  end if;
+  if not exists (select 1 from pg_class where oid = 'public.invoice_collections'::regclass and relrowsecurity) then
+    raise exception '_verify: 20261030_10 — RLS is off on public.invoice_collections (re-run 20261030_10)';
+  end if;
+  if not exists (select 1 from pg_indexes where schemaname = 'public' and indexname = 'invoice_collections_idempotency_key_key') then
+    raise exception '_verify: 20261030_10 — the idempotency key is not UNIQUE: a retried form could book a payment twice (re-run 20261030_10)';
+  end if;
+  raise notice '_verify: 20261030_10 OK — invoice payments are added under a lock, stale forms and overpayments refused, ledger server-only';
+end $$;
+-- <<< verify:invoice_collections
+-- >>> verify:create_lawyer_invoice — supabase/tests/rls/create_lawyer_invoice.test.sql
+-- 2026-10-30 — 20261030_20_create_invoice_atomic.sql (owner handoff CODE-F22 /
+-- CODE-F21). Read-only, safe to repeat. Before 20261030_20 runs it only
+-- reports; after, it raises when a signed-in session could issue an invoice or
+-- the one-invoice-per-form key is gone.
+do $$
+declare fn constant text := 'public.create_lawyer_invoice(uuid,text,bigint,text,text,uuid,text,text,text,text,text)'; role_name text;
+begin
+  if to_regprocedure(fn) is null then
+    raise notice '_verify: 20261030_20 is not applied yet — invoices are still issued as two separate writes'; return;
+  end if;
+  if not exists (select 1 from pg_proc where oid = to_regprocedure(fn) and prosecdef and proconfig @> array['search_path=""']) then
+    raise exception '_verify: 20261030_20 — % is not SECURITY DEFINER with search_path '''' (re-run 20261030_20)', fn;
+  end if;
+  foreach role_name in array array['anon','authenticated'] loop
+    if exists (select 1 from pg_roles where rolname = role_name) and has_function_privilege(role_name, fn, 'EXECUTE') then
+      raise exception '_verify: 20261030_20 — % can EXECUTE % (re-run 20261030_20)', role_name, fn;
+    end if;
+  end loop;
+  if exists (select 1 from pg_roles where rolname = 'service_role') and not has_function_privilege('service_role', fn, 'EXECUTE') then
+    raise exception '_verify: 20261030_20 — service_role cannot EXECUTE %: every new invoice answers 503 (re-run 20261030_20)', fn;
+  end if;
+  if not exists (select 1 from pg_indexes where schemaname = 'public' and indexname = 'payments_create_key_key') then
+    raise exception '_verify: 20261030_20 — payments_create_key_key is missing: a retried form could issue a second invoice (re-run 20261030_20)';
+  end if;
+  raise notice '_verify: 20261030_20 OK — one invoice per form, issued in one transaction after the ownership checks; server only';
+end $$;
+-- <<< verify:create_lawyer_invoice
