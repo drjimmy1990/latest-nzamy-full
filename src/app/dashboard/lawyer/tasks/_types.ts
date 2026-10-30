@@ -4,7 +4,9 @@ export type Priority = "urgent" | "high" | "normal" | "low";
 export type TaskStatus = "todo" | "in_progress" | "done" | "archived";
 export type TaskCategory = "case" | "document" | "admin" | "deadline" | "client";
 export type ViewMode = "list" | "kanban";
-export type TimeRange = "all" | "today" | "week" | "month" | "quarter" | "year";
+// "nodate" (CODE-F10): tasks without a due date are an explicit choice, never
+// implicitly part of «اليوم» or any other period.
+export type TimeRange = "all" | "today" | "week" | "month" | "quarter" | "year" | "nodate";
 export type KanbanGroupBy = "status" | "priority" | "category" | "due";
 
 export interface Task {
