@@ -4,6 +4,7 @@ import type { SidebarGroup, SidebarItem } from "./navigation.types";
 // load this module — navigation.consultant.test.ts runs getSidebarByUserType.
 import { isConsultantBlockedPath, type PracticeKind } from "../lib/auth/practiceKind.ts";
 import type { StaffRole } from "../lib/auth/staffRoles.ts";
+import { withComingSoonLast } from "./navigation.comingSoon.ts";
 import {
   adminSidebarForRole,
   CORPORATE_SIDEBAR,
@@ -500,6 +501,10 @@ export function getSidebarByUserType(
       items: group.items.filter(item => !hiddenHrefs.includes(item.href))
     })).filter(group => group.items.length > 0);
   }
+
+  // ── Owner UX08 (2026-10-30): «قريباً» rows in their own last section ─────
+  // The lawyer menu only. Same rows, same badges — only where they sit.
+  if (userType === "lawyer") base = withComingSoonLast(base);
 
   // ── Art. 18: the consultant's sidebar has no pleading or hearings tools ───
   // Last, so it also covers anything the multi-role merge above added.
