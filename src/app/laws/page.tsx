@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useRouter } from "next/navigation";
+import { instantBoxItems, type InstantItem } from "./instantBox";
 import { normalizeArabic, normalizeSearch } from "@/utils/normalizeArabic";
 import { stripMarkdownMarks } from "@/lib/text/stripMarkdownMarks";
 import { withoutLeadingHeadings } from "./components/summaryClamp";
@@ -127,6 +129,7 @@ type ArticleStatusFilter = (typeof ARTICLE_STATUS_FILTER_OPTIONS)[number]["value
 // ─── Main Page ──────────────────────────────────────────────────────────────────
 export default function LegalLibraryPage() {
   const { isRTL, isDark } = useTheme();
+  const router = useRouter();
   const { isLoggedIn }    = useUser();
 
   // --- Database-backed state variables ---
@@ -224,7 +227,7 @@ export default function LegalLibraryPage() {
   // null = no API answer (demo mode / request failed): the dropdown then counts
   // the local lists. Otherwise exact / «أكثر من ١٬٠٠٠» / degraded per section.
   const [autocompleteCounts, setAutocompleteCounts] = useState<SearchCountsInfo | null>(null);
-  const [autocompleteMatches, setAutocompleteMatches] = useState<{ label: string; type: string; typeLabel: string; id?: string }[]>([]);
+  const [autocompleteMatches, setAutocompleteMatches] = useState<InstantItem[]>([]);
   const autocompleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Only the newest autocomplete request may write state: an older, slower
   // response for a previous query is aborted or dropped.
@@ -260,11 +263,13 @@ export default function LegalLibraryPage() {
         const data = await res.json();
         if (requestId !== autocompleteRequestIdRef.current) return;
         setAutocompleteCounts(data?.counts ? readSearchCounts(data) : unavailable);
-        const matches = (data.topMatches || []).map((m: { title: string; section: string; slug: string; snippet?: string }) => ({
-          label: stripMarkdownMarks(m.title),
-          type: m.section === "laws" ? "laws" : m.section === "orders" ? "orders" : m.section === "feqh" ? "feqh" : "precedents",
-          typeLabel: m.section === "laws" ? (isRTL ? "نظام" : "Law") : m.section === "orders" ? (isRTL ? "مرسوم" : "Decree") : m.section === "feqh" ? (isRTL ? "كتاب" : "Book") : (isRTL ? "مبدأ" : "Principle"),
-          id: m.slug,
+        // Owner note ١٢-٢: badge + distinctive name + the document's link
+        // (instantBox.ts); a locked principle arrives with no snippet.
+        const matches = instantBoxItems(data.topMatches || [], q).map((m) => ({
+          ...m,
+          label: stripMarkdownMarks(m.label),
+          core: stripMarkdownMarks(m.core),
+          snippet: stripMarkdownMarks(m.snippet),
         }));
         setAutocompleteMatches(matches);
       }
@@ -807,12 +812,14 @@ export default function LegalLibraryPage() {
     // Fallback (demo mode only): scan local demo data for basic matching.
     // In supabase mode the API autocomplete above is authoritative — no mock.
     if (isSupabaseMode) return [];
-    const results: { label: string; type: string; typeLabel: string; id?: string }[] = [];
+    const results: InstantItem[] = [];
     PhosphorIcons; // reference to prevent unused warning if any
 
     DEMO_PRINCIPLES.forEach(p => {
-      if ((normalizeSearch(p.text).includes(nq) || normalizeSearch(p.source).includes(nq)) && (activeType === "all" || activeType === "precedents"))
-        results.push({ label: stripMarkdownMarks(p.text).substring(0, 60) + "...", type: "precedents", typeLabel: isRTL ? "مبدأ" : "Principle" });
+      if ((normalizeSearch(p.text).includes(nq) || normalizeSearch(p.source).includes(nq)) && (activeType === "all" || activeType === "precedents")) {
+        const label = stripMarkdownMarks(p.text).substring(0, 60) + "...";
+        results.push({ label, core: label, badge: "مبدأ", type: "precedents", href: "", snippet: "", locked: false, id: String(p.id) });
+      }
     });
     return results.slice(0, 6);
   })() : [];
@@ -1562,28 +1569,55 @@ export default function LegalLibraryPage() {
                     {/* Results list */}
                     <div className="max-h-[320px] overflow-y-auto">
                       {searchSuggestions.map((s, i) => (
-                        <button key={i}
-                          onMouseDown={() => {
-                            setSearch(s.label.replace(/\.\.\.$/, ""));
-                            if (s.type === "laws" && s.id) setActiveType("laws");
-                            else if (s.type === "precedents") setActiveType("precedents");
+                        <button key={`${s.type}:${s.id}:${i}`}
+                          type="button"
+                          title={s.label}
+                          data-testid="instant-box-item"
+                          onMouseDown={(e) => {
+                            // Owner note ١٢-٢: a suggestion OPENS its document (with
+                            // ?q=); it no longer copies its title into the box.
+                            e.preventDefault();
                             setShowSuggest(false);
+                            if (s.href) {
+                              router.push(s.href);
+                              return;
+                            }
+                            // No document link (a principle outside any collection,
+                            // demo rows): show that section's results for the query.
+                            setActiveType(s.type as ContentType);
                           }}
-                          className={`w-full flex items-center gap-3 px-4 py-3 text-sm text-right transition border-b last:border-0 ${
+                          className={`w-full flex items-start gap-3 px-4 py-3 text-sm text-right transition border-b last:border-0 ${
                             isDark
                               ? "hover:bg-white/5 text-zinc-200 border-white/[0.04]"
                               : "hover:bg-gray-50 text-gray-800 border-gray-100"
                           }`}
                           dir={isRTL ? "rtl" : "ltr"}
                         >
-                          <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                            s.type === "laws" ? (isDark ? "bg-green-900/30 text-green-400" : "bg-green-50 text-green-700") :
+                          <span className={`shrink-0 mt-0.5 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            s.badge === "نظام" ? (isDark ? "bg-green-900/30 text-green-400" : "bg-green-50 text-green-700") :
+                            s.badge === "لائحة" ? (isDark ? "bg-sky-900/30 text-sky-300" : "bg-sky-50 text-sky-700") :
+                            s.badge === "فقه" ? (isDark ? "bg-purple-900/30 text-purple-300" : "bg-purple-50 text-purple-700") :
+                            s.badge === "أمر" ? (isDark ? "bg-blue-900/30 text-blue-300" : "bg-blue-50 text-blue-700") :
                             isDark ? "bg-amber-900/30 text-amber-400" : "bg-amber-50 text-amber-700"
-                          }`}>{s.typeLabel}</span>
-                          <span
-                            className="flex-1 truncate text-[13px] font-medium"
-                            dangerouslySetInnerHTML={{ __html: highlightText(s.label, search) }}
-                          />
+                          }`}>{s.badge}</span>
+                          <span className="flex-1 min-w-0">
+                            <span className="flex items-center gap-1.5">
+                              <span
+                                className="truncate text-[13px] font-bold"
+                                dangerouslySetInnerHTML={{ __html: highlightText(s.core || s.label, search) }}
+                              />
+                              {s.locked && <PhosphorIcons.Lock size={11} weight="fill" className="shrink-0 text-[#C8A762]" aria-label="للمشتركين" />}
+                            </span>
+                            {s.core && s.core !== s.label && (
+                              <span className={`block truncate text-[11px] ${isDark ? "text-gray-400" : "text-gray-500"}`}>{s.label}</span>
+                            )}
+                            {s.snippet && (
+                              <span
+                                className={`block text-[11px] leading-relaxed line-clamp-2 ${isDark ? "text-gray-300" : "text-gray-600"}`}
+                                dangerouslySetInnerHTML={{ __html: highlightText(s.snippet, search) }}
+                              />
+                            )}
+                          </span>
                         </button>
                       ))}
                     </div>
