@@ -7,6 +7,7 @@ import {
   isValidTaxNumber, isValidUnifiedNumber700, isRatingFigure, feePairIssue,
 } from "@/lib/services/clientIdentityRules";
 import { hashNationalId, normalizedCommercialRegister } from "@/lib/services/clientIdentityHash";
+import { checkSaudiPhone, checkOptionalEmail } from "@/lib/services/contactFieldRules";
 import {
   CARD_SELECT, cardToDto, foldRequest, zeroStats, dbErrorResponse, digitsOnly,
   type CardRow, type Stats,
@@ -211,8 +212,20 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       }
       patch.status = status;
     }
-    if (phone !== undefined) patch.phone = phone?.trim() || null;
-    if (email !== undefined) patch.email = email?.trim() || null;
+    // LIVE-F22 — same rules as POST (contactFieldRules.ts). The type that
+    // decides whether a 920 number is allowed is the one this PATCH sets, or
+    // else the card's stored type.
+    if (phone !== undefined) {
+      const effectiveType = clientType !== undefined ? clientType : existingCard.client_type;
+      const checked = checkSaudiPhone(phone, { allowUnified: effectiveType === "company" });
+      if (!checked.ok) return NextResponse.json({ error: checked.error, field: "phone" }, { status: 400 });
+      patch.phone = checked.value;
+    }
+    if (email !== undefined) {
+      const checked = checkOptionalEmail(email);
+      if (!checked.ok) return NextResponse.json({ error: checked.error, field: "email" }, { status: 400 });
+      patch.email = checked.value;
+    }
     if (city !== undefined) patch.city = city?.trim() || null;
     // linkTargetUserId is set ONLY when this PATCH performs a fresh LINK —
     // that is what triggers propagation below. An unlink (null/"") clears

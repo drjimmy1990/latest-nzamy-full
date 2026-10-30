@@ -5,11 +5,11 @@ import { Users, Plus, HandHeart, CheckCircle, Warning } from "@phosphor-icons/re
 import { useTheme } from "@/components/ThemeProvider";
 import EmptyState from "@/components/ui/EmptyState";
 
-const VOLUNTEERS = [
-  { name: "ريم الحربي",        role: "منسقة فعاليات",  status: "نشط",          hours: 47, hasContract: true },
-  { name: "عبدالعزيز الدوسري", role: "مصمم جرافيك",   status: "نشط",          hours: 31, hasContract: true },
-  { name: "نورة القحطاني",     role: "مدربة تطوعية",   status: "موقف مؤقتاً",  hours: 18, hasContract: false },
-];
+// LIVE-F07 (owner package 2026-10-30): this list showed three invented
+// volunteers — names, hours and contract states — as if they were the
+// association's own. There is no volunteer table behind this screen yet, so
+// it now shows none and says so (the previous rows are in git history).
+const VOLUNTEERS: { name: string; role: string; status: string; hours: number; hasContract: boolean }[] = [];
 
 export default function NGOVolunteersPage() {
   const { isDark } = useTheme();
@@ -43,10 +43,15 @@ export default function NGOVolunteersPage() {
               className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-bold transition ${isDark ? "bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 text-emerald-400" : "bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-700"}`}>
               <HandHeart size={14} /> صائغ عقد تطوع
             </a>
-            <button className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-bold transition ${isDark ? "bg-white/5 border border-white/10 hover:bg-white/10 text-zinc-200" : "bg-gray-100 border border-gray-200 hover:bg-gray-200 text-gray-700"}`}>
+            <a href="/dashboard/ngo/volunteers/new" className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-bold transition ${isDark ? "bg-white/5 border border-white/10 hover:bg-white/10 text-zinc-200" : "bg-gray-100 border border-gray-200 hover:bg-gray-200 text-gray-700"}`}>
               <Plus size={14} /> متطوع جديد
-            </button>
+            </a>
           </div>
+        </div>
+
+        <div role="note" className={`flex items-start gap-2 rounded-xl border p-3 text-xs leading-relaxed ${isDark ? "border-amber-500/20 bg-amber-500/5 text-amber-200" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+          <Warning size={14} weight="fill" className="mt-0.5 shrink-0" />
+          <span>سجل المتطوعين غير مكتمل بعد: لا توجد قاعدة بيانات للمتطوعين، فلا يُحفظ أي متطوع ولا تظهر هنا ساعات أو عقود حقيقية.</span>
         </div>
 
         {/* Table */}
@@ -58,8 +63,8 @@ export default function NGOVolunteersPage() {
             {VOLUNTEERS.length === 0 ? (
               <EmptyState
                 icon={<Users size={28} weight="duotone" />}
-                title="لا يوجد متطوعون حتى الآن"
-                description="اضغط «متطوع جديد» أو استخدم صائغ عقد التطوع لإضافة أوّل متطوع"
+                title="لا يوجد متطوعون محفوظون"
+                description="حفظ المتطوعين غير متاح بعد. يمكنك تجربة نموذج التسجيل للتحقق من صيغة البيانات، أو صياغة عقد تطوع."
                 action={{ label: "إضافة متطوع", href: '/dashboard/ngo/volunteers/new' }}
                 secondaryAction={{ label: "صائغ عقد", href: '/ai/ngo/volunteer-contract' }}
                 size="sm"

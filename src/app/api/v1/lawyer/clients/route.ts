@@ -8,6 +8,7 @@ import {
   feePairIssue, normalizeDigits,
 } from "@/lib/services/clientIdentityRules";
 import { hashNationalId, normalizedCommercialRegister } from "@/lib/services/clientIdentityHash";
+import { checkContactPair } from "@/lib/services/contactFieldRules";
 import { assertLinkableAccount, propagateLink } from "./_link";
 
 /**
@@ -385,6 +386,14 @@ export async function POST(request: NextRequest) {
     });
     if (issue) return NextResponse.json({ error: issue }, { status: 400 });
 
+    // LIVE-F22: a card was saved with mobile «0000000000» — the phone and
+    // e-mail were only trimmed. Both stay optional HERE (a card made from a
+    // linked account may carry neither; the modal is what requires a phone),
+    // but a filled one must have the right format. A company may give a 920
+    // number. Stored normalised.
+    const contact = checkContactPair({ phone, email }, { allowUnified: clientType === "company" });
+    if (!contact.ok) return NextResponse.json({ error: contact.error, field: contact.field }, { status: 400 });
+
     if (clientUserId) {
       const linkCheck = await assertLinkableAccount(supabase, user.id, clientUserId);
       if (!linkCheck.ok) {
@@ -415,8 +424,8 @@ export async function POST(request: NextRequest) {
         client_user_id: clientUserId || null,
         client_type: clientType,
         name: name.trim(),
-        phone: phone?.trim() || null,
-        email: email?.trim() || null,
+        phone: contact.phone,
+        email: contact.email,
         city: city?.trim() || null,
         national_id_hash: nationalId ? hashNationalId(nationalId) : null,
         power_of_attorney_no: powerOfAttorneyNo?.trim() || null,

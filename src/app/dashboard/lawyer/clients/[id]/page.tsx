@@ -24,6 +24,7 @@ import {
   type LawyerClientNote, type NoteVisibility,
 } from "@/lib/services/lawyerClientNotesService";
 import { CLIENT_FLAGS, feePairIssue, isMoneyFigure } from "@/lib/services/clientIdentityRules";
+import { checkSaudiPhone, checkOptionalEmail } from "@/lib/services/contactFieldRules";
 import { countPhraseAr, type ArabicCountForms } from "@/lib/services/arabicCount";
 
 // ─── Local types ──────────────────────────────────────────────────────────────
@@ -433,6 +434,19 @@ export default function ClientDetailPage() {
 
   const saveEdit = async () => {
     if (!client || savingEdit) return;
+    // LIVE-F22 — same format rules as the add modal and the API route
+    // (contactFieldRules.ts). Both stay optional on a card; the typed values
+    // stay in the inputs when refused.
+    const phoneCheck = checkSaudiPhone(editPhone, { allowUnified: client.clientType === "company" });
+    if (!phoneCheck.ok) {
+      setEditError(phoneCheck.error);
+      return;
+    }
+    const emailCheck = checkOptionalEmail(editEmail);
+    if (!emailCheck.ok) {
+      setEditError(emailCheck.error);
+      return;
+    }
     const totalTrim = editFeeTotal.trim();
     const paidTrim = editFeePaid.trim();
     const totalNum = totalTrim ? Number(totalTrim) : undefined;
@@ -459,8 +473,8 @@ export default function ClientDetailPage() {
     setSavingEdit(true);
     setEditError(null);
     const patch: UpdateLawyerClientInput = {
-      phone: editPhone.trim(),
-      email: editEmail.trim(),
+      phone: phoneCheck.value ?? "",
+      email: emailCheck.value ?? "",
       city: editCity.trim(),
       flags: Array.from(editFlags),
       status: editStatus,
@@ -760,7 +774,7 @@ export default function ClientDetailPage() {
             <div className="pt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className={labelCls}>الهاتف</label>
-                <input value={editPhone} onChange={e => setEditPhone(e.target.value)} className={inputCls} placeholder="05xxxxxxxx" />
+                <input value={editPhone} onChange={e => setEditPhone(e.target.value)} className={inputCls} placeholder="05xxxxxxxx" dir="ltr" type="tel" />
               </div>
               <div>
                 <label className={labelCls}>البريد الإلكتروني</label>
