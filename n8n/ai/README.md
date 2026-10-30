@@ -21,9 +21,9 @@ On n8n.asra3.com (all created **inactive**):
 | L6 بطاقة الكانفاس الذكية | `NZAMY · AI · canvas-card (L6 بطاقة الكانفاس الذكية)` | `1g4hsswaWsaafkN5` | `nzamy-ai/canvas-card` |
 | L7 عصارة المرفقات (job) | `NZAMY · AI · case-brief (L7 عصارة المرفقات)` | `snPDkKndPA9wjIKr` | `nzamy-ai/case-brief` |
 | L8 مراجعة وتدقيق مذكرة (job) | `NZAMY · AI · brief-check (L8 مراجعة وتدقيق مذكرة)` | `bu9guzNEhaLbyAPd` | `nzamy-ai/brief-check` |
-| L9 المحاكي الشامل (job) | `NZAMY · AI · wargaming (L9 المحاكي الشامل)` | not created yet | `nzamy-ai/wargaming` |
-| L10 محلل قوة الموقف (job) | `NZAMY · AI · analyze-strength (L10 محلل قوة الموقف)` | not created yet | `nzamy-ai/analyze-strength` |
-| L11 محترف العقود المختصر (job) | `NZAMY · AI · contract-drafter (L11 محترف العقود المختصر)` | not created yet | `nzamy-ai/contract-drafter` |
+| L9 المحاكي الشامل (job) | `NZAMY · AI · wargaming (L9 المحاكي الشامل)` | `5CFEwAsuT0lRZRlK` | `nzamy-ai/wargaming` |
+| L10 محلل قوة الموقف (job) | `NZAMY · AI · analyze-strength (L10 محلل قوة الموقف)` | `MwONm9eg0IOGRRzt` | `nzamy-ai/analyze-strength` |
+| L11 محترف العقود المختصر (job) | `NZAMY · AI · contract-drafter (L11 محترف العقود المختصر)` | `r2s0JBMr8Q5Ti80O` | `nzamy-ai/contract-drafter` |
 
 **Wave 3: document jobs.** The page uploads each file to the user's vault (an `attachments` row), then sends the ids. Before anything is charged, `src/lib/ai/aiFiles.ts`:
 1. keeps only the user's own files, not in the bin;
@@ -134,7 +134,7 @@ No SQL. No new npm package.
    ```bash
    tail -f /root/deploy-wave5.log
    ```
-2. **n8n:** created and live-tested from here once the n8n connection is back (Claude does it). Or import it yourself with the same 5 steps as wave 4 below, picking `n8n/ai/contract-drafter.json`.
+2. **n8n:** done. The workflow is created, switched on and live-tested (2026-10-30): a rent contract came back with a title, a preamble with `[....]` blanks, 7 sections and two articles of نظام المعاملات المدنية. Nothing for you to do. To import it into another n8n, use the same 5 steps as wave 4 below with `n8n/ai/contract-drafter.json`.
 3. **Open it for admins only** at `https://nezamy.sa/dashboard/admin/ai-usage`: set `contract-drafter` to **للمشرفين فقط**, then press **حفظ**.
 4. **Test** at `https://nezamy.sa/ai/contract-drafter` (admin):
    - Choose «إنشاء عقد», pick «عقد إيجار», fill the landlord, tenant, property, rent and start date. Leave «ملاحظات إضافية» empty.
@@ -168,7 +168,7 @@ No SQL. No new npm package.
    ```bash
    tail -f /root/deploy-wave4.log
    ```
-2. **n8n:** the two workflows are created and live-tested from here once the n8n connection is back (Claude does it). Nothing for you to do unless you'd rather import them yourself:
+2. **n8n:** done. Both workflows are created, switched on and live-tested (2026-10-30): L9 without files, L10 without files and L10 with a PDF all came back `succeeded`. Nothing for you to do. To import them into another n8n:
    1. Workflows → **Import from File**, then pick `n8n/ai/wargaming.json` (then `n8n/ai/analyze-strength.json`).
    2. Open **Webhook** and select `NZAMY AI · inbound`.
    3. Open **Model** and **Read**, and select `Google Gemini(PaLM) Api account` in each.

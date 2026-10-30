@@ -23,12 +23,13 @@ This is the one file to return to after the owner's review. It covers:
 
 | Item | State |
 |---|---|
-| Wave 4 | **L9 and L10 merged into `main` and pushed (`819710ae`, 2026-10-30); `owner-edits` fast-forwarded to the same commit.** Not deployed yet. Their two n8n workflows are exported (`n8n/ai/wargaming.json`, `n8n/ai/analyze-strength.json`) but **not created on n8n yet**: the n8n connection was down. See §6 |
+| Wave 4 | **L9 and L10 merged into `main` and pushed (`819710ae`, 2026-10-30); `owner-edits` fast-forwarded to the same commit.** Not deployed yet. Both n8n workflows are **created, switched on and live-tested (2026-10-30)**: L9 without files, L10 without files and L10 with a PDF all came back `succeeded` |
+| Wave 5 | **L11 محترف العقود المختصر built on branch `feat/ai-wave5`, not merged.** Its n8n workflow is created, switched on and live-tested (2026-10-30): a rent contract in 7 sections with `[....]` blanks |
 | Code | **Waves 0–3 are merged into `main`**. Pushed up to `4039de86`. After it come two docs-only commits, committed locally and **not pushed yet**: the owner guide and this file |
 | Production | Last confirmed deploy is **`7266a948`** (wave 0 + wave 1 code). **Everything after it is not deployed**: the Gemini workflows change, the useUser fix, waves 2 and 3 |
 | Database | Wave 0 SQL (`ai_runs`, `ai_start_run`, `ai_fail_run`, …) **run on prod**, `_verify` OK. Waves 1–3 need **no SQL** |
 | Server env | `N8N_AI_BASE_URL`, `NZAMY_AI_KEY`, `NZAMY_AI_CALLBACK_KEY` are in `/www/wwwroot/nzamy/latest-nzamy-full/.env.local` (checked). `CRON_SECRET` is present |
-| n8n (n8n.asra3.com) | 12 NZAMY AI workflows, **all on**. Each refuses requests without the inbound key (403) |
+| n8n (n8n.asra3.com) | 15 NZAMY AI workflows, **all on**. Each refuses requests without the inbound key (403) |
 | Tools on the site | **All off** until an admin sets them («للمشرفين فقط» for testing) |
 | Live tests on the site | Only **المتحدث الذكي** has run end to end on prod (from the admin account). Every other tool was tested live on n8n with Gemini, through temporary relay workflows (since deleted), but not yet on the site |
 | Model | Google Gemini `models/gemini-3.1-flash-lite`, on the n8n credential «Google Gemini(PaLM) Api account». **No Anthropic key is used** |
@@ -119,8 +120,9 @@ cd /www/wwwroot/nzamy/latest-nzamy-full && git pull && npm install && nohup bash
 | L6 | بطاقة الكانفاس الذكية | `canvas-card` | case board «اقترح سنداً نظامياً» | fast + library | 10 | lawyer, firm (Pro+) | `1g4hsswaWsaafkN5` |
 | L7 | عصارة المرفقات / الموجز القضائي | `case-brief` | `/ai/case-brief` | job + files | 30 (≤5 pages) / 150 (≤30) | lawyer, firm | `snPDkKndPA9wjIKr` |
 | L8 | مراجعة وتدقيق مذكرة (gaps report) | `brief-check` | `/ai/brief-check` (beside the team order) | job + files + enricher | 200 | lawyer, firm (not consultants) | `bu9guzNEhaLbyAPd` |
-| L9 | المحاكي الشامل (wave 4) | `wargaming` | `/ai/wargaming` (beside the team order) | job + optional files + enricher | 250 | lawyer, firm (not consultants) | not created yet |
-| L10 | محلل الموقف والخصم (wave 4) | `analyze-strength` | `/ai/analyze-strength` | job + optional files + enricher | 250 | lawyer, firm | not created yet |
+| L9 | المحاكي الشامل (wave 4) | `wargaming` | `/ai/wargaming` (beside the team order) | job + optional files + enricher | 250 | lawyer, firm (not consultants) | `5CFEwAsuT0lRZRlK` |
+| L10 | محلل الموقف والخصم (wave 4) | `analyze-strength` | `/ai/analyze-strength` | job + optional files + enricher | 250 | lawyer, firm | `MwONm9eg0IOGRRzt` |
+| L11 | محترف العقود المختصر (wave 5, branch `feat/ai-wave5`) | `contract-drafter` | `/ai/contract-drafter` | job (no files) + enricher | 500 | lawyer, firm, individual, corporate, micro | `r2s0JBMr8Q5Ti80O` |
 | — | Schedules (sweep + retention) | — | — | cron | — | — | `8Skwnqn9WIPOxcml` |
 
 **n8n credentials:**
@@ -214,7 +216,7 @@ The owner's priority is **lawyer services first**, then individual tools.
 - analyze-strength is now `betaStatus: "priced"`, with no badge, instead of «free in beta».
 
 **Still to do for wave 4:**
-1. Create both workflows on n8n and live-probe them, with and without files. The Agent branch has the JSON shape (with braces) in its user text, which has not been probed yet. If it fails, describe the shape in words.
+1. ~~Create both workflows on n8n and live-probe them~~ done 2026-10-30. The Agent branch with the JSON shape (braces) in its user text works.
 2. ~~Merge and push~~ done 2026-10-30 (`819710ae`, also on `owner-edits`).
 3. Deploy, then set both tools to «للمشرفين فقط».
 
@@ -233,7 +235,7 @@ Also part of wave 5:
 
 | # | Tool | Page | Points | Notes |
 |:-:|---|---|:-:|---|
-| L11 | محترف العقود المختصر | `/ai/contract-drafter` | 500 | Six types with typed fields. Remove the template-plus-fake-delay and the fake upload. Fix the dead `consultations/new` link |
+| L11 | محترف العقود المختصر | `/ai/contract-drafter` | 500 | **Built 2026-10-30 on `feat/ai-wave5`** (one call writes the whole draft; outline-then-sections, retrieval, the editor, letterhead export and `review` mode come with L12–L14). Six types with typed fields. Template-plus-fake-delay and fake upload removed; the dead `consultations/new` link fixed |
 | L12 | الرأي الفصل | `/ai/legal-opinion` | 400 / 800 (D4) | Consultation and letter first, then study, memo and research. Due diligence (3,000) and cross-examination (150) last |
 | L13 | محترف العقود | `/ai/contracts` | 1,000 | About 40 types, bilingual, clause by clause. Review mode = the engine for the on-hold reviewer |
 | L14 | الصائغ القانوني | `/ai/draft` | 500 / 1,000 / 1,500 | Two phases: facts and issues, then **the lawyer confirms**, then drafting with retrieval and a citation check. Founder counter |

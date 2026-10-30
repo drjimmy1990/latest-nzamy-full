@@ -540,7 +540,7 @@ L8 notes:
 
 ### Wave 4: analysis (jobs)
 
-> **Status 2026-10-28 (branch `feat/ai-wave4`): L9 and L10 built, off by default. The n8n workflows are not created yet (the n8n connection was down); their JSON is exported.**
+> **Status 2026-10-28 (branch `feat/ai-wave4`): L9 and L10 built, off by default. The n8n workflows are not created yet (the n8n connection was down); their JSON is exported.** Update 2026-10-30: both created (`5CFEwAsuT0lRZRlK`, `MwONm9eg0IOGRRzt`), switched on and live-tested with and without files.
 > - **Both are 250-point jobs with optional files** (`WAVE4_FILES`: up to 6 PDFs or images, 30 pages, 22 MB; `FileRules.optional`).
 >   - No fileIds, or an empty list, skips the file step in `runCore`.
 >   - Any list given is checked in full before the charge.
