@@ -1,5 +1,7 @@
 # Library fortress (owner note ١٣, 2026-10-30): your steps
 
+> **APPLIED ON PROD 2026-10-31** (by the user, SQL editor). SELECT check returned one row, all seven columns `true`. Do not list it as pending at integration; re-running is harmless.
+
 One SQL file. It adds the per-user library document quota and the library-only security lock
 (`public.library_read_quota_docs`, `public.library_security_locks` and three service-role functions).
 It never touches accounts, subscriptions or library content. Safe to run twice.

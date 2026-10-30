@@ -117,6 +117,7 @@ closed rather than removed.
 already falls back to its built-in bank on a refused call. Test: `src/app/api/v1/academy/vault-explorer/route.test.ts` (2).
 
 ### C07 — durable per-user counter independent of shared IPs — FIXED IN CODE (needs the SQL to take effect)
+- **SQL applied on prod 2026-10-31** by the user; SELECT check all `true`. The quota and locks take effect when this branch is deployed (the live code does not call the functions yet).
 **Before.** `src/lib/rateLimit.ts:108` in-memory `Map` only; per IP; reset on restart.
 **Now.**
 - SQL `supabase/migrations/20261030_80_library_read_quota.sql`: `public.library_read_quota_docs (user_id, day, doc_key,
