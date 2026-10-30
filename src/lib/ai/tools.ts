@@ -619,6 +619,134 @@ function contractDraftOutput(raw: unknown): Record<string, unknown> | null {
   };
 }
 
+/**
+ * L12 الرأي الفصل: consultation and letter, the two output types built first.
+ * D4: both are the 400-point tier (800 is study / memo / research at «deep» or
+ * «comprehensive», still the team's order). Two tools, not one with a type
+ * field: the consultation answers from library texts (retrieval, refunded when
+ * it cites none of them); the letter is a document checked by the L8 citation
+ * check, and the retrieval rule would refund almost every letter.
+ */
+export const LEGAL_OPINION_PRICE = 400;
+export const LEGAL_OPINION_QUESTION_MIN = 20;
+export const LEGAL_OPINION_QUESTION_MAX = 6000;
+export const LETTER_SUBJECT_MIN = 10;
+export const LETTER_SUBJECT_MAX = 4000;
+export const LETTER_SENDER_ROLES = ["individual", "company"] as const;
+export const LETTER_RECIPIENT_TYPES = ["individual", "company", "government"] as const;
+export const LETTER_DEADLINE_DAYS = [5, 10, 15, 30] as const;
+const LETTER_ANNEXES_MAX = 10;
+
+/** The question, and the legal area's Arabic label when one was picked (the quick box has none). */
+function legalConsultInput(raw: unknown): InputCheck {
+  if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
+  const question = boundedText(raw.question, LEGAL_OPINION_QUESTION_MAX);
+  if (!question || question.length < LEGAL_OPINION_QUESTION_MIN) {
+    return {
+      ok: false,
+      error: `اكتب سؤالك ووقائعه (من ${LEGAL_OPINION_QUESTION_MIN.toLocaleString("ar-SA")} إلى ${LEGAL_OPINION_QUESTION_MAX.toLocaleString("ar-SA")} حرف)`,
+    };
+  }
+  let area: string | null = null;
+  if (raw.area !== undefined && raw.area !== null && raw.area !== "") {
+    area = boundedText(raw.area, 80);
+    if (!area) return { ok: false, error: "المجال القانوني غير صالح" };
+  }
+  return { ok: true, input: { area, question } };
+}
+
+/**
+ * The answer: a short conclusion and headed sections, the [S…] markers inside
+ * them. All or nothing, like the contract: one bad section refuses the answer.
+ */
+function legalConsultOutput(raw: unknown): Record<string, unknown> | null {
+  if (!isPlainObject(raw) || !Array.isArray(raw.sections)) return null;
+  const summary = boundedText(raw.summary, 2000);
+  if (!summary || raw.sections.length < 1 || raw.sections.length > 8) return null;
+  const sections: Array<{ heading: string; body: string }> = [];
+  for (const s of raw.sections) {
+    const heading = isPlainObject(s) ? boundedText(s.heading, 200) : null;
+    const body = isPlainObject(s) ? boundedText(s.body, 6000) : null;
+    if (!heading || !body) return null;
+    sections.push({ heading, body });
+  }
+  return { summary, sections };
+}
+
+/**
+ * The letter's facts as the form collected them. The sender is the one the
+ * user typed (a client's company, or the user), never the account's name.
+ */
+function legalLetterInput(raw: unknown): InputCheck {
+  if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
+  const type = boundedText(raw.type, 120);
+  if (!type) return { ok: false, error: "اختر نوع الخطاب" };
+  if (!(LETTER_SENDER_ROLES as readonly unknown[]).includes(raw.sender_role)) return { ok: false, error: "اختر صفة المرسِل" };
+  const sender = boundedText(raw.sender_name, 200);
+  if (!sender) return { ok: false, error: "اكتب اسم المرسِل (حتى ٢٠٠ حرف)" };
+  if (!(LETTER_RECIPIENT_TYPES as readonly unknown[]).includes(raw.recipient_type)) return { ok: false, error: "اختر نوع المستلِم" };
+  const recipient = boundedText(raw.recipient_name, 200);
+  if (!recipient) return { ok: false, error: "اكتب اسم المستلِم (حتى ٢٠٠ حرف)" };
+  let gov: string | null = null;
+  if (raw.recipient_type === "government" && typeof raw.gov_entity === "string" && raw.gov_entity.trim()) {
+    gov = boundedText(raw.gov_entity, 200);
+    if (!gov) return { ok: false, error: "اسم الجهة الحكومية أطول من المسموح" };
+  }
+  const subject = boundedText(raw.subject, LETTER_SUBJECT_MAX);
+  if (!subject || subject.length < LETTER_SUBJECT_MIN) {
+    return {
+      ok: false,
+      error: `اشرح موضوع الخطاب والمطلوب (من ${LETTER_SUBJECT_MIN.toLocaleString("ar-SA")} إلى ${LETTER_SUBJECT_MAX.toLocaleString("ar-SA")} حرف)`,
+    };
+  }
+  let legalRef: string | null = null;
+  if (typeof raw.legal_ref === "string" && raw.legal_ref.trim()) {
+    legalRef = boundedText(raw.legal_ref, 500);
+    if (!legalRef) return { ok: false, error: "النص النظامي المرجعي أطول من ٥٠٠ حرف" };
+  }
+  let deadline: number | null = null;
+  if (raw.deadline_days !== undefined && raw.deadline_days !== null) {
+    if (!(LETTER_DEADLINE_DAYS as readonly unknown[]).includes(raw.deadline_days)) return { ok: false, error: "مهلة الرد غير صالحة" };
+    deadline = raw.deadline_days as number;
+  }
+  const annexes: string[] = [];
+  if (raw.annexes !== undefined && raw.annexes !== null) {
+    if (!Array.isArray(raw.annexes) || raw.annexes.length > LETTER_ANNEXES_MAX) return { ok: false, error: "المرفقات أكثر من عشرة" };
+    for (const a of raw.annexes) {
+      const name = boundedText(a, 150);
+      if (!name) return { ok: false, error: "اسم مرفق فارغ أو أطول من ١٥٠ حرفاً" };
+      annexes.push(name);
+    }
+  }
+  return {
+    ok: true,
+    input: {
+      type,
+      sender_role: raw.sender_role,
+      sender_name: sender,
+      recipient_type: raw.recipient_type,
+      recipient_name: recipient,
+      gov_entity: gov,
+      subject,
+      legal_ref: legalRef,
+      deadline_days: deadline,
+      annexes,
+    },
+  };
+}
+
+/** The letter: a title and its full text; `cited` becomes the library's verdict (runCore). */
+function legalLetterOutput(raw: unknown): Record<string, unknown> | null {
+  if (!isPlainObject(raw)) return null;
+  const title = boundedText(raw.title, 200);
+  const body = boundedText(raw.body, 10000);
+  if (!title || !body) return null;
+  return { title, body, cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 20) : [] };
+}
+
+/** The roles of /ai/legal-opinion's two built types: the same audience as L11. */
+const LEGAL_OPINION_ROLES = ["lawyer", "firm", "individual", "corporate", "micro"] as const;
+
 export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
   "echo-fast": {
     id: "echo-fast",
@@ -813,6 +941,36 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     jobDeadlineSeconds: 15 * 60,
     validateInput: contractDraftInput,
     validateOutput: contractDraftOutput,
+  },
+  "legal-opinion-consult": {
+    id: "legal-opinion-consult",
+    n8nPath: "nzamy-ai/legal-opinion-consult",
+    class: "job",
+    tier: "deep",
+    roles: LEGAL_OPINION_ROLES,
+    // A consultation is advice, not pleading: /ai/legal-opinion is open to consultants (Art. 18).
+    consultantBlocked: false,
+    price: () => LEGAL_OPINION_PRICE,
+    dailyLimit: 5,
+    defaultMode: "off",
+    jobDeadlineSeconds: 15 * 60,
+    retrieval: { from: "question", laws: 8, principles: 4 },
+    validateInput: legalConsultInput,
+    validateOutput: legalConsultOutput,
+  },
+  "legal-opinion-letter": {
+    id: "legal-opinion-letter",
+    n8nPath: "nzamy-ai/legal-opinion-letter",
+    class: "job",
+    tier: "deep",
+    roles: LEGAL_OPINION_ROLES,
+    consultantBlocked: false,
+    price: () => LEGAL_OPINION_PRICE,
+    dailyLimit: 5,
+    defaultMode: "off",
+    jobDeadlineSeconds: 15 * 60,
+    validateInput: legalLetterInput,
+    validateOutput: legalLetterOutput,
   },
 };
 
