@@ -153,6 +153,8 @@ function AIBriefCheckPage() {
   const capacity = clientRole === "other" ? clientRoleOther.trim() : (BRIEF_CLIENT_ROLES.find(r => r.id === clientRole)?.label ?? "");
   const memoIsPdf = !!memo && /\.pdf$/i.test(memo.name);
   const canRunAi = reviewScope === "gaps_report" && memoIsPdf && !!capacity && !uploading && !ai.busy;
+  // A greyed button with no reason read as broken (owner's live test 29 Oct): say what is missing.
+  const aiBlocked = !memo ? "ارفع المذكرة أولاً (PDF)." : !capacity ? "اختر صفة الموكل أولاً." : uploading ? "انتظر اكتمال رفع المذكرة." : null;
 
   function runAiReport() {
     if (!canRunAi || !memo) return;
@@ -355,6 +357,7 @@ function AIBriefCheckPage() {
                 <Sparkle size={14} weight="fill" />
                 {ai.busy ? "جارٍ قراءة المذكرة… (دقيقة أو أكثر)" : "اعرض تقرير الثغرات الآن"}
               </button>
+              {!ai.busy && aiBlocked && <p className="text-[11px] text-amber-500">{aiBlocked}</p>}
               {ai.phase === "error" && ai.error && <p role="alert" className="text-[11px] text-red-500">{ai.error}</p>}
               {ai.phase === "review" && <p role="status" className={hint}>التقرير جاهز وينتظر مراجعة الفريق قبل عرضه.</p>}
             </div>

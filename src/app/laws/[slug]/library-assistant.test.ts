@@ -6,7 +6,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { askLibrary, LIBRARY_AI_SOON } from "./_library-assistant.ts";
+import { askLibrary, LIBRARY_AI_SOON, lawSlugFromPath } from "./_library-assistant.ts";
 
 function reply(status: number, body: unknown) {
   const sent: Array<Record<string, unknown>> = [];
@@ -22,11 +22,24 @@ test("it sends the tool, the message, the open article and a fresh key", async (
   const a = await askLibrary({ message: "اشرح لي", articleId: "labor-law__art-80" }, "/laws/labor-law", fetchImpl);
   assert.deepEqual(a, { text: "شرح [S1]", citations: [{ sid: "S1" }] });
   assert.equal(sent[0].tool, "library-assistant");
-  assert.deepEqual(sent[0].input, { message: "اشرح لي", article_id: "labor-law__art-80" });
+  assert.deepEqual(sent[0].input, { message: "اشرح لي", article_id: "labor-law__art-80", law_slug: "labor-law" });
   assert.match(String(sent[0].idempotencyKey), /^[A-Za-z0-9_-]{8,100}$/);
 
   await askLibrary({ message: "سؤال" }, "/laws/x", fetchImpl);
   assert.equal((sent[1].input as Record<string, unknown>).article_id, null);
+  assert.equal((sent[1].input as Record<string, unknown>).law_slug, "x");
+});
+
+test("the law page's slug: from /laws/<slug> only, decoded once, query and hash dropped", () => {
+  assert.equal(lawSlugFromPath("/laws/social-security-law?tab=1#a"), "social-security-law");
+  assert.equal(lawSlugFromPath("/laws/%D9%86%D8%B8%D8%A7%D9%85"), "نظام");
+  assert.equal(lawSlugFromPath("/laws/labor-law/extra"), "labor-law");
+  assert.equal(lawSlugFromPath("/laws/"), null);
+  assert.equal(lawSlugFromPath("/library/labor-law"), null);
+  assert.equal(lawSlugFromPath("/"), null);
+  // A shape the server would refuse is not sent: the question still goes.
+  assert.equal(lawSlugFromPath("/laws/a%20b"), null);
+  assert.equal(lawSlugFromPath("/laws/%zz"), null);
 });
 
 test("signed out and below Pro are told what to do, with a link", async () => {

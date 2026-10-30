@@ -21,7 +21,7 @@ async function pdf(pages: number): Promise<Uint8Array> {
   return doc.save();
 }
 
-type Row = { id: string; file_name: string; storage_path: string; mime_type: string; size_bytes: number };
+type Row = { id: string | number; file_name: string; storage_path: string; mime_type: string; size_bytes: number };
 
 /** The service client: `attachments` reads and the `documents` bucket. */
 function fakeAdmin(rows: Row[], objects: Record<string, Uint8Array>) {
@@ -40,7 +40,8 @@ function fakeAdmin(rows: Row[], objects: Record<string, Uint8Array>) {
           filters.push(["is", c, v]);
           const ids = filters.find((f) => f[0] === "in")![2] as string[];
           const owner = filters.find((f) => f[1] === "owner_user_id")![2];
-          return Promise.resolve({ data: owner === "u-1" ? rows.filter((r) => ids.includes(r.id)) : [], error: null });
+          // PostgREST matches `in.(37,38)` against a bigint column from strings.
+          return Promise.resolve({ data: owner === "u-1" ? rows.filter((r) => ids.includes(String(r.id))) : [], error: null });
         },
       };
       return chain;
@@ -62,12 +63,24 @@ function fakeAdmin(rows: Row[], objects: Record<string, Uint8Array>) {
   return { admin, reads, signed };
 }
 
-const row = (id: string, mime: string, size = 1000, name = "مذكرة.pdf"): Row => ({ id, file_name: name, storage_path: `u-1/${id}.bin`, mime_type: mime, size_bytes: size });
+const row = (id: string | number, mime: string, size = 1000, name = "مذكرة.pdf"): Row => ({ id, file_name: name, storage_path: `u-1/${id}.bin`, mime_type: mime, size_bytes: size });
 
 test("countPages: a PDF's pages, one for an image, null for a broken PDF", async () => {
   assert.equal(await countPages(await pdf(3), "pdf"), 3);
   assert.equal(await countPages(new Uint8Array([1, 2, 3]), "image"), 1);
   assert.equal(await countPages(new TextEncoder().encode("%PDF-1.7 not really"), "pdf"), null);
+});
+
+test("parseFileIds: the vault's numeric ids (bigserial, a JSON number), as strings", () => {
+  // The owner's live test (29 Oct): a PDF and a PNG «جاهز» were refused with
+  // «أرفق ملفاً واحداً على الأقل» because only UUIDs were taken.
+  assert.deepEqual(parseFileIds([37, 38], 5), ["37", "38"]);
+  assert.deepEqual(parseFileIds(["39", 40], 5), ["39", "40"]);
+  assert.equal(parseFileIds([37, "37"], 5), null, "one file twice");
+  for (const bad of [0, -1, 1.5, "0", "01", "1e3", " ", null, {}, Number.MAX_SAFE_INTEGER + 2]) {
+    assert.equal(parseFileIds([bad], 5), null, String(bad));
+  }
+  assert.equal(parseFileIds([1, 2, 3], 2), "too_many");
 });
 
 test("parseFileIds: 1..max distinct UUIDs", () => {
@@ -92,6 +105,17 @@ test("the caller's own files are counted and signed; the total pages come back",
   assert.deepEqual(signed.map((s) => s[1]), [900, 900]);
   // Own rows only, out of the bin.
   assert.deepEqual(reads[0].slice(1), [["eq", "owner_user_id", "u-1"], ["is", "deleted_at", null]]);
+});
+
+test("numeric vault rows as prod returns them: a PDF and a PNG both read, ids sent on as strings", async () => {
+  const { admin } = fakeAdmin([row(37, "application/pdf"), row(38, "image/png", 500, "صورة.png")], {
+    "u-1/37.bin": await pdf(2),
+    "u-1/38.bin": new Uint8Array([9]),
+  });
+  const got = await resolveAiFiles(admin as never, "u-1", [37, 38], RULES);
+  assert.ok(got.ok, JSON.stringify(got));
+  assert.equal(got.pages, 3);
+  assert.deepEqual(got.files.map((f) => f.id), ["37", "38"]);
 });
 
 test("someone else's file, or one not found, is refused without saying whose it is", async () => {
