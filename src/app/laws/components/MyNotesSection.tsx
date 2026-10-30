@@ -12,10 +12,13 @@ import { isSupabaseMode } from "@/lib/services/api";
 import { getMyArticleNotes, deleteArticleNote, type ArticleNote } from "@/lib/services/articleNotesService";
 import { listViewState, type ListRead } from "@/lib/services/listRead";
 import { useNoSessionCookie } from "./useNoSessionCookie";
+import {
+  buildTitleLookup, fetchLibraryTitles, noteDisplayTitle, noteDocHref, noteTypeBadge, parseNotePageId,
+  NOTE_KIND_ORDER, type NoteDocKind, type TitleMaps,
+} from "./noteDocRef";
 
 interface NoteEntry {
   pageId: string;
-  lawName: string;
   text: string;
   hasAudio: boolean;
   hasStrokes: boolean;
@@ -25,76 +28,31 @@ interface NoteEntry {
 type Tab = "all" | "highlights" | "notes";
 type ViewMode = "flat" | "grouped";
 
-function getCleanDocumentName(pageId: string): string {
-  // 2026-09-25: the old-corpus literal slugs below ("labor-law", "evidence-law", …)
-  // 404 on self-hosted, but a guest's browser may still hold a note saved under
-  // one of them from before the reseed — those keys stay for that display-name
-  // lookup. The real self-hosted slugs are added alongside them so a note saved
-  // going forward gets the same clean name.
-  const map: Record<string, string> = {
-    "companies-law": "نظام الشركات",
-    "labor-law": "نظام العمل",
-    "labor-law-qadha": "نظام العمل",
-    "civil-procedure": "نظام المرافعات الشرعية",
-    "sharia-pleading-law-qadha-edition": "نظام المرافعات الشرعية ولائحته التنفيذية",
-    "criminal-procedure": "نظام الإجراءات الجزائية",
-    "criminal-procedure-law": "نظام الإجراءات الجزائية",
-    "commercial-court": "نظام المحاكم التجارية",
-    "commercial-courts-law": "نظام المحاكم التجارية ولوائحه التنفيذية",
-    "civil-transactions": "نظام المعاملات المدنية",
-    "civil-transactions-law": "نظام المعاملات المدنية",
-    "evidence-law": "نظام الإثبات",
-    "evidence-law-qadha-edition": "نظام الإثبات",
-  };
-  
-  let cleanId = pageId;
-  if (pageId.startsWith("order-")) {
-    cleanId = pageId.replace("order-", "");
-  } else if (pageId.startsWith("judgment-")) {
-    cleanId = pageId.replace("judgment-", "");
-  }
-  
-  if (map[cleanId]) return map[cleanId];
-
-  let cleaned = pageId;
-  cleaned = cleaned.replace(/^(precedents-|feqh-|orders-|order-|judgment-)/g, "");
-  cleaned = cleaned.replace(/(_وزارة_العدل|-وزارة_العدل)$/g, "");
-  cleaned = cleaned.replace(/(-منقحة)$/g, " (منقحة)");
-  cleaned = cleaned.replace(/---/g, " - ");
-  cleaned = cleaned.replace(/-/g, " ");
-  cleaned = cleaned.replace(/\s+/g, " ").trim();
-
-  return cleaned;
-}
+// Owner note ٠٣ §٢.٢: the row's document, Arabic title and type badge come
+// from noteDocRef.ts — the page key is parsed for all four readers, and the
+// titles arrive in one batched call (POST /api/library/folders/titles).
+// The old name-from-the-key and the `precedents-` / `judgment-` prefix check
+// (no reader writes those) are gone: every judicial note was badged
+// «الأنظمة واللوائح» and named «...rulings 1434 v01».
 
 interface DocCategory {
+  kind: NoteDocKind;
   name: string;
   color: string;
 }
 
-function getCategoryInfo(pageId: string, isDark: boolean): DocCategory {
-  if (pageId.startsWith("precedents-") || pageId.startsWith("judgment-")) {
-    return {
-      name: "المبادئ القضائية",
-      color: isDark ? "bg-purple-900/30 text-purple-400 border-purple-500/20" : "bg-purple-50 text-purple-700 border-purple-200"
-    };
+function getCategoryInfo(kind: NoteDocKind, isDark: boolean): DocCategory {
+  const name = noteTypeBadge(kind);
+  if (kind === "precedent") {
+    return { kind, name, color: isDark ? "bg-purple-900/30 text-purple-400 border-purple-500/20" : "bg-purple-50 text-purple-700 border-purple-200" };
   }
-  if (pageId.startsWith("feqh-") || pageId.startsWith("book-")) {
-    return {
-      name: "الكتب الفقهية",
-      color: isDark ? "bg-emerald-900/30 text-emerald-400 border-emerald-500/20" : "bg-emerald-50 text-emerald-700 border-emerald-200"
-    };
+  if (kind === "book") {
+    return { kind, name, color: isDark ? "bg-emerald-900/30 text-emerald-400 border-emerald-500/20" : "bg-emerald-50 text-emerald-700 border-emerald-200" };
   }
-  if (pageId.startsWith("orders-") || pageId.startsWith("order-")) {
-    return {
-      name: "التعاميم والقرارات",
-      color: isDark ? "bg-amber-900/30 text-amber-400 border-amber-500/20" : "bg-amber-50 text-amber-700 border-amber-200"
-    };
+  if (kind === "order") {
+    return { kind, name, color: isDark ? "bg-amber-900/30 text-amber-400 border-amber-500/20" : "bg-amber-50 text-amber-700 border-amber-200" };
   }
-  return {
-    name: "الأنظمة واللوائح",
-    color: isDark ? "bg-blue-900/30 text-blue-400 border-blue-500/20" : "bg-blue-50 text-blue-700 border-blue-200"
-  };
+  return { kind, name, color: isDark ? "bg-blue-900/30 text-blue-400 border-blue-500/20" : "bg-blue-50 text-blue-700 border-blue-200" };
 }
 
 /** A committed, non-empty strokes array — not merely a key that exists. ResearchWorkspace's guest-mode
@@ -114,7 +72,6 @@ function hasRealGuestStrokes(raw: string | null): boolean {
 function noteToEntry(note: ArticleNote): NoteEntry {
   return {
     pageId: note.pageId,
-    lawName: getCleanDocumentName(note.pageId),
     text: note.noteText,
     hasAudio: note.audioPath !== null,
     hasStrokes: Array.isArray(note.strokes) && note.strokes.length > 0,
@@ -187,7 +144,6 @@ export function MyNotesSection({ isDark, isRTL = true }: { isDark: boolean; isRT
       if (text || audio || strk) {
         found.push({
           pageId,
-          lawName: getCleanDocumentName(pageId),
           text,
           hasAudio: audio,
           hasStrokes: strk,
@@ -227,10 +183,30 @@ export function MyNotesSection({ isDark, isRTL = true }: { isDark: boolean; isRT
   // Guest reads are a synchronous local scan — always "ready", never "loading"/"unreadable".
   const viewState = authPending ? "loading" : signedIn ? listViewState(loading, noteRead) : "ready";
 
+  // ── Arabic titles: one batched lookup for every document listed ──────────
+  const [titles, setTitles] = useState<TitleMaps | null>(null);
+  const [titlesSettled, setTitlesSettled] = useState(false);
+  const lookupKey = Array.from(new Set(entries.map(e => e.pageId))).sort().join("\u0000");
+  useEffect(() => {
+    const refs = lookupKey ? lookupKey.split("\u0000").map(parseNotePageId) : [];
+    const body = buildTitleLookup(refs);
+    if (!body) { setTitlesSettled(true); return; }
+    let cancelled = false;
+    setTitlesSettled(false);
+    void fetchLibraryTitles(body).then(found => {
+      if (cancelled) return;
+      if (found) setTitles(found);
+      setTitlesSettled(true);
+    });
+    return () => { cancelled = true; };
+  }, [lookupKey]);
+
+  const docName = (pageId: string) => noteDisplayTitle(parseNotePageId(pageId), titles, titlesSettled);
+
   // Get unique documents list for filter chips
   const uniqueDocs = Array.from(new Set(entries.map(e => e.pageId))).map(pageId => ({
     pageId,
-    name: getCleanDocumentName(pageId)
+    name: docName(pageId)
   }));
 
   // Filtering
@@ -281,10 +257,10 @@ export function MyNotesSection({ isDark, isRTL = true }: { isDark: boolean; isRT
       iconClass = "text-purple-500 dark:text-purple-400";
     }
 
-    const catInfo = getCategoryInfo(e.pageId, isDark);
-    const linkPrefix = e.pageId.startsWith("order-") ? "/laws/orders/" :
-                       e.pageId.startsWith("judgment-") ? "/precedents/judgment/" :
-                       e.pageId.startsWith("book-") ? "/book/" : "/laws/";
+    const ref = parseNotePageId(e.pageId);
+    const catInfo = getCategoryInfo(ref.kind, isDark);
+    const href = noteDocHref(ref, titles);
+    const name = noteDisplayTitle(ref, titles, titlesSettled);
 
     return (
       <div key={e.pageId} className="mb-2 last:mb-0">
@@ -309,8 +285,8 @@ export function MyNotesSection({ isDark, isRTL = true }: { isDark: boolean; isRT
             <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-md ${catInfo.color} block w-fit mb-0.5`}>
               {catInfo.name}
             </span>
-            <p className={`text-[12px] font-black truncate leading-tight ${isDark ? "text-zinc-200" : "text-slate-800"}`}>
-              {e.lawName}
+            <p title={name} className={`text-[12px] font-black truncate leading-tight ${isDark ? "text-zinc-200" : "text-slate-800"}`}>
+              {name}
             </p>
             <div className={`flex items-center gap-1.5 mt-0.5 ${muted}`}>
               {e.hasStrokes && <span className="flex items-center gap-0.5 text-[9px]"><Highlighter size={9}/> تحديد</span>}
@@ -319,7 +295,7 @@ export function MyNotesSection({ isDark, isRTL = true }: { isDark: boolean; isRT
             </div>
           </div>
           <div className="flex items-center gap-0.5 shrink-0">
-            <a href={`${linkPrefix}${e.pageId.replace(/^(precedents-|feqh-|orders-)/g, "")}`} onClick={ev => ev.stopPropagation()}
+            <a href={href} onClick={ev => ev.stopPropagation()} aria-label={isRTL ? `فتح ${name}` : `Open ${name}`}
               className={`p-1 rounded-lg transition ${isDark ? "hover:bg-white/10 text-zinc-500" : "hover:bg-slate-100 text-slate-400"}`}>
               <ArrowSquareOut size={12} />
             </a>
@@ -350,11 +326,11 @@ export function MyNotesSection({ isDark, isRTL = true }: { isDark: boolean; isRT
   };
 
   const renderGroupedEntries = () => {
-    const categories = ["الأنظمة واللوائح", "المبادئ القضائية", "الكتب الفقهية", "التعاميم والقرارات"];
     const elements: React.ReactNode[] = [];
 
-    categories.forEach(catName => {
-      const itemsInCat = filtered.filter(e => getCategoryInfo(e.pageId, isDark).name === catName);
+    NOTE_KIND_ORDER.forEach(kind => {
+      const catName = noteTypeBadge(kind);
+      const itemsInCat = filtered.filter(e => parseNotePageId(e.pageId).kind === kind);
       if (itemsInCat.length > 0) {
         elements.push(
           <div key={catName} className="mb-4 last:mb-0">
@@ -401,7 +377,7 @@ export function MyNotesSection({ isDark, isRTL = true }: { isDark: boolean; isRT
                 : viewState === "unreadable"
                 ? (isRTL ? "تعذّرت القراءة" : "Could not read")
                 : entries.length > 0
-                ? (isRTL ? `${entries.length} نظام به ملاحظات` : `${entries.length} laws with notes`)
+                ? (isRTL ? `${entries.length} مستند به ملاحظات` : `${entries.length} documents with notes`)
                 : isGuest
                 ? (isRTL ? "سجّل الدخول لحفظها في حسابك" : "Sign in to keep them in your account")
                 : (isRTL ? "لا توجد ملاحظات بعد" : "No notes yet")}

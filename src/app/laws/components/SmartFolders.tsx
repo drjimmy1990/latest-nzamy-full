@@ -1,31 +1,34 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   FolderSimple, FolderSimplePlus,
-  Check, X, BookOpen, Plus, CaretDown,
-  Scroll, Gavel, MagnifyingGlass
+  Check, X, Plus, CaretDown,
 } from "@phosphor-icons/react";
 
 // ─── Modular Imports & Re-exports ──────────────────────────────────────────────────
 import type { LawRef, SmartFolder, LibraryDoc } from "./SmartFolderTypes";
-import { FOLDER_COLORS, DEFAULT_LAWS, DEMO_FOLDERS, ALL_LIBRARY_DOCS } from "./SmartFolderTypes";
+import { FOLDER_COLORS, DEFAULT_LAWS, DEMO_FOLDERS } from "./SmartFolderTypes";
 import FolderCard, { FolderIcon, ColorPicker } from "./FolderCard";
 import CreateFolderInline from "./CreateFolderInline";
+// «إدارة المحتوى» reads the real library now (owner note ٠٤ §٢): the static
+// 14-row ALL_LIBRARY_DOCS sample is deleted. See folderLibrarySearch.ts.
+import FolderContentPicker, { DocTypeIcon } from "./FolderContentPicker";
+import { docKey } from "./folderLibrarySearch";
 import { useUser } from "@/hooks/useUser";
 import { useNoSessionCookie } from "./useNoSessionCookie";
 // The DB↔frontend mapper lives in its own plain-.ts module now — a pure
 // helper, shared with FolderSelectionModal.tsx, and unit-tested on its own
 // (see smartFolderApiMapper.test.ts). This file cannot host it and stay
 // testable with `node --test`: it is "use client" JSX.
-import { mapApiFolderToSmartFolder } from "./smartFolderApiMapper";
+import { mapApiFolderToSmartFolder, titleLookupForFolders, applyResolvedTitles } from "./smartFolderApiMapper";
+import { fetchLibraryTitles } from "./noteDocRef";
 import { isDemoMode } from "@/lib/runtimeMode";
-import { normalizeSearch } from "@/utils/normalizeArabic";
 
 // Re-export for project compatibility
 export type { LawRef, SmartFolder, LibraryDoc };
-export { FOLDER_COLORS, DEFAULT_LAWS, DEMO_FOLDERS, ALL_LIBRARY_DOCS };
+export { FOLDER_COLORS, DEFAULT_LAWS, DEMO_FOLDERS };
 export { FolderIcon, ColorPicker, FolderCard, CreateFolderInline };
 export { mapApiFolderToSmartFolder };
 
@@ -73,8 +76,10 @@ export default function SmartFolders({
 
   // Folder content management state
   const [managingFolder, setManagingFolder] = useState<SmartFolder | null>(null);
-  const [modalQuery, setModalQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<"all" | "law" | "book" | "order" | "precedent">("all");
+  // Where focus returns when the manage dialog closes (the «⋮» button or the
+  // empty folder's «إضافة محتوى للمجلد»).
+  const manageOpenerRef = useRef<HTMLElement | null>(null);
+  const manageDialogRef = useRef<HTMLDivElement>(null);
 
   // ─── Load folders (API for auth users, localStorage for guests) ────────────
 
@@ -95,6 +100,19 @@ export default function SmartFolders({
           // CustomEvent below is what keeps this component and
           // FolderSelectionModal in sync within the same tab.
           dispatchFoldersChanged(mapped);
+          // Old items saved with no title show their id: name them from the
+          // library in one batched call (owner note ٠٣ §٢.٢). Display only.
+          const lookup = titleLookupForFolders(mapped);
+          if (lookup) {
+            void fetchLibraryTitles(lookup).then(found => {
+              if (!found) return;
+              setFolders(prev => {
+                const named = applyResolvedTitles(prev, found);
+                dispatchFoldersChanged(named);
+                return named;
+              });
+            });
+          }
         } else {
           // API failed. No localStorage fallback for a signed-in user: that
           // key belongs to whoever last browsed here as a GUEST (owner ١١٥ —
@@ -385,7 +403,22 @@ export default function SmartFolders({
 
   // ─── TOGGLE item in modal ─────────────────────────────────────────────────
 
+  // (type, slug) keys whose save/remove is in flight: a second press waits.
+  const [pendingKeys, setPendingKeys] = useState<ReadonlySet<string>>(new Set());
+
   const handleToggleItemInModal = async (doc: LibraryDoc) => {
+    if (!managingFolder) return;
+    const key = docKey(doc);
+    if (pendingKeys.has(key)) return;
+    setPendingKeys(prev => new Set(prev).add(key));
+    try {
+      await toggleItemInManagedFolder(doc);
+    } finally {
+      setPendingKeys(prev => { const next = new Set(prev); next.delete(key); return next; });
+    }
+  };
+
+  const toggleItemInManagedFolder = async (doc: LibraryDoc) => {
     if (!managingFolder) return;
 
     const exists = managingFolder.laws.some(item => item.slug === doc.slug && (item.type || "law") === doc.type);
@@ -514,20 +547,41 @@ export default function SmartFolders({
     }
   }, [managingFolder, isMounted]);
 
-  // Filter searchable documents
-  const filteredDocs = useMemo(() => {
-    let list = ALL_LIBRARY_DOCS;
-    if (activeTab !== "all") {
-      list = list.filter(d => d.type === activeTab);
-    }
-    if (modalQuery.trim()) {
-      const nq = normalizeSearch(modalQuery);
-      list = list.filter(d =>
-        normalizeSearch(d.title).includes(nq) || normalizeSearch(d.titleEn).includes(nq) || normalizeSearch(d.catId).includes(nq)
-      );
-    }
-    return list;
-  }, [modalQuery, activeTab]);
+  // ─── Manage dialog: open / close / Escape / focus ─────────────────────────
+  const openManage = useCallback((folder: SmartFolder) => {
+    manageOpenerRef.current = (typeof document !== "undefined" ? document.activeElement : null) as HTMLElement | null;
+    setManagingFolder(folder);
+  }, []);
+
+  const closeManage = useCallback(() => {
+    setManagingFolder(null);
+    const opener = manageOpenerRef.current;
+    manageOpenerRef.current = null;
+    if (opener && opener.isConnected) window.setTimeout(() => opener.focus(), 0);
+  }, []);
+
+  const isManaging = managingFolder !== null;
+  useEffect(() => {
+    if (!isManaging) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { e.preventDefault(); closeManage(); return; }
+      // Keep Tab inside the dialog.
+      if (e.key !== "Tab") return;
+      const root = manageDialogRef.current;
+      if (!root) return;
+      const focusables = Array.from(root.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+      ));
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      else if (!root.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [isManaging, closeManage]);
 
   // Sort folders: pinned first, then lastModified descending
   const sortedFolders = [...folders].sort((a, b) => {
@@ -636,7 +690,7 @@ export default function SmartFolders({
                   onRename={handleRename}
                   onColorChange={handleColorChange}
                   onTogglePin={handleTogglePin}
-                  onManageContent={() => setManagingFolder(folder)}
+                  onManageContent={() => openManage(folder)}
                   onRemoveItem={(itemSlug, itemType) => handleRemoveItem(folder.id, itemSlug, itemType)}
                 />
               ))}
@@ -699,11 +753,23 @@ export default function SmartFolders({
         )}
       </motion.div>
 
-      {/* ── Manage Folder Content Modal ── */}
+      {/* ── Manage Folder Content Modal ──
+          Searches the whole library (FolderContentPicker → /api/library/init
+          before typing, /api/library/search while typing). Escape, the
+          backdrop and «تم» close it; Tab stays inside; focus returns to the
+          button that opened it. */}
       <AnimatePresence>
         {managingFolder && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            onMouseDown={e => { if (e.target === e.currentTarget) closeManage(); }}
+          >
             <motion.div
+              ref={manageDialogRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="manage-folder-title"
+              dir={isRTL ? "rtl" : "ltr"}
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
@@ -714,7 +780,7 @@ export default function SmartFolders({
               {/* Header */}
               <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-white/[0.04] mb-4 flex-shrink-0">
                 <div>
-                  <h3 className="text-sm font-bold flex items-center gap-2">
+                  <h3 id="manage-folder-title" className="text-sm font-bold flex items-center gap-2">
                     <FolderSimple size={18} weight="fill" style={{ color: managingFolder.color }} />
                     {isRTL ? `إدارة محتوى مجلد: ${managingFolder.name}` : `Manage folder content: ${managingFolder.nameEn}`}
                   </h3>
@@ -723,153 +789,72 @@ export default function SmartFolders({
                   </p>
                 </div>
                 <button
-                  onClick={() => { setManagingFolder(null); setModalQuery(""); }}
+                  type="button"
+                  onClick={closeManage}
+                  aria-label={isRTL ? "إغلاق" : "Close"}
                   className={`p-1.5 rounded-lg hover:bg-black/10 dark:hover:bg-white/5 transition text-gray-400`}
                 >
                   <X size={16} weight="bold" />
                 </button>
               </div>
 
-              {/* Search input */}
-              <div className="relative mb-3 flex-shrink-0">
-                <input
-                  type="text"
-                  value={modalQuery}
-                  onChange={e => setModalQuery(e.target.value)}
-                  placeholder={isRTL ? "البحث عن نظام، مبدأ، حكم، تعميم أو كتاب فقهي..." : "Search for law, precedent, circular or book..."}
-                  className={`w-full text-xs pl-3 pr-8 py-2 rounded-xl border outline-none ${
-                    isDark
-                      ? "bg-[#0c0f12] border-white/5 text-white placeholder-gray-600 focus:border-[#C8A762]/40"
-                      : "bg-slate-50 border-slate-200 text-gray-900 placeholder-gray-400 focus:border-[#0B3D2E]"
-                  }`}
-                />
-                <MagnifyingGlass size={14} className={`absolute top-1/2 -translate-y-1/2 ${isRTL ? "left-3" : "right-3"} text-gray-400`} />
-              </div>
-
-              {/* Category tabs */}
-              <div className="flex gap-1.5 overflow-x-auto pb-3 mb-3 border-b border-slate-100 dark:border-white/[0.04] flex-shrink-0">
-                {[
-                  { id: "all", label: "الكل" },
-                  { id: "law", label: "الأنظمة" },
-                  { id: "precedent", label: "المبادئ والأحكام" },
-                  { id: "order", label: "الأوامر والتعاميم" },
-                  { id: "book", label: "الكتب الفقهية" }
-                ].map(tab => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id as any)}
-                    className={`px-3 py-1 rounded-lg text-[10px] font-bold transition-all border whitespace-nowrap ${
-                      activeTab === tab.id
-                        ? isDark ? "border-[#C8A762]/40 text-[#C8A762] bg-[#C8A762]/10" : "border-[#0B3D2E]/20 text-[#0B3D2E] bg-[#0B3D2E]/5"
-                        : isDark ? "border-white/[0.04] text-zinc-500 hover:border-white/10" : "border-slate-200 text-slate-500 hover:bg-slate-50"
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Scrollable list */}
-              <div className="flex-1 overflow-y-auto space-y-4 pr-1">
-                {/* Recent viewed items (only show when no query and "all" tab is selected) */}
-                {!modalQuery && activeTab === "all" && recentSessions.length > 0 && (
+              <FolderContentPicker
+                isDark={isDark}
+                isRTL={isRTL}
+                folderColor={managingFolder.color}
+                autoFocusSearch
+                isInFolder={doc => managingFolder.laws.some(item => item.slug === doc.slug && (item.type || "law") === (doc.type || "law"))}
+                onToggle={doc => { void handleToggleItemInModal(doc); }}
+                pendingKeys={pendingKeys}
+              >
+                {tab => tab === "all" && recentSessions.length > 0 && (
                   <div className="space-y-2">
-                    <span className={`block text-[10px] font-bold tracking-wider uppercase ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+                    <span className={`block text-[10px] font-bold tracking-wider ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
                       {isRTL ? "آخر جلساتي وقراءاتي" : "Recent Sessions"}
                     </span>
-                    <div className="space-y-2">
+                    <ul className="space-y-2">
                       {recentSessions.map((doc: any) => {
-                        const inFolder = managingFolder.laws.some(item => item.slug === doc.slug && (item.type || "law") === doc.type);
+                        const inFolder = managingFolder.laws.some(item => item.slug === doc.slug && (item.type || "law") === (doc.type || "law"));
                         return (
-                          <div
-                            key={`recent-${doc.type}-${doc.slug}`}
-                            onClick={() => handleToggleItemInModal(doc)}
-                            className={`flex items-center justify-between p-2.5 rounded-xl border cursor-pointer transition-all ${
-                              inFolder
-                                ? isDark ? "bg-[#0B3D2E]/10 border-emerald-500/30 text-emerald-400" : "bg-emerald-50 border-emerald-200 text-emerald-900"
-                                : isDark ? "bg-white/[0.02] border-white/5 text-gray-300 hover:bg-white/5" : "bg-slate-50 border-slate-200 text-gray-700 hover:bg-slate-100"
-                            }`}
-                          >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <div className="flex-shrink-0">
-                                {doc.type === "order" ? <Scroll size={13} className="text-emerald-500" /> :
-                                 doc.type === "precedent" ? <Gavel size={13} className="text-purple-500" /> :
-                                 doc.type === "book" ? <BookOpen size={13} className="text-amber-500" /> :
-                                 <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: managingFolder.color }} />}
-                              </div>
-                              <span className="text-xs font-semibold truncate">{isRTL ? doc.title : doc.titleEn}</span>
-                            </div>
-                            <div className={`w-5 h-5 rounded-md border flex items-center justify-center flex-shrink-0 ${
-                              inFolder 
-                                ? "bg-emerald-500 border-emerald-500 text-white" 
-                                : isDark ? "border-white/20" : "border-gray-300"
-                            }`}>
-                              {inFolder && <Check size={12} weight="bold" />}
-                            </div>
-                          </div>
+                          <li key={`recent-${doc.type}-${doc.slug}`}>
+                            <button
+                              type="button"
+                              aria-pressed={inFolder}
+                              onClick={() => { void handleToggleItemInModal({ ...doc, type: doc.type || "law", titleEn: doc.titleEn || doc.title, catId: doc.catId || "SA-00" }); }}
+                              className={`w-full text-start flex items-center justify-between p-2.5 rounded-xl border transition-all ${
+                                inFolder
+                                  ? isDark ? "bg-[#0B3D2E]/10 border-emerald-500/30 text-emerald-400" : "bg-emerald-50 border-emerald-200 text-emerald-900"
+                                  : isDark ? "bg-white/[0.02] border-white/5 text-gray-300 hover:bg-white/5" : "bg-slate-50 border-slate-200 text-gray-700 hover:bg-slate-100"
+                              }`}
+                            >
+                              <span className="flex items-center gap-2.5 min-w-0">
+                                <span className="flex-shrink-0"><DocTypeIcon type={doc.type} color={managingFolder.color} /></span>
+                                <span className="text-xs font-semibold truncate">{isRTL ? doc.title : (doc.titleEn || doc.title)}</span>
+                              </span>
+                              <span className={`w-5 h-5 rounded-md border flex items-center justify-center flex-shrink-0 ${
+                                inFolder
+                                  ? "bg-emerald-500 border-emerald-500 text-white"
+                                  : isDark ? "border-white/20" : "border-gray-300"
+                              }`}>
+                                {inFolder ? <Check size={12} weight="bold" /> : <Plus size={10} weight="bold" />}
+                              </span>
+                            </button>
+                          </li>
                         );
                       })}
-                    </div>
+                    </ul>
                   </div>
                 )}
-
-                {/* Main list */}
-                <div className="space-y-2">
-                  <span className={`block text-[10px] font-bold tracking-wider uppercase ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                    {modalQuery ? (isRTL ? "نتائج البحث" : "Search Results") : (isRTL ? "محتويات المكتبة" : "Library Contents")}
-                  </span>
-                  <div className="space-y-2 pb-4">
-                    {filteredDocs.map(doc => {
-                      const inFolder = managingFolder.laws.some(item => item.slug === doc.slug && (item.type || "law") === doc.type);
-                      return (
-                        <div
-                          key={`all-${doc.type}-${doc.slug}`}
-                          onClick={() => handleToggleItemInModal(doc)}
-                          className={`flex items-center justify-between p-2.5 rounded-xl border cursor-pointer transition-all ${
-                            inFolder
-                              ? isDark ? "bg-[#0B3D2E]/10 border-emerald-500/30 text-emerald-400" : "bg-emerald-50 border-emerald-200 text-emerald-900"
-                              : isDark ? "bg-white/[0.02] border-white/5 text-gray-300 hover:bg-white/5" : "bg-slate-50 border-slate-200 text-gray-700 hover:bg-slate-100"
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="flex-shrink-0">
-                              {doc.type === "order" ? <Scroll size={13} className="text-emerald-500" /> :
-                               doc.type === "precedent" ? <Gavel size={13} className="text-purple-500" /> :
-                               doc.type === "book" ? <BookOpen size={13} className="text-amber-500" /> :
-                               <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: managingFolder.color }} />}
-                            </div>
-                            <div className="min-w-0">
-                              <span className="text-xs font-semibold block truncate">{isRTL ? doc.title : doc.titleEn}</span>
-                              <span className={`text-[8px] ${isDark ? "text-gray-500" : "text-gray-400"}`}>{doc.catId}</span>
-                            </div>
-                          </div>
-                          <div className={`w-5 h-5 rounded-md border flex items-center justify-center flex-shrink-0 ${
-                            inFolder 
-                              ? "bg-emerald-500 border-emerald-500 text-white" 
-                              : isDark ? "border-white/20" : "border-gray-300"
-                          }`}>
-                            {inFolder && <Check size={12} weight="bold" />}
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                    {filteredDocs.length === 0 && (
-                      <p className={`text-xs text-center py-8 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-                        {isRTL ? "لا توجد نتائج مطابقة لبحثك." : "No matching items found."}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
+              </FolderContentPicker>
 
               {/* Footer */}
               <div className="pt-4 border-t border-slate-100 dark:border-white/[0.04] flex justify-end flex-shrink-0">
                 <button
-                  onClick={() => { setManagingFolder(null); setModalQuery(""); }}
-                  className="px-5 py-2 rounded-xl text-xs font-bold bg-[#0B3D2E] text-white hover:opacity-90 active:scale-[0.98] transition-all"
+                  type="button"
+                  onClick={closeManage}
+                  className="w-full sm:w-auto px-8 py-2.5 rounded-xl text-xs font-bold bg-[#0B3D2E] text-white hover:opacity-90 active:scale-[0.98] transition-all"
                 >
-                  {isRTL ? "تم" : "Done"}
+                  {isRTL ? "تم ✓" : "Done ✓"}
                 </button>
               </div>
             </motion.div>
