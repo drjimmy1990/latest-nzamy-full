@@ -9,7 +9,7 @@ import {
   LIBRARY_FTS_CONFIG,
 } from '@/utils/normalizeArabic';
 import { libraryGate } from '@/lib/library-gate';
-import { categoryStoredSpellings, validateSearchRequest } from './filters';
+import { categoryStoredSpellings, sectionsToSearch, validateSearchRequest } from './filters';
 import { truncateWithHighlight } from './snippet';
 import { isFreeLibraryItem } from '@/lib/library-item-access';
 import {
@@ -975,14 +975,13 @@ export async function POST(request: Request) {
       orders: runOrders,
       feqh: runFeqh,
     };
-    const names: SearchSectionName[] = section === 'all'
-      ? ['laws', 'precedents', 'orders', 'feqh']
-      : [section];
+    // section=all + category (owner note ١٢-د) runs laws and orders only.
+    const names: SearchSectionName[] = sectionsToSearch(section, filters);
     const settled = await Promise.all(names.map((name) => runners[name]()));
     const outcomes: Partial<Record<SearchSectionName, SectionOutcome>> = {};
     names.forEach((name, i) => { outcomes[name] = settled[i]; });
 
-    const combined = combineSearchOutcomes(section, outcomes, { page, query: parsed.raw });
+    const combined = combineSearchOutcomes(section, outcomes, { page, query: parsed.raw }, names);
     if (combined.status !== 200) return searchUnavailableResponse(combined.status);
     // counts.laws already includes these; the separate number lets a client
     // label law-level hits apart from article hits.

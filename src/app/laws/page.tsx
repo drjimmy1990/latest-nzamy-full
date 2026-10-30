@@ -81,6 +81,7 @@ import {
   SEARCH_MAX_DEPTH,
   SEARCH_PAGE_SIZE,
   SEARCH_SECTIONS,
+  CATEGORY_SEARCH_SECTIONS,
   SECTION_DEGRADED_NOTICE,
   SEARCH_SECTION_LABELS_AR,
   appendSearchRows,
@@ -296,9 +297,10 @@ export default function LegalLibraryPage() {
       return;
     }
     // Category is a laws/orders API filter. Keep a persisted or stale category
-    // from silently widening an all, precedents, or feqh text search.
+    // from silently widening a precedents or feqh text search. On «الكل»
+    // (owner note ١٢-د) the API runs laws and orders only for a category.
     const section = type === 'all' ? 'all' : type;
-    if (cat !== 'all' && section !== 'laws' && section !== 'orders') {
+    if (cat !== 'all' && section !== 'laws' && section !== 'orders' && section !== 'all') {
       searchRequestIdRef.current += 1;
       searchAbortRef.current?.abort();
       loadMoreAbortRef.current?.abort();
@@ -373,7 +375,11 @@ export default function LegalLibraryPage() {
       }
       // Only the requested section(s) count; a section the API names in
       // `degraded` failed, it did not match nothing.
-      setSearchCounts(readSearchCounts(data, section === 'all' ? SEARCH_SECTIONS : [section as SearchSection]));
+      // «الكل» + a category searched laws and orders only: the other two
+      // sections are not counted (not «0», not degraded).
+      setSearchCounts(readSearchCounts(data, section === 'all'
+        ? (cat !== 'all' ? CATEGORY_SEARCH_SECTIONS : SEARCH_SECTIONS)
+        : [section as SearchSection]));
     } catch (e) {
       if ((e as { name?: string }).name !== 'AbortError') {
         console.error('[Search] API error:', e);
@@ -1940,6 +1946,18 @@ export default function LegalLibraryPage() {
                         >
                           {isRTL ? "مسح البحث" : "Clear Search"}
                         </button>
+                      </div>
+                    )}
+
+                    {/* Owner note ١٢-د: «الكل» + a category chip searches laws and
+                        orders only (the two sections that carry a category). */}
+                    {isSearchActive && !searchLoading && !searchError && searchResults && activeType === "all" && activeCat !== "all" && (
+                      <div role="status" data-testid="category-scope-note" className={`mb-4 rounded-xl border px-4 py-2.5 text-xs font-medium ${
+                        isDark ? "bg-white/5 border-[#2d3748] text-gray-300" : "bg-slate-50 border-slate-200 text-slate-700"
+                      }`}>
+                        {isRTL
+                          ? "التصنيف المختار يُطبَّق على الأنظمة والأوامر، فالنتائج منهما فقط. لعرض المبادئ والفقه اختر تصنيف «الكل»."
+                          : "The selected category applies to laws and orders, so results come from those only. Choose «All» categories to include principles and fiqh."}
                       </div>
                     )}
 
