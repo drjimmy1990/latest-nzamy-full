@@ -97,14 +97,25 @@ begin
   if after <> before then raise exception 'T2 FAIL: a replay wrote rows % → %', before, after; end if;
 end $$;
 
--- T3 the key with another amount, or from another lawyer → key_reused, nothing
---    written, and nothing about the first invoice revealed
+-- T3 the key with another amount, another client / type / case / description,
+--    or from another lawyer → key_reused, nothing written, and nothing about
+--    the first invoice revealed (a form edited after an uncertain reply must
+--    not get the old invoice back as if it were the new one)
 do $$
 declare r jsonb; before record; after record;
 begin
   select * into before from pg_temp.counts();
   r := pg_temp.mk('00000000-0000-0000-0000-00000000a001', 'create-0001', 200000);
   if r ->> 'code' <> 'key_reused' then raise exception 'T3 FAIL: other amount → %', r; end if;
+  r := pg_temp.mk('00000000-0000-0000-0000-00000000a001', 'create-0001', 100000, 'عميل آخر', 'individual');
+  if r ->> 'code' <> 'key_reused' then raise exception 'T3 FAIL: other client → %', r; end if;
+  r := pg_temp.mk('00000000-0000-0000-0000-00000000a001', 'create-0001', 100000, 'عميل نصي', 'company');
+  if r ->> 'code' <> 'key_reused' then raise exception 'T3 FAIL: other type → %', r; end if;
+  r := pg_temp.mk('00000000-0000-0000-0000-00000000a001', 'create-0001', 100000, 'عميل نصي', 'individual', ctitle => 'قضية أخرى');
+  if r ->> 'code' <> 'key_reused' then raise exception 'T3 FAIL: other case title → %', r; end if;
+  r := public.create_lawyer_invoice('00000000-0000-0000-0000-00000000a001', 'create-0001', 100000,
+         'عميل نصي', 'individual', null, null, null, 'وصف آخر', 'full', null);
+  if r ->> 'code' <> 'key_reused' then raise exception 'T3 FAIL: other description → %', r; end if;
   r := pg_temp.mk('00000000-0000-0000-0000-00000000a002', 'create-0001', 100000);
   if r ->> 'code' <> 'key_reused' or r ? 'payment' then raise exception 'T3 FAIL: other lawyer → %', r; end if;
   select * into after from pg_temp.counts();

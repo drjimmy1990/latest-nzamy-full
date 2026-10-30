@@ -21,8 +21,11 @@
 --       1. pg_advisory_xact_lock on the key: a second call with the same key
 --          waits, then finds the first call's invoice;
 --       2. the key already used → the same invoice back ('ok' + replay) when
---          it was this lawyer's and the same amount; otherwise 'key_reused'
---          (no detail — a guessed key reveals nothing);
+--          it was this lawyer's and EVERY input is the same (a fingerprint of
+--          all of them, metadata.create_fp); otherwise 'key_reused' (no
+--          detail — a guessed key reveals nothing). A form edited after an
+--          uncertain reply (another client, case, amount…) is therefore
+--          refused, never answered with the old invoice;
 --       3. ownership BEFORE any insert, one answer 'forbidden' for missing and
 --          foreign alike:
 --            p_request_id  — the request the invoice hangs on, assigned to
@@ -110,6 +113,7 @@ declare
   amt          numeric(12,2);
   req_id       text;
   meta         jsonb;
+  fp           text;
   created      public.payments%rowtype;
 begin
   if p_actor is null
@@ -123,6 +127,16 @@ begin
     return jsonb_build_object('code', 'invalid');
   end if;
   amt := round(p_amount_halalas::numeric / 100, 2);
+  fp := md5(jsonb_build_object(
+    'amount',   p_amount_halalas,
+    'client',   nullif(btrim(coalesce(p_client_name, '')), ''),
+    'type',     p_client_type,
+    'card',     p_lawyer_client_id,
+    'case',     p_case_id,
+    'caseTitle', nullif(btrim(coalesce(p_case_title, '')), ''),
+    'request',  p_request_id,
+    'desc',     nullif(btrim(coalesce(p_description, '')), ''),
+    'feeType',  coalesce(p_fee_type, 'full'))::text);
 
   -- 1. one form at a time per key
   perform pg_advisory_xact_lock(hashtext('create_lawyer_invoice:' || p_idempotency_key));
@@ -131,7 +145,7 @@ begin
   select p.* into prior from public.payments p
    where (p.metadata ->> 'create_key') = p_idempotency_key;
   if found then
-    if (prior.metadata ->> 'issued_by') = p_actor::text and prior.amount = amt then
+    if (prior.metadata ->> 'issued_by') = p_actor::text and (prior.metadata ->> 'create_fp') = fp then
       return jsonb_build_object('code', 'ok', 'replay', true, 'payment', to_jsonb(prior));
     end if;
     return jsonb_build_object('code', 'key_reused');
@@ -192,7 +206,8 @@ begin
     'description', coalesce(nullif(btrim(coalesce(p_description, '')), ''), 'أتعاب قانونية'),
     'issued_by', p_actor,
     'feeType', coalesce(p_fee_type, 'full'),
-    'create_key', p_idempotency_key);
+    'create_key', p_idempotency_key,
+    'create_fp', fp);
   if p_lawyer_client_id is not null then
     meta := meta || jsonb_build_object('clientId', p_lawyer_client_id);
   end if;

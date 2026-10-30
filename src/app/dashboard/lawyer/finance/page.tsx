@@ -455,6 +455,7 @@ export default function FinancePage() {
           if (raw.includes("يكرّر طلب إصدار سابقاً")) {
             setCreateUncertain(false);
             setCreateKey(newCollectKey());
+            refreshSilently();
           }
           setInvoiceError(CREATE_ERROR_AR[raw] || (hasArabic(raw) ? raw : "تعذّر إصدار الفاتورة. حاول مرة أخرى."));
         }
