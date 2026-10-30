@@ -5,7 +5,7 @@ import {
   ListNumbers, MagnifyingGlass, Compass
 } from "@phosphor-icons/react";
 import { formatLocator } from "./_locator";
-import type { BlocksBySection, CompleteSections, ReaderChapter } from "./_reader-model";
+import { tocWindow, type BlocksBySection, type CompleteSections, type ReaderChapter } from "./_reader-model";
 
 /** Chapters rendered at first, and per "show more" — books run to 4,860. */
 const CHAPTERS_PER_STEP = 150;
@@ -53,22 +53,24 @@ export default function SidebarPanel({
   const listRef = useRef<HTMLDivElement | null>(null);
 
   // Render the TOC in steps: thousands of chapter rows at once froze the page.
-  // A new search starts again from the first step. The step always reaches
-  // the chapter being read, so the entry in view has a row to highlight.
-  const [step, setStep] = useState({ query: searchQuery, count: CHAPTERS_PER_STEP });
+  // A new search starts again from the first step. When the chapter being
+  // read lies past the first step, the rendered slice is centred on it
+  // (tocWindow), so the entry in view has a row to highlight without
+  // mounting every chapter before it.
+  const [step, setStep] = useState({ query: searchQuery, count: CHAPTERS_PER_STEP, before: 0 });
+  const sameQuery = step.query === searchQuery;
+  const count = sameQuery ? step.count : CHAPTERS_PER_STEP;
+  const before = sameQuery ? step.before : 0;
   const activeChapterIndex = activeSectionId
     ? filteredChapters.findIndex((ch) => ch.sections.some((s) => s.id === activeSectionId))
     : -1;
-  const visibleChapters = Math.max(
-    step.query === searchQuery ? step.count : CHAPTERS_PER_STEP,
-    activeChapterIndex + 1,
-  );
-  const shownChapters = filteredChapters.slice(0, visibleChapters);
-  const remaining = filteredChapters.length - shownChapters.length;
+  const { start, end } = tocWindow(filteredChapters.length, activeChapterIndex, count, before, CHAPTERS_PER_STEP);
+  const shownChapters = filteredChapters.slice(start, end);
+  const remaining = filteredChapters.length - end;
 
   // Owner note ٠٢: as the reader scrolls the stream, the index follows — its
-  // OWN list scrolls to the entry in view (never the window: scrollIntoView
-  // would pull the page away from the text being read).
+  // OWN list scrolls to the entry in view (never the window: scrolling the
+  // row into view would pull the page away from the text being read).
   useEffect(() => {
     const list = listRef.current;
     if (!list || (!activeBlockId && !activeSectionId)) return;
@@ -149,6 +151,17 @@ export default function SidebarPanel({
         </div>
 
         <div ref={listRef} className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+          {start > 0 && (
+            <button
+              type="button"
+              onClick={() => setStep({ query: searchQuery, count, before: before + CHAPTERS_PER_STEP })}
+              className={`w-full px-3 py-2 rounded-xl text-[11px] font-bold border transition ${
+                isDark ? "border-white/[0.07] text-zinc-400 hover:text-zinc-300" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {`عرض الأبواب السابقة (${start} سابقة)`}
+            </button>
+          )}
           {shownChapters.map((ch) => (
             <div key={ch.id} className="space-y-2">
               <p className="text-[11px] font-black text-amber-600 dark:text-amber-500 border-b pb-1 border-slate-100 dark:border-white/[0.04]">{ch.title}</p>
@@ -208,7 +221,7 @@ export default function SidebarPanel({
           {remaining > 0 && (
             <button
               type="button"
-              onClick={() => setStep({ query: searchQuery, count: visibleChapters + CHAPTERS_PER_STEP })}
+              onClick={() => setStep({ query: searchQuery, count: count + CHAPTERS_PER_STEP, before })}
               className={`w-full px-3 py-2 rounded-xl text-[11px] font-bold border transition ${
                 isDark ? "border-white/[0.07] text-zinc-400 hover:text-zinc-300" : "border-slate-200 text-slate-600 hover:bg-slate-50"
               }`}

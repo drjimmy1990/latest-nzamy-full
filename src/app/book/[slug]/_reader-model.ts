@@ -483,9 +483,39 @@ export function extendStream(stream: ReaderStream, run: OrderedRun, dir: 1 | -1)
   };
 }
 
-/** A new stream from a cursor window (a jump): it starts where the window starts. */
-export function streamFromRun(run: OrderedRun): ReaderStream {
-  return { blocks: dedupeInOrder(run.blocks), startsBook: run.startsBook, endsBook: run.endsBook };
+/**
+ * A new stream from a cursor window (a jump): it starts where the window
+ * starts. `links` (recorded by earlier runs — page 1 records the book's first
+ * block) tell when that start, or the window's end, is an edge of the book, so
+ * a jump to the first chapter offers no «عرض ما قبل».
+ */
+export function streamFromRun(run: OrderedRun, links: BookLinks = emptyLinks()): ReaderStream {
+  const blocks = dedupeInOrder(run.blocks);
+  const first = blocks[0]?.id;
+  const last = blocks[blocks.length - 1]?.id;
+  return {
+    blocks,
+    startsBook: run.startsBook || (first !== undefined && links.prev[first] === null),
+    endsBook: run.endsBook || (last !== undefined && links.next[last] === null),
+  };
+}
+
+/**
+ * The slice of the index (chapters) the sidebar renders: `count` rows, plus
+ * `before` rows revealed above. When the chapter being read lies past the
+ * first `count` rows, the slice is centred on it instead of growing from
+ * chapter 0 — a jump to page 900 of a 4,860-chapter book must not mount
+ * thousands of rows (what the step was introduced to stop).
+ */
+export function tocWindow(
+  total: number,
+  activeIndex: number,
+  count: number,
+  before: number,
+  step: number,
+): { start: number; end: number } {
+  const anchor = activeIndex >= count ? Math.max(0, activeIndex - Math.floor(step / 2)) : 0;
+  return { start: Math.max(0, anchor - before), end: Math.min(total, anchor + count) };
 }
 
 /** The order_index to ask ?from_order= for (dir 1) or ?before_order= for (dir -1); null = nothing to anchor on. */

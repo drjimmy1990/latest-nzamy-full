@@ -206,14 +206,8 @@ export default function FeqhBookPage() {
   // Owner note ٠٦: arriving from a search (/book/…?q=) colours its terms
   // through the whole stream — nothing is hidden. The index's own box, when
   // typed in, takes over; ✕ «مسح الألوان» clears both and drops ?q=.
+  // Read from the address bar when the book loads (loadBookData below).
   const [urlQuery, setUrlQuery] = useState("");
-  useEffect(() => {
-    try {
-      setUrlQuery(new URLSearchParams(window.location.search).get("q")?.trim() ?? "");
-    } catch {
-      setUrlQuery("");
-    }
-  }, [slug]);
   const highlightQuery = searchQuery.trim() ? searchQuery : urlQuery;
   const clearHighlight = useCallback(() => {
     setSearchQuery("");
@@ -321,7 +315,7 @@ export default function FeqhBookPage() {
       streamGeneration.current += 1;
       morePending.current = null;
       recordRun(answer.run);
-      const next = streamFromRun(answer.run);
+      const next = streamFromRun(answer.run, linksRef.current);
       commitStream(next);
       setStalled(false);
       setMoreError(null);
@@ -586,6 +580,14 @@ export default function FeqhBookPage() {
       setSettledBlockId(state.firstBlockId);
     };
     async function loadBookData() {
+      // Owner note ٠٦: ?q= from a search result colours the whole book.
+      let q = "";
+      try {
+        q = new URLSearchParams(window.location.search).get("q")?.trim() ?? "";
+      } catch {
+        q = "";
+      }
+      setUrlQuery(q);
       setLoading(true);
       setLoadError(null);
       setNavError(null);

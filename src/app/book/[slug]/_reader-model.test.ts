@@ -303,7 +303,7 @@ test("TOC filter matches Arabic-Indic and Western digits bidirectionally", () =>
 // ── Owner note ٠٢: the continuous stream ─────────────────────────────────────
 import {
   emptyStream, extendStream, firstStreamBlockOfSection, parseJumpQuery, planBlockJump,
-  streamCursor, streamFromFirstPage, streamFromRun, streamHas, topmostVisible, type ReaderStream,
+  streamCursor, streamFromFirstPage, streamFromRun, streamHas, tocWindow, topmostVisible, type ReaderStream,
 } from "./_reader-model.ts";
 
 /** What the books API answers to ?from_order=N&limit=L (or before_order), from `all`. */
@@ -399,6 +399,31 @@ test("note ٠٢: a jump scrolls when the stream holds the block, loads from its 
   assert.deepEqual(streamCursor(emptyStream(), 1), null);
 });
 
+test("note ٠٢: a jump back to the book's first block knows it is the start (page 1 recorded the edge)", () => {
+  const all = Array.from({ length: 6 }, (_, i) => B(`b${i}`, "s", i));
+  const st = fromApiBook({ id: "x", chapters: [], blocks: all.slice(0, 2), pagination: { page: 1, limit: 2, total: 6, totalPages: 3 } });
+  const run = cursorWindow(all, 1, 0, 3); // from_order=0: a forward window never claims the start by itself
+  assert.equal(run.startsBook, false);
+  assert.equal(streamFromRun(run, st.links).startsBook, true);
+  assert.equal(streamFromRun(run).startsBook, false);
+});
+
+test("note ٠٢: the index renders a bounded slice centred on the chapter being read", () => {
+  // 4,860 chapters (مطالب أولي النهى ج01), reading chapter 3,000, step 150.
+  const w = tocWindow(4860, 3000, 150, 0, 150);
+  assert.ok(w.start > 0, "the slice never starts at chapter 0 when the reader is far beyond the step");
+  assert.ok(w.start <= 3000 && 3000 < w.end, "the active chapter has a row");
+  assert.equal(w.end - w.start, 150);
+  // «عرض الأبواب السابقة» reveals rows above; «عرض المزيد» rows below.
+  const more = tocWindow(4860, 3000, 300, 150, 150);
+  assert.equal(more.start, w.start - 150);
+  assert.equal(more.end, w.start + 300);
+  // Reading near the start: the old first step, from 0.
+  assert.deepEqual(tocWindow(4860, 20, 150, 0, 150), { start: 0, end: 150 });
+  assert.deepEqual(tocWindow(4860, -1, 150, 0, 150), { start: 0, end: 150 });
+  assert.deepEqual(tocWindow(40, 30, 150, 0, 150), { start: 0, end: 40 });
+});
+
 test("note ٠٢: the index highlights the first block, in stream order, that crosses the reading line", () => {
   const s = streamFromRun(cursorWindow(Array.from({ length: 5 }, (_, i) => B(`b${i}`, "s", i)), 1, 0, 5));
   assert.equal(topmostVisible(s, new Set(["b3", "b1"]), "b0"), "b1");
@@ -447,4 +472,9 @@ test("note ٠٢: the page renders the stream, with per-block actions, and no sin
     assert.ok(block.includes(`<Hl text={${part}} />`), `${part} is highlighted`);
   }
   assert.doesNotMatch(block, /dangerouslySetInnerHTML/);
+  // The index follows the stream in a bounded slice, scrolling its own list.
+  const sidebar = readFileSync(path.join(here, "_sidebar.tsx"), "utf8");
+  assert.match(sidebar, /tocWindow\(filteredChapters\.length, activeChapterIndex/);
+  assert.doesNotMatch(sidebar, /filteredChapters\.slice\(0,/);
+  assert.doesNotMatch(sidebar, /scrollIntoView/);
 });
