@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   FolderSimple, PencilSimple, Trash, Check, X, BookOpen, Star, PushPin, Palette,
@@ -9,6 +10,7 @@ import {
 import Link from "next/link";
 import { SmartFolder, FOLDER_COLORS } from "./SmartFolderTypes";
 import { resolveSavedItemHref } from "./smartFolderApiMapper";
+import { placeFloatingMenu, type MenuPlacement } from "./folderMenuPlacement";
 
 interface FolderIconProps {
   icon: SmartFolder["icon"];
@@ -72,18 +74,82 @@ export default function FolderCard({
   const [editName, setEditName] = useState(folder.name);
   const [showColors, setShowColors] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [menuPlacement, setMenuPlacement] = useState<MenuPlacement | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isEditing && inputRef.current) inputRef.current.focus();
   }, [isEditing]);
 
+  // ── «⋮» menu (owner note ٠٤ §١) ─────────────────────────────────────────
+  // Portalled to <body> with position: fixed, so no clipping ancestor (this
+  // card's overflow-hidden, the list's max-h scroll box, the widget's
+  // overflow-hidden) can hide it. Placement: folderMenuPlacement.ts.
+  const closeMenu = useCallback((returnFocus: boolean) => {
+    setShowMenu(false);
+    setMenuPlacement(null);
+    if (returnFocus) menuButtonRef.current?.focus();
+  }, []);
+
+  // Measure the rendered (still invisible) menu, then place it.
+  useLayoutEffect(() => {
+    if (!showMenu) return;
+    const button = menuButtonRef.current;
+    const menu = menuRef.current;
+    if (!button || !menu) return;
+    const place = () => {
+      const r = button.getBoundingClientRect();
+      setMenuPlacement(placeFloatingMenu({
+        anchor: { top: r.top, bottom: r.bottom, left: r.left, right: r.right },
+        menu: { width: menu.offsetWidth, height: menu.scrollHeight },
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+        isRTL,
+      }));
+    };
+    place();
+    // First item takes focus, so the keyboard can walk the menu at once.
+    menu.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+  }, [showMenu, isRTL]);
+
+  // Close on a press outside, Escape, any scroll outside the menu, resize.
   useEffect(() => {
     if (!showMenu) return;
-    const close = () => setShowMenu(false);
-    window.addEventListener("click", close);
-    return () => window.removeEventListener("click", close);
-  }, [showMenu]);
+    const inside = (t: EventTarget | null) =>
+      t instanceof Node && (menuRef.current?.contains(t) || menuButtonRef.current?.contains(t));
+    const onPointerDown = (e: PointerEvent) => { if (!inside(e.target)) closeMenu(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); closeMenu(true); } };
+    const onScroll = (e: Event) => { if (!(e.target instanceof Node && menuRef.current?.contains(e.target))) closeMenu(false); };
+    const onResize = () => closeMenu(false);
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onResize);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [showMenu, closeMenu]);
+
+  // Arrow keys / Home / End move between items; Tab leaves and closes.
+  const onMenuKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []);
+    if (items.length === 0) return;
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    let next = -1;
+    if (e.key === "ArrowDown") next = (at + 1) % items.length;
+    else if (e.key === "ArrowUp") next = (at - 1 + items.length) % items.length;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = items.length - 1;
+    else if (e.key === "Tab") { closeMenu(false); return; }
+    if (next >= 0) { e.preventDefault(); items[next].focus(); }
+  };
+
+  /** Runs a menu action, then closes the menu (focus goes where the action puts it). */
+  const menuAction = (fn: () => void) => () => { closeMenu(false); fn(); };
 
   const handleSave = () => {
     if (editName.trim()) {
@@ -169,87 +235,115 @@ export default function FolderCard({
           {!isEditing && (
             <div className="relative flex items-center">
               <button
-                onClick={() => { setShowMenu(!showMenu); setShowColors(false); }}
+                ref={menuButtonRef}
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded={showMenu}
+                onClick={() => { if (showMenu) closeMenu(false); else { setShowMenu(true); setShowColors(false); } }}
+                onKeyDown={e => {
+                  if ((e.key === "ArrowDown" || e.key === "ArrowUp") && !showMenu) { e.preventDefault(); setShowMenu(true); setShowColors(false); }
+                }}
                 className={`p-2 rounded-lg transition-all ${
                   isDark ? "hover:bg-white/5 text-gray-400 hover:text-white" : "hover:bg-gray-100 text-gray-500 hover:text-gray-800"
                 }`}
                 title={isRTL ? "خيارات المجلد" : "Folder options"}
+                aria-label={isRTL ? `خيارات المجلد ${folder.name}` : `Folder options: ${folder.nameEn}`}
               >
                 <DotsThreeVertical size={16} weight="bold" />
               </button>
-              
-              <AnimatePresence>
-                {showMenu && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                    transition={{ duration: 0.15 }}
-                    className={`absolute bottom-full mb-2 ${isRTL ? "left-0" : "right-0"} w-40 rounded-xl border shadow-xl z-30 p-1.5 ${
-                      isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"
+
+              {showMenu && typeof document !== "undefined" && createPortal(
+                <div
+                  ref={menuRef}
+                  role="menu"
+                  dir={isRTL ? "rtl" : "ltr"}
+                  aria-label={isRTL ? "خيارات المجلد" : "Folder options"}
+                  onKeyDown={onMenuKeyDown}
+                  data-direction={menuPlacement?.direction}
+                  style={{
+                    position: "fixed",
+                    top: menuPlacement?.top ?? 0,
+                    left: menuPlacement?.left ?? 0,
+                    maxHeight: menuPlacement?.maxHeight,
+                    // Invisible for the one frame it is measured in.
+                    visibility: menuPlacement ? "visible" : "hidden",
+                  }}
+                  className={`w-44 overflow-y-auto rounded-xl border shadow-xl z-[70] p-1.5 ${
+                    isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"
+                  }`}
+                >
+                  {/* Add Content */}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    // Focus back on «⋮» first, so the dialog returns it there on close.
+                    onClick={() => { closeMenu(true); onManageContent(); }}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg transition outline-none focus-visible:ring-2 focus-visible:ring-[#C8A762]/60 ${
+                      isDark ? "text-emerald-400 hover:bg-emerald-500/10" : "text-emerald-700 hover:bg-emerald-50"
                     }`}
                   >
-                    {/* Add Content */}
-                    <button
-                      onClick={() => { onManageContent(); setShowMenu(false); }}
-                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg transition ${
-                        isDark ? "text-emerald-400 hover:bg-emerald-500/10" : "text-emerald-700 hover:bg-emerald-50"
-                      }`}
-                    >
-                      <Plus size={13} weight="bold" />
-                      <span>{isRTL ? "إدارة المحتوى" : "Manage Content"}</span>
-                    </button>
+                    <Plus size={13} weight="bold" />
+                    <span>{isRTL ? "إدارة المحتوى" : "Manage Content"}</span>
+                  </button>
 
-                    {/* Toggle Pin */}
+                  {/* Toggle Pin */}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={menuAction(() => onTogglePin(folder.id))}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg transition outline-none focus-visible:ring-2 focus-visible:ring-[#C8A762]/60 ${
+                      isDark ? "text-gray-300 hover:bg-white/5" : "text-gray-700 hover:bg-gray-50"
+                    }`}
+                  >
+                    <PushPin size={13} weight={folder.isPinned ? "fill" : "regular"} className="text-[#C8A762]" />
+                    <span>{folder.isPinned ? (isRTL ? "إلغاء التثبيت" : "Unpin") : (isRTL ? "تثبيت المجلد" : "Pin")}</span>
+                  </button>
+
+                  {/* Change Color */}
+                  {!folder.isDefault && (
                     <button
-                      onClick={() => { onTogglePin(folder.id); setShowMenu(false); }}
-                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg transition ${
+                      type="button"
+                      role="menuitem"
+                      onClick={menuAction(() => setShowColors(true))}
+                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg transition outline-none focus-visible:ring-2 focus-visible:ring-[#C8A762]/60 ${
                         isDark ? "text-gray-300 hover:bg-white/5" : "text-gray-700 hover:bg-gray-50"
                       }`}
                     >
-                      <PushPin size={13} weight={folder.isPinned ? "fill" : "regular"} className="text-[#C8A762]" />
-                      <span>{folder.isPinned ? (isRTL ? "إلغاء التثبيت" : "Unpin") : (isRTL ? "تثبيت المجلد" : "Pin")}</span>
+                      <Palette size={13} />
+                      <span>{isRTL ? "تغيير اللون" : "Change Color"}</span>
                     </button>
+                  )}
 
-                    {/* Change Color */}
-                    {!folder.isDefault && (
-                      <button
-                        onClick={() => { setShowColors(true); setShowMenu(false); }}
-                        className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg transition ${
-                          isDark ? "text-gray-300 hover:bg-white/5" : "text-gray-700 hover:bg-gray-50"
-                        }`}
-                      >
-                        <Palette size={13} />
-                        <span>{isRTL ? "تغيير اللون" : "Change Color"}</span>
-                      </button>
-                    )}
+                  {/* Rename */}
+                  {!folder.isDefault && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={menuAction(() => { setEditName(folder.name); setIsEditing(true); })}
+                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg transition outline-none focus-visible:ring-2 focus-visible:ring-[#C8A762]/60 ${
+                        isDark ? "text-gray-300 hover:bg-white/5" : "text-gray-700 hover:bg-gray-50"
+                      }`}
+                    >
+                      <PencilSimple size={13} />
+                      <span>{isRTL ? "إعادة تسمية" : "Rename"}</span>
+                    </button>
+                  )}
 
-                    {/* Rename */}
-                    {!folder.isDefault && (
-                      <button
-                        onClick={() => { setEditName(folder.name); setIsEditing(true); setShowMenu(false); }}
-                        className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg transition ${
-                          isDark ? "text-gray-300 hover:bg-white/5" : "text-gray-700 hover:bg-gray-50"
-                        }`}
-                      >
-                        <PencilSimple size={13} />
-                        <span>{isRTL ? "إعادة تسمية" : "Rename"}</span>
-                      </button>
-                    )}
-
-                    {/* Delete */}
-                    {!folder.isDefault && (
-                      <button
-                        onClick={() => { onDelete(folder.id); setShowMenu(false); }}
-                        className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg text-red-500 hover:bg-red-500/10 transition"
-                      >
-                        <Trash size={13} />
-                        <span>{isRTL ? "حذف المجلد" : "Delete Folder"}</span>
-                      </button>
-                    )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                  {/* Delete */}
+                  {!folder.isDefault && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={menuAction(() => onDelete(folder.id))}
+                      className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg text-red-500 hover:bg-red-500/10 transition outline-none focus-visible:ring-2 focus-visible:ring-red-400/60"
+                    >
+                      <Trash size={13} />
+                      <span>{isRTL ? "حذف المجلد" : "Delete Folder"}</span>
+                    </button>
+                  )}
+                </div>,
+                document.body,
+              )}
             </div>
           )}
           <button
@@ -323,8 +417,21 @@ export default function FolderCard({
                 );
               })}
               {folder.laws.length === 0 && (
-                <div className="text-center py-5 text-gray-500 text-xs">
-                  {isRTL ? "المجلد فارغ حالياً." : "Folder is empty."}
+                <div className="text-center py-4 text-gray-500 text-xs flex flex-col items-center gap-2.5">
+                  <span>{isRTL ? "المجلد فارغ حالياً." : "Folder is empty."}</span>
+                  {/* Owner note ٠٤ §١.٢: the way in, without hunting in «⋮». */}
+                  <button
+                    type="button"
+                    onClick={onManageContent}
+                    className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-[11px] font-bold transition-all active:scale-[0.97] ${
+                      isDark
+                        ? "bg-[#C8A762]/10 text-[#C8A762] hover:bg-[#C8A762]/20"
+                        : "bg-[#0B3D2E] text-white hover:bg-[#0a3328]"
+                    }`}
+                  >
+                    <Plus size={12} weight="bold" />
+                    {isRTL ? "إضافة محتوى للمجلد" : "Add content to folder"}
+                  </button>
                 </div>
               )}
             </div>
