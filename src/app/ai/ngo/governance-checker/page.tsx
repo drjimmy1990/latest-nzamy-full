@@ -59,6 +59,7 @@ export default function NGOGovernanceCheckerPage() {
   const [checks, setChecks] = useState<CheckItem[]>(INITIAL_CHECKS);
   const [filter, setFilter] = useState<FilterStatus>("all");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   function updateStatus(id: string, status: CheckItem["status"]) {
     setChecks(prev => prev.map(c => c.id === id ? { ...c, status } : c));
@@ -78,6 +79,19 @@ export default function NGOGovernanceCheckerPage() {
   const criticalViolations = checks.filter(c => c.status === "violation" && c.priority === "critical").length;
 
   const categories = [...new Set(checks.map(c => c.category))];
+
+  // The button used to promise a «PDF» and had no handler; nothing is saved
+  // (LIVE-F19), so the user's way to keep the result is to copy it.
+  function copyResult() {
+    const lines = [
+      `نتيجة مدقق حوكمة الجمعية — ${score}% (حساب مؤقت غير محفوظ)`,
+      ...checks.map(c => `- [${STATUS_CONFIG[c.status].label}] ${c.requirement}${c.notes ? ` — ${c.notes}` : ""}`),
+    ];
+    navigator.clipboard?.writeText(lines.join("\n")).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {});
+  }
   const filtered = filter === "all" ? checks : checks.filter(c => c.status === filter);
 
   return (
@@ -111,6 +125,11 @@ export default function NGOGovernanceCheckerPage() {
           </div>
         </motion.div>
       )}
+
+      {/* LIVE-F19: nothing here is saved — say so before the first answer, never promise a record */}
+      <div className="mb-4 rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-2.5 text-[11px] text-amber-300">
+        حساب مؤقت: لا تُحفظ إجاباتك ولا النسبة، وتعود الصفحة فارغة إذا حدّثتها أو غادرتها. انسخ النتيجة بزر «نسخ النتيجة» قبل الخروج.
+      </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
@@ -147,8 +166,8 @@ export default function NGOGovernanceCheckerPage() {
             }`}
           >{f === "all" ? "الكل" : STATUS_CONFIG[f].label}</button>
         ))}
-        <button className="mr-auto flex items-center gap-1.5 rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-1.5 text-[11px] font-semibold text-zinc-500 hover:text-zinc-300 transition-all">
-          <Download size={11} /> تقرير الامتثال PDF
+        <button onClick={copyResult} className="mr-auto flex items-center gap-1.5 rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-1.5 text-[11px] font-semibold text-zinc-500 hover:text-zinc-300 transition-all">
+          <Download size={11} /> {copied ? "نُسخت النتيجة" : "نسخ النتيجة"}
         </button>
       </div>
 
