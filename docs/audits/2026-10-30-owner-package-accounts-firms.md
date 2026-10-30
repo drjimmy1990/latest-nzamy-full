@@ -203,6 +203,8 @@ No finance screen or route was touched.
 - When the firm owner's own session did the removal, the Art. 18 guard (20261019_21) refused the move and the transfer swallowed the error. The rows stayed, by accident.
 - A removal written by the service role or an admin passed the guard and moved them to the consultant.
 - One refused court deadline also kept that lawyer's contract dates back, because it is a single UPDATE.
+- "Appointments" are `hearings` rows. The table holds every diary entry: `kind` in judicial, appointment, deadline, gov_review, client_meet or internal (20260903 phase 1). No separate appointments table exists among the 21 specs.
+- Other dated rows still move to the owner on removal, deliberately: tasks, consultations (`scheduled_at`) and contracts. They are not court work under Art. 18, and a consulting office's owner may carry them on.
 
 **Change (SQL §2):**
 - `firm_member_removed_transfer` marks the removal with a transaction-local setting.
