@@ -75,6 +75,15 @@ Admins can use every tool, and admins are never charged.
 
 **L7 needs one extra step when you deploy it:** run `npm install` before `deploy.sh`, for the new page-counting package `pdf-lib`. The full steps are in `n8n/ai/README.md` («Wave 3, L7»).
 
+### Waves 4 and 5 (added 2026-10-30)
+| Tool | Page | Points | Who | State |
+|---|---|:-:|---|---|
+| **L9 المحاكي الشامل** | `/ai/wargaming` | 250 | lawyers, firms (not consultants) | on `main` `0d5273ea`; n8n workflow created and live-tested 2026-10-30 |
+| **L10 محلل قوة الموقف** | `/ai/analyze-strength` | 250 | lawyers, firms | on `main` `0d5273ea`; n8n workflow created and live-tested 2026-10-30 (with and without a file) |
+| **L11 محترف العقود المختصر**: the six contract types → a full draft in sections, blanks `[....]` for anything not given, every cited article checked in the library | `/ai/contract-drafter` | 500 | lawyers, firms, individuals, companies, micro | branch `feat/ai-wave5`, not merged; n8n workflow created and live-tested 2026-10-30 |
+
+The steps for each are in `n8n/ai/README.md` («Wave 4» and «Wave 5»).
+
 ### n8n workflows (all switched on, all refuse requests without the inbound key)
 | Workflow | Id |
 |---|---|
@@ -87,6 +96,9 @@ Admins can use every tool, and admins are never charged.
 | `NZAMY · AI · canvas-card (L6 بطاقة الكانفاس الذكية)` | `1g4hsswaWsaafkN5` |
 | `NZAMY · AI · case-brief (L7 عصارة المرفقات)`, a job that doesn't save successful runs | `snPDkKndPA9wjIKr` |
 | `NZAMY · AI · brief-check (L8 مراجعة وتدقيق مذكرة)`, a job that doesn't save successful runs | `bu9guzNEhaLbyAPd` |
+| `NZAMY · AI · wargaming (L9 المحاكي الشامل)`, a job that doesn't save successful runs | `5CFEwAsuT0lRZRlK` |
+| `NZAMY · AI · analyze-strength (L10 محلل قوة الموقف)`, a job that doesn't save successful runs | `MwONm9eg0IOGRRzt` |
+| `NZAMY · AI · contract-drafter (L11 محترف العقود المختصر)`, a job that doesn't save successful runs; it does nothing until the app code is deployed | `r2s0JBMr8Q5Ti80O` |
 | `NZAMY · AI · schedules (sweep 10 min + retention daily)` | `8Skwnqn9WIPOxcml` |
 | `NZAMY · AI · echo-fast (wave 0 test)` / `echo-job` | `m8vLkLlOrmWj6qeO` / `9qqzoHhFfhY3Esdj` |
 

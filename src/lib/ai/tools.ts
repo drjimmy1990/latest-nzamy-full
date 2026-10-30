@@ -550,6 +550,65 @@ function analyzeStrengthOutput(raw: unknown): Record<string, unknown> | null {
   };
 }
 
+// ── wave 5: documents the AI writes (plan §5, «Wave 5») ─────────────────────
+
+/** L11: the six types of /ai/contract-drafter (contractTypes.ts ids). */
+export const CONTRACT_TYPES = ["rent", "service", "employment", "partnership", "sale", "other"] as const;
+export type ContractTypeId = (typeof CONTRACT_TYPES)[number];
+export const CONTRACT_DRAFT_PRICE = 500;
+const CONTRACT_FIELDS_MAX = 15;
+export const CONTRACT_FIELD_MAX = 2000;
+
+/**
+ * L11 محترف العقود المختصر: the type and the form's fields, each as its Arabic
+ * label and the value typed, so the model reads what the user read.
+ */
+function contractDraftInput(raw: unknown): InputCheck {
+  if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
+  if (!(CONTRACT_TYPES as readonly unknown[]).includes(raw.type)) return { ok: false, error: "اختر نوع العقد" };
+  if (!Array.isArray(raw.fields)) return { ok: false, error: "أكمل بيانات العقد" };
+  if (raw.fields.length > CONTRACT_FIELDS_MAX) return { ok: false, error: "بيانات العقد أكثر من المسموح" };
+  // A blank field is left out; a field too long is refused, never cut or dropped.
+  const fields: Array<{ label: string; value: string }> = [];
+  for (const f of raw.fields) {
+    if (!isPlainObject(f) || typeof f.value !== "string" || !f.value.trim()) continue;
+    const label = boundedText(f.label, 80);
+    if (!label) return { ok: false, error: "بيانات العقد غير صالحة" };
+    const value = boundedText(f.value, CONTRACT_FIELD_MAX);
+    if (!value) return { ok: false, error: `«${label}» أطول من ${CONTRACT_FIELD_MAX.toLocaleString("ar-SA")} حرف` };
+    fields.push({ label, value });
+  }
+  if (fields.length < 2) return { ok: false, error: "أكمل بيانات العقد (طرفان على الأقل وموضوعه)" };
+  return { ok: true, input: { type: raw.type, fields } };
+}
+
+/**
+ * The draft: a title, the preamble, numbered sections; `cited` becomes the
+ * library's verdict (runCore). All or nothing: one bad or over-long section
+ * refuses the whole draft (refunded) rather than handing over a contract with
+ * a clause silently missing.
+ */
+function contractDraftOutput(raw: unknown): Record<string, unknown> | null {
+  if (!isPlainObject(raw) || !Array.isArray(raw.sections)) return null;
+  const title = boundedText(raw.title, 200);
+  if (!title || raw.sections.length < 2 || raw.sections.length > 40) return null;
+  const sections: Array<{ heading: string; body: string }> = [];
+  for (const s of raw.sections) {
+    const heading = isPlainObject(s) ? boundedText(s.heading, 200) : null;
+    const body = isPlainObject(s) ? boundedText(s.body, 12000) : null;
+    if (!heading || !body) return null;
+    sections.push({ heading, body });
+  }
+  const preamble = raw.preamble == null || raw.preamble === "" ? "" : boundedText(raw.preamble, 4000);
+  if (preamble === null) return null;
+  return {
+    title,
+    preamble,
+    sections,
+    cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 40) : [],
+  };
+}
+
 export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
   "echo-fast": {
     id: "echo-fast",
@@ -729,6 +788,21 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     files: WAVE4_FILES,
     validateInput: analyzeStrengthInput,
     validateOutput: analyzeStrengthOutput,
+  },
+  "contract-drafter": {
+    id: "contract-drafter",
+    n8nPath: "nzamy-ai/contract-drafter",
+    class: "job",
+    tier: "deep",
+    // The page serves lawyers and individuals alike (plan: individual F «عقد مبسّط ذكي» is the same engine).
+    roles: ["lawyer", "firm", "individual", "corporate", "micro"],
+    consultantBlocked: false,
+    price: () => CONTRACT_DRAFT_PRICE,
+    dailyLimit: 5,
+    defaultMode: "off",
+    jobDeadlineSeconds: 15 * 60,
+    validateInput: contractDraftInput,
+    validateOutput: contractDraftOutput,
   },
 };
 

@@ -225,9 +225,10 @@ export default function NewConsultationPage() {
   //      getLawyerById() effect above: that one maps the response into the
   //      legacy `Lawyer` shape and drops `services` on the way, and this is
   //      the one place on the page that needs that array.
-  //   2. a CLIENT_SERVICE_CATALOG id with no lawyer attached — the shape
-  //      src/app/ai/contract-drafter/_components/StepLawyerCTA.tsx:90 sends
-  //      today ("?service=contract-review", no "?lawyer="). Tried only when
+  //   2. a CLIENT_SERVICE_CATALOG id with no lawyer attached
+  //      ("?service=contract-review", no "?lawyer="; StepLawyerCTA once sent
+  //      it to a plural `consultations/new` that never existed, and now uses
+  //      the catalog's own route). Tried only when
   //      (1) did not resolve — no lawyer in the URL, the lawyer 404s (every
   //      production lawyer row is `pending`/un-listed as of this writing —
   //      see the docstring on GET /api/v1/lawyers/[id] — so this is the

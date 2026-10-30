@@ -3,7 +3,12 @@
 import { motion } from "framer-motion";
 import { CheckCircle, ShieldCheck, Seal, Star, Clock, Sparkle } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { resolveAdvisoryHandoff } from "@/components/ai/advisoryHandoff";
 import { Mode } from "./contractTypes";
+
+// The human review this step sells, in the catalog's own route and price
+// (the old «٩٩ ر.س» and `consultations/new` link matched neither).
+const REVIEW = resolveAdvisoryHandoff("contract-review");
 
 interface Props {
   mode: Mode;
@@ -77,8 +82,7 @@ export default function StepLawyerCTA({ mode, onRestart }: Props) {
               {isRTL ? "مراجعة قانونية من محامٍ معتمد" : "Legal Review by Certified Lawyer"}
             </p>
             <div className="flex items-end gap-1 mb-2">
-              <span className={`text-4xl font-black ${isDark ? "text-emerald-400" : "text-[#0B3D2E]"}`}>{isRTL ? "٩٩" : "99"}</span>
-              <span className={`text-sm pb-1 font-bold ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{isRTL ? "ر.س" : "SAR"}</span>
+              <span className={`text-2xl font-black ${isDark ? "text-emerald-400" : "text-[#0B3D2E]"}`}>{REVIEW.priceLabel}</span>
             </div>
             <p className={`text-[13px] font-medium ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
               {isRTL ? "• تقرير مكتوب مفصّل • خلال ٢٤ ساعة" : "• Detailed written report • Within 24 hours"}
@@ -86,7 +90,7 @@ export default function StepLawyerCTA({ mode, onRestart }: Props) {
           </div>
           <div className="flex flex-col gap-3 min-w-[220px]">
             <motion.a
-              href="/dashboard/client/consultations/new?service=contract-review"
+              href={REVIEW.href}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.97 }}
               className="flex items-center justify-center gap-2 bg-[#0B3D2E] text-white font-bold px-6 py-3.5 rounded-[1rem] text-[15px] hover:bg-[#0a3328] transition-colors shadow-[0_4px_14px_0_rgba(11,61,46,0.39)] hover:shadow-[0_6px_20px_rgba(11,61,46,0.23)]"

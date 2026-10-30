@@ -41,6 +41,7 @@ const OUTPUT_ENRICHERS: Readonly<Record<string, (admin: SupabaseClient, output: 
   "brief-check": (admin, output) => enrichBriefCheck(admin as never, output),
   wargaming: (admin, output) => enrichBriefCheck(admin as never, output),
   "analyze-strength": (admin, output) => enrichBriefCheck(admin as never, output),
+  "contract-drafter": (admin, output) => enrichBriefCheck(admin as never, output),
 };
 import {
   DEFAULT_JOB_DEADLINE_SECONDS,

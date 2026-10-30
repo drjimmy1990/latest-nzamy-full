@@ -7,6 +7,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import { ContractType } from "./contractTypes";
 import AiResultActions from "@/components/AiResultActions";
 import BetaReviewGate from "@/components/BetaReviewGate";
+import CitationCheckList, { type CitationVerdict } from "@/components/ai/CitationCheckList";
 
 interface Props {
   contractText: string;
@@ -20,20 +21,25 @@ interface Props {
   ArrowBack: React.ElementType;
   Arrow: React.ElementType;
   savedId?: string | null;
+  /**
+   * An L11 draft from the run pipeline. It shows as is, with the library's
+   * verdict on each article it relies on: the run has its own review mode,
+   * so the beta gate only wraps the other results.
+   */
+  aiDraft?: { citations: CitationVerdict[]; chargedPoints: number };
 }
 
 // ─── StepContractResult ───────────────────────────────────────────────────────
 
 export default function StepContractResult({
   contractText, contractType, copied, step4Tab,
-  onCopy, onTabChange, onBack, onRequestLawyer, ArrowBack, Arrow, savedId,
+  onCopy, onTabChange, onBack, onRequestLawyer, ArrowBack, Arrow, savedId, aiDraft,
 }: Props) {
   const { theme, lang } = useTheme();
   const isDark = theme === "dark";
   const isRTL = lang === "ar";
 
-  return (
-    <BetaReviewGate toolId="contract-drafter.result" toolName={isRTL ? "مسودة العقد ومراجعته السريعة" : "Contract draft and quick review"} reviewScope="legal-data">
+  const content = (
     <motion.div
       key="step4"
       initial={{ opacity: 0, scale: 0.96 }}
@@ -112,6 +118,20 @@ export default function StepContractResult({
                 {contractText}
               </pre>
             </div>
+            {aiDraft && (
+              <div className="mb-6">
+                <CitationCheckList
+                  items={aiDraft.citations}
+                  isDark={isDark}
+                  title={isRTL ? "المواد التي يستند إليها العقد — تحقّقت منها المنصة في مكتبة الأنظمة" : "Articles the contract relies on — checked in the library"}
+                  empty={isRTL ? "لا يستند العقد إلى مواد نظامية مرقّمة." : "The contract cites no numbered articles."}
+                />
+                <p className={`mt-2 text-[11px] leading-relaxed ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+                  {isRTL ? "مسودة كتبها الذكاء الاصطناعي من بياناتك؛ الفراغات [....] بيانات لم تذكرها. حالة كل مادة من مكتبة نظامي لا من الذكاء الاصطناعي." : "An AI draft from your details; [....] marks details you did not give. Each article's status comes from the library, not the AI."}
+                  {aiDraft.chargedPoints > 0 && <> · {isRTL ? `خُصمت ${aiDraft.chargedPoints.toLocaleString("ar-SA")} نقطة` : `${aiDraft.chargedPoints} points charged`}</>}
+                </p>
+              </div>
+            )}
           </motion.div>
         )}
 
@@ -184,6 +204,12 @@ export default function StepContractResult({
         </motion.button>
       </div>
     </motion.div>
+  );
+
+  if (aiDraft) return content;
+  return (
+    <BetaReviewGate toolId="contract-drafter.result" toolName={isRTL ? "مسودة العقد ومراجعته السريعة" : "Contract draft and quick review"} reviewScope="legal-data">
+      {content}
     </BetaReviewGate>
   );
 }
