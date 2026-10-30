@@ -113,7 +113,7 @@ Stream S4 ran `docker container prune -f` while cleaning its scratch container.
 
 ## Test status on the merged branch
 
-Full run, `npm run test:unit` on `0064ff51`: 4429 tests, 4420 pass, 9 fail.
+**Final run, `npm run test:unit` on `e2d5f31e`: 4429 tests, 4422 pass, 7 fail, exactly the baseline 7 listed below** (main `235e1bef` has 4166 tests with the same 7 failing).
 
 **The 7 baseline failures, each also failing on main `235e1bef`:**
 - books `_shape` volume series (T28-24)
@@ -123,9 +123,10 @@ Full run, `npm run test:unit` on `0064ff51`: 4429 tests, 4420 pass, 9 fail.
 - fulfillOrder grantPurchase (CRLF-only)
 - two trackingWiring source pins
 
-**The other 2 failures:**
+An earlier run on `0064ff51` had 4420 pass and 9 fail. The 2 extra failures were:
+
 - **owner ٢٦٠ law-route pin** (`lawSummaryVisibility.test.ts`): broken by this branch's `unnumbered` argument and fixed in `4c0a5d15`, now 42/42.
-- **`src/lib/ai/runCore.test.ts` «the start call carries the price…»:** passes when run alone (20/20, twice) and this branch does not touch `src/lib/ai`, so it is a load-dependent flake.
+- **`src/lib/ai/runCore.test.ts` «the start call carries the price…»:** passes when run alone (20/20, twice) and this branch does not touch `src/lib/ai`, so it was a load-dependent flake. It passed in the final run.
 
 **`tsc --noEmit`:** only the 2 baseline `pdf-lib` errors in `src/lib/ai/aiFiles*`.
 
