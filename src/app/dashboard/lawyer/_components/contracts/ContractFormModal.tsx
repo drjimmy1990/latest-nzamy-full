@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
-import { XCircle } from "@phosphor-icons/react";
+import ModalShell from "@/components/ui/ModalShell";
 import DualDatePicker from "@/components/ui/DualDatePicker";
 import {
   createContract, updateContract,
@@ -67,6 +66,16 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
     });
     return () => { cancelled = true; };
   }, []);
+
+  // CODE-F34: "dirty" = differs from what the form opened with (empty for a
+  // new contract, the saved contract for an edit). The first render's snapshot
+  // is the baseline.
+  const snapshot = JSON.stringify([
+    title, contractType, status, counterpartyName, selectedClientId, valueSar,
+    startsOn, endsOn, autoRenew, renewalNoticeDays, signedOn, notes,
+  ]);
+  const [baseline] = useState(snapshot);
+  const dirty = snapshot !== baseline;
 
   const statusOptions: ContractStatus[] = isEdit && initial
     ? CONTRACT_STATUSES.filter((s) => s === initial.status || canTransitionContract(initial.status, s))
@@ -158,26 +167,16 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
     }
   }
 
+  // CODE-F34: no exit while the contract is being saved; a changed draft asks first.
   return (
-    <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    <ModalShell
+      title={isEdit ? "تعديل العقد" : "عقد جديد"}
+      onClose={onClose}
+      isDark={isDark}
+      busy={saving}
+      dirty={dirty}
+      maxWidthClass="max-w-lg"
     >
-      <motion.div
-        initial={{ scale: 0.95, opacity: 0, y: 10 }}
-        animate={{ scale: 1, opacity: 1, y: 0 }}
-        exit={{ scale: 0.95, opacity: 0, y: -10 }}
-        className={`w-full max-w-lg rounded-3xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto ${isDark ? "bg-zinc-900 border border-white/[0.08]" : "bg-white border border-slate-200"}`}
-        dir="rtl"
-      >
-        <div className="flex items-center justify-between mb-5">
-          <h3 className={`text-[16px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>{isEdit ? "تعديل العقد" : "عقد جديد"}</h3>
-          <button onClick={onClose} className={`flex h-7 w-7 items-center justify-center rounded-full ${isDark ? "bg-white/[0.07] text-zinc-400 hover:text-white" : "bg-zinc-100 text-zinc-500 hover:text-black"}`}>
-            <XCircle size={16} />
-          </button>
-        </div>
-
         <div className="space-y-4">
           {error && (
             <div className={`rounded-xl px-3 py-2 text-[12px] font-semibold ${isDark ? "bg-red-500/10 text-red-400 border border-red-500/20" : "bg-red-50 text-red-600 border border-red-200"}`}>
@@ -264,6 +263,7 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
           </div>
 
           <button
+            type="button"
             onClick={handleSave}
             disabled={saving}
             className={`w-full rounded-xl py-2.5 text-[13px] font-bold transition mt-2 ${
@@ -275,7 +275,6 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
             {saving ? "جارٍ الحفظ..." : "حفظ العقد"}
           </button>
         </div>
-      </motion.div>
-    </motion.div>
+    </ModalShell>
   );
 }

@@ -122,7 +122,11 @@ export async function deliverConsultationOpinion(id: string, opinionText: string
   return res.data;
 }
 
-/** Creates the case (a service_requests row with source_consultation_id) — a second call is a 409. */
+/**
+ * Creates the case (a service_requests row with source_consultation_id). A consultation
+ * already linked to its case is a 409; a retry after a half-finished call (case made, link
+ * not written) answers 200 with that SAME case and the link repaired (CODE-F13).
+ */
 export async function convertConsultationToCase(id: string, input?: { title?: string }): Promise<{ consultation: LawyerConsultation; caseRequestId: string }> {
   if (!isSupabaseMode) throw new Error("الاستشارات غير متاحة في وضع العرض التجريبي");
   const res = await apiMutate<{ data: LawyerConsultation; caseRequestId: string }>(path(id, "convert"), "POST", input ?? {});
