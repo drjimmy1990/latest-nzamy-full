@@ -16,7 +16,9 @@ const drawer = read("CaseImportDrawer.tsx");
 const css = readFileSync(join(here, "../../../globals.css"), "utf8");
 
 test("a loaded board is normalised and is not an undo step", () => {
-  assert.match(view, /resetGraph\(normalizeLoadedNodes\(saved\.nodes\), normalizeLoadedEdges\(saved\.edges\)\)/);
+  // NOTE-08 C05: the whole board (groups from viewport.groups included) goes
+  // through the normaliser, and the reset carries the groups.
+  assert.match(view, /const board = normalizeLoadedBoard\(saved\);\s*resetGraph\(board\.nodes, board\.edges, board\.groups\)/);
   assert.doesNotMatch(view, /setNodes\(saved\.nodes/);
   assert.match(hook, /setHistory\(emptyHistory\(\)\)/);
 });
@@ -73,7 +75,8 @@ test("an unconfirmed change is sent on unmount, and a read waits for it", () => 
   // CODE-F24: the controller's dispose() sends what is unconfirmed — in the
   // debounce or failed and waiting to retry (caseGraphAutosave.test.ts).
   assert.match(view, /void ctl\.dispose\(\);/);
-  assert.match(view, /autosave\.current\?\.change\(\{ nodes, edges, viewport: \{ pan, scale \} \}\)/);
+  assert.match(view, /autosave\.current\?\.change\(\{ nodes, edges, viewport: groups\.length > 0 \? \{ pan, scale, groups \} : \{ pan, scale \} \}\)/);
+  assert.match(view, /\[caseId, loadState, nodes, edges, pan, scale, groups\]/, "a group change is a change");
   assert.doesNotMatch(view, /pendingSave/, "the pre-ack clear is gone");
   const svc = readFileSync(join(here, "../../../../lib/services/caseGraphService.ts"), "utf8");
   const get = svc.slice(svc.indexOf("export async function getCaseGraph"), svc.indexOf("type GraphBody"));
@@ -98,4 +101,39 @@ test("CODE-F24: versioned saves, conflict choices, page-close guard, draft offer
   assert.match(put, /status: 409/);
   const update = put.slice(put.indexOf(".update("), put.indexOf(".eq(\"case_request_id\""));
   assert.doesNotMatch(update, /owner_user_id|firm_id/, "an update never reassigns the owner");
+});
+
+test("NOTE-08 C03–C10: the canvas wiring that only shows in the .tsx files", () => {
+  // C03: the drop menu links from the card the arrow came from, at the zoom-corrected point.
+  assert.doesNotMatch(view, /lastFrom|nodes\[nodes\.length - 1\]/);
+  assert.match(view, /from: edgeDropMenu\.fromId/);
+  assert.match(hook, /fromId: drawingEdgeFrom/);
+  assert.equal((hook.match(/screenToCanvas\(e\.clientX, e\.clientY/g) ?? []).length, 4, "drawing start, drawing move, drop, right-click");
+  assert.doesNotMatch(hook, /e\.clientX - rect\.left - pan\.x/);
+  // C04: the right-click card goes where the click was on the canvas.
+  assert.match(view, /pos: cardPosCenteredAt\(\{ x: contextMenu\.canvasX, y: contextMenu\.canvasY \}\)/);
+  assert.doesNotMatch(view, /contextMenu\.x - pan\.x/);
+  // C05: groups reset with the board.
+  assert.match(hook, /setGroupsRaw\(nextGroups\);/);
+  // C06/C08: arrows, labels and the drawing line use the real rectangles.
+  assert.match(view, /curvePath\(edgeCurve\(boxOf\(fromNode\), boxOf\(toNode\)\)\)/);
+  assert.match(view, /curveMidpoint\(edgeCurve\(boxOf\(fromNode\), boxOf\(toNode\)\)\)/);
+  assert.match(view, /color: edge\.color \|\| cnf\.color/);
+  assert.match(view, /ref=\{measureNode\}\s*data-node-id=\{node\.id\}/);
+  assert.doesNotMatch(view, /createCurve|createTempCurve|\+ 200\) \/ 2/);
+  // C07: no clamp — the card is drawn where its arrows think it is.
+  assert.doesNotMatch(view, /Math\.max\(0, node\.pos/);
+  assert.match(view, /left: node\.pos\.x,\s*top: node\.pos\.y,/);
+  // C09: letters by e.code, the whole selection on the clipboard.
+  assert.doesNotMatch(hook, /e\.key === "[cvg]"/);
+  assert.match(hook, /const action = boardShortcut\(e\)/);
+  assert.match(hook, /copySelection\(board\.nodes, board\.edges, selectedNodeIds\)/);
+  // C10: one delete path; menus and the details panel follow the live board.
+  assert.equal((view.match(/deleteNodes\(\[/g) ?? []).length, 2, "bin button + «حذف العقدة»");
+  assert.match(hook, /deleteNodes\(selectedNodeIds\)/);
+  assert.doesNotMatch(view, /setNodes\(prev => prev\.filter/, "no delete path bypasses deleteNodes");
+  assert.match(hook, /const selectedNodeDetail = detailId \? nodes\.find/);
+  assert.match(hook, /edgeMenu: liveEdgeMenu/);
+  assert.match(hook, /if \(drawingEdgeFrom\) e\.stopPropagation\(\);/);
+  assert.match(view, /onPointerLeave=\{handlePointerLeave\}/);
 });

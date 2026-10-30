@@ -9,11 +9,16 @@
  *     otherwise throw and blank the whole case page);
  *   * a link card's `url` survives only as an http(s) address — a
  *     `javascript:` link opened from a case file is the attack this stops;
- *   * malformed checklist lines and refs are dropped.
+ *   * malformed checklist lines and refs are dropped;
+ *   * the author's name/role/colour are strings (the details panel calls
+ *     `author.name.charAt(0)`);
+ *   * the groups saved in `viewport.groups` are repaired and reconciled with
+ *     the cards (./_graph-groups.ts, NOTE-08 item 03).
  * A well-formed card from before N3.5 passes through untouched (same object
  * shape, no new keys), which is what keeps old boards byte-compatible.
  */
-import type { ChecklistItem, EdgeType, GraphEdge, GraphNode, NodeRef, NodeType } from "./_graph-model";
+import type { ChecklistItem, EdgeType, GraphEdge, GraphNode, NodeGroup, NodeRef, NodeType } from "./_graph-model";
+import { normalizeLoadedGroups } from "./_graph-groups.ts";
 
 const NODE_TYPES: readonly NodeType[] = ["person", "doc", "law", "event", "evidence", "custom", "link", "checklist"];
 const EDGE_TYPES: readonly EdgeType[] = ["support", "conflict", "neutral"];
@@ -83,6 +88,13 @@ export function normalizeLoadedNodes(raw: unknown): GraphNode[] {
       n.pos = { x: num(pos.x), y: num(pos.y) };
     }
     if (!isRecord(n.author)) n.author = { name: "", color: "", role: "" };
+    else {
+      const a = n.author;
+      if (typeof a.name !== "string" || typeof a.color !== "string" || typeof a.role !== "string") {
+        const str = (v: unknown) => (typeof v === "string" ? v : "");
+        n.author = { ...a, name: str(a.name), color: str(a.color), role: str(a.role) };
+      }
+    }
     if ("urgent" in n && typeof n.urgent !== "boolean") delete n.urgent;
     if ("url" in n) {
       const safe = safeExternalUrl(n.url);
@@ -116,6 +128,23 @@ export function normalizeLoadedEdges(raw: unknown): GraphEdge[] {
     out.push(e as unknown as GraphEdge);
   }
   return out;
+}
+
+/**
+ * A whole saved board — cards, arrows, and the groups kept in
+ * `viewport.groups` — as the canvas loads it (the read, a restored draft,
+ * «حمّل النسخة المحفوظة»). Group membership pointing at a missing card is
+ * dropped here, never rendered.
+ */
+export function normalizeLoadedBoard(raw: { nodes?: unknown; edges?: unknown; viewport?: unknown } | null | undefined): {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  groups: NodeGroup[];
+} {
+  const v = raw?.viewport;
+  const vp: Record<string, unknown> = isRecord(v) ? v : {};
+  const { nodes, groups } = normalizeLoadedGroups(vp.groups, normalizeLoadedNodes(raw?.nodes));
+  return { nodes, edges: normalizeLoadedEdges(raw?.edges), groups };
 }
 
 export function toggleChecklistItem(list: ChecklistItem[], id: string): ChecklistItem[] {

@@ -6,18 +6,18 @@ import { CheckCircle, CircleNotch, Crosshair, Info, LinkSimple, ArrowsOutSimple,
 import {
   EDGE_CONFIG,
   TYPE_CONFIG,
-  createCurve,
-  createTempCurve,
   type EdgeType,
   type GraphEdge,
   type GraphNode,
+  type NodeGroup,
   type NodeType,
 } from "./_graph-model";
+import { cardPosCenteredAt, curveMidpoint, curvePath, edgeCurve, tempLinePath } from "./_graph-geometry";
 import { useCaseGraphState } from "./_use-case-graph-state";
 import { SidebarLauncher, AiAnalysisPanel, OverlaysBundle } from "./CaseGraphOverlays";
 import { LinkCardBody, ChecklistCardBody } from "./CaseGraphCardExtras";
 import CaseImportDrawer from "./CaseImportDrawer";
-import { normalizeLoadedEdges, normalizeLoadedNodes } from "./_graph-sanitize";
+import { normalizeLoadedBoard } from "./_graph-sanitize";
 import { candidatesToNodes, type ImportCandidate } from "./_graph-import";
 import { askCanvasCard, suggestionsToNodes } from "./_graph-ai-card";
 import { getCaseGraph, saveCaseGraph } from "@/lib/services/caseGraphService";
@@ -25,7 +25,9 @@ import { GraphAutosave, canonicalJson, type AutosaveStatus } from "@/lib/service
 import { useUser } from "@/hooks/useUser";
 import { toArabicDigits } from "@/lib/services/arabicCount";
 
-type GraphPayload = { nodes: GraphNode[]; edges: GraphEdge[]; viewport: { pan: { x: number; y: number }; scale: number } };
+// NOTE-08 item 03: the groups (name, colour, lock, cards) ride in the viewport
+// jsonb as `viewport.groups` — saved, restored, reset with the board, no SQL.
+type GraphPayload = { nodes: GraphNode[]; edges: GraphEdge[]; viewport: { pan: { x: number; y: number }; scale: number; groups?: NodeGroup[] } };
 type GraphDraft = { payload: GraphPayload; savedAt: string };
 
 // CODE-F24 «مسودة محلية»: a change the server has not confirmed yet, kept in
@@ -94,9 +96,9 @@ export default function CaseGraphView({
     groups, createGroup, dissolveGroup, toggleGroupLock,
     edgeMenu, setEdgeMenu, handleEdgeContextMenu, updateEdgeStyle,
     aiDocument, setAiDocument, generateAiDocument,
-    resizingNode, handleResizeStart,
+    resizingNode, handleResizeStart, measureNode, boxOf, deleteNodes,
     hoveredNodeId, setHoveredNodeId, scale, setScale, canvasRef,
-    handleCanvasPointerDown, handlePointerDown, handlePointerMove, handlePointerUp, startDrawingEdge, handleNodePointerUp,
+    handleCanvasPointerDown, handlePointerDown, handlePointerMove, handlePointerUp, handlePointerLeave, startDrawingEdge, handleNodePointerUp,
     handleContextMenu, handleNodeContextMenu, handleNodeTextChange, handleEdgeLabelChange,
     fitToView,
     undo, redo, canUndo, canRedo, resetGraph, autoLayout,
@@ -206,8 +208,10 @@ export default function CaseGraphView({
           // resetGraph, not setNodes: loading is not an undoable step (the
           // first Ctrl+Z would otherwise empty the board and autosave would
           // write the empty board over the case). The saved jsonb is
-          // normalised on the way in — see ./_graph-sanitize.ts.
-          resetGraph(normalizeLoadedNodes(saved.nodes), normalizeLoadedEdges(saved.edges));
+          // normalised on the way in — see ./_graph-sanitize.ts — groups
+          // included (viewport.groups, reconciled with the cards).
+          const board = normalizeLoadedBoard(saved);
+          resetGraph(board.nodes, board.edges, board.groups);
           const vp = saved.viewport as { pan?: { x: number; y: number }; scale?: number } | null;
           if (vp?.pan) setPan(vp.pan);
           if (typeof vp?.scale === "number") setScale(vp.scale);
@@ -285,8 +289,10 @@ export default function CaseGraphView({
       skipNextAutosave.current = false;
       return;
     }
-    autosave.current?.change({ nodes, edges, viewport: { pan, scale } });
-  }, [caseId, loadState, nodes, edges, pan, scale]);
+    // `groups` only when there are some: a board without groups saves the same
+    // viewport as before this field existed.
+    autosave.current?.change({ nodes, edges, viewport: groups.length > 0 ? { pan, scale, groups } : { pan, scale } });
+  }, [caseId, loadState, nodes, edges, pan, scale, groups]);
 
   // A draft left by an earlier visit (the save never got through) is offered
   // back once, never applied silently — and only if it differs from what the
@@ -305,7 +311,8 @@ export default function CaseGraphView({
     const { payload } = offeredDraft;
     setOfferedDraft(null);
     // Unlike the load, this IS a change, so the autosave sends it.
-    resetGraph(normalizeLoadedNodes(payload.nodes), normalizeLoadedEdges(payload.edges));
+    const board = normalizeLoadedBoard(payload);
+    resetGraph(board.nodes, board.edges, board.groups);
     if (payload.viewport?.pan) setPan(payload.viewport.pan);
     if (typeof payload.viewport?.scale === "number") setScale(payload.viewport.scale);
   };
@@ -323,7 +330,8 @@ export default function CaseGraphView({
       const saved = await getCaseGraph(caseId);
       ctl.discard();
       skipNextAutosave.current = true;
-      resetGraph(normalizeLoadedNodes(saved?.nodes ?? []), normalizeLoadedEdges(saved?.edges ?? []));
+      const board = normalizeLoadedBoard(saved);
+      resetGraph(board.nodes, board.edges, board.groups);
       const vp = saved?.viewport as { pan?: { x: number; y: number }; scale?: number } | null | undefined;
       if (vp?.pan) setPan(vp.pan);
       if (typeof vp?.scale === "number") setScale(vp.scale);
@@ -365,7 +373,7 @@ export default function CaseGraphView({
         onPointerDown={handleCanvasPointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        onPointerLeave={handlePointerUp}
+        onPointerLeave={handlePointerLeave}
         onContextMenu={handleContextMenu}
       >
         {isWorkspaceEmpty ? (
@@ -617,7 +625,9 @@ export default function CaseGraphView({
                 const toNode = nodes.find(n => n.id === edge.to);
                 if (!fromNode || !toNode) return null;
                 
-                const path = createCurve(fromNode.pos, toNode.pos);
+                // Real rectangles, ports on the facing sides, control points
+                // pushed out of each port (./_graph-geometry.ts, NOTE-08 04–06).
+                const path = curvePath(edgeCurve(boxOf(fromNode), boxOf(toNode)));
                 const cnf = EDGE_CONFIG[edge.type] || EDGE_CONFIG.support;
                 const edgeColor = edge.color || cnf.color;
                 const edgeWidth = edge.width || (isDark ? 1.5 : 2);
@@ -635,8 +645,7 @@ export default function CaseGraphView({
                       fill="none" 
                       stroke={edgeColor} 
                       strokeWidth={String(edgeWidth)} 
-                      className={cnf.dash ? "stroke-dasharray-4" : ""}
-                      strokeDasharray={cnf.dash ? "4 4" : "none"}
+                      strokeDasharray={cnf.dash || "none"}
                       opacity={0.6}
                     />
                   </g>
@@ -646,7 +655,7 @@ export default function CaseGraphView({
               {/* Temporary line while drawing */}
               {drawingEdgeFrom && nodes.find(n => n.id === drawingEdgeFrom) && (
                 <path 
-                  d={createTempCurve(nodes.find(n => n.id === drawingEdgeFrom)!.pos, mousePos)}
+                  d={tempLinePath(boxOf(nodes.find(n => n.id === drawingEdgeFrom)!), mousePos)}
                   fill="none"
                   stroke={isDark ? "#ffffff" : "#0c0f12"}
                   strokeWidth="2"
@@ -662,14 +671,15 @@ export default function CaseGraphView({
               const toNode = nodes.find(n => n.id === edge.to);
               if (!fromNode || !toNode) return null;
               
-              const midX = (fromNode.pos.x + toNode.pos.x + 200) / 2;
-              const midY = (fromNode.pos.y + toNode.pos.y + 80) / 2 - 10;
+              // On the curve's real midpoint (it assumed 200×80 cards), in the
+              // arrow's own colour when it has one.
+              const mid = curveMidpoint(edgeCurve(boxOf(fromNode), boxOf(toNode)));
               const cnf = EDGE_CONFIG[edge.type] || EDGE_CONFIG.support;
               
               return (
                 <input
                   key={`label_${edge.id}`}
-                  style={{ position: 'absolute', left: midX - 60, top: midY - 10, color: cnf.color, zIndex: 15 }}
+                  style={{ position: 'absolute', left: mid.x - 60, top: mid.y - 20, color: edge.color || cnf.color, zIndex: 15 }}
                   className={`w-[120px] text-center text-[11px] font-bold bg-transparent outline-none border-b border-transparent hover:border-current focus:border-current ${isDark ? "placeholder-zinc-600" : "placeholder-zinc-400"}`}
                   value={edge.label}
                   onChange={(e) => handleEdgeLabelChange(edge.id, e.target.value)}
@@ -689,6 +699,8 @@ export default function CaseGraphView({
               return (
                 <div
                   key={node.id}
+                  ref={measureNode}
+                  data-node-id={node.id}
                   onPointerDown={(e) => { handlePointerDown(node.id, e); }}
                   onPointerUp={(e) => handleNodePointerUp(node.id, e)}
                   onContextMenu={(e) => handleNodeContextMenu(node.id, e)}
@@ -696,8 +708,11 @@ export default function CaseGraphView({
                   onMouseLeave={() => setHoveredNodeId(null)}
                   style={{
                     position: 'absolute',
-                    left: Math.max(0, node.pos.x),
-                    top: Math.max(0, node.pos.y),
+                    // The real position, negative included — the arrows use
+                    // the same one (NOTE-08 item 05: the old Math.max(0, …)
+                    // stopped the card at the edge and left its arrows behind).
+                    left: node.pos.x,
+                    top: node.pos.y,
                     width: node.w ? `${node.w}px` : '220px',
                     height: node.h ? `${node.h}px` : undefined,
                     minHeight: '90px',
@@ -914,8 +929,7 @@ export default function CaseGraphView({
                       onPointerDown={e => e.stopPropagation()}
                       onClick={e => {
                         e.stopPropagation();
-                        setNodes(prev => prev.filter(n => n.id !== node.id));
-                        setEdges(prev => prev.filter(ed => ed.from !== node.id && ed.to !== node.id));
+                        deleteNodes([node.id]);
                       }}
                       title="حذف البطاقة"
                       className={`absolute -top-2.5 -right-2.5 z-40 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-transform hover:scale-110 ${isDark ? "bg-red-500/90 border-zinc-900 text-white" : "bg-red-500 border-white text-white"}`}
@@ -988,10 +1002,11 @@ export default function CaseGraphView({
           />
         )}
 
-        {/* Edge Drop Menu — appears when arrow is dropped on empty canvas */}
+        {/* Edge Drop Menu — appears when arrow is dropped on empty canvas.
+            At the pointer's screen position, like the card and arrow menus. */}
         {edgeDropMenu && (
           <div
-            style={{ position: 'absolute', left: edgeDropMenu.x, top: edgeDropMenu.y }}
+            style={{ position: 'fixed', left: edgeDropMenu.x, top: edgeDropMenu.y }}
             onClick={e => e.stopPropagation()}
             className={`z-50 w-60 rounded-xl border p-1 shadow-2xl ${isDark ? "bg-zinc-800 border-zinc-700" : "bg-white border-zinc-200"}`}
           >
@@ -1003,27 +1018,26 @@ export default function CaseGraphView({
               const Icon = conf.icon;
               return (
                 <button key={t} onClick={() => {
-                  const newNodeId = `n_${Date.now()}`;
+                  const stamp = Date.now();
+                  const newNodeId = `n_${stamp}`;
                   const newNode: GraphNode = {
                     id: newNodeId,
                     type: t,
                     title: conf.label,
                     desc: "اكتب التفاصيل هنا...",
-                    pos: { x: edgeDropMenu.canvasX - 110, y: edgeDropMenu.canvasY - 60 },
+                    pos: cardPosCenteredAt({ x: edgeDropMenu.canvasX, y: edgeDropMenu.canvasY }),
                     author: { name: "انت", role: "المحامي", color: "bg-blue-600" },
                   };
                   setNodes(prev => [...prev, newNode]);
-                  // connect the last edge source to the new node
-                  const lastFrom = nodes[nodes.length - 1]?.id;
-                  if (lastFrom) {
-                    setEdges(prev => [...prev, {
-                      id: `e_${Date.now()}`,
-                      from: lastFrom,
-                      to: newNodeId,
-                      type: "support",
-                      label: "صلة جديدة",
-                    }]);
-                  }
+                  // Linked from the card the arrow was drawn FROM (NOTE-08
+                  // item 01) — it used to be the last card in the array.
+                  setEdges(prev => [...prev, {
+                    id: `e_${stamp}`,
+                    from: edgeDropMenu.fromId,
+                    to: newNodeId,
+                    type: "support",
+                    label: "صلة جديدة",
+                  }]);
                   setEdgeDropMenu(null);
                 }}
                   className={`w-full text-start px-3 py-2 text-xs font-semibold rounded-lg flex items-center gap-2.5 transition-colors ${isDark ? "text-zinc-200 hover:bg-zinc-700" : "text-zinc-700 hover:bg-zinc-100"}`}>
@@ -1040,7 +1054,7 @@ export default function CaseGraphView({
         {/* Canvas Right-Click Menu */}
         {contextMenu && (
           <div
-            style={{ position: 'absolute', left: contextMenu.x, top: contextMenu.y }}
+            style={{ position: 'fixed', left: contextMenu.x, top: contextMenu.y }}
             onClick={e => e.stopPropagation()}
             className={`z-50 w-56 rounded-xl border p-1 shadow-2xl ${isDark ? "bg-zinc-800 border-zinc-700" : "bg-white border-zinc-200"}`}
           >
@@ -1055,7 +1069,9 @@ export default function CaseGraphView({
                     type: t,
                     title: t === "custom" ? "" : conf.label,
                     desc: "اكتب التفاصيل هنا...",
-                    pos: { x: contextMenu.x - pan.x - 110, y: contextMenu.y - pan.y - 60 },
+                    // Where the right-click was ON THE CANVAS: pan removed and
+                    // the zoom divided out (NOTE-08 item 02).
+                    pos: cardPosCenteredAt({ x: contextMenu.canvasX, y: contextMenu.canvasY }),
                     author: { name: "انت", role: "المحامي", color: "bg-blue-600" },
                   };
                   setNodes(prev => [...prev, newNode]);
@@ -1139,7 +1155,7 @@ export default function CaseGraphView({
                 {nd.urgent ? "إلغاء «مستعجل»" : "تمييز كمستعجل (توهّج)"}
               </button>
               <div className={`my-1 border-t ${isDark ? "border-zinc-700" : "border-zinc-100"}`} />
-              <button onClick={() => { setNodes(prev => prev.filter(n => n.id !== nodeMenu.nodeId)); setEdges(prev => prev.filter(e => e.from !== nodeMenu.nodeId && e.to !== nodeMenu.nodeId)); setNodeMenu(null); }}
+              <button onClick={() => deleteNodes([nodeMenu.nodeId])}
                 className="w-full text-start px-3 py-2 text-xs font-semibold rounded-lg flex items-center gap-2 text-red-500 hover:bg-red-500/10 transition-colors">
                 <span>🗑</span> حذف العقدة
               </button>

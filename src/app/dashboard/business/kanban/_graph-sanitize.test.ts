@@ -74,3 +74,8 @@ test("checklist helpers", () => {
   assert.deepEqual(checklistCount(base), { done: 1, total: 2 });
   assert.deepEqual(checklistCount(undefined), { done: 0, total: 0 });
 });
+
+test("an author that is not three strings is repaired (the details panel reads author.name.charAt)", () => {
+  const [n] = normalizeLoadedNodes([{ id: "a", type: "doc", title: "", desc: "", pos: { x: 0, y: 0 }, author: { name: 7, color: "c", role: null } }]);
+  assert.deepEqual(n.author, { name: "", color: "c", role: "" });
+});
