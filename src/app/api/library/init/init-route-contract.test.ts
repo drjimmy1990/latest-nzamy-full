@@ -36,13 +36,17 @@ test("every paged section carries a deterministic order", () => {
   }
 });
 
-test("N2.5: the laws catalogue is ordered in SQL — merged, then the newest of (amendment, issue) (desc, nulls last), then title, slug", () => {
+test("N2.5 + ٣١٧: the laws catalogue is ordered in SQL — in force before repealed, merged, then the newest of (amendment, issue) (desc, nulls last), then title, slug", () => {
   const n = source.replace(/\r\n/g, "\n");
   const lawsCall = n.slice(n.indexOf('fetchSection("laws"'), n.indexOf('shouldFetch("decrees")'));
   assert.match(
     lawsCall,
-    /if \(on\.has\("sort"\)\) \{\s*return out\s*\.order\("has_merged_regulation", DESC_NULLS_LAST\)\s*\.order\(LAW_SORT_KEY, DESC_NULLS_LAST\)\s*\.order\("title"\)\s*\.order\("slug"\);/,
+    /if \(on\.has\("sort"\)\) \{\s*if \(on\.has\("repealedLast"\)\) out = out\.order\(LAW_REPEALED_KEY, ASC_NULLS_LAST\);\s*return out\s*\.order\("has_merged_regulation", DESC_NULLS_LAST\)\s*\.order\(LAW_SORT_KEY, DESC_NULLS_LAST\)\s*\.order\("title"\)\s*\.order\("slug"\);/,
   );
+  // Owner ٣١٧ / note ١٢ item ٨ (20261030_60): the generated boolean, its own optional feature.
+  assert.match(n, /const LAW_REPEALED_KEY = "catalogue_is_repealed";/);
+  assert.match(n, /\{ key: "repealedLast", columns: \[LAW_REPEALED_KEY\] \}/);
+  assert.match(n, /const ASC_NULLS_LAST = \{ ascending: true, nullsFirst: false \} as const;/);
   // ONE combined key (20261025_40: greatest(amendment, issue)), matching
   // idx_laws_catalogue_recency column for column.
   assert.match(n, /const LAW_SORT_KEY = "catalogue_recency_key";/);
@@ -51,20 +55,58 @@ test("N2.5: the laws catalogue is ordered in SQL — merged, then the newest of 
   // Before 20261025_40 the old order still pages deterministically.
   assert.match(lawsCall, /return out\.order\("section_code"\)\.order\("title"\)\.order\("slug"\);/);
   // Every viewer gets the order; the موجز only through the ٢٦٠ flag.
-  assert.match(lawsCall, /wanted: lawSummaryVisible\(hasFullAccess\) \? \["summary", "sort"\] : \["sort"\]/);
+  assert.match(lawsCall, /wanted: lawSummaryVisible\(hasFullAccess\) \? \["summary", "sort", "repealedLast"\] : \["sort", "repealedLast"\]/);
   // No in-page JS sort of the laws rows.
   assert.doesNotMatch(n.slice(n.indexOf("const lawsRows")), /lawsRows[^;]*\.sort\(/);
 });
 
-test("N2.5: the sort key is the locked dates — ordered by, never selected or sent", () => {
+test("N2.5: the sort keys are locked — ordered by, never selected or sent", () => {
   const n = source.replace(/\r\n/g, "\n");
   const list = n.match(/const LAW_LIST_COLUMNS =\n\s*"([^"]*)"/)?.[1] ?? "";
   assert.ok(list.includes("slug"), "LAW_LIST_COLUMNS found");
-  for (const key of ["catalogue_recency_key", "latest_update"]) {
+  for (const key of ["catalogue_recency_key", "catalogue_is_repealed", "latest_update"]) {
     assert.doesNotMatch(list, new RegExp(`\\b${key}\\b`));
   }
-  // The select callback only ever adds the موجز column.
-  assert.match(n, /fetchSection\("laws", \(on\) => \(on\.has\("summary"\) \? `\$\{LAW_LIST_COLUMNS\}, \$\{LAW_SUMMARY_COLUMN\}` : LAW_LIST_COLUMNS\)/);
+  // The select callback adds the موجز column (the ٢٦٠ flag) and the event-date alias (٣١٨) — nothing else.
+  assert.match(n, /fetchSection\("laws", \(on\) => `\$\{on\.has\("summary"\) \? `\$\{LAW_LIST_COLUMNS\}, \$\{LAW_SUMMARY_COLUMN\}` : LAW_LIST_COLUMNS\}, \$\{LAW_EVENT_DATE_SELECT\}`/);
+  for (const key of ["catalogue_recency_key", "catalogue_is_repealed"]) {
+    assert.doesNotMatch(n.slice(n.indexOf("const lawsRows")), new RegExp(key), `${key} is never read back`);
+  }
+});
+
+// ── Owner ٣١٨ (amended 28-Oct): a CHANGED CONTRACT, on purpose ─────────────
+// Until 2026-10-30 this file pinned that the catalogue withholds every date
+// from a non-subscriber. ٣١٨ now gives EVERY viewer one derived field, the
+// date ALONE: `latest_legislative_update` («1448/01/08هـ»). Only that field
+// is new — issue_date_hijri / issuing_instrument stay masked
+// (maskListOfficialFields), the sort keys are never selected, and
+// latest_update reaches the route as its date only (a JSON-path alias, so
+// its instrument text never leaves the database) and is deleted before the
+// response.
+test("٣١٨: the one public date — from the unmasked row, sent as the date alone, nothing else opened", () => {
+  const n = source.replace(/\r\n/g, "\n");
+  assert.match(n, /const LAW_EVENT_DATE_SELECT = "latest_update_date:latest_update->>date_hijri";/);
+  assert.match(n, /const LAW_EVENT_DATE_ALIAS = "latest_update_date";/);
+  const rows = n.slice(n.indexOf("const lawsRows"), n.indexOf("const decreesRows"));
+  // Computed BEFORE the mask (which nulls issue_date_hijri for a guest)…
+  const event = rows.indexOf("latestLegislativeEvent({");
+  const mask = rows.indexOf("maskListOfficialFields(shaped, hasFullAccess)");
+  assert.ok(event > -1 && mask > event, "the event is read from the unmasked row");
+  assert.match(rows, /latest_update: \{ date_hijri: row\[LAW_EVENT_DATE_ALIAS\] \},\s*issue_date_hijri: row\.issue_date_hijri,/);
+  // …the alias leaves every row (subscribers' too), and nothing after reads `row`…
+  assert.match(rows, /const \{ \[LAW_EVENT_DATE_ALIAS\]: _eventDate, \.\.\.rest \} = row;/);
+  const after = rows.slice(rows.indexOf("const { [LAW_EVENT_DATE_ALIAS]") + 60);
+  assert.doesNotMatch(after, /\brow\b/);
+  // …and only `.dateHijri` (the date alone) is sent, omitted when null.
+  assert.match(rows, /\.\.\.\(event \? \{ latest_legislative_update: event\.dateHijri \} : \{\}\),/);
+  // The rest of the T28-22 mask is unchanged.
+  assert.match(rows, /\.\.\.maskListOfficialFields\(shaped, hasFullAccess\),/);
+});
+
+test("٣١٩: the catalogue موجز goes through summaryForViewer on the server", () => {
+  const n = source.replace(/\r\n/g, "\n");
+  assert.match(n, /import \{ latestLegislativeEvent, summaryForViewer \} from "@\/lib\/library\/legislativeEvent";/);
+  assert.match(n, /shaped\.summary_brief = summaryForViewer\(shaped\.summary_brief, hasFullAccess\) \|\| null;/);
 });
 
 test("collections are read whole through selectAllPages, not one 50-row page", () => {

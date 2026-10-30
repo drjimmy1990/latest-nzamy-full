@@ -6,20 +6,40 @@
  *   - `officialMetaLocked` — true for a non-subscriber; `issuanceDecree`,
  *     `issuanceDate` and `source` then arrive as ''.
  *   - `officialSourceUrl`  — the official page, subscribers only.
- *   - `officialLink`       — the same official page for EVERY viewer (owner
- *                            ٢٩٧: beside «الجهة المصدرة»), '' when none.
+ *   - `officialLink`       — the official page beside «الجهة المصدرة» (owner
+ *                            ٢٩٧) — SUBSCRIBERS only since owner ٣١٨
+ *                            (28-Oct, reversing ٢٩٧'s public link).
+ *   - `officialLinks`      — [{label, url}] every official link by Arabic
+ *                            name (note ٠١ item ٣), subscribers only.
  *   - `gazette`            — {issueNumber, publicationDate, url} | null
  *                            (Umm al-Qura issue; null on every law today).
  *   - `replacedBy`         — {slug, title} | null (the law that replaced a
  *                            repealed one; null on every law today).
+ *   - `latest_legislative_update` — «1448/01/08هـ», the ONE public date
+ *                            (owner ٣١٨), every viewer.
+ *   - `latestUpdate`       — «آخر تعديل» from latest_update with its event
+ *                            (note ٠١ item ٢), subscribers only.
+ *   - `articleCounts`, `hasMergedRegulation`, `regulation_card` — the
+ *                            sidebar's two-layer card (note ٠١ items ٥–٦,
+ *                            note ١٢ item ٧).
  *
  * Kept OUT of the `LawSystem` whitelist mapping (data.ts is shared) and held
- * as its own state on the reader, the way `paywall.freeLimit` is.
+ * as its own state on the reader, the way `paywall.freeLimit` is — so the
+ * page's loadLaw mapping needs no change for any of them.
  *
  * Rules: every field is optional — an older response without them reads as
  * "not locked, nothing to show". A link is only ever a URL the server sent
- * (http/https); nothing here builds one. Pure, no imports: `node --test`.
+ * (http/https); nothing here builds one. Pure: `node --test`; its imports
+ * are the pure lawCardFields.ts / lawPreambleBlocks.ts (names, types).
  */
+
+import {
+  officialSourceName,
+  type ArticleTally,
+  type LawArticleCounts,
+  type OfficialSourceLink,
+} from "../../../lib/library/lawCardFields.ts";
+import type { LawCardField, LawMetadataCard } from "../../../lib/library/lawPreambleBlocks.ts";
 
 export interface LawGazette {
   /** The Umm al-Qura issue number as the source states it. */
@@ -36,19 +56,36 @@ export interface LawOfficialMeta {
   officialSourceUrl: string | null;
   /**
    * Owner ٢٩٧: the law's page at its official source, beside «الجهة المصدرة»
-   * — public, so kept when `locked`. http(s) only.
+   * — a subscriber's since ٣١٨, so dropped when `locked` (fail closed). http(s) only.
    */
   officialLink: string | null;
+  /** Note ٠١ item ٣: every official link with its Arabic name; [] when locked. */
+  officialLinks: OfficialSourceLink[];
   gazette: LawGazette | null;
   replacedBy: { slug: string; title: string } | null;
+  /** Owner ٣١٨: «آخر تحديث تشريعي», the date alone («1448/01/08هـ»), for every viewer. */
+  latestLegislativeUpdate: string | null;
+  /** Note ٠١ item ٢: «آخر تعديل» with its event — subscribers only (null when locked). */
+  latestUpdate: string | null;
+  /** Note ٠١ item ٦ / note ١٢ item ٧: tallies per container, or null (older response). */
+  articleCounts: LawArticleCounts | null;
+  hasMergedRegulation: boolean;
+  /** Note ٠١ item ٥: the merged regulation's own card rows (as the server shaped them for this viewer). */
+  regulationCard: LawMetadataCard | null;
 }
 
 export const EMPTY_OFFICIAL_META: LawOfficialMeta = {
   locked: false,
   officialSourceUrl: null,
   officialLink: null,
+  officialLinks: [],
   gazette: null,
   replacedBy: null,
+  latestLegislativeUpdate: null,
+  latestUpdate: null,
+  articleCounts: null,
+  hasMergedRegulation: false,
+  regulationCard: null,
 };
 
 function text(v: unknown): string {
@@ -102,13 +139,77 @@ export function parseOfficialMeta(data: unknown): LawOfficialMeta {
     if (slug) replacedBy = { slug, title: text(r.title) };
   }
 
+  // Owner ٣١٨: nothing official reaches a locked reader, even if a response slipped it through.
+  const officialLinks: OfficialSourceLink[] = [];
+  if (!locked && Array.isArray(d.officialLinks)) {
+    for (const l of d.officialLinks as unknown[]) {
+      if (!l || typeof l !== "object") continue;
+      const url = httpUrlOrNull((l as Record<string, unknown>).url);
+      if (!url || officialLinks.some((o) => o.url === url)) continue;
+      // The server's name, else the host's Arabic name — never the raw host.
+      const label = text((l as Record<string, unknown>).label);
+      officialLinks.push({ label: label && /\p{Script=Arabic}/u.test(label) ? label : officialSourceName(url), url });
+    }
+  }
+
+  const latestLegislativeUpdate = text(d.latest_legislative_update);
+  const latestUpdate = locked ? "" : text(d.latestUpdate);
+
   return {
     locked,
     officialSourceUrl: locked ? null : httpUrlOrNull(d.officialSourceUrl),
-    officialLink: httpUrlOrNull(d.officialLink),
+    officialLink: locked ? null : httpUrlOrNull(d.officialLink),
+    officialLinks,
     gazette,
     replacedBy,
+    // A date alone, or nothing: «1448/01/08هـ», «1446/02هـ», «1446هـ».
+    latestLegislativeUpdate: PUBLIC_DATE.test(latestLegislativeUpdate) ? latestLegislativeUpdate : null,
+    latestUpdate: latestUpdate || null,
+    articleCounts: parseArticleCounts(d.articleCounts),
+    hasMergedRegulation: d.hasMergedRegulation === true,
+    regulationCard: parseCard(d.regulation_card),
   };
+}
+
+const PUBLIC_DATE = /^1[34][0-9]{2}(?:\/[0-9]{2}){0,2}هـ$/;
+
+function count(v: unknown): number {
+  return typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : 0;
+}
+
+function tally(v: unknown): ArticleTally {
+  const t = v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+  return { total: count(t.total), amended: count(t.amended), repealed: count(t.repealed) };
+}
+
+/** The route's articleCounts, or null when absent / malformed (an older response). */
+export function parseArticleCounts(v: unknown): LawArticleCounts | null {
+  if (!v || typeof v !== "object") return null;
+  const c = v as Record<string, unknown>;
+  if (!c.law || typeof c.law !== "object") return null;
+  const regulations = Array.isArray(c.regulations)
+    ? (c.regulations as unknown[])
+        .filter((r): r is Record<string, unknown> => !!r && typeof r === "object")
+        .map((r) => ({ name: text(r.name) || "اللائحة التنفيذية", ...tally(r) }))
+        .filter((r) => r.total > 0)
+    : [];
+  return { law: tally(c.law), regulations, annexes: count(c.annexes) };
+}
+
+function parseRows(v: unknown): LawCardField[] {
+  if (!Array.isArray(v)) return [];
+  return (v as unknown[])
+    .filter((f): f is Record<string, unknown> => !!f && typeof f === "object")
+    .map((f) => ({ key: text(f.key), value: text(f.value) }))
+    .filter((f) => f.key && f.value);
+}
+
+function parseCard(v: unknown): LawMetadataCard | null {
+  if (!v || typeof v !== "object") return null;
+  const c = v as Record<string, unknown>;
+  const main = parseRows(c.main);
+  const more = parseRows(c.more);
+  return main.length || more.length ? { main, more } : null;
 }
 
 /** «أم القرى، العدد 4987» — the date is rendered beside it, never inside. */
