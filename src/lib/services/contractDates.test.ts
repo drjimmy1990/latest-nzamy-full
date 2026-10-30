@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { renewalNoticeDueOn, contractExpiryState, paymentScheduleTotals, isPaymentOverdue } from "./contractDates.ts";
+import { renewalNoticeDueOn, contractExpiryState, contractExpiryForStatus, paymentScheduleTotals, isPaymentOverdue } from "./contractDates.ts";
 import { parseIsoDate } from "./deadlineEngine.ts";
 
 test("renewal notice is due notice-days before the end date; zero means the end date itself", () => {
@@ -25,6 +25,16 @@ test("expiry state for the list badge", () => {
   assert.equal(contractExpiryState("2026-09-04", today), "expiring_soon", "due today is still not expired");
   assert.equal(contractExpiryState("2026-10-04", today), "expiring_soon");
   assert.equal(contractExpiryState("2026-10-05", today), "ok");
+});
+
+test("LIVE-F41: a cancelled or terminated contract never counts as expiring or expired", () => {
+  const today = parseIsoDate("2026-10-30")!;
+  assert.equal(contractExpiryForStatus("cancelled", "2026-11-10", today), "none");
+  assert.equal(contractExpiryForStatus("terminated", "2026-11-10", today), "none");
+  assert.equal(contractExpiryForStatus("cancelled", "2026-01-01", today), "none");
+  assert.equal(contractExpiryForStatus("active", "2026-11-10", today), "expiring_soon");
+  assert.equal(contractExpiryForStatus("pending_signature", "2026-11-10", today), "expiring_soon");
+  assert.equal(contractExpiryForStatus("active", "2026-01-01", today), "expired");
 });
 
 test("payment totals: cancelled rows are out, outstanding is total minus paid", () => {

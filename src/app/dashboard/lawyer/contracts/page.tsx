@@ -27,7 +27,7 @@ import { getContracts, type Contract } from "@/lib/services/contractsService";
 import {
   CONTRACT_STATUSES, CONTRACT_STATUS_AR, CONTRACT_TYPE_AR, type ContractStatus,
 } from "@/lib/services/contractVocabulary";
-import { contractExpiryState } from "@/lib/services/contractDates";
+import { contractExpiryForStatus } from "@/lib/services/contractDates";
 import { formatGregorianAr } from "../_components/DeadlineCard";
 import ContractFormModal from "../_components/contracts/ContractFormModal";
 
@@ -91,7 +91,7 @@ export default function LawyerContractsPage() {
   const activeCount = items.filter((c) => c.status === "active").length;
   const pendingSignatureCount = items.filter((c) => c.status === "pending_signature").length;
   const draftCount = items.filter((c) => c.status === "draft").length;
-  const expiringSoonCount = items.filter((c) => contractExpiryState(c.endsOn) === "expiring_soon").length;
+  const expiringSoonCount = items.filter((c) => contractExpiryForStatus(c.status, c.endsOn) === "expiring_soon").length;
 
   const statusCounts = new Map<ContractStatus, number>();
   for (const s of CONTRACT_STATUSES) statusCounts.set(s, 0);
@@ -254,7 +254,7 @@ export default function LawyerContractsPage() {
       ) : (
         <div className="space-y-2.5">
           {filtered.map((c, i) => {
-            const expiry = contractExpiryState(c.endsOn);
+            const expiry = contractExpiryForStatus(c.status, c.endsOn);
             const obligationsLine = c.pendingObligations > 0 ? countPhraseAr(c.pendingObligations, OBLIGATIONS_FORMS) : null;
             return (
               <motion.div key={c.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
