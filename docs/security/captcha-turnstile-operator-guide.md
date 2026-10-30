@@ -84,6 +84,7 @@ This step needs the branch merged into `main` and pulled on the server.
 3. Check, while GoTrue is still off:
    - `https://nezamy.sa/login` shows the challenge box under «تذكرني».
    - Signing in with a real account still works.
+   - Walk **each signup form to its last step** and watch the box turn green: `/register/client` (step 3) and `/register/provider` (step 4). Don't submit. These two were only covered by source tests, not by a browser run. If the box stays on «جارٍ تحميل…», the form is locked, so remove the key and redeploy before going further.
    - If the box never appears, run this and look at the output (it is screen output, not a file):
 
      ```bash
@@ -129,10 +130,12 @@ SUPABASE_DIR/docker-compose.override.yml
 services:
   auth:
     environment:
-      GOTRUE_SECURITY_CAPTCHA_ENABLED: ${CAPTCHA_ENABLED}
+      GOTRUE_SECURITY_CAPTCHA_ENABLED: ${CAPTCHA_ENABLED:-false}
       GOTRUE_SECURITY_CAPTCHA_PROVIDER: turnstile
-      GOTRUE_SECURITY_CAPTCHA_SECRET: ${CAPTCHA_SECRET}
+      GOTRUE_SECURITY_CAPTCHA_SECRET: ${CAPTCHA_SECRET:-}
 ```
+
+Keep the `:-false` default. Without it, a missing or misspelled `.env` line turns the setting into an empty string, and GoTrue may refuse to start on a boolean it cannot parse. That would take down every login, signup and session refresh, not just the captcha.
 
 Check that compose picked it up. This counts lines and does not print the secret:
 
@@ -146,11 +149,13 @@ It should print `3`. If it prints `0`, the stack is started with explicit `-f` f
 
 ```bash
 cd SUPABASE_DIR && docker compose up -d auth
-docker exec supabase-auth sh -c 'env | grep -E "GOTRUE_SECURITY_CAPTCHA_(ENABLED|PROVIDER)"'
+docker inspect supabase-auth --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -E 'CAPTCHA_(ENABLED|PROVIDER)'
+docker ps --filter name=supabase-auth --format '{{.Status}}'
 docker logs supabase-auth --tail 30
 ```
 
 - The second command should print `..._ENABLED=true` and `..._PROVIDER=turnstile`. It does not print the secret.
+- The third should say `Up …`, not `Restarting`. If it says `Restarting`, roll back right away (below).
 - The logs should show GoTrue starting with no error.
 
 **Rollback:** set `CAPTCHA_ENABLED=false` in `SUPABASE_DIR/.env`, then run `cd SUPABASE_DIR && docker compose up -d auth`. The frontend can stay as it is, because GoTrue ignores the token while the check is off.
@@ -189,11 +194,20 @@ curl -s -X POST 'https://auth.nezamy.sa/auth/v1/signup' -H "apikey: $ANON" -H 'C
 
 Before step 2, the first command answers `invalid_credentials`. That difference is the evidence the check is on.
 
+Error shape the browser sees (CAP-07 message). This prints headers and body to the screen; it is not a file:
+
+```bash
+curl -si -X POST 'https://auth.nezamy.sa/auth/v1/token?grant_type=password' -H "apikey: $ANON" -H 'Content-Type: application/json' -H 'X-Supabase-Api-Version: 2024-01-01' -H 'Origin: https://nezamy.sa' -d '{"email":"nobody@example.invalid","password":"x"}' | grep -iE 'access-control-expose-headers|x-supabase-api-version|captcha'
+```
+
+- If `access-control-expose-headers` lists `X-Supabase-Api-Version`, the page reads the error code directly.
+- If it doesn't, the page falls back to the 400 status plus the word "captcha" in the message. That still shows the right message.
+
 **In a browser**, with each test account and the owner's admin account, check:
 - login → lands on that role's dashboard once (CAP-01, CAP-09);
 - wrong password, then retry (CAP-06);
 - refresh the dashboard: no challenge (CAP-10);
-- Arabic, English, a phone, and keyboard-only use (CAP-08);
+- Arabic, English, a phone (including a 320 px-wide screen: the widget's minimum width is about 300 px), and keyboard-only use (CAP-08);
 - airplane mode before the page loads: retry button, form locked (CAP-07);
 - Google sign-in (CAP-11);
 - one real client signup and one provider signup (CAP-12).
@@ -235,7 +249,7 @@ No `capacitor.config.*` is tracked in this repo. If the iOS/Android app loads bu
 **Code version:** this branch (`claude/cranky-heyrovsky-e0494b`), not deployed.
 
 **Evidence:**
-- **Unit tests:** `src/lib/auth/captcha.test.ts`, 17 tests, run with `npm run test:unit` or `node --test src/lib/auth/captcha.test.ts`.
+- **Unit tests:** `src/lib/auth/captcha.test.ts`, 18 tests, run with `npm run test:unit` or `node --test src/lib/auth/captcha.test.ts`.
 - **Local check** (2026-10-30, `next dev --webpack` with Cloudflare's test site keys, against a local fake GoTrue that answers like GoTrue with the check on):
   - the widget renders in Arabic and in English (it re-renders on language switch);
   - the password request carries `gotrue_meta_security.captcha_token`;
@@ -244,6 +258,8 @@ No `capacitor.config.*` is tracked in this repo. If the iOS/Android app loads bu
   - after a spent token, a fresh token is issued for the next attempt;
   - with the always-fail key: one alert, focus on «إعادة المحاولة», and the submit sends **no** request.
   - The fake server proves the **browser** side only. Every "refused by GoTrue" claim needs the live check.
+  - The fake server answered in the legacy error shape only. The new shape (`code` + `message`) is handled by the fallback, which is unit-tested.
+  - **Not exercised in a browser:** the signup forms' widget on their last step. Source tests check the wiring; Step 1 has the manual check.
 
 **No case is `verified_closed` until its live check passes.**
 

@@ -137,12 +137,18 @@ export function withSignupCaptcha<T extends Record<string, unknown>>(
 }
 
 /**
- * Was this auth error GoTrue's captcha refusal? By `code` only — the message
- * text ("captcha protection: request disallowed (…)") is not a contract.
+ * Was this auth error GoTrue's captcha refusal? `code` first. The message
+ * fallback exists because supabase-js can only read the new-format `code`
+ * when the browser may see the X-Supabase-Api-Version response header (CORS
+ * Access-Control-Expose-Headers through the self-hosted gateway); when it
+ * cannot, `code` arrives undefined. The fallback applies ONLY then, and only
+ * picks which message is shown — it can never say whether an account exists.
  */
 export function isCaptchaAuthError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
-  return (error as { code?: unknown }).code === "captcha_failed";
+  const { code, status, message } = error as { code?: unknown; status?: unknown; message?: unknown };
+  if (typeof code === "string" && code) return code === "captcha_failed";
+  return status === 400 && typeof message === "string" && /captcha/i.test(message);
 }
 
 const MESSAGES = {

@@ -118,12 +118,19 @@ test("signup options keep the metadata object and add the token beside it", () =
   assert.deepEqual(withSignupCaptcha(data, undefined), { data });
 });
 
-test("GoTrue's captcha refusal is recognised by code, never by message", () => {
-  assert.equal(isCaptchaAuthError({ code: "captcha_failed", message: "anything" }), true);
-  assert.equal(isCaptchaAuthError({ code: "invalid_credentials", message: "captcha protection: request disallowed" }), false);
-  assert.equal(isCaptchaAuthError({ message: "captcha_failed" }), false);
+test("GoTrue's captcha refusal is recognised by code when there is one", () => {
+  assert.equal(isCaptchaAuthError({ code: "captcha_failed", status: 400, message: "anything" }), true);
+  // A code wins over the message: never re-label a real credential error.
+  assert.equal(isCaptchaAuthError({ code: "invalid_credentials", status: 400, message: "captcha protection: request disallowed" }), false);
   assert.equal(isCaptchaAuthError(null), false);
   assert.equal(isCaptchaAuthError("captcha_failed"), false);
+});
+
+test("no code (API-version header not exposed): a 400 whose message names captcha", () => {
+  assert.equal(isCaptchaAuthError({ status: 400, message: "captcha protection: request disallowed (no captcha response)" }), true);
+  assert.equal(isCaptchaAuthError({ code: undefined, status: 400, message: "Captcha verification failed" }), true);
+  assert.equal(isCaptchaAuthError({ status: 400, message: "Invalid login credentials" }), false);
+  assert.equal(isCaptchaAuthError({ status: 500, message: "captcha verifier unreachable" }), false);
 });
 
 // ── Wiring: the three pages that call GoTrue's password endpoints ──────────
