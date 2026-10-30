@@ -6,6 +6,8 @@ import { useUser } from "@/hooks/useUser";
 import Link from "next/link";
 import { OnboardingBanner } from "@/components/OnboardingBanner";
 import { SectorProfileReadinessPanel } from "@/components/dashboard/sector/SectorProfileReadinessPanel";
+import { isDemoMode } from "@/lib/runtimeMode";
+import { NOT_FROM_YOUR_RECORDS_NOTE } from "@/constants/sectorUnfinishedModules";
 import {
   Handshake, ShieldCheck, ClipboardText, FileText,
   Brain, Robot, ArrowLeft, CurrencyCircleDollar,
@@ -17,7 +19,7 @@ import {
 
 const AI_TOOLS = [
   { label: "صائغ عقود التطوع",    sub: "عقود مخصصة لكل متطوع ومهمة",               href: "/ai/ngo/volunteer-contract", Icon: Handshake },
-  { label: "مدقق الحوكمة",        sub: "توافق مع المركز الوطني للقطاع غير الربحي", href: "/ai/ngo/governance-checker", Icon: ShieldCheck },
+  { label: "مدقق الحوكمة",        sub: "فحص مبدئي — حساب مؤقت لا يُحفظ",         href: "/ai/ngo/governance-checker", Icon: ShieldCheck },
   { label: "محلل التبرعات",       sub: "تصنيف + قيود + استحقاق + تقارير",          href: "/ai/ngo/donation-analyzer",  Icon: Brain },
   { label: "المستشار الذكي",      sub: "استشارة قانونية سريعة بالذكاء الاصطناعي", href: "/ai/consult",                Icon: Robot },
 ];
@@ -59,6 +61,13 @@ export default function NGODashboard() {
   const muted = isDark ? "text-slate-400"         : "text-slate-500";
   const dim   = isDark ? "text-slate-500"         : "text-slate-400";
 
+  // LIVE-F07: the KPI strip, the compliance log and the donations feed are
+  // fixed sample data (nothing reads the organisation's records yet). They
+  // are drawn in demo mode only; production shows an honest note instead,
+  // the same rule the firm home follows (owner decision ١١٥).
+  const complianceLog: typeof COMPLIANCE_LOG = isDemoMode ? COMPLIANCE_LOG : [];
+  const donations: typeof RECENT_DONATIONS = isDemoMode ? RECENT_DONATIONS : [];
+
   return (
     <div className={`${bg} min-h-[100dvh] pb-20`} dir="rtl">
       <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 pt-8 space-y-10">
@@ -81,14 +90,14 @@ export default function NGODashboard() {
               isDark ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400" : "border-emerald-200 bg-emerald-50 text-emerald-700"
             }`}>
               <ShieldChevron size={14} weight="duotone" />
-              منظمة غير ربحية — متوافق مع المركز الوطني للقطاع غير الربحي
+              منظمة غير ربحية
             </div>
 
             <h1 className={`text-4xl md:text-5xl font-bold tracking-tighter leading-none mb-3 ${isDark ? "text-white" : "text-slate-900"}`}>
               {user.name || "جمعية البر الأهلية"}
             </h1>
             <p className={`max-w-[52ch] text-base leading-relaxed ${muted}`}>
-              لوحة التحكم الشاملة — إدارة المتطوعين، تتبع التبرعات، وضمان الامتثال القانوني والتشغيلي.
+              لوحة الجمعية — بعض الوحدات لم تكتمل بعد، والقائمة أعلاه توضّح ما لا يُحفظ حتى الآن.
             </p>
           </div>
 
@@ -114,7 +123,8 @@ export default function NGODashboard() {
           </div>
         </motion.div>
 
-        {/* ── KPI Metrics — 4-col borderless strip ──────────────────────────── */}
+        {/* ── KPI Metrics — 4-col borderless strip (demo mode only, LIVE-F07) ── */}
+        {isDemoMode && (
         <motion.div
           variants={container}
           initial="hidden"
@@ -141,6 +151,7 @@ export default function NGODashboard() {
             </motion.div>
           ))}
         </motion.div>
+        )}
 
         {/* ── Main Body — Asymmetric 2/3 + 1/3 ─────────────────────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-6">
@@ -168,7 +179,10 @@ export default function NGODashboard() {
               </div>
 
               <div className="space-y-4">
-                {COMPLIANCE_LOG.map((task) => {
+                {complianceLog.length === 0 && (
+                  <p className={`text-sm leading-relaxed ${muted}`}>{NOT_FROM_YOUR_RECORDS_NOTE}</p>
+                )}
+                {complianceLog.map((task) => {
                   const isCompleted = task.status === "completed";
                   const isWarning   = task.status === "warning";
 
@@ -253,16 +267,19 @@ export default function NGODashboard() {
                 <h2 className={`text-xl font-semibold tracking-tight ${isDark ? "text-white" : "text-slate-900"}`}>
                   سجل التبرعات
                 </h2>
-                <p className={`text-xs ${muted}`}>آخر المعاملات المالية الموثقة</p>
+                <p className={`text-xs ${muted}`}>{isDemoMode ? "أمثلة ثابتة — وضع العرض" : "وحدة التبرعات غير مربوطة بعد"}</p>
               </div>
             </div>
 
             {/* Timeline Feed */}
             <div className="flex-1 space-y-6">
-              {RECENT_DONATIONS.map((don, i) => (
+              {donations.length === 0 && (
+                <p className={`text-sm leading-relaxed ${muted}`}>{NOT_FROM_YOUR_RECORDS_NOTE}</p>
+              )}
+              {donations.map((don, i) => (
                 <div key={don.id} className="relative">
                   {/* Vertical line */}
-                  {i !== RECENT_DONATIONS.length - 1 && (
+                  {i !== donations.length - 1 && (
                     <div className={`absolute top-7 right-[10px] bottom-[-24px] w-px ${isDark ? "bg-white/5" : "bg-slate-100"}`} />
                   )}
 
@@ -298,7 +315,7 @@ export default function NGODashboard() {
             {/* Quick nav links */}
             <div className={`mt-8 pt-6 border-t space-y-2 ${isDark ? "border-white/5" : "border-slate-100"}`}>
               {[
-                { label: "السجل المالي الكامل",    href: "/dashboard/ngo/finance" },
+                { label: "المالية",                href: "/dashboard/ngo/finance" },
                 { label: "إدارة المتطوعين",        href: "/dashboard/ngo/volunteers" },
                 { label: "سجل العقود والوثائق",    href: "/dashboard/ngo/contracts" },
               ].map((lnk) => (

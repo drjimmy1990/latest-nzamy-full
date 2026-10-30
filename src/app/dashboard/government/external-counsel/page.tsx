@@ -1,4 +1,5 @@
 "use client";
+import { UnfinishedModuleNote } from "@/components/dashboard/sector/UnfinishedModuleNote";
 
 import { User, Briefcase, Star, ArrowLeft, Plus, MagnifyingGlass } from "@phosphor-icons/react";
 import Link from "next/link";
@@ -41,6 +42,7 @@ export default function GovernmentExternalCounselPage() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-8" dir="rtl">
+      <UnfinishedModuleNote href="/dashboard/government/external-counsel" />
 
       {/* Header */}
       <div className="flex items-center justify-between pt-2">

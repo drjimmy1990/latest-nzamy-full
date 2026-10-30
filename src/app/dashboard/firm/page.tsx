@@ -128,15 +128,17 @@ export default function FirmDashboardPage() {
             {isAr ? `قمرة القيادة — ${name}` : `Command Center — ${name}`}
           </motion.h1>
           <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-            {isAr ? "نظرة شاملة على أداء المكتب — تحديث فوري" : "Comprehensive firm performance overview — live"}
+            {isAr ? "نظرة عامة على المكتب" : "Firm overview"}
           </p>
         </div>
         <div className="flex gap-2">
           {/* No «السكرتير الذكي» button (owner ١١٥): the secretary is «قريباً». */}
           {role.can.addNewCase && (
-            <button className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-colors ${isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+            // LIVE-F07: this was a <button> with no handler. The cases page
+            // has the real «قضية جديدة» form.
+            <Link href="/dashboard/firm/cases" className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-colors ${isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
               <Plus size={15} weight="bold" /> {isAr ? "قضية جديدة" : "New Case"}
-            </button>
+            </Link>
           )}
         </div>
       </div>

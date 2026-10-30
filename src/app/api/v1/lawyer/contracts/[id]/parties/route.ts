@@ -2,6 +2,7 @@ import { NextResponse, NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
 import { isPartyRole, isPartyKind, isEntityType } from "@/lib/services/contractVocabulary";
 import { normalizeCommercialRegister, isValidCommercialRegister } from "@/lib/services/clientIdentityRules";
+import { checkContactPair, phoneAllowsUnified } from "@/lib/services/contactFieldRules";
 import { PARTY_SELECT, toPartyDto, dbErrorResponse, type PartyRow } from "../../_shared";
 
 /**
@@ -87,11 +88,16 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       resolvedCommercialRegisterNo = normalizeCommercialRegister(commercialRegisterNo);
     }
 
-    if (contactPhone !== undefined && contactPhone !== null && typeof contactPhone !== "string") {
-      return NextResponse.json({ error: "رقم الهاتف غير صالح." }, { status: 400 });
-    }
-    if (contactEmail !== undefined && contactEmail !== null && typeof contactEmail !== "string") {
-      return NextResponse.json({ error: "البريد الإلكتروني غير صالح." }, { status: 400 });
+    // LIVE-F39: a party was saved with phone «000» and e-mail «not-an-email»
+    // because this route only checked that each was a string. Both are
+    // optional; a filled one must have the right format, and the phone is
+    // stored normalised. Refused before any row is written.
+    const contact = checkContactPair(
+      { phone: contactPhone, email: contactEmail },
+      { allowUnified: phoneAllowsUnified(entityType) },
+    );
+    if (!contact.ok) {
+      return NextResponse.json({ error: contact.error, field: contact.field }, { status: 400 });
     }
 
     let resolvedPosition: number;
@@ -120,8 +126,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
         entity_type: entityType,
         lawyer_client_id: resolvedLawyerClientId,
         commercial_register_no: resolvedCommercialRegisterNo,
-        contact_phone: contactPhone ?? null,
-        contact_email: contactEmail ?? null,
+        contact_phone: contact.phone,
+        contact_email: contact.email,
         position: resolvedPosition,
       })
       .select(PARTY_SELECT)

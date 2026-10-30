@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { assertRole } from "@/lib/auth/assertRole";
 import { isPartyRole, isPartyKind, isEntityType } from "@/lib/services/contractVocabulary";
 import { normalizeCommercialRegister, isValidCommercialRegister } from "@/lib/services/clientIdentityRules";
+import { checkSaudiPhone, checkOptionalEmail, phoneAllowsUnified } from "@/lib/services/contactFieldRules";
 import { PARTY_SELECT, toPartyDto, dbErrorResponse, type PartyRow } from "../../../_shared";
 
 /**
@@ -105,17 +106,24 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         patch.commercial_register_no = normalizeCommercialRegister(body.commercialRegisterNo);
       }
     }
+    // LIVE-F39 — same rules as POST (contactFieldRules.ts). When the patch
+    // does not carry entityType the stored one decides whether a 920 number
+    // is allowed, so a company party can keep its unified number.
     if (body.contactPhone !== undefined) {
-      if (body.contactPhone !== null && typeof body.contactPhone !== "string") {
-        return NextResponse.json({ error: "رقم الهاتف غير صالح." }, { status: 400 });
+      let entityForPhone: string | null | undefined = body.entityType;
+      if (entityForPhone === undefined) {
+        const { data: current } = await supabase
+          .from("contract_parties").select("entity_type").eq("id", pid).eq("contract_id", id).maybeSingle();
+        entityForPhone = (current?.entity_type as string | undefined) ?? null;
       }
-      patch.contact_phone = body.contactPhone ?? null;
+      const phone = checkSaudiPhone(body.contactPhone, { allowUnified: phoneAllowsUnified(entityForPhone) });
+      if (!phone.ok) return NextResponse.json({ error: phone.error, field: "phone" }, { status: 400 });
+      patch.contact_phone = phone.value;
     }
     if (body.contactEmail !== undefined) {
-      if (body.contactEmail !== null && typeof body.contactEmail !== "string") {
-        return NextResponse.json({ error: "البريد الإلكتروني غير صالح." }, { status: 400 });
-      }
-      patch.contact_email = body.contactEmail ?? null;
+      const email = checkOptionalEmail(body.contactEmail);
+      if (!email.ok) return NextResponse.json({ error: email.error, field: "email" }, { status: 400 });
+      patch.contact_email = email.value;
     }
     if (body.position !== undefined) {
       if (!Number.isInteger(body.position) || body.position < 0) {

@@ -1,4 +1,5 @@
 "use client";
+import { UnfinishedModuleNote } from "@/components/dashboard/sector/UnfinishedModuleNote";
 
 import { motion } from "framer-motion";
 import { Globe, Users, Eye, ShieldCheck, Bell, ArrowUpRight } from "@phosphor-icons/react";
@@ -28,6 +29,7 @@ export default function FirmClientPortalPage() {
 
   return (
     <div className="max-w-[1100px] mx-auto space-y-6" dir="rtl">
+      <UnfinishedModuleNote href="/dashboard/firm/client-portal" />
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
         <h1 className={`text-2xl font-bold mb-1 ${isDark ? "text-white" : "text-slate-800"}`}
           style={{ fontFamily: "var(--font-brand)" }}>

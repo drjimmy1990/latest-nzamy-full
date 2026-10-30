@@ -8,6 +8,10 @@ import {
   type ContractVersion,
 } from "@/lib/services/contractsService";
 import { VERSION_LABELS, VERSION_LABEL_AR, type VersionLabel } from "@/lib/services/contractVocabulary";
+import {
+  validateContractVersionFile, precheckContractVersionFile,
+  CONTRACT_VERSION_ACCEPT, CONTRACT_VERSION_LIMIT_NOTE, CONTRACT_VERSION_HEAD_BYTES,
+} from "@/lib/services/contractVersionFile";
 
 /**
  * UploadVersionModal.tsx
@@ -15,6 +19,11 @@ import { VERSION_LABELS, VERSION_LABEL_AR, type VersionLabel } from "@/lib/servi
  * The bytes go straight from the browser to the `documents` bucket, then the
  * row is registered through the API (uploadContractVersionFile does both —
  * see contractsService.ts). Nothing here touches storage directly.
+ *
+ * LIVE-F40 / CODE-F39: the picked file is checked on the spot — size, name
+ * and the first bytes (contractVersionFile.ts) — and «رفع النسخة» stays
+ * disabled with the reason shown, so a TXT or a 30 MB file is refused before
+ * anything is sent. The service and the registration route check again.
  */
 
 interface Props {
@@ -31,6 +40,28 @@ export default function UploadVersionModal({ contractId, isDark, onClose, onUplo
   const [makeCurrent, setMakeCurrent] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Why the picked file is refused; null when it passed (or none picked). */
+  const [fileIssue, setFileIssue] = useState<string | null>(null);
+  const [checkingFile, setCheckingFile] = useState(false);
+
+  async function pickFile(picked: File | null) {
+    setError(null);
+    setFile(picked);
+    setFileIssue(null);
+    if (!picked) return;
+    const quick = precheckContractVersionFile(picked);
+    if (quick) { setFileIssue(quick); return; }
+    setCheckingFile(true);
+    try {
+      const head = new Uint8Array(await picked.slice(0, CONTRACT_VERSION_HEAD_BYTES).arrayBuffer());
+      const check = validateContractVersionFile({ name: picked.name, size: picked.size, head });
+      setFileIssue(check.ok ? null : check.error);
+    } catch {
+      setFileIssue("تعذّرت قراءة الملف — اختره مرة أخرى.");
+    } finally {
+      setCheckingFile(false);
+    }
+  }
 
   const inputCls = `w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none ${
     isDark
@@ -41,6 +72,7 @@ export default function UploadVersionModal({ contractId, isDark, onClose, onUplo
 
   async function handleUpload() {
     if (!file) { setError("اختر ملفاً قبل الرفع."); return; }
+    if (fileIssue || checkingFile) return;
     setUploading(true);
     setError(null);
     try {
@@ -100,12 +132,16 @@ export default function UploadVersionModal({ contractId, isDark, onClose, onUplo
               {file ? file.name : "اختر ملف PDF أو Word"}
               <input
                 type="file"
-                accept=".pdf,.doc,.docx"
+                accept={CONTRACT_VERSION_ACCEPT}
                 className="hidden"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => { void pickFile(e.target.files?.[0] ?? null); e.target.value = ""; }}
                 disabled={uploading}
               />
             </label>
+            <p className={`mt-1.5 text-[11px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{CONTRACT_VERSION_LIMIT_NOTE}</p>
+            {fileIssue && (
+              <p role="alert" className={`mt-1.5 text-[11px] font-semibold ${isDark ? "text-red-400" : "text-red-600"}`}>{fileIssue}</p>
+            )}
           </div>
 
           <div>
@@ -127,9 +163,9 @@ export default function UploadVersionModal({ contractId, isDark, onClose, onUplo
 
           <button
             onClick={handleUpload}
-            disabled={uploading || !file}
+            disabled={uploading || !file || !!fileIssue || checkingFile}
             className={`flex items-center justify-center gap-1.5 w-full rounded-xl py-2.5 text-[13px] font-bold transition mt-2 ${
-              uploading || !file
+              uploading || !file || !!fileIssue || checkingFile
                 ? isDark ? "bg-zinc-800 text-zinc-500 cursor-not-allowed" : "bg-slate-100 text-slate-400 cursor-not-allowed"
                 : "bg-[#0B3D2E] text-[#C8A762] hover:bg-[#092e22]"
             }`}
