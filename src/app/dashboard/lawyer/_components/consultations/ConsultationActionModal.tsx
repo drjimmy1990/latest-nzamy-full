@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { Warning, X } from "@phosphor-icons/react";
@@ -8,10 +8,13 @@ import {
   updateLawyerConsultation,
   deliverConsultationOpinion,
   convertConsultationToCase,
+  ConsultationOverlapError,
   type LawyerConsultation,
 } from "@/lib/services/lawyerConsultationsService";
 import { describeDateAr } from "@/lib/services/hijri";
-import { joinLocalDateTime, splitLocalDateTime } from "@/lib/services/dualCalendar";
+import {
+  RIYADH_ZONE_LABEL_AR, formatClockAr, pastSlotMessageAr, riyadhSlotIso, riyadhWallClock,
+} from "@/lib/services/consultationSchedule";
 import DualDatePicker from "@/components/ui/DualDatePicker";
 import { toArabicDigits } from "@/lib/services/arabicCount";
 import {
@@ -92,26 +95,11 @@ const SUBMIT_LABEL: Record<ConsultationAction, string> = {
   convert: "تحويل إلى قضية",
 };
 
-/** `<input type="datetime-local">` value ("YYYY-MM-DDTHH:mm", local time) from an ISO instant, or "" when there is none. */
-function toDatetimeLocalValue(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-/**
- * An ISO instant from a `datetime-local` value, or null for an empty/invalid
- * one. `new Date("YYYY-MM-DDTHH:mm")` — no timezone offset, no seconds — is
- * parsed as LOCAL time per spec (unlike a date-only "YYYY-MM-DD" string,
- * which parses as UTC), so this round-trips exactly what the picker showed.
- */
-function fromDatetimeLocalValue(value: string): string | null {
-  if (!value) return null;
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d.toISOString();
-}
+// The slot is a RIYADH wall-clock date + time (LIVE-F37). It used to be read
+// and written in the BROWSER's zone (`new Date("YYYY-MM-DDTHH:mm")`), so a
+// lawyer whose machine was not on Riyadh time saved, and was shown, a
+// different hour from the one the client was told. consultationSchedule.ts
+// converts with the fixed UTC+3 offset and never reads the machine's zone.
 
 export default function ConsultationActionModal({ consultation, action, isDark, onClose, onDone, basePath = "/dashboard/lawyer" }: Props) {
   const [saving, setSaving] = useState(false);
@@ -121,10 +109,16 @@ export default function ConsultationActionModal({ consultation, action, isDark, 
   // The day comes from the shared Hijri/Gregorian picker and the hour from a
   // time input. Kept as two halves so a day chosen before the hour is not
   // lost; joined, they are the same "YYYY-MM-DDTHH:mm" the old datetime-local
-  // field produced, so everything below reads `scheduledAtLocal` unchanged.
-  const [scheduledDate, setScheduledDate] = useState(() => splitLocalDateTime(toDatetimeLocalValue(consultation.scheduledAt)).date);
-  const [scheduledTime, setScheduledTime] = useState(() => splitLocalDateTime(toDatetimeLocalValue(consultation.scheduledAt)).time);
-  const scheduledAtLocal = joinLocalDateTime(scheduledDate, scheduledTime);
+  // field produced. Both halves are Riyadh wall clock.
+  const [scheduledDate, setScheduledDate] = useState(() => riyadhWallClock(consultation.scheduledAt)?.date ?? "");
+  const [scheduledTime, setScheduledTime] = useState(() => riyadhWallClock(consultation.scheduledAt)?.time ?? "");
+  // "Now" for the past-slot check (LIVE-F34), read on the client after mount
+  // and again whenever the slot changes — never at render, never at SSR.
+  const [nowMs, setNowMs] = useState<number | null>(null);
+  useEffect(() => { setNowMs(Date.now()); }, [scheduledDate, scheduledTime]);
+  // Set when the server answered 409 consultation_overlap (LIVE-F35); cleared
+  // by any change to the slot, so a confirmation never carries over.
+  const [overlapWarning, setOverlapWarning] = useState<string | null>(null);
   // Falls back to 60 only when the stored value isn't one of the offered
   // options — PATCH accepts any integer 5..480, so a row saved with e.g. 75
   // would otherwise leave the <select> matching nothing, silently rewriting
@@ -154,12 +148,26 @@ export default function ConsultationActionModal({ consultation, action, isDark, 
   // ── convert ──
   const [convertTitle, setConvertTitle] = useState(`قضية من استشارة: ${consultation.title}`);
 
-  const scheduledAtIso = action === "schedule" ? fromDatetimeLocalValue(scheduledAtLocal) : null;
-  const scheduledAtDescribed = action === "schedule" && scheduledAtLocal
-    ? describeDateAr(scheduledAtLocal.slice(0, 10))
+  useEffect(() => { setOverlapWarning(null); }, [scheduledDate, scheduledTime, duration]);
+
+  const scheduledAtIso = action === "schedule" ? riyadhSlotIso(scheduledDate, scheduledTime) : null;
+  const scheduledAtDescribed = action === "schedule" && scheduledDate
+    ? describeDateAr(scheduledDate)
     : null;
   const scheduledAtTime = action === "schedule" && scheduledAtIso
-    ? new Date(scheduledAtIso).toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" })
+    ? `${formatClockAr(scheduledTime)} ${RIYADH_ZONE_LABEL_AR}`
+    : null;
+  // Mirrors the PATCH route: a NEW slot (or one being scheduled for the first
+  // time) must be ahead of now; a scheduled row keeping its slot is not re-judged.
+  const slotIsNew = consultation.status !== "scheduled"
+    || !consultation.scheduledAt
+    || Date.parse(consultation.scheduledAt) !== (scheduledAtIso ? Date.parse(scheduledAtIso) : NaN);
+  const pastSlotIssue = action === "schedule" && scheduledAtIso && nowMs !== null && slotIsNew
+    && Date.parse(scheduledAtIso) <= nowMs
+    ? pastSlotMessageAr(nowMs)
+    : null;
+  const partialSlotIssue = action === "schedule" && (!!scheduledDate !== !!scheduledTime)
+    ? "أدخل التاريخ والوقت معاً."
     : null;
 
   const targetStatus = ACTION_TARGET_STATUS[action];
@@ -213,7 +221,7 @@ export default function ConsultationActionModal({ consultation, action, isDark, 
 
   const canSave = (() => {
     if (transitionIssue) return false;
-    if (action === "schedule") return !!scheduledAtIso && !!duration && !!mode;
+    if (action === "schedule") return !!scheduledAtIso && !pastSlotIssue && !!duration && !!mode;
     if (action === "complete") return !!outcome && feeValid;
     if (action === "cancel") return true;
     if (action === "no_show") return true;
@@ -222,18 +230,33 @@ export default function ConsultationActionModal({ consultation, action, isDark, 
     return false;
   })();
 
-  async function handleSave() {
+  async function handleSave(confirmOverlap = false) {
     if (!canSave || saving) return;
     setSaving(true);
     setError(null);
     try {
       if (action === "schedule") {
-        const updated = await updateLawyerConsultation(consultation.id, {
-          status: "scheduled",
-          scheduledAt: scheduledAtIso,
-          durationMinutes: duration,
-          mode,
-        });
+        // Re-checked against a fresh clock at the moment of saving; the
+        // server applies the same rule and is the one that counts.
+        if (scheduledAtIso && slotIsNew && Date.parse(scheduledAtIso) <= Date.now()) {
+          throw new Error(pastSlotMessageAr(Date.now()));
+        }
+        let updated: LawyerConsultation;
+        try {
+          updated = await updateLawyerConsultation(consultation.id, {
+            status: "scheduled",
+            scheduledAt: scheduledAtIso,
+            durationMinutes: duration,
+            mode,
+            ...(confirmOverlap ? { confirmOverlap: true } : {}),
+          });
+        } catch (err) {
+          if (err instanceof ConsultationOverlapError) {
+            setOverlapWarning(err.message);
+            return;
+          }
+          throw err;
+        }
         onDone(updated);
       } else if (action === "complete") {
         const updated = await updateLawyerConsultation(consultation.id, {
@@ -330,6 +353,19 @@ export default function ConsultationActionModal({ consultation, action, isDark, 
                     {scheduledAtDescribed}{scheduledAtTime ? ` · ${scheduledAtTime}` : ""}
                   </p>
                 )}
+                <p className={`mt-1 text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>الوقت {RIYADH_ZONE_LABEL_AR}.</p>
+                {(partialSlotIssue || pastSlotIssue) && (
+                  <p className="mt-1.5 text-[11px] font-semibold text-red-500">{partialSlotIssue ?? pastSlotIssue}</p>
+                )}
+                {overlapWarning && (
+                  <div className={`mt-2 rounded-xl px-3 py-2 text-[12px] font-semibold ${isDark ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" : "bg-amber-50 text-amber-700 border border-amber-200"}`}>
+                    <p>{overlapWarning}</p>
+                    <button type="button" onClick={() => handleSave(true)} disabled={saving}
+                      className="mt-2 rounded-lg bg-amber-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-amber-700 disabled:opacity-60">
+                      حفظ رغم التعارض
+                    </button>
+                  </div>
+                )}
               </div>
               <div>
                 <label className={labelCls}>المدة</label>
@@ -417,7 +453,7 @@ export default function ConsultationActionModal({ consultation, action, isDark, 
 
           {showFooterButton && (
             <button
-              onClick={handleSave}
+              onClick={() => handleSave()}
               disabled={saving || !canSave}
               className={`w-full rounded-xl py-2.5 text-[13px] font-bold transition mt-2 ${
                 saving || !canSave

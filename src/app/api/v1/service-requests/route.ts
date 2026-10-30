@@ -11,6 +11,7 @@ import { stripInternalNotes } from "@/lib/services/internalNotes";
 import { isKnownReceiver, ownRequestsOrFilter } from "@/lib/services/ownRequestsFilter";
 import { checkOrderIntake, intakeErrorMessageAr } from "@/lib/services/intakeGuard";
 import { validateServiceRequestCreate } from "@/lib/services/serviceRequestIntake";
+import { consultationBookingRefusal } from "@/app/api/v1/lawyer/consultations/_scheduleGuard";
 import { resolveServiceRequestEntityScope } from "@/lib/auth/serviceRequestEntityScope";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
@@ -379,6 +380,21 @@ export async function POST(request: NextRequest) {
         { error: intakeErrorMessageAr(intakeCheck.errors) },
         { status: 400 },
       );
+    }
+
+    // Consultation slot (owner findings LIVE-F34 / CODE-F31 / LIVE-F35): a
+    // real Riyadh date AND time strictly after now, or neither; and, for a
+    // booking the lawyer files to themselves, no unconfirmed overlap with
+    // their own scheduled consultations. See lawyer/consultations/_scheduleGuard.ts.
+    if (shape.value.type === "consultation") {
+      const slotRefusal = await consultationBookingRefusal(supabase, {
+        userId: user.id,
+        metadata: requestData.metadata,
+        assignedToSelf: (requestData.assignedTo ?? requestData.assigned_to ?? null) === user.id,
+        confirmOverlap: requestData.confirmOverlap === true,
+        nowMs: Date.now(),
+      });
+      if (slotRefusal) return slotRefusal;
     }
 
     // Task 6d follow-up — clamp the creation-time status. Without this, a

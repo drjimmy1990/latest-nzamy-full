@@ -83,6 +83,46 @@ export interface UpdateConsultationInput {
   feePaid?: boolean;
   cancelledReason?: string | null;
   lawyerClientId?: string | null;
+  /** Save even though the slot overlaps another scheduled consultation (LIVE-F35). */
+  confirmOverlap?: boolean;
+}
+
+/**
+ * Thrown when the server answers 409 `consultation_overlap`: the slot shares
+ * time with another scheduled consultation of the same lawyer. The screen
+ * shows `message` and offers to resend with `confirmOverlap: true`.
+ */
+export class ConsultationOverlapError extends Error {
+  readonly conflicts: Array<{ id: string; scheduledAt: string; durationMinutes: number }>;
+  constructor(message: string, conflicts: Array<{ id: string; scheduledAt: string; durationMinutes: number }>) {
+    super(message);
+    this.name = "ConsultationOverlapError";
+    this.conflicts = conflicts;
+  }
+}
+
+/**
+ * apiMutate, plus the one response it cannot express: a 409 overlap warning
+ * the caller must be able to tell apart from a refusal. Everything else
+ * behaves exactly like apiMutate (Arabic `error` thrown as the message).
+ */
+export async function mutateConsultationSlot<T>(url: string, method: "POST" | "PATCH", body: unknown): Promise<T> {
+  if (!isSupabaseMode) throw new Error("الاستشارات غير متاحة في وضع العرض التجريبي");
+  const response = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    credentials: "same-origin",
+    cache: "no-store",
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => ({ error: "Request failed" }));
+    if (response.status === 409 && errorBody?.code === "consultation_overlap") {
+      throw new ConsultationOverlapError(errorBody.error, Array.isArray(errorBody.conflicts) ? errorBody.conflicts : []);
+    }
+    throw new Error(errorBody.error || `API error: ${response.status}`);
+  }
+  return response.json() as Promise<T>;
 }
 
 const BASE = "/api/v1/lawyer/consultations";
@@ -109,7 +149,7 @@ export async function getLawyerConsultation(id: string): Promise<LawyerConsultat
 
 export async function updateLawyerConsultation(id: string, patch: UpdateConsultationInput): Promise<LawyerConsultation> {
   if (!isSupabaseMode) throw new Error("الاستشارات غير متاحة في وضع العرض التجريبي");
-  const res = await apiMutate<{ data: LawyerConsultation }>(path(id), "PATCH", patch);
+  const res = await mutateConsultationSlot<{ data: LawyerConsultation }>(path(id), "PATCH", patch);
   if (!res?.data) throw new Error("لم يُعِد الخادم الاستشارة بعد التعديل.");
   return res.data;
 }
