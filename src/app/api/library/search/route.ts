@@ -42,6 +42,8 @@ import {
 import { fetchLawTitleHitsChecked, type LawTitleHitsResult } from './lawTitleHits';
 import { fetchBookTitleHits } from './bookTitleHits';
 import { fetchCollectionTitleHits } from './collectionTitleHits';
+import { latestLegislativeEvent, summaryForViewer } from '@/lib/library/legislativeEvent';
+import { realPrincipleNumber } from '@/app/laws/principleLink';
 
 /** Book-title hits listed above the fiqh passages on page 1. */
 const BOOK_TITLE_HITS_MAX = 3;
@@ -312,6 +314,42 @@ export async function POST(request: Request) {
     // Filled by runLaws: the title hits counted in counts.laws.
     let lawTitleHitCount = 0;
 
+    // Owner note ١٢-٦ / answers ٣١٧–٣١٨: each law hit carries «آخر تحديث
+    // تشريعي» — the latest official event's date ALONE, for every viewer, the
+    // same value /api/library/init sends. latest_update / issue_date_hijri are
+    // column-locked for anon (20261004_01), so they are read here with the
+    // service role and only the date leaves the server. Best-effort: a failed
+    // lookup leaves the date out, it never fails the section.
+    const attachLatestLegislativeUpdate = async (items: SearchResultItem[], signal: AbortSignal): Promise<void> => {
+      try {
+        const batches = lawSlugBatches(items.map((it) => ({ law_slug: it.meta?.lawSlug })));
+        if (batches.length === 0) return;
+        const lookups = await Promise.all(batches.map((slugs) => serverOnly
+          .schema('library')
+          .from('laws')
+          .select('slug, latest_update, issue_date_hijri')
+          .in('slug', slugs)
+          .abortSignal(signal)));
+        const bySlug = new Map<string, string>();
+        for (const lookup of lookups) {
+          if (lookup.error || !Array.isArray(lookup.data)) {
+            console.warn('[Search] latest legislative update lookup failed:', lookup.error ?? 'invalid data');
+            continue;
+          }
+          for (const row of lookup.data as Record<string, unknown>[]) {
+            const event = latestLegislativeEvent({ latest_update: row.latest_update, issue_date_hijri: row.issue_date_hijri });
+            if (event && typeof row.slug === 'string') bySlug.set(row.slug, event.dateHijri);
+          }
+        }
+        for (const it of items) {
+          const date = bySlug.get(String(it.meta?.lawSlug ?? ''));
+          if (date) it.meta.latestLegislativeUpdate = date;
+        }
+      } catch (e) {
+        console.warn('[Search] latest legislative update lookup threw:', e);
+      }
+    };
+
     // --- LAWS SEARCH ---
     const runLaws = async (): Promise<SectionOutcome> => {
       const signal = AbortSignal.timeout(SECTION_BUDGET_MS);
@@ -469,7 +507,8 @@ export async function POST(request: Request) {
             id: `law:${law.slug}`,
             section: 'laws',
             title: law.title,
-            snippet: truncateWithHighlight(law.description || '', parsed.plainTerms, snippetLen(isFree)),
+            // Owner ٣١٩: a non-subscriber's text carries no decree number or issue date.
+            snippet: truncateWithHighlight(summaryForViewer(law.description || '', hasFullAccess), parsed.plainTerms, snippetLen(isFree)),
             locked: !isFree,
             meta: {
               kind: 'law',
@@ -537,6 +576,7 @@ export async function POST(request: Request) {
           : articleItems;
         const results = dedupeResults([...shownHits, ...shownArticles])
           .slice(0, section === 'laws' ? limit : ALL_SECTION_PREVIEW);
+        await attachLatestLegislativeUpdate(results, signal);
         // counts.laws is what the section lists: the article matches plus the
         // title hits, on every page (lawTitleHits carries the hits alone).
         lawTitleHitCount = k;
@@ -664,10 +704,14 @@ export async function POST(request: Request) {
         const precResults = settled.rows;
         const results: SearchResultItem[] = precResults.map((r: Record<string, unknown>) => {
           const isFree = isFreeLibraryItem({ contentType: 'principles', itemId: r.id as string, hasFullAccess, freeItemsByType, whitelistedLawSlugs: whitelistedSlugs });
+          const collection = r.judicial_collections as Record<string, unknown> | undefined;
+          // Never «مبدأ رقم null»: the number only when it is a real one.
+          const principleNumber = realPrincipleNumber(r.principle_number);
+          const body = String(r.issuing_body ?? collection?.court ?? '').trim();
           return {
             id: r.id,
             section: 'precedents',
-            title: `مبدأ رقم ${r.principle_number} — ${r.issuing_body}`,
+            title: principleNumber ? `مبدأ رقم ${principleNumber}${body ? ` — ${body}` : ''}` : (body || 'مبدأ قضائي'),
             // A locked hit is centred on nothing (the principle's opening), as
             // for articles: a query must not slide the window across paid text.
             snippet: truncateWithHighlight(
@@ -677,10 +721,15 @@ export async function POST(request: Request) {
             ),
             locked: !isFree,
             meta: {
-              court: (r.judicial_collections as Record<string, unknown>)?.court,
+              court: collection?.court,
               sessionDate: r.session_date,
               decisionNumber: r.decision_number,
-              collectionSlug: (r.judicial_collections as Record<string, unknown>)?.id,
+              collectionSlug: collection?.id,
+              // Owner note ١٢-١: the page groups principle hits under their
+              // collection's card, which needs its title (a public column).
+              collectionTitle: typeof collection?.title === 'string' ? collection.title : null,
+              track: collection?.track ?? null,
+              principleNumber,
               year: r.year_hijri,
             },
           };
