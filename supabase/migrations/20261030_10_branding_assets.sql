@@ -108,13 +108,16 @@ as $$
 declare
   v_lawyer uuid;
   v_firm   uuid;
+  v_prefix text;
 begin
   select v.lawyer_user_id, v.firm_id into v_lawyer, v_firm
     from public.branding_vaults v where v.id = new.vault_id;
   if not found then
     raise exception 'branding_assets: vault % does not exist', new.vault_id using errcode = '23503';
   end if;
-  if split_part(new.path, '/', 1) <> case when v_lawyer is not null then 'u' else 'f' end
+  -- (computed first: inside IF, plpgsql would end the condition at CASE's THEN)
+  v_prefix := case when v_lawyer is not null then 'u' else 'f' end;
+  if split_part(new.path, '/', 1) <> v_prefix
      or split_part(new.path, '/', 2) <> coalesce(v_lawyer, v_firm)::text then
     raise exception 'branding_assets: path % is not in the folder of vault %', new.path, new.vault_id using errcode = '23514';
   end if;
