@@ -293,6 +293,8 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   { file: "articles/[id]/route.ts", method: "PATCH", action: "content.delete", logs: 1 },
   { file: "feature-requests/[id]/route.ts", method: "PATCH", action: "tickets.manage", logs: 1 },
   { file: "library-invitations/route.ts", method: "POST", action: "entitlements.grant", logs: 1 },
+  // owner note ١٨ C04: revoke / end change of a library grant (one rpc, one audit row)
+  { file: "library-grants/[id]/route.ts", method: "PATCH", action: "entitlements.grant", logs: 1 },
   { file: "library-issue-reports/[id]/route.ts", method: "PATCH", action: "tickets.manage", logs: 1 },
   { file: "receipts/route.ts", method: "POST", action: "orders.manage", logs: 1 },
   { file: "tickets/route.ts", method: "POST", action: "tickets.manage", logs: 1 },
