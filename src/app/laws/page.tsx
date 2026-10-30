@@ -2,11 +2,18 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useRouter } from "next/navigation";
+import { instantBoxItems, type InstantItem } from "./instantBox";
+import type { SaveToFolderDoc } from "./saveToFolder";
+import type { TitleSuggestion } from "@/app/api/library/search/suggest/suggestions";
+import Link from "next/link";
+import FolderSelectionModal from "@/components/laws/FolderSelectionModal";
 import { normalizeArabic, normalizeSearch } from "@/utils/normalizeArabic";
 import { stripMarkdownMarks } from "@/lib/text/stripMarkdownMarks";
 import { withoutLeadingHeadings } from "./components/summaryClamp";
 import { groupLawSearchCards } from "./lawSearchGroups";
 import { courtBadge } from "./principleCardFields";
+import { collectionCardExcerpt } from "@/lib/library/precedentVolumes";
 import { realPrincipleNumber } from "./principleLink";
 import { highlightSearchHtml as highlightText } from "./highlightSearchHtml";
 import {
@@ -59,6 +66,7 @@ import { LawsTabContent } from "./components/LawsTabContent";
 import { FeqhTabContent } from "./components/FeqhTabContent";
 import { ISSUER_MAP } from "./components/ListItems";
 import { ResultsSkeleton } from "./components/ResultsSkeleton";
+import { HighlightProvider } from "@/components/search/MultiColorHighlight";
 import {
   type LawFacets,
   SECTION_30,
@@ -77,6 +85,7 @@ import {
   SEARCH_MAX_DEPTH,
   SEARCH_PAGE_SIZE,
   SEARCH_SECTIONS,
+  CATEGORY_SEARCH_SECTIONS,
   SECTION_DEGRADED_NOTICE,
   SEARCH_SECTION_LABELS_AR,
   appendSearchRows,
@@ -125,6 +134,11 @@ type ArticleStatusFilter = (typeof ARTICLE_STATUS_FILTER_OPTIONS)[number]["value
 // ─── Main Page ──────────────────────────────────────────────────────────────────
 export default function LegalLibraryPage() {
   const { isRTL, isDark } = useTheme();
+  const router = useRouter();
+  // Owner note ٠٤: the result card whose «حفظ في مجلد» opened the folder modal.
+  const [saveDoc, setSaveDoc] = useState<SaveToFolderDoc | null>(null);
+  // Owner note ١٢-٣: «هل تقصد …؟» titles for a search that found nothing.
+  const [titleSuggestions, setTitleSuggestions] = useState<TitleSuggestion[]>([]);
   const { isLoggedIn }    = useUser();
 
   // --- Database-backed state variables ---
@@ -222,7 +236,7 @@ export default function LegalLibraryPage() {
   // null = no API answer (demo mode / request failed): the dropdown then counts
   // the local lists. Otherwise exact / «أكثر من ١٬٠٠٠» / degraded per section.
   const [autocompleteCounts, setAutocompleteCounts] = useState<SearchCountsInfo | null>(null);
-  const [autocompleteMatches, setAutocompleteMatches] = useState<{ label: string; type: string; typeLabel: string; id?: string }[]>([]);
+  const [autocompleteMatches, setAutocompleteMatches] = useState<InstantItem[]>([]);
   const autocompleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Only the newest autocomplete request may write state: an older, slower
   // response for a previous query is aborted or dropped.
@@ -258,11 +272,13 @@ export default function LegalLibraryPage() {
         const data = await res.json();
         if (requestId !== autocompleteRequestIdRef.current) return;
         setAutocompleteCounts(data?.counts ? readSearchCounts(data) : unavailable);
-        const matches = (data.topMatches || []).map((m: { title: string; section: string; slug: string; snippet?: string }) => ({
-          label: stripMarkdownMarks(m.title),
-          type: m.section === "laws" ? "laws" : m.section === "orders" ? "orders" : m.section === "feqh" ? "feqh" : "precedents",
-          typeLabel: m.section === "laws" ? (isRTL ? "نظام" : "Law") : m.section === "orders" ? (isRTL ? "مرسوم" : "Decree") : m.section === "feqh" ? (isRTL ? "كتاب" : "Book") : (isRTL ? "مبدأ" : "Principle"),
-          id: m.slug,
+        // Owner note ١٢-٢: badge + distinctive name + the document's link
+        // (instantBox.ts); a locked principle arrives with no snippet.
+        const matches = instantBoxItems(data.topMatches || [], q).map((m) => ({
+          ...m,
+          label: stripMarkdownMarks(m.label),
+          core: stripMarkdownMarks(m.core),
+          snippet: stripMarkdownMarks(m.snippet),
         }));
         setAutocompleteMatches(matches);
       }
@@ -289,9 +305,10 @@ export default function LegalLibraryPage() {
       return;
     }
     // Category is a laws/orders API filter. Keep a persisted or stale category
-    // from silently widening an all, precedents, or feqh text search.
+    // from silently widening a precedents or feqh text search. On «الكل»
+    // (owner note ١٢-د) the API runs laws and orders only for a category.
     const section = type === 'all' ? 'all' : type;
-    if (cat !== 'all' && section !== 'laws' && section !== 'orders') {
+    if (cat !== 'all' && section !== 'laws' && section !== 'orders' && section !== 'all') {
       searchRequestIdRef.current += 1;
       searchAbortRef.current?.abort();
       loadMoreAbortRef.current?.abort();
@@ -366,7 +383,11 @@ export default function LegalLibraryPage() {
       }
       // Only the requested section(s) count; a section the API names in
       // `degraded` failed, it did not match nothing.
-      setSearchCounts(readSearchCounts(data, section === 'all' ? SEARCH_SECTIONS : [section as SearchSection]));
+      // «الكل» + a category searched laws and orders only: the other two
+      // sections are not counted (not «0», not degraded).
+      setSearchCounts(readSearchCounts(data, section === 'all'
+        ? (cat !== 'all' ? CATEGORY_SEARCH_SECTIONS : SEARCH_SECTIONS)
+        : [section as SearchSection]));
     } catch (e) {
       if ((e as { name?: string }).name !== 'AbortError') {
         console.error('[Search] API error:', e);
@@ -715,6 +736,25 @@ export default function LegalLibraryPage() {
       : "The article-status filter was cleared because the search is no longer limited to laws.");
   }, [isArticleStatusFilterInScope, articleStatusFilter, isRTL]);
 
+  // Owner note ١٢-٣: a settled search with no result anywhere (no section
+  // failed) asks /api/library/search/suggest for the closest titles —
+  // «هل تقصد …؟». Missing function / any failure → [] and the plain «لا نتائج».
+  const searchFoundNothing = isSearchActive && !searchLoading && !searchError && !!searchResults
+    && searchCounts.degraded.length === 0 && totalCountDisplay(searchCounts).value === 0;
+  useEffect(() => {
+    setTitleSuggestions([]);
+    if (!searchFoundNothing || !isSupabaseMode) return;
+    const controller = new AbortController();
+    fetch(`/api/library/search/suggest?q=${encodeURIComponent(search.trim())}`, { signal: controller.signal })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body) => {
+        if (controller.signal.aborted) return;
+        setTitleSuggestions(Array.isArray(body?.suggestions) ? body.suggestions : []);
+      })
+      .catch(() => { /* aborted or offline: no suggestions */ });
+    return () => controller.abort();
+  }, [searchFoundNothing, search]);
+
   if (!mounted) return null;
 
   // ─── Load More function for pagination ──────────────────────────────────────
@@ -805,12 +845,14 @@ export default function LegalLibraryPage() {
     // Fallback (demo mode only): scan local demo data for basic matching.
     // In supabase mode the API autocomplete above is authoritative — no mock.
     if (isSupabaseMode) return [];
-    const results: { label: string; type: string; typeLabel: string; id?: string }[] = [];
+    const results: InstantItem[] = [];
     PhosphorIcons; // reference to prevent unused warning if any
 
     DEMO_PRINCIPLES.forEach(p => {
-      if ((normalizeSearch(p.text).includes(nq) || normalizeSearch(p.source).includes(nq)) && (activeType === "all" || activeType === "precedents"))
-        results.push({ label: stripMarkdownMarks(p.text).substring(0, 60) + "...", type: "precedents", typeLabel: isRTL ? "مبدأ" : "Principle" });
+      if ((normalizeSearch(p.text).includes(nq) || normalizeSearch(p.source).includes(nq)) && (activeType === "all" || activeType === "precedents")) {
+        const label = stripMarkdownMarks(p.text).substring(0, 60) + "...";
+        results.push({ label, core: label, badge: "مبدأ", type: "precedents", href: "", snippet: "", locked: false, id: String(p.id) });
+      }
     });
     return results.slice(0, 6);
   })() : [];
@@ -905,9 +947,13 @@ export default function LegalLibraryPage() {
         articlesCount: law.total_articles || 0,
         chaptersCount: 0,
         lastUpdated: law.issue_date_hijri || "—",
+        // Owner note ١٢-٦ / ٣١٧–٣١٨: the one public date, sent to every
+        // viewer by /api/library/init («1448/01/08هـ», the date alone).
+        latestUpdate: typeof law.latest_legislative_update === "string" ? law.latest_legislative_update : "",
         cat: classifyLawCategory(law),
         type: "laws",
         subType: "basic",
+        hasMerged: law.has_merged_regulation === true,
         sub_types: law.has_merged_regulation ? ["لائحة تنفيذية"] : [],
         // The row's own type: only 593 of 5,901 are «نظام» (LIB-03).
         doc_type: law.type || "",
@@ -1098,6 +1144,8 @@ export default function LegalLibraryPage() {
         articlesCount: 0,
         chaptersCount: 0,
         lastUpdated: '—',
+        // Owner note ١٢-٦: the search route computes it per law (service role).
+        latestUpdate: typeof r.meta?.latestLegislativeUpdate === 'string' ? r.meta.latestLegislativeUpdate : '',
         cat: toTaxonomyId(r.meta?.sectionCode) ?? '',
         type: 'laws',
         subType: 'basic',
@@ -1136,7 +1184,11 @@ export default function LegalLibraryPage() {
               id: String(r.id),
               sourceId: r.meta?.collectionSlug || 'supreme',
               collectionId: r.meta?.collectionSlug != null ? String(r.meta.collectionSlug) : '',
-              // Search meta carries no principle number yet; shown only if it arrives.
+              // Owner note ١٢-١: the hit is listed under its collection's card.
+              collectionTitle: typeof r.meta?.collectionTitle === 'string' ? r.meta.collectionTitle : '',
+              // The server's per-hit lock: a locked hit shows no text.
+              locked: r.locked === true,
+              // Shown only when the search sends a real principle number.
               principleNum: realPrincipleNumber(r.meta?.principleNumber) ?? undefined,
               source: r.meta?.court || '',
               srcAbbr: courtBadge(r.meta?.court),
@@ -1177,7 +1229,8 @@ export default function LegalLibraryPage() {
         court: col.court || "—",
         track: col.track || "ordinary",
         year: col.year_hijri || "—",
-        desc: col.description || "",
+        // Owner note ٠٣ §٢: no «## ديباجة …» heading or raw Markdown on the card.
+        desc: collectionCardExcerpt(col.description),
         free: col.free ?? true,
         progress: col.progress || 0,
         rulingCount: col.ruling_count || 0,
@@ -1200,7 +1253,7 @@ export default function LegalLibraryPage() {
           court: r.meta?.court || "—",
           track: r.meta?.track || "ordinary",
           year: r.meta?.year || "—",
-          desc: stripMarkdownMarks(r.snippet || ""),
+          desc: collectionCardExcerpt(r.snippet),
           free: !r.locked,
           progress: r.meta?.progress || 0,
           rulingCount: r.meta?.rulingCount || 0,
@@ -1266,6 +1319,13 @@ export default function LegalLibraryPage() {
         progress: 0,
         volCount: r.meta?.volumeCount || 1,
         searchVolumesLabel: r.meta?.volumesLabel ?? null,
+        // Owner note ١٢-١: grouping keys — a passage is listed under its book.
+        hitKind: r.meta?.kind,
+        bookTitle: typeof r.meta?.bookTitle === 'string' ? r.meta.bookTitle : null,
+        chapter: typeof r.meta?.chapter === 'string' ? r.meta.chapter : null,
+        topic: typeof r.meta?.topic === 'string' ? r.meta.topic : null,
+        page: r.meta?.page ?? null,
+        volumesLabel: r.meta?.volumesLabel ?? null,
         lastUpdated: '',
         _isSearchResult: true,
         };
@@ -1527,6 +1587,10 @@ export default function LegalLibraryPage() {
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isDark ? "bg-blue-900/20 text-blue-400" : "bg-blue-50 text-blue-800"}`}>
                           أوامر وتعاميم ({autocompleteBadge("orders", filteredOrders.length)})
                         </span>
+                        {/* Owner note ١٢-ج: the API counts the fiqh section too; the box dropped it. */}
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isDark ? "bg-purple-900/20 text-purple-300" : "bg-purple-50 text-purple-800"}`}>
+                          الفقه والمراجع ({autocompleteBadge("feqh", filteredFeqhBooks.length)})
+                        </span>
                       </div>
                       {autocompleteCounts && autocompleteCounts.degraded.length > 0 && (
                         <p role="status" className={`mt-2 text-[11px] font-bold ${isDark ? "text-amber-300" : "text-amber-800"}`}>
@@ -1538,28 +1602,55 @@ export default function LegalLibraryPage() {
                     {/* Results list */}
                     <div className="max-h-[320px] overflow-y-auto">
                       {searchSuggestions.map((s, i) => (
-                        <button key={i}
-                          onMouseDown={() => {
-                            setSearch(s.label.replace(/\.\.\.$/, ""));
-                            if (s.type === "laws" && s.id) setActiveType("laws");
-                            else if (s.type === "precedents") setActiveType("precedents");
+                        <button key={`${s.type}:${s.id}:${i}`}
+                          type="button"
+                          title={s.label}
+                          data-testid="instant-box-item"
+                          onMouseDown={(e) => {
+                            // Owner note ١٢-٢: a suggestion OPENS its document (with
+                            // ?q=); it no longer copies its title into the box.
+                            e.preventDefault();
                             setShowSuggest(false);
+                            if (s.href) {
+                              router.push(s.href);
+                              return;
+                            }
+                            // No document link (a principle outside any collection,
+                            // demo rows): show that section's results for the query.
+                            setActiveType(s.type as ContentType);
                           }}
-                          className={`w-full flex items-center gap-3 px-4 py-3 text-sm text-right transition border-b last:border-0 ${
+                          className={`w-full flex items-start gap-3 px-4 py-3 text-sm text-right transition border-b last:border-0 ${
                             isDark
                               ? "hover:bg-white/5 text-zinc-200 border-white/[0.04]"
                               : "hover:bg-gray-50 text-gray-800 border-gray-100"
                           }`}
                           dir={isRTL ? "rtl" : "ltr"}
                         >
-                          <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                            s.type === "laws" ? (isDark ? "bg-green-900/30 text-green-400" : "bg-green-50 text-green-700") :
+                          <span className={`shrink-0 mt-0.5 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            s.badge === "نظام" ? (isDark ? "bg-green-900/30 text-green-400" : "bg-green-50 text-green-700") :
+                            s.badge === "لائحة" ? (isDark ? "bg-sky-900/30 text-sky-300" : "bg-sky-50 text-sky-700") :
+                            s.badge === "فقه" ? (isDark ? "bg-purple-900/30 text-purple-300" : "bg-purple-50 text-purple-700") :
+                            s.badge === "أمر" ? (isDark ? "bg-blue-900/30 text-blue-300" : "bg-blue-50 text-blue-700") :
                             isDark ? "bg-amber-900/30 text-amber-400" : "bg-amber-50 text-amber-700"
-                          }`}>{s.typeLabel}</span>
-                          <span
-                            className="flex-1 truncate text-[13px] font-medium"
-                            dangerouslySetInnerHTML={{ __html: highlightText(s.label, search) }}
-                          />
+                          }`}>{s.badge}</span>
+                          <span className="flex-1 min-w-0">
+                            <span className="flex items-center gap-1.5">
+                              <span
+                                className="truncate text-[13px] font-bold"
+                                dangerouslySetInnerHTML={{ __html: highlightText(s.core || s.label, search) }}
+                              />
+                              {s.locked && <PhosphorIcons.Lock size={11} weight="fill" className="shrink-0 text-[#C8A762]" aria-label="للمشتركين" />}
+                            </span>
+                            {s.core && s.core !== s.label && (
+                              <span className={`block truncate text-[11px] ${isDark ? "text-gray-400" : "text-gray-500"}`}>{s.label}</span>
+                            )}
+                            {s.snippet && (
+                              <span
+                                className={`block text-[11px] leading-relaxed line-clamp-2 ${isDark ? "text-gray-300" : "text-gray-600"}`}
+                                dangerouslySetInnerHTML={{ __html: highlightText(s.snippet, search) }}
+                              />
+                            )}
+                          </span>
                         </button>
                       ))}
                     </div>
@@ -1830,6 +1921,9 @@ export default function LegalLibraryPage() {
             {/* Center Column: Results & Active Tab Panels (Desktop Col 6, Mobile stacks at top) */}
             <div className={`order-1 lg:order-2 space-y-6 ${showSidebars ? "lg:col-span-6" : "lg:col-span-12"}`}>
               {/* ── Tab Content Panels ── */}
+              {/* Owner notes ٠٦/١٢-١: every result's <Hl> paints the search terms
+                  in their colours (MultiColorHighlight); no search → plain text. */}
+              <HighlightProvider query={isSearchActive ? search : ""}>
               <AnimatePresence mode="wait">
                 {dbLoading ? (
                   <motion.div
@@ -1879,6 +1973,53 @@ export default function LegalLibraryPage() {
                         >
                           {isRTL ? "مسح البحث" : "Clear Search"}
                         </button>
+                      </div>
+                    )}
+
+                    {/* Owner note ١٢-٣: no result anywhere → «هل تقصد …؟» + the closest titles. */}
+                    {searchFoundNothing && titleSuggestions.length > 0 && (
+                      <div data-testid="did-you-mean" className={`mb-4 rounded-xl border px-4 py-3 text-sm ${
+                        isDark ? "bg-[#161b22] border-[#2d3748] text-gray-300" : "bg-white border-gray-200 text-gray-700"
+                      }`}>
+                        <p className="font-bold mb-2">
+                          {isRTL ? "هل تقصد: " : "Did you mean: "}
+                          <button
+                            type="button"
+                            onClick={() => setSearch(titleSuggestions[0].title)}
+                            className={`underline underline-offset-2 ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
+                          >
+                            {titleSuggestions[0].title}
+                          </button>
+                          {isRTL ? "؟" : "?"}
+                        </p>
+                        <p className={`text-[11px] mb-1.5 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                          {isRTL ? "أقرب العناوين إلى ما كتبت:" : "The closest titles:"}
+                        </p>
+                        <ul className="flex flex-col gap-1">
+                          {titleSuggestions.map((s) => (
+                            <li key={`${s.section}:${s.id}`} className="flex items-center gap-2">
+                              <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${isDark ? "bg-white/5 text-gray-300" : "bg-gray-100 text-gray-600"}`}>
+                                {s.section === "laws" ? "نظام" : s.section === "precedents" ? "مبادئ" : "فقه"}
+                              </span>
+                              <Link href={s.href} className={`truncate hover:underline ${s.repealed ? (isDark ? "text-red-300" : "text-red-700") : ""}`}>
+                                {s.title}
+                              </Link>
+                              {s.repealed && <span className={`shrink-0 text-[10px] font-bold ${isDark ? "text-red-300" : "text-red-700"}`}>ملغى</span>}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Owner note ١٢-د: «الكل» + a category chip searches laws and
+                        orders only (the two sections that carry a category). */}
+                    {isSearchActive && !searchLoading && !searchError && searchResults && activeType === "all" && activeCat !== "all" && (
+                      <div role="status" data-testid="category-scope-note" className={`mb-4 rounded-xl border px-4 py-2.5 text-xs font-medium ${
+                        isDark ? "bg-white/5 border-[#2d3748] text-gray-300" : "bg-slate-50 border-slate-200 text-slate-700"
+                      }`}>
+                        {isRTL
+                          ? "التصنيف المختار يُطبَّق على الأنظمة والأوامر، فالنتائج منهما فقط. لعرض المبادئ والفقه اختر تصنيف «الكل»."
+                          : "The selected category applies to laws and orders, so results come from those only. Choose «All» categories to include principles and fiqh."}
                       </div>
                     )}
 
@@ -1979,6 +2120,7 @@ export default function LegalLibraryPage() {
                           viewerHasFullAccess={viewerHasFullAccess}
                           resultsPending={searchPending}
                           searchFailed={searchFailed}
+                          onSaveToFolder={setSaveDoc}
                         />
                         {/* Load More for Principles */}
                         {!isSearchActive && pagination.principles?.hasMore && (
@@ -2024,6 +2166,7 @@ export default function LegalLibraryPage() {
                           setSelectedHashtag={setSelectedHashtag}
                           resultsPending={searchPending}
                           searchFailed={searchFailed}
+                          onSaveToFolder={setSaveDoc}
                         />
                         {/* Load More for Orders/Decrees */}
                         {!isSearchActive && pagination.decrees?.hasMore && (
@@ -2104,6 +2247,7 @@ export default function LegalLibraryPage() {
                           viewerHasFullAccess={viewerHasFullAccess}
                           resultsPending={searchPending}
                           searchFailed={searchFailed}
+                          onSaveToFolder={setSaveDoc}
                         />
                         {/* Load More for Laws */}
                         {!isSearchActive && !lawsLoading && pagination.laws?.hasMore && activeType === "laws" && (
@@ -2151,6 +2295,7 @@ export default function LegalLibraryPage() {
                           viewerHasFullAccess={viewerHasFullAccess}
                           resultsPending={searchPending}
                           searchFailed={searchFailed}
+                          onSaveToFolder={setSaveDoc}
                         />
                         {/* Load More for Feqh Books */}
                         {!isSearchActive && pagination.books?.hasMore && (
@@ -2228,6 +2373,7 @@ export default function LegalLibraryPage() {
                   </>
                 )}
               </AnimatePresence>
+              </HighlightProvider>
             </div>
 
             {/* Left Column: Activity & Updates (Desktop Col 3, Mobile stacks at bottom) */}
@@ -2258,6 +2404,10 @@ export default function LegalLibraryPage() {
 
       <Footer />
             <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} isRTL={isRTL} isDark={isDark} />
+      {/* Owner note ٠٤: one folder modal for every result card's «حفظ في مجلد». */}
+      {saveDoc && (
+        <FolderSelectionModal isOpen={true} onClose={() => setSaveDoc(null)} currentDoc={saveDoc} />
+      )}
       <AdvancedSearchModal 
         isOpen={showAdvSearch} 
         onClose={() => setShowAdvSearch(false)} 
