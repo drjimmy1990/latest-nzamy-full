@@ -7,6 +7,8 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   CSV_BOM,
   GRANT_CSV_HEADER,
@@ -131,4 +133,28 @@ test('CSV row: Arabic labels for plan, source and status, one cell per header', 
   assert.equal(cells[5], 'أدمن');
   assert.equal(cells[6], 'ينتهي خلال 30 يوماً');
   assert.equal(cells[9], 'المدير');
+});
+
+// ─── The admin screens (source pins: the UI sends what the routes require) ───
+
+const page = (rel: string) => readFileSync(join(import.meta.dirname, '..', 'app', 'dashboard', 'admin', rel), 'utf8');
+
+test('entitlements page: «منح اشتراك المكتبة» posts action library with the reason, and blocks an empty reason', () => {
+  const src = page('entitlements/page.tsx');
+  assert.ok(src.includes('منح اشتراك المكتبة'));
+  assert.ok(src.includes('grant("library")'));
+  assert.ok(src.includes('body.reason = libraryReason.trim();'));
+  assert.ok(src.includes('body.planRef = libraryPlan;'));
+  assert.ok(/action === "library" && libraryReason\.trim\(\)\.length < 3/.test(src), 'no request without a reason');
+});
+
+test('library-subscriptions page: list + server CSV link, revoke / adjust with a reason, adjust sends the Riyadh end of day', () => {
+  const src = page('library-subscriptions/page.tsx');
+  assert.ok(src.includes('/api/v1/admin/library-grants?'));
+  assert.ok(src.includes('queryString(filters, 1, true)'), 'the CSV is the server export of the same filters');
+  assert.ok(!src.includes('new Blob('), 'the CSV is never assembled in the browser');
+  assert.ok(src.includes('method: "PATCH"'));
+  assert.ok(src.includes('reason: reason.trim()'));
+  assert.ok(src.includes('riyadhEndOfDayIso(newEnd)'));
+  for (const s of ['active', 'expiring', 'upcoming', 'expired', 'revoked']) assert.ok(src.includes(`${s}:`), s);
 });

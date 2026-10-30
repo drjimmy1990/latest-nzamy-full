@@ -29,7 +29,7 @@ test('no rows, or only ended / revoked rows → none', () => {
 test('one running grant: its own end', () => {
   const c = libraryCoverage([row('a', -10, 20)], NOW);
   assert.equal(c.status, 'active');
-  if (c.status === 'none') return;
+  if (!('endsAt' in c)) return;
   assert.equal(c.endsAt, at(20));
   assert.equal(c.lastGrantId, 'a');
   assert.equal(c.nextStartsAt, null);
@@ -41,7 +41,7 @@ test('an early renewal stacks: the user is shown the END OF THE CHAIN, not the c
   assert.equal(w.startsAt, at(20));
   const c = libraryCoverage([row('a', -10, 20), { ...row('b', 0, 0), starts_at: w.startsAt, ends_at: w.endsAt }], NOW);
   assert.equal(c.status, 'active');
-  if (c.status === 'none') return;
+  if (!('endsAt' in c)) return;
   assert.equal(c.endsAt, at(110));
   assert.equal(c.lastGrantId, 'b', 'the reminder key is the last grant of the chain');
   assert.equal(c.planRef, 'lib-q1');
@@ -50,7 +50,7 @@ test('an early renewal stacks: the user is shown the END OF THE CHAIN, not the c
 test('a gap (a revoked or shortened grant) stops the chain and names the next start', () => {
   const c = libraryCoverage([row('a', -10, 5), row('b', 30, 60)], NOW);
   assert.equal(c.status, 'active');
-  if (c.status === 'none') return;
+  if (!('endsAt' in c)) return;
   assert.equal(c.endsAt, at(5));
   assert.equal(c.nextStartsAt, at(30));
 });
@@ -58,7 +58,7 @@ test('a gap (a revoked or shortened grant) stops the chain and names the next st
 test('only an upcoming grant (the running one was revoked) → upcoming', () => {
   const c = libraryCoverage([row('a', -10, 0.0001, { revoked_at: at(0) }), row('b', 20, 50)], NOW);
   assert.equal(c.status, 'upcoming');
-  if (c.status === 'none') return;
+  if (!('endsAt' in c)) return;
   assert.equal(c.startsAt, at(20));
   assert.equal(c.endsAt, at(50));
 });
