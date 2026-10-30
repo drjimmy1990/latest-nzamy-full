@@ -59,8 +59,16 @@ test("the fallback <head> carries no database value and is noindex when asked", 
   const closed = buildLibraryFallbackMetadata("law", { noIndex: true });
   assert.deepEqual(closed.robots, { index: false, follow: false });
   assert.equal(closed.title, "مكتبة الأنظمة والتشريعات السعودية | نظامي");
-  const failed = buildLibraryFallbackMetadata("collection", { noIndex: false });
+  const failed = buildLibraryFallbackMetadata("collection", { noIndex: false, id: "majmuat-1435" });
   assert.deepEqual(failed.robots, { index: true, follow: true });
+});
+
+test("the fallback never inherits the section's canonical (/laws, /precedents)", () => {
+  // A failed read of a real page: its own URL, so it is not declared a duplicate of /precedents.
+  const failed = buildLibraryFallbackMetadata("collection", { noIndex: false, id: "majmuat-1435" });
+  assert.deepEqual(failed.alternates, { canonical: "https://nezamy.sa/precedents/majmuat-1435" });
+  // Closed / not found: an explicit null overrides the parent's.
+  assert.deepEqual(buildLibraryFallbackMetadata("law", { noIndex: true }).alternates, { canonical: null });
 });
 
 test("buildMetadata (every other page) is unchanged", () => {

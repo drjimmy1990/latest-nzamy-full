@@ -63,6 +63,11 @@ test("nothing safe left → the generic line, never the leak", () => {
   assert.equal(publicDescription("book"), "كتاب فقهي في مكتبة نظامي.");
 });
 
+test("a collection's fallback line loses its year without a dangling «لعام»", () => {
+  const d = publicDescription("collection", "", "مبادئ المحكمة الإدارية العليا لعام ١٤٤٣هـ — المحكمة الإدارية العليا");
+  assert.equal(d, "مبادئ المحكمة الإدارية العليا — المحكمة الإدارية العليا");
+});
+
 test("removeLinks: markdown link → its text; bare URL, www. and bare .gov.sa domains go", () => {
   assert.equal(removeLinks("[هيئة الخبراء](https://www.boe.gov.sa/a)").trim(), "هيئة الخبراء");
   assertClean(removeLinks("المصدر https://laws.boe.gov.sa/BoeLaws/Laws/LawDetails/1 و www.moj.gov.sa و ncar.gov.sa/x"), "removeLinks");

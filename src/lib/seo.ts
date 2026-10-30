@@ -136,13 +136,18 @@ const LIBRARY_SECTION_TITLE: Record<LibraryDocKind, string> = {
  * The <head> of a library page whose document could not be shown: closed
  * library or no such document (noIndex), or a failed read (indexable — a
  * passing outage must not de-index a real page). No database value in it.
+ *
+ * The canonical is set either way, so the section layout's own (/laws,
+ * /precedents) is never inherited: the document's URL when `id` is given (a
+ * failed read of a real page), none otherwise.
  */
-export function buildLibraryFallbackMetadata(kind: LibraryDocKind, { noIndex }: { noIndex: boolean }): Metadata {
+export function buildLibraryFallbackMetadata(kind: LibraryDocKind, { noIndex, id }: { noIndex: boolean; id?: string }): Metadata {
   const title = libraryPageTitle(LIBRARY_SECTION_TITLE[kind]);
   const description = publicDescription(kind);
   return {
     title,
     description,
+    alternates: { canonical: id ? `${BASE_URL}${libraryDocPath(kind, id)}` : null },
     robots: noIndex ? { index: false, follow: false } : { index: true, follow: true },
     openGraph: {
       title,

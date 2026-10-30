@@ -27,6 +27,7 @@ import {
   type LibraryDocKind,
   type LibraryDocSeo,
 } from "./libraryMetadata.ts";
+import { isMissingColumnError } from "./optionalColumn.ts";
 
 export type LibraryDocLoad =
   | { status: "ok"; doc: LibraryDocSeo; shell?: LibraryDocShell }
@@ -51,12 +52,23 @@ const str = (v: unknown): string => (typeof v === "string" ? v : "");
 
 async function readLaw(slug: string): Promise<LibraryDocLoad> {
   const supabase = await createServiceClient();
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .schema("library")
     .from("laws")
     .select("slug, title, type, summary_brief, latest_update, issue_date_hijri")
     .eq("slug", slug)
     .maybeSingle();
+  // summary_brief comes with 20261025_20 (as in /api/library/init): before
+  // it, the same read without the موجز — a generic description, not a failure.
+  if (isMissingColumnError(error, "summary_brief")) {
+    console.warn("[library-seo] library.laws.summary_brief is missing — law descriptions fall back to the generic line");
+    ({ data, error } = await supabase
+      .schema("library")
+      .from("laws")
+      .select("slug, title, type, latest_update, issue_date_hijri")
+      .eq("slug", slug)
+      .maybeSingle());
+  }
   if (error) {
     console.error(`[library-seo] law read failed for "${slug}":`, error.code ?? "no-code", error.message);
     return { status: "error" };
@@ -69,7 +81,7 @@ async function readLaw(slug: string): Promise<LibraryDocLoad> {
       kind: "law",
       id: str(data.slug) || slug,
       name: publicDocumentTitle("law", { title: str(data.title), type }),
-      description: publicDescription("law", str(data.summary_brief)),
+      description: publicDescription("law", str((data as Record<string, unknown>).summary_brief)),
       dateModified: lawDateModified(data),
       legislationType: type || null,
     },
@@ -208,5 +220,8 @@ export async function libraryDocMetadata(kind: LibraryDocKind, rawSlug: string):
   if (load.status === "ok") {
     return buildLibraryMetadata({ kind, id: load.doc.id, name: load.doc.name, description: load.doc.description });
   }
-  return buildLibraryFallbackMetadata(kind, { noIndex: load.status !== "error" });
+  // A failed read of what may be a real page keeps its own canonical (never
+  // the section's /laws or /precedents, which a child would otherwise inherit).
+  const id = load.status === "error" ? decodeRouteSlug(rawSlug).trim() : "";
+  return buildLibraryFallbackMetadata(kind, { noIndex: load.status !== "error", id: id || undefined });
 }

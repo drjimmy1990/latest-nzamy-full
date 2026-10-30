@@ -125,7 +125,12 @@ export function guestPlainText(raw: string | null | undefined): string {
   const stripped = summaryForViewer(removeLinks(String(raw ?? "")), false);
   // A heading is the block's label («## 📝 موجز النظام»), not its text.
   const body = stripped.replace(/^[ \t]*#{1,6}[^\n]*$/gm, "").replace(/<summary>[\s\S]*?<\/summary>/gi, "");
-  return plainText(removeLinks(body)).replace(/[\p{Extended_Pictographic}️]/gu, "").replace(/\s{2,}/g, " ").trim();
+  return plainText(removeLinks(body))
+    .replace(/[\p{Extended_Pictographic}️]/gu, "")
+    // «… لعام ١٤٤٣هـ — …» once the year is gone: no «لعام» left waiting for it.
+    .replace(/\s+(?:لعام|عام|سنة)(?=\s*(?:[—–\-،,.؛:]|$))/gu, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 const GENERIC_DESCRIPTION: Record<LibraryDocKind, string> = {

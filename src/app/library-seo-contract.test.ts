@@ -32,6 +32,7 @@ test("every reader route has a server layout with its own generateMetadata and J
 test("/precedents/judgment/[slug] (a «قريباً» screen) is noindex", () => {
   const src = read("./precedents/judgment/[slug]/layout.tsx");
   assert.match(src, /robots: \{ index: false, follow: false/);
+  assert.match(src, /alternates: \{ canonical: null \}/, "not the section's /precedents canonical");
   assert.doesNotMatch(read("./robots.ts"), /"\/precedents\/judgment/, "robots.txt must not hide the noindex tag");
   // Not a sitemap kind: no route base points at it.
   assert.doesNotMatch(read("../lib/library/libraryMetadata.ts"), /:\s*"\/precedents\/judgment/);
@@ -51,6 +52,14 @@ test("the loader reads as the service role, checks the library switch, and never
   assert.doesNotMatch(src, /\bcreateClient\(/);
   assert.match(src, /getLibraryStatus\(\)/);
   assert.match(src, /if \(await isClosed\(\)\) return \{ status: "closed" \};/);
+  // Closed → no document read at all: the closed check precedes the reader call.
+  const load = src.slice(src.indexOf("export const loadLibraryDocSeo"));
+  assert.ok(load.indexOf("isClosed()") < load.indexOf("READERS[kind](id)"));
+  // summary_brief (20261025_20) degrades to the read without it, as /api/library/init does.
+  assert.match(src, /if \(isMissingColumnError\(error, "summary_brief"\)\)/);
+  assert.match(src, /\.select\("slug, title, type, latest_update, issue_date_hijri"\)/);
+  // A failed read keeps the document's own canonical; closed / not found are noindex.
+  assert.match(src, /noIndex: load\.status !== "error", id: id \|\| undefined/);
   // No official link column is ever read.
   assert.doesNotMatch(src, /official_url|official_source_url|boe_source_url|gazette_url/);
 });

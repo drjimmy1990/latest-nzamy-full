@@ -9,6 +9,8 @@ import type { Metadata } from "next";
  */
 export const metadata: Metadata = {
   title: "صك حكم قضائي — قريباً | نظامي",
+  // Not the section's /precedents canonical, which this child would inherit.
+  alternates: { canonical: null },
   robots: { index: false, follow: false, googleBot: { index: false, follow: false } },
 };
 
