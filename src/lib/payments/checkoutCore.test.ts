@@ -353,7 +353,7 @@ function couponDb(
     /** The buyer's OPEN orders carrying the coupon. */
     openRows?: Array<Record<string, unknown>>;
     /** ٣٠٥: the buyer's earlier paid order of ANY item (the first-order read), or a failed read. */
-    earlierPaid?: "paid" | "refunded" | "error";
+    earlierPaid?: "paid" | "refunded" | "test_mode" | "already_entitled" | "error";
     insertErr?: { code: string; message: string };
   } = {},
 ) {
@@ -370,7 +370,10 @@ function couponDb(
       !has(q, "eq", "metadata->coupon->>id") &&
       (q.filters.find(([k, c]) => k === "in" && c === "status")?.[2] as string[] | undefined)?.join() === "paid,refunded"
     ) {
-      return opts.earlierPaid === "error" ? { error: { code: "57014", message: "timeout" } } : { data: [{ id: "earlier-any" }] };
+      if (opts.earlierPaid === "error") return { error: { code: "57014", message: "timeout" } };
+      if (opts.earlierPaid === "test_mode") return { data: [{ id: "earlier-any", live: false, metadata: {} }] };
+      if (opts.earlierPaid === "already_entitled") return { data: [{ id: "earlier-any", live: true, metadata: { already_entitled: true } }] };
+      return { data: [{ id: "earlier-any", live: true, metadata: {} }] };
     }
     if (q.table === "payment_orders" && q.op === "insert" && opts.insertErr) return { error: opts.insertErr };
     if (q.table === "payment_orders" && q.op === "select" && has(q, "eq", "metadata->coupon->>id")) {
@@ -606,6 +609,18 @@ test("٣٠٥: NEWCLIENT on the buyer's first paid order applies; the read is thi
   assert.equal(r.status, 200);
   assert.equal((inserts(log)[0].payload as { net_halalas: number }).net_halalas, 149000 - 7500);
   assert.ok(earlierPaidRead(log), "the first-order read ran");
+});
+
+test("٣٠٥: a test-mode payment or a paid order that granted nothing is not a first paid order — NEWCLIENT still applies", async () => {
+  for (const earlierPaid of ["test_mode", "already_entitled"] as const) {
+    const { client: admin, log } = couponDb("individual", { row: FIRST_ORDER_ROW, earlierPaid });
+    const r = await startCheckoutWith(
+      { admin, client: moyasar().client, now: () => NOW, attempts: createCouponAttemptBudget() },
+      input({ itemId: "ind-preventive", billing: "yearly", couponCode: "NEWCLIENT" }),
+    );
+    assert.equal(r.status, 200, earlierPaid);
+    assert.equal((inserts(log)[0].payload as { net_halalas: number }).net_halalas, 149000 - 7500, earlierPaid);
+  }
 });
 
 test("٣٠٥: a code that is not first-order-only never reads the buyer's other orders", async () => {

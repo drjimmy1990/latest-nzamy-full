@@ -164,21 +164,24 @@ export function orderConsumedCoupon(row: { live?: boolean | null; metadata?: Rec
  * Owner ٣٠٥: whether the buyer already has a paid order on the platform — of
  * any kind, for any item: a PAID or REFUNDED payment_orders row. A voided
  * order (cancelled inside the 90-minute window, ٣٠٦) does not count, nor does
- * one still open, failed or cancelled. null = could not tell: the caller
- * refuses rather than guesses.
+ * one still open, failed or cancelled — and, as for a coupon's own use
+ * (orderConsumedCoupon), not a test-mode payment (live = false) nor a paid
+ * order that granted nothing (already_entitled). null = could not tell: the
+ * caller refuses rather than guesses.
  */
 async function hasEarlierPaidOrder(admin: SupabaseClient, userId: string): Promise<boolean | null> {
   const { data, error } = await admin
     .from("payment_orders")
-    .select("id")
+    .select("id, live, metadata")
     .eq("user_id", userId)
     .in("status", ["paid", "refunded"])
-    .limit(1);
+    .limit(50);
   if (error) {
     console.error("[coupons] reading earlier paid orders failed:", error.code);
     return null;
   }
-  return Array.isArray(data) && data.length > 0;
+  const rows = Array.isArray(data) ? (data as Array<{ live?: boolean | null; metadata?: Record<string, unknown> | null }>) : [];
+  return rows.some(orderConsumedCoupon);
 }
 
 /** null = could not tell (an error): the caller refuses rather than guesses. */
