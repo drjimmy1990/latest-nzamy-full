@@ -35,7 +35,13 @@ import {
   isTrackingUnlockRoute,
   isAttachmentsZipRoute,
   libraryReadClientKey,
+  libraryBudgetBuckets,
+  type LibraryBudgetBucket,
 } from "@/lib/rateLimitRoutes";
+// Owner note ١٣ C07 / C09: the durable per-user library quota and the
+// library-only security lock (public.library_read_quota_hit, 20261030_80).
+import { libraryQuotaTarget, hasSupabaseAuthCookie, quotaRefusal } from "@/lib/library/readQuota";
+import { libraryReadQuotaHit } from "@/lib/library/readQuotaServer";
 import { hasValidSaudiMobile } from "@/lib/services/saudiMobile";
 
 // ─── Rate limiting (owner item ١٧٢) ─────────────────────────────────────────
@@ -96,6 +102,24 @@ const TRACKING_UNLOCK_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 100
 // and a wider ceiling per proxy-resolved IP (an office behind one address).
 const ATTACHMENTS_ZIP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 20 };
 const ATTACHMENTS_ZIP_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 200 };
+// Owner note ١٣ C03 — every library, library-invitation and library-AI route
+// (src/lib/rateLimitRoutes.ts libraryBudgetBuckets). Per visitor (Cloudflare's
+// CF-Connecting-IP, as library-read) and a ten-times-wider ceiling per
+// proxy-resolved IP (an office, or a shared edge, behind one address). Human
+// reading pace with room to spare; a script walking the corpus is not:
+//   library-any   240 / min    — any library call (status polls once a minute)
+//   library-doc   120 / min    — opening documents; a collection loads in up
+//                                to 24 windows, a book one section at a time
+//   library-init   60 / 10 min — catalogue pages of up to 200 rows
+//   library-ai     40 / 10 min — library AI answers (the routes keep their
+//                                own 20 / min per IP as well)
+// The durable per-USER daily quota is separate (applyLibraryReadQuota below).
+const LIBRARY_BUDGETS: Readonly<Record<LibraryBudgetBucket, { visitor: RateLimitPolicy; ip: RateLimitPolicy }>> = {
+  "library-any": { visitor: { windowMs: 60 * 1000, max: 240 }, ip: { windowMs: 60 * 1000, max: 2400 } },
+  "library-doc": { visitor: { windowMs: 60 * 1000, max: 120 }, ip: { windowMs: 60 * 1000, max: 1200 } },
+  "library-init": { visitor: { windowMs: 10 * 60 * 1000, max: 60 }, ip: { windowMs: 10 * 60 * 1000, max: 600 } },
+  "library-ai": { visitor: { windowMs: 10 * 60 * 1000, max: 40 }, ip: { windowMs: 10 * 60 * 1000, max: 400 } },
+};
 
 // The actual route tables (which paths/methods match which bucket) live in
 // src/lib/rateLimitRoutes.ts, pure and tested on their own — see that file's
@@ -131,10 +155,12 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
     const isCouponMatch = isCouponValidateRoute(method, pathname);
     const isTrackingUnlockMatch = isTrackingUnlockRoute(method, pathname);
     const isAttachmentsZipMatch = isAttachmentsZipRoute(method, pathname);
+    const libraryBuckets = libraryBudgetBuckets(method, pathname);
 
     if (
       !isStrictMatch && !isGeneralMatch && !isLibraryReadMatch && !isTrackingMatch &&
-      !isTrackingUnlockMatch && !isAttachmentsZipMatch && !isCouponMatch
+      !isTrackingUnlockMatch && !isAttachmentsZipMatch && !isCouponMatch &&
+      libraryBuckets.length === 0
     ) return null;
 
     const ip = resolveClientIp((name) => req.headers.get(name));
@@ -185,7 +211,89 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
       if (!decision.allowed) return rateLimitResponse(decision);
     }
 
+    if (libraryBuckets.length > 0) {
+      const key = libraryReadClientKey((name) => req.headers.get(name), ip);
+      for (const bucket of libraryBuckets) {
+        const policy = LIBRARY_BUDGETS[bucket];
+        const perIp = rateLimiter.check(`${bucket}-ip`, ip, policy.ip);
+        if (!perIp.allowed) return rateLimitResponse(perIp);
+        const decision = rateLimiter.check(bucket, key, policy.visitor);
+        if (!decision.allowed) return rateLimitResponse(decision);
+      }
+    }
+
     return null;
+  } catch {
+    return null;
+  }
+}
+
+// ─── Library read quota + security lock (owner note ١٣ C07 / C09) ────────────
+//
+// The buckets above are per visitor and in memory: they reset with the
+// process and treat an office NAT as one person. This step is the durable,
+// per-USER layer: on the four document reads it counts the DISTINCT document
+// (law / book / precedent collection / decree) once per Riyadh day in
+// Postgres (src/lib/library/readQuota.ts for the numbers), and on search, the
+// in-document search and the library AI it checks only the library lock.
+//
+// Who the user is comes from a verified getUser() - never from decoding the
+// cookie's JWT, which would let a forged `sub` spend (and lock) someone else's
+// quota. A request with no Supabase session cookie is a guest and skips this
+// step (guests keep only the per-visitor buckets). The Supabase client is
+// built exactly as branch 1b builds it, so a token refresh during getUser()
+// reaches both the route (the request cookies) and the browser (the
+// response); for these paths the rest of proxy() would only have returned
+// NextResponse.next(), so the cookie-carrying `next` is returned instead.
+//
+// FAILS OPEN: an auth transport error, a missing quota function (migration
+// not applied), a timeout or any bug answers "go on". A refusal is 423 (the
+// lock: an honest Arabic message, the SEC- reference and /contact) or 429
+// with Retry-After (the daily / hourly cap).
+async function applyLibraryReadQuota(req: NextRequest, pathname: string): Promise<NextResponse | null> {
+  if (!isSupabaseMode) return null;
+  const target = libraryQuotaTarget(req.method, pathname);
+  if (!target) return null;
+  // Not for a path the rest of proxy() treats specially (none today: the
+  // targets live under /api/library and /api/ai).
+  if (REDIRECTS[pathname] || isProtectedApiPath(pathname)) return null;
+  try {
+    if (!hasSupabaseAuthCookie(req.cookies.getAll().map((c) => c.name))) return null;
+
+    const response = NextResponse.next({ request: req });
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return req.cookies.getAll();
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value }) => req.cookies.set(name, value));
+            cookiesToSet.forEach(({ name, value, options }) =>
+              response.cookies.set(name, value, options),
+            );
+          },
+        },
+      },
+    );
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (error || !user) return response;
+
+    const row = await libraryReadQuotaHit(
+      user.id,
+      target.kind === "doc" ? target.docKey : null,
+      { memoLockCheck: target.kind === "lock-only" },
+    );
+    const refusal = quotaRefusal(row, Date.now());
+    if (!refusal) return response;
+
+    const refused = NextResponse.json(refusal.body, { status: refusal.status });
+    refused.headers.set("Cache-Control", "private, no-store");
+    if (refusal.retryAfterSeconds !== null) refused.headers.set("Retry-After", String(refusal.retryAfterSeconds));
+    response.cookies.getAll().forEach((c) => refused.cookies.set(c));
+    return refused;
   } catch {
     return null;
   }
@@ -251,6 +359,12 @@ export default async function proxy(req: NextRequest) {
   //    existing behaviour beneath this point runs exactly as it did before.
   const rateLimited = applyRateLimit(req, pathname);
   if (rateLimited) return rateLimited;
+
+  // 0b. Owner note ١٣: the durable per-user library quota and the library
+  //     lock - only for the library document reads, search and library AI
+  //     (see applyLibraryReadQuota). null for every other request.
+  const quotaResponse = await applyLibraryReadQuota(req, pathname);
+  if (quotaResponse) return quotaResponse;
 
   // 1. Handle deprecated route redirects (permanent 301)
   if (REDIRECTS[pathname]) {
