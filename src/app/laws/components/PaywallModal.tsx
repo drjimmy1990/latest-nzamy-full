@@ -8,11 +8,16 @@ import { Crown, CheckCircle, Scales, ListBullets, Gavel, X, BookOpen, Books, Boo
 import Link from "next/link";
 import { VAT_NOTICE } from "@/lib/pricing/vatNotice";
 import { bookPriceText } from "@/lib/pricing/priceBook";
+import { useMyLibraryGrant } from "@/components/library/LibraryGrantStatusCard";
 
 // ─── Types & Constants ─────────────────────────────────────────────────────────
 
 /**
- * Fallback free-article count shown when no caller supplies the real one.
+ * NO LONGER PRINTED (LIVE-F05, 2026-10-30): without a server-computed
+ * `freeLimit` the modal now names no number, because this default (the CAP of
+ * owner ١٨٤'s preview formula, src/lib/library/previewLimit.ts) is not what a
+ * reader sees — a law under 100 articles previews 3. Kept as the documented
+ * platform default only.
  * Mirrors the PLATFORM DEFAULT in checkLibraryAccess()
  * (src/lib/access-control.ts:177 — `library_free_article_limit ?? 5`), which
  * is the number actually enforced for any law without its own override.
@@ -83,12 +88,28 @@ export function PaywallModal({ isOpen, onClose, isRTL, isDark, freeLimit }: {
    * override) — pass it whenever it's known, so the copy below matches what
    * the server actually enforced instead of a generic default. `-1` means
    * "unlimited" (whitelisted/Pro+, see checkLibraryAccess) and can't be
-   * rendered as a count, so it falls back to FREE_LIMIT like an omitted prop.
+   * rendered as a count, so it is treated like an omitted prop: the copy then
+   * names NO number (LIVE-F05: /laws passes none, and the FREE_LIMIT fallback
+   * printed «5» where the reader enforced 3 — owner ١٨٤'s formula gives 3 for
+   * most laws).
    */
   freeLimit?: number;
 }) {
   if (!isOpen) return null;
-  const displayLimit = typeof freeLimit === "number" && freeLimit > 0 ? freeLimit : FREE_LIMIT;
+  // The eligibility read runs only once the modal is open (PaywallDialog).
+  return <PaywallDialog onClose={onClose} isRTL={isRTL} isDark={isDark} freeLimit={freeLimit} />;
+}
+
+function PaywallDialog({ onClose, isRTL, isDark, freeLimit }: {
+  onClose: () => void; isRTL: boolean; isDark: boolean; freeLimit?: number;
+}) {
+  const displayLimit = typeof freeLimit === "number" && freeLimit > 0 ? freeLimit : null;
+  // LIVE-F05: the library is sold to legal professionals only (owner). A
+  // signed-in individual is told so here, and the plan buttons explain
+  // instead of leading to a checkout; the server refuses the purchase too.
+  // A guest or an unreadable answer keeps the plans (sign-in comes first).
+  const { answer } = useMyLibraryGrant();
+  const refusal = answer?.purchase && answer.purchase.eligible === false ? answer.purchase : null;
   return (
     <AnimatePresence>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -113,10 +134,21 @@ export function PaywallModal({ isOpen, onClose, isRTL, isDark, freeLimit }: {
                 // digit is a value next to "العدد", never the head of an
                 // agreeing noun phrase, and "عنصر" stays true whatever the
                 // content type gates on.
-                ? `عدد العناصر المجانية من كل نص: ${displayLimit} — اختر الباقة التي تناسب احتياجك البحثي`
-                : `Free items per text: ${displayLimit} — choose the plan that fits your research needs`}
+                ? displayLimit !== null
+                  ? `عدد العناصر المجانية من كل نص: ${displayLimit} — اختر الباقة التي تناسب احتياجك البحثي`
+                  : "يُعرض جزء مجاني من كل نص — اختر الباقة التي تناسب احتياجك البحثي"
+                : displayLimit !== null
+                  ? `Free items per text: ${displayLimit} — choose the plan that fits your research needs`
+                  : "A free part of each text is shown — choose the plan that fits your research needs"}
             </p>
           </div>
+          {refusal && (
+            <div role="note" dir="rtl"
+              className={`mx-6 mt-6 rounded-2xl border p-4 text-[13px] leading-7 ${isDark ? "border-amber-500/30 bg-amber-500/10 text-amber-200" : "border-amber-300 bg-amber-50 text-amber-900"}`}>
+              <p className="font-bold mb-1">الاشتراك غير متاح لنوع حسابك</p>
+              <p>{refusal.messageAr}</p>
+            </div>
+          )}
           <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4" dir={isRTL ? "rtl" : "ltr"}>
             {PLANS.map(plan => (
               <div key={plan.id} className={`rounded-2xl border p-5 relative ${plan.highlight ? "border-[#C8A762] bg-[#C8A762]/5" : isDark ? "border-[#2d3748]" : "border-gray-200"}`}>
@@ -135,10 +167,17 @@ export function PaywallModal({ isOpen, onClose, isRTL, isDark, freeLimit }: {
                     </li>
                   ))}
                 </ul>
-                <Link href={`/laws/subscribe?plan=${plan.id}`}
-                  className={`block text-center py-2.5 rounded-xl text-sm font-bold transition ${plan.highlight ? "bg-[#C8A762] text-[#0B3D2E] hover:opacity-90" : "bg-[#0B3D2E] text-white hover:bg-[#0a3328]"}`}>
-                  {isRTL ? "اشترك الآن" : "Subscribe Now"}
-                </Link>
+                {refusal ? (
+                  <span aria-disabled="true"
+                    className={`block text-center py-2.5 rounded-xl text-sm font-bold cursor-not-allowed ${isDark ? "bg-white/[0.06] text-gray-400" : "bg-gray-100 text-gray-500"}`}>
+                    {isRTL ? "غير متاح لنوع حسابك" : "Not available for your account"}
+                  </span>
+                ) : (
+                  <Link href={`/laws/subscribe?plan=${plan.id}`}
+                    className={`block text-center py-2.5 rounded-xl text-sm font-bold transition ${plan.highlight ? "bg-[#C8A762] text-[#0B3D2E] hover:opacity-90" : "bg-[#0B3D2E] text-white hover:bg-[#0a3328]"}`}>
+                    {isRTL ? "اشترك الآن" : "Subscribe Now"}
+                  </Link>
+                )}
               </div>
             ))}
           </div>
