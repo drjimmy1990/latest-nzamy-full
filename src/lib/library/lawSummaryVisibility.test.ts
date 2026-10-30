@@ -151,7 +151,7 @@ test("owner ٢٦٠ opens nothing else in the law route: ديباجة, official m
   // Article text: the same free limit (owner ١٨٤) and full-access predicate.
   assert.match(route, /const freeLimit = effectiveFreeLimit\(firstLockedCheck, articles\.length\);/);
   assert.match(route, /const hasFullAccess = isSubscriber \|\| isWhitelisted;/);
-  assert.match(route, /formatArticleWithPaywall\(a, hasFullAccess, freeLimit, !officialMeta\.officialMetaLocked\)/);
+  assert.match(route, /formatArticleWithPaywall\(a, hasFullAccess, freeLimit, !officialMeta\.officialMetaLocked, unnumbered\)/);
   assert.match(route, /const parentLocked = isArticleLocked\(article, hasFullAccess, freeLimit\);/);
   // The lock row is promised only for ديباجة text left once the card and the موجز are out.
   assert.match(route, /preambleLocked: officialMeta\.officialMetaLocked && !!\(readerExtras\.preamble\.trim\(\) \|\| regulationExtras\.preamble\.trim\(\)\)/);
