@@ -51,7 +51,7 @@ test("already_done with no reason (a refresh after success) is success too", () 
 test("a top-up says the points were added", () => {
   const v = paymentResultView({ outcome: "granted" }, { ...order, kind: "topup", item_id: "topup-250", billing: "once" });
   assert.equal(v.tone, "success");
-  assert.match(v.body, /إضافة نقاط «شحن ٢٥٠ \(٣٠٠ نقطة\)»/);
+  assert.match(v.body, /إضافة نقاط «شحن ٢٥٠ \(٢٥٠ نقطة\)»/);
 });
 
 test("already_entitled: paid, nothing replaced — the refund-review copy, never «تم الدفع وتفعيل»", () => {

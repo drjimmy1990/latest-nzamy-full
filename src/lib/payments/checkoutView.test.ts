@@ -83,6 +83,9 @@ test("gatewayAllowsCheckout: only Moyasar, enabled, and loaded", () => {
 test("parseCheckoutQuery accepts an item and a billing it offers", () => {
   assert.deepEqual(parseCheckoutQuery("lawyer-pro", "yearly"), { ok: true, itemId: "lawyer-pro", billing: "yearly" });
   assert.deepEqual(parseCheckoutQuery(["topup-100", "x"], "once"), { ok: true, itemId: "topup-100", billing: "once" });
+  // ٣٠١ / §6أ: the new cycles where the revised doc prices them
+  assert.deepEqual(parseCheckoutQuery("ind-ai", "semiannual"), { ok: true, itemId: "ind-ai", billing: "semiannual" });
+  assert.deepEqual(parseCheckoutQuery("firm-basic", "quarterly"), { ok: true, itemId: "firm-basic", billing: "quarterly" });
   for (const [item, billing] of [
     [undefined, "monthly"],
     ["lawyer-pro", undefined],
@@ -91,9 +94,9 @@ test("parseCheckoutQuery accepts an item and a billing it offers", () => {
     ["lawyer-pro", "once"],
     ["topup-100", "monthly"],
     ["lawyer-pro", "weekly"],
-    // a real cycle the item is not sold in (no quarterly price before P2)
+    // a real cycle the item is not sold in
     ["lawyer-pro", "quarterly"],
-    ["ind-ai", "semiannual"],
+    ["ind-preventive", "semiannual"],
   ] as const) {
     assert.deepEqual(parseCheckoutQuery(item, billing), { ok: false }, `${item} ${billing}`);
   }
@@ -126,18 +129,24 @@ test("billingLabelAr names every cycle in Arabic", () => {
   assert.equal(billingLabelAr("once"), "دفعة واحدة");
 });
 
-test("checkoutItemNotes: ind-litigation states the main-subscriber coverage verbatim", () => {
-  assert.equal(LITIGATION_COVERAGE_AR, "تغطية المشترك الرئيسي؛ تُضاف التغطية العائلية بطلب يراجعه الفريق");
+test("checkoutItemNotes: ind-litigation states the main-subscriber coverage, and no family option (LIVE-F11, conflict ١٠)", () => {
+  assert.equal(LITIGATION_COVERAGE_AR, "تغطية المشترك الرئيسي");
   assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["ind-litigation"]), [LITIGATION_COVERAGE_AR]);
 });
 
 test("checkoutItemNotes: each top-up states the validity the catalog grants; the points are in its label already", () => {
   assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-100"]), ["صالحة ٣ أشهر من تاريخ الشراء"]);
   assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-250"]), ["صالحة ٣ أشهر من تاريخ الشراء"]);
-  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-500"]), ["صالحة ٦ أشهر من تاريخ الشراء"]);
-  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-1000"]), ["صالحة ١٢ شهراً من تاريخ الشراء"]);
+  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-500"]), ["صالحة ٣ أشهر من تاريخ الشراء"]);
+  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-1000"]), ["صالحة ٦ أشهر من تاريخ الشراء"]);
+  for (const id of ["topup-2500", "topup-5000", "topup-10000"]) {
+    assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS[id]), ["صالحة ١٢ شهراً من تاريخ الشراء"], id);
+  }
   // every top-up label names its points, so the screen shows them once
-  for (const [id, points] of [["topup-100", "١٠٠ نقطة"], ["topup-250", "٣٠٠ نقطة"], ["topup-500", "٧٠٠ نقطة"], ["topup-1000", "١٬٥٠٠ نقطة"]]) {
+  for (const [id, points] of [
+    ["topup-100", "١٠٠ نقطة"], ["topup-250", "٢٥٠ نقطة"], ["topup-500", "٥٠٠ نقطة"], ["topup-1000", "١٬٢٥٠ نقطة"],
+    ["topup-2500", "٣٬٥٠٠ نقطة"], ["topup-5000", "٨٬٥٠٠ نقطة"], ["topup-10000", "٢٥٬٠٠٠ نقطة"],
+  ]) {
     assert.ok(PAYABLE_ITEMS[id].labelAr.includes(points), id);
   }
   // a top-up whose label does not name its points still gets the line

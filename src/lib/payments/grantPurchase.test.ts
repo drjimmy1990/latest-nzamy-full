@@ -185,12 +185,12 @@ test("a points 23505 (the order's lot exists) is already credited → ok", async
 
 test("a top-up credits a purchase lot for the order, expiring after its validity months", async () => {
   const { client, log } = fakeDb(() => ({ data: "lot-1" }));
-  const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS }, order("topup-500", "topup", "once"), { now: NOW });
+  const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS }, order("topup-1000", "topup", "once"), { now: NOW });
   assert.deepEqual(r, { ok: true, alreadyEntitled: false });
   const lot = lots(log)[0].payload as Record<string, unknown>;
   assert.deepEqual(
     [lot.p_user, lot.p_points, lot.p_source, lot.p_order, lot.p_expires_at],
-    [USER, 700, "purchase", ORDER, addMonthsUtc(NOW, 6).toISOString()],
+    [USER, 1250, "purchase", ORDER, addMonthsUtc(NOW, 6).toISOString()],
   );
 });
 

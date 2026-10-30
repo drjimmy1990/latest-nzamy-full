@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { createContext, useContext, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
 import {
@@ -17,7 +17,16 @@ import { requestEntitlement } from "@/lib/services/entitlementService";
 import { referencePriceFor } from "@/lib/pricing/priceDisplay";
 import { planEntitlementRequest } from "@/lib/pricing/planRequest";
 import { vatNoticeFor } from "@/lib/pricing/vatNotice";
-import { cardPrice } from "@/lib/pricing/cardPrice";
+import { cardLaunch, cardPrice, cardTotalWithVat, type LaunchPriceMap } from "@/lib/pricing/cardPrice";
+import { signedInCta } from "@/lib/pricing/cardCta";
+import { useLaunchPrices } from "@/hooks/useLaunchPrices";
+
+/**
+ * What every card on screen shares: the server's launch prices (owner ٣٠٣ —
+ * null until GET /api/v1/pricing/launch answers, so a server-rendered card
+ * never carries one) and whether the viewer is signed in (UX14).
+ */
+const CardContext = createContext<{ launch: LaunchPriceMap | null; signedIn: boolean }>({ launch: null, signedIn: false });
 
 interface PricingCardsProps {
   planList: Plan[];
@@ -68,10 +77,18 @@ function SpotlightCard({
   // A price-book card reads the book (src/lib/pricing/cardPrice.ts); other
   // cards keep their display strings. null = not sold in this cycle.
   const shown = cardPrice(plan, billing, isAr ? "ar" : "en");
-  const price = shown?.price ?? "";
+  const { launch, signedIn } = useContext(CardContext);
+  // Owner ٣٠٣: while the SERVER says a launch price runs, the listed price is
+  // struck through beside it (cardLaunch); otherwise the listed price alone.
+  const launchView = cardLaunch(plan, billing, launch, isAr ? "ar" : "en");
+  const price = launchView?.price ?? shown?.price ?? "";
   const period = shown?.period ?? "";
   // Yearly view only — see referencePriceFor (src/lib/pricing/priceDisplay.ts).
-  const referencePrice = referencePriceFor(plan, billing);
+  // A running launch price is the one struck-through figure on the card.
+  const referencePrice = launchView ? null : referencePriceFor(plan, billing);
+  // UX14: what the buyer pays with VAT, and for which cycle, beside the button.
+  const vatTotal = cardTotalWithVat(plan, billing, launch, isAr ? "ar" : "en");
+  const cta = signedInCta(plan, signedIn, isAr);
   const { bonusLabel } = plan;
   const allFeatures = [
     ...plan.features.ai,
@@ -181,6 +198,20 @@ function SpotlightCard({
         <div className={`my-6 border-y py-5 ${
           isHighlighted ? "border-white/10" : "border-slate-100 dark:border-white/8"
         }`}>
+          {launchView && (
+            <div className={`mb-1 flex flex-wrap items-center gap-2 text-xs font-medium ${
+              isHighlighted ? "text-white/65" : "text-ink-muted dark:text-gray-400"
+            }`}>
+              <span className="line-through font-semibold">
+                {launchView.original} {isAr ? "ر.س" : "SAR"}
+              </span>
+              <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                isHighlighted ? "bg-gold/20 text-gold" : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+              }`}>
+                {isAr ? "سعر التدشين" : "Launch price"}
+              </span>
+            </div>
+          )}
           {referencePrice && (
             <div className={`mb-1 text-xs font-medium ${
               isHighlighted ? "text-white/65" : "text-ink-muted dark:text-gray-500"
@@ -275,23 +306,31 @@ function SpotlightCard({
           </a>
         )}
 
-        {/* CTA */}
+        {vatTotal && (
+          <p className={`mt-6 text-center text-xs font-semibold ${
+            isHighlighted ? "text-white/70" : "text-ink-muted dark:text-gray-400"
+          }`}>
+            {vatTotal}
+          </p>
+        )}
+
+        {/* CTA — a signed-in member never sees a sign-up button (UX14). */}
         <motion.a
-          href={plan.ctaHref}
+          href={cta.ctaHref}
           onClick={(e) => {
             // Logged-in users: subscribe CTAs go to /checkout (gateway on) or
             // become an entitlement request — see handleSubscribe.
-            if (onSubscribe?.(plan)) e.preventDefault();
+            if (cta.ctaHref === plan.ctaHref && onSubscribe?.(plan)) e.preventDefault();
           }}
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.97, y: 1 }}
-          className={`mt-7 flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-bold tracking-wide transition-all ${
+          className={`${vatTotal ? "mt-2" : "mt-7"} flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-bold tracking-wide transition-all ${
             isHighlighted
               ? "bg-white text-[#0B3D2E] shadow-[0_4px_20px_-4px_rgba(255,255,255,0.3)] hover:shadow-[0_8px_28px_-4px_rgba(255,255,255,0.4)]"
               : "bg-royal text-white shadow-[0_4px_20px_-4px_rgba(11,61,46,0.35)] hover:shadow-[0_8px_28px_-4px_rgba(11,61,46,0.5)]"
           }`}
         >
-          {plan.cta}
+          {cta.cta}
           <ArrowLeft size={15} weight="bold" />
         </motion.a>
 
@@ -323,7 +362,7 @@ function LawyerCreditsLayout({ planList, billing, isAr, onSubscribe }: { planLis
           <h3 className="mb-4 text-center font-brand text-lg font-bold text-ink">
             {isAr ? "حزم الشحن الإضافية" : "Extra point top-ups"}
           </h3>
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4 lg:gap-4">
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 lg:gap-4">
             {topups.map((plan, i) => (
               <SpotlightCard key={plan.id} plan={plan} billing={billing} index={i + subscription.length} isLawyer isAr={isAr} compact onSubscribe={onSubscribe} />
             ))}
@@ -480,6 +519,7 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
 
   const { isLoggedIn, loading: sessionLoading } = useUser();
   const payments = usePaymentsStatus();
+  const launch = useLaunchPrices();
   const router = useRouter();
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
 
@@ -521,6 +561,7 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
   }
 
   return (
+    <CardContext.Provider value={{ launch, signedIn: !sessionLoading && isLoggedIn }}>
     <section className="pb-16 md:pb-24">
       <div className="mx-auto max-w-[1200px] px-4">
 
@@ -656,5 +697,6 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
         )}
       </AnimatePresence>
     </section>
+    </CardContext.Provider>
   );
 }

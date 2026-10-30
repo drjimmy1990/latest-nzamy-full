@@ -14,10 +14,12 @@ const providerRegistration = readFileSync(
   "utf8",
 );
 
-// Owner answers ١٧٤ / ١٧٨ / ١٧٩ (2026-10-16): one subscription and four top-ups.
+// Owner answers ١٧٤ / ١٧٨ / ١٧٩ (2026-10-16): one subscription and its top-ups.
 // The library is no longer bundled into the packs (whether lawyers get it is
-// owner question ٢٠٨), and the free-memo offers are gone.
-test("the lawyer tab is the subscription (no points) plus four top-ups", () => {
+// owner question ٢٠٨), and the free-memo offers are gone. Owner ٣٠٢ (30 Oct
+// 2026, conflict ١١): the professionals' top-ups start at 500 — the revised
+// doc's five packs; 100 and 250 are the individuals' only.
+test("the lawyer tab is the subscription (no points) plus the five professional top-ups", () => {
   // The prices are the price book's (P1: the card reads them by id).
   // Yearly only: the 399 monthly price is retired (owner, 26 Oct 2026).
   assert.equal(bookSar("lawyer-pro", "yearly"), 3990);
@@ -26,14 +28,19 @@ test("the lawyer tab is the subscription (no points) plus four top-ups", () => {
   // Owner ٢٩١ (26 Oct 2026): the subscription comes with no points.
   assert.doesNotMatch(lawyers, /LAWYER_PRO_MONTHLY_POINTS|١٬٥٠٠ نقطة كل شهر|1,500 points every month/);
   const topups: Array<[string, number, string]> = [
-    ["topup-100", 100, "١٠٠ نقطة"],
-    ["topup-250", 250, "٣٠٠ نقطة"],
-    ["topup-500", 500, "٧٠٠ نقطة"],
-    ["topup-1000", 1000, "١٬٥٠٠ نقطة"],
+    ["topup-500", 500, "٥٠٠ نقطة"],
+    ["topup-1000", 1000, "١٬٢٥٠ نقطة"],
+    ["topup-2500", 2500, "٣٬٥٠٠ نقطة"],
+    ["topup-5000", 5000, "٨٬٥٠٠ نقطة"],
+    ["topup-10000", 10000, "٢٥٬٠٠٠ نقطة"],
   ];
   for (const [id, price, points] of topups) {
     assert.equal(bookSar(id, "once"), price, id);
     assert.match(lawyers, new RegExp(`id: "${id}"[\\s\\S]*?desc: "${points}( · [^"]*)?"`), id);
+  }
+  assert.doesNotMatch(lawyers, /id: "topup-(100|250)"/, "٣٠٢: the 100 / 250 packs are not on the lawyers' tab");
+  for (const [id, points] of [["topup-100", "١٠٠ نقطة"], ["topup-250", "٢٥٠ نقطة"]]) {
+    assert.match(individuals, new RegExp(`id: "${id}"[\\s\\S]*?desc: "${points} · صالحة ٣ أشهر"`), id);
   }
   assert.doesNotMatch(lawyers, /lawyer-(basic|advanced|elite|royal)|مشمولة مجاناً|مذكرة مجانية|مذكرة ثانية|أول ٥٠٠/);
   assert.doesNotMatch(lawyers, /محفظة|رصيد نقدي/);
@@ -188,8 +195,9 @@ test("٢١٣/١٧٦: the 699 family plan is gone from the individuals plans and 
   assert.doesNotMatch(plansTs, /ind-family|\b699\b|\b6990\b/);
 });
 
-test("٢١٣/١٧٦: ind-litigation is «التأمين القانوني» at 399 / 3,990 with the family option", () => {
-  const enAt = individuals.indexOf("\n  en: [");
+test("٢١٣/١٧٦: ind-litigation is «التأمين القانوني» at 399 / 3,990; the family option is kept but hidden at launch (conflict ١٠)", () => {
+  // the plan list's English half (FAMILY_LINES above it has an `en: [` too)
+  const enAt = individuals.indexOf("\n  en: [", individuals.indexOf("export const plansIndividuals"));
   const ar = planBlock(individuals, 0, "ind-litigation");
   const en = planBlock(individuals, enAt, "ind-litigation");
   assert.match(ar, /name: "التأمين القانوني"/);
@@ -197,10 +205,16 @@ test("٢١٣/١٧٦: ind-litigation is «التأمين القانوني» at 39
   assert.equal(bookSar("ind-litigation", "monthly"), 399);
   assert.equal(bookSar("ind-litigation", "yearly"), 3990);
   assert.doesNotMatch(ar, /price(Monthly|Yearly):/);
-  // Dependants at 20 / 30 / 40% off: ٣١٩, ٢٧٩, then ٢٣٩ from the third on.
-  assert.match(ar, /٣١٩ ر\.س[^"]*٢٧٩ ر\.س[^"]*٢٣٩ ر\.س/);
+  // Dependants at 20 / 30 / 40% off: ٣١٩, ٢٧٩, then ٢٣٩ from the third on —
+  // kept in FAMILY_LINES and shown only when SHOW_FAMILY_DEPENDENTS (false at
+  // launch: conflict ١٠ of the 28-Oct handover; backlog LIVE-F11).
+  assert.match(individuals, /export const SHOW_FAMILY_DEPENDENTS: boolean = false;/);
+  assert.match(ar, /\.\.\.familyLines\("ar"\)/);
+  assert.match(en, /\.\.\.familyLines\("en"\)/);
+  assert.match(individuals, /٣١٩ ر\.س[^"]*٢٧٩ ر\.س[^"]*٢٣٩ ر\.س/);
   for (const line of ["٣٥٬٠٠٠–٥٠٬٠٠٠ ر.س سنوياً", "تُضاف التغطية العائلية بطلب يراجعه الفريق"]) {
-    assert.ok(ar.includes(line), `ar: «${line}»`);
+    assert.ok(individuals.includes(line), `«${line}» is kept for the flag`);
+    assert.ok(!ar.includes(line), `«${line}» is not written into the card itself`);
   }
   // The family's «٣٬٠٠٠–٥٬٠٠٠ نقطة شهرياً» is gone: nothing ever credited it,
   // and points come from top-ups only (owner ٢٩١, 26 Oct 2026).
@@ -210,14 +224,14 @@ test("٢١٣/١٧٦: ind-litigation is «التأمين القانوني» at 39
 
   assert.match(en, /name: "Legal Insurance"/);
   assert.doesNotMatch(en, /price(Monthly|Yearly):/);
-  assert.match(en, /SAR 319[^"]*SAR 279[^"]*SAR 239/);
+  assert.match(individuals, /SAR 319[^"]*SAR 279[^"]*SAR 239/);
   assert.match(en, /footnote: "\* Terms and conditions apply"/);
 
   const canonical = planBlock(plansTs, 0, "ind-litigation");
   assert.match(canonical, /nameAr: "التأمين القانوني"/);
   assert.match(canonical, /priceMonthly: bookSar\("ind-litigation", "monthly"\),\s*priceYearly: bookSar\("ind-litigation", "yearly"\)/);
-  assert.match(canonical, /٣١٩ ر\.س[^"]*٢٧٩ ر\.س[^"]*٢٣٩ ر\.س/);
-  assert.ok(canonical.includes("تُضاف التغطية العائلية بطلب يراجعه الفريق"));
+  // conflict ١٠: no family line on the canonical plan either
+  assert.doesNotMatch(canonical, /٣١٩ ر\.س|التغطية العائلية/);
   assert.match(canonical, /footnoteAr: "\* تطبق الشروط والأحكام"/);
   assert.match(canonical, /footnoteEn: "\* Terms and conditions apply"/);
 });

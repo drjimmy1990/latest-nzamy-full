@@ -121,8 +121,12 @@ export function parseCheckoutQuery(
 
 // ── what the screen says ────────────────────────────────────────────────────
 
-/** Verbatim (Task 7 brief): ind-litigation covers the main subscriber only. */
-export const LITIGATION_COVERAGE_AR = "تغطية المشترك الرئيسي؛ تُضاف التغطية العائلية بطلب يراجعه الفريق";
+/**
+ * ind-litigation covers the main subscriber only. No family sentence: the
+ * dependants are withdrawn from every price surface at launch (conflict ١٠,
+ * owner package of 30 Oct 2026; LIVE-F11).
+ */
+export const LITIGATION_COVERAGE_AR = "تغطية المشترك الرئيسي";
 
 const ARABIC_DIGITS = "٠١٢٣٤٥٦٧٨٩";
 

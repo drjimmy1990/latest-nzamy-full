@@ -11,7 +11,14 @@
  *     a points / plan coupon is not a checkout discount;
  *   - the buyer's account type must be in eligible_user_types (empty = all);
  *   - once per user: a paid (or refunded) order of this buyer already carried
- *     it → refused. A failed or cancelled order never consumed it;
+ *     it → refused. A failed or cancelled order never consumed it, and a
+ *     paid order voided inside the 90-minute window gives it back (owner
+ *     ٣٠٦; refundCore → couponServer.releaseCouponUsage), while a normal
+ *     refund keeps it used;
+ *   - a first-order coupon (NEWCLIENT, owner ٣٠٥ — `isFirstOrderCoupon`) only
+ *     on the buyer's FIRST paid order on the platform: any earlier paid or
+ *     refunded order of any kind, for any service, refuses it (the user
+ *     counts, not the service type);
  *   - never on an excluded kind (top-ups always — 20261026_20 enforces it in
  *     the table too), never on an item already sold at a discount (a launch /
  *     campaign / founder price: ٢٧٩, the customer gets ONE discount, and the
@@ -59,6 +66,18 @@ export interface CouponRow {
   max_discount_pct: number | string;
   /** 20261026_20 */
   excluded_kinds: readonly string[] | null;
+  /** `first_paid_order_only: true` marks a first-order coupon (20261030_10_pricing_owner_package; owner ٣٠٥). */
+  metadata?: Record<string, unknown> | null;
+}
+
+/**
+ * Owner ٣٠٥ (30 Oct 2026): NEWCLIENT is for the buyer's first paid order on
+ * the platform. The code itself is enough, so the rule holds before
+ * 20261030_10 stamps the row; any other code an admin marks
+ * `metadata.first_paid_order_only` follows it too.
+ */
+export function isFirstOrderCoupon(row: Pick<CouponRow, "code" | "metadata">): boolean {
+  return row.code.toUpperCase() === "NEWCLIENT" || row.metadata?.first_paid_order_only === true;
 }
 
 export interface CouponContext {
@@ -70,6 +89,8 @@ export interface CouponContext {
   alreadyUsed: boolean;
   /** True when the item is already sold at a discount (launch / campaign / founder price). */
   itemDiscounted: boolean;
+  /** True when the buyer already has a paid or refunded order of any kind (owner ٣٠٥). */
+  hasEarlierPaidOrder: boolean;
   now: Date;
 }
 
@@ -106,6 +127,8 @@ export function evaluateCoupon(row: CouponRow | null | undefined, ctx: CouponCon
   const audience = row.eligible_user_types ?? [];
   if (audience.length > 0 && !(ctx.userType && audience.includes(ctx.userType))) return { ok: false, reason: "invalid" };
   if (ctx.alreadyUsed) return { ok: false, reason: "invalid" };
+  // the same sentence as «already used»: the buyer cannot act on either
+  if (isFirstOrderCoupon(row) && ctx.hasEarlierPaidOrder) return { ok: false, reason: "invalid" };
 
   const excluded = new Set(row.excluded_kinds ?? []);
   excluded.add("topup"); // the owner: never on a point top-up, whatever a row says

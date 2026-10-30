@@ -691,15 +691,22 @@ function validityAr(months: number): string {
 
 test("٢٤٩: each top-up card states the validity the catalog grants", () => {
   const topups = Object.values(PAYABLE_ITEMS).filter((item) => item.kind === "topup");
-  assert.equal(topups.length, 4, "four top-ups in the catalog");
+  assert.equal(topups.length, 7, "seven top-ups in the catalog (owner ٣٠٢)");
   const lawyers = planLists("constants/pricing/pricing.lawyers.ts").find((l) => l.name === "plansLawyers");
+  const individuals = planLists("constants/pricing/pricing.individuals.ts").find((l) => l.name === "plansIndividuals");
   assert.ok(lawyers, "plansLawyers was not found");
+  assert.ok(individuals, "plansIndividuals was not found");
   for (const item of topups) {
     const months = item.pointsValidityMonths;
     assert.ok(months, `${item.id} has no validity in the catalog`);
+    // ٣٠٢: 100 / 250 are the individuals' cards, 500 and up the lawyers'
+    const forIndividuals = Array.isArray(item.buyers) && item.buyers.includes("individual");
+    const list = forIndividuals ? individuals : lawyers;
+    const other = forIndividuals ? lawyers : individuals;
+    assert.ok(!other.ar.includes(`id: "${item.id}"`) && !other.en.includes(`id: "${item.id}"`), `${item.id}: not on the other audience's tab`);
     for (const [lang, seg, expected] of [
-      ["ar", lawyers.ar, validityAr(months)],
-      ["en", lawyers.en, `valid for ${months} month${months === 1 ? "" : "s"}`],
+      ["ar", list.ar, validityAr(months)],
+      ["en", list.en, `valid for ${months} month${months === 1 ? "" : "s"}`],
     ] as const) {
       const block = seg.slice(seg.indexOf(`id: "${item.id}"`));
       const desc = block.match(/desc: "([^"]*)"/);

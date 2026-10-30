@@ -61,6 +61,9 @@ export default function PricingPage() {
   const extraPlanIds   = tabsView.kind === "locked" ? extraPlanIdsFor(userType, practiceKind, libraryMode) : [];
   const cardPlanList   = withExtraPlans(planList, extraPlanIds, getPlanList("providers", isAr));
   const comparisonList = getComparisonList(audience, isAr);
+  // The table's columns are the cards it has rows for: the individuals'
+  // top-ups (owner ٣٠٢) are cards with no column.
+  const comparisonPlans = planList.filter((p) => comparisonList.some((c) => c.rows.some((r) => Object.hasOwn(r, p.id))));
   // The cycle toggle (§2 rule 1): the audience's allowed cycles that a card on
   // screen prices; the cards are drawn in the picked cycle while it is offered.
   const cycles         = offeredCycles(audience, cardPlanList);
@@ -106,7 +109,7 @@ export default function PricingPage() {
         {/* Feature comparison table */}
         {!libraryMode && (
           <PricingComparison
-            planList={planList} comparisonList={comparisonList} isAr={isAr}
+            planList={comparisonPlans} comparisonList={comparisonList} isAr={isAr}
           />
         )}
 

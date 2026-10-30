@@ -47,7 +47,10 @@ const individuals = readFileSync(
 );
 
 test("every individuals reference price is 12 × the book's monthly price, above the book's yearly one", () => {
-  const ids = ["ind-ai", "ind-preventive", "ind-litigation"];
+  // ind-ai carries none: its yearly cycle has a launch price (owner ٣٠٣), and
+  // the launch price's struck-through original is its one reference.
+  assert.ok(!individuals.includes(`priceOriginal: twelveMonths("ind-ai"`), "ind-ai: no second struck-through figure");
+  const ids = ["ind-preventive", "ind-litigation"];
   for (const id of ids) {
     for (const lang of ["ar", "en"]) {
       assert.ok(individuals.includes(`priceOriginal: twelveMonths("${id}", "${lang}")`), `${id} ${lang}: the reference is derived from the book`);
@@ -55,6 +58,6 @@ test("every individuals reference price is 12 × the book's monthly price, above
     assert.ok(bookSar(id, "yearly") < bookSar(id, "monthly") * 12, `${id}: the yearly price is not below 12 × monthly`);
   }
   assert.match(individuals, /const twelveMonths = \(id: string, lang: "ar" \| "en"\) => formatSarAmount\(bookSar\(id, "monthly"\) \* 12, lang\);/);
-  assert.equal((individuals.match(/priceOriginal:/g) ?? []).length, 6, "three paid plans × two languages carry a reference price");
+  assert.equal((individuals.match(/priceOriginal:/g) ?? []).length, 4, "two paid plans × two languages carry a reference price");
   assert.doesNotMatch(individuals, /priceOriginal: "/, "no literal reference price");
 });
