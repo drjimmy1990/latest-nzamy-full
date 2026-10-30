@@ -15,14 +15,18 @@ None of them is "closed" until the owner's acceptance test passes on the live si
 | `1398b07a` | Budgets on every library / AI route (C03) + per-user document quota in the proxy (C07) |
 | `a58e7cdd` | Library-only security lock: reader notice, status route, admin panel (C09) |
 | `11b997c5` | `vault-explorer` admin-only, no error echo (C06) |
+| `2ec449b8` | Review fixes: bearer sessions counted, percent-encoded paths canonicalised, in-document search counted, `library-any` 300/min (C03, C07) |
 | (this doc) | ledger, Arabic owner note, SQL README |
 
 ## Blast radius (GitNexus index is stale; mapped by grep)
 
 - `src/proxy.ts` `proxy()`: one new awaited step, `applyLibraryReadQuota`. It returns `null` immediately unless the request
-  is `GET /api/library/{laws,books,precedents,decrees}/<one segment>` or `POST /api/library/{search,scoped-search}` /
-  `POST /api/ai/{explain-article,library-chat}`, the request carries a Supabase session cookie, and supabase mode is on.
-  Every other request runs exactly as before.
+  is `GET /api/library/{laws,books,precedents,decrees}/<one segment>` or `POST /api/library/search` /
+  `POST /api/ai/{explain-article,library-chat}`, the request carries a Supabase session cookie or an
+  `Authorization: Bearer` token, and supabase mode is on. Every other request runs exactly as before.
+- `src/app/api/library/scoped-search/route.ts` `POST`: one new awaited call (spend the scope's document) after the user is
+  known and before any article text is read; skipped for guests; fails open. Callers: the in-law / in-collection / in-book
+  search panel (`src/components/library/ScopedSearchPanel.tsx`). Its existing tests (23 across the scoped-search files) pass.
 - `applyRateLimit` (same file): the new buckets match only `/api/library/**`, `/api/v1/library/**`, `/api/ai/**`.
   The existing buckets are unchanged.
 - `src/hooks/useLibraryStatus.ts`: one consumer (`LibraryGuard`). `GET /api/v1/library/status`: one caller (that hook).
@@ -31,7 +35,9 @@ None of them is "closed" until the owner's acceptance test passes on the live si
   (unchanged; it already treats a refused call as "no vault questions").
 - Branch sweep (every local branch, `git diff --name-only main...<branch>`): no open branch touches `proxy.ts`,
   `rateLimit*`, `admin/security`, `LibraryGuard`, `useLibraryStatus`, `v1/library/status`, `vault-explorer` or
-  `academy/quiz`. No library route file was edited (laws, books, init, autocomplete are all rewritten on open branches).
+  `academy/quiz`, `scoped-search/route.ts` or `supabase/server.ts`. No library content route rewritten on an open branch
+  was edited (laws, books, init, autocomplete stay untouched); the one library route edited, `scoped-search/route.ts`, is
+  touched by no open branch.
 
 ## Per item
 
@@ -65,12 +71,14 @@ catalogue columns with the cookie client (e.g. autocomplete's decree counts, the
 
 ### C03 — limits on every library, invitation and AI route — FIXED IN CODE
 **Before.** `src/lib/rateLimitRoutes.ts:55-62` covered 4 routes (search, autocomplete, laws/[slug], scoped-search).
-**Now.** `libraryBudgetBuckets` (`src/lib/rateLimitRoutes.ts:94`) + `LIBRARY_BUDGETS` (`src/proxy.ts:117`), applied at
-`src/proxy.ts:214`. Per visitor (CF-Connecting-IP) and a ten-times-wider ceiling on the proxy-resolved IP:
+**Now.** `libraryBudgetBuckets` (`src/lib/rateLimitRoutes.ts:116`) + `LIBRARY_BUDGETS` (`src/proxy.ts:119`), applied at
+`src/proxy.ts:160`. Per visitor (CF-Connecting-IP) and a ten-times-wider ceiling on the proxy-resolved IP. The path is first
+canonicalised (`canonicalApiPath`, `:95` — each segment percent-decoded once, an encoded `/` kept), so `/api/librar%79/...`
+cannot dodge a bucket:
 
 | Bucket | Covers | Per visitor | Per IP |
 |---|---|---|---|
-| `library-any` | every method under `/api/library/` and `/api/v1/library/` (catch-all, incl. folders writes, notes, status, access, invitations/redeem, and the routes that only exist on open branches) | 240 / min | 2400 / min |
+| `library-any` | every method under `/api/library/` and `/api/v1/library/` (catch-all, incl. folders writes, notes, status, access, invitations/redeem, and the routes that only exist on open branches) | 300 / min | 3000 / min |
 | `library-doc` | GET laws/[slug], books/[slug], precedents/[slug], decrees/[id] | 120 / min | 1200 / min |
 | `library-init` | GET /api/library/init (catalogue, 200 rows a page) | 60 / 10 min | 600 / 10 min |
 | `library-ai` | every `/api/ai/*` (explain-article, library-chat) | 40 / 10 min | 400 / 10 min |
@@ -78,7 +86,8 @@ catalogue columns with the cookie client (e.g. autocomplete's decree counts, the
 Unchanged and still applied: `library-read` 300/min (article-text routes), `strict` 10/10 min on
 `POST /api/v1/library/invitations/redeem`, the AI routes' own `rateLimit(... 20/min per IP)`.
 **Tests.** `src/lib/rateLimitRoutes.test.ts` walks `src/app/api/library`, `src/app/api/v1/library`, `src/app/api/ai`, reads
-each route's exported methods and fails if any (method, path) has no bucket (3 new tests, 23 in the file);
+each route's exported methods and fails if any (method, path) has no bucket, plus the encoded-path case (4 new tests, 24 in
+the file);
 `src/proxy.libraryQuota.test.ts` pins that every bucket is checked per visitor AND per IP.
 
 ### C04 — whole-law responses (up to 1,838 articles) — NOT BUILT (collides with `feat/library-owner-2026-10-30`)
@@ -119,9 +128,14 @@ already falls back to its built-in bank on a refused call. Test: `src/app/api/v1
   authenticated, execute for `service_role` only.
 - App: `src/lib/library/readQuota.ts` (pure: what is counted, the document key — percent-decoded up to 3 times + NFC, so the
   `apiSlug` double-encoding cannot make one law two documents — the Arabic refusals, a 60-second in-process memo) and
-  `src/lib/library/readQuotaServer.ts` (one PostgREST RPC call, 1.5 s timeout). Called from `src/proxy.ts:253`
-  (`applyLibraryReadQuota`, step 0b at `:366`): the user comes from a verified `getUser()` with branch 1b's cookie pattern
-  (never a decoded JWT); guests skipped.
+  `src/lib/library/readQuotaServer.ts` (one PostgREST RPC call, 1.5 s timeout). Called from `src/proxy.ts:258`
+  (`applyLibraryReadQuota`, step 0b at `:379`): the user comes from a verified `getUser()` with branch 1b's cookie pattern
+  (never a decoded JWT) — or `getUser(token)` for an `Authorization: Bearer` caller, because `src/lib/supabase/server.ts`
+  serves a bearer token as a session and the library routes would otherwise give a native-app caller subscriber text
+  uncounted; guests skipped. The path is canonicalised first (see C03).
+- In-document search (`POST /api/library/scoped-search`) returns article text, so the route itself spends the scope's
+  document with the same key as opening it (`scopedSearchDocKey`; `route.ts:246`, after the user is known, before any text
+  is read) — free when that document was already opened today.
 - **Quotas:** individual **220** distinct documents/day, office/company member **400** (both the owner's numbers);
   **120** distinct documents per rolling hour and **lock after 60 distinct refused documents** in a day (chosen here — owner
   questions). At the cap: 429 + Retry-After + «بلغت الحد اليومي…» (documents already opened stay open; resets at Riyadh
@@ -130,12 +144,15 @@ already falls back to its built-in bank on a refused call. Test: `src/app/api/v1
   request through unchanged (only the per-visitor buckets apply). The deploy may go before or after the SQL.
 - **Not covered (owner questions):** the note's 300 / 600 searches per day (search is lock-checked, not counted); guests'
   25 searches / 20 documents per day (a guest has no durable identity — only the in-memory per-visitor buckets apply);
-  the Turnstile challenge at the cap.
+  the Turnstile challenge at the cap; a per-account daily cap on the library AI (`explain-article`, `library-chat`) — those
+  are lock-checked and rate-limited (`library-ai` 40 / 10 min per visitor + the routes' own 20/min per IP), not counted per
+  day.
 **Tests.** Docker: `supabase/tests/rls/library_read_quota.test.sql` — T0–T11 (counting once per document, cap, refusal,
 lock on the Nth refusal, lift + reset, office tier incl. a suspended member, admin exempt, hourly cap + promotion, admin
 lock + one-open-lock index + expiry, bad arguments, housekeeping, session role cannot read/write/call anything). The
 migration ran **twice** (idempotent) then the test: ALL PASS; negative control (no migration) stops at T0, as it must.
-Unit: `src/lib/library/readQuota.test.ts` (15), `src/proxy.libraryQuota.test.ts` (5).
+Unit: `src/lib/library/readQuota.test.ts` (18, incl. encoded paths and the scoped-search route contract),
+`src/proxy.libraryQuota.test.ts` (6, incl. the bearer path).
 
 ### C08 — forged IP headers / direct origin access — OPS CHECKLIST (not code)
 `libraryReadClientKey` trusts `CF-Connecting-IP`, which anyone reaching the origin directly can forge; that is why every new
@@ -201,12 +218,17 @@ node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test src/lib/library/readQ
 R=supabase/tests/rls; M=supabase/migrations
 bash $R/run.sh $M/20261030_80_library_read_quota.sql $M/20261030_80_library_read_quota.sql $R/library_read_quota.test.sql
 ```
-Results 2026-10-30: 81 unit tests pass (30 new); SQL ALL PASS; `tsc --noEmit` clean; eslint 0 errors on changed files
+Results 2026-10-30: 86 unit tests pass (35 new) in these files, plus the 23 existing scoped-search tests
+(`src/app/api/library/scoped-search/scopedSearch.test.ts`, `src/components/library/scopedSearchPanel.test.ts`,
+`src/lib/library/scopedHitActions.test.ts`); SQL ALL PASS; `tsc --noEmit` clean; eslint 0 errors on changed files
 (one new warning, `react-hooks/set-state-in-effect` on the panel's load effect, the same pattern as the neighbouring admin
 pages). Pre-existing and unrelated: `src/lib/tracking/trackingWiring.test.ts` has 2 failures from `\n`-only regexes over
 CRLF working-tree files.
 
 ## What could not be verified here
-- The proxy step end-to-end in a running app with a real session (no dev server was run against a database).
+- The proxy step end-to-end in a running app with a real session or bearer token (no dev server was run against a
+  database).
+- How Next 16 hands a percent-encoded path to `proxy.ts` versus how it routes it: `canonicalApiPath` is unit-tested, but
+  not against a running server.
 - Whether nginx caches any `/api/library/*` GET publicly — a cached hit never reaches the proxy, so it would not be counted.
 - Production grants (C02) and the origin firewall (C08).
