@@ -1,23 +1,20 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence } from "framer-motion";
 import {
-  BookOpen, Lock, Sparkle,
-  ArrowRight, Check, Copy, Scales, Gavel,
-  BookBookmark, ListNumbers,
-  FileText, BookmarkSimple, CaretLeft, CaretRight, Stack, Printer, Plus
+  BookOpen, Sparkle, ArrowRight, CaretLeft, CaretRight, CaretUp, Stack, Printer,
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
-import { useUser } from "@/hooks/useUser";
 import { PrintWatermark } from "@/app/laws/components/PrintWatermark";
 import SidebarPanel from "./_sidebar";
 import IdentityPanel from "./_identity-panel";
-import { formatLocator, matchesLocator, pageToken, volumeToken } from "./_locator";
+import StreamBlock from "./_stream-block";
+import { formatLocator, matchesLocator } from "./_locator";
 import { ResearchWorkspace } from "@/components/ResearchWorkspace";
 import FolderSelectionModal from "@/components/laws/FolderSelectionModal";
 import { LibraryAI, CommunityQuestionModal } from "@/app/laws/[slug]/_ai-components";
@@ -27,6 +24,8 @@ import { useDraftCart } from "@/hooks/useDraftCart";
 import type { CartEntry } from "@/components/laws/DraftDrawer";
 import ScopedSearchPanel from "@/components/library/ScopedSearchPanel";
 import { blockCartEntry } from "@/lib/library/scopedHitActions";
+// Owner note ٠٦: the shared multi-colour highlight (?q= and the index's box).
+import { HighlightProvider, SearchLegendBar, useScrollToFirstMark } from "@/components/search/MultiColorHighlight";
 
 function getSelectedTextWithin(containerId: string): string {
   if (typeof window === "undefined") return "";
@@ -49,24 +48,38 @@ function stripMd(s: string): string {
     .replace(/__([^_]+)__/g,   "$1");
 }
 
+/** The text pasted into the HTML clipboard flavour: no markup of the source survives. */
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 // ─── Interfaces ─────────────────────────────────────────────────────────────
 import type { FeqhBookSystem } from "@/app/laws/data";
 import { apiSlug } from '@/utils/apiSlug';
 import { volumeSubtitle, volumesCountLabel } from "@/lib/library/bookVolumes";
 import {
-  emptyLinks, filterToc, findBlock, fromApiBook, fromNestedBook, linkRun, loadedBlocks,
-  mergeSectionBlocks, neighbour, normalizeBlock, runFromCursorResponse,
-  type BlocksBySection, type BookLinks, type CompleteSections, type ReaderBook, type ReaderState,
-  READER_LAYERS, emptyLayerNote, layerShows, type ReaderLayer,
+  emptyLinks, emptyStream, extendStream, filterToc, firstStreamBlockOfSection, fromApiBook,
+  fromNestedBook, linkRun, mergeSectionBlocks, normalizeBlock, parseJumpQuery, planBlockJump,
+  runFromCursorResponse, streamCursor, streamFromFirstPage, streamFromRun, topmostVisible,
+  type BlocksBySection, type BookLinks, type CompleteSections, type OrderedRun, type ReaderBlock,
+  type ReaderBook, type ReaderState, type ReaderStream,
+  READER_LAYERS, type ReaderLayer,
 } from "./_reader-model";
 import { isDemoMode } from "@/lib/runtimeMode";
 
-/** Blocks per request when a section is opened (sections hold 1–few blocks). */
-const SECTION_BLOCKS_LIMIT = 500;
-/** Blocks per reading-order window (?from_order= / ?before_order=). */
-const RUN_BLOCKS_LIMIT = 200;
-/** How many links ahead of the active block a prefetch looks for a gap. */
-const PREFETCH_LOOKAHEAD = 5;
+/**
+ * Owner note ٠٢ — the continuous stream. Blocks per request: the opening
+ * request and every batch appended as the reader nears the end.
+ */
+const STREAM_BATCH = 80;
+/**
+ * Rendered-DOM cap. A 1,000-page book is not mounted whole: past this many
+ * blocks the stream stops appending and offers «متابعة القراءة من هنا», which
+ * starts a fresh stream at the last block (the same move as a jump).
+ */
+const STREAM_MAX_BLOCKS = 800;
+/** How long the view must rest on a block before the notes panel follows it. */
+const WORKSPACE_SETTLE_MS = 1500;
 
 // Demo Data: الروض المربع
 const DEMO_RAWD: FeqhBookSystem = {
@@ -116,6 +129,15 @@ const DEMO_RAWD: FeqhBookSystem = {
   ]
 };
 
+/** Scroll to the first coloured term once, on arrival from a search (?q=). Lives inside the provider. */
+function ScrollToFirstMark({ enabled, loaded }: { enabled: boolean; loaded: number }) {
+  useScrollToFirstMark(enabled, [loaded]);
+  return null;
+}
+
+type WindowFailure = { ok: false; status: number; error: string };
+type WindowAnswer = { ok: true; run: OrderedRun } | WindowFailure;
+
 export default function FeqhBookPage() {
   const params = useParams();
   const router = useRouter();
@@ -127,30 +149,51 @@ export default function FeqhBookPage() {
   /** Arabic message when the API failed (5xx) — distinct from "not found". */
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Blocks are kept apart from the TOC and loaded per section on demand (see
-  // _reader-model.ts). Refs mirror the state so async navigation reads the
-  // latest values between awaits.
+  // Everything loaded so far, keyed by section (the index lists it), and the
+  // sections known to be complete (see linkRun). Refs mirror the state so
+  // async loaders read the latest values between awaits.
   const [blocksBySection, setBlocksBySection] = useState<BlocksBySection>({});
   const [completeSections, setCompleteSections] = useState<CompleteSections>({});
-  const [loadingSectionId, setLoadingSectionId] = useState<string | null>(null);
-  const [sectionError, setSectionError] = useState<string | null>(null);
   const blocksRef = useRef<BlocksBySection>({});
   const completeRef = useRef<CompleteSections>({});
-  const sectionRequests = useRef<Map<string, Promise<boolean>>>(new Map());
-  const bookGeneration = useRef(0);
-  // Reading-order links (see linkRun) — navigation data only, nothing renders them.
   const linksRef = useRef<BookLinks>(emptyLinks());
-  const runRequests = useRef<Map<string, Promise<boolean>>>(new Map());
-  const [navLoading, setNavLoading] = useState(false);
+  const bookGeneration = useRef(0);
+
+  // Owner note ٠٢: the stream — blocks contiguous in book order, rendered one
+  // under another (_reader-model.ts ReaderStream).
+  const [stream, setStream] = useState<ReaderStream>(emptyStream);
+  const streamRef = useRef<ReaderStream>(emptyStream());
+  /** Bumped on every new stream (a jump): a batch still in flight for the old one is dropped. */
+  const streamGeneration = useRef(0);
+  const morePending = useRef<Promise<void> | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const streamRootRef = useRef<HTMLDivElement | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreError, setMoreError] = useState<string | null>(null);
+  /** The last batch added nothing while the server said more follow (order_index ties). */
+  const [stalled, setStalled] = useState(false);
+  const [loadingBefore, setLoadingBefore] = useState(false);
+  const [beforeError, setBeforeError] = useState<string | null>(null);
+  /** «عرض ما قبل»: keep the block that was on screen where it was once blocks land above it. */
+  const prependAnchor = useRef<{ id: string; top: number } | null>(null);
+  // Jumps (an index entry, «انتقال للصفحة»).
+  const [jumping, setJumping] = useState(false);
   const [navError, setNavError] = useState<string | null>(null);
+  const [loadingSectionId, setLoadingSectionId] = useState<string | null>(null);
+  /** True from opening until the first jump or appended batch: ?q= may scroll to its first match only then. */
+  const [arrival, setArrival] = useState(true);
 
   // Reader states
+  /** The block in view — followed by the index (IntersectionObserver). */
   const [activeBlockId, setActiveBlockId] = useState<string>("");
+  const [settledBlockId, setSettledBlockId] = useState<string>("");
+  const isScrolling = useRef(false);
+  const scrollTimer = useRef<number | null>(null);
   // N2.3: the four layers of the owner preview (_reader-model.ts READER_LAYERS).
   const [viewLayer, setViewLayer] = useState<ReaderLayer>("all");
   const [fontSize, setFontSize] = useState<"normal" | "large" | "xlarge">("large");
   const [isReadingMode, setIsReadingMode] = useState(false);
-  const [copiedText, setCopiedText] = useState(false);
+  const [copiedBlockId, setCopiedBlockId] = useState<string>("");
   const [showCommunity, setShowCommunity] = useState(false);
   const lawMeta = getLawMeta(book?.id || slug);
 
@@ -159,7 +202,30 @@ export default function FeqhBookPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [quickJumpQuery, setQuickJumpQuery] = useState("");
   const [jumpError, setJumpError] = useState(false);
-  const [copiedCitation, setCopiedCitation] = useState(false);
+
+  // Owner note ٠٦: arriving from a search (/book/…?q=) colours its terms
+  // through the whole stream — nothing is hidden. The index's own box, when
+  // typed in, takes over; ✕ «مسح الألوان» clears both and drops ?q=.
+  const [urlQuery, setUrlQuery] = useState("");
+  useEffect(() => {
+    try {
+      setUrlQuery(new URLSearchParams(window.location.search).get("q")?.trim() ?? "");
+    } catch {
+      setUrlQuery("");
+    }
+  }, [slug]);
+  const highlightQuery = searchQuery.trim() ? searchQuery : urlQuery;
+  const clearHighlight = useCallback(() => {
+    setSearchQuery("");
+    setUrlQuery("");
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("q");
+      window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+    } catch {
+      /* the colours are gone either way */
+    }
+  }, []);
 
   // N2.6: the draft cart («مسودة التجميع») — the tab's one shared cart
   // (useDraftCart). Its drawer and save-error notice are the global
@@ -169,6 +235,7 @@ export default function FeqhBookPage() {
   const addEntryToCart = useCallback((entry: CartEntry) => {
     setCart((prev) => (prev.find((e) => e.articleId === entry.articleId) ? prev : [...prev, entry]));
   }, [setCart]);
+  const cartIds = useMemo(() => new Set(cart.map((e) => e.articleId)), [cart]);
 
   // Listen to open folder modal from mobile trigger stacked FAB
   useEffect(() => {
@@ -182,14 +249,6 @@ export default function FeqhBookPage() {
     return filterToc(book.chapters, blocksBySection, searchQuery);
   }, [book, blocksBySection, searchQuery]);
 
-  const handleScrollToBlock = useCallback((id: string) => {
-    setActiveBlockId(id);
-    const el = document.getElementById(`book-block-${id}`);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }, []);
-
   const commitReaderState = useCallback((map: BlocksBySection, complete: CompleteSections) => {
     blocksRef.current = map;
     completeRef.current = complete;
@@ -197,193 +256,310 @@ export default function FeqhBookPage() {
     setCompleteSections(complete);
   }, []);
 
-  /**
-   * Load every block of one section (?section_id=, all pages) unless it is
-   * already complete. Concurrent calls for the same section share one request.
-   * Resolves true when the section is complete afterwards. `quiet` (prefetch)
-   * shows no spinner and no error.
-   */
-  const ensureSection = useCallback((sectionId: string, quiet = false): Promise<boolean> => {
-    if (completeRef.current[sectionId]) return Promise.resolve(true);
-    const pending = sectionRequests.current.get(sectionId);
-    if (pending) return pending;
-    const generation = bookGeneration.current;
-    const run = (async () => {
-      if (!quiet) {
-        setLoadingSectionId(sectionId);
-        setSectionError(null);
-      }
-      try {
-        const loaded: ReturnType<typeof normalizeBlock>[] = [];
-        for (let page = 1; page <= 50; page++) {
-          const res = await fetch(
-            `/api/library/books/${apiSlug(slug)}?section_id=${encodeURIComponent(sectionId)}&toc=0&limit=${SECTION_BLOCKS_LIMIT}&page=${page}`,
-          );
-          const body = await res.json().catch(() => null);
-          if (!res.ok || !body) {
-            if (!quiet) setSectionError(typeof body?.error === "string" ? body.error : "تعذّر تحميل نص هذا الموضع، حاول مجدداً");
-            return false;
-          }
-          const blocks = (Array.isArray(body.blocks) ? body.blocks : [])
-            .map((b: Record<string, unknown>) => normalizeBlock(b, sectionId));
-          loaded.push(...blocks);
-          const totalPages = Number(body.pagination?.totalPages) || 1;
-          if (blocks.length === 0 || page >= totalPages) break;
-        }
-        // The reader moved to another book meanwhile: drop this result.
-        if (generation !== bookGeneration.current) return false;
-        commitReaderState(
-          mergeSectionBlocks(blocksRef.current, loaded),
-          { ...completeRef.current, [sectionId]: true },
-        );
-        return true;
-      } catch {
-        if (!quiet) setSectionError("تعذّر تحميل نص هذا الموضع، تحقّق من الاتصال");
-        return false;
-      } finally {
-        if (!quiet) setLoadingSectionId((cur) => (cur === sectionId ? null : cur));
-        if (generation === bookGeneration.current) sectionRequests.current.delete(sectionId);
-      }
-    })();
-    sectionRequests.current.set(sectionId, run);
-    return run;
-  }, [slug, commitReaderState]);
+  const commitStream = useCallback((next: ReaderStream) => {
+    streamRef.current = next;
+    setStream(next);
+  }, []);
 
-  /**
-   * Load one reading-order window around a block (`order` = its order_index)
-   * and record it as an ordered run. Concurrent calls for the same window share
-   * one request. Resolves true on success. `quiet` (prefetch) shows nothing.
-   */
-  const ensureRun = useCallback((dir: 1 | -1, order: number, quiet = false): Promise<boolean> => {
-    const key = `${dir}:${order}`;
-    const pending = runRequests.current.get(key);
-    if (pending) {
-      // A quiet prefetch may already be in flight for this window. A non-quiet
-      // caller (an actual click) joining it must still see a failure: it used
-      // to inherit a silent `false` with no navError, so the click did nothing
-      // and looked like the button was broken.
-      if (!quiet) {
-        setNavLoading(true);
-        setNavError(null);
+  /** Record an ordered window: its blocks join the index, its links mark complete sections. */
+  const recordRun = useCallback((run: OrderedRun) => {
+    const linked = linkRun(linksRef.current, completeRef.current, run, blocksRef.current);
+    linksRef.current = linked.links;
+    commitReaderState(mergeSectionBlocks(blocksRef.current, run.blocks), linked.complete);
+  }, [commitReaderState]);
+
+  /** One reading-order window from the books API (no TOC). */
+  const fetchWindow = useCallback(async (cursor: string, dir: 1 | -1): Promise<WindowAnswer> => {
+    try {
+      const res = await fetch(`/api/library/books/${apiSlug(slug)}?${cursor}&toc=0&limit=${STREAM_BATCH}`);
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body) {
+        return { ok: false, status: res.status, error: typeof body?.error === "string" ? body.error : "تعذّر تحميل نص الكتاب، حاول مجدداً" };
       }
-      return pending.then((ok) => {
-        if (!quiet) {
-          setNavLoading(false);
-          if (!ok) {
-            setNavError(dir === 1 ? "تعذّر تحميل الموضع التالي، حاول مجدداً" : "تعذّر تحميل الموضع السابق، حاول مجدداً");
-          }
-        }
-        return ok;
-      });
+      return { ok: true, run: runFromCursorResponse(body, dir) };
+    } catch {
+      return { ok: false, status: 0, error: "تعذّر تحميل نص الكتاب، تحقّق من الاتصال" };
     }
-    const generation = bookGeneration.current;
-    const run = (async () => {
-      if (!quiet) {
-        setNavLoading(true);
-        setNavError(null);
-      }
-      try {
-        const cursor = dir === 1 ? `from_order=${order}` : `before_order=${order}`;
-        const res = await fetch(`/api/library/books/${apiSlug(slug)}?${cursor}&toc=0&limit=${RUN_BLOCKS_LIMIT}`);
-        const body = await res.json().catch(() => null);
-        if (!res.ok || !body) {
-          if (!quiet) setNavError(typeof body?.error === "string" ? body.error : (dir === 1 ? "تعذّر تحميل الموضع التالي، حاول مجدداً" : "تعذّر تحميل الموضع السابق، حاول مجدداً"));
-          return false;
-        }
-        if (generation !== bookGeneration.current) return false;
-        const orderedRun = runFromCursorResponse(body, dir);
-        const linked = linkRun(linksRef.current, completeRef.current, orderedRun, blocksRef.current);
-        linksRef.current = linked.links;
-        commitReaderState(mergeSectionBlocks(blocksRef.current, orderedRun.blocks), linked.complete);
-        return true;
-      } catch {
-        if (!quiet) setNavError((dir === 1 ? "تعذّر تحميل الموضع التالي، تحقّق من الاتصال" : "تعذّر تحميل الموضع السابق، تحقّق من الاتصال"));
-        return false;
-      } finally {
-        if (!quiet) setNavLoading(false);
-        if (generation === bookGeneration.current) runRequests.current.delete(key);
-      }
-    })();
-    runRequests.current.set(key, run);
-    return run;
-  }, [slug, commitReaderState]);
-
-  /** Open a section from the TOC and show its first block. */
-  const handleOpenSection = useCallback(async (sectionId: string) => {
-    const ok = await ensureSection(sectionId);
-    if (!ok) return;
-    const first = blocksRef.current[sectionId]?.[0];
-    if (first) handleScrollToBlock(first.id);
-  }, [ensureSection, handleScrollToBlock]);
+  }, [slug]);
 
   /**
-   * Next / previous block in BOOK order (order_index). A known link is followed
-   * at once; an unknown one loads a window of RUN_BLOCKS_LIMIT blocks from the
-   * active block, which links all of them — one request per window, not one
-   * per section.
+   * Scroll a block of the stream into view (once it is rendered — a stream
+   * that was just replaced renders on the next commit). The scroll observer is
+   * held off meanwhile, so it does not re-pick the block mid-scroll.
    */
-  const goToNeighbour = useCallback(async (dir: 1 | -1, fromId: string) => {
-    if (!book) return;
-    // After one window the link is known; the second pass only covers a
-    // window that could not reach the block (order_index ties beyond a window).
-    for (let i = 0; i < 2; i++) {
-      const next = neighbour(blocksRef.current, linksRef.current, fromId, dir);
-      if (!next) return;
-      if (next.kind === "block") {
-        handleScrollToBlock(next.id);
+  const scrollToBlock = useCallback((id: string, behavior: ScrollBehavior = "smooth") => {
+    isScrolling.current = true;
+    setActiveBlockId(id);
+    if (scrollTimer.current !== null) window.clearTimeout(scrollTimer.current);
+    let frames = 0;
+    const attempt = () => {
+      const el = document.getElementById(`book-block-${id}`);
+      if (!el) {
+        if (frames++ < 60) requestAnimationFrame(attempt);
+        else isScrolling.current = false;
         return;
       }
-      const ok = await ensureRun(next.dir, next.order);
-      if (!ok) return;
-    }
-  }, [book, ensureRun, handleScrollToBlock]);
+      el.scrollIntoView({ behavior, block: "start" });
+      scrollTimer.current = window.setTimeout(() => { isScrolling.current = false; }, 1000);
+    };
+    requestAnimationFrame(attempt);
+  }, []);
 
-  // Prefetch the next window before the reader reaches its end, so stepping
-  // through the book does not wait on a request.
+  /**
+   * Replace the stream with a new run that starts at `cursor` (a jump), then
+   * scroll to `targetId` — or to the run's first block. The stream goes on
+   * downward from there. Resolves the failed answer, or null on success.
+   */
+  const startStreamAt = useCallback(async (cursor: string, targetId?: string): Promise<WindowFailure | null> => {
+    const generation = bookGeneration.current;
+    setJumping(true);
+    setNavError(null);
+    try {
+      const answer = await fetchWindow(cursor, 1);
+      if (generation !== bookGeneration.current) return null;
+      if (!answer.ok) return answer;
+      streamGeneration.current += 1;
+      morePending.current = null;
+      recordRun(answer.run);
+      const next = streamFromRun(answer.run);
+      commitStream(next);
+      setStalled(false);
+      setMoreError(null);
+      setBeforeError(null);
+      setArrival(false);
+      const target = targetId && next.blocks.some((b) => b.id === targetId) ? targetId : next.blocks[0]?.id;
+      if (target) scrollToBlock(target, "auto");
+      return null;
+    } finally {
+      if (generation === bookGeneration.current) setJumping(false);
+    }
+  }, [fetchWindow, recordRun, commitStream, scrollToBlock]);
+
+  /**
+   * Append the next batch (?from_order= the last block's order — inclusive;
+   * the anchor and order_index ties come back and are dropped by id). Callers
+   * share one request in flight, so the sentinel and the button never ask twice.
+   */
+  const loadMore = useCallback((): Promise<void> => {
+    if (morePending.current) return morePending.current;
+    const current = streamRef.current;
+    const cursor = streamCursor(current, 1);
+    if (current.endsBook || cursor === null) return Promise.resolve();
+    const generation = streamGeneration.current;
+    const bookGen = bookGeneration.current;
+    const run = (async () => {
+      setLoadingMore(true);
+      setMoreError(null);
+      try {
+        const answer = await fetchWindow(`from_order=${cursor}`, 1);
+        if (generation !== streamGeneration.current || bookGen !== bookGeneration.current) return;
+        if (!answer.ok) {
+          setMoreError(answer.error);
+          return;
+        }
+        recordRun(answer.run);
+        const { stream: next, added } = extendStream(streamRef.current, answer.run, 1);
+        commitStream(next);
+        setArrival(false);
+        // A window of nothing new while more follow: stop instead of asking
+        // for the same window forever; the button stays as a manual retry.
+        if (added === 0 && !next.endsBook) {
+          setStalled(true);
+          setMoreError("تعذّر متابعة التحميل من هذا الموضع؛ استعمل «انتقال للصفحة» أو الفهرس للمتابعة.");
+        }
+      } finally {
+        if (generation === streamGeneration.current) setLoadingMore(false);
+      }
+    })();
+    morePending.current = run;
+    run.finally(() => {
+      if (morePending.current === run) morePending.current = null;
+    });
+    return run;
+  }, [fetchWindow, recordRun, commitStream]);
+
+  /** «عرض ما قبل هذا الموضع»: prepend the window before the stream (after a jump into the middle). */
+  const loadBefore = useCallback(async () => {
+    const current = streamRef.current;
+    const cursor = streamCursor(current, -1);
+    if (current.startsBook || cursor === null || loadingBefore) return;
+    const generation = streamGeneration.current;
+    const bookGen = bookGeneration.current;
+    setLoadingBefore(true);
+    setBeforeError(null);
+    try {
+      const answer = await fetchWindow(`before_order=${cursor}`, -1);
+      if (generation !== streamGeneration.current || bookGen !== bookGeneration.current) return;
+      if (!answer.ok) {
+        setBeforeError(answer.error);
+        return;
+      }
+      const first = streamRef.current.blocks[0];
+      const el = first ? document.getElementById(`book-block-${first.id}`) : null;
+      prependAnchor.current = first && el ? { id: first.id, top: el.getBoundingClientRect().top } : null;
+      recordRun(answer.run);
+      commitStream(extendStream(streamRef.current, answer.run, -1).stream);
+    } finally {
+      setLoadingBefore(false);
+    }
+  }, [fetchWindow, recordRun, commitStream, loadingBefore]);
+
+  // After a prepend, put the block that was on screen back where it was (browsers
+  // without scroll anchoring would otherwise jump the reader up by the new height).
+  useLayoutEffect(() => {
+    const anchor = prependAnchor.current;
+    if (!anchor) return;
+    prependAnchor.current = null;
+    const el = document.getElementById(`book-block-${anchor.id}`);
+    if (!el) return;
+    const delta = el.getBoundingClientRect().top - anchor.top;
+    if (Math.abs(delta) > 1) window.scrollBy(0, delta);
+  }, [stream]);
+
+  const atCap = stream.blocks.length >= STREAM_MAX_BLOCKS;
+
+  // Infinite scroll: the next batch as the end of the stream nears. Re-armed
+  // on every new batch, so a sentinel still in view asks again.
   useEffect(() => {
-    if (!book || !activeBlockId) return;
-    let id = activeBlockId;
-    for (let i = 0; i < PREFETCH_LOOKAHEAD; i++) {
-      const next = neighbour(blocksRef.current, linksRef.current, id, 1);
-      if (!next) return;
-      if (next.kind === "load") {
-        void ensureRun(next.dir, next.order, true);
+    const el = sentinelRef.current;
+    if (!el || stream.endsBook || atCap || stalled || moreError || typeof IntersectionObserver === "undefined") return;
+    const obs = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) void loadMore(); },
+      { rootMargin: "800px 0px" },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [stream, atCap, stalled, moreError, loadMore]);
+
+  // The index follows the block in view: one observer over every rendered
+  // block, a reading band 20%–40% from the top (as the precedents reader).
+  useEffect(() => {
+    const root = streamRootRef.current;
+    if (!root || typeof IntersectionObserver === "undefined") return;
+    const visible = new Set<string>();
+    const obs = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const id = (entry.target as HTMLElement).dataset.streamBlock;
+          if (!id) continue;
+          if (entry.isIntersecting) visible.add(id);
+          else visible.delete(id);
+        }
+        if (isScrolling.current) return;
+        setActiveBlockId((prev) => topmostVisible(streamRef.current, visible, prev));
+      },
+      { rootMargin: "-20% 0px -60% 0px", threshold: 0 },
+    );
+    root.querySelectorAll<HTMLElement>("[data-stream-block]").forEach((node) => obs.observe(node));
+    return () => obs.disconnect();
+  }, [stream]);
+
+  // The notes panel (ResearchWorkspace) is keyed per block: it follows the
+  // block in view only once the reader rests there, not on every scroll step.
+  useEffect(() => {
+    if (!activeBlockId) return;
+    const t = window.setTimeout(() => setSettledBlockId(activeBlockId), WORKSPACE_SETTLE_MS);
+    return () => window.clearTimeout(t);
+  }, [activeBlockId]);
+
+  /** An index entry (a block row): scroll when the stream holds it, else a new stream from it. */
+  const handleScrollToBlock = useCallback((id: string) => {
+    const plan = planBlockJump(streamRef.current, blocksRef.current, id);
+    if (!plan) return;
+    if (plan.kind === "scroll") scrollToBlock(plan.id);
+    else void startStreamAt(`from_order=${plan.order}`, plan.id).then((failed) => {
+      if (failed) setNavError(failed.error);
+    });
+  }, [scrollToBlock, startStreamAt]);
+
+  /**
+   * A section title in the index: its first block, then the stream continues
+   * downward. When the stream does not hold it, one row (?section_id=&limit=1,
+   * ordered by order_index) tells where the section starts.
+   */
+  const handleOpenSection = useCallback(async (sectionId: string) => {
+    const inStream = firstStreamBlockOfSection(streamRef.current, sectionId);
+    // The stream's very first block may sit mid-section (it began at a jump):
+    // then the section starts earlier and is looked up below.
+    const startsHere = inStream && (streamRef.current.startsBook || streamRef.current.blocks[0]?.id !== inStream.id);
+    if (inStream && startsHere) {
+      scrollToBlock(inStream.id);
+      return;
+    }
+    const known = completeRef.current[sectionId] ? blocksRef.current[sectionId]?.[0] : undefined;
+    if (known && known.orderIndex !== null) {
+      const failed = await startStreamAt(`from_order=${known.orderIndex}`, known.id);
+      if (failed) setNavError(failed.error);
+      return;
+    }
+    const generation = bookGeneration.current;
+    setLoadingSectionId(sectionId);
+    setNavError(null);
+    try {
+      const res = await fetch(
+        `/api/library/books/${apiSlug(slug)}?section_id=${encodeURIComponent(sectionId)}&toc=0&limit=1&page=1`,
+      );
+      const body = await res.json().catch(() => null);
+      if (generation !== bookGeneration.current) return;
+      if (!res.ok || !body) {
+        setNavError(typeof body?.error === "string" ? body.error : "تعذّر فتح هذا الموضع، حاول مجدداً");
         return;
       }
-      id = next.id;
+      const first = (Array.isArray(body.blocks) ? body.blocks : [])
+        .map((b: Record<string, unknown>) => normalizeBlock(b, sectionId))[0] as ReaderBlock | undefined;
+      if (!first) {
+        // A section with no text: say so in the index («لا نص»).
+        commitReaderState(blocksRef.current, { ...completeRef.current, [sectionId]: true });
+        return;
+      }
+      if (first.orderIndex === null) return;
+      const failed = await startStreamAt(`from_order=${first.orderIndex}`, first.id);
+      if (failed) setNavError(failed.error);
+    } catch {
+      if (generation === bookGeneration.current) setNavError("تعذّر فتح هذا الموضع، تحقّق من الاتصال");
+    } finally {
+      setLoadingSectionId((cur) => (cur === sectionId ? null : cur));
     }
-  }, [book, activeBlockId, blocksBySection, ensureRun]);
+  }, [slug, scrollToBlock, startStreamAt, commitReaderState]);
 
-  const handleQuickJump = (query: string) => {
+  /**
+   * «انتقال للصفحة»: "47" (any volume) or "3/47". The stream first, then the
+   * blocks the index already holds, then the books API (?at_page=) for a page
+   * not loaded yet — the stream continues downward from that page.
+   */
+  const handleQuickJump = async (query: string) => {
     if (!book) return;
     setJumpError(false);
-    const trimmed = query.trim();
-    if (!trimmed) return;
-    
-    // "3/47" → volume 3, page 47. A bare "47" means page 47 in ANY volume —
-    // it used to default the volume to 1, which was invisible only while the
-    // parser claimed volume 1 for every block. 116,828 blocks now carry a real
-    // volume, so that default would hide every match outside volume 1.
-    let targetVol: string | null = null;
-    let targetPage: string | null = trimmed;
-
-    if (trimmed.includes("/")) {
-      const parts = trimmed.split("/");
-      targetVol = parts[0].trim() || null;
-      targetPage = parts[1].trim() || null;
-    }
-
-    // Searches the blocks loaded so far (sections open on demand).
-    const found = loadedBlocks(blocksBySection)
-      .find(b => matchesLocator(b, targetVol, targetPage));
-    const foundBlockId = found?.id ?? "";
-    
-    if (foundBlockId) {
-      setActiveBlockId(foundBlockId);
-      handleScrollToBlock(foundBlockId);
-    } else {
+    const { vol, page, server } = parseJumpQuery(query);
+    if (!page) return;
+    const fail = () => {
       setJumpError(true);
       setTimeout(() => setJumpError(false), 2000);
+    };
+    const inStream = streamRef.current.blocks.find((b) => matchesLocator(b, vol, page));
+    if (inStream) {
+      scrollToBlock(inStream.id);
+      return;
+    }
+    const known = Object.values(blocksRef.current).flat()
+      .filter((b) => b.orderIndex !== null && matchesLocator(b, vol, page))
+      .sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))[0];
+    if (!server) {
+      if (known && known.orderIndex !== null) {
+        const failed = await startStreamAt(`from_order=${known.orderIndex}`, known.id);
+        if (failed) fail();
+      } else {
+        fail();
+      }
+      return;
+    }
+    // The server finds the FIRST block printed on that page, even when a later
+    // one of the same page is already held.
+    const cursor = `at_page=${server.page}${server.vol !== null ? `&at_vol=${server.vol}` : ""}`;
+    const failed = await startStreamAt(cursor);
+    if (failed) {
+      fail();
+      if (failed.status !== 404) setNavError(failed.error);
     }
   };
 
@@ -404,24 +580,31 @@ export default function FeqhBookPage() {
       setBook(state.book);
       linksRef.current = state.links;
       commitReaderState(state.blocksBySection, state.complete);
+      const first = streamFromFirstPage(state);
+      commitStream(first);
       setActiveBlockId(state.firstBlockId);
+      setSettledBlockId(state.firstBlockId);
     };
     async function loadBookData() {
       setLoading(true);
       setLoadError(null);
-      setSectionError(null);
+      setNavError(null);
+      setMoreError(null);
+      setBeforeError(null);
+      setStalled(false);
+      setArrival(true);
       setBook(null);
       bookGeneration.current += 1;
-      sectionRequests.current = new Map();
-      runRequests.current = new Map();
+      streamGeneration.current += 1;
+      morePending.current = null;
       linksRef.current = emptyLinks();
-      setNavError(null);
       commitReaderState({}, {});
+      commitStream(emptyStream());
       try {
-        // Try API first: the complete TOC plus the first page of blocks; the
-        // rest load per section. apiSlug() decodes then encodes once, so a
-        // pre-encoded slug is not double-encoded into %25… (a 404).
-        const res = await fetch(`/api/library/books/${apiSlug(slug)}`);
+        // The complete TOC plus the first batch of the stream. apiSlug()
+        // decodes then encodes once, so a pre-encoded slug is not
+        // double-encoded into %25… (a 404).
+        const res = await fetch(`/api/library/books/${apiSlug(slug)}?limit=${STREAM_BATCH}`);
         if (cancelled) return;
         if (res.ok) {
           const apiData = await res.json();
@@ -458,7 +641,105 @@ export default function FeqhBookPage() {
     }
     loadBookData();
     return () => { cancelled = true; };
-  }, [slug, commitReaderState]);
+  }, [slug, commitReaderState, commitStream]);
+
+  // Multi-volume series (T28-24): the header names the series and the volume
+  // being read, and a switcher moves between volumes. The volume's own title
+  // does not always carry its number («الوسيط … — نظرية الالتزام بوجه عام —
+  // مصادر الالتزام» is الجزء 1), so citations use «السلسلة — الجزء N — …».
+  const series = book?.series ?? null;
+  const seriesIndex = series ? series.volumes.findIndex((v) => v.id === series.currentId) : -1;
+  const currentVolume = series && seriesIndex >= 0 ? series.volumes[seriesIndex] : null;
+  const volumeNote = book && currentVolume ? volumeSubtitle(book.title, book.id) : "";
+  const citeTitle = series && currentVolume
+    ? [series.title, currentVolume.label, volumeNote].filter(Boolean).join(" — ")
+    : book?.title ?? "";
+
+  /** Reference line: the locator segment disappears when the source has none. */
+  const blockCitation = useCallback((block: ReaderBlock) => {
+    if (!book) return "";
+    const loc = formatLocator(block, isRTL, "short");
+    // The API carries no publisher; «(طبعة undefined)» was printed into every citation.
+    return [book.author, citeTitle, loc, book.publisher ? `(طبعة ${book.publisher})` : ""]
+      .filter(Boolean)
+      .join("، ");
+  }, [book, citeTitle, isRTL]);
+
+  /**
+   * «نسخ بالتوثيق» on a block of the stream: its text (or the part of it the
+   * reader selected) with the reference. A locked block has no text here —
+   * it copies the reference only.
+   */
+  const handleCopyBlock = useCallback((block: ReaderBlock) => {
+    if (!book) return;
+    const citation = blockCitation(block);
+    const done = () => {
+      setCopiedBlockId(block.id);
+      setTimeout(() => setCopiedBlockId((cur) => (cur === block.id ? "" : cur)), 2000);
+    };
+    if (block.locked) {
+      navigator.clipboard.writeText(citation);
+      done();
+      return;
+    }
+
+    const selectedText = getSelectedTextWithin(`book-block-${block.id}`);
+    let textBlock = "";
+    let isSelectionCopy = false;
+
+    if (selectedText) {
+      textBlock = selectedText;
+      isSelectionCopy = true;
+    } else {
+      const parts = [];
+      if (block.matn) parts.push(`المتن:\n${block.matn}`);
+      if (block.sharh) parts.push(`الشرح:\n${block.sharh}`);
+      if (block.hashiyah.length > 0) {
+        parts.push(`الحواشي:\n${block.hashiyah.map((h, i) => `${i + 1}- ${h}`).join("\n")}`);
+      }
+      textBlock = parts.join("\n\n");
+    }
+
+    // «كتاب (العنوان - ج 3، ص 47)» → «كتاب (العنوان)» when the source gives no
+    // locator, instead of «كتاب (العنوان - ج null، ص null)».
+    const loc = formatLocator(block, isRTL, "short");
+    const where = loc ? `${citeTitle} - ${loc}` : citeTitle;
+    const prefixPlain = isSelectionCopy
+      ? (isRTL
+          ? `مقتبس من كتاب (${where}):`
+          : `Excerpt from book (${where}):`)
+      : (isRTL
+          ? `الموضع من كتاب (${where}):`
+          : `Excerpt from book (${where}):`);
+
+    const prefixHtml = `<b>${escapeHtml(prefixPlain)}</b>`;
+
+    const plain = `${prefixPlain}\n“${stripMd(textBlock)}”\n\nالمرجعية: ${citation}`;
+    const html  = `${prefixHtml}<br>“${escapeHtml(textBlock).replace(/\n/g, "<br>")}”<br><br><i>المرجعية: ${escapeHtml(citation)}</i>`;
+
+    try {
+      const full = `<html><body><p dir="rtl" style="font-family:'Arial';font-size:14pt;line-height:1.8">${html}</p></body></html>`;
+      navigator.clipboard.write([
+        new ClipboardItem({
+          "text/html":  new Blob([full],  { type: "text/html"  }),
+          "text/plain": new Blob([plain], { type: "text/plain" }),
+        }),
+      ]);
+    } catch {
+      navigator.clipboard.writeText(plain);
+    }
+    done();
+  }, [book, blockCitation, citeTitle, isRTL]);
+
+  /** «+ إضافة للمسودة» on a block of the stream (only a block whose text this viewer has). */
+  const handleAddBlockToDraft = useCallback((block: ReaderBlock) => {
+    if (block.locked) return;
+    addEntryToCart(blockCartEntry(
+      { id: block.id, topic: block.topic, matn: block.matn, sharh: block.sharh, hashiyah: block.hashiyah,
+        vol: block.vol, page: block.page, volLabel: block.volLabel, pageLabel: block.pageLabel },
+      citeTitle,
+    ));
+  }, [addEntryToCart, citeTitle]);
 
   if (loading) {
     return (
@@ -486,104 +767,12 @@ export default function FeqhBookPage() {
     );
   }
 
-  // Find active block — or, when none is chosen, the first loaded one.
-  const activeBlock = findBlock(blocksBySection, activeBlockId)
-    ?? loadedBlocks(blocksBySection)[0]
-    ?? null;
-
-  /**
-   * The source's own locator, or "" when it states none. Interpolating vol/page
-   * directly printed «ج null، ص null» once the schema stopped fabricating a
-   * volume for every block.
-   */
-  const blockLoc = (style: "short" | "long" = "short") =>
-    formatLocator(activeBlock, isRTL, style);
-
-  // Multi-volume series (T28-24): the header names the series and the volume
-  // being read, and a switcher moves between volumes. The volume's own title
-  // does not always carry its number («الوسيط … — نظرية الالتزام بوجه عام —
-  // مصادر الالتزام» is الجزء 1), so citations use «السلسلة — الجزء N — …».
-  const series = book.series;
-  const seriesIndex = series ? series.volumes.findIndex((v) => v.id === series.currentId) : -1;
-  const currentVolume = series && seriesIndex >= 0 ? series.volumes[seriesIndex] : null;
+  // The block in view (for the identity panel and the index), or the stream's first.
+  const inViewBlock = stream.blocks.find((b) => b.id === activeBlockId) ?? stream.blocks[0] ?? null;
+  const activeSectionId = inViewBlock?.sectionId ?? "";
   const prevVolume = series && seriesIndex > 0 ? series.volumes[seriesIndex - 1] : null;
   const nextVolume = series && seriesIndex >= 0 && seriesIndex < series.volumes.length - 1 ? series.volumes[seriesIndex + 1] : null;
-  const volumeNote = currentVolume ? volumeSubtitle(book.title, book.id) : "";
-  const citeTitle = series && currentVolume
-    ? [series.title, currentVolume.label, volumeNote].filter(Boolean).join(" — ")
-    : book.title;
-
-  /** Reference line: the locator segment disappears when the source has none. */
-  const blockCitation = () => {
-    if (!book || !activeBlock) return "";
-    const loc = blockLoc("short");
-    // The API carries no publisher; «(طبعة undefined)» was printed into every citation.
-    return [book.author, citeTitle, loc, book.publisher ? `(طبعة ${book.publisher})` : ""]
-      .filter(Boolean)
-      .join("، ");
-  };
-
-  const handleCopyCitation = () => {
-    if (!book || !activeBlock) return;
-    const citation = blockCitation();
-    navigator.clipboard.writeText(citation);
-    setCopiedCitation(true);
-    setTimeout(() => setCopiedCitation(false), 2000);
-  };
-
-  const handleCopyBlock = () => {
-    if (!book || !activeBlock) return;
-    
-    const selectedText = getSelectedTextWithin(`book-block-${activeBlock.id}`);
-    let textBlock = "";
-    let isSelectionCopy = false;
-    
-    if (selectedText) {
-      textBlock = selectedText;
-      isSelectionCopy = true;
-    } else {
-      const parts = [];
-      if (activeBlock.matn) parts.push(`المتن:\n${activeBlock.matn}`);
-      if (activeBlock.sharh) parts.push(`الشرح:\n${activeBlock.sharh}`);
-      if (activeBlock.hashiyah && activeBlock.hashiyah.length > 0) {
-        parts.push(`الحواشي:\n${activeBlock.hashiyah.map((h, i) => `${i + 1}- ${h}`).join("\n")}`);
-      }
-      textBlock = parts.join("\n\n");
-    }
-    
-    const citation = blockCitation();
-    // «كتاب (العنوان - ج 3، ص 47)» → «كتاب (العنوان)» when the source gives no
-    // locator, instead of «كتاب (العنوان - ج null، ص null)».
-    const loc = blockLoc("short");
-    const where = loc ? `${citeTitle} - ${loc}` : citeTitle;
-    const prefixPlain = isSelectionCopy
-      ? (isRTL
-          ? `مقتبس من كتاب (${where}):`
-          : `Excerpt from book (${where}):`)
-      : (isRTL
-          ? `الموضع من كتاب (${where}):`
-          : `Excerpt from book (${where}):`);
-
-    const prefixHtml = `<b>${prefixPlain}</b>`;
-
-    const plain = `${prefixPlain}\n“${stripMd(textBlock)}”\n\nالمرجعية: ${citation}`;
-    const html  = `${prefixHtml}<br>“${textBlock.replace(/\n/g, "<br>")}”<br><br><i>المرجعية: ${citation}</i>`;
-
-    try {
-      const full = `<html><body><p dir="rtl" style="font-family:'Arial';font-size:14pt;line-height:1.8">${html}</p></body></html>`;
-      navigator.clipboard.write([
-        new ClipboardItem({
-          "text/html":  new Blob([full],  { type: "text/html"  }),
-          "text/plain": new Blob([plain], { type: "text/plain" }),
-        }),
-      ]);
-    } catch {
-      navigator.clipboard.writeText(plain);
-    }
-
-    setCopiedText(true);
-    setTimeout(() => setCopiedText(false), 2000);
-  };
+  const workspaceBlockId = settledBlockId || inViewBlock?.id || "";
 
   const fontClass = {
     normal: "text-base leading-relaxed",
@@ -592,7 +781,6 @@ export default function FeqhBookPage() {
   }[fontSize];
 
   const card = `rounded-2xl border ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`;
-  const muted = isDark ? "text-zinc-500" : "text-slate-400";
 
   return (
     <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>
@@ -683,6 +871,8 @@ export default function FeqhBookPage() {
                 </div>
               )}
             </div>
+            {/* Note ٠٢: «نسخ بالتوثيق» and «إضافة للمسودة» sit on the head of
+                every block of the stream; the header keeps print and the draft. */}
             <div className="flex gap-2 print:hidden">
                 <button
                   onClick={() => window.print()}
@@ -694,33 +884,6 @@ export default function FeqhBookPage() {
                   <Printer size={14} />
                   <span>{isRTL ? "طباعة" : "Print"}</span>
                 </button>
-                <button
-                  onClick={handleCopyBlock}
-                  disabled={!activeBlock}
-                  className="px-4 py-2.5 text-xs font-bold bg-[#0B3D2E] text-white rounded-xl hover:opacity-90 transition flex items-center gap-1.5"
-                >
-                  {copiedText ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
-                  {isRTL ? "نسخ الموضع" : "Copy Content"}
-                </button>
-                {/* N2.6: the open block into the draft — only a block whose text this viewer has. */}
-                {activeBlock && !activeBlock.locked && (
-                  <button
-                    type="button"
-                    onClick={() => addEntryToCart(blockCartEntry(
-                      { id: activeBlock.id, topic: activeBlock.topic, matn: activeBlock.matn, sharh: activeBlock.sharh, hashiyah: activeBlock.hashiyah,
-                        vol: activeBlock.vol, page: activeBlock.page, volLabel: activeBlock.volLabel, pageLabel: activeBlock.pageLabel },
-                      citeTitle,
-                    ))}
-                    disabled={cart.some((e) => e.articleId === activeBlock.id)}
-                    aria-pressed={cart.some((e) => e.articleId === activeBlock.id)}
-                    className={`px-4 py-2.5 text-xs font-bold border rounded-xl transition flex items-center gap-1.5 ${
-                      isDark ? "border-white/[0.07] text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                    }`}
-                  >
-                    {cart.some((e) => e.articleId === activeBlock.id) ? <Check size={14} /> : <Plus size={14} />}
-                    {cart.some((e) => e.articleId === activeBlock.id) ? "الموضع في المسودة" : "إضافة الموضع للمسودة"}
-                  </button>
-                )}
                 <button
                   type="button"
                   onClick={() => window.dispatchEvent(new Event("nzamy-open-cart"))}
@@ -821,12 +984,12 @@ export default function FeqhBookPage() {
           volumeCount={series?.volumes.length ?? 1}
           isDark={isDark}
           onAddToDraft={addEntryToCart}
-          inDraft={(id) => cart.some((e) => e.articleId === id)}
+          inDraft={(id) => cartIds.has(id)}
         />
 
         {/* Workspace Layout */}
         <div className={isReadingMode ? "flex gap-6 items-start justify-center" : "grid grid-cols-1 lg:grid-cols-12 gap-6 items-start w-full"}>
-          
+
           {/* RIGHT COLUMN: Book Metadata Card AND TOC Index Panel */}
           {!isReadingMode && (
             <aside className="hidden lg:block lg:col-span-3 shrink-0 sticky top-6 z-40 space-y-3 print:hidden">
@@ -837,10 +1000,10 @@ export default function FeqhBookPage() {
                 // total_volumes is its own volume number, not a count: no
                 // series → no count rather than a wrong one (T28-24).
                 book={{ ...book, totalVolumes: series ? series.volumes.length : undefined }}
-                activeBlock={activeBlock}
+                activeBlock={inViewBlock}
                 setShowFolderModal={setShowFolderModal}
               />
-              
+
               <SidebarPanel
                 isDark={isDark}
                 isRTL={isRTL}
@@ -848,150 +1011,138 @@ export default function FeqhBookPage() {
                 setSearchQuery={setSearchQuery}
                 quickJumpQuery={quickJumpQuery}
                 setQuickJumpQuery={setQuickJumpQuery}
-                handleQuickJump={handleQuickJump}
+                handleQuickJump={(q) => { void handleQuickJump(q); }}
                 jumpError={jumpError}
                 filteredChapters={filteredChapters}
                 blocksBySection={blocksBySection}
                 completeSections={completeSections}
                 loadingSectionId={loadingSectionId}
                 onOpenSection={(id) => { void handleOpenSection(id); }}
-                activeBlockId={activeBlock?.id ?? activeBlockId}
+                activeBlockId={inViewBlock?.id ?? ""}
+                activeSectionId={activeSectionId}
                 handleScrollToBlock={handleScrollToBlock}
               />
             </aside>
           )}
 
-          {/* Center Reading Container */}
-          <div className={`nzamy-reader-container ${isReadingMode ? "max-w-3xl w-full" : "col-span-12 lg:col-span-6"} print:col-span-12 print:w-full print:max-w-none space-y-4`}>
-            {activeBlock ? (
-              <div id={`book-block-${activeBlock.id}`} className={`nzamy-reader-block ${card} p-6 md:p-8`}>
-                {/* Embedded physical page indicator */}
-                <div className="flex items-center justify-between border-b pb-4 mb-6 border-slate-200 dark:border-white/[0.05]">
-                  {/*
-                    Each segment appears only when the source states it. The
-                    volume used to be hardcoded to 1 by the parser, so this bar
-                    always had something to print; now a NULL means "the source
-                    gives no volume" and must render as nothing, not "null".
-                  */}
-                  <div className="flex items-center gap-2 text-xs font-black text-amber-600 dark:text-[#C8A762]">
-                    <FileText size={16} />
-                    {volumeToken(activeBlock) && (
-                      <span>{isRTL ? `المجلد ${volumeToken(activeBlock)}` : `Volume ${volumeToken(activeBlock)}`}</span>
-                    )}
-                    {volumeToken(activeBlock) && pageToken(activeBlock) && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#C8A762]" />
-                    )}
-                    {pageToken(activeBlock) && (
-                      <span>{isRTL ? `الصفحة ${pageToken(activeBlock)}` : `Page ${pageToken(activeBlock)}`}</span>
-                    )}
-                  </div>
-                  <span className="text-[9px] font-black text-slate-400 dark:text-zinc-500">
-                    {book.title}
-                  </span>
-                </div>
-
-                {/* Matn Section */}
-                {layerShows(viewLayer, "matn") && activeBlock.matn && (
-                  <div className="mb-6 relative">
-                    <div className="absolute top-2 right-2 flex items-center gap-1 text-[9px] font-black uppercase text-amber-600 dark:text-amber-500 tracking-wider">
-                      <BookmarkSimple size={10} weight="fill" />
-                      {isRTL ? "المتن" : "Matn"}
-                    </div>
-                    <div className="p-5 bg-amber-500/[0.03] border border-amber-500/10 dark:border-amber-500/20 rounded-2xl">
-                      <p className={`font-serif text-[#9b6f12] dark:text-[#C8A762] text-center ${fontClass}`}>
-                        {activeBlock.matn}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* N2.3: a single-layer view of a block with no text in that layer. */}
-                {emptyLayerNote(activeBlock, viewLayer, isRTL) && (
-                  <p role="note" className="mb-6 px-4 py-3 rounded-xl border text-xs font-bold text-center border-slate-200 text-slate-600 dark:border-white/[0.07] dark:text-zinc-400">
-                    {emptyLayerNote(activeBlock, viewLayer, isRTL)}
-                  </p>
-                )}
-
-                {activeBlock.locked && (
-                  <div className="mb-6 flex items-center gap-2 px-4 py-3 rounded-xl border border-amber-500/20 bg-amber-500/[0.05] text-xs font-bold text-amber-700 dark:text-amber-400">
-                    <Lock size={14} weight="fill" />
-                    <span>المعاينة المجانية أول صفحتين من الكتاب؛ نص هذا الموضع متاح لمشتركي Pro أو أعلى.</span>
-                  </div>
-                )}
-
-                {/* Sharh Section */}
-                {layerShows(viewLayer, "sharh") && activeBlock.sharh && (
-                  <div className="mb-8 relative">
-                    <div className="flex items-center gap-1 text-[9px] font-black uppercase text-[#0B3D2E] dark:text-[#C8A762] tracking-wider mb-2.5">
-                      <FileText size={11} weight="fill" />
-                      {isRTL ? "الشرح والتعليق" : "Sharh & Commentary"}
-                    </div>
-                    <div className={`font-sans text-slate-800 dark:text-zinc-200 text-justify ${fontClass}`}>
-                      {activeBlock.sharh.split("\n").map((para, pi) => (
-                        <p key={pi} className="mb-4">{para}</p>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Hashiyah Section */}
-                {layerShows(viewLayer, "hashiyah") && activeBlock.hashiyah && activeBlock.hashiyah.length > 0 && (
-                  <div className="border-t pt-5 mt-6 border-slate-200 dark:border-white/[0.05]">
-                    <h4 className="text-xs font-black text-slate-500 dark:text-zinc-400 mb-3 uppercase tracking-wider flex items-center gap-1.5">
-                      <ListNumbers size={14} />
-                      {isRTL ? "الحواشي والتعليقات السفلية" : "Footnotes & Annotations"}
-                    </h4>
-                    <div className="space-y-3">
-                      {activeBlock.hashiyah.map((h, i) => (
-                        <div key={i} className="flex gap-2 text-xs leading-relaxed text-slate-600 dark:text-zinc-400">
-                           <span className="font-bold text-[#C8A762]">{i + 1}-</span>
-                           <p className="flex-1 text-justify">{h}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className={`${card} p-8 text-center`}>
-                <p className="text-xs text-slate-500">{isRTL ? "الرجاء اختيار مسألة من الفهرس الجانبي لتصفحها." : "Please select a topic from the sidebar."}</p>
+          {/* Center Reading Container — owner note ٠٢: the book as one
+              continuous stream, block under block, loading as it scrolls. */}
+          <HighlightProvider query={highlightQuery}>
+          <div
+            ref={streamRootRef}
+            className={`nzamy-reader-container ${isReadingMode ? "max-w-3xl w-full" : "col-span-12 lg:col-span-6"} min-w-0 print:col-span-12 print:w-full print:max-w-none space-y-4`}
+          >
+            {highlightQuery.trim() && (
+              <div className="sticky top-20 z-30 print:hidden">
+                {/* Counts are of the loaded part of the book, unless it is all here. */}
+                <SearchLegendBar partial={!(stream.startsBook && stream.endsBook)} onClear={clearHighlight} />
               </div>
             )}
+            <ScrollToFirstMark enabled={arrival && urlQuery !== "" && !searchQuery.trim()} loaded={stream.blocks.length} />
 
-            {(sectionError || navError) && (
-              <p role="alert" className="text-xs text-center font-bold text-red-600 dark:text-red-400 print:hidden">{sectionError ?? navError}</p>
+            {jumping && (
+              <div role="status" className="flex items-center justify-center gap-2 text-xs font-bold text-slate-500 dark:text-zinc-400 print:hidden">
+                <span className="w-4 h-4 border-2 border-[#C8A762] border-t-transparent rounded-full animate-spin" />
+                {isRTL ? "جارٍ الانتقال إلى الموضع…" : "Opening…"}
+              </div>
+            )}
+            {navError && (
+              <p role="alert" className="text-xs text-center font-bold text-red-600 dark:text-red-400 print:hidden">{navError}</p>
             )}
 
-            {/* Reading order: the next/previous block in book order, loading windows on demand.
-                On small screens the TOC is hidden, so this is how the book is read. */}
-            {activeBlock && (
-              <div className="flex items-center justify-between gap-3 print:hidden">
+            {/* After a jump into the middle: what comes before, on request. */}
+            {!stream.startsBook && stream.blocks.length > 0 && (
+              <div className="text-center print:hidden">
+                {beforeError && (
+                  <p role="alert" className="text-xs text-red-600 dark:text-red-400 mb-2">{beforeError}</p>
+                )}
                 <button
                   type="button"
-                  onClick={() => { void goToNeighbour(-1, activeBlock.id); }}
-                  disabled={loadingSectionId !== null || navLoading}
-                  className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold border rounded-xl transition disabled:opacity-60 ${
-                    isDark ? "border-white/[0.07] text-zinc-400 hover:text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                  onClick={() => { void loadBefore(); }}
+                  disabled={loadingBefore}
+                  className={`inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold border rounded-xl transition disabled:opacity-60 ${
+                    isDark ? "border-white/[0.07] text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"
                   }`}
                 >
-                  <CaretRight size={14} />
-                  <span>الموضع السابق</span>
-                </button>
-                {(loadingSectionId !== null || navLoading) && (
-                  <span className="w-4 h-4 border-2 border-[#C8A762] border-t-transparent rounded-full animate-spin" />
-                )}
-                <button
-                  type="button"
-                  onClick={() => { void goToNeighbour(1, activeBlock.id); }}
-                  disabled={loadingSectionId !== null || navLoading}
-                  className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold bg-[#0B3D2E] text-white rounded-xl hover:opacity-90 transition disabled:opacity-60"
-                >
-                  <span>الموضع التالي</span>
-                  <CaretLeft size={14} />
+                  <CaretUp size={12} />
+                  {loadingBefore ? "جارٍ التحميل…" : "عرض الصفحات السابقة لهذا الموضع"}
                 </button>
               </div>
             )}
+
+            {stream.blocks.map((block) => (
+              <StreamBlock
+                key={block.id}
+                block={block}
+                isActive={block.id === inViewBlock?.id}
+                isDark={isDark}
+                isRTL={isRTL}
+                viewLayer={viewLayer}
+                fontClass={fontClass}
+                inDraft={cartIds.has(block.id)}
+                copied={copiedBlockId === block.id}
+                onCopy={handleCopyBlock}
+                onAddToDraft={handleAddBlockToDraft}
+              />
+            ))}
+
+            {stream.blocks.length === 0 && (
+              <div className={`${card} p-8 text-center`}>
+                <p className="text-xs text-slate-500">{isRTL ? "لا يوجد نص لهذا الكتاب بعد." : "This book has no text yet."}</p>
+              </div>
+            )}
+
+            {/* The stream's end: the infinite-scroll sentinel, with a visible
+                manual fallback; at the DOM cap, a fresh stream from here. */}
+            {!stream.endsBook && stream.blocks.length > 0 && (
+              <div ref={sentinelRef} className={`${card} p-4 text-center print:hidden`}>
+                <p className="text-xs text-slate-500 dark:text-zinc-400 mb-2">
+                  {atCap
+                    ? `عُرض ${stream.blocks.length} موضعاً متتالياً في هذه الصفحة؛ تابع القراءة من آخر موضع في عرض جديد.`
+                    : `عُرض ${stream.blocks.length} موضعاً — تُحمَّل الصفحات التالية تلقائياً مع التمرير.`}
+                </p>
+                {moreError && (
+                  <p role="alert" className="text-xs text-red-600 dark:text-red-400 mb-2">{moreError}</p>
+                )}
+                {atCap ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const last = stream.blocks[stream.blocks.length - 1];
+                      if (last?.orderIndex !== null && last?.orderIndex !== undefined) {
+                        void startStreamAt(`from_order=${last.orderIndex}`, last.id).then((failed) => {
+                          if (failed) setMoreError(failed.error);
+                        });
+                      }
+                    }}
+                    disabled={jumping}
+                    className="px-4 py-2 text-xs font-bold bg-[#0B3D2E] text-white rounded-xl hover:opacity-90 transition disabled:opacity-60"
+                  >
+                    متابعة القراءة من هنا
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // A manual retry clears a stall: the reader asked for it.
+                      setStalled(false);
+                      void loadMore();
+                    }}
+                    disabled={loadingMore}
+                    className="px-4 py-2 text-xs font-bold bg-[#0B3D2E] text-white rounded-xl hover:opacity-90 transition disabled:opacity-60"
+                  >
+                    {loadingMore ? "جارٍ التحميل…" : moreError ? "إعادة المحاولة" : "تحميل المزيد من الصفحات"}
+                  </button>
+                )}
+              </div>
+            )}
+            {stream.endsBook && stream.blocks.length > 0 && (
+              <p className="text-center text-[11px] font-bold text-slate-500 dark:text-zinc-400 print:hidden">
+                {isRTL ? "— نهاية الكتاب —" : "— End of book —"}
+              </p>
+            )}
           </div>
+          </HighlightProvider>
 
           {/* LEFT COLUMN: AI Assistant & Tools */}
           {!isReadingMode && (
@@ -1005,20 +1156,22 @@ export default function FeqhBookPage() {
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="flex-shrink-0"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                 {isRTL ? "اسأل في المجتمع القانوني" : "Ask Legal Community"}
               </button>
-              
+
               <LibraryAI isDark={isDark} isRTL={isRTL} />
 
-              <ResearchWorkspace isDark={isDark} pageId={`feqh-${book.id}-${activeBlock?.id || ""}`} isRTL={isRTL} />
+              {/* Notes stay keyed per block (existing notes keep their key);
+                  the key follows the block in view once the reader rests. */}
+              <ResearchWorkspace isDark={isDark} pageId={`feqh-${book.id}-${workspaceBlockId}`} isRTL={isRTL} />
 
               {/* Related Documents Card */}
-              {((lawMeta.related_systems && lawMeta.related_systems.length > 0) || 
+              {((lawMeta.related_systems && lawMeta.related_systems.length > 0) ||
                 (lawMeta.related_principles && lawMeta.related_principles.length > 0)) && (
                 <div className={`p-4 rounded-2xl border ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"} space-y-3.5`}>
                   <h3 className="text-xs font-black text-slate-500 dark:text-zinc-400 flex items-center gap-1.5 border-b pb-2 border-black/5 dark:border-white/5">
                     <Stack size={14} className="text-[#C8A762]" weight="fill" />
                     <span>{isRTL ? "وثائق وأنظمة ذات صلة" : "Related Documents"}</span>
                   </h3>
-                  
+
                   {/* Related Systems */}
                   {lawMeta.related_systems && lawMeta.related_systems.length > 0 && (
                     <div className="space-y-2">
@@ -1070,7 +1223,7 @@ export default function FeqhBookPage() {
       </div>
 
       <Footer />
-      
+
       <FolderSelectionModal
         isOpen={showFolderModal}
         onClose={() => setShowFolderModal(false)}

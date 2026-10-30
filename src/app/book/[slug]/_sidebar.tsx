@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ListNumbers, MagnifyingGlass, Compass
 } from "@phosphor-icons/react";
@@ -24,7 +24,10 @@ interface SidebarPanelProps {
   completeSections: CompleteSections;
   loadingSectionId: string | null;
   onOpenSection: (sectionId: string) => void;
+  /** The block in view in the reader's stream (owner note ٠٢). */
   activeBlockId: string;
+  /** Its section — highlighted even when the section lists no block rows. */
+  activeSectionId?: string;
   handleScrollToBlock: (id: string) => void;
 }
 
@@ -43,16 +46,41 @@ export default function SidebarPanel({
   loadingSectionId,
   onOpenSection,
   activeBlockId,
+  activeSectionId = "",
   handleScrollToBlock
 }: SidebarPanelProps) {
   const card = `rounded-2xl border ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`;
+  const listRef = useRef<HTMLDivElement | null>(null);
 
   // Render the TOC in steps: thousands of chapter rows at once froze the page.
-  // A new search starts again from the first step.
+  // A new search starts again from the first step. The step always reaches
+  // the chapter being read, so the entry in view has a row to highlight.
   const [step, setStep] = useState({ query: searchQuery, count: CHAPTERS_PER_STEP });
-  const visibleChapters = step.query === searchQuery ? step.count : CHAPTERS_PER_STEP;
+  const activeChapterIndex = activeSectionId
+    ? filteredChapters.findIndex((ch) => ch.sections.some((s) => s.id === activeSectionId))
+    : -1;
+  const visibleChapters = Math.max(
+    step.query === searchQuery ? step.count : CHAPTERS_PER_STEP,
+    activeChapterIndex + 1,
+  );
   const shownChapters = filteredChapters.slice(0, visibleChapters);
   const remaining = filteredChapters.length - shownChapters.length;
+
+  // Owner note ٠٢: as the reader scrolls the stream, the index follows — its
+  // OWN list scrolls to the entry in view (never the window: scrollIntoView
+  // would pull the page away from the text being read).
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list || (!activeBlockId && !activeSectionId)) return;
+    const row =
+      (activeBlockId ? list.querySelector<HTMLElement>(`[data-toc-block="${CSS.escape(activeBlockId)}"]`) : null) ??
+      (activeSectionId ? list.querySelector<HTMLElement>(`[data-toc-section="${CSS.escape(activeSectionId)}"]`) : null);
+    if (!row) return;
+    const top = row.getBoundingClientRect().top - list.getBoundingClientRect().top + list.scrollTop;
+    if (top < list.scrollTop || top + row.offsetHeight > list.scrollTop + list.clientHeight) {
+      list.scrollTop = Math.max(0, top - list.clientHeight / 3);
+    }
+  }, [activeBlockId, activeSectionId]);
 
   return (
     <div className="relative z-50 space-y-4">
@@ -70,7 +98,7 @@ export default function SidebarPanel({
           </div>
           <input
             type="text"
-            placeholder={isRTL ? "بحث في عناوين الفهرس والمسائل المفتوحة..." : "Search text or keywords..."}
+            placeholder={isRTL ? "بحث في الفهرس والنص المعروض (تُلوَّن الكلمات)..." : "Search the index and the text shown..."}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className={`w-full ${isRTL ? "pr-8 pl-8" : "pl-8 pr-8"} py-2 text-xs rounded-xl border transition-all ${
@@ -120,7 +148,7 @@ export default function SidebarPanel({
           </button>
         </div>
 
-        <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+        <div ref={listRef} className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
           {shownChapters.map((ch) => (
             <div key={ch.id} className="space-y-2">
               <p className="text-[11px] font-black text-amber-600 dark:text-amber-500 border-b pb-1 border-slate-100 dark:border-white/[0.04]">{ch.title}</p>
@@ -128,14 +156,20 @@ export default function SidebarPanel({
                 const blocks = blocksBySection[sec.id] ?? [];
                 const complete = completeSections[sec.id] === true;
                 const isLoading = loadingSectionId === sec.id;
+                const isActiveSection = activeSectionId === sec.id;
                 return (
                   <div key={sec.id} className="pl-2 space-y-1">
-                    {/* The section title opens it: its blocks load on demand. */}
+                    {/* The section title jumps to its first block; the stream
+                        continues downward from there (owner note ٠٢). */}
                     <button
                       type="button"
+                      data-toc-section={sec.id}
                       onClick={() => onOpenSection(sec.id)}
                       disabled={isLoading}
-                      className="w-full text-right text-[10px] font-bold text-slate-500 dark:text-zinc-400 hover:text-[#0B3D2E] dark:hover:text-[#C8A762] transition flex items-center justify-between gap-2"
+                      aria-current={isActiveSection ? "location" : undefined}
+                      className={`w-full text-right text-[10px] font-bold hover:text-[#0B3D2E] dark:hover:text-[#C8A762] transition flex items-center justify-between gap-2 ${
+                        isActiveSection ? "text-[#0B3D2E] dark:text-[#C8A762]" : "text-slate-500 dark:text-zinc-400"
+                      }`}
                     >
                       <span>{sec.title}</span>
                       {isLoading ? (
@@ -148,6 +182,8 @@ export default function SidebarPanel({
                       <button
                         key={b.id}
                         id={`sidebar-item-${b.id}`}
+                        data-toc-block={b.id}
+                        aria-current={activeBlockId === b.id ? "location" : undefined}
                         onClick={() => handleScrollToBlock(b.id)}
                         className={`w-full text-right flex items-center justify-between p-2 rounded-lg text-xs transition-all ${
                           activeBlockId === b.id

@@ -283,12 +283,14 @@ test("N2.3: a layer the block lacks gives an honest note, not an empty card", ()
 test("N2.3: the reader page draws its buttons from READER_LAYERS and its parts from layerShows", () => {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const page = readFileSync(path.join(here, "page.tsx"), "utf8");
+  // Note ٠٢: each block of the stream is drawn by _stream-block.tsx.
+  const block = readFileSync(path.join(here, "_stream-block.tsx"), "utf8");
   assert.match(page, /useState<ReaderLayer>\("all"\)/);
   assert.match(page, /READER_LAYERS\.map\(/);
   for (const part of ["matn", "sharh", "hashiyah"]) {
-    assert.ok(page.includes(`layerShows(viewLayer, "${part}")`), `the ${part} section is gated by layerShows`);
+    assert.ok(block.includes(`layerShows(viewLayer, "${part}")`), `the ${part} section is gated by layerShows`);
   }
-  assert.match(page, /emptyLayerNote\(activeBlock, viewLayer, isRTL\)/);
+  assert.match(block, /emptyLayerNote\(block, viewLayer, isRTL\)/);
   assert.match(page, /aria-pressed=\{viewLayer === layer\.id\}/);
 });
 
@@ -296,4 +298,153 @@ test("TOC filter matches Arabic-Indic and Western digits bidirectionally", () =>
   const st = fromApiBook(sentinelBook);
   assert.deepEqual(filterToc(st.book.chapters, st.blocksBySection, "461").map((c) => c.id), ["c461"]);
   assert.deepEqual(filterToc(st.book.chapters, st.blocksBySection, "٤").map((c) => c.id), ["c0", "c461"]);
+});
+
+// ── Owner note ٠٢: the continuous stream ─────────────────────────────────────
+import {
+  emptyStream, extendStream, firstStreamBlockOfSection, parseJumpQuery, planBlockJump,
+  streamCursor, streamFromFirstPage, streamFromRun, streamHas, topmostVisible, type ReaderStream,
+} from "./_reader-model.ts";
+
+/** What the books API answers to ?from_order=N&limit=L (or before_order), from `all`. */
+function cursorWindow(all: RawBlock[], dir: 1 | -1, order: number, limit: number) {
+  const sorted = [...all].sort((a, b) => a.orderIndex - b.orderIndex || (a.id < b.id ? -1 : 1));
+  const hits = dir === 1
+    ? sorted.filter((b) => b.orderIndex >= order)
+    : sorted.filter((b) => b.orderIndex <= order).reverse();
+  const window = hits.slice(0, limit);
+  return runFromCursorResponse({ blocks: dir === 1 ? window : [...window].reverse(), pagination: { hasMore: hits.length > limit } }, dir);
+}
+
+const ids = (s: ReaderStream) => s.blocks.map((b) => b.id);
+
+test("note ٠٢: the opening page is the first stream; it ends the book only when it holds all of it", () => {
+  const partial = streamFromFirstPage(fromApiBook(api));
+  assert.deepEqual(ids(partial), ["b1", "b2"]);
+  assert.equal(partial.startsBook, true);
+  assert.equal(partial.endsBook, false);
+  const whole = streamFromFirstPage(fromApiBook({ ...api, pagination: { total: 2 } }));
+  assert.equal(whole.endsBook, true);
+  const empty = streamFromFirstPage(fromApiBook({ id: "x", chapters: [], blocks: [] }));
+  assert.deepEqual(empty, { blocks: [], startsBook: true, endsBook: true });
+});
+
+test("note ٠٢: batches append in book order; the inclusive anchor is dropped, not duplicated", () => {
+  const all = Array.from({ length: 12 }, (_, i) => B(`b${i}`, `s${i >> 2}`, i));
+  let s = streamFromRun(cursorWindow(all, 1, 0, 5)); // b0..b4
+  assert.deepEqual(ids(s), ["b0", "b1", "b2", "b3", "b4"]);
+  assert.equal(streamCursor(s, 1), 4);
+  const r = extendStream(s, cursorWindow(all, 1, streamCursor(s, 1)!, 5), 1); // b4..b8
+  s = r.stream;
+  assert.equal(r.added, 4);
+  assert.deepEqual(ids(s), ["b0", "b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8"]);
+  assert.equal(s.endsBook, false);
+  s = extendStream(s, cursorWindow(all, 1, streamCursor(s, 1)!, 5), 1).stream; // b8..b11, the end
+  assert.equal(s.endsBook, true);
+  assert.equal(new Set(ids(s)).size, 12);
+});
+
+test("note ٠٢: a 1,000-block book streams to its end in windows, every block once, in order", () => {
+  const all = Array.from({ length: 1000 }, (_, i) => B(`b${i}`, `s${i}`, i));
+  const st = fromApiBook({
+    id: "ج01", chapters: [{ id: "c", title: "", sections: all.map((b) => ({ id: b.sectionId, title: "" })) }],
+    blocks: all.slice(0, 80), pagination: { page: 1, limit: 80, total: 1000, totalPages: 13 },
+  });
+  let s = streamFromFirstPage(st);
+  let requests = 0;
+  while (!s.endsBook && requests < 100) {
+    requests++;
+    s = extendStream(s, cursorWindow(all, 1, streamCursor(s, 1)!, 80), 1).stream;
+  }
+  assert.deepEqual(ids(s), all.map((b) => b.id));
+  assert.equal(requests, 12); // 920 blocks after page 1, 79 new per window (the anchor repeats)
+});
+
+test("note ٠٢: a window of nothing but order_index ties adds 0 blocks — the caller stops instead of looping", () => {
+  // Six blocks share order_index 5; a window of 3 from the anchor holds only ties.
+  const all = [B("a", "s", 4), ...["t1", "t2", "t3", "t4", "t5", "t6"].map((id) => B(id, "s", 5))];
+  let s = streamFromRun(cursorWindow(all, 1, 4, 3)); // a, t1, t2
+  const r1 = extendStream(s, cursorWindow(all, 1, streamCursor(s, 1)!, 3), 1); // t1, t2, t3
+  s = r1.stream;
+  assert.equal(r1.added, 1);
+  const again = extendStream(s, cursorWindow(all, 1, 5, 2), 1); // t1, t2 — nothing new, more follow
+  assert.equal(again.added, 0);
+  assert.equal(again.stream.endsBook, false);
+});
+
+test("note ٠٢: «عرض ما قبل» prepends the window before the stream and can reach the book start", () => {
+  const all = Array.from({ length: 10 }, (_, i) => B(`b${i}`, "s", i));
+  let s = streamFromRun(cursorWindow(all, 1, 6, 3)); // b6..b8 — a jump into the middle
+  assert.equal(s.startsBook, false);
+  assert.equal(streamCursor(s, -1), 6);
+  s = extendStream(s, cursorWindow(all, -1, 6, 4), -1).stream; // b3..b6
+  assert.deepEqual(ids(s), ["b3", "b4", "b5", "b6", "b7", "b8"]);
+  assert.equal(s.startsBook, false);
+  s = extendStream(s, cursorWindow(all, -1, 3, 4), -1).stream; // b0..b3, hasMore false
+  assert.equal(s.startsBook, true);
+  assert.equal(ids(s)[0], "b0");
+});
+
+test("note ٠٢: a jump scrolls when the stream holds the block, loads from its order when only the index knows it", () => {
+  const all = Array.from({ length: 10 }, (_, i) => B(`b${i}`, `s${i >> 1}`, i));
+  const s = streamFromRun(cursorWindow(all, 1, 0, 4)); // b0..b3
+  const map = mergeSectionBlocks({}, all.map((b) => normalizeBlock(b)));
+  assert.deepEqual(planBlockJump(s, map, "b2"), { kind: "scroll", id: "b2" });
+  assert.deepEqual(planBlockJump(s, map, "b7"), { kind: "load", order: 7, id: "b7" });
+  assert.equal(planBlockJump(s, map, "nope"), null);
+  assert.equal(planBlockJump(s, map, ""), null);
+  assert.equal(streamHas(s, "b3"), true);
+  assert.equal(firstStreamBlockOfSection(s, "s1")?.id, "b2");
+  assert.equal(firstStreamBlockOfSection(s, "s4"), null);
+  assert.deepEqual(streamCursor(emptyStream(), 1), null);
+});
+
+test("note ٠٢: the index highlights the first block, in stream order, that crosses the reading line", () => {
+  const s = streamFromRun(cursorWindow(Array.from({ length: 5 }, (_, i) => B(`b${i}`, "s", i)), 1, 0, 5));
+  assert.equal(topmostVisible(s, new Set(["b3", "b1"]), "b0"), "b1");
+  assert.equal(topmostVisible(s, new Set(), "b4"), "b4"); // a tall card covers the band: keep
+});
+
+test("note ٠٢: «انتقال للصفحة» parses page / volume, folds digits, and sends only numbers to the server", () => {
+  assert.deepEqual(parseJumpQuery("47"), { vol: null, page: "47", server: { page: 47, vol: null } });
+  assert.deepEqual(parseJumpQuery(" ٣/٤٧ "), { vol: "٣", page: "٤٧", server: { page: 47, vol: 3 } });
+  assert.deepEqual(parseJumpQuery("مقدمة/3"), { vol: "مقدمة", page: "3", server: null });
+  assert.deepEqual(parseJumpQuery("7-1"), { vol: null, page: "7-1", server: null });
+  assert.deepEqual(parseJumpQuery(""), { vol: null, page: null, server: null });
+  assert.deepEqual(parseJumpQuery("3/"), { vol: "3", page: null, server: null });
+});
+
+test("note ٠٦: the index filter speaks the search grammar (AND, exclusion) like the highlight", () => {
+  const st = fromApiBook(api);
+  // «ماء + شرح»: both words in b2 (section s2) → kept; «ماء -شرح» excludes it.
+  assert.deepEqual(filterToc(st.book.chapters, st.blocksBySection, "ماء + شرح").map((c) => c.id), ["c1"]);
+  assert.deepEqual(filterToc(st.book.chapters, st.blocksBySection, "ماء -شرح"), []);
+  assert.equal(filterToc(st.book.chapters, st.blocksBySection, "  ").length, 3);
+});
+
+// ── Source contract: the single-block reader is gone ─────────────────────────
+test("note ٠٢: the page renders the stream, with per-block actions, and no single-block navigation", () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const page = readFileSync(path.join(here, "page.tsx"), "utf8");
+  assert.doesNotMatch(page, /goToNeighbour/);
+  assert.doesNotMatch(page, /الموضع التالي|الموضع السابق/);
+  assert.doesNotMatch(page, /const activeBlock = findBlock/);
+  assert.doesNotMatch(page, /\{activeBlock \? \(/);
+  assert.match(page, /stream\.blocks\.map\(/);
+  assert.match(page, /new IntersectionObserver\(/);
+  assert.match(page, /sentinelRef/);
+  assert.match(page, /تحميل المزيد من الصفحات/);
+  assert.match(page, /from_order=\$\{/);
+  // The two actions sit on each block's head, not once in the page header.
+  const block = readFileSync(path.join(here, "_stream-block.tsx"), "utf8");
+  assert.match(block, /نسخ بالتوثيق/);
+  assert.match(block, /إضافة للمسودة/);
+  assert.match(block, /\{!block\.locked && \(/);
+  // Note ٠٦: ?q= and the in-page box colour the text through the shared engine.
+  assert.match(page, /<HighlightProvider query=\{highlightQuery\}>/);
+  assert.match(page, /<SearchLegendBar[^>]*partial/);
+  for (const part of ["block.topic", "block.matn", "para", "h"]) {
+    assert.ok(block.includes(`<Hl text={${part}} />`), `${part} is highlighted`);
+  }
+  assert.doesNotMatch(block, /dangerouslySetInnerHTML/);
 });
