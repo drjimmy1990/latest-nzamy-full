@@ -66,6 +66,8 @@ export interface AiToolSpec {
     from: string;
     /** The input field naming an article to send first, whatever the searches find (L5 «اشرح لي»). */
     pinFrom?: string;
+    /** The input field naming the law page the user is on: searched before the whole library (L5). */
+    scopeFrom?: string;
   };
   validateInput: (raw: unknown) => InputCheck;
   /**
@@ -212,19 +214,27 @@ export const LIBRARY_MESSAGE_MAX = 4000;
 export const LIBRARY_REPLY_MAX = 6000;
 /** Article ids are slugs such as `labor-law__art-80` (library.articles.id). */
 const ARTICLE_ID = /^[\p{L}\p{N}_.\-]{1,200}$/u;
+const LAW_SLUG = /^[\p{L}\p{N}_.\-]{1,200}$/u;
 
 /** L5 مساعد المكتبة: a question inside /laws, optionally about the article the user has open. */
 function libraryAssistantInput(raw: unknown): InputCheck {
   if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
   const message = boundedText(raw.message, LIBRARY_MESSAGE_MAX);
   if (!message || message.length < 2) return { ok: false, error: "اكتب سؤالك (حتى ٤٬٠٠٠ حرف)" };
+  // The law page the chat is on (owner's live test 29 Oct: two different laws
+  // got the same labour-law answer because the whole library was searched).
+  let law_slug: string | null = null;
+  if (raw.law_slug !== undefined && raw.law_slug !== null && raw.law_slug !== "") {
+    if (typeof raw.law_slug !== "string" || !LAW_SLUG.test(raw.law_slug)) return { ok: false, error: "معرّف النظام غير صالح" };
+    law_slug = raw.law_slug;
+  }
   if (raw.article_id === undefined || raw.article_id === null || raw.article_id === "") {
-    return { ok: true, input: { message, article_id: null } };
+    return { ok: true, input: { message, article_id: null, law_slug } };
   }
   if (typeof raw.article_id !== "string" || !ARTICLE_ID.test(raw.article_id)) {
     return { ok: false, error: "معرّف المادة غير صالح" };
   }
-  return { ok: true, input: { message, article_id: raw.article_id } };
+  return { ok: true, input: { message, article_id: raw.article_id, law_slug } };
 }
 
 function libraryAssistantOutput(raw: unknown): Record<string, unknown> | null {
@@ -691,7 +701,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     price: () => 5,
     dailyLimit: 60,
     defaultMode: "off",
-    retrieval: { from: "message", pinFrom: "article_id", laws: 6, principles: 3 },
+    retrieval: { from: "message", pinFrom: "article_id", scopeFrom: "law_slug", laws: 6, principles: 3 },
     validateInput: libraryAssistantInput,
     validateOutput: libraryAssistantOutput,
   },

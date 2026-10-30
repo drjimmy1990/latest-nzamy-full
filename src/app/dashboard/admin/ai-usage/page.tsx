@@ -248,7 +248,11 @@ export default function AdminAIUsagePage() {
                       {r.charged ? `${r.charged_points}${r.refunded_at ? " (أُعيدت)" : ""}` : `— (${r.price_points})`}
                     </td>
                     <td className="font-mono text-red-300">{r.error_code ?? ""}</td>
-                    <td>{r.usage ? `${r.usage.input_tokens ?? 0} / ${r.usage.output_tokens ?? 0}` : ""}</td>
+                    {/* n8n's AI Agent node does not report Gemini's token counts, so the
+                        workflows send 0 / 0: show that as unknown, not as a free run. */}
+                    <td title={r.usage && !r.usage.input_tokens && !r.usage.output_tokens ? "المزوّد لا يُرجع عدد الرموز عبر n8n" : undefined}>
+                      {!r.usage ? "" : !r.usage.input_tokens && !r.usage.output_tokens ? "غير متاح" : `${r.usage.input_tokens ?? 0} / ${r.usage.output_tokens ?? 0}`}
+                    </td>
                     <td>{r.duration_ms !== null ? `${(r.duration_ms / 1000).toFixed(1)} ث` : ""}</td>
                   </tr>
                 ))}

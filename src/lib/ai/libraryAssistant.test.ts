@@ -61,12 +61,16 @@ test("the registry entry: every account type, 5 points flat, off by default, the
   assert.equal(t.price({}, { pages: null }), 5);
   assert.equal(t.defaultMode, "off");
   assert.equal(t.retrieval?.pinFrom, "article_id");
-  assert.deepEqual(t.validateInput({ message: "اشرح" }), { ok: true, input: { message: "اشرح", article_id: null } });
-  assert.deepEqual(t.validateInput({ message: "اشرح", article_id: "labor-law__art-80" }), {
+  assert.equal(t.retrieval?.scopeFrom, "law_slug");
+  assert.deepEqual(t.validateInput({ message: "اشرح" }), { ok: true, input: { message: "اشرح", article_id: null, law_slug: null } });
+  assert.deepEqual(t.validateInput({ message: "اشرح", article_id: "labor-law__art-80", law_slug: "labor-law" }), {
     ok: true,
-    input: { message: "اشرح", article_id: "labor-law__art-80" },
+    input: { message: "اشرح", article_id: "labor-law__art-80", law_slug: "labor-law" },
   });
-  for (const bad of ["../etc", "a b", "x".repeat(201), 7]) assert.equal(t.validateInput({ message: "اشرح", article_id: bad }).ok, false, String(bad));
+  for (const bad of ["../etc", "a b", "x".repeat(201), 7]) {
+    assert.equal(t.validateInput({ message: "اشرح", article_id: bad }).ok, false, String(bad));
+    assert.equal(t.validateInput({ message: "اشرح", law_slug: bad }).ok, false, String(bad));
+  }
   assert.equal(t.validateOutput({ reply: "" }, {}), null);
 });
 
@@ -76,7 +80,29 @@ test("an individual on the library page gets an answer; the open article goes to
   const r = await startRunWith(client as never, deps(queries(["فسخ عقد العمل"]), pins), actor("individual"), body({ message: "اشرح لي هذه المادة", article_id: "labor__art-80" }));
   assert.equal(r.status, 200);
   assert.deepEqual(r.body.output, { reply: "شرح المادة [S1]" });
-  assert.deepEqual(pins, [{ articleId: "labor__art-80" }]);
+  assert.deepEqual(pins, [{ question: "اشرح لي هذه المادة", articleId: "labor__art-80" }]);
+});
+
+test("the law page and the question go to the retrieval (owner's live test 29 Oct)", async () => {
+  const pins: RetrievalPin[] = [];
+  const { client } = db();
+  const r = await startRunWith(client as never, deps(queries(["المستفيد"]), pins), actor("individual"), body({ message: "من هو المستفيد؟", law_slug: "social-security-law" }));
+  assert.equal(r.status, 200);
+  assert.deepEqual(pins, [{ question: "من هو المستفيد؟", lawSlug: "social-security-law" }]);
+});
+
+test("an article the question names is enough to answer from when the search writer finds nothing", async () => {
+  for (const input of [{ message: "ما هي المادة الأولى من نظام العمل؟" }, { message: "ما هي المادة الأولى؟", law_slug: "labor-law" }]) {
+    const { client, log } = db();
+    const r = await startRunWith(client as never, deps(queries([]), []), actor("lawyer"), body(input));
+    assert.equal(r.status, 200, input.message);
+    assert.ok(!log.some((q) => q.table === "ai_fail_run"));
+  }
+  // «المادة الأولى» with no law and no law page names nothing.
+  const { client, log } = db();
+  const r = await startRunWith(client as never, deps(queries([]), []), actor("lawyer"), body({ message: "ما هي المادة الأولى؟" }));
+  assert.equal(r.status, 502);
+  assert.ok(log.some((q) => q.table === "ai_fail_run"));
 });
 
 test("with an open article, a search writer that finds nothing still leads to an answer", async () => {

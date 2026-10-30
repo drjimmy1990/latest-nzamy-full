@@ -94,7 +94,13 @@ export default function CaseGraphView({
   const [aiCard, setAiCard] = useState<{ busy: boolean; note: string | null }>({ busy: false, note: null });
   async function suggestLawCards() {
     const chosen = nodes.filter((n) => selectedNodeIds.has(n.id));
-    if (chosen.length === 0 || aiCard.busy) return;
+    if (aiCard.busy) return;
+    // A disabled button showed its reason only as a hover title, which touch and
+    // some browsers never show (owner's 29-Oct test never got to a run): say it.
+    if (chosen.length === 0) {
+      setAiCard({ busy: false, note: "اختر بطاقة أو أكثر من اللوحة أولاً، ثم اضغط «اقترح سنداً نظامياً»." });
+      return;
+    }
     setAiCard({ busy: true, note: null });
     const answer = await askCanvasCard(chosen.slice(0, 8));
     if (!answer.ok) {
@@ -360,7 +366,7 @@ export default function CaseGraphView({
               {canImport && (
                 <button
                   onClick={() => void suggestLawCards()}
-                  disabled={selectedNodeIds.size === 0 || aiCard.busy}
+                  disabled={aiCard.busy}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition-colors text-[12px] border disabled:opacity-40 ${isDark ? "border-[#C8A762]/30 text-[#C8A762] hover:bg-[#C8A762]/10" : "border-[#C8A762]/50 text-amber-700 hover:bg-amber-50"}`}
                   title={selectedNodeIds.size > 0
                     ? "يبحث في مكتبة الأنظمة عن مواد تتصل بالبطاقات المختارة ويضيفها بطاقات (١٠ نقاط)"

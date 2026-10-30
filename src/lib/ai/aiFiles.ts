@@ -64,7 +64,20 @@ export const AI_FILE_MIMES: Readonly<Record<string, "pdf" | "image">> = {
 /** n8n downloads the files at once; the link outlives that by a wide margin. */
 export const SIGNED_URL_SECONDS = 15 * 60;
 const BUCKET = "documents";
+// `attachments.id` is a bigserial: PostgREST hands it to the browser as a JSON
+// number (prod: 37, 38, 39…). A UUID is still taken, lower-cased, for any
+// vault row keyed that way.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ROW_ID = /^[1-9][0-9]{0,17}$/;
+
+/** One id as the canonical string, or null when it is not an attachment id. */
+function fileId(v: unknown): string | null {
+  if (typeof v === "number") return Number.isSafeInteger(v) && v > 0 ? String(v) : null;
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  if (ROW_ID.test(t)) return t;
+  return UUID.test(t) ? t.toLowerCase() : null;
+}
 
 export const FILE_COPY = {
   none: "أرفق ملفاً واحداً على الأقل",
@@ -91,16 +104,21 @@ export async function countPages(bytes: Uint8Array, kind: "pdf" | "image"): Prom
   }
 }
 
-/** The run's `fileIds`: 1..max distinct UUIDs, or null. */
+/**
+ * The run's `fileIds`: 1..max distinct attachment ids (numbers, digit strings
+ * or UUIDs), as strings, or null when any one is not an id.
+ */
 export function parseFileIds(raw: unknown, max: number): string[] | null | "too_many" {
   if (!Array.isArray(raw) || raw.length === 0) return null;
-  const ids = [...new Set(raw.filter((v): v is string => typeof v === "string" && UUID.test(v)).map((v) => v.toLowerCase()))];
+  const each = raw.map(fileId);
+  if (each.some((v) => v === null)) return null;
+  const ids = [...new Set(each as string[])];
   if (ids.length !== raw.length) return null;
   return ids.length > max ? "too_many" : ids;
 }
 
 interface Row {
-  id: string;
+  id: string | number;
   file_name: string | null;
   storage_path: string | null;
   mime_type: string | null;
@@ -134,7 +152,7 @@ export async function resolveAiFiles(
   if (rows.length !== ids.length || rows.some((r) => !r.storage_path)) {
     return { ok: false, error: FILE_COPY.missing, code: "file_not_found" };
   }
-  const ordered = ids.map((id) => rows.find((r) => r.id.toLowerCase() === id)!);
+  const ordered = ids.map((id) => rows.find((r) => String(r.id).toLowerCase() === id)!);
 
   for (const r of ordered) {
     if (!AI_FILE_MIMES[String(r.mime_type ?? "").toLowerCase()]) return { ok: false, error: FILE_COPY.type, code: "file_type" };
@@ -169,7 +187,7 @@ export async function resolveAiFiles(
       return { ok: false, error: FILE_COPY.unavailable, code: "files_unavailable" };
     }
     files.push({
-      id: r.id,
+      id: String(r.id),
       name: (r.file_name ?? "ملف").slice(0, 200),
       mime: String(r.mime_type).toLowerCase(),
       bytes: body.byteLength,

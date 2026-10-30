@@ -32,6 +32,7 @@ import type { N8nCall, N8nOutcome } from "./n8nClient.ts";
 import { cleanQueries, type PackageSource, type RetrievalLimits, type RetrievalPin, type Retrieved } from "./retrieval.ts";
 import type { AiFile, FileRules, FilesCheck } from "./aiFiles.ts";
 import { enrichBriefCheck } from "./citationCheck.ts";
+import { articleRefs, bareArticleNumbers } from "./questionRefs.ts";
 
 /**
  * Tools whose result the app completes from its own data before storing it.
@@ -411,9 +412,15 @@ export async function startRunWith(
   // too; every way out below refunds.
   let pkgSources: PackageSource[] = [];
   if (spec.retrieval && deps.retrieve) {
-    const { from, pinFrom, laws, principles } = spec.retrieval;
+    const { from, pinFrom, scopeFrom, laws, principles } = spec.retrieval;
     const pinned = pinFrom ? checked.input[pinFrom] : null;
-    const pin: RetrievalPin = typeof pinned === "string" && pinned ? { articleId: pinned } : {};
+    const scope = scopeFrom ? checked.input[scopeFrom] : null;
+    const question = String(checked.input[from] ?? "");
+    const pin: RetrievalPin = {
+      question,
+      ...(typeof pinned === "string" && pinned ? { articleId: pinned } : {}),
+      ...(typeof scope === "string" && scope ? { lawSlug: scope } : {}),
+    };
     const asked = await deps.n8n({
       path: LIB_QUERIES_PATH,
       mode: "sync",
@@ -423,7 +430,7 @@ export async function startRunWith(
         run_id: run.run_id,
         tool: "lib-queries",
         input: {
-          text: [...history.filter((h) => h.role === "user").slice(-1).map((h) => h.text), String(checked.input[from] ?? "")].join("\n"),
+          text: [...history.filter((h) => h.role === "user").slice(-1).map((h) => h.text), question].join("\n"),
         },
       },
       timeoutMs: LIB_QUERIES_TIMEOUT_MS,
@@ -433,8 +440,10 @@ export async function startRunWith(
       reply && reply.run_id === run.run_id && reply.status === "succeeded" && isPlainObject(reply.output)
         ? cleanQueries(reply.output.queries)
         : [];
-    // An open article is a source even when the writer found nothing to search.
-    if (queries.length === 0 && !pin.articleId) {
+    // An open article, or one the question names, is a source even when the
+    // writer found nothing to search.
+    const named = articleRefs(question).length > 0 || (!!pin.lawSlug && bareArticleNumbers(question).length > 0);
+    if (queries.length === 0 && !pin.articleId && !named) {
       await failRun(admin, run.run_id, "no_queries", asked.kind === "failed" ? asked.detail : "the search writer returned no searches");
       return { status: 502, body: { error: AI_COPY.failed, code: "tool_failed", runId: run.run_id } };
     }
