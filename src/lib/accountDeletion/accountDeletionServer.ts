@@ -46,6 +46,8 @@ import {
   freezeStateFromUser,
   frozenAppMetadata,
   isMissingAccountDeletionSchema,
+  normalizeOwnerBlock,
+  type EntityOwnerBlock,
   type PurgeOutcome,
 } from "../auth/accountFreeze.ts";
 import { BRANDING_BUCKET } from "../branding/brandingVault.ts";
@@ -122,6 +124,30 @@ export async function readActiveRequest(
     return { ok: false, schemaMissing: isMissingAccountDeletionSchema(error.code), error: error.message };
   }
   return { ok: true, request: (data as DeletionRequestView | null) ?? null };
+}
+
+/**
+ * Owner ٣٠٧: the entity whose ownership blocks the CALLER's own deletion
+ * (20261030_10 account_deletion_owner_block(), auth.uid() only), read with
+ * the caller's session. Null when there is none, and also when the function
+ * is not there yet or the read fails — the database still refuses the request
+ * itself (request_account_deletion, 55000), so null only means "not known in
+ * advance".
+ */
+export async function readOwnerBlock(client: SupabaseClient): Promise<EntityOwnerBlock | null> {
+  try {
+    const { data, error } = await client.rpc("account_deletion_owner_block");
+    if (error) {
+      if (!isMissingAccountDeletionSchema(error.code)) {
+        console.error("[accountDeletion] reading the caller's owner block failed:", error.code, error.message);
+      }
+      return null;
+    }
+    return normalizeOwnerBlock(data);
+  } catch (err) {
+    console.error("[accountDeletion] reading the caller's owner block threw:", err);
+    return null;
+  }
 }
 
 /** Admin freeze: the row first, then the gates' copy; a failed copy undoes the row. */

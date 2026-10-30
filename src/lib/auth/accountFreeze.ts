@@ -27,9 +27,14 @@ export const DELETE_CONFIRM_PHRASE_AR = "احذف حسابي";
 /** Typed by a super admin to purge at once. */
 export const ADMIN_PURGE_CONFIRM_AR = "حذف نهائي";
 
-/** The answer a frozen account gets from a gated API. */
+/**
+ * The answer a frozen account gets from a gated API. The gates read only the
+ * cached copy, which does not say WHO froze the account, so the text is right
+ * for both: a freeze the user asked for he lifts himself, an administration's
+ * freeze only an admin lifts (owner ٣١٣) — the page says which.
+ */
 export const ACCOUNT_FROZEN_AR =
-  "حسابك مجمّد بطلب حذف. استعده أولاً من صفحة «حسابك مجمّد» لتعود إلى استخدام المنصة.";
+  "حسابك مجمّد. افتح صفحة «حسابك مجمّد»: إن كان التجميد بطلبك فاستعد حسابك منها، وإن كان بقرار من الإدارة فتواصل مع الدعم.";
 
 /**
  * A freeze the administration made (requested_by = "admin"): the user cannot
@@ -107,8 +112,8 @@ export function deletionErrorAr(message: string | null | undefined): string {
     return "حساب الإدارة لا يُحذف من الإعدادات. أزل صلاحية الإدارة أولاً من إدارة الفريق.";
   }
   if (m.includes("ACCOUNT_DELETION_ENTITY_OWNER") || m.includes("ACCOUNT_DELETE_ENTITY_OWNER")) {
-    const what = m.includes("firm") ? "المكتب" : m.includes("business") ? "الشركة" : "الجهة";
-    return `أنت صاحب ${what} وما زال فيه أعضاء آخرون، وحذف حسابك يحذف ${what} كله. انقل الملكية أو أخرج الأعضاء أولاً، أو تواصل مع الدعم.`;
+    const kind = /\b(firm|business|government|ngo)\b/.exec(m.replace(/[_:]/g, " "))?.[1] ?? null;
+    return entityOwnerBlockAr(kind);
   }
   if (m.includes("ACCOUNT_PURGE_IN_PROGRESS")) {
     return "جارٍ حذف هذا الحساب الآن. أعد المحاولة بعد ساعة إن لم يكتمل.";
@@ -123,6 +128,65 @@ export function deletionErrorAr(message: string | null | undefined): string {
     return "لم يُحذف الحساب: بقيت سجلات مكتب لم يمكن نقلها لصاحب المكتب، فلم يتغير شيء.";
   }
   return "تعذّر تنفيذ طلب حذف الحساب الآن. أعد المحاولة بعد قليل.";
+}
+
+/**
+ * Owner ٣٠٧: the entity kinds whose ownership blocks the owner's deletion
+ * while other members remain (20261026_70 account_entity_owner_block; the
+ * caller's own via 20261030_10 account_deletion_owner_block()).
+ */
+export type EntityOwnerBlock = "firm" | "business" | "government" | "ngo";
+
+/** The block as the database answers it, or null for anything else. */
+export function normalizeOwnerBlock(value: unknown): EntityOwnerBlock | null {
+  return value === "firm" || value === "business" || value === "government" || value === "ngo" ? value : null;
+}
+
+const ENTITY_NAME_AR: Record<EntityOwnerBlock, string> = {
+  firm: "المكتب",
+  business: "الشركة",
+  government: "الجهة",
+  ngo: "الجمعية",
+};
+
+/**
+ * Owner ٣٠٧ (أ): the owner of an entity that still has members cannot delete
+ * his account until its ownership is transferred. No screen transfers
+ * ownership yet, so the text promises none: it says it is not available and
+ * points to support.
+ */
+export function entityOwnerBlockAr(kind: unknown): string {
+  const k = normalizeOwnerBlock(kind);
+  const what = k ? ENTITY_NAME_AR[k] : "الجهة";
+  return `أنت مالك ${what}، وفي ${what} أعضاء آخرون غيرك، فلا يُحذف حسابك حتى تُنقل ملكية ${what} إلى غيرك. نقل الملكية غير متاح في المنصة بعد، فتواصل مع الدعم.`;
+}
+
+/**
+ * Owner ٣٠٧: what the frozen page says instead of a purge date when the final
+ * deletion is suspended — an entity owner (his ownership must be transferred
+ * first), or a purge the database refused (status `blocked`).
+ */
+export function deletionSuspendedAr(kind: unknown): string {
+  const k = normalizeOwnerBlock(kind);
+  if (k) {
+    const what = ENTITY_NAME_AR[k];
+    return `الحذف النهائي موقوف: أنت مالك ${what}، وفي ${what} أعضاء آخرون غيرك، ولا يُحذف الحساب قبل نقل ملكية ${what}. نقل الملكية غير متاح في المنصة بعد.`;
+  }
+  return "الحذف النهائي موقوف: تعذّر حذف الحساب لسبب تراجعه الإدارة، فبقي مجمّداً ولم يُحذف منه شيء.";
+}
+
+/**
+ * The admin's «حذف نهائي الآن» that ended blocked: why, in Arabic. `reason`
+ * is PurgeRun.reason (entity_owner, firm_assets_left, foreign_key, …).
+ */
+export function purgeBlockedAr(reason: unknown): string {
+  if (reason === "entity_owner") {
+    return "لم يُحذف الحساب: صاحبه مالك مكتب أو شركة أو جهة فيها أعضاء آخرون، والحذف النهائي موقوف حتى نقل الملكية — ولا شاشة لنقل الملكية بعد. بقي الحساب مجمّداً بقرار الإدارة.";
+  }
+  if (reason === "firm_assets_left") {
+    return "لم يُحذف الحساب: بقيت سجلات مكتب لم يمكن نقلها لصاحب المكتب، فلم يتغير شيء. بقي الحساب مجمّداً وسُجّل السبب على طلب الحذف.";
+  }
+  return "لم يُحذف الحساب: بيانات تمنع الحذف. بقي الحساب مجمّداً وسُجّل السبب على طلب الحذف.";
 }
 
 export type PurgeOutcome = "purged" | "blocked" | "retry";

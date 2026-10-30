@@ -13,6 +13,7 @@ import {
   deletionErrorAr,
   isMissingAccountDeletionSchema,
   phraseMatches,
+  purgeBlockedAr,
 } from "@/lib/auth/accountFreeze";
 import {
   cancelAccountFreezeWith,
@@ -561,8 +562,8 @@ export async function DELETE(
         const error = !now.frozen
           ? "لم يُحذف الحساب، وتعذّر تجميده، فأُلغي طلب الحذف وبقي الحساب نشطاً. أعد المحاولة لاحقاً."
           : run.outcome === "blocked"
-            ? "لم يُحذف الحساب: صاحب مكتب أو جهة لها أعضاء، أو بيانات تمنع الحذف. بقي الحساب مجمّداً وسُجّل السبب على طلب الحذف."
-            : "تعذّر إكمال الحذف الآن، وبقي الحساب مجمّداً. أعد المحاولة لاحقاً.";
+            ? purgeBlockedAr(run.reason)
+            :"تعذّر إكمال الحذف الآن، وبقي الحساب مجمّداً. أعد المحاولة لاحقاً.";
         return NextResponse.json({ error }, { status: run.outcome === "blocked" ? 409 : 500 });
       }
     }
