@@ -14,6 +14,7 @@ import { BILLING_LABEL_AR, isCycle } from "@/lib/pricing/priceBook";
 import { currentPlanLabelAr } from "@/lib/pricing/currentPlanLabel";
 import { PointsBalanceCard } from "@/components/payments/PointsBalanceCard";
 import { useBillingData } from "@/components/payments/useBillingData";
+import { LibraryGrantStatusCard } from "@/components/library/LibraryGrantStatusCard";
 
 // ── Tab: Subscription ────────────────────────────────────────────────
 // This tab used to build a whole billing history out of literals: a plan card
@@ -75,6 +76,9 @@ export function SubscriptionTab() {
           planLabel={currentPlanLabelAr(userType, practiceKind, tier ?? "free")}
           plansHref={audience ? `#${PLANS_ANCHOR}` : "/pricing"}
         />
+        {/* The library-only subscription is its own grant, not a tier (owner
+            note ١٨ C05): its end date, or nothing when there is no grant. */}
+        <LibraryGrantStatusCard className="mt-4" />
       </div>
 
       {billingRead.status === "ready" ? (

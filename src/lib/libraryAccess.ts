@@ -170,3 +170,110 @@ export function libraryEndsAtAr(endsAt: unknown): string | null {
     year: 'numeric',
   }).format(new Date(ms));
 }
+
+// ─── The user's coverage: the chain of stacked grants (owner note ١٨ C05/C06) ──
+
+/** A grant row as the coverage math reads it. revoked_at is optional (20261030_65). */
+export interface LibraryGrantRow {
+  id: string;
+  plan_ref: string;
+  source: string;
+  starts_at: string;
+  ends_at: string;
+  revoked_at?: string | null;
+}
+
+export type LibraryCoverage =
+  | { status: 'none' }
+  | {
+      /** 'active': a grant covers now; 'upcoming': only a later grant exists. */
+      status: 'active' | 'upcoming';
+      /** The start of the covering (or the first upcoming) grant. */
+      startsAt: string;
+      /**
+       * The end of the CONTIGUOUS chain: grants stack end to start, so a user
+       * who renewed early holds access until the LAST grant of the chain ends,
+       * not until the current row ends. This is the date the user is shown
+       * and the date the 7/3-day reminders count down to.
+       */
+      endsAt: string;
+      /** The id of the grant whose end is the chain's end (the reminder key). */
+      lastGrantId: string;
+      /** The plan of the covering (or first upcoming) grant. */
+      planRef: string;
+      source: string;
+      /** A later grant after a gap (a revoke or a shortened grant), if any. */
+      nextStartsAt: string | null;
+    };
+
+/**
+ * The user's library coverage at `now`, from his grant rows. Revoked rows and
+ * rows with unparseable dates are ignored; so is anything that ended at or
+ * before now. Pure.
+ */
+export function libraryCoverage(rows: readonly LibraryGrantRow[], now: Date): LibraryCoverage {
+  const t = now.getTime();
+  if (!Number.isFinite(t)) return { status: 'none' };
+  const live = rows
+    .filter((r) => r && !r.revoked_at)
+    .map((r) => ({ r, s: Date.parse(r.starts_at), e: Date.parse(r.ends_at) }))
+    .filter((x) => Number.isFinite(x.s) && Number.isFinite(x.e) && x.e > x.s && x.e > t)
+    .sort((a, b) => a.s - b.s || a.e - b.e);
+  if (live.length === 0) return { status: 'none' };
+
+  const covering = live.filter((x) => x.s <= t);
+  const first = covering.length > 0
+    ? covering.reduce((best, x) => (x.e > best.e ? x : best))
+    : live[0];
+  let end = first.e;
+  let last = first;
+  let nextStartsAt: string | null = null;
+  for (const x of live) {
+    if (x.s <= end) {
+      if (x.e > end) {
+        end = x.e;
+        last = x;
+      }
+    } else {
+      nextStartsAt = new Date(x.s).toISOString();
+      break;
+    }
+  }
+  return {
+    status: covering.length > 0 ? 'active' : 'upcoming',
+    startsAt: new Date(first.s).toISOString(),
+    endsAt: new Date(end).toISOString(),
+    lastGrantId: last.r.id,
+    planRef: first.r.plan_ref,
+    source: first.r.source,
+    nextStartsAt,
+  };
+}
+
+/** The two renewal reminders the pricing doc sets (7 and 3 days before the end). */
+export const LIBRARY_REMINDER_OFFSETS = [7, 3] as const;
+export type LibraryReminderOffset = (typeof LIBRARY_REMINDER_OFFSETS)[number];
+
+/**
+ * Which reminder is due for a coverage ending at `endsAt`: 3 when 3 days or
+ * less are left, 7 when 7 days or less (and more than 3) are left, else null.
+ * A cron run that missed the 7-day window sends only the 3-day one. Pure.
+ */
+export function libraryReminderOffset(endsAt: string, now: Date): LibraryReminderOffset | null {
+  const e = Date.parse(endsAt);
+  const t = now.getTime();
+  if (!Number.isFinite(e) || !Number.isFinite(t)) return null;
+  const left = e - t;
+  if (left <= 0) return null;
+  if (left <= 3 * DAY_MS) return 3;
+  if (left <= 7 * DAY_MS) return 7;
+  return null;
+}
+
+/** Whole days left until `endsAt`, rounded up (0 once it has passed). */
+export function libraryDaysLeft(endsAt: string, now: Date): number {
+  const e = Date.parse(endsAt);
+  const t = now.getTime();
+  if (!Number.isFinite(e) || !Number.isFinite(t) || e <= t) return 0;
+  return Math.ceil((e - t) / DAY_MS);
+}

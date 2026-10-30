@@ -114,11 +114,27 @@ async function latestActiveGrantEnd(
   }
 }
 
+/** PostgREST / Postgres codes meaning "the function does not exist here yet". */
+function isMissingGrantFunction(code: string | undefined): boolean {
+  return code === 'PGRST202' || code === '42883';
+}
+
+let missingGrantFunctionLogged = false;
+
 /**
  * Inserts one grant lasting `days` whole days (an integer from 1 to 3660),
  * starting at the later of now and the end of the user's latest active grant
  * (stackedGrantWindow). Returns the grant's end — the extended end — as an
  * ISO string. Never throws.
+ *
+ * ATOMIC (owner note ١٨ C01, 20261030_65): the read of the latest end and the
+ * insert run in ONE database function, public.library_grant_access, under a
+ * per-user lock — two grants at the same moment (two orders, an approval and
+ * a code) can no longer read the same end and overlap. Where that function
+ * does not exist yet (PGRST202 / 42883: the SQL has not run) the old read
+ * then insert below is the fallback, logged once. The function also keeps the
+ * admin's `reason` / `notes` (service-role-only table); the fallback cannot,
+ * so a grant that carries a reason FAILS there instead of dropping it.
  *
  * `orderId` (a paid order, source 'purchase', B1 Task 5) is written to
  * order_id, which is UNIQUE: a second grant for the same order fails with
@@ -138,7 +154,10 @@ export async function grantLibraryAccess(input: {
   source: LibraryGrantSource;
   grantedBy?: string | null;
   orderId?: string | null;
-}): Promise<{ ok: true; endsAt: string } | { ok: false; error: string; code?: string }> {
+  /** The admin's reason (mandatory for source 'admin' — the function refuses a blank one). */
+  reason?: string | null;
+  notes?: string | null;
+}): Promise<{ ok: true; endsAt: string; grantId?: string; startsAt?: string } | { ok: false; error: string; code?: string }> {
   if (typeof input.userId !== 'string' || input.userId.length === 0) {
     return { ok: false, error: 'userId is required' };
   }
@@ -148,6 +167,55 @@ export async function grantLibraryAccess(input: {
   }
   try {
     const supabase = await createServiceClient();
+
+    // 1. the atomic path (20261030_65)
+    const { data: granted, error: rpcError } = await supabase.rpc('library_grant_access', {
+      p_user: input.userId,
+      p_plan_ref: input.planRef,
+      p_source: input.source,
+      p_days: input.days,
+      p_granted_by: input.grantedBy ?? null,
+      p_order: input.orderId ?? null,
+      p_reason: input.reason ?? null,
+      p_notes: input.notes ?? null,
+    });
+    if (!rpcError) {
+      const row = (granted ?? null) as { id?: unknown; starts_at?: unknown; ends_at?: unknown } | null;
+      if (row && typeof row.ends_at === 'string') {
+        return {
+          ok: true,
+          endsAt: new Date(row.ends_at).toISOString(),
+          grantId: typeof row.id === 'string' ? row.id : undefined,
+          startsAt: typeof row.starts_at === 'string' ? new Date(row.starts_at).toISOString() : undefined,
+        };
+      }
+      console.error('[libraryAccess] grantLibraryAccess: library_grant_access answered without ends_at');
+      return { ok: false, error: 'library_grant_access: no result' };
+    }
+    if (!isMissingGrantFunction(rpcError.code)) {
+      if (isMissingLibraryGrantsTable(rpcError.code)) {
+        console.error(`[libraryAccess] grantLibraryAccess: ${MISSING_TABLE_ERROR} (20261019_10 not applied)`);
+        return { ok: false, error: MISSING_TABLE_ERROR, code: rpcError.code };
+      }
+      if (rpcError.code === '23505' && input.orderId) {
+        // the order's grant already exists — the caller treats it as done
+        return { ok: false, error: rpcError.message, code: rpcError.code };
+      }
+      console.error('[libraryAccess] grantLibraryAccess: library_grant_access failed:', rpcError.code, rpcError.message);
+      return { ok: false, error: rpcError.message, code: rpcError.code };
+    }
+
+    // 2. the fallback (20261030_65 not applied): read then insert, not atomic
+    if (!missingGrantFunctionLogged) {
+      missingGrantFunctionLogged = true;
+      console.warn(
+        '[libraryAccess] grantLibraryAccess: public.library_grant_access does not exist yet (20261030_65 not applied); granting with the non-atomic read then insert',
+      );
+    }
+    if ((input.reason && input.reason.trim()) || (input.notes && input.notes.trim())) {
+      // the reason has nowhere to go without 20261030_65 — refuse, never drop it
+      return { ok: false, error: 'library grant reasons need 20261030_65', code: rpcError.code };
+    }
     const latestActiveEnd = await latestActiveGrantEnd(supabase, input.userId, now.toISOString());
     const window = stackedGrantWindow(input.days, now, latestActiveEnd);
     if (!window) {

@@ -5,6 +5,7 @@ import { logAdminAction } from "@/lib/auth/adminAudit";
 import { grantEntitlement, type GrantAction } from "@/lib/entitlements";
 import { libraryEndsAtAr, resolveLibraryRequestGrant } from "@/lib/libraryAccess";
 import { grantLibraryAccess } from "@/lib/libraryAccessServer";
+import { libraryPurchaseEligibility } from "@/lib/library/libraryPurchaseEligibility";
 import { recordNotification } from "@/lib/notify";
 
 /**
@@ -221,6 +222,35 @@ async function approveLibraryRequest(input: {
     return NextResponse.json(
       { error: "مدة الاشتراك يجب أن تكون عدداً صحيحاً من يوم واحد إلى ٣٦٦٠ يوماً" },
       { status: 400 },
+    );
+  }
+
+  // LIVE-F05 (owner: the library is sold to legal professionals only). A
+  // library request is the gateway-off way to BUY a plan (owner ٢٤٦), so the
+  // server refuses to approve one from an ineligible account — hiding the
+  // button on /laws/subscribe is not enough, a session can insert a request
+  // directly. Fail closed: an unreadable profile is refused too. The admin
+  // rejects the request instead; a deliberate exception is the direct grant
+  // (POST /api/v1/admin/entitlements/grant, action library, reason required).
+  const { data: requester, error: requesterError } = await admin
+    .from("profiles")
+    .select("user_type")
+    .eq("id", requesterId)
+    .maybeSingle();
+  if (requesterError) {
+    console.error("[admin/entitlements/requests] reading the requester's account type failed:", requesterError.code);
+    return NextResponse.json({ error: "تعذّر التحقق من نوع حساب صاحب الطلب. حاول مرة أخرى." }, { status: 500 });
+  }
+  const eligibility = libraryPurchaseEligibility((requester as { user_type?: unknown } | null)?.user_type);
+  if (!eligibility.eligible) {
+    return NextResponse.json(
+      {
+        error:
+          "لا يمكن اعتماد هذا الطلب: اشتراك المكتبة يُباع للمحامين والمستشارين ومكاتب المحاماة والإدارات القانونية فقط، وصاحب الطلب ليس منهم. ارفض الطلب، أو امنحه منحة إدارية مسببة إن كان استثناءً مقصوداً.",
+        code: "library_not_eligible",
+        reason: eligibility.reason,
+      },
+      { status: 409 },
     );
   }
 
