@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Calculator, Money, CaretLeft, Gavel, Clock,
   ArrowCounterClockwise, CheckCircle, Info, ChartBar, Receipt,
-  Buildings, Users, CalendarBlank, ArrowsLeftRight, Warning, Sparkle,
+  Buildings, Users, CalendarBlank, ArrowsLeftRight, Sparkle,
   // Case Type Icons
   HardHat, Storefront, Scales, Lock, UsersThree, House, Bank
 } from "@phosphor-icons/react";
@@ -16,6 +16,7 @@ import dynamic from "next/dynamic";
 
 const CalcCourtFees  = dynamic(() => import("@/components/calculators/CalcCourtFees"),  { ssr: false });
 const CalcLaborRights = dynamic(() => import("@/components/calculators/CalcLaborRights"), { ssr: false });
+const CalcLegalDeadlines = dynamic(() => import("@/components/calculators/CalcLegalDeadlines"), { ssr: false });
 
 // ─── Types & Constants — Lawyer Fee Calculator ────────────────────────────────
 
@@ -102,40 +103,6 @@ const TABS: { id: Tab; label: string; icon: React.ElementType; desc: string }[] 
   { id: "date_convert", label: "تحويل التاريخ",      icon: ArrowsLeftRight,  desc: "هجري ↔ ميلادي بدقة" },
 ];
 
-// ─── Deadline calculator helpers ─────────────────────────────────────────────
-
-const DEADLINE_TYPES = [
-  { id: "appeal",        label: "استئناف الحكم",          days: 30,  note: "من تاريخ صدور الحكم أو تبليغه" },
-  { id: "cassation",     label: "الطعن بالتمييز/النقض",  days: 30,  note: "من تاريخ صدور حكم الاستئناف" },
-  { id: "objection",     label: "الاعتراض على أمر الأداء", days: 10, note: "من تاريخ إعلان الأمر" },
-  { id: "execution",     label: "الاعتراض على التنفيذ",  days: 7,   note: "من تاريخ المباشرة بالتنفيذ" },
-  { id: "labor_claim",   label: "رفع دعوى عمالية",       days: 365, note: "من تاريخ انتهاء العلاقة العمالية" },
-  { id: "commercial",    label: "التقادم التجاري",        days: 1825,note: "٥ سنوات من نشوء الحق" },
-  { id: "civil",         label: "التقادم المدني",         days: 3650,note: "١٠ سنوات من نشوء الحق" },
-  { id: "correction",    label: "تصحيح الحكم",           days: 30,  note: "من تاريخ صدور الحكم" },
-];
-
-function addDaysToDate(dateStr: string, days: number): string {
-  if (!dateStr) return "";
-  const d = new Date(dateStr);
-  d.setDate(d.getDate() + days);
-  return d.toLocaleDateString("ar-SA-u-nu-latn", { year: "numeric", month: "long", day: "numeric", calendar: "gregory" });
-}
-
-function isExpired(dateStr: string, days: number): boolean {
-  if (!dateStr) return false;
-  const deadline = new Date(dateStr);
-  deadline.setDate(deadline.getDate() + days);
-  return deadline < new Date();
-}
-
-function daysLeft(dateStr: string, days: number): number {
-  if (!dateStr) return 0;
-  const deadline = new Date(dateStr);
-  deadline.setDate(deadline.getDate() + days);
-  return Math.ceil((deadline.getTime() - Date.now()) / 86400000);
-}
-
 // ─── Hijri ↔ Gregorian helpers ────────────────────────────────────────────────
 
 function gregorianToHijri(gYear: number, gMonth: number, gDay: number): [number, number, number] {
@@ -182,8 +149,6 @@ export default function FeeCalculatorPage() {
   const [activeTab, setActiveTab] = useState<Tab>("lawyer_fees");
 
   // Deadline calc state
-  const [dlType,  setDlType]  = useState<string>("appeal");
-  const [dlDate,  setDlDate]  = useState<string>("");
 
   // Date converter state
   const [convDir,    setConvDir]    = useState<"g2h" | "h2g">("g2h");
@@ -450,65 +415,8 @@ export default function FeeCalculatorPage() {
           {activeTab === "labor_rights" && <CalcLaborRights />}
 
           {/* ── Tab 4: Legal Deadlines ──────────────────────────────────────── */}
-          {activeTab === "deadlines" && (
-            <div className="space-y-5">
-              <div className={`${card} p-6 space-y-5`}>
-                <div>
-                  <label className={`block text-xs font-bold mb-2 uppercase tracking-wider ${isDark ? "text-zinc-500" : "text-slate-400"}`}>نوع الموعد القانوني</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {DEADLINE_TYPES.map(d => (
-                      <button key={d.id} onClick={() => setDlType(d.id)}
-                        className={`flex items-start gap-2 p-3 rounded-xl border text-start text-[12px] font-medium transition-all ${
-                          dlType === d.id ? "bg-[#0B3D2E]/10 border-[#0B3D2E]/30 text-[#0B3D2E] dark:text-emerald-400 dark:border-emerald-700/40" : isDark ? "border-white/[0.06] text-zinc-500 hover:text-zinc-300" : "border-slate-100 text-slate-500 hover:border-[#0B3D2E]/20"
-                        }`}>
-                        <CalendarBlank size={14} className="mt-0.5 flex-shrink-0" />
-                        <div><p className="font-bold">{d.label}</p><p className={`text-[10px] mt-0.5 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{d.days >= 365 ? `${Math.round(d.days/365)} سنوات` : `${d.days} يوماً`}</p></div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <label className={`block text-xs font-bold mb-2 uppercase tracking-wider ${isDark ? "text-zinc-500" : "text-slate-400"}`}>تاريخ البداية (ميلادي)</label>
-                  <input type="date" value={dlDate} onChange={e => setDlDate(e.target.value)}
-                    className={`w-full rounded-xl border px-3 py-2.5 text-sm outline-none ${isDark ? "border-white/[0.08] bg-zinc-800/60 text-zinc-200" : "border-slate-200 bg-slate-50 text-slate-700"}`} />
-                </div>
-
-                {dlDate && dlType && (() => {
-                  const dt = DEADLINE_TYPES.find(d => d.id === dlType)!;
-                  const expired = isExpired(dlDate, dt.days);
-                  const left = daysLeft(dlDate, dt.days);
-                  const deadline = addDaysToDate(dlDate, dt.days);
-                  return (
-                    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-                      className={`rounded-2xl border p-5 ${
-                        expired ? isDark ? "border-red-500/20 bg-red-500/5" : "border-red-200 bg-red-50"
-                        : left <= 7 ? isDark ? "border-amber-500/20 bg-amber-500/5" : "border-amber-200 bg-amber-50"
-                        : isDark ? "border-emerald-700/20 bg-emerald-900/10" : "border-emerald-200 bg-emerald-50"
-                      }`}>
-                      <div className="flex items-center gap-3 mb-3">
-                        {expired ? <Warning size={20} weight="fill" className="text-red-500" /> : <CheckCircle size={20} weight="fill" className="text-emerald-500" />}
-                        <div>
-                          <p className={`font-bold text-[13px] ${expired ? "text-red-600 dark:text-red-400" : "text-emerald-700 dark:text-emerald-400"}`}>
-                            {expired ? "انتهى الميعاد" : `متبقٍّ ${left} يوماً`}
-                          </p>
-                          <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{dt.note}</p>
-                        </div>
-                      </div>
-                      <div className={`flex items-center justify-between rounded-xl border p-3 ${isDark ? "border-white/[0.06] bg-white/[0.02]" : "border-slate-100 bg-white"}`}>
-                        <span className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>آخر موعد للتقديم</span>
-                        <span className={`text-[14px] font-bold font-mono ${ expired ? "text-red-500" : left <= 7 ? "text-amber-500" : isDark ? "text-emerald-400" : "text-emerald-700"}`}>{deadline}</span>
-                      </div>
-                      {!expired && left <= 7 && (
-                        <p className={`mt-2 text-[11px] flex items-center gap-1.5 ${isDark ? "text-amber-400" : "text-amber-700"}`}>
-                          <Warning size={12} /> تنبيه: الموعد قريب جداً — يُنصح بالتحرك فوراً
-                        </p>
-                      )}
-                    </motion.div>
-                  );
-                })()}
-              </div>
-            </div>
-          )}
+          {/* LIVE-F33: the shared deadline engine, rules and court holidays — the radar's maths. */}
+          {activeTab === "deadlines" && <CalcLegalDeadlines />}
 
           {/* ── Tab 5: Date Converter ────────────────────────────────────────── */}
           {activeTab === "date_convert" && (
