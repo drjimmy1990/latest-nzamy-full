@@ -7,9 +7,9 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
-import { createWorkflowId, saveWorkflowRequest } from "@/lib/workflowStore";
+import { useAiRun } from "@/hooks/useAiRun";
 import { ContractType, Mode, Step } from "./_components/contractTypes";
-import { generateContractText } from "./_components/contractTemplates";
+import { asContractDraft, contractDraftFields, contractDraftText } from "./_components/contractDraft";
 import StepModeSelector from "./_components/StepModeSelector";
 import StepTypeSelector from "./_components/StepTypeSelector";
 import { StepReviewInput, StepDetailsForm } from "./_components/StepForms";
@@ -54,53 +54,28 @@ export default function ContractDrafterPage() {
   const [selectedType, setSelectedType] = useState<ContractType | null>(null);
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [agreed, setAgreed] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
+  // Review mode: the text the user pasted. Draft mode reads the AI's draft.
   const [contractText, setContractText] = useState("");
   const [copied, setCopied] = useState(false);
   const [step4Tab, setStep4Tab] = useState<"text" | "review">("text");
-  const [savedContractId, setSavedContractId] = useState<string | null>(null);
+
+  // L11 (plan §5 wave 5): a background job. The server checks the fields,
+  // charges the points and n8n writes the draft; the hook polls until it is
+  // back. The page follows the job — its draft or the form — never a template.
+  const run = useAiRun();
+  const draft = run.phase === "done" ? asContractDraft(run.output) : null;
+  const draftText = draft ? contractDraftText(draft) : "";
+  const shownStep: Step = mode === "draft" && step === 3 && draft ? 4 : step;
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
-  async function handleGenerateContract() {
-    setIsGenerating(true);
-    await new Promise((r) => setTimeout(r, 1800));
-    const draftText = generateContractText(selectedType!, formData, isRTL);
-    const id = createWorkflowId("CTR");
-    // Demo-only browser store (owner ١١٥): null outside demo mode, so no
-    // «saved» claim is shown for a draft that exists nowhere.
-    const saved = saveWorkflowRequest({
-      id,
-      type: "ai_draft",
-      title: selectedType?.labelAr ?? selectedType?.labelEn ?? "Contract draft",
-      description: draftText.slice(0, 500),
-      requester: {
-        name: user.name,
-        role: user.userType,
-        tier: user.tier,
-        businessRole: user.businessRole,
-      },
-      receiver: "ai_workspace",
-      status: "completed",
-      payment: {
-        amount: 0,
-        status: "not_required",
-      },
-      sourcePath: "/ai/contract-drafter",
-      metadata: {
-        contractType: selectedType?.id ?? null,
-        mode: mode ?? null,
-      },
-      auditEvent: "contract_draft_saved",
-    });
-    if (saved) setSavedContractId(id);
-    setContractText(draftText);
-    setIsGenerating(false);
-    setStep(4);
+  function handleGenerateContract() {
+    if (!selectedType || run.busy) return;
+    void run.start("contract-drafter", { type: selectedType.id, fields: contractDraftFields(selectedType.fields, formData) });
   }
 
   function handleCopy() {
-    navigator.clipboard.writeText(contractText);
+    navigator.clipboard.writeText(mode === "draft" ? draftText : contractText);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
@@ -116,7 +91,7 @@ export default function ContractDrafterPage() {
     setFormData({});
     setAgreed(false);
     setContractText("");
-    setSavedContractId(null);
+    run.reset();
   }
 
   const steps = mode === "review" ? REVIEW_STEPS : DRAFT_STEPS;
@@ -161,23 +136,23 @@ export default function ContractDrafterPage() {
             <div className="flex items-center justify-center gap-0 mt-12 mb-2">
               {steps.map((s, i) => (
                 <div key={s.num} className="flex items-center">
-                  <button type="button" disabled={s.num >= step} onClick={() => s.num < step && setStep(s.num as Step)} className="flex flex-col items-center group disabled:cursor-default">
+                  <button type="button" disabled={s.num >= shownStep || run.busy} onClick={() => { if (s.num < shownStep) { if (s.num < 4) run.reset(); setStep(s.num as Step); } }} className="flex flex-col items-center group disabled:cursor-default">
                     <div className={`w-10 h-10 rounded-[1rem] flex items-center justify-center font-bold text-sm transition-all duration-300 ${
-                      step === s.num ? "bg-[#0B3D2E] text-white scale-110 shadow-lg"
-                        : step > s.num ? "bg-emerald-500 text-white group-hover:scale-105"
+                      shownStep === s.num ? "bg-[#0B3D2E] text-white scale-110 shadow-lg"
+                        : shownStep > s.num ? "bg-emerald-500 text-white group-hover:scale-105"
                         : isDark ? "bg-white/5 border border-white/10 text-zinc-500" : "bg-white border border-zinc-200 text-zinc-400"
                     }`}>
-                      {step > s.num ? <CheckCircle size={20} weight="fill" /> : s.num}
+                      {shownStep > s.num ? <CheckCircle size={20} weight="fill" /> : s.num}
                     </div>
                     <span className={`mt-2 text-[12px] font-bold hidden sm:block transition-colors ${
-                      step === s.num ? (isDark ? "text-zinc-200" : "text-zinc-900") : step > s.num ? "text-emerald-500 group-hover:text-emerald-600" : isDark ? "text-zinc-600" : "text-zinc-400"
+                      shownStep === s.num ? (isDark ? "text-zinc-200" : "text-zinc-900") : shownStep > s.num ? "text-emerald-500 group-hover:text-emerald-600" : isDark ? "text-zinc-600" : "text-zinc-400"
                     }`}>
                       {isRTL ? s.labelAr : s.labelEn}
                     </span>
                   </button>
                   {i < steps.length - 1 && (
                     <div className={`w-14 sm:w-20 h-1 mx-2 mb-6 rounded-full transition-all duration-300 ${
-                      step > s.num ? "bg-gradient-to-r from-emerald-500 to-[#0B3D2E]" : isDark ? "bg-white/5" : "bg-zinc-200"
+                      shownStep > s.num ? "bg-gradient-to-r from-emerald-500 to-[#0B3D2E]" : isDark ? "bg-white/5" : "bg-zinc-200"
                     }`} />
                   )}
                 </div>
@@ -221,32 +196,49 @@ export default function ContractDrafterPage() {
                 Arrow={Arrow}
               />
             )}
-            {mode === "draft" && step === 3 && selectedType && (
-              <StepPreviewSign
-                selectedType={selectedType}
-                formData={formData}
-                agreed={agreed}
-                isGenerating={isGenerating}
-                onBack={() => setStep(2)}
-                onAgreedChange={setAgreed}
-                onGenerate={handleGenerateContract}
-                ArrowBack={ArrowBack}
-                Arrow={Arrow}
-              />
+            {mode === "draft" && shownStep === 3 && selectedType && (
+              <div key="step3" className="space-y-4">
+                {run.phase === "error" && run.error && (
+                  <p role="alert" className={`max-w-3xl mx-auto rounded-2xl border px-4 py-3 text-[13px] leading-relaxed ${isDark ? "border-red-900/40 bg-red-900/10 text-red-400" : "border-red-200 bg-red-50 text-red-600"}`}>
+                    {run.error}
+                  </p>
+                )}
+                {run.phase === "review" && (
+                  <p role="status" className={`max-w-3xl mx-auto rounded-2xl border px-4 py-3 text-[13px] ${isDark ? "border-amber-900/40 bg-amber-900/10 text-amber-400" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+                    {isRTL ? "المسودة جاهزة وتنتظر مراجعة الفريق قبل عرضها." : "The draft is ready and awaits the team's review."}
+                  </p>
+                )}
+                {run.phase === "running" && (
+                  <p role="status" className={`max-w-3xl mx-auto rounded-2xl border px-4 py-3 text-[13px] ${isDark ? "border-white/10 bg-white/5 text-zinc-300" : "border-zinc-200 bg-white text-zinc-600"}`}>
+                    {isRTL ? "يكتب الذكاء الاصطناعي المسودة الآن — قد يستغرق ذلك دقيقة أو دقيقتين." : "The AI is writing the draft — this can take a minute or two."}
+                  </p>
+                )}
+                <StepPreviewSign
+                  selectedType={selectedType}
+                  formData={formData}
+                  agreed={agreed}
+                  isGenerating={run.busy}
+                  onBack={() => { run.reset(); setStep(2); }}
+                  onAgreedChange={setAgreed}
+                  onGenerate={handleGenerateContract}
+                  ArrowBack={ArrowBack}
+                  Arrow={Arrow}
+                />
+              </div>
             )}
-            {mode === "draft" && step === 4 && contractText && (
+            {mode === "draft" && shownStep === 4 && draft && (
               <StepContractResult
-                contractText={contractText}
+                contractText={draftText}
                 contractType={selectedType}
                 copied={copied}
                 step4Tab={step4Tab}
                 onCopy={handleCopy}
                 onTabChange={setStep4Tab}
-                onBack={() => setStep(3)}
+                onBack={() => { run.reset(); setStep(3); }}
                 onRequestLawyer={() => setStep(5)}
                 ArrowBack={ArrowBack}
                 Arrow={Arrow}
-                savedId={savedContractId}
+                aiDraft={{ citations: draft.citation_check, chargedPoints: run.chargedPoints }}
               />
             )}
 
@@ -272,7 +264,6 @@ export default function ContractDrafterPage() {
                 onRequestLawyer={() => setStep(5)}
                 ArrowBack={ArrowBack}
                 Arrow={Arrow}
-                savedId={savedContractId}
               />
             )}
 

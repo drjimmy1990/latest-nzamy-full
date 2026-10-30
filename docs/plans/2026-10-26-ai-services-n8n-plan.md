@@ -572,6 +572,20 @@ L8 notes:
 | L10 | **محلل قوة الموقف** | `/ai/analyze-strength` | 250 | Sonnet | Four tabs: strengths and weaknesses, adversary moves, risks, adversary simulator. **Qualitative levels instead of the invented scores** (D5). Today the files are names only; make them real uploads |
 
 ### Wave 5: document generation (one shared engine)
+
+> **Status 2026-10-30 (branch `feat/ai-wave5`, not merged):**
+> - **L11 built:** tool `contract-drafter`, a 500-point job with a daily limit of 5, all five roles, off by default.
+>   - The input is the type plus labelled fields; the output is a title, a preamble and sections.
+>   - The articles it cites go through the L8 citation check.
+>   - n8n uses the wave 4 `caseJob` shape and always takes the Agent branch (no files).
+> - **Page fixes:** the template and fake delay are removed. So are the fake upload in review mode and the dead `consultations/new` link; that link and its price now come from the catalog (`resolveAdvisoryHandoff`).
+> - **Not yet in L11:**
+>   - the shared engine's outline-then-sections drafting (one call writes the whole contract);
+>   - library retrieval before drafting;
+>   - the common editor with versions;
+>   - DOCX/PDF export with the letterhead (the existing `AiResultActions` exports remain);
+>   - `review` release mode (there is still no admin approve route, so it runs in staff/live like the other tools).
+>   These come with L12–L14.
 Shared engine:
 
 ```

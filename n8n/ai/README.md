@@ -23,6 +23,7 @@ On n8n.asra3.com (all created **inactive**):
 | L8 مراجعة وتدقيق مذكرة (job) | `NZAMY · AI · brief-check (L8 مراجعة وتدقيق مذكرة)` | `bu9guzNEhaLbyAPd` | `nzamy-ai/brief-check` |
 | L9 المحاكي الشامل (job) | `NZAMY · AI · wargaming (L9 المحاكي الشامل)` | not created yet | `nzamy-ai/wargaming` |
 | L10 محلل قوة الموقف (job) | `NZAMY · AI · analyze-strength (L10 محلل قوة الموقف)` | not created yet | `nzamy-ai/analyze-strength` |
+| L11 محترف العقود المختصر (job) | `NZAMY · AI · contract-drafter (L11 محترف العقود المختصر)` | not created yet | `nzamy-ai/contract-drafter` |
 
 **Wave 3: document jobs.** The page uploads each file to the user's vault (an `attachments` row), then sends the ids. Before anything is charged, `src/lib/ai/aiFiles.ts`:
 1. keeps only the user's own files, not in the bin;
@@ -108,6 +109,41 @@ Wave 1 has no SQL and no new server variables.
 7. Send us a screenshot of each result and of the «آخر التشغيلات» table.
 
 ---
+
+## Wave 5, L11 محترف العقود المختصر: your steps
+
+**What it is.** A 500-point job at `/ai/contract-drafter` («إنشاء عقد»). The user picks one of the six types (إيجار، خدمات، عمل، شراكة، بيع، أخرى) and fills its form; the AI writes the full draft in numbered sections.
+- The page sends each filled field under its Arabic label. Empty fields are not sent.
+- The prompt forbids inventing a name, ID number, amount, date, address or percentage the user did not give: each becomes a `[....]` blank.
+- Every article the draft relies on is listed by the model and checked against the library by the app, as in L8. The page shows each article with its verdict.
+- Who: lawyers, firms, individuals, companies and micro businesses (the same page serves all of them). Daily limit: 5.
+
+**What else changed on the page:**
+- The template text and its fake 1.8-second wait are gone (`contractTemplates.ts` deleted).
+- «مراجعة عقد» mode no longer has a fake upload that only wrote «سيتم استخراج النص» into the box. It is paste only; a file goes with the team's review order.
+- The «اطلب مراجعة الآن» button pointed to a page that does not exist (`/dashboard/client/consultations/new`). It now opens the catalog's contract-review order, and the price shown is the catalog's («يبدأ من ٨٠٠») instead of a made-up «٩٩ ر.س».
+
+**The workflow** is the wave 4 `caseJob` shape. L11 never sends files, so it always takes the AI Agent branch.
+
+No SQL. No new npm package.
+
+1. **Deploy** (server):
+   ```bash
+   cd /www/wwwroot/nzamy/latest-nzamy-full && git pull && npm install && nohup bash deploy.sh > /root/deploy-wave5.log 2>&1 &
+   ```
+   ```bash
+   tail -f /root/deploy-wave5.log
+   ```
+2. **n8n:** created and live-tested from here once the n8n connection is back (Claude does it). Or import it yourself with the same 5 steps as wave 4 below, picking `n8n/ai/contract-drafter.json`.
+3. **Open it for admins only** at `https://nezamy.sa/dashboard/admin/ai-usage`: set `contract-drafter` to **للمشرفين فقط**, then press **حفظ**.
+4. **Test** at `https://nezamy.sa/ai/contract-drafter` (admin):
+   - Choose «إنشاء عقد», pick «عقد إيجار», fill the landlord, tenant, property, rent and start date. Leave «ملاحظات إضافية» empty.
+   - Tick the agreement box and press the generate button. The button shows its spinner and a line says the AI is writing (about 30–90 seconds).
+   - The draft appears under «مسوّدة عقدك جاهزة ✓»: a title, a preamble and numbered sections. Details you left out appear as `[....]`.
+   - Under the text: the articles the contract relies on, each with the library's verdict, and «خُصمت ٥٠٠ نقطة».
+   - Press «رجوع», change one field and generate again: a second, new draft, charged again.
+   - Try «عقد عمل» too: it should cite نظام العمل.
+5. **Turned off** (the default): the button returns the server's message and charges nothing.
 
 ## Wave 4, L9 المحاكي الشامل and L10 محلل قوة الموقف: your steps
 

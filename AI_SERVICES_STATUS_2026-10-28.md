@@ -75,6 +75,15 @@ Admins can use every tool, and admins are never charged.
 
 **L7 needs one extra step when you deploy it:** run `npm install` before `deploy.sh`, for the new page-counting package `pdf-lib`. The full steps are in `n8n/ai/README.md` («Wave 3, L7»).
 
+### Waves 4 and 5 (added 2026-10-30)
+| Tool | Page | Points | Who | State |
+|---|---|:-:|---|---|
+| **L9 المحاكي الشامل** | `/ai/wargaming` | 250 | lawyers, firms (not consultants) | on `main` `0d5273ea`, n8n workflow not created yet |
+| **L10 محلل قوة الموقف** | `/ai/analyze-strength` | 250 | lawyers, firms | on `main` `0d5273ea`, n8n workflow not created yet |
+| **L11 محترف العقود المختصر**: the six contract types → a full draft in sections, blanks `[....]` for anything not given, every cited article checked in the library | `/ai/contract-drafter` | 500 | lawyers, firms, individuals, companies, micro | branch `feat/ai-wave5`, not merged; n8n workflow not created yet |
+
+The steps for each are in `n8n/ai/README.md` («Wave 4» and «Wave 5»).
+
 ### n8n workflows (all switched on, all refuse requests without the inbound key)
 | Workflow | Id |
 |---|---|

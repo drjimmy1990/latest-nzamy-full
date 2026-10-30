@@ -550,6 +550,51 @@ function analyzeStrengthOutput(raw: unknown): Record<string, unknown> | null {
   };
 }
 
+// ── wave 5: documents the AI writes (plan §5, «Wave 5») ─────────────────────
+
+/** L11: the six types of /ai/contract-drafter (contractTypes.ts ids). */
+export const CONTRACT_TYPES = ["rent", "service", "employment", "partnership", "sale", "other"] as const;
+export type ContractTypeId = (typeof CONTRACT_TYPES)[number];
+export const CONTRACT_DRAFT_PRICE = 500;
+const CONTRACT_FIELDS_MAX = 15;
+
+/**
+ * L11 محترف العقود المختصر: the type and the form's fields, each as its Arabic
+ * label and the value typed, so the model reads what the user read.
+ */
+function contractDraftInput(raw: unknown): InputCheck {
+  if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
+  if (!(CONTRACT_TYPES as readonly unknown[]).includes(raw.type)) return { ok: false, error: "اختر نوع العقد" };
+  if (!Array.isArray(raw.fields)) return { ok: false, error: "أكمل بيانات العقد" };
+  const fields: Array<{ label: string; value: string }> = [];
+  for (const f of raw.fields.slice(0, CONTRACT_FIELDS_MAX)) {
+    if (!isPlainObject(f)) continue;
+    const label = boundedText(f.label, 80);
+    const value = boundedText(f.value, 2000);
+    if (label && value) fields.push({ label, value });
+  }
+  if (fields.length < 2) return { ok: false, error: "أكمل بيانات العقد (طرفان على الأقل وموضوعه)" };
+  return { ok: true, input: { type: raw.type, fields } };
+}
+
+/** The draft: a title, the preamble, numbered sections; `cited` becomes the library's verdict (runCore). */
+function contractDraftOutput(raw: unknown): Record<string, unknown> | null {
+  if (!isPlainObject(raw)) return null;
+  const title = boundedText(raw.title, 200);
+  const sections = listOf(raw.sections, 40, (s) =>
+    isPlainObject(s) && boundedText(s.heading, 200) && boundedText(s.body, 6000)
+      ? { heading: text(s.heading, 200), body: text(s.body, 6000) }
+      : null,
+  );
+  if (!title || sections.length < 2) return null;
+  return {
+    title,
+    preamble: text(raw.preamble, 4000),
+    sections,
+    cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 40) : [],
+  };
+}
+
 export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
   "echo-fast": {
     id: "echo-fast",
@@ -729,6 +774,21 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     files: WAVE4_FILES,
     validateInput: analyzeStrengthInput,
     validateOutput: analyzeStrengthOutput,
+  },
+  "contract-drafter": {
+    id: "contract-drafter",
+    n8nPath: "nzamy-ai/contract-drafter",
+    class: "job",
+    tier: "deep",
+    // The page serves lawyers and individuals alike (plan: individual F «عقد مبسّط ذكي» is the same engine).
+    roles: ["lawyer", "firm", "individual", "corporate", "micro"],
+    consultantBlocked: false,
+    price: () => CONTRACT_DRAFT_PRICE,
+    dailyLimit: 5,
+    defaultMode: "off",
+    jobDeadlineSeconds: 15 * 60,
+    validateInput: contractDraftInput,
+    validateOutput: contractDraftOutput,
   },
 };
 
