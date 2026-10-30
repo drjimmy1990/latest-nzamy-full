@@ -40,8 +40,8 @@ const COLLECT_ERROR_AR: Record<string, string> = {
   "Invoice is not collectable": "هذه الفاتورة لم تعد قابلة للتحصيل — قد تكون حُصّلت بالفعل. حدّث الصفحة.",
   "paymentId required": "تعذّر تحديد الفاتورة المطلوبة.",
   "method must be cash or bank_transfer": "طريقة التحصيل غير صالحة.",
-  "paidAmount must be greater than 0 and at most the invoice total":
-    "المبلغ المحصّل يجب أن يكون أكبر من صفر وألا يتجاوز إجمالي الفاتورة.",
+  "amountHalalas must be a whole number of halalas greater than 0":
+    "أدخل مبلغاً صحيحاً أكبر من صفر، بخانتين عشريتين على الأكثر.",
 };
 
 /**
@@ -69,6 +69,12 @@ const WALLET_KIND_CFG: Record<string, { label: string; sign: string; color: stri
   reversal: { label: "عكس قيد",   sign: "−", color: "text-orange-500",  bg: "bg-orange-500/10"  },
   pending:  { label: "معلّق",      sign: "",  color: "text-amber-500",   bg: "bg-amber-500/10"   },
 };
+
+/** مفتاح عدم التكرار لنموذج تحصيل واحد (يُولَّد عند فتحه). */
+const newCollectKey = () =>
+  typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 
 /** المتبقي على الفاتورة، بلا سالب — لا يُفترض وجوده لكن صفاً قديماً قد يحمله. */
 const remainderOf = (inv: any) =>
@@ -201,6 +207,16 @@ export default function FinancePage() {
   const [collectAmount, setCollectAmount] = useState("");
   const [collectError, setCollectError] = useState<string | null>(null);
   const [isCollecting, setIsCollecting] = useState(false);
+  // مفتاح يُولَّد مرة واحدة عند فتح النموذج: إعادة إرسال النموذج نفسه (نقرة
+  // مزدوجة، انقطاع شبكة) تُسجَّل دفعةً واحدة لا دفعتين.
+  const [collectKey, setCollectKey] = useState("");
+
+  // النموذج المفتوح يقرأ الفاتورة من القائمة الحالية لا من نسخة وقت فتحه: بعد
+  // رفضٍ تُعاد فيه قراءة الخادم يعرض المحصّل والمتبقي الجديدين — وإلا بقي يعرض
+  // القديم ويُرفض مرة أخرى.
+  const liveCollectTarget = collectTarget
+    ? invoices.find((x) => x.id === collectTarget.id) ?? collectTarget
+    : null;
 
   const cardCls = isDark
     ? "rounded-[2rem] border border-white/[0.06] bg-zinc-900/60 backdrop-blur-md shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
@@ -346,16 +362,19 @@ export default function FinancePage() {
     setCollectMethod("cash");
     setCollectAmount("");
     setCollectError(null);
+    setCollectKey(newCollectKey());
   };
 
   // ── تسجيل تحصيل فاتورة (نقداً / تحويل بنكي) ──
-  // الخادم يتوقع `paidAmount` كإجمالي محصّل تراكمي، بينما يُدخل المحامي هنا
-  // المبلغ المستلم الآن — فنجمعه على ما سبق تحصيله قبل الإرسال.
+  // يُرسَل مبلغ هذه الدفعة وحدها بالهللات، مع المحصّل الذي عرضه النموذج عند
+  // فتحه. الخادم يقفل الفاتورة ويرفض النموذج إن سُجّلت بعده دفعة أخرى، ويرفض ما
+  // يتجاوز المتبقي، ثم يضيف الدفعة (CODE-F02 / LIVE-F36). كان المتصفح يرسل
+  // إجمالياً تراكمياً يحسبه من نموذج قد يكون قديماً، فيمحو دفعة سابقة.
   const handleCollect = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!collectTarget || isCollecting) return;
+    if (!liveCollectTarget || isCollecting) return;
 
-    const inv = collectTarget;
+    const inv = liveCollectTarget;
     const alreadyCollected = Number(inv.paidAmount) || 0;
     const totalFee = Number(inv.totalFee) || 0;
     const remaining = totalFee - alreadyCollected;
@@ -388,7 +407,9 @@ export default function FinancePage() {
         const res = await apiMutate<{ data: any }>("/api/v1/lawyer/finance", "PATCH", {
           paymentId: inv.id,
           method: collectMethod,
-          paidAmount: cumulative,
+          amountHalalas: Math.round(collectedNow * 100),
+          expectedPaidHalalas: Math.round(alreadyCollected * 100),
+          idempotencyKey: collectKey,
         });
         const d = res?.data;
         // نستبدل الصف بما أعاده الخادم حتى تبقى المجاميع مطابقة لقاعدة البيانات
@@ -400,8 +421,15 @@ export default function FinancePage() {
       } catch (err: any) {
         console.error("[finance] collect invoice failed:", err);
         const raw = err?.message || "";
-        setCollectError(COLLECT_ERROR_AR[raw] || "تعذّر تسجيل التحصيل. حاول مرة أخرى.");
+        // رسائل الرفض المالية (دفعة سُجّلت بعد فتح النموذج، مبلغ يتجاوز
+        // المتبقي) يكتبها الخادم بالعربية ومعها المتبقي الفعلي — تُعرض كما هي.
+        setCollectError(
+          COLLECT_ERROR_AR[raw] ||
+            (/[؀-ۿ]/.test(raw) ? raw : "تعذّر تسجيل التحصيل. حاول مرة أخرى."),
+        );
         setIsCollecting(false);
+        // ما على الشاشة قد يكون قديماً — تُعاد قراءته من الخادم.
+        loadFinance();
       }
     } else {
       // وضع العرض التجريبي: التحديث محلي فقط بنفس منطق الخادم
@@ -1285,9 +1313,9 @@ export default function FinancePage() {
 
       {/* ── نافذة تأكيد تحصيل الفاتورة (نقداً / تحويل بنكي) ── */}
       <AnimatePresence>
-        {collectTarget && (() => {
-          const alreadyCollected = Number(collectTarget.paidAmount) || 0;
-          const totalFee = Number(collectTarget.totalFee) || 0;
+        {liveCollectTarget && (() => {
+          const alreadyCollected = Number(liveCollectTarget.paidAmount) || 0;
+          const totalFee = Number(liveCollectTarget.totalFee) || 0;
           const remaining = totalFee - alreadyCollected;
           const closeCollect = () => { if (!isCollecting) setCollectTarget(null); };
 
@@ -1335,8 +1363,8 @@ export default function FinancePage() {
                   {/* ملخص الفاتورة المستهدفة */}
                   <div className={`rounded-2xl border p-4 space-y-2 ${isDark ? "border-white/[0.06] bg-zinc-900/50" : "border-slate-200 bg-slate-50"}`}>
                     <div className="flex items-center justify-between gap-3">
-                      <span className={`text-[12px] font-black truncate ${isDark ? "text-zinc-200" : "text-slate-800"}`}>{collectTarget.client}</span>
-                      <span className={`text-[9px] font-mono ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{collectTarget.id}</span>
+                      <span className={`text-[12px] font-black truncate ${isDark ? "text-zinc-200" : "text-slate-800"}`}>{liveCollectTarget.client}</span>
+                      <span className={`text-[9px] font-mono ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{liveCollectTarget.id}</span>
                     </div>
                     <div className={`flex items-center justify-between text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
                       <span>إجمالي الفاتورة</span>
@@ -1390,7 +1418,7 @@ export default function FinancePage() {
                     <input
                       type="number"
                       min="0"
-                      step="any"
+                      step="0.01"
                       value={collectAmount}
                       onChange={(e) => setCollectAmount(e.target.value)}
                       disabled={isCollecting}
