@@ -64,5 +64,8 @@ test("diffSourceText drops the embedded history block and markdown marks", () =>
   const stored = "**المادة الخامسة:** للعامل الحق\n<details>\n<summary>النص قبل التعديل</summary>\n> النص القديم\n</details>\nفي `إجازة`";
   assert.equal(diffSourceText(stored), "المادة الخامسة: للعامل الحق\nفي إجازة");
   assert.equal(diffSourceText(null), "");
+  // The status label and heading / quote prefixes are not words of the law.
+  assert.equal(diffSourceText("## المادة (5): `[معدّلة]`\n> للعامل الحق (معدلة)"), "المادة (5):\nللعامل الحق");
+  assert.equal(diffWords(diffSourceText("للعامل الحق"), diffSourceText("للعامل الحق [مُعدَّلة]"))!.added, 0);
   assert.equal(diffSourceText("أ\r\n\r\n\r\nب"), "أ\nب");
 });

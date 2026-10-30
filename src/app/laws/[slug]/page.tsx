@@ -56,6 +56,22 @@ import { HighlightProvider, SearchLegendBar, useHighlight } from "@/components/s
 function ReaderArrivalScroll({ query, deps }: { query: string; deps: readonly unknown[] }) {
   const hl = useHighlight();
   const done = useRef(false);
+  // The sticky colour bar sits under the navbar: anchors (READER_SCROLL_MARGIN_TOP)
+  // land below it by its live height, 0 when it is not shown.
+  useEffect(() => {
+    const root = hl?.rootRef.current;
+    if (!root) return;
+    const html = document.documentElement;
+    const bar = root.querySelector<HTMLElement>('[role="toolbar"]');
+    const set = () => html.style.setProperty("--reader-legend-h", `${bar?.offsetHeight ?? 0}px`);
+    set();
+    const obs = bar ? new ResizeObserver(set) : null;
+    if (bar) obs?.observe(bar);
+    return () => {
+      obs?.disconnect();
+      html.style.removeProperty("--reader-legend-h");
+    };
+  }, [hl]);
   useEffect(() => {
     if (done.current) return;
     let hash = window.location.hash.slice(1);

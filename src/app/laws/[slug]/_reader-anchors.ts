@@ -21,8 +21,12 @@
  *    needed.
  */
 
-/** Clears the fixed navbar (≈5rem) with room to spare; same value as the precedents reader. */
-export const READER_SCROLL_MARGIN_TOP = "calc(8rem + env(safe-area-inset-top, 0px))";
+/**
+ * Clears the fixed navbar (≈5rem) with room to spare; same value as the precedents reader.
+ * Plus the sticky search-colour bar while it shows (owner note ٠٦): the law
+ * reader sets --reader-legend-h to its height, 0 otherwise.
+ */
+export const READER_SCROLL_MARGIN_TOP = "calc(8rem + var(--reader-legend-h, 0px) + env(safe-area-inset-top, 0px))";
 
 /** Scroll a reader anchor to just below the top bar. False when the element is not on the page. */
 export function scrollToReaderAnchor(id: string | null | undefined): boolean {

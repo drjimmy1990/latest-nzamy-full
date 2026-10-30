@@ -63,6 +63,13 @@ test("arrival scroll: the #hash target first, else the first mark", () => {
   assert.match(page, /<ReaderArrivalScroll query=\{arrivalQuery\}/);
 });
 
+test("anchors land below the sticky colour bar (its live height is in the scroll margin)", () => {
+  const anchors = read("./_reader-anchors.ts");
+  assert.match(anchors, /READER_SCROLL_MARGIN_TOP = "calc\(8rem \+ var\(--reader-legend-h, 0px\)/);
+  assert.match(page, /html\.style\.setProperty\("--reader-legend-h", `\$\{bar\?\.offsetHeight \?\? 0\}px`\)/);
+  assert.match(page, /html\.style\.removeProperty\("--reader-legend-h"\)/);
+});
+
 test("MD colours every markdown line through highlightSafeHtml, never raw", () => {
   const start = reader.indexOf("export function MD(");
   const body = reader.slice(start, reader.indexOf("import { type CartEntry }", start));

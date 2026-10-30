@@ -43,13 +43,17 @@ export interface WordDiff {
 export const MAX_DIFF_CELLS = 2_500_000;
 
 const HARAKAT_TATWEEL = /[ً-ْٰـ]/g;
+/** The parser's «[معدّلة]» / «(معدلة)» status token (any harakat) — a label, not a word of the law. */
+const AMENDED_MARKER = /[[(]\s*م[ً-ْٰ]*ع[ً-ْٰ]*د[ً-ْٰ]*ل[ً-ْٰ]*ة[ً-ْٰ]*\s*[\])]/gu;
 
-/** The article text as words to compare: no <details> history, no markdown marks. */
+/** The article text as words to compare: no <details> history, no markdown marks or status labels. */
 export function diffSourceText(text: string | null | undefined): string {
   return String(text ?? "")
     .replace(/<details[\s\S]*?<\/details>/gi, " ")
     .replace(/<\/?(?:details|summary)[^>]*>/gi, " ")
     .replace(/\*\*|__|`/g, "")
+    .replace(AMENDED_MARKER, " ")
+    .replace(/^[ \t]*(?:#{1,6}[ \t]+|>[ \t]?)/gm, "")
     .replace(/\r\n?/g, "\n")
     .replace(/[ \t\f\v]+/g, " ")
     .replace(/ *\n */g, "\n")
