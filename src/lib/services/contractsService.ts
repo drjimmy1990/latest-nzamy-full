@@ -27,6 +27,9 @@ import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
 import { listOk, listFailed, listFromApi, type ListRead } from "@/lib/services/listRead";
 import { contractVersionStorageKey } from "@/lib/services/storageKey";
+import {
+  validateContractVersionFile, uploadThenRegister, CONTRACT_VERSION_HEAD_BYTES,
+} from "@/lib/services/contractVersionFile";
 import type {
   ContractStatus, ContractType, VersionLabel, PartyRole, PartyKind, EntityType,
   ObligationKind, ObligationStatus, PaymentStage, PaymentStatus,
@@ -242,7 +245,12 @@ export async function addContractVersion(id: string, input: VersionInput): Promi
  * Upload the bytes from the browser to the `documents` bucket under the
  * uploader's own folder, then register the version through the API. If the
  * registration fails the object is removed again (best effort) so no orphan
- * file sits in the bucket unreferenced.
+ * file sits in the bucket unreferenced (uploadThenRegister).
+ *
+ * LIVE-F40 / CODE-F39: the file is checked by CONTENT and size
+ * (contractVersionFile.ts) before a byte is sent, and the registration route
+ * runs the same check on what Storage holds — a TXT renamed .pdf is refused
+ * here, and one sent around this function is refused and deleted there.
  */
 export async function uploadContractVersionFile(
   contractId: string,
@@ -254,27 +262,32 @@ export async function uploadContractVersionFile(
   const { data: auth, error: authError } = await supabase.auth.getUser();
   if (authError || !auth?.user) throw new Error("انتهت الجلسة — سجّل الدخول ثم أعد المحاولة.");
 
-  const storagePath = contractVersionStorageKey(auth.user.id, contractId, file.name, Date.now());
-  const { error: uploadError } = await supabase.storage.from("documents").upload(storagePath, file, {
-    contentType: file.type || "application/octet-stream",
-    upsert: false,
-  });
-  if (uploadError) throw new Error(`تعذّر رفع الملف: ${uploadError.message}`);
+  const head = new Uint8Array(await file.slice(0, CONTRACT_VERSION_HEAD_BYTES).arrayBuffer());
+  const check = validateContractVersionFile({ name: file.name, size: file.size, head });
+  if (!check.ok) throw new Error(check.error);
 
-  try {
-    return await addContractVersion(contractId, {
-      fileName: file.name,
-      storagePath,
-      mimeType: file.type || null,
-      sizeBytes: file.size,
-      label: opts.label,
-      notes: opts.notes,
-      makeCurrent: opts.makeCurrent,
-    });
-  } catch (err) {
-    await supabase.storage.from("documents").remove([storagePath]).catch(() => undefined);
-    throw err;
-  }
+  const storagePath = contractVersionStorageKey(auth.user.id, contractId, file.name, Date.now());
+  return uploadThenRegister({
+    upload: async () => {
+      const { error: uploadError } = await supabase.storage.from("documents").upload(storagePath, file, {
+        // From the checked content, never the browser's guess.
+        contentType: check.contentType,
+        upsert: false,
+      });
+      if (uploadError) throw new Error(`تعذّر رفع الملف: ${uploadError.message}`);
+    },
+    register: () =>
+      addContractVersion(contractId, {
+        fileName: file.name,
+        storagePath,
+        mimeType: check.contentType,
+        sizeBytes: file.size,
+        label: opts.label,
+        notes: opts.notes,
+        makeCurrent: opts.makeCurrent,
+      }),
+    remove: () => supabase.storage.from("documents").remove([storagePath]),
+  });
 }
 
 /** A 5-minute signed link, minted server-side after the RLS check; null when the runtime cannot sign. */
