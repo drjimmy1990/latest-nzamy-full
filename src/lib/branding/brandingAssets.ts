@@ -162,7 +162,6 @@ export function isOwnAssetPath(path: string | null | undefined, scope: BrandingS
 export function safeAssetFileName(name: string | null | undefined, ext: BrandingAssetExt): string {
   const base = String(name ?? "")
     .split(/[\\/]/).pop()!
-    // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001f\u007f‎‏‪-‮⁦-⁩"<>|:*?]/g, "")
     .replace(/\s+/g, " ")
     .trim()
