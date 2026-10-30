@@ -26,6 +26,8 @@ import {
 } from "@/lib/library/precedentVolumes";
 import { ClampedSummary } from "./ClampedSummary";
 import { resultHref } from "../searchHitGroups";
+import { SaveToFolderButton } from "./SaveToFolderButton";
+import { collectionSaveDoc, type SaveToFolderDoc } from "../saveToFolder";
 
 const VISIBLE_VOLUMES = 4;
 
@@ -51,6 +53,7 @@ export function CollectionSeriesCard({
   setShowPaywall,
   index,
   q = "",
+  onSaveToFolder,
 }: {
   series: CollectionSeriesGroup<CatalogueCollectionRow>;
   isDark: boolean;
@@ -61,6 +64,8 @@ export function CollectionSeriesCard({
   index: number;
   /** The search, carried to the reader as ?q= (owner note ٠٦). */
   q?: string;
+  /** Owner note ٠٤: «حفظ في مجلد» (saves the series' first volume). */
+  onSaveToFolder?: (doc: SaveToFolderDoc) => void;
 }) {
   const [showAll, setShowAll] = useState(false);
   const first = series.volumes[0].row;
@@ -104,6 +109,7 @@ export function CollectionSeriesCard({
           <Books size={12} weight="fill" aria-hidden="true" />
           {volumesCountLabel(series.count)}
         </span>
+        <SaveToFolderButton doc={collectionSaveDoc({ id: first.id, title: series.title })} onSave={onSaveToFolder} isDark={isDark} />
       </div>
 
       <h3 className={`text-base font-black mb-1 leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>{series.title}</h3>

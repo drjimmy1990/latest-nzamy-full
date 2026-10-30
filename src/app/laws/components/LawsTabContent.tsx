@@ -30,6 +30,8 @@ import { withSearchQuery } from "@/lib/search/multiColorSearch";
 import { Hl } from "@/components/search/MultiColorHighlight";
 import { deepHitHref, resultHref, groupFeqhSearchCards, groupPrincipleSearchCards, type FeqhHitLike, type PrincipleHitLike } from "../searchHitGroups";
 import { SearchHitGroupCard } from "./SearchHitGroupCard";
+import { SaveToFolderButton } from "./SaveToFolderButton";
+import { bookSaveDoc, collectionSaveDoc, lawSaveDoc, orderSaveDoc, type SaveToFolderDoc } from "../saveToFolder";
 import {
   PrincipleCard,
   PrincipleRow,
@@ -207,6 +209,8 @@ interface LawsTabContentProps {
   resultsPending?: boolean;
   // فشل طلب البحث: رسالة الخطأ تُعرض فوق؛ لا «لا توجد نتائج» تحتها
   searchFailed?: boolean;
+  // ملاحظة المالك ٠٤: زر «حفظ في مجلد» على كل بطاقة نتيجة (يفتح نافذة المجلدات)
+  onSaveToFolder?: (doc: SaveToFolderDoc) => void;
 }
 
 export function LawsTabContent({
@@ -240,6 +244,7 @@ export function LawsTabContent({
   officialMetaLocked = false,
   resultsPending = false,
   searchFailed = false,
+  onSaveToFolder,
 }: LawsTabContentProps) {
   const router = useRouter();
   // Owner note ٠٦ (المسار الثاني): every result link carries the search as
@@ -260,6 +265,8 @@ export function LawsTabContent({
     : filteredCollections;
   const feqhAreHits = filteredFeqhBooks.some((b) => b?._isSearchResult === true);
   const feqhGroups = feqhAreHits ? groupFeqhSearchCards(filteredFeqhBooks as FeqhHitLike[], searchQ) : [];
+  // A card's «حفظ في مجلد» handler, or undefined (no button) without a doc.
+  const saveHandler = (doc: SaveToFolderDoc | null) => (doc && onSaveToFolder ? () => onSaveToFolder(doc) : undefined);
 
   if (resultsPending) {
     return (
@@ -327,6 +334,8 @@ export function LawsTabContent({
                 const keywords: string[] = Array.isArray(sys.keywords)
                   ? sys.keywords.filter((k: unknown): k is string => typeof k === "string" && k.trim().length > 0)
                   : [];
+                // Owner note ٠٤: «حفظ في مجلد» (a <button>: the card's click handler skips it).
+                const saveButton = <SaveToFolderButton doc={lawSaveDoc(sys)} onSave={onSaveToFolder} isDark={isDark} />;
                 const openLaw = () =>
                   router.push(withSearchQuery(`/laws/${sys.slug}${getDocAnchorPrefix(docSubType) ? `?fromType=${encodeURIComponent(docSubType)}` : ""}`, searchQ));
                 const freePreviewHint = (
@@ -467,12 +476,15 @@ export function LawsTabContent({
                       {/* Owner note ١٢-٤: no fixed «مُحدّث» badge — every card said it. */}
                       <div className="flex items-center justify-between w-full mb-3 text-xs gap-2">
                         {isRepealedLaw ? repealedBadge : <span />}
+                        <div className="flex items-center gap-1.5">
                         {isUnlocked ? (
                           <span className="px-2 py-0.5 text-[9px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
                             <Sparkle size={9} weight="fill" />
                             {librarySubscribed && !sys.free ? (isRTL ? "مكتبة" : "SUBSCRIBED") : (isRTL ? "متاح" : "FREE")}
                           </span>
                         ) : freePreviewHint}
+                        {saveButton}
+                        </div>
                       </div>
 
                       <h3 className={`text-base font-black mb-2 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${titleClass}`}>
@@ -586,6 +598,7 @@ export function LawsTabContent({
                           ) : freePreviewHint}
                           {isRepealedLaw && repealedBadge}
                           {mergedBadge}
+                          {saveButton}
                         </div>
 
                         <h3 className={`text-sm font-black mb-1.5 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${titleClass}`}>
@@ -732,6 +745,7 @@ export function LawsTabContent({
                   </div>
                 )}
 
+                <SaveToFolderButton doc={collectionSaveDoc(col)} onSave={onSaveToFolder} isDark={isDark} className="absolute bottom-4 left-4 z-20" />
                 <Link
                   href={isColFree ? resultHref(`/precedents/${col.slug}`, searchQ) : "#"}
                   onClick={(e) => {
@@ -926,6 +940,7 @@ export function LawsTabContent({
                   muted={muted}
                   layoutMode={layoutMode}
                   index={idx}
+                  onSaveToFolder={saveHandler(collectionSaveDoc({ id: g.collectionId, title: g.title }))}
                 />
               ))}
             </div>
@@ -1039,6 +1054,7 @@ export function LawsTabContent({
                 muted={muted}
                 layoutMode={layoutMode}
                 index={idx}
+                onSaveToFolder={saveHandler(bookSaveDoc({ slug: g.bookSlug, title: g.title }))}
               />
             )) : filteredFeqhBooks.slice(0, 3).map((book, idx) => (
               <motion.div
@@ -1068,6 +1084,7 @@ export function LawsTabContent({
                   </div>
                 )}
 
+                <SaveToFolderButton doc={bookSaveDoc(book)} onSave={onSaveToFolder} isDark={isDark} className="absolute bottom-4 left-4 z-20" />
                 <Link
                   href={book.free ? resultHref(`/book/${book.slug}`, searchQ) : "#"}
                   onClick={(e) => {
@@ -1242,6 +1259,7 @@ export function LawsTabContent({
                     idx={idx}
                     isRTL={isRTL}
                     onClick={() => router.push(resultHref(`/laws/orders/${o.id}`, q))}
+                    onSaveToFolder={onSaveToFolder}
                     onHashtagClick={(tag) => setSelectedHashtag(tag)}
                   />
                 ) : (
@@ -1252,6 +1270,7 @@ export function LawsTabContent({
                     idx={idx}
                     isRTL={isRTL}
                     onClick={() => router.push(resultHref(`/laws/orders/${o.id}`, q))}
+                    onSaveToFolder={onSaveToFolder}
                     onHashtagClick={(tag) => setSelectedHashtag(tag)}
                   />
                 )

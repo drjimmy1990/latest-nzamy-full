@@ -25,6 +25,8 @@ import { CollectionSeriesCard, type CatalogueCollectionRow } from "./CollectionS
 import { groupCollectionVolumes } from "@/lib/library/precedentVolumes";
 import { groupPrincipleSearchCards, resultHref, type PrincipleHitLike } from "../searchHitGroups";
 import { SearchHitGroupCard } from "./SearchHitGroupCard";
+import { SaveToFolderButton } from "./SaveToFolderButton";
+import { collectionSaveDoc, type SaveToFolderDoc } from "../saveToFolder";
 
 /** Principles (or grouped principle cards) per page of the tab. */
 export const PRINCIPLES_PER_PAGE = 12;
@@ -67,6 +69,8 @@ interface PrecedentsTabContentProps {
   resultsPending?: boolean;
   /** The search failed (its error is shown above): no empty state. */
   searchFailed?: boolean;
+  /** Owner note ٠٤: «حفظ في مجلد» on each collection card. */
+  onSaveToFolder?: (doc: SaveToFolderDoc) => void;
 }
 
 export function PrecedentsTabContent({
@@ -96,6 +100,7 @@ export function PrecedentsTabContent({
   viewerHasFullAccess,
   resultsPending = false,
   searchFailed = false,
+  onSaveToFolder,
 }: PrecedentsTabContentProps) {
   const router = useRouter();
 
@@ -419,6 +424,7 @@ export function PrecedentsTabContent({
                     setShowPaywall={setShowPaywall}
                     index={idx}
                     q={q}
+                    onSaveToFolder={onSaveToFolder}
                   />
                 );
               }
@@ -450,6 +456,7 @@ export function PrecedentsTabContent({
                     </div>
                   )}
 
+                  <SaveToFolderButton doc={collectionSaveDoc(col)} onSave={onSaveToFolder} isDark={isDark} className="absolute bottom-4 left-4 z-20" />
                   <Link
                     href={isColFree ? resultHref(`/precedents/${col.slug}`, q) : "#"}
                     onClick={(e) => {
@@ -643,6 +650,10 @@ export function PrecedentsTabContent({
                   muted={muted}
                   layoutMode={layoutMode}
                   index={idx}
+                  onSaveToFolder={(() => {
+                    const doc = collectionSaveDoc({ id: g.collectionId, title: g.title });
+                    return doc && onSaveToFolder ? () => onSaveToFolder(doc) : undefined;
+                  })()}
                 />
               ))}
             </div>

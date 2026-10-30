@@ -8,6 +8,7 @@ import { type DemoOrder } from "../demo-data-access";
 import { OrderCard, OrderRow, EmptyState } from "./ListItems";
 import { ResultsSkeleton } from "./ResultsSkeleton";
 import { resultHref } from "../searchHitGroups";
+import type { SaveToFolderDoc } from "../saveToFolder";
 
 interface OrdersTabContentProps {
   isDark: boolean;
@@ -26,6 +27,8 @@ interface OrdersTabContentProps {
   resultsPending?: boolean;
   /** The search failed (its error is shown above): no empty state. */
   searchFailed?: boolean;
+  /** Owner note ٠٤: «حفظ في مجلد» on each card. */
+  onSaveToFolder?: (doc: SaveToFolderDoc) => void;
 }
 
 export function OrdersTabContent({
@@ -43,6 +46,7 @@ export function OrdersTabContent({
   setSelectedHashtag,
   resultsPending = false,
   searchFailed = false,
+  onSaveToFolder,
 }: OrdersTabContentProps) {
   const router = useRouter();
   const [page, setPage] = useState(1);
@@ -113,6 +117,7 @@ export function OrdersTabContent({
                   idx={idx}
                   isRTL={isRTL}
                   onClick={() => router.push(resultHref(`/laws/orders/${o.id}`, q))}
+                    onSaveToFolder={onSaveToFolder}
                   onHashtagClick={(tag) => setSelectedHashtag(tag)}
                 />
               ) : (
@@ -123,6 +128,7 @@ export function OrdersTabContent({
                   idx={idx}
                   isRTL={isRTL}
                   onClick={() => router.push(resultHref(`/laws/orders/${o.id}`, q))}
+                    onSaveToFolder={onSaveToFolder}
                   onHashtagClick={(tag) => setSelectedHashtag(tag)}
                 />
               )

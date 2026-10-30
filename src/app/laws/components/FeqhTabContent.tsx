@@ -11,6 +11,8 @@ import { EmptyState } from "./ListItems";
 import { ResultsSkeleton } from "./ResultsSkeleton";
 import { SearchHitGroupCard } from "./SearchHitGroupCard";
 import { groupFeqhSearchCards, resultHref, type FeqhHitLike } from "../searchHitGroups";
+import { SaveToFolderButton } from "./SaveToFolderButton";
+import { bookSaveDoc, type SaveToFolderDoc } from "../saveToFolder";
 
 /** A card field worth a line: not empty, and not the «—» placeholder. */
 function hasText(value: unknown): value is string {
@@ -43,6 +45,8 @@ interface FeqhTabContentProps {
   resultsPending?: boolean;
   /** The search failed (its error is shown above): no empty state. */
   searchFailed?: boolean;
+  /** Owner note ٠٤: «حفظ في مجلد» on each book card. */
+  onSaveToFolder?: (doc: SaveToFolderDoc) => void;
 }
 
 export function FeqhTabContent({
@@ -62,6 +66,7 @@ export function FeqhTabContent({
   viewerHasFullAccess,
   resultsPending = false,
   searchFailed = false,
+  onSaveToFolder,
 }: FeqhTabContentProps) {
   const [page, setPage] = useState(1);
   const itemsPerPage = 6;
@@ -217,6 +222,10 @@ export function FeqhTabContent({
               muted={muted}
               layoutMode={layoutMode}
               index={idx}
+              onSaveToFolder={(() => {
+                const doc = bookSaveDoc({ slug: g.bookSlug, title: g.title });
+                return doc && onSaveToFolder ? () => onSaveToFolder(doc) : undefined;
+              })()}
             />
           ))}
         </div>
@@ -253,6 +262,7 @@ export function FeqhTabContent({
                   </div>
                 )}
 
+                <SaveToFolderButton doc={bookSaveDoc({ slug: book.slug, title: cardTitle || book.title })} onSave={onSaveToFolder} isDark={isDark} className="absolute bottom-4 left-4 z-20" />
                 <Link
                   href={isBookFree ? resultHref(`/book/${book.slug}`, q) : "#"}
                   onClick={(e) => {

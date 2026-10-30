@@ -14,6 +14,8 @@ import { principleYear } from "../principleCardFields";
 import { principleHref } from "../principleLink";
 import { resultHref } from "../searchHitGroups";
 import { ClampedSummary } from "./ClampedSummary";
+import { SaveToFolderButton } from "./SaveToFolderButton";
+import { orderSaveDoc, type SaveToFolderDoc } from "../saveToFolder";
 
 /**
  * A catalogue principle row. `collectionId` is set by /laws for database rows
@@ -506,7 +508,7 @@ export function PrecedentRow({ pr, isDark, idx, isRTL = true, onClick, onHashtag
   );
 }
 
-export function OrderRow({ o, isDark, idx, isRTL = true, onClick, onHashtagClick }: { o: DemoOrder; isDark: boolean; idx: number; isRTL?: boolean; onClick?: () => void; onHashtagClick?: (tag: string) => void }) {
+export function OrderRow({ o, isDark, idx, isRTL = true, onClick, onHashtagClick, onSaveToFolder }: { o: DemoOrder; isDark: boolean; idx: number; isRTL?: boolean; onClick?: () => void; onHashtagClick?: (tag: string) => void; onSaveToFolder?: (doc: SaveToFolderDoc) => void }) {
   const style = orderTypeStyle(o.type);
   const typeLabel = isRTL ? style.label : orderTypeLabelEn(o.type);
   const issuerLabel = ISSUER_MAP[o.issuer]?.[isRTL ? "ar" : "en"] || o.issuer;
@@ -527,6 +529,7 @@ export function OrderRow({ o, isDark, idx, isRTL = true, onClick, onHashtagClick
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${style.class}`}>{typeLabel}</span>
             <span className={`text-[11px] font-bold ${isDark ? "text-zinc-200" : "text-gray-800"}`}>{o.ref}</span>
             <span className={`text-[10px] ${isDark ? "text-gray-600" : "text-slate-400"}`}>{o.date}</span>
+            <SaveToFolderButton doc={orderSaveDoc(o)} onSave={onSaveToFolder} isDark={isDark} className="ms-auto" />
           </div>
           <p className={`text-[13px] font-bold mb-1.5 ${isDark ? "text-white" : "text-gray-900"}`}>{o.title}</p>
           <ClampedSummary text={o.summary_brief || ""} isDark={isDark} isRTL={isRTL} className="mb-3" textClassName="text-[12.5px]" />
@@ -700,7 +703,7 @@ export function PrecedentCard({ pr, isDark, idx, isRTL = true, onClick, onHashta
 }
 
 // ─── OrderCard ───────────────────────────────────────────────────────────────────
-export function OrderCard({ o, isDark, idx, isRTL = true, onClick, onHashtagClick }: { o: DemoOrder; isDark: boolean; idx: number; isRTL?: boolean; onClick?: () => void; onHashtagClick?: (tag: string) => void }) {
+export function OrderCard({ o, isDark, idx, isRTL = true, onClick, onHashtagClick, onSaveToFolder }: { o: DemoOrder; isDark: boolean; idx: number; isRTL?: boolean; onClick?: () => void; onHashtagClick?: (tag: string) => void; onSaveToFolder?: (doc: SaveToFolderDoc) => void }) {
   const style = orderTypeStyle(o.type);
   const typeLabel = isRTL ? style.label : orderTypeLabelEn(o.type);
   const issuerLabel = ISSUER_MAP[o.issuer]?.[isRTL ? "ar" : "en"] || o.issuer;
@@ -715,7 +718,10 @@ export function OrderCard({ o, isDark, idx, isRTL = true, onClick, onHashtagClic
       <div>
         <div className="flex items-center justify-between gap-2 mb-3">
           <span className={`text-[9px] font-bold px-2 py-0.5 rounded-lg ${style.class}`}>{typeLabel}</span>
-          <span className={`text-[10px] ${isDark ? "text-gray-600" : "text-slate-400"}`}>{o.date}</span>
+          <span className="flex items-center gap-1.5">
+            <span className={`text-[10px] ${isDark ? "text-gray-600" : "text-slate-400"}`}>{o.date}</span>
+            <SaveToFolderButton doc={orderSaveDoc(o)} onSave={onSaveToFolder} isDark={isDark} />
+          </span>
         </div>
         
         <h4 className={`text-[13px] font-bold mb-1.5 line-clamp-2 ${isDark ? "text-white" : "text-gray-900"}`}>{o.title}</h4>

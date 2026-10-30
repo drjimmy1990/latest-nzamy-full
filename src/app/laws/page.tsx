@@ -4,6 +4,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { instantBoxItems, type InstantItem } from "./instantBox";
+import type { SaveToFolderDoc } from "./saveToFolder";
+import FolderSelectionModal from "@/components/laws/FolderSelectionModal";
 import { normalizeArabic, normalizeSearch } from "@/utils/normalizeArabic";
 import { stripMarkdownMarks } from "@/lib/text/stripMarkdownMarks";
 import { withoutLeadingHeadings } from "./components/summaryClamp";
@@ -131,6 +133,8 @@ type ArticleStatusFilter = (typeof ARTICLE_STATUS_FILTER_OPTIONS)[number]["value
 export default function LegalLibraryPage() {
   const { isRTL, isDark } = useTheme();
   const router = useRouter();
+  // Owner note ٠٤: the result card whose «حفظ في مجلد» opened the folder modal.
+  const [saveDoc, setSaveDoc] = useState<SaveToFolderDoc | null>(null);
   const { isLoggedIn }    = useUser();
 
   // --- Database-backed state variables ---
@@ -2058,6 +2062,7 @@ export default function LegalLibraryPage() {
                           viewerHasFullAccess={viewerHasFullAccess}
                           resultsPending={searchPending}
                           searchFailed={searchFailed}
+                          onSaveToFolder={setSaveDoc}
                         />
                         {/* Load More for Principles */}
                         {!isSearchActive && pagination.principles?.hasMore && (
@@ -2103,6 +2108,7 @@ export default function LegalLibraryPage() {
                           setSelectedHashtag={setSelectedHashtag}
                           resultsPending={searchPending}
                           searchFailed={searchFailed}
+                          onSaveToFolder={setSaveDoc}
                         />
                         {/* Load More for Orders/Decrees */}
                         {!isSearchActive && pagination.decrees?.hasMore && (
@@ -2183,6 +2189,7 @@ export default function LegalLibraryPage() {
                           viewerHasFullAccess={viewerHasFullAccess}
                           resultsPending={searchPending}
                           searchFailed={searchFailed}
+                          onSaveToFolder={setSaveDoc}
                         />
                         {/* Load More for Laws */}
                         {!isSearchActive && !lawsLoading && pagination.laws?.hasMore && activeType === "laws" && (
@@ -2230,6 +2237,7 @@ export default function LegalLibraryPage() {
                           viewerHasFullAccess={viewerHasFullAccess}
                           resultsPending={searchPending}
                           searchFailed={searchFailed}
+                          onSaveToFolder={setSaveDoc}
                         />
                         {/* Load More for Feqh Books */}
                         {!isSearchActive && pagination.books?.hasMore && (
@@ -2338,6 +2346,10 @@ export default function LegalLibraryPage() {
 
       <Footer />
             <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} isRTL={isRTL} isDark={isDark} />
+      {/* Owner note ٠٤: one folder modal for every result card's «حفظ في مجلد». */}
+      {saveDoc && (
+        <FolderSelectionModal isOpen={true} onClose={() => setSaveDoc(null)} currentDoc={saveDoc} />
+      )}
       <AdvancedSearchModal 
         isOpen={showAdvSearch} 
         onClose={() => setShowAdvSearch(false)} 
