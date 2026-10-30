@@ -5041,3 +5041,31 @@ begin
   raise notice '_verify: 20261030_10 OK — invoice payments are added under a lock, stale forms and overpayments refused, ledger server-only';
 end $$;
 -- <<< verify:invoice_collections
+-- >>> verify:create_lawyer_invoice — supabase/tests/rls/create_lawyer_invoice.test.sql
+-- 2026-10-30 — 20261030_20_create_invoice_atomic.sql (owner handoff CODE-F22 /
+-- CODE-F21). Read-only, safe to repeat. Before 20261030_20 runs it only
+-- reports; after, it raises when a signed-in session could issue an invoice or
+-- the one-invoice-per-form key is gone.
+do $$
+declare fn constant text := 'public.create_lawyer_invoice(uuid,text,bigint,text,text,uuid,text,text,text,text,text)'; role_name text;
+begin
+  if to_regprocedure(fn) is null then
+    raise notice '_verify: 20261030_20 is not applied yet — invoices are still issued as two separate writes'; return;
+  end if;
+  if not exists (select 1 from pg_proc where oid = to_regprocedure(fn) and prosecdef and proconfig @> array['search_path=""']) then
+    raise exception '_verify: 20261030_20 — % is not SECURITY DEFINER with search_path '''' (re-run 20261030_20)', fn;
+  end if;
+  foreach role_name in array array['anon','authenticated'] loop
+    if exists (select 1 from pg_roles where rolname = role_name) and has_function_privilege(role_name, fn, 'EXECUTE') then
+      raise exception '_verify: 20261030_20 — % can EXECUTE % (re-run 20261030_20)', role_name, fn;
+    end if;
+  end loop;
+  if exists (select 1 from pg_roles where rolname = 'service_role') and not has_function_privilege('service_role', fn, 'EXECUTE') then
+    raise exception '_verify: 20261030_20 — service_role cannot EXECUTE %: every new invoice answers 503 (re-run 20261030_20)', fn;
+  end if;
+  if not exists (select 1 from pg_indexes where schemaname = 'public' and indexname = 'payments_create_key_key') then
+    raise exception '_verify: 20261030_20 — payments_create_key_key is missing: a retried form could issue a second invoice (re-run 20261030_20)';
+  end if;
+  raise notice '_verify: 20261030_20 OK — one invoice per form, issued in one transaction after the ownership checks; server only';
+end $$;
+-- <<< verify:create_lawyer_invoice

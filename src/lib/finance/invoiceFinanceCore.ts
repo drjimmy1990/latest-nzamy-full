@@ -4,15 +4,24 @@
  * LIVE-F36). The route (src/app/api/v1/lawyer/finance/route.ts) checks the
  * session and role, builds the service client and calls these; the tests
  * (invoiceFinanceCore.test.ts) drive them with a fake service client. The
- * collection rules themselves live in SQL — public.record_invoice_collection
- * (supabase/migrations/20261030_10_invoice_collections_atomic.sql) — and
- * supabase/tests/rls/invoice_collections.test.sql proves them there.
+ * rules themselves live in SQL — public.create_lawyer_invoice
+ * (supabase/migrations/20261030_20_create_invoice_atomic.sql) and
+ * public.record_invoice_collection (20261030_10_invoice_collections_atomic.sql)
+ * — and supabase/tests/rls/invoice_collections.test.sql proves them there.
  *
  * CODE-F01 — POST accepted a `requestId` and hung a payments row on it through
  *   the service role without asking whose request it was; PATCH asked. Now the
  *   request must be assigned to the caller before anything is written. A
  *   missing request and someone else's request get the same 403 body, so the
  *   answer says nothing about whose request it is or whether it exists.
+ *
+ * CODE-F22 — the placeholder request and the payments row were two writes
+ *   with no transaction and no key: a lost response left an orphan, a retry a
+ *   duplicate. Both now happen in one SQL function, once per form key.
+ *
+ * CODE-F21 (scoped to finance) — the invoice may name a CRM card and a case
+ *   by id; the card's name and type are read on the server. A typed client
+ *   needs an explicit type: the page no longer sends "company" for everyone.
  *
  * CODE-F02 / LIVE-F36 — the page sent a cumulative `paidAmount` it had
  *   computed from what the form showed when it was opened, and the route
@@ -70,6 +79,12 @@ const fail = (status: 400 | 403 | 404 | 409 | 500 | 503, error: string): Finance
   body: { error },
 });
 
+const isHalalas = (v: unknown, min: number): v is number =>
+  typeof v === "number" && Number.isSafeInteger(v) && v >= min && v <= MAX_HALALAS;
+
+/** PostgREST / Postgres codes for "this function does not exist (yet)". */
+const MISSING_FUNCTION = new Set(["PGRST202", "42883"]);
+
 export interface FinanceDeps {
   /** The service-role client (payments has no INSERT/UPDATE policy). */
   admin: SupabaseClient;
@@ -77,124 +92,163 @@ export interface FinanceDeps {
 
 // ─── POST — issue a manual invoice ──────────────────────────────────────────
 
+export const LEGACY_CREATE_BODY_AR =
+  "تغيّرت طريقة إصدار الفواتير في المنصة. حدّث الصفحة ثم أصدر الفاتورة من جديد.";
+export const CREATE_UNAVAILABLE_AR =
+  "إصدار الفواتير غير متاح مؤقتاً. لم تُنشأ أي فاتورة — حاول بعد قليل.";
+export const CREATE_KEY_REUSED_AR =
+  "تعذّر قبول هذا الطلب لأنه يكرّر طلب إصدار سابقاً ببيانات مختلفة. أغلق النموذج وافتحه من جديد.";
+export const CREATE_INVALID_AR =
+  "بيانات الفاتورة غير مكتملة: اختر الموكّل من دليلك أو اكتب اسمه وحدّد نوعه (فرد أو شركة)، وأدخل أتعاباً أكبر من صفر.";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export interface CreateInvoiceBody {
+  idempotencyKey: string;
+  amountHalalas: number;
+  /** A CRM card (lawyer_clients.id); its name and type win over the typed ones. */
+  clientId: string | null;
+  client: string | null;
+  clientType: "individual" | "company" | null;
+  /** A case of this lawyer the invoice refers to (a reference, not its parent). */
+  caseId: string | null;
+  /** An existing request of this lawyer the invoice hangs on (CODE-F01). */
+  requestId: string | null;
+  description: string | null;
+  feeType: "full" | "partial" | null;
+  caseTitle: string | null;
+}
+
+/** null for absent/empty, the string itself, or false for any other type. */
+const optString = (v: unknown): string | null | false =>
+  v === undefined || v === null || v === "" ? null : typeof v === "string" ? v : false;
+
+/**
+ * Every field's type is checked here; whether the request, the case and the
+ * card belong to this lawyer is checked by the SQL function, in the same
+ * transaction as the inserts.
+ */
+export function parseCreateBody(
+  body: unknown,
+): { ok: true; value: CreateInvoiceBody } | { ok: false; error: string } {
+  const b = (body ?? {}) as Record<string, unknown>;
+
+  // A page loaded before this change sends `amount` in riyals and no key. A
+  // retry of such a request could not be recognised, so it is refused.
+  if (
+    typeof b.idempotencyKey !== "string" ||
+    b.idempotencyKey.length < 8 ||
+    b.idempotencyKey.length > 100 ||
+    b.amountHalalas === undefined
+  ) {
+    return { ok: false, error: LEGACY_CREATE_BODY_AR };
+  }
+  if (!isHalalas(b.amountHalalas, 1)) return { ok: false, error: CREATE_INVALID_AR };
+
+  const raw = {
+    clientId: optString(b.clientId),
+    client: optString(b.client),
+    clientType: optString(b.clientType),
+    caseId: optString(b.caseId),
+    requestId: optString(b.requestId),
+    description: optString(b.description),
+    feeType: optString(b.feeType),
+    caseTitle: optString(b.caseTitle),
+  };
+  for (const [k, v] of Object.entries(raw)) {
+    if (v === false) return { ok: false, error: `${k} must be a string` };
+  }
+  const f = raw as Record<keyof typeof raw, string | null>;
+  if (f.clientId !== null && !UUID_RE.test(f.clientId)) return { ok: false, error: CREATE_INVALID_AR };
+  if (f.clientType !== null && f.clientType !== "individual" && f.clientType !== "company") {
+    return { ok: false, error: CREATE_INVALID_AR };
+  }
+  if (f.feeType !== null && f.feeType !== "full" && f.feeType !== "partial") {
+    return { ok: false, error: CREATE_INVALID_AR };
+  }
+  // No card: a typed name and an explicit type. The page used to send
+  // clientType "company" for everyone (CODE-F21).
+  if (f.clientId === null && (!f.client?.trim() || f.clientType === null)) {
+    return { ok: false, error: CREATE_INVALID_AR };
+  }
+  return {
+    ok: true,
+    value: {
+      idempotencyKey: b.idempotencyKey,
+      amountHalalas: b.amountHalalas,
+      clientId: f.clientId,
+      client: f.client?.trim() ?? null,
+      clientType: f.clientType as CreateInvoiceBody["clientType"],
+      caseId: f.caseId,
+      requestId: f.requestId,
+      description: f.description,
+      feeType: f.feeType as CreateInvoiceBody["feeType"],
+      caseTitle: f.caseTitle,
+    },
+  };
+}
+
 export interface CreateInvoiceInput {
   userId: string;
   body: unknown;
 }
 
 /**
- * Validates, checks ownership of a supplied `requestId`, then writes.
- * Every refusal happens before the first insert, so a refused call leaves
- * no placeholder request and no payments row behind.
+ * CODE-F01 / CODE-F22: one call to public.create_lawyer_invoice
+ * (20261030_20), which checks ownership and writes the placeholder request
+ * and the payments row in ONE transaction, once per idempotency key. A
+ * refused call writes nothing; a repeated form gets the same invoice back.
  */
 export async function createInvoiceWith(
   deps: FinanceDeps,
   input: CreateInvoiceInput,
 ): Promise<FinanceReply> {
-  const b = (input.body ?? {}) as Record<string, unknown>;
-  const client = typeof b.client === "string" ? b.client : undefined;
-  const description = typeof b.description === "string" ? b.description : undefined;
-  const feeType = typeof b.feeType === "string" ? b.feeType : undefined;
-  const caseTitle = typeof b.caseTitle === "string" ? b.caseTitle : undefined;
-  const clientType = typeof b.clientType === "string" ? b.clientType : undefined;
-  const amount = b.amount;
+  const parsed = parseCreateBody(input.body);
+  if (!parsed.ok) return fail(400, parsed.error);
+  const c = parsed.value;
 
-  if (!client || !client.trim() || amount === undefined || amount === null) {
-    return fail(400, "client and amount required");
-  }
+  const { data, error } = await deps.admin.rpc("create_lawyer_invoice", {
+    p_actor: input.userId,
+    p_idempotency_key: c.idempotencyKey,
+    p_amount_halalas: c.amountHalalas,
+    p_client_name: c.client,
+    p_client_type: c.clientType,
+    p_lawyer_client_id: c.clientId,
+    p_case_id: c.caseId,
+    p_request_id: c.requestId,
+    p_description: c.description,
+    p_fee_type: c.feeType,
+    p_case_title: c.caseTitle,
+  });
 
-  const feeNum = Number(amount);
-  if (Number.isNaN(feeNum)) return fail(400, "amount must be a number");
-  // `payments.amount` has no CHECK constraint, so a negative fee was accepted
-  // and then subtracted from every total on the page — including «إجمالي
-  // الأتعاب المستحقة», which a lawyer may quote. There is no void or edit
-  // control on that page, so a bad row could not be taken back.
-  if (!Number.isFinite(feeNum) || feeNum <= 0) {
-    return fail(400, "amount must be greater than zero");
-  }
-
-  if (b.requestId !== undefined && b.requestId !== null && typeof b.requestId !== "string") {
-    return fail(400, "requestId must be a string");
-  }
-  const suppliedRequestId = typeof b.requestId === "string" && b.requestId ? b.requestId : null;
-
-  const service = deps.admin;
-
-  // CODE-F01: a supplied request must be assigned to this lawyer — the same
-  // rule PATCH and GET apply. Missing and foreign answer identically.
-  if (suppliedRequestId) {
-    const { data: owned, error: ownErr } = await service
-      .from("service_requests")
-      .select("assigned_to")
-      .eq("id", suppliedRequestId)
-      .maybeSingle();
-    if (ownErr) {
-      console.error("[lawyer/finance POST] ownership read failed:", ownErr.message);
-      return fail(500, "Failed to create invoice");
+  if (error) {
+    // Never fall back to the old two-step write: that is CODE-F22.
+    if (MISSING_FUNCTION.has(String(error.code ?? ""))) {
+      console.error(
+        "[lawyer/finance POST] create_lawyer_invoice is missing — run 20261030_20_create_invoice_atomic.sql",
+      );
+      return fail(503, CREATE_UNAVAILABLE_AR);
     }
-    if (!owned || (owned as { assigned_to?: unknown }).assigned_to !== input.userId) {
+    console.error("[lawyer/finance POST] create_lawyer_invoice failed:", error.message);
+    return fail(500, "Failed to create invoice");
+  }
+
+  const r = (data ?? {}) as { code?: string; replay?: boolean; payment?: Record<string, unknown> };
+  switch (r.code) {
+    case "ok":
+      if (!r.payment) return fail(500, "Failed to create invoice");
+      return { status: 200, row: r.payment, replay: r.replay === true };
+    case "forbidden":
+      // Same body for a missing and a foreign request / case / card.
       return fail(403, "Forbidden");
-    }
+    case "key_reused":
+      return fail(409, CREATE_KEY_REUSED_AR);
+    case "invalid":
+      return fail(400, CREATE_INVALID_AR);
+    default:
+      console.error("[lawyer/finance POST] unexpected result:", r.code);
+      return fail(500, "Failed to create invoice");
   }
-
-  // 1) Create (or reuse) a placeholder service_request to satisfy
-  //    payments.request_id NOT NULL FK.
-  let reqId = suppliedRequestId;
-  if (!reqId) {
-    const reqIdGen = crypto.randomUUID();
-    const { data: reqRow, error: reqErr } = await service
-      .from("service_requests")
-      .insert({
-        id: reqIdGen,
-        requester_user_id: input.userId,
-        type: "service",
-        title: `فاتورة: ${client.trim()}`,
-        description: description || "",
-        requester: { name: client.trim(), role: "client", tier: "free" },
-        receiver: "lawyer",
-        assigned_to: input.userId,
-        status: "completed",
-        payment: { amount: feeNum, status: "not_required" },
-        source_path: "",
-        metadata: { invoice: true },
-      })
-      .select("id")
-      .single();
-    if (reqErr || !reqRow) {
-      return fail(500, reqErr?.message || "Failed to create invoice request");
-    }
-    reqId = String((reqRow as { id: unknown }).id);
-  }
-
-  // 2) Insert the payment row.
-  const paymentMeta: Record<string, unknown> = {
-    invoice: true,
-    client: client.trim(),
-    description: description || "أتعاب قانونية",
-    issued_by: input.userId,
-    feeType: feeType || "full",
-  };
-  if (caseTitle) paymentMeta.caseTitle = caseTitle;
-  if (clientType) paymentMeta.clientType = clientType;
-
-  const { data: paymentRow, error: payErr } = await service
-    .from("payments")
-    .insert({
-      id: crypto.randomUUID(),
-      request_id: reqId,
-      provider: "manual",
-      amount: feeNum,
-      currency: "SAR",
-      status: "requires_payment",
-      metadata: paymentMeta,
-    })
-    .select(PAYMENT_COLUMNS)
-    .single();
-
-  if (payErr || !paymentRow) {
-    return fail(500, payErr?.message || "Failed to create payment");
-  }
-  return { status: 200, row: paymentRow as Record<string, unknown> };
 }
 
 // ─── PATCH — record one collected payment ───────────────────────────────────
@@ -206,9 +260,6 @@ export interface CollectBody {
   expectedPaidHalalas: number;
   idempotencyKey: string;
 }
-
-const isHalalas = (v: unknown, min: number): v is number =>
-  typeof v === "number" && Number.isSafeInteger(v) && v >= min && v <= MAX_HALALAS;
 
 /**
  * Every field is required. In particular there is no "omit the amount to
@@ -276,9 +327,6 @@ interface CollectionResult {
   replay?: boolean;
   payment?: Record<string, unknown>;
 }
-
-/** PostgREST / Postgres codes for "this function does not exist (yet)". */
-const MISSING_FUNCTION = new Set(["PGRST202", "42883"]);
 
 export async function recordCollectionWith(
   deps: FinanceDeps,
