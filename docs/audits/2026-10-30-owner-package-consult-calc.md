@@ -11,7 +11,7 @@ Source: `Nezamy-Developer-Handoff-2026-10-30`, specifically:
 
 The package was read only. Nothing in it was run.
 
-Status wording: each item below is **fixed in code, awaiting deployment and acceptance testing**. None of them is "closed".
+Status wording: each item below is **fixed in code, awaiting deployment and acceptance testing** («مُصلَح في الكود — بانتظار النشر واختبار القبول»). Acceptance on the deployed site is still owed for every item.
 
 | Commit | Scope |
 |---|---|
@@ -237,19 +237,39 @@ Every item was still open in the current code. The package's blob comparison say
   2. 29/10/2026 should give «18 جمادى الأولى 1448هـ».
   3. Hijri 30 in a 29-day month should be refused.
 
+## Checks that the new server guard breaks no other flow
+
+- **Client booking wizards.** `consultationBookingRefusal` runs for every `type: "consultation"` POST, so the metadata of all three creators was read:
+  - `useConsultationForm` (`/book/consultation`) spreads `ids` from `buildConsultationIntake`, whose keys are `specialtyId`, `consultTypeId`, `scheduleMode`, `calDay` and `calTime`. None of them is `day`, `time`, `duration` or `scheduledAt`.
+  - `/dashboard/client/consultation/new` sends `path`, `specialty`, `mode`, `serviceId`, `quoteSource`, `lawyerId`, `lawyerName`, `attachmentCount` and `intake`. None of those collides either.
+
+  So client bookings pass the guard untouched.
+- **`confirmOverlap` reaches the guard.** `validateServiceRequestCreate` checks fields one by one and rejects no unknown top-level key.
+- **`confirmOverlap` is never stored.** The insert names its columns explicitly, and the PATCH builds `patch` field by field, so the flag reaches neither table.
+
+## Remaining surfaces, not changed here
+
+- **`/ai/gov/deadline-calculator` («حاسبة المواعيد» for government roles).** Its «المدة (يوم)» field still reads `parseInt(...) || 0`, so a negative period is possible. It is a deadline page, which is off limits for this work, so it was left for the deadline owner.
+
+  A grep for `type="number"` together with «حاسبة/احسب/Calc» under `src/app` and `src/components` found no other calculator. The admin user page hit is not a calculator.
+- **Evidence `07-calculator-route.jpg`.** It shows the admin shell's «الصفحة غير موجودة» on an unnamed calculator route. `manifest.json` does not say which URL. No backlog item in this batch names it, so nothing was changed; the owner's working calculator is `/ai/fee-calculator` (evidence `08-calculator`).
+- **Consultation date shown in browser time outside the consultation files.** The client home «موعدك القادم» card (`src/app/dashboard/client/page.tsx` `appointmentDayPillAr`, and `src/lib/services/clientDashboardCards.ts` `formatArabicDate`) prints the DATE only, using local getters, and shows no time.
+
+  It can only disagree with Riyadh near midnight for a viewer outside Riyadh. It is not a consultation or booking file, so it was not edited. Fixing it means calling `riyadhWallClock` there.
+
 ## Verification
 
 - **Unit tests:** `node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test "src/**/*.test.ts"`.
   - Baseline at `235e1bef`: 4166 tests, 7 failing.
-  - On the branch: 4210 tests (44 new), all 44 new ones passing.
-  - The same 7 pre-existing failures remain. None is in the files touched here:
+  - On the branch, last full run: **4210 tests (44 new), 8 failing**. All 44 new tests pass.
+  - Seven of the eight failures are the same ones as the baseline. None is in the files touched here:
     - library volume series;
     - lawyer dashboard consultant cards;
     - `aiFiles` (`pdf-lib` missing from `node_modules`);
     - an AI timer end read;
     - `grantPurchase`;
     - two share-snapshot tests.
-  - In the full run, `src/lib/ai/runCore.test.ts` once reported a timeout of 49999 where 50000 was expected. It is timing-dependent, passed 3/3 when run alone, and is in an area that is off limits for this work.
+  - The eighth is `src/lib/ai/runCore.test.ts`, "the start call carries the price…". In the full run it reported a timeout of 49999 where 50000 was expected. It is timing-dependent, passed 3/3 when run alone, and is in an area that is off limits for this work.
 - **Type check:** `tsc --noEmit` reports only the pre-existing `pdf-lib` "Cannot find module" errors in `src/lib/ai/aiFiles*.ts`.
 - **GitNexus:** `impact` returned "target not found" for the edited symbols, and `detect_changes` mapped 0 symbols across the 10 changed files. The `latest-nzamy-full` index does not cover this worktree or is stale. The blast radius was checked by grep instead:
   - `ConsultationActionModal` is imported by the lawyer list, the lawyer detail and the firm list;
