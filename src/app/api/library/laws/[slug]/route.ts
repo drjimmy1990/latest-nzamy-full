@@ -7,7 +7,7 @@ import { libraryGate } from '@/lib/library-gate';
 import { lawStatusForDetail } from '@/app/laws/law-status';
 import { resolveParentLawLink, type ParentLawCandidate } from './_resolve-parent-law';
 import { orderLawChapters } from './_order-chapters';
-import { articleDisplayLabel, articleLocatorText } from './_article-label';
+import { articleDisplayLabel, articleLocatorText, documentIsUnnumbered } from './_article-label';
 import { lawOfficialLink, lawOfficialLinks, lawOfficialMeta, TIER_SHAPED_CACHE_CONTROL } from './_official-meta';
 import { splitStoredPreamble } from '@/lib/library/splitPreamble';
 import { latestUpdateDetail, lawReaderExtras, regulationReaderExtras } from '@/lib/library/lawSummaryVisibility';
@@ -359,6 +359,10 @@ export async function GET(
         })),
     }));
 
+    // Owner note ١١: a document whose rows never name an article or item
+    // (a guide split by topical headings) gets no invented «المادة N».
+    const unnumbered = documentIsUnnumbered(articles ?? []);
+
     // Build the response in the LawSystem format the frontend expects
     const lawSystem = {
       id: law.slug,
@@ -454,7 +458,7 @@ export async function GET(
         ...(chapter.id ? { id: chapter.id } : {}),
         ...(chapter.level ? { level: chapter.level } : {}),
         ...(chapter.level === 2 ? { parentChapterId: chapter.parentChapterId ?? null } : {}),
-        articles: chapter.articles.map((a) => formatArticleWithPaywall(a, hasFullAccess, freeLimit, !officialMeta.officialMetaLocked)),
+        articles: chapter.articles.map((a) => formatArticleWithPaywall(a, hasFullAccess, freeLimit, !officialMeta.officialMetaLocked, unnumbered)),
       })),
       // A law whose official text is not published has no articles; the
       // parser keeps the library's notice in `description`. Shown without an
@@ -531,14 +535,19 @@ function formatArticleWithPaywall(
   // T28-22: false for a non-subscriber — amending decrees and their dates
   // are official metadata, withheld like the issuing decree.
   showOfficialMeta = true,
+  // Owner note ١١: the document has no numbered articles in its source
+  // (documentIsUnnumbered) — never label a row «المادة N».
+  unnumbered = false,
 ) {
   const isLocked = isArticleLocked(article, hasFullAccess, freeLimit);
 
   const result: Record<string, unknown> = {
     id: article.id,
     // Heading marks stripped; an instrument name stored in place of the
-    // number falls back to «المادة N» (owner test 2026-09-28, _article-label.ts).
-    num: articleDisplayLabel(article.number_text as string | null, article.number as number | null),
+    // number falls back to «المادة N» (owner test 2026-09-28, _article-label.ts)
+    // — except in an unnumbered document (owner note ١١), where a topical
+    // heading is shown as written and a repeated name as «(N)».
+    num: articleDisplayLabel(article.number_text as string | null, article.number as number | null, { unnumbered }),
     // Raw locator parts, so a citation can be built from what the source
     // actually says instead of by regex-stripping the display label.
     // numberText is the cleaned source locator, or null when the stored text
