@@ -22,6 +22,23 @@ export function renewalNoticeDueOn(endsOn: string | null | undefined, noticeDays
 
 export type ContractExpiryState = "none" | "expired" | "expiring_soon" | "ok";
 
+/**
+ * LIVE-F41 (owner's 30-Oct test): a cancelled contract raised «تنتهي خلال
+ * ٣٠ يوماً». The badge and the counter are about an end date still ahead of
+ * live work; a contract that was terminated or cancelled has nothing left to
+ * expire, so its end date says nothing — "none". An `expired` contract keeps
+ * its state (it can be renewed back to active).
+ */
+export function contractExpiryForStatus(
+  status: string,
+  endsOn: string | null | undefined,
+  today: Date = new Date(),
+  soonDays = 30,
+): ContractExpiryState {
+  if (status === "terminated" || status === "cancelled") return "none";
+  return contractExpiryState(endsOn, today, soonDays);
+}
+
 /** «منتهٍ» / «ينتهي خلال ٣٠ يوماً» / fine — for the list badge. */
 export function contractExpiryState(endsOn: string | null | undefined, today: Date = new Date(), soonDays = 30): ContractExpiryState {
   if (!endsOn) return "none";
