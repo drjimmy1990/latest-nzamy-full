@@ -270,17 +270,27 @@ function termRegex(term: Pick<HighlightTerm, "label" | "kind">): RegExp | null {
  * any field drops the row.
  */
 export function matchesQuery(fields: ReadonlyArray<string | null | undefined>, parsed: ParsedHighlightQuery): boolean {
-  const hay = fields.filter((f) => typeof f === "string" && f).join("\n");
-  for (const ex of parsed.excluded) {
-    const re = termRegex(ex);
-    if (re && re.test(hay)) return false;
-  }
-  if (parsed.groups.length === 0) return true;
-  const hits = parsed.terms.map((t) => {
-    const re = termRegex(t);
-    return re ? re.test(hay) : false;
-  });
-  return parsed.groups.some((group) => group.every((i) => hits[i]));
+  return compileQueryMatcher(parsed)(fields);
+}
+
+/**
+ * matchesQuery with the patterns built once: a list that filters thousands of
+ * rows on every keystroke (the circuits directory, 2,192 rows) calls the
+ * returned function per row instead of rebuilding a RegExp per term per row.
+ */
+export function compileQueryMatcher(parsed: ParsedHighlightQuery): (fields: ReadonlyArray<string | null | undefined>) => boolean {
+  const excluded = parsed.excluded.map(termRegex).filter((re): re is RegExp => re !== null);
+  const included = parsed.terms.map(termRegex);
+  const groups = parsed.groups;
+  return (fields) => {
+    const hay = fields.filter((f) => typeof f === "string" && f).join("\n");
+    for (const re of excluded) {
+      if (re.test(hay)) return false;
+    }
+    if (groups.length === 0) return true;
+    const hits = included.map((re) => (re ? re.test(hay) : false));
+    return groups.some((group) => group.every((i) => hits[i]));
+  };
 }
 
 /**
