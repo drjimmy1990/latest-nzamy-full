@@ -1,0 +1,67 @@
+{
+  "metadata": {
+    "title": "النيابة العامة",
+    "basis": "ملاحظة المالك ١٩ §٤ (2026-10-28، فحص مواقع حكومية من اتصال سعودي)، وملاحظة المالك ٢٠ §ثانياً-3، ودليل الجهات (my.gov.sa/ar/agencies/17570، سُحب 2026-10-28)",
+    "rule": "لا جهة بلا مصدر وتاريخ تحقق (verified_at). فتُضاف النيابة العامة فئة مستقلة («النيابة العامة») بإدخالات موثقة فقط، ولا تُخلط بدليل وزارة العدل.",
+    "independence": "النيابة العامة جهة مستقلة عن وزارة العدل.",
+    "notFound": "ما لم أجده: أي بريد علني لـ«دائرة الأموال بالنيابة العامة بالشرقية».",
+    "noGuessing": "لا نخترع بريداً ولا نخمّنه."
+  },
+  "channels": [
+    {
+      "id": "pp-sectors-form",
+      "kind": "portal",
+      "label": "التواصل مع القطاعات النيابية",
+      "value": "https://esportal.pp.gov.sa/Requests/send_inquiry/details/new/",
+      "ownerText": "رابط https://esportal.pp.gov.sa/Requests/send_inquiry/details/new/ لتوجيه الطلب للفرع ودائرة التحقيق المختصة كالمنطقة الشرقية",
+      "source": "ملاحظة المالك ٢٠ §ثانياً-3؛ والنموذج «التواصل مع القطاعات النيابية» (بوابة esportal.pp.gov.sa) في ملاحظة المالك ١٩ §٤",
+      "sourceUrl": "https://www.pp.gov.sa/",
+      "checkedAt": "2026-10-28",
+      "verified": true
+    },
+    {
+      "id": "pp-website",
+      "kind": "website",
+      "label": "موقع النيابة العامة",
+      "value": "https://www.pp.gov.sa/",
+      "ownerText": "لا يعرض بريداً لأي فرع أو دائرة. يعرض نموذجين إلكترونيين: «التواصل مع معالي النائب العام» و«التواصل مع القطاعات النيابية» (بوابة esportal.pp.gov.sa)، وفيه قسم «منصة المحامين»",
+      "source": "ملاحظة المالك ١٩ §٤",
+      "sourceUrl": "https://www.pp.gov.sa/",
+      "checkedAt": "2026-10-28",
+      "verified": true
+    },
+    {
+      "id": "pp-lawyers-platform",
+      "kind": "note",
+      "label": "منصة المحامين",
+      "value": "",
+      "ownerText": "منصة المحامين في موقع النيابة: ربما تعرض بيانات الدوائر للمحامي بعد الدخول (لم أدخلها).",
+      "source": "ملاحظة المالك ١٩ §٤",
+      "sourceUrl": "https://www.pp.gov.sa/",
+      "checkedAt": "2026-10-28",
+      "verified": false
+    },
+    {
+      "id": "pp-phone",
+      "kind": "phone",
+      "label": "الهاتف المنشور في دليل الجهات",
+      "value": "00966118400000",
+      "ownerText": "يدرج «النيابة العامة» بعنوان الرياض (العليا، طريق الملك فهد) وهاتف 00966118400000",
+      "source": "my.gov.sa (دليل الجهات)",
+      "sourceUrl": "https://my.gov.sa/ar/agencies/17570",
+      "checkedAt": "2026-10-28",
+      "verified": false
+    },
+    {
+      "id": "pp-mygov-email",
+      "kind": "email",
+      "label": "البريد المنشور في دليل الجهات",
+      "value": "info@bip.gov.sa",
+      "ownerText": "`bip.gov.sa` بلا سجل بريد (MX) في فحصي، بينما `pp.gov.sa` له سجل بريد (`mail.pp.gov.sa`). فالبريد المنشور في `my.gov.sa` يبدو قديماً (اسم النطاق القديم للهيئة). فحص أولي من الخارج وقد يخطئ، فيُؤكَّد بإرسال تجريبي أو اتصال",
+      "source": "my.gov.sa (دليل الجهات)، وفحص المالك في ملاحظة ١٩ §٤",
+      "sourceUrl": "https://my.gov.sa/ar/agencies/17570",
+      "checkedAt": "2026-10-28",
+      "verified": false
+    }
+  ]
+}
