@@ -7,6 +7,7 @@ import {
   Receipt, Scales
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { parseLaborInputs, type LaborNumbers } from "./calcInputs";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -47,15 +48,18 @@ interface LaborResult {
   isEligibleGratuity: boolean;
 }
 
-function calcLaborRights(inp: LaborInputs): LaborResult | null {
-  if (!inp.salary || !inp.terminationType || (!inp.yearsOfService && !inp.monthsOfService)) return null;
+// LIVE-F30: the numbers arrive already bounded by parseLaborInputs
+// (./calcInputs.ts) — no more "parse, or else 0", which turned −5 years into a
+// silent «0 ر.س» instead of a refusal.
+function calcLaborRights(inp: LaborInputs, n: LaborNumbers): LaborResult | null {
+  if (!inp.terminationType) return null;
 
-  const baseSalary = parseFloat(inp.salary.replace(/,/g, "")) || 0;
-  const housing    = parseFloat(inp.housingAllowance.replace(/,/g, "")) || 0;
-  const other      = parseFloat(inp.otherAllowances.replace(/,/g, "")) || 0;
+  const baseSalary = n.baseSalary;
+  const housing    = n.housing;
+  const other      = n.other;
   const fullSalary = baseSalary + housing + other;
-  const years      = parseFloat(inp.yearsOfService) || 0;
-  const months     = parseFloat(inp.monthsOfService) || 0;
+  const years      = n.years;
+  const months     = n.months;
   const totalYears = years + (months / 12);
 
   const notes: string[] = [];
@@ -108,8 +112,8 @@ function calcLaborRights(inp: LaborInputs): LaborResult | null {
     if (!inp.hasNoticePeriod) {
       noticePay = fullSalary * requiredNotice;
       notes.push(`مكافأة بدل إشعار ${requiredNotice === 2 ? "٦٠" : "٣٠"} يوماً لعدم الإشعار المسبق (المادة 75).`);
-    } else if (inp.noticePeriodMonths) {
-      const givenMonths = parseFloat(inp.noticePeriodMonths) || 0;
+    } else {
+      const givenMonths = n.noticeMonths;
       const diff = requiredNotice - givenMonths;
       if (diff > 0) {
         noticePay = fullSalary * diff;
@@ -119,8 +123,8 @@ function calcLaborRights(inp: LaborInputs): LaborResult | null {
   }
 
   // ─── الإجازة السنوية (المادة 109) ──────────────────────────────────────
-  if (inp.hasUnusedLeave && inp.unusedLeaveDays) {
-    const days = parseFloat(inp.unusedLeaveDays) || 0;
+  if (inp.hasUnusedLeave && n.leaveDays > 0) {
+    const days = n.leaveDays;
     leavePay = (fullSalary / 30) * days;
     notes.push(`تم احتساب بدل ${days} يوم إجازة غير مستخدمة (المادة 109).`);
   }
@@ -156,6 +160,7 @@ export default function CalcLaborRights() {
   });
   const [result, setResult] = useState<LaborResult | null>(null);
   const [done, setDone] = useState(false);
+  const [inputError, setInputError] = useState<string | null>(null);
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
@@ -163,10 +168,23 @@ export default function CalcLaborRights() {
 
   const inp_style = `w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none ${isDark ? "border-white/[0.08] bg-zinc-800 text-zinc-200 placeholder:text-zinc-600" : "border-slate-200 bg-slate-50 text-slate-800 placeholder:text-slate-400"}`;
 
-  const calc = () => { setResult(calcLaborRights(inp)); setDone(true); };
+  // Bounds are checked before anything is calculated (LIVE-F30); a refused
+  // input clears any earlier result rather than leaving it on screen.
+  const calc = () => {
+    const parsed = parseLaborInputs(inp);
+    if (!parsed.ok) {
+      setInputError(parsed.error);
+      setResult(null);
+      setDone(false);
+      return;
+    }
+    setInputError(null);
+    setResult(calcLaborRights(inp, parsed.value));
+    setDone(true);
+  };
   const reset = () => {
     setInp({ salary: "", housingAllowance: "", otherAllowances: "", yearsOfService: "", monthsOfService: "", terminationType: "", hasUnusedLeave: false, unusedLeaveDays: "", hasNoticePeriod: false, noticePeriodMonths: "" });
-    setResult(null); setDone(false);
+    setResult(null); setDone(false); setInputError(null);
   };
 
   const canCalc = !!inp.salary && !!inp.terminationType && (!!inp.yearsOfService || !!inp.monthsOfService);
@@ -269,6 +287,12 @@ export default function CalcLaborRights() {
               onChange={e => setInp(p => ({ ...p, noticePeriodMonths: e.target.value }))} className={inp_style} />
           )}
         </div>
+
+        {inputError && (
+          <p role="alert" className={`flex items-start gap-1.5 rounded-xl border px-3 py-2 text-[12px] font-semibold ${isDark ? "border-red-500/20 bg-red-500/10 text-red-400" : "border-red-200 bg-red-50 text-red-700"}`}>
+            <Warning size={13} weight="fill" className="mt-0.5 flex-shrink-0" />{inputError}
+          </p>
+        )}
 
         <div className="flex gap-3">
           <button onClick={calc} disabled={!canCalc}

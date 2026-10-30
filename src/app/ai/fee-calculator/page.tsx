@@ -13,6 +13,9 @@ import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
 import dynamic from "next/dynamic";
+import { HIJRI_MONTHS_AR } from "@/lib/services/hijri";
+import { CASE_VALUE_RULE, HOURS_RULE, lawyerFeeInputError, parseBounded } from "@/components/calculators/calcInputs";
+import { convertGregorianToHijri, convertHijriToGregorian } from "@/components/calculators/dateConvert";
 
 const CalcCourtFees  = dynamic(() => import("@/components/calculators/CalcCourtFees"),  { ssr: false });
 const CalcLaborRights = dynamic(() => import("@/components/calculators/CalcLaborRights"), { ssr: false });
@@ -61,12 +64,16 @@ function calculateFee(inputs: FeeInputs) {
   const base = range.min + (range.max - range.min) * (complexityMult - 0.5) / 1.3;
   let low = 0, mid = 0, high = 0;
 
-  if (inputs.feeModel === "hourly" && inputs.estimatedHours) {
-    const hours = parseFloat(inputs.estimatedHours) || 0;
-    low = hours * 300; mid = hours * 550; high = hours * 800;
-  } else if (inputs.feeModel === "contingency" && inputs.caseValue) {
-    const value = parseFloat(inputs.caseValue.replace(/,/g, "")) || 0;
-    low = value * 0.05; mid = value * 0.1; high = value * 0.15;
+  // LIVE-F30: bounded numbers only — −5 hours used to give negative fees, and
+  // an empty field fell back silently to the fixed-fee formula.
+  if (inputs.feeModel === "hourly") {
+    const hours = parseBounded(inputs.estimatedHours, HOURS_RULE);
+    if (!hours.ok) return null;
+    low = hours.value * 300; mid = hours.value * 550; high = hours.value * 800;
+  } else if (inputs.feeModel === "contingency") {
+    const value = parseBounded(inputs.caseValue, CASE_VALUE_RULE);
+    if (!value.ok) return null;
+    low = value.value * 0.05; mid = value.value * 0.1; high = value.value * 0.15;
   } else {
     low = base * 0.7 * stagesCount; mid = base * stagesCount; high = base * 1.4 * stagesCount;
   }
@@ -136,44 +143,14 @@ function daysLeft(dateStr: string, days: number): number {
   return Math.ceil((deadline.getTime() - Date.now()) / 86400000);
 }
 
-// ─── Hijri ↔ Gregorian helpers ────────────────────────────────────────────────
+// ─── Hijri ↔ Gregorian ────────────────────────────────────────────────────────
+// LIVE-F31: the page's own Kuwaiti tabular routines are gone. They accepted
+// 31 February and rolled it into March without a word, and they were not Umm
+// al-Qura. components/calculators/dateConvert.ts refuses a day that does not
+// exist (Hijri month lengths included) and converts through hijri.ts — the
+// platform's one Umm al-Qura calendar.
 
-function gregorianToHijri(gYear: number, gMonth: number, gDay: number): [number, number, number] {
-  // Standard algorithm (Kuwaiti algorithm)
-  const jd = Math.floor((1461*(gYear+4800+Math.floor((gMonth-14)/12)))/4)
-    + Math.floor((367*(gMonth-2-12*Math.floor((gMonth-14)/12)))/12)
-    - Math.floor((3*Math.floor((gYear+4900+Math.floor((gMonth-14)/12))/100))/4)
-    + gDay - 32075;
-  const l = jd - 1948440 + 10632;
-  const n = Math.floor((l - 1) / 10631);
-  const ll = l - 10631*n + 354;
-  const j = Math.floor((10985 - ll) / 5316)*Math.floor((50*ll)/17719)
-    + Math.floor(ll/5670)*Math.floor((43*ll)/15238);
-  const ll2 = ll - Math.floor((30 - j) / 15)*Math.floor((17719*j)/50)
-    - Math.floor(j/16)*Math.floor((15238*j)/43)+29;
-  const hMonth = Math.floor((24*(ll2-1))/709);
-  const hDay = ll2 - Math.floor((709*hMonth)/24);
-  const hYear = 30*n + j - 30;
-  return [hYear, hMonth, hDay];
-}
-
-function hijriToGregorian(hYear: number, hMonth: number, hDay: number): [number, number, number] {
-  const jd = Math.floor((11*hYear+3)/30) + 354*hYear + 30*hMonth
-    - Math.floor((hMonth-1)/2) + hDay + 1948440 - 385;
-  const l = jd + 68569;
-  const n = Math.floor((4*l)/146097);
-  const ll = l - Math.floor((146097*n+3)/4);
-  const i = Math.floor((4000*(ll+1))/1461001);
-  const ll2 = ll - Math.floor((1461*i)/4) + 31;
-  const j = Math.floor((80*ll2)/2447);
-  const gDay = ll2 - Math.floor((2447*j)/80);
-  const gMonth = j + 2 - 12*Math.floor(j/11);
-  const gYear = 100*(n-49) + i + Math.floor(j/11);
-  return [gYear, gMonth, gDay];
-}
-
-const H_MONTHS = ["محرم","صفر","ربيع الأول","ربيع الثاني","جمادى الأولى","جمادى الثانية","رجب","شعبان","رمضان","شوال","ذو القعدة","ذو الحجة"];
-const G_MONTHS = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
+const H_MONTHS = HIJRI_MONTHS_AR;
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -194,6 +171,9 @@ export default function FeeCalculatorPage() {
   const [hMonth, setHMonth] = useState("");
   const [hDay,   setHDay]   = useState("");
   const [convResult, setConvResult] = useState<string | null>(null);
+  const [convError, setConvError] = useState<string | null>(null);
+  // LIVE-F30: the lawyer-fee inputs are bounded before calculating.
+  const [feeError, setFeeError] = useState<string | null>(null);
 
   const [inputs, setInputs] = useState<FeeInputs>({
     caseType: "", feeModel: "", caseValue: "",
@@ -208,14 +188,20 @@ export default function FeeCalculatorPage() {
 
   const inputCls = `w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition ${isDark ? "border-white/[0.08] bg-zinc-800/60 text-zinc-200 placeholder:text-zinc-600 focus:border-[#C8A762]/40" : "border-slate-200 bg-slate-50 text-slate-700 placeholder:text-slate-400"}`;
 
-  const handleCalc = useCallback(() => { setResult(calculateFee(inputs)); setCalculated(true); }, [inputs]);
+  const handleCalc = useCallback(() => {
+    const issue = lawyerFeeInputError(inputs);
+    if (issue) { setFeeError(issue); setResult(null); setCalculated(false); return; }
+    setFeeError(null);
+    setResult(calculateFee(inputs));
+    setCalculated(true);
+  }, [inputs]);
 
   const toggleStage = (stage: string) =>
     setInputs(prev => ({ ...prev, stages: prev.stages.includes(stage) ? prev.stages.filter(s => s !== stage) : [...prev.stages, stage] }));
 
   const resetAll = () => {
     setInputs({ caseType: "", feeModel: "", caseValue: "", estimatedHours: "", complexity: "", stages: ["first"] });
-    setResult(null); setCalculated(false);
+    setResult(null); setCalculated(false); setFeeError(null);
   };
 
   return (
@@ -336,17 +322,23 @@ export default function FeeCalculatorPage() {
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                       <label className={`block text-xs font-bold mb-1.5 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>عدد الساعات المتوقعة</label>
                       <input type="number" min="1" placeholder="مثال: 40" value={inputs.estimatedHours}
-                        onChange={e => setInputs(p => ({ ...p, estimatedHours: e.target.value }))} className={inputCls} />
+                        onChange={e => { setFeeError(null); setInputs(p => ({ ...p, estimatedHours: e.target.value })); }} className={inputCls} />
                     </motion.div>
                   )}
                   {inputs.feeModel === "contingency" && (
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                       <label className={`block text-xs font-bold mb-1.5 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>قيمة النزاع (ريال)</label>
                       <input type="text" placeholder="مثال: 500,000" value={inputs.caseValue}
-                        onChange={e => setInputs(p => ({ ...p, caseValue: e.target.value }))} className={inputCls} />
+                        onChange={e => { setFeeError(null); setInputs(p => ({ ...p, caseValue: e.target.value })); }} className={inputCls} />
                     </motion.div>
                   )}
                 </AnimatePresence>
+
+                {feeError && (
+                  <p role="alert" className={`flex items-start gap-1.5 rounded-xl border px-3 py-2 text-[12px] font-semibold ${isDark ? "border-red-500/20 bg-red-500/10 text-red-400" : "border-red-200 bg-red-50 text-red-700"}`}>
+                    <Warning size={13} weight="fill" className="mt-0.5 flex-shrink-0" />{feeError}
+                  </p>
+                )}
 
                 <div className="flex gap-3">
                   <motion.button onClick={handleCalc} disabled={!inputs.caseType || !inputs.complexity}
@@ -516,7 +508,7 @@ export default function FeeCalculatorPage() {
               <div className={`${card} p-6 space-y-5`}>
                 <div className={`flex rounded-xl overflow-hidden border ${isDark ? "border-white/[0.06]" : "border-slate-200"}`}>
                   {(["g2h","h2g"] as const).map(dir => (
-                    <button key={dir} onClick={() => { setConvDir(dir); setConvResult(null); }}
+                    <button key={dir} onClick={() => { setConvDir(dir); setConvResult(null); setConvError(null); }}
                       className={`flex-1 py-2.5 text-[13px] font-bold transition-all flex items-center justify-center gap-2 ${
                         convDir === dir ? "bg-[#0B3D2E] text-[#C8A762]" : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:bg-slate-50"
                       }`}>
@@ -533,16 +525,15 @@ export default function FeeCalculatorPage() {
                         <div key={f.label}>
                           <label className={`block text-[10px] font-bold mb-1 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{f.label}</label>
                           <input type="number" placeholder={f.ph} min="1" value={f.val}
-                            onChange={e => { f.set(e.target.value); setConvResult(null); }}
+                            onChange={e => { f.set(e.target.value); setConvResult(null); setConvError(null); }}
                             className={`w-full rounded-xl border px-3 py-2.5 text-sm text-center font-mono outline-none ${isDark ? "border-white/[0.08] bg-zinc-800/60 text-zinc-200" : "border-slate-200 bg-slate-50 text-slate-700"}`} />
                         </div>
                       ))}
                     </div>
                     <button onClick={() => {
-                        const y = parseInt(gYear), m = parseInt(gMonth), d = parseInt(gDay);
-                        if (!y||!m||!d) return;
-                        const [hy,hm,hd] = gregorianToHijri(y,m,d);
-                        setConvResult(`${hd} ${H_MONTHS[hm-1]} ${hy}هـ`);
+                        const r = convertGregorianToHijri(gDay, gMonth, gYear);
+                        if (r.ok) { setConvError(null); setConvResult(r.text); }
+                        else { setConvResult(null); setConvError(r.error); }
                       }}
                       disabled={!gYear||!gMonth||!gDay}
                       className="w-full py-3 rounded-xl bg-[#0B3D2E] text-[#C8A762] font-bold text-[13px] disabled:opacity-40">
@@ -559,7 +550,7 @@ export default function FeeCalculatorPage() {
                         <div key={f.label}>
                           <label className={`block text-[10px] font-bold mb-1 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{f.label}</label>
                           <input type="number" placeholder={f.ph} min="1" value={f.val}
-                            onChange={e => { f.set(e.target.value); setConvResult(null); }}
+                            onChange={e => { f.set(e.target.value); setConvResult(null); setConvError(null); }}
                             className={`w-full rounded-xl border px-3 py-2.5 text-sm text-center font-mono outline-none ${isDark ? "border-white/[0.08] bg-zinc-800/60 text-zinc-200" : "border-slate-200 bg-slate-50 text-slate-700"}`} />
                         </div>
                       ))}
@@ -568,7 +559,7 @@ export default function FeeCalculatorPage() {
                       <label className={`block text-[10px] font-bold mb-2 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>أو اختر الشهر</label>
                       <div className="grid grid-cols-4 gap-1.5">
                         {H_MONTHS.map((m,i) => (
-                          <button key={m} onClick={() => { setHMonth(String(i+1)); setConvResult(null); }}
+                          <button key={m} onClick={() => { setHMonth(String(i+1)); setConvResult(null); setConvError(null); }}
                             className={`py-1.5 rounded-lg border text-[10px] font-bold transition-all ${
                               hMonth === String(i+1) ? "bg-[#0B3D2E] text-white border-[#0B3D2E]" : isDark ? "border-white/[0.06] text-zinc-500 hover:text-zinc-300" : "border-slate-100 text-slate-500 hover:border-[#0B3D2E]/20"
                             }`}>{m}</button>
@@ -576,16 +567,21 @@ export default function FeeCalculatorPage() {
                       </div>
                     </div>
                     <button onClick={() => {
-                        const hy = parseInt(hYear), hm = parseInt(hMonth), hd = parseInt(hDay);
-                        if (!hy||!hm||!hd) return;
-                        const [gy,gm,gd] = hijriToGregorian(hy,hm,hd);
-                        setConvResult(`${gd} ${G_MONTHS[gm-1]} ${gy}`);
+                        const r = convertHijriToGregorian(hDay, hMonth, hYear);
+                        if (r.ok) { setConvError(null); setConvResult(r.text); }
+                        else { setConvResult(null); setConvError(r.error); }
                       }}
                       disabled={!hYear||!hMonth||!hDay}
                       className="w-full py-3 rounded-xl bg-[#0B3D2E] text-[#C8A762] font-bold text-[13px] disabled:opacity-40">
                       تحويل إلى ميلادي ✨
                     </button>
                   </motion.div>
+                )}
+
+                {convError && (
+                  <p role="alert" className={`flex items-start gap-1.5 rounded-xl border px-3 py-2.5 text-[12px] font-semibold ${isDark ? "border-red-500/20 bg-red-500/10 text-red-400" : "border-red-200 bg-red-50 text-red-700"}`}>
+                    <Warning size={13} weight="fill" className="mt-0.5 flex-shrink-0" />{convError}
+                  </p>
                 )}
 
                 <AnimatePresence>
