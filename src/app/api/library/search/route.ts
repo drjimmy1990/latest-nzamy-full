@@ -940,6 +940,8 @@ export async function POST(request: Request) {
               // Already selected for the join; the card shows the real author.
               author: typeof book?.author === 'string' && book.author.trim() ? book.author.trim() : null,
               chapter: chapter?.title,
+              // Owner note ١٢-١: the passage row's label under its book card.
+              topic: typeof r.topic === 'string' ? r.topic : null,
               page: r.page_number,
               volume: r.volume_number,
             },

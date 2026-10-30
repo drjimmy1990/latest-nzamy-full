@@ -27,6 +27,9 @@ import { ClampedSummary } from "./ClampedSummary";
 import { lawCardSummaryText } from "./summaryClamp";
 import { lawCardDates, mergedFileBadge } from "../catalogueCardLabels";
 import { withSearchQuery } from "@/lib/search/multiColorSearch";
+import { Hl } from "@/components/search/MultiColorHighlight";
+import { deepHitHref, groupFeqhSearchCards, groupPrincipleSearchCards, type FeqhHitLike, type PrincipleHitLike } from "../searchHitGroups";
+import { SearchHitGroupCard } from "./SearchHitGroupCard";
 import {
   PrincipleCard,
   PrincipleRow,
@@ -243,6 +246,21 @@ export function LawsTabContent({
   // ?q= (withSearchQuery keeps a #hash) so the reader can highlight it.
   const searchQ = q && q.trim().length >= 2 ? q.trim() : "";
 
+  // Owner note ١٢-١ («الكل» view): a principle hit sits under its collection's
+  // card and a fiqh passage under its book's card, as highlighted rows that
+  // open the matching place. A collection found by its title and by its
+  // principles is the one group card, not also a collection card.
+  const principlesAreHits = filteredPrinciples.some((p) => p?._isSearchResult === true);
+  const principleGroups = principlesAreHits
+    ? groupPrincipleSearchCards(filteredPrinciples as PrincipleHitLike[], filteredCollections, searchQ).filter((g) => g.total > 0)
+    : [];
+  const groupedCollectionIds = new Set(principleGroups.map((g) => g.collectionId).filter(Boolean));
+  const previewCollections = groupedCollectionIds.size > 0
+    ? filteredCollections.filter((col) => !groupedCollectionIds.has(String(col.slug ?? col.id)))
+    : filteredCollections;
+  const feqhAreHits = filteredFeqhBooks.some((b) => b?._isSearchResult === true);
+  const feqhGroups = feqhAreHits ? groupFeqhSearchCards(filteredFeqhBooks as FeqhHitLike[], searchQ) : [];
+
   if (resultsPending) {
     return (
       <motion.div key="laws-section-pending" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
@@ -381,11 +399,20 @@ export function LawsTabContent({
                     <ul className="space-y-1.5">
                       {matchedArticles.map((a) => {
                         const articleNotice = a.status === "status_undeclared" ? articleStatusNotice(a.status, isRTL) : null;
+                        // Owner note ١٢-أ: the article row opens the law ON that article
+                        // (?target=<id>#<id>) with the search highlighted (?q=).
+                        const articleHref = deepHitHref(`/laws/${sys.slug}`, a.id, searchQ);
                         return (
                           <li key={a.id} className="text-[11px] leading-relaxed">
-                            <span className={`font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
+                            {/* Decision ١٦٠: a locked law still opens; its page gates the text. */}
+                            <Link
+                              href={articleHref}
+                              onClick={(e) => e.stopPropagation()}
+                              data-testid="law-matched-article-link"
+                              className={`font-bold underline-offset-2 hover:underline ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
+                            >
                               {a.label || (isRTL ? "مادة مطابقة" : "Matching article")}
-                            </span>
+                            </Link>
                             {articleNotice && (
                               <span className="ms-1.5 text-[9px] font-bold px-1 py-0.5 rounded bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20">
                                 {isRTL ? `حالة المادة: ${articleNotice}` : `Article status: ${articleNotice}`}
@@ -401,7 +428,7 @@ export function LawsTabContent({
                               </span>
                             )}
                             {isUnlocked && a.snippet && (
-                              <span className={`block line-clamp-2 ${muted}`}>{a.snippet}</span>
+                              <span className={`block line-clamp-2 ${muted}`}><Hl text={a.snippet} /></span>
                             )}
                           </li>
                         );
@@ -667,17 +694,17 @@ export function LawsTabContent({
         </>
       )}
 
-      {activeType === "all" && filteredCollections.length > 0 && (
+      {activeType === "all" && previewCollections.length > 0 && (
         <div className="mb-8">
           <p className={`text-[11px] font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5 ${muted}`}>
             <Gavel size={13} />
             {isRTL ? "مجموعات المبادئ القضائية" : "Judicial Collections"}
             <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-700"}`}>
-              {filteredCollections.length}
+              {previewCollections.length}
             </span>
           </p>
           <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-4" : "flex flex-col gap-4 mb-4"}>
-            {filteredCollections.slice(0, 3).map((col, idx) => {
+            {previewCollections.slice(0, 3).map((col, idx) => {
               const isColFree = col.free || viewerHasFullAccess;
               return (
               <motion.div
@@ -855,12 +882,12 @@ export function LawsTabContent({
               );
             })}
           </div>
-          {filteredCollections.length > 3 && (
+          {previewCollections.length > 3 && (
             <button
               onClick={() => setActiveType("precedents")}
               className={`text-sm font-bold flex items-center gap-1.5 mb-8 ${isDark ? "text-[#C8A762] hover:text-[#C8A762]/80" : "text-[#0B3D2E] hover:text-[#0a3328]"} transition-colors`}
             >
-              {isRTL ? `عرض كل ${filteredCollections.length} مجموعات قضائية` : `View all ${filteredCollections.length} collections`}
+              {isRTL ? `عرض كل ${previewCollections.length} مجموعات قضائية` : `View all ${previewCollections.length} collections`}
               <ArrowRight size={14} className={isRTL ? "rotate-180" : ""} />
             </button>
           )}
@@ -881,6 +908,28 @@ export function LawsTabContent({
               {searchCountLabels.precedents ?? filteredPrinciples.length}
             </span>
           </p>
+          {principlesAreHits ? (
+            <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" : "flex flex-col gap-4"}>
+              {principleGroups.slice(0, 3).map((g, idx) => (
+                <SearchHitGroupCard
+                  key={g.key}
+                  kind="principle"
+                  title={g.title}
+                  subtitle={g.court}
+                  excerpt={g.collection?.desc}
+                  rows={g.rows}
+                  more={g.more}
+                  href={g.href}
+                  locked={g.collection?.free === false && !viewerHasFullAccess}
+                  setShowPaywall={setShowPaywall}
+                  isDark={isDark}
+                  muted={muted}
+                  layoutMode={layoutMode}
+                  index={idx}
+                />
+              ))}
+            </div>
+          ) : (
           <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" : "space-y-3"}>
             <AnimatePresence mode="popLayout">
               {filteredPrinciples.slice(0, 3).map((p, idx) =>
@@ -892,6 +941,7 @@ export function LawsTabContent({
               )}
             </AnimatePresence>
           </div>
+          )}
           {filteredPrinciples.length > 3 && (
             <button
               onClick={() => setActiveType("precedents")}
@@ -973,7 +1023,24 @@ export function LawsTabContent({
             </span>
           </p>
           <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-4" : "flex flex-col gap-4 mb-4"}>
-            {filteredFeqhBooks.slice(0, 3).map((book, idx) => (
+            {feqhAreHits ? feqhGroups.slice(0, 3).map((g, idx) => (
+              <SearchHitGroupCard
+                key={g.key}
+                kind="feqh"
+                title={g.volumesLabel ? `${g.title} (${g.volumesLabel})` : g.title}
+                subtitle={g.author && g.author !== "—" ? g.author : ""}
+                excerpt={g.bookHit?.desc}
+                rows={g.rows}
+                more={g.more}
+                href={g.href}
+                locked={false}
+                setShowPaywall={setShowPaywall}
+                isDark={isDark}
+                muted={muted}
+                layoutMode={layoutMode}
+                index={idx}
+              />
+            )) : filteredFeqhBooks.slice(0, 3).map((book, idx) => (
               <motion.div
                 key={book.id}
                 initial={{ opacity: 0, y: 10 }}

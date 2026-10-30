@@ -23,6 +23,8 @@ import {
 import { ResultsSkeleton } from "./ResultsSkeleton";
 import { CollectionSeriesCard, type CatalogueCollectionRow } from "./CollectionSeriesCard";
 import { groupCollectionVolumes } from "@/lib/library/precedentVolumes";
+import { groupPrincipleSearchCards, type PrincipleHitLike } from "../searchHitGroups";
+import { SearchHitGroupCard } from "./SearchHitGroupCard";
 
 /** Principles (or grouped principle cards) per page of the tab. */
 export const PRINCIPLES_PER_PAGE = 12;
@@ -97,12 +99,26 @@ export function PrecedentsTabContent({
 }: PrecedentsTabContentProps) {
   const router = useRouter();
 
+  // Owner note ١٢-١: while a search is active, the principle hits are listed
+  // under their collection's card (one card per collection, the hits as
+  // highlighted rows that open the matching principle). A collection found
+  // by its title AND by its principles is that one card; a collection found
+  // by its title only stays in the collections grid below.
+  const isSearchMode = searchCountLabel !== undefined;
+  const hitGroups = isSearchMode
+    ? groupPrincipleSearchCards(filteredPrinciples as unknown as PrincipleHitLike[], filteredCollections, q).filter((g) => g.total > 0)
+    : [];
+  const groupedCollectionIds = new Set(hitGroups.map((g) => g.collectionId).filter(Boolean));
+  const gridCollections = groupedCollectionIds.size > 0
+    ? filteredCollections.filter((col) => !groupedCollectionIds.has(String(col.slug ?? col.id)))
+    : filteredCollections;
+
   // N2.4: the volumes of a tagged series (same series_id) become one card;
   // owner note ٠٣: so do untagged volumes of one court whose titles end
   // «— المجلد N» (title fallback, by `court` + base title). Every other
   // collection keeps its own card, in the catalogue's order.
   const collectionEntries = groupCollectionVolumes<CatalogueCollectionRow & { col: any }>(
-    filteredCollections.map((col) => ({
+    gridCollections.map((col) => ({
       id: col.id,
       title: col.title,
       part: col.partNumber ?? null,
@@ -155,7 +171,8 @@ export function PrecedentsTabContent({
   // four rows of the 3-column grid, like the other tabs' pages.
   const itemsPerPage = PRINCIPLES_PER_PAGE;
   const totalPrecedents = sortedPrecedents.length;
-  const totalPrinciples = sortedPrinciples.length;
+  // A search pages the grouped cards (12 collections a page); browse pages principles.
+  const totalPrinciples = isSearchMode ? hitGroups.length : sortedPrinciples.length;
 
   const totalPrecedentsPages = Math.ceil(totalPrecedents / itemsPerPage);
   const totalPrinciplesPages = Math.ceil(totalPrinciples / itemsPerPage);
@@ -172,6 +189,7 @@ export function PrecedentsTabContent({
   // Sliced lists for current page view
   const paginatedPrecedents = sortedPrecedents.slice((precPage - 1) * itemsPerPage, precPage * itemsPerPage);
   const paginatedPrinciples = sortedPrinciples.slice((precPage - 1) * itemsPerPage, precPage * itemsPerPage);
+  const paginatedGroups = hitGroups.slice((precPage - 1) * itemsPerPage, precPage * itemsPerPage);
 
   const sortOptions = [
     { id: "relevance", labelAr: "مدى المطابقة (الافتراضي)", labelEn: "Relevance" },
@@ -378,7 +396,7 @@ export function PrecedentsTabContent({
         <ResultsSkeleton isDark={isDark} layoutMode={layoutMode} count={3} label="جارٍ البحث" />
       ) : (<>
       {/* Judicial Collections Grid */}
-      {precMode !== "precedents" && filteredCollections.length > 0 && (
+      {precMode !== "precedents" && gridCollections.length > 0 && (
         <div className="mb-8">
           <p className={`text-[11px] font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5 ${muted}`}>
             <Gavel size={13} />
@@ -606,6 +624,28 @@ export function PrecedentsTabContent({
               {searchCountLabel ?? filteredPrinciples.length}
             </span>
           </p>
+          {isSearchMode ? (
+            <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" : "flex flex-col gap-4"}>
+              {paginatedGroups.map((g, idx) => (
+                <SearchHitGroupCard
+                  key={g.key}
+                  kind="principle"
+                  title={g.title}
+                  subtitle={g.court}
+                  excerpt={g.collection?.desc}
+                  rows={g.rows}
+                  more={g.more}
+                  href={g.href}
+                  locked={g.collection?.free === false && !viewerHasFullAccess}
+                  setShowPaywall={setShowPaywall}
+                  isDark={isDark}
+                  muted={muted}
+                  layoutMode={layoutMode}
+                  index={idx}
+                />
+              ))}
+            </div>
+          ) : (
           <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" : "space-y-3"}>
             <AnimatePresence mode="popLayout">
               {paginatedPrinciples.map((p, idx) =>
@@ -617,6 +657,7 @@ export function PrecedentsTabContent({
               )}
             </AnimatePresence>
           </div>
+          )}
         </div>
       )}
 

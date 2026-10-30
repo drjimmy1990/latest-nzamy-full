@@ -60,6 +60,7 @@ import { LawsTabContent } from "./components/LawsTabContent";
 import { FeqhTabContent } from "./components/FeqhTabContent";
 import { ISSUER_MAP } from "./components/ListItems";
 import { ResultsSkeleton } from "./components/ResultsSkeleton";
+import { HighlightProvider } from "@/components/search/MultiColorHighlight";
 import {
   type LawFacets,
   SECTION_30,
@@ -1143,7 +1144,11 @@ export default function LegalLibraryPage() {
               id: String(r.id),
               sourceId: r.meta?.collectionSlug || 'supreme',
               collectionId: r.meta?.collectionSlug != null ? String(r.meta.collectionSlug) : '',
-              // Search meta carries no principle number yet; shown only if it arrives.
+              // Owner note ١٢-١: the hit is listed under its collection's card.
+              collectionTitle: typeof r.meta?.collectionTitle === 'string' ? r.meta.collectionTitle : '',
+              // The server's per-hit lock: a locked hit shows no text.
+              locked: r.locked === true,
+              // Shown only when the search sends a real principle number.
               principleNum: realPrincipleNumber(r.meta?.principleNumber) ?? undefined,
               source: r.meta?.court || '',
               srcAbbr: courtBadge(r.meta?.court),
@@ -1274,6 +1279,13 @@ export default function LegalLibraryPage() {
         progress: 0,
         volCount: r.meta?.volumeCount || 1,
         searchVolumesLabel: r.meta?.volumesLabel ?? null,
+        // Owner note ١٢-١: grouping keys — a passage is listed under its book.
+        hitKind: r.meta?.kind,
+        bookTitle: typeof r.meta?.bookTitle === 'string' ? r.meta.bookTitle : null,
+        chapter: typeof r.meta?.chapter === 'string' ? r.meta.chapter : null,
+        topic: typeof r.meta?.topic === 'string' ? r.meta.topic : null,
+        page: r.meta?.page ?? null,
+        volumesLabel: r.meta?.volumesLabel ?? null,
         lastUpdated: '',
         _isSearchResult: true,
         };
@@ -1842,6 +1854,9 @@ export default function LegalLibraryPage() {
             {/* Center Column: Results & Active Tab Panels (Desktop Col 6, Mobile stacks at top) */}
             <div className={`order-1 lg:order-2 space-y-6 ${showSidebars ? "lg:col-span-6" : "lg:col-span-12"}`}>
               {/* ── Tab Content Panels ── */}
+              {/* Owner notes ٠٦/١٢-١: every result's <Hl> paints the search terms
+                  in their colours (MultiColorHighlight); no search → plain text. */}
+              <HighlightProvider query={isSearchActive ? search : ""}>
               <AnimatePresence mode="wait">
                 {dbLoading ? (
                   <motion.div
@@ -2240,6 +2255,7 @@ export default function LegalLibraryPage() {
                   </>
                 )}
               </AnimatePresence>
+              </HighlightProvider>
             </div>
 
             {/* Left Column: Activity & Updates (Desktop Col 3, Mobile stacks at bottom) */}
