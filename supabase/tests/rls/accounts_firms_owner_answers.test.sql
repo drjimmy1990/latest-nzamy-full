@@ -1,7 +1,7 @@
--- accounts_firms_owner_answers.test.sql — proves 20261030_10 (owner answers
+-- accounts_firms_owner_answers.test.sql — proves 20261030_12 (owner answers
 -- ٣٠٧–٣١٣, package 2026-10-30) on top of 20261026_70 (D6).
 --
--- CHAIN (run.sh, postgres:16; stubs.sql loads first by itself). 20261030_10
+-- CHAIN (run.sh, postgres:16; stubs.sql loads first by itself). 20261030_12
 -- runs TWICE (idempotent). From the repo root:
 --   T=supabase/tests/rls; M=supabase/migrations; bash $T/run.sh \
 --     $T/prelude_lawyer_profiles_live.sql $T/prelude_signup_metadata_live.sql \
@@ -17,15 +17,15 @@
 --     $M/20261026_70_account_deletion.sql $M/20261026_70_account_deletion.sql \
 --     supabase/storage_policies_documents.sql \
 --     $T/prelude_accounts_firms_before.sql \
---     $M/20261030_10_accounts_firms_owner_answers.sql $M/20261030_10_accounts_firms_owner_answers.sql \
+--     $M/20261030_12_accounts_firms_owner_answers.sql $M/20261030_12_accounts_firms_owner_answers.sql \
 --     $T/accounts_firms_owner_answers.test.sql
--- (the same chain as account_deletion.test.sql, plus the prelude and 20261030_10)
+-- (the same chain as account_deletion.test.sql, plus the prelude and 20261030_12)
 --
 -- NEGATIVE CONTROLS (each must FAIL; recorded in the ledger
 -- docs/audits/2026-10-30-owner-package-accounts-firms.md):
---   1. the chain WITHOUT the two 20261030_10 lines → the first assertion that
+--   1. the chain WITHOUT the two 20261030_12 lines → the first assertion that
 --      reads original_author_id fails (T1: column missing).
---   2. the chain with 20261030_10 and then 20261026_70 run AGAIN after it
+--   2. the chain with 20261030_12 and then 20261026_70 run AGAIN after it
 --      (its own specs and removal trigger back) → "T3 FAIL: a service-role
 --      removal moved R2's hearing to the consultant owner".
 --

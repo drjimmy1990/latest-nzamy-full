@@ -24,9 +24,9 @@ It has not run on any real database yet.
 ## Step 1: the SQL (SQL editor)
 
 1. On your PC, the file is
-   `D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\SQL_batch_2026-10-30_pricing\10_ANY_TIME_20261030_10_pricing_owner_package.sql`.
-   - On the server, after `git pull`, it is `/www/wwwroot/nzamy/latest-nzamy-full/SQL_batch_2026-10-30_pricing/10_ANY_TIME_20261030_10_pricing_owner_package.sql`.
-   - It is the same file as `supabase/migrations/20261030_10_pricing_owner_package.sql`.
+   `D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\SQL_batch_2026-10-30_pricing\10_ANY_TIME_20261030_16_pricing_owner_package.sql`.
+   - On the server, after `git pull`, it is `/www/wwwroot/nzamy/latest-nzamy-full/SQL_batch_2026-10-30_pricing/10_ANY_TIME_20261030_16_pricing_owner_package.sql`.
+   - It is the same file as `supabase/migrations/20261030_16_pricing_owner_package.sql`.
 2. Open the Supabase dashboard → **SQL Editor** → New query. Paste the whole file and press **Run**.
 3. The SQL editor hides NOTICEs, so the file ends with two SELECTs. **Send us their result (screen output, not a file):**
    - **7 rows of `subscription_plans`:**
@@ -62,7 +62,7 @@ tail -f /root/deploy-20261030.log
 cd /www/wwwroot/nzamy/latest-nzamy-full && docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < supabase/migrations/_verify.sql 2>&1 | grep -E "20261030|ERROR"
 ```
 
-**Send us** the line `_verify: 20261030_10 OK — …` (screen output).
+**Send us** the line `_verify: 20261030_16 OK — …` (screen output).
 
 ## Rollback
 

@@ -133,7 +133,7 @@ export function deletionErrorAr(message: string | null | undefined): string {
 /**
  * Owner ٣٠٧: the entity kinds whose ownership blocks the owner's deletion
  * while other members remain (20261026_70 account_entity_owner_block; the
- * caller's own via 20261030_10 account_deletion_owner_block()).
+ * caller's own via 20261030_12 account_deletion_owner_block()).
  */
 export type EntityOwnerBlock = "firm" | "business" | "government" | "ngo";
 

@@ -4,9 +4,9 @@ One SQL file. It builds on `20261026_70_account_deletion.sql`, which is already 
 
 | File (full path on your PC) | When |
 |---|---|
-| `D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\SQL_batch_2026-10-30_accounts_firms\10_ANY_TIME_20261030_10_accounts_firms_owner_answers.sql` | any time, before or after the deploy |
+| `D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\SQL_batch_2026-10-30_accounts_firms\10_ANY_TIME_20261030_12_accounts_firms_owner_answers.sql` | any time, before or after the deploy |
 
-It is the same file, byte for byte, as `supabase/migrations/20261030_10_accounts_firms_owner_answers.sql`.
+It is the same file, byte for byte, as `supabase/migrations/20261030_12_accounts_firms_owner_answers.sql`.
 
 What it does:
 - **٣٠٨:** a new column `original_author_id` on `case_notes`, `dashboard_notes`, `lawyer_client_notes` and `consultation_notes`.
@@ -35,7 +35,7 @@ On the server:
 ```
 cd /www/wwwroot/nzamy/latest-nzamy-full && docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < supabase/migrations/_verify.sql 2>&1 | grep -E "_verify: 20261030_|ERROR"
 ```
-Run it after the code with this commit is on the server; `_verify.sql` comes with the code. Expect the line `_verify: 20261030_10 OK — …` and no `ERROR`.
+Run it after the code with this commit is on the server; `_verify.sql` comes with the code. Expect the line `_verify: 20261030_12 OK — …` and no `ERROR`.
 
 ## Re-run order
 If `20261026_70_account_deletion.sql` is ever run again, run this file again after it. Re-running 70 puts back its own list, and the consulting-office rule (٣١٢) is lost. `_verify.sql` raises when that happens.

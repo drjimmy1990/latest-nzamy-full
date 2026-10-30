@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration: 20261030_10_branding_assets.sql
+-- Migration: 20261030_14_branding_assets.sql
 -- Owner package 2026-10-30, note 09 §٢-أ (NOTE-09-C01, LIVE-F08): the office
 -- uploads its own ready-made stationery into the legal vault — the official
 -- Word letterhead template, a full-page PDF letterhead, the stamp and the
@@ -60,7 +60,7 @@ do $$
 begin
   if to_regclass('public.branding_vaults') is null
      or to_regprocedure('public.can_manage_branding_vault(uuid, uuid)') is null then
-    raise exception '20261030_10: public.branding_vaults / can_manage_branding_vault missing — apply 20261026_63_branding_vault.sql first';
+    raise exception '20261030_14: public.branding_vaults / can_manage_branding_vault missing — apply 20261026_63_branding_vault.sql first';
   end if;
 end $$;
 
@@ -96,7 +96,7 @@ create table if not exists public.branding_assets (
 );
 
 comment on table public.branding_assets is
-  'Owner note 09 (2026-10-30): the office''s ready-made stationery (Word / PDF letterhead, stamp, signature) in the private branding-files bucket, one per kind per branding vault. Server-written only. 20261030_10.';
+  'Owner note 09 (2026-10-30): the office''s ready-made stationery (Word / PDF letterhead, stamp, signature) in the private branding-files bucket, one per kind per branding vault. Server-written only. 20261030_14.';
 
 -- The folder must be the vault owner's: u/<lawyer uid>/ or f/<firm id>/.
 create or replace function public.branding_assets_guard()
@@ -171,7 +171,7 @@ end $$;
 do $$
 begin
   if to_regclass('storage.buckets') is null then
-    raise notice '20261030_10: storage.buckets not found — create the private bucket branding-files by hand (5 MB; pdf, docx, png, webp)';
+    raise notice '20261030_14: storage.buckets not found — create the private bucket branding-files by hand (5 MB; pdf, docx, png, webp)';
     return;
   end if;
   begin
@@ -185,7 +185,7 @@ begin
           file_size_limit = excluded.file_size_limit,
           allowed_mime_types = excluded.allowed_mime_types;
   exception when insufficient_privilege then
-    raise warning '20261030_10: this role may not write storage.buckets — create the private bucket branding-files as supabase_admin (5 MB; pdf, docx, png, webp)';
+    raise warning '20261030_14: this role may not write storage.buckets — create the private bucket branding-files as supabase_admin (5 MB; pdf, docx, png, webp)';
   end;
 end $$;
 
@@ -196,37 +196,37 @@ do $$
 declare c text;
 begin
   if not (select relrowsecurity from pg_class where oid = 'public.branding_assets'::regclass) then
-    raise exception '20261030_10 verify: RLS is off on branding_assets';
+    raise exception '20261030_14 verify: RLS is off on branding_assets';
   end if;
   if (select count(*) from pg_policy where polrelid = 'public.branding_assets'::regclass) <> 1
      or exists (select 1 from pg_policy where polrelid = 'public.branding_assets'::regclass and polcmd <> 'r') then
-    raise exception '20261030_10 verify: branding_assets must carry exactly the one SELECT policy of this file';
+    raise exception '20261030_14 verify: branding_assets must carry exactly the one SELECT policy of this file';
   end if;
   foreach c in array array['SELECT', 'INSERT', 'UPDATE', 'DELETE'] loop
     if exists (select 1 from pg_roles where rolname = 'anon')
        and has_table_privilege('anon', 'public.branding_assets', c) then
-      raise exception '20261030_10 verify: guests hold % on branding_assets', c;
+      raise exception '20261030_14 verify: guests hold % on branding_assets', c;
     end if;
     if c <> 'SELECT' and exists (select 1 from pg_roles where rolname = 'authenticated')
        and has_table_privilege('authenticated', 'public.branding_assets', c) then
-      raise exception '20261030_10 verify: sessions hold % on branding_assets — writes are the server''s only', c;
+      raise exception '20261030_14 verify: sessions hold % on branding_assets — writes are the server''s only', c;
     end if;
   end loop;
   if not exists (select 1 from pg_trigger where tgrelid = 'public.branding_assets'::regclass
                   and tgname = 'trg_branding_assets_guard' and tgenabled <> 'D') then
-    raise exception '20261030_10 verify: the folder guard trigger is missing or disabled';
+    raise exception '20261030_14 verify: the folder guard trigger is missing or disabled';
   end if;
   if not (select prosecdef from pg_proc where oid = 'public.branding_assets_guard()'::regprocedure)
      or not exists (select 1 from pg_proc where oid = 'public.branding_assets_guard()'::regprocedure
                      and proconfig @> array['search_path=""']) then
-    raise exception '20261030_10 verify: branding_assets_guard is not SECURITY DEFINER with search_path ''''';
+    raise exception '20261030_14 verify: branding_assets_guard is not SECURITY DEFINER with search_path ''''';
   end if;
   if to_regclass('storage.buckets') is not null
      and not exists (select 1 from storage.buckets where id = 'branding-files' and public = false
                       and file_size_limit = 5242880) then
-    raise warning '20261030_10 verify: the private bucket «branding-files» (5 MB) is not there yet — create it as supabase_admin';
+    raise warning '20261030_14 verify: the private bucket «branding-files» (5 MB) is not there yet — create it as supabase_admin';
   end if;
-  raise notice '20261030_10 verify: OK — branding_assets: one file per kind per vault, read by the vault''s managers only, written by the server only, folder pinned to the vault owner; private bucket branding-files (5 MB, pdf/docx/png/webp)';
+  raise notice '20261030_14 verify: OK — branding_assets: one file per kind per vault, read by the vault''s managers only, written by the server only, folder pinned to the vault owner; private bucket branding-files (5 MB, pdf/docx/png/webp)';
 end $$;
 
 commit;

@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration: 20261030_10_accounts_firms_owner_answers.sql
+-- Migration: 20261030_12_accounts_firms_owner_answers.sql
 -- Owner answers ٣٠٧–٣١٣ (package 2026-10-30, developer-questions-299-321.csv;
 -- option (أ) chosen in each). Ledger:
 -- docs/audits/2026-10-30-owner-package-accounts-firms.md.
@@ -94,11 +94,11 @@ begin
      or to_regclass('public.firm_asset_transfers') is null
      or to_regprocedure('public.transfer_firm_assets(uuid, uuid, text, boolean)') is null
      or to_regprocedure('public.account_entity_owner_block(uuid)') is null then
-    raise exception '20261030_10: 20261026_70_account_deletion.sql has not run here — run it first';
+    raise exception '20261030_12: 20261026_70_account_deletion.sql has not run here — run it first';
   end if;
   if to_regclass('public.deadlines') is not null
      and not public.account_column_exists('deadlines', 'kind') then
-    raise exception '20261030_10: public.deadlines has no kind column — run 20260904_phase5_deadline_radar.sql / 20261019_21 first';
+    raise exception '20261030_12: public.deadlines has no kind column — run 20260904_phase5_deadline_radar.sql / 20261019_21 first';
   end if;
 end $$;
 
@@ -120,7 +120,7 @@ end;
 $$;
 
 comment on function public.note_original_author_pin() is
-  '20261030_10 (owner ٣٠٨): a note''s original author is its author at insert and never changes — the firm transfer moves author_user_id to the firm owner, original_author_id keeps who wrote it.';
+  '20261030_12 (owner ٣٠٨): a note''s original author is its author at insert and never changes — the firm transfer moves author_user_id to the firm owner, original_author_id keeps who wrote it.';
 
 do $$
 declare
@@ -132,13 +132,13 @@ declare
 begin
   foreach t in array array['case_notes', 'dashboard_notes', 'lawyer_client_notes', 'consultation_notes'] loop
     if to_regclass('public.' || t) is null or not public.account_column_exists(t, 'author_user_id') then
-      raise notice '20261030_10: public.% (author_user_id) is not here — skipped', t;
+      raise notice '20261030_12: public.% (author_user_id) is not here — skipped', t;
       continue;
     end if;
 
     execute format('alter table public.%I add column if not exists original_author_id uuid', t);
     execute format($c$comment on column public.%I.original_author_id is %L$c$, t,
-      'كاتب الملاحظة الأصلي (قرار المالك ٣٠٨، 20261030_10). يُثبَّت عند الإنشاء ولا يتغير؛ إذا انتقلت الملاحظة لصاحب المكتب بقي هنا اسم من كتبها. بلا مفتاح أجنبي ليبقى بعد حذف حسابه.');
+      'كاتب الملاحظة الأصلي (قرار المالك ٣٠٨، 20261030_12). يُثبَّت عند الإنشاء ولا يتغير؛ إذا انتقلت الملاحظة لصاحب المكتب بقي هنا اسم من كتبها. بلا مفتاح أجنبي ليبقى بعد حذف حسابه.');
 
     execute format('select count(*) from public.%I where original_author_id is null', t) into pending;
     if pending > 0 then
@@ -166,7 +166,7 @@ begin
       foreach tg_name in array off loop
         execute format('alter table public.%I enable trigger %I', t, tg_name);
       end loop;
-      raise notice '20261030_10: public.%.original_author_id filled on % row(s)', t, pending;
+      raise notice '20261030_12: public.%.original_author_id filled on % row(s)', t, pending;
     end if;
 
     -- every author column is NOT NULL (case_notes, dashboard_notes,
@@ -209,7 +209,7 @@ end;
 $$;
 
 comment on function public.firm_court_rows_stay_with_member(uuid) is
-  '20261030_10 (owner ٣١٢): true while a member is being REMOVED from a consulting office (the firm owner is a legal consultant, Art. 18): his hearings, appointments, case stages and court deadlines stay in his name. Always false on the account-deletion path, where they move to the owner (read-only for him under 20261019_21).';
+  '20261030_12 (owner ٣١٢): true while a member is being REMOVED from a consulting office (the firm owner is a legal consultant, Art. 18): his hearings, appointments, case stages and court deadlines stay in his name. Always false on the account-deletion path, where they move to the owner (read-only for him under 20261019_21).';
 
 -- 20261026_70's list, unchanged except the three court tables (marked ٣١٢).
 create or replace function public.firm_asset_specs()
@@ -252,7 +252,7 @@ as $$
 $$;
 
 comment on function public.firm_asset_specs() is
-  '20261026_70 + 20261030_10 (٣١٢): the firm-asset columns transfer_firm_assets moves to the firm owner (table, pk, user column, firm expression over alias t, required columns, extra condition, counted by the purge guard). A consulting office keeps a removed member''s court rows with him (firm_court_rows_stay_with_member).';
+  '20261026_70 + 20261030_12 (٣١٢): the firm-asset columns transfer_firm_assets moves to the firm owner (table, pk, user column, firm expression over alias t, required columns, extra condition, counted by the purge guard). A consulting office keeps a removed member''s court rows with him (firm_court_rows_stay_with_member).';
 
 create or replace function public.firm_member_removed_transfer()
 returns trigger
@@ -284,7 +284,7 @@ as $$
 $$;
 
 comment on function public.account_deletion_owner_block() is
-  '20261030_10 (owner ٣٠٧): firm / business / government / ngo when the CALLER owns an entity that still has other members (his deletion is refused until ownership is transferred), else null. auth.uid() only.';
+  '20261030_12 (owner ٣٠٧): firm / business / government / ngo when the CALLER owns an entity that still has other members (his deletion is refused until ownership is transferred), else null. auth.uid() only.';
 
 
 -- ── 4. ٣١٠ a tax invoice is never deleted, its buyer never dropped ───────────
@@ -301,7 +301,7 @@ begin
   if tg_op = 'DELETE' then
     if old.status in ('paid', 'refunded') and old.live is distinct from false then
       raise exception using errcode = '42501',
-        message = format('TAX_INVOICE_KEPT: payment order %s (receipt %s) is a tax invoice and is never deleted (owner ٣١٠, 20261030_10)',
+        message = format('TAX_INVOICE_KEPT: payment order %s (receipt %s) is a tax invoice and is never deleted (owner ٣١٠, 20261030_12)',
                          old.id, coalesce(old.receipt_number, '—'));
     end if;
     return old;
@@ -328,14 +328,14 @@ end;
 $$;
 
 comment on function public.payment_orders_keep_tax_invoice() is
-  '20261030_10 (owner ٣١٠): a paid / refunded live payment order (a tax invoice) is never deleted; its buyer_snapshot is never dropped or rewritten, and takes the buyer''s national address when first written. No expiry.';
+  '20261030_12 (owner ٣١٠): a paid / refunded live payment order (a tax invoice) is never deleted; its buyer_snapshot is never dropped or rewritten, and takes the buyer''s national address when first written. No expiry.';
 
 do $$
 begin
   if to_regclass('public.payment_orders') is null
      or not public.account_column_exists('payment_orders', 'live')
      or not public.account_column_exists('payment_orders', 'metadata') then
-    raise notice '20261030_10: public.payment_orders (live, metadata) is not here — the invoice guard is skipped';
+    raise notice '20261030_12: public.payment_orders (live, metadata) is not here — the invoice guard is skipped';
     return;
   end if;
   drop trigger if exists trg_payment_orders_keep_tax_invoice on public.payment_orders;
@@ -382,52 +382,52 @@ begin
   foreach t in array array['case_notes', 'dashboard_notes', 'lawyer_client_notes', 'consultation_notes'] loop
     if to_regclass('public.' || t) is null then continue; end if;
     if not public.account_column_exists(t, 'original_author_id') then
-      raise exception '20261030_10 verify: public.%.original_author_id is missing', t;
+      raise exception '20261030_12 verify: public.%.original_author_id is missing', t;
     end if;
     execute format('select count(*) from public.%I where original_author_id is null', t) into n;
     if n > 0 then
-      raise exception '20261030_10 verify: % row(s) of public.% have no original author', n, t;
+      raise exception '20261030_12 verify: % row(s) of public.% have no original author', n, t;
     end if;
     if not exists (select 1 from pg_trigger where tgrelid = to_regclass('public.' || t)
                     and tgname = 'trg_note_original_author' and not tgisinternal and tgenabled <> 'D') then
-      raise exception '20261030_10 verify: public.% has no original-author trigger', t;
+      raise exception '20261030_12 verify: public.% has no original-author trigger', t;
     end if;
     if exists (select 1 from pg_trigger where tgrelid = to_regclass('public.' || t) and not tgisinternal and tgenabled = 'D') then
-      raise exception '20261030_10 verify: public.% has a disabled trigger — the backfill did not switch it back on', t;
+      raise exception '20261030_12 verify: public.% has a disabled trigger — the backfill did not switch it back on', t;
     end if;
   end loop;
 
   if not exists (select 1 from public.firm_asset_specs() s
                   where s.tbl = 'hearings' and s.extra like '%firm_court_rows_stay_with_member%') then
-    raise exception '20261030_10 verify: firm_asset_specs has no consulting-office rule (٣١٢)';
+    raise exception '20261030_12 verify: firm_asset_specs has no consulting-office rule (٣١٢)';
   end if;
   if (select count(*) from public.firm_asset_specs()) <> 21 then
-    raise exception '20261030_10 verify: firm_asset_specs lists % columns, expected 21 (20261026_70''s list)', (select count(*) from public.firm_asset_specs());
+    raise exception '20261030_12 verify: firm_asset_specs lists % columns, expected 21 (20261026_70''s list)', (select count(*) from public.firm_asset_specs());
   end if;
   if position('nzamy.firm_transfer_reason' in pg_get_functiondef('public.firm_member_removed_transfer()'::regprocedure)) = 0 then
-    raise exception '20261030_10 verify: firm_member_removed_transfer does not mark the removal (٣١٢)';
+    raise exception '20261030_12 verify: firm_member_removed_transfer does not mark the removal (٣١٢)';
   end if;
 
   if exists (select 1 from pg_roles where rolname = 'authenticated') then
     if not has_function_privilege('authenticated', 'public.account_deletion_owner_block()', 'EXECUTE') then
-      raise exception '20261030_10 verify: authenticated cannot ask its own deletion block';
+      raise exception '20261030_12 verify: authenticated cannot ask its own deletion block';
     end if;
     if has_function_privilege('authenticated', 'public.account_entity_owner_block(uuid)', 'EXECUTE') then
-      raise exception '20261030_10 verify: authenticated can ask ANY account''s deletion block';
+      raise exception '20261030_12 verify: authenticated can ask ANY account''s deletion block';
     end if;
   end if;
 
   if to_regclass('public.payment_orders') is not null then
     if not exists (select 1 from pg_trigger where tgrelid = 'public.payment_orders'::regclass
                     and tgname = 'trg_payment_orders_keep_tax_invoice' and not tgisinternal and tgenabled <> 'D') then
-      raise exception '20261030_10 verify: the tax-invoice guard on payment_orders is missing';
+      raise exception '20261030_12 verify: the tax-invoice guard on payment_orders is missing';
     end if;
     if exists (
          select 1 from pg_constraint con
            join pg_attribute a on a.attrelid = con.conrelid and a.attnum = any (con.conkey)
           where con.conrelid = 'public.payment_orders'::regclass and con.contype = 'f'
             and a.attname = 'user_id' and con.confdeltype <> 'n') then
-      raise exception '20261030_10 verify: payment_orders.user_id is not ON DELETE SET NULL — an account deletion would delete invoices';
+      raise exception '20261030_12 verify: payment_orders.user_id is not ON DELETE SET NULL — an account deletion would delete invoices';
     end if;
   end if;
 
@@ -440,11 +440,11 @@ begin
                      'public.payment_orders_keep_tax_invoice()'::regprocedure)
   loop
     if not rec.d or rec.o not in ('postgres', 'supabase_admin') then
-      raise exception '20261030_10 verify: % is owned by % (definer: %) — run this file as postgres', rec.f, rec.o, rec.d;
+      raise exception '20261030_12 verify: % is owned by % (definer: %) — run this file as postgres', rec.f, rec.o, rec.d;
     end if;
   end loop;
 
-  raise notice '20261030_10 verify: OK — notes keep their original author (٣٠٨); a consulting office keeps a removed lawyer''s court rows with him until his account is deleted (٣١٢); the caller can ask his own deletion block (٣٠٧); a tax invoice is never deleted and keeps its buyer (٣١٠)';
+  raise notice '20261030_12 verify: OK — notes keep their original author (٣٠٨); a consulting office keeps a removed lawyer''s court rows with him until his account is deleted (٣١٢); the caller can ask his own deletion block (٣٠٧); a tax invoice is never deleted and keeps its buyer (٣١٠)';
 end $$;
 
 commit;

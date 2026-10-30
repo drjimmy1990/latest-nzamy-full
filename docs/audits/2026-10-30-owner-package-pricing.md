@@ -95,7 +95,7 @@ The quarterly and half-yearly prices are the document's (§4ج).
 - On `/pricing` → الأفراد, toggle each of the four cycles: ind-ai shows 29 / 79 / 149 / 249. The other two plans hide in quarterly and half-yearly.
 - In test mode, check out ind-ai monthly: 29 + VAT = 33.35.
 
-**DB:** `subscription_plans` is updated by `20261030_10`. The admin MRR reads it, checkout does not.
+**DB:** `subscription_plans` is updated by `20261030_16`. The admin MRR reads it, checkout does not.
 
 ### ٣٠٢: the 100- and 250-point packs are for individuals only, valid 3 months
 
@@ -226,9 +226,9 @@ The quarterly and half-yearly prices are the document's (§4ج).
   - Like the coupon's own once-per-user rule (`orderConsumedCoupon`), it does not count a test-mode payment (`live = false`) or a paid order that granted nothing (`already_entitled`). So a staff test payment never costs a real user NEWCLIENT.
 - With an earlier order the code is refused with the generic «كود الخصم غير صالح أو منتهي الصلاحية», so a guesser cannot tell which codes exist.
 - A failed read answers 503 and never gives the discount.
-- `20261030_10` stamps the NEWCLIENT row so the rule is visible on the row.
+- `20261030_16` stamps the NEWCLIENT row so the rule is visible on the row.
 
-**Files:** `couponRules.ts`, `couponServer.ts`, `20261030_10_pricing_owner_package.sql`.
+**Files:** `couponRules.ts`, `couponServer.ts`, `20261030_16_pricing_owner_package.sql`.
 
 **Tests:**
 - `couponRules.test.ts` (two ٣٠٥ tests);
@@ -333,7 +333,7 @@ That flow belongs with the points-debit work of the AI waves (`src/lib/ai/*`), w
 
 ## 3. SQL (the user runs it; nothing gates the deploy)
 
-**File:** `supabase/migrations/20261030_10_pricing_owner_package.sql`. The copy to run is `SQL_batch_2026-10-30_pricing/10_ANY_TIME_20261030_10_pricing_owner_package.sql`.
+**File:** `supabase/migrations/20261030_16_pricing_owner_package.sql`. The copy to run is `SQL_batch_2026-10-30_pricing/10_ANY_TIME_20261030_16_pricing_owner_package.sql`.
 
 **Steps:** in `SQL_batch_2026-10-30_pricing/README.md`, with full paths and the SELECT result to expect.
 
@@ -358,7 +358,7 @@ That flow belongs with the points-debit work of the AI waves (`src/lib/ai/*`), w
 **Why there is no runtime probe for the quarterly / half-yearly cycles:**
 - The P1 design (`docs/plans/2026-10-26-P1-price-book-design.md` §6) asked P2 to refuse those cycles in code until a probe showed the database accepts them.
 - `20261026_10` widened both checks, and it ran on prod on 2026-10-26 with `_verify` OK.
-- `20261030_10` refuses to run without its columns.
+- `20261030_16` refuses to run without its columns.
 - So the probe would guard only a schema restored from before 26 Oct. In that case the order insert fails with 503, and nobody is charged.
 - **Recorded as accepted risk, not built.**
 
@@ -387,7 +387,7 @@ It was built with placeholder Supabase env. Two declared dependencies are missin
 
 **Files other sessions may also touch (for the merge order):**
 - `src/app/register/provider/data.ts` (two strings: `topup-100` → `topup-500`). The captcha session works in the register pages.
-- The `lib-*` prices in `priceBook.ts`: no overlap. The library session's claim note (`library-owner-2026-10-30-CLAIM.md`) says it does not touch the pricing constants and claims migrations `20261030_60..69`, while this batch uses `20261030_10`. Its baseline (4,166 tests, 7 pre-existing failures, from `235e1bef`) matches the 7 failures above.
+- The `lib-*` prices in `priceBook.ts`: no overlap. The library session's claim note (`library-owner-2026-10-30-CLAIM.md`) says it does not touch the pricing constants and claims migrations `20261030_60..69`, while this batch uses `20261030_16`. Its baseline (4,166 tests, 7 pre-existing failures, from `235e1bef`) matches the 7 failures above.
 
 ---
 

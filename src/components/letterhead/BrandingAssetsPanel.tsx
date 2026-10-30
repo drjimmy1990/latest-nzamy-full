@@ -4,12 +4,12 @@
  * BrandingAssetsPanel — «مطبوعات المكتب الجاهزة» inside the vault's branding
  * tab (owner note 09 §٢-أ, NOTE-09-C01, LIVE-F08): upload, replace, download
  * and delete the office's Word letterhead template, full-page PDF letterhead,
- * stamp and signature. Backed by /api/v1/branding/assets (20261030_10).
+ * stamp and signature. Backed by /api/v1/branding/assets (20261030_14).
  *
  * Honest about its reach: the files are STORED here and downloaded from here.
  * The platform does not yet merge a document into the Word template, print
  * over the PDF, or place the stamp and signature on any output — the note
- * under the list says so. Before 20261030_10 runs the server answers
+ * under the list says so. Before 20261030_14 runs the server answers
  * `available: false` and the panel says «يتطلب تحديث قاعدة البيانات» with
  * every button disabled; nothing is pretended.
  */

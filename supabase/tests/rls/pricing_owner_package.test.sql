@@ -1,4 +1,4 @@
--- pricing_owner_package.test.sql — proves 20261030_10 (owner package of 30 Oct
+-- pricing_owner_package.test.sql — proves 20261030_16 (owner package of 30 Oct
 -- 2026, answers ٢٩٩–٣٠٦) and its _verify section.
 --
 -- CHAIN (run.sh, postgres:16; stubs.sql loads first by itself). The migration
@@ -15,8 +15,8 @@
 --     $M/20261026_10_billing_cycles.sql \
 --     $M/20261026_20_coupons_server_only.sql \
 --     "$B" \
---     $M/20261030_10_pricing_owner_package.sql \
---     $M/20261030_10_pricing_owner_package.sql \
+--     $M/20261030_16_pricing_owner_package.sql \
+--     $M/20261030_16_pricing_owner_package.sql \
 --     "$B" \
 --     $R/pricing_owner_package.test.sql
 -- Why each link: 20260603_phase1_003 creates subscription_plans and coupons
@@ -26,7 +26,7 @@
 -- gives coupons its server-only shape.
 --
 -- NEGATIVE CONTROL (must FAIL): the chain without 20261026_10 → the migration
--- raises "20261030_10: subscription_plans has no price_quarterly /
+-- raises "20261030_16: subscription_plans has no price_quarterly /
 -- price_semiannual — run 20261026_10_billing_cycles.sql first".
 --
 -- Every assertion RAISES on failure.

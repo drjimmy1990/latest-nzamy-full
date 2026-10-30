@@ -66,14 +66,14 @@ export interface CouponRow {
   max_discount_pct: number | string;
   /** 20261026_20 */
   excluded_kinds: readonly string[] | null;
-  /** `first_paid_order_only: true` marks a first-order coupon (20261030_10_pricing_owner_package; owner ٣٠٥). */
+  /** `first_paid_order_only: true` marks a first-order coupon (20261030_16_pricing_owner_package; owner ٣٠٥). */
   metadata?: Record<string, unknown> | null;
 }
 
 /**
  * Owner ٣٠٥ (30 Oct 2026): NEWCLIENT is for the buyer's first paid order on
  * the platform. The code itself is enough, so the rule holds before
- * 20261030_10 stamps the row; any other code an admin marks
+ * 20261030_16 stamps the row; any other code an admin marks
  * `metadata.first_paid_order_only` follows it too.
  */
 export function isFirstOrderCoupon(row: Pick<CouponRow, "code" | "metadata">): boolean {

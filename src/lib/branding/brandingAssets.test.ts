@@ -1,7 +1,7 @@
 /**
  * brandingAssets.test.ts — the office's uploaded stationery (NOTE-09-C01,
  * LIVE-F08, package 2026-10-30): the byte sniffing, the object path, and the
- * agreement with supabase/migrations/20261030_10_branding_assets.sql and with
+ * agreement with supabase/migrations/20261030_14_branding_assets.sql and with
  * /api/v1/branding/assets (source assertions — the route imports next/server).
  */
 import assert from "node:assert/strict";
@@ -22,7 +22,7 @@ import {
 import { BRANDING_BUCKET, isOwnLogoPath } from "./brandingVault.ts";
 
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8").replace(/\r\n/g, "\n");
-const MIGRATION = read("../../../supabase/migrations/20261030_10_branding_assets.sql");
+const MIGRATION = read("../../../supabase/migrations/20261030_14_branding_assets.sql");
 const ROUTE = read("../../app/api/v1/branding/assets/route.ts");
 
 const UID = "0f8e2c1a-5b7d-4e3a-9c1f-2a6b8d4e0c9f";

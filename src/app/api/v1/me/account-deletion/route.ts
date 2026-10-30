@@ -20,10 +20,10 @@ import {
  * /api/v1/me/account-deletion — D6 (owner ٢٩٨), the account's own deletion.
  *
  *   GET   { data: { available, request, frozen, ownerBlock } }
- *         `ownerBlock` (owner ٣٠٧, 20261030_10): "firm" / "business" /
+ *         `ownerBlock` (owner ٣٠٧, 20261030_12): "firm" / "business" /
  *         "government" / "ngo" when the caller owns an entity that still has
  *         members — his deletion is refused until ownership is transferred —
- *         else null (also before 20261030_10 runs).
+ *         else null (also before 20261030_12 runs).
  *         `available: false` before 20261026_70 runs — Settings then keeps
  *         its «تواصل مع الدعم» panel. Re-syncs the gates' copy
  *         (app_metadata) from the table in both directions, so a hand-run SQL
@@ -77,7 +77,7 @@ export async function GET() {
 
   // Owner ٣٠٧: an entity owner with members is told why before he types
   // anything (Settings), and the frozen page says the final deletion is
-  // suspended. Null before 20261030_10 runs; the request itself is still
+  // suspended. Null before 20261030_12 runs; the request itself is still
   // refused by the database.
   const ownerBlock = await readOwnerBlock(supabase);
 

@@ -38,7 +38,7 @@
  * touched by a member's purge. A failed list (63 not run: no bucket) or
  * remove is recorded on the request like the documents' (`branding_failed`).
  * The same `u/<his id>/` folder of the `branding-files` bucket (his uploaded
- * Word / PDF letterhead, stamp and signature — 20261030_10) is cleared the
+ * Word / PDF letterhead, stamp and signature — 20261030_12) is cleared the
  * same way, right after; that bucket not existing yet means nothing to clear.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -132,7 +132,7 @@ export async function readActiveRequest(
 
 /**
  * Owner ٣٠٧: the entity whose ownership blocks the CALLER's own deletion
- * (20261030_10 account_deletion_owner_block(), auth.uid() only), read with
+ * (20261030_12 account_deletion_owner_block(), auth.uid() only), read with
  * the caller's session. Null when there is none, and also when the function
  * is not there yet or the read fails — the database still refuses the request
  * itself (request_account_deletion, 55000), so null only means "not known in
@@ -254,7 +254,7 @@ async function removeBrandingFolderWith(
   for (let offset = 0; ; offset += BRANDING_LIST_PAGE) {
     const { data, error } = await bucket.list(folder, { limit: BRANDING_LIST_PAGE, offset });
     if (error) {
-      // 20261030_10 not run yet: no stationery bucket, so no stationery to clear.
+      // 20261030_12 not run yet: no stationery bucket, so no stationery to clear.
       if (missingBucketIsEmpty && /bucket/i.test(error.message ?? "") && /not found/i.test(error.message ?? "")) {
         return { removed: 0, failed: [] };
       }

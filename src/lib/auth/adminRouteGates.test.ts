@@ -296,6 +296,9 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   // owner note ١٨ C04: revoke / end change of a library grant (one rpc, one audit row)
   { file: "library-grants/[id]/route.ts", method: "PATCH", action: "entitlements.grant", logs: 1 },
   { file: "library-issue-reports/[id]/route.ts", method: "PATCH", action: "tickets.manage", logs: 1 },
+  // library fortress (30-Oct package): an admin opens or lifts a library security lock (one audit row each)
+  { file: "library-security-locks/route.ts", method: "POST", action: "settings.write", logs: 1 },
+  { file: "library-security-locks/[id]/lift/route.ts", method: "POST", action: "settings.write", logs: 1 },
   { file: "receipts/route.ts", method: "POST", action: "orders.manage", logs: 1 },
   { file: "tickets/route.ts", method: "POST", action: "tickets.manage", logs: 1 },
   { file: "tickets/[id]/route.ts", method: "PATCH", action: "tickets.manage", logs: 1 },

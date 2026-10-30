@@ -5001,43 +5001,43 @@ begin
 end $$;
 -- <<< verify:ai_runs
 -- >>> verify:accounts_firms_owner_answers — supabase/tests/rls/accounts_firms_owner_answers.test.sql
--- 20261030_10 (owner answers ٣٠٧–٣١٣). Before it runs it only reports; after,
+-- 20261030_12 (owner answers ٣٠٧–٣١٣). Before it runs it only reports; after,
 -- it raises when a note lost its original author, 20261026_70 was re-run over
 -- it (the consulting-office rule ٣١٢ is gone), or the invoice guard is off.
 do $$
 declare t text; n bigint;
 begin
   if to_regprocedure('public.account_deletion_owner_block()') is null then
-    raise notice '_verify: 20261030_10 is not applied yet — no original_author_id / consulting-office rule / invoice guard'; return;
+    raise notice '_verify: 20261030_12 is not applied yet — no original_author_id / consulting-office rule / invoice guard'; return;
   end if;
   foreach t in array array['case_notes', 'dashboard_notes', 'lawyer_client_notes', 'consultation_notes'] loop
     if to_regclass('public.' || t) is null then continue; end if;
     if not exists (select 1 from pg_attribute where attrelid = to_regclass('public.' || t) and attname = 'original_author_id' and not attisdropped) then
-      raise exception '_verify: 20261030_10 — public.%.original_author_id is missing (re-run 20261030_10)', t;
+      raise exception '_verify: 20261030_12 — public.%.original_author_id is missing (re-run 20261030_12)', t;
     end if;
     execute format('select count(*) from public.%I where original_author_id is null', t) into n;
     if n > 0 then
-      raise exception '_verify: 20261030_10 — % row(s) of public.% have no original author (re-run 20261030_10)', n, t;
+      raise exception '_verify: 20261030_12 — % row(s) of public.% have no original author (re-run 20261030_12)', n, t;
     end if;
     if not exists (select 1 from pg_trigger where tgrelid = to_regclass('public.' || t) and tgname = 'trg_note_original_author'
                     and not tgisinternal and tgenabled <> 'D') then
-      raise exception '_verify: 20261030_10 — public.% has no original-author trigger (re-run 20261030_10)', t;
+      raise exception '_verify: 20261030_12 — public.% has no original-author trigger (re-run 20261030_12)', t;
     end if;
   end loop;
   if not exists (select 1 from public.firm_asset_specs() s where s.tbl = 'hearings' and s.extra like '%firm_court_rows_stay_with_member%')
      or position('nzamy.firm_transfer_reason' in pg_get_functiondef('public.firm_member_removed_transfer()'::regprocedure)) = 0 then
-    raise exception '_verify: 20261030_10 — the consulting-office rule (٣١٢) is gone: 20261026_70 was re-run after it (re-run 20261030_10)';
+    raise exception '_verify: 20261030_12 — the consulting-office rule (٣١٢) is gone: 20261026_70 was re-run after it (re-run 20261030_12)';
   end if;
   if to_regclass('public.payment_orders') is not null and not exists (
        select 1 from pg_trigger where tgrelid = 'public.payment_orders'::regclass
           and tgname = 'trg_payment_orders_keep_tax_invoice' and not tgisinternal and tgenabled <> 'D') then
-    raise exception '_verify: 20261030_10 — the tax-invoice guard on payment_orders is missing (re-run 20261030_10)';
+    raise exception '_verify: 20261030_12 — the tax-invoice guard on payment_orders is missing (re-run 20261030_12)';
   end if;
   if exists (select 1 from pg_roles where rolname = 'authenticated')
      and not has_function_privilege('authenticated', 'public.account_deletion_owner_block()', 'EXECUTE') then
-    raise exception '_verify: 20261030_10 — authenticated cannot ask its own deletion block (re-run 20261030_10)';
+    raise exception '_verify: 20261030_12 — authenticated cannot ask its own deletion block (re-run 20261030_12)';
   end if;
-  raise notice '_verify: 20261030_10 OK — notes keep their original author; a consulting office keeps a removed lawyer''s court rows with him; tax invoices never deleted';
+  raise notice '_verify: 20261030_12 OK — notes keep their original author; a consulting office keeps a removed lawyer''s court rows with him; tax invoices never deleted';
 end $$;
 -- <<< verify:accounts_firms_owner_answers
 -- >>> verify:invoice_collections — supabase/tests/rls/invoice_collections.test.sql
@@ -5111,7 +5111,7 @@ end $$;
 -- <<< verify:create_lawyer_invoice
 
 -- >>> verify:pricing_owner_package
--- 2026-10-30 — 20261030_10_pricing_owner_package.sql (owner answers ٢٩٩–٣٠٦).
+-- 2026-10-30 — 20261030_16_pricing_owner_package.sql (owner answers ٢٩٩–٣٠٦).
 -- Read-only, safe to repeat. While ind-ai still lists 39 a month the file has
 -- not run: it only reports. After, it raises when a plan row's prices are not
 -- the price book's (src/lib/pricing/priceBook.ts) or NEWCLIENT lost its stamp.
@@ -5121,10 +5121,10 @@ begin
   if to_regclass('public.subscription_plans') is null
      or not exists (select 1 from information_schema.columns
                      where table_schema = 'public' and table_name = 'subscription_plans' and column_name = 'price_quarterly') then
-    raise notice '_verify: 20261030_10 — subscription_plans has no price_quarterly yet (20261026_10 first)'; return;
+    raise notice '_verify: 20261030_16 — subscription_plans has no price_quarterly yet (20261026_10 first)'; return;
   end if;
   if exists (select 1 from public.subscription_plans where id = 'ind-ai' and price_monthly = 39) then
-    raise notice '_verify: 20261030_10 is not applied yet — ind-ai still lists 39 a month (the admin MRR reads the old price; checkout charges the book)'; return;
+    raise notice '_verify: 20261030_16 is not applied yet — ind-ai still lists 39 a month (the admin MRR reads the old price; checkout charges the book)'; return;
   end if;
   select string_agg(p.id, ', ') into bad
     from public.subscription_plans p
@@ -5140,12 +5140,12 @@ begin
    where (p.price_monthly, p.price_quarterly, p.price_semiannual, p.price_yearly)
          is distinct from (v.m, v.q, v.h, v.y);
   if bad is not null then
-    raise exception '_verify: 20261030_10 — the subscription_plans prices of % are not the price book''s (re-run 20261030_10)', bad;
+    raise exception '_verify: 20261030_16 — the subscription_plans prices of % are not the price book''s (re-run 20261030_16)', bad;
   end if;
   if exists (select 1 from public.coupons where upper(code) = 'NEWCLIENT'
                 and coalesce(metadata->>'first_paid_order_only', '') <> 'true') then
-    raise exception '_verify: 20261030_10 — NEWCLIENT is not stamped first_paid_order_only (re-run 20261030_10)';
+    raise exception '_verify: 20261030_16 — NEWCLIENT is not stamped first_paid_order_only (re-run 20261030_16)';
   end if;
-  raise notice '_verify: 20261030_10 OK — subscription_plans holds the price book''s prices; NEWCLIENT is first-paid-order only';
+  raise notice '_verify: 20261030_16 OK — subscription_plans holds the price book''s prices; NEWCLIENT is first-paid-order only';
 end $$;
 -- <<< verify:pricing_owner_package

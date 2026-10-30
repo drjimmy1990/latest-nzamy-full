@@ -26,8 +26,8 @@ Each answer was re-checked against the code at `235e1bef` before anything change
 
 | | |
 |---|---|
-| Path | `D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\SQL_batch_2026-10-30_accounts_firms\10_ANY_TIME_20261030_10_accounts_firms_owner_answers.sql` |
-| Same as | `supabase/migrations/20261030_10_accounts_firms_owner_answers.sql`, byte for byte (a unit test checks this) |
+| Path | `D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\SQL_batch_2026-10-30_accounts_firms\10_ANY_TIME_20261030_12_accounts_firms_owner_answers.sql` |
+| Same as | `supabase/migrations/20261030_12_accounts_firms_owner_answers.sql`, byte for byte (a unit test checks this) |
 | Steps | `SQL_batch_2026-10-30_accounts_firms/README.md` |
 
 ## Summary
@@ -144,7 +144,7 @@ Each answer was re-checked against the code at `235e1bef` before anything change
 **Change:** none.
 
 **Tests:**
-- Existing Docker (`account_deletion.test.sql`), re-run green on top of 20261030_10:
+- Existing Docker (`account_deletion.test.sql`), re-run green on top of 20261030_12:
   - T7c: I's document on C's case is kept for C;
   - T7d: never listed for removal;
   - T13: a client's document on a firm case is kept for the firm.
@@ -260,11 +260,11 @@ No finance screen or route was touched.
 
 | What | Result |
 |---|---|
-| Docker `accounts_firms_owner_answers.test.sql` (the full D6 chain, the prelude, 20261030_10 twice) | **ALL PASS**, T1–T8 |
-| Docker `account_deletion.test.sql` (D6) with 20261030_10 applied twice | **ALL PASS**, T1–T16 |
-| Negative control 1: the chain without 20261030_10 | fails at T1 (no `original_author_id`), exit 3 |
-| Negative control 2: 20261030_10, then 20261026_70 again | `T3 FAIL: a service-role removal moved R2's hearing to the consultant owner`, exit 3 |
-| The new `_verify.sql` block, after 20261030_10 | `_verify: 20261030_10 OK` |
+| Docker `accounts_firms_owner_answers.test.sql` (the full D6 chain, the prelude, 20261030_12 twice) | **ALL PASS**, T1–T8 |
+| Docker `account_deletion.test.sql` (D6) with 20261030_12 applied twice | **ALL PASS**, T1–T16 |
+| Negative control 1: the chain without 20261030_12 | fails at T1 (no `original_author_id`), exit 3 |
+| Negative control 2: 20261030_12, then 20261026_70 again | `T3 FAIL: a service-role removal moved R2's hearing to the consultant owner`, exit 3 |
+| The new `_verify.sql` block, after 20261030_12 | `_verify: 20261030_12 OK` |
 | Unit `ownerAnswers30Oct.test.ts`, `accountFreeze`, `accountFreezeGates`, `accountDeletionServer`, `sqlMergeHygiene`, `storagePathOwnership` | 52 / 52 pass |
 | Unit, whole suite `src/**/*.test.ts` | 4175 tests: 4168 pass, 7 fail |
 | `tsc --noEmit` | 2 errors |

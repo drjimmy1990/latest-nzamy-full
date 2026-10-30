@@ -33,6 +33,7 @@
  */
 
 import { riyadhDay } from "./campaigns.ts";
+import { LIBRARY_ELIGIBLE_USER_TYPES } from "../library/libraryPurchaseEligibility.ts";
 
 /** A subscription cycle: 1, 3, 6 or 12 calendar months. */
 export type Cycle = "monthly" | "quarterly" | "semiannual" | "yearly";
@@ -208,7 +209,9 @@ function library(id: LibraryPlanRef, labelAr: string, sar: number, days: number)
     prices: { once: { sar } },
     libraryPlanRef: id,
     libraryDays: days,
-    buyers: "any",
+    // LIVE-F05: the library is sold to legal professionals only, so checkout
+    // (buyerAllowed) refuses an individual who calls the API directly too.
+    buyers: [...LIBRARY_ELIGIBLE_USER_TYPES],
   });
 }
 

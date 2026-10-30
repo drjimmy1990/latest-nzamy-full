@@ -12,7 +12,7 @@ Source (read only): `Nezamy-Developer-Handoff-2026-10-30` —
 | Commit | What |
 |---|---|
 | `68acaea7` | Explicit letterhead permissions (٣١٥), firm QR hook (٣١٤), `/dashboard/firm/vault` route rule, `ensureOwnVault` |
-| `1b5fb019` | Stationery upload: migration `20261030_10`, `/api/v1/branding/assets`, panel, account-purge cleanup |
+| `1b5fb019` | Stationery upload: migration `20261030_14`, `/api/v1/branding/assets`, panel, account-purge cleanup |
 | `06d7d04d` | Vault pages and tabs, letterhead redirects, sidebar, letter editor removed, CODE-F37 save lock |
 | `ccc96e72` | Migration fix found by the new RLS harness test (plpgsql `IF … CASE … THEN`), plus the test |
 | `5832bf88` | Lint cleanup |
@@ -99,7 +99,7 @@ Re-run `node .gitnexus/run.cjs analyze` after the merge.
   - The panel says honestly that nothing is merged into the template, printed over the PDF, or stamped on outputs yet.
 - **Not built** (it would be faking it to claim otherwise): merging documents into the uploaded `.docx` at export, printing over the PDF background with margins, placing the stamp and signature on outputs, the ZIP of executive requests, and SVG logos with server-side sanitizing.
 - **Files:**
-  - `supabase/migrations/20261030_10_branding_assets.sql`
+  - `supabase/migrations/20261030_14_branding_assets.sql`
   - `src/lib/branding/brandingAssets.ts`
   - `src/app/api/v1/branding/assets/route.ts`
   - `src/components/letterhead/BrandingAssetsPanel.tsx`
@@ -193,9 +193,9 @@ Re-run `node .gitnexus/run.cjs analyze` after the merge.
 
 ## SQL for the user (never run by this branch)
 
-1. **`supabase/migrations/20261030_10_branding_assets.sql`**
-   - Worktree path: `D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\.claude\worktrees\agent-a63b2b2bfdaa23198\supabase\migrations\20261030_10_branding_assets.sql`
-   - Path after merge: `D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\supabase\migrations\20261030_10_branding_assets.sql`
+1. **`supabase/migrations/20261030_14_branding_assets.sql`**
+   - Worktree path: `D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\.claude\worktrees\agent-a63b2b2bfdaa23198\supabase\migrations\20261030_14_branding_assets.sql`
+   - Path after merge: `D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\supabase\migrations\20261030_14_branding_assets.sql`
    - Run it in the SQL editor (postgres), after 20261026_63, before or after the deploy. Before it runs, the code shows «يتطلب تحديث قاعدة البيانات».
    - If the editor role may not write `storage.buckets`, the file warns. Then create the private bucket `branding-files` (5 MB; pdf, docx, png, webp) as `supabase_admin`.
    - SELECT check (expect one row `t | t | t | 1 | t`):

@@ -275,8 +275,9 @@ test("only plans save the card (auto-renew)", () => {
   }
 });
 
-test("each item's buyers: plans to their own audience, the library to anyone, top-ups by audience (٣٠٢)", () => {
+test("each item's buyers: plans to their own audience, the library to professionals (LIVE-F05), top-ups by audience (٣٠٢)", () => {
   const PRO = ["lawyer", "firm", "corporate", "micro", "government", "ngo", "provider"];
+  const LIB = ["lawyer", "firm", "corporate", "government"];
   const want: Record<string, readonly string[] | "any"> = {
     "lawyer-pro": ["lawyer"],
     "consultant-independent": ["lawyer", "provider"],
@@ -285,9 +286,9 @@ test("each item's buyers: plans to their own audience, the library to anyone, to
     "ind-ai": ["individual"],
     "ind-preventive": ["individual"],
     "ind-litigation": ["individual"],
-    "lib-q1": "any",
-    "lib-q2": "any",
-    "lib-annual": "any",
+    "lib-q1": LIB,
+    "lib-q2": LIB,
+    "lib-annual": LIB,
     "topup-100": ["individual"],
     "topup-250": ["individual"],
     "topup-500": PRO,
@@ -319,16 +320,20 @@ test("buyerAllowed: the audience check checkout runs before quoting", () => {
   assert.equal(buyerAllowed(P["consultant-independent"], "provider"), true);
   assert.equal(buyerAllowed(P["firm-enterprise"], "firm"), true);
   assert.equal(buyerAllowed(P["ind-litigation"], "individual"), true);
-  // a missing or unknown type buys only "any" items (the library)
+  // a missing or unknown type buys nothing: no item is sold to "any" (LIVE-F05)
   for (const t of [null, undefined, "", "admin", "Lawyer"]) {
     assert.equal(buyerAllowed(P["lawyer-pro"], t), false, String(t));
     assert.equal(buyerAllowed(P["ind-ai"], t), false, String(t));
-    assert.equal(buyerAllowed(P["lib-q1"], t), true, String(t));
+    assert.equal(buyerAllowed(P["lib-q1"], t), false, String(t));
     assert.equal(buyerAllowed(P["topup-100"], t), false, String(t));
     assert.equal(buyerAllowed(P["topup-500"], t), false, String(t));
   }
-  for (const t of ["individual", "lawyer", "firm", "corporate", "micro", "provider"]) {
+  // LIVE-F05: the library to legal professionals; an individual is refused
+  for (const t of ["lawyer", "firm", "corporate", "government"]) {
     assert.equal(buyerAllowed(P["lib-annual"], t), true, t);
+  }
+  for (const t of ["individual", "micro", "ngo", "provider"]) {
+    assert.equal(buyerAllowed(P["lib-annual"], t), false, t);
   }
   // ٣٠٢: 100 / 250 for individuals only; 500 and up for professionals only
   for (const id of ["topup-100", "topup-250"]) {
@@ -443,10 +448,10 @@ test("formatHalalas refuses anything that is not a non-negative integer of halal
   }
 });
 
-// ─── subscription_plans (20261022_10 §6, repriced by 20261030_10) mirrors the book ───
+// ─── subscription_plans (20261022_10 §6, repriced by 20261030_16) mirrors the book ───
 
-test("20261030_10 sets every plan's subscription_plans prices to the book's listed price per cycle", () => {
-  const sql = readFileSync(new URL("../../../supabase/migrations/20261030_10_pricing_owner_package.sql", import.meta.url), "utf8");
+test("20261030_16 sets every plan's subscription_plans prices to the book's listed price per cycle", () => {
+  const sql = readFileSync(new URL("../../../supabase/migrations/20261030_16_pricing_owner_package.sql", import.meta.url), "utf8");
   const at = sql.search(/^update public\.subscription_plans p\s*$/m);
   assert.ok(at > -1);
   const block = sql.slice(at, sql.indexOf(";", at));

@@ -214,7 +214,7 @@ Membership rows (`case_team_members`, `firm_members`) are access, not assets, an
 
 ## 4. Open questions for the owner (safe defaults chosen)
 
-**Answered 2026-10-30 (٣٠٧–٣١٣, option (أ) each):** Q1 → ٣٠٧, Q2 → ٣٠٨, Q3 → ٣٠٩, Q4 → ٣١٠, Q5 → ٣١١, Q7 → ٣١٢, Q8 → ٣١٣. What changed is in `docs/audits/2026-10-30-owner-package-accounts-firms.md` and `supabase/migrations/20261030_10_accounts_firms_owner_answers.sql`. Q6 (B2 auto-renew) is still open.
+**Answered 2026-10-30 (٣٠٧–٣١٣, option (أ) each):** Q1 → ٣٠٧, Q2 → ٣٠٨, Q3 → ٣٠٩, Q4 → ٣١٠, Q5 → ٣١١, Q7 → ٣١٢, Q8 → ٣١٣. What changed is in `docs/audits/2026-10-30-owner-package-accounts-firms.md` and `supabase/migrations/20261030_12_accounts_firms_owner_answers.sql`. Q6 (B2 auto-renew) is still open.
 
 1. **A firm, company or NGO owner deleting his own account.** Default: the self-request is refused while the entity has other members. An admin freeze is allowed, but the purge is `blocked` and the account stays frozen. Ownership has to be transferred first, and no screen does that yet.
 2. **A member's PRIVATE notes on a firm case** (owner ١٦٩ «خاصة بي فقط»). Default: kept, moved to the firm owner, and still private, so he can read them. The original author is in `firm_asset_transfers`. Should they be deleted instead?

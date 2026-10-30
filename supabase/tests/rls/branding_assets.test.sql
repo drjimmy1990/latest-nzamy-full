@@ -1,4 +1,4 @@
--- branding_assets.test.sql — proves 20261030_10_branding_assets.sql (owner
+-- branding_assets.test.sql — proves 20261030_14_branding_assets.sql (owner
 -- note 09, package 2026-10-30: the office's uploaded stationery in its vault).
 --
 -- CHAIN (run.sh, postgres:16). 63 and 30_10 each run TWICE (re-runnable).
@@ -6,7 +6,7 @@
 --   T=supabase/tests/rls; M=supabase/migrations; bash $T/run.sh \
 --     $T/prelude_storage_objects_stub.sql $T/prelude_storage_buckets_stub.sql \
 --     $M/20261026_63_branding_vault.sql $M/20261026_63_branding_vault.sql \
---     $M/20261030_10_branding_assets.sql $M/20261030_10_branding_assets.sql \
+--     $M/20261030_14_branding_assets.sql $M/20261030_14_branding_assets.sql \
 --     $T/branding_assets.test.sql
 --
 -- RECORDED 2026-10-30 (postgres:16-alpine): ALL PASS after two runs of each

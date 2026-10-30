@@ -4,7 +4,7 @@
  * official Word letterhead template, a full-page PDF letterhead, the stamp and
  * the signature. Pure rules — which kinds exist, which bytes each accepts,
  * where the object lives — mirrored by
- * supabase/migrations/20261030_10_branding_assets.sql (its CHECKs, trigger
+ * supabase/migrations/20261030_14_branding_assets.sql (its CHECKs, trigger
  * and bucket); brandingAssets.test.ts pins both sides.
  *
  * WHAT IT IS: a private store. The office uploads, replaces, downloads and
@@ -140,7 +140,7 @@ const KIND_SLUG: Record<BrandingAssetKind, string> = {
   signature: "signature",
 };
 
-/** `u/<uid>/asset-<kind>-<random>.<ext>` or `f/<firm id>/…` — what 20261030_10's CHECK and trigger accept. */
+/** `u/<uid>/asset-<kind>-<random>.<ext>` or `f/<firm id>/…` — what 20261030_14's CHECK and trigger accept. */
 export function brandingAssetPath(scope: BrandingScope, ownerId: string, kind: BrandingAssetKind, random: string, ext: BrandingAssetExt): string {
   const id = ownerId.toLowerCase();
   if (!UUID.test(id)) throw new Error("brandingAssetPath: owner id is not a uuid");
@@ -170,7 +170,7 @@ export function safeAssetFileName(name: string | null | undefined, ext: Branding
   return `${stem}.${ext}`;
 }
 
-/** PostgREST / Postgres codes for "branding_assets is not there yet" (20261030_10 not run). */
+/** PostgREST / Postgres codes for "branding_assets is not there yet" (20261030_14 not run). */
 export function isMissingBrandingAssetsTable(error: { code?: string; message?: string } | null | undefined): boolean {
   if (!error) return false;
   if (error.code === "42P01" || error.code === "PGRST205") return true;

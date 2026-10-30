@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration: 20261030_10_pricing_owner_package.sql
+-- Migration: 20261030_16_pricing_owner_package.sql
 -- =============================================================================
 -- PURPOSE (owner package of 30 Oct 2026, answers ٢٩٩–٣٠٦)
 --   The price book (src/lib/pricing/priceBook.ts) now holds the revised final
@@ -52,19 +52,19 @@ declare
   missing text;
 begin
   if to_regclass('public.subscription_plans') is null then
-    raise exception '20261030_10: public.subscription_plans does not exist — run 20260603_phase1_003_subscriptions_billing.sql first';
+    raise exception '20261030_16: public.subscription_plans does not exist — run 20260603_phase1_003_subscriptions_billing.sql first';
   end if;
   if (select count(*) from information_schema.columns
        where table_schema = 'public' and table_name = 'subscription_plans'
          and column_name in ('price_quarterly', 'price_semiannual')) <> 2 then
-    raise exception '20261030_10: subscription_plans has no price_quarterly / price_semiannual — run 20261026_10_billing_cycles.sql first';
+    raise exception '20261030_16: subscription_plans has no price_quarterly / price_semiannual — run 20261026_10_billing_cycles.sql first';
   end if;
   select string_agg(v.id, ', ') into missing
     from (values ('ind-ai'), ('ind-preventive'), ('ind-litigation'), ('lawyer-pro'),
                  ('consultant-independent'), ('firm-basic'), ('firm-enterprise')) as v(id)
    where not exists (select 1 from public.subscription_plans p where p.id = v.id);
   if missing is not null then
-    raise exception '20261030_10: subscription_plans has no row for % — run 20261022_10_payments_core.sql first; nothing changed', missing;
+    raise exception '20261030_16: subscription_plans has no row for % — run 20261022_10_payments_core.sql first; nothing changed', missing;
   end if;
 end $$;
 
@@ -113,14 +113,14 @@ begin
    where (p.price_monthly, p.price_quarterly, p.price_semiannual, p.price_yearly)
          is distinct from (v.m, v.q, v.h, v.y);
   if bad is not null then
-    raise exception '20261030_10 verify: the prices of % are not the book''s', bad;
+    raise exception '20261030_16 verify: the prices of % are not the book''s', bad;
   end if;
   if exists (select 1 from public.coupons
               where upper(code) = 'NEWCLIENT'
                 and coalesce(metadata->>'first_paid_order_only', '') <> 'true') then
-    raise exception '20261030_10 verify: NEWCLIENT is not stamped first_paid_order_only';
+    raise exception '20261030_16 verify: NEWCLIENT is not stamped first_paid_order_only';
   end if;
-  raise notice '20261030_10 verify: OK — subscription_plans holds the book''s prices (ind-ai 29/79/149/249; firms quarterly and half-yearly); NEWCLIENT stamped first_paid_order_only';
+  raise notice '20261030_16 verify: OK — subscription_plans holds the book''s prices (ind-ai 29/79/149/249; firms quarterly and half-yearly); NEWCLIENT stamped first_paid_order_only';
 end $$;
 
 commit;

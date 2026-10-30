@@ -1,7 +1,7 @@
 /**
  * ownerAnswers30Oct.test.ts — owner answers ٣٠٧–٣١٣ (package 2026-10-30) on
  * the code side. The database side is proved in Docker by
- * supabase/tests/rls/accounts_firms_owner_answers.test.sql (20261030_10).
+ * supabase/tests/rls/accounts_firms_owner_answers.test.sql (20261030_12).
  * Ledger: docs/audits/2026-10-30-owner-package-accounts-firms.md.
  *
  * RUN: node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test src/lib/accountDeletion/ownerAnswers30Oct.test.ts
@@ -80,7 +80,7 @@ test("٣٠٧: readOwnerBlock asks the caller's own block; missing / failing / od
   assert.deepEqual(ok.calls, ["account_deletion_owner_block"]);
   assert.equal(await readOwnerBlock(fakeRpc(() => ({ data: null, error: null })).client), null);
   assert.equal(await readOwnerBlock(fakeRpc(() => ({ data: "x", error: null })).client), null);
-  // before 20261030_10: the function is not there
+  // before 20261030_12: the function is not there
   assert.equal(await readOwnerBlock(fakeRpc(() => ({ data: null, error: { code: "PGRST202", message: "not found" } })).client), null);
   const origError = console.error;
   console.error = () => {};
@@ -149,9 +149,9 @@ test("٣١٣: the gates' 403 never tells an admin-frozen user to restore the acc
 });
 
 // ── the SQL the user runs ──────────────────────────────────────────────────
-test("20261030_10: one transaction, a SELECT check, and nothing that deletes or rewrites existing rows", () => {
-  const sql = read("supabase/migrations/20261030_10_accounts_firms_owner_answers.sql");
-  const batch = read("SQL_batch_2026-10-30_accounts_firms/10_ANY_TIME_20261030_10_accounts_firms_owner_answers.sql");
+test("20261030_12: one transaction, a SELECT check, and nothing that deletes or rewrites existing rows", () => {
+  const sql = read("supabase/migrations/20261030_12_accounts_firms_owner_answers.sql");
+  const batch = read("SQL_batch_2026-10-30_accounts_firms/10_ANY_TIME_20261030_12_accounts_firms_owner_answers.sql");
   assert.equal(batch, sql, "the batch copy is the migration, byte for byte");
   const code = sql.replace(/--[^\n]*/g, "");
   assert.match(code, /^\s*begin;/m);

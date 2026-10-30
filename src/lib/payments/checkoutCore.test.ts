@@ -140,13 +140,24 @@ test("happy path: the quote's price, a created order, the intent, the guarded st
   assert.ok(log.indexOf(ins) < log.indexOf(stamp));
 });
 
-test("٢٥٨: the library is VAT-exclusive for every buyer — an individual pays VAT on top like a lawyer", async () => {
-  for (const [type, total, mode] of [["individual", 120750, "exclusive"], ["lawyer", 120750, "exclusive"]] as const) {
+test("٢٥٨: the library is VAT-exclusive for every buyer — a company pays VAT on top like a lawyer", async () => {
+  for (const [type, total, mode] of [["corporate", 120750, "exclusive"], ["lawyer", 120750, "exclusive"]] as const) {
     const { client: admin, log } = db(type);
     const r = await startCheckoutWith({ admin, client: moyasar().client, now: () => NOW }, input({ itemId: "lib-q1", billing: "once" }));
     assert.equal(r.status, 200, type);
     assert.equal((inserts(log)[0].payload as { total_halalas: number }).total_halalas, total, type);
     assert.equal((inserts(log)[0].payload as { vat_mode: string }).vat_mode, mode, type);
+  }
+});
+
+test("LIVE-F05: an individual cannot buy the library through the API (403, no order, no intent)", async () => {
+  for (const itemId of ["lib-q1", "lib-q2", "lib-annual"]) {
+    const { client: admin, log } = db("individual");
+    const m = moyasar();
+    const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW }, input({ itemId, billing: "once" }));
+    assert.deepEqual(r, { status: 403, body: { error: AUDIENCE_REFUSED_AR } }, itemId);
+    assert.equal(inserts(log).length, 0, itemId);
+    assert.equal(m.intents.length, 0, itemId);
   }
 });
 
@@ -495,13 +506,14 @@ test("coupon: once per user — a PAID earlier order with it refuses the second 
 });
 
 test("coupon: never on a point top-up, and NEWCLIENT (single services) not on a plan or the library — 400, no order", async () => {
-  const cases: Array<[Record<string, unknown> & { code: string }, string, "once" | "yearly"]> = [
-    [NZAMY50_ROW, "topup-250", "once"],
-    [NEWCLIENT_ROW, "ind-litigation", "yearly"],
-    [NEWCLIENT_ROW, "lib-q1", "once"],
+  // The library is sold to professionals only (LIVE-F05), so its case is a lawyer's.
+  const cases: Array<[Record<string, unknown> & { code: string }, string, "once" | "yearly", string]> = [
+    [NZAMY50_ROW, "topup-250", "once", "individual"],
+    [NEWCLIENT_ROW, "ind-litigation", "yearly", "individual"],
+    [NEWCLIENT_ROW, "lib-q1", "once", "lawyer"],
   ];
-  for (const [row, itemId, billing] of cases) {
-    const { client: admin, log } = couponDb("individual", { row });
+  for (const [row, itemId, billing, type] of cases) {
+    const { client: admin, log } = couponDb(type, { row });
     const m = moyasar();
     const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW }, input({ itemId, billing, couponCode: row.code }));
     assert.equal(r.status, 400, itemId);

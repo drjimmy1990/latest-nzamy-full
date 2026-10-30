@@ -109,6 +109,7 @@ const TABS: { id: Tab; label: string; icon: React.ElementType; desc: string }[] 
   { id: "deadlines",    label: "المواعيد القانونية", icon: CalendarBlank,    desc: "احسب مواعيد الاعتراض والتقادم" },
   { id: "date_convert", label: "تحويل التاريخ",      icon: ArrowsLeftRight,  desc: "هجري ↔ ميلادي بدقة" },
 ];
+
 // ─── Hijri ↔ Gregorian ────────────────────────────────────────────────────────
 // LIVE-F31: the page's own Kuwaiti tabular routines are gone. They accepted
 // 31 February and rolled it into March without a word, and they were not Umm

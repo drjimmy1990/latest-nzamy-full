@@ -34,9 +34,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * — GET `letterhead.print`, writes `branding.manage`, owner ٣١٥) → the vault
  * read THROUGH RLS (the proof this caller manages it) → the asset rows read
  * through RLS → only then the service role, which alone writes branding_assets
- * and the private `branding-files` bucket (20261030_10).
+ * and the private `branding-files` bucket (20261030_14).
  *
- * Before 20261030_10 runs: GET answers `available: false` with
+ * Before 20261030_14 runs: GET answers `available: false` with
  * «يتطلب تحديث قاعدة البيانات», writes 503 — nothing is faked.
  */
 
@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
       : NextResponse.json({ error: "تعذّر قراءة خزنة الهوية" }, { status: 500, headers: NO_STORE });
   }
   if (!vault.row) {
-    // No vault yet: probe the table so a server without 20261030_10 says so.
+    // No vault yet: probe the table so a server without 20261030_14 says so.
     const probe = await supabase.from("branding_assets").select("id").limit(1);
     if (probe.error && isMissingBrandingAssetsTable(probe.error)) {
       return NextResponse.json({ available: false, message: BRANDING_ASSETS_NEEDS_MIGRATION_AR, assets: [], permissions: owner.permissions }, { headers: NO_STORE });

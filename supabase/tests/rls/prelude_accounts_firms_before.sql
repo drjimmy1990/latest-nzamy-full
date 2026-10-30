@@ -1,7 +1,7 @@
--- prelude_accounts_firms_before.sql — the state 20261030_10 finds on prod:
+-- prelude_accounts_firms_before.sql — the state 20261030_12 finds on prod:
 -- 20261026_70 has run, a member was removed from a firm and his notes already
 -- moved to the firm owner (a firm_asset_transfers trail exists), and the notes
--- carry an old «آخر تعديل». Runs as postgres, BEFORE 20261030_10.
+-- carry an old «آخر تعديل». Runs as postgres, BEFORE 20261030_12.
 -- Chain: see accounts_firms_owner_answers.test.sql.
 
 alter table auth.users add column if not exists email text;
@@ -23,7 +23,7 @@ create table if not exists public.business_members (
 
 insert into auth.users (id) values
   ('c3000000-0000-0000-0000-000000000001'),  -- O2 firm owner (a firm account)
-  ('c3000000-0000-0000-0000-000000000002'),  -- L2 lawyer, removed before 20261030_10
+  ('c3000000-0000-0000-0000-000000000002'),  -- L2 lawyer, removed before 20261030_12
   ('c3000000-0000-0000-0000-000000000003'),  -- S2 legal secretary, active
   ('c3000000-0000-0000-0000-000000000004'),  -- C2 client (buyer of an invoice)
   ('c3000000-0000-0000-0000-000000000005'),  -- Q2 consulting office owner (practice_kind consultant)

@@ -38,7 +38,7 @@ interface World {
   /** Objects in the branding bucket, keyed by folder ("u/<id>"); a missing key lists nothing. */
   branding?: Record<string, Array<{ name: string; id: string | null }>>;
   brandingListError?: string;
-  /** Objects in the branding-files bucket (uploaded stationery, 20261030_10), keyed by folder. */
+  /** Objects in the branding-files bucket (uploaded stationery, 20261030_12), keyed by folder. */
   brandingFiles?: Record<string, Array<{ name: string; id: string | null }>>;
   brandingFilesListError?: string;
 }
@@ -266,7 +266,7 @@ test("purge: the lawyer's uploaded stationery (branding-files, u/<id>/) is remov
   assert.deepEqual(report.branding_failed, []);
 });
 
-test("purge: no branding-files bucket yet (20261030_10 not run) is nothing to clear, not a failure", async () => {
+test("purge: no branding-files bucket yet (20261030_12 not run) is nothing to clear, not a failure", async () => {
   const h = harness({ paths: [], brandingFilesListError: "Bucket not found" });
   await purgeAccountWith(h.admin, { requestId: REQ, userId: USER });
   const report = finishOf(h.log)[0].p_report as Record<string, unknown>;

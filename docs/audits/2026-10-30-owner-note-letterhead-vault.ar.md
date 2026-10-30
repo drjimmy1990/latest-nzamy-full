@@ -83,7 +83,7 @@
 
 ## ملف قاعدة البيانات (بانتظار التنفيذ)
 
-- **الملف:** `D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\supabase\migrations\20261030_10_branding_assets.sql`. هذا مساره بعد الدمج؛ وهو الآن في مجلد الفرع.
+- **الملف:** `D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\supabase\migrations\20261030_14_branding_assets.sql`. هذا مساره بعد الدمج؛ وهو الآن في مجلد الفرع.
 - يُنفَّذ بعد ملف خزنة الهوية السابق (20261026_63).
 - قبل تنفيذه تُظهر صفحة الرفع «يتطلب تحديث قاعدة البيانات»، ولا يُدّعى أي رفع.
 - جُرِّب على قاعدة اختبار معزولة، ونجحت كل فحوصه.
