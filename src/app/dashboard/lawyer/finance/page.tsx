@@ -11,12 +11,12 @@ import { useTheme } from "@/components/ThemeProvider";
 import confetti from "canvas-confetti";
 
 import { type FinanceTab, type InvoiceStatus, type FeeType, type Period, STATUS_CFG } from "@/constants/lawyerFinanceData";
-import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
+import { apiGet, apiMutate, ApiTimeoutError, isSupabaseMode } from "@/lib/services/api";
 import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
 import { AreaBarChart, DonutChart } from "@/components/dashboard/lawyer/FinanceCharts";
 
 // ── تحصيل الفاتورة ──
-// لا توجد بوابة دفع بعد، فالتحصيل يدوي: نقداً أو تحويل بنكي فقط.
+// تحصيل المكتب من موكليه لا يمرّ عبر بوابة دفع: قيد يدوي لمبلغ استُلم نقداً أو بتحويل بنكي.
 type CollectMethod = "cash" | "bank_transfer";
 
 const COLLECT_METHODS = [
@@ -43,6 +43,23 @@ const COLLECT_ERROR_AR: Record<string, string> = {
   "amountHalalas must be a whole number of halalas greater than 0":
     "أدخل مبلغاً صحيحاً أكبر من صفر، بخانتين عشريتين على الأكثر.",
 };
+
+/**
+ * مهلة انتظار الكتابة والقراءة (CODE-F23). انتهاء المهلة لا يعني الفشل: قد
+ * تكون الكتابة نُفِّذت في الخادم. لا تُعاد الكتابة تلقائياً أبداً — يعيدها
+ * المحامي بالضغط، بالمفتاح نفسه، فلا تُسجَّل مرتين.
+ */
+const WRITE_TIMEOUT_MS = 20_000;
+const READ_TIMEOUT_MS = 15_000;
+const COLLECT_UNCERTAIN_AR =
+  "لم يصل رد الخادم، فلا نعرف إن كانت الدفعة قد سُجّلت. أعدنا قراءة الأرقام من الخادم — إن لم تظهر الدفعة فاضغط «تسجيل» مرة أخرى: النموذج نفسه لا يُسجَّل مرتين.";
+const CREATE_UNCERTAIN_AR =
+  "لم يصل رد الخادم، فلا نعرف إن كانت الفاتورة قد صدرت. أعدنا قراءة القائمة من الخادم — إن لم تظهر فاضغط «حفظ» مرة أخرى: النموذج نفسه لا يُصدر فاتورتين.";
+/** الرسالة الإنجليزية الوحيدة الباقية من إصدار الفاتورة؛ البقية يكتبها الخادم بالعربية. */
+const CREATE_ERROR_AR: Record<string, string> = {
+  Forbidden: "هذا الموكّل أو هذه القضية ليست في ملفاتك، فلم تُصدر الفاتورة.",
+};
+const hasArabic = (text: string) => /[\u0600-\u06FF]/.test(text);
 
 /**
  * أسماء الشهور الميلادية.
@@ -121,6 +138,16 @@ function groupInvoices(
   return [...map.values()].sort((a, b) => a.sort - b.sort).slice(-keepMostRecent);
 }
 
+/** صفوف القراءتين التي يعرض منها نموذج الإصدار الموكّل وقضاياه (CODE-F21). */
+type CrmClientRow = { id?: unknown; name?: unknown; clientType?: string | null; source?: string };
+type CaseRow = { id?: unknown; title?: unknown; type?: string; metadata?: Record<string, unknown> | null };
+type FinanceRead = {
+  invoices?: any[];
+  invoicesTotal?: number | null;
+  walletTransactions?: any[];
+  walletTransactionsTotal?: number | null;
+};
+
 export default function FinancePage() {
   const { isDark } = useTheme();
   const payments = usePaymentsStatus();
@@ -156,12 +183,7 @@ export default function FinancePage() {
     if (!isSupabaseMode) { setLoading(false); return; }
     setLoading(true);
     setLoadError(null);
-    apiGet<{
-      invoices?: any[];
-      invoicesTotal?: number | null;
-      walletTransactions?: any[];
-      walletTransactionsTotal?: number | null;
-    }>("/api/v1/lawyer/finance")
+    apiGet<FinanceRead>("/api/v1/lawyer/finance")
       .then((data) => {
         // إسناد غير مشروط: الشرط القديم `if (data.invoices?.length)` كان يُبقي
         // القائمة السابقة معروضة حين يردّ الخادم قائمة فارغة عن حق.
@@ -189,6 +211,27 @@ export default function FinancePage() {
 
   useEffect(() => { loadFinance(); }, [loadFinance]);
 
+  /**
+   * قراءة صامتة لا تُفرغ الشاشة: للملخص الحديث عند فتح نموذج التحصيل (UX04)،
+   * وبعد كتابة رُفضت أو انقطع ردّها. فشلها لا يمسح ما هو معروض.
+   */
+  const refreshSilently = useCallback(async (): Promise<boolean> => {
+    if (!isSupabaseMode) return true;
+    try {
+      const data = await apiGet<FinanceRead>("/api/v1/lawyer/finance", undefined, { timeoutMs: READ_TIMEOUT_MS });
+      setInvoices(Array.isArray(data?.invoices) ? data.invoices : []);
+      setWalletTxns(Array.isArray(data?.walletTransactions) ? data.walletTransactions : []);
+      setInvoicesTotal(typeof data?.invoicesTotal === "number" ? data.invoicesTotal : null);
+      setWalletTotal(
+        typeof data?.walletTransactionsTotal === "number" ? data.walletTransactionsTotal : null,
+      );
+      return true;
+    } catch (err) {
+      console.error("[finance] silent refresh failed:", err);
+      return false;
+    }
+  }, []);
+
   // حالات النوافذ المنبثقة
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -200,16 +243,30 @@ export default function FinancePage() {
   const [newInvType, setNewInvType] = useState<FeeType>("full");
   const [newInvCase, setNewInvCase] = useState("");
   const [invoiceError, setInvoiceError] = useState<string | null>(null);
+  // مفتاح عدم التكرار لنموذج الإصدار (CODE-F22). يبقى بعد انقطاع الرد حتى لا
+  // تُصدر إعادة الضغط فاتورة ثانية، ويتجدد مع كل نموذج جديد.
+  const [createKey, setCreateKey] = useState("");
+  const [createUncertain, setCreateUncertain] = useState(false);
+  // الربط بالمعرّفات (CODE-F21): بطاقة الموكّل من الدليل وقضيته. نوع العميل
+  // يأتي من البطاقة، أو يحدده المحامي صراحةً — لا «شركة» افتراضية.
+  const [crmClients, setCrmClients] = useState<Array<{ id: string; name: string; clientType: string | null }> | null>(null);
+  const [newInvClientId, setNewInvClientId] = useState("");
+  const [newInvClientType, setNewInvClientType] = useState<"" | "individual" | "company">("");
+  const [clientCases, setClientCases] = useState<Array<{ id: string; title: string }>>([]);
+  const [newInvCaseId, setNewInvCaseId] = useState("");
 
   // نافذة تسجيل التحصيل (نقداً أو تحويل بنكي) — الفاتورة المستهدفة وحالتها
   const [collectTarget, setCollectTarget] = useState<any | null>(null);
-  const [collectMethod, setCollectMethod] = useState<CollectMethod>("cash");
+  // لا طريقة مختارة مسبقاً (UX04): يختار المحامي نقداً أو تحويلاً بنفسه.
+  const [collectMethod, setCollectMethod] = useState<CollectMethod | null>(null);
   const [collectAmount, setCollectAmount] = useState("");
   const [collectError, setCollectError] = useState<string | null>(null);
   const [isCollecting, setIsCollecting] = useState(false);
   // مفتاح يُولَّد مرة واحدة عند فتح النموذج: إعادة إرسال النموذج نفسه (نقرة
   // مزدوجة، انقطاع شبكة) تُسجَّل دفعةً واحدة لا دفعتين.
   const [collectKey, setCollectKey] = useState("");
+  // لا يُفعَّل زر التسجيل قبل أن تصل قراءة حديثة من الخادم (UX04).
+  const [collectFresh, setCollectFresh] = useState(false);
 
   // النموذج المفتوح يقرأ الفاتورة من القائمة الحالية لا من نسخة وقت فتحه: بعد
   // رفضٍ تُعاد فيه قراءة الخادم يعرض المحصّل والمتبقي الجديدين — وإلا بقي يعرض
@@ -278,9 +335,67 @@ export default function FinancePage() {
   [invoices, filter, search]);
 
   // ── معالجة إضافة فاتورة جديدة ──
+  // ── فتح نموذج الإصدار ──
+  const openInvoiceModal = () => {
+    setInvoiceError(null);
+    // بعد انقطاع رد يبقى المفتاح نفسه؛ وإلا نموذج جديد بمفتاح جديد.
+    if (!createUncertain || !createKey) setCreateKey(newCollectKey());
+    setIsInvoiceModalOpen(true);
+    if (isSupabaseMode && crmClients === null) {
+      apiGet<{ data?: CrmClientRow[] }>("/api/v1/lawyer/clients", undefined, { timeoutMs: READ_TIMEOUT_MS })
+        .then((res) =>
+          setCrmClients(
+            // صفوف «profile» بلا بطاقة لا معرّف لها في الدليل، فلا تُختار هنا.
+            (res?.data ?? [])
+              .filter((c) => c?.source === "card")
+              .map((c) => ({ id: String(c.id), name: String(c.name ?? ""), clientType: c.clientType ?? null })),
+          ),
+        )
+        .catch((err) => {
+          console.error("[finance] CRM clients read failed:", err);
+          setCrmClients([]);
+        });
+    }
+  };
+
+  // ── اختيار موكّل من الدليل: تُقرأ قضاياه ليختار المحامي إحداها ──
+  const pickClient = (id: string) => {
+    setNewInvClientId(id);
+    setNewInvCaseId("");
+    setClientCases([]);
+    if (!id || !isSupabaseMode) return;
+    apiGet<{ data?: CaseRow[] }>(
+      "/api/v1/service-requests",
+      { receiver: "lawyer", lawyer_client_id: id, limit: 100 },
+      { timeoutMs: READ_TIMEOUT_MS },
+    )
+      .then((res) =>
+        setClientCases(
+          (res?.data ?? [])
+            .filter((r) => {
+              const m = r?.metadata ?? {};
+              return r?.type === "service" && m.task !== true && m.client !== true && m.invoice !== true && m.hearing !== true;
+            })
+            .map((r) => ({ id: String(r.id), title: String(r.title ?? "") })),
+        ),
+      )
+      .catch((err) => console.error("[finance] client cases read failed:", err));
+  };
+
   const handleCreateInvoice = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newInvClient.trim() || !newInvFee) return;
+    if (isSubmitting) return;
+
+    const pickedCard = crmClients?.find((c) => c.id === newInvClientId) ?? null;
+    if (!pickedCard && !newInvClient.trim()) {
+      setInvoiceError("اختر الموكّل من دليلك أو اكتب اسمه.");
+      return;
+    }
+    if (!pickedCard && !newInvClientType) {
+      setInvoiceError("حدّد نوع العميل: فرد أو شركة.");
+      return;
+    }
+    const pickedCase = clientCases.find((c) => c.id === newInvCaseId) ?? null;
 
     const feeNum = parseFloat(newInvFee);
     // قيمة سالبة أو صفرية كانت تمرّ إلى قاعدة البيانات (لا CHECK على
@@ -296,32 +411,53 @@ export default function FinancePage() {
     if (isSupabaseMode) {
       try {
         const res = await apiMutate<{ data: any }>("/api/v1/lawyer/finance", "POST", {
-          client: newInvClient,
+          idempotencyKey: createKey,
+          amountHalalas: Math.round(feeNum * 100),
+          ...(pickedCard
+            ? { clientId: pickedCard.id }
+            : { client: newInvClient.trim(), clientType: newInvClientType }),
+          ...(pickedCase ? { caseId: pickedCase.id } : { caseTitle: newInvCase || undefined }),
           description: newInvDesc || "أتعاب نظامية متفق عليها",
-          amount: feeNum,
           feeType: newInvType,
-          caseTitle: newInvCase || undefined,
-          clientType: "company",
-        });
+        }, { timeoutMs: WRITE_TIMEOUT_MS });
         const d = res?.data;
         if (d) {
-          setInvoices(prev => [d, ...prev]);
+          // إعادةُ نموذجٍ انقطع ردّه تُرجع الفاتورة نفسها: تُستبدل ولا تُكرَّر.
+          setInvoices(prev => prev.some(x => x.id === d.id) ? prev.map(x => (x.id === d.id ? d : x)) : [d, ...prev]);
           window.dispatchEvent(new CustomEvent("nzamy-workflow-updated"));
         }
         setIsSubmitting(false);
         setIsInvoiceModalOpen(false);
+        setCreateUncertain(false);
+        setCreateKey("");
 
         // تفريغ الحقول
         setNewInvClient("");
         setNewInvDesc("");
         setNewInvFee("");
         setNewInvCase("");
+        setNewInvClientId("");
+        setNewInvClientType("");
+        setNewInvCaseId("");
+        setClientCases([]);
 
         // إطلاق كرات الاحتفال بالنجاح
         confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
       } catch (err: any) {
         console.error("[finance] create invoice failed:", err);
-        setInvoiceError(err?.message || "تعذّر إصدار الفاتورة. حاول مرة أخرى.");
+        const raw = err?.message || "";
+        if (err instanceof ApiTimeoutError) {
+          setCreateUncertain(true);
+          setInvoiceError(CREATE_UNCERTAIN_AR);
+          refreshSilently();
+        } else {
+          // رفضٌ صريح لم يكتب شيئاً — إلا تكرار المفتاح ببيانات أخرى، فنبدأ مفتاحاً جديداً.
+          if (raw.includes("يكرّر طلب إصدار سابقاً")) {
+            setCreateUncertain(false);
+            setCreateKey(newCollectKey());
+          }
+          setInvoiceError(CREATE_ERROR_AR[raw] || (hasArabic(raw) ? raw : "تعذّر إصدار الفاتورة. حاول مرة أخرى."));
+        }
         setIsSubmitting(false);
       }
     } else {
@@ -330,9 +466,9 @@ export default function FinancePage() {
       const month = now.getMonth() + 1;
       setInvoices(prev => [{
         id: `INV-0${prev.length + 1}`,
-        client: newInvClient,
-        clientType: "company",
-        caseTitle: newInvCase || "—",
+        client: pickedCard?.name ?? newInvClient,
+        clientType: pickedCard?.clientType ?? newInvClientType,
+        caseTitle: pickedCase?.title ?? (newInvCase || "—"),
         desc: newInvDesc || "أتعاب نظامية متفق عليها",
         totalFee: feeNum,
         paidAmount: 0,
@@ -359,10 +495,18 @@ export default function FinancePage() {
   // ── فتح نافذة تأكيد التحصيل ──
   const openCollectModal = (inv: any) => {
     setCollectTarget(inv);
-    setCollectMethod("cash");
+    setCollectMethod(null);
     setCollectAmount("");
     setCollectError(null);
     setCollectKey(newCollectKey());
+    // ملخص خادمي حديث قبل التأكيد (UX04): لا يُعتمد على أرقام مخبأة في الصفحة.
+    setCollectFresh(false);
+    refreshSilently().then((ok) => {
+      if (!ok) {
+        setCollectError("تعذّر تحديث الأرقام من الخادم — المعروض من آخر قراءة، والخادم يرفض أي نموذج متقادم.");
+      }
+      setCollectFresh(true);
+    });
   };
 
   // ── تسجيل تحصيل فاتورة (نقداً / تحويل بنكي) ──
@@ -384,17 +528,23 @@ export default function FinancePage() {
       return;
     }
 
-    let collectedNow = remaining;
-    if (collectAmount.trim()) {
-      collectedNow = parseFloat(collectAmount);
-      if (!Number.isFinite(collectedNow) || collectedNow <= 0) {
-        setCollectError("أدخل مبلغاً صحيحاً أكبر من صفر.");
-        return;
-      }
-      if (collectedNow > remaining) {
-        setCollectError(`المبلغ يتجاوز المتبقي على الفاتورة (${remaining.toLocaleString()} ر.س).`);
-        return;
-      }
+    // المبلغ صريح دائماً (UX04): الحقل الفارغ لم يعد يعني «المتبقي كاملاً».
+    if (!collectMethod) {
+      setCollectError("اختر طريقة استلام المبلغ: نقداً أو تحويل بنكي.");
+      return;
+    }
+    if (!collectAmount.trim()) {
+      setCollectError("أدخل المبلغ المستلم الآن.");
+      return;
+    }
+    const collectedNow = parseFloat(collectAmount);
+    if (!Number.isFinite(collectedNow) || collectedNow <= 0) {
+      setCollectError("أدخل مبلغاً صحيحاً أكبر من صفر.");
+      return;
+    }
+    if (collectedNow > remaining) {
+      setCollectError(`المبلغ يتجاوز المتبقي على الفاتورة (${remaining.toLocaleString()} ر.س).`);
+      return;
     }
 
     const cumulative = alreadyCollected + collectedNow;
@@ -410,7 +560,7 @@ export default function FinancePage() {
           amountHalalas: Math.round(collectedNow * 100),
           expectedPaidHalalas: Math.round(alreadyCollected * 100),
           idempotencyKey: collectKey,
-        });
+        }, { timeoutMs: WRITE_TIMEOUT_MS });
         const d = res?.data;
         // نستبدل الصف بما أعاده الخادم حتى تبقى المجاميع مطابقة لقاعدة البيانات
         if (d) setInvoices(prev => prev.map(x => (x.id === d.id ? d : x)));
@@ -423,13 +573,16 @@ export default function FinancePage() {
         const raw = err?.message || "";
         // رسائل الرفض المالية (دفعة سُجّلت بعد فتح النموذج، مبلغ يتجاوز
         // المتبقي) يكتبها الخادم بالعربية ومعها المتبقي الفعلي — تُعرض كما هي.
+        // انقطاع الرد ليس فشلاً: قد تكون الدفعة سُجّلت (CODE-F23). المفتاح يبقى،
+        // فإعادة الضغط على النموذج نفسه لا تسجّلها مرتين.
         setCollectError(
-          COLLECT_ERROR_AR[raw] ||
-            (/[؀-ۿ]/.test(raw) ? raw : "تعذّر تسجيل التحصيل. حاول مرة أخرى."),
+          err instanceof ApiTimeoutError
+            ? COLLECT_UNCERTAIN_AR
+            : COLLECT_ERROR_AR[raw] || (hasArabic(raw) ? raw : "تعذّر تسجيل التحصيل. حاول مرة أخرى."),
         );
         setIsCollecting(false);
-        // ما على الشاشة قد يكون قديماً — تُعاد قراءته من الخادم.
-        loadFinance();
+        // ما على الشاشة قد يكون قديماً — تُعاد قراءته من الخادم دون إفراغ الصفحة.
+        refreshSilently();
       }
     } else {
       // وضع العرض التجريبي: التحديث محلي فقط بنفس منطق الخادم
@@ -464,25 +617,69 @@ export default function FinancePage() {
   return (
     <div className="max-w-[1400px] mx-auto px-4 md:px-8 py-10 space-y-8 text-right" dir="rtl">
 
-      {/* ── بانر بوابة الدفع (يظهر فقط عندما لا تكون البوابة مفعّلة فعلياً) ── */}
-      {payments.status !== "live" && (
-        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
-          className={`rounded-2xl p-4 border flex items-center gap-3 mb-5 ${isDark ? "border-amber-500/20 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
-          <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-amber-500/15" : "bg-amber-100"}`}>
-            <Warning size={18} weight="fill" className="text-amber-500" />
-          </div>
-          <div>
-            <p className={`text-[13px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>
-              {payments.disabled ? "بوابة الدفع غير مفعّلة حالياً" : "بوابة الدفع قيد التفعيل"}
-            </p>
-            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-amber-600/60"}`}>
-              {payments.disabled
-                ? "البيانات المالية تعرض من قاعدة البيانات — الدفع والسحب غير متاحين حتى تفعيل البوابة"
-                : "البيانات المالية تعرض من قاعدة البيانات — بوابة الدفع قيد الإعداد"}
-            </p>
-          </div>
-        </motion.div>
-      )}
+      {/* ── ثلاثة مسارات مالية منفصلة (UX03) ──
+          كان هنا بانر يقول إن بوابة الدفع لم تُفعَّل بعد، فيربط تحصيل المكتب
+          اليدوي بحالة بوابة المنصة، وهما أمران لا علاقة بينهما. كل مسار يُعرض
+          الآن بحالته من مصدره: التحصيل اليدوي متاح دائماً، ومدفوعات المنصة من
+          /api/v1/payments/status (تختلف بحسب الحساب)، ورصيد المحفظة لا يُخصم
+          في أي دفع بعد (لا يقرؤه مسار الدفع). */}
+      <section aria-label="المسارات المالية الثلاثة" className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+        {[
+          {
+            icon: Coins,
+            title: "تحصيل مكتبك من موكليك",
+            badge: "متاح",
+            tone: "emerald",
+            text: "قيود يدوية لما استلمته نقداً أو بتحويل بنكي — هذه الصفحة. لا يمرّ عبر أي بوابة دفع.",
+          },
+          {
+            icon: Receipt,
+            title: "مدفوعات المنصة (اشتراكك)",
+            badge: payments.loading
+              ? "جارٍ التحقق…"
+              : payments.status === "live"
+                ? "مفعّلة"
+                : payments.status === "test"
+                  ? "تجريبي — لا خصم حقيقي"
+                  : "غير متاحة لحسابك حالياً",
+            tone: payments.status === "live" ? "emerald" : "amber",
+            text: "الدفع الإلكتروني لباقات نظامي عبر ميسّر. منفصل تماماً عن فواتير موكليك.",
+          },
+          {
+            icon: Wallet,
+            title: "رصيد محفظة المنصة",
+            badge: "لا يُستخدم في الدفع بعد",
+            tone: "amber",
+            text: "رصيد تضيفه إدارة نظامي، وحركاته في تبويب «حركات محفظة المنصة». لا يُخصم منه شيء في أي عملية دفع حتى الآن.",
+          },
+        ].map((path) => {
+          const PIcon = path.icon;
+          const good = path.tone === "emerald";
+          return (
+            <div
+              key={path.title}
+              className={`rounded-2xl p-4 border ${isDark ? "border-white/[0.06] bg-zinc-900/50" : "border-slate-200 bg-white"}`}
+            >
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <span className="flex items-center gap-2">
+                  <PIcon size={16} weight="duotone" className="text-[#C8A762]" />
+                  <span className={`text-[12px] font-black ${isDark ? "text-zinc-200" : "text-slate-800"}`}>{path.title}</span>
+                </span>
+                <span
+                  className={`text-[9px] font-black px-2 py-0.5 rounded-full whitespace-nowrap ${
+                    good
+                      ? isDark ? "bg-emerald-500/15 text-emerald-400" : "bg-emerald-50 text-emerald-700"
+                      : isDark ? "bg-amber-500/15 text-amber-400" : "bg-amber-50 text-amber-700"
+                  }`}
+                >
+                  {path.badge}
+                </span>
+              </div>
+              <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{path.text}</p>
+            </div>
+          );
+        })}
+      </section>
 
       {/* ── الرأس وتوزيع عناصرها بغير تماثل ── */}
       <motion.div
@@ -503,14 +700,14 @@ export default function FinancePage() {
           {/* الوصف السابق كان يعد بـ«تحليلات ضريبية متوافقة مع هيئة الزكاة
               والضريبة والجمارك» — لا تحتسب المنصة ضريبة ولا تسجّل مصروفات. */}
           <p className="text-[13px] text-slate-500 dark:text-zinc-500 leading-relaxed">
-            الفواتير التي أصدرتها ومبالغ التحصيل المسجلة على حسابك. القيود اليدوية فقط — لا توجد بوابة دفع إلكتروني.
+            الفواتير التي أصدرتها لموكليك وما سجّلته من تحصيلها. التحصيل هنا قيود يدوية لا تمرّ عبر بوابة الدفع.
           </p>
         </div>
 
         <motion.button
           whileHover={{ scale: 1.03 }}
           whileTap={{ scale: 0.97 }}
-          onClick={() => setIsInvoiceModalOpen(true)}
+          onClick={openInvoiceModal}
           className="flex items-center gap-2 px-5 py-3 rounded-2xl text-xs font-black bg-[#0B3D2E] text-[#C8A762] hover:bg-[#082d22] shadow-lg shadow-[#0B3D2E]/15 transition-all self-start md:self-auto cursor-pointer"
         >
           <Plus size={14} weight="bold" /> إصدار فاتورة جديدة
@@ -591,17 +788,20 @@ export default function FinancePage() {
           {/* ── شريط التبويبات الفخم مع الكبسولة المنزلقة ── */}
           <div className={`p-1.5 rounded-3xl flex gap-1 ${isDark ? "bg-zinc-800/50" : "bg-slate-100/80"}`}>
             {([
-              { key: "overview"  as FinanceTab, label: "نظرة عامة",              icon: ChartBar },
-              { key: "invoices"  as FinanceTab, label: "إدارة الفواتير",          icon: Receipt },
-              { key: "expenses"  as FinanceTab, label: "حركات محفظة المنصة",   icon: Wallet },
-              { key: "pl"        as FinanceTab, label: "ملخص الأتعاب والتحصيل", icon: Scales },
+              { key: "overview"  as FinanceTab, label: "نظرة عامة",              short: "نظرة",     icon: ChartBar },
+              { key: "invoices"  as FinanceTab, label: "إدارة الفواتير",          short: "الفواتير",  icon: Receipt },
+              { key: "expenses"  as FinanceTab, label: "حركات محفظة المنصة",   short: "المحفظة",  icon: Wallet },
+              { key: "pl"        as FinanceTab, label: "ملخص الأتعاب والتحصيل", short: "الملخص",   icon: Scales },
             ] as const).map(tab => {
               const isActive = activeTab === tab.key;
               return (
                 <button
                   key={tab.key}
                   onClick={() => setActiveTab(tab.key)}
-                  className="relative flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[12px] font-black transition-all cursor-pointer overflow-hidden"
+                  // UX01: على الجوال يختفي النص الكامل، فالاسم والاختيار يُعلنان صراحةً.
+                  aria-label={tab.label}
+                  aria-pressed={isActive}
+                  className="relative flex-1 flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 py-2.5 md:py-3 rounded-2xl text-[12px] font-black transition-all cursor-pointer overflow-hidden"
                   style={{ color: isActive ? (isDark ? "#ffffff" : "#0B3D2E") : (isDark ? "#71717a" : "#64748b") }}
                 >
                   {isActive && (
@@ -614,6 +814,7 @@ export default function FinancePage() {
                   <span className="relative z-10">
                     <tab.icon size={14} weight={isActive ? "fill" : "regular"} className={isActive ? "text-[#C8A762]" : ""} />
                   </span>
+                  <span className="relative z-10 md:hidden text-[9px]" aria-hidden="true">{tab.short}</span>
                   <span className="relative z-10 hidden md:block">{tab.label}</span>
                 </button>
               );
@@ -956,13 +1157,14 @@ export default function FinancePage() {
                                       whileHover={{ scale: 1.04 }}
                                       whileTap={{ scale: 0.96 }}
                                       onClick={() => openCollectModal(inv)}
+                                      aria-label={`تسجيل تحصيل على فاتورة ${inv.client}`}
                                       className={`mt-2 flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-black border transition-all cursor-pointer ${
                                         isDark
                                           ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20"
                                           : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
                                       }`}
                                     >
-                                      <CheckCircle size={11} weight="fill" /> تم التحصيل
+                                      <CheckCircle size={11} weight="fill" /> تسجيل تحصيل
                                     </motion.button>
                                   )}
                                 </div>
@@ -1152,6 +1354,7 @@ export default function FinancePage() {
               {/* إغلاق */}
               <button
                 onClick={() => setIsInvoiceModalOpen(false)}
+                aria-label="إغلاق نافذة إصدار الفاتورة"
                 className="absolute top-6 left-6 p-2 rounded-2xl bg-black/[0.04] dark:bg-white/[0.04] hover:bg-black/[0.08] transition-colors cursor-pointer"
               >
                 <X size={14} className={isDark ? "text-zinc-400" : "text-slate-500"} />
@@ -1199,10 +1402,35 @@ export default function FinancePage() {
                     onSubmit={handleCreateInvoice}
                     className="space-y-4"
                   >
-                    {/* حقل العميل */}
+                    {/* الموكّل من الدليل (CODE-F21): الاسم والنوع يقرؤهما الخادم من البطاقة */}
+                    {crmClients && crmClients.length > 0 && (
+                      <div className="space-y-1.5">
+                        <label htmlFor="inv-client-card" className="block text-[11px] font-bold text-slate-500 dark:text-zinc-400">الموكّل من دليل موكليك:</label>
+                        <select
+                          id="inv-client-card"
+                          value={newInvClientId}
+                          onChange={(e) => pickClient(e.target.value)}
+                          className={`w-full rounded-2xl border px-4 py-3 text-[12px] outline-none focus:border-[#C8A762]/50 transition-all text-right font-bold ${
+                            isDark ? "border-white/[0.08] bg-zinc-900/60 text-zinc-200" : "border-slate-200 bg-slate-50 text-slate-700"
+                          }`}
+                        >
+                          <option value="">— عميل غير مسجّل في الدليل (اكتب اسمه أدناه) —</option>
+                          {crmClients.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name} — {c.clientType === "company" ? "شركة" : "فرد"}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* حقل العميل — حين لا يُختار موكّل من الدليل */}
+                    {!newInvClientId && (
+                    <>
                     <div className="space-y-1.5">
-                      <label className="block text-[11px] font-bold text-slate-500 dark:text-zinc-400">اسم الجهة أو العميل المستحق:</label>
+                      <label htmlFor="inv-client-name" className="block text-[11px] font-bold text-slate-500 dark:text-zinc-400">اسم الجهة أو العميل المستحق:</label>
                       <input
+                        id="inv-client-name"
                         required
                         type="text"
                         value={newInvClient}
@@ -1214,10 +1442,63 @@ export default function FinancePage() {
                       />
                     </div>
 
-                    {/* حقل القضية */}
+                    {/* نوع العميل — يُحدَّد صراحةً، لا افتراض */}
+                    <div className="space-y-1.5" role="radiogroup" aria-labelledby="inv-client-type-label">
+                      <p id="inv-client-type-label" className="block text-[11px] font-bold text-slate-500 dark:text-zinc-400">نوع العميل:</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        {([
+                          { key: "individual" as const, label: "فرد" },
+                          { key: "company" as const, label: "شركة أو جهة" },
+                        ]).map((t) => {
+                          const on = newInvClientType === t.key;
+                          return (
+                            <button
+                              key={t.key}
+                              type="button"
+                              role="radio"
+                              aria-checked={on}
+                              onClick={() => setNewInvClientType(t.key)}
+                              className={`rounded-2xl border px-4 py-2.5 text-[12px] font-black transition-all cursor-pointer ${
+                                on
+                                  ? "border-[#C8A762] bg-[#C8A762]/10 text-[#C8A762]"
+                                  : isDark ? "border-white/[0.08] bg-zinc-900/60 text-zinc-300" : "border-slate-200 bg-slate-50 text-slate-700"
+                              }`}
+                            >
+                              {t.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    </>
+                    )}
+
+                    {/* قضية الموكّل المختار (CODE-F21): تُربط بالمعرّف، وعنوانها من القضية نفسها */}
+                    {newInvClientId && clientCases.length > 0 && (
+                      <div className="space-y-1.5">
+                        <label htmlFor="inv-case" className="block text-[11px] font-bold text-slate-500 dark:text-zinc-400">القضية (اختياري):</label>
+                        <select
+                          id="inv-case"
+                          value={newInvCaseId}
+                          onChange={(e) => setNewInvCaseId(e.target.value)}
+                          className={`w-full rounded-2xl border px-4 py-3 text-[12px] outline-none focus:border-[#C8A762]/50 transition-all text-right font-bold ${
+                            isDark ? "border-white/[0.08] bg-zinc-900/60 text-zinc-200" : "border-slate-200 bg-slate-50 text-slate-700"
+                          }`}
+                        >
+                          <option value="">— بلا قضية محددة —</option>
+                          {clientCases.map((c) => (
+                            <option key={c.id} value={c.id}>{c.title}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* حقل القضية النصي — حين لا تُختار قضية بالمعرّف */}
+                    {!newInvCaseId && (
                     <div className="space-y-1.5">
-                      <label className="block text-[11px] font-bold text-slate-500 dark:text-zinc-400">القضية أو المعاملة المرتبطة بها (اختياري):</label>
+                      <label htmlFor="inv-case-title" className="block text-[11px] font-bold text-slate-500 dark:text-zinc-400">القضية أو المعاملة المرتبطة بها (اختياري):</label>
                       <input
+                        id="inv-case-title"
                         type="text"
                         value={newInvCase}
                         onChange={(e) => setNewInvCase(e.target.value)}
@@ -1227,16 +1508,18 @@ export default function FinancePage() {
                         }`}
                       />
                     </div>
+                    )}
 
                     {/* حقل الوصف وقيمة الأتعاب في سطر واحد */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-1.5">
-                        <label className="block text-[11px] font-bold text-slate-500 dark:text-zinc-400">قيمة الأتعاب المقررة (ر.س):</label>
+                        <label htmlFor="inv-fee" className="block text-[11px] font-bold text-slate-500 dark:text-zinc-400">قيمة الأتعاب المقررة (ر.س):</label>
                         <input
+                          id="inv-fee"
                           required
                           type="number"
-                          min="1"
-                          step="any"
+                          min="0.01"
+                          step="0.01"
                           value={newInvFee}
                           onChange={(e) => setNewInvFee(e.target.value)}
                           placeholder="مثال: ٢٥٠٠٠"
@@ -1318,6 +1601,10 @@ export default function FinancePage() {
           const totalFee = Number(liveCollectTarget.totalFee) || 0;
           const remaining = totalFee - alreadyCollected;
           const closeCollect = () => { if (!isCollecting) setCollectTarget(null); };
+          // زر التسجيل يحمل المبلغ نفسه (UX04): «تسجيل ١٥٠ ر.س».
+          const amountNum = parseFloat(collectAmount);
+          const amountValid = Number.isFinite(amountNum) && amountNum > 0 && amountNum <= remaining;
+          const canSubmit = collectFresh && !!collectMethod && amountValid && !isCollecting;
 
           return (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -1346,6 +1633,7 @@ export default function FinancePage() {
                 <button
                   onClick={closeCollect}
                   disabled={isCollecting}
+                  aria-label="إغلاق نافذة تسجيل التحصيل"
                   className="absolute top-6 left-6 p-2 rounded-2xl bg-black/[0.04] dark:bg-white/[0.04] hover:bg-black/[0.08] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <X size={14} className={isDark ? "text-zinc-400" : "text-slate-500"} />
@@ -1384,8 +1672,8 @@ export default function FinancePage() {
 
                   {/* طريقة استلام المبلغ */}
                   <div className="space-y-2">
-                    <label className="block text-[11px] font-bold text-slate-500 dark:text-zinc-400">كيف استلمت المبلغ؟</label>
-                    <div className="grid grid-cols-2 gap-3">
+                    <p id="collect-method-label" className="block text-[11px] font-bold text-slate-500 dark:text-zinc-400">كيف استلمت المبلغ؟ (اختر واحدة)</p>
+                    <div className="grid grid-cols-2 gap-3" role="group" aria-labelledby="collect-method-label">
                       {COLLECT_METHODS.map(m => {
                         const MIcon = m.icon;
                         const isActive = collectMethod === m.key;
@@ -1395,6 +1683,7 @@ export default function FinancePage() {
                             type="button"
                             onClick={() => setCollectMethod(m.key)}
                             disabled={isCollecting}
+                            aria-pressed={isActive}
                             className={`rounded-2xl border p-3 text-right transition-all cursor-pointer disabled:cursor-not-allowed ${
                               isActive
                                 ? "border-[#C8A762] bg-[#C8A762]/10"
@@ -1410,19 +1699,33 @@ export default function FinancePage() {
                     </div>
                   </div>
 
-                  {/* المبلغ المستلم الآن (اختياري) */}
+                  {/* المبلغ المستلم الآن — صريح دائماً (UX04) */}
                   <div className="space-y-1.5">
-                    <label className="block text-[11px] font-bold text-slate-500 dark:text-zinc-400">
-                      المبلغ المستلم الآن (ر.س) — اتركه فارغاً لتحصيل المتبقي كاملاً:
-                    </label>
+                    <div className="flex items-center justify-between gap-2">
+                      <label htmlFor="collect-amount" className="block text-[11px] font-bold text-slate-500 dark:text-zinc-400">
+                        المبلغ المستلم الآن (ر.س):
+                      </label>
+                      {remaining > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setCollectAmount(String(Math.round(remaining * 100) / 100))}
+                          disabled={isCollecting}
+                          className="text-[10px] font-black text-[#C8A762] hover:underline cursor-pointer disabled:opacity-50"
+                        >
+                          المتبقي كاملاً ({remaining.toLocaleString()} ر.س)
+                        </button>
+                      )}
+                    </div>
                     <input
+                      id="collect-amount"
+                      required
                       type="number"
-                      min="0"
+                      min="0.01"
                       step="0.01"
                       value={collectAmount}
                       onChange={(e) => setCollectAmount(e.target.value)}
                       disabled={isCollecting}
-                      placeholder={remaining.toLocaleString()}
+                      placeholder="مثال: ١٥٠"
                       className={`w-full rounded-2xl border px-4 py-3 text-[12px] outline-none focus:border-[#C8A762]/50 transition-all text-right font-semibold font-mono disabled:opacity-60 ${
                         isDark ? "border-white/[0.08] bg-zinc-900/60 text-zinc-200" : "border-slate-200 bg-slate-50 text-slate-700"
                       }`}
@@ -1452,7 +1755,7 @@ export default function FinancePage() {
                       whileHover={isCollecting ? undefined : { scale: 1.02 }}
                       whileTap={isCollecting ? undefined : { scale: 0.98 }}
                       type="submit"
-                      disabled={isCollecting}
+                      disabled={!canSubmit}
                       className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-xs font-black bg-[#0B3D2E] text-[#C8A762] hover:bg-[#07241b] shadow-lg shadow-[#0B3D2E]/10 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
                     >
                       {isCollecting ? (
@@ -1464,7 +1767,9 @@ export default function FinancePage() {
                           />
                           جارٍ تسجيل التحصيل...
                         </>
-                      ) : "تأكيد التحصيل"}
+                      ) : !collectFresh ? "جارٍ تحديث الأرقام من الخادم..."
+                        : amountValid ? `تسجيل ${amountNum.toLocaleString()} ر.س`
+                        : "تسجيل تحصيل"}
                     </motion.button>
                     <motion.button
                       whileHover={isCollecting ? undefined : { scale: 1.02 }}
