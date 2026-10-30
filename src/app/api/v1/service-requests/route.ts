@@ -13,6 +13,7 @@ import { checkOrderIntake, intakeErrorMessageAr } from "@/lib/services/intakeGua
 import { isPleadingDraftIntake } from "@/lib/services/orderIntake";
 import { assertCourtPractice } from "@/lib/auth/assertCourtPractice";
 import { validateServiceRequestCreate } from "@/lib/services/serviceRequestIntake";
+import { consultationBookingRefusal } from "@/app/api/v1/lawyer/consultations/_scheduleGuard";
 import { resolveServiceRequestEntityScope } from "@/lib/auth/serviceRequestEntityScope";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
@@ -382,13 +383,26 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
-
     // Art. 18: a legal consultant does not plead, so he may not order a
     // pleading from الصائغ القانوني either (the page hides it; this is the
     // server's half). The specialist documents stay open to him.
     if (intakeCheck.kind === "ok" && intakeCheck.service === "draft" && isPleadingDraftIntake((requestData.metadata as { intake?: unknown }).intake)) {
       const refused = await assertCourtPractice(supabase, user.id);
       if (refused) return refused;
+    }
+    // Consultation slot (owner findings LIVE-F34 / CODE-F31 / LIVE-F35): a
+    // real Riyadh date AND time strictly after now, or neither; and, for a
+    // booking the lawyer files to themselves, no unconfirmed overlap with
+    // their own scheduled consultations. See lawyer/consultations/_scheduleGuard.ts.
+    if (shape.value.type === "consultation") {
+      const slotRefusal = await consultationBookingRefusal(supabase, {
+        userId: user.id,
+        metadata: requestData.metadata,
+        assignedToSelf: (requestData.assignedTo ?? requestData.assigned_to ?? null) === user.id,
+        confirmOverlap: requestData.confirmOverlap === true,
+        nowMs: Date.now(),
+      });
+      if (slotRefusal) return slotRefusal;
     }
 
     // Task 6d follow-up — clamp the creation-time status. Without this, a

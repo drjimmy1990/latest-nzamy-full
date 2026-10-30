@@ -30,6 +30,7 @@ import { getConsultations, type Consultation as ConsultationStatusRow } from "@/
 import { listViewState, itemsOf, type ListRead } from "@/lib/services/listRead";
 import { CONSULTATION_STATUS_AR, CONSULTATION_MODE_AR, type ConsultationStatus } from "@/lib/services/consultationVocabulary";
 import { formatGregorianAr } from "@/app/dashboard/lawyer/_components/DeadlineCard";
+import { RIYADH_ZONE_LABEL_AR, formatRiyadhTimeAr, riyadhWallClock } from "@/lib/services/consultationSchedule";
 import { toArabicDigits, countPhraseAr, type ArabicCountForms } from "@/lib/services/arabicCount";
 // Item 192 (U4), additive: a completed consultation request can be reviewed
 // once. Same eligibility source as «طلباتي» (requests/page.tsx) — never just
@@ -240,27 +241,16 @@ function channelLabelOf(c: Consultation): string | null {
 // once, this is deterministic on the value it is given and carries no such
 // risk. ───────────────────────────────────────────────────────────────────
 
-/** The Gregorian+Hijri date half of a stored timestamptz, in local time. */
+/** The Gregorian date half of a stored timestamptz, on the RIYADH calendar (LIVE-F37). */
 function isoDatePartAr(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return formatGregorianAr(`${y}-${m}-${day}`);
+  const wc = riyadhWallClock(iso);
+  return wc ? formatGregorianAr(wc.date) : null;
 }
 
-/** The 12-hour Arabic-Indic time half of a stored timestamptz, in local time. */
+/** The 12-hour Arabic-Indic time half of a stored timestamptz, Riyadh wall clock, zone named (LIVE-F37). */
 function isoTimePartAr(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  const hours = d.getHours();
-  const minutes = d.getMinutes();
-  const period = hours < 12 ? "ص" : "م";
-  const hour12 = hours % 12 === 0 ? 12 : hours % 12;
-  return `${toArabicDigits(hour12)}:${toArabicDigits(String(minutes).padStart(2, "0"))} ${period}`;
+  const t = formatRiyadhTimeAr(iso);
+  return t ? `${t} ${RIYADH_ZONE_LABEL_AR}` : null;
 }
 
 const DURATION_FORMS: ArabicCountForms = {
