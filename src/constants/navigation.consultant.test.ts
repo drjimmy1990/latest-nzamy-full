@@ -146,7 +146,7 @@ test("the lawyer case page reads practiceKind and gates its court controls", () 
     "setShowAddStage(true)",
     "setEditingStage(s)",
     "setShowAddDeadline(true)",
-    "handleDeadlineAction(d, next)",
+    "handleDeadlineAction(d, next, reason)",
   ];
   for (const trigger of triggers) {
     const at = CASE_PAGE.indexOf(trigger);

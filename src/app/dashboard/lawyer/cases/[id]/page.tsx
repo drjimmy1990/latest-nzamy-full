@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useSearchParams, useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import {
   Gavel, ArrowRight, CalendarCheck, Clock, User, Buildings,
@@ -11,13 +11,24 @@ import {
   MapPin, MoneyWavy, Robot, FolderOpen, Eye, CheckSquare,
   Graph, UsersThree, Circle, DotsThree,
   ArrowsOut, ArrowsIn, Spinner, ArrowClockwise, Timer, SortAscending,
-  Archive,
+  Archive, ClockCounterClockwise, Prohibit,
 } from "@phosphor-icons/react";
+import { useRiyadhToday } from "@/hooks/useRiyadhToday";
+import { hearingDisplayState, HEARING_DISPLAY_LABEL_AR, type HearingDisplayState } from "@/lib/services/hearingVocabulary";
+import { allowedHearingActions, HEARING_ACTION_LABEL_AR, type HearingAction } from "@/lib/services/hearingChange";
+import HearingActionDialog from "../../hearings/_HearingActionDialog";
+import { formatTimeOfDayAr } from "../../hearings/_timeOfDay";
+import {
+  CASE_TAB_GROUPS, tabFromParam, nextTabIndex, currentStageOf, nextUpcomingHearing, createLatestWins,
+  type CaseTabGroup,
+} from "./_caseFileView";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import { countPhraseAr, type ArabicCountForms } from "@/lib/services/arabicCount";
 import { getLawyerHearings, type HearingDto } from "@/lib/services/lawyerHearingsService";
-import { getCaseStages, type CaseStage } from "@/lib/services/caseStagesService";
+import { getCaseStages, autoDeadlineChanged, type CaseStage } from "@/lib/services/caseStagesService";
+import { mergeSavedStage } from "@/lib/services/stageDeadlineCopy";
+import type { DeadlineAction } from "@/lib/services/deadlineStatusPolicy";
 import { caseEventLabel } from "@/lib/services/caseEventLabels";
 import { DOCUMENT_SOURCE_LABEL_AR, documentSourceLabelAr } from "@/lib/services/item59Labels";
 import {
@@ -131,10 +142,15 @@ type CaseStatus = "active" | "pending" | "suspended" | "closed" | "cancelled";
 type TaskStatus = "todo" | "inprogress" | "done";
 
 interface HearingRow {
+  id: string;
   date: string;
   court: string;
   result: string;
+  /** CODE-F18: the row's real state — scheduled-ahead, awaiting outcome, held, adjourned, cancelled. */
+  state: HearingDisplayState;
   status: "done" | "upcoming";
+  /** The DTO as read, for the edit / postpone / cancel dialog. */
+  source: HearingDto;
 }
 
 interface NoteRow {
@@ -248,21 +264,35 @@ function toCaseTask(t: LawyerTask): CaseTask {
 const AR_DIGITS = ["٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"];
 const toArabicDigits = (n: number | string) => String(n).replace(/\d/g, d => AR_DIGITS[Number(d)]);
 
-const TABS = [
-  { id: "overview",  label: "نظرة عامة",  icon: Gavel },
+// UX11: each tab belongs to one of three groups (CASE_TAB_GROUPS) and the
+// strip draws them as three labelled clusters. Order here is render order, so
+// a group's tabs stay together.
+const TABS: { id: string; label: string; icon: React.ElementType; group: CaseTabGroup }[] = [
+  { id: "overview",  label: "نظرة عامة",  icon: Gavel, group: "follow" },
   // N3.7 (owner §٤٥ axis 1): hearings, stages, ledger entries and notes on one line.
-  { id: "timeline",  label: "السجل الزمني", icon: Clock },
-  { id: "tasks",     label: "المهام",      icon: CheckSquare },
-  { id: "hearings",  label: "الجلسات",     icon: CalendarCheck },
-  { id: "stages",    label: "درجات التقاضي", icon: Scales },
-  { id: "deadlines", label: "المهل",       icon: Timer },
-  { id: "documents", label: "المستندات",   icon: FolderOpen },
+  { id: "timeline",  label: "السجل الزمني", icon: Clock, group: "follow" },
+  { id: "tasks",     label: "المهام",      icon: CheckSquare, group: "follow" },
+  { id: "hearings",  label: "الجلسات",     icon: CalendarCheck, group: "litigation" },
+  { id: "stages",    label: "درجات التقاضي", icon: Scales, group: "litigation" },
+  { id: "deadlines", label: "المهل",       icon: Timer, group: "litigation" },
+  { id: "documents", label: "المستندات",   icon: FolderOpen, group: "file" },
   // «أطراف القضية», not «الفريق»: this tab lists the responsible lawyer AND the
   // client, while «فريق القضية» (owner ١٦٩, the notes tab) never includes the client.
-  { id: "team",      label: "أطراف القضية", icon: UsersThree },
-  { id: "graph",     label: "خريطة القضية", icon: Graph },
-  { id: "notes",     label: "الملاحظات",   icon: ChatDots },
+  { id: "team",      label: "أطراف القضية", icon: UsersThree, group: "file" },
+  { id: "graph",     label: "خريطة القضية", icon: Graph, group: "file" },
+  { id: "notes",     label: "الملاحظات",   icon: ChatDots, group: "file" },
 ];
+const TAB_IDS = TABS.map(t => t.id);
+
+/** CODE-F18: how each real hearing state is drawn on the hearings tab. */
+const HEARING_STATE_TONE: Record<HearingDisplayState, { icon: React.ElementType; text: string; light: string; dark: string }> = {
+  upcoming:         { icon: Clock,                 text: "text-royal",       light: "bg-royal/10",   dark: "bg-royal/10" },
+  awaiting_outcome: { icon: Warning,               text: "text-amber-600",   light: "bg-amber-50",   dark: "bg-amber-500/10" },
+  held:             { icon: CheckCircle,           text: "text-emerald-600", light: "bg-emerald-50", dark: "bg-emerald-500/10" },
+  adjourned:        { icon: ClockCounterClockwise, text: "text-violet-600",  light: "bg-violet-50",  dark: "bg-violet-500/10" },
+  cancelled:        { icon: Prohibit,              text: "text-red-600",     light: "bg-red-50",     dark: "bg-red-500/10" },
+  unknown:          { icon: Clock,                 text: "text-slate-500",   light: "bg-slate-50",   dark: "bg-white/[0.04]" },
+};
 
 // Map service_request statuses to the UI CaseStatus.
 //
@@ -406,11 +436,34 @@ export default function CaseDetailPage() {
   // is a link straight to ?tab=graph. Validated against TABS rather than trusted:
   // an unknown or absent value falls back to the overview instead of rendering a
   // blank panel.
+  //
+  // UX11: the tab is now WRITTEN back to the URL as well (router.replace, no
+  // scroll, other params kept), so a reload, a shared link and the browser's
+  // back button all land on the tab the lawyer was reading. Local state keeps
+  // the click instant; a URL change from outside (back/forward) re-syncs it.
   const searchParams = useSearchParams();
-  const requestedTab = searchParams.get("tab");
-  const [activeTab, setActiveTab] = useState(
-    TABS.some(t => t.id === requestedTab) ? (requestedTab as string) : "overview",
-  );
+  const router = useRouter();
+  const pathname = usePathname();
+  const urlTab = tabFromParam(searchParams.get("tab"), TAB_IDS);
+  const [activeTab, setActiveTabState] = useState(urlTab);
+  const [syncedUrlTab, setSyncedUrlTab] = useState(urlTab);
+  if (urlTab !== syncedUrlTab) {
+    setSyncedUrlTab(urlTab);
+    setActiveTabState(urlTab);
+  }
+  const setActiveTab = useCallback((tab: string) => {
+    setActiveTabState(tab);
+    const params = new URLSearchParams(searchParams.toString());
+    if (tab === "overview") params.delete("tab"); else params.set("tab", tab);
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [router, pathname, searchParams]);
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  // CODE-F18: the hearing being changed from the hearings tab.
+  const [hearingAction, setHearingAction] = useState<{ row: HearingDto; action: HearingAction } | null>(null);
+  // CODE-F11: per-row latest-wins for the optimistic task toggles.
+  const taskStatusRace = useRef(createLatestWins<TaskStatus>());
+  const subtaskRace = useRef(createLatestWins<CaseTask["subtasks"]>());
   const [graphFullscreen, setGraphFullscreen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -517,8 +570,17 @@ export default function CaseDetailPage() {
   // Was `caseData.metadata.hearings` (an array nothing wrote) with a fallback
   // to scanning `hearing.*` events. Both are gone: `caseHearings` above is the
   // one real source, GET /api/v1/lawyer/hearings?caseId=<this case>.
+  //
+  // CODE-F18: `status` used to be «scheduled and not past → upcoming, else
+  // done», and the card printed «منتهية» for done — so a CANCELLED sitting
+  // read as one that took place. Each row now carries its real state.
+  // Riyadh's day, "" until mounted (no server/client disagreement).
+  const today = useRiyadhToday();
   const hearings: HearingRow[] = useMemo(() => {
     return caseHearings.map((h): HearingRow => ({
+      id: h.id,
+      source: h,
+      state: hearingDisplayState(h.status, h.date, today),
       // `h.date` is a wall-clock "YYYY-MM-DD", not an instant — parsed with an
       // explicit local midnight so a reader west of Riyadh does not see it
       // roll back a day (the exact bug documented at length in
@@ -526,13 +588,14 @@ export default function CaseDetailPage() {
       date: formatHearingDate(h.date),
       court: h.location || "—",
       result: h.title,
-      status: h.status === "scheduled" && h.date >= todayIso() ? "upcoming" : "done",
+      status: hearingDisplayState(h.status, h.date, today) === "upcoming" ? "upcoming" : "done",
     }));
-  }, [caseHearings]);
+  }, [caseHearings, today]);
 
-  // caseHearings is ordered by the API (date asc, time asc), so the first
-  // "upcoming" row is genuinely the soonest.
-  const nextHearing = hearings.find((h) => h.status === "upcoming");
+  // UX11 / CODE-F18: the next appointment is the soonest row still SCHEDULED
+  // and not before today — never a cancelled or postponed-away one.
+  const nextHearingDto = useMemo(() => nextUpcomingHearing(caseHearings, today), [caseHearings, today]);
+  const nextHearing = nextHearingDto ? { date: formatHearingDate(nextHearingDto.date), time: nextHearingDto.time ?? null } : null;
 
   /** The hearings tab's sort toggle — see `hearingsSortDesc` above. `hearings`
    * is already date-asc, so flipping it is a plain reverse, not a re-sort. */
@@ -794,6 +857,20 @@ export default function CaseDetailPage() {
   const stagesView = listViewState(stagesLoading, stagesRead);
   const caseStages = itemsOf(stagesRead);
 
+  // UX11 pinned summary — each value says when it could not be read rather
+  // than printing a «none» it does not know.
+  const stageNow = currentStageOf(caseStages);
+  const pinnedStage =
+    stagesView === "loading" ? "…"
+    : stagesView === "unreadable" ? "تعذّر التحقق"
+    : stageNow ? `${stageNow.stage.degree}${stageNow.stage.courtName ? ` — ${stageNow.stage.courtName}` : ""}${stageNow.open ? "" : " (مغلقة)"}`
+    : "لم تُسجَّل درجة تقاضٍ";
+  const pinnedNextHearing =
+    hearingsView === "loading" || !today ? "…"
+    : hearingsView === "unreadable" ? "تعذّر التحقق"
+    : nextHearing ? `${nextHearing.date}${nextHearing.time ? ` — ${formatTimeOfDayAr(nextHearing.time)}` : ""}`
+    : "لا يوجد موعد مجدول";
+
   const deadlinesView = listViewState(deadlinesLoading, deadlinesRead);
   const caseDeadlines = itemsOf(deadlinesRead);
   // Open/missed need attention first (soonest due date on top); done/cancelled
@@ -816,14 +893,16 @@ export default function CaseDetailPage() {
 
   // Optimistic «تمّ / إلغاء» on one deadline row, rolled back on failure —
   // mirrors رادار المهل's handleRowAction (src/app/dashboard/lawyer/deadlines/page.tsx).
-  const handleDeadlineAction = async (deadline: Deadline, next: "done" | "cancelled") => {
+  // CODE-F33: the card confirms first and passes the reason (required to cancel
+  // or reopen, an optional receipt for «تمّ»); the route records it.
+  const handleDeadlineAction = async (deadline: Deadline, next: DeadlineAction, reason: string) => {
     setDeadlineRowBusy((b) => ({ ...b, [deadline.id]: true }));
     setDeadlineRowError((e) => { const n = { ...e }; delete n[deadline.id]; return n; });
     setDeadlinesRead((prev) => (prev && prev.ok
       ? listOk(prev.items.map((d) => (d.id === deadline.id ? { ...d, status: next } : d)), prev.total)
       : prev));
     try {
-      await updateDeadline(deadline.id, { status: next });
+      await updateDeadline(deadline.id, { status: next, reason });
       loadDeadlines();
     } catch (err) {
       setDeadlinesRead((prev) => (prev && prev.ok
@@ -913,13 +992,21 @@ export default function CaseDetailPage() {
 
   // Optimistic, with a real revert — the counts above must never claim a move
   // the server refused.
+  //
+  // CODE-F11: the request (`next`) is computed once, outside the updater; the
+  // updater only writes it. Two quick clicks on one task used to race — a
+  // failing FIRST request reverted over the second's result. Now only the
+  // latest click on a row may revert it, and to the newest value the server
+  // actually confirmed (createLatestWins in ./_caseFileView.ts).
   const cycleTaskStatus = async (task: CaseTask) => {
     const next = NEXT_TASK_STATUS[task.status];
-    const previous = task.status;
+    const token = taskStatusRace.current.begin(task.id, task.status);
     patchTasks(prev => prev.map(t => (t.id === task.id ? { ...t, status: next } : t)));
     const ok = await updateLawyerTaskStatus(task.id, PAGE_TO_API_STATUS[next]);
-    if (!ok) {
-      patchTasks(prev => prev.map(t => (t.id === task.id ? { ...t, status: previous } : t)));
+    const outcome = taskStatusRace.current.settle(task.id, token, ok, next);
+    if (outcome.revert) {
+      const back = outcome.to;
+      patchTasks(prev => prev.map(t => (t.id === task.id ? { ...t, status: back } : t)));
       setTaskError("تعذّر تحديث حالة المهمة.");
     }
   };
@@ -927,13 +1014,16 @@ export default function CaseDetailPage() {
   // The checklist is one metadata.subtasks array on the task row, so a tick
   // sends the array back whole and the server merges it over the task's other
   // metadata (caseId, dueDate, …). Optimistic with a real revert, like above.
+  // CODE-F11: same latest-wins rule, keyed on the task (the whole array is sent).
   const toggleCaseSubtask = async (task: CaseTask, subtaskId: string) => {
-    const previous = task.subtasks;
-    const next = previous.map(s => (s.id === subtaskId ? { ...s, done: !s.done } : s));
+    const next = task.subtasks.map(s => (s.id === subtaskId ? { ...s, done: !s.done } : s));
+    const token = subtaskRace.current.begin(task.id, task.subtasks);
     patchTasks(prev => prev.map(t => (t.id === task.id ? { ...t, subtasks: next } : t)));
     const ok = await updateLawyerTaskSubtasks(task.id, next);
-    if (!ok) {
-      patchTasks(prev => prev.map(t => (t.id === task.id ? { ...t, subtasks: previous } : t)));
+    const outcome = subtaskRace.current.settle(task.id, token, ok, next);
+    if (outcome.revert) {
+      const back = outcome.to;
+      patchTasks(prev => prev.map(t => (t.id === task.id ? { ...t, subtasks: back } : t)));
       setTaskError("تعذّر حفظ خطوة العمل.");
     }
   };
@@ -1170,6 +1260,7 @@ export default function CaseDetailPage() {
                 <p className={`text-[10px] font-semibold mb-0.5 ${isDark ? "text-amber-500/70" : "text-amber-600"}`}>الجلسة القادمة</p>
                 <p className={`text-[13px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>
                   <CalendarCheck size={12} className="inline ml-1" />{nextHearing.date}
+                  {nextHearing.time ? ` — ${formatTimeOfDayAr(nextHearing.time)}` : ""}
                 </p>
               </div>
             )}
@@ -1223,26 +1314,73 @@ export default function CaseDetailPage() {
         </div>
       </motion.div>
 
-      {/* Tabs */}
-      <div className={`flex gap-1 p-1 rounded-2xl overflow-x-auto ${isDark ? "bg-zinc-900/60 border border-white/[0.06]" : "bg-slate-100/80"}`}>
-        {TABS.map(tab => {
-          const Icon = tab.icon;
-          return (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-[12px] font-medium transition-all whitespace-nowrap flex-shrink-0 min-w-[70px] ${activeTab === tab.id
-                ? isDark ? "bg-white/[0.08] text-white shadow-sm" : "bg-white text-slate-800 shadow-sm"
-                : isDark ? "text-zinc-600 hover:text-zinc-400" : "text-slate-500 hover:text-slate-700"
-              }`}>
-              <Icon size={13} weight={activeTab === tab.id ? "duotone" : "regular"} />
-              <span className="hidden sm:inline">{tab.label}</span>
-            </button>
-          );
-        })}
+      {/* UX11: pinned summary + tabs. Stays in view while a long tab scrolls,
+          so the case, its current degree and its next appointment are always
+          one glance away. Below the fixed 60px mobile header; at the top on
+          desktop (the sidebar is beside the page there, not above it). */}
+      <div className={`sticky top-[calc(env(safe-area-inset-top)+60px)] lg:top-0 z-30 -mx-1 px-1 pt-1 pb-1 space-y-1.5 backdrop-blur-md ${isDark ? "bg-zinc-950/80" : "bg-slate-50/85"}`}>
+        <div className={`flex items-center gap-x-4 gap-y-1 flex-wrap px-3 py-2 rounded-xl text-[11px] ${isDark ? "bg-zinc-900/70 border border-white/[0.06] text-zinc-400" : "bg-white border border-slate-200 text-slate-500"}`}
+          aria-label="ملخص القضية">
+          <span className={`font-bold truncate max-w-[16rem] ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{caseData.title || "بدون عنوان"}</span>
+          <span className="flex items-center gap-1">
+            <Scales size={12} aria-hidden="true" />
+            <span>المرحلة الحالية:</span>
+            <span className={`font-semibold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{pinnedStage}</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <CalendarCheck size={12} aria-hidden="true" />
+            <span>الموعد القادم:</span>
+            <span className={`font-semibold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{pinnedNextHearing}</span>
+          </span>
+        </div>
+
+        {/* LIVE-F10: a real tablist — each tab has an accessible name (the
+            label was `hidden sm:inline`, so on a phone the buttons were bare
+            icons with no name at all), a selected state, one tab stop
+            (roving tabIndex) and arrow / Home / End keys, mirrored for RTL. */}
+        <div role="tablist" aria-label="أقسام ملف القضية"
+          onKeyDown={(e) => {
+            const current = TAB_IDS.indexOf(activeTab);
+            const to = nextTabIndex(e.key, current < 0 ? 0 : current, TABS.length, "rtl");
+            if (to === null) return;
+            e.preventDefault();
+            setActiveTab(TABS[to].id);
+            tabRefs.current[to]?.focus();
+          }}
+          className={`flex items-stretch gap-1 p-1 rounded-2xl overflow-x-auto ${isDark ? "bg-zinc-900/60 border border-white/[0.06]" : "bg-slate-100/80"}`}>
+          {CASE_TAB_GROUPS.map((group, gi) => (
+            <div key={group.id} role="presentation" className={`flex items-stretch gap-1 flex-shrink-0 ${gi > 0 ? (isDark ? "border-r border-white/[0.08] pr-1" : "border-r border-slate-300/70 pr-1") : ""}`}>
+              <span aria-hidden="true" className={`hidden md:flex items-center px-1.5 text-[9px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{group.label}</span>
+              {TABS.filter(t => t.group === group.id).map(tab => {
+                const Icon = tab.icon;
+                const index = TAB_IDS.indexOf(tab.id);
+                const selected = activeTab === tab.id;
+                return (
+                  <button key={tab.id} type="button" role="tab"
+                    id={`case-tab-${tab.id}`}
+                    aria-selected={selected}
+                    aria-controls="case-tabpanel"
+                    tabIndex={selected ? 0 : -1}
+                    ref={(el) => { tabRefs.current[index] = el; }}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-[12px] font-medium transition-all whitespace-nowrap flex-shrink-0 min-w-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal ${selected
+                      ? isDark ? "bg-white/[0.08] text-white shadow-sm" : "bg-white text-slate-800 shadow-sm"
+                      : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-700"
+                    }`}>
+                    <Icon size={13} weight={selected ? "duotone" : "regular"} aria-hidden="true" />
+                    <span className="sr-only sm:not-sr-only">{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Content */}
       <AnimatePresence mode="wait">
         <motion.div key={activeTab}
+          role="tabpanel" id="case-tabpanel" aria-labelledby={`case-tab-${activeTab}`} tabIndex={-1}
           initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
           transition={{ duration: 0.15 }}>
 
@@ -1699,27 +1837,50 @@ export default function CaseDetailPage() {
                   )}
                 </div>
               ) : (
-                sortedHearings.map((h, i) => (
-                  <motion.div key={i}
+                sortedHearings.map((h, i) => {
+                  // CODE-F18: one badge per real state. «منتهية» is gone — it
+                  // was printed for a cancelled sitting as much as a held one.
+                  const tone = HEARING_STATE_TONE[h.state];
+                  const StateIcon = tone.icon;
+                  const actions = courtWritesAllowed ? allowedHearingActions(h.source.status) : [];
+                  const lastReason = [...(h.source.history ?? [])].reverse().find(e => e.reason)?.reason;
+                  return (
+                  <motion.div key={h.id}
                     initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-                    className={`${card} p-4 flex items-start gap-4 ${h.status === "upcoming" ? "border-l-4 border-l-royal" : ""}`}>
-                    <div className={`w-11 h-11 rounded-2xl flex flex-col items-center justify-center flex-shrink-0 ${h.status === "upcoming" ? "bg-royal/10" : isDark ? "bg-white/[0.04]" : "bg-slate-50"}`}>
-                      {h.status === "upcoming"
-                        ? <Clock size={18} weight="duotone" className="text-royal" />
-                        : <CheckCircle size={18} weight="duotone" className="text-emerald-500" />}
-                      <span className={`text-[9px] font-bold mt-0.5 ${h.status === "upcoming" ? "text-royal" : "text-emerald-500"}`}>
-                        {h.status === "upcoming" ? "قادمة" : "منتهية"}
+                    className={`${card} p-4 flex items-start gap-4 ${h.state === "upcoming" ? "border-l-4 border-l-royal" : ""} ${h.state === "cancelled" ? "opacity-70" : ""}`}>
+                    <div className={`w-14 h-12 rounded-2xl flex flex-col items-center justify-center flex-shrink-0 ${isDark ? tone.dark : tone.light}`}>
+                      <StateIcon size={18} weight="duotone" className={tone.text} aria-hidden="true" />
+                      <span className={`text-[9px] font-bold mt-0.5 text-center leading-tight ${tone.text}`}>
+                        {HEARING_DISPLAY_LABEL_AR[h.state]}
                       </span>
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <p className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{h.date}</p>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <p className={`text-[13px] font-bold ${h.state === "cancelled" ? "line-through" : ""} ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{h.date}</p>
+                        {h.source.time && <span className={`text-[11px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>{formatTimeOfDayAr(h.source.time)}</span>}
                         <span className={`text-[10px] px-2 py-0.5 rounded-md ${isDark ? "bg-white/[0.04] text-zinc-500" : "bg-slate-100 text-slate-400"}`}>{h.court}</span>
                       </div>
                       <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{h.result}</p>
+                      {lastReason && (
+                        <p className={`text-[11px] mt-1 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>السبب: {lastReason}</p>
+                      )}
+                      {actions.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {actions.map(a => (
+                            <button key={a} type="button" onClick={() => setHearingAction({ row: h.source, action: a })}
+                              aria-label={`${HEARING_ACTION_LABEL_AR[a]}: ${h.result} ${h.date}`}
+                              className={`text-[11px] font-bold px-2.5 py-1 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal ${a === "cancel"
+                                ? isDark ? "bg-red-500/10 text-red-300 hover:bg-red-500/20" : "bg-red-50 text-red-700 hover:bg-red-100"
+                                : isDark ? "bg-white/[0.05] text-zinc-300 hover:bg-white/[0.1]" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}>
+                              {HEARING_ACTION_LABEL_AR[a]}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </motion.div>
-                ))
+                  );
+                })
               )}
             </div>
           )}
@@ -1873,7 +2034,7 @@ export default function CaseDetailPage() {
                       busy={!!deadlineRowBusy[d.id]}
                       error={deadlineRowError[d.id] ?? null}
                       // No onAction → DeadlineCard shows no «تمّت / إلغاء» buttons.
-                      onAction={courtWritesAllowed ? (next) => handleDeadlineAction(d, next) : undefined}
+                      onAction={courtWritesAllowed ? (next, reason) => handleDeadlineAction(d, next, reason) : undefined}
                     />
                   ))}
                 </div>
@@ -1889,6 +2050,18 @@ export default function CaseDetailPage() {
                 <div className="flex items-center gap-2">
                 {/* «تحميل الكل (ZIP)» (owner ٢٥٦) — the same live list this tab shows. */}
                 <ZipDownloadButton scope="case" id={id} sizes={documents.map((d) => d.file_size)} isDark={isDark} />
+                {/* Q316 (owner answer 2026-10-30): there is no «ملف داخلي» tag
+                    yet — every document uploaded here is visible to the client.
+                    Said beside the button, before the upload, not after it.
+                    Only where it is true: attachments_select_policy shows a
+                    file to the case's requester and assignee, so a client sees
+                    it on a case the CLIENT filed — not on the lawyer's own case
+                    (requester = the lawyer). Unknown requester ⇒ warn. */}
+                {(caseData as { requester_user_id?: string | null } | null)?.requester_user_id !== user.userId && (
+                <span role="note" className={`flex items-center gap-1 text-[11px] font-semibold ${isDark ? "text-amber-400" : "text-amber-700"}`}>
+                  <Eye size={12} aria-hidden="true" /> الموكّل يرى هذا الملف
+                </span>
+                )}
                 <label className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border cursor-pointer transition-all ${uploading ? "opacity-60 pointer-events-none" : ""} ${isDark ? "border-white/[0.06] text-zinc-500 hover:text-zinc-300" : "border-slate-100 text-slate-500 hover:border-royal/20 hover:text-royal"}`}>
                   <UploadSimple size={12} />{uploading ? "جاري الرفع..." : "رفع مستند"}
                   <input
@@ -2251,6 +2424,21 @@ export default function CaseDetailPage() {
         />
       )}
 
+      {/* CODE-F18: edit / postpone / cancel / held / reopen from the case file. */}
+      {hearingAction && (
+        <HearingActionDialog
+          hearing={{
+            id: hearingAction.row.id, title: hearingAction.row.title, status: hearingAction.row.status,
+            date: hearingAction.row.date, time: hearingAction.row.time ?? undefined,
+            location: hearingAction.row.location, notes: hearingAction.row.notes,
+            caseId: hearingAction.row.caseRequestId ?? undefined, caseName: hearingAction.row.caseName,
+          }}
+          action={hearingAction.action}
+          isDark={isDark}
+          onClose={() => setHearingAction(null)}
+        />
+      )}
+
       {showAddStage && (
         <AddCaseStageModal
           onClose={() => setShowAddStage(false)}
@@ -2268,15 +2456,14 @@ export default function CaseDetailPage() {
           isDark={isDark}
           caseRequestId={id}
           stage={editingStage}
+          // CODE-F06: called once at the save; the modal stays on its
+          // confirmation (what happened to the linked deadline) until the
+          // lawyer closes it, however they close it.
           onSaved={(savedStage, autoDeadline) => {
-            if (stagesRead?.ok) {
-              setStagesRead(listOk(
-                stagesRead.items.map((s) => (s.id === savedStage.id ? savedStage : s)),
-                stagesRead.total,
-              ));
-            }
-            setEditingStage(null);
-            if (autoDeadline?.created) loadDeadlines();
+            setStagesRead((prev) => (prev && prev.ok
+              ? listOk(prev.items.map((s) => (s.id === savedStage.id ? mergeSavedStage(s, savedStage, autoDeadline) : s)), prev.total)
+              : prev));
+            if (autoDeadlineChanged(autoDeadline)) loadDeadlines();
           }}
         />
       )}
@@ -2286,10 +2473,7 @@ export default function CaseDetailPage() {
           onClose={() => setShowAddDeadline(false)}
           isDark={isDark}
           caseRequestId={id}
-          onCreated={() => {
-            setShowAddDeadline(false);
-            loadDeadlines();
-          }}
+          onCreated={() => loadDeadlines()}
         />
       )}
     </div>
