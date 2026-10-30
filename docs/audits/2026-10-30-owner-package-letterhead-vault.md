@@ -16,6 +16,8 @@ Source (read only): `Nezamy-Developer-Handoff-2026-10-30` —
 | `06d7d04d` | Vault pages and tabs, letterhead redirects, sidebar, letter editor removed, CODE-F37 save lock |
 | `ccc96e72` | Migration fix found by the new RLS harness test (plpgsql `IF … CASE … THEN`), plus the test |
 | `5832bf88` | Lint cleanup |
+| `eaef6328` | This ledger and the Arabic owner note |
+| (last) | Vault pages key the workspace on the tab, so a same-route link (the sidebar's «الخزنة», which has no `?tab`) shows the tab its URL names; pinned in `letterheadWiring.test.ts` |
 
 ## Re-verification against current code (before any edit)
 
@@ -231,23 +233,37 @@ Not touched, but now inconsistent, so worth reconciling:
 
 ## Tests
 
-- Unit (`node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test "src/**/*.test.ts"`): 4184 tests, 4177 pass, 7 fail.
-  - The 7 failures are pre-existing and unrelated. Their test files are unchanged, and none reads a file this branch touched:
-    - `fulfillOrder.test.ts`
-    - `trackingWiring.test.ts` ×2
-    - `library books _shape.test.ts`
-    - `libraryAccess.test.ts`
-    - `navigation.consultant.test.ts` (lawyer dashboard page)
-    - `aiFiles.test.ts` (`pdf-lib` is not installed in the shared `node_modules`)
-  - New tests: 18 —
-    - `firmLetterheadPermissions` 5
-    - `brandingAssets` 6
-    - `letterheadWiring` +4
-    - `letterheadIdentity` +1
-    - `accountDeletionServer` +2
-- `npx tsc --noEmit`: clean, except the same pre-existing `pdf-lib` "cannot find module" in `src/lib/ai/aiFiles*.ts`.
-- RLS harness (Docker, postgres:16-alpine): `branding_assets.test.sql` ALL PASS (T0–T5), with 63 and 30_10 each run twice. The first run caught a plpgsql syntax error, fixed in `ccc96e72`.
+- Unit (`node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test "src/**/*.test.ts"`): final run on the branch tip gave 4184 tests, 4176 pass, 8 fail. None of the 8 is caused by this branch.
+  - **7 fail identically at the base `235e1bef`.** They were re-run with the base commit checked out (detached), then the branch was restored:
+    - `src/lib/payments/fulfillOrder.test.ts`: «grantPurchase keys every grant on the order».
+    - `src/lib/tracking/trackingWiring.test.ts` ×2: «no v1 fallback …» and «the insert and revoke policies … maker rule».
+    - `src/app/api/library/books/[slug]/_shape.test.ts`: «the volume series (T28-24)».
+    - `src/lib/libraryAccess.test.ts`: «the end read takes the latest ends_at …».
+    - `src/constants/navigation.consultant.test.ts`: «the lawyer dashboard hides the hearings and deadlines cards …». It reads `src/app/dashboard/lawyer/page.tsx`, which this branch did not touch. The test does import `navigation.sidebars.legal.ts`, which this branch edited, but it fails the same way at the base.
+    - `src/lib/ai/aiFiles.test.ts`: `pdf-lib` is not installed in the shared `node_modules`.
+  - **1 is flaky.** `src/lib/ai/runCore.test.ts`, «the start call carries the price, the limit and the deadline». It failed once in the full run, then passed 20/20 twice when run alone. The file is untouched and owned by the AI worker.
+  - **New tests: 19.**
+    - `firmLetterheadPermissions`: 5
+    - `brandingAssets`: 6
+    - `letterheadWiring`: +4 (with the `key` pin)
+    - `letterheadIdentity`: +1
+    - `accountDeletionServer`: +2
+- `npx tsc --noEmit`, re-run on the tip: clean, except the pre-existing `pdf-lib` "cannot find module" in `src/lib/ai/aiFiles*.ts`.
+- RLS harness (Docker, postgres:16-alpine; run.sh's steps done by hand): `supabase/tests/rls/branding_assets.test.sql` ALL PASS (T0–T5), with 63 and 30_10 each run twice.
+  - The first run caught a plpgsql syntax error, fixed in `ccc96e72`.
+  - The migration header's SELECT check returned `t | t | t | 1 | t`.
+  - Negative control: with the guard trigger dropped, a foreign-folder row is accepted.
 - ESLint on the touched folders: 0 errors. 4 `set-state-in-effect` warnings, all in the same load-in-effect pattern the files already used.
+
+## Touched outside my area (reconcile with the owner of auth / account deletion)
+
+- **`src/lib/accountDeletion/accountDeletionServer.ts`** (commit `1b5fb019`). The account purge now also clears `u/<uid>/` in the new `branding-files` bucket; a missing bucket counts as nothing to clear. Without this, a deleted lawyer's uploaded letterhead, stamp and signature would stay in storage.
+  - The file sits next to the off-limits auth area: it imports `src/lib/auth/accountFreeze.ts`.
+  - It is pinned by `src/lib/auth/accountFreezeGates.test.ts`, which this branch did **not** edit. That pin still passes, because the code keeps one `.list(` call site and the literal `admin.storage.from(BRANDING_BUCKET)`.
+  - But the pin's comment («The one listing is the branding bucket's u/<id>/ folder») and its `lists.length === 1` assertion now under-describe the behaviour: the same listing helper runs over two buckets. The auth owner should update that comment and assertion.
+  - **Fallback if the owner objects:** revert only the purge part of `1b5fb019`, that is, `accountDeletionServer.ts` and its two new tests. Orphaned stationery files on account deletion then become an open item.
+- **`src/lib/branding/brandingServer.ts`**: `resolveBrandingCaller` gained a second parameter, which defaults to the old behaviour for the logo route.
+- **GitNexus index:** stale for these files. It was not re-analyzed from this worktree.
 
 ## Open questions for the owner
 

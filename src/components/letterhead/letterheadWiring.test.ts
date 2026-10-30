@@ -59,6 +59,7 @@ test("the old letterhead pages redirect permanently into the vault's branding ta
     const vault = code(readFileSync(new URL(`../../app/dashboard/${scope}/vault/page.tsx`, import.meta.url), "utf8"));
     assert.ok(!/"use client"/.test(vault) && /await searchParams/.test(vault), "the vault page reads ?tab on the server");
     assert.ok(!/DashboardComingSoon/.test(vault));
+    assert.match(vault, /<LegalVaultWorkspace key=\{parseVaultTab\(tab\)\}/, "the tab follows a same-route URL change");
   }
   assert.deepEqual(LETTERHEAD_REDIRECT, { lawyer: "/dashboard/lawyer/vault?tab=branding", firm: "/dashboard/firm/vault?tab=branding" });
   assert.equal(parseVaultTab("branding"), "branding");
