@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { instantBoxItems, type InstantItem } from "./instantBox";
 import type { SaveToFolderDoc } from "./saveToFolder";
+import type { TitleSuggestion } from "@/app/api/library/search/suggest/suggestions";
+import Link from "next/link";
 import FolderSelectionModal from "@/components/laws/FolderSelectionModal";
 import { normalizeArabic, normalizeSearch } from "@/utils/normalizeArabic";
 import { stripMarkdownMarks } from "@/lib/text/stripMarkdownMarks";
@@ -135,6 +137,8 @@ export default function LegalLibraryPage() {
   const router = useRouter();
   // Owner note ٠٤: the result card whose «حفظ في مجلد» opened the folder modal.
   const [saveDoc, setSaveDoc] = useState<SaveToFolderDoc | null>(null);
+  // Owner note ١٢-٣: «هل تقصد …؟» titles for a search that found nothing.
+  const [titleSuggestions, setTitleSuggestions] = useState<TitleSuggestion[]>([]);
   const { isLoggedIn }    = useUser();
 
   // --- Database-backed state variables ---
@@ -731,6 +735,25 @@ export default function LegalLibraryPage() {
       ? "أزيل مرشح حالة المادة لأن البحث لم يعد مقتصرًا على الأنظمة."
       : "The article-status filter was cleared because the search is no longer limited to laws.");
   }, [isArticleStatusFilterInScope, articleStatusFilter, isRTL]);
+
+  // Owner note ١٢-٣: a settled search with no result anywhere (no section
+  // failed) asks /api/library/search/suggest for the closest titles —
+  // «هل تقصد …؟». Missing function / any failure → [] and the plain «لا نتائج».
+  const searchFoundNothing = isSearchActive && !searchLoading && !searchError && !!searchResults
+    && searchCounts.degraded.length === 0 && totalCountDisplay(searchCounts).value === 0;
+  useEffect(() => {
+    setTitleSuggestions([]);
+    if (!searchFoundNothing || !isSupabaseMode) return;
+    const controller = new AbortController();
+    fetch(`/api/library/search/suggest?q=${encodeURIComponent(search.trim())}`, { signal: controller.signal })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body) => {
+        if (controller.signal.aborted) return;
+        setTitleSuggestions(Array.isArray(body?.suggestions) ? body.suggestions : []);
+      })
+      .catch(() => { /* aborted or offline: no suggestions */ });
+    return () => controller.abort();
+  }, [searchFoundNothing, search]);
 
   if (!mounted) return null;
 
@@ -1950,6 +1973,41 @@ export default function LegalLibraryPage() {
                         >
                           {isRTL ? "مسح البحث" : "Clear Search"}
                         </button>
+                      </div>
+                    )}
+
+                    {/* Owner note ١٢-٣: no result anywhere → «هل تقصد …؟» + the closest titles. */}
+                    {searchFoundNothing && titleSuggestions.length > 0 && (
+                      <div data-testid="did-you-mean" className={`mb-4 rounded-xl border px-4 py-3 text-sm ${
+                        isDark ? "bg-[#161b22] border-[#2d3748] text-gray-300" : "bg-white border-gray-200 text-gray-700"
+                      }`}>
+                        <p className="font-bold mb-2">
+                          {isRTL ? "هل تقصد: " : "Did you mean: "}
+                          <button
+                            type="button"
+                            onClick={() => setSearch(titleSuggestions[0].title)}
+                            className={`underline underline-offset-2 ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
+                          >
+                            {titleSuggestions[0].title}
+                          </button>
+                          {isRTL ? "؟" : "?"}
+                        </p>
+                        <p className={`text-[11px] mb-1.5 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                          {isRTL ? "أقرب العناوين إلى ما كتبت:" : "The closest titles:"}
+                        </p>
+                        <ul className="flex flex-col gap-1">
+                          {titleSuggestions.map((s) => (
+                            <li key={`${s.section}:${s.id}`} className="flex items-center gap-2">
+                              <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${isDark ? "bg-white/5 text-gray-300" : "bg-gray-100 text-gray-600"}`}>
+                                {s.section === "laws" ? "نظام" : s.section === "precedents" ? "مبادئ" : "فقه"}
+                              </span>
+                              <Link href={s.href} className={`truncate hover:underline ${s.repealed ? (isDark ? "text-red-300" : "text-red-700") : ""}`}>
+                                {s.title}
+                              </Link>
+                              {s.repealed && <span className={`shrink-0 text-[10px] font-bold ${isDark ? "text-red-300" : "text-red-700"}`}>ملغى</span>}
+                            </li>
+                          ))}
+                        </ul>
                       </div>
                     )}
 
