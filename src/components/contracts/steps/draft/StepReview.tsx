@@ -62,7 +62,7 @@ function buildChecks(
       label: "نوع العقد",
       detail: hasType
         ? `نوع العقد محدد — ${CONTRACT_TYPES.find(c => c.id === contractType)?.title ?? contractType}`
-        : "نوع العقد غير محدد (اختياري) — سيستخدم الفريق نموذجاً عاماً عند الصياغة",
+        : "نوع العقد غير محدد (اختياري) — سيُصاغ عقد عام من وصفك",
       status: hasType ? "ok" : "warn",
     },
     {

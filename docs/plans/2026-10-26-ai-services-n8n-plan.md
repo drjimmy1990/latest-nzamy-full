@@ -586,6 +586,19 @@ L8 notes:
 >   - DOCX/PDF export with the letterhead (the existing `AiResultActions` exports remain);
 >   - `review` release mode (there is still no admin approve route, so it runs in staff/live like the other tools).
 >   These come with L12–L14.
+
+> **Status 2026-10-30 (L13 built on `feat/ai-l13-contracts`, not merged, not deployed):**
+> - **L13 built:** tool `contracts-pro`, a 1,000-point job with a daily limit of 5, all six roles, off by default. n8n workflow `mMekAog89HsgLz3o` (`nzamy-ai/contracts-pro`) is created, switched on and live-tested.
+>   - **Engine:** the outline first, then one Agent call per clause (new `clauseJob` shape). One failed or empty clause fails the whole draft (refunded); a clause is never dropped.
+>   - **Coverage:** the page's 38 types; Arabic, English, Arabic/English or a custom language, single or facing; the cited articles go through the L8 citation check.
+>   - **Page:** `/ai/contracts` draft mode writes the contract automatically (LIVE-F03 / NOTE-22-C04). The team order is a separate, optional card on the same step.
+>   - **Review mode** stays the team order and says plainly that AI review is not available yet. The fake 1.4 s «معالجة...» wait is removed.
+> - **Not yet in L13:**
+>   - library retrieval before drafting. `spec.retrieval` would gate the tool on the library tier and refund any draft that cites nothing; the citation check is the library step for now;
+>   - review mode (clause segmentation + per-clause risk);
+>   - the common editor and DOCX/PDF export with the letterhead;
+>   - more than the page's 38 types.
+> - **Price disagreement (pricing files not edited):** the registry charges 1,000 (this plan), but `/pricing` (`TOOL_POINT_LABELS["ai:contracts"]` = «١٠») and the `lawyerServicesTable` row «صياغة العقود وتدقيقها ومصفوفة المخاطر» say 10 points. This needs the owner's call.
 Shared engine:
 
 ```

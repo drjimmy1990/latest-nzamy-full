@@ -7,6 +7,9 @@ import { Check, ArrowRight, ArrowLeft, PencilSimple, ShieldCheck, FileText, File
 import { useTheme } from "@/components/ThemeProvider";
 
 import { useContractsState } from "@/hooks/useContractsState";
+import { useAiRun } from "@/hooks/useAiRun";
+import { CONTRACTS_PRO_PRICE } from "@/lib/ai/tools";
+import { asContractsProDraft, contractsProInput, contractsProText } from "@/components/contracts/contractsProRun";
 import { CONTRACT_TYPES } from "@/components/contracts/constants";
 import type { PartyData } from "@/components/contracts/types";
 import { getContract } from "@/lib/services/contractsService";
@@ -17,6 +20,7 @@ import { StepDomain } from "@/components/contracts/steps/draft/StepDomain";
 import { StepContext } from "@/components/contracts/steps/draft/StepContext";
 import { StepClauses } from "@/components/contracts/steps/draft/StepClauses";
 import { StepReview } from "@/components/contracts/steps/draft/StepReview";
+import { StepGenerate } from "@/components/contracts/steps/draft/StepGenerate";
 import { StepSubmit, type StepSubmitRow } from "@/components/contracts/steps/StepSubmit";
 
 import { StepRIdentity } from "@/components/contracts/steps/review/StepRIdentity";
@@ -64,6 +68,31 @@ function AIContractsPageInner() {
 
   const s = useContractsState(linkedContract ? { id: linkedContract.id, title: linkedContract.title } : null);
   const card = isDark ? "bg-zinc-900 border border-white/[0.07] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
+
+  // L13 (LIVE-F03 / NOTE-22-C04): the draft is written automatically by a
+  // background job — the server checks the answers, charges once and n8n
+  // writes the outline, then each clause. The team order is a separate,
+  // optional button on the same step (StepGenerate), never the way through.
+  const run = useAiRun();
+  const draft = run.phase === "done" ? asContractsProDraft(run.output) : null;
+  const draftText = draft ? contractsProText(draft) : "";
+  function generateContract() {
+    if (run.busy || !s.contractComplexity) return;
+    void run.start("contracts-pro", contractsProInput({
+      complexity: s.contractComplexity,
+      contractType: s.contractType,
+      language: s.contractLanguage,
+      customLanguageName: s.customLanguageName,
+      customLanguageLayout: s.customLanguageLayout,
+      customLanguageBase: s.customLanguageBase,
+      party1: s.party1Data,
+      party2: s.party2Data,
+      contractDesc: s.contractDesc,
+      courtType: s.courtType,
+      selectedClauses: s.clauses.filter(c => c.checked).map(c => s.clauseEdits[c.id]?.trim() || c.title),
+      additionalClauses: s.additionalClauses,
+    }));
+  }
 
   // Draft-mode submit recap — rows for the "submit" step. Mirrors buildIntake()
   // in useContractsState.ts: STEPS_DRAFT_SIMPLE never visits "domain" or
@@ -142,8 +171,8 @@ function AIContractsPageInner() {
         </div>
         <p className={`text-[13px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
           {s.contractMode === "review"
-            ? "ارفع عقدك الحالي — يراجعه فريق نظامي يدوياً ويرسل لك تقرير المخاطر والملاحظات"
-            : "صف فكرة عقدك وبنوده — يراجعها فريق نظامي ويتولى صياغته يدوياً"}
+            ? "ارفع عقدك الحالي — يراجعه فريق نظامي ويرسل لك تقرير المخاطر والملاحظات (المراجعة الآلية بالذكاء الاصطناعي لم تُتح بعد)"
+            : "صف فكرة عقدك وبنوده — يكتبه الذكاء الاصطناعي آلياً بنداً بنداً، وتتحقق المنصة من مواده في المكتبة"}
         </p>
       </div>
 
@@ -178,7 +207,7 @@ function AIContractsPageInner() {
               <p className={`text-[16px] font-bold mb-1 ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>صياغة عقد</p>
               <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>صمّم عقداً جديداً من الصفر</p>
               <div className="mt-3 flex flex-wrap justify-center gap-1.5">
-                {["الأطراف والنوع", "وصف الفكرة", "اختيار البنود", "مراجعة وإرسال"].map(f => (
+                {["الأطراف والنوع", "وصف الفكرة", "اختيار البنود", "إنشاء آلي"].map(f => (
                   <span key={f} className={`text-[10px] px-2 py-0.5 rounded-full ${isDark ? "bg-white/[0.06] text-zinc-400" : "bg-zinc-100 text-zinc-500"}`}>{f}</span>
                 ))}
               </div>
@@ -192,9 +221,9 @@ function AIContractsPageInner() {
                 <ShieldCheck size={26} weight="duotone" className="text-[#C8A762]" />
               </div>
               <p className={`text-[16px] font-bold mb-1 ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>مراجعة عقد</p>
-              <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>تحليل عقد موجود وكشف المخاطر</p>
+              <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>تحليل عقد موجود وكشف المخاطر — يتولاه فريق نظامي</p>
               <div className="mt-3 flex flex-wrap justify-center gap-1.5">
-                {["بياناتك عن العقد", "رفع ملف العقد", "مراجعة وإرسال"].map(f => (
+                {["بياناتك عن العقد", "رفع ملف العقد", "إرسال للفريق"].map(f => (
                   <span key={f} className={`text-[10px] px-2 py-0.5 rounded-full ${isDark ? "bg-white/[0.06] text-zinc-400" : "bg-zinc-100 text-zinc-500"}`}>{f}</span>
                 ))}
               </div>
@@ -327,7 +356,7 @@ function AIContractsPageInner() {
                       </p>
                       <p className={`text-[11px] leading-relaxed ${isDark ? "text-emerald-400/70" : "text-emerald-700"}`}>
                         قد يتأثر عقد العمل بتحديثات نظام العمل لعام 2025 — إجازات الأمومة/الأبوة، فترات التجربة، وآليات الإنهاء.
-                        اذكر ما يخصك من هذه التفاصيل في وصف الفكرة، وسيراعيها الفريق عند الصياغة.
+                        اذكر ما يخصك من هذه التفاصيل في وصف الفكرة لتُراعى عند الصياغة.
                       </p>
                     </div>
                   </motion.div>
@@ -358,22 +387,27 @@ function AIContractsPageInner() {
           {s.step === "clauses"  && <StepClauses isDark={isDark} clauses={s.clauses} setClauses={s.setClauses} clauseEdits={s.clauseEdits} setClauseEdits={s.setClauseEdits} newClause={s.newClause} setNewClause={s.setNewClause} additionalClauses={s.additionalClauses} setAdditionalClauses={s.setAdditionalClauses} />}
           {s.step === "review"   && <StepReview isDark={isDark} contractType={s.contractType} clauses={s.clauses} additionalClauses={s.additionalClauses} />}
           {s.step === "submit" && s.contractMode === "draft" && (
-            <StepSubmit
+            <StepGenerate
               isDark={isDark}
-              heading="مراجعة الطلب وإرساله"
-              description="سيراجع فريق نظامي بيانات العقد المدخلة ويتولى صياغته يدوياً، وسيصلك إشعار عند جهوزيته."
               rows={submitRows}
-              consentText="أقر بأن البيانات المدخلة صحيحة، وأوافق على إرسالها لفريق نظامي لصياغة العقد."
-              submitting={s.submitting}
-              submitErrors={s.submitErrors}
-              onSubmit={s.submitOrder}
+              price={CONTRACTS_PRO_PRICE}
+              phase={run.phase}
+              error={run.error}
+              chargedPoints={run.chargedPoints}
+              draft={draft}
+              draftText={draftText}
+              onGenerate={generateContract}
+              onRestart={() => { run.reset(); s.setStep("parties"); }}
+              humanSubmitting={s.submitting}
+              humanErrors={s.submitErrors}
+              onHumanOrder={s.submitOrder}
             />
           )}
           {s.step === "submit" && s.contractMode === "review" && (
             <StepSubmit
               isDark={isDark}
               heading="مراجعة الطلب وإرساله"
-              description="سيراجع فريق نظامي العقد المرفوع ويرسل لك تقرير المراجعة يدوياً، وسيصلك إشعار عند جهوزيته."
+              description="مراجعة العقد بالذكاء الاصطناعي (تقسيم البنود وتقدير مخاطر كل بند) لم تُتح بعد؛ هذا طلب بشري يراجع فيه فريق نظامي العقد المرفوع ويرسل لك تقرير المراجعة، وسيصلك إشعار عند جهوزيته."
               rows={reviewSubmitRows}
               attachments={s.attachments}
               consentText="أقر بأن البيانات المدخلة صحيحة، وأوافق على إرسال العقد المرفوع لفريق نظامي لمراجعته."
@@ -401,7 +435,7 @@ function AIContractsPageInner() {
 
           {/* Navigation */}
           <div className="flex items-center justify-between pt-2">
-            <button onClick={s.prevStep} disabled={s.currentStepIndex === 0}
+            <button onClick={s.prevStep} disabled={s.currentStepIndex === 0 || run.busy}
               className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-[12px] font-semibold border disabled:opacity-30 ${isDark ? "border-white/[0.07] bg-zinc-800 text-zinc-300" : "border-zinc-200 bg-white text-zinc-600"}`}>
               <ArrowRight size={13} /> السابق
             </button>
@@ -420,8 +454,8 @@ function AIContractsPageInner() {
           </div>
 
           <div className="flex justify-center mt-2">
-            <button onClick={() => { s.setContractMode(null); s.setContractComplexity(null); }}
-              className={`text-[11px] underline transition-colors ${isDark ? "text-zinc-600 hover:text-zinc-400" : "text-zinc-400 hover:text-zinc-600"}`}>
+            <button onClick={() => { run.reset(); s.setContractMode(null); s.setContractComplexity(null); }} disabled={run.busy}
+              className={`text-[11px] underline transition-colors disabled:opacity-40 ${isDark ? "text-zinc-600 hover:text-zinc-400" : "text-zinc-400 hover:text-zinc-600"}`}>
               تغيير الوضع ({s.contractMode === "draft" ? "صياغة عقد" : "مراجعة عقد"})
             </button>
           </div>

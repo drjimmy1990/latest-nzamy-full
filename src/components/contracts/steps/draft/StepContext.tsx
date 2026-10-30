@@ -32,11 +32,11 @@ export function StepContext({ isDark, contractDesc, setContractDesc, courtType, 
           <div className="absolute bottom-3 start-3"><VoiceInput onTranscript={t => setContractDesc(contractDesc ? `${contractDesc} ${t}` : t)} compact /></div>
         </div>
         {contractDesc.length > 0 && contractDesc.trim().length < 20 ? (
-          <p className="text-[11px] text-amber-500">أضف المزيد من التفاصيل (٢٠ حرفاً على الأقل) — هذا الوصف هو ما يعتمد عليه الفريق عند الصياغة</p>
+          <p className="text-[11px] text-amber-500">أضف المزيد من التفاصيل (٢٠ حرفاً على الأقل) — هذا الوصف هو ما تُكتب منه صياغة العقد</p>
         ) : (
           <p className={`text-[11px] flex items-center gap-1.5 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
             <UsersThree size={12} className="text-[#C8A762]" />
-            سيعتمد فريق نظامي على هذا الوصف عند صياغة عقدك يدوياً
+            يُكتب عقدك آلياً من هذا الوصف، فاذكر فيه ما يهمك
           </p>
         )}
       </div>
@@ -48,7 +48,7 @@ export function StepContext({ isDark, contractDesc, setContractDesc, courtType, 
           <div>
             <p className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>الجهة القضائية المختصة</p>
             <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-              في حال نشأ نزاع حول هذا العقد — أي جهة ستختص بالفصل فيه؟ (سيأخذ الفريق هذا الاختيار بعين الاعتبار عند صياغة بند فضّ النزاع)
+              في حال نشأ نزاع حول هذا العقد — أي جهة ستختص بالفصل فيه؟ (يُراعى هذا الاختيار عند صياغة بند فضّ النزاع)
             </p>
           </div>
         </div>

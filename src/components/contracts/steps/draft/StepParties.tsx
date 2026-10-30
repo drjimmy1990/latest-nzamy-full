@@ -21,7 +21,7 @@ export function StepParties({ isDark, party1Data, setParty1Data, party2Data, set
           by PartyForm's onChange), so this no longer claims one. */}
       <div className={`rounded-xl px-4 py-2.5 flex items-center gap-2 ${isDark ? "bg-[#C8A762]/5 border border-[#C8A762]/20" : "bg-amber-50 border border-amber-200"}`}>
         <span className="text-[#C8A762] text-[13px]">✦</span>
-        <p className={`text-[11px] ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>أدخل بيانات الطرفين بدقة — سيعتمد عليها الفريق عند صياغة العقد</p>
+        <p className={`text-[11px] ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>أدخل بيانات الطرفين بدقة — تُكتب منها بيانات الأطراف في العقد كما هي</p>
       </div>
       {/* Party 1 */}
       <div className={`${card} p-5 shadow-sm`}>

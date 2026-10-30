@@ -619,6 +619,205 @@ function contractDraftOutput(raw: unknown): Record<string, unknown> | null {
   };
 }
 
+// ── L13 محترف العقود (plan §5, «Wave 5») ────────────────────────────────────
+
+/**
+ * L13: the contract types of /ai/contracts (components/contracts/constants.ts
+ * ids, kept equal by a test), each under the name the model reads.
+ */
+export const CONTRACTS_PRO_TYPES: Readonly<Record<string, string>> = {
+  labor: "عقد عمل",
+  rent: "عقد إيجار",
+  trade: "عقد تجاري (بيع أو توريد أو وكالة)",
+  corporate: "عقد شركة (تأسيس أو شراكة أو اندماج)",
+  construction: "عقد مقاولة",
+  tech: "عقد تقني (برمجيات أو ترخيص أو خدمة سحابية)",
+  finance: "عقد مالي (قرض أو رهن أو ضمان)",
+  services: "عقد خدمات مهنية أو استشارية",
+  employment_exec: "عقد عمل تنفيذي أو إداري",
+  employment_remote: "عقد عمل عن بُعد",
+  employment_equity: "خطة حوافز وأسهم للموظفين",
+  hr_handbook: "دليل الموظف ولوائح العمل الداخلية",
+  termination: "اتفاقية إنهاء خدمة",
+  nca: "اتفاقية عدم منافسة وسرية",
+  pip: "خطة تحسين الأداء الوظيفي",
+  ip_license: "عقد ترخيص ملكية فكرية",
+  ip_assignment: "عقد نقل ملكية فكرية",
+  ip_nda: "اتفاقية عدم إفصاح (سرية)",
+  ip_trademark: "عقد علامة تجارية",
+  ip_opensource: "سياسة الامتثال لتراخيص المصادر المفتوحة",
+  arbitration_clause: "اتفاق تحكيم (شرط تحكيم)",
+  arbitration_req: "طلب تحكيم",
+  settlement: "اتفاقية تسوية وصلح",
+  demand_letter: "خطاب مطالبة وإنذار",
+  litigation_hold: "تعليمات حفظ الأدلة والمستندات",
+  governance_board: "قرار مجلس إدارة",
+  governance_agm: "قرار جمعية عامة",
+  governance_coi: "سياسة تعارض المصالح",
+  shareholders: "اتفاقية مساهمين (شركاء)",
+  investment: "اتفاقية استثمار",
+  whistleblower: "سياسة الإبلاغ عن المخالفات",
+  pdpl_privacy: "سياسة خصوصية وفق نظام حماية البيانات الشخصية",
+  pdpl_dpa: "اتفاقية معالجة بيانات شخصية",
+  pdpl_cookie: "سياسة ملفات تعريف الارتباط",
+  compliance_aml: "سياسة مكافحة غسل الأموال",
+  data_breach: "خطة الاستجابة لتسرب البيانات",
+  franchise: "عقد امتياز تجاري",
+  other: "عقد",
+};
+// Plan §5: 1,000 points. The /pricing label («ai:contracts» ١٠ نقاط) disagrees;
+// the tool stays off until the owner's pricing settles which is right.
+export const CONTRACTS_PRO_PRICE = 1000;
+export const CONTRACTS_PRO_DESC_MIN = 20;
+export const CONTRACTS_PRO_DESC_MAX = 4000;
+export const CONTRACTS_PRO_CLAUSE_MAX = 300;
+const CONTRACTS_PRO_CLAUSES_MAX = 40;
+const PARTY_FIELDS_MAX = 8;
+const PARTY_FIELD_MAX = 300;
+const PARTY_KIND: Readonly<Record<string, string>> = { company: "شركة أو منشأة", individual: "شخص طبيعي", government: "جهة حكومية" };
+const LANGUAGE_NAME: Readonly<Record<string, string>> = { ar: "العربية", en: "الإنجليزية" };
+// A custom language is a name the user typed: letters, spaces and hyphens only.
+const CUSTOM_LANGUAGE = /^\p{L}[\p{L} -]{1,39}$/u;
+
+/**
+ * The contract's language(s): `primary` is the text every clause is written
+ * in, `alt` the facing translation of a bilingual contract (null otherwise).
+ */
+function contractsProLanguage(raw: unknown): { primary: string; alt: string | null } | null {
+  if (raw == null) return { primary: LANGUAGE_NAME.ar, alt: null };
+  if (!isPlainObject(raw)) return null;
+  if (raw.mode === "ar" || raw.mode === "en") return { primary: LANGUAGE_NAME[raw.mode], alt: null };
+  if (raw.mode === "ar_en") return { primary: LANGUAGE_NAME.ar, alt: LANGUAGE_NAME.en };
+  if (raw.mode !== "custom") return null;
+  const name = typeof raw.name === "string" ? raw.name.trim() : "";
+  if (!CUSTOM_LANGUAGE.test(name)) return null;
+  if (raw.layout === "single") return { primary: name, alt: null };
+  const base = raw.base === "en" ? LANGUAGE_NAME.en : LANGUAGE_NAME.ar;
+  return base === name ? { primary: base, alt: null } : { primary: base, alt: name };
+}
+
+/**
+ * L13 محترف العقود: the wizard's answers. The two parties come as labelled
+ * fields (the model reads what the user read), then the idea, the court and
+ * the clauses the user ticked or added. A field too long is refused, never cut.
+ */
+function contractsProInput(raw: unknown): InputCheck {
+  if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
+  const complexity = raw.complexity === "detailed" || raw.complexity === "simple" ? raw.complexity : null;
+  if (!complexity) return { ok: false, error: "اختر مستوى تفصيل العقد" };
+  const type = raw.type == null || raw.type === "" ? null : raw.type;
+  if (type !== null && (typeof type !== "string" || !Object.prototype.hasOwnProperty.call(CONTRACTS_PRO_TYPES, type))) {
+    return { ok: false, error: "نوع العقد غير معروف" };
+  }
+  const language = contractsProLanguage(raw.language);
+  if (!language) return { ok: false, error: "لغة العقد غير صالحة" };
+
+  if (!Array.isArray(raw.parties) || raw.parties.length !== 2) return { ok: false, error: "أدخل بيانات الطرفين" };
+  const parties: Array<{ role: string; kind: string; fields: Array<{ label: string; value: string }> }> = [];
+  for (const [n, p] of raw.parties.entries()) {
+    const role = n === 0 ? "الطرف الأول" : "الطرف الثاني";
+    if (!isPlainObject(p) || typeof p.kind !== "string" || !Object.prototype.hasOwnProperty.call(PARTY_KIND, p.kind) || !Array.isArray(p.fields)) {
+      return { ok: false, error: `بيانات ${role} غير صالحة` };
+    }
+    if (p.fields.length > PARTY_FIELDS_MAX) return { ok: false, error: `بيانات ${role} أكثر من المسموح` };
+    const fields: Array<{ label: string; value: string }> = [];
+    for (const f of p.fields) {
+      if (!isPlainObject(f) || typeof f.value !== "string" || !f.value.trim()) continue;
+      const label = boundedText(f.label, 80);
+      if (!label) return { ok: false, error: `بيانات ${role} غير صالحة` };
+      const value = boundedText(f.value, PARTY_FIELD_MAX);
+      if (!value) return { ok: false, error: `«${label}» (${role}) أطول من ${PARTY_FIELD_MAX.toLocaleString("ar-SA")} حرف` };
+      fields.push({ label, value });
+    }
+    if (fields.length === 0) return { ok: false, error: `أدخل اسم ${role}` };
+    parties.push({ role, kind: PARTY_KIND[p.kind], fields });
+  }
+
+  const desc = typeof raw.description === "string" ? raw.description.trim() : "";
+  if (desc.length < CONTRACTS_PRO_DESC_MIN) {
+    return { ok: false, error: `صف فكرة العقد في ${CONTRACTS_PRO_DESC_MIN.toLocaleString("ar-SA")} حرفاً على الأقل` };
+  }
+  if (desc.length > CONTRACTS_PRO_DESC_MAX) {
+    return { ok: false, error: `وصف الفكرة أطول من ${CONTRACTS_PRO_DESC_MAX.toLocaleString("ar-SA")} حرف` };
+  }
+  const noCourt = raw.court == null || (typeof raw.court === "string" && !raw.court.trim());
+  const court = noCourt ? null : boundedText(raw.court, 200);
+  if (!noCourt && !court) return { ok: false, error: "الجهة المختصة غير صالحة" };
+
+  const clauses: string[] = [];
+  if (raw.clauses != null) {
+    if (!Array.isArray(raw.clauses) || raw.clauses.length > CONTRACTS_PRO_CLAUSES_MAX) {
+      return { ok: false, error: "البنود المطلوبة أكثر من المسموح" };
+    }
+    for (const c of raw.clauses) {
+      if (typeof c !== "string" || !c.trim()) continue;
+      const clause = boundedText(c, CONTRACTS_PRO_CLAUSE_MAX);
+      if (!clause) return { ok: false, error: `بند مطلوب أطول من ${CONTRACTS_PRO_CLAUSE_MAX.toLocaleString("ar-SA")} حرف` };
+      if (!clauses.includes(clause)) clauses.push(clause);
+    }
+  }
+
+  return {
+    ok: true,
+    input: {
+      type,
+      type_name: CONTRACTS_PRO_TYPES[type ?? "other"],
+      complexity,
+      language,
+      parties,
+      description: desc,
+      court,
+      clauses,
+    },
+  };
+}
+
+/**
+ * The assembled contract (n8n drafts the outline, then each clause on its own
+ * call): a title, the preamble and the clauses, each with its facing
+ * translation when the contract is bilingual. All or nothing: one missing or
+ * over-long clause, or a missing translation, refuses (and refunds) the whole
+ * contract rather than handing over one with a clause silently gone.
+ */
+function contractsProOutput(raw: unknown, input: Record<string, unknown>): Record<string, unknown> | null {
+  if (!isPlainObject(raw) || !Array.isArray(raw.sections)) return null;
+  const lang = isPlainObject(input.language) ? input.language : {};
+  const primary = typeof lang.primary === "string" ? lang.primary : LANGUAGE_NAME.ar;
+  const alt = typeof lang.alt === "string" && lang.alt ? lang.alt : null;
+  const title = boundedText(raw.title, 200);
+  if (!title || raw.sections.length < 2 || raw.sections.length > 40) return null;
+  const titleAlt = alt ? boundedText(raw.title_alt, 200) : null;
+  if (alt && !titleAlt) return null;
+  const sections: Array<Record<string, string>> = [];
+  for (const s of raw.sections) {
+    if (!isPlainObject(s)) return null;
+    const heading = boundedText(s.heading, 200);
+    const body = boundedText(s.body, 12000);
+    if (!heading || !body) return null;
+    if (!alt) {
+      sections.push({ heading, body });
+      continue;
+    }
+    const headingAlt = boundedText(s.heading_alt, 200);
+    const bodyAlt = boundedText(s.body_alt, 12000);
+    if (!headingAlt || !bodyAlt) return null;
+    sections.push({ heading, body, heading_alt: headingAlt, body_alt: bodyAlt });
+  }
+  const optional = (v: unknown, max: number) => (v == null || v === "" ? "" : boundedText(v, max));
+  const preamble = optional(raw.preamble, 4000);
+  const preambleAlt = alt ? optional(raw.preamble_alt, 4000) : "";
+  if (preamble === null || preambleAlt === null) return null;
+  return {
+    title,
+    ...(alt ? { title_alt: titleAlt } : {}),
+    language: { primary, alt },
+    preamble,
+    ...(alt ? { preamble_alt: preambleAlt } : {}),
+    sections,
+    cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 40) : [],
+  };
+}
+
 export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
   "echo-fast": {
     id: "echo-fast",
@@ -813,6 +1012,22 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     jobDeadlineSeconds: 15 * 60,
     validateInput: contractDraftInput,
     validateOutput: contractDraftOutput,
+  },
+  "contracts-pro": {
+    id: "contracts-pro",
+    n8nPath: "nzamy-ai/contracts-pro",
+    class: "job",
+    tier: "deep",
+    // The lawyer, firm and business sidebars and the public navbar all open /ai/contracts.
+    roles: ["lawyer", "firm", "individual", "corporate", "micro", "ngo"],
+    consultantBlocked: false,
+    price: () => CONTRACTS_PRO_PRICE,
+    dailyLimit: 5,
+    defaultMode: "off",
+    // One call for the outline, then one per clause (up to 25): longer than L11.
+    jobDeadlineSeconds: 20 * 60,
+    validateInput: contractsProInput,
+    validateOutput: contractsProOutput,
   },
 };
 

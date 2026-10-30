@@ -324,16 +324,11 @@ export function useContractsState(linkedContract?: { id: string; title: string }
   const nextStep = useCallback(async () => {
     const idx = currentStepIndex;
     if (idx >= currentSteps.length - 1) return;
-    // "r_upload" was here because moving off it used to lead into the mock
-    // r_analysis screen; it now leads straight to "submit" (Task C3), which
-    // processes nothing, so it no longer gets the fake delay either.
-    if (step === "parties" || step === "clauses") {
-      setProcessing(true);
-      await new Promise(r => setTimeout(r, 1400));
-      setProcessing(false);
-    }
+    // No step processes anything on the way (L13 writes the contract on the
+    // last step), so moving on is immediate — the 1.4 s "معالجة..." delay
+    // after the parties and clauses steps was theatre and is gone.
     setStep(currentSteps[idx + 1].key);
-  }, [currentStepIndex, step, currentSteps]);
+  }, [currentStepIndex, currentSteps]);
 
   function prevStep() {
     if (currentStepIndex <= 0) return;

@@ -53,6 +53,7 @@ test("every workflow matches its registry path, has a unique webhook id, and wir
     assert.equal(hook.parameters.authentication, "headerAuth");
     assert.equal(hook.parameters.responseMode, "responseNode");
     if (d.kind === "docJob") continue; // its own test below
+    if (d.kind === "clauseJob") continue; // contractsPro.test.ts
     const write = wf.nodes.find((n) => n.name === "Write")!;
     assert.equal(write.onError, "continueErrorOutput", "a model failure must still answer the app");
     assert.equal(write.parameters.promptType, "define");
