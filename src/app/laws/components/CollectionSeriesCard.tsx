@@ -1,8 +1,9 @@
 "use client";
 
 /**
- * N2.4 — one card for a multi-volume judicial collection (a tagged series,
- * src/lib/library/precedentVolumes.ts): the series title, its court, the
+ * N2.4 — one card for a multi-volume judicial collection (a tagged series, or
+ * — owner note ٠٣ — untagged volumes of one court whose titles end «— المجلد
+ * N», src/lib/library/precedentVolumes.ts): the series title, its court, the
  * number of volumes and principles, the first volume's description in two
  * lines, and one button per volume. The first VISIBLE_VOLUMES buttons show at
  * once; «+N مجلدات» unfolds the rest in place.
@@ -18,6 +19,7 @@ import { motion } from "framer-motion";
 import { Books, Lock } from "@phosphor-icons/react";
 import { volumesCountLabel } from "@/lib/library/bookVolumes";
 import {
+  collectionCardExcerpt,
   collectionVolumeLabel,
   type CollectionSeriesGroup,
   type CollectionVolumeRow,
@@ -58,7 +60,8 @@ export function CollectionSeriesCard({
 }) {
   const [showAll, setShowAll] = useState(false);
   const first = series.volumes[0].row;
-  const desc = series.volumes.find((v) => v.row.desc?.trim())?.row.desc ?? "";
+  // Owner note ٠٣ §٢: never a raw «## ديباجة …» heading on the card.
+  const desc = collectionCardExcerpt(series.volumes.find((v) => v.row.desc?.trim())?.row.desc ?? "");
   const shown = showAll ? series.volumes : series.volumes.slice(0, VISIBLE_VOLUMES);
   const hidden = series.count - shown.length;
   const anyFree = viewerHasFullAccess || series.volumes.some((v) => v.row.free !== false);

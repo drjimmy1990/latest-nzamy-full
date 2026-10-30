@@ -7,6 +7,7 @@ import { stripMarkdownMarks } from "@/lib/text/stripMarkdownMarks";
 import { withoutLeadingHeadings } from "./components/summaryClamp";
 import { groupLawSearchCards } from "./lawSearchGroups";
 import { courtBadge } from "./principleCardFields";
+import { collectionCardExcerpt } from "@/lib/library/precedentVolumes";
 import { realPrincipleNumber } from "./principleLink";
 import { highlightSearchHtml as highlightText } from "./highlightSearchHtml";
 import {
@@ -905,9 +906,13 @@ export default function LegalLibraryPage() {
         articlesCount: law.total_articles || 0,
         chaptersCount: 0,
         lastUpdated: law.issue_date_hijri || "—",
+        // Owner note ١٢-٦ / ٣١٧–٣١٨: the one public date, sent to every
+        // viewer by /api/library/init («1448/01/08هـ», the date alone).
+        latestUpdate: typeof law.latest_legislative_update === "string" ? law.latest_legislative_update : "",
         cat: classifyLawCategory(law),
         type: "laws",
         subType: "basic",
+        hasMerged: law.has_merged_regulation === true,
         sub_types: law.has_merged_regulation ? ["لائحة تنفيذية"] : [],
         // The row's own type: only 593 of 5,901 are «نظام» (LIB-03).
         doc_type: law.type || "",
@@ -1098,6 +1103,8 @@ export default function LegalLibraryPage() {
         articlesCount: 0,
         chaptersCount: 0,
         lastUpdated: '—',
+        // Owner note ١٢-٦: the search route computes it per law (service role).
+        latestUpdate: typeof r.meta?.latestLegislativeUpdate === 'string' ? r.meta.latestLegislativeUpdate : '',
         cat: toTaxonomyId(r.meta?.sectionCode) ?? '',
         type: 'laws',
         subType: 'basic',
@@ -1177,7 +1184,8 @@ export default function LegalLibraryPage() {
         court: col.court || "—",
         track: col.track || "ordinary",
         year: col.year_hijri || "—",
-        desc: col.description || "",
+        // Owner note ٠٣ §٢: no «## ديباجة …» heading or raw Markdown on the card.
+        desc: collectionCardExcerpt(col.description),
         free: col.free ?? true,
         progress: col.progress || 0,
         rulingCount: col.ruling_count || 0,
@@ -1200,7 +1208,7 @@ export default function LegalLibraryPage() {
           court: r.meta?.court || "—",
           track: r.meta?.track || "ordinary",
           year: r.meta?.year || "—",
-          desc: stripMarkdownMarks(r.snippet || ""),
+          desc: collectionCardExcerpt(r.snippet),
           free: !r.locked,
           progress: r.meta?.progress || 0,
           rulingCount: r.meta?.rulingCount || 0,
@@ -1526,6 +1534,10 @@ export default function LegalLibraryPage() {
                         </span>
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isDark ? "bg-blue-900/20 text-blue-400" : "bg-blue-50 text-blue-800"}`}>
                           أوامر وتعاميم ({autocompleteBadge("orders", filteredOrders.length)})
+                        </span>
+                        {/* Owner note ١٢-ج: the API counts the fiqh section too; the box dropped it. */}
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isDark ? "bg-purple-900/20 text-purple-300" : "bg-purple-50 text-purple-800"}`}>
+                          الفقه والمراجع ({autocompleteBadge("feqh", filteredFeqhBooks.length)})
                         </span>
                       </div>
                       {autocompleteCounts && autocompleteCounts.degraded.length > 0 && (

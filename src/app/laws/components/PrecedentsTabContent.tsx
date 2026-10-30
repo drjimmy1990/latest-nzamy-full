@@ -24,6 +24,9 @@ import { ResultsSkeleton } from "./ResultsSkeleton";
 import { CollectionSeriesCard, type CatalogueCollectionRow } from "./CollectionSeriesCard";
 import { groupCollectionVolumes } from "@/lib/library/precedentVolumes";
 
+/** Principles (or grouped principle cards) per page of the tab. */
+export const PRINCIPLES_PER_PAGE = 12;
+
 interface PrecedentsTabContentProps {
   isDark: boolean;
   isRTL: boolean;
@@ -95,7 +98,9 @@ export function PrecedentsTabContent({
   const router = useRouter();
 
   // N2.4: the volumes of a tagged series (same series_id) become one card;
-  // every other collection keeps its own card, in the catalogue's order.
+  // owner note ٠٣: so do untagged volumes of one court whose titles end
+  // «— المجلد N» (title fallback, by `court` + base title). Every other
+  // collection keeps its own card, in the catalogue's order.
   const collectionEntries = groupCollectionVolumes<CatalogueCollectionRow & { col: any }>(
     filteredCollections.map((col) => ({
       id: col.id,
@@ -146,7 +151,9 @@ export function PrecedentsTabContent({
   });
 
   // ─── Pagination parameters ───
-  const itemsPerPage = 3;
+  // Owner note ١٢-ب: three principles a page made the tab useless; 12 fills
+  // four rows of the 3-column grid, like the other tabs' pages.
+  const itemsPerPage = PRINCIPLES_PER_PAGE;
   const totalPrecedents = sortedPrecedents.length;
   const totalPrinciples = sortedPrinciples.length;
 

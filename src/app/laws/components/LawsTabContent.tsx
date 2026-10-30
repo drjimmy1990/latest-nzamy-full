@@ -25,6 +25,8 @@ import { OfficialMetaLockedRow } from "./OfficialMetaLockedRow";
 import { ResultsSkeleton } from "./ResultsSkeleton";
 import { ClampedSummary } from "./ClampedSummary";
 import { lawCardSummaryText } from "./summaryClamp";
+import { lawCardDates, mergedFileBadge } from "../catalogueCardLabels";
+import { withSearchQuery } from "@/lib/search/multiColorSearch";
 import {
   PrincipleCard,
   PrincipleRow,
@@ -237,6 +239,9 @@ export function LawsTabContent({
   searchFailed = false,
 }: LawsTabContentProps) {
   const router = useRouter();
+  // Owner note ٠٦ (المسار الثاني): every result link carries the search as
+  // ?q= (withSearchQuery keeps a #hash) so the reader can highlight it.
+  const searchQ = q && q.trim().length >= 2 ? q.trim() : "";
 
   if (resultsPending) {
     return (
@@ -305,7 +310,7 @@ export function LawsTabContent({
                   ? sys.keywords.filter((k: unknown): k is string => typeof k === "string" && k.trim().length > 0)
                   : [];
                 const openLaw = () =>
-                  router.push(`/laws/${sys.slug}${getDocAnchorPrefix(docSubType) ? `?fromType=${encodeURIComponent(docSubType)}` : ""}`);
+                  router.push(withSearchQuery(`/laws/${sys.slug}${getDocAnchorPrefix(docSubType) ? `?fromType=${encodeURIComponent(docSubType)}` : ""}`, searchQ));
                 const freePreviewHint = (
                   <span className={`px-2 py-0.5 text-[9px] font-bold rounded-lg flex items-center gap-1 border ${
                     isDark ? "bg-[#C8A762]/10 border-[#C8A762]/25 text-[#C8A762]" : "bg-amber-50 border-amber-200 text-amber-800"
@@ -328,6 +333,37 @@ export function LawsTabContent({
                     ⛔ ملغى وغير سارٍ
                   </span>
                 );
+                // Owner note ١٢-٤: the merged file is said once, prominently,
+                // in place of the faint «لائحة تنفيذية» chip; a repealed law
+                // keeps its red frame and badge, so the merged badge goes muted.
+                const mergedLabel = mergedFileBadge(sys.hasMerged === true || (sys.sub_types ?? []).includes("لائحة تنفيذية"), null, sys.title);
+                const mergedBadge = mergedLabel ? (
+                  <span
+                    role="link"
+                    tabIndex={0}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      // The law page gates what is locked (decision ١٦٠).
+                      router.push(withSearchQuery(`/laws/${sys.slug}?viewMode=regulation`, searchQ));
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") router.push(withSearchQuery(`/laws/${sys.slug}?viewMode=regulation`, searchQ));
+                    }}
+                    title={isRTL ? "يضم الملف النظام ولائحته في مكان واحد — افتح اللائحة" : "Merged file: the law and its regulation"}
+                    className={`clickable-badge cursor-pointer inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-black rounded-lg border transition-colors ${
+                      isRepealedLaw
+                        ? isDark ? "bg-white/5 border-white/10 text-gray-300" : "bg-white border-gray-200 text-gray-600"
+                        : isDark ? "bg-sky-950/40 border-sky-400/40 text-sky-300 hover:bg-sky-900/40" : "bg-sky-50 border-sky-300 text-sky-800 hover:bg-sky-100"
+                    }`}
+                  >
+                    {mergedLabel}
+                  </span>
+                ) : null;
+                // Owner note ١٢-٦ / answers ٣١٧–٣١٨: the one public date
+                // («آخر تحديث تشريعي», the date alone, everyone); «صدر» only
+                // for a viewer the official data is open to.
+                const cardDates = lawCardDates(sys.latestUpdate, sys.lastUpdated, officialMetaLocked);
                 const repealedNote = (
                   <p className={`text-[10.5px] font-semibold mb-2 ${isDark ? "text-red-300/90" : "text-red-700"}`}>
                     يُعرض للأرشيف وللوقائع السابقة لإلغائه
@@ -401,11 +437,9 @@ export function LawsTabContent({
                 >
                   {layoutMode === "grid" ? (
                     <div className="h-full flex flex-col items-center text-center">
-                      <div className="flex items-center justify-between w-full mb-3 text-xs">
-                        <span className={`px-2 py-0.5 text-[10px] font-bold rounded-lg ${isDark ? "bg-white/5 text-gray-400" : "bg-gray-100 text-gray-500"}`}>
-                          {isRTL ? "مُحدّث" : "Updated"}
-                        </span>
-                        {isRepealedLaw && repealedBadge}
+                      {/* Owner note ١٢-٤: no fixed «مُحدّث» badge — every card said it. */}
+                      <div className="flex items-center justify-between w-full mb-3 text-xs gap-2">
+                        {isRepealedLaw ? repealedBadge : <span />}
                         {isUnlocked ? (
                           <span className="px-2 py-0.5 text-[9px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
                             <Sparkle size={9} weight="fill" />
@@ -418,6 +452,7 @@ export function LawsTabContent({
                         {isRTL ? sys.title : sys.titleEn}
                       </h3>
                       {isRepealedLaw && repealedNote}
+                      {mergedBadge && <div className="mb-2.5">{mergedBadge}</div>}
 
                       {/* Rich Metadata Section */}
                       <div className="flex flex-wrap justify-center gap-1 mb-2.5">
@@ -435,7 +470,8 @@ export function LawsTabContent({
                             {sys.doc_type}
                           </span>
                         )}
-                        {sys.sub_types && sys.sub_types.map((st: string) => {
+                        {/* Other sub-types (an appendix) keep their chip; the regulation is the merged badge above. */}
+                        {sys.sub_types && sys.sub_types.filter((st: string) => !(mergedBadge && (st === "لائحة تنفيذية" || st === "لائحة"))).map((st: string) => {
                           const isReg = st === "لائحة تنفيذية" || st === "لائحة";
                           return (
                             <span
@@ -444,7 +480,7 @@ export function LawsTabContent({
                                 e.preventDefault();
                                 e.stopPropagation();
                                 // The law page gates what is locked (decision ١٦٠).
-                                router.push(`/laws/${sys.slug}?viewMode=${isReg ? "regulation" : "appendix"}`);
+                                router.push(withSearchQuery(`/laws/${sys.slug}?viewMode=${isReg ? "regulation" : "appendix"}`, searchQ));
                               }}
                               className="clickable-badge cursor-pointer hover:bg-blue-500/20 transition-colors text-[8.5px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20"
                             >
@@ -496,11 +532,16 @@ export function LawsTabContent({
                           {isRTL ? "تصفح النظام" : "Browse System"}
                           <ArrowRight size={12} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
                         </span>
+                        {cardDates.update && (
+                          <span className={`text-[10px] font-semibold ${isDark ? "text-gray-300" : "text-gray-600"}`} data-testid="law-card-latest-update">
+                            {cardDates.update}
+                          </span>
+                        )}
                         {showLockedMeta ? (
                           <OfficialMetaLockedRow isDark={isDark} onUnlock={() => setShowPaywall(true)} />
-                        ) : sys.lastUpdated && sys.lastUpdated !== "—" && (
+                        ) : cardDates.issued && (
                           <span className={`text-[10px] ${muted}`}>
-                            {isRTL ? `صدر: ${sys.lastUpdated}` : `Issued: ${sys.lastUpdated}`}
+                            {cardDates.issued}
                           </span>
                         )}
                       </div>
@@ -510,9 +551,6 @@ export function LawsTabContent({
                       {/* Left: Text info */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-                          <span className={`px-2 py-0.5 text-[10px] font-bold rounded-md ${isDark ? "bg-white/5 text-gray-300" : "bg-gray-100 text-gray-600"}`}>
-                            {isRTL ? "مُحدَّث" : "Updated"}
-                          </span>
                           {isUnlocked ? (
                             <span className="px-2 py-0.5 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-md flex items-center gap-1">
                               <Sparkle size={9} weight="fill" />
@@ -520,6 +558,7 @@ export function LawsTabContent({
                             </span>
                           ) : freePreviewHint}
                           {isRepealedLaw && repealedBadge}
+                          {mergedBadge}
                         </div>
 
                         <h3 className={`text-sm font-black mb-1.5 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${titleClass}`}>
@@ -543,7 +582,7 @@ export function LawsTabContent({
                               {sys.doc_type}
                             </span>
                           )}
-                          {sys.sub_types && sys.sub_types.map((st: string) => {
+                          {sys.sub_types && sys.sub_types.filter((st: string) => !(mergedBadge && (st === "لائحة تنفيذية" || st === "لائحة"))).map((st: string) => {
                             const isReg = st === "لائحة تنفيذية" || st === "لائحة";
                             return (
                               <span
@@ -552,7 +591,7 @@ export function LawsTabContent({
                                   e.preventDefault();
                                   e.stopPropagation();
                                   // The law page gates what is locked (decision ١٦٠).
-                                  router.push(`/laws/${sys.slug}?viewMode=${isReg ? "regulation" : "appendix"}`);
+                                  router.push(withSearchQuery(`/laws/${sys.slug}?viewMode=${isReg ? "regulation" : "appendix"}`, searchQ));
                                 }}
                                 className="clickable-badge cursor-pointer hover:bg-blue-500/25 transition-colors text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20"
                               >
@@ -604,11 +643,16 @@ export function LawsTabContent({
                             {isRTL ? "تصفح النظام" : "Browse"}
                             <ArrowRight size={12} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
                           </span>
+                          {cardDates.update && (
+                            <span className={`text-[9px] font-semibold whitespace-nowrap ${isDark ? "text-gray-300" : "text-gray-600"}`}>
+                              {cardDates.update}
+                            </span>
+                          )}
                           {showLockedMeta ? (
                             <OfficialMetaLockedRow isDark={isDark} onUnlock={() => setShowPaywall(true)} textSize="text-[9px]" />
-                          ) : sys.lastUpdated && sys.lastUpdated !== "—" && (
+                          ) : cardDates.issued && (
                             <span className={`text-[9px] ${muted} whitespace-nowrap`}>
-                              {isRTL ? `صدر: ${sys.lastUpdated}` : `Issued: ${sys.lastUpdated}`}
+                              {cardDates.issued}
                             </span>
                           )}
                         </div>
