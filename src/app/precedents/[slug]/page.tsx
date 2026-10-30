@@ -18,6 +18,10 @@ import ScopedSearchPanel from "@/components/library/ScopedSearchPanel";
 import type { CartEntry } from "@/components/laws/DraftDrawer";
 import { cleanPrincipleText } from "./_principle-text";
 import { PrintWatermark } from "@/app/laws/components/PrintWatermark";
+import { HighlightProvider, SearchLegendBar, useScrollToFirstMark } from "@/components/search/MultiColorHighlight";
+import { compileQueryMatcher, parseHighlightQuery, withSearchQuery } from "@/lib/search/multiColorSearch";
+import { readerArrival, withoutSearchQuery } from "@/lib/search/readerArrival";
+import type { ScopedHit } from "@/app/api/library/scoped-search/scopedSearch";
 
 // ─── Global Features ─────────────────────────────────────────────────────────
 import { useDraftCart } from "@/hooks/useDraftCart";
@@ -46,7 +50,7 @@ function getSelectedTextWithin(containerId: string): string {
 // ─── Interfaces ─────────────────────────────────────────────────────────────
 import { JudicialPrinciplesSystem, JudicialPrincipleItem } from "@/app/laws/data";
 import { apiSlug } from '@/utils/apiSlug';
-import { principleIdFromHash } from "@/app/laws/principleLink";
+import { principleHref } from "@/app/laws/principleLink";
 import {
   hasMorePrinciples, mergePrinciples, nextOffset, normalizePrinciple,
   type CollectionPrinciple,
@@ -56,6 +60,12 @@ import {
 const WINDOW_LIMIT = 100;
 const SEARCH_WINDOW_LIMIT = 500;
 type WindowResult = "more" | "done" | "error";
+
+/** Lives inside the HighlightProvider: arriving with ?q= and no target, scroll to the first match once. */
+function ScrollToFirstMark({ enabled, deps }: { enabled: boolean; deps: readonly unknown[] }) {
+  useScrollToFirstMark(enabled, deps);
+  return null;
+}
 
 export default function JudicialPrinciplesPage() {
   const params = useParams();
@@ -85,6 +95,10 @@ export default function JudicialPrinciplesPage() {
   const [activePrincipleId, setActivePrincipleId] = useState<string>("");
   const [copiedPrincipleId, setCopiedPrincipleId] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
+  // Owner note ٠٦: the search a link brought here (?q=). It only COLOURS the
+  // principles — it never filters them, so the target keeps its context
+  // (note ١٢: binding ?q= to the filter box hid the target principle).
+  const [urlQuery, setUrlQuery] = useState("");
   const [fontSize, setFontSize] = useState<"normal"|"large"|"xlarge">("normal"); // حجم الخط
   const [isReadingMode, setIsReadingMode] = useState(false);
   const [copiedCitation, setCopiedCitation] = useState(false);
@@ -483,10 +497,19 @@ export default function JudicialPrinciplesPage() {
   // and flash it. A hash naming no principle of this collection does nothing.
   const [linkTargetId, setLinkTargetId] = useState("");
   const hasCollection = collection !== null;
+  // A jump request: from the URL on arrival (#<id>, else ?target=<id>), or from
+  // the in-document search panel for a principle of THIS collection. Tagged
+  // with its slug so a request never pages another collection.
+  const [jump, setJump] = useState<{ id: string; slug: string; n: number } | null>(null);
   useEffect(() => {
     if (loading || !hasCollection || typeof window === "undefined") return;
-    const target = principleIdFromHash(window.location.hash);
-    if (!target) return;
+    const arrival = readerArrival(window.location.search, window.location.hash);
+    setUrlQuery(arrival.query);
+    setJump(arrival.target ? { id: arrival.target, slug, n: Date.now() } : null);
+  }, [loading, hasCollection, slug]);
+  useEffect(() => {
+    if (loading || !hasCollection || !jump || jump.slug !== slug || typeof window === "undefined") return;
+    const target = jump.id;
     let cancelled = false;
     const timers: number[] = [];
     (async () => {
@@ -522,7 +545,7 @@ export default function JudicialPrinciplesPage() {
       cancelled = true;
       timers.forEach((t) => window.clearTimeout(t));
     };
-  }, [loading, hasCollection, slug, loadMore]);
+  }, [loading, hasCollection, slug, jump, loadMore]);
 
   // Track recent sessions
   useEffect(() => {
@@ -558,29 +581,51 @@ export default function JudicialPrinciplesPage() {
     if (!collection) return [];
     const q = searchQuery.trim();
     if (!q) return collection.principles;
-    
-    const normalize = (s: string) =>
-      s
-        .replace(/[أإآا]/g, "ا")
-        .replace(/[ةه]/g, "ه")
-        .replace(/[يى]/g, "ي")
-        .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
-        .replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
-        .toLowerCase();
-    const nq = normalize(q);
 
-    return collection.principles.filter(p => {
-      const haystack = normalize([
-        p.number,
-        p.reference || "",
-        p.issuing_body || "",
-        p.classification_keywords.join(" "),
-        p.text,
-        p.paragraphs?.map(para => para.text).join(" ") || ""
-      ].join(" "));
-      return haystack.includes(nq);
-    });
+    // Owner note ٠٦/٠٧: the platform's one grammar (+ / "…" * -) and folding,
+    // the same patterns the highlight colours — the filter and the marks agree.
+    const matches = compileQueryMatcher(parseHighlightQuery(q));
+    return collection.principles.filter(p => matches([
+      String(p.number ?? ""),
+      p.decision_number || "",
+      p.reference || "",
+      p.issuing_body || "",
+      p.classification_keywords.join(" "),
+      p.text,
+      p.paragraphs?.map(para => para.text).join("\n") || "",
+    ]));
   }, [collection, searchQuery]);
+
+  // The highlight: the reader's own filter box while it has text, else ?q=.
+  const highlightQuery = searchQuery.trim() ? searchQuery : urlQuery;
+
+  /** ✕ «مسح الألوان»: drop the filter text and ?q= (the hash stays). */
+  const clearHighlight = () => {
+    setSearchQuery("");
+    setUrlQuery("");
+    if (typeof window !== "undefined") {
+      const { pathname, search, hash } = window.location;
+      window.history.replaceState(window.history.state, "", withoutSearchQuery(`${pathname}${search}${hash}`));
+    }
+  };
+
+  /**
+   * The in-document search panel's «الانتقال للموضع» on a principle of THIS
+   * collection: colour the panel's query in the reader, page in until the
+   * principle is held, scroll to it — no navigation. Another volume's hit
+   * follows its link (/precedents/<volume>?q=…#<id>).
+   */
+  const openScopedHit = (hit: ScopedHit, query: string): boolean => {
+    if (!collection || hit.kind !== "principle" || hit.volumeId !== collection.id) return false;
+    setSearchQuery("");
+    setUrlQuery(query);
+    const href = principleHref(collection.id, hit.id);
+    if (href && typeof window !== "undefined") {
+      window.history.replaceState(window.history.state, "", withSearchQuery(href, query));
+    }
+    setJump({ id: hit.id, slug, n: Date.now() });
+    return true;
+  };
 
   const handleCopyPrinciple = (p: JudicialPrincipleItem) => {
     const mainParas = p.paragraphs?.filter(para => !isReferenceText(para.text)) || [];
@@ -755,6 +800,7 @@ export default function JudicialPrinciplesPage() {
           isDark={isDark}
           onAddToDraft={addScopedEntry}
           inDraft={(id) => cart.some(e => e.articleId === id)}
+          onOpenHit={openScopedHit}
         />
 
         {/* ــ شريط وضع القراءة وحجم الخط والعودة ــ */}
@@ -879,6 +925,15 @@ export default function JudicialPrinciplesPage() {
 
           {/* CENTER COLUMN: Principle Reader */}
           <div className={`nzamy-reader-container ${isReadingMode ? "max-w-3xl w-full" : "lg:col-span-6"} min-w-0 space-y-6 w-full`}>
+            {/* Owner note ٠٦: one provider for the reader column only — the
+                in-document search panel above has its own colours and counts. */}
+            <HighlightProvider query={highlightQuery}>
+            <ScrollToFirstMark enabled={Boolean(urlQuery) && !jump && !searchQuery.trim()} deps={[collection.principles.length]} />
+            <SearchLegendBar
+              onClear={clearHighlight}
+              partial={hasMore}
+              className="sticky top-32 z-30 shadow-sm print:hidden"
+            />
 
             {/* Quick Search inside Principles */}
             {!isReadingMode && (
@@ -911,7 +966,6 @@ export default function JudicialPrinciplesPage() {
                 isRTL={isRTL}
                 activePrincipleId={activePrincipleId}
                 copiedPrincipleId={copiedPrincipleId}
-                searchQuery={searchQuery}
                 fontSize={fontSize}
                 isReadingMode={isReadingMode}
                 handleCopyPrinciple={handleCopyPrinciple}
@@ -953,6 +1007,7 @@ export default function JudicialPrinciplesPage() {
                 </button>
               </div>
             )}
+            </HighlightProvider>
           </div>
 
           {/* LEFT COLUMN: AI Assistant & Tools */}
