@@ -5,6 +5,9 @@
  * to either order is a deliberate one. The SQL side is proven in Docker by
  * supabase/tests/rls/law_sort_key.test.sql (T3 / T3b).
  *
+ * Owner ٣١٧ (28-Oct, note ١٢ item ٨; 20261030_60): every law in force comes
+ * before every repealed law; the order below applies inside each group.
+ *
  * How it differs from the owner's wording (reported, not changed):
  *   1. Merged-regulation laws come first (owner README «٤٧» part ٥, N2.5).
  *   2. ONE date per law — the later of its latest amendment and its issue —
@@ -39,12 +42,34 @@ test("٢٧٧ browse: the key is built from official dates only — the amendment
   }
 });
 
-test("٢٧٧ browse: /api/library/init orders laws merged → newest official date → title → slug", () => {
+test("٢٧٧ + ٣١٧ browse: /api/library/init orders laws in force → repealed, then merged → newest official date → title → slug", () => {
   const init = read("src/app/api/library/init/route.ts");
-  assert.match(init, /\.order\("has_merged_regulation", DESC_NULLS_LAST\)\s*\.order\(LAW_SORT_KEY, DESC_NULLS_LAST\)\s*\.order\("title"\)\s*\.order\("slug"\)/);
+  assert.match(init, /if \(on\.has\("repealedLast"\)\) out = out\.order\(LAW_REPEALED_KEY, ASC_NULLS_LAST\);\s*return out\s*\.order\("has_merged_regulation", DESC_NULLS_LAST\)\s*\.order\(LAW_SORT_KEY, DESC_NULLS_LAST\)\s*\.order\("title"\)\s*\.order\("slug"\)/);
   assert.match(init, /const LAW_SORT_KEY = "catalogue_recency_key";/);
+  assert.match(init, /const LAW_REPEALED_KEY = "catalogue_is_repealed";/);
   // The other sections are not date-ordered (difference 3 above).
   assert.match(init, /fetchSection\("decrees_circulars", DECREE_LIST_COLUMNS, "decrees", \(q\) => q\.order\("id"\)\)/);
+});
+
+test("٣١٧ / note ١٢ item ٨: repealed-last is a generated boolean from status alone — locked, indexed in the route's order, no trigger", () => {
+  const sql = read("supabase/migrations/20261030_60_catalogue_repealed_last.sql");
+  // The same rule as the badge (law-status.ts isRepealedLawStatus): trimmed, exactly 'repealed'.
+  assert.match(sql, /add column if not exists catalogue_is_repealed boolean\s*generated always as \(coalesce\(btrim\(status\) = 'repealed', false\)\) stored;/);
+  assert.match(sql, /on library\.laws \(catalogue_is_repealed, has_merged_regulation desc nulls last, catalogue_recency_key desc nulls last, title, slug\);/);
+  const body = sql.replace(/^--.*$/gm, "");
+  assert.doesNotMatch(body, /\bgrant\b/i, "granted to no API role");
+  assert.doesNotMatch(body, /create (or replace )?trigger/i);
+  assert.match(body, /has_column_privilege\(r, 'library\.laws', 'catalogue_is_repealed', 'SELECT'\)/);
+  assert.match(body, /^begin;$/m);
+  assert.match(body, /^commit;$/m);
+  // The route never selects it back (only orders by it).
+  const init = read("src/app/api/library/init/route.ts");
+  const list = init.match(/const LAW_LIST_COLUMNS =\n\s*"([^"]*)"/)?.[1] ?? "";
+  assert.ok(list.includes("slug") && !list.includes("catalogue_is_repealed"));
+  // The status rule it mirrors.
+  const status = read("src/app/laws/law-status.ts");
+  assert.match(status, /return lawStatusForDetail\(raw\) === "repealed";/);
+  assert.match(status, /const value = raw\.trim\(\);/);
 });
 
 test("٢٧٧ search: every section ranks by relevance on every page (20261026_52)", () => {
