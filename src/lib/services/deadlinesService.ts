@@ -99,6 +99,8 @@ export interface UpdateDeadlineInput {
   /** Re-dating a manual deadline. Not allowed on a rule-computed one — recreate it. */
   dueDate?: string;
   title?: string;
+  /** With a status change: required to cancel or reopen, an optional receipt for «تمّ» (CODE-F33). */
+  reason?: string;
 }
 
 /** What POST returns alongside the row when a rule was used — for the confirmation screen. */
