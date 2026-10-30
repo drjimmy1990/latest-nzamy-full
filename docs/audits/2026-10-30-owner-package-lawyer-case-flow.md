@@ -107,13 +107,13 @@ Arabic owner note (separate file, per the parent's rule): `docs/audits/2026-10-3
 | **LAW-DETAIL-007** (P1) | D | The DB CHECK on `lawyer_clients.client_type` allows only `individual` / `company`. The package asks for six types; REF0035 names three (فرد، شركة، جهة حكومية). | Not built: the list of types and the representative / identity fields per type are the owner's call, and need a migration. | — |
 | **LAW-DETAIL-008** (P1) | F (partial) | Default «المحكمة التجارية» and 3 options. | 14 courts plus «أخرى» (free text), no default (CODE-F30). **Not built:** a search box over the list. | `courtTypes.ts`, `AddCaseModal.tsx` |
 | **LAW-DETAIL-017** | F | = CODE-F17. | §3. | |
-| **LAW-DETAIL-020** | F (two branches) | The header pill (device clock) and the converter disagreed on the date. | The header now reads Riyadh's day (LIVE-F38, here). The header, `DualDatePicker` and the hearing modal all use the one Umm al-Qura engine (`hijri.ts`). The converter half is on branch `fix/owner-30oct-consult-calc` (dbae2ba8). | `HijriDateWidget.tsx` |
+| **LAW-DETAIL-020** | F (partial) | The header pill (device clock) and the converter disagreed on the date. | The header now reads Riyadh's day (LIVE-F38, here). The header, `DualDatePicker` and the hearing modal all use the one Umm al-Qura engine (`hijri.ts`). The converter half is on branch `fix/owner-30oct-consult-calc` (dbae2ba8). **Not checked / not changed:** the export. The Google link and the `.ics` file carry the hearing's wall-clock time with no zone (an earlier, documented choice in `src/lib/calendar/hearingIcs.ts`), so on a device outside Riyadh's zone the calendar shows the typed hour in the device's zone. The owner's month-boundary and Riyadh-midnight acceptance cases were not run. | `HijriDateWidget.tsx` |
 | **LIVE-F32** | fixed on another branch | — | Converter fixed on `fix/owner-30oct-consult-calc` (dbae2ba8), not here. Header side = LIVE-F38 / UX05 here. | — |
 | **UX05** (P2) | F | Hearing times had no time zone. | The dashboard home prints « بتوقيت الرياض» after hearing times. | `lawyer/page.tsx` |
 | **LAW-DETAIL-023** | F | = LIVE-F26 / CODE-F11. | §4. | |
 | **LAW-DETAIL-024** | F | = CODE-F10 / LIVE-F27. | §4. | |
 | **LAW-DETAIL-026** | F | Sessions were linked by title; nothing durable. | Linked by `taskId`, idempotent sync (CODE-F09). No billing reads `work_sessions`, so the timer does not drive fees. | §4 |
-| **Q316** (owner answer) | F | No «ملف داخلي» tag; nothing told the lawyer the client sees uploads. | «الموكّل يرى هذا الملف» beside «رفع مستند», shown only where true: `attachments_select_policy` shows a file to the requester and assignee, so it is hidden on the lawyer's own case (requester = the lawyer). | `cases/[id]/page.tsx` |
+| **Q316** (owner answer) | F | No «ملف داخلي» tag; nothing told the lawyer the client sees uploads. | «الموكّل يرى هذا الملف» beside «رفع مستند», shown only where true: `attachments_select_policy` shows a file to the requester and assignee, so it is hidden on the lawyer's own case (requester = the lawyer). The detail route selects `*` and spreads the row, so `requester_user_id` reaches the page (it is not declared on `ServiceRequestDetail`, hence a local cast); a source-shape test pins both ends. | `cases/[id]/page.tsx`, `_uploadVisibilityNote.test.ts` |
 
 ## 6. SQL for the user
 
@@ -151,10 +151,12 @@ Two new files from this branch. Neither changes existing rows. The finance branc
 
 ## 7. Tests and checks
 
-- `npm run test:unit` on 82db85de: **4341 tests, 4333 pass, 8 fail.** Seven are the known baseline (books volume series T28-24, the consultant dashboard needle — a `\n` against a CRLF file, `aiFiles` / `pdf-lib`, «end read takes the latest ends_at», `grantPurchase`, two maker-rule / snapshot tests). The eighth was `navigation.consultant.test.ts` pinning the old call `handleDeadlineAction(d, next)`; it now pins `(d, next, reason)` and passes (the `courtWritesAllowed` gate it checks is unchanged), so the suite is at the baseline seven.
-- `npx tsc --noEmit -p .`: clean except the baseline `pdf-lib` errors.
-- New test files: `deadlineStatusPolicy.test.ts`, `dashboardDateItems.test.ts`, `monthRevenue.test.ts`, `ownCaseStatus.test.ts`, `hearingChange.test.ts`, `_hearingsWiring.test.ts`, `_caseListRules.test.ts`, `_caseFileView.test.ts`, `clientNotesArchive.test.ts`, `_clientFileCases.test.ts`, plus those listed in each commit.
-- **Not run:** `next build --webpack`; no browser or live acceptance test (none of these items is closed).
+- `npm run test:unit` on the final tree (this ledger's commit): **4347 tests, 4340 pass, 7 fail.** Six are the known baseline: books volume series T28-24; the consultant dashboard needle (a `\n` matched against a CRLF file — fails on `main` too); «end read takes the latest ends_at»; `grantPurchase`; two maker-rule / snapshot tests. The seventh, `runCore.test.ts` «the start call carries the price…», asserted 50 000 ms and got 49 999. It is a timing flake in `src/lib/ai`, which this branch does not touch; the file passes 20/20 on three separate re-runs. `aiFiles` now passes because `pdf-lib` was installed in this worktree (`npm install --no-save --no-package-lock`; `package.json` and the lockfile are unchanged).
+- An earlier run on 82db85de had an eighth failure: `navigation.consultant.test.ts` still pinned the old call `handleDeadlineAction(d, next)`. It now pins `(d, next, reason)`, and the `courtWritesAllowed` gate it checks is unchanged.
+- `next build --webpack` with placeholder `NEXT_PUBLIC_SUPABASE_*`: **compiled successfully**; every touched route (`/dashboard/lawyer/cases`, `cases/[id]`, `clients`, `clients/[id]`, `hearings`, `/api/v1/lawyer/hearings/[id]`, the client-notes routes) is in the route table. The only log noise is the sitemap's expected «supabaseKey is required» under placeholder env.
+- `npx tsc --noEmit -p .`: clean (the `pdf-lib` errors were only the missing package).
+- New test files: `deadlineStatusPolicy.test.ts`, `dashboardDateItems.test.ts`, `monthRevenue.test.ts`, `ownCaseStatus.test.ts`, `hearingChange.test.ts`, `_hearingsWiring.test.ts`, `_caseListRules.test.ts`, `_caseFileView.test.ts`, `clientNotesArchive.test.ts`, `_clientFileCases.test.ts`, `_uploadVisibilityNote.test.ts`, plus those listed in each commit.
+- **Not run:** no browser or live acceptance test (none of these items is closed).
 - **GitNexus:** the index is stale (`detect_changes` mapped 2 of 44 files); impact was done with grep over callers instead.
 
 ## 8. Left over (not done here)
@@ -165,11 +167,19 @@ Two new files from this branch. Neither changes existing rows. The finance branc
   - LAW-DETAIL-007: the client types (six asked, three named, two in the DB).
   - CODE-F19 / LAW-006: team assignment needs a firm-team model.
 - **Not built:** a search box over the court list (LAW-008).
+- **Calendar export time zone (LAW-020):** Google / `.ics` hearing exports are zone-less wall-clock times by an earlier documented choice; stamping `Asia/Riyadh` is a small follow-up if the owner wants exports to match «بتوقيت الرياض».
 - **Small leftovers seen in passing:** ClientDrawer accessibility; field labels in `AddCaseStageModal` and `ContractFormModal`; `ModalShell` overscroll on phones; Pomodoro stats bucketed by device day; `_data.ts` `today()` on the device clock; «بتوقيت الرياض» on the hearings diary itself (only the home has it).
 - **Trade-offs to know:** archived «للمكتب» client notes are hidden from firm colleagues by the API only, not by RLS (case notes, 20261025_51, hide them in the DB). Consultation convert: a call whose link write failed announces nothing; the retry that repairs the link sends the event and the client notification (marked `repairedLink`), once.
 - **CODE-F15** depends on the finance branch's `invoice_collections`; without it the tile says it is counting paid invoices instead.
 
 ---
+
+## Overlap with sibling branches (for integration)
+
+- `fix/owner-30oct-consult-calc` touches two files this branch also changes:
+  - `src/app/api/v1/service-requests/route.ts`: it adds a consultation-slot guard just before the creation-status clamp, which this branch rewrote (`createStatusFor`, LIVE-F14) and extended with the 23505 replay (LAW-005). Expect a textual conflict; keep both.
+  - `src/app/ai/fee-calculator/page.tsx`: this branch moved the «المهل النظامية» tab into `CalcLegalDeadlines` (LIVE-F33); that branch changes the date-converter tab. Expect a conflict; keep both.
+- `fix/lawyer-finance-p0-2026-10-30`: no shared files. CODE-F15 reads its `invoice_collections` table, so that branch's `20261030_10` should be live before this tile is accepted.
 
 ## Owner note
 
