@@ -9,7 +9,7 @@ import {
   CurrencyCircleDollar, Star, Phone, EnvelopeSimple, MapPin,
   Warning, ArrowClockwise, CalendarBlank, Scales, Notepad,
   CaretLeft, IdentificationCard, PencilSimple, FloppyDisk, X,
-  Trash, LockKey, CheckCircle, Clock, LinkSimple,
+  LockKey, CheckCircle, Clock, LinkSimple, Archive, ArrowCounterClockwise,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { apiGet, isSupabaseMode } from "@/lib/services/api";
@@ -20,11 +20,12 @@ import {
   type ClientFlag, type ClientStatus,
 } from "@/lib/services/lawyerClientsService";
 import {
-  getClientNotes, addClientNote, deleteClientNote,
+  getClientNotes, addClientNote, archiveClientNote, restoreClientNote, getArchivedClientNotes,
   type LawyerClientNote, type NoteVisibility,
 } from "@/lib/services/lawyerClientNotesService";
 import { CLIENT_FLAGS, feePairIssue, isMoneyFigure } from "@/lib/services/clientIdentityRules";
 import { countPhraseAr, type ArabicCountForms } from "@/lib/services/arabicCount";
+import { isLawyerCaseRow } from "../../cases/_caseListRules";
 
 // ─── Local types ──────────────────────────────────────────────────────────────
 
@@ -302,6 +303,11 @@ export default function ClientDetailPage() {
         for (const r of byId.values()) {
           const type = String(r.type ?? "").toLowerCase();
           const status = mapRequestStatus(r.status);
+          // CODE-F40: a case is said explicitly, by the cases list's own rule
+          // (isLawyerCaseRow) — not "everything that is not a consultation".
+          // The table also holds client cards, invoices, tasks, hearings and
+          // AI/business orders; none of them is one of this client's cases.
+          if (type !== "consultation" && !isLawyerCaseRow({ type: r.type, metadata: r.metadata ?? null })) continue;
           if (type === "consultation") {
             consultRows.push({
               id: String(r.id),
@@ -359,6 +365,14 @@ export default function ClientDetailPage() {
   const [addingNote, setAddingNote] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
   const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null);
+  // CODE-F36: «حذف» archives. The note just archived (for «تراجع»), the
+  // «المؤرشفة» list, and whether the database has the archive yet (20261030_30).
+  const [undoNote, setUndoNote] = useState<LawyerClientNote | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivedRead, setArchivedRead] = useState<ListRead<LawyerClientNote> | null>(null);
+  const [archiveAvailable, setArchiveAvailable] = useState(true);
+  const [archivedLoading, setArchivedLoading] = useState(false);
+  const [restoringNoteId, setRestoringNoteId] = useState<string | null>(null);
 
   const loadNotes = useCallback(() => {
     setNotesLoading(true);
@@ -388,16 +402,46 @@ export default function ClientDetailPage() {
     }
   };
 
+  const loadArchivedNotes = useCallback(() => {
+    setArchivedLoading(true);
+    getArchivedClientNotes(clientId)
+      .then(({ read, available }) => { setArchivedRead(read); setArchiveAvailable(available); })
+      .finally(() => setArchivedLoading(false));
+  }, [clientId]);
+  const archivedView = listViewState(archivedLoading, archivedRead);
+  const archivedNotes = itemsOf(archivedRead);
+
+  // CODE-F36: was a hard DELETE with no confirm and no way back. Now the row is
+  // archived on the server (kept until restored — no automatic purge) and the
+  // banner offers «تراجع». The banner names what the SERVER returned; a
+  // failure (e.g. 503 before migration 20261030_30) says nothing was deleted.
   const removeNote = async (noteId: string) => {
     setDeletingNoteId(noteId);
     setNoteError(null);
     try {
-      await deleteClientNote(clientId, noteId);
+      const archived = await archiveClientNote(clientId, noteId);
+      setUndoNote(archived);
       loadNotes();
+      if (showArchived) loadArchivedNotes();
     } catch (e) {
-      setNoteError(e instanceof Error ? e.message : "تعذّر حذف الملاحظة.");
+      setNoteError(e instanceof Error ? e.message : "تعذّرت أرشفة الملاحظة — لم يُحذف شيء.");
     } finally {
       setDeletingNoteId(null);
+    }
+  };
+
+  const restoreNote = async (noteId: string) => {
+    setRestoringNoteId(noteId);
+    setNoteError(null);
+    try {
+      await restoreClientNote(clientId, noteId);
+      setUndoNote(prev => (prev?.id === noteId ? null : prev));
+      loadNotes();
+      if (showArchived) loadArchivedNotes();
+    } catch (e) {
+      setNoteError(e instanceof Error ? e.message : "تعذّرت استعادة الملاحظة.");
+    } finally {
+      setRestoringNoteId(null);
     }
   };
 
@@ -1046,6 +1090,11 @@ export default function ClientDetailPage() {
                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isDark ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-600"}`}>{notes.length}</span>
                 )}
               </div>
+              <button type="button" aria-expanded={showArchived}
+                onClick={() => { const next = !showArchived; setShowArchived(next); if (next) loadArchivedNotes(); }}
+                className={`flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg transition-colors ${isDark ? "text-zinc-400 hover:bg-white/[0.06]" : "text-slate-500 hover:bg-slate-100"}`}>
+                <Archive size={11} /> {showArchived ? "إخفاء المؤرشفة" : "المؤرشفة"}
+              </button>
             </div>
 
             <div className={`px-4 py-2 flex items-start gap-1.5 text-[10px] border-b ${isDark ? "border-white/[0.05] bg-amber-500/[0.06] text-amber-400" : "border-slate-100 bg-amber-50 text-amber-700"}`}>
@@ -1087,7 +1136,58 @@ export default function ClientDetailPage() {
                 </div>
               </div>
 
-              {noteError && <p className="mt-2 text-[11px] font-semibold text-red-500">{noteError}</p>}
+              {noteError && <p role="alert" className="mt-2 text-[11px] font-semibold text-red-500">{noteError}</p>}
+
+              {undoNote && (
+                <div role="status" className={`mt-2 flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-[11px] ${isDark ? "bg-white/[0.04] text-zinc-300" : "bg-slate-100 text-slate-700"}`}>
+                  <span>أُرشفت الملاحظة — محفوظة في «المؤرشفة» حتى تستعيدها.</span>
+                  <span className="flex items-center gap-2">
+                    <button type="button" onClick={() => restoreNote(undoNote.id)} disabled={restoringNoteId === undoNote.id}
+                      className="flex items-center gap-1 font-bold text-royal hover:underline disabled:opacity-40">
+                      <ArrowCounterClockwise size={11} /> {restoringNoteId === undoNote.id ? "جارٍ الاستعادة…" : "تراجع"}
+                    </button>
+                    <button type="button" onClick={() => setUndoNote(null)} aria-label="إغلاق التنبيه"
+                      className={isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"}>
+                      <X size={11} />
+                    </button>
+                  </span>
+                </div>
+              )}
+
+              {showArchived && (
+                <div className={`mt-3 p-3 rounded-xl border border-dashed ${isDark ? "border-white/[0.08]" : "border-slate-200"}`}>
+                  <p className={`text-[10px] font-bold mb-2 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
+                    ملاحظاتك المؤرشفة على هذا الموكّل — تبقى محفوظة حتى تستعيدها، ولا تُحذف تلقائياً.
+                  </p>
+                  {archivedView === "loading" && <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>جارٍ التحميل…</p>}
+                  {archivedView === "unreadable" && (
+                    <button onClick={loadArchivedNotes} className="flex items-center gap-1 text-[10px] font-bold text-royal hover:underline">
+                      <ArrowClockwise size={11} /> تعذّرت قراءة المؤرشفة — إعادة المحاولة
+                    </button>
+                  )}
+                  {archivedView === "empty" && (
+                    <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
+                      {archiveAvailable ? "لا توجد ملاحظات مؤرشفة." : "الأرشفة غير مفعّلة بعد على قاعدة البيانات — لا توجد ملاحظات مؤرشفة."}
+                    </p>
+                  )}
+                  {archivedView === "ready" && (
+                    <div className="space-y-1.5">
+                      {archivedNotes.map(note => (
+                        <div key={note.id} className={`flex items-start justify-between gap-2 p-2 rounded-lg text-[11px] ${isDark ? "bg-white/[0.02] text-zinc-400" : "bg-slate-50 text-slate-500"}`}>
+                          <span className="min-w-0">
+                            <span className="block">{note.body}</span>
+                            <span className="text-[9px]">أُرشفت {note.archivedAt ? formatDate(note.archivedAt) : ""}</span>
+                          </span>
+                          <button type="button" onClick={() => restoreNote(note.id)} disabled={restoringNoteId === note.id}
+                            className="flex-shrink-0 flex items-center gap-1 text-[10px] font-bold text-royal hover:underline disabled:opacity-40">
+                            <ArrowCounterClockwise size={10} /> {restoringNoteId === note.id ? "جارٍ الاستعادة…" : "استعادة"}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="mt-3 space-y-2">
                 {notesView === "loading" && (
@@ -1122,8 +1222,9 @@ export default function ClientDetailPage() {
                       </span>
                       {note.mine && (
                         <button onClick={() => removeNote(note.id)} disabled={deletingNoteId === note.id}
-                          className={`flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded font-bold transition-all disabled:opacity-40 ${isDark ? "text-zinc-700 hover:text-red-400" : "text-slate-300 hover:text-red-500"}`}>
-                          <Trash size={10} /> حذف
+                          title="تُنقل إلى «المؤرشفة» ويمكن استعادتها"
+                          className={`flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded font-bold transition-all disabled:opacity-40 ${isDark ? "text-zinc-500 hover:text-amber-400" : "text-slate-400 hover:text-amber-600"}`}>
+                          <Archive size={10} /> {deletingNoteId === note.id ? "جارٍ الأرشفة…" : "أرشفة"}
                         </button>
                       )}
                     </div>
