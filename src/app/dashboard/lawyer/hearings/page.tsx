@@ -11,7 +11,8 @@ import {
   MagnifyingGlass, CaretDown, Star, CheckSquare,
   Hourglass, CaretRight, CaretLeft, X,
   User, ArrowRight, List, CalendarBlank,
-  ArrowSquareOut, Scales, ArrowClockwise, CircleNotch, DownloadSimple,
+  ArrowSquareOut, Scales, ArrowClockwise, CircleNotch, DownloadSimple, LinkBreak,
+  PencilSimple, ClockCounterClockwise, Prohibit, ArrowCounterClockwise,
 } from "@phosphor-icons/react";
 
 // ─── Hijri day label ──────────────────────────────────────────────────────────
@@ -83,7 +84,12 @@ const TODAY_COUNT: ArabicCountForms = {
 import { getWorkflowRequestsByReceiver } from "@/lib/services/workflowService";
 import { hijriPartsOf, toArabicDigits } from "@/lib/services/hijri";
 import { isSupabaseMode } from "@/lib/services/api";
-import { getLawyerHearings, type HearingDto } from "@/lib/services/lawyerHearingsService";
+import { getLawyerHearings, type HearingDto, type HearingHistoryEntryDto } from "@/lib/services/lawyerHearingsService";
+import {
+  hearingDisplayState, isClosedHearingStatus, HEARING_DISPLAY_LABEL_AR, type HearingDisplayState,
+} from "@/lib/services/hearingVocabulary";
+import { allowedHearingActions, HEARING_ACTION_LABEL_AR, type HearingAction } from "@/lib/services/hearingChange";
+import HearingActionDialog from "./_HearingActionDialog";
 import type { WorkflowRequest } from "@/lib/workflowStore";
 import { useUser } from "@/hooks/useUser";
 import AddHearingModal from "../_components/AddHearingModal";
@@ -121,6 +127,15 @@ interface CalEvent {
   durationMinutes?: number | null;
   notes?: string; done?: boolean; deadlineDaysLeft?: number;
   workflow?: WorkflowStep[];
+  // CODE-F18: the row's own status (hearings.status) and what the card says
+  // about it. `done` used to be `status === "cancelled"` only, so a held
+  // sitting stayed in «القادمة» and a cancelled one read like any past row.
+  // `displayState` is re-derived with `dateSort` against `todayKey`.
+  status?: string;
+  displayState?: HearingDisplayState;
+  history?: HearingHistoryEntryDto[];
+  /** CODE-F18 actions are offered only on rows from public.hearings (not demo rows). */
+  actionable?: boolean;
 }
 
 // ─── Workflow → Hearing mapper (L8) ───────────────────────────────────────────
@@ -214,7 +229,9 @@ function hearingDtoToCalEvent(row: HearingDto): CalEvent | null {
 
   const type: EventType = (VALID_EVENT_TYPES as string[]).includes(row.type) ? (row.type as EventType) : "internal";
   const urgency: CalEvent["urgency"] = (VALID_URGENCIES as string[]).includes(row.urgency) ? (row.urgency as CalEvent["urgency"]) : "normal";
-  const isDone = row.status === "cancelled";
+  // CODE-F18: held, cancelled and (legacy) adjourned are all closed — none of
+  // them is a sitting still ahead of the lawyer.
+  const isDone = isClosedHearingStatus(row.status);
 
   return {
     id: row.id,
@@ -233,6 +250,9 @@ function hearingDtoToCalEvent(row: HearingDto): CalEvent | null {
     notes: row.notes || undefined,
     done: isDone,
     workflow: undefined,
+    status: row.status,
+    history: row.history,
+    actionable: true,
   };
 }
 
@@ -273,6 +293,7 @@ function demoWorkflowToHearing(request: WorkflowRequest): CalEvent | null {
     notes: typeof meta.notes === "string" && meta.notes ? meta.notes : undefined,
     done: isDone,
     workflow: undefined,
+    status: request.status === "cancelled" ? "cancelled" : request.status === "completed" ? "held" : "scheduled",
   };
 }
 
@@ -533,8 +554,36 @@ function FilterRow<T extends string>({
 }
 
 // ─── EventCard ─────────────────────────────────────────────────────────────────
+const STATE_CHIP_CLS: Record<HearingDisplayState, { light: string; dark: string }> = {
+  upcoming:         { light: "bg-blue-50 text-blue-700", dark: "bg-blue-500/10 text-blue-300" },
+  awaiting_outcome: { light: "bg-amber-50 text-amber-800", dark: "bg-amber-500/10 text-amber-300" },
+  held:             { light: "bg-emerald-50 text-emerald-700", dark: "bg-emerald-500/10 text-emerald-300" },
+  adjourned:        { light: "bg-violet-50 text-violet-700", dark: "bg-violet-500/10 text-violet-300" },
+  cancelled:        { light: "bg-red-50 text-red-700", dark: "bg-red-500/10 text-red-300" },
+  unknown:          { light: "bg-slate-100 text-slate-600", dark: "bg-white/[0.06] text-zinc-400" },
+};
+const ACTION_ICON: Record<HearingAction, React.ElementType> = {
+  edit: PencilSimple, postpone: ClockCounterClockwise, cancel: Prohibit, complete: CheckCircle, reopen: ArrowCounterClockwise,
+};
+
+/** One change-log line: «تأجيل — من ٣ نوفمبر إلى ١٠ نوفمبر — السبب: …». */
+function historyLineAr(h: HearingHistoryEntryDto): string {
+  const label = HEARING_ACTION_LABEL_AR[h.action as HearingAction] ?? h.action;
+  const parts = [label];
+  if (h.fromDate && h.toDate && h.fromDate !== h.toDate) parts.push(`من ${formatEventDateAr(h.fromDate)} إلى ${formatEventDateAr(h.toDate)}`);
+  else if (h.fromTime !== undefined && h.toTime !== undefined && h.fromTime !== h.toTime) parts.push(`الوقت ${h.toTime ? formatTimeOfDayAr(h.toTime) : "بلا وقت"}`);
+  if (h.reason) parts.push(`السبب: ${h.reason}`);
+  return parts.join(" — ");
+}
+
 function EventCard({ev,isDark}:{ev:CalEvent;isDark:boolean}) {
   const [open,setOpen] = useState(false);
+  // CODE-F18: the change being made (dialog open) and whether the log is shown.
+  const [pendingAction, setPendingAction] = useState<HearingAction | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const actions = ev.actionable && ev.status ? allowedHearingActions(ev.status) : [];
+  const state = ev.displayState ?? "unknown";
+  const history = ev.history ?? [];
   // ── Mutable local state so the workflow steps are interactive ────────────────
   // The `linkedTasks`/`setLinkedTasks` state and `toggleLinkedTask` that stood
   // here were removed on 2026-08-28 with LINKED_TASKS — see the note there.
@@ -548,7 +597,10 @@ function EventCard({ev,isDark}:{ev:CalEvent;isDark:boolean}) {
   const donePct = steps.length > 0 ? Math.round((steps.filter(s=>s.done).length / steps.length) * 100) : null;
   const isDeadline = ev.type==="deadline";
   const accentColor = ev.urgency==="critical"?"#ef4444":ev.urgency==="high"?"#f59e0b":cfg.color;
-  const calUrl = ev.dateSort>=0 ? googleCalUrl(ev) : null;
+  // CODE-F18: «أضف لـ Google» / .ics only for a sitting still ahead — never
+  // for a cancelled or held one, which would plant a dead entry in the lawyer's
+  // own calendar.
+  const calUrl = ev.dateSort>=0 && (state==="upcoming" || !ev.status) ? googleCalUrl(ev) : null;
 
   return (
     <motion.div layout initial={{opacity:0,y:6}} animate={{opacity:1,y:0}}
@@ -564,6 +616,13 @@ function EventCard({ev,isDark}:{ev:CalEvent;isDark:boolean}) {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-0.5">
               <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md" style={{backgroundColor:`${cfg.color}18`,color:cfg.color}}>{cfg.label}</span>
+              {/* CODE-F18: the row's real state — a cancelled sitting reads
+                  «ملغاة», never like any other past row. */}
+              {ev.status && (
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${isDark?STATE_CHIP_CLS[state].dark:STATE_CHIP_CLS[state].light}`}>
+                  {HEARING_DISPLAY_LABEL_AR[state]}
+                </span>
+              )}
               {isDeadline && ev.deadlineDaysLeft!==undefined && (
                 <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${ev.deadlineDaysLeft===0?"bg-red-500 text-white animate-pulse":ev.deadlineDaysLeft<=3?"bg-red-500/10 text-red-500":ev.deadlineDaysLeft<=7?"bg-amber-500/10 text-amber-500":isDark?"bg-white/[0.06] text-zinc-400":"bg-slate-100 text-slate-500"}`}>
                   {ev.deadlineDaysLeft===0?"⚠ اليوم":`${ev.deadlineDaysLeft} يوم`}
@@ -596,11 +655,19 @@ function EventCard({ev,isDark}:{ev:CalEvent;isDark:boolean}) {
                   <Scales size={9}/>{ev.caseName}<ArrowSquareOut size={9}/>
                 </Link>
               ) : (
+                // CODE-F17: a typed name with no case id is a LABEL, not a
+                // link — say so, so it is not mistaken for a case's hearing.
                 <span
-                  className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg ${isDark?"bg-indigo-500/10 text-indigo-400":"bg-indigo-50 text-indigo-600"}`}>
-                  <Scales size={9}/>{ev.caseName}
+                  title="هذا الموعد غير مرتبط بأي قضية — لا يظهر في ملف قضية. اربطه من «تعديل»."
+                  className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg ${isDark?"bg-white/[0.06] text-zinc-400":"bg-slate-100 text-slate-600"}`}>
+                  <LinkBreak size={9}/>{ev.caseName} · غير مرتبط بقضية
                 </span>
               ))}
+              {!ev.caseName && !ev.caseId && ev.actionable && (
+                <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg ${isDark?"bg-white/[0.06] text-zinc-400":"bg-slate-100 text-slate-600"}`}>
+                  <LinkBreak size={9}/>غير مرتبط بقضية
+                </span>
+              )}
               {/* The «N مهام» Link to /dashboard/lawyer/tasks stood here. It was
                   gated on `linkedTasks.length>0`, and linkedTasks came from
                   LINKED_TASKS, which nothing populated — removed 2026-08-28. */}
@@ -647,6 +714,49 @@ function EventCard({ev,isDark}:{ev:CalEvent;isDark:boolean}) {
           <div className={`mt-2 px-3 py-2 rounded-xl text-[12px] leading-relaxed ${ev.urgency==="critical"?isDark?"bg-red-500/10 text-red-400":"bg-red-50 text-red-600":ev.urgency==="high"?isDark?"bg-amber-500/10 text-amber-400":"bg-amber-50 text-amber-700":isDark?"bg-white/[0.04] text-zinc-500":"bg-slate-50 text-slate-500"}`}>
             {ev.notes}
           </div>
+        )}
+
+        {/* CODE-F18: edit / postpone / cancel / held / reopen, each through the
+            server (PATCH /api/v1/lawyer/hearings/[id]) with its reason kept in
+            the row's change log and the case's activity feed. */}
+        {(actions.length>0 || history.length>0) && (
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            {actions.map(a => {
+              const AIcon = ACTION_ICON[a];
+              return (
+                <button key={a} type="button" onClick={()=>setPendingAction(a)}
+                  aria-label={`${HEARING_ACTION_LABEL_AR[a]}: ${ev.title}`}
+                  className={`flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal ${a==="cancel"
+                    ? isDark?"bg-red-500/10 text-red-300 hover:bg-red-500/20":"bg-red-50 text-red-700 hover:bg-red-100"
+                    : isDark?"bg-white/[0.05] text-zinc-300 hover:bg-white/[0.1]":"bg-slate-100 text-slate-700 hover:bg-slate-200"}`}>
+                  <AIcon size={11}/>{HEARING_ACTION_LABEL_AR[a]}
+                </button>
+              );
+            })}
+            {history.length>0 && (
+              <button type="button" onClick={()=>setShowHistory(v=>!v)} aria-expanded={showHistory}
+                className={`text-[11px] font-semibold underline-offset-2 hover:underline ${isDark?"text-zinc-400":"text-slate-500"}`}>
+                سجل التغييرات ({toArabicDigits(history.length)})
+              </button>
+            )}
+          </div>
+        )}
+        {showHistory && history.length>0 && (
+          <ol className={`mt-2 space-y-1 rounded-xl px-3 py-2 text-[11px] ${isDark?"bg-white/[0.03] text-zinc-400":"bg-slate-50 text-slate-600"}`}>
+            {[...history].reverse().map((h,i)=>(
+              <li key={`${h.at}-${i}`}>
+                <span className="font-semibold">{h.at ? new Date(h.at).toLocaleDateString("ar-SA-u-ca-gregory-nu-arab",{day:"numeric",month:"short"}) : ""}</span>{" — "}{historyLineAr(h)}
+              </li>
+            ))}
+          </ol>
+        )}
+        {pendingAction && (
+          <HearingActionDialog
+            hearing={{ id: ev.id, title: ev.title, status: ev.status ?? "scheduled", date: ev.date, time: ev.time, location: ev.location, notes: ev.notes, caseId: ev.caseId, caseName: ev.caseName }}
+            action={pendingAction}
+            isDark={isDark}
+            onClose={()=>setPendingAction(null)}
+          />
         )}
 
         {ev.workflow&&donePct!==null&&!open&&(
@@ -1025,7 +1135,7 @@ function LawyerHearingsPage() {
     const out: CalEvent[] = [];
     for (const ev of rawEvents) {
       const dateSort = daysBetweenDays(todayKey, ev.date);
-      if (dateSort !== null) out.push({ ...ev, dateSort });
+      if (dateSort !== null) out.push({ ...ev, dateSort, displayState: hearingDisplayState(ev.status ?? "scheduled", ev.date, todayKey) });
     }
     return out;
   }, [rawEvents, todayKey]);

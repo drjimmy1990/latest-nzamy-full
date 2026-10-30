@@ -15,6 +15,20 @@
 
 import { apiGet, apiMutate } from "@/lib/services/api";
 
+export interface HearingHistoryEntryDto {
+  at: string;
+  by: string;
+  action: string;
+  reason?: string;
+  fromDate?: string;
+  toDate?: string;
+  fromTime?: string | null;
+  toTime?: string | null;
+  fromStatus?: string;
+  toStatus?: string;
+  fields?: string[];
+}
+
 export interface HearingDto {
   id: string;
   title: string;
@@ -32,6 +46,8 @@ export interface HearingDto {
   status: string;
   /** hearings.duration_minutes — «مدة الجلسة» (owner item 59). null when not recorded. */
   durationMinutes?: number | null;
+  /** CODE-F18: the row's change log (metadata.history), oldest first. */
+  history?: HearingHistoryEntryDto[];
   createdAt?: string;
   updatedAt?: string;
 }
@@ -72,5 +88,30 @@ export interface CreateHearingInput {
 
 export async function createLawyerHearing(input: CreateHearingInput): Promise<HearingDto> {
   const res = await apiMutate<{ data: HearingDto }>("/api/v1/lawyer/hearings", "POST", input);
+  return res.data;
+}
+
+/**
+ * CODE-F18: edit / postpone / cancel / «انعقدت» / reopen one hearing. The rules
+ * (and which actions need a reason) are src/lib/services/hearingChange.ts.
+ * Throws with the server's Arabic message on any non-2xx; resolves with the
+ * row as the server stored it, so the caller shows that, not its own guess.
+ */
+export interface UpdateHearingInput {
+  action: "edit" | "postpone" | "cancel" | "complete" | "reopen";
+  reason?: string;
+  date?: string;
+  time?: string | null;
+  title?: string;
+  type?: string;
+  location?: string;
+  notes?: string;
+  urgency?: string;
+  durationMinutes?: number | null;
+  caseRequestId?: string | null;
+}
+
+export async function updateLawyerHearing(id: string, input: UpdateHearingInput): Promise<HearingDto> {
+  const res = await apiMutate<{ data: HearingDto }>(`/api/v1/lawyer/hearings/${encodeURIComponent(id)}`, "PATCH", input);
   return res.data;
 }

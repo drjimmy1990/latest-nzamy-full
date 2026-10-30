@@ -5,8 +5,9 @@ import { recordActivity, RequestEvent } from "@/lib/events";
 import {
   type UiHearingType, type UiUrgency,
   VALID_UI_TYPES, VALID_UI_URGENCIES,
-  typeToKind, kindToType, urgencyToDb, urgencyFromDb,
+  typeToKind, urgencyToDb,
 } from "@/lib/services/hearingVocabulary";
+import { HEARINGS_SELECT, resolveOwnCase, toDto, type HearingRow } from "./_shared";
 import { validateHearingDuration } from "@/lib/services/item59Labels";
 
 /**
@@ -43,47 +44,6 @@ import { validateHearingDuration } from "@/lib/services/item59Labels";
 
 const VALID_TYPES = new Set<string>(VALID_UI_TYPES);
 const VALID_URGENCIES = new Set<string>(VALID_UI_URGENCIES);
-
-interface HearingRow {
-  id: string;
-  case_request_id: string | null;
-  title: string;
-  kind: string;
-  hearing_date: string;
-  hearing_time: string | null;
-  location: string;
-  urgency: string;
-  status: string;
-  notes: string;
-  /** Owner item 59 («مدة الجلسة»). Nullable; set by POST's `durationMinutes`. */
-  duration_minutes: number | null;
-  metadata: Record<string, unknown> | null;
-  created_at: string;
-  updated_at: string;
-}
-
-function toDto(row: HearingRow) {
-  const meta = row.metadata ?? {};
-  return {
-    id: row.id,
-    title: row.title,
-    type: kindToType(row.kind),
-    caseRequestId: row.case_request_id,
-    caseName: typeof meta.caseName === "string" ? meta.caseName : undefined,
-    date: row.hearing_date,
-    time: row.hearing_time,
-    location: row.location || undefined,
-    urgency: urgencyFromDb(row.urgency),
-    notes: row.notes || undefined,
-    status: row.status,
-    durationMinutes: typeof row.duration_minutes === "number" ? row.duration_minutes : null,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-const HEARINGS_SELECT =
-  "id, case_request_id, title, kind, hearing_date, hearing_time, location, urgency, status, notes, duration_minutes, metadata, created_at, updated_at";
 
 /**
  * GET /api/v1/lawyer/hearings
@@ -199,13 +159,26 @@ export async function POST(request: NextRequest) {
       console.error("[lawyer/hearings] firm_members lookup failed:", membershipError.message, membershipError.code);
     }
 
+    // CODE-F17 / LIVE-F28: the link is the case ID, checked against the
+    // caller's own cases — never the free text. An id that does not resolve is
+    // refused (400), not saved as a silently unlinked hearing. A linked row's
+    // display name is the case's own title, so the two cannot disagree; an
+    // unlinked row keeps the typed label, which the diary marks «غير مرتبط بقضية».
     const metadata: Record<string, unknown> = {};
-    if (caseName && caseName.trim()) metadata.caseName = caseName.trim();
+    let linkedCaseId: string | null = null;
+    if (typeof caseRequestId === "string" && caseRequestId.trim()) {
+      const linked = await resolveOwnCase(supabase, user.id, caseRequestId.trim());
+      if (!linked.ok) return NextResponse.json({ error: linked.error }, { status: linked.status });
+      linkedCaseId = linked.id;
+      metadata.caseName = linked.title;
+    } else if (caseName && caseName.trim()) {
+      metadata.caseName = caseName.trim();
+    }
 
     const { data, error } = await supabase
       .from("hearings")
       .insert({
-        case_request_id: caseRequestId || null,
+        case_request_id: linkedCaseId,
         firm_id: membership?.firm_id ?? null,
         owner_user_id: user.id,
         kind: typeToKind(type as UiHearingType),
@@ -233,7 +206,7 @@ export async function POST(request: NextRequest) {
       ownerUserId: user.id,
       firmId: membership?.firm_id ?? null,
       actorUserId: user.id,
-      caseRequestId: caseRequestId || null,
+      caseRequestId: linkedCaseId,
       subjectTable: "hearings",
       subjectId: data.id,
       payload: { title: title.trim() },
