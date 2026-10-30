@@ -7,10 +7,13 @@ import { libraryGate } from '@/lib/library-gate';
 import { lawStatusForDetail } from '@/app/laws/law-status';
 import { resolveParentLawLink, type ParentLawCandidate } from './_resolve-parent-law';
 import { orderLawChapters } from './_order-chapters';
-import { articleDisplayLabel, articleLocatorText } from './_article-label';
-import { lawOfficialLink, lawOfficialMeta, TIER_SHAPED_CACHE_CONTROL } from './_official-meta';
+import { articleDisplayLabel, articleLocatorText, documentIsUnnumbered } from './_article-label';
+import { lawOfficialLink, lawOfficialLinks, lawOfficialMeta, TIER_SHAPED_CACHE_CONTROL } from './_official-meta';
 import { splitStoredPreamble } from '@/lib/library/splitPreamble';
-import { lawReaderExtras, withCleanCardRows } from '@/lib/library/lawSummaryVisibility';
+import { latestUpdateDetail, lawReaderExtras, regulationReaderExtras } from '@/lib/library/lawSummaryVisibility';
+import { latestLegislativeEvent } from '@/lib/library/legislativeEvent';
+import { lawArticleCounts } from '@/lib/library/lawCardFields';
+import { stripPipelineNotes } from '@/lib/library/lawPreambleBlocks';
 import { selectAllPages } from '@/lib/supabase/selectAllPages';
 
 /**
@@ -32,10 +35,13 @@ type PgErrorParts = { code?: string; details?: string };
  * after migration 20261004_01 a `*` select needs privileges on every column).
  * The official metadata and the preamble are in it: they are column-locked for
  * the anon key since 20261004_01, so this read runs as the service role and
- * lawOfficialMeta() below is the mask (T28-22).
+ * lawOfficialMeta() below is the mask (T28-22). `latest_update` (locked jsonb)
+ * never leaves as it is: every viewer gets its date alone through
+ * `latest_legislative_update` (owner ٣١٨), a subscriber its cleaned
+ * description too (`latestUpdate`, latestUpdateDetail).
  */
 const LAW_DETAIL_COLUMNS =
-  'slug, title, title_en, type, status, description, preamble, parent_law_id, parent_law, enabling_article, issuing_instrument, issue_date_hijri, boe_source_url, official_source_url, gazette_issue_number, gazette_publication_date, gazette_url';
+  'slug, title, title_en, type, status, description, preamble, parent_law_id, parent_law, enabling_article, issuing_instrument, issue_date_hijri, boe_source_url, official_source_url, gazette_issue_number, gazette_publication_date, gazette_url, latest_update, has_merged_regulation';
 
 /**
  * GET /api/library/laws/[slug]
@@ -289,6 +295,25 @@ export async function GET(
     // side column only and the ديباجة in the middle column only
     // (src/lib/library/lawSummaryVisibility.ts).
     const readerExtras = lawReaderExtras(preamble, isSubscriber);
+    // Owner note ٠١ item ٥: the regulation part's own card goes to the
+    // sidebar's regulation group (cardForViewer per viewer); its ديباجة stays.
+    const regulationExtras = regulationReaderExtras(regulationPreamble, isSubscriber);
+
+    // Owner ٣١٧ / ٣١٨: the ONE public date — the latest official legislative
+    // event (the later of latest_update's date and the issue date; the key
+    // the catalogue orders by), as the date ALONE, for every viewer. Read
+    // from the unmasked service-role row; the instrument never rides along.
+    const legislativeEvent = latestLegislativeEvent({
+      latest_update: law.latest_update,
+      issue_date_hijri: law.issue_date_hijri,
+    });
+    // Owner note ٠١ item ٢: «آخر تعديل» from latest_update, with what
+    // happened — a SUBSCRIBER's (T28-22 / ٣١٨); '' for anyone else.
+    const latestUpdate = latestUpdateDetail(law.latest_update, isSubscriber);
+    // Owner note ٠١ item ٦ / note ١٢ item ٧: article totals per container,
+    // counted from EVERY loaded article (locked ones too — a count is not
+    // paid text), so a guest's card says the same numbers as a subscriber's.
+    const articleCounts = lawArticleCounts(articles, stripPipelineNotes);
 
     // ── Build the flat "اللائحة وحدها" view — one sorted list per secondary
     // instrument (`ref`), spanning every نظام article, with dual-linked
@@ -334,6 +359,10 @@ export async function GET(
         })),
     }));
 
+    // Owner note ١١: a document whose rows never name an article or item
+    // (a guide split by topical headings) gets no invented «المادة N».
+    const unnumbered = documentIsUnnumbered(articles ?? []);
+
     // Build the response in the LawSystem format the frontend expects
     const lawSystem = {
       id: law.slug,
@@ -350,13 +379,30 @@ export async function GET(
       issuanceDate: officialMeta.issuanceDate,
       source: officialMeta.source,
       officialSourceUrl: officialMeta.officialSourceUrl,
-      // Owner ٢٩٧: the law's official page, for EVERY viewer (beside الجهة
-      // المصدرة); '' when the law has no http(s) official_source_url.
-      officialLink: lawOfficialLink(law),
+      // Owner ٣١٨ (28-Oct) REVERSES ٢٩٧: the law's official page beside
+      // «الجهة المصدرة» is a SUBSCRIBER's (isSubscriber — never the
+      // whitelist); '' for anyone else. official_source_url, else
+      // boe_source_url (owner note ٠١ item ٣).
+      officialLink: lawOfficialLink(law, isSubscriber),
+      // Owner note ٠١ item ٣: every official link of the row, by Arabic name
+      // (هيئة الخبراء / جريدة أم القرى / بوابة وزارة العدل / موقع الجهة
+      // المختصة); [] for a non-subscriber (٣١٨).
+      officialLinks: lawOfficialLinks(law, isSubscriber),
       // {issueNumber, publicationDate, url} from the gazette_* columns only;
       // null when they are all empty (every law, 2026-09-28) or when locked.
       gazette: officialMeta.gazette,
       officialMetaLocked: officialMeta.officialMetaLocked,
+      // Owner ٣١٨: «آخر تحديث تشريعي» — «1448/01/08هـ», the date alone, for
+      // EVERY viewer (the same contract as /api/library/init's law items).
+      // Omitted when neither date reads.
+      ...(legislativeEvent ? { latest_legislative_update: legislativeEvent.dateHijri } : {}),
+      // Owner note ٠١ item ٢: «آخر تعديل» with its event, subscribers only; omitted otherwise.
+      ...(latestUpdate ? { latestUpdate } : {}),
+      // Note ٠١ item ٦ / note ١٢ item ٧: {law, regulations[], annexes} tallies.
+      articleCounts,
+      // Note ٠١ item ٥: the regulation group shows only for a merged file.
+      hasMergedRegulation: law.has_merged_regulation === true,
+      ...(regulationExtras.card ? { regulation_card: regulationExtras.card } : {}),
       // ك-02 (2026-08-23): library.laws.status is fetched (LAW_DETAIL_COLUMNS)
       // but was never copied into this response object, so the frontend's
       // "cancelled/active" badge always fell back to a hardcoded static map
@@ -376,12 +422,13 @@ export async function GET(
       // the decree itself — measured on 5,477 laws, 2026-09-28. Sending it to
       // a non-subscriber would undo the masking above, so it goes with it.
       preamble: officialMeta.officialMetaLocked ? '' : readerExtras.preamble,
-      // Owner ٢٥٩ (أ): the regulation's own card, if it carries one, as the law card's rows.
-      regulationPreamble: officialMeta.officialMetaLocked ? '' : withCleanCardRows(regulationPreamble),
+      // Owner ٢٥٩ (أ): the regulation's ديباجة with its card rows cleaned —
+      // the card itself is lifted to `regulation_card` (note ٠١ item ٥).
+      regulationPreamble: officialMeta.officialMetaLocked ? '' : regulationExtras.preamble,
       // Owner ٢٦٠: the card and the موجز are lifted out for every viewer now,
       // so a lock row is promised only for the ديباجة text left after them —
       // never for a preamble that was only the card and the law's title.
-      preambleLocked: officialMeta.officialMetaLocked && !!(readerExtras.preamble.trim() || regulationPreamble.trim()),
+      preambleLocked: officialMeta.officialMetaLocked && !!(readerExtras.preamble.trim() || regulationExtras.preamble.trim()),
       // N2.1: omitted (not empty) for a viewer the flag does not admit.
       ...(readerExtras.summary ? { summary: readerExtras.summary, summaryLabel: readerExtras.summaryLabel } : {}),
       ...(readerExtras.metadata_card ? { metadata_card: readerExtras.metadata_card } : {}),
@@ -411,7 +458,7 @@ export async function GET(
         ...(chapter.id ? { id: chapter.id } : {}),
         ...(chapter.level ? { level: chapter.level } : {}),
         ...(chapter.level === 2 ? { parentChapterId: chapter.parentChapterId ?? null } : {}),
-        articles: chapter.articles.map((a) => formatArticleWithPaywall(a, hasFullAccess, freeLimit, !officialMeta.officialMetaLocked)),
+        articles: chapter.articles.map((a) => formatArticleWithPaywall(a, hasFullAccess, freeLimit, !officialMeta.officialMetaLocked, unnumbered)),
       })),
       // A law whose official text is not published has no articles; the
       // parser keeps the library's notice in `description`. Shown without an
@@ -488,14 +535,19 @@ function formatArticleWithPaywall(
   // T28-22: false for a non-subscriber — amending decrees and their dates
   // are official metadata, withheld like the issuing decree.
   showOfficialMeta = true,
+  // Owner note ١١: the document has no numbered articles in its source
+  // (documentIsUnnumbered) — never label a row «المادة N».
+  unnumbered = false,
 ) {
   const isLocked = isArticleLocked(article, hasFullAccess, freeLimit);
 
   const result: Record<string, unknown> = {
     id: article.id,
     // Heading marks stripped; an instrument name stored in place of the
-    // number falls back to «المادة N» (owner test 2026-09-28, _article-label.ts).
-    num: articleDisplayLabel(article.number_text as string | null, article.number as number | null),
+    // number falls back to «المادة N» (owner test 2026-09-28, _article-label.ts)
+    // — except in an unnumbered document (owner note ١١), where a topical
+    // heading is shown as written and a repeated name as «(N)».
+    num: articleDisplayLabel(article.number_text as string | null, article.number as number | null, { unnumbered }),
     // Raw locator parts, so a citation can be built from what the source
     // actually says instead of by regex-stripping the display label.
     // numberText is the cleaned source locator, or null when the stored text

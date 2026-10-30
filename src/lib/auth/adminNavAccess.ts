@@ -74,6 +74,7 @@ export const ADMIN_PAGE_ACTION: Readonly<Record<string, StaffAction>> = Object.f
   "/dashboard/admin/content/articles": "content.delete",
   "/dashboard/admin/entitlements": "entitlements.grant",
   "/dashboard/admin/library-invitations": "entitlements.grant",
+  "/dashboard/admin/library-subscriptions": "entitlements.grant",
   "/dashboard/admin/broadcasts": "broadcasts.send",
   "/dashboard/admin/escrow": "subscriptions.write",
   "/dashboard/admin/payouts": "subscriptions.write",

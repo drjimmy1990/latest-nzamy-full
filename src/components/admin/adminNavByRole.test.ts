@@ -44,9 +44,9 @@ const SUPER_ONLY = [
 
 // ─── The console's own sidebar (AdminSidebar.tsx) ─────────────────────────────
 
-test("super_admin sees all 32 items of the console sidebar", () => {
+test("super_admin sees all 33 items of the console sidebar", () => {
   const all = hrefsOf(NAV);
-  assert.equal(all.length, 32, "the console sidebar has 32 items");
+  assert.equal(all.length, 33, "the console sidebar has 33 items (+ اشتراكات المكتبة, note ١٨ C03)");
   assert.equal(new Set(all).size, all.length, "no href is listed twice");
   assert.deepEqual(adminNavForRole("super_admin"), NAV);
 });
@@ -65,6 +65,7 @@ test("operations sees no settings, team or pricing items", () => {
     "/dashboard/admin/entitlements",
     "/dashboard/admin/broadcasts",
     "/dashboard/admin/library-invitations",
+    "/dashboard/admin/library-subscriptions",
   ]) {
     assert.equal(seen.includes(href), false, `${href} is a super_admin tool`);
   }

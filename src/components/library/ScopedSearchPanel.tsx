@@ -11,14 +11,22 @@
  * A locked hit (the global search's paywall, applied by the route) shows its
  * opening — or, for a fiqh block, only its place — and a subscription prompt;
  * it never has the copy or draft buttons, and the route sends it no text.
+ *
+ * Owner note ٠٦: the matches are coloured by the platform's one engine —
+ * Arabic and digit folding, one colour per term of the query, the legend bar
+ * (chips, counts, ↑ ↓) over the results — and a principle hit has
+ * «الانتقال للموضع», a link carrying ?q= into its collection reader (or, for
+ * this collection, handled in place by the reader's onOpenHit).
  */
 
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { Check, Copy, Lock, MagnifyingGlass, MapPin, Plus, X } from "@phosphor-icons/react";
+import { ArrowSquareOut, Check, Copy, Lock, MagnifyingGlass, MapPin, Plus, X } from "@phosphor-icons/react";
 import type { CartEntry } from "@/components/laws/DraftDrawer";
 import type { ArticleBody, BlockBody, PrincipleBody, ScopedHit } from "@/app/api/library/scoped-search/scopedSearch";
-import { highlightSegments, hitCartEntry, hitCopy, scopedPanelTitle, type ScopeInfo } from "@/lib/library/scopedHitActions";
+import { highlightSegments, hitCartEntry, hitCopy, scopedHitHref, scopedPanelTitle, type ScopeInfo } from "@/lib/library/scopedHitActions";
+import { paletteFor } from "@/lib/search/multiColorSearch";
+import { HighlightProvider, SearchLegendBar, useHighlight } from "@/components/search/MultiColorHighlight";
 import { cleanPrincipleText } from "@/app/precedents/[slug]/_principle-text";
 
 const PAGE_SIZE = 20;
@@ -56,16 +64,20 @@ async function copyRich(html: string, plain: string): Promise<void> {
   }
 }
 
-function Highlighted({ text, terms, isDark }: { text: string; terms: string[]; isDark: boolean }) {
+/** The text with the panel's query coloured (the nearest HighlightProvider: the panel's own). */
+function Highlighted({ text }: { text: string }) {
+  const ctx = useHighlight();
+  const terms = ctx?.parsed.terms ?? [];
+  const focus = ctx?.focus ?? null;
   return (
     <>
       {highlightSegments(text, terms).map((seg, i) =>
-        seg.hit ? (
-          <mark key={i} className={`rounded px-0.5 ${isDark ? "bg-[#C8A762]/30 text-white" : "bg-amber-200 text-gray-900"}`}>
+        seg.term === null || (focus !== null && focus !== seg.term) ? (
+          <span key={i}>{seg.text}</span>
+        ) : (
+          <mark key={i} data-hl-term={seg.term} className={`${paletteFor(terms[seg.term].color).mark} rounded px-0.5`}>
             {seg.text}
           </mark>
-        ) : (
-          <span key={i}>{seg.text}</span>
         ),
       )}
     </>
@@ -80,6 +92,7 @@ export default function ScopedSearchPanel({
   onAddToDraft,
   inDraft,
   onLocked,
+  onOpenHit,
 }: {
   /** "law:<slug>" | "collection:<id>" | "book:<id>" — the open document, from its own API data. */
   scope: string;
@@ -91,6 +104,11 @@ export default function ScopedSearchPanel({
   inDraft?: (id: string) => boolean;
   /** Opens the subscription prompt; without it a locked hit links to /laws/subscribe. */
   onLocked?: () => void;
+  /**
+   * «الانتقال للموضع» on a hit: return true when the reader handled it in
+   * place (a principle of the open collection); otherwise the link navigates.
+   */
+  onOpenHit?: (hit: ScopedHit, query: string) => boolean;
 }) {
   const inputId = useId();
   const statusId = useId();
@@ -182,7 +200,6 @@ export default function ScopedSearchPanel({
   const card = isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm";
   const muted = isDark ? "text-zinc-400" : "text-slate-500";
   const chip = "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A762]";
-  const terms = data?.terms ?? [];
 
   return (
     <section
@@ -269,6 +286,10 @@ export default function ScopedSearchPanel({
             : ""}
       </p>
 
+      <HighlightProvider query={data?.query ?? ""}>
+      {results.length > 0 && (
+        <SearchLegendBar partial={data ? results.length < data.count : false} className="mt-3" />
+      )}
       {results.length > 0 && (
         <ol className="mt-3 flex flex-col gap-4">
           {results.map((hit) => {
@@ -276,12 +297,28 @@ export default function ScopedSearchPanel({
             return (
               <li key={hit.id} className={`rounded-xl border p-4 ${isDark ? "border-white/[0.07] bg-white/[0.02]" : "border-slate-200 bg-slate-50/50"}`}>
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                  <div className="flex flex-wrap items-center gap-1.5">
                   <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold ${isDark ? "bg-[#0B3D2E]/50 text-emerald-200" : "bg-[#0B3D2E] text-white"}`}>
                     <MapPin size={12} weight="fill" aria-hidden="true" />
                     {hit.place}
                     {hit.kind === "block" && hit.meta.chapter ? ` — ${hit.meta.chapter}` : ""}
                     {hit.kind === "principle" && hit.meta.sessionDate ? ` — ${hit.meta.sessionDate}` : ""}
                   </span>
+                  {(() => {
+                    const href = data ? scopedHitHref(hit, data.query) : null;
+                    if (!href || !data) return null;
+                    return (
+                      <Link
+                        href={href}
+                        onClick={(e) => { if (onOpenHit?.(hit, data.query)) e.preventDefault(); }}
+                        className={`${chip} ${isDark ? "border-white/[0.1] text-zinc-300 hover:text-[#C8A762]" : "border-slate-200 text-slate-600 hover:text-[#0B3D2E] bg-white"}`}
+                      >
+                        <ArrowSquareOut size={11} aria-hidden="true" />
+                        الانتقال للموضع
+                      </Link>
+                    );
+                  })()}
+                  </div>
                   {hit.locked ? (
                     onLocked ? (
                       <button
@@ -326,12 +363,13 @@ export default function ScopedSearchPanel({
                     </div>
                   )}
                 </div>
-                <HitBody hit={hit} terms={terms} isDark={isDark} />
+                <HitBody hit={hit} isDark={isDark} />
               </li>
             );
           })}
         </ol>
       )}
+      </HighlightProvider>
 
       {data?.hasMore && (
         <div className="mt-4 flex justify-center">
@@ -349,14 +387,14 @@ export default function ScopedSearchPanel({
   );
 }
 
-function HitBody({ hit, terms, isDark }: { hit: ScopedHit; terms: string[]; isDark: boolean }) {
+function HitBody({ hit, isDark }: { hit: ScopedHit; isDark: boolean }) {
   const text = isDark ? "text-zinc-200" : "text-gray-800";
   const label = `text-[11px] font-black mb-1 ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`;
   const para = `text-sm leading-loose whitespace-pre-line select-text ${text}`;
 
   if (hit.locked || !hit.body) {
     return hit.snippet ? (
-      <p className={`text-sm leading-loose ${isDark ? "text-zinc-400" : "text-slate-600"}`}>{hit.snippet}</p>
+      <p className={`text-sm leading-loose ${isDark ? "text-zinc-400" : "text-slate-600"}`}><Highlighted text={hit.snippet} /></p>
     ) : (
       <p className={`text-xs ${isDark ? "text-zinc-500" : "text-slate-500"}`}>النص متاح للمشتركين.</p>
     );
@@ -367,11 +405,11 @@ function HitBody({ hit, terms, isDark }: { hit: ScopedHit; terms: string[]; isDa
     return (
       <div className="flex flex-col gap-3">
         {b.title && <p className={`text-xs font-bold ${text}`}>{b.title}</p>}
-        <p className={para}><Highlighted text={b.text} terms={terms} isDark={isDark} /></p>
+        <p className={para}><Highlighted text={b.text} /></p>
         {b.regulation && (
           <div className={`rounded-lg border-s-4 p-3 ${isDark ? "border-[#C8A762]/60 bg-white/[0.03]" : "border-amber-400 bg-amber-50/60"}`}>
             <p className={label}>نص اللائحة التنفيذية تحت المادة</p>
-            <p className={para}><Highlighted text={b.regulation} terms={terms} isDark={isDark} /></p>
+            <p className={para}><Highlighted text={b.regulation} /></p>
           </div>
         )}
       </div>
@@ -392,7 +430,7 @@ function HitBody({ hit, terms, isDark }: { hit: ScopedHit; terms: string[]; isDa
         {parts.filter(([, v]) => v && v.trim()).map(([title, v]) => (
           <div key={title}>
             <p className={label}>{title}</p>
-            <p className={para}><Highlighted text={cleanPrincipleText(v as string)} terms={terms} isDark={isDark} /></p>
+            <p className={para}><Highlighted text={cleanPrincipleText(v as string)} /></p>
           </div>
         ))}
       </div>
@@ -406,13 +444,13 @@ function HitBody({ hit, terms, isDark }: { hit: ScopedHit; terms: string[]; isDa
       {b.matn && (
         <div className={`rounded-lg p-3 ${isDark ? "bg-[#C8A762]/[0.08]" : "bg-amber-50"}`}>
           <p className={label}>📜 المتن</p>
-          <p className={para}><Highlighted text={b.matn} terms={terms} isDark={isDark} /></p>
+          <p className={para}><Highlighted text={b.matn} /></p>
         </div>
       )}
       {b.sharh && (
         <div>
           <p className={label}>📖 الشرح</p>
-          <p className={para}><Highlighted text={b.sharh} terms={terms} isDark={isDark} /></p>
+          <p className={para}><Highlighted text={b.sharh} /></p>
         </div>
       )}
       {b.hashiyah.length > 0 && (
@@ -420,7 +458,7 @@ function HitBody({ hit, terms, isDark }: { hit: ScopedHit; terms: string[]; isDa
           <p className={label}>📑 الحاشية</p>
           <ol className={`list-decimal ps-5 ${para}`}>
             {b.hashiyah.map((h, i) => (
-              <li key={i}><Highlighted text={h} terms={terms} isDark={isDark} /></li>
+              <li key={i}><Highlighted text={h} /></li>
             ))}
           </ol>
         </div>

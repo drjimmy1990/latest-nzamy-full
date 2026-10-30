@@ -108,6 +108,8 @@ test("isLibraryReadRateLimitedRoute: search (POST) and the two article-text GET 
   assert.equal(isLibraryReadRateLimitedRoute("GET", "/api/library/laws/%D9%86%D8%B8%D8%A7%D9%85"), true);
   // N2.6: the in-document search reads the server-only text as the service role too.
   assert.equal(isLibraryReadRateLimitedRoute("POST", "/api/library/scoped-search"), true);
+  // Note ١٢-٣: the «هل تقصد» suggestions are a service-role RPC open to guests.
+  assert.equal(isLibraryReadRateLimitedRoute("GET", "/api/library/search/suggest"), true);
 });
 
 test("isLibraryReadRateLimitedRoute: other methods and other library routes do not", () => {

@@ -55,6 +55,8 @@ export function isCouponValidateRoute(method: string, pathname: string): boolean
 export const LIBRARY_READ_RATE_LIMITED_ROUTES: ReadonlyArray<{ method: string; re: RegExp }> = [
   { method: "POST", re: /^\/api\/library\/search$/ }, // POST /api/library/search
   { method: "GET", re: /^\/api\/library\/autocomplete$/ }, // GET /api/library/autocomplete
+  // Note ١٢-٣: «هل تقصد» — an unauthenticated service-role RPC on every zero-result search.
+  { method: "GET", re: /^\/api\/library\/search\/suggest$/ }, // GET /api/library/search/suggest
   { method: "GET", re: /^\/api\/library\/laws\/[^/]+$/ }, // GET /api/library/laws/[slug]
   // N2.6: search inside one law / collection series / book series — the
   // same server-only text, read as the service role.

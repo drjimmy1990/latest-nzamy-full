@@ -26,6 +26,8 @@ import SidebarPanel from "./_sidebar";
 import FolderSelectionModal from "@/components/laws/FolderSelectionModal";
 import { ResearchWorkspace } from "@/components/ResearchWorkspace";
 import { apiSlug } from '@/utils/apiSlug';
+import { HighlightProvider, Hl, SearchLegendBar, useScrollToFirstMark } from "@/components/search/MultiColorHighlight";
+import { readerArrival, withoutSearchQuery } from "@/lib/search/readerArrival";
 
 function getSelectedTextWithin(containerId: string): string {
   if (typeof window === "undefined") return "";
@@ -62,6 +64,38 @@ function formatBold(text: string): string {
     .replace(/__([^_]+)__/g, "<strong>$1</strong>");
 }
 
+/**
+ * Owner note ٠٦: a page of the decree as React text — the source's «**…**» /
+ * «__…__» bold runs as <strong>, every run through <Hl> so the search is
+ * coloured (formatBold's markup, without dangerouslySetInnerHTML). A match
+ * that crosses a bold boundary is coloured on each side separately.
+ */
+function BoldHl({ text }: { text: string | null | undefined }) {
+  const src = String(text ?? "");
+  const parts: Array<{ text: string; bold: boolean }> = [];
+  const re = /\*\*([^*]+)\*\*|__([^_]+)__/g;
+  let last = 0;
+  for (let m = re.exec(src); m; m = re.exec(src)) {
+    if (m.index > last) parts.push({ text: src.slice(last, m.index), bold: false });
+    parts.push({ text: m[1] ?? m[2] ?? "", bold: true });
+    last = m.index + m[0].length;
+  }
+  if (last < src.length) parts.push({ text: src.slice(last), bold: false });
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.bold ? <strong key={i}><Hl text={part.text} /></strong> : <Hl key={i} text={part.text} />,
+      )}
+    </>
+  );
+}
+
+/** Lives inside the HighlightProvider: arriving with ?q=, scroll to the first match once. */
+function ScrollToFirstMark({ enabled, deps }: { enabled: boolean; deps: readonly unknown[] }) {
+  useScrollToFirstMark(enabled, deps);
+  return null;
+}
+
 const FOLDER_COLORS = [
   { id: "emerald", hex: "#10b981" },
   { id: "sky",     hex: "#0ea5e9" },
@@ -85,6 +119,25 @@ export default function OrderReaderPage() {
   const [showCommunity, setShowCommunity] = useState(false);
   const [isReadingMode, setIsReadingMode] = useState(false);
   const lawMeta = getLawMeta(slug);
+
+  // Owner note ٠٦: the search a link brought here (?q=) and the reader's own
+  // «ابحث داخل المستند» box. Both only COLOUR the text; no page is hidden.
+  const [urlQuery, setUrlQuery] = useState("");
+  const [localQuery, setLocalQuery] = useState("");
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setUrlQuery(readerArrival(window.location.search, "").query);
+    setLocalQuery("");
+  }, [slug]);
+  const highlightQuery = localQuery.trim() ? localQuery : urlQuery;
+  const clearHighlight = () => {
+    setLocalQuery("");
+    setUrlQuery("");
+    if (typeof window !== "undefined") {
+      const { pathname, search, hash } = window.location;
+      window.history.replaceState(window.history.state, "", withoutSearchQuery(`${pathname}${search}${hash}`));
+    }
+  };
   
   // Notes states
   const [noteText, setNoteText] = useState("");
@@ -368,6 +421,8 @@ export default function OrderReaderPage() {
       <Navbar />
 
       <div className="flex-1 max-w-[1200px] w-full mx-auto px-4 pt-32 pb-24">
+        <HighlightProvider query={highlightQuery}>
+        <ScrollToFirstMark enabled={Boolean(urlQuery) && !localQuery.trim()} deps={[order.id]} />
         
         <div className="h-6" />
 
@@ -380,7 +435,7 @@ export default function OrderReaderPage() {
           </div>
           <div className="flex flex-wrap items-start gap-3 justify-between">
             <div>
-              <h1 className={`text-xl font-black mb-0.5 ${isDark ? "text-white" : "text-zinc-900"}`}>{order.title}</h1>
+              <h1 className={`text-xl font-black mb-0.5 ${isDark ? "text-white" : "text-zinc-900"}`}><Hl text={order.title} /></h1>
               <p className={`text-[12px] ${muted}`}>
                 {order.ref} • {order.date}
               </p>
@@ -527,6 +582,23 @@ export default function OrderReaderPage() {
 
           {/* CENTER COLUMN: Document Content Reading Area */}
           <div className={`nzamy-reader-container col-span-12 min-w-0 space-y-6 ${isReadingMode ? "max-w-3xl mx-auto w-full" : "lg:col-span-6"}`}>
+
+            {/* Owner note ٠٦: search inside this document — colours every
+                match (one colour per term) without hiding any page. */}
+            <div className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition print:hidden ${isDark ? "bg-zinc-800/60 border-white/[0.06]" : "bg-white border-slate-200 shadow-sm"}`}>
+              <MagnifyingGlass size={16} className={muted} />
+              <input
+                type="search"
+                value={localQuery}
+                onChange={e => setLocalQuery(e.target.value)}
+                maxLength={300}
+                placeholder={isRTL ? 'ابحث داخل هذا المستند… مثال: "عزل الوكيل" + 1436' : "Search inside this document…"}
+                aria-label={isRTL ? "البحث داخل هذا المستند" : "Search inside this document"}
+                dir={isRTL ? "rtl" : "ltr"}
+                className="flex-1 bg-transparent text-xs outline-none"
+              />
+            </div>
+            <SearchLegendBar onClear={clearHighlight} className="sticky top-32 z-30 shadow-sm print:hidden" />
             
             {/* Header Card */}
             <div className={`p-6 md:p-8 rounded-[2rem] border shadow-sm ${
@@ -542,7 +614,11 @@ export default function OrderReaderPage() {
                 isDark ? "bg-white/[0.02]" : "bg-slate-50"
               } border border-dashed ${isDark ? "border-white/10" : "border-gray-200"} whitespace-pre-wrap`}>
                 <span className="font-bold text-[#C8A762]">{isRTL ? "موجز المستند:\n" : "Document Summary:\n"}</span>
+                {highlightQuery.trim() ? (
+                  <span className={isDark ? "text-gray-300" : "text-gray-600"}><BoldHl text={order.summary || order.summary_brief || ""} /></span>
+                ) : (
                 <span className={isDark ? "text-gray-300" : "text-gray-600"} dangerouslySetInnerHTML={{ __html: formatBold(order.summary || order.summary_brief || "") }}></span>
+                )}
               </div>
               )}
 
@@ -577,7 +653,7 @@ export default function OrderReaderPage() {
                   <div className={`p-5 rounded-2xl border text-xs leading-loose whitespace-pre-wrap font-serif ${
                     isDark ? "bg-[#0c0f12]/50 border-white/5 text-zinc-300" : "bg-slate-50/50 border-slate-100 text-gray-700"
                   }`}>
-                    {order.preamble}
+                    <Hl text={order.preamble} />
                   </div>
                 </div>
               )}
@@ -651,7 +727,7 @@ export default function OrderReaderPage() {
                             </button>
                           </div>
                         </div>
-                        <p className={`${fontSizeClass} whitespace-pre-wrap font-sans`} dangerouslySetInnerHTML={{ __html: formatBold(art) }}></p>
+                        <p className={`${fontSizeClass} whitespace-pre-wrap font-sans`}><BoldHl text={art} /></p>
                       </div>
                     );
                   })
@@ -659,7 +735,7 @@ export default function OrderReaderPage() {
                   <div className={`p-5 rounded-2xl border ${fontSizeClass} leading-relaxed ${
                     isDark ? "bg-[#0c0f12]/30 border-white/5 text-zinc-300" : "bg-white border-slate-100 text-gray-700 shadow-sm"
                   }`}>
-                    {order.summary}
+                    <Hl text={order.summary} />
                   </div>
                 )}
               </div>
@@ -741,6 +817,7 @@ export default function OrderReaderPage() {
           )}
         </div>
 
+        </HighlightProvider>
       </div>
 
       {/* ── Folder Selection Modal ── */}

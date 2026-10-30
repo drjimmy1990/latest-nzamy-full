@@ -17,8 +17,11 @@
  * v_laws_enactment_status is closed to it, so the routes read them with the
  * service role and mask them here. The rest of the catalogue stays public.
  *
- * Pure, no imports: `node --test` loads it (_official-meta.test.ts).
+ * Pure: `node --test` loads it (_official-meta.test.ts). Its one import is
+ * the pure lawCardFields.ts (the Arabic names of official sources).
  */
+
+import { officialSourceName } from "../../../../../lib/library/lawCardFields.ts";
 
 /**
  * Cache-Control for every response whose body depends on the viewer's tier.
@@ -109,14 +112,45 @@ export function lawOfficialMeta(law: LawOfficialColumns, isSubscriber: boolean):
 }
 
 /**
- * Owner ٢٩٧ (2026-10-26): «الجهة المصدرة» carries a clickable official link
- * that opens the law's page at its official source, when there is one. The
- * link is public — every viewer, guests included — unlike T28-22's metadata
- * above: it is the same official_source_url (http/https only), sent on its
- * own field so `officialSourceUrl` and `officialMetaLocked` keep their meaning.
+ * «الجهة المصدرة»'s clickable official link (owner ٢٩٧, 2026-10-26) — for a
+ * SUBSCRIBER only since owner ٣١٨ (amended 28-Oct): «يبقى للمشتركين: تاريخ
+ * الإصدار + أرقام المراسيم + الروابط الرسمية». This REVERSES ٢٩٧'s public
+ * link on purpose; a non-subscriber gets ''. The link is official_source_url,
+ * else boe_source_url (owner note ٠١ item ٣: most هيئة الخبراء laws keep
+ * their link in boe_source_url and left official_source_url empty), http(s)
+ * only. Keyed on the viewer's full library access (hasFullLibraryAccess),
+ * never the law whitelist — like lawOfficialMeta.
  */
-export function lawOfficialLink(law: Pick<LawOfficialColumns, "official_source_url">): string {
-  return httpUrl(law.official_source_url);
+export function lawOfficialLink(
+  law: Pick<LawOfficialColumns, "official_source_url" | "boe_source_url">,
+  isSubscriber: boolean,
+): string {
+  if (!isSubscriber) return "";
+  return httpUrl(law.official_source_url) || httpUrl(law.boe_source_url);
+}
+
+/** One official source: an Arabic name (never a raw host) and its http(s) link. */
+export interface OfficialLinkOut {
+  label: string;
+  url: string;
+}
+
+/**
+ * Every official link the law row holds — boe_source_url, official_source_url,
+ * gazette_url — once each, with its Arabic name; [] for a non-subscriber
+ * (٣١٨). The card's own link rows are added by the sidebar
+ * (collectOfficialLinks). The jsonb `official_links` of the owner's files is
+ * not a column (the seeder drops it): data-dependent.
+ */
+export function lawOfficialLinks(law: LawOfficialColumns, isSubscriber: boolean): OfficialLinkOut[] {
+  if (!isSubscriber) return [];
+  const out: OfficialLinkOut[] = [];
+  for (const raw of [law.boe_source_url, law.official_source_url, law.gazette_url]) {
+    const url = httpUrl(raw);
+    if (!url || out.some((o) => o.url === url)) continue;
+    out.push({ label: officialSourceName(url), url });
+  }
+  return out;
 }
 
 /**

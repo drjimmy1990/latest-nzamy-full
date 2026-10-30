@@ -153,6 +153,21 @@ function libraryArm(source: string): string {
   return source.slice(at);
 }
 
+test("LIVE-F05: an ineligible requester (an individual) is refused BEFORE the claim and the grant", () => {
+  const arm = libraryArm(routeSource);
+  const typeAt = arm.indexOf('.select("user_type")');
+  const ruleAt = arm.indexOf("libraryPurchaseEligibility(");
+  const refuseAt = arm.indexOf('code: "library_not_eligible"');
+  const claimAt = arm.indexOf('.eq("status", "pending")');
+  const grantAt = arm.indexOf("await grantLibraryAccess({");
+  assert.ok(typeAt > -1 && ruleAt > typeAt && refuseAt > ruleAt, "read the account type, apply the rule, refuse");
+  assert.ok(refuseAt < claimAt && claimAt < grantAt, "the refusal comes before the request is claimed or granted");
+  assert.ok(arm.slice(refuseAt, refuseAt + 120).includes("status: 409"));
+  // a failed read of the account type is refused too (fail closed)
+  const readFailAt = arm.indexOf("if (requesterError)");
+  assert.ok(readFailAt > typeAt && readFailAt < ruleAt);
+});
+
 test("a library request is routed to the library arm BEFORE the plan grant", () => {
   const code = codeOnly(routeSource);
   const branchAt = code.indexOf('if (kind === "library") {');

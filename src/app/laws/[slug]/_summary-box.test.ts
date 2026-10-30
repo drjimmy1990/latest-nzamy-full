@@ -39,13 +39,16 @@ test("the sidebar card's badge is never an invented «نظام»", () => {
 });
 
 test("under the file's card a subscriber still gets the DB official link / gazette when the card has no row for them", () => {
-  assert.match(SIDEBAR, /const dbOfficialRows = renderDbOfficialRows\(\[\.\.\.law\.metadata_card\.main, \.\.\.law\.metadata_card\.more\]\);/);
+  assert.match(SIDEBAR, /const cardRows = \[\.\.\.law\.metadata_card\.main, \.\.\.law\.metadata_card\.more\];/);
+  assert.match(SIDEBAR, /const dbOfficialRows = renderDbOfficialRows\(cardRows, topLinks\);/);
   assert.match(SIDEBAR, /\{dbOfficialRows\}/);
   assert.match(SIDEBAR, /if \(metaLocked \|\| !officialMeta\) return null;/);
   // The rule itself is dbOfficialRowsUnderCard (_official-meta.test.ts), not a loose key match:
   // «الجهة المصدرة» contains «المصدر» and hid the link on nearly every card.
   // (owner ٢٩٧: not repeated when the issuer row already shows that link).
-  assert.match(SIDEBAR, /const \{ sourceUrl, gazette \} = dbOfficialRowsUnderCard\(rows, officialMeta, officialLink\);/);
+  assert.match(SIDEBAR, /const found = dbOfficialRowsUnderCard\(rows, officialMeta, officialLink\);/);
+  // Note ٠١ item ٣: nor repeated when «المصادر الرسمية» at the top already lists it.
+  assert.match(SIDEBAR, /const sourceUrl = shownLinks\.some\(\(l\) => l\.url === found\.sourceUrl\) \? "" : found\.sourceUrl;/);
   assert.doesNotMatch(SIDEBAR, /f\.key\.includes\("المصدر"\)/);
 });
 

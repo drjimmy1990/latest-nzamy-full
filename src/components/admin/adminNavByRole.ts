@@ -73,6 +73,7 @@ export const NAV = [
       { href: "/dashboard/admin/security",  icon: ShieldCheck,   label: "الأمان" },
       { href: "/dashboard/admin/system",    icon: Database,      label: "إعدادات النظام" },
       { href: "/dashboard/admin/library-invitations", icon: Ticket, label: "أكواد دعوة المكتبة" },
+      { href: "/dashboard/admin/library-subscriptions", icon: BookOpen, label: "اشتراكات المكتبة" },
     ],
   },
 ];

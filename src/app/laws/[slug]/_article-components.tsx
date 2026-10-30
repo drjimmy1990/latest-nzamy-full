@@ -16,6 +16,12 @@ import { splitNumberedItem } from "./_numbered-item";
 import { READER_SCROLL_MARGIN_TOP } from "./_reader-anchors";
 import { visibleAmendments } from "./_previous-versions";
 import { OfficialMetaLockedRow } from "../components/OfficialMetaLockedRow";
+import { Hl, useHighlight, useTextHasHighlight } from "@/components/search/MultiColorHighlight";
+import type { HighlightTerm } from "@/lib/search/multiColorSearch";
+import { highlightSafeHtml, textHasHighlight } from "./_highlight-html";
+import { PreviousVersionText } from "./_word-diff";
+
+const NO_TERMS: readonly HighlightTerm[] = [];
 
 /**
  * «معدّلة» badge with amber styling and pulse indicator (Rule 5).
@@ -233,7 +239,7 @@ function parseMarkdownContent(text: string): ParseBlock[] {
   return blocks;
 }
 
-function renderMarkdownTableToHtml(tableMd: string): string {
+function renderMarkdownTableToHtml(tableMd: string, cellHtml: (md: string) => string = markdownBoldToSafeHtml): string {
   const lines = tableMd.split("\n");
   if (lines.length < 2) return "";
   
@@ -248,7 +254,7 @@ function renderMarkdownTableToHtml(tableMd: string): string {
   let html = "<thead class='bg-slate-50 dark:bg-zinc-900/60'>";
   html += "<tr>";
   headers.forEach(h => {
-    html += `<th class='px-4 py-3 text-right font-black tracking-wider text-[11px] opacity-90'>${markdownBoldToSafeHtml(h)}</th>`;
+    html += `<th class='px-4 py-3 text-right font-black tracking-wider text-[11px] opacity-90'>${cellHtml(h)}</th>`;
   });
   html += "</tr></thead>";
 
@@ -256,7 +262,7 @@ function renderMarkdownTableToHtml(tableMd: string): string {
   rows.forEach((row) => {
     html += `<tr class='hover:bg-slate-50/50 dark:hover:bg-zinc-900/30 transition-colors'>`;
     row.forEach(cell => {
-      html += `<td class='px-4 py-2.5 leading-relaxed whitespace-pre-wrap break-words'>${markdownBoldToSafeHtml(cell)}</td>`;
+      html += `<td class='px-4 py-2.5 leading-relaxed whitespace-pre-wrap break-words'>${cellHtml(cell)}</td>`;
     });
     html += "</tr>";
   });
@@ -265,12 +271,24 @@ function renderMarkdownTableToHtml(tableMd: string): string {
   return html;
 }
 
-export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]" }: { text: string; isDark: boolean; isRTL?: boolean; fontClass?: string }) {
+/**
+ * `highlight` (default on): inside a <HighlightProvider> the search terms are
+ * coloured in the rendered text (owner note ٠٦, _highlight-html.ts). Off for
+ * the blurred two-line preview of a locked article — a mark there would draw
+ * the legend's ↑ ↓ and the arrival scroll onto text the reader cannot read.
+ * Outside a provider (موجز box, notices) nothing changes.
+ */
+export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]", highlight = true }: { text: string; isDark: boolean; isRTL?: boolean; fontClass?: string; highlight?: boolean }) {
   const muted = isDark ? "text-zinc-300" : "text-zinc-700";
   const listIndent = isRTL ? "pr-4" : "pl-4";
-  
+
   const blocks = useMemo(() => parseMarkdownContent(text), [text]);
-  
+  const hlCtx = useHighlight();
+  const hlTerms = highlight && hlCtx ? hlCtx.parsed.terms : NO_TERMS;
+  const hlFocus = hlCtx?.focus ?? null;
+  // Every markdown → sanitised-HTML conversion below goes through this one.
+  const safeHtml = (md: string) => highlightSafeHtml(markdownBoldToSafeHtml(md), hlTerms, hlFocus);
+
   return (
     <div className="space-y-1.5 w-full">
       {blocks.map((block, index) => {
@@ -280,15 +298,17 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]" }: { 
               key={index}
               summary={block.summary}
               isDark={isDark}
+              // A match inside the folded pre-amendment text opens it.
+              defaultOpen={textHasHighlight(block.content, hlTerms)}
             >
-              <MD text={block.content || ""} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
+              <MD text={block.content || ""} isDark={isDark} isRTL={isRTL} fontClass={fontClass} highlight={highlight} />
             </AmendedToggleDetails>
           );
         }
 
         // ─── Table
         if (block.type === ("table" as any)) {
-          const tableHtml = renderMarkdownTableToHtml(block.content || "");
+          const tableHtml = renderMarkdownTableToHtml(block.content || "", safeHtml);
           return (
             <div key={index} className="overflow-x-auto my-4 rounded-xl border border-slate-200/60 dark:border-zinc-800 shadow-sm max-w-full">
               <table 
@@ -309,7 +329,7 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]" }: { 
           const cls = headingStyles[block.level ?? 3] ?? "text-[13px] font-bold";
           // «المادة (5/3): `[معدّلة]`» → the heading without the token + a badge.
           const marker = splitAmendedMarker(block.text || "");
-          const html = markdownBoldToSafeHtml(marker.text);
+          const html = safeHtml(marker.text);
           if (marker.amended) {
             return (
               <p key={index} className={`${cls} ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>
@@ -339,12 +359,12 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]" }: { 
             return (
               <p key={index}
                  className={`${fontClass} leading-relaxed ${listIndent} border-r-2 pr-3 border-[#C8A762]/40 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-                <span dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(labelMarker.text) }} />
+                <span dangerouslySetInnerHTML={{ __html: safeHtml(labelMarker.text) }} />
                 <AmendedBadge isDark={isDark} />
               </p>
             );
           }
-          const html = markdownBoldToSafeHtml(block.text);
+          const html = safeHtml(block.text);
           return (
             <p key={index}
                className={`${fontClass} leading-relaxed ${listIndent} border-r-2 pr-3 border-[#C8A762]/40 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}
@@ -354,7 +374,7 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]" }: { 
 
         // ─── Unordered list item
         if (block.type === "list-item") {
-          const html = markdownBoldToSafeHtml(block.text || "");
+          const html = safeHtml(block.text || "");
           return (
             <div key={index} className={`flex gap-2 ${listIndent}`}>
               <span className={`mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${isDark ? "bg-zinc-500" : "bg-slate-400"}`} />
@@ -365,10 +385,10 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]" }: { 
 
         // ─── Ordered list item
         if (block.type === "num-list-item") {
-          const html = markdownBoldToSafeHtml(block.text || "");
+          const html = safeHtml(block.text || "");
           return (
             <div key={index} className={`flex gap-2 ${listIndent}`}>
-              <span className={`${fontClass} leading-relaxed font-bold tabular-nums shrink-0 ${muted}`}>{block.number}.</span>
+              <span className={`${fontClass} leading-relaxed font-bold tabular-nums shrink-0 ${muted}`}>{highlight ? <Hl text={block.number} /> : block.number}.</span>
               <p className={`${fontClass} leading-relaxed ${muted}`} dangerouslySetInnerHTML={{ __html: html }} />
             </div>
           );
@@ -380,12 +400,12 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]" }: { 
         if (lineMarker.amended) {
           return (
             <p key={index} className={`${fontClass} leading-relaxed ${muted}`}>
-              <span dangerouslySetInnerHTML={{ __html: markdownBoldToSafeHtml(lineMarker.text) }} />
+              <span dangerouslySetInnerHTML={{ __html: safeHtml(lineMarker.text) }} />
               <AmendedBadge isDark={isDark} />
             </p>
           );
         }
-        const html = markdownBoldToSafeHtml(line);
+        const html = safeHtml(line);
 
         if (line.startsWith("أ-") || line.startsWith("ب-") || line.startsWith("ج-") ||
             line.startsWith("د-") || line.startsWith("هـ-")) {
@@ -645,7 +665,8 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
   /** The law API's `paywall.hasFullAccess`: full library access or a whitelisted law. */
   viewerHasFullAccess: boolean;
 }) {
-  const [showRepealed,   setShowRepealed]   = useState(false);
+  // null = the reader has not toggled it: closed, or open when it holds a search match (below).
+  const [repealedChoice, setRepealedChoice] = useState<boolean | null>(null);
   const [copied, setCopied]                 = useState(false);
   const [copiedReg, setCopiedReg]           = useState(false);
   const isRepealed  = isRepealedArticleStatus(article.status);
@@ -663,6 +684,17 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
    * that shape, and only 9 carry neither.
    */
   const repealedText = article.originalText || article.text || "";
+  // Owner note ٠٦: a search match inside a folded part opens it, so the colour
+  // (and the legend's ↑ ↓) can reach it. Locked text is never searched here.
+  const repealedHasHit = useTextHasHighlight(isRepealed && !isLocked ? repealedText : "");
+  const showRepealed = repealedChoice ?? repealedHasHit;
+  const setShowRepealed = (open: boolean) => setRepealedChoice(open);
+  const historyHay = useMemo(
+    () => visibleAmendments(article.amendments).map((v) => `${v.source}\n${v.date}\n${v.summary}\n${v.fullText}`).join("\n"),
+    [article.amendments],
+  );
+  const historyHasHit = useTextHasHighlight(historyHay);
+  const historicRegHasHit = useTextHasHighlight(article.historicRegulationText);
   const inCart      = !!entry && entry.isArticleAdded;
   const regInCart   = !!entry && entry.isExecRegAdded;
 
@@ -781,7 +813,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
            onClick={e => e.stopPropagation()}>
 
         <span className={`text-[11px] font-black px-2.5 py-1 rounded-lg flex-shrink-0 ${mainBadgeStyle}`}>
-          {mainBadgeText}
+          <Hl text={mainBadgeText} />
         </span>
         <p className={`flex-1 text-[12px] font-bold truncate ${
           isRepealed
@@ -790,7 +822,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
               ? isDark ? "text-amber-200" : "text-amber-800"
               : isDark ? "text-zinc-200" : "text-zinc-700"
         }`}>
-          {article.title}
+          <Hl text={article.title} />
         </p>
 
         {viewMode === "regulation" && (
@@ -856,7 +888,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
           isLocked ? (
             <div className="relative">
               <div className="blur-[3px] opacity-60 pointer-events-none select-none">
-                <MD text={mergedReg.text.split("\n").slice(0, 2).join("\n") + "\n..."} isDark={isDark} isRTL={isRTL} />
+                <MD text={mergedReg.text.split("\n").slice(0, 2).join("\n") + "\n..."} isDark={isDark} isRTL={isRTL} highlight={false} />
               </div>
               <div className="absolute inset-0 flex items-center justify-center">
                 <button onClick={showPaywall} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0B3D2E] text-white text-[11px] font-bold shadow">
@@ -905,7 +937,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                           ) : isLocked ? (
                             <div className="relative">
                               <div className="blur-[3px] opacity-60 pointer-events-none select-none">
-                                <MD text={repealedText.split("\n").slice(0, 2).join("\n") + "\n..."} isDark={isDark} isRTL={isRTL} />
+                                <MD text={repealedText.split("\n").slice(0, 2).join("\n") + "\n..."} isDark={isDark} isRTL={isRTL} highlight={false} />
                               </div>
                               <div className="absolute inset-0 flex items-center justify-center">
                                 <button onClick={showPaywall} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0B3D2E] text-white text-[11px] font-bold shadow">
@@ -925,7 +957,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
               ) : isLocked ? (
                 <div className="relative">
                   <div className="blur-[3px] opacity-60 pointer-events-none select-none">
-                    <MD text={article.text.split("\n").slice(0, 2).join("\n") + "\n..."} isDark={isDark} isRTL={isRTL} />
+                    <MD text={article.text.split("\n").slice(0, 2).join("\n") + "\n..."} isDark={isDark} isRTL={isRTL} highlight={false} />
                   </div>
                   <div className="absolute inset-0 flex items-center justify-center">
                     <button onClick={showPaywall} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0B3D2E] text-white text-[11px] font-bold shadow">
@@ -950,6 +982,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
             */}
             {viewMode !== "regulation" && isAmended && previousVersions.length > 0 && (
               <details
+                open={historyHasHit}
                 className={`my-3 rounded-xl border transition-all ${
                   isDark
                     ? "border-amber-900/35 bg-amber-950/10 text-amber-200"
@@ -969,14 +1002,23 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                           <span className={`text-[10px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>🔒 أداة التعديل وتاريخه متاحان للمشتركين</span>
                         ) : (
                           <>
-                            {amend.source && <span className={`text-[10px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>{amend.source}</span>}
-                            {amend.date && <span className={`text-[10px] ${isDark ? "text-zinc-400" : "text-slate-400"}`}>{amend.date}</span>}
+                            {amend.source && <span className={`text-[10px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}><Hl text={amend.source} /></span>}
+                            {amend.date && <span className={`text-[10px] ${isDark ? "text-zinc-400" : "text-slate-400"}`}><Hl text={amend.date} /></span>}
                           </>
                         )}
                       </div>
                       )}
-                      {amend.summary && <p className={`text-[11px] mb-2 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{amend.summary}</p>}
-                      {amend.fullText && <p className={`text-[12px] leading-relaxed ${amend.summary || amend.sourceLocked || amend.source || amend.date ? "pt-2 border-t" : ""} ${isDark ? "border-amber-700/15 text-zinc-400" : "border-amber-200 text-zinc-600"}`}>{amend.fullText}</p>}
+                      {amend.summary && <p className={`text-[11px] mb-2 ${isDark ? "text-zinc-500" : "text-slate-500"}`}><Hl text={amend.summary} /></p>}
+                      {/* Owner note ١٢ §٣: «إظهار الفروق الملونة» — this version against the current text (_word-diff.tsx). */}
+                      {amend.fullText && (
+                        <PreviousVersionText
+                          oldText={amend.fullText}
+                          currentText={article.text}
+                          isDark={isDark}
+                          isRTL={isRTL}
+                          className={`${amend.summary || amend.sourceLocked || amend.source || amend.date ? "pt-2 border-t" : ""} ${isDark ? "border-amber-700/15" : "border-amber-200"}`}
+                        />
+                      )}
                     </div>
                   ))}
                 </div>
@@ -989,7 +1031,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                 <div className="flex items-center gap-1.5 pb-2 border-b border-dashed border-zinc-200/20">
                   <FileText size={14} className={isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"} weight="duotone" />
                   <span className={`text-[12px] font-black ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
-                    {mergedReg.ref}
+                    <Hl text={mergedReg.ref} />
                   </span>
                   {!isReadingMode && (
                     <div className="flex gap-1.5 ms-auto print:hidden">
@@ -1028,7 +1070,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
               API only emits it to readers who are not paywalled.
             */}
             {viewMode !== "regulation" && article.historicRegulationText && (
-              <details className={`my-3 rounded-xl border ${isDark ? "border-white/[0.07] bg-white/[0.02] text-zinc-300" : "border-slate-200 bg-slate-50/70 text-slate-700"}`}>
+              <details open={historicRegHasHit} className={`my-3 rounded-xl border ${isDark ? "border-white/[0.07] bg-white/[0.02] text-zinc-300" : "border-slate-200 bg-slate-50/70 text-slate-700"}`}>
                 <summary className="px-4 py-2.5 font-black cursor-pointer hover:underline text-[12px] flex items-center gap-1.5 select-none">
                   <ClockCounterClockwise size={12} className={isDark ? "text-zinc-400" : "text-slate-500"} />
                   <span>{isRTL ? "نص لائحي تاريخي" : "Historic regulation text"}</span>

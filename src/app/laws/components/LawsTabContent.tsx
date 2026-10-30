@@ -25,6 +25,13 @@ import { OfficialMetaLockedRow } from "./OfficialMetaLockedRow";
 import { ResultsSkeleton } from "./ResultsSkeleton";
 import { ClampedSummary } from "./ClampedSummary";
 import { lawCardSummaryText } from "./summaryClamp";
+import { lawCardDates, mergedFileBadge } from "../catalogueCardLabels";
+import { withSearchQuery } from "@/lib/search/multiColorSearch";
+import { Hl } from "@/components/search/MultiColorHighlight";
+import { deepHitHref, resultHref, groupFeqhSearchCards, groupPrincipleSearchCards, type FeqhHitLike, type PrincipleHitLike } from "../searchHitGroups";
+import { SearchHitGroupCard } from "./SearchHitGroupCard";
+import { SaveToFolderButton } from "./SaveToFolderButton";
+import { bookSaveDoc, collectionSaveDoc, lawSaveDoc, orderSaveDoc, type SaveToFolderDoc } from "../saveToFolder";
 import {
   PrincipleCard,
   PrincipleRow,
@@ -202,6 +209,8 @@ interface LawsTabContentProps {
   resultsPending?: boolean;
   // فشل طلب البحث: رسالة الخطأ تُعرض فوق؛ لا «لا توجد نتائج» تحتها
   searchFailed?: boolean;
+  // ملاحظة المالك ٠٤: زر «حفظ في مجلد» على كل بطاقة نتيجة (يفتح نافذة المجلدات)
+  onSaveToFolder?: (doc: SaveToFolderDoc) => void;
 }
 
 export function LawsTabContent({
@@ -235,8 +244,29 @@ export function LawsTabContent({
   officialMetaLocked = false,
   resultsPending = false,
   searchFailed = false,
+  onSaveToFolder,
 }: LawsTabContentProps) {
   const router = useRouter();
+  // Owner note ٠٦ (المسار الثاني): every result link carries the search as
+  // ?q= (withSearchQuery keeps a #hash) so the reader can highlight it.
+  const searchQ = q && q.trim().length >= 2 ? q.trim() : "";
+
+  // Owner note ١٢-١ («الكل» view): a principle hit sits under its collection's
+  // card and a fiqh passage under its book's card, as highlighted rows that
+  // open the matching place. A collection found by its title and by its
+  // principles is the one group card, not also a collection card.
+  const principlesAreHits = filteredPrinciples.some((p) => p?._isSearchResult === true);
+  const principleGroups = principlesAreHits
+    ? groupPrincipleSearchCards(filteredPrinciples as PrincipleHitLike[], filteredCollections, searchQ).filter((g) => g.total > 0)
+    : [];
+  const groupedCollectionIds = new Set(principleGroups.map((g) => g.collectionId).filter(Boolean));
+  const previewCollections = groupedCollectionIds.size > 0
+    ? filteredCollections.filter((col) => !groupedCollectionIds.has(String(col.slug ?? col.id)))
+    : filteredCollections;
+  const feqhAreHits = filteredFeqhBooks.some((b) => b?._isSearchResult === true);
+  const feqhGroups = feqhAreHits ? groupFeqhSearchCards(filteredFeqhBooks as FeqhHitLike[], searchQ) : [];
+  // A card's «حفظ في مجلد» handler, or undefined (no button) without a doc.
+  const saveHandler = (doc: SaveToFolderDoc | null) => (doc && onSaveToFolder ? () => onSaveToFolder(doc) : undefined);
 
   if (resultsPending) {
     return (
@@ -304,8 +334,10 @@ export function LawsTabContent({
                 const keywords: string[] = Array.isArray(sys.keywords)
                   ? sys.keywords.filter((k: unknown): k is string => typeof k === "string" && k.trim().length > 0)
                   : [];
+                // Owner note ٠٤: «حفظ في مجلد» (a <button>: the card's click handler skips it).
+                const saveButton = <SaveToFolderButton doc={lawSaveDoc(sys)} onSave={onSaveToFolder} isDark={isDark} />;
                 const openLaw = () =>
-                  router.push(`/laws/${sys.slug}${getDocAnchorPrefix(docSubType) ? `?fromType=${encodeURIComponent(docSubType)}` : ""}`);
+                  router.push(withSearchQuery(`/laws/${sys.slug}${getDocAnchorPrefix(docSubType) ? `?fromType=${encodeURIComponent(docSubType)}` : ""}`, searchQ));
                 const freePreviewHint = (
                   <span className={`px-2 py-0.5 text-[9px] font-bold rounded-lg flex items-center gap-1 border ${
                     isDark ? "bg-[#C8A762]/10 border-[#C8A762]/25 text-[#C8A762]" : "bg-amber-50 border-amber-200 text-amber-800"
@@ -328,6 +360,37 @@ export function LawsTabContent({
                     ⛔ ملغى وغير سارٍ
                   </span>
                 );
+                // Owner note ١٢-٤: the merged file is said once, prominently,
+                // in place of the faint «لائحة تنفيذية» chip; a repealed law
+                // keeps its red frame and badge, so the merged badge goes muted.
+                const mergedLabel = mergedFileBadge(sys.hasMerged === true || (sys.sub_types ?? []).includes("لائحة تنفيذية"), null, sys.title);
+                const mergedBadge = mergedLabel ? (
+                  <span
+                    role="link"
+                    tabIndex={0}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      // The law page gates what is locked (decision ١٦٠).
+                      router.push(withSearchQuery(`/laws/${sys.slug}?viewMode=regulation`, searchQ));
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") router.push(withSearchQuery(`/laws/${sys.slug}?viewMode=regulation`, searchQ));
+                    }}
+                    title={isRTL ? "يضم الملف النظام ولائحته في مكان واحد — افتح اللائحة" : "Merged file: the law and its regulation"}
+                    className={`clickable-badge cursor-pointer inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-black rounded-lg border transition-colors ${
+                      isRepealedLaw
+                        ? isDark ? "bg-white/5 border-white/10 text-gray-300" : "bg-white border-gray-200 text-gray-600"
+                        : isDark ? "bg-sky-950/40 border-sky-400/40 text-sky-300 hover:bg-sky-900/40" : "bg-sky-50 border-sky-300 text-sky-800 hover:bg-sky-100"
+                    }`}
+                  >
+                    {mergedLabel}
+                  </span>
+                ) : null;
+                // Owner note ١٢-٦ / answers ٣١٧–٣١٨: the one public date
+                // («آخر تحديث تشريعي», the date alone, everyone); «صدر» only
+                // for a viewer the official data is open to.
+                const cardDates = lawCardDates(sys.latestUpdate, sys.lastUpdated, officialMetaLocked);
                 const repealedNote = (
                   <p className={`text-[10.5px] font-semibold mb-2 ${isDark ? "text-red-300/90" : "text-red-700"}`}>
                     يُعرض للأرشيف وللوقائع السابقة لإلغائه
@@ -345,11 +408,20 @@ export function LawsTabContent({
                     <ul className="space-y-1.5">
                       {matchedArticles.map((a) => {
                         const articleNotice = a.status === "status_undeclared" ? articleStatusNotice(a.status, isRTL) : null;
+                        // Owner note ١٢-أ: the article row opens the law ON that article
+                        // (?target=<id>#<id>) with the search highlighted (?q=).
+                        const articleHref = deepHitHref(`/laws/${sys.slug}`, a.id, searchQ);
                         return (
                           <li key={a.id} className="text-[11px] leading-relaxed">
-                            <span className={`font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
+                            {/* Decision ١٦٠: a locked law still opens; its page gates the text. */}
+                            <Link
+                              href={articleHref}
+                              onClick={(e) => e.stopPropagation()}
+                              data-testid="law-matched-article-link"
+                              className={`font-bold underline-offset-2 hover:underline ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
+                            >
                               {a.label || (isRTL ? "مادة مطابقة" : "Matching article")}
-                            </span>
+                            </Link>
                             {articleNotice && (
                               <span className="ms-1.5 text-[9px] font-bold px-1 py-0.5 rounded bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20">
                                 {isRTL ? `حالة المادة: ${articleNotice}` : `Article status: ${articleNotice}`}
@@ -365,7 +437,7 @@ export function LawsTabContent({
                               </span>
                             )}
                             {isUnlocked && a.snippet && (
-                              <span className={`block line-clamp-2 ${muted}`}>{a.snippet}</span>
+                              <span className={`block line-clamp-2 ${muted}`}><Hl text={a.snippet} /></span>
                             )}
                           </li>
                         );
@@ -401,23 +473,25 @@ export function LawsTabContent({
                 >
                   {layoutMode === "grid" ? (
                     <div className="h-full flex flex-col items-center text-center">
-                      <div className="flex items-center justify-between w-full mb-3 text-xs">
-                        <span className={`px-2 py-0.5 text-[10px] font-bold rounded-lg ${isDark ? "bg-white/5 text-gray-400" : "bg-gray-100 text-gray-500"}`}>
-                          {isRTL ? "مُحدّث" : "Updated"}
-                        </span>
-                        {isRepealedLaw && repealedBadge}
+                      {/* Owner note ١٢-٤: no fixed «مُحدّث» badge — every card said it. */}
+                      <div className="flex items-center justify-between w-full mb-3 text-xs gap-2">
+                        {isRepealedLaw ? repealedBadge : <span />}
+                        <div className="flex items-center gap-1.5">
                         {isUnlocked ? (
                           <span className="px-2 py-0.5 text-[9px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
                             <Sparkle size={9} weight="fill" />
                             {librarySubscribed && !sys.free ? (isRTL ? "مكتبة" : "SUBSCRIBED") : (isRTL ? "متاح" : "FREE")}
                           </span>
                         ) : freePreviewHint}
+                        {saveButton}
+                        </div>
                       </div>
 
                       <h3 className={`text-base font-black mb-2 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${titleClass}`}>
                         {isRTL ? sys.title : sys.titleEn}
                       </h3>
                       {isRepealedLaw && repealedNote}
+                      {mergedBadge && <div className="mb-2.5">{mergedBadge}</div>}
 
                       {/* Rich Metadata Section */}
                       <div className="flex flex-wrap justify-center gap-1 mb-2.5">
@@ -435,7 +509,8 @@ export function LawsTabContent({
                             {sys.doc_type}
                           </span>
                         )}
-                        {sys.sub_types && sys.sub_types.map((st: string) => {
+                        {/* Other sub-types (an appendix) keep their chip; the regulation is the merged badge above. */}
+                        {sys.sub_types && sys.sub_types.filter((st: string) => !(mergedBadge && (st === "لائحة تنفيذية" || st === "لائحة"))).map((st: string) => {
                           const isReg = st === "لائحة تنفيذية" || st === "لائحة";
                           return (
                             <span
@@ -444,7 +519,7 @@ export function LawsTabContent({
                                 e.preventDefault();
                                 e.stopPropagation();
                                 // The law page gates what is locked (decision ١٦٠).
-                                router.push(`/laws/${sys.slug}?viewMode=${isReg ? "regulation" : "appendix"}`);
+                                router.push(withSearchQuery(`/laws/${sys.slug}?viewMode=${isReg ? "regulation" : "appendix"}`, searchQ));
                               }}
                               className="clickable-badge cursor-pointer hover:bg-blue-500/20 transition-colors text-[8.5px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20"
                             >
@@ -496,11 +571,16 @@ export function LawsTabContent({
                           {isRTL ? "تصفح النظام" : "Browse System"}
                           <ArrowRight size={12} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
                         </span>
+                        {cardDates.update && (
+                          <span className={`text-[10px] font-semibold ${isDark ? "text-gray-300" : "text-gray-600"}`} data-testid="law-card-latest-update">
+                            {cardDates.update}
+                          </span>
+                        )}
                         {showLockedMeta ? (
                           <OfficialMetaLockedRow isDark={isDark} onUnlock={() => setShowPaywall(true)} />
-                        ) : sys.lastUpdated && sys.lastUpdated !== "—" && (
+                        ) : cardDates.issued && (
                           <span className={`text-[10px] ${muted}`}>
-                            {isRTL ? `صدر: ${sys.lastUpdated}` : `Issued: ${sys.lastUpdated}`}
+                            {cardDates.issued}
                           </span>
                         )}
                       </div>
@@ -510,9 +590,6 @@ export function LawsTabContent({
                       {/* Left: Text info */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-                          <span className={`px-2 py-0.5 text-[10px] font-bold rounded-md ${isDark ? "bg-white/5 text-gray-300" : "bg-gray-100 text-gray-600"}`}>
-                            {isRTL ? "مُحدَّث" : "Updated"}
-                          </span>
                           {isUnlocked ? (
                             <span className="px-2 py-0.5 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-md flex items-center gap-1">
                               <Sparkle size={9} weight="fill" />
@@ -520,6 +597,8 @@ export function LawsTabContent({
                             </span>
                           ) : freePreviewHint}
                           {isRepealedLaw && repealedBadge}
+                          {mergedBadge}
+                          {saveButton}
                         </div>
 
                         <h3 className={`text-sm font-black mb-1.5 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${titleClass}`}>
@@ -543,7 +622,7 @@ export function LawsTabContent({
                               {sys.doc_type}
                             </span>
                           )}
-                          {sys.sub_types && sys.sub_types.map((st: string) => {
+                          {sys.sub_types && sys.sub_types.filter((st: string) => !(mergedBadge && (st === "لائحة تنفيذية" || st === "لائحة"))).map((st: string) => {
                             const isReg = st === "لائحة تنفيذية" || st === "لائحة";
                             return (
                               <span
@@ -552,7 +631,7 @@ export function LawsTabContent({
                                   e.preventDefault();
                                   e.stopPropagation();
                                   // The law page gates what is locked (decision ١٦٠).
-                                  router.push(`/laws/${sys.slug}?viewMode=${isReg ? "regulation" : "appendix"}`);
+                                  router.push(withSearchQuery(`/laws/${sys.slug}?viewMode=${isReg ? "regulation" : "appendix"}`, searchQ));
                                 }}
                                 className="clickable-badge cursor-pointer hover:bg-blue-500/25 transition-colors text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20"
                               >
@@ -604,11 +683,16 @@ export function LawsTabContent({
                             {isRTL ? "تصفح النظام" : "Browse"}
                             <ArrowRight size={12} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
                           </span>
+                          {cardDates.update && (
+                            <span className={`text-[9px] font-semibold whitespace-nowrap ${isDark ? "text-gray-300" : "text-gray-600"}`}>
+                              {cardDates.update}
+                            </span>
+                          )}
                           {showLockedMeta ? (
                             <OfficialMetaLockedRow isDark={isDark} onUnlock={() => setShowPaywall(true)} textSize="text-[9px]" />
-                          ) : sys.lastUpdated && sys.lastUpdated !== "—" && (
+                          ) : cardDates.issued && (
                             <span className={`text-[9px] ${muted} whitespace-nowrap`}>
-                              {isRTL ? `صدر: ${sys.lastUpdated}` : `Issued: ${sys.lastUpdated}`}
+                              {cardDates.issued}
                             </span>
                           )}
                         </div>
@@ -623,17 +707,17 @@ export function LawsTabContent({
         </>
       )}
 
-      {activeType === "all" && filteredCollections.length > 0 && (
+      {activeType === "all" && previewCollections.length > 0 && (
         <div className="mb-8">
           <p className={`text-[11px] font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5 ${muted}`}>
             <Gavel size={13} />
             {isRTL ? "مجموعات المبادئ القضائية" : "Judicial Collections"}
             <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-700"}`}>
-              {filteredCollections.length}
+              {previewCollections.length}
             </span>
           </p>
           <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-4" : "flex flex-col gap-4 mb-4"}>
-            {filteredCollections.slice(0, 3).map((col, idx) => {
+            {previewCollections.slice(0, 3).map((col, idx) => {
               const isColFree = col.free || viewerHasFullAccess;
               return (
               <motion.div
@@ -661,8 +745,9 @@ export function LawsTabContent({
                   </div>
                 )}
 
+                <SaveToFolderButton doc={collectionSaveDoc(col)} onSave={onSaveToFolder} isDark={isDark} className="absolute bottom-4 left-4 z-20" />
                 <Link
-                  href={isColFree ? `/precedents/${col.slug}` : "#"}
+                  href={isColFree ? resultHref(`/precedents/${col.slug}`, searchQ) : "#"}
                   onClick={(e) => {
                     if (!isColFree) {
                       e.preventDefault();
@@ -811,12 +896,12 @@ export function LawsTabContent({
               );
             })}
           </div>
-          {filteredCollections.length > 3 && (
+          {previewCollections.length > 3 && (
             <button
               onClick={() => setActiveType("precedents")}
               className={`text-sm font-bold flex items-center gap-1.5 mb-8 ${isDark ? "text-[#C8A762] hover:text-[#C8A762]/80" : "text-[#0B3D2E] hover:text-[#0a3328]"} transition-colors`}
             >
-              {isRTL ? `عرض كل ${filteredCollections.length} مجموعات قضائية` : `View all ${filteredCollections.length} collections`}
+              {isRTL ? `عرض كل ${previewCollections.length} مجموعات قضائية` : `View all ${previewCollections.length} collections`}
               <ArrowRight size={14} className={isRTL ? "rotate-180" : ""} />
             </button>
           )}
@@ -837,6 +922,29 @@ export function LawsTabContent({
               {searchCountLabels.precedents ?? filteredPrinciples.length}
             </span>
           </p>
+          {principlesAreHits ? (
+            <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" : "flex flex-col gap-4"}>
+              {principleGroups.slice(0, 3).map((g, idx) => (
+                <SearchHitGroupCard
+                  key={g.key}
+                  kind="principle"
+                  title={g.title}
+                  subtitle={g.court}
+                  excerpt={g.collection?.desc}
+                  rows={g.rows}
+                  more={g.more}
+                  href={g.href}
+                  locked={g.collection?.free === false && !viewerHasFullAccess}
+                  setShowPaywall={setShowPaywall}
+                  isDark={isDark}
+                  muted={muted}
+                  layoutMode={layoutMode}
+                  index={idx}
+                  onSaveToFolder={saveHandler(collectionSaveDoc({ id: g.collectionId, title: g.title }))}
+                />
+              ))}
+            </div>
+          ) : (
           <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" : "space-y-3"}>
             <AnimatePresence mode="popLayout">
               {filteredPrinciples.slice(0, 3).map((p, idx) =>
@@ -848,6 +956,7 @@ export function LawsTabContent({
               )}
             </AnimatePresence>
           </div>
+          )}
           {filteredPrinciples.length > 3 && (
             <button
               onClick={() => setActiveType("precedents")}
@@ -880,7 +989,7 @@ export function LawsTabContent({
                     isDark={isDark}
                     idx={idx}
                     isRTL={isRTL}
-                    onClick={() => router.push(`/precedents/judgment/${pr.id}`)}
+                    onClick={() => router.push(resultHref(`/precedents/judgment/${pr.id}`, q))}
                     onHashtagClick={(tag) => setSelectedHashtag(tag)}
                     q={q}
                   />
@@ -891,7 +1000,7 @@ export function LawsTabContent({
                     isDark={isDark}
                     idx={idx}
                     isRTL={isRTL}
-                    onClick={() => router.push(`/precedents/judgment/${pr.id}`)}
+                    onClick={() => router.push(resultHref(`/precedents/judgment/${pr.id}`, q))}
                     onHashtagClick={(tag) => setSelectedHashtag(tag)}
                     q={q}
                   />
@@ -929,7 +1038,25 @@ export function LawsTabContent({
             </span>
           </p>
           <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-4" : "flex flex-col gap-4 mb-4"}>
-            {filteredFeqhBooks.slice(0, 3).map((book, idx) => (
+            {feqhAreHits ? feqhGroups.slice(0, 3).map((g, idx) => (
+              <SearchHitGroupCard
+                key={g.key}
+                kind="feqh"
+                title={g.volumesLabel ? `${g.title} (${g.volumesLabel})` : g.title}
+                subtitle={g.author && g.author !== "—" ? g.author : ""}
+                excerpt={g.bookHit?.desc}
+                rows={g.rows}
+                more={g.more}
+                href={g.href}
+                locked={false}
+                setShowPaywall={setShowPaywall}
+                isDark={isDark}
+                muted={muted}
+                layoutMode={layoutMode}
+                index={idx}
+                onSaveToFolder={saveHandler(bookSaveDoc({ slug: g.bookSlug, title: g.title }))}
+              />
+            )) : filteredFeqhBooks.slice(0, 3).map((book, idx) => (
               <motion.div
                 key={book.id}
                 initial={{ opacity: 0, y: 10 }}
@@ -957,8 +1084,9 @@ export function LawsTabContent({
                   </div>
                 )}
 
+                <SaveToFolderButton doc={bookSaveDoc(book)} onSave={onSaveToFolder} isDark={isDark} className="absolute bottom-4 left-4 z-20" />
                 <Link
-                  href={book.free ? `/book/${book.slug}` : "#"}
+                  href={book.free ? resultHref(`/book/${book.slug}`, searchQ) : "#"}
                   onClick={(e) => {
                     if (!book.free) {
                       e.preventDefault();
@@ -1130,7 +1258,8 @@ export function LawsTabContent({
                     isDark={isDark}
                     idx={idx}
                     isRTL={isRTL}
-                    onClick={() => router.push(`/laws/orders/${o.id}`)}
+                    onClick={() => router.push(resultHref(`/laws/orders/${o.id}`, q))}
+                    onSaveToFolder={onSaveToFolder}
                     onHashtagClick={(tag) => setSelectedHashtag(tag)}
                   />
                 ) : (
@@ -1140,7 +1269,8 @@ export function LawsTabContent({
                     isDark={isDark}
                     idx={idx}
                     isRTL={isRTL}
-                    onClick={() => router.push(`/laws/orders/${o.id}`)}
+                    onClick={() => router.push(resultHref(`/laws/orders/${o.id}`, q))}
+                    onSaveToFolder={onSaveToFolder}
                     onHashtagClick={(tag) => setSelectedHashtag(tag)}
                   />
                 )

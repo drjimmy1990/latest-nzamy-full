@@ -48,7 +48,9 @@ test("the book reader has the draft cart: the shared hook, the global drawer, an
   assert.doesNotMatch(BOOK, /<DraftDrawer/);
   assert.match(FLOATING, /window\.addEventListener\("nzamy-open-cart", handler\)/);
   assert.match(FLOATING, /if \(pathname\.startsWith\("\/book\/"\)\) \{/);
-  assert.match(BOOK, /\{activeBlock && !activeBlock\.locked && \(/);
+  // Owner note ٠٢: «add» sits on the head of each block of the stream.
+  const STREAM_BLOCK = read("../../app/book/[slug]/_stream-block.tsx");
+  assert.match(STREAM_BLOCK, /\{!block\.locked && \(/);
   assert.match(BOOK, /addEntryToCart\(blockCartEntry\(/);
 });
 

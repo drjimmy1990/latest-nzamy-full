@@ -65,6 +65,44 @@ test("the route still refuses a non-admin (and a staff role without entitlements
   assert.ok(gateAt < grantAt, "the staff gate must run before the grant");
 });
 
+// ─── owner note ١٨ C02: the direct library grant ────────────────────────────
+
+test("action library: branched off after the staff gate and before grantEntitlement", () => {
+  const gateAt = routeSource.indexOf('await requireStaff("entitlements.grant")');
+  const branchAt = routeSource.indexOf('if (body.action === "library") return grantLibrary(');
+  const grantAt = routeSource.indexOf("await grantEntitlement({");
+  assert.ok(branchAt > -1, "the library branch is missing");
+  assert.ok(gateAt < branchAt, "the staff gate (entitlements.grant) must run before the library grant");
+  assert.ok(branchAt < grantAt, "a library grant must never reach grantEntitlement (it writes subscriptions)");
+});
+
+test("action library: the body goes through parseLibraryGrantBody (reason mandatory) before any write", () => {
+  const fnAt = routeSource.indexOf("async function grantLibrary(");
+  assert.ok(fnAt > -1);
+  const fn = routeSource.slice(fnAt);
+  const parseAt = fn.indexOf("parseLibraryGrantBody(body)");
+  const refuseAt = fn.indexOf("if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });");
+  const writeAt = fn.indexOf("await grantLibraryAccess({");
+  assert.ok(parseAt > -1 && refuseAt > parseAt && writeAt > refuseAt, "validate (reason, days, plan) → 400, then grant");
+  const call = fn.slice(writeAt, fn.indexOf("});", writeAt));
+  assert.ok(call.includes('source: "admin"'), "an admin grant is recorded with source admin");
+  assert.ok(call.includes("grantedBy: adminId"), "who granted it is recorded");
+  assert.ok(call.includes("reason: input.reason"), "the reason is stored with the grant");
+  assert.ok(!fn.includes("grantEntitlement("), "never a plan grant");
+});
+
+test("action library: audited and notified only after the grant succeeded; raw errors are not sent", () => {
+  const fn = routeSource.slice(routeSource.indexOf("async function grantLibrary("));
+  const writeAt = fn.indexOf("await grantLibraryAccess({");
+  const failAt = fn.indexOf("if (!grant.ok)");
+  const logAt = fn.indexOf("await logAdminAction({");
+  const noticeAt = fn.indexOf("await recordNotification({");
+  assert.ok(writeAt < failAt && failAt < logAt && logAt < noticeAt);
+  assert.ok(fn.includes('action: "library_grant_created"'));
+  const failArm = fn.slice(failAt, logAt);
+  assert.ok(!failArm.includes("error: grant.error"), "grant.error is English or raw Postgres — logged, never sent");
+});
+
 test("a failed grant is a 400 with the Arabic error, not a silent success", () => {
   assert.ok(
     routeSource.includes("if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });"),

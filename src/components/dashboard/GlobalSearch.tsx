@@ -14,8 +14,7 @@
  * • Supports Ctrl+K / ⌘+K shortcut as bonus
  * • RTL-aware, dark/light mode aware
  */
-
-import { useState, useEffect, useRef, useCallback, useSyncExternalStore } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, useSyncExternalStore } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -35,9 +34,11 @@ import { getDocuments, type Document } from "@/lib/services/documentService";
 import { listMyServiceOrders } from "@/lib/services/serviceOrders";
 import {
   resolveDocumentsHref, mapDocumentsToContent, mapServiceOrdersToContent,
-  matchPersonalContent, summarisePersonalReads,
+  matchPersonalContent, summarisePersonalReads, PERSONAL_CONTENT_VISIBLE_LIMIT,
   type PersonalContentItem, type PersonalContentKind, type PersonalReadResult,
 } from "@/lib/services/globalSearchContent";
+import { compileQueryMatcher, parseHighlightQuery, withSearchQuery } from "@/lib/search/multiColorSearch";
+import { Hl } from "@/components/search/MultiColorHighlight";
 
 // ─── User type: the same resolver as SharedSidebar ────────────────────────────
 // The private copy of inferUserTypeFromPath that stood here is gone: the tools
@@ -79,18 +80,9 @@ function extractTools(groups: ReturnType<typeof getSidebarByUserType>, hasClient
 }
 
 // ─── Highlight matched text ───────────────────────────────────────────────────
-function Highlight({ text, query }: { text: string; query: string }) {
-  if (!query.trim()) return <>{text}</>;
-  const idx = text.toLowerCase().indexOf(query.toLowerCase());
-  if (idx === -1) return <>{text}</>;
-  return (
-    <>
-      {text.slice(0, idx)}
-      <mark className="bg-emerald-500/20 text-emerald-300 rounded px-0.5 not-italic">{text.slice(idx, idx + query.length)}</mark>
-      {text.slice(idx + query.length)}
-    </>
-  );
-}
+// Owner note ٠٧: the platform's one engine (<Hl>, multiColorSearch.ts) — every
+// term in its own colour, Arabic and digit folding, + / "…" * - operators. It
+// replaced an indexOf that marked only the first literal match in one colour.
 
 // ─── Content type icon ────────────────────────────────────────────────────────
 function ContentTypeIcon({ type }: { type: PersonalContentKind }) {
@@ -124,7 +116,6 @@ export function GlobalSearch() {
   const [partialRead, setPartialRead] = useState(false);
   /** Guards against an older open's response landing after a newer one. */
   const loadTokenRef = useRef(0);
-
   // Resolve user type — the one resolver SharedSidebar uses too.
   const { storedView } = useAdminView(pathname, !userLoading && sessionUserType === "admin");
   const isBusinessIntake =
@@ -192,17 +183,27 @@ export function GlobalSearch() {
     setContentState(summary.unreadable ? "unreadable" : "ready");
   }, [documentsHref]);
 
+  // Owner note ٠٧: one grammar and one set of patterns for the filter and the
+  // colours (parseHighlightQuery / compileQueryMatcher).
+  const parsedQuery = useMemo(() => parseHighlightQuery(query), [query]);
+  const matchesQuery = useMemo(() => compileQueryMatcher(parsedQuery), [parsedQuery]);
+  const hlTerms = parsedQuery.terms;
+
   // Filter tools
   const matchedTools = query.trim()
-    ? allTools.filter(t =>
-        t.label.toLowerCase().includes(query.toLowerCase()) ||
-        (t.labelEn ?? "").toLowerCase().includes(query.toLowerCase())
-      )
+    ? allTools.filter(t => matchesQuery([t.label, t.labelEn]))
     : allTools.slice(0, 6); // show first 6 as "recent" when no query
 
-  // The account's own rows matching the query — at most MAX_PERSONAL_MATCHES,
-  // and none at all for an empty query (see globalSearchContent.ts).
-  const matchedContent = matchPersonalContent(personalItems, query);
+  // The account's own rows matching the query — at most
+  // PERSONAL_CONTENT_VISIBLE_LIMIT (see globalSearchContent.ts).
+  const matchedContent = query.trim()
+    ? personalItems.filter(item => matchesQuery([item.label])).slice(0, PERSONAL_CONTENT_VISIBLE_LIMIT)
+    : matchPersonalContent(personalItems, query);
+
+  // A content row opens with the search in ?q= (owner note ٠٧), so the target
+  // page can colour or filter it. Tool links do NOT carry it: the query there
+  // names the tool, and a page such as consultation/new reads ?q= as a prefill.
+  const contentHref = (item: PersonalContentItem) => withSearchQuery(item.href, query);
 
   const totalResults = matchedTools.length + matchedContent.length;
 
@@ -244,7 +245,7 @@ export function GlobalSearch() {
     if (e.key === "ArrowDown") { e.preventDefault(); setCursor(v => Math.min(v + 1, totalResults - 1)); }
     if (e.key === "ArrowUp")   { e.preventDefault(); setCursor(v => Math.max(v - 1, 0)); }
     if (e.key === "Enter" && totalResults > 0) {
-      const all = [...matchedTools.map(t => t.href!), ...matchedContent.map(c => c.href)];
+      const all = [...matchedTools.map(t => t.href!), ...matchedContent.map(contentHref)];
       if (all[cursor]) { router.push(all[cursor]); setOpen(false); }
     }
   }
@@ -381,7 +382,7 @@ export function GlobalSearch() {
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className={`text-[13px] font-bold truncate ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
-                                <Highlight text={tool.label} query={query}/>
+                                <Hl text={tool.label} terms={hlTerms}/>
                               </p>
                               {tool.labelEn && (
                                 <p className={`text-[10px] truncate ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{tool.labelEn}</p>
@@ -446,7 +447,7 @@ export function GlobalSearch() {
                                  points at the one vault page, so hrefs repeat
                                  and would collide as React keys. */
                               key={item.key}
-                              href={item.href}
+                              href={contentHref(item)}
                               onClick={() => setOpen(false)}
                               className={`flex items-center gap-3 px-4 py-3 transition-colors ${resultHover} ${isActive ? resultActive : ""}`}
                             >
@@ -455,7 +456,7 @@ export function GlobalSearch() {
                               </div>
                               <div className="flex-1 min-w-0">
                                 <p className={`text-[13px] font-bold truncate ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
-                                  <Highlight text={item.label} query={query}/>
+                                  <Hl text={item.label} terms={hlTerms}/>
                                 </p>
                                 <p className={`text-[10px] truncate ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{item.sub}</p>
                               </div>

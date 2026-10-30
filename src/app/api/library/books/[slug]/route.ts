@@ -6,7 +6,7 @@ import { selectAllPages } from '@/lib/supabase/selectAllPages';
 import { BOOK_SERIES_FEATURE, bookVolumeColumns, buildBookSeries, type BookSeriesInfo, type VolumeRow } from '@/lib/library/bookVolumes';
 import { readWithOptionalFeatures } from '@/lib/library/optionalColumn';
 import { FREE_PAGES, FREE_PAGES_SCAN, feqhLockFrom, type BlockPlace } from '@/lib/library/freePages';
-import { cleanBookText, firstBlockOrderBySection, normalizeHashiyah, planBlocksPage, planBlocksRequest, shapeToc } from './_shape';
+import { cleanBookText, firstBlockOrderBySection, normalizeHashiyah, planBlocksPage, planBlocksRequest, shapeToc, type ResolvedBlocksSelection } from './_shape';
 
 /**
  * GET /api/library/books/[slug]
@@ -20,6 +20,8 @@ import { cleanBookText, firstBlockOrderBySection, normalizeHashiyah, planBlocksP
  *   before_order=N— reading-order cursor: `limit` blocks with order_index <= N,
  *                   returned in book order. Cursor responses carry
  *                   pagination.hasMore and no totals.
+ *   at_page=P[&at_vol=V] — «انتقال للصفحة»: from_order = the first block
+ *                   printed on page P (of volume V); 404 when there is none.
  *   toc=0         — skip the TOC; the reader sends it when it opens a section,
  *                   since it already holds the TOC from the first request.
  *
@@ -53,8 +55,7 @@ export async function GET(
     if (!plan.ok) {
       return NextResponse.json({ error: plan.error }, { status: 400 });
     }
-    const { sectionId, selection } = plan; // sectionId: optional, one section's blocks
-    const isCursor = selection.mode !== 'page';
+    const { sectionId } = plan; // sectionId: optional, one section's blocks
     const includeToc = searchParams.get('toc') !== '0';
 
     const supabase = await createClient();
@@ -75,6 +76,38 @@ export async function GET(
     if (!book) {
       return NextResponse.json({ error: 'لم يُعثر على هذا الكتاب' }, { status: 404 });
     }
+
+    // ?at_page= (owner note ٠٢, «انتقال للصفحة»): the first block printed on
+    // that page becomes a from_order cursor. Public columns on the request
+    // client — the paywall below masks the window's text as for any cursor.
+    let selection: ResolvedBlocksSelection;
+    if (plan.selection.mode === 'at_page') {
+      const at = plan.selection;
+      let pageQuery = supabase
+        .schema('library')
+        .from('feqh_blocks')
+        // column-lock-reviewed: public columns only (order_index, book_id, page_number, volume_number)
+        .select('order_index')
+        .eq('book_id', slug)
+        .eq('page_number', at.page);
+      if (at.vol !== null) pageQuery = pageQuery.eq('volume_number', at.vol);
+      const { data: hit, error: hitError } = await pageQuery
+        .order('order_index', { ascending: true })
+        .order('id', { ascending: true })
+        .limit(1);
+      if (hitError) {
+        console.error(`[Books] page lookup failed for "${slug}":`, hitError);
+        return NextResponse.json({ error: 'تعذّر البحث عن هذه الصفحة' }, { status: 500 });
+      }
+      const order = (hit?.[0] as { order_index?: unknown } | undefined)?.order_index;
+      if (typeof order !== 'number') {
+        return NextResponse.json({ error: 'لا توجد هذه الصفحة في هذا الكتاب', pageNotFound: true }, { status: 404 });
+      }
+      selection = { mode: 'after', order };
+    } else {
+      selection = plan.selection;
+    }
+    const isCursor = selection.mode !== 'page';
 
     // The series this volume belongs to, for the reader's volume switcher
     // (owner test 2026-09-28, T28-24). feqh_books holds one row PER VOLUME and

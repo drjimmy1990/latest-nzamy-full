@@ -59,7 +59,7 @@ test("rejects unknown article status values before a query can return a misleadi
 
 test("rejects a filter in every section where the route would ignore it, including all", () => {
   const cases: Array<[Record<string, unknown>, "all" | "laws" | "precedents" | "orders" | "feqh"]> = [
-    [{ category: "SA-01" }, "all"], [{ category: "SA-01" }, "precedents"], [{ category: "SA-01" }, "feqh"],
+    [{ category: "SA-01", track: "admin" }, "all"], [{ category: "SA-01" }, "precedents"], [{ category: "SA-01" }, "feqh"],
     [{ track: "admin" }, "all"], [{ track: "admin" }, "laws"], [{ track: "admin" }, "orders"],
     [{ source: "ديوان المظالم" }, "laws"], [{ year: 1436 }, "orders"], [{ court: "المحكمة الإدارية" }, "feqh"],
     [{ issuer: "مجلس الوزراء" }, "all"], [{ type: "royal" }, "laws"],
@@ -117,7 +117,7 @@ test("rejects malformed request values and ignored sort before search client cre
     [{ query: "نظام", limit: 0 }, "invalid_limit"],
     [{ query: "نظام", limit: SEARCH_MAX_LIMIT + 1 }, "invalid_limit"],
     [{ query: "نظام", limit: 1.5 }, "invalid_limit"],
-    [{ query: "نظام", section: "all", filters: { category: "SA-01" } }, "invalid_filter_scope"],
+    [{ query: "نظام", section: "all", filters: { category: "SA-01", track: "admin" } }, "invalid_filter_scope"],
   ];
   for (const [request, code] of cases) {
     const result = validateSearchRequest(request);
@@ -232,7 +232,7 @@ test("every validation message is Arabic and keeps its error code", () => {
     [{ query: "نظام", section: "laws", filters: { x: "y" } }, "unknown_filter"],
     [{ query: "نظام", section: "laws", filters: { category: 1 } }, "invalid_filter_type"],
     [{ query: "نظام", section: "laws", filters: { category: "labor" } }, "invalid_filter_value"],
-    [{ query: "نظام", section: "all", filters: { category: "SA-01" } }, "invalid_filter_scope"],
+    [{ query: "نظام", section: "all", filters: { category: "SA-01", track: "admin" } }, "invalid_filter_scope"],
   ];
   for (const [request, code] of requests) {
     const result = validateSearchRequest(request);
@@ -242,4 +242,29 @@ test("every validation message is Arabic and keeps its error code", () => {
     assert.match(result.error, /[\u0600-\u06FF]/, `${code}: ${result.error}`);
     assert.doesNotMatch(result.error, /\b(must|is not|supported only)\b/, `${code} still English: ${result.error}`);
   }
+});
+
+// Owner note ١٢-د: the category chip on «الكل» errored («مرشح التصنيف يطبّق
+// على الأنظمة والأوامر فقط»). section=all + category now runs the two
+// sections that carry a category — laws and orders — and nothing else.
+test("١٢-د: section=all accepts a category, and then searches laws and orders only", async () => {
+  const { sectionsToSearch } = await import("./filters.ts");
+  const ok = validateSearchFilters({ category: "SA-06" }, "all");
+  assert.equal(ok.ok, true);
+  if (ok.ok) {
+    assert.deepEqual(ok.filters, { category: "06" });
+    assert.deepEqual(sectionsToSearch("all", ok.filters), ["laws", "orders"]);
+  }
+  assert.deepEqual(sectionsToSearch("all", {}), ["laws", "precedents", "orders", "feqh"]);
+  assert.deepEqual(sectionsToSearch("feqh", {}), ["feqh"]);
+  const req = validateSearchRequest({ query: "نظام", section: "all", filters: { category: "SA-01" } });
+  assert.equal(req.ok, true);
+  // every other filter stays single-section
+  for (const f of [{ track: "admin" }, { issuer: "مجلس الوزراء" }, { status: "status_undeclared" }]) {
+    const r = validateSearchFilters(f, "all");
+    assert.equal(r.ok, false, JSON.stringify(f));
+  }
+  const route = fs.readFileSync(new URL("./route.ts", import.meta.url), "utf8");
+  assert.match(route, /const names: SearchSectionName\[\] = sectionsToSearch\(section, filters\);/);
+  assert.match(route, /combineSearchOutcomes\(section, outcomes, \{ page, query: parsed\.raw \}, names\)/);
 });

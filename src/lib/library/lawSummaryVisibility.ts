@@ -14,7 +14,11 @@
  *     subscribers'. cardForViewer below gives anyone else an ALLOWLIST: the
  *     النوع / الحالة / الجهة المصدرة rows only, their values cleaned; the
  *     sidebar shows one «للمشتركين» row in place of the rest. The law's
- *     official link is public (owner ٢٩٧) and travels on its own field.
+ *     official links are subscribers' too since owner ٣١٨ (28-Oct, reversing
+ *     ٢٩٧'s public link); a guest gets the one public date «آخر تحديث
+ *     تشريعي» instead (legislativeEvent.ts, computed by the routes).
+ *   - the موجز a guest receives has its decree numbers and issue dates
+ *     stripped on the server (owner ٣١٩, summaryForViewer in lawReaderExtras).
  *
  * library.laws.summary_brief stays column-locked for the anon key: the
  * catalogue (/api/library/init) and the law route read it, and the preamble
@@ -25,15 +29,18 @@
 
 import {
   cardFieldOfCells,
+  extractLawCard,
   extractLawPreambleBlocks,
   isHollowPreamble,
   isSeparatorRow,
   lawCardRanges,
   splitRow,
+  stripPipelineNotes,
   type LawMetadataCard,
   type LawCardField,
 } from "./lawPreambleBlocks.ts";
 import { LAW_CARD_PRIMARY_FIELDS, type LawCardFieldId } from "./lawCardFields.ts";
+import { formatHijriKey, hijriDateSortKey, summaryForViewer } from "./legislativeEvent.ts";
 
 export type LawSummaryAudience = "subscribers" | "everyone";
 
@@ -70,7 +77,7 @@ const BIDI_CONTROLS = /[\u200E\u200F\u061C\u202A-\u202E\u2066-\u2069]/g;
 /**
  * What a guest's value may not carry: any digit (Western, Arabic-Indic,
  * Persian — every instrument number and every date has one) or a link / bare
- * domain (the official link is sent on its own, `officialLink`).
+ * domain (official links are a subscriber's, ٣١٨; sent on their own fields).
  */
 const GUEST_UNSAFE = /[0-9٠-٩۰-۹]|https?:|www\.|[a-z0-9-]+\.(?:sa|com|net|org|gov|edu)\b/i;
 
@@ -406,10 +413,16 @@ export function cardRowValue(value: string): string | null {
   return withoutGapNotes(value) || null;
 }
 
-/** A row as every viewer sees it, or null: file rows dropped, notes removed, a status its words only. */
+/**
+ * A row as every viewer sees it, or null: file rows dropped, notes removed
+ * (a «[بوابة 6/تحقُّق حي …]» aside too — note ١٢ item ٧, stripPipelineNotes),
+ * a status its words only.
+ */
 function rowTidy(f: LawCardField): LawCardField | null {
   if (PIPELINE_ROW_KEYS.has(normalCardKey(f.key))) return null;
-  let value = cardRowValue(f.value);
+  const stripped = stripPipelineNotes(f.value);
+  if (!stripped) return null;
+  let value = cardRowValue(stripped);
   if (value && isStatusKey(f.key)) value = cardStatusValue(value);
   if (!value) return null;
   return value === f.value ? f : { key: f.key, value };
@@ -639,11 +652,75 @@ export function lawReaderExtras(
   const lifted = !!blocks.summary || !!blocks.metadataCard;
   // A card left in the text («🗂️ البطاقة التعريفية …»): its rows as the card's (owner ٢٥٩).
   const out: LawReaderExtras = { preamble: lifted && isHollowPreamble(blocks.rest) ? "" : withCleanCardRows(blocks.rest) };
-  if (blocks.summary) {
-    out.summary = blocks.summary;
+  // Owner ٣١٩ (ب): the موجز stays open to everyone, but a non-subscriber's
+  // copy loses its decree numbers and issue dates HERE, on the server — a
+  // line that still cites after the cleaning is dropped (fail closed). A
+  // موجز left empty by that is omitted, label and all.
+  const summary = summaryForViewer(blocks.summary, isSubscriber);
+  if (summary.trim()) {
+    out.summary = summary;
     out.summaryLabel = blocks.summaryLabel;
   }
   const card = cardForViewer(blocks.metadataCard, isSubscriber);
   if (card) out.metadata_card = card;
   return out;
+}
+
+/**
+ * The regulation part of a merged file (splitStoredPreamble's
+ * `regulationPreamble`) for one viewer: its identity card lifted out for
+ * the sidebar's regulation group (owner note ٠١ item ٥) — as cardForViewer
+ * gives it — and the regulation preamble without it, its rows cleaned
+ * (withCleanCardRows). A regulation preamble with no card comes back as
+ * withCleanCardRows gives it, with no card.
+ */
+export function regulationReaderExtras(
+  regulationPreamble: string,
+  isSubscriber: boolean,
+): { preamble: string; card: LawMetadataCard | null } {
+  const { card, rest } = extractLawCard(regulationPreamble);
+  if (!card) return { preamble: withCleanCardRows(regulationPreamble), card: null };
+  return {
+    preamble: isHollowPreamble(rest) ? "" : withCleanCardRows(rest),
+    card: cardForViewer(card, isSubscriber),
+  };
+}
+
+/**
+ * Keys of library.laws.latest_update (the owner's frontmatter, jsonb) that
+ * describe the event, in order of preference. Only `date_hijri`,
+ * `instrument` and `attachment_pdf` are seen in the owner's notes (note ١٤
+ * item ٩: `latest_update.instrument` leaks review notes in 220 files); the
+ * others are read defensively should a file carry them.
+ */
+const LATEST_UPDATE_TEXT_KEYS = ["event", "description", "type", "instrument"] as const;
+
+/**
+ * Owner note ٠١ item ٢: «آخر تعديل» from library.laws.latest_update for a
+ * SUBSCRIBER — the date, and what happened in a short parenthesis:
+ * «1448/01/08هـ (صدور اللائحة التنفيذية — قرار مجلس الوزراء رقم (43))».
+ * The description loses its pipeline notes (stripPipelineNotes, cardRowValue)
+ * and the date it repeats; a description that still reads as a note goes,
+ * leaving the date alone. '' for a non-subscriber (T28-22 / ٣١٨: a guest
+ * sees the public date «آخر تحديث تشريعي» only), or when there is no
+ * readable Hijri date.
+ */
+export function latestUpdateDetail(latestUpdate: unknown, isSubscriber: boolean): string {
+  if (!isSubscriber || !latestUpdate || typeof latestUpdate !== "object" || Array.isArray(latestUpdate)) return "";
+  const lu = latestUpdate as Record<string, unknown>;
+  const date = formatHijriKey(hijriDateSortKey(lu.date_hijri));
+  if (!date) return "";
+  const parts: string[] = [];
+  for (const k of LATEST_UPDATE_TEXT_KEYS) {
+    const raw = lu[k];
+    if (typeof raw !== "string" || !raw.trim()) continue;
+    let v = cardRowValue(stripPipelineNotes(raw)) ?? "";
+    // The date it repeats («… وتاريخ 1448/01/08هـ»): said once, outside.
+    v = v.replace(/\s*(?:و|ب)?(?:تاريخ|بتاريخ)?\s*[0-9٠-٩]{1,4}\s*[/-]\s*[0-9٠-٩]{1,2}\s*[/-]\s*[0-9٠-٩]{1,4}\s*(?:هـ|ه)?/gu, "");
+    v = v.replace(/\(\s*\)/g, "").replace(/\s+/g, " ").replace(/[\s،؛:,;—–-]+$/u, "").trim();
+    // An English token («amendment») or a note is not shown.
+    if (!v || !/\p{Script=Arabic}/u.test(v) || hasNoteWord(v) || parts.some((p) => p === v)) continue;
+    parts.push(v);
+  }
+  return parts.length ? `${date} (${parts.join(" — ")})` : date;
 }
