@@ -393,6 +393,55 @@ function isTitleHeading(s: string): boolean {
 }
 
 /**
+ * The identity card(s) of a preamble lifted out, and the preamble without
+ * them — the موجز (if any) stays where it was. For the regulation part of a
+ * merged file (splitStoredPreamble's `regulationPreamble`): its card goes to
+ * the sidebar's regulation group (owner note ٠١ item ٥), its ديباجة and
+ * موجز stay in the middle column. A preamble with no card comes back as it was.
+ */
+export function extractLawCard(preamble: unknown): { card: LawMetadataCard | null; rest: string } {
+  const text = normalise(preamble);
+  const cards = findCards(text);
+  if (!cards) return { card: null, rest: typeof preamble === "string" ? preamble : "" };
+  return { card: cards.card, rest: withoutRanges(text, cards.ranges) };
+}
+
+// ── The pipeline's own notes, wherever they hide ───────────────────────────
+
+/** Tashkeel, superscript alef, tatweel — removed before a note test. */
+const NOTE_MARKS = /[ً-ٰٟـ]/g;
+
+/**
+ * Words that make a «[…]» aside the export pipeline's note, not law: the
+ * owner's own example «[بوابة 6/تحقُّق حي …]» (note ١٢ item ٧), «[تحقق …]»,
+ * «[مراجعة …]», «[ملاحظة …]», «[review_…]», «[OCR …]», «[V3.3 …]».
+ */
+const PIPELINE_NOTE_WORDS = /بوابة\s*[0-9٠-٩]|تحقق|مراجعة|ملاحظة\s+(?:داخلية|تحقق|هيكلية|منهجية)|ملاحظة\s*:|(?<![A-Za-z])(?:review|todo|OCR|pipeline|Gemini|V[0-9]+(?:\.[0-9]+)?)(?![A-Za-z])/iu;
+
+/**
+ * Note ١٢ item ٧: a defensive filter so no internal note reaches a reader —
+ * a square-bracket aside that holds a pipeline note («[بوابة 6/تحقُّق حي …]»)
+ * and any HTML comment. A markdown link «[text](url)» is never touched, nor
+ * a bracket of law text («[مُلغاة]», «[1]»). When something is removed, the
+ * whitespace left behind is collapsed on each line (line breaks stay);
+ * otherwise the input comes back unchanged.
+ */
+export function stripPipelineNotes(input: string | null | undefined): string {
+  const src = String(input ?? "");
+  if (!src) return "";
+  let s = src.replace(/<!--[\s\S]*?-->/g, "");
+  s = s.replace(/\s*\[([^\[\]]*)\](?!\()/g, (all, inner: string) =>
+    PIPELINE_NOTE_WORDS.test(inner.replace(NOTE_MARKS, "")) ? "" : all);
+  // Nothing removed: the text exactly as it came (callers compare by identity).
+  if (s === src) return src;
+  return s
+    .split("\n")
+    .map((l) => l.replace(/[ \t]{2,}/g, " ").replace(/\s+([،,.؛;:])/g, "$1").trimEnd())
+    .join("\n")
+    .trim();
+}
+
+/**
  * The موجز and the identity card of a law's preamble (the law part from
  * splitStoredPreamble — never the regulation preamble), and the preamble
  * without them.
