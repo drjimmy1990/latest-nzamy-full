@@ -31,6 +31,18 @@ function text(v: unknown): string {
 }
 
 /**
+ * Owner note ٠٦ (المسار الثاني): a result link carries the search as ?q= so
+ * the reader highlights it. No link ("" / "#"), or a query under two
+ * characters (no search runs), leaves the href as it is; a #hash is kept.
+ */
+export function resultHref(href: string | null | undefined, query: string | null | undefined): string {
+  const h = typeof href === "string" ? href : "";
+  if (!h || h === "#") return h;
+  const q = String(query ?? "").trim();
+  return q.length >= 2 ? withSearchQuery(h, q) : h;
+}
+
+/**
  * The reader URL that opens on one hit: `?target=<id>` (a reader that pages in
  * windows loads up to it), `#<id>` (the DOM anchor) and `?q=` (the highlight).
  * `base` keeps any query it already has; an empty id gives `base` + `?q=`.

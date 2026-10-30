@@ -12,6 +12,7 @@ import { LEGAL_TAXONOMY } from "@/constants/taxonomies";
 import { SECTION_30 } from "../lawsIndexFacets";
 import { principleYear } from "../principleCardFields";
 import { principleHref } from "../principleLink";
+import { resultHref } from "../searchHitGroups";
 import { ClampedSummary } from "./ClampedSummary";
 
 /**
@@ -163,7 +164,7 @@ export function PrincipleRow({ p, isDark, idx, isRTL = true, q = "" }: { p: Cata
   // تحديد بادئة المُعرِّف: "مبدأ رقم" أو "تقرير رقم" (للتمييز)
   const isTamyeez  = p.sourceId === "tamyeez";
   const idLabel    = principleIdLabel(p, isRTL);
-  const href       = principleHref(p.collectionId, p.id);
+  const href       = resultHref(principleHref(p.collectionId, p.id), q);
 
   return (
     <motion.div
@@ -599,7 +600,7 @@ export function EmptyState({ type, catId, isDark, isRTL, hasSearch }: {
 export function PrincipleCard({ p, isDark, idx, isRTL = true, q = "" }: { p: CataloguePrinciple; isDark: boolean; idx: number; isRTL?: boolean; q?: string }) {
   const [copied, setCopied] = useState(false);
   const idLabel    = principleIdLabel(p, isRTL);
-  const href       = principleHref(p.collectionId, p.id);
+  const href       = resultHref(principleHref(p.collectionId, p.id), q);
   // Above the stretched link; clicks fall through to it except on the copy button.
   const layer      = href ? "relative z-[1] pointer-events-none" : "";
 

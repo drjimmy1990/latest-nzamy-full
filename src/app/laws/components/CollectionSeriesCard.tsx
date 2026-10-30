@@ -25,6 +25,7 @@ import {
   type CollectionVolumeRow,
 } from "@/lib/library/precedentVolumes";
 import { ClampedSummary } from "./ClampedSummary";
+import { resultHref } from "../searchHitGroups";
 
 const VISIBLE_VOLUMES = 4;
 
@@ -49,6 +50,7 @@ export function CollectionSeriesCard({
   viewerHasFullAccess,
   setShowPaywall,
   index,
+  q = "",
 }: {
   series: CollectionSeriesGroup<CatalogueCollectionRow>;
   isDark: boolean;
@@ -57,6 +59,8 @@ export function CollectionSeriesCard({
   viewerHasFullAccess: boolean;
   setShowPaywall: (show: boolean) => void;
   index: number;
+  /** The search, carried to the reader as ?q= (owner note ٠٦). */
+  q?: string;
 }) {
   const [showAll, setShowAll] = useState(false);
   const first = series.volumes[0].row;
@@ -132,7 +136,7 @@ export function CollectionSeriesCard({
             return (
               <li key={v.row.id}>
                 {open ? (
-                  <Link href={`/precedents/${v.row.id}`} className={`${chip} ${openChip}`} title={v.row.title}>
+                  <Link href={resultHref(`/precedents/${v.row.id}`, q)} className={`${chip} ${openChip}`} title={v.row.title}>
                     {label}
                     <span className={muted}>{count}</span>
                   </Link>

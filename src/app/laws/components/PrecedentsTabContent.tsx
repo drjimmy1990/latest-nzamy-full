@@ -23,7 +23,7 @@ import {
 import { ResultsSkeleton } from "./ResultsSkeleton";
 import { CollectionSeriesCard, type CatalogueCollectionRow } from "./CollectionSeriesCard";
 import { groupCollectionVolumes } from "@/lib/library/precedentVolumes";
-import { groupPrincipleSearchCards, type PrincipleHitLike } from "../searchHitGroups";
+import { groupPrincipleSearchCards, resultHref, type PrincipleHitLike } from "../searchHitGroups";
 import { SearchHitGroupCard } from "./SearchHitGroupCard";
 
 /** Principles (or grouped principle cards) per page of the tab. */
@@ -418,6 +418,7 @@ export function PrecedentsTabContent({
                     viewerHasFullAccess={viewerHasFullAccess}
                     setShowPaywall={setShowPaywall}
                     index={idx}
+                    q={q}
                   />
                 );
               }
@@ -450,7 +451,7 @@ export function PrecedentsTabContent({
                   )}
 
                   <Link
-                    href={isColFree ? `/precedents/${col.slug}` : "#"}
+                    href={isColFree ? resultHref(`/precedents/${col.slug}`, q) : "#"}
                     onClick={(e) => {
                       if (!isColFree) {
                         e.preventDefault();
@@ -681,7 +682,7 @@ export function PrecedentsTabContent({
                     isDark={isDark}
                     idx={idx}
                     isRTL={isRTL}
-                    onClick={() => router.push(`/precedents/judgment/${pr.id}`)}
+                    onClick={() => router.push(resultHref(`/precedents/judgment/${pr.id}`, q))}
                     onHashtagClick={(tag) => setSelectedHashtag(tag)}
                     q={q}
                   />
@@ -692,7 +693,7 @@ export function PrecedentsTabContent({
                     isDark={isDark}
                     idx={idx}
                     isRTL={isRTL}
-                    onClick={() => router.push(`/precedents/judgment/${pr.id}`)}
+                    onClick={() => router.push(resultHref(`/precedents/judgment/${pr.id}`, q))}
                     onHashtagClick={(tag) => setSelectedHashtag(tag)}
                     q={q}
                   />

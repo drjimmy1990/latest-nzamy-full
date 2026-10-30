@@ -95,3 +95,17 @@ test("source: the tabs render grouped search cards; links carry ?target= and ?q=
   assert.match(card, /\{row\.snippet \? \(/);
   assert.doesNotMatch(card, /text-(?:gray|slate)-(?:100|200)\b/);
 });
+
+test("٠٦-C05: resultHref adds ?q= and keeps the #hash; no link or no search leaves it", async () => {
+  const { resultHref } = await import("./searchHitGroups.ts");
+  assert.equal(resultHref("/precedents/c1#p1", "إيجار"), `/precedents/c1?q=${encodeURIComponent("إيجار")}#p1`);
+  assert.equal(resultHref("/book/x", "ب"), "/book/x", "a one-letter box runs no search");
+  assert.equal(resultHref("#", "إيجار"), "#");
+  assert.equal(resultHref(null, "إيجار"), "");
+  for (const rel of ["./components/OrdersTabContent.tsx", "./components/CollectionSeriesCard.tsx", "./components/ListItems.tsx", "./components/FeqhTabContent.tsx"]) {
+    assert.match(read(rel), /resultHref\(/, `${rel} links carry ?q=`);
+  }
+  const all = read("./components/LawsTabContent.tsx");
+  assert.doesNotMatch(all, /router\.push\(`\/laws\/orders\/\$\{o\.id\}`\)/);
+  assert.doesNotMatch(all, /href=\{book\.free \? `\/book\//);
+});

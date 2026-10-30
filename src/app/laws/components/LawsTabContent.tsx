@@ -28,7 +28,7 @@ import { lawCardSummaryText } from "./summaryClamp";
 import { lawCardDates, mergedFileBadge } from "../catalogueCardLabels";
 import { withSearchQuery } from "@/lib/search/multiColorSearch";
 import { Hl } from "@/components/search/MultiColorHighlight";
-import { deepHitHref, groupFeqhSearchCards, groupPrincipleSearchCards, type FeqhHitLike, type PrincipleHitLike } from "../searchHitGroups";
+import { deepHitHref, resultHref, groupFeqhSearchCards, groupPrincipleSearchCards, type FeqhHitLike, type PrincipleHitLike } from "../searchHitGroups";
 import { SearchHitGroupCard } from "./SearchHitGroupCard";
 import {
   PrincipleCard,
@@ -733,7 +733,7 @@ export function LawsTabContent({
                 )}
 
                 <Link
-                  href={isColFree ? `/precedents/${col.slug}` : "#"}
+                  href={isColFree ? resultHref(`/precedents/${col.slug}`, searchQ) : "#"}
                   onClick={(e) => {
                     if (!isColFree) {
                       e.preventDefault();
@@ -974,7 +974,7 @@ export function LawsTabContent({
                     isDark={isDark}
                     idx={idx}
                     isRTL={isRTL}
-                    onClick={() => router.push(`/precedents/judgment/${pr.id}`)}
+                    onClick={() => router.push(resultHref(`/precedents/judgment/${pr.id}`, q))}
                     onHashtagClick={(tag) => setSelectedHashtag(tag)}
                     q={q}
                   />
@@ -985,7 +985,7 @@ export function LawsTabContent({
                     isDark={isDark}
                     idx={idx}
                     isRTL={isRTL}
-                    onClick={() => router.push(`/precedents/judgment/${pr.id}`)}
+                    onClick={() => router.push(resultHref(`/precedents/judgment/${pr.id}`, q))}
                     onHashtagClick={(tag) => setSelectedHashtag(tag)}
                     q={q}
                   />
@@ -1069,7 +1069,7 @@ export function LawsTabContent({
                 )}
 
                 <Link
-                  href={book.free ? `/book/${book.slug}` : "#"}
+                  href={book.free ? resultHref(`/book/${book.slug}`, searchQ) : "#"}
                   onClick={(e) => {
                     if (!book.free) {
                       e.preventDefault();
@@ -1241,7 +1241,7 @@ export function LawsTabContent({
                     isDark={isDark}
                     idx={idx}
                     isRTL={isRTL}
-                    onClick={() => router.push(`/laws/orders/${o.id}`)}
+                    onClick={() => router.push(resultHref(`/laws/orders/${o.id}`, q))}
                     onHashtagClick={(tag) => setSelectedHashtag(tag)}
                   />
                 ) : (
@@ -1251,7 +1251,7 @@ export function LawsTabContent({
                     isDark={isDark}
                     idx={idx}
                     isRTL={isRTL}
-                    onClick={() => router.push(`/laws/orders/${o.id}`)}
+                    onClick={() => router.push(resultHref(`/laws/orders/${o.id}`, q))}
                     onHashtagClick={(tag) => setSelectedHashtag(tag)}
                   />
                 )

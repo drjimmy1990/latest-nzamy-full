@@ -7,6 +7,7 @@ import { CaretLeft, CaretRight } from "@phosphor-icons/react";
 import { type DemoOrder } from "../demo-data-access";
 import { OrderCard, OrderRow, EmptyState } from "./ListItems";
 import { ResultsSkeleton } from "./ResultsSkeleton";
+import { resultHref } from "../searchHitGroups";
 
 interface OrdersTabContentProps {
   isDark: boolean;
@@ -111,7 +112,7 @@ export function OrdersTabContent({
                   isDark={isDark}
                   idx={idx}
                   isRTL={isRTL}
-                  onClick={() => router.push(`/laws/orders/${o.id}`)}
+                  onClick={() => router.push(resultHref(`/laws/orders/${o.id}`, q))}
                   onHashtagClick={(tag) => setSelectedHashtag(tag)}
                 />
               ) : (
@@ -121,7 +122,7 @@ export function OrdersTabContent({
                   isDark={isDark}
                   idx={idx}
                   isRTL={isRTL}
-                  onClick={() => router.push(`/laws/orders/${o.id}`)}
+                  onClick={() => router.push(resultHref(`/laws/orders/${o.id}`, q))}
                   onHashtagClick={(tag) => setSelectedHashtag(tag)}
                 />
               )

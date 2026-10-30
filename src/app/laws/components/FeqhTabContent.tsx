@@ -10,7 +10,7 @@ import { toCatalogueCards } from "@/lib/library/bookVolumes";
 import { EmptyState } from "./ListItems";
 import { ResultsSkeleton } from "./ResultsSkeleton";
 import { SearchHitGroupCard } from "./SearchHitGroupCard";
-import { groupFeqhSearchCards, type FeqhHitLike } from "../searchHitGroups";
+import { groupFeqhSearchCards, resultHref, type FeqhHitLike } from "../searchHitGroups";
 
 /** A card field worth a line: not empty, and not the «—» placeholder. */
 function hasText(value: unknown): value is string {
@@ -254,7 +254,7 @@ export function FeqhTabContent({
                 )}
 
                 <Link
-                  href={isBookFree ? `/book/${book.slug}` : "#"}
+                  href={isBookFree ? resultHref(`/book/${book.slug}`, q) : "#"}
                   onClick={(e) => {
                     if (!isBookFree) {
                       e.preventDefault();
