@@ -337,6 +337,9 @@ export function CircuitsDirectory({
       </div>
 
       <HighlightProvider query={query}>
+        {/* The provider's wrapper is display:contents, out of reach of the
+            outer space-y-4: the spacing lives on this div. */}
+        <div className="space-y-4">
         <SearchLegendBar onClear={() => setSearch("")} partial={hasMore} />
 
         <p role="status" aria-live="polite" className={`text-[12px] px-1 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
@@ -371,6 +374,7 @@ export function CircuitsDirectory({
             </button>
           </div>
         )}
+        </div>
       </HighlightProvider>
     </div>
   );

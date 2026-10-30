@@ -29,6 +29,8 @@ test("the business page keeps its plan gate", () => {
 test("cross-field operator search, multi-colour highlight, legend, infinite scroll, copy", () => {
   assert.match(DIR, /filterCircuits\(circuits, \{ query, region, category, verification \}\)/);
   assert.match(DIR, /<HighlightProvider query=\{query\}>/);
+  // The provider's wrapper is display:contents: the list spacing lives inside it.
+  assert.match(DIR, /<HighlightProvider query=\{query\}>[\s\S]{0,200}<div className="space-y-4">/);
   assert.match(DIR, /<SearchLegendBar onClear=\{\(\) => setSearch\(""\)\} partial=\{hasMore\} \/>/);
   for (const field of ["circuit.name", "circuit.category", "circuit.region", "circuit.city", "circuit.email"]) {
     assert.match(DIR, new RegExp(`<Hl text=\\{${field.replace(".", "\\.")}\\} />`), field);

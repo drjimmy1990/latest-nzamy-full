@@ -33,7 +33,10 @@ test("collection reader: ?q= colours, never filters; the hash or ?target= is the
   // ?q= never reaches the filter box (note ١٢: that hid the target principle).
   assert.doesNotMatch(PAGE, /setSearchQuery\(arrival/);
   assert.doesNotMatch(PAGE, /setSearchQuery\(urlQuery/);
-  assert.match(PAGE, /const highlightQuery = searchQuery\.trim\(\) \? searchQuery : urlQuery;/);
+  assert.match(PAGE, /const deferredSearch = useDeferredValue\(searchQuery\);/);
+  assert.match(PAGE, /const highlightQuery = deferredSearch\.trim\(\) \? deferredSearch : urlQuery;/);
+  // The provider's wrapper is display:contents: the column spacing lives inside it.
+  assert.match(PAGE, /<HighlightProvider query=\{highlightQuery\}>[\s\S]{0,200}<div className="space-y-6">/);
   assert.match(PAGE, /<HighlightProvider query=\{highlightQuery\}>/);
   assert.match(PAGE, /<SearchLegendBar\s+onClear=\{clearHighlight\}\s+partial=\{hasMore\}/);
   // The filter box uses the same grammar as the highlight.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback, useDeferredValue } from "react";
 import { useParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -597,7 +597,9 @@ export default function JudicialPrinciplesPage() {
   }, [collection, searchQuery]);
 
   // The highlight: the reader's own filter box while it has text, else ?q=.
-  const highlightQuery = searchQuery.trim() ? searchQuery : urlQuery;
+  // Deferred: colouring up to 2,323 principles must not block typing.
+  const deferredSearch = useDeferredValue(searchQuery);
+  const highlightQuery = deferredSearch.trim() ? deferredSearch : urlQuery;
 
   /** ✕ «مسح الألوان»: drop the filter text and ?q= (the hash stays). */
   const clearHighlight = () => {
@@ -928,6 +930,9 @@ export default function JudicialPrinciplesPage() {
             {/* Owner note ٠٦: one provider for the reader column only — the
                 in-document search panel above has its own colours and counts. */}
             <HighlightProvider query={highlightQuery}>
+            {/* The provider's wrapper is display:contents, which space-y-6
+                above no longer reaches: the spacing lives on this div. */}
+            <div className="space-y-6">
             <ScrollToFirstMark enabled={Boolean(urlQuery) && !jump && !searchQuery.trim()} deps={[collection.principles.length]} />
             <SearchLegendBar
               onClear={clearHighlight}
@@ -1007,6 +1012,7 @@ export default function JudicialPrinciplesPage() {
                 </button>
               </div>
             )}
+            </div>
             </HighlightProvider>
           </div>
 
