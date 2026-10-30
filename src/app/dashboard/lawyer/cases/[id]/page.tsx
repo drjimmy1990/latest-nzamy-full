@@ -53,6 +53,7 @@ import {
   getDocumentFileUrl,
   isDocumentTimeoutError,
 } from "@/lib/services/documentService";
+import { openPendingTab } from "@/lib/ui/pendingTab";
 import {
   getLawyerTasks,
   createLawyerTask,
@@ -1012,14 +1013,22 @@ export default function CaseDetailPage() {
   const handleDownload = async (doc: ServiceRequestAttachment) => {
     setDownloadError(null);
     const label = doc.name || "المستند";
+    // CODE-F38: the tab is opened during the click, before the await, and
+    // pointed at the signed URL afterwards — a window.open after an await
+    // can be blocked, and its null used to be ignored (lib/ui/pendingTab.ts).
+    const tab = openPendingTab(window);
     try {
       const url = await getDocumentFileUrl(doc.storage_path);
       if (!url) {
+        tab.close();
         setDownloadError(`تعذّر فتح «${label}» — حاول مرة أخرى.`);
         return;
       }
-      window.open(url, "_blank", "noopener,noreferrer");
+      if (!tab.navigate(url)) {
+        setDownloadError(`منع المتصفح فتح نافذة جديدة لـ«${label}» — اسمح بالنوافذ المنبثقة لهذا الموقع ثم أعد المحاولة.`);
+      }
     } catch (e) {
+      tab.close();
       console.error("[lawyer case detail] download failed:", e);
       setDownloadError(
         isDocumentTimeoutError(e)
