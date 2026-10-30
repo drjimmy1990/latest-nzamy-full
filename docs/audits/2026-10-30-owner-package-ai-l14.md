@@ -77,7 +77,19 @@
 - `navigation.consultant.test.ts` 11/12. The failure is in a dashboard source test that matches LF text in a CRLF checkout, in a file this branch does not touch.
 - `npx tsc --noEmit`: clean except the same missing `pdf-lib`.
 
+**Scope of the live test:** it called n8n directly. The app's own path (start → charge → callback → citation check → refund) is covered by unit tests only, until the deploy and the owner's acceptance test.
+
 ## Not done (for the owner or later)
+
+- **The tool ships off (`defaultMode: off`; D10 keeps AI tools off or staff-only).** Until an admin turns `legal-drafter` on, «تحليل الوقائع» answers «tool off». The page then switches to the team order («لا يكتب الذكاء الاصطناعي هذا الطلب حالياً…»). Pleadings are not AI-written until the tool is on.
+- **Facts only in files ground weakly:**
+  - the analysis searches the library before n8n has read the file, using the judgment reasons, or else the branch and the kind;
+  - so a real file can come back with no [S…] markers, and it is then refused as ungrounded and refunded;
+  - typed facts ground properly.
+- **Fixed after review (commit 4):**
+  - once a draft exists, the analysis is locked;
+  - «صياغة جديدة» states that it charges again (a third run in the same work is refused);
+  - the AI step stays mounted on every step, so «السابق» no longer drops a paid analysis.
 
 - **Price conflict:**
   - NOTE-22 says appeal 800; the plan and the brief say 1,000 (built as 1,000);

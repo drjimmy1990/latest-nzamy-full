@@ -37,9 +37,11 @@ interface Props {
   skippedFiles: string[];
   /** The pleading as text once written ("" before): the optional team review carries it. */
   onPleading: (text: string) => void;
+  /** The tool is switched off (the run answered `tool_off`): the page offers the team order instead. */
+  onToolOff: () => void;
 }
 
-export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPleading }: Props) {
+export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPleading, onToolOff }: Props) {
   const analysis = useAiRun();
   const writing = useAiRun();
   const [sent, setSent] = useState<Record<string, unknown> | null>(null);
@@ -56,6 +58,11 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
   const blocker = edited ? draftBlocker(edited) : null;
   const written = pleading ? pleadingText(pleading) : "";
   useEffect(() => { onPleading(written); }, [written, onPleading]);
+  const toolOff = analysis.code === "tool_off";
+  useEffect(() => { if (toolOff) onToolOff(); }, [toolOff, onToolOff]);
+  // The analysis is fixed while the draft is written and once it exists: the
+  // work is one analysis and one draft (a third run is refused).
+  const locked = writing.busy || !!pleading;
 
   const card = isDark ? "bg-zinc-900 border border-white/[0.06] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
   const muted = isDark ? "text-zinc-500" : "text-zinc-400";
@@ -144,7 +151,7 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
 
             <label className="block space-y-1.5">
               <span className={`text-[12px] font-semibold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>الوقائع كما ستُكتب في المذكرة</span>
-              <textarea rows={7} value={edited.facts_summary} onChange={(e) => update({ facts_summary: e.target.value })} className={field} disabled={writing.busy} />
+              <textarea rows={7} value={edited.facts_summary} onChange={(e) => update({ facts_summary: e.target.value })} className={field} disabled={locked} />
             </label>
 
             <section className="space-y-2">
@@ -153,14 +160,14 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
                 <div key={n} className={`rounded-xl border p-3 space-y-2 ${isDark ? "border-white/[0.06]" : "border-zinc-100"}`}>
                   <div className="flex items-center gap-2">
                     <span className={`text-[11px] font-black ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>{(n + 1).toLocaleString("ar-SA")}</span>
-                    <input value={issue.title} onChange={(e) => update({ issues: edited.issues.map((x, i) => (i === n ? { ...x, title: e.target.value } : x)) })} className={field} disabled={writing.busy} />
-                    <button type="button" aria-label="حذف المسألة" disabled={writing.busy} onClick={() => update({ issues: edited.issues.filter((_, i) => i !== n) })} className="text-red-500 disabled:opacity-40"><Trash size={14} /></button>
+                    <input value={issue.title} onChange={(e) => update({ issues: edited.issues.map((x, i) => (i === n ? { ...x, title: e.target.value } : x)) })} className={field} disabled={locked} />
+                    <button type="button" aria-label="حذف المسألة" disabled={locked} onClick={() => update({ issues: edited.issues.filter((_, i) => i !== n) })} className="text-red-500 disabled:opacity-40"><Trash size={14} /></button>
                   </div>
-                  <textarea rows={2} value={issue.detail} onChange={(e) => update({ issues: edited.issues.map((x, i) => (i === n ? { ...x, detail: e.target.value } : x)) })} className={field} disabled={writing.busy} />
+                  <textarea rows={2} value={issue.detail} onChange={(e) => update({ issues: edited.issues.map((x, i) => (i === n ? { ...x, detail: e.target.value } : x)) })} className={field} disabled={locked} />
                 </div>
               ))}
               {edited.issues.length < 12 && (
-                <button type="button" disabled={writing.busy} onClick={() => update({ issues: [...edited.issues, { title: "", detail: "" }] })} className={`flex items-center gap-1 text-[11px] font-semibold ${muted}`}>
+                <button type="button" disabled={locked} onClick={() => update({ issues: [...edited.issues, { title: "", detail: "" }] })} className={`flex items-center gap-1 text-[11px] font-semibold ${muted}`}>
                   <Plus size={12} /> أضف مسألة
                 </button>
               )}
@@ -173,22 +180,22 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
                   d.kept ? (isDark ? "border-emerald-500/20" : "border-emerald-200") : isDark ? "border-white/[0.06]" : "border-zinc-100"
                 }`}>
                   <div className="flex items-center gap-2">
-                    <button type="button" aria-label="اعتماد الدفع" disabled={writing.busy} onClick={() => update({ defenses: edited.defenses.map((x, i) => (i === n ? { ...x, kept: true } : x)) })}
+                    <button type="button" aria-label="اعتماد الدفع" disabled={locked} onClick={() => update({ defenses: edited.defenses.map((x, i) => (i === n ? { ...x, kept: true } : x)) })}
                       className={`h-7 w-7 shrink-0 rounded-lg flex items-center justify-center ${d.kept ? "bg-emerald-500 text-white" : isDark ? "bg-zinc-800 text-zinc-500" : "bg-zinc-100 text-zinc-400"}`}>
                       <CheckCircle size={13} weight="fill" />
                     </button>
-                    <button type="button" aria-label="استبعاد الدفع" disabled={writing.busy} onClick={() => update({ defenses: edited.defenses.map((x, i) => (i === n ? { ...x, kept: false } : x)) })}
+                    <button type="button" aria-label="استبعاد الدفع" disabled={locked} onClick={() => update({ defenses: edited.defenses.map((x, i) => (i === n ? { ...x, kept: false } : x)) })}
                       className={`h-7 w-7 shrink-0 rounded-lg flex items-center justify-center ${!d.kept ? "bg-red-500 text-white" : isDark ? "bg-zinc-800 text-zinc-500" : "bg-zinc-100 text-zinc-400"}`}>
                       <XCircle size={13} weight="fill" />
                     </button>
-                    <input value={d.title} onChange={(e) => update({ defenses: edited.defenses.map((x, i) => (i === n ? { ...x, title: e.target.value } : x)) })} className={field} disabled={writing.busy} />
+                    <input value={d.title} onChange={(e) => update({ defenses: edited.defenses.map((x, i) => (i === n ? { ...x, title: e.target.value } : x)) })} className={field} disabled={locked} />
                     {d.issue !== null && <span className={`shrink-0 text-[10px] ${muted}`}>المسألة {d.issue.toLocaleString("ar-SA")}</span>}
                   </div>
                   {d.basis && <CitedText text={d.basis} cites={sourcesA} isDark={isDark} className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`} />}
                 </div>
               ))}
               {edited.defenses.length < 15 && (
-                <button type="button" disabled={writing.busy} onClick={() => update({ defenses: [...edited.defenses, { title: "", basis: "", issue: null, kept: true }] })} className={`flex items-center gap-1 text-[11px] font-semibold ${muted}`}>
+                <button type="button" disabled={locked} onClick={() => update({ defenses: [...edited.defenses, { title: "", basis: "", issue: null, kept: true }] })} className={`flex items-center gap-1 text-[11px] font-semibold ${muted}`}>
                   <Plus size={12} /> أضف دفعاً
                 </button>
               )}
@@ -198,12 +205,12 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
               <h3 className={`text-[12px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>الطلبات</h3>
               {edited.requests.map((r, n) => (
                 <div key={n} className="flex items-center gap-2">
-                  <input value={r} onChange={(e) => update({ requests: edited.requests.map((x, i) => (i === n ? e.target.value : x)) })} className={field} disabled={writing.busy} />
-                  <button type="button" aria-label="حذف الطلب" disabled={writing.busy} onClick={() => update({ requests: edited.requests.filter((_, i) => i !== n) })} className="text-red-500 disabled:opacity-40"><Trash size={14} /></button>
+                  <input value={r} onChange={(e) => update({ requests: edited.requests.map((x, i) => (i === n ? e.target.value : x)) })} className={field} disabled={locked} />
+                  <button type="button" aria-label="حذف الطلب" disabled={locked} onClick={() => update({ requests: edited.requests.filter((_, i) => i !== n) })} className="text-red-500 disabled:opacity-40"><Trash size={14} /></button>
                 </div>
               ))}
               {edited.requests.length < 10 && (
-                <button type="button" disabled={writing.busy} onClick={() => update({ requests: [...edited.requests, ""] })} className={`flex items-center gap-1 text-[11px] font-semibold ${muted}`}>
+                <button type="button" disabled={locked} onClick={() => update({ requests: [...edited.requests, ""] })} className={`flex items-center gap-1 text-[11px] font-semibold ${muted}`}>
                   <Plus size={12} /> أضف طلباً
                 </button>
               )}
@@ -278,9 +285,9 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
               className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[12px] font-semibold ${isDark ? "border-white/[0.07] text-zinc-300" : "border-zinc-200 text-zinc-600"}`}>
               <FileDoc size={14} /> تنزيل Word
             </button>
-            <button type="button" onClick={() => writing.reset()}
+            <button type="button" onClick={() => { if (window.confirm(`صياغة جديدة تبدأ تحليلاً جديداً وتُخصم لها ${spec.price.toLocaleString("ar-SA")} نقطة. المذكرة الحالية تبقى في سجل الذكاء الاصطناعي. متابعة؟`)) { writing.reset(); analysis.reset(); setSent(null); setChanges(null); } }}
               className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[12px] font-semibold ${isDark ? "border-white/[0.07] text-zinc-300" : "border-zinc-200 text-zinc-600"}`}>
-              <ArrowCounterClockwise size={14} /> عدّل التحليل
+              <ArrowCounterClockwise size={14} /> صياغة جديدة (بخصم جديد)
             </button>
           </div>
           {wordFailed && <p role="alert" className="text-[11px] text-red-500">تعذّر إنشاء ملف Word — انسخ النص أو نزّله .txt</p>}

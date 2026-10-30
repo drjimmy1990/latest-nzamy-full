@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { Check, ArrowRight, ArrowLeft } from "@phosphor-icons/react";
@@ -50,6 +50,11 @@ export default function AIDraftPage() {
   const files = useMemo(() => splitAiReadable(s.uploadedAttachments), [s.uploadedAttachments]);
   const [aiDraftText, setAiDraftText] = useState("");
   const [reviewOpen, setReviewOpen] = useState(false);
+  // The run answered `tool_off` (the tool ships off until an admin turns it
+  // on): the team order becomes the path.
+  const [aiOff, setAiOff] = useState(false);
+  const markAiOff = useCallback(() => setAiOff(true), []);
+  const aiPath = aiOpen && !aiOff && !consultantBlocked && kind !== null;
   // "pre" = show chooser, "draft" = show the wizard
   // If a mode param is provided skip the chooser and go straight to draft
   const [preMode, setPreMode] = useState<"pre" | "draft">(modeParam ? "draft" : "pre");
@@ -171,9 +176,13 @@ export default function AIDraftPage() {
           {CONSULTANT_BLOCKED_MESSAGE}
         </p>
       )}
-      {s.step === "submit" && !consultantBlocked && aiOpen && kind && (
-        <>
+      {/* Mounted on every step once the kind is known, so going back does
+          not drop a paid analysis or a run in progress; a new kind starts
+          a new work (key). */}
+      {aiPath && kind && (
+        <div className={s.step === "submit" ? "space-y-5" : "hidden"}>
           <StepAiDraft
+            key={kind}
             isDark={isDark}
             kind={kind}
             facts={{
@@ -190,6 +199,7 @@ export default function AIDraftPage() {
             fileIds={files.ids}
             skippedFiles={files.skipped}
             onPleading={setAiDraftText}
+            onToolOff={markAiOff}
           />
           {reviewOpen ? (
             <StepSubmit
@@ -209,9 +219,9 @@ export default function AIDraftPage() {
               طلب مراجعة من فريق نظامي (اختياري) — طلب منفصل عن الصياغة
             </button>
           )}
-        </>
+        </div>
       )}
-      {s.step === "submit" && !consultantBlocked && !aiOpen && (
+      {s.step === "submit" && !consultantBlocked && !aiPath && (
         <StepSubmit
           isDark={isDark}
           variant="order"
