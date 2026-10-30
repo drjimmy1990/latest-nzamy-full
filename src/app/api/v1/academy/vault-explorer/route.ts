@@ -1,11 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
+import { requireAdmin } from "@/lib/access-control";
+
+/**
+ * GET /api/v1/academy/vault-explorer — a developer's browser over the raw
+ * academy question bank on disk (the «مستعرض بنك الأسئلة» tab of
+ * /academy/quiz, which also asks it for a section sample when a quiz starts).
+ *
+ * Owner note ١٣ C06: it answered anyone, signed in or not, and echoed the
+ * server's error text. VAULT_DIR is a hard-coded Windows path on one
+ * developer's machine, so on the production server it never existed and the
+ * route served nothing (404) — but on any machine where it exists it handed
+ * the whole bank to a guest. Now: platform admins only (requireAdmin, the
+ * same check as every /api/v1/admin route), a generic error, nothing echoed.
+ * The quiz page already treats a refused call as "no vault questions" and
+ * falls back to its built-in bank, so nothing changes for a learner.
+ */
 
 const VAULT_DIR = "D:\\Data\\Data\\antigravity ai\\أكاديمية_نظامي\\02_بنك_الأسئلة_المفروز_بالأقسام_الـ30";
 const PROGRESS_FILE = "D:\\Data\\Data\\antigravity ai\\أكاديمية_نظامي\\PROGRESS_ACADEMY.json";
 
 export async function GET(req: NextRequest) {
+  const admin = await requireAdmin();
+  if (!admin.isAdmin) {
+    return NextResponse.json({ error: admin.error ?? "غير مصرح" }, { status: admin.status ?? 403 });
+  }
   try {
     const { searchParams } = new URL(req.url);
     const section = searchParams.get("section"); // e.g. "00" or "04"
@@ -93,7 +113,8 @@ export async function GET(req: NextRequest) {
       lawsSummary,
       sampleQuestions: sampleQuestions.slice(0, 50)
     });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err: unknown) {
+    console.error("[academy/vault-explorer] failed:", err instanceof Error ? err.name : "error");
+    return NextResponse.json({ error: "تعذّر قراءة بنك الأسئلة." }, { status: 500 });
   }
 }

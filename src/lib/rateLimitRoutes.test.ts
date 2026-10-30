@@ -13,7 +13,12 @@ import {
   isCouponValidateRoute,
   isTrackingUnlockRoute,
   isAttachmentsZipRoute,
+  libraryBudgetBuckets,
+  canonicalApiPath,
 } from "./rateLimitRoutes.ts";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 // ─── isStrictRateLimitedRoute ────────────────────────────────────────────────
 
@@ -175,4 +180,79 @@ test("isGeneralRateLimitedApiPath: n8n's AI callback is exempt, the browser's AI
   assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/ai/callback"), false);
   assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/ai/runs"), true);
   assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/ai/callback/x"), true);
+});
+
+// ─── libraryBudgetBuckets (owner note ١٣ C03) ────────────────────────────────
+
+const API_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "app", "api");
+
+/** Every route.ts under `dir`, as [url path with sample segments, exported methods]. */
+function routesUnder(dir: string): Array<{ url: string; methods: string[] }> {
+  const out: Array<{ url: string; methods: string[] }> = [];
+  const walk = (abs: string) => {
+    for (const entry of fs.readdirSync(abs, { withFileTypes: true })) {
+      const next = path.join(abs, entry.name);
+      if (entry.isDirectory()) walk(next);
+      else if (entry.name === "route.ts") {
+        const rel = path.relative(API_DIR, path.dirname(next)).split(path.sep)
+          .map((seg) => (/^\[.+\]$/.test(seg) ? "sample-1" : seg));
+        const src = fs.readFileSync(next, "utf8");
+        const methods = [...src.matchAll(/export\s+(?:async\s+)?(?:function|const)\s+(GET|POST|PUT|PATCH|DELETE|HEAD)\b/g)]
+          .map((m) => m[1]);
+        out.push({ url: "/api/" + rel.join("/"), methods });
+      }
+    }
+  };
+  if (fs.existsSync(dir)) walk(dir);
+  return out;
+}
+
+test("note ١٣ C03: EVERY route under /api/library, /api/v1/library and /api/ai has a budget, for every method it exports", () => {
+  const routes = [
+    ...routesUnder(path.join(API_DIR, "library")),
+    ...routesUnder(path.join(API_DIR, "v1", "library")),
+    ...routesUnder(path.join(API_DIR, "ai")),
+  ];
+  assert.ok(routes.length >= 20, `only ${routes.length} routes found — is the walk looking in the right place?`);
+  for (const { url, methods } of routes) {
+    assert.ok(methods.length > 0, `${url}: no exported handler found`);
+    for (const method of methods) {
+      assert.ok(libraryBudgetBuckets(method, url).length > 0, `${method} ${url} has no budget`);
+    }
+  }
+});
+
+test("libraryBudgetBuckets: documents, catalogue and AI get their own tighter bucket as well", () => {
+  for (const p of ["/api/library/laws/x", "/api/library/books/x", "/api/library/precedents/x", "/api/library/decrees/x"]) {
+    assert.deepEqual(libraryBudgetBuckets("GET", p), ["library-any", "library-doc"], p);
+  }
+  assert.deepEqual(libraryBudgetBuckets("GET", "/api/library/init"), ["library-any", "library-init"]);
+  assert.deepEqual(libraryBudgetBuckets("POST", "/api/ai/library-chat"), ["library-ai"]);
+  assert.deepEqual(libraryBudgetBuckets("POST", "/api/ai/explain-article"), ["library-ai"]);
+  // Routes that only exist on the open library branch are covered already.
+  assert.deepEqual(libraryBudgetBuckets("GET", "/api/library/search/suggest"), ["library-any"]);
+  assert.deepEqual(libraryBudgetBuckets("GET", "/api/v1/library/my-grant"), ["library-any"]);
+  // Invitations: the redeem keeps the strict bucket AND the library catch-all.
+  assert.deepEqual(libraryBudgetBuckets("POST", "/api/v1/library/invitations/redeem"), ["library-any"]);
+  assert.equal(isStrictRateLimitedRoute("POST", "/api/v1/library/invitations/redeem"), true);
+});
+
+test("libraryBudgetBuckets: percent-encoding a static segment does not dodge a bucket", () => {
+  assert.deepEqual(libraryBudgetBuckets("GET", "/api/librar%79/laws/x"), ["library-any", "library-doc"]);
+  assert.deepEqual(libraryBudgetBuckets("GET", "/api/library/law%73/x"), ["library-any", "library-doc"]);
+  assert.deepEqual(libraryBudgetBuckets("GET", "/api/library/ini%74"), ["library-any", "library-init"]);
+  assert.deepEqual(libraryBudgetBuckets("POST", "/api/a%69/library-chat"), ["library-ai"]);
+  assert.equal(canonicalApiPath("/api/library/laws%2Fx"), "/api/library/laws%2Fx");
+  assert.equal(canonicalApiPath("/api/library/%E0%A4%A"), "/api/library/%E0%A4%A");
+});
+
+test("libraryBudgetBuckets: neighbours are not swept in", () => {
+  assert.deepEqual(libraryBudgetBuckets("GET", "/api/librarything"), []);
+  assert.deepEqual(libraryBudgetBuckets("GET", "/api/v1/libraryx/status"), []);
+  assert.deepEqual(libraryBudgetBuckets("GET", "/api/aim"), []);
+  assert.deepEqual(libraryBudgetBuckets("GET", "/laws/labor-law"), []);
+  assert.deepEqual(libraryBudgetBuckets("POST", "/api/v1/ai/runs"), []);
+  // A document sub-path or a write is not a document read.
+  assert.deepEqual(libraryBudgetBuckets("GET", "/api/library/laws/x/y"), ["library-any"]);
+  assert.deepEqual(libraryBudgetBuckets("POST", "/api/library/laws/x"), ["library-any"]);
 });

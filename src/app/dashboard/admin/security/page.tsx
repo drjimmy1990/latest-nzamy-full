@@ -9,8 +9,11 @@ import {
   UserCircleMinus, ArrowsLeftRight, Desktop, Scan,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import LibraryLocksPanel from "./LibraryLocksPanel";
 
-type SecTab = "overview"|"duplicates"|"scraping"|"threats";
+// "library_locks" is real (owner note ١٣ C09, public.library_security_locks);
+// the other four tabs and the KPI row still show the illustrative data below.
+type SecTab = "library_locks"|"overview"|"duplicates"|"scraping"|"threats";
 
 /* ── Mock ──────────────────────────────────────────────────────────────────── */
 const DUP_ACCOUNTS = [
@@ -44,13 +47,14 @@ const THREAT_TYPES = [
 
 export default function SecurityPage() {
   const { isDark } = useTheme();
-  const [tab, setTab] = useState<SecTab>("overview");
+  const [tab, setTab] = useState<SecTab>("library_locks");
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
     : "rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]";
 
   const TABS:{id:SecTab;label:string;icon:React.ElementType}[] = [
+    { id:"library_locks", label:"قفل المكتبة", icon:LockSimple },
     { id:"overview", label:"نظرة عامة", icon:ShieldCheck },
     { id:"duplicates", label:"حسابات مكررة", icon:Users },
     { id:"scraping", label:"حماية البوتات", icon:Bug },
@@ -67,6 +71,10 @@ export default function SecurityPage() {
         <h1 className={`text-xl font-bold mb-1 ${isDark?"text-white":"text-slate-800"}`}>الأمان والحماية</h1>
         <p className={`text-[12px] ${isDark?"text-zinc-500":"text-slate-400"}`}>كشف التهديدات، الحسابات المكررة، وحماية المنصة من الهجمات</p>
       </motion.div>
+
+      <p className={`rounded-xl border px-4 py-2 text-[11px] ${isDark?"border-amber-500/20 bg-amber-500/10 text-amber-300":"border-amber-200 bg-amber-50 text-amber-800"}`}>
+        بيانات توضيحية: البطاقات أدناه وتبويبات «نظرة عامة» و«حسابات مكررة» و«حماية البوتات» و«التهديدات» ليست من النظام بعد. تبويب «قفل المكتبة» وحده حقيقي.
+      </p>
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -101,6 +109,8 @@ export default function SecurityPage() {
           </button>
         ))}
       </div>
+
+      {tab==="library_locks" && <LibraryLocksPanel isDark={isDark} card={card} />}
 
       {/* Overview */}
       {tab==="overview" && (
