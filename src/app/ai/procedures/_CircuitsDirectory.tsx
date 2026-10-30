@@ -1,6 +1,6 @@
 "use client";
 
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { MagnifyingGlass, MapPin, Star } from "@phosphor-icons/react";
 import { HighlightProvider, Hl } from "@/components/search/MultiColorHighlight";
 import { getPreferences, patchPreferences, type CircuitFavorite } from "@/lib/services/preferencesService";
@@ -94,29 +94,43 @@ export function CircuitsDirectory({ isDark }: { isDark: boolean }) {
 
   const result = useMemo(() => searchRows(scope, query, circuitFields), [scope, query]);
 
-  async function saveFavorites(next: CircuitFavorite[]) {
-    const previous = favorites;
+  // Every change builds on the LATEST list (favRef), not the one captured at
+  // render, and only the newest save may write the server's answer back — so
+  // two quick stars never save a list missing the first one, and a slow reply
+  // never overwrites a newer star.
+  const favRef = useRef<CircuitFavorite[] | null>(null);
+  const saveSeq = useRef(0);
+  useEffect(() => { favRef.current = favorites; }, [favorites]);
+
+  async function saveFavorites(next: CircuitFavorite[], previous: CircuitFavorite[]) {
+    const seq = ++saveSeq.current;
+    favRef.current = next;
     setFavorites(next);
     setFavError(null);
     try {
       const saved = await patchPreferences({ circuitFavorites: next });
-      setFavorites(saved.circuitFavorites ?? next);
+      if (seq === saveSeq.current) setFavorites(saved.circuitFavorites ?? next);
     } catch (e) {
-      setFavorites(previous);
+      if (seq === saveSeq.current) {
+        favRef.current = previous;
+        setFavorites(previous);
+      }
       setFavError(e instanceof Error && e.message ? e.message : "تعذّر حفظ المفضلة.");
     }
   }
 
   function toggleFavorite(id: string) {
-    if (!favorites) return;
-    saveFavorites(favIds.has(id) ? favorites.filter((f) => f.id !== id) : [{ id }, ...favorites]);
+    const list = favRef.current;
+    if (!list) return;
+    saveFavorites(list.some((f) => f.id === id) ? list.filter((f) => f.id !== id) : [{ id }, ...list], list);
   }
 
   function saveNote(id: string, note: string) {
-    if (!favorites) return;
-    const current = favorites.find((f) => f.id === id);
+    const list = favRef.current;
+    if (!list) return;
+    const current = list.find((f) => f.id === id);
     if (!current || (current.note ?? "") === note.trim()) return;
-    saveFavorites(favorites.map((f) => (f.id === id ? (note.trim() ? { id, note: note.trim() } : { id }) : f)));
+    saveFavorites(list.map((f) => (f.id === id ? (note.trim() ? { id, note: note.trim() } : { id }) : f)), list);
   }
 
   const muted = isDark ? "text-zinc-400" : "text-slate-500";
