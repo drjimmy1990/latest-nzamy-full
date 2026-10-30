@@ -31,6 +31,7 @@ import {
   resolveNavbarUserType,
   resolveNavUserType,
   resolveNotificationsShell,
+  switchCurrentView,
   writeStoredAdminView,
   type AdminView,
   type ViewStorage,
@@ -304,6 +305,17 @@ test("blocked storage never throws: nothing stored, nothing written", () => {
   const s = memoryStorage();
   assert.equal(writeStoredAdminView(s, "lawyer"), true);
   assert.equal(writeStoredAdminView(s, "lawyer"), false, "unchanged value: no write, no event");
+});
+
+test("NOTE-22-C02: the switch presses a button only for the two views — elsewhere both navigate", () => {
+  assert.equal(switchCurrentView("lawyer"), "lawyer");
+  assert.equal(switchCurrentView("admin"), "admin");
+  for (const other of ["corporate", "individual", "firm", "provider", "micro", "government", "ngo", null] as const) {
+    assert.equal(switchCurrentView(other), null, String(other));
+  }
+  // An admin on the console's back-link to /dashboard/business sees no pressed button.
+  assert.equal(switchCurrentView(resolveNavUserType({ pathname: "/dashboard/business", sessionUserType: "admin", storedView: "lawyer" })), null);
+  assert.match(read("components/dashboard/SharedSidebar.tsx"), /<AdminViewSwitch current=\{switchCurrentView\(userType\)\}/);
 });
 
 test("NOTE-22-C02: the header names a view, not a role", () => {

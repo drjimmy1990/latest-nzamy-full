@@ -265,6 +265,18 @@ export function resolveNotificationsShell(input: {
   return "business";
 }
 
+// ─── Switch bar state ────────────────────────────────────────────────────────
+
+/**
+ * Which «عرض كـ» button is pressed for the menu being drawn. Only the two
+ * views map to a button; an admin on another dashboard (the console's own
+ * back-link to /dashboard/business, say) sees neither pressed, so both
+ * buttons navigate instead of one being a dead "already here".
+ */
+export function switchCurrentView(shownType: UserType): AdminView | null {
+  return shownType === "admin" || shownType === "lawyer" ? shownType : null;
+}
+
 // ─── Header label ────────────────────────────────────────────────────────────
 
 /**

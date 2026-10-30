@@ -27,7 +27,7 @@ import { isSharedClientIntakePath } from "@/lib/auth/routeAccess";
 import { QuickAddSidebarItem } from "@/components/dashboard/quickAdd/QuickAdd";
 import { AdminViewSwitch } from "@/components/dashboard/AdminViewSwitch";
 import { useAdminView } from "@/hooks/useAdminView";
-import { resolveNavUserType, adminViewSuffix } from "@/lib/nav/shellContext";
+import { resolveNavUserType, adminViewSuffix, switchCurrentView } from "@/lib/nav/shellContext";
 
 import {
   SidebarSection,
@@ -151,7 +151,7 @@ export default function SharedSidebar() {
           outside the scrolling nav so it never scrolls away. Renders nothing
           unless the REAL role is admin; switching changes the menu only. */}
       {isRealAdmin && (
-        <AdminViewSwitch current={userType === "admin" ? "admin" : "lawyer"} tone="auto" isAr={isAr} />
+        <AdminViewSwitch current={switchCurrentView(userType)} tone="auto" isAr={isAr} />
       )}
 
       {/* «+ إضافة سريعة» (N3.3) — renders only inside the lawyer/firm

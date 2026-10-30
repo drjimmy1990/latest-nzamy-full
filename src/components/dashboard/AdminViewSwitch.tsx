@@ -29,8 +29,8 @@ export function AdminViewSwitch({
   tone,
   isAr = true,
 }: {
-  /** The view this shell is drawing right now. */
-  current: AdminView;
+  /** The view this shell is drawing right now; null on any other dashboard (no button pressed). */
+  current: AdminView | null;
   /** "console" = the always-dark admin console; "auto" = follows the site theme. */
   tone: "console" | "auto";
   isAr?: boolean;
