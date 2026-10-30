@@ -37,6 +37,9 @@
  * name). A firm's vault (`f/<firm id>/`) belongs to the firm and is never
  * touched by a member's purge. A failed list (63 not run: no bucket) or
  * remove is recorded on the request like the documents' (`branding_failed`).
+ * The same `u/<his id>/` folder of the `branding-files` bucket (his uploaded
+ * Word / PDF letterhead, stamp and signature — 20261030_10) is cleared the
+ * same way, right after; that bucket not existing yet means nothing to clear.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -49,6 +52,7 @@ import {
   type PurgeOutcome,
 } from "../auth/accountFreeze.ts";
 import { BRANDING_BUCKET } from "../branding/brandingVault.ts";
+import { BRANDING_FILES_BUCKET } from "../branding/brandingAssets.ts";
 
 export const DELETION_SCHEMA_MISSING_AR =
   "تجميد الحساب غير متاح بعد: لم يُنفَّذ ملف قاعدة البيانات 20261026_70 (حذف الحساب).";
@@ -205,13 +209,30 @@ export async function removeLawyerBrandingWith(
   admin: SupabaseClient,
   userId: string,
 ): Promise<{ removed: number; failed: string[] | "list_failed" }> {
+  const logos = await removeBrandingFolderWith(admin.storage.from(BRANDING_BUCKET), BRANDING_BUCKET, userId, false);
+  const files = await removeBrandingFolderWith(admin.storage.from(BRANDING_FILES_BUCKET), BRANDING_FILES_BUCKET, userId, true);
+  const failed = logos.failed === "list_failed" || files.failed === "list_failed"
+    ? "list_failed" as const
+    : [...logos.failed, ...files.failed];
+  return { removed: logos.removed + files.removed, failed };
+}
+
+async function removeBrandingFolderWith(
+  bucket: ReturnType<SupabaseClient["storage"]["from"]>,
+  bucketId: string,
+  userId: string,
+  missingBucketIsEmpty: boolean,
+): Promise<{ removed: number; failed: string[] | "list_failed" }> {
   const folder = `u/${userId.toLowerCase()}`;
-  const bucket = admin.storage.from(BRANDING_BUCKET);
   const paths: string[] = [];
   for (let offset = 0; ; offset += BRANDING_LIST_PAGE) {
     const { data, error } = await bucket.list(folder, { limit: BRANDING_LIST_PAGE, offset });
     if (error) {
-      console.error("[accountDeletion] listing the letterhead logo folder failed:", folder, error.message);
+      // 20261030_10 not run yet: no stationery bucket, so no stationery to clear.
+      if (missingBucketIsEmpty && /bucket/i.test(error.message ?? "") && /not found/i.test(error.message ?? "")) {
+        return { removed: 0, failed: [] };
+      }
+      console.error("[accountDeletion] listing the letterhead folder failed:", bucketId, folder, error.message);
       return { removed: 0, failed: "list_failed" };
     }
     const page = (data ?? []) as Array<{ name?: unknown; id?: unknown }>;
@@ -227,7 +248,7 @@ export async function removeLawyerBrandingWith(
     const chunk = paths.slice(i, i + REMOVE_CHUNK);
     const { error } = await bucket.remove(chunk);
     if (error) {
-      console.error("[accountDeletion] letterhead logo remove failed:", folder, error.message);
+      console.error("[accountDeletion] letterhead files remove failed:", bucketId, folder, error.message);
       failed.push(...chunk);
     } else {
       removed += chunk.length;

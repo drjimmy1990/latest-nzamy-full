@@ -38,6 +38,9 @@ interface World {
   /** Objects in the branding bucket, keyed by folder ("u/<id>"); a missing key lists nothing. */
   branding?: Record<string, Array<{ name: string; id: string | null }>>;
   brandingListError?: string;
+  /** Objects in the branding-files bucket (uploaded stationery, 20261030_10), keyed by folder. */
+  brandingFiles?: Record<string, Array<{ name: string; id: string | null }>>;
+  brandingFilesListError?: string;
 }
 
 function harness(world: World) {
@@ -87,7 +90,9 @@ function harness(world: World) {
         async list(folder: string, opts: { limit: number; offset: number }) {
           events.push(`list:${bucket}:${folder}:${opts.offset}`);
           if (bucket === "branding" && world.brandingListError) return { data: null, error: { message: world.brandingListError } };
-          const all = bucket === "branding" ? (world.branding?.[folder] ?? []) : [];
+          if (bucket === "branding-files" && world.brandingFilesListError) return { data: null, error: { message: world.brandingFilesListError } };
+          const all = bucket === "branding" ? (world.branding?.[folder] ?? [])
+            : bucket === "branding-files" ? (world.brandingFiles?.[folder] ?? []) : [];
           return { data: all.slice(opts.offset, opts.offset + opts.limit), error: null };
         },
         async remove(paths: string[]) {
@@ -113,6 +118,7 @@ test("purge: prepare → deleteUser → the file list → remove → finish purg
     "rpc:account_purge_storage_paths",
     `remove:documents:${USER}/1-vault.pdf,${USER}/9-orphan.pdf`,
     `list:branding:u/${USER}:0`,
+    `list:branding-files:u/${USER}:0`,
     "rpc:account_purge_finish",
   ]);
   assert.equal(finishOf(h.log)[0].p_outcome, "purged");
@@ -240,4 +246,32 @@ test("purge: a failed documents list still removes the letterhead logos", async 
   const report = finishOf(h.log)[0].p_report as Record<string, unknown>;
   assert.equal(report.storage_failed, "list_failed");
   assert.equal(report.branding_removed, 1);
+});
+
+// ─── 2026-10-30 (NOTE-09-C01): the uploaded stationery goes with the logo ───
+test("purge: the lawyer's uploaded stationery (branding-files, u/<id>/) is removed after the logo folder", async () => {
+  const h = harness({
+    paths: [],
+    branding: { [`u/${USER}`]: [{ name: "logo-current1.png", id: "o1" }] },
+    brandingFiles: { [`u/${USER}`]: [{ name: "asset-letterhead-pdf-abcdefgh.pdf", id: "f1" }, { name: "asset-stamp-abcdefgh.png", id: "f2" }] },
+  });
+  const run = await purgeAccountWith(h.admin, { requestId: REQ, userId: USER });
+  assert.equal(run.outcome, "purged");
+  const logos = h.events.indexOf(`remove:branding:u/${USER}/logo-current1.png`);
+  const files = h.events.indexOf(`remove:branding-files:u/${USER}/asset-letterhead-pdf-abcdefgh.pdf,u/${USER}/asset-stamp-abcdefgh.png`);
+  assert.ok(logos >= 0 && files > logos, JSON.stringify(h.events));
+  assert.ok(!h.events.some((e) => e.includes(":f/")), "never a firm folder");
+  const report = finishOf(h.log)[0].p_report as Record<string, unknown>;
+  assert.equal(report.branding_removed, 3);
+  assert.deepEqual(report.branding_failed, []);
+});
+
+test("purge: no branding-files bucket yet (20261030_10 not run) is nothing to clear, not a failure", async () => {
+  const h = harness({ paths: [], brandingFilesListError: "Bucket not found" });
+  await purgeAccountWith(h.admin, { requestId: REQ, userId: USER });
+  const report = finishOf(h.log)[0].p_report as Record<string, unknown>;
+  assert.deepEqual(report.branding_failed, []);
+  const h2 = harness({ paths: [], brandingFilesListError: "gateway timeout" });
+  await purgeAccountWith(h2.admin, { requestId: REQ, userId: USER });
+  assert.equal((finishOf(h2.log)[0].p_report as Record<string, unknown>).branding_failed, "list_failed");
 });
