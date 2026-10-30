@@ -15,6 +15,7 @@ import LegalLibraryBanner from "@/components/LegalLibraryBanner";
 import EscalationFlow from "@/components/EscalationFlow";
 import { OnboardingBanner } from "@/components/OnboardingBanner";
 import { SectorProfileReadinessPanel } from "@/components/dashboard/sector/SectorProfileReadinessPanel";
+import { isDemoMode } from "@/lib/runtimeMode";
 
 // ─── Spring config (design-taste-frontend: MOTION_INTENSITY 6) ───────────────
 const spring = { type: "spring" as const, stiffness: 100, damping: 20 };
@@ -74,8 +75,12 @@ export default function MicroDashboardPage() {
   const card  = `rounded-2xl border ${base}`;
   const muted = isDark ? "text-zinc-500" : "text-slate-400";
 
-  const activeReqs  = REQUIREMENTS_MOCK.filter(r => r.status === "completed").length;
-  const warningReqs = REQUIREMENTS_MOCK.filter(r => r.status === "needs_action").length;
+  // LIVE-F07: the requirement statuses, expiry dates and the KPI tiles are
+  // fixed sample data — nothing reads the business's licences from any
+  // authority yet. Demo mode only; production says so plainly.
+  const requirements: typeof REQUIREMENTS_MOCK = isDemoMode ? REQUIREMENTS_MOCK : [];
+  const activeReqs  = requirements.filter(r => r.status === "completed").length;
+  const warningReqs = requirements.filter(r => r.status === "needs_action").length;
 
   return (
     <div className="max-w-[960px] mx-auto space-y-5 px-4 py-6" dir={dir}>
@@ -96,7 +101,7 @@ export default function MicroDashboardPage() {
           <p className={`text-sm ${muted}`}>
             {businessType
               ? (isAr ? `نظرة سريعة على اشتراطات ${businessType}` : `Quick look at ${businessType} requirements`)
-              : (isAr ? "لوحة التحكم — منشأتك دائماً في أمان" : "Dashboard — your business always protected")}
+              : (isAr ? "لوحة التحكم — منشأتك" : "Dashboard — your business")}
           </p>
         </div>
         <Link href="/dashboard/micro/wallet"
@@ -108,7 +113,8 @@ export default function MicroDashboardPage() {
         </Link>
       </motion.div>
 
-      {/* ── BENTO KPIs — asymmetric 2fr 1fr (DESIGN_VARIANCE 8) ── */}
+      {/* ── BENTO KPIs — asymmetric 2fr 1fr (demo mode only, LIVE-F07) ── */}
+      {isDemoMode && (
       <motion.div variants={fadeUp} initial="hidden" animate="show" custom={1}
         className="grid grid-cols-1 sm:grid-cols-3 gap-3"
         style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
@@ -152,6 +158,7 @@ export default function MicroDashboardPage() {
           <p className={`text-[11px] ${muted}`}>{isAr ? "استفسارات AI اليوم" : "AI Queries Today"}</p>
         </div>
       </motion.div>
+      )}
 
       {/* ── Quick Links ── */}
       <motion.div variants={fadeUp} initial="hidden" animate="show" custom={2}>
@@ -190,7 +197,14 @@ export default function MicroDashboardPage() {
           </Link>
         </div>
         <div className="px-5 pb-5 space-y-2">
-          {REQUIREMENTS_MOCK.map((req, i) => {
+          {requirements.length === 0 && (
+            <p className={`text-[12px] leading-relaxed ${muted}`}>
+              {isAr
+                ? "لا تُقرأ حالة اشتراطاتك ورخصك من أي جهة بعد، فلا تعرض هذه اللوحة تواريخ انتهاء ولا تنبيهات تجديد. راجع مواعيد رخصك من مصادرها الرسمية."
+                : "Your licence and requirement statuses are not read from any authority yet, so no expiry dates or renewal alerts are shown here."}
+            </p>
+          )}
+          {requirements.map((req, i) => {
             const Icon = req.icon;
             const isWarn = req.status === "needs_action";
             const isProgress = req.status === "in_progress";
@@ -258,7 +272,7 @@ export default function MicroDashboardPage() {
           })}
 
           {/* Warning notice — no emoji */}
-          {REQUIREMENTS_MOCK.some(r => r.status === "needs_action") && (
+          {requirements.some(r => r.status === "needs_action") && (
             <div className={`mt-1 flex items-start gap-2 p-3 rounded-xl border text-[12px] ${
               isDark ? "border-amber-500/20 bg-amber-500/5 text-amber-400" : "border-amber-200 bg-amber-50 text-amber-700"
             }`}>
