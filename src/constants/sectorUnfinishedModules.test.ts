@@ -6,6 +6,8 @@ import {
   DEMO_SAMPLES_NOTE,
   NOT_FROM_YOUR_RECORDS_NOTE,
   unfinishedModulesFor,
+  unfinishedModuleAt,
+  MODULE_PAGE_NOTE,
   type UnfinishedSector,
 } from "./sectorUnfinishedModules.ts";
 
@@ -55,6 +57,17 @@ test("real modules are not listed as unfinished", () => {
 test("the NGO governance checker is said to be a temporary calculation (LIVE-F19 entry point)", () => {
   const gov = SECTOR_UNFINISHED.ngo.modules.find((m) => m.name.includes("الحوكمة"));
   assert.ok(gov && gov.state.includes("حساب مؤقت"));
+});
+
+test("a module page finds its entry by route; the micro wallet is real and not listed", () => {
+  assert.equal(unfinishedModuleAt("/dashboard/firm/departments")?.name, "الأقسام والفروع");
+  assert.equal(unfinishedModuleAt("/dashboard/ngo/compliance")?.name, "الامتثال والحوكمة");
+  assert.equal(unfinishedModuleAt("/dashboard/micro/wallet"), null);
+  assert.equal(unfinishedModuleAt("/dashboard/micro/requests"), null);
+  const all = SECTORS.flatMap((s) => SECTOR_UNFINISHED[s].modules.flatMap((m) => m.hrefs));
+  assert.equal(new Set(all).size, all.length, "a route belongs to one module only");
+  for (const h of all) assert.match(h, /^\/dashboard\/(firm|government|ngo|micro)\//);
+  assert.ok(!MODULE_PAGE_NOTE.includes("جاهز"));
 });
 
 test("no fee or commission figure appears anywhere in the copy", () => {

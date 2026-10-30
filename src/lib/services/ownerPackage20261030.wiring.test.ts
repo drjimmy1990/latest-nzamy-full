@@ -108,3 +108,20 @@ test("LIVE-F07: no readiness badges or fixed sample data in production on the se
   const volunteers = code("app/dashboard/ngo/volunteers/page.tsx");
   assert.doesNotMatch(volunteers, /ريم الحربي|عبدالعزيز الدوسري|نورة القحطاني/);
 });
+
+test("LIVE-F07: every unfinished module's own page says so (banner or «قريباً» gate)", async () => {
+  const { SECTOR_UNFINISHED } = await import("../../constants/sectorUnfinishedModules.ts");
+  let pages = 0;
+  for (const copy of Object.values(SECTOR_UNFINISHED)) {
+    for (const mod of copy.modules) {
+      for (const href of mod.hrefs) {
+        const s = code(`app${href}/page.tsx`);
+        const gated = /DashboardComingSoon|MyMarketplaceDashboard/.test(s);
+        const banner = s.includes(`<UnfinishedModuleNote href="${href}" />`);
+        assert.ok(gated || banner, `${href} (${mod.name}) shows neither the banner nor the «قريباً» gate`);
+        pages += 1;
+      }
+    }
+  }
+  assert.ok(pages >= 30, `expected the full list of module pages, got ${pages}`);
+});

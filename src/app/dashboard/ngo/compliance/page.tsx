@@ -1,4 +1,5 @@
 "use client";
+import { UnfinishedModuleNote } from "@/components/dashboard/sector/UnfinishedModuleNote";
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { ShieldCheck, CheckCircle, Warning, Buildings, DownloadSimple } from "@phosphor-icons/react";
@@ -46,6 +47,7 @@ export default function NGOCompliancePage() {
   return (
     <div className={`${bg} min-h-[100dvh] pb-20`} dir="rtl">
       <div className="max-w-4xl mx-auto p-4 md:p-8 space-y-6">
+        <UnfinishedModuleNote href="/dashboard/ngo/compliance" />
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
             <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${isDark ? "bg-teal-500/10" : "bg-teal-50"}`}>

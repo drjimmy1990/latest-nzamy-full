@@ -315,7 +315,7 @@ export default function NGODashboard() {
             {/* Quick nav links */}
             <div className={`mt-8 pt-6 border-t space-y-2 ${isDark ? "border-white/5" : "border-slate-100"}`}>
               {[
-                { label: "السجل المالي الكامل",    href: "/dashboard/ngo/finance" },
+                { label: "المالية",                href: "/dashboard/ngo/finance" },
                 { label: "إدارة المتطوعين",        href: "/dashboard/ngo/volunteers" },
                 { label: "سجل العقود والوثائق",    href: "/dashboard/ngo/contracts" },
               ].map((lnk) => (

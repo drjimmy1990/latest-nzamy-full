@@ -1,4 +1,5 @@
 "use client";
+import { UnfinishedModuleNote } from "@/components/dashboard/sector/UnfinishedModuleNote";
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Users, Plus, HandHeart, CheckCircle, Warning } from "@phosphor-icons/react";
@@ -27,6 +28,7 @@ export default function NGOVolunteersPage() {
   return (
     <div className={`${bg} min-h-[100dvh] pb-20`} dir="rtl">
       <div className="max-w-4xl mx-auto p-4 md:p-8 space-y-6">
+        <UnfinishedModuleNote href="/dashboard/ngo/volunteers" />
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
@@ -47,11 +49,6 @@ export default function NGOVolunteersPage() {
               <Plus size={14} /> متطوع جديد
             </a>
           </div>
-        </div>
-
-        <div role="note" className={`flex items-start gap-2 rounded-xl border p-3 text-xs leading-relaxed ${isDark ? "border-amber-500/20 bg-amber-500/5 text-amber-200" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
-          <Warning size={14} weight="fill" className="mt-0.5 shrink-0" />
-          <span>سجل المتطوعين غير مكتمل بعد: لا توجد قاعدة بيانات للمتطوعين، فلا يُحفظ أي متطوع ولا تظهر هنا ساعات أو عقود حقيقية.</span>
         </div>
 
         {/* Table */}

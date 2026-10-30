@@ -6,7 +6,7 @@ import Link from "next/link";
 import {
   Robot, ChatCircle, Scan, Briefcase, ShieldStar,
   Percent, Buildings, Warning, CheckCircle, ArrowLeft,
-  FileText, Storefront, Scales, Users, Gavel,
+  FileText, Scales, Users, Gavel,
   Lightning, BookOpen, HandCoins, CalendarBlank,
   TrendUp, MagnifyingGlass, PencilSimple,
 } from "@phosphor-icons/react";
@@ -47,7 +47,8 @@ const QUICK_LINKS = [
 const NAV_LINKS = [
   { hrefSuffix: "/contracts",  labelAr: "عقودي",            labelEn: "My Contracts",  icon: Briefcase  },
   { hrefSuffix: "/documents",  labelAr: "مستنداتي",          labelEn: "My Documents",  icon: Scan       },
-  { hrefSuffix: "/marketplace",labelAr: "سوق المهنيين",      labelEn: "Marketplace",   icon: Storefront },
+  // «سوق المهنيين» removed (LIVE-F07): /dashboard/micro/marketplace has no page
+  // and the marketplace is not available yet.
   { href: "/laws",             labelAr: "المكتبة القانونية", labelEn: "Legal Library", icon: BookOpen   },
 ];
 
@@ -339,14 +340,17 @@ export default function MicroDashboardPage() {
       <motion.div variants={fadeUp} initial="hidden" animate="show" custom={5} className={card}>
         <div className="px-5 pt-5 pb-3">
           <p className={`text-[11px] font-bold uppercase tracking-wider ${muted}`}>
-            {isAr ? "قوالب عقود جاهزة" : "Contract Templates"}
+            {isAr ? "صياغة عقد لمنشأتك" : "Draft a contract"}
           </p>
         </div>
         <div className="px-5 pb-5 grid grid-cols-2 sm:grid-cols-4 gap-2">
           {CONTRACT_TEMPLATES.map((tpl, i) => {
             const Icon = tpl.icon;
             return (
-              <motion.button key={tpl.labelAr} custom={i} variants={fadeUp} initial="hidden" animate="show"
+              // LIVE-F07: these tiles were buttons with no handler; each now
+              // opens the real contract-drafting service.
+              <Link key={tpl.labelAr} href="/services/contracts" className="block">
+              <motion.div custom={i} variants={fadeUp} initial="hidden" animate="show"
                 whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
                 className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-colors text-center ${
                   isDark ? "border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.05]" : "border-slate-100 hover:border-[#0B3D2E]/20 hover:bg-[#0B3D2E]/[0.02]"
@@ -355,7 +359,8 @@ export default function MicroDashboardPage() {
                 <span className={`text-[11px] font-medium ${isDark ? "text-zinc-300" : "text-slate-600"}`}>
                   {isAr ? tpl.labelAr : tpl.labelEn}
                 </span>
-              </motion.button>
+              </motion.div>
+              </Link>
             );
           })}
         </div>
