@@ -7,9 +7,12 @@
  *            (an admin passes assertRole but is not a lawyer, so is refused:
  *            the table's RLS would refuse the write anyway).
  *   firm   — the caller's firm (resolveCallerFirm: the firm he owns, else his
- *            first active membership), and only for the owner or a
- *            managing_partner / office_admin — the same rule as
- *            public.can_manage_branding_vault. Anyone else: 403.
+ *            first active membership), and only for a caller who holds the
+ *            NAMED permission the handler asks for (owner answer ٣١٥,
+ *            firmLetterheadPermissions.ts): `letterhead.print` to read the
+ *            identity for printing, `branding.manage` to change it. Both are
+ *            granted to the owner, managing_partner and office_admin — the
+ *            same set as public.can_manage_branding_vault. Anyone else: 403.
  *
  * This is the first gate; RLS on branding_vaults is the second. The routes
  * use the service role only AFTER an RLS read of the vault has succeeded
@@ -19,7 +22,14 @@ import { NextResponse } from "next/server";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { assertRole } from "@/lib/auth/assertRole";
 import { resolveCallerFirm } from "@/lib/auth/firmMembershipAccess";
-import { FIRM_BRANDING_ROLES, type BrandingScope } from "./brandingVault";
+import { isMissingBrandingTable, type BrandingScope } from "./brandingVault";
+import {
+  LETTERHEAD_PERMISSION_DENIED_AR,
+  firmHas,
+  letterheadPermissionsFor,
+  type LetterheadPermission,
+  type LetterheadPermissions,
+} from "./firmLetterheadPermissions";
 
 export interface BrandingOwner {
   scope: BrandingScope;
@@ -27,6 +37,8 @@ export interface BrandingOwner {
   ownerId: string;
   /** firm only: the caller's role in the firm. */
   firmRole?: string;
+  /** What this caller may do with this letterhead (owner ٣١٥) — sent to the page. */
+  permissions: LetterheadPermissions;
 }
 
 export type BrandingCaller =
@@ -37,7 +49,10 @@ export function parseBrandingScope(value: string | null): BrandingScope | null {
   return value === "lawyer" || value === "firm" ? value : null;
 }
 
-export async function resolveBrandingCaller(scopeParam: string | null): Promise<BrandingCaller> {
+export async function resolveBrandingCaller(
+  scopeParam: string | null,
+  need: LetterheadPermission = "branding.manage",
+): Promise<BrandingCaller> {
   const scope = parseBrandingScope(scopeParam);
   if (!scope) {
     return { ok: false, response: NextResponse.json({ error: "النطاق غير صالح (lawyer أو firm)" }, { status: 400 }) };
@@ -50,7 +65,7 @@ export async function resolveBrandingCaller(scopeParam: string | null): Promise<
     if (userType !== "lawyer") {
       return { ok: false, response: NextResponse.json({ error: "الورق المروّس الشخصي متاح للمحامي المرخّص فقط" }, { status: 403 }) };
     }
-    return { ok: true, supabase, user, owner: { scope, ownerId: user.id } };
+    return { ok: true, supabase, user, owner: { scope, ownerId: user.id, permissions: letterheadPermissionsFor("lawyer") } };
   }
 
   const { data: firm, error } = await resolveCallerFirm(supabase, user.id);
@@ -60,13 +75,17 @@ export async function resolveBrandingCaller(scopeParam: string | null): Promise<
   if (!firm) {
     return { ok: false, response: NextResponse.json({ error: "لا يوجد مكتب مرتبط بحسابك" }, { status: 404 }) };
   }
-  if (!firm.isOwner && !FIRM_BRANDING_ROLES.has(firm.role)) {
+  // Explicit permission, never an implied role (owner ٣١٥).
+  if (!firmHas(firm, need)) {
     return {
       ok: false,
-      response: NextResponse.json({ error: "هوية المكتب يديرها مالك المكتب أو الشريك المدير أو مدير المكتب" }, { status: 403 }),
+      response: NextResponse.json({ error: LETTERHEAD_PERMISSION_DENIED_AR[need], permission: need }, { status: 403 }),
     };
   }
-  return { ok: true, supabase, user, owner: { scope, ownerId: firm.id, firmRole: firm.isOwner ? "owner" : firm.role } };
+  return {
+    ok: true, supabase, user,
+    owner: { scope, ownerId: firm.id, firmRole: firm.isOwner ? "owner" : firm.role, permissions: letterheadPermissionsFor("firm", firm) },
+  };
 }
 
 /** The vault row as the session may see it (RLS). */
@@ -100,4 +119,29 @@ export async function readOwnVault(
     .eq(column, owner.ownerId)
     .maybeSingle();
   return { row: (data as VaultRow | null) ?? null, error };
+}
+
+/**
+ * The caller's vault through RLS, created first if the office never saved its
+ * identity — the proof this caller manages this vault, BEFORE any service-role
+ * write (used by /api/v1/branding/assets; the logo route keeps its own copy).
+ * `missing` = 20261026_63 has not run.
+ */
+export async function ensureOwnVault(
+  supabase: SupabaseClient,
+  owner: BrandingOwner,
+): Promise<{ ok: true; row: VaultRow } | { ok: false; reason: "missing" | "failed" }> {
+  let { row, error } = await readOwnVault(supabase, owner);
+  if (error) return { ok: false, reason: isMissingBrandingTable(error) ? "missing" : "failed" };
+  if (!row) {
+    const created = await supabase
+      .from("branding_vaults")
+      .insert(owner.scope === "lawyer" ? { lawyer_user_id: owner.ownerId } : { firm_id: owner.ownerId })
+      .select("id")
+      .maybeSingle();
+    if (created.error || !created.data) return { ok: false, reason: "failed" };
+    ({ row, error } = await readOwnVault(supabase, owner));
+    if (error || !row) return { ok: false, reason: "failed" };
+  }
+  return { ok: true, row };
 }

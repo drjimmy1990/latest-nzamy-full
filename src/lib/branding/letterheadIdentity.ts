@@ -12,6 +12,13 @@
  *   - otherwise (an unpublished lawyer, and every firm: there is no public firm
  *     page) → the platform's home, captioned as the platform's stamp. The
  *     screen tells the lawyer why his own profile is not in the code yet.
+ *
+ * FIRMS — owner answer ٣١٤ (package 2026-10-30): «الصفحة الرئيسية حتى تُبنى
+ * صفحات المكاتب، ومتى بُنيت فالوجهة ملف المكتب». There is no public firm page
+ * yet (no src/app/firms), so FIRM_PUBLIC_PAGES_LIVE is false and a firm's code
+ * carries the home page. The day /firms/[id] ships, flipping that ONE constant
+ * points every firm letterhead at `${origin}/firms/<firm id>` (firmProfileUrl)
+ * — letterheadIdentity.test.ts pins both states.
  * The origin is NEXT_PUBLIC_SITE_URL when it is an absolute http(s) URL, else
  * the page's own origin: an office printing from a LAN address must not put
  * `http://192.168.…` on paper when the site URL is known.
@@ -22,11 +29,25 @@ import { BRANDING_DEFAULT_ACCENT, type BrandingFields, type BrandingScope } from
 export const QR_CAPTION_PROFILE = "امسح الرمز بكاميرا الجوال للانتقال الفوري إلى الملف الشخصي أو حجز استشارة";
 export const QR_CAPTION_PLATFORM = "امسح الرمز بكاميرا الجوال لزيارة منصة نظامي";
 export const PLATFORM_STAMP_AR = "صادر عبر منصة نظامي";
+export const QR_CAPTION_FIRM = "امسح الرمز بكاميرا الجوال للانتقال إلى صفحة المكتب على منصة نظامي";
+
+/**
+ * Owner ٣١٤: false until a public firm page exists. Set it to true in the same
+ * commit that ships /firms/[id] — never before, or paper would carry a 404.
+ */
+export const FIRM_PUBLIC_PAGES_LIVE = false;
+
+/** The firm's public page — the QR target once FIRM_PUBLIC_PAGES_LIVE is true. */
+export function firmProfileUrl(origin: string, firmId: string): string {
+  return `${origin.replace(/\/+$/, "")}/firms/${encodeURIComponent(firmId)}`;
+}
 
 /** The subset of GET /api/v1/branding a letterhead needs. */
 export interface BrandingResponse {
   available: boolean;
   scope: BrandingScope;
+  /** firm scope: the firm whose page the QR opens once firm pages exist (٣١٤). */
+  firm?: { id: string } | null;
   fields: BrandingFields;
   logoUrl: string | null;
   licence: { number: string | null; verified: boolean };
@@ -69,10 +90,18 @@ export function letterheadOrigin(siteUrl: string | null | undefined, pageOrigin:
   return pageOrigin.replace(/\/+$/, "");
 }
 
-export function qrTargetFor(res: Pick<BrandingResponse, "scope" | "profile">, origin: string): QrTarget {
+export function qrTargetFor(
+  res: Pick<BrandingResponse, "scope" | "profile"> & { firm?: BrandingResponse["firm"] },
+  origin: string,
+  firmPagesLive: boolean = FIRM_PUBLIC_PAGES_LIVE,
+): QrTarget {
   const platform = (reason: Extract<QrTarget, { kind: "platform" }>["reason"]): QrTarget =>
     ({ kind: "platform", url: origin, caption: QR_CAPTION_PLATFORM, reason });
-  if (res.scope === "firm") return platform("firm");
+  if (res.scope === "firm") {
+    // Owner ٣١٤: home page until firm pages exist, then the firm's own page.
+    if (firmPagesLive && res.firm?.id) return { kind: "profile", url: firmProfileUrl(origin, res.firm.id), caption: QR_CAPTION_FIRM };
+    return platform("firm");
+  }
   const p = res.profile;
   if (!p) return platform("unknown");
   const state = profileShareState({
@@ -124,7 +153,7 @@ export function qrNoteAr(qr: QrTarget): string | null {
     case "no_profile":
       return "أكمل ملفك المهني ليحمل الرمز رابط ملفك الشخصي؛ يحمل الآن رابط منصة نظامي.";
     case "firm":
-      return "لا توجد صفحة عامة للمكاتب بعد؛ يحمل الرمز رابط منصة نظامي.";
+      return "لا توجد صفحة عامة للمكاتب بعد؛ يحمل الرمز رابط منصة نظامي، ويتحول إلى صفحة المكتب فور إطلاقها (قرار المالك ٣١٤).";
     default:
       return "تعذّر التحقق من نشر ملفك؛ يحمل الرمز رابط منصة نظامي.";
   }
