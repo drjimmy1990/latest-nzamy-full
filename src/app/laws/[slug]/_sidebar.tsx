@@ -7,10 +7,18 @@ import {
 import type { LawSystem, LawArticle } from "../data";
 import { lawStatusPresentation } from "../law-status";
 import { OfficialMetaLockedRow } from "../components/OfficialMetaLockedRow";
-import { dbOfficialRowsUnderCard, gazetteIssueLabel, urlHostname, type LawOfficialMeta } from "./_official-meta";
+import { dbOfficialRowsUnderCard, gazetteIssueLabel, type LawOfficialMeta } from "./_official-meta";
 import { buildChapterTree } from "./_chapter-tree";
 import { jumpToReaderAnchor } from "./_reader-anchors";
-import { lawCardLayout } from "@/lib/library/lawCardFields";
+import {
+  articleTallyLabel,
+  collectOfficialLinks,
+  isLinkOnlyValue,
+  lawCardLayout,
+  officialSourceName,
+  type OfficialSourceLink,
+} from "@/lib/library/lawCardFields";
+import type { LawCardField } from "@/lib/library/lawPreambleBlocks";
 
 // ك-13: نفس دمج regulations[]→{ref,text} المستعمل بـpage.tsx — يحافظ على
 // سلوك عرض الشارة/الاسم المدموج بلا تغيير، بمصدر بيانات جديد فقط.
@@ -99,16 +107,28 @@ export default function SidebarPanel({
   // those are suppressed too — otherwise the lock would hold for most laws and
   // leak for the mapped ones.
   const metaLocked = officialMeta?.locked === true;
-  // Owner ٢٩٧: the law's official page beside «الجهة المصدرة» — public, so
-  // shown to guests too (parseOfficialMeta keeps it when locked). http(s) only.
-  const officialLink = officialMeta?.officialLink ?? null;
+  // Owner ٢٩٧: the law's official page beside «الجهة المصدرة» — a
+  // SUBSCRIBER's since owner ٣١٨ (the route sends it to subscribers only and
+  // parseOfficialMeta drops it when locked). http(s) only.
+  const officialLink = metaLocked ? null : (officialMeta?.officialLink ?? null);
+  // Owner ٣١٨: the ONE public date, «آخر تحديث تشريعي» — the date alone, for
+  // a guest in place of the issue date and the amendment (subscribers read
+  // «آخر تعديل» / «تاريخ الإصدار» instead).
+  const publicLegislativeDate = metaLocked ? (officialMeta?.latestLegislativeUpdate ?? null) : null;
+  const articleCounts = officialMeta?.articleCounts ?? null;
   const issuanceDecree = metaLocked ? "" : (law.issuanceDecree || lawMeta.issuanceDecree || "");
   const border = isDark ? "border-white/[0.07]" : "border-slate-200";
   const card = `rounded-2xl border ${isDark ? "bg-zinc-900" : "bg-white shadow-sm"}`;
   const textStart = isRTL ? "text-right" : "text-left";
   // `0 && …` would print a literal 0 for a law with no articles (an unpublished-text
   // notice, 2026-10-04) — render the row only for a positive count.
-  const articleCount = Number(lawMeta.total_articles) || law.chapters?.flatMap(c => c.articles).length || 0;
+  // Note ٠١ item ٦: the base law's own articles, counted live by the route
+  // (articleCounts.law) when it sent them; else the old total.
+  const articleCount = articleCounts?.law.total || Number(lawMeta.total_articles) || law.chapters?.flatMap(c => c.articles).length || 0;
+  const articleCountText = articleCounts && articleCounts.law.total > 0 ? articleTallyLabel(articleCounts.law) : String(articleCount);
+  const regulationArticleCount = articleCounts?.regulations.length
+    ? articleCounts.regulations.reduce((n, r) => n + r.total, 0)
+    : lawMeta.regulation_articles;
 
   const renderLawStatus = () => {
     const status = lawStatusPresentation(law.law_status);
@@ -168,17 +188,19 @@ export default function SidebarPanel({
   };
 
   const renderValue = (val: string) => {
-    const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+    // A markdown link, or a bare http(s) URL (note ١٢ item ٧: «laws.moj.gov.sa
+    // ظهر خاماً») — both read as the source's name, never a raw host.
+    const linkRegex = /\[([^\]]+)\]\(([^)]+)\)|(https?:\/\/[^\s)\]»"'<>]+)/g;
     const parts = [];
     let lastIndex = 0;
     let match;
-    
+
     while ((match = linkRegex.exec(val)) !== null) {
       if (match.index > lastIndex) {
         parts.push(val.substring(lastIndex, match.index));
       }
-      const text = match[1];
-      const url = match[2].trim();
+      const url = (match[2] ?? match[3]).trim().replace(/[.,،;؛]+$/, "");
+      const text = match[1] ?? officialSourceName(url);
       // Card values come from the library files: only an http(s) link is a
       // link; anything else (a relative file path, a script URL) is its text.
       if (!/^https?:\/\/\S+$/i.test(url)) {
@@ -186,6 +208,8 @@ export default function SidebarPanel({
         lastIndex = linkRegex.lastIndex;
         continue;
       }
+      // Link text that is itself a host or a URL reads as the source's name.
+      const shown = /https?:|www\.|^[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/\S*)?$/i.test(text.trim()) ? officialSourceName(url) : text;
       parts.push(
         <a
           key={match.index}
@@ -194,31 +218,70 @@ export default function SidebarPanel({
           rel="noopener noreferrer"
           className="text-[#C8A762] hover:underline font-bold"
         >
-          {text}
+          {shown}
         </a>
       );
       lastIndex = linkRegex.lastIndex;
     }
-    
+
     if (lastIndex < val.length) {
       parts.push(val.substring(lastIndex));
     }
-    
+
     return parts.length > 0 ? parts : val;
   };
 
+  // Owner note ٠١ item ٣ / note ١٢ item ٧: an official link reads as the
+  // source's Arabic name («هيئة الخبراء»), never a raw host.
   const renderOfficialLink = (url: string) => (
     <a
       href={url}
       target="_blank"
       rel="noopener noreferrer"
-      dir="ltr"
       data-card-field="official-link"
-      className={`inline-block mt-0.5 text-[10px] leading-tight break-all underline decoration-dotted ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
+      className={`inline-block mt-0.5 text-[10px] leading-tight break-words underline decoration-dotted ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
     >
-      {isRTL ? `الرابط الرسمي ↗ ${urlHostname(url)}` : `Official page ↗ ${urlHostname(url)}`}
+      {isRTL ? `الرابط الرسمي ↗ ${officialSourceName(url)}` : `Official page ↗ ${officialSourceName(url)}`}
     </a>
   );
+
+  /** Note ٠١ item ٣: every official source at the top of the card, by name, each a new-tab link. */
+  const renderOfficialLinks = (links: OfficialSourceLink[]) =>
+    links.length === 0 ? null : (
+      <div className="flex gap-1.5 items-start" data-card-field="official-links">
+        <BookOpen size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
+        <div className="flex-1 min-w-0">
+          <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{isRTL ? "المصادر الرسمية" : "Official sources"}</p>
+          <p className="text-[10px] font-semibold leading-tight break-words">
+            {links.map((l, i) => (
+              <span key={l.url}>
+                {i > 0 && <span className={muted}> · </span>}
+                <a
+                  href={l.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`underline decoration-dotted ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
+                >
+                  {l.label}
+                </a>
+              </span>
+            ))}
+          </p>
+        </div>
+      </div>
+    );
+
+  /** Owner ٣١٨: a guest's one date row — «آخر تحديث تشريعي», the date alone. */
+  const renderPublicLegislativeDate = () =>
+    publicLegislativeDate ? (
+      <div className="flex gap-1.5 items-start" data-card-field="latest-legislative-update">
+        <CalendarBlank size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
+        <div className="flex-1 min-w-0">
+          <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{isRTL ? "آخر تحديث تشريعي" : "Latest legislative update"}</p>
+          <p className={`text-[10px] font-semibold leading-tight ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{publicLegislativeDate}</p>
+        </div>
+      </div>
+    ) : null;
 
   const getFieldIcon = (key: string) => {
     if (key.includes("نوع") || key.includes("تصنيف") || key.includes("التصنيف")) return <Tag size={10} className={muted} />;
@@ -237,9 +300,12 @@ export default function SidebarPanel({
    * row of its own for them, so a subscriber loses nothing the fallback card
    * showed and nothing is said twice.
    */
-  const renderDbOfficialRows = (rows: { key: string; value: string }[]) => {
+  const renderDbOfficialRows = (rows: { key: string; value: string }[], shownLinks: OfficialSourceLink[] = []) => {
     if (metaLocked || !officialMeta) return null;
-    const { sourceUrl, gazette } = dbOfficialRowsUnderCard(rows, officialMeta, officialLink);
+    const found = dbOfficialRowsUnderCard(rows, officialMeta, officialLink);
+    const gazette = found.gazette;
+    // Note ٠١ item ٣: a link already in «المصادر الرسمية» at the top is not said again here.
+    const sourceUrl = shownLinks.some((l) => l.url === found.sourceUrl) ? "" : found.sourceUrl;
     if (!sourceUrl && !gazette) return null;
     return (
       <>
@@ -252,10 +318,9 @@ export default function SidebarPanel({
                 href={sourceUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                dir="ltr"
-                className={`block text-[10px] leading-tight break-all underline decoration-dotted ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
+                className={`block text-[10px] leading-tight break-words underline decoration-dotted ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
               >
-                {urlHostname(sourceUrl)}
+                {officialSourceName(sourceUrl)}
               </a>
             </div>
           </div>
@@ -294,15 +359,59 @@ export default function SidebarPanel({
       // badge: the card's own type row, else library.laws.type — never an
       // invented «نظام». The status is the recorded one (owner ٢٥٩: none
       // recorded → none shown).
+      // C04 (note ٠١ item ٤): the category badge; an «التصنيف» row saying the same is not repeated.
+      const categoryBadge = (lawMeta.section_name || law.metadata_card.more.find(f => f.key === "التصنيف")?.value || "").trim();
       const layout = lawCardLayout(law.metadata_card, {
         status: lawStatusPresentation(law.law_status),
         issueDate: metaLocked ? "" : law.issuanceDate,
+        // Note ٠١ item ٢: the merged file's latest event fills «آخر تعديل» (subscribers).
+        latestUpdate: metaLocked ? "" : officialMeta?.latestUpdate,
+        category: categoryBadge,
       });
       const typeField = layout.primary.find(f => f.id === "type");
       const typeBadge = (typeField?.value || law.documentType || "").trim();
-      const dbOfficialRows = renderDbOfficialRows([...law.metadata_card.main, ...law.metadata_card.more]);
+      const cardRows = [...law.metadata_card.main, ...law.metadata_card.more];
+      // Note ٠١ item ٣: every official source at the top, by name (subscribers;
+      // ٣١٨ — the server sends a guest none and the guest card has no links).
+      const topLinks = metaLocked ? [] : collectOfficialLinks(officialMeta?.officialLinks ?? [], cardRows);
+      // A «المزيد» row that was only a link now shown at the top is not repeated.
+      const notShownAbove = (f: LawCardField) => !(topLinks.length && isLinkOnlyValue(f.value));
+      const dbOfficialRows = renderDbOfficialRows(cardRows, topLinks);
       const parentLaw = renderParentLaw();
-      const hasMore = layout.more.length > 0 || !!dbOfficialRows || !!parentLaw;
+      // Owner ٣٢٠ (أ): «ملغى» alone in the status; the law that replaced it on its own row here.
+      const replacedBy = officialMeta?.replacedBy ?? null;
+      const replacedRow = replacedBy ? (
+        <div className="flex gap-1.5 items-start" data-card-field="replaced-by">
+          {getFieldIcon("تشريع")}
+          <div className="flex-1 min-w-0">
+            <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{isRTL ? "النظام البديل" : "Replaced by"}</p>
+            <a href={`/laws/${encodeURIComponent(replacedBy.slug)}`} className="text-[10px] font-bold leading-tight break-words text-[#C8A762] hover:underline">
+              {replacedBy.title || replacedBy.slug}
+            </a>
+          </div>
+        </div>
+      ) : null;
+      // Note ٠١ items ٥–٦ / note ١٢ item ٧: two layers — the base law, then
+      // the merged regulation(s). The regulation layer exists only when the
+      // file has one (a regulation row, the regulation's own card, or
+      // regulation articles); else it is not drawn at all.
+      const regulationCard = officialMeta?.regulationCard ?? null;
+      const regCounts = articleCounts?.regulations ?? [];
+      const annexes = articleCounts?.annexes ?? 0;
+      const lawTally = articleCounts && articleCounts.law.total > 0 ? articleCounts.law : null;
+      // The file's own count rows give way to the live counts (note ٠١ item ٦).
+      const lawRows = layout.moreLaw
+        .filter(notShownAbove)
+        .filter((f) => !(lawTally && /^عدد\s+(?:ال)?مواد(?:\s+(?:ال)?نظام)?$/u.test(f.key.trim())));
+      const regulationRows = [
+        ...layout.moreRegulation,
+        ...(regulationCard ? [...regulationCard.main, ...regulationCard.more] : []),
+      ]
+        .filter(notShownAbove)
+        .filter((f) => !(regCounts.length && /^عدد\s+مواد\s+(?:ال)?لائح/u.test(f.key.trim())))
+        .filter((f, i, all) => all.findIndex((g) => g.key === f.key && g.value === f.value) === i);
+      const hasRegulationLayer = regulationRows.length > 0 || regCounts.length > 0 || annexes > 0;
+      const hasMore = lawRows.length > 0 || hasRegulationLayer || !!dbOfficialRows || !!parentLaw || !!replacedRow || !!lawTally;
       const renderRow = (key: string, value: string, idx: number | string, extra?: ReactNode) => (
         <div key={idx} className="flex gap-1.5 items-start">
           {getFieldIcon(key)}
@@ -324,15 +433,17 @@ export default function SidebarPanel({
               {typeBadge}
             </span>
             )}
-            {(lawMeta.section_name || law.metadata_card.more.find(f => f.key === "التصنيف")?.value) && (
+            {categoryBadge && (
               <span className={`text-[9px] px-2 py-0.5 rounded-full border ${isDark ? "border-white/10 text-zinc-500" : "border-slate-200 text-slate-500"}`}>
-                {lawMeta.section_name || law.metadata_card.more.find(f => f.key === "التصنيف")?.value}
+                {categoryBadge}
               </span>
             )}
           </div>
 
           {/* الحقول الظاهرة دائماً */}
           <div className="space-y-2">
+            {/* ٣١٨: a guest's one date, first (where «آخر تعديل» sits for a subscriber). */}
+            {renderPublicLegislativeDate()}
             {layout.primary.map((f) => {
               if (f.id === "type") return null;
               if (f.id === "status" && f.source === "db") {
@@ -346,14 +457,16 @@ export default function SidebarPanel({
                   </div>
                 );
               }
-              return renderRow(f.key, f.value, f.id, f.id === "issuer" && officialLink ? renderOfficialLink(officialLink) : undefined);
+              return renderRow(f.key, f.value, f.id, f.id === "issuer" && officialLink && !topLinks.length ? renderOfficialLink(officialLink) : undefined);
             })}
-            {officialLink && !layout.primary.some((f) => f.id === "issuer") && (
+            {officialLink && !topLinks.length && !layout.primary.some((f) => f.id === "issuer") && (
               <div className="flex gap-1.5 items-start" data-card-field="issuer-link">
                 {getFieldIcon("رابط")}
                 <div className="flex-1 min-w-0">{renderOfficialLink(officialLink)}</div>
               </div>
             )}
+            {/* Note ٠١ item ٣: all official sources at the top, clickable, by name (subscribers). */}
+            {renderOfficialLinks(topLinks)}
 
             {/* Owner ٢٦٠: the card reaches every viewer; for a non-subscriber the
                 API removed its T28-22 rows (decree, dates, official links), so
@@ -371,9 +484,27 @@ export default function SidebarPanel({
                     <span className="transition-transform duration-200 group-open:rotate-180 text-[8px]">▼</span>
                   </summary>
                   <div className="mt-2.5 space-y-2 pl-0.5">
-                    {layout.more.map((item, idx) => renderRow(item.key, item.value, idx))}
+                    {/* أولاً: بيانات النظام / التشريع الأساسي */}
+                    {hasRegulationLayer && (
+                      <p className="text-[9px] font-black text-[#C8A762]" data-card-group="law">{isRTL ? "بيانات النظام" : "Law details"}</p>
+                    )}
+                    {lawTally && renderRow("عدد المواد الكلي", articleTallyLabel(lawTally), "law-count")}
+                    {lawRows.map((item, idx) => renderRow(item.key, item.value, `law-${idx}`))}
                     {dbOfficialRows}
+                    {replacedRow}
                     {parentLaw}
+                    {/* ثانياً: بيانات اللائحة التنفيذية / التشريعات الفرعية المدمجة —
+                        not drawn at all for a law with none (note ٠١ item ٥). */}
+                    {hasRegulationLayer && (
+                      <div className="border-t border-dashed border-slate-100 dark:border-white/[0.05] pt-2.5 space-y-2" data-card-group="regulation">
+                        <p className="text-[9px] font-black text-[#C8A762]">
+                          {isRTL ? "بيانات اللائحة التنفيذية / التشريعات الفرعية المدمجة" : "Merged regulations"}
+                        </p>
+                        {regCounts.map((r, idx) => renderRow(regCounts.length > 1 || r.name !== "اللائحة التنفيذية" ? `عدد مواد ${r.name}` : "عدد مواد اللائحة", articleTallyLabel(r), `reg-count-${idx}`))}
+                        {annexes > 0 && renderRow("الملاحق", String(annexes), "annexes")}
+                        {regulationRows.map((item, idx) => renderRow(item.key, item.value, `reg-${idx}`))}
+                      </div>
+                    )}
                   </div>
                 </details>
               </div>
@@ -442,7 +573,7 @@ export default function SidebarPanel({
                 {articleCount > 0 && (
                   <div className="flex items-center justify-between text-[9px] mt-1">
                     <span className={muted}>{isRTL ? "عدد مواد النظام" : "Law Articles"}</span>
-                    <span className={`text-[10px] font-black ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{articleCount}</span>
+                    <span className={`text-[10px] font-black ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{articleCountText}</span>
                   </div>
                 )}
               </div>
@@ -464,10 +595,10 @@ export default function SidebarPanel({
                   </div>
                 )}
                 
-                {lawMeta.regulation_articles && (
+                {!!regulationArticleCount && (
                   <div className="flex items-center justify-between text-[9px] mt-1">
                     <span className={muted}>{isRTL ? "عدد مواد اللائحة" : "Reg Articles"}</span>
-                    <span className={`text-[10px] font-black ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{lawMeta.regulation_articles}</span>
+                    <span className={`text-[10px] font-black ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{regulationArticleCount}</span>
                   </div>
                 )}
               </div>
@@ -486,13 +617,15 @@ export default function SidebarPanel({
               {articleCount > 0 && (
                 <div className="flex items-center justify-between text-[9px]">
                   <span className={muted}>{isRTL ? "عدد المواد" : "Articles"}</span>
-                  <span className={`text-[10px] font-black ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{articleCount}</span>
+                  <span className={`text-[10px] font-black ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{articleCountText}</span>
                 </div>
               )}
             </>
           )}
 
           {/* الحقول العامة المشتركة */}
+          {/* ٣١٨: a guest's one public date. */}
+          {renderPublicLegislativeDate()}
           {/* T28-22: one row stands in for every withheld issuance field
               (أداة الإصدار، آخر تعديل، المصدر) — no blank labels. */}
           {metaLocked && (
@@ -535,10 +668,10 @@ export default function SidebarPanel({
                     href={law.source}
                     target="_blank"
                     rel="noopener noreferrer"
-                    dir="ltr"
-                    className={`block text-[10px] leading-tight break-all underline decoration-dotted ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
+                    className={`block text-[10px] leading-tight break-words underline decoration-dotted ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
                   >
-                    {(() => { try { return new URL(law.source).hostname; } catch { return law.source; } })()}
+                    {/* Note ٠١ item ٣: the source's Arabic name, never a raw host. */}
+                    {officialSourceName(law.source)}
                   </a>
                 ) : (
                   <p className={`text-[10px] leading-tight break-words ${muted}`}>{law.source}</p>
@@ -558,10 +691,9 @@ export default function SidebarPanel({
                   href={officialMeta.officialSourceUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  dir="ltr"
-                  className={`block text-[10px] leading-tight break-all underline decoration-dotted ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
+                  className={`block text-[10px] leading-tight break-words underline decoration-dotted ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
                 >
-                  {urlHostname(officialMeta.officialSourceUrl)}
+                  {officialSourceName(officialMeta.officialSourceUrl)}
                 </a>
               </div>
             </div>
