@@ -573,7 +573,7 @@ L8 notes:
 
 ### Wave 5: document generation (one shared engine)
 
-> **Status 2026-10-30 (branch `feat/ai-wave5`, not merged):**
+> **Status 2026-10-30 (built on `feat/ai-wave5`, merged into `main` as `c54e0c79`; not deployed yet):**
 > - **L11 built:** tool `contract-drafter`, a 500-point job with a daily limit of 5, all five roles, off by default.
 >   - The input is the type plus labelled fields; the output is a title, a preamble and sections.
 >   - The articles it cites go through the L8 citation check.

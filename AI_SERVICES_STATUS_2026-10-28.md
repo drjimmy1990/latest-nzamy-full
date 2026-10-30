@@ -80,7 +80,7 @@ Admins can use every tool, and admins are never charged.
 |---|---|:-:|---|---|
 | **L9 المحاكي الشامل** | `/ai/wargaming` | 250 | lawyers, firms (not consultants) | on `main` `0d5273ea`; n8n workflow created and live-tested 2026-10-30 |
 | **L10 محلل قوة الموقف** | `/ai/analyze-strength` | 250 | lawyers, firms | on `main` `0d5273ea`; n8n workflow created and live-tested 2026-10-30 (with and without a file) |
-| **L11 محترف العقود المختصر**: the six contract types → a full draft in sections, blanks `[....]` for anything not given, every cited article checked in the library | `/ai/contract-drafter` | 500 | lawyers, firms, individuals, companies, micro | branch `feat/ai-wave5`, not merged; n8n workflow created and live-tested 2026-10-30 |
+| **L11 محترف العقود المختصر**: the six contract types → a full draft in sections, blanks `[....]` for anything not given, every cited article checked in the library | `/ai/contract-drafter` | 500 | lawyers, firms, individuals, companies, micro | on `main` `c54e0c79`; n8n workflow created and live-tested 2026-10-30 |
 
 The steps for each are in `n8n/ai/README.md` («Wave 4» and «Wave 5»).
 

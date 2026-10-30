@@ -24,7 +24,7 @@ This is the one file to return to after the owner's review. It covers:
 | Item | State |
 |---|---|
 | Wave 4 | **L9 and L10 merged into `main` and pushed (`819710ae`, 2026-10-30); `owner-edits` fast-forwarded to the same commit.** Not deployed yet. Both n8n workflows are **created, switched on and live-tested (2026-10-30)**: L9 without files, L10 without files and L10 with a PDF all came back `succeeded` |
-| Wave 5 | **L11 محترف العقود المختصر built on branch `feat/ai-wave5`, not merged.** Its n8n workflow is created, switched on and live-tested (2026-10-30): a rent contract in 7 sections with `[....]` blanks |
+| Wave 5 | **L11 محترف العقود المختصر merged into `main` and pushed (`c54e0c79`, 2026-10-30); `owner-edits` fast-forwarded to the same commit.** Not deployed yet. Its n8n workflow is created, switched on and live-tested (2026-10-30): a rent contract in 7 sections with `[....]` blanks |
 | Code | **Waves 0–3 are merged into `main`**. Pushed up to `4039de86`. After it come two docs-only commits, committed locally and **not pushed yet**: the owner guide and this file |
 | Production | Last confirmed deploy is **`7266a948`** (wave 0 + wave 1 code). **Everything after it is not deployed**: the Gemini workflows change, the useUser fix, waves 2 and 3 |
 | Database | Wave 0 SQL (`ai_runs`, `ai_start_run`, `ai_fail_run`, …) **run on prod**, `_verify` OK. Waves 1–3 need **no SQL** |
@@ -122,7 +122,7 @@ cd /www/wwwroot/nzamy/latest-nzamy-full && git pull && npm install && nohup bash
 | L8 | مراجعة وتدقيق مذكرة (gaps report) | `brief-check` | `/ai/brief-check` (beside the team order) | job + files + enricher | 200 | lawyer, firm (not consultants) | `bu9guzNEhaLbyAPd` |
 | L9 | المحاكي الشامل (wave 4) | `wargaming` | `/ai/wargaming` (beside the team order) | job + optional files + enricher | 250 | lawyer, firm (not consultants) | `5CFEwAsuT0lRZRlK` |
 | L10 | محلل الموقف والخصم (wave 4) | `analyze-strength` | `/ai/analyze-strength` | job + optional files + enricher | 250 | lawyer, firm | `MwONm9eg0IOGRRzt` |
-| L11 | محترف العقود المختصر (wave 5, branch `feat/ai-wave5`) | `contract-drafter` | `/ai/contract-drafter` | job (no files) + enricher | 500 | lawyer, firm, individual, corporate, micro | `r2s0JBMr8Q5Ti80O` |
+| L11 | محترف العقود المختصر (wave 5) | `contract-drafter` | `/ai/contract-drafter` | job (no files) + enricher | 500 | lawyer, firm, individual, corporate, micro | `r2s0JBMr8Q5Ti80O` |
 | — | Schedules (sweep + retention) | — | — | cron | — | — | `8Skwnqn9WIPOxcml` |
 
 **n8n credentials:**
@@ -235,7 +235,7 @@ Also part of wave 5:
 
 | # | Tool | Page | Points | Notes |
 |:-:|---|---|:-:|---|
-| L11 | محترف العقود المختصر | `/ai/contract-drafter` | 500 | **Built 2026-10-30 on `feat/ai-wave5`** (one call writes the whole draft; outline-then-sections, retrieval, the editor, letterhead export and `review` mode come with L12–L14). Six types with typed fields. Template-plus-fake-delay and fake upload removed; the dead `consultations/new` link fixed |
+| L11 | محترف العقود المختصر | `/ai/contract-drafter` | 500 | **Built 2026-10-30, merged `c54e0c79`** (one call writes the whole draft; outline-then-sections, retrieval, the editor, letterhead export and `review` mode come with L12–L14). Six types with typed fields. Template-plus-fake-delay and fake upload removed; the dead `consultations/new` link fixed |
 | L12 | الرأي الفصل | `/ai/legal-opinion` | 400 / 800 (D4) | Consultation and letter first, then study, memo and research. Due diligence (3,000) and cross-examination (150) last |
 | L13 | محترف العقود | `/ai/contracts` | 1,000 | About 40 types, bilingual, clause by clause. Review mode = the engine for the on-hold reviewer |
 | L14 | الصائغ القانوني | `/ai/draft` | 500 / 1,000 / 1,500 | Two phases: facts and issues, then **the lawyer confirms**, then drafting with retrieval and a citation check. Founder counter |
