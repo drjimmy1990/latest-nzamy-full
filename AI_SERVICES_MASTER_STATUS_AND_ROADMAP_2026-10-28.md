@@ -23,8 +23,7 @@ This is the one file to return to after the owner's review. It covers:
 
 | Item | State |
 |---|---|
-| Wave 4 | **L9 and L10 built on branch `feat/ai-wave4`** (worktree `D:
-zwti2`), not merged. Their two n8n workflows are exported (`n8n/ai/wargaming.json`, `n8n/ai/analyze-strength.json`) but **not created on n8n yet**: the n8n connection was down. See §6 |
+| Wave 4 | **L9 and L10 merged into `main` and pushed (`819710ae`, 2026-10-30); `owner-edits` fast-forwarded to the same commit.** Not deployed yet. Their two n8n workflows are exported (`n8n/ai/wargaming.json`, `n8n/ai/analyze-strength.json`) but **not created on n8n yet**: the n8n connection was down. See §6 |
 | Code | **Waves 0–3 are merged into `main`**. Pushed up to `4039de86`. After it come two docs-only commits, committed locally and **not pushed yet**: the owner guide and this file |
 | Production | Last confirmed deploy is **`7266a948`** (wave 0 + wave 1 code). **Everything after it is not deployed**: the Gemini workflows change, the useUser fix, waves 2 and 3 |
 | Database | Wave 0 SQL (`ai_runs`, `ai_start_run`, `ai_fail_run`, …) **run on prod**, `_verify` OK. Waves 1–3 need **no SQL** |
@@ -216,7 +215,7 @@ The owner's priority is **lawyer services first**, then individual tools.
 
 **Still to do for wave 4:**
 1. Create both workflows on n8n and live-probe them, with and without files. The Agent branch has the JSON shape (with braces) in its user text, which has not been probed yet. If it fails, describe the shape in words.
-2. Merge and push on the user's go.
+2. ~~Merge and push~~ done 2026-10-30 (`819710ae`, also on `owner-edits`).
 3. Deploy, then set both tools to «للمشرفين فقط».
 
 ### Wave 5: document writing (one shared engine)
