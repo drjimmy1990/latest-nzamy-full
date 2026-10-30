@@ -182,7 +182,7 @@ export function StepIdentify({
         <p className={`text-[11px] font-bold uppercase tracking-wider mb-3 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>ملاحظات ومرئيات (اختياري)</p>
         <div className="relative">
           <textarea value={notesText} onChange={e => setNotesText(e.target.value)}
-            placeholder="أضف ملاحظاتك هنا: نقاط تريد التركيز عليها، أو أي تفاصيل إضافية يطّلع عليها فريق نظامي..." rows={3}
+            placeholder="أضف ملاحظاتك هنا: نقاط تريد التركيز عليها، أو أي تفاصيل إضافية تُراعى عند الصياغة..." rows={3}
             className={`w-full resize-none rounded-xl border p-4 pe-12 text-[13px] outline-none leading-relaxed ${isDark ? "border-white/[0.07] bg-zinc-800/50 text-zinc-200 placeholder:text-zinc-600 focus:border-[#C8A762]/40" : "border-zinc-200 bg-zinc-50 text-zinc-800 placeholder:text-zinc-400 focus:border-[#0B3D2E]/40"}`} />
           <div className="absolute start-3 top-3">
             <VoiceInput onTranscript={(t) => setNotesText(notesText ? `${notesText} ${t}` : t)} compact />

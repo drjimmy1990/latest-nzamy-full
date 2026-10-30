@@ -33,9 +33,11 @@ export interface OrderAttachment {
 export interface DraftIntakeV1 {
   schemaVersion: 1;
   service: "draft";
-  clientRole: "plaintiff" | "defendant";
+  /** Absent for the specialist modes, which have no plaintiff/defendant. */
+  clientRole?: "plaintiff" | "defendant";
   memoType: string;
   memoSubType?: string;
+  /** "" for the specialist modes. */
   legalBranch: string;
   caseText: string;
   parties: { one: Partial<PartyData>; two: Partial<PartyData> };
@@ -52,6 +54,23 @@ export type ValidationResult<T> =
   | { ok: false; errors: string[] };
 
 const MIN_CASE_TEXT = 30;
+
+/**
+ * The wizard's specialist modes (arbitration award, notarised deed, report,
+ * minutes): no plaintiff/defendant and no legal branch — the wizard asks
+ * only for the sub-type — so the order needs neither (plan, "fix the drafter
+ * before L14": they could never submit).
+ */
+export const SPECIALIST_MEMO_TYPES: ReadonlySet<string> = new Set(["arbitration", "notary", "report", "minutes"]);
+
+/**
+ * A draft order for a pleading (a claim, a memo, a challenge) rather than a
+ * specialist document — what a legal consultant may not order (Art. 18 of
+ * نظام المحاماة; the service-requests POST refuses it).
+ */
+export function isPleadingDraftIntake(intake: unknown): boolean {
+  return isRecord(intake) && str(intake.service) === "draft" && !SPECIALIST_MEMO_TYPES.has(str(intake.memoType));
+}
 
 export function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -120,21 +139,16 @@ export function validateDraftIntake(input: unknown): ValidationResult<DraftIntak
     errors.push("نوع الخدمة غير صحيح");
   }
 
-  const clientRole = str(input.clientRole);
-  if (clientRole !== "plaintiff" && clientRole !== "defendant") {
-    errors.push("صفة الموكل غير محددة");
-  }
-
   const memoType = str(input.memoType);
   if (!memoType) errors.push("نوع المذكرة مطلوب");
+  const specialist = SPECIALIST_MEMO_TYPES.has(memoType);
+
+  const role = str(input.clientRole);
+  const clientRole = role === "plaintiff" || role === "defendant" ? role : null;
+  if (!clientRole && !specialist) errors.push("صفة الموكل غير محددة");
 
   const legalBranch = str(input.legalBranch);
-  if (!legalBranch) errors.push("الفرع القانوني مطلوب");
-
-  const caseText = str(input.caseText);
-  if (caseText.length < MIN_CASE_TEXT) {
-    errors.push(`الوقائع قصيرة جداً — الحد الأدنى ${MIN_CASE_TEXT} حرفاً`);
-  }
+  if (!legalBranch && !specialist) errors.push("الفرع القانوني مطلوب");
 
   const partiesRaw = isRecord(input.parties) ? input.parties : null;
   if (!partiesRaw || !isRecord(partiesRaw.one) || !isRecord(partiesRaw.two)) {
@@ -142,6 +156,13 @@ export function validateDraftIntake(input: unknown): ValidationResult<DraftIntak
   }
 
   const attachments = collectAttachments(input.attachments, errors);
+
+  // The facts may be in the attached documents instead of typed (plan: a
+  // file without typed facts used to fail MIN_CASE_TEXT).
+  const caseText = str(input.caseText);
+  if (caseText.length < MIN_CASE_TEXT && attachments.length === 0) {
+    errors.push(`اكتب الوقائع (${MIN_CASE_TEXT} حرفاً على الأقل) أو أرفق مستنداتها`);
+  }
 
   if (errors.length > 0) return { ok: false, errors };
 
@@ -152,7 +173,7 @@ export function validateDraftIntake(input: unknown): ValidationResult<DraftIntak
     value: {
       schemaVersion: 1,
       service: "draft",
-      clientRole: clientRole as "plaintiff" | "defendant",
+      ...(clientRole ? { clientRole } : {}),
       memoType,
       ...(str(input.memoSubType) ? { memoSubType: str(input.memoSubType) } : {}),
       legalBranch,

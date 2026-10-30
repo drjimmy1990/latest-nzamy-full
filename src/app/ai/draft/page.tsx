@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { Check, ArrowRight, ArrowLeft } from "@phosphor-icons/react";
@@ -11,6 +11,11 @@ import { DraftPreStep } from "@/components/draft/DraftPreStep";
 import { StepIdentify }  from "@/components/draft/steps/StepIdentify";
 import { StepCase }      from "@/components/draft/steps/StepCase";
 import { StepSubmit }    from "@/components/draft/steps/StepSubmit";
+import { StepAiDraft }   from "@/components/draft/steps/StepAiDraft";
+import { useUser } from "@/hooks/useUser";
+import { draftKindFromMemo } from "@/lib/ai/draftKinds";
+import { CONSULTANT_BLOCKED_MESSAGE } from "@/lib/auth/practiceKind";
+import { splitAiReadable } from "@/components/ai/aiReadable";
 import { TranscriptHandoffNotice } from "@/components/draft/TranscriptHandoffNotice";
 import {
   TRANSCRIPT_FROM_PARAM, consumeTranscriptHandoff, discardTranscriptHandoff, sessionStorageOrNull,
@@ -31,6 +36,20 @@ export default function AIDraftPage() {
   const modeParam = searchParams.get("mode") ?? "";
 
   const s = useDraftState(modeParam);
+  const user = useUser();
+
+  // L14 (owner LIVE-F02, NOTE-22): a pleading is written by the AI by
+  // default; the team's review is a separate, optional order. The specialist
+  // modes (arbitration, notary, report, minutes) have no kind and stay a team
+  // order, as does any account the tool is not open to (lawyers and firms).
+  const kind = draftKindFromMemo(s.memoType, s.memoSubType);
+  const aiOpen = kind !== null && ["lawyer", "firm", "admin"].includes(user.userType as string);
+  // Art. 18: a legal consultant does not plead — neither by the AI nor by
+  // the team (the service-requests POST refuses it too).
+  const consultantBlocked = kind !== null && user.practiceKind === "consultant";
+  const files = useMemo(() => splitAiReadable(s.uploadedAttachments), [s.uploadedAttachments]);
+  const [aiDraftText, setAiDraftText] = useState("");
+  const [reviewOpen, setReviewOpen] = useState(false);
   // "pre" = show chooser, "draft" = show the wizard
   // If a mode param is provided skip the chooser and go straight to draft
   const [preMode, setPreMode] = useState<"pre" | "draft">(modeParam ? "draft" : "pre");
@@ -134,7 +153,7 @@ export default function AIDraftPage() {
                   isActive ? (isDark ? "text-white font-semibold" : "text-zinc-900 font-semibold") :
                   isDone   ? "text-emerald-500 font-medium" :
                   (isDark  ? "text-zinc-600" : "text-zinc-400")
-                }`}>{step.label}</span>
+                }`}>{step.key === "submit" && aiOpen ? "الصياغة" : step.label}</span>
                 {i < CLIENT_VISIBLE_STEPS.length - 1 && (
                   <div className={`flex-1 h-px mx-1 ${isDone ? "bg-emerald-500/40" : isDark ? "bg-zinc-800" : "bg-zinc-200"}`} />
                 )}
@@ -147,16 +166,62 @@ export default function AIDraftPage() {
       {/* Step content */}
       {s.step === "identify"  && <StepIdentify  isDark={isDark} clientRole={s.clientRole} setClientRole={s.setClientRole} memoType={s.memoType} setMemoType={s.setMemoType} memoSubType={s.memoSubType} setMemoSubType={s.setMemoSubType} legalBranch={s.legalBranch} setLegalBranch={s.setLegalBranch} notesText={s.notesText} setNotesText={s.setNotesText} showPreFiling={s.showPreFiling} setShowPreFiling={s.setShowPreFiling} />}
       {s.step === "case"      && <StepCase      isDark={isDark} clientRole={s.clientRole} memoType={s.memoType} legalBranch={s.legalBranch} caseText={s.caseText} setCaseText={s.setCaseText} caseFile={s.caseFile} setCaseFile={s.setCaseFile} supportDocs={s.supportDocs} addDoc={s.addDoc} removeDoc={s.removeDoc} updateDoc={s.updateDoc} lawyerNotes={s.lawyerNotes} setLawyerNotes={s.setLawyerNotes} useFirmMemory={s.useFirmMemory} setUseFirmMemory={s.setUseFirmMemory} bulkUpload={s.bulkUpload} setBulkUpload={s.setBulkUpload} partyOne={s.partyOne} setPartyOne={s.setPartyOne} partyTwo={s.partyTwo} setPartyTwo={s.setPartyTwo} caseFileRef={s.caseFileRef} attachRefs={s.attachRefs} uploading={s.uploading} attachError={s.attachError} attachFile={s.attachFile} attachFiles={s.attachFiles} removeAttachment={s.removeAttachment} plaintiffName={s.plaintiffName} setPlaintiffName={s.setPlaintiffName} defendantName={s.defendantName} setDefendantName={s.setDefendantName} judgmentCourt={s.judgmentCourt} setJudgmentCourt={s.setJudgmentCourt} judgmentNumber={s.judgmentNumber} setJudgmentNumber={s.setJudgmentNumber} judgmentDate={s.judgmentDate} setJudgmentDate={s.setJudgmentDate} judgmentText={s.judgmentText} setJudgmentText={s.setJudgmentText} judgmentReasons={s.judgmentReasons} setJudgmentReasons={s.setJudgmentReasons} />}
-      {s.step === "submit" && (
+      {consultantBlocked && (
+        <p role="alert" className={`rounded-xl border px-4 py-3 text-[12px] ${isDark ? "border-amber-900/40 bg-amber-900/10 text-amber-400" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+          {CONSULTANT_BLOCKED_MESSAGE}
+        </p>
+      )}
+      {s.step === "submit" && !consultantBlocked && aiOpen && kind && (
+        <>
+          <StepAiDraft
+            isDark={isDark}
+            kind={kind}
+            facts={{
+              kind,
+              clientRole: s.clientRole,
+              legalBranch: s.legalBranch,
+              caseText: s.caseText,
+              notes: [s.notesText, s.lawyerNotes].filter(Boolean).join("\n\n"),
+              plaintiffName: s.plaintiffName,
+              defendantName: s.defendantName,
+              judgment: { court: s.judgmentCourt, number: s.judgmentNumber, date: s.judgmentDate, text: s.judgmentText, reasons: s.judgmentReasons },
+              readableFiles: files.ids.length,
+            }}
+            fileIds={files.ids}
+            skippedFiles={files.skipped}
+            onPleading={setAiDraftText}
+          />
+          {reviewOpen ? (
+            <StepSubmit
+              isDark={isDark}
+              variant="review"
+              summary={s.buildSummary()}
+              attachments={s.uploadedAttachments}
+              notes={s.submitNotes}
+              setNotes={s.setSubmitNotes}
+              submitting={s.submitting}
+              errors={s.submitErrors}
+              onSubmit={() => s.submitOrder(aiDraftText)}
+            />
+          ) : (
+            <button type="button" onClick={() => setReviewOpen(true)}
+              className={`w-full rounded-2xl border border-dashed px-4 py-3 text-[12px] font-semibold ${isDark ? "border-white/[0.08] text-zinc-400 hover:text-zinc-200" : "border-zinc-300 text-zinc-500 hover:text-zinc-700"}`}>
+              طلب مراجعة من فريق نظامي (اختياري) — طلب منفصل عن الصياغة
+            </button>
+          )}
+        </>
+      )}
+      {s.step === "submit" && !consultantBlocked && !aiOpen && (
         <StepSubmit
           isDark={isDark}
+          variant="order"
           summary={s.buildSummary()}
           attachments={s.uploadedAttachments}
           notes={s.submitNotes}
           setNotes={s.setSubmitNotes}
           submitting={s.submitting}
           errors={s.submitErrors}
-          onSubmit={s.submitOrder}
+          onSubmit={() => s.submitOrder()}
         />
       )}
 
@@ -168,7 +233,7 @@ export default function AIDraftPage() {
         </button>
         {s.step !== "submit" && (
           <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-            onClick={s.nextStep} disabled={!s.canProceed() || s.processing || s.uploading}
+            onClick={s.nextStep} disabled={!s.canProceed() || s.processing || s.uploading || consultantBlocked}
             className="flex items-center gap-2 rounded-xl bg-[#0B3D2E] px-6 py-2.5 text-[12px] font-bold text-white shadow-md disabled:opacity-40">
             {s.processing ? (
               <>

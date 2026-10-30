@@ -165,7 +165,7 @@ export function StepCase({
             <span className="text-emerald-500 text-lg">📌</span>
             <div>
               <p className={`text-[13px] font-semibold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>اذكر أسماء الأطراف وبياناتهم ضمن ملخص القضية أو المرفقات أدناه</p>
-              <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>سيحددها فريق نظامي منها يدوياً عند الصياغة</p>
+              <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>يستخرجها التحليل منها، وتراجعها قبل الصياغة</p>
             </div>
           </div>
         </div>
@@ -331,9 +331,9 @@ export function StepCase({
                 onChange={handleBulkFiles} />
               <FileArrowUp size={18} className={`mx-auto mb-1 ${isDark ? "text-zinc-600" : "text-zinc-400"}`} />
               <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-                {uploading ? "جارٍ رفع المرفقات..." : "اضغط لاختيار جميع المرفقات دفعة واحدة — سيراجعها فريق نظامي يدوياً"}
+                {uploading ? "جارٍ رفع المرفقات..." : "اضغط لاختيار جميع المرفقات دفعة واحدة"}
               </p>
-              <p className={`text-[10px] mt-0.5 ${isDark ? "text-amber-600" : "text-amber-500"}`}>⚠ قد يحتاج الفريق وقتاً أطول لمراجعة عدد أكبر من الملفات</p>
+              <p className={`text-[10px] mt-0.5 ${isDark ? "text-amber-600" : "text-amber-500"}`}>⚠ يقرأ الذكاء الاصطناعي ملفات PDF والصور فقط — أرفق ملفات Word بصيغة PDF</p>
             </div>
             {bulkFailed.length > 0 && (
               <p className="flex items-center gap-1.5 text-[11px] text-red-500">
@@ -475,7 +475,7 @@ export function StepCase({
         <p className={`text-[12px] font-semibold mb-2 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>ملاحظات المحامي (اختياري)</p>
         <div className="relative">
           <textarea value={lawyerNotes} onChange={e => setLawyerNotes(e.target.value)}
-            placeholder="أي توجيهات خاصة لفريق نظامي: ركّز على نقطة معينة، تجنب دفع معين..." rows={3}
+            placeholder="أي توجيهات خاصة للصياغة: ركّز على نقطة معينة، تجنب دفع معين..." rows={3}
             className={`w-full resize-none rounded-xl border p-3 pe-14 text-[13px] outline-none leading-relaxed ${isDark ? "border-white/[0.07] bg-zinc-800/50 text-zinc-200 placeholder:text-zinc-600" : "border-zinc-200 bg-zinc-50 text-zinc-800 placeholder:text-zinc-400"}`} />
           <div className="absolute bottom-3 start-3">
             <VoiceInput onTranscript={(t) => setLawyerNotes(lawyerNotes ? `${lawyerNotes} ${t}` : t)} compact />

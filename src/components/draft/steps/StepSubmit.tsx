@@ -12,11 +12,32 @@ interface Props {
   submitting: boolean;
   errors: string[];
   onSubmit: () => void;
+  /**
+   * "review": the optional, separate order for the team to review the AI's
+   * pleading (L14 — the pleading itself is written by the AI by default).
+   * "order": a document the AI does not write yet (the specialist modes),
+   * or an account the AI tool is not open to.
+   */
+  variant: "review" | "order";
 }
 
+const COPY = {
+  review: {
+    title: "طلب مراجعة من فريق نظامي (اختياري)",
+    lead: "طلب منفصل عن الصياغة بالذكاء الاصطناعي: يراجع فريق نظامي المذكرة ويعدّلها، ويصلك إشعار عند جهوزيتها.",
+    button: "إرسال طلب المراجعة",
+  },
+  order: {
+    title: "مراجعة وإرسال",
+    lead: "هذا النوع من المستندات لا يكتبه الذكاء الاصطناعي بعد؛ يُعدّه فريق نظامي ويصلك إشعار عند جهوزيته.",
+    button: "إرسال الطلب",
+  },
+} as const;
+
 export function StepSubmit({
-  isDark, summary, attachments, notes, setNotes, submitting, errors, onSubmit,
+  isDark, summary, attachments, notes, setNotes, submitting, errors, onSubmit, variant,
 }: Props) {
+  const copy = COPY[variant];
   const [confirmed, setConfirmed] = useState(false);
   const card = isDark
     ? "bg-zinc-900 border border-white/[0.06] rounded-2xl"
@@ -26,10 +47,10 @@ export function StepSubmit({
     <div className={`${card} p-5 space-y-5`} dir="rtl">
       <div>
         <h2 className={`text-[15px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>
-          مراجعة وإرسال
+          {copy.title}
         </h2>
         <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-          سيتولى فريق نظامي إعداد المذكرة يدوياً، وسيصلك إشعار عند جهوزيتها.
+          {copy.lead}
         </p>
       </div>
 
@@ -89,12 +110,12 @@ export function StepSubmit({
       </label>
 
       <button
-        onClick={onSubmit}
+        onClick={() => onSubmit()}
         disabled={!confirmed || submitting}
         className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0B3D2E] px-6 py-3 text-[13px] font-bold text-white shadow-md disabled:opacity-40"
       >
         <PaperPlaneTilt size={15} />
-        {submitting ? "جارٍ الإرسال..." : "إرسال الطلب"}
+        {submitting ? "جارٍ الإرسال..." : copy.button}
       </button>
     </div>
   );
