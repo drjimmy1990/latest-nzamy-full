@@ -134,8 +134,12 @@ export default function DeadlineCalculatorPage() {
     }));
   };
 
+  // A period is a whole number of days, at least one: a negative or zero
+  // period has no due date to compute (owner's test — it accepted -5).
+  const periodError = Number.isInteger(form.periodDays) && form.periodDays >= 1
+    ? null : "المدة يجب أن تكون عدداً صحيحاً من الأيام، يوماً واحداً على الأقل.";
   const add = () => {
-    if (!form.label || !form.triggerDate) return;
+    if (!form.label || !form.triggerDate || periodError) return;
     setDeadlines((prev) => [...prev, { ...form, id: Date.now() }]);
     setForm({
       label: "", triggerDate: "", periodDays: 30, category: form.category,
@@ -220,14 +224,14 @@ export default function DeadlineCalculatorPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
             <div><label className={`block text-xs font-semibold mb-1 ${muted}`}>اسم الميعاد</label><input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} placeholder="الطعن بالاستئناف..." className={inp} /></div>
             <div><label className={`block text-xs font-semibold mb-1 ${muted}`}>تاريخ الواقعة (بداية الحساب)</label><input type="date" value={form.triggerDate} onChange={(e) => setForm({ ...form, triggerDate: e.target.value })} className={inp} /></div>
-            <div><label className={`block text-xs font-semibold mb-1 ${muted}`}>المدة (يوم)</label><input type="number" value={form.periodDays} onChange={(e) => editPeriodDays(parseInt(e.target.value) || 0)} className={inp} /></div>
+            <div><label className={`block text-xs font-semibold mb-1 ${muted}`}>المدة (يوم)</label><input type="number" min={1} step={1} value={form.periodDays} onChange={(e) => editPeriodDays(parseInt(e.target.value) || 0)} aria-invalid={!!periodError} className={inp} />{periodError && <p role="alert" className="mt-1 text-xs text-red-500">{periodError}</p>}</div>
             <div><label className={`block text-xs font-semibold mb-1 ${muted}`}>الجهة</label>
               <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className={inp}>
                 {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
           </div>
-          <button onClick={add} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-bold hover:bg-amber-600 transition">
+          <button onClick={add} disabled={!form.label || !form.triggerDate || !!periodError} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-bold hover:bg-amber-600 transition disabled:opacity-40">
             <Plus size={15} /> إضافة
           </button>
         </div>
