@@ -38,7 +38,7 @@ For each file: open it, copy all of it, paste into a new query, and press **Run*
 | 8 | `20261030_50_stage_auto_deadline_guard.sql` | `No rows returned` (good: no duplicates). Then run `select indexname from pg_indexes where indexname = 'uq_deadlines_one_open_auto_per_stage';` and expect **one row** |
 | 9 | `20261030_12_accounts_firms_owner_answers.sql` | one row: `0, t, t, t, t` |
 | 10 | `20261030_14_branding_assets.sql` | then run the **letterhead check** below |
-| 11 | `20261030_16_pricing_owner_package.sql` | 7 rows of plans + the NEWCLIENT row (see `SQL_batch_2026-10-30_pricing/README.md` for the exact table) |
+| 11 | `20261030_16_pricing_owner_package.sql` | the editor shows only the last result: one `NEWCLIENT` row with `first_paid_order_only = true`, or `No rows returned` if there is no NEWCLIENT coupon (both are fine) |
 
 Files 1 and 2 **must** run before the deploy, or creating or collecting an invoice answers 503. The others may run before or after the deploy; running them all now keeps it simple.
 

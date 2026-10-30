@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Calculator, Money, CaretLeft, Gavel, Clock,
   ArrowCounterClockwise, CheckCircle, Info, ChartBar, Receipt,
-  Buildings, Users, CalendarBlank, ArrowsLeftRight, Sparkle,
+  Buildings, Users, CalendarBlank, ArrowsLeftRight, Warning, Sparkle,
   // Case Type Icons
   HardHat, Storefront, Scales, Lock, UsersThree, House, Bank
 } from "@phosphor-icons/react";

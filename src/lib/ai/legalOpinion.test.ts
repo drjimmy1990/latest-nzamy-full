@@ -267,7 +267,7 @@ test("page helpers: the inputs the page sends pass the server's checks; results 
   assert.deepEqual(letter.annexes, ["صورة الفاتورة"]);
   assert.equal(letter.legal_ref, null);
   assert.equal(AI_TOOLS["legal-opinion-letter"].validateInput(letter).ok, true);
-  assert.equal(letterRunInput({ ...(letter as never), typeLabel: "x", senderRole: "individual", senderName: "a", recipientType: "individual", recipientName: "b", govEntity: "", subject: "s", legalRef: "", deadlineDays: null, annexes: [] }).deadline_days, null);
+  assert.equal(letterRunInput({ typeLabel: "x", senderRole: "individual", senderName: "a", recipientType: "individual", recipientName: "b", govEntity: "", subject: "s", legalRef: "", deadlineDays: null, annexes: [] }).deadline_days, null);
 
   const a = asConsultAnswer(ANSWER)!;
   assert.equal(consultAnswerText(a), "تستحق ثلث المكافأة [S1]\n\nما تقوله النصوص\nإذا استقال العامل بعد خمس سنوات وقبل عشر استحق ثلثي المكافأة [S1]");
