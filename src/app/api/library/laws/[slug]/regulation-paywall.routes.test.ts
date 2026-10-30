@@ -229,7 +229,8 @@ test("LIB-04b: chapters are ordered, relabelled and filtered by orderLawChapters
   const block = routeSource.slice(start, start + 600);
   assert.match(
     block,
-    /articles: chapter\.articles\.map\(\(a\) => formatArticleWithPaywall\(a, hasFullAccess, freeLimit, !officialMeta\.officialMetaLocked\)\)/,
+    // `unnumbered` (owner note ١١) only changes the label, never the paywall.
+    /articles: chapter\.articles\.map\(\(a\) => formatArticleWithPaywall\(a, hasFullAccess, freeLimit, !officialMeta\.officialMetaLocked, unnumbered\)\)/,
     "every grouped article must still pass through the paywall formatter",
   );
   // The old shapes must be gone: appending the orphan last put a law's
