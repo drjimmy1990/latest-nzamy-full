@@ -181,7 +181,8 @@ test("the assistant keeps its own rule: no full-library flag shows or hides it (
 });
 
 test("N2.5: the owner loader never sends the generated sort key (a generated column refuses a value)", () => {
-  const loader = fs.readFileSync(path.join(here, "../../../../../scripts/seed-library-from-owner.mjs"), "utf8");
-  const laws = loader.match(/\{ name: "laws", [^\n]*stripKeys: \[([^\]]*)\]/)?.[1] ?? "";
+  // The loader's table list lives in ownerLoaderTables.ts since note ١١ (2026-10-30).
+  const loader = fs.readFileSync(path.join(here, "../../../../lib/library/ownerLoaderTables.ts"), "utf8");
+  const laws = loader.match(/name: "laws",[\s\S]*?stripKeys: \[([^\]]*)\]/)?.[1] ?? "";
   for (const key of ["summary_brief", "catalogue_recency_key"]) assert.match(laws, new RegExp(`"${key}"`));
 });
