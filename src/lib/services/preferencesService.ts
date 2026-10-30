@@ -47,10 +47,21 @@ export interface UserPreferences {
    * `resolveQuickToolIds`, which drops ids the registry no longer knows.
    */
   quickTools?: string[];
+  /**
+   * «المفضلة» of the circuits directory on /ai/procedures (owner note ١٥ §٥):
+   * circuit ids from src/data/circuits-directory.json, each with an optional
+   * note of up to 300 characters; at most 200.
+   */
+  circuitFavorites?: CircuitFavorite[];
+}
+
+export interface CircuitFavorite {
+  id: string;
+  note?: string;
 }
 
 // Mirrored in preferencesMerge.ts (the route's validator) — change both.
-export const PREFERENCE_KEYS = ["readingActivity", "recentSessions", "dashboardMode", "quickTools"] as const;
+export const PREFERENCE_KEYS = ["readingActivity", "recentSessions", "dashboardMode", "quickTools", "circuitFavorites"] as const;
 
 export async function getPreferences(): Promise<UserPreferences | null> {
   if (!isSupabaseMode) return null;

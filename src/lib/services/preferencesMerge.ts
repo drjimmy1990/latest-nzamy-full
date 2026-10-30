@@ -31,7 +31,21 @@
 
 import { validateQuickToolIds } from "../lawyerQuickTools.ts";
 
-export const PREFERENCE_KEYS = ["readingActivity", "recentSessions", "dashboardMode", "quickTools"] as const;
+export const PREFERENCE_KEYS = ["readingActivity", "recentSessions", "dashboardMode", "quickTools", "circuitFavorites"] as const;
+
+/**
+ * «المفضلة» in the circuits directory on /ai/procedures (owner note ١٥ §٥,
+ * NOTE-15-C03): the user's own starred circuits, each with an optional note.
+ * Private by construction — user_settings rows are the caller's own.
+ */
+export interface CircuitFavorite {
+  /** A src/data/circuits-directory.json id, e.g. «moj-cir-0230». */
+  id: string;
+  note?: string;
+}
+export const CIRCUIT_FAVORITES_MAX = 200;
+export const CIRCUIT_FAVORITE_NOTE_MAX = 300;
+const CIRCUIT_ID = /^moj-cir-\d{4}$/;
 
 export interface ReadingActivity {
   lawsThisWeek: number;
@@ -58,6 +72,8 @@ export interface UserPreferences {
   dashboardMode?: "light" | "full";
   /** lawyer dashboard «وصول سريع» — 3..8 unique ids from LAWYER_QUICK_TOOLS */
   quickTools?: string[];
+  /** circuits directory «المفضلة» — unique circuit ids, newest first, ≤ CIRCUIT_FAVORITES_MAX */
+  circuitFavorites?: CircuitFavorite[];
 }
 
 const READING_ACTIVITY_NUMBER_KEYS = ["lawsThisWeek", "lawsThisMonth", "articles", "principles", "feqhPages"] as const;
@@ -127,6 +143,33 @@ function validateRecentSessions(value: unknown): RecentSession[] | string {
   return out.slice(0, RECENT_SESSIONS_MAX);
 }
 
+/** Returns the validated CircuitFavorite[], or an Arabic error message. */
+export function validateCircuitFavorites(value: unknown): CircuitFavorite[] | string {
+  if (!Array.isArray(value)) return "قائمة المفضلة يجب أن تكون قائمة.";
+  if (value.length > CIRCUIT_FAVORITES_MAX) return `لا تتسع المفضلة لأكثر من ${CIRCUIT_FAVORITES_MAX} دائرة.`;
+  const out: CircuitFavorite[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (!isPlainObject(item)) return "عنصر غير صالح في المفضلة.";
+    for (const key of Object.keys(item)) {
+      if (key !== "id" && key !== "note") return `حقل غير معروف في المفضلة: ${key}`;
+    }
+    const id = item.id;
+    if (typeof id !== "string" || !CIRCUIT_ID.test(id)) return "معرّف دائرة غير صالح في المفضلة.";
+    if (seen.has(id)) return "الدائرة مكررة في المفضلة.";
+    seen.add(id);
+    const fav: CircuitFavorite = { id };
+    if (item.note !== undefined) {
+      if (typeof item.note !== "string") return "ملاحظة المفضلة يجب أن تكون نصاً.";
+      const note = item.note.trim();
+      if (note.length > CIRCUIT_FAVORITE_NOTE_MAX) return `ملاحظة المفضلة أطول من ${CIRCUIT_FAVORITE_NOTE_MAX} حرف.`;
+      if (note) fav.note = note;
+    }
+    out.push(fav);
+  }
+  return out;
+}
+
 // A dedicated type predicate rather than the `T | string` return shape the
 // other two validators use: dashboardMode's own valid values ARE strings, so
 // `typeof result === "string"` could never tell a validated "light"/"full"
@@ -186,6 +229,12 @@ export function validatePreferencesPatch(body: unknown): PreferencesValidation {
     const result = validateQuickToolIds(body.quickTools);
     if (!Array.isArray(result)) return { ok: false, error: result.error };
     patch.quickTools = result;
+  }
+
+  if ("circuitFavorites" in body) {
+    const result = validateCircuitFavorites(body.circuitFavorites);
+    if (typeof result === "string") return { ok: false, error: result };
+    patch.circuitFavorites = result;
   }
 
   return { ok: true, patch };
