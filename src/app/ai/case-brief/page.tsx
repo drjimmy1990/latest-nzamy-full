@@ -155,7 +155,7 @@ export default function CaseBriefPage() {
             <Robot size={18} weight="duotone" className="text-[#0B3D2E] dark:text-[#C8A762]" />
           </div>
           <h1 className={`text-xl font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>
-            الباراليجل
+            الموجز القضائي
           </h1>
           <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-[#0B3D2E]/10 text-[#0B3D2E] dark:bg-[#C8A762]/15 dark:text-[#C8A762] border border-[#0B3D2E]/15 dark:border-[#C8A762]/30">
             الخطوة صفر
@@ -293,7 +293,7 @@ export default function CaseBriefPage() {
               <Robot size={40} weight="duotone" className="text-[#C8A762]" />
             </motion.div>
             <div>
-              <p className={`font-bold text-[16px] ${isDark ? "text-white" : "text-zinc-800"}`}>الباراليجل يقرأ الأوراق...</p>
+              <p className={`font-bold text-[16px] ${isDark ? "text-white" : "text-zinc-800"}`}>جارٍ قراءة الأوراق...</p>
               <p className={`text-[12px] mt-1 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
                 قد يستغرق ذلك دقيقة أو أكثر حسب عدد الصفحات — يمكنك البقاء في الصفحة.
               </p>
@@ -397,7 +397,7 @@ export default function CaseBriefPage() {
                 </div>
               ))}
               <p className={`text-[10px] italic text-center pt-1 ${isDark ? "text-zinc-700" : "text-zinc-400"}`}>
-                القرار النهائي للمحامي — الباراليجل يعرض الخيارات فقط.
+                القرار النهائي للمحامي — الموجز يعرض الخيارات فقط.
               </p>
             </div>
 
@@ -458,7 +458,7 @@ export default function CaseBriefPage() {
                   </div>
 
                   <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
-                    الباراليجل حلّل الأوراق وحدّد ما تحتاجه من العميل بدقة — كل طلب مرتبط بثغرة فعلية.
+                    حلّل الموجز الأوراق وحدّد ما تحتاجه من العميل — كل طلب مرتبط بثغرة وجدها.
                   </p>
 
                   {/* Request list */}

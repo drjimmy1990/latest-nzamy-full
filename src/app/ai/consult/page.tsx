@@ -54,14 +54,13 @@ function detectLegalArea(text: string): string | undefined {
   return undefined;
 }
 
-// ─── Mock AI response generator ──────────────────────────────────────────
+// ─── Reply while the engine is not live ──────────────────────────────────
 
-function getMockResponse(): { text: string; sources: string[] } {
-  return {
-    text: `بناءً على نظام العمل السعودي وأحدث لوائحه التنفيذية، إليك الإجابة التفصيلية حول سؤالك:\n\n**أولاً: الإطار النظامي**\nيُعدّ هذا الموضوع من المسائل التي تناولها نظام العمل الصادر بالمرسوم الملكي رقم م/51 بتاريخ 1426/8/23هـ، في المواد من (73) إلى (81) منه.\n\n**ثانياً: الشروط والضوابط**\n• يجب توافر ثلاثة عناصر أساسية: الركن المادي، والركن المعنوي، والإضرار بالطرف الآخر.\n• تُقدَّر الأضرار من قِبل المحكمة العمالية وفق ملابسات كل قضية.\n• مدة التقادم: لا تُسمع الدعوى بعد مرور 12 شهراً من تاريخ انتهاء العقد.\n\n**ثالثاً: توصيتي**\nيُنصح بتوثيق جميع المراسلات وجمع الإثباتات قبل رفع الدعوى. هل تودّ أن أساعدك في صياغة مذكرة مبدئية؟`,
-    sources: ["نظام العمل م/51 • المادة 77", "لائحة العمل التنفيذية • الباب الخامس", "قرار وزارة الموارد البشرية رقم 4786"],
-  };
-}
+// The individual's consult engine is not built yet (AI plan: individual tools come
+// after the lawyer waves). Every question used to get this same canned labour-law
+// answer with invented sources; it is kept out of the chat (owner LIVE-F24).
+const NOT_LIVE_REPLY =
+  "المستشار الذكي للأفراد لم يُفعَّل بعد، فلا نستطيع إعطاءك إجابة آلية الآن. يمكنك عرض سؤالك على محامٍ مختص من الخيارات أدناه.";
 
 // ─── Streaming text animation ─────────────────────────────────────────────────
 
@@ -180,6 +179,13 @@ export default function AIConsultPage() {
     },
   ]);
   const [input, setInput] = useState("");
+  // The client dashboard's «اسأل» box links here with ?q= (owner UX02): carry the
+  // question over instead of opening an empty composer. Read after mount, so the
+  // page stays statically renderable without a Suspense boundary.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("q");
+    if (q) setInput((cur) => cur || q.slice(0, 2000));
+  }, []);
   const [isThinking, setIsThinking] = useState(false);
   const [showEscalation, setShowEscalation] = useState(false);
   const [detectedArea, setDetectedArea] = useState<string | undefined>();
@@ -211,15 +217,12 @@ export default function AIConsultPage() {
     setMessages(prev => [...prev, userMsg]);
     setIsThinking(true);
 
-    await new Promise(r => setTimeout(r, 1800));
-
-    const { text: aiText, sources } = getMockResponse();
     const aiMsg: Message = {
       id: (Date.now() + 1).toString(),
       role: "ai",
-      text: aiText,
+      text: NOT_LIVE_REPLY,
       time: now(),
-      sources,
+      sources: [],
     };
     setMessages(prev => [...prev, aiMsg]);
     setIsThinking(false);
@@ -257,7 +260,7 @@ export default function AIConsultPage() {
       <div className={`flex-shrink-0 flex items-center justify-between px-5 py-3.5 border-b ${isDark ? "border-white/[0.06]" : "border-zinc-200"}`}>
         <div>
           <h1 className={`text-[15px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>المستشار الذكي</h1>
-          <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>اسأل أي سؤال قانوني — ذكاء نظامي يجيب فوراً</p>
+          <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>اكتب سؤالك القانوني — الإجابة الآلية لم تُفعَّل بعد</p>
         </div>
         <div className={`flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[11px] ${isDark ? "bg-[#0B3D2E]/30 text-emerald-400" : "bg-emerald-50 text-emerald-700"}`}>
           <motion.div animate={{ scale: [1, 1.4, 1] }} transition={{ duration: 2.5, repeat: Infinity }}
@@ -367,6 +370,7 @@ export default function AIConsultPage() {
                     complexityScore={68}
                     legalArea={detectedArea}
                     variant="inline"
+                    noAiAnswer
                     onDismiss={() => setShowEscalation(false)}
                   />
                 </motion.div>
