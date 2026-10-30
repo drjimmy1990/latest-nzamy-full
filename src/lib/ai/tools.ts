@@ -11,6 +11,7 @@
  * Pure: no imports outside src/lib/ai, so `node --test` runs it.
  */
 import { extractLegalRefs, missingLegalRefs } from "./legalRefs.ts";
+import { DRAFT_KINDS, draftKindPrice, isDraftKind } from "./draftKinds.ts";
 import type { RetrievalLimits } from "./retrieval.ts";
 import type { FileRules } from "./aiFiles.ts";
 
@@ -47,6 +48,14 @@ export interface AiToolSpec {
    * `price` gets the 0-based `turn`. A conversation holds `maxMessages` runs.
    */
   conversation?: { maxMessages: number; historyPairs: number; field: string; replyField: string };
+  /**
+   * A conversation tool whose turns are different steps (L14: the analysis,
+   * then the draft): the Arabic refusal of a turn out of order, or null. Runs
+   * after the conversation's earlier runs are read and before the charge.
+   */
+  checkTurn?: (input: Record<string, unknown>, turn: number, prior: ReadonlyArray<{ input: unknown; output: unknown; status: string }>) => string | null;
+  /** The input says its facts are in the files (L14): the run is refused, before the charge, without any. */
+  filesRequired?: (input: Record<string, unknown>) => boolean;
   /**
    * Wave 3: the tool reads the user's vault files (aiFiles.ts). The files are
    * checked, counted and signed before the charge, and `price` gets the total
@@ -619,6 +628,176 @@ function contractDraftOutput(raw: unknown): Record<string, unknown> | null {
   };
 }
 
+// ── L14 الصائغ القانوني: two steps of one work ──────────────────────────────
+// Turn 0 «issues»: the facts → the issues, the proposed defences and requests,
+// which the lawyer confirms or edits. Turn 1 «draft»: what he confirmed → the
+// pleading. One conversation of two runs: the analysis is charged the kind's
+// price (draftKinds.ts), the draft nothing, and a failed draft may be tried
+// again without a second charge (failed runs are not counted as turns).
+
+export const DRAFTER_FILES: FileRules = { max: 6, maxPages: 30, maxBytes: 22 * 1024 * 1024, optional: true };
+export const DRAFT_FACTS_MIN = 30;
+export const DRAFT_FACTS_MAX = 12000;
+const DRAFT_ROLES = ["plaintiff", "defendant"] as const;
+const DRAFT_SEARCH_MAX = 3000;
+
+export const DRAFT_COPY = {
+  kind: "اختر نوع المذكرة",
+  role: "اختر صفة موكّلك في القضية",
+  branch: "اختر الفرع القانوني",
+  facts: `اكتب الوقائع (${DRAFT_FACTS_MIN.toLocaleString("ar-SA")} حرفاً على الأقل) أو أرفق مستنداتها`,
+  factsLong: `الوقائع أطول من ${DRAFT_FACTS_MAX.toLocaleString("ar-SA")} حرف — اختصرها أو أرفقها ملفاً`,
+  issues: "أبقِ مسألة واحدة على الأقل",
+  defenses: "اعتمد دفعاً واحداً على الأقل",
+  tooLong: (label: string) => `«${label}» أطول من المسموح`,
+  firstStep: "ابدأ بتحليل الوقائع أولاً",
+  waitAnalysis: "لم يكتمل التحليل بعد — انتظره ثم اكتب المذكرة",
+  kindChanged: "نوع المذكرة يختلف عن التحليل — ابدأ صياغة جديدة",
+} as const;
+
+/** Blank → undefined; over-long → null (refused, never cut); else the trimmed text. */
+function optionalField(v: unknown, max: number): string | undefined | null {
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  if (!t) return undefined;
+  return t.length <= max ? t : null;
+}
+
+/** An array of 0..max strings of up to `len` each, blanks dropped; null when anything is wrong. */
+function textList(v: unknown, max: number, len: number): string[] | null {
+  if (v === undefined || v === null) return [];
+  if (!Array.isArray(v) || v.length > max) return null;
+  const out: string[] = [];
+  for (const x of v) {
+    const t = optionalField(x, len);
+    if (t === null) return null;
+    if (t) out.push(t);
+  }
+  return out;
+}
+
+/** An array of {title, <second>} rows of 1..max, each title required; null when anything is wrong. */
+function titledList(v: unknown, max: number, second: string, secondMax: number, extra?: string): Array<Record<string, unknown>> | null {
+  if (!Array.isArray(v) || v.length > max) return null;
+  const out: Array<Record<string, unknown>> = [];
+  for (const x of v) {
+    if (!isPlainObject(x)) return null;
+    const title = boundedText(x.title, 200);
+    const more = optionalField(x[second], secondMax);
+    if (!title || more === null) return null;
+    const row: Record<string, unknown> = { title, [second]: more ?? "" };
+    if (extra && Number.isInteger(x[extra]) && (x[extra] as number) >= 1 && (x[extra] as number) <= 50) row[extra] = x[extra];
+    out.push(row);
+  }
+  return out;
+}
+
+function legalDrafterInput(raw: unknown): InputCheck {
+  if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
+  if (raw.phase !== "issues" && raw.phase !== "draft") return { ok: false, error: "المدخلات غير صالحة" };
+  if (!isDraftKind(raw.kind)) return { ok: false, error: DRAFT_COPY.kind };
+  if (!(DRAFT_ROLES as readonly unknown[]).includes(raw.client_role)) return { ok: false, error: DRAFT_COPY.role };
+  const branch = boundedText(raw.branch, 60);
+  if (!branch) return { ok: false, error: DRAFT_COPY.branch };
+
+  const fields: Record<string, unknown> = {};
+  for (const [key, label, max] of [
+    ["plaintiff_name", "اسم المدعي", 200],
+    ["defendant_name", "اسم المدعى عليه", 200],
+    ["notes", "ملاحظاتك", 3000],
+  ] as const) {
+    const v = optionalField(raw[key], max);
+    if (v === null) return { ok: false, error: DRAFT_COPY.tooLong(label) };
+    if (v) fields[key] = v;
+  }
+  let judgment: Record<string, string> | null = null;
+  if (raw.judgment !== undefined && raw.judgment !== null) {
+    if (!isPlainObject(raw.judgment)) return { ok: false, error: "بيانات الحكم غير صالحة" };
+    const j: Record<string, string> = {};
+    for (const [key, label, max] of [
+      ["court", "المحكمة", 200],
+      ["number", "رقم الحكم", 100],
+      ["date", "تاريخ الحكم", 40],
+      ["text", "منطوق الحكم", 8000],
+      ["reasons", "أسباب الحكم", 8000],
+    ] as const) {
+      const v = optionalField(raw.judgment[key], max);
+      if (v === null) return { ok: false, error: DRAFT_COPY.tooLong(label) };
+      if (v) j[key] = v;
+    }
+    if (Object.keys(j).length > 0) judgment = j;
+  }
+  const requests = textList(raw.requests, 10, 500);
+  if (!requests) return { ok: false, error: DRAFT_COPY.tooLong("الطلبات") };
+
+  const factsRaw = typeof raw.facts === "string" ? raw.facts.trim() : "";
+  if (factsRaw.length > DRAFT_FACTS_MAX) return { ok: false, error: DRAFT_COPY.factsLong };
+  const base = { phase: raw.phase, kind: raw.kind, client_role: raw.client_role, branch, ...fields, judgment, requests };
+
+  if (raw.phase === "issues") {
+    // The facts may be in the files alone (plan: «a file without typed facts
+    // fails MIN_CASE_TEXT»); then runCore refuses the run without files.
+    const factsInFiles = raw.facts_in_files === true;
+    if (!factsInFiles && factsRaw.length < DRAFT_FACTS_MIN) return { ok: false, error: DRAFT_COPY.facts };
+    const search = factsRaw || judgment?.reasons || judgment?.text || `${branch} ${DRAFT_KINDS[raw.kind].label}`;
+    return { ok: true, input: { ...base, facts: factsRaw, facts_in_files: factsInFiles, search_text: search.slice(0, DRAFT_SEARCH_MAX) } };
+  }
+
+  // The draft: what the lawyer confirmed on the analysis screen.
+  if (factsRaw.length < DRAFT_FACTS_MIN) return { ok: false, error: DRAFT_COPY.facts };
+  const issues = titledList(raw.issues, 12, "detail", 2000);
+  if (!issues || issues.length === 0) return { ok: false, error: issues ? DRAFT_COPY.issues : DRAFT_COPY.tooLong("المسائل") };
+  const defenses = titledList(raw.defenses, 15, "basis", 3000);
+  if (!defenses || defenses.length === 0) return { ok: false, error: defenses ? DRAFT_COPY.defenses : DRAFT_COPY.tooLong("الدفوع") };
+  const search = [...issues, ...defenses].map((r) => r.title as string).join("\n");
+  return { ok: true, input: { ...base, facts: factsRaw, issues, defenses, search_text: search.slice(0, DRAFT_SEARCH_MAX) } };
+}
+
+/**
+ * The analysis or the draft, by the run's phase. All or nothing, as L11: one
+ * bad row refuses the result (refunded for the analysis) rather than handing
+ * the lawyer an issue or a section silently missing.
+ */
+function legalDrafterOutput(raw: unknown, input: Record<string, unknown>): Record<string, unknown> | null {
+  if (!isPlainObject(raw)) return null;
+  const cited = Array.isArray(raw.cited) ? raw.cited.slice(0, 40) : [];
+  if (input.phase === "draft") {
+    const title = boundedText(raw.title, 200);
+    if (!title || !Array.isArray(raw.sections) || raw.sections.length < 2 || raw.sections.length > 30) return null;
+    const sections: Array<{ heading: string; body: string }> = [];
+    for (const s of raw.sections) {
+      const heading = isPlainObject(s) ? boundedText(s.heading, 200) : null;
+      const body = isPlainObject(s) ? boundedText(s.body, 12000) : null;
+      if (!heading || !body) return null;
+      sections.push({ heading, body });
+    }
+    const requests = textList(raw.requests, 15, 1000);
+    if (!requests) return null;
+    return { phase: "draft", title, sections, requests, cited };
+  }
+  const facts_summary = boundedText(raw.facts_summary, 6000);
+  const issues = titledList(raw.issues, 12, "detail", 2000);
+  const defenses = titledList(raw.defenses, 15, "basis", 3000, "issue");
+  const requests = textList(raw.requests, 10, 500);
+  const missing = textList(raw.missing, 10, 300);
+  if (!facts_summary || !issues?.length || !defenses?.length || !requests || !missing) return null;
+  return { phase: "issues", facts_summary, issues, defenses, requests, missing, cited };
+}
+
+/** Turn 0 is the analysis; turn 1 the draft of that same kind, once the analysis succeeded. */
+function legalDrafterTurn(
+  input: Record<string, unknown>,
+  turn: number,
+  prior: ReadonlyArray<{ input: unknown; output: unknown; status: string }>,
+): string | null {
+  if (turn === 0) return input.phase === "issues" ? null : DRAFT_COPY.firstStep;
+  if (input.phase !== "draft") return DRAFT_COPY.kindChanged;
+  const first = prior[0];
+  if (!first || first.status !== "succeeded") return DRAFT_COPY.waitAnalysis;
+  return isPlainObject(first.input) && first.input.kind === input.kind ? null : DRAFT_COPY.kindChanged;
+}
+
 export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
   "echo-fast": {
     id: "echo-fast",
@@ -813,6 +992,29 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     jobDeadlineSeconds: 15 * 60,
     validateInput: contractDraftInput,
     validateOutput: contractDraftOutput,
+  },
+  "legal-drafter": {
+    id: "legal-drafter",
+    n8nPath: "nzamy-ai/legal-drafter",
+    class: "job",
+    tier: "deep",
+    roles: ["lawyer", "firm"],
+    // Pleadings: a consultant does not plead (Art. 18 of نظام المحاماة).
+    consultantBlocked: true,
+    // Charged once, on the analysis; the draft that follows it is free.
+    price: (input, ctx) => ((ctx.turn ?? 0) === 0 ? draftKindPrice(input.kind) : 0),
+    // An analysis and its draft are two runs.
+    dailyLimit: 10,
+    defaultMode: "off",
+    jobDeadlineSeconds: 15 * 60,
+    files: DRAFTER_FILES,
+    retrieval: { from: "search_text", laws: 8, principles: 4 },
+    // The draft's searches are written with the facts the analysis was searched with.
+    conversation: { maxMessages: 2, historyPairs: 1, field: "search_text", replyField: "facts_summary" },
+    checkTurn: legalDrafterTurn,
+    filesRequired: (input) => input.phase === "issues" && input.facts_in_files === true,
+    validateInput: legalDrafterInput,
+    validateOutput: legalDrafterOutput,
   },
 };
 

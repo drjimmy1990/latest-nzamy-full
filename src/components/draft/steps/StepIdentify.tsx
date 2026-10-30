@@ -48,6 +48,7 @@ const SUBTYPE_BRANCH_FILTER: Record<string, string[] | null> = {
   "جزائية خاصة (تعويض ضرر)": ["جزائي"],
   // null = show all branches (reply/appeal can span any legal area)
   "مذكرة رد أساسية": null,
+  "مذكرة تعقيب (على رد الخصم)": null,
   "مذكرة إلحاقية (إضافة أدلة)": null,
   "مذكرة ختامية قبل الحكم": null,
   "استئناف (درجة ثانية)": null,

@@ -43,6 +43,7 @@ const OUTPUT_ENRICHERS: Readonly<Record<string, (admin: SupabaseClient, output: 
   wargaming: (admin, output) => enrichBriefCheck(admin as never, output),
   "analyze-strength": (admin, output) => enrichBriefCheck(admin as never, output),
   "contract-drafter": (admin, output) => enrichBriefCheck(admin as never, output),
+  "legal-drafter": (admin, output) => enrichBriefCheck(admin as never, output),
 };
 import {
   DEFAULT_JOB_DEADLINE_SECONDS,
@@ -103,6 +104,7 @@ export const AI_COPY = {
   ungrounded: "لم تُجب نصوص المكتبة التي وجدتها عن سؤالك، وأُعيدت نقاطك — جرّب صياغة أخرى",
   conversation: "معرّف المحادثة غير صالح — ابدأ محادثة جديدة",
   conversationFull: "اكتملت هذه المحادثة — ابدأ محادثة جديدة لتكمل",
+  filesRequired: "أرفق مستندات الوقائع أو اكتبها",
 } as const;
 
 /** The search writer's wait: short, so the answer keeps most of the fast budget. */
@@ -301,6 +303,7 @@ export async function startRunWith(
   // user only, so a conversation id from another account reads as a new one.
   let conversationId: string | null = null;
   let history: Array<{ role: "user" | "assistant"; text: string }> = [];
+  let prior: Array<{ input: unknown; output: unknown; status: string }> = [];
   let turn = 0;
   if (spec.conversation) {
     const cid = req.conversationId;
@@ -309,7 +312,7 @@ export async function startRunWith(
     }
     conversationId = typeof cid === "string" ? cid.toLowerCase() : globalThis.crypto.randomUUID();
     if (typeof cid === "string") {
-      const prior = await admin
+      const read = await admin
         .from("ai_runs")
         .select("input, output, status")
         .eq("user_id", actor.userId)
@@ -318,11 +321,12 @@ export async function startRunWith(
         .in("status", ["running", "review", "succeeded"])
         .order("created_at", { ascending: true })
         .limit(spec.conversation.maxMessages + 1);
-      if (prior.error) {
-        console.error("[ai] conversation read failed:", spec.id, prior.error.code, prior.error.message);
+      if (read.error) {
+        console.error("[ai] conversation read failed:", spec.id, read.error.code, read.error.message);
         return { status: 503, body: { error: AI_COPY.unavailable, code: "unavailable" } };
       }
-      const rows = (Array.isArray(prior.data) ? prior.data : []) as Array<{ input: unknown; output: unknown; status: string }>;
+      const rows = (Array.isArray(read.data) ? read.data : []) as Array<{ input: unknown; output: unknown; status: string }>;
+      prior = rows;
       turn = rows.length;
       if (turn >= spec.conversation.maxMessages) {
         return { status: 409, body: { error: AI_COPY.conversationFull, code: "conversation_full", conversationId } };
@@ -339,6 +343,11 @@ export async function startRunWith(
             : [];
         });
     }
+  }
+  // A tool whose turns are different steps refuses one out of order, uncharged.
+  if (spec.checkTurn) {
+    const refusal = spec.checkTurn(checked.input, turn, prior);
+    if (refusal) return { status: 409, body: { error: refusal, code: "turn_refused", ...(conversationId ? { conversationId } : {}) } };
   }
 
   // A file tool: every predictable refusal (type, size, pages, an unreadable
@@ -358,6 +367,9 @@ export async function startRunWith(
     }
     files = got.files;
     pages = got.pages;
+  }
+  if (spec.filesRequired?.(checked.input) && files.length === 0) {
+    return { status: 422, body: { error: AI_COPY.filesRequired, code: "files_required" } };
   }
   const price = spec.price(checked.input, { pages, turn });
   const now = deps.now?.() ?? new Date();
