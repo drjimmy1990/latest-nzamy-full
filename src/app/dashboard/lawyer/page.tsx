@@ -172,6 +172,14 @@ function daysUntilDate(dateStr: string, today: string): number | null {
   return today ? daysBetween(today, dateStr) : null;
 }
 
+/** «هذا الشهر · صدر ٣٬٠٠٠ · متبقٍّ ١٬٢٠٠» — each part only when the server sent it. */
+function revenueSub(issued: number | null, outstanding: number | null): string {
+  const parts = ["هذا الشهر"];
+  if (issued !== null) parts.push(`صدر ${issued.toLocaleString("ar-SA")}`);
+  if (outstanding !== null) parts.push(`متبقٍّ ${outstanding.toLocaleString("ar-SA")}`);
+  return parts.join(" · ");
+}
+
 /** «اليوم» / «غداً» / the weekday, from a real stored date. */
 function dayLabel(dateStr: string, today: string): string {
   const days = daysUntilDate(dateStr, today);
@@ -409,7 +417,9 @@ export default function LawyerDashboardPage() {
       // overstate the court diary. The COUNT, not the length of the (capped)
       // list in the card beside it.
       { label: "المواعيد القادمة", value: dashboardData.upcomingHearingsCount === null ? null : String(dashboardData.upcomingHearingsCount), icon: Gavel, color: "text-blue-500", bg: "bg-blue-500/8", sub: "قادمة" },
-      { label: "الإيرادات", value: revenue === null ? null : `${revenue.toLocaleString("ar-SA")} ر.س`, icon: Money, color: "text-emerald-500", bg: "bg-emerald-500/8", sub: "هذا الشهر" },
+      // CODE-F15: collected this Riyadh month (by collection date), with what
+      // was issued this month and what is still owed beside it.
+      { label: "الإيرادات المحصّلة", value: revenue === null ? null : `${revenue.toLocaleString("ar-SA")} ر.س`, icon: Money, color: "text-emerald-500", bg: "bg-emerald-500/8", sub: revenueSub(dashboardData.revenueIssuedThisMonth ?? null, dashboardData.revenueOutstanding ?? null) },
     ];
   }, [dashboardData]);
 
@@ -1065,7 +1075,8 @@ export default function LawyerDashboardPage() {
               <Link key={h.id} href={h.href} className={`block p-3.5 rounded-xl border hover:opacity-90 transition ${h.borderColor} ${h.bg}`}>
                 <div className="flex items-center justify-between mb-1.5">
                   <span className={`text-[11px] font-bold ${h.color}`}>
-                    {h.dateLabel}{h.time ? ` · ${formatTimeOfDayAr(h.time)}` : ""}
+                    {/* UX05: the time is Riyadh wall-clock time, and says so. */}
+                    {h.dateLabel}{h.time ? ` · ${formatTimeOfDayAr(h.time)} بتوقيت الرياض` : ""}
                   </span>
                   <Gavel size={13} className={h.color} weight="duotone" />
                 </div>

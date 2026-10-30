@@ -3,6 +3,10 @@ import { assertRole } from "@/lib/auth/assertRole";
 import { kindToType, urgencyFromDb } from "@/lib/services/hearingVocabulary";
 import { addDays, isoDate, parseIsoDate } from "@/lib/services/deadlineEngine";
 import { dashboardItemHref, sumKnown, type DashboardDateSource } from "@/lib/services/dashboardDateItems";
+import {
+  computeMonthRevenue, isMissingTable, isOfficeInvoice, riyadhMonthBounds,
+  type CollectionRow, type InvoicePaymentRow,
+} from "@/lib/services/monthRevenue";
 
 /**
  * GET /api/v1/lawyer/dashboard/summary
@@ -542,6 +546,8 @@ export async function GET() {
     let activeCases: number | null = null;
     let recentCases: RecentCaseRow[] | null = null;
     let revenueThisMonth: number | null = null;
+    let revenueIssuedThisMonth: number | null = null;
+    let revenueOutstanding: number | null = null;
 
     if (workspace === null) {
       degraded.push("cases", "revenue");
@@ -597,30 +603,53 @@ export async function GET() {
       // Same scoping as /api/v1/lawyer/finance. No ids ⇒ no payments can
       // reference this lawyer's work, so 0 here is a fact, not a fallback.
       const requestIds = workspace.map((r) => r.id);
+      //
+      // CODE-F15 / LAW-DETAIL-010: revenue is money COLLECTED in Riyadh's
+      // month — by each collection's own date, partial collections included —
+      // not invoices marked paid that were CREATED this month. Issued and
+      // outstanding travel beside it. See monthRevenue.ts for the rules.
+      // «هذا الشهر» is the Saudi month (+03:00, no DST), not the server's.
+      const month = riyadhMonthBounds(today)!;
       if (requestIds.length === 0) {
         revenueThisMonth = 0;
+        revenueIssuedThisMonth = 0;
+        revenueOutstanding = 0;
       } else {
-        // «هذا الشهر» means the Saudi month, not the server's. `new Date(y, m,
-        // 1)` uses the server's local zone — UTC in every deployment — which
-        // puts the boundary three hours early and so counts payments taken on
-        // the last evening of the previous month. Saudi Arabia observes no DST,
-        // so the +03:00 offset is exact all year.
-        const [monthYear, monthNum] = today.split("-");
-        const monthStart = new Date(`${monthYear}-${monthNum}-01T00:00:00+03:00`).toISOString();
-        const { data: paid, error: payError } = await supabase
+        const { data: payRows, error: payError } = await supabase
           .from("payments")
-          .select("amount")
-          .in("request_id", requestIds)
-          .eq("status", "paid")
-          .gte("created_at", monthStart);
+          .select("id, amount, status, metadata, created_at")
+          .in("request_id", requestIds);
         if (payError) {
           console.error("[lawyer/dashboard/summary] payments read failed:", payError.message);
           degraded.push("revenue");
         } else {
-          revenueThisMonth = (paid ?? []).reduce(
-            (sum: number, p: { amount: number | null }) => sum + (p.amount ?? 0),
-            0,
-          );
+          const invoices = ((payRows ?? []) as InvoicePaymentRow[]).filter(isOfficeInvoice);
+          let collections: CollectionRow[] | null = [];
+          let collectionsFailed = false;
+          if (invoices.length > 0) {
+            const { data: colRows, error: colError } = await supabase
+              .from("invoice_collections")
+              .select("payment_id, amount, collected_at")
+              .in("payment_id", invoices.map((r) => r.id));
+            if (isMissingTable(colError)) {
+              // The collections ledger is not deployed yet: each invoice's own
+              // single collection (metadata.paidAt) is the only record there is.
+              collections = null;
+            } else if (colError) {
+              console.error("[lawyer/dashboard/summary] collections read failed:", colError.message);
+              collectionsFailed = true;
+            } else {
+              collections = (colRows ?? []) as CollectionRow[];
+            }
+          }
+          if (collectionsFailed) {
+            degraded.push("revenue");
+          } else {
+            const revenue = computeMonthRevenue(invoices, collections, month);
+            revenueThisMonth = revenue.collected;
+            revenueIssuedThisMonth = revenue.issued;
+            revenueOutstanding = revenue.outstanding;
+          }
         }
       }
     }
@@ -629,6 +658,8 @@ export async function GET() {
       activeCases,
       pendingConsultations,
       revenueThisMonth,
+      revenueIssuedThisMonth,
+      revenueOutstanding,
       recentCases,
       upcomingHearings,
       upcomingHearingsCount,

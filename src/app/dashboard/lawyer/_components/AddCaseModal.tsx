@@ -77,6 +77,11 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
   // the lawyer then typed a name that silently became a second card. The read
   // is a callback now so the error line can offer «إعادة المحاولة».
   const mountedRef = useRef(true);
+  // LAW-DETAIL-005: ONE id for this case, made once per modal and reused by
+  // every retry. A save whose answer was lost and is pressed again then names
+  // the same row, which the route answers with the case already saved
+  // (`replayed`) instead of creating a second one.
+  const caseIdRef = useRef<string | null>(null);
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
@@ -191,14 +196,19 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
         }
       }
 
-      const id = createWorkflowId();
+      if (!caseIdRef.current) caseIdRef.current = createWorkflowId();
+      const id = caseIdRef.current;
       const payload = {
         id,
         type: "service" as const,
         title: titleTrimmed,
         description: description.trim(),
         receiver: "lawyer" as const,
-        status: "pending_assignment" as const,
+        // LIVE-F14 / LAW-DETAIL-006: the lawyer's own case is his from birth
+        // — «نشطة», counted in «القضايا النشطة». The route accepts `assigned`
+        // only for a self-assigned lawyer/firm case and answers with the
+        // status it actually saved, which the success screen prints.
+        status: "assigned" as const,
         requester: {
           userId: user.userId,
           // The موكل's own name, and now always one that a `lawyer_clients`
