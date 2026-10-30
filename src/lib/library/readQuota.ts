@@ -5,8 +5,9 @@
  *
  * The counting itself is in Postgres (public.library_read_quota_hit,
  * supabase/migrations/20261030_80_library_read_quota.sql) and is called from
- * src/proxy.ts through readQuotaServer.ts. This file performs no I/O and
- * imports nothing, so `node --test` loads it directly.
+ * src/proxy.ts (and POST /api/library/scoped-search) through
+ * readQuotaServer.ts. This file performs no I/O and imports only the pure
+ * rateLimitRoutes.ts, so `node --test` loads it directly.
  *
  * WHY DOCUMENTS, NOT REQUESTS. The owner's numbers are «وثيقة فريدة/يوم».
  * One document is fetched in many requests — the precedents reader loads a
@@ -14,6 +15,7 @@
  * key ignores the query string (offset, page, section) and names only the
  * document: `law:<slug>`, `book:<slug>`, `precedent:<id>`, `decree:<id>`.
  */
+import { canonicalApiPath } from "../rateLimitRoutes.ts";
 
 /** The owner's quotas (note ١٣ §٢ المحور ٣), plus the two numbers the note does not give. */
 export const LIBRARY_READ_QUOTA = Object.freeze({
@@ -50,10 +52,14 @@ const DOC_KIND: Readonly<Record<string, LibraryDocKind>> = {
   decrees: "decree",
 };
 
-/** POST routes that return library text but read no single document. */
+/**
+ * POST routes that return library text but read no single document. Not
+ * /api/library/scoped-search: it searches INSIDE one document and returns
+ * article text, so the route itself spends that document
+ * (scopedSearchDocKey below) — which also checks the lock.
+ */
 const LOCK_ONLY_POST_PATHS: ReadonlySet<string> = new Set([
   "/api/library/search",
-  "/api/library/scoped-search",
   "/api/ai/explain-article",
   "/api/ai/library-chat",
 ]);
@@ -83,8 +89,9 @@ export function normalizeDocSegment(segment: string): string | null {
 }
 
 /** What, if anything, this request spends from the reader's quota. */
-export function libraryQuotaTarget(method: string, pathname: string): QuotaTarget | null {
+export function libraryQuotaTarget(method: string, rawPathname: string): QuotaTarget | null {
   const m = method.toUpperCase();
+  const pathname = canonicalApiPath(rawPathname);
   if (m === "GET") {
     const match = DOC_ROUTE_RE.exec(pathname);
     if (!match) return null;
@@ -94,6 +101,19 @@ export function libraryQuotaTarget(method: string, pathname: string): QuotaTarge
   }
   if (m === "POST" && LOCK_ONLY_POST_PATHS.has(pathname)) return { kind: "lock-only" };
   return null;
+}
+
+/**
+ * The document an in-document search spends: the same key as opening it
+ * (scope `law:<slug>` → `law:<slug>`, `collection:<id>` → `precedent:<id>`,
+ * `book:<id>` → `book:<id>`), so searching inside a law already opened today
+ * costs nothing, and searching inside every law costs one document each.
+ */
+export function scopedSearchDocKey(kind: "law" | "collection" | "book", id: string): string | null {
+  const segment = normalizeDocSegment(id);
+  if (!segment) return null;
+  const docKind: LibraryDocKind = kind === "collection" ? "precedent" : kind;
+  return `${docKind}:${segment}`;
 }
 
 /**

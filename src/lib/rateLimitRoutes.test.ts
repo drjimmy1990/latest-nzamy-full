@@ -14,6 +14,7 @@ import {
   isTrackingUnlockRoute,
   isAttachmentsZipRoute,
   libraryBudgetBuckets,
+  canonicalApiPath,
 } from "./rateLimitRoutes.ts";
 import fs from "node:fs";
 import path from "node:path";
@@ -234,6 +235,15 @@ test("libraryBudgetBuckets: documents, catalogue and AI get their own tighter bu
   // Invitations: the redeem keeps the strict bucket AND the library catch-all.
   assert.deepEqual(libraryBudgetBuckets("POST", "/api/v1/library/invitations/redeem"), ["library-any"]);
   assert.equal(isStrictRateLimitedRoute("POST", "/api/v1/library/invitations/redeem"), true);
+});
+
+test("libraryBudgetBuckets: percent-encoding a static segment does not dodge a bucket", () => {
+  assert.deepEqual(libraryBudgetBuckets("GET", "/api/librar%79/laws/x"), ["library-any", "library-doc"]);
+  assert.deepEqual(libraryBudgetBuckets("GET", "/api/library/law%73/x"), ["library-any", "library-doc"]);
+  assert.deepEqual(libraryBudgetBuckets("GET", "/api/library/ini%74"), ["library-any", "library-init"]);
+  assert.deepEqual(libraryBudgetBuckets("POST", "/api/a%69/library-chat"), ["library-ai"]);
+  assert.equal(canonicalApiPath("/api/library/laws%2Fx"), "/api/library/laws%2Fx");
+  assert.equal(canonicalApiPath("/api/library/%E0%A4%A"), "/api/library/%E0%A4%A");
 });
 
 test("libraryBudgetBuckets: neighbours are not swept in", () => {

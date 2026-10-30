@@ -34,10 +34,15 @@ test("the quota step runs right after the rate limiter, before redirects and eve
 });
 
 test("the user comes from a verified getUser(), never from decoding the cookie", () => {
-  assert.match(fnBody, /await supabase\.auth\.getUser\(\)/);
+  assert.match(fnBody, /supabase\.auth\.getUser\(\)/);
   assert.doesNotMatch(fnBody, /atob|Buffer\.from|jwt|decode/i);
-  // Guests (no session cookie) skip the auth round trip.
-  assert.match(fnBody, /if \(!hasSupabaseAuthCookie\(/);
+  // Guests (no session cookie and no bearer token) skip the auth round trip.
+  assert.match(fnBody, /if \(!bearerToken && !hasSupabaseAuthCookie\(/);
+});
+
+test("a native-app bearer token is counted too (server.ts serves it as a session)", () => {
+  assert.match(fnBody, /req\.headers\.get\("authorization"\)/);
+  assert.match(fnBody, /supabase\.auth\.getUser\(bearerToken\)/);
 });
 
 test("a token refresh during getUser() reaches the route and the browser (branch 1b's cookie pattern)", () => {

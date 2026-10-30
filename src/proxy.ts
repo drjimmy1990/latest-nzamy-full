@@ -107,7 +107,9 @@ const ATTACHMENTS_ZIP_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 100
 // CF-Connecting-IP, as library-read) and a ten-times-wider ceiling per
 // proxy-resolved IP (an office, or a shared edge, behind one address). Human
 // reading pace with room to spare; a script walking the corpus is not:
-//   library-any   240 / min    — any library call (status polls once a minute)
+//   library-any   300 / min    — any library call (status polls once a minute);
+//                                never tighter than library-read, which sits
+//                                on the same search / autocomplete requests
 //   library-doc   120 / min    — opening documents; a collection loads in up
 //                                to 24 windows, a book one section at a time
 //   library-init   60 / 10 min — catalogue pages of up to 200 rows
@@ -115,7 +117,7 @@ const ATTACHMENTS_ZIP_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 100
 //                                own 20 / min per IP as well)
 // The durable per-USER daily quota is separate (applyLibraryReadQuota below).
 const LIBRARY_BUDGETS: Readonly<Record<LibraryBudgetBucket, { visitor: RateLimitPolicy; ip: RateLimitPolicy }>> = {
-  "library-any": { visitor: { windowMs: 60 * 1000, max: 240 }, ip: { windowMs: 60 * 1000, max: 2400 } },
+  "library-any": { visitor: { windowMs: 60 * 1000, max: 300 }, ip: { windowMs: 60 * 1000, max: 3000 } },
   "library-doc": { visitor: { windowMs: 60 * 1000, max: 120 }, ip: { windowMs: 60 * 1000, max: 1200 } },
   "library-init": { visitor: { windowMs: 10 * 60 * 1000, max: 60 }, ip: { windowMs: 10 * 60 * 1000, max: 600 } },
   "library-ai": { visitor: { windowMs: 10 * 60 * 1000, max: 40 }, ip: { windowMs: 10 * 60 * 1000, max: 400 } },
@@ -239,8 +241,11 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
 //
 // Who the user is comes from a verified getUser() - never from decoding the
 // cookie's JWT, which would let a forged `sub` spend (and lock) someone else's
-// quota. A request with no Supabase session cookie is a guest and skips this
-// step (guests keep only the per-visitor buckets). The Supabase client is
+// quota. The session is either the cookie or an `Authorization: Bearer`
+// header (the native-app path src/lib/supabase/server.ts honours, so the
+// library routes would serve a bearer caller as a subscriber); a request
+// with neither is a guest and skips this step (guests keep only the
+// per-visitor buckets). The Supabase client is
 // built exactly as branch 1b builds it, so a token refresh during getUser()
 // reaches both the route (the request cookies) and the browser (the
 // response); for these paths the rest of proxy() would only have returned
@@ -258,7 +263,13 @@ async function applyLibraryReadQuota(req: NextRequest, pathname: string): Promis
   // targets live under /api/library and /api/ai).
   if (REDIRECTS[pathname] || isProtectedApiPath(pathname)) return null;
   try {
-    if (!hasSupabaseAuthCookie(req.cookies.getAll().map((c) => c.name))) return null;
+    const authHeader = req.headers.get("authorization");
+    let bearerToken: string | null = null;
+    if (authHeader && authHeader.trim().toLowerCase().startsWith("bearer ")) {
+      const token = authHeader.trim().slice(7).trim();
+      if (token.length > 0) bearerToken = token;
+    }
+    if (!bearerToken && !hasSupabaseAuthCookie(req.cookies.getAll().map((c) => c.name))) return null;
 
     const response = NextResponse.next({ request: req });
     const supabase = createServerClient(
@@ -278,7 +289,9 @@ async function applyLibraryReadQuota(req: NextRequest, pathname: string): Promis
         },
       },
     );
-    const { data: { user }, error } = await supabase.auth.getUser();
+    const { data: { user }, error } = await (bearerToken
+      ? supabase.auth.getUser(bearerToken)
+      : supabase.auth.getUser());
     if (error || !user) return response;
 
     const row = await libraryReadQuotaHit(

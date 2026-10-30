@@ -14,6 +14,7 @@ import {
   libraryQuotaTarget,
   normalizeDocSegment,
   parseQuotaRow,
+  scopedSearchDocKey,
   quotaRefusal,
   secondsUntil,
   type QuotaRow,
@@ -46,10 +47,38 @@ test("libraryQuotaTarget: once- and twice-encoded Arabic slugs are the same docu
   assert.deepEqual(b, a);
 });
 
-test("libraryQuotaTarget: search, scoped search and library AI check the lock only", () => {
-  for (const p of ["/api/library/search", "/api/library/scoped-search", "/api/ai/explain-article", "/api/ai/library-chat"]) {
+test("libraryQuotaTarget: search and library AI check the lock only", () => {
+  for (const p of ["/api/library/search", "/api/ai/explain-article", "/api/ai/library-chat"]) {
     assert.deepEqual(libraryQuotaTarget("POST", p), { kind: "lock-only" }, p);
   }
+  // Scoped search spends its document inside the route (scopedSearchDocKey).
+  assert.equal(libraryQuotaTarget("POST", "/api/library/scoped-search"), null);
+});
+
+test("libraryQuotaTarget: a percent-encoded static segment cannot dodge the count", () => {
+  assert.deepEqual(libraryQuotaTarget("GET", "/api/library/law%73/x"), { kind: "doc", docKey: "law:x" });
+  assert.deepEqual(libraryQuotaTarget("GET", "/api/librar%79/books/x"), { kind: "doc", docKey: "book:x" });
+  assert.deepEqual(libraryQuotaTarget("POST", "/api/librar%79/search"), { kind: "lock-only" });
+  // An encoded slash stays one segment, never a second path level.
+  assert.equal(libraryQuotaTarget("GET", "/api/library/laws%2Fx"), null);
+});
+
+test("scopedSearchDocKey: the same document as opening it", () => {
+  assert.equal(scopedSearchDocKey("law", "labor-law"), "law:labor-law");
+  assert.equal(scopedSearchDocKey("collection", "col-9"), "precedent:col-9");
+  assert.equal(scopedSearchDocKey("book", "  b1 "), "book:b1");
+  assert.equal(scopedSearchDocKey("law", "نظام_العمل"), libraryQuotaTarget("GET", "/api/library/laws/" + encodeURIComponent("نظام_العمل"))?.kind === "doc" ? "law:نظام_العمل" : "mismatch");
+  assert.equal(scopedSearchDocKey("law", "   "), null);
+});
+
+test("the scoped-search route spends the scope's document after it knows the user, failing open", () => {
+  const src = fs.readFileSync(path.join(API, "library", "scoped-search", "route.ts"), "utf8").replace(/\r\n/g, "\n");
+  const user = src.indexOf("userId = user?.id ?? null;");
+  const spend = src.indexOf("scopedSearchDocKey(scope.kind, scope.id)");
+  const read = src.indexOf("const serverOnly = await createServiceClient();");
+  assert.ok(user > 0 && spend > user && read > spend, "user → spend → read the text");
+  assert.match(src, /if \(userId\) \{/);
+  assert.match(src, /quotaRefusal\(await libraryReadQuotaHit\(userId, docKey\), Date\.now\(\)\)/);
 });
 
 test("libraryQuotaTarget: everything else is not counted (catalogue, facets, folders, writes, sub-paths)", () => {

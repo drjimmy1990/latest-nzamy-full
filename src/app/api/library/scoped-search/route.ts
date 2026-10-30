@@ -3,6 +3,8 @@ import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { getLibraryAccessForUser } from '@/lib/access-control';
 import { libraryGate } from '@/lib/library-gate';
 import { isFreeLibraryItem } from '@/lib/library-item-access';
+import { quotaRefusal, scopedSearchDocKey } from '@/lib/library/readQuota';
+import { libraryReadQuotaHit } from '@/lib/library/readQuotaServer';
 import { parseSearchQuery, SearchQuerySyntaxError, LIBRARY_FTS_CONFIG } from '@/utils/normalizeArabic';
 import { selectAllPages } from '@/lib/supabase/selectAllPages';
 import { BOOK_SERIES_FEATURE, bookVolumeColumns, buildBookSeries, type VolumeRow } from '@/lib/library/bookVolumes';
@@ -236,6 +238,20 @@ export async function POST(request: Request) {
     } catch {
       userId = null;
     }
+    // Owner note ١٣ C07 / C09: an in-document search returns article text,
+    // so a signed-in reader spends the scope's document exactly as opening
+    // it would (free when already opened today), and a library lock stops it.
+    // Fails open: no answer (migration not applied, timeout) → go on.
+    if (userId) {
+      const docKey = scopedSearchDocKey(scope.kind, scope.id);
+      const refusal = docKey ? quotaRefusal(await libraryReadQuotaHit(userId, docKey), Date.now()) : null;
+      if (refusal) {
+        const headers: Record<string, string> = { 'Cache-Control': 'private, no-store' };
+        if (refusal.retryAfterSeconds !== null) headers['Retry-After'] = String(refusal.retryAfterSeconds);
+        return NextResponse.json(refusal.body, { status: refusal.status, headers });
+      }
+    }
+
     const { hasFullAccess, whitelistedSlugs, freeItemsByType } = await getLibraryAccessForUser(userId);
     const access: ViewerAccess = {
       hasFullAccess,

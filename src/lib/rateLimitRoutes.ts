@@ -85,14 +85,37 @@ export function isLibraryReadRateLimitedRoute(method: string, pathname: string):
 // /api/v1/library/invitations/redeem keeps the strict bucket as well.
 export type LibraryBudgetBucket = "library-any" | "library-doc" | "library-init" | "library-ai";
 
+/**
+ * The pathname with each segment percent-decoded once, so `/api/librar%79/…`
+ * or `/api/library/law%73/…` cannot slip past a regex written for the plain
+ * spelling, whatever the router does with it. A segment that decodes to
+ * something containing "/" (an encoded %2F) or does not decode is kept as it
+ * came. Pure; used by libraryBudgetBuckets and src/lib/library/readQuota.ts.
+ */
+export function canonicalApiPath(pathname: string): string {
+  return pathname
+    .split("/")
+    .map((seg) => {
+      if (!seg.includes("%")) return seg;
+      try {
+        const decoded = decodeURIComponent(seg);
+        return decoded.includes("/") ? seg : decoded;
+      } catch {
+        return seg;
+      }
+    })
+    .join("/");
+}
+
 export const LIBRARY_ANY_RE = /^\/api\/(?:v1\/)?library(?:\/|$)/;
 export const LIBRARY_DOC_RE = /^\/api\/library\/(?:laws|books|precedents|decrees)\/[^/]+$/;
 export const LIBRARY_INIT_RE = /^\/api\/library\/init$/;
 export const LIBRARY_AI_RE = /^\/api\/ai(?:\/|$)/;
 
 /** The note-١٣ buckets this request counts against (empty: none). Every method. */
-export function libraryBudgetBuckets(method: string, pathname: string): LibraryBudgetBucket[] {
+export function libraryBudgetBuckets(method: string, rawPathname: string): LibraryBudgetBucket[] {
   const m = method.toUpperCase();
+  const pathname = canonicalApiPath(rawPathname);
   const out: LibraryBudgetBucket[] = [];
   if (LIBRARY_ANY_RE.test(pathname)) out.push("library-any");
   if ((m === "GET" || m === "HEAD") && LIBRARY_DOC_RE.test(pathname)) out.push("library-doc");
