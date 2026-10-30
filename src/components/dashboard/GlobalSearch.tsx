@@ -15,7 +15,7 @@
  * • RTL-aware, dark/light mode aware
  */
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useSyncExternalStore } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -39,19 +39,20 @@ import {
   type PersonalContentItem, type PersonalContentKind, type PersonalReadResult,
 } from "@/lib/services/globalSearchContent";
 
-// ─── Infer user type from path (same as SharedSidebar) ────────────────────────
-function inferUserTypeFromPath(pathname: string) {
-  if (pathname.startsWith("/dashboard/client"))     return "individual" as const;
-  if (pathname.startsWith("/dashboard/lawyer"))     return "lawyer" as const;
-  if (pathname.startsWith("/dashboard/firm"))       return "firm" as const;
-  if (pathname.startsWith("/dashboard/business"))   return "corporate" as const;
-  if (pathname.startsWith("/dashboard/micro"))      return "micro" as const;
-  if (pathname.startsWith("/dashboard/provider"))   return "provider" as const;
-  if (pathname.startsWith("/dashboard/admin"))      return "admin" as const;
-  if (pathname.startsWith("/dashboard/government")) return "government" as const;
-  if (pathname.startsWith("/dashboard/ngo"))        return "ngo" as const;
-  return null;
-}
+// ─── User type: the same resolver as SharedSidebar ────────────────────────────
+// The private copy of inferUserTypeFromPath that stood here is gone: the tools
+// list and the sidebar now ask the same function (src/lib/nav/shellContext.ts),
+// so an admin in lawyer mode searches the lawyer's tools (owner LIVE-F01).
+import { resolveNavUserType } from "@/lib/nav/shellContext";
+import { useAdminView } from "@/hooks/useAdminView";
+import { SERVER_SHORTCUT_MODIFIER, platformOf, shortcutModifierFor } from "@/lib/nav/platformShortcut";
+
+// UX17: the hint prints the platform's own modifier — Ctrl on Windows, ⌘ on
+// Apple. The server (and the first client paint) print Ctrl so hydration
+// matches; the real platform is read once on the client.
+const noSubscribe = () => () => {};
+const clientModifier = () => shortcutModifierFor(platformOf(typeof navigator === "undefined" ? null : navigator));
+const serverModifier = () => SERVER_SHORTCUT_MODIFIER;
 
 // ─── UAT-GHOST-001: what stood here ──────────────────────────────────────────
 // A module-level array of three invented rows — «قضية الشركة
@@ -102,7 +103,7 @@ function ContentTypeIcon({ type }: { type: PersonalContentKind }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export function GlobalSearch() {
   const { isDark, lang } = useTheme();
-  const { userType: sessionUserType, subRole, active_roles, governmentRole, businessRole, businessMembership, affiliation, isDemoBypass, country, practiceKind, staffRole } = useUser();
+  const { userType: sessionUserType, subRole, active_roles, governmentRole, businessRole, businessMembership, affiliation, isDemoBypass, country, practiceKind, staffRole, loading: userLoading } = useUser();
   const pathname = usePathname() ?? "/";
   const isAr = lang === "ar";
   const router = useRouter();
@@ -124,12 +125,13 @@ export function GlobalSearch() {
   /** Guards against an older open's response landing after a newer one. */
   const loadTokenRef = useRef(0);
 
-  // Resolve user type
-  const pathUserType = inferUserTypeFromPath(pathname);
+  // Resolve user type — the one resolver SharedSidebar uses too.
+  const { storedView } = useAdminView(pathname, !userLoading && sessionUserType === "admin");
   const isBusinessIntake =
     isSharedClientIntakePath(pathname) &&
     (sessionUserType === "corporate" || !!businessMembership);
-  const userType = isBusinessIntake ? "corporate" : pathUserType ?? sessionUserType;
+  const userType = resolveNavUserType({ pathname, sessionUserType, storedView, isBusinessIntake });
+  const shortcutModifier = useSyncExternalStore(noSubscribe, clientModifier, serverModifier);
 
   // Gather all tools for this user — the same list as the sidebar, so a
   // consultant (Art. 18) finds no pleading or hearings tool here either, and
@@ -304,7 +306,7 @@ export function GlobalSearch() {
             (note ١٧٩). The shortcut itself is a Latin-keyboard convention; only
             its own reading order needs pinning, not the button around it. */}
         <kbd dir="ltr" className={`hidden sm:flex items-center gap-0.5 text-[9px] font-mono px-1.5 py-0.5 rounded-md ${isDark ? "bg-white/5 text-zinc-600 border border-white/8" : "bg-slate-100 text-slate-400 border border-slate-200"}`}>
-          <span>⌘</span><span>K</span>
+          <span>{shortcutModifier}</span><span>K</span>
         </kbd>
       </button>
       </div>

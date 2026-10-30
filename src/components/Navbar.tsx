@@ -17,6 +17,8 @@ import { getNavByUserType, getDashboardRoute, getRoleLabel, isMegaMenu, type Nav
 import Link from "next/link";
 import { useNotifications } from "@/hooks/useNotifications";
 import { isNavbarTransparent, isPastSolidThreshold } from "./navbarChrome";
+import { useAdminView } from "@/hooks/useAdminView";
+import { resolveNavbarUserType } from "@/lib/nav/shellContext";
 
 // ─── Scroll position as an external store (for the see-through home bar) ─────
 function subscribeToScroll(onChange: () => void) {
@@ -478,8 +480,15 @@ export default function Navbar() {
   const transparent = isNavbarTransparent(pathname, scrolled, mobileOpen);
 
   // ── Select proper nav based on userType ──
-  const ACTIVE_NAV = getNavByUserType(isLoggedIn ? userType : null);
-  const dashboardHref = getDashboardRoute(userType);
+  // An admin's top bar follows the admin's VIEW context (owner LIVE-F01): in
+  // lawyer mode the library (/laws) and every other public page keep the
+  // lawyer links instead of jumping back to /dashboard/admin. Non-admin
+  // sessions get exactly `userType`, as before. The avatar menu's role label
+  // below stays the real role — a view is not a role.
+  const { storedView: adminStoredView } = useAdminView(pathname ?? "/", isLoggedIn && userType === "admin");
+  const navUserType = resolveNavbarUserType({ pathname: pathname ?? "/", sessionUserType: userType, storedView: adminStoredView });
+  const ACTIVE_NAV = getNavByUserType(isLoggedIn ? navUserType : null);
+  const dashboardHref = getDashboardRoute(navUserType);
 
   // ── Keyboard + click-away handlers ──
   useEffect(() => {
