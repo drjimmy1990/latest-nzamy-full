@@ -539,6 +539,33 @@ L8 notes:
 - `full_revision` stays a team order until wave 5.
 
 ### Wave 4: analysis (jobs)
+
+> **Status 2026-10-28 (branch `feat/ai-wave4`): L9 and L10 built, off by default. The n8n workflows are not created yet (the n8n connection was down); their JSON is exported.**
+> - **Both are 250-point jobs with optional files** (`WAVE4_FILES`: up to 6 PDFs or images, 30 pages, 22 MB; `FileRules.optional`).
+>   - No fileIds, or an empty list, skips the file step in `runCore`.
+>   - Any list given is checked in full before the charge.
+> - **n8n shape** (`toCaseJobWorkflow`): the L7/L8 job plus an IF «Has files?» after «Accepted 202».
+>   - With files: Gemini «Analyze Document».
+>   - Without files: the same prompt as the AI Agent's user text, under a brace-free system line.
+>   - Both meet at one parse (`CASE_PARSE`, which reads either reply), one error node and the callback.
+>   - Without the IF, «Files» would emit no item and n8n would never call back.
+> - **No number anywhere** (owner ١٩٣):
+>   - no score, no percentage, no likelihood; levels are words;
+>   - the validators drop any extra field (e.g. a `probability` or `score` the model adds);
+>   - L9's «اتجاه المحكمة» now reads «ما ستفحصه المحكمة وأسئلتها», and the prompt forbids predicting the ruling.
+> - **Grounding, a deviation from the table below:** no library retrieval (the plan said `principles` + `laws` for L9).
+>   - Instead, the prompt forbids naming judgments or precedents.
+>   - Every article the answer relies on goes through the L8 citation check (`OUTPUT_ENRICHERS`), so the screen shows the library's verdict on each.
+>   - So no Pro gate, and no `ungrounded` refund when an analysis rests on facts alone.
+> - **L9** on `/ai/wargaming`: «أو: محاكاة فورية بالذكاء الاصطناعي» under the submit step, beside the unchanged team order.
+>   - Only PDF and image attachments go to the job; the others are named on screen.
+>   - «نقض المذكرة» needs the pasted memo or a readable memo file.
+>   - Consultants are blocked (Art. 18).
+>   - The old unreachable mock (`buildPoints`, `Results`, `PolishPanel`) is untouched.
+> - **L10** on `/ai/analyze-strength`: the mock (score 68, dimension scores, likelihood percentages, the «ذاكرة المكتب» switch with nothing behind it, BetaReviewGate) is gone.
+>   - The page is now: role, summary, optional files, evidence notes and the opponent's words → four tabs plus the library's verdicts.
+>   - `analyze-strength.result` was removed from `betaConfig`.
+
 | # | Tool | Page | Price | Model | Notes |
 |:-:|---|---|:-:|---|---|
 | L9 | **المحاكي الشامل** | `/ai/wargaming` | 250 | Sonnet | One pass per chosen target (adversary / court direction / memo critique / pleading practice). Output: `SimPoint{source, severity, title, detail, counter}`, **no probability**. Memo critique reads the memo file. Retrieval: `principles` + `laws`. Consultants stay locked out |

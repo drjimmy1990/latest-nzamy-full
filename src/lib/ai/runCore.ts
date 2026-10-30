@@ -35,10 +35,12 @@ import { enrichBriefCheck } from "./citationCheck.ts";
 
 /**
  * Tools whose result the app completes from its own data before storing it.
- * L8: the library decides each cited article's status, never the model.
+ * L8, L9, L10: the library decides each cited article's status, never the model.
  */
 const OUTPUT_ENRICHERS: Readonly<Record<string, (admin: SupabaseClient, output: Record<string, unknown>) => Promise<Record<string, unknown>>>> = {
   "brief-check": (admin, output) => enrichBriefCheck(admin as never, output),
+  wargaming: (admin, output) => enrichBriefCheck(admin as never, output),
+  "analyze-strength": (admin, output) => enrichBriefCheck(admin as never, output),
 };
 import {
   DEFAULT_JOB_DEADLINE_SECONDS,
@@ -342,7 +344,8 @@ export async function startRunWith(
   // total sets the price.
   let files: AiFile[] = [];
   let pages: number | null = null;
-  if (spec.files) {
+  const noFilesGiven = req.fileIds === undefined || req.fileIds === null || (Array.isArray(req.fileIds) && req.fileIds.length === 0);
+  if (spec.files && !(spec.files.optional && noFilesGiven)) {
     if (!deps.resolveFiles) {
       console.error("[ai] a file tool without resolveFiles:", spec.id);
       return { status: 503, body: { error: AI_COPY.notReady, code: "not_ready" } };

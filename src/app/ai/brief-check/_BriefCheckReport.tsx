@@ -7,8 +7,8 @@
  * library / not checked). The model reports what the memo cites; it never
  * says whether an article exists.
  */
-import Link from "next/link";
-import { Warning, SealWarning, Lightbulb, CheckCircle, XCircle, Question, ArrowSquareOut } from "@phosphor-icons/react";
+import { Warning, SealWarning, Lightbulb } from "@phosphor-icons/react";
+import CitationCheckList, { asCitationVerdicts, type CitationVerdict } from "@/components/ai/CitationCheckList";
 
 export interface BriefFinding {
   severity: "high" | "medium" | "low";
@@ -17,15 +17,7 @@ export interface BriefFinding {
   fix: string;
 }
 
-export interface CitationVerdict {
-  cited: string;
-  law: string;
-  article: number;
-  status: "ok" | "amended" | "repealed" | "not_found" | "unchecked";
-  missing?: "law" | "article";
-  law_title?: string;
-  url?: string;
-}
+export type { CitationVerdict };
 
 export interface BriefCheckReport {
   summary: string;
@@ -38,7 +30,7 @@ export function asBriefCheckReport(output: Record<string, unknown> | null): Brie
   return {
     summary: output.summary,
     findings: Array.isArray(output.findings) ? (output.findings as BriefFinding[]) : [],
-    citation_check: Array.isArray(output.citation_check) ? (output.citation_check as CitationVerdict[]) : [],
+    citation_check: asCitationVerdicts(output.citation_check),
   };
 }
 
@@ -47,21 +39,6 @@ const SEVERITY = {
   medium: { label: "متوسطة", Icon: SealWarning, cls: "border-amber-500/25 bg-amber-500/10 text-amber-500" },
   low:    { label: "بسيطة", Icon: Lightbulb,   cls: "border-blue-500/25 bg-blue-500/10 text-blue-500" },
 } as const;
-
-function verdictOf(c: CitationVerdict) {
-  switch (c.status) {
-    case "ok": return { label: "سارية", Icon: CheckCircle, cls: "text-emerald-500" };
-    case "amended": return { label: "معدّلة — راجع نصها الحالي", Icon: SealWarning, cls: "text-amber-500" };
-    case "repealed": return { label: "ملغاة", Icon: XCircle, cls: "text-red-500" };
-    case "not_found":
-      return {
-        label: c.missing === "law" ? "لم يُعثر على النظام في المكتبة" : "لا توجد مادة بهذا الرقم في النظام",
-        Icon: XCircle,
-        cls: "text-red-500",
-      };
-    default: return { label: "لم يُتحقق منها", Icon: Question, cls: "text-zinc-400" };
-  }
-}
 
 export default function BriefCheckReportView({ report, isDark, chargedPoints }: { report: BriefCheckReport; isDark: boolean; chargedPoints: number }) {
   const card = isDark ? "bg-zinc-900 border border-white/[0.06] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
@@ -97,30 +74,12 @@ export default function BriefCheckReportView({ report, isDark, chargedPoints }: 
         })}
       </div>
 
-      <div className={`${card} p-5 shadow-sm space-y-3`}>
-        <p className={head}>المواد المستشهد بها — تحقّقت منها المنصة في مكتبة الأنظمة</p>
-        {report.citation_check.length === 0 && <p className={`text-[12px] ${body}`}>لا تستشهد المذكرة بمواد نظامية مرقّمة.</p>}
-        {report.citation_check.map((c, i) => {
-          const v = verdictOf(c);
-          return (
-            <div key={i} className={`flex items-start gap-2.5 rounded-xl px-3 py-2.5 ${isDark ? "bg-white/[0.03]" : "bg-zinc-50"}`}>
-              <v.Icon size={15} weight="fill" className={`mt-0.5 flex-shrink-0 ${v.cls}`} />
-              <div className="min-w-0 flex-1">
-                <p className={`text-[12px] font-semibold ${body}`}>{c.cited}</p>
-                <p className={`text-[11px] ${v.cls}`}>
-                  {v.label}
-                  {c.law_title && c.status !== "not_found" ? ` · ${c.law_title} — المادة ${c.article.toLocaleString("ar-SA")}` : ""}
-                </p>
-              </div>
-              {c.url && (
-                <Link href={c.url} target="_blank" className={`flex-shrink-0 text-[11px] font-bold inline-flex items-center gap-1 ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
-                  النص <ArrowSquareOut size={11} />
-                </Link>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      <CitationCheckList
+        items={report.citation_check}
+        isDark={isDark}
+        title="المواد المستشهد بها — تحقّقت منها المنصة في مكتبة الأنظمة"
+        empty="لا تستشهد المذكرة بمواد نظامية مرقّمة."
+      />
 
       <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
         تقرير آلي مبدئي؛ القرار للمحامي. حالة كل مادة من مكتبة نظامي لا من الذكاء الاصطناعي.

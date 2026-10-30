@@ -140,7 +140,9 @@ export const LAWYER_AI_TOOLS: readonly LawyerAiTool[] = [
     href: "/ai/analyze-strength",
     titleAr: "محلل قوة الموقف",
     titleEn: "Position Strength Analyzer",
-    betaStatus: "beta-free",
+    // Wave 4: a real 250-point job now (owner's 25-Oct price list), so it is
+    // no longer described as free; no badge until the price list carries it.
+    betaStatus: "priced",
     sidebarPlacement: "hub-only",
     adminPricingKey: "lawyer.ai.analyze_strength",
   },

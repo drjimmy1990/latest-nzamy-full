@@ -7,7 +7,7 @@ import {
   Buildings, User, UserFocus, Briefcase, Notebook, ArrowLeft, Pencil,
   Plus, PencilSimple, Trash, Check, Copy, CaretDown, Lightbulb,
   Eye, CheckFat, DownloadSimple, Warning, ArrowsCounterClockwise,
-  Robot, Microphone, Spinner, PaperPlaneTilt,
+  Robot, Microphone, Spinner, PaperPlaneTilt, Sparkle,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
@@ -24,6 +24,11 @@ import {
 } from "@/lib/services/orderIntake.wargaming";
 import type { OrderAttachment } from "@/lib/services/orderIntake";
 import { LEGAL_TAXONOMY } from "@/constants/taxonomies";
+import { useAiRun } from "@/hooks/useAiRun";
+import { splitAiReadable } from "@/components/ai/aiReadable";
+import { WAVE4_PRICE } from "@/lib/ai/tools";
+import { asSimResult } from "./_simResult";
+import SimResultView from "./_SimResultView";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type SimTarget  = "opponent" | "court" | "critique" | "plea";
@@ -59,7 +64,7 @@ const SEV = {
 
 const SIM_TARGETS: { id: SimTarget; label: string; sub: string; icon: typeof Sword; color: string; grad: string }[] = [
   { id:"opponent", label:"محاكاة الخصم",    sub:"هجماته ودفوعه المتوقعة",     icon:HandFist,        color:"text-red-400",    grad:"from-red-700 to-red-500"     },
-  { id:"court",    label:"اتجاه المحكمة",  sub:"احتمالية الحكم والسوابق",     icon:Scales,          color:"text-amber-400",  grad:"from-amber-600 to-amber-400" },
+  { id:"court",    label:"اتجاه المحكمة",  sub:"ما ستفحصه المحكمة وأسئلتها",  icon:Scales,          color:"text-amber-400",  grad:"from-amber-600 to-amber-400" },
   { id:"critique", label:"نقض المذكرة",    sub:"ثغرات كاشف الصياغة",           icon:MagnifyingGlass, color:"text-purple-400", grad:"from-purple-700 to-purple-500"},
   { id:"plea",     label:"تدريب المرافعة", sub:"سكريبت وأداء الجلسة",          icon:SpeakerHigh,     color:"text-blue-400",   grad:"from-blue-700 to-blue-500"   },
 ];
@@ -913,6 +918,32 @@ function AIWargamingPage() {
     attachments, uploading, attachError, attachFile, removeAttachment, clearAttachError,
   } = useOrderAttachments();
 
+  // L9 (plan §5, wave 4): beside the team order, the same case can be
+  // simulated at once by the `wargaming` job (250 points). Only PDF and image
+  // files go to it; a memo counts for «نقض المذكرة» only if it is one of them.
+  const ai = useAiRun();
+  const simResult = ai.phase === "done" ? asSimResult(ai.output) : null;
+  const { ids: aiFileIds, skipped: aiSkipped } = splitAiReadable(attachments);
+  const critique = targets.has(WARGAMING_CRITIQUE_TARGET);
+  const memoForAi = critique && (memoText.trim() !== "" || memoAttachmentIds.some(id => aiFileIds.includes(id)));
+  const aiBlocked = uploading || ai.busy || targets.size === 0 || (critique && !memoForAi);
+
+  function runAi() {
+    if (aiBlocked) return;
+    void ai.start(
+      "wargaming",
+      {
+        role: ctx.role,
+        area: caseAreaLabel(ctx),
+        case_summary: ctx.summary.trim(),
+        targets: Array.from(targets),
+        memo_text: critique ? memoText.trim() || null : null,
+        memo_in_files: critique && memoAttachmentIds.some(id => aiFileIds.includes(id)),
+      },
+      { fileIds: aiFileIds },
+    );
+  }
+
   // Wraps the single shared attachFile/removeAttachment from
   // useOrderAttachments() — still one hook instance, one attachments array —
   // so a file uploaded specifically as the memo is also tagged in
@@ -954,6 +985,7 @@ function AIWargamingPage() {
     setSubmitErrors([]);
     clearAttachError();
     attachments.forEach(a => removeAttachment(a.documentId));
+    ai.reset();
   }
 
   // For «أخرى» this is the client's own wording — so the recap, the order
@@ -1107,6 +1139,35 @@ function AIWargamingPage() {
               targets={targets} memoText={memoText} memoAttachmentIds={memoAttachmentIds} attachments={attachments}
               submitting={submitting} submitErrors={submitErrors}
               onBack={()=>{setSubmitErrors([]);setStep("targets");}} onSubmit={submitOrder}/>
+
+            <div className={`mt-4 rounded-2xl border p-4 space-y-2 ${D?"border-[#C8A762]/20 bg-[#C8A762]/[0.04]":"border-[#0B3D2E]/15 bg-[#0B3D2E]/[0.03]"}`}>
+              <p className={`text-[12px] font-bold ${D?"text-zinc-200":"text-zinc-800"}`}>أو: محاكاة فورية بالذكاء الاصطناعي</p>
+              <p className={`text-[11px] leading-relaxed ${D?"text-zinc-400":"text-zinc-500"}`}>
+                تُجري المحاكاة على الأهداف المختارة الآن وتعرض النتيجة هنا، وتتحقق المنصة من كل مادة تستند إليها في مكتبة الأنظمة ·
+                {" "}{WAVE4_PRICE.toLocaleString("ar-SA")} نقطة · تُرسل نسخة من الملخص والمرفقات إلى مزوّد ذكاء اصطناعي خارج المملكة.
+              </p>
+              {aiSkipped.length > 0 && (
+                <p className="text-[11px] text-amber-500">
+                  المحاكاة الفورية تقرأ PDF والصور فقط — لن تُرسل إليها: {aiSkipped.join("، ")}
+                </p>
+              )}
+              {critique && !memoForAi && (
+                <p className="text-[11px] text-amber-500">«نقض المذكرة» في المحاكاة الفورية يحتاج نص المذكرة أو ملفها بصيغة PDF أو صورة.</p>
+              )}
+              <button type="button" onClick={runAi} disabled={aiBlocked}
+                className={`flex w-full items-center justify-center gap-2 rounded-xl border px-6 py-2.5 text-[13px] font-bold disabled:opacity-40 ${D?"border-[#C8A762]/40 text-[#C8A762]":"border-[#0B3D2E]/30 text-[#0B3D2E]"}`}>
+                <Sparkle size={14} weight="fill"/>
+                {ai.busy ? "جارٍ المحاكاة… (دقيقة أو أكثر)" : `شغّل المحاكاة الآن (${WAVE4_PRICE.toLocaleString("ar-SA")} نقطة)`}
+              </button>
+              {ai.phase === "error" && ai.error && <p role="alert" className="text-[11px] text-red-500">{ai.error}</p>}
+              {ai.phase === "review" && <p role="status" className={`text-[11px] ${D?"text-zinc-400":"text-zinc-500"}`}>النتيجة جاهزة وتنتظر مراجعة الفريق قبل عرضها.</p>}
+            </div>
+
+            {simResult && (
+              <div className="mt-4">
+                <SimResultView result={simResult} isDark={D} chargedPoints={ai.chargedPoints} onReset={ai.reset}/>
+              </div>
+            )}
           </motion.div>
         )}
 
