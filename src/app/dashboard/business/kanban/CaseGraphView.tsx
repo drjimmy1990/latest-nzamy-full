@@ -21,7 +21,33 @@ import { normalizeLoadedEdges, normalizeLoadedNodes } from "./_graph-sanitize";
 import { candidatesToNodes, type ImportCandidate } from "./_graph-import";
 import { askCanvasCard, suggestionsToNodes } from "./_graph-ai-card";
 import { getCaseGraph, saveCaseGraph } from "@/lib/services/caseGraphService";
+import { GraphAutosave, canonicalJson, type AutosaveStatus } from "@/lib/services/caseGraphAutosave";
+import { useUser } from "@/hooks/useUser";
 import { toArabicDigits } from "@/lib/services/arabicCount";
+
+type GraphPayload = { nodes: GraphNode[]; edges: GraphEdge[]; viewport: { pan: { x: number; y: number }; scale: number } };
+type GraphDraft = { payload: GraphPayload; savedAt: string };
+
+// CODE-F24 «مسودة محلية»: a change the server has not confirmed yet, kept in
+// this browser under the user and the case, until a save confirms it. Every
+// access is guarded — private windows and full storage throw.
+function readGraphDraft(key: string): GraphDraft | null {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    const d = JSON.parse(raw) as GraphDraft;
+    if (!d || !Array.isArray(d.payload?.nodes) || !Array.isArray(d.payload?.edges)) return null;
+    return d;
+  } catch {
+    return null;
+  }
+}
+function writeGraphDraft(key: string, payload: GraphPayload): void {
+  try { window.localStorage.setItem(key, JSON.stringify({ payload, savedAt: new Date().toISOString() })); } catch { /* storage full or blocked */ }
+}
+function clearGraphDraft(key: string): void {
+  try { window.localStorage.removeItem(key); } catch { /* blocked */ }
+}
 
 /** Arabic labels for EDGE_CONFIG's three link styles — the legend below is the
  * only place that names them; the model itself only carries colour/dash. */
@@ -134,10 +160,21 @@ export default function CaseGraphView({
   //              silently overwrite a real saved graph we simply could not
   //              read, with whatever empty/seed state the board opened with.
   const [loadState, setLoadState] = useState<"loading" | "ready" | "readError">(caseId ? "loading" : "ready");
-  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "saveError">("idle");
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // The change the debounce is still holding, if any — flushed on unmount.
-  const pendingSave = useRef<{ nodes: GraphNode[]; edges: GraphEdge[]; viewport: { pan: { x: number; y: number }; scale: number } } | null>(null);
+  const [saveState, setSaveState] = useState<AutosaveStatus>("idle");
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  // CODE-F24: debounce, retry, conflict and the local draft live in one pure
+  // controller (src/lib/services/caseGraphAutosave.ts). A change stays
+  // unconfirmed until the server confirms THAT revision; it is no longer
+  // forgotten the moment the debounce fires.
+  const autosave = useRef<GraphAutosave<GraphPayload> | null>(null);
+  const { userId } = useUser();
+  const draftKey = caseId && userId ? `nzamy:case-graph-draft:${userId}:${caseId}` : null;
+  const draftKeyRef = useRef<string | null>(draftKey);
+  useEffect(() => { draftKeyRef.current = draftKey; }, [draftKey]);
+  // What the read returned, to tell a draft that differs from it.
+  const loadedSnapshot = useRef<string | null>(null);
+  const draftChecked = useRef(false);
+  const [offeredDraft, setOfferedDraft] = useState<GraphDraft | null>(null);
   // Guards the autosave effect from firing on the very first render after a
   // load — without this, seeding `nodes`/`edges` from the fetched graph would
   // immediately re-save the same data it just read, and a case with no saved
@@ -156,11 +193,16 @@ export default function CaseGraphView({
     if (!caseId) return;
     let cancelled = false;
     setLoadState("loading");
+    draftChecked.current = false;
+    setOfferedDraft(null);
     getCaseGraph(caseId)
       .then((saved) => {
         if (cancelled) return;
+        // Loading is not a change: with a saved board the reset below is not
+        // one, and with none an empty board must not be written as a row.
+        skipNextAutosave.current = true;
+        loadedSnapshot.current = canonicalJson({ nodes: saved?.nodes ?? [], edges: saved?.edges ?? [], viewport: saved?.viewport ?? {} });
         if (saved) {
-          skipNextAutosave.current = true;
           // resetGraph, not setNodes: loading is not an undoable step (the
           // first Ctrl+Z would otherwise empty the board and autosave would
           // write the empty board over the case). The saved jsonb is
@@ -196,40 +238,109 @@ export default function CaseGraphView({
     fitToView();
   }, [caseId, loadState, nodes.length, fitToView]);
 
+  // One autosave controller per loaded case. Declared before the change
+  // effect below so it exists in the commit where the read turns "ready".
+  // Leaving the board (closing fullscreen, switching tab, another case) runs
+  // dispose(): whatever is unconfirmed — still in the 1.5 s debounce, or
+  // failed and waiting to retry — goes out once, and caseGraphService orders
+  // it before the next board's read of the same case. Closing the page asks
+  // first while anything is unconfirmed, and the draft keeps it either way.
+  useEffect(() => {
+    if (!caseId || loadState !== "ready") return;
+    const ctl = new GraphAutosave<GraphPayload>({
+      send: (p) => saveCaseGraph(caseId, p),
+      setTimer: (fn, ms) => setTimeout(fn, ms),
+      clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+      onStatus: (s, m) => {
+        if (s === "retrying" || s === "error" || s === "conflict") console.error("[CaseGraphView] autosave:", s, m);
+        setSaveState(s);
+        setSaveMessage(m ?? null);
+      },
+      draft: {
+        write: (p) => { const k = draftKeyRef.current; if (k) writeGraphDraft(k, p); },
+        clear: () => { const k = draftKeyRef.current; if (k) clearGraphDraft(k); },
+      },
+    });
+    autosave.current = ctl;
+    const onPageHide = () => ctl.persistDraft();
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!ctl.dirty) return;
+      ctl.persistDraft();
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      if (autosave.current === ctl) autosave.current = null;
+      void ctl.dispose();
+    };
+  }, [caseId, loadState]);
+
   useEffect(() => {
     if (!caseId || loadState !== "ready") return;
     if (skipNextAutosave.current) {
       skipNextAutosave.current = false;
       return;
     }
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    const payload = { nodes, edges, viewport: { pan, scale } };
-    pendingSave.current = payload;
-    saveTimer.current = setTimeout(() => {
-      pendingSave.current = null;
-      setSaveState("saving");
-      saveCaseGraph(caseId, payload)
-        .then(() => setSaveState("saved"))
-        .catch((err) => {
-          console.error("[CaseGraphView] autosave failed:", err);
-          setSaveState("saveError");
-        });
-    }, 1500);
-    return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
+    autosave.current?.change({ nodes, edges, viewport: { pan, scale } });
   }, [caseId, loadState, nodes, edges, pan, scale]);
 
-  // Leaving the board (closing fullscreen, switching tab) must not drop the
-  // last change still waiting out the 1.5 s debounce: flush it on unmount.
-  // caseGraphService orders it before the next board's read of the same case.
+  // A draft left by an earlier visit (the save never got through) is offered
+  // back once, never applied silently — and only if it differs from what the
+  // server holds now. userId can arrive after the read, hence its own effect.
   useEffect(() => {
-    return () => {
-      const payload = pendingSave.current;
-      pendingSave.current = null;
-      if (caseId && payload) {
-        saveCaseGraph(caseId, payload).catch((err) => console.error("[CaseGraphView] flush on unmount failed:", err));
-      }
-    };
-  }, [caseId]);
+    if (!caseId || loadState !== "ready" || !draftKey || draftChecked.current) return;
+    draftChecked.current = true;
+    const d = readGraphDraft(draftKey);
+    if (!d) return;
+    if (canonicalJson(d.payload) === loadedSnapshot.current) clearGraphDraft(draftKey);
+    else setOfferedDraft(d);
+  }, [caseId, loadState, draftKey]);
+
+  const restoreDraft = () => {
+    if (!offeredDraft) return;
+    const { payload } = offeredDraft;
+    setOfferedDraft(null);
+    // Unlike the load, this IS a change, so the autosave sends it.
+    resetGraph(normalizeLoadedNodes(payload.nodes), normalizeLoadedEdges(payload.edges));
+    if (payload.viewport?.pan) setPan(payload.viewport.pan);
+    if (typeof payload.viewport?.scale === "number") setScale(payload.viewport.scale);
+  };
+  const dismissDraft = () => {
+    if (draftKey) clearGraphDraft(draftKey);
+    setOfferedDraft(null);
+  };
+
+  // After a 409: «حمّل النسخة المحفوظة» drops the local change and shows the
+  // server's board; «احتفظ بنسختي» re-reads the version and saves over it.
+  const loadSavedCopy = async () => {
+    const ctl = autosave.current;
+    if (!caseId || !ctl) return;
+    try {
+      const saved = await getCaseGraph(caseId);
+      ctl.discard();
+      skipNextAutosave.current = true;
+      resetGraph(normalizeLoadedNodes(saved?.nodes ?? []), normalizeLoadedEdges(saved?.edges ?? []));
+      const vp = saved?.viewport as { pan?: { x: number; y: number }; scale?: number } | null | undefined;
+      if (vp?.pan) setPan(vp.pan);
+      if (typeof vp?.scale === "number") setScale(vp.scale);
+    } catch {
+      setSaveMessage("تعذّرت قراءة النسخة المحفوظة — حاول مرة أخرى.");
+    }
+  };
+  const keepMine = async () => {
+    const ctl = autosave.current;
+    if (!caseId || !ctl) return;
+    try {
+      await getCaseGraph(caseId);
+      ctl.resume();
+    } catch {
+      setSaveMessage("تعذّرت قراءة النسخة المحفوظة — حاول مرة أخرى.");
+    }
+  };
 
   // `isWorkspaceEmpty` gates the LAUNCHER, and the launcher is a global-workspace
   // affordance only — keep it off the case-file mounts. Since the seed fallback
@@ -319,14 +430,37 @@ export default function CaseGraphView({
                 <div className={`px-3 py-1.5 rounded-xl font-bold text-[11px] flex items-center gap-2 ${isDark ? "bg-white/[0.06] text-zinc-400" : "bg-zinc-100 text-zinc-500"}`}>
                   <CircleNotch size={12} className="animate-spin" /> جارٍ الحفظ...
                 </div>
-              ) : saveState === "saveError" ? (
-                <div className={`px-3 py-1.5 rounded-xl font-bold text-[11px] flex items-center gap-2 ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}
-                  title="آخر تعديل لم يُحفَظ — سيُعاد المحاولة مع أي تعديل جديد">
+              ) : saveState === "pending" ? (
+                <div className={`px-3 py-1.5 rounded-xl font-bold text-[11px] flex items-center gap-2 ${isDark ? "bg-white/[0.06] text-zinc-400" : "bg-zinc-100 text-zinc-500"}`}>
+                  <span className="w-2 h-2 rounded-full bg-zinc-400" /> تعديلات لم تُحفظ بعد
+                </div>
+              ) : saveState === "retrying" ? (
+                <div className={`px-3 py-1.5 rounded-xl font-bold text-[11px] flex items-center gap-2 ${isDark ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-700"}`}
+                  title={`${saveMessage ? `${saveMessage} — ` : ""}تعديلاتك محفوظة في هذا المتصفح حتى ينجح الحفظ، ونعيد المحاولة تلقائياً.`}>
+                  <Warning size={12} weight="fill" /> تعذّر الحفظ — نعيد المحاولة
+                </div>
+              ) : saveState === "conflict" ? (
+                <div role="alert" className={`px-3 py-1.5 rounded-xl font-bold text-[11px] flex flex-wrap items-center gap-2 ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}
+                  title="تغيّرت اللوحة المحفوظة بعد أن فتحتها (من زميل أو من نافذة أخرى). لم نحفظ فوقها؛ تعديلاتك باقية هنا وفي هذا المتصفح.">
+                  <Warning size={12} weight="fill" /> تغيّرت النسخة المحفوظة — لم نحفظ فوقها
+                  <button onClick={() => void loadSavedCopy()} className="underline">حمّل النسخة المحفوظة</button>
+                  <button onClick={() => void keepMine()} className="underline">احتفظ بنسختي</button>
+                </div>
+              ) : saveState === "error" ? (
+                <div role="alert" className={`px-3 py-1.5 rounded-xl font-bold text-[11px] flex items-center gap-2 ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}
+                  title={`${saveMessage ? `${saveMessage} — ` : ""}الحفظ متوقّف؛ تعديلاتك باقية في هذا المتصفح.`}>
                   <Warning size={12} weight="fill" /> تعذّر الحفظ
                 </div>
               ) : (
                 <div className={`px-3 py-1.5 rounded-xl font-bold text-[11px] flex items-center gap-2 ${isDark ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-50 text-emerald-700"}`}>
                   <CheckCircle size={12} weight="fill" /> محفوظة
+                </div>
+              )}
+              {offeredDraft && (
+                <div role="status" className={`px-3 py-1.5 rounded-xl font-bold text-[11px] flex flex-wrap items-center gap-2 ${isDark ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-700"}`}>
+                  تعديلات من زيارة سابقة لم تُحفظ
+                  <button onClick={restoreDraft} className="underline">استعدها</button>
+                  <button onClick={dismissDraft} className="underline">تجاهلها</button>
                 </div>
               )}
               <div className={`w-px mx-1 my-1 self-stretch ${isDark ? "bg-white/10" : "bg-zinc-200"}`} />

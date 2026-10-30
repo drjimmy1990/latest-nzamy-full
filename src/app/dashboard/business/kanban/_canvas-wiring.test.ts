@@ -69,10 +69,33 @@ test("one live board per case page: the inline canvas unmounts while fullscreen 
   assert.match(lawyer, /\{!graphFullscreen && \(\s*<CaseGraphView isDark=\{isDark\} isGlobal=\{false\} caseId=\{id\} enableCaseImport \/>/);
 });
 
-test("a change still in the autosave debounce is flushed on unmount, and a read waits for it", () => {
-  assert.match(view, /flush on unmount failed/);
-  assert.match(view, /pendingSave\.current = payload;/);
+test("an unconfirmed change is sent on unmount, and a read waits for it", () => {
+  // CODE-F24: the controller's dispose() sends what is unconfirmed — in the
+  // debounce or failed and waiting to retry (caseGraphAutosave.test.ts).
+  assert.match(view, /void ctl\.dispose\(\);/);
+  assert.match(view, /autosave\.current\?\.change\(\{ nodes, edges, viewport: \{ pan, scale \} \}\)/);
+  assert.doesNotMatch(view, /pendingSave/, "the pre-ack clear is gone");
   const svc = readFileSync(join(here, "../../../../lib/services/caseGraphService.ts"), "utf8");
-  const get = svc.slice(svc.indexOf("export async function getCaseGraph"), svc.indexOf("export async function saveCaseGraph"));
+  const get = svc.slice(svc.indexOf("export async function getCaseGraph"), svc.indexOf("type GraphBody"));
   assert.match(get, /const pending = inflight\.get\(caseId\);\s*if \(pending\) await pending/);
+});
+
+test("CODE-F24: versioned saves, conflict choices, page-close guard, draft offered not applied", () => {
+  const svc = readFileSync(join(here, "../../../../lib/services/caseGraphService.ts"), "utf8");
+  assert.match(svc, /versions\.set\(caseId, data \? data\.updatedAt : null\)/);
+  assert.match(svc, /baseUpdatedAt: base/);
+  assert.match(svc, /if \(isDemoMode\)/);
+  assert.doesNotMatch(svc, /new Date\([^)]/, "the version string is never re-parsed");
+  assert.match(view, /حمّل النسخة المحفوظة/);
+  assert.match(view, /احتفظ بنسختي/);
+  assert.match(view, /addEventListener\("beforeunload"/);
+  assert.match(view, /addEventListener\("pagehide"/);
+  assert.match(view, /else setOfferedDraft\(d\)/);
+  const route = readFileSync(join(here, "../../../api/v1/lawyer/case-graph/[caseId]/route.ts"), "utf8");
+  const put = route.slice(route.indexOf("export async function PUT"));
+  assert.match(put, /\.eq\("updated_at", baseUpdatedAt\)/);
+  assert.match(put, /insertError\.code === "23505"\) return conflict\(\)/);
+  assert.match(put, /status: 409/);
+  const update = put.slice(put.indexOf(".update("), put.indexOf(".eq(\"case_request_id\""));
+  assert.doesNotMatch(update, /owner_user_id|firm_id/, "an update never reassigns the owner");
 });
