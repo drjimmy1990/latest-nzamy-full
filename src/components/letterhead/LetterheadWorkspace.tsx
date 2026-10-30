@@ -1,28 +1,47 @@
 "use client";
 
 /**
- * LetterheadWorkspace — «الورق المروّس الرسمي» for an individual lawyer
- * (/dashboard/lawyer/letterhead) and for a firm (/dashboard/firm/letterhead),
- * owner decision ٢٥٦.
+ * LetterheadWorkspace — «هوية ومطبوعات المكتب»: the official letterhead of an
+ * individual lawyer or a firm (owner decision ٢٥٦), shown as the «branding»
+ * tab of the legal vault (/dashboard/{lawyer,firm}/vault?tab=branding — owner
+ * note 09 §٤, package 2026-10-30, NOTE-09-C06). The old /letterhead pages
+ * redirect there.
  *
- * Left: the identity vault (names, contacts, accent colour, own logo; the
- * licence read-only from the verified profile) and the letter (date in
- * Gregorian + Hijri, recipient, subject, body, signature). Right: the A4 sheet
- * as it will print. «طباعة / حفظ PDF» opens the browser's print dialog; what
- * prints is a second copy of the sheet portalled straight under <body>, and
- * the print CSS hides everything else — the dashboard chrome never reaches
- * the paper. The letter itself is not stored: compose, print, done.
+ * Left: the identity (names, contacts, accent colour, own logo; the licence
+ * read-only from the verified profile) and — through `extra` — the office's
+ * own stationery files (BrandingAssetsPanel). Right: the A4 sheet as it will
+ * print, with a toggle between a faded sample text (preview only) and the
+ * blank sheet.
  *
- * Before 20261026_63 runs the API answers `available: false`: the vault is
- * read-only with «يتطلب تحديث قاعدة البيانات», and a letter still prints with
+ * NO LETTER EDITOR (owner note 09 §٢-ثانياً, NOTE-09-C03/C04): the «الخطاب»
+ * section (date / to / subject / body / signature, never saved) is gone. This
+ * page sets up the identity and prints the letterhead BLANK; letters are
+ * written in the platform's document tools. Those tools do not adopt the
+ * sheet yet (Letterhead.tsx lists the candidates) — that wiring lives in
+ * src/app/ai/* and is recorded as open in the 2026-10-30 ledger.
+ *
+ * PRINT: «طباعة الورق فارغاً / حفظ PDF» opens the browser's print dialog; what
+ * prints is a second, blank copy of the sheet portalled straight under <body>,
+ * and the print CSS hides everything else. A firm's sheet prints only for a
+ * caller holding the explicit `letterhead.print` permission (owner ٣١٥): the
+ * server refuses the identity to anyone else, and the button is shown only
+ * when the server says `permissions.print`.
+ *
+ * SAVING (CODE-F37): every identity input is disabled while a save is in
+ * flight (identityInputsLocked), so the server's normalised reply can replace
+ * the fields without wiping anything typed meanwhile.
+ *
+ * Before 20261026_63 runs the API answers `available: false`: the identity is
+ * read-only with «يتطلب تحديث قاعدة البيانات», and the sheet still prints with
  * the profile's own name.
  */
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Printer, FloppyDisk, CloudArrowUp, Trash, Warning, SpinnerGap, CheckCircle, Info, ArrowClockwise } from "@phosphor-icons/react";
+import { Printer, FloppyDisk, CloudArrowUp, Trash, Warning, SpinnerGap, CheckCircle, Info, ArrowClockwise, LockSimple } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { LetterheadSheet } from "./Letterhead";
 import { useLetterhead } from "./useLetterhead";
+import { identityInputsLocked, type LetterheadSaveKind } from "./letterheadFormLock";
 import {
   BRANDING_DEFAULT_ACCENT,
   BRANDING_FIELD_LABEL_AR,
@@ -34,8 +53,7 @@ import {
   type BrandingTextField,
 } from "@/lib/branding/brandingVault";
 import { qrNoteAr } from "@/lib/branding/letterheadIdentity";
-import { describeDateLinesAr } from "@/lib/services/dualCalendar";
-import { isoDate } from "@/lib/services/deadlineEngine";
+import { LETTERHEAD_PERMISSION_DENIED_AR, type LetterheadPermissions } from "@/lib/branding/firmLetterheadPermissions";
 
 const PRINT_ROOT_ID = "nz-letterhead-print-root";
 
@@ -50,14 +68,6 @@ const PRINT_CSS = `
 }
 `;
 
-interface Letter {
-  date: string;
-  recipient: string;
-  subject: string;
-  body: string;
-  signature: string;
-}
-
 const TEXT_INPUTS: { key: BrandingTextField; ltr?: boolean; placeholder: string }[] = [
   { key: "display_name_ar", placeholder: "مكتب المحامي فهد الشمري للمحاماة والاستشارات القانونية" },
   { key: "display_name_en", ltr: true, placeholder: "Fahad Al-Shammari Law Office" },
@@ -67,60 +77,44 @@ const TEXT_INPUTS: { key: BrandingTextField; ltr?: boolean; placeholder: string 
   { key: "website", ltr: true, placeholder: "https://example.sa" },
 ];
 
-function LetterBody({ letter }: { letter: Letter }) {
-  const lines = letter.date ? describeDateLinesAr(letter.date) : null;
+type PreviewMode = "sample" | "blank";
+
+/** A faded placeholder text — on the SCREEN preview only, never printed. */
+function SampleBody() {
+  const faded = { color: "#C4C9D1" };
   return (
-    <div>
-      {lines && (
-        <div style={{ textAlign: "left", fontSize: "10pt", color: "#374151", marginBottom: "6mm" }}>
-          <div>التاريخ: {lines.gregorian}</div>
-          {lines.hijri && <div>الموافق: {lines.hijri}</div>}
-        </div>
-      )}
-      {letter.recipient && <div style={{ fontWeight: 700, marginBottom: "2mm" }}>{letter.recipient}</div>}
-      {letter.subject && (
-        <div style={{ marginBottom: "5mm" }}>
-          <span style={{ fontWeight: 700 }}>الموضوع: </span>{letter.subject}
-        </div>
-      )}
-      <div style={{ whiteSpace: "pre-wrap", textAlign: "justify", minHeight: "60mm" }}>{letter.body}</div>
-      {letter.signature && (
-        <div style={{ marginTop: "12mm", textAlign: "left" }}>
-          <div style={{ fontWeight: 700 }}>{letter.signature}</div>
-          <div style={{ marginTop: "8mm", color: "#6B7280", fontSize: "9pt" }}>التوقيع: ............................</div>
-        </div>
-      )}
+    <div style={faded} aria-label="نص نموذجي للمعاينة فقط">
+      <div style={{ textAlign: "left", fontSize: "10pt", marginBottom: "6mm" }}>التاريخ: ..../..../........</div>
+      <div style={{ fontWeight: 700, marginBottom: "2mm" }}>الجهة المرسل إليها</div>
+      <div style={{ marginBottom: "5mm" }}><span style={{ fontWeight: 700 }}>الموضوع: </span>نص نموذجي للمعاينة فقط</div>
+      <div style={{ textAlign: "justify", minHeight: "60mm" }}>
+        السلام عليكم ورحمة الله وبركاته، وبعد: هذا نص نموذجي باهت يوضح موضع متن الخطاب على الورق المروّس، ولا يُطبع.
+        يُكتب الخطاب أو المذكرة أو الرأي في أدوات المستندات بالمنصة.
+      </div>
     </div>
   );
 }
 
-export default function LetterheadWorkspace({ scope }: { scope: BrandingScope }) {
+/** The printed body: empty room under the header (the footer is fixed to the page foot). */
+function BlankBody() {
+  return <div style={{ minHeight: "200mm" }} />;
+}
+
+export default function LetterheadWorkspace({ scope, embedded = false, extra }: { scope: BrandingScope; embedded?: boolean; extra?: ReactNode }) {
   const { isDark } = useTheme();
   const { state, reload, identityFor } = useLetterhead(scope);
   const [fields, setFields] = useState<BrandingFields>(EMPTY_BRANDING_FIELDS);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
-  const [saveState, setSaveState] = useState<{ kind: "idle" | "saving" | "saved" | "error"; message?: string }>({ kind: "idle" });
+  const [saveState, setSaveState] = useState<{ kind: LetterheadSaveKind; message?: string }>({ kind: "idle" });
   const [logoState, setLogoState] = useState<{ kind: "idle" | "busy" | "error"; message?: string }>({ kind: "idle" });
-  const [letter, setLetter] = useState<Letter>({
-    date: "",
-    recipient: "",
-    subject: "",
-    body: "السلام عليكم ورحمة الله وبركاته، وبعد:\n\n",
-    signature: "",
-  });
+  const [preview, setPreview] = useState<PreviewMode>("sample");
   const [printRoot, setPrintRoot] = useState<HTMLElement | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-
-  // Today on the client only (an SSR or nginx-cached date would be stale).
-  useEffect(() => {
-    setLetter((l) => (l.date ? l : { ...l, date: isoDate(new Date()) }));
-  }, []);
 
   useEffect(() => {
     if (state.status !== "ready") return;
     setFields(state.data.fields);
     setLogoUrl(state.data.logoUrl);
-    setLetter((l) => (l.signature ? l : { ...l, signature: state.data.fields.display_name_ar || state.data.defaults.display_name_ar }));
   }, [state]);
 
   useEffect(() => {
@@ -133,6 +127,10 @@ export default function LetterheadWorkspace({ scope }: { scope: BrandingScope })
 
   const identity = useMemo(() => identityFor(fields, logoUrl), [identityFor, fields, logoUrl]);
   const available = state.status === "ready" && state.data.available;
+  // From the server (owner ٣١٥); a server without the field predates the
+  // explicit permission and only ever answered a manager.
+  const permissions: LetterheadPermissions = (state.status === "ready" && state.data.permissions) || { print: true, manage: true };
+  const locked = identityInputsLocked({ available, canManage: permissions.manage, saveKind: saveState.kind });
 
   const card = isDark ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60" : "rounded-2xl border border-slate-200 bg-white shadow-sm";
   const tp = isDark ? "text-white" : "text-slate-800";
@@ -156,6 +154,8 @@ export default function LetterheadWorkspace({ scope }: { scope: BrandingScope })
         setSaveState({ kind: "error", message: (body as { error?: string }).error ?? "تعذّر الحفظ" });
         return;
       }
+      // Safe: the inputs were locked for the whole request (CODE-F37), so the
+      // server's normalised copy is also the latest thing the user typed.
       setFields((body as { fields: BrandingFields }).fields);
       setSaveState({ kind: "saved" });
     } catch {
@@ -233,41 +233,63 @@ export default function LetterheadWorkspace({ scope }: { scope: BrandingScope })
   const data = state.data;
   const note = identity ? qrNoteAr(identity.qr) : null;
   const setField = (key: keyof BrandingFields, value: string) => {
+    if (locked) return;
     setFields((f) => ({ ...f, [key]: value }));
-    if (saveState.kind !== "saving") setSaveState({ kind: "idle" });
+    setSaveState({ kind: "idle" });
   };
+  const Heading = embedded ? "h2" : "h1";
+  const toggleBtn = (mode: PreviewMode, label: string) => (
+    <button
+      type="button"
+      onClick={() => setPreview(mode)}
+      aria-pressed={preview === mode}
+      className={`rounded-lg px-3 py-1 text-[11px] font-semibold transition-colors ${
+        preview === mode
+          ? "bg-[#0B3D2E] text-[#C8A762]"
+          : isDark ? "text-zinc-400 hover:text-white" : "text-slate-500 hover:text-slate-800"
+      }`}
+    >
+      {label}
+    </button>
+  );
 
   return (
-    <div className="mx-auto max-w-7xl space-y-5 p-5 md:p-7" dir="rtl">
+    <div className={`${embedded ? "" : "mx-auto max-w-7xl p-5 md:p-7"} space-y-5`} dir="rtl">
       <style href="nz-letterhead-print" precedence="default">{PRINT_CSS}</style>
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className={`text-xl font-bold ${tp}`}>الورق المروّس الرسمي</h1>
+          <Heading className={`${embedded ? "text-lg" : "text-xl"} font-bold ${tp}`}>الورق المروّس والهوية</Heading>
           <p className={`mt-1 text-[13px] ${ts}`}>
-            {scope === "firm" ? "هوية المكتب على خطاباته الرسمية" : "هويتك المهنية على خطاباتك الرسمية"} — مع ختم منصة نظامي ورمزها الذكي في الذيل.
+            {scope === "firm" ? "هوية المكتب على مطبوعاته الرسمية" : "هويتك المهنية على مطبوعاتك الرسمية"} — مع ختم منصة نظامي ورمزها الذكي في الذيل.
           </p>
         </div>
-        <button
-          onClick={() => window.print()}
-          disabled={!identity}
-          className="inline-flex items-center gap-2 rounded-xl bg-[#0B3D2E] px-5 py-2.5 text-[13px] font-bold text-[#C8A762] shadow-sm transition-colors hover:bg-[#0a3328] disabled:opacity-50"
-        >
-          <Printer size={16} weight="bold" /> طباعة / حفظ PDF
-        </button>
+        {permissions.print ? (
+          <button
+            onClick={() => window.print()}
+            disabled={!identity}
+            className="inline-flex items-center gap-2 rounded-xl bg-[#0B3D2E] px-5 py-2.5 text-[13px] font-bold text-[#C8A762] shadow-sm transition-colors hover:bg-[#0a3328] disabled:opacity-50"
+          >
+            <Printer size={16} weight="bold" /> طباعة الورق فارغاً / حفظ PDF
+          </button>
+        ) : (
+          <span className={`inline-flex items-center gap-1.5 text-[12px] ${ts}`}>
+            <LockSimple size={14} /> {LETTERHEAD_PERMISSION_DENIED_AR["letterhead.print"]}
+          </span>
+        )}
       </div>
 
       {!data.available && (
         <div className={`flex items-start gap-2 rounded-xl border p-3 text-[12px] ${isDark ? "border-amber-500/30 bg-amber-500/10 text-amber-300" : "border-amber-300 bg-amber-50 text-amber-800"}`}>
           <Warning size={16} className="mt-0.5 flex-shrink-0" />
-          <span>{data.message} يمكنك طباعة خطاب بالاسم من ملفك، دون حفظ الهوية أو رفع شعار.</span>
+          <span>{data.message} يمكنك طباعة الورق بالاسم من ملفك، دون حفظ الهوية أو رفع شعار.</span>
         </div>
       )}
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
         <div className="space-y-5">
           <section className={`${card} space-y-3 p-5`}>
-            <h2 className={`text-[14px] font-bold ${tp}`}>هوية الورق</h2>
+            <h3 className={`text-[14px] font-bold ${tp}`}>هوية الورق</h3>
             {TEXT_INPUTS.map(({ key, ltr, placeholder }) => (
               <div key={key}>
                 <label className={labelCls} htmlFor={`lh-${key}`}>{BRANDING_FIELD_LABEL_AR[key]}</label>
@@ -277,7 +299,7 @@ export default function LetterheadWorkspace({ scope }: { scope: BrandingScope })
                   value={fields[key]}
                   maxLength={BRANDING_TEXT_FIELDS[key]}
                   placeholder={placeholder}
-                  disabled={!available}
+                  disabled={locked}
                   onChange={(e) => setField(key, e.target.value)}
                   className={inputCls}
                 />
@@ -290,13 +312,13 @@ export default function LetterheadWorkspace({ scope }: { scope: BrandingScope })
                   id="lh-accent"
                   type="color"
                   value={/^#[0-9A-Fa-f]{6}$/.test(fields.accent_color) ? fields.accent_color : BRANDING_DEFAULT_ACCENT}
-                  disabled={!available}
+                  disabled={locked}
                   onChange={(e) => setField("accent_color", e.target.value.toUpperCase())}
                   className="h-9 w-12 cursor-pointer rounded-lg border-0 disabled:cursor-not-allowed"
                 />
                 <span dir="ltr" className={`font-mono text-[12px] ${ts}`}>{fields.accent_color}</span>
-                {fields.accent_color !== BRANDING_DEFAULT_ACCENT && available && (
-                  <button onClick={() => setField("accent_color", BRANDING_DEFAULT_ACCENT)} className={`text-[11px] underline ${ts}`}>
+                {fields.accent_color !== BRANDING_DEFAULT_ACCENT && (
+                  <button onClick={() => setField("accent_color", BRANDING_DEFAULT_ACCENT)} disabled={locked} className={`text-[11px] underline disabled:opacity-50 ${ts}`}>
                     ذهبي المنصة
                   </button>
                 )}
@@ -316,7 +338,7 @@ export default function LetterheadWorkspace({ scope }: { scope: BrandingScope })
                 <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={uploadLogo} />
                 <button
                   onClick={() => fileRef.current?.click()}
-                  disabled={!available || logoState.kind === "busy"}
+                  disabled={locked || logoState.kind === "busy"}
                   className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[12px] font-semibold disabled:opacity-50 ${isDark ? "border-white/[0.08] text-zinc-300" : "border-slate-200 text-slate-600"}`}
                 >
                   {logoState.kind === "busy" ? <SpinnerGap size={14} className="animate-spin" /> : <CloudArrowUp size={14} />}
@@ -325,7 +347,7 @@ export default function LetterheadWorkspace({ scope }: { scope: BrandingScope })
                 {logoUrl && (
                   <button
                     onClick={() => void removeLogo()}
-                    disabled={!available || logoState.kind === "busy"}
+                    disabled={locked || logoState.kind === "busy"}
                     className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-semibold text-red-500 disabled:opacity-50"
                   >
                     <Trash size={14} /> حذف
@@ -336,58 +358,48 @@ export default function LetterheadWorkspace({ scope }: { scope: BrandingScope })
               {logoState.kind === "error" && <p className="mt-1 text-[11px] text-red-500">{logoState.message}</p>}
             </div>
 
-            <div className="flex items-center gap-3 pt-1">
-              <button
-                onClick={() => void save()}
-                disabled={!available || saveState.kind === "saving"}
-                className="inline-flex items-center gap-2 rounded-xl bg-[#0B3D2E] px-4 py-2 text-[12px] font-bold text-[#C8A762] disabled:opacity-50"
-              >
-                {saveState.kind === "saving" ? <SpinnerGap size={14} className="animate-spin" /> : <FloppyDisk size={14} />}
-                حفظ الهوية
-              </button>
-              {saveState.kind === "saved" && <span className="inline-flex items-center gap-1 text-[12px] text-emerald-500"><CheckCircle size={14} weight="fill" /> حُفظت</span>}
-              {saveState.kind === "error" && <span className="text-[12px] text-red-500">{saveState.message}</span>}
-            </div>
+            {permissions.manage && (
+              <div className="flex items-center gap-3 pt-1">
+                <button
+                  onClick={() => void save()}
+                  disabled={locked}
+                  className="inline-flex items-center gap-2 rounded-xl bg-[#0B3D2E] px-4 py-2 text-[12px] font-bold text-[#C8A762] disabled:opacity-50"
+                >
+                  {saveState.kind === "saving" ? <SpinnerGap size={14} className="animate-spin" /> : <FloppyDisk size={14} />}
+                  {saveState.kind === "saving" ? "جارٍ الحفظ…" : "حفظ الهوية"}
+                </button>
+                {saveState.kind === "saved" && <span className="inline-flex items-center gap-1 text-[12px] text-emerald-500"><CheckCircle size={14} weight="fill" /> حُفظت</span>}
+                {saveState.kind === "error" && <span className="text-[12px] text-red-500">{saveState.message}</span>}
+              </div>
+            )}
             {scope === "firm" && (
-              <p className={`text-[11px] ${ts}`}>يدير هوية المكتب مالكه والشريك المدير ومدير المكتب.</p>
+              <p className={`text-[11px] ${ts}`}>يدير هوية المكتب ويطبع ورقه المروّس مالكه والشريك المدير ومدير المكتب فقط.</p>
             )}
           </section>
 
-          <section className={`${card} space-y-3 p-5`}>
-            <h2 className={`text-[14px] font-bold ${tp}`}>الخطاب</h2>
-            <div>
-              <label className={labelCls} htmlFor="lh-date">التاريخ</label>
-              <input id="lh-date" type="date" value={letter.date} onChange={(e) => setLetter({ ...letter, date: e.target.value })} className={inputCls} />
-              {letter.date && describeDateLinesAr(letter.date)?.hijri && (
-                <p className={`mt-1 text-[11px] ${ts}`}>الموافق {describeDateLinesAr(letter.date)?.hijri}</p>
-              )}
-            </div>
-            <div>
-              <label className={labelCls} htmlFor="lh-to">إلى</label>
-              <input id="lh-to" value={letter.recipient} placeholder="أصحاب الفضيلة / الجهة المرسل إليها" onChange={(e) => setLetter({ ...letter, recipient: e.target.value })} className={inputCls} />
-            </div>
-            <div>
-              <label className={labelCls} htmlFor="lh-subject">الموضوع</label>
-              <input id="lh-subject" value={letter.subject} onChange={(e) => setLetter({ ...letter, subject: e.target.value })} className={inputCls} />
-            </div>
-            <div>
-              <label className={labelCls} htmlFor="lh-body">نص الخطاب</label>
-              <textarea id="lh-body" rows={10} value={letter.body} onChange={(e) => setLetter({ ...letter, body: e.target.value })} className={`${inputCls} leading-7`} />
-            </div>
-            <div>
-              <label className={labelCls} htmlFor="lh-sign">التوقيع (الاسم)</label>
-              <input id="lh-sign" value={letter.signature} onChange={(e) => setLetter({ ...letter, signature: e.target.value })} className={inputCls} />
-            </div>
-            <p className={`text-[11px] ${ts}`}>لا يُحفظ نص الخطاب على المنصة؛ اطبعه أو احفظه PDF من نافذة الطباعة.</p>
+          {extra}
+
+          <section className={`${card} space-y-2 p-5`}>
+            <h3 className={`text-[14px] font-bold ${tp}`}>أين أكتب الخطاب؟</h3>
+            <p className={`text-[12px] leading-6 ${ts}`}>
+              هذه الصفحة لإعداد الهوية وطباعة الورق المروّس فارغاً فقط. تُكتب الخطابات والمذكرات والآراء في أدوات المستندات بالمنصة؛
+              ولا تطبّق تلك الأدوات هذه الهوية تلقائياً بعد — اطبع الورق فارغاً هنا أو استعمل قالبك المرفوع إلى أن يُفعَّل الربط.
+            </p>
           </section>
         </div>
 
         <div className="min-w-0 space-y-2">
-          <p className={`text-[12px] font-semibold ${ts}`}>معاينة (A4)</p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className={`text-[12px] font-semibold ${ts}`}>معاينة (A4)</p>
+            <div className={`inline-flex items-center gap-1 rounded-xl p-1 ${isDark ? "bg-zinc-800/60" : "bg-slate-100"}`} role="group" aria-label="نوع المعاينة">
+              {toggleBtn("sample", "بنص نموذجي باهت")}
+              {toggleBtn("blank", "ورقة فارغة")}
+            </div>
+          </div>
           <div className={`overflow-x-auto rounded-2xl p-3 ${isDark ? "bg-zinc-800/60" : "bg-slate-100"}`}>
             {identity && (
               <LetterheadSheet identity={identity} style={{ width: "210mm", minHeight: "297mm", margin: "0 auto", padding: "14mm 16mm 12mm", boxShadow: "0 4px 24px rgba(0,0,0,0.12)" }}>
-                <LetterBody letter={letter} />
+                {preview === "sample" ? <SampleBody /> : <BlankBody />}
               </LetterheadSheet>
             )}
           </div>
@@ -399,9 +411,9 @@ export default function LetterheadWorkspace({ scope }: { scope: BrandingScope })
         </div>
       </div>
 
-      {printRoot && identity && createPortal(
+      {printRoot && identity && permissions.print && createPortal(
         <LetterheadSheet identity={identity}>
-          <LetterBody letter={letter} />
+          <BlankBody />
         </LetterheadSheet>,
         printRoot,
       )}
