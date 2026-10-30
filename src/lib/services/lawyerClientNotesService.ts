@@ -24,6 +24,8 @@ export interface LawyerClientNote {
   body: string;
   createdAt: string;
   updatedAt: string;
+  /** CODE-F36: set on an archived note (migration 20261030_30); null/absent on a live one. */
+  archivedAt?: string | null;
 }
 
 const base = (clientId: string) => `/api/v1/lawyer/clients/${encodeURIComponent(clientId)}/notes`;
@@ -46,7 +48,37 @@ export async function addClientNote(clientId: string, input: { body: string; vis
   return res.data;
 }
 
-export async function deleteClientNote(clientId: string, noteId: string): Promise<void> {
+/**
+ * CODE-F36: «حذف» archives — the row stays and can be restored. Resolves with
+ * the archived note as the server holds it. Before migration 20261030_30 the
+ * server answers 503 and this throws its message; nothing is deleted.
+ */
+export async function archiveClientNote(clientId: string, noteId: string): Promise<LawyerClientNote> {
   if (!isSupabaseMode) throw new Error("الملاحظات غير متاحة في وضع العرض التجريبي");
-  await apiMutate<void>(`${base(clientId)}/${encodeURIComponent(noteId)}`, "DELETE");
+  const res = await apiMutate<{ data: LawyerClientNote }>(`${base(clientId)}/${encodeURIComponent(noteId)}`, "DELETE");
+  if (!res?.data) throw new Error("لم يُعِد الخادم الملاحظة المؤرشفة.");
+  return res.data;
+}
+
+/** CODE-F36: undo / restore an archived note (the author's own). */
+export async function restoreClientNote(clientId: string, noteId: string): Promise<LawyerClientNote> {
+  if (!isSupabaseMode) throw new Error("الملاحظات غير متاحة في وضع العرض التجريبي");
+  const res = await apiMutate<{ data: LawyerClientNote }>(`${base(clientId)}/${encodeURIComponent(noteId)}`, "PATCH", { action: "restore" });
+  if (!res?.data) throw new Error("لم يُعِد الخادم الملاحظة المستعادة.");
+  return res.data;
+}
+
+/**
+ * CODE-F36: the caller's own archived notes on this card. `available: false`
+ * means migration 20261030_30 has not run — nothing can be archived yet.
+ */
+export async function getArchivedClientNotes(clientId: string): Promise<{ read: ListRead<LawyerClientNote>; available: boolean }> {
+  if (!isSupabaseMode) return { read: listOk([]), available: false };
+  try {
+    const body = await apiGet<{ data: LawyerClientNote[]; total?: number; archiveAvailable?: boolean }>(base(clientId), { archived: 1 });
+    return { read: listFromApi(body), available: body.archiveAvailable !== false };
+  } catch (error) {
+    console.error("[lawyerClientNotesService] getArchivedClientNotes failed:", error);
+    return { read: listFailed<LawyerClientNote>(), available: true };
+  }
 }

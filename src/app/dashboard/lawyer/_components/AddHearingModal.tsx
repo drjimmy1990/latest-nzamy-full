@@ -1,11 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle, XCircle } from "@phosphor-icons/react";
-import { createWorkflowRequest } from "@/lib/services/workflowService";
-import { isSupabaseMode } from "@/lib/services/api";
+import { CheckCircle, LinkBreak, Scales } from "@phosphor-icons/react";
+import { createWorkflowRequest, getWorkflowRequestsByReceiver } from "@/lib/services/workflowService";
+import { apiGet, isSupabaseMode } from "@/lib/services/api";
 import { createLawyerHearing } from "@/lib/services/lawyerHearingsService";
+import type { WorkflowRequest } from "@/lib/workflowStore";
+import ModalShell from "@/components/ui/ModalShell";
+import { isLawyerCaseRow } from "../cases/_caseListRules";
 import { createWorkflowId } from "@/lib/workflowStore";
 import type { UserType, UserTier } from "@/hooks/useUser";
 import { describeDateAr, toArabicDigits } from "@/lib/services/hijri";
@@ -29,7 +32,10 @@ interface Props {
    * in that mode since the case is already known, not asked for twice.
    */
   caseRequestId?: string;
-  /** Prefills the case-name field for the general diary (unlinked) flow. */
+  /**
+   * The case title, when opened from a case file — display only (CODE-F17):
+   * the server stamps the linked case's own title, never this text.
+   */
   defaultCaseName?: string;
   /**
    * Prefills the date field, e.g. when opened by double-clicking a day on the
@@ -49,15 +55,47 @@ const TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "internal",     label: "أخرى" },
 ];
 
+/** A case the general add can link to — the same rows /dashboard/lawyer/cases lists. */
+export interface LinkableCase { id: string; title: string; client: string }
+
+/**
+ * CODE-F17 / LIVE-F28: the cases the general add may link a hearing to.
+ * Same source and same `isLawyerCaseRow` rule as the case list, so the picker
+ * cannot offer a task, a CRM client or an invoice as a «case». Cancelled cases
+ * are left out; a completed one stays (an enforcement sitting can follow a
+ * judgment).
+ */
+export async function loadLinkableCases(): Promise<LinkableCase[]> {
+  const rows = isSupabaseMode
+    ? (await apiGet<{ data?: WorkflowRequest[]; degraded?: boolean }>("/api/v1/service-requests", { receiver: "lawyer", limit: 200 }))
+    : { data: await getWorkflowRequestsByReceiver("lawyer"), degraded: false };
+  // The route answers a failed query with 200 + degraded — a failure, not «no cases».
+  if (rows.degraded) throw new Error("degraded");
+  return (rows.data ?? [])
+    .filter(isLawyerCaseRow)
+    .filter(r => r.status !== "cancelled")
+    .map(r => ({ id: r.id, title: r.title || "قضية بدون عنوان", client: r.requester?.name || "" }));
+}
+
 export default function AddHearingModal({ onClose, isDark, user, caseRequestId, defaultCaseName, initialDate }: Props) {
   const [step, setStep] = useState<1 | 2>(1);
   const [done, setDone] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // What the SERVER stored — the success screen reads this, not the form.
+  const [saved, setSaved] = useState<{ date: string; linked: boolean; caseName?: string } | null>(null);
+  const typeRef = useRef<HTMLSelectElement | null>(null);
 
   // Controlled inputs
   const [type, setType] = useState("");
-  const [caseName, setCaseName] = useState(defaultCaseName ?? "");
+  // CODE-F17: in the general add this is a LABEL for an appointment that has
+  // no case (a first meeting, a government review). It never links anything.
+  const [caseName, setCaseName] = useState("");
+  // CODE-F17: the link itself, by id. Fixed to `caseRequestId` from a case file.
+  const [linkedCaseId, setLinkedCaseId] = useState("");
+  const [cases, setCases] = useState<LinkableCase[] | null>(null);
+  const [casesState, setCasesState] = useState<"idle" | "loading" | "error" | "ready">(caseRequestId ? "idle" : "loading");
+  const [caseQuery, setCaseQuery] = useState("");
   const [date, setDate] = useState(initialDate ?? "");
   const [time, setTime] = useState("");
   const [notes, setNotes] = useState("");
@@ -83,6 +121,28 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
   // before switching to «موعد طعن / نهائي» is not saved on it.
   const showDuration = type !== "deadline";
   const effectiveDuration = showDuration && duration ? Number(duration) : null;
+
+  const fetchCases = () =>
+    loadLinkableCases()
+      .then(list => { setCases(list); setCasesState("ready"); })
+      .catch(err => { console.error("[AddHearingModal] cases load failed:", err); setCasesState("error"); });
+  // The retry button: back to «loading», then read again.
+  const loadCases = () => { setCasesState("loading"); void fetchCases(); };
+  // First read: the state already starts at «loading» in the general add.
+  useEffect(() => { if (!caseRequestId) void fetchCases(); }, [caseRequestId]);
+
+  const selectedCase = cases?.find(c => c.id === linkedCaseId) ?? null;
+  const visibleCases = (cases ?? []).filter(c => {
+    const q = caseQuery.trim();
+    return !q || c.title.includes(q) || c.client.includes(q) || c.id === linkedCaseId;
+  });
+
+  // LIVE-F29: ask before discarding typed input — anything that differs from
+  // what the dialog opened with.
+  const dirty = !done && (
+    type !== "" || caseName.trim() !== "" || linkedCaseId !== "" || date !== (initialDate ?? "") ||
+    time !== "" || notes.trim() !== "" || location.trim() !== "" || duration !== "" || urgency !== "normal"
+  );
 
   const inputCls = `w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none ${
     isDark
@@ -126,7 +186,13 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
       // «جلسة — قضية الأفق» and read as a court sitting everywhere a title is
       // shown, while the type beneath it still said deadline. typeLabel is
       // the label the lawyer actually chose, already in hand one line up.
-      const title = caseName.trim() ? typeLabel + " — " + caseName.trim() : typeLabel;
+      // CODE-F17: a linked hearing is named after its case; an unlinked one
+      // after its label. Display only — the link is `caseRequestId`.
+      const linkId = caseRequestId ?? (linkedCaseId || undefined);
+      const shownName = caseRequestId
+        ? (defaultCaseName ?? "").trim()
+        : selectedCase ? selectedCase.title : caseName.trim();
+      const title = shownName ? typeLabel + " — " + shownName : typeLabel;
 
       // Phase 1: hearings live in their own table now (public.hearings), not
       // a metadata-flagged service_requests row. NOT createWorkflowRequest()
@@ -140,7 +206,13 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
       // Demo mode still uses the old local-store path below: there it is the
       // real backend and genuinely round-trips. The lie was supabase-only.
       if (isSupabaseMode) {
-        await createLawyerHearing({ type, date, time, caseName, caseRequestId, urgency, location: effectiveLocation, notes, title, durationMinutes: effectiveDuration });
+        // The free-text label travels only when no case is linked; the server
+        // ignores it for a linked row anyway and stores the case's own title.
+        const created = await createLawyerHearing({
+          type, date, time, caseName: linkId ? undefined : caseName, caseRequestId: linkId, urgency,
+          location: effectiveLocation, notes, title, durationMinutes: effectiveDuration,
+        });
+        setSaved({ date: created.date, linked: !!created.caseRequestId, caseName: created.caseName });
       } else {
         const id = createWorkflowId();
         await createWorkflowRequest({
@@ -158,9 +230,10 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
           },
           payment: { amount: 0, status: "not_required" as const },
           sourcePath: "",
-          metadata: { hearing: true, date, time, type, urgency, location: effectiveLocation, notes, caseName, durationMinutes: effectiveDuration },
+          metadata: { hearing: true, date, time, type, urgency, location: effectiveLocation, notes, caseName: shownName, durationMinutes: effectiveDuration },
           assignedTo: user.userId,
         });
+        setSaved({ date, linked: false, caseName: shownName || undefined });
       }
       setDone(true);
       window.dispatchEvent(new CustomEvent("nzamy-workflow-updated"));
@@ -176,34 +249,36 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
     }
   }
 
+  // LIVE-F29 / CODE-F34: the shared dialog frame — role="dialog", aria-modal,
+  // a named close button, Escape from any field, Tab kept inside, focus back
+  // to the opener; no exit while `saving`, a question first while `dirty`.
+  // `z-[60]` stays explicit: it is the lowest overlay layer, the FAB sits under it.
   return (
-    <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    <ModalShell
+      title="إضافة موعد / جلسة جديدة"
+      onClose={onClose}
+      isDark={isDark}
+      busy={saving}
+      dirty={dirty}
+      zIndexClass="z-[60]"
+      initialFocusRef={typeRef}
     >
-      <motion.div
-        initial={{ scale: 0.95, opacity: 0, y: 10 }}
-        animate={{ scale: 1, opacity: 1, y: 0 }}
-        exit={{ scale: 0.95, opacity: 0, y: -10 }}
-        className={`w-full max-w-md max-h-[85dvh] overflow-y-auto overscroll-contain rounded-3xl p-6 shadow-2xl ${isDark ? "bg-zinc-900 border border-white/[0.08]" : "bg-white border border-slate-200"}`}
-        dir="rtl"
-      >
-        <div className="flex items-center justify-between mb-5">
-          <h3 className={`text-[16px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>إضافة موعد / جلسة جديدة</h3>
-          <button onClick={onClose} className={`flex h-7 w-7 items-center justify-center rounded-full ${isDark ? "bg-white/[0.12] text-zinc-200 hover:text-white" : "bg-zinc-200 text-zinc-700 hover:text-black"}`}>
-            <XCircle size={16} />
-          </button>
-        </div>
-
         {done ? (
-          <div className="text-center py-6">
+          <div className="text-center py-6" role="status">
             <div className="h-14 w-14 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mx-auto mb-3">
               <CheckCircle size={28} weight="fill" className="text-emerald-500" />
             </div>
-            <p className={`font-bold text-[16px] flex-col ${isDark ? "text-white" : "text-zinc-900"}`}>تم إضافة الموعد بنجاح!</p>
-            <p className={`text-[12px] mt-1 mb-4 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-              تم حفظ الموعد في جدول أعمالك. يمكنك إضافته إلى تقويم Google يدوياً من بطاقة الموعد.
+            <p className={`font-bold text-[16px] flex-col ${isDark ? "text-white" : "text-zinc-900"}`}>تم حفظ الموعد</p>
+            {/* What the SERVER stored — its date and whether it is linked — not
+                what the form held. «مرتبط» is said only for a row that came
+                back with a case id. */}
+            <p className={`text-[12px] mt-1 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+              {saved && describeDateAr(saved.date) ? describeDateAr(saved.date) : "تم حفظ الموعد في جدول أعمالك."}
+            </p>
+            <p className={`text-[12px] mt-1 mb-4 font-semibold ${saved?.linked ? (isDark ? "text-emerald-400" : "text-emerald-700") : (isDark ? "text-amber-400" : "text-amber-700")}`}>
+              {saved?.linked
+                ? `مرتبط بالقضية «${saved.caseName ?? ""}» — يظهر في ملفها.`
+                : "غير مرتبط بأي قضية — يظهر في جدول المواعيد فقط."}
             </p>
             <button onClick={onClose} className="rounded-xl px-5 py-2.5 w-full text-[13px] font-bold bg-[#0B3D2E] text-white hover:bg-[#0B3D2E]/90 transition">
               إغلاق
@@ -238,23 +313,65 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
               {step === 1 && (
                 <motion.div key="step1" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="space-y-4">
                   <div>
-                    <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>نوع الموعد</label>
-                    <select value={type} onChange={e => setType(e.target.value)} className={inputCls}>
+                    <label htmlFor="add-hearing-type" className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>نوع الموعد</label>
+                    <select id="add-hearing-type" ref={typeRef} value={type} onChange={e => setType(e.target.value)} className={inputCls}>
                       {/* Was «اختر التصنيف...» under a label reading «نوع الموعد» —
                           two different words for one field, in one control. */}
                       <option value="" disabled>اختر نوع الموعد...</option>
                       {TYPE_OPTIONS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                     </select>
                   </div>
-                  {/* Hidden when opened from a case file: `caseRequestId` already
-                      names the case, so asking for its name again in free text
-                      would let the two disagree. The general diary (no case in
-                      context) keeps the free-text field — an appointment can
-                      exist before it belongs to a case. */}
-                  {!caseRequestId && (
-                    <div>
-                      <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>القضية / الموكل (اختياري)</label>
-                      <input type="text" value={caseName} onChange={e => setCaseName(e.target.value)} placeholder="مثال: قضية الأفق" className={inputCls} />
+                  {/* From a case file the case is fixed (`caseRequestId`) and
+                      shown, not asked for. In the general add, CODE-F17 /
+                      LIVE-F28: the old free-text «القضية / الموكل» box saved a
+                      typed case title as plain text — a hearing that showed in
+                      the archive and never in the case file. The link is now
+                      PICKED, by id, from the lawyer's own cases; the text box
+                      is a label for an appointment that has no case, and says
+                      so. */}
+                  {caseRequestId ? (
+                    <div className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-[12px] ${isDark ? "border-emerald-700/30 bg-emerald-900/10 text-emerald-300" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}>
+                      <Scales size={13} aria-hidden="true" />
+                      <span className="truncate">القضية: {defaultCaseName || "هذه القضية"}</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div>
+                        <label htmlFor="add-hearing-case" className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>ربط بقضية (اختياري)</label>
+                        {casesState === "ready" && (cases?.length ?? 0) > 8 && (
+                          <input type="search" value={caseQuery} onChange={e => setCaseQuery(e.target.value)}
+                            aria-label="ابحث في قضاياك" placeholder="ابحث باسم القضية أو الموكل..." className={`${inputCls} mb-1.5`} />
+                        )}
+                        <select id="add-hearing-case" value={linkedCaseId} onChange={e => setLinkedCaseId(e.target.value)}
+                          disabled={casesState !== "ready"} className={`${inputCls} disabled:opacity-60`}>
+                          <option value="">
+                            {casesState === "loading" ? "جارٍ تحميل قضاياك…"
+                              : casesState === "error" ? "تعذّر تحميل قضاياك"
+                              : (cases?.length ?? 0) === 0 ? "لا توجد لديك قضايا — موعد غير مرتبط"
+                              : "— موعد غير مرتبط بقضية —"}
+                          </option>
+                          {visibleCases.map(c => (
+                            <option key={c.id} value={c.id}>{c.client ? `${c.title} — ${c.client}` : c.title}</option>
+                          ))}
+                        </select>
+                        {casesState === "error" && (
+                          <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+                            تعذّر تحميل قائمة قضاياك، فلا يمكن الربط الآن.{" "}
+                            <button type="button" onClick={loadCases} className="font-bold underline">إعادة المحاولة</button>
+                          </p>
+                        )}
+                      </div>
+                      {!linkedCaseId && (
+                        <div>
+                          <label htmlFor="add-hearing-label" className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>وصف الموعد (اختياري)</label>
+                          <input id="add-hearing-label" type="text" value={caseName} onChange={e => setCaseName(e.target.value)}
+                            aria-describedby="add-hearing-label-note" placeholder="مثال: اجتماع أولي مع موكل جديد" className={inputCls} />
+                          <p id="add-hearing-label-note" className={`mt-1 flex items-center gap-1 text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
+                            <LinkBreak size={11} aria-hidden="true" />
+                            نص للعرض فقط — لا يربط الموعد بأي قضية. للربط اختر القضية من القائمة أعلاه.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   )}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -373,7 +490,6 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
             </AnimatePresence>
           </div>
         )}
-      </motion.div>
-    </motion.div>
+    </ModalShell>
   );
 }

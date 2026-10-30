@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, CalendarBlank, ArrowsLeftRight, SunDim, CaretLeft, CaretRight } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { useRiyadhToday } from "@/hooks/useRiyadhToday";
 import {
   hijriPartsOf,
   gregorianFromHijri,
@@ -84,8 +85,21 @@ export default function HijriDateWidget() {
   // bad shots are each wrong in one field rather than both.
   //
   // With null, the server emits no date at all, so there is nothing to cache
-  // wrong; the browser fills it in on mount from the browser's own clock.
-  const [now, setNow] = useState<Date | null>(null);
+  // wrong; the browser fills it in on mount.
+  //
+  // LIVE-F38 (owner live test 2026-10-30): filled from the DEVICE clock, the
+  // pill said 29 October on a Cairo-zoned laptop at 00:00 Riyadh while the
+  // date picker's «اليوم» said 30 October and the tasks filter dropped a
+  // 30-October task. All three now read Riyadh's day from one source
+  // (useRiyadhToday), which re-reads itself at Riyadh midnight and when the
+  // window regains focus. `now` is that day at LOCAL midnight — the shape
+  // hijriPartsOf and the month grid below expect — not an instant.
+  const riyadhDay = useRiyadhToday();
+  const now = useMemo<Date | null>(() => {
+    if (!riyadhDay) return null;
+    const [y, m, d] = riyadhDay.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  }, [riyadhDay]);
   const [viewDate, setViewDate] = useState<Date | null>(null);
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
 
@@ -96,11 +110,8 @@ export default function HijriDateWidget() {
   const [result,setResult]=useState<string|null>(null);
 
   useEffect(()=>{
-    setNow(new Date());
-    setViewDate(new Date());
-    const t=setInterval(()=>setNow(new Date()),60_000);
-    return()=>clearInterval(t);
-  },[]);
+    if(now) setViewDate(v=>v ?? new Date(now.getFullYear(), now.getMonth(), 1));
+  },[now]);
 
   const hijriToday = now ? hijriPartsOf(now) : null;
   const dayName = now ? DAYS_FULL[now.getDay()] : "";

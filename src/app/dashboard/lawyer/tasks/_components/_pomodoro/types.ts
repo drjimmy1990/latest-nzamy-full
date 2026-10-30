@@ -17,6 +17,8 @@ export interface PomodoroSession {
   mode:        PomodoroMode;
   startedAt:   string;  // ISO string (serializable)
   endedAt:     string;
+  /** public.tasks id the period was spent on (CODE-F09: linked by id, not by title). */
+  taskId?:     string | null;
   taskTitle?:  string;
   completed:   boolean;
   durationMin: number;

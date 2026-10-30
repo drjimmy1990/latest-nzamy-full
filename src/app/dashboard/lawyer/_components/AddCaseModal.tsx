@@ -1,13 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useId, useRef } from "react";
 import { motion } from "framer-motion";
-import { CheckCircle, XCircle } from "@phosphor-icons/react";
+import { CheckCircle, ArrowClockwise } from "@phosphor-icons/react";
+import ModalShell from "@/components/ui/ModalShell";
 import { createWorkflowRequest } from "@/lib/services/workflowService";
 import { apiMutate, isSupabaseMode } from "@/lib/services/api";
-import { createWorkflowId } from "@/lib/workflowStore";
+import { createWorkflowId, type WorkflowRequest } from "@/lib/workflowStore";
 import { createLawyerClient, getLawyerClients, type ClientType, type LawyerClient } from "@/lib/services/lawyerClientsService";
 import type { UserType, UserTier } from "@/hooks/useUser";
+import { COURT_CHOICES, COURT_OTHER, COURT_OTHER_LABEL, resolveCourt } from "./courtTypes";
+import { caseSavedStatusLine, cardNamed, isAddCaseDirty } from "./addCaseForm";
 
 interface Props {
   onClose: () => void;
@@ -35,12 +38,17 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
   const [done, setDone] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // CODE-F19: the status the server actually saved, for the success screen.
+  const [savedStatus, setSavedStatus] = useState<string | null>(null);
+  const fieldId = useId();
 
   // Controlled inputs
   const [clientName, setClientName] = useState("");
   const [title, setTitle] = useState("");
-  const [court, setCourt] = useState("المحكمة التجارية");
-  const [assignee, setAssignee] = useState("أنا فقط");
+  // CODE-F30: no court until the lawyer picks one — it used to start on
+  // «المحكمة التجارية», so an untouched field filed every case as commercial.
+  const [courtChoice, setCourtChoice] = useState("");
+  const [courtOther, setCourtOther] = useState("");
   const [priority, setPriority] = useState<Priority>("normal");
   const [description, setDescription] = useState("");
 
@@ -65,38 +73,61 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
   // rather than letting a new row appear in «الموكّلون» unannounced.
   const [createdCardName, setCreatedCardName] = useState<string | null>(null);
 
+  // CODE-F30: a failed read used to make the picker vanish without a word, and
+  // the lawyer then typed a name that silently became a second card. The read
+  // is a callback now so the error line can offer «إعادة المحاولة».
+  const mountedRef = useRef(true);
+  // LAW-DETAIL-005: ONE id for this case, made once per modal and reused by
+  // every retry. A save whose answer was lost and is pressed again then names
+  // the same row, which the route answers with the case already saved
+  // (`replayed`) instead of creating a second one.
+  const caseIdRef = useRef<string | null>(null);
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const read = await getLawyerClients();
-      if (cancelled) return;
-      if (!read.ok) {
-        setClientsUnreadable(true);
-        setClientsLoading(false);
-        return;
-      }
-      setClientCards(read.items.filter((c) => c.source === "card"));
-      setClientsLoading(false);
-    })();
-    return () => { cancelled = true; };
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
   }, []);
+  const loadClients = useCallback(async () => {
+    setClientsLoading(true);
+    setClientsUnreadable(false);
+    const read = await getLawyerClients();
+    if (!mountedRef.current) return;
+    if (!read.ok) {
+      setClientsUnreadable(true);
+      setClientsLoading(false);
+      return;
+    }
+    setClientCards(read.items.filter((c) => c.source === "card"));
+    setClientsLoading(false);
+  }, []);
+  useEffect(() => { void loadClients(); }, [loadClients]);
 
   function handleClientPick(id: string) {
     setSelectedClientId(id);
     const picked = clientCards.find((c) => c.id === id);
-    if (picked) setClientName(picked.name);
+    // «موكّل جديد» clears the picked card's name too — leaving it would make a
+    // second card with the same name on save.
+    setClientName(picked ? picked.name : "");
   }
+
+  const courtResolved = resolveCourt(courtChoice, courtOther);
+  const matchingCard = selectedClientId ? null : cardNamed(clientCards, clientName);
+  const dirty = !done && isAddCaseDirty({
+    selectedClientId, clientName, title, courtChoice, courtOther, priority, description,
+  });
 
   const inputCls = `w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none ${
     isDark
       ? "border-white/[0.08] bg-zinc-800 text-zinc-200"
       : "border-zinc-200 bg-zinc-50 text-zinc-800"
   }`;
+  const labelCls = `block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`;
+  const hintCls = `text-[11px] mt-1.5 ${isDark ? "text-zinc-500" : "text-zinc-500"}`;
 
   const priorityBtn = (key: Priority, label: string, activeCls: string) => (
     <button
       type="button"
       onClick={() => setPriority(key)}
+      aria-pressed={priority === key}
       className={`rounded-xl border py-2 text-[12px] font-bold transition-all ${priority === key ? activeCls : isDark ? "border-white/[0.08] bg-zinc-800 text-zinc-500" : "border-slate-200 bg-slate-50 text-slate-500"}`}
     >
       {label}
@@ -104,7 +135,10 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
   );
 
   /** True when step 1 is answerable — the same rule «التالي» and Save both use. */
-  const step1Complete = Boolean(clientName.trim()) && Boolean(title.trim());
+  const step1Complete = Boolean(clientName.trim()) && Boolean(title.trim()) && courtResolved.ok;
+  const step1Hint = !clientName.trim() || !title.trim()
+    ? "أدخل اسم الموكل وعنوان القضية للمتابعة"
+    : !courtResolved.ok ? courtResolved.error : undefined;
 
   async function handleSave() {
     // See the `user` prop doc: an unowned row is a lost case AND a row other
@@ -121,6 +155,11 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
     const titleTrimmed = title.trim();
     if (!clientNameTrimmed || !titleTrimmed) {
       setError("يرجى إدخال اسم الموكل وعنوان القضية قبل الحفظ.");
+      setStep(1);
+      return;
+    }
+    if (!courtResolved.ok) {
+      setError(courtResolved.error);
       setStep(1);
       return;
     }
@@ -157,14 +196,19 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
         }
       }
 
-      const id = createWorkflowId();
+      if (!caseIdRef.current) caseIdRef.current = createWorkflowId();
+      const id = caseIdRef.current;
       const payload = {
         id,
         type: "service" as const,
         title: titleTrimmed,
         description: description.trim(),
         receiver: "lawyer" as const,
-        status: "pending_assignment" as const,
+        // LIVE-F14 / LAW-DETAIL-006: the lawyer's own case is his from birth
+        // — «نشطة», counted in «القضايا النشطة». The route accepts `assigned`
+        // only for a self-assigned lawyer/firm case and answers with the
+        // status it actually saved, which the success screen prints.
+        status: "assigned" as const,
         requester: {
           userId: user.userId,
           // The موكل's own name, and now always one that a `lawyer_clients`
@@ -176,7 +220,10 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
         },
         payment: { amount: 0, status: "not_required" as const },
         sourcePath: "",
-        metadata: { court, priority, assignee },
+        // CODE-F19: no `assignee` — the «فريق العمل» choice it carried was read
+        // by nothing; the case is the current user's (`assignedTo` below).
+        // CODE-F30: no court chosen = no court saved, not a guessed one.
+        metadata: { ...(courtResolved.court ? { court: courtResolved.court } : {}), priority },
         assignedTo: user.userId,
         ...(lawyerClientId ? { lawyerClientId } : {}),
       };
@@ -188,11 +235,10 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
       // over a case that reached no database. Go straight to the API in supabase
       // mode so a non-2xx throws; demo mode keeps the local store, which there
       // is the real backend and genuinely reads back.
-      if (isSupabaseMode) {
-        await apiMutate("/api/v1/service-requests", "POST", payload);
-      } else {
-        await createWorkflowRequest(payload);
-      }
+      const saved: WorkflowRequest | undefined = isSupabaseMode
+        ? (await apiMutate<{ data?: WorkflowRequest }>("/api/v1/service-requests", "POST", payload))?.data
+        : await createWorkflowRequest(payload);
+      setSavedStatus(saved?.status ?? null);
       setDone(true);
       window.dispatchEvent(new CustomEvent("nzamy-workflow-updated"));
     } catch (err) {
@@ -207,25 +253,11 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
     }
   }
 
+  // CODE-F34: the shell blocks every exit while `saving` and asks first when
+  // the draft holds anything — this form used to close mid-save on a backdrop
+  // click and lose a typed case without a word.
   return (
-    <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <motion.div
-        initial={{ scale: 0.95, opacity: 0, y: 10 }}
-        animate={{ scale: 1, opacity: 1, y: 0 }}
-        exit={{ scale: 0.95, opacity: 0, y: -10 }}
-        className={`w-full max-w-md max-h-[85dvh] overflow-y-auto overscroll-contain rounded-3xl p-6 shadow-2xl ${isDark ? "bg-zinc-900 border border-white/[0.08]" : "bg-white border border-slate-200"}`}
-      >
-        <div className="flex items-center justify-between mb-5">
-          <h3 className={`text-[16px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>إضافة قضية جديدة</h3>
-          <button onClick={onClose} className={`flex h-7 w-7 items-center justify-center rounded-full ${isDark ? "bg-white/[0.07] text-zinc-400" : "bg-zinc-100 text-zinc-500"}`}>
-            <XCircle size={16} />
-          </button>
-        </div>
-
+    <ModalShell title="إضافة قضية جديدة" onClose={onClose} isDark={isDark} busy={saving} dirty={dirty}>
         {done ? (
           <div className="text-center py-6">
             <div className="h-14 w-14 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mx-auto mb-3">
@@ -233,24 +265,37 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
             </div>
             <p className={`font-bold text-[16px] ${isDark ? "text-white" : "text-zinc-900"}`}>تم إضافة القضية بنجاح!</p>
             <p className={`text-[12px] mt-1 mb-4 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-              تم إدراجها في قائمة قضاياك النشطة.
+              {caseSavedStatusLine(savedStatus)}
               {createdCardName && ` وأُنشئت بطاقة موكّل باسم «${createdCardName}» وربطت بها القضية.`}
             </p>
-            <button onClick={onClose} className="rounded-xl px-5 py-2 text-[13px] font-bold bg-[#0B3D2E] text-white">إغلاق</button>
+            <button type="button" onClick={onClose} className="rounded-xl px-5 py-2 text-[13px] font-bold bg-[#0B3D2E] text-white">إغلاق</button>
           </div>
         ) : (
           <div className="space-y-4">
             {error && (
-              <div className={`rounded-xl px-3 py-2 text-[12px] font-semibold ${isDark ? "bg-red-500/10 text-red-400 border border-red-500/20" : "bg-red-50 text-red-600 border border-red-200"}`}>
+              <div role="alert" className={`rounded-xl px-3 py-2 text-[12px] font-semibold ${isDark ? "bg-red-500/10 text-red-400 border border-red-500/20" : "bg-red-50 text-red-600 border border-red-200"}`}>
                 {error}
               </div>
             )}
             {step === 1 && (
               <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="space-y-4">
-                {!clientsUnreadable && (clientsLoading || clientCards.length > 0) && (
+                {clientsUnreadable ? (
+                  <div role="alert" className={`rounded-xl border px-3 py-2.5 text-[12px] ${isDark ? "border-amber-500/20 bg-amber-900/10 text-amber-300" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+                    <p className="font-semibold">تعذّر تحميل قائمة الموكّلين، فلا يمكن اختيار موكّل مسجّل الآن.</p>
+                    <p className="mt-0.5">إن كان الموكّل مسجّلاً فأعد المحاولة قبل كتابة اسمه، وإلا ستُنشأ له بطاقة جديدة.</p>
+                    <button
+                      type="button"
+                      onClick={() => { void loadClients(); }}
+                      className="mt-1.5 inline-flex items-center gap-1 font-bold hover:underline"
+                    >
+                      <ArrowClockwise size={13} aria-hidden="true" /> إعادة المحاولة
+                    </button>
+                  </div>
+                ) : (clientsLoading || clientCards.length > 0) && (
                   <div>
-                    <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>اختيار من قائمة الموكّلين</label>
+                    <label htmlFor={`${fieldId}-card`} className={labelCls}>اختيار من قائمة الموكّلين</label>
                     <select
+                      id={`${fieldId}-card`}
                       value={selectedClientId}
                       onChange={e => handleClientPick(e.target.value)}
                       disabled={clientsLoading}
@@ -266,14 +311,48 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
                   </div>
                 )}
                 <div>
-                  <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>اسم الموكل</label>
+                  <label htmlFor={`${fieldId}-name`} className={labelCls}>اسم الموكل</label>
+                  {/*
+                    CODE-F30: a picked card's name is read-only here. Editing it
+                    used to drop the link and — on save — create a NEW card with
+                    the edited name, so «correcting a typo» quietly split one
+                    موكّل into two. Changing the client and creating a new one
+                    are now explicit choices; renaming a card is done on the card.
+                  */}
                   <input
+                    id={`${fieldId}-name`}
                     type="text"
                     value={clientName}
-                    onChange={e => { setClientName(e.target.value); if (selectedClientId) setSelectedClientId(""); }}
+                    readOnly={Boolean(selectedClientId)}
+                    aria-describedby={selectedClientId ? `${fieldId}-name-hint` : undefined}
+                    onChange={e => setClientName(e.target.value)}
                     placeholder="اختر الموكل أو أضف موكلاً جديداً..."
-                    className={inputCls}
+                    className={`${inputCls} ${selectedClientId ? "opacity-80 cursor-default" : ""}`}
                   />
+                  {selectedClientId && (
+                    <div id={`${fieldId}-name-hint`} className={`${hintCls} flex flex-wrap items-center gap-x-2 gap-y-1`}>
+                      <span>مرتبط ببطاقة موكّل مسجّلة. تعديل اسمه يكون من بطاقته في «الموكّلون».</span>
+                      <button
+                        type="button"
+                        onClick={() => handleClientPick("")}
+                        className={`font-bold underline ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
+                      >
+                        موكّل آخر أو جديد
+                      </button>
+                    </div>
+                  )}
+                  {matchingCard && (
+                    <div className={`${hintCls} flex flex-wrap items-center gap-x-2 gap-y-1`}>
+                      <span>في قائمتك موكّل بهذا الاسم.</span>
+                      <button
+                        type="button"
+                        onClick={() => handleClientPick(matchingCard.id)}
+                        className={`font-bold underline ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
+                      >
+                        اختياره بدل إنشاء بطاقة جديدة
+                      </button>
+                    </div>
+                  )}
                 </div>
                 {/*
                   Only when the lawyer is naming a NEW موكل: the card that will
@@ -285,27 +364,40 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
                 */}
                 {isSupabaseMode && !selectedClientId && clientName.trim() !== "" && (
                   <div>
-                    <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>نوع الموكّل</label>
-                    <select value={clientType} onChange={e => setClientType(e.target.value as ClientType)} className={inputCls}>
+                    <label htmlFor={`${fieldId}-type`} className={labelCls}>نوع الموكّل</label>
+                    <select id={`${fieldId}-type`} value={clientType} onChange={e => setClientType(e.target.value as ClientType)} className={inputCls}>
                       <option value="individual">فرد</option>
                       <option value="company">شركة</option>
                     </select>
-                    <p className={`text-[11px] mt-1.5 ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>
+                    <p className={hintCls}>
                       ستُنشأ بطاقة موكّل بهذا الاسم عند الحفظ، وتُربط بها القضية.
                     </p>
                   </div>
                 )}
                 <div>
-                  <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>عنوان القضية</label>
-                  <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="مثال: مطالبة مالية - مؤسسة العليان" className={inputCls} />
+                  <label htmlFor={`${fieldId}-title`} className={labelCls}>عنوان القضية</label>
+                  <input id={`${fieldId}-title`} type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="مثال: مطالبة مالية - مؤسسة العليان" className={inputCls} />
                 </div>
                 <div>
-                  <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>المحكمة المختصة</label>
-                  <select value={court} onChange={e => setCourt(e.target.value)} className={inputCls}>
-                    <option>المحكمة التجارية</option>
-                    <option>المحكمة العامة</option>
-                    <option>المحكمة العمالية</option>
+                  <label htmlFor={`${fieldId}-court`} className={labelCls}>المحكمة المختصة</label>
+                  <select id={`${fieldId}-court`} value={courtChoice} onChange={e => setCourtChoice(e.target.value)} className={inputCls}>
+                    <option value="">— لم تُحدَّد بعد —</option>
+                    {COURT_CHOICES.map(c => <option key={c} value={c}>{c}</option>)}
+                    <option value={COURT_OTHER}>{COURT_OTHER_LABEL}</option>
                   </select>
+                  {courtChoice === COURT_OTHER && (
+                    <input
+                      type="text"
+                      aria-label="اسم المحكمة أو الجهة"
+                      value={courtOther}
+                      onChange={e => setCourtOther(e.target.value)}
+                      placeholder="اكتب اسم المحكمة أو الجهة..."
+                      className={`${inputCls} mt-2`}
+                    />
+                  )}
+                  {!courtChoice && (
+                    <p className={hintCls}>يمكن تركها الآن؛ تظهر القضية «بانتظار تحديد الجهة» حتى تُحدَّد.</p>
+                  )}
                 </div>
                 {/*
                   UAT-LIVE-CASE-001 — a REAL `disabled`, not only the disabled
@@ -322,10 +414,10 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
                   type="button"
                   disabled={!step1Complete}
                   aria-disabled={!step1Complete}
-                  title={step1Complete ? undefined : "أدخل اسم الموكل وعنوان القضية للمتابعة"}
+                  title={step1Hint}
                   onClick={() => {
                     if (!step1Complete) {
-                      setError("يرجى إدخال اسم الموكل وعنوان القضية للمتابعة.");
+                      setError(step1Hint ?? "يرجى إدخال اسم الموكل وعنوان القضية للمتابعة.");
                       return;
                     }
                     setError(null);
@@ -343,15 +435,22 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
             )}
             {step === 2 && (
               <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} className="space-y-4">
+                {/*
+                  CODE-F19: «إسناد إلى المحامي» offered «أنا فقط / فريق العمل»,
+                  but the choice was only a metadata label — `assignedTo` was
+                  always the current user, and there is no working team model
+                  to assign within (firm_members is not written in production).
+                  Until the owner decides how assignment should work, the form
+                  states the one thing that is true instead of offering a choice
+                  that does nothing.
+                */}
                 <div>
-                  <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>إسناد إلى المحامي</label>
-                  <select value={assignee} onChange={e => setAssignee(e.target.value)} className={inputCls}>
-                    <option>أنا فقط</option>
-                    <option>فريق العمل</option>
-                  </select>
+                  <p className={labelCls}>المسؤول عن القضية</p>
+                  <p className={`${inputCls} cursor-default`}>أنت — تُسجَّل القضية على حسابك.</p>
+                  <p className={hintCls}>إسناد القضية إلى عضو آخر في فريق العمل غير متاح بعد.</p>
                 </div>
-                <div>
-                  <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>مستوى الأهمية / الاستعجال</label>
+                <div role="group" aria-labelledby={`${fieldId}-priority`}>
+                  <p id={`${fieldId}-priority`} className={labelCls}>مستوى الأهمية / الاستعجال</p>
                   <div className="grid grid-cols-3 gap-2">
                     {priorityBtn("critical", "حرجة", "border-red-500/30 bg-red-500/10 text-red-500")}
                     {priorityBtn("high", "عاجلة", "border-amber-500/30 bg-amber-500/10 text-amber-500")}
@@ -359,15 +458,16 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
                   </div>
                 </div>
                 <div>
-                  <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>وصف القضية</label>
-                  <textarea rows={3} value={description} onChange={e => setDescription(e.target.value)} placeholder="ملخص موجز عن القضية وطلب الموكل..." className={`${inputCls} resize-none`} />
+                  <label htmlFor={`${fieldId}-desc`} className={labelCls}>وصف القضية</label>
+                  <textarea id={`${fieldId}-desc`} rows={3} value={description} onChange={e => setDescription(e.target.value)} placeholder="ملخص موجز عن القضية وطلب الموكل..." className={`${inputCls} resize-none`} />
                 </div>
                 <div className="flex gap-2 mt-4">
-                  <button onClick={() => setStep(1)} className={`flex-1 rounded-xl py-2.5 text-[13px] font-bold ${isDark ? "bg-white/[0.08] text-zinc-300" : "bg-slate-100 text-slate-600"}`}>رجوع</button>
+                  <button type="button" onClick={() => setStep(1)} disabled={saving} className={`flex-1 rounded-xl py-2.5 text-[13px] font-bold disabled:opacity-50 ${isDark ? "bg-white/[0.08] text-zinc-300" : "bg-slate-100 text-slate-600"}`}>رجوع</button>
                   <button
+                    type="button"
                     onClick={handleSave}
                     disabled={saving || !step1Complete}
-                    title={step1Complete ? undefined : "أدخل اسم الموكل وعنوان القضية في الخطوة السابقة"}
+                    title={step1Complete ? undefined : "أكمل بيانات الخطوة السابقة"}
                     className="flex-1 rounded-xl bg-[#0B3D2E] text-[#C8A762] py-2.5 text-[13px] font-bold disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {saving ? "جارٍ الحفظ..." : "حفظ واعتماد"}
@@ -377,7 +477,6 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
             )}
           </div>
         )}
-      </motion.div>
-    </motion.div>
+    </ModalShell>
   );
 }

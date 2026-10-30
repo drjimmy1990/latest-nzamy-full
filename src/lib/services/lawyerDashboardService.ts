@@ -50,6 +50,10 @@ export interface LawyerDashboardHearing {
   urgency: string | null;
   location: string | null;
   caseName: string | null;
+  /** CODE-F16 — absent from an older server, so the page falls back to its own rule. */
+  source?: "hearing" | "deadline";
+  caseId?: string | null;
+  href?: string;
 }
 
 export interface LawyerDashboardTask {
@@ -74,7 +78,12 @@ export interface LawyerDashboardActivity {
 export interface LawyerDashboardSummary {
   activeCases: number | null;
   pendingConsultations: number | null;
+  /** Money COLLECTED this Riyadh month, by collection date (CODE-F15). */
   revenueThisMonth: number | null;
+  /** Invoice amounts issued this Riyadh month — absent from an older server. */
+  revenueIssuedThisMonth?: number | null;
+  /** Still owed on open invoices, whenever issued — absent from an older server. */
+  revenueOutstanding?: number | null;
   recentCases: LawyerDashboardCase[] | null;
   upcomingHearings: LawyerDashboardHearing[] | null;
   /** Total upcoming hearings — NOT `upcomingHearings.length`, which is capped. */
@@ -243,6 +252,8 @@ export function toLawyerDashboardResult(body: unknown): LawyerDashboardResult {
       activeCases: num(body.activeCases),
       pendingConsultations: num(body.pendingConsultations),
       revenueThisMonth: num(body.revenueThisMonth),
+      revenueIssuedThisMonth: num(body.revenueIssuedThisMonth),
+      revenueOutstanding: num(body.revenueOutstanding),
       recentCases: lists.recentCases as LawyerDashboardCase[] | null,
       upcomingHearings: lists.upcomingHearings as LawyerDashboardHearing[] | null,
       upcomingHearingsCount: num(body.upcomingHearingsCount),

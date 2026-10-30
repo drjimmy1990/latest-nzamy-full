@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { motion } from "framer-motion";
+import ModalShell from "@/components/ui/ModalShell";
 import {
-  XCircle, Copy, Check, ShareNetwork, DownloadSimple, Info,
+  Copy, Check, ShareNetwork, DownloadSimple, Info,
   WhatsappLogo, XLogo, LinkedinLogo,
 } from "@phosphor-icons/react";
 import { copyToClipboard } from "@/lib/services/publicProfileLink";
@@ -77,13 +77,6 @@ export default function ShareProfileModal({ onClose, isDark, lawyerName, state, 
     return () => window.clearTimeout(timer);
   }, [copyState]);
 
-  // Escape closes, like the backdrop click.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   // The QR is drawn client-side; the library is loaded only when a published
   // link is actually on screen.
   useEffect(() => {
@@ -125,43 +118,27 @@ export default function ShareProfileModal({ onClose, isDark, lawyerName, state, 
   const muted = isDark ? "text-zinc-400" : "text-slate-500";
   const heading = `text-[12px] font-semibold ${isDark ? "text-zinc-300" : "text-zinc-700"}`;
 
+  // CODE-F35: the shared shell — a real Tab trap, focus back to the button
+  // that opened it, Escape handled inside the dialog (this modal used to add a
+  // window-wide Escape listener of its own), and the same named «إغلاق».
+  // Nothing here is a draft, so it never asks before closing.
   return (
-    <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm print:hidden"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    <ModalShell
+      title={
+        <span className="flex items-center gap-3 min-w-0">
+          <span aria-hidden="true" className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-[#C8A762]/10" : "bg-royal/5"}`}>
+            <ShareNetwork size={20} weight="duotone" className={isDark ? "text-[#C8A762]" : "text-royal"} />
+          </span>
+          <span className="min-w-0">
+            <span className="block">مشاركة الملف المهني</span>
+            {name && <span className={`block text-[12px] font-normal truncate ${muted}`}>{name}</span>}
+          </span>
+        </span>
+      }
+      onClose={onClose}
+      isDark={isDark}
+      zIndexClass="z-[60] print:hidden"
     >
-      <motion.div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="share-profile-title"
-        initial={{ scale: 0.95, opacity: 0, y: 10 }}
-        animate={{ scale: 1, opacity: 1, y: 0 }}
-        exit={{ scale: 0.95, opacity: 0, y: -10 }}
-        className={`w-full max-w-md max-h-[85dvh] overflow-y-auto overscroll-contain rounded-3xl p-6 shadow-2xl ${isDark ? "bg-zinc-900 border border-white/[0.08]" : "bg-white border border-slate-200"}`}
-        dir="rtl"
-      >
-        <div className="flex items-start justify-between gap-3 mb-5">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-[#C8A762]/10" : "bg-royal/5"}`}>
-              <ShareNetwork size={20} weight="duotone" className={isDark ? "text-[#C8A762]" : "text-royal"} />
-            </div>
-            <div className="min-w-0">
-              <h3 id="share-profile-title" className={`text-[16px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>
-                مشاركة الملف المهني
-              </h3>
-              {name && <p className={`text-[12px] truncate ${muted}`}>{name}</p>}
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="إغلاق"
-            className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full ${isDark ? "bg-white/[0.07] text-zinc-400 hover:text-white" : "bg-zinc-100 text-zinc-500 hover:text-black"}`}
-          >
-            <XCircle size={16} />
-          </button>
-        </div>
 
         {resolved.kind === "published" && shareUrl && (
           <>
@@ -191,7 +168,7 @@ export default function ShareProfileModal({ onClose, isDark, lawyerName, state, 
                     : "bg-[#0B3D2E] text-[#C8A762] hover:bg-[#092e22]"
                 }`}
               >
-                {copyState === "copied" ? <Check size={14} weight="bold" /> : <Copy size={14} />}
+                {copyState === "copied" ? <Check size={14} weight="bold" aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
                 {copyState === "copied" ? "نُسخ" : "نسخ الرابط"}
               </button>
             </div>
@@ -230,7 +207,7 @@ export default function ShareProfileModal({ onClose, isDark, lawyerName, state, 
                       isDark ? "border-white/[0.1] text-zinc-200 hover:bg-white/5" : "border-slate-200 text-slate-700 hover:bg-white"
                     }`}
                   >
-                    <DownloadSimple size={13} weight="bold" /> تنزيل الرمز (PNG)
+                    <DownloadSimple size={13} weight="bold" aria-hidden="true" /> تنزيل الرمز (PNG)
                   </a>
                 )}
               </div>
@@ -257,7 +234,7 @@ export default function ShareProfileModal({ onClose, isDark, lawyerName, state, 
                       isDark ? "border-white/[0.08] text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"
                     }`}
                   >
-                    <Icon size={22} weight="fill" color={color || undefined} />
+                    <Icon size={22} weight="fill" color={color || undefined} aria-hidden="true" />
                     {target.label}
                   </a>
                 );
@@ -325,7 +302,6 @@ export default function ShareProfileModal({ onClose, isDark, lawyerName, state, 
             تعذّر التحقق من حالة نشر ملفك المهني، فلا يُعرض رابط للمشاركة.
           </p>
         )}
-      </motion.div>
-    </motion.div>
+    </ModalShell>
   );
 }

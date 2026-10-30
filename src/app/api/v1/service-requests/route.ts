@@ -17,6 +17,7 @@ import { consultationBookingRefusal } from "@/app/api/v1/lawyer/consultations/_s
 import { resolveServiceRequestEntityScope } from "@/lib/auth/serviceRequestEntityScope";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
+import { createStatusFor } from "@/lib/services/ownCaseStatus";
 
 async function resolveActiveEntityIds(supabase: SupabaseClient, userId: string) {
   const [firmResult, businessResult, ownedFirmResult, ownedBusinessResult] = await Promise.all([
@@ -417,26 +418,14 @@ export async function POST(request: NextRequest) {
     // AddHearingModal.tsx, AddCaseModal.tsx, lawyer/contracts/page.tsx,
     // lawyer/consultations/page.tsx, client/requests/new/page.tsx,
     // client/find-lawyer/page.tsx, client/consultation/new/page.tsx) and
-    // none of them ever sends `completed`, `assigned`, or `cancelled` at
-    // creation — the full observed set is exactly this allowlist.
-    const CREATE_STATUS_ALLOWLIST = new Set([
-      "draft",
-      "in_review",
-      "pending_payment",
-      "pending_assignment",
-    ]);
-    const requestedStatus =
-      typeof requestData.status === "string" ? requestData.status : undefined;
-    let status =
-      requestedStatus && CREATE_STATUS_ALLOWLIST.has(requestedStatus)
-        ? requestedStatus
-        : "pending_assignment";
-
+    // none of them ever sends `completed` or `cancelled` at creation.
+    // `assigned` is accepted for one caller only — a lawyer or firm filing
+    // its OWN case to itself (LIVE-F14 / LAW-DETAIL-006); see ownCaseStatus.ts.
+    // It is decided below, once the caller's account type has been read.
+    //
     // A client can never confirm its own payment. All paid requests remain
-    // pending until a future signed, idempotent provider webhook exists.
-    if (isPaidRequest) {
-      status = "pending_payment";
-    }
+    // pending until a future signed, idempotent provider webhook exists —
+    // createStatusFor returns `pending_payment` for every paid request.
 
     // Entity ownership is resolved from active member/owner rows only. The
     // client may request a *kind* of entity context but can never supply an id.
@@ -480,6 +469,14 @@ export async function POST(request: NextRequest) {
       );
     }
     const { firmId, businessId } = entityScope;
+
+    const status = createStatusFor({
+      requested: requestData.status,
+      isPaid: isPaidRequest,
+      selfAssigned: (requestData.assignedTo ?? requestData.assigned_to ?? null) === user.id,
+      receiver: shape.value.receiver,
+      actorUserType: actorProfile && typeof actorProfile.user_type === "string" ? actorProfile.user_type : null,
+    });
 
     // Optional link to a lawyer_clients card (رقم الموكّل). Only ever written
     // when the RLS client can itself read that row — this is the ownership
@@ -554,6 +551,25 @@ export async function POST(request: NextRequest) {
       })
       .select()
       .single();
+
+    // LAW-DETAIL-005: a retry of a create whose answer was lost sends the same
+    // client-made id. The primary key refuses it (23505); if that row is this
+    // caller's own, answer with it instead of a 500 — the case exists once,
+    // and the side effects below already ran on the first call.
+    if (reqError?.code === "23505" && typeof requestData.id === "string") {
+      const { data: existing } = await supabase
+        .from("service_requests")
+        .select()
+        .eq("id", requestData.id)
+        .eq("requester_user_id", user.id)
+        .maybeSingle();
+      if (existing) {
+        return NextResponse.json(
+          { data: toWorkflowRequest(existing as unknown as Record<string, unknown>), replayed: true },
+          { status: 200 },
+        );
+      }
+    }
 
     if (reqError) {
       console.error("[service-requests POST] Supabase error:", reqError.message, reqError.details, reqError.hint, reqError.code);

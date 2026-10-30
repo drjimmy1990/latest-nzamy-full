@@ -72,10 +72,19 @@ test("pomodoroSessionToWorkSessionInput: maps focus/short/long to the server's m
   assert.equal(pomodoroSessionToWorkSessionInput(session({ mode: "long" })).mode, "long_break");
 });
 
-test("pomodoroSessionToWorkSessionInput: taskId is always null (only a title string exists client-side)", () => {
-  const input = pomodoroSessionToWorkSessionInput(session({ taskTitle: "قضية ١٢٣" }));
-  assert.equal(input.taskId, null);
+test("CODE-F09: pomodoroSessionToWorkSessionInput links the session by task id, the title is only the label", () => {
+  const taskId = "11111111-1111-4111-8111-111111111111";
+  const input = pomodoroSessionToWorkSessionInput(session({ taskId, taskTitle: "قضية ١٢٣" }));
+  assert.equal(input.taskId, taskId);
   assert.equal(input.label, "قضية ١٢٣");
+  // no task, or a pre-fix non-uuid id → no task (the route would refuse the shape)
+  assert.equal(pomodoroSessionToWorkSessionInput(session({ taskTitle: "x" })).taskId, null);
+  assert.equal(pomodoroSessionToWorkSessionInput(session({ taskId: "1730000000000" })).taskId, null);
+});
+
+test("CODE-F09: workSessionToPomodoroSession keeps the task id", () => {
+  const taskId = "11111111-1111-4111-8111-111111111111";
+  assert.equal(workSessionToPomodoroSession(workSession({ taskId })).taskId, taskId);
 });
 
 test("pomodoroSessionToWorkSessionInput: label is trimmed and clamped to 120 chars, and a missing title becomes ''", () => {

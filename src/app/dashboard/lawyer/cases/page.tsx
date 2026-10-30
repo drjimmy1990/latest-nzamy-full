@@ -10,10 +10,20 @@ import {
   TrendUp, Star, Handshake, UsersThree, User,
 } from "@phosphor-icons/react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
+import { useRiyadhToday } from "@/hooks/useRiyadhToday";
+import { relativeDayAr } from "@/lib/riyadhDay";
 import { getWorkflowRequestsByReceiver, updateWorkflowRequestById } from "@/lib/services/workflowService";
 import { apiGet, isSupabaseMode } from "@/lib/services/api";
+import { getDeadlines, type Deadline } from "@/lib/services/deadlinesService";
+import { getLawyerClient } from "@/lib/services/lawyerClientsService";
+import type { ListRead } from "@/lib/services/listRead";
+import {
+  isLawyerCaseRow, matchesClientFilter, summarizeOpenDeadlines, isDeadlineSoon, deadlineSortKey,
+  type CaseClientKeys, type CaseDeadlineSummary,
+} from "./_caseListRules";
 import type { WorkflowRequest } from "@/lib/workflowStore";
 import type { CaseStatus, CaseType, CourtDegree, Priority, ViewMode, KanbanGroupBy, Case } from "./_types";
 import AddCaseModal from "../_components/AddCaseModal";
@@ -126,16 +136,8 @@ async function fetchLawyerRows(): Promise<{ rows: WorkflowRequest[]; degraded: b
   };
 }
 
-function isLawyerCaseRow(request: WorkflowRequest): boolean {
-  if (request.type !== "service") return false;
-  const metadata = (request.metadata ?? {}) as Record<string, unknown>;
-  if (metadata.task === true) return false;
-  if (metadata.client === true) return false;
-  if (metadata.invoice === true) return false;
-  if (metadata.hearing === true) return false;
-  if ("caseName" in metadata && "time" in metadata) return false;
-  return true;
-}
+// `isLawyerCaseRow` moved to ./_caseListRules.ts (CODE-F17): the add-hearing
+// case picker offers exactly the cases this list shows, through the same rule.
 
 export default function CasesPage() {
   const { isDark } = useTheme();
@@ -171,6 +173,53 @@ export default function CasesPage() {
   // `timeFilter` بقي رغم إزالة أزرار «نطاق زمني»: شريط الطعون الأحمر أدناه يضبطه
   // بنفسه على "urgent"، وحذف الحالة كان سيحوّل زر ذلك الشريط إلى زر بلا أثر.
   const [archiveSearch, setArchiveSearch] = useState(""); // S82
+
+  // ── CODE-F20 / LIVE-F16: `?client=<id>` from the client file's «عرض الكل» ──
+  // It was never read, so the link opened every client's cases with no sign
+  // of a filter. Read from the URL (a reload keeps it), matched by ID through
+  // the two raw columns that tie a case to a client — the same match the
+  // client file makes — and applied to the base list, so the list, the
+  // Kanban, the archive and every counter describe that client only.
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const clientParam = searchParams?.get("client")?.trim() ?? "";
+  const [clientKeysById, setClientKeysById] = useState<Record<string, CaseClientKeys>>({});
+  // The card's name (chip label) and its linked platform account (second match
+  // arm). A failed read leaves the filter on, by card id — never off.
+  const [clientInfo, setClientInfo] = useState<{ id: string; name: string | null; linkedUserId: string | null } | null>(null);
+  useEffect(() => {
+    if (!clientParam) return;
+    let alive = true;
+    getLawyerClient(clientParam)
+      .then(c => { if (alive) setClientInfo({ id: clientParam, name: c?.name ?? null, linkedUserId: c?.clientUserId ?? null }); })
+      .catch(() => { if (alive) setClientInfo({ id: clientParam, name: null, linkedUserId: null }); });
+    return () => { alive = false; };
+  }, [clientParam]);
+  const clientFilterInfo = clientInfo && clientInfo.id === clientParam ? clientInfo : null;
+  const clearClientFilter = () => {
+    const next = new URLSearchParams(searchParams?.toString() ?? "");
+    next.delete("client");
+    const qs = next.toString();
+    router.replace(qs ? `/dashboard/lawyer/cases?${qs}` : "/dashboard/lawyer/cases", { scroll: false });
+  };
+
+  // ── CODE-F25: a real per-case deadline summary from public.deadlines ──
+  // One read of the lawyer's OPEN deadlines, folded per case. Kept apart:
+  // loading / read failed («تعذّر التحقق من المهل») / none («لا توجد مهل»).
+  const today = useRiyadhToday();
+  const [deadlinesRead, setDeadlinesRead] = useState<ListRead<Deadline> | null>(null);
+  useEffect(() => {
+    if (!isSupabaseMode) return;
+    let alive = true;
+    const load = () => {
+      getDeadlines({ status: "open", limit: 500 }).then(r => { if (alive) setDeadlinesRead(r); });
+    };
+    load();
+    window.addEventListener("nzamy-workflow-updated", load);
+    return () => { alive = false; window.removeEventListener("nzamy-workflow-updated", load); };
+  }, []);
+  const deadlineOf = useMemo(() => summarizeOpenDeadlines(deadlinesRead), [deadlinesRead]);
+  const deadlinesKnown = deadlinesRead !== null && deadlinesRead.ok;
 
   // Drag & drop state for Kanban. Column keys are strings (vary by grouping mode);
   // drag is only enabled in "status" mode where keys are active/pending/closed.
@@ -267,7 +316,15 @@ export default function CasesPage() {
           setLoadError(true);
           return;
         }
-        setCases(rows.filter(isLawyerCaseRow).map(workflowToCase));
+        const caseRows = rows.filter(isLawyerCaseRow);
+        setCases(caseRows.map(workflowToCase));
+        // The GET route spreads the raw row, so both columns travel with it.
+        const keys: Record<string, CaseClientKeys> = {};
+        for (const r of caseRows) {
+          const raw = r as WorkflowRequest & { lawyer_client_id?: string | null };
+          keys[r.id] = { lawyer_client_id: raw.lawyer_client_id ?? null, requester_user_id: raw.requester_user_id ?? null };
+        }
+        setClientKeysById(keys);
         setTruncated(truncated);
         setLoadError(false);
       } catch {
@@ -307,8 +364,15 @@ export default function CasesPage() {
   // Filtered cases. These two are memoised on `cases` so that the `filtered`
   // memo below can depend on THEM and still recompute when the fetch resolves —
   // see the note on that dependency array.
-  const activeCases = useMemo(() => cases.filter(c => c.status !== "archived"), [cases]);
-  const archivedCases = useMemo(() => cases.filter(c => c.status === "archived"), [cases]);
+  // CODE-F20: the client filter narrows the BASE, before anything is counted.
+  const scopedCases = useMemo(
+    () => clientParam
+      ? cases.filter(c => matchesClientFilter(clientKeysById[c.id] ?? {}, clientParam, clientFilterInfo?.linkedUserId ?? null))
+      : cases,
+    [cases, clientParam, clientKeysById, clientFilterInfo],
+  );
+  const activeCases = useMemo(() => scopedCases.filter(c => c.status !== "archived"), [scopedCases]);
+  const archivedCases = useMemo(() => scopedCases.filter(c => c.status === "archived"), [scopedCases]);
 
   // ── T28-29a: latest recorded stage per case ───────────────────────────────
   // Keyed on the SET of case ids, not on `cases`: a Kanban drag calls
@@ -357,16 +421,19 @@ export default function CasesPage() {
       // شروط "today"/"week"/"month" حُذفت مع أزرارها: كانت تقرأ `c.nextDateSort`،
       // وهو حقل لا يكتبه `workflowToCase` إطلاقاً، فكانت الثلاثة تُرجع لا شيء دائماً.
       // "urgent" باقٍ لأن شريط الطعون هو من يضبطه، ولا يظهر إلا حين يوجد ما يطابقه.
-      if (timeFilter === "urgent" && !c.hasDeadline) return false;
+      // CODE-F25: «قريبة» = an OPEN row in public.deadlines due within 7 days
+      // (or overdue), not the `metadata.deadline` key nothing writes.
+      if (timeFilter === "urgent" && !isDeadlineSoon(deadlineOf(c.id), today)) return false;
       // Only with stage data behind it — see `latestDegreeByCase`.
       if (stageFilter !== "all" && latestDegreeByCase
         && stageBucketFor(c.status, latestDegreeByCase[c.id]) !== stageFilter) return false;
       if (search && !c.title.includes(search) && !c.client.includes(search) && !c.court.includes(search)) return false;
       return true;
     }).sort((a, b) => {
-      // مواعيد الطعون أولاً
-      if (a.hasDeadline && !b.hasDeadline) return -1;
-      if (!a.hasDeadline && b.hasDeadline) return 1;
+      // القضايا ذات المهل المفتوحة أولاً، الأقرب استحقاقاً قبل غيرها (CODE-F25)
+      const ka = deadlineSortKey(deadlineOf(a.id));
+      const kb = deadlineSortKey(deadlineOf(b.id));
+      if (ka !== kb) return ka < kb ? -1 : 1;
       // ثم الأولوية
       const pOrder = { critical: 0, high: 1, normal: 2, low: 3 };
       return (pOrder[a.priority] ?? 3) - (pOrder[b.priority] ?? 3);
@@ -382,7 +449,8 @@ export default function CasesPage() {
     // `collabFilter` خرج من هذه المصفوفة لأنه خرج من الحالة نفسها؛ `timeFilter`
     // باقٍ لأن الشرط الذي يقرؤه ("urgent") ما زال أعلاه.
     // `stageFilter` و`latestDegreeByCase` (T28-29a) هنا للسبب نفسه: الجسم يقرؤهما.
-  }, [activeCases, archivedCases, statusFilter, typeFilter, degreeFilter, courtFilter, teamFilter, timeFilter, priorityFilter, stageFilter, latestDegreeByCase, search, viewMode]);
+    // `deadlineOf` و`today` (CODE-F25) للسبب نفسه.
+  }, [activeCases, archivedCases, statusFilter, typeFilter, degreeFilter, courtFilter, teamFilter, timeFilter, priorityFilter, stageFilter, latestDegreeByCase, search, viewMode, deadlineOf, today]);
 
   /**
    * True only when there is a real list behind every figure on this page.
@@ -414,14 +482,24 @@ export default function CasesPage() {
     archived: archivedCases.length,
   };
 
-  // Appeal deadlines: `hasDeadline` is `Boolean(metadata.deadline)` and NOTHING in
-  // this repo writes that key — not AddCaseModal, not AddHearingModal, not the
-  // POST route. So this is 0 for every lawyer, always. The banner and the card
-  // badges below stay because they render nothing while that is true and will
-  // light up correctly the day a writer exists; what was removed is the footer
-  // stat that printed «طعون: 0» as a standing all-clear on a check the platform
-  // never performs.
-  const criticalCount = cases.filter(c => c.hasDeadline).length;
+  // CODE-F25: was a count of `Case.hasDeadline` — `Boolean(metadata.deadline)`,
+  // a key nothing in the repo writes, so 0 for every lawyer, always. Now the
+  // cases (of the current client scope, archive excluded) with an OPEN row in
+  // public.deadlines due within 7 days or overdue. Nothing is counted until the
+  // deadlines read AND Riyadh's day are both known.
+  const criticalCount = deadlinesKnown && today
+    ? activeCases.filter(c => isDeadlineSoon(deadlineOf(c.id), today)).length
+    : 0;
+
+  /** The card's «مهلة» line — three honest states, never a stale metadata date. */
+  const deadlineLine = (s: CaseDeadlineSummary): { text: string; tone: "soon" | "open" | "none" | "unknown" } => {
+    if (s.state === "unknown") {
+      return { text: deadlinesRead === null ? "جارٍ التحقق من المهل…" : "تعذّر التحقق من المهل", tone: "unknown" };
+    }
+    if (s.state === "none") return { text: "لا توجد مهل مفتوحة", tone: "none" };
+    const rel = today ? relativeDayAr(today, s.nearestDue, toArabicDigits) : s.nearestDue;
+    return { text: `مهلة: ${rel}`, tone: isDeadlineSoon(s, today) ? "soon" : "open" };
+  };
 
   const resetFilters = () => {
     setStatusFilter("all"); setTypeFilter("all"); setDegreeFilter("all"); setCourtFilter("all");
@@ -449,6 +527,7 @@ export default function CasesPage() {
   function CaseCard({ c, compact = false }: { c: Case; compact?: boolean }) {
     const status = STATUS_CONFIG[c.status];
     const pConf  = PRIORITY_CONFIG[c.priority];
+    const dl = deadlineLine(deadlineOf(c.id));
     return (
       <Link href={`/dashboard/lawyer/cases/${c.id}`}
         className={`group ${card} p-4 flex items-center gap-4 hover:border-royal/30 hover:scale-[1.005] transition-all ${compact ? "p-3" : ""}`}>
@@ -456,7 +535,7 @@ export default function CasesPage() {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5 flex-wrap">
             <p className={`text-[13px] font-semibold truncate ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{c.title}</p>
-            {c.hasDeadline && <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-red-500/10 text-red-500 border border-red-500/20 flex-shrink-0">⏰ طعن</span>}
+            {dl.tone === "soon" && <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-red-500/10 text-red-500 border border-red-500/20 flex-shrink-0">⏰ مهلة قريبة</span>}
             <span className={`flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${status.bg} ${status.color}`}>{status.label}</span>
           </div>
           <div className={`flex items-center gap-2 text-[11px] flex-wrap ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
@@ -468,9 +547,16 @@ export default function CasesPage() {
         </div>
         <div className="flex-shrink-0 text-left hidden sm:block">
           <p className={`text-[12px] font-medium mb-0.5 ${isDark ? "text-zinc-300" : "text-slate-600"}`}>{c.stage}</p>
-          {c.nextDate
-            ? <p className={`text-[11px] flex items-center gap-1 ${c.hasDeadline ? "text-red-500 font-semibold" : isDark ? "text-zinc-600" : "text-slate-400"}`}><Clock size={10} />{c.nextDate}</p>
-            : <p className={`text-[11px] ${isDark ? "text-zinc-700" : "text-slate-300"}`}>{c.filedDate}</p>}
+          {/* CODE-F25: was `c.nextDate` — `metadata.deadline` or the literal
+              «بانتظار الإسناد». The line now reads public.deadlines, and a
+              read that failed says so instead of looking like «no deadline». */}
+          {isSupabaseMode && (
+            <p className={`text-[11px] flex items-center gap-1 ${
+              dl.tone === "soon" ? "text-red-500 font-semibold"
+              : dl.tone === "unknown" ? "text-amber-500"
+              : isDark ? "text-zinc-600" : "text-slate-400"}`}><Clock size={10} />{dl.text}</p>
+          )}
+          <p className={`text-[11px] ${isDark ? "text-zinc-700" : "text-slate-300"}`}>{c.filedDate}</p>
           {c.value && <p className={`text-[10px] mt-0.5 font-mono ${isDark ? "text-zinc-600" : "text-slate-300"}`}>{c.value}</p>}
         </div>
         <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-all ${isDark ? "text-zinc-700 group-hover:bg-white/[0.06] group-hover:text-zinc-300" : "text-slate-200 group-hover:bg-royal group-hover:text-white"}`}>
@@ -488,7 +574,16 @@ export default function CasesPage() {
             // «لا توجد قضايا مطابقة» is only true when there ARE cases and the
             // filters excluded them. With an empty list it told a lawyer their
             // search was at fault when in fact nothing had ever been filed.
-            cases.length === 0
+            clientParam && scopedCases.length === 0 && cases.length > 0
+              ? (
+                <EmptyState
+                  icon={<Gavel />}
+                  title="لا توجد قضايا لهذا الموكّل"
+                  description="لا توجد في قائمتك قضية مرتبطة بهذا الموكّل."
+                  action={{ label: "عرض كل القضايا", onClick: clearClientFilter }}
+                />
+              )
+            : cases.length === 0
               ? (
                 <EmptyState
                   icon={<Gavel />}
@@ -597,13 +692,13 @@ export default function CasesPage() {
                       onDragStart={()=>isDraggable&&onKanbanDragStart(c.id)}
                       className={`relative rounded-2xl border p-3.5 ${isDraggable?"cursor-grab active:cursor-grabbing":""} hover:shadow-md transition-all hover:scale-[1.01] ${isDark?"bg-zinc-900 border-white/[0.07] hover:border-white/[0.12]":"bg-white border-slate-100 shadow-sm"}`}
                     >
-                      {c.hasDeadline&&<span className="text-[9px] font-black text-red-500 block mb-1.5 flex items-center gap-1">⏰ طعن قادم</span>}
+                      {isDeadlineSoon(deadlineOf(c.id), today)&&<span className="text-[9px] font-black text-red-500 block mb-1.5 flex items-center gap-1">⏰ مهلة قريبة</span>}
                       <p className={`text-[13px] font-bold leading-snug mb-1 ${isDark?"text-zinc-100":"text-slate-800"}`}>{c.title}</p>
                       <p className={`text-[11px] mb-2 ${isDark?"text-zinc-500":"text-slate-400"}`}>{c.client}</p>
                       <div className="flex items-center justify-between gap-2 flex-wrap">
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${STATUS_CONFIG[c.status].bg} ${STATUS_CONFIG[c.status].color}`}>{STATUS_CONFIG[c.status].label}</span>
                         {kanbanGroup!=="degree"&&<span className={`text-[9px] px-1.5 py-0.5 rounded-full ${isDark?"bg-white/[0.05] text-zinc-500":"bg-slate-100 text-slate-400"}`}>{DEGREE_LABELS[c.degree] ?? c.degree}</span>}
-                        {c.nextDate&&<span className={`text-[10px] font-mono flex items-center gap-0.5 ${c.hasDeadline?"text-red-500":isDark?"text-zinc-600":"text-slate-400"}`}><Clock size={9}/>{c.nextDate}</span>}
+                        {(() => { const d = deadlineOf(c.id); if (d.state !== "open") return null; const l = deadlineLine(d); return <span className={`text-[10px] flex items-center gap-0.5 ${l.tone==="soon"?"text-red-500":isDark?"text-zinc-600":"text-slate-400"}`}><Clock size={9}/>{l.text}</span>; })()}
                       </div>
                       {c.team.length>0&&(
                         <div className="flex gap-1 mt-2">{c.team.map(m=>(
@@ -630,9 +725,10 @@ export default function CasesPage() {
 
   // S82 — Archive view: closed + archived, with live search
   function ArchiveView() {
+    // `scopedCases`, not `cases`: the client filter (CODE-F20) holds here too.
     const allArchived = [
-      ...cases.filter(c => c.status === "archived"),
-      ...cases.filter(c => c.status === "closed"),
+      ...scopedCases.filter(c => c.status === "archived"),
+      ...scopedCases.filter(c => c.status === "closed"),
     ];
     const q = archiveSearch.trim().toLowerCase();
     const filtered = q
@@ -689,13 +785,13 @@ export default function CasesPage() {
             isDark ? "text-zinc-600" : "text-slate-400"
           }`}>
             <span className="w-2 h-2 rounded-full bg-slate-400" />
-            مغلقة ({cases.filter(c => c.status === "closed").length})
+            مغلقة ({toArabicDigits(scopedCases.filter(c => c.status === "closed").length)})
           </span>
           <span className={`flex items-center gap-1.5 text-[10px] font-semibold ${
             isDark ? "text-zinc-600" : "text-slate-400"
           }`}>
             <span className="w-2 h-2 rounded-full bg-purple-400" />
-            مؤرشفة يدوياً ({cases.filter(c => c.status === "archived").length})
+            مؤرشفة يدوياً ({toArabicDigits(scopedCases.filter(c => c.status === "archived").length)})
           </span>
         </div>
 
@@ -745,7 +841,7 @@ export default function CasesPage() {
           className="rounded-2xl border border-red-500/30 bg-red-500/8 p-3 flex items-center gap-3">
           <Hourglass size={16} weight="duotone" className="text-red-500 flex-shrink-0 animate-pulse" />
           <p className="text-[12px] font-bold text-red-500 flex-1">
-            {criticalCount} قضية لديها مواعيد طعون قادمة — تتطلب متابعة فورية
+            {toArabicDigits(criticalCount)} قضية لديها مهل مفتوحة مستحقة خلال ٧ أيام أو متأخرة — تتطلب متابعة
           </p>
           <button onClick={() => { setTimeFilter("urgent"); setViewMode("list"); }}
             className="text-[11px] font-bold text-red-500 hover:underline flex-shrink-0">
@@ -770,7 +866,7 @@ export default function CasesPage() {
                 ? <span className="text-red-500 font-semibold">تعذّر تحميل القضايا</span>
                 : <>
                     {toArabicDigits(counts.all)} قضية · <span className="text-emerald-500 font-semibold">{toArabicDigits(counts.active)} نشطة</span>
-                    {criticalCount > 0 && <> · <span className="text-red-500 font-semibold">{criticalCount} طعون</span></>}
+                    {criticalCount > 0 && <> · <span className="text-red-500 font-semibold">{toArabicDigits(criticalCount)} مهل قريبة</span></>}
                   </>}
           </p>
         </div>
@@ -787,6 +883,37 @@ export default function CasesPage() {
           </button>
         </div>
       </motion.div>
+
+      {/* CODE-F20 / LIVE-F16: the client filter is visible and clearable. It
+          lives in the URL, so a reload or a shared link keeps it, and clearing
+          it removes it from the URL too. */}
+      {clientParam && (
+        <div className={`rounded-2xl border px-3 py-2.5 flex items-center gap-2 text-[12px] font-semibold ${
+          isDark ? "border-[#C8A762]/25 bg-[#C8A762]/[0.06] text-zinc-300" : "border-royal/15 bg-royal/[0.04] text-slate-700"
+        }`}>
+          <User size={14} className={isDark ? "text-[#C8A762]" : "text-royal"} />
+          <span className="flex-1 min-w-0 truncate">
+            قضايا الموكّل: {clientFilterInfo?.name ?? (clientFilterInfo ? "موكّل محدد" : "…")}
+            {countsKnown && <> — {toArabicDigits(scopedCases.length)} قضية</>}
+          </span>
+          <Link href={`/dashboard/lawyer/clients/${encodeURIComponent(clientParam)}`}
+            className={`text-[11px] font-bold hover:underline flex-shrink-0 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+            ملف الموكّل
+          </Link>
+          <button type="button" onClick={clearClientFilter}
+            className={`text-[12px] font-bold hover:underline flex-shrink-0 ${isDark ? "text-[#C8A762]" : "text-royal"}`}>
+            إلغاء تصفية الموكّل
+          </button>
+        </div>
+      )}
+
+      {/* CODE-F25: «تعذّر التحقق» is not «لا توجد مهل». */}
+      {isSupabaseMode && deadlinesRead !== null && !deadlinesRead.ok && (
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3 flex items-center gap-2 text-[12px] font-semibold text-amber-600 dark:text-amber-400">
+          <Warning size={14} weight="duotone" className="flex-shrink-0" />
+          تعذّر التحقق من المهل — ترتيب القضايا وشارة «مهلة قريبة» لا تعكس المهل الآن. هذا لا يعني أنه لا توجد مهل.
+        </div>
+      )}
 
       {/* View Switcher + Search */}
       <div className="flex flex-col sm:flex-row gap-3">

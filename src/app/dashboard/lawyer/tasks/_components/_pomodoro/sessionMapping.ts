@@ -40,6 +40,7 @@ export function workSessionToPomodoroSession(ws: WorkSession): PomodoroSession {
     mode: workSessionModeToPomodoroMode(ws.mode),
     startedAt: ws.startedAt,
     endedAt: ws.endedAt ?? ws.startedAt,
+    taskId: ws.taskId,
     taskTitle: ws.label || undefined,
     completed: ws.completed,
     durationMin: ws.durationMin,
@@ -64,9 +65,18 @@ export function isPostableSession(s: PomodoroSession): boolean {
   return true;
 }
 
-/** A completed local session → the POST body. `taskId` is always null: the
- *  engine only ever carries a task TITLE (`taskTitles` on the page is a list
- *  of strings, not ids), never a real task id to attach. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The uuid shape the route (and `work_sessions.id`/`task_id`) accepts. */
+export function isUuid(v: unknown): v is string {
+  return typeof v === "string" && UUID_RE.test(v);
+}
+
+/** A completed local session → the POST body. CODE-F09: the session carries
+ *  the real `public.tasks` id the period was spent on (the page now hands the
+ *  engine `{id, title}`, not bare titles), so it is linked by id; the title
+ *  rides along as the label for the log. A non-uuid id (a pre-fix browser
+ *  row) is sent as no task rather than refused by the route. */
 export function pomodoroSessionToWorkSessionInput(s: PomodoroSession): WorkSessionInput {
   return {
     mode: pomodoroModeToWorkSessionMode(s.mode),
@@ -74,7 +84,7 @@ export function pomodoroSessionToWorkSessionInput(s: PomodoroSession): WorkSessi
     endedAt: s.endedAt || null, // falsy (including "") normalizes to "no end time", not an unparsable string
     durationMin: s.durationMin,
     completed: s.completed,
-    taskId: null,
+    taskId: isUuid(s.taskId) ? s.taskId : null,
     label: (s.taskTitle ?? "").trim().slice(0, 120),
   };
 }

@@ -4,39 +4,64 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CheckCircle, Clock, Circle, Archive,
-  CaretRight, Scales, Trash,
-  PencilSimple, Plus, X, Note, User,
+  CaretRight, Scales,
+  PencilSimple, Plus, X, Note, User, Warning,
 } from "@phosphor-icons/react";
 
 import Link from "next/link";
+import ModalShell from "@/components/ui/ModalShell";
+import { DISCARD_DRAFT_PROMPT_AR } from "@/components/ui/modalDismissPolicy";
 import { PRIORITY_CONFIG, CATEGORY_CONFIG } from "../_data";
 import type { Task, TaskStatus } from "../_types";
 import { TASK_ASSIGNEE_LABEL_AR, assigneeLabelAr, assigneeOptionLabelAr } from "@/lib/services/item59Labels";
 import type { TaskAssigneeOption } from "@/lib/services/lawyerTasksService";
 
+/**
+ * A v4 uuid for a new checklist step. `task_steps.id` is a uuid column, so the
+ * old `ns-<time>-<rand>` fallback (for browsers without crypto.randomUUID —
+ * plain-http origins) made the whole checklist save fail with a 500.
+ */
+function newStepId(): string {
+  const c = typeof crypto !== "undefined" ? crypto : undefined;
+  if (c && "randomUUID" in c && typeof c.randomUUID === "function") return c.randomUUID();
+  const b = new Uint8Array(16);
+  if (c && typeof c.getRandomValues === "function") c.getRandomValues(b);
+  else for (let i = 0; i < 16; i++) b[i] = Math.floor(Math.random() * 256);
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = Array.from(b, x => x.toString(16).padStart(2, "0")).join("");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
 // ─── TaskCard ──────────────────────────────────────────────────────────────────
 
 export function TaskCard({
-  task, isDark, onToggle, onDelete, onArchive, onStatusChange,
+  task, isDark, onToggle, onArchive, onStatusChange,
   draggable, onDragStart, onDragEnd,
   onSubtaskToggle, onEditSave, assigneeOptions,
+  timeTracking, onTrackTime,
 }: {
   task: Task; isDark: boolean;
   onToggle: (id: string) => void;
-  onDelete: (id: string) => void;
   onArchive: (id: string) => void;
   onStatusChange: (id: string, s: TaskStatus) => void;
   draggable?: boolean;
   onDragStart?: (id: string) => void;
   onDragEnd?: () => void;
   onSubtaskToggle?: (taskId: string, subtaskId: string) => void;
-  onEditSave?: (taskId: string, patch: Partial<Task>) => void;
+  /** Resolves true once the server accepted the edit — the editor closes only then (CODE-F12). */
+  onEditSave?: (taskId: string, patch: Partial<Task>) => Promise<boolean>;
   /** «المحامي المُكلَّف» options, read once by the page. null/undefined hides the picker. */
   assigneeOptions?: TaskAssigneeOption[] | null;
+  /** CODE-F07: this task's state in the page's ONE focus timer — null when another task (or none) holds it. */
+  timeTracking?: { running: boolean } | null;
+  /** CODE-F07: start (or pause/resume) the focus timer on this task. */
+  onTrackTime?: (task: Task) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const [tracking, setTracking] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // ── Edit form ────────────────────────────────────────────────────────────────
   const [editTitle, setEditTitle]       = useState(task.title);
@@ -68,6 +93,7 @@ export function TaskCard({
     setEditSubtasks(task.subtasks ? [...task.subtasks] : []);
     setNewSubInput("");
     setEditAssignee(task.assigneeUserId ?? "");
+    setSaveError(null);
     setEditOpen(true);
   };
 
@@ -77,22 +103,44 @@ export function TaskCard({
     // A random id, not Date.now(): two steps added in the same millisecond would
     // share an id, and both the toggle handler and the server match by id — so a
     // collision would tick two steps at once (and the API now rejects duplicates).
-    const id = typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `ns-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    setEditSubtasks(prev => [...prev, { id, title: t, done: false }]);
+    setEditSubtasks(prev => [...prev, { id: newStepId(), title: t, done: false }]);
     setNewSubInput("");
   };
 
   const removeSubtask    = (id: string) => setEditSubtasks(prev => prev.filter(s => s.id !== id));
   const toggleEditSub    = (id: string) => setEditSubtasks(prev => prev.map(s => s.id === id ? { ...s, done: !s.done } : s));
 
-  const saveEdit = () => {
+  // The draft differs from the task as it stands — the dismiss rule asks
+  // before throwing it away.
+  const editDirty = editOpen && (
+    editTitle !== task.title
+    || editNotes !== ((task as any).notes ?? "")
+    || editPriority !== task.priority
+    || editAssignee !== currentAssignee
+    || newSubInput.trim() !== ""
+    || JSON.stringify(editSubtasks) !== JSON.stringify(task.subtasks ?? [])
+  );
+
+  const closeEdit = () => {
+    if (saving) return;
+    if (editDirty && !window.confirm(DISCARD_DRAFT_PROMPT_AR)) return;
+    setEditOpen(false);
+  };
+
+  // CODE-F12: the editor used to close before the save answered, so a refused
+  // save left the lawyer with a closed form, the text gone, and only a banner
+  // at the top of the page. Now it waits: on success it closes; on failure it
+  // stays open with every typed field intact and says why.
+  const saveEdit = async () => {
+    if (saving || !onEditSave) return;
+    if (!editTitle.trim()) { setSaveError("عنوان المهمة مطلوب."); return; }
     // The assignee is sent only when it changed, with the name the card will
     // show until the next refetch.
     const assigneeChanged = showAssigneePicker && editAssignee !== currentAssignee;
     const picked = pickerOptions.find(o => o.userId === editAssignee);
-    onEditSave?.(task.id, {
+    setSaving(true);
+    setSaveError(null);
+    const ok = await onEditSave(task.id, {
       title: editTitle,
       priority: editPriority,
       subtasks: editSubtasks,
@@ -101,8 +149,15 @@ export function TaskCard({
         ? { assigneeUserId: editAssignee || null, assigneeName: picked?.name ?? undefined }
         : {}),
     } as any);
-    setEditOpen(false);
+    setSaving(false);
+    if (ok) setEditOpen(false);
+    else setSaveError("تعذّر حفظ التعديلات — لم يتغيّر شيء على الخادم. ما كتبته باقٍ هنا؛ أعد المحاولة.");
   };
+
+  const tracked = !!timeTracking;
+  const trackTitle = !tracked
+    ? "تتبع الوقت — ابدأ مؤقت التركيز لهذه المهمة"
+    : timeTracking.running ? "مؤقت التركيز يعمل على هذه المهمة — إيقاف مؤقت" : "مؤقت التركيز متوقف مؤقتاً — استئناف";
 
   const priority = PRIORITY_CONFIG[task.priority];
   const category = CATEGORY_CONFIG[task.category];
@@ -217,22 +272,33 @@ export function TaskCard({
               title="تحرير">
               <PencilSimple size={12} />
             </button>
-            <button onClick={e => { e.stopPropagation(); setTracking(!tracking); }}
-              className={`p-1.5 rounded-lg transition-all border ${tracking ? "border-red-500 bg-red-500/10 text-red-500 animate-pulse" : isDark ? "border-transparent text-zinc-600 hover:border-white/[0.05] hover:bg-white/[0.05]" : "border-transparent text-slate-300 hover:border-slate-200 hover:bg-slate-50"}`}
-              title="تتبع الوقت">
-              <Clock size={12} weight={tracking ? "fill" : "regular"} />
-            </button>
+            {/* CODE-F07: «تتبع الوقت» used to flip a local `tracking` flag —
+                a pulsing red icon with no clock behind it and nothing
+                recorded. It now drives the page's one focus timer, bound to
+                this task's id: the period it runs is saved to the work log
+                against this task. Hidden where the page offers no timer. */}
+            {onTrackTime && task.status !== "archived" && (
+              <button onClick={e => { e.stopPropagation(); onTrackTime(task); }}
+                className={`p-1.5 rounded-lg transition-all border ${
+                  tracked && timeTracking.running ? "border-red-500 bg-red-500/10 text-red-500 animate-pulse"
+                  : tracked ? "border-amber-400 bg-amber-400/10 text-amber-500"
+                  : isDark ? "border-transparent text-zinc-600 hover:border-white/[0.05] hover:bg-white/[0.05]" : "border-transparent text-slate-300 hover:border-slate-200 hover:bg-slate-50"}`}
+                title={trackTitle} aria-label={trackTitle} aria-pressed={tracked && timeTracking.running}>
+                <Clock size={12} weight={tracked ? "fill" : "regular"} />
+              </button>
+            )}
+            {/* CODE-F12: one honest action. The trash icon next to this one
+                sent the same «archived» status and dropped the row from the
+                screen, so a "deleted" task came back in the archive. There is
+                no delete endpoint for tasks; «أرشفة» is what happens, and
+                «الأرشيف» in the filters shows and restores them. */}
             {task.status !== "archived" && (
               <button onClick={e => { e.stopPropagation(); onArchive(task.id); }}
                 className={`p-1.5 rounded-lg transition-colors ${isDark ? "hover:bg-white/[0.06] text-zinc-600 hover:text-zinc-300" : "hover:bg-slate-100 text-slate-300 hover:text-slate-500"}`}
-                title="أرشفة">
+                title="أرشفة — تُنقل إلى «الأرشيف» ويمكن استعادتها" aria-label="أرشفة">
                 <Archive size={12} />
               </button>
             )}
-            <button onClick={e => { e.stopPropagation(); onDelete(task.id); }}
-              className={`p-1.5 rounded-lg transition-colors ${isDark ? "hover:bg-red-500/10 text-zinc-700 hover:text-red-400" : "hover:bg-red-50 text-slate-300 hover:text-red-400"}`}>
-              <Trash size={12} />
-            </button>
           </div>
         </div>
 
@@ -280,37 +346,14 @@ export function TaskCard({
       </motion.div>
       </div>
 
-      {/* ── Edit Modal ── */}
+      {/* ── Edit Modal ── the shared ModalShell: × / backdrop / Escape are
+          blocked while the save is in flight and ask before discarding a
+          changed draft (CODE-F12). z-[300] keeps it above the board. */}
       <AnimatePresence>
         {editOpen && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[300] flex items-end sm:items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-            onClick={e => { if (e.target === e.currentTarget) setEditOpen(false); }}
-          >
-            <motion.div
-              initial={{ scale: 0.95, y: 24, opacity: 0 }}
-              animate={{ scale: 1, y: 0, opacity: 1 }}
-              exit={{ scale: 0.95, y: 24, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 130, damping: 20 }}
-              className={`w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden ${isDark ? "bg-zinc-900 border border-white/[0.08]" : "bg-white border border-slate-200"}`}
-              dir="rtl"
-            >
-              {/* Header */}
-              <div className={`flex items-center justify-between px-6 py-4 border-b ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-royal/10 flex items-center justify-center">
-                    <PencilSimple size={14} className="text-royal" />
-                  </div>
-                  <h3 className={`text-[15px] font-bold ${isDark ? "text-white" : "text-slate-800"}`}>تحرير المهمة</h3>
-                </div>
-                <button onClick={() => setEditOpen(false)}
-                  className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${isDark ? "bg-white/[0.06] hover:bg-white/[0.12] text-zinc-400" : "bg-slate-100 hover:bg-slate-200 text-slate-500"}`}>
-                  <X size={14} />
-                </button>
-              </div>
-
-              <div className="px-6 py-5 space-y-5 max-h-[70vh] overflow-y-auto">
+          <ModalShell title="تحرير المهمة" onClose={() => setEditOpen(false)} isDark={isDark}
+            busy={saving} dirty={editDirty} maxWidthClass="max-w-lg" zIndexClass="z-[300]">
+              <div className="space-y-5">
 
                 {/* Title */}
                 <div>
@@ -410,19 +453,25 @@ export function TaskCard({
 
               </div>
 
+              {saveError && (
+                <p role="alert" className="mt-4 flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2.5 text-[12px] font-semibold text-red-500">
+                  <Warning size={14} weight="fill" className="mt-0.5 flex-shrink-0" />
+                  <span>{saveError}</span>
+                </p>
+              )}
+
               {/* Footer */}
-              <div className={`px-6 py-4 border-t flex gap-3 ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
-                <button onClick={saveEdit}
-                  className="flex-1 py-2.5 rounded-xl text-[13px] font-bold bg-gradient-to-r from-[#0B3D2E] to-[#1a6b50] text-[#C8A762] hover:shadow-lg transition-all">
-                  حفظ التعديلات
+              <div className={`mt-5 pt-4 border-t flex gap-3 ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
+                <button onClick={() => { void saveEdit(); }} disabled={saving}
+                  className="flex-1 py-2.5 rounded-xl text-[13px] font-bold bg-gradient-to-r from-[#0B3D2E] to-[#1a6b50] text-[#C8A762] hover:shadow-lg transition-all disabled:opacity-60">
+                  {saving ? "جارٍ الحفظ…" : "حفظ التعديلات"}
                 </button>
-                <button onClick={() => setEditOpen(false)}
-                  className={`px-5 py-2.5 rounded-xl text-[13px] font-medium border transition-colors ${isDark ? "border-white/[0.06] text-zinc-400 hover:bg-white/[0.05]" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                <button onClick={closeEdit} disabled={saving}
+                  className={`px-5 py-2.5 rounded-xl text-[13px] font-medium border transition-colors disabled:opacity-60 ${isDark ? "border-white/[0.06] text-zinc-400 hover:bg-white/[0.05]" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
                   إلغاء
                 </button>
               </div>
-            </motion.div>
-          </motion.div>
+          </ModalShell>
         )}
       </AnimatePresence>
     </>

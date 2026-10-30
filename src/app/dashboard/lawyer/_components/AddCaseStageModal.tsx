@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { motion } from "framer-motion";
-import { CheckCircle, XCircle } from "@phosphor-icons/react";
+import { CheckCircle } from "@phosphor-icons/react";
+import ModalShell from "@/components/ui/ModalShell";
 import { addCaseStage } from "@/lib/services/caseStagesService";
 import { VALID_UI_DEGREES, type UiDegree } from "@/lib/services/caseStageVocabulary";
 import DualDatePicker from "@/components/ui/DualDatePicker";
@@ -39,6 +39,12 @@ export default function AddCaseStageModal({ onClose, isDark, caseRequestId, onCr
       : "border-zinc-200 bg-zinc-50 text-zinc-800 focus:border-[#0B3D2E]"
   }`;
 
+  // CODE-F34: anything typed is a draft the shell will not drop without asking;
+  // the success screen holds nothing to lose.
+  const dirty = !done && Boolean(
+    degree || courtName.trim() || courtCaseNo.trim() || circuit.trim() || judgeName.trim() || openedOn || notes.trim(),
+  );
+
   async function handleSave() {
     if (!degree) {
       setError("اختر درجة التقاضي قبل الحفظ.");
@@ -70,33 +76,17 @@ export default function AddCaseStageModal({ onClose, isDark, caseRequestId, onCr
     }
   }
 
+  // CODE-F34: no exit while the stage is being saved (it used to close
+  // mid-save and leave the lawyer unsure whether the stage exists).
   return (
-    <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <motion.div
-        initial={{ scale: 0.95, opacity: 0, y: 10 }}
-        animate={{ scale: 1, opacity: 1, y: 0 }}
-        exit={{ scale: 0.95, opacity: 0, y: -10 }}
-        className={`w-full max-w-md max-h-[85dvh] overflow-y-auto overscroll-contain rounded-3xl p-6 shadow-2xl ${isDark ? "bg-zinc-900 border border-white/[0.08]" : "bg-white border border-slate-200"}`}
-        dir="rtl"
-      >
-        <div className="flex items-center justify-between mb-5">
-          <h3 className={`text-[16px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>إضافة درجة تقاضٍ</h3>
-          <button onClick={onClose} className={`flex h-7 w-7 items-center justify-center rounded-full ${isDark ? "bg-white/[0.07] text-zinc-400 hover:text-white" : "bg-zinc-100 text-zinc-500 hover:text-black"}`}>
-            <XCircle size={16} />
-          </button>
-        </div>
-
+    <ModalShell title="إضافة درجة تقاضٍ" onClose={onClose} isDark={isDark} busy={saving} dirty={dirty}>
         {done ? (
           <div className="text-center py-6">
             <div className="h-14 w-14 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mx-auto mb-3">
               <CheckCircle size={28} weight="fill" className="text-emerald-500" />
             </div>
             <p className={`font-bold text-[16px] ${isDark ? "text-white" : "text-zinc-900"}`}>تمت إضافة درجة التقاضي</p>
-            <button onClick={onClose} className="mt-4 rounded-xl px-5 py-2.5 w-full text-[13px] font-bold bg-[#0B3D2E] text-white hover:bg-[#0B3D2E]/90 transition">
+            <button type="button" onClick={onClose} className="mt-4 rounded-xl px-5 py-2.5 w-full text-[13px] font-bold bg-[#0B3D2E] text-white hover:bg-[#0B3D2E]/90 transition">
               إغلاق
             </button>
           </div>
@@ -142,7 +132,7 @@ export default function AddCaseStageModal({ onClose, isDark, caseRequestId, onCr
               <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>ملاحظات</label>
               <textarea rows={3} value={notes} onChange={e => setNotes(e.target.value)} className={`${inputCls} resize-none`} />
             </div>
-            <button onClick={handleSave} disabled={saving || !degree}
+            <button type="button" onClick={handleSave} disabled={saving || !degree}
               className={`w-full rounded-xl py-2.5 text-[13px] font-bold transition ${
                 saving || !degree
                   ? isDark ? "bg-zinc-800 text-zinc-500 cursor-not-allowed" : "bg-slate-100 text-slate-400 cursor-not-allowed"
@@ -152,7 +142,6 @@ export default function AddCaseStageModal({ onClose, isDark, caseRequestId, onCr
             </button>
           </div>
         )}
-      </motion.div>
-    </motion.div>
+    </ModalShell>
   );
 }

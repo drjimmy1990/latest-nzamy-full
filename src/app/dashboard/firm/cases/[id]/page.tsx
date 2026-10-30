@@ -68,12 +68,14 @@ import {
   type LawyerTask,
   type LawyerTaskStatus,
 } from "@/lib/services/lawyerTasksService";
-import { getCaseStages, type CaseStage } from "@/lib/services/caseStagesService";
+import { getCaseStages, autoDeadlineChanged, type CaseStage } from "@/lib/services/caseStagesService";
+import { mergeSavedStage } from "@/lib/services/stageDeadlineCopy";
 import {
   getDeadlines,
   updateDeadline,
   type Deadline,
 } from "@/lib/services/deadlinesService";
+import type { DeadlineAction } from "@/lib/services/deadlineStatusPolicy";
 import {
   uploadDocumentFile,
   getDocumentFileUrl,
@@ -537,14 +539,14 @@ export default function FirmCaseDetailsPage() {
 
   // Optimistic «تمّ»/«إلغاء» — copied from رادار المهل's handleRowAction so
   // the same row action feels identical on both screens.
-  async function handleDeadlineRowAction(deadline: Deadline, next: "done" | "cancelled") {
+  async function handleDeadlineRowAction(deadline: Deadline, next: DeadlineAction, reason: string) {
     setDeadlineRowBusy((b) => ({ ...b, [deadline.id]: true }));
     setDeadlineRowError((e) => { const n = { ...e }; delete n[deadline.id]; return n; });
     setDeadlinesRead((prev) => prev && prev.ok
       ? listOk(prev.items.map((d) => (d.id === deadline.id ? { ...d, status: next } : d)), prev.total)
       : prev);
     try {
-      await updateDeadline(deadline.id, { status: next });
+      await updateDeadline(deadline.id, { status: next, reason });
       loadCaseDeadlines();
     } catch (err) {
       setDeadlinesRead((prev) => prev && prev.ok
@@ -1190,7 +1192,7 @@ export default function FirmCaseDetailsPage() {
                       showCaseLink={false}
                       busy={!!deadlineRowBusy[d.id]}
                       error={deadlineRowError[d.id] ?? null}
-                      onAction={(next) => handleDeadlineRowAction(d, next)}
+                      onAction={(next, reason) => handleDeadlineRowAction(d, next, reason)}
                     />
                   ))}
                 </div>
@@ -1431,12 +1433,13 @@ export default function FirmCaseDetailsPage() {
           isDark={isDark}
           caseRequestId={id}
           stage={outcomeStage}
+          // CODE-F06: fired once on the server's answer — refresh only; the
+          // modal stays on its confirmation until the lawyer closes it.
           onSaved={(stage, autoDeadline) => {
-            setOutcomeStage(null);
-            if (stagesRead?.ok) {
-              setStagesRead(listOk(stagesRead.items.map((s) => (s.id === stage.id ? stage : s))));
-            }
-            if (autoDeadline?.created) loadCaseDeadlines();
+            setStagesRead((prev) => (prev?.ok
+              ? listOk(prev.items.map((s) => (s.id === stage.id ? mergeSavedStage(s, stage, autoDeadline) : s)), prev.total)
+              : prev));
+            if (autoDeadlineChanged(autoDeadline)) loadCaseDeadlines();
           }}
         />
       )}
@@ -1446,10 +1449,7 @@ export default function FirmCaseDetailsPage() {
           onClose={() => setShowAddDeadline(false)}
           isDark={isDark}
           caseRequestId={id}
-          onCreated={() => {
-            setShowAddDeadline(false);
-            loadCaseDeadlines();
-          }}
+          onCreated={() => loadCaseDeadlines()}
         />
       )}
     </div>

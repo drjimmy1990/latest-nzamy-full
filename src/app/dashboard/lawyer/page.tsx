@@ -67,6 +67,10 @@ import { profileShareState, type ProfileShareState } from "./_components/profile
 import ShareProfileModal from "./_components/ShareProfileModal";
 import StickyNotesWall from "@/components/dashboard/notes/StickyNotesWall";
 import { formatTimeOfDayAr } from "./hearings/_timeOfDay";
+import { useRiyadhToday } from "@/hooks/useRiyadhToday";
+import { daysBetween, relativeDayAr, dayUrgency, type DayUrgency } from "@/lib/riyadhDay";
+import { toArabicDigits } from "@/lib/services/arabicCount";
+import { dashboardItemHref, moreCriticalHref, hiddenCount } from "@/lib/services/dashboardDateItems";
 import { describeRequestEvent, type ActivityBadge } from "@/lib/events";
 import { orderReference } from "@/lib/services/orderReference";
 
@@ -154,25 +158,31 @@ function relativeTime(iso: string): string {
 }
 
 /**
- * Whole days from today to a `YYYY-MM-DD` wall-clock date.
+ * Whole days from `today` (Riyadh's day, from useRiyadhToday) to a
+ * `YYYY-MM-DD` wall-clock date; null before the day is known or for a date
+ * that will not parse. Midnight-to-midnight, never instants.
  *
- * Same arithmetic as `daysFromToday()` in /dashboard/lawyer/hearings, so «غداً»
- * on this page and «غداً» on the schedule mean the same day. The old version
- * took an ISO instant and `Math.ceil`d it, which turned a hearing 25 hours away
- * into "2 days"; hearings are stored as dates, not instants, so midnight-to-
- * midnight is the correct unit.
+ * CODE-F29: this used the device's own midnight (`new Date()` +
+ * setHours(0)), so a lawyer outside Riyadh's zone saw «غداً» for a hearing
+ * that is today in Riyadh, and an open tab never noticed midnight passing.
+ * The day now comes from one Riyadh source that re-reads itself at Riyadh
+ * midnight and when the window regains focus.
  */
-function daysUntilDate(dateStr: string): number | null {
-  const parsed = new Date(`${dateStr}T00:00:00`);
-  if (isNaN(parsed.getTime())) return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return Math.round((parsed.getTime() - today.getTime()) / 86_400_000);
+function daysUntilDate(dateStr: string, today: string): number | null {
+  return today ? daysBetween(today, dateStr) : null;
+}
+
+/** «هذا الشهر · صدر ٣٬٠٠٠ · متبقٍّ ١٬٢٠٠» — each part only when the server sent it. */
+function revenueSub(issued: number | null, outstanding: number | null): string {
+  const parts = ["هذا الشهر"];
+  if (issued !== null) parts.push(`صدر ${issued.toLocaleString("ar-SA")}`);
+  if (outstanding !== null) parts.push(`متبقٍّ ${outstanding.toLocaleString("ar-SA")}`);
+  return parts.join(" · ");
 }
 
 /** «اليوم» / «غداً» / the weekday, from a real stored date. */
-function dayLabel(dateStr: string): string {
-  const days = daysUntilDate(dateStr);
+function dayLabel(dateStr: string, today: string): string {
+  const days = daysUntilDate(dateStr, today);
   if (days === 0) return "اليوم";
   if (days === 1) return "غداً";
   const parsed = new Date(`${dateStr}T00:00:00`);
@@ -215,6 +225,7 @@ export default function LawyerDashboardPage() {
   // among his quick tools.
   const isConsultant = practiceKind === "consultant";
   const { isDark } = useTheme();
+  const today = useRiyadhToday();
   // `activityTab` — REMOVED. It only ever held "all": the «نشاط AI» filter it
   // drove could not match a row, because nothing records AI-tool usage. See the
   // note on the activity card below.
@@ -406,7 +417,9 @@ export default function LawyerDashboardPage() {
       // overstate the court diary. The COUNT, not the length of the (capped)
       // list in the card beside it.
       { label: "المواعيد القادمة", value: dashboardData.upcomingHearingsCount === null ? null : String(dashboardData.upcomingHearingsCount), icon: Gavel, color: "text-blue-500", bg: "bg-blue-500/8", sub: "قادمة" },
-      { label: "الإيرادات", value: revenue === null ? null : `${revenue.toLocaleString("ar-SA")} ر.س`, icon: Money, color: "text-emerald-500", bg: "bg-emerald-500/8", sub: "هذا الشهر" },
+      // CODE-F15: collected this Riyadh month (by collection date), with what
+      // was issued this month and what is still owed beside it.
+      { label: "الإيرادات المحصّلة", value: revenue === null ? null : `${revenue.toLocaleString("ar-SA")} ر.س`, icon: Money, color: "text-emerald-500", bg: "bg-emerald-500/8", sub: revenueSub(dashboardData.revenueIssuedThisMonth ?? null, dashboardData.revenueOutstanding ?? null) },
     ];
   }, [dashboardData]);
 
@@ -425,13 +438,13 @@ export default function LawyerDashboardPage() {
   const tasks = useMemo(() => {
     if (!dashboardData?.urgentTasks) return [];
     return dashboardData.urgentTasks.map((t) => {
-      const days = t.dueDate ? daysUntilDate(t.dueDate) : null;
+      const days = t.dueDate ? daysUntilDate(t.dueDate, today) : null;
       return {
         id: t.id,
         title: t.title,
         // null → the card omits the whole due-date chip rather than printing
         // «—» or, worse, a date it made up.
-        dueLabel: t.dueDate ? dayLabel(t.dueDate) : null,
+        dueLabel: t.dueDate ? dayLabel(t.dueDate, today) : null,
         // A date in the past is stated as past. Without this the chip reads
         // «الخميس ٢٠ أغسطس» and a lawyer scanning the card has to do the
         // subtraction to notice the task is already late.
@@ -440,7 +453,7 @@ export default function LawyerDashboardPage() {
         category: t.category ? TASK_CATEGORY_LABEL[t.category] ?? t.category : null,
       };
     });
-  }, [dashboardData]);
+  }, [dashboardData, today]);
 
   // ─── Computed recent cases ────────────────────────────────────────────────
   const recentCases = useMemo(() => {
@@ -508,23 +521,29 @@ export default function LawyerDashboardPage() {
   // lines were «جلسة» / «موعد قادم» placeholders by construction.
   const hearings = useMemo(() => {
     if (!dashboardData?.upcomingHearings) return [];
-    const palette = [
-      { color: "text-red-500",   bg: isDark ? "bg-red-500/10"   : "bg-red-50",   borderColor: isDark ? "border-red-500/20"   : "border-red-200" },
-      { color: "text-amber-500", bg: isDark ? "bg-amber-500/10" : "bg-amber-50", borderColor: isDark ? "border-amber-500/20" : "border-amber-200" },
-      { color: "text-blue-500",  bg: isDark ? "bg-blue-500/10"  : "bg-blue-50",  borderColor: isDark ? "border-blue-500/20"  : "border-blue-200" },
-    ];
-    return dashboardData.upcomingHearings.map((h: LawyerDashboardHearing, i: number) => ({
+    // CODE-F29: the colour says how near the sitting is — one meaning, the
+    // same on every row — not where it falls in the list (it used to be
+    // red / amber / blue by index, so the first row was always red).
+    const tone: Record<DayUrgency | "unknown", { color: string; bg: string; borderColor: string }> = {
+      overdue: { color: "text-red-500",   bg: isDark ? "bg-red-500/10"   : "bg-red-50",   borderColor: isDark ? "border-red-500/20"   : "border-red-200" },
+      today:   { color: "text-red-500",   bg: isDark ? "bg-red-500/10"   : "bg-red-50",   borderColor: isDark ? "border-red-500/20"   : "border-red-200" },
+      soon:    { color: "text-amber-500", bg: isDark ? "bg-amber-500/10" : "bg-amber-50", borderColor: isDark ? "border-amber-500/20" : "border-amber-200" },
+      later:   { color: "text-blue-500",  bg: isDark ? "bg-blue-500/10"  : "bg-blue-50",  borderColor: isDark ? "border-blue-500/20"  : "border-blue-200" },
+      unknown: { color: isDark ? "text-zinc-400" : "text-slate-500", bg: isDark ? "bg-white/[0.03]" : "bg-slate-50", borderColor: isDark ? "border-white/[0.06]" : "border-slate-200" },
+    };
+    return dashboardData.upcomingHearings.map((h: LawyerDashboardHearing) => ({
       id: h.id,
       title: h.title,
-      dateLabel: dayLabel(h.date),
+      href: h.href ?? dashboardItemHref({ source: h.source ?? "hearing", caseId: h.caseId ?? null }),
+      dateLabel: dayLabel(h.date, today),
       // Not defaulted: a hearing saved without a time shows no time at all
       // rather than an invented «١٢:٠٠ ص» that a lawyer could plan around.
       time: h.time,
       typeLabel: h.type ? HEARING_TYPE_LABEL[h.type] ?? null : null,
       location: h.location,
-      ...palette[i % palette.length],
+      ...tone[(today ? dayUrgency(today, h.date) : null) ?? "unknown"],
     }));
-  }, [dashboardData, isDark]);
+  }, [dashboardData, isDark, today]);
 
   // «مواعيد حرجة» — the same stored rows, narrowed by the route to the ones the
   // lawyer flagged critical or filed as an appeal/final deadline. `severity` is
@@ -532,25 +551,34 @@ export default function LawyerDashboardPage() {
   const criticalDeadlines = useMemo(() => {
     if (!dashboardData?.criticalDeadlines) return [];
     return dashboardData.criticalDeadlines.map((d: LawyerDashboardHearing) => {
-      const days = daysUntilDate(d.date);
+      const days = daysUntilDate(d.date, today);
+      // An older server sends no `source`: a deadlines-table row is the one
+      // with type «deadline» and no time.
+      const source = d.source ?? (d.type === "deadline" && !d.time ? "deadline" : "hearing");
       return {
         id: d.id,
         label: d.title,
         typeLabel: d.type ? HEARING_TYPE_LABEL[d.type] ?? null : null,
-        date: dayLabel(d.date),
+        date: dayLabel(d.date, today),
         daysLeft: days,
+        // «متأخرة ٣ أيام» / «اليوم» / «غداً» / «خلال ٥ أيام» — never «خلال -٣ أيام».
+        relative: today ? relativeDayAr(today, d.date, toArabicDigits) : "",
         severity: (days === null ? "normal" : days <= 2 ? "urgent" : days <= 7 ? "warning" : "normal") as "urgent" | "warning" | "normal",
+        source,
+        // CODE-F16: a deadline opens the deadline (its case's «المهل» tab or
+        // the radar), a hearing opens the hearing — never the diary for both.
+        href: d.href ?? dashboardItemHref({ source, caseId: d.caseId ?? null }),
       };
     });
-  }, [dashboardData]);
+  }, [dashboardData, today]);
 
   // How many critical dates the card is NOT showing. Unlike «المواعيد القادمة»,
   // this card has no KPI tile beside it carrying the true total, so without
   // this line a fifth critical deadline would simply not exist on this screen.
-  const hiddenCriticalCount = Math.max(
-    0,
-    (dashboardData?.criticalDeadlinesCount ?? 0) - criticalDeadlines.length,
-  );
+  // null = the server could not count them (CODE-F14): the card then says so
+  // instead of implying there are none beyond the four it shows.
+  const hiddenCriticalCount = hiddenCount(dashboardData?.criticalDeadlinesCount ?? null, criticalDeadlines.length);
+  const moreCriticalLink = moreCriticalHref(criticalDeadlines.some((d) => d.source === "deadline"));
 
   // The banner below renders THIS row, not `[0]`. The old one was gated on
   // «some row is urgent» but always described row 0, so it could announce a
@@ -790,20 +818,16 @@ export default function LawyerDashboardPage() {
           <div className="flex-1">
             <p className={`text-[13px] font-bold ${isDark ? "text-red-400" : "text-red-700"}`}>
               <Warning size={14} weight="fill" className="inline mb-0.5 me-1" />
-              {soonestUrgent.daysLeft === 0
-                ? "موعد اليوم"
-                : soonestUrgent.daysLeft === 1
-                  ? "موعد غداً"
-                  : `موعد خلال ${soonestUrgent.daysLeft} أيام`} — {soonestUrgent.label}
+              {soonestUrgent.source === "deadline" ? "مهلة" : "موعد"} {soonestUrgent.relative} — {soonestUrgent.label}
             </p>
             <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-red-600/60"}`}>
               {soonestUrgent.date}{soonestUrgent.typeLabel ? ` · ${soonestUrgent.typeLabel}` : ""}
             </p>
           </div>
-          <Link href="/dashboard/lawyer/hearings"
+          <Link href={soonestUrgent.href}
             className="flex items-center gap-1 text-[12px] font-bold text-red-500 hover:underline flex-shrink-0"
           >
-            عرض المواعيد <CaretLeft size={11} />
+            {soonestUrgent.source === "deadline" ? "فتح المهلة" : "فتح الموعد"} <CaretLeft size={11} />
           </Link>
         </motion.div>
       )}
@@ -1048,10 +1072,11 @@ export default function LawyerDashboardPage() {
                 <p className="text-xs">لا توجد جلسات قادمة</p>
               </div>
             ) : hearings.map((h) => (
-              <div key={h.id} className={`p-3.5 rounded-xl border ${h.borderColor} ${h.bg}`}>
+              <Link key={h.id} href={h.href} className={`block p-3.5 rounded-xl border hover:opacity-90 transition ${h.borderColor} ${h.bg}`}>
                 <div className="flex items-center justify-between mb-1.5">
                   <span className={`text-[11px] font-bold ${h.color}`}>
-                    {h.dateLabel}{h.time ? ` · ${formatTimeOfDayAr(h.time)}` : ""}
+                    {/* UX05: the time is Riyadh wall-clock time, and says so. */}
+                    {h.dateLabel}{h.time ? ` · ${formatTimeOfDayAr(h.time)} بتوقيت الرياض` : ""}
                   </span>
                   <Gavel size={13} className={h.color} weight="duotone" />
                 </div>
@@ -1063,7 +1088,7 @@ export default function LawyerDashboardPage() {
                     {h.location && <><MapPin size={10} weight="duotone" />{h.location}</>}
                   </p>
                 )}
-              </div>
+              </Link>
             ))}
           </div>
         </div>
@@ -1099,13 +1124,13 @@ export default function LawyerDashboardPage() {
                   className={`rounded-xl p-3.5 border ${cfg.border} ${cfg.bg}`}
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <p className={`text-[13px] font-bold ${cfg.text}`}>{d.label}</p>
+                    <Link href={d.href} className={`text-[13px] font-bold hover:underline ${cfg.text}`}>{d.label}</Link>
                     {/* `daysLeft` is null only when the stored date will not
                         parse; then the countdown chip is omitted rather than
                         showing «٠ أيام», which would read as "today". */}
                     {d.daysLeft !== null && (
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${d.severity === "urgent" ? "bg-red-500 text-white" : isDark ? "bg-white/[0.06] text-zinc-400" : "bg-white text-slate-500"}`}>
-                        {d.daysLeft === 0 ? "اليوم!" : d.daysLeft === 1 ? "غداً" : `${d.daysLeft} أيام`}
+                        {d.relative}
                       </span>
                     )}
                   </div>
@@ -1128,11 +1153,17 @@ export default function LawyerDashboardPage() {
                 </motion.div>
               );
             })}
-            {hiddenCriticalCount > 0 && (
-              <Link href="/dashboard/lawyer/hearings"
+            {hiddenCriticalCount === null ? (
+              <Link href={moreCriticalLink}
                 className={`block text-center text-[11px] font-bold pt-1 text-royal hover:underline`}
               >
-                و{hiddenCriticalCount} موعد حرج آخر — عرض الجدول
+                تعذّر عدّ المواعيد الحرجة — قد يوجد غيرها
+              </Link>
+            ) : hiddenCriticalCount > 0 && (
+              <Link href={moreCriticalLink}
+                className={`block text-center text-[11px] font-bold pt-1 text-royal hover:underline`}
+              >
+                و{toArabicDigits(hiddenCriticalCount)} موعد حرج آخر — عرض الكل
               </Link>
             )}
           </div>

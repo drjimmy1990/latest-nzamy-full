@@ -1,5 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
+import { liveRowsOnly, isMissingColumnError } from "@/lib/services/archivedRows";
+import { NOTE_SELECT, NOTE_SELECT_WITH_ARCHIVE, toNoteDto, type NoteRow } from "./_shared";
 
 /**
  * /api/v1/lawyer/clients/[id]/notes — Phase 2 (خطة_البناء_الكاملة_٢٠٢٦-٠٩-٠٢.md §6).
@@ -16,51 +18,55 @@ import { assertRole } from "@/lib/auth/assertRole";
  * delete.
  */
 
-interface NoteRow {
-  id: string;
-  client_id: string;
-  author_user_id: string;
-  visibility: string;
-  body: string;
-  created_at: string;
-  updated_at: string;
-}
-
-const NOTE_SELECT = "id, client_id, author_user_id, visibility, body, created_at, updated_at";
-
 const MAX_BODY_LENGTH = 4000;
 const VALID_VISIBILITY = new Set(["private", "firm"]);
-
-function toDto(row: NoteRow, uid: string) {
-  return {
-    id: row.id,
-    clientId: row.client_id,
-    authorUserId: row.author_user_id,
-    mine: row.author_user_id === uid,
-    visibility: row.visibility,
-    body: row.body,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
 
 /**
  * GET /api/v1/lawyer/clients/[id]/notes
  * Ordered created_at desc — most recent note first, matching every other
  * note/activity feed in this product.
+ *
+ * CODE-F36: live notes only (`deleted_at is null`); before migration
+ * 20261030_30 there is no such column and `liveRowsOnly` retries without the
+ * filter (nothing can be archived there yet).
+ * `?archived=1` lists the CALLER'S OWN archived notes on this card — the
+ * «المؤرشفة» list the undo / restore works from. Before 20261030_30 it answers
+ * an empty list with `archiveAvailable: false`.
  */
-export async function GET(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
+export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const auth = await assertRole(["lawyer", "firm"]);
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
     const { id } = await context.params;
 
-    const { data, error, count } = await supabase
-      .from("lawyer_client_notes")
-      .select(NOTE_SELECT, { count: "exact" })
-      .eq("client_id", id)
-      .order("created_at", { ascending: false });
+    if (request.nextUrl.searchParams.get("archived") === "1") {
+      const archived = await supabase
+        .from("lawyer_client_notes")
+        .select(NOTE_SELECT_WITH_ARCHIVE, { count: "exact" })
+        .eq("client_id", id)
+        .eq("author_user_id", user.id)
+        .not("deleted_at", "is", null)
+        .order("deleted_at", { ascending: false });
+      if (isMissingColumnError(archived.error, "deleted_at")) {
+        return NextResponse.json({ data: [], total: 0, archiveAvailable: false });
+      }
+      if (archived.error) {
+        console.error("[lawyer/clients/notes GET archived] query failed:", archived.error.message, archived.error.code);
+        return NextResponse.json({ error: "تعذّر تحميل الملاحظات المؤرشفة." }, { status: 500 });
+      }
+      const rows = (archived.data ?? []) as NoteRow[];
+      return NextResponse.json({ data: rows.map((row) => toNoteDto(row, user.id)), total: archived.count ?? rows.length, archiveAvailable: true });
+    }
+
+    const { data, error, count } = await liveRowsOnly((excludeArchived) => {
+      let query = supabase
+        .from("lawyer_client_notes")
+        .select(NOTE_SELECT, { count: "exact" })
+        .eq("client_id", id);
+      if (excludeArchived) query = query.is("deleted_at", null);
+      return query.order("created_at", { ascending: false });
+    });
 
     if (error) {
       console.error("[lawyer/clients/notes GET] query failed:", error.message, error.code);
@@ -68,7 +74,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
     }
 
     const rows = (data ?? []) as NoteRow[];
-    return NextResponse.json({ data: rows.map((row) => toDto(row, user.id)), total: count ?? rows.length });
+    return NextResponse.json({ data: rows.map((row) => toNoteDto(row, user.id)), total: count ?? rows.length });
   } catch (err) {
     console.error("[lawyer/clients/notes GET] Unexpected error:", err);
     return NextResponse.json({ error: "تعذّر تحميل ملاحظات الموكّل." }, { status: 500 });
@@ -173,7 +179,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       return NextResponse.json({ error: "تعذّر حفظ الملاحظة." }, { status: 500 });
     }
 
-    return NextResponse.json({ data: toDto(data as NoteRow, user.id) });
+    return NextResponse.json({ data: toNoteDto(data as NoteRow, user.id) });
   } catch (err) {
     console.error("[lawyer/clients/notes POST] Unexpected error:", err);
     return NextResponse.json({ error: "تعذّر حفظ الملاحظة." }, { status: 500 });

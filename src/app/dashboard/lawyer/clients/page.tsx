@@ -123,9 +123,9 @@ export default function ClientsPage() {
             <p className={`text-[13px] font-bold ${isDark ? "text-red-400" : "text-red-700"}`}>{loadError}</p>
             <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-red-600/70"}`}>القائمة أدناه غير مكتملة — لا تعتمد عليها حتى ينجح التحميل.</p>
           </div>
-          <button onClick={loadClients}
+          <button type="button" onClick={loadClients}
             className="flex items-center gap-1.5 text-[11px] font-bold text-red-500 hover:underline flex-shrink-0">
-            <ArrowClockwise size={13} /> إعادة المحاولة
+            <ArrowClockwise size={13} aria-hidden="true" /> إعادة المحاولة
           </button>
         </motion.div>
       )}
@@ -155,7 +155,7 @@ export default function ClientsPage() {
           { key: "active" as const, label: "الموكلون النشطون", count: clients.filter(c => !isArchived(c)).length },
           { key: "archive" as const, label: "غير نشطين / أرشيف", count: clients.filter(isArchived).length },
         ]).map(tab => (
-          <button key={tab.key} onClick={() => { setClientView(tab.key); setArchiveSearch(""); }}
+          <button key={tab.key} type="button" aria-pressed={clientView === tab.key} onClick={() => { setClientView(tab.key); setArchiveSearch(""); }}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-bold transition-all ${
               clientView === tab.key
                 ? isDark ? "bg-zinc-700 text-white shadow-sm" : "bg-white text-[#0B3D2E] shadow-sm"
@@ -179,8 +179,10 @@ export default function ClientsPage() {
         <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border ${
           isDark ? "border-white/[0.06] bg-zinc-900/60" : "border-slate-200 bg-white"
         }`}>
-          <MagnifyingGlass size={14} className={isDark ? "text-zinc-500" : "text-slate-400"} />
+          <MagnifyingGlass size={14} aria-hidden="true" className={isDark ? "text-zinc-500" : "text-slate-400"} />
           <input
+            type="search"
+            aria-label="البحث في أرشيف الموكّلين"
             value={archiveSearch}
             onChange={e => setArchiveSearch(e.target.value)}
             placeholder="ابحث في الأرشيف (اسم موكل، رقم الهاتف...)"
@@ -189,7 +191,7 @@ export default function ClientsPage() {
             }`}
           />
           {archiveSearch && (
-            <button onClick={() => setArchiveSearch("")}
+            <button type="button" onClick={() => setArchiveSearch("")} aria-label="مسح البحث في الأرشيف"
               className={`text-[11px] px-2 py-0.5 rounded-lg ${
                 isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"
               }`}>مسح</button>
@@ -226,9 +228,9 @@ export default function ClientsPage() {
           </p>
         </div>
         {clientView === "active" && (
-        <button onClick={() => setShowModal(true)}
+        <button type="button" onClick={() => setShowModal(true)}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors self-start">
-          <Plus size={15} weight="bold" />إضافة موكّل
+          <Plus size={15} weight="bold" aria-hidden="true" />إضافة موكّل
         </button>
         )}
       </motion.div>
@@ -244,20 +246,20 @@ export default function ClientsPage() {
             if (count === 0) return null;
             const active  = activeFlags.has(flag);
             return (
-              <button key={flag} onClick={() => toggleFlag(flag)} title={conf.desc}
+              <button key={flag} type="button" aria-pressed={active} onClick={() => toggleFlag(flag)} title={conf.desc}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11px] font-bold transition-all ${
                   active ? conf.bg + " " + conf.color + " border-current/30" : isDark ? "border-white/[0.06] text-zinc-500 hover:text-zinc-300" : "border-slate-100 text-slate-500"
                 }`}>
-                <span>{conf.emoji}</span>
+                <span aria-hidden="true">{conf.emoji}</span>
                 {conf.label}
                 <span className={`text-[9px] rounded-full px-1.5 py-0.5 ${active ? "bg-white/20" : isDark ? "bg-white/[0.06]" : "bg-slate-100"}`}>{count}</span>
               </button>
             );
           })}
           {activeFlags.size > 0 && (
-            <button onClick={() => setActiveFlags(new Set())}
+            <button type="button" onClick={() => setActiveFlags(new Set())}
               className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-red-500 px-2 py-1.5">
-              <XCircle size={12} /> مسح الفلتر
+              <XCircle size={12} aria-hidden="true" /> مسح الفلتر
             </button>
           )}
         </div>
@@ -266,13 +268,13 @@ export default function ClientsPage() {
       {/* Search + Sort */}
       <div className="flex gap-3 flex-col sm:flex-row">
         <div className={`flex items-center gap-2 flex-1 px-3 py-2.5 rounded-xl border ${isDark ? "border-white/[0.06] bg-zinc-900/60" : "border-slate-200 bg-white"}`}>
-          <MagnifyingGlass size={15} className={isDark ? "text-zinc-500" : "text-slate-400"} />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="بحث بالاسم أو الهاتف..."
+          <MagnifyingGlass size={15} aria-hidden="true" className={isDark ? "text-zinc-500" : "text-slate-400"} />
+          <input type="search" aria-label="البحث في الموكّلين بالاسم أو الهاتف" value={search} onChange={e => setSearch(e.target.value)} placeholder="بحث بالاسم أو الهاتف..."
             className={`flex-1 bg-transparent text-sm outline-none ${isDark ? "text-zinc-200 placeholder:text-zinc-600" : "text-slate-700 placeholder:text-slate-400"}`} />
         </div>
         <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-[12px] ${isDark ? "border-white/[0.06] bg-zinc-900/60 text-zinc-400" : "border-slate-200 bg-white text-slate-500"}`}>
-          <SortAscending size={14} />
-          <select value={sortKey} onChange={e => setSortKey(e.target.value as SortKey)}
+          <SortAscending size={14} aria-hidden="true" />
+          <select aria-label="ترتيب الموكّلين حسب" value={sortKey} onChange={e => setSortKey(e.target.value as SortKey)}
             className="bg-transparent outline-none text-[12px] cursor-pointer">
             <option value="lastContact">آخر نشاط</option>
             <option value="activeCases">الطلبات النشطة</option>
@@ -344,23 +346,28 @@ export default function ClientsPage() {
             <motion.div key={client.id}
               initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.04 }}>
-              <div onClick={() => setDrawerClient(client)}
-                className={`block group cursor-pointer ${card} overflow-hidden transition-all hover:border-royal/30 hover:shadow-lg hover:-translate-y-0.5`}>
+              {/* CODE-F35: the card opens the client's drawer, so it is a real
+                  <button> — reachable by Tab and opened by Enter/Space. It
+                  was a <div onClick>, which a keyboard could not reach at all.
+                  (A button, not a link: it opens a panel here rather than
+                  navigating; the full file is linked from inside the drawer.) */}
+              <button type="button" onClick={() => setDrawerClient(client)}
+                className={`block w-full text-right group cursor-pointer ${card} overflow-hidden transition-all hover:border-royal/30 hover:shadow-lg hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal/50`}>
                 {/* Header area */}
                 <div className="p-4 pb-3">
                   <div className="flex items-start gap-3">
                     {/* Avatar */}
                     <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 font-bold text-sm ${client.clientType === "company" ? "bg-indigo-500/10 text-indigo-500" : "bg-royal/10 text-royal"}`}>
-                      {client.clientType === "company" ? <Buildings size={20} weight="duotone" /> : client.name.charAt(0)}
+                      {client.clientType === "company" ? <Buildings size={20} weight="duotone" aria-label="شركة" /> : <span aria-hidden="true">{client.name.charAt(0)}</span>}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start gap-2 mb-1">
                         <p className={`text-[14px] font-bold truncate flex-1 ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{client.name}</p>
                         {/* Stars only for a client the lawyer actually rated. */}
                         {client.rating !== null && (
-                          <div className="flex flex-shrink-0">
+                          <div className="flex flex-shrink-0" role="img" aria-label={`التقييم ${client.rating} من 5`}>
                             {Array.from({ length: 5 }).map((_, si) => (
-                              <Star key={si} size={10} weight={si < (client.rating ?? 0) ? "fill" : "regular"}
+                              <Star key={si} size={10} aria-hidden="true" weight={si < (client.rating ?? 0) ? "fill" : "regular"}
                                 className={si < (client.rating ?? 0) ? "text-amber-400" : isDark ? "text-zinc-700" : "text-slate-200"} />
                             ))}
                           </div>
@@ -393,12 +400,12 @@ export default function ClientsPage() {
                         </div>
                       )}
                       <div className={`flex items-center gap-3 text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-                        {lastContact && <span className="flex items-center gap-0.5"><Clock size={9} />{lastContact}</span>}
-                        {client.phone && <span className="flex items-center gap-0.5"><Phone size={9} /><span dir="ltr">{client.phone}</span></span>}
+                        {lastContact && <span className="flex items-center gap-0.5"><Clock size={9} aria-hidden="true" />{lastContact}</span>}
+                        {client.phone && <span className="flex items-center gap-0.5"><Phone size={9} aria-hidden="true" /><span dir="ltr">{client.phone}</span></span>}
                       </div>
                     </div>
                     <div className="flex-shrink-0">
-                      <ArrowRight size={16} className={`opacity-0 group-hover:opacity-100 transition-all -translate-x-1 group-hover:translate-x-0 ${isDark ? "text-zinc-500" : "text-slate-400"}`} />
+                      <ArrowRight size={16} aria-hidden="true" className={`opacity-0 group-hover:opacity-100 transition-all -translate-x-1 group-hover:translate-x-0 ${isDark ? "text-zinc-500" : "text-slate-400"}`} />
                     </div>
                   </div>
                 </div>
@@ -430,7 +437,7 @@ export default function ClientsPage() {
                   ))}
                 </div>
 
-              </div>
+              </button>
             </motion.div>
           );
         })}

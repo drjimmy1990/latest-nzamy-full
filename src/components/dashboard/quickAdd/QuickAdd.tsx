@@ -164,7 +164,7 @@ export function QuickAddProvider({ scope, firmRole, canAddCase, children }: Prov
     // AddClientModal fires «nzamy-workflow-updated» and closes itself after a save.
     client: () => <AddClientModal key="qa-client" isDark={isDark} onClose={closeModal} onCreated={() => {}} />,
     task: () => <AddTaskModal key="qa-task" onClose={closeModal} isDark={isDark} />,
-    deadline: () => <AddDeadlineModal key="qa-deadline" onClose={closeModal} isDark={isDark} onCreated={() => { refreshed(); closeModal(); }} />,
+    deadline: () => <AddDeadlineModal key="qa-deadline" onClose={closeModal} isDark={isDark} onCreated={() => refreshed()} />,
     // The note service fires its own event; the wall re-reads on it.
     note: () => <NoteEditorModal key="qa-note" isDark={isDark} onClose={closeModal} />,
     ledger: () => <LedgerEntryModal key="qa-ledger" isDark={isDark} onClose={closeModal} />,
