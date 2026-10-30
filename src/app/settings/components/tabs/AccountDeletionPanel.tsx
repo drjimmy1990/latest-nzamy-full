@@ -3,7 +3,15 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Trash, WarningCircle } from "@phosphor-icons/react";
 import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
-import { ACCOUNT_FROZEN_PATH, DELETE_CONFIRM_PHRASE_AR, FREEZE_DAYS, phraseMatches } from "@/lib/auth/accountFreeze";
+import {
+  ACCOUNT_FROZEN_PATH,
+  DELETE_CONFIRM_PHRASE_AR,
+  FREEZE_DAYS,
+  entityOwnerBlockAr,
+  normalizeOwnerBlock,
+  phraseMatches,
+  type EntityOwnerBlock,
+} from "@/lib/auth/accountFreeze";
 import { toArabicDigits } from "@/lib/services/arabicCount";
 
 /**
@@ -15,10 +23,13 @@ import { toArabicDigits } from "@/lib/services/arabicCount";
  * POST freezes the account for 60 days and the browser goes to
  * /account-frozen, the one page a frozen account may open.
  */
-type StatusEnvelope = { data: { available: boolean; frozen: boolean } };
+type StatusEnvelope = { data: { available: boolean; frozen: boolean; ownerBlock?: unknown } };
 
 export function AccountDeletionPanel({ fallback }: { fallback: ReactNode }) {
   const [state, setState] = useState<"loading" | "available" | "unavailable">(isSupabaseMode ? "loading" : "unavailable");
+  // Owner ٣٠٧: the owner of an entity with members is refused until its
+  // ownership is transferred — said before he types anything, no button.
+  const [ownerBlock, setOwnerBlock] = useState<EntityOwnerBlock | null>(null);
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [typed, setTyped] = useState("");
@@ -36,6 +47,7 @@ export function AccountDeletionPanel({ fallback }: { fallback: ReactNode }) {
           window.location.assign(ACCOUNT_FROZEN_PATH);
           return;
         }
+        setOwnerBlock(normalizeOwnerBlock(res.data.ownerBlock));
         setState(res.data.available ? "available" : "unavailable");
       })
       .catch(() => {
@@ -88,13 +100,28 @@ export function AccountDeletionPanel({ fallback }: { fallback: ReactNode }) {
             <ul className="list-disc space-y-1 pr-5">
               <li>الفواتير الضريبية التي يُلزم النظام بحفظها، باسمك كما صدرت.</li>
               <li>إن كنت عضواً في مكتب محاماة: ملفات قضايا المكتب وملاحظاته ومستندات موكليه تبقى للمكتب وتنتقل لصاحبه.</li>
+              <li>
+                ملاحظاتك «الخاصة بي فقط» على قضايا المكتب تنتقل لصاحب المكتب خاصةً به، ويبقى مسجّلاً أنك كاتبها.
+              </li>
+              <li>
+                إن غادرت مكتباً استشارياً: جلساتك ومواعيدك فيه بقيت باسمك، وعند حذف حسابك تنتقل لصاحب المكتب للعرض
+                والحفظ لا للتمثيل.
+              </li>
               <li>مستنداتك على قضية فيها طرف آخر (موكلك أو محاميك) تبقى لذلك الطرف.</li>
             </ul>
+            <p className="mt-1">
+              عضو الفريق القانوني في شركة حسابه مستقل: لا ينتقل منه شيء للشركة، ويُحذف كحساب مستقل.
+            </p>
           </div>
         </div>
       </div>
 
-      {!open ? (
+      {ownerBlock ? (
+        <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold leading-6 text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
+          <WarningCircle size={15} weight="fill" className="mt-1 flex-shrink-0" />
+          <span>{entityOwnerBlockAr(ownerBlock)}</span>
+        </div>
+      ) : !open ? (
         <button
           type="button"
           onClick={() => setOpen(true)}
