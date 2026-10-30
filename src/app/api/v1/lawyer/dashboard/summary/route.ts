@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
 import { kindToType, urgencyFromDb } from "@/lib/services/hearingVocabulary";
 import { addDays, isoDate, parseIsoDate } from "@/lib/services/deadlineEngine";
+import { dashboardItemHref, sumKnown, type DashboardDateSource } from "@/lib/services/dashboardDateItems";
 
 /**
  * GET /api/v1/lawyer/dashboard/summary
@@ -95,6 +96,10 @@ interface UpcomingHearingRow {
   urgency: string | null;
   location: string | null;
   caseName: string | null;
+  /** CODE-F16: which table the row came from, its case, and the record it opens. */
+  source: DashboardDateSource;
+  caseId: string | null;
+  href: string;
 }
 
 interface UrgentTaskRow {
@@ -170,7 +175,7 @@ export async function GET() {
     const degraded: string[] = [];
 
     // ── Round 1: the six independent reads ───────────────────────────────────
-    const [workspace, pendingConsultations, recentActivity, hearingRows, taskRows, deadlineRows] = await Promise.all([
+    const [workspace, pendingConsultations, recentActivity, hearingRead, taskRows, deadlineRead, criticalHearingsCount] = await Promise.all([
       // 1. The lawyer's whole workspace, unfiltered by status: one read that
       //    feeds cases only now (hearings and tasks both moved to their own
       //    tables — queries 4 and 5, below). `assigned_to` is the predicate
@@ -301,7 +306,9 @@ export async function GET() {
       Promise.resolve(
         supabase
           .from("hearings")
-          .select("id, title, kind, hearing_date, hearing_time, urgency, location, metadata")
+          // CODE-F14: the count is exact and independent of the preview limit
+          // below — the tile used to print the length of the capped list.
+          .select("id, title, kind, hearing_date, hearing_time, urgency, location, metadata, case_request_id", { count: "exact" })
           .eq("owner_user_id", uid)
           .eq("status", "scheduled")
           .gte("hearing_date", today)
@@ -309,16 +316,19 @@ export async function GET() {
           .order("hearing_time", { ascending: true, nullsFirst: false })
           .limit(50),
       )
-        .then(({ data, error }) => {
+        .then(({ data, error, count }) => {
           if (error) {
             console.error("[lawyer/dashboard/summary] hearings read failed:", error.message);
             return null;
           }
-          return (data ?? []) as {
-            id: string; title: string; kind: string; hearing_date: string;
-            hearing_time: string | null; urgency: string; location: string | null;
-            metadata: Record<string, unknown> | null;
-          }[];
+          return {
+            rows: (data ?? []) as {
+              id: string; title: string; kind: string; hearing_date: string;
+              hearing_time: string | null; urgency: string; location: string | null;
+              metadata: Record<string, unknown> | null; case_request_id: string | null;
+            }[],
+            count: count ?? null,
+          };
         })
         .catch((err) => {
           console.error("[lawyer/dashboard/summary] hearings read threw:", err);
@@ -362,27 +372,57 @@ export async function GET() {
       Promise.resolve(
         supabase
           .from("deadlines")
-          .select("id, title, due_date, case_request_id")
+          .select("id, title, due_date, case_request_id", { count: "exact" })
           .eq("owner_user_id", uid)
           .eq("status", "open")
           .lte("due_date", deadlineWindowEnd)
           .order("due_date", { ascending: true })
           .limit(10),
       )
-        .then(({ data, error }) => {
+        .then(({ data, error, count }) => {
           if (error) {
             console.error("[lawyer/dashboard/summary] deadlines read failed:", error.message);
             return null;
           }
-          return (data ?? []) as {
-            id: string; title: string; due_date: string; case_request_id: string | null;
-          }[];
+          return {
+            rows: (data ?? []) as {
+              id: string; title: string; due_date: string; case_request_id: string | null;
+            }[],
+            count: count ?? null,
+          };
         })
         .catch((err) => {
           console.error("[lawyer/dashboard/summary] deadlines read threw:", err);
           return null;
         }),
+
+      // 7. CODE-F14: how many upcoming hearings are critical — counted by the
+      //    database with the same predicate the card applies to the preview
+      //    rows (kind «deadline» or urgency «urgent» in the DB vocabulary), so
+      //    a 51st critical hearing is still counted. null = unknown.
+      Promise.resolve(
+        supabase
+          .from("hearings")
+          .select("id", { count: "exact", head: true })
+          .eq("owner_user_id", uid)
+          .eq("status", "scheduled")
+          .gte("hearing_date", today)
+          .or("kind.eq.deadline,urgency.eq.urgent"),
+      )
+        .then(({ count, error }) => {
+          if (error) {
+            console.error("[lawyer/dashboard/summary] critical hearings count failed:", error.message);
+            return null;
+          }
+          return count ?? null;
+        })
+        .catch((err) => {
+          console.error("[lawyer/dashboard/summary] critical hearings count threw:", err);
+          return null;
+        }),
     ]);
+    const hearingRows = hearingRead?.rows ?? null;
+    const deadlineRows = deadlineRead?.rows ?? null;
 
     if (pendingConsultations === null) degraded.push("pendingConsultations");
     if (recentActivity === null) degraded.push("recentActivity");
@@ -408,16 +448,19 @@ export async function GET() {
         urgency: urgencyFromDb(row.urgency),
         location: row.location,
         caseName: readString((row.metadata ?? {}) as Record<string, unknown>, "caseName"),
+        source: "hearing",
+        caseId: row.case_request_id,
+        href: dashboardItemHref({ source: "hearing", caseId: row.case_request_id }),
       }));
       // Already ordered by the query (date asc, time asc), so slicing keeps
-      // the soonest first.
-      upcomingHearingsCount = hearings.length;
+      // the soonest first. The count is the database's, not the list length.
+      upcomingHearingsCount = hearingRead?.count ?? null;
       upcomingHearings = hearings.slice(0, 3);
       // «مواعيد حرجة» is a real subset of the same rows, not a second source:
       // an appeal/final deadline (the modal's «موعد طعن / نهائي») or anything
       // the lawyer marked critical when saving it.
       const critical = hearings.filter((h) => h.type === "deadline" || h.urgency === "critical");
-      criticalDeadlinesCount = critical.length;
+      criticalDeadlinesCount = criticalHearingsCount;
       criticalDeadlines = critical.slice(0, 4);
     }
 
@@ -461,9 +504,12 @@ export async function GET() {
         urgency: row.due_date <= cutoff3 ? "critical" : "normal",
         location: null,
         caseName: row.case_request_id ? caseTitles.get(row.case_request_id) ?? null : null,
+        source: "deadline",
+        caseId: row.case_request_id,
+        href: dashboardItemHref({ source: "deadline", caseId: row.case_request_id }),
       }));
 
-      criticalDeadlinesCount = (criticalDeadlinesCount ?? 0) + deadlineItems.length;
+      criticalDeadlinesCount = sumKnown(criticalDeadlinesCount, deadlineRead?.count ?? null);
       criticalDeadlines = [...(criticalDeadlines ?? []), ...deadlineItems]
         .sort((a, b) => a.date.localeCompare(b.date))
         .slice(0, 4);

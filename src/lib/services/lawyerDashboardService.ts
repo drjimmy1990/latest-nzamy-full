@@ -50,6 +50,10 @@ export interface LawyerDashboardHearing {
   urgency: string | null;
   location: string | null;
   caseName: string | null;
+  /** CODE-F16 — absent from an older server, so the page falls back to its own rule. */
+  source?: "hearing" | "deadline";
+  caseId?: string | null;
+  href?: string;
 }
 
 export interface LawyerDashboardTask {
