@@ -440,13 +440,16 @@ const rules = [
   'لا تذكر أحكاماً قضائية ولا سوابق. كل مادة نظامية تستند إليها اذكرها في cited: اسم النظام كما تعرفه، ورقم المادة بالأرقام، والعبارة كما كتبتها؛ المنصة تتحقق منها في المكتبة.',
   'أعد كائن JSON واحداً فقط، بلا أي نص قبله أو بعده وبلا Markdown.',
 ].join('\n');
-const SYSTEM = 'أنت محامٍ سعودي خبير في صياغة العقود. اتبع التعليمات في رسالة المستخدم بدقة، وأعد كائن JSON واحداً فقط.';`;
+const SYSTEM = 'أنت محامٍ سعودي خبير في صياغة العقود. اتبع التعليمات في رسالة المستخدم بدقة، وأعد كائن JSON واحداً فقط.';
+// The outline's ceiling: the usual size, raised so every clause the user asked for fits (40 at most).
+const asked = Array.isArray(i.clauses) ? i.clauses.length : 0;
+const top = Math.min(40, Math.max(i.complexity === 'detailed' ? 25 : 12, asked + 6));`;
 
 const CONTRACTS_OUTLINE_BUILD = String.raw`const b = $('Webhook').first().json.body;
 const i = b.input || {};
 const esc = (s) => String(s ?? '').replace(/</g, '＜');
 ${CONTRACTS_FRAME}
-const range = i.complexity === 'detailed' ? 'من ٨ إلى ٢٥ بنداً، مفصّلة' : 'من ٤ إلى ١٢ بنداً، موجزة';
+const range = i.complexity === 'detailed' ? 'من 8 إلى ' + top + ' بنداً، مفصّلة' : 'من 4 إلى ' + top + ' بنداً، موجزة';
 const prompt = [
   'أنت محامٍ سعودي خبير في صياغة العقود وفق الأنظمة السعودية النافذة (ومنها نظام المعاملات المدنية، ونظام العمل لعقود العمل، ونظام الشركات للشركات، بحسب النوع).',
   'المطلوب الآن مخطط «' + esc(i.type_name) + '» فقط: العنوان والتمهيد وقائمة البنود بعناوينها، دون كتابة نصوص البنود.',
@@ -472,7 +475,7 @@ const end = t.lastIndexOf('}');
 if (start < 0 || end <= start) return fail('schema_invalid', 'no JSON object in the outline');
 let o;
 try { o = JSON.parse(t.slice(start, end + 1)); } catch (e) { return fail('schema_invalid', 'the outline is not valid JSON'); }
-const max = i.complexity === 'detailed' ? 25 : 12;
+const max = top;
 const text = (v, n) => (typeof v === 'string' && v.trim() && v.trim().length <= n ? v.trim() : null);
 if (!o || !text(o.title, 200) || !Array.isArray(o.sections) || o.sections.length < 2 || o.sections.length > max) {
   return fail('schema_invalid', 'the outline has no title or ' + (Array.isArray(o && o.sections) ? o.sections.length : 0) + ' clauses');

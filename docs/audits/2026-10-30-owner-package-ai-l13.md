@@ -27,7 +27,7 @@ Nothing here is closed until it is deployed and the owner has re-tested it (owne
   - the two parties as labelled fields;
   - the description (20–4,000 characters);
   - the court;
-  - up to 40 clauses.
+  - up to 34 requested clauses. An outline holds 40, so 6 are left for the standard ones; the outline's ceiling rises from 25 (detailed) or 12 (simple) to fit every clause asked for.
 
   A field that is too long is refused before any charge; nothing is cut.
 - **n8n** (`clauseJob`, workflow `mMekAog89HsgLz3o`): Webhook → 202 → «Build outline» → Outline Agent → «Plan clauses» → one Agent call per clause → «Assemble» → one callback.
@@ -48,7 +48,7 @@ Nothing here is closed until it is deployed and the owner has re-tested it (owne
 
 ## Tests
 
-- `node --test src/lib/ai/*.test.ts src/components/ai/*.test.ts`: 168/168. These include the new `src/lib/ai/contractsPro.test.ts` (13 tests): registry, input, languages, all-or-nothing output, charge once / retry 409, callback `citation_check`, workflow wiring, prompts, plan, assemble, and the page helpers.
+- `node --test src/lib/ai/*.test.ts src/components/ai/*.test.ts`: 170/170. These include the new `src/lib/ai/contractsPro.test.ts` (15 tests): the live n8n reply as a fixture through the app's output check and the page reader, clause caps, registry, input, languages, all-or-nothing output, charge once / retry 409, callback `citation_check`, workflow wiring, prompts, plan, assemble, and the page helpers.
 - Tests that mention the contracts flow (`zipWiring`, `pricingHonesty`, `intakeValues`, `serviceRequestIntake`, `cannedOutputGate`): 117/117.
 - `tsc --noEmit`: clean.
 

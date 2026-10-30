@@ -115,7 +115,12 @@ export function StepGenerate({
             submitLabel={`اكتب العقد الآن — ${points} نقطة`}
             submittingLabel="جارٍ كتابة العقد..."
             submitting={busy}
-            submitErrors={phase === "error" && error ? [error] : []}
+            submitErrors={
+              phase === "error" && error ? [error]
+                // The server accepted a draft this page cannot read: say so, never show the form as if nothing happened.
+                : phase === "done" ? ["اكتمل الطلب لكن تعذّر عرض العقد هنا — تواصل مع الدعم."]
+                : []
+            }
             onSubmit={onGenerate}
           />
           <p className={`flex items-start gap-1.5 text-[11px] leading-relaxed ${muted}`}>

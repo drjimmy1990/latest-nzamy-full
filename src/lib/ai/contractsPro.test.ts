@@ -259,7 +259,7 @@ test("outline prompt: the parties and the idea as quoted data, the clauses asked
   assert.match(out.content, /- اسم الشركة: «شركة الأفق»/);
   assert.match(out.content, /«تأجير مستودع في الرياض/);
   assert.match(out.content, /- «بند التحكيم»/);
-  assert.match(out.content, /من ٨ إلى ٢٥ بنداً/);
+  assert.match(out.content, /من 8 إلى 25 بنداً/);
   assert.match(out.content, /\[\.\.\.\.\]/);
   assert.ok(!out.content.includes("title_alt"));
   const bi = run(def.build, pkg(checked({ ...input, language: { mode: "ar_en" } })))[0].json;
@@ -393,4 +393,67 @@ test("page: the wizard's state becomes the run's input, labelled as the user saw
   assert.match(contractsProText(bi), /ع\n\n١\nنص\n\n٢\nنص٢\n\n— الإنجليزية —\n\nC\n\n1\nText\n\n2\nText2/);
   assert.equal(asContractsProDraft(null), null);
   assert.equal(asContractsProDraft({ title: "t", sections: [] }), null);
+});
+
+test("the live n8n reply (2026-10-30, services, ar_en) passes the app's output check and reads back as a bilingual draft", () => {
+  // Trimmed from the live-test callback body (2 of its 8 clauses, 2 of its 9 citations), keys as n8n sent them.
+  const i = checked({
+    type: "services",
+    complexity: "simple",
+    language: { mode: "ar_en" },
+    parties: [
+      { kind: "company", fields: [{ label: "اسم الشركة", value: "شركة الاختبار للتقنية" }, { label: "السجل التجاري", value: "1010000000" }] },
+      { kind: "individual", fields: [{ label: "الاسم الكامل", value: "سالم أحمد" }] },
+    ],
+    description: "عقد تقديم خدمات تصميم موقع إلكتروني للشركة خلال شهرين مقابل مبلغ يُدفع على دفعتين",
+    court: "المحكمة التجارية",
+    clauses: ["سرية المعلومات"],
+  });
+  const live = {
+    title: "عقد تقديم خدمات تصميم موقع إلكتروني",
+    preamble: "إنه في يوم [....] الموافق [....]، تم الاتفاق بين كل من: شركة الاختبار للتقنية، سجل تجاري رقم (1010000000)، ويمثلها في التوقيع [....] (طرف أول)، والسيد/ سالم أحمد، هوية وطنية رقم [....] (طرف ثاني).",
+    sections: [
+      {
+        heading: "البند الأول: محل العقد",
+        body: "1. يلتزم الطرف الثاني بموجب هذا العقد بتقديم خدمات تصميم وتطوير موقع إلكتروني لصالح الطرف الأول.\n2. يتعهد الطرف الثاني بتنفيذ كافة الأعمال الموكلة إليه بمهنية عالية.",
+        heading_alt: "Article 1: Scope of Services",
+        body_alt: "1. The Second Party shall provide website design and development services for the First Party.\n2. The Second Party undertakes to perform all assigned tasks with high professionalism.",
+      },
+      {
+        heading: "البند الخامس: سرية المعلومات",
+        body: "1. يتعهد الطرف الثاني بالحفاظ على سرية كافة المعلومات والبيانات والوثائق التي يطلع عليها.",
+        heading_alt: "Article 5: Confidentiality",
+        body_alt: "1. The Second Party undertakes to maintain the confidentiality of all information, data, and documents.",
+      },
+    ],
+    cited: [
+      { law: "نظام المعاملات المدنية", article: 101, as_written: "يجب تنفيذ العقد وفقاً لما اشتمل عليه وبطريقة تتفق مع ما يوجبه حسن النية." },
+      { law: "نظام المحاكم التجارية", article: 16, as_written: "تختص المحاكم التجارية بالنظر في الدعاوى..." },
+    ],
+    title_alt: "Website Design Services Agreement",
+    preamble_alt: "On this day [....], corresponding to [....], an agreement has been reached between: Al-Ikhtibar Technology Company (First Party), and Mr. Salem Ahmed (Second Party).",
+  };
+  const out = AI_TOOLS["contracts-pro"].validateOutput(live, i) as Record<string, any>;
+  assert.ok(out, "the app accepts the live reply");
+  assert.deepEqual(out.language, { primary: "العربية", alt: "الإنجليزية" });
+  assert.equal(out.sections.length, 2);
+  assert.equal(out.cited.length, 2);
+  const d = asContractsProDraft({ ...out, citation_check: [] })!;
+  assert.equal(d.alt, "الإنجليزية");
+  assert.equal(d.title_alt, "Website Design Services Agreement");
+  assert.equal(d.sections[1].body_alt, live.sections[1].body_alt);
+});
+
+test("clause caps: the input refuses more requested clauses than an outline can hold, and the outline makes room for every one asked", () => {
+  const v = AI_TOOLS["contracts-pro"].validateInput;
+  const many = (n: number) => Array.from({ length: n }, (_, k) => `بند مطلوب ${k + 1}`);
+  assert.equal(v({ ...input, clauses: many(34) }).ok, true);
+  assert.equal(v({ ...input, clauses: many(35) }).ok, false, "34 asked + 6 standard = the output's 40");
+  // A simple contract with 10 clauses asked may have 16 sections, not 12.
+  const simple = pkg(checked({ ...input, complexity: "simple", clauses: many(10) }));
+  const sections = (n: number) => ({ title: "عقد", preamble: "", sections: Array.from({ length: n }, (_, k) => ({ heading: `البند ${k + 1}`, covers: "" })) });
+  assert.equal(run(def.plan, simple, { json: outlineReply(sections(16)) }).length, 16);
+  assert.equal(run(def.plan, simple, { json: outlineReply(sections(17)) })[0].json.ok, false);
+  const prompt = run(def.build, simple)[0].json.content as string;
+  assert.match(prompt, /من 4 إلى 16 بنداً/);
 });

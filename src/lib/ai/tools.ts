@@ -671,7 +671,9 @@ export const CONTRACTS_PRO_PRICE = 1000;
 export const CONTRACTS_PRO_DESC_MIN = 20;
 export const CONTRACTS_PRO_DESC_MAX = 4000;
 export const CONTRACTS_PRO_CLAUSE_MAX = 300;
-const CONTRACTS_PRO_CLAUSES_MAX = 40;
+// An outline holds 40 clauses at most (the output check); 6 are left for the
+// standard ones (parties, subject, term, price, disputes, final provisions).
+const CONTRACTS_PRO_CLAUSES_MAX = 34;
 const PARTY_FIELDS_MAX = 8;
 const PARTY_FIELD_MAX = 300;
 const PARTY_KIND: Readonly<Record<string, string>> = { company: "شركة أو منشأة", individual: "شخص طبيعي", government: "جهة حكومية" };
