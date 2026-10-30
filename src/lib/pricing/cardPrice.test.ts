@@ -5,8 +5,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { audienceCycles, cardPrice, displayCycle, isBookCard, offeredCycles, type CardPriceFields } from "./cardPrice.ts";
-import { PRICE_BOOK, formatSarAmount, offeredSar, type Cycle } from "./priceBook.ts";
+import {
+  audienceCycles,
+  cardLaunch,
+  cardPrice,
+  cardTotalWithVat,
+  displayCycle,
+  isBookCard,
+  offeredCycles,
+  type CardPriceFields,
+  type LaunchPriceMap,
+} from "./cardPrice.ts";
+import { PRICE_BOOK, activeLaunchPrices, formatSarAmount, offeredSar, type Cycle } from "./priceBook.ts";
+import { quote } from "../payments/catalog.ts";
 
 const card = (id: string, extra: Partial<CardPriceFields> = {}): CardPriceFields => ({
   id,
@@ -18,15 +29,17 @@ const card = (id: string, extra: Partial<CardPriceFields> = {}): CardPriceFields
 test("a book card's price is the book's, in each cycle it is sold", () => {
   assert.deepEqual(cardPrice(card("lawyer-pro"), "yearly", "ar"), { price: "٣٬٩٩٠", period: "ر.س / سنة" });
   assert.equal(cardPrice(card("lawyer-pro"), "monthly", "ar"), null, "the professionals' monthly cycle is retired");
-  assert.deepEqual(cardPrice(card("ind-ai"), "monthly", "ar"), { price: "٣٩", period: "ر.س / شهر" });
-  assert.deepEqual(cardPrice(card("ind-ai", { periodYearly: "SAR / year" }), "yearly", "en"), { price: "390", period: "SAR / year" });
-  assert.equal(cardPrice(card("lawyer-pro"), "quarterly", "ar"), null, "no quarterly price yet: the card is not shown in that cycle");
+  assert.deepEqual(cardPrice(card("ind-ai"), "monthly", "ar"), { price: "٢٩", period: "ر.س / شهر" });
+  assert.deepEqual(cardPrice(card("ind-ai", { periodYearly: "SAR / year" }), "yearly", "en"), { price: "249", period: "SAR / year" });
+  assert.deepEqual(cardPrice(card("ind-ai"), "quarterly", "ar"), { price: "٧٩", period: "ر.س / ٣ أشهر" });
+  assert.deepEqual(cardPrice(card("firm-basic"), "semiannual", "en"), { price: "5,490", period: "SAR / 6 months" });
+  assert.equal(cardPrice(card("lawyer-pro"), "quarterly", "ar"), null, "no quarterly price: the card is not shown in that cycle");
 });
 
 test("a one-payment card (top-up, library pass) shows its price in every cycle", () => {
   for (const cycle of ["monthly", "quarterly", "semiannual", "yearly"] as Cycle[]) {
     assert.deepEqual(cardPrice(card("topup-250", { periodMonthly: "ر.س / الشحنة" }), cycle, "ar"), { price: "٢٥٠", period: "ر.س / الشحنة" });
-    assert.deepEqual(cardPrice(card("lib-q2", { periodMonthly: "SAR / 6 months" }), cycle, "en"), { price: "2,750", period: "SAR / 6 months" });
+    assert.deepEqual(cardPrice(card("lib-q2", { periodMonthly: "SAR / 6 months" }), cycle, "en"), { price: "1,920", period: "SAR / 6 months" });
   }
 });
 
@@ -60,12 +73,16 @@ test("§2 rule 1: the toggle offers professionals quarterly / half / yearly only
   }
 });
 
-test("P1 (no new prices): lawyers and firms see yearly only — the monthly 399 / 990 are no longer advertised", () => {
-  const lawyers = ["lawyer-pro", "topup-100", "topup-250", "topup-500", "topup-1000"].map((id) => ({ id }));
+test("lawyers see yearly only; firms quarterly / half / yearly (§6أ); the monthly 399 / 990 are not advertised", () => {
+  const lawyers = ["lawyer-pro", "topup-500", "topup-1000", "topup-2500", "topup-5000", "topup-10000"].map((id) => ({ id }));
   assert.deepEqual(offeredCycles("lawyers", lawyers), ["yearly"]);
-  assert.deepEqual(offeredCycles("firms", [{ id: "firm-basic" }, { id: "firm-enterprise" }]), ["yearly"]);
-  // individuals keep monthly and yearly
-  assert.deepEqual(offeredCycles("individuals", [{ id: "pay-per-piece" }, { id: "ind-ai" }, { id: "ind-preventive" }, { id: "ind-litigation" }]), ["monthly", "yearly"]);
+  assert.deepEqual(offeredCycles("firms", [{ id: "firm-basic" }, { id: "firm-enterprise" }]), ["quarterly", "semiannual", "yearly"]);
+  // individuals: ind-ai sells all four cycles (٣٠١), the other two monthly and yearly
+  assert.deepEqual(
+    offeredCycles("individuals", [{ id: "pay-per-piece" }, { id: "ind-ai" }, { id: "ind-preventive" }, { id: "ind-litigation" }]),
+    ["monthly", "quarterly", "semiannual", "yearly"],
+  );
+  assert.equal(cardPrice(card("ind-preventive"), "quarterly", "ar"), null, "not sold quarterly: hidden in that cycle");
   // only one-payment or non-book cards: no cycle toggle at all
   assert.deepEqual(offeredCycles("lawyers", [{ id: "lib-q1" }, { id: "lib-q2" }, { id: "lib-annual" }]), []);
   assert.deepEqual(offeredCycles("companies", [{ id: "biz-sm-basic" }]), []);
@@ -110,7 +127,7 @@ test("derivation: no card of a price-book id carries a price string in src/const
       }
     }
   }
-  assert.equal(cards, 28, "14 book items, once in Arabic and once in English");
+  assert.equal(cards, 34, "17 book items, once in Arabic and once in English");
 });
 
 test("derivation: the price tables read the book too (firms, individuals comparison rows)", () => {
@@ -123,19 +140,74 @@ test("derivation: the price tables read the book too (firms, individuals compari
   }
 });
 
-test("١٧٩: no price card reads a launch price — launch prices live in the dated campaign banner only", () => {
-  const surfaces = [
-    "lib/pricing/cardPrice.ts",
-    "components/pricing/PricingCards.tsx",
-    "components/pricing/PricingHero.tsx",
-    "app/pricing/page.tsx",
-    "app/pro/page.tsx",
-    "app/laws/subscribe/page.tsx",
-    "app/laws/components/PaywallModal.tsx",
-    ...CONSTANTS,
-    "constants/pricing/pricing.common.ts",
-  ];
-  for (const path of surfaces) assert.doesNotMatch(code(path), /launchPrices?/, path);
-  // and the book has none yet, so nothing could leak
-  for (const entry of Object.values(PRICE_BOOK)) assert.equal(entry.launchPrices, undefined, entry.id);
+// ── ٣٠٣ (replaces ١٧٩): a launch price shows on the card, struck-through original beside it ──
+
+const DURING = activeLaunchPrices(new Date("2026-12-01T09:00:00Z"));
+
+test("٣٠٣: a card shows a launch price only from the server's map, and only for the cycle it runs in", () => {
+  assert.deepEqual(cardLaunch({ id: "ind-ai" }, "yearly", DURING, "ar"), { price: "١٩٩", original: "٢٤٩" });
+  assert.deepEqual(cardLaunch({ id: "firm-basic" }, "yearly", DURING, "en"), { price: "8,415", original: "9,900" });
+  assert.deepEqual(cardLaunch({ id: "firm-enterprise" }, "yearly", DURING, "en"), { price: "12,665", original: "14,900" });
+  assert.equal(cardLaunch({ id: "ind-ai" }, "monthly", DURING, "ar"), null, "no launch price for the monthly cycle");
+  assert.equal(cardLaunch({ id: "firm-basic" }, "quarterly", DURING, "ar"), null);
+  assert.equal(cardLaunch({ id: "lawyer-pro" }, "yearly", DURING, "ar"), null, "the doc gives lawyer-pro none");
+  // the first render and after the campaign: nothing
+  assert.equal(cardLaunch({ id: "ind-ai" }, "yearly", null, "ar"), null);
+  assert.equal(cardLaunch({ id: "ind-ai" }, "yearly", activeLaunchPrices(new Date("2027-02-01T09:00:00Z")), "ar"), null);
+});
+
+test("٣٠٣: a stale or malformed map entry shows nothing rather than a wrong pair", () => {
+  const stale: LaunchPriceMap = { "ind-ai:yearly": { sar: 199, listSar: 390 } };
+  assert.equal(cardLaunch({ id: "ind-ai" }, "yearly", stale, "ar"), null, "its listed price is not the book's");
+  for (const sar of [0, -5, 249, 300, 19.5]) {
+    assert.equal(cardLaunch({ id: "ind-ai" }, "yearly", { "ind-ai:yearly": { sar, listSar: 249 } }, "ar"), null, String(sar));
+  }
+  const inherited = Object.create({ "ind-ai:yearly": { sar: 199, listSar: 249 } }) as LaunchPriceMap;
+  assert.equal(cardLaunch({ id: "ind-ai" }, "yearly", inherited, "ar"), null, "own keys only");
+  assert.equal(cardLaunch({ id: "biz-sm-basic" }, "yearly", DURING, "ar"), null, "not a book card");
+});
+
+test("٣٠٣: the card never decides the date — no clock in cardPrice or the cards, the server route does", () => {
+  for (const path of ["lib/pricing/cardPrice.ts", "components/pricing/PricingCards.tsx", "hooks/useLaunchPrices.ts"]) {
+    assert.doesNotMatch(code(path), /new Date\(|Date\.now\(|activeLaunchPrices?\(/, path);
+  }
+  const route = code("app/api/v1/pricing/launch/route.ts");
+  assert.match(route, /activeLaunchPrices\(new Date\(\)\)/);
+  assert.match(route, /dynamic = "force-dynamic"/);
+  assert.match(route, /no-store/);
+  const hook = code("hooks/useLaunchPrices.ts");
+  assert.match(hook, /useState<LaunchPriceMap \| null>\(null\)/, "the first render has no launch price");
+  assert.match(hook, /useEffect\(/);
+});
+
+// ── UX14: the VAT-inclusive total and the cycle next to the button ─────────────
+
+test("UX14: the total with VAT is checkout's own arithmetic, in the card's billing", () => {
+  assert.equal(cardTotalWithVat({ id: "ind-ai" }, "monthly", null, "ar"), "الإجمالي شامل الضريبة ٣٣٫٣٥ ر.س · شهري");
+  assert.equal(cardTotalWithVat({ id: "lawyer-pro" }, "yearly", null, "en"), "Total incl. VAT: SAR 4,588.50 · Yearly");
+  assert.equal(cardTotalWithVat({ id: "lib-annual" }, "monthly", null, "en"), "Total incl. VAT: SAR 4,013.50 · One payment");
+  // a launch price is what the total is computed from
+  assert.equal(cardTotalWithVat({ id: "ind-ai" }, "yearly", DURING, "en"), "Total incl. VAT: SAR 228.85 · Yearly");
+  // nothing for a card the book does not price, or a cycle it does not sell
+  assert.equal(cardTotalWithVat({ id: "biz-sm-basic" }, "yearly", null, "ar"), null);
+  assert.equal(cardTotalWithVat({ id: "lawyer-pro" }, "monthly", null, "ar"), null);
+});
+
+test("UX14: every book card's total equals catalog.quote's total, with and without the launch price", () => {
+  const during = new Date("2026-12-01T09:00:00Z");
+  const after = new Date("2027-03-01T09:00:00Z");
+  for (const id of Object.keys(PRICE_BOOK)) {
+    for (const cycle of ["monthly", "quarterly", "semiannual", "yearly"] as Cycle[]) {
+      for (const [now, map] of [[during, DURING], [after, null]] as const) {
+        const shown = cardTotalWithVat({ id }, cycle, map, "en");
+        if (shown === null) continue;
+        const billing = offeredSar(PRICE_BOOK[id], "once") !== null ? "once" : cycle;
+        const q = quote(id, billing, undefined, now);
+        assert.ok(q.ok, `${id} ${billing}`);
+        const total = q.totalHalalas;
+        const want = `${Math.floor(total / 100).toLocaleString("en-US")}${total % 100 ? "." + String(total % 100).padStart(2, "0") : ""}`;
+        assert.ok(shown.includes(`SAR ${want} ·`), `${id} ${billing}: ${shown} vs ${want}`);
+      }
+    }
+  }
 });

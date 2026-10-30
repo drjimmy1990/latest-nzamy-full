@@ -47,7 +47,7 @@ export const faqs: { ar: FaqItem[]; en: FaqItem[] } = {
   ar: [
     { q: "هل يمكنني إلغاء اشتراكي في أي وقت؟", a: "نعم، يمكنك الإلغاء في أي وقت دون رسوم إضافية. يبقى اشتراكك فعالاً حتى نهاية الفترة المدفوعة." },
     { q: "ما الفرق بين الصائغ القانوني ومحترف العقود؟", a: "الصائغ القانوني متخصص في إنتاج المذكرات القانونية واللوائح والاعتراضات للقضايا، بينما محترف العقود يُعنى بصياغة العقود التجارية ومراجعتها واكتشاف الثغرات فيها." },
-    { q: "ماذا يحدث عند نفاد نقاطي؟", a: `النقاط لا تأتي مع الاشتراك ولا تتجدد كل شهر: تشتري حزمة شحن تبدأ من ${bookPriceText("topup-100", "once", "ar")} ر.س، ولكل حزمة مدة صلاحية معلنة. وتكلفة كل أداة بالنقاط معلنة في جدول الأسعار.` },
+    { q: "ماذا يحدث عند نفاد نقاطي؟", a: `النقاط لا تأتي مع الاشتراك ولا تتجدد كل شهر: تشتري حزمة شحن تبدأ من ${bookPriceText("topup-100", "once", "ar")} ر.س للأفراد ومن ${bookPriceText("topup-500", "once", "ar")} ر.س للمهنيين، ولكل حزمة مدة صلاحية معلنة. وتكلفة كل أداة بالنقاط معلنة في جدول الأسعار.` },
     { q: "هل يمكنني الترقية أو التغيير بين الباقات؟", a: "يمكنك طلب الترقية أو التغيير في أي وقت؛ يراجع الفريق الطلب ويفعّله يدوياً." },
     { q: "هل الترافع يعني حضور المحامي أمام المحكمة فعلياً؟", a: "نعم، الترافع في باقات الشركات يعني حضور محامٍ مرخّص من مكتب نظامي أو من مكتب شريك معتمد أمام المحكمة فعلياً." },
     { q: "كيف تعمل خدمة 'الدفع بالعمل القانوني'؟", a: "لا تحتاج اشتراكاً. تختار الخدمة، وتدفع أتعابها لمكتب المحاماة المرخّص مباشرة عبر بوابة دفع مرخّصة من البنك المركزي. ولا تحتفظ المنصة بأي أموال." },
@@ -57,7 +57,7 @@ export const faqs: { ar: FaqItem[]; en: FaqItem[] } = {
   en: [
     { q: "Can I cancel my subscription at any time?", a: "Yes, cancel anytime with no extra fees. Your subscription remains active until the end of the paid period." },
     { q: "What's the difference between Legal Drafter and Contract Expert?", a: "Legal Drafter creates legal memos, briefs, and objections for cases. Contract Expert handles drafting and reviewing commercial contracts to detect gaps and risks." },
-    { q: "What happens when my points run out?", a: `Points do not come with the subscription and do not renew each month: buy a top-up from SAR ${bookPriceText("topup-100", "once", "en")}; each top-up has a stated validity. Each tool's cost in points is listed in the price table.` },
+    { q: "What happens when my points run out?", a: `Points do not come with the subscription and do not renew each month: buy a top-up — from SAR ${bookPriceText("topup-100", "once", "en")} for individuals and SAR ${bookPriceText("topup-500", "once", "en")} for professionals; each top-up has a stated validity. Each tool's cost in points is listed in the price table.` },
     { q: "Can I upgrade or change my plan?", a: "You can request an upgrade or a change at any time; the team reviews the request and activates it manually." },
     { q: "Does litigation mean actual court presence?", a: "Yes, litigation in company plans means a certified Nezamy network lawyer physically attends court, managed via the Professional Marketplace." },
     { q: "How does the Pay-Per-Use service work?", a: "No subscription needed. Choose the service and pay the fee directly to the licensed law office through a SAMA-licensed payment gateway. The platform holds no funds." },

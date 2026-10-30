@@ -5,16 +5,18 @@ import { Plan, ComparisonCategory } from "./pricing.types";
 // - «المحامي المحترف»: 3,990 SAR/year. The 399 monthly price is retired
 //   (owner, 26 Oct 2026: professionals never pay monthly), and the plan comes
 //   with NO points (owner ٢٩١: standard subscriptions open with 0 points).
-// - Points come from top-ups only: 1 SAR = 1 point, plus a bonus on the
-//   larger packs (100→100, 250→300, 500→700, 1,000→1,500).
-// - Top-up points expire: 3, 3, 6 and 12 months from purchase (owner ٢٤٩),
-//   as src/lib/payments/catalog.ts grants them; each card's `desc` says so.
+// - Points come from top-ups only. The professionals' packs start at 500
+//   (owner ٣٠٢ / conflict ١١ of 30 Oct 2026; pricing doc §4هـ): 500→500,
+//   1,000→1,250, 2,500→3,500, 5,000→8,500, 10,000→25,000. The 100 and 250
+//   packs are the individuals' only (pricing.individuals.ts).
+// - Top-up points expire: 3, 6, 12, 12 and 12 months from purchase, as
+//   src/lib/payments/catalog.ts grants them; each card's `desc` says so.
 // - Points are prepaid usage units for Nezamy's own AI tools only. They are
 //   never called a wallet or a cash balance, never move between users and
 //   never pay a lawyer's fee (a stored-value product would need a SAMA
 //   licence — owner answer ١٧٨).
-// - The old 1,000–10,000 SAR packs, their 50–200% bonuses and the
-//   launch offers for the first lawyers are gone (owner answers ١٧٤ / ١٧٩).
+// - The doc's larger «فترة العروض» balances (700 / 1,500 / 5,000 / 12,500 /
+//   30,000) are not dated by the owner, so no card or checkout grants them.
 // The independent consultant pays the same (owner answer ١٧٣); see
 // pricing.providers.ts.
 
@@ -36,32 +38,39 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
       },
     },
     {
-      id: "topup-100", name: "شحن ١٠٠", badge: null,
-      periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
-      desc: "١٠٠ نقطة · صالحة ٣ أشهر", target: "شحن إضافي للمشترك",
-      cta: "اشحن الآن", ctaHref: "/register/provider?plan=topup-100", highlighted: false, color: "border-blue-200/60 dark:border-blue-500/20",
-      features: { ai: ["١٠٠ نقطة", "١ ر.س للنقطة"], platform: [], support: [] },
-    },
-    {
-      id: "topup-250", name: "شحن ٢٥٠", badge: null,
-      periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
-      desc: "٣٠٠ نقطة · صالحة ٣ أشهر", target: "شحن إضافي للمشترك", bonusLabel: "+٥٠ نقطة مجاناً",
-      cta: "اشحن الآن", ctaHref: "/register/provider?plan=topup-250", highlighted: false, color: "border-emerald-200/60 dark:border-emerald-500/20",
-      features: { ai: ["٣٠٠ نقطة", "نحو ٠٫٨٣ ر.س للنقطة"], platform: [], support: [] },
-    },
-    {
       id: "topup-500", name: "شحن ٥٠٠", badge: null,
       periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
-      desc: "٧٠٠ نقطة · صالحة ٦ أشهر", target: "شحن إضافي للمشترك", bonusLabel: "+٢٠٠ نقطة مجاناً",
-      cta: "اشحن الآن", ctaHref: "/register/provider?plan=topup-500", highlighted: false, color: "border-gold/20",
-      features: { ai: ["٧٠٠ نقطة", "نحو ٠٫٧١ ر.س للنقطة"], platform: [], support: [] },
+      desc: "٥٠٠ نقطة · صالحة ٣ أشهر", target: "شحن إضافي للمشترك",
+      cta: "اشحن الآن", ctaHref: "/register/provider?plan=topup-500", highlighted: false, color: "border-blue-200/60 dark:border-blue-500/20",
+      features: { ai: ["٥٠٠ نقطة", "١ ر.س للنقطة"], platform: [], support: [] },
     },
     {
       id: "topup-1000", name: "شحن ١٬٠٠٠", badge: null,
       periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
-      desc: "١٬٥٠٠ نقطة · صالحة ١٢ شهراً", target: "شحن إضافي للمشترك", bonusLabel: "+٥٠٠ نقطة مجاناً",
-      cta: "اشحن الآن", ctaHref: "/register/provider?plan=topup-1000", highlighted: false, color: "border-[#C8A762]/25",
-      features: { ai: ["١٬٥٠٠ نقطة", "نحو ٠٫٦٧ ر.س للنقطة"], platform: [], support: [] },
+      desc: "١٬٢٥٠ نقطة · صالحة ٦ أشهر", target: "شحن إضافي للمشترك", bonusLabel: "+٢٥٠ نقطة مجاناً",
+      cta: "اشحن الآن", ctaHref: "/register/provider?plan=topup-1000", highlighted: false, color: "border-emerald-200/60 dark:border-emerald-500/20",
+      features: { ai: ["١٬٢٥٠ نقطة", "نحو ٠٫٨٠ ر.س للنقطة"], platform: [], support: [] },
+    },
+    {
+      id: "topup-2500", name: "شحن ٢٬٥٠٠", badge: null,
+      periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
+      desc: "٣٬٥٠٠ نقطة · صالحة ١٢ شهراً", target: "شحن إضافي للمشترك", bonusLabel: "+١٬٠٠٠ نقطة مجاناً",
+      cta: "اشحن الآن", ctaHref: "/register/provider?plan=topup-2500", highlighted: false, color: "border-gold/20",
+      features: { ai: ["٣٬٥٠٠ نقطة", "نحو ٠٫٧١ ر.س للنقطة"], platform: [], support: [] },
+    },
+    {
+      id: "topup-5000", name: "شحن ٥٬٠٠٠", badge: null,
+      periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
+      desc: "٨٬٥٠٠ نقطة · صالحة ١٢ شهراً", target: "شحن إضافي للمشترك", bonusLabel: "+٣٬٥٠٠ نقطة مجاناً",
+      cta: "اشحن الآن", ctaHref: "/register/provider?plan=topup-5000", highlighted: false, color: "border-[#C8A762]/25",
+      features: { ai: ["٨٬٥٠٠ نقطة", "نحو ٠٫٥٩ ر.س للنقطة"], platform: [], support: [] },
+    },
+    {
+      id: "topup-10000", name: "شحن ١٠٬٠٠٠", badge: null,
+      periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
+      desc: "٢٥٬٠٠٠ نقطة · صالحة ١٢ شهراً", target: "شحن إضافي للمشترك", bonusLabel: "+١٥٬٠٠٠ نقطة مجاناً",
+      cta: "اشحن الآن", ctaHref: "/register/provider?plan=topup-10000", highlighted: false, color: "border-royal/20",
+      features: { ai: ["٢٥٬٠٠٠ نقطة", "٠٫٤٠ ر.س للنقطة"], platform: [], support: [] },
     },
   ],
   en: [
@@ -81,32 +90,39 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
       },
     },
     {
-      id: "topup-100", name: "Top-up 100", badge: null,
-      periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
-      desc: "100 points · valid for 3 months", target: "Extra points for subscribers",
-      cta: "Top up", ctaHref: "/register/provider?plan=topup-100", highlighted: false, color: "border-blue-200/60 dark:border-blue-500/20",
-      features: { ai: ["100 points", "SAR 1 per point"], platform: [], support: [] },
-    },
-    {
-      id: "topup-250", name: "Top-up 250", badge: null,
-      periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
-      desc: "300 points · valid for 3 months", target: "Extra points for subscribers", bonusLabel: "+50 free points",
-      cta: "Top up", ctaHref: "/register/provider?plan=topup-250", highlighted: false, color: "border-emerald-200/60 dark:border-emerald-500/20",
-      features: { ai: ["300 points", "About SAR 0.83 per point"], platform: [], support: [] },
-    },
-    {
       id: "topup-500", name: "Top-up 500", badge: null,
       periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
-      desc: "700 points · valid for 6 months", target: "Extra points for subscribers", bonusLabel: "+200 free points",
-      cta: "Top up", ctaHref: "/register/provider?plan=topup-500", highlighted: false, color: "border-gold/20",
-      features: { ai: ["700 points", "About SAR 0.71 per point"], platform: [], support: [] },
+      desc: "500 points · valid for 3 months", target: "Extra points for subscribers",
+      cta: "Top up", ctaHref: "/register/provider?plan=topup-500", highlighted: false, color: "border-blue-200/60 dark:border-blue-500/20",
+      features: { ai: ["500 points", "SAR 1 per point"], platform: [], support: [] },
     },
     {
       id: "topup-1000", name: "Top-up 1,000", badge: null,
       periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
-      desc: "1,500 points · valid for 12 months", target: "Extra points for subscribers", bonusLabel: "+500 free points",
-      cta: "Top up", ctaHref: "/register/provider?plan=topup-1000", highlighted: false, color: "border-[#C8A762]/25",
-      features: { ai: ["1,500 points", "About SAR 0.67 per point"], platform: [], support: [] },
+      desc: "1,250 points · valid for 6 months", target: "Extra points for subscribers", bonusLabel: "+250 free points",
+      cta: "Top up", ctaHref: "/register/provider?plan=topup-1000", highlighted: false, color: "border-emerald-200/60 dark:border-emerald-500/20",
+      features: { ai: ["1,250 points", "About SAR 0.80 per point"], platform: [], support: [] },
+    },
+    {
+      id: "topup-2500", name: "Top-up 2,500", badge: null,
+      periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
+      desc: "3,500 points · valid for 12 months", target: "Extra points for subscribers", bonusLabel: "+1,000 free points",
+      cta: "Top up", ctaHref: "/register/provider?plan=topup-2500", highlighted: false, color: "border-gold/20",
+      features: { ai: ["3,500 points", "About SAR 0.71 per point"], platform: [], support: [] },
+    },
+    {
+      id: "topup-5000", name: "Top-up 5,000", badge: null,
+      periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
+      desc: "8,500 points · valid for 12 months", target: "Extra points for subscribers", bonusLabel: "+3,500 free points",
+      cta: "Top up", ctaHref: "/register/provider?plan=topup-5000", highlighted: false, color: "border-[#C8A762]/25",
+      features: { ai: ["8,500 points", "About SAR 0.59 per point"], platform: [], support: [] },
+    },
+    {
+      id: "topup-10000", name: "Top-up 10,000", badge: null,
+      periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
+      desc: "25,000 points · valid for 12 months", target: "Extra points for subscribers", bonusLabel: "+15,000 free points",
+      cta: "Top up", ctaHref: "/register/provider?plan=topup-10000", highlighted: false, color: "border-royal/20",
+      features: { ai: ["25,000 points", "SAR 0.40 per point"], platform: [], support: [] },
     },
   ],
 };
@@ -206,22 +222,24 @@ export const lawyerServicesTable: ServiceCategory[] = [
 export const comparisonLawyers: { ar: ComparisonCategory[]; en: ComparisonCategory[] } = {
   ar: [
     { category: "الاشتراك وحزم الشحن", icon: Lightning, rows: [
-      { feature: "النقاط",      "lawyer-pro": "بالشحن",       "topup-100": "١٠٠",   "topup-250": "٣٠٠",      "topup-500": "٧٠٠",      "topup-1000": "١٬٥٠٠" },
-      { feature: "نقاط مجانية", "lawyer-pro": "—",            "topup-100": "—",     "topup-250": "+٥٠",      "topup-500": "+٢٠٠",     "topup-1000": "+٥٠٠" },
-      { feature: "سعر النقطة",  "lawyer-pro": "—",           "topup-100": "١ ر.س", "topup-250": "نحو ٠٫٨٣ ر.س", "topup-500": "نحو ٠٫٧١ ر.س", "topup-1000": "نحو ٠٫٦٧ ر.س" },
+      { feature: "النقاط",      "lawyer-pro": "بالشحن", "topup-500": "٥٠٠",   "topup-1000": "١٬٢٥٠",       "topup-2500": "٣٬٥٠٠",       "topup-5000": "٨٬٥٠٠",       "topup-10000": "٢٥٬٠٠٠" },
+      { feature: "نقاط مجانية", "lawyer-pro": "—",      "topup-500": "—",     "topup-1000": "+٢٥٠",        "topup-2500": "+١٬٠٠٠",      "topup-5000": "+٣٬٥٠٠",      "topup-10000": "+١٥٬٠٠٠" },
+      { feature: "سعر النقطة",  "lawyer-pro": "—",      "topup-500": "١ ر.س", "topup-1000": "نحو ٠٫٨٠ ر.س", "topup-2500": "نحو ٠٫٧١ ر.س", "topup-5000": "نحو ٠٫٥٩ ر.س", "topup-10000": "٠٫٤٠ ر.س" },
+      { feature: "الصلاحية",    "lawyer-pro": "—",      "topup-500": "٣ أشهر", "topup-1000": "٦ أشهر",      "topup-2500": "١٢ شهراً",     "topup-5000": "١٢ شهراً",     "topup-10000": "١٢ شهراً" },
     ]},
     { category: "المنصة", icon: Gavel, rows: [
-      { feature: "إدارة القضايا والجلسات والمهل", "lawyer-pro": true, "topup-100": "مع الاشتراك", "topup-250": "مع الاشتراك", "topup-500": "مع الاشتراك", "topup-1000": "مع الاشتراك" },
+      { feature: "إدارة القضايا والجلسات والمهل", "lawyer-pro": true, "topup-500": "مع الاشتراك", "topup-1000": "مع الاشتراك", "topup-2500": "مع الاشتراك", "topup-5000": "مع الاشتراك", "topup-10000": "مع الاشتراك" },
     ]},
   ],
   en: [
     { category: "Subscription & top-ups", icon: Lightning, rows: [
-      { feature: "Points",          "lawyer-pro": "Top-ups",        "topup-100": "100",   "topup-250": "300",            "topup-500": "700",            "topup-1000": "1,500" },
-      { feature: "Free points",     "lawyer-pro": "—",              "topup-100": "—",     "topup-250": "+50",            "topup-500": "+200",           "topup-1000": "+500" },
-      { feature: "Price per point", "lawyer-pro": "—",              "topup-100": "SAR 1", "topup-250": "About SAR 0.83", "topup-500": "About SAR 0.71", "topup-1000": "About SAR 0.67" },
+      { feature: "Points",          "lawyer-pro": "Top-ups", "topup-500": "500",      "topup-1000": "1,250",          "topup-2500": "3,500",          "topup-5000": "8,500",          "topup-10000": "25,000" },
+      { feature: "Free points",     "lawyer-pro": "—",       "topup-500": "—",        "topup-1000": "+250",           "topup-2500": "+1,000",         "topup-5000": "+3,500",         "topup-10000": "+15,000" },
+      { feature: "Price per point", "lawyer-pro": "—",       "topup-500": "SAR 1",    "topup-1000": "About SAR 0.80", "topup-2500": "About SAR 0.71", "topup-5000": "About SAR 0.59", "topup-10000": "SAR 0.40" },
+      { feature: "Valid for",       "lawyer-pro": "—",       "topup-500": "3 months", "topup-1000": "6 months",       "topup-2500": "12 months",      "topup-5000": "12 months",      "topup-10000": "12 months" },
     ]},
     { category: "Platform", icon: Gavel, rows: [
-      { feature: "Cases, hearings and deadlines", "lawyer-pro": true, "topup-100": "With the subscription", "topup-250": "With the subscription", "topup-500": "With the subscription", "topup-1000": "With the subscription" },
+      { feature: "Cases, hearings and deadlines", "lawyer-pro": true, "topup-500": "With the subscription", "topup-1000": "With the subscription", "topup-2500": "With the subscription", "topup-5000": "With the subscription", "topup-10000": "With the subscription" },
     ]},
   ],
 };

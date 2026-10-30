@@ -48,6 +48,9 @@ const EXPECTED_IDS = [
   "topup-250",
   "topup-500",
   "topup-1000",
+  "topup-2500",
+  "topup-5000",
+  "topup-10000",
 ];
 
 // ─── quote ───────────────────────────────────────────────────────────────────
@@ -78,22 +81,22 @@ test("the professionals' monthly cycle is retired (owner, 26 Oct): not sold, sti
   for (const id of ["ind-ai", "ind-preventive", "ind-litigation"]) assert.ok(quote(id, "monthly").ok, id);
 });
 
-test("٢٥٨: the individuals' plans are VAT-exclusive now — 39 is the net, 44.85 is charged", () => {
+test("٢٥٨ / ٣٠١: the individuals' plans are VAT-exclusive — 29 is the net, 33.35 is charged", () => {
   const q = quote("ind-ai", "monthly");
   assert.ok(q.ok);
   assert.equal(q.vatMode, "exclusive");
-  assert.equal(q.netHalalas, 3900);
-  assert.equal(q.vatHalalas, 585);
-  assert.equal(q.totalHalalas, 4485);
+  assert.equal(q.netHalalas, 2900);
+  assert.equal(q.vatHalalas, 435);
+  assert.equal(q.totalHalalas, 3335);
 });
 
 test("٢٥٨: the library is VAT-exclusive for every buyer (no more buyer-dependent mode)", () => {
   const q = quote("lib-q1", "once");
   assert.ok(q.ok);
   assert.equal(q.vatMode, "exclusive");
-  assert.equal(q.netHalalas, 150000);
-  assert.equal(q.vatHalalas, 22500);
-  assert.equal(q.totalHalalas, 172500);
+  assert.equal(q.netHalalas, 105000);
+  assert.equal(q.vatHalalas, 15750);
+  assert.equal(q.totalHalalas, 120750);
 });
 
 test("٢٥٨: nothing sold today is quoted inclusive; the listed price is always the net", () => {
@@ -114,9 +117,55 @@ test("unknown ids, inherited object keys and unoffered billing are refused", () 
   assert.deepEqual(quote("lib-q1", "monthly"), { ok: false, error: "billing_not_offered" });
   assert.deepEqual(quote("topup-100", "yearly"), { ok: false, error: "billing_not_offered" });
   assert.deepEqual(quote("lawyer-pro", "once"), { ok: false, error: "billing_not_offered" });
-  // no item offers the new cycles yet (P2+ adds them once 20261026_10 has run)
+  // the new cycles only where the revised doc prices them (ind-ai, the two firm plans)
   assert.deepEqual(quote("lawyer-pro", "quarterly"), { ok: false, error: "billing_not_offered" });
-  assert.deepEqual(quote("ind-ai", "semiannual"), { ok: false, error: "billing_not_offered" });
+  assert.deepEqual(quote("ind-preventive", "semiannual"), { ok: false, error: "billing_not_offered" });
+  assert.ok(quote("ind-ai", "semiannual").ok);
+  assert.ok(quote("firm-basic", "quarterly").ok);
+});
+
+// ─── ٣٠٣: the launch price is charged by the request's clock ─────────────────
+
+test("٣٠٣: inside the campaign checkout charges the launch price, VAT on top, and names the listed one", () => {
+  const q = quote("ind-ai", "yearly", undefined, new Date("2026-12-01T09:00:00Z"));
+  assert.ok(q.ok);
+  assert.equal(q.netHalalas, 19900);
+  assert.equal(q.vatHalalas, 2985);
+  assert.equal(q.totalHalalas, 22885);
+  assert.deepEqual(q.launch, { campaignId: "launch-2026", listNetHalalas: 24900, endsOn: "2027-01-25" });
+  const firm = quote("firm-enterprise", "yearly", undefined, new Date("2026-12-01T09:00:00Z"));
+  assert.ok(firm.ok);
+  assert.equal(firm.netHalalas, 1266500);
+  assert.equal(firm.launch?.listNetHalalas, 1490000);
+});
+
+test("٣٠٣: outside the campaign, without a clock, or in another cycle, the listed price and no launch", () => {
+  for (const now of [new Date("2026-10-24T20:59:00Z"), new Date("2027-01-25T21:00:00Z"), undefined]) {
+    const q = quote("ind-ai", "yearly", undefined, now);
+    assert.ok(q.ok);
+    assert.equal(q.netHalalas, 24900, String(now));
+    assert.equal(q.launch, null, String(now));
+  }
+  const monthly = quote("ind-ai", "monthly", undefined, new Date("2026-12-01T09:00:00Z"));
+  assert.ok(monthly.ok);
+  assert.equal(monthly.netHalalas, 2900);
+  assert.equal(monthly.launch, null);
+});
+
+test("٣٠٣: every place that quotes a price to charge or show passes the request's clock", () => {
+  const sites: Array<[string, RegExp]> = [
+    ["./checkoutCore.ts", /quote\(input\.itemId, input\.billing, catalog, now\)/],
+    ["./couponServer.ts", /quote\(input\.itemId, input\.billing, catalog, now\)/],
+    ["../../app/checkout/page.tsx", /quote\(item\.id, parsed\.billing, undefined, new Date\(\)\)/],
+  ];
+  for (const [path, call] of sites) {
+    const src = readFileSync(new URL(path, import.meta.url), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:"'\\])\/\/.*$/gm, "$1");
+    assert.match(src, call, path);
+    assert.equal(src.match(/\bquote\(/g)?.length, 1, `${path}: one quote call`);
+  }
+  assert.match(readFileSync(new URL("../../app/checkout/page.tsx", import.meta.url), "utf8"), /dynamic = "force-dynamic"/, "the checkout page is never cached");
 });
 
 test("every offered price quotes to net + vat = total, in whole halalas", () => {
@@ -142,18 +191,21 @@ test("prices and grants as the owner set them (net halalas)", () => {
   const expected: Record<string, { prices: Partial<Record<Billing, number>>; tier?: ServerTierLiteral; retiredMonthly?: number }> = {
     "lawyer-pro":             { prices: { yearly: 399000 },   tier: "pro", retiredMonthly: 39900 },
     "consultant-independent": { prices: { yearly: 399000 },   tier: "pro", retiredMonthly: 39900 },
-    "firm-basic":             { prices: { yearly: 990000 },   tier: "corp", retiredMonthly: 99000 },
-    "firm-enterprise":        { prices: { yearly: 1490000 },  tier: "enterprise", retiredMonthly: 149000 },
-    "ind-ai":                 { prices: { monthly: 3900, yearly: 39000 },     tier: "ai" },
+    "firm-basic":             { prices: { quarterly: 299000, semiannual: 549000, yearly: 990000 },    tier: "corp", retiredMonthly: 99000 },
+    "firm-enterprise":        { prices: { quarterly: 449000, semiannual: 819000, yearly: 1490000 },   tier: "enterprise", retiredMonthly: 149000 },
+    "ind-ai":                 { prices: { monthly: 2900, quarterly: 7900, semiannual: 14900, yearly: 24900 }, tier: "ai" },
     "ind-preventive":         { prices: { monthly: 14900, yearly: 149000 },   tier: "pro" },
     "ind-litigation":         { prices: { monthly: 39900, yearly: 399000 },   tier: "max" },
-    "lib-q1":                 { prices: { once: 150000 } },
-    "lib-q2":                 { prices: { once: 275000 } },
-    "lib-annual":             { prices: { once: 500000 } },
+    "lib-q1":                 { prices: { once: 105000 } },
+    "lib-q2":                 { prices: { once: 192000 } },
+    "lib-annual":             { prices: { once: 349000 } },
     "topup-100":              { prices: { once: 10000 } },
     "topup-250":              { prices: { once: 25000 } },
     "topup-500":              { prices: { once: 50000 } },
     "topup-1000":             { prices: { once: 100000 } },
+    "topup-2500":             { prices: { once: 250000 } },
+    "topup-5000":             { prices: { once: 500000 } },
+    "topup-10000":            { prices: { once: 1000000 } },
   };
   for (const [id, want] of Object.entries(expected)) {
     const item = PAYABLE_ITEMS[id];
@@ -198,11 +250,16 @@ test("library items grant days of access and point to their library plan", () =>
 });
 
 test("every top-up carries its points and their validity", () => {
+  // revised doc §4هـ / conflict ١١ (owner ٣٠٢): the standard balances; the
+  // undated «فترة العروض» balances are not granted
   const want: Record<string, [number, number]> = {
     "topup-100": [100, 3],
-    "topup-250": [300, 3],
-    "topup-500": [700, 6],
-    "topup-1000": [1500, 12],
+    "topup-250": [250, 3],
+    "topup-500": [500, 3],
+    "topup-1000": [1250, 6],
+    "topup-2500": [3500, 12],
+    "topup-5000": [8500, 12],
+    "topup-10000": [25000, 12],
   };
   for (const [id, [points, months]] of Object.entries(want)) {
     const item = PAYABLE_ITEMS[id];
@@ -218,7 +275,8 @@ test("only plans save the card (auto-renew)", () => {
   }
 });
 
-test("each item's buyers: plans to their own audience, library and top-ups to anyone", () => {
+test("each item's buyers: plans to their own audience, the library to anyone, top-ups by audience (٣٠٢)", () => {
+  const PRO = ["lawyer", "firm", "corporate", "micro", "government", "ngo", "provider"];
   const want: Record<string, readonly string[] | "any"> = {
     "lawyer-pro": ["lawyer"],
     "consultant-independent": ["lawyer", "provider"],
@@ -230,10 +288,13 @@ test("each item's buyers: plans to their own audience, library and top-ups to an
     "lib-q1": "any",
     "lib-q2": "any",
     "lib-annual": "any",
-    "topup-100": "any",
-    "topup-250": "any",
-    "topup-500": "any",
-    "topup-1000": "any",
+    "topup-100": ["individual"],
+    "topup-250": ["individual"],
+    "topup-500": PRO,
+    "topup-1000": PRO,
+    "topup-2500": PRO,
+    "topup-5000": PRO,
+    "topup-10000": PRO,
   };
   assert.deepEqual(Object.keys(want).sort(), [...EXPECTED_IDS].sort());
   for (const [id, buyers] of Object.entries(want)) assert.deepEqual(PAYABLE_ITEMS[id].buyers, buyers, id);
@@ -258,16 +319,25 @@ test("buyerAllowed: the audience check checkout runs before quoting", () => {
   assert.equal(buyerAllowed(P["consultant-independent"], "provider"), true);
   assert.equal(buyerAllowed(P["firm-enterprise"], "firm"), true);
   assert.equal(buyerAllowed(P["ind-litigation"], "individual"), true);
-  // a missing or unknown type buys only "any" items
+  // a missing or unknown type buys only "any" items (the library)
   for (const t of [null, undefined, "", "admin", "Lawyer"]) {
     assert.equal(buyerAllowed(P["lawyer-pro"], t), false, String(t));
     assert.equal(buyerAllowed(P["ind-ai"], t), false, String(t));
     assert.equal(buyerAllowed(P["lib-q1"], t), true, String(t));
-    assert.equal(buyerAllowed(P["topup-100"], t), true, String(t));
+    assert.equal(buyerAllowed(P["topup-100"], t), false, String(t));
+    assert.equal(buyerAllowed(P["topup-500"], t), false, String(t));
   }
   for (const t of ["individual", "lawyer", "firm", "corporate", "micro", "provider"]) {
     assert.equal(buyerAllowed(P["lib-annual"], t), true, t);
-    assert.equal(buyerAllowed(P["topup-1000"], t), true, t);
+  }
+  // ٣٠٢: 100 / 250 for individuals only; 500 and up for professionals only
+  for (const id of ["topup-100", "topup-250"]) {
+    assert.equal(buyerAllowed(P[id], "individual"), true, id);
+    for (const t of ["lawyer", "firm", "corporate", "provider"]) assert.equal(buyerAllowed(P[id], t), false, `${id} ${t}`);
+  }
+  for (const id of ["topup-500", "topup-1000", "topup-2500", "topup-5000", "topup-10000"]) {
+    assert.equal(buyerAllowed(P[id], "individual"), false, id);
+    for (const t of ["lawyer", "firm", "corporate", "micro", "government", "ngo", "provider"]) assert.equal(buyerAllowed(P[id], t), true, `${id} ${t}`);
   }
 });
 
@@ -373,21 +443,24 @@ test("formatHalalas refuses anything that is not a non-negative integer of halal
   }
 });
 
-// ─── the subscription_plans seed (20261022_10 §6) mirrors the book ───────────
+// ─── subscription_plans (20261022_10 §6, repriced by 20261030_10) mirrors the book ───
 
-test("the subscription_plans seed holds the book's monthly / yearly price for each plan sold online", () => {
-  const sql = readFileSync(new URL("../../../supabase/migrations/20261022_10_payments_core.sql", import.meta.url), "utf8");
-  const seed = sql.slice(sql.indexOf("insert into public.subscription_plans"), sql.indexOf("on conflict (id) do update set", sql.indexOf("insert into public.subscription_plans")));
-  const rows = [...seed.matchAll(/\('([a-z-]+)',\s*'[a-z]+',\s*'[a-z]+',\s*'[^']*',\s*'[^']*',\s*(\d+),\s*(\d+)\)/g)];
+test("20261030_10 sets every plan's subscription_plans prices to the book's listed price per cycle", () => {
+  const sql = readFileSync(new URL("../../../supabase/migrations/20261030_10_pricing_owner_package.sql", import.meta.url), "utf8");
+  const at = sql.search(/^update public\.subscription_plans p\s*$/m);
+  assert.ok(at > -1);
+  const block = sql.slice(at, sql.indexOf(";", at));
+  const num = "(null|\\d+)(?:::numeric)?";
+  const rows = [...block.matchAll(new RegExp(`\\('([a-z-]+)',\\s*${num},\\s*${num},\\s*${num},\\s*${num}\\)`, "g"))];
   const plans = Object.values(PAYABLE_ITEMS).filter((i) => i.kind === "plan");
-  assert.equal(rows.length, plans.length, "one seed row per plan in the book");
-  for (const [, id, monthly, yearly] of rows) {
+  assert.equal(rows.length, plans.length, "one row per plan in the book");
+  const col = (v: string) => (v === "null" ? undefined : Number(v) * 100);
+  for (const [, id, m, q, h, y] of rows) {
     const item = PAYABLE_ITEMS[id];
     assert.ok(item && item.kind === "plan", `${id} is a book plan`);
-    assert.equal(Number(monthly) * 100, item.listedPrices.monthly, `${id} monthly`);
-    assert.equal(Number(yearly) * 100, item.listedPrices.yearly, `${id} yearly`);
-    // 20261026_10 adds price_quarterly / price_semiannual as null: the book has none yet
-    assert.equal(item.listedPrices.quarterly, undefined, id);
-    assert.equal(item.listedPrices.semiannual, undefined, id);
+    assert.equal(col(m), item.listedPrices.monthly, `${id} monthly`);
+    assert.equal(col(q), item.listedPrices.quarterly, `${id} quarterly`);
+    assert.equal(col(h), item.listedPrices.semiannual, `${id} semiannual`);
+    assert.equal(col(y), item.listedPrices.yearly, `${id} yearly`);
   }
 });

@@ -10,7 +10,7 @@ import { getPaymentGatewayStatus } from "@/lib/access-control";
 import { viewerGatewayState } from "@/lib/payments/testModeAccess";
 import { MOYASAR_DISABLED_MESSAGE_AR } from "@/lib/payments/moyasarConfig";
 import { AUDIENCE_REFUSED_AR, NOT_FOR_SALE_AR, UNKNOWN_ITEM_AR } from "@/lib/payments/checkoutCore";
-import { buyerAllowed, formatHalalas, sellableItem } from "@/lib/payments/catalog";
+import { buyerAllowed, formatHalalas, quote, sellableItem } from "@/lib/payments/catalog";
 import { couponsAvailable } from "@/lib/payments/couponServer";
 import {
   billingLabelAr,
@@ -31,7 +31,9 @@ import {
  *     and test accounts → «الدفع الإلكتروني غير متاح حالياً»;
  *   - an account type the item is not sold to → «هذه الباقة غير متاحة لنوع
  *     حسابك» and a link to /pricing (the checkout POST refuses it too);
- *   - otherwise the item, its listed price and the VAT sentence, the notes
+ *   - otherwise the item, its price and the VAT sentence — while a launch
+ *     price runs (owner ٣٠٣) the listed price struck through beside it, from
+ *     this request's clock (the page is force-dynamic) — the notes
  *     the catalog backs (top-up points and validity, library access length,
  *     the ind-litigation coverage — firm plans promise no seats), and
  *     MoyasarCheckout, which starts the payment and shows the server's quote;
@@ -123,7 +125,11 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
   if (typeof rawType === "string") userType = rawType;
   if (profile && !buyerAllowed(item, userType)) return <Notice title={AUDIENCE_REFUSED_AR} />;
 
-  const listed = item.prices[parsed.billing];
+  // The price the POST will charge now: the launch price while its campaign
+  // runs today in Riyadh (owner ٣٠٣), else the listed one. Per request, never cached.
+  const priced = quote(item.id, parsed.billing, undefined, new Date());
+  const listed = priced.ok ? priced.netHalalas : item.prices[parsed.billing];
+  const launchList = priced.ok && priced.launch ? priced.launch.listNetHalalas : null;
   const notes = checkoutItemNotes(item);
 
   let couponsReady = false;
@@ -143,7 +149,15 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{billingLabelAr(parsed.billing)}</p>
 
         {listed !== undefined ? (
-          <p className="mt-5 text-2xl font-extrabold text-[#0B3D2E] dark:text-[#C8A762]">{formatHalalas(listed)}</p>
+          <p className="mt-5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            {launchList !== null ? (
+              <span className="text-base font-semibold text-zinc-500 line-through dark:text-zinc-400">{formatHalalas(launchList)}</span>
+            ) : null}
+            <span className="text-2xl font-extrabold text-[#0B3D2E] dark:text-[#C8A762]">{formatHalalas(listed)}</span>
+            {launchList !== null ? (
+              <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300">سعر التدشين</span>
+            ) : null}
+          </p>
         ) : null}
         <p className="mt-1 text-xs font-medium text-zinc-600 dark:text-zinc-400">{listedVatNotice(item)}</p>
 

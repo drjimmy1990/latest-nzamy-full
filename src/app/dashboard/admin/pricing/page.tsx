@@ -43,15 +43,16 @@ const STATUS_LABEL: Record<AdminPricingStatus, string> = {
 // Every price on this screen is READ from the price book
 // (src/lib/pricing/priceBook.ts) — the source checkout charges from — never a
 // second copy: the subscriptions (yearly — the professionals' monthly cycle is
-// retired, so its column shows «-») and the four top-ups (one price, points
-// with the bonus).
+// retired, so its column shows «-») and the professionals' five top-ups (one
+// price, points with the bonus; owner ٣٠٢ — 100 and 250 are the individuals').
 const topupNumbers = (id: string) => ({ price: bookSar(id, "once"), credits: PRICE_BOOK[id].points ?? 0 });
 const LAWYER_PLAN_NUMBERS: Record<string, { price: number; yearly?: number; credits: number }> = {
   "lawyer-pro": { price: 0, yearly: bookSar("lawyer-pro", "yearly"), credits: 0 }, // monthly retired; no points with a plan (owner ٢٩١)
-  "topup-100": topupNumbers("topup-100"),
-  "topup-250": topupNumbers("topup-250"),
   "topup-500": topupNumbers("topup-500"),
   "topup-1000": topupNumbers("topup-1000"),
+  "topup-2500": topupNumbers("topup-2500"),
+  "topup-5000": topupNumbers("topup-5000"),
+  "topup-10000": topupNumbers("topup-10000"),
 };
 
 const FIRM_PLAN_NUMBERS: Record<string, { monthly: number; yearly: number; credits: number; baseSeats: number; extraSeatYearly: number | null; maxSeats: number | null }> = {

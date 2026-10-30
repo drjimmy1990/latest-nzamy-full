@@ -192,8 +192,10 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
   if (!known) return fail(400, UNKNOWN_ITEM_AR);
   if (!buyerAllowed(known, userType)) return fail(403, AUDIENCE_REFUSED_AR);
 
-  // 3. the price
-  const q = quote(input.itemId, input.billing, catalog);
+  // 3. the price — on the request's clock, so a launch price (owner ٣٠٣) is
+  // charged while its campaign runs and never after
+  const now = deps.now?.() ?? new Date();
+  const q = quote(input.itemId, input.billing, catalog, now);
   if (!q.ok) {
     if (q.error === "not_for_sale") return fail(410, NOT_FOR_SALE_AR);
     return fail(400, q.error === "unknown_item" ? UNKNOWN_ITEM_AR : BILLING_NOT_OFFERED_AR);
@@ -211,8 +213,9 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
       userId: user.id,
       userType,
       item: q.item,
+      billing: input.billing,
       netHalalas: q.netHalalas,
-      now: deps.now?.() ?? new Date(),
+      now,
       book: deps.book,
       gateway: client,
     });
@@ -254,7 +257,13 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
       currency: "SAR",
       status: "created",
       source: "checkout",
-      metadata: couponMeta ? { user_email: user.email ?? null, coupon: couponMeta } : { user_email: user.email ?? null },
+      metadata: {
+        user_email: user.email ?? null,
+        ...(couponMeta ? { coupon: couponMeta } : {}),
+        ...(q.launch
+          ? { launch: { campaign_id: q.launch.campaignId, list_net_halalas: q.launch.listNetHalalas } }
+          : {}),
+      },
     })
     .select("id")
     .single();
@@ -314,7 +323,14 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
       amountHalalas: total,
       descriptionAr,
       saveCard: q.item.saveCard,
-      quote: { net, vat, total, vatMode: q.vatMode, ...(couponQuote ?? {}) },
+      quote: {
+        net,
+        vat,
+        total,
+        vatMode: q.vatMode,
+        ...(couponQuote ?? {}),
+        ...(q.launch ? { launchListNet: q.launch.listNetHalalas } : {}),
+      },
       callbackUrl,
       expiresAt: intent.data.expiresAt,
     },

@@ -5109,3 +5109,43 @@ begin
   raise notice '_verify: 20261030_20 OK — one invoice per form, issued in one transaction after the ownership checks; server only';
 end $$;
 -- <<< verify:create_lawyer_invoice
+
+-- >>> verify:pricing_owner_package
+-- 2026-10-30 — 20261030_10_pricing_owner_package.sql (owner answers ٢٩٩–٣٠٦).
+-- Read-only, safe to repeat. While ind-ai still lists 39 a month the file has
+-- not run: it only reports. After, it raises when a plan row's prices are not
+-- the price book's (src/lib/pricing/priceBook.ts) or NEWCLIENT lost its stamp.
+do $$
+declare bad text;
+begin
+  if to_regclass('public.subscription_plans') is null
+     or not exists (select 1 from information_schema.columns
+                     where table_schema = 'public' and table_name = 'subscription_plans' and column_name = 'price_quarterly') then
+    raise notice '_verify: 20261030_10 — subscription_plans has no price_quarterly yet (20261026_10 first)'; return;
+  end if;
+  if exists (select 1 from public.subscription_plans where id = 'ind-ai' and price_monthly = 39) then
+    raise notice '_verify: 20261030_10 is not applied yet — ind-ai still lists 39 a month (the admin MRR reads the old price; checkout charges the book)'; return;
+  end if;
+  select string_agg(p.id, ', ') into bad
+    from public.subscription_plans p
+    join (values
+      ('ind-ai',                 29::numeric,  79::numeric,  149::numeric,  249::numeric),
+      ('ind-preventive',         149,          null,         null,          1490),
+      ('ind-litigation',         399,          null,         null,          3990),
+      ('lawyer-pro',             399,          null,         null,          3990),
+      ('consultant-independent', 399,          null,         null,          3990),
+      ('firm-basic',             990,          2990,         5490,          9900),
+      ('firm-enterprise',        1490,         4490,         8190,          14900)
+    ) as v(id, m, q, h, y) on v.id = p.id
+   where (p.price_monthly, p.price_quarterly, p.price_semiannual, p.price_yearly)
+         is distinct from (v.m, v.q, v.h, v.y);
+  if bad is not null then
+    raise exception '_verify: 20261030_10 — the subscription_plans prices of % are not the price book''s (re-run 20261030_10)', bad;
+  end if;
+  if exists (select 1 from public.coupons where upper(code) = 'NEWCLIENT'
+                and coalesce(metadata->>'first_paid_order_only', '') <> 'true') then
+    raise exception '_verify: 20261030_10 — NEWCLIENT is not stamped first_paid_order_only (re-run 20261030_10)';
+  end if;
+  raise notice '_verify: 20261030_10 OK — subscription_plans holds the price book''s prices; NEWCLIENT is first-paid-order only';
+end $$;
+-- <<< verify:pricing_owner_package

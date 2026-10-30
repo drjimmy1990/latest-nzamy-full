@@ -3,19 +3,22 @@
  * ─────────────────────────────────────────────────────────────
  * Canonical Pricing Plans Definition (Owner & Council Decisions 165/168)
  * 
- * 1. Legal Library Standalone Subscription:
- *    - Annual: 5,000 SAR / year (Canonical rate, unified across system)
- *    - Half-year: 2,750 SAR / 6 months (owner answer ١٧٧, 2026-10-16)
- *    - Quarterly: 1,500 SAR / quarter
+ * 1. Legal Library Standalone Subscription (owner ٣٠٠ / conflict ٢, 30 Oct
+ *    2026 — the price book holds the numbers):
+ *    - Annual: 3,490 SAR / year (3,790 and 5,000 are cancelled)
+ *    - Half-year: 1,920 SAR / 6 months
+ *    - Quarterly: 1,050 SAR / quarter
  *    - (The 2,500 SAR/year "AI Researcher Add-on" is withdrawn: AI points
  *      replaced it — gap analysis 2026-10-16 §2. No plan offers it.)
  * 
  * 2. Individuals Pricing Pyramid:
- *    - Tier 1: AI Self-Service (الباقة الذكية) = 39 SAR/mo (390 SAR/yr)
+ *    - Tier 1: AI Self-Service (الباقة الذكية) = 29 / 79 / 149 / 249 SAR a
+ *      month / quarter / half-year / year, launch 199 a year (owner ٣٠١)
  *    - Tier 2: Preventive (الباقة الوقائية) = 149 SAR/mo (1,490 SAR/yr)
  *    - Tier 3: «التأمين القانوني» = 399 SAR/mo (3,990 SAR/yr) [Underwriting Gated],
- *      with the family cover option (owner answers ٢١٣ + ١٧٦, 2026-10-18).
- *      The separate family tier is merged into it.
+ *      The family cover option (owner answers ٢١٣ + ١٧٦) is withdrawn from
+ *      display at launch (conflict ١٠; SHOW_FAMILY_DEPENDENTS in
+ *      src/constants/pricing/pricing.individuals.ts).
  * 
  * 3. Independent Legal Consultant:
  *    - 399 SAR/mo or 3,990 SAR/yr, the same as «المحامي المحترف» (owner answer
@@ -168,22 +171,23 @@ export const INDIVIDUALS_PYRAMID_PLANS: Record<string, PricingPlan> = {
     priceMonthly: bookSar("ind-ai", "monthly"),
     priceYearly: bookSar("ind-ai", "yearly"),
     periodMonthlyAr: "ر.س / شهر",
-    periodYearlyAr: "ر.س / سنة (شهرين مجاناً)",
+    periodYearlyAr: "ر.س / سنة",
     periodMonthlyEn: "SAR / month",
     periodYearlyEn: "SAR / year",
-    badgeAr: "١٫٢٥ ر.س يومياً",
-    badgeEn: "Affordable",
+    badgeAr: "نحو ٠٫٦٨ ر.س يومياً بالاشتراك السنوي",
+    badgeEn: "About SAR 0.68 a day on the yearly plan",
     descAr: "مستشارك القانوني الذكي — إجابات نظامية وصياغة خطابات وإنذارات",
     descEn: "Your AI legal assistant — statutory answers and draft notices",
     featuresAr: [
-      "مساعد ذكاء اصطناعي قانوني غير محدود طوال الاشتراك",
+      // LIVE-F11 (owner package 30 Oct 2026): no «غير محدود» claim.
+      "مساعد ذكاء اصطناعي قانوني ذاتي طوال الاشتراك",
       "استشهادات دقيقة بمواد الأنظمة واللوائح السعودية",
       "توليد ومراجعة مسودات الإنذارات والخطابات الودية",
       "حاسبة الرسوم القضائية ومحدد مدد التقادم",
       "دعم فني عبر المنصة والبريد",
     ],
     featuresEn: [
-      "Unlimited AI legal assistant",
+      "Self-service AI legal assistant for the whole subscription",
       "Direct citations from Saudi statutory laws",
       "Draft generation for notices and official correspondence",
       "Court fees & statutory limitation period calculators",
@@ -244,19 +248,15 @@ export const INDIVIDUALS_PYRAMID_PLANS: Record<string, PricingPlan> = {
     periodYearlyEn: "SAR / year",
     badgeAr: "تخضع لقواعد القبول والاكتتاب",
     badgeEn: "Subject to Underwriting",
-    descAr: "تمثيل قضائي وترافع معتمد أمام المحاكم، مع خيار تغطية عائلية — تخضع للتدقيق المهني المسبق وخلو النزاع من التعارض",
-    descEn: "Court representation & litigation defense, with a family cover option — subject to underwriting review and conflict checks",
+    descAr: "تمثيل قضائي وترافع معتمد أمام المحاكم — تخضع للتدقيق المهني المسبق وخلو النزاع من التعارض",
+    descEn: "Court representation & litigation defense — subject to underwriting review and conflict checks",
     featuresAr: [
       "كل مزايا الباقتين الذكية والوقائية",
       "تمثيل قضائي وترافع أمام المحاكم لقضية مؤهلة سنوياً",
       "صياغة لوائح الدعوى والمذكرات الجوابية والاعتراضية",
       "استشارات غير محدودة طوال فترة التقاضي في القضية المقبولة — تُطبَّق بطلب يراجعه الفريق",
       "⚠️ خضوع القضية لقواعد الاكتتاب والتحقق المسبق قبل البدء",
-      // Owner answer ١٧٦ (line 16): the family option.
-      "التغطية العائلية: التابع الأول ٣١٩ ر.س، والثاني ٢٧٩ ر.س، والثالث فأكثر ٢٣٩ ر.س شهرياً (خصم ٢٠٪ / ٣٠٪ / ٤٠٪)",
-      "سقف عائلي مشترك لأتعاب الترافع: ٣٥٬٠٠٠–٥٠٬٠٠٠ ر.س سنوياً",
-      "لكل فرد بالغ حسابه الخاص، لا يطّلع عليه بقية أفراد الأسرة",
-      "تُضاف التغطية العائلية بطلب يراجعه الفريق",
+      // The family option (answer ١٧٦) is withdrawn at launch (conflict ١٠).
     ],
     featuresEn: [
       "All Smart AI & Preventive features included",
@@ -264,10 +264,6 @@ export const INDIVIDUALS_PYRAMID_PLANS: Record<string, PricingPlan> = {
       "Drafting statements of claim, responses and appeals",
       "Unlimited consultations throughout active case duration — applied on a request the team reviews",
       "⚠️ Subject to legal underwriting review and intake qualification",
-      "Family cover: first dependant SAR 319, second SAR 279, third and beyond SAR 239 a month (20% / 30% / 40% off)",
-      "Shared family cap on litigation fees: SAR 35,000–50,000 a year",
-      "Each adult keeps a private account the rest of the family cannot see",
-      "Family cover is added on request, after the team reviews it",
     ],
     highlighted: false,
     requiresUnderwriting: true,

@@ -13,6 +13,7 @@ import {
   COUPON_NOT_FOR_ITEM_AR,
   couponRefusalAr,
   evaluateCoupon,
+  isFirstOrderCoupon,
   normalizeCouponCode,
   type CouponContext,
   type CouponRow,
@@ -45,6 +46,7 @@ const ctx = (over: Partial<CouponContext> = {}): CouponContext => ({
   userType: "individual",
   alreadyUsed: false,
   itemDiscounted: false,
+  hasEarlierPaidOrder: false,
   now: NOW,
   ...over,
 });
@@ -142,4 +144,24 @@ test("applyDiscount never lets the net go below zero and keeps total = net + VAT
   assert.equal(r.netHalalas, 111750);
   assert.equal(r.vatHalalas, Math.round(111750 * 0.15));
   assert.equal(r.totalHalalas, r.netHalalas + r.vatHalalas);
+});
+
+// ── owner ٣٠٥ (30 Oct 2026): NEWCLIENT = the buyer's first paid order on the platform ──
+
+test("٣٠٥: NEWCLIENT is a first-order coupon by its code alone; another code only when its row is marked", () => {
+  assert.equal(isFirstOrderCoupon(NEWCLIENT), true);
+  assert.equal(isFirstOrderCoupon({ ...NEWCLIENT, code: "newclient" }), true);
+  assert.equal(isFirstOrderCoupon(NZAMY50), false);
+  assert.equal(isFirstOrderCoupon({ ...NZAMY50, metadata: { first_paid_order_only: true } }), true);
+  assert.equal(isFirstOrderCoupon({ ...NZAMY50, metadata: { first_paid_order_only: "true" } }), false);
+});
+
+test("٣٠٥: any earlier paid order of the buyer — whatever it bought — refuses NEWCLIENT, with the generic sentence", () => {
+  const firstOrder = { ...NEWCLIENT, excluded_kinds: ["topup"] };
+  assert.deepEqual(evaluateCoupon(firstOrder, ctx({ netHalalas: 30000 })), { ok: true, discountHalalas: 7500 });
+  const later = evaluateCoupon(firstOrder, ctx({ netHalalas: 30000, hasEarlierPaidOrder: true }));
+  assert.deepEqual(later, { ok: false, reason: "invalid" });
+  assert.equal(couponRefusalAr(later as Extract<typeof later, { ok: false }>, formatHalalas), COUPON_INVALID_AR);
+  // NZAMY50 is not a first-order coupon: an earlier order does not matter to it
+  assert.deepEqual(evaluateCoupon(NZAMY50, ctx({ hasEarlierPaidOrder: true })), { ok: true, discountHalalas: 5000 });
 });
