@@ -45,6 +45,7 @@ const OUTPUT_ENRICHERS: Readonly<Record<string, (admin: SupabaseClient, output: 
   "contract-drafter": (admin, output) => enrichBriefCheck(admin as never, output),
   // L12: the letter. The consultation needs none: it stands on the library texts it was sent.
   "legal-opinion-letter": (admin, output) => enrichBriefCheck(admin as never, output),
+  "contracts-pro": (admin, output) => enrichBriefCheck(admin as never, output),
 };
 import {
   DEFAULT_JOB_DEADLINE_SECONDS,
