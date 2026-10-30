@@ -586,6 +586,14 @@ L8 notes:
 >   - DOCX/PDF export with the letterhead (the existing `AiResultActions` exports remain);
 >   - `review` release mode (there is still no admin approve route, so it runs in staff/live like the other tools).
 >   These come with L12–L14.
+>
+> **Status 2026-10-30, L12 (built on `feat/ai-l12-opinion`; not merged, not deployed):**
+> - **Consultation and letter built** as two tools, both 400-point jobs (D4) with a daily limit of 5, all five roles, off by default.
+>   - `legal-opinion-consult` (question + optional area → summary + sections) is grounded by retrieval (`from: question`, 8 laws, 4 principles). It passes the library gate before the charge, cites the sources as `[S#]`, and is refunded as ungrounded when it cites none.
+>   - `legal-opinion-letter` (type, sender, recipient, subject, optional reference, deadline and annexes → title + body) has no retrieval. Its cited articles go through the L8 citation check.
+> - **Page:** automatic generation is the default path for those two types (owner LIVE-F21 / NOTE-22). Human review stays a separate, optional, labelled team order below it. The other five types say plainly that they are the team's order.
+> - **n8n:** `jnejnjYKUcYwhNkR` (legal-opinion-consult) and `wIdLCC7dIj64b6Rz` (legal-opinion-letter) are created, switched on, and live-tested through temporary copies (deleted). Both are the `caseJob` shape.
+> - **Not yet in L12:** study, memo, research, due diligence and cross-examination (still team orders); the 800-point full depth; the shared engine; DOCX export with the letterhead; `review` release mode.
 Shared engine:
 
 ```
