@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArrowClockwise, LockSimple, LockSimpleOpen, Plus } from "@phosphor-icons/react";
 import type { LockDto } from "@/lib/library/securityLockAdmin";
-import { LIBRARY_READ_QUOTA } from "@/lib/library/readQuota";
+import { MONITOR_SETTINGS_DEFAULTS, type MonitorSettings } from "@/lib/library/monitorSettings";
 
 /**
  * «قفل المكتبة» — owner note ١٣ C09: the REAL tab of the security page. It
@@ -34,6 +34,14 @@ export default function LibraryLocksPanel({ isDark, card }: Props) {
   const [resetToday, setResetToday] = useState<Record<string, boolean>>({});
   const [form, setForm] = useState({ email: "", note: "", until: "" });
   const [creating, setCreating] = useState(false);
+  // The caps are editable in «نشاط المكتبة» (20261031_10): show the live ones.
+  const [caps, setCaps] = useState<MonitorSettings>({ ...MONITOR_SETTINGS_DEFAULTS });
+  useEffect(() => {
+    fetch("/api/v1/admin/library-monitor/settings", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((b) => { if (b?.settings) setCaps(b.settings as MonitorSettings); })
+      .catch(() => {});
+  }, []);
 
   const tp = isDark ? "text-white" : "text-slate-800";
   const ts = isDark ? "text-zinc-400" : "text-slate-500";
@@ -113,10 +121,13 @@ export default function LibraryLocksPanel({ isDark, card }: Props) {
       <div className={`${card} p-5`}>
         <p className={`text-[13px] font-bold mb-1 ${tp}`}>قفل المكتبة — إيقاف القراءة فقط</p>
         <p className={`text-[11px] leading-relaxed ${ts}`}>
-          القفل يوقف قراءة المكتبة القانونية وحدها؛ لا يجمّد الحساب ولا يحذفه، وبقية خدمات المنصة تعمل. يُفتح تلقائياً
-          إذا حاول القارئ فتح {LIBRARY_READ_QUOTA.lockAfterRefused} وثيقة مختلفة بعد بلوغ حده في اليوم نفسه (الحد:{" "}
-          {LIBRARY_READ_QUOTA.dailyDocs} وثيقة للفرد، {LIBRARY_READ_QUOTA.memberDailyDocs} لعضو المكتب أو الشركة،{" "}
-          {LIBRARY_READ_QUOTA.hourlyDocs} في الساعة)، أو بقرار منك هنا. يرى المستخدم رقم المرجع ورابط «تواصل معنا».
+          القفل يوقف قراءة المكتبة القانونية وحدها؛ لا يجمّد الحساب ولا يحذفه، وبقية خدمات المنصة تعمل.{" "}
+          {Number(caps.lockAfterRefused) > 0
+            ? <>يُفتح تلقائياً إذا حاول القارئ فتح {String(caps.lockAfterRefused)} وثيقة مختلفة بعد بلوغ حده في اليوم نفسه</>
+            : <>الإيقاف التلقائي عند تجاوز الحد معطّل الآن</>}{" "}
+          (الحد: {String(caps.dailyDocs)} وثيقة للفرد، {String(caps.memberDailyDocs)} لعضو المكتب أو الشركة،{" "}
+          {String(caps.hourlyDocs)} في الساعة — تُعدّل من «نشاط المكتبة»)، أو عند المراجعة إذا اخترت ذلك هناك، أو بقرار منك هنا.
+          يرى المستخدم رقم المرجع ورابط «تواصل معنا».
         </p>
       </div>
 
@@ -206,6 +217,9 @@ export default function LibraryLocksPanel({ isDark, card }: Props) {
                   <span>ينتهي: {r.lockedUntil ? fmt(r.lockedUntil) : "حتى يُرفع"}</span>
                   {r.liftedAt && (
                     <span>رُفع: {fmt(r.liftedAt)}{r.liftedBy ? ` — ${r.liftedBy.name || r.liftedBy.email || "مسؤول"}` : ""}{r.liftNote ? ` — ${r.liftNote}` : ""}</span>
+                  )}
+                  {r.reason === "activity_flag" && r.details && (
+                    <span>مرجع المراجعة: {String(r.details.flag_reference ?? "—")}</span>
                   )}
                   {r.reason === "quota_breach" && r.details && (
                     <span>

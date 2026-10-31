@@ -17,7 +17,13 @@
  */
 import { canonicalApiPath } from "../rateLimitRoutes.ts";
 
-/** The owner's quotas (note ١٣ §٢ المحور ٣), plus the two numbers the note does not give. */
+/**
+ * The owner's quotas (note ١٣ §٢ المحور ٣), plus the two numbers the note does
+ * not give. Since 20261031_10 these are FALLBACKS only: the admin page
+ * «نشاط المكتبة» edits public.library_monitor_settings (seeded with these same
+ * values), and a per-user limit (public.library_user_limits) wins over both.
+ * library_read_quota_hit uses an argument only when the settings row is gone.
+ */
 export const LIBRARY_READ_QUOTA = Object.freeze({
   /** Note ١٣: «فرد … 220 وثيقة فريدة/يوم». */
   dailyDocs: 220,

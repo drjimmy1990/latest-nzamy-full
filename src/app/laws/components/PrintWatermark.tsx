@@ -2,37 +2,23 @@
 
 import { useUser } from "@/hooks/useUser";
 
-export const getUserMobile = (name?: string): string => {
-  if (!name) return "0500000000";
-  const n = name.trim();
-  if (n.includes("فهد العتيبي")) return "0505123456";
-  if (n.includes("محمد الزهراني")) return "0555654321";
-  if (n.includes("الشمري")) return "0567890123";
-  if (n.includes("الخليج")) return "0598765432";
-  if (n.includes("العمر")) return "0555544332";
-  if (n.includes("الحربي")) return "0544332211";
-  if (n.includes("الناصر")) return "0533221100";
-  if (n.includes("السالم")) return "0511223344";
-  if (n.includes("القحطاني")) return "0522334455";
-  if (n.includes("العبدالله")) return "0533445566";
-  if (n.includes("الدوسري")) return "0544556677";
-  if (n.includes("القرني")) return "0555667788";
-  if (n.includes("الجهني")) return "0566778899";
-  if (n.includes("السلمي")) return "0577889900";
-  if (n.includes("الحارثي")) return "0588990011";
-  if (n.includes("الزيد")) return "0599001122";
-  if (n.includes("العيسى")) return "0500112233";
-  if (n.includes("الرشيد")) return "0511223344";
-  if (n.includes("المالكي")) return "0522334455";
-  if (n.includes("الفيحاء")) return "0533445566";
-  if (n.includes("العنزي")) return "0544556677";
-  if (n.includes("الغامدي")) return "0555667788";
-  return "0501234567";
-};
+/**
+ * The printed page's watermark: the platform, the subscriber's name and a
+ * short account number (the first 8 characters of the account id), so a
+ * leaked print can be traced to its account. It used to print a phone number
+ * guessed from the NAME (a fixed list of family names, "0501234567" for
+ * everyone else) — a real stranger's number on someone else's print. What the
+ * mark should carry beyond this is owner question ١١ of the library fortress.
+ */
+export function watermarkAccountRef(userId: string | undefined): string | null {
+  if (!userId) return null;
+  const ref = userId.replace(/-/g, "").slice(0, 8).toUpperCase();
+  return ref.length === 8 ? ref : null;
+}
 
 export function PrintWatermark({ isRTL }: { isRTL?: boolean }) {
   const user = useUser();
-  const mobile = getUserMobile(user.name);
+  const accountRef = watermarkAccountRef(user.userId);
   const displayName = user.name || (isRTL ? "عضو نظامي" : "Nezamy Member");
 
   return (
@@ -43,7 +29,11 @@ export function PrintWatermark({ isRTL }: { isRTL?: boolean }) {
           <div style={{ fontSize: '9px', marginTop: '2px' }}>
             {isRTL ? `المشترك: ${displayName}` : `Subscriber: ${displayName}`}
           </div>
-          <div style={{ fontSize: '9px' }}>{mobile}</div>
+          {accountRef && (
+            <div style={{ fontSize: '9px' }} dir="ltr">
+              {isRTL ? `حساب ${accountRef}` : `Account ${accountRef}`}
+            </div>
+          )}
         </div>
       ))}
     </div>

@@ -103,6 +103,7 @@ export interface LockDto {
 export const LOCK_REASON_AR: Readonly<Record<string, string>> = {
   quota_breach: "تجاوز متكرر لحد القراءة اليومي (تلقائي)",
   admin: "قرار من الإدارة",
+  activity_flag: "نشاط قراءة غير معتاد — مراجعة تلقائية",
 };
 
 export function toLockDto(row: LockRow, people: ReadonlyMap<string, PersonRef>, now: number): LockDto {

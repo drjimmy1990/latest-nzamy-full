@@ -299,6 +299,10 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   // library fortress (30-Oct package): an admin opens or lifts a library security lock (one audit row each)
   { file: "library-security-locks/route.ts", method: "POST", action: "settings.write", logs: 1 },
   { file: "library-security-locks/[id]/lift/route.ts", method: "POST", action: "settings.write", logs: 1 },
+  { file: "library-monitor/settings/route.ts", method: "PUT", action: "settings.write", logs: 1 },
+  { file: "library-monitor/flags/[id]/clear/route.ts", method: "POST", action: "settings.write", logs: 1 },
+  { file: "library-monitor/user-limits/route.ts", method: "POST", action: "settings.write", logs: 1 },
+  { file: "library-monitor/user-limits/[userId]/route.ts", method: "DELETE", action: "settings.write", logs: 1 },
   { file: "receipts/route.ts", method: "POST", action: "orders.manage", logs: 1 },
   { file: "tickets/route.ts", method: "POST", action: "tickets.manage", logs: 1 },
   { file: "tickets/[id]/route.ts", method: "PATCH", action: "tickets.manage", logs: 1 },

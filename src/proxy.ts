@@ -42,6 +42,9 @@ import {
 // library-only security lock (public.library_read_quota_hit, 20261030_80).
 import { libraryQuotaTarget, hasSupabaseAuthCookie, quotaRefusal } from "@/lib/library/readQuota";
 import { libraryReadQuotaHit } from "@/lib/library/readQuotaServer";
+// «نشاط المكتبة» (20261031_10): the per-reader activity tally.
+import { libraryActivityKind } from "@/lib/library/activityMeter";
+import { recordLibraryActivity } from "@/lib/library/activityMeterServer";
 import { hasValidSaudiMobile } from "@/lib/services/saudiMobile";
 
 // ─── Rate limiting (owner item ١٧٢) ─────────────────────────────────────────
@@ -293,6 +296,10 @@ async function applyLibraryReadQuota(req: NextRequest, pathname: string): Promis
       ? supabase.auth.getUser(bearerToken)
       : supabase.auth.getUser());
     if (error || !user) return response;
+
+    // Every request of a signed-in reader is tallied (refused ones too); the
+    // tally never waits and never fails the request.
+    recordLibraryActivity(user.id, libraryActivityKind(target, pathname));
 
     const row = await libraryReadQuotaHit(
       user.id,

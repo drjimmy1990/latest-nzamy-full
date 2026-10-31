@@ -1,19 +1,22 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ShieldCheck, Warning, CheckCircle, LockSimple, Eye,
   Users, Globe, Robot, Fingerprint, Detective,
   Prohibit, Clock, TrendUp, ChartLine, X, Bug,
-  UserCircleMinus, ArrowsLeftRight, Desktop, Scan,
+  UserCircleMinus, ArrowsLeftRight, Desktop, Scan, BookOpenText,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import LibraryLocksPanel from "./LibraryLocksPanel";
+import LibraryActivityPanel from "./LibraryActivityPanel";
 
-// "library_locks" is real (owner note ١٣ C09, public.library_security_locks);
-// the other four tabs and the KPI row still show the illustrative data below.
-type SecTab = "library_locks"|"overview"|"duplicates"|"scraping"|"threats";
+// "library_activity" (20261031_10) and "library_locks" (owner note ١٣ C09,
+// public.library_security_locks) are real; the other four tabs and the KPI
+// row still show the illustrative data below.
+type SecTab = "library_activity"|"library_locks"|"overview"|"duplicates"|"scraping"|"threats";
+const SEC_TABS: readonly SecTab[] = ["library_activity","library_locks","overview","duplicates","scraping","threats"];
 
 /* ── Mock ──────────────────────────────────────────────────────────────────── */
 const DUP_ACCOUNTS = [
@@ -47,13 +50,20 @@ const THREAT_TYPES = [
 
 export default function SecurityPage() {
   const { isDark } = useTheme();
-  const [tab, setTab] = useState<SecTab>("library_locks");
+  const [tab, setTab] = useState<SecTab>("library_activity");
+  // ?tab=… — the admins' notifications link straight to a tab. Read after
+  // mount (no useSearchParams, so the page needs no Suspense boundary).
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get("tab");
+    if (wanted && (SEC_TABS as readonly string[]).includes(wanted)) setTab(wanted as SecTab);
+  }, []);
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
     : "rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]";
 
   const TABS:{id:SecTab;label:string;icon:React.ElementType}[] = [
+    { id:"library_activity", label:"نشاط المكتبة", icon:BookOpenText },
     { id:"library_locks", label:"قفل المكتبة", icon:LockSimple },
     { id:"overview", label:"نظرة عامة", icon:ShieldCheck },
     { id:"duplicates", label:"حسابات مكررة", icon:Users },
@@ -73,7 +83,7 @@ export default function SecurityPage() {
       </motion.div>
 
       <p className={`rounded-xl border px-4 py-2 text-[11px] ${isDark?"border-amber-500/20 bg-amber-500/10 text-amber-300":"border-amber-200 bg-amber-50 text-amber-800"}`}>
-        بيانات توضيحية: البطاقات أدناه وتبويبات «نظرة عامة» و«حسابات مكررة» و«حماية البوتات» و«التهديدات» ليست من النظام بعد. تبويب «قفل المكتبة» وحده حقيقي.
+        بيانات توضيحية: البطاقات أدناه وتبويبات «نظرة عامة» و«حسابات مكررة» و«حماية البوتات» و«التهديدات» ليست من النظام بعد. تبويبا «نشاط المكتبة» و«قفل المكتبة» حقيقيان.
       </p>
 
       {/* KPIs */}
@@ -98,10 +108,10 @@ export default function SecurityPage() {
       </div>
 
       {/* Tabs */}
-      <div className={`flex gap-1 border-b pb-0.5 ${isDark?"border-white/[0.06]":"border-slate-100"}`}>
+      <div className={`flex gap-1 overflow-x-auto border-b pb-0.5 ${isDark?"border-white/[0.06]":"border-slate-100"}`}>
         {TABS.map(t=>(
           <button key={t.id} onClick={()=>setTab(t.id)}
-            className={`flex items-center gap-1.5 px-3 py-2 text-[11px] font-bold rounded-t-xl transition-all ${
+            className={`flex shrink-0 items-center gap-1.5 px-3 py-2 text-[11px] font-bold rounded-t-xl transition-all ${
               tab===t.id?isDark?"text-white border-b-2 border-[#C8A762]":"text-slate-800 border-b-2 border-[#0B3D2E]"
               :isDark?"text-zinc-600":"text-slate-400"
             }`}>
@@ -110,6 +120,7 @@ export default function SecurityPage() {
         ))}
       </div>
 
+      {tab==="library_activity" && <LibraryActivityPanel isDark={isDark} card={card} />}
       {tab==="library_locks" && <LibraryLocksPanel isDark={isDark} card={card} />}
 
       {/* Overview */}

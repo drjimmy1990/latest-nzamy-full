@@ -5149,3 +5149,43 @@ begin
   raise notice '_verify: 20261030_16 OK — subscription_plans holds the price book''s prices; NEWCLIENT is first-paid-order only';
 end $$;
 -- <<< verify:pricing_owner_package
+-- >>> verify:library_activity_monitor
+-- 2026-10-31 — 20261031_10_library_activity_monitor.sql («نشاط المكتبة»).
+-- Before it runs it only reports; after, it checks the settings row, the one
+-- overload of library_read_quota_hit, and that no session role reaches the
+-- new tables or functions.
+do $$
+declare t text; f text;
+begin
+  if to_regclass('public.library_monitor_settings') is null then
+    raise notice '_verify: 20261031_10 is not applied yet — no library activity monitor (caps stay the app constants)'; return;
+  end if;
+  if (select count(*) from public.library_monitor_settings) <> 1 then
+    raise exception '_verify: 20261031_10 — library_monitor_settings must hold exactly one row (re-run 20261031_10)';
+  end if;
+  if (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'library_read_quota_hit') <> 1 then
+    raise exception '_verify: 20261031_10 — library_read_quota_hit has more than one overload (PostgREST would refuse the call)';
+  end if;
+  foreach t in array array['public.library_monitor_settings', 'public.library_user_limits',
+                           'public.library_activity_hourly', 'public.library_review_flags'] loop
+    if to_regclass(t) is null then
+      raise exception '_verify: 20261031_10 — % is missing (re-run 20261031_10)', t;
+    end if;
+    if has_table_privilege('anon', t, 'SELECT') or has_table_privilege('authenticated', t, 'SELECT')
+       or has_table_privilege('authenticated', t, 'UPDATE') then
+      raise exception '_verify: 20261031_10 — a session role can read or change %', t;
+    end if;
+  end loop;
+  foreach f in array array['public.library_activity_bump(jsonb)', 'public.library_activity_top(timestamptz,int)',
+                           'public.library_monitor_evaluate(uuid)', 'public.library_quota_limits(uuid,int,int,int,int)'] loop
+    if to_regprocedure(f) is null then
+      raise exception '_verify: 20261031_10 — % is missing (re-run 20261031_10)', f;
+    end if;
+    if has_function_privilege('authenticated', f, 'EXECUTE') or has_function_privilege('anon', f, 'EXECUTE') then
+      raise exception '_verify: 20261031_10 — a session role can EXECUTE %', f;
+    end if;
+  end loop;
+  raise notice '_verify: 20261031_10 OK — library caps, review rules and per-user limits come from the admin page; activity is service-only';
+end $$;
+-- <<< verify:library_activity_monitor
