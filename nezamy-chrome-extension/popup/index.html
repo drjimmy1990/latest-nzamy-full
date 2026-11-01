@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>نظامي - جسر ناجز</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="extension-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo-row">
+        <div class="brand">
+          <div class="logo-badge">ن</div>
+          <div>
+            <h1 class="title">نـظـامـي</h1>
+            <p class="subtitle">جسر مزامنة ناجز الذكي</p>
+          </div>
+        </div>
+        <button id="btnSettings" class="icon-btn" title="الإعدادات">⚙️</button>
+      </div>
+
+      <!-- Najiz Status Badge -->
+      <div id="najizStatusBadge" class="status-card disconnected">
+        <span class="status-dot"></span>
+        <span id="najizStatusText" class="status-label">جاري فحص الاتصال بناجز...</span>
+      </div>
+    </header>
+
+    <!-- Main Actions -->
+    <main class="main-content">
+      <!-- Direct Sync Current Case -->
+      <section class="action-card primary">
+        <div class="action-header">
+          <span class="action-icon">⚡</span>
+          <div>
+            <h2 class="action-title">مزامنة القضية المعروضة</h2>
+            <p class="action-desc">سحب تفاصيل القضية الحالية المفتوحة في تبويب ناجز وتفكيك محاضرها فوراً.</p>
+          </div>
+        </div>
+        
+        <div class="input-row">
+          <input type="text" id="manualCaseKey" placeholder="أو أدخل معرف القضية (ObjectKey)..." class="text-input" />
+        </div>
+
+        <button id="btnSyncCurrentCase" class="btn btn-primary">
+          <span class="btn-text">بدء المزامنة الفورية</span>
+          <span class="btn-spinner hidden"></span>
+        </button>
+      </section>
+
+      <!-- Batch Actions -->
+      <div class="grid-actions">
+        <button id="btnSyncAllCases" class="btn btn-secondary">
+          <span class="btn-icon">📑</span>
+          <span>مزامنة القضايا النشطة</span>
+        </button>
+        <button id="btnSyncWekalat" class="btn btn-secondary">
+          <span class="btn-icon">📜</span>
+          <span>سحب الوكالات</span>
+        </button>
+      </div>
+
+      <!-- Logs / Output Status -->
+      <div id="logSection" class="log-section hidden">
+        <div class="log-header">
+          <span>سجل العمليات والبيانات المستخرجة</span>
+          <span id="lastSyncTime" class="time-label"></span>
+        </div>
+        <div id="logContent" class="log-content"></div>
+        <pre id="jsonPreview" class="json-preview hidden" dir="ltr"></pre>
+        <div id="exportActions" class="export-actions hidden">
+          <button id="btnDownloadJson" class="btn btn-secondary btn-sm">📥 تحميل JSON</button>
+          <button id="btnCopyJson" class="btn btn-secondary btn-sm">📋 نسخ البيانات</button>
+        </div>
+      </div>
+    </main>
+
+    <!-- Settings Drawer -->
+    <section id="settingsDrawer" class="settings-drawer hidden">
+      <div class="drawer-header">
+        <h3>إعدادات الربط مع نظامي</h3>
+        <button id="btnCloseSettings" class="close-btn">✕</button>
+      </div>
+
+      <div class="form-group">
+        <label for="serverUrl">رابط خادم نظامي (API URL):</label>
+        <input type="text" id="serverUrl" class="text-input" placeholder="http://localhost:3000" />
+        <small class="hint">استخدم http://localhost:3000 للتطوير أو https://nezamy.sa للإنتاج.</small>
+      </div>
+
+      <div class="form-group">
+        <label for="apiKey">مفتاح API الخاص بحسابك (اختياري):</label>
+        <input type="password" id="apiKey" class="text-input" placeholder="NZ_LIVE_..." />
+      </div>
+
+      <button id="btnSaveSettings" class="btn btn-save">حفظ الإعدادات</button>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <span>نظامي © 2026 • أمان تام Zero-Credentials</span>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
