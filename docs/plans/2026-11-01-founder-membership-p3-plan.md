@@ -43,6 +43,8 @@ The admin watches the seats and can pause the sale.
   - `drafting_work` = **6**, tool `legal-drafter`, turn 0 only;
   - `independent_output` = **1**, tools `contracts-pro`, `legal-opinion-consult`, `legal-opinion-letter`, `wargaming`.
   - Direction support has no tool yet, so it stays «قريبًا» and spends nothing.
+- Tool access is by role (`spec.roles` includes `lawyer`, checked in `runCore.ts:266`), not by subscription tier, so a founder needs no `subscriptions` row to use the tools.
+  - Note: `wargaming` is `consultantBlocked`. A founder whose practice kind is `consultant` cannot spend the output on the simulator; the choice UI must not offer it there.
 - Eligible drafter kinds (manifest): `claim`, `reply`, `supplementary`, `closing`, `appeal`, `cassation`, `petition`. **`rejoinder` is excluded** until the owner answers ٣٩٩.
 - Activation requires `lawyer_profiles.verification_status = 'verified'`, a paid order, and an atomically allocated seat. Nobody gets a badge, seat or credit without all three.
 - The card must not promise anything this plan doesn't grant: no guest invites, continuity/grace, marketplace fee, recommendation, founder room, academy or 25 GB. ERP is shown only as «قريبًا — ضمن مدة العضوية المحسوبة من التفعيل».
@@ -65,6 +67,8 @@ The admin watches the seats and can pause the sale.
 - Never stage `.env*`. Run `detect_changes` before every commit. Merge or push only on the user's go.
 
 ## Review Focus
+
+0. **A card is declined and the buyer retries within 2 hours.** They get the same seat moved to the new order, not 409 «أنت عضو مؤسس بالفعل». This is the most likely launch-day failure. Covered by the Task 1 Docker test and Task 5.
 
 1. **Two buyers race for the last seat.** One gets `reserved`, the other gets a 409 «اكتملت المقاعد», and neither is charged twice. Covered by the Task 1 Docker test with two sessions and an advisory lock.
 2. **A payment is captured after the reservation expired, and the seats are full by then.** The order stays `paid`, no badge or credit is granted, `metadata.founder = 'seat_unavailable'`, and the admin panel lists it for a refund. Task 1 (SQL) and Task 5.
@@ -101,6 +105,7 @@ The admin watches the seats and can pause the sale.
 - `founder_reserve_seat(p_user uuid, p_order uuid) returns text`:
   - Returns `'reserved' | 'already_member' | 'full' | 'closed' | 'paused' | 'not_verified'`.
   - Takes `pg_advisory_xact_lock(hashtext('founder_seats:founder-2026'))`.
+  - Only an **`active`** seat answers `already_member`. If the user already holds a `reserved` seat whose order is not `paid` (a declined card, a retry), it **moves that reservation to `p_order`**: it updates `order_id` and refreshes `reserved_until`. A retry never answers 409 and never takes a second seat.
   - Counts `active` seats plus `reserved` seats with `reserved_until > now()`, against `capacity`.
   - On success inserts a seat with `reserved_until = now() + interval '2 hours'`.
   - The window is checked with the existing `founder_campaign_active()`.
@@ -120,12 +125,15 @@ The admin watches the seats and can pause the sale.
   - Clears the badge unless the user has another `active` seat.
   - Returns `'revoked' | 'none'`.
 - `founder_release_expired() returns int`: releases `reserved` seats past `reserved_until` whose order is not `paid`.
+- `founder_release_order(p_order uuid) returns boolean`: releases the order's `reserved` seat at once. It is called when Moyasar reports the payment `failed`, `voided` or `cancelled` (Task 5), so a seat is not held for 2 hours by a dead payment.
 - `founder_seat_summary() returns table(capacity int, active int, reserved int, seats_left int, sale_paused bool, on_sale bool)`.
 
 - [ ] **Step 1: Write the failing Docker test** `founder_membership.test.sql`. Assert:
   - with capacity set to 2 and three verified lawyers, reservations return `reserved`, `reserved`, `full`;
   - an unverified user gets `not_verified`;
-  - a second reserve by the same user gets `already_member`;
+  - a second reserve by the same user with a new order, while the first order is unpaid, gets `reserved` and moves the same seat row (still 1 seat, `order_id` = the new order);
+  - after activation, a further reserve gets `already_member`;
+  - `founder_release_order` frees a reserved seat, and a third lawyer can then reserve it;
   - `founder_activate` on an unpaid order gets `not_paid`;
   - after marking the order paid it returns `activated`, there are 2 credit rows (6 and 1), a library grant with `plan_ref='lib-founder'` and `ends_at` about 365 days out, and the badge is true;
   - a second activate returns `already` and leaves the row counts unchanged;
@@ -155,6 +163,8 @@ The admin watches the seats and can pause the sale.
   4. Calls `ai_start_run(... p_price := 0 ...)`.
   5. If `created`, inserts a `membership_credit_uses` row and decrements `remaining`. A duplicate idempotency key returns the existing run with `credit_used = false` and no second decrement.
 - `ai_fail_run(p_run uuid, p_code text, p_message text)`: `create or replace` with the **identical** body plus one block. When the run moves to `failed` and a `membership_credit_uses` row for `p_run` has `restored_at is null`, it sets `restored_at = now()` and does `remaining = remaining + 1`. Copy the current body verbatim from `20261027_10_ai_runs.sql:179-242`; don't paraphrase it.
+  - As of e25edba2, `20261027_10` is the **only** migration defining `ai_start_run` and `ai_fail_run`, and `20261030_65` is the latest `library_grant_access`.
+  - Re-run `grep -ln -iE "function (public\.)?(ai_fail_run|ai_start_run|library_grant_access)" supabase/migrations/*.sql` before copying. If a newer file exists, copy from that one.
 
 - [ ] **Step 1: Write the failing test.** Assert:
   - a founder with 6 works spends one (`remaining = 5`, `credit_used = true`, the run has `charged = false`);
@@ -219,6 +229,8 @@ The admin watches the seats and can pause the sale.
 - `CheckoutReply` status adds `409`.
 
 Behaviour, for `item.kind === "membership"` only:
+0. While `FOUNDER_MEMBERSHIP_ON_SALE` is false, reply 410 «باب الاشتراك مغلق حاليًا» before anything else. A partial deploy of Tasks 3–5 can then never take money. Task 11 flips the flag.
+0b. A `couponCode` on a membership item is refused with 400 «لا تُطبَّق القسائم على باقة المؤسس». The manifest says the first-year founder price is already discounted and nothing stacks. Also mark the item as already discounted in `couponRules.ts` (the "already sold at a discount" check at line ~90), so the coupon server refuses it too.
 1. After the buyer check and the order insert, call `reserveFounderSeat`.
 2. If the answer is not `reserved`, set the order `status = 'cancelled'` (use the existing order-status values) and reply as follows. All messages are Arabic.
 
@@ -229,7 +241,12 @@ Behaviour, for `item.kind === "membership"` only:
 | `full` | 409 | «اكتملت مقاعد المؤسسين» |
 | `closed` / `paused` | 410 | «باب الاشتراك مغلق حاليًا» |
 
-- [ ] **Step 1: Failing tests:** each answer gives the status and message above with the order cancelled; `reserved` continues to the Moyasar form; a non-membership item never calls `reserveFounderSeat`.
+- [ ] **Step 1: Failing tests:**
+  - each answer gives the status and message above with the order cancelled (`'cancelled'` is an allowed `payment_orders.status`, see `20261022_10:108`);
+  - `reserved` continues to the Moyasar form;
+  - a non-membership item never calls `reserveFounderSeat`;
+  - with the flag false the reply is 410 and no order is inserted;
+  - a coupon on the membership is 400, and `couponRules` refuses it on its own.
 - [ ] **Step 2: Run them and see them fail.**
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run the tests and see them pass.**
@@ -242,7 +259,8 @@ Behaviour, for `item.kind === "membership"` only:
   - `src/lib/payments/grantPurchase.ts` (a `membership` branch → `deps.activateFounder(orderId)`; `already` counts as success);
   - `fulfillOrder.ts` (wire `activateFounder` to `founder_activate`);
   - `refundDecision.ts` and `refundCore.ts` (`membership` → `founder_revoke(order, 'refund')`);
-  - `src/app/api/v1/cron/payments-sweep/route.ts` (also call `founder_release_expired`).
+  - `src/app/api/v1/cron/payments-sweep/route.ts` (also call `founder_release_expired`);
+  - `webhookCore.ts` and the result page: on a `failed`, `voided` or `cancelled` membership order, call `founder_release_order`.
 - Test: `grantPurchase.test.ts`, `refundDecision.test.ts`, `fulfillCore.test.ts`.
 
 **Interfaces:**
@@ -253,7 +271,8 @@ Behaviour, for `item.kind === "membership"` only:
   - `activateFounder` is called once per order, including on a webhook + result-page double fulfil;
   - `seat_unavailable` produces an admin notification and no throw;
   - a refund of a membership calls `founder_revoke` and does not touch points lots;
-  - the sweep calls the release function.
+  - the sweep calls the release function;
+  - a failed payment webhook for a membership order calls `founder_release_order` once.
 
 ### Task 6: Use a credit from the AI run route
 
@@ -324,6 +343,7 @@ Behaviour, for `item.kind === "membership"` only:
   - an existing member sees «أنت عضو مؤسس».
 
   The CTA logic lives in a pure helper `founderCta(state)` with unit tests.
+- Match the URL's `campaign` against `FOUNDER_CAMPAIGN_ID` (`"founder-2026"`). Never compare it with the id that `founderCampaignFromSetting` builds, which is `founder-<starts_on>`, i.e. `founder-2026-11-01`.
 - When `campaign=founder-2026` is in the URL but the sale is closed, show «انتهت حملة المؤسس أو اكتملت مقاعدها» instead of a dead anchor.
 
 - [ ] **Steps 1–5:** TDD on `founderCta` and the setting validator; implement; `pricingHonesty` passes; check in a browser at `/pricing?audience=lawyers&campaign=founder-2026#founder-plan` with the flag forced on locally; commit.
