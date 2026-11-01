@@ -1040,6 +1040,30 @@ begin
     end if;
   end if;
 
+  -- §8 functions run as their owner. CREATE OR REPLACE keeps ai_fail_run's
+  -- owner from 20261027_10. membership_credits / membership_credit_uses have
+  -- RLS on with no policy for that role, so an owner that neither owns the
+  -- tables nor bypasses RLS would restore 0 rows SILENTLY (and without the
+  -- grants every ai_fail_run — and every points refund — raises 42501).
+  foreach fn in array array[
+    'public.ai_fail_run(uuid, text, text)',
+    'public.ai_start_run_with_credit(uuid, text, text, text, int, int, text, timestamptz, boolean, jsonb, text[], int, uuid, jsonb, text)'] loop
+    continue when to_regprocedure(fn) is null;
+    select pg_get_userbyid(proowner) into r from pg_proc where oid = to_regprocedure(fn);
+    foreach t in array array['public.membership_credits', 'public.membership_credit_uses'] loop
+      if not (pg_get_userbyid((select relowner from pg_class where oid = t::regclass)) = r
+              or exists (select 1 from pg_roles ro where ro.rolname = r and (ro.rolsuper or ro.rolbypassrls))) then
+        missing := missing || format(' %s runs as %s, which neither owns %s nor bypasses RLS (alter function %s owner to %s);',
+                                     fn, r, t, fn, pg_get_userbyid((select relowner from pg_class where oid = t::regclass)));
+      end if;
+      foreach p in array array['SELECT', 'INSERT', 'UPDATE'] loop
+        if not has_table_privilege(r, t, p) then
+          missing := missing || format(' %s (owner of %s) lacks %s on %s;', r, fn, p, t);
+        end if;
+      end loop;
+    end loop;
+  end loop;
+
   if missing <> '' then
     raise exception '20261101_10 verify:%', missing;
   end if;
