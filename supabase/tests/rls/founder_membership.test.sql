@@ -209,6 +209,16 @@ begin
      or s.reserved_until <> now() + interval '2 hours' or s.campaign_id <> 'founder-2026' then
     raise exception 'T3 FAIL: the retry did not move the same seat to the new order: %', row_to_json(s);
   end if;
+  -- the declined card's `failed` webhook arrives AFTER the retry: releasing
+  -- the OLD order must not touch the seat that now carries the new one
+  if public.founder_release_order('00000000-0000-0000-0000-00000000fe11') is distinct from false then
+    raise exception 'T3 FAIL: release_order(old order) after the move returned true';
+  end if;
+  if (select status from public.founder_seats where id = seat1) <> 'reserved'
+     or (select order_id from public.founder_seats where id = seat1) <> '00000000-0000-0000-0000-00000000fe12'
+     or (select reserved_until from public.founder_seats where id = seat1) <> now() + interval '2 hours' then
+    raise exception 'T3 FAIL: a late failed webhook for the old order released the moved seat';
+  end if;
 
   r := public.founder_reserve_seat('00000000-0000-0000-0000-00000000fd02', '00000000-0000-0000-0000-00000000fe21');
   if r is distinct from 'reserved' then raise exception 'T3 FAIL: L2 reserve returned %', r; end if;
@@ -217,7 +227,7 @@ begin
   if exists (select 1 from public.founder_seats where user_id = '00000000-0000-0000-0000-00000000fd03') then
     raise exception 'T3 FAIL: full still wrote a seat';
   end if;
-  raise notice 'T3 PASS: reserved; retry moved the same seat to the new order (2h refreshed); reserved; full';
+  raise notice 'T3 PASS: reserved; retry moved the same seat to the new order (2h refreshed); late release of the old order → false, seat kept; reserved; full';
 end $$;
 
 -- T4 release_order frees the seat at once; a third lawyer then gets it
@@ -548,11 +558,12 @@ begin
 end $$;
 do $$
 declare
-  ra text;
-  rb text;
+  ra   text;
+  rb   text;
+  conn text := format('dbname=%s user=%s', quote_ident(current_database()), quote_ident(current_user));
 begin
-  perform dblink_connect('race_a', 'dbname=postgres user=postgres');
-  perform dblink_connect('race_b', 'dbname=postgres user=postgres');
+  perform dblink_connect('race_a', conn);
+  perform dblink_connect('race_b', conn);
   perform dblink_exec('race_a', 'begin');
   select x into ra from dblink('race_a',
     'select public.founder_reserve_seat(''00000000-0000-0000-0000-00000000fd0a'', ''00000000-0000-0000-0000-00000000fea1'')') as t(x text);
