@@ -35,8 +35,8 @@
 --   4. public.membership_credits — the seat's two credit rows (6 and 1),
 --      unique (seat_id, kind), remaining between 0 and total. Owner reads own.
 --   5. public.membership_credit_uses — one row per AI run that spent a credit
---      (run_id UNIQUE → ai_runs). Server only (RLS on, no policy). Task 2
---      writes it.
+--      (run_id UNIQUE → ai_runs). Server only (RLS on, no policy). §8
+--      (ai_start_run_with_credit / ai_fail_run) writes it.
 --   6. Functions (SECURITY DEFINER, search_path public, pg_temp, EXECUTE for
 --      service_role only). Every one that changes a seat first takes
 --        pg_advisory_xact_lock(hashtext('founder_seats:founder-2026'))
@@ -107,6 +107,19 @@
 --        left).
 --      founder_campaign_limits() → capacity, sale_paused with the R1
 --        defaults (internal helper).
+--   7. §8 (Task 2) — the credits pay for AI runs:
+--      ai_start_run_with_credit(<ai_start_run's 14 parameters>, p_credit_kind)
+--        → run_id, created, status, charged, charged_points, credit_used.
+--        Spends one credit (row locked FOR UPDATE) and starts the run at
+--        price 0 in one transaction. P0001 credit_not_eligible | no_credit.
+--        points_enforcement off → a free run, nothing consumed.
+--      ai_fail_run(uuid, text, text) RE-CREATED with the identical signature
+--        and body of 20261027_10 plus one block: a failed run that spent a
+--        credit gets it back exactly once (membership_credit_uses.restored_at).
+--
+-- 20261027_10 COUPLING — re-running 20261027_10 AFTER this file silently puts
+--   back the ai_fail_run WITHOUT the credit restore. Re-run this file after
+--   it (its verify checks the restore is there).
 --
 -- 20261026_02 COUPLING
 --   20261026_02 clears every founder_badge whose user holds no PAID order with
@@ -123,7 +136,13 @@
 --   these functions until that code ships, so the file may run any time
 --   before it. NOTE: deploy.sh does not run _verify.sql.
 --
--- ROLLBACK (only before any seat is sold)
+-- ROLLBACK (only before any seat is sold) — IN THIS ORDER: ai_fail_run reads
+--   membership_credit_uses, so dropping that table first would make every AI
+--   failure raise 42P01 and stop every points refund.
+--   1. re-run 20261027_10_ai_runs.sql (puts back the ai_fail_run without the
+--      credit restore; it does not touch ai_runs data);
+--   2. drop function if exists public.ai_start_run_with_credit(uuid, text, text, text, int, int, text, timestamptz, boolean, jsonb, text[], int, uuid, jsonb, text);
+--   3. then:
 --   drop function if exists public.founder_reserve_seat(uuid, uuid);
 --   drop function if exists public.founder_activate(uuid);
 --   drop function if exists public.founder_revoke(uuid, text);
@@ -648,7 +667,232 @@ begin
   end loop;
 end $$;
 
--- ── 8. Verify — raises, so the transaction rolls back ────────────────────────
+-- ── 8. Founder credits on AI runs (P3 Task 2) ────────────────────────────────
+-- A credit pays for an AI run instead of points; a failed run gives it back
+-- once. Task 6 calls ai_start_run_with_credit from runCore.ts instead of
+-- ai_start_run when the run qualifies — its name, parameters, result columns
+-- and error codes are that contract.
+
+-- 8a. spend a credit and start the run at price 0, one transaction.
+-- Every ai_start_run parameter (same names, types, defaults, order) plus
+-- p_credit_kind LAST. Postgres needs a default on every parameter after the
+-- first defaulted one, so p_credit_kind defaults to null — and null (or any
+-- unknown kind) is credit_not_eligible.
+--   1. eligibility → else P0001 credit_not_eligible:
+--        drafting_work       p_tool 'legal-drafter' and p_input->>'kind' in
+--                            claim, reply, supplementary, closing, appeal,
+--                            cassation, petition ('rejoinder' is NOT — ruling
+--                            R3, owner ٣٩٩);
+--        independent_output  p_tool in contracts-pro, legal-opinion-consult,
+--                            legal-opinion-letter, wargaming.
+--   2. points_enforcement off (read as ai_start_run reads it) → an ordinary
+--      free run: ai_start_run(p_price 0), credit_used false, nothing consumed.
+--   3. lock the user's credit row FOR UPDATE: this kind, remaining > 0,
+--      ends_at > now(), its seat ACTIVE (a revoked seat never spends, even a
+--      credit that a late ai_fail_run gave back). Nearest end first. A second
+--      call of the same user waits here and then re-reads remaining.
+--      None → if the run of this idempotency key already exists (a replay
+--      after the last credit), ai_start_run returns it, credit_used false;
+--      else P0001 no_credit (nothing written).
+--   4. ai_start_run(p_price 0, every other argument passed through): its
+--      daily limit, duplicate key and deadline rules are unchanged.
+--   5. created → one membership_credit_uses row and remaining - 1,
+--      credit_used true. A duplicate key (created false) → the existing run,
+--      credit_used false, no second decrement.
+create or replace function public.ai_start_run_with_credit(
+  p_user            uuid,
+  p_tool            text,
+  p_variant         text,
+  p_class           text,
+  p_price           int,
+  p_daily_limit     int,
+  p_idempotency_key text,
+  p_deadline        timestamptz,
+  p_exempt          boolean default false,
+  p_input           jsonb default null,
+  p_file_ids        text[] default '{}',
+  p_pages           int default null,
+  p_conversation    uuid default null,
+  p_source_ids      jsonb default null,
+  p_credit_kind     text default null)
+returns table (run_id uuid, created boolean, status text, charged boolean, charged_points int, credit_used boolean)
+language plpgsql
+volatile
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_ok      boolean;
+  v_enforce boolean;
+  v_credit  uuid;
+  v_run     record;
+begin
+  v_ok := coalesce(
+       (p_credit_kind = 'drafting_work'
+        and p_tool = 'legal-drafter'
+        and p_input ->> 'kind' in ('claim', 'reply', 'supplementary', 'closing', 'appeal', 'cassation', 'petition'))
+    or (p_credit_kind = 'independent_output'
+        and p_tool in ('contracts-pro', 'legal-opinion-consult', 'legal-opinion-letter', 'wargaming')),
+    false);
+  if not v_ok then
+    raise exception 'credit_not_eligible' using errcode = 'P0001',
+      detail = format('credit kind %s does not pay for tool %s (kind %s)',
+                      coalesce(p_credit_kind, '(none)'), coalesce(p_tool, '(none)'),
+                      coalesce(p_input ->> 'kind', '(none)'));
+  end if;
+
+  select coalesce((select ps.value = 'true'::jsonb from public.platform_settings ps
+                    where ps.key = 'points_enforcement'), false) into v_enforce;
+
+  if v_enforce then
+    select c.id into v_credit
+      from public.membership_credits c
+      join public.founder_seats fs on fs.id = c.seat_id
+     where c.user_id = p_user and c.kind = p_credit_kind
+       and c.remaining > 0 and c.ends_at > now()
+       and fs.status = 'active'
+     order by c.ends_at, c.id
+     limit 1
+       for update of c;
+
+    if v_credit is null
+       and not exists (select 1 from public.ai_runs a
+                        where a.user_id = p_user and a.idempotency_key = p_idempotency_key) then
+      raise exception 'no_credit' using errcode = 'P0001',
+        detail = format('no %s credit left', p_credit_kind);
+    end if;
+  end if;
+
+  select s.run_id, s.created, s.status, s.charged, s.charged_points into v_run
+    from public.ai_start_run(
+           p_user            => p_user,
+           p_tool            => p_tool,
+           p_variant         => p_variant,
+           p_class           => p_class,
+           p_price           => 0,
+           p_daily_limit     => p_daily_limit,
+           p_idempotency_key => p_idempotency_key,
+           p_deadline        => p_deadline,
+           p_exempt          => p_exempt,
+           p_input           => p_input,
+           p_file_ids        => p_file_ids,
+           p_pages           => p_pages,
+           p_conversation    => p_conversation,
+           p_source_ids      => p_source_ids) s;
+
+  if v_credit is not null and v_run.created then
+    insert into public.membership_credit_uses (credit_id, run_id, tool)
+      values (v_credit, v_run.run_id, p_tool);
+    update public.membership_credits c
+       set remaining = c.remaining - 1
+     where c.id = v_credit;
+    return query select v_run.run_id, v_run.created, v_run.status, v_run.charged, v_run.charged_points, true;
+    return;
+  end if;
+
+  return query select v_run.run_id, v_run.created, v_run.status, v_run.charged, v_run.charged_points, false;
+end $$;
+
+comment on function public.ai_start_run_with_credit(uuid, text, text, text, int, int, text, timestamptz, boolean, jsonb, text[], int, uuid, jsonb, text) is
+  'Starts an AI run paid with a founder credit instead of points (20261101_10, P3 Task 2): ai_start_run''s arguments plus p_credit_kind; the run starts at price 0. P0001 credit_not_eligible (tool / drafter kind not covered by the kind) | P0001 no_credit (none left, expired or seat not active). points_enforcement off → a free run, nothing consumed. A duplicate key → the existing run, credit_used false. Service role only.';
+
+-- 8b. ai_fail_run: re-created with the IDENTICAL signature, defaults, result,
+-- search_path ('' — kept on purpose: the body names every object with its
+-- schema) and body of 20261027_10, plus ONE block right after the status
+-- update — before the "not charged → return" exit, because a credit run is
+-- never charged. The block gives a credit back once: the use row's
+-- restored_at is set only while null, and the status update above it only
+-- matches a running / review run, so a second fail (n8n error, then the
+-- sweep, then a late callback) returns false before reaching it. least()
+-- keeps the CHECK (remaining <= total) from ever raising inside a fail —
+-- that would strand the run in 'running' and stop its points refund.
+-- NEVER add a second overload (PGRST203 breaks every AI run).
+create or replace function public.ai_fail_run(p_run uuid, p_code text, p_message text default null)
+returns boolean
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  v_run  public.ai_runs;
+  r      record;
+  v_lot  uuid;
+begin
+  if p_run is null or p_code is null then
+    raise exception 'ai_fail_run: p_run and p_code are required' using errcode = '22023';
+  end if;
+
+  update public.ai_runs a
+     set status = 'failed', error_code = left(p_code, 60), error_message = left(p_message, 500),
+         finished_at = now()
+   where a.id = p_run and a.status in ('running','review')
+   returning * into v_run;
+  if not found then
+    return false;
+  end if;
+
+  -- 20261101_10: a run paid with a founder credit gets the credit back, once
+  with restored as (
+    update public.membership_credit_uses u
+       set restored_at = now()
+     where u.run_id = p_run and u.restored_at is null
+    returning u.credit_id)
+  update public.membership_credits c
+     set remaining = least(c.total, c.remaining + 1)
+    from restored
+   where c.id = restored.credit_id;
+
+  if not v_run.charged or v_run.refunded_at is not null then
+    return true;
+  end if;
+
+  update public.ai_runs a set refunded_at = now() where a.id = p_run and a.refunded_at is null;
+  if not found then
+    return true;
+  end if;
+
+  for r in
+    select g.lot_id, g.pts, pl.expires_at
+      from (select l.lot_id, sum(-l.delta)::int as pts
+              from public.points_ledger l
+             where l.user_id = v_run.user_id and l.reason = 'usage'
+               and l.ref = 'ai_run:' || p_run::text
+             group by l.lot_id) g
+      join public.points_lots pl on pl.id = g.lot_id
+     order by pl.expires_at, pl.created_at, pl.id
+       for update of pl
+  loop
+    if r.pts <= 0 then
+      continue;
+    end if;
+    if r.expires_at > now() then
+      update public.points_lots set points_left = least(points_total, points_left + r.pts) where id = r.lot_id;
+      insert into public.points_ledger (user_id, lot_id, delta, reason, tool, ref)
+        values (v_run.user_id, r.lot_id, r.pts, 'usage_refund', v_run.tool, 'ai_run:' || p_run::text);
+    else
+      insert into public.points_lots (user_id, source, points_total, points_left, expires_at)
+        values (v_run.user_id, 'refund_restore', r.pts, r.pts, now() + interval '30 days')
+        returning id into v_lot;
+      insert into public.points_ledger (user_id, lot_id, delta, reason, tool, ref)
+        values (v_run.user_id, v_lot, r.pts, 'usage_refund', v_run.tool, 'ai_run:' || p_run::text);
+    end if;
+  end loop;
+
+  return true;
+end;
+$$;
+
+comment on function public.ai_fail_run(uuid, text, text) is
+  'Fails a running / review AI run once and refunds its debit to the original lots (expired → new 30-day refund_restore lot), ledger reason usage_refund (20261027_10); a run paid with a founder credit gets the credit back once (20261101_10). Service role only.';
+
+-- 8c. service role only
+revoke all on function public.ai_start_run_with_credit(uuid, text, text, text, int, int, text, timestamptz, boolean, jsonb, text[], int, uuid, jsonb, text) from public, anon, authenticated;
+grant execute on function public.ai_start_run_with_credit(uuid, text, text, text, int, int, text, timestamptz, boolean, jsonb, text[], int, uuid, jsonb, text) to service_role;
+revoke all on function public.ai_fail_run(uuid, text, text) from public, anon, authenticated;
+grant execute on function public.ai_fail_run(uuid, text, text) to service_role;
+
+-- ── 9. Verify — raises, so the transaction rolls back ────────────────────────
 do $$
 declare
   fn      text;
@@ -742,15 +986,64 @@ begin
     end if;
   end loop;
 
-  if (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-       where n.nspname = 'public' and p.proname = 'ai_fail_run') <> 1 then
-    missing := missing || ' public.ai_fail_run must have exactly one overload (PGRST203);';
+  foreach p in array array['ai_start_run', 'ai_fail_run', 'ai_start_run_with_credit'] loop
+    if (select count(*) from pg_proc pp join pg_namespace n on n.oid = pp.pronamespace
+         where n.nspname = 'public' and pp.proname = p) <> 1 then
+      missing := missing || format(' public.%s must have exactly one overload (PGRST203);', p);
+    end if;
+  end loop;
+
+  -- §8: the credit RPC (Task 6's contract) and the restoring ai_fail_run
+  fn := 'public.ai_start_run_with_credit(uuid, text, text, text, int, int, text, timestamptz, boolean, jsonb, text[], int, uuid, jsonb, text)';
+  if to_regprocedure(fn) is null then
+    missing := missing || format(' %s is missing;', fn);
+  else
+    select proconfig, prosecdef, pg_get_userbyid(proowner) into cfg, definer, t
+      from pg_proc where oid = to_regprocedure(fn);
+    if not coalesce(definer, false) or cfg is null or not ('search_path=public, pg_temp' = any (cfg)) then
+      missing := missing || format(' %s is not SECURITY DEFINER with search_path public, pg_temp;', fn);
+    end if;
+    foreach r in array array['public', 'anon', 'authenticated'] loop
+      if has_function_privilege(r, fn, 'EXECUTE') then
+        missing := missing || format(' %s can EXECUTE %s;', r, fn);
+      end if;
+    end loop;
+    if not has_function_privilege('service_role', fn, 'EXECUTE') then
+      missing := missing || format(' service_role cannot EXECUTE %s;', fn);
+    end if;
+    -- it runs as its owner, who must be able to run ai_start_run (service
+    -- role only), or every credit run fails 42501
+    if to_regprocedure('public.ai_start_run(uuid, text, text, text, int, int, text, timestamptz, boolean, jsonb, text[], int, uuid, jsonb)') is null
+       or not has_function_privilege(t, 'public.ai_start_run(uuid, text, text, text, int, int, text, timestamptz, boolean, jsonb, text[], int, uuid, jsonb)', 'EXECUTE') then
+      missing := missing || format(' %s, the owner of ai_start_run_with_credit, cannot EXECUTE ai_start_run;', t);
+    end if;
+  end if;
+
+  fn := 'public.ai_fail_run(uuid, text, text)';
+  if to_regprocedure(fn) is null then
+    missing := missing || format(' %s is missing;', fn);
+  else
+    select prosrc into src from pg_proc where oid = to_regprocedure(fn);
+    if position('public.membership_credit_uses' in src) = 0 or position('restored_at is null' in src) = 0 then
+      missing := missing || ' ai_fail_run lost the founder credit restore (re-run after 20261027_10?);';
+    end if;
+    if position('refund_restore' in src) = 0 or position('usage_refund' in src) = 0 then
+      missing := missing || ' ai_fail_run lost its points refund;';
+    end if;
+    foreach r in array array['public', 'anon', 'authenticated'] loop
+      if has_function_privilege(r, fn, 'EXECUTE') then
+        missing := missing || format(' %s can EXECUTE %s;', r, fn);
+      end if;
+    end loop;
+    if not has_function_privilege('service_role', fn, 'EXECUTE') then
+      missing := missing || format(' service_role cannot EXECUTE %s;', fn);
+    end if;
   end if;
 
   if missing <> '' then
     raise exception '20261101_10 verify:%', missing;
   end if;
-  raise notice '20261101_10 OK — kind membership; founder_campaign = %; founder_seats / membership_credits (owner reads own) / membership_credit_uses (server only); 7 founder functions definer, service role only, seat lock held',
+  raise notice '20261101_10 OK — kind membership; founder_campaign = %; founder_seats / membership_credits (owner reads own) / membership_credit_uses (server only); 7 founder functions definer, service role only, seat lock held; ai_start_run_with_credit service role only; ai_fail_run restores a credit once; one overload each of ai_start_run / ai_fail_run / ai_start_run_with_credit',
     v;
 end $$;
 
