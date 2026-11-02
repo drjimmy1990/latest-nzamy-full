@@ -52,13 +52,17 @@
  *     already_entitled, the payer told the administration will review a
  *     refund — and every admin alerted ONCE (deps.notifyAdmins), by the call
  *     that stamped, so a retry or a second caller never alerts again;
- *   - a dead membership payment frees its reserved seat at once
- *     (deps.releaseFounderSeat → founder_release_order): when this call
- *     records the failure, and whenever a failed / voided / cancelled
- *     membership order is seen again. The webhook, the result page and the
- *     sweep all reach it through here. Best-effort: a release that fails
- *     changes no answer (the sweep's founder_release_expired catches it
- *     within the 2-hour reservation, releaseExpiredFounderSeats below).
+ *   - a DECLINED card keeps its seat (ruling R17): the 2-hour reservation
+ *     holds it for the buyer's retry (founder_reserve_seat moves the same
+ *     seat to the new order) and the sweep's founder_release_expired frees an
+ *     abandoned one (releaseExpiredFounderSeats below). Only a voided or
+ *     cancelled membership order frees its reserved seat at once
+ *     (deps.releaseFounderSeat → founder_release_order) whenever it is seen —
+ *     the webhook, the result page and the sweep all reach it through here.
+ *     Best-effort: a release that fails changes no answer;
+ *   - a refund case later activated (a resume after a failed stamp, ruling
+ *     R18) clears metadata.already_entitled before the stamp, so neither the
+ *     payer nor the admin list keeps showing a refund review.
  *
  * Deploy order: a missing table, column or function of the B1 migrations
  * (42P01 / 42703 / 42883 / PGRST202 / PGRST204 / PGRST205) answers 'pending',
@@ -154,8 +158,11 @@ const ORDER_COLUMNS =
 
 const OPEN_STATUSES = ["created", "initiated"];
 
-/** A membership order in one of these holds no payment that can still land: its seat is freed. */
-const DEAD_STATUSES = new Set(["failed", "voided", "cancelled"]);
+/**
+ * A membership order in one of these is dead: its reserved seat is freed at
+ * once. NOT 'failed' (R17): a declined card keeps the seat for its retry.
+ */
+const DEAD_STATUSES = new Set(["voided", "cancelled"]);
 
 /** Where an admin refunds a paid order. */
 export const ADMIN_ORDERS_HREF = "/dashboard/admin/subscriptions/orders";
@@ -394,6 +401,16 @@ async function finish(
   if (granted.alreadyEntitled && !(await mergeOrderMetadata(admin, order.id, { already_entitled: true }))) {
     return { outcome: "pending", reason: "metadata_merge_failed", receiptNumber };
   }
+  // R18: a membership refund case that a later call activated (seat freed,
+  // licence verified) is no longer a refund review — cleared before the stamp.
+  if (
+    order.kind === "membership" &&
+    !granted.alreadyEntitled &&
+    order.metadata?.already_entitled === true &&
+    !(await mergeOrderMetadata(admin, order.id, { already_entitled: false }))
+  ) {
+    return { outcome: "pending", reason: "metadata_merge_failed", receiptNumber };
+  }
   const { data: stamped, error: stampErr } = await admin
     .from("payment_orders")
     .update({ fulfilled_at: now.toISOString() })
@@ -539,7 +556,7 @@ async function run(deps: FulfilDeps, input: FulfillOrderInput): Promise<FulfillR
       return { outcome: "rejected", reason: "order_mismatch" };
     }
     if (failErr) return pendingForDbError("failure record", failErr);
-    if (order.kind === "membership") await releaseFounderSeatOf(deps, order.id);
+    // R17: a declined membership card keeps its reserved seat for the retry
     return { outcome: "failed", reason: message ?? "payment_failed" };
   }
 

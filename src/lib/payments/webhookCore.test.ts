@@ -299,7 +299,7 @@ test("end to end: a payment_paid delivery grants a top-up once through fulfillOr
   assert.deepEqual(outcomeUpdates(log).at(-1)?.payload, { outcome: "granted" });
 });
 
-test("P3: a payment_failed delivery for a membership order frees its seat once (founder_release_order); the repeat delivery does not", async () => {
+test("P3 (R17): a payment_failed delivery for a membership order records the failure and frees NO seat (the reservation holds it for the retry)", async () => {
   const NOW = new Date("2026-10-22T08:00:00.000Z");
   const order = {
     id: ORDER, user_id: USER, merchant: "platform", kind: "membership", item_id: "lawyer-founder-2026", billing: "once",
@@ -347,8 +347,8 @@ test("P3: a payment_failed delivery for a membership order frees its seat once (
   };
   const body = event({ type: "payment_failed", data: { id: "pay_1", status: "failed", amount: 344540, currency: "SAR", metadata: { order_id: ORDER } } });
   assert.deepEqual(await handleWebhookWith(deps, body), { status: 200, body: { received: true } });
-  assert.deepEqual(releases, [ORDER], "founder_release_order once");
+  assert.deepEqual(releases, [], "a declined card keeps its seat");
   assert.ok(log.some((q) => q.table === "payment_orders" && q.op === "update" && (q.payload as { status?: string }).status === "failed"));
   assert.deepEqual(await handleWebhookWith(deps, body), { status: 200, body: { received: true, duplicate: true } });
-  assert.deepEqual(releases, [ORDER], "a repeat delivery frees nothing more");
+  assert.deepEqual(releases, [], "a repeat delivery frees nothing either");
 });
