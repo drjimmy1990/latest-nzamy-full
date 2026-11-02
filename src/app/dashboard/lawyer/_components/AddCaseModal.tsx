@@ -9,7 +9,8 @@ import { apiMutate, isSupabaseMode } from "@/lib/services/api";
 import { createWorkflowId, type WorkflowRequest } from "@/lib/workflowStore";
 import { createLawyerClient, getLawyerClients, type ClientType, type LawyerClient } from "@/lib/services/lawyerClientsService";
 import type { UserType, UserTier } from "@/hooks/useUser";
-import { COURT_CHOICES, COURT_OTHER, COURT_OTHER_LABEL, resolveCourt } from "./courtTypes";
+import { resolveCourt } from "./courtTypes";
+import CourtPicker from "./CourtPicker";
 import { caseSavedStatusLine, cardNamed, isAddCaseDirty } from "./addCaseForm";
 
 interface Props {
@@ -380,24 +381,18 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
                 </div>
                 <div>
                   <label htmlFor={`${fieldId}-court`} className={labelCls}>المحكمة المختصة</label>
-                  <select id={`${fieldId}-court`} value={courtChoice} onChange={e => setCourtChoice(e.target.value)} className={inputCls}>
-                    <option value="">— لم تُحدَّد بعد —</option>
-                    {COURT_CHOICES.map(c => <option key={c} value={c}>{c}</option>)}
-                    <option value={COURT_OTHER}>{COURT_OTHER_LABEL}</option>
-                  </select>
-                  {courtChoice === COURT_OTHER && (
-                    <input
-                      type="text"
-                      aria-label="اسم المحكمة أو الجهة"
-                      value={courtOther}
-                      onChange={e => setCourtOther(e.target.value)}
-                      placeholder="اكتب اسم المحكمة أو الجهة..."
-                      className={`${inputCls} mt-2`}
-                    />
-                  )}
-                  {!courtChoice && (
-                    <p className={hintCls}>يمكن تركها الآن؛ تظهر القضية «بانتظار تحديد الجهة» حتى تُحدَّد.</p>
-                  )}
+                  {/* q351: search over the 14 classifications and the MoJ
+                      directory of courts, plus «أخرى» — same two values,
+                      same resolveCourt, same saved string. */}
+                  <CourtPicker
+                    id={`${fieldId}-court`}
+                    isDark={isDark}
+                    choice={courtChoice}
+                    other={courtOther}
+                    onChange={(choice, other) => { setCourtChoice(choice); setCourtOther(other); }}
+                    inputCls={inputCls}
+                    hintCls={hintCls}
+                  />
                 </div>
                 {/*
                   UAT-LIVE-CASE-001 — a REAL `disabled`, not only the disabled
