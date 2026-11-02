@@ -65,7 +65,8 @@ const enPrice = (t: ConsultationType) => consultationTypePrice(t, CLIENT_SERVICE
 export const consultationTypes: Record<"ar" | "en", TypeDef[]> = {
   ar: [
     {
-      id: "ai", icon: Brain, label: "ذكاء نظامي", sublabel: "استجابة فورية", price: arPrice("ai"),
+      // Fix round 1 (M10): not «استجابة فورية» — the AI consult is beta-gated.
+      id: "ai", icon: Brain, label: "ذكاء نظامي", sublabel: "قريباً", price: arPrice("ai"),
       desc: "مساعد قانوني ذكي مدرّب على الأنظمة السعودية", color: "border-royal/20 hover:border-royal/40", badge: null,
     },
     {
@@ -86,7 +87,7 @@ export const consultationTypes: Record<"ar" | "en", TypeDef[]> = {
   ],
   en: [
     {
-      id: "ai", icon: Brain, label: "Nezamy AI", sublabel: "Instant response", price: enPrice("ai"),
+      id: "ai", icon: Brain, label: "Nezamy AI", sublabel: "Coming soon", price: enPrice("ai"),
       desc: "Smart legal assistant trained on Saudi laws and regulations", color: "border-royal/20 hover:border-royal/40", badge: null,
     },
     {

@@ -163,11 +163,100 @@ test("shield is unsold: no on-sale price-book plan grants it, and a lock names n
 test("shield lock copy: SubscriptionGuard and the sidebar badge name no unsold plan", () => {
   const guard = src("components/dashboard/SubscriptionGuard.tsx").replace(/^\s*\/\/.*$/gm, "");
   assert.doesNotMatch(guard, /التأمين القانوني/);
-  assert.match(guard, /const tierName = UNSOLD_TIERS\.has\(minTier as UserTier\) \? null :/);
+  assert.match(guard, /const tierName = UNSOLD_TIERS\.has\(minTier as UserTier\) (\|\| minTier === "free" )?\? null :/);
   assert.match(guard, /featureBlocked=\{tierName \?\? undefined\}/);
   assert.match(guard, /\{LOCKED_NOT_IN_PLAN_AR\}/);
   assert.match(guard, /href="\/pricing"/);
   // UpgradeBadge prints tierLabelAr(tier); tierLabelAr goes through the lock helper.
   assert.match(src("components/dashboard/SidebarComponents.tsx"), /\{tierLabelAr\(tier\)\}/);
   assert.match(src("hooks/useSubscription.ts"), /return lockTierLabelAr\(tier\) \?\? "ترقية";/);
+});
+
+// ── fix round 1 ──────────────────────────────────────────────────────────────
+
+test("I1: /services/contracts and /services/tracking name no price nothing charges, and agree with their cards", async () => {
+  const { CLIENT_SERVICE_CATALOG } = await import("../../constants/clientServiceCatalog.ts");
+  const { catalogPriceLabel } = await import("../pricing/catalogPriceLabel.ts");
+  const contracts = src("app/services/contracts/page.tsx").replace(/^\s*\/\/.*$/gm, "");
+  const tiers = contracts.split("const pricingTiers")[1].split("const faqs")[0];
+  assert.doesNotMatch(tiers, /٢٤٩|٤٩٩|"249"|"499"/);
+  assert.doesNotMatch(tiers, /بالذكاء الاصطناعي|AI-powered/);
+  assert.equal((tiers.match(/price: reviewPrice\("(ar|en)"\)/g) ?? []).length, 2);
+  assert.match(contracts, /catalogPriceLabel\("contract-review", CLIENT_SERVICE_CATALOG, lang\)/);
+  // The card on /services/individuals reads the same row.
+  assert.equal(catalogPriceLabel("contract-review", CLIENT_SERVICE_CATALOG, "ar"), "يبدأ من ٦٠٠ ر.س");
+
+  const tracking = src("components/tracking/constants.ts").replace(/^\s*\/\/.*$/gm, "");
+  const trackTiers = tracking.split("export const pricingTiers")[1];
+  assert.doesNotMatch(trackTiers, /price(_num)?: "[^"]*[0-9٠-٩]/, "a tracking tier names a number again");
+  assert.equal((trackTiers.match(/price: AFTER_ASSESSMENT_AR,/g) ?? []).length, 3);
+  assert.equal((trackTiers.match(/price_num: AFTER_ASSESSMENT_EN,/g) ?? []).length, 3);
+});
+
+test("I2: /services/consultations shows the booking page's prices and «قريباً» for the AI tier", () => {
+  const page = src("app/services/consultations/page.tsx").replace(/^\s*\/\/.*$/gm, "");
+  assert.doesNotMatch(page, /price: "|currency: "/, "a typed price or currency is back");
+  assert.doesNotMatch(page, /٩٩ ر|٢٩٩|"99"|"299"/);
+  assert.match(page, /const \{ catalog \} = useClientPricingCatalog\(\);/);
+  assert.match(page, /kind === "ai" \? COMING_SOON\[L\] : consultationTypePrice\(kind, catalog, L\)/);
+  assert.equal((page.match(/\{priceOf\(item\.kind\)\}/g) ?? []).length, 2, "both card grids");
+  assert.doesNotMatch(page, /إجابة فورية من الذكاء الاصطناعي|Instant AI-powered/);
+});
+
+test("I3: no «مشمول في الباقة» / 49 / 79 for ai-letter, the wizard's AI path or the chat's AI choices", async () => {
+  const { CLIENT_SERVICE_CATALOG } = await import("../../constants/clientServiceCatalog.ts");
+  const { formatClientServicePrice } = await import("../pricingRepository.ts");
+  const letter = CLIENT_SERVICE_CATALOG.find((s) => s.serviceId === "ai-letter")!;
+  assert.equal(letter.priceMode, "free");
+  assert.equal(letter.basePrice, 0);
+  assert.equal(letter.priceNote, undefined);
+  assert.equal(letter.includedByPlan, undefined);
+  assert.equal(formatClientServicePrice(letter), "مجانا");
+
+  const wizard = src("app/dashboard/client/consultation/new/page.tsx");
+  assert.match(wizard, /const aiConsultSoon = isTerminalToolHref\(aiConsultService\.route\);/);
+  assert.match(wizard, /\{aiConsultSoon \? COMING_SOON_BADGE_AR : `استشارة فورية · \$\{servicePriceLabel\(aiConsultService\)\}`\}/);
+  assert.match(wizard, /\{!aiConsultSoon && aiConsultService\.priceNote && \(/);
+  assert.match(wizard, /\{aiPathSoon \? COMING_SOON_BADGE_AR : servicePriceLabel\(service\)\}/);
+  assert.match(wizard, /\{!aiPathSoon && service\.priceNote && priceNoteDescribesSelection && \(/);
+
+  assert.match(src("components/floating/waChatPrices.ts"), /if \(isTerminalToolHref\(service\.route\)\) \{/);
+  const contract = src("components/floating/wa-steps/StepContract.tsx");
+  assert.match(contract, /label: "مراجعة AI", desc: "قيد الإعداد", price: COMING_SOON_BADGE_AR, val: "ai-review"/);
+});
+
+test("I6: the companies, legal-department and government plans sell no gated AI tool", () => {
+  for (const path of [
+    "constants/pricing/pricing.companies.ts",
+    "constants/pricing/pricing.companies.legaldept.ts",
+    "constants/pricing/pricing.government.ts",
+  ]) {
+    const code = src(path).replace(/^\s*\/\/.*$/gm, "");
+    const features = [...code.matchAll(/ai: \[([^\]]*)\]/g)].map((m) => m[1]).join("\n");
+    assert.ok(features.length > 0, path);
+    assert.doesNotMatch(
+      features,
+      /CorpMind|Deal Intel|LegalMail|Doc Analyzer|تحليل مستندات|تقييم مخاطر|Risk Assessment|رادار امتثال|Compliance radar|حزمة AI|AI suite|جميع أدوات|All AI tools|صائغ|Drafter|مراجع العقود|Contract Reviewer|\dAI|AI Contract Review|مراجعة عقود AI|فحص صحة|Health Check|استخدامات|uses \//,
+      `${path} still sells a gated tool`,
+    );
+    assert.match(features, /أدوات الذكاء الاصطناعي: قريباً/);
+    assert.match(features, /AI tools: coming soon/);
+  }
+  const gov = src("constants/pricing/pricing.government.ts").replace(/^\s*\/\/.*$/gm, "");
+  assert.doesNotMatch(gov, /feature: "(صائغ|Judgment|Indictment|عدد الاستخدامات|Usage Limit)/);
+});
+
+test("M2, M5, M10: small honesty fixes", () => {
+  const guard = src("components/dashboard/SubscriptionGuard.tsx");
+  assert.match(guard, /UNSOLD_TIERS\.has\(minTier as UserTier\) \|\| minTier === "free" \? null :/);
+  const gated = src("components/GatedToolScreen.tsx");
+  assert.doesNotMatch(gated, /^import .*betaConfig/m, "a static betaConfig import breaks its deletion path");
+  assert.match(gated, /const cfg = require\("@\/lib\/betaConfig"\);/);
+  assert.doesNotMatch(src("components/consultation/constants.ts").replace(/^\s*\/\/.*$/gm, ""), /استجابة فورية|Instant response/);
+  assert.doesNotMatch(src("app/ai/templates/page.tsx").replace(/\{\/\*[\s\S]*?\*\/\}/g, ""), /مُرجَّعة قانونياً/);
+});
+
+test("M3: formatClientServicePrice never renders blank for an unknown mode", async () => {
+  const { formatClientServicePrice } = await import("../pricingRepository.ts");
+  assert.equal(formatClientServicePrice({ basePrice: 10, priceMode: "made-up" as never }), "يُحدَّد بعد المراجعة");
 });

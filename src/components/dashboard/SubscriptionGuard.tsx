@@ -41,8 +41,10 @@ export function SubscriptionGuard({
     };
     // A tier nothing sells gets no plan name and no upgrade dialog: the copy
     // says the feature is not in the current plan and links to /pricing.
-    // The gate itself (can / requiredTier) is unchanged.
-    const tierName = UNSOLD_TIERS.has(minTier as UserTier) ? null : TIER_LABELS[minTier] || minTier;
+    // Fix round 1 (M2): so does "free" — can() only says no to a free-gated
+    // feature when an admin switched it off, and «ترقية باقتك إلى المجانية»
+    // would be false. The gate itself (can / requiredTier) is unchanged.
+    const tierName = UNSOLD_TIERS.has(minTier as UserTier) || minTier === "free" ? null : TIER_LABELS[minTier] || minTier;
 
     return (
       <div className="flex flex-col items-center justify-center min-h-[70vh] px-4">

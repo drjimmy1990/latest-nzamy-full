@@ -87,7 +87,10 @@ export function formatClientServicePrice(service: Pick<ClientServiceCatalogItem,
     // Paid in points by the tool; the count is in the row's priceNote.
     points: "بالنقاط",
   };
-  return labels[service.priceMode];
+  // Fix round 1 (M3): a price_mode this build does not know (a DB row written
+  // ahead of a deploy — price_mode has no CHECK) reads as an honest stand-in,
+  // never a blank price.
+  return labels[service.priceMode] ?? "يُحدَّد بعد المراجعة";
 }
 
 export function mergeAdminPricingCatalogRows(rows: AdminPricingCatalogRow[]): ClientServiceCatalogItem[] {

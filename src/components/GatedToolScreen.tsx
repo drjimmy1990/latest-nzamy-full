@@ -19,8 +19,18 @@
 
 import type { ReactNode } from "react";
 import BetaReviewGate from "@/components/BetaReviewGate";
-import { BETA_REVIEW_MODE } from "@/lib/betaConfig";
 import { useUser } from "@/hooks/useUser";
+
+// ── Safe import, as in BetaReviewGate.tsx: if betaConfig is deleted (its
+// "Option C"), beta mode is OFF and every page renders as before ──────────────
+let BETA_REVIEW_MODE = false;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const cfg = require("@/lib/betaConfig");
+  BETA_REVIEW_MODE = cfg.BETA_REVIEW_MODE ?? false;
+} catch {
+  // betaConfig.ts was deleted — beta mode OFF
+}
 
 export default function GatedToolScreen({
   toolId,

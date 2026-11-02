@@ -70,9 +70,10 @@ export default function TemplatesPage() {
                 style={{ fontFamily: "var(--font-brand)" }}>
               مكتبة القوالب القانونية
             </h1>
-            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-[#C8A762]/15 text-[#C8A762] border border-[#C8A762]/30">
-              مُرجَّعة قانونياً
-            </span>
+            {/* Fix round 1 (M10): no «مُرجَّعة قانونياً» pill. It reads as
+                "legally reviewed", and nothing records a review; 3 of the 42
+                templates carry no legal reference at all. Each card still
+                lists its own «المراجع القانونية». */}
           </div>
           <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
             {TEMPLATES.length} قالب · مبنية على الأنظمة السعودية
