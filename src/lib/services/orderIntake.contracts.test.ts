@@ -299,4 +299,6 @@ test("draft mode refuses a malformed representative ID (§3.5-3b) and accepts a 
   if (!bad.ok) assert.ok(bad.errors.some((e) => e.includes("رقم هوية الممثل") && e.includes("الطرف الثاني")));
   assert.equal(validateContractsIntake(withId("2023456789")).ok, true);
   assert.equal(validateContractsIntake(withId("")).ok, true);
+  const stale = { ...validDraftBase, parties: { ...validDraftBase.parties, two: { type: "individual", fullName: "خالد", representativeId: "1234" } } };
+  assert.equal(validateContractsIntake(stale).ok, true, "a leftover ID on a non-company party is ignored");
 });

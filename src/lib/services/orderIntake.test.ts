@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   isPleadingDraftIntake, validateDraftIntake, SERVICE_TYPE_BY_KEY,
-  PARTY_ROLE_OTHER, partyRepresentativeRole, representativeIdOk, REPRESENTATIVE_ID_ERROR,
+  PARTY_ROLE_OTHER, partyRepresentativeRole, representativeIdOk, representativeIdValid, REPRESENTATIVE_ID_ERROR,
 } from "./orderIntake.ts";
 
 const valid = {
@@ -105,12 +105,25 @@ test("rejects an intake with missing service key", () => {
 });
 
 test("representative (§3.5-3b): the ID is optional, 10 digits starting 1 or 2 when typed", () => {
-  assert.equal(representativeIdOk({}), true, "absent");
-  assert.equal(representativeIdOk({ representativeId: "  " }), true, "blank");
-  assert.equal(representativeIdOk({ representativeId: "1023456789" }), true);
-  assert.equal(representativeIdOk({ representativeId: "٢٠٢٣٤٥٦٧٨٩" }), true, "Arabic-Indic digits");
-  for (const bad of ["3023456789", "102345678", "10234567890", "abc"]) assert.equal(representativeIdOk({ representativeId: bad }), false, bad);
+  const company = (representativeId?: string) => ({ type: "company", representativeId });
+  assert.equal(representativeIdOk(company()), true, "absent");
+  assert.equal(representativeIdOk(company("  ")), true, "blank");
+  assert.equal(representativeIdOk(company("1023456789")), true);
+  assert.equal(representativeIdOk(company("٢٠٢٣٤٥٦٧٨٩")), true, "Arabic-Indic digits");
+  for (const bad of ["3023456789", "102345678", "10234567890", "abc"]) {
+    assert.equal(representativeIdOk(company(bad)), false, bad);
+    assert.equal(representativeIdValid(bad), false, bad);
+  }
   assert.equal(representativeIdOk(null), true, "not a party object: nothing to check");
+});
+
+test("representative (§3.5-3b): a bad ID left behind after switching to فرد or جهة blocks nothing", () => {
+  // The field shows for a company only; a stale value on another type has no field to fix it.
+  assert.equal(representativeIdOk({ type: "individual", fullName: "خالد", representativeId: "3000000000" }), true);
+  assert.equal(representativeIdOk({ type: "government", entityName: "جهة", representativeId: "12" }), true);
+  assert.equal(representativeIdOk({ representativeId: "3000000000" }), true, "no type: not a company");
+  const stale = validateDraftIntake({ ...valid, parties: { ...valid.parties, one: { type: "individual", fullName: "محمد", representativeId: "3000000000" } } });
+  assert.equal(stale.ok, true);
 });
 
 test("representative (§3.5-3b): «أخرى» means the typed capacity", () => {

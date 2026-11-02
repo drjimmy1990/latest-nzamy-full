@@ -102,12 +102,23 @@ export const REPRESENTATIVE_ID_ERROR = "رقم هوية الممثل أو إقا
 /**
  * The representative's national ID / iqama number is optional; when typed it
  * is 10 digits starting with 1 or 2 (clientIdentityRules.isValidNationalId,
- * Arabic-Indic digits accepted). A party that is not an object has none.
+ * Arabic-Indic digits accepted).
+ */
+export function representativeIdValid(id: unknown): boolean {
+  const typed = str(id);
+  return !typed || isValidNationalId(typed);
+}
+
+/**
+ * A party's representative ID, checked only for a company: the only type whose
+ * form shows the field (RepresentativeFields) and the only one the contracts
+ * run sends it for. A bad ID typed before switching the party to فرد or جهة
+ * would otherwise block the wizard with no field on screen to fix it. A party
+ * that is not an object has none.
  */
 export function representativeIdOk(p: unknown): boolean {
-  if (!isRecord(p)) return true;
-  const id = str(p.representativeId);
-  return !id || isValidNationalId(id);
+  if (!isRecord(p) || str(p.type) !== "company") return true;
+  return representativeIdValid(p.representativeId);
 }
 
 /** One error per party whose representative ID is malformed. */

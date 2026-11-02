@@ -1,7 +1,7 @@
 "use client";
 
 import { useId } from "react";
-import { PARTY_ROLE_OTHER, REPRESENTATIVE_ID_ERROR, representativeIdOk } from "@/lib/services/orderIntake";
+import { PARTY_ROLE_OTHER, REPRESENTATIVE_ID_ERROR, representativeIdValid } from "@/lib/services/orderIntake";
 
 type RepresentativeField = "representativeRole" | "representativeRoleOther" | "representativeId";
 
@@ -24,7 +24,7 @@ export function RepresentativeFields({ role, roleOther, repId, onChange, inp, lb
 }) {
   const ids = useId();
   const id = repId ?? "";
-  const idBad = !representativeIdOk({ representativeId: id });
+  const idBad = !representativeIdValid(id);
 
   return (
     <>
