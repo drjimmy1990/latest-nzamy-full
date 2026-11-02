@@ -13,22 +13,24 @@ import { AI_TOOLS, ASSISTANT_MESSAGES_PER_CONVERSATION } from "./tools.ts";
 import { DRAFT_KIND_IDS } from "./draftKinds.ts";
 
 /** The registry tools a screen may price (the echo tests are never shown). */
-export type PricedAiToolId =
-  | "communicate"
-  | "najiz-optimizer"
-  | "quick-answer"
-  | "library-assistant"
-  | "assistant"
-  | "canvas-card"
-  | "case-brief"
-  | "brief-check"
-  | "wargaming"
-  | "analyze-strength"
-  | "contract-drafter"
-  | "legal-opinion-consult"
-  | "legal-opinion-letter"
-  | "contracts-pro"
-  | "legal-drafter";
+export const PRICED_AI_TOOL_IDS = [
+  "communicate",
+  "najiz-optimizer",
+  "quick-answer",
+  "library-assistant",
+  "assistant",
+  "canvas-card",
+  "case-brief",
+  "brief-check",
+  "wargaming",
+  "analyze-strength",
+  "contract-drafter",
+  "legal-opinion-consult",
+  "legal-opinion-letter",
+  "contracts-pro",
+  "legal-drafter",
+] as const;
+export type PricedAiToolId = (typeof PRICED_AI_TOOL_IDS)[number];
 
 /** One tool, or several sold under one label (the legal opinion's consult and letter). */
 export type PricedAiToolRef = PricedAiToolId | readonly PricedAiToolId[];
@@ -74,6 +76,16 @@ export function aiToolPointsLabel(ref: PricedAiToolRef, lang: "ar" | "en"): stri
   const fmt = lang === "ar" ? arabicPoints : latinPoints;
   const [min, max] = aiToolPointRange(ref);
   return min === max ? fmt(min) : `${fmt(min)}–${fmt(max)}`;
+}
+
+/**
+ * Any registry id, the echo tests included (the admin AI table lists them
+ * all): its cost-column label, or null for an id the registry does not hold.
+ */
+export function registryPointsLabel(id: string, lang: "ar" | "en"): string | null {
+  if (!Object.prototype.hasOwnProperty.call(AI_TOOLS, id)) return null;
+  // chargedPrices reads any registry entry; the cast only widens the screens' list.
+  return aiToolPointsLabel(id as PricedAiToolId, lang);
 }
 
 /** What one price buys when it is not one run (the assistant: a conversation), or null. */

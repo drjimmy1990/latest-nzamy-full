@@ -110,6 +110,14 @@ const TODAY: Record<string, [number, number]> = {
 };
 
 test("task 4: the registry charges today's prices, and the display helper reads exactly that", () => {
+  // Every tool a screen may price is pinned here, and every registry tool but
+  // the two echo tests is one a screen may price: a new tool cannot skip the pin.
+  assert.deepEqual(Object.keys(TODAY).sort(), [...display.PRICED_AI_TOOL_IDS].sort(), "TODAY and PRICED_AI_TOOL_IDS differ");
+  assert.deepEqual(
+    Object.keys(AI_TOOLS).filter((id) => !id.startsWith("echo-")).sort(),
+    [...display.PRICED_AI_TOOL_IDS].sort(),
+    "a registry tool is missing from PRICED_AI_TOOL_IDS (or the list names a tool the registry lacks)",
+  );
   for (const [id, range] of Object.entries(TODAY)) {
     assert.deepEqual(serverRange([id]), range, `${id}: the server charge moved — update every label's expectation here`);
     assert.deepEqual([...display.aiToolPointRange(id as display.PricedAiToolId)], range, `${id}: the display range is not the charge`);
@@ -327,11 +335,22 @@ test("task 4: the tool pages print the constant the registry charges", () => {
   // The helper's labels where a page had a typed number.
   assert.match(shown("app/ai/quick-answer/page.tsx"), /\{aiToolPriceText\("quick-answer", "ar"\)\} للسؤال/);
   assert.match(shown("app/dashboard/business/kanban/CaseGraphView.tsx"), /\(\$\{aiToolPriceText\("canvas-card", "ar"\)\}\)/);
-  // The Najiz page still types its number (its code is not this task's): held to the server here.
-  const najiz = /اختصر بالذكاء الاصطناعي \(([٠-٩]+) نقاط\)/.exec(shown("app/ai/najiz-optimizer/page.tsx"));
-  assert.ok(najiz, "the Najiz button's price was not found");
-  const typed = Number(najiz[1].replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d))));
-  assert.deepEqual(serverCharges("najiz-optimizer"), [typed], "the Najiz button's points are not what the server charges");
+  assert.match(shown("app/ai/najiz-optimizer/page.tsx"), /اختصر بالذكاء الاصطناعي \(\$\{aiToolPriceText\("najiz-optimizer", "ar"\)\}\)/);
+});
+
+test("task 4: the admin AI table shows the range a run can be charged (the drafter is not 0)", () => {
+  // price({}) read 0 for the drafter (no kind) and 30 for case-brief (no pages).
+  assert.equal(display.registryPointsLabel("legal-drafter", "en"), expectedLabel(["legal-drafter"], "en"));
+  assert.notEqual(display.registryPointsLabel("legal-drafter", "en"), "0");
+  assert.equal(display.registryPointsLabel("case-brief", "en"), expectedLabel(["case-brief"], "en"));
+  assert.equal(display.registryPointsLabel("echo-fast", "en"), "1");
+  assert.equal(display.registryPointsLabel("no-such-tool", "en"), null);
+  const route = shown("app/api/v1/admin/ai-runs/route.ts");
+  assert.match(route, /priceLabel: registryPointsLabel\(spec\.id, "en"\)/);
+  assert.doesNotMatch(route, /spec\.price\(/, "the admin table computes a price of its own");
+  const page = shown("app/dashboard/admin/ai-usage/page.tsx");
+  assert.match(page, /\{t\.priceLabel\} نقطة/);
+  assert.doesNotMatch(page, /\{t\.price\}/);
 });
 
 test("task 4: the catalog useUser loads on every page does not import the AI registry", () => {
@@ -341,7 +360,6 @@ test("task 4: the catalog useUser loads on every page does not import the AI reg
 
 test("task 4: no AI screen types a points number of its own", () => {
   const roots = ["app/ai", "components/draft", "components/legal-opinion", "app/dashboard/business/kanban", "app/laws", "constants/lawyerAiCatalog.ts", "constants/lawyerAiBadges.ts"];
-  const allowed = new Set(["app/ai/najiz-optimizer/page.tsx"]); // held to the server above
   const files: string[] = [];
   const walk = (rel: string): void => {
     const url = new URL(`../../${rel}`, import.meta.url);
@@ -355,7 +373,7 @@ test("task 4: no AI screen types a points number of its own", () => {
   const typedPoints = /[0-9٠-٩]\s?(?:نقطة|نقاط)(?![\u0600-\u06FF])|\b\d[\d,]*\s(?:points|pts)\b/;
   let scanned = 0;
   for (const rel of files) {
-    if (!/\.tsx?$/.test(rel) || /\.test\.tsx?$/.test(rel) || allowed.has(rel)) continue;
+    if (!/\.tsx?$/.test(rel) || /\.test\.tsx?$/.test(rel)) continue;
     scanned++;
     const hit = typedPoints.exec(shown(rel));
     assert.equal(hit, null, `${rel} types «${hit?.[0]}»: read it from the registry (toolPointsDisplay.ts)`);

@@ -13,6 +13,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
 import ConsultantGate from "@/components/dashboard/ConsultantGate";
 import { useAiRun } from "@/hooks/useAiRun";
+import { aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
 
 // ─── Najiz Optimizer Core Logic ───────────────────────────────────────────────
 // Implements: Najiz_Legal_Memo_Optimizer_v5
@@ -350,7 +351,7 @@ function NajizOptimizerPage() {
                       <button onClick={handleShorten} disabled={ai.busy}
                         className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#0B3D2E] text-white text-[12px] font-bold shadow-sm disabled:opacity-50">
                         <Sparkle size={13} weight="fill" className="text-[#C8A762]" />
-                        {ai.busy ? "جارٍ الاختصار…" : "اختصر بالذكاء الاصطناعي (٥ نقاط)"}
+                        {ai.busy ? "جارٍ الاختصار…" : `اختصر بالذكاء الاصطناعي (${aiToolPriceText("najiz-optimizer", "ar")})`}
                       </button>
                       {ai.phase === "error" && ai.error && (
                         <p role="alert" className={`text-[11px] ${isDark ? "text-red-400" : "text-red-600"}`}>{ai.error}</p>

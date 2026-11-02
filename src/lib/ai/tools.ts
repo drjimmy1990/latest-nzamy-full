@@ -789,8 +789,8 @@ export const CONTRACTS_PRO_TYPES: Readonly<Record<string, string>> = {
   franchise: "عقد امتياز تجاري",
   other: "عقد",
 };
-// Plan §5: 1,000 points. The /pricing label («ai:contracts» ١٠ نقاط) disagrees;
-// the tool stays off until the owner's pricing settles which is right.
+// Plan §5: 1,000 points. /pricing, the hub and the plan cards read it through
+// toolPointsDisplay.ts (Wave 1 task 4); the owner's repricing is Wave 2.
 export const CONTRACTS_PRO_PRICE = 1000;
 export const CONTRACTS_PRO_DESC_MIN = 20;
 export const CONTRACTS_PRO_DESC_MAX = 4000;
@@ -1175,7 +1175,8 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     roles: ["lawyer", "firm"],
     // CONSULTANT_BLOCKED_PREFIXES has /ai/najiz-optimizer (Art. 18).
     consultantBlocked: true,
-    // The pricing table's «منقح ناجز» row (owner ٢١٦: ٥–٨); the plan's 15 is older.
+    // Owner ٢١٦ gave «٥–٨»; 5 is charged, and every label reads it from here
+    // (toolPointsDisplay.ts). The plan's 15 is older.
     price: () => 5,
     dailyLimit: 20,
     defaultMode: "off",

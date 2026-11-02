@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/access-control";
 import { AI_TOOLS } from "@/lib/ai/tools";
+import { registryPointsLabel } from "@/lib/ai/toolPointsDisplay";
 import { resolveToolRuntime } from "@/lib/ai/aiToolsConfig";
 
 /**
@@ -44,7 +45,9 @@ export async function GET(request: NextRequest) {
         id: spec.id,
         class: spec.class,
         tier: spec.tier,
-        price: spec.price({}, { pages: null }),
+        // The range a run can be charged (the drafter per kind, case-brief by
+        // pages), not price({}): that read 0 for the drafter and 30 for case-brief.
+        priceLabel: registryPointsLabel(spec.id, "en") ?? "—",
         mode: rt.mode,
         ...(rt.legacyMode ? { legacyMode: rt.legacyMode } : {}),
         dailyLimit: rt.dailyLimit,

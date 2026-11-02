@@ -607,7 +607,8 @@ const AI_TOOLS: AiToolCard[] = [
       : tool.betaStatus === "beta-free"
         ? "Official lawyer beta tool, free until admin pricing is approved."
         : "Official lawyer tool connected to the credit catalog.",
-    // No badge for a priced tool the price list does not list (owner ٢١٦).
+    // The registry's charge (lawyerAiBadges.ts); no badge for a tool the
+    // registry does not price.
     badgeAr: getLawyerAiBadge(tool, "ar") ?? undefined,
     badgeEn: getLawyerAiBadge(tool, "en") ?? undefined,
   })),

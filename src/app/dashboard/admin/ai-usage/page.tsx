@@ -20,7 +20,8 @@ interface ToolRow {
   id: string;
   class: "fast" | "job";
   tier: string;
-  price: number;
+  /** "250", "500–1,500": every price one run can be charged (toolPointsDisplay.ts). */
+  priceLabel: string;
   mode: "off" | "staff" | "live";
   /** The stored mode was the retired "review"; it runs as "staff" now. */
   legacyMode?: "review";
@@ -171,7 +172,7 @@ export default function AdminAIUsagePage() {
                 <tr key={t.id} className="border-t border-zinc-800/70">
                   <td className="py-2 font-mono">{t.id}</td>
                   <td>{t.class === "fast" ? "فوري" : "مهمة"}</td>
-                  <td>{t.price} نقطة</td>
+                  <td>{t.priceLabel} نقطة</td>
                   <td>
                     <select value={t.mode} onChange={(e) => update(t.id, { mode: e.target.value as ToolRow["mode"] })}
                       className="rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-100">
