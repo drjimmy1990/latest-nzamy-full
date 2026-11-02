@@ -8,6 +8,8 @@ import CitationCheckList from "@/components/ai/CitationCheckList";
 import { StepSubmit, type StepSubmitRow } from "@/components/contracts/steps/StepSubmit";
 import type { ContractsProDraft } from "@/components/contracts/contractsProRun";
 import type { AiRunPhase } from "@/hooks/useAiRun";
+import FounderCreditChoice from "@/components/membership/FounderCreditChoice";
+import { founderCreditChoiceKey, FOUNDER_CREDIT_PRICE_TEXT, FOUNDER_CREDIT_USED_TEXT } from "@/lib/membership/founderPlan";
 
 /**
  * L13 محترف العقود — the draft path's last step (LIVE-F03 / NOTE-22-C04).
@@ -24,6 +26,11 @@ interface Props {
   phase: AiRunPhase;
   error: string | null;
   chargedPoints: number;
+  /** The run was paid with the founder's independent output (P3). */
+  creditUsed: boolean;
+  /** «استخدم رصيد باقة المؤسس» — the page sends it as useCredit. */
+  useCredit: boolean;
+  onUseCreditChange: (v: boolean) => void;
   draft: ContractsProDraft | null;
   draftText: string;
   onGenerate: () => void;
@@ -35,7 +42,7 @@ interface Props {
 }
 
 export function StepGenerate({
-  isDark, rows, price, phase, error, chargedPoints, draft, draftText,
+  isDark, rows, price, phase, error, chargedPoints, creditUsed, useCredit, onUseCreditChange, draft, draftText,
   onGenerate, onRestart, humanSubmitting, humanErrors, onHumanOrder,
 }: Props) {
   const [humanOpen, setHumanOpen] = useState(false);
@@ -81,7 +88,7 @@ export function StepGenerate({
             />
             <p className={`mt-2 text-[11px] leading-relaxed ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
               مسودة كتبها الذكاء الاصطناعي من بياناتك؛ الفراغات [....] بيانات لم تذكرها. حالة كل مادة من مكتبة نظامي لا من الذكاء الاصطناعي.
-              {chargedPoints > 0 && <> · خُصمت {chargedPoints.toLocaleString("ar-SA")} نقطة</>}
+              {creditUsed ? <> · {FOUNDER_CREDIT_USED_TEXT}</> : chargedPoints > 0 && <> · خُصمت {chargedPoints.toLocaleString("ar-SA")} نقطة</>}
             </p>
           </div>
 
@@ -106,13 +113,16 @@ export function StepGenerate({
               المسودة جاهزة وتنتظر مراجعة الفريق قبل عرضها.
             </p>
           )}
+          <FounderCreditChoice key={founderCreditChoiceKey(phase, creditUsed, null)} kind="independent_output" value={useCredit} onChange={onUseCreditChange} isDark={isDark} disabled={busy} />
           <StepSubmit
             isDark={isDark}
             heading="إنشاء العقد آلياً"
-            description={`يكتب الذكاء الاصطناعي العقد من بياناتك فوراً: المخطط ثم البنود واحداً واحداً، وتتحقق المنصة من كل مادة نظامية يستند إليها. التكلفة ${points} نقطة تُخصم مرة واحدة، وتُعاد إن تعذّر الإنشاء.`}
+            description={useCredit
+              ? `يكتب الذكاء الاصطناعي العقد من بياناتك فوراً: المخطط ثم البنود واحداً واحداً، وتتحقق المنصة من كل مادة نظامية يستند إليها. التكلفة ${FOUNDER_CREDIT_PRICE_TEXT}، ويُعاد الرصيد إن تعذّر الإنشاء.`
+              : `يكتب الذكاء الاصطناعي العقد من بياناتك فوراً: المخطط ثم البنود واحداً واحداً، وتتحقق المنصة من كل مادة نظامية يستند إليها. التكلفة ${points} نقطة تُخصم مرة واحدة، وتُعاد إن تعذّر الإنشاء.`}
             rows={rows}
             consentText="أقر بأن البيانات المدخلة صحيحة، وأن الناتج مسودة آلية أراجعها قبل استخدامها."
-            submitLabel={`اكتب العقد الآن — ${points} نقطة`}
+            submitLabel={useCredit ? `اكتب العقد الآن (${FOUNDER_CREDIT_PRICE_TEXT})` : `اكتب العقد الآن — ${points} نقطة`}
             submittingLabel="جارٍ كتابة العقد..."
             submitting={busy}
             submitErrors={

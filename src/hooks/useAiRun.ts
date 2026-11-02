@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { FOUNDER_CREDIT_REFUNDED_FAILURE, founderCreditRefundText } from "@/lib/membership/founderPlan";
 
 /**
  * useAiRun — the one client for the AI tools (plan §2.4). `start(tool, input)`
@@ -20,6 +21,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * (P3) instead of points; the server decides whether the run qualifies and
  * answers `creditUsed`. A run that does not qualify is charged points as usual;
  * no credit left is a 402 «لا يتبقى لك رصيد من باقة المؤسس لهذه الأداة».
+ * A failed credit run says «أُعيد رصيد باقة المؤسس», never «أُعيدت نقاطك»
+ * (R20); a page passes useCredit only when the run qualifies
+ * (founderCreditChoiceView), so the two agree.
  */
 
 export type AiRunPhase = "idle" | "starting" | "running" | "done" | "review" | "error";
@@ -106,7 +110,7 @@ export function useAiRun() {
           phase: "error",
           code: typeof run.error_code === "string" ? run.error_code : "failed",
           error: s.creditUsed
-            ? "تعذّر إكمال الطلب، وأُعيد رصيدك من باقة المؤسس"
+            ? FOUNDER_CREDIT_REFUNDED_FAILURE
             : run.refunded_at
               ? "تعذّر إكمال الطلب، وأُعيدت نقاطك"
               : "تعذّر إكمال الطلب",
@@ -165,7 +169,9 @@ export function useAiRun() {
           runId,
           conversationId,
           code: typeof json.code === "string" ? json.code : null,
-          error: typeof json.error === "string" ? json.error : FALLBACK_ERROR,
+          // A credit run that failed after it started got its credit back,
+          // though the server's message says «وأُعيدت نقاطك» (R20).
+          error: typeof json.error === "string" ? founderCreditRefundText(json.error, opts.useCredit === true) : FALLBACK_ERROR,
         });
       } catch {
         if (alive.current) setState({ ...IDLE, phase: "error", error: FALLBACK_ERROR });
