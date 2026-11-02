@@ -278,16 +278,19 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     categoryId: "contracts",
     label: "صياغة خطاب رسمي بالذكاء الاصطناعي",
     description: "إنذار، إخطار، مطالبة، اعتراض - أدخل التفاصيل والـ AI يصيغ خطابك في دقيقة",
-    basePrice: 49,
-    priceMode: "included",
-    priceNote: "أو 49 ر.س للخطاب",
+    // Wave 1 task 6, fix round 1 (I3): no «مشمول في الباقة · أو 49 ر.س للخطاب».
+    // No plan includes it and nothing charges 49: /dashboard/client/letters
+    // fills a guidance template in the browser and debits nothing. So: free,
+    // no riyal amount, no plan. (The DB row is enabled = false, so this code
+    // row is what the client services page shows.)
+    basePrice: 0,
+    priceMode: "free",
     route: "/dashboard/client/letters",
     icon: "Envelope",
     receiverType: "ai_workspace",
     requestType: "ai_draft",
     betaVisibility: "public",
     requiresPayment: false,
-    includedByPlan: "ai_individual",
     tag: "جديد",
     aiPowered: true,
   },

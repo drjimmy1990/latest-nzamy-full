@@ -10,6 +10,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { CLIENT_SERVICE_CATALOG } from "../../constants/clientServiceCatalog.ts";
+import { isTerminalToolHref } from "../../constants/betaGatedRoutes.ts";
+
+const CATALOG = CLIENT_SERVICE_CATALOG;
 import { formatClientServicePrice, getClientServiceById } from "../../lib/pricingRepository.ts";
 import { VAT_NOTICE } from "../../lib/pricing/vatNotice.ts";
 import { consultServiceId, contractServiceId, WA_PRICE_AFTER_REVIEW_AR, WA_VAT_NOTICE_AR, waPrice, waServiceId } from "./waChatPrices.ts";
@@ -56,6 +59,7 @@ test("the price line is formatClientServicePrice of the (admin-merged) catalogue
   for (const id of ["ai-consult", "written-opinion", "video-full", "in-person", "contract-analyze", "contract-review"]) {
     const entry = getClientServiceById(id, CLIENT_SERVICE_CATALOG);
     if (entry.priceMode === "included") continue; // the next test
+    if (isTerminalToolHref(entry.route)) continue; // the gated-tool test
     const p = waPrice(CLIENT_SERVICE_CATALOG, id);
     assert.equal(p.text, formatClientServicePrice(entry), id);
     assert.equal(p.requiresPayment, entry.requiresPayment, id);
@@ -69,7 +73,21 @@ test("the price line is formatClientServicePrice of the (admin-merged) catalogue
   assert.deepEqual(waPrice(CLIENT_SERVICE_CATALOG, null), { text: "يتم التحديد", note: null, requiresPayment: false, showsAmount: false });
 });
 
+test("task 6 I3: a service whose route is a beta-gated tool reads «قريباً» — no price, no note, no payment step", () => {
+  for (const id of ["ai-consult", "contract-analyze"]) {
+    const entry = getClientServiceById(id, CLIENT_SERVICE_CATALOG);
+    assert.ok(isTerminalToolHref(entry.route), `${id} routes to ${entry.route}`);
+    assert.deepEqual(waPrice(CLIENT_SERVICE_CATALOG, id), { text: "قريباً", note: null, requiresPayment: false, showsAmount: false });
+    assert.equal(waPrice(CLIENT_SERVICE_CATALOG, id, { viewerIncluded: true }).text, "قريباً");
+  }
+});
+
 test("finding 6: an «included» service never reads «مشمول في الباقة» to a viewer the chat cannot tell has the plan — the catalogue price, or «يُحدَّد بعد المراجعة»", () => {
+  // contract-analyze's real route is gated (previous test); give it an open
+  // one so this rule is still exercised on an «included» row.
+  const CLIENT_SERVICE_CATALOG = CATALOG.map((s) =>
+    s.serviceId === "contract-analyze" ? { ...s, route: "/dashboard/client/requests/new?type=contract-analyze" } : s,
+  );
   const entry = getClientServiceById("contract-analyze", CLIENT_SERVICE_CATALOG);
   assert.equal(entry.priceMode, "included");
   const guest = waPrice(CLIENT_SERVICE_CATALOG, "contract-analyze");
