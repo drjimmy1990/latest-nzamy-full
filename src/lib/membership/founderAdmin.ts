@@ -1,7 +1,7 @@
 /**
  * founderAdmin.ts — the pure rules of the admin «حملة المؤسس» panel (P3 Task 10):
  *   GET   /api/v1/admin/founder/overview            — the numbers, members, refund list
- *   PATCH /api/v1/admin/founder/sale                — { salePaused, capacity? } (R2)
+ *   PATCH /api/v1/admin/founder/sale                — { salePaused?, capacity? } (R2, R25)
  *   POST  /api/v1/admin/founder/orders/[id]/activate — «إعادة محاولة التفعيل» (R24)
  *
  * - The summary is founder_seat_summary() (20261101_10).
@@ -98,6 +98,12 @@ export interface FounderOrderRow {
 
 export type PersonRef = { name: string | null; email: string | null };
 
+/** A refund claimed and not released (refund_job.state other than 'retryable'). */
+function refundInFlight(order: FounderOrderRow): boolean {
+  const job = order.metadata?.refund_job;
+  return isPlainObject(job) && job.state !== "retryable";
+}
+
 /** Why this order waits for a refund (R7), or null when it does not. */
 export function founderRefundCase(order: FounderOrderRow): FounderRefundCase | null {
   if (order.kind !== "membership" || order.status !== "paid") return null;
@@ -120,6 +126,8 @@ export interface FounderRefundOrderDto {
   /**
    * The «إعادة محاولة التفعيل» button. Not for already_member: he holds an
    * active seat from another order, so founder_activate can only say 'already'.
+   * Not while a refund is in flight either (R26): a refund_job other than
+   * 'retryable' — the API refuses it (activationRetryIssue).
    */
   canRetry: boolean;
 }
@@ -146,7 +154,7 @@ export function founderRefundOrders(
       receiptNumber: o.receipt_number ?? null,
       paidAt: o.paid_at ?? null,
       live: typeof o.live === "boolean" ? o.live : null,
-      canRetry: reason !== "already_member",
+      canRetry: reason !== "already_member" && !refundInFlight(o),
     });
   }
   return out.sort((a, b) => (b.paidAt ?? "").localeCompare(a.paidAt ?? ""));
@@ -218,12 +226,15 @@ export function founderMembers(
 
 // ── the sale PATCH (R2) ──────────────────────────────────────────────────────
 
-export type FounderSalePatch = { sale_paused: boolean; capacity?: number };
+export type FounderSalePatch = { sale_paused?: boolean; capacity?: number };
 
 /**
- * { salePaused: boolean, capacity?: whole number 1..100000 } → the keys merged
- * into platform_settings['founder_campaign']. The merged value is checked
- * again by founderCampaignSettingIssue (Task 8's validator) before the write.
+ * { salePaused?: boolean, capacity?: whole number 1..100000 }, at least one
+ * (R25: partial) → only the keys sent, merged into
+ * platform_settings['founder_campaign'], so a capacity save never re-sends
+ * (and so never undoes) a pause another admin just made, and the reverse.
+ * The merged value is checked again by founderCampaignSettingIssue (Task 8's
+ * validator) before the write.
  */
 export function parseFounderSalePatch(body: unknown): { ok: true; patch: FounderSalePatch } | { ok: false; error: string } {
   if (!isPlainObject(body)) return { ok: false, error: "بيانات غير صالحة" };
@@ -231,10 +242,16 @@ export function parseFounderSalePatch(body: unknown): { ok: true; patch: Founder
   if (unknownKeys.length > 0) {
     return { ok: false, error: `حقول غير معروفة: ${unknownKeys.join("، ")} — المسموح: salePaused و capacity` };
   }
-  if (typeof body.salePaused !== "boolean") {
-    return { ok: false, error: "salePaused مطلوب: true لإيقاف البيع مؤقتًا أو false لاستئنافه" };
+  if (!("salePaused" in body) && !("capacity" in body)) {
+    return { ok: false, error: "أرسل salePaused أو capacity (أو كليهما)" };
   }
-  const patch: FounderSalePatch = { sale_paused: body.salePaused };
+  const patch: FounderSalePatch = {};
+  if ("salePaused" in body) {
+    if (typeof body.salePaused !== "boolean") {
+      return { ok: false, error: "salePaused يجب أن يكون true لإيقاف البيع مؤقتًا أو false لاستئنافه" };
+    }
+    patch.sale_paused = body.salePaused;
+  }
   if ("capacity" in body) {
     const c = body.capacity;
     if (typeof c !== "number" || !Number.isInteger(c) || c < 1 || c > FOUNDER_CAPACITY_MAX) {
@@ -273,8 +290,7 @@ export function activationRetryIssue(order: FounderOrderRow | null): RetryIssue 
   if (typeof order.refunded_halalas === "number" && order.refunded_halalas > 0) {
     return { status: 409, error: "استُرد مبلغ من هذه العملية — لا يُعاد تفعيلها" };
   }
-  const job = order.metadata?.refund_job;
-  if (isPlainObject(job) && job.state !== "retryable") {
+  if (refundInFlight(order)) {
     return { status: 409, error: "استرداد هذه العملية قيد المعالجة — لا يُعاد تفعيلها" };
   }
   if (order.metadata?.founder === "activated") {

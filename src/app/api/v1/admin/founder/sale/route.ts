@@ -17,13 +17,14 @@ import {
  * PATCH /api/v1/admin/founder/sale — «إيقاف البيع مؤقتًا / استئناف البيع» and
  * the seat count (P3 Task 10, ruling R2).
  *
- * Body: { salePaused: boolean, capacity?: number }.
- * requireStaff("settings.write") first. The posted keys are MERGED into
+ * Body: { salePaused?: boolean, capacity?: number }, at least one (R25: a
+ * capacity save sends no salePaused, so it cannot undo a concurrent pause).
+ * requireStaff("settings.write") first. Only the posted keys are MERGED into
  * platform_settings['founder_campaign'] (the dates and library_days are kept)
  * with Task 8's helpers — the raw capacity literal (digits only), the merge,
- * and the same validator as /api/v1/admin/settings. A capacity below the
- * seats already taken (active + live reserved, founder_seat_summary()) is a
- * 400. Audited with the value before and after.
+ * and the same validator as /api/v1/admin/settings. A capacity (when sent)
+ * below the seats already taken (active + live reserved,
+ * founder_seat_summary()) is a 400. Audited with the value before and after.
  *
  * The read-merge-write is not atomic (as on the settings page): two admins
  * saving at the same instant could lose one change. A seat reserved between

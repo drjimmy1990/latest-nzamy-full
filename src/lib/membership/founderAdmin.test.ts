@@ -8,6 +8,9 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { mergeFounderCampaignSetting } from "../pricing/campaigns.ts";
 import {
   FOUNDER_REFUND_LABEL_AR,
   activationAnswer,
@@ -104,6 +107,18 @@ test("the refund list: labelled «بانتظار استرداد», the buyer's n
     canRetry: true,
   });
   assert.equal(list[0].canRetry, false, "already a member: a retry can only answer 'already'");
+
+  // R26: a refund in flight (refund_job not 'retryable') hides the retry button
+  const withJob = (state: string) =>
+    founderRefundOrders([order({ metadata: { founder: "seat_unavailable", refund_job: { state } } })], people)[0];
+  assert.equal(withJob("processing").canRetry, false, "a refund being processed");
+  assert.equal(withJob("done").canRetry, false);
+  assert.equal(withJob("retryable").canRetry, true, "a released claim can still be retried");
+  assert.equal(
+    founderRefundOrders([order({ metadata: { founder: "not_verified", refund_job: "junk" } })], people)[0].canRetry,
+    true,
+    "only an object job counts",
+  );
   assert.equal(list[1].name, null, "an unknown buyer has no name");
   assert.equal(list[1].live, false);
 });
@@ -142,18 +157,23 @@ test("members: active seats only, credits from those seats only (a revoked seat'
 
 // ── the sale PATCH ───────────────────────────────────────────────────────────
 
-test("the sale body: salePaused boolean required, capacity an optional whole number, nothing else", () => {
+test("the sale body (R25): partial — salePaused and / or capacity, at least one, nothing else", () => {
   assert.deepEqual(parseFounderSalePatch({ salePaused: true }), { ok: true, patch: { sale_paused: true } });
+  assert.deepEqual(parseFounderSalePatch({ capacity: 1200 }), { ok: true, patch: { capacity: 1200 } });
   assert.deepEqual(parseFounderSalePatch({ salePaused: false, capacity: 1200 }), {
     ok: true,
     patch: { sale_paused: false, capacity: 1200 },
   });
+  const empty = parseFounderSalePatch({});
+  assert.equal(empty.ok, false, "an empty body is refused");
   for (const bad of [
     null,
     [],
     "x",
     {},
     { salePaused: "true" },
+    { capacity: 0 },
+    { capacity: null },
     { salePaused: true, capacity: 0 },
     { salePaused: true, capacity: 12.5 },
     { salePaused: true, capacity: "100" },
@@ -165,6 +185,29 @@ test("the sale body: salePaused boolean required, capacity an optional whole num
     assert.equal(r.ok, false, JSON.stringify(bad));
     if (!r.ok) assert.ok(r.error.length > 0);
   }
+});
+
+test("R25: only the keys sent are merged — a capacity save never touches a concurrent pause, and the reverse", () => {
+  const stored = { starts_on: "2026-11-01", ends_on: "2027-01-25", library_days: 365, capacity: 1096, sale_paused: true };
+  const cap = parseFounderSalePatch({ capacity: 1200 });
+  assert.ok(cap.ok);
+  if (cap.ok) {
+    assert.equal("sale_paused" in cap.patch, false);
+    assert.deepEqual(mergeFounderCampaignSetting(stored, cap.patch), { ...stored, capacity: 1200 });
+  }
+  const pause = parseFounderSalePatch({ salePaused: false });
+  assert.ok(pause.ok);
+  if (pause.ok) {
+    assert.equal("capacity" in pause.patch, false);
+    assert.deepEqual(mergeFounderCampaignSetting(stored, pause.patch), { ...stored, sale_paused: false });
+  }
+});
+
+test("R25: the page posts { capacity } alone from the capacity field and { salePaused } alone from the switch", () => {
+  const page = readFileSync(join(import.meta.dirname, "..", "..", "app", "dashboard", "admin", "founder", "page.tsx"), "utf8");
+  assert.ok(page.includes("void patchSale({ capacity: n }"), "saveCapacity posts the capacity only");
+  assert.ok(page.includes("void patchSale({ salePaused: copy.next }"), "the switch posts salePaused only");
+  assert.equal(page.includes("salePaused: summary.salePaused"), false, "the last-loaded pause state is never re-sent");
 });
 
 test("capacity cannot go below active + reserved; equal is allowed", () => {

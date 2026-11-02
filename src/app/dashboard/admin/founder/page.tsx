@@ -19,7 +19,7 @@ import {
  * «حملة المؤسس» (P3 Task 10) — the founder campaign at a glance and its two
  * levers. The admin console is always dark (admin/layout.tsx).
  *   GET   /api/v1/admin/founder/overview
- *   PATCH /api/v1/admin/founder/sale                  { salePaused, capacity? }
+ *   PATCH /api/v1/admin/founder/sale                  { salePaused } or { capacity } (R25)
  *   POST  /api/v1/admin/founder/orders/[id]/activate  «إعادة محاولة التفعيل»
  */
 
@@ -100,7 +100,7 @@ export default function FounderCampaignPage() {
 
   const summary = data?.summary ?? null;
 
-  async function patchSale(payload: { salePaused: boolean; capacity?: number }, label: string) {
+  async function patchSale(payload: { salePaused: boolean } | { capacity: number }, label: string) {
     setBusy(label);
     setNotice(null);
     const { ok, body } = await call("/api/v1/admin/founder/sale", {
@@ -128,7 +128,7 @@ export default function FounderCampaignPage() {
       return;
     }
     if (!window.confirm(`تغيير عدد مقاعد المؤسسين من ${summary.capacity} إلى ${n}؟`)) return;
-    void patchSale({ salePaused: summary.salePaused, capacity: n }, "capacity");
+    void patchSale({ capacity: n }, "capacity");
   }
 
   async function retry(o: FounderRefundOrderDto) {
