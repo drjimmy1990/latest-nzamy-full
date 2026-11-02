@@ -37,10 +37,11 @@ test("callback plan: a PKCE code is exchanged, with the recovery hint when next 
   });
 });
 
-test("callback plan: a token_hash is verified only for type=recovery", () => {
-  assert.deepEqual(planAuthCallback(params("token_hash=h1&type=recovery")), {
-    kind: "verify_recovery_hash",
-    tokenHash: "h1",
+test("callback plan: a token_hash is never verified (ruling R2: login CSRF)", () => {
+  // A recovery hash is answered with the honest link error, never a session.
+  assert.deepEqual(planAuthCallback(params("token_hash=h1&type=recovery")), { kind: "recovery_link_error" });
+  assert.deepEqual(planAuthCallback(params("token_hash=h1&type=recovery&next=/reset-password")), {
+    kind: "recovery_link_error",
   });
   for (const t of ["signup", "magiclink", "invite", "email_change", "email", ""]) {
     assert.deepEqual(planAuthCallback(params(`token_hash=h1&type=${t}`)), { kind: "fail" }, t);
@@ -103,6 +104,22 @@ test("recover errors: only transport, captcha and malformed-address failures dif
   // was just sent a link — telling it apart would say the account exists.
   assert.equal(classifyRecoverError({ code: "over_email_send_rate_limit", status: 429, message: "For security purposes, you can only request this after 42 seconds." }), "sent");
   assert.equal(classifyRecoverError({ status: 422, message: "something else" }), "sent");
+  assert.equal(classifyRecoverError({ name: "AuthApiError", code: "unexpected_failure", status: 500, message: "Error sending recovery email" }), "sent");
+});
+
+test("recover errors that cannot depend on the account get the honest server message", () => {
+  // Not GoTrue's JSON at all: an HTML 500 from a proxy, a wrong URL.
+  assert.equal(classifyRecoverError({ name: "AuthUnknownError", message: "Unexpected token <" }), "server");
+  // Configuration refusals, decided before or without the lookup.
+  for (const code of ["email_provider_disabled", "provider_disabled", "bad_json", "bad_jwt", "no_authorization", "request_timeout"]) {
+    assert.equal(classifyRecoverError({ name: "AuthApiError", code, status: 422, message: "" }), "server", code);
+  }
+  // The gateway's «Invalid API key» and friends arrive code-less.
+  for (const status of [401, 403, 404, 405]) {
+    assert.equal(classifyRecoverError({ name: "AuthApiError", status, message: "Invalid API key" }), "server", String(status));
+  }
+  // A code-less 500 may be an old GoTrue's SMTP failure: stays neutral.
+  assert.equal(classifyRecoverError({ name: "AuthApiError", status: 500, message: "Internal Server Error" }), "sent");
 });
 
 test("email shape check", () => {

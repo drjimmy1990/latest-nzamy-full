@@ -40,7 +40,14 @@ import {
  * session is signed out — the recovery one included — so the person signs in
  * with the new password, and /login does not bounce a still-live session
  * straight to a dashboard.
+ *
+ * signOut RETURNS its error (network, 5xx) rather than throwing, and on an
+ * error it keeps the local session. So a failed global sign-out falls back to
+ * a local one, and the success copy says which of the two actually happened
+ * (or that neither did) instead of always claiming "every device".
  */
+
+type SignOutOutcome = "global" | "local" | "none";
 
 type Phase = "checking" | "ready" | "invalid" | "unavailable" | "demo" | "done";
 
@@ -64,8 +71,13 @@ const TEXT = {
     unavailable: "تعذّر الاتصال بالخادم للتحقق من الرابط. تحقق من اتصالك ثم أعد تحميل الصفحة.",
     demo: "تعيين كلمة المرور يعمل مع الخادم الحقيقي فقط — غير متاح في وضع العرض (قريباً).",
     doneTitle: "تم تغيير كلمة المرور",
-    doneBody: "سُجّل خروجك من جميع الأجهزة. سجّل الدخول الآن بكلمة المرور الجديدة.",
+    doneBody: {
+      global: "سُجّل خروجك من جميع الأجهزة. سجّل الدخول الآن بكلمة المرور الجديدة.",
+      local: "سُجّل خروجك من هذا الجهاز. قد تبقى أجهزتك الأخرى مسجّلة الدخول حتى تنتهي جلساتها. سجّل الدخول الآن بكلمة المرور الجديدة.",
+      none: "تعذّر تسجيل الخروج الآن، فما زلت مسجّل الدخول على هذا الجهاز. كلمة المرور الجديدة هي المعتمدة من الآن.",
+    },
     signIn: "تسجيل الدخول",
+    continue: "متابعة",
     show: "إظهار كلمة المرور",
   },
   en: {
@@ -84,8 +96,13 @@ const TEXT = {
     unavailable: "Could not reach the server to check the link. Check your connection, then reload the page.",
     demo: "Setting a password works with the real server only — not available in demo mode (coming soon).",
     doneTitle: "Password changed",
-    doneBody: "You have been signed out on every device. Sign in now with your new password.",
+    doneBody: {
+      global: "You have been signed out on every device. Sign in now with your new password.",
+      local: "You have been signed out on this device. Your other devices may stay signed in until their sessions end. Sign in now with your new password.",
+      none: "Signing out failed just now, so you are still signed in on this device. The new password is the one that counts from now on.",
+    },
     signIn: "Sign in",
+    continue: "Continue",
     show: "Show password",
   },
 } as const;
@@ -101,6 +118,7 @@ export default function ResetPasswordPage() {
   const [showPass, setShowPass] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [signedOut, setSignedOut] = useState<SignOutOutcome>("none");
 
   // Client-only: the session lives in this browser's cookies, and the link's
   // own `#error…` fragment never reaches a server.
@@ -148,12 +166,25 @@ export default function ResetPasswordPage() {
         return;
       }
       // End every session for this account, the recovery one included.
-      // A failure here does not undo the new password, so it is not an error.
+      // signOut returns (not throws) its error and then keeps the local
+      // session, so check it and fall back to this device only. A failure
+      // here does not undo the new password, so it is not an error.
+      let outcome: SignOutOutcome = "none";
       try {
-        await supabase.auth.signOut({ scope: "global" });
+        const { error: globalError } = await supabase.auth.signOut({ scope: "global" });
+        if (!globalError) outcome = "global";
       } catch {
-        // ignored
+        // fall through to the local attempt
       }
+      if (outcome === "none") {
+        try {
+          const { error: localError } = await supabase.auth.signOut({ scope: "local" });
+          if (!localError) outcome = "local";
+        } catch {
+          // still signed in; the copy says so
+        }
+      }
+      setSignedOut(outcome);
       setPassword("");
       setConfirm("");
       setPhase("done");
@@ -229,14 +260,14 @@ export default function ResetPasswordPage() {
                 <CheckCircle size={38} weight="bold" className="text-white" />
               </div>
               <h1 className="font-brand text-2xl font-bold text-ink">{t.doneTitle}</h1>
-              <p className="mt-3 text-sm text-ink-muted dark:text-gray-400">{t.doneBody}</p>
+              <p className="mt-3 text-sm text-ink-muted dark:text-gray-400">{t.doneBody[signedOut]}</p>
               {/* A full page load, not <Link>: the browser's auth state starts fresh after the sign-out. */}
               {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
               <a
                 href="/login"
                 className="mt-8 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-royal py-3.5 text-sm font-semibold text-white shadow-[0_4px_16px_-4px_rgba(11,61,46,0.4)] hover:bg-royal-light transition-all"
               >
-                {t.signIn}
+                {signedOut === "none" ? t.continue : t.signIn}
                 {isAr ? <ArrowLeft size={16} /> : <ArrowRight size={16} />}
               </a>
             </motion.div>

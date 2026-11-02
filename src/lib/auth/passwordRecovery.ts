@@ -10,11 +10,12 @@
  *      supabase-js stores a code verifier tagged "/recovery" in this
  *      browser's cookies.
  *   2. GoTrue emails a link; following it verifies the token and redirects to
- *      /auth/callback?next=/reset-password&code=… (or, with a custom email
- *      template, /auth/callback?token_hash=…&type=recovery&next=/reset-password).
- *   3. /auth/callback exchanges the code (or verifies the hash) and sends the
- *      person to /reset-password — never to a dashboard (planAuthCallback,
- *      recoveryLandingAfterExchange).
+ *      /auth/callback?next=/reset-password&code=….
+ *   3. /auth/callback exchanges the code and sends the person to
+ *      /reset-password — never to a dashboard (planAuthCallback,
+ *      recoveryLandingAfterExchange). It works only in the browser that
+ *      asked: the PKCE verifier is there. token_hash links are deliberately
+ *      not verified (login CSRF — see the note in the callback route).
  *   4. /reset-password requires that session and calls
  *      supabase.auth.updateUser({ password }) — the SecurityTab pattern.
  *
@@ -59,17 +60,19 @@ function nextIsResetPage(rawNext: string | null): boolean {
 export type AuthCallbackPlan =
   /** PKCE: OAuth sign-in or a recovery link. `recoveryHint` = the URL says recovery. */
   | { kind: "exchange_code"; code: string; recoveryHint: boolean }
-  /** A recovery link built from {{ .TokenHash }} in a custom email template. */
-  | { kind: "verify_recovery_hash"; tokenHash: string }
-  /** A recovery link GoTrue already refused (expired / used): no code came back. */
+  /**
+   * A recovery link with no code: GoTrue already refused it (expired / used),
+   * or it is a token_hash link, which this app never verifies.
+   */
   | { kind: "recovery_link_error" }
   /** Nothing usable — the route's old /login?error=… answer. */
   | { kind: "fail" };
 
 /**
- * What /auth/callback should do with this query string. Only `type=recovery`
- * is accepted for a token_hash: this route never verifies signup, invite,
- * magic-link or email-change hashes.
+ * What /auth/callback should do with this query string. Only a PKCE `code` is
+ * ever exchanged; a `token_hash` of any type is never verified (review ruling
+ * R2: an attacker's own hash would sign the victim's browser into the
+ * attacker's account).
  */
 export function planAuthCallback(params: URLSearchParams): AuthCallbackPlan {
   const type = params.get("type");
@@ -77,11 +80,6 @@ export function planAuthCallback(params: URLSearchParams): AuthCallbackPlan {
 
   const code = params.get("code");
   if (code) return { kind: "exchange_code", code, recoveryHint };
-
-  const tokenHash = params.get("token_hash");
-  if (tokenHash) {
-    return type === "recovery" ? { kind: "verify_recovery_hash", tokenHash } : { kind: "fail" };
-  }
 
   return recoveryHint ? { kind: "recovery_link_error" } : { kind: "fail" };
 }
@@ -113,16 +111,33 @@ export type RecoverOutcome = "sent" | "captcha" | "network" | "server" | "invali
  *   - 429 over_email_send_rate_limit is per account: it fires only for a
  *     registered address that was sent a link moments ago — the link is
  *     already on its way, so the neutral message is still true;
- *   - an API 500 ("Error sending recovery email", SMTP down) comes only after
- *     GoTrue found the user, so it too is answered neutrally. A mail outage
- *     is therefore invisible here — the post-deploy inbox test catches it.
+ *   - a GoTrue API 5xx ("Error sending recovery email", SMTP down, or a send
+ *     hook failing) comes only after GoTrue found the user, so it too is
+ *     answered neutrally. A mail outage is therefore invisible here — the
+ *     post-deploy inbox test catches it;
+ *   - any API error this list does not name: unknown means neutral.
  * What is said differently cannot reveal an account:
  *   - captcha: checked before GoTrue looks the address up;
  *   - network (AuthRetryableFetchError, status 0) and validation (malformed
  *     address): no lookup;
  *   - gateway down (AuthRetryableFetchError with 502/503/504/52x/530 —
- *     supabase-js raises it only for those): the same for every address.
+ *     supabase-js raises it only for those): the same for every address;
+ *   - AuthUnknownError: the answer was not GoTrue's JSON at all (an HTML 500
+ *     from a proxy, a wrong URL) — it never reached the lookup;
+ *   - configuration refusals (ACCOUNT_INDEPENDENT_CODES, or a code-less
+ *     401/403/404/405 such as the gateway's «Invalid API key»): decided
+ *     before or without the lookup, the same for every address.
  */
+const ACCOUNT_INDEPENDENT_CODES = new Set([
+  "email_provider_disabled",
+  "provider_disabled",
+  "bad_json",
+  "bad_jwt",
+  "no_authorization",
+  "request_timeout",
+]);
+const ACCOUNT_INDEPENDENT_STATUSES = new Set([401, 403, 404, 405]);
+
 export function classifyRecoverError(error: unknown): RecoverOutcome {
   if (!error || typeof error !== "object") return "sent";
   if (isCaptchaAuthError(error)) return "captcha";
@@ -130,7 +145,10 @@ export function classifyRecoverError(error: unknown): RecoverOutcome {
   if (name === "AuthRetryableFetchError") {
     return status === 0 || status === undefined ? "network" : "server";
   }
+  if (name === "AuthUnknownError") return "server";
   if (code === "validation_failed" || code === "email_address_invalid") return "invalid_email";
+  if (typeof code === "string" && ACCOUNT_INDEPENDENT_CODES.has(code)) return "server";
+  if (!code && typeof status === "number" && ACCOUNT_INDEPENDENT_STATUSES.has(status)) return "server";
   return "sent";
 }
 

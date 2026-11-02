@@ -69,18 +69,27 @@ test("reset-password requires a live session, saves through updateUser and signs
   const done = reset.indexOf('setPhase("done")');
   assert.ok(update > 0 && errCheck > update && signOut > errCheck && done > signOut);
   assert.equal([...reset.matchAll(/setPhase\("done"\)/g)].length, 1);
+  // a returned (not thrown) global sign-out error falls back to local
+  assert.match(reset, /const \{ error: globalError \} = await supabase\.auth\.signOut\(\{ scope: "global" \}\)/);
+  assert.match(reset, /const \{ error: localError \} = await supabase\.auth\.signOut\(\{ scope: "local" \}\)/);
+  assert.match(reset, /\{t\.doneBody\[signedOut\]\}/);
   // the honest dead end links back to a new request
   assert.match(reset, /href=\{FORGOT_PASSWORD_PATH\}/);
 });
 
 test("callback: recovery is decided before the onboarding/dashboard routing, OAuth path kept", () => {
   assert.match(callback, /const plan = planAuthCallback\(searchParams\)/);
-  assert.match(callback, /verifyOtp\(\{\s*type: "recovery",\s*token_hash: plan\.tokenHash,?\s*\}\)/);
+  // ruling R2: no token_hash verification at all (login CSRF)
+  assert.doesNotMatch(callback, /verifyOtp|token_hash/);
   assert.match(callback, /exchangeCodeForSession\(plan\.code\)/);
   const landing = callback.indexOf("if (recoveryLanding) return redirectRelative(recoveryLanding)");
   const profiles = callback.indexOf('.from("profiles")');
   const onboarding = callback.indexOf('redirectRelative("/onboarding")');
   assert.ok(landing > 0 && profiles > landing && onboarding > landing);
+  // the post-login stash is read and cleared only on the OAuth path
+  const stash = callback.indexOf("readPostLoginCookie(");
+  assert.ok(stash > landing, "POST_LOGIN_COOKIE handled after the recovery exit");
+  assert.equal(callback.indexOf("cookieStore.set(POST_LOGIN_COOKIE") > landing, true);
   // next is still validated by the shared open-redirect guard
   assert.match(callback, /safeLocalPath\(searchParams\.get\("next"\), FALLBACK_DASHBOARD_PATH\)/);
   assert.match(callback, /return redirectRelative\("\/login\?error=auth_callback_failed"\)/);

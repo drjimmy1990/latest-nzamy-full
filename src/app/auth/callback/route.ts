@@ -11,7 +11,6 @@ import {
 } from "@/lib/auth/userTypes";
 import {
   RESET_LINK_ERROR_PATH,
-  RESET_PASSWORD_PATH,
   planAuthCallback,
   recoveryLandingAfterExchange,
 } from "@/lib/auth/passwordRecovery";
@@ -54,13 +53,19 @@ import {
  *
  * ── Password-recovery links (owner package 2026-11-02, slice A §1.5) ───────
  * The reset email from /forgot-password also comes back here, with
- * `next=/reset-password` and either a PKCE `code` (GoTrue's default template)
- * or `token_hash` + `type=recovery` (a custom template). Either way the person
- * is sent to /reset-password — never through the onboarding or dashboard
- * routing below — and a refused, expired or already-used link goes to
+ * `next=/reset-password` and a PKCE `code`. The person is sent to
+ * /reset-password — never through the onboarding or dashboard routing below —
+ * and a refused, expired or already-used link goes to
  * /reset-password?error=link, which says so. The decision is
  * planAuthCallback / recoveryLandingAfterExchange in
  * src/lib/auth/passwordRecovery.ts; the OAuth path below is unchanged.
+ *
+ * PKCE only, on purpose (review ruling R2): a `token_hash` link is NOT
+ * verified here. Verifying one would sign this browser into whichever account
+ * the hash belongs to — an attacker's own recovery link, sent to a victim,
+ * would log the victim into the attacker's account (login CSRF). A PKCE code
+ * cannot be replayed that way: its verifier lives only in the browser that
+ * asked for the email.
  *
  * ── State of the feature ───────────────────────────────────────────────────
  * Nothing reaches this route until the Google OAuth client is registered in
@@ -103,14 +108,8 @@ export async function GET(request: Request) {
   // characters and backslashes and checks the result stays same-origin.
   const next = safeLocalPath(searchParams.get("next"), FALLBACK_DASHBOARD_PATH);
 
-  if (plan.kind === "exchange_code" || plan.kind === "verify_recovery_hash") {
+  if (plan.kind === "exchange_code") {
     const cookieStore = await cookies();
-    // Where /login was asked to send a Google sign-in (src/lib/auth/postLoginCookie.ts).
-    // Read once, re-validated, and cleared whatever happens below.
-    const stashed = readPostLoginCookie(cookieStore.get(POST_LOGIN_COOKIE)?.value);
-    if (cookieStore.get(POST_LOGIN_COOKIE)) {
-      cookieStore.set(POST_LOGIN_COOKIE, "", { path: "/", maxAge: 0 });
-    }
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -132,16 +131,6 @@ export async function GET(request: Request) {
       },
     );
 
-    // token_hash recovery link (custom email template): verified here, on the
-    // same cookie-writing client, so the session it opens is this browser's.
-    if (plan.kind === "verify_recovery_hash") {
-      const { error: verifyError } = await supabase.auth.verifyOtp({
-        type: "recovery",
-        token_hash: plan.tokenHash,
-      });
-      return redirectRelative(verifyError ? RESET_LINK_ERROR_PATH : RESET_PASSWORD_PATH);
-    }
-
     const { data: exchanged, error } = await supabase.auth.exchangeCodeForSession(plan.code);
 
     // A recovery session goes to the reset form before any profile or
@@ -154,6 +143,14 @@ export async function GET(request: Request) {
       recoveryHint: plan.recoveryHint,
     });
     if (recoveryLanding) return redirectRelative(recoveryLanding);
+
+    // OAuth only from here: a recovery link never reads or clears this.
+    // Where /login was asked to send a Google sign-in (src/lib/auth/postLoginCookie.ts).
+    // Read once, re-validated, and cleared whatever happens below.
+    const stashed = readPostLoginCookie(cookieStore.get(POST_LOGIN_COOKIE)?.value);
+    if (cookieStore.get(POST_LOGIN_COOKIE)) {
+      cookieStore.set(POST_LOGIN_COOKIE, "", { path: "/", maxAge: 0 });
+    }
 
     if (!error) {
       const {
