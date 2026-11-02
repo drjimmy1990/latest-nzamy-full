@@ -23,10 +23,21 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import SmartSchedulingPicker, { type SchedulingChoice } from "@/components/SmartSchedulingPicker";
 import { useTheme } from "@/components/ThemeProvider";
+import { consultationTypePrice } from "@/components/consultation/consultationPrices";
+import { useClientPricingCatalog } from "@/hooks/useClientPricingCatalog";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Lang = "ar" | "en";
+
+// Wave 1 task 6, fix round 1 (I2): no typed prices. The cards used to say
+// «٩٩ ر.س» for the AI tier (q327 withdrew it; /ai/consult is beta-gated) and
+// «٢٩٩ ر.س» for a call, against the catalogue's 500. A call and an in-person
+// visit now read the same client catalogue as /book/consultation
+// (consultationTypePrice, live via useClientPricingCatalog); the AI tier is
+// «قريباً».
+type Kind = "ai" | "video" | "in-person";
+const COMING_SOON: Record<Lang, string> = { ar: "قريباً", en: "Coming soon" };
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
@@ -34,16 +45,15 @@ const consultationTypes = {
   ar: [
     {
       icon: Brain,
+      kind: "ai" as Kind,
       title: "ذكاء نظامي",
-      subtitle: "إجابة فورية من الذكاء الاصطناعي",
-      price: "٩٩",
-      currency: "ر.س",
-      desc: "احصل على إجابات قانونية فورية من نموذج AI متخصص في الأنظمة واللوائح السعودية — مع خيار تصعيد للمحامي في أي وقت",
+      subtitle: "قيد الإعداد",
+      desc: "إجابات قانونية من نموذج متخصص في الأنظمة واللوائح السعودية — غير متاحة حالياً.",
       // Dropped «لحظي ٢٤/٧»: no model is wired to the AI tools, so nothing can
       // be instantly available round the clock — and the FAQ on this same page
       // now says the roster is still being onboarded and no wait time can be
       // quoted. The remaining bullets describe the tier, not its uptime.
-      features: ["غير محدود خلال الجلسة", "يستشهد بالمادة القانونية", "تصعيد للمحامي بضغطة"],
+      features: [] as string[],
       // No «الأوفر» badge (owner, Q164, 2026-10-03: no superlative badges);
       // the three prices sit side by side on the cards.
       badge: null,
@@ -54,9 +64,8 @@ const consultationTypes = {
     {
       icon: Video,
       title: "استشارة صوتية / مرئية",
+      kind: "video" as Kind,
       subtitle: "جلسة مباشرة مع محامٍ",
-      price: "٢٩٩",
-      currency: "ر.س",
       desc: "جلسة استشارية مباشرة مع محامٍ معتمد عبر الصوت أو الفيديو — ٤٥ دقيقة كاملة وتقرير مكتوب بعد الجلسة",
       features: ["٤٥ دقيقة مع محامٍ معتمد", "صوت أو فيديو حسب اختيارك", "تقرير مكتوب بعد الجلسة", "متابعة مجانية ٢٤ ساعة"],
       // No «الأكثر طلبًا» badge (owner, Q164): no booking data supports it.
@@ -68,9 +77,8 @@ const consultationTypes = {
     {
       icon: User,
       title: "استشارة حضورية",
+      kind: "in-person" as Kind,
       subtitle: "لقاء شخصي في المكتب",
-      price: "٧٠٠",
-      currency: "ر.س",
       desc: "استشارة حضورية في مكتب المحامي لمن يفضل التواصل المباشر — ٦٠ دقيقة مع محامٍ متخصص وملف قضية كامل",
       features: ["٦٠ دقيقة في مكتب المحامي", "توقيع وثائق رسمية", "ملف قضية مكتوب كامل", "متابعة مجانية أسبوع"],
       badge: null,
@@ -82,12 +90,11 @@ const consultationTypes = {
   en: [
     {
       icon: Brain,
+      kind: "ai" as Kind,
       title: "Nezamy AI",
-      subtitle: "Instant AI-powered legal answers",
-      price: "99",
-      currency: "SAR",
-      desc: "Get instant legal answers from an AI model specialized in Saudi regulations — with the option to escalate to a lawyer at any time",
-      features: ["Unlimited within session", "Cites legal articles", "One-tap lawyer escalation"],
+      subtitle: "In preparation",
+      desc: "Legal answers from a model specialized in Saudi regulations — not available yet.",
+      features: [] as string[],
       badge: null,
       color: "from-emerald-500/10 to-emerald-500/5",
       border: "border-emerald-500/20",
@@ -96,9 +103,8 @@ const consultationTypes = {
     {
       icon: Video,
       title: "Voice / Video Consultation",
+      kind: "video" as Kind,
       subtitle: "Live session with a lawyer",
-      price: "299",
-      currency: "SAR",
       desc: "Live consultation session with a certified lawyer via voice or video — 45 full minutes with a written report after the session",
       features: ["45 min with certified lawyer", "Voice or video, your choice", "Written report after session", "Free 24-hour follow-up"],
       badge: null,
@@ -109,9 +115,8 @@ const consultationTypes = {
     {
       icon: User,
       title: "In-Person Consultation",
+      kind: "in-person" as Kind,
       subtitle: "Face-to-face at the office",
-      price: "700",
-      currency: "SAR",
       desc: "In-person consultation at the lawyer's office for those who prefer direct contact — 60 minutes with a specialist lawyer and a full case file",
       features: ["60 min at lawyer's office", "Sign official documents", "Full written case file", "Free one-week follow-up"],
       badge: null,
@@ -178,6 +183,8 @@ export default function ConsultationsPage() {
   const isRTL = lang === "ar";
   const isDark = theme === "dark";
   const L = lang as Lang;
+  const { catalog } = useClientPricingCatalog();
+  const priceOf = (kind: Kind): string => (kind === "ai" ? COMING_SOON[L] : consultationTypePrice(kind, catalog, L));
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [scheduling, setScheduling] = useState<SchedulingChoice>(null);
 
@@ -244,8 +251,7 @@ export default function ConsultationsPage() {
                 </ul>
                 <div className="flex items-end justify-between">
                   <div>
-                    <span className={`text-3xl font-black ${item.accent}`}>{item.price}</span>
-                    <span className={`text-sm ms-1 ${isDark ? "text-gray-400" : "text-gray-500"}`}>{item.currency}</span>
+                    <span className={`text-2xl font-black ${item.accent}`}>{priceOf(item.kind)}</span>
                   </div>
                   <motion.a
                     href="/register/client"
@@ -409,8 +415,7 @@ export default function ConsultationsPage() {
                 <item.icon size={28} className={`${item.accent} mb-4`} weight="duotone" />
                 <h3 className={`text-lg font-bold mb-1 ${isDark ? "text-white" : "text-gray-900"}`}>{item.title}</h3>
                 <div className="flex items-end gap-1 my-4">
-                  <span className={`text-4xl font-black ${item.accent}`}>{item.price}</span>
-                  <span className={`text-sm pb-1 ${isDark ? "text-gray-400" : "text-gray-500"}`}>{item.currency}</span>
+                  <span className={`text-2xl font-black ${item.accent}`}>{priceOf(item.kind)}</span>
                 </div>
                 <ul className="space-y-2.5 mb-7">
                   {item.features.map((f) => (

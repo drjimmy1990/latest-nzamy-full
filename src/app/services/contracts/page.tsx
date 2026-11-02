@@ -24,6 +24,8 @@ import {
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
+import { CLIENT_SERVICE_CATALOG } from "@/constants/clientServiceCatalog";
+import { catalogPriceLabel } from "@/lib/pricing/catalogPriceLabel";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -96,15 +98,24 @@ const contractTypes = {
   en: ["Labor", "Commercial", "Lease", "Partnership", "Sale", "Supply", "Services", "NDA", "Investment", "Power of Attorney"],
 };
 
+// Wave 1 task 6, fix round 1 (I1): the tiers used to sell «أساسي ٢٤٩ ر.س»
+// with «مراجعة بالذكاء الاصطناعي» and «متقدم ٤٩٩ ر.س» — nothing charges
+// either, and the AI contract reviewer is beta-gated. The review tier shows
+// the client catalogue's contract-review row (the card on /services/individuals
+// reads the same row); lawyer drafting has no catalogue row, so no number.
+const AFTER_ASSESSMENT: { ar: string; en: string } = { ar: "يُحدَّد بعد التقييم", en: "Determined after assessment" };
+const reviewPrice = (lang: "ar" | "en"): string =>
+  catalogPriceLabel("contract-review", CLIENT_SERVICE_CATALOG, lang) ?? AFTER_ASSESSMENT[lang];
+
 const pricingTiers = {
   ar: [
-    { name: "أساسي", price: "٢٤٩", currency: "ر.س", desc: "مراجعة عقد واحد", features: ["مراجعة بالذكاء الاصطناعي", "تقرير PDF", "٢٤ ساعة تسليم"], highlight: false },
-    { name: "متقدم", price: "٤٩٩", currency: "ر.س", desc: "صياغة أو مراجعة شاملة", features: ["مراجعة محامٍ متخصص", "تعديلات ضمن نطاق الطلب", "تقرير مفصل", "دعم أولوية"], highlight: true },
+    { name: "مراجعة عقد", price: reviewPrice("ar"), currency: "", desc: "مراجعة عقد واحد", features: ["مراجعة محامٍ متخصص", "تقرير PDF", "٢٤ ساعة تسليم"], highlight: false },
+    { name: "صياغة أو مراجعة شاملة", price: AFTER_ASSESSMENT.ar, currency: "", desc: "صياغة أو مراجعة شاملة", features: ["مراجعة محامٍ متخصص", "تعديلات ضمن نطاق الطلب", "تقرير مفصل", "دعم أولوية"], highlight: true },
     { name: "مؤسسي", price: "يُحدد", currency: "", desc: "للشركات والمؤسسات", features: ["عقود غير محدودة", "فريق قانوني مخصص", "مدة التسليم تُؤكَّد مع الفريق قبل البدء", "اجتماعات شهرية"], highlight: false },
   ],
   en: [
-    { name: "Basic", price: "249", currency: "SAR", desc: "Single contract review", features: ["AI-powered review", "PDF report", "24-hour delivery"], highlight: false },
-    { name: "Advanced", price: "499", currency: "SAR", desc: "Full drafting or review", features: ["Specialist lawyer review", "Revisions within request scope", "Detailed report", "Priority support"], highlight: true },
+    { name: "Contract review", price: reviewPrice("en"), currency: "", desc: "Single contract review", features: ["Specialist lawyer review", "PDF report", "24-hour delivery"], highlight: false },
+    { name: "Full drafting or review", price: AFTER_ASSESSMENT.en, currency: "", desc: "Full drafting or review", features: ["Specialist lawyer review", "Revisions within request scope", "Detailed report", "Priority support"], highlight: true },
     { name: "Enterprise", price: "Custom", currency: "", desc: "For companies and organizations", features: ["Unlimited contracts", "Dedicated legal team", "Delivery timeline confirmed with team before start", "Monthly meetings"], highlight: false },
   ],
 };
@@ -424,7 +435,7 @@ export default function ContractsPage() {
                 <h3 className={`text-lg font-bold mb-1 ${isDark ? "text-white" : "text-gray-900"}`}>{tier.name}</h3>
                 <p className={`text-sm mb-4 ${isDark ? "text-gray-400" : "text-gray-500"}`}>{tier.desc}</p>
                 <div className="flex items-end gap-1 mb-6">
-                  <span className="text-4xl font-black text-royal">{tier.price}</span>
+                  <span className="text-2xl font-black text-royal">{tier.price}</span>
                   {tier.currency && <span className={`text-sm pb-1 ${isDark ? "text-gray-400" : "text-gray-500"}`}>{tier.currency}</span>}
                 </div>
                 <ul className="space-y-2.5 mb-7">

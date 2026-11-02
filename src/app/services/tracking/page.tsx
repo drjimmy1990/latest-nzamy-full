@@ -297,7 +297,7 @@ export default function TrackingPage() {
                     {isRTL ? tier.name_ar : tier.name_en}
                   </h3>
                   <div className="flex items-baseline gap-1">
-                    <span className="text-4xl font-black text-gray-900 dark:text-white">
+                    <span className="text-2xl font-black text-gray-900 dark:text-white">
                       {isRTL ? tier.price : tier.price_num}
                     </span>
                     <span className="text-gray-500 dark:text-gray-400 text-sm">
