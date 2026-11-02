@@ -65,6 +65,7 @@ import {
 import { apiGet, isSupabaseMode } from "@/lib/services/api";
 import { profileShareState, type ProfileShareState } from "./_components/profileShareTargets";
 import ShareProfileModal from "./_components/ShareProfileModal";
+import FounderMembershipCard from "./_components/FounderMembershipCard";
 import StickyNotesWall from "@/components/dashboard/notes/StickyNotesWall";
 import { formatTimeOfDayAr } from "./hearings/_timeOfDay";
 import { useRiyadhToday } from "@/hooks/useRiyadhToday";
@@ -831,6 +832,17 @@ export default function LawyerDashboardPage() {
           </Link>
         </motion.div>
       )}
+
+      {/* ── «عضويتي المؤسسة» (P3 Task 9) ──
+          A paid founder sees his membership; a verified lawyer who is not
+          one sees a one-line invite to the founder card while the sale is
+          open; everyone else, and every loading or failed read, nothing. */}
+      <FounderMembershipCard
+        isDark={isDark}
+        userLoading={userLoading}
+        userType={userType ?? null}
+        practiceKind={practiceKind ?? null}
+      />
 
       {/* ── Quick Actions Bar ── */}
       <motion.div
