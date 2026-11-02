@@ -287,8 +287,8 @@ test("fulfilmentNoticeAr: already entitled says nothing changed and that the adm
 test("fulfilmentNoticeAr: a founder membership says the membership is active for 12 months from activation", () => {
   const n = fulfilmentNoticeAr({ kind: "membership", labelAr: "باقة المحامي المؤسس", receiptNumber: "NZ-2026-000003", alreadyEntitled: false });
   assert.equal(n.title, "تم تفعيل عضويتك المؤسِّسة");
-  assert.equal(n.body, "تم الدفع وتفعيل «باقة المحامي المؤسس» لمدة ١٢ شهراً من اليوم. رقم الإيصال: NZ-2026-000003.");
-  assert.doesNotMatch(n.title + n.body, /اشتراك|نقاط/);
+  assert.equal(n.body, "تم الدفع وتفعيل «باقة المحامي المؤسس» لمدة ١٢ شهراً من تاريخ التفعيل. رقم الإيصال: NZ-2026-000003.");
+  assert.doesNotMatch(n.title + n.body, /اشتراك|نقاط|من اليوم/, "stored and re-shown later: never relative to today");
 });
 
 test("fulfilmentNoticeAr: no receipt number yet still reads as a sentence", () => {

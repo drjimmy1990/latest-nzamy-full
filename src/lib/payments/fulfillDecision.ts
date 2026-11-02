@@ -355,10 +355,11 @@ export function fulfilmentNoticeAr(input: {
     };
   }
   if (input.kind === "membership") {
-    // founder_activate (20261101_10): 12 months from activation
+    // founder_activate (20261101_10): 12 months from activation. Never «من اليوم»:
+    // the body is stored as a notification and re-shown on a later visit.
     return {
       title: "تم تفعيل عضويتك المؤسِّسة",
-      body: `تم الدفع وتفعيل ${label} لمدة ١٢ شهراً من اليوم.${receipt}`,
+      body: `تم الدفع وتفعيل ${label} لمدة ١٢ شهراً من تاريخ التفعيل.${receipt}`,
       href,
     };
   }
