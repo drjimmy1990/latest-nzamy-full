@@ -21,7 +21,9 @@ interface ToolRow {
   class: "fast" | "job";
   tier: string;
   price: number;
-  mode: "off" | "staff" | "review" | "live";
+  mode: "off" | "staff" | "live";
+  /** The stored mode was the retired "review"; it runs as "staff" now. */
+  legacyMode?: "review";
   dailyLimit: number;
   defaultMode: string;
   defaultDailyLimit: number;
@@ -43,7 +45,11 @@ interface RunRow {
   duration_ms: number | null;
 }
 
-const MODE_LABEL: Record<string, string> = { off: "متوقفة", staff: "للمشرفين فقط", review: "بمراجعة", live: "مفعّلة" };
+// "review" (charge, then hide until released) is not offered: nothing releases
+// or refunds such a run yet (Wave 3). A tool still stored as review runs as
+// staff, and its row says so until the next save writes "staff".
+const MODE_LABEL: Record<string, string> = { off: "متوقفة", staff: "للمشرفين فقط", live: "مفعّلة" };
+const LEGACY_REVIEW_LABEL = "للمشرفين فقط (كان: بمراجعة)";
 const STATUS_LABEL: Record<string, string> = { running: "قيد التنفيذ", review: "بانتظار المراجعة", succeeded: "نجح", failed: "فشل" };
 const STATUS_TONE: Record<string, string> = {
   running: "text-amber-300",
@@ -169,8 +175,15 @@ export default function AdminAIUsagePage() {
                   <td>
                     <select value={t.mode} onChange={(e) => update(t.id, { mode: e.target.value as ToolRow["mode"] })}
                       className="rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-100">
-                      {(["off", "staff", "review", "live"] as const).map((m) => <option key={m} value={m}>{MODE_LABEL[m]}</option>)}
+                      {(["off", "staff", "live"] as const).map((m) => (
+                        <option key={m} value={m}>{m === "staff" && t.legacyMode === "review" ? LEGACY_REVIEW_LABEL : MODE_LABEL[m]}</option>
+                      ))}
                     </select>
+                    {t.legacyMode === "review" && (
+                      <p className="mt-1 text-[11px] text-amber-300">
+                        وضع «بمراجعة» موقوف، فتعمل الأداة الآن للمشرفين فقط. الحفظ يثبّت ذلك.
+                      </p>
+                    )}
                   </td>
                   <td>
                     <input type="number" min={0} max={1000} value={t.dailyLimit}

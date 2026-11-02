@@ -10,7 +10,9 @@ import { resolveToolRuntime } from "@/lib/ai/aiToolsConfig";
  *   tools   every registered tool with its runtime mode and daily limit
  *           (platform_settings.ai_tools over the registry default) — the
  *           switches themselves are written through PATCH /api/v1/admin/settings
- *           (key ai_tools, settings.write);
+ *           (key ai_tools, settings.write). A stored "review" (retired) reads
+ *           as mode "staff", the mode it now runs as, with legacyMode "review"
+ *           so the page can say so;
  *   runs    the last 100 runs (?tool=, ?status= to filter) with who ran them,
  *           what was charged or refunded, the error code, tokens and time;
  *   charging  platform_settings.points_enforcement.
@@ -44,6 +46,7 @@ export async function GET(request: NextRequest) {
         tier: spec.tier,
         price: spec.price({}, { pages: null }),
         mode: rt.mode,
+        ...(rt.legacyMode ? { legacyMode: rt.legacyMode } : {}),
         dailyLimit: rt.dailyLimit,
         defaultMode: spec.defaultMode,
         defaultDailyLimit: spec.dailyLimit,
