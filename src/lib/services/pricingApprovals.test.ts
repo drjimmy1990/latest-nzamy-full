@@ -172,7 +172,7 @@ test("task 4: the /pricing price list prints the registry's charge, «قريبا
     ["المحاكي القضائي", ["wargaming"]],
     ["تقرير العناية الواجبة", "soon"],
     ["الرأي الفصل", ["legal-opinion-consult", "legal-opinion-letter"]],
-    ["المساعد القانوني والتشريع المقارن", ["assistant"]],
+    ["المساعد القانوني", ["assistant"]],
     ["البحث الدلالي وشرح المواد في المكتبة", ["library-assistant"]],
     ["المرشد القضائي", "free"],
     ["الحاسبة القانونية", "free"],
@@ -283,16 +283,16 @@ test("task 4: the plan cards' tool bullets read the registry (lawyer card, consu
     ]],
     [providers, [
       '`صياغة العقود وتدقيقها: ${aiToolPriceText("contracts-pro", "ar")}`',
-      '`المساعد القانوني والتشريع المقارن: ${aiToolPriceText("assistant", "ar")}`',
+      '`المساعد القانوني: ${aiToolPriceText("assistant", "ar")}`',
       '`Contract drafting and review: ${aiToolPriceText("contracts-pro", "en")}`',
-      '`Legal assistant and comparative law: ${aiToolPriceText("assistant", "en")}`',
+      '`Legal assistant: ${aiToolPriceText("assistant", "en")}`',
     ]],
   ];
   for (const [text, bullets] of cards) {
     for (const b of bullets) assert.ok(text.includes(b), `missing ${b}`);
     // No tool bullet types its own number any more.
-    assert.doesNotMatch(text, /(المذكرات واللوائح|العقود وتدقيقها|التشريع المقارن): [٠-٩]/);
-    assert.doesNotMatch(text, /(pleadings|review|comparative law): \d/);
+    assert.doesNotMatch(text, /(المذكرات واللوائح|العقود وتدقيقها|المساعد القانوني): [٠-٩]/);
+    assert.doesNotMatch(text, /(pleadings|review|Legal assistant): \d/);
   }
   // What those bullets print, against the server.
   assert.equal(display.aiToolPriceText("contracts-pro", "ar"), `${expectedLabel(["contracts-pro"], "ar")} نقطة`);
@@ -385,8 +385,13 @@ test("task 4: no AI screen types a points number of its own", () => {
 test("٢١٦: the price list does not say points are deducted on every use (enforcement is off)", () => {
   assert.doesNotMatch(pricingCards, /تُخصم[^\n]*كل استخدام|لكل استخدام|per use/i);
   assert.match(pricingCards, /قائمة أسعار الأدوات بالنقاط/);
-  assert.match(pricingCards, /الخصم الآلي[^\n"]*الدفع الإلكتروني/);
-  assert.match(pricingCards, /automatic deduction[^\n"]*electronic payment/i);
+  // Wave 1 task 6: nor WHEN deduction starts. It follows the runtime switch
+  // platform_settings.points_enforcement (ai_start_run), not the e-payment
+  // launch, so the old «يبدأ الخصم الآلي … مع إطلاق الدفع الإلكتروني» was
+  // false whenever an admin had turned it on. The copy states the price only.
+  assert.doesNotMatch(pricingCards, /الخصم الآلي[^\n"]*الدفع الإلكتروني/);
+  assert.doesNotMatch(pricingCards, /automatic deduction[^\n"]*electronic payment/i);
+  assert.match(pricingCards, /قائمة أسعار أدوات المحامي بالنقاط: تكلفة كل تشغيل للأداة/);
   // The lawyer card at provider registration made the same claim (fix round 1).
   assert.doesNotMatch(providerRegistration, /خصم النقاط|تُخصم|[Pp]oints deducted|deducted per/);
   assert.ok(providerRegistration.includes('"أسعار الأدوات بالنقاط حسب قائمة الأسعار"'), "provider registration (ar)");

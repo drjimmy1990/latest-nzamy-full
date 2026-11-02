@@ -207,7 +207,9 @@ export const lawyerServicesTable: ServiceCategory[] = [
     emoji: "⚡",
     color: "text-purple-400",
     items: [
-      { name: "المساعد القانوني والتشريع المقارن", price: { aiTool: "assistant" }, tools: ["ai:assistant"] },
+      // Wave 1 task 6: not «والتشريع المقارن» — no comparative-law tool
+      // exists (/ai/global is «قريباً»); this row sells the assistant only.
+      { name: "المساعد القانوني", price: { aiTool: "assistant" }, tools: ["ai:assistant"] },
       { name: "البحث الدلالي وشرح المواد في المكتبة", price: { aiTool: "library-assistant" } },
     ],
   },

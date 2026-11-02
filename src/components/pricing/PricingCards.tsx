@@ -429,12 +429,18 @@ function LawyerServicesTable({ isAr }: { isAr: boolean }) {
             <div className="mb-6 rounded-2xl border border-amber-200/60 bg-amber-50/60 px-5 py-3.5 text-[12px] text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/5 dark:text-amber-300 flex items-start gap-3" dir={isAr ? "rtl" : "ltr"}>
               <span className="text-xl">💡</span>
               <p className="leading-relaxed">
-                {/* Owner answer ٢١٦ and gate G4: nothing is deducted yet, so the
-                    table is a price list, not a running meter. */}
+                {/* Wave 1 task 6. Whether a run debits points is a runtime
+                    switch — platform_settings.points_enforcement, read by
+                    ai_start_run (20261027_10) — not the e-payment launch, and
+                    this page cannot see it. So the copy is true in both states:
+                    it states the price, never when deduction starts. Nor does
+                    it say an unlisted tool has no price: quick-answer,
+                    case-brief, analyze-strength, contract-drafter, communicate
+                    and canvas-card are charged and are not rows here. */}
                 <span className="font-bold">{isAr ? "كيف تقرأ الجدول؟" : "How to read this table"}</span><br/>
                 {isAr
-                  ? "هذا الجدول قائمة أسعار الأدوات بالنقاط، ويبدأ الخصم الآلي من رصيدك مع إطلاق الدفع الإلكتروني. والأدوات غير المذكورة فيه لم تُحدَّد تكلفتها بعد."
-                  : "This table is the tools' price list in points; automatic deduction from your balance starts with electronic payment. Tools not listed have no price yet."}
+                  ? "هذا الجدول قائمة أسعار أدوات المحامي بالنقاط: تكلفة كل تشغيل للأداة."
+                  : "This table is the lawyer tools' price list in points: the cost of one run of each tool."}
               </p>
             </div>
 

@@ -42,3 +42,50 @@ test("debt collection: no notice calls itself an accredited legal instrument", (
   assert.match(page, /مسودة إشعار؛ راجعها قبل إرسالها/);
   assert.match(page, /مسودة إنذار؛ راجعها قبل إرسالها/);
 });
+
+// ── /pricing: the lawyer price list's disclaimer (Wave 1 task 6, item A) ─────
+
+test("/pricing disclaimer: no «unlisted tools have no price» and no deduction-start claim", () => {
+  const cards = src("components/pricing/PricingCards.tsx");
+  // Six charged tools are not rows of the table (quick-answer, case-brief,
+  // analyze-strength, contract-drafter, communicate, canvas-card).
+  assert.doesNotMatch(cards, /غير المذكورة|لم تُحدَّد تكلفتها|not listed|no price yet/i);
+  // Deduction follows platform_settings.points_enforcement (ai_start_run),
+  // not the e-payment launch, and the page cannot see that switch.
+  assert.doesNotMatch(cards, /يبدأ الخصم|الخصم الآلي|مع إطلاق الدفع الإلكتروني|deduction from your balance starts|starts with electronic payment/i);
+  assert.match(cards, /هذا الجدول قائمة أسعار أدوات المحامي بالنقاط: تكلفة كل تشغيل للأداة\./);
+});
+
+test("/pricing disclaimer: the six unlisted tools really are charged and really are not rows", async () => {
+  const { PRICED_AI_TOOL_IDS } = await import("../ai/toolPointsDisplay.ts");
+  // The table's source, not the module (it imports icons and "@/" paths).
+  const table = src("constants/pricing/pricing.lawyers.ts").split("export const lawyerServicesTable")[1];
+  const listed = new Set(
+    [...table.matchAll(/aiTool: (\[[^\]]*\]|"[^"]+")/g)].flatMap((m) => [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1])),
+  );
+  assert.ok(listed.size >= 8, `parsed only ${listed.size} priced rows`);
+  const unlisted = PRICED_AI_TOOL_IDS.filter((id) => !listed.has(id));
+  assert.deepEqual([...unlisted].sort(), ["analyze-strength", "canvas-card", "case-brief", "communicate", "contract-drafter", "quick-answer"]);
+});
+
+// ── item B: no comparative-law tool exists ───────────────────────────────────
+
+test("the assistant row is «المساعد القانوني», not «… والتشريع المقارن»", () => {
+  for (const path of ["constants/pricing/pricing.lawyers.ts", "constants/pricing/pricing.providers.ts"]) {
+    const code = src(path).replace(/^\s*\/\/.*$/gm, "");
+    assert.doesNotMatch(code, /التشريع المقارن|comparative law/i, path);
+  }
+  assert.match(src("constants/pricing/pricing.lawyers.ts"), /\{ name: "المساعد القانوني", price: \{ aiTool: "assistant" \}/);
+});
+
+// ── item C: /ai/consult starts no AI run ─────────────────────────────────────
+
+test("ai:consult is «قريباً» on the hub, not «بيتا مجاني»", async () => {
+  const { LAWYER_AI_TOOLS } = await import("../../constants/lawyerAiCatalog.ts");
+  const { getLawyerAiBadge } = await import("../../constants/lawyerAiBadges.ts");
+  const consult = LAWYER_AI_TOOLS.find((t) => t.permission === "ai:consult")!;
+  assert.equal(consult.comingSoon, true);
+  assert.equal(getLawyerAiBadge(consult, "ar"), "قريباً");
+  assert.equal(getLawyerAiBadge(consult, "en"), "Coming soon");
+  assert.doesNotMatch(src("app/ai/consult/page.tsx"), /useAiRun|\/api\/v1\/ai\//, "consult now runs AI — revisit its «قريباً»");
+});
