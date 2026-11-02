@@ -70,7 +70,14 @@ The new «نسيت كلمة المرور» page sends a real reset email. It nee
    - `https://nezamy.sa/reset-password` may be added too. It is harmless but not needed: GoTrue only ever sends the user to `/auth/callback`, and the site moves them on to `/reset-password`.
 4. **Keep GoTrue's default recovery email template** (`{{ .ConfirmationURL }}`). Do not switch it to a `token_hash` link: the site refuses those on purpose.
 5. Restart auth with `docker compose up -d auth` (not `restart`, which keeps the old env).
-6. Send **one** test email to a real inbox and check the spam folder. The full reset test is Step 7.
+6. The test email comes after the deploy (Step 7): the page live today is still the fake one and sends nothing. To test the mail settings before that, ask GoTrue directly from the server (it answers `{}` and sends the email; check the inbox and the spam folder):
+
+```bash
+ANON=$(grep '^NEXT_PUBLIC_SUPABASE_ANON_KEY=' /www/wwwroot/nzamy/latest-nzamy-full/.env.local | cut -d= -f2-)
+curl -s -X POST 'https://auth.nezamy.sa/auth/v1/recover' -H "apikey: $ANON" -H 'Content-Type: application/json' -d '{"email":"<a real inbox of yours>"}'
+```
+
+   The link in that email lands on the home page and does nothing: this is only a mail test. If the captcha is already on in GoTrue, the request is refused with `captcha_failed`; then test in Step 7 instead.
 
 ### 1c. GitHub and keys (any time; the sooner the better)
 
@@ -201,7 +208,7 @@ Expect on the screen (it is not a file), and no `ERROR`:
 - `_verify: 20261102_10 OK — contract review 600 for individuals; contract drafting 0 SAR with no «الأكثر طلبا» tag …`
 - `_verify: 20261102_11 OK — contract drafting is priced in points («٥٠٠ نقطة للعقد»), not «مشمول في الباقة» …`
 
-This new block is the last one in the file, and it **raises an ERROR** in every wrong state, naming the file(s) to re-run:
+This new block sits at the end of the file (as of this batch), and it **raises an ERROR** in every wrong state, naming the file(s) to re-run:
 - `_verify: 20261102_10 — contract-review shows 800.00 …` or `contract-draft shows 99.00 …`: `_10` did not run, or the 20260518 seed was re-run after it. Run Step 3, then Step 4, then this step again.
 - `_verify: 20261102_11 — contract-draft is price_mode included …` or `… with the note «أو ٥٠٠ نقطة للعقد» …`: `_11` did not run, or `_10` was re-run after it. Run Step 4, then this step again.
 
@@ -340,6 +347,18 @@ D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\docs\audits\20
 - Switch to live **only after this deploy**. Before it, the live site still sells the cancelled plans.
 - A payment that was **opened before the deploy** for a retired plan or cycle may still be completed afterwards. It is fulfilled like any paid order (ruling R10): the buyer gets what he paid for. While the gateway is in test mode only staff and test accounts can pay, so in practice these can only be test payments.
 - Existing holders of a retired plan keep it. Nothing renews automatically today; the renewal policy for retired cycles is an owner question in the report.
+
+### Switching on the library assistant (an admin decision; no deploy)
+
+The library assistant (tool `library-assistant`: the law page's chat and «اشرح لي», 5 points) ships switched **off**. Whether and when to switch it on is a decision for the admin in /dashboard/admin/ai-usage («تشغيلات الذكاء الاصطناعي»): «مفعّلة» (live) for everyone, or «للمشرفين فقط» (staff) to try it first.
+
+### «تعذّر الاتصال بالخادم» (the owner's screenshots 03, 04, 17 and 21)
+
+The pattern points to a timeout that returns a non-JSON 502/504 page, not to a bug in the tools. Look in:
+- the app log: `pm2 logs` on the server, around the time of a failure;
+- the nginx error and access logs, for 502/504 on `/api/v1/ai/` and the timeout lines (`upstream timed out`).
+
+Send us what you find; a longer proxy timeout or a background job may be needed.
 
 ### Gemini billing
 
