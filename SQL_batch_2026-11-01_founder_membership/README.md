@@ -95,7 +95,7 @@ t      | t             | t            | t              | t                    | 
 
 Nobody has seen these screens rendered yet. Check them on your PC, in light **and** dark mode, before Step 3.
 
-Where: the main folder, after `git pull` on main:
+Where: the main folder, once this branch is merged into main. That folder is usually on the `owner-edits` branch, so first run `git checkout main` and then `git pull`. It also holds untracked najiz work under `src/`, which the build will pick up too. If the build fails inside those najiz files, that is not this batch's fault: tell the developer before going further.
 
 ```
 D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website
@@ -120,7 +120,7 @@ Then open `http://localhost:3000` and check:
    - the page opens the lawyers tab and scrolls down to the founder card by itself (the anchor);
    - the card shows «٢٬٩٩٦ ر.س قبل الضريبة — الإجمالي ٣٬٤٤٥٫٤٠ ر.س», under it «٢٬٩٩٦ + ٤٤٩٫٤٠ ضريبة القيمة المضافة = ٣٬٤٤٥٫٤٠ ر.س» and «آخر يوم في الحملة: ٢٥ يناير ٢٠٢٧» (or the end date the admin set), then the seats left;
    - text is readable in both modes (no light-grey text on a dark card).
-2. **The paused message.** In `/dashboard/admin/founder` (an admin account) press «إيقاف البيع مؤقتًا». Wait about a minute (the campaign answer is cached for 60 seconds), then reload the campaign link above: in place of the card it reads «البيع متوقف مؤقتًا — تابعنا لموعد الاستئناف». The same page **without** `&campaign=founder-2026` shows no founder card at all. Then press «استئناف البيع». This local build talks to the real database, so the pause is real: do not leave it paused. The old code still live on the site has the sale switch off, so nobody outside sees either state.
+2. **The paused message.** In `/dashboard/admin/founder` (an admin account) press «إيقاف البيع مؤقتًا». Wait about a minute (the campaign answer is cached for 60 seconds), then reload the campaign link above: in place of the card it reads «البيع متوقف مؤقتًا — تابعنا لموعد الاستئناف». The same page **without** `&campaign=founder-2026` shows no founder card at all. Then press «استئناف البيع», reload the panel, and confirm it no longer shows «البيع متوقف مؤقتًا» before you go on to Step 3. This local build talks to the real database, so the pause is real: do not leave it paused. The old code still live on the site has the sale switch off, so nobody outside sees either state.
 3. `/dashboard/admin/founder` itself: the seat numbers, the order counts, the members table (empty for now) and the pause button.
 4. The lawyer dashboard as a **verified** lawyer test account: the line inviting him to the founder card shows.
 
