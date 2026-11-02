@@ -74,3 +74,40 @@ test("the other consultation screens format in Riyadh time", () => {
     assert.match(src, /RIYADH_ZONE_LABEL_AR/, rel);
   }
 });
+
+test("q357: the guard reads the lawyer's scheduled timed hearings too, and keeps the consultation 409 code", () => {
+  const src = read("./_scheduleGuard.ts");
+  assert.match(src, /\.from\("hearings"\)[\s\S]*?\.eq\("owner_user_id", args\.lawyerUserId\)[\s\S]*?\.eq\("status", "scheduled"\)/);
+  assert.match(src, /findScheduleClashes\(args\.startMs, args\.durationMinutes, items, exclude\)/);
+  assert.match(src, /code: CONSULTATION_OVERLAP_CODE, conflicts: read\.conflicts/);
+  assert.match(src, /export async function hearingOverlapRefusal\(/);
+  assert.match(src, /code: HEARING_OVERLAP_CODE, conflicts: read\.conflicts/);
+});
+
+test("q357: POST and PATCH /api/v1/lawyer/hearings check the slot before writing, warn-then-confirm", () => {
+  const post = read("../hearings/route.ts");
+  const guard = post.indexOf("hearingOverlapRefusal(supabase");
+  const insert = post.search(/\.from\("hearings"\)\s*\.insert\(/);
+  assert.ok(guard > 0 && insert > guard, "POST: guard before the insert");
+  assert.match(post, /confirmOverlap: confirmOverlap === true/);
+  const patch = read("../hearings/[id]/route.ts");
+  const pGuard = patch.indexOf("hearingOverlapRefusal(supabase");
+  const update = patch.search(/\.from\("hearings"\)\s*\.update\(/);
+  assert.ok(pGuard > 0 && update > pGuard, "PATCH: guard before the update");
+  assert.match(patch, /excludeHearingId: current\.id/);
+  assert.match(patch, /nextStatus === "scheduled" && slotChanged/);
+});
+
+test("q357: the hearing screens tell the overlap 409 apart by code and offer «حفظ رغم التعارض»", () => {
+  const svc = read("../../../../../lib/services/lawyerHearingsService.ts");
+  assert.match(svc, /response\.status === 409 && errorBody\?\.code === "hearing_overlap"/);
+  for (const rel of [
+    "../../../../dashboard/lawyer/_components/AddHearingModal.tsx",
+    "../../../../dashboard/lawyer/hearings/_HearingActionDialog.tsx",
+  ]) {
+    const src = read(rel);
+    assert.match(src, /instanceof HearingOverlapError/, rel);
+    assert.match(src, /حفظ رغم التعارض/, rel);
+    assert.match(src, /confirmOverlap/, rel);
+  }
+});

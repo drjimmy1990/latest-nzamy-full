@@ -11,7 +11,12 @@
  * each caller.
  *
  * Scope: the consultations of ONE lawyer (`lawyer_user_id`) that are
- * `scheduled` — a cancelled, completed or unscheduled row holds no time.
+ * `scheduled` — a cancelled, completed or unscheduled row holds no time —
+ * AND, since owner q357, the same lawyer's `scheduled` hearings that carry an
+ * hour (`owner_user_id`). The check runs both ways: a consultation slot is
+ * checked against hearings here (overlapRefusal), and a hearing slot against
+ * consultations and other hearings (hearingOverlapRefusal, called by the
+ * hearing routes). The rule itself is src/lib/services/scheduleClash.ts.
  * Read through the caller's RLS client, which can read the lawyer's own rows.
  */
 
@@ -23,43 +28,69 @@ import {
   DURATION_BAD_AR,
   checkDayTimeSlot,
   checkInstantSlot,
-  findOverlaps,
   isValidDuration,
-  overlapMessageAr,
   overlapQueryWindow,
   type SlotCheck,
-  type SlotConflict,
 } from "@/lib/services/consultationSchedule";
+import {
+  HEARING_OVERLAP_CODE,
+  clashMessageAr,
+  consultationItems,
+  findScheduleClashes,
+  hearingItems,
+  hearingQueryDays,
+  type ConsultationSlotRow,
+  type HearingSlotRow,
+  type ScheduleConflict,
+} from "@/lib/services/scheduleClash";
 
 export type OverlapRead =
-  | { ok: true; conflicts: SlotConflict[] }
+  | { ok: true; conflicts: ScheduleConflict[] }
   | { ok: false };
 
+/**
+ * The lawyer's scheduled consultations AND timed scheduled hearings that share
+ * a minute with the slot. `excludeId` is a consultation's own id (a
+ * reschedule), `excludeHearingId` a hearing's own id (an edit/postpone).
+ */
 export async function readScheduleConflicts(
   supabase: SupabaseClient,
-  args: { lawyerUserId: string; startMs: number; durationMinutes: number; excludeId?: string | null },
+  args: { lawyerUserId: string; startMs: number; durationMinutes: number; excludeId?: string | null; excludeHearingId?: string | null },
 ): Promise<OverlapRead> {
   const { fromIso, toIso } = overlapQueryWindow(args.startMs, args.durationMinutes);
-  const { data, error } = await supabase
-    .from("consultations")
-    .select("id, scheduled_at, duration_minutes")
-    .eq("lawyer_user_id", args.lawyerUserId)
-    .eq("status", "scheduled")
-    .gt("scheduled_at", fromIso)
-    .lt("scheduled_at", toIso)
-    .limit(50);
-  if (error) {
-    console.error("[consultations schedule guard] overlap read failed:", error.message, error.code);
+  const { fromDay, toDay } = hearingQueryDays(args.startMs, args.durationMinutes);
+  const [consultations, hearings] = await Promise.all([
+    supabase
+      .from("consultations")
+      .select("id, scheduled_at, duration_minutes")
+      .eq("lawyer_user_id", args.lawyerUserId)
+      .eq("status", "scheduled")
+      .gt("scheduled_at", fromIso)
+      .lt("scheduled_at", toIso)
+      .limit(50),
+    supabase
+      .from("hearings")
+      .select("id, hearing_date, hearing_time, duration_minutes")
+      .eq("owner_user_id", args.lawyerUserId)
+      .eq("status", "scheduled")
+      .not("hearing_time", "is", null)
+      .gte("hearing_date", fromDay)
+      .lte("hearing_date", toDay)
+      .limit(50),
+  ]);
+  if (consultations.error || hearings.error) {
+    const e = consultations.error ?? hearings.error;
+    console.error("[schedule guard] overlap read failed:", e?.message, e?.code);
     return { ok: false };
   }
-  const rows = (data ?? []) as Array<{ id: string; scheduled_at: string | null; duration_minutes: number | null }>;
-  const conflicts = findOverlaps(
-    args.startMs,
-    args.durationMinutes,
-    rows.filter((r) => r.scheduled_at).map((r) => ({ id: r.id, scheduledAt: r.scheduled_at as string, durationMinutes: r.duration_minutes })),
-    args.excludeId,
-  );
-  return { ok: true, conflicts };
+  const items = [
+    ...consultationItems((consultations.data ?? []) as ConsultationSlotRow[]),
+    ...hearingItems((hearings.data ?? []) as HearingSlotRow[]),
+  ];
+  const exclude = args.excludeHearingId
+    ? { kind: "hearing" as const, id: args.excludeHearingId }
+    : args.excludeId ? { kind: "consultation" as const, id: args.excludeId } : null;
+  return { ok: true, conflicts: findScheduleClashes(args.startMs, args.durationMinutes, items, exclude) };
 }
 
 /**
@@ -125,8 +156,30 @@ export async function overlapRefusal(
     return NextResponse.json({ error: "تعذّر التحقق من تعارض المواعيد. حاول مرة أخرى." }, { status: 503 });
   }
   if (read.conflicts.length === 0 || args.confirmOverlap) return null;
+  // The code stays `consultation_overlap` even when the clash is a hearing:
+  // mutateConsultationSlot matches that exact string to offer «حفظ رغم التعارض».
   return NextResponse.json(
-    { error: overlapMessageAr(read.conflicts), code: CONSULTATION_OVERLAP_CODE, conflicts: read.conflicts },
+    { error: clashMessageAr(read.conflicts), code: CONSULTATION_OVERLAP_CODE, conflicts: read.conflicts },
+    { status: 409 },
+  );
+}
+
+/**
+ * The hearing routes' half (owner q357): a timed, scheduled hearing checked
+ * against the lawyer's consultations and other hearings. null when it may be
+ * saved; a 409 `hearing_overlap` until the lawyer confirms; 503 on a failed read.
+ */
+export async function hearingOverlapRefusal(
+  supabase: SupabaseClient,
+  args: { lawyerUserId: string; startMs: number; durationMinutes: number; excludeHearingId?: string | null; confirmOverlap: boolean },
+): Promise<NextResponse | null> {
+  const read = await readScheduleConflicts(supabase, args);
+  if (!read.ok) {
+    return NextResponse.json({ error: "تعذّر التحقق من تعارض المواعيد. حاول مرة أخرى." }, { status: 503 });
+  }
+  if (read.conflicts.length === 0 || args.confirmOverlap) return null;
+  return NextResponse.json(
+    { error: clashMessageAr(read.conflicts), code: HEARING_OVERLAP_CODE, conflicts: read.conflicts },
     { status: 409 },
   );
 }

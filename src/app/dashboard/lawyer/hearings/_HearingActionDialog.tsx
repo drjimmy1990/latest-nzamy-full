@@ -17,7 +17,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import ModalShell from "@/components/ui/ModalShell";
-import { updateLawyerHearing, type HearingDto, type UpdateHearingInput } from "@/lib/services/lawyerHearingsService";
+import { HearingOverlapError, updateLawyerHearing, type HearingDto, type UpdateHearingInput } from "@/lib/services/lawyerHearingsService";
 import {
   actionNeedsReason, HEARING_ACTION_LABEL_AR, HEARING_REASON_MAX, type HearingAction,
 } from "@/lib/services/hearingChange";
@@ -56,6 +56,8 @@ export default function HearingActionDialog({
   const today = useRiyadhToday();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // q357: the server's 409 hearing_overlap for the new slot; cleared by any slot change.
+  const [overlapWarning, setOverlapWarning] = useState<string | null>(null);
   const [reason, setReason] = useState("");
   const [date, setDate] = useState(action === "postpone" ? hearing.date : "");
   const [time, setTime] = useState(hearing.time ?? "");
@@ -93,8 +95,9 @@ export default function HearingActionDialog({
   const dirty = !!reason.trim() || (action === "edit" ? Object.keys(editChanges).length > 0
     : showDate ? date !== (action === "postpone" ? hearing.date : "") || (time || "") !== (hearing.time ?? "") : false);
 
-  const submit = async () => {
+  const submit = async (confirmOverlap = false) => {
     setError(null);
+    setOverlapWarning(null);
     if (needsReason && !reason.trim()) { setError("اذكر سبب التغيير — يُحفظ في سجل الموعد."); return; }
     if (showDate && !date) { setError("حدِّد التاريخ الجديد."); return; }
     if (action === "edit" && Object.keys(editChanges).length === 0) { setError("لم تغيّر شيئاً بعد."); return; }
@@ -102,6 +105,7 @@ export default function HearingActionDialog({
     if (action === "postpone") Object.assign(input, { date, time: time || null });
     if (reopenNeedsDate) input.date = date;
     if (action === "edit") Object.assign(input, editChanges);
+    if (confirmOverlap) input.confirmOverlap = true;
     setSaving(true);
     try {
       const row = await updateLawyerHearing(hearing.id, input);
@@ -109,6 +113,7 @@ export default function HearingActionDialog({
       onSaved?.(row);
       onClose();
     } catch (e) {
+      if (e instanceof HearingOverlapError) { setOverlapWarning(e.message); return; }
       setError(e instanceof Error && e.message ? e.message : "تعذّر حفظ التغيير.");
     } finally {
       setSaving(false);
@@ -155,13 +160,13 @@ export default function HearingActionDialog({
         {showDate && (
           <div>
             <label htmlFor="ha-date" className={labelCls}>التاريخ الجديد</label>
-            <input id="ha-date" type="date" min={today || undefined} value={date} onChange={e => setDate(e.target.value)} className={inputCls} />
+            <input id="ha-date" type="date" min={today || undefined} value={date} onChange={e => { setDate(e.target.value); setOverlapWarning(null); }} className={inputCls} />
           </div>
         )}
         {showTime && (
           <div>
             <label htmlFor="ha-time" className={labelCls}>الوقت {action === "postpone" ? "الجديد" : ""} (اختياري)</label>
-            <input id="ha-time" type="time" value={time} onChange={e => setTime(e.target.value)} className={inputCls} />
+            <input id="ha-time" type="time" value={time} onChange={e => { setTime(e.target.value); setOverlapWarning(null); }} className={inputCls} />
           </div>
         )}
         {action === "edit" && (
@@ -194,6 +199,15 @@ export default function HearingActionDialog({
           <p className={`mt-1 text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>يُحفظ في سجل تغييرات الموعد وسجل نشاط القضية.</p>
         </div>
         {error && <p role="alert" className="text-[12px] font-semibold text-red-500">{error}</p>}
+        {overlapWarning && (
+          <div role="alert" className={`rounded-xl px-3 py-2 text-[12px] font-semibold ${isDark ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" : "bg-amber-50 text-amber-700 border border-amber-200"}`}>
+            <p>{overlapWarning}</p>
+            <button type="button" onClick={() => void submit(true)} disabled={saving}
+              className="mt-2 rounded-lg bg-amber-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-amber-700 disabled:opacity-60">
+              حفظ رغم التعارض
+            </button>
+          </div>
+        )}
         <div className="flex gap-2 pt-1">
           <button type="submit" disabled={saving}
             className={`flex-1 rounded-xl py-2.5 text-[13px] font-bold text-white disabled:opacity-60 ${danger ? "bg-red-600 hover:bg-red-700" : "bg-royal hover:opacity-90"}`}>

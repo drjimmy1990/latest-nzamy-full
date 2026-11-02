@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle, LinkBreak, Scales } from "@phosphor-icons/react";
 import { createWorkflowRequest, getWorkflowRequestsByReceiver } from "@/lib/services/workflowService";
 import { apiGet, isSupabaseMode } from "@/lib/services/api";
-import { createLawyerHearing } from "@/lib/services/lawyerHearingsService";
+import { createLawyerHearing, HearingOverlapError } from "@/lib/services/lawyerHearingsService";
 import type { WorkflowRequest } from "@/lib/workflowStore";
 import ModalShell from "@/components/ui/ModalShell";
 import { isLawyerCaseRow } from "../cases/_caseListRules";
@@ -82,6 +82,9 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
   const [done, setDone] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // q357: the server's 409 hearing_overlap — the hour clashes with a
+  // consultation or another hearing. Cleared by any change to the slot.
+  const [overlapWarning, setOverlapWarning] = useState<string | null>(null);
   // What the SERVER stored — the success screen reads this, not the form.
   const [saved, setSaved] = useState<{ date: string; linked: boolean; caseName?: string } | null>(null);
   const typeRef = useRef<HTMLSelectElement | null>(null);
@@ -160,7 +163,7 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
     </button>
   );
 
-  async function handleSave() {
+  async function handleSave(confirmOverlap = false) {
     // A hearing with no date is not a diary entry — the calendar has nowhere to
     // put it, and the old code defaulted it to "today, forever". The date input
     // is now gated in step 1 as well; this is the backstop.
@@ -179,6 +182,7 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
     }
     setSaving(true);
     setError(null);
+    setOverlapWarning(null);
     try {
       const typeLabel = TYPE_OPTIONS.find(t => t.value === type)?.label ?? "جلسة";
       // The case-name branch used to hardcode a title regardless of which type
@@ -211,6 +215,7 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
         const created = await createLawyerHearing({
           type, date, time, caseName: linkId ? undefined : caseName, caseRequestId: linkId, urgency,
           location: effectiveLocation, notes, title, durationMinutes: effectiveDuration,
+          ...(confirmOverlap ? { confirmOverlap: true } : {}),
         });
         setSaved({ date: created.date, linked: !!created.caseRequestId, caseName: created.caseName });
       } else {
@@ -238,6 +243,11 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
       setDone(true);
       window.dispatchEvent(new CustomEvent("nzamy-workflow-updated"));
     } catch (err) {
+      if (err instanceof HearingOverlapError) {
+        // Warn, then let the lawyer confirm — not a failure.
+        setOverlapWarning(err.message);
+        return;
+      }
       console.error("[AddHearingModal] save failed:", err);
       setError(
         err instanceof Error && err.message
@@ -377,7 +387,7 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>التاريخ <span className="text-red-500">*</span></label>
-                      <DualDatePicker label="تاريخ الموعد" value={date} onChange={setDate} className={inputCls} />
+                      <DualDatePicker label="تاريخ الموعد" value={date} onChange={(v) => { setDate(v); setOverlapWarning(null); }} className={inputCls} />
                     </div>
                     <div>
                       {/* «(اختياري)» because it IS optional and was not saying so.
@@ -385,7 +395,7 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
                           this form allows; the read-back below names it rather
                           than letting the lawyer find out on the calendar. */}
                       <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>الوقت <span className={isDark ? "text-zinc-500" : "text-slate-400"}>(اختياري)</span></label>
-                      <input type="time" value={time} onChange={e => setTime(e.target.value)} className={inputCls} />
+                      <input type="time" value={time} onChange={e => { setTime(e.target.value); setOverlapWarning(null); }} className={inputCls} />
                     </div>
                   </div>
 
@@ -459,7 +469,7 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
                   {showDuration && (
                     <div>
                       <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{HEARING_DURATION_LABEL_AR} <span className={isDark ? "text-zinc-500" : "text-slate-400"}>(اختياري)</span></label>
-                      <select value={duration} onChange={e => setDuration(e.target.value)} className={inputCls}>
+                      <select value={duration} onChange={e => { setDuration(e.target.value); setOverlapWarning(null); }} className={inputCls}>
                         <option value="">—</option>
                         {HEARING_DURATION_OPTIONS.map(m => <option key={m} value={String(m)}>{formatDurationAr(m)}</option>)}
                       </select>
@@ -477,11 +487,20 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
                       {urgencyBtn("normal", "طبيعية", isDark ? "border-white/[0.08] bg-zinc-800 text-zinc-300 focus:ring-blue-500/50" : "border-slate-200 bg-white text-slate-600 focus:ring-blue-500/50")}
                     </div>
                   </div>
+                  {overlapWarning && (
+                    <div role="alert" className={`rounded-xl px-3 py-2 text-[12px] font-semibold ${isDark ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" : "bg-amber-50 text-amber-700 border border-amber-200"}`}>
+                      <p>{overlapWarning}</p>
+                      <button type="button" onClick={() => handleSave(true)} disabled={saving}
+                        className="mt-2 rounded-lg bg-amber-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-amber-700 disabled:opacity-60">
+                        حفظ رغم التعارض
+                      </button>
+                    </div>
+                  )}
                   <div className="flex gap-2 mt-6">
                     <button onClick={() => setStep(1)} className={`flex-1 rounded-xl py-2.5 text-[13px] font-bold transition ${isDark ? "bg-white/[0.08] text-zinc-300 hover:bg-white/[0.12]" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
                       رجوع
                     </button>
-                    <button onClick={handleSave} disabled={saving} className="flex-[2] rounded-xl bg-[#0B3D2E] text-[#C8A762] py-2.5 text-[13px] font-bold hover:bg-[#092e22] shadow-[0_4px_12px_rgba(11,61,46,0.3)] transition disabled:opacity-50">
+                    <button onClick={() => handleSave()} disabled={saving} className="flex-[2] rounded-xl bg-[#0B3D2E] text-[#C8A762] py-2.5 text-[13px] font-bold hover:bg-[#092e22] shadow-[0_4px_12px_rgba(11,61,46,0.3)] transition disabled:opacity-50">
                       {saving ? "جارٍ الحفظ..." : "حفظ الموعد"}
                     </button>
                   </div>

@@ -13,7 +13,8 @@
 
 "use client";
 
-import { apiGet, apiMutate } from "@/lib/services/api";
+import { apiGet } from "@/lib/services/api";
+import { isDemoMode } from "@/lib/runtimeMode";
 
 export interface HearingHistoryEntryDto {
   at: string;
@@ -84,10 +85,50 @@ export interface CreateHearingInput {
   title: string;
   /** «مدة الجلسة» in minutes (5–1440); null/absent = not set. */
   durationMinutes?: number | null;
+  /** Save even though the slot overlaps a consultation or another hearing (q357). */
+  confirmOverlap?: boolean;
+}
+
+/**
+ * Thrown when the server answers 409 `hearing_overlap` (owner q357): the
+ * hearing shares time with a scheduled consultation or another hearing of the
+ * same lawyer. The screen shows `message` and offers to resend with
+ * `confirmOverlap: true`. PATCH has two other 409s (a stale row, an action not
+ * allowed) — they stay plain Errors, told apart by `code`, not status.
+ */
+export class HearingOverlapError extends Error {
+  readonly conflicts: Array<{ kind: string; id: string; scheduledAt: string; durationMinutes: number }>;
+  constructor(message: string, conflicts: HearingOverlapError["conflicts"]) {
+    super(message);
+    this.name = "HearingOverlapError";
+    this.conflicts = conflicts;
+  }
+}
+
+/** apiMutate, plus the overlap warning it cannot express (it keeps only `error`). */
+async function mutateHearing<T>(url: string, method: "POST" | "PATCH", body: unknown): Promise<T> {
+  if (isDemoMode) {
+    throw new Error("وضع العرض التجريبي محلي بالكامل: لا يُرسَل أي حفظ أو تعديل إلى الخادم.");
+  }
+  const response = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    credentials: "same-origin",
+    cache: "no-store",
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => ({ error: "Request failed" }));
+    if (response.status === 409 && errorBody?.code === "hearing_overlap") {
+      throw new HearingOverlapError(errorBody.error, Array.isArray(errorBody.conflicts) ? errorBody.conflicts : []);
+    }
+    throw new Error(errorBody.error || `API error: ${response.status}`);
+  }
+  return response.json() as Promise<T>;
 }
 
 export async function createLawyerHearing(input: CreateHearingInput): Promise<HearingDto> {
-  const res = await apiMutate<{ data: HearingDto }>("/api/v1/lawyer/hearings", "POST", input);
+  const res = await mutateHearing<{ data: HearingDto }>("/api/v1/lawyer/hearings", "POST", input);
   return res.data;
 }
 
@@ -109,9 +150,11 @@ export interface UpdateHearingInput {
   urgency?: string;
   durationMinutes?: number | null;
   caseRequestId?: string | null;
+  /** Save even though the new slot overlaps (q357); see HearingOverlapError. */
+  confirmOverlap?: boolean;
 }
 
 export async function updateLawyerHearing(id: string, input: UpdateHearingInput): Promise<HearingDto> {
-  const res = await apiMutate<{ data: HearingDto }>(`/api/v1/lawyer/hearings/${encodeURIComponent(id)}`, "PATCH", input);
+  const res = await mutateHearing<{ data: HearingDto }>(`/api/v1/lawyer/hearings/${encodeURIComponent(id)}`, "PATCH", input);
   return res.data;
 }
