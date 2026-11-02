@@ -333,6 +333,12 @@ export default function RecordStageOutcomeModal({ onClose, isDark, caseRequestId
                         </button>
                       )}
                       {triggerBeforeJudgment && <p className="mt-1.5 text-[11px] font-semibold text-red-500">لا يسبق تاريخ صدور الحكم</p>}
+                      {/* q347 / review M6: the save is disabled until this date is in — say so. */}
+                      {triggerDateMissing && (
+                        <p className="mt-1.5 text-[11px] font-semibold text-red-500">
+                          أدخل {TRIGGER_EVENT_LABEL_AR[triggerEvent]} لتُحسب المهلة ويُحفظ القرار، أو اختر «تاريخ صدور الحكم» أعلاه.
+                        </p>
+                      )}
                     </div>
                   )}
                 </fieldset>
