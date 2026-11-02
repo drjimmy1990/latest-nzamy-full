@@ -9,7 +9,7 @@ import { catalogPriceLabel } from "@/lib/pricing/catalogPriceLabel";
 // rows), read through catalogPriceLabel — no price is typed here. The old
 // «٢٤٩» / «١٩٩» / «١٤٩» / «يبدأ من ٤٩٩» were charged by nothing. Notary and
 // government follow-up have no catalogue row, so they name no number.
-const AFTER_ASSESSMENT = { ar: "يُحدد بعد التقييم", en: "Determined after assessment" } as const;
+const AFTER_ASSESSMENT: { ar: string; en: string } = { ar: "يُحدد بعد التقييم", en: "Determined after assessment" };
 const catalogPrice = (serviceId: string, lang: "ar" | "en"): string =>
   catalogPriceLabel(serviceId, CLIENT_SERVICE_CATALOG, lang) ?? AFTER_ASSESSMENT[lang];
 
