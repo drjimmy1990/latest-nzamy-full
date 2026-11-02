@@ -189,6 +189,11 @@ function sanitizeUsage(raw: unknown): Record<string, unknown> | null {
   };
 }
 
+/**
+ * ctx.review stores a success as "review" (held from the user). Every caller
+ * passes false until Wave 3 builds release / reject with a refund; without it
+ * a review run was charged and never shown.
+ */
 export async function settleRunWith(
   admin: SupabaseClient,
   ctx: { spec: AiToolSpec; runId: string; sources: SourceMap; review: boolean; input: Record<string, unknown> },
@@ -281,6 +286,8 @@ export async function startRunWith(
 
   const runtime = resolveToolRuntime(spec, await readAiToolsSetting(admin));
   // "staff": only admins, so a tool can be tried on production before it opens.
+  // A stored "review" arrives here as "staff" (aiToolsConfig.effectiveToolMode),
+  // so it too is refused here, before ai_start_run charges anything.
   if (runtime.mode === "off" || (runtime.mode === "staff" && !isAdmin)) {
     return { status: 423, body: { error: AI_COPY.off, code: "tool_off" } };
   }
@@ -562,9 +569,11 @@ export async function startRunWith(
   }
 
   // A job tool must answer 202; callN8n never returns a result for async.
+  // review is false until Wave 3's money-safe gate (release / reject with a
+  // refund): a stored "review" now runs as "staff" and is never hidden.
   const settled = await settleRunWith(
     admin,
-    { spec, runId: run.run_id, sources, review: runtime.mode === "review", input: checked.input },
+    { spec, runId: run.run_id, sources, review: false, input: checked.input },
     outcome.result,
   );
   if (settled.kind === "succeeded") {
@@ -625,10 +634,10 @@ export async function callbackWith(admin: SupabaseClient, body: unknown): Promis
     return { status: 200, body: { ok: true, final: "failed" } };
   }
 
-  const { data: setting } = await admin.from("platform_settings").select("value").eq("key", "ai_tools").maybeSingle();
-  const review = resolveToolRuntime(spec, (setting as { value?: unknown } | null)?.value ?? null).mode === "review";
+  // No run is held for review until Wave 3's money-safe gate: a job started
+  // while its tool was stored as "review" settles as succeeded and is shown.
   const sources = (isPlainObject(run.source_ids) ? run.source_ids : {}) as SourceMap;
   const input = (isPlainObject(run.input) ? run.input : {}) as Record<string, unknown>;
-  const settled = await settleRunWith(admin, { spec, runId, sources, review, input }, body);
+  const settled = await settleRunWith(admin, { spec, runId, sources, review: false, input }, body);
   return { status: 200, body: { ok: true, final: settled.kind === "succeeded" ? settled.status : settled.kind } };
 }
