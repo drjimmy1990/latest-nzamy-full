@@ -40,8 +40,11 @@ test("every counted allowance on an individual plan says the team applies it on 
       assert.match(text, MARKED, `${file}: «${text}»`);
     }
   }
-  // 3 card lines × AR/EN in both files, plus 3 comparison cells × AR/EN.
-  assert.equal(seen, 18);
+  // Zero since q329 (owner package of 1 Nov 2026): the two plans that carried
+  // these lines — ind-preventive and ind-litigation — are retired and have no
+  // card, column or plan entry. A plan that promises one again must say how
+  // it is applied (the match above).
+  assert.equal(seen, 0);
 });
 
 test("the grant behind those plans is a tier only — nothing counts consultations or contract reviews", () => {

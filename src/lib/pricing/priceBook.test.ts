@@ -27,6 +27,7 @@ import {
   offeredSar,
   renewalPrice,
   type BookEntry,
+  type Cycle,
 } from "./priceBook.ts";
 
 test("the cycles are 1 / 3 / 6 / 12 months, with Arabic labels", () => {
@@ -84,14 +85,23 @@ test("owner package 30 Oct 2026 (٢٩٩–٣٠٢): the book holds the revised do
 
 const PROFESSIONAL_MONTHLY_RETIRED = ["lawyer-pro", "consultant-independent", "firm-basic", "firm-enterprise"];
 
-/** ٣٠٣: only what the revised doc gives a launch price has one. */
+/**
+ * Owner package of 1 Nov 2026 §6.2.1 (q329 — Wave 1 task 5): individuals buy
+ * yearly only. The cycles retired here, by id; nothing is deleted.
+ */
+const INDIVIDUAL_RETIRED: Record<string, readonly string[]> = {
+  "ind-ai": ["monthly", "quarterly", "semiannual"],
+  "ind-preventive": ["monthly", "yearly"],
+  "ind-litigation": ["monthly", "yearly"],
+};
+
+/** ٣٠٣: only what the revised doc gives a launch price has one (ind-ai's 199 retired by q329). */
 const LAUNCH_PRICED: Record<string, Record<string, number>> = {
-  "ind-ai": { yearly: 199 },
   "firm-basic": { yearly: 8415 },
   "firm-enterprise": { yearly: 12665 },
 };
 
-test("no entry is retired or coming soon; only the professionals' monthly cycle is retired; launch prices only where the doc has one", () => {
+test("no entry is retired or coming soon; the professionals' monthly cycle and the individuals' cancelled cycles are retired; launch prices only where the doc has one", () => {
   for (const entry of Object.values(PRICE_BOOK)) {
     assert.equal(entry.retired, undefined, entry.id);
     assert.equal(entry.comingSoon, undefined, entry.id);
@@ -101,9 +111,14 @@ test("no entry is retired or coming soon; only the professionals' monthly cycle 
       LAUNCH_PRICED[entry.id] ? [{ campaignId: "launch-2026", prices: LAUNCH_PRICED[entry.id] }] : undefined,
       entry.id,
     );
-    assert.ok(isOnSale(entry), entry.id);
+    // ind-preventive / ind-litigation: every cycle retired, so not on sale
+    // (the entry carries no `retired` flag of its own: its prices do).
+    const allRetired = entry.id === "ind-preventive" || entry.id === "ind-litigation";
+    assert.equal(isOnSale(entry), !allRetired, entry.id);
     for (const [billing, p] of Object.entries(entry.prices)) {
-      const retired = billing === "monthly" && PROFESSIONAL_MONTHLY_RETIRED.includes(entry.id);
+      const retired =
+        (billing === "monthly" && PROFESSIONAL_MONTHLY_RETIRED.includes(entry.id)) ||
+        (INDIVIDUAL_RETIRED[entry.id] ?? []).includes(billing);
       assert.equal(p!.retired, retired ? true : undefined, `${entry.id} ${billing}`);
     }
   }
@@ -135,13 +150,41 @@ test("the professionals' monthly cycle (owner, 26 Oct: 399/month cancelled) is n
     assert.deepEqual(renewalPrice(id, "monthly"), { status: "retired", sar }, `${id}: B2 must notify, never renew it silently`);
     assert.throws(() => bookSar(id, "monthly"), id);
   }
-  assert.deepEqual(offeredBillings(PRICE_BOOK["ind-ai"]), ["monthly", "quarterly", "semiannual", "yearly"], "ind-ai: ٣٠١ four cycles");
-  for (const id of ["ind-preventive", "ind-litigation"]) {
-    assert.deepEqual(offeredBillings(PRICE_BOOK[id]), ["monthly", "yearly"], `${id}: individuals keep monthly`);
-  }
 });
 
-test("quarterly / half-yearly prices only on ind-ai and the two firm plans (the DB accepts them since 20261026_10)", () => {
+test("q329 (owner package of 1 Nov 2026): ind-ai is sold yearly at 249 only, with no launch price; ind-preventive and ind-litigation are sold in no cycle", () => {
+  const ai = PRICE_BOOK["ind-ai"];
+  assert.deepEqual(offeredBillings(ai), ["yearly"]);
+  assert.equal(offeredSar(ai, "yearly"), 249, "249 before VAT, as before — the VAT question is the owner's");
+  assert.equal(ai.launchPrices, undefined, "the 199 launch price is retired");
+  assert.equal(activeLaunchPrice(ai, "yearly", new Date("2026-12-01T09:00:00Z")), null);
+  for (const id of ["ind-preventive", "ind-litigation"]) {
+    assert.equal(isOnSale(PRICE_BOOK[id]), false, id);
+    assert.deepEqual(offeredBillings(PRICE_BOOK[id]), [], id);
+  }
+  // lookups by id still resolve (orders, receipts, admin, refunds)
+  for (const id of Object.keys(INDIVIDUAL_RETIRED)) assert.equal(bookEntry(id)?.id, id);
+  assert.equal(bookEntry("ind-litigation")?.labelAr, "التأمين القانوني");
+  // the founder membership is untouched
+  assert.ok(isOnSale(PRICE_BOOK["lawyer-founder-2026"]));
+});
+
+test("q329: every retired individual (id, cycle) resolves for the renewal lookup at its listed price, and a page asking for it throws", () => {
+  const listed: Record<string, Record<string, number>> = {
+    "ind-ai": { monthly: 29, quarterly: 79, semiannual: 149 },
+    "ind-preventive": { monthly: 149, yearly: 1490 },
+    "ind-litigation": { monthly: 399, yearly: 3990 },
+  };
+  for (const [id, cycles] of Object.entries(INDIVIDUAL_RETIRED)) {
+    for (const cycle of cycles) {
+      assert.deepEqual(renewalPrice(id, cycle), { status: "retired", sar: listed[id][cycle] }, `${id} ${cycle}`);
+      assert.throws(() => bookSar(id, cycle as Cycle), `${id} ${cycle}`);
+    }
+  }
+  assert.deepEqual(renewalPrice("ind-ai", "yearly"), { status: "sold", sar: 249 });
+});
+
+test("quarterly / half-yearly prices only on ind-ai (listed, retired) and the two firm plans (the DB accepts them since 20261026_10)", () => {
   const withNewCycles = Object.values(PRICE_BOOK)
     .filter((e) => Object.hasOwn(e.prices, "quarterly") || Object.hasOwn(e.prices, "semiannual"))
     .map((e) => e.id)
@@ -181,20 +224,20 @@ test("٣٠٣: the launch campaign's dates are the owner's", () => {
 });
 
 test("٣٠٣: a launch price runs only inside its Riyadh days, and only for the cycle the doc gives one", () => {
-  const ai = PRICE_BOOK["ind-ai"];
+  const firm = PRICE_BOOK["firm-basic"];
   // 24 Oct 20:59 UTC = 24 Oct 23:59 Riyadh — the day before
-  assert.equal(activeLaunchPrice(ai, "yearly", new Date("2026-10-24T20:59:00Z")), null);
+  assert.equal(activeLaunchPrice(firm, "yearly", new Date("2026-10-24T20:59:00Z")), null);
   // 24 Oct 21:00 UTC = 25 Oct 00:00 Riyadh — the first day
-  assert.deepEqual(activeLaunchPrice(ai, "yearly", new Date("2026-10-24T21:00:00Z")), {
-    campaignId: "launch-2026", sar: 199, listSar: 249, endsOn: "2027-01-25",
+  assert.deepEqual(activeLaunchPrice(firm, "yearly", new Date("2026-10-24T21:00:00Z")), {
+    campaignId: "launch-2026", sar: 8415, listSar: 9900, endsOn: "2027-01-25",
   });
   // 25 Jan 2027 23:59 Riyadh — the last day still runs
-  assert.equal(activeLaunchPrice(ai, "yearly", new Date("2027-01-25T20:59:00Z"))?.sar, 199);
+  assert.equal(activeLaunchPrice(firm, "yearly", new Date("2027-01-25T20:59:00Z"))?.sar, 8415);
   // 26 Jan 2027 00:00 Riyadh — gone by itself
-  assert.equal(activeLaunchPrice(ai, "yearly", new Date("2027-01-25T21:00:00Z")), null);
+  assert.equal(activeLaunchPrice(firm, "yearly", new Date("2027-01-25T21:00:00Z")), null);
   // the doc gives no launch price for the other cycles
-  for (const b of ["monthly", "quarterly", "semiannual"] as const) {
-    assert.equal(activeLaunchPrice(ai, b, new Date("2026-11-01T09:00:00Z")), null, b);
+  for (const b of ["quarterly", "semiannual"] as const) {
+    assert.equal(activeLaunchPrice(firm, b, new Date("2026-11-01T09:00:00Z")), null, b);
   }
   // a retired cycle never has one
   assert.equal(activeLaunchPrice(PRICE_BOOK["firm-basic"], "monthly", new Date("2026-11-01T09:00:00Z")), null);
@@ -202,7 +245,7 @@ test("٣٠٣: a launch price runs only inside its Riyadh days, and only for the 
 
 test("٣٠٣: activeLaunchPrices lists every running launch price by id:billing, and nothing outside the campaign", () => {
   const during = activeLaunchPrices(new Date("2026-12-01T09:00:00Z"));
-  assert.deepEqual(Object.keys(during).sort(), ["firm-basic:yearly", "firm-enterprise:yearly", "ind-ai:yearly"]);
+  assert.deepEqual(Object.keys(during).sort(), ["firm-basic:yearly", "firm-enterprise:yearly"]);
   assert.equal(during["firm-basic:yearly"].sar, 8415);
   assert.equal(during["firm-enterprise:yearly"].sar, 12665);
   assert.deepEqual(activeLaunchPrices(new Date("2027-02-01T09:00:00Z")), {});
@@ -281,7 +324,8 @@ test("formatSarAmount: Arabic digits with «٬», English with commas", () => {
 test("bookPriceText / bookSar read a sold price and throw for anything else", () => {
   assert.equal(bookPriceText("lawyer-pro", "yearly", "ar"), "٣٬٩٩٠");
   assert.equal(bookPriceText("lib-q2", "once", "en"), "1,920");
-  assert.equal(bookSar("ind-ai", "monthly"), 29);
+  assert.equal(bookSar("ind-ai", "yearly"), 249);
+  assert.throws(() => bookSar("ind-ai", "monthly"), "q329: individuals are not sold monthly");
   assert.throws(() => bookPriceText("lawyer-pro", "quarterly", "ar"));
   assert.throws(() => bookPriceText("lawyer-pro", "monthly", "ar"), "a retired cycle is not sold");
   assert.throws(() => bookPriceText("lib-q1", "monthly", "ar"));

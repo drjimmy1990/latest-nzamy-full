@@ -29,9 +29,16 @@ const card = (id: string, extra: Partial<CardPriceFields> = {}): CardPriceFields
 test("a book card's price is the book's, in each cycle it is sold", () => {
   assert.deepEqual(cardPrice(card("lawyer-pro"), "yearly", "ar"), { price: "٣٬٩٩٠", period: "ر.س / سنة" });
   assert.equal(cardPrice(card("lawyer-pro"), "monthly", "ar"), null, "the professionals' monthly cycle is retired");
-  assert.deepEqual(cardPrice(card("ind-ai"), "monthly", "ar"), { price: "٢٩", period: "ر.س / شهر" });
   assert.deepEqual(cardPrice(card("ind-ai", { periodYearly: "SAR / year" }), "yearly", "en"), { price: "249", period: "SAR / year" });
-  assert.deepEqual(cardPrice(card("ind-ai"), "quarterly", "ar"), { price: "٧٩", period: "ر.س / ٣ أشهر" });
+  // q329 (owner package of 1 Nov 2026): no card in a cycle checkout refuses
+  for (const cycle of ["monthly", "quarterly", "semiannual"] as Cycle[]) {
+    assert.equal(cardPrice(card("ind-ai"), cycle, "ar"), null, `ind-ai ${cycle} is retired`);
+  }
+  for (const id of ["ind-preventive", "ind-litigation"]) {
+    for (const cycle of ["monthly", "quarterly", "semiannual", "yearly"] as Cycle[]) {
+      assert.equal(cardPrice(card(id), cycle, "ar"), null, `${id} ${cycle} is retired`);
+    }
+  }
   assert.deepEqual(cardPrice(card("firm-basic"), "semiannual", "en"), { price: "5,490", period: "SAR / 6 months" });
   assert.equal(cardPrice(card("lawyer-pro"), "quarterly", "ar"), null, "no quarterly price: the card is not shown in that cycle");
 });
@@ -77,12 +84,12 @@ test("lawyers see yearly only; firms quarterly / half / yearly (§6أ); the mont
   const lawyers = ["lawyer-pro", "topup-500", "topup-1000", "topup-2500", "topup-5000", "topup-10000"].map((id) => ({ id }));
   assert.deepEqual(offeredCycles("lawyers", lawyers), ["yearly"]);
   assert.deepEqual(offeredCycles("firms", [{ id: "firm-basic" }, { id: "firm-enterprise" }]), ["quarterly", "semiannual", "yearly"]);
-  // individuals: ind-ai sells all four cycles (٣٠١), the other two monthly and yearly
+  // individuals (q329, owner package of 1 Nov 2026): yearly only — even a stray
+  // card of a retired plan adds no cycle to the toggle
   assert.deepEqual(
     offeredCycles("individuals", [{ id: "pay-per-piece" }, { id: "ind-ai" }, { id: "ind-preventive" }, { id: "ind-litigation" }]),
-    ["monthly", "quarterly", "semiannual", "yearly"],
+    ["yearly"],
   );
-  assert.equal(cardPrice(card("ind-preventive"), "quarterly", "ar"), null, "not sold quarterly: hidden in that cycle");
   // only one-payment or non-book cards: no cycle toggle at all
   assert.deepEqual(offeredCycles("lawyers", [{ id: "lib-q1" }, { id: "lib-q2" }, { id: "lib-annual" }]), []);
   assert.deepEqual(offeredCycles("companies", [{ id: "biz-sm-basic" }]), []);
@@ -127,7 +134,8 @@ test("derivation: no card of a price-book id carries a price string in src/const
       }
     }
   }
-  assert.equal(cards, 34, "17 book items, once in Arabic and once in English");
+  // ind-preventive / ind-litigation have no card since q329 (retired in the book)
+  assert.equal(cards, 30, "15 book items, once in Arabic and once in English");
 });
 
 test("derivation: the price tables read the book too (firms, individuals comparison rows)", () => {
@@ -145,10 +153,9 @@ test("derivation: the price tables read the book too (firms, individuals compari
 const DURING = activeLaunchPrices(new Date("2026-12-01T09:00:00Z"));
 
 test("٣٠٣: a card shows a launch price only from the server's map, and only for the cycle it runs in", () => {
-  assert.deepEqual(cardLaunch({ id: "ind-ai" }, "yearly", DURING, "ar"), { price: "١٩٩", original: "٢٤٩" });
   assert.deepEqual(cardLaunch({ id: "firm-basic" }, "yearly", DURING, "en"), { price: "8,415", original: "9,900" });
   assert.deepEqual(cardLaunch({ id: "firm-enterprise" }, "yearly", DURING, "en"), { price: "12,665", original: "14,900" });
-  assert.equal(cardLaunch({ id: "ind-ai" }, "monthly", DURING, "ar"), null, "no launch price for the monthly cycle");
+  assert.equal(cardLaunch({ id: "ind-ai" }, "yearly", DURING, "ar"), null, "q329: the 199 launch price is retired");
   assert.equal(cardLaunch({ id: "firm-basic" }, "quarterly", DURING, "ar"), null);
   assert.equal(cardLaunch({ id: "lawyer-pro" }, "yearly", DURING, "ar"), null, "the doc gives lawyer-pro none");
   // the first render and after the campaign: nothing
@@ -183,11 +190,12 @@ test("٣٠٣: the card never decides the date — no clock in cardPrice or the c
 // ── UX14: the VAT-inclusive total and the cycle next to the button ─────────────
 
 test("UX14: the total with VAT is checkout's own arithmetic, in the card's billing", () => {
-  assert.equal(cardTotalWithVat({ id: "ind-ai" }, "monthly", null, "ar"), "الإجمالي شامل الضريبة ٣٣٫٣٥ ر.س · شهري");
+  assert.equal(cardTotalWithVat({ id: "ind-ai" }, "yearly", null, "ar"), "الإجمالي شامل الضريبة ٢٨٦٫٣٥ ر.س · سنوي");
+  assert.equal(cardTotalWithVat({ id: "ind-ai" }, "monthly", null, "ar"), null, "q329: not sold monthly");
   assert.equal(cardTotalWithVat({ id: "lawyer-pro" }, "yearly", null, "en"), "Total incl. VAT: SAR 4,588.50 · Yearly");
   assert.equal(cardTotalWithVat({ id: "lib-annual" }, "monthly", null, "en"), "Total incl. VAT: SAR 4,013.50 · One payment");
   // a launch price is what the total is computed from
-  assert.equal(cardTotalWithVat({ id: "ind-ai" }, "yearly", DURING, "en"), "Total incl. VAT: SAR 228.85 · Yearly");
+  assert.equal(cardTotalWithVat({ id: "firm-basic" }, "yearly", DURING, "en"), "Total incl. VAT: SAR 9,677.25 · Yearly");
   // nothing for a card the book does not price, or a cycle it does not sell
   assert.equal(cardTotalWithVat({ id: "biz-sm-basic" }, "yearly", null, "ar"), null);
   assert.equal(cardTotalWithVat({ id: "lawyer-pro" }, "monthly", null, "ar"), null);

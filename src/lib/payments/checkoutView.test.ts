@@ -37,9 +37,20 @@ import {
 test("checkoutHref: a signed-in buyer with the gateway on goes to /checkout", () => {
   assert.equal(checkoutHref("lawyer-pro", "yearly", true, true), "/checkout?item=lawyer-pro&billing=yearly");
   assert.equal(checkoutHref("lawyer-pro", "monthly", true, true), null, "the professionals' monthly cycle is retired (owner, 26 Oct)");
-  assert.equal(checkoutHref("ind-ai", "monthly", true, true), "/checkout?item=ind-ai&billing=monthly", "individuals keep monthly");
+  assert.equal(checkoutHref("ind-ai", "yearly", true, true), "/checkout?item=ind-ai&billing=yearly");
   assert.equal(checkoutHref("firm-basic", "yearly", true, true), "/checkout?item=firm-basic&billing=yearly");
-  assert.equal(checkoutHref("ind-litigation", "yearly", true, true), "/checkout?item=ind-litigation&billing=yearly");
+  // q329 (owner package of 1 Nov 2026): no buy link for a cancelled plan or cycle
+  for (const [id, billing] of [
+    ["ind-ai", "monthly"],
+    ["ind-ai", "quarterly"],
+    ["ind-ai", "semiannual"],
+    ["ind-preventive", "monthly"],
+    ["ind-preventive", "yearly"],
+    ["ind-litigation", "monthly"],
+    ["ind-litigation", "yearly"],
+  ] as const) {
+    assert.equal(checkoutHref(id, billing, true, true), null, `${id} ${billing}`);
+  }
 });
 
 test("checkoutHref: top-ups and library plans are paid once, whatever the /pricing toggle says", () => {
@@ -61,7 +72,7 @@ test("checkoutHref: null keeps today's request flow (gateway off, guest, or not 
 });
 
 test("checkoutBillingFor maps the toggle to a billing the item offers", () => {
-  assert.equal(checkoutBillingFor(PAYABLE_ITEMS["ind-ai"], "monthly"), "monthly");
+  assert.equal(checkoutBillingFor(PAYABLE_ITEMS["ind-ai"], "monthly"), null, "q329: retired");
   assert.equal(checkoutBillingFor(PAYABLE_ITEMS["ind-ai"], "yearly"), "yearly");
   assert.equal(checkoutBillingFor(PAYABLE_ITEMS["ind-ai"], "once"), null);
   assert.equal(checkoutBillingFor(PAYABLE_ITEMS["topup-100"], "monthly"), "once");
@@ -83,8 +94,8 @@ test("gatewayAllowsCheckout: only Moyasar, enabled, and loaded", () => {
 test("parseCheckoutQuery accepts an item and a billing it offers", () => {
   assert.deepEqual(parseCheckoutQuery("lawyer-pro", "yearly"), { ok: true, itemId: "lawyer-pro", billing: "yearly" });
   assert.deepEqual(parseCheckoutQuery(["topup-100", "x"], "once"), { ok: true, itemId: "topup-100", billing: "once" });
-  // ٣٠١ / §6أ: the new cycles where the revised doc prices them
-  assert.deepEqual(parseCheckoutQuery("ind-ai", "semiannual"), { ok: true, itemId: "ind-ai", billing: "semiannual" });
+  // §6أ: the new cycles where the revised doc prices them (ind-ai's are retired, q329)
+  assert.deepEqual(parseCheckoutQuery("ind-ai", "yearly"), { ok: true, itemId: "ind-ai", billing: "yearly" });
   assert.deepEqual(parseCheckoutQuery("firm-basic", "quarterly"), { ok: true, itemId: "firm-basic", billing: "quarterly" });
   for (const [item, billing] of [
     [undefined, "monthly"],
@@ -94,7 +105,7 @@ test("parseCheckoutQuery accepts an item and a billing it offers", () => {
     ["lawyer-pro", "once"],
     ["topup-100", "monthly"],
     ["lawyer-pro", "weekly"],
-    // a real cycle the item is not sold in
+    // a real cycle the item never listed
     ["lawyer-pro", "quarterly"],
     ["ind-preventive", "semiannual"],
   ] as const) {
@@ -106,7 +117,20 @@ test("parseCheckoutQuery: a retired cycle (lawyer-pro monthly) is «no longer so
   for (const id of ["lawyer-pro", "consultant-independent", "firm-basic", "firm-enterprise"]) {
     assert.deepEqual(parseCheckoutQuery(id, "monthly"), { ok: false, notForSale: true }, id);
   }
-  assert.deepEqual(parseCheckoutQuery("ind-ai", "monthly"), { ok: true, itemId: "ind-ai", billing: "monthly" });
+});
+
+test("q329: a direct /checkout?item=… for a cancelled individual plan or cycle is «no longer sold», not «unknown»", () => {
+  for (const [id, billing] of [
+    ["ind-ai", "monthly"],
+    ["ind-ai", "quarterly"],
+    ["ind-ai", "semiannual"],
+    ["ind-preventive", "monthly"],
+    ["ind-preventive", "yearly"],
+    ["ind-litigation", "monthly"],
+    ["ind-litigation", "yearly"],
+  ] as const) {
+    assert.deepEqual(parseCheckoutQuery(id, billing), { ok: false, notForSale: true }, `${id} ${billing}`);
+  }
 });
 
 // ── what the screen says ────────────────────────────────────────────────────

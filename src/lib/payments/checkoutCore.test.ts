@@ -11,11 +11,46 @@ import assert from "node:assert/strict";
 import { fakeDb, has, type FakeHandler, type FakeQuery } from "./fakeDb.test-helper.ts";
 import { createCouponAttemptBudget } from "./couponAttempts.ts";
 import { COUPON_PENDING_AR } from "./couponServer.ts";
-import { AUDIENCE_REFUSED_AR, CHECKOUT_FAILED_AR, NOT_FOR_SALE_AR, startCheckoutWith, type CheckoutDeps, type CheckoutInput } from "./checkoutCore.ts";
+import {
+  AUDIENCE_REFUSED_AR,
+  CHECKOUT_FAILED_AR,
+  NOT_FOR_SALE_AR,
+  startCheckoutWith as startCheckoutWithBook,
+  type CheckoutDeps,
+  type CheckoutInput,
+} from "./checkoutCore.ts";
 import { buildCatalog, quote } from "./catalog.ts";
-import { PRICE_BOOK } from "../pricing/priceBook.ts";
+import { PRICE_BOOK, type BookEntry } from "../pricing/priceBook.ts";
 import { FOUNDER_MEMBERSHIP_ON_SALE } from "../pricing/campaigns.ts";
 import { MOYASAR_DISABLED_MESSAGE_AR } from "./moyasarConfig.ts";
+
+/** A book entry with none of its cycles retired: what it was before it was retired. */
+function asSold(entry: BookEntry): BookEntry {
+  return {
+    ...entry,
+    prices: Object.fromEntries(Object.entries(entry.prices).map(([billing, p]) => [billing, { sar: p!.sar }])),
+  };
+}
+
+/**
+ * q329 (owner package of 1 Nov 2026) retired ind-preventive and ind-litigation
+ * in the real book. The coupon, supersede and order-row tests below were
+ * written with them as items on sale (1,490 / 149 and 3,990), and they test
+ * checkout's mechanics, not the catalogue — so they run against this fixture:
+ * the real book with those two plans still sold at their old prices.
+ * `startCheckoutWithBook` (no fixture) is the real catalogue; the q329 tests
+ * use it to prove checkout refuses the retired plans and cycles.
+ */
+const PRE_Q329_BOOK: Readonly<Record<string, BookEntry>> = {
+  ...PRICE_BOOK,
+  "ind-preventive": asSold(PRICE_BOOK["ind-preventive"]),
+  "ind-litigation": asSold(PRICE_BOOK["ind-litigation"]),
+};
+const PRE_Q329_CATALOG = buildCatalog(PRE_Q329_BOOK);
+
+function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput) {
+  return startCheckoutWithBook({ catalog: PRE_Q329_CATALOG, book: PRE_Q329_BOOK, ...deps }, input);
+}
 
 const NOW = new Date("2026-10-22T08:00:00.000Z");
 const USER = "00000000-0000-0000-0000-00000000u001";
@@ -317,7 +352,7 @@ test("retire, never delete: a retired plan is refused at checkout (410, no order
 test("a retired CYCLE (lawyer-pro monthly, owner 26 Oct) is refused with 410 from the real book — no order, no intent", async () => {
   const { client: admin, log } = db("lawyer");
   const m = moyasar();
-  const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW }, input({ billing: "monthly" }));
+  const r = await startCheckoutWithBook({ admin, client: m.client, now: () => NOW }, input({ billing: "monthly" }));
   assert.equal(r.status, 410);
   assert.deepEqual(r.body, { error: NOT_FOR_SALE_AR });
   assert.equal(inserts(log).length, 0, "no order");
@@ -526,8 +561,8 @@ test("coupon: never on a point top-up, and NEWCLIENT (single services) not on a 
 
 test("coupon: ٢٧٩ no stacking — an item at a RUNNING launch price takes no coupon; once the campaign is over it does", async () => {
   const book = {
-    ...PRICE_BOOK,
-    "ind-preventive": { ...PRICE_BOOK["ind-preventive"], launchPrices: [{ campaignId: "launch-2026", prices: { yearly: 990 } }] },
+    ...PRE_Q329_BOOK,
+    "ind-preventive": { ...PRE_Q329_BOOK["ind-preventive"], launchPrices: [{ campaignId: "launch-2026", prices: { yearly: 990 } }] },
   };
   {
     const { client: admin, log } = couponDb("individual");
@@ -567,28 +602,68 @@ const IN_LAUNCH = new Date("2026-12-01T09:00:00.000Z");
 const AFTER_LAUNCH = new Date("2027-01-25T21:00:00.000Z"); // 26 Jan 00:00 Riyadh
 
 test("٣٠٣: during the campaign checkout charges the launch price — order, intent and answer — and records the listed one", async () => {
-  const { client: admin, log } = db("individual");
+  const { client: admin, log } = db("firm");
   const m = moyasar();
-  const r = await startCheckoutWith({ admin, client: m.client, now: () => IN_LAUNCH }, input({ itemId: "ind-ai", billing: "yearly" }));
+  const r = await startCheckoutWithBook({ admin, client: m.client, now: () => IN_LAUNCH }, input({ itemId: "firm-basic", billing: "yearly" }));
   assert.equal(r.status, 200);
   const p = inserts(log)[0].payload as Record<string, unknown>;
-  assert.equal(p.net_halalas, 19900);
-  assert.equal(p.vat_halalas, 2985);
-  assert.equal(p.total_halalas, 22885);
-  assert.deepEqual((p.metadata as Record<string, unknown>).launch, { campaign_id: "launch-2026", list_net_halalas: 24900 });
-  assert.equal(m.intents[0].amountHalalas, 22885);
+  assert.equal(p.net_halalas, 841500);
+  assert.equal(p.vat_halalas, 126225);
+  assert.equal(p.total_halalas, 967725);
+  assert.deepEqual((p.metadata as Record<string, unknown>).launch, { campaign_id: "launch-2026", list_net_halalas: 990000 });
+  assert.equal(m.intents[0].amountHalalas, 967725);
   const body = r.body as { quote: Record<string, unknown> };
-  assert.deepEqual(body.quote, { net: 19900, vat: 2985, total: 22885, vatMode: "exclusive", launchListNet: 24900 });
+  assert.deepEqual(body.quote, { net: 841500, vat: 126225, total: 967725, vatMode: "exclusive", launchListNet: 990000 });
 });
 
 test("٣٠٣: the day after the campaign the listed price is charged and nothing names a launch", async () => {
-  const { client: admin, log } = db("individual");
-  const r = await startCheckoutWith({ admin, client: moyasar().client, now: () => AFTER_LAUNCH }, input({ itemId: "ind-ai", billing: "yearly" }));
+  const { client: admin, log } = db("firm");
+  const r = await startCheckoutWithBook({ admin, client: moyasar().client, now: () => AFTER_LAUNCH }, input({ itemId: "firm-basic", billing: "yearly" }));
   assert.equal(r.status, 200);
   const p = inserts(log)[0].payload as Record<string, unknown>;
-  assert.equal(p.net_halalas, 24900);
+  assert.equal(p.net_halalas, 990000);
   assert.equal((p.metadata as Record<string, unknown>).launch, undefined);
   assert.equal((r.body as { quote: Record<string, unknown> }).quote.launchListNet, undefined);
+});
+
+// ── q329 (owner package of 1 Nov 2026): the cancelled individual plans ──────
+
+test("q329: the real book refuses every cancelled individual plan and cycle with 410 — no order, no intent", async () => {
+  const cases: Array<[string, CheckoutInput["billing"]]> = [
+    ["ind-ai", "monthly"],
+    ["ind-ai", "quarterly"],
+    ["ind-ai", "semiannual"],
+    ["ind-preventive", "monthly"],
+    ["ind-preventive", "yearly"],
+    ["ind-litigation", "monthly"],
+    ["ind-litigation", "yearly"],
+  ];
+  for (const [itemId, billing] of cases) {
+    for (const now of [NOW, IN_LAUNCH]) {
+      const { client: admin, log } = db("individual");
+      const m = moyasar();
+      const r = await startCheckoutWithBook({ admin, client: m.client, now: () => now }, input({ itemId, billing }));
+      assert.equal(r.status, 410, `${itemId} ${billing}`);
+      assert.deepEqual(r.body, { error: NOT_FOR_SALE_AR }, `${itemId} ${billing}`);
+      assert.equal(inserts(log).length, 0, `${itemId} ${billing}: no order`);
+      assert.equal(m.intents.length, 0, `${itemId} ${billing}: no intent`);
+    }
+  }
+});
+
+test("q329: ind-ai yearly still sells at 249 before VAT, and during the campaign too (its 199 launch price is retired)", async () => {
+  for (const now of [NOW, IN_LAUNCH]) {
+    const { client: admin, log } = db("individual");
+    const m = moyasar();
+    const r = await startCheckoutWithBook({ admin, client: m.client, now: () => now }, input({ itemId: "ind-ai", billing: "yearly" }));
+    assert.equal(r.status, 200, now.toISOString());
+    const p = inserts(log)[0].payload as Record<string, unknown>;
+    assert.equal(p.net_halalas, 24900);
+    assert.equal(p.vat_halalas, 3735);
+    assert.equal(p.total_halalas, 28635);
+    assert.equal((p.metadata as Record<string, unknown>).launch, undefined);
+    assert.equal(m.intents[0].amountHalalas, 28635);
+  }
 });
 
 // ── ٣٠٥: NEWCLIENT is for the buyer's first paid order on the platform ───────

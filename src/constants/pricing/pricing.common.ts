@@ -1,6 +1,6 @@
 import { User, Buildings, Storefront, Scales, Briefcase, Users, Gavel, Handshake } from "@phosphor-icons/react";
 import { AudienceTab, FaqItem, Plan, ComparisonCategory, BillingNote, CompanySize } from "./pricing.types";
-import { bookPriceText } from "../../lib/pricing/priceBook";
+import { bookEntry, bookPriceText, isOnSale } from "../../lib/pricing/priceBook";
 
 const libAr = (id: string) => bookPriceText(id, "once", "ar");
 const libEn = (id: string) => bookPriceText(id, "once", "en");
@@ -30,7 +30,8 @@ export const audienceTabs: { id: AudienceTab; labelAr: string; labelEn: string; 
 
 // ─── Billing Notes per audience (shown in info bar) ───────────────────────────
 export const billingNotes: Record<AudienceTab, BillingNote> = {
-  individuals: { icon: "📅", textAr: "شهري أو سنوي — اختر ما يناسب ميزانيتك", textEn: "Monthly or yearly — choose what fits your budget" },
+  // q329 (owner package of 1 Nov 2026): individuals subscribe yearly only.
+  individuals: { icon: "📅", textAr: "اشتراك سنوي — أو ادفع لكل خدمة دون اشتراك", textEn: "Yearly subscription — or pay per service with no subscription" },
   micro:       { icon: "🛡", textAr: "اشتراك سنوي — ضامنك القانوني بـ~٢٠٨ ر.س/شهر", textEn: "Annual subscription — your legal shield at ~208 SAR/mo" },
   companies:   { icon: "🏢", textAr: "اشتراك سنوي — حسب حجم شركتك وطبيعة فريقك القانوني", textEn: "Annual subscription — based on your company size and legal team" },
   ngo:         { icon: "💚", textAr: "اشتراك سنوي — أسعار مخفضة لدعم القطاع الثالث", textEn: "Annual subscription — discounted rates for the third sector" },
@@ -113,7 +114,16 @@ export function getPlanList(
   // Hidden plans remain as product proposals, but must never be rendered as
   // purchasable offers until their legal copy, server-side catalogue,
   // checkout, entitlement workflow, and acceptance evidence are approved.
-  return (map[audience] ?? map.individuals).filter((plan) => !plan.isBetaHidden);
+  // A card whose id is a price-book entry no longer on sale (retired, coming
+  // soon) is dropped too: no card, no comparison column, and no `?plan=` on
+  // /register/client or /onboarding resolves to it (Wave 1 task 5).
+  return (map[audience] ?? map.individuals).filter((plan) => !plan.isBetaHidden && bookCardOnSale(plan));
+}
+
+/** False only for a card whose id is a price-book entry that is not on sale. */
+function bookCardOnSale(plan: Pick<Plan, "id">): boolean {
+  const entry = bookEntry(plan.id);
+  return entry === undefined || isOnSale(entry);
 }
 
 export function getComparisonList(audience: AudienceTab, isAr: boolean): ComparisonCategory[] {

@@ -266,8 +266,9 @@ function membership(id: string, labelAr: string, sar: number, buyers: readonly s
  * wins where the two differ) — docs/audits/2026-10-30-owner-package-pricing.md:
  *   - the library (doc §4ج, conflict ٢, answer ٣٠٠): 1,050 / 1,920 / 3,490;
  *   - ind-ai, the doc's «الباقة الذكية الذاتية» `ind-smart` (§7أ.2, answer
- *     ٣٠١): 29 / 79 / 149 / 249 a year, launch 199 a year; the id stays
- *     ind-ai so orders and subscriptions keep resolving;
+ *     ٣٠١): 29 / 79 / 149 / 249 a year, launch 199 a year (all but the
+ *     yearly 249 retired on 1 Nov, below); the id stays ind-ai so orders
+ *     and subscriptions keep resolving;
  *   - the firms' quarterly and half-yearly prices (§6أ) and their launch
  *     prices for the first year (8,415 / 12,665);
  *   - top-ups (§4هـ, conflict ١١, answer ٣٠٢): 100 and 250 for individuals
@@ -280,10 +281,12 @@ function membership(id: string, labelAr: string, sar: number, buyers: readonly s
  * lawyers only. Its window (2026-11-01 → 2027-01-25) and its 1,096 seats are
  * enforced at checkout and in SQL (founder_reserve_seat), not by a launch
  * price here. There is no client or business founder plan.
+ * Owner package of 1 Nov 2026 (§6.2.1, q329 — Wave 1 task 5): individuals
+ * buy yearly only. ind-ai is sold yearly at 249 with no launch price;
+ * ind-preventive and ind-litigation are retired in every cycle.
  * Still waiting (the doc's own numbers need the owner): lawyer-pro and
- * consultant-independent → erp-* / bundle-* (P2), ind-preventive /
- * ind-litigation (the revised §7أ prices neither the same way as today —
- * owner question in the ledger).
+ * consultant-independent → erp-* / bundle-* (P2), the 365 legal-protection
+ * plan and its 496-seat founder offer (٤٢٠).
  */
 export const PRICE_BOOK: Readonly<Record<string, BookEntry>> = Object.freeze({
   "lawyer-pro": plan("lawyer-pro", "المحامي المحترف", { monthly: 399, yearly: 3990 }, "pro", ["lawyer"], ["monthly"]),
@@ -306,17 +309,24 @@ export const PRICE_BOOK: Readonly<Record<string, BookEntry>> = Object.freeze({
     ["monthly"],
     [{ campaignId: "launch-2026", prices: { yearly: 12665 } }],
   ),
+  // Owner package of 1 Nov 2026 §6.2.1 (q329): individuals subscribe yearly
+  // only. ind-ai keeps its yearly 249 (before VAT, as today — whether 249
+  // includes VAT is an open owner question) and loses the 199 launch price;
+  // its monthly, quarterly and half-yearly cycles are retired.
   "ind-ai": plan(
     "ind-ai",
     "الباقة الذكية",
     { monthly: 29, quarterly: 79, semiannual: 149, yearly: 249 },
     "ai",
     ["individual"],
-    [],
-    [{ campaignId: "launch-2026", prices: { yearly: 199 } }],
+    ["monthly", "quarterly", "semiannual"],
   ),
-  "ind-preventive": plan("ind-preventive", "الباقة الوقائية", { monthly: 149, yearly: 1490 }, "pro", ["individual"]),
-  "ind-litigation": plan("ind-litigation", "التأمين القانوني", { monthly: 399, yearly: 3990 }, "max", ["individual"]),
+  // q329: the preventive plan (149 / 1,490) is cancelled, and the 399 / 3,990
+  // legal insurance with it; its 365 replacement is a new id once the owner
+  // settles ٤٢٠. Every cycle retired: still resolvable for orders, receipts
+  // and the renewal lookup.
+  "ind-preventive": plan("ind-preventive", "الباقة الوقائية", { monthly: 149, yearly: 1490 }, "pro", ["individual"], ["monthly", "yearly"]),
+  "ind-litigation": plan("ind-litigation", "التأمين القانوني", { monthly: 399, yearly: 3990 }, "max", ["individual"], ["monthly", "yearly"]),
   "lib-q1": library("lib-q1", "المكتبة القانونية — ربع سنوي", 1050, 90),
   "lib-q2": library("lib-q2", "المكتبة القانونية — نصف سنوي", 1920, 180),
   "lib-annual": library("lib-annual", "المكتبة القانونية — سنوي", 3490, 365),

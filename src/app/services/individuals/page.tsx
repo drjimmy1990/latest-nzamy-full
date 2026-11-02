@@ -25,8 +25,27 @@ import { useTheme } from "@/components/ThemeProvider";
 import { services, faqs } from "@/constants/servicesData";
 import { ServiceCard, FAQItem } from "@/components/services/ServiceComponents";
 import { INDIVIDUALS_PYRAMID_PLANS } from "@/lib/pricing/plans";
+import { bookEntry, offeredSar } from "@/lib/pricing/priceBook";
 import { VAT_NOTICE } from "@/lib/pricing/vatNotice";
 import { Warning, UsersThree, Sparkle } from "@phosphor-icons/react";
+
+type PyramidCycle = "monthly" | "yearly";
+const PYRAMID_CYCLES: readonly PyramidCycle[] = ["monthly", "yearly"];
+
+/**
+ * A pyramid plan's price in a cycle, read from the price book: null when the
+ * book does not sell it in that cycle (owner package of 1 Nov 2026, q329:
+ * individuals buy yearly only). A card never shows a cycle checkout refuses.
+ */
+function pyramidPrice(id: string, cycle: PyramidCycle): number | null {
+  const entry = bookEntry(id);
+  return entry ? offeredSar(entry, cycle) : null;
+}
+
+/** The cycles at least one pyramid plan is sold in; the toggle shows only with two. */
+const PYRAMID_SELLING_CYCLES = PYRAMID_CYCLES.filter((c) =>
+  Object.values(INDIVIDUALS_PYRAMID_PLANS).some((plan) => pyramidPrice(plan.id, c) !== null),
+);
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -34,7 +53,11 @@ export default function IndividualsPage() {
   const { lang } = useTheme();
   const isAr = lang === "ar";
   const [selectedService, setSelectedService] = useState<string | null>(null);
-  const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
+  const [billingCycle, setBillingCycle] = useState<PyramidCycle>("yearly");
+  const shownCycle: PyramidCycle = PYRAMID_SELLING_CYCLES.includes(billingCycle)
+    ? billingCycle
+    : (PYRAMID_SELLING_CYCLES[0] ?? "yearly");
+  const pyramidPlans = Object.values(INDIVIDUALS_PYRAMID_PLANS).filter((plan) => pyramidPrice(plan.id, shownCycle) !== null);
   const serviceList = isAr ? services.ar : services.en;
   // The number of cards below, counted — never a literal (it said «٦» while
   // being typed by hand).
@@ -306,17 +329,18 @@ export default function IndividualsPage() {
               </h2>
               <p className="mx-auto mt-3 max-w-[65ch] text-sm text-ink-muted dark:text-gray-400">
                 {isAr
-                  ? "اختر المستوى المناسب لاحتياجك من الاستشارة الذكية حتى التمثيل القضائي المتكامل أمام المحاكم."
-                  : "Choose the level that suits your needs from AI advisory to full court litigation representation."}
+                  ? "اشتراك سنوي في الباقة الذكية، وكل خدمة أخرى تُطلب وحدها دون اشتراك."
+                  : "A yearly subscription to the Smart AI plan; every other service is ordered on its own, with no subscription."}
               </p>
 
-              {/* Billing Toggle */}
+              {/* Billing Toggle — only while plans are sold in two cycles */}
+              {PYRAMID_SELLING_CYCLES.length >= 2 && (
               <div className="mt-8 inline-flex items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1.5 dark:border-white/10 dark:bg-dark-card shadow-sm">
                 <button
                   type="button"
                   onClick={() => setBillingCycle("monthly")}
                   className={`px-5 py-2 rounded-xl text-xs font-bold transition-all ${
-                    billingCycle === "monthly"
+                    shownCycle === "monthly"
                       ? "bg-royal text-white shadow-sm"
                       : "text-ink-muted hover:text-ink dark:text-gray-400"
                   }`}
@@ -327,7 +351,7 @@ export default function IndividualsPage() {
                   type="button"
                   onClick={() => setBillingCycle("yearly")}
                   className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold transition-all ${
-                    billingCycle === "yearly"
+                    shownCycle === "yearly"
                       ? "bg-royal text-white shadow-sm"
                       : "text-ink-muted hover:text-ink dark:text-gray-400"
                   }`}
@@ -338,13 +362,14 @@ export default function IndividualsPage() {
                   </span>
                 </button>
               </div>
+              )}
             </motion.div>
 
             {/* Pyramid Grid */}
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {Object.values(INDIVIDUALS_PYRAMID_PLANS).map((plan, idx) => {
-                const isYearly = billingCycle === "yearly";
-                const price = isYearly ? plan.priceYearly : plan.priceMonthly;
+              {pyramidPlans.map((plan, idx) => {
+                const isYearly = shownCycle === "yearly";
+                const price = pyramidPrice(plan.id, shownCycle) ?? 0;
                 const period = isYearly
                   ? isAr ? plan.periodYearlyAr : plan.periodYearlyEn
                   : isAr ? plan.periodMonthlyAr : plan.periodMonthlyEn;

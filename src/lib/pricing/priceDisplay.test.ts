@@ -34,30 +34,21 @@ test("parseDisplayedAmount refuses text, open-ended and mixed-digit amounts", ()
   assert.equal(parseDisplayedAmount(""), null);
 });
 
-// ── The invariant the yearly «بدلاً من» line relies on ───────────────────────
+// ── The yearly «بدلاً من» line on the individuals' cards ──────────────────────
 //
-// The individuals' reference price is derived from the price book —
-// pricing.individuals.ts writes `priceOriginal: twelveMonths("<id>", lang)` —
-// so it is always exactly 12 × the monthly price; the book must keep the
-// yearly price below it for the struck-through line to be true.
+// It was 12 × the book's monthly price (`twelveMonths`). Since q329 (owner
+// package of 1 Nov 2026) no individual plan is sold monthly, so there is no
+// monthly price to multiply: no individuals card carries a reference price,
+// and the helper that would have read a retired monthly price at module scope
+// is gone.
 
 const individuals = readFileSync(
   new URL("../../constants/pricing/pricing.individuals.ts", import.meta.url),
   "utf8",
 );
 
-test("every individuals reference price is 12 × the book's monthly price, above the book's yearly one", () => {
-  // ind-ai carries none: its yearly cycle has a launch price (owner ٣٠٣), and
-  // the launch price's struck-through original is its one reference.
-  assert.ok(!individuals.includes(`priceOriginal: twelveMonths("ind-ai"`), "ind-ai: no second struck-through figure");
-  const ids = ["ind-preventive", "ind-litigation"];
-  for (const id of ids) {
-    for (const lang of ["ar", "en"]) {
-      assert.ok(individuals.includes(`priceOriginal: twelveMonths("${id}", "${lang}")`), `${id} ${lang}: the reference is derived from the book`);
-    }
-    assert.ok(bookSar(id, "yearly") < bookSar(id, "monthly") * 12, `${id}: the yearly price is not below 12 × monthly`);
-  }
-  assert.match(individuals, /const twelveMonths = \(id: string, lang: "ar" \| "en"\) => formatSarAmount\(bookSar\(id, "monthly"\) \* 12, lang\);/);
-  assert.equal((individuals.match(/priceOriginal:/g) ?? []).length, 4, "two paid plans × two languages carry a reference price");
-  assert.doesNotMatch(individuals, /priceOriginal: "/, "no literal reference price");
+test("no individuals card carries a reference price: no individual plan is sold monthly (q329)", () => {
+  assert.throws(() => bookSar("ind-ai", "monthly"), "ind-ai is sold yearly only");
+  assert.doesNotMatch(individuals, /priceOriginal:/);
+  assert.doesNotMatch(individuals, /twelveMonths/);
 });

@@ -8,13 +8,15 @@
  * pricing screen…) — a page that asks for a retired price fails to load, and
  * only `next build` would notice. This test lists every literal call site, so
  * the phase that retires a price (P2: lawyer-pro; P6: the firms' monthly
- * cycle) gets one failing test naming each page it must update.
+ * cycle; Wave 1 task 5: the individuals' monthly / quarterly / half-yearly
+ * cycles, ind-preventive and ind-litigation) gets one failing test naming
+ * each page it must update.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import { bookEntry, isBilling, offeredSar } from "./priceBook.ts";
+import { PRICE_BOOK, bookEntry, isBilling, isOnSale, offeredSar } from "./priceBook.ts";
 
 const SRC = join(import.meta.dirname, "..", "..");
 
@@ -58,4 +60,29 @@ test("every literal price-book call in src names a price the book sells today", 
   }
   assert.ok(calls >= 60, `only ${calls} call sites found — the scan lost its patterns`);
   assert.deepEqual(bad, [], "pages that ask the book for a price it does not sell (update them in the phase that retires it)");
+});
+
+/** Source without comments, so a note naming a retired id does not count. */
+function code(path: string): string {
+  return readFileSync(path, "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:"'\\])\/\/.*$/gm, "$1");
+}
+
+test("no card, comparison column or plan list names a book id that is not on sale (q329: retiring a plan removes its cards)", () => {
+  // A retired id's card would not throw (cardPrice hides it), but its comparison
+  // column and its `?plan=` on /register/client would still show it. The ids
+  // stay in the book for orders; the pages drop them in the same change.
+  const notOnSale = Object.keys(PRICE_BOOK).filter((id) => !isOnSale(PRICE_BOOK[id]));
+  assert.ok(notOnSale.includes("ind-preventive") && notOnSale.includes("ind-litigation"), "q329 retired both");
+  const files = [
+    ...readdirSync(join(SRC, "constants", "pricing")).filter((n) => n.endsWith(".ts")).map((n) => join(SRC, "constants", "pricing", n)),
+    join(SRC, "lib", "pricing", "plans.ts"),
+  ];
+  const named: string[] = [];
+  for (const file of files) {
+    const text = code(file);
+    for (const id of notOnSale) if (text.includes(`"${id}"`)) named.push(`${relative(SRC, file)}: ${id}`);
+  }
+  assert.deepEqual(named, []);
 });

@@ -399,72 +399,41 @@ test("library subscription buttons point to live routes", () => {
 });
 
 test("individual pricing pyramid includes approved plans and per-service pricing", () => {
-  // Four plans × two languages (the 699 family plan merged, owner ٢١٣/١٧٦).
-  assert.equal((individuals.match(/isBetaHidden: false/g) ?? []).length, 8);
+  // pay-per-piece and ind-ai × two languages; ind-preventive and
+  // ind-litigation are retired (q329, owner package of 1 Nov 2026).
+  assert.equal((individuals.match(/isBetaHidden: false/g) ?? []).length, 4);
   assert.match(individuals, /id: "pay-per-piece"/);
   assert.match(individuals, /id: "ind-ai"/);
-  assert.match(individuals, /id: "ind-preventive"/);
-  assert.match(individuals, /id: "ind-litigation"/);
+  assert.doesNotMatch(individuals, /id: "ind-preventive"/);
+  assert.doesNotMatch(individuals, /id: "ind-litigation"/);
   assert.doesNotMatch(individuals, /ind-family/);
   assert.match(individuals, /priceMonthly: "حسب الخدمة"/);
   assert.match(individuals, /priceYearly: "بدون اشتراك"/);
 });
 
-// ── Owner answers ٢١٣ + ١٧٦ (2026-10-18): «التأمين القانوني» with family cover ─
+// ── Owner answers ٢١٣ + ١٧٦ (2026-10-18), then q329 (1 Nov 2026) ─────────────
 
 const plansTs = readFileSync(new URL("../../lib/pricing/plans.ts", import.meta.url), "utf8");
-
-/** One plan object, from its id to the line that closes it. */
-function planBlock(text: string, from: number, id: string): string {
-  const start = text.indexOf(`id: "${id}"`, from);
-  assert.ok(start >= 0, `plan ${id} not found`);
-  return text.slice(start, text.indexOf("\n    },", start));
-}
 
 test("٢١٣/١٧٦: the 699 family plan is gone from the individuals plans and their comparison", () => {
   assert.doesNotMatch(individuals, /ind-family|٦٩٩|٦٬٩٩٠|\b699\b|6,990/);
   assert.doesNotMatch(plansTs, /ind-family|\b699\b|\b6990\b/);
 });
 
-test("٢١٣/١٧٦: ind-litigation is «التأمين القانوني» at 399 / 3,990; the family option is kept but hidden at launch (conflict ١٠)", () => {
-  // the plan list's English half (FAMILY_LINES above it has an `en: [` too)
-  const enAt = individuals.indexOf("\n  en: [", individuals.indexOf("export const plansIndividuals"));
-  const ar = planBlock(individuals, 0, "ind-litigation");
-  const en = planBlock(individuals, enAt, "ind-litigation");
-  assert.match(ar, /name: "التأمين القانوني"/);
-  // 399 / 3,990 are the price book's (the card reads them by id).
-  assert.equal(bookSar("ind-litigation", "monthly"), 399);
-  assert.equal(bookSar("ind-litigation", "yearly"), 3990);
-  assert.doesNotMatch(ar, /price(Monthly|Yearly):/);
-  // Dependants at 20 / 30 / 40% off: ٣١٩, ٢٧٩, then ٢٣٩ from the third on —
-  // kept in FAMILY_LINES and shown only when SHOW_FAMILY_DEPENDENTS (false at
-  // launch: conflict ١٠ of the 28-Oct handover; backlog LIVE-F11).
-  assert.match(individuals, /export const SHOW_FAMILY_DEPENDENTS: boolean = false;/);
-  assert.match(ar, /\.\.\.familyLines\("ar"\)/);
-  assert.match(en, /\.\.\.familyLines\("en"\)/);
-  assert.match(individuals, /٣١٩ ر\.س[^"]*٢٧٩ ر\.س[^"]*٢٣٩ ر\.س/);
-  for (const line of ["٣٥٬٠٠٠–٥٠٬٠٠٠ ر.س سنوياً", "تُضاف التغطية العائلية بطلب يراجعه الفريق"]) {
-    assert.ok(individuals.includes(line), `«${line}» is kept for the flag`);
-    assert.ok(!ar.includes(line), `«${line}» is not written into the card itself`);
+test("q329: «التأمين القانوني» (399 / 3,990) and «الباقة الوقائية» (149 / 1,490) are retired — no card or column on /pricing or /services/individuals, still resolvable in the book", () => {
+  // Not sold: the book throws for every cycle, so no page can print the old prices.
+  for (const id of ["ind-litigation", "ind-preventive"]) {
+    for (const cycle of ["monthly", "yearly"] as const) assert.throws(() => bookSar(id, cycle), `${id} ${cycle}`);
   }
-  // The family's «٣٬٠٠٠–٥٬٠٠٠ نقطة شهرياً» is gone: nothing ever credited it,
-  // and points come from top-ups only (owner ٢٩١, 26 Oct 2026).
-  assert.doesNotMatch(ar, /نقطة شهرياً/);
-  assert.doesNotMatch(en, /points a month/);
-  assert.match(ar, /footnote: "\* تطبق الشروط والأحكام"/);
-
-  assert.match(en, /name: "Legal Insurance"/);
-  assert.doesNotMatch(en, /price(Monthly|Yearly):/);
-  assert.match(individuals, /SAR 319[^"]*SAR 279[^"]*SAR 239/);
-  assert.match(en, /footnote: "\* Terms and conditions apply"/);
-
-  const canonical = planBlock(plansTs, 0, "ind-litigation");
-  assert.match(canonical, /nameAr: "التأمين القانوني"/);
-  assert.match(canonical, /priceMonthly: bookSar\("ind-litigation", "monthly"\),\s*priceYearly: bookSar\("ind-litigation", "yearly"\)/);
-  // conflict ١٠: no family line on the canonical plan either
-  assert.doesNotMatch(canonical, /٣١٩ ر\.س|التغطية العائلية/);
-  assert.match(canonical, /footnoteAr: "\* تطبق الشروط والأحكام"/);
-  assert.match(canonical, /footnoteEn: "\* Terms and conditions apply"/);
+  // No card, no comparison column, no canonical plan.
+  for (const text of [individuals, plansTs]) {
+    assert.doesNotMatch(text, /id: "ind-litigation"|"ind-litigation":|id: "ind-preventive"|"ind-preventive":/);
+  }
+  // The family lines were the 399-a-month plan's (dependants at 319 / 279 / 239
+  // a month); they went with it. The 365 plan that replaces it waits on ٤٢٠.
+  assert.doesNotMatch(individuals, /FAMILY_LINES|SHOW_FAMILY_DEPENDENTS|familyLines|٣١٩ ر\.س|SAR 319/);
+  // The ind-ai card no longer names the retired insurance plan.
+  assert.doesNotMatch(individuals, /"[^"\n]*«التأمين القانوني»[^"\n]*"|unlike Legal Insurance/);
 });
 
 test("٢١٣: the footnote renders, small and grey, under the card on both pages", () => {
