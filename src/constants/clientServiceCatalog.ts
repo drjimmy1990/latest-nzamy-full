@@ -276,8 +276,11 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
   {
     serviceId: "ai-letter",
     categoryId: "contracts",
-    label: "صياغة خطاب رسمي بالذكاء الاصطناعي",
-    description: "إنذار، إخطار، مطالبة، اعتراض - أدخل التفاصيل والـ AI يصيغ خطابك في دقيقة",
+    // Fix round 1b: was «صياغة خطاب رسمي بالذكاء الاصطناعي» / «والـ AI يصيغ
+    // خطابك في دقيقة». No model runs there (ClientLetterWorkflow.tsx: a
+    // guidance template, owner ruling س٣) — the card says what the page does.
+    label: "خطاب رسمي من قالب استرشادي",
+    description: "إنذار، إخطار، مطالبة، اعتراض - أدخل التفاصيل لتكوين مسودة من قالب، واطلب تدقيقها من المكتب",
     // Wave 1 task 6, fix round 1 (I3): no «مشمول في الباقة · أو 49 ر.س للخطاب».
     // No plan includes it and nothing charges 49: /dashboard/client/letters
     // fills a guidance template in the browser and debits nothing. So: free,
@@ -292,7 +295,6 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     betaVisibility: "public",
     requiresPayment: false,
     tag: "جديد",
-    aiPowered: true,
   },
   {
     serviceId: "contract-analyze",

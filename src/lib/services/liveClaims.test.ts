@@ -260,3 +260,31 @@ test("M3: formatClientServicePrice never renders blank for an unknown mode", asy
   const { formatClientServicePrice } = await import("../pricingRepository.ts");
   assert.equal(formatClientServicePrice({ basePrice: 10, priceMode: "made-up" as never }), "يُحدَّد بعد المراجعة");
 });
+
+// ── fix round 1b ─────────────────────────────────────────────────────────────
+
+test("1b: /services/contracts claims no AI analysis — the lawyer's service, and no fake AI demo", () => {
+  const page = src("app/services/contracts/page.tsx").replace(/^\s*\/\/.*$/gm, "");
+  // The AI contract reviewer is beta-gated; nothing on the page may say AI does the work.
+  assert.doesNotMatch(page, /\bAI\b|الذكاء الاصطناعي|ذكاء نظامي/);
+  assert.doesNotMatch(page, /مسح AI|تحليل AI|AI Analysis|AI Scan|بمساعدة الذكاء/);
+  // The demo and its mock output are gone.
+  assert.doesNotMatch(page, /mockClauses|riskColors|اكتمل التحليل|Analysis complete|تم اكتشاف ٣ بنود/);
+  // What replaced them describes the lawyer's review.
+  assert.match(page, /صياغة ومراجعة العقود على يد محامٍ متخصص/);
+  assert.match(page, /label: "إسناد المحامي"/);
+  assert.match(page, /q: "كيف تتم مراجعة العقد؟"/);
+  assert.match(page, /title: "تقرير مخاطر مكتوب"/);
+});
+
+test("1b: the ai-letter card says what /dashboard/client/letters does — a template, no AI", () => {
+  // The page runs no model: no useAiRun, no AI route, no gate.
+  const workflow = src("app/dashboard/client/_components/ClientLetterWorkflow.tsx");
+  assert.doesNotMatch(workflow, /useAiRun|\/api\/v1\/ai\//);
+  assert.doesNotMatch(src("app/dashboard/client/letters/page.tsx"), /useAiRun|\/api\/v1\/ai\//);
+  const catalog = src("constants/clientServiceCatalog.ts");
+  const row = catalog.split('serviceId: "ai-letter"')[1].split("serviceId:")[0].replace(/^\s*\/\/.*$/gm, "");
+  assert.doesNotMatch(row, /\bAI\b|الذكاء الاصطناعي/);
+  assert.doesNotMatch(row, /aiPowered: true/, "the card's «AI» chip");
+  assert.match(row, /label: "خطاب رسمي من قالب استرشادي"/);
+});
