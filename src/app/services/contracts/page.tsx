@@ -5,17 +5,12 @@ import { useState } from "react";
 import {
   FileText,
   MagnifyingGlass,
-  Brain,
   Briefcase,
   ArrowLeft,
   ArrowRight,
   Check,
   CaretDown,
-  WarningCircle,
-  CheckCircle,
-  Warning,
   CloudArrowUp,
-  Scan,
   UserCheck,
   Package,
   Lightning,
@@ -54,40 +49,32 @@ const services = {
   ar: [
     { icon: FileText, title: "صياغة عقد جديد", desc: "صياغة عقد احترافي من الصفر مصمم خصيصاً لاحتياجك ومتوافق مع الأنظمة السعودية", color: "text-royal", bg: "bg-royal/10" },
     { icon: MagnifyingGlass, title: "مراجعة عقد", desc: "مراجعة عقدك الحالي وتحديد الثغرات والبنود المجحفة والمخاطر القانونية المحتملة", color: "text-gold", bg: "bg-gold/10" },
-    { icon: Brain, title: "تحليل AI", desc: "تحليل فوري بالذكاء الاصطناعي يكشف البنود غير المتوازنة قبل مراجعة المحامي", color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/10" },
+    // Fix round 1b: was «تحليل AI — تحليل فوري بالذكاء الاصطناعي…». The AI
+    // contract reviewer is beta-gated; the risk report is the lawyer's.
+    { icon: UserCheck, title: "تقرير مخاطر مكتوب", desc: "يحدد المحامي المراجع البنود غير المتوازنة والمخاطر القانونية في تقرير مكتوب", color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/10" },
     { icon: Briefcase, title: "عقود تجارية", desc: "عقود الشراكة وتأسيس الشركات ومذكرات التفاهم والعقود التجارية المتخصصة", color: "text-purple-600 dark:text-purple-400", bg: "bg-purple-500/10" },
   ],
   en: [
     { icon: FileText, title: "Draft a New Contract", desc: "Professional contract drafted from scratch, tailored to your needs and compliant with Saudi law", color: "text-royal", bg: "bg-royal/10" },
     { icon: MagnifyingGlass, title: "Contract Review", desc: "Review your existing contract to identify gaps, unfair clauses, and potential legal risks", color: "text-gold", bg: "bg-gold/10" },
-    { icon: Brain, title: "AI Analysis", desc: "Instant AI analysis that detects unbalanced clauses before the lawyer review", color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/10" },
+    { icon: UserCheck, title: "Written Risk Report", desc: "The reviewing lawyer flags unbalanced clauses and legal risks in a written report", color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/10" },
     { icon: Briefcase, title: "Commercial Contracts", desc: "Partnership agreements, company formation, MoUs, and specialized commercial contracts", color: "text-purple-600 dark:text-purple-400", bg: "bg-purple-500/10" },
   ],
 };
 
-const mockClauses = {
-  ar: [
-    { clause: "المادة ٧ — إنهاء العقد", risk: "high", note: "تمنح الطرف الأول حق الإنهاء الفوري دون إشعار مسبق أو تعويض" },
-    { clause: "المادة ١٢ — التحكيم", risk: "medium", note: "يُلزم باللجوء للتحكيم خارج المملكة مما قد يرفع التكاليف" },
-    { clause: "المادة ٣ — التسليم والدفع", risk: "low", note: "بنود واضحة ومتوازنة، جدول الدفع محدد بدقة" },
-  ],
-  en: [
-    { clause: "Clause 7 — Termination", risk: "high", note: "Grants Party A the right to immediate termination without prior notice or compensation" },
-    { clause: "Clause 12 — Arbitration", risk: "medium", note: "Requires arbitration outside Saudi Arabia which may increase costs" },
-    { clause: "Clause 3 — Delivery & Payment", risk: "low", note: "Clear and balanced terms, payment schedule well-defined" },
-  ],
-};
+// Fix round 1b: the «تحليل AI للعقود» demo and its mock clauses are gone — a
+// fake «اكتمل التحليل» result from a tool that is beta-gated.
 
 const processSteps = {
   ar: [
     { icon: CloudArrowUp, label: "رفع العقد", desc: "ارفع ملف العقد بأي صيغة" },
-    { icon: Scan, label: "مسح AI", desc: "تحليل فوري للبنود والمخاطر" },
+    { icon: MagnifyingGlass, label: "إسناد المحامي", desc: "يُسند فريق نظامي العقد إلى محامٍ مختص" },
     { icon: UserCheck, label: "مراجعة المحامي", desc: "مراجعة محامٍ متخصص" },
     { icon: Package, label: "التسليم", desc: "تقرير كامل خلال ٢٤ ساعة" },
   ],
   en: [
     { icon: CloudArrowUp, label: "Upload Contract", desc: "Upload contract file in any format" },
-    { icon: Scan, label: "AI Scan", desc: "Instant clause and risk analysis" },
+    { icon: MagnifyingGlass, label: "Lawyer Assignment", desc: "Nezamy's team assigns the contract to a specialist lawyer" },
     { icon: UserCheck, label: "Lawyer Review", desc: "Specialist lawyer review" },
     { icon: Package, label: "Deliver", desc: "Full report within 24 hours" },
   ],
@@ -122,25 +109,20 @@ const pricingTiers = {
 
 const faqs = {
   ar: [
-    { q: "ما صيغ الملفات المدعومة؟", a: "تدعم المنصة جميع الصيغ الشائعة — PDF، Word (.docx)، وصور JPEG/PNG. يتولى نظام AI تحويلها وتحليلها تلقائياً." },
+    { q: "ما صيغ الملفات المدعومة؟", a: "تدعم المنصة جميع الصيغ الشائعة — PDF، Word (.docx)، وصور JPEG/PNG. يطّلع عليها المحامي المراجع كما رفعتها." },
     // أُزيلت «قاعدة بيانات من آلاف العقود السعودية»: لا وجود لهذه القاعدة.
-    // (يبقى وصف الأداة نفسه محلَّ مراجعة — لا نموذج لغوي موصول بأدوات AI بعد.)
-    { q: "كيف يعمل تحليل AI للعقود؟", a: "يقرأ النموذج كل بند ويقيس توازنه، ثم يصنّف كل بند في ثلاثة مستويات خطورة ويشرح السبب." },
+    // Fix round 1b: was «كيف يعمل تحليل AI للعقود؟» — the AI reviewer is
+    // beta-gated, so the answer describes the lawyer's review.
+    { q: "كيف تتم مراجعة العقد؟", a: "يقرأ المحامي كل بند ويقيس توازنه، ثم يصنّف البنود حسب درجة الخطورة ويشرح السبب في تقرير مكتوب." },
     { q: "هل الصياغة متوافقة مع الأنظمة السعودية؟", a: "نعم، جميع العقود المصاغة تمر بمراجعة محامٍ معتمد ومتخصص في نظام الشركات ونظام العمل وأنظمة التجارة السعودية." },
     { q: "ما مدة إنجاز العقود؟", a: "مراجعة العقد تُنجز خلال ٢٤ ساعة. صياغة العقد من الصفر تستغرق ٤٨-٧٢ ساعة حسب التعقيد. خدمات الطوارئ متاحة بسعر إضافي." },
   ],
   en: [
-    { q: "What file formats are supported?", a: "The platform supports all common formats — PDF, Word (.docx), and JPEG/PNG images. The AI system converts and analyzes them automatically." },
-    { q: "How does AI contract analysis work?", a: "The model reads each clause and evaluates its balance, then classifies each clause at three risk levels with explanations." },
+    { q: "What file formats are supported?", a: "The platform supports all common formats — PDF, Word (.docx), and JPEG/PNG images. The reviewing lawyer reads them as uploaded." },
+    { q: "How is a contract reviewed?", a: "The lawyer reads each clause and weighs its balance, then grades the clauses by risk and explains why in a written report." },
     { q: "Are drafted contracts compliant with Saudi law?", a: "Yes, all drafted contracts are reviewed by a certified lawyer specializing in Saudi company law, labor law, and commercial regulations." },
     { q: "How long does it take to complete contracts?", a: "Contract review is completed within 24 hours. Drafting from scratch takes 48-72 hours depending on complexity. Rush services are available at an additional fee." },
   ],
-};
-
-const riskColors = {
-  high: { bg: "bg-red-500/10", text: "text-red-500", border: "border-red-500/20", icon: WarningCircle, label: { ar: "خطورة عالية", en: "High Risk" } },
-  medium: { bg: "bg-amber-500/10", text: "text-amber-500", border: "border-amber-500/20", icon: Warning, label: { ar: "خطورة متوسطة", en: "Medium Risk" } },
-  low: { bg: "bg-emerald-500/10", text: "text-emerald-500", border: "border-emerald-500/20", icon: CheckCircle, label: { ar: "آمن", en: "Safe" } },
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -179,8 +161,8 @@ export default function ContractsPage() {
             </h1>
             <p className={`text-lg max-w-2xl mx-auto mb-10 ${isDark ? "text-gray-400" : "text-gray-600"}`}>
               {isRTL
-                ? "صياغة ومراجعة العقود بمساعدة الذكاء الاصطناعي مع مراجعة محامٍ متخصص — سريع، دقيق، وموثوق"
-                : "Draft and review contracts with AI assistance and human review by a specialist lawyer — fast, accurate, and reliable"}
+                ? "صياغة ومراجعة العقود على يد محامٍ متخصص"
+                : "Contracts drafted and reviewed by a specialist lawyer"}
             </p>
 
             {/* Stats row */}
@@ -241,79 +223,6 @@ export default function ContractsPage() {
               </motion.div>
             ))}
           </div>
-        </div>
-      </section>
-
-      {/* ── AI Analysis Demo ──────────────────────────────────────────────── */}
-      <section className={`py-20 ${isDark ? "bg-[#0c0f12]" : "bg-gray-50"}`}>
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="text-center mb-12"
-          >
-            <h2 className={`text-3xl font-bold mb-3 ${isDark ? "text-white" : "text-gray-900"}`}>
-              {isRTL ? "تحليل AI للعقود" : "AI Contract Analysis"}
-            </h2>
-            <p className={`text-base ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-              {isRTL ? "مثال حي على نتائج تحليل عقد العمل" : "Live example of a labor contract analysis result"}
-            </p>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 24 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className={`rounded-2xl border overflow-hidden ${isDark ? "bg-[#161b22] border-white/10" : "bg-white border-gray-200"}`}
-          >
-            {/* Mock terminal header */}
-            <div className={`flex items-center gap-2 px-5 py-3 border-b ${isDark ? "border-white/10 bg-[#0e1217]" : "border-gray-100 bg-gray-50"}`}>
-              <div className="w-3 h-3 rounded-full bg-red-400" />
-              <div className="w-3 h-3 rounded-full bg-amber-400" />
-              <div className="w-3 h-3 rounded-full bg-emerald-400" />
-              <span className={`text-xs ms-2 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-                {isRTL ? "ذكاء نظامي — تحليل عقد العمل" : "Nezamy AI — Labor Contract Analysis"}
-              </span>
-              <div className="ms-auto flex items-center gap-1.5">
-                <Brain size={14} className="text-emerald-500" />
-                <span className="text-xs text-emerald-500">{isRTL ? "اكتمل التحليل" : "Analysis complete"}</span>
-              </div>
-            </div>
-
-            <div className="p-6 space-y-4">
-              {mockClauses[L].map((clause, i) => {
-                const risk = riskColors[clause.risk as keyof typeof riskColors];
-                return (
-                  <motion.div
-                    key={i}
-                    initial={{ opacity: 0, x: isRTL ? 20 : -20 }}
-                    whileInView={{ opacity: 1, x: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ delay: i * 0.15 }}
-                    className={`flex items-start gap-4 rounded-xl border p-4 ${risk.bg} ${risk.border}`}
-                  >
-                    <risk.icon size={20} className={`${risk.text} flex-shrink-0 mt-0.5`} weight="fill" />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <span className={`font-semibold text-sm ${isDark ? "text-white" : "text-gray-900"}`}>{clause.clause}</span>
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${risk.bg} ${risk.text} border ${risk.border}`}>
-                          {risk.label[L]}
-                        </span>
-                      </div>
-                      <p className={`text-sm ${isDark ? "text-gray-300" : "text-gray-600"}`}>{clause.note}</p>
-                    </div>
-                  </motion.div>
-                );
-              })}
-
-              <div className={`flex items-center gap-3 pt-2 border-t ${isDark ? "border-white/10" : "border-gray-100"}`}>
-                <div className={`text-sm ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                  {isRTL ? "تم اكتشاف ٣ بنود • خطورة عالية ١ • متوسطة ١ • منخفضة ١" : "3 clauses detected • 1 High • 1 Medium • 1 Low"}
-                </div>
-              </div>
-            </div>
-          </motion.div>
         </div>
       </section>
 
