@@ -165,6 +165,17 @@ test("checkoutItemNotes: the library states its access length; firm plans promis
   }
 });
 
+test("checkoutItemNotes: the founder membership states its length and what activation grants (20261101_10), nothing more", () => {
+  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["lawyer-founder-2026"]), [
+    "عضوية لمدة ١٢ شهراً من تاريخ التفعيل",
+    "٦ أعمال بالصائغ القانوني ومخرج مستقل واحد",
+    "وصول إلى المكتبة القانونية لمدة ٣٦٥ يوماً",
+  ]);
+  // the card's promises that this plan does not grant (global constraints)
+  const notes = checkoutItemNotes(PAYABLE_ITEMS["lawyer-founder-2026"]).join(" ");
+  assert.doesNotMatch(notes, /دعوة|ضيف|غيغا|GB|أكاديمية|تجديد|مقعد/);
+});
+
 // ── the buy buttons while the status loads ──────────────────────────────────
 
 test("buyButtonAction: checkout / wait / request", () => {
@@ -398,4 +409,6 @@ test("couponFieldShown: only once the coupon columns exist, and never for a poin
   assert.equal(couponFieldShown({ kind: "library" }, true), true);
   assert.equal(couponFieldShown({ kind: "topup" }, true), false);
   assert.equal(couponFieldShown({ kind: "plan" }, false), false);
+  // P3: the founder price is already discounted and nothing stacks on it
+  assert.equal(couponFieldShown({ kind: "membership" }, true), false);
 });

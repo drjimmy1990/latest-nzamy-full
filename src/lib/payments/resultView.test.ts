@@ -54,6 +54,18 @@ test("a top-up says the points were added", () => {
   assert.match(v.body, /إضافة نقاط «شحن ٢٥٠ \(٢٥٠ نقطة\)»/);
 });
 
+test("a founder membership order is labelled «باقة المحامي المؤسس» with the membership notice, not a plan's", () => {
+  const m = { ...order, kind: "membership", item_id: "lawyer-founder-2026", billing: "once" };
+  const v = paymentResultView({ outcome: "granted", receiptNumber: "NZ-2026-000004" }, m);
+  const notice = fulfilmentNoticeAr({ kind: "membership", labelAr: "باقة المحامي المؤسس", receiptNumber: "NZ-2026-000004", alreadyEntitled: false });
+  const asPlan = fulfilmentNoticeAr({ kind: "plan", labelAr: "باقة المحامي المؤسس", receiptNumber: "NZ-2026-000004", alreadyEntitled: false });
+  assert.equal(v.tone, "success");
+  assert.equal(v.title, notice.title);
+  assert.equal(v.body, notice.body);
+  assert.notEqual(v.title, asPlan.title);
+  assert.match(v.body, /«باقة المحامي المؤسس»/);
+});
+
 test("already_entitled: paid, nothing replaced — the refund-review copy, never «تم الدفع وتفعيل»", () => {
   const v = paymentResultView({ outcome: "already_done", reason: "already_entitled", receiptNumber: "NZ-2026-000002" }, order);
   const notice = fulfilmentNoticeAr({ kind: "plan", labelAr: "المحامي المحترف", receiptNumber: "NZ-2026-000002", alreadyEntitled: true });

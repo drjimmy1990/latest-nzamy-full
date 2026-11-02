@@ -69,6 +69,8 @@ test("owner package 30 Oct 2026 (٢٩٩–٣٠٢): the book holds the revised do
     "topup-2500": { once: 2500 },
     "topup-5000": { once: 5000 },
     "topup-10000": { once: 10000 },
+    // P3: the lawyer founder membership, one payment of 2,996 before VAT
+    "lawyer-founder-2026": { once: 2996 },
   };
   assert.deepEqual(Object.keys(PRICE_BOOK).sort(), Object.keys(want).sort());
   for (const [id, prices] of Object.entries(want)) {
@@ -105,6 +107,24 @@ test("no entry is retired or coming soon; only the professionals' monthly cycle 
       assert.equal(p!.retired, retired ? true : undefined, `${entry.id} ${billing}`);
     }
   }
+});
+
+test("P3: the lawyer founder membership is a one-payment `membership` entry for lawyers only, with no tier, points or launch price", () => {
+  const entry = PRICE_BOOK["lawyer-founder-2026"];
+  assert.equal(entry.id, "lawyer-founder-2026");
+  assert.equal(entry.kind, "membership");
+  assert.equal(entry.labelAr, "باقة المحامي المؤسس");
+  assert.deepEqual(entry.buyers, ["lawyer"]);
+  assert.deepEqual(offeredBillings(entry), ["once"]);
+  assert.equal(offeredSar(entry, "once"), 2996);
+  assert.equal(entry.tier, undefined);
+  assert.equal(entry.points, undefined);
+  assert.equal(entry.libraryPlanRef, undefined);
+  assert.equal(entry.launchPrices, undefined);
+  assert.ok(isOnSale(entry));
+  assert.equal(renewalPrice("lawyer-founder-2026", "yearly"), null, "never renews in a cycle");
+  // the only membership in the book
+  assert.deepEqual(Object.values(PRICE_BOOK).filter((e) => e.kind === "membership").map((e) => e.id), ["lawyer-founder-2026"]);
 });
 
 test("the professionals' monthly cycle (owner, 26 Oct: 399/month cancelled) is not sold, but renews as 'retired' with its old price", () => {

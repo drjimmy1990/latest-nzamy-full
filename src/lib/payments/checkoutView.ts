@@ -22,6 +22,7 @@ import { resolveItem, sellableItem, type Billing, type PayableItem, type VatMode
 import type { CheckoutResponse } from "./checkoutRules.ts";
 import { VAT_NOTICE } from "../pricing/vatNotice.ts";
 import { BILLING_LABEL_AR, isBilling } from "../pricing/priceBook.ts";
+import { FOUNDER_CREDITS, FOUNDER_LIBRARY_DAYS, FOUNDER_MEMBERSHIP_MONTHS } from "../membership/founderPlan.ts";
 
 // ── the buy buttons ─────────────────────────────────────────────────────────
 
@@ -177,6 +178,14 @@ export function checkoutItemNotes(item: PayableItem): string[] {
   }
   if (item.kind === "library" && typeof item.libraryDays === "number") {
     return [`وصول إلى المكتبة القانونية لمدة ${daysAr(item.libraryDays)}`];
+  }
+  if (item.kind === "membership") {
+    // P3 founder membership: what founder_activate (20261101_10) grants, nothing more
+    return [
+      `عضوية لمدة ${monthsAr(FOUNDER_MEMBERSHIP_MONTHS)} من تاريخ التفعيل`,
+      `${arabicNumber(FOUNDER_CREDITS.drafting_work)} أعمال بالصائغ القانوني ومخرج مستقل واحد`,
+      `وصول إلى المكتبة القانونية لمدة ${daysAr(FOUNDER_LIBRARY_DAYS)}`,
+    ];
   }
   return [];
 }
@@ -446,9 +455,10 @@ export function parseCouponPreview(body: unknown): CouponPreview | null {
 
 /**
  * Whether /checkout shows the coupon field: once 20261026_20 has run
- * (couponServer.couponsAvailable) and never for a point top-up (no coupon
- * ever applies to one — owner, pricing doc §13أ.3).
+ * (couponServer.couponsAvailable), never for a point top-up (no coupon
+ * ever applies to one — owner, pricing doc §13أ.3) and never for the founder
+ * membership (its first-year price is already discounted; nothing stacks).
  */
 export function couponFieldShown(item: Pick<PayableItem, "kind">, couponsReady: boolean): boolean {
-  return couponsReady && item.kind !== "topup";
+  return couponsReady && item.kind !== "topup" && item.kind !== "membership";
 }

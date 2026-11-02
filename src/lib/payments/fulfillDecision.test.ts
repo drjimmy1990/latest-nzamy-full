@@ -266,7 +266,7 @@ test("isMissingPaymentsObject: a missing table, column or function, by Postgres 
 // ── the Arabic notices ──────────────────────────────────────────────────────
 
 test("fulfilmentNoticeAr: a title and a non-empty body for every kind, with the receipt number", () => {
-  for (const kind of ["plan", "library", "topup"] as const) {
+  for (const kind of ["plan", "library", "topup", "membership"] as const) {
     const n = fulfilmentNoticeAr({ kind, labelAr: "الباقة الذكية", receiptNumber: "NZ-2026-000001", alreadyEntitled: false });
     assert.ok(n.title.trim().length > 0, kind);
     assert.ok(n.body.trim().length > 0, kind);
@@ -282,6 +282,13 @@ test("fulfilmentNoticeAr: already entitled says nothing changed and that the adm
   assert.match(n.body, /استرداد/);
   assert.match(n.body, /الإدارة/);
   assert.doesNotMatch(n.title + n.body, /تفعيل/);
+});
+
+test("fulfilmentNoticeAr: a founder membership says the membership is active for 12 months from activation", () => {
+  const n = fulfilmentNoticeAr({ kind: "membership", labelAr: "باقة المحامي المؤسس", receiptNumber: "NZ-2026-000003", alreadyEntitled: false });
+  assert.equal(n.title, "تم تفعيل عضويتك المؤسِّسة");
+  assert.equal(n.body, "تم الدفع وتفعيل «باقة المحامي المؤسس» لمدة ١٢ شهراً من اليوم. رقم الإيصال: NZ-2026-000003.");
+  assert.doesNotMatch(n.title + n.body, /اشتراك|نقاط/);
 });
 
 test("fulfilmentNoticeAr: no receipt number yet still reads as a sentence", () => {

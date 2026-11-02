@@ -51,6 +51,7 @@ const EXPECTED_IDS = [
   "topup-2500",
   "topup-5000",
   "topup-10000",
+  "lawyer-founder-2026",
 ];
 
 // ─── quote ───────────────────────────────────────────────────────────────────
@@ -206,6 +207,7 @@ test("prices and grants as the owner set them (net halalas)", () => {
     "topup-2500":             { prices: { once: 250000 } },
     "topup-5000":             { prices: { once: 500000 } },
     "topup-10000":            { prices: { once: 1000000 } },
+    "lawyer-founder-2026":    { prices: { once: 299600 } },
   };
   for (const [id, want] of Object.entries(expected)) {
     const item = PAYABLE_ITEMS[id];
@@ -296,6 +298,7 @@ test("each item's buyers: plans to their own audience, the library to profession
     "topup-2500": PRO,
     "topup-5000": PRO,
     "topup-10000": PRO,
+    "lawyer-founder-2026": ["lawyer"],
   };
   assert.deepEqual(Object.keys(want).sort(), [...EXPECTED_IDS].sort());
   for (const [id, buyers] of Object.entries(want)) assert.deepEqual(PAYABLE_ITEMS[id].buyers, buyers, id);
@@ -327,6 +330,7 @@ test("buyerAllowed: the audience check checkout runs before quoting", () => {
     assert.equal(buyerAllowed(P["lib-q1"], t), false, String(t));
     assert.equal(buyerAllowed(P["topup-100"], t), false, String(t));
     assert.equal(buyerAllowed(P["topup-500"], t), false, String(t));
+    assert.equal(buyerAllowed(P["lawyer-founder-2026"], t), false, String(t));
   }
   // LIVE-F05: the library to legal professionals; an individual is refused
   for (const t of ["lawyer", "firm", "corporate", "government"]) {
@@ -344,6 +348,34 @@ test("buyerAllowed: the audience check checkout runs before quoting", () => {
     assert.equal(buyerAllowed(P[id], "individual"), false, id);
     for (const t of ["lawyer", "firm", "corporate", "micro", "government", "ngo", "provider"]) assert.equal(buyerAllowed(P[id], t), true, `${id} ${t}`);
   }
+});
+
+test("P3: the lawyer founder membership — 2,996 + 15 % VAT, one payment, no saved card, lawyers only", () => {
+  const q = quote("lawyer-founder-2026", "once");
+  assert.ok(q.ok);
+  assert.equal(q.netHalalas, 299600);
+  assert.equal(q.vatHalalas, 44940);
+  assert.equal(q.totalHalalas, 344540);
+  assert.equal(q.vatMode, "exclusive");
+  assert.equal(q.launch, null);
+  // inside the launch campaign too: the membership has no launch price
+  const inCampaign = quote("lawyer-founder-2026", "once", PAYABLE_ITEMS, new Date("2026-11-15T09:00:00Z"));
+  assert.ok(inCampaign.ok);
+  assert.equal(inCampaign.totalHalalas, 344540);
+  assert.equal(inCampaign.launch, null);
+  for (const b of ["monthly", "quarterly", "semiannual", "yearly"] as const) {
+    assert.deepEqual(quote("lawyer-founder-2026", b), { ok: false, error: "billing_not_offered" }, b);
+  }
+
+  const item = PAYABLE_ITEMS["lawyer-founder-2026"];
+  assert.equal(item.kind, "membership");
+  assert.equal(item.labelAr, "باقة المحامي المؤسس");
+  assert.equal(item.saveCard, false, "billed once: no auto-renew, so no saved card");
+  assert.equal(item.onSale, true);
+  assert.equal(item.tier, undefined);
+  assert.equal(item.points, undefined);
+  assert.equal(buyerAllowed(item, "lawyer"), true);
+  for (const t of ["firm", "individual", "provider", "corporate", "admin"]) assert.equal(buyerAllowed(item, t), false, t);
 });
 
 test("the catalog is frozen: no code can patch a price at runtime", () => {
