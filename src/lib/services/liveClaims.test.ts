@@ -225,25 +225,84 @@ test("I3: no «مشمول في الباقة» / 49 / 79 for ai-letter, the wizar
   assert.match(contract, /label: "مراجعة AI", desc: "قيد الإعداد", price: COMING_SOON_BADGE_AR, val: "ai-review"/);
 });
 
+// Fix round 2 widened this from the `ai: [...]` arrays to every string /pricing
+// renders for these audiences: the plan descriptions, the feature lists and
+// the comparison tables (pricing.companies.comparison.ts was how the gated
+// tools survived round 1).
+const I6_GATED = /CorpMind|Deal Intel|LegalMail|Doc Analyzer|تحليل مستندات|تقييم مخاطر|Risk Assessment|رادار (ال)?امتثال|[Cc]ompliance [Rr]adar|حزمة AI|AI suite|جميع أدوات|All AI tools|صائغ|Drafter|مراجع العقود|Contract Reviewer|\dAI|AI Contract Review|مراجعة عقود AI|فحص صحة|فحص ٣٦٠|360°|Health Check|استخدامات|uses \//;
+const I6_SOON = /قريباً|coming soon|^Soon$/;
+const I6_PLAN_FILES = [
+  "constants/pricing/pricing.companies.ts",
+  "constants/pricing/pricing.companies.legaldept.ts",
+  "constants/pricing/pricing.government.ts",
+];
+const stripLineComments = (code: string) => code.replace(/^\s*\/\/.*$/gm, "");
+
 test("I6: the companies, legal-department and government plans sell no gated AI tool", () => {
-  for (const path of [
-    "constants/pricing/pricing.companies.ts",
-    "constants/pricing/pricing.companies.legaldept.ts",
-    "constants/pricing/pricing.government.ts",
-  ]) {
-    const code = src(path).replace(/^\s*\/\/.*$/gm, "");
-    const features = [...code.matchAll(/ai: \[([^\]]*)\]/g)].map((m) => m[1]).join("\n");
-    assert.ok(features.length > 0, path);
-    assert.doesNotMatch(
-      features,
-      /CorpMind|Deal Intel|LegalMail|Doc Analyzer|تحليل مستندات|تقييم مخاطر|Risk Assessment|رادار امتثال|Compliance radar|حزمة AI|AI suite|جميع أدوات|All AI tools|صائغ|Drafter|مراجع العقود|Contract Reviewer|\dAI|AI Contract Review|مراجعة عقود AI|فحص صحة|Health Check|استخدامات|uses \//,
-      `${path} still sells a gated tool`,
-    );
-    assert.match(features, /أدوات الذكاء الاصطناعي: قريباً/);
-    assert.match(features, /AI tools: coming soon/);
+  for (const path of I6_PLAN_FILES) {
+    const code = stripLineComments(src(path));
+    const ai = [...code.matchAll(/ai: \[([^\]]*)\]/g)].map((m) => m[1]).join("\n");
+    assert.ok(ai.length > 0, path);
+    assert.match(ai, /أدوات الذكاء الاصطناعي: قريباً/);
+    assert.match(ai, /AI tools: coming soon/);
+    // Every feature-list item (ai, platform, support) that is not itself a
+    // «قريباً» line names no gated tool.
+    const items = [...code.matchAll(/(?:ai|platform|support): \[([^\]]*)\]/g)]
+      .flatMap((m) => [...m[1].matchAll(/"([^"]*)"/g)].map((s) => s[1]));
+    assert.ok(items.length > 0, path);
+    for (const item of items) {
+      if (I6_SOON.test(item)) continue;
+      assert.doesNotMatch(item, I6_GATED, `${path}: «${item}» sells a gated tool`);
+    }
+    // The card descriptions promise no AI and no compliance radar.
+    const descs = [...code.matchAll(/desc: "([^"]*)"/g)].map((m) => m[1]);
+    assert.ok(descs.length > 0, path);
+    for (const desc of descs) {
+      assert.doesNotMatch(desc, I6_GATED, `${path}: desc «${desc}»`);
+      assert.doesNotMatch(desc, /\bAI\b|الذكاء الاصطناعي|رادار|[Cc]ompliance/, `${path}: desc «${desc}»`);
+    }
   }
-  const gov = src("constants/pricing/pricing.government.ts").replace(/^\s*\/\/.*$/gm, "");
-  assert.doesNotMatch(gov, /feature: "(صائغ|Judgment|Indictment|عدد الاستخدامات|Usage Limit)/);
+});
+
+test("I6: the companies and government comparison tables match the trimmed cards", () => {
+  for (const path of ["constants/pricing/pricing.companies.comparison.ts", "constants/pricing/pricing.government.ts"]) {
+    const code = stripLineComments(src(path));
+    const rows = [...code.matchAll(/\{\s*feature: "([^"]*)",([^}]*)\}/g)].map((m) => ({
+      feature: m[1],
+      values: [...m[2].matchAll(/"([a-z-]+)": (?:"([^"]*)"|(true|false))/g)].map((v) => v[2] ?? v[3]),
+    }));
+    assert.ok(rows.length >= 6, path);
+    for (const { feature, values } of rows) {
+      assert.ok(values.length > 0, `${path}: «${feature}» has no plan values`);
+      // A row about an AI tool or the compliance radar shows «قريباً» in every
+      // plan (or "not included": false / ❌), never a quota or a tier.
+      if (/\bAI\b|الذكاء الاصطناعي|رادار|Radar|CorpMind|فحص|Health Check/.test(feature)) {
+        for (const v of values) assert.match(v, /قريباً|^Soon$|^false$|^❌$/, `${path}: «${feature}» sells «${v}»`);
+      } else {
+        // Any other row names no gated tool.
+        assert.doesNotMatch(feature, I6_GATED, `${path}: row «${feature}»`);
+      }
+      for (const v of values) {
+        assert.doesNotMatch(v, I6_GATED, `${path}: «${feature}» = «${v}»`);
+        assert.doesNotMatch(v, /\bAI\b|خصم من النقاط|Uses points/, `${path}: «${feature}» = «${v}»`);
+      }
+    }
+  }
+
+  // The lawyer contract-review counts in the table are the plan cards' counts.
+  const cards = stripLineComments(src("constants/pricing/pricing.companies.ts"));
+  const arCards = cards.slice(0, cards.indexOf("  en: ["));
+  const table = stripLineComments(src("constants/pricing/pricing.companies.comparison.ts"));
+  const arTable = table.slice(0, table.indexOf("  en: ["));
+  const reviewRow = arTable.split('feature: "مراجعة عقود محامٍ",')[1].split("}")[0];
+  const ids = [...arCards.matchAll(/\{ id: "(biz-[a-z-]+)"/g)].map((m) => m[1]);
+  assert.equal(ids.length, 9);
+  for (const id of ids) {
+    const block = arCards.split(`{ id: "${id}"`)[1].split("{ id: ")[0];
+    const card = block.match(/"مراجعة عقود محامٍ: ([^"]+)"/)?.[1]
+      ?? (block.includes("مراجعة عقود + صياغة: حسب العقد") ? "حسب العقد" : "❌");
+    assert.match(reviewRow, new RegExp(`"${id}": "${card}"`), `${id}: the table disagrees with the card («${card}»)`);
+  }
 });
 
 test("M2, M5, M10: small honesty fixes", () => {

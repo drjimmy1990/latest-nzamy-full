@@ -29,7 +29,7 @@ export const plansGovernment: { ar: Plan[]; en: Plan[] } = {
       ctaHref: "/contact?type=government&plan=department", highlighted: true, color: "border-sky-200/60 dark:border-sky-500/20",
       features: {
         ai: ["أدوات الذكاء الاصطناعي: قريباً", null, null, null],
-        platform: ["حتى ١٠ مستخدمين", "لوحة تحكم كاملة + تقارير", "إدارة القضايا والعقود (حسب العقد)", "رادار الامتثال التفاعلي"],
+        platform: ["حتى ١٠ مستخدمين", "لوحة تحكم كاملة + تقارير", "إدارة القضايا والعقود (حسب العقد)", "رادار الامتثال: قريباً"],
         support: ["دعم فني أولوية", "تدريب عن بُعد (٤ ساعات)"],
       },
     },
@@ -64,7 +64,7 @@ export const plansGovernment: { ar: Plan[]; en: Plan[] } = {
       ctaHref: "/contact?type=government&plan=department", highlighted: true, color: "border-sky-200/60 dark:border-sky-500/20",
       features: {
         ai: ["AI tools: coming soon", null, null, null],
-        platform: ["Up to 10 users", "Full dashboard + reports", "Cases & contracts: per contract", "Interactive compliance radar"],
+        platform: ["Up to 10 users", "Full dashboard + reports", "Cases & contracts: per contract", "Compliance radar: coming soon"],
         support: ["Priority support", "Remote training (4 hours)"],
       },
     },
@@ -93,7 +93,7 @@ export const comparisonGovernment: { ar: ComparisonCategory[]; en: ComparisonCat
       { feature: "عدد المستخدمين",                 "gov-eval": "١",              "gov-department": "حتى ١٠",          "gov-enterprise": "حتى ١٠٠" },
       { feature: "أدوار فرعية (RBAC)",             "gov-eval": "أساسي",          "gov-department": true,              "gov-enterprise": true },
       { feature: "SSO / Active Directory",          "gov-eval": false,            "gov-department": false,             "gov-enterprise": true },
-      { feature: "رادار الامتثال",                 "gov-eval": false,            "gov-department": "تفاعلي",          "gov-enterprise": "آلي + تصدير" },
+      { feature: "رادار الامتثال",                 "gov-eval": false,            "gov-department": "قريباً",          "gov-enterprise": "قريباً" },
     ]},
     { category: "الدعم والتدريب", icon: Gavel, rows: [
       { feature: "الدعم الفني",                    "gov-eval": "بريد إلكتروني",  "gov-department": "أولوية",           "gov-enterprise": "مدير حساب مخصص" },
@@ -110,7 +110,7 @@ export const comparisonGovernment: { ar: ComparisonCategory[]; en: ComparisonCat
       { feature: "Number of Users",                  "gov-eval": "1",              "gov-department": "Up to 10",        "gov-enterprise": "Up to 100" },
       { feature: "Sub-Roles (RBAC)",                 "gov-eval": "Basic",          "gov-department": true,              "gov-enterprise": true },
       { feature: "SSO / Active Directory",           "gov-eval": false,            "gov-department": false,             "gov-enterprise": true },
-      { feature: "Compliance Radar",                 "gov-eval": false,            "gov-department": "Interactive",     "gov-enterprise": "Auto + Export" },
+      { feature: "Compliance Radar",                 "gov-eval": false,            "gov-department": "Soon",            "gov-enterprise": "Soon" },
     ]},
     { category: "Support & Training", icon: Gavel, rows: [
       { feature: "Technical Support",                "gov-eval": "Email",          "gov-department": "Priority",        "gov-enterprise": "Dedicated account manager" },

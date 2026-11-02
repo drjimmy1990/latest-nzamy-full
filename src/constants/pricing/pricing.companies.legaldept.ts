@@ -1,7 +1,7 @@
 import { Plan } from "./pricing.types";
 
 // ─── COMPANIES WITH LEGAL DEPT (أرخص — أدوات + نقاط لفريقهم الموجود) ─────────
-// الخدمات: نقاط AI (CorpMind/مراجعة عقود/امتثال) + Kanban + مكتبة + سوق مهنيين
+// الخدمات: نقاط + Kanban + مكتبة + سوق مهنيين (أدوات AI: قريباً)
 // بدون: ترافع أو استشارات محامٍ (لأن عندهم فريق قانوني داخلي أصلاً)
 // Wave 1 task 6, fix round 1 (I6): CorpMind, Deal Intelligence, the
 // compliance radar, the document and risk analysers, LegalMail, the HR
@@ -14,7 +14,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
     // ── صغيرة (٦-٤٩) ───────────────────────────────────
     { id: "dept-sm-basic", name: "أساسية", badge: "~٤١٦ ر.س/شهر",
       priceMonthly: "٤,٩٨٨", priceYearly: "٤,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
-      desc: "نقاط AI + مكتبة قانونية + Kanban لفريق صغير", target: "إدارة قانونية صغيرة", cta: "اشترك سنوياً",
+      desc: "نقاط + مكتبة قانونية + Kanban لفريق صغير", target: "إدارة قانونية صغيرة", cta: "اشترك سنوياً",
       ctaHref: "/register/client?type=company", highlighted: false, color: "border-slate-200/50",
       companySize: "small", forLegalDept: true,
       includedSeats: 2, includedAnnualPoints: 5000, extraSeatPrice: "١,٩٨٨ ر.س/سنة",
@@ -27,7 +27,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
     },
     { id: "dept-sm-pro", name: "احترافية", badge: null,
       priceMonthly: "٩,٩٨٨", priceYearly: "٩,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
-      desc: "نقاط مكثفة + رادار امتثال + سوق مهنيين", target: "إدارة قانونية صغيرة", cta: "اشترك سنوياً",
+      desc: "نقاط مكثفة + حدود صرف + سوق مهنيين", target: "إدارة قانونية صغيرة", cta: "اشترك سنوياً",
       ctaHref: "/register/client?type=company", highlighted: true, color: "border-gold/20",
       companySize: "small", forLegalDept: true,
       includedSeats: 5, includedAnnualPoints: 15000, extraSeatPrice: "١,٩٨٨ ر.س/سنة",
@@ -40,7 +40,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
     },
     { id: "dept-sm-full", name: "متكاملة", badge: "~١,٤٩٩ ر.س/شهر",
       priceMonthly: "١٧,٩٨٨", priceYearly: "١٧,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
-      desc: "محفظة نقاط كبيرة + أدوات AI كاملة + API", target: "إدارة قانونية صغيرة", cta: "اشترك سنوياً",
+      desc: "محفظة نقاط كبيرة + تقارير مالية + API", target: "إدارة قانونية صغيرة", cta: "اشترك سنوياً",
       ctaHref: "/register/client?type=company", highlighted: false, color: "border-royal/20",
       companySize: "small", forLegalDept: true,
       includedSeats: 10, includedAnnualPoints: 40000, extraSeatPrice: "١,٩٨٨ ر.س/سنة",
@@ -67,7 +67,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
     },
     { id: "dept-md-pro", name: "احترافية", badge: null,
       priceMonthly: "١٩,٩٨٨", priceYearly: "١٩,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
-      desc: "رادار امتثال + حوكمة + نقاط مكثفة", target: "إدارة قانونية متوسطة", cta: "اشترك سنوياً",
+      desc: "حدود صرف + حوكمة + نقاط مكثفة", target: "إدارة قانونية متوسطة", cta: "اشترك سنوياً",
       ctaHref: "/register/client?type=company", highlighted: true, color: "border-gold/20",
       companySize: "medium", forLegalDept: true,
       includedSeats: 10, includedAnnualPoints: 40000, extraSeatPrice: "٢,٤٨٨ ر.س/سنة",
@@ -80,7 +80,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
     },
     { id: "dept-md-full", name: "متكاملة", badge: "~٢,٩١٦ ر.س/شهر",
       priceMonthly: "٣٤,٩٨٨", priceYearly: "٣٤,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
-      desc: "محفظة ضخمة + AI كامل + حوكمة + API", target: "إدارة قانونية متوسطة", cta: "تواصل معنا",
+      desc: "محفظة ضخمة + حوكمة + API", target: "إدارة قانونية متوسطة", cta: "تواصل معنا",
       ctaHref: "/contact", highlighted: false, color: "border-royal/20",
       companySize: "medium", forLegalDept: true,
       includedSeats: 20, includedAnnualPoints: 80000, extraSeatPrice: "٢,٤٨٨ ر.س/سنة",
@@ -107,7 +107,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
     },
     { id: "dept-lg-pro", name: "احترافية", badge: null,
       priceMonthly: "٣٩,٩٨٨", priceYearly: "٣٩,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
-      desc: "رادار امتثال كامل + انتداب + نقاط مكثفة", target: "إدارة قانونية كبرى", cta: "تواصل معنا",
+      desc: "حوكمة كاملة + انتداب + نقاط مكثفة", target: "إدارة قانونية كبرى", cta: "تواصل معنا",
       ctaHref: "/contact", highlighted: true, color: "border-gold/20",
       companySize: "large", forLegalDept: true,
       includedSeats: 25, includedAnnualPoints: 100000, extraSeatPrice: "٢,٩٨٨ ر.س/سنة",
@@ -136,7 +136,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
     // ── Small (6-49) EN ─────────────────────────────────
     { id: "dept-sm-basic", name: "Basic", badge: "~416 SAR/mo",
       priceMonthly: "4,988", priceYearly: "4,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
-      desc: "AI points + legal library + Kanban for small team", target: "Small Legal Dept", cta: "Subscribe Yearly",
+      desc: "Points + legal library + Kanban for small team", target: "Small Legal Dept", cta: "Subscribe Yearly",
       ctaHref: "/register/client?type=company", highlighted: false, color: "border-slate-200/50",
       companySize: "small", forLegalDept: true,
       includedSeats: 2, includedAnnualPoints: 5000, extraSeatPrice: "1,988 SAR/yr",
@@ -149,7 +149,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
     },
     { id: "dept-sm-pro", name: "Professional", badge: null,
       priceMonthly: "9,988", priceYearly: "9,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
-      desc: "Intensive points + compliance radar + marketplace", target: "Small Legal Dept", cta: "Subscribe Yearly",
+      desc: "Intensive points + spending limits + marketplace", target: "Small Legal Dept", cta: "Subscribe Yearly",
       ctaHref: "/register/client?type=company", highlighted: true, color: "border-gold/20",
       companySize: "small", forLegalDept: true,
       includedSeats: 5, includedAnnualPoints: 15000, extraSeatPrice: "1,988 SAR/yr",
@@ -162,7 +162,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
     },
     { id: "dept-sm-full", name: "Full Suite", badge: "~1,499 SAR/mo",
       priceMonthly: "17,988", priceYearly: "17,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
-      desc: "Large points wallet + full AI tools + API", target: "Small Legal Dept", cta: "Subscribe Yearly",
+      desc: "Large points wallet + finance reports + API", target: "Small Legal Dept", cta: "Subscribe Yearly",
       ctaHref: "/register/client?type=company", highlighted: false, color: "border-royal/20",
       companySize: "small", forLegalDept: true,
       includedSeats: 10, includedAnnualPoints: 40000, extraSeatPrice: "1,988 SAR/yr",
@@ -189,7 +189,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
     },
     { id: "dept-md-pro", name: "Professional", badge: null,
       priceMonthly: "19,988", priceYearly: "19,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
-      desc: "Compliance radar + governance + intensive points", target: "Medium Legal Dept", cta: "Subscribe Yearly",
+      desc: "Spending limits + governance + intensive points", target: "Medium Legal Dept", cta: "Subscribe Yearly",
       ctaHref: "/register/client?type=company", highlighted: true, color: "border-gold/20",
       companySize: "medium", forLegalDept: true,
       includedSeats: 10, includedAnnualPoints: 40000, extraSeatPrice: "2,488 SAR/yr",
@@ -202,7 +202,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
     },
     { id: "dept-md-full", name: "Full Suite", badge: "~2,916 SAR/mo",
       priceMonthly: "34,988", priceYearly: "34,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
-      desc: "Massive wallet + full AI + governance + API", target: "Medium Legal Dept", cta: "Contact Us",
+      desc: "Massive wallet + governance + API", target: "Medium Legal Dept", cta: "Contact Us",
       ctaHref: "/contact", highlighted: false, color: "border-royal/20",
       companySize: "medium", forLegalDept: true,
       includedSeats: 20, includedAnnualPoints: 80000, extraSeatPrice: "2,488 SAR/yr",
@@ -229,7 +229,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
     },
     { id: "dept-lg-pro", name: "Professional", badge: null,
       priceMonthly: "39,988", priceYearly: "39,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
-      desc: "Full compliance + secondment + intensive points", target: "Large Legal Dept", cta: "Contact Us",
+      desc: "Full governance + secondment + intensive points", target: "Large Legal Dept", cta: "Contact Us",
       ctaHref: "/contact", highlighted: true, color: "border-gold/20",
       companySize: "large", forLegalDept: true,
       includedSeats: 25, includedAnnualPoints: 100000, extraSeatPrice: "2,988 SAR/yr",
