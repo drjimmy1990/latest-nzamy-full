@@ -100,8 +100,13 @@
 --      founder_release_expired() → int: releases reserved seats past
 --        reserved_until whose order is not paid (the payments sweep).
 --      founder_release_order(p_order) → boolean: releases the order's
---        reserved seat at once (Moyasar said failed / voided / cancelled);
---        never one whose order is paid.
+--        reserved seat at once; never one whose order is paid. Called only
+--        when Moyasar says the payment was voided / cancelled, and on the
+--        checkout's own failure paths (intent refused, stamp failed, reserve
+--        transport error). A DECLINED / FAILED card does NOT release it
+--        (ruling R17): the seat stays reserved until reserved_until (2 hours)
+--        so the buyer's retry moves the same seat to the new order;
+--        founder_release_expired frees an abandoned one.
 --      founder_seat_summary() → capacity, active, reserved (live only),
 --        seats_left, sale_paused, on_sale (window open, not paused, a seat
 --        left).
@@ -597,7 +602,9 @@ end $$;
 comment on function public.founder_release_expired() is
   'Releases reserved founder seats past reserved_until whose order is not paid; returns how many (20261101_10). Service role only.';
 
--- 7f. release one order's reservation (Moyasar said failed / voided / cancelled)
+-- 7f. release one order's reservation — only for a voided / cancelled payment
+--     or the checkout's own failure paths. A declined / failed card keeps its
+--     seat until reserved_until for the retry (ruling R17).
 create or replace function public.founder_release_order(p_order uuid)
 returns boolean
 language plpgsql

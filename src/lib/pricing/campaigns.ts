@@ -60,13 +60,17 @@ export function activeCampaign(now: Date, campaigns: readonly Campaign[] = CAMPA
 // ── The founder campaign (owner ٢١٨, dates ٢٢٥; 25-Oct answers, 20261026_01) ──
 
 /**
- * False until the paid founder membership exists (phase P3: verified licence
- * + payment, 1,096 paid seats). While false, GET /api/v1/campaigns/active
- * answers `{ campaign: null }` without reading the setting, so no banner
- * promises a founder offer nobody can buy. P3 flips it in the same change
- * that ships the membership checkout.
+ * The code-level sale switch of the paid founder membership (phase P3:
+ * verified licence + payment + a seat, 20261101_10). P3 Task 11 turned it on,
+ * in the same change that ships the membership checkout. It is only the
+ * first of two gates: GET /api/v1/campaigns/active and the checkout still
+ * answer no campaign / 410 outside the founder_campaign dates, while the
+ * admin has paused the sale, or once no seat is left (founder_seat_summary,
+ * founder_reserve_seat). Setting it back to false hides the card and refuses
+ * every founder checkout without reading the setting; the admin's pause
+ * switch («حملة المؤسس») does the same without a deploy.
  */
-export const FOUNDER_MEMBERSHIP_ON_SALE: boolean = false;
+export const FOUNDER_MEMBERSHIP_ON_SALE: boolean = true;
 
 /**
  * The paid-membership copy. It never promises a gift for registering (owner,
@@ -77,7 +81,7 @@ export const FOUNDER_MEMBERSHIP_ON_SALE: boolean = false;
  */
 export const FOUNDER_CAMPAIGN_COPY = {
   badgeAr: "عضوية المحامي المؤسس",
-  messageAr: "عضوية المحامي المؤسس السنوية — مقاعد محدودة (١٬٠٩٦ مقعداً مدفوعاً) لمن يوثّق رخصته ويُتم السداد",
+  messageAr: "عضوية المحامي المؤسس السنوية — مقاعد محدودة لمن يوثّق رخصته ويُتم السداد",
   ctaAr: "اعرف التفاصيل",
   ctaHref: "/pricing?audience=lawyers&campaign=founder-2026#founder-plan",
 } as const;

@@ -60,7 +60,7 @@ test("founder campaign: shows on the first and the last day, both included, with
     assert.equal(c.startsOn, "2026-10-25");
     assert.equal(c.endsOn, "2027-01-25");
     assert.equal(c.badgeAr, "عضوية المحامي المؤسس");
-    assert.equal(c.messageAr, "عضوية المحامي المؤسس السنوية — مقاعد محدودة (١٬٠٩٦ مقعداً مدفوعاً) لمن يوثّق رخصته ويُتم السداد");
+    assert.equal(c.messageAr, "عضوية المحامي المؤسس السنوية — مقاعد محدودة لمن يوثّق رخصته ويُتم السداد");
     assert.equal(c.ctaAr, "اعرف التفاصيل");
     assert.equal(c.ctaHref, "/pricing?audience=lawyers&campaign=founder-2026#founder-plan");
     assert.equal(c.id, "founder-2026-10-25");
@@ -71,8 +71,13 @@ test("founder campaign: shows on the first and the last day, both included, with
 // free signup. Until the paid founder membership exists (P3) no banner may
 // promise any founder offer, and no copy may promise a signup gift. ─────────
 
-test("founder membership is not on sale yet (P3), so the route answers no campaign", () => {
-  assert.equal(FOUNDER_MEMBERSHIP_ON_SALE, false);
+test("founder membership is on sale in code (P3 Task 11); the dates, the pause and the seats still gate it in SQL", () => {
+  assert.equal(FOUNDER_MEMBERSHIP_ON_SALE, true);
+});
+
+test("the founder banner states no seat number: capacity is admin-editable (R1)", () => {
+  assert.doesNotMatch(FOUNDER_CAMPAIGN_COPY.messageAr, /[0-9٠-٩]/);
+  assert.match(FOUNDER_CAMPAIGN_COPY.messageAr, /مقاعد محدودة/);
 });
 
 test("the founder copy promises no signup gift — no free library days, no badge for registering", () => {
