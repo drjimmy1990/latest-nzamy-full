@@ -107,8 +107,12 @@ It needs the main folder's own env file (never paste its values in chat):
 D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\.env.local
 ```
 
-```bash
-npm run build && npm run start
+The same build command `deploy.sh` runs (`npm run build`, with the same 4096 MB heap). In PowerShell, one line at a time:
+
+```powershell
+$env:NODE_OPTIONS="--max-old-space-size=4096"
+npm run build
+npm run start
 ```
 
 Then open `http://localhost:3000` and check:
