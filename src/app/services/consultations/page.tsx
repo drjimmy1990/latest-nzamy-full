@@ -165,14 +165,16 @@ const faqs = {
     // which /refund-policy (owner answer ١٨٠, sections ٢ and ٤) does not offer.
     // This answer restates that policy and links to it; it adds no term.
     { q: "هل يمكن استرداد المبلغ إذا لم أكن راضيًا؟", a: "تُدفع أتعاب الاستشارة لمكتب المحاماة المرخّص مباشرةً، ولا تحتفظ بها المنصة. الإلغاء قبل ٢٤ ساعة من موعد الجلسة إلغاءٌ كامل، وما عدا ذلك يخضع لاتفاقك مع مكتب المحاماة، ويحق لك تقديم شكوى جودة تُحال إلى فريق نظامي للمراجعة.", link: { href: "/refund-policy", label: "سياسة الاسترداد" } },
-    { q: "هل ذكاء نظامي يغني عن المحامي؟", a: "ذكاء نظامي أداة مساعدة ممتازة للاستفسارات العامة والمعلوماتية، لكن للقضايا المعقدة والتمثيل القضائي لا بديل عن المتابعة بواسطة محامٍ مرخص ومتمرس." },
+    // Was «ذكاء نظامي أداة مساعدة ممتازة …»: /ai/consult is beta-gated and the
+    // AI card above says «غير متاحة حالياً» (Wave 1 task 6, fix round 2).
+    { q: "هل ذكاء نظامي متاح الآن؟", a: "ليس بعد؛ ذكاء نظامي غير متاح حالياً. وحين يُتاح يبقى أداة مساعدة للاستفسارات العامة، ولا يغني عن محامٍ مرخّص في القضايا المعقدة والتمثيل القضائي." },
   ],
   en: [
     { q: "How does an instant consultation work?", a: "After payment you are immediately connected to a voice/video/chat room with the first available lawyer in the requested specialty. Because the lawyer roster is still being onboarded, we cannot quote an expected wait time yet." },
     { q: "Is the consultation confidential?", a: "Yes — the platform complies with Saudi legal confidentiality requirements. Technically: traffic is secured with TLS, and row-level security (RLS) prevents another account from reading your conversations. There is no end-to-end (E2E) encryption." },
     { q: "What is the difference between instant and scheduled?", a: "Instant connects you with the first available lawyer in minutes for 30 minutes. Scheduled lets you pick a time that suits you for 60 minutes; Nezamy's team reviews your request and assigns a specialist lawyer." },
     { q: "Can I get a refund if I am not satisfied?", a: "Consultation fees are paid directly to the licensed law office; the platform does not hold them. Cancelling up to 24 hours before the session is a full cancellation. Anything else follows your agreement with the law office, and you may file a quality complaint for the Nezamy team to review.", link: { href: "/refund-policy", label: "Refund Policy" } },
-    { q: "Does Nezamy AI replace a lawyer?", a: "Nezamy AI is an excellent aid for general and informational queries, but for complex cases and court representation there is no substitute for follow-up by a licensed, experienced lawyer." },
+    { q: "Is Nezamy AI available now?", a: "Not yet; Nezamy AI is not available at the moment. Once it is, it will be an aid for general queries and no substitute for a licensed lawyer in complex cases or court representation." },
   ],
 };
 
@@ -215,8 +217,8 @@ export default function ConsultationsPage() {
             </h1>
             <p className={`text-lg max-w-2xl mx-auto ${isDark ? "text-gray-400" : "text-gray-600"}`}>
               {isRTL
-                ? "تواصل مع محامٍ معتمد في دقائق — صوتاً أو مرئياً أو نصاً — أو استعن بذكاء نظامي المتخصص في الأنظمة السعودية"
-                : "Connect with a certified lawyer in minutes — by voice, video or text — or use Nezamy AI specialized in Saudi law"}
+                ? "تواصل مع محامٍ معتمد في دقائق — صوتاً أو مرئياً أو نصاً"
+                : "Connect with a certified lawyer in minutes — by voice, video or text"}
             </p>
           </motion.div>
 

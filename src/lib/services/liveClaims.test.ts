@@ -347,3 +347,17 @@ test("1b: the ai-letter card says what /dashboard/client/letters does — a temp
   assert.doesNotMatch(row, /aiPowered: true/, "the card's «AI» chip");
   assert.match(row, /label: "خطاب رسمي من قالب استرشادي"/);
 });
+
+// ── fix round 2 ──────────────────────────────────────────────────────────────
+
+test("2: /services/consultations invites nobody to the gated AI it marks «غير متاحة حالياً»", () => {
+  const page = src("app/services/consultations/page.tsx").replace(/^\s*\/\/.*$/gm, "");
+  // The AI card still says it is unavailable.
+  assert.match(page, /غير متاحة حالياً/);
+  assert.match(page, /not available yet/);
+  // The hero and the FAQ no longer send the visitor to it.
+  assert.doesNotMatch(page, /استعن بذكاء نظامي|use Nezamy AI/);
+  assert.doesNotMatch(page, /أداة مساعدة ممتازة|excellent aid/);
+  assert.match(page, /q: "هل ذكاء نظامي متاح الآن؟", a: "ليس بعد؛ ذكاء نظامي غير متاح حالياً\./);
+  assert.match(page, /q: "Is Nezamy AI available now\?", a: "Not yet; Nezamy AI is not available at the moment\./);
+});
