@@ -73,6 +73,11 @@ test("reset-password requires a live session, saves through updateUser and signs
   assert.match(reset, /const \{ error: globalError \} = await supabase\.auth\.signOut\(\{ scope: "global" \}\)/);
   assert.match(reset, /const \{ error: localError \} = await supabase\.auth\.signOut\(\{ scope: "local" \}\)/);
   assert.match(reset, /\{t\.doneBody\[signedOut\]\}/);
+  // both server sign-outs failed: the auth cookies are expired by hand, and
+  // only then — after re-checking — is the outcome "local"
+  assert.match(reset, /for \(const name of authCookieNamesToClear\(document\.cookie\)\)/);
+  assert.match(reset, /document\.cookie = `\$\{name\}=; path=\/; max-age=0; samesite=lax`/);
+  assert.match(reset, /if \(authCookieNamesToClear\(document\.cookie\)\.length === 0\) outcome = "local"/);
   // the honest dead end links back to a new request
   assert.match(reset, /href=\{FORGOT_PASSWORD_PATH\}/);
 });

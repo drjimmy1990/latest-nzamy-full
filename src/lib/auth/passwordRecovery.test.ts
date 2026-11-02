@@ -8,6 +8,8 @@ import {
   recoveryLandingAfterExchange,
   classifyRecoverError,
   isPlausibleEmail,
+  isSupabaseAuthCookieName,
+  authCookieNamesToClear,
   linkErrorInUrl,
   resetPasswordProblem,
   resetPasswordErrorMessage,
@@ -99,6 +101,10 @@ test("recover errors: only transport, captcha and malformed-address failures dif
   // An API 500 (SMTP failed) only happens for a registered address: neutral.
   assert.equal(classifyRecoverError({ name: "AuthApiError", status: 500, message: "Error sending recovery email" }), "sent");
   assert.equal(classifyRecoverError({ name: "AuthRetryableFetchError", status: 502, message: "" }), "server");
+  // A timeout may be a hanging SMTP send — only for a registered address.
+  // (GoTrue's request_timeout is a 504, which auth-js raises as retryable.)
+  assert.equal(classifyRecoverError({ name: "AuthRetryableFetchError", status: 504, message: "" }), "sent");
+  assert.equal(classifyRecoverError({ name: "AuthRetryableFetchError", status: 524, message: "" }), "sent");
   assert.equal(classifyRecoverError({ code: "validation_failed", status: 400, message: "Unable to validate email address: invalid format" }), "invalid_email");
   // GoTrue's per-account resend limit only fires for a registered address that
   // was just sent a link — telling it apart would say the account exists.
@@ -111,7 +117,7 @@ test("recover errors that cannot depend on the account get the honest server mes
   // Not GoTrue's JSON at all: an HTML 500 from a proxy, a wrong URL.
   assert.equal(classifyRecoverError({ name: "AuthUnknownError", message: "Unexpected token <" }), "server");
   // Configuration refusals, decided before or without the lookup.
-  for (const code of ["email_provider_disabled", "provider_disabled", "bad_json", "bad_jwt", "no_authorization", "request_timeout"]) {
+  for (const code of ["email_provider_disabled", "provider_disabled", "bad_json", "bad_jwt", "no_authorization"]) {
     assert.equal(classifyRecoverError({ name: "AuthApiError", code, status: 422, message: "" }), "server", code);
   }
   // The gateway's «Invalid API key» and friends arrive code-less.
@@ -155,4 +161,26 @@ test("a lost recovery session says the link expired and points at /forgot-passwo
   assert.match(en, /link/i);
   // Everything else reuses the Settings translation.
   assert.match(resetPasswordErrorMessage(new Error("New password should be different from the old password."), true), /تختلف/);
+});
+
+test("auth cookie names: the token, its chunks and the PKCE verifier — nothing else", () => {
+  for (const name of [
+    "sb-auth-auth-token",
+    "sb-auth-auth-token.0",
+    "sb-auth-auth-token.1",
+    "sb-auth-auth-token-code-verifier",
+    "sb-abcdefghijkl-auth-token.12",
+  ]) {
+    assert.equal(isSupabaseAuthCookieName(name), true, name);
+  }
+  for (const name of ["nz_theme", "nz_post_login", "nzamy_session", "sb-auth-auth-tokenx", "xsb-auth-auth-token", "auth-token", "sb--auth-token-other"]) {
+    assert.equal(isSupabaseAuthCookieName(name), false, name);
+  }
+  assert.deepEqual(
+    authCookieNamesToClear(
+      "nz_theme=dark; sb-auth-auth-token.0=base64-abc; nz_post_login=%2Flaws; sb-auth-auth-token.1=def; sb-auth-auth-token-code-verifier=v",
+    ),
+    ["sb-auth-auth-token.0", "sb-auth-auth-token.1", "sb-auth-auth-token-code-verifier"],
+  );
+  assert.deepEqual(authCookieNamesToClear(""), []);
 });

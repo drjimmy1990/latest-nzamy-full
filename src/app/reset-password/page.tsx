@@ -20,6 +20,7 @@ import { BACKEND_MODE } from "@/lib/runtimeMode";
 import { toArabicDigits } from "@/lib/services/arabicCount";
 import {
   FORGOT_PASSWORD_PATH,
+  authCookieNamesToClear,
   MIN_RESET_PASSWORD_LENGTH,
   linkErrorInUrl,
   resetPasswordErrorMessage,
@@ -42,9 +43,11 @@ import {
  * straight to a dashboard.
  *
  * signOut RETURNS its error (network, 5xx) rather than throwing, and on an
- * error it keeps the local session. So a failed global sign-out falls back to
- * a local one, and the success copy says which of the two actually happened
- * (or that neither did) instead of always claiming "every device".
+ * error it keeps the local session — for scope "local" too, which also asks
+ * the server first (auth-js _signOut). So a failed global sign-out falls back
+ * to a local one, and if that fails as well the page expires the auth cookies
+ * itself (authCookieNamesToClear). The success copy says what actually
+ * happened: only a global sign-out may claim the other devices.
  */
 
 type SignOutOutcome = "global" | "local" | "none";
@@ -73,8 +76,8 @@ const TEXT = {
     doneTitle: "تم تغيير كلمة المرور",
     doneBody: {
       global: "سُجّل خروجك من جميع الأجهزة. سجّل الدخول الآن بكلمة المرور الجديدة.",
-      local: "سُجّل خروجك من هذا الجهاز. قد تبقى أجهزتك الأخرى مسجّلة الدخول حتى تنتهي جلساتها. سجّل الدخول الآن بكلمة المرور الجديدة.",
-      none: "تعذّر تسجيل الخروج الآن، فما زلت مسجّل الدخول على هذا الجهاز. كلمة المرور الجديدة هي المعتمدة من الآن.",
+      local: "سُجّل خروجك من هذا الجهاز فقط. إن كنت مسجّل الدخول على أجهزة أخرى فقد تبقى مسجّلة — سجّل الخروج منها بنفسك. سجّل الدخول الآن بكلمة المرور الجديدة.",
+      none: "تغيّرت كلمة المرور، لكن تعذّر تسجيل خروجك، فما زلت مسجّل الدخول على هذا الجهاز، وقد تبقى أجهزتك الأخرى مسجّلة أيضاً. سجّل الخروج من كل جهاز بنفسك، ثم سجّل الدخول فيه بكلمة المرور الجديدة.",
     },
     signIn: "تسجيل الدخول",
     continue: "متابعة",
@@ -98,8 +101,8 @@ const TEXT = {
     doneTitle: "Password changed",
     doneBody: {
       global: "You have been signed out on every device. Sign in now with your new password.",
-      local: "You have been signed out on this device. Your other devices may stay signed in until their sessions end. Sign in now with your new password.",
-      none: "Signing out failed just now, so you are still signed in on this device. The new password is the one that counts from now on.",
+      local: "You have been signed out on this device only. If you are signed in on other devices, they may still be signed in — sign out there yourself. Sign in now with your new password.",
+      none: "Your password changed, but signing you out failed, so you are still signed in on this device, and your other devices may be too. Sign out on each device yourself, then sign in there with the new password.",
     },
     signIn: "Sign in",
     continue: "Continue",
@@ -180,6 +183,18 @@ export default function ResetPasswordPage() {
         try {
           const { error: localError } = await supabase.auth.signOut({ scope: "local" });
           if (!localError) outcome = "local";
+        } catch {
+          // fall through to clearing the cookies by hand
+        }
+      }
+      if (outcome === "none") {
+        // Both asked the server and kept the session on failure. Expire this
+        // browser's auth cookies directly (path=/, as @supabase/ssr sets them).
+        try {
+          for (const name of authCookieNamesToClear(document.cookie)) {
+            document.cookie = `${name}=; path=/; max-age=0; samesite=lax`;
+          }
+          if (authCookieNamesToClear(document.cookie).length === 0) outcome = "local";
         } catch {
           // still signed in; the copy says so
         }

@@ -114,14 +114,19 @@ export type RecoverOutcome = "sent" | "captcha" | "network" | "server" | "invali
  *   - a GoTrue API 5xx ("Error sending recovery email", SMTP down, or a send
  *     hook failing) comes only after GoTrue found the user, so it too is
  *     answered neutrally. A mail outage is therefore invisible here — the
- *     post-deploy inbox test catches it;
+ *     operator watches GoTrue's logs for 5xx on /recover. Nothing is logged
+ *     in the browser either: the console would tell the same secret;
+ *   - a timeout (504/524, including GoTrue's own request_timeout, which
+ *     auth-js raises as a retryable 504): a hanging SMTP send only happens
+ *     for a registered address, so a timeout is neutral too;
  *   - any API error this list does not name: unknown means neutral.
  * What is said differently cannot reveal an account:
  *   - captcha: checked before GoTrue looks the address up;
  *   - network (AuthRetryableFetchError, status 0) and validation (malformed
  *     address): no lookup;
- *   - gateway down (AuthRetryableFetchError with 502/503/504/52x/530 —
- *     supabase-js raises it only for those): the same for every address;
+ *   - gateway down (AuthRetryableFetchError with 502/503/520-523/530 —
+ *     supabase-js raises it for those and for the timeouts above): the
+ *     upstream was unreachable, the same for every address;
  *   - AuthUnknownError: the answer was not GoTrue's JSON at all (an HTML 500
  *     from a proxy, a wrong URL) — it never reached the lookup;
  *   - configuration refusals (ACCOUNT_INDEPENDENT_CODES, or a code-less
@@ -134,16 +139,18 @@ const ACCOUNT_INDEPENDENT_CODES = new Set([
   "bad_json",
   "bad_jwt",
   "no_authorization",
-  "request_timeout",
 ]);
 const ACCOUNT_INDEPENDENT_STATUSES = new Set([401, 403, 404, 405]);
+/** Gateway timeouts: the upstream may have been busy sending a real email. */
+const TIMEOUT_STATUSES = new Set([504, 524]);
 
 export function classifyRecoverError(error: unknown): RecoverOutcome {
   if (!error || typeof error !== "object") return "sent";
   if (isCaptchaAuthError(error)) return "captcha";
   const { name, status, code } = error as { name?: unknown; status?: unknown; code?: unknown };
   if (name === "AuthRetryableFetchError") {
-    return status === 0 || status === undefined ? "network" : "server";
+    if (status === 0 || status === undefined) return "network";
+    return typeof status === "number" && TIMEOUT_STATUSES.has(status) ? "sent" : "server";
   }
   if (name === "AuthUnknownError") return "server";
   if (code === "validation_failed" || code === "email_address_invalid") return "invalid_email";
@@ -199,4 +206,30 @@ export function resetPasswordErrorMessage(error: unknown, isAr: boolean): string
   if (/different from the old password/i.test(raw)) return "The new password must differ from the current one.";
   if (/rate limit|too many requests|after \d+ seconds/i.test(raw)) return "Too many attempts. Wait a moment, then try again.";
   return "The password could not be updated. Please try again.";
+}
+
+/**
+ * The Supabase auth cookies in this browser, by name. supabase-js names its
+ * storage key `sb-${hostname.split(".")[0]}-auth-token` (so
+ * `sb-auth-auth-token` for auth.nezamy.sa); @supabase/ssr splits a long value
+ * into `${key}.${i}` chunks, and the PKCE verifier lives at
+ * `${key}-code-verifier`. Nothing else of ours starts with "sb-".
+ */
+export function isSupabaseAuthCookieName(name: string): boolean {
+  return /^sb-.+-auth-token(?:-code-verifier)?(?:\.\d+)?$/.test(name);
+}
+
+/**
+ * The auth cookie names in a `document.cookie` string — what /reset-password
+ * expires by hand when both server sign-outs failed. (auth-js signOut, local
+ * scope included, calls the server first and keeps the session on a network
+ * or 5xx error.) The cookies are httpOnly:false (@supabase/ssr defaults), so
+ * the page can expire them.
+ */
+export function authCookieNamesToClear(cookieString: string): string[] {
+  const names = cookieString
+    .split(";")
+    .map((part) => part.split("=")[0]?.trim() ?? "")
+    .filter((name) => name && isSupabaseAuthCookieName(name));
+  return [...new Set(names)];
 }
