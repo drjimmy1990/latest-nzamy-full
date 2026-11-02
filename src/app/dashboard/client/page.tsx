@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import {
   Gavel, CalendarBlank, FolderOpen, Coins, Robot, Sparkle,
-  ArrowClockwise, ArrowLeft, Clock, ChatCircle,
+  ArrowClockwise, ArrowLeft, Clock,
   FileText, Wallet, Shield,
   Headset, Users, PencilSimple,
   Package, Lightning, WarningCircle, UserCircle,
@@ -469,13 +469,17 @@ export default function ClientDashboard() {
 
   // ── Quick Services ─────────────────────────────────────────────────────
   //
-  // THREE CARDS, NOT FOUR. The fourth was «ابحث عن محامٍ» →
+  // TWO CARDS. «احجز استشارة» (→ /dashboard/client/consultation/new) left in
+  // owner q358: the home shows ONE booking button, «اطلب استشارة» in the
+  // greeting card, going where the old primary did (/dashboard/client/services).
+  //
+  // The card before that was «ابحث عن محامٍ» →
   // /dashboard/client/find-lawyer, badged «مجاني دائماً».
   //
   // THE REASON THAT STANDS ON ITS OWN is a fact about this code:
   // BETA_MONOPOLY_MODE (src/lib/betaConfig.ts) is true, نظامي is the sole
   // provider for the whole beta, and there is therefore no second lawyer to go
-  // and find. «احجز استشارة» beside it books the office directly.
+  // and find. «اطلب استشارة» in the greeting card books the office directly.
   //
   // THE SUPPORTING FACT IS ABOUT DATA, ON A DATE, AND WAS NOT CHECKED FROM
   // HERE. GET /api/v1/lawyers filters on verification_status = 'verified' AND
@@ -501,15 +505,6 @@ export default function ClientDashboard() {
   //
   // Constant, so no useMemo: it closes over nothing.
   const QUICK_SERVICES = [
-    {
-      // The booking wizard itself, not the catalogue — «كل الخدمات» in the
-      // section header is the catalogue.
-      label: "احجز استشارة",
-      href: "/dashboard/client/consultation/new",
-      icon: ChatCircle,
-      color: "from-[#b5883a] to-[#C8A762]",
-      desc: "مع محامي المكتب",
-    },
     {
       label: "اسأل ذكاء نظامي",
       href: "/ai/consult",
@@ -671,7 +666,7 @@ export default function ClientDashboard() {
                   className="flex items-center gap-2 bg-[#C8A762] text-[#0B3D2E] font-bold px-5 py-2.5 rounded-xl text-sm shadow-md cursor-pointer"
                 >
                   <Headset size={16} weight="bold" />
-                  احجز استشارة
+                  اطلب استشارة
                   <ArrowLeft size={14} />
                 </motion.div>
               </Link>
@@ -816,15 +811,10 @@ export default function ClientDashboard() {
           </div>
           <div>
             <p className={`text-[13px] font-bold ${isDark ? "text-white" : "text-zinc-800"}`}>لا يوجد موعد قادم</p>
-            <p className={`text-[11px] mt-1 leading-relaxed ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>احجز استشارة ليظهر موعدك هنا</p>
+            {/* No button here (owner q358): «اطلب استشارة» in the greeting
+                card is the home's one booking button. */}
+            <p className={`text-[11px] mt-1 leading-relaxed ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>حين يُحدَّد موعد استشارتك يظهر هنا</p>
           </div>
-          <Link href="/dashboard/client/services" className="block w-full">
-            <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-              className="w-full flex items-center justify-center gap-1.5 bg-royal/10 dark:bg-emerald-500/15 text-royal dark:text-emerald-400 text-[12px] font-bold py-2.5 rounded-xl transition-colors hover:bg-royal/20 dark:hover:bg-emerald-500/25 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal dark:focus-visible:ring-gold"
-            >
-              <Headset size={13} /> احجز استشارة
-            </motion.div>
-          </Link>
         </motion.div>
         )}
       </motion.div>
@@ -940,10 +930,10 @@ export default function ClientDashboard() {
             كل الخدمات <ArrowLeft size={10} />
           </Link>
         </div>
-        {/* lg:grid-cols-3, matching the three cards. It was grid-cols-4 for a
-            fourth card — «ابحث عن محامٍ» — that has been removed; see the
-            QUICK_SERVICES comment above. */}
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+        {/* grid-cols-2, matching the two cards. It was lg:grid-cols-3 for
+            «احجز استشارة» (q358) and grid-cols-4 before that for «ابحث عن
+            محامٍ»; see the QUICK_SERVICES comment above. */}
+        <div className="grid grid-cols-2 gap-3">
           {QUICK_SERVICES.map((svc) => {
             const Icon = svc.icon;
             return (
