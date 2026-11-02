@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { CaretDown, Brain } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { ContractType } from "./contractTypes";
+import { RequiredMark } from "@/components/ui/RequiredMark";
 
 interface Props {
   contractText: string;
@@ -112,13 +113,13 @@ export function StepDetailsForm({ selectedType, formData, onChange, onBack, onNe
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
           {selectedType.fields.map(field => (
             <div key={field.id} className={field.type === "textarea" ? "sm:col-span-2" : ""}>
-              <label className={`block text-[13px] font-bold mb-2 ms-1 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+              <label htmlFor={`cd-field-${field.id}`} className={`block text-[13px] font-bold mb-2 ms-1 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
                 {isRTL ? field.labelAr : field.labelEn}
-                {field.required && <span className="text-red-500 ms-1">*</span>}
+                {field.required && <RequiredMark />}
               </label>
               {field.type === "select" ? (
                 <div className="relative">
-                  <select value={formData[field.id] || ""} onChange={e => onChange(field.id, e.target.value)}
+                  <select id={`cd-field-${field.id}`} aria-required={field.required || undefined} value={formData[field.id] || ""} onChange={e => onChange(field.id, e.target.value)}
                     className={`w-full rounded-2xl border px-4 py-3 text-[14px] font-medium appearance-none outline-none focus:ring-2 focus:ring-[#0B3D2E] transition-all shadow-sm ${isDark ? "border-white/10 bg-zinc-800 text-white" : "border-zinc-200 bg-zinc-50 text-zinc-900"}`}>
                     <option value="">{isRTL ? "اختر..." : "Choose..."}</option>
                     {field.options?.map(o => <option key={o.en} value={isRTL ? o.ar : o.en}>{isRTL ? o.ar : o.en}</option>)}
@@ -126,10 +127,10 @@ export function StepDetailsForm({ selectedType, formData, onChange, onBack, onNe
                   <CaretDown size={16} weight="bold" className={`absolute top-1/2 -translate-y-1/2 ${isRTL ? "left-4" : "right-4"} pointer-events-none ${isDark ? "text-zinc-500" : "text-zinc-400"}`} />
                 </div>
               ) : field.type === "textarea" ? (
-                <textarea rows={4} maxLength={2000} value={formData[field.id] || ""} onChange={e => onChange(field.id, e.target.value)} placeholder={field.placeholder}
+                <textarea id={`cd-field-${field.id}`} aria-required={field.required || undefined} rows={4} maxLength={2000} value={formData[field.id] || ""} onChange={e => onChange(field.id, e.target.value)} placeholder={field.placeholder}
                   className={`w-full rounded-2xl border px-4 py-3 text-[14px] outline-none focus:ring-2 focus:ring-[#0B3D2E] resize-none transition-all shadow-sm ${isDark ? "border-white/10 bg-zinc-800 text-white placeholder:text-zinc-600" : "border-zinc-200 bg-zinc-50 text-zinc-900 placeholder:text-zinc-400"}`} />
               ) : (
-                <input type={field.type} maxLength={2000} value={formData[field.id] || ""} onChange={e => onChange(field.id, e.target.value)} placeholder={field.placeholder}
+                <input id={`cd-field-${field.id}`} aria-required={field.required || undefined} type={field.type} maxLength={2000} value={formData[field.id] || ""} onChange={e => onChange(field.id, e.target.value)} placeholder={field.placeholder}
                   className={`w-full rounded-2xl border px-4 py-3 text-[14px] outline-none focus:ring-2 focus:ring-[#0B3D2E] transition-all shadow-sm ${isDark ? "border-white/10 bg-zinc-800 text-white placeholder:text-zinc-600" : "border-zinc-200 bg-zinc-50 text-zinc-900 placeholder:text-zinc-400"}`} />
               )}
             </div>

@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { CloudArrowUp, UploadSimple, Spinner, X, Warning } from "@phosphor-icons/react";
 import { CONTRACT_TYPES } from "@/components/contracts/constants";
 import type { OrderAttachment } from "@/lib/services/orderIntake";
+import { RequiredMark } from "@/components/ui/RequiredMark";
 
 interface StepRUploadProps {
   isDark: boolean;
@@ -68,7 +69,7 @@ export function StepRUpload({
           ))}
         </div>
 
-        <p className={`text-[13px] font-bold mb-3 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>ارفع ملف العقد (متطلب)</p>
+        <p className={`text-[13px] font-bold mb-3 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>ارفع ملف العقد<RequiredMark announce /></p>
         <div
           onClick={() => { if (!uploading) fileRef.current?.click(); }}
           onDragOver={e => e.preventDefault()}

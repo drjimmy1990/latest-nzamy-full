@@ -6,6 +6,7 @@ import { CloudArrowUp, PaperclipHorizontal, BookOpen, UploadSimple, FileArrowUp,
 import { AnimatePresence } from "framer-motion";
 import { VoiceInput } from "@/components/ui/VoiceInput";
 import { DraftPartyForm } from "@/components/draft/DraftPartyForm";
+import { RequiredMark } from "@/components/ui/RequiredMark";
 import { JudgmentHeader } from "@/components/draft/JudgmentHeader";
 import { COMMITTEE_BRANCH_IDS, PartyData, SupportDoc, REQUIRES_JUDGMENT_HEADER } from "@/components/draft/draftConstants";
 import type { OrderAttachment } from "@/lib/services/orderIntake";
@@ -184,7 +185,7 @@ export function StepCase({
       <div className={`${card} p-5 shadow-sm`}>
         <div className="flex items-center gap-2 mb-1">
           <p className={`text-[13px] font-bold ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>
-            {isDraftType ? "المستند الأساسي / المرفقات" : "ملفات القضية الكاملة (مطلوب)"}
+            {isDraftType ? "المستند الأساسي / المرفقات" : "ملفات القضية الكاملة"}<RequiredMark announce />
           </p>
           {!isDraftType && (
             <span className={`text-[10px] px-2 py-0.5 rounded-full border ${isDark ? "border-orange-500/30 bg-orange-900/15 text-orange-400" : "border-orange-300 bg-orange-50 text-orange-700"}`}>
@@ -225,8 +226,12 @@ export function StepCase({
           )}
         </div>
         <p className={`text-center text-[11px] my-3 ${isDark ? "text-zinc-700" : "text-zinc-300"}`}>أو</p>
+        {/* Either one is required (validateDraftIntake): the facts typed, or a file. */}
+        <p id="draft-case-facts-hint" className={`text-[11px] mb-2 ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>
+          مطلوب أحدهما: أرفق مستنداً، أو اكتب الوقائع (٣٠ حرفاً على الأقل)
+        </p>
         <div className="relative">
-          <textarea value={caseText} onChange={e => setCaseText(e.target.value)}
+          <textarea aria-label="وقائع القضية" aria-describedby="draft-case-facts-hint" value={caseText} onChange={e => setCaseText(e.target.value)}
             placeholder={caseFile ? "أضف ملاحظات إضافية على الملف (اختياري)..." : "اكتب ملخص القضية: الأطراف · الواقعة · التسلسل الزمني · الأدلة..."}
             rows={5}
             className={`w-full resize-none rounded-xl border p-4 pe-14 text-[13px] outline-none leading-relaxed ${isDark ? "border-white/[0.07] bg-zinc-800/50 text-zinc-200 placeholder:text-zinc-600 focus:border-[#C8A762]/40" : "border-zinc-200 bg-zinc-50 text-zinc-800 placeholder:text-zinc-400 focus:border-[#0B3D2E]/40"}`} />
