@@ -9,6 +9,12 @@ import {
   dashboardPathFor,
   isDbUserType,
 } from "@/lib/auth/userTypes";
+import {
+  RESET_LINK_ERROR_PATH,
+  RESET_PASSWORD_PATH,
+  planAuthCallback,
+  recoveryLandingAfterExchange,
+} from "@/lib/auth/passwordRecovery";
 
 /**
  * OAuth callback route handler.
@@ -46,6 +52,16 @@ import {
  * account type is known, `needsOnboarding` says so, and the person is sent to
  * /onboarding rather than to a dashboard chosen by guesswork.
  *
+ * ── Password-recovery links (owner package 2026-11-02, slice A §1.5) ───────
+ * The reset email from /forgot-password also comes back here, with
+ * `next=/reset-password` and either a PKCE `code` (GoTrue's default template)
+ * or `token_hash` + `type=recovery` (a custom template). Either way the person
+ * is sent to /reset-password — never through the onboarding or dashboard
+ * routing below — and a refused, expired or already-used link goes to
+ * /reset-password?error=link, which says so. The decision is
+ * planAuthCallback / recoveryLandingAfterExchange in
+ * src/lib/auth/passwordRecovery.ts; the OAuth path below is unchanged.
+ *
  * ── State of the feature ───────────────────────────────────────────────────
  * Nothing reaches this route until the Google OAuth client is registered in
  * Google Cloud and the provider is enabled in Supabase. This file decides
@@ -64,9 +80,15 @@ function redirectRelative(path: string): NextResponse {
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const code = searchParams.get("code");
+  const plan = planAuthCallback(searchParams);
 
-  // `next` is an explicit landing override. No call-site sets it today — the
+  // A recovery link GoTrue already refused (expired, used): it redirects here
+  // with `error`/`error_code` and no code. Say so on the reset page rather
+  // than on /login, which does not read `?error=` (see the note at the end).
+  if (plan.kind === "recovery_link_error") return redirectRelative(RESET_LINK_ERROR_PATH);
+
+  // `next` is an explicit landing override. The only call-site that sets it is
+  // the reset email (`next=/reset-password`, handled by `plan` above) — the
   // sign-in buttons in src/app/login/page.tsx:223,
   // src/app/register/client/page.tsx:342 and src/app/register/provider/page.tsx
   // all pass a bare `/auth/callback` — and it is only consulted below
@@ -81,7 +103,7 @@ export async function GET(request: Request) {
   // characters and backslashes and checks the result stays same-origin.
   const next = safeLocalPath(searchParams.get("next"), FALLBACK_DASHBOARD_PATH);
 
-  if (code) {
+  if (plan.kind === "exchange_code" || plan.kind === "verify_recovery_hash") {
     const cookieStore = await cookies();
     // Where /login was asked to send a Google sign-in (src/lib/auth/postLoginCookie.ts).
     // Read once, re-validated, and cleared whatever happens below.
@@ -110,7 +132,28 @@ export async function GET(request: Request) {
       },
     );
 
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    // token_hash recovery link (custom email template): verified here, on the
+    // same cookie-writing client, so the session it opens is this browser's.
+    if (plan.kind === "verify_recovery_hash") {
+      const { error: verifyError } = await supabase.auth.verifyOtp({
+        type: "recovery",
+        token_hash: plan.tokenHash,
+      });
+      return redirectRelative(verifyError ? RESET_LINK_ERROR_PATH : RESET_PASSWORD_PATH);
+    }
+
+    const { data: exchanged, error } = await supabase.auth.exchangeCodeForSession(plan.code);
+
+    // A recovery session goes to the reset form before any profile or
+    // onboarding routing: an unfinished client account must still be able to
+    // set its password. `redirectType` is supabase-js's own answer (it is not
+    // in the AuthTokenResponse type, hence the cast); the URL is the fallback.
+    const recoveryLanding = recoveryLandingAfterExchange({
+      ok: !error,
+      redirectType: (exchanged as { redirectType?: string | null } | null)?.redirectType,
+      recoveryHint: plan.recoveryHint,
+    });
+    if (recoveryLanding) return redirectRelative(recoveryLanding);
 
     if (!error) {
       const {
