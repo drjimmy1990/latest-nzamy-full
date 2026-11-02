@@ -515,7 +515,9 @@ export default function ClientDashboard() {
       href: "/ai/consult",
       icon: Robot,
       color: "from-[#0B3D2E] to-[#1a6b50]",
-      desc: "إجابات فورية",
+      // Not «إجابات فورية»: /ai/consult ends at the beta gate's "not
+      // available" card (betaGatedRoutes.ts, Wave 1 task 6).
+      desc: "قريباً",
     },
     {
       label: "صياغة عقد",
@@ -680,6 +682,8 @@ export default function ClientDashboard() {
                 >
                   <Robot size={16} weight="fill" />
                   اسأل ذكاء نظامي
+                  {/* /ai/consult ends at the beta gate (Wave 1 task 6). */}
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-white/15">قريباً</span>
                 </motion.div>
               </Link>
               {/* THE ONLY ENTRY POINT TO THE PROFILE FROM THIS PAGE (WP-5 C-3).

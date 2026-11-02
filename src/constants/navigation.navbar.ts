@@ -135,7 +135,10 @@ export const INDIVIDUAL_NAV: NavItem[] = [
   },
   { label: "قضاياي",        labelEn: "My Cases",     href: "/dashboard/client/cases" },
   { label: "المستندات",     labelEn: "Documents",    href: "/dashboard/client/documents" },
-  { label: "ذكاء نظامي",      labelEn: "Nezamy AI",    href: "/ai/consult" },
+  // The AI hub, not /ai/consult: that page ends at the beta gate's "not
+  // available" card (betaGatedRoutes.ts), and the hub lists the tools that
+  // work beside it, marked «قريباً» (Wave 1 task 6).
+  { label: "ذكاء نظامي",      labelEn: "Nezamy AI",    href: "/ai" },
 ];
 
 // ── Corporate Nav (شركة) ─────────────────────────────────────────────────────
@@ -147,8 +150,8 @@ export const CORPORATE_NAV: NavItem[] = [
     label: "أدوات AI", labelEn: "AI Tools", href: "#ai",
     children: [
       { label: "محترف العقود",    labelEn: "Contract Pro",    href: "/ai/contracts",         icon: "FileText" },
-      { label: "مراقب الامتثال", labelEn: "Compliance",      href: "/ai/corp/compliance-monitor",   icon: "ShieldCheck" },
-      { label: "المستشار التجاري",labelEn: "Corp Advisor",    href: "/ai/corp/advisor",      icon: "Buildings" },
+      { label: "مراقب الامتثال", labelEn: "Compliance",      href: "/ai/corp/compliance-monitor",   icon: "ShieldCheck", badge: "قريباً" },
+      { label: "المستشار التجاري",labelEn: "Corp Advisor",    href: "/ai/corp/advisor",      icon: "Buildings", badge: "قريباً" },
       // Owner answer ١١٥ — these three printed canned output and render
       // DashboardComingSoon now; navComingSoon.test.ts does not scan this file,
       // cannedOutputGate.test.ts does.
@@ -175,7 +178,7 @@ export const CORPORATE_NAV: NavItem[] = [
 // Simple intentionally — صاحب البقالة لا يريد ١٠ عناصر
 export const MICRO_NAV: NavItem[] = [
   { label: "لوحة التحكم",       labelEn: "Dashboard",     href: "/dashboard/micro" },
-  { label: "استشارة سريعة",     labelEn: "Quick Consult", href: "/ai/consult" },
+  { label: "استشارة سريعة",     labelEn: "Quick Consult", href: "/ai/consult", badge: "قريباً" },
   { label: "اشتراطاتي",          labelEn: "My Requirements",href: "/dashboard/micro/requirements" },
   { label: "عقودي",              labelEn: "My Contracts",  href: "/dashboard/micro/contracts" },
 ];
@@ -216,12 +219,12 @@ export const GOVERNMENT_NAV: NavItem[] = [
   {
     label: "أدوات AI", labelEn: "AI Tools", href: "#ai",
     children: [
-      { label: "مراجع العقود الحكومية", labelEn: "Contract Review",    href: "/ai/gov/contract-reviewer",    icon: "FileText" },
-      { label: "مدقق الامتثال",         labelEn: "Compliance Checker", href: "/ai/gov/compliance-checker",   icon: "ShieldCheck" },
-      { label: "مُرجّح الأحكام",         labelEn: "Judgment Weigher",  href: "/ai/gov/judgment-weigher",     icon: "Scales", badge: "قاضي" },
-      { label: "صائغ لائحة الاتهام",    labelEn: "Indictment Drafter", href: "/ai/gov/indictment-drafter",  icon: "FileWarning", badge: "نيابة" },
-      { label: "محاضر الضبط",           labelEn: "Detention Records",  href: "/ai/gov/detention-records",   icon: "ClipboardText", badge: "ضابط" },
-      { label: "مراجع المناقصات",        labelEn: "Procurement",        href: "/ai/gov/procurement-reviewer", icon: "Buildings", badge: "مستشار" },
+      { label: "مراجع العقود الحكومية", labelEn: "Contract Review",    href: "/ai/gov/contract-reviewer",    icon: "FileText", badge: "قريباً" },
+      { label: "مدقق الامتثال",         labelEn: "Compliance Checker", href: "/ai/gov/compliance-checker",   icon: "ShieldCheck", badge: "قريباً" },
+      { label: "مُرجّح الأحكام",         labelEn: "Judgment Weigher",  href: "/ai/gov/judgment-weigher",     icon: "Scales", badge: "قريباً" },
+      { label: "صائغ لائحة الاتهام",    labelEn: "Indictment Drafter", href: "/ai/gov/indictment-drafter",  icon: "FileWarning", badge: "قريباً" },
+      { label: "محاضر الضبط",           labelEn: "Detention Records",  href: "/ai/gov/detention-records",   icon: "ClipboardText", badge: "قريباً" },
+      { label: "مراجع المناقصات",        labelEn: "Procurement",        href: "/ai/gov/procurement-reviewer", icon: "Buildings", badge: "قريباً" },
     ],
   },
 ];
@@ -236,10 +239,10 @@ export const NGO_NAV: NavItem[] = [
   {
     label: "أدوات AI", labelEn: "AI Tools", href: "#ai",
     children: [
-      { label: "صائغ عقود التطوع",  labelEn: "Volunteer Contract",  href: "/ai/ngo/volunteer-contract",  icon: "HandHeart" },
+      { label: "صائغ عقود التطوع",  labelEn: "Volunteer Contract",  href: "/ai/ngo/volunteer-contract",  icon: "HandHeart", badge: "قريباً" },
       { label: "مدقق الحوكمة",       labelEn: "Governance Checker",  href: "/ai/ngo/governance-checker",  icon: "ShieldCheck" },
-      { label: "محلل التبرعات",      labelEn: "Donation Analyzer",   href: "/ai/ngo/donation-analyzer",   icon: "ChartBar" },
-      { label: "مُعد التقارير",      labelEn: "Report Generator",    href: "/ai/ngo/report-generator",    icon: "FileText" },
+      { label: "محلل التبرعات",      labelEn: "Donation Analyzer",   href: "/ai/ngo/donation-analyzer",   icon: "ChartBar", badge: "قريباً" },
+      { label: "مُعد التقارير",      labelEn: "Report Generator",    href: "/ai/ngo/report-generator",    icon: "FileText", badge: "قريباً" },
     ],
   },
 ];

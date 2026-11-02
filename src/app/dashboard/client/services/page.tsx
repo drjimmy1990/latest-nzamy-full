@@ -17,6 +17,7 @@ import {
 } from "@/lib/pricingRepository";
 import { useClientPricingCatalog } from "@/hooks/useClientPricingCatalog";
 import type { ClientServiceCatalogItem } from "@/constants/clientServiceCatalog";
+import { COMING_SOON_BADGE_AR, isTerminalToolHref } from "@/constants/betaGatedRoutes";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -88,18 +89,25 @@ function buildCategories(catalog: ClientServiceCatalogItem[]): ServiceCategory[]
       services: getClientServicesByCategory(cat.categoryId, catalog)
         .filter((service) => service.enabled !== false)
         .filter((service) => !IS_CLIENT_BETA || service.betaVisibility === "public")
-        .map((service) => ({
+        .map((service) => {
+          // Wave 1 task 6: a service whose route opens a tool that ends at
+          // the beta gate (/ai/consult, /ai/analyze) is «قريباً», with no
+          // price and no «ابدأ الآن» — nothing there answers yet.
+          const soon = isTerminalToolHref(service.route);
+          return {
           id: service.serviceId,
           label: service.label,
           desc: service.description,
-          price: formatClientServicePrice(service),
-          priceNote: service.priceNote,
+          price: soon ? COMING_SOON_BADGE_AR : formatClientServicePrice(service),
+          priceNote: soon ? undefined : service.priceNote,
+          comingSoon: soon,
           icon: ICON_MAP[service.icon] ?? ShieldStar,
           href: service.route,
-          tag: service.tag,
+          tag: soon ? undefined : service.tag,
           aiPowered: service.aiPowered,
           humanService: service.humanService,
-        })),
+          };
+        }),
     }))
     .filter((cat) => cat.services.length > 0);
 }

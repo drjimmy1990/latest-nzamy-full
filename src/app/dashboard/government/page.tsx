@@ -5,6 +5,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import { useUser, type GovernmentRole } from "@/hooks/useUser";
 import { resolveGovernmentRole } from "@/hooks/governmentRole";
 import Link from "next/link";
+import { COMING_SOON_BADGE_AR, isTerminalToolHref } from "@/constants/betaGatedRoutes";
 import { OnboardingBanner } from "@/components/OnboardingBanner";
 import { SectorProfileReadinessPanel } from "@/components/dashboard/sector/SectorProfileReadinessPanel";
 import {
@@ -118,6 +119,20 @@ const QUICK_NAV_BY_ROLE: Record<GovRole, GovActionLink[]> = {
 };
 
 const spring = { type: "spring" as const, stiffness: 100, damping: 20 };
+
+/**
+ * Wave 1 task 6: every /ai/gov/* tool ends at the beta gate's "not available"
+ * card (betaGatedRoutes.ts), so a link to one says «قريباً» instead of
+ * reading as a working tool.
+ */
+function SoonChip({ href }: { href: string }) {
+  if (!isTerminalToolHref(href)) return null;
+  return (
+    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 flex-shrink-0">
+      {COMING_SOON_BADGE_AR}
+    </span>
+  );
+}
 const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } };
 const item = { hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: spring } };
 
@@ -190,6 +205,7 @@ export default function GovernmentDashboard() {
                 }`}>
                   <Icon size={18} weight={action.primary ? "bold" : "duotone"} />
                   {action.label}
+                  <SoonChip href={action.href} />
                 </Link>
               );
             })}
@@ -205,7 +221,10 @@ export default function GovernmentDashboard() {
               <h2 className={`text-xl font-semibold tracking-tight ${isDark ? "text-white" : "text-slate-900"}`}>
                 أدوات الذكاء الاصطناعي — {meta.label}
               </h2>
-              <span className={`text-xs ${muted}`}>{tools.length} أدوات متاحة</span>
+              {/* No «N أدوات متاحة» while the tools end at the beta gate. */}
+              <span className={`text-xs ${muted}`}>
+                {tools.some((t) => isTerminalToolHref(t.href)) ? COMING_SOON_BADGE_AR : `${tools.length} أدوات متاحة`}
+              </span>
             </div>
 
             {/* Featured tool — wide */}
@@ -227,7 +246,7 @@ export default function GovernmentDashboard() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className={`text-lg font-semibold tracking-tight mb-1 ${isDark ? "text-white" : "text-slate-900"}`}>
-                        {tools[0].label}
+                        {tools[0].label} <SoonChip href={tools[0].href} />
                       </div>
                       <p className={`text-sm leading-relaxed max-w-[48ch] ${muted}`}>{tools[0].sub}</p>
                     </div>
@@ -255,7 +274,7 @@ export default function GovernmentDashboard() {
                       <div className={`w-10 h-10 flex items-center justify-center rounded-xl mb-3 border ${accent}`}>
                         <Icon size={18} weight="duotone" />
                       </div>
-                      <div className={`font-semibold text-sm mb-1 ${isDark ? "text-white" : "text-slate-900"}`}>{tool.label}</div>
+                      <div className={`flex items-center gap-2 font-semibold text-sm mb-1 ${isDark ? "text-white" : "text-slate-900"}`}>{tool.label} <SoonChip href={tool.href} /></div>
                       <p className={`text-xs leading-relaxed ${muted}`}>{tool.sub}</p>
                     </motion.div>
                   </Link>
@@ -282,6 +301,7 @@ export default function GovernmentDashboard() {
                       <div className="flex items-center gap-2.5">
                         <Icon size={16} />
                         {lnk.label}
+                        <SoonChip href={lnk.href} />
                       </div>
                       <ArrowLeft size={14} className={dim} />
                     </Link>

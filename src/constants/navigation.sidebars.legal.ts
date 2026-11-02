@@ -265,8 +265,8 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
       { label: "الصائغ القانوني",       labelEn: "Legal Drafter",    href: "/ai/draft",            icon: "PencilSimple", divider: true },
       { label: "المجمّع البحثي",        labelEn: "Research Collector", href: "/ai/collector",      icon: "Tray",         badge: "جديد" },
       { label: "محترف العقود",           labelEn: "Contract Pro",     href: "/ai/contracts",        icon: "FileText" },
-      { label: "مفاوض العقود",           labelEn: "Contract Negotiator", href: "/ai/contract-negotiator",  icon: "Handshake", badge: "جديد" },
-      { label: "مراجع العقود",           labelEn: "Contract Reviewer",   href: "/ai/contract-reviewer",    icon: "MagnifyingGlass", badge: "جديد" },
+      { label: "مفاوض العقود",           labelEn: "Contract Negotiator", href: "/ai/contract-negotiator",  icon: "Handshake", badge: "قريباً" },
+      { label: "مراجع العقود",           labelEn: "Contract Reviewer",   href: "/ai/contract-reviewer",    icon: "MagnifyingGlass", badge: "قريباً" },
       { label: "الرأي الفصل",           labelEn: "Al-Ra'y Al-Fasl", href: "/ai/legal-opinion",    icon: "Lightbulb" },
       { label: "منقح ناجز",             labelEn: "Najiz Optimizer",  href: "/ai/najiz-optimizer",  icon: "Broom",        badge: "جديد" },
       // ③ التحليل والاستراتيجية
@@ -278,7 +278,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
       // ⑤ المساعدة الذكية
       { label: "السكرتير الذكي",        labelEn: "AI Secretary",     href: "/ai/secretary",        icon: "Robot",        divider: true, badge: "قريباً" },
       { label: "الحاسبة القانونية",     labelEn: "Legal Calculator", href: "/ai/fee-calculator",   icon: "Calculator" },
-      { label: "مولّد التقارير",        labelEn: "Report Generator", href: "/ai/report-generator", icon: "FileArrowUp",  badge: "جديد" },
+      { label: "مولّد التقارير",        labelEn: "Report Generator", href: "/ai/report-generator", icon: "FileArrowUp",  badge: "قريباً" },
     ],
   },
   // ── أدوات المكتب المؤسسية (الفيرم ككيان تجاري يحتاج أدوات الشركات) ──────
@@ -287,9 +287,9 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     collapsible: true,
     defaultOpen: false,
     items: [
-      { label: "المستشار التجاري",    labelEn: "Business Advisor",       href: "/ai/corp/advisor",            icon: "Briefcase" },
+      { label: "المستشار التجاري",    labelEn: "Business Advisor",       href: "/ai/corp/advisor",            icon: "Briefcase", badge: "قريباً" },
       { label: "مدير العقود CLM",      labelEn: "Contract Lifecycle",     href: "/ai/corp/clm",                icon: "ArrowsClockwise", badge: "قريباً" },
-      { label: "مراقب الامتثال",       labelEn: "Compliance Monitor",     href: "/ai/corp/compliance-monitor",  icon: "ShieldCheck" },
+      { label: "مراقب الامتثال",       labelEn: "Compliance Monitor",     href: "/ai/corp/compliance-monitor",  icon: "ShieldCheck", badge: "قريباً" },
       { label: "مستشار الموارد البشرية", labelEn: "HR Advisor",           href: "/ai/corp/hr",                 icon: "UserCirclePlus", badge: "قريباً" },
     ],
   },

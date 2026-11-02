@@ -59,6 +59,10 @@ export const LAWYER_AI_TOOLS: readonly LawyerAiTool[] = [
     betaStatus: "beta-free",
     sidebarPlacement: "hub-only",
     adminPricingKey: "lawyer.ai.consult",
+    // Wave 1 task 6: /ai/consult starts no AI run — every answer ends at the
+    // beta gate's "not available" card (betaGatedRoutes.ts). So no «بيتا
+    // مجاني»: a free tool that answers nothing is «قريباً».
+    comingSoon: true,
   },
   {
     permission: "ai:quick-answer",
