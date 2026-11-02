@@ -965,6 +965,12 @@ export default function LegalLibraryPage() {
         // no keyword column yet and /api/library/init sends none, so this is
         // [] until the API carries `keywords` (text[]).
         keywords: Array.isArray(law.keywords) ? law.keywords : [],
+        // §2.4-1: the law that replaced a repealed one ({slug, title}) — the
+        // card links it next to «ملغى». /api/library/init sends it only when
+        // a newer law names this one in supersedes_law_slug.
+        replacedBy: law.replaced_by && typeof law.replaced_by.slug === "string" && law.replaced_by.slug
+          ? { slug: law.replaced_by.slug, title: typeof law.replaced_by.title === "string" ? law.replaced_by.title : "" }
+          : null,
       }))
     : []) as any[]; // honest empty state — no fabricated laws in prod (mirrors the gated DEMO_* lists)
 

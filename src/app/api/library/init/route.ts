@@ -10,6 +10,8 @@ import { lawSummaryVisible } from "@/lib/library/lawSummaryVisibility";
 import { latestLegislativeEvent, summaryForViewer } from "@/lib/library/legislativeEvent";
 import { readWithOptionalFeatures, type OptionalFeature } from "@/lib/library/optionalColumn";
 import { BOOK_SERIES_FEATURE, bookVolumeColumns } from "@/lib/library/bookVolumes";
+import { chunked, successorsBySupersededSlug } from "@/lib/library/lawSuccessors";
+import { isRepealedLawStatus } from "@/app/laws/law-status";
 
 /**
  * Card columns only (LIB-16). `select('*')` shipped every list row's `fts`
@@ -344,9 +346,40 @@ export async function GET(request: Request) {
     // subscribers (tier pro+, never the whitelist — the same rule as the law
     // page). A non-subscriber's rows carry null there; `status` stays.
     const lawsRows = laws.data as unknown as Record<string, unknown>[];
+
+    // §2.4-1 (owner package 2026-11-02): the law that replaced each repealed
+    // law on this page, for the card's link next to «ملغى». The link is on the
+    // NEWER law (supersedes_law_slug), read like the law page's `replacedBy`
+    // (/api/library/laws/[slug]) with the request client — slug, title and
+    // supersedes_law_slug are on the anon allow-list of 20261004_01. Short
+    // `.in()` chunks keep the URL small (Arabic-capable slugs, ?limit ≤ 200).
+    // Supplementary: a failed lookup only means no link on the card.
+    const repealedSlugs = lawsRows
+      .filter((row) => isRepealedLawStatus(row.status))
+      .map((row) => row.slug)
+      .filter((slug): slug is string => typeof slug === "string" && slug.length > 0);
+    const successorRows: unknown[] = [];
+    if (repealedSlugs.length > 0) {
+      try {
+        const reads = await Promise.all(
+          chunked(repealedSlugs).map((part) =>
+            supabase.schema("library").from("laws").select("slug,title,supersedes_law_slug").in("supersedes_law_slug", part)
+          )
+        );
+        for (const { data, error } of reads) {
+          if (error) console.warn("[Library Init API] successor lookup failed:", error.message);
+          else successorRows.push(...((data as unknown[] | null) ?? []));
+        }
+      } catch (e) {
+        console.warn("[Library Init API] successor lookup threw:", e);
+      }
+    }
+    const successors = successorsBySupersededSlug(successorRows);
+
     laws.data = lawsRows.map((row) => {
       const slug = row.slug as string;
       const isFree = isFreeLibraryItem({ contentType: "laws", itemId: slug, hasFullAccess, freeItemsByType, whitelistedLawSlugs: whitelistedSlugs });
+      const replacedBy = isRepealedLawStatus(row.status) ? successors.get(slug) : undefined;
       // Owner ٣١٨: the one public date, from the UNMASKED row (the mask below
       // nulls issue_date_hijri for a non-subscriber) — the date alone.
       const event = latestLegislativeEvent({
@@ -364,6 +397,8 @@ export async function GET(request: Request) {
       return {
         ...maskListOfficialFields(shaped, hasFullAccess),
         ...(event ? { latest_legislative_update: event.dateHijri } : {}),
+        // §2.4-1: {slug, title} of the law that replaced a repealed one.
+        ...(replacedBy ? { replaced_by: replacedBy } : {}),
         free: isFree,
         locked: !isFree,
       };
