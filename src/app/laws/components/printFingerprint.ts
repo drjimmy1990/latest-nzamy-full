@@ -59,18 +59,20 @@ export interface PrintFingerprintLines {
 }
 
 /**
- * The fingerprint's lines. A guest gets the neutral mark — the platform and
- * the print time only — never «المشترك: …» for someone who is not one.
+ * The fingerprint's lines. The name is the official one first (full_name,
+ * owner q371), then the display name, then «عضو نظامي». A guest gets the
+ * neutral mark — the platform and the print time only — never
+ * «المشترك: …» for someone who is not one.
  */
 export function printFingerprintLines(
-  user: { isLoggedIn: boolean; name?: string | null; userId?: string | null },
+  user: { isLoggedIn: boolean; fullName?: string | null; name?: string | null; userId?: string | null },
   stamp: string,
   isRTL = true,
 ): PrintFingerprintLines {
   const printedAt = stamp ? (isRTL ? `طُبع: ${stamp} (توقيت الرياض)` : `Printed: ${stamp} (Riyadh time)`) : null;
   const platform = "نظامي - Nezamy";
   if (!user.isLoggedIn) return { platform, subscriber: null, account: null, printedAt };
-  const name = fingerprintName(user.name) ?? (isRTL ? "عضو نظامي" : "Nezamy Member");
+  const name = fingerprintName(user.fullName) ?? fingerprintName(user.name) ?? (isRTL ? "عضو نظامي" : "Nezamy Member");
   const ref = watermarkAccountRef(user.userId ?? undefined);
   return {
     platform,

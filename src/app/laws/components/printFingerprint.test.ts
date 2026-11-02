@@ -44,6 +44,13 @@ test("q371: a subscriber's mark — name, short account id, Riyadh print time", 
   assert.equal(noName.printedAt, null);
 });
 
+test("q371 (review M6): full_name first, then the display name, then «عضو نظامي»", () => {
+  const id = "3f2a9c1e-77aa-4b1b-9e0d-1234567890ab";
+  assert.equal(printFingerprintLines({ isLoggedIn: true, fullName: "سارة بنت محمد القحطاني", name: "سارة", userId: id }, "").subscriber, "المشترك: سارة بنت محمد القحطاني");
+  assert.equal(printFingerprintLines({ isLoggedIn: true, fullName: "", name: "سارة", userId: id }, "").subscriber, "المشترك: سارة");
+  assert.equal(printFingerprintLines({ isLoggedIn: true, fullName: "s@x.co", name: "s@x.co", userId: id }, "").subscriber, "المشترك: عضو نظامي");
+});
+
 test("q371: a guest gets the neutral mark — platform and print time only", () => {
   const lines = printFingerprintLines({ isLoggedIn: false, name: "", userId: undefined }, "2026-11-03 00:30");
   assert.deepEqual(lines, {

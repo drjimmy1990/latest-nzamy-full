@@ -36,7 +36,7 @@ export function PrintWatermark({ isRTL }: { isRTL?: boolean }) {
   }, []);
 
   const lines = printFingerprintLines(
-    { isLoggedIn: user.isLoggedIn, name: user.name, userId: user.userId },
+    { isLoggedIn: user.isLoggedIn, fullName: user.fullName, name: user.name, userId: user.userId },
     stamp,
     !!isRTL,
   );
