@@ -145,43 +145,52 @@ export async function consultationBookingRefusal(
   });
 }
 
+type ScheduleRefusalArgs = {
+  lawyerUserId: string;
+  startMs: number;
+  durationMinutes: number;
+  excludeId?: string | null;
+  excludeHearingId?: string | null;
+  confirmOverlap: boolean;
+};
+
 /**
- * null when the slot may be saved; otherwise the response to return.
- * A failed read refuses (503) rather than saving blind.
+ * The ONE overlap refusal (review I2): null when the slot may be saved;
+ * otherwise the response to return — 409 with `code` and the conflicts until
+ * the lawyer confirms, or 503 when a read failed (it refuses rather than
+ * saving blind). The two exported names below differ only in `code`.
  */
-export async function overlapRefusal(
-  supabase: SupabaseClient,
-  args: { lawyerUserId: string; startMs: number; durationMinutes: number; excludeId?: string | null; confirmOverlap: boolean },
-): Promise<NextResponse | null> {
+async function scheduleRefusal(supabase: SupabaseClient, args: ScheduleRefusalArgs, code: string): Promise<NextResponse | null> {
   const read = await readScheduleConflicts(supabase, args);
   if (!read.ok) {
     return NextResponse.json({ error: "تعذّر التحقق من تعارض المواعيد. حاول مرة أخرى." }, { status: 503 });
   }
   if (read.conflicts.length === 0 || args.confirmOverlap) return null;
-  // The code stays `consultation_overlap` even when the clash is a hearing:
-  // mutateConsultationSlot matches that exact string to offer «حفظ رغم التعارض».
   return NextResponse.json(
-    { error: clashMessageAr(read.conflicts), code: CONSULTATION_OVERLAP_CODE, conflicts: read.conflicts },
+    { error: clashMessageAr(read.conflicts), code, conflicts: read.conflicts },
     { status: 409 },
   );
 }
 
 /**
+ * A consultation slot. The code stays `consultation_overlap` even when the
+ * clash is a hearing: mutateConsultationSlot matches that exact string to
+ * offer «حفظ رغم التعارض».
+ */
+export async function overlapRefusal(
+  supabase: SupabaseClient,
+  args: { lawyerUserId: string; startMs: number; durationMinutes: number; excludeId?: string | null; confirmOverlap: boolean },
+): Promise<NextResponse | null> {
+  return scheduleRefusal(supabase, args, CONSULTATION_OVERLAP_CODE);
+}
+
+/**
  * The hearing routes' half (owner q357): a timed, scheduled hearing checked
- * against the lawyer's consultations and other hearings. null when it may be
- * saved; a 409 `hearing_overlap` until the lawyer confirms; 503 on a failed read.
+ * against the lawyer's consultations and other hearings — 409 `hearing_overlap`.
  */
 export async function hearingOverlapRefusal(
   supabase: SupabaseClient,
   args: { lawyerUserId: string; startMs: number; durationMinutes: number; excludeHearingId?: string | null; confirmOverlap: boolean },
 ): Promise<NextResponse | null> {
-  const read = await readScheduleConflicts(supabase, args);
-  if (!read.ok) {
-    return NextResponse.json({ error: "تعذّر التحقق من تعارض المواعيد. حاول مرة أخرى." }, { status: 503 });
-  }
-  if (read.conflicts.length === 0 || args.confirmOverlap) return null;
-  return NextResponse.json(
-    { error: clashMessageAr(read.conflicts), code: HEARING_OVERLAP_CODE, conflicts: read.conflicts },
-    { status: 409 },
-  );
+  return scheduleRefusal(supabase, args, HEARING_OVERLAP_CODE);
 }

@@ -20,7 +20,7 @@
 
 "use client";
 
-import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
+import { apiGet, apiMutate, isSupabaseMode, mutateWithOverlapCode } from "@/lib/services/api";
 import { listOk, listFailed, listFromApi, type ListRead } from "@/lib/services/listRead";
 import type { ConsultationMode, ConsultationOutcome, ConsultationStatus } from "@/lib/services/consultationVocabulary";
 
@@ -108,21 +108,8 @@ export class ConsultationOverlapError extends Error {
  */
 export async function mutateConsultationSlot<T>(url: string, method: "POST" | "PATCH", body: unknown): Promise<T> {
   if (!isSupabaseMode) throw new Error("الاستشارات غير متاحة في وضع العرض التجريبي");
-  const response = await fetch(url, {
-    method,
-    headers: { "Content-Type": "application/json; charset=utf-8" },
-    credentials: "same-origin",
-    cache: "no-store",
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({ error: "Request failed" }));
-    if (response.status === 409 && errorBody?.code === "consultation_overlap") {
-      throw new ConsultationOverlapError(errorBody.error, Array.isArray(errorBody.conflicts) ? errorBody.conflicts : []);
-    }
-    throw new Error(errorBody.error || `API error: ${response.status}`);
-  }
-  return response.json() as Promise<T>;
+  return mutateWithOverlapCode<T>(url, method, body, "consultation_overlap", (message, conflicts) =>
+    new ConsultationOverlapError(message, conflicts as ConsultationOverlapError["conflicts"]));
 }
 
 const BASE = "/api/v1/lawyer/consultations";

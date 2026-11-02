@@ -148,6 +148,39 @@ export async function apiMutate<T>(
   });
 }
 
+/**
+ * The schedule-overlap contract's client half, shared by consultations
+ * (`consultation_overlap`) and hearings (`hearing_overlap`, owner q357): a
+ * POST/PATCH like apiMutate, except that a 409 whose `code` is `overlapCode`
+ * is thrown as `makeOverlapError(message, conflicts)` so the screen can offer
+ * «حفظ رغم التعارض» and resend with `confirmOverlap: true`. Any other non-2xx
+ * — a 409 with another code included — throws a plain Error with the
+ * server's Arabic `error`. Each caller keeps its own demo-mode guard.
+ */
+export async function mutateWithOverlapCode<T>(
+  url: string,
+  method: "POST" | "PATCH",
+  body: unknown,
+  overlapCode: string,
+  makeOverlapError: (message: string, conflicts: unknown[]) => Error,
+): Promise<T> {
+  const response = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    credentials: "same-origin",
+    cache: "no-store",
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => ({ error: "Request failed" }));
+    if (response.status === 409 && errorBody?.code === overlapCode) {
+      throw makeOverlapError(errorBody.error, Array.isArray(errorBody.conflicts) ? errorBody.conflicts : []);
+    }
+    throw new Error(errorBody.error || `API error: ${response.status}`);
+  }
+  return response.json() as Promise<T>;
+}
+
 // ─── Dual-mode wrapper ────────────────────────────────────────────────────────
 
 /**

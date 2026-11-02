@@ -79,9 +79,10 @@ test("q357: the guard reads the lawyer's scheduled timed hearings too, and keeps
   const src = read("./_scheduleGuard.ts");
   assert.match(src, /\.from\("hearings"\)[\s\S]*?\.eq\("owner_user_id", args\.lawyerUserId\)[\s\S]*?\.eq\("status", "scheduled"\)[\s\S]*?\.neq\("kind", DEADLINE_HEARING_KIND\)/);
   assert.match(src, /findScheduleClashes\(args\.startMs, args\.durationMinutes, items, exclude\)/);
-  assert.match(src, /code: CONSULTATION_OVERLAP_CODE, conflicts: read\.conflicts/);
-  assert.match(src, /export async function hearingOverlapRefusal\(/);
-  assert.match(src, /code: HEARING_OVERLAP_CODE, conflicts: read\.conflicts/);
+  // review I2: one refusal, the code a parameter
+  assert.match(src, /\{ error: clashMessageAr\(read\.conflicts\), code, conflicts: read\.conflicts \}/);
+  assert.match(src, /export async function overlapRefusal\([\s\S]*?return scheduleRefusal\(supabase, args, CONSULTATION_OVERLAP_CODE\);/);
+  assert.match(src, /export async function hearingOverlapRefusal\([\s\S]*?return scheduleRefusal\(supabase, args, HEARING_OVERLAP_CODE\);/);
 });
 
 test("q357: POST and PATCH /api/v1/lawyer/hearings check the slot before writing, warn-then-confirm", () => {
@@ -100,8 +101,13 @@ test("q357: POST and PATCH /api/v1/lawyer/hearings check the slot before writing
 });
 
 test("q357: the hearing screens tell the overlap 409 apart by code and offer «حفظ رغم التعارض»", () => {
+  // review I2: one client helper, the code a parameter
+  const api = read("../../../../../lib/services/api.ts");
+  assert.match(api, /response\.status === 409 && errorBody\?\.code === overlapCode/);
   const svc = read("../../../../../lib/services/lawyerHearingsService.ts");
-  assert.match(svc, /response\.status === 409 && errorBody\?\.code === "hearing_overlap"/);
+  assert.match(svc, /mutateWithOverlapCode<T>\(url, method, body, "hearing_overlap"/);
+  const consult = read("../../../../../lib/services/lawyerConsultationsService.ts");
+  assert.match(consult, /mutateWithOverlapCode<T>\(url, method, body, "consultation_overlap"/);
   for (const rel of [
     "../../../../dashboard/lawyer/_components/AddHearingModal.tsx",
     "../../../../dashboard/lawyer/hearings/_HearingActionDialog.tsx",
