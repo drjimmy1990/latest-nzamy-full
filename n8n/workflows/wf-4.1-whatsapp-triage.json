@@ -166,6 +166,6 @@
     "AI FAQ Answer": { "main": [[{ "node": "Reply WhatsApp", "type": "main", "index": 0 }]] }
   },
   "active": false,
-  "settings": { "executionOrder": "v1" },
+  "settings": { "executionOrder": "v1", "saveDataSuccessExecution": "none" },
   "pinData": {}
 }

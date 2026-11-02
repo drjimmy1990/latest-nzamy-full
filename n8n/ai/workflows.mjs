@@ -1168,6 +1168,6 @@ export function toWorkflow(def) {
       "Parse result": { main: [[{ node: "Respond", type: "main", index: 0 }]] },
       "Model error": { main: [[{ node: "Respond", type: "main", index: 0 }]] },
     },
-    settings: { executionOrder: "v1", saveDataErrorExecution: "all", saveDataSuccessExecution: "all", callerPolicy: "workflowsFromSameOwner" },
+    settings: { executionOrder: "v1", saveDataErrorExecution: "all", saveDataSuccessExecution: "none", callerPolicy: "workflowsFromSameOwner" },
   };
 }
