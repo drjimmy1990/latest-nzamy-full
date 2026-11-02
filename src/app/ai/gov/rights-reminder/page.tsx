@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 import { useState, useEffect } from "react";
 import { useTheme } from "@/components/ThemeProvider";
 import { Bell, CheckCircle } from "@phosphor-icons/react";
@@ -15,7 +16,7 @@ const RIGHTS = [
   { article: "م ٩٨", text: "عدم احتجاز الموقوف في أماكن غير رسمية معتمدة." },
   { article: "م ١٠٢", text: "تزويد الموقوف بالغذاء والرعاية الصحية اللازمة." },
 ];
-export default function RightsReminderPage() {
+function RightsReminderInner() {
   const { isDark } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [checked, setChecked] = useState<number[]>([]);
@@ -76,5 +77,14 @@ export default function RightsReminderPage() {
         </BetaReviewGate>
       </div>
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function RightsReminderPage() {
+  return (
+    <GatedToolScreen toolId="gov.rights-reminder" toolName="قائمة ضمانات الموقوف">
+      <RightsReminderInner />
+    </GatedToolScreen>
   );
 }

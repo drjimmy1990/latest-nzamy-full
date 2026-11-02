@@ -63,6 +63,26 @@ test("a gate-only route runs no AI and renders BetaReviewGate", () => {
   }
 });
 
+test("a gate-only page shows the gate first: its default export is GatedToolScreen around the page", () => {
+  const cfg = read("lib/betaConfig.ts");
+  for (const route of GATE_ONLY_TOOL_ROUTES) {
+    const page = readFileSync(path.join(appDir(route), "page.tsx"), "utf8");
+    if (route === "/ai/analyze") {
+      // Lawyers get DashboardComingSoon (AttachmentSqueezer); clients the gated analyzer.
+      assert.match(page, /<GatedToolScreen toolId="analyze\.smart\.result"[^>]*>\s*<SmartAnalyzer /, route);
+      continue;
+    }
+    const m = /export default function \w+\(\) \{\s*return \(\s*<GatedToolScreen toolId="([^"]+)" toolName="[^"]+">\s*<(\w+) \/>\s*<\/GatedToolScreen>\s*\);\s*\}/.exec(page);
+    assert.ok(m, `${route}: the default export does not open with GatedToolScreen`);
+    assert.ok(cfg.includes(`{ id: "${m[1]}", route: "${route}"`), `${route}: toolId ${m[1]} is not this route's registry id`);
+    assert.match(page, new RegExp(`^function ${m[2]}\\(\\) \\{`, "m"), `${route}: ${m[2]} is not the page body`);
+    assert.equal((page.match(/^export default /gm) ?? []).length, 1, route);
+  }
+  const screen = read("components/GatedToolScreen.tsx");
+  assert.match(screen, /if \(!BETA_REVIEW_MODE \|\| user\.isDemoBypass\) return <>\{children\}<\/>;/);
+  assert.match(screen, /<BetaReviewGate toolId=\{toolId\} toolName=\{toolName\} reviewScope="legal-data">\s*\{null\}/);
+});
+
 test("a coming-soon route renders DashboardComingSoon", () => {
   for (const route of COMING_SOON_TOOL_ROUTES) {
     assert.match(readFileSync(path.join(appDir(route), "page.tsx"), "utf8"), /from "@\/components\/ui\/DashboardComingSoon"/, route);

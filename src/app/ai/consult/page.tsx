@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useRef, useEffect } from "react";
@@ -165,7 +166,7 @@ function AIMessageBubble({ msg, isDark, isLatest }: { msg: Message; isDark: bool
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
-export default function AIConsultPage() {
+function AIConsultInner() {
   const { isDark, lang } = useTheme();
   const isRTL = lang === "ar";
   const router = useRouter();
@@ -448,5 +449,14 @@ export default function AIConsultPage() {
         )}
       </div>
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function AIConsultPage() {
+  return (
+    <GatedToolScreen toolId="consult.result" toolName="الاستشارة القانونية الذكية">
+      <AIConsultInner />
+    </GatedToolScreen>
   );
 }

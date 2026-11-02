@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -93,7 +94,7 @@ const MOCK_REPORT = `# ملخص القضية — نزاع تجاري شركة ا
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function ReportGeneratorPage() {
+function ReportGeneratorInner() {
   const { isDark } = useTheme();
   const [step, setStep] = useState<"select" | "config" | "generating" | "done">("select");
   const [selectedType, setSelectedType] = useState<ReportType | null>(null);
@@ -287,5 +288,14 @@ export default function ReportGeneratorPage() {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function ReportGeneratorPage() {
+  return (
+    <GatedToolScreen toolId="report-generator.result" toolName="التقرير الذكي">
+      <ReportGeneratorInner />
+    </GatedToolScreen>
   );
 }

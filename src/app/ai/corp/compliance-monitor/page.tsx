@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -116,7 +117,7 @@ function formatComplianceMonitorReport(results: SectionResult[], overallScore: n
   ].join("\n\n");
 }
 
-export default function ComplianceMonitorPage() {
+function ComplianceMonitorInner() {
   const { isDark } = useTheme();
   const [step, setStep] = useState(1);
   const [answers, setAnswers] = useState<Record<string, boolean>>({});
@@ -404,5 +405,14 @@ export default function ComplianceMonitorPage() {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function ComplianceMonitorPage() {
+  return (
+    <GatedToolScreen toolId="corp.compliance-monitor" toolName="تقرير الامتثال التنظيمي">
+      <ComplianceMonitorInner />
+    </GatedToolScreen>
   );
 }

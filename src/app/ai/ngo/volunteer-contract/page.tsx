@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -28,7 +29,7 @@ const DURATIONS: ContractDuration[] = ["يومي", "أسبوعي", "شهري", "
 
 type Step = "volunteer" | "terms" | "result";
 
-export default function VolunteerContractPage() {
+function VolunteerContractInner() {
   const user = useUser();
   const [step, setStep] = useState<Step>("volunteer");
 
@@ -433,5 +434,14 @@ ${benefits}
 
       </AnimatePresence>
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function VolunteerContractPage() {
+  return (
+    <GatedToolScreen toolId="ngo.volunteer-contract" toolName="عقد التطوع">
+      <VolunteerContractInner />
+    </GatedToolScreen>
   );
 }

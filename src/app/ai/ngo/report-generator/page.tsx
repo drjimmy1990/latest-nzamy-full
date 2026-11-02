@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -26,7 +27,7 @@ interface KPI {
   trend: "up" | "down" | "stable";
 }
 
-export default function NGOReportGeneratorPage() {
+function NGOReportGeneratorInner() {
   const [reportType, setReportType] = useState<ReportType | "">("");
   const [orgName, setOrgName] = useState("");
   const [period, setPeriod] = useState("");
@@ -302,5 +303,14 @@ ${nextSteps || "الأهداف والخطط للفترة القادمة..."}
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function NGOReportGeneratorPage() {
+  return (
+    <GatedToolScreen toolId="ngo.report-generator" toolName="التقرير الدوري للجمعية">
+      <NGOReportGeneratorInner />
+    </GatedToolScreen>
   );
 }

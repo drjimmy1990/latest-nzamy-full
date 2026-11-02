@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ClipboardText, Robot, Copy, DownloadSimple, Warning, ArrowLeft, ArrowRight } from "@phosphor-icons/react";
@@ -6,7 +7,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
 import BetaReviewGate from "@/components/BetaReviewGate";
 type Step = "input" | "generating" | "result";
-export default function DetentionRecordsPage() {
+function DetentionRecordsInner() {
   const { isDark, isRTL } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [step, setStep] = useState<Step>("input");
@@ -69,5 +70,14 @@ export default function DetentionRecordsPage() {
         </AnimatePresence>
       </div>
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function DetentionRecordsPage() {
+  return (
+    <GatedToolScreen toolId="gov.detention-records" toolName="محضر الضبط والإيقاف">
+      <DetentionRecordsInner />
+    </GatedToolScreen>
   );
 }
