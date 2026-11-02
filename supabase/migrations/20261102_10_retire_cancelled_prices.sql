@@ -79,19 +79,21 @@ commit;
 
 -- ── SELECT check (the SQL editor hides NOTICEs — run this and read the rows) ──
 -- Expected: two rows, ok = true. in_table = false means the row does not exist
--- and the code catalogue serves the same values (also ok).
+-- and the code catalogue serves the same values (also ok). ok is never NULL:
+-- every comparison is null-safe (a row with no priceNote reads ok = false).
 select e.service_id,
        c.service_id is not null                            as in_table,
        c.audience,
        c.base_price,
        c.metadata->>'priceNote'                            as price_note,
        c.metadata->>'tag'                                  as tag,
-       c.service_id is null
-         or (c.base_price = e.base_price
-             and c.metadata->>'priceNote' = e.price_note
-             and not (c.metadata ? 'tag' and e.service_id = 'contract-draft'))
-         or (e.service_id = 'contract-review' and c.audience <> 'individual')
-                                                           as ok
+       coalesce(
+         c.service_id is null
+         or (e.service_id = 'contract-review' and c.audience is distinct from 'individual')
+         or (c.base_price is not distinct from e.base_price
+             and c.metadata->>'priceNote' is not distinct from e.price_note
+             and not (e.service_id = 'contract-draft' and coalesce(c.metadata ? 'tag', false))),
+         false)                                            as ok
   from (values ('contract-draft',  0::numeric,   'أو ٥٠٠ نقطة للعقد'),
                ('contract-review', 600::numeric, 'سعر الأفراد؛ يُؤكَّد بعد الاطلاع على العقد'))
          as e(service_id, base_price, price_note)
