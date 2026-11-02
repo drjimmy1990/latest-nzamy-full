@@ -363,7 +363,7 @@ export function LawsTabContent({
                 // Owner note ١٢-٤: the merged file is said once, prominently,
                 // in place of the faint «لائحة تنفيذية» chip; a repealed law
                 // keeps its red frame and badge, so the merged badge goes muted.
-                const mergedLabel = mergedFileBadge(sys.hasMerged === true || (sys.sub_types ?? []).includes("لائحة تنفيذية"), null, sys.title);
+                const mergedLabel = mergedFileBadge(sys.hasMerged === true || (sys.sub_types ?? []).includes("لائحة تنفيذية"));
                 const mergedBadge = mergedLabel ? (
                   <span
                     role="link"

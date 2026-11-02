@@ -6,13 +6,11 @@ import { lawCardDates, mergedFileBadge, mergedFileName } from "./catalogueCardLa
 const cards = readFileSync(new URL("./components/LawsTabContent.tsx", import.meta.url), "utf8");
 const page = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
 
-test("١٢-٤: the merged badge names the regulation once; a count when the data has one", () => {
+test("BUG-LIB-07 (q382): the merged badge is the one word «مدمج»", () => {
   assert.equal(mergedFileBadge(false), "");
   assert.equal(mergedFileBadge(undefined), "");
-  assert.equal(mergedFileBadge(true), "📚 ملف مدمج · شامل اللائحة التنفيذية");
-  assert.equal(mergedFileBadge(true, 4), "📚 ملف مدمج · شامل 4 لوائح وقواعد");
-  // the title already says it: the badge does not repeat it
-  assert.equal(mergedFileBadge(true, null, "نظام المرافعات الشرعية ولائحته التنفيذية"), "📚 ملف مدمج");
+  assert.equal(mergedFileBadge("true"), "");
+  assert.equal(mergedFileBadge(true), "مدمج");
 });
 
 test("١٢-٥: الأصل + ≤2 فرعي + «+ N أخرى», without repeating the base name", () => {
