@@ -210,6 +210,8 @@ export interface FounderSeatSummary {
   seatsLeft: number;
   /** The SQL's on_sale: window open, not paused, a seat left. */
   onSale: boolean;
+  /** The SQL's sale_paused: the admin's «إيقاف البيع مؤقتًا» (founder_campaign.sale_paused). */
+  salePaused: boolean;
 }
 
 const isWhole = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n) && n >= 0;
@@ -222,15 +224,18 @@ const isWhole = (n: unknown): n is number => typeof n === "number" && Number.isI
 export function founderSummaryFromRpc(data: unknown): FounderSeatSummary | null {
   const row = Array.isArray(data) ? data[0] : data;
   if (!isPlainObject(row)) return null;
-  const { capacity, seats_left: seatsLeft, on_sale: onSale } = row;
+  const { capacity, seats_left: seatsLeft, on_sale: onSale, sale_paused: salePaused } = row;
   if (!isWhole(capacity) || capacity < 1 || !isWhole(seatsLeft) || typeof onSale !== "boolean") return null;
-  return { capacity, seatsLeft, onSale };
+  if (typeof salePaused !== "boolean") return null;
+  return { capacity, seatsLeft, onSale, salePaused };
 }
 
 /** The route's campaign: the banner's fields plus what the /pricing card reads. */
 export type FounderOfferCampaign = Campaign & {
   planId: string;
   onSale: boolean;
+  /** The admin paused the sale (R31): the card's campaign-link visitor reads «البيع متوقف مؤقتًا…». */
+  salePaused: boolean;
   seatsLeft: number;
   capacity: number;
 };
@@ -249,6 +254,7 @@ export function founderOfferCampaign(
     ...campaign,
     planId: FOUNDER_PLAN_ID,
     onSale: flag && summary.onSale,
+    salePaused: summary.salePaused,
     seatsLeft: summary.seatsLeft,
     capacity: summary.capacity,
   };

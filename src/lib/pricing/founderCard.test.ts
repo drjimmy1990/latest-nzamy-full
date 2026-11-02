@@ -11,17 +11,20 @@ import {
   FOUNDER_CONSULTANT_NOTE,
   FOUNDER_FINE_PRINT,
   FOUNDER_GUEST_LOGIN_HREF,
+  FOUNDER_PAUSED_TEXT,
   FOUNDER_PLAN_ANCHOR,
   FOUNDER_REGISTER_HREF,
   FOUNDER_TERM_LINE,
   FOUNDER_VERIFY_HREF,
   audienceFromParam,
   founderCta,
+  founderEndsLine,
   founderMemberFromReply,
   founderOfferFromApi,
   founderPriceLine,
   founderSectionView,
   founderSeatsLine,
+  founderVatLine,
   founderVerificationFromProfile,
   type FounderCtaState,
 } from "./founderCard.ts";
@@ -40,6 +43,7 @@ test("the card copy is the brief's, verbatim", () => {
   ]);
   assert.equal(FOUNDER_FINE_PRINT, "لا يُعدّ سعر السنة الأولى سعر تجديد ثابتًا");
   assert.equal(FOUNDER_CLOSED_TEXT, "انتهت حملة المؤسس أو اكتملت مقاعدها");
+  assert.equal(FOUNDER_PAUSED_TEXT, "البيع متوقف مؤقتًا — تابعنا لموعد الاستئناف");
   assert.equal(FOUNDER_CONSULTANT_NOTE, "حساب المستشار: لا يشمل الصائغ القانوني والمحاكي الشامل");
   // «مخرج مستقل واحد» is written out; it must stay what one activation grants.
   assert.equal(FOUNDER_CREDITS.independent_output, 1);
@@ -62,6 +66,25 @@ test("the price line is computed from quote(): 2,996 before VAT, 3,445.40 total"
   assert.equal(founderPriceLine(off), null);
 });
 
+test("R33: the VAT breakdown is computed from quote(): 2,996 + 449.40 VAT = 3,445.40", () => {
+  assert.equal(founderVatLine(), "٢٬٩٩٦ + ٤٤٩٫٤٠ ضريبة القيمة المضافة = ٣٬٤٤٥٫٤٠ ر.س");
+  const item = PAYABLE_ITEMS[FOUNDER_PLAN_ID];
+  const cheaper = { ...PAYABLE_ITEMS, [FOUNDER_PLAN_ID]: { ...item, prices: { once: 100000 } } };
+  assert.equal(founderVatLine(cheaper), "١٬٠٠٠ + ١٥٠ ضريبة القيمة المضافة = ١٬١٥٠ ر.س");
+  const odd = { ...PAYABLE_ITEMS, [FOUNDER_PLAN_ID]: { ...item, prices: { once: 100005 } } };
+  assert.equal(founderVatLine(odd), "١٬٠٠٠٫٠٥ + ١٥٠٫٠١ ضريبة القيمة المضافة = ١٬١٥٠٫٠٦ ر.س");
+  const off = { ...PAYABLE_ITEMS, [FOUNDER_PLAN_ID]: { ...item, onSale: false } };
+  assert.equal(founderVatLine(off), null);
+});
+
+test("R33: the end date is the setting's ends_on as an Arabic Gregorian day, or nothing", () => {
+  assert.equal(founderEndsLine("2027-01-25"), "آخر يوم في الحملة: ٢٥ يناير ٢٠٢٧");
+  assert.equal(founderEndsLine("2026-12-31"), "آخر يوم في الحملة: ٣١ ديسمبر ٢٠٢٦");
+  for (const bad of [undefined, null, "", "2027-02-30", "2027-01-25T00:00:00Z", 20270125]) {
+    assert.equal(founderEndsLine(bad), null, JSON.stringify(bad));
+  }
+});
+
 test("the seats line uses the live capacity, Arabic-Indic digits", () => {
   assert.equal(founderSeatsLine(1096, 1096), "المقاعد المتبقية: ١٬٠٩٦ من ١٬٠٩٦");
   assert.equal(founderSeatsLine(7, 1096), "المقاعد المتبقية: ٧ من ١٬٠٩٦");
@@ -79,9 +102,16 @@ const OPEN = {
 };
 
 test("founderOfferFromApi: open, closed or unavailable", () => {
-  assert.deepEqual(founderOfferFromApi(OPEN), { state: "open", seatsLeft: 1000, capacity: 1096 });
+  assert.deepEqual(founderOfferFromApi(OPEN), { state: "open", seatsLeft: 1000, capacity: 1096, endsOn: "2027-01-25" });
+  // No usable endsOn: the card simply has no end-date line.
+  assert.deepEqual(founderOfferFromApi({ campaign: { ...OPEN.campaign, endsOn: "x" } }), { state: "open", seatsLeft: 1000, capacity: 1096 });
   assert.deepEqual(founderOfferFromApi({ campaign: null }), { state: "closed" });
   assert.deepEqual(founderOfferFromApi({ campaign: { ...OPEN.campaign, onSale: false } }), { state: "closed" });
+  assert.deepEqual(founderOfferFromApi({ campaign: { ...OPEN.campaign, onSale: false, salePaused: false } }), { state: "closed" });
+  // R31: paused with seats left is its own state; paused AND full reads closed.
+  assert.deepEqual(founderOfferFromApi({ campaign: { ...OPEN.campaign, onSale: false, salePaused: true } }), { state: "paused" });
+  assert.deepEqual(founderOfferFromApi({ campaign: { ...OPEN.campaign, onSale: false, salePaused: true, seatsLeft: 0 } }), { state: "closed" });
+  assert.deepEqual(founderOfferFromApi({ campaign: { ...OPEN.campaign, onSale: false, salePaused: "true" } }), { state: "closed" });
   // A read failure is not «the campaign ended».
   assert.deepEqual(founderOfferFromApi({ campaign: null, founderUnavailable: true }), { state: "unavailable" });
   assert.deepEqual(founderOfferFromApi(null), { state: "unavailable" });
@@ -119,6 +149,15 @@ test("founderSectionView: a closed sale says so only to a visitor who came from 
   // A failed read never claims the campaign ended.
   assert.equal(founderSectionView({ ...base, offer: { state: "unavailable" }, campaignParam: FOUNDER_CAMPAIGN_ID }), "hidden");
   assert.equal(founderSectionView({ ...base, offer: { state: "unavailable" }, campaignParam: null }), "hidden");
+});
+
+test("founderSectionView R31: a paused sale says so only to a campaign-link visitor; others see nothing", () => {
+  const base = { audience: "lawyers", libraryMode: false, offer: { state: "paused" }, priced: true } as const;
+  assert.equal(founderSectionView({ ...base, campaignParam: FOUNDER_CAMPAIGN_ID }), "paused");
+  assert.equal(founderSectionView({ ...base, campaignParam: null }), "hidden");
+  assert.equal(founderSectionView({ ...base, campaignParam: "founder-2026-11-01" }), "hidden");
+  assert.equal(founderSectionView({ ...base, audience: "firms", campaignParam: FOUNDER_CAMPAIGN_ID }), "hidden");
+  assert.equal(founderSectionView({ ...base, libraryMode: true, campaignParam: FOUNDER_CAMPAIGN_ID }), "hidden");
 });
 
 test("audienceFromParam: a real tab, or null", () => {

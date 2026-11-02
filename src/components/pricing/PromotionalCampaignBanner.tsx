@@ -9,14 +9,14 @@ const DISMISSED_PREFIX = "nzamy_dismissed_campaign_";
 /**
  * Dismissible banner for a real, dated campaign (owner answer ١٧٩). The
  * founder campaign (owner ٢١٨ / ٢٢٥) comes from GET /api/v1/campaigns/active,
- * which reads the admin-set dates — and answers null until the paid founder
- * membership is on sale (FOUNDER_MEMBERSHIP_ON_SALE, phase P3; owner, 25 Oct:
- * no founder gift on a free signup). When that route fails or answers nothing
- * usable, the code `CAMPAIGNS` list (empty) is the fallback.
+ * which reads the admin-set dates; campaignFromApi drops it while the paid
+ * founder sale is not open (FOUNDER_MEMBERSHIP_ON_SALE off, paused, or full —
+ * owner, 25 Oct: no founder gift on a free signup). When that route fails or
+ * answers nothing usable, the code `CAMPAIGNS` list (empty) is the fallback.
  * Renders nothing when neither has a campaign for today. Today is read after
  * mount, never during render, so a cached page cannot show a campaign on the
  * wrong day (the SSR cached-date trap) — and the route's campaign is
- * re-checked against today here, because the route answer is cached 5 minutes.
+ * re-checked against today here, because the route answer is cached for 1 minute.
  */
 export function PromotionalCampaignBanner() {
   const [campaign, setCampaign] = useState<Campaign | null>(null);

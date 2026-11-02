@@ -11,7 +11,7 @@ One SQL file. It is new, it only adds, and it is safe to run twice. It runs in o
 
 **Prerequisites:** these have all run already: `20261021_50`, `20261022_10`, `20261022_30`, `20261027_10` and `20261030_65`. If one is missing, the file stops with an error that names it.
 
-**Real buyers can pay only after the gateway is switched to LIVE (Step 6).** Today the gateway is in test mode. In test mode only staff and the accounts in `public.test_accounts` can pay. For everyone else, guests included, the gateway reads as disabled. On the founder card a signed-in verified lawyer sees the button «الدفع الإلكتروني غير متاح حاليًا» instead of «اشترك الآن»; a direct checkout answers «الدفع الإلكتروني غير متاح حالياً». Whether to turn live on is your and the owner's decision. Make it after the acceptance test in Step 5.
+**Real buyers can pay only after the gateway is switched to LIVE (Step 6).** Today the gateway is in test mode. In test mode only staff and the accounts in `public.test_accounts` can pay. For everyone else, guests included, the gateway reads as disabled. On the founder card a signed-in verified lawyer sees the button «الدفع الإلكتروني غير متاح حاليًا» instead of «اشترك الآن»; a direct checkout answers «الدفع الإلكتروني غير متاح حالياً». Whether to turn live on is your and the owner's decision. Make it after the acceptance test in Step 5. Between the acceptance test and the live switch the sale stays **paused** (Step 6).
 
 ---
 
@@ -91,6 +91,37 @@ t      | t             | t            | t              | t                    | 
 - `sale_window`: the file moves the start from the old seed date 2026-10-25 to **2026-11-01**. It changes the date only while it still holds that seed. If you see another date, an admin set it, and it was kept.
 - `on_sale = t` means the dates include today, the sale is not paused, and seats are left. Nothing is sold yet, because the old code is still live: it has the sale switch off.
 
+## Step 2b: look at the new screens on a local build, BEFORE the deploy
+
+Nobody has seen these screens rendered yet. Check them on your PC, in light **and** dark mode, before Step 3.
+
+Where: the main folder, after `git pull` on main:
+
+```
+D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website
+```
+
+It needs the main folder's own env file (never paste its values in chat):
+
+```
+D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\.env.local
+```
+
+```bash
+npm run build && npm run start
+```
+
+Then open `http://localhost:3000` and check:
+1. `/pricing?audience=lawyers&campaign=founder-2026#founder-plan`, signed out and as a lawyer:
+   - the page opens the lawyers tab and scrolls down to the founder card by itself (the anchor);
+   - the card shows «٢٬٩٩٦ ر.س قبل الضريبة — الإجمالي ٣٬٤٤٥٫٤٠ ر.س», under it «٢٬٩٩٦ + ٤٤٩٫٤٠ ضريبة القيمة المضافة = ٣٬٤٤٥٫٤٠ ر.س» and «آخر يوم في الحملة: ٢٥ يناير ٢٠٢٧» (or the end date the admin set), then the seats left;
+   - text is readable in both modes (no light-grey text on a dark card).
+2. **The paused message.** In `/dashboard/admin/founder` (an admin account) press «إيقاف البيع مؤقتًا». Wait about a minute (the campaign answer is cached for 60 seconds), then reload the campaign link above: in place of the card it reads «البيع متوقف مؤقتًا — تابعنا لموعد الاستئناف». The same page **without** `&campaign=founder-2026` shows no founder card at all. Then press «استئناف البيع». This local build talks to the real database, so the pause is real: do not leave it paused. The old code still live on the site has the sale switch off, so nobody outside sees either state.
+3. `/dashboard/admin/founder` itself: the seat numbers, the order counts, the members table (empty for now) and the pause button.
+4. The lawyer dashboard as a **verified** lawyer test account: the line inviting him to the founder card shows.
+
+Two screens cannot show yet, because nobody is a member before the first purchase: the «استخدم رصيد باقة المؤسس» checkbox (the drafter, contracts pro, decisive opinion, simulator) and the member card «عضويتي المؤسسة». They are checked in light and dark mode during Step 5, right after the test payment.
+
 ## Step 3: deploy (server terminal)
 
 There are no new npm packages in this batch, so `npm install` is not needed.
@@ -105,6 +136,12 @@ tail -f /root/deploy-20261101-founder.log
 
 ## Step 4: `_verify.sql` by hand (server, after the deploy; deploy.sh does not run it)
 
+The file on the server:
+
+```
+/www/wwwroot/nzamy/latest-nzamy-full/supabase/migrations/_verify.sql
+```
+
 ```bash
 cd /www/wwwroot/nzamy/latest-nzamy-full && docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < supabase/migrations/_verify.sql 2>&1 | grep -E "_verify: 20261101_|_verify: 20261027_10|ERROR"
 ```
@@ -113,7 +150,13 @@ Expect on the screen (it is not a file), and no `ERROR`:
 - `_verify: 20261027_10 OK …`
 - `_verify: 20261101_10 OK — … capacity 1096; founder functions service role only`
 
-If you see `ai_fail_run lost the founder credit restore`, someone re-ran `20261027_10` after this file. Re-run `20261101_10_founder_membership.sql` (Step 1) and run this step again.
+If you see `ai_fail_run lost the founder credit restore`, someone re-ran `20261027_10` after this file. Re-run the Step 1 file and run this step again:
+
+```
+/www/wwwroot/nzamy/latest-nzamy-full/supabase/migrations/20261101_10_founder_membership.sql
+```
+
+**An old NOTICE to ignore.** If you run the whole `_verify.sql` without the `grep` above, then once a paid founder exists the old 20261026_02 block prints: `_verify: 20261026_02 — N founder badge(s) are held. Before P3 sells the paid founder membership none should be; re-run 20261026_02 …`, followed by its `OK` line. That wording predates this sale. A paid founder's badge is expected, so the NOTICE is harmless: ignore it, and do not re-run 20261026_02 because of it.
 
 ## Step 5: the acceptance test, in TEST mode, with a test account
 
@@ -141,14 +184,23 @@ select ta.user_id, u.email, lp.verification_status, lp.practice_kind
 The test, in short (the owner note has every expected text):
 1. **The card.** Open `/pricing?audience=lawyers&campaign=founder-2026#founder-plan` as the test account. The founder card shows:
    - «٢٬٩٩٦ ر.س قبل الضريبة — الإجمالي ٣٬٤٤٥٫٤٠ ر.س»;
+   - «٢٬٩٩٦ + ٤٤٩٫٤٠ ضريبة القيمة المضافة = ٣٬٤٤٥٫٤٠ ر.س»;
+   - «آخر يوم في الحملة: ٢٥ يناير ٢٠٢٧» (or the end date the admin set);
    - the seats left.
 2. **Declined card, then a retry.**
    - Buy, and pay with one of Moyasar's **declined** test cards (from Moyasar's test-card documentation).
    - Within 2 hours, buy again. It must go to payment again, NOT «أنت عضو مؤسس بالفعل».
    - In «حملة المؤسس», `reserved` stays **1**: it is the same seat.
 3. **Pay.** Use the success test card `4111 1111 1111 1111`. The result page says «تم تفعيل عضويتك المؤسِّسة», and the dashboard shows «عضويتي المؤسسة» with ٦ من ٦ and ١ من ١.
+   - **The screens Step 2b could not show**, in light and dark mode: the member card «عضويتي المؤسسة» on the dashboard, and the «استخدم رصيد باقة المؤسس» checkbox on the drafter, contracts pro, decisive opinion and simulator (open each page; do not run them all, that would spend the credits).
+   - In «حملة المؤسس» the account is listed among the members with the tag «تجريبي» (a test-mode payment).
 4. **One drafter work.** Use one in «الصائغ القانوني». The balance goes to ٥ and no points are deducted. A second turn in the same conversation spends nothing.
-5. **Pause, then unpause.** In /dashboard/admin/founder («حملة المؤسس»), press «إيقاف البيع مؤقتًا»: the card disappears from /pricing. Press «استئناف البيع».
+5. **Pause, then unpause.** In /dashboard/admin/founder («حملة المؤسس»), press «إيقاف البيع مؤقتًا». After up to about a minute (the campaign answer is cached for 60 seconds):
+   - the campaign link `/pricing?audience=lawyers&campaign=founder-2026#founder-plan` shows «البيع متوقف مؤقتًا — تابعنا لموعد الاستئناف» in place of the card;
+   - `/pricing?audience=lawyers` without the campaign part shows no founder card;
+   - the campaign banner at the top of the site is gone.
+
+   Press «استئناف البيع»: the card comes back, again within about a minute.
 6. **Refund.** Refund the order from /dashboard/admin/subscriptions/orders. Then check all of these:
    - the seat is revoked;
    - the credits are 0;
@@ -160,6 +212,8 @@ The test, in short (the owner note has every expected text):
 
 Then check a normal verified lawyer account (not in `test_accounts`): on the founder card the button reads «الدفع الإلكتروني غير متاح حاليًا», not «اشترك الآن».
 
+**Last, pause the sale (ruling R29).** When all of the above passes, press «إيقاف البيع مؤقتًا» in /dashboard/admin/founder and leave it paused until Step 6. It must come **after** the test: a pause also refuses the test account (no new seat, no payment retry).
+
 ## Step 6: live payments (a decision, not a step of this batch)
 
 Real buyers can pay only after the gateway is switched to **live** in /dashboard/admin/settings. Live mode needs three things, or the gateway reads as disabled:
@@ -167,17 +221,44 @@ Real buyers can pay only after the gateway is switched to **live** in /dashboard
 - the webhook secret;
 - a complete `billing_company` (name, CR number, VAT number and address).
 
-Between the deploy and the live switch, the founder card is visible to everyone. For a normal verified lawyer the button reads «الدفع الإلكتروني غير متاح حاليًا», and no seat is taken. **Send no WhatsApp message and no campaign link until the gateway is live.**
+The order (ruling R29):
+1. the acceptance test of Step 5, including its refund, in test mode;
+2. pause the sale from /dashboard/admin/founder («إيقاف البيع مؤقتًا»), as Step 5 ends;
+3. switch the gateway to live;
+4. unpause («استئناف البيع»);
+5. only then the WhatsApp messages and the campaign link.
+
+Between the deploy and the end of the acceptance test the founder card is visible to everyone. For a normal verified lawyer the button reads «الدفع الإلكتروني غير متاح حاليًا», and no seat is taken. From the pause until the unpause, visitors from the campaign link read «البيع متوقف مؤقتًا — تابعنا لموعد الاستئناف» and others see no card. **Send no WhatsApp message and no campaign link before the unpause.**
 
 ## To close the sale in an emergency
 
-- **No deploy:** /dashboard/admin/founder → «إيقاف البيع مؤقتًا». The card disappears and every new founder checkout is refused. Members keep everything. «استئناف البيع» reopens it.
-- **With a deploy:** set `FOUNDER_MEMBERSHIP_ON_SALE = false` in `src/lib/pricing/campaigns.ts`.
+- **No deploy:** /dashboard/admin/founder → «إيقاف البيع مؤقتًا». Within about a minute (the campaign answer is cached for 60 seconds):
+  - a visitor from the campaign link reads «البيع متوقف مؤقتًا — تابعنا لموعد الاستئناف»;
+  - other visitors see no founder card;
+  - the campaign banner hides;
+  - no new seat is reserved and no payment retry goes through.
+
+  An order already paid still activates, and members keep everything. «استئناف البيع» reopens the sale.
+- **With a deploy:** set `FOUNDER_MEMBERSHIP_ON_SALE = false` in this file, then deploy:
+
+```
+D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\src\lib\pricing\campaigns.ts
+```
 
 ## Rollback (only before any seat is sold)
 
-Follow the order in the header of `20261101_10_founder_membership.sql` exactly, under "ROLLBACK":
-1. re-run `20261027_10_ai_runs.sql`, which puts back `ai_fail_run` without the credit restore;
+Follow the order in the header of this file exactly, under "ROLLBACK":
+
+```
+/www/wwwroot/nzamy/latest-nzamy-full/supabase/migrations/20261101_10_founder_membership.sql
+```
+
+1. re-run this file, which puts back `ai_fail_run` without the credit restore:
+
+```
+/www/wwwroot/nzamy/latest-nzamy-full/supabase/migrations/20261027_10_ai_runs.sql
+```
+
 2. drop `ai_start_run_with_credit`;
 3. drop the 7 founder functions;
 4. drop the three tables last.

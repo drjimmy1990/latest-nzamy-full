@@ -25,6 +25,7 @@ import {
   riyadhDayStartIso,
   saleStateAr,
   saleToggleCopy,
+  FOUNDER_TEST_SEAT_TAG_AR,
 } from "./founderAdmin.ts";
 
 const order = (over: Record<string, unknown> = {}) => ({
@@ -139,7 +140,8 @@ test("members: active seats only, credits from those seats only (a revoked seat'
     { seat_id: "s3", kind: "drafting_work", total: 6, remaining: 6 },
   ];
   const people = new Map([["u-1", { name: "أ. سعد", email: "s@x.sa" }]]);
-  const members = founderMembers(seats, credits, people);
+  const liveByOrder = new Map<string, boolean | null>([["o-1", true], ["o-3", false]]);
+  const members = founderMembers(seats, credits, people, liveByOrder);
   assert.deepEqual(members.map((m) => m.seatId), ["s3", "s1"], "active only, newest activation first");
   assert.deepEqual(members[1], {
     seatId: "s1",
@@ -150,9 +152,23 @@ test("members: active seats only, credits from those seats only (a revoked seat'
     activatedAt: "2026-11-02T08:00:00Z",
     endsAt: "2027-11-02T08:00:00Z",
     credits: { draftingWork: { remaining: 4, total: 6 }, independentOutput: { remaining: 0, total: 1 } },
+    live: true,
   });
   assert.deepEqual(members[0].credits, { draftingWork: { remaining: 6, total: 6 }, independentOutput: null });
   assert.equal(members[0].name, null);
+  assert.equal(members[0].live, false, "R32: a test-mode order's seat is tagged");
+});
+
+test("members R32: only a known live = false is a test seat; no order, unknown order or null live is not", () => {
+  const seat = (id: string, order_id: string | null) =>
+    ({ id, user_id: `u-${id}`, order_id, status: "active", activated_at: "2026-11-02T08:00:00Z", ends_at: null });
+  const liveByOrder = new Map<string, boolean | null>([["o-test", false], ["o-live", true], ["o-null", null]]);
+  const byId = new Map(
+    founderMembers([seat("a", "o-test"), seat("b", "o-live"), seat("c", "o-null"), seat("d", "o-missing"), seat("e", null)], [], new Map(), liveByOrder)
+      .map((m) => [m.seatId, m.live]),
+  );
+  assert.deepEqual(Object.fromEntries(byId), { a: false, b: true, c: true, d: true, e: true });
+  assert.equal(FOUNDER_TEST_SEAT_TAG_AR, "تجريبي");
 });
 
 // ── the sale PATCH ───────────────────────────────────────────────────────────
@@ -293,4 +309,10 @@ test("the switch: the brief's two labels, a confirm question each, and the value
   const paused = saleToggleCopy(true);
   assert.deepEqual([paused.button, paused.next], ["استئناف البيع", false]);
   for (const c of [live, paused]) assert.ok(c.confirm.endsWith(".") && c.confirm.includes("؟"));
+  // R30: founder_reserve_seat refuses 'paused' before its move step, so a
+  // pause DOES stop new reservations and payment retries; founder_activate
+  // never reads sale_paused, so a paid order still activates.
+  assert.doesNotMatch(live.confirm, /الحجوزات القائمة لا تتأثر/);
+  assert.match(live.confirm, /لا يُقبل حجز جديد ولا إعادة محاولة دفع/);
+  assert.match(live.confirm, /العمليات المدفوعة تُفعَّل كالمعتاد/);
 });

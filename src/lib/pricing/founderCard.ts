@@ -12,7 +12,8 @@
  * The card promises only what founder_activate grants (global constraints):
  * the drafter works, the one independent output (direction support
  * «قريبًا»), the library for 12 months, office management «قريبًا». The price
- * comes from quote(), never a typed number.
+ * and its VAT breakdown come from quote(), never a typed number; the end date
+ * is the setting's ends_on, served by GET /api/v1/campaigns/active.
  *
  * Pure: relative imports only, so `node --test` loads it (founderCard.test.ts).
  */
@@ -26,7 +27,9 @@ import {
   FOUNDER_PLAN_ID,
 } from "../membership/founderPlan.ts";
 import { toArabicDigits } from "../services/arabicCount.ts";
+import { libraryEndsAtAr } from "../libraryAccess.ts";
 import { USER_TYPE_TO_AUDIENCE } from "./audienceForUserType.ts";
+import { isCalendarDay } from "./campaigns.ts";
 import type { AudienceTab } from "../../constants/pricing/pricing.types.ts";
 
 // ── the copy ────────────────────────────────────────────────────────────────
@@ -51,6 +54,12 @@ export const FOUNDER_FINE_PRINT = "لا يُعدّ سعر السنة الأول�
 
 /** Shown instead of a dead anchor when the campaign link arrives after the sale closed. */
 export const FOUNDER_CLOSED_TEXT = "انتهت حملة المؤسس أو اكتملت مقاعدها";
+
+/**
+ * R31: shown instead of FOUNDER_CLOSED_TEXT when the admin paused the sale
+ * («إيقاف البيع مؤقتًا») and seats are left — the campaign has not ended.
+ */
+export const FOUNDER_PAUSED_TEXT = "البيع متوقف مؤقتًا — تابعنا لموعد الاستئناف";
 
 /**
  * R19: legal-drafter and wargaming are consultantBlocked, so a consultant
@@ -91,6 +100,37 @@ export function founderPriceLine(
   return `${formatHalalas(q.netHalalas)} قبل الضريبة — الإجمالي ${formatHalalas(q.totalHalalas)}`;
 }
 
+/** Halalas as «٢٬٩٩٦» / «٤٤٩٫٤٠» — formatHalalas without its « ر.س» suffix. */
+function amountAr(h: number): string {
+  const sar = Math.floor(h / 100);
+  const halalas = h % 100;
+  const fraction = halalas === 0 ? "" : `٫${String(halalas).padStart(2, "0")}`;
+  return toArabicDigits(String(sar).replace(/\B(?=(\d{3})+(?!\d))/g, "٬") + fraction);
+}
+
+/**
+ * R33: «٢٬٩٩٦ + ٤٤٩٫٤٠ ضريبة القيمة المضافة = ٣٬٤٤٥٫٤٠ ر.س», every number from
+ * quote(); null when the item is not sold (same as founderPriceLine).
+ */
+export function founderVatLine(
+  catalog: Readonly<Record<string, PayableItem>> = PAYABLE_ITEMS,
+): string | null {
+  const q = quote(FOUNDER_PLAN_ID, "once", catalog);
+  if (!q.ok) return null;
+  return `${amountAr(q.netHalalas)} + ${amountAr(q.vatHalalas)} ضريبة القيمة المضافة = ${formatHalalas(q.totalHalalas)}`;
+}
+
+/**
+ * R33: «آخر يوم في الحملة: ٢٥ يناير ٢٠٢٧» from the setting's ends_on (a Riyadh
+ * `YYYY-MM-DD`, inclusive), in the Arabic date format the dashboard founder
+ * card uses (libraryEndsAtAr); null for anything that is not a real day.
+ */
+export function founderEndsLine(endsOn: unknown): string | null {
+  if (!isCalendarDay(endsOn)) return null;
+  const day = libraryEndsAtAr(endsOn);
+  return day ? `آخر يوم في الحملة: ${day}` : null;
+}
+
 function groupedAr(n: number): string {
   return toArabicDigits(String(n).replace(/\B(?=(\d{3})+(?!\d))/g, "٬"));
 }
@@ -103,13 +143,17 @@ export function founderSeatsLine(seatsLeft: number, capacity: number): string {
 // ── GET /api/v1/campaigns/active → the offer ────────────────────────────────
 
 export type FounderOffer =
-  | { state: "open"; seatsLeft: number; capacity: number }
+  /** `endsOn`: the campaign's last day (the setting's ends_on), when the body carries a real one. */
+  | { state: "open"; seatsLeft: number; capacity: number; endsOn?: string }
   | { state: "closed" }
+  /** R31: the admin paused the sale and seats are left. */
+  | { state: "paused" }
   /** The route could not read the setting or the seats (or the fetch failed). */
   | { state: "unavailable" };
 
 const UNAVAILABLE: FounderOffer = { state: "unavailable" };
 const CLOSED: FounderOffer = { state: "closed" };
+const PAUSED: FounderOffer = { state: "paused" };
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -117,8 +161,10 @@ const isPositiveInt = (n: unknown): n is number => typeof n === "number" && Numb
 
 /**
  * The route's body as the card reads it. `campaign: null` (outside the
- * dates, or the code switch off) and `onSale: false` (full, paused) are
- * "closed"; `founderUnavailable: true`, a malformed body, or an on-sale
+ * dates, or the code switch off) and `onSale: false` (full, ended) are
+ * "closed"; `onSale: false` with `salePaused: true` and a seat left is
+ * "paused" (R31: paused and full at once reads "closed" — resuming would not
+ * reopen it); `founderUnavailable: true`, a malformed body, or an on-sale
  * campaign with unusable numbers are "unavailable" — never reported as an
  * ended campaign.
  */
@@ -127,9 +173,10 @@ export function founderOfferFromApi(body: unknown): FounderOffer {
   if (body.campaign === null) return CLOSED;
   const c = body.campaign;
   if (!isObject(c)) return UNAVAILABLE;
-  if (c.onSale !== true) return CLOSED;
+  if (c.onSale !== true) return c.salePaused === true && isPositiveInt(c.seatsLeft) ? PAUSED : CLOSED;
   if (c.planId !== FOUNDER_PLAN_ID || !isPositiveInt(c.seatsLeft) || !isPositiveInt(c.capacity)) return UNAVAILABLE;
-  return { state: "open", seatsLeft: c.seatsLeft, capacity: c.capacity };
+  const open: FounderOffer = { state: "open", seatsLeft: c.seatsLeft, capacity: c.capacity };
+  return isCalendarDay(c.endsOn) ? { ...open, endsOn: c.endsOn } : open;
 }
 
 // ── whether the section renders ─────────────────────────────────────────────
@@ -141,13 +188,14 @@ export function audienceFromParam(value: string | null | undefined): AudienceTab
   return typeof value === "string" && AUDIENCES.has(value) ? (value as AudienceTab) : null;
 }
 
-export type FounderSectionView = "hidden" | "card" | "closed";
+export type FounderSectionView = "hidden" | "card" | "closed" | "paused";
 
 /**
  * The lawyers tab (not library mode) shows the card while the sale is open
- * and the price is known. A closed sale says «انتهت حملة المؤسس…» only to a
- * visitor whose URL carries campaign=founder-2026; a failed read or a page
- * still loading (`offer` null) shows nothing.
+ * and the price is known. A closed sale says «انتهت حملة المؤسس…», a paused
+ * one «البيع متوقف مؤقتًا…» (R31), only to a visitor whose URL carries
+ * campaign=founder-2026; a failed read or a page still loading (`offer`
+ * null) shows nothing.
  */
 export function founderSectionView(input: {
   audience: AudienceTab;
@@ -158,7 +206,9 @@ export function founderSectionView(input: {
 }): FounderSectionView {
   if (input.audience !== "lawyers" || input.libraryMode || !input.offer) return "hidden";
   if (input.offer.state === "open") return input.priced ? "card" : "hidden";
-  if (input.offer.state === "closed" && input.campaignParam === FOUNDER_CAMPAIGN_ID) return "closed";
+  if (input.campaignParam !== FOUNDER_CAMPAIGN_ID) return "hidden";
+  if (input.offer.state === "closed") return "closed";
+  if (input.offer.state === "paused") return "paused";
   return "hidden";
 }
 

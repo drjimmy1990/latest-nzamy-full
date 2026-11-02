@@ -15,21 +15,25 @@ import {
  *
  * The founder campaign (owner ٢١٨, dates ٢٢٥) when today, in Riyadh, is
  * between the admin-set `founder_campaign` dates (both included); else null.
- * PromotionalCampaignBanner falls back to the code `CAMPAIGNS` when this
- * answers null or fails.
+ * PromotionalCampaignBanner falls back to the code `CAMPAIGNS` (empty) when
+ * this answers null or fails.
  *
  * Owner answers of 25 Oct (P0): a free signup never earns the founder badge,
- * seat or library days, so until the paid founder membership ships (phase P3)
- * `FOUNDER_MEMBERSHIP_ON_SALE` is false and this route answers
+ * seat or library days; only the paid founder membership (P3, 20261101_10)
+ * does. `FOUNDER_MEMBERSHIP_ON_SALE` is the code switch of that sale. It is
+ * on since P3 Task 11; set back to false, this route answers
  * `{ campaign: null }` without reading the setting.
  *
- * P3 Task 8: inside the dates the campaign also carries the /pricing card's
- * numbers from founder_seat_summary() (service role only, 20261101_10):
- * `planId`, `seatsLeft`, `capacity` and `onSale` = FOUNDER_MEMBERSHIP_ON_SALE
- * AND the SQL's on_sale (window open, not paused, a seat left). A full or
- * paused sale still answers the campaign, with onSale false: the card then
- * says «انتهت حملة المؤسس أو اكتملت مقاعدها» to a campaign-link visitor and
- * the banner (campaignFromApi) stays quiet.
+ * Inside the dates the campaign also carries the /pricing card's numbers from
+ * founder_seat_summary() (service role only, 20261101_10): `planId`,
+ * `seatsLeft`, `capacity`, `salePaused` (the setting's sale_paused, R31) and
+ * `onSale` = FOUNDER_MEMBERSHIP_ON_SALE AND the SQL's on_sale (window open,
+ * not paused, a seat left); `endsOn` is the setting's ends_on. A full or
+ * paused sale still answers the campaign, with onSale false. To a visitor
+ * from the campaign link the card then says «البيع متوقف مؤقتًا…» when
+ * paused with seats left, else «انتهت حملة المؤسس أو اكتملت مقاعدها»; other
+ * visitors see no card, and the banner (campaignFromApi) and the dashboard
+ * invite stay quiet.
  *
  * platform_settings has no public read, so the service client reads the one
  * key; only the derived banner copy, dates and seat numbers leave this route.
@@ -66,7 +70,8 @@ function unavailable() {
 }
 
 export async function GET() {
-  // P3 flips FOUNDER_MEMBERSHIP_ON_SALE when the paid membership can be bought.
+  // The code switch of the paid founder sale (on since P3 Task 11): while it
+  // is off there is no campaign to show, and the setting is not read.
   if (!FOUNDER_MEMBERSHIP_ON_SALE) return answer(null);
   try {
     const supabase = await createServiceClient();

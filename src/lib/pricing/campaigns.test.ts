@@ -263,28 +263,38 @@ test("the admin settings route merges founder_campaign into the stored value and
 
 test("founderSummaryFromRpc: the founder_seat_summary() row, or null when unusable", () => {
   const row = { capacity: 1096, active: 10, reserved: 2, seats_left: 1084, sale_paused: false, on_sale: true };
-  assert.deepEqual(founderSummaryFromRpc([row]), { capacity: 1096, seatsLeft: 1084, onSale: true });
-  assert.deepEqual(founderSummaryFromRpc(row), { capacity: 1096, seatsLeft: 1084, onSale: true });
-  assert.deepEqual(founderSummaryFromRpc([{ ...row, seats_left: 0, on_sale: false }]), { capacity: 1096, seatsLeft: 0, onSale: false });
-  for (const bad of [null, [], [null], [{ ...row, on_sale: "true" }], [{ ...row, seats_left: -1 }], [{ ...row, capacity: 2.5 }], "x"]) {
+  assert.deepEqual(founderSummaryFromRpc([row]), { capacity: 1096, seatsLeft: 1084, onSale: true, salePaused: false });
+  assert.deepEqual(founderSummaryFromRpc(row), { capacity: 1096, seatsLeft: 1084, onSale: true, salePaused: false });
+  assert.deepEqual(founderSummaryFromRpc([{ ...row, seats_left: 0, on_sale: false }]), { capacity: 1096, seatsLeft: 0, onSale: false, salePaused: false });
+  // R31: a paused sale is read from the same row.
+  assert.deepEqual(founderSummaryFromRpc([{ ...row, sale_paused: true, on_sale: false }]), { capacity: 1096, seatsLeft: 1084, onSale: false, salePaused: true });
+  const noPaused = Object.fromEntries(Object.entries(row).filter(([k]) => k !== "sale_paused"));
+  for (const bad of [null, [], [null], [{ ...row, on_sale: "true" }], [{ ...row, seats_left: -1 }], [{ ...row, capacity: 2.5 }], [{ ...row, sale_paused: "true" }], [noPaused], "x"]) {
     assert.equal(founderSummaryFromRpc(bad), null, JSON.stringify(bad));
   }
 });
 
 test("founderOfferCampaign: onSale is the code flag AND the SQL's on_sale", () => {
   const c = founderCampaignFromSetting(STORED, "2026-11-10")!;
-  const summary = { capacity: 1096, seatsLeft: 9, onSale: true };
+  const summary = { capacity: 1096, seatsLeft: 9, onSale: true, salePaused: false };
   assert.deepEqual(founderOfferCampaign(c, summary, true), {
-    ...c, planId: "lawyer-founder-2026", onSale: true, seatsLeft: 9, capacity: 1096,
+    ...c, planId: "lawyer-founder-2026", onSale: true, salePaused: false, seatsLeft: 9, capacity: 1096,
   });
   assert.equal(founderOfferCampaign(c, summary, false).onSale, false);
   assert.equal(founderOfferCampaign(c, { ...summary, onSale: false }, true).onSale, false);
+  // R31: salePaused passes through (additive), next to onSale; endsOn is the setting's ends_on.
+  const paused = founderOfferCampaign(c, { ...summary, onSale: false, salePaused: true }, true);
+  assert.equal(paused.salePaused, true);
+  assert.equal(paused.onSale, false);
+  assert.equal(paused.endsOn, "2027-01-25");
 });
 
 test("campaignFromApi: the banner stays quiet when the seats are full or the sale is paused", () => {
   const c = founderCampaignFromSetting(STORED, "2026-11-10")!;
-  const summary = { capacity: 1096, seatsLeft: 0, onSale: false };
+  const summary = { capacity: 1096, seatsLeft: 0, onSale: false, salePaused: false };
   assert.equal(campaignFromApi({ campaign: founderOfferCampaign(c, summary, true) }), null);
+  // Paused with seats left: the SQL's on_sale is false, so the banner hides too.
+  assert.equal(campaignFromApi({ campaign: founderOfferCampaign(c, { ...summary, seatsLeft: 50, salePaused: true }, true) }), null);
   const live = campaignFromApi({ campaign: founderOfferCampaign(c, { ...summary, seatsLeft: 5, onSale: true }, true) });
   assert.deepEqual(live, c, "only the banner fields come back");
 });

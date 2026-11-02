@@ -10,7 +10,8 @@
  *   refund, so the status filter is what drops a refunded order from the list.
  * - Members are ACTIVE seats only, and their credits come from those seats
  *   only: a revoked seat's credit row can read remaining 1 after a late
- *   ai_fail_run (Task 2 note).
+ *   ai_fail_run (Task 2 note). Each member carries `live` from its order's
+ *   payment_orders.live (R32), so a test-mode seat shows «تجريبي».
  * - The retry maps founder_activate's answer (a stamped refund order) or
  *   fulfillOrder's resume answer (a paid order whose stamp never happened).
  *
@@ -189,13 +190,27 @@ export interface FounderMemberDto {
   activatedAt: string | null;
   endsAt: string | null;
   credits: { draftingWork: CreditDto; independentOutput: CreditDto };
+  /**
+   * R32: false only when the seat's order is a test-mode payment
+   * (payment_orders.live = false) — the panel tags it «تجريبي». A seat with
+   * no order, an order not found, or live null counts as live (no tag), the
+   * same `=== false` rule as the refund list's «عملية تجريبية».
+   */
+  live: boolean;
 }
 
-/** The members: ACTIVE seats, newest activation first, each with its own seat's credits. */
+/** «تجريبي» — the member row's tag for a seat bought in test mode (R32). */
+export const FOUNDER_TEST_SEAT_TAG_AR = "تجريبي";
+
+/**
+ * The members: ACTIVE seats, newest activation first, each with its own
+ * seat's credits. `liveByOrder` is payment_orders.live keyed by order id.
+ */
 export function founderMembers(
   seats: readonly FounderSeatRow[],
   credits: readonly FounderCreditRow[],
   people: ReadonlyMap<string, PersonRef>,
+  liveByOrder: ReadonlyMap<string, boolean | null>,
 ): FounderMemberDto[] {
   const active = seats.filter((s) => s.status === "active");
   const bySeat = new Map<string, { draftingWork: CreditDto; independentOutput: CreditDto }>();
@@ -219,6 +234,7 @@ export function founderMembers(
         activatedAt: s.activated_at,
         endsAt: s.ends_at,
         credits: bySeat.get(s.id)!,
+        live: !(s.order_id && liveByOrder.get(s.order_id) === false),
       };
     })
     .sort((a, b) => (b.activatedAt ?? "").localeCompare(a.activatedAt ?? ""));
@@ -386,7 +402,8 @@ export function saleToggleCopy(salePaused: boolean): { button: string; confirm: 
       }
     : {
         button: "إيقاف البيع مؤقتًا",
-        confirm: "إيقاف بيع عضوية المؤسس مؤقتًا؟ تختفي البطاقة ويُرفض أي شراء جديد. الأعضاء الحاليون والحجوزات القائمة لا تتأثر.",
+        confirm:
+          "إيقاف بيع عضوية المؤسس مؤقتًا؟ تُخفى البطاقة، ويرى القادم من رابط الحملة «البيع متوقف مؤقتًا». لا يُقبل حجز جديد ولا إعادة محاولة دفع ما دام البيع متوقفًا. العمليات المدفوعة تُفعَّل كالمعتاد، والأعضاء الحاليون لا يتأثرون.",
         next: true,
       };
 }

@@ -11,14 +11,17 @@ import {
   FOUNDER_CARD_TITLE,
   FOUNDER_CLOSED_TEXT,
   FOUNDER_FINE_PRINT,
+  FOUNDER_PAUSED_TEXT,
   FOUNDER_PLAN_ANCHOR,
   FOUNDER_TERM_LINE,
   founderCta,
+  founderEndsLine,
   founderMemberFromReply,
   founderOfferFromApi,
   founderPriceLine,
   founderSectionView,
   founderSeatsLine,
+  founderVatLine,
   founderVerificationFromProfile,
   type FounderMember,
   type FounderOffer,
@@ -30,18 +33,20 @@ import {
  * links to /pricing?audience=lawyers&campaign=founder-2026#founder-plan.
  *
  * FounderPlanSection reads GET /api/v1/campaigns/active and decides, through
- * the pure founderSectionView, whether the card, the «انتهت حملة المؤسس…»
- * line (campaign-link visitors only) or nothing renders. Both carry
+ * the pure founderSectionView, whether the card, the «انتهت حملة المؤسس…» or
+ * «البيع متوقف مؤقتًا…» line (campaign-link visitors only) or nothing renders.
+ * All carry
  * id="founder-plan", so the link never lands on a dead anchor; they mount
  * after the fetch, so the hash is scrolled to by hand once.
  *
  * Every word and number comes from src/lib/pricing/founderCard.ts: the price
- * from quote(), the seats from founder_seat_summary(), the button from
- * founderCta.
+ * and its VAT breakdown from quote(), the seats from founder_seat_summary(),
+ * the last day from the setting's ends_on, the button from founderCta.
  */
 
 // quote() is pure and the book is static: computed once per module load.
 const PRICE_LINE = founderPriceLine();
+const VAT_LINE = founderVatLine();
 
 export function FounderPlanSection({
   audience,
@@ -82,27 +87,29 @@ export function FounderPlanSection({
 
   if (view === "hidden" || !offer) return null;
 
-  if (view === "closed") {
+  if (view === "closed" || view === "paused") {
     return (
       <section id={FOUNDER_PLAN_ANCHOR} dir="rtl" className="mx-auto max-w-3xl scroll-mt-24 px-4 pt-8">
         <p className="flex items-center justify-center gap-2 rounded-2xl border border-gold/30 bg-gold/10 px-5 py-4 text-center text-sm font-bold text-[#0B3D2E] dark:text-[#C8A762]">
           <Info size={18} weight="fill" aria-hidden />
-          {FOUNDER_CLOSED_TEXT}
+          {view === "paused" ? FOUNDER_PAUSED_TEXT : FOUNDER_CLOSED_TEXT}
         </p>
       </section>
     );
   }
 
   if (offer.state !== "open" || PRICE_LINE === null) return null;
-  return <FounderPlanCard campaign={offer} priceLine={PRICE_LINE} />;
+  return <FounderPlanCard campaign={offer} priceLine={PRICE_LINE} vatLine={VAT_LINE} />;
 }
 
 export function FounderPlanCard({
   campaign,
   priceLine,
+  vatLine,
 }: {
-  campaign: { seatsLeft: number; capacity: number };
+  campaign: { seatsLeft: number; capacity: number; endsOn?: string };
   priceLine: string;
+  vatLine: string | null;
 }) {
   const { isLoggedIn, loading, userType, practiceKind } = useUser();
   const payments = usePaymentsStatus();
@@ -132,6 +139,8 @@ export function FounderPlanCard({
     };
   }, [lawyerSignedIn]);
 
+  const endsLine = founderEndsLine(campaign.endsOn);
+
   const cta = founderCta({
     sessionLoading: loading,
     signedIn: isLoggedIn,
@@ -160,9 +169,11 @@ export function FounderPlanCard({
         </h2>
         <p className="mt-1.5 text-sm text-zinc-600 dark:text-zinc-300">{FOUNDER_TERM_LINE}</p>
 
-        <p className="my-5 border-y border-zinc-200 py-4 text-lg font-extrabold tabular-nums text-[#0B3D2E] dark:border-zinc-700 dark:text-[#C8A762]">
-          {priceLine}
-        </p>
+        <div className="my-5 border-y border-zinc-200 py-4 dark:border-zinc-700">
+          <p className="text-lg font-extrabold tabular-nums text-[#0B3D2E] dark:text-[#C8A762]">{priceLine}</p>
+          {vatLine && <p className="mt-1 text-xs tabular-nums text-zinc-600 dark:text-zinc-300">{vatLine}</p>}
+          {endsLine && <p className="mt-1 text-xs font-semibold text-zinc-600 dark:text-zinc-300">{endsLine}</p>}
+        </div>
 
         <ul className="space-y-2.5">
           {FOUNDER_BENEFITS.map((benefit) => (

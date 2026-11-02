@@ -25,8 +25,9 @@ import {
  *
  * Answers founder_seat_summary(), FOUNDER_MEMBERSHIP_ON_SALE, membership
  * orders counted by status, activations today (Riyadh day) and in the last 7
- * days, the members (active seats; credits from those seats only) and the
- * «بانتظار استرداد» orders (paid, metadata.founder in R7's three reasons).
+ * days, the members (active seats; credits from those seats only; `live`
+ * from each seat's payment_orders.live, R32) and the «بانتظار استرداد» orders
+ * (paid, metadata.founder in R7's three reasons).
  *
  * Self-hosted PostgREST caps a reply at 1000 rows and `.in()` breaks past
  * ~396 UUIDs, so counts use head counts, lists are read in pages and names
@@ -64,6 +65,27 @@ async function peopleOf(ids: string[]): Promise<Map<string, PersonRef>> {
     for (const [id, p] of chunk) out.set(id, { name: p.name, email: p.email });
   }
   return out;
+}
+
+/**
+ * payment_orders.live of the members' orders (R32), ID_CHUNK ids per read —
+ * a plain lookup, not an embed (self-hosted PostgREST, PGRST201).
+ */
+async function liveOfOrders(
+  service: Awaited<ReturnType<typeof createServiceClient>>,
+  ids: string[],
+): Promise<{ live: Map<string, boolean | null>; error: DbError }> {
+  const unique = [...new Set(ids.filter(Boolean))];
+  const live = new Map<string, boolean | null>();
+  for (let i = 0; i < unique.length; i += ID_CHUNK) {
+    const { data, error } = await service
+      .from("payment_orders")
+      .select("id, live")
+      .in("id", unique.slice(i, i + ID_CHUNK));
+    if (error) return { live, error };
+    for (const row of (data ?? []) as { id: string; live: boolean | null }[]) live.set(row.id, row.live);
+  }
+  return { live, error: null };
 }
 
 export async function GET() {
@@ -145,9 +167,15 @@ export async function GET() {
       return NextResponse.json({ error: "تعذّر تحميل أرصدة الأعضاء." }, { status: 503 });
     }
 
+    const orderLive = await liveOfOrders(service, seats.rows.map((s) => s.order_id ?? ""));
+    if (orderLive.error) {
+      console.error("[admin/founder/overview] order mode read failed:", orderLive.error.code);
+      return NextResponse.json({ error: "تعذّر تحميل بيانات الأعضاء." }, { status: 503 });
+    }
+
     const orders = (refundRows.data ?? []) as FounderOrderRow[];
     const people = await peopleOf([...seats.rows.map((s) => s.user_id), ...orders.map((o) => o.user_id ?? "")]);
-    const members = founderMembers(seats.rows, credits.rows, people);
+    const members = founderMembers(seats.rows, credits.rows, people, orderLive.live);
 
     const ordersByStatus = Object.fromEntries(
       FOUNDER_ORDER_STATUSES.map((s, i) => [s, statusCounts[i].count ?? 0]),

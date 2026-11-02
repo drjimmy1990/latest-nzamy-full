@@ -8,6 +8,7 @@ import { orderStatusAr } from "@/lib/payments/billingView";
 import {
   ADMIN_REFUND_HREF,
   FOUNDER_ORDER_STATUSES,
+  FOUNDER_TEST_SEAT_TAG_AR,
   saleStateAr,
   saleToggleCopy,
   type FounderAdminSummary,
@@ -335,7 +336,14 @@ export default function FounderCampaignPage() {
                   {data.members.map((m) => (
                     <tr key={m.seatId}>
                       <td className={td}>
-                        <p className="font-bold text-white">{m.name ?? "—"}</p>
+                        <p className="font-bold text-white">
+                          {m.name ?? "—"}
+                          {m.live === false ? (
+                            <span className="ms-2 rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-bold text-amber-300">
+                              {FOUNDER_TEST_SEAT_TAG_AR}
+                            </span>
+                          ) : null}
+                        </p>
                         <p className="text-[11px] text-zinc-400" dir="ltr">{m.email ?? m.userId}</p>
                       </td>
                       <td className={td}>{fmt(m.activatedAt)}</td>
