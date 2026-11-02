@@ -49,9 +49,11 @@ test("libraryQuotaTarget: once- and twice-encoded Arabic slugs are the same docu
   assert.deepEqual(b, a);
 });
 
-test("libraryQuotaTarget: search and library AI check the lock only", () => {
-  for (const p of ["/api/library/search", "/api/ai/explain-article", "/api/ai/library-chat"]) {
-    assert.deepEqual(libraryQuotaTarget("POST", p), { kind: "lock-only" }, p);
+test("libraryQuotaTarget: search checks the lock only; the deleted free AI routes are not targets", () => {
+  assert.deepEqual(libraryQuotaTarget("POST", "/api/library/search"), { kind: "lock-only" });
+  // The library AI checks the lock inside /api/v1/ai/runs (isLibraryAiTool).
+  for (const p of ["/api/ai/explain-article", "/api/ai/library-chat", "/api/v1/ai/runs"]) {
+    assert.equal(libraryQuotaTarget("POST", p), null, p);
   }
   // Scoped search spends its document inside the route (scopedSearchDocKey).
   assert.equal(libraryQuotaTarget("POST", "/api/library/scoped-search"), null);
@@ -117,6 +119,12 @@ test("isLibraryAiTool: no other AI tool is locked — contract tools, L9–L11 a
 test("isLibraryAiTool: only an exact string id", () => {
   for (const v of ["Library-Assistant", " library-assistant", "library-assistant ", "", "constructor", "__proto__", null, undefined, 5, {}, ["library-assistant"]]) {
     assert.equal(isLibraryAiTool(v), false, JSON.stringify(v));
+  }
+});
+
+test("the free legacy library AI routes are deleted (q374 / q379: points only)", () => {
+  for (const name of ["library-chat", "explain-article"]) {
+    assert.equal(fs.existsSync(path.join(API, "ai", name, "route.ts")), false, `/api/ai/${name} must stay deleted`);
   }
 });
 

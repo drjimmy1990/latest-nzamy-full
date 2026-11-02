@@ -116,8 +116,8 @@ const ATTACHMENTS_ZIP_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 100
 //   library-doc   120 / min    — opening documents; a collection loads in up
 //                                to 24 windows, a book one section at a time
 //   library-init   60 / 10 min — catalogue pages of up to 200 rows
-//   library-ai     40 / 10 min — library AI answers (the routes keep their
-//                                own 20 / min per IP as well)
+//   library-ai     40 / 10 min — anything under /api/ai/ (no route there
+//                                today; the library AI is /api/v1/ai/runs)
 // The durable per-USER daily quota is separate (applyLibraryReadQuota below).
 const LIBRARY_BUDGETS: Readonly<Record<LibraryBudgetBucket, { visitor: RateLimitPolicy; ip: RateLimitPolicy }>> = {
   "library-any": { visitor: { windowMs: 60 * 1000, max: 300 }, ip: { windowMs: 60 * 1000, max: 3000 } },
@@ -239,8 +239,9 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
 // process and treat an office NAT as one person. This step is the durable,
 // per-USER layer: on the four document reads it counts the DISTINCT document
 // (law / book / precedent collection / decree) once per Riyadh day in
-// Postgres (src/lib/library/readQuota.ts for the numbers), and on search, the
-// in-document search and the library AI it checks only the library lock.
+// Postgres (src/lib/library/readQuota.ts for the numbers), and on search and
+// the in-document search it checks only the library lock. The library AI
+// (/api/v1/ai/runs) checks the lock in its own route (isLibraryAiTool).
 //
 // Who the user is comes from a verified getUser() - never from decoding the
 // cookie's JWT, which would let a forged `sub` spend (and lock) someone else's
@@ -263,7 +264,7 @@ async function applyLibraryReadQuota(req: NextRequest, pathname: string): Promis
   const target = libraryQuotaTarget(req.method, pathname);
   if (!target) return null;
   // Not for a path the rest of proxy() treats specially (none today: the
-  // targets live under /api/library and /api/ai).
+  // targets live under /api/library).
   if (REDIRECTS[pathname] || isProtectedApiPath(pathname)) return null;
   try {
     const authHeader = req.headers.get("authorization");

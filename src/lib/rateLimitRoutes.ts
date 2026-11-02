@@ -83,7 +83,9 @@ export function isLibraryReadRateLimitedRoute(method: string, pathname: string):
 //                 durable per-user quota, src/lib/library/readQuota.ts, is
 //                 counted on the same four)
 //   library-init  GET /api/library/init — the catalogue, up to 200 rows a page
-//   library-ai    every /api/ai/* route (explain-article, library-chat today)
+//   library-ai    every /api/ai/* route (none today: the free explain-article
+//                 and library-chat routes are deleted; the library AI is
+//                 /api/v1/ai/runs, limited per tool per day in ai_start_run)
 // /api/v1/library/invitations/redeem keeps the strict bucket as well.
 export type LibraryBudgetBucket = "library-any" | "library-doc" | "library-init" | "library-ai";
 

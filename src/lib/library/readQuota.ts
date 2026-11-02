@@ -47,7 +47,7 @@ export type LibraryDocKind = "law" | "book" | "precedent" | "decree";
 
 export type QuotaTarget =
   | { kind: "doc"; docKey: string }
-  /** The lock is checked, nothing is counted (search, in-document search, library AI). */
+  /** The lock is checked, nothing is counted (search). */
   | { kind: "lock-only" };
 
 const DOC_ROUTE_RE = /^\/api\/library\/(laws|books|precedents|decrees)\/([^/]+)$/;
@@ -62,13 +62,13 @@ const DOC_KIND: Readonly<Record<string, LibraryDocKind>> = {
  * POST routes that return library text but read no single document. Not
  * /api/library/scoped-search: it searches INSIDE one document and returns
  * article text, so the route itself spends that document
- * (scopedSearchDocKey below) — which also checks the lock. The live library
- * AI (/api/v1/ai/runs) checks it in the route as well (isLibraryAiTool below).
+ * (scopedSearchDocKey below) — which also checks the lock. The library AI
+ * (/api/v1/ai/runs) checks it in the route as well (isLibraryAiTool below);
+ * the old free routes /api/ai/library-chat and /api/ai/explain-article are
+ * gone (owner q374 / q379: library AI for points only).
  */
 const LOCK_ONLY_POST_PATHS: ReadonlySet<string> = new Set([
   "/api/library/search",
-  "/api/ai/explain-article",
-  "/api/ai/library-chat",
 ]);
 
 /**

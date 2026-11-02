@@ -39,7 +39,7 @@ const SIGN_IN = { error: "سجّل الدخول لاستخدام أدوات ال
 /**
  * A library tool's gate: the library's closed switch (admins pass), then the
  * assistant's rule, Pro or higher or a platform admin (owner ٢٠٦ / ٢٠٧ / ٢٠٩),
- * the same two checks as /api/ai/library-chat.
+ * the same two checks the deleted free route /api/ai/library-chat made.
  */
 async function libraryAccess(): Promise<RouteReply | null> {
   const refused = (await libraryGate()) ?? (await libraryAiAccess());

@@ -5,10 +5,12 @@ import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } fro
 import { libraryAiDecision } from './libraryAiDecision';
 
 /**
- * Who may call the library's AI routes (/api/ai/library-chat and
- * /api/ai/explain-article).
+ * Who may use the library's AI: POST /api/v1/ai/runs asks this for every
+ * library tool (runs/route.ts libraryAccess), before the charge. (It first
+ * guarded the old free routes /api/ai/library-chat and /api/ai/explain-article,
+ * now deleted: owner q374 / q379, library AI for points only.)
  *
- * Both proxy to an n8n RAG agent grounded in the library corpus. Article and
+ * The tool answers from an n8n agent grounded in the library corpus. Article and
  * precedent text in that corpus is server-only and paywalled (migrations
  * 20260929_01 and 20261016_01), and the agent answers from it and quotes it.
  *
@@ -20,9 +22,9 @@ import { libraryAiDecision } from './libraryAiDecision';
  * library's texts, not the assistant, so a free user with a library grant is a
  * 403 here.
  *
- * The check is all or nothing, not per item. A chat answer can draw on any law,
- * and explain-article returns `relatedArticles[].text` from other laws, so a
- * free law or a free first-N article cannot contain what comes back.
+ * The check is all or nothing, not per item. An answer can draw on any law
+ * and quote other laws' text, so a free law or a free first-N article cannot
+ * contain what comes back.
  *
  * Returns the response to send, or null when the caller may go on. Call it after
  * the rate limit (it costs a getUser round-trip and, for a signed-in user, two

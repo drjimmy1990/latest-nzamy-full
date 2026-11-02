@@ -1,8 +1,9 @@
 /**
  * What the library assistant (LibraryAI in ./_ai-components.tsx) says when
- * POST /api/ai/library-chat answers with a refusal it can act on.
+ * POST /api/v1/ai/runs (tool library-assistant) answers with a refusal it can
+ * act on.
  *
- * The route lets through only signed-in users on Pro or above, or an admin
+ * The run route lets through only signed-in users on Pro or above, or an admin
  * (src/app/api/ai/_libraryAiAccess.ts): a guest gets 401, everyone else 403.
  * That includes a library-only subscriber: the library subscription opens the
  * texts, not the assistant (owner answer ٢٠٧), so neither message calls the
