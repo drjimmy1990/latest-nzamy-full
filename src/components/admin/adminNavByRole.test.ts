@@ -92,6 +92,17 @@ test("operations keeps its own day-to-day tools and the read pages", () => {
   }
 });
 
+test("q372: the security page (its «قفل المكتبة» tab) is offered to operations to lift locks, not to the auditor", () => {
+  assert.equal(ADMIN_PAGE_ACTION["/dashboard/admin/security"], "library.lock_lift");
+  for (const nav of [hrefsOf(adminNavForRole("operations")), hrefsOf(adminSidebarForRole("operations"))]) {
+    assert.ok(nav.includes("/dashboard/admin/security"), "operations");
+  }
+  assert.ok(hrefsOf(adminNavForRole("super_admin")).includes("/dashboard/admin/security"), "super_admin");
+  for (const nav of [hrefsOf(adminNavForRole("auditor")), hrefsOf(adminSidebarForRole("auditor"))]) {
+    assert.equal(nav.includes("/dashboard/admin/security"), false, "auditor");
+  }
+});
+
 test("auditor sees no write pages: only the read items", () => {
   const seen = hrefsOf(adminNavForRole("auditor"));
   const reads = hrefsOf(NAV).filter((h) => ["read", "payments.read"].includes(ADMIN_PAGE_ACTION[h]));

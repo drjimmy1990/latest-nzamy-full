@@ -22,6 +22,7 @@ export type StaffAction =
   | "staff.manage"
   | "settings.write"
   | "library.delete"
+  | "library.lock_lift"
   | "content.delete"
   | "coupons.delete"
   | "subscriptions.write"
@@ -45,6 +46,7 @@ const EVERY_ACTION: Readonly<Record<StaffAction, true>> = {
   "staff.manage": true,
   "settings.write": true,
   "library.delete": true,
+  "library.lock_lift": true,
   "content.delete": true,
   "coupons.delete": true,
   "subscriptions.write": true,
@@ -146,6 +148,10 @@ export const STAFF_MATRIX: Readonly<Record<StaffRole, ReadonlySet<StaffAction>>>
       "community.moderate",
       "tickets.manage",
       "entitlements.decide",
+      // q372: «يحق للمشرف الأعلى وفريق العمليات رفعه» — lifting a library
+      // security lock only; opening one and the monitor's settings stay
+      // settings.write.
+      "library.lock_lift",
       "read",
       "payments.read",
     ]),

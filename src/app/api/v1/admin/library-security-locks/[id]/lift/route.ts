@@ -9,12 +9,13 @@ import { isUuid, lockDbError, parseLiftLockBody, toLockDto, type LockRow } from 
  * Owner note ١٣ C09 «فك الحظر بضغطة زر»: closes the lock (the row is kept,
  * with who and when) and, unless resetToday is false, clears the user's
  * counted documents for today — otherwise his next read after a quota-breach
- * lock would open a new one at once. requireStaff("settings.write"), audited.
+ * lock would open a new one at once. requireStaff("library.lock_lift") — super admin and
+ * operations (q372) — audited.
  * Lifting a lock that is already lifted returns it unchanged.
  */
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const gate = await requireStaff("settings.write");
+    const gate = await requireStaff("library.lock_lift");
     if (!gate.ok) return gate.response;
 
     const { id } = await context.params;

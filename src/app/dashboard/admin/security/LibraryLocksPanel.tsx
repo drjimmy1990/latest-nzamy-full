@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowClockwise, LockSimple, LockSimpleOpen, Plus } from "@phosphor-icons/react";
 import type { LockDto } from "@/lib/library/securityLockAdmin";
 import { MONITOR_SETTINGS_DEFAULTS, type MonitorSettings } from "@/lib/library/monitorSettings";
+import { useUser } from "@/hooks/useUser";
+import { staffMaySee } from "@/lib/auth/adminNavAccess";
 
 /**
  * «قفل المكتبة» — owner note ١٣ C09: the REAL tab of the security page. It
@@ -13,6 +15,9 @@ import { MONITOR_SETTINGS_DEFAULTS, type MonitorSettings } from "@/lib/library/m
  *   GET  /api/v1/admin/library-security-locks?state=open|all
  *   POST /api/v1/admin/library-security-locks            { email, note, until? }
  *   POST /api/v1/admin/library-security-locks/[id]/lift  { note?, resetToday }
+ * Lifting is library.lock_lift (super admin and operations, q372); opening a
+ * lock is settings.write (super admin). Each control shows only to a role
+ * that holds its action; the server decides either way (requireStaff).
  */
 
 type Props = { isDark: boolean; card: string };
@@ -25,6 +30,9 @@ const fmt = (iso: string | null) => {
 };
 
 export default function LibraryLocksPanel({ isDark, card }: Props) {
+  const { staffRole } = useUser();
+  const canLift = staffMaySee(staffRole, "library.lock_lift");
+  const canCreate = staffMaySee(staffRole, "settings.write");
   const [state, setState] = useState<"open" | "all">("open");
   const [rows, setRows] = useState<LockDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -144,29 +152,31 @@ export default function LibraryLocksPanel({ isDark, card }: Props) {
         </div>
       )}
 
-      <form onSubmit={create} className={`${card} p-5 grid gap-3 md:grid-cols-4`}>
-        <div className="md:col-span-1">
-          <label className={`mb-1 block text-[11px] ${ts}`}>بريد المستخدم</label>
-          <input type="email" required dir="ltr" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className={input} />
-        </div>
-        <div className="md:col-span-2">
-          <label className={`mb-1 block text-[11px] ${ts}`}>السبب (للسجل، لا يراه المستخدم)</label>
-          <input type="text" required maxLength={1000} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} className={input} />
-        </div>
-        <div className="md:col-span-1">
-          <label className={`mb-1 block text-[11px] ${ts}`}>ينتهي في (اختياري)</label>
-          <input type="datetime-local" value={form.until} onChange={(e) => setForm({ ...form, until: e.target.value })} className={input} />
-        </div>
-        <div className="md:col-span-4 flex justify-end">
-          <button
-            type="submit"
-            disabled={creating}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-[12px] font-bold text-white hover:bg-red-500 disabled:opacity-50"
-          >
-            <Plus size={13} weight="bold" /> إيقاف قراءة المكتبة لهذا الحساب
-          </button>
-        </div>
-      </form>
+      {canCreate && (
+        <form onSubmit={create} className={`${card} p-5 grid gap-3 md:grid-cols-4`}>
+          <div className="md:col-span-1">
+            <label className={`mb-1 block text-[11px] ${ts}`}>بريد المستخدم</label>
+            <input type="email" required dir="ltr" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className={input} />
+          </div>
+          <div className="md:col-span-2">
+            <label className={`mb-1 block text-[11px] ${ts}`}>السبب (للسجل، لا يراه المستخدم)</label>
+            <input type="text" required maxLength={1000} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} className={input} />
+          </div>
+          <div className="md:col-span-1">
+            <label className={`mb-1 block text-[11px] ${ts}`}>ينتهي في (اختياري)</label>
+            <input type="datetime-local" value={form.until} onChange={(e) => setForm({ ...form, until: e.target.value })} className={input} />
+          </div>
+          <div className="md:col-span-4 flex justify-end">
+            <button
+              type="submit"
+              disabled={creating}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-[12px] font-bold text-white hover:bg-red-500 disabled:opacity-50"
+            >
+              <Plus size={13} weight="bold" /> إيقاف قراءة المكتبة لهذا الحساب
+            </button>
+          </div>
+        </form>
+      )}
 
       <div className={`${card} p-5`}>
         <div className="mb-3 flex items-center justify-between gap-2">
@@ -228,7 +238,7 @@ export default function LibraryLocksPanel({ isDark, card }: Props) {
                     </span>
                   )}
                 </div>
-                {r.active && (
+                {r.active && canLift && (
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <input
                       type="text"

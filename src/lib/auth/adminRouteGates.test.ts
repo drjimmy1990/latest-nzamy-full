@@ -300,7 +300,8 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   { file: "library-issue-reports/[id]/route.ts", method: "PATCH", action: "tickets.manage", logs: 1 },
   // library fortress (30-Oct package): an admin opens or lifts a library security lock (one audit row each)
   { file: "library-security-locks/route.ts", method: "POST", action: "settings.write", logs: 1 },
-  { file: "library-security-locks/[id]/lift/route.ts", method: "POST", action: "settings.write", logs: 1 },
+  // q372: super admin and operations lift (library.lock_lift); opening a lock stays settings.write
+  { file: "library-security-locks/[id]/lift/route.ts", method: "POST", action: "library.lock_lift", logs: 1 },
   { file: "library-monitor/settings/route.ts", method: "PUT", action: "settings.write", logs: 1 },
   { file: "library-monitor/flags/[id]/clear/route.ts", method: "POST", action: "settings.write", logs: 1 },
   { file: "library-monitor/user-limits/route.ts", method: "POST", action: "settings.write", logs: 1 },
