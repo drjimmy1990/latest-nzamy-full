@@ -36,7 +36,7 @@ export const STAFF_ROLE_LABELS_AR: Readonly<Record<StaffRole, string>> = Object.
  */
 export const STAFF_ROLE_SUMMARY_AR: Readonly<Record<StaffRole, string>> = Object.freeze({
   super_admin: "كل إجراءات لوحة الإدارة، ومنها إدارة الفريق والإعدادات والأسعار وحذف المستخدمين.",
-  operations: "العمل اليومي: طلبات الخدمات، التحقق من المزودين، الإشراف على المجتمع، تذاكر الدعم، والبتّ في طلبات الترقية.",
+  operations: "العمل اليومي: طلبات الخدمات، التحقق من المزودين، الإشراف على المجتمع، تذاكر الدعم، البتّ في طلبات الترقية، ورفع إيقاف قراءة المكتبة.",
   auditor: "الاطلاع فقط، دون أي تعديل.",
 });
 
