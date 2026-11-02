@@ -1,6 +1,17 @@
 import {
   ChatCircleDots, Scales, FileText, Stamp, Shield, Brain
 } from "@phosphor-icons/react";
+import { CLIENT_SERVICE_CATALOG } from "./clientServiceCatalog";
+import { catalogPriceLabel } from "@/lib/pricing/catalogPriceLabel";
+
+// Wave 1 task 6 (E): every number on these cards is the client service
+// catalogue's (CLIENT_SERVICE_CATALOG; migration 20261102_10 writes the same
+// rows), read through catalogPriceLabel — no price is typed here. The old
+// «٢٤٩» / «١٩٩» / «١٤٩» / «يبدأ من ٤٩٩» were charged by nothing. Notary and
+// government follow-up have no catalogue row, so they name no number.
+const AFTER_ASSESSMENT = { ar: "يُحدد بعد التقييم", en: "Determined after assessment" } as const;
+const catalogPrice = (serviceId: string, lang: "ar" | "en"): string =>
+  catalogPriceLabel(serviceId, CLIENT_SERVICE_CATALOG, lang) ?? AFTER_ASSESSMENT[lang];
 
 export const services = {
   ar: [
@@ -37,13 +48,13 @@ export const services = {
       icon: FileText,
       label: "عقود",
       tagline: "صياغة ومراجعة احترافية",
-      desc: "صياغة عقد جديد أو مراجعة عقد موجود بمساعدة AI تكشف البنود المجحفة، يراجعها محامٍ متخصص.",
+      desc: "صياغة عقد جديد أو مراجعة عقد موجود على يد محامٍ متخصص.",
       href: "/services/contracts",
-      price: "٢٤٩ ر.س",
+      price: catalogPrice("contract-review", "ar"),
       duration: "٢٤ ساعة",
       color: "bg-emerald-50 text-emerald-600",
       borderHover: "hover:border-emerald-200",
-      features: ["AI يكشف البنود المجحفة تلقائياً", "مراجعة محامٍ متخصص", "تعديلات ضمن نطاق الطلب", "نموذج مخصص لاحتياجك"],
+      features: ["مراجعة محامٍ متخصص", "تعديلات ضمن نطاق الطلب", "نموذج مخصص لاحتياجك"],
     },
     {
       id: "notary",
@@ -52,7 +63,7 @@ export const services = {
       tagline: "توثيق سريع وموثوق",
       desc: "توثيق العقود والمحررات الرسمية عبر موثقين معتمدين — إلكترونياً أو حضورياً.",
       href: "/services/notary",
-      price: "١٩٩ ر.س",
+      price: AFTER_ASSESSMENT.ar,
       duration: "٤٨ ساعة",
       color: "bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400",
       borderHover: "hover:border-blue-200",
@@ -65,7 +76,7 @@ export const services = {
       tagline: "أنجز معاملاتك الحكومية",
       desc: "إنجاز المعاملات الحكومية والقانونية نيابةً عنك — تراخيص، سجلات، وزارات.",
       href: "/services/tracking",
-      price: "١٤٩ ر.س",
+      price: AFTER_ASSESSMENT.ar,
       duration: "يوم عمل",
       color: "bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400",
       borderHover: "hover:border-orange-200",
@@ -79,11 +90,11 @@ export const services = {
       tagline: "اعرف موقفك القانوني قبل أن تتحرك",
       desc: "جلسة تقييم متعمقة مع محامٍ متخصص يدرس ملف قضيتك ويبيّن قوة الأسانيد والمخاطر الإجرائية قبل أي خطوة قانونية.",
       href: "/services/individuals/case-study",
-      price: "يبدأ من ٤٩٩ ر.س",
+      price: catalogPrice("case-study", "ar"),
       duration: "٢-٥ أيام",
       color: "bg-royal/5 text-royal",
       borderHover: "hover:border-royal/20",
-      features: ["تحليل وثائق القضية بـ AI", "مؤشرات قوة الأسانيد والمخاطر الإجرائية", "توصية باستراتيجية قانونية", "يُخصم من أتعاب التمثيل عند التوكيل"],
+      features: ["دراسة وثائق القضية", "مؤشرات قوة الأسانيد والمخاطر الإجرائية", "توصية باستراتيجية قانونية", "يُخصم من أتعاب التمثيل عند التوكيل"],
       badge: "جديد",
     },
   ],
@@ -119,13 +130,13 @@ export const services = {
       icon: FileText,
       label: "Contracts",
       tagline: "Professional drafting & review",
-      desc: "Draft a new contract or review an existing one with AI flagging unfair clauses, reviewed by a specialist lawyer.",
+      desc: "Draft a new contract or review an existing one, by a specialist lawyer.",
       href: "/services/contracts",
-      price: "249 SAR",
+      price: catalogPrice("contract-review", "en"),
       duration: "24 hours",
       color: "bg-emerald-50 text-emerald-600",
       borderHover: "hover:border-emerald-200",
-      features: ["AI auto-detects unfair clauses", "Human review by specialist lawyer", "Revisions within the request scope", "Custom template for your needs"],
+      features: ["Review by a specialist lawyer", "Revisions within the request scope", "Custom template for your needs"],
     },
     {
       id: "notary",
@@ -134,7 +145,7 @@ export const services = {
       tagline: "Fast and reliable notarization",
       desc: "Official document notarization via certified notaries — digitally or in person.",
       href: "/services/notary",
-      price: "199 SAR",
+      price: AFTER_ASSESSMENT.en,
       duration: "48 hours",
       color: "bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400",
       borderHover: "hover:border-blue-200",
@@ -147,7 +158,7 @@ export const services = {
       tagline: "Get your government transactions done",
       desc: "Complete government and legal transactions on your behalf — licenses, registrations, ministries.",
       href: "/services/tracking",
-      price: "149 SAR",
+      price: AFTER_ASSESSMENT.en,
       duration: "1 business day",
       color: "bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400",
       borderHover: "hover:border-orange-200",
@@ -159,13 +170,13 @@ export const services = {
       icon: Brain,
       label: "Case Study & Assessment",
       tagline: "Know your legal position before you act",
-      desc: "An in-depth assessment session with a specialist lawyer who studies your case file and estimates success odds and risks before any legal step.",
+      desc: "An in-depth assessment session with a specialist lawyer who studies your case file and shows the strength of your arguments and the procedural risks before any legal step.",
       href: "/services/individuals/case-study",
-      price: "Starting from 499 SAR",
+      price: catalogPrice("case-study", "en"),
       duration: "2–5 days",
       color: "bg-royal/5 text-royal",
       borderHover: "hover:border-royal/20",
-      features: ["AI-powered case document analysis", "Success probability estimation", "Legal strategy recommendation", "Deducted from representation fees upon power of attorney"],
+      features: ["Study of the case documents", "Indicators of argument strength and procedural risks", "Legal strategy recommendation", "Deducted from representation fees upon power of attorney"],
       badge: "New",
     },
   ],

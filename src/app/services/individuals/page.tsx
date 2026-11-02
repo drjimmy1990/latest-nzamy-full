@@ -283,7 +283,7 @@ export default function IndividualsPage() {
                       </div>
                       <div className="flex flex-col gap-4">
                         <div className="rounded-2xl border border-slate-100 bg-surface p-6 dark:border-white/10 dark:bg-dark-bg">
-                          <div className="text-xs text-ink-faint dark:text-gray-500">{isAr ? "السعر يبدأ من" : "Starting price"}</div>
+                          <div className="text-xs text-ink-faint dark:text-gray-500">{isAr ? "السعر" : "Price"}</div>
                           <div className="font-brand mt-1 text-2xl font-bold text-royal dark:text-gold">{selected.price}</div>
                           <div className="mt-1 text-xs text-ink-muted dark:text-gray-400">{isAr ? "مدة الخدمة:" : "Service duration:"} {selected.duration}</div>
                         </div>

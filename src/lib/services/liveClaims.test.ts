@@ -89,3 +89,28 @@ test("ai:consult is «قريباً» on the hub, not «بيتا مجاني»", a
   assert.equal(getLawyerAiBadge(consult, "en"), "Coming soon");
   assert.doesNotMatch(src("app/ai/consult/page.tsx"), /useAiRun|\/api\/v1\/ai\//, "consult now runs AI — revisit its «قريباً»");
 });
+
+// ── item E: /services/individuals cards price from the catalogue ─────────────
+
+test("services cards: no typed price; contracts and case study read the catalogue, the rest name no number", async () => {
+  const { CLIENT_SERVICE_CATALOG } = await import("../../constants/clientServiceCatalog.ts");
+  const { catalogPriceLabel } = await import("../pricing/catalogPriceLabel.ts");
+  const code = src("constants/servicesData.ts").replace(/^\s*\/\/.*$/gm, "");
+  // Charged by nothing: the retired card prices.
+  assert.doesNotMatch(code, /٢٤٩|١٩٩|١٤٩|٤٩٩|\b249\b|\b199\b|\b149\b|\b499\b/);
+  assert.doesNotMatch(code, /price: "[^"]*[0-9٠-٩]/, "a typed price is back in servicesData");
+  assert.equal((code.match(/price: catalogPrice\("contract-review", "(ar|en)"\)/g) ?? []).length, 2);
+  assert.equal((code.match(/price: catalogPrice\("case-study", "(ar|en)"\)/g) ?? []).length, 2);
+  assert.equal((code.match(/price: AFTER_ASSESSMENT\.(ar|en)/g) ?? []).length, 4, "notary + tracking, both languages");
+  // What those calls render is the catalogue row the request form charges from.
+  assert.equal(catalogPriceLabel("contract-review", CLIENT_SERVICE_CATALOG, "ar"), "يبدأ من ٦٠٠ ر.س");
+  assert.equal(catalogPriceLabel("contract-review", CLIENT_SERVICE_CATALOG, "en"), "From 600 SAR");
+  assert.equal(catalogPriceLabel("case-study", CLIENT_SERVICE_CATALOG, "ar"), "يبدأ من ١٬٦٠٠ ر.س");
+  assert.equal(catalogPriceLabel("case-study", CLIENT_SERVICE_CATALOG, "en"), "From 1,600 SAR");
+  // No catalogue row → null (the card's own "after assessment"), never «طلب عام»'s price.
+  assert.equal(catalogPriceLabel("notary", CLIENT_SERVICE_CATALOG, "ar"), null);
+  // The human services claim no AI behind them.
+  assert.doesNotMatch(code, /AI يكشف|بـ AI|AI flagging|AI auto-detects|AI-powered case|Success probability/);
+  // The heading above the price no longer doubles «يبدأ من».
+  assert.match(src("app/services/individuals/page.tsx"), /\{isAr \? "السعر" : "Price"\}/);
+});

@@ -20,11 +20,8 @@
  * Pure: relative imports only, so `node --test` loads it.
  */
 import type { ClientServiceCatalogItem } from "../../constants/clientServiceCatalog.ts";
-import {
-  formatClientServicePrice,
-  getClientServiceById,
-  getConsultationModeServiceId,
-} from "../../lib/pricingRepository.ts";
+import { getConsultationModeServiceId } from "../../lib/pricingRepository.ts";
+import { catalogPriceLabel } from "../../lib/pricing/catalogPriceLabel.ts";
 import type { ConsultationType, TypeDef } from "./constants.ts";
 
 export const PRICE_AFTER_REVIEW = { ar: "يُحدَّد بعد المراجعة", en: "Set after review" } as const;
@@ -43,18 +40,7 @@ export function consultationTypePrice(
 ): string {
   const id = consultationServiceId(type);
   if (!id) return PRICE_AFTER_REVIEW[lang];
-  const service = getClientServiceById(id, catalog);
-  // getClientServiceById falls back to «طلب عام»; never show its price here.
-  if (service.serviceId !== id || !(service.basePrice > 0)) return PRICE_AFTER_REVIEW[lang];
-  if (lang === "ar") {
-    return service.priceMode === "fixed" || service.priceMode === "starting_from"
-      ? formatClientServicePrice(service)
-      : PRICE_AFTER_REVIEW.ar;
-  }
-  const amount = `${service.basePrice.toLocaleString("en-US")} SAR`;
-  if (service.priceMode === "fixed") return amount;
-  if (service.priceMode === "starting_from") return `From ${amount}`;
-  return PRICE_AFTER_REVIEW.en;
+  return catalogPriceLabel(id, catalog, lang) ?? PRICE_AFTER_REVIEW[lang];
 }
 
 /** The type cards with the catalogue's price in place of whatever they carried. */
