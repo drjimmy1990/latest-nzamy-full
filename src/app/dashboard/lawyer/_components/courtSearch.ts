@@ -14,8 +14,17 @@
  *      «ابتدائي» because the name is not one of the 14 classifications.
  *
  * Left out of the directory: «كتابة عدل» (notaries) and «إدارة وفروع الوزارة»
- * (ministry departments) — neither hears a case. Names that repeat (6 in the
- * file, one per city) are offered once: the saved value is the name only.
+ * (ministry departments) — neither hears a case — and, since the source file
+ * files some administrative units under court categories (review M1), every
+ * row whose name names no court («محكم» / «دائر» / «ديوان») or starts like an
+ * office («إدارة»، «وكالة»، «وكيل»، «سكرتارية»، «مركز»، «شؤون»، «أخبار»).
+ * Names that repeat (one per city) are offered once.
+ *
+ * Each kept row carries its CLASSIFICATION (`directoryCourtClass`, review
+ * I1): one of the 14, from the row's category, or — for the mixed
+ * «محاكم ودوائر قضائية» group — from its name. The picker saves it beside the
+ * name as `metadata.courtClass`, and courtClassOf (courtTypes.ts) reads it,
+ * so «محكمة الاستئناف بالرياض» is an appeal case on the board, not «ابتدائي».
  *
  * Matching is the platform's one query grammar (multiColorSearch.ts): hamza,
  * ة/ه, ى/ي and digit folding, several words AND-ed across name + city.
@@ -38,14 +47,76 @@ export interface CourtDirectoryEntry {
   name: string;
   city: string;
   category: string;
+  /** One of COURT_CHOICES, or null when neither the category nor the name says. */
+  courtClass: string | null;
 }
 
 export type CourtOption =
   | { kind: "type"; value: string }
-  | { kind: "directory"; value: string; city: string; category: string };
+  | { kind: "directory"; value: string; city: string; category: string; courtClass: string | null };
 
 /** Directory categories that are not courts. */
 export const NON_COURT_CATEGORIES: ReadonlySet<string> = new Set(["كتابة عدل", "إدارة وفروع الوزارة"]);
+
+/** Hamza, ة/ه, ى/ي, harakat and tatweel folded, for the name rules below. */
+export function foldCourtName(s: string): string {
+  return s
+    .replace(/[ً-ْـ]/g, "")
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ة/g, "ه")
+    .replace(/ى/g, "ي")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const COURT_WORD = /محكم|دائر|ديوان/;
+const OFFICE_START = /^(ال)?ادار|^وكال|^وكيل|^سكرتاري|^مركز|^شؤون|^اخبار/;
+
+/** A directory row a case can be filed at: it names a court and is not an office (review M1). */
+export function isCourtRowName(name: string): boolean {
+  const n = foldCourtName(name);
+  return COURT_WORD.test(n) && !OFFICE_START.test(n);
+}
+
+/** Directory category → classification (the five that are one court type). */
+const CATEGORY_CLASS: Readonly<Record<string, string>> = {
+  "محكمة عامة": "المحكمة العامة",
+  "محكمة جزائية": "المحكمة الجزائية",
+  "محكمة تنفيذ": "محكمة التنفيذ",
+  "استئناف": "محكمة الاستئناف",
+  "محكمة تجارية": "المحكمة التجارية",
+};
+
+/**
+ * Name rules for the mixed «محاكم ودوائر قضائية» group, on the folded name,
+ * first match wins. A circuit is classed by the court it sits in («… بمحكمة
+ * الأحوال الشخصية بالدمام»), which the name always carries.
+ */
+const NAME_CLASS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/^المحكمه العليا/, "المحكمة العليا"],
+  [/احوال الشخصيه|احوال شخصيه/, "محكمة الأحوال الشخصية"],
+  [/جزائي/, "المحكمة الجزائية"],
+  [/تنفيذ/, "محكمة التنفيذ"],
+  [/تجاري/, "المحكمة التجارية"],
+  [/عمالي/, "المحكمة العمالية"],
+  [/المحكمه العامه|الدائره القضائيه|دائره قضائيه/, "المحكمة العامة"],
+];
+
+/**
+ * The classification of one directory row (one of COURT_CHOICES), or null.
+ * Any name that carries «استئناف» is an appeal court or one of its circuits,
+ * whatever its category says (23 «الدائرة الجزائية … بمحكمة الاستئناف» rows
+ * are filed under «محكمة جزائية»); otherwise the category decides, and the
+ * mixed group falls to NAME_CLASS.
+ */
+export function directoryCourtClass(row: { name: string; category: string }): string | null {
+  const n = foldCourtName(row.name);
+  if (/استئناف/.test(n)) return "محكمة الاستئناف";
+  const byCategory = CATEGORY_CLASS[row.category];
+  if (byCategory) return byCategory;
+  for (const [re, cls] of NAME_CLASS) if (re.test(n)) return cls;
+  return null;
+}
 
 /** How many directory rows one search shows; the reader narrows by typing more. */
 export const COURT_DIRECTORY_LIMIT = 30;
@@ -56,9 +127,10 @@ export function courtDirectoryEntries(rows: readonly CourtDirectoryRow[]): Court
   const out: CourtDirectoryEntry[] = [];
   for (const r of rows) {
     const name = (r.name ?? "").trim();
-    if (!name || NON_COURT_CATEGORIES.has(r.category) || seen.has(name)) continue;
+    if (!name || NON_COURT_CATEGORIES.has(r.category) || !isCourtRowName(name) || seen.has(name)) continue;
     seen.add(name);
-    out.push({ name, city: r.city ?? "", category: r.category ?? "" });
+    const category = r.category ?? "";
+    out.push({ name, city: r.city ?? "", category, courtClass: directoryCourtClass({ name, category }) });
   }
   return out;
 }
@@ -85,7 +157,7 @@ export function searchCourtOptions(
   for (const e of directory) {
     if (n >= limit) break;
     if (choices.includes(e.name) || !matches([e.name, e.city])) continue;
-    out.push({ kind: "directory", value: e.name, city: e.city, category: e.category });
+    out.push({ kind: "directory", value: e.name, city: e.city, category: e.category, courtClass: e.courtClass });
     n++;
   }
   return out;

@@ -10,7 +10,10 @@
  * unchanged: a classification is saved as itself; a directory court is saved
  * as its name through the «أخرى» path (choice = COURT_OTHER, other = name),
  * which is exactly how a typed «أخرى» name has always been saved. Rows saved
- * before this field existed read the same way.
+ * before this field existed read the same way. A directory pick also hands
+ * back its classification (`directoryClass`, review I1), which the form saves
+ * as metadata.courtClass; the parent holds it, and the chip is derived from
+ * it (review M2), so the chip survives a remount.
  *
  * The directory (src/data/circuits-directory.json, ~1 MB) is imported the
  * first time the box takes focus, not with the modal, as the procedures guide
@@ -27,14 +30,16 @@ interface Props {
   isDark: boolean;
   choice: string;
   other: string;
-  onChange: (choice: string, other: string) => void;
+  /** A directory pick's classification (null if unclassed); undefined when `other` was typed. */
+  directoryClass?: string | null;
+  onChange: (choice: string, other: string, directoryClass?: string | null) => void;
   inputCls: string;
   hintCls: string;
 }
 
 type Row = CourtOption | { kind: "other"; value: string };
 
-export default function CourtPicker({ id, isDark, choice, other, onChange, inputCls, hintCls }: Props) {
+export default function CourtPicker({ id, isDark, choice, other, directoryClass, onChange, inputCls, hintCls }: Props) {
   const listId = useId();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -42,9 +47,10 @@ export default function CourtPicker({ id, isDark, choice, other, onChange, input
   const [directory, setDirectory] = useState<CourtDirectoryEntry[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [loading, setLoading] = useState(false);
-  // A directory pick is stored through the «أخرى» path; this tells the two
-  // apart on screen (a chip for a pick, the free-text box for «أخرى»).
-  const [fromDirectory, setFromDirectory] = useState(false);
+  // A directory pick is stored through the «أخرى» path; `directoryClass` (held
+  // by the parent) tells the two apart on screen: a chip for a pick, the
+  // free-text box for «أخرى».
+  const fromDirectory = choice === COURT_OTHER && directoryClass !== undefined;
 
   function loadDirectory() {
     if (directory || loading || loadFailed) return;
@@ -64,15 +70,14 @@ export default function CourtPicker({ id, isDark, choice, other, onChange, input
   );
 
   function pick(row: Row) {
-    if (row.kind === "type") { setFromDirectory(false); onChange(row.value, ""); }
-    else if (row.kind === "directory") { setFromDirectory(true); onChange(COURT_OTHER, row.value); }
-    else { setFromDirectory(false); onChange(COURT_OTHER, ""); }
+    if (row.kind === "type") onChange(row.value, "");
+    else if (row.kind === "directory") onChange(COURT_OTHER, row.value, row.courtClass);
+    else onChange(COURT_OTHER, "");
     setQuery("");
     setOpen(false);
   }
 
   function clear() {
-    setFromDirectory(false);
     onChange("", "");
   }
 
@@ -103,7 +108,8 @@ export default function CourtPicker({ id, isDark, choice, other, onChange, input
       <div>
         <div className={chipCls}>
           <span className="truncate font-semibold">{chosenLabel}</span>
-          <button type="button" onClick={clear} aria-label="تغيير المحكمة" className={linkCls}>تغيير</button>
+          {/* The field's id sits here in chip mode, so the form's <label> points at an element (review M2). */}
+          <button id={id} type="button" onClick={clear} aria-label="تغيير المحكمة" className={linkCls}>تغيير</button>
         </div>
         {choice === COURT_OTHER && (
           <p className={hintCls}>من دليل المحاكم والدوائر — يُحفظ باسمه كما هو.</p>
