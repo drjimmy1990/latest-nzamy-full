@@ -183,3 +183,21 @@ test("dashboards: no gated tool is offered as working", () => {
   }
   assert.equal(gated, 5, "ngo (3) + micro (2) gated cards found");
 });
+
+test("fix round 1 (I4, I5): the micro request catalogue and the arbitrator's tool grid mark gated tools «قريباً»", () => {
+  const micro = read("app/dashboard/micro/requests/page.tsx");
+  assert.doesNotMatch(micro, /من [٠-٩]+ ر\.س/, "a «من … ر.س» price nothing charges is back");
+  let gatedRows = 0;
+  for (const m of micro.matchAll(/\{ id: "[^"]+",[^\n]*price: "([^"]*)", href: "([^"]+)" \}/g)) {
+    if (isTerminalToolHref(m[2])) { gatedRows++; assert.equal(m[1], "", `${m[2]} carries a typed price`); }
+  }
+  assert.equal(gatedRows, 3, "consult, contract, notice");
+  assert.match(micro, /\.map\(\(s\) => \(\{ \.\.\.s, price: isTerminalToolHref\(s\.href\) \? COMING_SOON_BADGE_AR : s\.price \}\)\)/);
+
+  const arb = read("app/dashboard/provider/components/ArbitratorDashboard.tsx");
+  const tiles = [...arb.matchAll(/\{ label: "[^"]+",\s+icon: \w+,\s*href: "([^"]+)" \}/g)].map((m) => m[1]);
+  assert.equal(tiles.length, 6, "the grid's six tiles");
+  assert.equal(tiles.filter(isTerminalToolHref).length, 4, "analyze, judicial-search, jurisdiction-analyzer, consult");
+  assert.match(arb, /\{isTerminalToolHref\(tool\.href\) && \(/);
+  assert.match(arb, /\{COMING_SOON_BADGE_AR\}/);
+});
