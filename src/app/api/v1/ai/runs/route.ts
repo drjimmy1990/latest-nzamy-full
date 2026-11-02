@@ -6,6 +6,7 @@ import { callN8n } from "@/lib/ai/n8nClient";
 import { retrieveLibrary } from "@/lib/ai/retrieval";
 import { resolveAiFiles } from "@/lib/ai/aiFiles";
 import { startRunWith, type RouteReply, type RunActor } from "@/lib/ai/runCore";
+import { runForViewer } from "@/lib/ai/aiToolsConfig";
 import { libraryGate } from "@/lib/library-gate";
 import { libraryAiAccess } from "@/app/api/ai/_libraryAiAccess";
 import { isLibraryAiTool, quotaRefusal } from "@/lib/library/readQuota";
@@ -149,8 +150,16 @@ export async function GET(request: NextRequest) {
       console.error("[ai/runs] GET failed:", error.code, error.message);
       return NextResponse.json({ error: "تعذّر تحميل السجل" }, { status: 503, headers: NO_STORE });
     }
-    // A review run's draft is for staff until it is approved.
-    const runs = (data ?? []).map((r) => (r.status === "review" ? { ...r, output: null, citations: [] } : r));
+    // A stored review run's output (review mode is retired; Wave 3 releases
+    // or refunds those rows) is held from its owner, never from an admin. The
+    // profile is read only when such a row is there, and fails closed.
+    const rows = data ?? [];
+    let isAdmin = false;
+    if (rows.some((r) => r.status === "review")) {
+      const { data: me, error: meError } = await supabase.from("profiles").select("user_type").eq("id", auth.user.id).maybeSingle();
+      isAdmin = !meError && me?.user_type === "admin";
+    }
+    const runs = rows.map((r) => runForViewer(r, isAdmin));
     return NextResponse.json({ runs }, { headers: NO_STORE });
   } catch (err) {
     console.error("[ai/runs] GET threw:", err);
