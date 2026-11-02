@@ -38,6 +38,13 @@ const OUTPUT_PATH = path.resolve(projectRoot, "src/data/gov-agencies-directory.j
 export const RETRIEVED_AT = "2026-10-28";
 export const TEST_RECORD_IDS = ["319731", "18143"];
 export const EXPECTED_SOURCE_COUNT = 363;
+/**
+ * Addresses the source publishes that the platform does not (owner q386:
+ * «لا يُنشر بريد غير متحقَّق للنيابة العامة»). my.gov.sa lists info@bip.gov.sa
+ * for النيابة العامة (17570); its domain had no mail (MX) record in the owner's
+ * check (note ١٩ §٤), so it is dropped here rather than shown with a warning.
+ */
+export const WITHHELD_EMAILS = { "17570": ["info@bip.gov.sa"] };
 
 const stripMd = (s) => s.replace(/\*\*/g, "").replace(/`/g, "").trim();
 
@@ -71,7 +78,10 @@ export function parseAgencyRow(line, category, categoryId) {
   // malformed address such as «info@@pep.gov.sa» stays as the source has it.
   const clean = (v) => v.replace(/[\u200b-\u200f\u2060\ufeff]/g, "").trim();
   const phones = [...tail.matchAll(/هاتف:\s*`([^`]+)`/g)].map((m) => clean(m[1]));
-  const emails = [...tail.matchAll(/بريد:\s*`([^`]+)`/g)].map((m) => clean(m[1]));
+  const withheld = new Set((WITHHELD_EMAILS[id] ?? []).map((e) => e.toLowerCase()));
+  const emails = [...tail.matchAll(/بريد:\s*`([^`]+)`/g)]
+    .map((m) => clean(m[1]))
+    .filter((e) => !withheld.has(e.toLowerCase()));
 
   return {
     id,
