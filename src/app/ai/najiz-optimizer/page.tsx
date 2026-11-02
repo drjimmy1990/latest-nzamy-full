@@ -13,13 +13,18 @@ import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
 import ConsultantGate from "@/components/dashboard/ConsultantGate";
 import { useAiRun } from "@/hooks/useAiRun";
-import { aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
+import { aiToolPriceText, arabicPoints } from "@/lib/ai/toolPointsDisplay";
+import { NAJIZ_TARGET_CHARS } from "@/lib/ai/tools";
 
 // ─── Najiz Optimizer Core Logic ───────────────────────────────────────────────
 // Implements: Najiz_Legal_Memo_Optimizer_v5
 
-const MAX_CHARS = 10_000;
-const TARGET_CHARS = 9_000;
+// One limit, the server's (tools.ts NAJIZ_TARGET_CHARS): R5 refuses a memo
+// within it and returns one no longer than it. The page used to say 10,000,
+// an unverified figure, so the tool disagreed with itself (owner package C-0).
+const MAX_CHARS = NAJIZ_TARGET_CHARS;
+/** «٩٬٠٠٠» — fixed digits, so the server render and the browser agree. */
+const MAX_CHARS_AR = arabicPoints(MAX_CHARS);
 
 interface OptimizationReport {
   originalLength: number;
@@ -104,13 +109,13 @@ function runNajizOptimizer(text: string): { result: string; report: Optimization
 // ─── Character Count Bar ──────────────────────────────────────────────────────
 function CharBar({ count, isDark }: { count: number; isDark: boolean }) {
   const pct = Math.min((count / MAX_CHARS) * 100, 100);
-  const color = count > MAX_CHARS ? "bg-red-500" : count > TARGET_CHARS ? "bg-amber-500" : "bg-emerald-500";
-  const label = count > MAX_CHARS ? "text-red-500" : count > TARGET_CHARS ? "text-amber-500" : "text-emerald-500";
+  const color = count > MAX_CHARS ? "bg-red-500" : "bg-emerald-500";
+  const label = count > MAX_CHARS ? "text-red-500" : "text-emerald-500";
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between text-[11px] font-bold">
-        <span className={label}>{count.toLocaleString()} حرف</span>
-        <span className={isDark ? "text-zinc-500" : "text-slate-400"}>الحد الأقصى: {MAX_CHARS.toLocaleString()}</span>
+        <span className={label}>{arabicPoints(count)} حرف</span>
+        <span className={isDark ? "text-zinc-500" : "text-slate-400"}>الحد الأقصى: {MAX_CHARS_AR}</span>
       </div>
       <div className={`h-2 rounded-full overflow-hidden ${isDark ? "bg-zinc-800" : "bg-slate-100"}`}>
         <motion.div
@@ -235,7 +240,7 @@ function NajizOptimizerPage() {
         <div className={`text-[12px] space-y-0.5 ${isDark ? "text-blue-300" : "text-blue-700"}`}>
           <p className="font-bold">القواعد المُطبَّقة (Najiz_Legal_Memo_Optimizer_v5)</p>
           <p className={isDark ? "text-blue-400/70" : "text-blue-600/80"}>
-            R1 إزالة الرموز غير المسموح بها · R2 حذف الإيموجي · R3 حذف الحقول الفارغة · R4 تنسيق القوائم · R5 اختصار اختياري بالذكاء الاصطناعي إذا بقي النص فوق ١٠,٠٠٠ حرف
+            R1 إزالة الرموز غير المسموح بها · R2 حذف الإيموجي · R3 حذف الحقول الفارغة · R4 تنسيق القوائم · R5 اختصار اختياري بالذكاء الاصطناعي إذا بقي النص فوق {MAX_CHARS_AR} حرف
           </p>
         </div>
       </motion.div>
@@ -256,7 +261,7 @@ function NajizOptimizerPage() {
               value={inputText}
               onChange={e => setInputText(e.target.value)}
               rows={16}
-              placeholder={`الصق نص المذكرة هنا...\n\nسيقوم النظام بـ:\n• إزالة الرموز غير المسموح بها\n• حذف الحقول الفارغة (......)\n• تنسيق القوائم\n• تقليص النص إذا تجاوز 10,000 حرف`}
+              placeholder={`الصق نص المذكرة هنا...\n\nسيقوم النظام بـ:\n• إزالة الرموز غير المسموح بها\n• حذف الحقول الفارغة (......)\n• تنسيق القوائم\n• تقليص النص إذا تجاوز ${MAX_CHARS_AR} حرف`}
               className={`w-full px-4 py-3 text-[13px] leading-relaxed resize-none outline-none ${isDark ? "bg-transparent text-zinc-200 placeholder:text-zinc-700" : "bg-transparent text-zinc-800 placeholder:text-slate-400"}`}
             />
             <div className={`px-4 pb-4`}>
@@ -344,9 +349,9 @@ function NajizOptimizerPage() {
                   )}
                   {!report.isUnderLimit && !aiShortened && (
                     <div className={`rounded-xl border p-3 space-y-2 ${isDark ? "border-[#C8A762]/25 bg-[#C8A762]/5" : "border-amber-200 bg-amber-50/60"}`}>
-                      <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>ما زال النص فوق {MAX_CHARS.toLocaleString()} حرف</p>
+                      <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>ما زال النص فوق {MAX_CHARS_AR} حرف</p>
                       <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-                        R5: يختصره الذكاء الاصطناعي إلى {TARGET_CHARS.toLocaleString()} حرف أو أقل، ويُرفض الناتج وتُعاد نقاطك إن سقطت منه مادة أو رقم حكم أو قرار مكتوب بالأرقام. يُرسَل النص إلى مزوّد ذكاء اصطناعي خارج المملكة.
+                        R5: يختصره الذكاء الاصطناعي إلى {MAX_CHARS_AR} حرف أو أقل، ويُرفض الناتج وتُعاد نقاطك إن سقطت منه مادة أو رقم حكم أو قرار مكتوب بالأرقام. يُرسَل النص إلى مزوّد ذكاء اصطناعي خارج المملكة.
                       </p>
                       <button onClick={handleShorten} disabled={ai.busy}
                         className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#0B3D2E] text-white text-[12px] font-bold shadow-sm disabled:opacity-50">
