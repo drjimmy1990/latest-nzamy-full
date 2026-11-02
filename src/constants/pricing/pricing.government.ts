@@ -4,6 +4,11 @@ import { Plan, ComparisonCategory } from "./pricing.types";
 // ─── Plans: Government (B2G — Enterprise Licensing) ───────────────────────────
 // Government entities use institutional licensing, not consumer SaaS subscriptions.
 // The "free" tier enables trial/evaluation; paid tiers are sales-led with annual contracts.
+// Wave 1 task 6, fix round 1 (I6): every government AI tool (the judgment,
+// verdict and indictment drafters, the contract reviewer, the other 19 gov
+// tools) ends at the beta gate's "not available" card
+// (src/constants/betaGatedRoutes.ts), so no licence sells them or a usage
+// quota: one «قريباً» line, as in pricing.ngo.ts.
 export const plansGovernment: { ar: Plan[]; en: Plan[] } = {
   ar: [
     {
@@ -12,7 +17,7 @@ export const plansGovernment: { ar: Plan[]; en: Plan[] } = {
       desc: "وصول محدود لتقييم المنصة قبل التعاقد الرسمي", target: "إدارات قانونية", cta: "ابدأ التقييم",
       ctaHref: "/register/client?type=government", highlighted: false, color: "border-slate-200/50",
       features: {
-        ai: ["أدوات الذكاء الاصطناعي: ٥ استخدامات / شهر", "أداة واحدة فقط حسب الدور", null, null],
+        ai: ["أدوات الذكاء الاصطناعي: قريباً", null, null, null],
         platform: ["حساب مستخدم واحد", "لوحة التحكم الأساسية", "القضايا والعقود (حتى ١٠)", null],
         support: ["دعم عبر البريد الإلكتروني", null],
       },
@@ -23,7 +28,7 @@ export const plansGovernment: { ar: Plan[]; en: Plan[] } = {
       desc: "ترخيص لإدارة قانونية واحدة داخل الجهة الحكومية", target: "إدارات قانونية", cta: "طلب عرض سعر",
       ctaHref: "/contact?type=government&plan=department", highlighted: true, color: "border-sky-200/60 dark:border-sky-500/20",
       features: {
-        ai: ["جميع أدوات الذكاء الاصطناعي حسب الدور", "صائغ الأحكام + المنطوق (القاضي)", "صائغ لوائح الاتهام (النيابة)", "مراجع العقود الحكومية (المستشار)"],
+        ai: ["أدوات الذكاء الاصطناعي: قريباً", null, null, null],
         platform: ["حتى ١٠ مستخدمين", "لوحة تحكم كاملة + تقارير", "إدارة القضايا والعقود (حسب العقد)", "رادار الامتثال التفاعلي"],
         support: ["دعم فني أولوية", "تدريب عن بُعد (٤ ساعات)"],
       },
@@ -34,7 +39,7 @@ export const plansGovernment: { ar: Plan[]; en: Plan[] } = {
       desc: "ترخيص شامل للجهة الحكومية بالكامل — قضاة ومحققون ومستشارون", target: "جهات حكومية كبرى", cta: "تواصل مع فريق المبيعات",
       ctaHref: "/contact?type=government&plan=enterprise", highlighted: false, color: "border-amber-200/30",
       features: {
-        ai: ["جميع أدوات AI (١٩+ أداة متخصصة)", "نماذج مخصصة للجهة", "واجهة API للربط مع الأنظمة الداخلية", "تقارير AI تلقائية"],
+        ai: ["أدوات الذكاء الاصطناعي: قريباً", "واجهة API للربط مع الأنظمة الداخلية", null, null],
         platform: ["حتى ١٠٠ مستخدم", "أدوار فرعية (قاضي/نيابة/ضابط/مستشار)", "لوحة إدارة مركزية", "ربط SSO + Active Directory"],
         support: ["مدير حساب حكومي مخصص", "تدريب ميداني + توثيق مخصص"],
       },
@@ -47,7 +52,7 @@ export const plansGovernment: { ar: Plan[]; en: Plan[] } = {
       desc: "Limited access for platform evaluation before formal contracting", target: "Legal Departments", cta: "Start Evaluation",
       ctaHref: "/register/client?type=government", highlighted: false, color: "border-slate-200/50",
       features: {
-        ai: ["AI Tools: 5 uses / month", "One tool per role only", null, null],
+        ai: ["AI tools: coming soon", null, null, null],
         platform: ["Single user account", "Basic dashboard", "Cases & Contracts (up to 10)", null],
         support: ["Email support", null],
       },
@@ -58,7 +63,7 @@ export const plansGovernment: { ar: Plan[]; en: Plan[] } = {
       desc: "License for a single legal department within a government entity", target: "Legal Departments", cta: "Request Quote",
       ctaHref: "/contact?type=government&plan=department", highlighted: true, color: "border-sky-200/60 dark:border-sky-500/20",
       features: {
-        ai: ["All AI tools per role", "Judgment + Verdict Drafter (Judge)", "Indictment Drafter (Prosecutor)", "Government Contract Reviewer (Counsel)"],
+        ai: ["AI tools: coming soon", null, null, null],
         platform: ["Up to 10 users", "Full dashboard + reports", "Cases & contracts: per contract", "Interactive compliance radar"],
         support: ["Priority support", "Remote training (4 hours)"],
       },
@@ -69,7 +74,7 @@ export const plansGovernment: { ar: Plan[]; en: Plan[] } = {
       desc: "Full institutional license — judges, prosecutors, officers, and counsel", target: "Large Government Entities", cta: "Contact Sales Team",
       ctaHref: "/contact?type=government&plan=enterprise", highlighted: false, color: "border-amber-200/30",
       features: {
-        ai: ["All AI tools (19+ specialized)", "Custom models for the entity", "API integration with internal systems", "Automated AI reports"],
+        ai: ["AI tools: coming soon", "API integration with internal systems", null, null],
         platform: ["Up to 100 users", "Sub-roles (Judge/Prosecutor/Officer/Counsel)", "Central admin dashboard", "SSO + Active Directory integration"],
         support: ["Dedicated government account manager", "On-site training + custom documentation"],
       },
@@ -81,10 +86,7 @@ export const plansGovernment: { ar: Plan[]; en: Plan[] } = {
 export const comparisonGovernment: { ar: ComparisonCategory[]; en: ComparisonCategory[] } = {
   ar: [
     { category: "أدوات الذكاء الاصطناعي", icon: Brain, rows: [
-      { feature: "أدوات AI المتاحة",              "gov-eval": "أداة واحدة",     "gov-department": "الكل حسب الدور", "gov-enterprise": "الكل + مخصصة" },
-      { feature: "عدد الاستخدامات",               "gov-eval": "٥/شهر",          "gov-department": "حسب العقد",       "gov-enterprise": "حسب العقد" },
-      { feature: "صائغ الأحكام / المنطوق",        "gov-eval": false,            "gov-department": true,              "gov-enterprise": true },
-      { feature: "صائغ لوائح الاتهام",             "gov-eval": false,            "gov-department": true,              "gov-enterprise": true },
+      { feature: "أدوات AI (الصائغون والمراجعون)",  "gov-eval": "قريباً",         "gov-department": "قريباً",          "gov-enterprise": "قريباً" },
       { feature: "واجهة API للأنظمة الداخلية",    "gov-eval": false,            "gov-department": false,             "gov-enterprise": true },
     ]},
     { category: "الأمن والحوكمة", icon: ShieldCheck, rows: [
@@ -101,10 +103,7 @@ export const comparisonGovernment: { ar: ComparisonCategory[]; en: ComparisonCat
   ],
   en: [
     { category: "AI Tools", icon: Brain, rows: [
-      { feature: "Available AI Tools",               "gov-eval": "One tool",       "gov-department": "All per role",     "gov-enterprise": "All + Custom" },
-      { feature: "Usage Limit",                      "gov-eval": "5/month",        "gov-department": "Per contract",     "gov-enterprise": "Per contract" },
-      { feature: "Judgment / Verdict Drafter",       "gov-eval": false,            "gov-department": true,              "gov-enterprise": true },
-      { feature: "Indictment Drafter",               "gov-eval": false,            "gov-department": true,              "gov-enterprise": true },
+      { feature: "AI tools (drafters, reviewers)",   "gov-eval": "Soon",           "gov-department": "Soon",            "gov-enterprise": "Soon" },
       { feature: "API for Internal Systems",         "gov-eval": false,            "gov-department": false,             "gov-enterprise": true },
     ]},
     { category: "Security & Governance", icon: ShieldCheck, rows: [

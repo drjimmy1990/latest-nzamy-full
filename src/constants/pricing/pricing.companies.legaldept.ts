@@ -3,6 +3,12 @@ import { Plan } from "./pricing.types";
 // ─── COMPANIES WITH LEGAL DEPT (أرخص — أدوات + نقاط لفريقهم الموجود) ─────────
 // الخدمات: نقاط AI (CorpMind/مراجعة عقود/امتثال) + Kanban + مكتبة + سوق مهنيين
 // بدون: ترافع أو استشارات محامٍ (لأن عندهم فريق قانوني داخلي أصلاً)
+// Wave 1 task 6, fix round 1 (I6): CorpMind, Deal Intelligence, the
+// compliance radar, the document and risk analysers, LegalMail, the HR
+// advisor and the 360° health check are all beta-gated or «قريباً» pages
+// (src/constants/betaGatedRoutes.ts, DashboardComingSoon), so no plan sells
+// them or a quota of them: one «قريباً» line, as in pricing.ngo.ts. A
+// contract-review quota keeps only its lawyer part.
 export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
   ar: [
     // ── صغيرة (٦-٤٩) ───────────────────────────────────
@@ -14,7 +20,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
       includedSeats: 2, includedAnnualPoints: 5000, extraSeatPrice: "١,٩٨٨ ر.س/سنة",
       pricingFormulaLabel: "اشتراك + ٢ مقعد + ٥,٠٠٠ نقطة", bonusLabel: "٥,٠٠٠ نقطة سنوية",
       features: {
-        ai: ["٥,٠٠٠ نقطة سنوية (CorpMind + مراجعة عقود)", "المكتبة القانونية الكاملة ✅", null, null],
+        ai: ["٥,٠٠٠ نقطة سنوية", "أدوات الذكاء الاصطناعي: قريباً", "المكتبة القانونية الكاملة ✅", null],
         platform: ["٢ مقعد", "Kanban: ١٠ مهام · طلبات: ٥/شهر", "عقود الموظفين (HR) ✅", null],
         support: ["تقارير شهرية", "دعم بريد إلكتروني"],
       },
@@ -27,7 +33,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
       includedSeats: 5, includedAnnualPoints: 15000, extraSeatPrice: "١,٩٨٨ ر.س/سنة",
       pricingFormulaLabel: "اشتراك + ٥ مقاعد + ١٥,٠٠٠ نقطة", bonusLabel: "١٥,٠٠٠ نقطة سنوية",
       features: {
-        ai: ["١٥,٠٠٠ نقطة سنوية", "رادار امتثال + LegalMail ✅", "حدود صرف بالقسم", null],
+        ai: ["١٥,٠٠٠ نقطة سنوية", "أدوات الذكاء الاصطناعي: قريباً", "حدود صرف بالقسم", null],
         platform: ["٥ مقاعد", "Kanban: ٢٥ مهمة · طلبات: ١٠/شهر", "سوق المهنيين + عقود HR ✅", null],
         support: ["تقارير دورية", "دعم واتساب"],
       },
@@ -40,7 +46,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
       includedSeats: 10, includedAnnualPoints: 40000, extraSeatPrice: "١,٩٨٨ ر.س/سنة",
       pricingFormulaLabel: "اشتراك + ١٠ مقاعد + ٤٠,٠٠٠ نقطة", bonusLabel: "٤٠,٠٠٠ نقطة سنوية",
       features: {
-        ai: ["٤٠,٠٠٠ نقطة سنوية", "حزمة AI كاملة + تحليل مستندات", "سياسات امتثال مخصصة", null],
+        ai: ["٤٠,٠٠٠ نقطة سنوية", "أدوات الذكاء الاصطناعي: قريباً", "سياسات امتثال مخصصة", null],
         platform: ["١٠ مقاعد", "Kanban: ٥٠ مهمة · ربط API ✅", "سوق + HR + تقارير مالية ✅", null],
         support: ["مدير حساب", "دعم عبر واتساب"],
       },
@@ -54,7 +60,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
       includedSeats: 5, includedAnnualPoints: 15000, extraSeatPrice: "٢,٤٨٨ ر.س/سنة",
       pricingFormulaLabel: "اشتراك + ٥ مقاعد + ١٥,٠٠٠ نقطة", bonusLabel: "١٥,٠٠٠ نقطة سنوية",
       features: {
-        ai: ["١٥,٠٠٠ نقطة سنوية", "CorpMind + مراجعة عقود بالنقاط", "المكتبة القانونية الكاملة ✅", null],
+        ai: ["١٥,٠٠٠ نقطة سنوية", "أدوات الذكاء الاصطناعي: قريباً", "المكتبة القانونية الكاملة ✅", null],
         platform: ["٥ مقاعد", "Kanban: ٢٥ مهمة · طلبات: ١٠/شهر", "إدارات + عقود HR ✅", null],
         support: ["تقارير شهرية", "دعم واتساب"],
       },
@@ -67,7 +73,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
       includedSeats: 10, includedAnnualPoints: 40000, extraSeatPrice: "٢,٤٨٨ ر.س/سنة",
       pricingFormulaLabel: "اشتراك + ١٠ مقاعد + ٤٠,٠٠٠ نقطة", bonusLabel: "٤٠,٠٠٠ نقطة سنوية",
       features: {
-        ai: ["٤٠,٠٠٠ نقطة سنوية", "رادار امتثال + Deal Intelligence ✅", "حدود صرف بالقسم", null],
+        ai: ["٤٠,٠٠٠ نقطة سنوية", "أدوات الذكاء الاصطناعي: قريباً", "حدود صرف بالقسم", null],
         platform: ["١٠ مقاعد", "Kanban: ٥٠ مهمة · حوكمة ✅", "إدارات + تقارير مالية ✅", null],
         support: ["تقارير دورية", "دعم عبر واتساب"],
       },
@@ -80,7 +86,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
       includedSeats: 20, includedAnnualPoints: 80000, extraSeatPrice: "٢,٤٨٨ ر.س/سنة",
       pricingFormulaLabel: "اشتراك + ٢٠ مقعد + ٨٠,٠٠٠ نقطة", bonusLabel: "٨٠,٠٠٠ نقطة سنوية",
       features: {
-        ai: ["٨٠,٠٠٠ نقطة سنوية", "حزمة AI كاملة + فحص صحة ٣٦٠°", "سياسات امتثال مخصصة", null],
+        ai: ["٨٠,٠٠٠ نقطة سنوية", "أدوات الذكاء الاصطناعي: قريباً", "سياسات امتثال مخصصة", null],
         platform: ["٢٠ مقعد", "Kanban: ١٠٠ مهمة · ربط API ✅", "حوكمة + إدارات + تقارير ✅", null],
         support: ["مدير حساب مخصص", "دعم عبر واتساب"],
       },
@@ -94,7 +100,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
       includedSeats: 10, includedAnnualPoints: 40000, extraSeatPrice: "٢,٩٨٨ ر.س/سنة",
       pricingFormulaLabel: "اشتراك + ١٠ مقاعد + ٤٠,٠٠٠ نقطة", bonusLabel: "٤٠,٠٠٠ نقطة سنوية",
       features: {
-        ai: ["٤٠,٠٠٠ نقطة سنوية", "CorpMind + مراجعة عقود بالنقاط", "المكتبة القانونية ✅", null],
+        ai: ["٤٠,٠٠٠ نقطة سنوية", "أدوات الذكاء الاصطناعي: قريباً", "المكتبة القانونية ✅", null],
         platform: ["١٠ مقاعد", "Kanban: ٤٠ مهمة · حوكمة أساسية", "إدارات + عقود HR ✅", null],
         support: ["تقارير أساسية", "دعم واتساب"],
       },
@@ -107,7 +113,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
       includedSeats: 25, includedAnnualPoints: 100000, extraSeatPrice: "٢,٩٨٨ ر.س/سنة",
       pricingFormulaLabel: "اشتراك + ٢٥ مقعد + ١٠٠,٠٠٠ نقطة", bonusLabel: "١٠٠,٠٠٠ نقطة سنوية",
       features: {
-        ai: ["١٠٠,٠٠٠ نقطة سنوية", "حزمة AI كاملة + فحص ٣٦٠°", "حدود صرف + امتثال متقدم", null],
+        ai: ["١٠٠,٠٠٠ نقطة سنوية", "أدوات الذكاء الاصطناعي: قريباً", "حدود صرف + امتثال متقدم", null],
         platform: ["٢٥ مقعد", "Kanban: ١٠٠ مهمة · حوكمة كاملة", "انتداب مستشار + تقارير مالية ✅", null],
         support: ["تقارير دورية", "مدير حساب مخصص"],
       },
@@ -120,7 +126,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
       includedSeats: 50, includedAnnualPoints: 200000, extraSeatPrice: "٢,٩٨٨ ر.س/سنة",
       pricingFormulaLabel: "اشتراك + ٥٠ مقعد + ٢٠٠,٠٠٠ نقطة", bonusLabel: "٢٠٠,٠٠٠ نقطة سنوية",
       features: {
-        ai: ["٢٠٠,٠٠٠ نقطة سنوية", "جميع أدوات AI مفتوحة", "سياسات امتثال مخصصة", null],
+        ai: ["٢٠٠,٠٠٠ نقطة سنوية", "أدوات الذكاء الاصطناعي: قريباً", "سياسات امتثال مخصصة", null],
         platform: ["٥٠ مقعد", "Kanban: ٢٠٠ مهمة · SSO + API ✅", "حوكمة + انتداب + إشراف مجتمع ✅", null],
         support: ["مدير حساب + SLA"],
       },
@@ -136,7 +142,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
       includedSeats: 2, includedAnnualPoints: 5000, extraSeatPrice: "1,988 SAR/yr",
       pricingFormulaLabel: "Annual + 2 seats + 5,000 pts", bonusLabel: "5,000 annual points",
       features: {
-        ai: ["5,000 annual points (CorpMind + contract review)", "Full Legal Library ✅", null, null],
+        ai: ["5,000 annual points", "AI tools: coming soon", "Full Legal Library ✅", null],
         platform: ["2 seats", "Kanban: 10 tasks · Requests: 5/mo", "Employee contracts (HR) ✅", null],
         support: ["Monthly reports", "Email support"],
       },
@@ -149,7 +155,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
       includedSeats: 5, includedAnnualPoints: 15000, extraSeatPrice: "1,988 SAR/yr",
       pricingFormulaLabel: "Annual + 5 seats + 15,000 pts", bonusLabel: "15,000 annual points",
       features: {
-        ai: ["15,000 annual points", "Compliance radar + LegalMail ✅", "Dept spending limits", null],
+        ai: ["15,000 annual points", "AI tools: coming soon", "Dept spending limits", null],
         platform: ["5 seats", "Kanban: 25 tasks · Requests: 10/mo", "Marketplace + HR contracts ✅", null],
         support: ["Periodic reports", "WhatsApp support"],
       },
@@ -162,7 +168,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
       includedSeats: 10, includedAnnualPoints: 40000, extraSeatPrice: "1,988 SAR/yr",
       pricingFormulaLabel: "Annual + 10 seats + 40,000 pts", bonusLabel: "40,000 annual points",
       features: {
-        ai: ["40,000 annual points", "Full AI suite + Doc Analyzer", "Custom compliance policies", null],
+        ai: ["40,000 annual points", "AI tools: coming soon", "Custom compliance policies", null],
         platform: ["10 seats", "Kanban: 50 tasks · API ✅", "Marketplace + HR + Finance reports ✅", null],
         support: ["Account manager", "WhatsApp support"],
       },
@@ -176,7 +182,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
       includedSeats: 5, includedAnnualPoints: 15000, extraSeatPrice: "2,488 SAR/yr",
       pricingFormulaLabel: "Annual + 5 seats + 15,000 pts", bonusLabel: "15,000 annual points",
       features: {
-        ai: ["15,000 annual points", "CorpMind + contract review by points", "Full Legal Library ✅", null],
+        ai: ["15,000 annual points", "AI tools: coming soon", "Full Legal Library ✅", null],
         platform: ["5 seats", "Kanban: 25 tasks · Requests: 10/mo", "Departments + HR contracts ✅", null],
         support: ["Monthly reports", "WhatsApp support"],
       },
@@ -189,7 +195,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
       includedSeats: 10, includedAnnualPoints: 40000, extraSeatPrice: "2,488 SAR/yr",
       pricingFormulaLabel: "Annual + 10 seats + 40,000 pts", bonusLabel: "40,000 annual points",
       features: {
-        ai: ["40,000 annual points", "Compliance + Deal Intelligence ✅", "Dept spending limits", null],
+        ai: ["40,000 annual points", "AI tools: coming soon", "Dept spending limits", null],
         platform: ["10 seats", "Kanban: 50 tasks · Governance ✅", "Departments + Finance reports ✅", null],
         support: ["Periodic reports", "WhatsApp support"],
       },
@@ -202,7 +208,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
       includedSeats: 20, includedAnnualPoints: 80000, extraSeatPrice: "2,488 SAR/yr",
       pricingFormulaLabel: "Annual + 20 seats + 80,000 pts", bonusLabel: "80,000 annual points",
       features: {
-        ai: ["80,000 annual points", "Full AI suite + Health Check 360°", "Custom compliance policies", null],
+        ai: ["80,000 annual points", "AI tools: coming soon", "Custom compliance policies", null],
         platform: ["20 seats", "Kanban: 100 tasks · API ✅", "Governance + Departments + Reports ✅", null],
         support: ["Dedicated account manager", "WhatsApp support"],
       },
@@ -216,7 +222,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
       includedSeats: 10, includedAnnualPoints: 40000, extraSeatPrice: "2,988 SAR/yr",
       pricingFormulaLabel: "Annual + 10 seats + 40,000 pts", bonusLabel: "40,000 annual points",
       features: {
-        ai: ["40,000 annual points", "CorpMind + contract review by points", "Full Legal Library ✅", null],
+        ai: ["40,000 annual points", "AI tools: coming soon", "Full Legal Library ✅", null],
         platform: ["10 seats", "Kanban: 40 tasks · Basic governance", "Departments + HR contracts ✅", null],
         support: ["Basic reports", "WhatsApp support"],
       },
@@ -229,7 +235,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
       includedSeats: 25, includedAnnualPoints: 100000, extraSeatPrice: "2,988 SAR/yr",
       pricingFormulaLabel: "Annual + 25 seats + 100,000 pts", bonusLabel: "100,000 annual points",
       features: {
-        ai: ["100,000 annual points", "Full AI suite + Health Check 360°", "Spending limits + advanced compliance", null],
+        ai: ["100,000 annual points", "AI tools: coming soon", "Spending limits + advanced compliance", null],
         platform: ["25 seats", "Kanban: 100 tasks · Full governance", "Secondment + Finance reports ✅", null],
         support: ["Periodic reports", "Dedicated account manager"],
       },
@@ -242,7 +248,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
       includedSeats: 50, includedAnnualPoints: 200000, extraSeatPrice: "2,988 SAR/yr",
       pricingFormulaLabel: "Annual + 50 seats + 200,000 pts", bonusLabel: "200,000 annual points",
       features: {
-        ai: ["200,000 annual points", "All AI tools unlocked", "Custom compliance policies", null],
+        ai: ["200,000 annual points", "AI tools: coming soon", "Custom compliance policies", null],
         platform: ["50 seats", "Kanban: 200 tasks · SSO + API ✅", "Governance + secondment + community ✅", null],
         support: ["Account manager + SLA"],
       },
