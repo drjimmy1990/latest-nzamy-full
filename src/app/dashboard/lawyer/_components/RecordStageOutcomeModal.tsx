@@ -13,7 +13,7 @@ import { getDeadlineRules, getCourtHolidays, type DeadlineRule } from "@/lib/ser
 import type { HolidayRule } from "@/lib/services/deadlineEngine";
 import { itemsOf, type ListRead } from "@/lib/services/listRead";
 import {
-  DEGREE_TO_AUTO_RULE_CODE, STAGE_TRIGGER_EVENTS, TRIGGER_EVENT_LABEL_AR, isFinalOutcome,
+  DEGREE_TO_AUTO_RULE_CODE, STAGE_TRIGGER_EVENTS, TRIGGER_EVENT_LABEL_AR, defaultStageTriggerEvent, isFinalOutcome,
 } from "@/lib/services/stageDeadlineSync";
 import { describeAutoDeadline } from "@/lib/services/stageDeadlineCopy";
 import {
@@ -66,7 +66,14 @@ export default function RecordStageOutcomeModal({ onClose, isDark, caseRequestId
   // date or EMPTY — the old "fill today" effect is gone (it is what turned
   // «قيد النظر» into a closed degree with a cassation deadline, LIVE-F15).
   const [closedOn, setClosedOn] = useState(stage.closedOn ?? "");
-  const [triggerEvent, setTriggerEvent] = useState<StageTriggerEvent | "">(stage.triggerEvent ?? "");
+  // q347: a degree recorded for the first time opens on «تسلّم صورة الحكم»
+  // (the event the rules count from); see defaultStageTriggerEvent.
+  const initialTriggerEvent = defaultStageTriggerEvent({
+    triggerEvent: stage.triggerEvent,
+    closedOn: stage.closedOn,
+    hasAutoRule: !!DEGREE_TO_AUTO_RULE_CODE[degreeToDb(stage.degree)],
+  });
+  const [triggerEvent, setTriggerEvent] = useState<StageTriggerEvent | "">(initialTriggerEvent);
   const [triggerDate, setTriggerDate] = useState(
     stage.triggerEvent && stage.triggerEvent !== "judgment_date" ? stage.triggerDate ?? "" : "",
   );
@@ -112,7 +119,7 @@ export default function RecordStageOutcomeModal({ onClose, isDark, caseRequestId
 
   const dirty =
     outcome !== initialOutcome || closedOn !== (stage.closedOn ?? "") ||
-    triggerEvent !== (stage.triggerEvent ?? "") || notes !== (stage.notes ?? "") ||
+    triggerEvent !== initialTriggerEvent || notes !== (stage.notes ?? "") ||
     triggerDate !== (stage.triggerEvent && stage.triggerEvent !== "judgment_date" ? stage.triggerDate ?? "" : "");
 
   const inputCls = `w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none ${
