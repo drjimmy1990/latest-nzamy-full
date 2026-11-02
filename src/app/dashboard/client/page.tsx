@@ -471,7 +471,9 @@ export default function ClientDashboard() {
   //
   // TWO CARDS. «احجز استشارة» (→ /dashboard/client/consultation/new) left in
   // owner q358: the home shows ONE booking button, «اطلب استشارة» in the
-  // greeting card, going where the old primary did (/dashboard/client/services).
+  // greeting card. It goes to the booking wizard (/dashboard/client/consultation/new)
+  // because its label promises a consultation (review M7); «كل الخدمات» below
+  // still leads to /dashboard/client/services.
   //
   // The card before that was «ابحث عن محامٍ» →
   // /dashboard/client/find-lawyer, badged «مجاني دائماً».
@@ -479,7 +481,8 @@ export default function ClientDashboard() {
   // THE REASON THAT STANDS ON ITS OWN is a fact about this code:
   // BETA_MONOPOLY_MODE (src/lib/betaConfig.ts) is true, نظامي is the sole
   // provider for the whole beta, and there is therefore no second lawyer to go
-  // and find. «اطلب استشارة» in the greeting card books the office directly.
+  // and find. «اطلب استشارة» in the greeting card opens the booking wizard,
+  // which books نظامي's own office.
   //
   // THE SUPPORTING FACT IS ABOUT DATA, ON A DATE, AND WAS NOT CHECKED FROM
   // HERE. GET /api/v1/lawyers filters on verification_status = 'verified' AND
@@ -660,7 +663,7 @@ export default function ClientDashboard() {
             </p>
 
             <div className="flex flex-wrap gap-3">
-              <Link href="/dashboard/client/services">
+              <Link href="/dashboard/client/consultation/new">
                 <motion.div
                   whileHover={{ scale: 1.04, y: -1 }} whileTap={{ scale: 0.97 }}
                   className="flex items-center gap-2 bg-[#C8A762] text-[#0B3D2E] font-bold px-5 py-2.5 rounded-xl text-sm shadow-md cursor-pointer"
