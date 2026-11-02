@@ -21,10 +21,11 @@ test("init: law rows are masked for non-subscribers and the envelope says so", (
   // columns: successorsBySupersededSlug builds nothing else).
   assert.match(
     initSource,
-    /return \{\s*\.\.\.maskListOfficialFields\(shaped, hasFullAccess\),\s*\.\.\.\(event \? \{ latest_legislative_update: event\.dateHijri \} : \{\}\),\s*\/\/ §2\.4-1:[^\n]*\n\s*\.\.\.\(replacedBy \? \{ replaced_by: replacedBy \} : \{\}\),\s*free: isFree,\s*locked: !isFree,\s*\};/,
+    /return \{\s*\.\.\.maskListOfficialFields\(shaped, hasFullAccess\),\s*\.\.\.\(event \? \{ latest_legislative_update: event\.dateHijri \} : \{\}\),\s*(?:\/\/[^\n]*\n\s*)*\.\.\.\(replacedBy \? \{ replaced_by: replacedBy \} : \{\}\),\s*free: isFree,\s*locked: !isFree,\s*\};/,
   );
   assert.match(initSource, /const replacedBy = isRepealedLawStatus\(row\.status\) \? successors\.get\(slug\) : undefined;/);
-  assert.match(initSource, /\.select\("slug,title,supersedes_law_slug"\)\.in\("supersedes_law_slug", part\)/);
+  assert.match(initSource, /\.select\("slug,title,supersedes_law_slug"\)\s*\.not\("supersedes_law_slug", "is", null\)/);
+  assert.doesNotMatch(initSource, /\.in\("supersedes_law_slug"/);
   // hasFullAccess here is getLibraryAccessForUser's full library access (a
   // Pro+ tier, an active library grant, or an admin; owner ٢٠٥/٢٠٩) — no whitelist.
   assert.match(initSource, /const \{ hasFullAccess, whitelistedSlugs, freeItemsByType \} = await getLibraryAccessForUser\(userId\);/);

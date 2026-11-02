@@ -16,16 +16,12 @@ export interface LawSuccessor {
   title: string;
 }
 
-/** A `.in()` filter carries this many slugs at most (the URL stays short). */
-export const SUCCESSOR_LOOKUP_CHUNK = 20;
-
-/** `items` in runs of `size` (the last one shorter). */
-export function chunked<T>(items: readonly T[], size: number = SUCCESSOR_LOOKUP_CHUNK): T[][] {
-  const step = Math.max(1, Math.floor(size));
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += step) out.push(items.slice(i, i + step));
-  return out;
-}
+/**
+ * Runaway guard for /api/library/init's one read of the laws that name a
+ * predecessor (`supersedes_law_slug is not null`). The column is mostly
+ * empty; the whole table is about 5.9k laws.
+ */
+export const SUCCESSOR_READ_MAX_ROWS = 10_000;
 
 function str(v: unknown): string {
   return typeof v === "string" ? v.trim() : "";

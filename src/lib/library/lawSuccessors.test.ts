@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { chunked, successorsBySupersededSlug, SUCCESSOR_LOOKUP_CHUNK } from "./lawSuccessors.ts";
+import { successorsBySupersededSlug, SUCCESSOR_READ_MAX_ROWS } from "./lawSuccessors.ts";
 
 test("§2.4-1: the replaced slug maps to the newer law that names it", () => {
   const map = successorsBySupersededSlug([
@@ -25,12 +25,6 @@ test("§2.4-1: a self-link is ignored; two successors resolve to the smaller slu
   assert.equal(successorsBySupersededSlug(null).size, 0);
 });
 
-test("the .in() lookup runs in short chunks", () => {
-  assert.equal(SUCCESSOR_LOOKUP_CHUNK, 20);
-  const slugs = Array.from({ length: 45 }, (_, i) => `s${i}`);
-  const parts = chunked(slugs);
-  assert.deepEqual(parts.map((p) => p.length), [20, 20, 5]);
-  assert.deepEqual(parts.flat(), slugs);
-  assert.deepEqual(chunked([], 20), []);
-  assert.deepEqual(chunked([1, 2, 3], 0), [[1], [2], [3]]);
+test("the one successor read has a runaway guard above the table's size", () => {
+  assert.ok(SUCCESSOR_READ_MAX_ROWS >= 6_000);
 });

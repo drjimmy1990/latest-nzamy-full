@@ -10,7 +10,7 @@ import { lawSummaryVisible } from "@/lib/library/lawSummaryVisibility";
 import { latestLegislativeEvent, summaryForViewer } from "@/lib/library/legislativeEvent";
 import { readWithOptionalFeatures, type OptionalFeature } from "@/lib/library/optionalColumn";
 import { BOOK_SERIES_FEATURE, bookVolumeColumns } from "@/lib/library/bookVolumes";
-import { chunked, successorsBySupersededSlug } from "@/lib/library/lawSuccessors";
+import { SUCCESSOR_READ_MAX_ROWS, successorsBySupersededSlug } from "@/lib/library/lawSuccessors";
 import { isRepealedLawStatus } from "@/app/laws/law-status";
 
 /**
@@ -351,25 +351,27 @@ export async function GET(request: Request) {
     // law on this page, for the card's link next to «ملغى». The link is on the
     // NEWER law (supersedes_law_slug), read like the law page's `replacedBy`
     // (/api/library/laws/[slug]) with the request client — slug, title and
-    // supersedes_law_slug are on the anon allow-list of 20261004_01. Short
-    // `.in()` chunks keep the URL small (Arabic-capable slugs, ?limit ≤ 200).
-    // Supplementary: a failed lookup only means no link on the card.
-    const repealedSlugs = lawsRows
-      .filter((row) => isRepealedLawStatus(row.status))
-      .map((row) => row.slug)
-      .filter((slug): slug is string => typeof slug === "string" && slug.length > 0);
-    const successorRows: unknown[] = [];
-    if (repealedSlugs.length > 0) {
+    // supersedes_law_slug are on the anon allow-list of 20261004_01. ONE read
+    // of the few laws that name a predecessor (the column is mostly empty),
+    // paged by selectAllPages, only when this page has a repealed law — no
+    // `.in()` list in the URL. Supplementary: a failed lookup only means no
+    // link on the card.
+    let successorRows: unknown[] = [];
+    if (lawsRows.some((row) => isRepealedLawStatus(row.status))) {
       try {
-        const reads = await Promise.all(
-          chunked(repealedSlugs).map((part) =>
-            supabase.schema("library").from("laws").select("slug,title,supersedes_law_slug").in("supersedes_law_slug", part)
-          )
+        const { data, error } = await selectAllPages<Record<string, unknown>>(
+          (f, t) =>
+            supabase
+              .schema("library")
+              .from("laws")
+              .select("slug,title,supersedes_law_slug")
+              .not("supersedes_law_slug", "is", null)
+              .order("slug")
+              .range(f, t) as unknown as PromiseLike<{ data: Record<string, unknown>[] | null; error: { message: string } | null }>,
+          { pageSize: 1000, maxRows: SUCCESSOR_READ_MAX_ROWS }
         );
-        for (const { data, error } of reads) {
-          if (error) console.warn("[Library Init API] successor lookup failed:", error.message);
-          else successorRows.push(...((data as unknown[] | null) ?? []));
-        }
+        if (error) console.warn("[Library Init API] successor lookup failed:", error.message);
+        else successorRows = data;
       } catch (e) {
         console.warn("[Library Init API] successor lookup threw:", e);
       }
