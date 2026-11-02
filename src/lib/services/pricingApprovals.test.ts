@@ -1,9 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 // A namespace import, so a missing export fails its own test, not the file.
 import * as catalog from "../../constants/lawyerAiCatalog.ts";
 import { bookSar } from "../pricing/priceBook.ts";
+import {
+  AI_TOOLS,
+  ASSISTANT_CONVERSATION_PRICE,
+  ASSISTANT_MESSAGES_PER_CONVERSATION,
+  BRIEF_CHECK_PRICE,
+  CASE_BRIEF_PRICES,
+  CONTRACTS_PRO_PRICE,
+  LEGAL_OPINION_PRICE,
+  WAVE4_PRICE,
+} from "../ai/tools.ts";
+import { DRAFT_KINDS } from "../ai/draftKinds.ts";
+import * as display from "../ai/toolPointsDisplay.ts";
 
 const lawyers = readFileSync(new URL("../../constants/pricing/pricing.lawyers.ts", import.meta.url), "utf8");
 const pricingCards = readFileSync(new URL("../../components/pricing/PricingCards.tsx", import.meta.url), "utf8");
@@ -46,9 +58,73 @@ test("the lawyer tab is the subscription (no points) plus the five professional 
   assert.doesNotMatch(lawyers, /محفظة|رصيد نقدي/);
 });
 
-// ── Owner answer ٢١٦ (2026-10-18): the point ranges for the remaining tools ──
+// ── Wave 1 task 4 (2026-11-02): every points figure shown = what the server charges ─
+// The /pricing price list, the hub badges, the plan cards and the tool pages
+// read the AI registry (src/lib/ai/toolPointsDisplay.ts, tools.ts,
+// draftKinds.ts). These tests work the charge out themselves from the
+// registry's own `price` functions and pin today's numbers, so a repriced
+// tool or a hand-typed label fails here. The old 15 / 10 / «١٥–٢٠» / «٥–٨» /
+// «١–٢» labels (owner ٢١٦) were a fraction of the real charge.
 
-interface PriceRow { name: string; points: number; pointsLabel?: string; tools: string[] }
+/** Every charge one run of a registry tool can make, from its own `price`. */
+function serverCharges(id: string): number[] {
+  const tool = AI_TOOLS[id];
+  assert.ok(tool, `${id} is not in the AI registry`);
+  if (id === "legal-drafter") return Object.keys(DRAFT_KINDS).map((kind) => tool.price({ kind }, { pages: null, turn: 0 }));
+  if (id === "case-brief") return [1, 5, 6, 30].map((pages) => tool.price({}, { pages, turn: 0 }));
+  return [tool.price({}, { pages: 1, turn: 0 })];
+}
+
+function serverRange(ids: readonly string[]): [number, number] {
+  const all = ids.flatMap(serverCharges);
+  return [Math.min(...all), Math.max(...all)];
+}
+
+/** The cost column's text, worked out here, not by the helper under test. */
+function expectedLabel(ids: readonly string[], lang: "ar" | "en"): string {
+  const locale = lang === "ar" ? "ar-SA" : "en-US";
+  const [min, max] = serverRange(ids);
+  return min === max ? min.toLocaleString(locale) : `${min.toLocaleString(locale)}–${max.toLocaleString(locale)}`;
+}
+
+const nounAr = (n: number): string => (n >= 3 && n <= 10 ? "نقاط" : "نقطة");
+
+/** Today's server prices, [lowest, highest] per run. A repricing (Wave 2) edits this on purpose. */
+const TODAY: Record<string, [number, number]> = {
+  "legal-drafter": [500, 1500],
+  "contracts-pro": [1000, 1000],
+  "contract-drafter": [500, 500],
+  wargaming: [250, 250],
+  "analyze-strength": [250, 250],
+  "legal-opinion-consult": [400, 400],
+  "legal-opinion-letter": [400, 400],
+  assistant: [100, 100],
+  "quick-answer": [20, 20],
+  "najiz-optimizer": [5, 5],
+  communicate: [5, 5],
+  "library-assistant": [5, 5],
+  "canvas-card": [10, 10],
+  "case-brief": [30, 150],
+  "brief-check": [200, 200],
+};
+
+test("task 4: the registry charges today's prices, and the display helper reads exactly that", () => {
+  for (const [id, range] of Object.entries(TODAY)) {
+    assert.deepEqual(serverRange([id]), range, `${id}: the server charge moved — update every label's expectation here`);
+    assert.deepEqual([...display.aiToolPointRange(id as display.PricedAiToolId)], range, `${id}: the display range is not the charge`);
+    for (const lang of ["ar", "en"] as const) {
+      assert.equal(display.aiToolPointsLabel(id as display.PricedAiToolId, lang), expectedLabel([id], lang), `${id} (${lang})`);
+    }
+  }
+  // The assistant: one price buys a conversation, and the unit says how long.
+  assert.equal(AI_TOOLS.assistant.price({}, { pages: null, turn: 1 }), 0);
+  assert.equal(display.aiToolPriceUnit("assistant", "ar"), `لكل محادثة من ${ASSISTANT_MESSAGES_PER_CONVERSATION.toLocaleString("ar-SA")} رسائل`);
+  assert.equal(display.aiToolPriceText("legal-drafter", "ar"), `من ${(500).toLocaleString("ar-SA")} إلى ${(1500).toLocaleString("ar-SA")} نقطة`);
+  assert.equal(display.aiToolPriceText("legal-drafter", "en"), "500 to 1,500 points");
+  assert.equal(display.aiToolPriceText("najiz-optimizer", "ar"), "٥ نقاط");
+});
+
+interface PriceRow { name: string; price: string; aiTool: string[]; tools: string[]; note?: string }
 
 /** The rows of `lawyerServicesTable` (the price list under the lawyer cards). */
 function serviceRows(): PriceRow[] {
@@ -56,44 +132,65 @@ function serviceRows(): PriceRow[] {
   const end = lawyers.indexOf("export const comparisonLawyers");
   assert.ok(start >= 0 && end > start, "lawyerServicesTable is in pricing.lawyers.ts");
   const table = lawyers.slice(start, end);
-  return [
+  const rows = [
     ...table.matchAll(
-      /\{ name: "([^"]+)", points: (\d+)(?:, pointsLabel: "([^"]+)")?(?:, tools: \[([^\]]*)\])?(?:, note: "[^"]*")? \}/g,
+      /\{ name: "([^"]+)", price: (\{ aiTool: (?:"[^"]+"|\[[^\]]*\]) \}|"free"|"soon")(?:, tools: \[([^\]]*)\])?(?:, note: "([^"]*)")? \}/g,
     ),
   ].map((m) => ({
     name: m[1],
-    points: Number(m[2]),
-    pointsLabel: m[3],
-    tools: [...(m[4] ?? "").matchAll(/"([^"]+)"/g)].map((t) => t[1]),
+    price: m[2],
+    aiTool: [...(m[2].startsWith("{") ? m[2] : "").matchAll(/"([^"]+)"/g)].map((t) => t[1]),
+    tools: [...(m[3] ?? "").matchAll(/"([^"]+)"/g)].map((t) => t[1]),
+    note: m[4],
   }));
+  // Every row is in one of the three shapes: none escapes the parser with a number.
+  assert.equal(rows.length, (table.match(/\{ name: "/g) ?? []).length, "a price-list row is not { aiTool } / free / soon");
+  assert.doesNotMatch(table, /\bpoints(Label)?:/, "a price-list row writes its own number");
+  return rows;
 }
 
-const AR_DIGITS = "٠١٢٣٤٥٦٧٨٩";
-/** What the table prints in the cost column: the label, else the number. */
-function rowLabel(row: PriceRow): string {
-  return row.pointsLabel ?? String(row.points).replace(/\d/g, (d) => AR_DIGITS[Number(d)]);
-}
-
-test("٢١٦: the six newly priced tools are listed with the owner's ranges", () => {
-  const rows = serviceRows();
-  const expected: Array<[string, number, string]> = [
-    ["الصياغة من نموذج", 5, "٥–٨"],
-    ["مولّد أسئلة الاستجواب", 5, "٥–٨"],
-    ["منقح ناجز", 5, "٥–٨"],
-    ["المحاكي القضائي", 15, "١٥–٢٠"],
-    ["تقرير العناية الواجبة", 15, "١٥–٢٠"],
-    ["الرأي الفصل", 15, "١٥–٢٠"],
+test("task 4: the /pricing price list prints the registry's charge, «قريباً» with no number, or free", () => {
+  const rows = new Map(serviceRows().map((r) => [r.name, r]));
+  // The owner's catalogue keeps every row (owner ٢١٦); only the numbers moved.
+  const expected: Array<[string, string[] | "soon" | "free"]> = [
+    ["الصائغ القانوني: المذكرات ومذكرات الدفاع واللوائح الاعتراضية", ["legal-drafter"]],
+    ["صياغة العقود وتدقيقها ومصفوفة المخاطر", ["contracts-pro"]],
+    ["الصياغة من نموذج", "soon"],
+    ["فحص المذكرة الشكلي والموضوعي", ["brief-check"]],
+    ["مولّد أسئلة الاستجواب", "soon"],
+    ["منقح ناجز", ["najiz-optimizer"]],
+    ["المحاكي القضائي", ["wargaming"]],
+    ["تقرير العناية الواجبة", "soon"],
+    ["الرأي الفصل", ["legal-opinion-consult", "legal-opinion-letter"]],
+    ["المساعد القانوني والتشريع المقارن", ["assistant"]],
+    ["البحث الدلالي وشرح المواد في المكتبة", ["library-assistant"]],
+    ["المرشد القضائي", "free"],
+    ["الحاسبة القانونية", "free"],
+    ["المجمّع البحثي", "free"],
+    ["المجتمع القانوني", "free"],
   ];
-  for (const [name, points, label] of expected) {
-    const row = rows.find((r) => r.name === name);
+  assert.equal(rows.size, expected.length, "the price list lost or gained a row");
+  for (const [name, want] of expected) {
+    const row = rows.get(name);
     assert.ok(row, `no row «${name}» in lawyerServicesTable`);
-    assert.equal(row.points, points, name);
-    assert.equal(row.pointsLabel, label, name);
+    if (typeof want === "string") {
+      assert.equal(row.price, `"${want}"`, name);
+      continue;
+    }
+    assert.deepEqual(row.aiTool, want, name);
+    const ref = (want.length === 1 ? want[0] : want) as display.PricedAiToolRef;
+    // What the cell prints (PricingCards: aiToolPointsLabel(aiTool, "ar")) = the charge.
+    assert.equal(display.aiToolPointsLabel(ref, "ar"), expectedLabel(want, "ar"), name);
   }
-  // The archive is not a 0-point («مجاني دائماً») row: it is a note.
-  assert.ok(!rows.some((r) => r.name.includes("الأرشيف")), "the archive must not be a free row");
+  // The archive is not a free row: it is a note.
+  assert.ok(![...rows.keys()].some((n) => n.includes("الأرشيف")), "the archive must not be a free row");
   assert.match(lawyers, /"الأرشيف السحابي: ضمن سعة الباقة"/);
   assert.match(pricingCards, /LAWYER_ARCHIVE_NOTE/);
+  // The table renders the registry's label and «قريباً», never a row's own number.
+  assert.match(pricingCards, /aiToolPointsLabel\(aiTool, "ar"\)/);
+  assert.match(pricingCards, /aiToolPriceUnit\(aiTool, "ar"\)/);
+  assert.match(pricingCards, /item\.price === "soon"[\s\S]{0,200}قريباً/);
+  assert.doesNotMatch(pricingCards, /item\.points|item\.pointsLabel/);
 });
 
 test("٢١٦: the comparator and the translator are not priced (both still return canned output)", () => {
@@ -105,49 +202,159 @@ test("٢١٦: the comparator and the translator are not priced (both still retur
   for (const id of ["ai:compare", "ai:legal-translate"] as const) {
     const tool = byPermission.get(id);
     assert.ok(tool, id);
-    // No badge today; «قريباً» once W7 T7.6 marks the page coming-soon.
     const badge = catalog.getLawyerAiBadge(tool, "ar");
     assert.ok(badge === null || badge === "قريباً", `${id} still shows a price on the hub: «${badge}»`);
   }
 });
 
-test("٢١٦: every hub badge is the price-list label or absent (one source for tool costs)", () => {
+/** Catalog id → the registry tool(s) its hub card sells, written here independently of the catalog. */
+const HUB_TOOLS: Record<string, string[]> = {
+  "ai:quick-answer": ["quick-answer"],
+  "ai:case-brief": ["case-brief"],
+  "ai:draft": ["legal-drafter"],
+  "ai:brief-check": ["brief-check"],
+  "ai:contracts": ["contracts-pro"],
+  "ai:contract-drafter": ["contract-drafter"],
+  "ai:wargaming": ["wargaming"],
+  "ai:analyze-strength": ["analyze-strength"],
+  "ai:legal-opinion": ["legal-opinion-consult", "legal-opinion-letter"],
+  "ai:najiz-optimizer": ["najiz-optimizer"],
+  "ai:communicate": ["communicate"],
+  "ai:assistant": ["assistant"],
+};
+
+test("task 4: every hub badge is the registry's charge, «قريباً», free for a tool that charges nothing, or absent", () => {
   const exported = (catalog as { TOOL_POINT_LABELS?: Record<string, string> }).TOOL_POINT_LABELS;
   assert.ok(exported, "lawyerAiCatalog.ts exports TOOL_POINT_LABELS");
   const labels: Record<string, string> = exported;
-  const rows = serviceRows();
+  assert.deepEqual(Object.keys(labels).sort(), Object.keys(HUB_TOOLS).sort(), "the hub prices a different set of tools");
 
-  // The map and the table say the same thing, both ways round.
-  const fromTable = new Map<string, string>();
-  for (const row of rows) for (const id of row.tools) {
-    assert.ok(!fromTable.has(id), `${id} is priced by two rows`);
-    fromTable.set(id, rowLabel(row));
-  }
-  // Five since owner answer ١١٥: analyze (٨), transcriber and secretary (٥,
-  // one shared row) were unpriced until they work — their pages say «قريباً».
-  // The owner's figures are kept in the TOOL_POINT_LABELS comment for when
-  // they come back. Not a regression: a tool that cannot answer is not sold.
-  assert.ok(fromTable.size >= 5, "the catalog tools the table prices carry their ids");
-  assert.deepEqual(Object.fromEntries(fromTable), labels);
-
-  const nonPrice = new Set(["قريباً", "بيتا مجاني", "مجاني"]);
   for (const tool of catalog.LAWYER_AI_TOOLS) {
     const ar: string | null = catalog.getLawyerAiBadge(tool, "ar");
     const en: string | null = catalog.getLawyerAiBadge(tool, "en");
-    if (ar !== null && nonPrice.has(ar)) continue;
-    const label: string | undefined = labels[tool.permission];
-    if (label === undefined) {
-      assert.equal(ar, null, `${tool.permission}: «${ar}» has no row in the price list`);
-      assert.equal(en, null, tool.permission);
+    const ids = HUB_TOOLS[tool.permission];
+    if (tool.comingSoon) {
+      assert.equal(ar, "قريباً", tool.permission);
       continue;
     }
-    assert.ok(ar !== null && ar.startsWith(`${label} `), `${tool.permission}: «${ar}» is not the table's «${label}»`);
-    assert.match(ar ?? "", /^\S+ (نقطة|نقاط)$/, tool.permission);
-    const latin: string = label.replace(/[٠-٩]/g, (d: string) => String(AR_DIGITS.indexOf(d)));
-    assert.equal(en, `${latin} pts`, tool.permission);
+    if (!ids) {
+      // No registry tool: no number. «مجاني» / «بيتا مجاني» only where nothing is charged.
+      assert.ok(ar === null || ar === "مجاني" || ar === "بيتا مجاني", `${tool.permission}: «${ar}» prices a tool the server has no price for`);
+      continue;
+    }
+    // A tool the server charges is never called free on the hub.
+    assert.equal(tool.betaStatus, "priced", `${tool.permission} is charged ${expectedLabel(ids, "en")} points but the hub calls it free`);
+    const label = expectedLabel(ids, "ar");
+    assert.equal(labels[tool.permission], label, tool.permission);
+    assert.equal(ar, `${label} ${nounAr(serverRange(ids)[1])}`, tool.permission);
+    assert.equal(en, `${expectedLabel(ids, "en")} pts`, tool.permission);
   }
+
+  // The price list and the hub agree wherever a row names a catalog id.
+  const fromTable = new Map<string, PriceRow>();
+  for (const row of serviceRows()) for (const id of row.tools) {
+    assert.ok(!fromTable.has(id), `${id} is priced by two rows`);
+    fromTable.set(id, row);
+    assert.deepEqual(row.aiTool, HUB_TOOLS[id], `${id}: the row and the hub sell different registry tools`);
+  }
+  assert.ok(fromTable.size >= 5, "the catalog tools the table prices carry their ids");
   // The old catalog figures (500 / 300 / 100 … points) are gone as a source.
   assert.ok(!catalog.LAWYER_AI_TOOLS.some((t) => "pointCost" in t), "LawyerAiTool.pointCost is a second price source");
+});
+
+test("task 4: the plan cards' tool bullets read the registry (lawyer card, consultant card)", () => {
+  const providers = readFileSync(new URL("../../constants/pricing/pricing.providers.ts", import.meta.url), "utf8");
+  const cards: Array<[string, string[]]> = [
+    [lawyers, [
+      '`صياغة المذكرات واللوائح: ${aiToolPriceText("legal-drafter", "ar")}`',
+      '`صياغة العقود وتدقيقها: ${aiToolPriceText("contracts-pro", "ar")}`',
+      '`Briefs and pleadings: ${aiToolPriceText("legal-drafter", "en")}`',
+      '`Contract drafting and review: ${aiToolPriceText("contracts-pro", "en")}`',
+    ]],
+    [providers, [
+      '`صياغة العقود وتدقيقها: ${aiToolPriceText("contracts-pro", "ar")}`',
+      '`المساعد القانوني والتشريع المقارن: ${aiToolPriceText("assistant", "ar")}`',
+      '`Contract drafting and review: ${aiToolPriceText("contracts-pro", "en")}`',
+      '`Legal assistant and comparative law: ${aiToolPriceText("assistant", "en")}`',
+    ]],
+  ];
+  for (const [text, bullets] of cards) {
+    for (const b of bullets) assert.ok(text.includes(b), `missing ${b}`);
+    // No tool bullet types its own number any more.
+    assert.doesNotMatch(text, /(المذكرات واللوائح|العقود وتدقيقها|التشريع المقارن): [٠-٩]/);
+    assert.doesNotMatch(text, /(pleadings|review|comparative law): \d/);
+  }
+  // What those bullets print, against the server.
+  assert.equal(display.aiToolPriceText("contracts-pro", "ar"), `${expectedLabel(["contracts-pro"], "ar")} نقطة`);
+  assert.equal(
+    display.aiToolPriceText("assistant", "en"),
+    `${expectedLabel(["assistant"], "en")} points per conversation of ${ASSISTANT_MESSAGES_PER_CONVERSATION} messages`,
+  );
+});
+
+/** Source without comments, as the screens print it. */
+function shown(rel: string): string {
+  return readFileSync(new URL(`../../${rel}`, import.meta.url), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:"'\\])\/\/.*$/gm, "$1");
+}
+
+test("task 4: the tool pages print the constant the registry charges", () => {
+  // [page, the expression that prints the price, its value, the registry tools that charge it]
+  const pages: Array<[string, string, number, string[]]> = [
+    ["app/ai/analyze-strength/page.tsx", 'WAVE4_PRICE.toLocaleString("ar-SA")', WAVE4_PRICE, ["analyze-strength"]],
+    ["app/ai/wargaming/page.tsx", 'WAVE4_PRICE.toLocaleString("ar-SA")', WAVE4_PRICE, ["wargaming"]],
+    ["app/ai/assistant/page.tsx", 'ASSISTANT_CONVERSATION_PRICE.toLocaleString("ar-SA")', ASSISTANT_CONVERSATION_PRICE, ["assistant"]],
+    ["app/ai/brief-check/page.tsx", 'BRIEF_CHECK_PRICE.toLocaleString("ar-SA")', BRIEF_CHECK_PRICE, ["brief-check"]],
+    ["app/ai/case-brief/page.tsx", 'CASE_BRIEF_PRICES.small.toLocaleString("ar-SA")', CASE_BRIEF_PRICES.small, ["case-brief"]],
+    ["app/ai/case-brief/page.tsx", 'CASE_BRIEF_PRICES.large.toLocaleString("ar-SA")', CASE_BRIEF_PRICES.large, ["case-brief"]],
+    ["app/ai/legal-opinion/page.tsx", "price={LEGAL_OPINION_PRICE}", LEGAL_OPINION_PRICE, ["legal-opinion-consult"]],
+    ["app/ai/legal-opinion/_components/LetterWorkflow.tsx", "price={LEGAL_OPINION_PRICE}", LEGAL_OPINION_PRICE, ["legal-opinion-letter"]],
+    ["app/ai/contracts/page.tsx", "price={CONTRACTS_PRO_PRICE}", CONTRACTS_PRO_PRICE, ["contracts-pro"]],
+  ];
+  for (const [rel, expr, value, ids] of pages) {
+    assert.ok(shown(rel).includes(expr), `${rel} no longer prints ${expr}`);
+    for (const id of ids) assert.ok(serverCharges(id).includes(value), `${rel}: ${expr} = ${value}, but ${id} charges ${serverCharges(id).join("/")}`);
+  }
+  // The drafter's step prints the chosen kind's price, which is what the analysis run charges.
+  const step = shown("components/draft/steps/StepAiDraft.tsx");
+  assert.match(step, /const spec = DRAFT_KINDS\[kind\]/);
+  assert.match(step, /spec\.price\.toLocaleString\("ar-SA"\)/);
+  for (const kind of Object.keys(DRAFT_KINDS) as Array<keyof typeof DRAFT_KINDS>) {
+    assert.equal(AI_TOOLS["legal-drafter"].price({ kind }, { pages: null, turn: 0 }), DRAFT_KINDS[kind].price, kind);
+  }
+  // The helper's labels where a page had a typed number.
+  assert.match(shown("app/ai/quick-answer/page.tsx"), /\{aiToolPriceText\("quick-answer", "ar"\)\} للسؤال/);
+  assert.match(shown("app/dashboard/business/kanban/CaseGraphView.tsx"), /\(\$\{aiToolPriceText\("canvas-card", "ar"\)\}\)/);
+  // The Najiz page still types its number (its code is not this task's): held to the server here.
+  const najiz = /اختصر بالذكاء الاصطناعي \(([٠-٩]+) نقاط\)/.exec(shown("app/ai/najiz-optimizer/page.tsx"));
+  assert.ok(najiz, "the Najiz button's price was not found");
+  const typed = Number(najiz[1].replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d))));
+  assert.deepEqual(serverCharges("najiz-optimizer"), [typed], "the Najiz button's points are not what the server charges");
+});
+
+test("task 4: no AI screen types a points number of its own", () => {
+  const roots = ["app/ai", "components/draft", "components/legal-opinion", "app/dashboard/business/kanban", "app/laws", "constants/lawyerAiCatalog.ts"];
+  const allowed = new Set(["app/ai/najiz-optimizer/page.tsx"]); // held to the server above
+  const files: string[] = [];
+  const walk = (rel: string): void => {
+    const url = new URL(`../../${rel}`, import.meta.url);
+    if (statSync(url).isFile()) {
+      files.push(rel);
+      return;
+    }
+    for (const entry of readdirSync(url)) walk(`${rel}/${entry}`);
+  };
+  for (const r of roots) walk(r);
+  const typedPoints = /[0-9٠-٩]\s?(?:نقطة|نقاط)(?![\u0600-\u06FF])|\b\d[\d,]*\s(?:points|pts)\b/;
+  let scanned = 0;
+  for (const rel of files) {
+    if (!/\.tsx?$/.test(rel) || /\.test\.tsx?$/.test(rel) || allowed.has(rel)) continue;
+    scanned++;
+    const hit = typedPoints.exec(shown(rel));
+    assert.equal(hit, null, `${rel} types «${hit?.[0]}»: read it from the registry (toolPointsDisplay.ts)`);
+  }
+  assert.ok(scanned > 50, `scanned only ${scanned} files`);
 });
 
 test("٢١٦: the price list does not say points are deducted on every use (enforcement is off)", () => {

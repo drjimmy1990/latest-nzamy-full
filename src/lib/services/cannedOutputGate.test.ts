@@ -217,7 +217,8 @@ test("the gated lawyer tools are «قريباً» on the hub and unpriced; the N
     assert.ok(!pricing.includes(s), `pricing.lawyers.ts still sells ${s}`);
   }
   assert.notEqual(LAWYER_AI_TOOL_BY_PERMISSION["ai:najiz-optimizer"].comingSoon, true);
-  assert.equal(TOOL_POINT_LABELS["ai:najiz-optimizer"], "٥–٨");
+  // The registry's price (tools.ts), not the owner's old «٥–٨» range (Wave 1 task 4).
+  assert.equal(TOOL_POINT_LABELS["ai:najiz-optimizer"], "٥");
 });
 
 /** `{ href, badge }` for every nav row on one line, in the given constants file. */

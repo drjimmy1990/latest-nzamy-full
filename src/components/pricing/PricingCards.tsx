@@ -9,6 +9,7 @@ import {
 } from "@phosphor-icons/react";
 import type { Plan, AudienceTab, Billing } from "@/constants/pricingData";
 import { lawyerServicesTable, LAWYER_ARCHIVE_NOTE } from "@/constants/pricing/pricing.lawyers";
+import { aiToolPointsLabel, aiToolPriceUnit } from "@/lib/ai/toolPointsDisplay";
 import { useUser } from "@/hooks/useUser";
 import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
 import { buyButtonAction } from "@/lib/payments/checkoutView";
@@ -454,22 +455,32 @@ function LawyerServicesTable({ isAr }: { isAr: boolean }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {cat.items.map((item, ii) => (
+                      {cat.items.map((item, ii) => {
+                        // An AI row prints what the registry charges (Wave 1
+                        // task 4); a row with no backend says «قريباً», no number.
+                        const aiTool = typeof item.price === "object" ? item.price.aiTool : null;
+                        const note = [item.note, aiTool && aiToolPriceUnit(aiTool, "ar")].filter(Boolean).join(" · ");
+                        return (
                         <tr key={ii} className={`border-b border-slate-50 dark:border-white/5 ${
-                          item.points === 0 ? "bg-emerald-50/40 dark:bg-emerald-500/5" :
+                          item.price === "free" ? "bg-emerald-50/40 dark:bg-emerald-500/5" :
                           ii % 2 ? "bg-slate-50/40 dark:bg-white/[0.015]" : ""
                         }`}>
                           <td className="px-5 py-2.5 text-right text-[12px] text-ink" dir="rtl">
                             {item.name}
-                            {item.note && (
-                              <span className="mr-1.5 block md:inline-block text-[10px] font-semibold text-amber-600 dark:text-amber-400">{item.note}</span>
+                            {note && (
+                              <span className="mr-1.5 block md:inline-block text-[10px] font-semibold text-amber-600 dark:text-amber-400">{note}</span>
                             )}
                           </td>
-                          <td className="px-3 py-2.5 text-center font-mono text-[12px] font-bold text-royal">
-                            {item.points === 0 ? "—" : (item.pointsLabel ?? item.points.toLocaleString("ar-SA"))}
-                          </td>
+                          {item.price === "soon" ? (
+                            <td className="px-3 py-2.5 text-center text-[11px] font-semibold text-ink-faint">قريباً</td>
+                          ) : (
+                            <td className="px-3 py-2.5 text-center font-mono text-[12px] font-bold text-royal">
+                              {aiTool ? aiToolPointsLabel(aiTool, "ar") : "—"}
+                            </td>
+                          )}
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

@@ -1,5 +1,6 @@
 import { Lightning, Gavel } from "@phosphor-icons/react";
 import { Plan, ComparisonCategory } from "./pricing.types";
+import { aiToolPriceText, type PricedAiToolRef } from "@/lib/ai/toolPointsDisplay";
 
 // ─── Lawyers: one subscription + point top-ups (owner answers ١٧٤ / ١٧٨, 2026-10-16) ─
 // - «المحامي المحترف»: 3,990 SAR/year. The 399 monthly price is retired
@@ -30,8 +31,9 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: [
           "النقاط بحزم الشحن المستقلة",
-          "صياغة المذكرات واللوائح: ١٥ نقطة",
-          "صياغة العقود وتدقيقها: ١٠ نقاط",
+          // The registry's charge (Wave 1 task 4), never a figure typed here.
+          `صياغة المذكرات واللوائح: ${aiToolPriceText("legal-drafter", "ar")}`,
+          `صياغة العقود وتدقيقها: ${aiToolPriceText("contracts-pro", "ar")}`,
         ],
         platform: ["إدارة القضايا والجلسات والمهل", "الموكّلون والاستشارات والعقود"],
         support: [],
@@ -82,8 +84,8 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: [
           "Points from separate top-ups",
-          "Briefs and pleadings: 15 points",
-          "Contract drafting and review: 10 points",
+          `Briefs and pleadings: ${aiToolPriceText("legal-drafter", "en")}`,
+          `Contract drafting and review: ${aiToolPriceText("contracts-pro", "en")}`,
         ],
         platform: ["Cases, hearings and deadlines", "Clients, consultations and contracts"],
         support: [],
@@ -128,21 +130,24 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
 };
 
 // ─── Point costs per tool (owner answers ١٧٨ and ٢١٦) — shown below the cards ─
-// This is the price list, and the hub's point badges read it: a row's `tools`
-// names the catalog ids it prices, and TOOL_POINT_LABELS
-// (src/constants/lawyerAiCatalog.ts) repeats its label for those ids
-// (pricingApprovals.test.ts holds the two equal). Only the tools the owner
-// priced are listed: a missing price is better than a guessed one.
-// Not listed although ٢١٦ prices them: «المقارن الذكي» and «المترجم القانوني»,
-// which still return canned output. A price over a tool that does not work is
-// a false promise (pricingHonesty.test.ts forbids pricing a «قريباً» tool).
-// Points are not deducted yet: automatic deduction starts with electronic
-// payment (owner gate G4).
+// The price list. A row with an AI tool shows the points that tool's run is
+// charged, read from the AI registry (src/lib/ai/toolPointsDisplay.ts) at
+// render time; no row writes a number (Wave 1 task 4: the old 15 / 10 /
+// «١٥–٢٠» labels were a fraction of the real charge). The hub's badges
+// (TOOL_POINT_SOURCES in src/constants/lawyerAiCatalog.ts) read the same
+// registry, and pricingApprovals.test.ts holds both to the server.
+// A row the owner lists whose tool has no backend yet says «قريباً», with no
+// number. Not listed although ٢١٦ prices them: «المقارن الذكي» and «المترجم
+// القانوني», which still return canned output (pricingHonesty.test.ts forbids
+// pricing a «قريباً» tool).
 export interface ServiceRow {
   name: string;
-  points: number;
-  /** Shown instead of `points` when the cost is a range («١–٢»). */
-  pointsLabel?: string;
+  /**
+   * `aiTool`: the registry tool(s) the row sells; the cost column prints its
+   * charge. "free": a tool that charges nothing. "soon": no backend yet, so
+   * «قريباً» and no number.
+   */
+  price: { aiTool: PricedAiToolRef } | "free" | "soon";
   /** The catalog ids (LawyerAiPermission) this row prices on the hub. */
   tools?: string[];
   note?: string;
@@ -166,9 +171,10 @@ export const lawyerServicesTable: ServiceCategory[] = [
     emoji: "📋",
     color: "text-blue-400",
     items: [
-      { name: "الصائغ القانوني: المذكرات ومذكرات الدفاع واللوائح الاعتراضية", points: 15, tools: ["ai:draft"] },
-      { name: "صياغة العقود وتدقيقها ومصفوفة المخاطر", points: 10, tools: ["ai:contracts"] },
-      { name: "الصياغة من نموذج", points: 5, pointsLabel: "٥–٨" },
+      // The drafter's price is per kind (draftKinds.ts), so the cell is a range.
+      { name: "الصائغ القانوني: المذكرات ومذكرات الدفاع واللوائح الاعتراضية", price: { aiTool: "legal-drafter" }, tools: ["ai:draft"] },
+      { name: "صياغة العقود وتدقيقها ومصفوفة المخاطر", price: { aiTool: "contracts-pro" }, tools: ["ai:contracts"] },
+      { name: "الصياغة من نموذج", price: "soon" },
     ],
   },
   {
@@ -179,10 +185,10 @@ export const lawyerServicesTable: ServiceCategory[] = [
       // Owner answer ١١٥: the attachment digest (٨) and, under «أدوات مساعدة»,
       // the transcriber + secretary row (٥) are off this list until those pages
       // work — all three say «قريباً». Their prices are kept in the comment
-      // above TOOL_POINT_LABELS (lawyerAiCatalog.ts) for when they return.
-      { name: "فحص المذكرة الشكلي والموضوعي", points: 5 },
-      { name: "مولّد أسئلة الاستجواب", points: 5, pointsLabel: "٥–٨" },
-      { name: "منقح ناجز", points: 5, pointsLabel: "٥–٨", tools: ["ai:najiz-optimizer"] },
+      // above TOOL_POINT_SOURCES (lawyerAiCatalog.ts) for when they return.
+      { name: "فحص المذكرة الشكلي والموضوعي", price: { aiTool: "brief-check" }, tools: ["ai:brief-check"] },
+      { name: "مولّد أسئلة الاستجواب", price: "soon" },
+      { name: "منقح ناجز", price: { aiTool: "najiz-optimizer" }, tools: ["ai:najiz-optimizer"] },
     ],
   },
   {
@@ -190,9 +196,10 @@ export const lawyerServicesTable: ServiceCategory[] = [
     emoji: "⚖️",
     color: "text-rose-400",
     items: [
-      { name: "المحاكي القضائي", points: 15, pointsLabel: "١٥–٢٠", tools: ["ai:wargaming"] },
-      { name: "تقرير العناية الواجبة", points: 15, pointsLabel: "١٥–٢٠" },
-      { name: "الرأي الفصل", points: 15, pointsLabel: "١٥–٢٠", tools: ["ai:legal-opinion"] },
+      { name: "المحاكي القضائي", price: { aiTool: "wargaming" }, tools: ["ai:wargaming"] },
+      { name: "تقرير العناية الواجبة", price: "soon" },
+      // The AI writes two of the studio's types; the others are team orders.
+      { name: "الرأي الفصل", price: { aiTool: ["legal-opinion-consult", "legal-opinion-letter"] }, tools: ["ai:legal-opinion"], note: "الاستشارة المكتوبة أو الخطاب" },
     ],
   },
   {
@@ -200,8 +207,8 @@ export const lawyerServicesTable: ServiceCategory[] = [
     emoji: "⚡",
     color: "text-purple-400",
     items: [
-      { name: "المساعد القانوني والتشريع المقارن", points: 5 },
-      { name: "البحث الدلالي وشرح المواد في المكتبة", points: 1, pointsLabel: "١–٢" },
+      { name: "المساعد القانوني والتشريع المقارن", price: { aiTool: "assistant" }, tools: ["ai:assistant"] },
+      { name: "البحث الدلالي وشرح المواد في المكتبة", price: { aiTool: "library-assistant" } },
     ],
   },
   {
@@ -209,10 +216,10 @@ export const lawyerServicesTable: ServiceCategory[] = [
     emoji: "🎁",
     color: "text-green-400",
     items: [
-      { name: "المرشد القضائي", points: 0 },
-      { name: "الحاسبة القانونية", points: 0 },
-      { name: "المجمّع البحثي", points: 0 },
-      { name: "المجتمع القانوني", points: 0 },
+      { name: "المرشد القضائي", price: "free" },
+      { name: "الحاسبة القانونية", price: "free" },
+      { name: "المجمّع البحثي", price: "free" },
+      { name: "المجتمع القانوني", price: "free" },
     ],
   },
 ];
