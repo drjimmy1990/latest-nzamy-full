@@ -8,6 +8,9 @@ import { resolveAiFiles } from "@/lib/ai/aiFiles";
 import { startRunWith, type RouteReply, type RunActor } from "@/lib/ai/runCore";
 import { libraryGate } from "@/lib/library-gate";
 import { libraryAiAccess } from "@/app/api/ai/_libraryAiAccess";
+import { isLibraryAiTool, quotaRefusal } from "@/lib/library/readQuota";
+import { libraryReadQuotaHit } from "@/lib/library/readQuotaServer";
+import { recordLibraryActivity } from "@/lib/library/activityMeterServer";
 
 /**
  * /api/v1/ai/runs — the AI tools (docs/plans/2026-10-26-ai-services-n8n-plan.md
@@ -22,7 +25,9 @@ import { libraryAiAccess } from "@/app/api/ai/_libraryAiAccess";
  * GET   the user's last 50 runs (?tool= to filter), own rows through RLS.
  *
  * /api/v1/ai/* is not in PROTECTED_API_PREFIXES, so the proxy adds no 401 or
- * freeze check: both happen here.
+ * freeze check: both happen here. Nor does the proxy's library lock reach
+ * this path (one path, every tool): a run of the library's own AI checks the
+ * lock here, before the charge (libraryAccessFor).
  */
 
 export const dynamic = "force-dynamic";
@@ -41,6 +46,25 @@ async function libraryAccess(): Promise<RouteReply | null> {
   if (!refused) return null;
   const body = (await refused.json().catch(() => ({}))) as Record<string, unknown>;
   return { status: refused.status, body: { ...body, code: body.libraryClosed ? "library_closed" : "library_tier" } };
+}
+
+/**
+ * The gate above, then, for the library's own AI (readQuota.isLibraryAiTool),
+ * what the proxy does on the library's other reads: the call is tallied for
+ * «نشاط المكتبة» as a library-AI call, and a reader under a library lock gets
+ * the lock's 423 and its message (readQuota.quotaRefusal), uncharged. The
+ * lock check fails open and exempts admins, as in the proxy
+ * (readQuotaServer.ts).
+ */
+function libraryAccessFor(userId: string) {
+  return async (toolId: string): Promise<RouteReply | null> => {
+    const denied = await libraryAccess();
+    if (denied) return denied;
+    if (!isLibraryAiTool(toolId)) return null;
+    recordLibraryActivity(userId, "ai");
+    const refusal = quotaRefusal(await libraryReadQuotaHit(userId, null, { memoLockCheck: true }), Date.now());
+    return refusal ? { status: refusal.status, body: { ...refusal.body } } : null;
+  };
 }
 
 function callbackUrl(): string {
@@ -89,7 +113,7 @@ export async function POST(request: NextRequest) {
       {
         callbackUrl: callbackUrl(),
         n8n: (call) => callN8n({ ...call, baseUrl: process.env.N8N_AI_BASE_URL, key: process.env.NZAMY_AI_KEY }),
-        libraryAccess,
+        libraryAccess: libraryAccessFor(user.id),
         retrieve: (queries, limits, pin) => retrieveLibrary(admin, queries, limits, pin),
         resolveFiles: (userId, fileIds, rules) => resolveAiFiles(admin, userId, fileIds, rules),
       },

@@ -121,3 +121,54 @@ test("without an open article, no searches is still a refund", async () => {
   assert.equal(r.status, 502);
   assert.ok(log.some((q) => q.table === "ai_fail_run"));
 });
+
+// The library lock (readQuota.isLibraryAiTool, wired in /api/v1/ai/runs): the
+// route's libraryAccess is told which tool is running, and its lock refusal
+// stops the run before ai_start_run, so a locked reader is never charged.
+const LOCKED = {
+  status: 423,
+  body: { error: "أُوقفت القراءة في المكتبة القانونية لحسابك مؤقتاً", code: "library_security_lock", reference: "SEC-1", support: "/contact" },
+};
+
+test("the library lock refuses before the charge: 423, the lock's own body, no ai_start_run", async () => {
+  const asked: string[] = [];
+  const calls: string[] = [];
+  const { client, log } = db();
+  const d: StartRunDeps = {
+    ...deps(queries(["فسخ عقد العمل"]), [], calls),
+    libraryAccess: async (toolId) => {
+      asked.push(toolId);
+      return LOCKED;
+    },
+  };
+  const r = await startRunWith(client as never, d, actor("individual"), body({ message: "اشرح لي هذه المادة", article_id: "labor__art-80" }));
+  assert.equal(r.status, 423);
+  assert.deepEqual(r.body, LOCKED.body);
+  assert.deepEqual(asked, ["library-assistant"]);
+  assert.ok(!log.some((q) => q.op === "rpc"), "no ai_start_run, no refund: nothing was charged");
+  assert.deepEqual(calls, [], "no n8n call either");
+});
+
+test("a tool without library retrieval never asks the library lock", async () => {
+  const asked: string[] = [];
+  const { client, log } = fakeDb((q: FakeQuery) => {
+    if (q.table === "platform_settings") return { data: { value: { "echo-fast": { mode: "live" } } } };
+    if (q.op === "rpc" && q.table === "ai_start_run") {
+      return { data: [{ run_id: RUN, created: true, status: "running", charged: true, charged_points: 1 }] };
+    }
+    if (q.table === "ai_runs" && q.op === "update") return { data: [{ id: RUN }] };
+    return {};
+  });
+  const d: StartRunDeps = {
+    callbackUrl: "https://app.test/api/v1/ai/callback",
+    n8n: async () => ({ kind: "result", result: { run_id: RUN, status: "succeeded", output: { echo: "مرحبا" }, citations: [] } }),
+    libraryAccess: async (toolId) => {
+      asked.push(toolId);
+      return LOCKED;
+    },
+  };
+  const r = await startRunWith(client as never, d, actor("lawyer"), { tool: "echo-fast", input: { text: "مرحبا" }, idempotencyKey: "key-abcdef01" });
+  assert.equal(r.status, 200);
+  assert.deepEqual(asked, []);
+  assert.ok(log.some((q) => q.op === "rpc" && q.table === "ai_start_run"));
+});

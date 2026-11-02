@@ -78,10 +78,12 @@ export interface StartRunDeps {
   callbackUrl: string;
   now?: () => Date;
   /**
-   * Library tools only: the library gate and the assistant's tier rule, before
-   * the charge. A reply refuses the run; null lets it go on.
+   * Library tools only: the library gate and the assistant's tier rule, and
+   * for the library's own AI the library lock (readQuota.isLibraryAiTool),
+   * before the charge. `toolId` is the registry id. A reply refuses the run;
+   * null lets it go on.
    */
-  libraryAccess?: () => Promise<RouteReply | null>;
+  libraryAccess?: (toolId: string) => Promise<RouteReply | null>;
   /** Library tools only: the searches → the texts (retrieval.retrieveLibrary). */
   retrieve?: (queries: string[], limits: RetrievalLimits, pin: RetrievalPin) => Promise<Retrieved>;
   /** File tools only: the caller's vault files checked, counted and signed (aiFiles.resolveAiFiles). */
@@ -299,13 +301,14 @@ export async function startRunWith(
   }
 
   // A library tool quotes server-only, paywalled texts: the library's own
-  // gate and the assistant's tier rule apply before anything is charged.
+  // gate and the assistant's tier rule apply before anything is charged, and
+  // so does the library lock for the library's own AI (the route decides).
   if (spec.retrieval) {
     if (!deps.libraryAccess || !deps.retrieve) {
       console.error("[ai] a library tool without libraryAccess / retrieve:", spec.id);
       return { status: 503, body: { error: AI_COPY.notReady, code: "not_ready" } };
     }
-    const denied = await deps.libraryAccess();
+    const denied = await deps.libraryAccess(spec.id);
     if (denied) return denied;
   }
 

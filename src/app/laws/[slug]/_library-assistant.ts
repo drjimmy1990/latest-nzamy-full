@@ -24,6 +24,8 @@ export interface LibraryAnswer {
 export const LIBRARY_AI_SOON =
   "الذكاء الاصطناعي قيد التفعيل وقريباً سيتوفر.\nحالياً يمكنك تصفح المواد والاستعانة بالفهرس والمبادئ والسوابق.";
 const FALLBACK = "تعذّر الاتصال بالخادم — حاول مرة أخرى";
+/** readQuota.LIBRARY_LOCK_SUPPORT_PATH; not imported, so this client file stays free of the proxy's modules. */
+const LOCK_SUPPORT = "/contact";
 
 function newKey(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
@@ -75,6 +77,11 @@ export async function askLibrary(
   if (res.status === 401 || (res.status === 403 && json.code === "library_tier")) {
     const refusal = libraryAiRefusal(res.status, currentPath);
     if (refusal) return { text: refusal.text, citations: [], action: refusal.action };
+  }
+  // A library lock is a 423 too, but not «قيد التفعيل»: the server's own lock
+  // message (readQuota.libraryLockMessageAr) and the way to support.
+  if (json.code === "library_security_lock" && typeof json.error === "string" && json.error) {
+    return { text: json.error, citations: [], action: { label: "تواصل معنا", href: LOCK_SUPPORT } };
   }
   // Switched off or not wired yet: the page's existing «قيد التفعيل».
   if (res.status === 423 || json.code === "not_ready") return { text: LIBRARY_AI_SOON, citations: [] };

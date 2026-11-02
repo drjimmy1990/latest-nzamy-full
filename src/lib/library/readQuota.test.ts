@@ -11,6 +11,7 @@ import {
   LIBRARY_READ_QUOTA,
   TtlMemo,
   hasSupabaseAuthCookie,
+  isLibraryAiTool,
   libraryQuotaTarget,
   normalizeDocSegment,
   parseQuotaRow,
@@ -19,6 +20,7 @@ import {
   secondsUntil,
   type QuotaRow,
 } from "./readQuota.ts";
+import { AI_TOOLS } from "../ai/tools.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const API = path.resolve(HERE, "..", "..", "app", "api");
@@ -79,6 +81,59 @@ test("the scoped-search route spends the scope's document after it knows the use
   assert.ok(user > 0 && spend > user && read > spend, "user → spend → read the text");
   assert.match(src, /if \(userId\) \{/);
   assert.match(src, /quotaRefusal\(await libraryReadQuotaHit\(userId, docKey\), Date\.now\(\)\)/);
+});
+
+test("isLibraryAiTool: the library's own assistant (chat and «اشرح لي») is library reading", () => {
+  assert.equal(isLibraryAiTool("library-assistant"), true);
+  // It is a real registry tool that goes through the library gate (spec.retrieval),
+  // where runCore hands the id to the route's lock check; a rename would drop the lock.
+  assert.ok(AI_TOOLS["library-assistant"]?.retrieval, "library-assistant must stay a retrieval tool");
+});
+
+test("isLibraryAiTool: no other AI tool is locked — contract tools, L9–L11 and the lawyers' library-backed tools", () => {
+  for (const id of [
+    "contract-drafter", // L11
+    "contracts-pro", // L13
+    "wargaming", // L9
+    "analyze-strength", // L10
+    "legal-drafter",
+    "quick-answer",
+    "assistant",
+    "canvas-card",
+    "legal-opinion-consult",
+    "legal-opinion-letter",
+    "communicate",
+    "najiz-optimizer",
+    "case-brief",
+    "brief-check",
+  ]) {
+    assert.ok(id in AI_TOOLS, `${id} is not a registry tool any more`);
+    assert.equal(isLibraryAiTool(id), false, id);
+  }
+  const locked = Object.keys(AI_TOOLS).filter((id) => isLibraryAiTool(id));
+  assert.deepEqual(locked, ["library-assistant"]);
+});
+
+test("isLibraryAiTool: only an exact string id", () => {
+  for (const v of ["Library-Assistant", " library-assistant", "library-assistant ", "", "constructor", "__proto__", null, undefined, 5, {}, ["library-assistant"]]) {
+    assert.equal(isLibraryAiTool(v), false, JSON.stringify(v));
+  }
+});
+
+test("the AI run route checks the library lock for library tools, after the gate, and tallies the call", () => {
+  const src = fs.readFileSync(path.join(API, "v1", "ai", "runs", "route.ts"), "utf8").replace(/\r\n/g, "\n");
+  assert.match(src, /import \{ isLibraryAiTool, quotaRefusal \} from "@\/lib\/library\/readQuota";/);
+  assert.match(src, /import \{ libraryReadQuotaHit \} from "@\/lib\/library\/readQuotaServer";/);
+  assert.match(src, /import \{ recordLibraryActivity \} from "@\/lib\/library\/activityMeterServer";/);
+  assert.match(src, /libraryAccess: libraryAccessFor\(user\.id\),/);
+  const gate = src.indexOf("const denied = await libraryAccess();");
+  const match = src.indexOf("if (!isLibraryAiTool(toolId)) return null;");
+  const tally = src.indexOf('recordLibraryActivity(userId, "ai");');
+  const lock = src.indexOf("quotaRefusal(await libraryReadQuotaHit(userId, null, { memoLockCheck: true }), Date.now())");
+  assert.ok(gate > 0 && match > gate && tally > match && lock > tally, "gate → library tool? → tally → lock");
+  // The same reply the proxy gives (status and body), not a second copy of the message.
+  assert.match(src, /return refusal \? \{ status: refusal\.status, body: \{ \.\.\.refusal\.body \} \} : null;/);
+  assert.doesNotMatch(src, /أُوقفت القراءة/);
 });
 
 test("libraryQuotaTarget: everything else is not counted (catalogue, facets, folders, writes, sub-paths)", () => {

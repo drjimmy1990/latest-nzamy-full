@@ -62,13 +62,33 @@ const DOC_KIND: Readonly<Record<string, LibraryDocKind>> = {
  * POST routes that return library text but read no single document. Not
  * /api/library/scoped-search: it searches INSIDE one document and returns
  * article text, so the route itself spends that document
- * (scopedSearchDocKey below) — which also checks the lock.
+ * (scopedSearchDocKey below) — which also checks the lock. The live library
+ * AI (/api/v1/ai/runs) checks it in the route as well (isLibraryAiTool below).
  */
 const LOCK_ONLY_POST_PATHS: ReadonlySet<string> = new Set([
   "/api/library/search",
   "/api/ai/explain-article",
   "/api/ai/library-chat",
 ]);
+
+/**
+ * The tools of /api/v1/ai/runs that are the library's own AI: L5
+ * «مساعد المكتبة», the chat in the reader and its «اشرح لي» window. That one
+ * route serves every AI tool, so the proxy cannot tell a library run by its
+ * path; the run route checks the lock (and counts the call in the activity
+ * monitor) for these ids, before anything is charged.
+ *
+ * Only the library's own assistant. The lawyers' tools that also answer from
+ * library texts (quick-answer, assistant, canvas-card, legal-opinion-consult,
+ * legal-drafter) are not here: the lock message promises that the rest of the
+ * platform keeps working.
+ */
+const LIBRARY_AI_TOOLS: ReadonlySet<string> = new Set(["library-assistant"]);
+
+/** True when a run of this tool is library reading: the lock applies to it. */
+export function isLibraryAiTool(toolId: unknown): boolean {
+  return typeof toolId === "string" && LIBRARY_AI_TOOLS.has(toolId);
+}
 
 const MAX_SEGMENT_LENGTH = 200;
 
