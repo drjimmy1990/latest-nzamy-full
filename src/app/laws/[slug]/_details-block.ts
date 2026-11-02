@@ -3,7 +3,7 @@
  *
  * Every `<details>` in a law's text used to render as the amber amendment
  * toggle, whose summary prints «سابق» — so a never-amended law showed a
- * «previous version» badge over a schedule, an info card or a موجز. And a
+ * «previous version» badge over its موجز and info card. And a
  * `<details open><summary>…</summary>` written on ONE line (the preamble's
  * موجز, lawPreambleBlocks.ts) lost its summary: the parser skipped the whole
  * line and put the invented label «النص قبل التعديل…» in its place.
@@ -11,46 +11,86 @@
  * This module:
  *   - puts every `<details>` / `<summary>…</summary>` / `</details>` on a line
  *     of its own, so the reader's line parser sees the real summary;
- *   - says whether a block is amendment history (amber toggle) or anything
- *     else (a neutral toggle, no «سابق»);
+ *   - says whether a block is amendment history (amber «سابق» toggle) or
+ *     known current content (a neutral toggle);
  *   - cleans a summary into plain text (it is rendered as text, never HTML).
  *
- * Pure, no imports: `node --test` loads it (_details-block.test.ts).
+ * The classification follows the parser's design
+ * (scripts/parsers/lib/article-history.ts, whose label lists it imports):
+ * superseded text must never look current, so a block is history UNLESS it
+ * is known current content, and history wording in the body overrides a
+ * live-annex summary.
+ *
+ * Pure: `node --test` loads it (_details-block.test.ts).
  */
+import {
+  BEFORE_TEXT_LABELS,
+  ENGLISH_TEXT_SUMMARY_RE,
+  HISTORIC_SUMMARY_RE,
+  LIVE_ANNEX_SUMMARY_ALLOWLIST,
+  REFERENCE_LABELS,
+  REFERENCE_NOTICE_VERBS,
+  UNBOLDED_BEFORE_RE,
+  isPredominantlyLatin,
+} from "../../../../scripts/parsers/lib/article-history.ts";
 
 /** The label of a history block whose source wrote no summary. */
 export const AMENDMENT_DETAILS_FALLBACK_SUMMARY = "📜 النص قبل التعديل وتفاصيل قرار/مرسوم التعديل";
-/** The label of any other block whose source wrote no summary. */
+/** The label of a known-current block whose source wrote no summary. */
 export const GENERAL_DETAILS_FALLBACK_SUMMARY = "عرض التفاصيل";
 
-/** Arabic diacritics + tatweel, and the hamza forms of alef, for matching only. */
-function normalizeArabic(s: string): string {
-  return s.replace(/[ً-ْٰـ]/g, "").replace(/[أإآ]/g, "ا");
+/** Arabic diacritics + tatweel — the parser's stripTashkeel, for matching only. */
+function stripTashkeel(s: string): string {
+  return s.replace(/[ً-ْٰـ]/g, "");
+}
+
+/** stripTashkeel plus the hamza forms of alef («أُلغيت» = «الغيت»), for matching only. */
+function fold(s: string): string {
+  return stripTashkeel(s).replace(/[أإآ]/g, "ا");
+}
+
+function alternation(labels: readonly string[]): string {
+  return labels.map((l) => fold(l).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+}
+
+/** A line that opens with one of the parser's «before» labels: superseded wording follows. */
+const BEFORE_LABEL_LINE_RE = new RegExp(`^[\\s>*_]*(?:${alternation(BEFORE_TEXT_LABELS)})`, "m");
+/** A bold or colon-ended reference label: «**الإلغاء:**», «تعديل:», «**إضافة**:». */
+const REFERENCE_LABEL_LINE_RE = new RegExp(`^[\\s>]*\\**\\s*(?:${alternation(REFERENCE_LABELS)})\\s*\\**\\s*[:：]`, "m");
+/** A notice recording the change at a line's start: «عُدّلت…», «نُقلت…», «أُلغي…». */
+const NOTICE_LINE_RE = new RegExp(`^[\\s>*_]*(?:${alternation(REFERENCE_NOTICE_VERBS)})(?=[\\s:،.]|$)`, "m");
+
+/**
+ * The preamble's own toggles, which are never history (lawPreambleBlocks.ts:
+ * the «📝 موجز المستند…» block, the «📊 بطاقة تعريف…» card and its «➕ المزيد…»
+ * rows; lawSummaryVisibility.ts: «🗂️ البطاقة التعريفية…»). Decided before the
+ * body is read: a موجز may well say «عُدّل النظام…».
+ */
+const PREAMBLE_SUMMARY_RE = /📝[^\n]*موجز|بطاقة\s+تعريف|البطاقة\s+التعريفية|➕/;
+
+/** The parser's history evidence: the summary says so, or the body carries a label or notice. */
+function hasHistoryWording(summary: string, content: string): boolean {
+  if (HISTORIC_SUMMARY_RE.test(stripTashkeel(summary))) return true;
+  if (UNBOLDED_BEFORE_RE.test(stripTashkeel(content))) return true;
+  const body = fold(content);
+  return BEFORE_LABEL_LINE_RE.test(body) || REFERENCE_LABEL_LINE_RE.test(body) || NOTICE_LINE_RE.test(body);
 }
 
 /**
- * Summary wording that marks a block as a previous version. Mirrors the
- * parser's HISTORIC_SUMMARY_RE (scripts/parsers/lib/article-history.ts:230)
- * without «حاشية/حواشي» (a footnote is history only when its body says so,
- * BODY_HISTORY_RE below), plus «النص الأصلي» and «مرسوم/قرار التعديل».
- * Phrases only — a bare «التعديلات» in an annex title is not history.
- * Matched on normalizeArabic() text.
+ * True when the block is (or may be) a previous version of the text — the
+ * amber «سابق» toggle. False only for known current content: the preamble's
+ * موجز / info card (always), a hand-verified live annex or a confirmed English
+ * courtesy translation (unless the body carries history wording). Anything
+ * else is history, as the parser treats it.
  */
-const SUMMARY_HISTORY_RE =
-  /الاصدارات\s+السابقة|التعديلات\s+والالغاءات|نص\s+تاريخي|قبل\s+الالغاء|قبل\s+التعديل|النص\s+السابق|النص\s+الاصلي|(?:مرسوم|قرار)\s+التعديل/;
-
-/**
- * Body wording that IS amendment history: the parser's «before» labels
- * (BEFORE_TEXT_LABELS) and its bare notices (REFERENCE_NOTICE_RE: «عُدّلت…»
- * at the start of a line). Matched on normalizeArabic() text.
- */
-const BODY_HISTORY_RE =
-  /قبل\s+التعديل|قبل\s+الالغاء|النص\s+السابق|نصها\s+الاصلي|^[\s>*_]*(?:اضيفت|عدلت|الغيت|حذفت|استبدلت)(?=\s|$)/m;
-
-/** True when the block holds a previous version of the text (amber «سابق» toggle). */
 export function isAmendmentDetails(summary: string | null | undefined, content: string | null | undefined): boolean {
-  if (summary && SUMMARY_HISTORY_RE.test(normalizeArabic(summary))) return true;
-  return !!content && BODY_HISTORY_RE.test(normalizeArabic(content));
+  const s = (summary ?? "").replace(/\s+/g, " ").trim();
+  const body = content ?? "";
+  if (PREAMBLE_SUMMARY_RE.test(s)) return false;
+  if (hasHistoryWording(s, body)) return true;
+  if (LIVE_ANNEX_SUMMARY_ALLOWLIST.has(s)) return false;
+  if (ENGLISH_TEXT_SUMMARY_RE.test(s) && isPredominantlyLatin(body)) return false;
+  return true;
 }
 
 const ENTITIES: Record<string, string> = {

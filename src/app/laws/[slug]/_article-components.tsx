@@ -104,9 +104,11 @@ export function AmendedToggleDetails({
 }
 
 /**
- * Any other collapsible block in the text — a schedule, an info card, a موجز
- * (BUG-LIB-05): neutral, and no «سابق» badge. Only amendment history gets the
- * amber AmendedToggleDetails (isAmendmentDetails, _details-block.ts).
+ * A collapsible block of known CURRENT content — the preamble's موجز and info
+ * cards, a hand-verified live annex, an English courtesy translation
+ * (BUG-LIB-05): neutral, and no «سابق» badge. Everything else stays the amber
+ * AmendedToggleDetails, as the parser treats it (isAmendmentDetails,
+ * _details-block.ts): superseded text never looks current.
  */
 function GeneralToggleDetails({
   summary,
@@ -339,9 +341,10 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]", high
     <div className="space-y-1.5 w-full">
       {blocks.map((block, index) => {
         if (block.type === "details") {
-          // BUG-LIB-05: the amber «سابق» toggle only for amendment history; a
-          // schedule, an info card or a موجز folds neutrally. The summary is
-          // plain text (no leftover tags or ** marks), rendered as text.
+          // BUG-LIB-05: known current content (the موجز, an info card, a live
+          // annex) folds neutrally; anything else is the amber «سابق» toggle.
+          // The summary is plain text (no leftover tags or ** marks), rendered
+          // as text.
           const summaryText = cleanDetailsSummary(block.summary);
           const body = <MD text={block.content || ""} isDark={isDark} isRTL={isRTL} fontClass={fontClass} highlight={highlight} />;
           // A match inside the folded text opens it.
