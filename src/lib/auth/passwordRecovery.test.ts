@@ -90,12 +90,14 @@ test("after the exchange: a recovery session always lands on /reset-password, ne
   assert.equal(RESET_LINK_ERROR_PATH, "/reset-password?error=link");
 });
 
-test("recover errors: only network, server and captcha failures differ from the neutral answer", () => {
+test("recover errors: only transport, captcha and malformed-address failures differ from the neutral answer", () => {
   assert.equal(classifyRecoverError(null), "sent");
   assert.equal(classifyRecoverError({ code: "captcha_failed", status: 400, message: "captcha protection: request disallowed" }), "captcha");
   assert.equal(classifyRecoverError({ name: "AuthRetryableFetchError", status: 0, message: "Failed to fetch" }), "network");
   assert.equal(classifyRecoverError({ name: "AuthRetryableFetchError", status: 503, message: "" }), "server");
-  assert.equal(classifyRecoverError({ name: "AuthApiError", status: 500, message: "Error sending recovery email" }), "server");
+  // An API 500 (SMTP failed) only happens for a registered address: neutral.
+  assert.equal(classifyRecoverError({ name: "AuthApiError", status: 500, message: "Error sending recovery email" }), "sent");
+  assert.equal(classifyRecoverError({ name: "AuthRetryableFetchError", status: 502, message: "" }), "server");
   assert.equal(classifyRecoverError({ code: "validation_failed", status: 400, message: "Unable to validate email address: invalid format" }), "invalid_email");
   // GoTrue's per-account resend limit only fires for a registered address that
   // was just sent a link — telling it apart would say the account exists.

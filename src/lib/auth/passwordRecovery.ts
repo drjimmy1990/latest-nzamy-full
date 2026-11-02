@@ -112,19 +112,24 @@ export type RecoverOutcome = "sent" | "captcha" | "network" | "server" | "invali
  * neutral «إن كان البريد مسجلاً…» message):
  *   - 429 over_email_send_rate_limit is per account: it fires only for a
  *     registered address that was sent a link moments ago — the link is
- *     already on its way, so the neutral message is still true.
+ *     already on its way, so the neutral message is still true;
+ *   - an API 500 ("Error sending recovery email", SMTP down) comes only after
+ *     GoTrue found the user, so it too is answered neutrally. A mail outage
+ *     is therefore invisible here — the post-deploy inbox test catches it.
  * What is said differently cannot reveal an account:
  *   - captcha: checked before GoTrue looks the address up;
- *   - network (status 0) and validation (malformed address): no lookup;
- *   - 5xx: the server failed (e.g. SMTP down). Saying «تعذّر الإرسال» is the
- *     honest answer; it only differs from the neutral one while mail is broken.
+ *   - network (AuthRetryableFetchError, status 0) and validation (malformed
+ *     address): no lookup;
+ *   - gateway down (AuthRetryableFetchError with 502/503/504/52x/530 —
+ *     supabase-js raises it only for those): the same for every address.
  */
 export function classifyRecoverError(error: unknown): RecoverOutcome {
   if (!error || typeof error !== "object") return "sent";
   if (isCaptchaAuthError(error)) return "captcha";
   const { name, status, code } = error as { name?: unknown; status?: unknown; code?: unknown };
-  if (name === "AuthRetryableFetchError" && (status === 0 || status === undefined)) return "network";
-  if (typeof status === "number" && status >= 500) return "server";
+  if (name === "AuthRetryableFetchError") {
+    return status === 0 || status === undefined ? "network" : "server";
+  }
   if (code === "validation_failed" || code === "email_address_invalid") return "invalid_email";
   return "sent";
 }
