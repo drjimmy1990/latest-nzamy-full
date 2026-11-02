@@ -114,3 +114,26 @@ test("services cards: no typed price; contracts and case study read the catalogu
   // The heading above the price no longer doubles «يبدأ من».
   assert.match(src("app/services/individuals/page.tsx"), /\{isAr \? "السعر" : "Price"\}/);
 });
+
+// ── item F: the 99 SAR provider plan and the marketplace prices ──────────────
+
+test("provider dashboard: no «مزوّد خدمة مميز — ٩٩ ر.س» plan, no allowances, no upgrade button", () => {
+  const page = src("app/dashboard/provider/page.tsx");
+  const code = page.replace(/^\s*\/\/.*$/gm, "").replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
+  assert.doesNotMatch(code, /٩٩ ر\.س|99 SAR/);
+  assert.doesNotMatch(code, /١٠ استخدامات\/يوم|٣\/شهر|١\/يوم مجاناً/, "an allowance of a plan nothing sells");
+  assert.doesNotMatch(code, /مقفل — المميز|ترقية الآن/);
+  assert.match(code, /باقة مزوّد الخدمة المميز/);
+  // The consult tile opens a gated tool: «قريباً».
+  assert.match(code, /\{ label: "المستشار الذكي", desc: "قريباً", +icon: Robot, +locked: false, href: "\/ai\/consult" \}/);
+});
+
+test("pro marketplace: every product says «قريباً», no typed price", () => {
+  const page = src("app/pro/marketplace/page.tsx");
+  const code = page.replace(/^\s*\/\/.*$/gm, "");
+  assert.doesNotMatch(code, /ر\.س|SAR \d/);
+  assert.equal((code.match(/price: +SOON,/g) ?? []).length, 6);
+  assert.match(code, /const SOON = \{ ar: "قريباً", en: "Coming soon" \};/);
+  // Still parked behind BETA_MONOPOLY_MODE.
+  assert.match(src("app/pro/marketplace/layout.tsx"), /if \(BETA_MONOPOLY_MODE\) redirect\("\/services"\);/);
+});

@@ -37,13 +37,18 @@ const CATEGORIES = [
   { id: "support",    label: { ar: "خدمات الدعم",         en: "Support Services" },  icon: Headset },
 ];
 
+// Wave 1 task 6 (F): no product here has a vendor, an order or a charge —
+// the old «٢٩٩ / ١٩٩ / ١٤٩ / ٩٩ / ٢٤٩ ر.س/شهر» and «٣٩٩ ر.س/مراجعة» were
+// charged by nothing. Each card says «قريباً» instead of a price.
+const SOON = { ar: "قريباً", en: "Coming soon" };
+
 const PRODUCTS = [
   {
     id: 1, category: "ai",
     name:    { ar: "الصائغ القانوني Pro", en: "Legal Drafter Pro" },
     vendor:  { ar: "ذكاء نظامي", en: "Nezamy AI" },
     desc:    { ar: "توليد مسودات قانونية متكاملة بالذكاء الاصطناعي — عقود، مذكرات، ردود، في ثوانٍ", en: "Generate complete legal drafts with AI — contracts, memos, responses, in seconds" },
-    price:   { ar: "٢٩٩ ر.س/شهر", en: "SAR 299/mo" },
+    price:   SOON,
     rating: 4.9, reviews: 312, verified: true,
     // No «الأكثر مبيعاً» badge (owner, Q164): there are no sales to rank.
     badge:   null, badgeColor: "",
@@ -55,7 +60,7 @@ const PRODUCTS = [
     name:    { ar: "مراقب الامتثال التنظيمي", en: "Regulatory Compliance Monitor" },
     vendor:  { ar: "ذكاء نظامي", en: "Nezamy AI" },
     desc:    { ar: "متابعة التغييرات التنظيمية تلقائياً وإشعارك عند صدور لوائح أو أحكام تؤثر على ملفاتك", en: "Auto-track regulatory changes and alert you when rules or rulings affect your files" },
-    price:   { ar: "١٩٩ ر.س/شهر", en: "SAR 199/mo" },
+    price:   SOON,
     rating: 4.8, reviews: 187, verified: true,
     badge:   { ar: "محدّث باستمرار", en: "Always Updated" }, badgeColor: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
     features: { ar: ["تنبيهات فورية", "تغطية كاملة للأنظمة السعودية", "تقارير أسبوعية"], en: ["Real-time alerts", "Full Saudi regulations coverage", "Weekly reports"] },
@@ -66,7 +71,7 @@ const PRODUCTS = [
     name:    { ar: "مدير العقود الذكي", en: "Smart Contract Manager" },
     vendor:  { ar: "ذكاء نظامي", en: "Nezamy AI" },
     desc:    { ar: "تنظيم وتتبع وتجديد عقودك تلقائياً مع تنبيهات انتهاء الصلاحية ومراجعة AI للبنود الخطرة", en: "Automatically organize, track, and renew your contracts with expiry alerts and AI risk clause review" },
-    price:   { ar: "١٤٩ ر.س/شهر", en: "SAR 149/mo" },
+    price:   SOON,
     rating: 4.7, reviews: 243, verified: true,
     badge:   null, badgeColor: "",
     features: { ar: ["تنبيهات الانتهاء", "تحليل بنود الخطر", "توقيع إلكتروني"], en: ["Expiry alerts", "Risk clause analysis", "e-Signature"] },
@@ -77,7 +82,7 @@ const PRODUCTS = [
     name:    { ar: "لوحة تحليلات الأداء Pro", en: "Performance Analytics Dashboard Pro" },
     vendor:  { ar: "نظامي Analytics", en: "Nezamy Analytics" },
     desc:    { ar: "تقارير مفصّلة عن أداء مكتبك: الإيرادات، مراحل القضايا ومهلها، إنتاجية الفريق، ورضا الموكلين", en: "Detailed reports on your firm's performance: revenue, case win rate, team productivity, and client satisfaction" },
-    price:   { ar: "٩٩ ر.س/شهر", en: "SAR 99/mo" },
+    price:   SOON,
     rating: 4.6, reviews: 156, verified: true,
     badge:   null, badgeColor: "",
     features: { ar: ["١٥+ تقرير تلقائي", "تصدير Excel/PDF", "مقارنة شهرية"], en: ["15+ auto reports", "Excel/PDF export", "Monthly comparison"] },
@@ -88,7 +93,7 @@ const PRODUCTS = [
     name:    { ar: "محاكي الخصم (Wargaming)", en: "Opponent Simulator (Wargaming)" },
     vendor:  { ar: "ذكاء نظامي", en: "Nezamy AI" },
     desc:    { ar: "AI يحاكي حجج الطرف الآخر في قضيتك ويساعدك في بناء دفاع صلب قبل الجلسة", en: "AI simulates opposing party arguments and helps you build a solid defense before the hearing" },
-    price:   { ar: "٢٤٩ ر.س/شهر", en: "SAR 249/mo" },
+    price:   SOON,
     rating: 4.8, reviews: 98, verified: true,
     badge:   { ar: "جديد", en: "New" }, badgeColor: "bg-royal/10 text-royal dark:text-emerald-400",
     features: { ar: ["محاكاة 3 سيناريوهات", "تحليل نقاط الضعف", "مقترحات دفاع AI"], en: ["3-scenario simulation", "Weakness analysis", "AI defense suggestions"] },
@@ -99,7 +104,7 @@ const PRODUCTS = [
     name:    { ar: "مراجعة قانونية متخصصة", en: "Specialist Legal Review" },
     vendor:  { ar: "شبكة محامي نظامي", en: "Nezamy Lawyer Network" },
     desc:    { ar: "مراجعة عقودك ومستنداتك من محامٍ متخصص خلال ٢٤ ساعة مع تقرير تفصيلي", en: "Get your contracts and documents reviewed by a specialist lawyer within 24 hours with a detailed report" },
-    price:   { ar: "٣٩٩ ر.س/مراجعة", en: "SAR 399/review" },
+    price:   SOON,
     rating: 5.0, reviews: 421, verified: true,
     badge:   { ar: "الأعلى تقييماً", en: "Top Rated" }, badgeColor: "bg-gold/15 text-gold-dark dark:text-gold",
     features: { ar: ["رد خلال ٢٤ ساعة", "محامٍ متخصص", "تقرير تفصيلي + توصيات"], en: ["24h turnaround", "Specialist lawyer", "Detailed report + recommendations"] },
