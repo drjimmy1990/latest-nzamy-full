@@ -8,7 +8,9 @@
  *                      tool → role → Art. 18 → mode → input → key → files
  *                      → [library tool: the library gate + tier rule]
  *                      → ai_start_run (daily limit + balance + debit, one
- *                        transaction)
+ *                        transaction) — or, when the body asks `useCredit`
+ *                        and the run qualifies, ai_start_run_with_credit
+ *                        (a founder credit instead of points, P3)
  *                      → [library tool: searches → texts, refunded when none]
  *                      → the package → n8n
  *                    fast tool: n8n's reply is settled here, in the request;
@@ -33,6 +35,7 @@ import { cleanQueries, type PackageSource, type RetrievalLimits, type RetrievalP
 import type { AiFile, FileRules, FilesCheck } from "./aiFiles.ts";
 import { enrichBriefCheck } from "./citationCheck.ts";
 import { articleRefs, bareArticleNumbers } from "./questionRefs.ts";
+import { creditKindForRun } from "../membership/founderPlan.ts";
 
 /**
  * Tools whose result the app completes from its own data before storing it.
@@ -108,6 +111,8 @@ export const AI_COPY = {
   conversation: "معرّف المحادثة غير صالح — ابدأ محادثة جديدة",
   conversationFull: "اكتملت هذه المحادثة — ابدأ محادثة جديدة لتكمل",
   filesRequired: "أرفق مستندات الوقائع أو اكتبها",
+  noCredit: "لا يتبقى لك رصيد من باقة المؤسس لهذه الأداة",
+  creditNotEligible: "هذه الأداة لا تُدفع من رصيد باقة المؤسس",
 } as const;
 
 /** The search writer's wait: short, so the answer keeps most of the fast budget. */
@@ -250,6 +255,8 @@ interface StartedRun {
   status: string;
   charged: boolean;
   charged_points: number;
+  /** ai_start_run_with_credit only: true when this call spent a founder credit. */
+  credit_used?: boolean;
 }
 
 export async function startRunWith(
@@ -383,7 +390,15 @@ export async function startRunWith(
   const startedAt = clock();
   let sources: SourceMap = {};
 
-  const { data, error } = await admin.rpc("ai_start_run", {
+  // A founder credit pays instead of points when the client asks and the run
+  // qualifies (founderPlan.creditKindForRun). The turn is the one read above
+  // from this user's own runs, never the client's: a drafter's second turn reads
+  // 1 there and so goes to plain ai_start_run at price 0. An exempt caller (admin)
+  // never spends a credit. Anything else that asks falls back to points.
+  const creditKind = !isAdmin && req.useCredit === true ? creditKindForRun(spec.id, checked.input, turn) : null;
+  const startFn = creditKind ? "ai_start_run_with_credit" : "ai_start_run";
+
+  const { data, error } = await admin.rpc(startFn, {
     p_user: actor.userId,
     p_tool: spec.id,
     p_variant: null,
@@ -398,8 +413,17 @@ export async function startRunWith(
     p_pages: pages,
     p_conversation: conversationId,
     p_source_ids: sources,
+    ...(creditKind ? { p_credit_kind: creditKind } : {}),
   });
   if (error) {
+    // A credit request never falls back to points on these: the user asked to
+    // spend a credit, so he is told why it was not.
+    if (error.message === "no_credit") {
+      return { status: 402, body: { error: AI_COPY.noCredit, code: "no_credit" } };
+    }
+    if (error.message === "credit_not_eligible") {
+      return { status: 400, body: { error: AI_COPY.creditNotEligible, code: "credit_not_eligible" } };
+    }
     if (error.message === "insufficient_points") {
       return { status: 402, body: { error: AI_COPY.points, code: "insufficient_points", price } };
     }
@@ -409,19 +433,23 @@ export async function startRunWith(
     if (isMissingFunction(error.code)) {
       return { status: 503, body: { error: AI_COPY.notReady, code: "not_ready" } };
     }
-    console.error("[ai] ai_start_run failed:", spec.id, error.code, error.message);
+    console.error(`[ai] ${startFn} failed:`, spec.id, error.code, error.message);
     return { status: 503, body: { error: AI_COPY.unavailable, code: "unavailable" } };
   }
   const run = (Array.isArray(data) ? data[0] : data) as StartedRun | undefined;
   if (!run?.run_id) {
-    console.error("[ai] ai_start_run returned no run:", spec.id);
+    console.error(`[ai] ${startFn} returned no run:`, spec.id);
     return { status: 503, body: { error: AI_COPY.unavailable, code: "unavailable" } };
   }
   if (!run.created) {
     return { status: 409, body: { error: AI_COPY.duplicate, code: "duplicate", runId: run.run_id, status: run.status } };
   }
 
-  const charged = { chargedPoints: run.charged_points, ...(conversationId ? { conversationId } : {}) };
+  const charged = {
+    chargedPoints: run.charged_points,
+    creditUsed: run.credit_used === true,
+    ...(conversationId ? { conversationId } : {}),
+  };
 
   // Charged first, so the daily limit and the balance hold for the searches
   // too; every way out below refunds.

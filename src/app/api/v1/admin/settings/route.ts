@@ -3,7 +3,11 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
-import { founderCampaignSettingIssue } from "@/lib/pricing/campaigns";
+import {
+  founderCampaignSettingIssue,
+  founderCapacityLiteralIssue,
+  mergeFounderCampaignSetting,
+} from "@/lib/pricing/campaigns";
 import { aiToolsSettingIssue } from "@/lib/ai/aiToolsConfig";
 import { AI_TOOLS } from "@/lib/ai/tools";
 import {
@@ -26,6 +30,9 @@ const ALLOWED_SETTINGS_KEYS = [
   // dates read as "off" — so the write is validated below. Since 20261026_01
   // (owner, 25 Oct) no signup trigger reads it: nothing is granted on signup,
   // and library_days is unused until the paid founder membership (P3).
+  // P3 (20261101_10, ruling R1) adds "capacity" (int 1..100000) and
+  // "sale_paused" (boolean); a PATCH MERGES into the stored value, so the
+  // settings page's dates-only post never wipes them.
   "founder_campaign",
   // Moyasar B1 (20261022_10): the receipt's issuer —
   // {"legal_name_ar","cr_number","vat_number","address_ar": string | null}.
@@ -97,7 +104,8 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
     typeof value === "boolean" ? null : "قيمة points_enforcement يجب أن تكون true أو false",
   // A malformed date reads as "campaign off" in founder_campaign_active(), so a
   // typo would silently stop the campaign — refuse it here instead.
-  // Pure, so src/lib/pricing/campaigns.test.ts covers it.
+  // Pure, so src/lib/pricing/campaigns.test.ts covers it. Runs on the MERGED
+  // value (stored keys + posted keys), see PATCH.
   founder_campaign: founderCampaignSettingIssue,
   // Pure, so src/lib/ai/runCore.test.ts covers it.
   ai_tools: (value) => aiToolsSettingIssue(value, Object.keys(AI_TOOLS)),
@@ -194,7 +202,10 @@ export async function GET() {
  * Allowed keys: 'library_free_article_limit', 'library_whitelisted_laws',
  *               'library_free_law_overrides'
  *
- * Upserts into platform_settings table.
+ * Upserts into platform_settings table. `founder_campaign` is merged into
+ * the stored value first (posted keys win, the others are kept — R1), and its
+ * raw `capacity` literal must be digits only (50.0 is refused: JSON.parse
+ * would hide it, and the SQL reads a non-integer as 1096).
  *
  * Requires: a staff role with settings.write (owner ٢١٠); each change is
  * audited with the value before and after.
@@ -205,10 +216,19 @@ export async function PATCH(request: NextRequest) {
   if (!gate.ok) return gate.response;
 
   // ── Parse body ─────────────────────────────────────────────────────────────
+  // Read as text first: the founder_campaign capacity check needs the literal.
+  let raw: string;
   let body: { key: string; value: unknown };
   try {
-    body = await request.json();
+    raw = await request.text();
+    body = JSON.parse(raw);
   } catch {
+    return NextResponse.json(
+      { error: "بيانات غير صالحة" },
+      { status: 400 },
+    );
+  }
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
     return NextResponse.json(
       { error: "بيانات غير صالحة" },
       { status: 400 },
@@ -234,24 +254,58 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
+  const adminClient = await createServiceClient();
+
+  // ── founder_campaign: the raw capacity literal, then merge (R1) ────────────
+  // What is stored: the posted value, or for founder_campaign the posted keys
+  // over the stored ones. A failed read of the stored value refuses the write
+  // — merging into nothing would wipe capacity / sale_paused.
+  let toStore: unknown = value;
+  let storedBefore: { value: unknown } | null | undefined;
+  if (key === "founder_campaign") {
+    const literal = founderCapacityLiteralIssue(raw);
+    if (literal) {
+      return NextResponse.json({ error: literal }, { status: 400 });
+    }
+    try {
+      const { data: stored, error: storedError } = await adminClient
+        .from("platform_settings")
+        .select("value")
+        .eq("key", key)
+        .maybeSingle();
+      if (storedError) throw storedError;
+      storedBefore = stored ?? null;
+    } catch (err) {
+      console.error("[admin/settings] founder_campaign read before merge failed:", err);
+      return NextResponse.json(
+        { error: "تعذّر قراءة إعداد الحملة الحالي — لم يُحفظ شيء، حاول مجدداً" },
+        { status: 503 },
+      );
+    }
+    toStore = mergeFounderCampaignSetting(storedBefore?.value ?? null, value);
+  }
+
   // ── Validate the value shape for safety-critical keys ──────────────────────
   const validate = SETTINGS_VALUE_VALIDATORS[key];
   if (validate) {
-    const invalid = await validate(value, { billingCompanyComplete: readBillingCompanyComplete });
+    const invalid = await validate(toStore, { billingCompanyComplete: readBillingCompanyComplete });
     if (invalid) {
       return NextResponse.json({ error: invalid }, { status: 400 });
     }
   }
 
-  const adminClient = await createServiceClient();
-
   try {
     // ── The value before, for the audit row (a failed read only loses that) ──
-    const { data: previous } = await adminClient
-      .from("platform_settings")
-      .select("value")
-      .eq("key", key)
-      .maybeSingle();
+    const previous =
+      storedBefore !== undefined
+        ? storedBefore
+        : (
+            await adminClient
+              .from("platform_settings")
+              .select("value")
+              .eq("key", key)
+              .maybeSingle()
+          ).data;
 
     // ── Upsert setting ─────────────────────────────────────────────────────
     const { data, error } = await adminClient
@@ -259,7 +313,7 @@ export async function PATCH(request: NextRequest) {
       .upsert(
         {
           key,
-          value,
+          value: toStore,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "key" },
@@ -277,7 +331,7 @@ export async function PATCH(request: NextRequest) {
       targetType: "platform_setting",
       targetId: key,
       before: { value: previous?.value ?? null },
-      after: { value },
+      after: { value: toStore },
     });
 
     return NextResponse.json({

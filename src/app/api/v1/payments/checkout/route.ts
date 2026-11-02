@@ -29,6 +29,10 @@ import { frozenAccountResponse } from "@/lib/auth/apiAuth";
  * startCheckoutWith in src/lib/payments/checkoutCore.ts, tested there.
  * The browser must put the response's `orderId` into the payment's
  * metadata.order_id (Task 7).
+ * P3: a founder membership's seat is reserved through the
+ * founder_reserve_seat RPC (20261101_10, service role only) — the
+ * reserveFounderSeat dependency below; an RPC error throws into
+ * startCheckoutWith, which cancels the order and answers 503.
  */
 
 function reply(body: object, status = 200) {
@@ -95,7 +99,19 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await startCheckoutWith(
-      { admin, client },
+      {
+        admin,
+        client,
+        reserveFounderSeat: async (userId, orderId) => {
+          const { data, error } = await admin.rpc("founder_reserve_seat", { p_user: userId, p_order: orderId });
+          if (error) throw new Error(`founder_reserve_seat ${error.code ?? "error"}`);
+          return typeof data === "string" ? data : "";
+        },
+        releaseFounderSeat: async (orderId) => {
+          const { error } = await admin.rpc("founder_release_order", { p_order: orderId });
+          if (error) throw new Error(`founder_release_order ${error.code ?? "error"}`);
+        },
+      },
       {
         user: { id: user.id, email: user.email ?? null },
         itemId: parsed.itemId,

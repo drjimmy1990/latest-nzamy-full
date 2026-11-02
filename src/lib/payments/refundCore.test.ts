@@ -107,3 +107,55 @@ test("the refund notice says the refund started and may take days, never that it
   assert.ok(REFUND_NOTICE_AR.body.includes("بدأت إعادة المبلغ إلى وسيلة الدفع الأصلية، وقد يستغرق ظهوره في حسابك عدة أيام حسب البنك"));
   assert.ok(!REFUND_NOTICE_AR.body.includes("تمت إعادة") && !REFUND_NOTICE_AR.title.includes("تم استرداد"));
 });
+
+// ── P3 Task 5: refunding the founder membership revokes it (founder_revoke), never a points lot ──
+function setupMember(over: Record<string, unknown> = {}, revoke: { data?: unknown; error?: { code: string; message: string } } = { data: "revoked" }) {
+  const base = setup({ kind: "membership", total_halalas: 344540, ...over } as Partial<typeof order>);
+  const events: string[] = [];
+  const db = fakeDb(q => {
+    events.push(q.table);
+    if (q.table === "payment_orders") return { data: { ...order, kind: "membership", total_halalas: 344540, ...over } };
+    if (q.table === "points_lots") return { data: [] };
+    if (q.table === "claim_payment_refund") return { data: job };
+    if (q.table === "founder_revoke") return revoke;
+    if (q.table === "finish_payment_refund") return { data: { done: true, tier: "free" } };
+    return {};
+  });
+  const mpay = { ...payment, amount: 344540, captured: 344540 };
+  const deps = { ...base.deps, admin: db.client, gateway: async (): Promise<Pick<MoyasarClient, "mode" | "fetchPayment" | "refund" | "void">> => ({ mode: "test" as const, fetchPayment: async () => ({ ok: true as const, data: mpay }), refund: async () => { events.push("gateway-refund"); return { ok: true as const, data: { ...mpay, status: "refunded" as const, refunded: 344540 } }; }, void: async () => { events.push("gateway-void"); return { ok: true as const, data: { ...mpay, status: "voided" as const } }; } }), syncTier: async () => { events.push("tier"); }, notify: async () => { events.push("notice"); } };
+  return { deps, events, log: db.log };
+}
+test("membership refund: claimed, money back, founder_revoke(order, 'refund') BEFORE the atomic finish, then the notice — no points lots read or revoked", async () => {
+  const { deps, events, log } = setupMember();
+  assert.equal((await refundOrderWith(deps, "o", "admin", true)).status, 200);
+  assert.deepEqual(events, ["payment_orders", "claim_payment_refund", "gateway-refund", "founder_revoke", "finish_payment_refund", "notice"]);
+  assert.deepEqual(log.find(q => q.table === "founder_revoke")?.payload, { p_order: "o", p_reason: "refund" });
+  assert.ok(!events.includes("points_lots") && !events.includes("revoke_lot"));
+  assert.ok(!events.includes("tier"), "a membership is not a plan: no tier sync");
+});
+test("membership refund preview: the super_admin gets a review (the button acts), with the founder warning and no lots read", async () => {
+  const { deps, events } = setupMember();
+  const r = await refundOrderWith(deps, "o", "admin", false);
+  assert.equal(r.status, 200);
+  assert.ok("warnings" in r.body && r.body.warnings?.some((w: string) => w.includes("المؤسس")));
+  assert.deepEqual(events, ["payment_orders"]);
+});
+test("membership refund: a founder_revoke error answers 503 and never finishes; the retry revokes then finishes without refunding again", async () => {
+  const { deps, events } = setupMember({}, { error: { code: "40001", message: "x" } });
+  assert.equal((await refundOrderWith(deps, "o", "admin", true)).status, 503);
+  assert.ok(!events.includes("finish_payment_refund"));
+  const retry = setupMember({ metadata: { refund_job: job } }, { data: "none" });
+  retry.deps.gateway = async () => ({ mode: "test", fetchPayment: async () => ({ ok: true, data: { ...payment, amount: 344540, status: "refunded", refunded: 344540 } }), refund: async () => { throw new Error("must not resend"); }, void: async () => { throw new Error("must not resend"); } });
+  assert.equal((await refundOrderWith(retry.deps, "o", "admin", true)).status, 200);
+  assert.deepEqual(retry.events, ["payment_orders", "founder_revoke", "finish_payment_refund", "notice"]);
+});
+test("membership refund: an order that never got a seat (seat_unavailable / already_member) — founder_revoke 'none' — still refunds", async () => {
+  const { deps, events } = setupMember({ metadata: { founder: "seat_unavailable", already_entitled: true } }, { data: "none" });
+  assert.equal((await refundOrderWith(deps, "o", "admin", true)).status, 200);
+  assert.ok(events.includes("founder_revoke") && events.includes("finish_payment_refund"));
+});
+test("a top-up or plan refund never calls founder_revoke", async () => {
+  const { deps, events } = setup();
+  assert.equal((await refundOrderWith(deps, "o", "admin", true)).status, 200);
+  assert.ok(!events.includes("founder_revoke"));
+});

@@ -38,7 +38,9 @@ export async function refundOrderWith(deps: RefundDeps, orderId: string, actorId
       if (granted.error) return unavailable();
       if (granted.data?.status === "cancelled") return fail(409, "استُبدلت هذه الباقة بعملية لاحقة؛ يلزم مراجعة فترات الاشتراك قبل الاسترداد");
     }
-    const lots = await deps.admin.from("points_lots").select("points_total,points_left").eq("order_id", orderId);
+    // P3: a membership grants no points lot — nothing to read (or revoke) there
+    const isMembership = order.kind === "membership";
+    const lots = isMembership ? { data: [], error: null } : await deps.admin.from("points_lots").select("points_total,points_left").eq("order_id", orderId);
     if (lots.error) return unavailable();
     const rows = (lots.data ?? []) as Array<{ points_total: number; points_left: number }>;
     const total = rows.reduce((n,l) => n + l.points_total,0);
@@ -75,6 +77,15 @@ export async function refundOrderWith(deps: RefundDeps, orderId: string, actorId
       if (p.id !== payment.id || p.amount !== order.total_halalas || p.currency !== "SAR"
           || p.metadata.order_id !== order.id || (typeof p.live === "boolean" && p.live !== order.live)
           || !(job.method === "void" ? p.status === "voided" : p.status === "refunded" && p.refunded === order.total_halalas)) return fail(502, "نتيجة الاسترداد غير مؤكدة؛ يلزم مراجعة لدى مزوّد الدفع");
+    }
+    // P3: the founder seat goes BEFORE the atomic finish. finish flips the order
+    // to refunded and a retry is then refused at the status check, so a revoke
+    // after it could never be retried. An error here leaves the order paid with
+    // the claim in place: the retry skips the gateway (already reversed),
+    // revokes ('none' the second time) and finishes.
+    if (isMembership) {
+      const revoked = await deps.admin.rpc("founder_revoke", { p_order: order.id, p_reason: "refund" });
+      if (revoked.error) return unavailable();
     }
     const finished = await deps.admin.rpc("finish_payment_refund", { p_order: order.id, p_token: job.token, p_method: job.method });
     if (finished.error || !finished.data?.done) return unavailable();

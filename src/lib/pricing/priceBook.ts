@@ -2,7 +2,7 @@
  * priceBook.ts — the one server price book (owner's pricing doc, 25 Oct 2026,
  * §2 rule 4: «وحدة مرجع السعر — Single PriceBook»).
  *
- * Every plan, library pass and top-up sold online lives here, once, in SAR,
+ * Every plan, library pass, top-up and membership sold online lives here, once, in SAR,
  * BEFORE VAT (§2 rule 5, answer ٢٥٨: every price on the platform is
  * VAT-exclusive; 15 % is added at checkout and on the receipt). Everything
  * else derives from it:
@@ -83,7 +83,12 @@ export const BILLING_LABEL_EN: Readonly<Record<Billing, string>> = Object.freeze
 export const PROFESSIONAL_CYCLES: readonly Cycle[] = Object.freeze(["quarterly", "semiannual", "yearly"] as const);
 export const INDIVIDUAL_CYCLES: readonly Cycle[] = CYCLES;
 
-export type BookItemKind = "plan" | "library" | "topup";
+/**
+ * `membership` (P3): a one-payment founder membership. It grants no tier and
+ * no points: activation (founder_activate, 20261101_10) writes a seat,
+ * credits, a library grant and the badge. Billed once, so no saved card.
+ */
+export type BookItemKind = "plan" | "library" | "topup" | "membership";
 
 /** The paid tiers a plan grants — a subset of ServerTier in src/lib/access-control.ts. */
 export type ServerTierLiteral = "ai" | "pro" | "max" | "corp" | "enterprise";
@@ -235,6 +240,21 @@ function topup(
 }
 
 /**
+ * A one-payment membership (P3). The id is src/lib/membership/founderPlan.ts's
+ * FOUNDER_PLAN_ID, written out here so the book imports nothing from it
+ * (founderPlan.test.ts holds the two together).
+ */
+function membership(id: string, labelAr: string, sar: number, buyers: readonly string[]): BookEntry {
+  return freezeEntry({
+    id,
+    kind: "membership",
+    labelAr,
+    prices: { once: { sar } },
+    buyers: [...buyers],
+  });
+}
+
+/**
  * The book. The professionals' MONTHLY cycle is retired (the owner confirmed
  * on 26 Oct 2026 that the 399 monthly plan is cancelled; professionals never
  * pay monthly — pricing doc §2 rule 1): checkout refuses it (410), while
@@ -255,10 +275,15 @@ function topup(
  *     for professionals only, the doc's everyday balance (its larger «فترة
  *     العروض» balance is not dated by the owner, so it is not granted), valid
  *     3 / 6 / 12 / 12 / 12 months.
+ * P3 (founder kit r7, 1 Nov 2026): the LAWYER founder membership
+ * `lawyer-founder-2026` is in the book — 2,996 before VAT, one payment,
+ * lawyers only. Its window (2026-11-01 → 2027-01-25) and its 1,096 seats are
+ * enforced at checkout and in SQL (founder_reserve_seat), not by a launch
+ * price here. There is no client or business founder plan.
  * Still waiting (the doc's own numbers need the owner): lawyer-pro and
- * consultant-independent → erp-* / bundle-* (P2), the founder memberships
- * (P3), ind-preventive / ind-litigation (the revised §7أ prices neither the
- * same way as today — owner question in the ledger).
+ * consultant-independent → erp-* / bundle-* (P2), ind-preventive /
+ * ind-litigation (the revised §7أ prices neither the same way as today —
+ * owner question in the ledger).
  */
 export const PRICE_BOOK: Readonly<Record<string, BookEntry>> = Object.freeze({
   "lawyer-pro": plan("lawyer-pro", "المحامي المحترف", { monthly: 399, yearly: 3990 }, "pro", ["lawyer"], ["monthly"]),
@@ -302,6 +327,7 @@ export const PRICE_BOOK: Readonly<Record<string, BookEntry>> = Object.freeze({
   "topup-2500": topup("topup-2500", "شحن ٢٬٥٠٠ (٣٬٥٠٠ نقطة)", 2500, 3500, 12, PROFESSIONAL_BUYERS),
   "topup-5000": topup("topup-5000", "شحن ٥٬٠٠٠ (٨٬٥٠٠ نقطة)", 5000, 8500, 12, PROFESSIONAL_BUYERS),
   "topup-10000": topup("topup-10000", "شحن ١٠٬٠٠٠ (٢٥٬٠٠٠ نقطة)", 10000, 25000, 12, PROFESSIONAL_BUYERS),
+  "lawyer-founder-2026": membership("lawyer-founder-2026", "باقة المحامي المؤسس", 2996, ["lawyer"]),
 });
 
 // ── lookups ─────────────────────────────────────────────────────────────────

@@ -108,6 +108,15 @@ test("never on a point top-up — even when a row forgot to exclude it — nor o
   assert.equal(couponRefusalAr(d, formatHalalas), COUPON_NOT_FOR_ITEM_AR);
 });
 
+test("P3: never on the founder membership — its first-year price is already the discount, whatever a row excludes", () => {
+  for (const row of [NZAMY50, { ...NZAMY50, excluded_kinds: [] }, { ...NZAMY50, excluded_kinds: null }]) {
+    const d = evaluateCoupon(row, ctx({ kind: "membership", userType: "lawyer", netHalalas: 299600 }));
+    assert.deepEqual(d, { ok: false, reason: "not_for_item" });
+    if (d.ok) throw new Error("unreachable");
+    assert.equal(couponRefusalAr(d, formatHalalas), COUPON_NOT_FOR_ITEM_AR);
+  }
+});
+
 test("inactive, not started, expired, used up, wrong audience, points / plan coupons: all the generic refusal", () => {
   const cases: Array<[CouponRow | null, Partial<CouponContext>]> = [
     [null, {}],

@@ -331,7 +331,7 @@ export interface FulfilmentNotice {
 
 /** The in-app notification a fulfilled order sends (title and a non-empty body). */
 export function fulfilmentNoticeAr(input: {
-  kind: "plan" | "library" | "topup";
+  kind: "plan" | "library" | "topup" | "membership";
   labelAr: string;
   receiptNumber: string | null;
   alreadyEntitled: boolean;
@@ -340,6 +340,14 @@ export function fulfilmentNoticeAr(input: {
   const receipt = input.receiptNumber ? ` رقم الإيصال: ${input.receiptNumber}.` : "";
   const href = "/dashboard/billing";
 
+  if (input.alreadyEntitled && input.kind === "membership") {
+    // P3: paid, no seat (seats full, licence not verified, or already a member)
+    return {
+      title: "دفعتك قيد المراجعة",
+      body: `استلمنا دفعتك مقابل ${label}، ولم تُفعَّل بها عضوية مؤسِّسة.${receipt} ستراجع الإدارة الدفعة لاسترداد المبلغ.`,
+      href,
+    };
+  }
   if (input.alreadyEntitled) {
     return {
       title: "دفعتك قيد المراجعة",
@@ -351,6 +359,15 @@ export function fulfilmentNoticeAr(input: {
     return {
       title: "أُضيفت النقاط إلى رصيدك",
       body: `تم الدفع وإضافة نقاط ${label} إلى رصيدك.${receipt}`,
+      href,
+    };
+  }
+  if (input.kind === "membership") {
+    // founder_activate (20261101_10): 12 months from activation. Never «من اليوم»:
+    // the body is stored as a notification and re-shown on a later visit.
+    return {
+      title: "تم تفعيل عضويتك المؤسِّسة",
+      body: `تم الدفع وتفعيل ${label} لمدة ١٢ شهراً من تاريخ التفعيل.${receipt}`,
       href,
     };
   }

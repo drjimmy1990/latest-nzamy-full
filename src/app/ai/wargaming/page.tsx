@@ -29,6 +29,8 @@ import { splitAiReadable } from "@/components/ai/aiReadable";
 import { WAVE4_PRICE } from "@/lib/ai/tools";
 import { asSimResult } from "./_simResult";
 import SimResultView from "./_SimResultView";
+import FounderCreditChoice from "@/components/membership/FounderCreditChoice";
+import { founderCreditChoiceKey, FOUNDER_CREDIT_PRICE_TEXT } from "@/lib/membership/founderPlan";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type SimTarget  = "opponent" | "court" | "critique" | "plea";
@@ -922,6 +924,10 @@ function AIWargamingPage() {
   // simulated at once by the `wargaming` job (250 points). Only PDF and image
   // files go to it; a memo counts for «نقض المذكرة» only if it is one of them.
   const ai = useAiRun();
+  // P3: a founder lawyer may spend his one independent output on the
+  // simulation instead of points. A consultant never gets here (ConsultantGate),
+  // so the choice is never offered where the run would be refused.
+  const [useCredit, setUseCredit] = useState(false);
   const simResult = ai.phase === "done" ? asSimResult(ai.output) : null;
   const { ids: aiFileIds, skipped: aiSkipped } = splitAiReadable(attachments);
   const critique = targets.has(WARGAMING_CRITIQUE_TARGET);
@@ -940,7 +946,7 @@ function AIWargamingPage() {
         memo_text: critique ? memoText.trim() || null : null,
         memo_in_files: critique && memoAttachmentIds.some(id => aiFileIds.includes(id)),
       },
-      { fileIds: aiFileIds },
+      { fileIds: aiFileIds, ...(useCredit ? { useCredit: true } : {}) },
     );
   }
 
@@ -1144,7 +1150,7 @@ function AIWargamingPage() {
               <p className={`text-[12px] font-bold ${D?"text-zinc-200":"text-zinc-800"}`}>أو: محاكاة فورية بالذكاء الاصطناعي</p>
               <p className={`text-[11px] leading-relaxed ${D?"text-zinc-400":"text-zinc-500"}`}>
                 تُجري المحاكاة على الأهداف المختارة الآن وتعرض النتيجة هنا، وتتحقق المنصة من كل مادة تستند إليها في مكتبة الأنظمة ·
-                {" "}{WAVE4_PRICE.toLocaleString("ar-SA")} نقطة · تُرسل نسخة من الملخص والمرفقات إلى مزوّد ذكاء اصطناعي خارج المملكة.
+                {" "}{useCredit ? FOUNDER_CREDIT_PRICE_TEXT : `${WAVE4_PRICE.toLocaleString("ar-SA")} نقطة`} · تُرسل نسخة من الملخص والمرفقات إلى مزوّد ذكاء اصطناعي خارج المملكة.
               </p>
               {aiSkipped.length > 0 && (
                 <p className="text-[11px] text-amber-500">
@@ -1154,10 +1160,12 @@ function AIWargamingPage() {
               {critique && !memoForAi && (
                 <p className="text-[11px] text-amber-500">«نقض المذكرة» في المحاكاة الفورية يحتاج نص المذكرة أو ملفها بصيغة PDF أو صورة.</p>
               )}
+              <FounderCreditChoice key={founderCreditChoiceKey(ai.phase, ai.creditUsed, ai.runId)} kind="independent_output"
+                value={useCredit} onChange={setUseCredit} isDark={D} disabled={ai.busy}/>
               <button type="button" onClick={runAi} disabled={aiBlocked}
                 className={`flex w-full items-center justify-center gap-2 rounded-xl border px-6 py-2.5 text-[13px] font-bold disabled:opacity-40 ${D?"border-[#C8A762]/40 text-[#C8A762]":"border-[#0B3D2E]/30 text-[#0B3D2E]"}`}>
                 <Sparkle size={14} weight="fill"/>
-                {ai.busy ? "جارٍ المحاكاة… (دقيقة أو أكثر)" : `شغّل المحاكاة الآن (${WAVE4_PRICE.toLocaleString("ar-SA")} نقطة)`}
+                {ai.busy ? "جارٍ المحاكاة… (دقيقة أو أكثر)" : `شغّل المحاكاة الآن (${useCredit ? FOUNDER_CREDIT_PRICE_TEXT : `${WAVE4_PRICE.toLocaleString("ar-SA")} نقطة`})`}
               </button>
               {ai.phase === "error" && ai.error && <p role="alert" className="text-[11px] text-red-500">{ai.error}</p>}
               {ai.phase === "review" && <p role="status" className={`text-[11px] ${D?"text-zinc-400":"text-zinc-500"}`}>النتيجة جاهزة وتنتظر مراجعة الفريق قبل عرضها.</p>}
@@ -1165,7 +1173,7 @@ function AIWargamingPage() {
 
             {simResult && (
               <div className="mt-4">
-                <SimResultView result={simResult} isDark={D} chargedPoints={ai.chargedPoints} onReset={ai.reset}/>
+                <SimResultView result={simResult} isDark={D} chargedPoints={ai.chargedPoints} creditUsed={ai.creditUsed} onReset={ai.reset}/>
               </div>
             )}
           </motion.div>

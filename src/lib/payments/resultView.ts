@@ -66,8 +66,8 @@ function labelOf(itemId: string): string {
   return resolveItem(itemId)?.labelAr ?? "طلبك";
 }
 
-function noticeKind(kind: string): "plan" | "library" | "topup" {
-  return kind === "library" || kind === "topup" ? kind : "plan";
+function noticeKind(kind: string): "plan" | "library" | "topup" | "membership" {
+  return kind === "library" || kind === "topup" || kind === "membership" ? kind : "plan";
 }
 
 /** /checkout for the order's own item and billing — only while that item is still sold so. */

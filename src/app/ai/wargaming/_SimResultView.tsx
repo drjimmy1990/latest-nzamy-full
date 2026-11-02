@@ -10,6 +10,7 @@ import { Warning, SealWarning, Lightbulb, ArrowsCounterClockwise } from "@phosph
 import AiResultActions from "@/components/AiResultActions";
 import CitationCheckList, { asCitationVerdicts } from "@/components/ai/CitationCheckList";
 import { groupPoints, simResultText, SEVERITY_LABEL, SOURCE_LABEL, type SimResult } from "./_simResult";
+import { FOUNDER_CREDIT_USED_TEXT } from "@/lib/membership/founderPlan";
 
 const SEVERITY = {
   high:   { Icon: Warning,     cls: "border-red-500/25 bg-red-500/10 text-red-500" },
@@ -17,8 +18,8 @@ const SEVERITY = {
   low:    { Icon: Lightbulb,   cls: "border-blue-500/25 bg-blue-500/10 text-blue-500" },
 } as const;
 
-export default function SimResultView({ result, isDark, chargedPoints, onReset }: {
-  result: SimResult; isDark: boolean; chargedPoints: number; onReset: () => void;
+export default function SimResultView({ result, isDark, chargedPoints, creditUsed = false, onReset }: {
+  result: SimResult; isDark: boolean; chargedPoints: number; creditUsed?: boolean; onReset: () => void;
 }) {
   const card = isDark ? "bg-zinc-900 border border-white/[0.06] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
   const head = `text-[11px] font-black uppercase tracking-wider ${isDark ? "text-zinc-500" : "text-zinc-400"}`;
@@ -75,7 +76,7 @@ export default function SimResultView({ result, isDark, chargedPoints, onReset }
 
       <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
         محاكاة آلية مبدئية لا تتوقع الحكم؛ المحكمة تحكم بقناعتها والقرار للمحامي. حالة كل مادة من مكتبة نظامي لا من الذكاء الاصطناعي.
-        {chargedPoints > 0 && <> · خُصمت {chargedPoints.toLocaleString("ar-SA")} نقطة</>}
+        {creditUsed ? <> · {FOUNDER_CREDIT_USED_TEXT}</> : chargedPoints > 0 && <> · خُصمت {chargedPoints.toLocaleString("ar-SA")} نقطة</>}
       </p>
     </div>
   );

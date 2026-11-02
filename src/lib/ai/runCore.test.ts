@@ -11,7 +11,8 @@ import { fakeDb, type FakeQuery } from "../payments/fakeDb.test-helper.ts";
 import { AI_COPY, callbackWith, mapCitations, startRunWith, type RunActor, type StartRunDeps } from "./runCore.ts";
 import type { N8nOutcome } from "./n8nClient.ts";
 import { resolveToolRuntime, aiToolsSettingIssue } from "./aiToolsConfig.ts";
-import { AI_TOOLS } from "./tools.ts";
+import { AI_TOOLS, LIB_QUERIES_PATH } from "./tools.ts";
+import type { Retrieved } from "./retrieval.ts";
 
 const RUN = "11111111-2222-4333-8444-555555555555";
 const LAWYER: RunActor = { userId: "u-1", userType: "lawyer", practiceKind: "advocate", displayName: null };
@@ -346,4 +347,154 @@ test("staff mode runs the tool for an admin and refuses everyone else before any
     assert.equal(r.status, 200);
   }
   assert.equal(aiToolsSettingIssue({ communicate: { mode: "staff" } }, Object.keys(AI_TOOLS)), null);
+});
+
+// ── founder credits (P3 Task 6) ──────────────────────────────────────────────
+
+const CONV = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+const FACTS = "عمل الموكل لدى الشركة خمس سنوات ثم فُصل دون إنذار ولم تُصرف مستحقاته.";
+const issuesInput = (over: Record<string, unknown> = {}) => ({
+  phase: "issues", kind: "claim", client_role: "plaintiff", branch: "عمالي", facts: FACTS, ...over,
+});
+const draftInput = (over: Record<string, unknown> = {}) => ({
+  phase: "draft", kind: "appeal", client_role: "plaintiff", branch: "عمالي", facts: FACTS,
+  issues: [{ title: "مشروعية الفصل", detail: "فُصل دون إنذار" }],
+  defenses: [{ title: "الفصل دون سبب مشروع", basis: "[S1]" }],
+  requests: ["إلزام المدعى عليها بمكافأة نهاية الخدمة"],
+  ...over,
+});
+const ANALYSIS = {
+  facts_summary: "عمل المدعي خمس سنوات ثم فُصل.",
+  issues: [{ title: "مشروعية الفصل", detail: "دون إنذار" }],
+  defenses: [{ title: "الفصل دون سبب مشروع", basis: "المادة ٧٧ [S1]", issue: 1 }],
+  requests: ["مكافأة نهاية الخدمة"],
+  missing: [],
+  cited: [{ law: "نظام العمل", article: 77, as_written: "المادة ٧٧" }],
+};
+const FOUND: Retrieved = {
+  sources: [{ sid: "S1", kind: "article", title: "نظام العمل — السابعة والسبعون", text: "…" }],
+  map: { S1: { kind: "article", id: "labor__art-77", title: "نظام العمل — السابعة والسبعون", url: "/laws/labor#labor__art-77" } },
+};
+
+/** Answers both start functions; the credit one reports credit_used unless `credit` overrides it. */
+function creditDb(opts: { prior?: unknown[]; credit?: { data?: unknown; error?: { code?: string; message?: string } } } = {}) {
+  return fakeDb((q: FakeQuery) => {
+    if (q.table === "platform_settings") return { data: { value: { ...ON, "legal-drafter": { mode: "live" } } } };
+    if (q.table === "ai_runs" && q.op === "select") return { data: opts.prior ?? [] };
+    if (q.op === "rpc" && q.table === "ai_start_run") {
+      const price = (q.payload as Record<string, unknown>).p_price as number;
+      return { data: [{ run_id: RUN, created: true, status: "running", charged: price > 0, charged_points: price }] };
+    }
+    if (q.op === "rpc" && q.table === "ai_start_run_with_credit") {
+      return opts.credit ?? { data: [{ run_id: RUN, created: true, status: "running", charged: false, charged_points: 0, credit_used: true }] };
+    }
+    if (q.op === "rpc" && q.table === "ai_fail_run") return { data: true };
+    if (q.table === "ai_runs" && q.op === "update") return { data: [{ id: RUN }] };
+    return {};
+  });
+}
+
+function drafterDeps(calls: Array<{ path: string }> = []): StartRunDeps {
+  return {
+    callbackUrl: "https://app.test/api/v1/ai/callback",
+    n8n: async (call) => {
+      calls.push(call);
+      return call.path === LIB_QUERIES_PATH
+        ? { kind: "result", result: { run_id: RUN, status: "succeeded", output: { queries: ["فصل العامل دون سبب مشروع"] } } }
+        : { kind: "accepted" };
+    },
+    libraryAccess: async () => null,
+    retrieve: async () => FOUND,
+    resolveFiles: async () => ({ ok: true, files: [], pages: 0 }) as never,
+  };
+}
+
+const drafterBody = (input: Record<string, unknown>, over: Record<string, unknown> = {}) => ({
+  tool: "legal-drafter", input, idempotencyKey: "key-abcdef01", useCredit: true, ...over,
+});
+const payloadOf = (log: FakeQuery[], fn: string) =>
+  log.find((q) => q.op === "rpc" && q.table === fn)?.payload as Record<string, unknown> | undefined;
+
+test("founder: useCredit on the drafter's first turn (appeal) spends a drafting work through ai_start_run_with_credit", async () => {
+  const { client, log } = creditDb();
+  const r = await startRunWith(client as never, drafterDeps(), LAWYER, drafterBody(issuesInput({ kind: "appeal" })));
+  assert.equal(r.status, 202);
+  assert.deepEqual(rpcs(log), ["ai_start_run_with_credit"], "the credit function only, never ai_start_run too");
+  const p = payloadOf(log, "ai_start_run_with_credit")!;
+  assert.equal(p.p_credit_kind, "drafting_work");
+  assert.equal(p.p_tool, "legal-drafter");
+  assert.equal(p.p_exempt, false);
+  assert.equal((p.p_input as Record<string, unknown>).kind, "appeal");
+  // Every ai_start_run argument is passed through, plus p_credit_kind.
+  for (const k of ["p_user", "p_tool", "p_variant", "p_class", "p_price", "p_daily_limit", "p_idempotency_key", "p_deadline", "p_exempt", "p_input", "p_file_ids", "p_pages", "p_conversation", "p_source_ids"]) {
+    assert.ok(Object.prototype.hasOwnProperty.call(p, k), k);
+  }
+  assert.equal(r.body.creditUsed, true);
+  assert.equal(r.body.chargedPoints, 0);
+});
+
+test("founder: the drafter's second turn never spends a second work — plain ai_start_run at price 0", async () => {
+  const prior = [{ input: issuesInput({ kind: "appeal", search_text: FACTS }), output: ANALYSIS, status: "succeeded" }];
+  const { client, log } = creditDb({ prior });
+  const r = await startRunWith(client as never, drafterDeps(), LAWYER, drafterBody(draftInput(), { conversationId: CONV }));
+  assert.equal(r.status, 202);
+  assert.deepEqual(rpcs(log), ["ai_start_run"]);
+  assert.equal(payloadOf(log, "ai_start_run")!.p_price, 0);
+  assert.equal(r.body.creditUsed, false);
+});
+
+test("founder: useCredit with an ineligible tool or drafter kind falls back to the points path", async () => {
+  {
+    const { client, log } = creditDb();
+    const r = await startRunWith(client as never, deps(okReply()), LAWYER, body({ useCredit: true }));
+    assert.equal(r.status, 200);
+    assert.deepEqual(rpcs(log), ["ai_start_run"], "echo-fast: no credit function");
+    assert.equal(payloadOf(log, "ai_start_run")!.p_price, 1);
+    assert.equal(r.body.creditUsed, false);
+  }
+  {
+    // rejoinder is not covered until the owner answers ٣٩٩.
+    const { client, log } = creditDb();
+    const r = await startRunWith(client as never, drafterDeps(), LAWYER, drafterBody(issuesInput({ kind: "rejoinder" })));
+    assert.equal(r.status, 202);
+    assert.deepEqual(rpcs(log), ["ai_start_run"]);
+    assert.equal(payloadOf(log, "ai_start_run")!.p_price, 500);
+  }
+  {
+    // Without useCredit an eligible run is charged points as before.
+    const { client, log } = creditDb();
+    const r = await startRunWith(client as never, drafterDeps(), LAWYER, drafterBody(issuesInput({ kind: "appeal" }), { useCredit: undefined }));
+    assert.equal(r.status, 202);
+    assert.deepEqual(rpcs(log), ["ai_start_run"]);
+    assert.equal(payloadOf(log, "ai_start_run")!.p_price, 1000);
+  }
+});
+
+test("founder: an admin (exempt) never spends a credit, even with useCredit", async () => {
+  const { client, log } = creditDb();
+  const r = await startRunWith(client as never, drafterDeps(), { ...LAWYER, userType: "admin" }, drafterBody(issuesInput({ kind: "appeal" })));
+  assert.equal(r.status, 202);
+  assert.deepEqual(rpcs(log), ["ai_start_run"]);
+  assert.equal(payloadOf(log, "ai_start_run")!.p_exempt, true);
+  assert.equal(r.body.creditUsed, false);
+});
+
+test("founder: no credit left → 402 with the Arabic message; not eligible → 400; the tool is never called", async () => {
+  const cases: Array<[string, number]> = [
+    ["no_credit", 402],
+    ["credit_not_eligible", 400],
+  ];
+  for (const [message, status] of cases) {
+    const { client, log } = creditDb({ credit: { error: { code: "P0001", message } } });
+    const calls: Array<{ path: string }> = [];
+    const r = await startRunWith(client as never, drafterDeps(calls), LAWYER, drafterBody(issuesInput({ kind: "appeal" })));
+    assert.equal(r.status, status, message);
+    assert.equal(r.body.code, message);
+    assert.ok(!rpcs(log).includes("ai_start_run"), `${message}: no fallback to points`);
+    assert.ok(!calls.some((c) => c.path === "nzamy-ai/legal-drafter"), `${message}: the tool was not called`);
+  }
+  const { client } = creditDb({ credit: { error: { code: "P0001", message: "no_credit" } } });
+  const r = await startRunWith(client as never, drafterDeps(), LAWYER, drafterBody(issuesInput({ kind: "appeal" })));
+  assert.equal(r.body.error, "لا يتبقى لك رصيد من باقة المؤسس لهذه الأداة");
+  assert.equal(r.body.error, AI_COPY.noCredit);
 });

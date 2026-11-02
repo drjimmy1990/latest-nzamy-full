@@ -52,6 +52,30 @@
  *      order closed, 503 — the client secret never goes out for a closed
  *      order.
  *   8. 200 CheckoutResponse, with the intent's callback URL and expiry.
+ *
+ * The founder membership (P3, kind "membership" — lawyer-founder-2026) adds,
+ * for that kind only (every other item is untouched):
+ *   0.  The sale switch (deps.onSale, FOUNDER_MEMBERSHIP_ON_SALE by default)
+ *       off → 410 «باب الاشتراك مغلق حاليًا» before anything is read or
+ *       written, so a partial deploy can never take money (Task 11 flips it).
+ *   0b. A coupon code → 400 «لا تُطبَّق القسائم على باقة المؤسس»: the
+ *       first-year price is already the discount and nothing stacks. No
+ *       coupon is read and no try is spent (couponRules refuses the kind too,
+ *       for the preview route).
+ *   5b. After the order row, the seat: deps.reserveFounderSeat (the route's
+ *       founder_reserve_seat RPC, 20261101_10). Anything but 'reserved'
+ *       cancels the order (still 'created', no intent yet) and answers:
+ *       not_verified 403, already_member / full 409, closed / paused 410; an
+ *       RPC error (22023: the order already holds a seat), a throw, an
+ *       unknown answer or a missing dependency → 503 CHECKOUT_FAILED_AR.
+ *       Never a 500, never an intent without a reserved seat.
+ *   5c. (Task 5, ruling R13) Once the seat may be held, an order cancelled on
+ *       the way — Moyasar refused the intent (6), the stamp failed (7), or
+ *       the reserve RPC threw (a transport error after the database may have
+ *       reserved) — frees it at once: deps.releaseFounderSeat (the route's
+ *       founder_release_order RPC). Best-effort: a failure is logged and the
+ *       reply is unchanged (the sweep's founder_release_expired catches it).
+ *       A refusal answer reserved nothing, so it releases nothing.
  * A missing B1 table (isMissingPaymentsObject) → 503 with the Arabic copy,
  * logged once; never 500.
  *
@@ -67,6 +91,7 @@ import { MOYASAR_DISABLED_MESSAGE_AR } from "./moyasarConfig.ts";
 import { COUPON_PENDING_AR, isCouponOrderConflict, priceWithCoupon } from "./couponServer.ts";
 import { COUPON_ATTEMPTS, RATE_LIMITED_AR, type CouponAttemptBudget } from "./couponAttempts.ts";
 import type { BookEntry } from "../pricing/priceBook.ts";
+import { FOUNDER_MEMBERSHIP_ON_SALE } from "../pricing/campaigns.ts";
 import {
   callbackUrlFor,
   cancelOrderAfterIntentCancel,
@@ -84,6 +109,22 @@ export const UNKNOWN_ITEM_AR = "هذا المنتج غير متاح للدفع �
 export const BILLING_NOT_OFFERED_AR = "مدة الاشتراك هذه غير متاحة لهذا المنتج";
 export { NOT_FOR_SALE_AR };
 
+// P3: the founder membership's refusals (task 4 brief, verbatim)
+export const FOUNDER_CLOSED_AR = "باب الاشتراك مغلق حاليًا";
+export const FOUNDER_NO_COUPON_AR = "لا تُطبَّق القسائم على باقة المؤسس";
+export const FOUNDER_NOT_VERIFIED_AR = "يُتاح اشتراك المؤسس بعد توثيق رخصتك المهنية";
+export const FOUNDER_ALREADY_MEMBER_AR = "أنت عضو مؤسس بالفعل";
+export const FOUNDER_FULL_AR = "اكتملت مقاعد المؤسسين";
+
+/** founder_reserve_seat's refusals (20261101_10) → the checkout's reply. 'reserved' goes on; any other answer is a 503. */
+const SEAT_REFUSALS: Readonly<Record<string, { status: 403 | 409 | 410; error: string }>> = {
+  not_verified: { status: 403, error: FOUNDER_NOT_VERIFIED_AR },
+  already_member: { status: 409, error: FOUNDER_ALREADY_MEMBER_AR },
+  full: { status: 409, error: FOUNDER_FULL_AR },
+  closed: { status: 410, error: FOUNDER_CLOSED_AR },
+  paused: { status: 410, error: FOUNDER_CLOSED_AR },
+};
+
 export interface CheckoutDeps {
   admin: SupabaseClient;
   client: Pick<MoyasarClient, "createIntent" | "cancelIntent" | "listPaymentsByOrder">;
@@ -95,6 +136,21 @@ export interface CheckoutDeps {
   catalog?: Readonly<Record<string, PayableItem>>;
   /** The price book behind the catalogue (the "already discounted" check); PRICE_BOOK unless a test passes one. */
   book?: Readonly<Record<string, BookEntry>>;
+  /** P3: whether the founder membership is on sale; FOUNDER_MEMBERSHIP_ON_SALE unless a test passes its own. */
+  onSale?: boolean;
+  /**
+   * P3: reserves a founder seat for this membership order — the route's
+   * founder_reserve_seat RPC. Answers reserved | already_member | full |
+   * closed | paused | not_verified; throws on an RPC error. Missing → a
+   * membership checkout fails closed (503).
+   */
+  reserveFounderSeat?: (userId: string, orderId: string) => Promise<string>;
+  /**
+   * P3 (R13): frees the founder seat of a membership order this checkout
+   * cancels after reserving it — the route's founder_release_order RPC.
+   * Best-effort; never called for any other kind.
+   */
+  releaseFounderSeat?: (orderId: string) => Promise<void>;
 }
 
 export interface CheckoutInput {
@@ -110,7 +166,7 @@ export interface CheckoutInput {
 
 export type CheckoutReply =
   | { status: 200; body: CheckoutResponse }
-  | { status: 400 | 403 | 410 | 429 | 503; body: { error: string } };
+  | { status: 400 | 403 | 409 | 410 | 429 | 503; body: { error: string } };
 
 const OPEN = ["created", "initiated"];
 
@@ -122,7 +178,7 @@ function logMissingOnce(step: string, code: string | undefined): void {
   console.warn(`[payments/checkout] ${step}: a B1 migration is not applied yet (${code ?? "?"}); answering 503`);
 }
 
-const fail = (status: 400 | 403 | 410 | 429 | 503, error: string): CheckoutReply => ({ status, body: { error } });
+const fail = (status: 400 | 403 | 409 | 410 | 429 | 503, error: string): CheckoutReply => ({ status, body: { error } });
 
 /** Step 4 — best-effort: a failure here never blocks the new checkout. */
 async function supersedeEarlierOrders(
@@ -161,10 +217,50 @@ async function supersedeEarlierOrders(
   return { missing: false };
 }
 
+/** Step 5c — best-effort: a failed release is logged and never changes the reply. */
+async function releaseSeat(deps: CheckoutDeps, orderId: string): Promise<void> {
+  if (!deps.releaseFounderSeat) return;
+  try {
+    await deps.releaseFounderSeat(orderId);
+  } catch (err) {
+    console.warn("[payments/checkout] freeing the founder seat failed (the sweep frees it):", orderId, err instanceof Error ? err.message : "unknown");
+  }
+}
+
+/** Step 5b — null when the seat is reserved, else the reply (the caller cancels the order). */
+async function reserveSeat(deps: CheckoutDeps, userId: string, orderId: string): Promise<CheckoutReply | null> {
+  if (!deps.reserveFounderSeat) {
+    console.error("[payments/checkout] a membership checkout without reserveFounderSeat:", orderId);
+    return fail(503, CHECKOUT_FAILED_AR);
+  }
+  let answer: unknown;
+  try {
+    answer = await deps.reserveFounderSeat(userId, orderId);
+  } catch (err) {
+    console.error("[payments/checkout] reserving a founder seat failed:", orderId, err instanceof Error ? err.message : "unknown");
+    // the RPC may have reserved before the transport failed (5c)
+    await releaseSeat(deps, orderId);
+    return fail(503, CHECKOUT_FAILED_AR);
+  }
+  if (answer === "reserved") return null;
+  const refusal = typeof answer === "string" && Object.prototype.hasOwnProperty.call(SEAT_REFUSALS, answer) ? SEAT_REFUSALS[answer] : null;
+  if (refusal) return fail(refusal.status, refusal.error);
+  console.error("[payments/checkout] founder_reserve_seat gave an unknown answer:", orderId, String(answer).slice(0, 40));
+  return fail(503, CHECKOUT_FAILED_AR);
+}
+
 export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput): Promise<CheckoutReply> {
   const { admin, client } = deps;
   const { user } = input;
   const attempts = deps.attempts ?? COUPON_ATTEMPTS;
+  const catalog = deps.catalog ?? PAYABLE_ITEMS;
+
+  // 0 (P3). the founder membership: the sale switch, then no coupon — before any read
+  const isMembership = resolveItem(input.itemId, catalog)?.kind === "membership";
+  if (isMembership) {
+    if (!(deps.onSale ?? FOUNDER_MEMBERSHIP_ON_SALE)) return fail(410, FOUNDER_CLOSED_AR);
+    if (input.couponCode) return fail(400, FOUNDER_NO_COUPON_AR);
+  }
 
   // 0. a buyer who spent his coupon tries is answered before any read
   if (input.couponCode && !attempts.check(user.id).ok) return fail(429, RATE_LIMITED_AR);
@@ -187,7 +283,6 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
   const userType = typeof rawType === "string" ? rawType : null;
 
   // 2. the audience, before any price
-  const catalog = deps.catalog ?? PAYABLE_ITEMS;
   const known = resolveItem(input.itemId, catalog);
   if (!known) return fail(400, UNKNOWN_ITEM_AR);
   if (!buyerAllowed(known, userType)) return fail(403, AUDIENCE_REFUSED_AR);
@@ -281,6 +376,16 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
     console.error("[payments/checkout] creating the order failed:", insertErr?.code, insertErr?.message);
     return fail(503, CHECKOUT_FAILED_AR);
   }
+
+  // 5b (P3). the founder seat — reserved, or the order is closed before any intent
+  if (isMembership) {
+    const refused = await reserveSeat(deps, user.id, orderId);
+    if (refused) {
+      await admin.from("payment_orders").update({ status: "cancelled" }).eq("id", orderId).eq("status", "created");
+      return refused;
+    }
+  }
+
   const descriptionAr = intentDescription(q.item.labelAr);
   const callbackUrl = callbackUrlFor(input.origin, orderId);
 
@@ -295,6 +400,7 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
     console.error("[payments/checkout] Moyasar refused the intent:", orderId, intent.status, intent.type);
     // no client secret left the server: close the order so nothing waits on it
     await admin.from("payment_orders").update({ status: "cancelled" }).eq("id", orderId).eq("status", "created");
+    if (isMembership) await releaseSeat(deps, orderId);
     return fail(503, CHECKOUT_FAILED_AR);
   }
 
@@ -309,6 +415,7 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
     console.error("[payments/checkout] saving the intent on the order failed:", orderId, stampErr?.code ?? "no row");
     await client.cancelIntent(intent.data.id);
     await admin.from("payment_orders").update({ status: "cancelled" }).eq("id", orderId).eq("status", "created");
+    if (isMembership) await releaseSeat(deps, orderId);
     return fail(503, CHECKOUT_FAILED_AR);
   }
 

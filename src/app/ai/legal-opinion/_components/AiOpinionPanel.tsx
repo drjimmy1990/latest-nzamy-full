@@ -6,6 +6,8 @@
 // points once and refunds a failure; n8n writes; the page polls (useAiRun).
 // The team order stays below it as a separate, optional request — this panel
 // never creates an order and never claims a human has seen its result.
+// A founder lawyer may spend his one independent output on either tool
+// instead of points (P3): the choice lives here, so both pages get it.
 
 import { useState } from "react";
 import { motion } from "framer-motion";
@@ -14,6 +16,8 @@ import type { useAiRun } from "@/hooks/useAiRun";
 import { asCitations, CitedText, SourceList, stripCitationMarkers } from "@/components/ai/CitedAnswer";
 import CitationCheckList from "@/components/ai/CitationCheckList";
 import AiResultActions from "@/components/AiResultActions";
+import FounderCreditChoice from "@/components/membership/FounderCreditChoice";
+import { founderCreditChoiceKey, FOUNDER_CREDIT_PRICE_TEXT, FOUNDER_CREDIT_USED_TEXT } from "@/lib/membership/founderPlan";
 import {
   AI_OPINION_TOOL, aiOpinionErrorText, asConsultAnswer, asLetterDraft, consultAnswerText, type AiOpinionKind,
 } from "./aiOpinion";
@@ -48,13 +52,17 @@ const COPY: Record<AiOpinionKind, { title: string; lead: string; button: string;
 
 export function AiOpinionPanel({ kind, run, input, blocked, price, isDark, card }: Props) {
   const [copied, setCopied] = useState(false);
+  // Driven by FounderCreditChoice: false whenever it is hidden.
+  const [useCredit, setUseCredit] = useState(false);
   const c = COPY[kind];
   const muted = isDark ? "text-zinc-500" : "text-zinc-400";
   const answer = kind === "consult" && run.phase === "done" ? asConsultAnswer(run.output) : null;
   const letter = kind === "letter" && run.phase === "done" ? asLetterDraft(run.output) : null;
   const cites = asCitations(run.citations);
   const resultText = answer ? stripCitationMarkers(consultAnswerText(answer)) : letter ? `${letter.title}\n\n${letter.body}` : "";
-  const charged = run.chargedPoints > 0 ? ` · خُصمت ${run.chargedPoints.toLocaleString("ar-SA")} نقطة` : "";
+  const charged = run.creditUsed
+    ? ` · ${FOUNDER_CREDIT_USED_TEXT}`
+    : run.chargedPoints > 0 ? ` · خُصمت ${run.chargedPoints.toLocaleString("ar-SA")} نقطة` : "";
 
   function copy() {
     navigator.clipboard.writeText(resultText);
@@ -70,20 +78,21 @@ export function AiOpinionPanel({ kind, run, input, blocked, price, isDark, card 
         </div>
         <div className="min-w-0">
           <h2 className={`text-[15px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>{c.title}</h2>
-          <p className={`text-[12px] leading-relaxed mt-0.5 ${muted}`}>{c.lead}</p>
+          <p className={`text-[12px] leading-relaxed mt-0.5 ${muted}`}>{useCredit ? c.lead.replace("أُعيدت نقاطك", "أُعيد رصيد باقة المؤسس") : c.lead}</p>
         </div>
       </div>
 
       {!answer && !letter && (
         <div className="space-y-2">
+          <FounderCreditChoice key={founderCreditChoiceKey(run.phase, run.creditUsed, run.runId)} kind="independent_output" value={useCredit} onChange={setUseCredit} isDark={isDark} disabled={run.busy} />
           <button
             type="button"
-            onClick={() => void run.start(AI_OPINION_TOOL[kind], input)}
+            onClick={() => void run.start(AI_OPINION_TOOL[kind], input, useCredit ? { useCredit: true } : {})}
             disabled={!!blocked || run.busy}
             className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#0B3D2E] to-[#1a6b50] py-3 text-[13px] font-bold text-white disabled:opacity-40 shadow-lg"
           >
             <Sparkle size={14} weight="fill" />
-            {run.busy ? "جارٍ التوليد..." : `${c.button} — ${price.toLocaleString("ar-SA")} نقطة`}
+            {run.busy ? "جارٍ التوليد..." : useCredit ? `${c.button} (${FOUNDER_CREDIT_PRICE_TEXT})` : `${c.button} — ${price.toLocaleString("ar-SA")} نقطة`}
           </button>
           {!run.busy && blocked && <p className="text-[11px] text-amber-500">{blocked}</p>}
           {run.phase === "running" && <p role="status" className={`text-[12px] ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>{c.running}</p>}

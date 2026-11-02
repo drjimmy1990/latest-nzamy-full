@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Navbar          from "@/components/Navbar";
 import Footer          from "@/components/Footer";
 import { useTheme }    from "@/components/ThemeProvider";
@@ -11,6 +12,7 @@ import type { AudienceTab, Billing, CompanySize } from "@/constants/pricingData"
 import { PricingHero }         from "@/components/pricing/PricingHero";
 import { PricingCards }        from "@/components/pricing/PricingCards";
 import { PromotionalCampaignBanner } from "@/components/pricing/PromotionalCampaignBanner";
+import { FounderPlanSection } from "@/components/pricing/FounderPlanCard";
 import { PricingComparison }   from "@/components/pricing/PricingComparison";
 import { PricingTestimonials } from "@/components/pricing/PricingTestimonials";
 import { PricingFAQ }          from "@/components/pricing/PricingFAQ";
@@ -18,12 +20,35 @@ import { PricingCTA }          from "@/components/pricing/PricingCTA";
 import { GovernmentRolesInfo } from "@/components/pricing/GovernmentRolesInfo";
 import { audienceTabsView, extraPlanIdsFor, withExtraPlans } from "@/lib/pricing/audienceForUserType";
 import { displayCycle, offeredCycles } from "@/lib/pricing/cardPrice";
+import { audienceFromParam } from "@/lib/pricing/founderCard";
 
 // Which package families the audience bar offers (owner, 2026-10-24): a
 // member sees only their own account type's family — the bar is locked to it
 // — while guests and account types with no family of their own (e.g. "admin")
 // keep the full bar. The map lives in audienceForUserType.ts so Settings →
 // «الاشتراك والباقة» shows the same family.
+
+interface PricingUrl {
+  audience: AudienceTab | null;
+  campaign: string | null;
+}
+
+/**
+ * The URL's `?audience=` and `?campaign=` (the owner's founder campaign links
+ * to /pricing?audience=lawyers&campaign=founder-2026#founder-plan). It renders
+ * nothing and reports the two values up. It sits alone inside <Suspense>
+ * (Next 16 asks for a boundary around useSearchParams on a prerendered
+ * route), so the rest of the page still renders on the server.
+ */
+function PricingUrlReader({ onRead }: { onRead: (url: PricingUrl) => void }) {
+  const params = useSearchParams();
+  const audience = audienceFromParam(params.get("audience"));
+  const campaign = params.get("campaign");
+  useEffect(() => {
+    onRead({ audience, campaign });
+  }, [audience, campaign, onRead]);
+  return null;
+}
 
 export default function PricingPage() {
   const { lang } = useTheme();
@@ -38,14 +63,20 @@ export default function PricingPage() {
   // The audience a guest (or an admin) is browsing. Starts at the guest
   // default — same on server and client — so the first client render matches
   // the SSR markup exactly (audience also toggles extra DOM, e.g. the
-  // library-mode toggle).
-  const [pickedAudience, setPickedAudience] = useState<AudienceTab>("individuals");
+  // library-mode toggle). null until the visitor clicks a tab: until then the
+  // URL's `?audience=` applies — it is read after mount (PricingUrlReader), so
+  // the first render is still the guest default.
+  const [pickedAudience, setPickedAudience] = useState<AudienceTab | null>(null);
+  const [url, setUrl] = useState<PricingUrl>({ audience: null, campaign: null });
 
   // Once useUser() resolves, a member is locked to their own family. While it
   // is still loading the bar is not rendered at all (tabsView "pending"), so a
   // member never sees every family flash up and then disappear.
   const tabsView = audienceTabsView({ loading: userLoading, isLoggedIn, userType });
-  const audience: AudienceTab = tabsView.kind === "locked" ? tabsView.audience : pickedAudience;
+  // A member's own family (the lock) wins over any link; for a guest or an
+  // admin, a tab they clicked wins over `?audience=`.
+  const audience: AudienceTab =
+    tabsView.kind === "locked" ? tabsView.audience : (pickedAudience ?? url.audience ?? "individuals");
   // The library plans exist on the lawyers and firms tabs only.
   const libraryMode = libraryModeState && (audience === "lawyers" || audience === "firms");
 
@@ -91,8 +122,16 @@ export default function PricingPage() {
           audienceTabs={tabsView.kind === "locked" ? "own" : tabsView.kind}
         />
 
+        <Suspense fallback={null}>
+          <PricingUrlReader onRead={setUrl} />
+        </Suspense>
+
         {/* A dated campaign only (owner ١٧٩); renders nothing today. */}
         <PromotionalCampaignBanner />
+
+        {/* The lawyer founder membership (P3): the card while on sale; the
+            «انتهت…» line for a campaign-link visitor after it closes. */}
+        <FounderPlanSection audience={audience} libraryMode={libraryMode} campaignParam={url.campaign} />
 
         {/* Plan cards + enterprise + SME + quarterly */}
         <PricingCards

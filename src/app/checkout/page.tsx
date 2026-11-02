@@ -133,7 +133,8 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
   const notes = checkoutItemNotes(item);
 
   let couponsReady = false;
-  if (item.kind !== "topup") {
+  // no coupon ever applies to a point top-up or the founder membership (couponFieldShown)
+  if (item.kind !== "topup" && item.kind !== "membership") {
     try {
       couponsReady = await couponsAvailable(await createServiceClient());
     } catch {

@@ -9,6 +9,8 @@ import AiResultActions from "@/components/AiResultActions";
 import CitationCheckList from "@/components/ai/CitationCheckList";
 import { CitedText, SourceList, asCitations } from "@/components/ai/CitedAnswer";
 import { DRAFT_KINDS, type DraftKindId } from "@/lib/ai/draftKinds";
+import FounderCreditChoice from "@/components/membership/FounderCreditChoice";
+import { creditKindForRun, founderCreditChoiceKey, FOUNDER_CREDIT_PRICE_TEXT, FOUNDER_CREDIT_USED_TEXT } from "@/lib/membership/founderPlan";
 import {
   analysisInput, asDraftAnalysis, asPleading, canAnalyse, draftBlocker, draftInput, pleadingText, pleadingWordHtml,
   type DraftAnalysis, type WizardFacts,
@@ -27,6 +29,10 @@ import {
  * The price is charged once, on the analysis; the draft is free, and a failed
  * draft is tried again free. A review by the Nzamy team is a separate,
  * optional order below this card (the page renders it), never the default.
+ *
+ * A founder lawyer may pay the analysis with one of his drafting works
+ * instead (P3 «استخدم رصيد باقة المؤسس»): FounderCreditChoice, shown only for
+ * a kind that spends a work; the draft (turn 1) never sends useCredit.
  */
 
 interface Props {
@@ -48,6 +54,8 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
   // The lawyer's copy of the analysis; until he edits it, the analysis as read.
   const [changes, setChanges] = useState<DraftAnalysis | null>(null);
   const [wordFailed, setWordFailed] = useState(false);
+  // Driven by FounderCreditChoice: false whenever it is hidden.
+  const [useCredit, setUseCredit] = useState(false);
 
   const spec = DRAFT_KINDS[kind];
   const read = analysis.phase === "done" ? asDraftAnalysis(analysis.output) : null;
@@ -63,6 +71,10 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
   // The analysis is fixed while the draft is written and once it exists: the
   // work is one analysis and one draft (a third run is refused).
   const locked = writing.busy || !!pleading;
+  // The analysis is the work's first turn; a rejoinder spends no work (R3).
+  const creditEligible = creditKindForRun("legal-drafter", analysisInput(facts), 0) === "drafting_work";
+  // Before the analysis settles, the choice; after it, what the server charged.
+  const paidByCredit = analysis.phase === "done" || analysis.phase === "review" ? analysis.creditUsed : useCredit && creditEligible;
 
   const card = isDark ? "bg-zinc-900 border border-white/[0.06] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
   const muted = isDark ? "text-zinc-500" : "text-zinc-400";
@@ -73,7 +85,7 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
     setSent(input);
     setChanges(null);
     writing.reset();
-    void analysis.start("legal-drafter", input, { fileIds });
+    void analysis.start("legal-drafter", input, { fileIds, ...(useCredit && creditEligible ? { useCredit: true } : {}) });
   }
 
   function startDraft() {
@@ -111,7 +123,7 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
             </p>
           </div>
           <span className="rounded-full border border-[#C8A762]/30 bg-[#C8A762]/10 px-3 py-1 text-[11px] font-bold text-[#C8A762]">
-            {spec.price.toLocaleString("ar-SA")} نقطة — تشمل التحليل والصياغة
+            {paidByCredit ? `${FOUNDER_CREDIT_PRICE_TEXT}، تشمل التحليل والصياغة` : `${spec.price.toLocaleString("ar-SA")} نقطة — تشمل التحليل والصياغة`}
           </span>
         </div>
 
@@ -129,6 +141,7 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
               </p>
             )}
             <RunStatus isDark={isDark} run={analysis} busyText="يحلّل الذكاء الاصطناعي الوقائع والمستندات — قد يستغرق ذلك دقيقة أو دقيقتين." />
+            <FounderCreditChoice key={founderCreditChoiceKey(analysis.phase, analysis.creditUsed, analysis.runId)} kind="drafting_work" value={useCredit} onChange={setUseCredit} eligible={creditEligible} isDark={isDark} disabled={analysis.busy} />
             <button
               type="button"
               onClick={startAnalysis}
@@ -146,7 +159,9 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
               <p className={`text-[12px] font-bold ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>
                 التحليل جاهز — راجعه وعدّله، فالمذكرة تُكتب مما تعتمده هنا وحده.
               </p>
-              {analysis.chargedPoints > 0 && <span className={`text-[11px] ${muted}`}>خُصمت {analysis.chargedPoints.toLocaleString("ar-SA")} نقطة</span>}
+              {analysis.creditUsed
+                ? <span className={`text-[11px] ${muted}`}>{FOUNDER_CREDIT_USED_TEXT}</span>
+                : analysis.chargedPoints > 0 && <span className={`text-[11px] ${muted}`}>خُصمت {analysis.chargedPoints.toLocaleString("ar-SA")} نقطة</span>}
             </div>
 
             <label className="block space-y-1.5">
@@ -285,7 +300,9 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
               className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[12px] font-semibold ${isDark ? "border-white/[0.07] text-zinc-300" : "border-zinc-200 text-zinc-600"}`}>
               <FileDoc size={14} /> تنزيل Word
             </button>
-            <button type="button" onClick={() => { if (window.confirm(`صياغة جديدة تبدأ تحليلاً جديداً وتُخصم لها ${spec.price.toLocaleString("ar-SA")} نقطة. المذكرة الحالية تبقى في سجل الذكاء الاصطناعي. متابعة؟`)) { writing.reset(); analysis.reset(); setSent(null); setChanges(null); } }}
+            <button type="button" onClick={() => { if (window.confirm(analysis.creditUsed
+              ? `صياغة جديدة تبدأ تحليلاً جديداً يُدفع من جديد: بعمل آخر من باقة المؤسس إن بقي لك واخترته، وإلا تُخصم له ${spec.price.toLocaleString("ar-SA")} نقطة. المذكرة الحالية تبقى في سجل الذكاء الاصطناعي. متابعة؟`
+              : `صياغة جديدة تبدأ تحليلاً جديداً وتُخصم لها ${spec.price.toLocaleString("ar-SA")} نقطة. المذكرة الحالية تبقى في سجل الذكاء الاصطناعي. متابعة؟`)) { writing.reset(); analysis.reset(); setSent(null); setChanges(null); } }}
               className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[12px] font-semibold ${isDark ? "border-white/[0.07] text-zinc-300" : "border-zinc-200 text-zinc-600"}`}>
               <ArrowCounterClockwise size={14} /> صياغة جديدة (بخصم جديد)
             </button>

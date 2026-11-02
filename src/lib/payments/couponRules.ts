@@ -20,7 +20,8 @@
  *     refunded order of any kind, for any service, refuses it (the user
  *     counts, not the service type);
  *   - never on an excluded kind (top-ups always — 20261026_20 enforces it in
- *     the table too), never on an item already sold at a discount (a launch /
+ *     the table too; the founder membership always, P3 — its price is the
+ *     discount), never on an item already sold at a discount (a launch /
  *     campaign / founder price: ٢٧٩, the customer gets ONE discount, and the
  *     item's own discount is it). Government fees are never part of a
  *     platform order, so no coupon reaches them;
@@ -132,6 +133,10 @@ export function evaluateCoupon(row: CouponRow | null | undefined, ctx: CouponCon
 
   const excluded = new Set(row.excluded_kinds ?? []);
   excluded.add("topup"); // the owner: never on a point top-up, whatever a row says
+  // P3: the founder membership's first-year price is already the discount (٢٧٩,
+  // nothing stacks) — and coupons.excluded_kinds cannot name it (its CHECK
+  // lists plan / library / topup / service), so the rule lives here
+  excluded.add("membership");
   if (excluded.has(ctx.kind) || ctx.itemDiscounted) return { ok: false, reason: "not_for_item" };
 
   const net = ctx.netHalalas;

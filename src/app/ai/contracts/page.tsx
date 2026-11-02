@@ -74,6 +74,9 @@ function AIContractsPageInner() {
   // writes the outline, then each clause. The team order is a separate,
   // optional button on the same step (StepGenerate), never the way through.
   const run = useAiRun();
+  // P3: a founder lawyer may spend his one independent output here instead of
+  // points (FounderCreditChoice in StepGenerate drives it; false when hidden).
+  const [useCredit, setUseCredit] = useState(false);
   const draft = run.phase === "done" ? asContractsProDraft(run.output) : null;
   const draftText = draft ? contractsProText(draft) : "";
   function generateContract() {
@@ -91,7 +94,7 @@ function AIContractsPageInner() {
       courtType: s.courtType,
       selectedClauses: s.clauses.filter(c => c.checked).map(c => s.clauseEdits[c.id]?.trim() || c.title),
       additionalClauses: s.additionalClauses,
-    }));
+    }), useCredit ? { useCredit: true } : {});
   }
 
   // Draft-mode submit recap — rows for the "submit" step. Mirrors buildIntake()
@@ -394,6 +397,9 @@ function AIContractsPageInner() {
               phase={run.phase}
               error={run.error}
               chargedPoints={run.chargedPoints}
+              creditUsed={run.creditUsed}
+              useCredit={useCredit}
+              onUseCreditChange={setUseCredit}
               draft={draft}
               draftText={draftText}
               onGenerate={generateContract}

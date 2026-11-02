@@ -5189,3 +5189,76 @@ begin
   raise notice '_verify: 20261031_10 OK — library caps, review rules and per-user limits come from the admin page; activity is service-only';
 end $$;
 -- <<< verify:library_activity_monitor
+-- >>> verify:founder_membership — supabase/tests/rls/founder_membership.test.sql
+-- 2026-11-01 — 20261101_10_founder_membership.sql («عضوية المحامي المؤسس»,
+-- P3). Read-only, safe to repeat. Before 20261101_10 runs it only reports;
+-- after, it raises when a table or function is missing, a second overload of
+-- ai_start_run / ai_fail_run / ai_start_run_with_credit appeared (PGRST203),
+-- ai_fail_run lost the founder credit restore (20261027_10 was re-run after
+-- it), the kind CHECK refuses 'membership', the founder_campaign setting or
+-- its capacity is missing, or a session role can EXECUTE a founder function.
+-- Capacity is admin-editable («حملة المؤسس»): any whole number passes and is
+-- printed; only a missing or non-integer one raises.
+do $$
+declare t text; f text; p text; src text; cap text; role_name text;
+begin
+  if to_regclass('public.founder_seats') is null then
+    raise notice '_verify: 20261101_10 is not applied yet — no founder seats (the founder checkout answers 503 until it runs)'; return;
+  end if;
+  foreach t in array array['public.founder_seats', 'public.membership_credits', 'public.membership_credit_uses'] loop
+    if to_regclass(t) is null then
+      raise exception '_verify: 20261101_10 — % is missing (re-run 20261101_10)', t;
+    end if;
+    if not (select relrowsecurity from pg_class where oid = t::regclass) then
+      raise exception '_verify: 20261101_10 — RLS is off on % (re-run 20261101_10)', t;
+    end if;
+    foreach role_name in array array['anon', 'authenticated'] loop
+      if exists (select 1 from pg_roles where rolname = role_name)
+         and (has_table_privilege(role_name, t, 'INSERT') or has_table_privilege(role_name, t, 'UPDATE')
+              or has_table_privilege(role_name, t, 'DELETE')) then
+        raise exception '_verify: 20261101_10 — % can write % (re-run 20261101_10)', role_name, t;
+      end if;
+    end loop;
+  end loop;
+  foreach p in array array['ai_start_run', 'ai_fail_run', 'ai_start_run_with_credit'] loop
+    if (select count(*) from pg_proc pp join pg_namespace n on n.oid = pp.pronamespace
+         where n.nspname = 'public' and pp.proname = p) <> 1 then
+      raise exception '_verify: 20261101_10 — public.% must have exactly one overload (PostgREST would refuse the call, PGRST203)', p;
+    end if;
+  end loop;
+  select prosrc into src from pg_proc where oid = to_regprocedure('public.ai_fail_run(uuid,text,text)');
+  if src is null or position('public.membership_credit_uses' in src) = 0 or position('restored_at is null' in src) = 0 then
+    raise exception '_verify: 20261101_10 — ai_fail_run lost the founder credit restore: a failed credit run would keep the credit (20261027_10 re-run after it? re-run 20261101_10)';
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'payment_orders_kind_check'
+                  and conrelid = 'public.payment_orders'::regclass
+                  and pg_get_constraintdef(oid) like '%''membership''%') then
+    raise exception '_verify: 20261101_10 — payment_orders_kind_check does not allow membership: every founder checkout fails (re-run 20261101_10)';
+  end if;
+  if not exists (select 1 from public.platform_settings where key = 'founder_campaign') then
+    raise exception '_verify: 20261101_10 — platform_settings has no founder_campaign row: the founder sale reads as closed (20261021_50, then 20261101_10)';
+  end if;
+  select value->>'capacity' into cap from public.platform_settings where key = 'founder_campaign';
+  if cap is null or cap !~ '^[0-9]+$' then
+    raise exception '_verify: 20261101_10 — founder_campaign.capacity is missing or not a whole number (%): the seats read the default 1096 (re-run 20261101_10, or save it in «حملة المؤسس»)', coalesce(cap, 'null');
+  end if;
+  foreach f in array array['public.founder_campaign_limits()', 'public.founder_reserve_seat(uuid,uuid)',
+                           'public.founder_activate(uuid)', 'public.founder_revoke(uuid,text)',
+                           'public.founder_release_expired()', 'public.founder_release_order(uuid)',
+                           'public.founder_seat_summary()',
+                           'public.ai_start_run_with_credit(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb,text)'] loop
+    if to_regprocedure(f) is null then
+      raise exception '_verify: 20261101_10 — % is missing (re-run 20261101_10)', f;
+    end if;
+    foreach role_name in array array['anon', 'authenticated'] loop
+      if exists (select 1 from pg_roles where rolname = role_name) and has_function_privilege(role_name, f, 'EXECUTE') then
+        raise exception '_verify: 20261101_10 — % can EXECUTE % (re-run 20261101_10)', role_name, f;
+      end if;
+    end loop;
+    if exists (select 1 from pg_roles where rolname = 'service_role') and not has_function_privilege('service_role', f, 'EXECUTE') then
+      raise exception '_verify: 20261101_10 — service_role cannot EXECUTE %: the founder checkout / activation fails (re-run 20261101_10)', f;
+    end if;
+  end loop;
+  raise notice '_verify: 20261101_10 OK — founder seats / credits / credit uses with RLS; one overload each of ai_start_run / ai_fail_run / ai_start_run_with_credit; ai_fail_run restores a credit once; kind membership allowed; capacity %; founder functions service role only', cap;
+end $$;
+-- <<< verify:founder_membership
