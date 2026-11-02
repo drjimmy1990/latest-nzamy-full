@@ -8,6 +8,10 @@ import {
   FOUNDER_MEMBERSHIP_ON_SALE,
   founderCampaignFromSetting,
   founderCampaignSettingIssue,
+  founderCapacityLiteralIssue,
+  founderOfferCampaign,
+  founderSummaryFromRpc,
+  mergeFounderCampaignSetting,
   riyadhDay,
   type Campaign,
 } from "./campaigns.ts";
@@ -58,7 +62,7 @@ test("founder campaign: shows on the first and the last day, both included, with
     assert.equal(c.badgeAr, "عضوية المحامي المؤسس");
     assert.equal(c.messageAr, "عضوية المحامي المؤسس السنوية — مقاعد محدودة (١٬٠٩٦ مقعداً مدفوعاً) لمن يوثّق رخصته ويُتم السداد");
     assert.equal(c.ctaAr, "اعرف التفاصيل");
-    assert.equal(c.ctaHref, "/pricing");
+    assert.equal(c.ctaHref, "/pricing?audience=lawyers&campaign=founder-2026#founder-plan");
     assert.equal(c.id, "founder-2026-10-25");
   }
 });
@@ -75,7 +79,8 @@ test("the founder copy promises no signup gift — no free library days, no badg
   const all = Object.values(FOUNDER_CAMPAIGN_COPY).join(" ");
   assert.doesNotMatch(all, /سجّل|سجل الآن|مجان|٣ أشهر|3 أشهر|ثلاثة أشهر|شارة المؤسس/);
   assert.match(FOUNDER_CAMPAIGN_COPY.messageAr, /يوثّق رخصته ويُتم السداد/);
-  assert.match(FOUNDER_CAMPAIGN_COPY.ctaHref, /^\/pricing$/, "the CTA is a page that exists (no ?audience= handling on /pricing)");
+  // P3 Task 8: /pricing reads ?audience= and ?campaign= and has the #founder-plan card.
+  assert.equal(FOUNDER_CAMPAIGN_COPY.ctaHref, "/pricing?audience=lawyers&campaign=founder-2026#founder-plan");
 });
 
 test("GET /api/v1/campaigns/active returns null before reading the setting while the membership is not on sale", async () => {
@@ -173,4 +178,117 @@ test("the admin settings route runs the founder_campaign validator", async () =>
   const { join } = await import("node:path");
   const route = readFileSync(join(import.meta.dirname, "../../app/api/v1/admin/settings/route.ts"), "utf8");
   assert.match(route, /founder_campaign:\s*founderCampaignSettingIssue/);
+});
+
+// ── P3 Task 8: capacity / sale_paused (ruling R1), the seat count, the card ──
+
+const STORED = { ...SEEDED, starts_on: "2026-11-01", capacity: 1096, sale_paused: false };
+
+test("founder_campaign admin validator: capacity and sale_paused are optional, and accepted when well-formed", () => {
+  assert.equal(founderCampaignSettingIssue(STORED), null);
+  assert.equal(founderCampaignSettingIssue({ ...STORED, capacity: 1 }), null);
+  assert.equal(founderCampaignSettingIssue({ ...STORED, capacity: 100000 }), null);
+  assert.equal(founderCampaignSettingIssue({ ...STORED, sale_paused: true }), null);
+  assert.equal(founderCampaignSettingIssue(SEEDED), null, "the SQL defaults them when absent");
+});
+
+test("founder_campaign admin validator: refuses a capacity or sale_paused the SQL would read as its default", () => {
+  for (const bad of [
+    { capacity: 0 },
+    { capacity: -5 },
+    { capacity: 100001 },
+    { capacity: 50.5 },
+    { capacity: "1096" },
+    { capacity: null },
+    { capacity: true },
+    { sale_paused: "false" },
+    { sale_paused: 0 },
+    { sale_paused: null },
+  ]) {
+    const issue = founderCampaignSettingIssue({ ...STORED, ...bad });
+    assert.equal(typeof issue, "string", JSON.stringify(bad));
+    assert.match(issue as string, /[؀-ۿ]/);
+  }
+});
+
+test("founderCapacityLiteralIssue: the posted body's capacity is a plain integer literal (R1: 50.0 refused)", () => {
+  const body = (cap: string) => `{"key":"founder_campaign","value":{"starts_on":"2026-11-01","ends_on":"2027-01-25","library_days":90,"capacity":${cap}}}`;
+  for (const ok of ["50", "1096", "100000", " 7 "]) assert.equal(founderCapacityLiteralIssue(body(ok)), null, ok);
+  for (const bad of ["50.0", "5e1", "50E0", "-1", "1096.00"]) {
+    const issue = founderCapacityLiteralIssue(body(bad));
+    assert.equal(typeof issue, "string", bad);
+    assert.match(issue as string, /[؀-ۿ]/);
+  }
+  // Not a number literal at all: left to the shape validator (which refuses it).
+  assert.equal(founderCapacityLiteralIssue(body('"50"')), null);
+  assert.equal(founderCapacityLiteralIssue(body("true")), null);
+  // No capacity in the body: nothing to check.
+  assert.equal(founderCapacityLiteralIssue('{"key":"founder_campaign","value":{"starts_on":null}}'), null);
+  assert.equal(founderCapacityLiteralIssue('{"key":"founder_campaign","value":{"capacity" : 12.0}}') !== null, true);
+});
+
+test("mergeFounderCampaignSetting: a dates-only post (the settings page) keeps capacity and sale_paused", () => {
+  const posted = { starts_on: "2026-11-02", ends_on: "2027-01-25", library_days: 90 };
+  assert.deepEqual(mergeFounderCampaignSetting({ ...STORED, capacity: 500, sale_paused: true }, posted), {
+    starts_on: "2026-11-02", ends_on: "2027-01-25", library_days: 90, capacity: 500, sale_paused: true,
+  });
+  // A capacity-only post keeps the dates.
+  assert.deepEqual(mergeFounderCampaignSetting(STORED, { sale_paused: true }), { ...STORED, sale_paused: true });
+  // Nothing stored (or a non-object): the post as it is.
+  assert.deepEqual(mergeFounderCampaignSetting(null, posted), posted);
+  assert.deepEqual(mergeFounderCampaignSetting("x", posted), posted);
+  assert.deepEqual(mergeFounderCampaignSetting([STORED], posted), posted);
+  // A non-object post is passed through untouched so the validator refuses it.
+  assert.equal(mergeFounderCampaignSetting(STORED, 42), 42);
+  assert.equal(mergeFounderCampaignSetting(STORED, null), null);
+});
+
+test("the admin settings route merges founder_campaign into the stored value and checks the raw capacity literal", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const route = readFileSync(join(import.meta.dirname, "../../app/api/v1/admin/settings/route.ts"), "utf8");
+  assert.match(route, /await request\.text\(\)/);
+  assert.match(route, /founderCapacityLiteralIssue\(raw\)/);
+  const merge = route.indexOf("mergeFounderCampaignSetting(");
+  assert.ok(merge > 0, "the route merges");
+  assert.ok(merge < route.indexOf("const invalid = await validate("), "merge before validation");
+  assert.match(route, /value: toStore/);
+  assert.match(route, /after: \{ value: toStore \}/);
+});
+
+test("founderSummaryFromRpc: the founder_seat_summary() row, or null when unusable", () => {
+  const row = { capacity: 1096, active: 10, reserved: 2, seats_left: 1084, sale_paused: false, on_sale: true };
+  assert.deepEqual(founderSummaryFromRpc([row]), { capacity: 1096, seatsLeft: 1084, onSale: true });
+  assert.deepEqual(founderSummaryFromRpc(row), { capacity: 1096, seatsLeft: 1084, onSale: true });
+  assert.deepEqual(founderSummaryFromRpc([{ ...row, seats_left: 0, on_sale: false }]), { capacity: 1096, seatsLeft: 0, onSale: false });
+  for (const bad of [null, [], [null], [{ ...row, on_sale: "true" }], [{ ...row, seats_left: -1 }], [{ ...row, capacity: 2.5 }], "x"]) {
+    assert.equal(founderSummaryFromRpc(bad), null, JSON.stringify(bad));
+  }
+});
+
+test("founderOfferCampaign: onSale is the code flag AND the SQL's on_sale", () => {
+  const c = founderCampaignFromSetting(STORED, "2026-11-10")!;
+  const summary = { capacity: 1096, seatsLeft: 9, onSale: true };
+  assert.deepEqual(founderOfferCampaign(c, summary, true), {
+    ...c, planId: "lawyer-founder-2026", onSale: true, seatsLeft: 9, capacity: 1096,
+  });
+  assert.equal(founderOfferCampaign(c, summary, false).onSale, false);
+  assert.equal(founderOfferCampaign(c, { ...summary, onSale: false }, true).onSale, false);
+});
+
+test("campaignFromApi: the banner stays quiet when the seats are full or the sale is paused", () => {
+  const c = founderCampaignFromSetting(STORED, "2026-11-10")!;
+  const summary = { capacity: 1096, seatsLeft: 0, onSale: false };
+  assert.equal(campaignFromApi({ campaign: founderOfferCampaign(c, summary, true) }), null);
+  const live = campaignFromApi({ campaign: founderOfferCampaign(c, { ...summary, seatsLeft: 5, onSale: true }, true) });
+  assert.deepEqual(live, c, "only the banner fields come back");
+});
+
+test("GET /api/v1/campaigns/active reads founder_seat_summary() and tells a failed read apart from a closed sale", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const route = readFileSync(join(import.meta.dirname, "../../app/api/v1/campaigns/active/route.ts"), "utf8");
+  assert.match(route, /\.rpc\("founder_seat_summary"\)/);
+  assert.match(route, /founderOfferCampaign\(campaign, summary, FOUNDER_MEMBERSHIP_ON_SALE\)/);
+  assert.match(route, /founderUnavailable: true/);
 });

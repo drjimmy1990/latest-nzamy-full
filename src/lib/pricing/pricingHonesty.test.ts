@@ -57,6 +57,9 @@ const PRICING_SURFACES = [
   "lib/pricing/vatNotice.ts",
   "components/pricing/PricingCards.tsx",
   "components/pricing/PricingHero.tsx",
+  // P3 Task 8: the lawyer founder card and the module that holds its copy.
+  "components/pricing/FounderPlanCard.tsx",
+  "lib/pricing/founderCard.ts",
   "app/laws/components/PaywallModal.tsx",
   "app/laws/subscribe/page.tsx",
   "app/pro/page.tsx",
