@@ -499,6 +499,7 @@ describe("Adversarial Suite 3: Unclosed <details> Parsing (_article-components.t
   const src = fs.readFileSync(articleComponentsPath, "utf8");
 
   const { splitNumberedItem } = await import(repoUrl("src", "app", "laws", "[slug]", "_numbered-item.ts"));
+  const { splitDetailsMarkup } = await import(repoUrl("src", "app", "laws", "[slug]", "_details-block.ts"));
 
   // Isolate parseMarkdownContent function body
   const fnMatch = src.match(/function parseMarkdownContent\(text:\s*string\): ParseBlock\[\]\s*\{([\s\S]*?)\n\}/);
@@ -513,11 +514,11 @@ describe("Adversarial Suite 3: Unclosed <details> Parsing (_article-components.t
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
   }).outputText;
 
-  // Construct callable function with splitNumberedItem bound in scope
-  const parseMarkdownContent = new Function("splitNumberedItem", `
+  // Construct callable function with its helpers bound in scope
+  const parseMarkdownContent = new Function("splitNumberedItem", "splitDetailsMarkup", `
     ${fnJs}
     return parseMarkdownContent;
-  `)(splitNumberedItem);
+  `)(splitNumberedItem, splitDetailsMarkup);
 
   test("Oracle 3.1: Standard closed <details> block parses correctly", () => {
     const md = `<details>\n<summary>نص التعديل بموجب المرسوم م/5</summary>\nنص المادة قبل التعديل كاملاً\n</details>`;
@@ -537,12 +538,14 @@ describe("Adversarial Suite 3: Unclosed <details> Parsing (_article-components.t
     assert.equal(blocks[0].content, "السطر الأول من النص التاريخي\nالسطر الثاني من النص التاريخي");
   });
 
-  test("Oracle 3.3: Unclosed <details> at EOF without <summary> assigns statutory fallback summary", () => {
+  // BUG-LIB-05 (2026-11-02): the parser no longer invents the amendment label;
+  // the reader picks the fallback by isAmendmentDetails() (_details-block.ts).
+  test("Oracle 3.3: Unclosed <details> at EOF without <summary> keeps an empty summary", () => {
     const md = `<details>\nنص تاريخي مباشر دون ملخص`;
     const blocks = parseMarkdownContent(md, splitNumberedItem);
     assert.equal(blocks.length, 1);
     assert.equal(blocks[0].type, "details");
-    assert.equal(blocks[0].summary, "📜 النص قبل التعديل وتفاصيل قرار/مرسوم التعديل");
+    assert.equal(blocks[0].summary, "");
     assert.equal(blocks[0].content, "نص تاريخي مباشر دون ملخص");
   });
 
