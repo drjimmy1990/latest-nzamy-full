@@ -50,10 +50,14 @@ export const specialties: Record<"ar" | "en", SpecialtyDef[]> = {
   ],
 };
 
+// q327 (owner package of 1 Nov 2026): the AI consultation's «٩٩ ر.س» is
+// withdrawn — no price list or checkout ever charged it. The booking is a
+// request the team reviews (the price string travels into it as the
+// non-binding estimate), so it says the price comes after that review.
 export const consultationTypes: Record<"ar" | "en", TypeDef[]> = {
   ar: [
     {
-      id: "ai", icon: Brain, label: "ذكاء نظامي", sublabel: "استجابة فورية", price: "٩٩ ر.س",
+      id: "ai", icon: Brain, label: "ذكاء نظامي", sublabel: "استجابة فورية", price: "يُحدَّد بعد المراجعة",
       desc: "مساعد قانوني ذكي مدرّب على الأنظمة السعودية", color: "border-royal/20 hover:border-royal/40", badge: null,
     },
     {
@@ -74,7 +78,7 @@ export const consultationTypes: Record<"ar" | "en", TypeDef[]> = {
   ],
   en: [
     {
-      id: "ai", icon: Brain, label: "Nezamy AI", sublabel: "Instant response", price: "99 SAR",
+      id: "ai", icon: Brain, label: "Nezamy AI", sublabel: "Instant response", price: "Set after review",
       desc: "Smart legal assistant trained on Saudi laws and regulations", color: "border-royal/20 hover:border-royal/40", badge: null,
     },
     {

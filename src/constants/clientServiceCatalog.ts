@@ -238,9 +238,16 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     categoryId: "contracts",
     label: "صياغة عقد مخصص",
     description: "الذكاء الاصطناعي يصيغ عقدك من البداية حسب احتياجاتك الدقيقة",
-    basePrice: 99,
+    // q327 (owner package of 1 Nov 2026): no «ابتداءً من ٩٩ ر.س» — nothing
+    // ever charged it (requiresPayment is false; the route is the AI tool).
+    // The approved price is the tool's: ٥٠٠ نقطة for a contract (owner guide
+    // §3.2, q326), what /ai/contract-drafter charges (CONTRACT_DRAFT_PRICE in
+    // src/lib/ai/tools.ts; pricingApprovals.test.ts holds the two together —
+    // the registry is not imported here, it would ride into every client
+    // page). No riyal amount: 0. Migration 20261102_10 writes the same row.
+    basePrice: 0,
     priceMode: "included",
-    priceNote: "أو ابتداءً من ٩٩ ر.س للطلب",
+    priceNote: "أو ٥٠٠ نقطة للعقد",
     route: "/ai/contract-drafter",
     icon: "PencilSimple",
     receiverType: "ai_workspace",
@@ -252,7 +259,8 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     // a popularity claim. NOTE: migration 20260518 seeded the same tag into
     // admin_pricing_catalog.metadata, and /api/client-pricing lets that row
     // win (pricingRepository: metadata.tag ?? existing.tag) — the DB row must
-    // be cleared too for the tag to disappear in production.
+    // be cleared too for the tag to disappear in production; migration
+    // 20261102_10 clears it with the price.
     aiPowered: true,
   },
   {
@@ -295,9 +303,14 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     categoryId: "contracts",
     label: "مراجعة من محام متخصص",
     description: "محام متخصص يراجع عقدك ويقدم تقريرا قانونيا مكتوبا",
-    basePrice: 800,
+    // q327 (owner package of 1 Nov 2026 §6.2.1): from 600 for individuals,
+    // 800 for business. This catalogue is the individuals' one (the API reads
+    // audience = 'individual' only, and service_id is the table's key), so
+    // only the 600 lives here; the business 800 has no row to carry it.
+    // Migration 20261102_10 writes the same row.
+    basePrice: 600,
     priceMode: "starting_from",
-    priceNote: "2x سعر مراجعة المحامي",
+    priceNote: "سعر الأفراد؛ يُؤكَّد بعد الاطلاع على العقد",
     route: "/dashboard/client/requests/new?type=contract-review",
     icon: "MagnifyingGlass",
     receiverType: "lawyer",

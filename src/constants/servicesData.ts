@@ -11,7 +11,9 @@ export const services = {
       tagline: "استشارة مع محامٍ أو عبر ذكاء نظامي",
       desc: "استشارة مباشرة مع محامي معتمد — صوتية أو مرئية أو حضورية — أو عبر ذكاء نظامي المتخصص في الأنظمة السعودية.",
       href: "/services/consultations",
-      price: "٩٩ ر.س",
+      // q327: no «٩٩ ر.س» — nothing charged it; each consultation's price is
+      // in the services list.
+      price: "حسب نوع الاستشارة",
       duration: "٣٠ دقيقة",
       color: "bg-royal/5 text-royal",
       borderHover: "hover:border-royal/20",
@@ -93,7 +95,7 @@ export const services = {
       tagline: "Consult a lawyer or Nezamy AI",
       desc: "Direct consultation with a certified lawyer — voice, video, in-person, or via Nezamy AI trained on Saudi law.",
       href: "/services/consultations",
-      price: "99 SAR",
+      price: "Depends on the consultation type",
       duration: "30 minutes",
       color: "bg-royal/5 text-royal",
       borderHover: "hover:border-royal/20",

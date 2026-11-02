@@ -11,6 +11,7 @@ import {
   ASSISTANT_MESSAGES_PER_CONVERSATION,
   BRIEF_CHECK_PRICE,
   CASE_BRIEF_PRICES,
+  CONTRACT_DRAFT_PRICE,
   CONTRACTS_PRO_PRICE,
   LEGAL_OPINION_PRICE,
   WAVE4_PRICE,
@@ -519,4 +520,41 @@ test("٢١٧: no stale firm price or seat price is left on the firm surfaces", (
   assert.match(contracts, /plan: "firm-basic",\s*annualPrice: bookSar\("firm-basic", "yearly"\),\s*includedSeats: 3,\s*extraSeatAnnualPrice: null,\s*includedAnnualPoints: 0,/);
   assert.match(contracts, /plan: "firm-enterprise",\s*annualPrice: bookSar\("firm-enterprise", "yearly"\),\s*includedSeats: 5,\s*extraSeatAnnualPrice: null,\s*includedAnnualPoints: 0,/);
   assert.doesNotMatch(contracts, /firm-growth|firm-scale/);
+});
+
+// ── q327 (owner package of 1 Nov 2026): contract review 600 / 800, no «99» ──
+
+test("q327: contract review is 600 for individuals; contract drafting says the tool's points, not a riyal amount", async () => {
+  const { CLIENT_SERVICE_CATALOG } = await import("../../constants/clientServiceCatalog.ts");
+  const row = (id: string) => {
+    const r = CLIENT_SERVICE_CATALOG.find((s) => s.serviceId === id);
+    assert.ok(r, id);
+    return r;
+  };
+  const review = row("contract-review");
+  assert.equal(review.basePrice, 600, "individuals' price (the 800 business price has no row: the catalogue is audience = 'individual')");
+  assert.equal(review.priceMode, "starting_from");
+  assert.doesNotMatch(review.priceNote ?? "", /2x/);
+  const draft = row("contract-draft");
+  assert.equal(draft.basePrice, 0, "nothing charges riyals for drafting: the tool debits points");
+  assert.equal(draft.priceMode, "included");
+  assert.equal(draft.requiresPayment, false);
+  assert.equal(draft.route, "/ai/contract-drafter");
+  // The note names exactly what /ai/contract-drafter debits.
+  assert.equal(draft.priceNote, `أو ${display.arabicPoints(CONTRACT_DRAFT_PRICE)} نقطة للعقد`);
+  assert.equal(draft.tag, undefined, "no popularity claim");
+});
+
+test("q327: no «٩٩ ر.س» / «99 SAR» price is left in the consultation and service constants", () => {
+  for (const path of [
+    "components/consultation/constants.ts",
+    "constants/servicesData.ts",
+    "constants/clientServiceCatalog.ts",
+  ]) {
+    const text = readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
+    // A price field or note of exactly 99 — not 199 / 299 / 499 / 599.
+    assert.doesNotMatch(text, /price: "(?:٩٩ ر\.س|99 SAR)"/, `${path}: a 99 price`);
+    assert.doesNotMatch(text, /basePrice: 99,/, `${path}: a 99 base price`);
+    assert.doesNotMatch(text, /priceNote: "[^"\n]*(?<![\d٠-٩])(?:٩٩|99)(?![\d٠-٩])[^"\n]*"/, `${path}: a 99 price note`);
+  }
 });
