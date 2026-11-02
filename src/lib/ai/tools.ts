@@ -157,8 +157,11 @@ function communicateOutput(raw: unknown): Record<string, unknown> | null {
   return text ? { text } : null;
 }
 
-/** Najiz's memo field: the hard limit, and the length R5 shortens to. */
-export const NAJIZ_MAX_CHARS = 10_000;
+/**
+ * The one Najiz limit the platform states and enforces: R5 refuses a memo
+ * within it and returns one no longer than it; /ai/najiz-optimizer shows it.
+ * (A 10,000 figure for Najiz's own field is unverified and is not used.)
+ */
 export const NAJIZ_TARGET_CHARS = 9_000;
 /** The longest cleaned memo R5 accepts. */
 export const NAJIZ_INPUT_MAX = 40_000;
