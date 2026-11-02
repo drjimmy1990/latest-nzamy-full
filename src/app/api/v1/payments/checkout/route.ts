@@ -107,6 +107,10 @@ export async function POST(request: NextRequest) {
           if (error) throw new Error(`founder_reserve_seat ${error.code ?? "error"}`);
           return typeof data === "string" ? data : "";
         },
+        releaseFounderSeat: async (orderId) => {
+          const { error } = await admin.rpc("founder_release_order", { p_order: orderId });
+          if (error) throw new Error(`founder_release_order ${error.code ?? "error"}`);
+        },
       },
       {
         user: { id: user.id, email: user.email ?? null },

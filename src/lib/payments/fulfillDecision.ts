@@ -340,6 +340,14 @@ export function fulfilmentNoticeAr(input: {
   const receipt = input.receiptNumber ? ` رقم الإيصال: ${input.receiptNumber}.` : "";
   const href = "/dashboard/billing";
 
+  if (input.alreadyEntitled && input.kind === "membership") {
+    // P3: paid, no seat (seats full, licence not verified, or already a member)
+    return {
+      title: "دفعتك قيد المراجعة",
+      body: `استلمنا دفعتك مقابل ${label}، ولم تُفعَّل بها عضوية مؤسِّسة.${receipt} ستراجع الإدارة الدفعة لاسترداد المبلغ.`,
+      href,
+    };
+  }
   if (input.alreadyEntitled) {
     return {
       title: "دفعتك قيد المراجعة",

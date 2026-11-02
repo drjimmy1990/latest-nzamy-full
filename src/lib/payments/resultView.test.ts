@@ -206,3 +206,15 @@ test("an order in a retired cycle (lawyer-pro monthly) gets no retry link: check
   assert.equal(retryHrefFor({ item_id: "lawyer-pro", billing: "monthly" }), undefined);
   assert.equal(retryHrefFor({ item_id: "lawyer-pro", billing: "yearly" }), "/checkout?item=lawyer-pro&billing=yearly");
 });
+
+test("P3: a paid membership that got no seat shows the refund review with membership copy — never «تم التفعيل», never the plan sentence", () => {
+  const member: ResultOrder = { ...order, kind: "membership", item_id: "lawyer-founder-2026", billing: "once" };
+  const v = paymentResultView({ outcome: "already_done", reason: "already_entitled", receiptNumber: "NZ-2026-000009" }, member);
+  assert.equal(v.tone, "review");
+  assert.equal(v.title, "دفعتك قيد المراجعة");
+  assert.match(v.body, /لم تُفعَّل بها عضوية مؤسِّسة/);
+  assert.match(v.body, /استرداد المبلغ/);
+  assert.ok(!v.body.includes("لم نغيّر اشتراكك"));
+  const plan = fulfilmentNoticeAr({ kind: "plan", labelAr: "x", receiptNumber: null, alreadyEntitled: true });
+  assert.match(plan.body, /لم نغيّر اشتراكك الحالي/, "the plan copy is unchanged");
+});

@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { findPaidPaymentWith, fulfillOrderWith, type FulfilDeps, type GatewayClient } from "./fulfillCore.ts";
+import { findPaidPaymentWith, fulfillOrderWith, releaseExpiredFounderSeats, type FulfilDeps, type GatewayClient } from "./fulfillCore.ts";
 import type { MoyasarPayment } from "./moyasarClient.ts";
 import type { GrantLibraryFn } from "./grantPurchase.ts";
 import { fakeDb, has, RANKS, type FakeHandler, type FakeQuery } from "./fakeDb.test-helper.ts";
@@ -381,4 +381,178 @@ test("retire, never delete: a paid order for an item retired since is still gran
   assert.equal(stamps(log).length, 1);
   assert.equal(notices.length, 1);
   assert.ok(notices[0].body.includes("شحن ١٠٠"), "the notice names the retired item");
+});
+
+// ── P3 Task 5: the founder membership — activate on payment, free the seat of a dead payment ──
+
+const MEMBER_ROW = (over: Record<string, unknown> = {}) =>
+  orderRow({ kind: "membership", item_id: "lawyer-founder-2026", billing: "once", total_halalas: 344540, ...over });
+const MEMBER_PAY = (over: Partial<MoyasarPayment> = {}) => paymentOf({ amount: 344540, ...over });
+
+/** A membership order whose claim succeeds ONCE (a second caller gets zero rows, as claim_payment_order answers). */
+function memberDb(row: Record<string, unknown> = MEMBER_ROW(), over?: FakeHandler) {
+  let claimed = false;
+  return fakeDb((q) => {
+    const r = over?.(q);
+    if (r) return r;
+    if (q.table === "payment_orders" && q.op === "select") return { data: row };
+    if (q.table === "claim_payment_order") {
+      if (claimed) return { data: [] };
+      claimed = true;
+      return { data: [{ ...row, status: "paid", moyasar_payment_id: "pay_1", receipt_number: "NZ-2026-000009", paid_at: NOW.toISOString() }] };
+    }
+    if (q.table === "payment_orders" && q.op === "update") return { data: [{ id: ORDER }] };
+    return { data: null };
+  });
+}
+
+function founderDeps(client: FulfilDeps["admin"], gw: GatewayClient | null, answer = "activated") {
+  const activations: string[] = [];
+  const releases: string[] = [];
+  const admins: Array<{ title: string; body: string; href: string }> = [];
+  const base = deps(client, gw, {
+    activateFounder: async (orderId: string) => {
+      activations.push(orderId);
+      return { data: answer, error: null };
+    },
+    releaseFounderSeat: async (orderId: string) => {
+      releases.push(orderId);
+    },
+    notifyAdmins: async (n: { title: string; body: string; href: string }) => {
+      admins.push(n);
+    },
+  });
+  return { ...base, activations, releases, admins };
+}
+
+test("founder: a paid membership activates once — claim, founder_activate, stamp, the «تم تفعيل عضويتك المؤسِّسة» notice; no admin alert, no points", async () => {
+  const { client, log } = memberDb();
+  const f = founderDeps(client, gateway(MEMBER_PAY()));
+  const r = await fulfillOrderWith(f.d, INPUT);
+  assert.equal(r.outcome, "granted");
+  assert.deepEqual(f.activations, [ORDER]);
+  assert.equal(stamps(log).length, 1);
+  assert.equal(f.notices.length, 1);
+  assert.equal(f.notices[0].title, "تم تفعيل عضويتك المؤسِّسة");
+  assert.equal(f.admins.length, 0);
+  assert.equal(log.filter((q) => q.table === "credit_points").length, 0);
+  assert.equal(f.releases.length, 0);
+});
+
+test("founder: the webhook and the result page fulfilling the same payment activate exactly once", async () => {
+  const { client, log } = memberDb();
+  const f = founderDeps(client, gateway(MEMBER_PAY()));
+  const [hook, page] = await Promise.all([
+    fulfillOrderWith(f.d, { ...INPUT, liveFlag: false }),
+    fulfillOrderWith(f.d, INPUT),
+  ]);
+  assert.deepEqual([hook.outcome, page.outcome].sort(), ["already_done", "granted"]);
+  assert.equal(log.filter((q) => q.table === "claim_payment_order").length, 2);
+  assert.deepEqual(f.activations, [ORDER], "founder_activate once per order");
+  assert.equal(f.notices.length, 1);
+});
+
+test("founder: seat_unavailable — paid, nothing granted, fulfilled_at stamped, one refund notice to the payer and ONE admin alert, never a throw", async () => {
+  const { client, log } = memberDb();
+  const f = founderDeps(client, gateway(MEMBER_PAY()), "full");
+  const [first, second] = await Promise.all([fulfillOrderWith(f.d, INPUT), fulfillOrderWith(f.d, { ...INPUT, liveFlag: false })]);
+  const outcomes = [first, second].map((x) => `${x.outcome}:${x.reason ?? ""}`).sort();
+  assert.deepEqual(outcomes, ["already_done:already_entitled", "already_done:claimed_elsewhere"]);
+  assert.deepEqual(f.activations, [ORDER]);
+  assert.equal(stamps(log).length, 1, "stamped, so the sweep does not loop on it");
+  const flag = idx(log, (q) => q.table === "merge_payment_order_metadata" && JSON.stringify(q.payload).includes("already_entitled"));
+  assert.ok(flag >= 0 && flag < idx(log, (q) => stamps([q]).length === 1), "the refund flag lands before the stamp");
+  assert.equal(f.notices.length, 1);
+  assert.ok(!f.notices[0].body.includes("لم نغيّر اشتراكك"), "not the plan copy");
+  assert.match(f.notices[0].body, /لم تُفعَّل/);
+  assert.match(f.notices[0].body, /استرداد/);
+  assert.equal(f.admins.length, 1);
+  assert.match(f.admins[0].body, /seat_unavailable|اكتملت/);
+  assert.match(f.admins[0].body, new RegExp(ORDER));
+  assert.equal(f.admins[0].href, "/dashboard/admin/subscriptions/orders");
+});
+
+test("founder: not_verified and a member who paid twice take the same refund path; an admin alert that throws changes nothing", async () => {
+  for (const answer of ["not_verified", "already"]) {
+    const { client, log } = memberDb(MEMBER_ROW(), (q) =>
+      answer === "already" && q.table === "payment_orders" && q.op === "select" && q.columns === "metadata"
+        ? { data: { metadata: { founder: "already_member" } } }
+        : undefined,
+    );
+    const f = founderDeps(client, gateway(MEMBER_PAY()), answer);
+    f.d.notifyAdmins = async () => {
+      throw new Error("bell down");
+    };
+    const r = await fulfillOrderWith(f.d, INPUT);
+    assert.deepEqual([r.outcome, r.reason], ["already_done", "already_entitled"], answer);
+    assert.equal(stamps(log).length, 1, answer);
+    assert.equal(f.notices.length, 1, answer);
+  }
+});
+
+test("founder: an admin alert is sent only by the call that stamped; a lost stamp race sends none", async () => {
+  const { client } = memberDb(MEMBER_ROW(), (q) =>
+    q.table === "payment_orders" && q.op === "update" && "fulfilled_at" in (q.payload as object) ? { data: [] } : undefined,
+  );
+  const f = founderDeps(client, gateway(MEMBER_PAY()), "full");
+  const r = await fulfillOrderWith(f.d, INPUT);
+  assert.equal(r.outcome, "already_done");
+  assert.equal(f.admins.length, 0);
+  assert.equal(f.notices.length, 0);
+});
+
+test("founder: the payer refreshing a seat_unavailable order sees the refund review, not «تم التفعيل»", async () => {
+  const row = MEMBER_ROW({ status: "paid", fulfilled_at: NOW.toISOString(), metadata: { already_entitled: true, founder: "seat_unavailable" } });
+  const { client } = memberDb(row);
+  const f = founderDeps(client, gateway(MEMBER_PAY()));
+  const r = await fulfillOrderWith(f.d, INPUT);
+  assert.deepEqual([r.outcome, r.reason], ["already_done", "already_entitled"]);
+  assert.equal(f.activations.length, 0);
+});
+
+test("founder: a failed membership payment frees the seat once (founder_release_order); a failed top-up never does", async () => {
+  const { client } = memberDb();
+  const f = founderDeps(client, gateway(MEMBER_PAY({ status: "failed", source: { type: "creditcard", message: "DECLINED" } })));
+  const r = await fulfillOrderWith(f.d, INPUT);
+  assert.equal(r.outcome, "failed");
+  assert.deepEqual(f.releases, [ORDER]);
+  assert.equal(f.activations.length, 0);
+
+  const { client: topupClient } = happyDb();
+  const t = founderDeps(topupClient, gateway(paymentOf({ status: "failed", source: { type: "creditcard", message: "DECLINED" } })));
+  assert.equal((await fulfillOrderWith(t.d, INPUT)).outcome, "failed");
+  assert.equal(t.releases.length, 0);
+});
+
+test("founder: a release that throws never changes the failure the payer sees", async () => {
+  const { client } = memberDb();
+  const f = founderDeps(client, gateway(MEMBER_PAY({ status: "failed", source: { type: "creditcard", message: "DECLINED" } })));
+  f.d.releaseFounderSeat = async () => {
+    throw new Error("rpc down");
+  };
+  const r = await fulfillOrderWith(f.d, INPUT);
+  assert.deepEqual(r, { outcome: "failed", reason: "DECLINED" });
+});
+
+test("founder: a dead membership order seen again (failed / voided / cancelled) frees its seat; a dead top-up does not", async () => {
+  for (const status of ["failed", "voided", "cancelled"]) {
+    const { client } = memberDb(MEMBER_ROW({ status, failure_message: "DECLINED" }));
+    const f = founderDeps(client, gateway(MEMBER_PAY({ status: "failed" })));
+    await fulfillOrderWith(f.d, INPUT);
+    assert.deepEqual(f.releases, [ORDER], status);
+  }
+  const { client } = happyDb(orderRow({ status: "cancelled" }));
+  const t = founderDeps(client, gateway(paymentOf({ status: "failed" })));
+  await fulfillOrderWith(t.d, INPUT);
+  assert.equal(t.releases.length, 0);
+});
+
+test("founder: the sweep's release of expired reservations calls founder_release_expired and never throws", async () => {
+  const { client, log } = fakeDb((q) => (q.table === "founder_release_expired" ? { data: 3 } : { data: null }));
+  assert.equal(await releaseExpiredFounderSeats(client), 3);
+  assert.equal(log.filter((q) => q.table === "founder_release_expired" && q.op === "rpc").length, 1);
+  const { client: missing } = fakeDb(() => ({ error: { code: "PGRST202", message: "x" } }));
+  assert.equal(await releaseExpiredFounderSeats(missing), null);
+  const throwing = { rpc: () => { throw new Error("boom"); } } as unknown as FulfilDeps["admin"];
+  assert.equal(await releaseExpiredFounderSeats(throwing), null);
 });

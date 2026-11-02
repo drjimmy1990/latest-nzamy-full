@@ -1063,3 +1063,82 @@ test("founder: a plan, a library pass or a top-up never calls reserveFounderSeat
     }
   }
 });
+
+// ── P3 Task 5 (R13): a membership order cancelled AFTER its seat was reserved frees the seat at once ──
+
+function releaseSpy(throws = false) {
+  const calls: string[] = [];
+  const releaseFounderSeat = async (orderId: string) => {
+    calls.push(orderId);
+    if (throws) throw new Error("rpc down");
+  };
+  return { releaseFounderSeat, calls };
+}
+
+const stampFails = (q: FakeQuery) =>
+  q.table === "payment_orders" && q.op === "update" && (q.payload as { status?: string }).status === "initiated"
+    ? { error: { code: "40001", message: "serialization" } }
+    : undefined;
+
+test("founder (R13): an intent refusal, a stamp failure and a reserve RPC throw free the seat once (founder_release_order) — the reply stays 503", async () => {
+  const cases: Array<[string, () => { m: ReturnType<typeof moyasar>; over?: FakeHandler; answer: string | Error }]> = [
+    ["intent refused", () => ({ m: moyasar({ intentOk: false }), answer: "reserved" })],
+    ["stamp failed", () => ({ m: moyasar(), over: stampFails, answer: "reserved" })],
+    ["reserve threw", () => ({ m: moyasar(), answer: new Error("ECONNRESET") })],
+  ];
+  for (const [name, make] of cases) {
+    for (const throws of [false, true]) {
+      const { m, over, answer } = make();
+      const { client: admin, log } = db("lawyer", over);
+      const seat = seatSpy(answer, log);
+      const rel = releaseSpy(throws);
+      const r = await startCheckoutWith(
+        { admin, client: m.client, now: () => NOW, onSale: true, reserveFounderSeat: seat.reserveFounderSeat, releaseFounderSeat: rel.releaseFounderSeat },
+        input(FOUNDER),
+      );
+      assert.deepEqual(r, { status: 503, body: { error: CHECKOUT_FAILED_AR } }, `${name} throws=${throws}`);
+      assert.deepEqual(rel.calls, [NEW_ORDER], `${name} throws=${throws}`);
+      assert.ok(!JSON.stringify(r).includes("cs_secret_new"));
+    }
+  }
+});
+
+test("founder (R13): a seat refusal reserved nothing, so nothing is released", async () => {
+  for (const answer of ["not_verified", "already_member", "full", "closed", "paused"]) {
+    const { client: admin, log } = db("lawyer");
+    const rel = releaseSpy();
+    await startCheckoutWith(
+      { admin, client: moyasar().client, now: () => NOW, onSale: true, reserveFounderSeat: seatSpy(answer, log).reserveFounderSeat, releaseFounderSeat: rel.releaseFounderSeat },
+      input(FOUNDER),
+    );
+    assert.equal(rel.calls.length, 0, answer);
+  }
+  const { client: admin, log } = db("lawyer");
+  const rel = releaseSpy();
+  const ok = await startCheckoutWith(
+    { admin, client: moyasar().client, now: () => NOW, onSale: true, reserveFounderSeat: seatSpy("reserved", log).reserveFounderSeat, releaseFounderSeat: rel.releaseFounderSeat },
+    input(FOUNDER),
+  );
+  assert.equal(ok.status, 200);
+  assert.equal(rel.calls.length, 0, "a successful checkout keeps its seat");
+});
+
+test("founder (R13): a plan, a library pass or a top-up never calls releaseFounderSeat — intent refused or stamp failed", async () => {
+  const cases: Array<[Partial<CheckoutInput>, string]> = [
+    [{}, "lawyer"],
+    [{ itemId: "lib-q1", billing: "once" }, "lawyer"],
+    [{ itemId: "topup-250", billing: "once" }, "individual"],
+  ];
+  for (const [over, userType] of cases) {
+    for (const mode of ["intent", "stamp"] as const) {
+      const { client: admin } = db(userType, mode === "stamp" ? stampFails : undefined);
+      const rel = releaseSpy();
+      const r = await startCheckoutWith(
+        { admin, client: moyasar({ intentOk: mode !== "intent" }).client, now: () => NOW, onSale: true, releaseFounderSeat: rel.releaseFounderSeat },
+        input(over),
+      );
+      assert.equal(r.status, 503, `${JSON.stringify(over)} ${mode}`);
+      assert.equal(rel.calls.length, 0, `${JSON.stringify(over)} ${mode}`);
+    }
+  }
+});

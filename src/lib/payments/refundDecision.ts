@@ -9,9 +9,11 @@ export interface RefundOrder { status: string; kind: string; paid_at: string | n
 export function refundDecision(order: RefundOrder, now: Date, usage: RefundUsage) {
   const paidAt = order.paid_at ? Date.parse(order.paid_at) : NaN;
   if (order.status !== "paid" || !Number.isFinite(paidAt) || paidAt > now.getTime()) return null;
-  if (!["plan", "library", "topup"].includes(order.kind)) return null;
-  const reverse: Array<"cancel_plan" | "end_library_grant" | "revoke_lot"> = order.kind === "plan" ? ["cancel_plan", "revoke_lot"] : order.kind === "library" ? ["end_library_grant"] : ["revoke_lot"];
+  if (!["plan", "library", "topup", "membership"].includes(order.kind)) return null;
+  // P3: a membership grants no points lot; refundCore revokes it with founder_revoke(order, 'refund')
+  const reverse: Array<"cancel_plan" | "end_library_grant" | "revoke_lot" | "revoke_founder"> = order.kind === "plan" ? ["cancel_plan", "revoke_lot"] : order.kind === "library" ? ["end_library_grant"] : order.kind === "membership" ? ["revoke_founder"] : ["revoke_lot"];
   const warnings: string[] = [];
+  if (order.kind === "membership") warnings.push("يُلغي الاسترداد عضوية المؤسس التي منحتها هذه العملية: المقعد والرصيد المتبقي من الأعمال والمخرجات ووصول المكتبة والشارة؛ راجع ما استُخدم منها وشروط الاسترداد.");
   if (order.kind === "plan" && usage.planPointsUsedPct > 5) warnings.push("استُخدم أكثر من ٥٪ من نقاط الباقة؛ راجع شروط الانسحاب قبل الاسترداد.");
   if (usage.pointsUsedFromOrderLot > 0) warnings.push("استُخدمت بعض نقاط هذه العملية. تُلغى النقاط المتبقية فقط ولا يصبح الرصيد سالباً.");
   if (order.kind === "library") warnings.push("يُنهي الاسترداد الوصول الذي منحته هذه العملية؛ راجع استخدام المحتوى وشروط الاسترداد.");

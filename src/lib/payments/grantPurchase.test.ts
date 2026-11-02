@@ -294,3 +294,97 @@ test("an item the book never knew is still refused (unknown item), retired or no
   );
   assert.equal(r.ok, false);
 });
+
+// ── P3 Task 5: the founder membership (lawyer-founder-2026) → founder_activate ──
+
+/** An activateFounder spy answering `answer` (or `{ error }`), recording every order id. */
+function activateSpy(answer: string | { error: { code?: string; message?: string } }) {
+  const calls: string[] = [];
+  const activateFounder = async (orderId: string) => {
+    calls.push(orderId);
+    return typeof answer === "string" ? { data: answer, error: null } : { data: null, error: answer.error };
+  };
+  return { activateFounder, calls };
+}
+
+/** The order's metadata as founder_activate left it (read only after 'already'). */
+function memberDb(founder?: string) {
+  return fakeDb((q) => {
+    if (q.table === "payment_orders" && q.op === "select") return { data: { metadata: founder ? { founder } : {} } };
+    return { data: null };
+  });
+}
+
+const MEMBER = () => order("lawyer-founder-2026", "membership", "once");
+
+test("membership: 'activated' is a grant — founder_activate once with the order, no points lot, no subscription", async () => {
+  const { client, log } = memberDb();
+  const spy = activateSpy("activated");
+  const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS, activateFounder: spy.activateFounder }, MEMBER(), { now: NOW });
+  assert.deepEqual(r, { ok: true, alreadyEntitled: false });
+  assert.deepEqual(spy.calls, [ORDER]);
+  assert.equal(lots(log).length, 0, "a membership never falls into the top-up branch");
+  assert.equal(grants(log).length, 0);
+  assert.equal(log.filter((q) => q.table === "subscriptions").length, 0);
+});
+
+test("membership: 'already' on the order's own seat (a retry) counts as success", async () => {
+  for (const founder of ["activated", undefined]) {
+    const { client } = memberDb(founder);
+    const spy = activateSpy("already");
+    const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS, activateFounder: spy.activateFounder }, MEMBER(), { now: NOW });
+    assert.deepEqual(r, { ok: true, alreadyEntitled: false }, String(founder));
+  }
+});
+
+test("membership: 'already' for a member who paid twice (metadata.founder = already_member) is a refund case, never a grant", async () => {
+  const { client, log } = memberDb("already_member");
+  const spy = activateSpy("already");
+  const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS, activateFounder: spy.activateFounder }, MEMBER(), { now: NOW });
+  assert.deepEqual(r, { ok: true, alreadyEntitled: true, refundReason: "already_member" });
+  const read = log.find((q) => q.table === "payment_orders" && q.op === "select");
+  assert.ok(read && has(read, "eq", "id", ORDER), "the metadata read is this order's");
+});
+
+test("membership: 'full' and 'not_verified' are refund cases — ok (so fulfilled_at is stamped), nothing granted", async () => {
+  for (const [answer, reason] of [["full", "seat_unavailable"], ["not_verified", "not_verified"]] as const) {
+    const { client, log } = memberDb();
+    const spy = activateSpy(answer);
+    const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS, activateFounder: spy.activateFounder }, MEMBER(), { now: NOW });
+    assert.deepEqual(r, { ok: true, alreadyEntitled: true, refundReason: reason }, answer);
+    assert.equal(lots(log).length, 0);
+  }
+});
+
+test("membership: not_paid, an unknown answer, an RPC error or a missing dependency → not ok (the sweep retries); a missing function is `missing`", async () => {
+  for (const answer of ["not_paid", "", "ACTIVATED"]) {
+    const { client } = memberDb();
+    const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS, activateFounder: activateSpy(answer).activateFounder }, MEMBER(), { now: NOW });
+    assert.equal(r.ok, false, answer);
+  }
+  const { client } = memberDb();
+  const err = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS, activateFounder: activateSpy({ error: { code: "40001", message: "x" } }).activateFounder }, MEMBER(), { now: NOW });
+  assert.equal(err.ok, false);
+  assert.ok(!err.ok && !err.missing);
+  const missing = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS, activateFounder: activateSpy({ error: { code: "PGRST202", message: "x" } }).activateFounder }, MEMBER(), { now: NOW });
+  assert.ok(!missing.ok && missing.missing === true);
+  const { client: c2, log } = memberDb();
+  const none = await grantPurchase({ admin: c2, grantLibrary: noLibrary, ranks: RANKS }, MEMBER(), { now: NOW });
+  assert.equal(none.ok, false, "no activateFounder → never a silent grant");
+  assert.equal(lots(log).length, 0);
+});
+
+test("membership: a failed metadata read after 'already' is not ok (retried), never a guessed success", async () => {
+  const { client } = fakeDb((q) => (q.table === "payment_orders" ? { error: { code: "57014", message: "timeout" } } : { data: null }));
+  const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS, activateFounder: activateSpy("already").activateFounder }, MEMBER(), { now: NOW });
+  assert.equal(r.ok, false);
+});
+
+test("membership: a top-up, a library pass and a plan never call activateFounder", async () => {
+  const spy = activateSpy("activated");
+  const { client } = planDb([], (q) => (q.table === "credit_points" ? { data: "lot" } : undefined));
+  await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS, activateFounder: spy.activateFounder }, order("topup-100", "topup", "once"), { now: NOW });
+  await grantPurchase({ admin: client, grantLibrary: (async () => ({ ok: true, endsAt: NOW.toISOString() })) as GrantLibraryFn, ranks: RANKS, activateFounder: spy.activateFounder }, order("lib-q1", "library", "once"), { now: NOW });
+  await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS, activateFounder: spy.activateFounder }, order("ind-ai", "plan", "monthly"), { now: NOW });
+  assert.equal(spy.calls.length, 0);
+});

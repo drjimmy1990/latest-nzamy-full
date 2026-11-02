@@ -298,3 +298,57 @@ test("end to end: a payment_paid delivery grants a top-up once through fulfillOr
   assert.equal(notices.length, 1);
   assert.deepEqual(outcomeUpdates(log).at(-1)?.payload, { outcome: "granted" });
 });
+
+test("P3: a payment_failed delivery for a membership order frees its seat once (founder_release_order); the repeat delivery does not", async () => {
+  const NOW = new Date("2026-10-22T08:00:00.000Z");
+  const order = {
+    id: ORDER, user_id: USER, merchant: "platform", kind: "membership", item_id: "lawyer-founder-2026", billing: "once",
+    total_halalas: 344540, currency: "SAR", status: "initiated", moyasar_payment_id: null, live: null,
+    receipt_number: null, paid_at: null, fulfilled_at: null, failure_message: null, metadata: {},
+  };
+  let eventRow: string | null = null;
+  const { client, log } = fakeDb((q) => {
+    if (q.table === "payment_webhook_events" && q.op === "insert") {
+      return eventRow === null ? { data: null } : { error: { code: "23505", message: "dup" } };
+    }
+    if (q.table === "payment_webhook_events" && q.op === "update") {
+      eventRow = (q.payload as { outcome: string }).outcome;
+      return { data: null };
+    }
+    if (q.table === "payment_webhook_events" && q.op === "select") return { data: { outcome: eventRow } };
+    if (q.table === "payment_orders" && q.op === "select" && has(q, "eq", "moyasar_payment_id", "pay_1")) return { data: null };
+    if (q.table === "payment_orders" && q.op === "select") return { data: order };
+    return { data: null };
+  });
+  const failed = { ...paymentOf(), amount: 344540, status: "failed" as const, source: { type: "creditcard" as const, message: "DECLINED" } };
+  const gw = {
+    mode: "test",
+    fetchPayment: async () => ({ ok: true, data: failed }),
+    fetchToken: async () => ({ ok: false, status: 404, type: "x", message: "x" }),
+    listPaymentsByOrder: async () => ({ ok: true, data: [] }),
+  } as unknown as GatewayClient;
+  const releases: string[] = [];
+  const fdeps: FulfilDeps = {
+    admin: client,
+    gateway: async () => gw,
+    grantLibrary: (async () => ({ ok: true, endsAt: NOW.toISOString() })) as GrantLibraryFn,
+    ranks: RANKS,
+    notify: async () => {},
+    now: () => NOW,
+    releaseFounderSeat: async (orderId) => {
+      releases.push(orderId);
+    },
+  };
+  const deps: WebhookDeps = {
+    admin: async () => client,
+    fulfill: (input) => fulfillOrderWith(fdeps, input),
+    webhookSecret: SECRET,
+    secretKey: "sk_test_abc",
+  };
+  const body = event({ type: "payment_failed", data: { id: "pay_1", status: "failed", amount: 344540, currency: "SAR", metadata: { order_id: ORDER } } });
+  assert.deepEqual(await handleWebhookWith(deps, body), { status: 200, body: { received: true } });
+  assert.deepEqual(releases, [ORDER], "founder_release_order once");
+  assert.ok(log.some((q) => q.table === "payment_orders" && q.op === "update" && (q.payload as { status?: string }).status === "failed"));
+  assert.deepEqual(await handleWebhookWith(deps, body), { status: 200, body: { received: true, duplicate: true } });
+  assert.deepEqual(releases, [ORDER], "a repeat delivery frees nothing more");
+});

@@ -114,7 +114,11 @@ test("a later call on a closed order still reports a refund review or a refund â
 });
 
 test("the server wrapper wires the real service client, gateway, ranking, library grant and notifier", () => {
-  assert.match(wrapper, /admin: await createServiceClient\(\)/);
+  assert.match(wrapper, /const admin = await createServiceClient\(\);\s*return \{\s*admin,/);
+  // P3 (20261101_10): the founder grant, a dead payment's seat, the admin bell
+  assert.match(wrapper, /admin\.rpc\("founder_activate", \{ p_order: orderId \}\)/);
+  assert.match(wrapper, /admin\.rpc\("founder_release_order", \{ p_order: orderId \}\)/);
+  assert.match(wrapper, /admin\.rpc\("library_monitor_notify_admins", \{ p_title: n\.title, p_body: n\.body, p_href: n\.href \}\)/);
   assert.match(wrapper, /gateway: platformGateway/);
   assert.match(wrapper, /grantLibrary: grantLibraryAccess/);
   assert.match(wrapper, /ranks: TIER_RANK/);

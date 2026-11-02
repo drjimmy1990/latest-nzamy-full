@@ -69,6 +69,13 @@
  *       RPC error (22023: the order already holds a seat), a throw, an
  *       unknown answer or a missing dependency → 503 CHECKOUT_FAILED_AR.
  *       Never a 500, never an intent without a reserved seat.
+ *   5c. (Task 5, ruling R13) Once the seat may be held, an order cancelled on
+ *       the way — Moyasar refused the intent (6), the stamp failed (7), or
+ *       the reserve RPC threw (a transport error after the database may have
+ *       reserved) — frees it at once: deps.releaseFounderSeat (the route's
+ *       founder_release_order RPC). Best-effort: a failure is logged and the
+ *       reply is unchanged (the sweep's founder_release_expired catches it).
+ *       A refusal answer reserved nothing, so it releases nothing.
  * A missing B1 table (isMissingPaymentsObject) → 503 with the Arabic copy,
  * logged once; never 500.
  *
@@ -138,6 +145,12 @@ export interface CheckoutDeps {
    * membership checkout fails closed (503).
    */
   reserveFounderSeat?: (userId: string, orderId: string) => Promise<string>;
+  /**
+   * P3 (R13): frees the founder seat of a membership order this checkout
+   * cancels after reserving it — the route's founder_release_order RPC.
+   * Best-effort; never called for any other kind.
+   */
+  releaseFounderSeat?: (orderId: string) => Promise<void>;
 }
 
 export interface CheckoutInput {
@@ -204,6 +217,16 @@ async function supersedeEarlierOrders(
   return { missing: false };
 }
 
+/** Step 5c — best-effort: a failed release is logged and never changes the reply. */
+async function releaseSeat(deps: CheckoutDeps, orderId: string): Promise<void> {
+  if (!deps.releaseFounderSeat) return;
+  try {
+    await deps.releaseFounderSeat(orderId);
+  } catch (err) {
+    console.warn("[payments/checkout] freeing the founder seat failed (the sweep frees it):", orderId, err instanceof Error ? err.message : "unknown");
+  }
+}
+
 /** Step 5b — null when the seat is reserved, else the reply (the caller cancels the order). */
 async function reserveSeat(deps: CheckoutDeps, userId: string, orderId: string): Promise<CheckoutReply | null> {
   if (!deps.reserveFounderSeat) {
@@ -215,6 +238,8 @@ async function reserveSeat(deps: CheckoutDeps, userId: string, orderId: string):
     answer = await deps.reserveFounderSeat(userId, orderId);
   } catch (err) {
     console.error("[payments/checkout] reserving a founder seat failed:", orderId, err instanceof Error ? err.message : "unknown");
+    // the RPC may have reserved before the transport failed (5c)
+    await releaseSeat(deps, orderId);
     return fail(503, CHECKOUT_FAILED_AR);
   }
   if (answer === "reserved") return null;
@@ -375,6 +400,7 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
     console.error("[payments/checkout] Moyasar refused the intent:", orderId, intent.status, intent.type);
     // no client secret left the server: close the order so nothing waits on it
     await admin.from("payment_orders").update({ status: "cancelled" }).eq("id", orderId).eq("status", "created");
+    if (isMembership) await releaseSeat(deps, orderId);
     return fail(503, CHECKOUT_FAILED_AR);
   }
 
@@ -389,6 +415,7 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
     console.error("[payments/checkout] saving the intent on the order failed:", orderId, stampErr?.code ?? "no row");
     await client.cancelIntent(intent.data.id);
     await admin.from("payment_orders").update({ status: "cancelled" }).eq("id", orderId).eq("status", "created");
+    if (isMembership) await releaseSeat(deps, orderId);
     return fail(503, CHECKOUT_FAILED_AR);
   }
 
