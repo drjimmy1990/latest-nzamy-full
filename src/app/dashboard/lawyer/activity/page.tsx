@@ -625,10 +625,11 @@ function PersonalActivityFeed() {
           (owner screenshot 12); the feed starts unfiltered and only a click
           narrows it. */}
       {activeCardLabel&&(
-        <div role="status" className={`flex items-center justify-between gap-3 rounded-xl px-3 py-2 border text-[12px] ${isDark?"border-[#C8A762]/30 bg-[#C8A762]/[0.06] text-zinc-300":"border-amber-200 bg-amber-50 text-slate-700"}`}>
+        <div className={`flex items-center justify-between gap-3 rounded-xl px-3 py-2 border text-[12px] ${isDark?"border-[#C8A762]/30 bg-[#C8A762]/[0.06] text-zinc-300":"border-amber-200 bg-amber-50 text-slate-700"}`}>
           <span className="flex items-center gap-1.5 min-w-0">
             <FunnelSimple size={13} className="text-[#C8A762] flex-shrink-0"/>
-            <span className="truncate">السجل مفلتر: تُعرض أنشطة «{activeCardLabel}» فقط</span>
+            {/* The live region holds the announcement only; the button sits outside it. */}
+            <span role="status" className="truncate">السجل مفلتر: تُعرض أنشطة «{activeCardLabel}» فقط</span>
           </span>
           <button type="button" onClick={()=>setCardFilter(null)}
             className={`flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors ${isDark?"border-[#C8A762]/40 text-[#C8A762] hover:bg-[#C8A762]/10":"border-amber-300 text-amber-700 hover:bg-amber-100"}`}>
