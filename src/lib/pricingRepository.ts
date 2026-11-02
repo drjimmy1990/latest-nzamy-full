@@ -84,6 +84,8 @@ export function formatClientServicePrice(service: Pick<ClientServiceCatalogItem,
     starting_from: `يبدأ من ${amount} ر.س`,
     custom: "حسب التقييم",
     per_page: `يبدأ من ${amount} ر.س`,
+    // Paid in points by the tool; the count is in the row's priceNote.
+    points: "بالنقاط",
   };
   return labels[service.priceMode];
 }

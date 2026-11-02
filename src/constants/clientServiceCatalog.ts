@@ -14,7 +14,11 @@ export type ClientServicePriceMode =
   | "fixed"
   | "starting_from"
   | "custom"
-  | "per_page";
+  | "per_page"
+  // Wave 1 task 6 (G): a service paid in points by the tool itself, not in
+  // riyals and not covered by any plan. basePrice stays 0 (it is riyals
+  // everywhere it is read); the number of points lives in priceNote.
+  | "points";
 
 export type ClientServiceVisibility = "public" | "beta_hidden" | "internal";
 
@@ -245,16 +249,22 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     // src/lib/ai/tools.ts; pricingApprovals.test.ts holds the two together —
     // the registry is not imported here, it would ride into every client
     // page). No riyal amount: 0. Migration 20261102_10 writes the same row.
+    // Wave 1 task 6 (G): no plan grant includes contract drafting (founder
+    // credits cover legal-drafter, contracts-pro, legal-opinion and wargaming;
+    // the AI plan grants 0 points, owner ٢٩١), so the card no longer says
+    // «مشمول في الباقة … أو ٥٠٠ نقطة»: mode "points" («بالنقاط») and the
+    // note is the tool's price alone. No includedByPlan. Migration
+    // 20261102_11 writes the same row (run it AFTER the deploy: older code
+    // has no "points" label).
     basePrice: 0,
-    priceMode: "included",
-    priceNote: "أو ٥٠٠ نقطة للعقد",
+    priceMode: "points",
+    priceNote: "٥٠٠ نقطة للعقد",
     route: "/ai/contract-drafter",
     icon: "PencilSimple",
     receiverType: "ai_workspace",
     requestType: "ai_draft",
     betaVisibility: "public",
     requiresPayment: false,
-    includedByPlan: "ai_individual",
     // No «الأكثر طلبا» tag (owner, Q164, 2026-10-03): no order data supports
     // a popularity claim. NOTE: migration 20260518 seeded the same tag into
     // admin_pricing_catalog.metadata, and /api/client-pricing lets that row

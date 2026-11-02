@@ -542,11 +542,13 @@ test("q327: contract review is 600 for individuals; contract drafting says the t
   assert.doesNotMatch(review.priceNote ?? "", /2x/);
   const draft = row("contract-draft");
   assert.equal(draft.basePrice, 0, "nothing charges riyals for drafting: the tool debits points");
-  assert.equal(draft.priceMode, "included");
+  // Task 6 (G): no plan grant includes drafting, so not «مشمول في الباقة».
+  assert.equal(draft.priceMode, "points");
+  assert.equal(draft.includedByPlan, undefined, "no plan includes contract drafting");
   assert.equal(draft.requiresPayment, false);
   assert.equal(draft.route, "/ai/contract-drafter");
-  // The note names exactly what /ai/contract-drafter debits.
-  assert.equal(draft.priceNote, `أو ${display.arabicPoints(CONTRACT_DRAFT_PRICE)} نقطة للعقد`);
+  // The note names exactly what /ai/contract-drafter debits — no «أو».
+  assert.equal(draft.priceNote, `${display.arabicPoints(CONTRACT_DRAFT_PRICE)} نقطة للعقد`);
   assert.equal(draft.tag, undefined, "no popularity claim");
 });
 
@@ -569,6 +571,8 @@ test("q327: migration 20261102_10 writes the same two rows the code catalogue ca
   const sql = readFileSync(new URL("../../../supabase/migrations/20261102_10_retire_cancelled_prices.sql", import.meta.url), "utf8");
   // Statements only: the header and the rollback note are comments.
   const code = sql.replace(/--.*$/gm, "");
+  // contract-draft's last writer is 20261102_11 (next test); _10 still owns
+  // its base_price.
   for (const id of ["contract-draft", "contract-review"]) {
     const row = CLIENT_SERVICE_CATALOG.find((s) => s.serviceId === id);
     assert.ok(row?.priceNote, id);
@@ -577,8 +581,25 @@ test("q327: migration 20261102_10 writes the same two rows the code catalogue ca
       .find((s) => /update public\.admin_pricing_catalog\s+set base_price = /.test(s) && s.includes(`where service_id = '${id}'`));
     assert.ok(stmt, `${id}: an UPDATE keyed by service_id`);
     assert.match(stmt, new RegExp(`set base_price = ${row.basePrice},`), `${id}: base_price ${row.basePrice}`);
-    assert.ok(stmt.includes(`'priceNote', '${row.priceNote}'`), `${id}: the same note`);
+    if (id === "contract-review") assert.ok(stmt.includes(`'priceNote', '${row.priceNote}'`), `${id}: the same note`);
   }
   // Retire, never delete: no DROP, no DELETE, no function (PGRST203).
   assert.doesNotMatch(code, /\b(?:drop|delete|truncate)\b|create (?:or replace )?function/i);
+});
+
+test("task 6 (G): migration 20261102_11 writes contract-draft's mode and note exactly as the code row carries them", async () => {
+  const { CLIENT_SERVICE_CATALOG } = await import("../../constants/clientServiceCatalog.ts");
+  const { formatClientServicePrice } = await import("../pricingRepository.ts");
+  const row = CLIENT_SERVICE_CATALOG.find((s) => s.serviceId === "contract-draft")!;
+  const sql = readFileSync(new URL("../../../supabase/migrations/20261102_11_contract_draft_points_price.sql", import.meta.url), "utf8");
+  const code = sql.replace(/--.*$/gm, "");
+  const stmt = code.split(";").find((s) => /update public\.admin_pricing_catalog/.test(s));
+  assert.ok(stmt && stmt.includes("where service_id = 'contract-draft'"));
+  assert.ok(stmt.includes(`set price_mode = '${row.priceMode}',`), "the same mode");
+  assert.ok(stmt.includes(`'priceNote', '${row.priceNote}'`), "the same note");
+  assert.match(stmt, /- 'includedByPlan'/, "the plan claim is removed from the row");
+  assert.doesNotMatch(stmt, /base_price/, "riyals untouched (0 since _10)");
+  assert.doesNotMatch(code, /\b(?:drop|delete|truncate)\b|create (?:or replace )?function/i);
+  // The card reads «بالنقاط» + «٥٠٠ نقطة للعقد», never «مشمول في الباقة».
+  assert.equal(formatClientServicePrice(row), "بالنقاط");
 });
