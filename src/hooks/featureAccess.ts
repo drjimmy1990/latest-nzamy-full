@@ -52,6 +52,29 @@ export const TIER_LABELS_AR: Record<UserTier, string> = {
   enterprise: "الشركات المتكاملة",
 };
 
+// ─── Tiers no plan on sale grants ─────────────────────────────────────────────
+// Wave 1 task 6 (H): `shield` («التأمين القانوني») is a tier KEY — rank 1, and
+// FEATURE_GATES still sets it as the minimum for marketplace, reports and
+// ai-contracts — but no plan on sale grants it (the price book's tiers are
+// ai / pro / max / corp / enterprise; ind-litigation, the plan that carried
+// the name, is retired, q329). A lock must not tell the user to buy it. The
+// gating itself (TIER_RANK, FEATURE_GATES, can()) is unchanged, and
+// TIER_LABELS_AR.shield stays: a holder of the tier still sees its name
+// (currentPlanLabel.ts).
+export const UNSOLD_TIERS: ReadonlySet<UserTier> = new Set<UserTier>(["shield"]);
+
+/** The neutral lock copy when the minimum tier is not sold. */
+export const LOCKED_NOT_IN_PLAN_AR = "هذه الميزة غير متاحة في باقتك الحالية";
+
+/**
+ * The plan name a LOCK may print for its minimum tier: null when that tier is
+ * not sold or not a known tier — the caller then names no plan.
+ */
+export function lockTierLabelAr(tier: string): string | null {
+  if (UNSOLD_TIERS.has(tier as UserTier)) return null;
+  return TIER_LABELS_AR[tier as UserTier] ?? null;
+}
+
 // ─── Feature → minimum tier required ─────────────────────────────────────────
 export const FEATURE_GATES: Record<string, UserTier> = {
   // Business / Corporate features

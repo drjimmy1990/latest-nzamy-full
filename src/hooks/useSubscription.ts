@@ -16,7 +16,7 @@
 import { useUser, type UserTier } from "@/hooks/useUser";
 import { useAdminSettings } from "@/hooks/useAdminSettings";
 import { isSupabaseMode } from "@/lib/services/api";
-import { TIER_RANK, FEATURE_GATES, TIER_LABELS_AR, resolveFeatureAccess } from "@/hooks/featureAccess";
+import { TIER_RANK, FEATURE_GATES, TIER_LABELS_AR, resolveFeatureAccess, lockTierLabelAr } from "@/hooks/featureAccess";
 
 // ─── Tier → Arabic label ───────────────────────────────────────────────────────
 // The one canonical copy lives in ./featureAccess.ts (pure, so `node --test`
@@ -25,11 +25,12 @@ import { TIER_RANK, FEATURE_GATES, TIER_LABELS_AR, resolveFeatureAccess } from "
 // keeps working.
 export { TIER_LABELS_AR };
 
-/** Arabic label for a tier key that may not be a known `UserTier` (e.g. read
- *  off a route/config value rather than the session). Never prints a raw
- *  English key — falls back to a generic upgrade word. */
+/** Arabic label for a LOCK's minimum tier (its one caller is the sidebar's
+ *  UpgradeBadge). Never prints a raw English key, and never names a plan
+ *  nothing sells (Wave 1 task 6, H: shield) — both fall back to a generic
+ *  upgrade word. A holder's own plan name comes from currentPlanLabel.ts. */
 export function tierLabelAr(tier: string): string {
-  return TIER_LABELS_AR[tier as UserTier] ?? "ترقية";
+  return lockTierLabelAr(tier) ?? "ترقية";
 }
 
 // ─── Feature → minimum tier required ─────────────────────────────────────────

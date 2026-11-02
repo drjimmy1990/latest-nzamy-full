@@ -137,3 +137,37 @@ test("pro marketplace: every product says «قريباً», no typed price", () 
   // Still parked behind BETA_MONOPOLY_MODE.
   assert.match(src("app/pro/marketplace/layout.tsx"), /if \(BETA_MONOPOLY_MODE\) redirect\("\/services"\);/);
 });
+
+// ── item H: a lock never names «التأمين القانوني», a plan nothing sells ──────
+
+test("shield is unsold: no on-sale price-book plan grants it, and a lock names no plan for it", async () => {
+  const fa = await import("../../hooks/featureAccess.ts");
+  const { PRICE_BOOK, isOnSale } = await import("../pricing/priceBook.ts");
+  const soldTiers = new Set(
+    Object.values(PRICE_BOOK).filter((e) => isOnSale(e) && e.tier).map((e) => e.tier as string),
+  );
+  assert.ok(soldTiers.size > 0, "no on-sale tier found — the book's shape changed");
+  for (const t of fa.UNSOLD_TIERS) assert.ok(!soldTiers.has(t), `${t} is on sale again — drop it from UNSOLD_TIERS`);
+  assert.ok(fa.UNSOLD_TIERS.has("shield"));
+  assert.equal(fa.lockTierLabelAr("shield"), null);
+  assert.equal(fa.lockTierLabelAr("ai"), fa.TIER_LABELS_AR.ai);
+  assert.equal(fa.lockTierLabelAr("not-a-tier"), null);
+  // The gating and the holder's label are unchanged.
+  assert.equal(fa.TIER_RANK.shield, 1);
+  assert.equal(fa.FEATURE_GATES.marketplace, "shield");
+  assert.equal(fa.FEATURE_GATES.reports, "shield");
+  assert.equal(fa.FEATURE_GATES["ai-contracts"], "shield");
+  assert.equal(fa.TIER_LABELS_AR.shield, "التأمين القانوني");
+});
+
+test("shield lock copy: SubscriptionGuard and the sidebar badge name no unsold plan", () => {
+  const guard = src("components/dashboard/SubscriptionGuard.tsx").replace(/^\s*\/\/.*$/gm, "");
+  assert.doesNotMatch(guard, /التأمين القانوني/);
+  assert.match(guard, /const tierName = UNSOLD_TIERS\.has\(minTier as UserTier\) \? null :/);
+  assert.match(guard, /featureBlocked=\{tierName \?\? undefined\}/);
+  assert.match(guard, /\{LOCKED_NOT_IN_PLAN_AR\}/);
+  assert.match(guard, /href="\/pricing"/);
+  // UpgradeBadge prints tierLabelAr(tier); tierLabelAr goes through the lock helper.
+  assert.match(src("components/dashboard/SidebarComponents.tsx"), /\{tierLabelAr\(tier\)\}/);
+  assert.match(src("hooks/useSubscription.ts"), /return lockTierLabelAr\(tier\) \?\? "ترقية";/);
+});
