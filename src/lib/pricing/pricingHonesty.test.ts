@@ -60,6 +60,9 @@ const PRICING_SURFACES = [
   // P3 Task 8: the lawyer founder card and the module that holds its copy.
   "components/pricing/FounderPlanCard.tsx",
   "lib/pricing/founderCard.ts",
+  // P3 Task 9: «عضويتي المؤسسة» on the lawyer dashboard and its copy.
+  "app/dashboard/lawyer/_components/FounderMembershipCard.tsx",
+  "app/dashboard/lawyer/_components/founderMembershipCardView.ts",
   "app/laws/components/PaywallModal.tsx",
   "app/laws/subscribe/page.tsx",
   "app/pro/page.tsx",
