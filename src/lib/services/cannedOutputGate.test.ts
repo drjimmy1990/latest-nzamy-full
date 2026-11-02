@@ -23,7 +23,8 @@ import test from "node:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { LAWYER_AI_TOOL_BY_PERMISSION, TOOL_POINT_LABELS, getLawyerAiBadge } from "../../constants/lawyerAiCatalog.ts";
+import { LAWYER_AI_TOOL_BY_PERMISSION } from "../../constants/lawyerAiCatalog.ts";
+import { TOOL_POINT_LABELS, getLawyerAiBadge } from "../../constants/lawyerAiBadges.ts";
 import { LAWYER_QUICK_TOOLS } from "../lawyerQuickTools.ts";
 
 function src(rel: string): string {

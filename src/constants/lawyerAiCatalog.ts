@@ -1,5 +1,3 @@
-import { aiToolPointRange, aiToolPointsLabel, pointsNounAr, type PricedAiToolRef } from "../lib/ai/toolPointsDisplay.ts";
-
 export type LawyerAiPermission =
   | "ai:consult"
   | "ai:quick-answer"
@@ -34,8 +32,9 @@ export interface LawyerAiTool {
   titleAr: string;
   titleEn: string;
   // No point cost here (owner answer ٢١٦, 2026-10-18): a tool's price is what
-  // the AI registry charges, read through TOOL_POINT_SOURCES below. The old
-  // `pointCost` figures (500 / 300 / 100 … points) contradicted the server.
+  // the AI registry charges, read through TOOL_POINT_SOURCES
+  // (lawyerAiBadges.ts). The old `pointCost` figures (500 / 300 / 100 …
+  // points) contradicted the server.
   betaStatus: LawyerAiBetaStatus;
   sidebarPlacement: LawyerAiSidebarPlacement;
   adminPricingKey: string;
@@ -240,7 +239,8 @@ export const LAWYER_AI_TOOLS: readonly LawyerAiTool[] = [
     adminPricingKey: "lawyer.ai.transcriber",
     // Owner answer ١١٥ — both modes printed a fixed transcript of a hearing
     // nobody uploaded; the page renders DashboardComingSoon now, so it is
-    // unpriced (the owner's ٥ is recorded above TOOL_POINT_SOURCES).
+    // unpriced (the owner's ٥ is recorded above TOOL_POINT_SOURCES in
+    // lawyerAiBadges.ts).
     comingSoon: true,
   },
   {
@@ -310,60 +310,6 @@ export const LAWYER_AI_TOOL_BY_PERMISSION = Object.fromEntries(
   LAWYER_AI_TOOLS.map((tool) => [tool.permission, tool]),
 ) as Record<LawyerAiPermission, LawyerAiTool>;
 
-/**
- * The registry tool (src/lib/ai/tools.ts) behind each priced catalog id: the
- * hub badge is the points that tool's run is charged, read from the registry
- * (toolPointsDisplay.ts), never a figure written here (Wave 1 task 4). The
- * price list under the lawyer cards on /pricing (`lawyerServicesTable` in
- * src/constants/pricing/pricing.lawyers.ts) reads the same registry, so the
- * two cannot disagree; pricingApprovals.test.ts holds both to the server.
- *
- * A catalog id with no registry tool gets no badge: a missing price is better
- * than a guessed one. A `comingSoon` tool shows «قريباً» whatever this map
- * holds. The legal opinion sells two runs (a consultation and a letter) under
- * one card, so its badge spans both.
- *
- * UNPRICED UNTIL THEY WORK (owner ١١٥, fix round 1). These tools are
- * `comingSoon` with no registry entry, so neither this map nor
- * lawyerServicesTable sells them. The owner's approved figures, for when each
- * page really answers (the badge will then read the registry's price):
- *   - "ai:analyze": ٨ — row «عصارة المرفقات وتلخيص ملف القضية واستخلاص
- *     النزاع»; the lawyer card also listed «عصارة المرفقات وتلخيص ملف
- *     القضية: ٨ نقاط» / "Attachment digest and case summary: 8 points".
- *   - "ai:transcriber" and "ai:secretary": ٥ — one shared row,
- *     «التفريغ الصوتي الذكي وأوامر السكرتير».
- */
-export const TOOL_POINT_SOURCES: Readonly<Partial<Record<LawyerAiPermission, PricedAiToolRef>>> = {
-  "ai:quick-answer": "quick-answer",
-  "ai:case-brief": "case-brief",
-  "ai:draft": "legal-drafter",
-  "ai:brief-check": "brief-check",
-  "ai:contracts": "contracts-pro",
-  "ai:contract-drafter": "contract-drafter",
-  "ai:wargaming": "wargaming",
-  "ai:analyze-strength": "analyze-strength",
-  "ai:legal-opinion": ["legal-opinion-consult", "legal-opinion-letter"],
-  "ai:najiz-optimizer": "najiz-optimizer",
-  "ai:communicate": "communicate",
-  "ai:assistant": "assistant",
-};
-
-/** A priced tool's points on the hub, keyed by catalog id: «٢٥٠», «٥٠٠–١٬٥٠٠». */
-// PURE: the many screens that import this file only for the permission list
-// (useUser) can drop the registry from their bundle.
-export const TOOL_POINT_LABELS: Record<string, string> = /*#__PURE__*/ Object.fromEntries(
-  Object.entries(TOOL_POINT_SOURCES).map(([id, ref]) => [id, aiToolPointsLabel(ref, "ar")]),
-);
-
-export function getLawyerAiBadge(tool: LawyerAiTool, lang: "ar" | "en"): string | null {
-  // Checked FIRST, before any price: a tool with no working page is not
-  // "100 points", it is not available. See `comingSoon` on LawyerAiTool.
-  if (tool.comingSoon) return lang === "ar" ? "قريباً" : "Coming soon";
-  if (tool.betaStatus === "beta-free") return lang === "ar" ? "بيتا مجاني" : "Beta free";
-  if (tool.betaStatus === "free") return lang === "ar" ? "مجاني" : "Free";
-  const ref = TOOL_POINT_SOURCES[tool.permission];
-  if (!ref) return null;
-  if (lang === "en") return `${aiToolPointsLabel(ref, "en")} pts`;
-  // A range agrees with its upper bound, the number read last.
-  return `${aiToolPointsLabel(ref, "ar")} ${pointsNounAr(aiToolPointRange(ref)[1])}`;
-}
+// The hub's point badges (TOOL_POINT_SOURCES, TOOL_POINT_LABELS,
+// getLawyerAiBadge) live in lawyerAiBadges.ts: they read the AI registry, and
+// this file stays free of it because useUser loads it on every page.

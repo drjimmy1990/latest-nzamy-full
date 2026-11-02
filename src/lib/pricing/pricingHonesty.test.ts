@@ -22,7 +22,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { LAWYER_AI_TOOLS, TOOL_POINT_LABELS, getLawyerAiBadge } from "../../constants/lawyerAiCatalog.ts";
+import { LAWYER_AI_TOOLS } from "../../constants/lawyerAiCatalog.ts";
+import { TOOL_POINT_LABELS, getLawyerAiBadge } from "../../constants/lawyerAiBadges.ts";
 import type { AudienceTab } from "../../constants/pricing/pricing.types.ts";
 import { PAYABLE_ITEMS } from "../payments/catalog.ts";
 import { VAT_NOTICE, vatNoticeFor } from "./vatNotice.ts";

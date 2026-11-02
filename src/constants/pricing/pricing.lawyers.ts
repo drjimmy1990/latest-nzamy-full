@@ -134,7 +134,7 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
 // charged, read from the AI registry (src/lib/ai/toolPointsDisplay.ts) at
 // render time; no row writes a number (Wave 1 task 4: the old 15 / 10 /
 // «١٥–٢٠» labels were a fraction of the real charge). The hub's badges
-// (TOOL_POINT_SOURCES in src/constants/lawyerAiCatalog.ts) read the same
+// (TOOL_POINT_SOURCES in src/constants/lawyerAiBadges.ts) read the same
 // registry, and pricingApprovals.test.ts holds both to the server.
 // A row the owner lists whose tool has no backend yet says «قريباً», with no
 // number. Not listed although ٢١٦ prices them: «المقارن الذكي» and «المترجم
@@ -185,7 +185,7 @@ export const lawyerServicesTable: ServiceCategory[] = [
       // Owner answer ١١٥: the attachment digest (٨) and, under «أدوات مساعدة»,
       // the transcriber + secretary row (٥) are off this list until those pages
       // work — all three say «قريباً». Their prices are kept in the comment
-      // above TOOL_POINT_SOURCES (lawyerAiCatalog.ts) for when they return.
+      // above TOOL_POINT_SOURCES (lawyerAiBadges.ts) for when they return.
       { name: "فحص المذكرة الشكلي والموضوعي", price: { aiTool: "brief-check" }, tools: ["ai:brief-check"] },
       { name: "مولّد أسئلة الاستجواب", price: "soon" },
       { name: "منقح ناجز", price: { aiTool: "najiz-optimizer" }, tools: ["ai:najiz-optimizer"] },

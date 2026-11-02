@@ -28,7 +28,8 @@ import { formatLibraryCount } from "@/lib/library/libraryStats";
 import { useLibraryStats } from "@/lib/library/useLibraryStats";
 import Link from "next/link";
 import { useUser, UserPermission } from "@/hooks/useUser";
-import { LAWYER_AI_TOOLS, getLawyerAiBadge, type LawyerAiTool } from "@/constants/lawyerAiCatalog";
+import { LAWYER_AI_TOOLS, type LawyerAiTool } from "@/constants/lawyerAiCatalog";
+import { getLawyerAiBadge } from "@/constants/lawyerAiBadges";
 import { isConsultantBlockedPath } from "@/lib/auth/practiceKind";
 
 // ─── Data ─────────────────────────────────────────────────────────────────────

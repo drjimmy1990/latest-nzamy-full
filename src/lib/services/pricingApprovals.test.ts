@@ -3,6 +3,7 @@ import test from "node:test";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 // A namespace import, so a missing export fails its own test, not the file.
 import * as catalog from "../../constants/lawyerAiCatalog.ts";
+import * as badges from "../../constants/lawyerAiBadges.ts";
 import { bookSar } from "../pricing/priceBook.ts";
 import {
   AI_TOOLS,
@@ -202,7 +203,7 @@ test("٢١٦: the comparator and the translator are not priced (both still retur
   for (const id of ["ai:compare", "ai:legal-translate"] as const) {
     const tool = byPermission.get(id);
     assert.ok(tool, id);
-    const badge = catalog.getLawyerAiBadge(tool, "ar");
+    const badge = badges.getLawyerAiBadge(tool, "ar");
     assert.ok(badge === null || badge === "قريباً", `${id} still shows a price on the hub: «${badge}»`);
   }
 });
@@ -224,14 +225,14 @@ const HUB_TOOLS: Record<string, string[]> = {
 };
 
 test("task 4: every hub badge is the registry's charge, «قريباً», free for a tool that charges nothing, or absent", () => {
-  const exported = (catalog as { TOOL_POINT_LABELS?: Record<string, string> }).TOOL_POINT_LABELS;
-  assert.ok(exported, "lawyerAiCatalog.ts exports TOOL_POINT_LABELS");
+  const exported = (badges as { TOOL_POINT_LABELS?: Record<string, string> }).TOOL_POINT_LABELS;
+  assert.ok(exported, "lawyerAiBadges.ts exports TOOL_POINT_LABELS");
   const labels: Record<string, string> = exported;
   assert.deepEqual(Object.keys(labels).sort(), Object.keys(HUB_TOOLS).sort(), "the hub prices a different set of tools");
 
   for (const tool of catalog.LAWYER_AI_TOOLS) {
-    const ar: string | null = catalog.getLawyerAiBadge(tool, "ar");
-    const en: string | null = catalog.getLawyerAiBadge(tool, "en");
+    const ar: string | null = badges.getLawyerAiBadge(tool, "ar");
+    const en: string | null = badges.getLawyerAiBadge(tool, "en");
     const ids = HUB_TOOLS[tool.permission];
     if (tool.comingSoon) {
       assert.equal(ar, "قريباً", tool.permission);
@@ -333,8 +334,13 @@ test("task 4: the tool pages print the constant the registry charges", () => {
   assert.deepEqual(serverCharges("najiz-optimizer"), [typed], "the Najiz button's points are not what the server charges");
 });
 
+test("task 4: the catalog useUser loads on every page does not import the AI registry", () => {
+  const src = readFileSync(new URL("../../constants/lawyerAiCatalog.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(src, /^import /m, "lawyerAiCatalog.ts imports something: the badges belong in lawyerAiBadges.ts");
+});
+
 test("task 4: no AI screen types a points number of its own", () => {
-  const roots = ["app/ai", "components/draft", "components/legal-opinion", "app/dashboard/business/kanban", "app/laws", "constants/lawyerAiCatalog.ts"];
+  const roots = ["app/ai", "components/draft", "components/legal-opinion", "app/dashboard/business/kanban", "app/laws", "constants/lawyerAiCatalog.ts", "constants/lawyerAiBadges.ts"];
   const allowed = new Set(["app/ai/najiz-optimizer/page.tsx"]); // held to the server above
   const files: string[] = [];
   const walk = (rel: string): void => {
