@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { PricedAiToolId } from "@/lib/ai/toolPointsDisplay";
+import type { PointsStandingTool } from "@/lib/ai/pointsStanding";
 
 export type PointsShortfall = { balance: number; price: number } | null;
 
@@ -12,7 +12,7 @@ export type PointsShortfall = { balance: number; price: number } | null;
  * or for an admin: the banner it drives never shows on a guess (LIVE-06).
  * `recheck` asks again when it changes, e.g. after a run settles.
  */
-export function usePointsShortfall(tool: PricedAiToolId, enabled: boolean, recheck: unknown = null): PointsShortfall {
+export function usePointsShortfall(tool: PointsStandingTool, enabled: boolean, recheck: unknown = null): PointsShortfall {
   const [shortfall, setShortfall] = useState<PointsShortfall>(null);
 
   useEffect(() => {

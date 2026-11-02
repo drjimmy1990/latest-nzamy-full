@@ -7,7 +7,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { fakeDb, type FakeQuery, type FakeError } from "../payments/fakeDb.test-helper.ts";
-import { isPricedAiToolId, pointsShort, pointsStandingWith } from "./pointsStanding.ts";
+import { isPointsStandingTool, isPricedAiToolId, pointsShort, pointsStandingWith } from "./pointsStanding.ts";
 import { CONTRACT_DRAFT_PRICE } from "./tools.ts";
 
 const USER = "11111111-2222-4333-8444-555555555555";
@@ -26,6 +26,16 @@ test("isPricedAiToolId: registry tools only", () => {
   assert.equal(isPricedAiToolId("contract-drafter"), true);
   assert.equal(isPricedAiToolId("letter-drafter"), false);
   assert.equal(isPricedAiToolId(null), false);
+});
+
+test("isPointsStandingTool: no tool a founder credit can pay (the rule knows only points)", () => {
+  assert.equal(isPointsStandingTool("contract-drafter"), true);
+  assert.equal(isPointsStandingTool("najiz-optimizer"), true);
+  for (const credit of ["legal-drafter", "contracts-pro", "legal-opinion-consult", "legal-opinion-letter", "wargaming"]) {
+    assert.equal(isPricedAiToolId(credit), true, credit);
+    assert.equal(isPointsStandingTool(credit), false, credit);
+  }
+  assert.equal(isPointsStandingTool("letter-drafter"), false);
 });
 
 type Answers = { profile?: { data?: unknown; error?: FakeError }; setting?: { data?: unknown; error?: FakeError }; balance?: { data?: unknown; error?: FakeError } };

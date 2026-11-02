@@ -15,9 +15,24 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { aiToolPointRange, PRICED_AI_TOOL_IDS, type PricedAiToolId } from "./toolPointsDisplay.ts";
+import { FOUNDER_DRAFTER_TOOL, FOUNDER_OUTPUT_TOOLS, type FounderOutputTool } from "../membership/founderPlan.ts";
 
 export function isPricedAiToolId(v: unknown): v is PricedAiToolId {
   return typeof v === "string" && (PRICED_AI_TOOL_IDS as readonly string[]).includes(v);
+}
+
+/**
+ * The tools this module may answer for: priced, and with no founder-credit
+ * path. On legal-drafter and the four founder output tools a founder credit
+ * pays instead of points (founderPlan.creditKindForRun, runCore), and the
+ * rule below knows nothing of credits: it would call a founder who holds
+ * credits "short". Restricting the list is simpler and safer than teaching it
+ * credits; a credit tool that wants the banner must add the credit read first.
+ */
+export type PointsStandingTool = Exclude<PricedAiToolId, typeof FOUNDER_DRAFTER_TOOL | FounderOutputTool>;
+
+export function isPointsStandingTool(v: unknown): v is PointsStandingTool {
+  return isPricedAiToolId(v) && v !== FOUNDER_DRAFTER_TOOL && !(FOUNDER_OUTPUT_TOOLS as readonly string[]).includes(v);
 }
 
 export interface PointsFacts {
@@ -51,7 +66,7 @@ export async function pointsStandingWith(
   rls: SupabaseClient,
   admin: SupabaseClient,
   userId: string,
-  tool: PricedAiToolId,
+  tool: PointsStandingTool,
 ): Promise<PointsStanding> {
   try {
     const profile = await rls.from("profiles").select("user_type").eq("id", userId).maybeSingle();

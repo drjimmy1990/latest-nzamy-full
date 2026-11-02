@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireApiUser } from "@/lib/auth/apiAuth";
-import { isPricedAiToolId, pointsStandingWith } from "@/lib/ai/pointsStanding";
+import { isPointsStandingTool, pointsStandingWith } from "@/lib/ai/pointsStanding";
 
 /**
  * GET /api/v1/ai/points-standing?tool=<id> — is the signed-in user short of
@@ -29,7 +29,8 @@ export async function GET(request: NextRequest) {
     if (auth instanceof NextResponse) return auth;
 
     const tool = request.nextUrl.searchParams.get("tool");
-    if (!isPricedAiToolId(tool)) {
+    // Priced tools with no founder-credit path only (pointsStanding.ts).
+    if (!isPointsStandingTool(tool)) {
       return NextResponse.json({ error: "أداة غير معروفة", code: "unknown_tool" }, { status: 400, headers: NO_STORE });
     }
     const admin = await createServiceClient();
