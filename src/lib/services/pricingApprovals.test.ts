@@ -558,3 +558,22 @@ test("q327: no «٩٩ ر.س» / «99 SAR» price is left in the consultation and
     assert.doesNotMatch(text, /priceNote: "[^"\n]*(?<![\d٠-٩])(?:٩٩|99)(?![\d٠-٩])[^"\n]*"/, `${path}: a 99 price note`);
   }
 });
+
+test("q327: migration 20261102_10 writes the same two rows the code catalogue carries (the DB row wins on /api/client-pricing)", async () => {
+  const { CLIENT_SERVICE_CATALOG } = await import("../../constants/clientServiceCatalog.ts");
+  const sql = readFileSync(new URL("../../../supabase/migrations/20261102_10_retire_cancelled_prices.sql", import.meta.url), "utf8");
+  // Statements only: the header and the rollback note are comments.
+  const code = sql.replace(/--.*$/gm, "");
+  for (const id of ["contract-draft", "contract-review"]) {
+    const row = CLIENT_SERVICE_CATALOG.find((s) => s.serviceId === id);
+    assert.ok(row?.priceNote, id);
+    const stmt = code
+      .split(";")
+      .find((s) => /update public\.admin_pricing_catalog\s+set base_price = /.test(s) && s.includes(`where service_id = '${id}'`));
+    assert.ok(stmt, `${id}: an UPDATE keyed by service_id`);
+    assert.match(stmt, new RegExp(`set base_price = ${row.basePrice},`), `${id}: base_price ${row.basePrice}`);
+    assert.ok(stmt.includes(`'priceNote', '${row.priceNote}'`), `${id}: the same note`);
+  }
+  // Retire, never delete: no DROP, no DELETE, no function (PGRST203).
+  assert.doesNotMatch(code, /\b(?:drop|delete|truncate)\b|create (?:or replace )?function/i);
+});
