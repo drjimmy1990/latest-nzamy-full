@@ -9,7 +9,7 @@ import {
 } from "@/lib/services/hearingVocabulary";
 import { HEARINGS_SELECT, resolveOwnCase, toDto, type HearingRow } from "./_shared";
 import { validateHearingDuration } from "@/lib/services/item59Labels";
-import { hearingDurationMinutes, hearingStartMs } from "@/lib/services/scheduleClash";
+import { DEADLINE_HEARING_KIND, hearingDurationMinutes, hearingStartMs } from "@/lib/services/scheduleClash";
 import { hearingOverlapRefusal } from "@/app/api/v1/lawyer/consultations/_scheduleGuard";
 
 /**
@@ -151,8 +151,9 @@ export async function POST(request: NextRequest) {
     }
 
     // q357: warn-then-confirm on a clash with the lawyer's own diary. A hearing
-    // with no hour holds a day, not a slot, and is not checked.
-    const startMs = hearingStartMs(date, time);
+    // with no hour holds a day, not a slot, and a «موعد طعن / نهائي» marks a
+    // day to act by — neither is checked.
+    const startMs = typeToKind(type as UiHearingType) === DEADLINE_HEARING_KIND ? null : hearingStartMs(date, time);
     if (startMs !== null) {
       const refusal = await hearingOverlapRefusal(supabase, {
         lawyerUserId: user.id,

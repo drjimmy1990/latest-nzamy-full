@@ -5,7 +5,7 @@ import { recordActivity, RequestEvent } from "@/lib/events";
 import { appendHearingHistory, planHearingChange } from "@/lib/services/hearingChange";
 import { riyadhToday } from "@/lib/riyadhDay";
 import { HEARINGS_SELECT, resolveOwnCase, toDto, type HearingRow } from "../_shared";
-import { hearingDurationMinutes, hearingStartMs } from "@/lib/services/scheduleClash";
+import { DEADLINE_HEARING_KIND, hearingDurationMinutes, hearingStartMs } from "@/lib/services/scheduleClash";
 import { hearingOverlapRefusal } from "@/app/api/v1/lawyer/consultations/_scheduleGuard";
 
 /**
@@ -71,11 +71,16 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       const nextTime = "hearing_time" in u ? (u.hearing_time as string | null) : current.hearing_time;
       const nextDuration = "duration_minutes" in u ? (u.duration_minutes as number | null) : current.duration_minutes;
       const nextStatus = typeof u.status === "string" ? u.status : current.status;
+      const nextKind = typeof u.kind === "string" ? u.kind : current.kind;
       const slotChanged = nextDate !== current.hearing_date
         || (nextTime ?? "").slice(0, 5) !== (current.hearing_time ?? "").slice(0, 5)
         || nextDuration !== current.duration_minutes
-        || nextStatus !== current.status;
-      const startMs = nextStatus === "scheduled" && slotChanged ? hearingStartMs(nextDate, nextTime) : null;
+        || nextStatus !== current.status
+        || nextKind !== current.kind;
+      // A «موعد طعن / نهائي» (kind deadline) marks a day, it holds no hour: not checked.
+      const startMs = nextStatus === "scheduled" && slotChanged && nextKind !== DEADLINE_HEARING_KIND
+        ? hearingStartMs(nextDate, nextTime)
+        : null;
       if (startMs !== null) {
         const refusal = await hearingOverlapRefusal(supabase, {
           lawyerUserId: user.id,

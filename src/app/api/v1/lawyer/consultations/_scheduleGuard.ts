@@ -33,6 +33,7 @@ import {
   type SlotCheck,
 } from "@/lib/services/consultationSchedule";
 import {
+  DEADLINE_HEARING_KIND,
   HEARING_OVERLAP_CODE,
   clashMessageAr,
   consultationItems,
@@ -70,9 +71,10 @@ export async function readScheduleConflicts(
       .limit(50),
     supabase
       .from("hearings")
-      .select("id, hearing_date, hearing_time, duration_minutes")
+      .select("id, hearing_date, hearing_time, duration_minutes, kind")
       .eq("owner_user_id", args.lawyerUserId)
       .eq("status", "scheduled")
+      .neq("kind", DEADLINE_HEARING_KIND)
       .not("hearing_time", "is", null)
       .gte("hearing_date", fromDay)
       .lte("hearing_date", toDay)

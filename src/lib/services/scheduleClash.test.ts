@@ -77,14 +77,27 @@ test("q357: the hearing query covers the day before (a long sitting may still ru
   assert.deepEqual(hearingQueryDays(at("2026-11-10", "23:30"), 60), { fromDay: "2026-11-09", toDay: "2026-11-11" });
 });
 
-test("q357: the warning names a hearing as جلسة and a consultation as استشارة", () => {
-  const one = clashMessageAr([{ kind: "hearing", id: "h1", scheduledAt: "2026-11-10T06:00:00.000Z", durationMinutes: 60 }]);
-  assert.match(one, /^يتعارض هذا الموعد مع جلسة مجدولة أخرى: /);
+test("q357: a «موعد طعن / نهائي» row (kind deadline) is not a clash — it marks a day, it holds no hour", () => {
+  const items = hearingItems([{ ...hearingRow, id: "d1", kind: "deadline" }]);
+  assert.deepEqual(items, []);
+  assert.equal(hearingItems([{ ...hearingRow, kind: "judicial" }]).length, 1);
+  assert.equal(hearingItems([{ ...hearingRow, kind: "client_meet" }]).length, 1);
+});
+
+test("q357: the warning names a sitting جلسة, another diary row موعد, a consultation استشارة", () => {
+  const one = clashMessageAr([{ kind: "hearing", id: "h1", scheduledAt: "2026-11-10T06:00:00.000Z", durationMinutes: 60, hearingKind: "judicial" }]);
+  assert.match(one, /^يتعارض هذا الموعد مع جلسة مجدولة: /);
   assert.match(one, /٩:٠٠ ص بتوقيت الرياض \(٦٠ دقيقة\)/);
   assert.match(one, /أكّد الحفظ رغم التعارض/);
+  assert.match(clashMessageAr([{ kind: "hearing", id: "m", scheduledAt: "2026-11-10T06:00:00.000Z", durationMinutes: 60, hearingKind: "client_meet" }]),
+    /^يتعارض هذا الموعد مع موعد مجدول: /);
+  assert.match(clashMessageAr([{ kind: "consultation", id: "c", scheduledAt: "2026-11-10T10:30:00.000Z", durationMinutes: 60 }]),
+    /^يتعارض هذا الموعد مع استشارة مجدولة: /);
   const two = clashMessageAr([
     { kind: "hearing", id: "h1", scheduledAt: "2026-11-10T06:00:00.000Z", durationMinutes: 60 },
     { kind: "consultation", id: "c1", scheduledAt: "2026-11-10T10:30:00.000Z", durationMinutes: 60 },
   ]);
-  assert.match(two, /مع ٢ مواعيد مجدولة: جلسة .*، استشارة /);
+  assert.match(two, /مع موعدين في جدولك: جلسة .*، استشارة /);
+  const three = clashMessageAr(Array.from({ length: 3 }, (_, i) => ({ kind: "consultation" as const, id: `c${i}`, scheduledAt: "2026-11-10T10:30:00.000Z", durationMinutes: 60 })));
+  assert.match(three, /مع ٣ مواعيد في جدولك: /);
 });

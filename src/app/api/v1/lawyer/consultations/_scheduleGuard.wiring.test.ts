@@ -77,7 +77,7 @@ test("the other consultation screens format in Riyadh time", () => {
 
 test("q357: the guard reads the lawyer's scheduled timed hearings too, and keeps the consultation 409 code", () => {
   const src = read("./_scheduleGuard.ts");
-  assert.match(src, /\.from\("hearings"\)[\s\S]*?\.eq\("owner_user_id", args\.lawyerUserId\)[\s\S]*?\.eq\("status", "scheduled"\)/);
+  assert.match(src, /\.from\("hearings"\)[\s\S]*?\.eq\("owner_user_id", args\.lawyerUserId\)[\s\S]*?\.eq\("status", "scheduled"\)[\s\S]*?\.neq\("kind", DEADLINE_HEARING_KIND\)/);
   assert.match(src, /findScheduleClashes\(args\.startMs, args\.durationMinutes, items, exclude\)/);
   assert.match(src, /code: CONSULTATION_OVERLAP_CODE, conflicts: read\.conflicts/);
   assert.match(src, /export async function hearingOverlapRefusal\(/);
@@ -90,12 +90,13 @@ test("q357: POST and PATCH /api/v1/lawyer/hearings check the slot before writing
   const insert = post.search(/\.from\("hearings"\)\s*\.insert\(/);
   assert.ok(guard > 0 && insert > guard, "POST: guard before the insert");
   assert.match(post, /confirmOverlap: confirmOverlap === true/);
+  assert.match(post, /typeToKind\(type as UiHearingType\) === DEADLINE_HEARING_KIND \? null/);
   const patch = read("../hearings/[id]/route.ts");
   const pGuard = patch.indexOf("hearingOverlapRefusal(supabase");
   const update = patch.search(/\.from\("hearings"\)\s*\.update\(/);
   assert.ok(pGuard > 0 && update > pGuard, "PATCH: guard before the update");
   assert.match(patch, /excludeHearingId: current\.id/);
-  assert.match(patch, /nextStatus === "scheduled" && slotChanged/);
+  assert.match(patch, /nextStatus === "scheduled" && slotChanged && nextKind !== DEADLINE_HEARING_KIND/);
 });
 
 test("q357: the hearing screens tell the overlap 409 apart by code and offer «حفظ رغم التعارض»", () => {

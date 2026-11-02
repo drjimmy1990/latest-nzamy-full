@@ -174,6 +174,8 @@ export default function CourtPicker({ id, isDark, choice, other, onChange, input
           id={listId}
           role="listbox"
           aria-label="المحاكم"
+          // Pressing the list's scrollbar must not blur the input (which closes the list).
+          onMouseDown={(e) => e.preventDefault()}
           className={`absolute z-10 mt-1 max-h-60 w-full overflow-y-auto rounded-xl border shadow-lg ${
             isDark ? "border-white/[0.08] bg-zinc-900" : "border-zinc-200 bg-white"
           }`}
