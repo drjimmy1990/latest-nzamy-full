@@ -291,3 +291,12 @@ test("review mode does not require named parties", () => {
   const r = validateContractsIntake({ ...validReview, parties: undefined });
   assert.equal(r.ok, true);
 });
+
+test("draft mode refuses a malformed representative ID (§3.5-3b) and accepts a valid or absent one", () => {
+  const withId = (id: string) => ({ ...validDraftBase, parties: { ...validDraftBase.parties, two: { type: "company", companyName: "شركة", representativeId: id } } });
+  const bad = validateContractsIntake(withId("1234"));
+  assert.equal(bad.ok, false);
+  if (!bad.ok) assert.ok(bad.errors.some((e) => e.includes("رقم هوية الممثل") && e.includes("الطرف الثاني")));
+  assert.equal(validateContractsIntake(withId("2023456789")).ok, true);
+  assert.equal(validateContractsIntake(withId("")).ok, true);
+});

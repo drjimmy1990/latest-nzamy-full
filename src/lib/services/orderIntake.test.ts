@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isPleadingDraftIntake, validateDraftIntake, SERVICE_TYPE_BY_KEY } from "./orderIntake.ts";
+import {
+  isPleadingDraftIntake, validateDraftIntake, SERVICE_TYPE_BY_KEY,
+  PARTY_ROLE_OTHER, partyRepresentativeRole, representativeIdOk, REPRESENTATIVE_ID_ERROR,
+} from "./orderIntake.ts";
 
 const valid = {
   schemaVersion: 1,
@@ -99,4 +102,31 @@ test("rejects an intake with wrong service value", () => {
 test("rejects an intake with missing service key", () => {
   const r = validateDraftIntake({ ...valid, service: undefined });
   assert.equal(r.ok, false);
+});
+
+test("representative (§3.5-3b): the ID is optional, 10 digits starting 1 or 2 when typed", () => {
+  assert.equal(representativeIdOk({}), true, "absent");
+  assert.equal(representativeIdOk({ representativeId: "  " }), true, "blank");
+  assert.equal(representativeIdOk({ representativeId: "1023456789" }), true);
+  assert.equal(representativeIdOk({ representativeId: "٢٠٢٣٤٥٦٧٨٩" }), true, "Arabic-Indic digits");
+  for (const bad of ["3023456789", "102345678", "10234567890", "abc"]) assert.equal(representativeIdOk({ representativeId: bad }), false, bad);
+  assert.equal(representativeIdOk(null), true, "not a party object: nothing to check");
+});
+
+test("representative (§3.5-3b): «أخرى» means the typed capacity", () => {
+  assert.equal(partyRepresentativeRole({ representativeRole: "مدير عام", representativeRoleOther: "x" }), "مدير عام");
+  assert.equal(partyRepresentativeRole({ representativeRole: PARTY_ROLE_OTHER, representativeRoleOther: " وكيل شرعي " }), "وكيل شرعي");
+  assert.equal(partyRepresentativeRole({ representativeRole: PARTY_ROLE_OTHER }), "");
+  assert.equal(partyRepresentativeRole(null), "");
+});
+
+test("the draft intake refuses a malformed representative ID and keeps a valid one with «أخرى»", () => {
+  const one = { type: "company", companyName: "شركة", representativeId: "3000000000" };
+  const bad = validateDraftIntake({ ...valid, parties: { ...valid.parties, one } });
+  assert.equal(bad.ok, false);
+  if (!bad.ok) assert.ok(bad.errors.includes(`${REPRESENTATIVE_ID_ERROR} (الطرف الأول)`));
+  const two = { type: "company", companyName: "شركة", representativeId: "1023456789", representativeRole: PARTY_ROLE_OTHER, representativeRoleOther: "وكيل" };
+  const ok = validateDraftIntake({ ...valid, parties: { ...valid.parties, two } });
+  assert.equal(ok.ok, true);
+  if (ok.ok) assert.deepEqual(ok.value.parties.two, two, "carried to the order as typed");
 });

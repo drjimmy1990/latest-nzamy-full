@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Microphone, PencilLine, CheckCircle, X } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { PartyData } from "./types";
+import { RepresentativeFields } from "@/components/parties/RepresentativeFields";
 
 // ─── Voice Button ─────────────────────────────────────────────────────────────
 export function VoiceBtn({ label = "صوت" }: { label?: string }) {
@@ -57,16 +58,8 @@ export function PartyForm({ data, onChange, isDark }: {
           <div><label className={lbl}>السجل التجاري</label><input className={inp} value={data.commercialReg} onChange={e => onChange("commercialReg", e.target.value)} placeholder="10 أرقام" /></div>
           <div><label className={lbl}>الرقم الموحد (700)</label><input className={inp} value={data.unifiedNum} onChange={e => onChange("unifiedNum", e.target.value)} placeholder="700XXXXXXX" /></div>
           <div><label className={lbl}>الممثل النظامي</label><input className={inp} value={data.representative} onChange={e => onChange("representative", e.target.value)} placeholder="الاسم الكامل" /></div>
-          <div>
-            <label className={lbl}>صفة الممثل</label>
-            <select className={inp} value={data.representativeRole} onChange={e => onChange("representativeRole", e.target.value)}>
-              <option value="">اختر الصفة</option>
-              <option value="مدير عام">مدير عام</option>
-              <option value="عضو مجلس إدارة">عضو مجلس إدارة</option>
-              <option value="مفوض بالتوقيع">مفوض بالتوقيع</option>
-              <option value="مدير">مدير</option>
-            </select>
-          </div>
+          <RepresentativeFields role={data.representativeRole} roleOther={data.representativeRoleOther} repId={data.representativeId}
+            onChange={onChange} inp={inp} lbl={lbl} isDark={isDark} />
           <div className="col-span-2"><label className={lbl}>العنوان</label><input className={inp} value={data.address} onChange={e => onChange("address", e.target.value)} placeholder="المدينة — الحي — الشارع" /></div>
         </div>
       )}

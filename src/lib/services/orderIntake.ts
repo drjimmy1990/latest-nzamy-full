@@ -7,6 +7,8 @@
  */
 
 import type { PartyData } from "@/components/draft/draftConstants";
+// Relative `.ts`: `node --test` resolves neither the alias nor a bare path.
+import { isValidNationalId } from "./clientIdentityRules.ts";
 
 export type ServiceKey = "draft" | "contracts" | "wargaming" | "legal_opinion";
 
@@ -78,6 +80,43 @@ export function isRecord(v: unknown): v is Record<string, unknown> {
 
 export function str(v: unknown): string {
   return typeof v === "string" ? v.trim() : "";
+}
+
+// ─── A party's legal representative (owner package §3.5-3b) ──────────────────
+// Both PartyForms (the drafter's DraftPartyForm and contracts' PartyForm) and
+// both intakes (draft here, contracts in orderIntake.contracts.ts) share these,
+// and the contracts AI run sends what partyRepresentativeRole() returns.
+
+/** The «أخرى» choice of «صفة الممثل»; what it means is typed in representativeRoleOther. */
+export const PARTY_ROLE_OTHER = "أخرى";
+
+/** The representative's capacity as the user meant it: the typed text when «أخرى» was picked. */
+export function partyRepresentativeRole(p: unknown): string {
+  if (!isRecord(p)) return "";
+  const role = str(p.representativeRole);
+  return role === PARTY_ROLE_OTHER ? str(p.representativeRoleOther) : role;
+}
+
+export const REPRESENTATIVE_ID_ERROR = "رقم هوية الممثل أو إقامته عشرة أرقام تبدأ بـ ١ أو ٢";
+
+/**
+ * The representative's national ID / iqama number is optional; when typed it
+ * is 10 digits starting with 1 or 2 (clientIdentityRules.isValidNationalId,
+ * Arabic-Indic digits accepted). A party that is not an object has none.
+ */
+export function representativeIdOk(p: unknown): boolean {
+  if (!isRecord(p)) return true;
+  const id = str(p.representativeId);
+  return !id || isValidNationalId(id);
+}
+
+/** One error per party whose representative ID is malformed. */
+export function representativeIdErrors(parties: { one?: unknown; two?: unknown } | null): string[] {
+  if (!parties) return [];
+  const errors: string[] = [];
+  if (!representativeIdOk(parties.one)) errors.push(`${REPRESENTATIVE_ID_ERROR} (الطرف الأول)`);
+  if (!representativeIdOk(parties.two)) errors.push(`${REPRESENTATIVE_ID_ERROR} (الطرف الثاني)`);
+  return errors;
 }
 
 /**
@@ -154,6 +193,7 @@ export function validateDraftIntake(input: unknown): ValidationResult<DraftIntak
   if (!partiesRaw || !isRecord(partiesRaw.one) || !isRecord(partiesRaw.two)) {
     errors.push("بيانات الأطراف غير مكتملة");
   }
+  errors.push(...representativeIdErrors(partiesRaw));
 
   const attachments = collectAttachments(input.attachments, errors);
 

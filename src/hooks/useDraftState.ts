@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import {
   CLIENT_VISIBLE_STEPS, StepKey, VisibleStepKey, PartyData, EMPTY_PARTY, SupportDoc, MEMO_MAIN_TYPES,
 } from "@/components/draft/draftConstants";
-import { validateDraftIntake } from "@/lib/services/orderIntake";
+import { validateDraftIntake, representativeIdOk } from "@/lib/services/orderIntake";
 import { createServiceOrder } from "@/lib/services/serviceOrders";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
 import { useOrderAttachments } from "@/hooks/useOrderAttachments";
@@ -202,7 +202,10 @@ export function useDraftState(initialMode = "") {
       return !!(clientRole && memoType && legalBranch && memoSubType);
     }
     // The facts typed (as validateDraftIntake asks) or in an attached file.
-    if (step === "case")     return caseText.trim().length >= 30 || uploadedAttachments.length > 0;
+    // A typed representative ID must be one (§3.5-3b), as validateDraftIntake asks.
+    if (step === "case") {
+      return (caseText.trim().length >= 30 || uploadedAttachments.length > 0) && representativeIdOk(partyOne) && representativeIdOk(partyTwo);
+    }
     return true;
   }
 

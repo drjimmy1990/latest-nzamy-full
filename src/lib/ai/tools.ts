@@ -8,9 +8,11 @@
  * Runtime overrides (mode, daily limit) live in platform_settings.ai_tools
  * (aiToolsConfig.ts) and are editable from admin without a deploy.
  *
- * Pure: no imports outside src/lib/ai, so `node --test` runs it.
+ * Pure: no imports outside src/lib/ai except the pure national-ID rule
+ * (services/clientIdentityRules.ts, itself import-free), so `node --test` runs it.
  */
 import { extractLegalRefs, missingLegalRefs } from "./legalRefs.ts";
+import { isValidNationalId, normalizeNationalId } from "../services/clientIdentityRules.ts";
 import { DRAFT_KINDS, draftKindPrice, isDraftKind } from "./draftKinds.ts";
 import type { RetrievalLimits } from "./retrieval.ts";
 import type { FileRules } from "./aiFiles.ts";
@@ -801,6 +803,12 @@ const CONTRACTS_PRO_CLAUSES_MAX = 34;
 const PARTY_FIELDS_MAX = 8;
 const PARTY_FIELD_MAX = 300;
 const PARTY_KIND: Readonly<Record<string, string>> = { company: "شركة أو منشأة", individual: "شخص طبيعي", government: "جهة حكومية" };
+/**
+ * The label of the representative's ID / iqama field (owner package §3.5-3b).
+ * The parties arrive as labelled fields, so this label is how the check below
+ * finds it; the wizard (contractsProRun.ts) sends it under this constant.
+ */
+export const CONTRACTS_PRO_REP_ID_LABEL = "رقم هوية الممثل / الإقامة";
 const LANGUAGE_NAME: Readonly<Record<string, string>> = { ar: "العربية", en: "الإنجليزية" };
 // A custom language is a name the user typed: letters, spaces and hyphens only.
 const CUSTOM_LANGUAGE = /^\p{L}[\p{L} -]{1,39}$/u;
@@ -853,6 +861,12 @@ function contractsProInput(raw: unknown): InputCheck {
       if (!label) return { ok: false, error: `بيانات ${role} غير صالحة` };
       const value = boundedText(f.value, PARTY_FIELD_MAX);
       if (!value) return { ok: false, error: `«${label}» (${role}) أطول من ${PARTY_FIELD_MAX.toLocaleString("ar-SA")} حرف` };
+      if (label === CONTRACTS_PRO_REP_ID_LABEL) {
+        // Optional, but typed it is a Saudi ID / iqama: 10 digits, 1 or 2 first.
+        if (!isValidNationalId(value)) return { ok: false, error: `«${label}» (${role}) عشرة أرقام تبدأ بـ ١ أو ٢` };
+        fields.push({ label, value: normalizeNationalId(value) });
+        continue;
+      }
       fields.push({ label, value });
     }
     if (fields.length === 0) return { ok: false, error: `أدخل اسم ${role}` };

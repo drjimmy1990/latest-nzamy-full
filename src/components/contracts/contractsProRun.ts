@@ -3,9 +3,11 @@
  * how it reads the contract back. The run validates both ends again
  * (tools.ts contractsProInput / contractsProOutput); these only shape them.
  *
- * Pure (type-only imports), so `node --test` runs it.
+ * Pure (relative `.ts` imports of pure modules), so `node --test` runs it.
  */
 import type { PartyData } from "./types";
+import { CONTRACTS_PRO_REP_ID_LABEL } from "../../lib/ai/tools.ts";
+import { partyRepresentativeRole } from "../../lib/services/orderIntake.ts";
 import type { CitationVerdict } from "../ai/CitationCheckList";
 
 /** Each party type's fields, under the labels PartyForm shows (SharedComponents.tsx). */
@@ -16,6 +18,8 @@ const PARTY_FIELDS: Record<PartyData["type"], Array<[keyof PartyData, string]>> 
     ["unifiedNum", "الرقم الموحد (700)"],
     ["representative", "الممثل النظامي"],
     ["representativeRole", "صفة الممثل"],
+    // The validator checks this one by its label (tools.ts contractsProInput).
+    ["representativeId", CONTRACTS_PRO_REP_ID_LABEL],
     ["address", "العنوان"],
   ],
   individual: [
@@ -30,12 +34,18 @@ const PARTY_FIELDS: Record<PartyData["type"], Array<[keyof PartyData, string]>> 
   ],
 };
 
-/** The filled fields of one party, each under its label: the model reads what the user read. */
+/**
+ * The filled fields of one party, each under its label: the model reads what
+ * the user read. «صفة الممثل» is the typed capacity when «أخرى» was picked
+ * (one field, never «أخرى» plus a second one), so a full company stays under
+ * the validator's 8 fields.
+ */
 function partyInput(p: PartyData): { kind: PartyData["type"]; fields: Array<{ label: string; value: string }> } {
+  const value = (key: keyof PartyData) => (key === "representativeRole" ? partyRepresentativeRole(p) : String(p[key] ?? "").trim());
   return {
     kind: p.type,
     fields: PARTY_FIELDS[p.type]
-      .map(([key, label]) => ({ label, value: String(p[key] ?? "").trim() }))
+      .map(([key, label]) => ({ label, value: value(key) }))
       .filter((f) => f.value.length > 0),
   };
 }

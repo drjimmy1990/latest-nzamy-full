@@ -46,6 +46,9 @@ export type PartyData = {
   // company
   companyName: string; commercialReg: string; unifiedNum: string;
   representative: string; representativeRole: string; address: string;
+  // Optional (owner package §3.5-3b): the representative's ID / iqama number,
+  // and the capacity typed when representativeRole is «أخرى» (PARTY_ROLE_OTHER).
+  representativeId: string; representativeRoleOther: string;
   // individual
   fullName: string; idNumber: string; nationality: string;
   // government
@@ -56,6 +59,7 @@ export const EMPTY_PARTY: PartyData = {
   type: "individual",
   companyName: "", commercialReg: "", unifiedNum: "",
   representative: "", representativeRole: "", address: "",
+  representativeId: "", representativeRoleOther: "",
   fullName: "", idNumber: "", nationality: "",
   entityName: "", unifiedNumGov: "", contactPerson: "",
 };

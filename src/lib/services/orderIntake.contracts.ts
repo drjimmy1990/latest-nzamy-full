@@ -7,7 +7,7 @@
  * from orderIntake.ts rather than re-declaring them.
  */
 
-import { isRecord, str, collectAttachments, type OrderAttachment, type ValidationResult } from "./orderIntake.ts";
+import { isRecord, str, collectAttachments, representativeIdErrors, type OrderAttachment, type ValidationResult } from "./orderIntake.ts";
 
 export interface ContractsIntakeV1 {
   schemaVersion: 1;
@@ -118,6 +118,8 @@ export function validateContractsIntake(input: unknown): ValidationResult<Contra
   if (mode === "draft" && !(partyIsNamed(partiesRaw?.one) && partyIsNamed(partiesRaw?.two))) {
     errors.push("يجب إدخال اسم الطرف الأول والطرف الثاني قبل إرسال طلب الصياغة — تحقق من الأطراف");
   }
+  // The representative's ID is optional; typed, it must be one (§3.5-3b).
+  errors.push(...representativeIdErrors(partiesRaw));
 
   const contractDesc = str(input.contractDesc);
   if (mode === "draft" && contractDesc.length < MIN_CONTRACT_DESC) {
