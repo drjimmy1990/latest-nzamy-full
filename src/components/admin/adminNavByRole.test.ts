@@ -44,9 +44,9 @@ const SUPER_ONLY = [
 
 // ─── The console's own sidebar (AdminSidebar.tsx) ─────────────────────────────
 
-test("super_admin sees all 33 items of the console sidebar", () => {
+test("super_admin sees all 34 items of the console sidebar", () => {
   const all = hrefsOf(NAV);
-  assert.equal(all.length, 33, "the console sidebar has 33 items (+ اشتراكات المكتبة, note ١٨ C03)");
+  assert.equal(all.length, 34, "the console sidebar has 34 items (+ اشتراكات المكتبة, note ١٨ C03; + حملة المؤسس, P3 Task 10)");
   assert.equal(new Set(all).size, all.length, "no href is listed twice");
   assert.deepEqual(adminNavForRole("super_admin"), NAV);
 });
@@ -125,6 +125,19 @@ test("the filter never changes the source nav", () => {
   assert.equal(JSON.stringify(hrefsOf(NAV)), before);
 });
 
+test("«حملة المؤسس» sits right after the security item in both navs, and is a read page", () => {
+  const FOUNDER = "/dashboard/admin/founder";
+  assert.equal(ADMIN_PAGE_ACTION[FOUNDER], "read", "the overview is requireStaff(\"read\"); its writes are gated on the server");
+  for (const groups of [NAV, ADMIN_SIDEBAR] as ReadonlyArray<ReadonlyArray<{ items: ReadonlyArray<{ href: string; label: string }> }>>) {
+    const group = groups.find((g) => g.items.some((i) => i.href === FOUNDER));
+    assert.ok(group, "the founder item is listed");
+    const at = group.items.findIndex((i) => i.href === FOUNDER);
+    assert.equal(group.items[at - 1]?.href, "/dashboard/admin/security", "next to the security item");
+    assert.equal(group.items[at].label, "حملة المؤسس");
+  }
+  for (const role of ROLES) assert.ok(hrefsOf(adminNavForRole(role)).includes(FOUNDER), role);
+});
+
 // ─── The classification table ─────────────────────────────────────────────────
 
 test("every admin href in both navs is classified (a new item cannot default open)", () => {
@@ -171,9 +184,9 @@ test("filterNavGroupsByRole keeps the group's own fields", () => {
 
 // ─── ADMIN_SIDEBAR (SharedSidebar / GlobalSearch) ─────────────────────────────
 
-// 34 since the Escrow link went (owner ٢٨٩: the platform holds no funds).
-test("ADMIN_SIDEBAR: super_admin and a null role see all 34 items", () => {
-  assert.equal(hrefsOf(ADMIN_SIDEBAR).length, 34, "ADMIN_SIDEBAR has 34 items");
+// 34 since the Escrow link went (owner ٢٨٩: the platform holds no funds); 35 with حملة المؤسس (P3 Task 10).
+test("ADMIN_SIDEBAR: super_admin and a null role see all 35 items", () => {
+  assert.equal(hrefsOf(ADMIN_SIDEBAR).length, 35, "ADMIN_SIDEBAR has 35 items");
   assert.deepEqual(adminSidebarForRole("super_admin"), ADMIN_SIDEBAR);
   assert.deepEqual(adminSidebarForRole(null), ADMIN_SIDEBAR);
 });

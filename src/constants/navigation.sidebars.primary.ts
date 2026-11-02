@@ -198,6 +198,8 @@ export const ADMIN_SIDEBAR: SidebarGroup[] = [
       { label: "إعدادات المنصة",        labelEn: "Platform Settings", href: "/dashboard/admin/settings",            icon: "Gear",                   badge: "جديد" },
       { label: "سجل التدقيق",          labelEn: "Audit Log",       href: "/dashboard/admin/audit-log",             icon: "ClockCounterClockwise", badge: "مُطوَّر" },
       { label: "الأمان والحماية",      labelEn: "Security",        href: "/dashboard/admin/security",              icon: "ShieldCheck",            badge: "مُطوَّر" },
+      // P3 Task 10: seats, members, refunds, pause / resume, capacity, retry activation
+      { label: "حملة المؤسس",          labelEn: "Founder Campaign", href: "/dashboard/admin/founder",              icon: "Crown",                  badge: "جديد" },
       // Owner answer ١١٥ — all three showed fixed logs, backups and figures and
       // render DashboardComingSoon now.
       { label: "سجل النظام",           labelEn: "System Log",      href: "/dashboard/admin/system",                icon: "Terminal",               badge: "قريباً" },

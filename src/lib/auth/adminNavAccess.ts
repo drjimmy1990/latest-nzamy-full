@@ -44,6 +44,9 @@ export const ADMIN_PAGE_ACTION: Readonly<Record<string, StaffAction>> = Object.f
   "/dashboard/admin/platform": "read",
   "/dashboard/admin/audit-log": "read",
   "/dashboard/admin/reports": "read",
+  // P3 Task 10: «حملة المؤسس» — the overview is requireStaff("read"); pause /
+  // capacity / retry activation are settings.write on the server.
+  "/dashboard/admin/founder": "read",
 
   // ── Operations' day-to-day queues ──────────────────────────────────────────
   "/dashboard/admin/provider-verification": "verifications.decide",
