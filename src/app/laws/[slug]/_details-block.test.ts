@@ -14,6 +14,8 @@ test("BUG-LIB-05: a schedule, an info card or a موجز is not amendment histor
   assert.equal(isAmendmentDetails("📜 حاشية المادة", "انظر المادة الخامسة."), false);
   // «تعديل» as an ordinary verb in a live annex is not history
   assert.equal(isAmendmentDetails("📝 ضوابط تفصيلية", "يجوز للهيئة تعديل هذه الضوابط."), false);
+  // a bare «التعديلات» in an annex title is not the parser's «التعديلات والإلغاءات»
+  assert.equal(isAmendmentDetails("📊 جدول التعديلات المسموح بها", "| البند | الحد |"), false);
 });
 
 test("BUG-LIB-05: a previous version is amendment history, by summary or by body", () => {

@@ -31,11 +31,13 @@ function normalizeArabic(s: string): string {
 /**
  * Summary wording that marks a block as a previous version. Mirrors the
  * parser's HISTORIC_SUMMARY_RE (scripts/parsers/lib/article-history.ts:230)
- * without «حاشية/حواشي»: a footnote is history only when its body says so
- * (BODY_HISTORY_RE below). Matched on normalizeArabic() text.
+ * without «حاشية/حواشي» (a footnote is history only when its body says so,
+ * BODY_HISTORY_RE below), plus «النص الأصلي» and «مرسوم/قرار التعديل».
+ * Phrases only — a bare «التعديلات» in an annex title is not history.
+ * Matched on normalizeArabic() text.
  */
 const SUMMARY_HISTORY_RE =
-  /الاصدارات\s+السابقة|التعديلات|الالغاءات|نص\s+تاريخي|قبل\s+الالغاء|قبل\s+التعديل|النص\s+السابق|النص\s+الاصلي|(?:مرسوم|قرار)\s+التعديل/;
+  /الاصدارات\s+السابقة|التعديلات\s+والالغاءات|نص\s+تاريخي|قبل\s+الالغاء|قبل\s+التعديل|النص\s+السابق|النص\s+الاصلي|(?:مرسوم|قرار)\s+التعديل/;
 
 /**
  * Body wording that IS amendment history: the parser's «before» labels
