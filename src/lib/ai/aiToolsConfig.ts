@@ -95,17 +95,3 @@ export function aiToolsSettingIssue(value: unknown, knownTools: readonly string[
   }
   return null;
 }
-
-/**
- * A stored run as the reader may see it. A "review" row's output is held back
- * from its owner (rows stored before review was retired: charged, hidden, and
- * nothing releases them until Wave 3), but never from an admin: the owner's
- * rule is that the admin always sees the output. `viewerIsAdmin` must fail
- * closed: an unread profile is not an admin.
- */
-export function runForViewer<T extends { status?: unknown; output?: unknown; citations?: unknown }>(
-  run: T,
-  viewerIsAdmin: boolean,
-): T {
-  return run.status === "review" && !viewerIsAdmin ? { ...run, output: null, citations: [] } : run;
-}

@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { fakeDb, type FakeQuery } from "../payments/fakeDb.test-helper.ts";
 import { AI_COPY, callbackWith, mapCitations, startRunWith, type RunActor, type StartRunDeps } from "./runCore.ts";
 import type { N8nOutcome } from "./n8nClient.ts";
-import { resolveToolRuntime, aiToolsSettingIssue, effectiveToolMode, runForViewer, REVIEW_MODE_REFUSED_AR } from "./aiToolsConfig.ts";
+import { resolveToolRuntime, aiToolsSettingIssue, effectiveToolMode, REVIEW_MODE_REFUSED_AR } from "./aiToolsConfig.ts";
 import { AI_TOOLS, LIB_QUERIES_PATH } from "./tools.ts";
 import type { Retrieved } from "./retrieval.ts";
 
@@ -419,14 +419,6 @@ test("review retired: a job callback for a stored-review tool settles as succeed
   assert.equal(r.body.final, "succeeded");
   const upd = log.find((q) => q.table === "ai_runs" && q.op === "update")!;
   assert.equal((upd.payload as Record<string, unknown>).status, "succeeded");
-});
-
-test("review retired: a stored review row is hidden from its owner, never from an admin", () => {
-  const row = { id: RUN, status: "review", output: { text: "x" }, citations: [{ sid: "s1" }] };
-  assert.deepEqual(runForViewer(row, false), { ...row, output: null, citations: [] });
-  assert.equal(runForViewer(row, true), row);
-  const done = { ...row, status: "succeeded" };
-  assert.equal(runForViewer(done, false), done);
 });
 
 // ── founder credits (P3 Task 6) ──────────────────────────────────────────────

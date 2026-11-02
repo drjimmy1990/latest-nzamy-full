@@ -6,7 +6,7 @@ import { callN8n } from "@/lib/ai/n8nClient";
 import { retrieveLibrary } from "@/lib/ai/retrieval";
 import { resolveAiFiles } from "@/lib/ai/aiFiles";
 import { startRunWith, type RouteReply, type RunActor } from "@/lib/ai/runCore";
-import { runForViewer } from "@/lib/ai/aiToolsConfig";
+import { runForViewer, viewerIsAdmin } from "@/lib/ai/runVisibility";
 import { libraryGate } from "@/lib/library-gate";
 import { libraryAiAccess } from "@/app/api/ai/_libraryAiAccess";
 import { isLibraryAiTool, quotaRefusal } from "@/lib/library/readQuota";
@@ -154,11 +154,7 @@ export async function GET(request: NextRequest) {
     // or refunds those rows) is held from its owner, never from an admin. The
     // profile is read only when such a row is there, and fails closed.
     const rows = data ?? [];
-    let isAdmin = false;
-    if (rows.some((r) => r.status === "review")) {
-      const { data: me, error: meError } = await supabase.from("profiles").select("user_type").eq("id", auth.user.id).maybeSingle();
-      isAdmin = !meError && me?.user_type === "admin";
-    }
+    const isAdmin = rows.some((r) => r.status === "review") && (await viewerIsAdmin(supabase, auth.user.id));
     const runs = rows.map((r) => runForViewer(r, isAdmin));
     return NextResponse.json({ runs }, { headers: NO_STORE });
   } catch (err) {

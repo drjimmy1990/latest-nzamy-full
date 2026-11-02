@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { requireApiUser } from "@/lib/auth/apiAuth";
-import { runForViewer } from "@/lib/ai/aiToolsConfig";
+import { runForViewer, viewerIsAdmin } from "@/lib/ai/runVisibility";
 
 /**
  * GET /api/v1/ai/runs/<id> — one run of the signed-in user (the job tools'
@@ -18,15 +18,6 @@ export const dynamic = "force-dynamic";
 
 const NO_STORE = { "Cache-Control": "private, no-store" };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/**
- * Whether the signed-in viewer is a platform admin, read only when a stored
- * "review" row needs it. Fails closed: an unread profile is not an admin.
- */
-async function viewerIsAdmin(supabase: Awaited<ReturnType<typeof createClient>>, userId: string): Promise<boolean> {
-  const { data, error } = await supabase.from("profiles").select("user_type").eq("id", userId).maybeSingle();
-  return !error && data?.user_type === "admin";
-}
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {

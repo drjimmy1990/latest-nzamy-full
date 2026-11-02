@@ -256,7 +256,16 @@ export default function AdminAIUsagePage() {
                     <td className="py-2 whitespace-nowrap">{new Date(r.created_at).toLocaleString("ar-SA-u-nu-latn")}</td>
                     <td>{r.user_name}</td>
                     <td className="font-mono">{r.tool}</td>
-                    <td className={STATUS_TONE[r.status] ?? ""}>{STATUS_LABEL[r.status] ?? r.status}</td>
+                    <td className={STATUS_TONE[r.status] ?? ""}>
+                      {STATUS_LABEL[r.status] ?? r.status}
+                      {/* A row left from the retired review mode: charged, hidden from its
+                          owner. The output is for judging a manual refund (super admin only;
+                          the route answers 403 to any other role). */}
+                      {r.status === "review" && (
+                        <a href={`/api/v1/admin/ai-runs/${r.id}`} target="_blank" rel="noopener noreferrer"
+                          className="ms-2 text-[11px] text-[#C8A762] underline">عرض الناتج</a>
+                      )}
+                    </td>
                     <td>
                       {r.charged ? `${r.charged_points}${r.refunded_at ? " (أُعيدت)" : ""}` : `— (${r.price_points})`}
                     </td>
