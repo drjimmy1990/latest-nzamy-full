@@ -9,7 +9,7 @@ import { DraftPartyForm } from "@/components/draft/DraftPartyForm";
 import { RequiredMark } from "@/components/ui/RequiredMark";
 import { JudgmentHeader } from "@/components/draft/JudgmentHeader";
 import { COMMITTEE_BRANCH_IDS, PartyData, SupportDoc, REQUIRES_JUDGMENT_HEADER } from "@/components/draft/draftConstants";
-import type { OrderAttachment } from "@/lib/services/orderIntake";
+import { draftPartiesShown, type OrderAttachment } from "@/lib/services/orderIntake";
 
 interface StepCaseProps {
   isDark: boolean;
@@ -71,6 +71,9 @@ export function StepCase({
   const card = isDark ? "bg-zinc-900 border border-white/[0.06] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
   const isCommittee  = COMMITTEE_BRANCH_IDS.has(legalBranch);
   const isDraftType  = memoType === "case";
+  // Which party forms show: the same rule the case step's gate and
+  // validateDraftIntake apply, so a hidden form's values never count.
+  const partiesShown = draftPartiesShown(memoType, legalBranch);
   const needsJudgment = REQUIRES_JUDGMENT_HEADER.has(memoType);
 
   const [showFirmModal, setShowFirmModal] = useState(false);
@@ -127,7 +130,7 @@ export function StepCase({
 
 
       {/* بيانات الأطراف */}
-      {isDraftType ? (
+      {partiesShown.one ? (
         <div className={`${card} p-5 shadow-sm`}>
           <div className="flex items-center gap-2 mb-4">
             <p className={`text-[13px] font-bold ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>بيانات الأطراف</p>
@@ -141,7 +144,7 @@ export function StepCase({
           <p className={`text-[11px] font-bold uppercase tracking-wider mb-2 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
             {clientRole === "plaintiff" ? "المدعى عليه (الطرف الثاني)" : "المدعي (الطرف الثاني)"}
           </p>
-          {isCommittee ? (
+          {!partiesShown.two ? (
             <div className={`rounded-xl p-3 ${isDark ? "bg-zinc-800/50 text-zinc-400" : "bg-zinc-50 text-zinc-500"} text-[12px]`}>
               🏛️ المستأنف ضدها: <strong>هيئة الزكاة والضريبة والجمارك</strong> (ثابت)
             </div>

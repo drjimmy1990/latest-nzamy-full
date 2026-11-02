@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   isPleadingDraftIntake, validateDraftIntake, SERVICE_TYPE_BY_KEY,
   PARTY_ROLE_OTHER, partyRepresentativeRole, representativeIdOk, representativeIdValid, REPRESENTATIVE_ID_ERROR,
+  draftPartiesShown, partyForIntake,
 } from "./orderIntake.ts";
 
 const valid = {
@@ -110,7 +111,7 @@ test("representative (§3.5-3b): the ID is optional, 10 digits starting 1 or 2 w
   assert.equal(representativeIdOk(company("  ")), true, "blank");
   assert.equal(representativeIdOk(company("1023456789")), true);
   assert.equal(representativeIdOk(company("٢٠٢٣٤٥٦٧٨٩")), true, "Arabic-Indic digits");
-  for (const bad of ["3023456789", "102345678", "10234567890", "abc"]) {
+  for (const bad of ["3023456789", "102345678", "10234567890", "abc", "ID 1023456789", "1023-456789", "1O234567890"]) {
     assert.equal(representativeIdOk(company(bad)), false, bad);
     assert.equal(representativeIdValid(bad), false, bad);
   }
@@ -142,4 +143,57 @@ test("the draft intake refuses a malformed representative ID and keeps a valid o
   const ok = validateDraftIntake({ ...valid, parties: { ...valid.parties, two } });
   assert.equal(ok.ok, true);
   if (ok.ok) assert.deepEqual(ok.value.parties.two, two, "carried to the order as typed");
+  const arabic = validateDraftIntake({ ...valid, parties: { ...valid.parties, two: { ...two, representativeId: " ١٠٢٣٤٥٦٧٨٩ " } } });
+  assert.equal(arabic.ok, true);
+  if (arabic.ok) assert.equal(arabic.value.parties.two.representativeId, "1023456789", "the order keeps 10 ASCII digits, as the AI run does");
+});
+
+test("draftPartiesShown mirrors StepCase: both forms for «تحرير دعوى», party two not on a committee branch", () => {
+  assert.deepEqual(draftPartiesShown("case", "عمالي"), { one: true, two: true });
+  assert.deepEqual(draftPartiesShown("case", "ضريبية"), { one: true, two: false });
+  assert.deepEqual(draftPartiesShown("reply", "عمالي"), { one: false, two: false });
+  assert.deepEqual(draftPartiesShown("appeal", "زكوية"), { one: false, two: false });
+});
+
+const BAD_COMPANY = { type: "company", companyName: "شركة", representativeId: "3", representativeRole: PARTY_ROLE_OTHER, representativeRoleOther: "وكيل" };
+
+test("I1: a bad ID typed in «تحرير دعوى», then the memo switched to reply or appeal, blocks nothing and is not sent", () => {
+  for (const memoType of ["reply", "appeal"]) {
+    const r = validateDraftIntake({ ...valid, memoType, parties: { one: BAD_COMPANY, two: BAD_COMPANY } });
+    assert.equal(r.ok, true, memoType);
+    if (!r.ok) continue;
+    for (const party of [r.value.parties.one, r.value.parties.two] as Record<string, unknown>[]) {
+      assert.equal("representativeId" in party, false, memoType);
+      assert.equal("representativeRole" in party, false, memoType);
+      assert.equal("representativeRoleOther" in party, false, memoType);
+      assert.equal(party.companyName, "شركة", "the rest of the party passes as before");
+    }
+  }
+});
+
+test("I1: a bad ID on party two, then a committee branch (party two fixed), blocks nothing; party one is still checked", () => {
+  const hiddenTwo = validateDraftIntake({ ...valid, legalBranch: "ضريبية", parties: { one: valid.parties.one, two: BAD_COMPANY } });
+  assert.equal(hiddenTwo.ok, true);
+  if (hiddenTwo.ok) assert.equal("representativeId" in (hiddenTwo.value.parties.two as Record<string, unknown>), false);
+  const shownOne = validateDraftIntake({ ...valid, legalBranch: "ضريبية", parties: { one: BAD_COMPANY, two: valid.parties.two } });
+  assert.equal(shownOne.ok, false);
+  if (!shownOne.ok) assert.ok(shownOne.errors.includes(`${REPRESENTATIVE_ID_ERROR} (الطرف الأول)`));
+});
+
+test("M5: partyForIntake keeps only what the form means now", () => {
+  const listed = partyForIntake({ type: "company", companyName: "ش", representativeRole: "مدير عام", representativeRoleOther: "قديم", representativeId: "1023456789" });
+  assert.deepEqual(listed, { type: "company", companyName: "ش", representativeRole: "مدير عام", representativeId: "1023456789" }, "a stale «أخرى» text is dropped");
+  const person = partyForIntake({ type: "individual", fullName: "خالد", representativeRole: "مدير", representativeRoleOther: "x", representativeId: "1023456789" });
+  assert.deepEqual(person, { type: "individual", fullName: "خالد" }, "فرد carries no representative fields");
+  const gov = partyForIntake({ type: "government", entityName: "جهة", representativeId: "1023456789" });
+  assert.deepEqual(gov, { type: "government", entityName: "جهة" });
+  const hidden = partyForIntake({ type: "company", companyName: "ش", representativeId: "1023456789" }, false);
+  assert.deepEqual(hidden, { type: "company", companyName: "ش" }, "a hidden form sends none");
+  assert.equal(partyForIntake(null), null);
+});
+
+test("the cleaned draft intake re-validates (the server guard checks the wizard's own output)", () => {
+  const first = validateDraftIntake({ ...valid, legalBranch: "ضريبية", parties: { one: { ...BAD_COMPANY, representativeId: "٢٠٢٣٤٥٦٧٨٩" }, two: BAD_COMPANY } });
+  assert.equal(first.ok, true);
+  if (first.ok) assert.equal(validateDraftIntake(first.value).ok, true);
 });

@@ -12,7 +12,7 @@
  * (services/clientIdentityRules.ts, itself import-free), so `node --test` runs it.
  */
 import { extractLegalRefs, missingLegalRefs } from "./legalRefs.ts";
-import { isValidNationalId, normalizeNationalId } from "../services/clientIdentityRules.ts";
+import { strictNationalId } from "../services/clientIdentityRules.ts";
 import { DRAFT_KINDS, draftKindPrice, isDraftKind } from "./draftKinds.ts";
 import type { RetrievalLimits } from "./retrieval.ts";
 import type { FileRules } from "./aiFiles.ts";
@@ -863,8 +863,9 @@ function contractsProInput(raw: unknown): InputCheck {
       if (!value) return { ok: false, error: `«${label}» (${role}) أطول من ${PARTY_FIELD_MAX.toLocaleString("ar-SA")} حرف` };
       if (label === CONTRACTS_PRO_REP_ID_LABEL) {
         // Optional, but typed it is a Saudi ID / iqama: 10 digits, 1 or 2 first.
-        if (!isValidNationalId(value)) return { ok: false, error: `«${label}» (${role}) عشرة أرقام تبدأ بـ ١ أو ٢` };
-        fields.push({ label, value: normalizeNationalId(value) });
+        const id = strictNationalId(value);
+        if (!id) return { ok: false, error: `«${label}» (${role}) عشرة أرقام تبدأ بـ ١ أو ٢` };
+        fields.push({ label, value: id });
         continue;
       }
       fields.push({ label, value });

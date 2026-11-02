@@ -465,11 +465,14 @@ test("parties (§3.5-3b): the representative's ID is optional, validated when ty
   const ok = checked(company([name, { label: CONTRACTS_PRO_REP_ID_LABEL, value: "١٠٢٣٤٥٦٧٨٩" }])) as { parties: Array<{ fields: Array<{ label: string; value: string }> }> };
   assert.deepEqual(ok.parties[0].fields[1], { label: CONTRACTS_PRO_REP_ID_LABEL, value: "1023456789" }, "Arabic-Indic digits normalised");
   assert.ok(v(company([name, { label: CONTRACTS_PRO_REP_ID_LABEL, value: "2023456789" }])).ok, "an iqama starts with 2");
-  for (const bad of ["3023456789", "102345678", "10234567890", "1O23456789"]) {
+  // Taken as typed: a letter, a separator or a prefix is refused, never stripped down to ten digits.
+  for (const bad of ["3023456789", "102345678", "10234567890", "1O234567890", "ID 1023456789", "1023-456789", "1023 456789"]) {
     const r = v(company([name, { label: CONTRACTS_PRO_REP_ID_LABEL, value: bad }]));
     assert.match(!r.ok ? r.error : "", /عشرة أرقام تبدأ بـ ١ أو ٢/, bad);
   }
   assert.ok(v(company([name])).ok, "no ID at all is fine");
+  const padded = checked(company([name, { label: CONTRACTS_PRO_REP_ID_LABEL, value: "  2023456789 " }])) as { parties: Array<{ fields: Array<{ label: string; value: string }> }> };
+  assert.equal(padded.parties[0].fields[1].value, "2023456789", "surrounding spaces are trimmed");
 
   // The wizard: a fully filled company with «أخرى» stays one «صفة الممثل» field, 7 in all, and passes.
   const sent = contractsProInput({

@@ -1,6 +1,6 @@
 "use client";
 
-import { useId } from "react";
+import { useId, useState } from "react";
 import { PARTY_ROLE_OTHER, REPRESENTATIVE_ID_ERROR, representativeIdValid } from "@/lib/services/orderIntake";
 
 type RepresentativeField = "representativeRole" | "representativeRoleOther" | "representativeId";
@@ -24,7 +24,10 @@ export function RepresentativeFields({ role, roleOther, repId, onChange, inp, lb
 }) {
   const ids = useId();
   const id = repId ?? "";
-  const idBad = !representativeIdValid(id);
+  // The error waits until the field is left or 10 characters are in: the
+  // first digit alone is not a mistake yet.
+  const [left, setLeft] = useState(false);
+  const idBad = (left || id.trim().length >= 10) && !representativeIdValid(id);
 
   return (
     <>
@@ -46,7 +49,7 @@ export function RepresentativeFields({ role, roleOther, repId, onChange, inp, lb
       <div>
         <label htmlFor={`${ids}-id`} className={lbl}>رقم هوية الممثل / الإقامة</label>
         <input id={`${ids}-id`} className={inp} inputMode="numeric" maxLength={10} dir="ltr" value={id}
-          onChange={e => onChange("representativeId", e.target.value)} placeholder="اختياري — 10 أرقام"
+          onChange={e => onChange("representativeId", e.target.value)} onBlur={() => setLeft(true)} placeholder="اختياري — 10 أرقام"
           aria-invalid={idBad} aria-describedby={idBad ? `${ids}-id-error` : undefined} />
         {idBad && (
           <p id={`${ids}-id-error`} className={`mt-1 text-[10px] ${isDark ? "text-red-400" : "text-red-600"}`}>{REPRESENTATIVE_ID_ERROR}</p>
