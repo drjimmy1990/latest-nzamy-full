@@ -39,8 +39,31 @@ export type AdminPricingCatalogRow = {
     humanService?: boolean;
     /** S6: this row is an audience variant of that service id (never a card). */
     variantOf?: string;
+    /**
+     * S6: true only when an admin hid the row on purpose (adminHiddenPatch).
+     * The server loader fetches a disabled row only with this flag.
+     */
+    adminHidden?: boolean;
   };
 };
+
+/**
+ * S6 contract for the admin enable/disable toggle (S6-T7 must use it): the
+ * columns a PATCH writes. Disabling writes enabled = false AND
+ * metadata.adminHidden = true — without the flag the server loader
+ * (src/lib/pricing/clientPricingServer.ts) never fetches the row, so the
+ * toggle would hide nothing. Enabling writes enabled = true and REMOVES the
+ * flag. Every other metadata key is kept. Pure; the caller writes the result.
+ */
+export function adminHiddenPatch(
+  enabled: boolean,
+  metadata: Record<string, unknown> | null | undefined,
+): { enabled: boolean; metadata: Record<string, unknown> } {
+  const next: Record<string, unknown> = { ...(metadata ?? {}) };
+  if (enabled) delete next.adminHidden;
+  else next.adminHidden = true;
+  return { enabled, metadata: next };
+}
 
 // Coupons are NOT here. A client-side map (VALID_COUPONS) and the
 // quoteClientService() that read it used to accept NZAMY50 / NEWCLIENT with no

@@ -300,8 +300,10 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     // Wave 1 task 6, fix round 1 (I3): no «مشمول في الباقة · أو 49 ر.س للخطاب».
     // No plan includes it and nothing charges 49: /dashboard/client/letters
     // fills a guidance template in the browser and debits nothing. So: free,
-    // no riyal amount, no plan. (The DB row is enabled = false, so this code
-    // row is what the client services page shows.)
+    // no riyal amount, no plan. (The DB row is a legacy enabled = false row
+    // with no metadata.adminHidden, which the server loader never reads —
+    // clientPricingServer.ts — so this code row is what the client services
+    // page shows.)
     basePrice: 0,
     priceMode: "free",
     route: "/dashboard/client/letters",
@@ -667,9 +669,10 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     requestType: "service",
     // Was "internal" (hidden from clients) — Q42 makes it client-facing.
     // NOTE: the admin_pricing_catalog seed row (20260518) still says
-    // beta_visibility 'internal' and enabled false; /api/client-pricing only
-    // reads enabled rows, so this constant is what clients get until an admin
-    // enables that row — and then the row's own visibility wins.
+    // beta_visibility 'internal' and enabled false. The server loader
+    // (clientPricingServer.ts) reads a disabled row only when an admin hid it
+    // on purpose (metadata.adminHidden), so this constant is what clients get
+    // until an admin enables that row — and then the row's own visibility wins.
     betaVisibility: "public",
     requiresPayment: true,
     humanService: true,

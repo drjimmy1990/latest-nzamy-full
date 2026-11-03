@@ -98,3 +98,13 @@ test("S6: an unknown id resolves like getClientServiceById (the general fallback
   assert.equal(resolveClientService("xyz", "individual", CLIENT_SERVICE_CATALOG).serviceId, "general");
   assert.equal(resolveClientService("xyz", "corporate", CLIENT_SERVICE_CATALOG).serviceId, "general");
 });
+
+test("S6: the admin toggle contract — disabling flags adminHidden, enabling removes it, other keys kept", async () => {
+  const { adminHiddenPatch } = await import("./pricingRepository.ts");
+  const meta = { route: "/x", priceNote: "n" };
+  assert.deepEqual(adminHiddenPatch(false, meta), { enabled: false, metadata: { route: "/x", priceNote: "n", adminHidden: true } });
+  assert.deepEqual(adminHiddenPatch(true, { ...meta, adminHidden: true }), { enabled: true, metadata: meta });
+  assert.deepEqual(adminHiddenPatch(false, null), { enabled: false, metadata: { adminHidden: true } });
+  assert.deepEqual(adminHiddenPatch(true, undefined), { enabled: true, metadata: {} });
+  assert.deepEqual(meta, { route: "/x", priceNote: "n" }, "the input is not mutated");
+});
