@@ -317,7 +317,8 @@ function readsSimulationKey(src: string): boolean {
 }
 
 const SIM_NAMES = /\b(?:adminSim\w*|simId\w*|sim|useAdminSimulation|setAdminSimulation|simulatedNavIdentity|adminBypassesUiGates|ADMIN_SIM_\w+|ADMIN_SWITCH_OPTIONS)\b/;
-const REQUEST_CALL = /\b(?:fetch|apiFetch|authedFetch|sendBeacon|axios(?:\.\w+)?)\s*\(/g;
+// Navigation counts as a request: a query string (?view=judge) reaches the proxy.
+const REQUEST_CALL = /\b(?:fetch|apiFetch|authedFetch|sendBeacon|axios(?:\.\w+)?|router\.(?:push|replace|prefetch)|redirect|location\.(?:assign|replace))\s*\(/g;
 
 /** The argument text of every request call (balanced parentheses). */
 function requestCallArgs(src: string): string[] {
@@ -339,9 +340,11 @@ function requestCallArgs(src: string): string[] {
 function simulationLeaksIntoRequest(src: string): boolean {
   const c = code(src);
   if (requestCallArgs(c).some((args) => SIM_NAMES.test(args))) return true;
-  return c.split("\n").some((line) =>
-    /\b(?:body|headers)\s*:|JSON\.stringify\(|new\s+(?:Request|Headers|FormData)\(|\.set(?:Header)?\(\s*["'][xX]-/.test(line) &&
-    SIM_NAMES.test(line));
+  if (c.split("\n").some((line) =>
+    /\b(?:body|headers)\s*:|JSON\.stringify\(|new\s+(?:Request|Headers|FormData|URLSearchParams)\(|\.set(?:Header)?\(\s*["'][xX]-|\bhref\s*=|location\.href\s*=|searchParams\.(?:set|append)\(/.test(line) &&
+    SIM_NAMES.test(line))) return true;
+  // Handed to a child component as a prop — the child could send it.
+  return /=\{\s*(?:adminSim|simId|sim)\b/.test(c);
 }
 
 /** Request, session or guard code that must never sit in a simulation module. */
@@ -422,6 +425,12 @@ test("R27 negative control: each predicate flags a planted leak and passes a cle
   assert.equal(importsSimulation('const m = await import("../lib/nav/adminSimulation.ts");'), true);
   assert.equal(importsSimulation('// import { x } from "@/lib/nav/adminSimulation";'), false, "a comment imports nothing");
   assert.equal(readsSimulationKey('sessionStorage.getItem("nzamy_admin_sim")'), true);
+  // Navigation and props count as leaks too.
+  assert.equal(simulationLeaksIntoRequest('router.push(`/dashboard/government?role=${simId.governmentRole}`);'), true);
+  assert.equal(simulationLeaksIntoRequest('<Link href={`/x?v=${adminSim.view}`}>x</Link>'), true);
+  assert.equal(simulationLeaksIntoRequest('<RequestForm role={simId.practiceKind} />'), true);
+  assert.equal(simulationLeaksIntoRequest('<RequestForm sim={adminSim} />'), true);
+  assert.equal(simulationLeaksIntoRequest('router.push(opt.href);\n<Link href="/dashboard/lawyer">x</Link>'), false);
   // The comment stripper: «/ai/*» in a line comment opens nothing; a URL in a string stays.
   assert.equal(code('// every /ai/* tool\nconst simId = 1; /* gone */ const u = "https://x";'), '\nconst simId = 1;  const u = "https://x";');
 
