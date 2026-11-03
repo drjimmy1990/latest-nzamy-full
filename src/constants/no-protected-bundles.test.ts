@@ -43,19 +43,19 @@ test("no source file refers to a bundled collection or book", () => {
   assert.deepEqual(offenders, []);
 });
 
-/** Double-quoted and template literals in `source`, longer than `max` once one trailing «…» is set aside. */
+/** Double-, single-quoted and template literals in `source`, longer than `max` once one trailing «…» is set aside. */
 function longLiterals(source: string, max: number): string[] {
   const out: string[] = [];
-  const re = /"((?:[^"\\\r\n]|\\.)*)"|`((?:[^`\\]|\\.)*)`/g;
+  const re = /"((?:[^"\\\r\n]|\\.)*)"|'((?:[^'\\\r\n]|\\.)*)'|`((?:[^`\\]|\\.)*)`/g;
   for (const m of source.matchAll(re)) {
-    const raw = (m[1] ?? m[2] ?? "").replace(/…$/, "");
+    const raw = (m[1] ?? m[2] ?? m[3] ?? "").replace(/…$/, "");
     if (raw.length > max) out.push(raw.slice(0, 40));
   }
   return out;
 }
 
 function declaration(rel: string, start: string, end: string | null): string {
-  const text = readFileSync(at(rel), "utf8");
+  const text = readFileSync(at(rel), "utf8").replace(/\r\n/g, "\n");
   const a = text.indexOf(start);
   assert.ok(a >= 0, `${start} not found in ${rel}`);
   const b = end === null ? text.length : text.indexOf(end, a);
@@ -70,7 +70,31 @@ test("demo records keep at most 150 characters per field (DEMO_PRECEDENTS, DEMO_
   assert.deepEqual(longLiterals(rawd, 150), [], "DEMO_RAWD");
 });
 
+/**
+ * Controller ruling (fix round 1): the cut applies to EVERY client-bundled
+ * copy of library text — law, principle, decree or book. Every
+ * src/app/laws/demo-data*.ts file is measured whole, and so is the inline
+ * الروض المربع of the feqh preview page.
+ */
+test("every demo-data module keeps at most 150 characters per string (DEMO_PRINCIPLES, DEMO_ORDERS, …)", () => {
+  const files = readdirSync(at("app/laws")).filter((f) => /^demo-data.*\.ts$/.test(f) && !f.endsWith(".test.ts"));
+  for (const expected of ["demo-data-principles.ts", "demo-data-orders.ts", "demo-data-precedents.ts", "demo-data-books.ts"]) {
+    assert.ok(files.includes(expected), `${expected} not found — update this guard if it moved`);
+  }
+  for (const f of files) {
+    assert.deepEqual(longLiterals(readFileSync(at(`app/laws/${f}`), "utf8"), 150), [], f);
+  }
+});
+
+test("the feqh preview's inline demo book keeps at most 150 characters per string (DEMO_BOOK)", () => {
+  const book = declaration("app/laws/feqh-preview/page.tsx", "const DEMO_BOOK: FeqhBook = {", "\n};");
+  assert.ok(book.includes("matn:") && book.includes("chapters:"), "DEMO_BOOK declaration not found whole");
+  assert.deepEqual(longLiterals(book, 150), [], "DEMO_BOOK");
+});
+
 test("the scanner sees a long literal (negative control)", () => {
   assert.equal(longLiterals(`x: "${"ب".repeat(151)}"`, 150).length, 1);
+  assert.equal(longLiterals(`x: '${"ب".repeat(151)}'`, 150).length, 1);
+  assert.equal(longLiterals("x: `" + "ب".repeat(151) + "`", 150).length, 1);
   assert.equal(longLiterals(`x: "${"ب".repeat(150)}…"`, 150).length, 0);
 });

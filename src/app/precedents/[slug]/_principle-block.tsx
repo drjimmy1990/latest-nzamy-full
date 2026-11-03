@@ -10,13 +10,12 @@ import { useNearViewport } from "@/hooks/useNearViewport";
 /**
  * Principle text as paragraphs: no raw Markdown marks, and a ruling split on
  * its own sentence and line breaks instead of one block (_principle-text.ts).
- * Memoised: a search loads every principle of a collection (up to 2,323, some
- * fields over 25k characters), and a block re-renders when the active
- * principle changes on scroll.
+ * Memoised: some fields run over 25k characters, and a block re-renders when
+ * the active principle changes on scroll.
  *
  * Owner note ٠٦: each paragraph goes through <Hl>, which colours the search
- * of the nearest HighlightProvider (the reader's ?q= or its own filter box)
- * and renders plain text when there is none. <Hl> reads context, so the memo
+ * of the nearest HighlightProvider (the reader's ?q=, or the in-document
+ * panel's «الانتقال للموضع») and renders plain text when there is none. <Hl> reads context, so the memo
  * still re-renders when the search changes.
  *
  * BUG-LIB-01: the block colours its text only while it is near the viewport
