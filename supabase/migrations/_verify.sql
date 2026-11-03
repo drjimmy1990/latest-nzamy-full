@@ -5270,10 +5270,11 @@ end $$;
 -- and "undone by a later re-run" (of the 20260518 seed, which puts 99 / 800
 -- and «مشمول» back, or of 20261102_10, which puts «أو ٥٠٠ نقطة للعقد» back)
 -- look the same: every wrong state RAISES and names the file(s) to re-run.
--- A missing row passes (the code catalogue then serves the same values), and
--- so does a contract-review row for another audience (GET /api/client-pricing
--- serves audience 'individual' only). The Arabic literals are the migrations'
--- own, byte for byte.
+-- A missing row passes (the code catalogue then serves the same values). Each
+-- select reads the audience 'individual' row only: a company's price lives in
+-- its own row (e.g. 'contract-review-business', audience 'corporate', checked
+-- by verify:s6_contract_review_business), never in these two. The Arabic
+-- literals are the migrations' own, byte for byte.
 -- Docker, from the repo root in Git Bash (R, M and "$F" as in the header of
 -- supabase/tests/rls/contract_draft_points_price.test.sql):
 --   B=$(mktemp -d)/verify_wave1_pricing_rows.sql
@@ -5299,7 +5300,7 @@ begin
       r.base_price, coalesce(r.metadata->>'priceNote', 'null');
   end if;
   select base_price, metadata into r from public.admin_pricing_catalog
-   where service_id = 'contract-draft';
+   where service_id = 'contract-draft' and audience = 'individual';
   if found and (r.base_price is distinct from 0
                 or coalesce(r.metadata ? 'tag', false)
                 or coalesce(r.metadata->>'priceNote', '') not in ('أو ٥٠٠ نقطة للعقد', '٥٠٠ نقطة للعقد')) then
@@ -5315,7 +5316,7 @@ begin
     raise notice '_verify: 20261102_11 — public.admin_pricing_catalog is missing (20260518 not applied): nothing to check'; return;
   end if;
   select price_mode, metadata into r from public.admin_pricing_catalog
-   where service_id = 'contract-draft';
+   where service_id = 'contract-draft' and audience = 'individual';
   if found and (r.price_mode is distinct from 'points'
                 or r.metadata->>'priceNote' is distinct from '٥٠٠ نقطة للعقد'
                 or coalesce(r.metadata ? 'includedByPlan', false)) then
@@ -5325,3 +5326,46 @@ begin
   raise notice '_verify: 20261102_11 OK — contract drafting is priced in points («٥٠٠ نقطة للعقد»), not «مشمول في الباقة» (a missing row reads as the code catalogue)';
 end $$;
 -- <<< verify:wave1_pricing_rows
+-- >>> verify:s6_contract_review_business
+-- 2026-11-03 — 20261103_20_contract_review_business_row.sql (owner-free wave,
+-- S6-T1; q327): contract review for business is 800, in its own row
+-- 'contract-review-business' (audience 'corporate', metadata.variantOf
+-- 'contract-review'), because service_id is the table's primary key. Read-only,
+-- safe to repeat: SELECTs and RAISE.
+-- RAISES (naming the file to run) when the row is missing, has another
+-- audience, no variantOf, or no positive price. Passes (NOTICE) on any
+-- positive base_price and on enabled = false: both are legal admin edits. The
+-- file is ON CONFLICT DO NOTHING, so a wrong row is not fixed by a re-run —
+-- the message says to delete it first.
+-- Docker, from the repo root in Git Bash (R, M and "$F" as in the header of
+-- supabase/tests/rls/contract_review_business_row.test.sql):
+--   B=$(mktemp -d)/verify_s6_crb.sql
+--   sed -n '/^-- >>> verify:s6_contract_review_business/,/^-- <<< verify:s6_contract_review_business/p' $M/_verify.sql > "$B"
+--   PASS: bash $R/run.sh "$F" $M/20261102_10_retire_cancelled_prices.sql \
+--           $M/20261102_11_contract_draft_points_price.sql \
+--           $M/20261103_20_contract_review_business_row.sql "$B"
+--   FAIL (each must raise): "$F" _10 _11 "$B" (row missing); the PASS chain
+--         with a prelude that sets audience 'individual' on the row before "$B".
+--   No table at all: one NOTICE, passes.
+do $$
+declare r record;
+begin
+  if to_regclass('public.admin_pricing_catalog') is null then
+    raise notice '_verify: 20261103_20 — public.admin_pricing_catalog is missing (20260518 not applied): the code catalogue serves the business 800; nothing to check'; return;
+  end if;
+  select audience, base_price, enabled, metadata into r from public.admin_pricing_catalog
+   where service_id = 'contract-review-business';
+  if not found then
+    raise exception '_verify: 20261103_20 — there is no contract-review-business row (the business 800 for contract review, q327): run 20261103_20_contract_review_business_row.sql (AFTER the deploy)';
+  end if;
+  if r.audience is distinct from 'corporate' or r.metadata->>'variantOf' is distinct from 'contract-review' then
+    raise exception '_verify: 20261103_20 — contract-review-business has audience % and variantOf %, not corporate / contract-review: it would not reach companies. Run delete from public.admin_pricing_catalog where service_id = ''contract-review-business''; then run 20261103_20_contract_review_business_row.sql (AFTER the deploy)',
+      coalesce(r.audience, 'null'), coalesce(r.metadata->>'variantOf', 'null');
+  end if;
+  if r.base_price is null or r.base_price <= 0 then
+    raise exception '_verify: 20261103_20 — contract-review-business has price %, not a positive business price: set a positive base_price by hand (update … where service_id = ''contract-review-business''), or delete the row and run 20261103_20_contract_review_business_row.sql (AFTER the deploy)',
+      coalesce(r.base_price::text, 'null');
+  end if;
+  raise notice '_verify: 20261103_20 OK — business contract review % SAR (enabled %; any positive price an admin sets is accepted)', r.base_price, r.enabled;
+end $$;
+-- <<< verify:s6_contract_review_business
