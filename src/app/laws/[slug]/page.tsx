@@ -125,7 +125,7 @@ function LawSystemPageContent() {
   const [showIndexSheet, setShowIndexSheet] = useState(false);
   const [activeId,    setActiveId]    = useState<string>("art-1");
   const [explainArticle, setExplainArticle] = useState<LawArticle | null>(null);
-  // Starts empty. This used to default to the bundled COMPANIES_LAW, which meant
+  // Starts empty. This used to default to a bundled COMPANIES_LAW (deleted, q390), which meant
   // every law page — whichever one you opened — briefly rendered نظام الشركات
   // while its own data loaded. The `if (!law)` guard below the loading/error
   // early-returns is what lets the rest of the component keep reading `law.x`.
@@ -224,7 +224,7 @@ function LawSystemPageContent() {
     // law/meta after a client-side navigation.
     let cancelled = false;
     async function loadLaw() {
-      // NOTE: `companies-law` used to short-circuit to the bundled COMPANIES_LAW
+      // NOTE: `companies-law` used to short-circuit to a bundled COMPANIES_LAW (deleted, q390)
       // constant here, BEFORE the fetch — so the reader never asked the database
       // for it. Measured: the database holds 281 articles for that law and the
       // bundled constant held 17, so 264 articles were invisible, and because no

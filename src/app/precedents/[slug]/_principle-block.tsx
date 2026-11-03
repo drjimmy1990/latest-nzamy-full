@@ -15,8 +15,8 @@ import { useNearViewport } from "@/hooks/useNearViewport";
  *
  * Owner note ٠٦: each paragraph goes through <Hl>, which colours the search
  * of the nearest HighlightProvider (the reader's ?q=, or the in-document
- * panel's «الانتقال للموضع») and renders plain text when there is none. <Hl> reads context, so the memo
- * still re-renders when the search changes.
+ * panel's «الانتقال للموضع») and renders plain text when there is none.
+ * <Hl> reads context, so the memo still re-renders when the search changes.
  *
  * BUG-LIB-01: the block colours its text only while it is near the viewport
  * (HighlightScope + useNearViewport); the page's legend counts every loaded

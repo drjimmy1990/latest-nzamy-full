@@ -43,11 +43,41 @@ test("no source file refers to a bundled collection or book", () => {
   assert.deepEqual(offenders, []);
 });
 
-/** Double-, single-quoted and template literals in `source`, longer than `max` once one trailing «…» is set aside. */
+/**
+ * `source` with its `//` and `/* *\/` comments blanked out (strings are kept,
+ * so a `//` inside a string is not a comment). A quote or backtick inside a
+ * comment would otherwise pair up with another one and read as a literal.
+ */
+function withoutComments(source: string): string {
+  let out = "";
+  let i = 0;
+  while (i < source.length) {
+    const c = source[i];
+    const next = source[i + 1];
+    if (c === "/" && next === "/") {
+      while (i < source.length && source[i] !== "\n") i++;
+    } else if (c === "/" && next === "*") {
+      const end = source.indexOf("*/", i + 2);
+      i = end === -1 ? source.length : end + 2;
+      out += " ";
+    } else if (c === '"' || c === "'" || c === "`") {
+      let j = i + 1;
+      while (j < source.length && source[j] !== c && !(c !== "`" && source[j] === "\n")) j += source[j] === "\\" ? 2 : 1;
+      out += source.slice(i, j + 1);
+      i = j + 1;
+    } else {
+      out += c;
+      i++;
+    }
+  }
+  return out;
+}
+
+/** Double-, single-quoted and template literals in `source` (comments skipped), longer than `max` once one trailing «…» is set aside. */
 function longLiterals(source: string, max: number): string[] {
   const out: string[] = [];
   const re = /"((?:[^"\\\r\n]|\\.)*)"|'((?:[^'\\\r\n]|\\.)*)'|`((?:[^`\\]|\\.)*)`/g;
-  for (const m of source.matchAll(re)) {
+  for (const m of withoutComments(source).matchAll(re)) {
     const raw = (m[1] ?? m[2] ?? m[3] ?? "").replace(/…$/, "");
     if (raw.length > max) out.push(raw.slice(0, 40));
   }
@@ -71,14 +101,14 @@ test("demo records keep at most 150 characters per field (DEMO_PRECEDENTS, DEMO_
 });
 
 /**
- * Controller ruling (fix round 1): the cut applies to EVERY client-bundled
- * copy of library text — law, principle, decree or book. Every
- * src/app/laws/demo-data*.ts file is measured whole, and so is the inline
- * الروض المربع of the feqh preview page.
+ * Controller ruling (fix rounds 1–2): the cut applies to EVERY client-bundled
+ * copy of library text — law, principle, decree or book. Every non-test
+ * src/app/laws/*.ts module (demo-data*, data.ts, …) is measured whole, and so
+ * is the inline الروض المربع of the feqh preview page.
  */
-test("every demo-data module keeps at most 150 characters per string (DEMO_PRINCIPLES, DEMO_ORDERS, …)", () => {
-  const files = readdirSync(at("app/laws")).filter((f) => /^demo-data.*\.ts$/.test(f) && !f.endsWith(".test.ts"));
-  for (const expected of ["demo-data-principles.ts", "demo-data-orders.ts", "demo-data-precedents.ts", "demo-data-books.ts"]) {
+test("every src/app/laws/*.ts module keeps at most 150 characters per string (DEMO_PRINCIPLES, DEMO_ORDERS, data.ts, …)", () => {
+  const files = readdirSync(at("app/laws")).filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"));
+  for (const expected of ["data.ts", "demo-data-principles.ts", "demo-data-orders.ts", "demo-data-precedents.ts", "demo-data-books.ts"]) {
     assert.ok(files.includes(expected), `${expected} not found — update this guard if it moved`);
   }
   for (const f of files) {
@@ -96,5 +126,9 @@ test("the scanner sees a long literal (negative control)", () => {
   assert.equal(longLiterals(`x: "${"ب".repeat(151)}"`, 150).length, 1);
   assert.equal(longLiterals(`x: '${"ب".repeat(151)}'`, 150).length, 1);
   assert.equal(longLiterals("x: `" + "ب".repeat(151) + "`", 150).length, 1);
+  // A `//` inside a string is not a comment: the literal is still measured.
+  assert.equal(longLiterals(`x: "https://${"ب".repeat(151)}"`, 150).length, 1);
+  // Quotes inside comments never pair up into a literal.
+  assert.equal(longLiterals(`// it's \`a\n/* ${"ب".repeat(151)} ' */\nx: '\`b'`, 150).length, 0);
   assert.equal(longLiterals(`x: "${"ب".repeat(150)}…"`, 150).length, 0);
 });
