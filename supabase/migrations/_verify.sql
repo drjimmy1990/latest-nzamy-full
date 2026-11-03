@@ -5142,11 +5142,15 @@ begin
   if bad is not null then
     raise exception '_verify: 20261030_16 — the subscription_plans prices of % are not the price book''s (re-run 20261030_16)', bad;
   end if;
+  -- Since 20261103_21 (metadata.first_order_rule = '20261103_21') the flag is
+  -- the admin coupons page's: an un-ticked NEWCLIENT is a legitimate state
+  -- there, checked by verify:s6_newclient_flag instead.
   if exists (select 1 from public.coupons where upper(code) = 'NEWCLIENT'
-                and coalesce(metadata->>'first_paid_order_only', '') <> 'true') then
-    raise exception '_verify: 20261030_16 — NEWCLIENT is not stamped first_paid_order_only (re-run 20261030_16)';
+                and coalesce(metadata->>'first_paid_order_only', '') <> 'true'
+                and coalesce(metadata->>'first_order_rule', '') <> '20261103_21') then
+    raise exception '_verify: 20261030_16 — NEWCLIENT is not stamped first_paid_order_only (run 20261103_21_newclient_first_order_flag.sql, BEFORE the deploy)';
   end if;
-  raise notice '_verify: 20261030_16 OK — subscription_plans holds the price book''s prices; NEWCLIENT is first-paid-order only';
+  raise notice '_verify: 20261030_16 OK — subscription_plans holds the price book''s prices; NEWCLIENT is first-paid-order only (or, after 20261103_21, as an admin set it)';
 end $$;
 -- <<< verify:pricing_owner_package
 -- >>> verify:library_activity_monitor
@@ -5381,3 +5385,38 @@ begin
   end if;
 end $$;
 -- <<< verify:s6_contract_review_business
+-- >>> verify:s6_newclient_flag
+-- 2026-11-03 — 20261103_21_newclient_first_order_flag.sql (owner-free wave,
+-- S6-T9; owner ٣٠٥): NEWCLIENT's first-paid-order rule lives in its row
+-- (metadata.first_paid_order_only), stamped metadata.first_order_rule =
+-- '20261103_21'. From the deploy of S6-T10 on the code reads the row only,
+-- never the name. Read-only, safe to repeat: SELECTs and RAISE.
+-- RAISES (naming the file to run) when a NEWCLIENT row has no marker. With
+-- the marker it passes whatever the flag says: the admin coupons page owns
+-- the flag from then on (an un-tick is a legitimate state, reported in the
+-- NOTICE). No NEWCLIENT row passes (nothing to check). No coupons table:
+-- one NOTICE, passes.
+-- Docker: supabase/tests/rls/newclient_first_order_flag.test.sql runs this
+-- block (its header has the chain, the negative control and the sed line).
+do $$
+declare r record;
+begin
+  if to_regclass('public.coupons') is null then
+    raise notice '_verify: 20261103_21 — public.coupons is missing (20260603_phase1_003 not applied): nothing to check'; return;
+  end if;
+  select code, metadata into r from public.coupons where upper(code) = 'NEWCLIENT' limit 1;
+  if not found then
+    raise notice '_verify: 20261103_21 OK — there is no NEWCLIENT coupon: nothing to stamp'; return;
+  end if;
+  if coalesce(r.metadata->>'first_order_rule', '') <> '20261103_21' then
+    raise exception '_verify: 20261103_21 — NEWCLIENT has no first_order_rule marker (its first-paid-order flag is %): from the deploy of S6-T10 the rule is read from the row only. Run 20261103_21_newclient_first_order_flag.sql (BEFORE the deploy)',
+      coalesce(r.metadata->>'first_paid_order_only', 'absent');
+  end if;
+  if coalesce(r.metadata->'first_paid_order_only' = 'true'::jsonb, false) then  -- the JSON boolean the code reads (=== true), not the string "true"
+    raise notice '_verify: 20261103_21 OK — NEWCLIENT is for the buyer''s first paid order only (from its row)';
+  else
+    raise notice '_verify: 20261103_21 OK, but note — an admin un-ticked NEWCLIENT''s «للطلب المدفوع الأول فقط» (flag %): it now applies to any order its other rules allow',
+      coalesce(r.metadata->>'first_paid_order_only', 'absent');
+  end if;
+end $$;
+-- <<< verify:s6_newclient_flag

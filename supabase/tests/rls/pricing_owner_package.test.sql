@@ -25,6 +25,13 @@
 -- ind-ai; 20261026_10 adds price_quarterly / price_semiannual; 20261026_20
 -- gives coupons its server-only shape.
 --
+-- Since 20261103_21 (S6-T9) the _verify section accepts a NEWCLIENT whose
+-- flag an admin un-ticked once the row carries metadata.first_order_rule =
+-- '20261103_21'; that state is exercised by newclient_first_order_flag.test.sql
+-- (it runs this same block over the un-ticked row, and the block of db4a1472
+-- as its negative control). This chain never has the marker, so it still
+-- proves the block passes on a stamped row.
+--
 -- NEGATIVE CONTROL (must FAIL): the chain without 20261026_10 → the migration
 -- raises "20261030_16: subscription_plans has no price_quarterly /
 -- price_semiannual — run 20261026_10_billing_cycles.sql first".
