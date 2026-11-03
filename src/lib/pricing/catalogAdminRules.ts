@@ -55,8 +55,14 @@ export const CATALOG_PRICE_MODES: readonly ClientServicePriceMode[] = [
 export const CATALOG_MAX_PRICE = 1_000_000;
 export const CATALOG_NOTE_MAX = 200;
 
-/** Modes that print a riyal amount, so the amount must be above zero. */
-const NEEDS_PRICE: readonly string[] = ["fixed", "starting_from"];
+/**
+ * Modes that print a riyal amount (formatClientServicePrice), so the amount
+ * must be above zero: `per_page` prints «يبدأ من … ر.س» too (review M3).
+ */
+const NEEDS_PRICE: readonly string[] = ["fixed", "starting_from", "per_page"];
+
+/** Modes whose customer string carries no amount (the screen shows no bare number for them). */
+export const AMOUNTLESS_PRICE_MODES: readonly string[] = ["free", "included", "custom", "points"];
 
 export const CATALOG_ERRORS = {
   body: "بيانات غير صالحة",
@@ -281,17 +287,21 @@ export function customerViewOf(
       basePrice: code.basePrice,
       priceMode: code.priceMode,
       priceNote: code.priceNote ?? "",
-      visible: code.enabled !== false,
+      visible: code.enabled !== false && code.betaVisibility === "public",
     };
   }
   const meta = (row.metadata as Record<string, unknown> | null) ?? {};
+  // Review M1: the merge shows `metadata.priceNote ?? code.priceNote`, so a
+  // row with no note of its own shows the code entry's note to customers.
+  const note = typeof meta.priceNote === "string" ? meta.priceNote : codeEntryFor(row.service_id, catalog)?.priceNote;
   return {
     legacy: false,
     label: row.label_ar,
     basePrice: Number(row.base_price) || 0,
     priceMode: row.price_mode,
-    priceNote: typeof meta.priceNote === "string" ? meta.priceNote : "",
-    visible: row.enabled !== false,
+    priceNote: note ?? "",
+    // Review M2: a customer list shows only an enabled, public service.
+    visible: row.enabled !== false && row.beta_visibility === "public",
   };
 }
 

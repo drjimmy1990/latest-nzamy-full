@@ -75,9 +75,19 @@ export async function PATCH(
       updated_at: new Date().toISOString(),
     };
 
-    let query = adminClient.from("admin_pricing_catalog").update(updateData).eq("service_id", serviceId);
-    if (typeof row.updated_at === "string") query = query.eq("updated_at", row.updated_at);
-    const { data: updated, error } = await query.select("*");
+    // updated_at is NOT NULL; a row read without it would silently lose the
+    // race protection below, so it is a failure, never an unconditional write.
+    if (typeof row.updated_at !== "string" || row.updated_at === "") {
+      console.error("[admin/pricing-catalog PATCH] row has no updated_at; refusing an unconditional write:", serviceId);
+      return NextResponse.json({ error: "تعذّر حفظ البند — لم يتغيّر شيء." }, { status: 500 });
+    }
+
+    const { data: updated, error } = await adminClient
+      .from("admin_pricing_catalog")
+      .update(updateData)
+      .eq("service_id", serviceId)
+      .eq("updated_at", row.updated_at)
+      .select("*");
 
     if (error) {
       console.error("[admin/pricing-catalog PATCH] Supabase error:", error.code, error.message, error.details, error.hint);

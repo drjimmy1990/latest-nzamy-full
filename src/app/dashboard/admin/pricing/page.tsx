@@ -17,6 +17,7 @@ import { LAWYER_AI_TOOLS } from "@/constants/lawyerAiCatalog";
 import { bookSar, PRICE_BOOK } from "@/lib/pricing/priceBook";
 import { formatClientServicePrice, type AdminPricingCatalogRow } from "@/lib/pricingRepository";
 import {
+  AMOUNTLESS_PRICE_MODES,
   CATALOG_PRICE_MODES,
   changedCatalogFields,
   customerViewOf,
@@ -309,7 +310,8 @@ export default function PricingPage() {
                           <input type="number" min={0} step="0.01" value={editing.basePrice} onChange={(e) => setDraft({ ...editing, basePrice: e.target.value })} className={`${input} w-28`} />
                         ) : (
                           <>
-                            <span>{view.basePrice.toLocaleString("ar-SA")}</span>
+                            {/* Review M7: no bare amount for a mode whose customer string prints none */}
+                            {!AMOUNTLESS_PRICE_MODES.includes(view.priceMode) && <span>{view.basePrice.toLocaleString("ar-SA")}</span>}
                             <span className={`block text-[10px] font-sans ${muted}`}>
                               {formatClientServicePrice({ basePrice: view.basePrice, priceMode: view.priceMode as ClientServicePriceMode })}
                             </span>

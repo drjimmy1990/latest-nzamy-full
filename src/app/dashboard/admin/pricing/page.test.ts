@@ -60,3 +60,17 @@ test("S6: the console is dark-only — zinc tokens, never text-gray-100/200, no 
   assert.doesNotMatch(source, /new Date\(/);
   assert.ok(source.includes('toLocaleString("ar-SA")'));
 });
+
+test("S6 M7: no bare amount for a mode whose customer string prints none", () => {
+  assert.match(source, /!AMOUNTLESS_PRICE_MODES\.includes\(view\.priceMode\) && <span>\{view\.basePrice\.toLocaleString\("ar-SA"\)\}<\/span>/);
+});
+
+test("S6 M10: the platform readiness list no longer says pricing is local-only", () => {
+  const readiness = readFileSync(new URL("../../../../constants/adminBackendReadiness.ts", import.meta.url), "utf8");
+  const pricing = [...readiness.matchAll(/id: "pricing",[\s\S]*?note: "[^"]*",/g)].map((m) => m[0]);
+  assert.equal(pricing.length, 2, "fixture: both pricing entries found");
+  for (const entry of pricing) {
+    assert.match(entry, /\/api\/v1\/admin\/pricing-catalog/);
+    assert.doesNotMatch(entry, /محلياً|Pricing API|pricing API|AdminPricingItem/);
+  }
+});

@@ -310,3 +310,42 @@ test("S6: the screen sends only what changed against what the customer sees (a l
   // the stale seed price 49 is never in an untouched body
   assert.equal(Object.values(changedCatalogFields(view, untouched)).includes(49), false);
 });
+
+// ── review round 1 (M1, M2, M3) ──
+
+test("S6 M3: «per_page» prints «يبدأ من … ر.س», so a price of 0 is refused for it too", () => {
+  assert.deepEqual(validateCatalogPatch({ price_mode: "starting_from", base_price: 600 }, { priceMode: "per_page", basePrice: 0 }), {
+    ok: false,
+    error: "السعر مطلوب وأكبر من صفر لهذه الطريقة",
+  });
+  assert.deepEqual(validateCatalogPatch({ price_mode: "per_page", base_price: 300 }, { basePrice: 0 }), {
+    ok: false,
+    error: "السعر مطلوب وأكبر من صفر لهذه الطريقة",
+  });
+  // no code entry in an amount mode is priced 0 (a legacy realign would refuse every edit)
+  for (const s of CLIENT_SERVICE_CATALOG) {
+    if (["fixed", "starting_from", "per_page"].includes(s.priceMode)) assert.ok(s.basePrice > 0, s.serviceId);
+  }
+});
+
+test("S6 M1: a live row with no note of its own shows the code entry's note, as the merge does", () => {
+  const code = codeEntryFor("contract-review")!;
+  assert.ok(code.priceNote, "fixture: the code entry carries a note");
+  const view = customerViewOf(row({ metadata: {} }));
+  assert.equal(view.priceNote, code.priceNote);
+  const merged = getClientServiceById("contract-review", mergeAdminPricingCatalogRows([row({ metadata: {} })]));
+  assert.equal(view.priceNote, merged.priceNote);
+  // a stored empty note is the admin's «no note», shown as such
+  assert.equal(customerViewOf(row({ metadata: { priceNote: "" } })).priceNote, "");
+  // and clearing the code note is sent (draft "" differs from the shown note)
+  assert.deepEqual(
+    changedCatalogFields(view, { basePrice: view.basePrice, priceMode: view.priceMode, priceNote: "", enabled: view.visible }),
+    { priceNote: "" },
+  );
+});
+
+test("S6 M2: «ظاهر» needs an enabled AND public row", () => {
+  assert.equal(customerViewOf(row({ beta_visibility: "beta_hidden" })).visible, false);
+  assert.equal(customerViewOf(row({ beta_visibility: "internal" })).visible, false);
+  assert.equal(customerViewOf(row({ beta_visibility: "public" })).visible, true);
+});
