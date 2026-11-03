@@ -20,8 +20,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useTheme } from "@/components/ThemeProvider";
 import { listFailed, listFromApi, listOk, listViewState, itemsOf, type ListRead } from "@/lib/services/listRead";
 import type { AdminCoupon, AdminCouponStatus, AdminDiscountType, AdminEligibleRole, AdminCouponType } from "@/types/adminBackendReady";
-import { COUPON_USER_TYPE_TO_ROLE } from "@/lib/payments/couponAdminRules";
-import { couponPatchDiff } from "@/lib/payments/couponAdminDiff";
+import { COUPON_USER_TYPE_TO_ROLE, couponDateInput } from "@/lib/payments/couponAdminRules";
+import { couponPatchRequest, otherFirstOrderCodes } from "@/lib/payments/couponAdminDiff";
 import { excludedItemsOf } from "@/lib/payments/couponRules";
 import { isOnSale, PRICE_BOOK } from "@/lib/pricing/priceBook";
 import { COUPON_USAGE_LIMIT, couponUsageDateAr, type CouponUsageView } from "@/lib/payments/couponUsageView";
@@ -48,9 +48,11 @@ const EXCLUDABLE_KINDS: Array<[string, string]> = [
 /** Price-book items on sale today — what «منتجات مستثناة» can name (metadata.excluded_items). */
 const ON_SALE_ITEMS = Object.values(PRICE_BOOK).filter(isOnSale);
 
+// Review M7: the Riyadh calendar date — the routes store a date-only startsAt
+// as 00:00 and expiresAt as 23:59:59 Riyadh time (21:00Z / 20:59:59Z), so a
+// UTC slice would show the day before. Runs on the client, after the fetch.
 function toDateInput(value: unknown): string {
-  if (typeof value !== "string" || !value) return "";
-  return value.slice(0, 10);
+  return couponDateInput(value);
 }
 
 function deriveStatus(row: Record<string, unknown>): AdminCouponStatus {
@@ -115,6 +117,7 @@ function mapRowToCoupon(row: Record<string, unknown>): AdminCoupon {
     firstPaidOrderOnly: metadata?.first_paid_order_only === true,
     excludedItems: excludedItemsOf({ metadata }),
     createdAt: toDateInput(row.created_at),
+    updatedAt: typeof row.updated_at === "string" ? row.updated_at : undefined,
   };
 }
 
@@ -315,9 +318,10 @@ export default function AdminCouponsPage() {
       let res: Response;
       if (editingId && original) {
         // An existing coupon: only what changed (S6-T12) — an untouched
-        // audience or date is never rewritten.
-        const patch = couponPatchDiff(original, normalized);
-        if (Object.keys(patch).length === 0) {
+        // audience or date is never rewritten — plus the updated_at this page
+        // loaded, so a change since then is a 409 (review M1).
+        const patch = couponPatchRequest(original, normalized);
+        if (!patch) {
           setToast("لا تغييرات للحفظ.");
           return;
         }
@@ -378,11 +382,16 @@ export default function AdminCouponsPage() {
       const res = await fetch(`/api/v1/admin/coupons/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ active: nextStatus !== "disabled", status: nextStatus }),
+        body: JSON.stringify({
+          active: nextStatus !== "disabled",
+          status: nextStatus,
+          ...(current?.updatedAt ? { expectedUpdatedAt: current.updatedAt } : {}),
+        }),
       });
       if (!res.ok) {
         const err = (await res.json().catch(() => ({}))) as { error?: string };
         setToast(err.error ?? `تعذّر تغيير حالة ${code} على الخادم.`);
+        if (res.status === 409) await loadCoupons();
         return;
       }
       setToast(`تم ${nextStatus === "disabled" ? "تعطيل" : "تفعيل"} ${code}.`);
@@ -554,6 +563,12 @@ export default function AdminCouponsPage() {
                   للطلب المدفوع الأول فقط
                   <span className={`text-[11px] font-normal ${muted}`}>(يُرفض لمن سبق له طلب مدفوع على المنصة)</span>
                 </label>
+                {draft.firstPaidOrderOnly === true && otherFirstOrderCodes(coupons, draft.code).length > 0 && (
+                  <p className={`flex items-center gap-1.5 text-xs font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>
+                    <Warning size={14} weight="fill" />
+                    تنبيه: {otherFirstOrderCodes(coupons, draft.code).join("، ")} يحمل هذا الشرط أيضاً — قيد «مرة واحدة» لكل كوبون على حدة، فقد يُستخدم كوبونان منها في طلبين يُفتحان معاً قبل اكتمال الدفع الأول.
+                  </p>
+                )}
                 {draft.excludedKinds !== undefined && (
                   <div>
                     <p className={`text-xs font-bold mb-2 ${muted}`}>أنواع الطلبات المستثناة</p>

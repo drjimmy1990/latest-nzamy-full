@@ -3,10 +3,14 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
 import {
+  BAD_BODY_AR,
   adminCouponMetadataPatch,
   adminDiscountPatch,
   buildCouponPatchMetadata,
   couponAudience,
+  couponBodyObject,
+  couponDateIso,
+  couponExpectedUpdatedAt,
   isCouponId,
 } from "@/lib/payments/couponAdminRules";
 
@@ -21,6 +25,7 @@ import {
  *   usageLimit?: number       — max_uses
  *   startsAt?: string         — valid_from
  *   expiresAt?: string        — valid_until
+ *   expectedUpdatedAt?: string — the updated_at the page loaded (review M1)
  *   eligibleRoles?: string[]  — eligible_user_types (client => individual,
  *                               business => corporate; [] = everyone)
  *   minOrderAmount?: number   — min_order_amount (> 0 on a discount coupon)
@@ -36,10 +41,14 @@ import {
  *
  * S6-T11: metadata is built ONCE (buildCouponPatchMetadata): the stored keys
  * (owner_rules, rules, first_order_rule …), then the flags, then the status —
- * so a body with a status and a flag keeps both. The update is conditional on
- * the updated_at that was read: a concurrent edit (another admin, or a coupon
- * use — the trigger that bumps used_count bumps updated_at too) is a 409,
- * never a lost update. A bad id is a 404 before any read.
+ * so a body with a status and a flag keeps both. Review M1: the update is
+ * conditional on the updated_at the PAGE loaded (body.expectedUpdatedAt): an
+ * edit by another admin or a coupon use since the page opened (the trigger
+ * that bumps used_count bumps updated_at too) is a 409, not a lost update.
+ * A caller that sends no expectedUpdatedAt is guarded against this route's
+ * own read only (a change while saving). A bad id is a 404 before any read;
+ * a non-object body or a bad date is a 400 (startsAt / expiresAt as in POST:
+ * a date-only value is that day in Riyadh, couponDateIso).
  *
  * Owner ٢١٠: PATCH needs a staff role with settings.write, DELETE one with
  * coupons.delete; each successful change is audited.
@@ -60,13 +69,15 @@ export async function PATCH(
 
     let body: Record<string, unknown>;
     try {
-      const parsed: unknown = await request.json();
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        return NextResponse.json({ error: "بيانات غير صالحة" }, { status: 400 });
-      }
-      body = parsed as Record<string, unknown>;
+      const parsed = couponBodyObject(await request.json());
+      if (!parsed) return NextResponse.json({ error: BAD_BODY_AR }, { status: 400 });
+      body = parsed;
     } catch {
-      return NextResponse.json({ error: "بيانات غير صالحة" }, { status: 400 });
+      return NextResponse.json({ error: BAD_BODY_AR }, { status: 400 });
+    }
+    const expected = couponExpectedUpdatedAt(body);
+    if (!expected.ok) {
+      return NextResponse.json({ error: expected.error }, { status: 400 });
     }
 
     const adminClient = await createServiceClient();
@@ -126,10 +137,14 @@ export async function PATCH(
       updateData.max_uses = Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
     }
     if (body.startsAt !== undefined) {
-      updateData.valid_from = body.startsAt ? new Date(String(body.startsAt)).toISOString() : null;
+      const startsAt = couponDateIso(body.startsAt, "start");
+      if (!startsAt.ok) return NextResponse.json({ error: startsAt.error }, { status: 400 });
+      updateData.valid_from = startsAt.value;
     }
     if (body.expiresAt !== undefined) {
-      updateData.valid_until = body.expiresAt ? new Date(String(body.expiresAt)).toISOString() : null;
+      const expiresAt = couponDateIso(body.expiresAt, "end");
+      if (!expiresAt.ok) return NextResponse.json({ error: expiresAt.error }, { status: 400 });
+      updateData.valid_until = expiresAt.value;
     }
     if (body.eligibleRoles !== undefined) {
       const audience = couponAudience(body.eligibleRoles);
@@ -167,7 +182,7 @@ export async function PATCH(
       .from("coupons")
       .update({ ...updateData, updated_at: new Date().toISOString() })
       .eq("id", id)
-      .eq("updated_at", existing.updated_at)
+      .eq("updated_at", expected.value ?? prior.updated_at)
       .select("*");
 
     if (error) {

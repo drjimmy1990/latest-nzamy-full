@@ -43,6 +43,8 @@ export interface AdminCoupon {
   firstPaidOrderOnly?: boolean;
   /** منتجات دفتر الأسعار المستثناة (metadata.excluded_items) — S6-T12 */
   excludedItems?: string[];
+  /** coupons.updated_at as loaded — sent back as expectedUpdatedAt (review M1) */
+  updatedAt?: string;
   // 🆕 حقول التتبع — Backend-ready
   couponType?: AdminCouponType;
   pointsGranted?: number;

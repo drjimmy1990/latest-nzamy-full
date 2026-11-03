@@ -10,6 +10,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
+  BAD_BODY_AR,
+  DATE_AR,
+  EXPECTED_UPDATED_AT_AR,
+  couponBodyObject,
+  couponDateInput,
+  couponDateIso,
+  couponExpectedUpdatedAt,
   adminCouponMetadataPatch,
   adminDiscountFields,
   adminDiscountPatch,
@@ -178,7 +185,70 @@ test("S6: the routes use the shared rules — one metadata build, the 409 race c
   assert.match(PATCH, /buildCouponPatchMetadata\(/);
   // the old status-only metadata rewrite is gone
   assert.doesNotMatch(PATCH, /updateData\.metadata = \{ \.\.\.prevMeta, status: nextStatus \}/);
-  assert.match(PATCH, /\.eq\("updated_at", existing\.updated_at\)/);
+  assert.match(PATCH, /\.eq\("updated_at", expected\.value \?\? prior\.updated_at\)/);
   assert.match(PATCH, /status: 409/);
   assert.match(PATCH, /isCouponId\(id\)/);
+});
+
+test("review M1: expectedUpdatedAt — what the page loaded; absent is null, a bad value is a 400", () => {
+  assert.deepEqual(couponExpectedUpdatedAt({}), { ok: true, value: null });
+  assert.deepEqual(couponExpectedUpdatedAt({ expectedUpdatedAt: "2026-11-03T08:15:00.123456+00:00" }), {
+    ok: true,
+    value: "2026-11-03T08:15:00.123456+00:00", // passed through untouched: the DB compares it (microseconds kept)
+  });
+  for (const bad of [null, "", "  ", "yesterday", 1730000000, {}]) {
+    assert.deepEqual(couponExpectedUpdatedAt({ expectedUpdatedAt: bad }), { ok: false, error: EXPECTED_UPDATED_AT_AR }, String(bad));
+  }
+  // PATCH reads it before the row, refuses a bad one, and writes only while the row still carries it
+  assert.match(PATCH, /const expected = couponExpectedUpdatedAt\(body\);\s*if \(!expected\.ok\)/);
+  assert.ok(PATCH.indexOf("couponExpectedUpdatedAt(body)") < PATCH.indexOf('.from("coupons")'));
+  assert.doesNotMatch(PATCH, /\.eq\("updated_at", existing\.updated_at\)/);
+});
+
+test("review M6: a body that is not a JSON object is refused by both routes", () => {
+  for (const bad of [null, [], [1], "x", 7, true]) assert.equal(couponBodyObject(bad), null, JSON.stringify(bad));
+  assert.deepEqual(couponBodyObject({ code: "A" }), { code: "A" });
+  for (const src of [CREATE, PATCH]) {
+    assert.match(src, /couponBodyObject\(await request\.json\(\)\)/);
+    assert.match(src, /error: BAD_BODY_AR \}, \{ status: 400 \}/);
+  }
+  assert.equal(BAD_BODY_AR, "بيانات غير صالحة");
+});
+
+test("review M6/M7: dates — a date-only value is that day in Riyadh; a bad date is a 400, never a 500", () => {
+  // date-only: startsAt from 00:00 Riyadh, expiresAt until 23:59:59 Riyadh
+  assert.deepEqual(couponDateIso("2027-12-31", "end"), { ok: true, value: "2027-12-31T20:59:59.000Z" });
+  assert.deepEqual(couponDateIso("2027-12-31", "start"), { ok: true, value: "2027-12-30T21:00:00.000Z" });
+  assert.deepEqual(couponDateIso(" 2026-06-01 ", "start"), { ok: true, value: "2026-05-31T21:00:00.000Z" });
+  // a full timestamp is kept as given
+  assert.deepEqual(couponDateIso("2027-12-31T23:59:59Z", "end"), { ok: true, value: "2027-12-31T23:59:59.000Z" });
+  // empty → null (POST then starts now; PATCH clears)
+  for (const empty of [undefined, null, ""]) assert.deepEqual(couponDateIso(empty, "end"), { ok: true, value: null });
+  // refused: not a date, not a real day, not a string
+  for (const bad of ["31/12/2027", "tomorrow", "2027-02-30", "2027-13-01", 20271231, {}, true]) {
+    assert.deepEqual(couponDateIso(bad, "end"), { ok: false, error: DATE_AR }, String(bad));
+    assert.deepEqual(couponDateIso(bad, "start"), { ok: false, error: DATE_AR }, String(bad));
+  }
+  // both routes use it, and the RangeError path is gone
+  for (const src of [CREATE, PATCH]) {
+    assert.match(src, /couponDateIso\(body\.startsAt, "start"\)/);
+    assert.match(src, /couponDateIso\(body\.expiresAt, "end"\)/);
+    assert.doesNotMatch(src, /new Date\(String\(body\./);
+  }
+});
+
+test("review M7: the page's date round-trips through the stored value", () => {
+  for (const day of ["2026-01-01", "2026-06-01", "2027-12-31", "2028-02-29"]) {
+    for (const edge of ["start", "end"] as const) {
+      const stored = couponDateIso(day, edge);
+      assert.ok(stored.ok && stored.value);
+      assert.equal(couponDateInput(stored.value), day, `${day} ${edge}`);
+    }
+  }
+  // rows stored the old way (midnight UTC) still show their day
+  assert.equal(couponDateInput("2027-12-31T00:00:00+00:00"), "2027-12-31");
+  assert.equal(couponDateInput("2026-06-01T00:00:00Z"), "2026-06-01");
+  // 23:59:59Z is 02:59 the next day in Riyadh — shown as that day, the true end
+  assert.equal(couponDateInput("2027-12-31T23:59:59Z"), "2028-01-01");
+  for (const bad of [undefined, null, "", "nope", 5]) assert.equal(couponDateInput(bad), "");
 });

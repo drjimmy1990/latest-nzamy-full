@@ -56,3 +56,27 @@ export function couponPatchDiff(original: AdminCoupon, draft: AdminCoupon): Reco
   }
   return out;
 }
+
+/**
+ * Review M1: the PATCH body of an edit — the diff plus the updated_at the page
+ * loaded (expectedUpdatedAt), so the route writes only while the row is still
+ * the one the admin saw. null when nothing changed (the page sends nothing).
+ */
+export function couponPatchRequest(original: AdminCoupon, draft: AdminCoupon): Record<string, unknown> | null {
+  const patch = couponPatchDiff(original, draft);
+  if (Object.keys(patch).length === 0) return null;
+  return original.updatedAt ? { ...patch, expectedUpdatedAt: original.updatedAt } : patch;
+}
+
+/**
+ * Review M4 (parked, warning only): the OTHER live coupons that already carry
+ * «للطلب المدفوع الأول فقط». The once-key is per (buyer, coupon), so two such
+ * coupons can each discount one first order.
+ */
+export function otherFirstOrderCodes(coupons: readonly AdminCoupon[], code: string): string[] {
+  const self = code.trim().toUpperCase();
+  return coupons
+    .filter((c) => c.firstPaidOrderOnly === true && c.status !== "disabled" && c.status !== "expired")
+    .map((c) => c.code)
+    .filter((c) => c.trim().toUpperCase() !== self);
+}

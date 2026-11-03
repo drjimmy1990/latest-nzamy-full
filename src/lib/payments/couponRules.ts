@@ -163,8 +163,11 @@ export function evaluateCoupon(row: CouponRow | null | undefined, ctx: CouponCon
   // lists plan / library / topup / service), so the rule lives here
   excluded.add("membership");
   if (excluded.has(ctx.kind) || ctx.itemDiscounted) return { ok: false, reason: "not_for_item" };
-  // S6-T10: an item the row excludes by its id (exact match)
-  if (excludedItemsOf(row).includes(ctx.itemId)) return { ok: false, reason: "not_for_item" };
+  // S6-T10: an item the row excludes by its id. Both sides are trimmed and
+  // lower-cased (every price-book id is lower-case), so a hand-edited "IND-AI"
+  // or " ind-ai" still excludes ind-ai: the match fails closed, never open.
+  const itemKey = ctx.itemId.trim().toLowerCase();
+  if (excludedItemsOf(row).some((id) => id.trim().toLowerCase() === itemKey)) return { ok: false, reason: "not_for_item" };
 
   const net = ctx.netHalalas;
   const minHalalas = sarToHalalas(row.min_order_amount);

@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { couponPatchDiff } from "./couponAdminDiff.ts";
+import { couponPatchDiff, couponPatchRequest, otherFirstOrderCodes } from "./couponAdminDiff.ts";
 import type { AdminCoupon } from "../../types/adminBackendReady.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..", "..");
@@ -60,7 +60,7 @@ test("S6: arrays are sets; back to «الجميع» is sent as []; a field the e
 });
 
 test("S6: the coupons page saves the diff, keeps an empty audience, maps corporate, and has no wrong badge", () => {
-  assert.match(PAGE, /couponPatchDiff\(original, normalized\)/);
+  assert.match(PAGE, /couponPatchRequest\(original, normalized\)/);
   assert.match(PAGE, /لا تغييرات للحفظ/);
   assert.doesNotMatch(PAGE, /eligibleRoles\.length \? eligibleRoles : \["client"\]/);
   assert.doesNotMatch(PAGE, /Backend-ready/);
@@ -74,4 +74,41 @@ test("S6: the coupons page saves the diff, keeps an empty audience, maps corpora
   // a 409 (changed meanwhile) reloads the list
   assert.match(PAGE, /res\.status === 409/);
   assert.doesNotMatch(PAGE, /text-gray-(100|200)\b/);
+});
+
+test("review M1: an edit sends the updated_at the page loaded; nothing changed sends nothing", () => {
+  const loaded: AdminCoupon = { ...base, updatedAt: "2026-11-03T08:15:00.123456+00:00" };
+  assert.equal(couponPatchRequest(loaded, loaded), null);
+  assert.deepEqual(couponPatchRequest(loaded, { ...loaded, value: 40 }), {
+    value: 40,
+    expectedUpdatedAt: "2026-11-03T08:15:00.123456+00:00",
+  });
+  // a draft cannot move the guard: it is always the ORIGINAL's updated_at
+  assert.equal(couponPatchRequest(loaded, { ...loaded, value: 40, updatedAt: "2099-01-01T00:00:00Z" })?.expectedUpdatedAt, loaded.updatedAt);
+  // a row read without updated_at sends the plain diff (the route then guards its own read)
+  assert.deepEqual(couponPatchRequest(base, { ...base, value: 40 }), { value: 40 });
+  // the page sends it on the edit AND on the on/off toggle, and reloads on a 409
+  assert.match(PAGE, /updatedAt: typeof row\.updated_at === "string" \? row\.updated_at : undefined/);
+  assert.match(PAGE, /expectedUpdatedAt: current\.updatedAt/);
+  assert.match(PAGE, /if \(res\.status === 409\) await loadCoupons\(\);/);
+});
+
+test("review M4: the editor warns when another live coupon is already first-order-only", () => {
+  const coupons: AdminCoupon[] = [
+    { ...base, code: "NEWCLIENT", firstPaidOrderOnly: true },
+    { ...base, code: "WELCOME", firstPaidOrderOnly: true, status: "disabled" },
+    { ...base, code: "OLDFIRST", firstPaidOrderOnly: true, status: "expired" },
+    { ...base, code: "SOON", firstPaidOrderOnly: true, status: "scheduled" },
+    { ...base, code: "NZAMY50", firstPaidOrderOnly: false },
+  ];
+  assert.deepEqual(otherFirstOrderCodes(coupons, "WELCOME2"), ["NEWCLIENT", "SOON"]);
+  // the coupon being edited is never its own warning
+  assert.deepEqual(otherFirstOrderCodes(coupons, " newclient "), ["SOON"]);
+  assert.deepEqual(otherFirstOrderCodes([], "X"), []);
+  assert.match(PAGE, /draft\.firstPaidOrderOnly === true && otherFirstOrderCodes\(coupons, draft\.code\)\.length > 0/);
+});
+
+test("review M7: the page shows the Riyadh calendar date, not a UTC slice", () => {
+  assert.match(PAGE, /return couponDateInput\(value\);/);
+  assert.doesNotMatch(PAGE, /value\.slice\(0, 10\)/);
 });

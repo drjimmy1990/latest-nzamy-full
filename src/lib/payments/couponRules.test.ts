@@ -191,9 +191,16 @@ test("S6: metadata.excluded_items refuses that item only", () => {
     ok: false,
     reason: "not_for_item",
   });
-  // exact id only: no prefix, no case folding
+  // the whole id only (no prefix match) ...
   assert.equal(evaluateCoupon(row, ctx({ itemId: "ind-ai-x", netHalalas: 24900 })).ok, true);
-  assert.equal(evaluateCoupon({ ...NZAMY50, metadata: { excluded_items: ["IND-AI"] } }, ctx({ itemId: "ind-ai", netHalalas: 24900 })).ok, true);
+  assert.equal(evaluateCoupon({ ...NZAMY50, metadata: { excluded_items: ["ind"] } }, ctx({ itemId: "ind-ai", netHalalas: 24900 })).ok, true);
+  // ... but a hand-edited case or padding still excludes it (review M2: fails closed)
+  for (const stored of ["IND-AI", " ind-ai ", "Ind-Ai	"]) {
+    assert.deepEqual(evaluateCoupon({ ...NZAMY50, metadata: { excluded_items: [stored] } }, ctx({ itemId: "ind-ai", netHalalas: 24900 })), {
+      ok: false,
+      reason: "not_for_item",
+    }, stored);
+  }
   assert.equal(couponRefusalAr({ ok: false, reason: "not_for_item" }, formatHalalas), COUPON_NOT_FOR_ITEM_AR);
 });
 

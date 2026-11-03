@@ -29,7 +29,16 @@
 -- NEGATIVE CONTROLS (each must FAIL; checked 2026-11-03):
 --   (1) without either 20261103_22 run: "$V" raises "_verify: 20261103_22 —
 --       coupon(s) T22BIZLAW, T22BOTH still target the user type 'business' …";
---   (2) the same chain with "$V" left out → "T1 FAIL".
+--   (2) control (1)'s chain — no 20261103_22 run at all — with "$V" left out
+--       too, so the test itself runs → "T1 FAIL: T22BIZLAW targets
+--       {business,lawyer} …";
+--   (3) the xmin checks can fail: the full chain, but with both 20261103_22
+--       runs replaced by a copy whose UPDATE has no WHERE (every row
+--       rewritten, a no-op array_replace on rows without 'business'):
+--         sed "s/^ where 'business' = any (eligible_user_types);/;/" \
+--           $M/20261103_22_coupon_business_role.sql > $D/22_nowhere.sql
+--       → "T2 FAIL: T22INDIV was rewritten (xmin … → …)". (T3 would fail the
+--       same way; T2 stops the script first.)
 --
 -- Every assertion RAISES on failure.
 

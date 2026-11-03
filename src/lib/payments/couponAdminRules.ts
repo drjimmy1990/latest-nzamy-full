@@ -265,3 +265,69 @@ export function buildCouponPatchMetadata(
   const keys = new Set([...Object.keys(base), ...Object.keys(next)]);
   return [...keys].some((k) => !sameJson(base[k], next[k])) ? next : null;
 }
+
+// ─── Review round 1 (M1, M6, M7) ────────────────────────────────────────────
+
+export const BAD_BODY_AR = "بيانات غير صالحة";
+export const DATE_AR = "تاريخ البدء أو الانتهاء غير صالح";
+export const EXPECTED_UPDATED_AT_AR = "نسخة الكوبون المرسلة غير صالحة — أعد التحميل ثم عدّل.";
+
+/** A JSON body the coupon routes accept: a plain object, never null / an array / a scalar. */
+export function couponBodyObject(parsed: unknown): Record<string, unknown> | null {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  return parsed as Record<string, unknown>;
+}
+
+const RIYADH_OFFSET = "+03:00"; // Saudi Arabia keeps no daylight saving
+const DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** The Riyadh calendar date (YYYY-MM-DD) of an instant, or "" for anything unreadable. */
+export function couponDateInput(value: unknown): string {
+  if (typeof value !== "string" || !value) return "";
+  const t = Date.parse(value);
+  if (Number.isNaN(t)) return "";
+  // en-CA formats as YYYY-MM-DD
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Riyadh", year: "numeric", month: "2-digit", day: "2-digit" }).format(t);
+}
+
+/**
+ * startsAt / expiresAt → the stored timestamptz. An empty value is null (the
+ * caller decides the default). A date-only YYYY-MM-DD is that day in Riyadh:
+ * startsAt from 00:00:00, expiresAt until 23:59:59 (+03:00) — it used to be
+ * midnight UTC, so a coupon ending «2027-12-31» stopped at 03:00 that day.
+ * Anything unparseable (or a 2027-02-30) is refused, never a 500 RangeError.
+ */
+export function couponDateIso(
+  raw: unknown,
+  edge: "start" | "end",
+): { ok: true; value: string | null } | { ok: false; error: string } {
+  if (raw === undefined || raw === null || raw === "") return { ok: true, value: null };
+  if (typeof raw !== "string") return { ok: false, error: DATE_AR };
+  const text = raw.trim();
+  if (DATE_ONLY_RE.test(text)) {
+    const t = Date.parse(`${text}T${edge === "start" ? "00:00:00" : "23:59:59"}${RIYADH_OFFSET}`);
+    // round-trip guard: 2027-02-30 must not roll over into March
+    if (Number.isNaN(t) || couponDateInput(new Date(t).toISOString()) !== text) return { ok: false, error: DATE_AR };
+    return { ok: true, value: new Date(t).toISOString() };
+  }
+  const t = Date.parse(text);
+  if (Number.isNaN(t)) return { ok: false, error: DATE_AR };
+  return { ok: true, value: new Date(t).toISOString() };
+}
+
+/**
+ * The `updated_at` the page loaded (body.expectedUpdatedAt). PATCH writes only
+ * while the row still carries it, so an edit or a coupon use (coupon_usage's
+ * trigger bumps updated_at) since the page opened is a 409. Not sent → null
+ * (an older client; the route then guards against its own read only).
+ */
+export function couponExpectedUpdatedAt(
+  body: Record<string, unknown>,
+): { ok: true; value: string | null } | { ok: false; error: string } {
+  const raw = body.expectedUpdatedAt;
+  if (raw === undefined) return { ok: true, value: null };
+  if (typeof raw !== "string" || raw.trim() === "" || Number.isNaN(Date.parse(raw))) {
+    return { ok: false, error: EXPECTED_UPDATED_AT_AR };
+  }
+  return { ok: true, value: raw };
+}
