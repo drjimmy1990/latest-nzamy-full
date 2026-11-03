@@ -21,7 +21,9 @@ import {
   parseAdminSimulation,
   parseStoredAdminSimulation,
   readStoredAdminSimulation,
+  isUnderHref,
   simulatedNavIdentity,
+  switchOptionFor,
   writeStoredAdminSimulation,
   type AdminSimulation,
 } from "./adminSimulation.ts";
@@ -114,6 +116,24 @@ test("a hand-edited simulation in a non-admin tab is ignored for every account t
       }
     }
   }
+});
+
+test("S6-T16: the selected «عرض كـ» entry follows the drawn dashboard and the stored sub-role", () => {
+  assert.equal(switchOptionFor(null, null), null);
+  assert.equal(switchOptionFor("lawyer", null)?.id, "lawyer-advocate");
+  assert.equal(switchOptionFor("lawyer", { view: "lawyer", practiceKind: "consultant", mode: "simulate" })?.id, "lawyer-consultant");
+  assert.equal(switchOptionFor("firm", { view: "lawyer", practiceKind: "consultant", mode: "simulate" })?.id, "firm-managing-partner",
+    "a sim for another dashboard does not pick the entry");
+  assert.equal(switchOptionFor("government", { view: "government", governmentRole: "officer", mode: "override" })?.id, "gov-officer");
+  assert.equal(switchOptionFor("corporate", null)?.id, "corporate");
+  assert.equal(switchOptionFor("admin", null)?.id, "admin");
+  for (const v of ["admin", "lawyer", "firm", "individual", "corporate", "micro", "provider", "government", "ngo"] as const) {
+    assert.ok(switchOptionFor(v, null), `${v} has an entry`);
+  }
+  assert.equal(isUnderHref("/dashboard/lawyer/cases", "/dashboard/lawyer"), true);
+  assert.equal(isUnderHref("/dashboard/lawyer", "/dashboard/lawyer"), true);
+  assert.equal(isUnderHref("/dashboard/lawyerish", "/dashboard/lawyer"), false);
+  assert.equal(isUnderHref("/ai/draft", "/dashboard/firm"), false);
 });
 
 // ─── R27: the simulation is UI only (source scan) ────────────────────────────
@@ -212,6 +232,7 @@ function bannedInSimModule(src: string): string[] {
 /** The only files allowed to import the simulation. Add one only after review (R27). */
 const ALLOWED_IMPORTERS = new Set<string>([
   "hooks/useAdminSimulation.ts",
+  "components/dashboard/AdminViewSwitch.tsx",   // S6-T16: writes this tab's sim; no request code
 ]);
 
 /** Importers that are not on the reviewed list. */

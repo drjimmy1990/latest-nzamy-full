@@ -404,7 +404,8 @@ test("the switch bar is gated on the REAL role and sits in both admin-reachable 
   const sw = read("components/dashboard/AdminViewSwitch.tsx");
   assert.match(sw, /const \{ userType, loading \} = useUser\(\);/);
   assert.match(sw, /if \(loading \|\| userType !== "admin"\) return null;/);
-  assert.match(sw, /لا يغيّر الصلاحيات/);
+  // S6-T16 changed this pin on purpose: the caption now says what the server does.
+  assert.match(sw, /الخادم يعاملك كأدمن/);
   assert.match(read("components/dashboard/SharedSidebar.tsx"), /\{isRealAdmin && \(\s*<AdminViewSwitch /);
   assert.match(read("components/admin/AdminSidebar.tsx"), /<AdminViewSwitch current="admin" tone="console" \/>/);
 });

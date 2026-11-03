@@ -168,3 +168,27 @@ export function simulatedNavIdentity(
     governmentRole: sim.governmentRole ?? null,
   };
 }
+
+/**
+ * The «عرض كـ» entry to show selected for the dashboard being drawn: the
+ * stored simulation's entry when it is for that dashboard, else the first
+ * entry for it (lawyer → محامٍ, firm → الشريك المدير, government → قاضٍ).
+ * Null when nothing is drawn.
+ */
+export function switchOptionFor(current: AdminView | null, sim: AdminSimulation | null): AdminSwitchOption | null {
+  if (!current) return null;
+  if (sim && sim.view === current) {
+    const exact = ADMIN_SWITCH_OPTIONS.find((o) =>
+      o.sim.view === sim.view &&
+      o.sim.practiceKind === sim.practiceKind &&
+      o.sim.affiliationRole === sim.affiliationRole &&
+      o.sim.governmentRole === sim.governmentRole);
+    if (exact) return exact;
+  }
+  return ADMIN_SWITCH_OPTIONS.find((o) => o.sim.view === current) ?? null;
+}
+
+/** True when `pathname` is `href` or under it (the switch navigates only otherwise). */
+export function isUnderHref(pathname: string, href: string): boolean {
+  return pathname === href || pathname.startsWith(href + "/");
+}
