@@ -122,3 +122,44 @@ The query side needs no change in either direction. To undo:
 Rolling back takes the same lock for the same time.
 
 <!-- <<< S1 Task 13: 20261103_14 -->
+
+<!-- >>> S1 Task 14: 20261103_10 (BEFORE the deploy) -->
+
+## BEFORE the deploy: `20261103_10_library_auto_lock_hours.sql`
+
+**What it does:** an automatic library lock (too many documents after the daily limit, or the «نشاط المكتبة» review rule set to «إيقاف») now ends by itself after `auto_lock_hours`, 24 by default (owner q362). Before this file such a lock lasted until an admin lifted it. An admin's own lock is not touched. The admin page «نشاط المكتبة» → «الحدود» shows the new number after the deploy; 0 means "until an admin lifts it".
+
+It adds one column to `public.library_monitor_settings` and re-creates `library_read_quota_hit` and `library_monitor_evaluate` with the same arguments. No grant changes; no new function.
+
+The file is in two places:
+- On your PC, after `git pull` on main: `D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\supabase\migrations\20261103_10_library_auto_lock_hours.sql`
+- On the server: `/www/wwwroot/nzamy/latest-nzamy-full/supabase/migrations/20261103_10_library_auto_lock_hours.sql`
+
+Run it in the SQL Editor as postgres (paste the whole file). **Expected result on the screen** (it is not a file): one row with `column_default_24 = t`, `auto_lock_hours_now = 24`, `quota_fn_overloads = 1`, `evaluate_fn_overloads = 1`, `ok = t`. A second run gives the same row.
+
+If it stops with `run 20261031_10_library_activity_monitor.sql first`, nothing changed: that earlier file is missing on this database.
+
+**Optional (a data choice, not run by the file):** locks that are ALREADY open keep no end. To give them the same 24 hours counted from when they started, first look at them:
+
+```sql
+select l.reference, l.reason, l.locked_at, l.locked_at + make_interval(hours => s.auto_lock_hours) as would_end
+  from public.library_security_locks l, public.library_monitor_settings s
+ where s.id and s.auto_lock_hours > 0 and l.lifted_at is null and l.locked_until is null
+   and l.reason in ('quota_breach', 'activity_flag');
+```
+
+then, if you want it:
+
+```sql
+update public.library_security_locks l
+   set locked_until = l.locked_at + make_interval(hours => s.auto_lock_hours)
+  from public.library_monitor_settings s
+ where s.id and s.auto_lock_hours > 0 and l.lifted_at is null and l.locked_until is null
+   and l.reason in ('quota_breach', 'activity_flag');
+select count(*) as automatic_locks_without_end from public.library_security_locks
+ where lifted_at is null and locked_until is null and reason in ('quota_breach', 'activity_flag');
+```
+
+The last row should read `automatic_locks_without_end = 0`. A lock whose 24 hours have already passed closes by itself on that reader's next library request.
+
+<!-- <<< S1 Task 14: 20261103_10 -->

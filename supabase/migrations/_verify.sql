@@ -5519,3 +5519,48 @@ begin
   raise notice '_verify: 20261103_14 OK — articles, principles and fiqh blocks index text without tashkeel; fold_tashkeel is service_role only; the cross-section matview stays off the API';
 end $$;
 -- <<< verify:library_fts_tashkeel_fold
+-- >>> verify:library_auto_lock_hours
+-- 2026-11-03 — 20261103_10_library_auto_lock_hours.sql (owner-free wave,
+-- S1-T14; owner q362): an automatic library lock ends after
+-- library_monitor_settings.auto_lock_hours (default 24; 0 = until an admin
+-- lifts it). Read-only, safe to repeat: SELECTs and RAISE.
+-- RAISES (naming the file to run) when the column or its check is missing,
+-- when either function no longer reads it (20261031_10 re-run after
+-- 20261103_10 puts the old bodies back), or when a function has more than one
+-- overload. No library_monitor_settings (20261031_10 not applied): one NOTICE,
+-- passes.
+-- Docker: supabase/tests/rls/library_auto_lock_hours.test.sql runs this block
+-- (its header has the chain, the negative controls and the sed line).
+do $$
+declare v_hours text; fn text;
+begin
+  if to_regclass('public.library_monitor_settings') is null then
+    raise notice '_verify: 20261103_10 — public.library_monitor_settings is missing (20261031_10 not applied): nothing to check'; return;
+  end if;
+  if not exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'library_monitor_settings'
+                    and column_name = 'auto_lock_hours') then
+    raise exception '_verify: 20261103_10 — library_monitor_settings.auto_lock_hours is missing: automatic library locks never end. Run 20261103_10_library_auto_lock_hours.sql (BEFORE the deploy)';
+  end if;
+  if not exists (select 1 from pg_constraint
+                  where conrelid = 'public.library_monitor_settings'::regclass
+                    and conname = 'library_monitor_settings_auto_lock_hours_check') then
+    raise exception '_verify: 20261103_10 — the check library_monitor_settings_auto_lock_hours_check is missing. Run 20261103_10_library_auto_lock_hours.sql again (BEFORE the deploy)';
+  end if;
+  foreach fn in array array['public.library_read_quota_hit(uuid,text,int,int,int,int)',
+                            'public.library_monitor_evaluate(uuid)'] loop
+    if to_regprocedure(fn) is null then
+      raise exception '_verify: 20261103_10 — % is missing. Run 20261031_10, then 20261103_10_library_auto_lock_hours.sql (BEFORE the deploy)', fn;
+    end if;
+    if position('auto_lock_hours' in pg_get_functiondef(to_regprocedure(fn))) = 0 then
+      raise exception '_verify: 20261103_10 — % does not read auto_lock_hours (20261031_10 was re-run after it): its automatic locks never end. Run 20261103_10_library_auto_lock_hours.sql again (BEFORE the deploy)', fn;
+    end if;
+  end loop;
+  if (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname in ('library_read_quota_hit', 'library_monitor_evaluate')) <> 2 then
+    raise exception '_verify: 20261103_10 — library_read_quota_hit / library_monitor_evaluate has more than one overload (PostgREST would refuse the call with PGRST203)';
+  end if;
+  select string_agg(auto_lock_hours::text, ',') into v_hours from public.library_monitor_settings;
+  raise notice '_verify: 20261103_10 OK — automatic library locks end after % hour(s) (0 = until an admin lifts it)', coalesce(v_hours, 'no settings row: 24');
+end $$;
+-- <<< verify:library_auto_lock_hours
