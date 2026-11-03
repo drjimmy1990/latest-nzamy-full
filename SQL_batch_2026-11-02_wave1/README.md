@@ -260,7 +260,7 @@ No rows: nothing to do, and the rest of this step does not apply. A run paid wit
 
 To decide on a refund, a super admin can read each run's output: «عرض الناتج» in the runs table at /dashboard/admin/ai-usage.
 
-**8c. Refund one review run (a write; optional; your decision).** Replace `<run id>` (three places) with one id from 8b and run the whole block as one query:
+**8c. Refund one review run (a write; optional; your decision).** Replace `<run id>` (two places in this block, and three more in the checks after it) with one id from 8b and run the whole block as one query:
 
 ```sql
 -- كتابة — اختياري
@@ -306,10 +306,28 @@ Expect `status = 'failed'`, `error_code = 'review_retired'` and `output_cleared 
 The 14 workflow files this batch changed in the repo now say "do not save successful runs". The live instance does not read the repo, so do one of these on each n8n instance that runs them (n8n.asra3.com and ours):
 - **Per workflow:** open it → Settings → «Save successful production executions» → **Do not save**, then save. Or re-import the workflow file from the repo.
 - **Or for the whole instance:** set `EXECUTIONS_DATA_SAVE_ON_SUCCESS=none` in its env and restart it. A workflow's own setting still wins over this default, so check the 14 anyway.
+- **Failed runs (optional):** a failed run is still saved with its input (the case text). The seven `n8n/ai/` files set «Save failed production executions» to **Save**, and the seven `n8n/workflows/` files leave it to the instance default, which is also Save. You may also set it to **Do not save** per workflow (again after every re-import from the repo, which puts the `n8n/ai/` value back), or prune old runs for the whole instance with `EXECUTIONS_DATA_PRUNE=true` and `EXECUTIONS_DATA_MAX_AGE=<hours>` in its env (pruning applies whatever a workflow says).
 
-The 14 files, under `n8n/ai/` and `n8n/workflows/` in the repo (on the server under `/www/wwwroot/nzamy/latest-nzamy-full/n8n/`):
-- `n8n/ai/`: `assistant.json`, `canvas-card.json`, `communicate.json`, `lib-queries.json`, `library-assistant.json`, `najiz-optimizer.json`, `quick-answer.json`;
-- `n8n/workflows/`: `wf-1.1-welcome-new-user.json`, `wf-1.2-lawyer-verification.json`, `wf-2.1-new-request-notify-lawyers.json`, `wf-2.2-request-assigned-notify-client.json`, `wf-2.3-request-completed-review.json`, `wf-4.1-whatsapp-triage.json`, `wf-4.2-consultation-reminder.json`.
+The 14 files on your PC (main folder, after `git pull` on main):
+
+```
+D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\n8n\ai\assistant.json
+D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\n8n\ai\canvas-card.json
+D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\n8n\ai\communicate.json
+D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\n8n\ai\lib-queries.json
+D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\n8n\ai\library-assistant.json
+D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\n8n\ai\najiz-optimizer.json
+D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\n8n\ai\quick-answer.json
+D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\n8n\workflows\wf-1.1-welcome-new-user.json
+D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\n8n\workflows\wf-1.2-lawyer-verification.json
+D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\n8n\workflows\wf-2.1-new-request-notify-lawyers.json
+D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\n8n\workflows\wf-2.2-request-assigned-notify-client.json
+D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\n8n\workflows\wf-2.3-request-completed-review.json
+D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\n8n\workflows\wf-4.1-whatsapp-triage.json
+D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\n8n\workflows\wf-4.2-consultation-reminder.json
+```
+
+On the server, the same names under `/www/wwwroot/nzamy/latest-nzamy-full/n8n/ai/` and `/www/wwwroot/nzamy/latest-nzamy-full/n8n/workflows/`.
 
 ### The deleted library-AI routes
 
@@ -383,11 +401,28 @@ D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\src\app\laws\[
 
 ## Rollback (by hand, only if the owner reverses a decision)
 
-Each file's header has its own one-statement rollback, under "ROLLBACK". Undo `_11` first, then `_10`:
+Each file's header has its own one-statement rollback, under "ROLLBACK". Undo `_11` first, then `_10`.
+
+On your PC (main folder, after `git pull` on main):
+
+```
+D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\supabase\migrations\20261102_11_contract_draft_points_price.sql
+D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\supabase\migrations\20261102_10_retire_cancelled_prices.sql
+```
+
+On the server:
 
 ```
 /www/wwwroot/nzamy/latest-nzamy-full/supabase/migrations/20261102_11_contract_draft_points_price.sql
 /www/wwwroot/nzamy/latest-nzamy-full/supabase/migrations/20261102_10_retire_cancelled_prices.sql
 ```
+
+**After a rollback, `_verify.sql` stops with an ERROR on this batch's block, every time.** The rolled-back rows are byte for byte the "not run yet" rows (checked in Docker on 2026-11-03: `_11` rolled back = `_10` only; `_10` rolled back = the 20260518 seed), so the block cannot tell a rollback from a missed step and reports both as an ERROR. With `ON_ERROR_STOP=1` that also skips every block a later batch appends after it. So with the rollback, also remove or soften the block in this file, between the lines `-- >>> verify:wave1_pricing_rows` and `-- <<< verify:wave1_pricing_rows`:
+
+```
+D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\supabase\migrations\_verify.sql
+```
+
+Ask us to do it in the repo; do not edit it only on the server.
 
 The code part of the batch has no SQL to undo.
