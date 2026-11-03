@@ -84,6 +84,12 @@ export interface StartRunDeps {
    * null lets it go on.
    */
   libraryAccess?: (toolId: string) => Promise<RouteReply | null>;
+  /**
+   * Called once, right after ai_start_run CREATED the run (never for a
+   * refusal or a duplicate request): the route's «نشاط المكتبة» tally
+   * (libraryRunAccess.libraryRunCreated). `toolId` is the registry id.
+   */
+  onRunCreated?: (toolId: string) => void;
   /** Library tools only: the searches → the texts (retrieval.retrieveLibrary). */
   retrieve?: (queries: string[], limits: RetrievalLimits, pin: RetrievalPin) => Promise<Retrieved>;
   /** File tools only: the caller's vault files checked, counted and signed (aiFiles.resolveAiFiles). */
@@ -454,6 +460,12 @@ export async function startRunWith(
   }
   if (!run.created) {
     return { status: 409, body: { error: AI_COPY.duplicate, code: "duplicate", runId: run.run_id, status: run.status } };
+  }
+  try {
+    deps.onRunCreated?.(spec.id);
+  } catch (err) {
+    // A tally must never fail a run that is already charged.
+    console.error("[ai] onRunCreated threw:", spec.id, err);
   }
 
   const charged = {

@@ -128,19 +128,16 @@ test("the free legacy library AI routes are deleted (q374 / q379: points only)",
   }
 });
 
-test("the AI run route checks the library lock for library tools, after the gate, and tallies the call", () => {
+test("the AI run route binds the library gate, the lock read and the created-run tally (branches: src/lib/ai/libraryRunAccess.test.ts)", () => {
   const src = fs.readFileSync(path.join(API, "v1", "ai", "runs", "route.ts"), "utf8").replace(/\r\n/g, "\n");
-  assert.match(src, /import \{ isLibraryAiTool, quotaRefusal \} from "@\/lib\/library\/readQuota";/);
+  assert.match(src, /import \{ libraryRunAccess, libraryRunCreated \} from "@\/lib\/ai\/libraryRunAccess";/);
   assert.match(src, /import \{ libraryReadQuotaHit \} from "@\/lib\/library\/readQuotaServer";/);
   assert.match(src, /import \{ recordLibraryActivity \} from "@\/lib\/library\/activityMeterServer";/);
-  assert.match(src, /libraryAccess: libraryAccessFor\(user\.id\),/);
-  const gate = src.indexOf("const denied = await libraryAccess();");
-  const match = src.indexOf("if (!isLibraryAiTool(toolId)) return null;");
-  const tally = src.indexOf('recordLibraryActivity(userId, "ai");');
-  const lock = src.indexOf("quotaRefusal(await libraryReadQuotaHit(userId, null, { memoLockCheck: true }), Date.now())");
-  assert.ok(gate > 0 && match > gate && tally > match && lock > tally, "gate → library tool? → tally → lock");
-  // The same reply the proxy gives (status and body), not a second copy of the message.
-  assert.match(src, /return refusal \? \{ status: refusal\.status, body: \{ \.\.\.refusal\.body \} \} : null;/);
+  assert.match(src, /gate: libraryAccess,\n\s*lockRow: \(\) => libraryReadQuotaHit\(userId, null, \{ memoLockCheck: true \}\),/);
+  assert.match(src, /return libraryRunCreated\(\(\) => recordLibraryActivity\(userId, "ai"\)\);/);
+  assert.match(src, /libraryAccess: libraryAccessFor\(user\.id\),\n\s*onRunCreated: libraryRunCreatedFor\(user\.id\),/);
+  // Task 2 review M1: the tally is no longer inside the gate (it ran for refused and duplicate runs).
+  assert.equal((src.match(/recordLibraryActivity\(/g) ?? []).length, 1);
   assert.doesNotMatch(src, /أُوقفت القراءة/);
 });
 

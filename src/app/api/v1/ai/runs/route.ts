@@ -9,7 +9,7 @@ import { startRunWith, type RouteReply, type RunActor } from "@/lib/ai/runCore";
 import { runForViewer, viewerIsAdmin } from "@/lib/ai/runVisibility";
 import { libraryGate } from "@/lib/library-gate";
 import { libraryAiAccess } from "@/app/api/ai/_libraryAiAccess";
-import { isLibraryAiTool, quotaRefusal } from "@/lib/library/readQuota";
+import { libraryRunAccess, libraryRunCreated } from "@/lib/ai/libraryRunAccess";
 import { libraryReadQuotaHit } from "@/lib/library/readQuotaServer";
 import { recordLibraryActivity } from "@/lib/library/activityMeterServer";
 
@@ -51,21 +51,22 @@ async function libraryAccess(): Promise<RouteReply | null> {
 
 /**
  * The gate above, then, for the library's own AI (readQuota.isLibraryAiTool),
- * what the proxy does on the library's other reads: the call is tallied for
- * «نشاط المكتبة» as a library-AI call, and a reader under a library lock gets
- * the lock's 423 and its message (readQuota.quotaRefusal), uncharged. The
- * lock check fails open and exempts admins, as in the proxy
- * (readQuotaServer.ts).
+ * what the proxy does on the library's other reads: a reader under a library
+ * lock gets the lock's 423 and its message (readQuota.quotaRefusal),
+ * uncharged. The lock check fails open and exempts admins, as in the proxy
+ * (readQuotaServer.ts). The branches are src/lib/ai/libraryRunAccess.ts.
  */
 function libraryAccessFor(userId: string) {
-  return async (toolId: string): Promise<RouteReply | null> => {
-    const denied = await libraryAccess();
-    if (denied) return denied;
-    if (!isLibraryAiTool(toolId)) return null;
-    recordLibraryActivity(userId, "ai");
-    const refusal = quotaRefusal(await libraryReadQuotaHit(userId, null, { memoLockCheck: true }), Date.now());
-    return refusal ? { status: refusal.status, body: { ...refusal.body } } : null;
-  };
+  return libraryRunAccess({
+    gate: libraryAccess,
+    lockRow: () => libraryReadQuotaHit(userId, null, { memoLockCheck: true }),
+    now: () => Date.now(),
+  });
+}
+
+/** «نشاط المكتبة»: a library-AI call is tallied once its run is created (task 2 review M1). */
+function libraryRunCreatedFor(userId: string) {
+  return libraryRunCreated(() => recordLibraryActivity(userId, "ai"));
 }
 
 function callbackUrl(): string {
@@ -115,6 +116,7 @@ export async function POST(request: NextRequest) {
         callbackUrl: callbackUrl(),
         n8n: (call) => callN8n({ ...call, baseUrl: process.env.N8N_AI_BASE_URL, key: process.env.NZAMY_AI_KEY }),
         libraryAccess: libraryAccessFor(user.id),
+        onRunCreated: libraryRunCreatedFor(user.id),
         retrieve: (queries, limits, pin) => retrieveLibrary(admin, queries, limits, pin),
         resolveFiles: (userId, fileIds, rules) => resolveAiFiles(admin, userId, fileIds, rules),
       },

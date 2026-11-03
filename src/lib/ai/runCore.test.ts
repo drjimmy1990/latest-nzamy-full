@@ -121,6 +121,29 @@ test("the money refusals map to 402 / 429 / 503 / 409", async () => {
   }
 });
 
+test("task 2 review M1: onRunCreated fires once for a created run — never for a refusal or a duplicate", async () => {
+  const cases: Array<[{ data?: unknown; error?: { code?: string; message?: string } } | undefined, string[]]> = [
+    [undefined, ["echo-fast"]],
+    [{ data: [{ run_id: RUN, created: false, status: "succeeded", charged: true, charged_points: 1 }] }, []],
+    [{ error: { code: "P0001", message: "insufficient_points" } }, []],
+    [{ error: { code: "P0001", message: "daily_limit" } }, []],
+  ];
+  for (const [start, expected] of cases) {
+    const { client } = db(start ? { start } : {});
+    const created: string[] = [];
+    await startRunWith(client as never, { ...deps(okReply()), onRunCreated: (t) => created.push(t) }, LAWYER, body());
+    assert.deepEqual(created, expected, JSON.stringify(start ?? "created"));
+  }
+  // A refusal before the charge (bad input) never reaches it either.
+  const { client } = db();
+  const created: string[] = [];
+  await startRunWith(client as never, { ...deps(okReply()), onRunCreated: (t) => created.push(t) }, LAWYER, body({ input: { text: "" } }));
+  assert.deepEqual(created, []);
+  // A throwing tally does not fail the run.
+  const r = await startRunWith(db().client as never, { ...deps(okReply()), onRunCreated: () => { throw new Error("tally"); } }, LAWYER, body());
+  assert.equal(r.status, 200);
+});
+
 test("a fast reply is stored once and returned; only status running is updated", async () => {
   const { client, log } = db();
   const r = await startRunWith(client as never, deps(okReply()), LAWYER, body());
