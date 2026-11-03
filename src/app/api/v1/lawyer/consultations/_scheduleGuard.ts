@@ -40,6 +40,7 @@ import {
   findScheduleClashes,
   hearingItems,
   hearingQueryDays,
+  hearingQueryMinuteFilter,
   type ConsultationSlotRow,
   type HearingSlotRow,
   type ScheduleConflict,
@@ -60,6 +61,21 @@ export async function readScheduleConflicts(
 ): Promise<OverlapRead> {
   const { fromIso, toIso } = overlapQueryWindow(args.startMs, args.durationMinutes);
   const { fromDay, toDay } = hearingQueryDays(args.startMs, args.durationMinutes);
+  const minuteFilter = hearingQueryMinuteFilter(args.startMs, args.durationMinutes);
+  // Both reads are cut to the slot's own window and read LATEST start first:
+  // a row that starts inside the slot always clashes, one from the look-back
+  // only if it runs long, so on a diary busier than the limit the rows dropped
+  // are the least likely clashes (final review M1).
+  let hearingsQuery = supabase
+    .from("hearings")
+    .select("id, hearing_date, hearing_time, duration_minutes, kind")
+    .eq("owner_user_id", args.lawyerUserId)
+    .eq("status", "scheduled")
+    .neq("kind", DEADLINE_HEARING_KIND)
+    .not("hearing_time", "is", null)
+    .gte("hearing_date", fromDay)
+    .lte("hearing_date", toDay);
+  if (minuteFilter) hearingsQuery = hearingsQuery.or(minuteFilter);
   const [consultations, hearings] = await Promise.all([
     supabase
       .from("consultations")
@@ -68,16 +84,11 @@ export async function readScheduleConflicts(
       .eq("status", "scheduled")
       .gt("scheduled_at", fromIso)
       .lt("scheduled_at", toIso)
+      .order("scheduled_at", { ascending: false })
       .limit(50),
-    supabase
-      .from("hearings")
-      .select("id, hearing_date, hearing_time, duration_minutes, kind")
-      .eq("owner_user_id", args.lawyerUserId)
-      .eq("status", "scheduled")
-      .neq("kind", DEADLINE_HEARING_KIND)
-      .not("hearing_time", "is", null)
-      .gte("hearing_date", fromDay)
-      .lte("hearing_date", toDay)
+    hearingsQuery
+      .order("hearing_date", { ascending: false })
+      .order("hearing_time", { ascending: false })
       .limit(50),
   ]);
   if (consultations.error || hearings.error) {

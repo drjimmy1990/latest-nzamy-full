@@ -85,6 +85,18 @@ test("q357: the guard reads the lawyer's scheduled timed hearings too, and keeps
   assert.match(src, /export async function hearingOverlapRefusal\([\s\S]*?return scheduleRefusal\(supabase, args, HEARING_OVERLAP_CODE\);/);
 });
 
+test("final review M1: both overlap reads are cut to the slot's window and keep the LATEST rows under the limit", () => {
+  const src = read("./_scheduleGuard.ts").replace(/\r\n/g, "\n");
+  // hearings: the minute filter on top of the day bounds, latest first
+  assert.match(src, /const minuteFilter = hearingQueryMinuteFilter\(args\.startMs, args\.durationMinutes\);/);
+  assert.match(src, /if \(minuteFilter\) hearingsQuery = hearingsQuery\.or\(minuteFilter\);/);
+  assert.match(src, /hearingsQuery\s*\.order\("hearing_date", \{ ascending: false \}\)\s*\.order\("hearing_time", \{ ascending: false \}\)\s*\.limit\(50\)/);
+  // consultations: already cut to the instant window; latest first
+  assert.match(src, /\.lt\("scheduled_at", toIso\)\s*\.order\("scheduled_at", \{ ascending: false \}\)\s*\.limit\(50\)/);
+  // no read is limited without an order
+  assert.equal((src.match(/\.limit\(50\)/g) ?? []).length, 2);
+});
+
 test("q357: POST and PATCH /api/v1/lawyer/hearings check the slot before writing, warn-then-confirm", () => {
   const post = read("../hearings/route.ts");
   const guard = post.indexOf("hearingOverlapRefusal(supabase");

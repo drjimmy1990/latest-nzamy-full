@@ -8,6 +8,7 @@ import {
   hearingDurationMinutes,
   hearingItems,
   hearingQueryDays,
+  hearingQueryMinuteFilter,
   hearingStartMs,
   intervalsOverlap,
 } from "./scheduleClash.ts";
@@ -75,6 +76,50 @@ test("q357: the row being saved is excluded by kind and id; another kind with th
 test("q357: the hearing query covers the day before (a long sitting may still run) through the end day", () => {
   assert.deepEqual(hearingQueryDays(at("2026-11-10", "09:00"), 60), { fromDay: "2026-11-09", toDay: "2026-11-10" });
   assert.deepEqual(hearingQueryDays(at("2026-11-10", "23:30"), 60), { fromDay: "2026-11-09", toDay: "2026-11-11" });
+});
+
+test("final review M1: the hearing read is cut to the minute — from 1440 minutes before the slot to its end", () => {
+  // 09:00–10:00 on 10 Nov: from 09:00 on the 9th, up to (not including) 10:00 on the 10th.
+  assert.equal(
+    hearingQueryMinuteFilter(at("2026-11-10", "09:00"), 60),
+    "and(hearing_date.eq.2026-11-09,hearing_time.gte.09:00)," +
+      "and(hearing_date.gt.2026-11-09,hearing_date.lt.2026-11-10)," +
+      "and(hearing_date.eq.2026-11-10,hearing_time.lt.10:00)",
+  );
+  // A slot past midnight: three days, the middle one whole.
+  assert.equal(
+    hearingQueryMinuteFilter(at("2026-11-10", "23:30"), 60),
+    "and(hearing_date.eq.2026-11-09,hearing_time.gte.23:30)," +
+      "and(hearing_date.gt.2026-11-09,hearing_date.lt.2026-11-11)," +
+      "and(hearing_date.eq.2026-11-11,hearing_time.lt.00:30)",
+  );
+  assert.equal(hearingQueryMinuteFilter(Number.NaN, 60), null);
+});
+
+test("final review M1: every hearing the filter drops is one the clash rule would not report", () => {
+  const start = at("2026-11-10", "09:00");
+  const minutes = 60;
+  const filter = hearingQueryMinuteFilter(start, minutes) as string;
+  // Evaluate the filter's three branches over hearing rows, as PostgREST would.
+  const branches = [...filter.matchAll(/and\(([^)]*)\)/g)].map((m) => m[1].split(","));
+  const keeps = (date: string, time: string) =>
+    branches.some((conds) =>
+      conds.every((c) => {
+        const [col, op, value] = c.split(".");
+        const v = col === "hearing_date" ? date : time;
+        return op === "eq" ? v === value : op === "gt" ? v > value : op === "gte" ? v >= value : op === "lt" ? v < value : false;
+      }),
+    );
+  for (const date of ["2026-11-08", "2026-11-09", "2026-11-10", "2026-11-11"]) {
+    for (let h = 0; h < 24; h++) {
+      for (const m of [0, 30]) {
+        const time = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+        // The longest sitting (1440 minutes): if even that cannot clash, dropping the row is safe.
+        const clashes = findScheduleClashes(start, minutes, hearingItems([{ id: "x", hearing_date: date, hearing_time: `${time}:00`, duration_minutes: 1440 }]), null).length > 0;
+        if (clashes) assert.ok(keeps(date, time), `${date} ${time} clashes but is filtered out`);
+      }
+    }
+  }
 });
 
 test("q357: a «موعد طعن / نهائي» row (kind deadline) is not a clash — it marks a day, it holds no hour", () => {

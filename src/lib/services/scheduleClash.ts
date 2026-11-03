@@ -169,6 +169,27 @@ export function hearingQueryDays(startMs: number, durationMinutes: number): { fr
   return { fromDay: from?.date ?? "", toDay: to?.date ?? "" };
 }
 
+/**
+ * The same window to the minute, as ONE PostgREST `or` filter on the two
+ * wall-clock columns: (fromDay, fromTime) <= (hearing_date, hearing_time) <
+ * (toDay, toTime). The day bounds alone let a busy diary's other sittings on
+ * the end day (after the slot) fill the read's row limit (final review M1).
+ * Null when the instant is not a real time (the caller keeps the day bounds).
+ */
+export function hearingQueryMinuteFilter(startMs: number, durationMinutes: number): string | null {
+  const from = riyadhWallClock(startMs - MAX_HEARING_MINUTES * MINUTE_MS);
+  const to = riyadhWallClock(startMs + durationMinutes * MINUTE_MS);
+  if (!from || !to) return null;
+  if (from.date === to.date) {
+    return `and(hearing_date.eq.${from.date},hearing_time.gte.${from.time},hearing_time.lt.${to.time})`;
+  }
+  return [
+    `and(hearing_date.eq.${from.date},hearing_time.gte.${from.time})`,
+    `and(hearing_date.gt.${from.date},hearing_date.lt.${to.date})`,
+    `and(hearing_date.eq.${to.date},hearing_time.lt.${to.time})`,
+  ].join(",");
+}
+
 function arDigits(value: number | string): string {
   return String(value).replace(/[0-9]/g, (d) => "٠١٢٣٤٥٦٧٨٩"[Number(d)]);
 }
