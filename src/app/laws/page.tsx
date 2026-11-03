@@ -13,6 +13,7 @@ import { stripMarkdownMarks } from "@/lib/text/stripMarkdownMarks";
 import { withoutLeadingHeadings } from "./components/summaryClamp";
 import { groupLawSearchCards } from "./lawSearchGroups";
 import { catalogueMatches } from "./catalogueMatch";
+import SearchSyntaxHelp from "@/components/library/SearchSyntaxHelp";
 import { courtBadge } from "./principleCardFields";
 import { collectionCardExcerpt } from "@/lib/library/precedentVolumes";
 import { realPrincipleNumber } from "./principleLink";
@@ -1679,6 +1680,9 @@ export default function LegalLibraryPage() {
                 <Faders size={20} weight="fill" />
                 <span className="hidden sm:inline">{isRTL ? "بحث متقدم" : "Advanced"}</span>
               </button>
+
+              {/* BUG-LIB-04: what the operators do, one example each. */}
+              <SearchSyntaxHelp onPick={setSearch} isDark={isDark} panelPosition="start-0 md:start-auto md:end-0" />
 
               <div className={`flex items-center p-1.5 rounded-2xl border ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"} shadow-sm`}>
                 <button
