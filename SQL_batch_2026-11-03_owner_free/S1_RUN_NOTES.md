@@ -65,7 +65,10 @@ cd /www/wwwroot/nzamy/latest-nzamy-full && docker exec -i supabase-db psql -U su
 
 A second run prints `already folds tashkeel — skipped` three times and rewrites nothing.
 
-**The other way:** in the Supabase dashboard, open SQL Editor as postgres and paste the whole file. The editor hides the NOTICEs and shows only the last result, `ok = t`. If the editor reports a timeout, use the terminal command above. The file runs in one transaction, so a timeout changes nothing.
+**The other way:** in the Supabase dashboard, open SQL Editor as postgres and paste the whole file.
+- The editor hides the NOTICEs and shows only the last result, `ok = t`.
+- If the editor reports a timeout, use the terminal command above. The file runs in one transaction, so a timeout changes nothing.
+- If Step 1 showed `matview_owner` other than `postgres`, do not use the SQL Editor. It would stop with an error and change nothing. Use the terminal command without `-c "set role postgres"`.
 
 **If it stops:**
 - `canceling statement due to lock timeout`: a long query held one of the tables for more than 5 s, and **nothing changed**. Wait a minute and run it again.
