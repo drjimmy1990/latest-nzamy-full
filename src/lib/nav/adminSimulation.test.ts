@@ -299,10 +299,20 @@ test("S6-T18: the three gates use the helpers; the session role still feeds quic
 //      its sessionStorage key.
 // Every predicate is run against planted fixtures first (negative control),
 // including the four probes from the task-6 review.
-// NOT enforced: a value laundered through a module-level variable, a call on
-// the result of another call (`a().b(x)` checks only `.b` as a pure method),
-// or a regex literal containing a quote (the comment scanner does not model
-// regex literals). The importer allowlist is the backstop for those.
+// NOT enforced (re-review N2 included):
+//   - a value laundered through a module-level variable;
+//   - a late assignment (`let v; v = adminSim.view;` — only initializers taint);
+//   - a call on the result of another call (`a().b(x)` checks only `.b` as a
+//     pure method);
+//   - a remap through a pure method that keeps the `{x.href}` shape (e.g.
+//     `.map((a) => ({ ...a, href: a.href + "&as=" + role }))` then
+//     `<Link href={actions[0].href}>` in the government page);
+//   - the getSidebarByUserType sanitizer applies in every importer, so a menu
+//     built from a simulated sub-role can be sent untainted (today GlobalSearch
+//     only uses it to decide whether an argument-less read runs);
+//   - a regex literal containing a quote (the comment scanner does not model
+//     regex literals).
+// The importer allowlist is the backstop for those.
 
 const SRC = fileURLToPath(new URL("../../", import.meta.url));
 const rel = (abs: string) => relative(SRC, abs).split(sep).join("/");
@@ -367,7 +377,7 @@ const esc = (s: string) => s.replace(/[$]/g, "\\$");
 /** The simulation's own names: the hook, the helpers that read it, the options list, the usual variable names. */
 const SIM_SEED = /(?<![\w$.])(?:useAdminSimulation|setAdminSimulation|simulatedNavIdentity|adminBypassesUiGates|adminSimulatesConsultant|simulatedFirmRole|switchOptionFor|parse(?:Stored)?AdminSimulation|readStoredAdminSimulation\w*|writeStoredAdminSimulation|ADMIN_SWITCH_OPTIONS|ADMIN_SIM_\w+|adminSim\w*|simId\w*|sim)(?![\w$])/;
 /** FirmRoleContext's readers: the value they read is the (possibly simulated) firm role. */
-const FIRM_ROLE_SEED = /(?<![\w$.])(?:useFirmRole\s*\(|useContext\s*\(\s*FirmRoleContext\b)/;
+const FIRM_ROLE_SEED = /(?<![\w$.])(?:useFirmRole\s*\(|use(?:Context)?\s*\(\s*FirmRoleContext\b|FirmRoleContext\.Consumer\b)/;
 
 /** Its result is the static menu config: bindings made from it are not tainted. */
 const SANITIZERS = /^\s*getSidebarByUserType\s*\(/;
@@ -398,9 +408,10 @@ const PRESENTATION = /^(?:className|style|key|size|weight|color|aria-[\w-]+)$/;
  * that names a simulated value and was read and judged not to send it.
  */
 const SAFE_BY_FILE: Record<string, ReadonlySet<string>> = {
-  // opt.href is one of ADMIN_SWITCH_OPTIONS' nine bare /dashboard/<x> paths — no query,
-  // no fragment (pinned by "S6-T16: every option href is a bare dashboard path").
-  "components/dashboard/AdminViewSwitch.tsx": new Set(["router.push"]),
+  // Only `router.push(<x>.href)` (STATIC_HREF_ARG): opt.href is one of ADMIN_SWITCH_OPTIONS'
+  // nine bare /dashboard/<x> paths — no query, no fragment (pinned by "S6-T16: every option
+  // href is a bare dashboard path"). Any other push in the file, e.g. a built string, is a leak.
+  "components/dashboard/AdminViewSwitch.tsx": new Set(["router.push:static"]),
   // The display role for FirmRoleContext; its readers are pinned in FIRM_ROLE_READERS.
   "app/dashboard/firm/layout.tsx": new Set(["FirmRoleContext.Provider.value"]),
   // The simulated role picks which entries of the page's static maps (ALL_TOOLS,
@@ -413,6 +424,8 @@ const SAFE_BY_FILE: Record<string, ReadonlySet<string>> = {
 };
 
 /** `{x.href}`, `{tools[0].href}` — a config entry's own href, nothing built from the value. */
+/** `(opt.href)` — a call whose one argument is a config entry's own href. */
+const STATIC_HREF_ARG = /^\(\s*[A-Za-z_$][\w$]*\.href\s*\)$/;
 const STATIC_HREF = /^\{\s*[A-Za-z_$][\w$]*(?:\[\d+\]|\.[A-Za-z_$][\w$]*)*\.href\s*\}$/;
 
 /** Where an expression (a declaration initializer) ends: `;`, an unbalanced closer, or a line break that does not continue it. */
@@ -455,7 +468,9 @@ function declarations(c: string): Array<{ names: string[]; init: string }> {
   return out;
 }
 
-function mentions(text: string, seed: RegExp, tainted: Set<string>): boolean {
+function mentions(raw: string, seed: RegExp, tainted: Set<string>): boolean {
+  // A spread (`...x`) names x: drop the dots so the "not a property" lookbehind sees it.
+  const text = raw.replace(/\.\.\./g, " ");
   if (seed.test(text)) return true;
   for (const n of tainted) if (new RegExp(`(?<![\\w$.])${esc(n)}(?![\\w$])`).test(text)) return true;
   return false;
@@ -514,6 +529,7 @@ function simulationSinks(src: string, file = "", seed: RegExp = SIM_SEED): strin
     const last = callee.split(".").pop()!;
     if (KEYWORDS.has(head) || /\bfunction\s*$/.test(c.slice(Math.max(0, m.index! - 12), m.index!))) continue;
     if (SAFE_CALLEES.has(callee) || HOOKS.has(callee) || safe.has(callee)) continue;
+    if (safe.has(`${callee}:static`) && STATIC_HREF_ARG.test(args)) continue;
     if (callee.includes(".") && PURE_METHODS.has(last)) continue;
     if (!callee.includes(".") && (callee === "Boolean" || callee === "String" || callee === "Number")) continue;
     sinks.push(`${callee}(…)`);
@@ -539,6 +555,28 @@ function simulationSinks(src: string, file = "", seed: RegExp = SIM_SEED): strin
     }
     if (safe.has(`${tag}.${attr}`)) continue;
     sinks.push(`<${tag} ${attr}>`);
+  }
+
+  // JSX spreads (re-review N2): `<RequestForm {...simProps} />` hands every key to the child.
+  for (const m of c.matchAll(/<([A-Za-z][\w.-]*)(?=[\s/>])/g)) {
+    let depth = 0;
+    for (let i = m.index! + m[0].length; i < c.length; i++) {
+      const ch = c[i];
+      if (ch === '"' || ch === "'" || ch === "`") {
+        let j = i + 1;
+        while (j < c.length && c[j] !== ch) { if (c[j] === "\\") j++; j++; }
+        i = j;
+        continue;
+      }
+      if (ch === "{") {
+        if (depth === 0 && /^\{\s*\.\.\./.test(c.slice(i, i + 8))) {
+          const expr = balanced(c, i);
+          if (mentions(expr, seed, tainted)) sinks.push(`<${m[1]} {...}>`);
+        }
+        depth++;
+      } else if (ch === "}") depth--;
+      else if (depth === 0 && (ch === ">" || ch === "<")) break;
+    }
   }
 
   // Request-building lines (redundant with the call check; kept as a second net).
@@ -672,6 +710,24 @@ test("R27 negative control: each predicate flags a planted leak and passes a cle
   for (const [name, src] of Object.entries(probes)) {
     assert.notDeepEqual(simulationSinks(src), [], `probe ${name} must be flagged`);
   }
+  // Re-review N1: the switch's push exemption covers only `router.push(<x>.href)`.
+  const SWITCH = "components/dashboard/AdminViewSwitch.tsx";
+  const opt = "const opt = ADMIN_SWITCH_OPTIONS.find((o) => o.id === id);\n";
+  assert.deepEqual(simulationSinks(opt + "router.push(opt.href);", SWITCH), []);
+  assert.notDeepEqual(simulationSinks("const adminSim = useAdminSimulation(true);\nrouter.push(`/dashboard/government?role=${adminSim?.governmentRole}`);", SWITCH), [],
+    "a built query string is a leak even in the switch");
+  assert.notDeepEqual(simulationSinks(opt + "router.push(opt.href + '?sim=' + opt.id);", SWITCH), [],
+    "a concatenated push is a leak even in the switch");
+  assert.notDeepEqual(simulationSinks(opt + "router.replace(opt.href);", SWITCH), [], "only push is reviewed");
+  // Re-review N2 (1): a JSX spread of a tainted object.
+  assert.notDeepEqual(simulationSinks("const simProps = { role: simId.practiceKind };\nreturn <RequestForm {...simProps} />;"), []);
+  assert.notDeepEqual(simulationSinks("return <input {...adminSim} />;"), []);
+  assert.notDeepEqual(simulationSinks("saveOrder({ ...simId, x: 1 });"), [], "an object spread in a call names the value");
+  assert.deepEqual(simulationSinks("const p = { a: 1 };\nreturn <RequestForm {...p} />;"), []);
+  // Re-review N2 (4): the other ways to read FirmRoleContext.
+  assert.equal(readsFirmRole("const role = use(FirmRoleContext);"), true);
+  assert.equal(readsFirmRole("<FirmRoleContext.Consumer>{(r) => r.labelAr}</FirmRoleContext.Consumer>"), true);
+  assert.equal(readsFirmRole("<FirmRoleContext.Provider value={x}>"), false, "the provider is not a reader");
   // …and the provider probe passes only in the file whose provider was reviewed.
   assert.deepEqual(simulationSinks(probes.providerValue, "app/dashboard/firm/layout.tsx"), []);
   // The government page's reviewed static hrefs: a config entry's href passes, a built one does not.
