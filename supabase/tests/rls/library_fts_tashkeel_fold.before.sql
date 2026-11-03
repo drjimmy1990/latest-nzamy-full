@@ -33,6 +33,12 @@ do $$ begin
   end if;
 end $$;
 grant usage, create on schema library to t7_mv_owner;
+-- A second superuser, to run _14 as a role that does not own the tables (review M-4).
+do $$ begin
+  if not exists (select 1 from pg_roles where rolname = 't7_admin') then
+    create role t7_admin superuser nologin;
+  end if;
+end $$;
 -- REFRESH runs the matview's query with its owner's privileges.
 grant select on all tables in schema library to t7_mv_owner;
 alter materialized view library.cross_section_search owner to t7_mv_owner;

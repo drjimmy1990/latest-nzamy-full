@@ -31,6 +31,10 @@
 --   3. _14 without its `alter materialized view … owner to` block
 --      → T7 RAISES (the recreated matview belongs to whoever ran the file, so
 --      the SECURITY DEFINER library.refresh_cross_section_search() could not refresh it).
+--   4. As another superuser (review M-4): the same chain with each _14 replaced by
+--      a copy that starts with `set role t7_admin;` (t7_admin is created by the
+--      .before fixture) → passes; the same without _14's `alter function … owner
+--      to` block → T6 RAISES (the function would belong to t7_admin).
 --
 -- The file runs as the superuser; every role-scoped assertion does `set role` first.
 -- Every assertion RAISES on failure (the harness fails closed on ERROR).
@@ -173,7 +177,15 @@ begin
   if library.fold_tashkeel('الرَّحْمٰنُ ـ') <> 'الرحمن ' then
     raise exception 'T6: fold_tashkeel(«الرَّحْمٰنُ ـ») = %', library.fold_tashkeel('الرَّحْمٰنُ ـ');
   end if;
-  raise notice 'T6 ok — fold_tashkeel is service_role only and folds harakat, dagger alef and tatweel';
+  -- Review M-4: the function belongs to the tables' owner, whoever ran _14
+  -- (the second chain runs _14 as another superuser, t7_admin).
+  if (select pg_get_userbyid(proowner) from pg_proc where oid = 'library.fold_tashkeel(text)'::regprocedure)
+     <> (select pg_get_userbyid(relowner) from pg_class where oid = 'library.articles'::regclass) then
+    raise exception 'T6: fold_tashkeel belongs to %, not to the tables'' owner %',
+      (select pg_get_userbyid(proowner) from pg_proc where oid = 'library.fold_tashkeel(text)'::regprocedure),
+      (select pg_get_userbyid(relowner) from pg_class where oid = 'library.articles'::regclass);
+  end if;
+  raise notice 'T6 ok — fold_tashkeel is service_role only (plus its owner, the tables'' owner) and folds harakat, dagger alef and tatweel';
 end $$;
 
 -- T7 — the matview is back, empty (WITH NO DATA), off the API, and refreshable.

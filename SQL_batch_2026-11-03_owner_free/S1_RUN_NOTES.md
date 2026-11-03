@@ -9,7 +9,9 @@
 - `library.principles`
 - `library.feqh_blocks`
 
-No row is added, changed or deleted, and no grant changes.
+No row is added, changed or deleted, and no table or column grant changes. The privileges it does set:
+- the new function `library.fold_tashkeel(text)`: EXECUTE for `service_role` only (revoked from PUBLIC, anon and authenticated). It belongs to the owner of the library tables, who can always run it.
+- the matview `library.cross_section_search`: it is dropped and recreated, then gets the same privileges back. It keeps its old owner and gets back every grant it had (for example `service_role`'s), except any for anon, authenticated or PUBLIC: it stays off the API.
 
 **Why AFTER the deploy:** the new search code, already in this deploy, sends every word twice, once as typed and once without tashkeel. It works before this file and after it. The old code sends only the typed form. If this file ran first, a search typed with tashkeel would find nothing until the deploy.
 
@@ -56,7 +58,7 @@ It prints its NOTICEs and has no editor timeout:
 cd /www/wwwroot/nzamy/latest-nzamy-full && docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -c "set role postgres" -f - < supabase/migrations/20261103_14_library_fts_tashkeel_fold.sql
 ```
 
-`set role postgres` makes the new function and the recreated matview belong to `postgres`, like the tables.
+`set role postgres` runs the file as the tables' owner. The file also hands the function to the tables' owner, and the matview to its old owner, whoever runs it.
 
 **Expected output on the screen:**
 - three lines `NOTICE:  20261103_14: library.<table>.fts rebuilt with fold_tashkeel (statistics target 1000)`;
@@ -109,8 +111,13 @@ The query side needs no change in either direction. To undo:
    - `20260729_article_history_columns.sql` (articles and the matview);
    - `20260823_fts_number_search.sql` (principles);
    - the `feqh_blocks` fts of `20260626_legal_library_schema.sql`.
-2. Run `20261017_21_library_fts_statistics.sql`.
-3. Run `drop function library.fold_tashkeel(text);`.
+2. Take the recreated matview off the API again and give the server its read back, as `20260922_04` and `20260929_01` did:
+   ```sql
+   revoke all on library.cross_section_search from anon, authenticated, public;
+   grant select on library.cross_section_search to service_role;
+   ```
+3. Run `20261017_21_library_fts_statistics.sql`.
+4. Run `drop function library.fold_tashkeel(text);`.
 
 Rolling back takes the same lock for the same time.
 

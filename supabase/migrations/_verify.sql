@@ -5496,6 +5496,10 @@ begin
   if not has_function_privilege('service_role', 'library.fold_tashkeel(text)', 'EXECUTE') then
     raise exception '_verify: 20261103_14 — service_role cannot EXECUTE library.fold_tashkeel(text): every insert into articles / principles / fiqh blocks (the owner''s loader) fails with 42501. Run 20261103_14 again (AFTER the deploy)';
   end if;
+  if not has_function_privilege((select pg_get_userbyid(relowner) from pg_class where oid = 'library.articles'::regclass),
+                                'library.fold_tashkeel(text)', 'EXECUTE') then
+    raise exception '_verify: 20261103_14 — the owner of the library tables cannot EXECUTE library.fold_tashkeel(text): its writes (the SQL editor, the owner''s fix SQL) fail with 42501. Run 20261103_14 again (AFTER the deploy)';
+  end if;
   if has_function_privilege('anon', 'library.fold_tashkeel(text)', 'EXECUTE')
      or has_function_privilege('authenticated', 'library.fold_tashkeel(text)', 'EXECUTE') then
     raise exception '_verify: 20261103_14 — anon or authenticated can EXECUTE library.fold_tashkeel(text): run 20261103_14 again (AFTER the deploy)';

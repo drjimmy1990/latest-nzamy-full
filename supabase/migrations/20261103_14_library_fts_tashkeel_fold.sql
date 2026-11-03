@@ -39,8 +39,10 @@
 --         the index, restore the column's statistics target (20261017_21);
 --      d. recreate cross_section_search exactly as 20260729_article_history_columns
 --         did (WITH NO DATA), its two indexes and comment; revoke it from anon,
---         authenticated and PUBLIC (20260922_04 / 20260929_01) and give
---         service_role back the SELECT it had.
+--         authenticated and PUBLIC (20260922_04 / 20260929_01), give it its old
+--         owner back and every other grant it had (its ACL, e.g. service_role's
+--         ALL from 20260626) — whoever runs the file, so default privileges of
+--         the running role never decide them.
 --   3. After COMMIT: ANALYZE each rewritten fts column (fresh word statistics
 --      for the planner; SHARE UPDATE EXCLUSIVE — reads and writes continue).
 --   4. A final SELECT whose `ok` is true only when all of it is in place.
@@ -78,6 +80,24 @@ comment on function library.fold_tashkeel(text) is
 revoke execute on function library.fold_tashkeel(text) from public, anon, authenticated;
 grant execute on function library.fold_tashkeel(text) to service_role;
 
+-- The function belongs to the owner of the library tables, whoever runs this
+-- file (psql as supabase_admin, or the SQL editor as postgres). EXECUTE is
+-- revoked from PUBLIC, so a function owned by another role would make every
+-- write the tables' owner makes (the SQL editor, the owner's fix SQL) fail with
+-- 42501 on the generated column; the owner always holds EXECUTE.
+do $own$
+declare
+  tables_owner name;
+begin
+  select pg_get_userbyid(c.relowner) into tables_owner
+    from pg_class c where c.oid = to_regclass('library.articles');
+  if tables_owner is not null and tables_owner <> (
+       select pg_get_userbyid(p.proowner) from pg_proc p
+        where p.oid = 'library.fold_tashkeel(text)'::regprocedure) then
+    execute format('alter function library.fold_tashkeel(text) owner to %I', tables_owner);
+  end if;
+end $own$;
+
 -- ── 2. Fold the three fts columns (only those not folded yet) ────────────────
 do $mig$
 declare
@@ -98,6 +118,8 @@ declare
   target     int;
   bad        text;
   svc_select boolean;
+  mv_acl     aclitem[];
+  g          record;
   mv_owner   name;
 begin
   for i in 1 .. array_length(tables, 1) loop
@@ -148,7 +170,7 @@ begin
   -- Its owner too: library.refresh_cross_section_search() is SECURITY DEFINER
   -- and REFRESH needs the owner, so the recreated matview keeps the old one
   -- whoever runs this file (SQL editor as postgres, or psql as supabase_admin).
-  select pg_get_userbyid(c.relowner) into mv_owner
+  select pg_get_userbyid(c.relowner), c.relacl into mv_owner, mv_acl
     from pg_class c where c.oid = to_regclass('library.cross_section_search');
   drop materialized view if exists library.cross_section_search;
 
@@ -240,7 +262,18 @@ $mv$;
     execute format('alter materialized view library.cross_section_search owner to %I', mv_owner);
   end if;
   revoke all on library.cross_section_search from anon, authenticated, public;
-  if svc_select then
+  -- The old grants, except the owner's own and anything for anon,
+  -- authenticated or PUBLIC (the matview stays off the API).
+  for g in
+    select distinct pg_get_userbyid(a.grantee) as grantee, a.privilege_type
+      from aclexplode(coalesce(mv_acl, '{}'::aclitem[])) a
+     where a.grantee <> 0
+       and a.grantee <> (select c.relowner from pg_class c where c.oid = 'library.cross_section_search'::regclass)
+       and pg_get_userbyid(a.grantee) not in ('anon', 'authenticated')
+  loop
+    execute format('grant %s on library.cross_section_search to %I', g.privilege_type, g.grantee);
+  end loop;
+  if svc_select and not has_table_privilege('service_role', 'library.cross_section_search', 'SELECT') then
     grant select on library.cross_section_search to service_role;
   end if;
 end $mig$;
@@ -267,6 +300,8 @@ select
   and not has_table_privilege('anon', 'library.cross_section_search', 'SELECT')
   and not has_table_privilege('authenticated', 'library.cross_section_search', 'SELECT')
   and has_function_privilege('service_role', 'library.fold_tashkeel(text)', 'EXECUTE')
+  and has_function_privilege((select pg_get_userbyid(relowner) from pg_class where oid = 'library.articles'::regclass),
+                             'library.fold_tashkeel(text)', 'EXECUTE')
   and not has_function_privilege('anon', 'library.fold_tashkeel(text)', 'EXECUTE')
   and not has_function_privilege('authenticated', 'library.fold_tashkeel(text)', 'EXECUTE')
   as ok;
