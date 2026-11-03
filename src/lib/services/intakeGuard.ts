@@ -32,6 +32,7 @@ import { validateContractsIntake } from "./orderIntake.contracts.ts";
 import { validateWargamingIntake } from "./orderIntake.wargaming.ts";
 import { validateLegalOpinionIntake } from "./orderIntake.legalOpinion.ts";
 import { BRIEF_REVIEW_SERVICE, validateBriefReviewMetadata } from "./briefReviewOrder.ts";
+import { COURT_CHOICES } from "../../app/dashboard/lawyer/_components/courtTypes.ts";
 
 export type IntakeGuardResult =
   /** No AI intake on this request — legacy/non-AI orders pass through. */
@@ -94,16 +95,51 @@ export function checkOrderIntake(metadata: unknown): IntakeGuardResult {
       : { kind: "ok", service: BRIEF_REVIEW_SERVICE };
   }
 
-  const intake = metadata.intake;
-  if (intake === undefined || intake === null) return { kind: "pass" };
-
-  const service =
-    asServiceKey(isRecord(intake) ? intake.service : undefined) ?? asServiceKey(metadata.service);
-  if (!service) return { kind: "pass" };
-
-  const result = VALIDATOR_BY_SERVICE[service](intake);
+  const checked = checkWizardIntake(metadata);
+  if (!checked) return { kind: "pass" };
+  const { service, result } = checked;
   if (result.ok) return { kind: "ok", service };
   return { kind: "invalid", service, errors: result.errors };
+}
+
+/** The wizard service `metadata` claims and its validator's verdict, or null (no intake / unknown service). */
+function checkWizardIntake(
+  metadata: Record<string, unknown>,
+): { service: ServiceKey; result: ValidationResult<unknown> } | null {
+  const intake = metadata.intake;
+  if (intake === undefined || intake === null) return null;
+  const service =
+    asServiceKey(isRecord(intake) ? intake.service : undefined) ?? asServiceKey(metadata.service);
+  if (!service) return null;
+  return { service, result: VALIDATOR_BY_SERVICE[service](intake) };
+}
+
+/**
+ * The `metadata` POST /api/v1/service-requests stores, once checkOrderIntake
+ * has passed it. Every key goes through as sent, except two:
+ *   - `intake` of the four wizard services is the validator's own `value`, not
+ *     the raw body (Wave 1 task 8 re-review). The wizards already send that
+ *     value, and every validator returns its own output unchanged
+ *     (intakeGuard.test.ts), so a live submit stores the same object; a direct
+ *     POST can no longer store fields the validator drops, such as a hidden
+ *     party's leftover representative ID or «أخرى» text.
+ *   - `courtClass` is kept only when it is one of the 14 classifications
+ *     (COURT_CHOICES) and dropped otherwise (Wave 1 task 10 re-review), as
+ *     courtClassOf already ignores it on read.
+ * A `metadata` that is not an object is returned unchanged, `{}` for none.
+ */
+export function persistedRequestMetadata(metadata: unknown): unknown {
+  if (!isRecord(metadata)) return metadata ?? {};
+  const out: Record<string, unknown> = { ...metadata };
+  // A memo-review order (briefReviewOrder.ts) is not a wizard intake: as sent.
+  const briefReview =
+    metadata.service === BRIEF_REVIEW_SERVICE || (isRecord(metadata.intake) && metadata.intake.service === BRIEF_REVIEW_SERVICE);
+  const checked = briefReview ? null : checkWizardIntake(metadata);
+  if (checked?.result.ok) out.intake = checked.result.value;
+  if ("courtClass" in out && !(typeof out.courtClass === "string" && (COURT_CHOICES as readonly string[]).includes(out.courtClass))) {
+    delete out.courtClass;
+  }
+  return out;
 }
 
 /**
