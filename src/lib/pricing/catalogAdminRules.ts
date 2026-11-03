@@ -294,3 +294,21 @@ export function customerViewOf(
     visible: row.enabled !== false,
   };
 }
+
+/** The screen's edit draft for one row. */
+export type CatalogEditDraft = { basePrice: number; priceMode: string; priceNote: string; enabled: boolean };
+
+/**
+ * The PATCH body for an edit: only what differs from what the customer sees
+ * now (customerViewOf). For a legacy row the view is the code entry, so an
+ * untouched field is never sent — sending the stale DB value would make the
+ * admin's "explicit" field win and republish it. Pure.
+ */
+export function changedCatalogFields(view: CatalogCustomerView, draft: CatalogEditDraft): Record<string, unknown> {
+  const body: Record<string, unknown> = {};
+  if (draft.basePrice !== view.basePrice) body.basePrice = draft.basePrice;
+  if (draft.priceMode !== view.priceMode) body.priceMode = draft.priceMode;
+  if (draft.priceNote.trim() !== view.priceNote.trim()) body.priceNote = draft.priceNote.trim();
+  if (draft.enabled !== view.visible) body.enabled = draft.enabled;
+  return body;
+}

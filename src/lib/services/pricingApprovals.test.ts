@@ -628,3 +628,15 @@ test("task 6 (G): migration 20261102_11 writes contract-draft's mode and note ex
   // The card reads «بالنقاط» + «٥٠٠ نقطة للعقد», never «مشمول في الباقة».
   assert.equal(formatClientServicePrice(row), "بالنقاط");
 });
+
+// ── S5-B6 (absorbed into Task 4 by preflight R9) ──
+
+test("admin pricing: «Beta free AI» never counts a «قريباً» tool", () => {
+  const admin = readFileSync(new URL("../../app/dashboard/admin/pricing/page.tsx", import.meta.url), "utf8");
+  assert.match(admin, /tool\.betaStatus === "beta-free" && !tool\.comingSoon/);
+  // no bare beta-free filter left beside it
+  assert.equal(admin.split('betaStatus === "beta-free"').length - 1, 1, "one beta-free filter, the guarded one");
+  // pinned to the catalogue at HEAD: the only beta-free tool (consult) is «قريباً»
+  assert.equal(catalog.LAWYER_AI_TOOLS.filter((t) => t.betaStatus === "beta-free" && !t.comingSoon).length, 0);
+  assert.ok(catalog.LAWYER_AI_TOOLS.some((t) => t.betaStatus === "beta-free" && t.comingSoon), "fixture: a «قريباً» beta-free tool exists");
+});

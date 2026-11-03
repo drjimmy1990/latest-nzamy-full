@@ -6,6 +6,7 @@ import { getClientServiceById, mergeAdminPricingCatalogRows, type AdminPricingCa
 import {
   CATALOG_PRICE_MODES,
   catalogRowUpdate,
+  changedCatalogFields,
   codeEntryFor,
   customerViewOf,
   isLegacyCatalogRow,
@@ -295,4 +296,17 @@ test("S6: the admin screen shows what the customer sees (a legacy row reads the 
     visible: true,
   });
   assert.equal(customerViewOf(row({ enabled: false, metadata: { adminHidden: true } })).visible, false);
+});
+
+test("S6: the screen sends only what changed against what the customer sees (a legacy row never resends stale values)", () => {
+  const aiLetter = seedRows().find((r) => r.service_id === "ai-letter")!;
+  const view = customerViewOf(aiLetter);
+  const untouched = { basePrice: view.basePrice, priceMode: view.priceMode, priceNote: view.priceNote, enabled: view.visible };
+  assert.deepEqual(changedCatalogFields(view, untouched), {});
+  assert.deepEqual(changedCatalogFields(view, { ...untouched, basePrice: 25 }), { basePrice: 25 });
+  assert.deepEqual(changedCatalogFields(view, { ...untouched, priceNote: "  ملاحظة " }), { priceNote: "ملاحظة" });
+  assert.deepEqual(changedCatalogFields(view, { ...untouched, enabled: false }), { enabled: false });
+  assert.deepEqual(changedCatalogFields(view, { ...untouched, priceMode: "fixed", basePrice: 49 }), { basePrice: 49, priceMode: "fixed" });
+  // the stale seed price 49 is never in an untouched body
+  assert.equal(Object.values(changedCatalogFields(view, untouched)).includes(49), false);
 });
