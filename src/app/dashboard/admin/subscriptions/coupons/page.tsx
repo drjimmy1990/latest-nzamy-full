@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowClockwise,
   CalendarBlank,
@@ -15,8 +15,6 @@ import {
   X,
   FileText,
   User,
-  Desktop,
-  DownloadSimple
 } from "@phosphor-icons/react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTheme } from "@/components/ThemeProvider";
@@ -26,6 +24,10 @@ import { COUPON_USER_TYPE_TO_ROLE } from "@/lib/payments/couponAdminRules";
 import { couponPatchDiff } from "@/lib/payments/couponAdminDiff";
 import { excludedItemsOf } from "@/lib/payments/couponRules";
 import { isOnSale, PRICE_BOOK } from "@/lib/pricing/priceBook";
+import { COUPON_USAGE_LIMIT, couponUsageDateAr, type CouponUsageView } from "@/lib/payments/couponUsageView";
+
+/** The usage log of the coupon whose panel is open: «empty» is said only after a read that worked. */
+type UsageRead = { state: "loading" | "error" } | { state: "ready"; rows: CouponUsageView[] };
 
 // ─── DB row → AdminCoupon mapping ──────────────────────────────────────────────
 // The coupons table (20260603_phase1_003_subscriptions_billing.sql) uses
@@ -189,6 +191,8 @@ export default function AdminCouponsPage() {
   const [original, setOriginal] = useState<AdminCoupon | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedCoupon, setSelectedCoupon] = useState<AdminCoupon | null>(null);
+  const [usage, setUsage] = useState<UsageRead>({ state: "loading" });
+  const currentUsageCode = useRef<string | null>(null);
   // Now only ever reports what a WRITE did. The read has its own three states
   // below; a toast could not distinguish them and was the reason a failed load
   // could sit above three fake coupons saying «تُعرض بيانات تجريبية».
@@ -241,6 +245,38 @@ export default function AdminCouponsPage() {
   const totalUsage = useMemo(() => coupons.reduce((sum, coupon) => sum + coupon.usedCount, 0), [coupons]);
   const card = `rounded-2xl border ${isDark ? "bg-[#161b22] border-white/10" : "bg-white border-gray-200 shadow-sm"}`;
   const muted = isDark ? "text-gray-400" : "text-gray-500";
+
+  // S6-T13: the panel reads coupon_usage when it opens (a stale answer for
+  // another coupon, opened meanwhile, is dropped).
+  async function loadUsage(coupon: AdminCoupon) {
+    const id = codeToId[coupon.code];
+    setUsage({ state: "loading" });
+    if (!id) {
+      setUsage({ state: "error" });
+      return;
+    }
+    try {
+      const res = await fetch(`/api/v1/admin/coupons/${id}/usage`);
+      const json = (await res.json().catch(() => null)) as { data?: unknown } | null;
+      if (!res.ok || !json || !Array.isArray(json.data)) throw new Error(`usage ${res.status}`);
+      const rows = json.data as CouponUsageView[];
+      setUsage((prev) => (currentUsageCode.current === coupon.code ? { state: "ready", rows } : prev));
+    } catch (err) {
+      console.error("[coupons] usage read failed:", err);
+      setUsage((prev) => (currentUsageCode.current === coupon.code ? { state: "error" } : prev));
+    }
+  }
+
+  function openCouponPanel(coupon: AdminCoupon) {
+    currentUsageCode.current = coupon.code;
+    setSelectedCoupon(coupon);
+    void loadUsage(coupon);
+  }
+
+  function closeCouponPanel() {
+    currentUsageCode.current = null;
+    setSelectedCoupon(null);
+  }
 
   function openNewCoupon() {
     setOriginal(null);
@@ -597,7 +633,7 @@ export default function AdminCouponsPage() {
             )}
 
             {state === "ready" && coupons.map((coupon, index) => (
-              <motion.div key={coupon.code} onClick={() => setSelectedCoupon(coupon)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: index * 0.04 }} className={`grid grid-cols-12 items-center gap-2 px-5 py-4 cursor-pointer transition ${isDark ? "hover:bg-white/[0.04]" : "hover:bg-gray-50"}`}>
+              <motion.div key={coupon.code} onClick={() => openCouponPanel(coupon)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: index * 0.04 }} className={`grid grid-cols-12 items-center gap-2 px-5 py-4 cursor-pointer transition ${isDark ? "hover:bg-white/[0.04]" : "hover:bg-gray-50"}`}>
                 <span className={`col-span-2 font-mono text-sm font-black ${isDark ? "text-[#C8A762]" : "text-amber-600"}`}>{coupon.code}</span>
                 
                 <span className={`col-span-2 text-sm font-bold ${isDark ? "text-white" : "text-gray-900"}`}>
@@ -665,11 +701,11 @@ export default function AdminCouponsPage() {
       <AnimatePresence>
         {selectedCoupon && (
           <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedCoupon(null)} className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={closeCouponPanel} className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40" />
             <motion.div initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={{ type: "spring", damping: 25, stiffness: 200 }} className={`fixed top-0 right-0 bottom-0 w-full max-w-md shadow-2xl z-50 flex flex-col ${isDark ? "bg-[#0d1117] border-l border-white/10" : "bg-white border-l border-gray-200"}`}>
               <div className={`p-5 flex items-center justify-between border-b ${isDark ? "border-white/10" : "border-gray-100"}`}>
                 <h2 className={`text-lg font-black font-mono ${isDark ? "text-white" : "text-gray-900"}`}>{selectedCoupon.code}</h2>
-                <button onClick={() => setSelectedCoupon(null)} className={`p-2 rounded-full ${isDark ? "hover:bg-white/10 text-gray-400" : "hover:bg-gray-100 text-gray-600"}`}>
+                <button onClick={closeCouponPanel} className={`p-2 rounded-full ${isDark ? "hover:bg-white/10 text-gray-400" : "hover:bg-gray-100 text-gray-600"}`}>
                   <X size={20} />
                 </button>
               </div>
@@ -689,47 +725,57 @@ export default function AdminCouponsPage() {
                         {selectedCoupon.createdByAdmin || "—"}
                       </span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className={muted}>الجهاز المستخدم</span>
-                      <span className={`flex items-center gap-1 font-bold ${isDark ? "text-gray-300" : "text-gray-700"}`}>
-                        <Desktop size={14} />
-                        {selectedCoupon.createdFromDevice || "—"}
-                      </span>
-                    </div>
+                    {/* S6-T13: the «الجهاز المستخدم» row is gone — no device is ever recorded for a coupon. */}
                   </div>
                 </div>
 
                 <div>
                   <div className="flex items-center justify-between mb-3">
-                    <h3 className={`text-sm font-bold ${isDark ? "text-white" : "text-gray-900"}`}>سجل الاستخدام (Audit Log)</h3>
-                    <button className={`inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border font-bold ${isDark ? "border-white/10 hover:bg-white/5 text-gray-300" : "border-gray-200 hover:bg-gray-100 text-gray-700"}`}>
-                      <DownloadSimple size={14} />
-                      CSV
-                    </button>
+                    {/* S6-T13: read from coupon_usage (GET …/[id]/usage) when the panel opens.
+                        The dead CSV button is gone. */}
+                    <h3 className={`text-sm font-bold ${isDark ? "text-white" : "text-gray-900"}`}>سجل الاستخدام</h3>
+                    <span className={`text-[11px] ${muted}`}>الطلبات المدفوعة فقط</span>
                   </div>
-                  
-                  {(!selectedCoupon.usageLog || selectedCoupon.usageLog.length === 0) ? (
+
+                  {usage.state === "loading" && (
+                    <div className={`p-8 text-center text-sm rounded-xl border border-dashed ${isDark ? "border-white/10 text-gray-500" : "border-gray-200 text-gray-400"}`}>
+                      جارٍ قراءة السجل…
+                    </div>
+                  )}
+                  {usage.state === "error" && (
+                    <div className={`p-6 text-center rounded-xl border border-dashed ${isDark ? "border-white/10" : "border-gray-200"}`}>
+                      <Warning size={24} weight="fill" className="mx-auto mb-2 text-amber-500" />
+                      <p className={`text-sm font-bold ${isDark ? "text-white" : "text-gray-900"}`}>تعذّرت قراءة السجل</p>
+                      <p className={`text-xs mt-1 ${muted}`}>هذا ليس سجلاً فارغاً — لم نتمكن من القراءة.</p>
+                      <button type="button" onClick={() => { void loadUsage(selectedCoupon); }}
+                        className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 text-white font-bold text-xs hover:bg-amber-600 transition">
+                        <ArrowClockwise size={12} weight="bold" /> إعادة المحاولة
+                      </button>
+                    </div>
+                  )}
+                  {usage.state === "ready" && usage.rows.length === 0 && (
                     <div className={`p-8 text-center rounded-xl border border-dashed ${isDark ? "border-white/10 text-gray-500" : "border-gray-200 text-gray-400"}`}>
                       <FileText size={32} weight="duotone" className="mx-auto mb-2 opacity-50" />
-                      <p className="text-sm">لم يتم استخدام الكوبون بعد</p>
+                      <p className="text-sm">لم يُسجَّل استخدام بعد</p>
                     </div>
-                  ) : (
+                  )}
+                  {usage.state === "ready" && usage.rows.length > 0 && (
                     <div className="space-y-3">
-                      {selectedCoupon.usageLog.map((log, idx) => (
-                        <div key={idx} className={`p-4 rounded-xl border ${isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-100 bg-white"}`}>
+                      {usage.rows.length >= COUPON_USAGE_LIMIT && (
+                        <p className={`text-[11px] ${muted}`}>تُعرض أحدث {COUPON_USAGE_LIMIT} استخدام فقط.</p>
+                      )}
+                      {usage.rows.map((log, idx) => (
+                        <div key={`${log.orderId ?? "none"}-${idx}`} className={`p-4 rounded-xl border ${isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-100 bg-white"}`}>
                           <div className="flex justify-between items-start mb-2">
                             <div>
                               <p className={`text-sm font-bold ${isDark ? "text-white" : "text-gray-900"}`}>{log.usedBy}</p>
-                              <p className={`text-[11px] ${muted}`}>{ROLE_LABEL[log.usedByRole]}</p>
+                              <p className={`text-[11px] ${muted}`}>{Object.hasOwn(ROLE_LABEL, log.usedByRole) ? ROLE_LABEL[log.usedByRole as AdminEligibleRole] : log.usedByRole}</p>
                             </div>
-                            <span className={`text-xs font-mono font-bold ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>-{log.discountApplied}</span>
+                            <span className={`text-xs font-mono font-bold ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>-{log.discountApplied.toLocaleString("ar-SA")} ر.س</span>
                           </div>
                           <div className={`flex items-center justify-between text-[11px] ${muted} mt-3 pt-3 border-t ${isDark ? "border-white/10" : "border-gray-50"}`}>
-                            <span>{log.appliedTo}</span>
-                            <span>{log.usedAt}</span>
-                          </div>
-                          <div className={`text-[10px] mt-1 ${isDark ? "text-gray-600" : "text-gray-400"}`}>
-                            الجهاز: {log.usedFromDevice}
+                            <span className="font-mono" dir="ltr">{log.orderId ?? "—"}</span>
+                            <span>{couponUsageDateAr(log.createdAt)}</span>
                           </div>
                         </div>
                       ))}
