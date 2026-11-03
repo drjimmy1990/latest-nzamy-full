@@ -6,7 +6,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { hasMorePrinciples, mergePrinciples, nextOffset, normalizePrinciple } from "./_collection-model.ts";
+import {
+  appendRun,
+  hasMorePrinciples,
+  mergePrinciples,
+  nextOffset,
+  normalizePrinciple,
+  prependRun,
+  runHasMore,
+  runNextOffset,
+  runPrevWindow,
+  type CollectionRun,
+} from "./_collection-model.ts";
 
 test("missing arrays and NULL fields are defaulted", () => {
   const p = normalizePrinciple({ id: "p1", number: 12, text: null, paragraphs: [{ letter: "أ", text: "نص" }] });
@@ -58,4 +69,68 @@ test("a simulated scroll-then-search walk holds all 2,323 principles once", () =
   }
   assert.equal(held.length, 2323);
   assert.equal(new Set(held.map((p) => p.id)).size, 2323);
+});
+
+// ── q390-ب: a run of principles that may start mid-collection (?target=) ──
+
+const ids = (from: number, n: number) => Array.from({ length: n }, (_, i) => ({ id: `p-${from + i}` }));
+const run = (start: number, n: number): CollectionRun<{ id: string }> => ({ start, items: ids(start, n) });
+
+test("runNextOffset: the offset after the last principle held", () => {
+  assert.equal(runNextOffset(run(100, 50)), 150);
+  assert.equal(runNextOffset(run(0, 0)), 0);
+});
+
+test("runPrevWindow: the window just before the run, never below 0", () => {
+  assert.deepEqual(runPrevWindow(run(120, 10), 50), { offset: 70, limit: 50 });
+  assert.deepEqual(runPrevWindow(run(30, 10), 50), { offset: 0, limit: 30 });
+  assert.equal(runPrevWindow(run(0, 10), 50), null);
+});
+
+test("appendRun keeps start and de-duplicates by id", () => {
+  const r = run(100, 3);
+  const next = appendRun(r, [{ id: "p-102" }, ...ids(103, 2)]);
+  assert.equal(next.start, 100);
+  assert.deepEqual(next.items.map((p) => p.id), ["p-100", "p-101", "p-102", "p-103", "p-104"]);
+  assert.equal(appendRun(next, [{ id: "p-104" }]), next, "a no-op append returns the same run");
+});
+
+test("prependRun sets start to the new offset and keeps one copy of an overlapping id", () => {
+  const r = run(120, 3);
+  const prev = prependRun(r, [...ids(70, 50), { id: "p-120" }], 70);
+  assert.equal(prev.start, 70);
+  assert.equal(prev.items.length, 53);
+  assert.equal(prev.items.filter((p) => p.id === "p-120").length, 1);
+  assert.equal(prev.items[0].id, "p-70");
+  assert.equal(prev.items[50].id, "p-120");
+  assert.equal(runNextOffset(prev), 123);
+  assert.equal(runPrevWindow(prev, 50)?.offset, 20);
+});
+
+test("runHasMore follows the exact total from the run's end, else the server flag", () => {
+  assert.equal(runHasMore(run(2300, 23), 2323, false), false);
+  assert.equal(runHasMore(run(2300, 23), 2323, true), false);
+  assert.equal(runHasMore(run(2250, 50), 2323, false), true);
+  assert.equal(runHasMore(run(100, 50), null, true), true);
+  assert.equal(runHasMore(run(100, 50), null, false), false);
+});
+
+test("a run opened at a target walks back to 0 and forward to the end, each principle once", () => {
+  const total = 2323;
+  const server = ids(0, total);
+  const limit = 50;
+  // ?target= the principle at position 1234 → window 1200..1249.
+  let r: CollectionRun<{ id: string }> = { start: 1200, items: server.slice(1200, 1250) };
+  for (let w = runPrevWindow(r, limit); w; w = runPrevWindow(r, limit)) {
+    r = prependRun(r, server.slice(w.offset, w.offset + w.limit), w.offset);
+  }
+  while (runHasMore(r, total, true)) {
+    const before = r.items.length;
+    r = appendRun(r, server.slice(runNextOffset(r), runNextOffset(r) + limit));
+    if (r.items.length === before) break;
+  }
+  assert.equal(r.start, 0);
+  assert.equal(r.items.length, total);
+  assert.equal(new Set(r.items.map((p) => p.id)).size, total);
+  assert.deepEqual(r.items.map((p) => p.id), server.map((p) => p.id));
 });
