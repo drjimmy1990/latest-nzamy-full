@@ -253,6 +253,79 @@ export function arabicSpellingVariants(word: string): string[] {
   return withDigits;
 }
 
+/**
+ * The negation particles a reader types fused or apart (owner, BUG-LIB-02):
+ * «لايكون» and «لا يكون» are the same words. Longest first, so «مما» wins over
+ * «ما». Bare «الا» (no hamza) is NOT a particle: it would split «الاداري»,
+ * «الاثبات» and «الالكتروني», which are ال + alef words.
+ */
+export const NEGATION_PARTICLES = ['فيما', 'مما', 'ألا', 'لا', 'ما'] as const;
+
+/** The article prefixes a stored word may carry (BUG-LIB-03): «قرار» finds «القرار», «بالقرار»… */
+export const ARTICLE_PREFIXES = ['وال', 'بال', 'لل', 'ال'] as const;
+
+/**
+ * Most lexemes one query word becomes: as typed, without tashkeel, its article
+ * forms, its spellings and a fused-particle split. Later forms are cut first.
+ */
+export const MAX_WORD_LEXEMES = 12;
+
+const TASHKEEL = /[ً-ٰٟـ]/g;
+/** One Arabic-script letter, nothing else (no digit, mark or punctuation). */
+const ARABIC_WORD = /^(?:(?=\p{Script=Arabic})\p{L})+$/u;
+
+/** Remove harakat (U+064B–U+065F), the dagger alef (U+0670) and tatweel (U+0640). */
+export function stripTashkeel(text: string): string {
+  return text.replace(TASHKEEL, '');
+}
+
+function isParticle(word: string): boolean {
+  return (NEGATION_PARTICLES as readonly string[]).includes(stripTashkeel(word));
+}
+
+/**
+ * «لايكون» → {لا, يكون}. Non-null only when the word (tashkeel ignored) opens
+ * with a negation particle and 3 or more letters follow: «مادة» and «لازم» stay
+ * whole. A false split («لائحة» → لا + ئحة) is harmless: the query only ever
+ * ADDS the split as an OR alternative.
+ */
+export function splitFusedParticle(word: string): { particle: string; rest: string } | null {
+  const stripped = stripTashkeel(word);
+  if (!ARABIC_WORD.test(stripped)) return null;
+  for (const particle of NEGATION_PARTICLES) {
+    if (!stripped.startsWith(particle)) continue;
+    const rest = stripped.slice(particle.length);
+    return Array.from(rest).length >= 3 ? { particle, rest } : null;
+  }
+  return null;
+}
+
+/**
+ * The article forms of one word, the word as given first. «قرار» →
+ * [قرار, القرار, والقرار, بالقرار, للقرار]; «القرار» (base «قرار») → [القرار,
+ * والقرار, بالقرار, للقرار] — never the bare base, which would widen a typed
+ * article. Before a lam the لل form drops one lam («اللائحة» → «للائحة»).
+ * A word of fewer than 3 letters, a word with a digit or any non-Arabic
+ * character, a particle, and a prefixed word whose base is under 2 letters
+ * («الا», «والي», «بالغ») get no extra form.
+ */
+export function prefixForms(word: string): string[] {
+  if (!ARABIC_WORD.test(word) || Array.from(word).length < 3 || isParticle(word)) return [word];
+  let base = word;
+  for (const prefix of ARTICLE_PREFIXES) {
+    if (word.startsWith(prefix)) {
+      base = word.slice(prefix.length);
+      if (Array.from(base).length < 2) return [word];
+      break;
+    }
+  }
+  const forms = [word];
+  for (const form of [`ال${base}`, `وال${base}`, `بال${base}`, base.startsWith('ل') ? `ل${base}` : `لل${base}`]) {
+    if (!forms.includes(form)) forms.push(form);
+  }
+  return forms;
+}
+
 function isLiteralSlash(input: string, index: number, termStart: number): boolean {
   const previous = input[index - 1] ?? '';
   const next = input[index + 1] ?? '';
@@ -266,17 +339,45 @@ function isLiteralSlash(input: string, index: number, termStart: number): boolea
   return input.slice(termStart, index) === 'م' && SEARCH_DIGIT.test(next);
 }
 
-export function parseSearchQuery(query: string): ParsedSearchQuery {
-  const raw = query.trim();
+/**
+ * `(` and `)` outside a quoted phrase read as a space, one character for one,
+ * so error indexes still point into the query as typed: «عدم نفاذ (+) قرار» is
+ * «عدم نفاذ + قرار». Inside quotes (escapes respected) they stay literal.
+ */
+function blankParentheses(text: string): string {
+  let out = '';
+  let inPhrase = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const character = text[i];
+    if (inPhrase) {
+      if (character === '\\' && i + 1 < text.length) {
+        out += character + text[i + 1];
+        i += 1;
+        continue;
+      }
+      if (character === '"') inPhrase = false;
+      out += character;
+      continue;
+    }
+    if (character === '"') inPhrase = true;
+    out += character === '(' || character === ')' ? ' ' : character;
+  }
+  return out;
+}
 
-  if (!raw) {
-    return { raw, tsquery: '', plainTerms: [] };
+export function parseSearchQuery(query: string): ParsedSearchQuery {
+  const typed = query.trim();
+
+  if (!typed) {
+    return { raw: typed, tsquery: '', plainTerms: [] };
   }
 
-  if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(raw)) {
+  if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(typed)) {
     throw new SearchQuerySyntaxError('Control characters are not allowed', 0);
   }
 
+  // Parsed text: the query with its grouping parentheses read as spaces.
+  const raw = blankParentheses(typed);
   const tokens: SearchQueryToken[] = [];
   let index = 0;
 
@@ -284,17 +385,55 @@ export function parseSearchQuery(query: string): ParsedSearchQuery {
     throw new SearchQuerySyntaxError(message, at);
   };
 
-  // One word → its lexeme, or an OR-group of its stored spellings
-  // (arabicSpellingVariants). A prefix search keeps `:*` on every spelling.
-  // Once the query's variant budget is spent, words stay as typed.
+  // One word → its lexeme, or an OR-group of the forms the stored text may use,
+  // in this order (later forms are cut first):
+  //   1. the word as typed;
+  //   2. without tashkeel — the index keeps harakat until 20261103_14 folds
+  //      them, so both forms are sent and either index state matches;
+  //   3. its article forms (prefixForms: «قرار» → «القرار», «بالقرار»…);
+  //   4. its alef / final-letter / numeral spellings (arabicSpellingVariants);
+  //   5. a fused particle split («لايكون» → 'لا' <-> 'يكون'), last.
+  // A word keeps at most MAX_WORD_LEXEMES; the query's extras share one
+  // MAX_QUERY_SPELLING_VARIANTS budget (the PostgREST URL stays bounded).
+  // A prefix search keeps `:*` on every form.
   let variantBudget = MAX_QUERY_SPELLING_VARIANTS;
+  const takeBudget = <T>(forms: T[]): T[] => {
+    const kept = forms.slice(0, Math.min(MAX_WORD_LEXEMES, 1 + variantBudget));
+    variantBudget -= kept.length - 1;
+    return kept;
+  };
+  const group = (alternatives: string[]): string =>
+    alternatives.length === 1 ? alternatives[0] : `(${alternatives.join(' | ')})`;
   const wordTsquery = (word: string, prefix: boolean): string => {
     const suffix = prefix ? ':*' : '';
-    let spellings = arabicSpellingVariants(word);
-    if (spellings.length - 1 > variantBudget) spellings = [word];
-    variantBudget -= spellings.length - 1;
-    if (spellings.length === 1) return `${quoteTsqueryLexeme(word)}${suffix}`;
-    return `(${spellings.map((s) => `${quoteTsqueryLexeme(s)}${suffix}`).join(' | ')})`;
+    const stripped = stripTashkeel(word);
+    const lexemes: string[] = [];
+    const add = (form: string) => {
+      if (form && !lexemes.includes(form)) lexemes.push(form);
+    };
+    add(word);
+    add(stripped);
+    for (const form of prefixForms(stripped)) add(form);
+    for (const form of arabicSpellingVariants(stripped)) add(form);
+    const alternatives = lexemes.map((lexeme) => `${quoteTsqueryLexeme(lexeme)}${suffix}`);
+    const fused = splitFusedParticle(stripped);
+    if (fused) alternatives.push(`(${quoteTsqueryLexeme(fused.particle)} <-> ${quoteTsqueryLexeme(fused.rest)}${suffix})`);
+    return group(takeBudget(alternatives));
+  };
+  // A particle and the word after it, typed apart: one operand that matches
+  // them adjacent or fused — «لا يكون» → (('لا' <-> 'يكون') | 'لايكون').
+  const particlePairTsquery = (particle: string, word: string, prefix: boolean): string => {
+    const suffix = prefix ? ':*' : '';
+    const forms = (w: string) => [...new Set([w, stripTashkeel(w)])].filter(Boolean);
+    const particleForms = forms(particle).map(quoteTsqueryLexeme);
+    const wordForms = forms(word).map((w) => `${quoteTsqueryLexeme(w)}${suffix}`);
+    const fusedForms = [...new Set([particle + word, stripTashkeel(particle) + stripTashkeel(word)])]
+      .map((w) => `${quoteTsqueryLexeme(w)}${suffix}`);
+    // The pair is two words; everything past one lexeme each is an extra.
+    const extras = takeBudget(['', ...particleForms.slice(1), ...wordForms.slice(1), ...fusedForms]).slice(1);
+    const adjacent = `${group([particleForms[0], ...extras.filter((e) => particleForms.includes(e))])} <-> ${group([wordForms[0], ...extras.filter((e) => wordForms.includes(e))])}`;
+    const fusedKept = extras.filter((e) => fusedForms.includes(e));
+    return fusedKept.length ? `((${adjacent}) | ${fusedKept.join(' | ')})` : `(${adjacent})`;
   };
 
   const pushOperand = (operand: Extract<SearchQueryToken, { kind: 'operand' }>) => {
@@ -344,22 +483,32 @@ export function parseSearchQuery(query: string): ParsedSearchQuery {
     // original source text, with no folding. Never FOLD the query alone
     // (normalizeSearch): «الاثبات» folded is still a lexeme the index lacks
     // when the source writes «الإثبات». Instead each word EXPANDS to an
-    // OR-group of the spellings the source may use (wordTsquery →
-    // arabicSpellingVariants), always including the word as typed. Digit
-    // forms are left as typed. Folding on both sides would need the stored
-    // vectors rebuilt together with this emitter.
+    // OR-group of the forms the source may use (wordTsquery), always
+    // including the word as typed. Only tashkeel is ever folded in the index
+    // (20261103_14), and the as-typed form is sent too.
     const words = phrase.trim().split(/\s+/).filter(Boolean);
     if (words.length === 0) fail('Quoted phrase cannot be empty', phraseStart);
 
+    // (forms of w1) <-> (forms of w2): adjacency is kept per word. A particle
+    // and its next word are one slot that also matches them fused.
+    const slots: string[] = [];
+    for (let w = 0; w < words.length; w += 1) {
+      if (isParticle(words[w]) && w + 1 < words.length && !isParticle(words[w + 1])) {
+        slots.push(particlePairTsquery(words[w], words[w + 1], false));
+        w += 1;
+        continue;
+      }
+      slots.push(wordTsquery(words[w], false));
+    }
+
     return {
       kind: 'operand',
-      // (spellings of w1) <-> (spellings of w2): adjacency is kept per word.
-      tsquery: words.map((word) => wordTsquery(word, false)).join(' <-> '),
+      tsquery: slots.join(' <-> '),
       plain: phrase,
     };
   };
 
-  const parseTerm = (): Extract<SearchQueryToken, { kind: 'operand' }> => {
+  const readTerm = (): { plain: string; wildcard: boolean } => {
     const termStart = index;
 
     while (index < raw.length) {
@@ -383,16 +532,41 @@ export function parseSearchQuery(query: string): ParsedSearchQuery {
     const plain = wildcard ? sourceTerm.slice(0, -1) : sourceTerm;
     if (!plain.trim()) fail('Wildcard * must follow a search term', termStart);
 
+    return { plain, wildcard };
+  };
+
+  const parseTerm = (negated: boolean): Extract<SearchQueryToken, { kind: 'operand' }> => {
+    const term = readTerm();
+    // «لا يكون» typed apart, unquoted: a particle joined to the next plain
+    // word by whitespace alone (no operator, phrase, negation or wildcard
+    // between) is one operand, never 'لا' & 'يكون'.
+    if (!negated && !term.wildcard && isParticle(term.plain)) {
+      let next = index;
+      while (next < raw.length && /\s/.test(raw[next])) next += 1;
+      if (next > index && next < raw.length && !['+', '/', '-', '"'].includes(raw[next])) {
+        const resume = index;
+        index = next;
+        const word = readTerm();
+        if (!isParticle(word.plain)) {
+          return {
+            kind: 'operand',
+            tsquery: particlePairTsquery(term.plain, word.plain, word.wildcard),
+            plain: `${term.plain} ${word.plain}`,
+          };
+        }
+        index = resume;
+      }
+    }
     return {
       kind: 'operand',
-      tsquery: wordTsquery(plain, wildcard),
-      plain,
+      tsquery: wordTsquery(term.plain, term.wildcard),
+      plain: term.plain,
     };
   };
 
   let positiveOperands = 0;
   const parseOperand = (negated: boolean) => {
-    const operand = raw[index] === '"' ? parsePhrase() : parseTerm();
+    const operand = raw[index] === '"' ? parsePhrase() : parseTerm(negated);
     if (!negated) positiveOperands += 1;
     pushOperand({
       ...operand,
@@ -467,7 +641,7 @@ export function parseSearchQuery(query: string): ParsedSearchQuery {
   if (tokenIndex !== tokens.length) fail('Invalid search expression', raw.length);
 
   return {
-    raw,
+    raw: typed,
     tsquery,
     plainTerms: tokens
       .filter((token): token is Extract<SearchQueryToken, { kind: 'operand' }> => token.kind === 'operand')
