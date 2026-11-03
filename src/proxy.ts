@@ -34,6 +34,7 @@ import {
   isCouponValidateRoute,
   isTrackingUnlockRoute,
   isAttachmentsZipRoute,
+  isPointsStandingRoute,
   libraryReadClientKey,
   libraryBudgetBuckets,
   type LibraryBudgetBucket,
@@ -160,12 +161,13 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
     const isCouponMatch = isCouponValidateRoute(method, pathname);
     const isTrackingUnlockMatch = isTrackingUnlockRoute(method, pathname);
     const isAttachmentsZipMatch = isAttachmentsZipRoute(method, pathname);
+    const isPointsStandingMatch = isPointsStandingRoute(method, pathname);
     const libraryBuckets = libraryBudgetBuckets(method, pathname);
 
     if (
       !isStrictMatch && !isGeneralMatch && !isLibraryReadMatch && !isTrackingMatch &&
       !isTrackingUnlockMatch && !isAttachmentsZipMatch && !isCouponMatch &&
-      libraryBuckets.length === 0
+      !isPointsStandingMatch && libraryBuckets.length === 0
     ) return null;
 
     const ip = resolveClientIp((name) => req.headers.get(name));
@@ -177,6 +179,12 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
 
     if (isGeneralMatch) {
       const decision = rateLimiter.check("general", ip, GENERAL_RATE_LIMIT);
+      if (!decision.allowed) return rateLimitResponse(decision);
+    }
+
+    // The banner's GET: the general policy, its own bucket (rateLimitRoutes.ts).
+    if (isPointsStandingMatch) {
+      const decision = rateLimiter.check("points-standing", ip, GENERAL_RATE_LIMIT);
       if (!decision.allowed) return rateLimitResponse(decision);
     }
 

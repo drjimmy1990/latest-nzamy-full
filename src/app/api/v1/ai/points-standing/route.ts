@@ -14,7 +14,9 @@ import { isPointsStandingTool, pointsStandingWith } from "@/lib/ai/pointsStandin
  * but not points_enforcement or the admin exemption, and the setting is not
  * the user's to read. The decision is src/lib/ai/pointsStanding.ts.
  *
- * /api/v1/ai/* gets no 401 from the proxy, so the sign-in check is here.
+ * /api/v1/ai/* gets no 401 from the proxy, so the sign-in check is here. The
+ * proxy does rate-limit this GET, per IP (isPointsStandingRoute in
+ * src/lib/rateLimitRoutes.ts).
  */
 
 export const dynamic = "force-dynamic";

@@ -13,6 +13,7 @@ import {
   isCouponValidateRoute,
   isTrackingUnlockRoute,
   isAttachmentsZipRoute,
+  isPointsStandingRoute,
   libraryBudgetBuckets,
   canonicalApiPath,
 } from "./rateLimitRoutes.ts";
@@ -178,6 +179,25 @@ test("isAttachmentsZipRoute: the ZIP download (D3), GET and HEAD, the exact path
   assert.equal(isAttachmentsZipRoute("GET", "/api/v1/attachments/zipper"), false);
   assert.equal(isGeneralRateLimitedApiPath("GET", "/api/v1/attachments/zip"), false, "reads are not in the general bucket");
 });
+test("isPointsStandingRoute: the banner's GET (final review M2), GET and HEAD, the exact path only — never the run polls", () => {
+  assert.equal(isPointsStandingRoute("GET", "/api/v1/ai/points-standing"), true);
+  assert.equal(isPointsStandingRoute("HEAD", "/api/v1/ai/points-standing"), true);
+  assert.equal(isPointsStandingRoute("POST", "/api/v1/ai/points-standing"), false);
+  assert.equal(isPointsStandingRoute("GET", "/api/v1/ai/points-standing/x"), false);
+  assert.equal(isPointsStandingRoute("GET", "/api/v1/ai/runs"), false);
+  assert.equal(isPointsStandingRoute("GET", "/api/v1/ai/runs/0b6d0c4e-1111-4222-8333-444455556666"), false);
+  assert.equal(isGeneralRateLimitedApiPath("GET", "/api/v1/ai/points-standing"), false, "reads are not in the general bucket");
+});
+
+test("proxy: the points-standing match is in the early-return guard and has its own bucket on the general policy", () => {
+  const src = fs
+    .readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "proxy.ts"), "utf8")
+    .replace(/\r\n/g, "\n");
+  assert.match(src, /const isPointsStandingMatch = isPointsStandingRoute\(method, pathname\);/);
+  assert.match(src, /!isPointsStandingMatch && libraryBuckets\.length === 0\n\s*\) return null;/);
+  assert.match(src, /if \(isPointsStandingMatch\) \{\n\s*const decision = rateLimiter\.check\("points-standing", ip, GENERAL_RATE_LIMIT\);/);
+});
+
 test("isGeneralRateLimitedApiPath: n8n's AI callback is exempt, the browser's AI runs route is not", () => {
   assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/ai/callback"), false);
   assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/ai/runs"), true);

@@ -163,6 +163,18 @@ export function isAttachmentsZipRoute(method: string, pathname: string): boolean
   return (method === "GET" || method === "HEAD") && ATTACHMENTS_ZIP_RE.test(pathname);
 }
 
+// GET /api/v1/ai/points-standing (the «رصيدك من النقاط لا يكفي» banner): three
+// database reads per call, and a GET, so the general bucket (writes only)
+// never counted it (final review M2). The proxy gives it the general bucket's
+// policy under its own name, so banner reads never spend the write budget.
+// The exact path only: the job-poll GETs on /api/v1/ai/runs/<id> stay free.
+export const POINTS_STANDING_RE = /^\/api\/v1\/ai\/points-standing$/;
+
+/** True for a GET/HEAD of /api/v1/ai/points-standing. */
+export function isPointsStandingRoute(method: string, pathname: string): boolean {
+  return (method === "GET" || method === "HEAD") && POINTS_STANDING_RE.test(pathname);
+}
+
 /**
  * The key for the library-read bucket. nezamy.sa is served through Cloudflare
  * (Server: cloudflare, CF-RAY on every response, 2026-09-29), and nothing in
