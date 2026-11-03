@@ -50,9 +50,12 @@ test("S6: the profiles read gets distinct ids and no null", () => {
 });
 
 test("S6: usage dates are Gregorian in Riyadh time; a bad date is «—»", () => {
+  // 21:30Z on 1 Nov is 00:30 on 2 Nov in Riyadh (UTC+3): day ٠٢, month ١١, year ٢٠٢٦, 12:30 a.m.
   const text = couponUsageDateAr("2026-11-01T21:30:00Z");
-  // 21:30Z is 00:30 on 2 Nov in Riyadh (UTC+3)
-  assert.match(text, /٢|2/);
+  assert.match(text, /^٠٢\D+١١\D+٢٠٢٦/, text);
+  assert.match(text, /١٢:٣٠/, text);
+  // not UTC (that would print ٠١ … ٩:٣٠ م) and Gregorian, not the Hijri default of ar-SA
+  assert.doesNotMatch(text, /^٠١/);
   assert.doesNotMatch(text, /هـ/);
   assert.equal(couponUsageDateAr("nope"), "—");
 });
