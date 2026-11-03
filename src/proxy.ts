@@ -114,8 +114,10 @@ const ATTACHMENTS_ZIP_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 100
 //   library-any   300 / min    — any library call (status polls once a minute);
 //                                never tighter than library-read, which sits
 //                                on the same search / autocomplete requests
-//   library-doc   120 / min    — opening documents; a collection loads in up
-//                                to 24 windows, a book one section at a time
+//   library-doc   120 / min    — opening documents; a collection opens on one
+//                                50-principle window and loads the next only
+//                                as the reader scrolls (no whole-collection
+//                                walk), a book in batches of 50 blocks
 //   library-init   60 / 10 min — catalogue pages of up to 200 rows
 // (The library AI is POST /api/v1/ai/runs, in the general bucket.)
 // The durable per-USER daily quota is separate (applyLibraryReadQuota below).

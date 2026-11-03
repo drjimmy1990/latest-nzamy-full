@@ -50,9 +50,13 @@ export function isPrincipleLocked(isFree: boolean, freeLimit: number, globalInde
   return !isFree && freeLimit !== -1 && globalIndex >= freeLimit;
 }
 
-/** The offset of the `limit`-sized window that holds 0-based `position`. */
+/**
+ * The offset of the `limit`-sized window that holds 0-based `position`. A
+ * limit below 1 (or not a number) counts as 1: never a division by 0 or NaN.
+ */
 export function targetWindowOffset(position: number, limit: number): number {
-  return Math.floor(Math.max(0, position) / limit) * limit;
+  const size = Number.isFinite(limit) && limit >= 1 ? Math.floor(limit) : 1;
+  return Math.floor(Math.max(0, position) / size) * size;
 }
 
 /**

@@ -96,10 +96,12 @@ export function runNextOffset(run: CollectionRun<{ id: string }>): number {
 /**
  * The window just before the run, never below 0: `offset = max(0, start - limit)`
  * and `limit = start - offset`, so it ends exactly where the run begins. null at 0.
+ * A limit below 1 (or not a number) counts as 1: never an empty or negative window.
  */
 export function runPrevWindow(run: CollectionRun<{ id: string }>, limit: number): { offset: number; limit: number } | null {
   if (run.start <= 0) return null;
-  const offset = Math.max(0, run.start - limit);
+  const size = Number.isFinite(limit) && limit >= 1 ? Math.floor(limit) : 1;
+  const offset = Math.max(0, run.start - size);
   return { offset, limit: run.start - offset };
 }
 

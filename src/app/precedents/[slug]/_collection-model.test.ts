@@ -87,6 +87,13 @@ test("runPrevWindow: the window just before the run, never below 0", () => {
   assert.equal(runPrevWindow(run(0, 10), 50), null);
 });
 
+test("runPrevWindow: a limit below 1 (or not a number) is clamped to 1 — never an empty or negative window", () => {
+  assert.deepEqual(runPrevWindow(run(30, 10), 0), { offset: 29, limit: 1 });
+  assert.deepEqual(runPrevWindow(run(30, 10), -5), { offset: 29, limit: 1 });
+  assert.deepEqual(runPrevWindow(run(30, 10), Number.NaN), { offset: 29, limit: 1 });
+  assert.equal(runPrevWindow(run(0, 10), 0), null);
+});
+
 test("appendRun keeps start and de-duplicates by id", () => {
   const r = run(100, 3);
   const next = appendRun(r, [{ id: "p-102" }, ...ids(103, 2)]);

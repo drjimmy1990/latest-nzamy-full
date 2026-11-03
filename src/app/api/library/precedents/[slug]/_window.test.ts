@@ -67,6 +67,14 @@ test("targetWindowOffset: the window that holds a position", () => {
   assert.equal(targetWindowOffset(-3, 50), 0);
 });
 
+test("targetWindowOffset: a limit below 1 (or not a number) is clamped to 1, never NaN/Infinity", () => {
+  assert.equal(targetWindowOffset(7, 0), 7);
+  assert.equal(targetWindowOffset(7, -50), 7);
+  assert.equal(targetWindowOffset(7, Number.NaN), 7);
+  assert.equal(targetWindowOffset(-3, 0), 0);
+  assert.equal(targetWindowOffset(7, 2.9), 6, "a fractional limit is floored");
+});
+
 test("parsePrincipleTarget: trimmed, at most a principle id long, else none", () => {
   assert.equal(parsePrincipleTarget(null), null);
   assert.equal(parsePrincipleTarget("   "), null);
