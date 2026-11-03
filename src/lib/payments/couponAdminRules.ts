@@ -286,8 +286,10 @@ export function couponDateInput(value: unknown): string {
   if (typeof value !== "string" || !value) return "";
   const t = Date.parse(value);
   if (Number.isNaN(t)) return "";
-  // en-CA formats as YYYY-MM-DD
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Riyadh", year: "numeric", month: "2-digit", day: "2-digit" }).format(t);
+  // formatToParts, not a locale's YYYY-MM-DD convention
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Riyadh", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(t);
+  const part = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
 /**
@@ -304,10 +306,14 @@ export function couponDateIso(
   if (raw === undefined || raw === null || raw === "") return { ok: true, value: null };
   if (typeof raw !== "string") return { ok: false, error: DATE_AR };
   const text = raw.trim();
-  if (DATE_ONLY_RE.test(text)) {
+  const ymd = DATE_ONLY_RE.exec(text);
+  if (ymd) {
+    const [y, m, d] = [Number(ymd[1]), Number(ymd[2]), Number(ymd[3])];
+    // a real calendar day only: 2027-02-30 must not roll over into March
+    const day = new Date(Date.UTC(y, m - 1, d));
+    if (day.getUTCFullYear() !== y || day.getUTCMonth() !== m - 1 || day.getUTCDate() !== d) return { ok: false, error: DATE_AR };
     const t = Date.parse(`${text}T${edge === "start" ? "00:00:00" : "23:59:59"}${RIYADH_OFFSET}`);
-    // round-trip guard: 2027-02-30 must not roll over into March
-    if (Number.isNaN(t) || couponDateInput(new Date(t).toISOString()) !== text) return { ok: false, error: DATE_AR };
+    if (Number.isNaN(t)) return { ok: false, error: DATE_AR };
     return { ok: true, value: new Date(t).toISOString() };
   }
   const t = Date.parse(text);
