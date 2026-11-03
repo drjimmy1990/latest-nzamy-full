@@ -28,7 +28,6 @@ import {
 import { useTheme } from "@/components/ThemeProvider";
 import { useSubscription, tierLabelAr } from "@/hooks/useSubscription";
 import { type SidebarGroup, type SidebarItem } from "@/constants/navigation";
-import { type UserType } from "@/hooks/useUser";
 import { toArabicDigits } from "@/lib/services/arabicCount";
 
 // ─── Icon resolver ─────────────────────────────────────────────────────────────
@@ -67,19 +66,11 @@ export function SidebarIcon_({ name, size = 17 }: { name: string; size?: number 
  * Infers the correct dashboard user type from the current pathname.
  * FIX: ensures /dashboard/client always shows the client sidebar regardless
  * of which account is stored in session/localStorage.
+ *
+ * Moved to src/lib/nav/shellContext.ts (owner LIVE-F01, 2026-10-30) beside
+ * the one resolver every shell now asks; re-exported here under the same name.
  */
-export function inferUserTypeFromPath(pathname: string): UserType {
-  if (pathname.startsWith("/dashboard/client"))     return "individual";
-  if (pathname.startsWith("/dashboard/lawyer"))     return "lawyer";
-  if (pathname.startsWith("/dashboard/firm"))       return "firm";
-  if (pathname.startsWith("/dashboard/business"))   return "corporate";
-  if (pathname.startsWith("/dashboard/micro"))      return "micro";
-  if (pathname.startsWith("/dashboard/provider"))   return "provider";
-  if (pathname.startsWith("/dashboard/admin"))      return "admin";
-  if (pathname.startsWith("/dashboard/government")) return "government";
-  if (pathname.startsWith("/dashboard/ngo"))        return "ngo";
-  return null;
-}
+export { inferUserTypeFromPath } from "@/lib/nav/shellContext";
 
 // AI section items shown by default in lawyer sidebar; rest are "المزيد".
 // Raised from 9 to 10 (note ٢٦١): the lawyer's own AI group carries exactly

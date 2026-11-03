@@ -2,7 +2,7 @@
  * priceBook.ts — the one server price book (owner's pricing doc, 25 Oct 2026,
  * §2 rule 4: «وحدة مرجع السعر — Single PriceBook»).
  *
- * Every plan, library pass and top-up sold online lives here, once, in SAR,
+ * Every plan, library pass, top-up and membership sold online lives here, once, in SAR,
  * BEFORE VAT (§2 rule 5, answer ٢٥٨: every price on the platform is
  * VAT-exclusive; 15 % is added at checkout and on the receipt). Everything
  * else derives from it:
@@ -21,12 +21,19 @@
  * admin views and the renewal lookup still resolve it, because orders and
  * subscriptions keep pointing at its id.
  *
- * Launch prices (`launchPrices`) are campaign-bound and dated by the
- * campaign; they are shown in the dated banner only, never inside a price card
- * (owner ١٧٩). No entry has one yet.
+ * Launch prices (`launchPrices`, owner ٣٠٣ of 30 Oct 2026 — it replaces ١٧٩
+ * here): only an entry the revised pricing doc of 26 Oct gives a launch price
+ * has one. While its campaign runs (LAUNCH_CAMPAIGNS, Riyadh days, both ends
+ * included) checkout charges it and the card shows the listed price struck
+ * through beside it; after the last day both go back to the listed price on
+ * their own. The day is always the SERVER's (activeLaunchPrice is called with
+ * the request's clock, never the browser's — the SSR cached-date trap).
  *
- * Pure: no runtime imports, so `node --test` loads it directly.
+ * Pure: relative imports only, so `node --test` loads it directly.
  */
+
+import { riyadhDay } from "./campaigns.ts";
+import { LIBRARY_ELIGIBLE_USER_TYPES } from "../library/libraryPurchaseEligibility.ts";
 
 /** A subscription cycle: 1, 3, 6 or 12 calendar months. */
 export type Cycle = "monthly" | "quarterly" | "semiannual" | "yearly";
@@ -76,7 +83,12 @@ export const BILLING_LABEL_EN: Readonly<Record<Billing, string>> = Object.freeze
 export const PROFESSIONAL_CYCLES: readonly Cycle[] = Object.freeze(["quarterly", "semiannual", "yearly"] as const);
 export const INDIVIDUAL_CYCLES: readonly Cycle[] = CYCLES;
 
-export type BookItemKind = "plan" | "library" | "topup";
+/**
+ * `membership` (P3): a one-payment founder membership. It grants no tier and
+ * no points: activation (founder_activate, 20261101_10) writes a seat,
+ * credits, a library grant and the badge. Billed once, so no saved card.
+ */
+export type BookItemKind = "plan" | "library" | "topup" | "membership";
 
 /** The paid tiers a plan grants — a subset of ServerTier in src/lib/access-control.ts. */
 export type ServerTierLiteral = "ai" | "pro" | "max" | "corp" | "enterprise";
@@ -89,7 +101,25 @@ export interface BookPrice {
   readonly retired?: true;
 }
 
-/** A campaign-bound price, shown only in that campaign's dated banner (owner ١٧٩). */
+/**
+ * A dated launch campaign. `startsOn` / `endsOn` are Riyadh days
+ * (`YYYY-MM-DD`), both included.
+ */
+export interface LaunchCampaign {
+  readonly id: string;
+  readonly startsOn: string;
+  readonly endsOn: string;
+}
+
+/**
+ * Owner ٣٠٣ (30 Oct 2026; pricing doc 26 Oct §13ج.6): launch prices run from
+ * 25 Oct 2026 to 25 Jan 2027 and disappear by themselves after it.
+ */
+export const LAUNCH_CAMPAIGNS: Readonly<Record<string, LaunchCampaign>> = Object.freeze({
+  "launch-2026": Object.freeze({ id: "launch-2026", startsOn: "2026-10-25", endsOn: "2027-01-25" }),
+});
+
+/** A campaign-bound price, charged and shown struck-through while its campaign runs (owner ٣٠٣). */
 export interface LaunchPrice {
   readonly campaignId: string;
   readonly prices: Readonly<Partial<Record<Billing, number>>>;
@@ -141,14 +171,40 @@ function plan(
   tier: ServerTierLiteral,
   buyers: readonly string[],
   retiredCycles: readonly Cycle[] = [],
+  launchPrices: readonly LaunchPrice[] = [],
 ): BookEntry {
   const listed: Partial<Record<Billing, BookPrice>> = {};
   for (const c of CYCLES) {
     if (prices[c] === undefined) continue;
     listed[c] = retiredCycles.includes(c) ? { sar: prices[c]!, retired: true } : { sar: prices[c]! };
   }
-  return freezeEntry({ id, kind: "plan", labelAr, prices: listed, tier, buyers: [...buyers] });
+  return freezeEntry({
+    id,
+    kind: "plan",
+    labelAr,
+    prices: listed,
+    tier,
+    buyers: [...buyers],
+    ...(launchPrices.length > 0 ? { launchPrices: launchPrices.map((lp) => ({ ...lp, prices: { ...lp.prices } })) } : {}),
+  });
 }
+
+/**
+ * The `profiles.user_type` values of the professional audiences (pricing doc
+ * §2 rule 1) and of individuals. Top-ups are split between them (owner ٣٠٢,
+ * conflict ١١): 100 and 250 for individuals only, 500 and up for
+ * professionals only.
+ */
+export const PROFESSIONAL_BUYERS: readonly string[] = Object.freeze([
+  "lawyer",
+  "firm",
+  "corporate",
+  "micro",
+  "government",
+  "ngo",
+  "provider",
+]);
+export const INDIVIDUAL_BUYERS: readonly string[] = Object.freeze(["individual"]);
 
 function library(id: LibraryPlanRef, labelAr: string, sar: number, days: number): BookEntry {
   return freezeEntry({
@@ -158,11 +214,20 @@ function library(id: LibraryPlanRef, labelAr: string, sar: number, days: number)
     prices: { once: { sar } },
     libraryPlanRef: id,
     libraryDays: days,
-    buyers: "any",
+    // LIVE-F05: the library is sold to legal professionals only, so checkout
+    // (buyerAllowed) refuses an individual who calls the API directly too.
+    buyers: [...LIBRARY_ELIGIBLE_USER_TYPES],
   });
 }
 
-function topup(id: string, labelAr: string, sar: number, points: number, months: number): BookEntry {
+function topup(
+  id: string,
+  labelAr: string,
+  sar: number,
+  points: number,
+  months: number,
+  buyers: readonly string[],
+): BookEntry {
   return freezeEntry({
     id,
     kind: "topup",
@@ -170,35 +235,109 @@ function topup(id: string, labelAr: string, sar: number, points: number, months:
     prices: { once: { sar } },
     points,
     pointsValidityMonths: months,
-    buyers: "any",
+    buyers: [...buyers],
   });
 }
 
 /**
- * The book. Prices are today's (P1 changes none). The professionals' MONTHLY
- * cycle is retired (the owner confirmed on 26 Oct 2026 that the 399 monthly
- * plan is cancelled; professionals never pay monthly — pricing doc §2 rule 1):
- * checkout refuses it (410), while monthly orders and subscriptions already
- * made still resolve for fulfilment, receipts, refunds, admin and renewal.
- * P2 retires lawyer-pro and consultant-independent and adds the lib/erp/bundle
- * paths; P6 adds the firms' quarterly and half-yearly prices; P5 adds the
- * individuals' — see docs/plans/2026-10-26-P1-price-book-design.md §6.
+ * A one-payment membership (P3). The id is src/lib/membership/founderPlan.ts's
+ * FOUNDER_PLAN_ID, written out here so the book imports nothing from it
+ * (founderPlan.test.ts holds the two together).
+ */
+function membership(id: string, labelAr: string, sar: number, buyers: readonly string[]): BookEntry {
+  return freezeEntry({
+    id,
+    kind: "membership",
+    labelAr,
+    prices: { once: { sar } },
+    buyers: [...buyers],
+  });
+}
+
+/**
+ * The book. The professionals' MONTHLY cycle is retired (the owner confirmed
+ * on 26 Oct 2026 that the 399 monthly plan is cancelled; professionals never
+ * pay monthly — pricing doc §2 rule 1): checkout refuses it (410), while
+ * monthly orders and subscriptions already made still resolve for
+ * fulfilment, receipts, refunds, admin and renewal.
+ *
+ * Owner package of 30 Oct 2026 (answer ٢٩٩: the revised pricing doc of 26 Oct
+ * is final; its 14 conflicts are settled in the 28-Oct handover §١/٣, which
+ * wins where the two differ) — docs/audits/2026-10-30-owner-package-pricing.md:
+ *   - the library (doc §4ج, conflict ٢, answer ٣٠٠): 1,050 / 1,920 / 3,490;
+ *   - ind-ai, the doc's «الباقة الذكية الذاتية» `ind-smart` (§7أ.2, answer
+ *     ٣٠١): 29 / 79 / 149 / 249 a year, launch 199 a year (all but the
+ *     yearly 249 retired on 1 Nov, below); the id stays ind-ai so orders
+ *     and subscriptions keep resolving;
+ *   - the firms' quarterly and half-yearly prices (§6أ) and their launch
+ *     prices for the first year (8,415 / 12,665);
+ *   - top-ups (§4هـ, conflict ١١, answer ٣٠٢): 100 and 250 for individuals
+ *     only, 1 point a riyal, 3 months; 500 / 1,000 / 2,500 / 5,000 / 10,000
+ *     for professionals only, the doc's everyday balance (its larger «فترة
+ *     العروض» balance is not dated by the owner, so it is not granted), valid
+ *     3 / 6 / 12 / 12 / 12 months.
+ * P3 (founder kit r7, 1 Nov 2026): the LAWYER founder membership
+ * `lawyer-founder-2026` is in the book — 2,996 before VAT, one payment,
+ * lawyers only. Its window (2026-11-01 → 2027-01-25) and its 1,096 seats are
+ * enforced at checkout and in SQL (founder_reserve_seat), not by a launch
+ * price here. There is no client or business founder plan.
+ * Owner package of 1 Nov 2026 (§6.2.1, q329 — Wave 1 task 5): individuals
+ * buy yearly only. ind-ai is sold yearly at 249 with no launch price;
+ * ind-preventive and ind-litigation are retired in every cycle.
+ * Still waiting (the doc's own numbers need the owner): lawyer-pro and
+ * consultant-independent → erp-* / bundle-* (P2), the 365 legal-protection
+ * plan and its 496-seat founder offer (٤٢٠).
  */
 export const PRICE_BOOK: Readonly<Record<string, BookEntry>> = Object.freeze({
   "lawyer-pro": plan("lawyer-pro", "المحامي المحترف", { monthly: 399, yearly: 3990 }, "pro", ["lawyer"], ["monthly"]),
   "consultant-independent": plan("consultant-independent", "المستشار القانوني المستقل", { monthly: 399, yearly: 3990 }, "pro", ["lawyer", "provider"], ["monthly"]),
-  "firm-basic": plan("firm-basic", "مكتب المحاماة", { monthly: 990, yearly: 9900 }, "corp", ["firm"], ["monthly"]),
-  "firm-enterprise": plan("firm-enterprise", "شركة المحاماة", { monthly: 1490, yearly: 14900 }, "enterprise", ["firm"], ["monthly"]),
-  "ind-ai": plan("ind-ai", "الباقة الذكية", { monthly: 39, yearly: 390 }, "ai", ["individual"]),
-  "ind-preventive": plan("ind-preventive", "الباقة الوقائية", { monthly: 149, yearly: 1490 }, "pro", ["individual"]),
-  "ind-litigation": plan("ind-litigation", "التأمين القانوني", { monthly: 399, yearly: 3990 }, "max", ["individual"]),
-  "lib-q1": library("lib-q1", "المكتبة القانونية — ربع سنوي", 1500, 90),
-  "lib-q2": library("lib-q2", "المكتبة القانونية — نصف سنوي", 2750, 180),
-  "lib-annual": library("lib-annual", "المكتبة القانونية — سنوي", 5000, 365),
-  "topup-100": topup("topup-100", "شحن ١٠٠ (١٠٠ نقطة)", 100, 100, 3),
-  "topup-250": topup("topup-250", "شحن ٢٥٠ (٣٠٠ نقطة)", 250, 300, 3),
-  "topup-500": topup("topup-500", "شحن ٥٠٠ (٧٠٠ نقطة)", 500, 700, 6),
-  "topup-1000": topup("topup-1000", "شحن ١٬٠٠٠ (١٬٥٠٠ نقطة)", 1000, 1500, 12),
+  "firm-basic": plan(
+    "firm-basic",
+    "مكتب المحاماة",
+    { monthly: 990, quarterly: 2990, semiannual: 5490, yearly: 9900 },
+    "corp",
+    ["firm"],
+    ["monthly"],
+    [{ campaignId: "launch-2026", prices: { yearly: 8415 } }],
+  ),
+  "firm-enterprise": plan(
+    "firm-enterprise",
+    "شركة المحاماة",
+    { monthly: 1490, quarterly: 4490, semiannual: 8190, yearly: 14900 },
+    "enterprise",
+    ["firm"],
+    ["monthly"],
+    [{ campaignId: "launch-2026", prices: { yearly: 12665 } }],
+  ),
+  // Owner package of 1 Nov 2026 §6.2.1 (q329): individuals subscribe yearly
+  // only. ind-ai keeps its yearly 249 (before VAT, as today — whether 249
+  // includes VAT is an open owner question) and loses the 199 launch price;
+  // its monthly, quarterly and half-yearly cycles are retired.
+  "ind-ai": plan(
+    "ind-ai",
+    "الباقة الذكية",
+    { monthly: 29, quarterly: 79, semiannual: 149, yearly: 249 },
+    "ai",
+    ["individual"],
+    ["monthly", "quarterly", "semiannual"],
+  ),
+  // q329: the preventive plan (149 / 1,490) is cancelled, and the 399 / 3,990
+  // legal insurance with it; its 365 replacement is a new id once the owner
+  // settles ٤٢٠. Every cycle retired: still resolvable for orders, receipts
+  // and the renewal lookup.
+  "ind-preventive": plan("ind-preventive", "الباقة الوقائية", { monthly: 149, yearly: 1490 }, "pro", ["individual"], ["monthly", "yearly"]),
+  "ind-litigation": plan("ind-litigation", "التأمين القانوني", { monthly: 399, yearly: 3990 }, "max", ["individual"], ["monthly", "yearly"]),
+  "lib-q1": library("lib-q1", "المكتبة القانونية — ربع سنوي", 1050, 90),
+  "lib-q2": library("lib-q2", "المكتبة القانونية — نصف سنوي", 1920, 180),
+  "lib-annual": library("lib-annual", "المكتبة القانونية — سنوي", 3490, 365),
+  "topup-100": topup("topup-100", "شحن ١٠٠ (١٠٠ نقطة)", 100, 100, 3, INDIVIDUAL_BUYERS),
+  "topup-250": topup("topup-250", "شحن ٢٥٠ (٢٥٠ نقطة)", 250, 250, 3, INDIVIDUAL_BUYERS),
+  "topup-500": topup("topup-500", "شحن ٥٠٠ (٥٠٠ نقطة)", 500, 500, 3, PROFESSIONAL_BUYERS),
+  "topup-1000": topup("topup-1000", "شحن ١٬٠٠٠ (١٬٢٥٠ نقطة)", 1000, 1250, 6, PROFESSIONAL_BUYERS),
+  "topup-2500": topup("topup-2500", "شحن ٢٬٥٠٠ (٣٬٥٠٠ نقطة)", 2500, 3500, 12, PROFESSIONAL_BUYERS),
+  "topup-5000": topup("topup-5000", "شحن ٥٬٠٠٠ (٨٬٥٠٠ نقطة)", 5000, 8500, 12, PROFESSIONAL_BUYERS),
+  "topup-10000": topup("topup-10000", "شحن ١٠٬٠٠٠ (٢٥٬٠٠٠ نقطة)", 10000, 25000, 12, PROFESSIONAL_BUYERS),
+  "lawyer-founder-2026": membership("lawyer-founder-2026", "باقة المحامي المؤسس", 2996, ["lawyer"]),
 });
 
 // ── lookups ─────────────────────────────────────────────────────────────────
@@ -213,6 +352,17 @@ export function isOnSale(entry: BookEntry): boolean {
   return !entry.retired && !entry.comingSoon && offeredBillings(entry).length > 0;
 }
 
+/**
+ * Whether a pricing card may be shown (pricing.common.ts getPlanList): false
+ * only when its id is a book entry that is not on sale (retired, coming
+ * soon, every cycle retired). A card whose id is not in the book (pay per
+ * piece, a top-up card of another audience's list) is not the book's to hide.
+ */
+export function bookCardOnSale(planId: string, book: Readonly<Record<string, BookEntry>> = PRICE_BOOK): boolean {
+  const entry = bookEntry(planId, book);
+  return entry === undefined || isOnSale(entry);
+}
+
 /** The billings the entry is SOLD in today, in book order (retired cycles left out). */
 export function offeredBillings(entry: BookEntry): Billing[] {
   if (entry.retired || entry.comingSoon) return [];
@@ -225,6 +375,71 @@ export function offeredBillings(entry: BookEntry): Billing[] {
 /** SAR before VAT for a billing the entry is sold in today, or null. */
 export function offeredSar(entry: BookEntry, billing: Billing): number | null {
   return offeredBillings(entry).includes(billing) ? entry.prices[billing]!.sar : null;
+}
+
+/** An entry's launch price that runs on `now`, for a billing it is sold in today. */
+export interface ActiveLaunchPrice {
+  readonly campaignId: string;
+  /** SAR before VAT: what checkout charges while the campaign runs. */
+  readonly sar: number;
+  /** SAR before VAT: the listed price, struck through beside it. */
+  readonly listSar: number;
+  /** The campaign's last Riyadh day (`YYYY-MM-DD`). */
+  readonly endsOn: string;
+}
+
+/**
+ * The launch price of (entry, billing) on `now`, or null: none listed, the
+ * billing not sold today, the campaign unknown or outside its Riyadh days, or
+ * the price not below the listed one. `now` is the server's request time —
+ * never call this with a date baked into a cached page.
+ */
+export function activeLaunchPrice(
+  entry: BookEntry,
+  billing: Billing,
+  now: Date,
+  campaigns: Readonly<Record<string, LaunchCampaign>> = LAUNCH_CAMPAIGNS,
+): ActiveLaunchPrice | null {
+  return launchPriceOn(entry.launchPrices, offeredSar(entry, billing), billing, now, campaigns);
+}
+
+/**
+ * The rule under activeLaunchPrice, for callers holding the launch prices and
+ * the sold list price only (catalog.quote, in halalas' SAR).
+ */
+export function launchPriceOn(
+  launchPrices: readonly LaunchPrice[] | undefined,
+  listSar: number | null,
+  billing: Billing,
+  now: Date,
+  campaigns: Readonly<Record<string, LaunchCampaign>> = LAUNCH_CAMPAIGNS,
+): ActiveLaunchPrice | null {
+  if (listSar === null || !launchPrices) return null;
+  const day = riyadhDay(now);
+  for (const lp of launchPrices) {
+    const campaign = Object.hasOwn(campaigns, lp.campaignId) ? campaigns[lp.campaignId] : undefined;
+    if (!campaign || day < campaign.startsOn || day > campaign.endsOn) continue;
+    const sar = Object.hasOwn(lp.prices, billing) ? lp.prices[billing] : undefined;
+    if (typeof sar !== "number" || !Number.isSafeInteger(sar) || sar <= 0 || sar >= listSar) continue;
+    return { campaignId: campaign.id, sar, listSar, endsOn: campaign.endsOn };
+  }
+  return null;
+}
+
+/** Every launch price running on `now`, keyed `id:billing` (GET /api/v1/pricing/launch). */
+export function activeLaunchPrices(
+  now: Date,
+  book: Readonly<Record<string, BookEntry>> = PRICE_BOOK,
+): Record<string, ActiveLaunchPrice> {
+  const out: Record<string, ActiveLaunchPrice> = {};
+  for (const entry of Object.values(book)) {
+    if (!entry.launchPrices) continue;
+    for (const billing of offeredBillings(entry)) {
+      const lp = activeLaunchPrice(entry, billing, now);
+      if (lp) out[`${entry.id}:${billing}`] = lp;
+    }
+  }
+  return out;
 }
 
 /**

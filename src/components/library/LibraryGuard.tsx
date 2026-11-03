@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { useLibraryStatus } from "@/hooks/useLibraryStatus";
 import { useTheme } from "@/components/ThemeProvider";
 import LibraryClosedNotice from "./LibraryClosedNotice";
+import LibrarySecurityLockNotice, { LibraryDailyLimitBanner } from "./LibrarySecurityLockNotice";
 
 /**
  * LibraryGuard — renders library content only while the library is open.
@@ -61,6 +62,25 @@ export default function LibraryGuard({ children }: { children: React.ReactNode }
   // working while the library is closed to everyone else.
   if (lib.effectiveStatus === "closed") {
     return <LibraryClosedNotice message={lib.message} />;
+  }
+
+  // Owner note ١٣ C09: a library-only security lock. The reader pages turn a
+  // refused API call into a generic error (or, for precedents and books, a
+  // bundled copy), so the honest notice is shown here and the readers are not
+  // mounted at all. The account itself is untouched.
+  if (lib.securityLock) {
+    return <LibrarySecurityLockNotice lock={lib.securityLock} />;
+  }
+
+  // Owner note ١٣ C07: at the daily cap the documents already opened today
+  // still open; say so above the page rather than let a new one just fail.
+  if (lib.readQuota?.overDaily) {
+    return (
+      <>
+        <LibraryDailyLimitBanner quota={lib.readQuota} />
+        {children}
+      </>
+    );
   }
 
   return <>{children}</>;

@@ -142,6 +142,7 @@ test("the court route set is the one the ruling names", () => {
     "lawyer/case-stages/route.ts",
     "lawyer/deadlines/[id]/route.ts",
     "lawyer/deadlines/route.ts",
+    "lawyer/hearings/[id]/route.ts",
     "lawyer/hearings/route.ts",
   ]);
 });
@@ -158,6 +159,7 @@ test("the expected write handlers exist (so the pins below are not vacuous)", ()
     "lawyer/case-stages/route.ts": [],
     "lawyer/deadlines/[id]/route.ts": ["PATCH"],
     "lawyer/deadlines/route.ts": ["POST"],
+    "lawyer/hearings/[id]/route.ts": ["PATCH"],
     "lawyer/hearings/route.ts": ["POST"],
   });
 });

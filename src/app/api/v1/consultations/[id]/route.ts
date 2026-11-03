@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { isConsultationStatus, CONSULTATION_STATUSES } from "@/lib/services/consultationVocabulary";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
+import { checkInstantSlot } from "@/lib/services/consultationSchedule";
 
 /**
  * GET /api/v1/consultations/[id] — Get consultation detail
@@ -106,6 +107,15 @@ export async function PATCH(
     const v = updates.scheduled_at;
     if (v !== null && (typeof v !== "string" || Number.isNaN(Date.parse(v)))) {
       return NextResponse.json({ error: "موعد الاستشارة غير صالح." }, { status: 400 });
+    }
+    // Same slot rule as /api/v1/lawyer/consultations/[id] (LIVE-F34/F37): a
+    // new slot carries its zone and is ahead of now. This legacy route has no
+    // caller in the app; the lawyer screens use the lawyer route, which also
+    // runs the overlap check.
+    if (v !== null) {
+      const slot = checkInstantSlot(v, Date.now(), true);
+      if (slot.kind === "invalid") return NextResponse.json({ error: slot.error }, { status: 400 });
+      if (slot.kind === "slot") updates.scheduled_at = slot.startIso;
     }
   }
 

@@ -95,31 +95,6 @@ export const DEMO_FOLDERS: SmartFolder[] = [
   },
 ];
 
-export const ALL_LIBRARY_DOCS: LibraryDoc[] = [
-  { slug: "companies-law", title: "نظام الشركات", titleEn: "Companies Law", catId: "SA-04", type: "law" },
-  { slug: "commercial-courts-law", title: "نظام المحاكم التجارية", titleEn: "Commercial Courts Law", catId: "SA-04", type: "law" },
-  { slug: "civil-procedure", title: "نظام المرافعات الشرعية", titleEn: "Civil Procedure Law", catId: "SA-00", type: "law" },
-  { slug: "evidence-law-qadha-edition", title: "نظام الإثبات", titleEn: "Evidence Law", catId: "SA-00", type: "law" },
-  { slug: "execution-law-qadha-edition", title: "نظام التنفيذ", titleEn: "Execution Law", catId: "SA-00", type: "law" },
-  { slug: "civil-transactions-law", title: "نظام المعاملات المدنية", titleEn: "Civil Transactions Law", catId: "SA-03", type: "law" },
-  { slug: "labor-law-qadha", title: "نظام العمل", titleEn: "Labor Law", catId: "SA-06", type: "law" },
-  { slug: "personal-status-law", title: "نظام الأحوال الشخصية", titleEn: "Personal Status Law", catId: "SA-03", type: "law" },
-  { slug: "real-estate-brokerage-law", title: "نظام الوساطة العقارية", titleEn: "Real Estate Brokerage Law", catId: "SA-07", type: "law" },
-  // registered-lease (Ejar Law) removed — see DEMO_FOLDERS note above; no
-  // confident self-hosted match.
-  { slug: "real-estate-title-registration-law", title: "نظام التسجيل العيني للعقار", titleEn: "Real Estate Registry Law", catId: "SA-07", type: "law" },
-  { slug: "arbitration-law", title: "نظام التحكيم", titleEn: "Arbitration Law", catId: "SA-28", type: "law" },
-  { slug: "grievance-board-enforcement-law", title: "نظام التنفيذ أمام ديوان المظالم", titleEn: "BOG Enforcement Law", catId: "SA-28", type: "law" },
-  // Non-law entries resolved 2026-09-25 against self-hosted (auth.nezamy.sa).
-  // Books use feqh_books.id, the key /api/library/books/[slug] reads; the two
-  // old demo ids (rawd-al-murbi, sources-of-right-1) exist in no table.
-  { slug: "الروض المربع شرح زاد المستقنع", title: "الروض المربع شرح زاد المستقنع", titleEn: "Al-Rawd Al-Murbi", catId: "SA-00", type: "book" },
-  { slug: "مصادر الحق في الفقه الإسلامي - الجزء الأول", title: "مصادر الحق في الفقه الإسلامي — الجزء 1", titleEn: "Sources of Right, vol. 1", catId: "SA-00", type: "book" },
-  // Removed, no confident match: the eight demo orders (ord-sama-01,
-  // ord-ncnp-01, ord-01..ord-06) — decrees_circulars.id is a uuid, and no row
-  // matches their titles (the companies-law and VAT approval decrees, the SAMA
-  // e-payment, NCNP donation, domestic-labour, REGA ads and e-commerce
-  // circulars are not in the table); and the seven demo precedents
-  // (prec-moj-01, prec-01..prec-06), which name topics, not
-  // judicial_collections rows. Each linked to a not-found or unavailable page.
-];
+// ALL_LIBRARY_DOCS (a hand-written 14-row sample: 12 laws, 2 books, no
+// precedents, no orders) was deleted 2026-10-30 (owner notes ٠٤ §٢, ٠٥ §٢.٢).
+// «إدارة المحتوى» searches the real library: folderLibrarySearch.ts.

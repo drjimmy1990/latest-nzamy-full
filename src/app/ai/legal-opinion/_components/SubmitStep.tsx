@@ -22,6 +22,8 @@ export interface RecapRow {
 interface Props {
   isDark: boolean;
   card: string;
+  /** L12: the consultation's team order sits under its automatic path and says it is optional. */
+  heading?: string;
   title: string;
   recapRows: RecapRow[];
   description: string;
@@ -34,7 +36,7 @@ interface Props {
 }
 
 export function SubmitStep({
-  isDark, card, title, recapRows, description, descriptionLabel,
+  isDark, card, heading, title, recapRows, description, descriptionLabel,
   attachments, submitting, submitErrors, onBack, onSubmit,
 }: Props) {
   const [confirmed, setConfirmed] = useState(false);
@@ -43,7 +45,7 @@ export function SubmitStep({
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
       <div className={`${card} p-5 space-y-5`}>
         <div>
-          <h2 className={`text-[15px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>مراجعة الطلب وإرساله</h2>
+          <h2 className={`text-[15px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>{heading ?? "مراجعة الطلب وإرساله"}</h2>
           <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
             سيراجع فريق نظامي بيانات {title} يدوياً ويُعدّ لك المستند المطلوب، وسيصلك إشعار عند جهوزيته.
           </p>

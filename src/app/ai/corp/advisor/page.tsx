@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 
 import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
@@ -54,7 +55,7 @@ function StreamingText({ text }: { text: string }) {
   return <pre className="whitespace-pre-wrap font-sans text-[13px] leading-[1.9]">{shown}</pre>;
 }
 
-export default function CorpAdvisorPage() {
+function CorpAdvisorInner() {
   const { isDark } = useTheme();
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -180,5 +181,14 @@ export default function CorpAdvisorPage() {
         </BetaReviewGate>
       )}
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function CorpAdvisorPage() {
+  return (
+    <GatedToolScreen toolId="corp.advisor" toolName="رأي المستشار التجاري">
+      <CorpAdvisorInner />
+    </GatedToolScreen>
   );
 }

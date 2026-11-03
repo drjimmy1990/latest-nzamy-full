@@ -21,6 +21,9 @@ interface EscalationProps {
   complexityScore?: number;
   /** Callback when user dismisses */
   onDismiss?: () => void;
+  /** No automatic answer was given (tool not live, or the run failed): the card
+   *  must not claim an AI result or an AI-judged complexity (owner LIVE-F24). */
+  noAiAnswer?: boolean;
   /** Style variant */
   variant?: "inline" | "modal" | "banner";
 }
@@ -52,6 +55,8 @@ const txt = {
     subtitleDetected: (area: string) => `الذكاء الاصطناعي وجد أن وضعك قد يتعلق ب ${area} — محامي متخصص يقدر يفيدك أكثر`,
     titleGeneric: "هل تحتاج محامي متخصص؟",
     subtitleGeneric: "الذكاء الاصطناعي أعطاك نتيجة أولية — لكن قضيتك قد تحتاج محامي",
+    subtitleNoAnswer: (area?: string) => area ? `سؤالك قد يتعلق ب ${area} — محامٍ متخصص يقدر يجيبك` : "لم نُعطك إجابة آلية — محامٍ متخصص يقدر يجيبك",
+    dismissNoAnswer: "ليس الآن",
     complexHigh: "⚠️ قضيتك تبدو معقدة — ننصح بالتحدث مع محامي متخصص",
     complexMid: "قضيتك فيها تفاصيل تحتاج نظر محامي — فكّر في استشارة",
     complexLow: "قضيتك تبدو واضحة، لكن المحامي يقدر يساعدك أكثر",
@@ -81,6 +86,8 @@ const txt = {
     subtitleDetected: (area: string) => `AI detected your case relates to ${area} — a specialist can help more`,
     titleGeneric: "Need a Specialist Lawyer?",
     subtitleGeneric: "AI gave you an initial result — but your case may need a lawyer",
+    subtitleNoAnswer: (area?: string) => area ? `Your question may relate to ${area} — a specialist lawyer can answer it` : "No automatic answer was given — a specialist lawyer can answer it",
+    dismissNoAnswer: "Not now",
     complexHigh: "⚠️ Your case looks complex — we recommend consulting a specialist",
     complexMid: "Your case has details that need a lawyer's eye — consider a consultation",
     complexLow: "Your case seems straightforward, but a lawyer can help more",
@@ -113,6 +120,7 @@ export default function EscalationFlow({
   complexityScore = 60,
   onDismiss,
   variant = "inline",
+  noAiAnswer = false,
 }: EscalationProps) {
   const { isDark, lang } = useTheme();
   const { userType } = useUser();
@@ -126,9 +134,11 @@ export default function EscalationFlow({
   const pageTitle = detectedSpec
     ? t.titleDetected(detectedSpec.label)
     : t.titleGeneric;
-  const pageSubtitle = detectedSpec
-    ? t.subtitleDetected(detectedSpec.label)
-    : t.subtitleGeneric;
+  const pageSubtitle = noAiAnswer
+    ? t.subtitleNoAnswer(detectedSpec?.label)
+    : detectedSpec
+      ? t.subtitleDetected(detectedSpec.label)
+      : t.subtitleGeneric;
 
   const [selectedSpec, setSelectedSpec] = useState<string | null>(legalArea || null);
   // If the legal area is already known from context → skip step 1 directly
@@ -184,15 +194,15 @@ export default function EscalationFlow({
           </div>
         </div>
 
-        {/* Complexity notice */}
-        <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[12px] font-medium ${
+        {/* Complexity notice — only when an answer exists to have judged it */}
+        {!noAiAnswer && <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[12px] font-medium ${
           complexityScore >= 70
             ? isDark ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" : "bg-amber-50 text-amber-700 border border-amber-200"
             : isDark ? "bg-royal/10 text-emerald-400 border border-royal/20" : "bg-royal/5 text-royal border border-royal/10"
         }`}>
           <Lightning size={14} weight="fill" />
           {complexityMsg}
-        </div>
+        </div>}
       </div>
 
       {/* ── Step content ── */}
@@ -344,7 +354,7 @@ export default function EscalationFlow({
           onClick={() => { setDismissed(true); onDismiss?.(); }}
           className={`w-full text-center mt-4 text-[11px] font-medium ${isDark ? "text-zinc-600 hover:text-zinc-400" : "text-slate-400 hover:text-slate-600"} transition-colors`}
         >
-          {t.dismiss}
+          {noAiAnswer ? t.dismissNoAnswer : t.dismiss}
         </button>
       </div>
     </motion.div>

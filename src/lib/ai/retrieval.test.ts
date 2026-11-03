@@ -122,3 +122,116 @@ test("a failed search costs only its own hits; nothing found is an empty result"
   const out = await retrieveLibrary(admin as never, ["غياب العامل"], { laws: 8, principles: 4 });
   assert.deepEqual(out, { sources: [], map: {} });
 });
+
+/**
+ * The service client with every chain retrieval builds (owner's live test,
+ * 29 Oct): laws by name (ilike), articles by law and number, articles inside
+ * one law (textSearch), the open article, the relevance functions and titles.
+ */
+type Op = [string, ...unknown[]];
+function chainAdmin(lib: {
+  laws: Array<{ slug: string; title: string; status?: string }>;
+  articles: Array<Record<string, unknown> & { id: string; law_slug: string; number: number; words?: string }>;
+  ranked?: Array<Record<string, unknown>>;
+}) {
+  const log: Array<{ table: string; ops: Op[] }> = [];
+  const likeToRegex = (p: string) =>
+    new RegExp(`^${p.replace(/\\([\\%_])/g, "\u0001$1").replace(/[.*+?^${}()|[\]]/g, "\\$&").replace(/%/g, ".*").replace(/_/g, ".").replace(/\u0001(.)/g, (_m, c) => `\\${c}`)}$`, "s");
+  const resolve = (table: string, ops: Op[]) => {
+    let rows: Array<Record<string, unknown>> = table === "laws" ? lib.laws : lib.articles;
+    for (const [op, col, val] of ops) {
+      if (op === "eq") rows = rows.filter((r) => r[col as string] === val);
+      if (op === "in") rows = rows.filter((r) => (val as unknown[]).includes(r[col as string]));
+      if (op === "ilike") rows = rows.filter((r) => likeToRegex(val as string).test(String(r[col as string])));
+      // A search inside one law: every word of the tsquery in the article's words.
+      if (op === "textSearch") {
+        const groups = String(val).split("&").map((g) => [...g.matchAll(/'([^']+)'/g)].map((m) => m[1]));
+        rows = rows.filter((r) => groups.every((alts) => alts.some((w) => String(r.words ?? "").split(" ").includes(w))));
+      }
+    }
+    return { data: rows, error: null };
+  };
+  const chain = (table: string) => {
+    const ops: Op[] = [];
+    log.push({ table, ops });
+    const c: Record<string, unknown> = {};
+    for (const m of ["select", "eq", "ilike", "textSearch", "order", "abortSignal"]) {
+      c[m] = (...a: unknown[]) => (ops.push([m, ...a]), c);
+    }
+    c.limit = (n: number) => {
+      const r = resolve(table, ops);
+      return Promise.resolve({ ...r, data: r.data.slice(0, n) });
+    };
+    c.in = (...a: unknown[]) => (ops.push(["in", ...a]), Promise.resolve(resolve(table, ops)));
+    c.maybeSingle = () => Promise.resolve({ data: resolve(table, ops).data[0] ?? null, error: null });
+    return c;
+  };
+  const admin = {
+    schema: () => ({
+      from: chain,
+      rpc: (fn: string) => ({
+        abortSignal: () =>
+          Promise.resolve({ data: { ranked: true, rows: fn === "search_law_articles_relevance" ? (lib.ranked ?? []) : [] }, error: null }),
+      }),
+    }),
+  };
+  return { admin, log };
+}
+
+const LIB = {
+  laws: [
+    { slug: "labor-law", title: "نظام العمل", status: "active" },
+    { slug: "labor-rules", title: "اللائحة التنفيذية لنظام العمل", status: "active" },
+    { slug: "social-security-law", title: "نظام الضمان الاجتماعي", status: "active" },
+    { slug: "civil-transactions-law", title: "نظام المعاملات المدنية", status: "active" },
+  ],
+  articles: [
+    { id: "labor-law__art-1", law_slug: "labor-law", number: 1, status: "active", text: "يسمى هذا النظام نظام العمل" },
+    { id: "labor-rules__art-1", law_slug: "labor-rules", number: 1, status: "active", text: "أولى اللائحة" },
+    { id: "social-security-law__art-1-old", law_slug: "social-security-law", number: 1, status: "repealed", text: "القديمة" },
+    { id: "social-security-law__art-1", law_slug: "social-security-law", number: 1, status: "active", text: "يقصد بالمستفيد", words: "المستفيد الاسرة" },
+    { id: "civil-transactions-law__art-307", law_slug: "civil-transactions-law", number: 307, status: "active", text: "البيع عقد يلتزم", words: "عقد البيع" },
+  ],
+  // What the whole library ranks first for the same words: another law.
+  ranked: [{ id: "labor-law__art-50", law_slug: "labor-law", number: 50, text: "عقد العمل" }],
+};
+
+test("«ما هي المادة الأولى من نظام العمل» reads that article first, from that law, not its executive regulation", async () => {
+  const { admin } = chainAdmin(LIB);
+  const out = await retrieveLibrary(admin as never, ["نظام العمل"], { laws: 6, principles: 3 }, { question: "ما هي المادة الأولى من نظام العمل؟" });
+  assert.equal(out.map.S1.id, "labor-law__art-1");
+  assert.ok(!Object.values(out.map).some((s) => s.id === "labor-rules__art-1"));
+});
+
+test("an article named by number reads the version in force, and stands even with no searches", async () => {
+  const { admin } = chainAdmin(LIB);
+  const out = await retrieveLibrary(admin as never, [], { laws: 6, principles: 3 }, { question: "اشرح المادة 1 من نظام الضمان الاجتماعي" });
+  assert.deepEqual(Object.values(out.map).map((s) => s.id), ["social-security-law__art-1"]);
+});
+
+test("on a law page the page's law is searched first, and «المادة الأولى» alone means its article", async () => {
+  const { admin, log } = chainAdmin(LIB);
+  const out = await retrieveLibrary(admin as never, ["المستفيد"], { laws: 6, principles: 3 }, { lawSlug: "social-security-law", question: "من هو المستفيد؟" });
+  assert.equal(out.map.S1.id, "social-security-law__art-1", "the page's own hit before the library's");
+  assert.ok(log.some((l) => l.ops.some(([op, col, val]) => op === "eq" && col === "law_slug" && val === "social-security-law")));
+  assert.ok(!log.some((l) => l.table === "laws" && l.ops.some(([op]) => op === "ilike")), "the page names the law; no lookup by name");
+
+  const first = await retrieveLibrary(admin as never, [], { laws: 6, principles: 3 }, { lawSlug: "labor-law", question: "ما هي المادة الأولى؟" });
+  assert.deepEqual(Object.values(first.map).map((s) => s.id), ["labor-law__art-1"]);
+});
+
+test("a law named in the question scopes the search; the library's hits follow", async () => {
+  const { admin } = chainAdmin(LIB);
+  const out = await retrieveLibrary(admin as never, ["عقد البيع"], { laws: 6, principles: 3 }, { question: "تعريف عقد البيع في نظام المعاملات المدنية" });
+  assert.deepEqual(Object.values(out.map).map((s) => s.id), ["civil-transactions-law__art-307", "labor-law__art-50"]);
+});
+
+test("a law the library does not have pins nothing, and the plain search still answers", async () => {
+  const { admin } = chainAdmin(LIB);
+  const out = await retrieveLibrary(admin as never, ["عقد"], { laws: 6, principles: 3 }, { question: "المادة 3 من نظام الطيران المدني" });
+  assert.deepEqual(Object.values(out.map).map((s) => s.id), ["labor-law__art-50"]);
+});
+
+test("cleanQueries drops the framing the answering text never says («تعريف عقد البيع» → «عقد البيع»)", () => {
+  assert.deepEqual(cleanQueries(["تعريف عقد البيع", "ما هو التعريف", "المادة الأولى نظام العمل"]), ["عقد البيع", "نظام العمل"]);
+});

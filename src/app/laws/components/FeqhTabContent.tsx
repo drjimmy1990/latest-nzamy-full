@@ -9,6 +9,10 @@ import { FEQH_TYPES, type FeqhType } from "@/constants/lawsLibraryData";
 import { toCatalogueCards } from "@/lib/library/bookVolumes";
 import { EmptyState } from "./ListItems";
 import { ResultsSkeleton } from "./ResultsSkeleton";
+import { SearchHitGroupCard } from "./SearchHitGroupCard";
+import { groupFeqhSearchCards, resultHref, type FeqhHitLike } from "../searchHitGroups";
+import { SaveToFolderButton } from "./SaveToFolderButton";
+import { bookSaveDoc, type SaveToFolderDoc } from "../saveToFolder";
 
 /** A card field worth a line: not empty, and not the «—» placeholder. */
 function hasText(value: unknown): value is string {
@@ -41,6 +45,8 @@ interface FeqhTabContentProps {
   resultsPending?: boolean;
   /** The search failed (its error is shown above): no empty state. */
   searchFailed?: boolean;
+  /** Owner note ٠٤: «حفظ في مجلد» on each book card. */
+  onSaveToFolder?: (doc: SaveToFolderDoc) => void;
 }
 
 export function FeqhTabContent({
@@ -60,6 +66,7 @@ export function FeqhTabContent({
   viewerHasFullAccess,
   resultsPending = false,
   searchFailed = false,
+  onSaveToFolder,
 }: FeqhTabContentProps) {
   const [page, setPage] = useState(1);
   const itemsPerPage = 6;
@@ -74,9 +81,17 @@ export function FeqhTabContent({
 
   // One card per multi-volume series (T28-24); pages count cards, not volume rows.
   const cards = useMemo(() => toCatalogueCards(filteredFeqhBooks), [filteredFeqhBooks]);
-  const totalItems = cards.length;
+  // Owner note ١٢-١: a search lists one card per BOOK with its matching
+  // passages as highlighted rows (each opens the passage, ?target=…&q=…).
+  const isSearchMode = filteredFeqhBooks.some((b) => (b as { _isSearchResult?: boolean })._isSearchResult === true);
+  const feqhGroups = useMemo(
+    () => (isSearchMode ? groupFeqhSearchCards(filteredFeqhBooks as unknown as FeqhHitLike[], q) : []),
+    [isSearchMode, filteredFeqhBooks, q],
+  );
+  const totalItems = isSearchMode ? feqhGroups.length : cards.length;
   const maxPages = Math.ceil(totalItems / itemsPerPage);
   const displayedCards = cards.slice((page - 1) * itemsPerPage, page * itemsPerPage);
+  const displayedGroups = feqhGroups.slice((page - 1) * itemsPerPage, page * itemsPerPage);
 
   const getPageNumbers = () => {
     const pages: (number | string)[] = [];
@@ -189,6 +204,31 @@ export function FeqhTabContent({
 
       {resultsPending ? (
         <ResultsSkeleton isDark={isDark} layoutMode={layoutMode} label="جارٍ البحث" />
+      ) : isSearchMode && displayedGroups.length > 0 ? (
+        <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" : "flex flex-col gap-4"}>
+          {displayedGroups.map((g, idx) => (
+            <SearchHitGroupCard
+              key={g.key}
+              kind="feqh"
+              title={g.volumesLabel ? `${g.title} (${g.volumesLabel})` : g.title}
+              subtitle={hasAuthor(g.author) ? g.author : ""}
+              excerpt={g.bookHit?.desc}
+              rows={g.rows}
+              more={g.more}
+              href={g.href}
+              locked={false}
+              setShowPaywall={setShowPaywall}
+              isDark={isDark}
+              muted={muted}
+              layoutMode={layoutMode}
+              index={idx}
+              onSaveToFolder={(() => {
+                const doc = bookSaveDoc({ slug: g.bookSlug, title: g.title });
+                return doc && onSaveToFolder ? () => onSaveToFolder(doc) : undefined;
+              })()}
+            />
+          ))}
+        </div>
       ) : displayedCards.length > 0 ? (
         <div className={layoutMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" : "space-y-4"}>
           {displayedCards.map(({ key: cardKey, book, title: cardTitle, volumesLabel }) => {
@@ -222,8 +262,9 @@ export function FeqhTabContent({
                   </div>
                 )}
 
+                <SaveToFolderButton doc={bookSaveDoc({ slug: book.slug, title: cardTitle || book.title })} onSave={onSaveToFolder} isDark={isDark} className="absolute bottom-4 left-4 z-20" />
                 <Link
-                  href={isBookFree ? `/book/${book.slug}` : "#"}
+                  href={isBookFree ? resultHref(`/book/${book.slug}`, q) : "#"}
                   onClick={(e) => {
                     if (!isBookFree) {
                       e.preventDefault();

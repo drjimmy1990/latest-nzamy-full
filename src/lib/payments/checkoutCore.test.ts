@@ -11,10 +11,46 @@ import assert from "node:assert/strict";
 import { fakeDb, has, type FakeHandler, type FakeQuery } from "./fakeDb.test-helper.ts";
 import { createCouponAttemptBudget } from "./couponAttempts.ts";
 import { COUPON_PENDING_AR } from "./couponServer.ts";
-import { AUDIENCE_REFUSED_AR, CHECKOUT_FAILED_AR, NOT_FOR_SALE_AR, startCheckoutWith, type CheckoutDeps, type CheckoutInput } from "./checkoutCore.ts";
+import {
+  AUDIENCE_REFUSED_AR,
+  CHECKOUT_FAILED_AR,
+  NOT_FOR_SALE_AR,
+  startCheckoutWith as startCheckoutWithBook,
+  type CheckoutDeps,
+  type CheckoutInput,
+} from "./checkoutCore.ts";
 import { buildCatalog, quote } from "./catalog.ts";
-import { PRICE_BOOK } from "../pricing/priceBook.ts";
+import { PRICE_BOOK, type BookEntry } from "../pricing/priceBook.ts";
+import { FOUNDER_MEMBERSHIP_ON_SALE } from "../pricing/campaigns.ts";
 import { MOYASAR_DISABLED_MESSAGE_AR } from "./moyasarConfig.ts";
+
+/** A book entry with none of its cycles retired: what it was before it was retired. */
+function asSold(entry: BookEntry): BookEntry {
+  return {
+    ...entry,
+    prices: Object.fromEntries(Object.entries(entry.prices).map(([billing, p]) => [billing, { sar: p!.sar }])),
+  };
+}
+
+/**
+ * q329 (owner package of 1 Nov 2026) retired ind-preventive and ind-litigation
+ * in the real book. The coupon, supersede and order-row tests below were
+ * written with them as items on sale (1,490 / 149 and 3,990), and they test
+ * checkout's mechanics, not the catalogue — so they run against this fixture:
+ * the real book with those two plans still sold at their old prices.
+ * `startCheckoutWithBook` (no fixture) is the real catalogue; the q329 tests
+ * use it to prove checkout refuses the retired plans and cycles.
+ */
+const PRE_Q329_BOOK: Readonly<Record<string, BookEntry>> = {
+  ...PRICE_BOOK,
+  "ind-preventive": asSold(PRICE_BOOK["ind-preventive"]),
+  "ind-litigation": asSold(PRICE_BOOK["ind-litigation"]),
+};
+const PRE_Q329_CATALOG = buildCatalog(PRE_Q329_BOOK);
+
+function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput) {
+  return startCheckoutWithBook({ catalog: PRE_Q329_CATALOG, book: PRE_Q329_BOOK, ...deps }, input);
+}
 
 const NOW = new Date("2026-10-22T08:00:00.000Z");
 const USER = "00000000-0000-0000-0000-00000000u001";
@@ -140,13 +176,24 @@ test("happy path: the quote's price, a created order, the intent, the guarded st
   assert.ok(log.indexOf(ins) < log.indexOf(stamp));
 });
 
-test("٢٥٨: the library is VAT-exclusive for every buyer — an individual pays VAT on top like a lawyer", async () => {
-  for (const [type, total, mode] of [["individual", 172500, "exclusive"], ["lawyer", 172500, "exclusive"]] as const) {
+test("٢٥٨: the library is VAT-exclusive for every buyer — a company pays VAT on top like a lawyer", async () => {
+  for (const [type, total, mode] of [["corporate", 120750, "exclusive"], ["lawyer", 120750, "exclusive"]] as const) {
     const { client: admin, log } = db(type);
     const r = await startCheckoutWith({ admin, client: moyasar().client, now: () => NOW }, input({ itemId: "lib-q1", billing: "once" }));
     assert.equal(r.status, 200, type);
     assert.equal((inserts(log)[0].payload as { total_halalas: number }).total_halalas, total, type);
     assert.equal((inserts(log)[0].payload as { vat_mode: string }).vat_mode, mode, type);
+  }
+});
+
+test("LIVE-F05: an individual cannot buy the library through the API (403, no order, no intent)", async () => {
+  for (const itemId of ["lib-q1", "lib-q2", "lib-annual"]) {
+    const { client: admin, log } = db("individual");
+    const m = moyasar();
+    const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW }, input({ itemId, billing: "once" }));
+    assert.deepEqual(r, { status: 403, body: { error: AUDIENCE_REFUSED_AR } }, itemId);
+    assert.equal(inserts(log).length, 0, itemId);
+    assert.equal(m.intents.length, 0, itemId);
   }
 });
 
@@ -305,7 +352,7 @@ test("retire, never delete: a retired plan is refused at checkout (410, no order
 test("a retired CYCLE (lawyer-pro monthly, owner 26 Oct) is refused with 410 from the real book — no order, no intent", async () => {
   const { client: admin, log } = db("lawyer");
   const m = moyasar();
-  const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW }, input({ billing: "monthly" }));
+  const r = await startCheckoutWithBook({ admin, client: m.client, now: () => NOW }, input({ billing: "monthly" }));
   assert.equal(r.status, 410);
   assert.deepEqual(r.body, { error: NOT_FOR_SALE_AR });
   assert.equal(inserts(log).length, 0, "no order");
@@ -352,6 +399,8 @@ function couponDb(
     paidRows?: Array<Record<string, unknown>>;
     /** The buyer's OPEN orders carrying the coupon. */
     openRows?: Array<Record<string, unknown>>;
+    /** ٣٠٥: the buyer's earlier paid order of ANY item (the first-order read), or a failed read. */
+    earlierPaid?: "paid" | "refunded" | "test_mode" | "already_entitled" | "error";
     insertErr?: { code: string; message: string };
   } = {},
 ) {
@@ -361,6 +410,18 @@ function couponDb(
       return { data: opts.row === undefined ? NZAMY50_ROW : opts.row };
     }
     if (q.table === "coupon_usage") return { data: opts.usage ? [{ id: 1 }] : [] };
+    if (
+      opts.earlierPaid &&
+      q.table === "payment_orders" &&
+      q.op === "select" &&
+      !has(q, "eq", "metadata->coupon->>id") &&
+      (q.filters.find(([k, c]) => k === "in" && c === "status")?.[2] as string[] | undefined)?.join() === "paid,refunded"
+    ) {
+      if (opts.earlierPaid === "error") return { error: { code: "57014", message: "timeout" } };
+      if (opts.earlierPaid === "test_mode") return { data: [{ id: "earlier-any", live: false, metadata: {} }] };
+      if (opts.earlierPaid === "already_entitled") return { data: [{ id: "earlier-any", live: true, metadata: { already_entitled: true } }] };
+      return { data: [{ id: "earlier-any", live: true, metadata: {} }] };
+    }
     if (q.table === "payment_orders" && q.op === "insert" && opts.insertErr) return { error: opts.insertErr };
     if (q.table === "payment_orders" && q.op === "select" && has(q, "eq", "metadata->coupon->>id")) {
       const statuses = q.filters.find(([k, c]) => k === "in" && c === "status")?.[2] as string[] | undefined;
@@ -432,7 +493,7 @@ test("coupon: below the minimum (a 149 SAR monthly plan, NZAMY50 needs 200) is r
   assert.equal(m.intents.length, 0);
 });
 
-test("coupon: the cap — a 500 SAR coupon on the 390 SAR plan takes 25 % (97.50), never more", async () => {
+test("coupon: the cap — a 500 SAR coupon on the 249 SAR plan takes 25 % (62.25), never more", async () => {
   const { client: admin, log } = couponDb("individual", { row: { ...NZAMY50_ROW, discount_value: 500, min_order_amount: 0 } });
   const r = await startCheckoutWith(
     { admin, client: moyasar().client, now: () => NOW },
@@ -440,8 +501,8 @@ test("coupon: the cap — a 500 SAR coupon on the 390 SAR plan takes 25 % (97.50
   );
   assert.equal(r.status, 200);
   const p = inserts(log)[0].payload as Record<string, number>;
-  assert.equal(p.net_halalas, 39000 - 9750);
-  assert.equal(p.vat_halalas, Math.round((39000 - 9750) * 0.15));
+  assert.equal(p.net_halalas, 24900 - 6225);
+  assert.equal(p.vat_halalas, Math.round((24900 - 6225) * 0.15));
   assert.equal(p.total_halalas, p.net_halalas + p.vat_halalas);
 });
 
@@ -481,13 +542,14 @@ test("coupon: once per user — a PAID earlier order with it refuses the second 
 });
 
 test("coupon: never on a point top-up, and NEWCLIENT (single services) not on a plan or the library — 400, no order", async () => {
-  const cases: Array<[Record<string, unknown> & { code: string }, string, "once" | "yearly"]> = [
-    [NZAMY50_ROW, "topup-1000", "once"],
-    [NEWCLIENT_ROW, "ind-litigation", "yearly"],
-    [NEWCLIENT_ROW, "lib-q1", "once"],
+  // The library is sold to professionals only (LIVE-F05), so its case is a lawyer's.
+  const cases: Array<[Record<string, unknown> & { code: string }, string, "once" | "yearly", string]> = [
+    [NZAMY50_ROW, "topup-250", "once", "individual"],
+    [NEWCLIENT_ROW, "ind-litigation", "yearly", "individual"],
+    [NEWCLIENT_ROW, "lib-q1", "once", "lawyer"],
   ];
-  for (const [row, itemId, billing] of cases) {
-    const { client: admin, log } = couponDb("individual", { row });
+  for (const [row, itemId, billing, type] of cases) {
+    const { client: admin, log } = couponDb(type, { row });
     const m = moyasar();
     const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW }, input({ itemId, billing, couponCode: row.code }));
     assert.equal(r.status, 400, itemId);
@@ -497,18 +559,176 @@ test("coupon: never on a point top-up, and NEWCLIENT (single services) not on a 
   }
 });
 
-test("coupon: ٢٧٩ no stacking — an item already at a launch price takes no coupon", async () => {
+test("coupon: ٢٧٩ no stacking — an item at a RUNNING launch price takes no coupon; once the campaign is over it does", async () => {
   const book = {
-    ...PRICE_BOOK,
-    "ind-preventive": { ...PRICE_BOOK["ind-preventive"], launchPrices: [{ campaignId: "launch", prices: { yearly: 990 } }] },
+    ...PRE_Q329_BOOK,
+    "ind-preventive": { ...PRE_Q329_BOOK["ind-preventive"], launchPrices: [{ campaignId: "launch-2026", prices: { yearly: 990 } }] },
   };
+  {
+    const { client: admin, log } = couponDb("individual");
+    const r = await startCheckoutWith(
+      { admin, client: moyasar().client, now: () => IN_LAUNCH, book, attempts: createCouponAttemptBudget() },
+      input({ itemId: "ind-preventive", billing: "yearly", couponCode: "NZAMY50" }),
+    );
+    assert.equal(r.status, 400);
+    assert.deepEqual(r.body, { error: "كود الخصم لا ينطبق على هذا المنتج" });
+    assert.equal(inserts(log).length, 0);
+  }
+  for (const now of [NOW, AFTER_LAUNCH]) {
+    // before 25 Oct and after 25 Jan the item is at its listed price: the coupon applies
+    const { client: admin, log } = couponDb("individual");
+    const r = await startCheckoutWith(
+      { admin, client: moyasar().client, now: () => now, book, attempts: createCouponAttemptBudget() },
+      input({ itemId: "ind-preventive", billing: "yearly", couponCode: "NZAMY50" }),
+    );
+    assert.equal(r.status, 200, now.toISOString());
+    assert.equal((inserts(log)[0].payload as { net_halalas: number }).net_halalas, 149000 - 5000, now.toISOString());
+  }
+  {
+    // the other cycle of the same item has no launch price: the coupon applies even during the campaign
+    const { client: admin } = couponDb("individual");
+    const r = await startCheckoutWith(
+      { admin, client: moyasar().client, now: () => IN_LAUNCH, book, attempts: createCouponAttemptBudget() },
+      input({ itemId: "ind-preventive", billing: "monthly", couponCode: "NZAMY50", }),
+    );
+    assert.equal(r.status, 400, "monthly 149 is under NZAMY50's 200 minimum — refused for the minimum, not the launch");
+    assert.deepEqual(r.body, { error: "يتطلب هذا الكود طلباً بقيمة ٢٠٠ ر.س على الأقل قبل الضريبة" });
+  }
+});
+
+// ── ٣٠٣: the launch price is charged by the request's clock ──────────────────
+
+const IN_LAUNCH = new Date("2026-12-01T09:00:00.000Z");
+const AFTER_LAUNCH = new Date("2027-01-25T21:00:00.000Z"); // 26 Jan 00:00 Riyadh
+
+test("٣٠٣: during the campaign checkout charges the launch price — order, intent and answer — and records the listed one", async () => {
+  const { client: admin, log } = db("firm");
+  const m = moyasar();
+  const r = await startCheckoutWithBook({ admin, client: m.client, now: () => IN_LAUNCH }, input({ itemId: "firm-basic", billing: "yearly" }));
+  assert.equal(r.status, 200);
+  const p = inserts(log)[0].payload as Record<string, unknown>;
+  assert.equal(p.net_halalas, 841500);
+  assert.equal(p.vat_halalas, 126225);
+  assert.equal(p.total_halalas, 967725);
+  assert.deepEqual((p.metadata as Record<string, unknown>).launch, { campaign_id: "launch-2026", list_net_halalas: 990000 });
+  assert.equal(m.intents[0].amountHalalas, 967725);
+  const body = r.body as { quote: Record<string, unknown> };
+  assert.deepEqual(body.quote, { net: 841500, vat: 126225, total: 967725, vatMode: "exclusive", launchListNet: 990000 });
+});
+
+test("٣٠٣: the day after the campaign the listed price is charged and nothing names a launch", async () => {
+  const { client: admin, log } = db("firm");
+  const r = await startCheckoutWithBook({ admin, client: moyasar().client, now: () => AFTER_LAUNCH }, input({ itemId: "firm-basic", billing: "yearly" }));
+  assert.equal(r.status, 200);
+  const p = inserts(log)[0].payload as Record<string, unknown>;
+  assert.equal(p.net_halalas, 990000);
+  assert.equal((p.metadata as Record<string, unknown>).launch, undefined);
+  assert.equal((r.body as { quote: Record<string, unknown> }).quote.launchListNet, undefined);
+});
+
+// ── q329 (owner package of 1 Nov 2026): the cancelled individual plans ──────
+
+test("q329: the real book refuses every cancelled individual plan and cycle with 410 — no order, no intent", async () => {
+  const cases: Array<[string, CheckoutInput["billing"]]> = [
+    ["ind-ai", "monthly"],
+    ["ind-ai", "quarterly"],
+    ["ind-ai", "semiannual"],
+    ["ind-preventive", "monthly"],
+    ["ind-preventive", "yearly"],
+    ["ind-litigation", "monthly"],
+    ["ind-litigation", "yearly"],
+  ];
+  for (const [itemId, billing] of cases) {
+    for (const now of [NOW, IN_LAUNCH]) {
+      const { client: admin, log } = db("individual");
+      const m = moyasar();
+      const r = await startCheckoutWithBook({ admin, client: m.client, now: () => now }, input({ itemId, billing }));
+      assert.equal(r.status, 410, `${itemId} ${billing}`);
+      assert.deepEqual(r.body, { error: NOT_FOR_SALE_AR }, `${itemId} ${billing}`);
+      assert.equal(inserts(log).length, 0, `${itemId} ${billing}: no order`);
+      assert.equal(m.intents.length, 0, `${itemId} ${billing}: no intent`);
+    }
+  }
+});
+
+test("q329: ind-ai yearly still sells at 249 before VAT, and during the campaign too (its 199 launch price is retired)", async () => {
+  for (const now of [NOW, IN_LAUNCH]) {
+    const { client: admin, log } = db("individual");
+    const m = moyasar();
+    const r = await startCheckoutWithBook({ admin, client: m.client, now: () => now }, input({ itemId: "ind-ai", billing: "yearly" }));
+    assert.equal(r.status, 200, now.toISOString());
+    const p = inserts(log)[0].payload as Record<string, unknown>;
+    assert.equal(p.net_halalas, 24900);
+    assert.equal(p.vat_halalas, 3735);
+    assert.equal(p.total_halalas, 28635);
+    assert.equal((p.metadata as Record<string, unknown>).launch, undefined);
+    assert.equal(m.intents[0].amountHalalas, 28635);
+  }
+});
+
+// ── ٣٠٥: NEWCLIENT is for the buyer's first paid order on the platform ───────
+
+const FIRST_ORDER_ROW = { ...NEWCLIENT_ROW, min_order_amount: 0, excluded_kinds: ["topup"] };
+const earlierPaidRead = (log: FakeQuery[]) =>
+  log.find((q) => q.table === "payment_orders" && q.op === "select" && !has(q, "eq", "metadata->coupon->>id") && has(q, "eq", "user_id", USER)
+    && (q.filters.find(([k, c]) => k === "in" && c === "status")?.[2] as string[] | undefined)?.join() === "paid,refunded");
+
+test("٣٠٥: NEWCLIENT with any earlier paid order of this buyer (any item) is refused with the generic sentence — no order", async () => {
+  for (const status of ["paid", "refunded"] as const) {
+    const { client: admin, log } = couponDb("individual", { row: FIRST_ORDER_ROW, earlierPaid: status });
+    const m = moyasar();
+    const r = await startCheckoutWith(
+      { admin, client: m.client, now: () => NOW, attempts: createCouponAttemptBudget() },
+      input({ itemId: "ind-preventive", billing: "yearly", couponCode: "NEWCLIENT" }),
+    );
+    assert.equal(r.status, 400, status);
+    assert.deepEqual(r.body, { error: "كود الخصم غير صالح أو منتهي الصلاحية" }, status);
+    assert.equal(inserts(log).length, 0, status);
+    assert.equal(m.intents.length, 0, status);
+  }
+});
+
+test("٣٠٥: NEWCLIENT on the buyer's first paid order applies; the read is this buyer's paid / refunded orders, not the coupon's", async () => {
+  const { client: admin, log } = couponDb("individual", { row: FIRST_ORDER_ROW });
+  const r = await startCheckoutWith(
+    { admin, client: moyasar().client, now: () => NOW, attempts: createCouponAttemptBudget() },
+    input({ itemId: "ind-preventive", billing: "yearly", couponCode: "NEWCLIENT" }),
+  );
+  assert.equal(r.status, 200);
+  assert.equal((inserts(log)[0].payload as { net_halalas: number }).net_halalas, 149000 - 7500);
+  assert.ok(earlierPaidRead(log), "the first-order read ran");
+});
+
+test("٣٠٥: a test-mode payment or a paid order that granted nothing is not a first paid order — NEWCLIENT still applies", async () => {
+  for (const earlierPaid of ["test_mode", "already_entitled"] as const) {
+    const { client: admin, log } = couponDb("individual", { row: FIRST_ORDER_ROW, earlierPaid });
+    const r = await startCheckoutWith(
+      { admin, client: moyasar().client, now: () => NOW, attempts: createCouponAttemptBudget() },
+      input({ itemId: "ind-preventive", billing: "yearly", couponCode: "NEWCLIENT" }),
+    );
+    assert.equal(r.status, 200, earlierPaid);
+    assert.equal((inserts(log)[0].payload as { net_halalas: number }).net_halalas, 149000 - 7500, earlierPaid);
+  }
+});
+
+test("٣٠٥: a code that is not first-order-only never reads the buyer's other orders", async () => {
   const { client: admin, log } = couponDb("individual");
   const r = await startCheckoutWith(
-    { admin, client: moyasar().client, now: () => NOW, book },
+    { admin, client: moyasar().client, now: () => NOW, attempts: createCouponAttemptBudget() },
     input({ itemId: "ind-preventive", billing: "yearly", couponCode: "NZAMY50" }),
   );
-  assert.equal(r.status, 400);
-  assert.deepEqual(r.body, { error: "كود الخصم لا ينطبق على هذا المنتج" });
+  assert.equal(r.status, 200);
+  assert.equal(earlierPaidRead(log), undefined);
+});
+
+test("٣٠٥: a failed read of the earlier orders is 503, never the discount", async () => {
+  const { client: admin, log } = couponDb("individual", { row: FIRST_ORDER_ROW, earlierPaid: "error" });
+  const r = await startCheckoutWith(
+    { admin, client: moyasar().client, now: () => NOW, attempts: createCouponAttemptBudget() },
+    input({ itemId: "ind-preventive", billing: "yearly", couponCode: "NEWCLIENT" }),
+  );
+  assert.equal(r.status, 503);
+  assert.deepEqual(r.body, { error: "أكواد الخصم غير متاحة حالياً" });
   assert.equal(inserts(log).length, 0);
 });
 
@@ -738,5 +958,262 @@ test("coupon: an abandoned 3-D Secure order (a payment reached it) blocks for th
     const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW }, input(NZ_INPUT));
     assert.equal(r.status, 400, JSON.stringify(listed));
     assert.equal(closes(log, reached.id).length, 0, JSON.stringify(listed));
+  }
+});
+
+// ── P3: the founder membership (lawyer-founder-2026) — sale switch, no coupons, a reserved seat ──
+
+const FOUNDER = { itemId: "lawyer-founder-2026", billing: "once" as const };
+
+/** A reserveFounderSeat spy: answers `answer` (or throws it when it is an Error), recording each call and the log length at the call. */
+function seatSpy(answer: string | Error, log?: FakeQuery[]) {
+  const calls: Array<{ userId: string; orderId: string; logAt: number }> = [];
+  const reserveFounderSeat = async (userId: string, orderId: string) => {
+    calls.push({ userId, orderId, logAt: log ? log.length : -1 });
+    if (answer instanceof Error) throw answer;
+    return answer;
+  };
+  return { reserveFounderSeat, calls };
+}
+
+const cancels = (log: FakeQuery[]) =>
+  updates(log).filter((u) => (u.payload as { status?: string }).status === "cancelled" && has(u, "eq", "id", NEW_ORDER));
+
+test("founder: `reserved` goes on to the Moyasar form — 2,996 + VAT, billed once, no saved card; the seat is reserved after the order is written", async () => {
+  const { client: admin, log } = db("lawyer");
+  const m = moyasar();
+  const seat = seatSpy("reserved", log);
+  const r = await startCheckoutWith(
+    { admin, client: m.client, now: () => NOW, onSale: true, reserveFounderSeat: seat.reserveFounderSeat },
+    input(FOUNDER),
+  );
+  assert.equal(r.status, 200);
+  if (r.status !== 200) throw new Error("unreachable");
+  assert.equal(r.body.amountHalalas, 344540);
+  assert.equal(r.body.saveCard, false);
+  assert.deepEqual(r.body.quote, { net: 299600, vat: 44940, total: 344540, vatMode: "exclusive" });
+
+  const [ins] = inserts(log);
+  assert.equal((ins.payload as { kind?: string }).kind, "membership");
+  assert.equal((ins.payload as { item_id?: string }).item_id, "lawyer-founder-2026");
+  assert.equal(seat.calls.length, 1);
+  assert.equal(seat.calls[0].userId, USER);
+  assert.equal(seat.calls[0].orderId, NEW_ORDER);
+  assert.ok(seat.calls[0].logAt > log.indexOf(ins), "the seat is reserved after the insert");
+  assert.equal(m.intents.length, 1);
+  assert.equal(cancels(log).length, 0);
+});
+
+test("founder: every answer but `reserved` cancels the order, opens no intent, and answers in Arabic", async () => {
+  const cases: Array<[string, number, string]> = [
+    ["not_verified", 403, "يُتاح اشتراك المؤسس بعد توثيق رخصتك المهنية"],
+    ["already_member", 409, "أنت عضو مؤسس بالفعل"],
+    ["full", 409, "اكتملت مقاعد المؤسسين"],
+    ["closed", 410, "باب الاشتراك مغلق حاليًا"],
+    ["paused", 410, "باب الاشتراك مغلق حاليًا"],
+  ];
+  for (const [answer, status, error] of cases) {
+    const { client: admin, log } = db("lawyer");
+    const m = moyasar();
+    const seat = seatSpy(answer, log);
+    const r = await startCheckoutWith(
+      { admin, client: m.client, now: () => NOW, onSale: true, reserveFounderSeat: seat.reserveFounderSeat },
+      input(FOUNDER),
+    );
+    assert.equal(r.status, status, answer);
+    assert.deepEqual(r.body, { error }, answer);
+    assert.equal(seat.calls.length, 1, answer);
+    assert.equal(m.intents.length, 0, `${answer}: no intent`);
+    const [cancel] = cancels(log);
+    assert.ok(cancel, `${answer}: the order is cancelled`);
+    assert.ok(has(cancel, "eq", "status", "created"), `${answer}: only while still created`);
+  }
+});
+
+test("founder: an RPC error (e.g. 22023), a throw or an unknown answer is a safe 503 with the order cancelled — never a 500", async () => {
+  for (const answer of [new Error("22023"), "", "something_else", "RESERVED"] as Array<string | Error>) {
+    const { client: admin, log } = db("lawyer");
+    const m = moyasar();
+    const seat = seatSpy(answer, log);
+    const r = await startCheckoutWith(
+      { admin, client: m.client, now: () => NOW, onSale: true, reserveFounderSeat: seat.reserveFounderSeat },
+      input(FOUNDER),
+    );
+    assert.equal(r.status, 503, String(answer));
+    assert.deepEqual(r.body, { error: CHECKOUT_FAILED_AR });
+    assert.equal(m.intents.length, 0);
+    assert.equal(cancels(log).length, 1, `${String(answer)}: the order is cancelled`);
+  }
+});
+
+test("founder: without a reserveFounderSeat dependency the membership fails closed — cancelled, 503, no intent", async () => {
+  const { client: admin, log } = db("lawyer");
+  const m = moyasar();
+  const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW, onSale: true }, input(FOUNDER));
+  assert.equal(r.status, 503);
+  assert.equal(m.intents.length, 0);
+  assert.equal(cancels(log).length, 1);
+});
+
+test("founder: while the sale switch is off the reply is 410 «باب الاشتراك مغلق حاليًا» and nothing is read or written", async () => {
+  const { client: admin, log } = db("lawyer");
+  const m = moyasar();
+  const seat = seatSpy("reserved", log);
+  const r = await startCheckoutWith(
+    { admin, client: m.client, now: () => NOW, onSale: false, reserveFounderSeat: seat.reserveFounderSeat },
+    input({ ...FOUNDER, couponCode: "NZAMY50" }),
+  );
+  assert.equal(r.status, 410);
+  assert.deepEqual(r.body, { error: "باب الاشتراك مغلق حاليًا" });
+  assert.equal(inserts(log).length, 0);
+  assert.equal(log.length, 0);
+  assert.equal(seat.calls.length, 0);
+  assert.equal(m.intents.length, 0);
+});
+
+test("founder: the sale switch defaults to FOUNDER_MEMBERSHIP_ON_SALE", async () => {
+  const { client: admin, log } = db("lawyer");
+  const seat = seatSpy("reserved", log);
+  const r = await startCheckoutWith(
+    { admin, client: moyasar().client, now: () => NOW, reserveFounderSeat: seat.reserveFounderSeat },
+    input(FOUNDER),
+  );
+  if (FOUNDER_MEMBERSHIP_ON_SALE) assert.equal(r.status, 200);
+  else {
+    assert.equal(r.status, 410);
+    assert.equal(inserts(log).length, 0);
+  }
+});
+
+test("founder: a coupon on the membership is 400 «لا تُطبَّق القسائم على باقة المؤسس» — no coupon read, no order, no try spent", async () => {
+  const { client: admin, log } = db("lawyer");
+  const seat = seatSpy("reserved", log);
+  const budget = createCouponAttemptBudget({ max: 1, windowMs: 60_000 });
+  for (let i = 0; i < 3; i++) {
+    const r = await startCheckoutWith(
+      { admin, client: moyasar().client, now: () => NOW, onSale: true, reserveFounderSeat: seat.reserveFounderSeat, attempts: budget },
+      input({ ...FOUNDER, couponCode: "NZAMY50" }),
+    );
+    assert.equal(r.status, 400, `try ${i}`);
+    assert.deepEqual(r.body, { error: "لا تُطبَّق القسائم على باقة المؤسس" });
+  }
+  assert.equal(log.filter((q) => q.table === "coupons").length, 0);
+  assert.equal(inserts(log).length, 0);
+  assert.equal(seat.calls.length, 0);
+  assert.ok(budget.check(USER).ok, "the refusal spent no coupon try");
+});
+
+test("founder: a non-lawyer buyer is refused 403 before any order or seat", async () => {
+  for (const userType of ["individual", "firm", "corporate"]) {
+    const { client: admin, log } = db(userType);
+    const seat = seatSpy("reserved", log);
+    const r = await startCheckoutWith(
+      { admin, client: moyasar().client, now: () => NOW, onSale: true, reserveFounderSeat: seat.reserveFounderSeat },
+      input(FOUNDER),
+    );
+    assert.equal(r.status, 403, userType);
+    assert.deepEqual(r.body, { error: AUDIENCE_REFUSED_AR });
+    assert.equal(inserts(log).length, 0);
+    assert.equal(seat.calls.length, 0);
+  }
+});
+
+test("founder: a plan, a library pass or a top-up never calls reserveFounderSeat, whatever the sale switch says", async () => {
+  const cases: Array<[Partial<CheckoutInput>, string]> = [
+    [{}, "lawyer"],
+    [{ itemId: "lib-q1", billing: "once" }, "lawyer"],
+    [{ itemId: "topup-250", billing: "once" }, "individual"],
+  ];
+  for (const onSale of [false, true]) {
+    for (const [over, userType] of cases) {
+      const { client: admin, log } = db(userType);
+      const seat = seatSpy("full", log);
+      const r = await startCheckoutWith(
+        { admin, client: moyasar().client, now: () => NOW, onSale, reserveFounderSeat: seat.reserveFounderSeat },
+        input(over),
+      );
+      assert.equal(r.status, 200, `${JSON.stringify(over)} onSale=${onSale}`);
+      assert.equal(seat.calls.length, 0);
+      assert.equal(cancels(log).length, 0);
+    }
+  }
+});
+
+// ── P3 Task 5 (R13): a membership order cancelled AFTER its seat was reserved frees the seat at once ──
+
+function releaseSpy(throws = false) {
+  const calls: string[] = [];
+  const releaseFounderSeat = async (orderId: string) => {
+    calls.push(orderId);
+    if (throws) throw new Error("rpc down");
+  };
+  return { releaseFounderSeat, calls };
+}
+
+const stampFails = (q: FakeQuery) =>
+  q.table === "payment_orders" && q.op === "update" && (q.payload as { status?: string }).status === "initiated"
+    ? { error: { code: "40001", message: "serialization" } }
+    : undefined;
+
+test("founder (R13): an intent refusal, a stamp failure and a reserve RPC throw free the seat once (founder_release_order) — the reply stays 503", async () => {
+  const cases: Array<[string, () => { m: ReturnType<typeof moyasar>; over?: FakeHandler; answer: string | Error }]> = [
+    ["intent refused", () => ({ m: moyasar({ intentOk: false }), answer: "reserved" })],
+    ["stamp failed", () => ({ m: moyasar(), over: stampFails, answer: "reserved" })],
+    ["reserve threw", () => ({ m: moyasar(), answer: new Error("ECONNRESET") })],
+  ];
+  for (const [name, make] of cases) {
+    for (const throws of [false, true]) {
+      const { m, over, answer } = make();
+      const { client: admin, log } = db("lawyer", over);
+      const seat = seatSpy(answer, log);
+      const rel = releaseSpy(throws);
+      const r = await startCheckoutWith(
+        { admin, client: m.client, now: () => NOW, onSale: true, reserveFounderSeat: seat.reserveFounderSeat, releaseFounderSeat: rel.releaseFounderSeat },
+        input(FOUNDER),
+      );
+      assert.deepEqual(r, { status: 503, body: { error: CHECKOUT_FAILED_AR } }, `${name} throws=${throws}`);
+      assert.deepEqual(rel.calls, [NEW_ORDER], `${name} throws=${throws}`);
+      assert.ok(!JSON.stringify(r).includes("cs_secret_new"));
+    }
+  }
+});
+
+test("founder (R13): a seat refusal reserved nothing, so nothing is released", async () => {
+  for (const answer of ["not_verified", "already_member", "full", "closed", "paused"]) {
+    const { client: admin, log } = db("lawyer");
+    const rel = releaseSpy();
+    await startCheckoutWith(
+      { admin, client: moyasar().client, now: () => NOW, onSale: true, reserveFounderSeat: seatSpy(answer, log).reserveFounderSeat, releaseFounderSeat: rel.releaseFounderSeat },
+      input(FOUNDER),
+    );
+    assert.equal(rel.calls.length, 0, answer);
+  }
+  const { client: admin, log } = db("lawyer");
+  const rel = releaseSpy();
+  const ok = await startCheckoutWith(
+    { admin, client: moyasar().client, now: () => NOW, onSale: true, reserveFounderSeat: seatSpy("reserved", log).reserveFounderSeat, releaseFounderSeat: rel.releaseFounderSeat },
+    input(FOUNDER),
+  );
+  assert.equal(ok.status, 200);
+  assert.equal(rel.calls.length, 0, "a successful checkout keeps its seat");
+});
+
+test("founder (R13): a plan, a library pass or a top-up never calls releaseFounderSeat — intent refused or stamp failed", async () => {
+  const cases: Array<[Partial<CheckoutInput>, string]> = [
+    [{}, "lawyer"],
+    [{ itemId: "lib-q1", billing: "once" }, "lawyer"],
+    [{ itemId: "topup-250", billing: "once" }, "individual"],
+  ];
+  for (const [over, userType] of cases) {
+    for (const mode of ["intent", "stamp"] as const) {
+      const { client: admin } = db(userType, mode === "stamp" ? stampFails : undefined);
+      const rel = releaseSpy();
+      const r = await startCheckoutWith(
+        { admin, client: moyasar({ intentOk: mode !== "intent" }).client, now: () => NOW, onSale: true, releaseFounderSeat: rel.releaseFounderSeat },
+        input(over),
+      );
+      assert.equal(r.status, 503, `${JSON.stringify(over)} ${mode}`);
+      assert.equal(rel.calls.length, 0, `${JSON.stringify(over)} ${mode}`);
+    }
   }
 });

@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { motion } from "framer-motion";
+import ModalShell from "@/components/ui/ModalShell";
 import {
-  XCircle, CheckSquare, Square, ArrowCounterClockwise, Warning, Info,
+  CheckSquare, Square, ArrowCounterClockwise, Warning, Info,
   Gavel, CalendarCheck, Timer, Folder, Money, ChatDots, AddressBook, FileText,
   PencilSimple, FileMagnifyingGlass, MagnifyingGlass, Tray, Lightbulb, Sword,
   Handshake, Calculator,
@@ -74,6 +74,10 @@ export default function QuickToolsCustomizer({ isDark, currentIds, canSave, prac
   const isDefault = selected.length === defaultIds.length
     && selected.every((id, i) => id === defaultIds[i]);
 
+  // CODE-F34: the order is what gets saved, so a reordered pick is a change too.
+  // In demo mode nothing can be saved, so there is nothing to warn about losing.
+  const dirty = canSave && (selected.length !== currentIds.length || selected.some((id, i) => id !== currentIds[i]));
+
   const toggle = (id: string) => {
     setError(null);
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -94,50 +98,31 @@ export default function QuickToolsCustomizer({ isDark, currentIds, canSave, prac
     }
   };
 
+  // CODE-F34: the shared shell — no exit while the save is in flight (it used
+  // to close mid-save), a changed pick asks before it is thrown away, and the
+  // focus trap / Escape / focus return come with it.
   return (
-    <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    <ModalShell
+      title="تخصيص الوصول السريع"
+      subtitle={<>اختر من {toArabicDigits(QUICK_TOOLS_MIN)} إلى {toArabicDigits(QUICK_TOOLS_MAX)} أدوات تظهر في لوحة التحكم.</>}
+      onClose={onClose}
+      isDark={isDark}
+      busy={saving}
+      dirty={dirty}
+      maxWidthClass="max-w-lg"
+      headerExtra={
+        <span
+          aria-live="polite"
+          className={`flex-shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
+            inRange
+              ? isDark ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-50 text-emerald-700"
+              : isDark ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-700"
+          }`}
+        >
+          المحدد {toArabicDigits(count)} / {toArabicDigits(QUICK_TOOLS_MAX)}
+        </span>
+      }
     >
-      <motion.div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="quick-tools-title"
-        initial={{ scale: 0.95, opacity: 0, y: 10 }}
-        animate={{ scale: 1, opacity: 1, y: 0 }}
-        exit={{ scale: 0.95, opacity: 0, y: -10 }}
-        className={`w-full max-w-lg max-h-[85dvh] overflow-y-auto overscroll-contain rounded-3xl p-6 shadow-2xl ${isDark ? "bg-zinc-900 border border-white/[0.08]" : "bg-white border border-slate-200"}`}
-        dir="rtl"
-      >
-        <div className="flex items-center justify-between mb-1">
-          <h3 id="quick-tools-title" className={`text-[16px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>
-            تخصيص الوصول السريع
-          </h3>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="إغلاق"
-            className={`flex h-7 w-7 items-center justify-center rounded-full ${isDark ? "bg-white/[0.07] text-zinc-400 hover:text-white" : "bg-zinc-100 text-zinc-500 hover:text-black"}`}
-          >
-            <XCircle size={16} />
-          </button>
-        </div>
-        <div className="flex items-center justify-between gap-3 mb-4">
-          <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
-            اختر من {toArabicDigits(QUICK_TOOLS_MIN)} إلى {toArabicDigits(QUICK_TOOLS_MAX)} أدوات تظهر في لوحة التحكم.
-          </p>
-          <span
-            aria-live="polite"
-            className={`flex-shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
-              inRange
-                ? isDark ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-50 text-emerald-700"
-                : isDark ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-700"
-            }`}
-          >
-            المحدد {toArabicDigits(count)} / {toArabicDigits(QUICK_TOOLS_MAX)}
-          </span>
-        </div>
 
         {!canSave && (
           <div className={`mb-4 flex items-start gap-2 rounded-xl border px-3 py-2.5 text-[12px] ${isDark ? "border-amber-500/20 bg-amber-900/10 text-amber-300" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
@@ -224,7 +209,6 @@ export default function QuickToolsCustomizer({ isDark, currentIds, canSave, prac
             {saving ? "جارٍ الحفظ..." : "حفظ"}
           </button>
         </div>
-      </motion.div>
-    </motion.div>
+    </ModalShell>
   );
 }

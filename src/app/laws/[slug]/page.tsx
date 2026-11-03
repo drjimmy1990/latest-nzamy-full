@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef, useMemo, Suspense } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight, ArrowUp, Crown, Stack, Check, Copy, BookOpen, Bookmark, Scales, Printer,
@@ -44,6 +44,54 @@ import { READER_SCROLL_MARGIN_TOP, buildRegulationAnchors, regulationCardId } fr
 import { ResearchWorkspace } from "@/components/ResearchWorkspace";
 import { apiSlug } from '@/utils/apiSlug';
 import ScopedSearchPanel from "@/components/library/ScopedSearchPanel";
+import { HighlightProvider, SearchLegendBar, useHighlight } from "@/components/search/MultiColorHighlight";
+
+/**
+ * Owner note ٠٦: on arrival — from the library search with `?q=` and maybe an
+ * article `#hash` — go to the article named by the hash, else to the first
+ * coloured match (as useScrollToFirstMark does). Rendered INSIDE
+ * <HighlightProvider>: it reads the provider's root; from the page itself it
+ * would see no provider. Once per arrival — a later view switch does not jump.
+ */
+function ReaderArrivalScroll({ query, deps }: { query: string; deps: readonly unknown[] }) {
+  const hl = useHighlight();
+  const done = useRef(false);
+  // The sticky colour bar sits under the navbar: anchors (READER_SCROLL_MARGIN_TOP)
+  // land below it by its live height, 0 when it is not shown.
+  useEffect(() => {
+    const root = hl?.rootRef.current;
+    if (!root) return;
+    const html = document.documentElement;
+    const bar = root.querySelector<HTMLElement>('[role="toolbar"]');
+    const set = () => html.style.setProperty("--reader-legend-h", `${bar?.offsetHeight ?? 0}px`);
+    set();
+    const obs = bar ? new ResizeObserver(set) : null;
+    if (bar) obs?.observe(bar);
+    return () => {
+      obs?.disconnect();
+      html.style.removeProperty("--reader-legend-h");
+    };
+  }, [hl]);
+  useEffect(() => {
+    if (done.current) return;
+    let hash = window.location.hash.slice(1);
+    try { hash = decodeURIComponent(hash); } catch { /* keep it raw */ }
+    const target = hash ? document.getElementById(hash) : null;
+    if (target) {
+      done.current = true;
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    if (!query.trim()) return;
+    const first = hl?.rootRef.current?.querySelector<HTMLElement>("mark[data-hl-term]");
+    if (first) {
+      done.current = true;
+      first.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, hl, ...deps]);
+  return null;
+}
 
 function LawSystemPageContent() {
   const { isDark, isRTL }  = useTheme();
@@ -126,6 +174,23 @@ function LawSystemPageContent() {
   }, []);
   
   const searchParams = useSearchParams();
+  // Owner note ٠٦: the search the reader arrived with (/laws result → ?q=).
+  // It COLOURS the matches only — it never feeds jumpQuery / filteredArticles,
+  // so every other article stays on the page (read in full context).
+  const arrivalQuery = searchParams?.get("q") ?? "";
+  // The in-page box wins while it has text: its filter and its colours agree.
+  const highlightQuery = jumpQuery.trim() ? jumpQuery : arrivalQuery;
+  const router = useRouter();
+  const pathname = usePathname();
+  // «✕ مسح الألوان»: empty the box and drop ?q= (other params and the #hash kept, no scroll jump).
+  const clearHighlight = useCallback(() => {
+    setJumpQuery("");
+    if (!searchParams?.get("q")) return;
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("q");
+    const qs = next.toString();
+    router.replace(`${pathname}${qs ? `?${qs}` : ""}${window.location.hash}`, { scroll: false });
+  }, [searchParams, router, pathname]);
   const initialViewMode = (searchParams?.get("viewMode") as "all" | "law" | "regulation" | "appendix") || "all";
   const [viewMode, setViewMode] = useState<"all" | "law" | "regulation" | "appendix">(initialViewMode);
   const [selectedRegName, setSelectedRegName] = useState<string | null>(null); // فلتر اللائحة المختارة عند تعددها
@@ -1034,6 +1099,19 @@ function LawSystemPageContent() {
               />
             )}
 
+            {/* Owner note ٠٦: search colours over the reader (preamble → articles →
+                regulation → amendment history). The ScopedSearchPanel above stays
+                outside: it has its own results and its own highlight. */}
+            <HighlightProvider query={highlightQuery}>
+            <div className="space-y-4">
+            <SearchLegendBar
+              onClear={clearHighlight}
+              // Counts are of what is on the page: the box's filter, or locked articles' withheld text.
+              partial={!!filteredArticles || (!viewerHasFullAccess && allArticles.some(a => !a.free))}
+              className="sticky top-28 z-20 print:hidden"
+            />
+            <ReaderArrivalScroll query={arrivalQuery} deps={[law, viewMode]} />
+
             {/* Preamble */}
             <PreambleBlock
               text={law.preamble}
@@ -1469,6 +1547,8 @@ function LawSystemPageContent() {
                 });
               })()
             )}
+            </div>
+            </HighlightProvider>
           </div>
 
           {/* LEFT COLUMN: AI Tools and related documents */}

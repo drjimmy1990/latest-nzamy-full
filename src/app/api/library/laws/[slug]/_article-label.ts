@@ -91,12 +91,51 @@ export function articleLocatorText(
   return cleaned;
 }
 
+/**
+ * Owner note ١١ item ٤ (2026-10-26): a document that is NOT divided into
+ * numbered articles in its official source (a guide or instrument split by
+ * topical headings — `source_number: null` in the owner's export) must never
+ * show an invented «المادة N». `articles.number` there is only a technical
+ * order. The database has no `source_number` column, so the document-level
+ * signal is: not one of its rows names an article or item in `number_text`
+ * («المادة», «البند», «الفقرة», an ordinal, a leading number —
+ * documentIsUnnumbered). The law route computes it once per document and
+ * passes `{ unnumbered: true }`.
+ */
+export function documentIsUnnumbered(
+  rows: ReadonlyArray<{ number_text?: unknown }>,
+): boolean {
+  if (rows.length === 0) return false;
+  // A real locator names an article / item («المادة», «البند», an ordinal, a
+  // number) — not merely short text, which articleLocatorText also keeps.
+  return rows.every((r) => !LOCATOR.test(cleanNumberText(typeof r.number_text === "string" ? r.number_text : null)));
+}
+
+export interface ArticleLabelOptions {
+  /**
+   * The document has no numbered articles in its source (documentIsUnnumbered,
+   * or a future `source_number IS NULL`). Then a topical heading is shown as
+   * written, and an instrument name repeated in place of a number — the case
+   * the «المادة N» fallback exists for (thirty identical lines in the contents)
+   * — shows the bare position «(N)», never the word «المادة».
+   */
+  unnumbered?: boolean;
+}
+
 export function articleDisplayLabel(
   numberText: string | null | undefined,
   number: number | string | null | undefined,
+  options: ArticleLabelOptions = {},
 ): string {
   const locator = articleLocatorText(numberText, number);
   if (locator !== null) return locator;
+  if (options.unnumbered) {
+    const cleaned = cleanNumberText(numberText);
+    const n = typeof number === "string" && number.trim() === "" ? NaN : Number(number);
+    const positive = Number.isFinite(n) && n > 0;
+    if (cleaned && !INSTRUMENT_NAME.test(cleaned)) return cleaned;
+    return positive ? `(${n})` : cleaned;
+  }
   // `articles.number` is 0 for many rows whose locator is spelled out
   // («المادة الأولى:» — measured 2026-09-28 on executive-regulations-health-
   // profession), so only a positive number is trusted for the fallback.

@@ -144,6 +144,41 @@ test("mergePreferences with an empty patch returns the existing value unchanged"
   assert.deepEqual(mergePreferences(existing, {}), existing);
 });
 
+// ── circuitFavorites (owner note ١٥ §٥, NOTE-15-C03) ────────────────────────
+
+test("circuitFavorites: circuit ids with an optional note are accepted, the note trimmed and an empty one dropped", () => {
+  const result = validatePreferencesPatch({
+    circuitFavorites: [{ id: "moj-cir-0230", note: "  دائرة القضية ٤٤  " }, { id: "moj-cir-0001", note: "" }, { id: "moj-cir-2192" }],
+  });
+  assert.deepEqual(result, {
+    ok: true,
+    patch: { circuitFavorites: [{ id: "moj-cir-0230", note: "دائرة القضية ٤٤" }, { id: "moj-cir-0001" }, { id: "moj-cir-2192" }] },
+  });
+});
+
+test("circuitFavorites: bad ids, duplicates, unknown fields, long notes, non-arrays and over-cap lists are 400s", () => {
+  const tooMany = Array.from({ length: 201 }, (_, i) => ({ id: `moj-cir-${String(i + 1).padStart(4, "0")}` }));
+  for (const bad of [
+    [{ id: "moj-cir-1" }], [{ id: "x" }], [{ id: 5 }], ["moj-cir-0001"],
+    [{ id: "moj-cir-0001" }, { id: "moj-cir-0001" }],
+    [{ id: "moj-cir-0001", email: "a@b" }],
+    [{ id: "moj-cir-0001", note: 3 }],
+    [{ id: "moj-cir-0001", note: "ن".repeat(301) }],
+    tooMany, "moj-cir-0001", null, { id: "moj-cir-0001" },
+  ]) {
+    const result = validatePreferencesPatch({ circuitFavorites: bad });
+    assert.equal(result.ok, false, `expected ${JSON.stringify(bad).slice(0, 80)} to be rejected`);
+    if (!result.ok) assert.match(result.error, /[؀-ۿ]/, "the error must be Arabic");
+  }
+});
+
+test("circuitFavorites is PATCH-owned: a stale PUT echo cannot overwrite it", () => {
+  assert.ok((PREFERENCE_KEYS as readonly string[]).includes("circuitFavorites"));
+  const existing = { circuitFavorites: [{ id: "moj-cir-0002" }], notifications: { sms: true } };
+  const put = mergePutPreferences(existing, { circuitFavorites: [], notifications: { sms: false } });
+  assert.deepEqual(put, { ok: true, merged: { circuitFavorites: [{ id: "moj-cir-0002" }], notifications: { sms: false } } });
+});
+
 // ── quickTools (T28-30) ─────────────────────────────────────────────────────
 
 test("PREFERENCE_KEYS carries quickTools", () => {

@@ -25,6 +25,7 @@ const FAB_MOBILE_SUPPRESSED_PREFIXES = [
   "/login",
   "/register",
   "/forgot-password",
+  "/reset-password",
   "/auth",
 ] as const;
 
@@ -83,6 +84,7 @@ test("auth screens hide it ON PHONES ONLY — owner-ledger item ١٦٨", () => {
   assert.equal(isFabMobileSuppressedPath("/register/client"), true);
   assert.equal(isFabMobileSuppressedPath("/register/provider"), true);
   assert.equal(isFabMobileSuppressedPath("/forgot-password"), true);
+  assert.equal(isFabMobileSuppressedPath("/reset-password"), true);
   assert.equal(isFabMobileSuppressedPath("/auth/callback"), true);
 });
 

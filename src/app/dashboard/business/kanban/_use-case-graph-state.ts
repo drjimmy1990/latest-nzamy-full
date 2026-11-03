@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
 import {
-  NODE_H,
-  NODE_W,
   type GraphEdge,
   type GraphNode,
   type NodeGroup,
   type Point,
 } from "./_graph-model";
+import { nodeBox, screenToCanvas, type Size } from "./_graph-geometry";
+import { boardShortcut, copySelection, pasteClipboard, type BoardClipboard } from "./_graph-clipboard";
+import { groupNodes, removeNodes } from "./_graph-groups";
 import { toArabicDigits } from "@/lib/services/arabicCount";
 import {
   canRedo,
@@ -57,15 +58,27 @@ export function useCaseGraphState({
   const [draggedNode, setDraggedNode] = useState<string | null>(null);
   const [drawingEdgeFrom, setDrawingEdgeFrom] = useState<string | null>(null);
   const [mousePos, setMousePos] = useState<Point>({x: 0, y: 0});
-  const [contextMenu, setContextMenu] = useState<{x: number, y: number} | null>(null);
+  // Menus are placed at the pointer's SCREEN position (position: fixed, like
+  // the card and arrow menus); `canvasX/Y` is the same point in canvas
+  // coordinates — pan removed, zoom divided out (NOTE-08 items 01–02).
+  const [contextMenu, setContextMenu] = useState<{x: number; y: number; canvasX: number; canvasY: number} | null>(null);
   const [nodeMenu, setNodeMenu] = useState<{nodeId: string; x: number; y: number} | null>(null);
   const [pan, setPan] = useState<Point>({x: 0, y: 0});
   const [isPanning, setIsPanning] = useState(false);
   const [showAiAnalysis, setShowAiAnalysis] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [edgeDropMenu, setEdgeDropMenu] = useState<{x: number; y: number; canvasX: number; canvasY: number} | null>(null);
-  const [selectedNodeDetail, setSelectedNodeDetail] = useState<GraphNode | null>(null);
-  const [clipboard, setClipboard] = useState<GraphNode | null>(null);
+  // `fromId` is the card the arrow was drawn FROM. The drop menu used to link
+  // the new card to `nodes[nodes.length - 1]` — whichever card was added last.
+  const [edgeDropMenu, setEdgeDropMenu] = useState<{x: number; y: number; canvasX: number; canvasY: number; fromId: string} | null>(null);
+  // The details panel follows the LIVE card by id: it used to hold a copy of
+  // the card taken when it opened, so it showed stale text after an edit and
+  // stayed open on a deleted card (NOTE-08 item 08).
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const selectedNodeDetail = detailId ? nodes.find((n) => n.id === detailId) ?? null : null;
+  const setSelectedNodeDetail = useCallback((n: GraphNode | null) => setDetailId(n ? n.id : null), []);
+  // Every selected card and the arrows between them; `pastes` cascades
+  // repeated pastes instead of stacking them on one spot (NOTE-08 item 07).
+  const [clipboard, setClipboard] = useState<{ clip: BoardClipboard; pastes: number } | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [scale, setScale] = useState(1);
 
@@ -163,9 +176,12 @@ export function useCaseGraphState({
    * the first Ctrl+Z would empty the board and the autosave would then write
    * that empty board over the case's real one.
    */
-  const resetGraph = useCallback((nextNodes: GraphNode[], nextEdges: GraphEdge[]) => {
+  const resetGraph = useCallback((nextNodes: GraphNode[], nextEdges: GraphEdge[], nextGroups: NodeGroup[] = []) => {
     setNodesRaw(nextNodes);
     setEdgesRaw(nextEdges);
+    // The groups belong to the board being loaded: they used to survive a
+    // reset and be applied to the next board (NOTE-08 item 03).
+    setGroupsRaw(nextGroups);
     setHistory(emptyHistory());
     typingKey.current = null;
     gestureStart.current = null;
@@ -186,20 +202,14 @@ export function useCaseGraphState({
     }));
   }, [setNodes]);
 
+  // Only cards that still exist, at least two, and each moved out of any
+  // group it was in before (./_graph-groups.ts).
   const createGroup = useCallback(() => {
-    if (selectedNodeIds.size < 2) return;
-    const colors = ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ef4444", "#C8A762"];
-    const gid = `grp_${Date.now()}`;
-    const newGroup: NodeGroup = {
-      id: gid,
-      label: `مجموعة ${groups.length + 1}`,
-      color: colors[groups.length % colors.length],
-      nodeIds: Array.from(selectedNodeIds),
-      locked: true,
-    };
-    setGroups(prev => [...prev, newGroup]);
-    setNodes(prev => prev.map(n => selectedNodeIds.has(n.id) ? { ...n, groupId: gid } : n));
-  }, [selectedNodeIds, groups.length, setGroups, setNodes]);
+    const next = groupNodes(snapshotRef.current, selectedNodeIds, `grp_${Date.now()}`);
+    if (!next) return;
+    setGroups(next.groups);
+    setNodes(next.nodes);
+  }, [selectedNodeIds, setGroups, setNodes]);
 
   const dissolveGroup = useCallback((gid: string) => {
     setGroups(prev => prev.filter(g => g.id !== gid));
@@ -221,6 +231,34 @@ export function useCaseGraphState({
     setEdges(prev => prev.map(e => e.id === edgeId ? { ...e, ...updates } : e));
     setEdgeMenu(null);
   }, [setEdges]);
+
+  // ── Deleting cards (NOTE-08 item 08) ──────────────────────────────────────
+  // The one path for the Delete key, the card's bin button and «حذف العقدة»:
+  // the cards, their arrows and their group membership go in ONE undo step,
+  // they leave the selection (a ghost id there fed «تجميع»), and the menus
+  // that pointed at them close. The details panel closes by itself — it reads
+  // the live card.
+  const deleteNodes = useCallback((ids: Iterable<string>) => {
+    const gone = new Set(ids);
+    if (gone.size === 0) return;
+    const next = removeNodes(snapshotRef.current, gone);
+    setNodes(next.nodes);
+    setEdges(next.edges);
+    setGroups(next.groups);
+    setSelectedNodeIds(prev => {
+      const kept = new Set(Array.from(prev).filter(id => !gone.has(id)));
+      return kept.size === prev.size ? prev : kept;
+    });
+    setNodeMenu(null);
+    setEdgeMenu(null);
+    setEdgeDropMenu(null);
+  }, [setNodes, setEdges, setGroups]);
+
+  // A menu whose card / arrow is gone (deleted, or taken back by undo) is not
+  // shown — derived at render rather than cleared in an effect.
+  const liveNodeMenu = nodeMenu && nodes.some(n => n.id === nodeMenu.nodeId) ? nodeMenu : null;
+  const liveEdgeMenu = edgeMenu && edges.some(e => e.id === edgeMenu.edgeId) ? edgeMenu : null;
+  const liveEdgeDropMenu = edgeDropMenu && nodes.some(n => n.id === edgeDropMenu.fromId) ? edgeDropMenu : null;
 
   // ── Text summary of the board ───────────────────────────────────────────────
   //
@@ -267,6 +305,43 @@ export function useCaseGraphState({
     setAiDocument(doc);
   }, [nodes, edges]);
 
+  // ── Real card sizes (NOTE-08 item 06) ───────────────────────────────────────
+  // A card without `h` is as tall as its text, so its height is only known
+  // once it is laid out. One ResizeObserver records each card's layout size
+  // (offsetWidth/Height: unaffected by the zoom transform). It is view state:
+  // never written into `nodes`, so measuring is neither a save nor an undo step.
+  const [sizes, setSizes] = useState<ReadonlyMap<string, Size>>(() => new Map());
+  const sizeObserver = useRef<ResizeObserver | null>(null);
+  const measureNode = useCallback((el: HTMLDivElement | null) => {
+    if (!el || typeof ResizeObserver === "undefined") return;
+    if (!sizeObserver.current) {
+      sizeObserver.current = new ResizeObserver((entries) => {
+        const seen: [string, Size][] = [];
+        for (const entry of entries) {
+          const t = entry.target as HTMLElement;
+          const id = t.dataset.nodeId;
+          if (id) seen.push([id, { w: t.offsetWidth, h: t.offsetHeight }]);
+        }
+        if (seen.length === 0) return;
+        setSizes(prev => {
+          let next: Map<string, Size> | null = null;
+          for (const [id, s] of seen) {
+            const old = (next ?? prev).get(id);
+            if (old && old.w === s.w && old.h === s.h) continue;
+            next = next ?? new Map(prev);
+            next.set(id, s);
+          }
+          return next ?? prev;
+        });
+      });
+    }
+    const ro = sizeObserver.current;
+    ro.observe(el);
+    return () => ro.unobserve(el);
+  }, []);
+  /** The card's rectangle as drawn — what arrows, labels and fit-to-view use. */
+  const boxOf = useCallback((n: GraphNode) => nodeBox(n, sizes.get(n.id)), [sizes]);
+
   // ── Resizing nodes ──────────────────────────────────────────────────────────
   const [resizingNode, setResizingNode] = useState<{ id: string, dir: string } | null>(null);
 
@@ -283,8 +358,9 @@ export function useCaseGraphState({
     setNodesRaw(prev => prev.map(n => {
       if (n.id !== resizingNode.id) return n;
       
-      let newW = n.w ?? 220;
-      let newH = n.h ?? 90;
+      // Starts from the size on screen: an auto-height card is not 90 tall.
+      let newW = n.w ?? sizes.get(n.id)?.w ?? 220;
+      let newH = n.h ?? sizes.get(n.id)?.h ?? 90;
       let newX = n.pos.x;
       let newY = n.pos.y;
       
@@ -310,7 +386,7 @@ export function useCaseGraphState({
 
       return { ...n, w: newW, h: newH, pos: { x: newX, y: newY } };
     }));
-  }, [resizingNode, scale]);
+  }, [resizingNode, scale, sizes]);
 
   const handleResizeEnd = useCallback(() => {
     setResizingNode(null);
@@ -341,7 +417,9 @@ export function useCaseGraphState({
     return () => el.removeEventListener("wheel", handleWheel);
   }, []);
 
-  // Keyboard: Ctrl+C copy, Ctrl+V paste, Delete remove, Ctrl+G group, Escape deselect
+  // Keyboard: Ctrl+C copy, Ctrl+V paste, Ctrl+G group, Delete remove, Escape
+  // closes what is open (else deselects). Letters are matched on `e.code`, the
+  // physical key, so they work on an Arabic layout (NOTE-08 item 07).
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       // Inside a field the browser's own text undo applies, not the board's.
@@ -355,38 +433,52 @@ export function useCaseGraphState({
         return;
       }
 
-      // Ctrl+G → create group from selection
-      if ((e.ctrlKey || e.metaKey) && e.key === "g") {
+      const action = boardShortcut(e);
+      if (action === "group") {
         e.preventDefault();
         createGroup();
         return;
       }
-
-      if ((e.ctrlKey || e.metaKey) && e.key === "c" && selectedNodeIds.size > 0) {
-        const firstId = Array.from(selectedNodeIds)[0];
-        const node = nodes.find(n => n.id === firstId);
-        if (node) setClipboard(node);
+      if (action === "copy") {
+        const board = snapshotRef.current;
+        const clip = copySelection(board.nodes, board.edges, selectedNodeIds);
+        if (clip) setClipboard({ clip, pastes: 0 });
+        return;
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === "v" && clipboard) {
-        const newNode: GraphNode = {
-          ...clipboard,
-          id: `n_${Date.now()}`,
-          pos: { x: clipboard.pos.x + 40, y: clipboard.pos.y + 40 },
-          groupId: undefined,
-        };
-        setNodes(prev => [...prev, newNode]);
-        setSelectedNodeIds(new Set([newNode.id]));
+      if (action === "paste") {
+        if (!clipboard) return;
+        e.preventDefault();
+        const step = clipboard.pastes + 1;
+        const stamp = Date.now();
+        let i = 0;
+        const made = pasteClipboard(clipboard.clip, (kind) => `${kind === "node" ? "n" : "e"}_${stamp}_${i++}`, { x: 40 * step, y: 40 * step });
+        // Two recorded setters in one handler → one undo step.
+        setNodes(prev => [...prev, ...made.nodes]);
+        if (made.edges.length > 0) setEdges(prev => [...prev, ...made.edges]);
+        setClipboard({ clip: clipboard.clip, pastes: step });
+        setSelectedNodeIds(new Set(made.nodes.map(n => n.id)));
+        return;
       }
       if ((e.key === "Delete" || e.key === "Backspace") && selectedNodeIds.size > 0) {
-        setNodes(prev => prev.filter(n => !selectedNodeIds.has(n.id)));
-        setEdges(prev => prev.filter(ed => !selectedNodeIds.has(ed.from) && !selectedNodeIds.has(ed.to)));
-        setSelectedNodeIds(new Set());
+        deleteNodes(selectedNodeIds);
       }
-      if (e.key === "Escape") setSelectedNodeIds(new Set());
+      if (e.key === "Escape") {
+        if (contextMenu || nodeMenu || edgeMenu || edgeDropMenu || detailId || drawingEdgeFrom) {
+          setContextMenu(null);
+          setNodeMenu(null);
+          setEdgeMenu(null);
+          setEdgeDropMenu(null);
+          setDetailId(null);
+          setDrawingEdgeFrom(null);
+        } else {
+          setSelectedNodeIds(new Set());
+        }
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [selectedNodeIds, clipboard, nodes, createGroup, setNodes, setEdges, undo, redo]);
+  }, [selectedNodeIds, clipboard, createGroup, deleteNodes, setNodes, setEdges, undo, redo,
+      contextMenu, nodeMenu, edgeMenu, edgeDropMenu, detailId, drawingEdgeFrom]);
 
   // THREE SIMULATIONS USED TO LIVE HERE. All three are removed rather than
   // relabelled, because each of them wrote or implied content that no part of this
@@ -462,10 +554,7 @@ export function useCaseGraphState({
     }
     
     if (drawingEdgeFrom) {
-      const rect = canvasRef.current.getBoundingClientRect();
-      const x = e.clientX - rect.left - pan.x;
-      const y = e.clientY - rect.top - pan.y;
-      setMousePos({ x, y });
+      setMousePos(screenToCanvas(e.clientX, e.clientY, canvasRef.current.getBoundingClientRect(), pan, scale));
     } else if (draggedNode) {
       const dx = e.movementX / scale;
       const dy = e.movementY / scale;
@@ -489,37 +578,38 @@ export function useCaseGraphState({
     }
   };
   
-  const handlePointerUp = (e: PointerEvent) => {
+  // Released on empty canvas while drawing an arrow → the «add a card and
+  // link it» menu, remembering the card the arrow came FROM. Leaving the
+  // canvas while drawing cancels the arrow instead (NOTE-08 item 08).
+  const finishPointer = (e: PointerEvent, openDropMenu: boolean) => {
     if (resizingNode) {
       handleResizeEnd();
       return;
     }
-    if (drawingEdgeFrom && canvasRef.current) {
-      const rect = canvasRef.current.getBoundingClientRect();
-      setEdgeDropMenu({
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top,
-        canvasX: e.clientX - rect.left - pan.x,
-        canvasY: e.clientY - rect.top - pan.y,
-      });
+    if (openDropMenu && drawingEdgeFrom && canvasRef.current) {
+      const p = screenToCanvas(e.clientX, e.clientY, canvasRef.current.getBoundingClientRect(), pan, scale);
+      setEdgeDropMenu({ x: e.clientX, y: e.clientY, canvasX: p.x, canvasY: p.y, fromId: drawingEdgeFrom });
     }
     setDraggedNode(null);
     setDrawingEdgeFrom(null);
     setIsPanning(false);
     endGesture();
   };
+  const handlePointerUp = (e: PointerEvent) => finishPointer(e, true);
+  const handlePointerLeave = (e: PointerEvent) => finishPointer(e, false);
 
   const startDrawingEdge = (nodeId: string, e: PointerEvent) => {
     e.stopPropagation();
     if (!canvasRef.current) return;
-    const rect = canvasRef.current.getBoundingClientRect();
     setDrawingEdgeFrom(nodeId);
-    setMousePos({ x: e.clientX - rect.left - pan.x, y: e.clientY - rect.top - pan.y });
+    setMousePos(screenToCanvas(e.clientX, e.clientY, canvasRef.current.getBoundingClientRect(), pan, scale));
   };
 
   const handleNodePointerUp = (targetNodeId: string, e: PointerEvent) => {
+    // An arrow released on a card never opens the drop menu — not even on the
+    // card it started from, which used to fall through to the canvas.
+    if (drawingEdgeFrom) e.stopPropagation();
     if (drawingEdgeFrom && drawingEdgeFrom !== targetNodeId) {
-      e.stopPropagation();
       const newEdge: GraphEdge = {
         id: `e_${Date.now()}`,
         from: drawingEdgeFrom,
@@ -539,8 +629,8 @@ export function useCaseGraphState({
     e.preventDefault();
     setNodeMenu(null);
     if (!canvasRef.current) return;
-    const rect = canvasRef.current.getBoundingClientRect();
-    setContextMenu({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    const p = screenToCanvas(e.clientX, e.clientY, canvasRef.current.getBoundingClientRect(), pan, scale);
+    setContextMenu({ x: e.clientX, y: e.clientY, canvasX: p.x, canvasY: p.y });
   };
 
   const handleNodeContextMenu = (nodeId: string, e: MouseEvent) => {
@@ -571,7 +661,7 @@ export function useCaseGraphState({
 
   /**
    * Frame every card into view: computes the bounding box of all `nodes`
-   * (falling back to NODE_W/NODE_H for a card with no explicit size) and sets
+   * (each card's real rectangle, `boxOf` — measured size first) and sets
    * `pan`/`scale` so the whole box is centred and visible inside the canvas
    * viewport, with a margin.
    *
@@ -587,12 +677,11 @@ export function useCaseGraphState({
     const MARGIN = 60;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     nodes.forEach(n => {
-      const w = n.w ?? NODE_W;
-      const h = n.h ?? NODE_H;
-      minX = Math.min(minX, n.pos.x);
-      minY = Math.min(minY, n.pos.y);
-      maxX = Math.max(maxX, n.pos.x + w);
-      maxY = Math.max(maxY, n.pos.y + h);
+      const b = boxOf(n);
+      minX = Math.min(minX, b.x);
+      minY = Math.min(minY, b.y);
+      maxX = Math.max(maxX, b.x + b.w);
+      maxY = Math.max(maxY, b.y + b.h);
     });
     const boxW = Math.max(1, maxX - minX);
     const boxH = Math.max(1, maxY - minY);
@@ -607,7 +696,7 @@ export function useCaseGraphState({
       x: rect.width / 2 - centerX * nextScale,
       y: rect.height / 2 - centerY * nextScale,
     });
-  }, [nodes]);
+  }, [nodes, boxOf]);
 
   useEffect(() => {
     if (!pendingFit.current) return;
@@ -624,7 +713,7 @@ export function useCaseGraphState({
     mousePos,
     contextMenu,
     setContextMenu,
-    nodeMenu,
+    nodeMenu: liveNodeMenu,
     setNodeMenu,
     pan,
     setPan,
@@ -633,7 +722,7 @@ export function useCaseGraphState({
     setShowAiAnalysis,
     isFullscreen,
     setIsFullscreen,
-    edgeDropMenu,
+    edgeDropMenu: liveEdgeDropMenu,
     setEdgeDropMenu,
     selectedNodeDetail,
     setSelectedNodeDetail,
@@ -650,7 +739,7 @@ export function useCaseGraphState({
     dissolveGroup,
     toggleGroupLock,
     // Edge menu
-    edgeMenu,
+    edgeMenu: liveEdgeMenu,
     setEdgeMenu,
     handleEdgeContextMenu,
     updateEdgeStyle,
@@ -661,6 +750,10 @@ export function useCaseGraphState({
     // Resize
     resizingNode,
     handleResizeStart,
+    // Real sizes (NOTE-08 item 06) and the one delete path (item 08)
+    measureNode,
+    boxOf,
+    deleteNodes,
     // Scale
     scale,
     setScale,
@@ -671,6 +764,7 @@ export function useCaseGraphState({
     handlePointerDown,
     handlePointerMove,
     handlePointerUp,
+    handlePointerLeave,
     startDrawingEdge,
     handleNodePointerUp,
     handleContextMenu,

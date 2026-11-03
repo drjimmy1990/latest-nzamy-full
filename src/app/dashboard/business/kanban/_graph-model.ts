@@ -74,10 +74,12 @@ export const TYPE_CONFIG: Record<NodeType, { icon: Icon; bg: string; text: strin
   checklist:{ icon: ListChecks,    bg: "bg-teal-500/10 border-teal-500/30",        text: "text-teal-500",    label: "قائمة مهام" },
 };
 
+/** `dash` is the SVG stroke-dasharray ("" = solid). It used to hold Tailwind-looking
+ * class names that no stylesheet defines (NOTE-08 item 06). */
 export const EDGE_CONFIG: Record<EdgeType, { color: string; dash: string }> = {
   support:  { color: "#10b981", dash: "" },
-  conflict: { color: "#ef4444", dash: "stroke-dasharray-4" },
-  neutral:  { color: "#a1a1aa", dash: "stroke-dasharray-2" },
+  conflict: { color: "#ef4444", dash: "6 4" },
+  neutral:  { color: "#a1a1aa", dash: "2 4" },
 };
 
 // ── NO SEED DATA LIVES HERE ANY MORE ───────────────────────────────
@@ -106,48 +108,13 @@ export const EDGE_CONFIG: Record<EdgeType, { color: string; dash: string }> = {
 // the only way material reaches it is a caller passing `initialNodes`/
 // `initialEdges`, or the user typing it.
 
-// ── Smart Edge Routing: connects from nearest handle on each node ────────────
+// ── Geometry ──────────────────────────────────────────────────────────────────
+//
+// getNodeCenter / getBestHandles / createCurve / createTempCurve lived here and
+// assumed every card was 220×120 at its stored position, with control points
+// pointing right whatever side the arrow left from (NOTE-08 items 04–06). The
+// canvas geometry is now in ./_graph-geometry.ts (pure, unit-tested), which
+// works on each card's real rectangle. The two size defaults are re-exported
+// for the callers that still import them from here.
 
-export const NODE_W = 220;
-export const NODE_H = 120;
-
-export function getNodeCenter(p: Point) {
-  return { x: p.x + NODE_W / 2, y: p.y + NODE_H / 2 };
-}
-
-// Returns the best exit point on node1 toward node2, and entry on node2
-export function getBestHandles(p1: Point, p2: Point): { src: Point; tgt: Point } {
-  const c1 = getNodeCenter(p1);
-  const c2 = getNodeCenter(p2);
-  const dx = c2.x - c1.x;
-  const dy = c2.y - c1.y;
-  // Decide axis: horizontal or vertical dominance
-  const isHoriz = Math.abs(dx) > Math.abs(dy);
-  let src: Point, tgt: Point;
-  if (isHoriz) {
-    // left / right handles
-    src = dx > 0 ? { x: p1.x + NODE_W, y: p1.y + NODE_H / 2 } : { x: p1.x, y: p1.y + NODE_H / 2 };
-    tgt = dx > 0 ? { x: p2.x, y: p2.y + NODE_H / 2 }           : { x: p2.x + NODE_W, y: p2.y + NODE_H / 2 };
-  } else {
-    // top / bottom handles
-    src = dy > 0 ? { x: p1.x + NODE_W / 2, y: p1.y + NODE_H } : { x: p1.x + NODE_W / 2, y: p1.y };
-    tgt = dy > 0 ? { x: p2.x + NODE_W / 2, y: p2.y }           : { x: p2.x + NODE_W / 2, y: p2.y + NODE_H };
-  }
-  return { src, tgt };
-}
-
-export function createCurve(p1: Point, p2: Point) {
-  const { src, tgt } = getBestHandles(p1, p2);
-  const dx = Math.abs(tgt.x - src.x);
-  const dy = Math.abs(tgt.y - src.y);
-  const ctrl = Math.max(dx, dy) * 0.45;
-  const isHoriz = dx > dy;
-  const cp1 = isHoriz ? { x: src.x + ctrl, y: src.y } : { x: src.x, y: src.y + ctrl };
-  const cp2 = isHoriz ? { x: tgt.x - ctrl, y: tgt.y } : { x: tgt.x, y: tgt.y - ctrl };
-  return `M ${src.x} ${src.y} C ${cp1.x} ${cp1.y}, ${cp2.x} ${cp2.y}, ${tgt.x} ${tgt.y}`;
-}
-
-export function createTempCurve(p1: Point, p2: Point) {
-  const ctr = getNodeCenter(p1);
-  return `M ${ctr.x} ${ctr.y} L ${p2.x} ${p2.y}`;
-}
+export { NODE_W, NODE_H } from "./_graph-geometry";

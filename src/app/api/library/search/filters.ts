@@ -86,6 +86,22 @@ const filterSections: Record<keyof SearchFilters, readonly Exclude<SearchSection
   court: ['precedents'],
 };
 
+/** The sections a category filter applies to; section=all + category runs these only. */
+export const CATEGORY_SECTIONS = ['laws', 'orders'] as const satisfies readonly Exclude<SearchSection, 'all'>[];
+
+/**
+ * The sections a validated request runs. section=all runs all four — or,
+ * with a category, only the sections that carry one (CATEGORY_SECTIONS).
+ */
+export function sectionsToSearch(
+  section: SearchSection,
+  filters: SearchFilters,
+): Exclude<SearchSection, 'all'>[] {
+  if (section !== 'all') return [section];
+  if (filters.category !== undefined) return [...CATEGORY_SECTIONS];
+  return ['laws', 'precedents', 'orders', 'feqh'];
+}
+
 // These names appeared in the public request shape but route.ts never applied
 // them.  Retain them here only to return an explicit client error; do not add
 // them to SearchFilters until their query semantics and access review exist.
@@ -212,9 +228,15 @@ export function validateSearchFilters(value: unknown, section: SearchSection = '
 
     const allowedSections = filterSections[key];
     // An all-sections request may not selectively filter one table while
-    // presenting unrelated sections as matches. The API has no intersection
-    // contract for multi-section filters, so reject every one explicitly.
-    if (section === 'all' || !allowedSections.includes(section as Exclude<SearchSection, 'all'>)) {
+    // presenting unrelated sections as matches. The one exception is the
+    // category (owner note ١٢-د, the chip on «الكل»): section=all + category
+    // searches ONLY the sections that carry a category (sectionsToSearch),
+    // so no unfiltered section is presented as a match. Every other filter
+    // on section=all is rejected.
+    const outOfScope = section === 'all'
+      ? key !== 'category'
+      : !allowedSections.includes(section as Exclude<SearchSection, 'all'>);
+    if (outOfScope) {
       return {
         ok: false,
         code: 'invalid_filter_scope',

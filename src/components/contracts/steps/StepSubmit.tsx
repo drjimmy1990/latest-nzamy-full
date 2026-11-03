@@ -37,6 +37,8 @@ interface StepSubmitProps {
   attachments?: StepSubmitAttachment[];
   consentText: string;
   submitLabel?: string;
+  /** The button while `submitting` (default: sending). */
+  submittingLabel?: string;
   submitting: boolean;
   submitErrors: string[];
   onSubmit: () => void;
@@ -44,7 +46,7 @@ interface StepSubmitProps {
 
 export function StepSubmit({
   isDark, heading, description, rows, attachments = [],
-  consentText, submitLabel = "إرسال الطلب", submitting, submitErrors, onSubmit,
+  consentText, submitLabel = "إرسال الطلب", submittingLabel = "جارٍ الإرسال...", submitting, submitErrors, onSubmit,
 }: StepSubmitProps) {
   const [confirmed, setConfirmed] = useState(false);
   const card = isDark ? "bg-zinc-900 border border-white/[0.06] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
@@ -97,7 +99,7 @@ export function StepSubmit({
         <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
           onClick={onSubmit} disabled={!confirmed || submitting}
           className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#0B3D2E] to-[#1a6b50] py-3 text-[13px] font-bold text-white disabled:opacity-40 shadow-lg">
-          <PaperPlaneTilt size={15} />{submitting ? "جارٍ الإرسال..." : submitLabel}
+          <PaperPlaneTilt size={15} />{submitting ? submittingLabel : submitLabel}
         </motion.button>
       </div>
     </motion.div>

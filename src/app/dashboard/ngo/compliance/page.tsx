@@ -1,9 +1,17 @@
 "use client";
+import { UnfinishedModuleNote } from "@/components/dashboard/sector/UnfinishedModuleNote";
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { ShieldCheck, CheckCircle, Warning, Buildings, DownloadSimple } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+
+// LIVE-F07 / LIVE-F19 (owner package 2026-10-30): ITEMS are fixed examples —
+// nothing reads the organisation's registration, reports or AML status from
+// any authority, and no assessment is saved. In production they used to be
+// shown as the organisation's own status (e.g. «غير متوافق» on AML). They are
+// now drawn in demo mode only; production says plainly that nothing is saved.
 
 type Item = { title: string; body: string; status: "متوافق" | "يحتاج مراجعة" | "غير متوافق"; source: string };
 const ITEMS: Item[] = [
@@ -39,6 +47,7 @@ export default function NGOCompliancePage() {
   return (
     <div className={`${bg} min-h-[100dvh] pb-20`} dir="rtl">
       <div className="max-w-4xl mx-auto p-4 md:p-8 space-y-6">
+        <UnfinishedModuleNote href="/dashboard/ngo/compliance" />
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
             <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${isDark ? "bg-teal-500/10" : "bg-teal-50"}`}>
@@ -46,7 +55,7 @@ export default function NGOCompliancePage() {
             </div>
             <div>
               <h1 className={`text-lg font-black ${isDark ? "text-white" : "text-gray-900"}`}>الامتثال والحوكمة</h1>
-              <p className={`text-xs ${muted}`}>{pass} متوافق · {warn} يحتاج مراجعة · {fail} غير متوافق</p>
+              <p className={`text-xs ${muted}`}>{isDemoMode ? `${pass} متوافق · ${warn} يحتاج مراجعة · ${fail} غير متوافق` : "لا يوجد تقييم محفوظ بعد"}</p>
             </div>
           </div>
           <Link href="/ai/ngo/governance-checker"
@@ -55,6 +64,8 @@ export default function NGOCompliancePage() {
           </Link>
         </div>
 
+        {isDemoMode ? (
+        <>
         {/* KPI */}
         <div className={`grid grid-cols-3 ${card} overflow-hidden shadow-sm divide-x divide-x-reverse ${div}`}>
           {[
@@ -96,6 +107,14 @@ export default function NGOCompliancePage() {
         <button className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition ${isDark ? "bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300" : "bg-gray-100 border border-gray-200 hover:bg-gray-200 text-gray-600"}`}>
           <DownloadSimple size={14} /> تصدير تقرير الحوكمة
         </button>
+        </>
+        ) : (
+          <div className={`${card} p-5 space-y-2 text-sm leading-relaxed ${muted}`}>
+            <p className={`font-bold ${isDark ? "text-white" : "text-gray-900"}`}>هذه الوحدة لم تكتمل بعد.</p>
+            <p>لا تُقرأ حالة امتثال جمعيتك من أي جهة، ولا يُحفظ أي تقييم في هذه الصفحة، فلا تعرض حالتك الفعلية.</p>
+            <p>مدقق الحوكمة حساب مؤقت: تظهر النسبة أثناء استخدامه فقط، ولا تُحفظ إجاباتك، وتضيع عند تحديث الصفحة.</p>
+          </div>
+        )}
       </div>
     </div>
   );

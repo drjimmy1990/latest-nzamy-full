@@ -1,4 +1,5 @@
 "use client";
+import { UnfinishedModuleNote } from "@/components/dashboard/sector/UnfinishedModuleNote";
 
 import { ShieldCheck, CheckCircle, Warning, FileText, Plus } from "@phosphor-icons/react";
 import Link from "next/link";
@@ -50,6 +51,7 @@ export default function GovernmentCompliancePage() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-8" dir="rtl">
+      <UnfinishedModuleNote href="/dashboard/government/compliance" />
 
       {/* Header */}
       <div className="flex items-center justify-between pt-2">

@@ -255,3 +255,15 @@ test("fiqh runs through the time-limited RPC and falls back only when it is miss
   // A locked fiqh hit carries no text.
   assert.match(routeSource, /snippet: isFree \? truncateWithHighlight\(\(r\.sharh \|\| r\.matn\) as string, parsed\.plainTerms, snippetLen\(isFree\)\) : '',/);
 });
+
+test("١٢-د: section=all + category — the two sections run; the two not run are not «degraded»", () => {
+  const res = combineSearchOutcomes("all", { laws: ok("laws", 12), orders: ok("orders", 3) }, { page: 1, query: "العمل" }, ["laws", "orders"]);
+  assert.equal(res.status, 200);
+  const body = res.body as { degraded: string[]; counts: Record<string, number>; countsExact: Record<string, boolean> };
+  assert.deepEqual(body.degraded, []);
+  assert.equal(body.counts.precedents, 0);
+  assert.equal(body.countsExact.feqh, true);
+  // both run sections failed → the whole request fails closed
+  const down = combineSearchOutcomes("all", { laws: failed, orders: failed }, { page: 1, query: "العمل" }, ["laws", "orders"]);
+  assert.equal(down.status, 503);
+});

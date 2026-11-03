@@ -55,6 +55,8 @@ export function isCouponValidateRoute(method: string, pathname: string): boolean
 export const LIBRARY_READ_RATE_LIMITED_ROUTES: ReadonlyArray<{ method: string; re: RegExp }> = [
   { method: "POST", re: /^\/api\/library\/search$/ }, // POST /api/library/search
   { method: "GET", re: /^\/api\/library\/autocomplete$/ }, // GET /api/library/autocomplete
+  // Note ١٢-٣: «هل تقصد» — an unauthenticated service-role RPC on every zero-result search.
+  { method: "GET", re: /^\/api\/library\/search\/suggest$/ }, // GET /api/library/search/suggest
   { method: "GET", re: /^\/api\/library\/laws\/[^/]+$/ }, // GET /api/library/laws/[slug]
   // N2.6: search inside one law / collection series / book series — the
   // same server-only text, read as the service role.
@@ -64,6 +66,66 @@ export const LIBRARY_READ_RATE_LIMITED_ROUTES: ReadonlyArray<{ method: string; r
 /** True for a request to one of the article-text library routes above. */
 export function isLibraryReadRateLimitedRoute(method: string, pathname: string): boolean {
   return LIBRARY_READ_RATE_LIMITED_ROUTES.some((r) => r.method === method && r.re.test(pathname));
+}
+
+// Owner note ١٣ C03: EVERY library route and the library invitations are
+// under a per-visitor budget — not only the four article-text routes above.
+// Three extra buckets, each paired in src/proxy.ts with a wider
+// ceiling on the proxy-resolved IP (CF-Connecting-IP alone is forgeable by
+// anyone reaching the origin directly):
+//   library-any   every method under /api/library/ and /api/v1/library/ — a
+//                 catch-all, so a route added later (search/suggest,
+//                 folders/titles, v1/library/my-grant on the open library
+//                 branch) is covered from the day it exists. Folder writes
+//                 live under /api/library/, outside the general /api/v1 bucket.
+//   library-doc   GET of one document: laws/[slug], books/[slug],
+//                 precedents/[slug], decrees/[id] (the heavy reads; the
+//                 durable per-user quota, src/lib/library/readQuota.ts, is
+//                 counted on the same four)
+//   library-init  GET /api/library/init — the catalogue, up to 200 rows a page
+// /api/v1/library/invitations/redeem keeps the strict bucket as well.
+// The library AI is POST /api/v1/ai/runs: the general bucket here, and a
+// per-tool daily limit in ai_start_run. The old "library-ai" bucket covered
+// /api/ai/*, where no route is left since the free explain-article and
+// library-chat routes were deleted (Wave 1 task 2 review M8);
+// rateLimitRoutes.test.ts fails if a route appears there again.
+export type LibraryBudgetBucket = "library-any" | "library-doc" | "library-init";
+
+/**
+ * The pathname with each segment percent-decoded once, so `/api/librar%79/…`
+ * or `/api/library/law%73/…` cannot slip past a regex written for the plain
+ * spelling, whatever the router does with it. A segment that decodes to
+ * something containing "/" (an encoded %2F) or does not decode is kept as it
+ * came. Pure; used by libraryBudgetBuckets and src/lib/library/readQuota.ts.
+ */
+export function canonicalApiPath(pathname: string): string {
+  return pathname
+    .split("/")
+    .map((seg) => {
+      if (!seg.includes("%")) return seg;
+      try {
+        const decoded = decodeURIComponent(seg);
+        return decoded.includes("/") ? seg : decoded;
+      } catch {
+        return seg;
+      }
+    })
+    .join("/");
+}
+
+export const LIBRARY_ANY_RE = /^\/api\/(?:v1\/)?library(?:\/|$)/;
+export const LIBRARY_DOC_RE = /^\/api\/library\/(?:laws|books|precedents|decrees)\/[^/]+$/;
+export const LIBRARY_INIT_RE = /^\/api\/library\/init$/;
+
+/** The note-١٣ buckets this request counts against (empty: none). Every method. */
+export function libraryBudgetBuckets(method: string, rawPathname: string): LibraryBudgetBucket[] {
+  const m = method.toUpperCase();
+  const pathname = canonicalApiPath(rawPathname);
+  const out: LibraryBudgetBucket[] = [];
+  if (LIBRARY_ANY_RE.test(pathname)) out.push("library-any");
+  if ((m === "GET" || m === "HEAD") && LIBRARY_DOC_RE.test(pathname)) out.push("library-doc");
+  if ((m === "GET" || m === "HEAD") && LIBRARY_INIT_RE.test(pathname)) out.push("library-init");
+  return out;
 }
 
 // The client's case tracking page (N3.6, /track/[token]) is public and keyed
@@ -99,6 +161,18 @@ export const ATTACHMENTS_ZIP_RE = /^\/api\/v1\/attachments\/zip$/;
 /** True for a GET/HEAD of /api/v1/attachments/zip. */
 export function isAttachmentsZipRoute(method: string, pathname: string): boolean {
   return (method === "GET" || method === "HEAD") && ATTACHMENTS_ZIP_RE.test(pathname);
+}
+
+// GET /api/v1/ai/points-standing (the «رصيدك من النقاط لا يكفي» banner): three
+// database reads per call, and a GET, so the general bucket (writes only)
+// never counted it (final review M2). The proxy gives it the general bucket's
+// policy under its own name, so banner reads never spend the write budget.
+// The exact path only: the job-poll GETs on /api/v1/ai/runs/<id> stay free.
+export const POINTS_STANDING_RE = /^\/api\/v1\/ai\/points-standing$/;
+
+/** True for a GET/HEAD of /api/v1/ai/points-standing. */
+export function isPointsStandingRoute(method: string, pathname: string): boolean {
+  return (method === "GET" || method === "HEAD") && POINTS_STANDING_RE.test(pathname);
 }
 
 /**

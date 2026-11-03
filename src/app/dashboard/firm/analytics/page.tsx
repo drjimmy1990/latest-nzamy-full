@@ -1,4 +1,5 @@
 "use client";
+import { UnfinishedModuleNote } from "@/components/dashboard/sector/UnfinishedModuleNote";
 
 import { memo, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -106,6 +107,7 @@ export default function FirmAnalyticsPage() {
 
   return (
     <div className="max-w-[1400px] mx-auto pb-12" dir="rtl">
+      <div className="mb-6"><UnfinishedModuleNote href="/dashboard/firm/analytics" /></div>
       
       {/* Header */}
       <motion.div 

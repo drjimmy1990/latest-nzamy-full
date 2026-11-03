@@ -19,6 +19,7 @@ import {
 } from "@phosphor-icons/react";
 import { type WorkflowRequest } from "@/lib/workflowStore";
 import type { CaseStatus, CaseType, CourtDegree, Priority, KanbanCol, Case } from "@/app/dashboard/lawyer/cases/_types";
+import { courtClassOf } from "@/app/dashboard/lawyer/_components/courtTypes";
 
 export function workflowTypeToCaseType(request: WorkflowRequest): CaseType {
   const raw = String(request.metadata?.requestedType ?? request.metadata?.serviceId ?? request.title);
@@ -43,8 +44,13 @@ export function workflowTypeToCaseType(request: WorkflowRequest): CaseType {
  * حقل إلزامي في `_types.ts`، وهو سلوك اليوم نفسه لتلك الصفوف — لا ادّعاء جديد.
  * الدقّة الكاملة تحتاج درجة صريحة على الصف = عمود جديد، ليس في هذه الجولة.
  */
-function courtToDegree(court: string): CourtDegree {
-  return COURTS_LIST.find(c => c.id === court)?.degree ?? "primary";
+//
+// q351 / review I1: the argument is the court's CLASSIFICATION (courtClassOf,
+// courtTypes.ts), not the raw name — so a court picked from the MoJ directory
+// («محكمة الاستئناف بالرياض») reaches «استئناف» through the class saved beside
+// it. The 14 names and typed «أخرى» names read exactly as before.
+function courtToDegree(courtClass: string | null): CourtDegree {
+  return COURTS_LIST.find(c => c.id === courtClass)?.degree ?? "primary";
 }
 
 export function workflowToCase(request: WorkflowRequest): Case {
@@ -62,17 +68,19 @@ export function workflowToCase(request: WorkflowRequest): Case {
         ? "active"
         : "pending";
   const court = (request.metadata?.court as string) || "بانتظار تحديد الجهة";
+  const courtClass = courtClassOf(court, request.metadata?.courtClass);
   return {
     id: request.id,
     title: request.title,
     client: request.requester.name || "عميل نظامي",
     court,
+    courtClass,
     type: workflowTypeToCaseType(request),
     status,
     priority: request.payment.amount >= 800 ? "high" : "normal",
     nextDate: String(request.metadata?.deadline ?? "بانتظار الإسناد"),
     filedDate: new Date(request.createdAt).toLocaleDateString("ar-SA"),
-    degree: courtToDegree(court),
+    degree: courtToDegree(courtClass),
     stage: isAssigned ? "تم قبول الطلب" : "طلب وارد من منصة نظامي",
     kanbanCol: isCompleted ? "closed" : isAssigned ? "docs_prep" : "new",
     team: [],

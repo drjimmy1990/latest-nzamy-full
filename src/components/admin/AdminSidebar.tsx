@@ -16,14 +16,19 @@ import { STAFF_ROLE_LABELS_AR } from "@/lib/auth/staffManagement";
 // The items and the per-role filter (owner ٢١٠): each staff role is shown only
 // its own tools. Moved out of this file so node --test can load them.
 import { adminNavForRole } from "./adminNavByRole";
+import { AdminViewSwitch } from "@/components/dashboard/AdminViewSwitch";
+import { useAdminView } from "@/hooks/useAdminView";
 
 export function AdminSidebar() {
   const pathname = usePathname();
   // Owner ٢١٠: the admin's staff role (null until read, or when it cannot be:
   // before 20261019_30 runs). Null keeps today's full nav — requireStaff on
   // the server is the real rule — so the filter only ever hides.
-  const { staffRole } = useUser();
+  const { staffRole, userType, loading } = useUser();
   const nav = adminNavForRole(staffRole);
+  // Entering the console records the admin view for this tab (owner
+  // LIVE-F01) — the lawyer-mode menus elsewhere read it. UI only.
+  useAdminView(pathname ?? "/dashboard/admin", !loading && userType === "admin");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [notifOpen, setNotifOpen] = useState(false);
   /* This sidebar was the one dashboard chrome in the product with no mobile
@@ -220,6 +225,10 @@ export function AdminSidebar() {
           {adminEmail && <p className="truncate text-[9px] text-zinc-600">{adminEmail}</p>}
         </div>
       </div>
+
+      {/* «عرض كـ» (owner NOTE-22-C02) — the same fixed switch the lawyer-mode
+          sidebar carries, so the way back is in the same place on both. */}
+      <AdminViewSwitch current="admin" tone="console" />
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-4">

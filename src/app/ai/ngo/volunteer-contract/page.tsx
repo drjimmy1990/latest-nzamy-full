@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -11,6 +12,7 @@ import { useUser } from "@/hooks/useUser";
 import { createWorkflowId, saveWorkflowRequest } from "@/lib/workflowStore";
 import AiResultActions from "@/components/AiResultActions";
 import BetaReviewGate from "@/components/BetaReviewGate";
+import { checkNationalIdFormat, checkSaudiPhone, FORMAT_ONLY_NOTE } from "@/lib/services/contactFieldRules";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type VolunteerRole =
@@ -27,7 +29,7 @@ const DURATIONS: ContractDuration[] = ["يومي", "أسبوعي", "شهري", "
 
 type Step = "volunteer" | "terms" | "result";
 
-export default function VolunteerContractPage() {
+function VolunteerContractInner() {
   const user = useUser();
   const [step, setStep] = useState<Step>("volunteer");
 
@@ -166,7 +168,13 @@ ${benefits}
     setTimeout(() => setCopied(false), 2000);
   }
 
-  const canVolunteer = volunteerName && volunteerId && volunteerRole;
+  // Owner's test (LIVE-F22): any text passed as an ID or a mobile. Format only —
+  // a well-formed number says nothing about who owns it (FORMAT_ONLY_NOTE).
+  const idCheck = checkNationalIdFormat(volunteerId, { required: true });
+  const phoneCheck = checkSaudiPhone(volunteerPhone);
+  const idError = volunteerId.trim() && !idCheck.ok ? idCheck.error : null;
+  const phoneError = !phoneCheck.ok ? phoneCheck.error : null;
+  const canVolunteer = volunteerName.trim() && idCheck.ok && phoneCheck.ok && volunteerRole;
   const canTerms = orgName && duration && startDate && hoursPerWeek;
 
   return (
@@ -227,15 +235,19 @@ ${benefits}
                 <label className="text-[12px] font-semibold text-zinc-400">رقم الهوية</label>
                 <input value={volunteerId} onChange={e => setVolunteerId(e.target.value)}
                   placeholder="رقم الهوية الوطنية / الإقامة"
+                  inputMode="numeric" maxLength={10} aria-invalid={!!idError}
                   className="w-full rounded-xl border border-white/[0.08] bg-white/[0.04] px-4 py-2.5 text-[13px] text-white placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500/40"
                 />
+                {idError && <p role="alert" className="text-[11px] text-red-400">{idError}</p>}
               </div>
               <div className="space-y-1.5">
                 <label className="text-[12px] font-semibold text-zinc-400 flex items-center gap-1"><Phone size={11}/> الجوال</label>
                 <input value={volunteerPhone} onChange={e => setVolunteerPhone(e.target.value)}
                   placeholder="05xxxxxxxx"
+                  inputMode="tel" aria-invalid={!!phoneError}
                   className="w-full rounded-xl border border-white/[0.08] bg-white/[0.04] px-4 py-2.5 text-[13px] text-white placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500/40"
                 />
+                {phoneError && <p role="alert" className="text-[11px] text-red-400">{phoneError}</p>}
               </div>
               <div className="space-y-1.5">
                 <label className="text-[12px] font-semibold text-zinc-400 flex items-center gap-1"><MapPin size={11}/> المدينة</label>
@@ -257,6 +269,8 @@ ${benefits}
                 ))}
               </div>
             </div>
+
+            <p className="text-[11px] text-zinc-500">{FORMAT_ONLY_NOTE}</p>
 
             <div className="flex justify-start pt-2">
               <motion.button whileHover={{ scale:1.03 }} whileTap={{ scale:0.97 }}
@@ -420,5 +434,14 @@ ${benefits}
 
       </AnimatePresence>
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function VolunteerContractPage() {
+  return (
+    <GatedToolScreen toolId="ngo.volunteer-contract" toolName="عقد التطوع">
+      <VolunteerContractInner />
+    </GatedToolScreen>
   );
 }

@@ -23,6 +23,8 @@ import { countPhraseAr } from "../../lib/services/arabicCount.ts";
 
 export const SEARCH_SECTIONS = ["laws", "precedents", "orders", "feqh"] as const;
 export type SearchSection = (typeof SEARCH_SECTIONS)[number];
+/** «الكل» + a category chip searches these only (owner note ١٢-د; the API's filters.ts CATEGORY_SECTIONS). */
+export const CATEGORY_SEARCH_SECTIONS: readonly SearchSection[] = ["laws", "orders"];
 
 /** Above this a count is not proven exact (PostgREST max-rows). */
 export const EXACT_COUNT_CEILING = 1000;

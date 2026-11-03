@@ -8,6 +8,8 @@ import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
 
 import { specialties, consultationTypes } from "@/components/consultation/constants";
+import { withCatalogPrices } from "@/components/consultation/consultationPrices";
+import { useClientPricingCatalog } from "@/hooks/useClientPricingCatalog";
 import { useConsultationForm } from "@/hooks/useConsultationForm";
 import { StepBar } from "@/components/consultation/StepBar";
 import { StepSpecialty } from "@/components/consultation/steps/StepSpecialty";
@@ -19,9 +21,14 @@ export default function BookConsultationPage() {
   const { lang } = useTheme();
   const isAr = lang === "ar";
   const s = useConsultationForm();
+  // Wave 1 task 6: each type shows the client service catalogue's price
+  // (CLIENT_SERVICE_CATALOG merged with admin_pricing_catalog by GET
+  // /api/client-pricing) — the same figure the request records as its
+  // estimate below. A booking itself charges nothing.
+  const { catalog } = useClientPricingCatalog();
 
   const specialtyList = isAr ? specialties.ar : specialties.en;
-  const typeList = isAr ? consultationTypes.ar : consultationTypes.en;
+  const typeList = withCatalogPrices(isAr ? consultationTypes.ar : consultationTypes.en, catalog, isAr ? "ar" : "en");
   const selectedSpecialty = specialtyList.find(sp => sp.id === s.specialty);
   const selectedType = typeList.find(t => t.id === s.consultType);
 
@@ -36,7 +43,7 @@ export default function BookConsultationPage() {
    */
   const handleSubmit = () => {
     const arSpecialty = specialties.ar.find(sp => sp.id === s.specialty);
-    const arType = consultationTypes.ar.find(t => t.id === s.consultType);
+    const arType = withCatalogPrices(consultationTypes.ar, catalog, "ar").find(t => t.id === s.consultType);
     void s.submitBooking({
       specialtyLabel: arSpecialty?.label ?? selectedSpecialty?.label ?? "غير محدد",
       consultTypeLabel: arType?.label ?? selectedType?.label ?? "غير محدد",

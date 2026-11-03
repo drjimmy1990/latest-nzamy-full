@@ -13,7 +13,22 @@
 
 "use client";
 
-import { apiGet, apiMutate } from "@/lib/services/api";
+import { apiGet, mutateWithOverlapCode } from "@/lib/services/api";
+import { isDemoMode } from "@/lib/runtimeMode";
+
+export interface HearingHistoryEntryDto {
+  at: string;
+  by: string;
+  action: string;
+  reason?: string;
+  fromDate?: string;
+  toDate?: string;
+  fromTime?: string | null;
+  toTime?: string | null;
+  fromStatus?: string;
+  toStatus?: string;
+  fields?: string[];
+}
 
 export interface HearingDto {
   id: string;
@@ -32,6 +47,8 @@ export interface HearingDto {
   status: string;
   /** hearings.duration_minutes — «مدة الجلسة» (owner item 59). null when not recorded. */
   durationMinutes?: number | null;
+  /** CODE-F18: the row's change log (metadata.history), oldest first. */
+  history?: HearingHistoryEntryDto[];
   createdAt?: string;
   updatedAt?: string;
 }
@@ -68,9 +85,63 @@ export interface CreateHearingInput {
   title: string;
   /** «مدة الجلسة» in minutes (5–1440); null/absent = not set. */
   durationMinutes?: number | null;
+  /** Save even though the slot overlaps a consultation or another hearing (q357). */
+  confirmOverlap?: boolean;
+}
+
+/**
+ * Thrown when the server answers 409 `hearing_overlap` (owner q357): the
+ * hearing shares time with a scheduled consultation or another hearing of the
+ * same lawyer. The screen shows `message` and offers to resend with
+ * `confirmOverlap: true`. PATCH has two other 409s (a stale row, an action not
+ * allowed) — they stay plain Errors, told apart by `code`, not status.
+ */
+export class HearingOverlapError extends Error {
+  readonly conflicts: Array<{ kind: string; id: string; scheduledAt: string; durationMinutes: number }>;
+  constructor(message: string, conflicts: HearingOverlapError["conflicts"]) {
+    super(message);
+    this.name = "HearingOverlapError";
+    this.conflicts = conflicts;
+  }
+}
+
+/** apiMutate's demo guard, then the shared overlap mutate (api.ts) with `hearing_overlap`. */
+async function mutateHearing<T>(url: string, method: "POST" | "PATCH", body: unknown): Promise<T> {
+  if (isDemoMode) {
+    throw new Error("وضع العرض التجريبي محلي بالكامل: لا يُرسَل أي حفظ أو تعديل إلى الخادم.");
+  }
+  return mutateWithOverlapCode<T>(url, method, body, "hearing_overlap", (message, conflicts) =>
+    new HearingOverlapError(message, conflicts as HearingOverlapError["conflicts"]));
 }
 
 export async function createLawyerHearing(input: CreateHearingInput): Promise<HearingDto> {
-  const res = await apiMutate<{ data: HearingDto }>("/api/v1/lawyer/hearings", "POST", input);
+  const res = await mutateHearing<{ data: HearingDto }>("/api/v1/lawyer/hearings", "POST", input);
+  return res.data;
+}
+
+/**
+ * CODE-F18: edit / postpone / cancel / «انعقدت» / reopen one hearing. The rules
+ * (and which actions need a reason) are src/lib/services/hearingChange.ts.
+ * Throws with the server's Arabic message on any non-2xx; resolves with the
+ * row as the server stored it, so the caller shows that, not its own guess.
+ */
+export interface UpdateHearingInput {
+  action: "edit" | "postpone" | "cancel" | "complete" | "reopen";
+  reason?: string;
+  date?: string;
+  time?: string | null;
+  title?: string;
+  type?: string;
+  location?: string;
+  notes?: string;
+  urgency?: string;
+  durationMinutes?: number | null;
+  caseRequestId?: string | null;
+  /** Save even though the new slot overlaps (q357); see HearingOverlapError. */
+  confirmOverlap?: boolean;
+}
+
+export async function updateLawyerHearing(id: string, input: UpdateHearingInput): Promise<HearingDto> {
+  const res = await mutateHearing<{ data: HearingDto }>(`/api/v1/lawyer/hearings/${encodeURIComponent(id)}`, "PATCH", input);
   return res.data;
 }

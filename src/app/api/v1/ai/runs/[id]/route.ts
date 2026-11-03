@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { requireApiUser } from "@/lib/auth/apiAuth";
+import { runForViewer, viewerIsAdmin } from "@/lib/ai/runVisibility";
 
 /**
  * GET /api/v1/ai/runs/<id> — one run of the signed-in user (the job tools'
@@ -8,6 +9,9 @@ import { requireApiUser } from "@/lib/auth/apiAuth";
  * succeeded, and what was charged. Read through RLS, which shows a user only
  * their own rows and never input / usage / model / source_ids (20261027_10).
  * Someone else's run, or no run, is 404.
+ *
+ * A "review" row (stored before review mode was retired; Wave 3 releases or
+ * refunds them) keeps its output from its owner, never from an admin.
  */
 
 export const dynamic = "force-dynamic";
@@ -37,7 +41,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ error: "تعذّر تحميل الطلب" }, { status: 503, headers: NO_STORE });
     }
     if (!data) return NextResponse.json({ error: "غير موجود" }, { status: 404, headers: NO_STORE });
-    const run = data.status === "review" ? { ...data, output: null, citations: [] } : data;
+    const run = data.status === "review" ? runForViewer(data, await viewerIsAdmin(supabase, auth.user.id)) : data;
     return NextResponse.json({ run }, { headers: NO_STORE });
   } catch (err) {
     console.error("[ai/runs/:id] threw:", err);

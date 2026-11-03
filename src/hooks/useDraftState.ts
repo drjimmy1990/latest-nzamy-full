@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import {
   CLIENT_VISIBLE_STEPS, StepKey, VisibleStepKey, PartyData, EMPTY_PARTY, SupportDoc, MEMO_MAIN_TYPES,
 } from "@/components/draft/draftConstants";
-import { validateDraftIntake } from "@/lib/services/orderIntake";
+import { validateDraftIntake, representativeIdErrors, draftPartiesShown } from "@/lib/services/orderIntake";
 import { createServiceOrder } from "@/lib/services/serviceOrders";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
 import { useOrderAttachments } from "@/hooks/useOrderAttachments";
@@ -114,7 +114,9 @@ export function useDraftState(initialMode = "") {
     ];
   }
 
-  function buildIntake(): Record<string, unknown> {
+  // aiDraft: the AI's pleading, when the lawyer orders the team's optional
+  // review of it (L14) — carried in the notes so the team reviews that text.
+  function buildIntake(aiDraft = ""): Record<string, unknown> {
     return {
       schemaVersion: 1,
       service: "draft",
@@ -128,14 +130,14 @@ export function useDraftState(initialMode = "") {
       // screen and then silently dropped here — never reaching the admin.
       // Folded into the same free-text field lawyerNotes/submitNotes already
       // join, rather than dropping it (Task C6).
-      lawyerNotes: [notesText, lawyerNotes, submitNotes].filter(Boolean).join("\n\n"),
+      lawyerNotes: [notesText, lawyerNotes, submitNotes, aiDraft && `مسودة الذكاء الاصطناعي المطلوب مراجعتها:\n${aiDraft}`].filter(Boolean).join("\n\n"),
       attachments: uploadedAttachments,
     };
   }
 
-  async function submitOrder(): Promise<void> {
+  async function submitOrder(aiDraft = ""): Promise<void> {
     setSubmitErrors([]);
-    const intake = buildIntake();
+    const intake = buildIntake(aiDraft);
     const check = validateDraftIntake(intake);
     if (!check.ok) { setSubmitErrors(check.errors); return; }
 
@@ -199,7 +201,14 @@ export function useDraftState(initialMode = "") {
       }
       return !!(clientRole && memoType && legalBranch && memoSubType);
     }
-    if (step === "case")     return caseText.trim().length > 10 || !!caseFile;
+    // The facts typed (as validateDraftIntake asks) or in an attached file.
+    // A typed representative ID must be one (§3.5-3b), as validateDraftIntake
+    // asks — and only in a party form StepCase shows for this memo type and
+    // branch: a value left in a hidden form must not lock the step.
+    if (step === "case") {
+      const idsOk = representativeIdErrors({ one: partyOne, two: partyTwo }, draftPartiesShown(memoType, legalBranch)).length === 0;
+      return (caseText.trim().length >= 30 || uploadedAttachments.length > 0) && idsOk;
+    }
     return true;
   }
 

@@ -1,4 +1,5 @@
 "use client";
+import { UnfinishedModuleNote } from "@/components/dashboard/sector/UnfinishedModuleNote";
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -81,6 +82,7 @@ export default function MicroDocumentsPage() {
 
   return (
     <div className={`p-5 md:p-8 max-w-[900px] mx-auto space-y-5 ${isDark ? "text-zinc-100" : "text-zinc-900"}`} dir="rtl">
+      <UnfinishedModuleNote href="/dashboard/micro/documents" />
 
       {/* Header */}
       <motion.div variants={fadeUp} initial="hidden" animate="show" custom={0}

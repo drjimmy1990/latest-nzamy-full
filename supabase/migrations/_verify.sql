@@ -5000,3 +5000,328 @@ begin
   raise notice '_verify: 20261027_10 OK — ai_runs own-row read without input / usage; only the server starts, fails, sweeps and clears runs; refunds allowed in the ledger';
 end $$;
 -- <<< verify:ai_runs
+-- >>> verify:accounts_firms_owner_answers — supabase/tests/rls/accounts_firms_owner_answers.test.sql
+-- 20261030_12 (owner answers ٣٠٧–٣١٣). Before it runs it only reports; after,
+-- it raises when a note lost its original author, 20261026_70 was re-run over
+-- it (the consulting-office rule ٣١٢ is gone), or the invoice guard is off.
+do $$
+declare t text; n bigint;
+begin
+  if to_regprocedure('public.account_deletion_owner_block()') is null then
+    raise notice '_verify: 20261030_12 is not applied yet — no original_author_id / consulting-office rule / invoice guard'; return;
+  end if;
+  foreach t in array array['case_notes', 'dashboard_notes', 'lawyer_client_notes', 'consultation_notes'] loop
+    if to_regclass('public.' || t) is null then continue; end if;
+    if not exists (select 1 from pg_attribute where attrelid = to_regclass('public.' || t) and attname = 'original_author_id' and not attisdropped) then
+      raise exception '_verify: 20261030_12 — public.%.original_author_id is missing (re-run 20261030_12)', t;
+    end if;
+    execute format('select count(*) from public.%I where original_author_id is null', t) into n;
+    if n > 0 then
+      raise exception '_verify: 20261030_12 — % row(s) of public.% have no original author (re-run 20261030_12)', n, t;
+    end if;
+    if not exists (select 1 from pg_trigger where tgrelid = to_regclass('public.' || t) and tgname = 'trg_note_original_author'
+                    and not tgisinternal and tgenabled <> 'D') then
+      raise exception '_verify: 20261030_12 — public.% has no original-author trigger (re-run 20261030_12)', t;
+    end if;
+  end loop;
+  if not exists (select 1 from public.firm_asset_specs() s where s.tbl = 'hearings' and s.extra like '%firm_court_rows_stay_with_member%')
+     or position('nzamy.firm_transfer_reason' in pg_get_functiondef('public.firm_member_removed_transfer()'::regprocedure)) = 0 then
+    raise exception '_verify: 20261030_12 — the consulting-office rule (٣١٢) is gone: 20261026_70 was re-run after it (re-run 20261030_12)';
+  end if;
+  if to_regclass('public.payment_orders') is not null and not exists (
+       select 1 from pg_trigger where tgrelid = 'public.payment_orders'::regclass
+          and tgname = 'trg_payment_orders_keep_tax_invoice' and not tgisinternal and tgenabled <> 'D') then
+    raise exception '_verify: 20261030_12 — the tax-invoice guard on payment_orders is missing (re-run 20261030_12)';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated')
+     and not has_function_privilege('authenticated', 'public.account_deletion_owner_block()', 'EXECUTE') then
+    raise exception '_verify: 20261030_12 — authenticated cannot ask its own deletion block (re-run 20261030_12)';
+  end if;
+  raise notice '_verify: 20261030_12 OK — notes keep their original author; a consulting office keeps a removed lawyer''s court rows with him; tax invoices never deleted';
+end $$;
+-- <<< verify:accounts_firms_owner_answers
+-- >>> verify:invoice_collections — supabase/tests/rls/invoice_collections.test.sql
+-- 2026-10-30 — 20261030_10_invoice_collections_atomic.sql (owner handoff
+-- CODE-F02 / LIVE-F36). Read-only, safe to repeat. Before 20261030_10 runs it
+-- only reports; after, it raises when a signed-in session could record a
+-- payment or write the ledger, or the function lost its settings.
+do $$
+declare fn constant text := 'public.record_invoice_collection(text,uuid,bigint,text,bigint,text)'; role_name text;
+begin
+  if to_regclass('public.invoice_collections') is null then
+    raise notice '_verify: 20261030_10 is not applied yet — invoice payments are still stored by overwrite'; return;
+  end if;
+  if to_regprocedure(fn) is null then
+    raise exception '_verify: 20261030_10 — % is missing (re-run 20261030_10)', fn;
+  end if;
+  if not exists (select 1 from pg_proc where oid = to_regprocedure(fn) and prosecdef and proconfig @> array['search_path=""']) then
+    raise exception '_verify: 20261030_10 — % is not SECURITY DEFINER with search_path '''' (re-run 20261030_10)', fn;
+  end if;
+  foreach role_name in array array['anon','authenticated'] loop
+    if exists (select 1 from pg_roles where rolname = role_name) then
+      if has_function_privilege(role_name, fn, 'EXECUTE') then
+        raise exception '_verify: 20261030_10 — % can EXECUTE % (re-run 20261030_10)', role_name, fn;
+      end if;
+      if has_table_privilege(role_name, 'public.invoice_collections', 'INSERT')
+         or has_table_privilege(role_name, 'public.invoice_collections', 'UPDATE')
+         or has_table_privilege(role_name, 'public.invoice_collections', 'DELETE') then
+        raise exception '_verify: 20261030_10 — % can write public.invoice_collections (re-run 20261030_10)', role_name;
+      end if;
+    end if;
+  end loop;
+  if exists (select 1 from pg_roles where rolname = 'service_role') and not has_function_privilege('service_role', fn, 'EXECUTE') then
+    raise exception '_verify: 20261030_10 — service_role cannot EXECUTE %: every payment the lawyer records answers 503 (re-run 20261030_10)', fn;
+  end if;
+  if not exists (select 1 from pg_class where oid = 'public.invoice_collections'::regclass and relrowsecurity) then
+    raise exception '_verify: 20261030_10 — RLS is off on public.invoice_collections (re-run 20261030_10)';
+  end if;
+  if not exists (select 1 from pg_indexes where schemaname = 'public' and indexname = 'invoice_collections_idempotency_key_key') then
+    raise exception '_verify: 20261030_10 — the idempotency key is not UNIQUE: a retried form could book a payment twice (re-run 20261030_10)';
+  end if;
+  raise notice '_verify: 20261030_10 OK — invoice payments are added under a lock, stale forms and overpayments refused, ledger server-only';
+end $$;
+-- <<< verify:invoice_collections
+-- >>> verify:create_lawyer_invoice — supabase/tests/rls/create_lawyer_invoice.test.sql
+-- 2026-10-30 — 20261030_20_create_invoice_atomic.sql (owner handoff CODE-F22 /
+-- CODE-F21). Read-only, safe to repeat. Before 20261030_20 runs it only
+-- reports; after, it raises when a signed-in session could issue an invoice or
+-- the one-invoice-per-form key is gone.
+do $$
+declare fn constant text := 'public.create_lawyer_invoice(uuid,text,bigint,text,text,uuid,text,text,text,text,text)'; role_name text;
+begin
+  if to_regprocedure(fn) is null then
+    raise notice '_verify: 20261030_20 is not applied yet — invoices are still issued as two separate writes'; return;
+  end if;
+  if not exists (select 1 from pg_proc where oid = to_regprocedure(fn) and prosecdef and proconfig @> array['search_path=""']) then
+    raise exception '_verify: 20261030_20 — % is not SECURITY DEFINER with search_path '''' (re-run 20261030_20)', fn;
+  end if;
+  foreach role_name in array array['anon','authenticated'] loop
+    if exists (select 1 from pg_roles where rolname = role_name) and has_function_privilege(role_name, fn, 'EXECUTE') then
+      raise exception '_verify: 20261030_20 — % can EXECUTE % (re-run 20261030_20)', role_name, fn;
+    end if;
+  end loop;
+  if exists (select 1 from pg_roles where rolname = 'service_role') and not has_function_privilege('service_role', fn, 'EXECUTE') then
+    raise exception '_verify: 20261030_20 — service_role cannot EXECUTE %: every new invoice answers 503 (re-run 20261030_20)', fn;
+  end if;
+  if not exists (select 1 from pg_indexes where schemaname = 'public' and indexname = 'payments_create_key_key') then
+    raise exception '_verify: 20261030_20 — payments_create_key_key is missing: a retried form could issue a second invoice (re-run 20261030_20)';
+  end if;
+  raise notice '_verify: 20261030_20 OK — one invoice per form, issued in one transaction after the ownership checks; server only';
+end $$;
+-- <<< verify:create_lawyer_invoice
+
+-- >>> verify:pricing_owner_package
+-- 2026-10-30 — 20261030_16_pricing_owner_package.sql (owner answers ٢٩٩–٣٠٦).
+-- Read-only, safe to repeat. While ind-ai still lists 39 a month the file has
+-- not run: it only reports. After, it raises when a plan row's prices are not
+-- the price book's (src/lib/pricing/priceBook.ts) or NEWCLIENT lost its stamp.
+do $$
+declare bad text;
+begin
+  if to_regclass('public.subscription_plans') is null
+     or not exists (select 1 from information_schema.columns
+                     where table_schema = 'public' and table_name = 'subscription_plans' and column_name = 'price_quarterly') then
+    raise notice '_verify: 20261030_16 — subscription_plans has no price_quarterly yet (20261026_10 first)'; return;
+  end if;
+  if exists (select 1 from public.subscription_plans where id = 'ind-ai' and price_monthly = 39) then
+    raise notice '_verify: 20261030_16 is not applied yet — ind-ai still lists 39 a month (the admin MRR reads the old price; checkout charges the book)'; return;
+  end if;
+  select string_agg(p.id, ', ') into bad
+    from public.subscription_plans p
+    join (values
+      ('ind-ai',                 29::numeric,  79::numeric,  149::numeric,  249::numeric),
+      ('ind-preventive',         149,          null,         null,          1490),
+      ('ind-litigation',         399,          null,         null,          3990),
+      ('lawyer-pro',             399,          null,         null,          3990),
+      ('consultant-independent', 399,          null,         null,          3990),
+      ('firm-basic',             990,          2990,         5490,          9900),
+      ('firm-enterprise',        1490,         4490,         8190,          14900)
+    ) as v(id, m, q, h, y) on v.id = p.id
+   where (p.price_monthly, p.price_quarterly, p.price_semiannual, p.price_yearly)
+         is distinct from (v.m, v.q, v.h, v.y);
+  if bad is not null then
+    raise exception '_verify: 20261030_16 — the subscription_plans prices of % are not the price book''s (re-run 20261030_16)', bad;
+  end if;
+  if exists (select 1 from public.coupons where upper(code) = 'NEWCLIENT'
+                and coalesce(metadata->>'first_paid_order_only', '') <> 'true') then
+    raise exception '_verify: 20261030_16 — NEWCLIENT is not stamped first_paid_order_only (re-run 20261030_16)';
+  end if;
+  raise notice '_verify: 20261030_16 OK — subscription_plans holds the price book''s prices; NEWCLIENT is first-paid-order only';
+end $$;
+-- <<< verify:pricing_owner_package
+-- >>> verify:library_activity_monitor
+-- 2026-10-31 — 20261031_10_library_activity_monitor.sql («نشاط المكتبة»).
+-- Before it runs it only reports; after, it checks the settings row, the one
+-- overload of library_read_quota_hit, and that no session role reaches the
+-- new tables or functions.
+do $$
+declare t text; f text;
+begin
+  if to_regclass('public.library_monitor_settings') is null then
+    raise notice '_verify: 20261031_10 is not applied yet — no library activity monitor (caps stay the app constants)'; return;
+  end if;
+  if (select count(*) from public.library_monitor_settings) <> 1 then
+    raise exception '_verify: 20261031_10 — library_monitor_settings must hold exactly one row (re-run 20261031_10)';
+  end if;
+  if (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'library_read_quota_hit') <> 1 then
+    raise exception '_verify: 20261031_10 — library_read_quota_hit has more than one overload (PostgREST would refuse the call)';
+  end if;
+  foreach t in array array['public.library_monitor_settings', 'public.library_user_limits',
+                           'public.library_activity_hourly', 'public.library_review_flags'] loop
+    if to_regclass(t) is null then
+      raise exception '_verify: 20261031_10 — % is missing (re-run 20261031_10)', t;
+    end if;
+    if has_table_privilege('anon', t, 'SELECT') or has_table_privilege('authenticated', t, 'SELECT')
+       or has_table_privilege('authenticated', t, 'UPDATE') then
+      raise exception '_verify: 20261031_10 — a session role can read or change %', t;
+    end if;
+  end loop;
+  foreach f in array array['public.library_activity_bump(jsonb)', 'public.library_activity_top(timestamptz,int)',
+                           'public.library_monitor_evaluate(uuid)', 'public.library_quota_limits(uuid,int,int,int,int)'] loop
+    if to_regprocedure(f) is null then
+      raise exception '_verify: 20261031_10 — % is missing (re-run 20261031_10)', f;
+    end if;
+    if has_function_privilege('authenticated', f, 'EXECUTE') or has_function_privilege('anon', f, 'EXECUTE') then
+      raise exception '_verify: 20261031_10 — a session role can EXECUTE %', f;
+    end if;
+  end loop;
+  raise notice '_verify: 20261031_10 OK — library caps, review rules and per-user limits come from the admin page; activity is service-only';
+end $$;
+-- <<< verify:library_activity_monitor
+-- >>> verify:founder_membership — supabase/tests/rls/founder_membership.test.sql
+-- 2026-11-01 — 20261101_10_founder_membership.sql («عضوية المحامي المؤسس»,
+-- P3). Read-only, safe to repeat. Before 20261101_10 runs it only reports;
+-- after, it raises when a table or function is missing, a second overload of
+-- ai_start_run / ai_fail_run / ai_start_run_with_credit appeared (PGRST203),
+-- ai_fail_run lost the founder credit restore (20261027_10 was re-run after
+-- it), the kind CHECK refuses 'membership', the founder_campaign setting or
+-- its capacity is missing, or a session role can EXECUTE a founder function.
+-- Capacity is admin-editable («حملة المؤسس»): any whole number passes and is
+-- printed; only a missing or non-integer one raises.
+do $$
+declare t text; f text; p text; src text; cap text; role_name text;
+begin
+  if to_regclass('public.founder_seats') is null then
+    raise notice '_verify: 20261101_10 is not applied yet — no founder seats (the founder checkout answers 503 until it runs)'; return;
+  end if;
+  foreach t in array array['public.founder_seats', 'public.membership_credits', 'public.membership_credit_uses'] loop
+    if to_regclass(t) is null then
+      raise exception '_verify: 20261101_10 — % is missing (re-run 20261101_10)', t;
+    end if;
+    if not (select relrowsecurity from pg_class where oid = t::regclass) then
+      raise exception '_verify: 20261101_10 — RLS is off on % (re-run 20261101_10)', t;
+    end if;
+    foreach role_name in array array['anon', 'authenticated'] loop
+      if exists (select 1 from pg_roles where rolname = role_name)
+         and (has_table_privilege(role_name, t, 'INSERT') or has_table_privilege(role_name, t, 'UPDATE')
+              or has_table_privilege(role_name, t, 'DELETE')) then
+        raise exception '_verify: 20261101_10 — % can write % (re-run 20261101_10)', role_name, t;
+      end if;
+    end loop;
+  end loop;
+  foreach p in array array['ai_start_run', 'ai_fail_run', 'ai_start_run_with_credit'] loop
+    if (select count(*) from pg_proc pp join pg_namespace n on n.oid = pp.pronamespace
+         where n.nspname = 'public' and pp.proname = p) <> 1 then
+      raise exception '_verify: 20261101_10 — public.% must have exactly one overload (PostgREST would refuse the call, PGRST203)', p;
+    end if;
+  end loop;
+  select prosrc into src from pg_proc where oid = to_regprocedure('public.ai_fail_run(uuid,text,text)');
+  if src is null or position('public.membership_credit_uses' in src) = 0 or position('restored_at is null' in src) = 0 then
+    raise exception '_verify: 20261101_10 — ai_fail_run lost the founder credit restore: a failed credit run would keep the credit (20261027_10 re-run after it? re-run 20261101_10)';
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'payment_orders_kind_check'
+                  and conrelid = 'public.payment_orders'::regclass
+                  and pg_get_constraintdef(oid) like '%''membership''%') then
+    raise exception '_verify: 20261101_10 — payment_orders_kind_check does not allow membership: every founder checkout fails (re-run 20261101_10)';
+  end if;
+  if not exists (select 1 from public.platform_settings where key = 'founder_campaign') then
+    raise exception '_verify: 20261101_10 — platform_settings has no founder_campaign row: the founder sale reads as closed (20261021_50, then 20261101_10)';
+  end if;
+  select value->>'capacity' into cap from public.platform_settings where key = 'founder_campaign';
+  if cap is null or cap !~ '^[0-9]+$' then
+    raise exception '_verify: 20261101_10 — founder_campaign.capacity is missing or not a whole number (%): the seats read the default 1096 (re-run 20261101_10, or save it in «حملة المؤسس»)', coalesce(cap, 'null');
+  end if;
+  foreach f in array array['public.founder_campaign_limits()', 'public.founder_reserve_seat(uuid,uuid)',
+                           'public.founder_activate(uuid)', 'public.founder_revoke(uuid,text)',
+                           'public.founder_release_expired()', 'public.founder_release_order(uuid)',
+                           'public.founder_seat_summary()',
+                           'public.ai_start_run_with_credit(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb,text)'] loop
+    if to_regprocedure(f) is null then
+      raise exception '_verify: 20261101_10 — % is missing (re-run 20261101_10)', f;
+    end if;
+    foreach role_name in array array['anon', 'authenticated'] loop
+      if exists (select 1 from pg_roles where rolname = role_name) and has_function_privilege(role_name, f, 'EXECUTE') then
+        raise exception '_verify: 20261101_10 — % can EXECUTE % (re-run 20261101_10)', role_name, f;
+      end if;
+    end loop;
+    if exists (select 1 from pg_roles where rolname = 'service_role') and not has_function_privilege('service_role', f, 'EXECUTE') then
+      raise exception '_verify: 20261101_10 — service_role cannot EXECUTE %: the founder checkout / activation fails (re-run 20261101_10)', f;
+    end if;
+  end loop;
+  raise notice '_verify: 20261101_10 OK — founder seats / credits / credit uses with RLS; one overload each of ai_start_run / ai_fail_run / ai_start_run_with_credit; ai_fail_run restores a credit once; kind membership allowed; capacity %; founder functions service role only', cap;
+end $$;
+-- <<< verify:founder_membership
+-- >>> verify:wave1_pricing_rows
+-- 2026-11-02 — 20261102_10_retire_cancelled_prices.sql and
+-- 20261102_11_contract_draft_points_price.sql (Wave 1 safety: the two contract
+-- rows of admin_pricing_catalog). Read-only, safe to repeat: SELECTs and RAISE.
+-- Both files only UPDATE two rows and leave no schema marker, so "not run yet"
+-- and "undone by a later re-run" (of the 20260518 seed, which puts 99 / 800
+-- and «مشمول» back, or of 20261102_10, which puts «أو ٥٠٠ نقطة للعقد» back)
+-- look the same: every wrong state RAISES and names the file(s) to re-run.
+-- A missing row passes (the code catalogue then serves the same values), and
+-- so does a contract-review row for another audience (GET /api/client-pricing
+-- serves audience 'individual' only). The Arabic literals are the migrations'
+-- own, byte for byte.
+-- Docker, from the repo root in Git Bash (R, M and "$F" as in the header of
+-- supabase/tests/rls/contract_draft_points_price.test.sql):
+--   B=$(mktemp -d)/verify_wave1_pricing_rows.sql
+--   sed -n '/^-- >>> verify:wave1_pricing_rows/,/^-- <<< verify:wave1_pricing_rows/p' $M/_verify.sql > "$B"
+--   PASS: bash $R/run.sh "$F" $M/20261102_10_retire_cancelled_prices.sql \
+--           $M/20261102_11_contract_draft_points_price.sql "$B"
+--   FAIL (each must raise): "$F" "$B" (seed 800); "$F" _10 "$B" (_11 not run);
+--         "$F" _10 _11 "$S" "$B" (seed re-run; S = only the seed's
+--         "insert into public.admin_pricing_catalog … updated_at = now();");
+--         "$F" _10 _11 _10 "$B" (_10 re-run). All checked 2026-11-02, plus
+--         _10 _11 _10 _11 (passes) and no table at all (two NOTICEs, passes).
+do $$
+declare r record;
+begin
+  if to_regclass('public.admin_pricing_catalog') is null then
+    raise notice '_verify: 20261102_10 — public.admin_pricing_catalog is missing (20260518 not applied): the code catalogue serves the contract prices; nothing to check'; return;
+  end if;
+  select base_price, metadata into r from public.admin_pricing_catalog
+   where service_id = 'contract-review' and audience = 'individual';
+  if found and (r.base_price is distinct from 600
+                or r.metadata->>'priceNote' is distinct from 'سعر الأفراد؛ يُؤكَّد بعد الاطلاع على العقد') then
+    raise exception '_verify: 20261102_10 — contract-review shows % with the note «%», not 600 (q327): run 20261102_10, then 20261102_11 (not run yet, or the 20260518 seed was re-run after it)',
+      r.base_price, coalesce(r.metadata->>'priceNote', 'null');
+  end if;
+  select base_price, metadata into r from public.admin_pricing_catalog
+   where service_id = 'contract-draft';
+  if found and (r.base_price is distinct from 0
+                or coalesce(r.metadata ? 'tag', false)
+                or coalesce(r.metadata->>'priceNote', '') not in ('أو ٥٠٠ نقطة للعقد', '٥٠٠ نقطة للعقد')) then
+    raise exception '_verify: 20261102_10 — contract-draft shows % with the note «%» and the tag «%», not 0 with no tag: run 20261102_10, then 20261102_11 (not run yet, or the 20260518 seed was re-run after it)',
+      r.base_price, coalesce(r.metadata->>'priceNote', 'null'), coalesce(r.metadata->>'tag', 'none');
+  end if;
+  raise notice '_verify: 20261102_10 OK — contract review 600 for individuals; contract drafting 0 SAR with no «الأكثر طلبا» tag (a missing row reads as the code catalogue)';
+end $$;
+do $$
+declare r record;
+begin
+  if to_regclass('public.admin_pricing_catalog') is null then
+    raise notice '_verify: 20261102_11 — public.admin_pricing_catalog is missing (20260518 not applied): nothing to check'; return;
+  end if;
+  select price_mode, metadata into r from public.admin_pricing_catalog
+   where service_id = 'contract-draft';
+  if found and (r.price_mode is distinct from 'points'
+                or r.metadata->>'priceNote' is distinct from '٥٠٠ نقطة للعقد'
+                or coalesce(r.metadata ? 'includedByPlan', false)) then
+    raise exception '_verify: 20261102_11 — contract-draft is price_mode % with the note «%» and includedByPlan %, not points / «٥٠٠ نقطة للعقد»: the card still says «مشمول في الباقة» or «أو …». Run 20261102_11 (AFTER the deploy and after 20261102_10; again after any re-run of 20261102_10 or the 20260518 seed)',
+      r.price_mode, coalesce(r.metadata->>'priceNote', 'null'), coalesce(r.metadata->>'includedByPlan', 'none');
+  end if;
+  raise notice '_verify: 20261102_11 OK — contract drafting is priced in points («٥٠٠ نقطة للعقد»), not «مشمول في الباقة» (a missing row reads as the code catalogue)';
+end $$;
+-- <<< verify:wave1_pricing_rows

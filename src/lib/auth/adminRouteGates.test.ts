@@ -244,6 +244,8 @@ const WRITE_MARKERS = [
   "cancelAccountFreezeWith(",
   "purgeAccountWith(",
   "purgeNowWith(",
+  // P3 Task 10 (R24): the founder retry re-runs fulfilment through the resume path
+  "fulfillOrder(",
 ];
 
 function firstWriteAt(body: string): number {
@@ -293,11 +295,24 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   { file: "articles/[id]/route.ts", method: "PATCH", action: "content.delete", logs: 1 },
   { file: "feature-requests/[id]/route.ts", method: "PATCH", action: "tickets.manage", logs: 1 },
   { file: "library-invitations/route.ts", method: "POST", action: "entitlements.grant", logs: 1 },
+  // owner note ١٨ C04: revoke / end change of a library grant (one rpc, one audit row)
+  { file: "library-grants/[id]/route.ts", method: "PATCH", action: "entitlements.grant", logs: 1 },
   { file: "library-issue-reports/[id]/route.ts", method: "PATCH", action: "tickets.manage", logs: 1 },
+  // library fortress (30-Oct package): an admin opens or lifts a library security lock (one audit row each)
+  { file: "library-security-locks/route.ts", method: "POST", action: "settings.write", logs: 1 },
+  // q372: super admin and operations lift (library.lock_lift); opening a lock stays settings.write
+  { file: "library-security-locks/[id]/lift/route.ts", method: "POST", action: "library.lock_lift", logs: 1 },
+  { file: "library-monitor/settings/route.ts", method: "PUT", action: "settings.write", logs: 1 },
+  { file: "library-monitor/flags/[id]/clear/route.ts", method: "POST", action: "settings.write", logs: 1 },
+  { file: "library-monitor/user-limits/route.ts", method: "POST", action: "settings.write", logs: 1 },
+  { file: "library-monitor/user-limits/[userId]/route.ts", method: "DELETE", action: "settings.write", logs: 1 },
   { file: "receipts/route.ts", method: "POST", action: "orders.manage", logs: 1 },
   { file: "tickets/route.ts", method: "POST", action: "tickets.manage", logs: 1 },
   { file: "tickets/[id]/route.ts", method: "PATCH", action: "tickets.manage", logs: 1 },
   { file: "teams/route.ts", method: "PATCH", action: "staff.manage", logs: 1 },
+  // P3 Task 10: «حملة المؤسس» — pause / resume and capacity (R2), and the R24 retry
+  { file: "founder/sale/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
+  { file: "founder/orders/[id]/activate/route.ts", method: "POST", action: "settings.write", logs: 1 },
 ];
 
 for (const { file, method, action, logs } of GATES) {
@@ -324,6 +339,19 @@ for (const { file, method, action, logs } of GATES) {
     assert.equal(body.includes('from("admin_audit_events")'), false, "audit rows go through logAdminAction only");
   });
 }
+
+test("founder/overview GET: any staff role may read, gated before the first query, no inline admin check", () => {
+  const body = handler("founder/overview/route.ts", "GET");
+  const gateAt = body.indexOf('await requireStaff("read")');
+  assert.ok(gateAt > -1, 'await requireStaff("read") is missing');
+  const firstQuery = Math.min(...[".from(", ".rpc("].map((m) => body.indexOf(m)).filter((i) => i > -1));
+  assert.ok(Number.isFinite(firstQuery) && gateAt < firstQuery, "the staff gate must run before the first query");
+  assert.equal(body.includes("requireAdmin("), false);
+  assert.equal(body.includes("auth.getUser("), false);
+  for (const write of [".insert(", ".update(", ".delete(", ".upsert("]) {
+    assert.equal(body.includes(write), false, `the overview only reads (found ${write})`);
+  }
+});
 
 /** Every POST/PUT/PATCH/DELETE handler under /api/v1/admin, as "file METHOD" → its code. */
 function adminWriteHandlers(): Map<string, string> {

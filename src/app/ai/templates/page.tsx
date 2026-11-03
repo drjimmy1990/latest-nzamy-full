@@ -70,12 +70,13 @@ export default function TemplatesPage() {
                 style={{ fontFamily: "var(--font-brand)" }}>
               مكتبة القوالب القانونية
             </h1>
-            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-[#C8A762]/15 text-[#C8A762] border border-[#C8A762]/30">
-              مُرجَّعة قانونياً
-            </span>
+            {/* Fix round 1 (M10): no «مُرجَّعة قانونياً» pill. It reads as
+                "legally reviewed", and nothing records a review; 3 of the 42
+                templates carry no legal reference at all. Each card still
+                lists its own «المراجع القانونية». */}
           </div>
           <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-            {TEMPLATES.length} قالب · مبنية على الأنظمة السعودية · AI-powered
+            {TEMPLATES.length} قالب · مبنية على الأنظمة السعودية
           </p>
         </div>
         <div className="flex gap-2">
@@ -292,11 +293,6 @@ export default function TemplatesPage() {
                   <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${isDark ? "bg-white/[0.04] border-white/[0.08] text-zinc-400" : "bg-slate-50 border-slate-200 text-slate-500"} border`}>
                     <Clock size={10} /> {selected.pages}
                   </span>
-                  {selected.isAi && (
-                    <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-500 border border-purple-500/20">
-                      <Sparkle size={10} /> AI مُحسَّن
-                    </span>
-                  )}
                 </div>
 
                 {/* Long description */}

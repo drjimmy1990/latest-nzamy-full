@@ -4,8 +4,12 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Direct Network Seeder for Nzamy Legal Library.
  *
- * Streams and batch-upserts the 14 verified JSONL tables from the owner's
- * delivery package into Supabase (self-hosted) via HTTPS/PostgREST.
+ * Streams and batch-upserts the 15 library tables from the owner's delivery
+ * package into Supabase (self-hosted) via HTTPS/PostgREST — 14 upserts plus
+ * private_precedent_details.jsonl through store_private_precedent_details
+ * (owner note ١١; list and checks in src/lib/library/ownerLoaderTables.ts).
+ * A live run first checks every required column (feqh_books.series_id /
+ * volume_number) and stops with exit 1, writing nothing, if any check fails.
  *
  * NO 800MB SQL FILE UPLOAD NEEDED.
  *
@@ -67,7 +71,7 @@ process.emitWarning = (warning, ...rest) => {
 const { stripInternalContentKeys } = await import("../src/lib/library/internalContentFields.ts");
 const { liveWriteDecision, parseSeedOwnerArgs, SEED_OWNER_USAGE } = await import("../src/lib/library/seedOwnerArgs.ts");
 const { fetchWithTimeout } = await import("../src/lib/library/fetchWithTimeout.ts");
-const { missingOptionalColumns } = await import("../src/lib/library/optionalColumn.ts");
+const { OWNER_LOADER_TABLES, preflightRequiredColumns, rpcBatchStored } = await import("../src/lib/library/ownerLoaderTables.ts");
 
 // Leave from the top level without a synchronous process.exit right after the
 // dynamic .ts imports: on Windows that aborts Node itself (libuv
@@ -170,31 +174,9 @@ if (!fs.existsSync(ROWS_DIR) || !fs.statSync(ROWS_DIR).isDirectory()) {
   await quit(1);
 }
 
-// 14 Tables in FK-safe dependency order
-const TABLES = [
-  // summary_brief: GENERATED from preamble since 20261025_20 (N2.2), and
-  // catalogue_recency_key from latest_update / issue_date_hijri since
-  // 20261025_40 (N2.5) — a row that carries one (an export of a live table)
-  // would fail the whole batch. latest_amendment_key / issue_date_key were an
-  // unreleased draft of 40; stripped too, in case an export carries them.
-  { name: "laws", pkey: "slug", batchSize: 100, stripKeys: ["needs_human_review", "review_reason", "summary_brief", "catalogue_recency_key", "latest_amendment_key", "issue_date_key"] },
-  { name: "chapters", pkey: "id", batchSize: 200, stripKeys: [] },
-  { name: "articles", pkey: "id", batchSize: 100, stripKeys: [] },
-  { name: "article_amendments", pkey: "id", batchSize: 200, stripKeys: [] },
-  { name: "article_regulations", pkey: "id", batchSize: 200, stripKeys: [] },
-  { name: "decrees_circulars", pkey: "id", batchSize: 100, stripKeys: ["needs_human_review", "review_reason"] },
-  { name: "decree_pages", pkey: "id", batchSize: 200, stripKeys: [] },
-  { name: "judicial_collections", pkey: "id", batchSize: 100, stripKeys: [] },
-  { name: "principles", pkey: "id", batchSize: 100, stripKeys: ["needs_human_review", "review_reason"] },
-  { name: "principle_paragraphs", pkey: "id", batchSize: 200, stripKeys: [] },
-  // series_id / volume_number (owner ٢٦٢) come with migration 20261026_51;
-  // until it runs they are dropped from every row (seedTable's probe), so
-  // the books still load — without their series, as today.
-  { name: "feqh_books", pkey: "id", batchSize: 100, stripKeys: [], optionalColumns: ["series_id", "volume_number"] },
-  { name: "feqh_chapters", pkey: "id", batchSize: 200, stripKeys: [] },
-  { name: "feqh_sections", pkey: "id", batchSize: 200, stripKeys: [] },
-  { name: "feqh_blocks", pkey: "id", batchSize: 100, stripKeys: ["is_synthetic_page"] },
-];
+// The 15 library tables in FK-safe order, the private-details RPC and the
+// required series columns: src/lib/library/ownerLoaderTables.ts (note ١١).
+const TABLES = OWNER_LOADER_TABLES;
 
 async function seedTable(tableConfig) {
   const stats = {
@@ -209,6 +191,10 @@ async function seedTable(tableConfig) {
 
   const filePath = path.join(ROWS_DIR, `${tableConfig.name}.jsonl`);
   if (!fs.existsSync(filePath)) {
+    if (tableConfig.optionalFile) {
+      console.log(`  ℹ ${tableConfig.name}: no ${tableConfig.name}.jsonl in this export — nothing to load.`);
+      return stats;
+    }
     stats.fileFound = false;
     console.warn(`  ⚠️ Skipping ${tableConfig.name}: file not found at ${filePath}`);
     return stats;
@@ -218,16 +204,9 @@ async function seedTable(tableConfig) {
   const sizeMB = (stat.size / (1024 * 1024)).toFixed(1);
   console.log(`\n📦 Processing library.${tableConfig.name} (${sizeMB} MB)${isDry ? " [DRY RUN]" : ""}...`);
 
-  // Columns a pending migration adds: probed once (a one-row read), dropped
-  // from every row when the database does not have them yet.
+  // No column is ever dropped because the database lacks it: required
+  // columns were checked before the first write (preflight in main, note ١١).
   const stripKeys = [...tableConfig.stripKeys];
-  if (!isDry && tableConfig.optionalColumns?.length) {
-    const missing = await missingOptionalColumns(tableConfig.optionalColumns, (c) => supabase.from(tableConfig.name).select(c).limit(1));
-    if (missing.length) {
-      console.warn(`  ⚠️ library.${tableConfig.name} has no ${missing.join(", ")} yet — loading without ${missing.length > 1 ? "them" : "it"} (run its SQL, then load again to keep them).`);
-      stripKeys.push(...missing);
-    }
-  }
 
   const fileStream = fs.createReadStream(filePath);
   const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
@@ -246,6 +225,21 @@ async function seedTable(tableConfig) {
 
   async function upsertBatch(rows) {
     if (rows.length === 0) return;
+    // The private precedent details go through their RPC, all or nothing: a
+    // batch the RPC did not store in full stops the load (fail closed, the
+    // same rule as seed-library.ts) — no row-by-row retry around it.
+    if (tableConfig.rpc) {
+      const { data, error } = await supabase
+        .schema(tableConfig.rpc.schema)
+        .rpc(tableConfig.rpc.name, { [tableConfig.rpc.arg]: rows });
+      if (!rpcBatchStored(rows.length, data, error)) {
+        throw new Error(
+          `${tableConfig.rpc.name}: expected ${rows.length} stored, got ${error ? error.message : String(data)} — the load stops here; fix and load again from --from ${tableConfig.name}.`,
+        );
+      }
+      stats.rowsWritten += rows.length;
+      return;
+    }
     const { error } = await supabase.from(tableConfig.name).upsert(rows, { onConflict: tableConfig.pkey });
     if (!error) {
       stats.rowsWritten += rows.length;
@@ -403,6 +397,19 @@ async function main() {
   if (tablesToSeed.length === 0) {
     console.error(`❌ No tables to seed.`);
     process.exit(1);
+  }
+
+  // Pre-flight schema guard (note ١١): every required column must answer a
+  // probe before the first write. Any error — missing, permission, timeout —
+  // stops the run here, with nothing written.
+  if (!isDry) {
+    const problems = await preflightRequiredColumns(tablesToSeed, (table, column) => supabase.from(table).select(column).limit(1));
+    if (problems.length) {
+      console.error("❌ Pre-flight check failed — nothing was written:");
+      for (const p of problems) console.error(`   - library.${p.table}.${p.column}: ${p.reason}`);
+      console.error("   Run the pending SQL (e.g. supabase/migrations/20261026_51_feqh_books_series.sql), then load again.");
+      process.exit(1);
+    }
   }
 
   const grandStart = Date.now();

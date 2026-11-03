@@ -106,6 +106,15 @@ test("the client secret and the keys are never logged", () => {
   }
 });
 
+test("P3: the founder seat is reserved through the service client's founder_reserve_seat RPC; an RPC error throws into the core", () => {
+  assert.match(
+    post,
+    /reserveFounderSeat: async \(userId, orderId\) => \{\s*const \{ data, error \} = await admin\.rpc\("founder_reserve_seat", \{ p_user: userId, p_order: orderId \}\);\s*if \(error\) throw new Error\(/,
+  );
+  assert.doesNotMatch(post, /onSale:/, "the sale switch is the constant in production, never a route override");
+  assert.match(core, /return fail\(410, FOUNDER_CLOSED_AR\)/);
+});
+
 test("CheckoutResponse documents that orderId goes into the payment metadata", () => {
   const rules = readFileSync(join(import.meta.dirname, "../../../../../lib/payments/checkoutRules.ts"), "utf8");
   assert.match(rules, /export interface CheckoutResponse/);

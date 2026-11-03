@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { LAW_SUMMARY_BRIEF_MAX_CHARS, extractLawPreambleBlocks, isHollowPreamble, lawSummaryBrief } from "./lawPreambleBlocks.ts";
+import { LAW_SUMMARY_BRIEF_MAX_CHARS, extractLawCard, extractLawPreambleBlocks, isHollowPreamble, lawSummaryBrief, stripPipelineNotes } from "./lawPreambleBlocks.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_SQL = readFileSync(
@@ -304,4 +304,38 @@ test("a second 📊 heading is never read as the first card's sub-heading", () =
   // The first heading has no table of its own; the second is the card.
   assert.deepEqual(out.metadataCard?.main, [{ key: "نوع التشريع", value: "نظام" }]);
   assert.equal(out.rest, "### 📊 بطاقة تعريف نظام");
+});
+
+// ── Note ١٢ item ٧: stripPipelineNotes ──
+
+test("stripPipelineNotes removes the pipeline's bracket notes and HTML comments, never a link or law text", () => {
+  // The owner's own example.
+  assert.equal(stripPipelineNotes("اللائحة التنفيذية [بوابة 6/تحقُّق حي 2026-08-11: النص مطابق]"), "اللائحة التنفيذية");
+  assert.equal(stripPipelineNotes("مجلس الوزراء <!-- review_note: x --> الموقر"), "مجلس الوزراء الموقر");
+  assert.equal(stripPipelineNotes("نص [review_pending] هنا"), "نص هنا");
+  // Untouched: a markdown link, a bracket of law text, a numbered note.
+  for (const keep of ["[هيئة الخبراء](https://laws.boe.gov.sa/x)", "المادة [مُلغاة]", "الحاشية [1]", "  نص  بمسافات  "]) {
+    assert.equal(stripPipelineNotes(keep), keep);
+  }
+  assert.equal(stripPipelineNotes(null), "");
+});
+
+test("extractLawCard lifts only the card; the موجز and the rest stay", () => {
+  const text = [
+    "<details open><summary>📝 موجز اللائحة</summary>",
+    "> تنظم اللائحة إجراءات التملك.",
+    "</details>",
+    "### 📊 بطاقة تعريف اللائحة",
+    "| الحقل | القيمة |",
+    "| :--- | :--- |",
+    "| نوع التشريع | لائحة تنفيذية |",
+    "",
+    "نص الديباجة.",
+  ].join("\n");
+  const { card, rest } = extractLawCard(text);
+  assert.deepEqual(card, { main: [{ key: "نوع التشريع", value: "لائحة تنفيذية" }], more: [] });
+  assert.match(rest, /موجز اللائحة/);
+  assert.match(rest, /نص الديباجة/);
+  assert.doesNotMatch(rest, /بطاقة تعريف/);
+  assert.deepEqual(extractLawCard("نص فقط"), { card: null, rest: "نص فقط" });
 });

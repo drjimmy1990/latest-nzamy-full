@@ -4,6 +4,7 @@ import type { SidebarGroup, SidebarItem } from "./navigation.types";
 // load this module — navigation.consultant.test.ts runs getSidebarByUserType.
 import { isConsultantBlockedPath, type PracticeKind } from "../lib/auth/practiceKind.ts";
 import type { StaffRole } from "../lib/auth/staffRoles.ts";
+import { withComingSoonLast } from "./navigation.comingSoon.ts";
 import {
   adminSidebarForRole,
   CORPORATE_SIDEBAR,
@@ -68,9 +69,9 @@ export const GOV_REVIEWER_SIDEBAR: SidebarGroup[] = [
     collapsible: true,
     defaultOpen: true,
     items: [
-      { label: "مساعد المعاملات",   labelEn: "Transaction Assistant",  href: "/ai/consult",                   icon: "Robot" },
+      { label: "مساعد المعاملات",   labelEn: "Transaction Assistant",  href: "/ai/consult",                   icon: "Robot", badge: "قريباً" },
       { label: "دليل الإجراءات",     labelEn: "Procedure Guide",        href: "/ai/procedures",                icon: "MapTrifold" },
-      { label: "مراجع الاشتراطات",  labelEn: "Requirements Checker",   href: "/ai/analyze",                   icon: "ShieldCheck" },
+      { label: "مراجع الاشتراطات",  labelEn: "Requirements Checker",   href: "/ai/analyze",                   icon: "ShieldCheck", badge: "قريباً" },
       { label: "صياغة تقرير",       labelEn: "Draft Report",           href: "/ai/draft?mode=report",         icon: "FileArrowUp" },
     ],
   },
@@ -119,10 +120,10 @@ export const ARBITRATOR_SIDEBAR: SidebarGroup[] = [
     defaultOpen: true,
     items: [
       { label: "صائغ حكم التحكيم",  labelEn: "Award Drafter",      href: "/ai/draft?mode=arbitration",  icon: "Robot",          badge: "AI" },
-      { label: "ملخّص المذكرات",     labelEn: "Memo Summarizer",    href: "/ai/analyze?mode=memo",       icon: "Scan" },
-      { label: "باحث المبادئ",       labelEn: "Principle Search",   href: "/ai/gov/judicial-search",     icon: "MagnifyingGlass" },
-      { label: "مدقق الاختصاص",     labelEn: "Jurisdiction Check", href: "/ai/gov/jurisdiction-analyzer",icon: "TreeStructure" },
-      { label: "مستشار القانون الدولي",labelEn: "Intl. Law Advisor",href: "/ai/consult?ctx=arbitration", icon: "Globe" },
+      { label: "ملخّص المذكرات",     labelEn: "Memo Summarizer",    href: "/ai/analyze?mode=memo",       icon: "Scan", badge: "قريباً" },
+      { label: "باحث المبادئ",       labelEn: "Principle Search",   href: "/ai/gov/judicial-search",     icon: "MagnifyingGlass", badge: "قريباً" },
+      { label: "مدقق الاختصاص",     labelEn: "Jurisdiction Check", href: "/ai/gov/jurisdiction-analyzer",icon: "TreeStructure", badge: "قريباً" },
+      { label: "مستشار القانون الدولي",labelEn: "Intl. Law Advisor",href: "/ai/consult?ctx=arbitration", icon: "Globe", badge: "قريباً" },
     ],
   },
   {
@@ -174,7 +175,7 @@ export const BAILIFF_ADDON_SECTIONS: SidebarGroup[] = [
     defaultOpen: false,   // مطوية بالافتراضي — الأدوات الأساسية للمراجع فقط
     items: [
       { label: "طلبات التعقيب",     labelEn: "Review Requests",    href: "/dashboard/provider/bailiff/requests",   icon: "ClipboardText", badge: "معقّب" },
-      { label: "مساعد المعاملات",   labelEn: "Transaction Assist", href: "/ai/consult",                            icon: "Robot",         badge: "AI" },
+      { label: "مساعد المعاملات",   labelEn: "Transaction Assist", href: "/ai/consult",                            icon: "Robot",         badge: "قريباً" },
       { label: "دليل الإجراءات",    labelEn: "Procedure Guide",    href: "/ai/procedures",                         icon: "MapTrifold",    badge: "معقّب" },
     ],
   },
@@ -500,6 +501,10 @@ export function getSidebarByUserType(
       items: group.items.filter(item => !hiddenHrefs.includes(item.href))
     })).filter(group => group.items.length > 0);
   }
+
+  // ── Owner UX08 (2026-10-30): «قريباً» rows in their own last section ─────
+  // The lawyer menu only. Same rows, same badges — only where they sit.
+  if (userType === "lawyer") base = withComingSoonLast(base);
 
   // ── Art. 18: the consultant's sidebar has no pleading or hearings tools ───
   // Last, so it also covers anything the multi-role merge above added.

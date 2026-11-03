@@ -24,6 +24,7 @@ On n8n.asra3.com (all created **inactive**):
 | L9 المحاكي الشامل (job) | `NZAMY · AI · wargaming (L9 المحاكي الشامل)` | `5CFEwAsuT0lRZRlK` | `nzamy-ai/wargaming` |
 | L10 محلل قوة الموقف (job) | `NZAMY · AI · analyze-strength (L10 محلل قوة الموقف)` | `MwONm9eg0IOGRRzt` | `nzamy-ai/analyze-strength` |
 | L11 محترف العقود المختصر (job) | `NZAMY · AI · contract-drafter (L11 محترف العقود المختصر)` | `r2s0JBMr8Q5Ti80O` | `nzamy-ai/contract-drafter` |
+| L13 محترف العقود (job, clause by clause) | `NZAMY · AI · contracts-pro (L13 محترف العقود)` | `mMekAog89HsgLz3o` | `nzamy-ai/contracts-pro` |
 
 **Wave 3: document jobs.** The page uploads each file to the user's vault (an `attachments` row), then sends the ids. Before anything is charged, `src/lib/ai/aiFiles.ts`:
 1. keeps only the user's own files, not in the bin;
@@ -145,6 +146,30 @@ No SQL. No new npm package.
    - A field over 2,000 characters cannot be typed (the form caps it); the server refuses one too, before any charge. A draft with any empty or over-long clause is refused as a whole and refunded, never shown with a clause missing.
    - Try «عقد عمل» too: it should cite نظام العمل.
 5. **Turned off** (the default): the button returns the server's message and charges nothing.
+## L13 محترف العقود: your steps
+
+**What it is.** A 1,000-point job at `/ai/contracts`, «صياغة عقد» mode. The contract is now written automatically on the last step («إنشاء العقد آلياً»). Asking نظامي's team is a separate, optional order on the same step (owner LIVE-F03 / NOTE-22-C04).
+- **Drafting, clause by clause.** One call writes the outline: the title, the preamble, and each clause's heading and what it covers. Then one call per clause writes that clause with the whole outline in view. The app checks every cited article in the library (as in L8).
+- **Types and languages.** Any of the page's 38 types (the detailed path), or a generic contract (the simple path). The languages are Arabic, English, Arabic/English, or a custom language. «ثنائية متقابلة» puts the translation beside each text.
+- **Blanks.** Anything the user did not give becomes `[....]`.
+- **Who and how often.** Lawyers, firms, individuals, companies, micro businesses and NGOs. Daily limit: 5. Charged once: a retry with the same request key never charges twice, and a failed draft is refunded.
+- **Not built yet:**
+  - AI review mode; «مراجعة عقد» stays the team order and now says so;
+  - reading the library before drafting;
+  - DOCX export with the letterhead.
+
+**The workflow** is the new `clauseJob` shape: Webhook → 202 → outline → one Agent call per clause → assemble → one callback. A successful run is not kept in n8n's history.
+
+No SQL. No new npm package.
+
+1. **Deploy** this branch with the next deploy (no extra step).
+2. **n8n:** done. The workflow is created, switched on and live-tested (2026-10-30). The test was a services contract in Arabic/English. It came back in about 50 seconds with a title, a preamble with `[....]` blanks, 8 clauses (each with its English facing text) and 9 cited articles. Nothing for you to do. To import it elsewhere, use `n8n/ai/contracts-pro.json`.
+3. **Open it for admins only** at `https://nezamy.sa/dashboard/admin/ai-usage`: set `contracts-pro` to **للمشرفين فقط**, then press **حفظ**.
+4. **Test** at `https://nezamy.sa/ai/contracts` (admin): choose «صياغة عقد» → «عقد تفصيلي», fill both parties, pick «عقد خدمات», choose «عربي / إنجليزي», describe the idea and tick some clauses. On the last step, tick the box and press «اكتب العقد الآن — ١٬٠٠٠ نقطة»:
+   - a status line shows while it writes (1–3 minutes);
+   - then the contract: Arabic beside English, clause by clause, then the cited articles with the library's verdicts, and «خُصمت ١٬٠٠٠ نقطة»;
+   - the «طلب منفصل واختياري» card still sends the team order, as before.
+5. **Turned off** (the default): the button returns the server's message and charges nothing. The team order still works.
 
 ## Wave 4, L9 المحاكي الشامل and L10 محلل قوة الموقف: your steps
 

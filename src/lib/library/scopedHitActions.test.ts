@@ -84,16 +84,34 @@ test("the cart's server key stays within 60 characters", () => {
   assert.equal(e.articleNum.length, 60);
 });
 
-test("highlightSegments: every occurrence, longest first, prefix star dropped, regex-safe", async () => {
+test("highlightSegments: every occurrence, longest first, prefix to the end of the word, regex-safe", async () => {
   const { highlightSegments } = await import("./scopedHitActions.ts");
   assert.deepEqual(highlightSegments("فسخ العقد ثم فسخ", ["فسخ"]), [
-    { text: "فسخ", hit: true }, { text: " العقد ثم ", hit: false }, { text: "فسخ", hit: true },
+    { text: "فسخ", hit: true, term: 0 }, { text: " العقد ثم ", hit: false, term: null }, { text: "فسخ", hit: true, term: 0 },
   ]);
-  assert.deepEqual(highlightSegments("غرامة التأخير", ["غرامة", "غرامة التأخير"]), [{ text: "غرامة التأخير", hit: true }]);
-  assert.deepEqual(highlightSegments("تعويضات", ["تعويض*"]), [{ text: "تعويض", hit: true }, { text: "ات", hit: false }]);
-  assert.deepEqual(highlightSegments("a (b) c", ["(b)"]), [{ text: "a ", hit: false }, { text: "(b)", hit: true }, { text: " c", hit: false }]);
-  assert.deepEqual(highlightSegments("نص", ["ن"]), [{ text: "نص", hit: false }]);
+  assert.deepEqual(highlightSegments("غرامة التأخير", ["غرامة", "غرامة التأخير"]), [{ text: "غرامة التأخير", hit: true, term: 1 }]);
+  // Owner note ٠٦: «وكيل*» colours «وكيله» whole, not its first letters.
+  assert.deepEqual(highlightSegments("تعويضات", ["تعويض*"]), [{ text: "تعويضات", hit: true, term: 0 }]);
+  assert.deepEqual(highlightSegments("a (b) c", ["(b)"]), [{ text: "a ", hit: false, term: null }, { text: "(b)", hit: true, term: 0 }, { text: " c", hit: false, term: null }]);
+  assert.deepEqual(highlightSegments("نص", ["ن"]), [{ text: "نص", hit: false, term: null }]);
   assert.deepEqual(highlightSegments("", ["فسخ"]), []);
+});
+
+test("highlightSegments (owner note ٠٦): folded Arabic and digits, one colour per term of the query", async () => {
+  const { highlightSegments } = await import("./scopedHitActions.ts");
+  const hits = (text: string, q: string) => highlightSegments(text, q).filter((s) => s.hit).map((s) => [s.text, s.term]);
+  assert.deepEqual(hits("وفق نظام الإثبات", "الاثبات"), [["الإثبات", 0]]);
+  assert.deepEqual(hits("المادة ١٢٣ من النظام", "123"), [["١٢٣", 0]]);
+  assert.deepEqual(hits("عزل الوكيل أمام المحكمة دون تحكيم", '"عزل الوكيل" + المحكمة -تحكيم'), [["عزل الوكيل", 0], ["المحكمة", 1]]);
+  assert.deepEqual(hits("الاعتزال أو العزل", "اعتزال / عزل"), [["اعتزال", 0], ["عزل", 1]]);
+});
+
+test("scopedHitHref: a principle opens in its collection at its id with ?q=; articles and blocks have no link yet", async () => {
+  const { scopedHitHref } = await import("./scopedHitActions.ts");
+  assert.equal(scopedHitHref(principle(), "عزل"), `/precedents/v2?q=${encodeURIComponent("عزل")}#v2__p118`);
+  assert.equal(scopedHitHref(principle(), ""), "/precedents/v2#v2__p118");
+  assert.equal(scopedHitHref(article(), "عزل"), null);
+  assert.equal(scopedHitHref(block(), "عزل"), null);
 });
 
 test("the panel names what it searches, apart from the reader's own filter / jump boxes", () => {

@@ -28,7 +28,6 @@ import {
   refreshDecision,
   INTENT_EXPIRY_MARGIN_MS,
   INTENT_REFRESH_MS,
-  LITIGATION_COVERAGE_AR,
   billingLabelAr,
 } from "./checkoutView.ts";
 
@@ -37,9 +36,20 @@ import {
 test("checkoutHref: a signed-in buyer with the gateway on goes to /checkout", () => {
   assert.equal(checkoutHref("lawyer-pro", "yearly", true, true), "/checkout?item=lawyer-pro&billing=yearly");
   assert.equal(checkoutHref("lawyer-pro", "monthly", true, true), null, "the professionals' monthly cycle is retired (owner, 26 Oct)");
-  assert.equal(checkoutHref("ind-ai", "monthly", true, true), "/checkout?item=ind-ai&billing=monthly", "individuals keep monthly");
+  assert.equal(checkoutHref("ind-ai", "yearly", true, true), "/checkout?item=ind-ai&billing=yearly");
   assert.equal(checkoutHref("firm-basic", "yearly", true, true), "/checkout?item=firm-basic&billing=yearly");
-  assert.equal(checkoutHref("ind-litigation", "yearly", true, true), "/checkout?item=ind-litigation&billing=yearly");
+  // q329 (owner package of 1 Nov 2026): no buy link for a cancelled plan or cycle
+  for (const [id, billing] of [
+    ["ind-ai", "monthly"],
+    ["ind-ai", "quarterly"],
+    ["ind-ai", "semiannual"],
+    ["ind-preventive", "monthly"],
+    ["ind-preventive", "yearly"],
+    ["ind-litigation", "monthly"],
+    ["ind-litigation", "yearly"],
+  ] as const) {
+    assert.equal(checkoutHref(id, billing, true, true), null, `${id} ${billing}`);
+  }
 });
 
 test("checkoutHref: top-ups and library plans are paid once, whatever the /pricing toggle says", () => {
@@ -61,7 +71,7 @@ test("checkoutHref: null keeps today's request flow (gateway off, guest, or not 
 });
 
 test("checkoutBillingFor maps the toggle to a billing the item offers", () => {
-  assert.equal(checkoutBillingFor(PAYABLE_ITEMS["ind-ai"], "monthly"), "monthly");
+  assert.equal(checkoutBillingFor(PAYABLE_ITEMS["ind-ai"], "monthly"), null, "q329: retired");
   assert.equal(checkoutBillingFor(PAYABLE_ITEMS["ind-ai"], "yearly"), "yearly");
   assert.equal(checkoutBillingFor(PAYABLE_ITEMS["ind-ai"], "once"), null);
   assert.equal(checkoutBillingFor(PAYABLE_ITEMS["topup-100"], "monthly"), "once");
@@ -83,6 +93,9 @@ test("gatewayAllowsCheckout: only Moyasar, enabled, and loaded", () => {
 test("parseCheckoutQuery accepts an item and a billing it offers", () => {
   assert.deepEqual(parseCheckoutQuery("lawyer-pro", "yearly"), { ok: true, itemId: "lawyer-pro", billing: "yearly" });
   assert.deepEqual(parseCheckoutQuery(["topup-100", "x"], "once"), { ok: true, itemId: "topup-100", billing: "once" });
+  // §6أ: the new cycles where the revised doc prices them (ind-ai's are retired, q329)
+  assert.deepEqual(parseCheckoutQuery("ind-ai", "yearly"), { ok: true, itemId: "ind-ai", billing: "yearly" });
+  assert.deepEqual(parseCheckoutQuery("firm-basic", "quarterly"), { ok: true, itemId: "firm-basic", billing: "quarterly" });
   for (const [item, billing] of [
     [undefined, "monthly"],
     ["lawyer-pro", undefined],
@@ -91,9 +104,9 @@ test("parseCheckoutQuery accepts an item and a billing it offers", () => {
     ["lawyer-pro", "once"],
     ["topup-100", "monthly"],
     ["lawyer-pro", "weekly"],
-    // a real cycle the item is not sold in (no quarterly price before P2)
+    // a real cycle the item never listed
     ["lawyer-pro", "quarterly"],
-    ["ind-ai", "semiannual"],
+    ["ind-preventive", "semiannual"],
   ] as const) {
     assert.deepEqual(parseCheckoutQuery(item, billing), { ok: false }, `${item} ${billing}`);
   }
@@ -103,7 +116,20 @@ test("parseCheckoutQuery: a retired cycle (lawyer-pro monthly) is «no longer so
   for (const id of ["lawyer-pro", "consultant-independent", "firm-basic", "firm-enterprise"]) {
     assert.deepEqual(parseCheckoutQuery(id, "monthly"), { ok: false, notForSale: true }, id);
   }
-  assert.deepEqual(parseCheckoutQuery("ind-ai", "monthly"), { ok: true, itemId: "ind-ai", billing: "monthly" });
+});
+
+test("q329: a direct /checkout?item=… for a cancelled individual plan or cycle is «no longer sold», not «unknown»", () => {
+  for (const [id, billing] of [
+    ["ind-ai", "monthly"],
+    ["ind-ai", "quarterly"],
+    ["ind-ai", "semiannual"],
+    ["ind-preventive", "monthly"],
+    ["ind-preventive", "yearly"],
+    ["ind-litigation", "monthly"],
+    ["ind-litigation", "yearly"],
+  ] as const) {
+    assert.deepEqual(parseCheckoutQuery(id, billing), { ok: false, notForSale: true }, `${id} ${billing}`);
+  }
 });
 
 // ── what the screen says ────────────────────────────────────────────────────
@@ -126,18 +152,25 @@ test("billingLabelAr names every cycle in Arabic", () => {
   assert.equal(billingLabelAr("once"), "دفعة واحدة");
 });
 
-test("checkoutItemNotes: ind-litigation states the main-subscriber coverage verbatim", () => {
-  assert.equal(LITIGATION_COVERAGE_AR, "تغطية المشترك الرئيسي؛ تُضاف التغطية العائلية بطلب يراجعه الفريق");
-  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["ind-litigation"]), [LITIGATION_COVERAGE_AR]);
+test("task 5 review M5: retired ind-litigation keeps resolving by id, but /checkout never shows it, so it has no note line", () => {
+  assert.equal(PAYABLE_ITEMS["ind-litigation"].id, "ind-litigation");
+  assert.deepEqual(parseCheckoutQuery("ind-litigation", "yearly"), { ok: false, notForSale: true });
+  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["ind-litigation"]), []);
 });
 
 test("checkoutItemNotes: each top-up states the validity the catalog grants; the points are in its label already", () => {
   assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-100"]), ["صالحة ٣ أشهر من تاريخ الشراء"]);
   assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-250"]), ["صالحة ٣ أشهر من تاريخ الشراء"]);
-  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-500"]), ["صالحة ٦ أشهر من تاريخ الشراء"]);
-  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-1000"]), ["صالحة ١٢ شهراً من تاريخ الشراء"]);
+  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-500"]), ["صالحة ٣ أشهر من تاريخ الشراء"]);
+  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-1000"]), ["صالحة ٦ أشهر من تاريخ الشراء"]);
+  for (const id of ["topup-2500", "topup-5000", "topup-10000"]) {
+    assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS[id]), ["صالحة ١٢ شهراً من تاريخ الشراء"], id);
+  }
   // every top-up label names its points, so the screen shows them once
-  for (const [id, points] of [["topup-100", "١٠٠ نقطة"], ["topup-250", "٣٠٠ نقطة"], ["topup-500", "٧٠٠ نقطة"], ["topup-1000", "١٬٥٠٠ نقطة"]]) {
+  for (const [id, points] of [
+    ["topup-100", "١٠٠ نقطة"], ["topup-250", "٢٥٠ نقطة"], ["topup-500", "٥٠٠ نقطة"], ["topup-1000", "١٬٢٥٠ نقطة"],
+    ["topup-2500", "٣٬٥٠٠ نقطة"], ["topup-5000", "٨٬٥٠٠ نقطة"], ["topup-10000", "٢٥٬٠٠٠ نقطة"],
+  ]) {
     assert.ok(PAYABLE_ITEMS[id].labelAr.includes(points), id);
   }
   // a top-up whose label does not name its points still gets the line
@@ -154,6 +187,17 @@ test("checkoutItemNotes: the library states its access length; firm plans promis
   for (const id of Object.keys(PAYABLE_ITEMS)) {
     assert.doesNotMatch(checkoutItemNotes(PAYABLE_ITEMS[id]).join(" "), /مقعد|مقاعد|seat/i, id);
   }
+});
+
+test("checkoutItemNotes: the founder membership states its length and what activation grants (20261101_10), nothing more", () => {
+  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["lawyer-founder-2026"]), [
+    "عضوية لمدة ١٢ شهراً من تاريخ التفعيل",
+    "٦ أعمال بالصائغ القانوني ومخرج مستقل واحد",
+    "وصول إلى المكتبة القانونية لمدة ٣٦٥ يوماً",
+  ]);
+  // the card's promises that this plan does not grant (global constraints)
+  const notes = checkoutItemNotes(PAYABLE_ITEMS["lawyer-founder-2026"]).join(" ");
+  assert.doesNotMatch(notes, /دعوة|ضيف|غيغا|GB|أكاديمية|تجديد|مقعد/);
 });
 
 // ── the buy buttons while the status loads ──────────────────────────────────
@@ -389,4 +433,6 @@ test("couponFieldShown: only once the coupon columns exist, and never for a poin
   assert.equal(couponFieldShown({ kind: "library" }, true), true);
   assert.equal(couponFieldShown({ kind: "topup" }, true), false);
   assert.equal(couponFieldShown({ kind: "plan" }, false), false);
+  // P3: the founder price is already discounted and nothing stacks on it
+  assert.equal(couponFieldShown({ kind: "membership" }, true), false);
 });

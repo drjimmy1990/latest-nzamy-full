@@ -14,10 +14,17 @@ test("the search page sends only filters used by its requested section", () => {
 });
 
 test("an incompatible selected category fails closed before the request is sent", () => {
-  const guardStart = pageSource.indexOf("if (cat !== 'all' && section !== 'laws' && section !== 'orders')");
+  // Owner note ١٢-د: «الكل» is no longer incompatible (the API runs laws and
+  // orders only); a precedents or feqh search with a category still fails closed.
+  const guardStart = pageSource.indexOf("if (cat !== 'all' && section !== 'laws' && section !== 'orders' && section !== 'all')");
   const fetchStart = pageSource.indexOf("const res = await fetch('/api/library/search'");
   assert.ok(guardStart >= 0 && guardStart < fetchStart, "category guard must run before fetch");
   assert.match(pageSource, /مرشح التصنيف يطبّق على الأنظمة والأوامر فقط؛ لم يُنفذ البحث\./);
   assert.match(pageSource, /The category filter applies only to laws and orders; the search was not sent\./);
   assert.match(pageSource, /setSearchResults\(null\);[\s\S]{0,240}setSearchError\(/);
+});
+
+test("١٢-د: «الكل» + category reads laws and orders counts only, with a note", () => {
+  assert.match(pageSource, /cat !== 'all' \? CATEGORY_SEARCH_SECTIONS : SEARCH_SECTIONS/);
+  assert.match(pageSource, /data-testid="category-scope-note"/);
 });

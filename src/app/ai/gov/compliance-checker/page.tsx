@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 
 import { useState } from "react";
 import { motion } from "framer-motion";
@@ -45,7 +46,7 @@ const STATUS_CONFIG = {
 
 type FilterStatus = "all" | "compliant" | "violation" | "partial" | "pending";
 
-export default function GovCompliancePage() {
+function GovComplianceInner() {
   const [checks, setChecks] = useState<CheckItem[]>(INITIAL_CHECKS);
   const [filter, setFilter] = useState<FilterStatus>("all");
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -231,5 +232,14 @@ export default function GovCompliancePage() {
       )}
       </BetaReviewGate>
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function GovCompliancePage() {
+  return (
+    <GatedToolScreen toolId="gov.compliance-checker" toolName="تقرير الامتثال الحكومي">
+      <GovComplianceInner />
+    </GatedToolScreen>
   );
 }

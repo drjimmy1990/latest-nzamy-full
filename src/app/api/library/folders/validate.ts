@@ -109,6 +109,45 @@ export function checkFolderItem(body: Record<string, unknown>): Checked<FolderIt
   };
 }
 
+/**
+ * POST /api/library/folders/titles — document ids whose Arabic titles a
+ * screen needs (owner note ٠٣ §٢.٢: «ملاحظاتي وتحديداتي» showed «...te
+ * ownership law» instead of the law's title). One key per library table;
+ * at most TITLE_LOOKUP_MAX_PER_KIND ids each, well under the ~396 ids where
+ * a PostgREST `.in()` URL breaks. Order ids are uuids (decrees_circulars.id):
+ * anything else is dropped, never sent (a malformed uuid fails the WHOLE
+ * `.in()` with 22P02).
+ */
+export const TITLE_LOOKUP_MAX_PER_KIND = 100;
+export const TITLE_LOOKUP_KINDS = ['laws', 'orders', 'precedents', 'books'] as const;
+export type TitleLookupKind = (typeof TITLE_LOOKUP_KINDS)[number];
+export type TitleLookup = Record<TitleLookupKind, string[]>;
+
+export function checkTitleLookup(body: Record<string, unknown>): Checked<TitleLookup> {
+  const out: TitleLookup = { laws: [], orders: [], precedents: [], books: [] };
+  let total = 0;
+  for (const kind of TITLE_LOOKUP_KINDS) {
+    const raw = body[kind];
+    if (raw === undefined || raw === null) continue;
+    if (!Array.isArray(raw)) return { ok: false, error: `${kind} must be an array of ids` };
+    if (raw.length > TITLE_LOOKUP_MAX_PER_KIND) {
+      return { ok: false, error: `${kind}: at most ${TITLE_LOOKUP_MAX_PER_KIND} ids` };
+    }
+    const seen = new Set<string>();
+    for (const v of raw) {
+      if (typeof v !== 'string') return { ok: false, error: `${kind} must be an array of ids` };
+      const id = v.trim();
+      if (!id || charLength(id) > ENTITY_ID_MAX) continue;
+      if (kind === 'orders' && !UUID.test(id)) continue;
+      seen.add(id);
+    }
+    out[kind] = Array.from(seen);
+    total += out[kind].length;
+  }
+  if (total === 0) return { ok: false, error: 'no ids to look up' };
+  return { ok: true, value: out };
+}
+
 /** PATCH body → the columns to update; an empty set or any malformed field is an error. */
 export function checkFolderPatch(body: Record<string, unknown>): Checked<{ folderId: string; updates: Record<string, unknown> }> {
   const { folderId, name, color, icon, isPinned } = body;

@@ -242,10 +242,5 @@ test("missingOptionalColumns: only a missing-column answer marks a column missin
   assert.deepEqual(await missingOptionalColumns([], probe), []);
 });
 
-test("the owner loader probes feqh_books' optional columns and drops them only when missing", () => {
-  const src = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "../../../scripts/seed-library-from-owner.mjs"), "utf8");
-  assert.match(src, /name: "feqh_books"[^\n]*optionalColumns: \["series_id", "volume_number"\]/);
-  assert.match(src, /missingOptionalColumns\(tableConfig\.optionalColumns, \(c\) => supabase\.from\(tableConfig\.name\)\.select\(c\)\.limit\(1\)\)/);
-  // Never in a dry run: no DB call at all.
-  assert.match(src, /if \(!isDry && tableConfig\.optionalColumns\?\.length\)/);
-});
+// The owner loader no longer drops feqh_books' series columns when they are
+// missing (owner note ١١, fail closed): ownerLoaderTables.test.ts pins that.

@@ -52,17 +52,18 @@ import {
   COUPONS_UNAVAILABLE_AR,
   couponRefusalAr,
   evaluateCoupon,
+  isFirstOrderCoupon,
   type CouponRow,
   type DiscountedQuote,
 } from "./couponRules.ts";
 import { isMissingPaymentsObject, SWEEP_LOOKBACK_MS } from "./fulfillDecision.ts";
 import { isMissingFeatureColumn } from "../library/optionalColumn.ts";
-import { bookEntry, PRICE_BOOK, type BookEntry } from "../pricing/priceBook.ts";
+import { activeLaunchPrice, bookEntry, PRICE_BOOK, type BookEntry } from "../pricing/priceBook.ts";
 import { SUPERSEDE_WINDOW_MS } from "./checkoutRules.ts";
 import { COUPON_ATTEMPTS, RATE_LIMITED_AR, type CouponAttemptBudget } from "./couponAttempts.ts";
 
 export const COUPON_COLUMNS =
-  "id, code, discount_type, discount_value, min_order_amount, eligible_user_types, max_uses, used_count, valid_from, valid_until, active, max_discount_pct, excluded_kinds";
+  "id, code, discount_type, discount_value, min_order_amount, eligible_user_types, max_uses, used_count, valid_from, valid_until, active, max_discount_pct, excluded_kinds, metadata";
 
 type DbError = { code?: string; message?: string } | null | undefined;
 
@@ -90,14 +91,20 @@ export async function couponsAvailable(admin: SupabaseClient): Promise<boolean> 
 
 /**
  * An item already sold at a discount takes no coupon (٢٧٩: one discount, the
- * best one, and the item's own is it). Today that is an entry with a launch /
- * campaign price; no entry has one yet, and quote() charges none. P3 (the
- * founder membership) and P5 (the individuals' launch prices) must keep their
- * discounted prices visible to this check.
+ * best one, and the item's own is it; pricing doc §13أ.3). Today that is a
+ * launch price RUNNING on `now` for this billing (owner ٣٠٣) — the same rule
+ * quote() charges by, so the coupon is refused exactly while the launch price
+ * is charged, and accepted again on the listed price once the campaign ends.
+ * P3 (the founder membership) must keep its discounted prices visible here.
  */
-export function itemIsDiscounted(itemId: string, book: Readonly<Record<string, BookEntry>> = PRICE_BOOK): boolean {
+export function itemIsDiscounted(
+  itemId: string,
+  billing: Billing,
+  now: Date,
+  book: Readonly<Record<string, BookEntry>> = PRICE_BOOK,
+): boolean {
   const entry = bookEntry(itemId, book);
-  return !!entry?.launchPrices && entry.launchPrices.length > 0;
+  return !!entry && activeLaunchPrice(entry, billing, now) !== null;
 }
 
 /** The code sits on another of the buyer's orders that may still be paid. */
@@ -127,6 +134,7 @@ export interface CouponPricingInput {
   userId: string;
   userType: string | null;
   item: Pick<PayableItem, "id" | "kind">;
+  billing: Billing;
   netHalalas: number;
   now: Date;
   book?: Readonly<Record<string, BookEntry>>;
@@ -150,6 +158,30 @@ const unavailable = (): CouponPricing => ({ ok: false, status: 503, error: COUPO
 export function orderConsumedCoupon(row: { live?: boolean | null; metadata?: Record<string, unknown> | null }): boolean {
   if (row.live === false) return false;
   return row.metadata?.already_entitled !== true;
+}
+
+/**
+ * Owner ٣٠٥: whether the buyer already has a paid order on the platform — of
+ * any kind, for any item: a PAID or REFUNDED payment_orders row. A voided
+ * order (cancelled inside the 90-minute window, ٣٠٦) does not count, nor does
+ * one still open, failed or cancelled — and, as for a coupon's own use
+ * (orderConsumedCoupon), not a test-mode payment (live = false) nor a paid
+ * order that granted nothing (already_entitled). null = could not tell: the
+ * caller refuses rather than guesses.
+ */
+async function hasEarlierPaidOrder(admin: SupabaseClient, userId: string): Promise<boolean | null> {
+  const { data, error } = await admin
+    .from("payment_orders")
+    .select("id, live, metadata")
+    .eq("user_id", userId)
+    .in("status", ["paid", "refunded"])
+    .limit(50);
+  if (error) {
+    console.error("[coupons] reading earlier paid orders failed:", error.code);
+    return null;
+  }
+  const rows = Array.isArray(data) ? (data as Array<{ live?: boolean | null; metadata?: Record<string, unknown> | null }>) : [];
+  return rows.some(orderConsumedCoupon);
 }
 
 /** null = could not tell (an error): the caller refuses rather than guesses. */
@@ -313,13 +345,16 @@ export async function priceWithCoupon(admin: SupabaseClient, input: CouponPricin
 
   const used = await alreadyUsed(admin, row.id, input.userId);
   if (used === null) return unavailable();
+  const earlier = isFirstOrderCoupon(row) ? await hasEarlierPaidOrder(admin, input.userId) : false;
+  if (earlier === null) return unavailable();
 
   const decision = evaluateCoupon(row, {
     netHalalas: input.netHalalas,
     kind: input.item.kind,
     userType: input.userType,
     alreadyUsed: used,
-    itemDiscounted: itemIsDiscounted(input.item.id, input.book),
+    itemDiscounted: itemIsDiscounted(input.item.id, input.billing, input.now, input.book),
+    hasEarlierPaidOrder: earlier,
     now: input.now,
   });
   if (!decision.ok) return { ok: false, status: 400, error: couponRefusalAr(decision, formatHalalas) };
@@ -386,7 +421,9 @@ export async function validateCouponWith(deps: ValidateDeps, input: ValidateInpu
   const catalog = deps.catalog ?? PAYABLE_ITEMS;
   const known = resolveItem(input.itemId, catalog);
   if (!known || !buyerAllowed(known, userType)) return { status: 400, body: { error: COUPON_INVALID_AR } };
-  const q = quote(input.itemId, input.billing, catalog);
+  // the request's clock, as checkout's: the preview equals the charge (٣٠٣)
+  const now = deps.now?.() ?? new Date();
+  const q = quote(input.itemId, input.billing, catalog, now);
   if (!q.ok) return { status: 400, body: { error: COUPON_INVALID_AR } };
 
   const priced = await priceWithCoupon(admin, {
@@ -394,8 +431,9 @@ export async function validateCouponWith(deps: ValidateDeps, input: ValidateInpu
     userId: input.userId,
     userType,
     item: q.item,
+    billing: input.billing,
     netHalalas: q.netHalalas,
-    now: deps.now?.() ?? new Date(),
+    now,
     book: deps.book,
   });
   if (!priced.ok) return { status: priced.status, body: { error: priced.error } };

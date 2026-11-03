@@ -92,14 +92,75 @@ test("under the file's card: the DB official link shows unless a card row alread
   assert.deepEqual(dbOfficialRowsUnderCard(issuerOnly, { officialSourceUrl: null, gazette: null }), { sourceUrl: "", gazette: null });
 });
 
-test("owner ٢٩٧: officialLink is public — kept on a locked response — and http(s) only", () => {
-  const m = parseOfficialMeta({ officialMetaLocked: true, officialSourceUrl: "https://laws.boe.gov.sa/x", officialLink: "https://laws.boe.gov.sa/x" });
+// Owner ٣١٨ (28-Oct) REVERSES ٢٩٧ on purpose: until 2026-10-30 this test
+// pinned that officialLink was public and kept on a locked response. Official
+// links are now a subscriber's — a locked response drops every one of them.
+test("owner ٣١٨ (reverses ٢٩٧): officialLink / officialLinks / latestUpdate are dropped on a locked response; http(s) only", () => {
+  const m = parseOfficialMeta({
+    officialMetaLocked: true,
+    officialSourceUrl: "https://laws.boe.gov.sa/x",
+    officialLink: "https://laws.boe.gov.sa/x",
+    officialLinks: [{ label: "هيئة الخبراء", url: "https://laws.boe.gov.sa/x" }],
+    latestUpdate: "1448/01/08هـ (المرسوم الملكي م/12)",
+  });
   assert.equal(m.locked, true);
   assert.equal(m.officialSourceUrl, null);
-  assert.equal(m.officialLink, "https://laws.boe.gov.sa/x");
+  assert.equal(m.officialLink, null);
+  assert.deepEqual(m.officialLinks, []);
+  assert.equal(m.latestUpdate, null);
+  assert.equal(parseOfficialMeta({ officialLink: "https://laws.boe.gov.sa/x" }).officialLink, "https://laws.boe.gov.sa/x");
   for (const bad of ["javascript:alert(1)", "//evil.example/x", "laws.boe.gov.sa", "", 7, null]) {
     assert.equal(parseOfficialMeta({ officialLink: bad }).officialLink, null, String(bad));
   }
+});
+
+test("note ٠١ item ٣: officialLinks keep an Arabic label, else the host's Arabic name — never a raw host; deduped, http(s) only", () => {
+  const m = parseOfficialMeta({
+    officialLinks: [
+      { label: "laws.boe.gov.sa", url: "https://laws.boe.gov.sa/a" },
+      { label: "هيئة الخبراء", url: "https://laws.boe.gov.sa/a" },
+      { label: "", url: "https://uqn.gov.sa/b" },
+      { label: "x", url: "javascript:alert(1)" },
+      "junk",
+    ],
+  });
+  assert.deepEqual(m.officialLinks, [
+    { label: "هيئة الخبراء", url: "https://laws.boe.gov.sa/a" },
+    { label: "جريدة أم القرى", url: "https://uqn.gov.sa/b" },
+  ]);
+});
+
+test("owner ٣١٨: latest_legislative_update is public but only a date alone", () => {
+  for (const ok of ["1448/01/08هـ", "1446/02هـ", "1446هـ"]) {
+    assert.equal(parseOfficialMeta({ officialMetaLocked: true, latest_legislative_update: ok }).latestLegislativeUpdate, ok);
+  }
+  for (const bad of ["1448/01/08هـ (المرسوم الملكي م/12)", "م/12", "2026-10-30", "", 1448, null]) {
+    assert.equal(parseOfficialMeta({ latest_legislative_update: bad }).latestLegislativeUpdate, null, String(bad));
+  }
+});
+
+test("note ٠١ item ٦: articleCounts parse per container; malformed or absent → null", () => {
+  const m = parseOfficialMeta({
+    articleCounts: {
+      law: { total: 245, amended: 12, repealed: 3 },
+      regulations: [{ name: "اللائحة التنفيذية", total: 40, amended: 0, repealed: 1 }, { name: "", total: 0 }, null],
+      annexes: 2,
+    },
+    hasMergedRegulation: true,
+  });
+  assert.deepEqual(m.articleCounts, {
+    law: { total: 245, amended: 12, repealed: 3 },
+    regulations: [{ name: "اللائحة التنفيذية", total: 40, amended: 0, repealed: 1 }],
+    annexes: 2,
+  });
+  assert.equal(m.hasMergedRegulation, true);
+  assert.equal(parseOfficialMeta({}).articleCounts, null);
+  assert.equal(parseOfficialMeta({ articleCounts: { regulations: [] } }).articleCounts, null);
+  assert.deepEqual(parseOfficialMeta({ articleCounts: { law: { total: -1, amended: 1.5 } } }).articleCounts, {
+    law: { total: 0, amended: 0, repealed: 0 },
+    regulations: [],
+    annexes: 0,
+  });
 });
 
 test("under the file's card: the DB link is not repeated when the issuer row already shows it", () => {
@@ -111,15 +172,20 @@ test("under the file's card: the DB link is not repeated when the issuer row alr
   assert.equal(dbOfficialRowsUnderCard(issuerOnly, meta).sourceUrl, url);
 });
 
-test("the sidebar puts the official link on «الجهة المصدرة» as a new-tab link, for every viewer", async () => {
+// ٣١٨ reverses ٢٩٧ here too: the link is behind metaLocked again, and shown by
+// its Arabic name — on «الجهة المصدرة» only when there is no «المصادر الرسمية» list.
+test("the sidebar's official links open in a new tab, by Arabic name, for subscribers only (٣١٨)", async () => {
   const { readFileSync } = await import("node:fs");
   const { fileURLToPath } = await import("node:url");
-  const src = readFileSync(fileURLToPath(new URL("./_sidebar.tsx", import.meta.url)), "utf8");
+  const src = readFileSync(fileURLToPath(new URL("./_sidebar.tsx", import.meta.url)), "utf8").replace(/\r\n/g, "\n");
   const link = src.slice(src.indexOf("const renderOfficialLink"), src.indexOf("const getFieldIcon"));
   assert.match(link, /target="_blank"/);
   assert.match(link, /rel="noopener noreferrer"/);
-  assert.match(src, /const officialLink = officialMeta\?\.officialLink \?\? null;/);
-  // Not behind metaLocked: the issuer row and the stand-alone row.
-  assert.match(src, /f\.id === "issuer" && officialLink \? renderOfficialLink\(officialLink\)/);
-  assert.match(src, /\{officialLink && !layout\.primary\.some\(\(f\) => f\.id === "issuer"\) && \(/);
+  assert.match(link, /officialSourceName\(/);
+  assert.match(src, /const officialLink = metaLocked \? null : \(officialMeta\?\.officialLink \?\? null\);/);
+  assert.match(src, /const topLinks = metaLocked \? \[\] : collectOfficialLinks\(officialMeta\?\.officialLinks \?\? \[\], cardRows\);/);
+  assert.match(src, /f\.id === "issuer" && officialLink && !topLinks\.length \? renderOfficialLink\(officialLink\)/);
+  assert.match(src, /\{officialLink && !topLinks\.length && !layout\.primary\.some\(\(f\) => f\.id === "issuer"\) && \(/);
+  // No raw host is drawn as a link's text.
+  assert.doesNotMatch(src, /urlHostname\(/);
 });

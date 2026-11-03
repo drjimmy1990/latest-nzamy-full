@@ -70,17 +70,30 @@ export async function GET(request: NextRequest) {
 /**
  * POST /api/v1/lawyer/work-sessions
  * Body: WorkSessionInput (see src/lib/services/workSessionInput.ts for the
- * exact checks). `taskId` is never existence-checked — the column carries no
- * FK on purpose, so a session logged against a task that is later deleted
- * keeps its place in the log.
+ * exact checks), plus an optional `id`. `taskId` is never existence-checked —
+ * the column carries no FK on purpose, so a session logged against a task
+ * that is later deleted keeps its place in the log.
+ *
+ * CODE-F09 — idempotent by `id`. The pomodoro outbox (tasks/_components/
+ * _pomodoro/sessionQueue.ts) gives every period a uuid when it starts and
+ * sends it as `id` on every attempt; it becomes the row's primary key
+ * (`work_sessions.id uuid primary key default gen_random_uuid()` — no
+ * migration needed). A second POST with the same id — a retry after a lost
+ * answer, or another tab flushing the same outbox — hits the primary key
+ * (23505), and is answered 200 with the row already saved (`replayed: true`),
+ * so a retry is always safe and never a duplicate. An id that belongs to a
+ * different account is not read back (RLS + the user filter) and stays a 409.
+ * Without `id` the route behaves exactly as before.
  */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function POST(request: NextRequest) {
   try {
     const auth = await assertRole();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
 
-    const body = (await request.json().catch(() => null)) as WorkSessionInputBody | null;
+    const body = (await request.json().catch(() => null)) as (WorkSessionInputBody & { id?: unknown }) | null;
     if (!body || typeof body !== "object") {
       return NextResponse.json({ error: "بيانات الطلب غير صالحة." }, { status: 400 });
     }
@@ -91,9 +104,20 @@ export async function POST(request: NextRequest) {
     }
     const input = validation.value;
 
+    // `validateWorkSessionInput` rebuilds the value without `id`, so its shape
+    // is checked here.
+    let clientId: string | null = null;
+    if (body.id !== undefined && body.id !== null) {
+      if (typeof body.id !== "string" || !UUID_RE.test(body.id)) {
+        return NextResponse.json({ error: "معرّف الجلسة غير صالح." }, { status: 400 });
+      }
+      clientId = body.id.toLowerCase();
+    }
+
     const { data, error } = await supabase
       .from("work_sessions")
       .insert({
+        ...(clientId ? { id: clientId } : {}),
         user_id: user.id,
         mode: input.mode,
         started_at: input.startedAt,
@@ -105,6 +129,18 @@ export async function POST(request: NextRequest) {
       })
       .select(WORK_SESSION_SELECT)
       .single();
+
+    if (error?.code === "23505" && clientId) {
+      const { data: existing, error: readError } = await supabase
+        .from("work_sessions")
+        .select(WORK_SESSION_SELECT)
+        .eq("id", clientId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (!readError && existing) {
+        return NextResponse.json({ data: toWorkSessionDto(existing as WorkSessionRow), replayed: true });
+      }
+    }
 
     if (error || !data) {
       const { status, message } = dbErrorResponse(error);

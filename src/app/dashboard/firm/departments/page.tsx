@@ -1,4 +1,5 @@
 "use client";
+import { UnfinishedModuleNote } from "@/components/dashboard/sector/UnfinishedModuleNote";
 
 import { useState } from "react";
 import { motion } from "framer-motion";
@@ -32,6 +33,7 @@ export default function FirmDepartmentsPage() {
   return (
     <SubscriptionGuard featureKey="firm-departments">
       <div className="max-w-6xl mx-auto space-y-5" dir="rtl">
+        <UnfinishedModuleNote href="/dashboard/firm/departments" />
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
             <h1 className={`text-2xl font-black ${isDark ? "text-white" : "text-slate-800"}`}>أقسام شركة المحاماة</h1>

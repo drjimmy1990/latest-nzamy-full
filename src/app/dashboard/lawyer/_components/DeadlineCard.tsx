@@ -1,10 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { Scales, SealWarning, Info } from "@phosphor-icons/react";
 
 import { toArabicDigits } from "@/lib/services/arabicCount";
 import type { Deadline, DeadlineStatus } from "@/lib/services/deadlinesService";
+import { deadlineActionRule, MAX_STATUS_REASON, type DeadlineAction } from "@/lib/services/deadlineStatusPolicy";
 
 /**
  * DeadlineCard.tsx
@@ -14,6 +16,10 @@ import type { Deadline, DeadlineStatus } from "@/lib/services/deadlinesService";
  * that lists a case's own deadlines. formatGregorianAr and daysLeftChip are
  * exported alongside the component so both callers format dates and chips
  * identically without duplicating the logic.
+ *
+ * CODE-F33: «تمّ» / «إلغاء» no longer act on one click. Each opens a small
+ * confirm row — a required reason to cancel, an optional receipt for «تمّ» —
+ * and a closed (done / cancelled) row offers «إعادة فتح» with a reason.
  */
 
 // ─── Arabic date formatting (Gregorian only — the Hijri half comes straight
@@ -80,7 +86,8 @@ export interface DeadlineCardProps {
   error?: string | null;
   /** Hide the «القضية» link — e.g. inside a case file that already shows the case. Defaults to true. */
   showCaseLink?: boolean;
-  onAction?: (next: "done" | "cancelled") => void;
+  /** `reason` is trimmed; "" when the lawyer left the optional receipt empty. */
+  onAction?: (next: DeadlineAction, reason: string) => void;
 }
 
 export default function DeadlineCard({
@@ -89,6 +96,24 @@ export default function DeadlineCard({
   const status = statusChip(deadline.status, isDark);
   const days = daysLeftChip(deadline.daysLeft, isDark);
   const canAct = (deadline.status === "open" || deadline.status === "missed") && !!onAction;
+  const canReopen = (deadline.status === "done" || deadline.status === "cancelled") && !!onAction;
+  const [pending, setPending] = useState<DeadlineAction | null>(null);
+  const [reason, setReason] = useState("");
+  const rule = pending ? deadlineActionRule(deadline.status, pending) : null;
+  const reasonMissing = !!rule?.reasonRequired && !reason.trim();
+
+  function ask(next: DeadlineAction) { setPending(next); setReason(""); }
+  function confirm() {
+    if (!pending || reasonMissing) return;
+    onAction?.(pending, reason.trim());
+    setPending(null);
+    setReason("");
+  }
+  const actionBtn = (tone: "green" | "grey") => `rounded-lg px-2.5 py-1 text-[11px] font-bold transition disabled:opacity-50 ${
+    tone === "green"
+      ? isDark ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20" : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+      : isDark ? "bg-white/[0.06] text-zinc-400 hover:bg-white/[0.1]" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+  }`;
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
@@ -140,26 +165,48 @@ export default function DeadlineCard({
           {days && (
             <span className={`rounded-full border px-2.5 py-1 text-[10.5px] font-bold ${days.cls}`}>{days.label}</span>
           )}
-          {canAct && (
+          {canAct && !pending && (
             <div className="flex gap-1.5">
-              <button
-                disabled={busy}
-                onClick={() => onAction?.("done")}
-                className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition disabled:opacity-50 ${isDark ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20" : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"}`}
-              >
+              <button type="button" disabled={busy} onClick={() => ask("done")} className={actionBtn("green")}>
                 تمّ
               </button>
-              <button
-                disabled={busy}
-                onClick={() => onAction?.("cancelled")}
-                className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition disabled:opacity-50 ${isDark ? "bg-white/[0.06] text-zinc-400 hover:bg-white/[0.1]" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}
-              >
+              <button type="button" disabled={busy} onClick={() => ask("cancelled")} className={actionBtn("grey")}>
                 إلغاء
               </button>
             </div>
           )}
+          {canReopen && !pending && (
+            <button type="button" disabled={busy} onClick={() => ask("open")} className={actionBtn("grey")}>
+              إعادة فتح
+            </button>
+          )}
         </div>
       </div>
+      {pending && rule && (
+        <div className={`mt-3 rounded-xl border p-3 space-y-2 ${isDark ? "border-white/[0.08] bg-white/[0.02]" : "border-slate-200 bg-slate-50"}`}>
+          <label className={`block text-[11px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`} htmlFor={`deadline-reason-${deadline.id}`}>
+            {rule.promptAr}
+          </label>
+          <textarea
+            id={`deadline-reason-${deadline.id}`}
+            value={reason}
+            maxLength={MAX_STATUS_REASON}
+            rows={2}
+            autoFocus
+            aria-required={rule.reasonRequired}
+            onChange={(e) => setReason(e.target.value)}
+            className={`w-full resize-none rounded-lg border px-2.5 py-1.5 text-[12px] outline-none ${isDark ? "border-white/[0.08] bg-zinc-800/60 text-zinc-200" : "border-slate-200 bg-white text-slate-700"}`}
+          />
+          <div className="flex gap-1.5 justify-end">
+            <button type="button" onClick={() => { setPending(null); setReason(""); }} className={actionBtn("grey")}>
+              تراجع
+            </button>
+            <button type="button" disabled={busy || reasonMissing} onClick={confirm} className={actionBtn(pending === "done" ? "green" : "grey")}>
+              {rule.labelAr}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

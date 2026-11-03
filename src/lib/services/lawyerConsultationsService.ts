@@ -20,7 +20,7 @@
 
 "use client";
 
-import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
+import { apiGet, apiMutate, isSupabaseMode, mutateWithOverlapCode } from "@/lib/services/api";
 import { listOk, listFailed, listFromApi, type ListRead } from "@/lib/services/listRead";
 import type { ConsultationMode, ConsultationOutcome, ConsultationStatus } from "@/lib/services/consultationVocabulary";
 
@@ -83,6 +83,33 @@ export interface UpdateConsultationInput {
   feePaid?: boolean;
   cancelledReason?: string | null;
   lawyerClientId?: string | null;
+  /** Save even though the slot overlaps another scheduled consultation (LIVE-F35). */
+  confirmOverlap?: boolean;
+}
+
+/**
+ * Thrown when the server answers 409 `consultation_overlap`: the slot shares
+ * time with another scheduled consultation of the same lawyer. The screen
+ * shows `message` and offers to resend with `confirmOverlap: true`.
+ */
+export class ConsultationOverlapError extends Error {
+  readonly conflicts: Array<{ id: string; scheduledAt: string; durationMinutes: number }>;
+  constructor(message: string, conflicts: Array<{ id: string; scheduledAt: string; durationMinutes: number }>) {
+    super(message);
+    this.name = "ConsultationOverlapError";
+    this.conflicts = conflicts;
+  }
+}
+
+/**
+ * apiMutate, plus the one response it cannot express: a 409 overlap warning
+ * the caller must be able to tell apart from a refusal. Everything else
+ * behaves exactly like apiMutate (Arabic `error` thrown as the message).
+ */
+export async function mutateConsultationSlot<T>(url: string, method: "POST" | "PATCH", body: unknown): Promise<T> {
+  if (!isSupabaseMode) throw new Error("الاستشارات غير متاحة في وضع العرض التجريبي");
+  return mutateWithOverlapCode<T>(url, method, body, "consultation_overlap", (message, conflicts) =>
+    new ConsultationOverlapError(message, conflicts as ConsultationOverlapError["conflicts"]));
 }
 
 const BASE = "/api/v1/lawyer/consultations";
@@ -109,7 +136,7 @@ export async function getLawyerConsultation(id: string): Promise<LawyerConsultat
 
 export async function updateLawyerConsultation(id: string, patch: UpdateConsultationInput): Promise<LawyerConsultation> {
   if (!isSupabaseMode) throw new Error("الاستشارات غير متاحة في وضع العرض التجريبي");
-  const res = await apiMutate<{ data: LawyerConsultation }>(path(id), "PATCH", patch);
+  const res = await mutateConsultationSlot<{ data: LawyerConsultation }>(path(id), "PATCH", patch);
   if (!res?.data) throw new Error("لم يُعِد الخادم الاستشارة بعد التعديل.");
   return res.data;
 }
@@ -122,7 +149,11 @@ export async function deliverConsultationOpinion(id: string, opinionText: string
   return res.data;
 }
 
-/** Creates the case (a service_requests row with source_consultation_id) — a second call is a 409. */
+/**
+ * Creates the case (a service_requests row with source_consultation_id). A consultation
+ * already linked to its case is a 409; a retry after a half-finished call (case made, link
+ * not written) answers 200 with that SAME case and the link repaired (CODE-F13).
+ */
 export async function convertConsultationToCase(id: string, input?: { title?: string }): Promise<{ consultation: LawyerConsultation; caseRequestId: string }> {
   if (!isSupabaseMode) throw new Error("الاستشارات غير متاحة في وضع العرض التجريبي");
   const res = await apiMutate<{ data: LawyerConsultation; caseRequestId: string }>(path(id, "convert"), "POST", input ?? {});

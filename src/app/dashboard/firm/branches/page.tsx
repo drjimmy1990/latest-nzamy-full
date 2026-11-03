@@ -1,4 +1,5 @@
 "use client";
+import { UnfinishedModuleNote } from "@/components/dashboard/sector/UnfinishedModuleNote";
 
 import { useState } from "react";
 import { motion } from "framer-motion";
@@ -24,6 +25,7 @@ export default function FirmBranchesPage() {
   return (
     <SubscriptionGuard featureKey="firm-branches">
       <div className="max-w-6xl mx-auto space-y-5" dir="rtl">
+        <UnfinishedModuleNote href="/dashboard/firm/branches" />
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
             <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-blue-500/25 bg-blue-500/10 px-3 py-1 text-[11px] font-bold text-blue-300">

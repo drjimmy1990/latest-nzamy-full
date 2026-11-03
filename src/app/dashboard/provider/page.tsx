@@ -21,7 +21,7 @@ import {
   ArrowRight, ArrowLeft, CalendarBlank, MapPin, ArrowSquareOut,
   Fire, TrendUp, Storefront, UserCircle, ChatDots, ShieldCheck,
   Sparkle, Package, CaretRight, CaretLeft, Robot, Lock, Crown,
-  Scan, Lightning, FileText,
+  Scan, FileText,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
@@ -480,7 +480,11 @@ export default function ProviderDashboardPage() {
           </motion.div>
         )}
 
-        {/* ── Premium Provider Upgrade Banner ──────────────────────────── */}
+        {/* ── Premium Provider plan: not sold yet ──────────────────────────
+            Wave 1 task 6 (F): this banner sold «مزوّد خدمة مميز — ٩٩ ر.س/شهر»
+            with «مستشار AI — ١٠ استخدامات/يوم» and «فحص مستندات — ٣/شهر». No
+            price-book entry sells that plan and nothing charges 99, so it names
+            no price, no allowance and no upgrade button. */}
         <motion.div variants={fadeUp} initial="hidden" animate="show" custom={11}
           className={`rounded-2xl border-2 border-dashed overflow-hidden ${
             isDark ? "border-[#C8A762]/20 bg-[#C8A762]/5" : "border-[#C8A762]/30 bg-amber-50/50"
@@ -492,29 +496,13 @@ export default function ProviderDashboardPage() {
             </div>
             <div className="flex-1 text-center md:text-start">
               <h3 className={`text-base font-bold mb-1 ${isDark ? "text-white" : "text-slate-800"}`}>
-                ترقّ لمزوّد خدمة مميز — ٩٩ ر.س/شهر
+                باقة مزوّد الخدمة المميز
               </h3>
-              <div className="flex flex-wrap justify-center md:justify-start gap-3 mt-2">
-                {[
-                  { icon: Lightning, label: "أولوية في نتائج البحث" },
-                  { icon: Robot,     label: "مستشار AI — ١٠ استخدامات/يوم" },
-                  { icon: Scan,      label: "فحص مستندات — ٣/شهر" },
-                  { icon: FileText,  label: "قوالب ونماذج حسب تخصصك" },
-                ].map(({ icon: Icon, label }) => (
-                  <span key={label} className={`flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-full ${
-                    isDark ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-50 text-emerald-700"
-                  }`}>
-                    <Icon size={11} weight="fill" /> {label}
-                  </span>
-                ))}
-              </div>
+              <p className={`text-xs ${muted}`}>لم يُحدَّد سعرها ولا مزاياها بعد.</p>
             </div>
-            <Link
-              href="/dashboard/provider/earnings"
-              className="shrink-0 flex items-center gap-2 px-5 py-3 rounded-xl bg-[#0B3D2E] text-[#C8A762] text-sm font-bold shadow-md hover:bg-[#155e41] transition-colors"
-            >
-              ترقية الآن <Arrow size={14} />
-            </Link>
+            <span className={`shrink-0 rounded-xl px-5 py-3 text-sm font-bold ${isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-[#0B3D2E]/10 text-[#0B3D2E]"}`}>
+              قريباً
+            </span>
           </div>
         </motion.div>
 
@@ -529,10 +517,10 @@ export default function ProviderDashboardPage() {
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
-              { label: "المستشار الذكي", desc: "١/يوم مجاناً",  icon: Robot,      locked: false, href: "/ai/consult" },
-              { label: "فحص مستند",      desc: "مقفل — المميز",  icon: Scan,       locked: true,  href: "/ai/analyze" },
-              { label: "تتبع المعاملات", desc: "مقفل — المميز",  icon: FileText,   locked: true,  href: "#" },
-              { label: "قوالب ونماذج",   desc: "مقفل — المميز",  icon: ShieldCheck, locked: true,  href: "#" },
+              { label: "المستشار الذكي", desc: "قريباً",       icon: Robot,      locked: false, href: "/ai/consult" },
+              { label: "فحص مستند",      desc: "قريباً",        icon: Scan,       locked: true,  href: "/ai/analyze" },
+              { label: "تتبع المعاملات", desc: "قريباً",        icon: FileText,   locked: true,  href: "#" },
+              { label: "قوالب ونماذج",   desc: "قريباً",        icon: ShieldCheck, locked: true,  href: "#" },
             ].map((tool) => {
               const Icon = tool.icon;
               if (tool.locked) {

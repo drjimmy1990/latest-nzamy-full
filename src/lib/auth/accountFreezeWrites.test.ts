@@ -33,6 +33,7 @@ const ALLOWED: Record<string, string> = {
   "v1/ai-review-requests/route.ts": "an anonymous-capable request for a human review; writes no account data",
   "library/search/route.ts": "a search: POST for the body, reads only",
   "library/scoped-search/route.ts": "a search: POST for the body, reads only",
+  "library/folders/titles/route.ts": "a catalogue title lookup: POST for the body (≤ 400 ids), reads only",
   "v1/leads/business-assessment/route.ts": "the public lead form; the session is read only to tag the lead",
 };
 

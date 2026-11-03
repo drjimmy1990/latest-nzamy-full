@@ -15,6 +15,8 @@ export interface Case {
   title:         string;
   client:        string;
   court:         string;
+  /** One of the 14 classifications (courtClassOf), or null — what the court filter and degree read. */
+  courtClass?:   string | null;
   type:          CaseType;
   status:        CaseStatus;
   priority:      Priority;

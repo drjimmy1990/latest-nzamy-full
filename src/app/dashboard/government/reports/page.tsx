@@ -1,4 +1,5 @@
 'use client';
+import { UnfinishedModuleNote } from "@/components/dashboard/sector/UnfinishedModuleNote";
 
 import { motion } from 'framer-motion';
 import { useState } from 'react';
@@ -49,6 +50,7 @@ export default function GovernmentReportsPage() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-5" dir="rtl">
+      <UnfinishedModuleNote href="/dashboard/government/reports" />
 
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}

@@ -20,9 +20,11 @@ import {
   releaseCouponUsage,
   sortOpenCouponOrders,
   staleOrderClosable,
-  validateCouponWith,
+  validateCouponWith as validateCouponWithBook,
   type OpenCouponOrderRow,
 } from "./couponServer.ts";
+import { buildCatalog } from "./catalog.ts";
+import { PRICE_BOOK, type BookEntry } from "../pricing/priceBook.ts";
 import { createCouponAttemptBudget } from "./couponAttempts.ts";
 import { fulfillOrderWith, type FulfilDeps, type GatewayClient } from "./fulfillCore.ts";
 import { refundOrderWith } from "./refundCore.ts";
@@ -35,6 +37,28 @@ const USER = "00000000-0000-0000-0000-00000000u001";
 const ORDER = "00000000-0000-0000-0000-0000000a0007";
 const COUPON = "00000000-0000-0000-0000-0000000c0050";
 const COUPON_META = { id: COUPON, code: "NZAMY50", discount_halalas: 5000, list_net_halalas: 149000 };
+
+/** A book entry with none of its cycles retired: what it was before it was retired. */
+function asSold(entry: BookEntry): BookEntry {
+  return {
+    ...entry,
+    prices: Object.fromEntries(Object.entries(entry.prices).map(([billing, p]) => [billing, { sar: p!.sar }])),
+  };
+}
+
+/**
+ * q329 (owner package of 1 Nov 2026) retired ind-preventive in the real book.
+ * The previews below were written with its 1,490 yearly price on sale and test
+ * the coupon rules, not the catalogue, so they run against the real book with
+ * that plan still sold (checkoutCore.test.ts does the same). The real
+ * catalogue's refusal of the retired plans is checkoutCore.test.ts's q329 tests.
+ */
+const PRE_Q329_BOOK: Readonly<Record<string, BookEntry>> = { ...PRICE_BOOK, "ind-preventive": asSold(PRICE_BOOK["ind-preventive"]) };
+const PRE_Q329_CATALOG = buildCatalog(PRE_Q329_BOOK);
+
+function validateCouponWith(...[deps, input]: Parameters<typeof validateCouponWithBook>) {
+  return validateCouponWithBook({ catalog: PRE_Q329_CATALOG, book: PRE_Q329_BOOK, ...deps }, input);
+}
 
 const ROW = {
   id: COUPON,
@@ -264,6 +288,57 @@ test("refund: a couponed order refunds exactly the PAID (discounted) total", asy
   assert.deepEqual(refunds, [166750]);
 });
 
+test("٣٠٦: a void inside the 90-minute window gives the coupon back; a normal refund keeps it used", async () => {
+  const order = {
+    id: "o",
+    user_id: "u",
+    merchant: "platform",
+    kind: "library",
+    status: "paid",
+    total_halalas: 166750,
+    paid_at: "2026-10-26T05:00:00Z",
+    fulfilled_at: "2026-10-26T05:00:01Z",
+    moyasar_payment_id: "p",
+    live: false,
+    metadata: { coupon: COUPON_META },
+  };
+  const paid: MoyasarPayment = { id: "p", status: "paid", amount: 166750, currency: "SAR", metadata: { order_id: "o" }, source: { type: "creditcard" }, invoice_id: null, refunded: 0, captured: 166750, createdAt: null };
+  for (const method of ["void", "refund"] as const) {
+    const db = fakeDb((q) => {
+      if (q.table === "payment_orders") return { data: order };
+      if (q.table === "points_lots") return { data: [] };
+      if (q.table === "claim_payment_refund") return { data: { token: "t", state: "processing", method, actor_id: "admin" } };
+      if (q.table === "finish_payment_refund") return { data: { done: true, tier: "free" } };
+      return {};
+    });
+    const r = await refundOrderWith(
+      {
+        admin: db.client,
+        now: () => NOW,
+        gateway: async (): Promise<Pick<MoyasarClient, "mode" | "fetchPayment" | "refund" | "void">> => ({
+          mode: "test",
+          fetchPayment: async () => ({ ok: true, data: paid }),
+          refund: async (_id: string, amount?: number) => ({ ok: true, data: { ...paid, status: "refunded", refunded: amount ?? 0 } }),
+          void: async () => ({ ok: true, data: { ...paid, status: "voided" } }),
+        }),
+        syncTier: async () => {},
+        notify: async () => {},
+      },
+      "o",
+      "admin",
+      true,
+    );
+    assert.equal(r.status, 200, method);
+    const released = db.log.filter((q) => q.table === "coupon_usage" && q.op === "delete");
+    if (method === "void") {
+      assert.equal(released.length, 1, "void: the coupon_usage row of the order goes");
+      assert.ok(has(released[0], "eq", "order_id", "o"));
+    } else {
+      assert.equal(released.length, 0, "refund: the coupon stays used");
+    }
+  }
+});
+
 // ── the preview ─────────────────────────────────────────────────────────────
 
 function previewDb(row: Record<string, unknown> | null = ROW, userType = "individual") {
@@ -299,13 +374,45 @@ test("validate: unknown code, wrong audience item and top-up answer refusals; no
   }
   {
     const { client } = previewDb();
-    const r = await validateCouponWith({ admin: client, now: () => NOW }, { userId: USER, code: "NZAMY50", itemId: "topup-1000", billing: "once" });
+    const r = await validateCouponWith({ admin: client, now: () => NOW }, { userId: USER, code: "NZAMY50", itemId: "topup-250", billing: "once" });
     assert.deepEqual(r, { status: 400, body: { error: "كود الخصم لا ينطبق على هذا المنتج" } });
   }
   {
     const { client } = fakeDb(() => ({ data: null }));
     const r = await validateCouponWith({ admin: client, now: () => NOW }, { userId: USER, code: "NZAMY50", itemId: "ind-preventive", billing: "yearly" });
     assert.equal(r.status, 503);
+  }
+});
+
+test("validate ٣٠٣: during the launch campaign a launch-priced cycle takes no coupon; after it, the preview has the listed price", async () => {
+  // firm-basic yearly: the launch price that still runs (ind-ai's 199 is retired, q329)
+  const ROW_NO_MIN = { ...ROW, min_order_amount: "0.00" };
+  {
+    const { client } = previewDb(ROW_NO_MIN, "firm");
+    const r = await validateCouponWithBook(
+      { admin: client, now: () => new Date("2026-12-01T09:00:00Z") },
+      { userId: USER, code: "NZAMY50", itemId: "firm-basic", billing: "yearly" },
+    );
+    assert.deepEqual(r, { status: 400, body: { error: "كود الخصم لا ينطبق على هذا المنتج" } });
+  }
+  {
+    const { client } = previewDb(ROW_NO_MIN, "firm");
+    const r = await validateCouponWithBook(
+      { admin: client, now: () => new Date("2027-02-01T09:00:00Z") },
+      { userId: USER, code: "NZAMY50", itemId: "firm-basic", billing: "yearly" },
+    );
+    assert.equal(r.status, 200);
+    assert.equal((r.body as { quote: { listNet: number } }).quote.listNet, 990000);
+  }
+  {
+    // q329: ind-ai yearly has no launch price any more — the coupon applies during the campaign
+    const { client } = previewDb(ROW_NO_MIN);
+    const r = await validateCouponWithBook(
+      { admin: client, now: () => new Date("2026-12-01T09:00:00Z") },
+      { userId: USER, code: "NZAMY50", itemId: "ind-ai", billing: "yearly" },
+    );
+    assert.equal(r.status, 200);
+    assert.equal((r.body as { quote: { listNet: number } }).quote.listNet, 24900);
   }
 });
 

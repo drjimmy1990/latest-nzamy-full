@@ -13,6 +13,7 @@ import {
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
+import { COMING_SOON_BADGE_AR, isTerminalToolHref } from "@/constants/betaGatedRoutes";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -368,6 +369,13 @@ export default function ArbitratorDashboard() {
                       <span className={`text-[11px] font-semibold leading-tight ${isDark ? "text-zinc-200" : "text-gray-700"}`}>
                         {tool.label}
                       </span>
+                      {/* Wave 1 task 6, fix round 1 (I5): a tile that opens a
+                          beta-gated tool says so. */}
+                      {isTerminalToolHref(tool.href) && (
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isDark ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-700"}`}>
+                          {COMING_SOON_BADGE_AR}
+                        </span>
+                      )}
                     </Link>
                   );
                 })}

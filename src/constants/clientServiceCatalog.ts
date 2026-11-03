@@ -14,7 +14,11 @@ export type ClientServicePriceMode =
   | "fixed"
   | "starting_from"
   | "custom"
-  | "per_page";
+  | "per_page"
+  // Wave 1 task 6 (G): a service paid in points by the tool itself, not in
+  // riyals and not covered by any plan. basePrice stays 0 (it is riyals
+  // everywhere it is read); the number of points lives in priceNote.
+  | "points";
 
 export type ClientServiceVisibility = "public" | "beta_hidden" | "internal";
 
@@ -238,40 +242,59 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     categoryId: "contracts",
     label: "صياغة عقد مخصص",
     description: "الذكاء الاصطناعي يصيغ عقدك من البداية حسب احتياجاتك الدقيقة",
-    basePrice: 99,
-    priceMode: "included",
-    priceNote: "أو ابتداءً من ٩٩ ر.س للطلب",
+    // q327 (owner package of 1 Nov 2026): no «ابتداءً من ٩٩ ر.س» — nothing
+    // ever charged it (requiresPayment is false; the route is the AI tool).
+    // The approved price is the tool's: ٥٠٠ نقطة for a contract (owner guide
+    // §3.2, q326), what /ai/contract-drafter charges (CONTRACT_DRAFT_PRICE in
+    // src/lib/ai/tools.ts; pricingApprovals.test.ts holds the two together —
+    // the registry is not imported here, it would ride into every client
+    // page). No riyal amount: 0. Migration 20261102_10 writes the same row.
+    // Wave 1 task 6 (G): no plan grant includes contract drafting (founder
+    // credits cover legal-drafter, contracts-pro, legal-opinion and wargaming;
+    // the AI plan grants 0 points, owner ٢٩١), so the card no longer says
+    // «مشمول في الباقة … أو ٥٠٠ نقطة»: mode "points" («بالنقاط») and the
+    // note is the tool's price alone. No includedByPlan. Migration
+    // 20261102_11 writes the same row (run it AFTER the deploy: older code
+    // has no "points" label).
+    basePrice: 0,
+    priceMode: "points",
+    priceNote: "٥٠٠ نقطة للعقد",
     route: "/ai/contract-drafter",
     icon: "PencilSimple",
     receiverType: "ai_workspace",
     requestType: "ai_draft",
     betaVisibility: "public",
     requiresPayment: false,
-    includedByPlan: "ai_individual",
     // No «الأكثر طلبا» tag (owner, Q164, 2026-10-03): no order data supports
     // a popularity claim. NOTE: migration 20260518 seeded the same tag into
     // admin_pricing_catalog.metadata, and /api/client-pricing lets that row
     // win (pricingRepository: metadata.tag ?? existing.tag) — the DB row must
-    // be cleared too for the tag to disappear in production.
+    // be cleared too for the tag to disappear in production; migration
+    // 20261102_10 clears it with the price.
     aiPowered: true,
   },
   {
     serviceId: "ai-letter",
     categoryId: "contracts",
-    label: "صياغة خطاب رسمي بالذكاء الاصطناعي",
-    description: "إنذار، إخطار، مطالبة، اعتراض - أدخل التفاصيل والـ AI يصيغ خطابك في دقيقة",
-    basePrice: 49,
-    priceMode: "included",
-    priceNote: "أو 49 ر.س للخطاب",
+    // Fix round 1b: was «صياغة خطاب رسمي بالذكاء الاصطناعي» / «والـ AI يصيغ
+    // خطابك في دقيقة». No model runs there (ClientLetterWorkflow.tsx: a
+    // guidance template, owner ruling س٣) — the card says what the page does.
+    label: "خطاب رسمي من قالب استرشادي",
+    description: "إنذار، إخطار، مطالبة، اعتراض - أدخل التفاصيل لتكوين مسودة من قالب، واطلب تدقيقها من المكتب",
+    // Wave 1 task 6, fix round 1 (I3): no «مشمول في الباقة · أو 49 ر.س للخطاب».
+    // No plan includes it and nothing charges 49: /dashboard/client/letters
+    // fills a guidance template in the browser and debits nothing. So: free,
+    // no riyal amount, no plan. (The DB row is enabled = false, so this code
+    // row is what the client services page shows.)
+    basePrice: 0,
+    priceMode: "free",
     route: "/dashboard/client/letters",
     icon: "Envelope",
     receiverType: "ai_workspace",
     requestType: "ai_draft",
     betaVisibility: "public",
     requiresPayment: false,
-    includedByPlan: "ai_individual",
     tag: "جديد",
-    aiPowered: true,
   },
   {
     serviceId: "contract-analyze",
@@ -295,9 +318,14 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     categoryId: "contracts",
     label: "مراجعة من محام متخصص",
     description: "محام متخصص يراجع عقدك ويقدم تقريرا قانونيا مكتوبا",
-    basePrice: 800,
+    // q327 (owner package of 1 Nov 2026 §6.2.1): from 600 for individuals,
+    // 800 for business. This catalogue is the individuals' one (the API reads
+    // audience = 'individual' only, and service_id is the table's key), so
+    // only the 600 lives here; the business 800 has no row to carry it.
+    // Migration 20261102_10 writes the same row.
+    basePrice: 600,
     priceMode: "starting_from",
-    priceNote: "2x سعر مراجعة المحامي",
+    priceNote: "سعر الأفراد؛ يُؤكَّد بعد الاطلاع على العقد",
     route: "/dashboard/client/requests/new?type=contract-review",
     icon: "MagnifyingGlass",
     receiverType: "lawyer",

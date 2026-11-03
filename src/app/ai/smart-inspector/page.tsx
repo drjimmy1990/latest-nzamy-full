@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 
 import { useState, useCallback, useRef, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -101,7 +102,7 @@ const ScoreBar = memo(function ScoreBar({ score, isDark }: { score: number; isDa
 });
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
-export default function SmartInspectorPage() {
+function SmartInspectorInner() {
   const { isDark } = useTheme();
 
   const [mode, setMode]               = useState<InputMode>("landing");
@@ -518,5 +519,14 @@ export default function SmartInspectorPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function SmartInspectorPage() {
+  return (
+    <GatedToolScreen toolId="smart-inspector.result" toolName="الفاحص الذكي">
+      <SmartInspectorInner />
+    </GatedToolScreen>
   );
 }

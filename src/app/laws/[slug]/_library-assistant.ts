@@ -7,6 +7,10 @@
  *
  * The answer to show is always the server's: its reply and citations, or the
  * refusal it gave. Nothing here invents a reply.
+ *
+ * The law page's slug goes with every question, so the server searches the
+ * law the reader is on before the whole library (owner's live test 29 Oct:
+ * two different laws got the same labour-law answer).
  */
 import { libraryAiRefusal, type LibraryAiAction } from "./_ai-reply.ts";
 
@@ -20,10 +24,28 @@ export interface LibraryAnswer {
 export const LIBRARY_AI_SOON =
   "الذكاء الاصطناعي قيد التفعيل وقريباً سيتوفر.\nحالياً يمكنك تصفح المواد والاستعانة بالفهرس والمبادئ والسوابق.";
 const FALLBACK = "تعذّر الاتصال بالخادم — حاول مرة أخرى";
+/** readQuota.LIBRARY_LOCK_SUPPORT_PATH; not imported, so this client file stays free of the proxy's modules. */
+const LOCK_SUPPORT = "/contact";
 
 function newKey(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
   return `k${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+}
+
+/** The same shape the server accepts (tools.ts LAW_SLUG); anything else is not sent. */
+const LAW_SLUG = /^[\p{L}\p{N}_.\-]{1,200}$/u;
+
+/** The law slug in a /laws/<slug> path (query and hash ignored, decoded once), or null. */
+export function lawSlugFromPath(path: string): string | null {
+  const m = /^\/laws\/([^/?#]+)/.exec(String(path ?? ""));
+  if (!m) return null;
+  let slug = m[1];
+  try {
+    slug = decodeURIComponent(slug);
+  } catch {
+    // A malformed escape: keep it as typed; the shape check below decides.
+  }
+  return LAW_SLUG.test(slug) ? slug : null;
 }
 
 export async function askLibrary(
@@ -38,7 +60,7 @@ export async function askLibrary(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         tool: "library-assistant",
-        input: { message: input.message, article_id: input.articleId ?? null },
+        input: { message: input.message, article_id: input.articleId ?? null, law_slug: lawSlugFromPath(currentPath) },
         idempotencyKey: newKey(),
       }),
     });
@@ -55,6 +77,11 @@ export async function askLibrary(
   if (res.status === 401 || (res.status === 403 && json.code === "library_tier")) {
     const refusal = libraryAiRefusal(res.status, currentPath);
     if (refusal) return { text: refusal.text, citations: [], action: refusal.action };
+  }
+  // A library lock is a 423 too, but not «قيد التفعيل»: the server's own lock
+  // message (readQuota.libraryLockMessageAr) and the way to support.
+  if (json.code === "library_security_lock" && typeof json.error === "string" && json.error) {
+    return { text: json.error, citations: [], action: { label: "تواصل معنا", href: LOCK_SUPPORT } };
   }
   // Switched off or not wired yet: the page's existing «قيد التفعيل».
   if (res.status === 423 || json.code === "not_ready") return { text: LIBRARY_AI_SOON, citations: [] };

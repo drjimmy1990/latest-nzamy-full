@@ -13,10 +13,19 @@
  *     least one card on screen actually prices. A card the book does not sell
  *     in the chosen cycle is not shown; one-payment items (top-ups, library
  *     passes) show in every cycle.
+ *   - A launch price (owner ٣٠٣) is shown only from the SERVER's answer
+ *     (GET /api/v1/pricing/launch, read after mount): the listed price struck
+ *     through and the launch price beside it. The browser's clock decides
+ *     nothing, and a server-rendered card never carries a launch price, so a
+ *     cached page cannot show one after the campaign ends.
+ *   - Backlog UX14: next to the button, what the buyer pays with VAT and for
+ *     which cycle — the same arithmetic as checkout's quote.
  *
  * Pure: relative imports only, so `node --test` loads it (cardPrice.test.ts).
  */
 import {
+  BILLING_LABEL_AR,
+  BILLING_LABEL_EN,
   INDIVIDUAL_CYCLES,
   PROFESSIONAL_CYCLES,
   bookEntry,
@@ -24,8 +33,10 @@ import {
   isOnSale,
   offeredBillings,
   offeredSar,
+  type Billing,
   type Cycle,
 } from "./priceBook.ts";
+import { VAT_PERCENT } from "../payments/catalog.ts";
 import type { AudienceTab } from "../../constants/pricing/pricing.types.ts";
 
 /** The card fields this module reads (a subset of Plan in pricing.types.ts). */
@@ -105,4 +116,76 @@ export function offeredCycles(audience: AudienceTab, cards: readonly Pick<CardPr
 export function displayCycle(offered: readonly Cycle[], picked: Cycle): Cycle {
   if (offered.includes(picked)) return picked;
   return offered[0] ?? "yearly";
+}
+
+// ── launch prices (owner ٣٠٣) and the VAT total (UX14) ─────────────────────
+
+/** GET /api/v1/pricing/launch's `prices`: `id:billing` → the running launch price. */
+export type LaunchPriceMap = Readonly<Record<string, { readonly sar: number; readonly listSar: number }>>;
+
+/** The billing a card is bought in from the toggle's cycle: one payment for top-ups and passes. */
+function cardBilling(id: string, cycle: Cycle): Billing | null {
+  const entry = bookEntry(id);
+  if (!entry || !isOnSale(entry)) return null;
+  if (offeredSar(entry, "once") !== null) return "once";
+  return offeredSar(entry, cycle) !== null ? cycle : null;
+}
+
+/** The server's launch price for (id, billing) when it still matches the book's listed price. */
+function launchSarFor(id: string, billing: Billing, launch: LaunchPriceMap | null): { sar: number; listSar: number } | null {
+  if (!launch) return null;
+  const key = `${id}:${billing}`;
+  const lp = Object.hasOwn(launch, key) ? launch[key] : undefined;
+  const listSar = offeredSar(bookEntry(id)!, billing);
+  if (!lp || listSar === null || lp.listSar !== listSar) return null;
+  if (!Number.isSafeInteger(lp.sar) || lp.sar <= 0 || lp.sar >= listSar) return null;
+  return { sar: lp.sar, listSar };
+}
+
+/**
+ * The struck-through original and the launch price a card shows in `cycle`,
+ * or null. Only a book card, only from the server's map, and only when the
+ * map's listed price is the book's own (a stale answer from before a price
+ * change shows nothing rather than a wrong pair).
+ */
+export function cardLaunch(
+  card: Pick<CardPriceFields, "id">,
+  cycle: Cycle,
+  launch: LaunchPriceMap | null,
+  lang: "ar" | "en",
+): { price: string; original: string } | null {
+  const billing = cardBilling(card.id, cycle);
+  const lp = billing ? launchSarFor(card.id, billing, launch) : null;
+  return lp ? { price: formatSarAmount(lp.sar, lang), original: formatSarAmount(lp.listSar, lang) } : null;
+}
+
+/** 28635 halalas → «٢٨٦٫٣٥» / "286.35"; whole riyals drop the fraction. */
+function halalasText(h: number, lang: "ar" | "en"): string {
+  const sar = formatSarAmount(Math.floor(h / 100), lang);
+  const rest = h % 100;
+  if (rest === 0) return sar;
+  const frac = String(rest).padStart(2, "0");
+  return lang === "en" ? `${sar}.${frac}` : `${sar}٫${frac.replace(/[0-9]/g, (d) => "٠١٢٣٤٥٦٧٨٩"[Number(d)])}`;
+}
+
+/**
+ * UX14: «الإجمالي شامل الضريبة ٢٨٦٫٣٥ ر.س · سنوي» for a book card in
+ * `cycle` — the net (the launch price when the server's map names one) plus
+ * 15 % VAT rounded to the halala, as catalog.quote charges it. null for a
+ * card the book does not price (sales quotes, display-only cards).
+ */
+export function cardTotalWithVat(
+  card: Pick<CardPriceFields, "id">,
+  cycle: Cycle,
+  launch: LaunchPriceMap | null,
+  lang: "ar" | "en",
+): string | null {
+  const billing = cardBilling(card.id, cycle);
+  if (!billing) return null;
+  const netSar = launchSarFor(card.id, billing, launch)?.sar ?? offeredSar(bookEntry(card.id)!, billing)!;
+  const net = netSar * 100;
+  const total = net + Math.round((net * VAT_PERCENT) / 100);
+  return lang === "en"
+    ? `Total incl. VAT: SAR ${halalasText(total, "en")} · ${BILLING_LABEL_EN[billing]}`
+    : `الإجمالي شامل الضريبة ${halalasText(total, "ar")} ر.س · ${BILLING_LABEL_AR[billing]}`;
 }

@@ -13,7 +13,13 @@ import {
   isCouponValidateRoute,
   isTrackingUnlockRoute,
   isAttachmentsZipRoute,
+  isPointsStandingRoute,
+  libraryBudgetBuckets,
+  canonicalApiPath,
 } from "./rateLimitRoutes.ts";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 // ─── isStrictRateLimitedRoute ────────────────────────────────────────────────
 
@@ -103,6 +109,8 @@ test("isLibraryReadRateLimitedRoute: search (POST) and the two article-text GET 
   assert.equal(isLibraryReadRateLimitedRoute("GET", "/api/library/laws/%D9%86%D8%B8%D8%A7%D9%85"), true);
   // N2.6: the in-document search reads the server-only text as the service role too.
   assert.equal(isLibraryReadRateLimitedRoute("POST", "/api/library/scoped-search"), true);
+  // Note ١٢-٣: the «هل تقصد» suggestions are a service-role RPC open to guests.
+  assert.equal(isLibraryReadRateLimitedRoute("GET", "/api/library/search/suggest"), true);
 });
 
 test("isLibraryReadRateLimitedRoute: other methods and other library routes do not", () => {
@@ -171,8 +179,103 @@ test("isAttachmentsZipRoute: the ZIP download (D3), GET and HEAD, the exact path
   assert.equal(isAttachmentsZipRoute("GET", "/api/v1/attachments/zipper"), false);
   assert.equal(isGeneralRateLimitedApiPath("GET", "/api/v1/attachments/zip"), false, "reads are not in the general bucket");
 });
+test("isPointsStandingRoute: the banner's GET (final review M2), GET and HEAD, the exact path only — never the run polls", () => {
+  assert.equal(isPointsStandingRoute("GET", "/api/v1/ai/points-standing"), true);
+  assert.equal(isPointsStandingRoute("HEAD", "/api/v1/ai/points-standing"), true);
+  assert.equal(isPointsStandingRoute("POST", "/api/v1/ai/points-standing"), false);
+  assert.equal(isPointsStandingRoute("GET", "/api/v1/ai/points-standing/x"), false);
+  assert.equal(isPointsStandingRoute("GET", "/api/v1/ai/runs"), false);
+  assert.equal(isPointsStandingRoute("GET", "/api/v1/ai/runs/0b6d0c4e-1111-4222-8333-444455556666"), false);
+  assert.equal(isGeneralRateLimitedApiPath("GET", "/api/v1/ai/points-standing"), false, "reads are not in the general bucket");
+});
+
+test("proxy: the points-standing match is in the early-return guard and has its own bucket on the general policy", () => {
+  const src = fs
+    .readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "proxy.ts"), "utf8")
+    .replace(/\r\n/g, "\n");
+  assert.match(src, /const isPointsStandingMatch = isPointsStandingRoute\(method, pathname\);/);
+  assert.match(src, /!isPointsStandingMatch && libraryBuckets\.length === 0\n\s*\) return null;/);
+  assert.match(src, /if \(isPointsStandingMatch\) \{\n\s*const decision = rateLimiter\.check\("points-standing", ip, GENERAL_RATE_LIMIT\);/);
+});
+
 test("isGeneralRateLimitedApiPath: n8n's AI callback is exempt, the browser's AI runs route is not", () => {
   assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/ai/callback"), false);
   assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/ai/runs"), true);
   assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/ai/callback/x"), true);
+});
+
+// ─── libraryBudgetBuckets (owner note ١٣ C03) ────────────────────────────────
+
+const API_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "app", "api");
+
+/** Every route.ts under `dir`, as [url path with sample segments, exported methods]. */
+function routesUnder(dir: string): Array<{ url: string; methods: string[] }> {
+  const out: Array<{ url: string; methods: string[] }> = [];
+  const walk = (abs: string) => {
+    for (const entry of fs.readdirSync(abs, { withFileTypes: true })) {
+      const next = path.join(abs, entry.name);
+      if (entry.isDirectory()) walk(next);
+      else if (entry.name === "route.ts") {
+        const rel = path.relative(API_DIR, path.dirname(next)).split(path.sep)
+          .map((seg) => (/^\[.+\]$/.test(seg) ? "sample-1" : seg));
+        const src = fs.readFileSync(next, "utf8");
+        const methods = [...src.matchAll(/export\s+(?:async\s+)?(?:function|const)\s+(GET|POST|PUT|PATCH|DELETE|HEAD)\b/g)]
+          .map((m) => m[1]);
+        out.push({ url: "/api/" + rel.join("/"), methods });
+      }
+    }
+  };
+  if (fs.existsSync(dir)) walk(dir);
+  return out;
+}
+
+test("note ١٣ C03: EVERY route under /api/library and /api/v1/library has a budget, for every method it exports", () => {
+  const routes = [
+    ...routesUnder(path.join(API_DIR, "library")),
+    ...routesUnder(path.join(API_DIR, "v1", "library")),
+  ];
+  assert.ok(routes.length >= 20, `only ${routes.length} routes found — is the walk looking in the right place?`);
+  for (const { url, methods } of routes) {
+    assert.ok(methods.length > 0, `${url}: no exported handler found`);
+    for (const method of methods) {
+      assert.ok(libraryBudgetBuckets(method, url).length > 0, `${method} ${url} has no budget`);
+    }
+  }
+});
+
+test("libraryBudgetBuckets: documents, catalogue and AI get their own tighter bucket as well", () => {
+  for (const p of ["/api/library/laws/x", "/api/library/books/x", "/api/library/precedents/x", "/api/library/decrees/x"]) {
+    assert.deepEqual(libraryBudgetBuckets("GET", p), ["library-any", "library-doc"], p);
+  }
+  assert.deepEqual(libraryBudgetBuckets("GET", "/api/library/init"), ["library-any", "library-init"]);
+  // Routes that only exist on the open library branch are covered already.
+  assert.deepEqual(libraryBudgetBuckets("GET", "/api/library/search/suggest"), ["library-any"]);
+  assert.deepEqual(libraryBudgetBuckets("GET", "/api/v1/library/my-grant"), ["library-any"]);
+  // Invitations: the redeem keeps the strict bucket AND the library catch-all.
+  assert.deepEqual(libraryBudgetBuckets("POST", "/api/v1/library/invitations/redeem"), ["library-any"]);
+  assert.equal(isStrictRateLimitedRoute("POST", "/api/v1/library/invitations/redeem"), true);
+});
+
+test("task 2 review M8: no route is left under /api/ai/ — the dead library-ai bucket is gone; a new route there needs a budget first", () => {
+  assert.deepEqual(routesUnder(path.join(API_DIR, "ai")), [], "a route under /api/ai/ has no rate-limit bucket: add one in rateLimitRoutes.ts");
+});
+
+test("libraryBudgetBuckets: percent-encoding a static segment does not dodge a bucket", () => {
+  assert.deepEqual(libraryBudgetBuckets("GET", "/api/librar%79/laws/x"), ["library-any", "library-doc"]);
+  assert.deepEqual(libraryBudgetBuckets("GET", "/api/library/law%73/x"), ["library-any", "library-doc"]);
+  assert.deepEqual(libraryBudgetBuckets("GET", "/api/library/ini%74"), ["library-any", "library-init"]);
+  assert.equal(canonicalApiPath("/api/library/laws%2Fx"), "/api/library/laws%2Fx");
+  assert.equal(canonicalApiPath("/api/library/%E0%A4%A"), "/api/library/%E0%A4%A");
+});
+
+test("libraryBudgetBuckets: neighbours are not swept in", () => {
+  assert.deepEqual(libraryBudgetBuckets("GET", "/api/librarything"), []);
+  assert.deepEqual(libraryBudgetBuckets("GET", "/api/v1/libraryx/status"), []);
+  assert.deepEqual(libraryBudgetBuckets("GET", "/api/aim"), []);
+  assert.deepEqual(libraryBudgetBuckets("POST", "/api/ai/anything"), []);
+  assert.deepEqual(libraryBudgetBuckets("GET", "/laws/labor-law"), []);
+  assert.deepEqual(libraryBudgetBuckets("POST", "/api/v1/ai/runs"), []);
+  // A document sub-path or a write is not a document read.
+  assert.deepEqual(libraryBudgetBuckets("GET", "/api/library/laws/x/y"), ["library-any"]);
+  assert.deepEqual(libraryBudgetBuckets("POST", "/api/library/laws/x"), ["library-any"]);
 });

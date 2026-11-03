@@ -8,13 +8,11 @@ import {
   BellRinging, ChartBar, Bird, ClockCounterClockwise, WarningCircle,
 } from "@phosphor-icons/react";
 
-import { usePomodoroEngine } from "./_pomodoro/usePomodoroEngine";
-import { MODE_COLORS, MODE_LABELS, DURATIONS, NOISE_CONFIG } from "./_pomodoro/types";
+import { usePomodoroClock, type PomodoroEngine } from "./_pomodoro/usePomodoroEngine";
+import { MODE_COLORS, MODE_LABELS, MIN_SAVE_DURATION, NOISE_CONFIG } from "./_pomodoro/types";
 import type { PomodoroMode, PomodoroSession } from "./_pomodoro/types";
-import {
-  getServerSessions, recordSessionOnServer, migrateLocalSessionsToServer,
-  workSessionToPomodoroSession,
-} from "./_pomodoro/storage";
+import { getServerSessions, migrateLocalSessionsToServer } from "./_pomodoro/storage";
+import { mergeSessionLog, type QueueState } from "./_pomodoro/sessionQueue";
 import { NoiseMixer }     from "./NoiseMixer";
 import { StatsPanel }     from "./StatsPanel";
 import { RankLevelBadge, SmartInsights, ShareButton } from "./PomodoroExtras";
@@ -133,21 +131,24 @@ type Tab = "timer" | "stats" | "insights" | "log";
 // ─── Main Panel ───────────────────────────────────────────────────────────────
 export default function PomodoroPanel({
   isDark,
-  taskTitles = [],
-  onPomodoroComplete,
+  tasks = [],
+  engine,
   userName,
 }: {
-  isDark:               boolean;
-  taskTitles?:          string[];
-  onPomodoroComplete?:  () => void;
-  userName?:            string;
+  isDark:     boolean;
+  /** Open tasks the period can be linked to — by id (CODE-F09), not by title. */
+  tasks?:     { id: string; title: string }[];
+  /** Owned by the tasks page so the period survives closing this panel (LIVE-F17). */
+  engine:     PomodoroEngine;
+  userName?:  string;
 }) {
-  const engine = usePomodoroEngine(onPomodoroComplete);
   const {
-    mode, timeLeft, running, sessions: localSessions, pomCount,
-    linkedTask, notif, noises,
-    setMode, toggleRun, reset, setLinkedTask, setNoises,
+    mode, totalSec, running, phase, sessions: localSessions, pomCount,
+    linkedTaskId, linkedTaskTitle, notif, noises, queue, recentlySynced,
+    setMode, toggleRun, reset, setLinkedTask, setNoises, retrySync,
   } = engine;
+  // Seconds left — re-renders this panel only, not the board (see usePomodoroClock).
+  const timeLeft = usePomodoroClock(engine);
 
   const { isLoggedIn, loading: userLoading } = useUser();
   const useServer = isSupabaseMode && isLoggedIn;
@@ -155,9 +156,7 @@ export default function PomodoroPanel({
   // ── Server-backed session history (supabase mode, signed in) ──────────────
   const [serverRead, setServerRead]       = useState<ListRead<PomodoroSession> | null>(null);
   const [serverLoading, setServerLoading] = useState<boolean>(isSupabaseMode);
-  const [syncWarning, setSyncWarning]     = useState(false);
   const initRan   = useRef(false);
-  const syncedKeys = useRef<Set<string>>(new Set());
 
   const fetchServer = useCallback(async () => {
     setServerLoading(true);
@@ -186,30 +185,13 @@ export default function PomodoroPanel({
     return () => { cancelled = true; };
   }, [isLoggedIn, userLoading, fetchServer]);
 
-  // Watch the engine's local buffer for a newly-completed session and record
-  // it server-side. Deduped on (startedAt, mode, durationMin) rather than the
-  // engine's own `Date.now()` id, which a double effect invocation could repeat.
-  useEffect(() => {
-    if (!useServer) return;
-    if (!serverRead || !serverRead.ok) return;
-    const latest = localSessions[0];
-    if (!latest) return;
-    const key = `${latest.startedAt}|${latest.mode}|${latest.durationMin}`;
-    if (syncedKeys.current.has(key)) return;
-    syncedKeys.current.add(key);
-
-    recordSessionOnServer(latest).then(saved => {
-      if (!saved) { setSyncWarning(true); return; }
-      setServerRead(prev => prev && prev.ok
-        ? {
-            ...prev,
-            items: [workSessionToPomodoroSession(saved), ...prev.items],
-            total: prev.total !== null ? prev.total + 1 : null,
-          }
-        : prev);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [localSessions, useServer, serverRead?.ok]);
+  // CODE-F09: the panel no longer records anything. It used to watch the
+  // engine's array and add a `startedAt|mode|durationMin` key to a "synced"
+  // set BEFORE the POST answered — a failed or interrupted request was then
+  // never retried. Finished periods now go through the engine's outbox
+  // (./_pomodoro/sessionQueue.ts), which the page owns and retries; this panel
+  // only SHOWS them: the server's log, plus what the outbox still holds
+  // (marked «بانتظار الحفظ» / «لم تُحفظ بعد»), one row per session id.
 
   const localViewState = localSessions.length === 0 ? "empty" : "ready";
   const viewState =
@@ -218,13 +200,23 @@ export default function PomodoroPanel({
     !isLoggedIn      ? localViewState :          // signed out — nothing to fetch
     listViewState(serverLoading, serverRead);    // signed in — the real read
 
-  const sessions: PomodoroSession[] = useServer ? itemsOf(serverRead) : localSessions;
+  const log: (PomodoroSession & { syncState?: QueueState })[] = useServer
+    ? mergeSessionLog([...recentlySynced, ...itemsOf(serverRead)], queue)
+    : localSessions;
+  const sessions: PomodoroSession[] = log;
+  const unsaved = useServer ? queue.filter(e => e.state === "failed").length : 0;
   const truncationNotice = useServer ? truncationNoticeAr(serverRead) : null;
+  const inProgress = phase !== "idle";
+  // The linked task may have left the open-task list (done, archived) while
+  // its period runs — keep it selectable so the select shows the truth.
+  const taskOptions = linkedTaskId && !tasks.some(t => t.id === linkedTaskId)
+    ? [{ id: linkedTaskId, title: linkedTaskTitle || "مهمة" }, ...tasks]
+    : tasks;
 
   const [tab, setTab] = useState<Tab>("timer");
 
-  const total = DURATIONS[mode];
-  const pct   = timeLeft / total;
+  const total = totalSec;
+  const pct   = total > 0 ? timeLeft / total : 0;
   const mins  = String(Math.floor(timeLeft / 60)).padStart(2, "0");
   const secs  = String(timeLeft % 60).padStart(2, "0");
   const color = MODE_COLORS[mode];
@@ -263,7 +255,7 @@ export default function PomodoroPanel({
           >
             <BellRinging size={18} weight="fill" className="text-emerald-500" />
             <p className={`text-[13px] font-bold ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>
-              {mode === "focus" ? "🦅 فترة تركيز مكتملة! إنجاز عظيم" : "انتهت الاستراحة — هيا بنا"}
+              {notif === "focus" ? "🦅 فترة تركيز مكتملة! إنجاز عظيم" : "انتهت الاستراحة — هيا بنا"}
             </p>
           </motion.div>
         )}
@@ -305,6 +297,7 @@ export default function PomodoroPanel({
                 const active = mode === m;
                 return (
                   <button key={m} onClick={() => setMode(m)}
+                    title={inProgress && !active ? `يغلق الفترة الحالية ويحفظها إن بلغت ${MIN_SAVE_DURATION} دقائق` : undefined}
                     className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-[12px] font-bold transition-all duration-300 ${
                       active ? `bg-opacity-15 bg-current shadow-sm` : isDark ? "text-zinc-600 hover:text-zinc-400" : "text-slate-400 hover:text-slate-600"
                     }`}
@@ -354,19 +347,27 @@ export default function PomodoroPanel({
                 {/* Noise Mixer */}
                 <NoiseMixer isDark={isDark} noises={noises} onChange={setNoises} />
 
-                {/* Linked task */}
-                {taskTitles.length > 0 && (
+                {/* Linked task — by id (CODE-F09); fixed while a period is open. */}
+                {(taskOptions.length > 0 || linkedTaskId) && (
                   <div>
                     <p className={`mb-2 text-[10px] font-black uppercase tracking-widest ${muted}`}>ربط بمهمة</p>
                     <select
-                      value={linkedTask} onChange={e => setLinkedTask(e.target.value)}
-                      className={`w-full rounded-2xl border px-4 py-3 text-[12px] font-bold outline-none transition-all ${
+                      value={linkedTaskId ?? ""}
+                      disabled={inProgress}
+                      onChange={e => {
+                        const picked = taskOptions.find(t => t.id === e.target.value);
+                        setLinkedTask(picked ? { id: picked.id, title: picked.title } : null);
+                      }}
+                      className={`w-full rounded-2xl border px-4 py-3 text-[12px] font-bold outline-none transition-all disabled:opacity-60 ${
                         isDark ? "border-white/[0.08] bg-black/20 text-zinc-200 focus:border-[#C8A762]/50" : "border-slate-200 bg-slate-50 text-slate-700 focus:border-[#0B3D2E]/50"
                       }`}
                     >
                       <option value="">بدون مهمة محددة</option>
-                      {taskTitles.map(t => <option key={t} value={t}>{t}</option>)}
+                      {taskOptions.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
                     </select>
+                    {inProgress && (
+                      <p className={`mt-1.5 text-[10px] font-semibold ${muted}`}>المهمة مثبّتة لهذه الفترة — أنهِ الفترة لتغييرها.</p>
+                    )}
                   </div>
                 )}
 
@@ -379,10 +380,10 @@ export default function PomodoroPanel({
                     style={{ backgroundColor: running ? undefined : color }}
                   >
                     {running ? <Pause size={18} weight="bold" /> : <Play size={18} weight="fill" />}
-                    {running ? "توقف مؤقت" : "ابدأ الفترة"}
+                    {running ? "توقف مؤقت" : phase === "paused" ? "استئناف" : "ابدأ الفترة"}
                   </MagneticButton>
-                  
-                  <MagneticButton onClick={reset} title="إعادة ضبط"
+
+                  <MagneticButton onClick={reset} title={`إنهاء الفترة — تُحفظ إن بلغت ${MIN_SAVE_DURATION} دقائق`}
                     className={`rounded-2xl p-4 transition-all duration-300 flex items-center justify-center ${
                       isDark ? "bg-white/[0.04] border border-white/[0.05] text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.08]" : "bg-slate-100 border border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-200"
                     }`}
@@ -390,6 +391,12 @@ export default function PomodoroPanel({
                     <ArrowCounterClockwise size={18} weight="bold" />
                   </MagneticButton>
                 </div>
+                {/* The policy, said where it applies (LIVE-F17 / CODE-F08). */}
+                <p className={`text-[10px] font-semibold leading-relaxed ${muted}`}>
+                  {inProgress
+                    ? `الفترة تستمر وإن أُغلقت هذه اللوحة أو الصفحة. «إنهاء الفترة» أو تغيير الوضع يغلقها ويحفظها إن بلغت ${MIN_SAVE_DURATION} دقائق تركيز.`
+                    : "الفترة تستمر وإن أُغلقت هذه اللوحة أو الصفحة، وتُسجَّل مكتملة لحظة انتهاء وقتها."}
+                </p>
               </div>
             </div>
 
@@ -447,8 +454,11 @@ export default function PomodoroPanel({
             {truncationNotice && (
               <p className={`text-[10px] font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>{truncationNotice}</p>
             )}
-            {syncWarning && (
-              <p className={`text-[10px] font-bold ${isDark ? "text-red-400" : "text-red-500"}`}>تعذّر حفظ إحدى الفترات على الخادم.</p>
+            {unsaved > 0 && (
+              <div className={`flex flex-wrap items-center gap-2 text-[10px] font-bold ${isDark ? "text-red-400" : "text-red-500"}`}>
+                <span>{`لم تُحفظ ${unsaved} ${unsaved === 1 ? "فترة" : "فترات"} على الخادم بعد — محفوظة في هذا المتصفح وتُعاد المحاولة تلقائياً.`}</span>
+                <button onClick={retrySync} className="underline underline-offset-2">إعادة المحاولة الآن</button>
+              </div>
             )}
             {viewState === "loading" ? (
               <SessionsLoadingNote isDark={isDark} />
@@ -461,9 +471,10 @@ export default function PomodoroPanel({
               </div>
             ) : (
               <div className="max-h-80 space-y-2 overflow-y-auto pr-2 custom-scrollbar">
-                {sessions.map(s => {
+                {log.map(s => {
                   const start = new Date(s.startedAt);
                   const end   = new Date(s.endedAt);
+                  const syncState = s.syncState;
                   return (
                     <motion.div
                       key={s.id}
@@ -481,6 +492,13 @@ export default function PomodoroPanel({
                           {s.taskTitle || MODE_LABELS[s.mode]}
                           {!s.completed && (
                             <span className={`mr-1.5 text-[10px] font-normal px-2 py-0.5 rounded-md ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-500"}`}>({s.durationMin}د جزئية)</span>
+                          )}
+                          {syncState && (
+                            <span className={`mr-1.5 text-[10px] font-normal px-2 py-0.5 rounded-md ${
+                              syncState === "failed"
+                                ? isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-500"
+                                : isDark ? "bg-amber-500/10 text-amber-300" : "bg-amber-50 text-amber-700"
+                            }`}>{syncState === "failed" ? "لم تُحفظ بعد" : "بانتظار الحفظ"}</span>
                           )}
                         </p>
                         {s.noises?.length > 0 && (

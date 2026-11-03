@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence } from "framer-motion";
 import {
   Timer, Plus, ArrowClockwise, CircleNotch, Warning, CalendarBlank,
@@ -17,6 +17,9 @@ import {
   getDeadlines, getDeadlineRules, getCourtHolidays, updateDeadline, setRuleVerified,
   type Deadline, type DeadlineRule, type HolidayRule, type DeadlineStatus,
 } from "@/lib/services/deadlinesService";
+import {
+  createLatestGuard, deadlineTruncationNoticeAr, windowCountLabel, type DeadlineAction,
+} from "@/lib/services/deadlineStatusPolicy";
 import AddDeadlineModal from "../_components/AddDeadlineModal";
 import DeadlineCard, { formatGregorianAr, AR_MONTHS } from "../_components/DeadlineCard";
 
@@ -41,6 +44,7 @@ const TABS: { key: DeadlineStatus | "all"; label: string }[] = [
   { key: "open", label: "مفتوحة" },
   { key: "done", label: "تمّت" },
   { key: "missed", label: "فائتة" },
+  { key: "cancelled", label: "ملغاة" },
   { key: "all", label: "الكل" },
 ];
 
@@ -62,29 +66,52 @@ function LawyerDeadlinesPage() {
   // tab — a lawyer looking at «تمّت» must still see how many are overdue.
   const [openRead, setOpenRead] = useState<ListRead<Deadline> | null>(null);
   const [openLoading, setOpenLoading] = useState(true);
+  // CODE-F32: each list keeps only the answer to its latest request — a slow
+  // reply to an earlier tab (or an earlier refresh) is dropped, never shown
+  // under the tab the lawyer has since switched to.
+  const openGuard = useRef(createLatestGuard()).current;
   const loadOpen = useCallback(() => {
+    const token = openGuard.next();
     setOpenLoading(true);
-    getDeadlines({ status: "open" }).then(setOpenRead).finally(() => setOpenLoading(false));
-  }, []);
+    getDeadlines({ status: "open" }).then((r) => {
+      if (!openGuard.isLatest(token)) return;
+      setOpenRead(r);
+      setOpenLoading(false);
+    });
+  }, [openGuard]);
   useEffect(() => { loadOpen(); }, [loadOpen]);
 
   // The list actually shown, scoped to the active tab.
   const [tabRead, setTabRead] = useState<ListRead<Deadline> | null>(null);
   const [tabLoading, setTabLoading] = useState(true);
+  const tabGuard = useRef(createLatestGuard()).current;
   const loadTab = useCallback(() => {
+    const token = tabGuard.next();
     setTabLoading(true);
-    getDeadlines({ status: tab }).then(setTabRead).finally(() => setTabLoading(false));
-  }, [tab]);
+    getDeadlines({ status: tab }).then((r) => {
+      if (!tabGuard.isLatest(token)) return;
+      setTabRead(r);
+      setTabLoading(false);
+    });
+  }, [tab, tabGuard]);
   useEffect(() => { loadTab(); }, [loadTab]);
 
   const openState = listViewState(openLoading, openRead);
   const openItems = itemsOf(openRead);
   const countersReady = openState === "ready" || openState === "empty";
-  const overdueCount = openItems.filter((d) => d.daysLeft !== null && d.daysLeft < 0).length;
-  const dueSoonCount = openItems.filter((d) => d.daysLeft !== null && d.daysLeft >= 0 && d.daysLeft <= 7).length;
-  const allOpenCount = openItems.length;
+  // The list is ordered by due date, so a cut list still holds every row of a
+  // window that ended before the cut; otherwise the counter says «N+».
+  const openCut = {
+    truncated: !!openRead?.ok && openRead.truncated,
+    lastShownDaysLeft: openItems.length ? openItems[openItems.length - 1].daysLeft : null,
+  };
+  const overdue = windowCountLabel(openItems.filter((d) => d.daysLeft !== null && d.daysLeft < 0).length, openCut, -1);
+  const dueSoon = windowCountLabel(openItems.filter((d) => d.daysLeft !== null && d.daysLeft >= 0 && d.daysLeft <= 7).length, openCut, 7);
+  const allOpenCount = openRead?.ok && openRead.total !== null ? openRead.total : openItems.length;
+  const countText = (c: { count: number; atLeast: boolean }) => `${toArabicDigits(c.count)}${c.atLeast ? "+" : ""}`;
 
   const tabView = listViewState(tabLoading, tabRead);
+  const tabCutNotice = tabRead?.ok ? deadlineTruncationNoticeAr(tabRead.items.length, tabRead.total) : null;
   const rows = useMemo(
     () => itemsOf(tabRead).slice().sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
     [tabRead],
@@ -94,14 +121,14 @@ function LawyerDeadlinesPage() {
   const [rowBusy, setRowBusy] = useState<Record<string, boolean>>({});
   const [rowError, setRowError] = useState<Record<string, string>>({});
 
-  async function handleRowAction(deadline: Deadline, next: "done" | "cancelled") {
+  async function handleRowAction(deadline: Deadline, next: DeadlineAction, reason: string) {
     setRowBusy((b) => ({ ...b, [deadline.id]: true }));
     setRowError((e) => { const n = { ...e }; delete n[deadline.id]; return n; });
     setTabRead((prev) => prev && prev.ok
       ? listOk(prev.items.map((d) => (d.id === deadline.id ? { ...d, status: next } : d)), prev.total)
       : prev);
     try {
-      await updateDeadline(deadline.id, { status: next });
+      await updateDeadline(deadline.id, { status: next, reason });
       loadOpen();
       loadTab();
     } catch (err) {
@@ -191,7 +218,7 @@ function LawyerDeadlinesPage() {
             <Warning size={16} />
           </div>
           <div>
-            <p className={`text-[17px] font-bold leading-none ${isDark ? "text-white" : "text-zinc-900"}`}>{countersReady ? toArabicDigits(overdueCount) : "—"}</p>
+            <p className={`text-[17px] font-bold leading-none ${isDark ? "text-white" : "text-zinc-900"}`}>{countersReady ? countText(overdue) : "—"}</p>
             <p className={`text-[11px] mt-0.5 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>متأخرة</p>
           </div>
         </div>
@@ -200,7 +227,7 @@ function LawyerDeadlinesPage() {
             <ClockCountdown size={16} />
           </div>
           <div>
-            <p className={`text-[17px] font-bold leading-none ${isDark ? "text-white" : "text-zinc-900"}`}>{countersReady ? toArabicDigits(dueSoonCount) : "—"}</p>
+            <p className={`text-[17px] font-bold leading-none ${isDark ? "text-white" : "text-zinc-900"}`}>{countersReady ? countText(dueSoon) : "—"}</p>
             <p className={`text-[11px] mt-0.5 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>خلال ٧ أيام</p>
           </div>
         </div>
@@ -218,10 +245,13 @@ function LawyerDeadlinesPage() {
       </div>
 
       {/* ── Tabs ── */}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="حالة المهل">
         {TABS.map((t) => (
           <button
             key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.key}
             onClick={() => setTab(t.key)}
             className={`rounded-xl px-3.5 py-2 text-[12px] font-bold transition-all ${
               tab === t.key
@@ -258,6 +288,11 @@ function LawyerDeadlinesPage() {
         </div>
       ) : (
         <div className="space-y-2.5">
+          {tabCutNotice && (
+            <p role="status" className={`flex items-start gap-1.5 rounded-xl px-3 py-2 text-[11.5px] ${isDark ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-700"}`}>
+              <Info size={13} className="mt-0.5 shrink-0" /> {tabCutNotice}
+            </p>
+          )}
           {rows.map((d) => (
             <DeadlineCard
               key={d.id}
@@ -265,7 +300,7 @@ function LawyerDeadlinesPage() {
               isDark={isDark}
               busy={!!rowBusy[d.id]}
               error={rowError[d.id] ?? null}
-              onAction={(next) => handleRowAction(d, next)}
+              onAction={(next, reason) => handleRowAction(d, next, reason)}
             />
           ))}
         </div>
@@ -369,7 +404,6 @@ function LawyerDeadlinesPage() {
             onClose={() => setShowAdd(false)}
             isDark={isDark}
             onCreated={() => {
-              setShowAdd(false);
               loadOpen();
               loadTab();
             }}

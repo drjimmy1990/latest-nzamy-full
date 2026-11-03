@@ -1,8 +1,9 @@
 "use client";
 
 /**
- * N2.4 — one card for a multi-volume judicial collection (a tagged series,
- * src/lib/library/precedentVolumes.ts): the series title, its court, the
+ * N2.4 — one card for a multi-volume judicial collection (a tagged series, or
+ * — owner note ٠٣ — untagged volumes of one court whose titles end «— المجلد
+ * N», src/lib/library/precedentVolumes.ts): the series title, its court, the
  * number of volumes and principles, the first volume's description in two
  * lines, and one button per volume. The first VISIBLE_VOLUMES buttons show at
  * once; «+N مجلدات» unfolds the rest in place.
@@ -18,11 +19,15 @@ import { motion } from "framer-motion";
 import { Books, Lock } from "@phosphor-icons/react";
 import { volumesCountLabel } from "@/lib/library/bookVolumes";
 import {
+  collectionCardExcerpt,
   collectionVolumeLabel,
   type CollectionSeriesGroup,
   type CollectionVolumeRow,
 } from "@/lib/library/precedentVolumes";
 import { ClampedSummary } from "./ClampedSummary";
+import { resultHref } from "../searchHitGroups";
+import { SaveToFolderButton } from "./SaveToFolderButton";
+import { collectionSaveDoc, type SaveToFolderDoc } from "../saveToFolder";
 
 const VISIBLE_VOLUMES = 4;
 
@@ -47,6 +52,8 @@ export function CollectionSeriesCard({
   viewerHasFullAccess,
   setShowPaywall,
   index,
+  q = "",
+  onSaveToFolder,
 }: {
   series: CollectionSeriesGroup<CatalogueCollectionRow>;
   isDark: boolean;
@@ -55,10 +62,15 @@ export function CollectionSeriesCard({
   viewerHasFullAccess: boolean;
   setShowPaywall: (show: boolean) => void;
   index: number;
+  /** The search, carried to the reader as ?q= (owner note ٠٦). */
+  q?: string;
+  /** Owner note ٠٤: «حفظ في مجلد» (saves the series' first volume). */
+  onSaveToFolder?: (doc: SaveToFolderDoc) => void;
 }) {
   const [showAll, setShowAll] = useState(false);
   const first = series.volumes[0].row;
-  const desc = series.volumes.find((v) => v.row.desc?.trim())?.row.desc ?? "";
+  // Owner note ٠٣ §٢: never a raw «## ديباجة …» heading on the card.
+  const desc = collectionCardExcerpt(series.volumes.find((v) => v.row.desc?.trim())?.row.desc ?? "");
   const shown = showAll ? series.volumes : series.volumes.slice(0, VISIBLE_VOLUMES);
   const hidden = series.count - shown.length;
   const anyFree = viewerHasFullAccess || series.volumes.some((v) => v.row.free !== false);
@@ -97,6 +109,7 @@ export function CollectionSeriesCard({
           <Books size={12} weight="fill" aria-hidden="true" />
           {volumesCountLabel(series.count)}
         </span>
+        <SaveToFolderButton doc={collectionSaveDoc({ id: first.id, title: series.title })} onSave={onSaveToFolder} isDark={isDark} />
       </div>
 
       <h3 className={`text-base font-black mb-1 leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>{series.title}</h3>
@@ -129,7 +142,7 @@ export function CollectionSeriesCard({
             return (
               <li key={v.row.id}>
                 {open ? (
-                  <Link href={`/precedents/${v.row.id}`} className={`${chip} ${openChip}`} title={v.row.title}>
+                  <Link href={resultHref(`/precedents/${v.row.id}`, q)} className={`${chip} ${openChip}`} title={v.row.title}>
                     {label}
                     <span className={muted}>{count}</span>
                   </Link>

@@ -34,6 +34,10 @@ import { ResultView } from "./_components/ResultView";
 import { LetterWorkflow } from "./_components/LetterWorkflow";
 import { SettingsStep } from "./_components/SettingsStep";
 import BetaReviewGate from "@/components/BetaReviewGate";
+import { useAiRun } from "@/hooks/useAiRun";
+import { LEGAL_OPINION_PRICE, LEGAL_OPINION_QUESTION_MAX, LEGAL_OPINION_QUESTION_MIN } from "@/lib/ai/tools";
+import { AiOpinionPanel, TeamOrderDivider } from "./_components/AiOpinionPanel";
+import { consultRunInput } from "./_components/aiOpinion";
 
 // ─── UI id → stored metadata.intake.outputType map (Task C4, notes §3) ─────────
 // The wizard's own identifiers are hyphenated; the persisted intake contract
@@ -166,6 +170,16 @@ export default function AILegalOpinionPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitErrors, setSubmitErrors] = useState<string[]>([]);
 
+  // L12 (owner LIVE-F21 / NOTE-22): the consultation's automatic path. Kept at
+  // page level so a paid result survives a step back and forth; a new type or
+  // a new quick question clears it.
+  const consultRun = useAiRun();
+  const consultText = description.trim();
+  const consultBlocked =
+    consultText.length < LEGAL_OPINION_QUESTION_MIN ? `اكتب سؤالك ووقائعه في ${LEGAL_OPINION_QUESTION_MIN.toLocaleString("ar-SA")} حرفاً على الأقل.`
+    : consultText.length > LEGAL_OPINION_QUESTION_MAX ? `السؤال أطول من ${LEGAL_OPINION_QUESTION_MAX.toLocaleString("ar-SA")} حرف — اختصره.`
+    : null;
+
   const opConfig = OUTPUT_TYPES.find(o => o.id === selectedType);
   // For letter type, show dedicated letter UI
   const isLetterMode = selectedType === "letter" && currentStep !== "type";
@@ -257,6 +271,7 @@ export default function AILegalOpinionPage() {
     setSubmitErrors([]);
     clearAttachError();
     attachments.forEach(a => removeAttachment(a.documentId));
+    consultRun.reset();
   }
 
   const reset = () => {
@@ -456,10 +471,14 @@ export default function AILegalOpinionPage() {
         {/* "MULTI-AGENT" / "٥ نماذج AI" badges and the "متعدد المصادر
             ومتعدد الوكلاء" (multi-source, multi-agent) phrase removed
             (Task C4 fix pass) — they asserted an automated multi-agent
-            pipeline that no longer runs; fulfilment is manual. What
-            remains below still describes what the client receives. */}
+            pipeline that never ran. L12: the consultation and the letter
+            now have a real automatic path; the other five types are still
+            the team's order, and the line below says which is which. */}
         <p className={`text-[12px] mt-1 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
           استشارات · دراسات · مذكرات رأي · بحث قانوني متخصص · عناية واجبة
+        </p>
+        <p className={`text-[11px] mt-1 leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+          الاستشارة والخطاب يكتبهما الذكاء الاصطناعي فوراً، ومراجعة الفريق لهما طلب منفصل اختياري. بقية المسارات طلبات يعدّها فريق نظامي.
         </p>
       </div>
 
@@ -531,9 +550,12 @@ export default function AILegalOpinionPage() {
                       setTopicArea("");
                       setDescription(question);
                       setCurrentStep("submit");
+                      // L12: the box leads to the automatic consultation; a
+                      // result for an earlier question must not sit under this one.
+                      consultRun.reset();
                     }}
                     className={`px-4 py-2 rounded-xl text-[11px] font-bold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] disabled:opacity-50 transition-colors flex items-center gap-2`}>
-                    إرسال
+                    متابعة
                     <ArrowSquareOut size={12} weight="bold" />
                   </button>
                 </div>
@@ -577,6 +599,12 @@ export default function AILegalOpinionPage() {
                       <span className={`text-[9px] rounded-full px-2 py-0.5 ${isDark ? "bg-zinc-800 text-zinc-500" : "bg-slate-100 text-slate-400"}`}>{ot.audience}</span>
                       <span className={`text-[9px] font-mono ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>{ot.credits} ك</span>
                     </div>
+                    {/* L12: which path each card is, in plain words. */}
+                    <p className={`mt-2 text-[10px] font-bold ${
+                      ot.id === "consult" || ot.id === "letter" ? "text-[#C8A762]" : isDark ? "text-zinc-500" : "text-slate-500"
+                    }`}>
+                      {ot.id === "consult" || ot.id === "letter" ? "توليد آلي فوري · مراجعة الفريق اختيارية" : "طلب يعدّه فريق نظامي"}
+                    </p>
                   </motion.button>
                 );
               })}
@@ -721,9 +749,25 @@ export default function AILegalOpinionPage() {
             collected earlier and included verbatim in buildIntake() above —
             not a control whose value fails to reach the order. */}
         {currentStep === "submit" && (
-          <motion.div key="step-submit" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+          <motion.div key="step-submit" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-4">
+            {/* L12: the consultation's automatic path first; the team order
+                below it is separate and optional (owner NOTE-22). */}
+            {selectedType === "consult" && (
+              <>
+                <AiOpinionPanel
+                  kind="consult"
+                  run={consultRun}
+                  input={consultRunInput(LEGAL_AREA_LABELS[topicArea], description)}
+                  blocked={consultBlocked}
+                  price={LEGAL_OPINION_PRICE}
+                  isDark={isDark} card={card}
+                />
+                <TeamOrderDivider isDark={isDark} />
+              </>
+            )}
             <SubmitStep
               isDark={isDark} card={card}
+              heading={selectedType === "consult" ? "طلب الاستشارة من فريق نظامي (اختياري)" : undefined}
               title={opConfig?.title ?? "الطلب"}
               recapRows={buildRecapRows()}
               description={description}
@@ -763,7 +807,7 @@ export default function AILegalOpinionPage() {
               onClick={next} disabled={!canProceed()}
               className="flex items-center gap-2 rounded-xl bg-[#0B3D2E] px-6 py-2.5 text-[12px] font-bold text-white disabled:opacity-40">
               {steps[ci + 1] === "submit" ? (
-                <><Sparkle size={13} weight="fill" />مراجعة الطلب وإرساله</>
+                <><Sparkle size={13} weight="fill" />{selectedType === "consult" ? "التالي: الاستشارة الآلية أو طلب الفريق" : "مراجعة الطلب وإرساله"}</>
               ) : (
                 <>التالي <ArrowLeft size={13} /></>
               )}

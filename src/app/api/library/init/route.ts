@@ -7,8 +7,11 @@ import { selectAllPages } from "@/lib/supabase/selectAllPages";
 import { EXEC_REGULATION_TYPE, toSectionCode } from "@/app/laws/lawsIndexFacets";
 import { maskListOfficialFields, TIER_SHAPED_CACHE_CONTROL } from "@/app/api/library/laws/[slug]/_official-meta";
 import { lawSummaryVisible } from "@/lib/library/lawSummaryVisibility";
+import { latestLegislativeEvent, summaryForViewer } from "@/lib/library/legislativeEvent";
 import { readWithOptionalFeatures, type OptionalFeature } from "@/lib/library/optionalColumn";
 import { BOOK_SERIES_FEATURE, bookVolumeColumns } from "@/lib/library/bookVolumes";
+import { SUCCESSOR_READ_MAX_ROWS, successorsBySupersededSlug } from "@/lib/library/lawSuccessors";
+import { isRepealedLawStatus } from "@/app/laws/law-status";
 
 /**
  * Card columns only (LIB-16). `select('*')` shipped every list row's `fts`
@@ -34,6 +37,19 @@ const LAW_LIST_COLUMNS =
  */
 const LAW_SUMMARY_COLUMN = "summary_brief";
 /**
+ * Owner ٣١٧ / ٣١٨ (note ١٢ item ٦): every viewer's law card carries ONE
+ * public date, «آخر تحديث تشريعي» — `latest_legislative_update`, the date
+ * ALONE («1448/01/08هـ»), the later of latest_update's date and the issue
+ * date (latestLegislativeEvent; the same key catalogue_recency_key orders
+ * by). Only the DATE leaves the database — a PostgREST JSON-path alias, so
+ * latest_update's instrument text (which carries review notes in 220 files,
+ * note ١٤ item ٩) is never read here — and the alias itself is deleted from
+ * every row before the response; issue_date_hijri stays masked for a
+ * non-subscriber (maskListOfficialFields).
+ */
+const LAW_EVENT_DATE_SELECT = "latest_update_date:latest_update->>date_hijri";
+const LAW_EVENT_DATE_ALIAS = "latest_update_date";
+/**
  * N2.5: the catalogue order (owner, README «٤٧» part ٥) — laws with a merged
  * executive regulation first, then the newest law first, by ONE date: the
  * later of its latest amendment and its issue date (an unamended law issued
@@ -48,10 +64,21 @@ const LAW_SUMMARY_COLUMN = "summary_brief";
  * /api/library/search orders by relevance (owner ٢٧٧ (أ), 20261026_52).
  */
 const LAW_SORT_KEY = "catalogue_recency_key";
+/**
+ * Owner ٣١٧ / note ١٢ item ٨: laws in force BEFORE repealed ones, then the
+ * order above. A stored generated boolean (status = 'repealed', migration
+ * 20261030_60), ordered ascending (false first); like the recency key it is
+ * locked for the API roles, ordered by on the service-role read and never
+ * selected. Before the migration the read drops it (readWithOptionalFeatures)
+ * and keeps the 20261025_40 order.
+ */
+const LAW_REPEALED_KEY = "catalogue_is_repealed";
 const LAW_OPTIONAL_FEATURES: readonly OptionalFeature[] = [
   { key: "summary", columns: [LAW_SUMMARY_COLUMN] },
   { key: "sort", columns: [LAW_SORT_KEY] },
+  { key: "repealedLast", columns: [LAW_REPEALED_KEY] },
 ];
+const ASC_NULLS_LAST = { ascending: true, nullsFirst: false } as const;
 const DESC_NULLS_LAST = { ascending: false, nullsFirst: false } as const;
 // `summary` (owner ٢٦٣): the card shows the short موجز, else the source's
 // summary — both are catalogue text, on the anon allow-list of 20261019_40.
@@ -253,7 +280,7 @@ export async function GET(request: Request) {
 
     const [laws, decrees, principles, books, collections] = await Promise.all([
       shouldFetch("laws")
-        ? fetchSection("laws", (on) => (on.has("summary") ? `${LAW_LIST_COLUMNS}, ${LAW_SUMMARY_COLUMN}` : LAW_LIST_COLUMNS), "laws", (q, on) => {
+        ? fetchSection("laws", (on) => `${on.has("summary") ? `${LAW_LIST_COLUMNS}, ${LAW_SUMMARY_COLUMN}` : LAW_LIST_COLUMNS}, ${LAW_EVENT_DATE_SELECT}`, "laws", (q, on) => {
             let out = q;
             if (lawSectionCode) out = out.eq("section_code", lawSectionCode);
             if (lawType) {
@@ -265,7 +292,9 @@ export async function GET(request: Request) {
                 : out.eq("type", lawType);
             }
             // N2.5 (see LAW_SORT_KEY): merged → newest of (amendment, issue), in SQL.
+            // Owner ٣١٧ / note ١٢ item ٨ (LAW_REPEALED_KEY): in force before repealed, first.
             if (on.has("sort")) {
+              if (on.has("repealedLast")) out = out.order(LAW_REPEALED_KEY, ASC_NULLS_LAST);
               return out
                 .order("has_merged_regulation", DESC_NULLS_LAST)
                 .order(LAW_SORT_KEY, DESC_NULLS_LAST)
@@ -278,7 +307,7 @@ export async function GET(request: Request) {
             features: LAW_OPTIONAL_FEATURES,
             // The موجز for the viewers the ٢٦٠ flag admits (answered: everyone,
             // the guest too); the order for all.
-            wanted: lawSummaryVisible(hasFullAccess) ? ["summary", "sort"] : ["sort"],
+            wanted: lawSummaryVisible(hasFullAccess) ? ["summary", "sort", "repealedLast"] : ["sort", "repealedLast"],
           })
         : Promise.resolve(emptySection()),
       shouldFetch("decrees")
@@ -317,11 +346,64 @@ export async function GET(request: Request) {
     // subscribers (tier pro+, never the whitelist — the same rule as the law
     // page). A non-subscriber's rows carry null there; `status` stays.
     const lawsRows = laws.data as unknown as Record<string, unknown>[];
+
+    // §2.4-1 (owner package 2026-11-02): the law that replaced each repealed
+    // law on this page, for the card's link next to «ملغى». The link is on the
+    // NEWER law (supersedes_law_slug), read like the law page's `replacedBy`
+    // (/api/library/laws/[slug]) with the request client — slug, title and
+    // supersedes_law_slug are on the anon allow-list of 20261004_01. ONE read
+    // of the few laws that name a predecessor (the column is mostly empty),
+    // paged by selectAllPages, only when this page has a repealed law — no
+    // `.in()` list in the URL. Supplementary: a failed lookup only means no
+    // link on the card.
+    let successorRows: unknown[] = [];
+    if (lawsRows.some((row) => isRepealedLawStatus(row.status))) {
+      try {
+        const { data, error } = await selectAllPages<Record<string, unknown>>(
+          (f, t) =>
+            supabase
+              .schema("library")
+              .from("laws")
+              .select("slug,title,supersedes_law_slug")
+              .not("supersedes_law_slug", "is", null)
+              .order("slug")
+              .range(f, t) as unknown as PromiseLike<{ data: Record<string, unknown>[] | null; error: { message: string } | null }>,
+          { pageSize: 1000, maxRows: SUCCESSOR_READ_MAX_ROWS }
+        );
+        if (error) console.warn("[Library Init API] successor lookup failed:", error.message);
+        else successorRows = data;
+      } catch (e) {
+        console.warn("[Library Init API] successor lookup threw:", e);
+      }
+    }
+    const successors = successorsBySupersededSlug(successorRows);
+
     laws.data = lawsRows.map((row) => {
       const slug = row.slug as string;
       const isFree = isFreeLibraryItem({ contentType: "laws", itemId: slug, hasFullAccess, freeItemsByType, whitelistedLawSlugs: whitelistedSlugs });
-      const shaped = isFree ? row : stripFields({ ...row }, ["preamble", "description", "article_status_summary"]);
-      return { ...maskListOfficialFields(shaped, hasFullAccess), free: isFree, locked: !isFree };
+      const replacedBy = isRepealedLawStatus(row.status) ? successors.get(slug) : undefined;
+      // Owner ٣١٨: the one public date, from the UNMASKED row (the mask below
+      // nulls issue_date_hijri for a non-subscriber) — the date alone.
+      const event = latestLegislativeEvent({
+        latest_update: { date_hijri: row[LAW_EVENT_DATE_ALIAS] },
+        issue_date_hijri: row.issue_date_hijri,
+      });
+      const { [LAW_EVENT_DATE_ALIAS]: _eventDate, ...rest } = row;
+      void _eventDate; // never sent: the raw latest_update date leaves only as `latest_legislative_update`
+      const shaped = isFree ? rest : stripFields({ ...rest }, ["preamble", "description", "article_status_summary"]);
+      // Owner ٣١٩ (ب): the موجز stays for everyone; a non-subscriber's loses
+      // its decree numbers and issue dates here, on the server.
+      if (typeof shaped.summary_brief === "string") {
+        shaped.summary_brief = summaryForViewer(shaped.summary_brief, hasFullAccess) || null;
+      }
+      return {
+        ...maskListOfficialFields(shaped, hasFullAccess),
+        ...(event ? { latest_legislative_update: event.dateHijri } : {}),
+        // §2.4-1: {slug, title} of the law that replaced a repealed one.
+        ...(replacedBy ? { replaced_by: replacedBy } : {}),
+        free: isFree,
+        locked: !isFree,
+      };
     }) as any;
 
     const decreesRows = decrees.data as unknown as Record<string, unknown>[];

@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Buildings, Robot, Copy, DownloadSimple, Warning, CheckCircle, XCircle, ArrowLeft, ArrowRight } from "@phosphor-icons/react";
@@ -6,7 +7,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
 import BetaReviewGate from "@/components/BetaReviewGate";
 type Step = "input" | "reviewing" | "result";
-export default function ProcurementReviewerPage() {
+function ProcurementReviewerInner() {
   const { isDark, isRTL } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [step, setStep] = useState<Step>("input");
@@ -97,5 +98,14 @@ export default function ProcurementReviewerPage() {
         </AnimatePresence>
       </div>
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function ProcurementReviewerPage() {
+  return (
+    <GatedToolScreen toolId="gov.procurement-reviewer" toolName="تقرير مراجعة المنافسات والمشتريات">
+      <ProcurementReviewerInner />
+    </GatedToolScreen>
   );
 }

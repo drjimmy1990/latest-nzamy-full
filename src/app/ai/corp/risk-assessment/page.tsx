@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -94,7 +95,7 @@ function formatRiskAssessmentReport(inp: RiskInputs, result: RiskResult) {
   ].filter(Boolean).join("\n");
 }
 
-export default function SupplierRiskAssessmentPage() {
+function SupplierRiskAssessmentInner() {
   const { isDark } = useTheme();
   const [inp, setInp] = useState<RiskInputs>({
     partyName: "", partyType: "", duration: "", contractValue: "",
@@ -318,5 +319,14 @@ export default function SupplierRiskAssessmentPage() {
 
       </div>
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function SupplierRiskAssessmentPage() {
+  return (
+    <GatedToolScreen toolId="corp.risk-assessment" toolName="تحليل مخاطر الطرف التعاقدي">
+      <SupplierRiskAssessmentInner />
+    </GatedToolScreen>
   );
 }

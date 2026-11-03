@@ -279,6 +279,8 @@ test("a key the route did not promise cannot reach the dashboard", () => {
     "pendingConsultations",
     "recentActivity",
     "recentCases",
+    "revenueIssuedThisMonth",
+    "revenueOutstanding",
     "revenueThisMonth",
     "upcomingHearings",
     "upcomingHearingsCount",

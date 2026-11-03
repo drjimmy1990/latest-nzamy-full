@@ -19,6 +19,7 @@ import {
   type PaymentStage, type PaymentStatus,
 } from "@/lib/services/contractVocabulary";
 import { normalizeCommercialRegister, isValidCommercialRegister } from "@/lib/services/clientIdentityRules";
+import { checkSaudiPhone, checkOptionalEmail, phoneAllowsUnified } from "@/lib/services/contactFieldRules";
 import { getLawyerClients, type LawyerClient } from "@/lib/services/lawyerClientsService";
 
 /**
@@ -154,6 +155,11 @@ export function PartyFormModal({ contractId, isDark, onClose, initial, onSaved, 
 
   const crTrimmed = commercialRegisterNo.trim();
   const crInvalid = !!crTrimmed && !isValidCommercialRegister(crTrimmed);
+  // LIVE-F39: both optional, but a filled one must have the right format —
+  // the same check the API route runs (contactFieldRules.ts). Recomputed on
+  // every keystroke; what the lawyer typed is never cleared on an error.
+  const phoneCheck = checkSaudiPhone(contactPhone, { allowUnified: phoneAllowsUnified(entityType) });
+  const emailCheck = checkOptionalEmail(contactEmail);
 
   const inputCls = inputClsFor(isDark);
   const labelCls = labelClsFor(isDark);
@@ -162,6 +168,8 @@ export function PartyFormModal({ contractId, isDark, onClose, initial, onSaved, 
     const trimmedName = name.trim();
     if (!trimmedName) { setError("اسم الطرف مطلوب."); return; }
     if (crInvalid) { setError("رقم السجل التجاري يجب أن يتكوّن من ١٠ أرقام."); return; }
+    if (!phoneCheck.ok) { setError(phoneCheck.error); return; }
+    if (!emailCheck.ok) { setError(emailCheck.error); return; }
 
     setSaving(true);
     setError(null);
@@ -173,8 +181,8 @@ export function PartyFormModal({ contractId, isDark, onClose, initial, onSaved, 
         entityType,
         lawyerClientId: selectedClientId || null,
         commercialRegisterNo: crTrimmed ? normalizeCommercialRegister(crTrimmed) : null,
-        contactPhone: contactPhone.trim() || null,
-        contactEmail: contactEmail.trim() || null,
+        contactPhone: phoneCheck.value,
+        contactEmail: emailCheck.value,
         position: initial?.position ?? (parties?.length ?? 0),
       };
       const saved = initial
@@ -243,12 +251,17 @@ export function PartyFormModal({ contractId, isDark, onClose, initial, onSaved, 
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className={labelCls}>الهاتف</label>
-            <input type="text" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} className={inputCls} />
+            <label className={labelCls}>الهاتف (اختياري)</label>
+            <input type="tel" dir="ltr" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} className={inputCls}
+              placeholder={phoneAllowsUnified(entityType) ? "05XXXXXXXX / 920XXXXXX" : "05XXXXXXXX"}
+              aria-invalid={!phoneCheck.ok} />
+            {!phoneCheck.ok && <p className="mt-1.5 text-[11px] font-semibold text-red-500">{phoneCheck.error}</p>}
           </div>
           <div>
-            <label className={labelCls}>البريد الإلكتروني</label>
-            <input type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} className={inputCls} />
+            <label className={labelCls}>البريد الإلكتروني (اختياري)</label>
+            <input type="email" dir="ltr" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} className={inputCls}
+              placeholder="name@example.com" aria-invalid={!emailCheck.ok} />
+            {!emailCheck.ok && <p className="mt-1.5 text-[11px] font-semibold text-red-500">{emailCheck.error}</p>}
           </div>
         </div>
 

@@ -180,7 +180,8 @@ test("source contract: the admin route, the status route and access-control are 
   assert.match(settings, /billing_company:\s*billingCompanySettingIssue/);
   assert.match(settings, /points_enforcement:/);
   assert.match(settings, /return paymentsGatewaySettingIssue\(value,/);
-  assert.match(settings, /await validate\(value, \{ billingCompanyComplete: readBillingCompanyComplete \}\)/);
+  // P3 Task 8: the value validated is `toStore` (founder_campaign merges into the stored value first).
+  assert.match(settings, /await validate\(toStore, \{ billingCompanyComplete: readBillingCompanyComplete \}\)/);
   assert.doesNotMatch(settings, /live غير مدعوم بعد/);
 
   const status = read("../../app/api/v1/payments/status/route.ts");

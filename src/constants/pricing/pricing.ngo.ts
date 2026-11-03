@@ -2,6 +2,10 @@ import { Brain, Heart, ShieldCheck, FileText } from "@phosphor-icons/react";
 import { Plan, ComparisonCategory } from "./pricing.types";
 
 // ─── Plans: NGO / Non-Profit Organizations ────────────────────────────────────
+// Wave 1 task 6: the NGO AI tools (المستشار الذكي، صائغ عقود التطوع، محلل
+// التبرعات، مُعد التقارير) end at the beta gate's "not available" card
+// (src/constants/betaGatedRoutes.ts), so no plan sells them or a weekly quota
+// of them: one «قريباً» line instead.
 export const plansNgo: { ar: Plan[]; en: Plan[] } = {
   ar: [
     {
@@ -10,7 +14,7 @@ export const plansNgo: { ar: Plan[]; en: Plan[] } = {
       desc: "إدارة أساسية للمتطوعين والتبرعات لدعم القطاع الثالث", target: "جمعيات ناشئة", cta: "سجّل جمعيتك مجاناً",
       ctaHref: "/register/client?type=ngo", highlighted: false, color: "border-slate-200/50",
       features: {
-        ai: ["المستشار الذكي: ٣ استفسارات / أسبوع", null, null, null],
+        ai: ["أدوات الذكاء الاصطناعي: قريباً", null, null, null],
         platform: ["إدارة المتطوعين (حتى ٥٠ متطوع)", "سجل التبرعات والماليات الأساسي", "رادار الامتثال (تنبيهات فقط)", null],
         support: ["دعم مجتمعي عبر المنتدى", null],
       },
@@ -21,7 +25,7 @@ export const plansNgo: { ar: Plan[]; en: Plan[] } = {
       desc: "أدوات الذكاء الاصطناعي لرفع كفاءة الحوكمة والتشغيل", target: "جمعيات متوسطة", cta: "ارتقِ بالجمعية",
       ctaHref: "/register/client?type=ngo&plan=ngo-impact", highlighted: true, color: "border-emerald-200/60 dark:border-emerald-500/20",
       features: {
-        ai: ["المستشار الذكي: ٥٠/أسبوع", "صائغ عقود التطوع AI", "محلل التبرعات والبيانات المالية", null],
+        ai: ["أدوات الذكاء الاصطناعي: قريباً", null, null, null],
         platform: ["إدارة المتطوعين (حتى ٥٠٠)", "تصدير التقارير الربعية (مسودة)", "رادار الامتثال التفاعلي", "خصم ١٥٪ على استشارات المحامين"],
         support: ["دعم فني أولوية عبر البريد", null],
       },
@@ -32,7 +36,7 @@ export const plansNgo: { ar: Plan[]; en: Plan[] } = {
       desc: "حوكمة كاملة وتقارير تلقائية للمراكز الرقابية", target: "مؤسسات كبرى", cta: "تواصل للمؤسسات",
       ctaHref: "/register/client?type=ngo&plan=ngo-institutional", highlighted: false, color: "border-royal/20",
       features: {
-        ai: ["جميع قدرات AI للجمعيات", "مدقق الحوكمة الذكي (المركز الوطني)", "مُعد التقارير السنوية AI", "مراجعة عقود الشراكات"],
+        ai: ["أدوات الذكاء الاصطناعي: قريباً", "مدقق الحوكمة الذكي (المركز الوطني)", "مراجعة عقود الشراكات", null],
         platform: ["لوحة تحكم إدارية متقدمة", "ربط مباشر مع مكاتب المحاماة", "إعداد تلقائي لتقرير الشفافية", null],
         support: ["مدير حساب مخصص"],
       },
@@ -45,7 +49,7 @@ export const plansNgo: { ar: Plan[]; en: Plan[] } = {
       desc: "Basic management for volunteers and donations", target: "New NGOs", cta: "Sign Up Free",
       ctaHref: "/register/client?type=ngo", highlighted: false, color: "border-slate-200/50",
       features: {
-        ai: ["AI Consultant: 3 queries / week", null, null, null],
+        ai: ["AI tools: coming soon", null, null, null],
         platform: ["Volunteer management (up to 50)", "Basic donation ledger", "Compliance radar (alerts only)", null],
         support: ["Community forum support", null],
       },
@@ -56,7 +60,7 @@ export const plansNgo: { ar: Plan[]; en: Plan[] } = {
       desc: "AI tools to elevate governance and operations", target: "Mid-size NGOs", cta: "Upgrade NGO",
       ctaHref: "/register/client?type=ngo&plan=ngo-impact", highlighted: true, color: "border-emerald-200/60 dark:border-emerald-500/20",
       features: {
-        ai: ["AI Consultant: 50/week", "AI Volunteer Contract Drafter", "Donation & Finance Analyzer", null],
+        ai: ["AI tools: coming soon", null, null, null],
         platform: ["Up to 500 volunteers", "Quarterly reports export", "Interactive compliance radar", "15% discount on lawyer consults"],
         support: ["Priority email support", null],
       },
@@ -67,7 +71,7 @@ export const plansNgo: { ar: Plan[]; en: Plan[] } = {
       desc: "Full governance and automated regulatory reports", target: "Large Institutions", cta: "Contact Us",
       ctaHref: "/register/client?type=ngo&plan=ngo-institutional", highlighted: false, color: "border-royal/20",
       features: {
-        ai: ["All NGO AI features", "Smart Governance Checker (NCNP)", "AI Annual Report Generator", "Partnership Contract Review"],
+        ai: ["AI tools: coming soon", "Smart Governance Checker (NCNP)", "Partnership Contract Review", null],
         platform: ["Advanced admin dashboard", "Direct connection to law firms", "Auto Transparency Report prep", null],
         support: ["Dedicated account manager"],
       },
@@ -79,11 +83,9 @@ export const plansNgo: { ar: Plan[]; en: Plan[] } = {
 export const comparisonNgo: { ar: ComparisonCategory[]; en: ComparisonCategory[] } = {
   ar: [
     { category: "أدوات الذكاء الاصطناعي", icon: Brain, rows: [
-      { feature: "المستشار الذكي",                 "ngo-free": "٣/أسبوع", "ngo-impact": "٥٠/أسبوع",    "ngo-institutional": "١٠٠/أسبوع" },
-      { feature: "صائغ عقود التطوع AI",            "ngo-free": false,     "ngo-impact": true,          "ngo-institutional": true },
-      { feature: "محلل التبرعات والمالية",         "ngo-free": false,     "ngo-impact": true,          "ngo-institutional": true },
+      { feature: "الاستشارة وعقود التطوع والتبرعات", "ngo-free": "قريباً",  "ngo-impact": "قريباً",      "ngo-institutional": "قريباً" },
       { feature: "مدقق الحوكمة الذكي",             "ngo-free": false,     "ngo-impact": false,         "ngo-institutional": true },
-      { feature: "مُعد التقارير التلقائي",         "ngo-free": false,     "ngo-impact": false,         "ngo-institutional": true },
+      { feature: "مُعد التقارير التلقائي",         "ngo-free": false,     "ngo-impact": false,         "ngo-institutional": "قريباً" },
     ]},
     { category: "الامتثال والإدارة", icon: ShieldCheck, rows: [
       { feature: "إدارة المتطوعين",                "ngo-free": "٥٠ كحد أقصى","ngo-impact": "حتى ٥٠٠",  "ngo-institutional": "حتى ١,٠٠٠ + تحليلات" },
@@ -93,11 +95,9 @@ export const comparisonNgo: { ar: ComparisonCategory[]; en: ComparisonCategory[]
   ],
   en: [
     { category: "AI Tools", icon: Brain, rows: [
-      { feature: "AI Consultant",                  "ngo-free": "3/week",  "ngo-impact": "50/week",   "ngo-institutional": "100/week" },
-      { feature: "AI Volunteer Contract",          "ngo-free": false,     "ngo-impact": true,          "ngo-institutional": true },
-      { feature: "Donation Analyzer",              "ngo-free": false,     "ngo-impact": true,          "ngo-institutional": true },
+      { feature: "Consultant, volunteer contracts, donations", "ngo-free": "Soon", "ngo-impact": "Soon", "ngo-institutional": "Soon" },
       { feature: "Smart Governance Checker",       "ngo-free": false,     "ngo-impact": false,         "ngo-institutional": true },
-      { feature: "Auto Report Generator",          "ngo-free": false,     "ngo-impact": false,         "ngo-institutional": true },
+      { feature: "Auto Report Generator",          "ngo-free": false,     "ngo-impact": false,         "ngo-institutional": "Soon" },
     ]},
     { category: "Compliance & Management", icon: ShieldCheck, rows: [
       { feature: "Volunteer Management",           "ngo-free": "Up to 50", "ngo-impact": "Up to 500",  "ngo-institutional": "Up to 1,000 + Analytics" },

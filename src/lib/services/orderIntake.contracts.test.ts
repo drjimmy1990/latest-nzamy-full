@@ -291,3 +291,30 @@ test("review mode does not require named parties", () => {
   const r = validateContractsIntake({ ...validReview, parties: undefined });
   assert.equal(r.ok, true);
 });
+
+test("draft mode refuses a malformed representative ID (§3.5-3b) and accepts a valid or absent one", () => {
+  const withId = (id: string) => ({ ...validDraftBase, parties: { ...validDraftBase.parties, two: { type: "company", companyName: "شركة", representativeId: id } } });
+  const bad = validateContractsIntake(withId("1234"));
+  assert.equal(bad.ok, false);
+  if (!bad.ok) assert.ok(bad.errors.some((e) => e.includes("رقم هوية الممثل") && e.includes("الطرف الثاني")));
+  assert.equal(validateContractsIntake(withId("2023456789")).ok, true);
+  assert.equal(validateContractsIntake(withId("")).ok, true);
+  const stale = { ...validDraftBase, parties: { ...validDraftBase.parties, two: { type: "individual", fullName: "خالد", representativeId: "1234" } } };
+  assert.equal(validateContractsIntake(stale).ok, true, "a leftover ID on a non-company party is ignored");
+});
+
+test("draft mode: the order keeps a normalised ID and no stale representative values (M4, M5)", () => {
+  const r = validateContractsIntake({
+    ...validDraftBase,
+    parties: {
+      one: { type: "company", companyName: "شركة", representativeRole: "مدير", representativeRoleOther: "قديم", representativeId: " ١٠٢٣٤٥٦٧٨٩ " },
+      two: { type: "individual", fullName: "خالد", representativeId: "1023456789", representativeRole: "مدير" },
+    },
+  });
+  assert.equal(r.ok, true);
+  if (!r.ok) return;
+  assert.deepEqual(r.value.parties?.one, { type: "company", companyName: "شركة", representativeRole: "مدير", representativeId: "1023456789" });
+  assert.deepEqual(r.value.parties?.two, { type: "individual", fullName: "خالد" });
+  assert.equal(validateContractsIntake(r.value).ok, true, "the cleaned output re-validates");
+  assert.equal(validateContractsIntake({ ...validDraftBase, parties: { ...validDraftBase.parties, one: { type: "company", companyName: "ش", representativeId: "ID 1023456789" } } }).ok, false, "a prefix is refused, not stripped");
+});

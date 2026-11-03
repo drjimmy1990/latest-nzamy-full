@@ -9,11 +9,15 @@ import { buildWebhookPayload } from "@/lib/n8n/payload";
 import { recordNotification } from "@/lib/notify";
 import { stripInternalNotes } from "@/lib/services/internalNotes";
 import { isKnownReceiver, ownRequestsOrFilter } from "@/lib/services/ownRequestsFilter";
-import { checkOrderIntake, intakeErrorMessageAr } from "@/lib/services/intakeGuard";
+import { checkOrderIntake, intakeErrorMessageAr, persistedRequestMetadata } from "@/lib/services/intakeGuard";
+import { isPleadingDraftIntake } from "@/lib/services/orderIntake";
+import { assertCourtPractice } from "@/lib/auth/assertCourtPractice";
 import { validateServiceRequestCreate } from "@/lib/services/serviceRequestIntake";
+import { consultationBookingRefusal } from "@/app/api/v1/lawyer/consultations/_scheduleGuard";
 import { resolveServiceRequestEntityScope } from "@/lib/auth/serviceRequestEntityScope";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
+import { createStatusFor } from "@/lib/services/ownCaseStatus";
 
 async function resolveActiveEntityIds(supabase: SupabaseClient, userId: string) {
   const [firmResult, businessResult, ownedFirmResult, ownedBusinessResult] = await Promise.all([
@@ -380,6 +384,27 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
+    // Art. 18: a legal consultant does not plead, so he may not order a
+    // pleading from الصائغ القانوني either (the page hides it; this is the
+    // server's half). The specialist documents stay open to him.
+    if (intakeCheck.kind === "ok" && intakeCheck.service === "draft" && isPleadingDraftIntake((requestData.metadata as { intake?: unknown }).intake)) {
+      const refused = await assertCourtPractice(supabase, user.id);
+      if (refused) return refused;
+    }
+    // Consultation slot (owner findings LIVE-F34 / CODE-F31 / LIVE-F35): a
+    // real Riyadh date AND time strictly after now, or neither; and, for a
+    // booking the lawyer files to themselves, no unconfirmed overlap with
+    // their own scheduled consultations. See lawyer/consultations/_scheduleGuard.ts.
+    if (shape.value.type === "consultation") {
+      const slotRefusal = await consultationBookingRefusal(supabase, {
+        userId: user.id,
+        metadata: requestData.metadata,
+        assignedToSelf: (requestData.assignedTo ?? requestData.assigned_to ?? null) === user.id,
+        confirmOverlap: requestData.confirmOverlap === true,
+        nowMs: Date.now(),
+      });
+      if (slotRefusal) return slotRefusal;
+    }
 
     // Task 6d follow-up — clamp the creation-time status. Without this, a
     // client could POST a row already `status: "completed"` and it would
@@ -393,26 +418,14 @@ export async function POST(request: NextRequest) {
     // AddHearingModal.tsx, AddCaseModal.tsx, lawyer/contracts/page.tsx,
     // lawyer/consultations/page.tsx, client/requests/new/page.tsx,
     // client/find-lawyer/page.tsx, client/consultation/new/page.tsx) and
-    // none of them ever sends `completed`, `assigned`, or `cancelled` at
-    // creation — the full observed set is exactly this allowlist.
-    const CREATE_STATUS_ALLOWLIST = new Set([
-      "draft",
-      "in_review",
-      "pending_payment",
-      "pending_assignment",
-    ]);
-    const requestedStatus =
-      typeof requestData.status === "string" ? requestData.status : undefined;
-    let status =
-      requestedStatus && CREATE_STATUS_ALLOWLIST.has(requestedStatus)
-        ? requestedStatus
-        : "pending_assignment";
-
+    // none of them ever sends `completed` or `cancelled` at creation.
+    // `assigned` is accepted for one caller only — a lawyer or firm filing
+    // its OWN case to itself (LIVE-F14 / LAW-DETAIL-006); see ownCaseStatus.ts.
+    // It is decided below, once the caller's account type has been read.
+    //
     // A client can never confirm its own payment. All paid requests remain
-    // pending until a future signed, idempotent provider webhook exists.
-    if (isPaidRequest) {
-      status = "pending_payment";
-    }
+    // pending until a future signed, idempotent provider webhook exists —
+    // createStatusFor returns `pending_payment` for every paid request.
 
     // Entity ownership is resolved from active member/owner rows only. The
     // client may request a *kind* of entity context but can never supply an id.
@@ -456,6 +469,14 @@ export async function POST(request: NextRequest) {
       );
     }
     const { firmId, businessId } = entityScope;
+
+    const status = createStatusFor({
+      requested: requestData.status,
+      isPaid: isPaidRequest,
+      selfAssigned: (requestData.assignedTo ?? requestData.assigned_to ?? null) === user.id,
+      receiver: shape.value.receiver,
+      actorUserType: actorProfile && typeof actorProfile.user_type === "string" ? actorProfile.user_type : null,
+    });
 
     // Optional link to a lawyer_clients card (رقم الموكّل). Only ever written
     // when the RLS client can itself read that row — this is the ownership
@@ -515,7 +536,9 @@ export async function POST(request: NextRequest) {
         receiver: shape.value.receiver,
         requester: shape.value.requester,
         payment: persistedPayment,
-        metadata: requestData.metadata ?? {},
+        // The validated intake and an allow-listed courtClass, not the raw
+        // body (intakeGuard.persistedRequestMetadata).
+        metadata: persistedRequestMetadata(requestData.metadata),
         // Phase 2 columns, sent ONLY when they carry a value. Both exist on
         // production only after migration 20260903_phase2 has been run; a solo
         // lawyer or a request with no picked client inserts exactly the column
@@ -530,6 +553,25 @@ export async function POST(request: NextRequest) {
       })
       .select()
       .single();
+
+    // LAW-DETAIL-005: a retry of a create whose answer was lost sends the same
+    // client-made id. The primary key refuses it (23505); if that row is this
+    // caller's own, answer with it instead of a 500 — the case exists once,
+    // and the side effects below already ran on the first call.
+    if (reqError?.code === "23505" && typeof requestData.id === "string") {
+      const { data: existing } = await supabase
+        .from("service_requests")
+        .select()
+        .eq("id", requestData.id)
+        .eq("requester_user_id", user.id)
+        .maybeSingle();
+      if (existing) {
+        return NextResponse.json(
+          { data: toWorkflowRequest(existing as unknown as Record<string, unknown>), replayed: true },
+          { status: 200 },
+        );
+      }
+    }
 
     if (reqError) {
       console.error("[service-requests POST] Supabase error:", reqError.message, reqError.details, reqError.hint, reqError.code);

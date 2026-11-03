@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -22,7 +23,7 @@ const OPINION_TYPES: OpinionType[] = [
 
 type Step = "input" | "research" | "result";
 
-export default function LegalOpinionDrafterPage() {
+function LegalOpinionDrafterInner() {
   const [step, setStep] = useState<Step>("input");
   const [opinionType, setOpinionType] = useState<OpinionType | "">("");
   const [factsText, setFactsText] = useState("");
@@ -311,5 +312,14 @@ ${opinionType === "رأي قانوني في عقد" ? "أن العقد المع�
 
       </AnimatePresence>
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function LegalOpinionDrafterPage() {
+  return (
+    <GatedToolScreen toolId="gov.legal-opinion-drafter" toolName="الرأي القانوني الحكومي">
+      <LegalOpinionDrafterInner />
+    </GatedToolScreen>
   );
 }

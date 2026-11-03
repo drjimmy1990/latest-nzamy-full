@@ -21,6 +21,7 @@ import {
 import { SkeletonList } from "../_components/DashboardSkeleton";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
+import { formatRiyadhSlotAr } from "@/lib/services/consultationSchedule";
 import {
   MODE_COPY,
   CHANNEL_LABEL,
@@ -199,7 +200,8 @@ function formatDate(iso: string | null | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("ar-SA", { year: "numeric", month: "long", day: "numeric" });
+  // Riyadh's calendar day, not the browser's (LIVE-F37).
+  return d.toLocaleDateString("ar-SA", { year: "numeric", month: "long", day: "numeric", timeZone: "Asia/Riyadh" });
 }
 
 /** `metadata.x` as a non-empty string, or null. Never "null"/"undefined". */
@@ -480,7 +482,8 @@ export default function ConsultationListPage() {
                 specialty: null,
                 topic: sc.description || "",
                 date: formatDate(sc.created_at),
-                scheduledDate: formatDate(sc.scheduled_at),
+                // Date AND time, Riyadh wall clock, zone named (LIVE-F37 / UX10).
+                scheduledDate: formatRiyadhSlotAr(sc.scheduled_at) ?? "",
                 // These rows carry no amount column at all. It used to be
                 // filled in as 0, which rendered «٠ ر.س» — a stated price,
                 // invented.

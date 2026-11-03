@@ -1,5 +1,8 @@
 import { NextResponse, NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
+import { createServiceClient } from "@/lib/supabase/server";
+import { readStoredObjectHead } from "@/lib/storedObjectHead";
+import { validateContractVersionFile } from "@/lib/services/contractVersionFile";
 import { isVersionLabel } from "@/lib/services/contractVocabulary";
 import { VERSION_SELECT, dbErrorResponse, toVersionDto, profileNames, type VersionRow } from "../../_shared";
 
@@ -76,21 +79,41 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     if (!storagePath.startsWith(`${user.id}/`)) {
       return NextResponse.json({ error: "مسار الملف غير صالح" }, { status: 400 });
     }
+    // Only a contract-version key (storageKey.contractVersionStorageKey) —
+    // the one place that writes these rows. This is also what makes the
+    // remove() below safe: it can never delete another of the user's files,
+    // such as a case attachment in the same bucket.
+    if (!storagePath.startsWith(`${user.id}/contracts/`)) {
+      return NextResponse.json({ error: "مسار الملف غير صالح" }, { status: 400 });
+    }
 
     const label = body.label !== undefined ? body.label : "draft";
     if (!isVersionLabel(label)) {
       return NextResponse.json({ error: "تصنيف النسخة غير صالح." }, { status: 400 });
     }
 
-    let sizeBytes: number | null = null;
-    if (body.sizeBytes !== undefined && body.sizeBytes !== null) {
-      if (typeof body.sizeBytes !== "number" || !Number.isFinite(body.sizeBytes) || body.sizeBytes < 0) {
-        return NextResponse.json({ error: "حجم الملف غير صالح." }, { status: 400 });
-      }
-      sizeBytes = body.sizeBytes;
+    // LIVE-F40 / CODE-F39 (owner package 2026-10-30): a 54-byte TXT became
+    // the current version because this route trusted the caller's name, type
+    // and size. It now reads what Storage actually holds — the first bytes
+    // and the real size — and applies contractVersionFile's policy (PDF or
+    // Word by content, ≤ 20 MB). A refused file is deleted from the bucket
+    // and no row is written, so it leaves no trace. The body's `sizeBytes`
+    // and `mimeType` are ignored; both come from the checked object.
+    const service = await createServiceClient();
+    const bucket = service.storage.from("documents");
+    const stored = await readStoredObjectHead(bucket, storagePath);
+    if (!stored.ok) {
+      console.error(`[lawyer/contracts versions POST] stored object unreadable (${stored.reason}): contract=${id}`);
+      return NextResponse.json({ error: "لم يُعثر على الملف المرفوع — أعد رفعه." }, { status: 400 });
     }
-
-    const mimeType = typeof body.mimeType === "string" && body.mimeType.trim() ? body.mimeType.trim() : null;
+    const fileCheck = validateContractVersionFile({ name: fileName, size: stored.size, head: stored.head });
+    if (!fileCheck.ok) {
+      const { error: removeError } = await bucket.remove([storagePath]);
+      if (removeError) console.error("[lawyer/contracts versions POST] refused file not removed:", removeError.message);
+      return NextResponse.json({ error: fileCheck.error }, { status: fileCheck.status });
+    }
+    const sizeBytes: number = stored.size;
+    const mimeType: string = fileCheck.contentType;
     const notes = typeof body.notes === "string" ? body.notes.trim() : "";
     const makeCurrent = body.makeCurrent !== false;
 

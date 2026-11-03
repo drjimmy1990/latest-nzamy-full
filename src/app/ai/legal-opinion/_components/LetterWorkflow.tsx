@@ -16,6 +16,10 @@ import { useOrderAttachments } from "@/hooks/useOrderAttachments";
 import { validateLegalOpinionIntake } from "@/lib/services/orderIntake.legalOpinion";
 import { createServiceOrder } from "@/lib/services/serviceOrders";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
+import { useAiRun } from "@/hooks/useAiRun";
+import { LEGAL_OPINION_PRICE, LETTER_SUBJECT_MAX } from "@/lib/ai/tools";
+import { AiOpinionPanel, TeamOrderDivider } from "./AiOpinionPanel";
+import { letterRunInput } from "./aiOpinion";
 
 interface LetterWorkflowProps {
   isDark: boolean;
@@ -77,6 +81,9 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
   // controller notes: it needs its own submit path.
   const [submitting, setSubmitting] = useState(false);
   const [submitErrors, setSubmitErrors] = useState<string[]>([]);
+  // L12 (owner LIVE-F21 / NOTE-22): the letter's automatic path, on step 4
+  // above the team order. The letter is signed by the sender typed in step 2.
+  const letterRun = useAiRun();
 
   // Resolves letterType to a display label, "other" included. Previously
   // `LETTER_TYPES.find(l => l.id === letterType)?.label` resolved to
@@ -127,6 +134,10 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
     return lines.filter(Boolean).join("\n");
   }, [recipientType, govEntity, recipientName, letterType, senderName,
       letterSubject, letterLegalRef, responseDeadline, deadlineDays, letterAttachments]);
+
+  const letterBlocked =
+    letterSubject.trim().length > LETTER_SUBJECT_MAX ? `موضوع الخطاب أطول من ${LETTER_SUBJECT_MAX.toLocaleString("ar-SA")} حرف — اختصره.`
+    : letterAttachments.length > 10 ? "مرفقات ذيل الخطاب أكثر من عشرة." : null;
 
   // Kept defined but never called any more (Task C4) — see the letterDone
   // comment above. The step-3 "التالي" button now moves straight to
@@ -234,7 +245,7 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
           indicator. */}
       <div className={`${card} p-3 mb-4`}>
         <div className="flex items-center gap-1">
-          {["نوع الخطاب", "الأطراف", "الموضوع", "مراجعة وإرسال"].map((l, i) => {
+          {["نوع الخطاب", "الأطراف", "الموضوع", "التوليد أو الطلب"].map((l, i) => {
             const n = i + 1;
             const isActive = letterStep === n;
             const isDone = letterStep > n;
@@ -730,7 +741,7 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
               disabled={letterSubject.trim().length < 10 || uploading}
               className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-700 to-blue-500 px-6 py-2.5 text-[13px] font-bold text-white disabled:opacity-40 shadow-[0_4px_12px_-4px_rgba(37,99,235,0.5)]"
             >
-              <PaperPlaneTilt size={14} />{uploading ? "جارٍ رفع الملف..." : "التالي: مراجعة وإرسال"}
+              <PaperPlaneTilt size={14} />{uploading ? "جارٍ رفع الملف..." : "التالي: التوليد الآلي أو طلب الفريق"}
             </motion.button>
           </div>
         </motion.div>
@@ -742,10 +753,30 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
           screen previews the same fullLetterText (genuinely composed from
           steps 1-3, not fabricated) and submits it as a real order — the
           admin's starting draft, per the controller notes. */}
+      {/* L12: the automatic letter first, then the team order — separate and
+          optional (owner NOTE-22). */}
       {letterStep === 4 && (
-        <motion.div key="ls4-submit" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className={`${card} p-5 space-y-4`}>
+        <motion.div key="ls4" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+          <AiOpinionPanel
+            kind="letter"
+            run={letterRun}
+            input={letterRunInput({
+              typeLabel: letterTypeLabel,
+              senderRole, senderName,
+              recipientType, recipientName, govEntity,
+              subject: letterSubject,
+              legalRef: letterLegalRef,
+              deadlineDays: responseDeadline ? deadlineDays : null,
+              annexes: letterAttachments,
+            })}
+            blocked={letterBlocked}
+            price={LEGAL_OPINION_PRICE}
+            isDark={isDark} card={card}
+          />
+          <TeamOrderDivider isDark={isDark} />
+        <div className={`${card} p-5 space-y-4`}>
           <div>
-            <h2 className={`text-[15px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>مراجعة الطلب وإرساله</h2>
+            <h2 className={`text-[15px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>طلب الخطاب من فريق نظامي (اختياري)</h2>
             <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
               سيراجع فريق نظامي بيانات الخطاب يدوياً ويُصدر لك النسخة النهائية الجاهزة للاستخدام، وسيصلك إشعار عند جهوزيتها. النص أدناه مسودة انطلاق مبنية على بياناتك — لن يُرسل كما هو دون مراجعة الفريق.
             </p>
@@ -854,6 +885,7 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
               <PaperPlaneTilt size={14} />{submitting ? "جارٍ الإرسال..." : uploading ? "جارٍ رفع الملف..." : "إرسال الطلب"}
             </motion.button>
           </div>
+        </div>
         </motion.div>
       )}
 

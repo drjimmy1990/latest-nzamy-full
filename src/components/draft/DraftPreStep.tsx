@@ -90,7 +90,7 @@ export function DraftPreStep({ onStartDraft, initialMode = "" }: DraftPreStepPro
             <div className="relative space-y-2">
               <p className={`font-bold text-[17px] ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>صياغة جديدة</p>
               <p className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-                مذكرة · دعوى · رد · استئناف · طعن — صياغة احترافية من الصفر يعدّها فريق نظامي
+                مذكرة · دعوى · رد · استئناف · طعن — يحلّل الذكاء الاصطناعي الوقائع ويكتبها مستنداً إلى المكتبة، ومراجعة فريق نظامي اختيارية
               </p>
             </div>
 

@@ -1,38 +1,35 @@
 import { Brain, Gavel, Users } from "@phosphor-icons/react";
 import { ComparisonCategory } from "./pricing.types";
 
+// Wave 1 task 6, fix round 2 (I6): CorpMind, the AI contract reviewer, the
+// compliance radar and the 360° health check are beta-gated or «قريباً»
+// pages (src/constants/betaGatedRoutes.ts, DashboardComingSoon), so this
+// table sells none of them: one «قريباً» row, as in comparisonGovernment.
+// Contract review keeps only the lawyer counts the plan cards
+// (pricing.companies.ts) list.
 export const comparisonCompanies: { ar: ComparisonCategory[]; en: ComparisonCategory[] } = {
   ar: [
     { category: "أدوات الذكاء الاصطناعي", icon: Brain, rows: [
       { 
-        feature: "CorpMind / استفسارات AI",
-        "biz-sm-basic": "٢٠/شهر", "biz-sm-pro": "٥٠/شهر", "biz-sm-full": "١٠٠/شهر",
-        "biz-md-basic": "٣٠/شهر", "biz-md-pro": "١٠٠/شهر", "biz-md-full": "٢٠٠/شهر",
-        "biz-lg-basic": "٥٠/شهر", "biz-lg-pro": "٢٠٠/شهر", "biz-lg-full": "مخصص",
-        "dept-sm-basic": "خصم من النقاط", "dept-sm-pro": "خصم من النقاط", "dept-sm-full": "خصم من النقاط",
-        "dept-md-basic": "خصم من النقاط", "dept-md-pro": "خصم من النقاط", "dept-md-full": "خصم من النقاط",
-        "dept-lg-basic": "خصم من النقاط", "dept-lg-pro": "خصم من النقاط", "dept-lg-full": "خصم من النقاط",
-      },
-      { 
-        feature: "مراجعة العقود",
-        "biz-sm-basic": "٣ عقود (AI)", "biz-sm-pro": "٥ عقود (AI + محامٍ)", "biz-sm-full": "١٠ عقود (AI + محامٍ)",
-        "biz-md-basic": "٥ عقود (AI)", "biz-md-pro": "١٠ عقود (AI + محامٍ)", "biz-md-full": "١٥ عقداً (AI + محامٍ)",
-        "biz-lg-basic": "٨ عقود (AI)", "biz-lg-pro": "٢٠ عقداً (AI + محامٍ)", "biz-lg-full": "مخصص",
-        "dept-sm-basic": "خصم من النقاط", "dept-sm-pro": "خصم من النقاط", "dept-sm-full": "خصم من النقاط",
-        "dept-md-basic": "خصم من النقاط", "dept-md-pro": "خصم من النقاط", "dept-md-full": "خصم من النقاط",
-        "dept-lg-basic": "خصم من النقاط", "dept-lg-pro": "خصم من النقاط", "dept-lg-full": "خصم من النقاط",
-      },
-      { 
-        feature: "رادار امتثال (Compliance)",
-        "biz-sm-basic": "❌", "biz-sm-pro": "أساسي", "biz-sm-full": "متقدم",
-        "biz-md-basic": "أساسي", "biz-md-pro": "متقدم", "biz-md-full": "فحص ٣٦٠°",
-        "biz-lg-basic": "أساسي", "biz-lg-pro": "متقدم + تقييم مخاطر", "biz-lg-full": "مخصص",
-        "dept-sm-basic": "❌", "dept-sm-pro": "✅", "dept-sm-full": "مخصص",
-        "dept-md-basic": "❌", "dept-md-pro": "✅", "dept-md-full": "فحص ٣٦٠°",
-        "dept-lg-basic": "❌", "dept-lg-pro": "متقدم", "dept-lg-full": "مخصص",
+        feature: "أدوات الذكاء الاصطناعي",
+        "biz-sm-basic": "قريباً", "biz-sm-pro": "قريباً", "biz-sm-full": "قريباً",
+        "biz-md-basic": "قريباً", "biz-md-pro": "قريباً", "biz-md-full": "قريباً",
+        "biz-lg-basic": "قريباً", "biz-lg-pro": "قريباً", "biz-lg-full": "قريباً",
+        "dept-sm-basic": "قريباً", "dept-sm-pro": "قريباً", "dept-sm-full": "قريباً",
+        "dept-md-basic": "قريباً", "dept-md-pro": "قريباً", "dept-md-full": "قريباً",
+        "dept-lg-basic": "قريباً", "dept-lg-pro": "قريباً", "dept-lg-full": "قريباً",
       },
     ]},
     { category: "الخدمات القانونية", icon: Gavel, rows: [
+      { 
+        feature: "مراجعة عقود محامٍ",
+        "biz-sm-basic": "❌", "biz-sm-pro": "٢/شهر", "biz-sm-full": "٥/شهر",
+        "biz-md-basic": "❌", "biz-md-pro": "٥/شهر", "biz-md-full": "١٠/شهر",
+        "biz-lg-basic": "❌", "biz-lg-pro": "١٠/شهر", "biz-lg-full": "حسب العقد",
+        "dept-sm-basic": "❌", "dept-sm-pro": "❌", "dept-sm-full": "❌",
+        "dept-md-basic": "❌", "dept-md-pro": "❌", "dept-md-full": "❌",
+        "dept-lg-basic": "❌", "dept-lg-pro": "❌", "dept-lg-full": "❌",
+      },
       { 
         feature: "استشارات محامٍ متخصص",
         "biz-sm-basic": "❌", "biz-sm-pro": "ساعتين/شهر", "biz-sm-full": "٥ ساعات/شهر",
@@ -76,34 +73,25 @@ export const comparisonCompanies: { ar: ComparisonCategory[]; en: ComparisonCate
   en: [
     { category: "AI Tools", icon: Brain, rows: [
       { 
-        feature: "CorpMind / AI Queries",
-        "biz-sm-basic": "20/mo", "biz-sm-pro": "50/mo", "biz-sm-full": "100/mo",
-        "biz-md-basic": "30/mo", "biz-md-pro": "100/mo", "biz-md-full": "200/mo",
-        "biz-lg-basic": "50/mo", "biz-lg-pro": "200/mo", "biz-lg-full": "Custom",
-        "dept-sm-basic": "Uses points", "dept-sm-pro": "Uses points", "dept-sm-full": "Uses points",
-        "dept-md-basic": "Uses points", "dept-md-pro": "Uses points", "dept-md-full": "Uses points",
-        "dept-lg-basic": "Uses points", "dept-lg-pro": "Uses points", "dept-lg-full": "Uses points",
-      },
-      { 
-        feature: "Contract Review",
-        "biz-sm-basic": "3 docs (AI)", "biz-sm-pro": "5 docs (AI + Lawyer)", "biz-sm-full": "10 docs (AI + Lawyer)",
-        "biz-md-basic": "5 docs (AI)", "biz-md-pro": "10 docs (AI + Lawyer)", "biz-md-full": "15 docs (AI + Lawyer)",
-        "biz-lg-basic": "8 docs (AI)", "biz-lg-pro": "20 docs (AI + Lawyer)", "biz-lg-full": "Custom",
-        "dept-sm-basic": "Uses points", "dept-sm-pro": "Uses points", "dept-sm-full": "Uses points",
-        "dept-md-basic": "Uses points", "dept-md-pro": "Uses points", "dept-md-full": "Uses points",
-        "dept-lg-basic": "Uses points", "dept-lg-pro": "Uses points", "dept-lg-full": "Uses points",
-      },
-      { 
-        feature: "Compliance Radar",
-        "biz-sm-basic": "❌", "biz-sm-pro": "Basic", "biz-sm-full": "Advanced",
-        "biz-md-basic": "Basic", "biz-md-pro": "Advanced", "biz-md-full": "Health Check 360°",
-        "biz-lg-basic": "Basic", "biz-lg-pro": "Advanced + Risk", "biz-lg-full": "Custom",
-        "dept-sm-basic": "❌", "dept-sm-pro": "✅", "dept-sm-full": "Custom",
-        "dept-md-basic": "❌", "dept-md-pro": "✅", "dept-md-full": "Health Check 360°",
-        "dept-lg-basic": "❌", "dept-lg-pro": "Advanced", "dept-lg-full": "Custom",
+        feature: "AI tools",
+        "biz-sm-basic": "Soon", "biz-sm-pro": "Soon", "biz-sm-full": "Soon",
+        "biz-md-basic": "Soon", "biz-md-pro": "Soon", "biz-md-full": "Soon",
+        "biz-lg-basic": "Soon", "biz-lg-pro": "Soon", "biz-lg-full": "Soon",
+        "dept-sm-basic": "Soon", "dept-sm-pro": "Soon", "dept-sm-full": "Soon",
+        "dept-md-basic": "Soon", "dept-md-pro": "Soon", "dept-md-full": "Soon",
+        "dept-lg-basic": "Soon", "dept-lg-pro": "Soon", "dept-lg-full": "Soon",
       },
     ]},
     { category: "Legal Services", icon: Gavel, rows: [
+      { 
+        feature: "Lawyer Contract Review",
+        "biz-sm-basic": "❌", "biz-sm-pro": "2/mo", "biz-sm-full": "5/mo",
+        "biz-md-basic": "❌", "biz-md-pro": "5/mo", "biz-md-full": "10/mo",
+        "biz-lg-basic": "❌", "biz-lg-pro": "10/mo", "biz-lg-full": "Per contract",
+        "dept-sm-basic": "❌", "dept-sm-pro": "❌", "dept-sm-full": "❌",
+        "dept-md-basic": "❌", "dept-md-pro": "❌", "dept-md-full": "❌",
+        "dept-lg-basic": "❌", "dept-lg-pro": "❌", "dept-lg-full": "❌",
+      },
       { 
         feature: "Specialist Lawyer Consultations",
         "biz-sm-basic": "❌", "biz-sm-pro": "2 hrs/mo", "biz-sm-full": "5 hrs/mo",

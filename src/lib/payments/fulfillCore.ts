@@ -45,6 +45,25 @@
  * {payment_id, reason, at} is MERGED into the order (merge_payment_order_metadata,
  * 20261022_30 — other keys are never overwritten).
  *
+ * The founder membership (P3, kind 'membership', 20261101_10):
+ *   - the grant is founder_activate (grantPurchase.ts). A paid order that
+ *     gets no seat (seat_unavailable / not_verified / already_member) takes
+ *     the «already entitled» path above: stamped fulfilled, flagged
+ *     already_entitled, the payer told the administration will review a
+ *     refund — and every admin alerted ONCE (deps.notifyAdmins), by the call
+ *     that stamped, so a retry or a second caller never alerts again;
+ *   - a DECLINED card keeps its seat (ruling R17): the 2-hour reservation
+ *     holds it for the buyer's retry (founder_reserve_seat moves the same
+ *     seat to the new order) and the sweep's founder_release_expired frees an
+ *     abandoned one (releaseExpiredFounderSeats below). Only a voided or
+ *     cancelled membership order frees its reserved seat at once
+ *     (deps.releaseFounderSeat → founder_release_order) whenever it is seen —
+ *     the webhook, the result page and the sweep all reach it through here.
+ *     Best-effort: a release that fails changes no answer;
+ *   - a refund case later activated (a resume after a failed stamp, ruling
+ *     R18) clears metadata.already_entitled before the stamp, so neither the
+ *     payer nor the admin list keeps showing a refund review.
+ *
  * Deploy order: a missing table, column or function of the B1 migrations
  * (42P01 / 42703 / 42883 / PGRST202 / PGRST204 / PGRST205) answers 'pending',
  * logged once per step. Nothing here throws.
@@ -55,7 +74,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { MoyasarClient, MoyasarPayment } from "./moyasarClient.ts";
 import { resolveItem } from "./catalog.ts";
-import { grantPurchase, type GrantPurchaseDeps } from "./grantPurchase.ts";
+import { grantPurchase, type FounderRefundReason, type GrantPurchaseDeps } from "./grantPurchase.ts";
 import { recordCouponUsage } from "./couponServer.ts";
 import {
   fulfilmentNoticeAr,
@@ -107,6 +126,10 @@ export interface FulfilDeps extends GrantPurchaseDeps {
   notify: (input: { userId: string; title: string; body: string; href: string }) => Promise<void>;
   /** The clock (tests pin it). */
   now?: () => Date;
+  /** P3: founder_release_order — frees a dead membership order's reserved seat. Best-effort. */
+  releaseFounderSeat?: (orderId: string) => Promise<void>;
+  /** P3: the in-site bell of every admin (library_monitor_notify_admins, 20261031_10). Best-effort. */
+  notifyAdmins?: (input: { title: string; body: string; href: string }) => Promise<void>;
 }
 
 interface OrderRow {
@@ -134,6 +157,21 @@ const ORDER_COLUMNS =
   "id, user_id, merchant, kind, item_id, billing, total_halalas, currency, status, moyasar_payment_id, live, receipt_number, paid_at, fulfilled_at, failure_message, metadata";
 
 const OPEN_STATUSES = ["created", "initiated"];
+
+/**
+ * A membership order in one of these is dead: its reserved seat is freed at
+ * once. NOT 'failed' (R17): a declined card keeps the seat for its retry.
+ */
+const DEAD_STATUSES = new Set(["voided", "cancelled"]);
+
+/** Where an admin refunds a paid order. */
+export const ADMIN_ORDERS_HREF = "/dashboard/admin/subscriptions/orders";
+
+const FOUNDER_REFUND_WHY_AR: Readonly<Record<FounderRefundReason, string>> = {
+  seat_unavailable: "اكتملت مقاعد المؤسسين قبل تأكيد الدفع",
+  not_verified: "رخصة المحامي غير موثّقة عند تأكيد الدفع",
+  already_member: "المشتري عضو مؤسس بالفعل بعملية أخرى",
+};
 
 const missingLogged = new Set<string>();
 
@@ -174,6 +212,58 @@ export async function mergeOrderMetadata(
   } catch (err) {
     console.error("[payments] fulfillOrder: metadata merge threw:", orderId, err instanceof Error ? err.message : err);
     return false;
+  }
+}
+
+/** P3: frees the reserved founder seat of a dead membership order. Never fails the caller. */
+async function releaseFounderSeatOf(deps: FulfilDeps, orderId: string): Promise<void> {
+  if (!deps.releaseFounderSeat) return;
+  try {
+    await deps.releaseFounderSeat(orderId);
+  } catch (err) {
+    console.warn("[payments] fulfillOrder: freeing the founder seat failed (the sweep frees it):", orderId, err instanceof Error ? err.message : err);
+  }
+}
+
+/** P3: one alert to every admin — a paid membership granted nothing and needs a refund. Never fails the caller. */
+async function alertAdminsFounderRefund(
+  deps: FulfilDeps,
+  order: OrderRow,
+  reason: FounderRefundReason,
+  receiptNumber: string | null,
+): Promise<void> {
+  console.error("[payments] fulfillOrder: a paid founder membership was not activated — admin refund:", order.id, reason);
+  if (!deps.notifyAdmins) return;
+  const receipt = receiptNumber ? ` رقم الإيصال: ${receiptNumber}.` : "";
+  try {
+    await deps.notifyAdmins({
+      title: "عضوية مؤسس مدفوعة لم تُفعَّل — يلزم استرداد",
+      body: `${FOUNDER_REFUND_WHY_AR[reason]} (${reason}). الطلب ${order.id}.${receipt}`,
+      href: ADMIN_ORDERS_HREF,
+    });
+  } catch (err) {
+    console.error("[payments] fulfillOrder: the admin alert failed:", order.id, err instanceof Error ? err.message : err);
+  }
+}
+
+/**
+ * The sweep (P3): founder_release_expired frees every reserved seat past its
+ * reserved_until whose order is not paid. The number freed, or null when it
+ * could not run (a missing function before 20261101_10, an error). Never throws.
+ */
+export async function releaseExpiredFounderSeats(admin: SupabaseClient): Promise<number | null> {
+  try {
+    const { data, error } = await admin.rpc("founder_release_expired");
+    if (error) {
+      if (isMissingPaymentsObject(error.code)) logMissingOnce("founder_release_expired", error);
+      else console.error("[payments] founder_release_expired failed:", error.code, error.message);
+      return null;
+    }
+    const n = Number(data);
+    return Number.isFinite(n) ? n : 0;
+  } catch (err) {
+    console.error("[payments] founder_release_expired threw:", err instanceof Error ? err.message : err);
+    return null;
   }
 }
 
@@ -311,6 +401,16 @@ async function finish(
   if (granted.alreadyEntitled && !(await mergeOrderMetadata(admin, order.id, { already_entitled: true }))) {
     return { outcome: "pending", reason: "metadata_merge_failed", receiptNumber };
   }
+  // R18: a membership refund case that a later call activated (seat freed,
+  // licence verified) is no longer a refund review — cleared before the stamp.
+  if (
+    order.kind === "membership" &&
+    !granted.alreadyEntitled &&
+    order.metadata?.already_entitled === true &&
+    !(await mergeOrderMetadata(admin, order.id, { already_entitled: false }))
+  ) {
+    return { outcome: "pending", reason: "metadata_merge_failed", receiptNumber };
+  }
   const { data: stamped, error: stampErr } = await admin
     .from("payment_orders")
     .update({ fulfilled_at: now.toISOString() })
@@ -333,6 +433,7 @@ async function finish(
     alreadyEntitled: granted.alreadyEntitled,
   });
   await deps.notify({ userId: order.user_id, title: notice.title, body: notice.body, href: notice.href });
+  if (granted.refundReason) await alertAdminsFounderRefund(deps, order, granted.refundReason, receiptNumber);
 
   return granted.alreadyEntitled
     ? { outcome: "already_done", reason: "already_entitled", receiptNumber }
@@ -420,6 +521,7 @@ async function run(deps: FulfilDeps, input: FulfillOrderInput): Promise<FulfillR
   }
 
   if (decision === "already_done") {
+    if (order.kind === "membership" && DEAD_STATUSES.has(order.status)) await releaseFounderSeatOf(deps, order.id);
     // a declined order stays declined: the payer coming back again sees the failure
     if (order.status === "failed") return { outcome: "failed", reason: order.failure_message ?? "payment_failed" };
     return { outcome: "already_done", reason: `order_${order.status}`, receiptNumber: order.receipt_number };
@@ -454,6 +556,7 @@ async function run(deps: FulfilDeps, input: FulfillOrderInput): Promise<FulfillR
       return { outcome: "rejected", reason: "order_mismatch" };
     }
     if (failErr) return pendingForDbError("failure record", failErr);
+    // R17: a declined membership card keeps its reserved seat for the retry
     return { outcome: "failed", reason: message ?? "payment_failed" };
   }
 

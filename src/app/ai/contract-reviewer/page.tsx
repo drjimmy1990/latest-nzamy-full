@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -120,7 +121,7 @@ function ScoreRing({ score, isDark }: { score: number; isDark: boolean }) {
   );
 }
 
-export default function ContractReviewerPage() {
+function ContractReviewerInner() {
   const { isDark } = useTheme();
   const [step, setStep] = useState<Step>("upload");
   const [contractText, setContractText] = useState("");
@@ -359,5 +360,14 @@ export default function ContractReviewerPage() {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function ContractReviewerPage() {
+  return (
+    <GatedToolScreen toolId="contract-reviewer.result" toolName="تقرير مراجعة العقد">
+      <ContractReviewerInner />
+    </GatedToolScreen>
   );
 }

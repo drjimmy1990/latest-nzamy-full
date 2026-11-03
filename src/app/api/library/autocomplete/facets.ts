@@ -16,6 +16,14 @@ export interface TopMatch {
   section: string;
   slug: string;
   snippet?: string;
+  /** 'collection' | 'principle' for precedents; absent elsewhere. */
+  kind?: string;
+  /** The document this suggestion opens (a site path), when the row names one. */
+  href?: string;
+  /** This viewer may not read the item: no snippet is sent. */
+  locked?: boolean;
+  /** library.laws.type, for the «نظام / لائحة» badge (owner note ١٢-٢). */
+  lawType?: string;
 }
 
 export const AUTOCOMPLETE_UNAVAILABLE_MESSAGE = 'تعذّر جلب اقتراحات البحث.';

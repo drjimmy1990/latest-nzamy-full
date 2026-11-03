@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   UserCircle, Phone, Envelope, MapPin, PencilSimple, SealCheck, Crown,
@@ -24,6 +24,7 @@ import { buildPublicProfileUrl } from "@/lib/services/publicProfileLink";
 import ShareProfileModal from "../_components/ShareProfileModal";
 import { profileShareState, type ProfileShareState } from "../_components/profileShareTargets";
 import { listViewState, itemsOf, type ListRead } from "@/lib/services/listRead";
+import { mergeSavedRow, mergeDeletedRow } from "@/lib/services/heldListMerge";
 import {
   getMyServices, deleteService, updateService, type LawyerService,
 } from "@/lib/services/lawyerServicesService";
@@ -339,20 +340,25 @@ export default function LawyerProfilePage() {
     }
   }, [activeTab, servicesRequested, loadServices]);
 
-  /** Merge a server-confirmed row (create or edit) into the held list. */
+  // The held read, for deciding OUTSIDE a state updater whether to re-read.
+  const servicesReadRef = useRef<ListRead<LawyerService> | null>(null);
+  useEffect(() => { servicesReadRef.current = servicesRead; }, [servicesRead]);
+
+  /**
+   * Merge a server-confirmed row (create or edit) into the held list.
+   *
+   * CODE-F42: after a FAILED first read this used to return the failed read
+   * unchanged, so the list never recovered even though the save succeeded.
+   * A held list that is not a good read is now read again from the server
+   * (heldListMerge.ts) rather than patched.
+   */
   const handleServiceSaved = useCallback((service: LawyerService) => {
-    setServicesRead((prev) => {
-      if (!prev || !prev.ok) return prev;
-      const exists = prev.items.some((s) => s.id === service.id);
-      return {
-        ...prev,
-        items: exists
-          ? prev.items.map((s) => (s.id === service.id ? service : s))
-          : [...prev.items, service],
-        total: exists ? prev.total : (prev.total ?? prev.items.length) + 1,
-      };
-    });
-  }, []);
+    if (!servicesReadRef.current?.ok) {
+      loadServices();
+      return;
+    }
+    setServicesRead((prev) => mergeSavedRow(prev, service).next);
+  }, [loadServices]);
 
   const handleToggleActive = useCallback(async (service: LawyerService) => {
     setServiceBusyId(service.id);
@@ -373,20 +379,15 @@ export default function LawyerProfilePage() {
     setServiceActionError(null);
     try {
       await deleteService(service.id);
-      setServicesRead((prev) => {
-        if (!prev || !prev.ok) return prev;
-        return {
-          ...prev,
-          items: prev.items.filter((s) => s.id !== service.id),
-          total: prev.total === null ? null : Math.max(0, prev.total - 1),
-        };
-      });
+      // Same rule as handleServiceSaved (CODE-F42).
+      if (!servicesReadRef.current?.ok) loadServices();
+      else setServicesRead((prev) => mergeDeletedRow(prev, service.id).next);
     } catch (err) {
       setServiceActionError(err instanceof Error && err.message ? err.message : "تعذّر حذف الخدمة.");
     } finally {
       setServiceBusyId(null);
     }
-  }, []);
+  }, [loadServices]);
 
   // ─── Share link (item 130 · WP-4 G4 · owner Q151) ────────────────────────
   //

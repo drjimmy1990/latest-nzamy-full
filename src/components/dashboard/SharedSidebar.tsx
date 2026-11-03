@@ -25,9 +25,11 @@ import UpgradeModal from "@/components/UpgradeModal";
 import { GlobalSearch } from "@/components/dashboard/GlobalSearch";
 import { isSharedClientIntakePath } from "@/lib/auth/routeAccess";
 import { QuickAddSidebarItem } from "@/components/dashboard/quickAdd/QuickAdd";
+import { AdminViewSwitch } from "@/components/dashboard/AdminViewSwitch";
+import { useAdminView } from "@/hooks/useAdminView";
+import { resolveNavUserType, adminViewSuffix, switchCurrentView } from "@/lib/nav/shellContext";
 
 import {
-  inferUserTypeFromPath,
   SidebarSection,
   CreditsBar,
 } from "./SidebarComponents";
@@ -69,12 +71,22 @@ export default function SharedSidebar() {
     try { localStorage.removeItem("nzamy_dashboard_mode"); } catch {}
   }, []);
 
-  // Infer user type from URL path first — session userType is fallback.
-  const pathUserType = inferUserTypeFromPath(pathname);
+  // Which menu to draw — decided by resolveNavUserType (src/lib/nav/
+  // shellContext.ts), the one resolver every shell asks. Path first, then the
+  // session. For an admin, off /dashboard/<role>/ it is the admin's VIEW
+  // context (owner LIVE-F01): the old "path, else the real role" rule drew
+  // the ADMIN sidebar on every /ai/* tool an admin opened in lawyer mode.
+  // A menu only — guards and the server keep reading the real role.
+  const isRealAdmin = !loading && sessionUserType === "admin";
+  const { storedView } = useAdminView(pathname, isRealAdmin);
   const isBusinessIntake =
     isSharedClientIntakePath(pathname) &&
     (sessionUserType === "corporate" || !!businessMembership);
-  const userType = isBusinessIntake ? "corporate" : pathUserType ?? sessionUserType;
+  const userType = resolveNavUserType({ pathname, sessionUserType, storedView, isBusinessIntake });
+  const viewSuffix = adminViewSuffix(sessionUserType, userType, isAr);
+  const roleLabel = viewSuffix
+    ? `${getRoleLabel("admin", isAr)} · ${viewSuffix}`
+    : userType ? getRoleLabel(userType, isAr) : "";
 
   // practiceKind (Art. 18): a consultant's sidebar has no pleading or hearings tools.
   // staffRole (owner ٢١٠): an admin sees only the tools of their staff role.
@@ -119,9 +131,9 @@ export default function SharedSidebar() {
                         r === "arbitrator" ? "محكّم" : r
                       ).join(" + ")}
                       {" • "}
-                      {userType ? getRoleLabel(userType, isAr) : ""}
+                      {roleLabel}
                     </span>)
-                  : userType ? getRoleLabel(userType, isAr) : ""
+                  : roleLabel
                 }
               </p>
             </div>
@@ -134,6 +146,13 @@ export default function SharedSidebar() {
           </button>
         </div>
       </div>
+
+      {/* «عرض كـ» (owner NOTE-22-C02) — the admin's fixed view switch,
+          outside the scrolling nav so it never scrolls away. Renders nothing
+          unless the REAL role is admin; switching changes the menu only. */}
+      {isRealAdmin && (
+        <AdminViewSwitch current={switchCurrentView(userType)} tone="auto" isAr={isAr} />
+      )}
 
       {/* «+ إضافة سريعة» (N3.3) — renders only inside the lawyer/firm
           layouts' QuickAddProvider; every other dashboard is unchanged. */}

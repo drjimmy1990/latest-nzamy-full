@@ -20,6 +20,7 @@ import { planFromParam } from "@/lib/pricing/planRequest";
 import { LIBRARY_STAT_KEYS, LIBRARY_STAT_LABELS, formatLibraryCount } from "@/lib/library/libraryStats";
 import { useLibraryStats } from "@/lib/library/useLibraryStats";
 import { useLibraryFullAccess } from "@/lib/library/useLibraryFullAccess";
+import { LibraryGrantStatusCard, useMyLibraryGrant } from "@/components/library/LibraryGrantStatusCard";
 import { VAT_NOTICE } from "@/lib/pricing/vatNotice";
 import { bookPriceText } from "@/lib/pricing/priceBook";
 
@@ -237,6 +238,13 @@ export default function LawsSubscribePage() {
   // The review copy (intro, activation FAQ) holds only while payment is off.
   const payOnline = gatewayAllowsCheckout(payments);
   const libraryAccess = useLibraryFullAccess();
+  // GET /api/v1/library/my-grant: the current library subscription (its card,
+  // owner note ١٨ C05) and whether this account type may BUY the library
+  // (LIVE-F05 — legal professionals only). `purchase` null = unknown (a guest
+  // or a failed read): the plans stay, and the server still refuses.
+  const myGrant = useMyLibraryGrant();
+  const purchaseRefusal =
+    myGrant.answer?.purchase && myGrant.answer.purchase.eligible === false ? myGrant.answer.purchase : null;
   const isAr = lang === "ar";
   const t = isAr ? txt.ar : txt.en;
   const Arrow = isAr ? ArrowLeft : ArrowRight;
@@ -283,6 +291,14 @@ export default function LawsSubscribePage() {
   function handleSubscribe(planId: string) {
     if (planId === "free") {
       window.location.href = "/laws";
+      return;
+    }
+    // LIVE-F05: an individual (or another non-professional account) is told
+    // why, and nothing is requested or charged. The server refuses too (the
+    // request approval, and checkout once the price book lists the buyers).
+    if (purchaseRefusal) {
+      setToast({ ok: false, msg: purchaseRefusal.messageAr });
+      window.setTimeout(() => setToast(null), 6000);
       return;
     }
     // Logged-in users with the Moyasar gateway on pay online: the library
@@ -400,6 +416,27 @@ export default function LawsSubscribePage() {
           </div>
         </motion.div>
 
+        {/* ── The current library subscription (owner note ١٨ C05) ─────
+            Nothing for a guest or a user without a library grant. The renew
+            link is hidden: the plans are right below. */}
+        <LibraryGrantStatusCard answer={myGrant.answer} showRenew={false} />
+
+        {/* ── Who may buy (LIVE-F05) ─────────────────────────────────────
+            The owner restricts the library to legal professionals. An
+            individual sees why instead of a checkout; the plans stay visible
+            (prices are public) but their buttons explain instead of buying. */}
+        {purchaseRefusal && (
+          <div
+            role="note"
+            className={`rounded-2xl border p-5 text-[13px] leading-7 ${
+              isDark ? "border-amber-500/30 bg-amber-500/10 text-amber-200" : "border-amber-300 bg-amber-50 text-amber-900"
+            }`}
+          >
+            <p className="font-bold mb-1">{isAr ? "الاشتراك غير متاح لنوع حسابك" : "Not available for your account type"}</p>
+            <p>{purchaseRefusal.messageAr}</p>
+          </div>
+        )}
+
         {/* ── Plans Grid ──────────────────────────────────────────────── */}
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
           {t.plans.map((plan, i) => {
@@ -472,7 +509,7 @@ export default function LawsSubscribePage() {
                         : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 border border-zinc-200"
                   }`}
                 >
-                  {plan.cta}
+                  {purchaseRefusal && plan.id !== "free" ? (isAr ? "غير متاح لنوع حسابك" : "Not available for your account") : plan.cta}
                 </motion.button>
               </motion.div>
             );

@@ -7,6 +7,7 @@ import {
   TIER_SHAPED_CACHE_CONTROL,
   gazetteFor,
   lawOfficialLink,
+  lawOfficialLinks,
   lawOfficialMeta,
   maskListOfficialFields,
 } from "./_official-meta.ts";
@@ -88,17 +89,41 @@ test("tier-shaped responses are never stored by a shared cache", () => {
   assert.equal(TIER_SHAPED_CACHE_CONTROL, "private, no-store");
 });
 
-test("owner ٢٩٧: the official link is the http(s) official_source_url, whoever the viewer is", () => {
+// Owner ٣١٨ (28-Oct) REVERSES ٢٩٧ on purpose. Until 2026-10-30 these two
+// tests pinned that officialLink went to every viewer; official links are now
+// a subscriber's (isSubscriber = hasFullLibraryAccess — never the whitelist).
+test("owner ٣١٨ (reverses ٢٩٧): the official link is a subscriber's — official_source_url, else boe_source_url; http(s) only", () => {
   const law = { ...WITH_BOE, official_source_url: "https://laws.boe.gov.sa/BoeLaws/Laws/LawDetails/bf8b/1" };
-  assert.equal(lawOfficialLink(law), "https://laws.boe.gov.sa/BoeLaws/Laws/LawDetails/bf8b/1");
-  // T28-22's mask is unchanged: officialSourceUrl stays a subscriber's field.
+  assert.equal(lawOfficialLink(law, true), "https://laws.boe.gov.sa/BoeLaws/Laws/LawDetails/bf8b/1");
+  assert.equal(lawOfficialLink(law, false), "");
+  // No official_source_url: the BOE page stands in (subscriber only).
+  assert.equal(lawOfficialLink(WITH_BOE, true), WITH_BOE.boe_source_url);
+  assert.equal(lawOfficialLink(WITH_BOE, false), "");
   assert.equal(lawOfficialMeta(law, false).officialSourceUrl, "");
   for (const bad of ["", null, undefined, "javascript:alert(1)", "laws.boe.gov.sa/x", "ftp://x.sa/a", " "]) {
-    assert.equal(lawOfficialLink({ official_source_url: bad }), "", String(bad));
+    assert.equal(lawOfficialLink({ official_source_url: bad, boe_source_url: bad }, true), "", String(bad));
   }
 });
 
-test("the law route sends officialLink to every viewer, outside the T28-22 mask", () => {
+test("note ٠١ item ٣ / ٣١٨: lawOfficialLinks — every official source by its Arabic name, deduped, none for a guest", () => {
+  const law = {
+    ...WITH_BOE,
+    official_source_url: WITH_BOE.boe_source_url,
+    gazette_url: "https://uqn.gov.sa/details?p=1",
+  };
+  assert.deepEqual(lawOfficialLinks(law, true), [
+    { label: "هيئة الخبراء", url: WITH_BOE.boe_source_url },
+    { label: "جريدة أم القرى", url: "https://uqn.gov.sa/details?p=1" },
+  ]);
+  assert.deepEqual(lawOfficialLinks(law, false), []);
+  assert.deepEqual(lawOfficialLinks({ ...law, boe_source_url: "javascript:x", official_source_url: "", gazette_url: null }, true), []);
+});
+
+test("the law route sends officialLink / officialLinks by isSubscriber, and the one public date to everyone", () => {
   const route = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "route.ts"), "utf8");
-  assert.match(route, /officialLink: lawOfficialLink\(law\),/);
+  assert.match(route, /officialLink: lawOfficialLink\(law, isSubscriber\),/);
+  assert.match(route, /officialLinks: lawOfficialLinks\(law, isSubscriber\),/);
+  assert.match(route, /\.\.\.\(legislativeEvent \? \{ latest_legislative_update: legislativeEvent\.dateHijri \} : \{\}\),/);
+  assert.match(route, /const latestUpdate = latestUpdateDetail\(law\.latest_update, isSubscriber\);/);
+  assert.doesNotMatch(route, /lawOfficialLink\(law\)/);
 });

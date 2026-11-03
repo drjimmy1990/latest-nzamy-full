@@ -10,6 +10,18 @@ import {
   MapPin, Briefcase, CalendarBlank,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import {
+  checkNationalIdFormat, checkSaudiPhone, checkOptionalEmail, FORMAT_ONLY_NOTE,
+} from "@/lib/services/contactFieldRules";
+
+/*
+ * Owner package 2026-10-30:
+ *   • LIVE-F22 — a zero ID and phone «000» passed step 1. Step 1 now runs the
+ *     shared format checks (contactFieldRules.ts), one message per field.
+ *   • LIVE-F07 — the page said «تم تسجيل المتطوع … بنجاح» and promised a
+ *     contract «تلقائياً» while storing nothing at all. There is no volunteer
+ *     table yet, so the page now says it is a trial that saves nothing.
+ */
 
 const spring = { type: "spring" as const, stiffness: 120, damping: 20 };
 
@@ -42,7 +54,15 @@ export default function NewVolunteerPage() {
       : "bg-white border-slate-200 text-slate-800 placeholder:text-slate-400 focus:border-[#0B3D2E]/40"
   }`;
 
-  const step1Valid = form.name && form.id && form.phone;
+  const idCheck = checkNationalIdFormat(form.id, { required: true });
+  const phoneCheck = checkSaudiPhone(form.phone, { required: true });
+  const emailCheck = checkOptionalEmail(form.email);
+  // A message shows only once the field has something in it.
+  const idIssue = form.id.trim() && !idCheck.ok ? idCheck.error : null;
+  const phoneIssue = form.phone.trim() && !phoneCheck.ok ? phoneCheck.error : null;
+  const emailIssue = emailCheck.ok ? null : emailCheck.error;
+  const step1Valid = !!form.name.trim() && idCheck.ok && phoneCheck.ok && emailCheck.ok;
+  const fieldError = "text-[11px] font-semibold mt-1.5 " + (isDark ? "text-red-400" : "text-red-700");
   const step2Valid = form.specialty && form.startDate;
 
   if (submitted) {
@@ -53,10 +73,10 @@ export default function NewVolunteerPage() {
             <CheckCircle size={40} weight="fill" className="text-emerald-500" />
           </div>
           <h1 className={`text-2xl font-bold mb-3 ${isDark ? "text-white" : "text-slate-900"}`}>
-            تم تسجيل المتطوع
+            البيانات مكتملة — لم تُحفظ
           </h1>
-          <p className={`text-sm mb-6 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
-            تم إضافة <strong>{form.name}</strong> إلى قائمة المتطوعين بنجاح.
+          <p className={`text-sm mb-6 leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+            صيغة بيانات <strong>{form.name}</strong> صحيحة، لكن حفظ المتطوعين غير متاح بعد: لم يُضف إلى أي قائمة ولم يُنشأ له عقد.
           </p>
           <div className="flex gap-3 justify-center">
             <Link href="/dashboard/ngo/volunteers"
@@ -67,7 +87,7 @@ export default function NewVolunteerPage() {
             </Link>
             <button onClick={() => { setSubmitted(false); setStep(1); setForm({ name:"",id:"",phone:"",email:"",city:"",specialty:"",startDate:"",notes:"" }); }}
               className="px-6 py-3 rounded-xl text-sm font-bold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors">
-              إضافة متطوع آخر
+              تجربة بيانات أخرى
             </button>
           </div>
         </motion.div>
@@ -89,7 +109,7 @@ export default function NewVolunteerPage() {
           تسجيل متطوع جديد
         </h1>
         <p className={`text-sm mt-1 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-          أدخل بيانات المتطوع وستُنشأ عقد تطوع تلقائياً عند الإرسال
+          نموذج تجريبي: يتحقق من صيغة البيانات فقط، ولا يُحفظ المتطوع ولا يُنشأ له عقد بعد.
         </p>
       </div>
 
@@ -123,22 +143,27 @@ export default function NewVolunteerPage() {
             <label className={`text-[11px] font-semibold uppercase tracking-wide mb-2 block ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
               رقم الهوية الوطنية *
             </label>
-            <input value={form.id} onChange={e => set("id", e.target.value)}
-              placeholder="10xxxxxxxx" maxLength={10} className={input} />
+            <input value={form.id} onChange={e => set("id", e.target.value)} dir="ltr" inputMode="numeric"
+              placeholder="10xxxxxxxx" maxLength={10} className={input} aria-invalid={!!idIssue} />
+            {idIssue
+              ? <p className={fieldError}>{idIssue}</p>
+              : <p className={`text-[11px] mt-1.5 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{FORMAT_ONLY_NOTE}</p>}
           </div>
           <div>
             <label className={`text-[11px] font-semibold uppercase tracking-wide mb-2 block ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
               <Phone size={12} className="inline ml-1" />رقم الجوال *
             </label>
-            <input value={form.phone} onChange={e => set("phone", e.target.value)}
-              placeholder="05xxxxxxxx" className={input} />
+            <input value={form.phone} onChange={e => set("phone", e.target.value)} dir="ltr" type="tel"
+              placeholder="05xxxxxxxx" className={input} aria-invalid={!!phoneIssue} />
+            {phoneIssue && <p className={fieldError}>{phoneIssue}</p>}
           </div>
           <div>
             <label className={`text-[11px] font-semibold uppercase tracking-wide mb-2 block ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
               <EnvelopeSimple size={12} className="inline ml-1" />البريد الإلكتروني
             </label>
             <input value={form.email} onChange={e => set("email", e.target.value)}
-              placeholder="example@domain.com" type="email" className={input} />
+              placeholder="example@domain.com" type="email" dir="ltr" className={input} aria-invalid={!!emailIssue} />
+            {emailIssue && <p className={fieldError}>{emailIssue}</p>}
           </div>
           <div>
             <label className={`text-[11px] font-semibold uppercase tracking-wide mb-2 block ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
@@ -200,7 +225,7 @@ export default function NewVolunteerPage() {
             <button onClick={() => setSubmitted(true)} disabled={!step2Valid}
               className="flex-1 py-3 rounded-xl text-sm font-bold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors disabled:opacity-40 flex items-center justify-center gap-2">
               <UserCirclePlus size={16} weight="bold" />
-              تسجيل المتطوع
+              تحقّق من البيانات (لا يُحفظ)
             </button>
           </div>
         </motion.div>

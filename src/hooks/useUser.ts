@@ -152,6 +152,12 @@ export interface UserSession {
   membershipState?: MembershipState;
   subRole:       SubRole;
   name:          string;
+  /**
+   * The account's full name (user_metadata.full_name) when set — the
+   * official name the printed fingerprint shows first (owner q371).
+   * `name` prefers display_name and falls back to the email.
+   */
+  fullName?:     string;
   avatar?:       string;
   tier:          UserTier;
   credits:       number;

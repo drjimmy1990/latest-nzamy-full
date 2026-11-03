@@ -8,6 +8,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import type { BrandingFields, BrandingScope } from "@/lib/branding/brandingVault";
+import type { LetterheadPermissions } from "@/lib/branding/firmLetterheadPermissions";
 import { buildLetterheadIdentity, letterheadOrigin, type BrandingResponse, type LetterheadIdentity } from "@/lib/branding/letterheadIdentity";
 
 export interface LetterheadData extends BrandingResponse {
@@ -16,6 +17,8 @@ export interface LetterheadData extends BrandingResponse {
   hasLogo?: boolean;
   defaults: BrandingFields;
   role: string | null;
+  /** Owner ٣١٥: what this caller may do — from the server, never recomputed here. */
+  permissions?: LetterheadPermissions;
 }
 
 export type LetterheadState =

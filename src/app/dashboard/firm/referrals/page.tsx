@@ -1,4 +1,5 @@
 "use client";
+import { UnfinishedModuleNote } from "@/components/dashboard/sector/UnfinishedModuleNote";
 
 import { useState } from "react";
 import { motion } from "framer-motion";
@@ -77,6 +78,7 @@ export default function FirmReferralsPage() {
 
   return (
     <div className="max-w-[1100px] mx-auto space-y-6" dir="rtl">
+      <UnfinishedModuleNote href="/dashboard/firm/referrals" />
 
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">

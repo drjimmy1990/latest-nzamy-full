@@ -8,7 +8,9 @@
  *                      tool → role → Art. 18 → mode → input → key → files
  *                      → [library tool: the library gate + tier rule]
  *                      → ai_start_run (daily limit + balance + debit, one
- *                        transaction)
+ *                        transaction) — or, when the body asks `useCredit`
+ *                        and the run qualifies, ai_start_run_with_credit
+ *                        (a founder credit instead of points, P3)
  *                      → [library tool: searches → texts, refunded when none]
  *                      → the package → n8n
  *                    fast tool: n8n's reply is settled here, in the request;
@@ -32,6 +34,8 @@ import type { N8nCall, N8nOutcome } from "./n8nClient.ts";
 import { cleanQueries, type PackageSource, type RetrievalLimits, type RetrievalPin, type Retrieved } from "./retrieval.ts";
 import type { AiFile, FileRules, FilesCheck } from "./aiFiles.ts";
 import { enrichBriefCheck } from "./citationCheck.ts";
+import { articleRefs, bareArticleNumbers } from "./questionRefs.ts";
+import { creditKindForRun } from "../membership/founderPlan.ts";
 
 /**
  * Tools whose result the app completes from its own data before storing it.
@@ -42,6 +46,10 @@ const OUTPUT_ENRICHERS: Readonly<Record<string, (admin: SupabaseClient, output: 
   wargaming: (admin, output) => enrichBriefCheck(admin as never, output),
   "analyze-strength": (admin, output) => enrichBriefCheck(admin as never, output),
   "contract-drafter": (admin, output) => enrichBriefCheck(admin as never, output),
+  // L12: the letter. The consultation needs none: it stands on the library texts it was sent.
+  "legal-opinion-letter": (admin, output) => enrichBriefCheck(admin as never, output),
+  "contracts-pro": (admin, output) => enrichBriefCheck(admin as never, output),
+  "legal-drafter": (admin, output) => enrichBriefCheck(admin as never, output),
 };
 import {
   DEFAULT_JOB_DEADLINE_SECONDS,
@@ -70,10 +78,18 @@ export interface StartRunDeps {
   callbackUrl: string;
   now?: () => Date;
   /**
-   * Library tools only: the library gate and the assistant's tier rule, before
-   * the charge. A reply refuses the run; null lets it go on.
+   * Library tools only: the library gate and the assistant's tier rule, and
+   * for the library's own AI the library lock (readQuota.isLibraryAiTool),
+   * before the charge. `toolId` is the registry id. A reply refuses the run;
+   * null lets it go on.
    */
-  libraryAccess?: () => Promise<RouteReply | null>;
+  libraryAccess?: (toolId: string) => Promise<RouteReply | null>;
+  /**
+   * Called once, right after ai_start_run CREATED the run (never for a
+   * refusal or a duplicate request): the route's «نشاط المكتبة» tally
+   * (libraryRunAccess.libraryRunCreated). `toolId` is the registry id.
+   */
+  onRunCreated?: (toolId: string) => void;
   /** Library tools only: the searches → the texts (retrieval.retrieveLibrary). */
   retrieve?: (queries: string[], limits: RetrievalLimits, pin: RetrievalPin) => Promise<Retrieved>;
   /** File tools only: the caller's vault files checked, counted and signed (aiFiles.resolveAiFiles). */
@@ -102,6 +118,9 @@ export const AI_COPY = {
   ungrounded: "لم تُجب نصوص المكتبة التي وجدتها عن سؤالك، وأُعيدت نقاطك — جرّب صياغة أخرى",
   conversation: "معرّف المحادثة غير صالح — ابدأ محادثة جديدة",
   conversationFull: "اكتملت هذه المحادثة — ابدأ محادثة جديدة لتكمل",
+  filesRequired: "أرفق مستندات الوقائع أو اكتبها",
+  noCredit: "لا يتبقى لك رصيد من باقة المؤسس لهذه الأداة",
+  creditNotEligible: "هذه الأداة لا تُدفع من رصيد باقة المؤسس",
 } as const;
 
 /** The search writer's wait: short, so the answer keeps most of the fast budget. */
@@ -148,7 +167,7 @@ async function failRun(admin: SupabaseClient, runId: string, code: string, messa
 // ── settle ───────────────────────────────────────────────────────────────────
 
 export type SettleOutcome =
-  | { kind: "succeeded"; status: "succeeded" | "review"; output: Record<string, unknown>; citations: unknown[] }
+  | { kind: "succeeded"; status: "succeeded"; output: Record<string, unknown>; citations: unknown[] }
   | { kind: "failed"; code: string }
   | { kind: "stale" };
 
@@ -176,9 +195,15 @@ function sanitizeUsage(raw: unknown): Record<string, unknown> | null {
   };
 }
 
+/**
+ * A success is always stored as "succeeded" and shown. There is no way to
+ * store "review" (held from the user) until Wave 3 builds the money-safe gate
+ * (release / reject with a refund): before, a review run was charged and
+ * never shown.
+ */
 export async function settleRunWith(
   admin: SupabaseClient,
-  ctx: { spec: AiToolSpec; runId: string; sources: SourceMap; review: boolean; input: Record<string, unknown> },
+  ctx: { spec: AiToolSpec; runId: string; sources: SourceMap; input: Record<string, unknown> },
   raw: unknown,
 ): Promise<SettleOutcome> {
   const fail = async (code: string, message: string): Promise<SettleOutcome> => {
@@ -212,7 +237,7 @@ export async function settleRunWith(
   // with no citation that resolves, it is the model's memory, not the library.
   if (ctx.spec.retrieval && citations.length === 0) return fail("ungrounded", "the answer cites none of the sources sent");
   const usage = sanitizeUsage(raw.usage);
-  const status = ctx.review ? "review" : "succeeded";
+  const status = "succeeded";
   const { data, error } = await admin
     .from("ai_runs")
     .update({
@@ -244,6 +269,8 @@ interface StartedRun {
   status: string;
   charged: boolean;
   charged_points: number;
+  /** ai_start_run_with_credit only: true when this call spent a founder credit. */
+  credit_used?: boolean;
 }
 
 export async function startRunWith(
@@ -266,6 +293,8 @@ export async function startRunWith(
 
   const runtime = resolveToolRuntime(spec, await readAiToolsSetting(admin));
   // "staff": only admins, so a tool can be tried on production before it opens.
+  // A stored "review" arrives here as "staff" (aiToolsConfig.effectiveToolMode),
+  // so it too is refused here, before ai_start_run charges anything.
   if (runtime.mode === "off" || (runtime.mode === "staff" && !isAdmin)) {
     return { status: 423, body: { error: AI_COPY.off, code: "tool_off" } };
   }
@@ -286,13 +315,14 @@ export async function startRunWith(
   }
 
   // A library tool quotes server-only, paywalled texts: the library's own
-  // gate and the assistant's tier rule apply before anything is charged.
+  // gate and the assistant's tier rule apply before anything is charged, and
+  // so does the library lock for the library's own AI (the route decides).
   if (spec.retrieval) {
     if (!deps.libraryAccess || !deps.retrieve) {
       console.error("[ai] a library tool without libraryAccess / retrieve:", spec.id);
       return { status: 503, body: { error: AI_COPY.notReady, code: "not_ready" } };
     }
-    const denied = await deps.libraryAccess();
+    const denied = await deps.libraryAccess(spec.id);
     if (denied) return denied;
   }
 
@@ -300,6 +330,7 @@ export async function startRunWith(
   // user only, so a conversation id from another account reads as a new one.
   let conversationId: string | null = null;
   let history: Array<{ role: "user" | "assistant"; text: string }> = [];
+  let prior: Array<{ input: unknown; output: unknown; status: string }> = [];
   let turn = 0;
   if (spec.conversation) {
     const cid = req.conversationId;
@@ -308,7 +339,7 @@ export async function startRunWith(
     }
     conversationId = typeof cid === "string" ? cid.toLowerCase() : globalThis.crypto.randomUUID();
     if (typeof cid === "string") {
-      const prior = await admin
+      const read = await admin
         .from("ai_runs")
         .select("input, output, status")
         .eq("user_id", actor.userId)
@@ -317,11 +348,12 @@ export async function startRunWith(
         .in("status", ["running", "review", "succeeded"])
         .order("created_at", { ascending: true })
         .limit(spec.conversation.maxMessages + 1);
-      if (prior.error) {
-        console.error("[ai] conversation read failed:", spec.id, prior.error.code, prior.error.message);
+      if (read.error) {
+        console.error("[ai] conversation read failed:", spec.id, read.error.code, read.error.message);
         return { status: 503, body: { error: AI_COPY.unavailable, code: "unavailable" } };
       }
-      const rows = (Array.isArray(prior.data) ? prior.data : []) as Array<{ input: unknown; output: unknown; status: string }>;
+      const rows = (Array.isArray(read.data) ? read.data : []) as Array<{ input: unknown; output: unknown; status: string }>;
+      prior = rows;
       turn = rows.length;
       if (turn >= spec.conversation.maxMessages) {
         return { status: 409, body: { error: AI_COPY.conversationFull, code: "conversation_full", conversationId } };
@@ -338,6 +370,11 @@ export async function startRunWith(
             : [];
         });
     }
+  }
+  // A tool whose turns are different steps refuses one out of order, uncharged.
+  if (spec.checkTurn) {
+    const refusal = spec.checkTurn(checked.input, turn, prior);
+    if (refusal) return { status: 409, body: { error: refusal, code: "turn_refused", ...(conversationId ? { conversationId } : {}) } };
   }
 
   // A file tool: every predictable refusal (type, size, pages, an unreadable
@@ -358,6 +395,9 @@ export async function startRunWith(
     files = got.files;
     pages = got.pages;
   }
+  if (spec.filesRequired?.(checked.input) && files.length === 0) {
+    return { status: 422, body: { error: AI_COPY.filesRequired, code: "files_required" } };
+  }
   const price = spec.price(checked.input, { pages, turn });
   const now = deps.now?.() ?? new Date();
   const deadline = new Date(
@@ -367,7 +407,15 @@ export async function startRunWith(
   const startedAt = clock();
   let sources: SourceMap = {};
 
-  const { data, error } = await admin.rpc("ai_start_run", {
+  // A founder credit pays instead of points when the client asks and the run
+  // qualifies (founderPlan.creditKindForRun). The turn is the one read above
+  // from this user's own runs, never the client's: a drafter's second turn reads
+  // 1 there and so goes to plain ai_start_run at price 0. An exempt caller (admin)
+  // never spends a credit. Anything else that asks falls back to points.
+  const creditKind = !isAdmin && req.useCredit === true ? creditKindForRun(spec.id, checked.input, turn) : null;
+  const startFn = creditKind ? "ai_start_run_with_credit" : "ai_start_run";
+
+  const { data, error } = await admin.rpc(startFn, {
     p_user: actor.userId,
     p_tool: spec.id,
     p_variant: null,
@@ -382,8 +430,17 @@ export async function startRunWith(
     p_pages: pages,
     p_conversation: conversationId,
     p_source_ids: sources,
+    ...(creditKind ? { p_credit_kind: creditKind } : {}),
   });
   if (error) {
+    // A credit request never falls back to points on these: the user asked to
+    // spend a credit, so he is told why it was not.
+    if (error.message === "no_credit") {
+      return { status: 402, body: { error: AI_COPY.noCredit, code: "no_credit" } };
+    }
+    if (error.message === "credit_not_eligible") {
+      return { status: 400, body: { error: AI_COPY.creditNotEligible, code: "credit_not_eligible" } };
+    }
     if (error.message === "insufficient_points") {
       return { status: 402, body: { error: AI_COPY.points, code: "insufficient_points", price } };
     }
@@ -393,27 +450,43 @@ export async function startRunWith(
     if (isMissingFunction(error.code)) {
       return { status: 503, body: { error: AI_COPY.notReady, code: "not_ready" } };
     }
-    console.error("[ai] ai_start_run failed:", spec.id, error.code, error.message);
+    console.error(`[ai] ${startFn} failed:`, spec.id, error.code, error.message);
     return { status: 503, body: { error: AI_COPY.unavailable, code: "unavailable" } };
   }
   const run = (Array.isArray(data) ? data[0] : data) as StartedRun | undefined;
   if (!run?.run_id) {
-    console.error("[ai] ai_start_run returned no run:", spec.id);
+    console.error(`[ai] ${startFn} returned no run:`, spec.id);
     return { status: 503, body: { error: AI_COPY.unavailable, code: "unavailable" } };
   }
   if (!run.created) {
     return { status: 409, body: { error: AI_COPY.duplicate, code: "duplicate", runId: run.run_id, status: run.status } };
   }
+  try {
+    deps.onRunCreated?.(spec.id);
+  } catch (err) {
+    // A tally must never fail a run that is already charged.
+    console.error("[ai] onRunCreated threw:", spec.id, err);
+  }
 
-  const charged = { chargedPoints: run.charged_points, ...(conversationId ? { conversationId } : {}) };
+  const charged = {
+    chargedPoints: run.charged_points,
+    creditUsed: run.credit_used === true,
+    ...(conversationId ? { conversationId } : {}),
+  };
 
   // Charged first, so the daily limit and the balance hold for the searches
   // too; every way out below refunds.
   let pkgSources: PackageSource[] = [];
   if (spec.retrieval && deps.retrieve) {
-    const { from, pinFrom, laws, principles } = spec.retrieval;
+    const { from, pinFrom, scopeFrom, laws, principles } = spec.retrieval;
     const pinned = pinFrom ? checked.input[pinFrom] : null;
-    const pin: RetrievalPin = typeof pinned === "string" && pinned ? { articleId: pinned } : {};
+    const scope = scopeFrom ? checked.input[scopeFrom] : null;
+    const question = String(checked.input[from] ?? "");
+    const pin: RetrievalPin = {
+      question,
+      ...(typeof pinned === "string" && pinned ? { articleId: pinned } : {}),
+      ...(typeof scope === "string" && scope ? { lawSlug: scope } : {}),
+    };
     const asked = await deps.n8n({
       path: LIB_QUERIES_PATH,
       mode: "sync",
@@ -423,7 +496,7 @@ export async function startRunWith(
         run_id: run.run_id,
         tool: "lib-queries",
         input: {
-          text: [...history.filter((h) => h.role === "user").slice(-1).map((h) => h.text), String(checked.input[from] ?? "")].join("\n"),
+          text: [...history.filter((h) => h.role === "user").slice(-1).map((h) => h.text), question].join("\n"),
         },
       },
       timeoutMs: LIB_QUERIES_TIMEOUT_MS,
@@ -433,8 +506,10 @@ export async function startRunWith(
       reply && reply.run_id === run.run_id && reply.status === "succeeded" && isPlainObject(reply.output)
         ? cleanQueries(reply.output.queries)
         : [];
-    // An open article is a source even when the writer found nothing to search.
-    if (queries.length === 0 && !pin.articleId) {
+    // An open article, or one the question names, is a source even when the
+    // writer found nothing to search.
+    const named = articleRefs(question).length > 0 || (!!pin.lawSlug && bareArticleNumbers(question).length > 0);
+    if (queries.length === 0 && !pin.articleId && !named) {
       await failRun(admin, run.run_id, "no_queries", asked.kind === "failed" ? asked.detail : "the search writer returned no searches");
       return { status: 502, body: { error: AI_COPY.failed, code: "tool_failed", runId: run.run_id } };
     }
@@ -507,21 +582,12 @@ export async function startRunWith(
   }
 
   // A job tool must answer 202; callN8n never returns a result for async.
-  const settled = await settleRunWith(
-    admin,
-    { spec, runId: run.run_id, sources, review: runtime.mode === "review", input: checked.input },
-    outcome.result,
-  );
+  // Nothing is held for review (a stored "review" runs as "staff"; Wave 3).
+  const settled = await settleRunWith(admin, { spec, runId: run.run_id, sources, input: checked.input }, outcome.result);
   if (settled.kind === "succeeded") {
     return {
       status: 200,
-      body: {
-        runId: run.run_id,
-        status: settled.status,
-        output: settled.status === "succeeded" ? settled.output : null,
-        citations: settled.status === "succeeded" ? settled.citations : [],
-        ...charged,
-      },
+      body: { runId: run.run_id, status: settled.status, output: settled.output, citations: settled.citations, ...charged },
     };
   }
   if (settled.kind === "stale") {
@@ -570,10 +636,10 @@ export async function callbackWith(admin: SupabaseClient, body: unknown): Promis
     return { status: 200, body: { ok: true, final: "failed" } };
   }
 
-  const { data: setting } = await admin.from("platform_settings").select("value").eq("key", "ai_tools").maybeSingle();
-  const review = resolveToolRuntime(spec, (setting as { value?: unknown } | null)?.value ?? null).mode === "review";
+  // No run is held for review until Wave 3's money-safe gate: a job started
+  // while its tool was stored as "review" settles as succeeded and is shown.
   const sources = (isPlainObject(run.source_ids) ? run.source_ids : {}) as SourceMap;
   const input = (isPlainObject(run.input) ? run.input : {}) as Record<string, unknown>;
-  const settled = await settleRunWith(admin, { spec, runId, sources, review, input }, body);
+  const settled = await settleRunWith(admin, { spec, runId, sources, input }, body);
   return { status: 200, body: { ok: true, final: settled.kind === "succeeded" ? settled.status : settled.kind } };
 }

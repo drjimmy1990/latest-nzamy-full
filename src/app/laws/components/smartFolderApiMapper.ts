@@ -70,6 +70,61 @@ export function mapApiFolderToSmartFolder(apiFolder: ApiSmartFolderRow): SmartFo
   };
 }
 
+/** smart_folder_items.entity_type → the POST /api/library/folders/titles key. */
+const TITLE_KIND: Record<string, "laws" | "orders" | "precedents" | "books"> = {
+  law: "laws",
+  order: "orders",
+  precedent: "precedents",
+  book: "books",
+};
+
+/** A saved item with no real title: the mapper fell back to its id (an old row, or a page saved before its title loaded). */
+export function itemLacksTitle(item: { slug: string; title?: string | null }): boolean {
+  const t = (item.title ?? "").trim();
+  return !t || t === item.slug;
+}
+
+/**
+ * The ids of every titleless item, per library table, for ONE call to
+ * POST /api/library/folders/titles (≤ 100 per table — far under the ~396-id
+ * `.in()` ceiling). null when every item already has its title.
+ */
+export function titleLookupForFolders(folders: readonly SmartFolder[], maxPerKind = 100): Record<"laws" | "orders" | "precedents" | "books", string[]> | null {
+  const sets = { laws: new Set<string>(), orders: new Set<string>(), precedents: new Set<string>(), books: new Set<string>() };
+  for (const f of folders) {
+    for (const item of f.laws) {
+      if (!itemLacksTitle(item)) continue;
+      const kind = TITLE_KIND[item.type || "law"];
+      if (kind) sets[kind].add(item.slug);
+    }
+  }
+  const out = {
+    laws: Array.from(sets.laws).slice(0, maxPerKind),
+    orders: Array.from(sets.orders).slice(0, maxPerKind),
+    precedents: Array.from(sets.precedents).slice(0, maxPerKind),
+    books: Array.from(sets.books).slice(0, maxPerKind),
+  };
+  return out.laws.length + out.orders.length + out.precedents.length + out.books.length > 0 ? out : null;
+}
+
+/** Folders with titleless items named from `titles` (display only; the rows are not rewritten). */
+export function applyResolvedTitles(
+  folders: SmartFolder[],
+  titles: Partial<Record<"laws" | "orders" | "precedents" | "books", Record<string, string>>>,
+): SmartFolder[] {
+  return folders.map(f => {
+    let changed = false;
+    const laws = f.laws.map(item => {
+      if (!itemLacksTitle(item)) return item;
+      const found = titles[TITLE_KIND[item.type || "law"]]?.[item.slug];
+      if (!found) return item;
+      changed = true;
+      return { ...item, title: found, titleEn: item.titleEn && item.titleEn !== item.slug ? item.titleEn : found };
+    });
+    return changed ? { ...f, laws } : f;
+  });
+}
+
 /**
  * Resolve the canonical reader route for a saved folder item.
  * Judicial collections saved from `/precedents/[slug]` store `type: "precedent"`

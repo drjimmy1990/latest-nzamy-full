@@ -1,4 +1,5 @@
 "use client";
+import { UnfinishedModuleNote } from "@/components/dashboard/sector/UnfinishedModuleNote";
 
 import { motion, useTransform, useMotionValue } from "framer-motion";
 import {
@@ -161,6 +162,7 @@ export default function FirmFeesPage() {
 
   return (
     <div className={`p-5 md:p-7 max-w-6xl mx-auto space-y-6 ${tp}`} dir="rtl">
+      <UnfinishedModuleNote href="/dashboard/firm/fees" />
 
       {/* ── Header ───────────────────────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">

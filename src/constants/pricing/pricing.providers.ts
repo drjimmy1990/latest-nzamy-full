@@ -1,5 +1,6 @@
 import { Scales, MagnifyingGlass, Brain, ShieldCheck, Star } from "@phosphor-icons/react";
 import { Plan, ComparisonCategory } from "./pricing.types";
+import { aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
 
 // ─── Plans: Service Providers (موثق / محكم / معقب) — Simple 3 Tiers ───────────
 // الفلسفة: عمل مقدمي الخدمات بسيط ولا يحتاج تعقيد الباقات الكثيرة.
@@ -58,7 +59,8 @@ export const plansProviders: { ar: Plan[]; en: Plan[] } = {
       ctaHref: "/register/provider?type=consultant&plan=independent", highlighted: false, color: "border-purple-300",
       commissionPct: 5,
       features: {
-        ai: ["النقاط بحزم الشحن المستقلة، بتكلفة أدوات باقة المحامي نفسها", "صياغة العقود وتدقيقها: ١٠ نقاط", "المساعد القانوني والتشريع المقارن: ٥ نقاط", null],
+        // The registry's charge (Wave 1 task 4), never a figure typed here.
+        ai: ["النقاط بحزم الشحن المستقلة، بتكلفة أدوات باقة المحامي نفسها", `صياغة العقود وتدقيقها: ${aiToolPriceText("contracts-pro", "ar")}`, `المساعد القانوني: ${aiToolPriceText("assistant", "ar")}`, null],
         platform: ["العملاء والملفات الاستشارية والتقويم", "ملف مهني للمستشار", "🚫 لا ترافع ولا إدارة جلسات (المادة ١٨)", null],
         support: [],
       },
@@ -114,7 +116,7 @@ export const plansProviders: { ar: Plan[]; en: Plan[] } = {
       ctaHref: "/register/provider?type=consultant&plan=independent", highlighted: false, color: "border-purple-300",
       commissionPct: 5,
       features: {
-        ai: ["Points from separate top-ups, at the lawyer plan's tool costs", "Contract drafting and review: 10 points", "Legal assistant and comparative law: 5 points", null],
+        ai: ["Points from separate top-ups, at the lawyer plan's tool costs", `Contract drafting and review: ${aiToolPriceText("contracts-pro", "en")}`, `Legal assistant: ${aiToolPriceText("assistant", "en")}`, null],
         platform: ["Clients, advisory files and calendar", "Consultant profile", "🚫 No pleading or hearing management (Art. 18)", null],
         support: [],
       },

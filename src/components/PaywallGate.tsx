@@ -5,21 +5,24 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import { Warning, ArrowFatUp, CreditCard } from "@phosphor-icons/react";
 import UpgradeModal from "@/components/UpgradeModal";
+import { arabicPoints, pointsNounAr } from "@/lib/ai/toolPointsDisplay";
 
 /**
- * CreditsBanner — Non-blocking inline banner shown when user's AI credits are exhausted.
- * Opens UpgradeModal instead of navigating away to /pricing.
+ * CreditsBanner — non-blocking inline banner for a user the SERVER found short
+ * of points for one run of the tool (usePointsShortfall → GET
+ * /api/v1/ai/points-standing). The caller renders it only then, with the
+ * server's two numbers; never on a client guess (owner package LIVE-06: it
+ * used to show to everyone, admins included, from a field nothing writes).
  */
-export function CreditsBanner({ isDark, credits, creditsMax }: {
+export function CreditsBanner({ isDark, balance, price }: {
   isDark: boolean;
-  credits?: number;
-  creditsMax?: number;
+  /** The user's points balance, as the server read it. */
+  balance: number;
+  /** The cheapest run of the tool, as the server charges it. */
+  price: number;
 }) {
-  const [upgradeOpen, setUpgradeOpen] = useState(false);
-
   return (
     <>
-      <UpgradeModal open={upgradeOpen} onClose={() => setUpgradeOpen(false)} featureBlocked="كريديت AI إضافي" />
       <motion.div
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
@@ -37,24 +40,29 @@ export function CreditsBanner({ isDark, credits, creditsMax }: {
             className={`flex-shrink-0 mt-0.5 ${isDark ? "text-amber-400" : "text-amber-600"}`}
           />
           <div>
+            {/* The server's own refusal (runCore AI_COPY.points). */}
             <p className={`text-[13px] font-bold leading-snug ${isDark ? "text-amber-300" : "text-amber-800"}`}>
-              انتهى رصيدك من الكريديت
+              رصيدك من النقاط لا يكفي لهذه الأداة
             </p>
             <p className={`text-[11px] mt-0.5 leading-relaxed ${isDark ? "text-amber-400/70" : "text-amber-700/80"}`}>
-              يمكنك ترقية باقتك للحصول على رصيد شهري أكبر، أو الدفع بالعمل القانوني لهذه الخدمة فقط.
+              تحتاج هذه الأداة {arabicPoints(price)} {pointsNounAr(price)}، ورصيدك الآن {arabicPoints(balance)} {pointsNounAr(balance)}.
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0 w-full sm:w-auto">
-          <button
-            onClick={() => setUpgradeOpen(true)}
+          {/* «ارقَ باقتك» opened the access-request dialog, and «الدفع بالعمل
+              القانوني» went to /pricing?mode=single, a mode the page does not
+              read. The plans and point top-ups are on /pricing; the balance
+              and its lots on /dashboard/billing. */}
+          <Link
+            href="/pricing"
             className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-[#0B3D2E] text-white text-[12px] font-bold hover:bg-[#0e4f3a] transition-colors shadow-sm"
           >
             <ArrowFatUp size={13} weight="fill" />
-            ارقَ باقتك
-          </button>
+            الباقات والنقاط
+          </Link>
           <Link
-            href="/pricing?mode=single"
+            href="/dashboard/billing"
             className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-[12px] font-bold border transition-colors ${
               isDark
                 ? "border-white/10 text-zinc-300 hover:bg-zinc-800"
@@ -62,7 +70,7 @@ export function CreditsBanner({ isDark, credits, creditsMax }: {
             }`}
           >
             <CreditCard size={13} />
-            الدفع بالعمل القانوني
+            رصيد نقاطي
           </Link>
         </div>
       </motion.div>

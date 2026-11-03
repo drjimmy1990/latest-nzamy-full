@@ -129,6 +129,32 @@ test("reading-order cursors are plain integers and exclusive of each other", () 
   }
 });
 
+test("note ٠٢: ?at_page= (with an optional ?at_vol=) is a page jump — integers only, alone", () => {
+  assert.deepEqual(planBlocksRequest(q("at_page=204")), { ok: true, sectionId: null, selection: { mode: "at_page", page: 204, vol: null } });
+  assert.deepEqual(planBlocksRequest(q("at_page=47&at_vol=3")), { ok: true, sectionId: null, selection: { mode: "at_page", page: 47, vol: 3 } });
+  for (const bad of ["at_page=abc", "at_page=-2", "at_vol=3", "at_page=4&at_vol=x", "at_page=4&from_order=1",
+    "at_page=4&before_order=1", "at_page=4&section_id=91bfdd89-4f5b-5281-97ce-8bf16b84e85d", "at_page=1),id.gt.(x"]) {
+    const plan = planBlocksRequest(q(bad));
+    assert.equal(plan.ok, false, bad);
+    assert.match(plan.ok ? "" : plan.error, /[؀-ۿ]/);
+  }
+});
+
+test("route: at_page resolves on public columns to a from_order cursor; no page is a 404, a failure a 500", () => {
+  const src = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
+  const block = src.slice(src.indexOf("if (plan.selection.mode === 'at_page')"), src.indexOf("const isCursor"));
+  assert.ok(block.length > 0);
+  // The request client, never the service role; public columns only.
+  assert.match(block, /= supabase\s*\.schema\('library'\)\s*\.from\('feqh_blocks'\)/);
+  assert.doesNotMatch(block, /serverOnly/);
+  assert.match(block, /\.select\('order_index'\)/);
+  assert.match(block, /\.eq\('page_number', at\.page\)/);
+  assert.match(block, /\.eq\('volume_number', at\.vol\)/);
+  assert.match(block, /status: 404/);
+  assert.match(block, /status: 500/);
+  assert.match(block, /selection = \{ mode: 'after', order \}/);
+});
+
 test("route: 400 on a bad request, head count past the end, cursors via gte/lte", () => {
   const src = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
   assert.match(src, /planBlocksRequest\(searchParams\)[\s\S]*?status: 400/);

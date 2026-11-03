@@ -23,6 +23,13 @@ import { cleanPrincipleText } from "../../app/precedents/[slug]/_principle-text.
 import { formatLocator } from "../../app/book/[slug]/_locator.ts";
 import type { ArticleBody, BlockBody, PrincipleBody, ScopedHit } from "../../app/api/library/scoped-search/scopedSearch.ts";
 import type { CartEntry } from "../../components/laws/DraftDrawer.tsx";
+import { principleHref } from "../../app/laws/principleLink.ts";
+import {
+  highlightMultiColorSegments,
+  parseHighlightQuery,
+  withSearchQuery,
+  type HighlightTerm,
+} from "../search/multiColorSearch.ts";
 
 /** What the route returns as `scope`. */
 export interface ScopeInfo {
@@ -216,30 +223,64 @@ export function blockCartEntry(b: CartBlock, citeTitle: string, fallbackPlace = 
 export interface TextSegment {
   text: string;
   hit: boolean;
+  /** Index into the coloured terms (its colour), null for plain text. */
+  term: number | null;
+}
+
+/** Most terms a list of plain strings may colour. */
+const MAX_LIST_TERMS = 20;
+
+/**
+ * The coloured terms for highlightSegments:
+ *   - a query string → the platform grammar (parseHighlightQuery): `+`, `"…"`,
+ *     `/`, `word*`, `-word` (never coloured);
+ *   - parsed terms → as they are;
+ *   - a list of plain strings (the route's `terms`) → one term each, «x*» a
+ *     prefix, a string with a space a phrase; shorter than two characters, or
+ *     past the first 20, ignored.
+ */
+export function highlightTermsFrom(terms: string | readonly string[] | readonly HighlightTerm[]): HighlightTerm[] {
+  if (typeof terms === "string") return parseHighlightQuery(terms).terms;
+  if (terms.length > 0 && typeof terms[0] === "object") return [...(terms as readonly HighlightTerm[])];
+  const out: HighlightTerm[] = [];
+  const seen = new Set<string>();
+  for (const raw of terms as readonly string[]) {
+    const s = String(raw ?? "").trim();
+    const prefix = /\*+$/.test(s);
+    const label = s.replace(/\*+$/, "").replace(/^"|"$/g, "").trim();
+    if (label.length < 2 || seen.has(label) || out.length >= MAX_LIST_TERMS) continue;
+    seen.add(label);
+    out.push({ label, kind: prefix ? "prefix" : label.includes(" ") ? "phrase" : "word", color: out.length });
+  }
+  return out;
 }
 
 /**
- * The text cut into plain and matching segments for <mark> (never HTML):
- * every occurrence of a search term, longest terms first, the prefix «*»
- * dropped. Terms shorter than two characters and anything past the first 20
- * terms are ignored.
+ * The text cut into plain and matching segments for <mark> (never HTML), by
+ * the platform's one engine (owner note ٠٦): Arabic and digit folding
+ * (الاثبات ↔ الإثبات, 123 ↔ ١٢٣), one colour per term, longest term first, a
+ * prefix term coloured to the end of its word.
  */
-export function highlightSegments(text: string, terms: readonly string[]): TextSegment[] {
-  const clean = [...new Set(terms.map((t) => String(t ?? "").replace(/\*+$/, "").trim()).filter((t) => t.length >= 2))]
-    .slice(0, 20)
-    .sort((a, b) => b.length - a.length);
+export function highlightSegments(text: string, terms: string | readonly string[] | readonly HighlightTerm[]): TextSegment[] {
   if (!text) return [];
-  if (clean.length === 0) return [{ text, hit: false }];
-  const re = new RegExp(clean.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "gi");
-  const out: TextSegment[] = [];
-  let last = 0;
-  for (let m = re.exec(text); m; m = re.exec(text)) {
-    if (m.index > last) out.push({ text: text.slice(last, m.index), hit: false });
-    out.push({ text: m[0], hit: true });
-    last = m.index + m[0].length;
-  }
-  if (last < text.length) out.push({ text: text.slice(last), hit: false });
-  return out;
+  return highlightMultiColorSegments(text, highlightTermsFrom(terms)).map((s) => ({
+    text: s.text,
+    hit: s.term !== null,
+    term: s.term,
+  }));
+}
+
+/**
+ * «الانتقال للموضع» for a hit, carrying the search (?q=) so the reader colours
+ * it on arrival: a principle opens in its collection reader at its own id
+ * (/precedents/<volume>?q=…#<principle id>), which pages in until it holds it.
+ * Articles and fiqh blocks get no link yet: the law and book readers do not
+ * scroll to an anchor on load (follow-up).
+ */
+export function scopedHitHref(hit: Pick<ScopedHit, "kind" | "id" | "volumeId">, query: string): string | null {
+  if (hit.kind !== "principle") return null;
+  const href = principleHref(hit.volumeId, hit.id);
+  return href ? withSearchQuery(href, query) : null;
 }
 
 /**

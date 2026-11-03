@@ -62,7 +62,6 @@ const ALLOW: [string, string | null, string][] = [
   ["components/Footer.tsx", "rounded-2xl bg-white px-8 py-4 text-sm font-bold text-royal", ON_BAND],
   ["components/pricing/PricingCTA.tsx", "rounded-2xl bg-white px-8 py-4 text-sm font-bold text-royal", ON_BAND],
   ["components/pricing/PricingCards.tsx", "bg-white text-[#0B3D2E] shadow-[0_4px_20px_-4px_rgba(255,255,255,0.3)]", `${ON_BAND}: the CTA on the highlighted (dark green) plan card`],
-  ["app/forgot-password/page.tsx", "bg-white text-royal", `${ON_BAND}: the current step in the green side panel`],
   ["app/onboarding/page.tsx", "bg-white text-royal", `${ON_BAND}: the current step in the green side panel`],
   ["app/register/client/page.tsx", "bg-white text-royal", `${ON_BAND}: the current step in the green side panel`],
   ["app/register/provider/page.tsx", "bg-white text-royal", `${ON_BAND}: the current step in the green side panel`],

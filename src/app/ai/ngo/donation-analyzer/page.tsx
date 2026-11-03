@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChartBar, Robot, Sparkle, DownloadSimple, Copy, Warning, ArrowLeft, ArrowRight, TrendUp, HandHeart, Buildings, User } from "@phosphor-icons/react";
@@ -20,7 +21,7 @@ const TYPE_CONF: Record<DonationType, { icon: React.ElementType; color: string; 
   "هبة حكومية": { icon: Buildings, color: "text-purple-500", bg: "bg-purple-500/10" },
   "وقف": { icon: User, color: "text-amber-500", bg: "bg-amber-500/10" },
 };
-export default function DonationAnalyzerPage() {
+function DonationAnalyzerInner() {
   const { isDark, isRTL } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [step, setStep] = useState<Step>("input");
@@ -164,5 +165,14 @@ export default function DonationAnalyzerPage() {
         </AnimatePresence>
       </div>
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function DonationAnalyzerPage() {
+  return (
+    <GatedToolScreen toolId="ngo.donation-analyzer" toolName="تحليل التبرعات والامتثال">
+      <DonationAnalyzerInner />
+    </GatedToolScreen>
   );
 }

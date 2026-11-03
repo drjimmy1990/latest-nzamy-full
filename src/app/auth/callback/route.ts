@@ -9,6 +9,11 @@ import {
   dashboardPathFor,
   isDbUserType,
 } from "@/lib/auth/userTypes";
+import {
+  RESET_LINK_ERROR_PATH,
+  planAuthCallback,
+  recoveryLandingAfterExchange,
+} from "@/lib/auth/passwordRecovery";
 
 /**
  * OAuth callback route handler.
@@ -46,6 +51,22 @@ import {
  * account type is known, `needsOnboarding` says so, and the person is sent to
  * /onboarding rather than to a dashboard chosen by guesswork.
  *
+ * ── Password-recovery links (owner package 2026-11-02, slice A §1.5) ───────
+ * The reset email from /forgot-password also comes back here, with
+ * `next=/reset-password` and a PKCE `code`. The person is sent to
+ * /reset-password — never through the onboarding or dashboard routing below —
+ * and a refused, expired or already-used link goes to
+ * /reset-password?error=link, which says so. The decision is
+ * planAuthCallback / recoveryLandingAfterExchange in
+ * src/lib/auth/passwordRecovery.ts; the OAuth path below is unchanged.
+ *
+ * PKCE only, on purpose (review ruling R2): a `token_hash` link is NOT
+ * verified here. Verifying one would sign this browser into whichever account
+ * the hash belongs to — an attacker's own recovery link, sent to a victim,
+ * would log the victim into the attacker's account (login CSRF). A PKCE code
+ * cannot be replayed that way: its verifier lives only in the browser that
+ * asked for the email.
+ *
  * ── State of the feature ───────────────────────────────────────────────────
  * Nothing reaches this route until the Google OAuth client is registered in
  * Google Cloud and the provider is enabled in Supabase. This file decides
@@ -64,9 +85,15 @@ function redirectRelative(path: string): NextResponse {
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const code = searchParams.get("code");
+  const plan = planAuthCallback(searchParams);
 
-  // `next` is an explicit landing override. No call-site sets it today — the
+  // A recovery link GoTrue already refused (expired, used): it redirects here
+  // with `error`/`error_code` and no code. Say so on the reset page rather
+  // than on /login, which does not read `?error=` (see the note at the end).
+  if (plan.kind === "recovery_link_error") return redirectRelative(RESET_LINK_ERROR_PATH);
+
+  // `next` is an explicit landing override. The only call-site that sets it is
+  // the reset email (`next=/reset-password`, handled by `plan` above) — the
   // sign-in buttons in src/app/login/page.tsx:223,
   // src/app/register/client/page.tsx:342 and src/app/register/provider/page.tsx
   // all pass a bare `/auth/callback` — and it is only consulted below
@@ -81,14 +108,8 @@ export async function GET(request: Request) {
   // characters and backslashes and checks the result stays same-origin.
   const next = safeLocalPath(searchParams.get("next"), FALLBACK_DASHBOARD_PATH);
 
-  if (code) {
+  if (plan.kind === "exchange_code") {
     const cookieStore = await cookies();
-    // Where /login was asked to send a Google sign-in (src/lib/auth/postLoginCookie.ts).
-    // Read once, re-validated, and cleared whatever happens below.
-    const stashed = readPostLoginCookie(cookieStore.get(POST_LOGIN_COOKIE)?.value);
-    if (cookieStore.get(POST_LOGIN_COOKIE)) {
-      cookieStore.set(POST_LOGIN_COOKIE, "", { path: "/", maxAge: 0 });
-    }
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -110,7 +131,26 @@ export async function GET(request: Request) {
       },
     );
 
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const { data: exchanged, error } = await supabase.auth.exchangeCodeForSession(plan.code);
+
+    // A recovery session goes to the reset form before any profile or
+    // onboarding routing: an unfinished client account must still be able to
+    // set its password. `redirectType` is supabase-js's own answer (it is not
+    // in the AuthTokenResponse type, hence the cast); the URL is the fallback.
+    const recoveryLanding = recoveryLandingAfterExchange({
+      ok: !error,
+      redirectType: (exchanged as { redirectType?: string | null } | null)?.redirectType,
+      recoveryHint: plan.recoveryHint,
+    });
+    if (recoveryLanding) return redirectRelative(recoveryLanding);
+
+    // OAuth only from here: a recovery link never reads or clears this.
+    // Where /login was asked to send a Google sign-in (src/lib/auth/postLoginCookie.ts).
+    // Read once, re-validated, and cleared whatever happens below.
+    const stashed = readPostLoginCookie(cookieStore.get(POST_LOGIN_COOKIE)?.value);
+    if (cookieStore.get(POST_LOGIN_COOKIE)) {
+      cookieStore.set(POST_LOGIN_COOKIE, "", { path: "/", maxAge: 0 });
+    }
 
     if (!error) {
       const {

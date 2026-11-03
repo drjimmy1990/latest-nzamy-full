@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { FOUNDER_CREDIT_REFUNDED_FAILURE, founderCreditRefundText } from "@/lib/membership/founderPlan";
 
 /**
  * useAiRun — the one client for the AI tools (plan §2.4). `start(tool, input)`
@@ -12,6 +13,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
  *
  * Errors are the server's Arabic message (402 points, 429 daily limit, 423
  * tool off, 504 timeout with points refunded…), never an invented result.
+ *
+ * A conversation tool answers with its `conversationId`; it is kept so the
+ * page can send the next turn into the same conversation.
+ *
+ * `start(tool, input, { useCredit: true })` asks to pay with a founder credit
+ * (P3) instead of points; the server decides whether the run qualifies and
+ * answers `creditUsed`. A run that does not qualify is charged points as usual;
+ * no credit left is a 402 «لا يتبقى لك رصيد من باقة المؤسس لهذه الأداة».
+ * A failed credit run says «أُعيد رصيد باقة المؤسس», never «أُعيدت نقاطك»
+ * (R20); a page passes useCredit only when the run qualifies
+ * (founderCreditChoiceView), so the two agree.
  */
 
 export type AiRunPhase = "idle" | "starting" | "running" | "done" | "review" | "error";
@@ -22,9 +34,12 @@ export interface AiRunState {
   output: Record<string, unknown> | null;
   citations: unknown[];
   chargedPoints: number;
+  /** True when the run was paid with a founder credit instead of points. */
+  creditUsed: boolean;
   step: string | null;
   error: string | null;
   code: string | null;
+  conversationId: string | null;
 }
 
 const IDLE: AiRunState = {
@@ -33,9 +48,11 @@ const IDLE: AiRunState = {
   output: null,
   citations: [],
   chargedPoints: 0,
+  creditUsed: false,
   step: null,
   error: null,
   code: null,
+  conversationId: null,
 };
 
 const POLL_MS = 3000;
@@ -92,7 +109,11 @@ export function useAiRun() {
           ...s,
           phase: "error",
           code: typeof run.error_code === "string" ? run.error_code : "failed",
-          error: run.refunded_at ? "تعذّر إكمال الطلب، وأُعيدت نقاطك" : "تعذّر إكمال الطلب",
+          error: s.creditUsed
+            ? FOUNDER_CREDIT_REFUNDED_FAILURE
+            : run.refunded_at
+              ? "تعذّر إكمال الطلب، وأُعيدت نقاطك"
+              : "تعذّر إكمال الطلب",
         }));
       } catch (err) {
         if (alive.current) setState((s) => ({ ...s, phase: "error", error: (err as Error).message || FALLBACK_ERROR }));
@@ -101,7 +122,11 @@ export function useAiRun() {
   }, []);
 
   const start = useCallback(
-    async (tool: string, input: Record<string, unknown>, opts: { variant?: string; fileIds?: string[]; conversationId?: string } = {}) => {
+    async (
+      tool: string,
+      input: Record<string, unknown>,
+      opts: { variant?: string; fileIds?: string[]; conversationId?: string; useCredit?: boolean } = {},
+    ) => {
       if (pollTimer.current) clearTimeout(pollTimer.current);
       setState({ ...IDLE, phase: "starting" });
       try {
@@ -114,13 +139,15 @@ export function useAiRun() {
         if (!alive.current) return;
         const runId = typeof json.runId === "string" ? json.runId : null;
         const chargedPoints = typeof json.chargedPoints === "number" ? json.chargedPoints : 0;
+        const creditUsed = json.creditUsed === true;
+        const conversationId = typeof json.conversationId === "string" ? json.conversationId : opts.conversationId ?? null;
         if (res.status === 202 && runId) {
-          setState({ ...IDLE, phase: "running", runId, chargedPoints });
+          setState({ ...IDLE, phase: "running", runId, chargedPoints, creditUsed, conversationId });
           poll(runId, Date.now());
           return;
         }
         if (res.ok && json.status === "review") {
-          setState({ ...IDLE, phase: "review", runId, chargedPoints });
+          setState({ ...IDLE, phase: "review", runId, chargedPoints, creditUsed, conversationId });
           return;
         }
         if (res.ok) {
@@ -129,6 +156,8 @@ export function useAiRun() {
             phase: "done",
             runId,
             chargedPoints,
+            creditUsed,
+            conversationId,
             output: (json.output as Record<string, unknown>) ?? null,
             citations: Array.isArray(json.citations) ? json.citations : [],
           });
@@ -138,8 +167,11 @@ export function useAiRun() {
           ...IDLE,
           phase: "error",
           runId,
+          conversationId,
           code: typeof json.code === "string" ? json.code : null,
-          error: typeof json.error === "string" ? json.error : FALLBACK_ERROR,
+          // A credit run that failed after it started got its credit back,
+          // though the server's message says «وأُعيدت نقاطك» (R20).
+          error: typeof json.error === "string" ? founderCreditRefundText(json.error, opts.useCredit === true) : FALLBACK_ERROR,
         });
       } catch {
         if (alive.current) setState({ ...IDLE, phase: "error", error: FALLBACK_ERROR });

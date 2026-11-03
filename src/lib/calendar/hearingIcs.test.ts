@@ -36,19 +36,31 @@ test("every physical line is at most 75 octets and folding never splits a UTF-8 
   assert.ok(lines(ics).includes(`SUMMARY:${base.title}`), "unfolding restores the Arabic title");
 });
 
-test("floating DTSTART/DTEND (no Z, no TZID), DTSTAMP in UTC, stable UID", () => {
+test("q352: DTSTART/DTEND carry TZID=Asia/Riyadh (not floating, not UTC); DTSTAMP in UTC, stable UID", () => {
   const l = lines(buildHearingIcs(base)!);
-  assert.ok(l.includes("DTSTART:20261110T090000"));
-  assert.ok(l.includes("DTEND:20261110T103000"), "duration_minutes (90) sets the end");
+  assert.ok(l.includes("DTSTART;TZID=Asia/Riyadh:20261110T090000"));
+  assert.ok(l.includes("DTEND;TZID=Asia/Riyadh:20261110T103000"), "duration_minutes (90) sets the end");
   assert.ok(l.includes("DTSTAMP:20261025T091530Z"));
   assert.ok(l.includes("UID:hearing-1b2c@nezamy.sa"));
-  assert.equal(l.some((x) => x.startsWith("DTSTART;TZID") || /^DTSTART:.*Z$/.test(x)), false);
+  const event = l.slice(l.indexOf("BEGIN:VEVENT"));
+  assert.equal(event.some((x) => /^DT(START|END):/.test(x)), false, "no floating or UTC start/end in the VEVENT");
+});
+
+test("q352: the VTIMEZONE block for Asia/Riyadh (UTC+3, no DST) precedes the VEVENT", () => {
+  const l = lines(buildHearingIcs(base)!);
+  const tz = l.indexOf("BEGIN:VTIMEZONE");
+  assert.ok(tz > 0 && tz < l.indexOf("BEGIN:VEVENT"));
+  assert.deepEqual(l.slice(tz, tz + 9), [
+    "BEGIN:VTIMEZONE", "TZID:Asia/Riyadh", "BEGIN:STANDARD", "DTSTART:19700101T000000",
+    "TZOFFSETFROM:+0300", "TZOFFSETTO:+0300", "TZNAME:+03", "END:STANDARD", "END:VTIMEZONE",
+  ]);
+  assert.equal(l.includes("BEGIN:DAYLIGHT"), false);
 });
 
 test("no duration falls back to one hour, the same block the Google link uses; the end may cross midnight", () => {
   const l = lines(buildHearingIcs({ ...base, time: "23:30", durationMinutes: null })!);
-  assert.ok(l.includes("DTSTART:20261110T233000"));
-  assert.ok(l.includes("DTEND:20261111T003000"));
+  assert.ok(l.includes("DTSTART;TZID=Asia/Riyadh:20261110T233000"));
+  assert.ok(l.includes("DTEND;TZID=Asia/Riyadh:20261111T003000"));
 });
 
 test("four VALARMs with relative triggers for a 09:00 hearing", () => {

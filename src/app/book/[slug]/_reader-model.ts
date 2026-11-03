@@ -17,16 +17,19 @@
  *   - a section is "complete" once all of its blocks are known — fetched with
  *     ?section_id= when it is opened from the TOC, or bracketed by other
  *     sections inside an ordered run (see linkRun);
- *   - «التالي / السابق» walk BOOK order (order_index), not TOC order: links
- *     between adjacent blocks come from ordered runs (page 1, and windows of
- *     ?from_order= / ?before_order=), so one request covers a whole window of
- *     blocks instead of one request per section.
+ *   - the page reads a continuous STREAM in BOOK order (order_index), not TOC
+ *     order (owner note ٠٢, see ReaderStream below): windows of ?from_order= /
+ *     ?before_order= extend it, one request per window. Links between adjacent
+ *     blocks (linkRun) are still recorded from every ordered run — they tell
+ *     which sections are complete.
  *
  * Every array is defaulted, and matn/sharh are always strings, so no field the
  * database leaves NULL (sharh is NULL on many rows; hashiyah is `{}`) can throw.
  *
- * Pure and import-free so node:test can load it.
+ * Pure, and imports only pure modules by relative path, so node:test can load it.
  */
+
+import { matchesQuery, parseHighlightQuery } from "../../../lib/search/multiColorSearch.ts";
 
 export interface ReaderBlock {
   id: string;
@@ -417,33 +420,209 @@ export function neighbour(
   return { kind: "load", dir, order: active.orderIndex };
 }
 
-const norm = (s: string) =>
+// ── The continuous stream (owner note ٠٢) ───────────────────────────────────
+//
+// The reader used to show ONE block (activeBlock) and walk the book with
+// «الموضع التالي / السابق» — on الوسيط ج1 page 1 that was a single line of
+// author and publisher. It now shows a stream: a run of blocks contiguous in
+// BOOK order (order_index), rendered one under another. The first batch comes
+// with the opening request; the next one is appended when the reader nears the
+// end (?from_order= the last block's order — inclusive, so the anchor and any
+// order_index ties come back and are dropped here by id). A jump to a place
+// outside the stream (an index entry, «انتقال للصفحة») replaces the stream
+// with a new run that starts there and continues downward.
+
+/** A run of blocks contiguous in book order, plus whether it touches either end of the book. */
+export interface ReaderStream {
+  blocks: ReaderBlock[];
+  startsBook: boolean;
+  endsBook: boolean;
+}
+
+export const emptyStream = (): ReaderStream => ({ blocks: [], startsBook: false, endsBook: false });
+
+/** Sort into book order and drop repeated ids (the later copy wins: it is the fresher answer). */
+function dedupeInOrder(blocks: ReaderBlock[]): ReaderBlock[] {
+  const byId = new Map<string, ReaderBlock>();
+  for (const b of blocks) if (b.id) byId.set(b.id, b);
+  return [...byId.values()].sort(compareBlocks);
+}
+
+/** The opening request's blocks (page 1 of the book) as the first stream. */
+export function streamFromFirstPage(state: Pick<ReaderState, "blocksBySection" | "links">): ReaderStream {
+  const blocks = loadedBlocks(state.blocksBySection);
+  if (blocks.length === 0) return { blocks, startsBook: true, endsBook: true };
+  return {
+    blocks,
+    startsBook: true,
+    // linkRun recorded the book's end on the last block when page 1 held all of it.
+    endsBook: state.links.next[blocks[blocks.length - 1].id] === null,
+  };
+}
+
+/**
+ * Append (dir = 1) or prepend (dir = -1) one cursor window to the stream.
+ * `added` counts the blocks that were not held yet: 0 while the server says
+ * more follow means the window was all order_index ties of the anchor — the
+ * caller stops auto-loading instead of asking for the same window forever
+ * (a `+1` cursor would silently skip the rest of the ties).
+ */
+export function extendStream(stream: ReaderStream, run: OrderedRun, dir: 1 | -1): { stream: ReaderStream; added: number } {
+  const held = new Set(stream.blocks.map((b) => b.id));
+  const added = run.blocks.filter((b) => b.id && !held.has(b.id)).length;
+  const blocks = dir === 1
+    ? dedupeInOrder([...stream.blocks, ...run.blocks])
+    : dedupeInOrder([...run.blocks, ...stream.blocks]);
+  return {
+    stream: {
+      blocks,
+      startsBook: stream.startsBook || run.startsBook,
+      endsBook: stream.endsBook || run.endsBook,
+    },
+    added,
+  };
+}
+
+/**
+ * A new stream from a cursor window (a jump): it starts where the window
+ * starts. `links` (recorded by earlier runs — page 1 records the book's first
+ * block) tell when that start, or the window's end, is an edge of the book, so
+ * a jump to the first chapter offers no «عرض ما قبل».
+ */
+export function streamFromRun(run: OrderedRun, links: BookLinks = emptyLinks()): ReaderStream {
+  const blocks = dedupeInOrder(run.blocks);
+  const first = blocks[0]?.id;
+  const last = blocks[blocks.length - 1]?.id;
+  return {
+    blocks,
+    startsBook: run.startsBook || (first !== undefined && links.prev[first] === null),
+    endsBook: run.endsBook || (last !== undefined && links.next[last] === null),
+  };
+}
+
+/**
+ * The slice of the index (chapters) the sidebar renders: `count` rows, plus
+ * `before` rows revealed above. When the chapter being read lies past the
+ * first `count` rows, the slice is centred on it instead of growing from
+ * chapter 0 — a jump to page 900 of a 4,860-chapter book must not mount
+ * thousands of rows (what the step was introduced to stop).
+ */
+export function tocWindow(
+  total: number,
+  activeIndex: number,
+  count: number,
+  before: number,
+  step: number,
+): { start: number; end: number } {
+  const anchor = activeIndex >= count ? Math.max(0, activeIndex - Math.floor(step / 2)) : 0;
+  return { start: Math.max(0, anchor - before), end: Math.min(total, anchor + count) };
+}
+
+/** The order_index to ask ?from_order= for (dir 1) or ?before_order= for (dir -1); null = nothing to anchor on. */
+export function streamCursor(stream: ReaderStream, dir: 1 | -1): number | null {
+  const orders = stream.blocks.map((b) => b.orderIndex).filter((o): o is number => o !== null);
+  if (orders.length === 0) return null;
+  return dir === 1 ? Math.max(...orders) : Math.min(...orders);
+}
+
+export function streamHas(stream: ReaderStream, blockId: string): boolean {
+  return stream.blocks.some((b) => b.id === blockId);
+}
+
+/**
+ * Where a jump to a block goes: scroll to it when the stream holds it; load a
+ * new stream from its order_index when the reader knows the block (from the
+ * index) but the stream does not hold it; null when its place is unknown.
+ */
+export type JumpPlan = { kind: "scroll"; id: string } | { kind: "load"; order: number; id: string } | null;
+
+export function planBlockJump(stream: ReaderStream, map: BlocksBySection, blockId: string): JumpPlan {
+  if (!blockId) return null;
+  if (streamHas(stream, blockId)) return { kind: "scroll", id: blockId };
+  const known = findBlock(map, blockId);
+  if (!known || known.orderIndex === null) return null;
+  return { kind: "load", order: known.orderIndex, id: blockId };
+}
+
+/** The first block of a section the stream holds (opening a section from the index), or null. */
+export function firstStreamBlockOfSection(stream: ReaderStream, sectionId: string): ReaderBlock | null {
+  return stream.blocks.find((b) => b.sectionId === sectionId) ?? null;
+}
+
+/**
+ * The block the reader is on: the first one, in stream order, whose card
+ * crosses the reading line (the IntersectionObserver's band). When none does
+ * (a tall card covers the band), the previous answer stands.
+ */
+export function topmostVisible(stream: ReaderStream, visible: ReadonlySet<string>, previous: string): string {
+  for (const b of stream.blocks) if (visible.has(b.id)) return b.id;
+  return previous;
+}
+
+const foldDigits = (s: string) =>
   s
-    .replace(/[أإآا]/g, "ا")
-    .replace(/[ةه]/g, "ه")
-    .replace(/[يى]/g, "ي")
     .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
-    .replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
-    .toLowerCase();
+    .replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)));
+
+/**
+ * «انتقال للصفحة»: "47" → page 47 in any volume; "3/47" → volume 3, page 47
+ * (Arabic-Indic digits accepted). `serverPage` / `serverVol` are set when the
+ * tokens are plain numbers, so the books API can find a page the stream does
+ * not hold yet (?at_page=); a label such as «مقدمة» is matched on the loaded
+ * blocks only (`server` is then null).
+ */
+export function parseJumpQuery(query: string): {
+  vol: string | null;
+  page: string | null;
+  server: { page: number; vol: number | null } | null;
+} {
+  const trimmed = query.trim();
+  let vol: string | null = null;
+  let page: string | null = trimmed || null;
+  if (trimmed.includes("/")) {
+    const [v, p] = trimmed.split("/");
+    vol = v.trim() || null;
+    page = (p ?? "").trim() || null;
+  }
+  const asInt = (t: string | null) => {
+    if (t === null) return null;
+    const f = foldDigits(t).trim();
+    return /^\d{1,9}$/.test(f) ? Number(f) : null;
+  };
+  const serverPage = asInt(page);
+  const serverVol = asInt(vol);
+  // A token that is not a number cannot go to the server — not even half of
+  // it («مقدمة/3» is not «page 3 in any volume»).
+  const server = serverPage === null || (vol !== null && serverVol === null)
+    ? null
+    : { page: serverPage, vol: serverVol };
+  return { vol, page, server };
+}
 
 /**
  * Filter the TOC by a query: a chapter whose title matches keeps all its
  * sections; otherwise a section stays when its title or one of its LOADED
  * blocks matches. Blocks not loaded yet cannot be searched on the client.
+ * Folding (ا/أ/إ/آ, ة/ه, ي/ى, the three digit scripts, harakat) is the
+ * shared engine's (src/lib/search/multiColorSearch.ts).
  */
 export function filterToc(chapters: ReaderChapter[], map: BlocksBySection, query: string): ReaderChapter[] {
-  const q = norm(query.trim());
-  if (!q) return chapters;
-  const blockHit = (b: ReaderBlock) =>
-    norm(b.topic).includes(q) || norm(b.matn).includes(q) || norm(b.sharh).includes(q);
+  // Owner note ٠٦: the box speaks the library's grammar (space/+ AND, "…",
+  // /, word*, -word) — the same parser that colours the matches in the text,
+  // so the index and the highlight never disagree.
+  const parsed = parseHighlightQuery(query);
+  // Nothing to match on (an empty box, or only punctuation) filters nothing.
+  if (parsed.groups.length === 0 && parsed.excluded.length === 0) return chapters;
+  const hit = (...fields: string[]) => matchesQuery(fields, parsed);
+  const blockHit = (b: ReaderBlock) => hit(b.topic, b.matn, b.sharh, ...b.hashiyah);
   const out: ReaderChapter[] = [];
   for (const ch of chapters) {
-    if (norm(ch.title).includes(q)) {
+    if (hit(ch.title)) {
       out.push(ch);
       continue;
     }
     const sections = ch.sections.filter(
-      (s) => norm(s.title).includes(q) || (map[s.id] ?? []).some(blockHit),
+      (s) => hit(s.title) || (map[s.id] ?? []).some(blockHit),
     );
     if (sections.length > 0) out.push({ ...ch, sections });
   }

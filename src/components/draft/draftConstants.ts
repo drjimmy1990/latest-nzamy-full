@@ -52,7 +52,7 @@ export const MEMO_MAIN_TYPES = [
 
 export const MEMO_SUB_TYPES_REGULAR: Record<string, string[]> = {
   case:     ["حقوقية (مدني/تجاري/عائلي)", "جزائية خاصة (تعويض ضرر)", "إدارية أمام ديوان المظالم"],
-  reply:    ["مذكرة رد أساسية", "مذكرة إلحاقية (إضافة أدلة)", "مذكرة ختامية قبل الحكم"],
+  reply:    ["مذكرة رد أساسية", "مذكرة تعقيب (على رد الخصم)", "مذكرة إلحاقية (إضافة أدلة)", "مذكرة ختامية قبل الحكم"],
   appeal:   ["استئناف (درجة ثانية)", "نقض (المحكمة العليا)", "التماس إعادة النظر"],
   arbitration: ["حكم تحكيم نهائي", "حكم تحكيم جزئي", "قرار إجرائي", "حكم بإثبات الصلح"],
   notary:      ["عقد بيع عقار", "وكالة شرعية", "عقد تأسيس شركة", "إقرار موثّق", "عقد رهن"],
@@ -125,6 +125,9 @@ export type PartyData = {
   type: PartyType;
   companyName: string; commercialReg: string; unifiedNum: string;
   representative: string; representativeRole: string; address: string;
+  // Optional (owner package §3.5-3b): the representative's ID / iqama number,
+  // and the capacity typed when representativeRole is «أخرى» (PARTY_ROLE_OTHER).
+  representativeId: string; representativeRoleOther: string;
   fullName: string; idNumber: string; nationality: string;
   entityName: string; unifiedNumGov: string; contactPerson: string;
   taxOrCustomsNum: string;
@@ -134,6 +137,7 @@ export const EMPTY_PARTY: PartyData = {
   type: "individual",
   companyName: "", commercialReg: "", unifiedNum: "",
   representative: "", representativeRole: "", address: "",
+  representativeId: "", representativeRoleOther: "",
   fullName: "", idNumber: "", nationality: "",
   entityName: "", unifiedNumGov: "", contactPerson: "",
   taxOrCustomsNum: "",

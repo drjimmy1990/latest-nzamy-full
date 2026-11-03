@@ -181,7 +181,7 @@ const BLOCKED_COPY: Record<
     // read you" here would be the false half of the pair this round opened on.
     //
     // The body used to end «يرجى التواصل مع الدعم لإنشائه» — an instruction
-    // whose outcome no feature delivers. Re-verified: no route inserts into
+    // whose outcome no feature delivered. HISTORY (before CODE-F26): no route inserted into
     // `lawyer_profiles` for an existing account (the tree's only insert is
     // onboarding/account-type through a dynamic `spec.table`, and it refuses a
     // caller whose `user_type` is already set), and the admin surface only
@@ -191,8 +191,12 @@ const BLOCKED_COPY: Record<
     // (`newSectorRowNotes` in src/app/dashboard/admin/users/[id]/page.tsx —
     // «أنشئ الصف يدويًا من قاعدة البيانات»). Naming it is also what makes the
     // retry button below honest: it says what a re-read could ever pick up.
-    title: "لا يوجد سجل مهني مرتبط بحسابك — الحفظ معطّل",
-    body: "قرأنا حسابك بنجاح ولم نجد سجلاً مهنياً مرتبطاً به، فالحقول أدناه فارغة لهذا السبب لا لتعذّر القراءة. الحفظ هنا يُحدّث سجلاً قائماً ولا يُنشئ سجلاً جديداً، ولا توجد في المنصة — لا في هذه الصفحة ولا في لوحة المسؤول — أداة تُنشئ هذا السجل؛ إنشاؤه تدخّل يدوي في قاعدة البيانات من مشغّل المنصة. لن يُحفظ شيء مما تكتبه هنا، وإن أُنشئ السجل فاضغط «إعادة القراءة» أدناه ليظهر دون إعادة تحميل الصفحة.",
+    //
+    // CODE-F26 (owner package 2026-10-30): that dead end is closed — the
+    // «أنشئ سجلك المهني» button below calls POST /api/v1/lawyer/profile-row,
+    // which creates the same minimal row onboarding creates, then re-reads.
+    title: "لم يُنشأ سجلك المهني بعد — أنشئه أولاً",
+    body: "قرأنا حسابك بنجاح ولم نجد سجلاً مهنياً مرتبطاً به، فالحقول أدناه فارغة لهذا السبب لا لتعذّر القراءة. اضغط «أنشئ سجلك المهني» ليُنشأ السجل، ثم املأ الحقول واحفظ. إنشاء السجل لا يعني توثيق حسابك — التوثيق يبقى بيد إدارة المنصة بعد مراجعة الترخيص.",
     retry: "إعادة القراءة",
   },
   "no-server": {
@@ -289,6 +293,8 @@ export default function LawyerProfileEditPage() {
   // Null only before load() has resolved, and the banner is not rendered then
   // (the spinner returns first). Every non-success exit from load() sets it.
   const [blocked, setBlocked] = useState<BlockedReason | null>(null);
+  const [creatingRow, setCreatingRow] = useState(false);
+  const [createRowError, setCreateRowError] = useState<string | null>(null);
   // Licence image upload (owner answer ٢١٩). Independent of handleSave: the
   // file goes up on its own button. `licenceInputKey` remounts the file input
   // to clear it after a successful upload.
@@ -373,42 +379,17 @@ export default function LawyerProfileEditPage() {
         setBlocked(res.roleProfileReadFailed === true ? "read-failed" : "no-row");
 
         /*
-         * ─── DEFERRED: creating the missing row from here ────────────────────
+         * ─── BUILT (CODE-F26, 2026-10-30): creating the missing row ─────────
          *
-         * An earlier pass deferred this on the ground that «no owner INSERT
-         * policy exists, and adding one is a migration (banned)». That ground
-         * is FALSE and should not be repeated:
-         * supabase/migrations/20260614_auto_create_role_profiles.sql:195-206
-         * creates policy "users insert own lawyer profile" on
-         * public.lawyer_profiles for insert with check (user_id = auth.uid()).
-         * No migration would be needed to use it.
-         *
-         * It stays deferred on a real ground instead: nobody in a coding
-         * session can verify that 20260614 was ever APPLIED to production, and
-         * in this project migrations are applied by the owner, never by us.
-         *
-         * THE ONE CHECK, against PRODUCTION, before anyone builds this:
-         *   does pg_policies hold a row with tablename = 'lawyer_profiles'
-         *   and policyname = 'users insert own lawyer profile'?
-         * If it does not, an insert from here returns an RLS denial and this
-         * honest banner becomes a runtime failure.
-         *
-         * DO NOT treat the existing provisioning path as evidence that it does.
-         * src/app/api/v1/onboarding/account-type/route.ts:200 really does
-         * create these rows in production — but on `createServiceClient()`
-         * (same file, :310), which bypasses RLS entirely, so its success says
-         * nothing about what an authenticated session is allowed to insert.
-         * Everything this editor writes goes through `createClient()` and is
-         * subject to the policy.
-         *
-         * And the build is not in this file: PATCH /api/v1/profile does
-         * `.update().eq().select().single()`
-         * (src/app/api/v1/profile/route.ts:368-378) — which is precisely why
-         * the no-row save is blocked, since an UPDATE matching zero rows
-         * returns PGRST116 and the route answers 500 «تعذّر حفظ التعديلات».
-         * Building this means changing that call and deciding which columns a
-         * self-created row may carry (verification_status must not be one; it
-         * is admin-only by design).
+         * The «no-row» banner now carries «أنشئ سجلك المهني», which calls
+         * POST /api/v1/lawyer/profile-row. That route inserts the same minimal
+         * row onboarding/account-type provisions (sectorRowValuesFor, lawyer)
+         * on the SERVICE client — the earlier deferral was about whether the
+         * owner INSERT policy from 20260614 is live on production, and a
+         * service-client insert keyed on the session's own id does not depend
+         * on it. verification_status is never set; it keeps its default and
+         * stays admin-only. After the insert this page re-reads, `loaded`
+         * turns true and Save works through the unchanged PATCH.
          */
       }
     } catch { setBlocked("read-failed"); }
@@ -637,6 +618,29 @@ export default function LawyerProfileEditPage() {
             <p className={`text-[11px] mt-1 leading-relaxed ${isDark ? "text-zinc-400" : "text-amber-700/70"}`}>
               {BLOCKED_COPY[blocked].body}
             </p>
+            {blocked === "no-row" && (
+              <button
+                disabled={creatingRow}
+                onClick={async () => {
+                  setCreatingRow(true); setCreateRowError(null); setMsg(null);
+                  try {
+                    await apiMutate("/api/v1/lawyer/profile-row", "POST", {});
+                    setLoading(true);
+                    await load();
+                  } catch (e) {
+                    setCreateRowError(e instanceof Error && e.message ? e.message : "تعذّر إنشاء السجل المهني — حاول مرة أخرى.");
+                  } finally {
+                    setCreatingRow(false);
+                  }
+                }}
+                className="mt-3 me-2 inline-flex items-center gap-1.5 rounded-xl bg-[#0B3D2E] px-4 py-2 text-[11px] font-bold text-[#C8A762] transition-colors hover:bg-[#0a3328] disabled:opacity-50">
+                {creatingRow ? <SpinnerGap size={13} className="animate-spin" /> : <Plus size={13} weight="bold" />}
+                {creatingRow ? "جارٍ الإنشاء..." : "أنشئ سجلك المهني"}
+              </button>
+            )}
+            {blocked === "no-row" && createRowError && (
+              <p role="alert" className={`mt-2 text-[11px] font-semibold ${isDark ? "text-red-400" : "text-red-700"}`}>{createRowError}</p>
+            )}
             {BLOCKED_COPY[blocked].retry && (
               <button onClick={() => { setMsg(null); setLoading(true); load(); }}
                 className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-[#0B3D2E] px-4 py-2 text-[11px] font-bold text-[#C8A762] transition-colors hover:bg-[#0a3328]">

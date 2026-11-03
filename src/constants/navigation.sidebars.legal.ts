@@ -64,11 +64,8 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
     items: [
       { label: "مدير العقود",    labelEn: "Contracts",       href: "/dashboard/lawyer/contracts", icon: "FileText" },
       { label: "المستندات",      labelEn: "Documents",        href: "/dashboard/lawyer/documents", icon: "FolderOpen" },
-      // Owner decision ٢٥٦ — the official letterhead (D4).
-      { label: "الورق المروّس",  labelEn: "Letterhead",       href: "/dashboard/lawyer/letterhead", icon: "Stamp" },
-      // badge «قريباً» — /ai/vault renders DashboardComingSoon (its mock
-      // documents and mock lawyer card were removed, owner decision 28 Sep).
-      { label: "الخزنة",         labelEn: "The Vault",        href: "/ai/vault",                    icon: "Vault", badge: "قريباً" },
+      // Owner note 09 §٤ (2026-10-30): the letterhead lives inside the vault (?tab=branding).
+      { label: "الخزنة",         labelEn: "The Vault",        href: "/dashboard/lawyer/vault",      icon: "Vault" },
       // «الأرشيف الموحّد» stood here. An earlier round downgraded its badge
       // from «جديد» to «قريباً» — honest about the pill, but the entry still
       // spent a line of the sidebar on a 12-line DashboardComingSoon template.
@@ -200,7 +197,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     title: "العقود", titleEn: "Contracts",
     items: [
       { label: "مدير العقود",     labelEn: "Contract Manager", href: "/dashboard/firm/contracts",  icon: "FileText" },
-      { label: "الورق المروّس",   labelEn: "Letterhead",       href: "/dashboard/firm/letterhead", icon: "Stamp" },
+      { label: "الخزنة",          labelEn: "Letterhead",       href: "/dashboard/firm/vault?tab=branding", icon: "Vault" },
       { label: "النماذج القياسية",labelEn: "Templates",         href: "/dashboard/firm/templates", badge: "قريباً",  icon: "CopySimple" },
       { label: "المستندات",        labelEn: "Documents",         href: "/dashboard/firm/documents", badge: "قريباً",  icon: "FolderOpen" },
       { label: "الأرشيف الموحّد",   labelEn: "Unified Archive",   href: "/dashboard/firm/archive", badge: "قريباً",    icon: "Archive" },
@@ -268,8 +265,8 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
       { label: "الصائغ القانوني",       labelEn: "Legal Drafter",    href: "/ai/draft",            icon: "PencilSimple", divider: true },
       { label: "المجمّع البحثي",        labelEn: "Research Collector", href: "/ai/collector",      icon: "Tray",         badge: "جديد" },
       { label: "محترف العقود",           labelEn: "Contract Pro",     href: "/ai/contracts",        icon: "FileText" },
-      { label: "مفاوض العقود",           labelEn: "Contract Negotiator", href: "/ai/contract-negotiator",  icon: "Handshake", badge: "جديد" },
-      { label: "مراجع العقود",           labelEn: "Contract Reviewer",   href: "/ai/contract-reviewer",    icon: "MagnifyingGlass", badge: "جديد" },
+      { label: "مفاوض العقود",           labelEn: "Contract Negotiator", href: "/ai/contract-negotiator",  icon: "Handshake", badge: "قريباً" },
+      { label: "مراجع العقود",           labelEn: "Contract Reviewer",   href: "/ai/contract-reviewer",    icon: "MagnifyingGlass", badge: "قريباً" },
       { label: "الرأي الفصل",           labelEn: "Al-Ra'y Al-Fasl", href: "/ai/legal-opinion",    icon: "Lightbulb" },
       { label: "منقح ناجز",             labelEn: "Najiz Optimizer",  href: "/ai/najiz-optimizer",  icon: "Broom",        badge: "جديد" },
       // ③ التحليل والاستراتيجية
@@ -281,7 +278,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
       // ⑤ المساعدة الذكية
       { label: "السكرتير الذكي",        labelEn: "AI Secretary",     href: "/ai/secretary",        icon: "Robot",        divider: true, badge: "قريباً" },
       { label: "الحاسبة القانونية",     labelEn: "Legal Calculator", href: "/ai/fee-calculator",   icon: "Calculator" },
-      { label: "مولّد التقارير",        labelEn: "Report Generator", href: "/ai/report-generator", icon: "FileArrowUp",  badge: "جديد" },
+      { label: "مولّد التقارير",        labelEn: "Report Generator", href: "/ai/report-generator", icon: "FileArrowUp",  badge: "قريباً" },
     ],
   },
   // ── أدوات المكتب المؤسسية (الفيرم ككيان تجاري يحتاج أدوات الشركات) ──────
@@ -290,9 +287,9 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     collapsible: true,
     defaultOpen: false,
     items: [
-      { label: "المستشار التجاري",    labelEn: "Business Advisor",       href: "/ai/corp/advisor",            icon: "Briefcase" },
+      { label: "المستشار التجاري",    labelEn: "Business Advisor",       href: "/ai/corp/advisor",            icon: "Briefcase", badge: "قريباً" },
       { label: "مدير العقود CLM",      labelEn: "Contract Lifecycle",     href: "/ai/corp/clm",                icon: "ArrowsClockwise", badge: "قريباً" },
-      { label: "مراقب الامتثال",       labelEn: "Compliance Monitor",     href: "/ai/corp/compliance-monitor",  icon: "ShieldCheck" },
+      { label: "مراقب الامتثال",       labelEn: "Compliance Monitor",     href: "/ai/corp/compliance-monitor",  icon: "ShieldCheck", badge: "قريباً" },
       { label: "مستشار الموارد البشرية", labelEn: "HR Advisor",           href: "/ai/corp/hr",                 icon: "UserCirclePlus", badge: "قريباً" },
     ],
   },

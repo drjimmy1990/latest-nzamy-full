@@ -1,9 +1,10 @@
 "use client";
 
-import { memo, useMemo } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import { FileText, Copy, Check, Plus, Minus, Lock } from "@phosphor-icons/react";
 import { JudicialPrincipleItem } from "@/app/laws/data";
 import { cleanPrincipleText, principleParagraphs } from "./_principle-text";
+import { Hl, useTextHasHighlight } from "@/components/search/MultiColorHighlight";
 
 /**
  * Principle text as paragraphs: no raw Markdown marks, and a ruling split on
@@ -11,6 +12,11 @@ import { cleanPrincipleText, principleParagraphs } from "./_principle-text";
  * Memoised: a search loads every principle of a collection (up to 2,323, some
  * fields over 25k characters), and a block re-renders when the active
  * principle changes on scroll.
+ *
+ * Owner note ٠٦: each paragraph goes through <Hl>, which colours the search
+ * of the nearest HighlightProvider (the reader's ?q= or its own filter box)
+ * and renders plain text when there is none. <Hl> reads context, so the memo
+ * still re-renders when the search changes.
  */
 const Paragraphs = memo(function Paragraphs({ text, className }: { text: string | null | undefined; className?: string }) {
   const paragraphs = useMemo(() => principleParagraphs(text), [text]);
@@ -18,7 +24,7 @@ const Paragraphs = memo(function Paragraphs({ text, className }: { text: string 
   return (
     <div className="space-y-2">
       {paragraphs.map((para, i) => (
-        <p key={i} className={className}>{para}</p>
+        <p key={i} className={className}><Hl text={para} /></p>
       ))}
     </div>
   );
@@ -35,7 +41,6 @@ interface PrincipleBlockProps {
   isRTL: boolean;
   activePrincipleId: string;
   copiedPrincipleId: string;
-  searchQuery: string;
   fontSize: "normal" | "large" | "xlarge";
   isReadingMode: boolean;
   handleCopyPrinciple: (p: JudicialPrincipleItem) => void;
@@ -57,7 +62,6 @@ export default function PrincipleBlock({
   isRTL,
   activePrincipleId,
   copiedPrincipleId,
-  searchQuery,
   fontSize,
   isReadingMode,
   handleCopyPrinciple,
@@ -91,6 +95,15 @@ export default function PrincipleBlock({
   const mainParas = nonEmptyParas.filter(para => !isReferenceText(para.text));
   const hasParas = mainParas.length > 0;
   const hasDetails = Object.values(details).some(Boolean);
+  // Owner note ٠٦: a search term inside the collapsed «الوقائع والتسبيب
+  // والمنطوق» opens it. Set on the element once when a match appears — not a
+  // controlled `open` prop, which would re-apply on every scroll render and
+  // stop the reader from closing it again.
+  const detailsRef = useRef<HTMLDetailsElement | null>(null);
+  const detailsHaveMatch = useTextHasHighlight(Object.values(details).filter(Boolean).join("\n"));
+  useEffect(() => {
+    if (detailsHaveMatch && detailsRef.current) detailsRef.current.open = true;
+  }, [detailsHaveMatch]);
 
   return (
     <div
@@ -107,18 +120,18 @@ export default function PrincipleBlock({
       <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-4 mb-6 border-slate-200 dark:border-white/[0.05]">
         <div className="flex items-center gap-2 text-xs font-black text-amber-600 dark:text-[#C8A762]">
           <FileText size={16} />
-          <span>{isRTL ? `مبدأ رقم (${p.number})` : `Principle #${p.number}`}</span>
+          <span><Hl text={isRTL ? `مبدأ رقم (${p.number})` : `Principle #${p.number}`} /></span>
           {p.decision_number && (
             <>
               <span className="w-1.5 h-1.5 rounded-full bg-[#C8A762]" />
-              <span>{isRTL ? `قرار رقم (${p.decision_number})` : `Decision #${p.decision_number}`}</span>
+              <span><Hl text={isRTL ? `قرار رقم (${p.decision_number})` : `Decision #${p.decision_number}`} /></span>
             </>
           )}
           <span className="w-1.5 h-1.5 rounded-full bg-[#C8A762]" />
-          <span>{p.issuing_body}</span>
+          <span><Hl text={p.issuing_body} /></span>
           {p.session_date && (
             <span className="text-[10px] font-medium text-slate-400 dark:text-zinc-500 mr-2">
-              ({p.session_date})
+              (<Hl text={p.session_date} />)
             </span>
           )}
         </div>
@@ -199,7 +212,7 @@ export default function PrincipleBlock({
           <div className="mt-4 pt-3 border-t border-dashed border-slate-100 dark:border-white/[0.05]">
             <p className="text-[10px] text-slate-400 dark:text-zinc-500 leading-relaxed">
               <span className="font-bold text-amber-600 dark:text-[#C8A762]">{isRTL ? "المرجع: " : "Reference: "}</span>
-              {cleanRef}
+              <Hl text={cleanRef} />
             </p>
           </div>
         );
@@ -208,7 +221,7 @@ export default function PrincipleBlock({
       {/* Extra fields collapsibles */}
       {hasDetails && (
         <div className="mt-6 pt-4 border-t border-slate-200 dark:border-white/[0.05] space-y-2 print:hidden">
-          <details className="group border border-slate-200 dark:border-white/5 rounded-2xl overflow-hidden transition-all duration-300">
+          <details ref={detailsRef} className="group border border-slate-200 dark:border-white/5 rounded-2xl overflow-hidden transition-all duration-300">
             <summary className="list-none flex items-center justify-between p-4 cursor-pointer font-bold text-xs bg-slate-50/50 dark:bg-zinc-800/20 hover:bg-slate-100 dark:hover:bg-zinc-800/40 transition">
               <span>🔍 {isRTL ? "وقائع القضية والتسبيب والمنطوق" : "Case Facts, Reasons & Ruling"}</span>
               <span className="transition group-open:rotate-180">🔽</span>

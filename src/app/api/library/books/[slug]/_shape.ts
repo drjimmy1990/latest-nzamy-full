@@ -125,11 +125,20 @@ export function isUuid(value: string): boolean {
  * purpose: block ids are free-form varchar and never go into a filter string.
  * The anchor block and any order_index ties come back too; the reader drops
  * the blocks it already holds.
+ *   at_page — ?at_page=P[&at_vol=V] (owner note ٠٢, «انتقال للصفحة»): the
+ *            route finds the first block printed on that page (page_number,
+ *            and volume_number when given — public columns) and answers as
+ *            `after` from its order_index, so the reader's stream continues
+ *            from that page downward. Plain integers only, like the cursors.
  */
 export type BlocksSelection =
   | { mode: 'page' }
   | { mode: 'after'; order: number }
-  | { mode: 'before'; order: number };
+  | { mode: 'before'; order: number }
+  | { mode: 'at_page'; page: number; vol: number | null };
+
+/** A selection once the route has turned at_page into an order_index. */
+export type ResolvedBlocksSelection = Exclude<BlocksSelection, { mode: 'at_page' }>;
 
 export type BlocksRequestPlan =
   | { ok: true; sectionId: string | null; selection: BlocksSelection }
@@ -157,6 +166,17 @@ export function planBlocksRequest(searchParams: URLSearchParams): BlocksRequestP
   }
   if ((after !== null || before !== null) && sectionId !== null) {
     return { ok: false, error: 'لا يمكن الجمع بين القسم وموضع القراءة' };
+  }
+  const atPage = toCursor(searchParams.get('at_page'));
+  const atVol = toCursor(searchParams.get('at_vol'));
+  if (atPage === 'bad' || atVol === 'bad' || (atVol !== null && atPage === null)) {
+    return { ok: false, error: 'رقم الصفحة المطلوب غير صالح' };
+  }
+  if (atPage !== null) {
+    if (after !== null || before !== null || sectionId !== null) {
+      return { ok: false, error: 'لا يمكن الجمع بين رقم الصفحة وموضع آخر' };
+    }
+    return { ok: true, sectionId, selection: { mode: 'at_page', page: atPage, vol: atVol } };
   }
   if (after !== null) return { ok: true, sectionId, selection: { mode: 'after', order: after } };
   if (before !== null) return { ok: true, sectionId, selection: { mode: 'before', order: before } };

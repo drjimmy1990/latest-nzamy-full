@@ -177,6 +177,14 @@ export const RequestEvent = {
   // which sets payload.auto = true so the feed can say the clock started itself.
   DEADLINE_CREATED: "deadline.created",
   DEADLINE_STATUS_CHANGED: "deadline.status_changed",
+  // Owner package 2026-10-30 (LIVE-F25 / CODE-F04): the judgment hook moved an
+  // auto deadline because its stage's date was corrected — payload carries
+  // fromDueDate/toDueDate so the log shows the change, not just "updated".
+  DEADLINE_RECOMPUTED: "deadline.recomputed",
+  // CODE-F18 (2026-10-30): a hearing was edited/postponed, or its status
+  // changed (completed / cancelled), with the reason in payload.reason.
+  HEARING_UPDATED: "hearing.updated",
+  HEARING_STATUS_CHANGED: "hearing.status_changed",
   // N3.7 (2026-10-25): سجل الصادر والوارد — written by POST /api/v1/lawyer/ledger
   // with the case's firm, so the office tab of the activity log shows it.
   LEDGER_ENTRY_ADDED: "ledger.entry_added",
@@ -383,7 +391,30 @@ export function describeActivityEvent(opts: {
         : status === "open" ? "أُعيد فتحها"
         : "";
       const suffix = statusAr ? ` — ${statusAr}` : "";
-      return { title: title ? `تحديث حالة مهلة: ${title}${suffix}` : `تحديث حالة مهلة${suffix}`, badge: "deadline" };
+      const reason = typeof payload.reason === "string" && payload.reason.trim() ? ` (${payload.reason.trim()})` : "";
+      return { title: title ? `تحديث حالة مهلة: ${title}${suffix}${reason}` : `تحديث حالة مهلة${suffix}${reason}`, badge: "deadline" };
+    }
+    case RequestEvent.DEADLINE_RECOMPUTED: {
+      const from = typeof payload.fromDueDate === "string" ? payload.fromDueDate : "";
+      const to = typeof payload.toDueDate === "string" ? payload.toDueDate : "";
+      const change = from && to ? ` — من ${from} إلى ${to}` : "";
+      return { title: title ? `أُعيد احتساب مهلة: ${title}${change}` : `أُعيد احتساب مهلة${change}`, badge: "deadline" };
+    }
+    case RequestEvent.HEARING_UPDATED: {
+      const reason = typeof payload.reason === "string" && payload.reason.trim() ? ` — ${payload.reason.trim()}` : "";
+      return { title: title ? `تعديل جلسة: ${title}${reason}` : `تعديل جلسة${reason}`, badge: "hearing" };
+    }
+    case RequestEvent.HEARING_STATUS_CHANGED: {
+      const status = typeof payload.status === "string" ? payload.status : "";
+      const statusAr =
+        status === "completed" ? "انعقدت"
+        : status === "cancelled" ? "أُلغيت"
+        : status === "postponed" ? "أُجِّلت"
+        : status === "scheduled" ? "أُعيدت مجدولة"
+        : "";
+      const suffix = statusAr ? ` — ${statusAr}` : "";
+      const reason = typeof payload.reason === "string" && payload.reason.trim() ? ` (${payload.reason.trim()})` : "";
+      return { title: title ? `تحديث حالة جلسة: ${title}${suffix}${reason}` : `تحديث حالة جلسة${suffix}${reason}`, badge: "hearing" };
     }
     case RequestEvent.LEDGER_ENTRY_ADDED:
       return { title: ledgerActivityTitle(payload.direction, payload.channel, payload.title), badge: "notice" };

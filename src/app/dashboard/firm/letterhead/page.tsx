@@ -1,12 +1,14 @@
-"use client";
-
 /**
- * /dashboard/firm/letterhead — the law firm's official letterhead (owner
- * decision ٢٥٦), managed by the owner, the managing partner or the office
- * admin (FIRM_ROUTE_RULES, and the same rule in the API and the database).
+ * /dashboard/firm/letterhead — moved INTO the legal vault (owner note 09 §٤,
+ * package 2026-10-30, NOTE-09-C06: «تحويل الرابط القديم تلقائياً إلى
+ * /dashboard/<النطاق>/vault?tab=branding حتى لا ينكسر أي رابط سابق»). A permanent
+ * (308) page-level redirect, so next.config.ts stays untouched. The route rule
+ * for this path stays in entityRouteAccess.ts so the guard keeps refusing the
+ * roles that may not open the vault either.
  */
-import LetterheadWorkspace from "@/components/letterhead/LetterheadWorkspace";
+import { permanentRedirect } from "next/navigation";
+import { LETTERHEAD_REDIRECT } from "@/components/letterhead/legalVaultTabs";
 
-export default function FirmLetterheadPage() {
-  return <LetterheadWorkspace scope="firm" />;
+export default function FirmLetterheadRedirect(): never {
+  permanentRedirect(LETTERHEAD_REDIRECT.firm);
 }

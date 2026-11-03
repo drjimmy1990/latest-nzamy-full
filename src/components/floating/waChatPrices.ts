@@ -38,6 +38,7 @@ import {
   getConsultationModeServiceId,
 } from "../../lib/pricingRepository.ts";
 import { VAT_NOTICE } from "../../lib/pricing/vatNotice.ts";
+import { COMING_SOON_BADGE_AR, isTerminalToolHref } from "../../constants/betaGatedRoutes.ts";
 
 /** The platform's VAT sentence (§13ب.2). */
 export const WA_VAT_NOTICE_AR: string = VAT_NOTICE.exclusive.ar;
@@ -92,6 +93,13 @@ export function waPrice(
   if (!serviceId) return UNSET;
   const service = getClientServiceById(serviceId, catalog);
   if (service.serviceId !== serviceId) return UNSET;
+  // Wave 1 task 6, fix round 1 (I3): a service whose route is a beta-gated
+  // tool (/ai/consult, /ai/analyze …) cannot be ordered, so the chat says
+  // «قريباً» — not «مجانا … أو 49 ر.س» and not the 79 of contract-analyze,
+  // which nothing charges.
+  if (isTerminalToolHref(service.route)) {
+    return { text: COMING_SOON_BADGE_AR, note: null, requiresPayment: false, showsAmount: false };
+  }
   const base = {
     note: service.priceNote ?? null,
     requiresPayment: service.requiresPayment === true,

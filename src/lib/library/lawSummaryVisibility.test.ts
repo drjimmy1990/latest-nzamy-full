@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { GUEST_CARD_KEYS, LAW_SUMMARY_AUDIENCE, cardForViewer, cardRowValue, cardStatusValue, guestCardValue, lawReaderExtras, lawSummaryVisible, withCleanCardRows } from "./lawSummaryVisibility.ts";
+import { GUEST_CARD_KEYS, LAW_SUMMARY_AUDIENCE, cardForViewer, cardRowValue, cardStatusValue, guestCardValue, latestUpdateDetail, lawReaderExtras, lawSummaryVisible, regulationReaderExtras, withCleanCardRows } from "./lawSummaryVisibility.ts";
 import { LAW_CARD_PRIMARY_FIELDS, lawCardLayout } from "./lawCardFields.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -142,26 +142,130 @@ test("owner ٢٦٠ opens nothing else in the law route: ديباجة, official m
   const route = read("src/app/api/library/laws/[slug]/route.ts");
   // The ديباجة (and the regulation's) stay blank for a non-subscriber.
   assert.match(route, /preamble: officialMeta\.officialMetaLocked \? '' : readerExtras\.preamble,/);
-  assert.match(route, /regulationPreamble: officialMeta\.officialMetaLocked \? '' : withCleanCardRows\(regulationPreamble\),/);
+  // Note ٠١ item ٥ (2026-10-30): the regulation's card is lifted to
+  // `regulation_card`; its ديباجة (rows cleaned, regulationReaderExtras) stays blank for a guest.
+  assert.match(route, /regulationPreamble: officialMeta\.officialMetaLocked \? '' : regulationExtras\.preamble,/);
+  assert.match(route, /const regulationExtras = regulationReaderExtras\(regulationPreamble, isSubscriber\);/);
   // T28-22 mask still keyed on the subscriber flag.
   assert.match(route, /const officialMeta = lawOfficialMeta\(law, isSubscriber\);/);
   // Article text: the same free limit (owner ١٨٤) and full-access predicate.
   assert.match(route, /const freeLimit = effectiveFreeLimit\(firstLockedCheck, articles\.length\);/);
   assert.match(route, /const hasFullAccess = isSubscriber \|\| isWhitelisted;/);
-  assert.match(route, /formatArticleWithPaywall\(a, hasFullAccess, freeLimit, !officialMeta\.officialMetaLocked\)/);
+  assert.match(route, /formatArticleWithPaywall\(a, hasFullAccess, freeLimit, !officialMeta\.officialMetaLocked, unnumbered\)/);
   assert.match(route, /const parentLocked = isArticleLocked\(article, hasFullAccess, freeLimit\);/);
   // The lock row is promised only for ديباجة text left once the card and the موجز are out.
-  assert.match(route, /preambleLocked: officialMeta\.officialMetaLocked && !!\(readerExtras\.preamble\.trim\(\) \|\| regulationPreamble\.trim\(\)\)/);
+  assert.match(route, /preambleLocked: officialMeta\.officialMetaLocked && !!\(readerExtras\.preamble\.trim\(\) \|\| regulationExtras\.preamble\.trim\(\)\)/);
 });
 
 test("the catalogue sends the موجز to everyone through the same flag, from the service-role read", () => {
   const init = read("src/app/api/library/init/route.ts");
-  assert.match(init, /wanted: lawSummaryVisible\(hasFullAccess\) \? \["summary", "sort"\] : \["sort"\]/);
+  // Owner ٣١٧ / note ١٢ item ٨ (20261030_60): the repealed-last order rides on the same read.
+  assert.match(init, /wanted: lawSummaryVisible\(hasFullAccess\) \? \["summary", "sort", "repealedLast"\] : \["sort", "repealedLast"\]/);
   // Read on the service-role client (summary_brief is column-locked for anon).
   assert.match(init, /fetchSection\("laws",[\s\S]*?\}, serverOnly, \{/);
   // Locked law rows still lose the body fields; the official fields stay masked.
-  assert.match(init, /stripFields\(\{ \.\.\.row \}, \["preamble", "description", "article_status_summary"\]\)/);
+  // (`rest` = the row less the latest_update date alias, ٣١٨.)
+  assert.match(init, /stripFields\(\{ \.\.\.rest \}, \["preamble", "description", "article_status_summary"\]\)/);
   assert.match(init, /maskListOfficialFields\(shaped, hasFullAccess\)/);
+  // Owner ٣١٩ (ب): a non-subscriber's موجز is stripped of decree numbers and dates on the server.
+  assert.match(init, /shaped\.summary_brief = summaryForViewer\(shaped\.summary_brief, hasFullAccess\) \|\| null;/);
+});
+
+// ── Owner ٣١٩ (ب): the موجز a non-subscriber receives — server-side, fixtures ──
+
+const DECREE_SUMMARY = [
+  "# نظام تملك غير السعوديين للعقار",
+  "<details open><summary>📝 موجز المستند (خلاصة سريعة)</summary>",
+  "",
+  "> صدر النظام بالمرسوم الملكي رقم (م/14) وتاريخ 1447/01/30هـ، ويحدد ضوابط تملك غير السعوديين للعقار.",
+  "> - يشترط النظام موافقة الجهة المختصة خلال 30 يوماً.",
+  "",
+  "</details>",
+].join("\n");
+
+test("٣١٩: lawReaderExtras gives a guest the موجز without the decree number and the issue date", () => {
+  const guest = lawReaderExtras(DECREE_SUMMARY, false);
+  assert.ok(guest.summary, "the موجز stays open to everyone");
+  assert.doesNotMatch(guest.summary!, /م\/14|1447|رقم/);
+  assert.match(guest.summary!, /ضوابط تملك غير السعوديين للعقار/);
+  // Other numbers are the law's substance, not a decree reference.
+  assert.match(guest.summary!, /30 يوماً/);
+  assert.equal(guest.summaryLabel, "📝 موجز المستند (خلاصة سريعة)");
+});
+
+test("٣١٩: a subscriber's موجز is whole", () => {
+  const sub = lawReaderExtras(DECREE_SUMMARY, true);
+  assert.match(sub.summary!, /المرسوم الملكي رقم \(م\/14\) وتاريخ 1447\/01\/30هـ/);
+});
+
+test("٣١٩: a guest موجز left empty by the cleaning is omitted, label and all", () => {
+  const onlyDecree = "<details open><summary>📝 موجز النظام</summary>\n\n> - (م/14) 1447/01/30هـ\n\n</details>";
+  const guest = lawReaderExtras(onlyDecree, false);
+  assert.equal("summary" in guest, false);
+  assert.equal("summaryLabel" in guest, false);
+});
+
+// ── Note ٠١ item ٢: «آخر تعديل» from library.laws.latest_update (subscribers) ──
+
+test("latestUpdateDetail: the date and its event in brackets, notes stripped — subscribers only", () => {
+  const lu = {
+    date_hijri: "1448/1/8",
+    description: "صدور اللائحة التنفيذية",
+    instrument: "قرار مجلس الوزراء رقم (43) وتاريخ 1448/01/08هـ [بوابة 6/تحقُّق حي 2026-10-20]",
+  };
+  assert.equal(latestUpdateDetail(lu, true), "1448/01/08هـ (صدور اللائحة التنفيذية — قرار مجلس الوزراء رقم (43))");
+  assert.equal(latestUpdateDetail(lu, false), "", "a guest gets the public date only (٣١٨)");
+  // An instrument that is only a review note: the date alone.
+  assert.equal(latestUpdateDetail({ date_hijri: "1446/02/03", instrument: "بحاجة تحقق حي" }, true), "1446/02/03هـ");
+  // No readable date, or not an object: nothing.
+  for (const bad of [null, "1446/02/03", [], { instrument: "قرار" }, { date_hijri: "غير محدد" }]) {
+    assert.equal(latestUpdateDetail(bad, true), "", JSON.stringify(bad));
+  }
+  // An English token is not shown.
+  assert.equal(latestUpdateDetail({ date_hijri: "1446/2/3", type: "amendment" }, true), "1446/02/03هـ");
+});
+
+// ── Note ٠١ item ٥: the regulation part's card goes to the sidebar ──
+
+test("regulationReaderExtras lifts the regulation's card, keeps its ديباجة, per viewer", () => {
+  const reg = [
+    "## اللائحة التنفيذية",
+    "### 📊 بطاقة تعريف اللائحة",
+    "| الحقل | القيمة |",
+    "| :--- | :--- |",
+    "| نوع التشريع | لائحة تنفيذية |",
+    "| أداة الإصدار | قرار مجلس الوزراء رقم (43) وتاريخ 1448/01/08هـ |",
+    "",
+    "نص ديباجة اللائحة: بناءً على المادة الخامسة عشرة من النظام.",
+  ].join("\n");
+  const sub = regulationReaderExtras(reg, true);
+  assert.deepEqual(sub.card?.main.map((f) => f.key), ["نوع التشريع", "أداة الإصدار"]);
+  assert.doesNotMatch(sub.preamble, /بطاقة تعريف/);
+  assert.match(sub.preamble, /نص ديباجة اللائحة/);
+  const guest = regulationReaderExtras(reg, false);
+  assert.deepEqual(guest.card?.main, [{ key: "نوع التشريع", value: "لائحة تنفيذية" }], "a guest's card is the allowlist");
+  // No card: the text as withCleanCardRows gives it, no card.
+  assert.deepEqual(regulationReaderExtras("نص فقط", true), { preamble: "نص فقط", card: null });
+});
+
+// ── Note ١٢ item ٧: no pipeline note reaches a card row ──
+
+test("a «[بوابة 6/تحقُّق حي …]» note is removed from a card row, for every viewer", () => {
+  const card = {
+    main: [
+      { key: "الجهة المصدرة", value: "مجلس الوزراء [بوابة 6/تحقُّق حي 2026-08-11]" },
+      { key: "أداة الإصدار", value: "مرسوم ملكي رقم (م/1) [ملاحظة داخلية: راجع المصدر]" },
+    ],
+    more: [{ key: "المصدر الرسمي", value: "[هيئة الخبراء](https://laws.boe.gov.sa/x)" }],
+  };
+  const sub = cardForViewer(card, true)!;
+  assert.deepEqual(sub.main, [
+    { key: "الجهة المصدرة", value: "مجلس الوزراء" },
+    { key: "أداة الإصدار", value: "مرسوم ملكي رقم (م/1)" },
+  ]);
+  // A markdown link is never taken for a note.
+  assert.deepEqual(sub.more, card.more);
+  assert.deepEqual(cardForViewer(card, false)!.main, [{ key: "الجهة المصدرة", value: "مجلس الوزراء" }]);
 });
 
 test("the sidebar card says «للمشتركين» once for the rows a guest does not get", () => {

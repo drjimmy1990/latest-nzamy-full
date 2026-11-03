@@ -7,6 +7,10 @@ import { fetchBookTitleHits } from '../search/bookTitleHits';
 import { fetchCollectionTitleHits } from '../search/collectionTitleHits';
 import { isMissingFunctionError, rpcPageResult } from '../search/searchPlan';
 import { buildAutocompleteBody, uniformCountsExact, type FacetResult, type TopMatch } from './facets';
+import { getLibraryAccessForUser } from '@/lib/access-control';
+import { isFreeLibraryItem } from '@/lib/library-item-access';
+import { TIER_SHAPED_CACHE_CONTROL } from '../laws/[slug]/_official-meta';
+import { realPrincipleNumber } from '@/app/laws/principleLink';
 
 /**
  * Client-side ceiling. It only ends this route's wait: aborting does not stop
@@ -82,6 +86,20 @@ export async function GET(request: Request) {
 
     const serverOnly = await createServiceClient();
 
+    // Owner note ١٢-٢: a principle's text is shown only to a viewer who may
+    // read it (same rule as /api/library/search). Read alongside the facets;
+    // if it fails, every principle is treated as locked (fail-closed).
+    const accessPromise = (async () => {
+      let userId: string | null = null;
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        userId = user?.id ?? null;
+      } catch {
+        userId = null;
+      }
+      return getLibraryAccessForUser(userId);
+    })().catch(() => null);
+
     const count = (table: string, client: typeof supabase | typeof serverOnly = supabase) => client
       .schema('library')
       .from(table)
@@ -117,7 +135,7 @@ export async function GET(request: Request) {
         serverOnly
           .schema('library')
           .from('principles')
-          .select('id, principle_number, issuing_body, text')
+          .select('id, principle_number, issuing_body, text, collection_id')
           .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG })
           .order('id')
           .limit(2)
@@ -183,25 +201,48 @@ export async function GET(request: Request) {
     ]);
     const precedentsCount = principles.count;
     const topPrecedents = principles.top;
+    const access = await accessPromise;
+    const hasFullAccess = access?.hasFullAccess === true;
 
     const lawMatches: TopMatch[] = ((topLaws.data ?? []) as Record<string, unknown>[]).map((law) => ({
       title: law.title as string,
       section: 'laws',
       slug: law.slug as string,
+      lawType: typeof law.type === 'string' ? law.type : undefined,
     }));
     const collectionMatches: TopMatch[] = topCollections.hits.map((col) => ({
       title: col.title,
       section: 'precedents',
       slug: col.id,
+      kind: 'collection',
+      // The court is a public catalogue column; the lock only marks the row.
       snippet: col.court || undefined,
+      locked: !(col.free || hasFullAccess),
+      href: `/precedents/${encodeURIComponent(col.id)}`,
     }));
     const precedentMatches: TopMatch[] = ((topPrecedents.data ?? []) as Record<string, unknown>[]).map((p) => {
-      const text = p.text as string;
+      const id = String(p.id ?? '');
+      const collection = p.judicial_collections as Record<string, unknown> | undefined;
+      const collectionId = String(collection?.id ?? p.collection_id ?? '').trim();
+      // Owner note ١٢-٢: the snippet leaked every principle's opening to
+      // every viewer. It is sent only to a viewer who may read the principle;
+      // no access answer → locked.
+      const isFree = access !== null && isFreeLibraryItem({
+        contentType: 'principles', itemId: id, hasFullAccess, freeItemsByType: access.freeItemsByType, whitelistedLawSlugs: access.whitelistedSlugs,
+      });
+      const text = typeof p.text === 'string' ? p.text.trim() : '';
+      const n = realPrincipleNumber(p.principle_number);
+      const body = String(p.issuing_body ?? collection?.court ?? '').trim();
       return {
-        title: `مبدأ رقم ${p.principle_number} — ${p.issuing_body}`,
+        // Never «مبدأ رقم null — undefined».
+        title: n ? `مبدأ رقم ${n}${body ? ` — ${body}` : ''}` : (body || 'مبدأ قضائي'),
         section: 'precedents',
-        slug: p.id as string,
-        snippet: text?.slice(0, 120) + (text?.length > 120 ? '...' : ''),
+        slug: id,
+        kind: 'principle',
+        snippet: isFree && text ? text.slice(0, 120) + (text.length > 120 ? '...' : '') : undefined,
+        locked: !isFree,
+        // Opens the principle in its collection (the reader scrolls to #id).
+        href: collectionId ? `/precedents/${encodeURIComponent(collectionId)}?target=${encodeURIComponent(id)}#${encodeURIComponent(id)}` : undefined,
       };
     });
     const orderMatches: TopMatch[] = ((topOrders.data ?? []) as Record<string, unknown>[]).map((o) => ({
@@ -237,7 +278,8 @@ export async function GET(request: Request) {
         { result: topOrders, items: orderMatches },
       ],
     });
-    return NextResponse.json(built.body, { status: built.status });
+    // The body now depends on the viewer (principle snippets): tier-shaped.
+    return NextResponse.json(built.body, { status: built.status, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
   } catch (error) {
     console.error('[Autocomplete] Error:', error);
     return NextResponse.json(

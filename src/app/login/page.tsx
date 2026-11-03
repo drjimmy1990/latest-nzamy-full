@@ -35,6 +35,15 @@ import { postLoginCookieAssignment, stashablePostLoginPath } from "@/lib/auth/po
 import { createClient } from "@/lib/supabase/client";
 import { isDemoUiEnabled, BACKEND_MODE } from "@/lib/runtimeMode";
 import { saudiMobileOrNull } from "@/lib/services/saudiMobile";
+import {
+  buildPasswordCredentials,
+  canSubmitWithCaptcha,
+  captchaMessage,
+  captchaSubmitError,
+  isCaptchaAuthError,
+} from "@/lib/auth/captcha";
+import { useTurnstile } from "@/components/auth/useTurnstile";
+import { TurnstileWidget } from "@/components/auth/TurnstileWidget";
 
 const t = {
   ar: {
@@ -178,6 +187,9 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // OWNER-SEC-01: one Turnstile token per sign-in attempt. GoTrue verifies it
+  // (GOTRUE_SECURITY_CAPTCHA_*); see src/lib/auth/captcha.ts.
+  const captcha = useTurnstile({ isAr, theme, action: "login" });
 
   // Redirect if user is already logged in
   useEffect(() => {
@@ -199,20 +211,46 @@ export default function LoginPage() {
       // ── Supabase Mode: Real authentication ──────────────────────────────────
       if (BACKEND_MODE === "supabase") {
         const phone = inputMode === "phone" ? saudiMobileOrNull(identifier) : null;
-        const credentials = inputMode === "email"
-          ? { email: identifier.trim(), password: password.trim() }
-          : phone
-            ? { phone, password: password.trim() }
-            : null;
+        const credentials = buildPasswordCredentials({
+          mode: inputMode,
+          identifier,
+          phoneE164: phone,
+          password,
+          captchaToken: captcha.token,
+        });
         if (!credentials) {
           setError(isAr ? "أدخل رقم جوال سعودي صحيح" : "Enter a valid Saudi mobile number");
           return;
         }
+        // No live token, no request. Not the protection itself (GoTrue is),
+        // but it spares a round trip that would only come back captcha_failed.
+        if (!canSubmitWithCaptcha(captcha.state)) {
+          setError(captchaSubmitError(captcha.state, isAr));
+          return;
+        }
         const supabase = createClient();
-        const { data, error: authError } = await supabase.auth.signInWithPassword(credentials);
+        let signIn: Awaited<ReturnType<typeof supabase.auth.signInWithPassword>>;
+        try {
+          signIn = await supabase.auth.signInWithPassword(credentials);
+        } finally {
+          // The token reached GoTrue (or may have): it is spent whatever the
+          // answer, including when the handshake below fails after a
+          // successful sign-in. The next attempt gets a fresh challenge.
+          captcha.spend();
+        }
+        const { data, error: authError } = signIn;
 
         if (authError || !data.user) {
-          setError(isAr ? "بيانات الدخول غير صحيحة" : "Invalid credentials");
+          // A captcha refusal is said as such, so the visitor knows to redo
+          // the check rather than their password (which stays in the field).
+          // Every other failure keeps ONE message: GoTrue answers
+          // invalid_credentials for a wrong password and for an unknown
+          // account alike, and this must not tell them apart (CAP-06).
+          setError(
+            isCaptchaAuthError(authError)
+              ? captchaMessage("captchaRejected", isAr)
+              : isAr ? "بيانات الدخول غير صحيحة" : "Invalid credentials",
+          );
           return;
         }
 
@@ -677,6 +715,9 @@ export default function LoginPage() {
                     </span>
                   </button>
                 </motion.div>
+
+                {/* Security check (Turnstile) — real backend only. */}
+                {BACKEND_MODE === "supabase" && <TurnstileWidget control={captcha} isAr={isAr} />}
 
                 {/* Error message */}
                 {error && (

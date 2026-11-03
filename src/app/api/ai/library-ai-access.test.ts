@@ -1,13 +1,13 @@
 /**
- * library-ai-access.test.ts — who may reach n8n through the library AI routes.
+ * library-ai-access.test.ts — who may use the library's AI.
  * Run with:
  *   node --test src/app/api/ai/library-ai-access.test.ts
  *
- * POST /api/ai/library-chat and POST /api/ai/explain-article proxy to an n8n RAG
- * agent that answers from library text made server-only by 20260929_01
- * (articles) and 20261016_01 (precedent text). Before this check they asked only
- * libraryGate() and a per-IP rate limit, so a guest could read paywalled text
- * through the agent once the webhook URLs were set.
+ * The library assistant (tool library-assistant on POST /api/v1/ai/runs)
+ * answers from library text made server-only by 20260929_01 (articles) and
+ * 20261016_01 (precedent text). The run route asks this gate for every library
+ * tool, before the charge. (The old free routes /api/ai/library-chat and
+ * /api/ai/explain-article, which this gate first guarded, are deleted.)
  *
  * Who passes (owner answers ٢٠٦ / ٢٠٧ / ٢٠٩, decisions of 2026-10-18): a tier
  * of pro or above, or a platform admin. A library subscription
@@ -18,10 +18,8 @@
  *      ranking lifted out of src/lib/access-control.ts (that module imports
  *      "@/lib/supabase/server" and cannot load under node --test, so the rule
  *      takes the ranking as `ranks` and keeps no copy of it);
- *   2. the routes and their shared gate, which import next/server and "@/…"
- *      aliases, so (like src/app/api/v1/profile/route.test.ts) this asserts
- *      against their source. Multi-line patterns allow \r\n: the routes are CRLF
- *      in a Windows checkout.
+ *   2. the shared gate, which imports next/server and "@/…" aliases, so (like
+ *      src/app/api/v1/profile/route.test.ts) this asserts against its source.
  */
 
 import test from "node:test";
@@ -50,11 +48,6 @@ function readTierRank(source: string): Record<string, number> {
 
 const RANKS = readTierRank(accessControlSource);
 const member = { signedIn: true, isAdmin: false };
-
-const ROUTES = [
-  { name: "library-chat", url: "N8N_LIBRARY_CHAT_WEBHOOK_URL", rateKey: "ai:library-chat:" },
-  { name: "explain-article", url: "N8N_EXPLAIN_WEBHOOK_URL", rateKey: "ai:explain-article:" },
-] as const;
 
 function at(source: string, needle: string, label: string): number {
   const i = source.indexOf(needle);
@@ -120,7 +113,7 @@ test("the rule module stays pure: no alias imports and no TIER_RANK copy", () =>
   assert.doesNotMatch(decisionSource, /(?:export )?const TIER_RANK/);
 });
 
-// ── 2. the gate and the routes ──────────────────────────────────────────────
+// ── 2. the gate ──────────────────────────────────────────────
 
 test("the gate reads the session with getUser, never the unverified getSession", () => {
   assert.match(gateSource, /import \{ createClient \} from '@\/lib\/supabase\/server';/);
@@ -212,29 +205,3 @@ test("the gate's own error bodies are Arabic", () => {
     assert.doesNotMatch(text.replace(/\bPro\b/g, ""), /[A-Za-z]/, text);
   }
 });
-
-for (const route of ROUTES) {
-  const source = readFileSync(new URL(`./${route.name}/route.ts`, import.meta.url), "utf8");
-
-  test(`${route.name}: the access gate runs after the config check and before any n8n call`, () => {
-    assert.match(source, /import \{ libraryAiAccess \} from '\.\.\/_libraryAiAccess';/);
-    assert.match(source, /const denied = await libraryAiAccess\(\);\s*if \(denied\) return denied;/);
-
-    const gate = at(source, "const gate = await libraryGate();", route.name);
-    const rate = at(source, `rateLimit(\`${route.rateKey}\${ip}\`, { limit: 20, windowMs: 60_000 });`, route.name);
-    const configured = at(source, `if (!${route.url}) {`, route.name);
-    const access = at(source, "const denied = await libraryAiAccess();", route.name);
-    const body = at(source, "await request.json();", route.name);
-    const forward = at(source, `await fetch(${route.url}, {`, route.name);
-    assert.ok(gate < rate, "libraryGate first");
-    assert.ok(rate < configured, "the per-IP limit comes before everything else");
-    // The client turns 401/403 into "sign in" / "subscribe"
-    // (src/app/laws/[slug]/_ai-reply.ts). While the webhook is unset everyone
-    // gets the 503 «قيد التفعيل», so nobody is asked to pay for an offline
-    // assistant.
-    assert.ok(configured < access, "the 503 'not configured' answer comes before 401/403");
-    assert.ok(access < body && body < forward, "401/403 come before the body is read and before n8n");
-    // The only outbound call is the n8n one.
-    assert.equal(source.match(/\bfetch\(/g)?.length, 1);
-  });
-}

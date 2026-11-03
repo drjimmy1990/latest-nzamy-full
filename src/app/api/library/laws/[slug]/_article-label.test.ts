@@ -142,3 +142,28 @@ test("leadingOrdinal returns the opening ordinal exactly as written, or null", (
   assert.equal(leadingOrdinal("المادة الثالثة"), null);
   assert.equal(leadingOrdinal(null), null);
 });
+
+// ── Owner note ١١ item ٤: no invented «المادة N» in an unnumbered document ──
+
+test("note ١١: documentIsUnnumbered — no row carries a locator", async () => {
+  const { documentIsUnnumbered } = await import("./_article-label.ts");
+  assert.equal(documentIsUnnumbered([{ number_text: "أولاً: نطاق الدليل" }, { number_text: "### المادة (2):" }]), false);
+  assert.equal(documentIsUnnumbered([{ number_text: "نطاق الدليل وأهدافه" }, { number_text: "الأحكام العامة" }, { number_text: null }]), true);
+  assert.equal(documentIsUnnumbered([]), false, "no rows: nothing to decide, keep the old behaviour");
+});
+
+test("note ١١: in an unnumbered document a topical heading is shown as written, never «المادة N»", () => {
+  const guideTitle = "الدليل الإجرائي لتنظيم أعمال الغرف التجارية الصناعية وتحديد اختصاصات الأمانة العامة";
+  for (const text of ["نطاق الدليل وأهدافه", "### الأحكام العامة:", guideTitle]) {
+    const label = articleDisplayLabel(text, 4, { unnumbered: true });
+    assert.doesNotMatch(label, /المادة/);
+    assert.equal(label, text.replace(/^#+\s*/, "").replace(/:$/, ""));
+  }
+  // The repeated instrument name: the bare position, not the word «المادة».
+  assert.equal(articleDisplayLabel("اللائحة التنفيذية لنظام العمل", 7, { unnumbered: true }), "(7)");
+  assert.equal(articleDisplayLabel("", 3, { unnumbered: true }), "(3)");
+  assert.equal(articleDisplayLabel("", 0, { unnumbered: true }), "");
+  // A real locator is always kept; numbered documents are unchanged.
+  assert.equal(articleDisplayLabel("### المادة (1):", 1, { unnumbered: true }), "المادة (1)");
+  assert.equal(articleDisplayLabel(guideTitle, 5), "المادة 5");
+});

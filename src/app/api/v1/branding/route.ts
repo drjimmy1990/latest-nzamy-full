@@ -48,7 +48,10 @@ function fieldsOf(row: VaultRow): BrandingFields {
 }
 
 export async function GET(request: NextRequest) {
-  const caller = await resolveBrandingCaller(request.nextUrl.searchParams.get("scope"));
+  // Reading the identity is what printing needs: a firm caller must hold the
+  // explicit `letterhead.print` permission (owner ٣١٥). Writes ask for
+  // `branding.manage` (the default of resolveBrandingCaller).
+  const caller = await resolveBrandingCaller(request.nextUrl.searchParams.get("scope"), "letterhead.print");
   if (!caller.ok) return caller.response;
   const { supabase, user, owner } = caller;
 
@@ -65,6 +68,8 @@ export async function GET(request: NextRequest) {
     verificationStatus: string | null;
     marketplaceVisible: boolean;
   } | null = null;
+  // The firm the QR would open once public firm pages exist (owner ٣١٤).
+  const firm: { id: string } | null = owner.scope === "firm" ? { id: owner.ownerId } : null;
 
   if (owner.scope === "lawyer") {
     const [{ data: p }, lp] = await Promise.all([
@@ -104,6 +109,7 @@ export async function GET(request: NextRequest) {
   if (error && isMissingBrandingTable(error)) {
     return NextResponse.json(
       { available: false, message: BRANDING_NEEDS_MIGRATION_AR, scope: owner.scope, role: owner.firmRole ?? null,
+        permissions: owner.permissions, firm,
         saved: false, fields: defaults, defaults, logoUrl: null, licence, profile },
       { headers: NO_STORE },
     );
@@ -123,6 +129,8 @@ export async function GET(request: NextRequest) {
       available: true,
       scope: owner.scope,
       role: owner.firmRole ?? null,
+      permissions: owner.permissions,
+      firm,
       saved: !!row,
       fields: row ? fieldsOf(row) : defaults,
       defaults,

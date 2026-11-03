@@ -30,3 +30,12 @@ test("the admin list offers a refund only for paid platform orders with a known 
     assert.equal(canOfferRefund({ status: "paid", merchant: "platform", live: false, ...change }), false);
   }
 });
+test("P3: a paid membership can be refunded — the founder seat is revoked, no points lot, and the admin is warned", () => {
+  const d = refundDecision({ ...base, kind: "membership" }, now, { pointsUsedFromOrderLot: 0, planPointsUsedPct: 0 });
+  assert.ok(d, "the super_admin refund button has a decision to act on");
+  assert.deepEqual(d?.reverse, ["revoke_founder"]);
+  assert.equal(d?.method, "refund");
+  assert.ok(d?.warnings.some((w) => w.includes("المؤسس")));
+  assert.equal(refundDecision({ ...base, kind: "membership", status: "refunded" }, now, { pointsUsedFromOrderLot: 0, planPointsUsedPct: 0 }), null);
+  assert.equal(refundDecision({ ...base, kind: "membership", paid_at: "2026-10-22T11:30:00Z" }, now, { pointsUsedFromOrderLot: 0, planPointsUsedPct: 0 })?.method, "void");
+});

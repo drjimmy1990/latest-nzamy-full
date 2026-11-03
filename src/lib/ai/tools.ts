@@ -8,9 +8,12 @@
  * Runtime overrides (mode, daily limit) live in platform_settings.ai_tools
  * (aiToolsConfig.ts) and are editable from admin without a deploy.
  *
- * Pure: no imports outside src/lib/ai, so `node --test` runs it.
+ * Pure: no imports outside src/lib/ai except the pure national-ID rule
+ * (services/clientIdentityRules.ts, itself import-free), so `node --test` runs it.
  */
 import { extractLegalRefs, missingLegalRefs } from "./legalRefs.ts";
+import { strictNationalId } from "../services/clientIdentityRules.ts";
+import { DRAFT_KINDS, draftKindPrice, isDraftKind } from "./draftKinds.ts";
 import type { RetrievalLimits } from "./retrieval.ts";
 import type { FileRules } from "./aiFiles.ts";
 
@@ -48,6 +51,14 @@ export interface AiToolSpec {
    */
   conversation?: { maxMessages: number; historyPairs: number; field: string; replyField: string };
   /**
+   * A conversation tool whose turns are different steps (L14: the analysis,
+   * then the draft): the Arabic refusal of a turn out of order, or null. Runs
+   * after the conversation's earlier runs are read and before the charge.
+   */
+  checkTurn?: (input: Record<string, unknown>, turn: number, prior: ReadonlyArray<{ input: unknown; output: unknown; status: string }>) => string | null;
+  /** The input says its facts are in the files (L14): the run is refused, before the charge, without any. */
+  filesRequired?: (input: Record<string, unknown>) => boolean;
+  /**
    * Wave 3: the tool reads the user's vault files (aiFiles.ts). The files are
    * checked, counted and signed before the charge, and `price` gets the total
    * `pages`. A tool without this refuses any fileIds.
@@ -66,6 +77,8 @@ export interface AiToolSpec {
     from: string;
     /** The input field naming an article to send first, whatever the searches find (L5 «اشرح لي»). */
     pinFrom?: string;
+    /** The input field naming the law page the user is on: searched before the whole library (L5). */
+    scopeFrom?: string;
   };
   validateInput: (raw: unknown) => InputCheck;
   /**
@@ -144,8 +157,11 @@ function communicateOutput(raw: unknown): Record<string, unknown> | null {
   return text ? { text } : null;
 }
 
-/** Najiz's memo field: the hard limit, and the length R5 shortens to. */
-export const NAJIZ_MAX_CHARS = 10_000;
+/**
+ * The one Najiz limit the platform states and enforces: R5 refuses a memo
+ * within it and returns one no longer than it; /ai/najiz-optimizer shows it.
+ * (A 10,000 figure for Najiz's own field is unverified and is not used.)
+ */
 export const NAJIZ_TARGET_CHARS = 9_000;
 /** The longest cleaned memo R5 accepts. */
 export const NAJIZ_INPUT_MAX = 40_000;
@@ -212,19 +228,27 @@ export const LIBRARY_MESSAGE_MAX = 4000;
 export const LIBRARY_REPLY_MAX = 6000;
 /** Article ids are slugs such as `labor-law__art-80` (library.articles.id). */
 const ARTICLE_ID = /^[\p{L}\p{N}_.\-]{1,200}$/u;
+const LAW_SLUG = /^[\p{L}\p{N}_.\-]{1,200}$/u;
 
 /** L5 مساعد المكتبة: a question inside /laws, optionally about the article the user has open. */
 function libraryAssistantInput(raw: unknown): InputCheck {
   if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
   const message = boundedText(raw.message, LIBRARY_MESSAGE_MAX);
   if (!message || message.length < 2) return { ok: false, error: "اكتب سؤالك (حتى ٤٬٠٠٠ حرف)" };
+  // The law page the chat is on (owner's live test 29 Oct: two different laws
+  // got the same labour-law answer because the whole library was searched).
+  let law_slug: string | null = null;
+  if (raw.law_slug !== undefined && raw.law_slug !== null && raw.law_slug !== "") {
+    if (typeof raw.law_slug !== "string" || !LAW_SLUG.test(raw.law_slug)) return { ok: false, error: "معرّف النظام غير صالح" };
+    law_slug = raw.law_slug;
+  }
   if (raw.article_id === undefined || raw.article_id === null || raw.article_id === "") {
-    return { ok: true, input: { message, article_id: null } };
+    return { ok: true, input: { message, article_id: null, law_slug } };
   }
   if (typeof raw.article_id !== "string" || !ARTICLE_ID.test(raw.article_id)) {
     return { ok: false, error: "معرّف المادة غير صالح" };
   }
-  return { ok: true, input: { message, article_id: raw.article_id } };
+  return { ok: true, input: { message, article_id: raw.article_id, law_slug } };
 }
 
 function libraryAssistantOutput(raw: unknown): Record<string, unknown> | null {
@@ -608,6 +632,516 @@ function contractDraftOutput(raw: unknown): Record<string, unknown> | null {
     cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 40) : [],
   };
 }
+/**
+ * L12 الرأي الفصل: consultation and letter, the two output types built first.
+ * D4: both are the 400-point tier (800 is study / memo / research at «deep» or
+ * «comprehensive», still the team's order). Two tools, not one with a type
+ * field: the consultation answers from library texts (retrieval, refunded when
+ * it cites none of them); the letter is a document checked by the L8 citation
+ * check, and the retrieval rule would refund almost every letter.
+ */
+export const LEGAL_OPINION_PRICE = 400;
+export const LEGAL_OPINION_QUESTION_MIN = 20;
+export const LEGAL_OPINION_QUESTION_MAX = 6000;
+export const LETTER_SUBJECT_MIN = 10;
+export const LETTER_SUBJECT_MAX = 4000;
+export const LETTER_SENDER_ROLES = ["individual", "company"] as const;
+export const LETTER_RECIPIENT_TYPES = ["individual", "company", "government"] as const;
+export const LETTER_DEADLINE_DAYS = [5, 10, 15, 30] as const;
+const LETTER_ANNEXES_MAX = 10;
+
+/** The question, and the legal area's Arabic label when one was picked (the quick box has none). */
+function legalConsultInput(raw: unknown): InputCheck {
+  if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
+  const question = boundedText(raw.question, LEGAL_OPINION_QUESTION_MAX);
+  if (!question || question.length < LEGAL_OPINION_QUESTION_MIN) {
+    return {
+      ok: false,
+      error: `اكتب سؤالك ووقائعه (من ${LEGAL_OPINION_QUESTION_MIN.toLocaleString("ar-SA")} إلى ${LEGAL_OPINION_QUESTION_MAX.toLocaleString("ar-SA")} حرف)`,
+    };
+  }
+  let area: string | null = null;
+  if (raw.area !== undefined && raw.area !== null && raw.area !== "") {
+    area = boundedText(raw.area, 80);
+    if (!area) return { ok: false, error: "المجال القانوني غير صالح" };
+  }
+  return { ok: true, input: { area, question } };
+}
+
+/**
+ * The answer: a short conclusion and headed sections, the [S…] markers inside
+ * them. All or nothing, like the contract: one bad section refuses the answer.
+ */
+function legalConsultOutput(raw: unknown): Record<string, unknown> | null {
+  if (!isPlainObject(raw) || !Array.isArray(raw.sections)) return null;
+  const summary = boundedText(raw.summary, 2000);
+  if (!summary || raw.sections.length < 1 || raw.sections.length > 8) return null;
+  const sections: Array<{ heading: string; body: string }> = [];
+  for (const s of raw.sections) {
+    const heading = isPlainObject(s) ? boundedText(s.heading, 200) : null;
+    const body = isPlainObject(s) ? boundedText(s.body, 6000) : null;
+    if (!heading || !body) return null;
+    sections.push({ heading, body });
+  }
+  return { summary, sections };
+}
+
+/**
+ * The letter's facts as the form collected them. The sender is the one the
+ * user typed (a client's company, or the user), never the account's name.
+ */
+function legalLetterInput(raw: unknown): InputCheck {
+  if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
+  const type = boundedText(raw.type, 120);
+  if (!type) return { ok: false, error: "اختر نوع الخطاب" };
+  if (!(LETTER_SENDER_ROLES as readonly unknown[]).includes(raw.sender_role)) return { ok: false, error: "اختر صفة المرسِل" };
+  const sender = boundedText(raw.sender_name, 200);
+  if (!sender) return { ok: false, error: "اكتب اسم المرسِل (حتى ٢٠٠ حرف)" };
+  if (!(LETTER_RECIPIENT_TYPES as readonly unknown[]).includes(raw.recipient_type)) return { ok: false, error: "اختر نوع المستلِم" };
+  const recipient = boundedText(raw.recipient_name, 200);
+  if (!recipient) return { ok: false, error: "اكتب اسم المستلِم (حتى ٢٠٠ حرف)" };
+  let gov: string | null = null;
+  if (raw.recipient_type === "government" && typeof raw.gov_entity === "string" && raw.gov_entity.trim()) {
+    gov = boundedText(raw.gov_entity, 200);
+    if (!gov) return { ok: false, error: "اسم الجهة الحكومية أطول من المسموح" };
+  }
+  const subject = boundedText(raw.subject, LETTER_SUBJECT_MAX);
+  if (!subject || subject.length < LETTER_SUBJECT_MIN) {
+    return {
+      ok: false,
+      error: `اشرح موضوع الخطاب والمطلوب (من ${LETTER_SUBJECT_MIN.toLocaleString("ar-SA")} إلى ${LETTER_SUBJECT_MAX.toLocaleString("ar-SA")} حرف)`,
+    };
+  }
+  let legalRef: string | null = null;
+  if (typeof raw.legal_ref === "string" && raw.legal_ref.trim()) {
+    legalRef = boundedText(raw.legal_ref, 500);
+    if (!legalRef) return { ok: false, error: "النص النظامي المرجعي أطول من ٥٠٠ حرف" };
+  }
+  let deadline: number | null = null;
+  if (raw.deadline_days !== undefined && raw.deadline_days !== null) {
+    if (!(LETTER_DEADLINE_DAYS as readonly unknown[]).includes(raw.deadline_days)) return { ok: false, error: "مهلة الرد غير صالحة" };
+    deadline = raw.deadline_days as number;
+  }
+  const annexes: string[] = [];
+  if (raw.annexes !== undefined && raw.annexes !== null) {
+    if (!Array.isArray(raw.annexes) || raw.annexes.length > LETTER_ANNEXES_MAX) return { ok: false, error: "المرفقات أكثر من عشرة" };
+    for (const a of raw.annexes) {
+      const name = boundedText(a, 150);
+      if (!name) return { ok: false, error: "اسم مرفق فارغ أو أطول من ١٥٠ حرفاً" };
+      annexes.push(name);
+    }
+  }
+  return {
+    ok: true,
+    input: {
+      type,
+      sender_role: raw.sender_role,
+      sender_name: sender,
+      recipient_type: raw.recipient_type,
+      recipient_name: recipient,
+      gov_entity: gov,
+      subject,
+      legal_ref: legalRef,
+      deadline_days: deadline,
+      annexes,
+    },
+  };
+}
+
+// ── L13 محترف العقود (plan §5, «Wave 5») ────────────────────────────────────
+
+/**
+ * L13: the contract types of /ai/contracts (components/contracts/constants.ts
+ * ids, kept equal by a test), each under the name the model reads.
+ */
+export const CONTRACTS_PRO_TYPES: Readonly<Record<string, string>> = {
+  labor: "عقد عمل",
+  rent: "عقد إيجار",
+  trade: "عقد تجاري (بيع أو توريد أو وكالة)",
+  corporate: "عقد شركة (تأسيس أو شراكة أو اندماج)",
+  construction: "عقد مقاولة",
+  tech: "عقد تقني (برمجيات أو ترخيص أو خدمة سحابية)",
+  finance: "عقد مالي (قرض أو رهن أو ضمان)",
+  services: "عقد خدمات مهنية أو استشارية",
+  employment_exec: "عقد عمل تنفيذي أو إداري",
+  employment_remote: "عقد عمل عن بُعد",
+  employment_equity: "خطة حوافز وأسهم للموظفين",
+  hr_handbook: "دليل الموظف ولوائح العمل الداخلية",
+  termination: "اتفاقية إنهاء خدمة",
+  nca: "اتفاقية عدم منافسة وسرية",
+  pip: "خطة تحسين الأداء الوظيفي",
+  ip_license: "عقد ترخيص ملكية فكرية",
+  ip_assignment: "عقد نقل ملكية فكرية",
+  ip_nda: "اتفاقية عدم إفصاح (سرية)",
+  ip_trademark: "عقد علامة تجارية",
+  ip_opensource: "سياسة الامتثال لتراخيص المصادر المفتوحة",
+  arbitration_clause: "اتفاق تحكيم (شرط تحكيم)",
+  arbitration_req: "طلب تحكيم",
+  settlement: "اتفاقية تسوية وصلح",
+  demand_letter: "خطاب مطالبة وإنذار",
+  litigation_hold: "تعليمات حفظ الأدلة والمستندات",
+  governance_board: "قرار مجلس إدارة",
+  governance_agm: "قرار جمعية عامة",
+  governance_coi: "سياسة تعارض المصالح",
+  shareholders: "اتفاقية مساهمين (شركاء)",
+  investment: "اتفاقية استثمار",
+  whistleblower: "سياسة الإبلاغ عن المخالفات",
+  pdpl_privacy: "سياسة خصوصية وفق نظام حماية البيانات الشخصية",
+  pdpl_dpa: "اتفاقية معالجة بيانات شخصية",
+  pdpl_cookie: "سياسة ملفات تعريف الارتباط",
+  compliance_aml: "سياسة مكافحة غسل الأموال",
+  data_breach: "خطة الاستجابة لتسرب البيانات",
+  franchise: "عقد امتياز تجاري",
+  other: "عقد",
+};
+// Plan §5: 1,000 points. /pricing, the hub and the plan cards read it through
+// toolPointsDisplay.ts (Wave 1 task 4); the owner's repricing is Wave 2.
+export const CONTRACTS_PRO_PRICE = 1000;
+export const CONTRACTS_PRO_DESC_MIN = 20;
+export const CONTRACTS_PRO_DESC_MAX = 4000;
+export const CONTRACTS_PRO_CLAUSE_MAX = 300;
+// An outline holds 40 clauses at most (the output check); 6 are left for the
+// standard ones (parties, subject, term, price, disputes, final provisions).
+const CONTRACTS_PRO_CLAUSES_MAX = 34;
+const PARTY_FIELDS_MAX = 8;
+const PARTY_FIELD_MAX = 300;
+const PARTY_KIND: Readonly<Record<string, string>> = { company: "شركة أو منشأة", individual: "شخص طبيعي", government: "جهة حكومية" };
+/**
+ * The label of the representative's ID / iqama field (owner package §3.5-3b).
+ * The parties arrive as labelled fields, so this label is how the check below
+ * finds it; the wizard (contractsProRun.ts) sends it under this constant.
+ */
+export const CONTRACTS_PRO_REP_ID_LABEL = "رقم هوية الممثل / الإقامة";
+const LANGUAGE_NAME: Readonly<Record<string, string>> = { ar: "العربية", en: "الإنجليزية" };
+// A custom language is a name the user typed: letters, spaces and hyphens only.
+const CUSTOM_LANGUAGE = /^\p{L}[\p{L} -]{1,39}$/u;
+
+/**
+ * The contract's language(s): `primary` is the text every clause is written
+ * in, `alt` the facing translation of a bilingual contract (null otherwise).
+ */
+function contractsProLanguage(raw: unknown): { primary: string; alt: string | null } | null {
+  if (raw == null) return { primary: LANGUAGE_NAME.ar, alt: null };
+  if (!isPlainObject(raw)) return null;
+  if (raw.mode === "ar" || raw.mode === "en") return { primary: LANGUAGE_NAME[raw.mode], alt: null };
+  if (raw.mode === "ar_en") return { primary: LANGUAGE_NAME.ar, alt: LANGUAGE_NAME.en };
+  if (raw.mode !== "custom") return null;
+  const name = typeof raw.name === "string" ? raw.name.trim() : "";
+  if (!CUSTOM_LANGUAGE.test(name)) return null;
+  if (raw.layout === "single") return { primary: name, alt: null };
+  const base = raw.base === "en" ? LANGUAGE_NAME.en : LANGUAGE_NAME.ar;
+  return base === name ? { primary: base, alt: null } : { primary: base, alt: name };
+}
+
+/**
+ * L13 محترف العقود: the wizard's answers. The two parties come as labelled
+ * fields (the model reads what the user read), then the idea, the court and
+ * the clauses the user ticked or added. A field too long is refused, never cut.
+ */
+function contractsProInput(raw: unknown): InputCheck {
+  if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
+  const complexity = raw.complexity === "detailed" || raw.complexity === "simple" ? raw.complexity : null;
+  if (!complexity) return { ok: false, error: "اختر مستوى تفصيل العقد" };
+  const type = raw.type == null || raw.type === "" ? null : raw.type;
+  if (type !== null && (typeof type !== "string" || !Object.prototype.hasOwnProperty.call(CONTRACTS_PRO_TYPES, type))) {
+    return { ok: false, error: "نوع العقد غير معروف" };
+  }
+  const language = contractsProLanguage(raw.language);
+  if (!language) return { ok: false, error: "لغة العقد غير صالحة" };
+
+  if (!Array.isArray(raw.parties) || raw.parties.length !== 2) return { ok: false, error: "أدخل بيانات الطرفين" };
+  const parties: Array<{ role: string; kind: string; fields: Array<{ label: string; value: string }> }> = [];
+  for (const [n, p] of raw.parties.entries()) {
+    const role = n === 0 ? "الطرف الأول" : "الطرف الثاني";
+    if (!isPlainObject(p) || typeof p.kind !== "string" || !Object.prototype.hasOwnProperty.call(PARTY_KIND, p.kind) || !Array.isArray(p.fields)) {
+      return { ok: false, error: `بيانات ${role} غير صالحة` };
+    }
+    if (p.fields.length > PARTY_FIELDS_MAX) return { ok: false, error: `بيانات ${role} أكثر من المسموح` };
+    const fields: Array<{ label: string; value: string }> = [];
+    for (const f of p.fields) {
+      if (!isPlainObject(f) || typeof f.value !== "string" || !f.value.trim()) continue;
+      const label = boundedText(f.label, 80);
+      if (!label) return { ok: false, error: `بيانات ${role} غير صالحة` };
+      const value = boundedText(f.value, PARTY_FIELD_MAX);
+      if (!value) return { ok: false, error: `«${label}» (${role}) أطول من ${PARTY_FIELD_MAX.toLocaleString("ar-SA")} حرف` };
+      if (label === CONTRACTS_PRO_REP_ID_LABEL) {
+        // Optional, but typed it is a Saudi ID / iqama: 10 digits, 1 or 2 first.
+        const id = strictNationalId(value);
+        if (!id) return { ok: false, error: `«${label}» (${role}) عشرة أرقام تبدأ بـ ١ أو ٢` };
+        fields.push({ label, value: id });
+        continue;
+      }
+      fields.push({ label, value });
+    }
+    if (fields.length === 0) return { ok: false, error: `أدخل اسم ${role}` };
+    parties.push({ role, kind: PARTY_KIND[p.kind], fields });
+  }
+
+  const desc = typeof raw.description === "string" ? raw.description.trim() : "";
+  if (desc.length < CONTRACTS_PRO_DESC_MIN) {
+    return { ok: false, error: `صف فكرة العقد في ${CONTRACTS_PRO_DESC_MIN.toLocaleString("ar-SA")} حرفاً على الأقل` };
+  }
+  if (desc.length > CONTRACTS_PRO_DESC_MAX) {
+    return { ok: false, error: `وصف الفكرة أطول من ${CONTRACTS_PRO_DESC_MAX.toLocaleString("ar-SA")} حرف` };
+  }
+  const noCourt = raw.court == null || (typeof raw.court === "string" && !raw.court.trim());
+  const court = noCourt ? null : boundedText(raw.court, 200);
+  if (!noCourt && !court) return { ok: false, error: "الجهة المختصة غير صالحة" };
+
+  const clauses: string[] = [];
+  if (raw.clauses != null) {
+    if (!Array.isArray(raw.clauses) || raw.clauses.length > CONTRACTS_PRO_CLAUSES_MAX) {
+      return { ok: false, error: "البنود المطلوبة أكثر من المسموح" };
+    }
+    for (const c of raw.clauses) {
+      if (typeof c !== "string" || !c.trim()) continue;
+      const clause = boundedText(c, CONTRACTS_PRO_CLAUSE_MAX);
+      if (!clause) return { ok: false, error: `بند مطلوب أطول من ${CONTRACTS_PRO_CLAUSE_MAX.toLocaleString("ar-SA")} حرف` };
+      if (!clauses.includes(clause)) clauses.push(clause);
+    }
+  }
+
+  return {
+    ok: true,
+    input: {
+      type,
+      type_name: CONTRACTS_PRO_TYPES[type ?? "other"],
+      complexity,
+      language,
+      parties,
+      description: desc,
+      court,
+      clauses,
+    },
+  };
+}
+/** The letter: a title and its full text; `cited` becomes the library's verdict (runCore). */
+function legalLetterOutput(raw: unknown): Record<string, unknown> | null {
+  if (!isPlainObject(raw)) return null;
+  const title = boundedText(raw.title, 200);
+  const body = boundedText(raw.body, 10000);
+  if (!title || !body) return null;
+  return { title, body, cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 20) : [] };
+}
+
+/** The roles of /ai/legal-opinion's two built types: the same audience as L11. */
+const LEGAL_OPINION_ROLES = ["lawyer", "firm", "individual", "corporate", "micro"] as const;
+
+/**
+ * The assembled contract (n8n drafts the outline, then each clause on its own
+ * call): a title, the preamble and the clauses, each with its facing
+ * translation when the contract is bilingual. All or nothing: one missing or
+ * over-long clause, or a missing translation, refuses (and refunds) the whole
+ * contract rather than handing over one with a clause silently gone.
+ */
+function contractsProOutput(raw: unknown, input: Record<string, unknown>): Record<string, unknown> | null {
+  if (!isPlainObject(raw) || !Array.isArray(raw.sections)) return null;
+  const lang = isPlainObject(input.language) ? input.language : {};
+  const primary = typeof lang.primary === "string" ? lang.primary : LANGUAGE_NAME.ar;
+  const alt = typeof lang.alt === "string" && lang.alt ? lang.alt : null;
+  const title = boundedText(raw.title, 200);
+  if (!title || raw.sections.length < 2 || raw.sections.length > 40) return null;
+  const titleAlt = alt ? boundedText(raw.title_alt, 200) : null;
+  if (alt && !titleAlt) return null;
+  const sections: Array<Record<string, string>> = [];
+  for (const s of raw.sections) {
+    if (!isPlainObject(s)) return null;
+    const heading = boundedText(s.heading, 200);
+    const body = boundedText(s.body, 12000);
+    if (!heading || !body) return null;
+    if (!alt) {
+      sections.push({ heading, body });
+      continue;
+    }
+    const headingAlt = boundedText(s.heading_alt, 200);
+    const bodyAlt = boundedText(s.body_alt, 12000);
+    if (!headingAlt || !bodyAlt) return null;
+    sections.push({ heading, body, heading_alt: headingAlt, body_alt: bodyAlt });
+  }
+  const optional = (v: unknown, max: number) => (v == null || v === "" ? "" : boundedText(v, max));
+  const preamble = optional(raw.preamble, 4000);
+  const preambleAlt = alt ? optional(raw.preamble_alt, 4000) : "";
+  if (preamble === null || preambleAlt === null) return null;
+  return {
+    title,
+    ...(alt ? { title_alt: titleAlt } : {}),
+    language: { primary, alt },
+    preamble,
+    ...(alt ? { preamble_alt: preambleAlt } : {}),
+    sections,
+    cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 40) : [],
+  };
+}
+
+// ── L14 الصائغ القانوني: two steps of one work ──────────────────────────────
+// Turn 0 «issues»: the facts → the issues, the proposed defences and requests,
+// which the lawyer confirms or edits. Turn 1 «draft»: what he confirmed → the
+// pleading. One conversation of two runs: the analysis is charged the kind's
+// price (draftKinds.ts), the draft nothing, and a failed draft may be tried
+// again without a second charge (failed runs are not counted as turns).
+
+export const DRAFTER_FILES: FileRules = { max: 6, maxPages: 30, maxBytes: 22 * 1024 * 1024, optional: true };
+export const DRAFT_FACTS_MIN = 30;
+export const DRAFT_FACTS_MAX = 12000;
+const DRAFT_ROLES = ["plaintiff", "defendant"] as const;
+const DRAFT_SEARCH_MAX = 3000;
+
+export const DRAFT_COPY = {
+  kind: "اختر نوع المذكرة",
+  role: "اختر صفة موكّلك في القضية",
+  branch: "اختر الفرع القانوني",
+  facts: `اكتب الوقائع (${DRAFT_FACTS_MIN.toLocaleString("ar-SA")} حرفاً على الأقل) أو أرفق مستنداتها`,
+  factsLong: `الوقائع أطول من ${DRAFT_FACTS_MAX.toLocaleString("ar-SA")} حرف — اختصرها أو أرفقها ملفاً`,
+  issues: "أبقِ مسألة واحدة على الأقل",
+  defenses: "اعتمد دفعاً واحداً على الأقل",
+  tooLong: (label: string) => `«${label}» أطول من المسموح`,
+  firstStep: "ابدأ بتحليل الوقائع أولاً",
+  waitAnalysis: "لم يكتمل التحليل بعد — انتظره ثم اكتب المذكرة",
+  kindChanged: "نوع المذكرة يختلف عن التحليل — ابدأ صياغة جديدة",
+} as const;
+
+/** Blank → undefined; over-long → null (refused, never cut); else the trimmed text. */
+function optionalField(v: unknown, max: number): string | undefined | null {
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  if (!t) return undefined;
+  return t.length <= max ? t : null;
+}
+
+/** An array of 0..max strings of up to `len` each, blanks dropped; null when anything is wrong. */
+function textList(v: unknown, max: number, len: number): string[] | null {
+  if (v === undefined || v === null) return [];
+  if (!Array.isArray(v) || v.length > max) return null;
+  const out: string[] = [];
+  for (const x of v) {
+    const t = optionalField(x, len);
+    if (t === null) return null;
+    if (t) out.push(t);
+  }
+  return out;
+}
+
+/** An array of {title, <second>} rows of 1..max, each title required; null when anything is wrong. */
+function titledList(v: unknown, max: number, second: string, secondMax: number, extra?: string): Array<Record<string, unknown>> | null {
+  if (!Array.isArray(v) || v.length > max) return null;
+  const out: Array<Record<string, unknown>> = [];
+  for (const x of v) {
+    if (!isPlainObject(x)) return null;
+    const title = boundedText(x.title, 200);
+    const more = optionalField(x[second], secondMax);
+    if (!title || more === null) return null;
+    const row: Record<string, unknown> = { title, [second]: more ?? "" };
+    if (extra && Number.isInteger(x[extra]) && (x[extra] as number) >= 1 && (x[extra] as number) <= 50) row[extra] = x[extra];
+    out.push(row);
+  }
+  return out;
+}
+
+function legalDrafterInput(raw: unknown): InputCheck {
+  if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
+  if (raw.phase !== "issues" && raw.phase !== "draft") return { ok: false, error: "المدخلات غير صالحة" };
+  if (!isDraftKind(raw.kind)) return { ok: false, error: DRAFT_COPY.kind };
+  if (!(DRAFT_ROLES as readonly unknown[]).includes(raw.client_role)) return { ok: false, error: DRAFT_COPY.role };
+  const branch = boundedText(raw.branch, 60);
+  if (!branch) return { ok: false, error: DRAFT_COPY.branch };
+
+  const fields: Record<string, unknown> = {};
+  for (const [key, label, max] of [
+    ["plaintiff_name", "اسم المدعي", 200],
+    ["defendant_name", "اسم المدعى عليه", 200],
+    ["notes", "ملاحظاتك", 3000],
+  ] as const) {
+    const v = optionalField(raw[key], max);
+    if (v === null) return { ok: false, error: DRAFT_COPY.tooLong(label) };
+    if (v) fields[key] = v;
+  }
+  let judgment: Record<string, string> | null = null;
+  if (raw.judgment !== undefined && raw.judgment !== null) {
+    if (!isPlainObject(raw.judgment)) return { ok: false, error: "بيانات الحكم غير صالحة" };
+    const j: Record<string, string> = {};
+    for (const [key, label, max] of [
+      ["court", "المحكمة", 200],
+      ["number", "رقم الحكم", 100],
+      ["date", "تاريخ الحكم", 40],
+      ["text", "منطوق الحكم", 8000],
+      ["reasons", "أسباب الحكم", 8000],
+    ] as const) {
+      const v = optionalField(raw.judgment[key], max);
+      if (v === null) return { ok: false, error: DRAFT_COPY.tooLong(label) };
+      if (v) j[key] = v;
+    }
+    if (Object.keys(j).length > 0) judgment = j;
+  }
+  const requests = textList(raw.requests, 10, 500);
+  if (!requests) return { ok: false, error: DRAFT_COPY.tooLong("الطلبات") };
+
+  const factsRaw = typeof raw.facts === "string" ? raw.facts.trim() : "";
+  if (factsRaw.length > DRAFT_FACTS_MAX) return { ok: false, error: DRAFT_COPY.factsLong };
+  const base = { phase: raw.phase, kind: raw.kind, client_role: raw.client_role, branch, ...fields, judgment, requests };
+
+  if (raw.phase === "issues") {
+    // The facts may be in the files alone (plan: «a file without typed facts
+    // fails MIN_CASE_TEXT»); then runCore refuses the run without files.
+    const factsInFiles = raw.facts_in_files === true;
+    if (!factsInFiles && factsRaw.length < DRAFT_FACTS_MIN) return { ok: false, error: DRAFT_COPY.facts };
+    const search = factsRaw || judgment?.reasons || judgment?.text || `${branch} ${DRAFT_KINDS[raw.kind].label}`;
+    return { ok: true, input: { ...base, facts: factsRaw, facts_in_files: factsInFiles, search_text: search.slice(0, DRAFT_SEARCH_MAX) } };
+  }
+
+  // The draft: what the lawyer confirmed on the analysis screen.
+  if (factsRaw.length < DRAFT_FACTS_MIN) return { ok: false, error: DRAFT_COPY.facts };
+  const issues = titledList(raw.issues, 12, "detail", 2000);
+  if (!issues || issues.length === 0) return { ok: false, error: issues ? DRAFT_COPY.issues : DRAFT_COPY.tooLong("المسائل") };
+  const defenses = titledList(raw.defenses, 15, "basis", 3000);
+  if (!defenses || defenses.length === 0) return { ok: false, error: defenses ? DRAFT_COPY.defenses : DRAFT_COPY.tooLong("الدفوع") };
+  const search = [...issues, ...defenses].map((r) => r.title as string).join("\n");
+  return { ok: true, input: { ...base, facts: factsRaw, issues, defenses, search_text: search.slice(0, DRAFT_SEARCH_MAX) } };
+}
+
+/**
+ * The analysis or the draft, by the run's phase. All or nothing, as L11: one
+ * bad row refuses the result (refunded for the analysis) rather than handing
+ * the lawyer an issue or a section silently missing.
+ */
+function legalDrafterOutput(raw: unknown, input: Record<string, unknown>): Record<string, unknown> | null {
+  if (!isPlainObject(raw)) return null;
+  const cited = Array.isArray(raw.cited) ? raw.cited.slice(0, 40) : [];
+  if (input.phase === "draft") {
+    const title = boundedText(raw.title, 200);
+    if (!title || !Array.isArray(raw.sections) || raw.sections.length < 2 || raw.sections.length > 30) return null;
+    const sections: Array<{ heading: string; body: string }> = [];
+    for (const s of raw.sections) {
+      const heading = isPlainObject(s) ? boundedText(s.heading, 200) : null;
+      const body = isPlainObject(s) ? boundedText(s.body, 12000) : null;
+      if (!heading || !body) return null;
+      sections.push({ heading, body });
+    }
+    const requests = textList(raw.requests, 15, 1000);
+    if (!requests) return null;
+    return { phase: "draft", title, sections, requests, cited };
+  }
+  const facts_summary = boundedText(raw.facts_summary, 6000);
+  const issues = titledList(raw.issues, 12, "detail", 2000);
+  const defenses = titledList(raw.defenses, 15, "basis", 3000, "issue");
+  const requests = textList(raw.requests, 10, 500);
+  const missing = textList(raw.missing, 10, 300);
+  if (!facts_summary || !issues?.length || !defenses?.length || !requests || !missing) return null;
+  return { phase: "issues", facts_summary, issues, defenses, requests, missing, cited };
+}
+
+/** Turn 0 is the analysis; turn 1 the draft of that same kind, once the analysis succeeded. */
+function legalDrafterTurn(
+  input: Record<string, unknown>,
+  turn: number,
+  prior: ReadonlyArray<{ input: unknown; output: unknown; status: string }>,
+): string | null {
+  if (turn === 0) return input.phase === "issues" ? null : DRAFT_COPY.firstStep;
+  if (input.phase !== "draft") return DRAFT_COPY.kindChanged;
+  const first = prior[0];
+  if (!first || first.status !== "succeeded") return DRAFT_COPY.waitAnalysis;
+  return isPlainObject(first.input) && first.input.kind === input.kind ? null : DRAFT_COPY.kindChanged;
+}
 
 export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
   "echo-fast": {
@@ -659,7 +1193,8 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     roles: ["lawyer", "firm"],
     // CONSULTANT_BLOCKED_PREFIXES has /ai/najiz-optimizer (Art. 18).
     consultantBlocked: true,
-    // The pricing table's «منقح ناجز» row (owner ٢١٦: ٥–٨); the plan's 15 is older.
+    // Owner ٢١٦ gave «٥–٨»; 5 is charged, and every label reads it from here
+    // (toolPointsDisplay.ts). The plan's 15 is older.
     price: () => 5,
     dailyLimit: 20,
     defaultMode: "off",
@@ -691,7 +1226,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     price: () => 5,
     dailyLimit: 60,
     defaultMode: "off",
-    retrieval: { from: "message", pinFrom: "article_id", laws: 6, principles: 3 },
+    retrieval: { from: "message", pinFrom: "article_id", scopeFrom: "law_slug", laws: 6, principles: 3 },
     validateInput: libraryAssistantInput,
     validateOutput: libraryAssistantOutput,
   },
@@ -803,6 +1338,75 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     jobDeadlineSeconds: 15 * 60,
     validateInput: contractDraftInput,
     validateOutput: contractDraftOutput,
+  },
+  "legal-opinion-consult": {
+    id: "legal-opinion-consult",
+    n8nPath: "nzamy-ai/legal-opinion-consult",
+    class: "job",
+    tier: "deep",
+    roles: LEGAL_OPINION_ROLES,
+    // A consultation is advice, not pleading: /ai/legal-opinion is open to consultants (Art. 18).
+    consultantBlocked: false,
+    price: () => LEGAL_OPINION_PRICE,
+    dailyLimit: 5,
+    defaultMode: "off",
+    jobDeadlineSeconds: 15 * 60,
+    retrieval: { from: "question", laws: 8, principles: 4 },
+    validateInput: legalConsultInput,
+    validateOutput: legalConsultOutput,
+  },
+  "legal-opinion-letter": {
+    id: "legal-opinion-letter",
+    n8nPath: "nzamy-ai/legal-opinion-letter",
+    class: "job",
+    tier: "deep",
+    roles: LEGAL_OPINION_ROLES,
+    consultantBlocked: false,
+    price: () => LEGAL_OPINION_PRICE,
+    dailyLimit: 5,
+    defaultMode: "off",
+    jobDeadlineSeconds: 15 * 60,
+    validateInput: legalLetterInput,
+    validateOutput: legalLetterOutput,
+  },
+  "contracts-pro": {
+    id: "contracts-pro",
+    n8nPath: "nzamy-ai/contracts-pro",
+    class: "job",
+    tier: "deep",
+    // The lawyer, firm and business sidebars and the public navbar all open /ai/contracts.
+    roles: ["lawyer", "firm", "individual", "corporate", "micro", "ngo"],
+    consultantBlocked: false,
+    price: () => CONTRACTS_PRO_PRICE,
+    dailyLimit: 5,
+    defaultMode: "off",
+    // One call for the outline, then one per clause (up to 25): longer than L11.
+    jobDeadlineSeconds: 20 * 60,
+    validateInput: contractsProInput,
+    validateOutput: contractsProOutput,
+  },
+  "legal-drafter": {
+    id: "legal-drafter",
+    n8nPath: "nzamy-ai/legal-drafter",
+    class: "job",
+    tier: "deep",
+    roles: ["lawyer", "firm"],
+    // Pleadings: a consultant does not plead (Art. 18 of نظام المحاماة).
+    consultantBlocked: true,
+    // Charged once, on the analysis; the draft that follows it is free.
+    price: (input, ctx) => ((ctx.turn ?? 0) === 0 ? draftKindPrice(input.kind) : 0),
+    // An analysis and its draft are two runs.
+    dailyLimit: 10,
+    defaultMode: "off",
+    jobDeadlineSeconds: 15 * 60,
+    files: DRAFTER_FILES,
+    retrieval: { from: "search_text", laws: 8, principles: 4 },
+    // The draft's searches are written with the facts the analysis was searched with.
+    conversation: { maxMessages: 2, historyPairs: 1, field: "search_text", replyField: "facts_summary" },
+    checkTurn: legalDrafterTurn,
+    filesRequired: (input) => input.phase === "issues" && input.facts_in_files === true,
+    validateInput: legalDrafterInput,
+    validateOutput: legalDrafterOutput,
   },
 };
 

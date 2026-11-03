@@ -59,7 +59,7 @@ test("the owner's numbers", () => {
 
 test("finding 3: the top-up validity is the price book's on-sale packs — what checkout sells today", () => {
   const packs = topupValidityMonths();
-  assert.deepEqual(packs.map((t) => [t.sar, t.months]), [[100, 3], [250, 3], [500, 6], [1000, 12]]);
+  assert.deepEqual(packs.map((t) => [t.sar, t.months]), [[100, 3], [250, 3], [500, 3], [1000, 6], [2500, 12], [5000, 12], [10000, 12]]);
   for (const { sar } of packs) {
     const entry = Object.values(PRICE_BOOK).find((e) => e.kind === "topup" && e.prices.once?.sar === sar)!;
     const q = quote(entry.id, "once");
@@ -140,8 +140,8 @@ test("the page agrees with refundPolicy.ts: new sentences built from it, the own
 });
 
 test("the sentences the page shows", () => {
-  assert.equal(topupValidityAr(), "حزمتا ١٠٠ و٢٥٠ ر.س: ٣ أشهر؛ حزمة ٥٠٠ ر.س: ٦ أشهر؛ حزمة ١٬٠٠٠ ر.س: ١٢ شهراً");
-  assert.equal(topupValidityEn(), "SAR 100 and 250: 3 months; SAR 500: 6 months; SAR 1,000: 12 months");
+  assert.equal(topupValidityAr(), "حزم ١٠٠ و٢٥٠ و٥٠٠ ر.س: ٣ أشهر؛ حزمة ١٬٠٠٠ ر.س: ٦ أشهر؛ حزم ٢٬٥٠٠ و٥٬٠٠٠ و١٠٬٠٠٠ ر.س: ١٢ شهراً");
+  assert.equal(topupValidityEn(), "SAR 100, 250 and 500: 3 months; SAR 1,000: 6 months; SAR 2,500, 5,000 and 10,000: 12 months");
   assert.deepEqual([1, 2, 3, 10, 11, 12].map(monthsAr), ["شهر واحد", "شهران", "٣ أشهر", "١٠ أشهر", "١١ شهراً", "١٢ شهراً"]);
   assert.equal(renewalRemindersAr(), "تذكيراً أول قبل ٧ أيام، وتذكيراً ثانياً قبل ٣ أيام من موعد التجديد");
   assert.equal(arNumber(10000), "١٠٬٠٠٠");

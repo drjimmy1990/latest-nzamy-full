@@ -3,19 +3,20 @@
  * ─────────────────────────────────────────────────────────────
  * Canonical Pricing Plans Definition (Owner & Council Decisions 165/168)
  * 
- * 1. Legal Library Standalone Subscription:
- *    - Annual: 5,000 SAR / year (Canonical rate, unified across system)
- *    - Half-year: 2,750 SAR / 6 months (owner answer ١٧٧, 2026-10-16)
- *    - Quarterly: 1,500 SAR / quarter
+ * 1. Legal Library Standalone Subscription (owner ٣٠٠ / conflict ٢, 30 Oct
+ *    2026 — the price book holds the numbers):
+ *    - Annual: 3,490 SAR / year (3,790 and 5,000 are cancelled)
+ *    - Half-year: 1,920 SAR / 6 months
+ *    - Quarterly: 1,050 SAR / quarter
  *    - (The 2,500 SAR/year "AI Researcher Add-on" is withdrawn: AI points
  *      replaced it — gap analysis 2026-10-16 §2. No plan offers it.)
  * 
- * 2. Individuals Pricing Pyramid:
- *    - Tier 1: AI Self-Service (الباقة الذكية) = 39 SAR/mo (390 SAR/yr)
- *    - Tier 2: Preventive (الباقة الوقائية) = 149 SAR/mo (1,490 SAR/yr)
- *    - Tier 3: «التأمين القانوني» = 399 SAR/mo (3,990 SAR/yr) [Underwriting Gated],
- *      with the family cover option (owner answers ٢١٣ + ١٧٦, 2026-10-18).
- *      The separate family tier is merged into it.
+ * 2. Individuals Pricing Pyramid (owner package of 1 Nov 2026 §6.2.1, q329):
+ *    - AI Self-Service (الباقة الذكية) = 249 SAR a year, yearly only; the
+ *      29 / 79 / 149 cycles and the 199 launch price are retired.
+ *    - «الباقة الوقائية» (149 / 1,490) and «التأمين القانوني» (399 / 3,990)
+ *      are retired in the price book: no plan here. The 365 legal-protection
+ *      plan waits on the owner (٤٢٠).
  * 
  * 3. Independent Legal Consultant:
  *    - 399 SAR/mo or 3,990 SAR/yr, the same as «المحامي المحترف» (owner answer
@@ -47,7 +48,6 @@ export interface PricingPlan {
   featuresAr: string[];
   featuresEn: string[];
   highlighted?: boolean;
-  requiresUnderwriting?: boolean;
   article18Restricted?: boolean;
   ctaTextAr: string;
   ctaTextEn: string;
@@ -165,25 +165,29 @@ export const INDIVIDUALS_PYRAMID_PLANS: Record<string, PricingPlan> = {
     id: "ind-ai",
     nameAr: "الباقة الذكية (AI الذاتي)",
     nameEn: "AI Self-Service Plan",
-    priceMonthly: bookSar("ind-ai", "monthly"),
+    // Yearly only (owner package of 1 Nov 2026 §6.2.1, q329): the monthly
+    // cycle is retired, 0 = not sold monthly. /services/individuals reads
+    // each cycle from the book and shows only what is sold.
+    priceMonthly: 0,
     priceYearly: bookSar("ind-ai", "yearly"),
     periodMonthlyAr: "ر.س / شهر",
-    periodYearlyAr: "ر.س / سنة (شهرين مجاناً)",
+    periodYearlyAr: "ر.س / سنة",
     periodMonthlyEn: "SAR / month",
     periodYearlyEn: "SAR / year",
-    badgeAr: "١٫٢٥ ر.س يومياً",
-    badgeEn: "Affordable",
+    badgeAr: "نحو ٠٫٦٨ ر.س يومياً بالاشتراك السنوي",
+    badgeEn: "About SAR 0.68 a day on the yearly plan",
     descAr: "مستشارك القانوني الذكي — إجابات نظامية وصياغة خطابات وإنذارات",
     descEn: "Your AI legal assistant — statutory answers and draft notices",
     featuresAr: [
-      "مساعد ذكاء اصطناعي قانوني غير محدود طوال الاشتراك",
+      // LIVE-F11 (owner package 30 Oct 2026): no «غير محدود» claim.
+      "مساعد ذكاء اصطناعي قانوني ذاتي طوال الاشتراك",
       "استشهادات دقيقة بمواد الأنظمة واللوائح السعودية",
       "توليد ومراجعة مسودات الإنذارات والخطابات الودية",
       "حاسبة الرسوم القضائية ومحدد مدد التقادم",
       "دعم فني عبر المنصة والبريد",
     ],
     featuresEn: [
-      "Unlimited AI legal assistant",
+      "Self-service AI legal assistant for the whole subscription",
       "Direct citations from Saudi statutory laws",
       "Draft generation for notices and official correspondence",
       "Court fees & statutory limitation period calculators",
@@ -193,89 +197,6 @@ export const INDIVIDUALS_PYRAMID_PLANS: Record<string, PricingPlan> = {
     ctaTextAr: "اشترك في الباقة الذكية",
     ctaTextEn: "Subscribe to Smart AI",
     ctaHref: "/register/client?type=individual&plan=ind-ai",
-  },
-
-  "ind-preventive": {
-    id: "ind-preventive",
-    nameAr: "الباقة الوقائية (الاستشارات والعقود)",
-    nameEn: "Preventive Legal Plan",
-    priceMonthly: bookSar("ind-preventive", "monthly"),
-    priceYearly: bookSar("ind-preventive", "yearly"),
-    periodMonthlyAr: "ر.س / شهر",
-    periodYearlyAr: "ر.س / سنة (شهرين مجاناً)",
-    periodMonthlyEn: "SAR / month",
-    periodYearlyEn: "SAR / year",
-    // No «الأكثر طلباً للأفراد» badge (owner, Q164, 2026-10-03).
-    badgeAr: null,
-    badgeEn: null,
-    descAr: "درعك الوقائي لحماية حقوقك وتعاملاتك اليومية — استشارات مع محامين مرخصين ومراجعة عقود",
-    descEn: "Your preventive legal shield — licensed lawyer consultations and contract reviews",
-    featuresAr: [
-      "كل مزايا الباقة الذكية (ذكاء اصطناعي مفتوح)",
-      // Final review, item 4: no code counts these allowances; the team
-      // applies them by hand on a request (see pricing.individuals.ts).
-      "٤ استشارات قانونية سنوية (مرئية/هاتفية) مع محامٍ مرخّص — تُطبَّق بطلب يراجعه الفريق",
-      "مراجعة وتدقيق عقدين (٢) سنوياً لضمان خلوها من الثغرات — تُطبَّق بطلب يراجعه الفريق",
-      "فحص وقائي تعاقدي وتنبيهات بالمخاطر القانونية",
-      "خصم ١٥٪ على أتعاب أي قضايا أو ترافع إضافي",
-    ],
-    featuresEn: [
-      "All Smart AI features included",
-      "4 annual consultations (video/phone) with licensed lawyers — applied on a request the team reviews",
-      "2 contract reviews per year for clause risk protection — applied on a request the team reviews",
-      "Preventive contract health check",
-      "15% ongoing discount on additional legal litigation services",
-    ],
-    highlighted: true,
-    ctaTextAr: "اشترك في الباقة الوقائية",
-    ctaTextEn: "Subscribe to Preventive",
-    ctaHref: "/register/client?type=individual&plan=ind-preventive",
-  },
-
-  "ind-litigation": {
-    id: "ind-litigation",
-    nameAr: "التأمين القانوني",
-    nameEn: "Legal Insurance",
-    priceMonthly: bookSar("ind-litigation", "monthly"),
-    priceYearly: bookSar("ind-litigation", "yearly"),
-    periodMonthlyAr: "ر.س / شهر",
-    periodYearlyAr: "ر.س / سنة (شهرين مجاناً)",
-    periodMonthlyEn: "SAR / month",
-    periodYearlyEn: "SAR / year",
-    badgeAr: "تخضع لقواعد القبول والاكتتاب",
-    badgeEn: "Subject to Underwriting",
-    descAr: "تمثيل قضائي وترافع معتمد أمام المحاكم، مع خيار تغطية عائلية — تخضع للتدقيق المهني المسبق وخلو النزاع من التعارض",
-    descEn: "Court representation & litigation defense, with a family cover option — subject to underwriting review and conflict checks",
-    featuresAr: [
-      "كل مزايا الباقتين الذكية والوقائية",
-      "تمثيل قضائي وترافع أمام المحاكم لقضية مؤهلة سنوياً",
-      "صياغة لوائح الدعوى والمذكرات الجوابية والاعتراضية",
-      "استشارات غير محدودة طوال فترة التقاضي في القضية المقبولة — تُطبَّق بطلب يراجعه الفريق",
-      "⚠️ خضوع القضية لقواعد الاكتتاب والتحقق المسبق قبل البدء",
-      // Owner answer ١٧٦ (line 16): the family option.
-      "التغطية العائلية: التابع الأول ٣١٩ ر.س، والثاني ٢٧٩ ر.س، والثالث فأكثر ٢٣٩ ر.س شهرياً (خصم ٢٠٪ / ٣٠٪ / ٤٠٪)",
-      "سقف عائلي مشترك لأتعاب الترافع: ٣٥٬٠٠٠–٥٠٬٠٠٠ ر.س سنوياً",
-      "لكل فرد بالغ حسابه الخاص، لا يطّلع عليه بقية أفراد الأسرة",
-      "تُضاف التغطية العائلية بطلب يراجعه الفريق",
-    ],
-    featuresEn: [
-      "All Smart AI & Preventive features included",
-      "Court representation for 1 qualified eligible case per year",
-      "Drafting statements of claim, responses and appeals",
-      "Unlimited consultations throughout active case duration — applied on a request the team reviews",
-      "⚠️ Subject to legal underwriting review and intake qualification",
-      "Family cover: first dependant SAR 319, second SAR 279, third and beyond SAR 239 a month (20% / 30% / 40% off)",
-      "Shared family cap on litigation fees: SAR 35,000–50,000 a year",
-      "Each adult keeps a private account the rest of the family cannot see",
-      "Family cover is added on request, after the team reviews it",
-    ],
-    highlighted: false,
-    requiresUnderwriting: true,
-    ctaTextAr: "تقديم طلب انضمام للباقة",
-    ctaTextEn: "Apply for Legal Insurance",
-    ctaHref: "/register/client?type=individual&plan=ind-litigation",
-    footnoteAr: "* تطبق الشروط والأحكام",
-    footnoteEn: "* Terms and conditions apply",
   },
 };
 
@@ -332,8 +253,4 @@ export function getIndividualPyramidPlan(id: string): PricingPlan | undefined {
 export function isArticle18Restricted(planId: string): boolean {
   if (planId === INDEPENDENT_CONSULTANT_PLAN.id) return true;
   return false;
-}
-
-export function requiresLitigationUnderwriting(planId: string): boolean {
-  return INDIVIDUALS_PYRAMID_PLANS[planId]?.requiresUnderwriting === true;
 }

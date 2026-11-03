@@ -5,9 +5,12 @@ import { recordActivity, RequestEvent } from "@/lib/events";
 import {
   type UiHearingType, type UiUrgency,
   VALID_UI_TYPES, VALID_UI_URGENCIES,
-  typeToKind, kindToType, urgencyToDb, urgencyFromDb,
+  typeToKind, urgencyToDb,
 } from "@/lib/services/hearingVocabulary";
+import { HEARINGS_SELECT, resolveOwnCase, toDto, type HearingRow } from "./_shared";
 import { validateHearingDuration } from "@/lib/services/item59Labels";
+import { DEADLINE_HEARING_KIND, hearingDurationMinutes, hearingStartMs } from "@/lib/services/scheduleClash";
+import { hearingOverlapRefusal } from "@/app/api/v1/lawyer/consultations/_scheduleGuard";
 
 /**
  * /api/v1/lawyer/hearings — Phase 1 (خطة_البناء_الكاملة §5).
@@ -43,47 +46,6 @@ import { validateHearingDuration } from "@/lib/services/item59Labels";
 
 const VALID_TYPES = new Set<string>(VALID_UI_TYPES);
 const VALID_URGENCIES = new Set<string>(VALID_UI_URGENCIES);
-
-interface HearingRow {
-  id: string;
-  case_request_id: string | null;
-  title: string;
-  kind: string;
-  hearing_date: string;
-  hearing_time: string | null;
-  location: string;
-  urgency: string;
-  status: string;
-  notes: string;
-  /** Owner item 59 («مدة الجلسة»). Nullable; set by POST's `durationMinutes`. */
-  duration_minutes: number | null;
-  metadata: Record<string, unknown> | null;
-  created_at: string;
-  updated_at: string;
-}
-
-function toDto(row: HearingRow) {
-  const meta = row.metadata ?? {};
-  return {
-    id: row.id,
-    title: row.title,
-    type: kindToType(row.kind),
-    caseRequestId: row.case_request_id,
-    caseName: typeof meta.caseName === "string" ? meta.caseName : undefined,
-    date: row.hearing_date,
-    time: row.hearing_time,
-    location: row.location || undefined,
-    urgency: urgencyFromDb(row.urgency),
-    notes: row.notes || undefined,
-    status: row.status,
-    durationMinutes: typeof row.duration_minutes === "number" ? row.duration_minutes : null,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-const HEARINGS_SELECT =
-  "id, case_request_id, title, kind, hearing_date, hearing_time, location, urgency, status, notes, duration_minutes, metadata, created_at, updated_at";
 
 /**
  * GET /api/v1/lawyer/hearings
@@ -137,7 +99,11 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/v1/lawyer/hearings
- * Body: { type, date, time?, caseName?, caseRequestId?, urgency?, location?, notes?, title, durationMinutes? }
+ * Body: { type, date, time?, caseName?, caseRequestId?, urgency?, location?, notes?, title, durationMinutes?, confirmOverlap? }
+ *
+ * Owner q357: a hearing with an hour is checked against the lawyer's
+ * scheduled consultations and other timed hearings — 409 `hearing_overlap`
+ * with the conflicts until the same body is sent with `confirmOverlap: true`.
  *
  * `durationMinutes` («مدة الجلسة», owner item 59): a whole number of minutes
  * from 5 to 1440, or null/absent for "not set" — see `validateHearingDuration`.
@@ -159,11 +125,11 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const {
-      type, date, time, caseName, caseRequestId, urgency, location, notes, title, durationMinutes,
+      type, date, time, caseName, caseRequestId, urgency, location, notes, title, durationMinutes, confirmOverlap,
     } = body as {
       type?: string; date?: string; time?: string; caseName?: string;
       caseRequestId?: string; urgency?: string; location?: string; notes?: string; title?: string;
-      durationMinutes?: unknown;
+      durationMinutes?: unknown; confirmOverlap?: unknown;
     };
 
     if (!type || !(VALID_TYPES as Set<string>).has(type)) {
@@ -184,6 +150,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: parsedDuration.error }, { status: 400 });
     }
 
+    // q357: warn-then-confirm on a clash with the lawyer's own diary. A hearing
+    // with no hour holds a day, not a slot, and a «موعد طعن / نهائي» marks a
+    // day to act by — neither is checked.
+    const startMs = typeToKind(type as UiHearingType) === DEADLINE_HEARING_KIND ? null : hearingStartMs(date, time);
+    if (startMs !== null) {
+      const refusal = await hearingOverlapRefusal(supabase, {
+        lawyerUserId: user.id,
+        startMs,
+        durationMinutes: hearingDurationMinutes(parsedDuration.value),
+        confirmOverlap: confirmOverlap === true,
+      });
+      if (refusal) return refusal;
+    }
+
     // Solo lawyer → no firm row → firm_id stays null, exactly what
     // can_access_case_row's owner arm is for. A lawyer with more than one
     // active membership gets the first; nothing in this product distinguishes
@@ -199,13 +179,26 @@ export async function POST(request: NextRequest) {
       console.error("[lawyer/hearings] firm_members lookup failed:", membershipError.message, membershipError.code);
     }
 
+    // CODE-F17 / LIVE-F28: the link is the case ID, checked against the
+    // caller's own cases — never the free text. An id that does not resolve is
+    // refused (400), not saved as a silently unlinked hearing. A linked row's
+    // display name is the case's own title, so the two cannot disagree; an
+    // unlinked row keeps the typed label, which the diary marks «غير مرتبط بقضية».
     const metadata: Record<string, unknown> = {};
-    if (caseName && caseName.trim()) metadata.caseName = caseName.trim();
+    let linkedCaseId: string | null = null;
+    if (typeof caseRequestId === "string" && caseRequestId.trim()) {
+      const linked = await resolveOwnCase(supabase, user.id, caseRequestId.trim());
+      if (!linked.ok) return NextResponse.json({ error: linked.error }, { status: linked.status });
+      linkedCaseId = linked.id;
+      metadata.caseName = linked.title;
+    } else if (caseName && caseName.trim()) {
+      metadata.caseName = caseName.trim();
+    }
 
     const { data, error } = await supabase
       .from("hearings")
       .insert({
-        case_request_id: caseRequestId || null,
+        case_request_id: linkedCaseId,
         firm_id: membership?.firm_id ?? null,
         owner_user_id: user.id,
         kind: typeToKind(type as UiHearingType),
@@ -233,7 +226,7 @@ export async function POST(request: NextRequest) {
       ownerUserId: user.id,
       firmId: membership?.firm_id ?? null,
       actorUserId: user.id,
-      caseRequestId: caseRequestId || null,
+      caseRequestId: linkedCaseId,
       subjectTable: "hearings",
       subjectId: data.id,
       payload: { title: title.trim() },

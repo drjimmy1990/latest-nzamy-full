@@ -114,7 +114,11 @@ test("a later call on a closed order still reports a refund review or a refund �
 });
 
 test("the server wrapper wires the real service client, gateway, ranking, library grant and notifier", () => {
-  assert.match(wrapper, /admin: await createServiceClient\(\)/);
+  assert.match(wrapper, /const admin = await createServiceClient\(\);\s*return \{\s*admin,/);
+  // P3 (20261101_10): the founder grant, a dead payment's seat, the admin bell
+  assert.match(wrapper, /admin\.rpc\("founder_activate", \{ p_order: orderId \}\)/);
+  assert.match(wrapper, /admin\.rpc\("founder_release_order", \{ p_order: orderId \}\)/);
+  assert.match(wrapper, /admin\.rpc\("library_monitor_notify_admins", \{ p_title: n\.title, p_body: n\.body, p_href: n\.href \}\)/);
   assert.match(wrapper, /gateway: platformGateway/);
   assert.match(wrapper, /grantLibrary: grantLibraryAccess/);
   assert.match(wrapper, /ranks: TIER_RANK/);
@@ -125,4 +129,22 @@ test("the server wrapper wires the real service client, gateway, ranking, librar
 test("paid_unmatched is written through the merge RPC, never by replacing metadata", () => {
   assert.match(fulfill, /admin\.rpc\("merge_payment_order_metadata", \{ p_order: orderId, p_patch: patch \}\)/);
   assert.match(fulfill, /paid_unmatched: \{ payment_id: paymentId, reason, at \}/);
+});
+
+// ── P3 Task 5: the route wiring of the founder seat RPCs (CR stripped: these files are CRLF) ──
+const sweepRoute = readFileSync(join(import.meta.dirname, "../../app/api/v1/cron/payments-sweep/route.ts"), "utf8").replace(/\r/g, "");
+const checkoutRoute = readFileSync(join(import.meta.dirname, "../../app/api/v1/payments/checkout/route.ts"), "utf8").replace(/\r/g, "");
+
+test("P3: the sweep frees stale founder reservations — releaseExpiredFounderSeats(admin), AFTER the (c) loop", () => {
+  assert.match(sweepRoute, /import \{ releaseExpiredFounderSeats \} from "@\/lib\/payments\/fulfillCore";/);
+  const call = sweepRoute.indexOf("await releaseExpiredFounderSeats(admin)");
+  const loopC = sweepRoute.indexOf("for (const row of resumable.slice(0, SWEEP_BATCH))");
+  assert.ok(call > -1, "the sweep calls the release function");
+  assert.ok(loopC > -1 && call > loopC, "after (a), (b) and (c): a landing payment keeps its seat");
+  assert.match(sweepRoute, /founder_seats_released: founderSeatsReleased/);
+  assert.match(fulfill.replace(/\r/g, ""), /admin\.rpc\("founder_release_expired"\)/);
+});
+
+test("P3 (R13): the checkout route wires releaseFounderSeat to founder_release_order", () => {
+  assert.match(checkoutRoute, /releaseFounderSeat: async \(orderId\) => \{\s*const \{ error \} = await admin\.rpc\("founder_release_order", \{ p_order: orderId \}\);/);
 });

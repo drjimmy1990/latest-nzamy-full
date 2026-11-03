@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -37,7 +38,7 @@ const CHARGE_TEMPLATES = [
   { key: "makdarat", label: "حيازة مخدرات", article: "المادة 1 من نظام مكافحة المخدرات" },
 ];
 
-export default function IndictmentDrafterPage() {
+function IndictmentDrafterInner() {
   const [step, setStep] = useState<Step>("facts");
   const [crimeCategory, setCrimeCategory] = useState<CrimeCategory | "">("");
   const [caseNumber, setCaseNumber] = useState("");
@@ -411,5 +412,14 @@ ${penaltyText || "تُطالب النيابة العامة بتطبيق العق
 
       </AnimatePresence>
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function IndictmentDrafterPage() {
+  return (
+    <GatedToolScreen toolId="gov.indictment-drafter" toolName="لائحة الاتهام">
+      <IndictmentDrafterInner />
+    </GatedToolScreen>
   );
 }

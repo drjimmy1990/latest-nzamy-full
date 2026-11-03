@@ -5,7 +5,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mapApiFolderToSmartFolder, resolveSavedItemHref, type ApiSmartFolderRow } from "./smartFolderApiMapper.ts";
+import { mapApiFolderToSmartFolder, resolveSavedItemHref, itemLacksTitle, titleLookupForFolders, applyResolvedTitles, type ApiSmartFolderRow } from "./smartFolderApiMapper.ts";
 
 test("mapApiFolderToSmartFolder maps a full row, items included", () => {
   const row: ApiSmartFolderRow = {
@@ -125,4 +125,26 @@ test("resolveSavedItemHref encodes exactly once (apiSlug) — encoded, plain and
   assert.equal(resolveSavedItemHref({ slug: "../../admin?x=1#y", type: "precedent" }), `/precedents/${encodeURIComponent("../../admin?x=1#y")}`);
   assert.equal(resolveSavedItemHref({ slug: "//evil.example", type: "law" }), "/laws/%2F%2Fevil.example");
   assert.equal(resolveSavedItemHref({ slug: "", type: null }), "/laws/");
+});
+
+test("titleless items (old rows show their id) are named from ONE batched title lookup", () => {
+  const folder = mapApiFolderToSmartFolder({
+    id: "f1",
+    name: "قديم",
+    smart_folder_items: [
+      { id: "i1", entity_type: "law", entity_id: "real-estate-ownership-law", title: null },
+      { id: "i2", entity_type: "precedent", entity_id: "moj-1434", title: "" },
+      { id: "i3", entity_type: "law", entity_id: "labor-law", title: "نظام العمل" },
+    ],
+  });
+  assert.equal(itemLacksTitle(folder.laws[0]), true, "the mapper fell back to the id");
+  assert.equal(itemLacksTitle(folder.laws[2]), false);
+  assert.deepEqual(titleLookupForFolders([folder]), { laws: ["real-estate-ownership-law"], orders: [], precedents: ["moj-1434"], books: [] });
+  const [named] = applyResolvedTitles([folder], { laws: { "real-estate-ownership-law": "نظام تملك العقار" }, precedents: {} });
+  assert.equal(named.laws[0].title, "نظام تملك العقار");
+  assert.equal(named.laws[1].title, "moj-1434", "an unresolved item keeps its fallback");
+  assert.equal(named.laws[2].title, "نظام العمل");
+  assert.equal((named.laws[0] as { _itemDbId?: string })._itemDbId, "i1", "the DB id survives for deletion");
+  assert.equal(titleLookupForFolders([named, { ...folder, laws: [] }])?.precedents.length, 1);
+  assert.equal(titleLookupForFolders([{ ...folder, laws: [folder.laws[2]] }]), null);
 });

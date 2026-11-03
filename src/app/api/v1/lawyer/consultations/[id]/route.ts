@@ -11,6 +11,8 @@ import {
   CONSULTATION_SELECT, CONSULTATION_FORBIDDEN, hydrateConsultations, toConsultationDto,
   consultationDbErrorResponse, type ConsultationRow,
 } from "../_shared";
+import { overlapRefusal } from "../_scheduleGuard";
+import { DEFAULT_CONSULTATION_MINUTES, checkInstantSlot, pastSlotMessageAr } from "@/lib/services/consultationSchedule";
 
 /**
  * /api/v1/lawyer/consultations/[id] — Phase 3, lawyer/firm side.
@@ -62,6 +64,8 @@ interface PatchBody {
   feePaid?: boolean;
   cancelledReason?: string | null;
   lawyerClientId?: string | null;
+  /** The lawyer saw the 409 overlap warning and saves anyway (LIVE-F35). */
+  confirmOverlap?: boolean;
 }
 
 const NOTIFY_TITLE: Partial<Record<ConsultationStatus, string>> = {
@@ -157,13 +161,53 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       patch.cancelled_reason = body.cancelledReason;
     }
 
+    // The slot must carry its zone (LIVE-F37: a zone-less string is read in
+    // whatever zone the reader runs in). Whether it may be in the past is
+    // decided below, once the resulting status is known.
+    const nowMs = Date.now();
+    let newSlotMs: number | null = null;
     if (body.scheduledAt !== undefined) {
       if (body.scheduledAt === null) {
         patch.scheduled_at = null;
-      } else if (typeof body.scheduledAt === "string" && !Number.isNaN(Date.parse(body.scheduledAt))) {
-        patch.scheduled_at = body.scheduledAt;
       } else {
-        return NextResponse.json({ error: "موعد الاستشارة غير صالح." }, { status: 400 });
+        const slot = checkInstantSlot(body.scheduledAt, nowMs, false);
+        if (slot.kind !== "slot") {
+          return NextResponse.json({ error: slot.kind === "invalid" ? slot.error : "موعد الاستشارة غير صالح." }, { status: 400 });
+        }
+        patch.scheduled_at = slot.startIso;
+        newSlotMs = slot.startMs;
+      }
+    }
+
+    // LIVE-F34 / LIVE-F35 — when the row ends up `scheduled`, its slot must be
+    // ahead of now (Riyadh = the server clock, read per request) if it is a
+    // NEW choice, and must not overlap the lawyer's other scheduled
+    // consultations unless the lawyer confirms. A row that keeps the slot it
+    // already had (e.g. only the mode changes) is not re-judged against now.
+    {
+      const resultStatus = (patch.status ?? row.status) as string;
+      const storedMs = row.scheduled_at ? Date.parse(row.scheduled_at) : null;
+      const effectiveMs = body.scheduledAt !== undefined ? newSlotMs : storedMs;
+      const slotChanged = body.scheduledAt !== undefined && newSlotMs !== storedMs;
+      const becomesScheduled = patch.status === "scheduled" && row.status !== "scheduled";
+      const durationChanged = body.durationMinutes !== undefined && body.durationMinutes !== row.duration_minutes;
+      if (resultStatus === "scheduled" && effectiveMs !== null && Number.isFinite(effectiveMs)) {
+        if ((slotChanged || becomesScheduled) && effectiveMs <= nowMs) {
+          return NextResponse.json({ error: pastSlotMessageAr(nowMs) }, { status: 400 });
+        }
+        if (slotChanged || becomesScheduled || durationChanged) {
+          const duration = body.durationMinutes !== undefined && body.durationMinutes !== null
+            ? body.durationMinutes
+            : row.duration_minutes ?? DEFAULT_CONSULTATION_MINUTES;
+          const refusal = await overlapRefusal(supabase, {
+            lawyerUserId: row.lawyer_user_id ?? user.id,
+            startMs: effectiveMs,
+            durationMinutes: duration,
+            excludeId: row.id,
+            confirmOverlap: body.confirmOverlap === true,
+          });
+          if (refusal) return refusal;
+        }
       }
     }
 

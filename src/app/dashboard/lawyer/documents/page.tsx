@@ -20,6 +20,7 @@ import {
 } from "@/lib/services/documentService";
 import type { Document } from "@/lib/services/documentService";
 import { partitionUploadFiles } from "@/lib/services/fileValidation";
+import { openPendingTab } from "@/lib/ui/pendingTab";
 import { isSupabaseMode } from "@/lib/services/api";
 import { DocumentsTrashPanel } from "@/components/documents/DocumentsTrashPanel";
 import ShareDocumentModal from "@/components/documents/ShareDocumentModal";
@@ -107,6 +108,8 @@ export default function DocumentsPage() {
   const [uploading,     setUploading]     = useState(false);
   const [uploadError,   setUploadError]   = useState<string | null>(null);
   const [actionError,   setActionError]   = useState<string | null>(null);
+  /** A signed link the browser would not open in a new tab — shown as a link instead. */
+  const [blockedLink, setBlockedLink] = useState<{ name: string; url: string } | null>(null);
   const [busyDocId,     setBusyDocId]     = useState<string | null>(null);
   // «مشاركة برابط» — owner item 174. The doc being shared, or null when the
   // modal is closed. Only ever set to a row from `filteredDocs` (the live
@@ -264,10 +267,19 @@ export default function DocumentsPage() {
     }
   }, []);
 
+  /*
+   * CODE-F38: `window.open` used to run AFTER the await below, outside the
+   * click, where a popup blocker may stop it — and its null was ignored, so
+   * «عرض» could do nothing at all. The tab is now opened during the click
+   * (openPendingTab, before any await) and pointed at the signed URL when it
+   * arrives; if no tab could be opened the link is shown on the page instead.
+   */
   const handleView = useCallback(async (d: Doc) => {
+    setBlockedLink(null);
+    const tab = openPendingTab(window);
     const url = await resolveFileUrl(d, "عرض");
-    if (!url) return;
-    window.open(url, "_blank", "noopener,noreferrer");
+    if (!url) { tab.close(); return; }
+    if (!tab.navigate(url)) setBlockedLink({ name: d.name, url });
   }, [resolveFileUrl]);
 
   const handleDownload = useCallback(async (d: Doc) => {
@@ -480,6 +492,18 @@ export default function DocumentsPage() {
         <div className={`flex items-start gap-3 p-4 rounded-2xl border text-sm ${isDark ? "border-red-500/20 bg-red-500/10 text-red-300" : "border-red-200 bg-red-50 text-red-800"}`}>
           <Warning size={18} weight="fill" className="mt-0.5 flex-shrink-0" />
           <span>{actionError}</span>
+        </div>
+      )}
+
+      {blockedLink && (
+        <div role="status" className={`flex flex-wrap items-center gap-2 p-4 rounded-2xl border text-sm ${isDark ? "border-amber-500/20 bg-amber-500/10 text-amber-300" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+          <Warning size={18} weight="fill" className="flex-shrink-0" />
+          <span>منع المتصفح فتح نافذة جديدة لـ«{blockedLink.name}».</span>
+          <a href={blockedLink.url} target="_blank" rel="noopener noreferrer" onClick={() => setBlockedLink(null)}
+            className="font-bold underline">
+            افتح المستند
+          </a>
+          <span className="text-xs opacity-80">(الرابط صالح لدقائق قليلة)</span>
         </div>
       )}
 

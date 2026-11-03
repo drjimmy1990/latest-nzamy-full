@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 
 import { useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -41,7 +42,7 @@ function formatDealIntelReport(dealType: string | null, sector: string | null, p
   ].join("\n");
 }
 
-export default function DealIntelPage() {
+function DealIntelInner() {
   const { isDark } = useTheme();
   const [stage,       setStage]      = useState<Stage>("form");
   const [dealType,    setDealType]   = useState<string | null>(null);
@@ -552,5 +553,14 @@ export default function DealIntelPage() {
 
       </AnimatePresence>
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function DealIntelPage() {
+  return (
+    <GatedToolScreen toolId="corp.deal-intel" toolName="تقرير تحليل الصفقة">
+      <DealIntelInner />
+    </GatedToolScreen>
   );
 }

@@ -6,6 +6,7 @@ import {
   mergePaymentOrderMetadata,
   type FulfillOutcome,
 } from "@/lib/payments/fulfillOrder";
+import { releaseExpiredFounderSeats } from "@/lib/payments/fulfillCore";
 import {
   cronSecretMatches,
   isMissingPaymentsObject,
@@ -39,7 +40,14 @@ import {
  *       SWEEP_MAX_ATTEMPTS (20) the order is skipped and carries
  *       metadata.paid_unmatched {reason: 'sweep_gave_up'} for an admin. The
  *       given-up orders are filtered out in code from a window of
- *       4 × SWEEP_BATCH, oldest first.
+ *       4 × SWEEP_BATCH, oldest first;
+ *   (d) P3: founder_release_expired (20261101_10) frees every reserved
+ *       founder seat past its 2-hour reserved_until whose order is not paid
+ *       (releaseExpiredFounderSeats). LAST, after (a) and (b): those may claim
+ *       an initiated membership order whose payment is just landing, and
+ *       freeing its seat first could turn a good purchase into
+ *       seat_unavailable near capacity. Best-effort; the count is
+ *       `founder_seats_released` (null when it could not run).
  *
  * ── AUTH — fails CLOSED ─────────────────────────────────────────────────────
  * Header `x-cron-secret` must equal CRON_SECRET, compared with
@@ -182,7 +190,11 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // (d) stale founder reservations — last, see the header
+  const founderSeatsReleased = await releaseExpiredFounderSeats(admin);
+
   return NextResponse.json({
+    founder_seats_released: founderSeatsReleased,
     swept: (initiated?.length ?? 0) + (intentOnly?.length ?? 0) + Math.min(resumable.length, SWEEP_BATCH),
     ...tally,
   });

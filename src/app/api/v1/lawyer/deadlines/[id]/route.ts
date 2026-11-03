@@ -5,6 +5,7 @@ import { recordActivity, RequestEvent } from "@/lib/events";
 import { hijriLabelAr } from "@/lib/services/hijri";
 import { parseIsoDate, daysUntil } from "@/lib/services/deadlineEngine";
 import { enqueueDeadlineReminders, cancelPendingDeadlineReminders } from "@/lib/deadlineReminders";
+import { validateStatusChange, withStatusHistory } from "@/lib/services/deadlineStatusPolicy";
 
 /**
  * /api/v1/lawyer/deadlines/[id] — Phase 5 (رادار المهل).
@@ -22,6 +23,11 @@ import { enqueueDeadlineReminders, cancelPendingDeadlineReminders } from "@/lib/
  * left: pending, cancelled, or sent) and inserts any kind that never had a
  * row at all. See that function's own header for why the upsert, not a
  * plain insert, is what makes this safe.
+ *
+ * CODE-F33: a lawyer's «تمّ» / «إلغاء» / «إعادة فتح» goes through
+ * `validateStatusChange` — cancelling and reopening need a reason, «تمّ»
+ * takes an optional receipt — and each change is appended to
+ * `metadata.status_history` and carried into the activity row.
  */
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -110,7 +116,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
     const { data: existing, error: fetchError } = await supabase
       .from("deadlines")
-      .select("id, trigger_date, due_date, computed_by_rule, status, owner_user_id, firm_id, case_request_id")
+      .select("id, trigger_date, due_date, computed_by_rule, status, owner_user_id, firm_id, case_request_id, metadata")
       .eq("id", id)
       .maybeSingle();
     if (fetchError) {
@@ -123,8 +129,10 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     const body = (await request.json()) as {
       status?: string; priority?: string; notes?: string;
       reminderOffsetsDays?: number[]; dueDate?: string; title?: string;
+      reason?: string | null;
     };
     const { status, priority, notes, reminderOffsetsDays, dueDate, title } = body;
+    const reason = typeof body.reason === "string" ? body.reason.trim() : "";
 
     const patch: Record<string, unknown> = {};
 
@@ -132,7 +140,20 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       if (!VALID_STATUS.has(status)) {
         return NextResponse.json({ error: `status يجب أن يكون أحد: ${[...VALID_STATUS].join(", ")}` }, { status: 400 });
       }
+      const refusedChange = validateStatusChange(existing.status, status, reason);
+      if (refusedChange) {
+        return NextResponse.json({ error: refusedChange }, { status: 400 });
+      }
       patch.status = status;
+      if (status !== existing.status) {
+        patch.metadata = withStatusHistory(existing.metadata as Record<string, unknown> | null, {
+          at: new Date().toISOString(),
+          by: user.id,
+          from: existing.status,
+          to: status,
+          reason: reason || null,
+        });
+      }
       if (status === "done" || status === "cancelled") {
         patch.completed_at = new Date().toISOString();
       } else {
@@ -224,7 +245,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
           caseRequestId: existing.case_request_id ?? null,
           subjectTable: "deadlines",
           subjectId: id,
-          payload: { title: (data as DeadlineRow).title, status },
+          payload: { title: (data as DeadlineRow).title, status, from: existing.status, reason: reason || null },
         });
       } catch (activityErr) {
         console.error("[lawyer/deadlines PATCH] activity record failed:", activityErr);

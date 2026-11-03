@@ -25,6 +25,7 @@ import {
 import { contractExpiryState, paymentScheduleTotals, isPaymentOverdue } from "@/lib/services/contractDates";
 import { isoDate } from "@/lib/services/deadlineEngine";
 import { toArabicDigits } from "@/lib/services/arabicCount";
+import { openPendingTab } from "@/lib/ui/pendingTab";
 import { formatGregorianAr } from "../DeadlineCard";
 import ContractFormModal from "./ContractFormModal";
 import UploadVersionModal from "./UploadVersionModal";
@@ -163,11 +164,14 @@ export default function ContractDetail({ contractId, isDark, basePath }: Props) 
   const setErr = (id: string, v: string | null) =>
     setRowError((e) => { const n = { ...e }; if (v) n[id] = v; else delete n[id]; return n; });
 
+  // CODE-F38 (same pattern): open the tab during the click, then point it at
+  // the signed URL — a window.open after the await can be blocked.
   async function handleDownloadVersion(v: ContractVersion) {
     setErr(v.id, null);
+    const tab = openPendingTab(window);
     const url = await getContractVersionUrl(contractId, v.id);
-    if (!url) { setErr(v.id, "تعذّر إنشاء رابط التنزيل"); return; }
-    window.open(url, "_blank");
+    if (!url) { tab.close(); setErr(v.id, "تعذّر إنشاء رابط التنزيل"); return; }
+    if (!tab.navigate(url)) setErr(v.id, "منع المتصفح فتح نافذة جديدة — اسمح بالنوافذ المنبثقة لهذا الموقع ثم أعد المحاولة.");
   }
 
   async function handleDeleteVersion(v: ContractVersion) {

@@ -77,5 +77,10 @@ test("the laws page uses this module for its dangerouslySetInnerHTML suggestion 
   assert.match(page, /import \{ highlightSearchHtml as highlightText \} from "\.\/highlightSearchHtml"/);
   assert.ok(!/function highlightText\(/.test(page), "no second, untested copy in the page");
   const sinks = page.match(/dangerouslySetInnerHTML=\{\{ __html: [^}]+\}\}/g) ?? [];
-  assert.deepEqual(sinks, ["dangerouslySetInnerHTML={{ __html: highlightText(s.label, search) }}"]);
+  // Owner note ١٢-٢: the instant box shows the law's name core and the
+  // snippet too; every sink still goes through the escaping module.
+  assert.deepEqual(sinks, [
+    "dangerouslySetInnerHTML={{ __html: highlightText(s.core || s.label, search) }}",
+    "dangerouslySetInnerHTML={{ __html: highlightText(s.snippet, search) }}",
+  ]);
 });

@@ -3,11 +3,21 @@
  * owner README «٤٧» part ٦: one card per series with volume buttons, and a
  * volume selector inside the reader).
  * ─────────────────────────────────────────────────────────────────────────────
- * TAGGED SERIES ONLY. A series is the collections that share a non-empty
+ * A series is, first, the collections that share a non-empty
  * library.judicial_collections.series_id (the source's `collection_id`,
  * kept by the parser as a grouping label — parse-precedents.ts
- * parsePrecedentContainer), two volumes or more. Nothing is grouped by title
- * and no series list is hard-coded (more series wait on owner ٢٦٢).
+ * parsePrecedentContainer), two volumes or more.
+ *
+ * TITLE FALLBACK (owner note ٠٣, 2026-10-30 — the same rule bookVolumes.ts
+ * applies to the fiqh books). Only two series carry a series_id, so 177
+ * volumes stood as loose cards («المجلد الأول» then «الثالث» then «الثاني»).
+ * A row WITHOUT series_id whose title ends with an explicit volume suffix
+ * («… — المجلد الأول», «… - الجزء 3», «… (المجلد الثاني)») joins the other
+ * untagged rows with the same issuing court AND the same base title; two or
+ * more make one series card, in ascending volume order. A title without such
+ * a suffix never joins anything, and no series list is hard-coded. An
+ * untagged volume whose base title + court are exactly those of ONE tagged
+ * series joins that series (a work tagged on most of its files is not split).
  *
  * VOLUME NUMBERS. `part` is the volume number when it tells the volumes
  * apart. In the owner corpus (2026-10-25) the series files carry
@@ -21,8 +31,11 @@
  * Each volume keeps its own row (and its own `free` flag): a series card
  * never unlocks a paid volume because another volume is free.
  *
- * Pure and import-free: the catalogue, the precedents API and node:test load it.
+ * Pure (its one import is the pure stripMarkdownMarks): the catalogue, the
+ * precedents API and node:test load it.
  */
+
+import { stripMarkdownMarks } from "../text/stripMarkdownMarks.ts";
 
 export interface CollectionVolumeRow {
   id: string;
@@ -31,6 +44,8 @@ export interface CollectionVolumeRow {
   series_id?: string | null;
   free?: boolean | null;
   ruling_count?: number | null;
+  /** The issuing court: half of the title-fallback key (absent = ""). */
+  court?: string | null;
 }
 
 export interface CollectionVolume<T extends CollectionVolumeRow> {
@@ -41,7 +56,7 @@ export interface CollectionVolume<T extends CollectionVolumeRow> {
 
 export interface CollectionSeriesGroup<T extends CollectionVolumeRow> {
   kind: "series";
-  /** The series_id. */
+  /** The series_id, or «title:<first volume id>» for a title-fallback series. */
   key: string;
   /** The first volume's title without its volume token. */
   title: string;
@@ -104,8 +119,14 @@ export function arabicOrdinalNumber(s: string): number | null {
 const ID_VOLUME = /(?:^|[-_])v(?:ol)?0*(\d{1,3})$/i;
 /** A filename-derived id (parser fallback): «97 - السوابق القضائية__وزارة_العدل_المجموعة_1434_المجلد_01». */
 const ID_VOLUME_WORD = /المجلد[_\s]+(\d{1,3})(?!\d)/;
-const TITLE_VOLUME = /المجلد\s+(.+)$/;
-const TITLE_VOLUME_TAIL = /\s*[-—–]\s*المجلد\s+.*$/;
+const TITLE_VOLUME = /(?:المجلد|الجزء)\s+(.+)$/;
+const TITLE_VOLUME_TAIL = /\s*[-—–]\s*(?:المجلد|الجزء)\s+.*$/;
+/**
+ * The explicit volume suffix the title fallback needs: «— المجلد X», «- الجزء X»,
+ * «(المجلد X)» or a bare « المجلد X» closing the title, where X reads as a
+ * number (digits or an ordinal word). Group 1 = the base title.
+ */
+const EXPLICIT_VOLUME_SUFFIX = /^(.+?)(?:\s*[-—–:،]\s*|\s*\(\s*|\s+)(?:المجلد|الجزء)\s+([^()]+?)\s*\)?\s*$/;
 
 function numberFromIdOrTitle(row: CollectionVolumeRow): number | null {
   const id = String(row.id ?? "");
@@ -145,6 +166,8 @@ function byNumberThenId<T extends CollectionVolumeRow>(a: CollectionVolume<T>, b
 /** The series title: the volume title without « - المجلد …». */
 export function collectionSeriesTitle(title: string): string {
   const t = String(title ?? "").trim();
+  const explicit = EXPLICIT_VOLUME_SUFFIX.exec(t);
+  if (explicit && isWholeVolumeNumber(explicit[2]) && explicit[1].trim()) return explicit[1].trim();
   const base = t.replace(TITLE_VOLUME_TAIL, "").trim();
   return base || t;
 }
@@ -159,6 +182,74 @@ function seriesKey(row: CollectionVolumeRow): string | null {
   return s ? s : null;
 }
 
+/** «الأول» / «الحادي عشر» / «12» — the whole string is a volume number (a « — وصف» after it is allowed). */
+function isWholeVolumeNumber(raw: string): boolean {
+  const s = toAsciiDigits(String(raw ?? "")).split(/\s+[-—–]\s+|\s*[—–]\s*/)[0].trim();
+  if (!s) return false;
+  if (/^\d{1,3}$/.test(s)) return Number(s) > 0;
+  const words = s.split(/\s+/);
+  if (words.length === 1) return words[0] in ROUND || (words[0] in UNITS && words[0] !== "الحادي");
+  if (words.length === 2) return words[0] in UNITS && words[1] in TENS;
+  return false;
+}
+
+function foldKey(s: string): string {
+  return String(s ?? "")
+    .replace(/[ً-ْـ]/g, "")
+    .replace(/[أإآ]/g, "ا")
+    .replace(/[—–-]/g, "-")
+    .replace(/\s*-\s*/g, " - ")
+    .replace(/\s+/g, " ")
+    .replace(/[\s.،,:-]+$/u, "")
+    .trim();
+}
+
+/**
+ * The title-fallback key of an UNTAGGED row: issuing court + base title, or
+ * null when the title has no explicit volume suffix (owner note ٠٣).
+ */
+export function collectionFallbackKey(row: Pick<CollectionVolumeRow, "title" | "court">): string | null {
+  const title = String(row.title ?? "").trim();
+  const m = EXPLICIT_VOLUME_SUFFIX.exec(title);
+  if (!m || !isWholeVolumeNumber(m[2])) return null;
+  const base = foldKey(m[1]);
+  if (!base) return null;
+  return `${foldKey(String(row.court ?? ""))}\u0000${base}`;
+}
+
+/**
+ * Each row's group key: its series_id; else (untagged) the one tagged series
+ * whose tagged volumes share its court + base title; else its title-fallback
+ * key («title:…»); else null (stands alone).
+ */
+function groupKeys<T extends CollectionVolumeRow>(rows: readonly T[]): Map<T, string | null> {
+  const tagByFallback = new Map<string, string | null>();
+  for (const row of rows) {
+    const tag = seriesKey(row);
+    if (!tag) continue;
+    const fb = collectionFallbackKey(row);
+    if (!fb) continue;
+    const seen = tagByFallback.get(fb);
+    tagByFallback.set(fb, seen === undefined || seen === tag ? tag : null); // two tags: ambiguous, adopt none
+  }
+  const out = new Map<T, string | null>();
+  for (const row of rows) {
+    const tag = seriesKey(row);
+    if (tag) {
+      out.set(row, tag);
+      continue;
+    }
+    const fb = collectionFallbackKey(row);
+    if (!fb) {
+      out.set(row, null);
+      continue;
+    }
+    const adopted = tagByFallback.get(fb);
+    out.set(row, adopted ? adopted : `title:${fb}`);
+  }
+  return out;
+}
+
 /**
  * Rows → catalogue entries, in the order each entry first appears (the
  * catalogue's own order and filters apply before this).
@@ -169,11 +260,16 @@ export function groupCollectionVolumes<T extends CollectionVolumeRow>(rows: read
   // A row listed twice (overlapping pages of a list) is one collection: the
   // first copy stands, so a lone volume never turns into a "series" of two.
   const seen = new Set<string>();
+  const unique: T[] = [];
   for (const row of rows) {
     if (!row || typeof row.id !== "string") continue;
     if (seen.has(row.id)) continue;
     seen.add(row.id);
-    const key = seriesKey(row);
+    unique.push(row);
+  }
+  const keys = groupKeys(unique);
+  for (const row of unique) {
+    const key = keys.get(row) ?? null;
     if (key === null) {
       order.push({ key: null, row });
       continue;
@@ -192,7 +288,8 @@ export function groupCollectionVolumes<T extends CollectionVolumeRow>(rows: read
     const volumes = members.map((r, i) => ({ row: r, number: numbers[i] })).sort(byNumberThenId);
     return {
       kind: "series",
-      key,
+      // A title-fallback key holds the title itself: the card's DOM ids need a plain one.
+      key: key.startsWith("title:") ? `title:${volumes[0].row.id}` : key,
       title: collectionSeriesTitle(volumes[0].row.title),
       volumes,
       count: volumes.length,
@@ -205,12 +302,13 @@ export function groupCollectionVolumes<T extends CollectionVolumeRow>(rows: read
 export function buildCollectionSeries(rows: readonly CollectionVolumeRow[], currentId: string): CollectionSeriesInfo | null {
   const current = rows.find((r) => r && r.id === currentId);
   if (!current) return null;
-  const key = seriesKey(current);
-  if (key === null) return null;
-  const entry = groupCollectionVolumes(rows.filter((r) => r && seriesKey(r) === key))[0];
-  if (!entry || entry.kind !== "series") return null;
+  // Tagged or title fallback (owner note ٠٣): the entry that holds currentId.
+  const entry = groupCollectionVolumes(rows).find(
+    (e): e is CollectionSeriesGroup<CollectionVolumeRow> => e.kind === "series" && e.volumes.some((v) => v.row.id === currentId),
+  );
+  if (!entry) return null;
   return {
-    seriesId: key,
+    seriesId: entry.key,
     currentId,
     volumes: entry.volumes.map((v) => ({
       id: v.row.id,
@@ -220,4 +318,37 @@ export function buildCollectionSeries(rows: readonly CollectionVolumeRow[], curr
       rulingCount: typeof v.row.ruling_count === "number" ? v.row.ruling_count : null,
     })),
   };
+}
+
+/* ── Owner note ٠٣ §٢: the card excerpt ───────────────────────────────────── */
+
+/** A line that is only a heading: «## …», «**…**», or one opening with «ديباجة». */
+function isHeadingLine(line: string): boolean {
+  const t = line.trim();
+  if (!t) return false;
+  if (/^#{1,6}(?:\s|$)/.test(t) || /^#{2,6}/.test(t)) return true;
+  if (/^\*\*[^*]+\*\*:?$/.test(t)) return true;
+  const plain = t.replace(/^[#*\s]+/, "").replace(/[*\s]+$/, "");
+  return /^ديباج[ةه](?:\s|$|:)/.test(plain);
+}
+
+/**
+ * The description a collection card shows (owner note ٠٣ §٢: «## ديباجة أحكام
+ * ديوان المظالم — 1440هـ…» leaked raw onto the card). Leading heading lines —
+ * Markdown headings, a bold title line, a «ديباجة …» line — go when text
+ * follows them; then the Markdown marks go (stripMarkdownMarks). A description
+ * that is ONLY such a heading keeps its words (marks stripped), so a card is
+ * never emptied by the cleaning. Newlines become spaces (the card clamps).
+ */
+export function collectionCardExcerpt(raw: unknown): string {
+  if (typeof raw !== "string" || !raw.trim()) return "";
+  const lines = raw.replace(/\r\n?/g, "\n").split("\n");
+  let i = 0;
+  while (i < lines.length && !lines[i].trim()) i++;
+  while (i < lines.length && isHeadingLine(lines[i]) && lines.slice(i + 1).some((l) => l.trim() && !isHeadingLine(l))) {
+    i++;
+    while (i < lines.length && !lines[i].trim()) i++;
+  }
+  const body = stripMarkdownMarks(lines.slice(i).join("\n"));
+  return body.replace(/\s*\n\s*/g, " ").replace(/\s{2,}/g, " ").trim();
 }

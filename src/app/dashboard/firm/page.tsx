@@ -8,7 +8,7 @@ import {
   Gavel, UsersThree, ChartBar, Money,
   CalendarCheck, ArrowUpRight, WarningCircle,
   ClockCounterClockwise, FileText,
-  CheckCircle, Buildings, ChartLine,
+  CheckCircle, Buildings,
   Lock, Plus, ArrowLeft,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
@@ -128,15 +128,17 @@ export default function FirmDashboardPage() {
             {isAr ? `قمرة القيادة — ${name}` : `Command Center — ${name}`}
           </motion.h1>
           <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-            {isAr ? "نظرة شاملة على أداء المكتب — تحديث فوري" : "Comprehensive firm performance overview — live"}
+            {isAr ? "نظرة عامة على المكتب" : "Firm overview"}
           </p>
         </div>
         <div className="flex gap-2">
           {/* No «السكرتير الذكي» button (owner ١١٥): the secretary is «قريباً». */}
           {role.can.addNewCase && (
-            <button className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-colors ${isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+            // LIVE-F07: this was a <button> with no handler. The cases page
+            // has the real «قضية جديدة» form.
+            <Link href="/dashboard/firm/cases" className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-colors ${isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
               <Plus size={15} weight="bold" /> {isAr ? "قضية جديدة" : "New Case"}
-            </button>
+            </Link>
           )}
         </div>
       </div>
@@ -314,8 +316,9 @@ export default function FirmDashboardPage() {
           {[
             { href: "/ai/draft",            labelAr: "صياغة مذكرة",     labelEn: "Draft Memo",      icon: FileText,   color: "text-royal"         },
             { href: "/ai/wargaming",        labelAr: "محاكي الخصم",     labelEn: "Case Simulator",  icon: Gavel,       color: "text-purple-500"    },
-            { href: "/ai/report-generator", labelAr: "توليد تقرير",     labelEn: "Generate Report", icon: ChartLine,   color: "text-emerald-500"   },
             // No secretary tile (owner ١١٥): it is «قريباً», like the lawyer tile.
+            // No report-generator tile (Wave 1 task 6): it ends at the beta
+            // gate (betaGatedRoutes.ts); the firm sidebar row says «قريباً».
           ].map((action) => {
             const Icon = action.icon;
             return (

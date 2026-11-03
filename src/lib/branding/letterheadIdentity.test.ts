@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { existsSync } from "node:fs";
 import { EMPTY_BRANDING_FIELDS } from "./brandingVault.ts";
 import {
+  FIRM_PUBLIC_PAGES_LIVE,
+  QR_CAPTION_FIRM,
+  firmProfileUrl,
   QR_CAPTION_PLATFORM,
   QR_CAPTION_PROFILE,
   buildLetterheadIdentity,
@@ -68,4 +72,27 @@ test("the licence prints only when verified; contacts keep their order and skip 
   assert.equal(id.accent, "#C8A762");
   res.licence = { number: "41/182", verified: false };
   assert.equal(buildLetterheadIdentity(res, ORIGIN).licenceLine, null);
+});
+
+// ─── Owner ٣١٤ (package 2026-10-30): the firm's QR ───────────────────────────
+test("٣١٤: a firm's QR is the home page while no firm page exists, then the firm's own page", () => {
+  const firmRes = { scope: "firm" as const, profile: null, firm: { id: "a1b2c3d4-0000-4000-8000-000000000001" } };
+  // Today: no public firm page in the app, so the flag must be off and the
+  // code must carry the home page — never a /firms/… 404 on paper.
+  assert.equal(existsSync(new URL("../../app/firms", import.meta.url)), FIRM_PUBLIC_PAGES_LIVE,
+    "FIRM_PUBLIC_PAGES_LIVE is true exactly when src/app/firms exists");
+  const today = qrTargetFor(firmRes, ORIGIN);
+  assert.equal(today.kind, "platform");
+  assert.equal(today.url, ORIGIN);
+  assert.equal(today.kind === "platform" && today.reason, "firm");
+  assert.match(qrNoteAr(today) ?? "", /٣١٤/);
+  // The day firm pages ship: the firm's page, with its own caption.
+  const later = qrTargetFor(firmRes, ORIGIN, true);
+  assert.deepEqual(later, { kind: "profile", url: `${ORIGIN}/firms/${firmRes.firm.id}`, caption: QR_CAPTION_FIRM });
+  assert.equal(firmProfileUrl("https://nezamy.sa/", "x y"), "https://nezamy.sa/firms/x%20y");
+  // A firm response without its id never points at /firms/undefined.
+  assert.equal(qrTargetFor({ scope: "firm", profile: null }, ORIGIN, true).url, ORIGIN);
+  // buildLetterheadIdentity passes the firm through to the QR.
+  const id = buildLetterheadIdentity({ ...lawyer(), scope: "firm", profile: null, firm: firmRes.firm }, ORIGIN);
+  assert.equal(id.qr.url, ORIGIN);
 });

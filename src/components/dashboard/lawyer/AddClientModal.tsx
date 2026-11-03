@@ -9,6 +9,7 @@ import {
   isValidNationalId, isValidCommercialRegister, isValidTaxNumber, isValidUnifiedNumber700,
   feePairIssue,
 } from "@/lib/services/clientIdentityRules";
+import { checkSaudiPhone, checkOptionalEmail, FORMAT_ONLY_NOTE } from "@/lib/services/contactFieldRules";
 import { FLAG_CONFIG } from "@/constants/lawyerClientsData";
 import DualDatePicker from "@/components/ui/DualDatePicker";
 import {
@@ -160,10 +161,17 @@ export default function AddClientModal({ isDark, onClose, onCreated }: {
   // Recomputed every keystroke, so the message under each step's fields and
   // the «التالي» button are always answering the same question.
   const idIssue = step0Issue(type, nationalId, commercialRegisterNo, taxNumber, unifiedNumber700);
+  // LIVE-F22: «0000000000» used to be saved as a mobile. Same check as the
+  // API route (contactFieldRules.ts); a company may give a 920 number. The
+  // message shows only once something is typed, under its own field.
+  const phoneCheck = checkSaudiPhone(phone, { allowUnified: type === "company", required: true });
+  const phoneFormatIssue = phone.trim() && !phoneCheck.ok ? phoneCheck.error : null;
+  const emailCheck = checkOptionalEmail(email);
+  const emailIssue = emailCheck.ok ? null : emailCheck.error;
   const feeIssue = validateFees(total, paid);
 
   const canNext =
-    step === 0 ? name.trim().length > 0 && phone.trim().length > 0 && idIssue === null
+    step === 0 ? name.trim().length > 0 && phone.trim().length > 0 && idIssue === null && phoneCheck.ok && emailCheck.ok
     : step === 1 ? feeIssue === null
     : true;
 
@@ -182,7 +190,7 @@ export default function AddClientModal({ isDark, onClose, onCreated }: {
     // write, so it stays true if the step gating is ever changed. No setError —
     // sending the lawyer back shows the same sentence in place, and printing it
     // twice in two boxes would read as two different problems.
-    if (idIssue) {
+    if (idIssue || !phoneCheck.ok || !emailCheck.ok) {
       setStep(0);
       return;
     }
@@ -200,8 +208,8 @@ export default function AddClientModal({ isDark, onClose, onCreated }: {
     const input: CreateLawyerClientInput = {
       name: name.trim(),
       clientType: type,
-      phone: phone.trim() || undefined,
-      email: email.trim() || undefined,
+      phone: phoneCheck.ok && phoneCheck.value ? phoneCheck.value : undefined,
+      email: emailCheck.ok && emailCheck.value ? emailCheck.value : undefined,
       city: city.trim() || undefined,
       nationalId: type === "individual" && nationalId.trim() ? nationalId.trim() : undefined,
       powerOfAttorneyNo: type === "individual" && powerOfAttorneyNo.trim() ? powerOfAttorneyNo.trim() : undefined,
@@ -322,13 +330,21 @@ export default function AddClientModal({ isDark, onClose, onCreated }: {
                 </div>
                 <div>
                   <label className={`text-[10px] font-bold uppercase tracking-wider mb-1 block ${labelCls}`}>رقم الهاتف *</label>
-                  <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+966 5X XXX XXXX" dir="ltr"
+                  <input value={phone} onChange={e => setPhone(e.target.value)} placeholder={type === "company" ? "05XXXXXXXX / 920XXXXXX" : "05XXXXXXXX"} dir="ltr" type="tel"
+                    aria-invalid={!!phoneFormatIssue}
                     className={`w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none transition ${inputCls}`} />
+                  {phoneFormatIssue && (
+                    <p className={`text-[11px] font-semibold mt-1 ${isDark ? "text-red-400" : "text-red-700"}`}>{phoneFormatIssue}</p>
+                  )}
                 </div>
                 <div>
                   <label className={`text-[10px] font-bold uppercase tracking-wider mb-1 block ${labelCls}`}>البريد الإلكتروني (اختياري)</label>
-                  <input value={email} onChange={e => setEmail(e.target.value)} placeholder="name@example.com" dir="ltr"
+                  <input value={email} onChange={e => setEmail(e.target.value)} placeholder="name@example.com" dir="ltr" type="email"
+                    aria-invalid={!!emailIssue}
                     className={`w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none transition ${inputCls}`} />
+                  {emailIssue && (
+                    <p className={`text-[11px] font-semibold mt-1 ${isDark ? "text-red-400" : "text-red-700"}`}>{emailIssue}</p>
+                  )}
                 </div>
 
                 {/* item 80: identity fields, shown by the type toggle above.
@@ -341,7 +357,7 @@ export default function AddClientModal({ isDark, onClose, onCreated }: {
                       <input value={nationalId} onChange={e => setNationalId(e.target.value)} placeholder="١٠ أرقام" dir="ltr"
                         className={`w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none transition ${inputCls}`} />
                       <p className={`text-[10px] leading-relaxed mt-1 ${labelCls}`}>
-                        يُحفظ كبصمة تعريفية فقط، ولا يُخزَّن الرقم نفسه ولا يظهر لاحقًا في أي شاشة.
+                        يُحفظ كبصمة تعريفية فقط، ولا يُخزَّن الرقم نفسه ولا يظهر لاحقًا في أي شاشة. {FORMAT_ONLY_NOTE}
                       </p>
                     </div>
                     <div>
@@ -533,7 +549,7 @@ export default function AddClientModal({ isDark, onClose, onCreated }: {
                     (idIssue); this line covers the one gap neither of those
                     touches — the required name/phone pair — so a washed-out
                     «التالي» is never the only signal. */}
-                {step === 0 && !canNext && !idIssue && (
+                {step === 0 && !canNext && !idIssue && !phoneFormatIssue && !emailIssue && (
                   <p className={`text-[11px] ${labelCls}`}>
                     {!name.trim() && !phone.trim()
                       ? "أدخل اسم الموكّل ورقم جواله للمتابعة"

@@ -435,8 +435,14 @@ export function combineSearchOutcomes(
   section: 'all' | SearchSectionName,
   outcomes: Partial<Record<SearchSectionName, SectionOutcome>>,
   meta: { page: number; query: string },
+  /**
+   * The sections the request ran, when narrower than `section` implies
+   * (section=all + category runs laws and orders only, filters.ts). A section
+   * not run keeps 0 / exact and is never `degraded`.
+   */
+  ran?: readonly SearchSectionName[],
 ): CombinedSearchResponse {
-  const requested = section === 'all' ? SEARCH_SECTION_NAMES : [section];
+  const requested = ran && ran.length > 0 ? ran : section === 'all' ? SEARCH_SECTION_NAMES : [section];
   const counts: Record<SearchSectionName, number> = { laws: 0, precedents: 0, orders: 0, feqh: 0 };
   // A section the request did not search keeps 0 / true: it is no match count
   // at all, and `false` would render as «أكثر من ١٬٠٠٠».

@@ -11,7 +11,9 @@ import {
   FOLDER_ENTITY_TYPES,
   FOLDER_NAME_MAX,
   ITEM_TITLE_MAX,
+  TITLE_LOOKUP_MAX_PER_KIND,
   checkFolderItem,
+  checkTitleLookup,
   checkFolderName,
   checkFolderPatch,
   folderColorOrDefault,
@@ -105,4 +107,27 @@ test('both folder routes use these checks and keep the auth-unavailable branch',
   assert.match(folders, /isUuid\(itemId\)/);
   assert.match(items, /checkFolderItem\(body\)/);
   assert.equal((folders.match(/isAuthUnavailable\(user, authError\)/g) ?? []).length, 4, 'GET, POST, PATCH, DELETE');
+});
+
+test('title lookup (owner note ٠٣ §٢.٢): ids per table, deduped, uuids only for orders, capped at 100', () => {
+  const ok = checkTitleLookup({ laws: [' labor-law ', 'labor-law', ''], orders: [FOLDER, 'not-a-uuid'], books: ['الروض المربع'] });
+  assert.deepEqual(ok, { ok: true, value: { laws: ['labor-law'], orders: [FOLDER], precedents: [], books: ['الروض المربع'] } });
+  assert.equal(checkTitleLookup({}).ok, false, 'nothing to look up');
+  assert.equal(checkTitleLookup({ orders: ['x'] }).ok, false, 'a malformed uuid is dropped, never sent to .in()');
+  assert.equal(checkTitleLookup({ laws: 'labor-law' }).ok, false);
+  assert.equal(checkTitleLookup({ laws: [1] }).ok, false);
+  assert.equal(checkTitleLookup({ laws: Array.from({ length: TITLE_LOOKUP_MAX_PER_KIND + 1 }, (_, i) => `l${i}`) }).ok, false);
+  assert.equal(checkTitleLookup({ laws: Array.from({ length: TITLE_LOOKUP_MAX_PER_KIND }, (_, i) => `l${i}`) }).ok, true);
+  assert.ok(TITLE_LOOKUP_MAX_PER_KIND < 396, 'under the PostgREST .in() ceiling');
+});
+
+test('titles route: gated, validated, request client only (no service role, no locked column)', () => {
+  const src = readFileSync(path.join(here, 'titles', 'route.ts'), 'utf8');
+  assert.match(src, /const gate = await libraryGate\(\);\s*if \(gate\) return gate;/);
+  assert.match(src, /checkTitleLookup\(body\)/);
+  assert.ok(!src.includes('createServiceClient'), 'titles are anon-readable; the service role is not needed');
+  assert.match(src, /\.select\(`\$\{idColumn\}, title`\)/);
+  for (const locked of ['issue_date', 'latest_update', 'summary_brief', 'official_url', 'issuing_instrument']) {
+    assert.ok(!src.includes(locked), `never reads ${locked}`);
+  }
 });

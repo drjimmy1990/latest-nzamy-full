@@ -95,6 +95,19 @@ export async function GET(
  * does not validate node/edge shape beyond "is an array/object", because the
  * canvas is exactly as free-form as the lawyer's own diagram, not a
  * structured record with rules to enforce.
+ *
+ * CODE-F24 — a version check (compare-and-set) on `updated_at`. The client
+ * sends `baseUpdatedAt`, the version it last read or wrote:
+ * - `null`   → it saw no saved board: INSERT; a row that appeared meanwhile
+ *              (23505) is a 409, not an overwrite;
+ * - a string → UPDATE only if the row is still at that version; otherwise
+ *              409 «graph_conflict», and the board asks the lawyer;
+ * - absent   → a page still running the old script: the old unconditional
+ *              upsert, so a deploy does not break an open tab.
+ * The UPDATE no longer rewrites `owner_user_id`/`firm_id` (the old upsert
+ * made whichever colleague saved last the row's owner of record), and
+ * `updated_at` comes from the column default / trigger, read back with
+ * `.select` and returned as `updatedAt` — the client's next base.
  */
 export async function PUT(
   request: NextRequest,
@@ -117,14 +130,48 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const { nodes, edges, viewport } = body as {
+    const { nodes, edges, viewport, baseUpdatedAt } = body as {
       nodes?: unknown;
       edges?: unknown;
       viewport?: unknown;
+      baseUpdatedAt?: unknown;
     };
 
     if (!Array.isArray(nodes) || !Array.isArray(edges)) {
       return NextResponse.json({ error: "nodes and edges must both be arrays" }, { status: 400 });
+    }
+    if (baseUpdatedAt !== undefined && baseUpdatedAt !== null && typeof baseUpdatedAt !== "string") {
+      return NextResponse.json({ error: "baseUpdatedAt must be a string or null" }, { status: 400 });
+    }
+    const vp = viewport && typeof viewport === "object" ? viewport : {};
+    const conflict = () => NextResponse.json(
+      { error: "تغيّرت اللوحة المحفوظة منذ آخر قراءة لها — من زميل أو من نافذة أخرى.", code: "graph_conflict" },
+      { status: 409 },
+    );
+
+    if (typeof baseUpdatedAt === "string") {
+      const { data: updated, error: updateError } = await supabase
+        .from("case_graphs")
+        .update({ nodes, edges, viewport: vp, updated_by: user.id })
+        .eq("case_request_id", caseId)
+        .eq("updated_at", baseUpdatedAt)
+        .select("updated_at");
+      if (updateError) {
+        console.error("[case-graph PUT] update failed:", updateError.message, updateError.code);
+        return NextResponse.json({ error: updateError.message }, { status: 500 });
+      }
+      if (!updated || updated.length === 0) {
+        // No row at that version: moved on (conflict), or not visible to this
+        // user at all (gone / no access) — say which.
+        const { data: exists } = await supabase
+          .from("case_graphs")
+          .select("case_request_id")
+          .eq("case_request_id", caseId)
+          .maybeSingle();
+        if (!exists) return NextResponse.json({ error: "لا توجد لوحة محفوظة لهذه القضية يمكنك تعديلها." }, { status: 404 });
+        return conflict();
+      }
+      return NextResponse.json({ success: true, updatedAt: (updated[0] as { updated_at: string }).updated_at });
     }
 
     // Solo lawyer → no firm row → firm_id stays null, same reasoning as
@@ -140,21 +187,34 @@ export async function PUT(
       console.error("[lawyer/case-graph POST] firm_members lookup failed:", membershipError.message, membershipError.code);
     }
 
+    const row = {
+      case_request_id: caseId,
+      owner_user_id: user.id,
+      firm_id: membership?.firm_id ?? null,
+      nodes,
+      edges,
+      viewport: vp,
+      updated_by: user.id,
+    };
+
+    if (baseUpdatedAt === null) {
+      const { data: inserted, error: insertError } = await supabase
+        .from("case_graphs")
+        .insert(row)
+        .select("updated_at")
+        .single();
+      if (insertError) {
+        if (insertError.code === "23505") return conflict();
+        console.error("[case-graph PUT] insert failed:", insertError.message, insertError.code);
+        return NextResponse.json({ error: insertError.message }, { status: 500 });
+      }
+      return NextResponse.json({ success: true, updatedAt: (inserted as { updated_at: string }).updated_at });
+    }
+
+    // Legacy (no baseUpdatedAt): the pre-CODE-F24 unconditional write.
     const { error } = await supabase
       .from("case_graphs")
-      .upsert(
-        {
-          case_request_id: caseId,
-          owner_user_id: user.id,
-          firm_id: membership?.firm_id ?? null,
-          nodes,
-          edges,
-          viewport: viewport && typeof viewport === "object" ? viewport : {},
-          updated_by: user.id,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "case_request_id" },
-      );
+      .upsert({ ...row, updated_at: new Date().toISOString() }, { onConflict: "case_request_id" });
 
     if (error) {
       console.error("[case-graph PUT] upsert failed:", error.message, error.code);

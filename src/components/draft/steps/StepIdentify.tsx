@@ -4,6 +4,7 @@ import { Dispatch, SetStateAction, useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Warning, CheckCircle, Circle } from "@phosphor-icons/react";
 import { VoiceInput } from "@/components/ui/VoiceInput";
+import { RequiredMark } from "@/components/ui/RequiredMark";
 import {
   MEMO_MAIN_TYPES, MEMO_SUB_TYPES_REGULAR, MEMO_SUB_TYPES_COMMITTEES,
   LEGAL_BRANCHES_REGULAR, LEGAL_BRANCHES_COMMITTEES, COMMITTEE_BRANCH_IDS,
@@ -48,6 +49,7 @@ const SUBTYPE_BRANCH_FILTER: Record<string, string[] | null> = {
   "جزائية خاصة (تعويض ضرر)": ["جزائي"],
   // null = show all branches (reply/appeal can span any legal area)
   "مذكرة رد أساسية": null,
+  "مذكرة تعقيب (على رد الخصم)": null,
   "مذكرة إلحاقية (إضافة أدلة)": null,
   "مذكرة ختامية قبل الحكم": null,
   "استئناف (درجة ثانية)": null,
@@ -114,7 +116,7 @@ export function StepIdentify({
       {/* صفة الموكل — مخفي في الأوضاع المتخصصة */}
       {!["arbitration", "notary", "report", "minutes"].includes(memoType) && (
         <div className={`${card} p-5 shadow-sm`}>
-          <p className={`text-[11px] font-bold uppercase tracking-wider mb-3 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>صفة الموكل</p>
+          <p className={`text-[11px] font-bold uppercase tracking-wider mb-3 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>صفة الموكل<RequiredMark announce /></p>
           <div className="grid grid-cols-2 gap-3">
             {([["plaintiff", "مُدَّعِي", "أنت تقم برفع الدعوى"], ["defendant", "مُدَّعَى عليه", "ترد على دعوى مرفوعة ضدك"]] as const).map(([key, label, desc]) => (
               <motion.button key={key} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
@@ -134,7 +136,7 @@ export function StepIdentify({
 
       {/* نوع المذكرة */}
       <div className={`${card} p-5 shadow-sm`}>
-        <p className={`text-[11px] font-bold uppercase tracking-wider mb-3 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>نوع المذكرة</p>
+        <p className={`text-[11px] font-bold uppercase tracking-wider mb-3 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>نوع المذكرة<RequiredMark announce /></p>
         <div className="grid grid-cols-2 gap-3">
           {MEMO_MAIN_TYPES.map(mt => (
             <motion.button key={mt.id} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
@@ -156,7 +158,7 @@ export function StepIdentify({
           {memoType && activeSubTypes.length > 0 && (
             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="mt-4 overflow-hidden">
               <p className={`text-[11px] font-semibold mb-2 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-                {SUBTYPE_LABEL[memoType] || "نوع الطعن"}
+                {SUBTYPE_LABEL[memoType] || "نوع الطعن"}<RequiredMark announce />
                 {isCommitteeSubtype && <span className="ms-2 text-[9px] text-amber-500 font-bold">(⚠️ لجان شبه قضائية — ❌ لا نقض)</span>}
               </p>
               <div className="flex flex-wrap gap-2">
@@ -181,7 +183,7 @@ export function StepIdentify({
         <p className={`text-[11px] font-bold uppercase tracking-wider mb-3 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>ملاحظات ومرئيات (اختياري)</p>
         <div className="relative">
           <textarea value={notesText} onChange={e => setNotesText(e.target.value)}
-            placeholder="أضف ملاحظاتك هنا: نقاط تريد التركيز عليها، أو أي تفاصيل إضافية يطّلع عليها فريق نظامي..." rows={3}
+            placeholder="أضف ملاحظاتك هنا: نقاط تريد التركيز عليها، أو أي تفاصيل إضافية تُراعى عند الصياغة..." rows={3}
             className={`w-full resize-none rounded-xl border p-4 pe-12 text-[13px] outline-none leading-relaxed ${isDark ? "border-white/[0.07] bg-zinc-800/50 text-zinc-200 placeholder:text-zinc-600 focus:border-[#C8A762]/40" : "border-zinc-200 bg-zinc-50 text-zinc-800 placeholder:text-zinc-400 focus:border-[#0B3D2E]/40"}`} />
           <div className="absolute start-3 top-3">
             <VoiceInput onTranscript={(t) => setNotesText(notesText ? `${notesText} ${t}` : t)} compact />
@@ -213,7 +215,7 @@ export function StepIdentify({
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <div className={`${card} p-5 shadow-sm`}>
               <div className="flex items-center justify-between mb-3">
-                <p className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>تصنيف القضية</p>
+                <p className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>تصنيف القضية<RequiredMark announce /></p>
                 {memoSubType && filteredRegular.length < LEGAL_BRANCHES_REGULAR.length && (
                   <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
                     isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"

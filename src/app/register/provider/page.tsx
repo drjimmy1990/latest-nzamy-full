@@ -42,6 +42,15 @@ import { createClient } from "@/lib/supabase/client";
 import { normalizeSaudiMobile, saudiMobileMessage } from "@/lib/services/saudiMobile";
 
 import { BACKEND_MODE } from "@/lib/runtimeMode";
+import {
+  canSubmitWithCaptcha,
+  captchaMessage,
+  captchaSubmitError,
+  isCaptchaAuthError,
+  withSignupCaptcha,
+} from "@/lib/auth/captcha";
+import { useTurnstile } from "@/components/auth/useTurnstile";
+import { TurnstileWidget } from "@/components/auth/TurnstileWidget";
 
 // `?type=` from a /pricing CTA (e.g. /register/provider?type=consultant)
 // preselects that card. Step 1 stays on screen, so the choice can still be
@@ -70,6 +79,9 @@ export default function RegisterProviderPage() {
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
+  // OWNER-SEC-01: GoTrue's captcha check covers /signup too, so signUp sends
+  // a Turnstile token (src/lib/auth/captcha.ts). One token per attempt.
+  const captcha = useTurnstile({ isAr, theme, action: "signup" });
   const [googleError, setGoogleError] = useState<string | null>(null);
   const [googleLoading, setGoogleLoading] = useState(false);
   const handleChange = (k: string, v: string) => setFormData(d => ({ ...d, [k]: v }));
@@ -399,6 +411,13 @@ export default function RegisterProviderPage() {
                 {step === 5 && <Step5 key="s5" isAr={isAr} providerType={providerType} selectedPlan={selectedPlan} />}
               </AnimatePresence>
 
+              {/* Security check (Turnstile) on the step that calls signUp. */}
+              {step === 4 && BACKEND_MODE === "supabase" && (
+                <div className="mt-6">
+                  <TurnstileWidget control={captcha} isAr={isAr} />
+                </div>
+              )}
+
               {/* Navigation */}
               {step < 5 && (
                 <div className="mt-8 flex items-center justify-between gap-3">
@@ -446,11 +465,17 @@ export default function RegisterProviderPage() {
                               return;
                             }
                             const normalizedPhone = phoneResult.e164;
+                            // No live token, no request (GoTrue would only
+                            // answer captcha_failed).
+                            if (!canSubmitWithCaptcha(captcha.state)) {
+                              setAuthError(captchaSubmitError(captcha.state, isAr) || null);
+                              setAuthLoading(false);
+                              return;
+                            }
                             const { error } = await supabase.auth.signUp({
                               email: formData.email,
                               password: formData.password,
-                              options: {
-                                data: {
+                              options: withSignupCaptcha({
                                   ...signupMeta,
                                   display_name: displayName,
                                   full_name: displayName,
@@ -476,13 +501,17 @@ export default function RegisterProviderPage() {
                                   ...(providerType === "tracker" && {
                                     gov_entity: formData.govEntity,
                                   }),
-                                },
-                              },
+                              }, captcha.token),
                             });
+                            // Spent whatever GoTrue answered; the next
+                            // attempt gets a fresh challenge.
+                            captcha.spend();
 
                             if (error) {
                               setAuthError(
-                                error.message === "User already registered"
+                                isCaptchaAuthError(error)
+                                  ? captchaMessage("captchaRejected", isAr)
+                                  : error.message === "User already registered"
                                   ? (isAr ? "البريد الإلكتروني مسجل بالفعل" : "This email is already registered")
                                   : error.message
                               );
@@ -492,6 +521,9 @@ export default function RegisterProviderPage() {
 
                             setStep(5);
                           } catch {
+                            // signUp threw (network): the token may have
+                            // reached GoTrue, so it is not reused.
+                            captcha.spend();
                             setAuthError(isAr ? "حدث خطأ، حاول مرة أخرى" : "An error occurred, please try again");
                           } finally {
                             setAuthLoading(false);

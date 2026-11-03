@@ -12,6 +12,7 @@ import {
 import { useUser } from "@/hooks/useUser";
 import { toArabicDigits } from "@/lib/services/arabicCount";
 import { describeDateAr } from "@/lib/services/hijri";
+import { RIYADH_ZONE_LABEL_AR, formatClockAr, riyadhWallClock } from "@/lib/services/consultationSchedule";
 import { itemsOf, listViewState, type ListRead } from "@/lib/services/listRead";
 import {
   getLawyerConsultation, getConsultationNotes, addConsultationNote, deleteConsultationNote,
@@ -73,14 +74,12 @@ function canDeliverOpinion(c: LawyerConsultation): boolean {
  * previous UTC day — slicing would print "yesterday" next to "01:30 AM").
  */
 function formatDateTimeAr(iso: string | null): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  const localDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  const described = describeDateAr(localDateStr);
+  // Riyadh wall clock, named (LIVE-F37) — never the viewer's browser zone.
+  const wc = riyadhWallClock(iso);
+  if (!wc) return null;
+  const described = describeDateAr(wc.date);
   if (!described) return null;
-  const time = d.toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
-  return `${described} · ${time}`;
+  return `${described} · ${formatClockAr(wc.time)} ${RIYADH_ZONE_LABEL_AR}`;
 }
 
 export default function ConsultationDetail({ consultationId, isDark, basePath }: Props) {

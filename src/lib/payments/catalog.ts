@@ -26,10 +26,12 @@ import {
   PRICE_BOOK,
   BILLINGS,
   isOnSale,
+  launchPriceOn,
   offeredBillings,
   type Billing,
   type BookEntry,
   type BookItemKind,
+  type LaunchPrice,
   type LibraryPlanRef,
   type ServerTierLiteral,
 } from "../pricing/priceBook.ts";
@@ -54,13 +56,18 @@ export type PayableItem = Readonly<{
   libraryDays?: number;
   points?: number;
   pointsValidityMonths?: number;
-  /** Plans renew automatically (owner ٢٤٦), so only they keep the card. */
+  /**
+   * Plans renew automatically (owner ٢٤٦), so only they keep the card. A
+   * library pass, a top-up and the founder membership are billed once: false.
+   */
   saveCard: boolean;
   /**
    * The `profiles.user_type` values that may buy this item online, or "any".
    * Checkout refuses a buyer outside the list (buyerAllowed).
    */
   buyers: Readonly<string[]> | "any";
+  /** The book's launch prices (SAR); quote() charges one only while its campaign runs (owner ٣٠٣). */
+  launchPrices?: readonly LaunchPrice[];
 }>;
 
 export const VAT_PERCENT = 15;
@@ -89,8 +96,9 @@ function toPayable(entry: BookEntry): PayableItem {
     ...(entry.libraryDays !== undefined ? { libraryDays: entry.libraryDays } : {}),
     ...(entry.points !== undefined ? { points: entry.points } : {}),
     ...(entry.pointsValidityMonths !== undefined ? { pointsValidityMonths: entry.pointsValidityMonths } : {}),
-    saveCard: entry.kind === "plan",
+    saveCard: entry.kind === "plan", // never for "membership": billed once, no auto-renew
     buyers: entry.buyers === "any" ? "any" : Object.freeze([...entry.buyers]),
+    ...(entry.launchPrices ? { launchPrices: entry.launchPrices } : {}),
   };
   return Object.freeze(item);
 }
@@ -130,6 +138,8 @@ export type QuoteResult =
       netHalalas: number;
       vatHalalas: number;
       totalHalalas: number;
+      /** Set while a launch price runs: `netHalalas` is the launch price, `listNetHalalas` the listed one. */
+      launch: { campaignId: string; listNetHalalas: number; endsOn: string } | null;
     }
   | { ok: false; error: "unknown_item" | "not_for_sale" | "billing_not_offered" };
 
@@ -138,11 +148,18 @@ export type QuoteResult =
  * A retired or coming-soon item, or a RETIRED cycle of an item still on sale
  * (listed, no longer sold — lawyer-pro monthly), is `not_for_sale` (checkout
  * 410); a billing the book never listed for it is `billing_not_offered` (400).
+ *
+ * `now` is the REQUEST's time (owner ٣٠٣): while a launch campaign runs that
+ * day in Riyadh, the item's launch price is charged instead of the listed
+ * one. Checkout and the coupon preview always pass it; without it the listed
+ * price is quoted (quoteCallSites in catalog.test.ts keeps both call sites
+ * passing one).
  */
 export function quote(
   itemId: string,
   billing: Billing,
   catalog: Readonly<Record<string, PayableItem>> = PAYABLE_ITEMS,
+  now?: Date,
 ): QuoteResult {
   const item = resolveItem(itemId, catalog);
   if (!item) return { ok: false, error: "unknown_item" };
@@ -152,8 +169,18 @@ export function quote(
     const listed = Object.hasOwn(item.listedPrices, billing);
     return { ok: false, error: listed ? "not_for_sale" : "billing_not_offered" };
   }
-  const vatHalalas = Math.round((netHalalas * VAT_PERCENT) / 100);
-  return { ok: true, item, vatMode: "exclusive", netHalalas, vatHalalas, totalHalalas: netHalalas + vatHalalas };
+  const lp = now ? launchPriceOn(item.launchPrices, netHalalas / SAR, billing, now) : null;
+  const charged = lp ? lp.sar * SAR : netHalalas;
+  const vatHalalas = Math.round((charged * VAT_PERCENT) / 100);
+  return {
+    ok: true,
+    item,
+    vatMode: "exclusive",
+    netHalalas: charged,
+    vatHalalas,
+    totalHalalas: charged + vatHalalas,
+    launch: lp ? { campaignId: lp.campaignId, listNetHalalas: netHalalas, endsOn: lp.endsOn } : null,
+  };
 }
 
 /**

@@ -425,6 +425,13 @@ export default function MoyasarCheckout({
             </div>
           </>
         ) : null}
+        {/* Owner ٣٠٣: while a launch price runs, the server's quote names the listed price too. */}
+        {ready.quote.launchListNet !== undefined ? (
+          <div className="flex items-center justify-between gap-4 px-5 py-3">
+            <dt className="text-zinc-600 dark:text-zinc-400">السعر الأصلي (قبل سعر التدشين)</dt>
+            <dd className="font-semibold text-zinc-500 line-through dark:text-zinc-400">{formatHalalas(ready.quote.launchListNet)}</dd>
+          </div>
+        ) : null}
         <div className="flex items-center justify-between gap-4 px-5 py-3">
           <dt className="text-zinc-600 dark:text-zinc-400">المبلغ قبل الضريبة</dt>
           <dd className="font-semibold text-zinc-900 dark:text-zinc-100">{formatHalalas(ready.quote.net)}</dd>

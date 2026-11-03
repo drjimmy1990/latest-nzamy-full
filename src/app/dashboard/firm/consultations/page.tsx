@@ -43,6 +43,7 @@ import {
 import { listViewState, itemsOf, truncationNoticeAr, type ListRead } from "@/lib/services/listRead";
 import { toArabicDigits } from "@/lib/services/arabicCount";
 import { describeDateAr } from "@/lib/services/hijri";
+import { RIYADH_ZONE_LABEL_AR, formatClockAr, riyadhWallClock } from "@/lib/services/consultationSchedule";
 import EmptyState from "@/components/ui/EmptyState";
 import ConsultationActionModal, { type ConsultationAction } from "../../lawyer/_components/consultations/ConsultationActionModal";
 
@@ -68,13 +69,13 @@ const STATUS_DOT: Record<ConsultationStatus, string> = {
 // there, so kept here as a small duplicate rather than reaching into a
 // client component's private scope.
 function formatDateTimeAr(iso: string | null): string | null {
-  if (!iso) return null;
-  const described = describeDateAr(iso.slice(0, 10));
+  // Riyadh wall clock, named (LIVE-F37). Slicing the UTC characters gave the
+  // previous day before 03:00 Riyadh; the time half used the browser zone.
+  const wc = riyadhWallClock(iso);
+  if (!wc) return null;
+  const described = describeDateAr(wc.date);
   if (!described) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return described;
-  const time = d.toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
-  return `${described} · ${time}`;
+  return `${described} · ${formatClockAr(wc.time)} ${RIYADH_ZONE_LABEL_AR}`;
 }
 
 /** The next-status actions a row can offer, trimmed from ConsultationDetail's full six to the three that fit a compact row. */

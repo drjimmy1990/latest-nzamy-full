@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
+import { isLibrarySaleRequest, libraryPurchaseEligibility } from "@/lib/library/libraryPurchaseEligibility";
 
 /**
  * POST /api/v1/entitlement-requests — an authenticated user asks for a paid
@@ -40,6 +41,24 @@ export async function POST(request: NextRequest) {
       { error: `نوع الطلب غير صالح. القيم المسموحة: ${VALID_KINDS.join(", ")}` },
       { status: 400 },
     );
+  }
+
+  // LIVE-F05: the library is sold to legal professionals only. The admin
+  // approval refuses an individual too (409); refusing here keeps the request
+  // out of the admin queue. A failed read of the account type is refused.
+  if (isLibrarySaleRequest(kind)) {
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("user_type")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (profileError) {
+      return NextResponse.json({ error: "تعذّر التحقق من نوع الحساب" }, { status: 503 });
+    }
+    const eligibility = libraryPurchaseEligibility((profile as { user_type?: unknown } | null)?.user_type);
+    if (!eligibility.eligible) {
+      return NextResponse.json({ error: eligibility.messageAr, code: "library_not_eligible" }, { status: 403 });
+    }
   }
 
   // Insert via the auth-aware client so the RLS insert-own policy applies

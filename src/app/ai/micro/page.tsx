@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useRef } from "react";
@@ -125,7 +126,7 @@ function buildOutput(situationId: string, answers: string[]): string {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function MicroBusinessPage() {
+function MicroBusinessInner() {
   const { isDark } = useTheme();
   const user = useUser();
   const [step, setStep] = useState<"pick" | "questions" | "result">("pick");
@@ -453,5 +454,14 @@ export default function MicroBusinessPage() {
         </motion.div>
       )}
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function MicroBusinessPage() {
+  return (
+    <GatedToolScreen toolId="micro.result" toolName="مستند المنشأة الصغيرة">
+      <MicroBusinessInner />
+    </GatedToolScreen>
   );
 }

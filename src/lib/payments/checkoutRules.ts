@@ -178,6 +178,8 @@ export interface CheckoutResponse {
     listNet?: number;
     discount?: number;
     couponCode?: string;
+    /** While a launch price runs (owner ٣٠٣): the book's listed net, shown struck through; `net` is the launch price. */
+    launchListNet?: number;
   };
   /**
    * The intent's callback_url, `<NEXT_PUBLIC_SITE_URL>/payments/result?order=<orderId>`

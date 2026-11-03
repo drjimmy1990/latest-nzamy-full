@@ -118,6 +118,7 @@
 
 import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
 import { listOk, listFailed, type ListRead } from "@/lib/services/listRead";
+import { toCollectorSession } from "@/lib/services/researchSessionRow";
 import {
   // Session API
   createSession as createSessionLocal,
@@ -172,7 +173,8 @@ export async function createSession(name?: string): Promise<CollectorSession> {
     { name },
   );
   if (!res?.data) throw new Error("لم يصل تأكيد إنشاء الجلسة من الخادم");
-  return res.data;
+  // LIVE-F18: the route answers with the raw row (`title`), the screen reads `name`.
+  return toCollectorSession(res.data as unknown as Record<string, unknown>);
 }
 
 export async function getActiveSessions(): Promise<ListRead<CollectorSession>> {
@@ -195,7 +197,11 @@ async function readSessions(archived: boolean): Promise<ListRead<CollectorSessio
     // The route 500s on a Supabase error (sessions/route.ts:43) — no `degraded`
     // envelope to read, so a throw or a missing array is the failure.
     if (!Array.isArray(response?.data)) return listFailed<CollectorSession>();
-    return listOk(response.data, response.total);
+    // LIVE-F18: raw rows (`title`/`created_at`/`status`) → the session shape.
+    return listOk(
+      (response.data as unknown as Record<string, unknown>[]).map(toCollectorSession),
+      response.total,
+    );
   } catch (error) {
     console.error("[researchService] readSessions failed:", error);
     return listFailed<CollectorSession>();

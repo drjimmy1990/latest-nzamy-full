@@ -28,6 +28,19 @@
  *             they are and are read like any other lot (balance, refunds).
  *   library → grantLibraryAccess({ source: 'purchase', orderId }).
  *   topup   → credit_points(user, points, 'purchase', now + validity months, order).
+ *   membership (P3, lawyer-founder-2026) → deps.activateFounder(order) — the
+ *             founder_activate RPC (20261101_10), which allocates the seat,
+ *             the credits, the lib-founder grant and the badge under one lock:
+ *               activated                      → granted;
+ *               already, the order's own seat  → granted (a retry);
+ *               already, metadata.founder = 'already_member' (he paid twice),
+ *               full (metadata.founder = 'seat_unavailable'), not_verified
+ *                                              → { ok: true, alreadyEntitled:
+ *                 true, refundReason }: nothing granted, the order stays paid
+ *                 and is stamped fulfilled (so the sweep does not loop on it)
+ *                 for an admin refund (ruling R7);
+ *               not_paid, an unknown answer, an RPC error → not ok (retried).
+ *             No points lot: a membership never falls into the top-up branch.
  *
  * EXACTLY ONCE: every grant is keyed on the order, so a retry (the sweep, or a
  * second caller) never grants twice —
@@ -60,9 +73,21 @@ export interface PurchaseOrder {
   billing: string;
 }
 
+/** Why a paid membership order granted nothing and waits for an admin refund (metadata.founder, 20261101_10). */
+export type FounderRefundReason = "seat_unavailable" | "not_verified" | "already_member";
+
+/**
+ * ok with alreadyEntitled true: paid, nothing granted, refund review. For a
+ * membership `refundReason` says why (absent on every other kind).
+ */
 export type GrantPurchaseResult =
-  | { ok: true; alreadyEntitled: boolean }
+  | { ok: true; alreadyEntitled: boolean; refundReason?: FounderRefundReason }
   | { ok: false; error: string; missing?: boolean };
+
+/** founder_activate(p_order) (20261101_10): the raw RPC answer, never thrown. */
+export type ActivateFounderFn = (
+  orderId: string,
+) => Promise<{ data: unknown; error: { code?: string; message?: string } | null }>;
 
 export type GrantLibraryFn = (input: {
   userId: string;
@@ -85,6 +110,11 @@ export interface GrantPurchaseDeps {
    * that has since been retired is still fulfilled.
    */
   catalog?: Readonly<Record<string, PayableItem>>;
+  /**
+   * P3: the founder_activate RPC (wired in ./fulfillOrder.ts). Missing → a
+   * membership order is not granted (not ok, the sweep retries).
+   */
+  activateFounder?: ActivateFounderFn;
 }
 
 type DbError = { code?: string; message?: string } | null;
@@ -201,6 +231,32 @@ async function grantPlan(
   return { ok: true, alreadyEntitled: false };
 }
 
+async function grantMembership(deps: GrantPurchaseDeps, order: PurchaseOrder): Promise<GrantPurchaseResult> {
+  if (!deps.activateFounder) return { ok: false, error: "membership order without activateFounder" };
+  const { data, error } = await deps.activateFounder(order.id);
+  if (error) return failure("founder_activate", error);
+  if (data === "activated") return { ok: true, alreadyEntitled: false };
+  if (data === "full") return { ok: true, alreadyEntitled: true, refundReason: "seat_unavailable" };
+  if (data === "not_verified") return { ok: true, alreadyEntitled: true, refundReason: "not_verified" };
+  if (data === "already") {
+    // 'already' is both «this order's seat is active» (a retry: success) and
+    // «he holds a seat from ANOTHER order» (he paid twice: a refund). Only the
+    // metadata founder_activate wrote tells them apart.
+    const { data: row, error: readErr } = await deps.admin
+      .from("payment_orders")
+      .select("metadata")
+      .eq("id", order.id)
+      .maybeSingle();
+    if (readErr) return failure("membership order read", readErr);
+    const founder = (row as { metadata?: Record<string, unknown> | null } | null)?.metadata?.founder;
+    return founder === "already_member"
+      ? { ok: true, alreadyEntitled: true, refundReason: "already_member" }
+      : { ok: true, alreadyEntitled: false };
+  }
+  // not_paid (the claim precedes the grant, so a retry sees it paid) or an answer this code does not know
+  return { ok: false, error: `founder_activate answered ${String(data).slice(0, 40)}` };
+}
+
 export async function grantPurchase(
   deps: GrantPurchaseDeps,
   order: PurchaseOrder,
@@ -217,6 +273,10 @@ export async function grantPurchase(
 
     if (item.kind === "plan") {
       return await grantPlan(deps, order, item, opts.paymentMethodId ?? null, now);
+    }
+
+    if (item.kind === "membership") {
+      return await grantMembership(deps, order);
     }
 
     if (item.kind === "library") {

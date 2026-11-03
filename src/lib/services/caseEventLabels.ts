@@ -34,6 +34,8 @@ export const CASE_EVENT_LABELS: Record<string, string> = {
   "case.hearing_added":             "إضافة جلسة",
   // Phase 1 (2026-09-03): activity_events rows merged into the same timeline.
   "hearing.created":                "إضافة جلسة",
+  "hearing.updated":                "تعديل جلسة",
+  "hearing.status_changed":         "تحديث حالة جلسة",
   "task.created":                   "إضافة مهمة",
   "task.status_changed":            "تحديث حالة مهمة",
   "task.deleted":                   "حذف مهمة",
@@ -42,6 +44,7 @@ export const CASE_EVENT_LABELS: Record<string, string> = {
   // Phase 5 (2026-09-04): رادار المهل.
   "deadline.created":               "إضافة مهلة",
   "deadline.status_changed":        "تحديث حالة مهلة",
+  "deadline.recomputed":            "إعادة احتساب مهلة",
   "payment.created":                "تسجيل دفعة",
   // N3.7 (2026-10-25): سجل الصادر والوارد.
   "ledger.entry_added":             "قيد صادر أو وارد",

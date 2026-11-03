@@ -4,7 +4,14 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowCounterClockwise, SignOut, Snowflake, WarningCircle } from "@phosphor-icons/react";
 import { createClient } from "@/lib/supabase/client";
-import { ADMIN_FREEZE_AR, FREEZE_DAYS, frozenUntilAr, isAdminFreeze } from "@/lib/auth/accountFreeze";
+import {
+  ADMIN_FREEZE_AR,
+  FREEZE_DAYS,
+  deletionSuspendedAr,
+  frozenUntilAr,
+  isAdminFreeze,
+  normalizeOwnerBlock,
+} from "@/lib/auth/accountFreeze";
 import { toArabicDigits } from "@/lib/services/arabicCount";
 
 /**
@@ -24,7 +31,7 @@ type Status =
   | { kind: "loading" }
   | { kind: "signed_out" }
   | { kind: "active" }
-  | { kind: "frozen"; purgeAfter: string | null; status: string; byAdmin: boolean }
+  | { kind: "frozen"; purgeAfter: string | null; status: string; byAdmin: boolean; ownerBlock: unknown }
   | { kind: "error"; message: string };
 
 interface StatusBody {
@@ -32,6 +39,7 @@ interface StatusBody {
     available: boolean;
     frozen: boolean;
     request: { purgeAfter: string; status: string; requestedBy?: string | null } | null;
+    ownerBlock?: unknown;
   };
   error?: string;
 }
@@ -55,6 +63,7 @@ export default function AccountFrozenPage() {
           purgeAfter: body.data.request.purgeAfter,
           status: body.data.request.status,
           byAdmin: isAdminFreeze(body.data.request.requestedBy),
+          ownerBlock: body.data.ownerBlock ?? null,
         });
       })
       .catch(() => {
@@ -96,6 +105,13 @@ export default function AccountFrozenPage() {
   };
 
   const until = state.kind === "frozen" ? frozenUntilAr(state.purgeAfter) : null;
+  // Owner ٣٠٧: an entity owner's final deletion is suspended until ownership
+  // is transferred, and a purge the database refused (blocked) is suspended
+  // too — no purge date is promised for either.
+  const suspended =
+    state.kind === "frozen" && (state.status === "blocked" || normalizeOwnerBlock(state.ownerBlock) !== null)
+      ? deletionSuspendedAr(state.ownerBlock)
+      : null;
 
   return (
     <main dir="rtl" className="mx-auto flex min-h-[70vh] max-w-xl flex-col justify-center px-4 py-12">
@@ -133,7 +149,7 @@ export default function AccountFrozenPage() {
           <div className="space-y-4 text-sm leading-7 text-slate-700 dark:text-zinc-300">
             <div className="flex items-center gap-3">
               <Snowflake size={28} className="text-sky-600 dark:text-sky-400" />
-              <h1 className="text-lg font-bold">{until ? `حسابك مجمّد حتى ${until}` : "حسابك مجمّد"}</h1>
+              <h1 className="text-lg font-bold">{until && !suspended ? `حسابك مجمّد حتى ${until}` : "حسابك مجمّد"}</h1>
             </div>
             {state.status === "purging" ? (
               <p>انتهت مهلة الاستعادة ويجري حذف الحساب نهائياً الآن.</p>
@@ -142,8 +158,9 @@ export default function AccountFrozenPage() {
                 <p className="font-bold">{ADMIN_FREEZE_AR}</p>
                 <p>
                   ملفك العام مخفي، ولا يمكن استخدام المنصة.{" "}
-                  {until ? `في ${until} يُحذف الحساب نهائياً` : "بعد انتهاء المهلة يُحذف الحساب نهائياً"} ما لم ترفع
-                  الإدارة التجميد.{" "}
+                  {suspended
+                    ? `${suspended} لا يرفع التجميد إلا الإدارة.`
+                    : `${until ? `في ${until} يُحذف الحساب نهائياً` : "بعد انتهاء المهلة يُحذف الحساب نهائياً"} ما لم ترفع الإدارة التجميد.`}{" "}
                   <Link href="/contact" className="font-semibold text-royal hover:underline dark:text-emerald-400">
                     تواصل مع الدعم
                   </Link>
@@ -151,11 +168,15 @@ export default function AccountFrozenPage() {
               </>
             ) : (
               <>
-                <p>
-                  طُلب حذف هذا الحساب، فجُمِّد {toArabicDigits(String(FREEZE_DAYS))} يوماً: ملفك العام مخفي، ولا يمكن استخدام
-                  المنصة. {until ? `في ${until} يُحذف الحساب نهائياً` : "بعد انتهاء المهلة يُحذف الحساب نهائياً"} مع مستنداتك
-                  وملاحظاتك الشخصية، وتبقى الفواتير الضريبية، وتبقى ملفات المكتب لصاحبه إن كنت عضواً في مكتب.
-                </p>
+                {suspended ? (
+                  <p>طُلب حذف هذا الحساب فجُمِّد: ملفك العام مخفي، ولا يمكن استخدام المنصة. {suspended}</p>
+                ) : (
+                  <p>
+                    طُلب حذف هذا الحساب، فجُمِّد {toArabicDigits(String(FREEZE_DAYS))} يوماً: ملفك العام مخفي، ولا يمكن
+                    استخدام المنصة. {until ? `في ${until} يُحذف الحساب نهائياً` : "بعد انتهاء المهلة يُحذف الحساب نهائياً"} مع
+                    مستنداتك وملاحظاتك الشخصية، وتبقى الفواتير الضريبية، وتبقى ملفات المكتب لصاحبه إن كنت عضواً في مكتب.
+                  </p>
+                )}
                 <p>إن غيّرت رأيك فاستعد حسابك الآن، وسيعود كما كان.</p>
               </>
             )}

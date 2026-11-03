@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
-import { CheckCircle, XCircle, ArrowClockwise, CircleNotch } from "@phosphor-icons/react";
+import { CheckCircle, ArrowClockwise, CircleNotch } from "@phosphor-icons/react";
+import ModalShell from "@/components/ui/ModalShell";
 import { describeDateAr, toArabicDigits } from "@/lib/services/hijri";
 import { CasePicker } from "@/components/ui/CasePicker";
 import DualDatePicker from "@/components/ui/DualDatePicker";
@@ -24,10 +24,12 @@ interface Props {
    */
   caseRequestId?: string;
   /**
-   * Called once, when the lawyer dismisses the confirmation screen — NOT the
-   * moment the row is actually written. The computation (due date, Hijri,
-   * what it rolled past) has to stay on screen long enough to be read; the
-   * parent list is refreshed only when the lawyer says «إغلاق».
+   * Called once, the moment the server confirms the row was written — so the
+   * parent list is refreshed however the modal is then closed («إغلاق», ×,
+   * the backdrop or Escape). CODE-F06: it used to fire only from «إغلاق», so
+   * closing any other way left the new deadline missing from the list. The
+   * parent refreshes here and does NOT close the modal: the confirmation
+   * (due date, Hijri, what it rolled past) stays until the lawyer closes it.
    */
   onCreated: (deadline: Deadline) => void;
 }
@@ -161,6 +163,7 @@ export default function AddDeadlineModal({ onClose, isDark, caseRequestId, onCre
       });
       setResult(res);
       setDone(true);
+      onCreated(res.deadline);
     } catch (err) {
       console.error("[AddDeadlineModal] save failed:", err);
       setError(
@@ -181,25 +184,14 @@ export default function AddDeadlineModal({ onClose, isDark, caseRequestId, onCre
       .join("، ");
   }
 
+  // Anything typed or picked counts as a draft until the save lands.
+  const dirty = !done && (
+    !!title.trim() || !!triggerDate || !!dueDate || !!ruleId
+    || (!caseRequestId && !!caseId) || priority !== "high" || offsets.size !== OFFSET_OPTIONS.length
+  );
+
   return (
-    <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <motion.div
-        initial={{ scale: 0.95, opacity: 0, y: 10 }}
-        animate={{ scale: 1, opacity: 1, y: 0 }}
-        exit={{ scale: 0.95, opacity: 0, y: -10 }}
-        className={`w-full max-w-md rounded-3xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto ${isDark ? "bg-zinc-900 border border-white/[0.08]" : "bg-white border border-slate-200"}`}
-        dir="rtl"
-      >
-        <div className="flex items-center justify-between mb-5">
-          <h3 className={`text-[16px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>إضافة مهلة جديدة</h3>
-          <button onClick={onClose} className={`flex h-7 w-7 items-center justify-center rounded-full ${isDark ? "bg-white/[0.07] text-zinc-400 hover:text-white" : "bg-zinc-100 text-zinc-500 hover:text-black"}`}>
-            <XCircle size={16} />
-          </button>
-        </div>
+    <ModalShell title="إضافة مهلة جديدة" onClose={onClose} isDark={isDark} busy={saving} dirty={dirty}>
 
         {done ? (
           <div className="text-center py-4">
@@ -227,7 +219,8 @@ export default function AddDeadlineModal({ onClose, isDark, caseRequestId, onCre
             )}
 
             <button
-              onClick={() => { if (result) onCreated(result.deadline); }}
+              type="button"
+              onClick={onClose}
               className="mt-4 rounded-xl px-5 py-2.5 w-full text-[13px] font-bold bg-[#0B3D2E] text-white hover:bg-[#0B3D2E]/90 transition"
             >
               إغلاق
@@ -335,7 +328,6 @@ export default function AddDeadlineModal({ onClose, isDark, caseRequestId, onCre
             </button>
           </div>
         )}
-      </motion.div>
-    </motion.div>
+    </ModalShell>
   );
 }

@@ -10,13 +10,14 @@
 //     browser under `nzamy_pomodoro_sessions`, exactly as before this phase.
 //   - supabase mode                                → they stop touching the
 //     browser (`loadSessions` → `[]`, `saveSession` → `[session]`, no
-//     `localStorage` read or write). `PomodoroPanel.tsx` (which owns
-//     `useUser()` and can tell signed-in from not) is the actual adapter:
-//     it fetches the true history with `getServerSessions`, watches the
-//     engine's local array for a newly-completed entry and hands it to
-//     `recordSessionOnServer`, and runs `migrateLocalSessionsToServer` once
-//     to sweep any pre-phase-6 rows left in the browser into the server and
-//     out of it.
+//     `localStorage` read or write). Finished periods go to the server through
+//     the engine's outbox instead (CODE-F09, ./sessionQueue.ts): kept in the
+//     browser under the user's id until `postSessionIdempotent` gets the row
+//     back. `PomodoroPanel.tsx` fetches the true history with
+//     `getServerSessions` and runs `migrateLocalSessionsToServer` once to
+//     sweep any pre-phase-6 rows left in the browser into the server and out
+//     of it. (`recordSessionOnServer`, which the panel used to call after
+//     marking a session "synced" before the answer came, is gone.)
 //
 // The pure mapping + stats logic (mode mapping, row shaping, validation,
 // getWeekStats/getHourStats/generateInsights) lives in `./sessionMapping.ts`
@@ -31,12 +32,12 @@ import { isSupabaseMode } from "../../../../../../lib/services/api.ts";
 import type { ListRead } from "../../../../../../lib/services/listRead.ts";
 import { getWorkSessions, recordWorkSession, type WorkSession } from "../../../../../../lib/services/workSessionsService.ts";
 import {
-  isPostableSession, pomodoroSessionToWorkSessionInput, workSessionToPomodoroSession,
+  isPostableSession, isUuid, pomodoroSessionToWorkSessionInput, workSessionToPomodoroSession,
 } from "./sessionMapping.ts";
 
 export {
   pomodoroModeToWorkSessionMode, workSessionModeToPomodoroMode,
-  workSessionToPomodoroSession, isPostableSession, pomodoroSessionToWorkSessionInput,
+  workSessionToPomodoroSession, isPostableSession, isUuid, pomodoroSessionToWorkSessionInput,
   getWeekStats, getHourStats, generateInsights,
   type DayStats, type HourStats, type SmartInsight,
 } from "./sessionMapping.ts";
@@ -118,20 +119,68 @@ export async function getServerSessions(opts?: { from?: string; to?: string; lim
   };
 }
 
-/** Records one just-completed (or early-reset) session server-side. Returns
- *  `null` — logged, never thrown — for an unpostable session or a failed
- *  request, so the caller can show one honest "wasn't saved" line instead of
- *  folding a phantom row into the displayed counts. */
-export async function recordSessionOnServer(session: PomodoroSession): Promise<WorkSession | null> {
+// ─── Outbox transport + the active period (CODE-F09, LIVE-F17) ───────────────
+
+export type PostOutcome =
+  | { ok: true; saved: WorkSession }
+  | { ok: false; status: number | null; error: string };
+
+/**
+ * POSTs one finished period with its own id, so the route answers a repeat
+ * with the row it already holds (see work-sessions/route.ts POST). `fetch`
+ * directly rather than `recordWorkSession`, because the outbox needs the HTTP
+ * status to tell a refusal (do not retry) from an outage (retry) — `apiMutate`
+ * folds both into one Error.
+ */
+export async function postSessionIdempotent(session: PomodoroSession): Promise<PostOutcome> {
+  // Owner decision ١١٥ — demo mode never reaches a server. `apiMutate` has
+  // this guard; a direct `fetch` must repeat it.
+  if (!isSupabaseMode) {
+    return { ok: false, status: 400, error: "وضع العرض التجريبي محلي بالكامل." };
+  }
   if (!isPostableSession(session)) {
-    console.warn("[pomodoro storage] session fails validation, not posting:", session.id);
+    return { ok: false, status: 400, error: "بيانات الفترة غير صالحة." };
+  }
+  const body = {
+    ...pomodoroSessionToWorkSessionInput(session),
+    ...(isUuid(session.id) ? { id: session.id } : {}),
+  };
+  try {
+    const res = await fetch("/api/v1/lawyer/work-sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      credentials: "same-origin",
+      cache: "no-store",
+      body: JSON.stringify(body),
+    });
+    const json = (await res.json().catch(() => null)) as { data?: WorkSession; error?: string } | null;
+    if (res.ok && json?.data) return { ok: true, saved: json.data };
+    return { ok: false, status: res.status, error: json?.error || `HTTP ${res.status}` };
+  } catch (error) {
+    // Offline / DNS / aborted — no status, always retryable.
+    return { ok: false, status: null, error: error instanceof Error ? error.message : "network" };
+  }
+}
+
+/** Read one JSON value from the browser; null when absent, unreadable or blocked. */
+export function readStoredJson(key: string): unknown {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
     return null;
   }
+}
+
+/** Write (or with `null`, remove) one JSON value; a full or blocked storage is not fatal. */
+export function writeStoredJson(key: string, value: unknown): void {
+  if (typeof window === "undefined") return;
   try {
-    return await recordWorkSession(pomodoroSessionToWorkSessionInput(session));
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, JSON.stringify(value));
   } catch (error) {
-    console.error("[pomodoro storage] recordSessionOnServer failed:", error);
-    return null;
+    console.warn("[pomodoro storage] could not persist", key, error);
   }
 }
 

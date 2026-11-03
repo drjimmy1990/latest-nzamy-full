@@ -44,6 +44,9 @@ export const ADMIN_PAGE_ACTION: Readonly<Record<string, StaffAction>> = Object.f
   "/dashboard/admin/platform": "read",
   "/dashboard/admin/audit-log": "read",
   "/dashboard/admin/reports": "read",
+  // P3 Task 10: «حملة المؤسس» — the overview is requireStaff("read"); pause /
+  // capacity / retry activation are settings.write on the server.
+  "/dashboard/admin/founder": "read",
 
   // ── Operations' day-to-day queues ──────────────────────────────────────────
   "/dashboard/admin/provider-verification": "verifications.decide",
@@ -55,6 +58,10 @@ export const ADMIN_PAGE_ACTION: Readonly<Record<string, StaffAction>> = Object.f
   "/dashboard/admin/tickets": "tickets.manage",
   "/dashboard/admin/feature-requests": "tickets.manage",
   "/dashboard/admin/library-issue-reports": "tickets.manage",
+  // q372: operations lift library locks («قفل المكتبة» tab). The page's other
+  // writes (opening a lock, the monitor's numbers) stay settings.write on the
+  // server, and the locks panel hides the lock form from operations.
+  "/dashboard/admin/security": "library.lock_lift",
   "/dashboard/admin/community/moderation": "community.moderate",
   "/dashboard/admin/community/reports": "community.moderate",
 
@@ -65,7 +72,6 @@ export const ADMIN_PAGE_ACTION: Readonly<Record<string, StaffAction>> = Object.f
   "/dashboard/admin/settings": "settings.write",
   "/dashboard/admin/pricing": "settings.write",
   "/dashboard/admin/features": "settings.write",
-  "/dashboard/admin/security": "settings.write",
   "/dashboard/admin/system": "settings.write",
   "/dashboard/admin/system/backup": "settings.write",
   "/dashboard/admin/sector-profiles": "settings.write",
@@ -74,6 +80,7 @@ export const ADMIN_PAGE_ACTION: Readonly<Record<string, StaffAction>> = Object.f
   "/dashboard/admin/content/articles": "content.delete",
   "/dashboard/admin/entitlements": "entitlements.grant",
   "/dashboard/admin/library-invitations": "entitlements.grant",
+  "/dashboard/admin/library-subscriptions": "entitlements.grant",
   "/dashboard/admin/broadcasts": "broadcasts.send",
   "/dashboard/admin/escrow": "subscriptions.write",
   "/dashboard/admin/payouts": "subscriptions.write",

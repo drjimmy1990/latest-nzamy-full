@@ -17,6 +17,7 @@ import StepPreviewSign from "./_components/StepPreviewSign";
 import StepContractResult from "./_components/StepContractResult";
 import StepLawyerCTA from "./_components/StepLawyerCTA";
 import { CreditsBanner } from "@/components/PaywallGate";
+import { usePointsShortfall } from "@/hooks/usePointsShortfall";
 import AdvisoryTemplateNotice from "@/components/ai/AdvisoryTemplateNotice";
 
 // ─── Step indicator labels ────────────────────────────────────────────────────
@@ -46,7 +47,6 @@ export default function ContractDrafterPage() {
   const isRTL = lang === "ar";
   const Arrow = isRTL ? ArrowLeft : ArrowRight;
   const ArrowBack = isRTL ? ArrowRight : ArrowLeft;
-  const isExhausted = user.credits <= 0;
 
   // Wizard state
   const [mode, setMode] = useState<Mode>(null);
@@ -63,6 +63,10 @@ export default function ContractDrafterPage() {
   // charges the points and n8n writes the draft; the hook polls until it is
   // back. The page follows the job — its draft or the form — never a template.
   const run = useAiRun();
+  // LIVE-06: the banner shows only when the server says this user is short
+  // of points for a draft (never an admin, never while charging is off), and
+  // asks again as a run moves on.
+  const shortfall = usePointsShortfall("contract-drafter", user.isLoggedIn && !user.loading, run.phase);
   const draft = run.phase === "done" ? asContractDraft(run.output) : null;
   const draftText = draft ? contractDraftText(draft) : "";
   const shownStep: Step = mode === "draft" && step === 3 && draft ? 4 : step;
@@ -166,8 +170,8 @@ export default function ContractDrafterPage() {
       <section className="pb-24">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
 
-          {/* Credits exhausted banner */}
-          {isExhausted && <CreditsBanner isDark={isDark} />}
+          {/* Short of points for a draft (server-checked) */}
+          {shortfall && <CreditsBanner isDark={isDark} balance={shortfall.balance} price={shortfall.price} />}
 
           <AnimatePresence mode="wait">
 

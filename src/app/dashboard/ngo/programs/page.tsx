@@ -1,4 +1,5 @@
 "use client";
+import { UnfinishedModuleNote } from "@/components/dashboard/sector/UnfinishedModuleNote";
 
 import { useState } from "react";
 import Link from "next/link";
@@ -19,6 +20,7 @@ export default function NgoProgramsPage() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-5 p-4 md:p-8" dir="rtl">
+      <UnfinishedModuleNote href="/dashboard/ngo/programs" />
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-2">

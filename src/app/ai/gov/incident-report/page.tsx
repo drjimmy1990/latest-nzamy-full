@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -33,7 +34,7 @@ interface Accused {
   nationality: string;
 }
 
-export default function IncidentReportPage() {
+function IncidentReportInner() {
   // Step state
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
 
@@ -438,5 +439,14 @@ ${officerNotes || "——"}
 
       </AnimatePresence>
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function IncidentReportPage() {
+  return (
+    <GatedToolScreen toolId="gov.incident-report" toolName="تقرير الحادثة الرسمي">
+      <IncidentReportInner />
+    </GatedToolScreen>
   );
 }

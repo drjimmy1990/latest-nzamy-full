@@ -12,10 +12,16 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
-import { apiMutate, isSupabaseMode } from "@/lib/services/api";
+import { isSupabaseMode } from "@/lib/services/api";
 import { createWorkflowId } from "@/lib/workflowStore";
 import { getLawyerClients, type LawyerClient } from "@/lib/services/lawyerClientsService";
-import { getLawyerConsultations, type LawyerConsultation } from "@/lib/services/lawyerConsultationsService";
+import {
+  getLawyerConsultations, mutateConsultationSlot, ConsultationOverlapError, type LawyerConsultation,
+} from "@/lib/services/lawyerConsultationsService";
+import {
+  RIYADH_ZONE_LABEL_AR, checkDayTimeSlot, formatClockAr, riyadhWallClock,
+} from "@/lib/services/consultationSchedule";
+import { describeDateAr } from "@/lib/services/hijri";
 import {
   CONSULTATION_STATUS_AR, CONSULTATION_MODE_AR, canTransitionConsultation,
   type ConsultationStatus, type ConsultationMode,
@@ -95,26 +101,21 @@ const STATUS_CHIP_CLS: Record<ConsultationStatus, { light: string; dark: string 
 };
 
 /**
- * «٢ سبتمبر ٢٠٢٦ · ٠٥:٣٠ م», or just the date when the time cannot be read.
- * The date half MUST come from the same viewer-local Date the time half uses,
- * never from slicing the raw ISO characters, or the two halves can disagree
- * near midnight (slicing would print "yesterday" next to "١:٣٠ ص").
+ * «٢ سبتمبر ٢٠٢٦ · ٥:٣٠ م بتوقيت الرياض». Both halves come from the RIYADH
+ * wall clock of the stored instant (LIVE-F37): this used to format in the
+ * BROWSER's zone, so a consultation entered as 15:15 Riyadh showed 14:15 on a
+ * machine set to UTC+2. The zone is named on screen so input, review and
+ * display visibly agree.
  */
 function formatScheduledAr(iso: string | null): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  const localDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  const dateAr = formatGregorianAr(localDateStr);
-  const time = d.toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
-  return `${dateAr} · ${time}`;
+  const wc = riyadhWallClock(iso);
+  if (!wc) return null;
+  return `${formatGregorianAr(wc.date)} · ${formatClockAr(wc.time)} ${RIYADH_ZONE_LABEL_AR}`;
 }
 
-/** The LOCAL calendar day ("YYYY-MM-DD") a stored instant falls on. */
+/** The RIYADH calendar day ("YYYY-MM-DD") a stored instant falls on. */
 function localYMD(iso: string): string | null {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return riyadhWallClock(iso)?.date ?? null;
 }
 
 // ─── Booking Modal ──────────────────────────────────────────────────────────
@@ -143,6 +144,13 @@ function BookingModal({ isDark, onClose, lawyerUserId, sessionLoading = false }:
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // "Now" for the same-day past-time check (LIVE-F34) — read in the browser
+  // after mount and again whenever the date or time changes; never at render.
+  const [nowMs, setNowMs] = useState<number | null>(null);
+  useEffect(() => { setNowMs(Date.now()); }, [date, time]);
+  // The server's 409 overlap warning (LIVE-F35), cleared by any slot change.
+  const [overlapWarning, setOverlapWarning] = useState<string | null>(null);
+  useEffect(() => { setOverlapWarning(null); }, [date, time, duration]);
 
   // Optional client picker (Phase 2 — public.lawyer_clients). Only cards
   // ("source: 'card'") are offered: a "profile" row has no id in
@@ -206,7 +214,14 @@ function BookingModal({ isDark, onClose, lawyerUserId, sessionLoading = false }:
     : !clientName.trim()
       ? "اكتب اسم العميل للمتابعة."
       : null;
-  const dateError = bookingDateError(date, todayYMD);
+  // CODE-F31 / LIVE-F34: the date and the time are judged TOGETHER, against
+  // Riyadh now. Both blank is allowed and means an unscheduled request
+  // («بانتظار الجدولة»); one without the other, or a slot that has already
+  // passed — earlier today included — is refused. The server applies the
+  // same rule (consultationSchedule.ts).
+  const slot = nowMs === null ? null : checkDayTimeSlot(date, time, nowMs);
+  const dateError = bookingDateError(date, todayYMD) ?? (slot?.kind === "invalid" ? slot.error : null);
+  const hasSlot = !!date && !!time;
   // T28-13: the confirm step used to be clickable before useUser() had
   // resolved, so an early click hit the «تعذّر التحقق من الجلسة» refusal in
   // handleConfirm although the session was fine — it just had not loaded yet.
@@ -225,7 +240,7 @@ function BookingModal({ isDark, onClose, lawyerUserId, sessionLoading = false }:
                 : null)
             : null;
 
-  const handleConfirm = async () => {
+  const handleConfirm = async (confirmOverlap = false) => {
     setError(null);
     setSubmitting(true);
     try {
@@ -235,6 +250,9 @@ function BookingModal({ isDark, onClose, lawyerUserId, sessionLoading = false }:
       }
       const pastDate = bookingDateError(date, saudiCalendarDate());
       if (pastDate) throw new Error(pastDate);
+      // Re-checked with a fresh clock at the moment of saving.
+      const freshSlot = checkDayTimeSlot(date, time, Date.now());
+      if (freshSlot.kind === "invalid") throw new Error(freshSlot.error);
 
       const pickedClient = selectedClientId ? clientCards.find((c) => c.id === selectedClientId) ?? null : null;
       // When a card is picked, carry its contact details into `requester` —
@@ -280,7 +298,20 @@ function BookingModal({ isDark, onClose, lawyerUserId, sessionLoading = false }:
         throw new Error("تعذّر التحقق من الجلسة. أعد تحميل الصفحة ثم حاول مرة أخرى.");
       }
 
-      await apiMutate<{ data: unknown }>("/api/v1/service-requests", "POST", payload);
+      try {
+        await mutateConsultationSlot<{ data: unknown }>(
+          "/api/v1/service-requests",
+          "POST",
+          confirmOverlap ? { ...payload, confirmOverlap: true } : payload,
+        );
+      } catch (e) {
+        if (e instanceof ConsultationOverlapError) {
+          setOverlapWarning(e.message);
+          setSubmitting(false);
+          return;
+        }
+        throw e;
+      }
       window.dispatchEvent(new CustomEvent("nzamy-workflow-updated"));
       setSubmitting(false);
       onClose();
@@ -431,8 +462,11 @@ function BookingModal({ isDark, onClose, lawyerUserId, sessionLoading = false }:
                     <DualDatePicker label="تاريخ الاستشارة" value={date} min={todayYMD || undefined} onChange={setDate} className={inputCls} />
                   </div>
                   <div>
-                    <label className={labelCls}>الوقت</label>
+                    <label className={labelCls}>الوقت ({RIYADH_ZONE_LABEL_AR})</label>
                     <input type="time" value={time} onChange={e => setTime(e.target.value)} className={inputCls} />
+                    <p className={`mt-1 text-[10.5px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
+                      اترك التاريخ والوقت فارغين لحفظ طلب غير مجدول «{CONSULTATION_STATUS_AR.requested}»، أو أدخلهما معاً لموعد مؤكد.
+                    </p>
                   </div>
                   <div>
                     <label className={labelCls}>ملاحظات (اختياري)</label>
@@ -454,8 +488,11 @@ function BookingModal({ isDark, onClose, lawyerUserId, sessionLoading = false }:
                     { label: "النوع", value: CONSULT_TYPES.find(t => t.id === consultType)?.label ?? "—" },
                     { label: "الوسيلة", value: mode ? CONSULTATION_MODE_AR[mode] : "—" },
                     { label: "المدة", value: `${toArabicDigits(duration)} دقيقة` },
-                    { label: "التاريخ", value: date || "—" },
-                    { label: "الوقت", value: time || "—" },
+                    // CODE-F31: the summary says which of the two this is —
+                    // an unscheduled request, or a confirmed slot in Riyadh time.
+                    { label: "الحالة بعد الحفظ", value: hasSlot ? `${CONSULTATION_STATUS_AR.scheduled} — موعد مؤكد` : `${CONSULTATION_STATUS_AR.requested} — طلب غير مجدول` },
+                    { label: "التاريخ", value: date ? (describeDateAr(date) ?? date) : "—" },
+                    { label: "الوقت", value: time ? `${formatClockAr(time) ?? time} ${RIYADH_ZONE_LABEL_AR}` : "—" },
                   ].map(row => (
                     <div key={row.label} className={`flex justify-between text-[12px] pb-2 border-b last:border-0 last:pb-0 ${isDark ? "border-white/[0.04]" : "border-slate-100"}`}>
                       <span className={isDark ? "text-zinc-500" : "text-slate-400"}>{row.label}</span>
@@ -489,9 +526,19 @@ function BookingModal({ isDark, onClose, lawyerUserId, sessionLoading = false }:
                 else handleConfirm();
               }}
               className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-[#0B3D2E] px-5 py-2.5 text-[13px] font-bold text-[#C8A762] disabled:opacity-60 disabled:cursor-not-allowed">
-              {step === "confirm" ? <><CheckCircle size={15} weight="fill" /> {submitting ? "جارٍ التأكيد..." : "تأكيد الجدولة"}</> : <>التالي <ArrowRight size={13} /></>}
+              {/* «تأكيد الجدولة» only when there IS a slot to confirm (CODE-F31). */}
+              {step === "confirm" ? <><CheckCircle size={15} weight="fill" /> {submitting ? "جارٍ الحفظ..." : hasSlot ? "تأكيد الجدولة" : "حفظ كطلب غير مجدول"}</> : <>التالي <ArrowRight size={13} /></>}
             </motion.button>
           </div>
+          {overlapWarning && (
+            <div className={`mt-3 rounded-xl px-3 py-2 text-[11px] font-semibold ${isDark ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" : "bg-amber-50 text-amber-700 border border-amber-200"}`}>
+              <p>{overlapWarning}</p>
+              <button type="button" onClick={() => handleConfirm(true)} disabled={submitting}
+                className="mt-2 rounded-lg bg-amber-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-amber-700 disabled:opacity-60">
+                حفظ رغم التعارض
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Error banner */}
@@ -692,8 +739,8 @@ export default function ConsultationsPage() {
   // last rendered on the server, not the viewer's actual day.
   const [todayYMD, setTodayYMD] = useState<string | null>(null);
   useEffect(() => {
-    const now = new Date();
-    setTodayYMD(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`);
+    // Riyadh's day, matching localYMD above — not the browser's.
+    setTodayYMD(saudiCalendarDate());
   }, []);
 
   const requestedCount = items.filter((c) => c.status === "requested").length;
