@@ -14,7 +14,7 @@ export const FLAG_ACTIONS: readonly FlagAction[] = ["notify", "slow", "lock"];
 export const FLAG_ACTION_AR: Readonly<Record<FlagAction, string>> = {
   notify: "تنبيه الإدارة فقط — القراءة مستمرة",
   slow: "إبطاء القارئ تلقائياً (حدود أقل لمدة محددة)",
-  lock: "إيقاف قراءة المكتبة تلقائياً حتى تراجعه",
+  lock: "إيقاف قراءة المكتبة تلقائياً (لمدة الإيقاف التلقائي في «الحدود»)",
 };
 
 export type SettingsGroup = "caps" | "rules" | "action" | "alerts";
@@ -57,6 +57,8 @@ export const MONITOR_SETTINGS_FIELDS: readonly SettingsField[] = [
   int("memberDailyDocs", "member_daily_docs", 1, 100000, "حد الوثائق المختلفة في اليوم — عضو المكتب أو الشركة", "caps"),
   int("hourlyDocs", "hourly_docs", 1, 100000, "حد الوثائق المختلفة في الساعة", "caps"),
   int("lockAfterRefused", "lock_after_refused", 0, 100000, "إيقاف تلقائي بعد محاولة فتح هذا العدد من الوثائق بعد بلوغ الحد اليومي (٠ = لا إيقاف تلقائي)", "caps"),
+  // 20261103_10 (owner q362): how long an AUTOMATIC lock lasts; admin locks keep the end the admin chose.
+  int("autoLockHours", "auto_lock_hours", 0, 720, "مدة الإيقاف التلقائي بالساعات (٠ = حتى يرفعه المسؤول)", "caps"),
 
   bool("ruleHourRequestsOn", "rule_hour_requests_on", "طلبات كثيرة في ساعة واحدة (فتح الوثائق والبحث ومساعد المكتبة)", "rules"),
   int("ruleHourRequests", "rule_hour_requests", 10, 1000000, "عدد الطلبات في الساعة", "rules", "ruleHourRequestsOn"),
@@ -85,9 +87,9 @@ export const MONITOR_SETTINGS_FIELDS: readonly SettingsField[] = [
 
 export type MonitorSettings = Record<string, number | boolean | string>;
 
-/** The seeded values (20261031_10) — what the page shows before the migration runs. */
+/** The seeded values (20261031_10; autoLockHours 20261103_10) — what the page shows before the migration runs. */
 export const MONITOR_SETTINGS_DEFAULTS: Readonly<MonitorSettings> = Object.freeze({
-  dailyDocs: 220, memberDailyDocs: 400, hourlyDocs: 120, lockAfterRefused: 60,
+  dailyDocs: 220, memberDailyDocs: 400, hourlyDocs: 120, lockAfterRefused: 60, autoLockHours: 24,
   ruleHourRequestsOn: true, ruleHourRequests: 600,
   ruleHourSearchesOn: true, ruleHourSearches: 200,
   ruleWeekDocsOn: true, ruleWeekDocs: 600,
@@ -100,6 +102,13 @@ export const MONITOR_SETTINGS_DEFAULTS: Readonly<MonitorSettings> = Object.freez
 });
 
 export const MONITOR_SETTINGS_SELECT = ["updated_at", "updated_by", ...MONITOR_SETTINGS_FIELDS.map((f) => f.column)].join(", ");
+
+/**
+ * The select before 20261103_10 (no auto_lock_hours): the settings route
+ * reads with it when the database answers that the column does not exist yet,
+ * so the page keeps working whichever of the deploy and the SQL comes first.
+ */
+export const MONITOR_SETTINGS_SELECT_V1 = ["updated_at", "updated_by", ...MONITOR_SETTINGS_FIELDS.filter((f) => f.column !== "auto_lock_hours").map((f) => f.column)].join(", ");
 
 /** A database row → the page's settings (a missing or odd column keeps its default). */
 export function settingsFromRow(row: Record<string, unknown> | null | undefined): MonitorSettings {

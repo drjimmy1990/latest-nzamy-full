@@ -12,6 +12,7 @@ import {
   TtlMemo,
   hasSupabaseAuthCookie,
   isLibraryAiTool,
+  libraryLockMessageAr,
   libraryQuotaTarget,
   normalizeDocSegment,
   parseQuotaRow,
@@ -214,6 +215,35 @@ test("quotaRefusal: a lock is 423 with the reference, support page and an honest
   assert.match(r.body.error, /حسابك وبقية خدمات المنصة تعمل/); // not deleted, not frozen
   assert.match(r.body.error, /تواصل مع الدعم/);
   assert.equal(r.retryAfterSeconds, null);
+});
+
+test("quotaRefusal (q362): a lock with an end carries lockedUntil, and the message says it lifts by itself — no date text", () => {
+  const r = quotaRefusal(parseQuotaRow(row({ status: "locked", lock_reference: "SEC-1", locked_until: "2026-11-04T10:00:00Z" })) as QuotaRow, 0);
+  assert.ok(r);
+  assert.equal(r.status, 423);
+  assert.equal(r.body.lockedUntil, "2026-11-04T10:00:00Z");
+  assert.match(r.body.error, /يُرفع الإيقاف تلقائياً/);
+  assert.match(r.body.error, /SEC-1/);
+  // The date is formatted on the client (LibrarySecurityLockNotice), never in this server string.
+  assert.doesNotMatch(r.body.error, /2026|[٠-٩]{4}/);
+});
+
+test("quotaRefusal (q362): a lock without an end has no lockedUntil key and today's exact message", () => {
+  const r = quotaRefusal(parseQuotaRow(row({ status: "locked", lock_reference: "SEC-1" })) as QuotaRow, 0);
+  assert.ok(r);
+  assert.equal("lockedUntil" in r.body, false);
+  assert.equal(
+    r.body.error,
+    "أُوقفت القراءة في المكتبة القانونية لحسابك مؤقتاً لحماية محتواها (رقم المرجع: SEC-1). " +
+      "حسابك وبقية خدمات المنصة تعمل كالمعتاد. " +
+      "لاستعادة القراءة تواصل مع الدعم من صفحة «تواصل معنا» واذكر رقم المرجع.",
+  );
+  assert.equal(libraryLockMessageAr("SEC-1"), libraryLockMessageAr("SEC-1", null));
+});
+
+test("the status route passes the lock's end to the message (the notice prints the date on the client)", () => {
+  const src = fs.readFileSync(path.join(API, "v1", "library", "status", "route.ts"), "utf8");
+  assert.match(src, /libraryLockMessageAr\(row\.lockReference, row\.lockedUntil\)/);
 });
 
 test("quotaRefusal: the daily cap is 429 until Riyadh midnight; documents already read stay open", () => {

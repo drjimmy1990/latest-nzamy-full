@@ -65,6 +65,14 @@ test("branch 3: the library's own AI reads the lock — the proxy's own reply wh
   }
 });
 
+test("q362: a lock with an end reaches the library AI's 423 with its lockedUntil (from the server row)", async () => {
+  const lock = row({ status: "locked", lockReference: "SEC-9", lockedUntil: "2026-11-04T09:00:00Z" });
+  const reply = await harness({ lock }).access("library-assistant");
+  assert.equal(reply?.status, 423);
+  assert.equal((reply?.body as { lockedUntil?: string }).lockedUntil, "2026-11-04T09:00:00Z");
+  assert.match(String((reply?.body as { error?: string }).error), /يُرفع الإيقاف تلقائياً/);
+});
+
 test("review M1: the activity tally counts a created run of the library's own AI only", () => {
   let counted = 0;
   const onCreated = libraryRunCreated(() => {
