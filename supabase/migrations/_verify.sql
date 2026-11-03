@@ -5638,3 +5638,55 @@ begin
   raise notice '_verify: 20261103_12 OK — library eligibility is staff-only (% verified, % revoked)', n_active, n_revoked;
 end $$;
 -- <<< verify:library_eligibility_verifications
+-- >>> verify:library_invitations_closed
+-- 2026-11-03 — 20261103_15_library_invitations_close_public_read.sql
+-- (owner-free wave, S1; approved by the user 2026-11-03): library invite codes
+-- are readable by the service role only. Read-only, safe to repeat: SELECTs
+-- and RAISE.
+-- RAISES «run 20261103_15_library_invitations_close_public_read.sql (any
+-- time)» when RLS is off, when a policy on library.invitations admits anon,
+-- authenticated or PUBLIC (20260626 re-run puts «Allow public read on
+-- library.invitations» back: the codes are listable with the public key), or
+-- when anon / authenticated holds ANY table or column privilege on it — also
+-- the grant alone, without a policy (20260922_01 re-run): RLS still returns no
+-- row then, but the table is one permissive policy from the leak, and the fix
+-- is one idempotent file that runs at any time.
+-- RAISES too when service_role lost a privilege the invite routes need.
+-- No library.invitations (20260626 not applied): one NOTICE, passes.
+-- Docker: supabase/tests/rls/library_invitations_close_public_read.test.sql
+-- runs this block (its header has the chain and the negative controls).
+do $$
+declare r text; p text; v_pol text; n int;
+begin
+  if to_regclass('library.invitations') is null then
+    raise notice '_verify: 20261103_15 — library.invitations is missing (20260626 not applied): nothing to check'; return;
+  end if;
+  if not (select c.relrowsecurity from pg_class c where c.oid = 'library.invitations'::regclass) then
+    raise exception '_verify: 20261103_15 — RLS is off on library.invitations: every invite code is readable with the public key. Run 20261103_15_library_invitations_close_public_read.sql (any time)';
+  end if;
+  select string_agg(quote_ident(pol.policyname), ', ' order by pol.policyname) into v_pol
+    from pg_policies pol
+   where pol.schemaname = 'library' and pol.tablename = 'invitations'
+     and pol.roles && array['public', 'anon', 'authenticated']::name[];
+  if v_pol is not null then
+    raise exception '_verify: 20261103_15 — the policy % on library.invitations admits anon / authenticated: every invite code is readable with the public key. Run 20261103_15_library_invitations_close_public_read.sql (any time)', v_pol;
+  end if;
+  foreach r in array array['anon', 'authenticated'] loop
+    foreach p in array array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'] loop
+      if has_table_privilege(r, 'library.invitations', p) then
+        raise exception '_verify: 20261103_15 — % holds % on library.invitations (20260922_01 or 20260626 re-run after 20261103_15?). No policy admits it, so no row is readable yet, but run 20261103_15_library_invitations_close_public_read.sql (any time)', r, p;
+      end if;
+    end loop;
+    if has_any_column_privilege(r, 'library.invitations', 'SELECT, INSERT, UPDATE, REFERENCES') then
+      raise exception '_verify: 20261103_15 — % holds a column privilege on library.invitations. Run 20261103_15_library_invitations_close_public_read.sql (any time)', r;
+    end if;
+  end loop;
+  foreach p in array array['SELECT', 'INSERT', 'UPDATE', 'DELETE'] loop
+    if not has_table_privilege('service_role', 'library.invitations', p) then
+      raise exception '_verify: 20261103_15 — service_role lacks % on library.invitations: the invite routes fail. Run 20261103_15_library_invitations_close_public_read.sql (any time)', p;
+    end if;
+  end loop;
+  select count(*) into n from pg_policies pol where pol.schemaname = 'library' and pol.tablename = 'invitations';
+  raise notice '_verify: 20261103_15 OK — library invite codes: no anon / authenticated privilege, no policy admits them (% polic(ies) left), service_role reads and writes', n;
+end $$;
+-- <<< verify:library_invitations_closed

@@ -180,24 +180,39 @@ The file is in two places:
 
 Run it in the SQL Editor as postgres (paste the whole file). **Expected result on the screen** (it is not a file): one row with `grant_days_column = t`, `grant_days_check = t`, `codes_with_own_days = 0` on the first run, and `ok = t`.
 
-The row also shows `codes_readable_by_session_roles`. It is **not** part of `ok`, and this file does not change it. If it reads `t`, see the STOP-POINT below.
+The row also shows `codes_readable_by_session_roles`. It is **not** part of `ok`, and this file does not change it. If it reads `t`, run `20261103_15` (below); after it the column reads `f`.
 
-### STOP-POINT, not run by any file: the invite codes are readable with the public key
+### The invite codes were readable with the public key: closed by `20261103_15` (run it as soon as possible)
 
-`20260626_legal_library_schema.sql` gave anon and authenticated SELECT on every library table, and added the policy «Allow public read on library.invitations» (`using (true)`). So anyone holding the site's public anon key can list every invite code through the API (`Accept-Profile: library`) and redeem the ones that still have seats. The site's own code reads this table only through the service role, so closing it breaks no page. It is a grant and RLS change on an existing table, so it waits for your go. When you decide, the statements would be:
-
-```sql
-begin;
-revoke all on library.invitations from anon, authenticated;
-drop policy if exists "Allow public read on library.invitations" on library.invitations;
-commit;
-select has_table_privilege('anon', 'library.invitations', 'SELECT') as anon_reads_codes,
-       has_table_privilege('authenticated', 'library.invitations', 'SELECT') as users_read_codes;
-```
-
-Both columns should then read `f`.
+`20260626_legal_library_schema.sql` gave anon and authenticated SELECT on every library table, and added the policy «Allow public read on library.invitations» (`using (true)`). So anyone holding the site's public anon key could list every invite code through the API (`Accept-Profile: library`) and redeem the ones that still have seats. You approved closing it on 2026-11-03; the fix is its own file, `20261103_15_library_invitations_close_public_read.sql` (next section). The drafted statements that stood here are no longer needed.
 
 <!-- <<< S1 Task 16: 20261103_11 -->
+
+<!-- >>> S1: 20261103_15 (ANY time) -->
+
+## ANY time — closes a live leak; run it as soon as possible: `20261103_15_library_invitations_close_public_read.sql`
+
+**What it does:** library invite codes (`library.invitations`) can no longer be read or changed with the site's public key. It takes every privilege on the table away from anon, authenticated and PUBLIC, drops the policy «Allow public read on library.invitations» and any other policy that lets them in (each one it drops is named in a NOTICE), keeps RLS on, and keeps full access for the service role. The site reads and writes this table only through the service role (the admin «أكواد الدعوة» page and the redeem route), so no page changes. It does not depend on the deploy or on any other file of this batch: before or after the deploy, at any time.
+
+The file is in two places:
+- On your PC, after `git pull` on main: `D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\supabase\migrations\20261103_15_library_invitations_close_public_read.sql`
+- On the server: `/www/wwwroot/nzamy/latest-nzamy-full/supabase/migrations/20261103_15_library_invitations_close_public_read.sql`
+
+Run it in the SQL Editor as postgres (paste the whole file). **Expected result on the screen** (it is not a file): one row with `anon_select = f`, `authenticated_select = f`, `policies_left = 0`, `policies_admitting_session_roles = 0`, `service_role_select = t`, `ok = t`. A second run gives the same row. If `policies_left` is above 0, a policy that admits only the service role was kept on purpose; the NOTICEs in the server's psql name every policy that was dropped.
+
+If it stops with `library.invitations is missing`, nothing changed: this database has no library schema.
+
+**Which half lasts:** re-running `20260922_01_library_grants.sql` (or `20260626`) gives anon and authenticated SELECT on the table again. With the policy gone, RLS still returns them no row, so the dropped policy is what keeps the codes closed. `_verify.sql` still stops on the grant alone (block `verify:library_invitations_closed`, «… holds SELECT on library.invitations … run 20261103_15 … (any time)»); run this file again and it is put right.
+
+**`_verify.sql` by hand** (server; deploy.sh does not run it):
+
+```bash
+cd /www/wwwroot/nzamy/latest-nzamy-full && docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < supabase/migrations/_verify.sql 2>&1 | grep -E "_verify: 20261103_15|ERROR"
+```
+
+Expected screen line: `_verify: 20261103_15 OK — library invite codes: no anon / authenticated privilege, no policy admits them (0 polic(ies) left), service_role reads and writes`.
+
+<!-- <<< S1: 20261103_15 -->
 
 <!-- >>> S1 Task 18: 20261103_12 (BEFORE the deploy) -->
 
