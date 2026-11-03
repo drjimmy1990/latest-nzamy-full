@@ -160,6 +160,9 @@ test("legend texts: the built reference is counted, the «المرجع:» label 
   const block = readFileSync(new URL("./_principle-block.tsx", import.meta.url), "utf8");
   const page = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
   assert.match(block, /const cleanRef = principleReferenceLine\(rawRef\);/);
-  assert.match(page, /principleHighlightTexts\(p, isRTL, getReferenceForPrinciple\)/);
+  // The legend counts and the drawn block build the reference the same way.
+  assert.match(page, /principleHighlightTexts\(p, isRTL, referenceOf\)/);
+  assert.match(page, /const referenceOf = \(p: JudicialPrincipleItem\) => referenceForPrinciple\(p, collection, isRTL\);/);
+  assert.match(page, /const getReferenceForPrinciple = \(p: JudicialPrincipleItem\) => referenceForPrinciple\(p, collection, isRTL\);/);
   assert.doesNotMatch(page, /^const isReferenceText/m);
 });

@@ -12,3 +12,9 @@ test("catalogue cards match with the library grammar, not a literal includes", (
   // The matcher is rebuilt when the query changes.
   assert.equal(catalogueMatches("تحكيم", ["نظام التحكيم"]), true);
 });
+
+test("half-typed queries never throw and never blank the catalogue (typed on every keystroke)", () => {
+  for (const q of ['"', '"غرامة', "(", ")", "-", "+", "/", "*", "نظام -", "نظام /", "نظام +"]) {
+    assert.equal(catalogueMatches(q, ["نظام الغرامة"]), true, JSON.stringify(q));
+  }
+});
