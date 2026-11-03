@@ -334,6 +334,9 @@ export default function PricingPage() {
                           {view.visible ? <Eye size={12} /> : <EyeSlash size={12} />}
                           {view.visible ? "ظاهر" : "مخفي"}
                         </button>
+                        {typeof variantOf === "string" && (
+                          <p className={`text-[10px] mt-1 ${muted}`}>الإخفاء يُعيد سعر الأفراد للشركات</p>
+                        )}
                       </td>
                       <td className="px-4 py-4">
                         {editing ? (
