@@ -58,16 +58,20 @@ const MODE_LABEL: Record<ClientServicePriceMode, string> = {
 
 const API = "/api/v1/admin/pricing-catalog";
 
-/** Read-only price-book rows: the professionals' subscription and top-ups, the two firm plans (yearly; monthly retired). */
-const BOOK_ROWS: Array<{ id: string; billing: "yearly" | "once" }> = [
-  { id: "lawyer-pro", billing: "yearly" },
-  { id: "topup-500", billing: "once" },
-  { id: "topup-1000", billing: "once" },
-  { id: "topup-2500", billing: "once" },
-  { id: "topup-5000", billing: "once" },
-  { id: "topup-10000", billing: "once" },
-  { id: "firm-basic", billing: "yearly" },
-  { id: "firm-enterprise", billing: "yearly" },
+/**
+ * Read-only price-book rows: the professionals' subscription and top-ups, the
+ * two firm plans (yearly; monthly retired). Each price is a literal bookSar
+ * call, so bookCallSites.test.ts checks the book still sells it.
+ */
+const BOOK_ROWS: Array<{ id: string; yearly: boolean; price: number }> = [
+  { id: "lawyer-pro", yearly: true, price: bookSar("lawyer-pro", "yearly") },
+  { id: "topup-500", yearly: false, price: bookSar("topup-500", "once") },
+  { id: "topup-1000", yearly: false, price: bookSar("topup-1000", "once") },
+  { id: "topup-2500", yearly: false, price: bookSar("topup-2500", "once") },
+  { id: "topup-5000", yearly: false, price: bookSar("topup-5000", "once") },
+  { id: "topup-10000", yearly: false, price: bookSar("topup-10000", "once") },
+  { id: "firm-basic", yearly: true, price: bookSar("firm-basic", "yearly") },
+  { id: "firm-enterprise", yearly: true, price: bookSar("firm-enterprise", "yearly") },
 ];
 
 type Draft = { serviceId: string; basePrice: string; priceMode: string; priceNote: string };
@@ -373,14 +377,14 @@ export default function PricingPage() {
               </tr>
             </thead>
             <tbody>
-              {BOOK_ROWS.map(({ id, billing }) => (
+              {BOOK_ROWS.map(({ id, yearly, price }) => (
                 <tr key={id} className="border-b last:border-0 border-white/[0.04]">
                   <td className="px-3 py-2 text-sm text-zinc-100">
                     {PRICE_BOOK[id].labelAr}
                     <span className={`block text-[10px] font-mono ${muted}`}>{id}</span>
                   </td>
-                  <td className="px-3 py-2 text-xs text-zinc-300">{billing === "yearly" ? "سنوي" : "مرة واحدة"}</td>
-                  <td className="px-3 py-2 text-sm font-mono text-[#C8A762]">{bookSar(id, billing).toLocaleString("ar-SA")}</td>
+                  <td className="px-3 py-2 text-xs text-zinc-300">{yearly ? "سنوي" : "مرة واحدة"}</td>
+                  <td className="px-3 py-2 text-sm font-mono text-[#C8A762]">{price.toLocaleString("ar-SA")}</td>
                   <td className={`px-3 py-2 text-sm font-mono ${muted}`}>
                     {PRICE_BOOK[id].points ? PRICE_BOOK[id].points!.toLocaleString("ar-SA") : "—"}
                   </td>
