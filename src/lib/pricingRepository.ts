@@ -17,6 +17,8 @@ export type PricingCatalogSource = "admin-seed" | "backend";
 
 export type AdminPricingCatalogRow = {
   service_id: string;
+  /** 'individual' | 'corporate' (S6); any other value keeps the code item's. */
+  audience?: string;
   category_id: ClientServiceCategoryId;
   label_ar: string;
   base_price: number | string;
@@ -35,6 +37,8 @@ export type AdminPricingCatalogRow = {
     tag?: string;
     aiPowered?: boolean;
     humanService?: boolean;
+    /** S6: this row is an audience variant of that service id (never a card). */
+    variantOf?: string;
   };
 };
 
@@ -44,15 +48,21 @@ export type AdminPricingCatalogRow = {
 // pricing doc §13أ) a coupon is checked and applied on the server only:
 // src/lib/payments/couponRules.ts + couponServer.ts, inside the checkout order.
 
+// S6: an audience variant (`variantOf` set, e.g. contract-review-business) is
+// never a card and never a lookup result — it only lends its price to its
+// base item through resolveClientService (src/lib/pricing/clientPricingAudience.ts).
+// Each helper below skips it, so a variant id resolves like an unknown id.
+const isCard = (service: ClientServiceCatalogItem) => !service.variantOf;
+
 export function getClientServiceById(
   serviceId: string | null | undefined,
   catalog: ClientServiceCatalogItem[] = CLIENT_SERVICE_CATALOG,
 ): ClientServiceCatalogItem {
   return (
-    catalog.find((service) => service.serviceId === serviceId) ??
-    catalog.find((service) => service.serviceId === "general") ??
-    CLIENT_SERVICE_CATALOG.find((service) => service.serviceId === serviceId) ??
-    CLIENT_SERVICE_CATALOG.find((service) => service.serviceId === "general")!
+    catalog.find((service) => isCard(service) && service.serviceId === serviceId) ??
+    catalog.find((service) => isCard(service) && service.serviceId === "general") ??
+    CLIENT_SERVICE_CATALOG.find((service) => isCard(service) && service.serviceId === serviceId) ??
+    CLIENT_SERVICE_CATALOG.find((service) => isCard(service) && service.serviceId === "general")!
   );
 }
 
@@ -60,7 +70,7 @@ export function getClientServicesByCategory(
   categoryId: ClientServiceCategoryId,
   catalog: ClientServiceCatalogItem[] = CLIENT_SERVICE_CATALOG,
 ): ClientServiceCatalogItem[] {
-  return catalog.filter((service) => service.categoryId === categoryId && service.enabled !== false);
+  return catalog.filter((service) => isCard(service) && service.categoryId === categoryId && service.enabled !== false);
 }
 
 export function getClientServiceCategories(options?: { includeBeta?: boolean }): ClientServiceCategory[] {
@@ -71,8 +81,10 @@ export function getClientServiceCategories(options?: { includeBeta?: boolean }):
 
 export function getVisibleClientServiceCatalog(options?: { includeBeta?: boolean }): ClientServiceCatalogItem[] {
   const includeBeta = options?.includeBeta ?? false;
-  if (includeBeta) return CLIENT_SERVICE_CATALOG.filter((service) => service.enabled !== false);
-  return CLIENT_SERVICE_CATALOG.filter((service) => service.betaVisibility === "public" && service.enabled !== false);
+  if (includeBeta) return CLIENT_SERVICE_CATALOG.filter((service) => isCard(service) && service.enabled !== false);
+  return CLIENT_SERVICE_CATALOG.filter(
+    (service) => isCard(service) && service.betaVisibility === "public" && service.enabled !== false,
+  );
 }
 
 export function formatClientServicePrice(service: Pick<ClientServiceCatalogItem, "basePrice" | "priceMode">): string {
@@ -120,6 +132,11 @@ export function mergeAdminPricingCatalogRows(rows: AdminPricingCatalogRow[]): Cl
       tag: metadata.tag ?? existing?.tag,
       aiPowered: metadata.aiPowered ?? existing?.aiPowered,
       humanService: metadata.humanService ?? existing?.humanService,
+      // S6: a row's audience and variantOf travel with it. A row that drops
+      // either keeps the code item's, so a variant never turns into a card.
+      audience:
+        row.audience === "corporate" || row.audience === "individual" ? row.audience : existing?.audience,
+      variantOf: metadata.variantOf ?? existing?.variantOf,
     };
     byId.set(row.service_id, next);
   }

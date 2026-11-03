@@ -22,6 +22,14 @@ export type ClientServicePriceMode =
 
 export type ClientServiceVisibility = "public" | "beta_hidden" | "internal";
 
+/**
+ * Who a catalogue price is for (S6, q327). `corporate` is the value
+ * profiles.user_type and subscription_plans.audience use for companies.
+ * Re-exported by src/lib/pricing/clientPricingAudience.ts, which decides the
+ * viewer's audience and resolves the price for it.
+ */
+export type ClientPricingAudience = "individual" | "corporate";
+
 export type ClientServiceCatalogItem = {
   serviceId: string;
   categoryId: ClientServiceCategoryId;
@@ -35,7 +43,7 @@ export type ClientServiceCatalogItem = {
   /**
    * DEAD DATA — READ BY NOBODY, AND NOT THE PLACE TO PROMISE A HUMAN.
    *
-   * Twenty-four entries below say `receiverType: "lawyer"`, and not one of them
+   * Twenty-three entries below say `receiverType: "lawyer"`, and not one of them
    * reaches a `service_requests` row. Every client intake path writes the
    * literal `receiver: "ai_workspace"` instead, unconditionally:
    * requests/new/page.tsx:135, consultation/new/page.tsx:347,
@@ -62,6 +70,14 @@ export type ClientServiceCatalogItem = {
   tag?: string;
   aiPowered?: boolean;
   humanService?: boolean;
+  /** Absent = "individual". */
+  audience?: ClientPricingAudience;
+  /**
+   * Set on an audience VARIANT of another service (S6): the item only lends
+   * its price to the base item `variantOf` through resolveClientService. It is
+   * never a card and never a getClientServiceById result.
+   */
+  variantOf?: string;
 };
 
 export type ClientServiceCategory = {
@@ -319,13 +335,37 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     label: "مراجعة من محام متخصص",
     description: "محام متخصص يراجع عقدك ويقدم تقريرا قانونيا مكتوبا",
     // q327 (owner package of 1 Nov 2026 §6.2.1): from 600 for individuals,
-    // 800 for business. This catalogue is the individuals' one (the API reads
-    // audience = 'individual' only, and service_id is the table's key), so
-    // only the 600 lives here; the business 800 has no row to carry it.
-    // Migration 20261102_10 writes the same row.
+    // 800 for business. This is the individuals' price (migration 20261102_10
+    // writes the same row). The business 800 lives in its own variant,
+    // `contract-review-business` (audience "corporate", variantOf this id),
+    // just below: service_id is admin_pricing_catalog's primary key, so one
+    // service cannot hold two audience rows (migration 20261103_20).
     basePrice: 600,
     priceMode: "starting_from",
     priceNote: "سعر الأفراد؛ يُؤكَّد بعد الاطلاع على العقد",
+    route: "/dashboard/client/requests/new?type=contract-review",
+    icon: "MagnifyingGlass",
+    receiverType: "lawyer",
+    requestType: "service",
+    betaVisibility: "public",
+    requiresPayment: true,
+    humanService: true,
+  },
+  {
+    // S6 (q327): the business price of `contract-review`. A VARIANT, never a
+    // card: resolveClientService lends its price/mode/note to the base item
+    // for a corporate viewer; the helpers in pricingRepository.ts skip it.
+    // Migration 20261103_20 writes the same row; when that row exists it wins
+    // here (an admin may edit its price).
+    serviceId: "contract-review-business",
+    audience: "corporate",
+    variantOf: "contract-review",
+    categoryId: "contracts",
+    label: "مراجعة من محام متخصص",
+    description: "محام متخصص يراجع عقدك ويقدم تقريرا قانونيا مكتوبا",
+    basePrice: 800,
+    priceMode: "starting_from",
+    priceNote: "سعر الأعمال؛ يُؤكَّد بعد الاطلاع على العقد",
     route: "/dashboard/client/requests/new?type=contract-review",
     icon: "MagnifyingGlass",
     receiverType: "lawyer",

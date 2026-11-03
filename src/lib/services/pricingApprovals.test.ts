@@ -537,7 +537,12 @@ test("q327: contract review is 600 for individuals; contract drafting says the t
     return r;
   };
   const review = row("contract-review");
-  assert.equal(review.basePrice, 600, "individuals' price (the 800 business price has no row: the catalogue is audience = 'individual')");
+  assert.equal(review.basePrice, 600, "individuals' price (the business 800 is the contract-review-business variant, S6)");
+  const business = row("contract-review-business");
+  assert.equal(business.basePrice, 800, "q327: «من ٨٠٠» for business");
+  assert.equal(business.priceMode, "starting_from");
+  assert.equal(business.audience, "corporate");
+  assert.equal(business.variantOf, "contract-review");
   assert.equal(review.priceMode, "starting_from");
   assert.doesNotMatch(review.priceNote ?? "", /2x/);
   const draft = row("contract-draft");
@@ -585,6 +590,26 @@ test("q327: migration 20261102_10 writes the same two rows the code catalogue ca
   }
   // Retire, never delete: no DROP, no DELETE, no function (PGRST203).
   assert.doesNotMatch(code, /\b(?:drop|delete|truncate)\b|create (?:or replace )?function/i);
+});
+
+test("S6 (q327): migration 20261103_20 inserts the same business variant the code catalogue carries", async () => {
+  const { CLIENT_SERVICE_CATALOG } = await import("../../constants/clientServiceCatalog.ts");
+  const v = CLIENT_SERVICE_CATALOG.find((s) => s.serviceId === "contract-review-business")!;
+  const base = CLIENT_SERVICE_CATALOG.find((s) => s.serviceId === "contract-review")!;
+  const sql = readFileSync(new URL("../../../supabase/migrations/20261103_20_contract_review_business_row.sql", import.meta.url), "utf8");
+  const code = sql.replace(/--.*$/gm, "");
+  const tuple = `('${v.serviceId}', '${v.audience}', '${v.categoryId}', '${v.label}', ${v.basePrice}, '${v.priceMode}', '${v.receiverType}', '${v.betaVisibility}', ${v.requiresPayment}, true,`;
+  assert.ok(code.includes(tuple), "the same id, audience, category, label, price, mode, receiver, visibility, payment flag");
+  const meta = JSON.parse(/'(\{"route"[\s\S]*?\})'::jsonb/.exec(code)![1]);
+  assert.equal(meta.variantOf, v.variantOf);
+  assert.equal(meta.priceNote, v.priceNote);
+  assert.equal(meta.route, base.route, "the variant opens the base service's form");
+  assert.equal(meta.icon, v.icon);
+  assert.equal(meta.requestType, v.requestType);
+  assert.equal(meta.humanService, true);
+  // A re-run never overwrites an admin's edit; nothing else is written.
+  assert.match(code, /on conflict \(service_id\) do nothing;/);
+  assert.doesNotMatch(code, /\b(?:update|drop|delete|truncate)\b|create (?:or replace )?function|\bpolicy\b/i);
 });
 
 test("task 6 (G): migration 20261102_11 writes contract-draft's mode and note exactly as the code row carries them", async () => {
