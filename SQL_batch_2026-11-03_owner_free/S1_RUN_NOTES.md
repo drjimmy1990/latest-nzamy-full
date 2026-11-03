@@ -163,3 +163,34 @@ select count(*) as automatic_locks_without_end from public.library_security_lock
 The last row should read `automatic_locks_without_end = 0`. A lock whose 24 hours have already passed closes by itself on that reader's next library request.
 
 <!-- <<< S1 Task 14: 20261103_10 -->
+
+<!-- >>> S1 Task 16: 20261103_11 (BEFORE the deploy) -->
+
+## BEFORE the deploy: `20261103_11_library_invitation_grant_days.sql`
+
+**What it does:** a library invite code may carry its own number of days (owner q378). It adds one column, `library.invitations.grant_days` (empty = the usual 30 days; a number = 1 to 3660 days). Codes made before keep giving 30 days. Seats are the existing «عدد المقاعد» (`max_uses`). No grant and no policy changes.
+
+The file is in two places:
+- On your PC, after `git pull` on main: `D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\supabase\migrations\20261103_11_library_invitation_grant_days.sql`
+- On the server: `/www/wwwroot/nzamy/latest-nzamy-full/supabase/migrations/20261103_11_library_invitation_grant_days.sql`
+
+Run it in the SQL Editor as postgres (paste the whole file). **Expected result on the screen** (it is not a file): one row with `grant_days_column = t`, `grant_days_check = t`, `codes_with_own_days = 0` on the first run, and `ok = t`.
+
+The row also shows `codes_readable_by_session_roles`. It is **not** part of `ok`, and this file does not change it. If it reads `t`, see the STOP-POINT below.
+
+### STOP-POINT, not run by any file: the invite codes are readable with the public key
+
+`20260626_legal_library_schema.sql` gave anon and authenticated SELECT on every library table, and added the policy «Allow public read on library.invitations» (`using (true)`). So anyone holding the site's public anon key can list every invite code through the API (`Accept-Profile: library`) and redeem the ones that still have seats. The site's own code reads this table only through the service role, so closing it breaks no page. It is a grant and RLS change on an existing table, so it waits for your go. When you decide, the statements would be:
+
+```sql
+begin;
+revoke all on library.invitations from anon, authenticated;
+drop policy if exists "Allow public read on library.invitations" on library.invitations;
+commit;
+select has_table_privilege('anon', 'library.invitations', 'SELECT') as anon_reads_codes,
+       has_table_privilege('authenticated', 'library.invitations', 'SELECT') as users_read_codes;
+```
+
+Both columns should then read `f`.
+
+<!-- <<< S1 Task 16: 20261103_11 -->

@@ -5564,3 +5564,31 @@ begin
   raise notice '_verify: 20261103_10 OK — automatic library locks end after % hour(s) (0 = until an admin lifts it)', coalesce(v_hours, 'no settings row: 24');
 end $$;
 -- <<< verify:library_auto_lock_hours
+-- >>> verify:library_invitation_grant_days
+-- 2026-11-03 — 20261103_11_library_invitation_grant_days.sql (owner-free
+-- wave, S1-T16; owner q378): a library invite code may carry its own number
+-- of days (library.invitations.grant_days; null = the default 30). Read-only,
+-- safe to repeat: SELECTs and RAISE.
+-- RAISES (naming the file to run) when the column or its check is missing.
+-- No library.invitations (20260626 not applied): one NOTICE, passes.
+-- Docker: supabase/tests/rls/library_invitation_grant_days.test.sql runs this
+-- block (its header has the chain, the negative control and the sed line).
+do $$
+declare n_own int; n_all int;
+begin
+  if to_regclass('library.invitations') is null then
+    raise notice '_verify: 20261103_11 — library.invitations is missing (20260626 not applied): nothing to check'; return;
+  end if;
+  if not exists (select 1 from information_schema.columns
+                  where table_schema = 'library' and table_name = 'invitations' and column_name = 'grant_days') then
+    raise exception '_verify: 20261103_11 — library.invitations.grant_days is missing: every invite code gives 30 days and the admin cannot set a code''s own length. Run 20261103_11_library_invitation_grant_days.sql (BEFORE the deploy)';
+  end if;
+  if not exists (select 1 from pg_constraint
+                  where conrelid = 'library.invitations'::regclass
+                    and conname = 'library_invitations_grant_days_check') then
+    raise exception '_verify: 20261103_11 — the check library_invitations_grant_days_check is missing. Run 20261103_11_library_invitation_grant_days.sql again (BEFORE the deploy)';
+  end if;
+  execute 'select count(*) filter (where grant_days is not null), count(*) from library.invitations' into n_own, n_all;
+  raise notice '_verify: 20261103_11 OK — % of % invite code(s) carry their own number of days; the rest give 30', n_own, n_all;
+end $$;
+-- <<< verify:library_invitation_grant_days
