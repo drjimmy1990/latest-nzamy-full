@@ -10,9 +10,11 @@
  * imported and executed from `node --test`. The rate-limit half IS executable.
  *
  * What it pins:
- *   - Owner answers ٢٠١–٢٠٣ (2026-10-18): a code grants the LIBRARY, for 30
- *     days — a `lib-invite` row in library_access_grants with source
- *     'invite_code' — and no longer a "pro" subscription through
+ *   - Owner answers ٢٠١–٢٠٣ (2026-10-18): a code grants the LIBRARY — a
+ *     `lib-invite` row in library_access_grants with source 'invite_code' —
+ *     for the code's own grant_days (owner q378, 20261103_11), 30 when the
+ *     code has none or the column is not there yet — and no longer a "pro"
+ *     subscription through
  *     grantEntitlement. The success payload says so (`tier: "library"`,
  *     `days`), so src/lib/services/libraryInvitationDisplay.ts prints the
  *     library sentence instead of «فُعّلت باقة Pro …».
@@ -60,16 +62,30 @@ function grantCallBlock(source: string): string {
   return source.slice(callAt, endAt);
 }
 
-// ── 1. a code grants the library for 30 days, never "pro" ───────────────────
+// ── 1. a code grants the library for its own days (30 by default), never "pro" ─
 
-test("redeem writes a 30-day lib-invite library grant", () => {
+test("redeem writes a lib-invite library grant for the code's own grant_days, 30 when it has none (q378)", () => {
   const code = codeOnly(routeSource);
-  assert.ok(code.includes("const REDEEM_LIBRARY_DAYS = 30;"), "a code's library window is 30 days");
+  assert.ok(!code.includes("REDEEM_LIBRARY_DAYS"), "the fixed 30-day constant is gone: a code carries its own days");
+  assert.ok(
+    code.includes("claimedDays = row.grant_days ?? DEFAULT_INVITE_GRANT_DAYS;"),
+    "the claimed code's grant_days, or the default 30 (DEFAULT_INVITE_GRANT_DAYS)",
+  );
+  const claimAt = code.indexOf("claimed = updated;");
+  const daysAt = code.indexOf("claimedDays = row.grant_days ?? DEFAULT_INVITE_GRANT_DAYS;");
+  assert.ok(daysAt > -1 && daysAt < claimAt, "the days are those of the row this attempt claimed (same loop round)");
   const call = grantCallBlock(code);
   assert.ok(call.includes("userId,"), "the grant goes to the signed-in caller");
   assert.ok(call.includes('planRef: "lib-invite"'), "an invitation code's grant is plan 'lib-invite'");
-  assert.ok(call.includes("days: REDEEM_LIBRARY_DAYS"), "the grant lasts the 30 days");
+  assert.ok(call.includes("days: claimedDays"), "the grant lasts the code's days");
   assert.ok(call.includes('source: "invite_code"'), "the grant's source is 'invite_code'");
+});
+
+test("redeem reads grant_days, and before 20261103_11 re-reads without it (a code then gives 30 days)", () => {
+  const code = codeOnly(routeSource);
+  assert.ok(code.includes("read(LIBRARY_INVITATION_SELECT_V2)"), "the lookup names grant_days");
+  assert.ok(code.includes('isMissingColumnError(') && code.includes('"grant_days"'), "a missing column is detected by name");
+  assert.ok(code.includes("read(LIBRARY_INVITATION_SELECT)"), "the fallback read has no grant_days");
 });
 
 test("redeem no longer grants pro or writes a subscription", () => {
@@ -136,7 +152,7 @@ test("a failed grant refunds the use, answers 400 in Arabic, and hides the raw e
   );
 });
 
-// ── 3. the success payload says library, 30 days, and the real end ──────────
+// ── 3. the success payload says library, the code's days, and the real end ──
 
 test("the success payload names the library, its days, and the grant's own end", () => {
   const code = codeOnly(routeSource);
@@ -147,7 +163,7 @@ test("the success payload names the library, its days, and the grant's own end",
     payload.includes('tier: "library"'),
     "the payload must not say pro: the modal turns `tier` into its sentence",
   );
-  assert.ok(payload.includes("days: REDEEM_LIBRARY_DAYS"), "the modal says how long the library is open");
+  assert.ok(payload.includes("days: claimedDays"), "the modal says how long the library is open — the code's own days");
   assert.ok(payload.includes("until: grant.endsAt"), "the end date is the inserted grant's own");
 });
 

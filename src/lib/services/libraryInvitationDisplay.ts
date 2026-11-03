@@ -46,3 +46,13 @@ export function redeemSuccessMessageAr(tier: string, until: string | null, days?
   const label = tierDisplayAr(tier);
   return dateAr ? `فُعّلت باقة ${label} حتى ${dateAr}` : `فُعّلت باقة ${label}`;
 }
+
+/**
+ * A code's terms on the admin list (owner q378): its days and its seats
+ * (max_uses — how many accounts may use it), e.g. «٩٠ يوماً · ٥ مقاعد».
+ */
+export function invitationTermsAr(days: number, seats: number): string {
+  const daysAr = countPhraseAr(days, { zero: null, one: "يوم واحد", two: "يومان", few: "أيام", many: "يوماً" }) ?? "—";
+  const seatsAr = countPhraseAr(seats, { zero: null, one: "مقعد واحد", two: "مقعدان", few: "مقاعد", many: "مقعداً" }) ?? "—";
+  return `${daysAr} · ${seatsAr}`;
+}

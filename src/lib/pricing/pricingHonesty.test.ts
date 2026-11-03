@@ -452,15 +452,17 @@ test("P1 item 2: the CTA's refund line states the refund page's condition", () =
 });
 
 // ── Task 1.6 (owner ٢٠١–٢٠٣): an invite code opens the library, nothing else ──
-// Since 2026-10-18 a library invitation code grants the legal library for 30
-// days (a library grant, no plan tier, no AI search), so its copy may promise
-// neither Pro nor «البحث الذكي».
+// Since 2026-10-18 a library invitation code grants the legal library (a
+// library grant, no plan tier, no AI search), so its copy may promise neither
+// Pro nor «البحث الذكي». Since owner q378 (20261103_11) a code carries its own
+// days (30 when it has none), so the copy may not promise a flat 30 days.
 
-test("T1.6: the invite-code copy promises the library for 30 days, not Pro or smart search", () => {
+test("T1.6: the invite-code copy promises the library for the code's days (30 by default), not Pro or smart search", () => {
   const banner = code("components/InvitationBanner.tsx");
   assert.doesNotMatch(banner, /البحث الذكي/, "banner: smart search");
   assert.doesNotMatch(banner, /\bPro\b/, "banner: Pro");
-  assert.match(banner, /فعّله لتفتح نصوص المكتبة القانونية كاملة لمدة ٣٠ يوماً\./);
+  assert.match(banner, /فعّله لتفتح نصوص المكتبة القانونية كاملة للمدة التي يمنحها الكود \(٣٠ يوماً ما لم يُحدَّد غير ذلك\)\./);
+  assert.doesNotMatch(banner, /لمدة ٣٠ يوماً/, "banner: a flat 30 days (a code may carry its own length, q378)");
 
   const subscribe = code("app/laws/subscribe/page.tsx");
   const faqs = subscribe.match(/faqs: \[[\s\S]*?\n {4}\],/g) ?? [];
@@ -469,8 +471,9 @@ test("T1.6: the invite-code copy promises the library for 30 days, not Pro or sm
     assert.doesNotMatch(faq, /باقة Pro/, "FAQ: «باقة Pro»");
     assert.doesNotMatch(faq, /Pro tier/i, "FAQ: Pro tier");
   }
-  assert.match(subscribe, /إن كان لديك كود دعوة، فإنه يفتح المكتبة القانونية كاملة لمدة ٣٠ يوماً فور تفعيله، دون انتظار\./);
-  assert.match(subscribe, /If you have an invitation code, it opens the full legal library for 30 days as soon as you redeem it — no waiting\./);
+  assert.match(subscribe, /إن كان لديك كود دعوة، فإنه يفتح المكتبة القانونية كاملة للمدة التي يمنحها الكود \(٣٠ يوماً ما لم يُحدَّد غير ذلك\) فور تفعيله، دون انتظار\./);
+  assert.match(subscribe, /If you have an invitation code, it opens the full legal library for the length the code grants \(30 days unless it says otherwise\) as soon as you redeem it — no waiting\./);
+  assert.doesNotMatch(subscribe, /كود دعوة، فإنه يفتح المكتبة القانونية كاملة لمدة ٣٠ يوماً/, "FAQ: a flat 30 days (q378)");
 });
 
 test("P1 item 1: the admin AI-usage pages show real runs or say they are coming", () => {

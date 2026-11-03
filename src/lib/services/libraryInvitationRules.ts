@@ -6,14 +6,15 @@
  *
  * Pure: no I/O, no Supabase, no Next.js. Every branch is testable.
  *
- * `library.invitations` columns: id, code (unique), max_uses (default 1),
- * current_uses (default 0), expires_at (nullable), created_by, created_at,
- * updated_at. There is no per-code tier/trial_days column — that is the
- * *other* invitation system (`public.invitations`, colleague referrals,
- * `/api/v1/invite/[code]/accept`). A library code always grants the same
- * thing: the legal library — a `lib-invite` library grant, not a plan
- * (owner answers ٢٠١–٢٠٣) — for a fixed duration; see the redeem route for
- * that constant.
+ * `library.invitations` columns: id, code (unique), max_uses (default 1 —
+ * the code's seats: how many accounts may use it), current_uses (default 0),
+ * expires_at (nullable), grant_days (nullable, 20261103_11), created_by,
+ * created_at, updated_at. There is no per-code tier — that is the *other*
+ * invitation system (`public.invitations`, colleague referrals,
+ * `/api/v1/invite/[code]/accept`). A library code always grants the legal
+ * library — a `lib-invite` library grant, not a plan (owner answers
+ * ٢٠١–٢٠٣) — for its own grant_days (owner q378), or
+ * DEFAULT_INVITE_GRANT_DAYS when it has none.
  */
 
 import { randomInt } from "node:crypto";
@@ -74,6 +75,28 @@ export function validateMaxUses(raw: unknown): FieldValidation<number> {
       ok: false,
       error: `الحد الأقصى لعدد الاستخدامات يجب أن يكون بين ${MIN_MAX_USES} و${MAX_MAX_USES}`,
     };
+  }
+  return { ok: true, value: raw };
+}
+
+/**
+ * The length of a code without its own grant_days: every code made before
+ * 20261103_11, and any code the admin made without a length (owner ٢٠١–٢٠٣).
+ */
+export const DEFAULT_INVITE_GRANT_DAYS = 30;
+
+const MIN_GRANT_DAYS = 1;
+/** grantLibraryAccess's (and library_grant_access's) upper bound — the same as the column's CHECK. */
+const MAX_GRANT_DAYS = 3660;
+
+/**
+ * `grantDays` (owner q378): optional. Absent/null → no own length (null: the
+ * code gives DEFAULT_INVITE_GRANT_DAYS); otherwise an integer 1..3660.
+ */
+export function validateGrantDays(raw: unknown): FieldValidation<number | null> {
+  if (raw === undefined || raw === null) return { ok: true, value: null };
+  if (typeof raw !== "number" || !Number.isInteger(raw) || raw < MIN_GRANT_DAYS || raw > MAX_GRANT_DAYS) {
+    return { ok: false, error: "مدة المنحة يجب أن تكون عدداً صحيحاً بين ١ و٣٦٦٠ يوماً" };
   }
   return { ok: true, value: raw };
 }

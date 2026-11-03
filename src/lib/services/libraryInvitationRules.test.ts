@@ -11,6 +11,8 @@ import {
   isValidInvitationCodeFormat,
   validateMaxUses,
   validateExpiresAt,
+  validateGrantDays,
+  DEFAULT_INVITE_GRANT_DAYS,
   libraryInvitationStatus,
 } from "./libraryInvitationRules.ts";
 
@@ -153,4 +155,25 @@ test("a future expiry does not mark an otherwise-active code expired", () => {
     libraryInvitationStatus({ currentUses: 1, maxUses: 3, expiresAt: future }),
     "active",
   );
+});
+
+// ── validateGrantDays (owner q378, 20261103_11) ─────────────────────────────
+
+test("validateGrantDays: absent or null = no own length (the default 30 days)", () => {
+  assert.deepEqual(validateGrantDays(undefined), { ok: true, value: null });
+  assert.deepEqual(validateGrantDays(null), { ok: true, value: null });
+  assert.equal(DEFAULT_INVITE_GRANT_DAYS, 30);
+});
+
+test("validateGrantDays: an integer from 1 to 3660 days (grantLibraryAccess's bound)", () => {
+  const ninety = validateGrantDays(90);
+  assert.ok(ninety.ok);
+  if (ninety.ok) assert.equal(ninety.value, 90);
+  assert.equal(validateGrantDays(1).ok, true);
+  assert.equal(validateGrantDays(3660).ok, true);
+  for (const bad of [0, 3661, 1.5, -5, "90", Number.NaN, Infinity, true, {}]) {
+    const r = validateGrantDays(bad);
+    assert.equal(r.ok, false, String(bad));
+    if (!r.ok) assert.equal(r.error, "مدة المنحة يجب أن تكون عدداً صحيحاً بين ١ و٣٦٦٠ يوماً");
+  }
 });

@@ -2,8 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
 import { createServiceClient } from "@/lib/supabase/server";
 import { grantLibraryAccess } from "@/lib/libraryAccessServer";
-import { normalizeInvitationCode } from "@/lib/services/libraryInvitationRules";
-import { libraryInvitationDbErrorResponse } from "../_shared";
+import { DEFAULT_INVITE_GRANT_DAYS, normalizeInvitationCode } from "@/lib/services/libraryInvitationRules";
+import { isMissingColumnError } from "@/lib/library/optionalColumn";
+import {
+  LIBRARY_INVITATION_SELECT,
+  LIBRARY_INVITATION_SELECT_V2,
+  libraryInvitationDbErrorResponse,
+  type LibraryInvitationRow,
+} from "../_shared";
 
 /**
  * POST /api/v1/library/invitations/redeem — spend an admin-issued
@@ -14,15 +20,15 @@ import { libraryInvitationDbErrorResponse } from "../_shared";
  * unlike the sibling colleague-referral flow at
  * /api/v1/invite/[code]/accept (public.invitations), which uses 404/409/410.
  *
- * A code always grants the SAME thing (owner answers ٢٠١–٢٠٣, 2026-10-18):
- * the legal library, for 30 days — one `lib-invite` row in
- * public.library_access_grants with source 'invite_code' — and no plan tier.
- * It used to grant a 30-day "pro" subscription through grantEntitlement;
- * full library access is now Pro+ OR an active library grant OR admin
- * (src/lib/libraryAccessDecision.ts), so the grant alone opens the library.
- * There is no per-code length column on `library.invitations` (unlike
- * `public.invitations`, which carries `trial_days`), so the length is fixed
- * here.
+ * A code grants the legal library (owner answers ٢٠١–٢٠٣, 2026-10-18) — one
+ * `lib-invite` row in public.library_access_grants with source 'invite_code'
+ * — and no plan tier. It used to grant a 30-day "pro" subscription through
+ * grantEntitlement; full library access is now Pro+ OR an active library
+ * grant OR admin (src/lib/libraryAccessDecision.ts), so the grant alone opens
+ * the library. Its length is the code's own `grant_days` (owner q378,
+ * 20261103_11), or DEFAULT_INVITE_GRANT_DAYS (30) when the code has none.
+ * Before 20261103_11 runs the column does not exist: the lookup re-reads
+ * without it, and every code gives 30 days, as before.
  *
  * A library grant is its own row: it cancels no subscription, so a code can
  * no longer downgrade anyone (review 2026-09-21 A3/C01) and there is no
@@ -33,25 +39,16 @@ import { libraryInvitationDbErrorResponse } from "../_shared";
  * back to granting "pro": that would undo the owner's decision.
  *
  * The success payload keeps its shape ({ ok, tier, until }) and says what was
- * granted: `tier: "library"`, plus `days`, so
+ * granted: `tier: "library"`, plus `days` (the code's), so
  * src/lib/services/libraryInvitationDisplay.ts prints «فُعّل اشتراك المكتبة
- * القانونية لمدة ٣٠ يوماً حتى …».
+ * القانونية لمدة ٩٠ يوماً حتى …».
  */
-const REDEEM_LIBRARY_DAYS = 30;
 
 /** Bounds the number of read→CAS-update rounds when concurrent redemptions
  *  race for the same code's `current_uses` counter. */
 const MAX_REDEEM_ATTEMPTS = 5;
 
 export const dynamic = "force-dynamic";
-
-interface InvitationCounterRow {
-  id: string;
-  code: string;
-  max_uses: number;
-  current_uses: number;
-  expires_at: string | null;
-}
 
 export async function POST(request: NextRequest) {
   const auth = await assertRole();
@@ -74,14 +71,19 @@ export async function POST(request: NextRequest) {
   const admin = await createServiceClient();
 
   let claimed: { id: string; current_uses: number } | null = null;
+  let claimedDays = DEFAULT_INVITE_GRANT_DAYS;
+
+  /** The code's row with grant_days; before 20261103_11, read once more without it. */
+  const readInvitation = async () => {
+    const read = (select: string) =>
+      admin.schema("library").from("invitations").select(select).eq("code", code).maybeSingle<LibraryInvitationRow>();
+    const first = await read(LIBRARY_INVITATION_SELECT_V2);
+    if (!isMissingColumnError(first.error, "grant_days")) return first;
+    return read(LIBRARY_INVITATION_SELECT);
+  };
 
   for (let attempt = 0; attempt < MAX_REDEEM_ATTEMPTS; attempt++) {
-    const { data: row, error: readError } = await admin
-      .schema("library")
-      .from("invitations")
-      .select("id, code, max_uses, current_uses, expires_at")
-      .eq("code", code)
-      .maybeSingle<InvitationCounterRow>();
+    const { data: row, error: readError } = await readInvitation();
 
     if (readError) {
       console.error("[library/invitations/redeem] lookup failed:", readError.message, readError.code);
@@ -121,6 +123,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: mapped.message }, { status: mapped.status });
     }
     if (updated) {
+      // The days of the row this round claimed — never a re-read after the claim.
+      claimedDays = row.grant_days ?? DEFAULT_INVITE_GRANT_DAYS;
       claimed = updated;
       break;
     }
@@ -165,7 +169,7 @@ export async function POST(request: NextRequest) {
   const grant = await grantLibraryAccess({
     userId,
     planRef: "lib-invite",
-    days: REDEEM_LIBRARY_DAYS,
+    days: claimedDays,
     source: "invite_code",
   });
 
@@ -183,7 +187,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     ok: true,
     tier: "library",
-    days: REDEEM_LIBRARY_DAYS,
+    days: claimedDays,
     until: grant.endsAt,
   });
 }
