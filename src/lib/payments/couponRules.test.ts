@@ -13,6 +13,7 @@ import {
   COUPON_NOT_FOR_ITEM_AR,
   couponRefusalAr,
   evaluateCoupon,
+  excludedItemsOf,
   isFirstOrderCoupon,
   normalizeCouponCode,
   type CouponContext,
@@ -47,6 +48,7 @@ const ctx = (over: Partial<CouponContext> = {}): CouponContext => ({
   alreadyUsed: false,
   itemDiscounted: false,
   hasEarlierPaidOrder: false,
+  itemId: "lawyer-pro",
   now: NOW,
   ...over,
 });
@@ -157,16 +159,53 @@ test("applyDiscount never lets the net go below zero and keeps total = net + VAT
 
 // ── owner ٣٠٥ (30 Oct 2026): NEWCLIENT = the buyer's first paid order on the platform ──
 
-test("٣٠٥: NEWCLIENT is a first-order coupon by its code alone; another code only when its row is marked", () => {
-  assert.equal(isFirstOrderCoupon(NEWCLIENT), true);
-  assert.equal(isFirstOrderCoupon({ ...NEWCLIENT, code: "newclient" }), true);
+test("S6: only the row makes a first-order coupon", () => {
+  // the name is never read (S6-T10): NEWCLIENT's rule lives in its row (20261030_16, 20261103_21)
+  assert.equal(isFirstOrderCoupon(NEWCLIENT), false);
+  const lowerCase: CouponRow = { ...NEWCLIENT, code: "newclient" };
+  assert.equal(isFirstOrderCoupon(lowerCase), false);
+  assert.equal(isFirstOrderCoupon({ ...NEWCLIENT, metadata: { first_paid_order_only: true } }), true);
+  assert.equal(isFirstOrderCoupon({ ...NEWCLIENT, metadata: { first_paid_order_only: false, first_order_rule: "20261103_21" } }), false);
   assert.equal(isFirstOrderCoupon(NZAMY50), false);
   assert.equal(isFirstOrderCoupon({ ...NZAMY50, metadata: { first_paid_order_only: true } }), true);
   assert.equal(isFirstOrderCoupon({ ...NZAMY50, metadata: { first_paid_order_only: "true" } }), false);
+  assert.equal(isFirstOrderCoupon({ ...NZAMY50, metadata: null }), false);
+});
+
+test("S6: an admin's un-tick makes NEWCLIENT an ordinary coupon — an earlier paid order no longer refuses it", () => {
+  const unticked = { ...NEWCLIENT, excluded_kinds: ["topup"], metadata: { first_paid_order_only: false, first_order_rule: "20261103_21" } };
+  assert.deepEqual(evaluateCoupon(unticked, ctx({ netHalalas: 30000, hasEarlierPaidOrder: true })), { ok: true, discountHalalas: 7500 });
+});
+
+test("S6: metadata.excluded_items refuses that item only", () => {
+  const row: CouponRow = { ...NZAMY50, metadata: { excluded_items: ["ind-ai"] } };
+  assert.deepEqual(evaluateCoupon(row, ctx({ itemId: "ind-ai", netHalalas: 24900 })), { ok: false, reason: "not_for_item" });
+  assert.deepEqual(evaluateCoupon(row, ctx({ itemId: "lawyer-pro" })), { ok: true, discountHalalas: 5000 });
+  // a malformed list is ignored
+  assert.deepEqual(evaluateCoupon({ ...NZAMY50, metadata: { excluded_items: "ind-ai" } }, ctx({ itemId: "ind-ai", netHalalas: 24900 })), {
+    ok: true,
+    discountHalalas: 5000,
+  });
+  // a list holding a non-string still excludes the strings it names
+  assert.deepEqual(evaluateCoupon({ ...NZAMY50, metadata: { excluded_items: [7, "ind-ai"] } }, ctx({ itemId: "ind-ai", netHalalas: 24900 })), {
+    ok: false,
+    reason: "not_for_item",
+  });
+  // exact id only: no prefix, no case folding
+  assert.equal(evaluateCoupon(row, ctx({ itemId: "ind-ai-x", netHalalas: 24900 })).ok, true);
+  assert.equal(evaluateCoupon({ ...NZAMY50, metadata: { excluded_items: ["IND-AI"] } }, ctx({ itemId: "ind-ai", netHalalas: 24900 })).ok, true);
+  assert.equal(couponRefusalAr({ ok: false, reason: "not_for_item" }, formatHalalas), COUPON_NOT_FOR_ITEM_AR);
+});
+
+test("S6: excludedItemsOf reads strings from an array only", () => {
+  assert.deepEqual(excludedItemsOf({ metadata: { excluded_items: ["a", 1, null, "b"] } }), ["a", "b"]);
+  assert.deepEqual(excludedItemsOf({ metadata: { excluded_items: "a" } }), []);
+  assert.deepEqual(excludedItemsOf({ metadata: null }), []);
+  assert.deepEqual(excludedItemsOf({}), []);
 });
 
 test("٣٠٥: any earlier paid order of the buyer — whatever it bought — refuses NEWCLIENT, with the generic sentence", () => {
-  const firstOrder = { ...NEWCLIENT, excluded_kinds: ["topup"] };
+  const firstOrder = { ...NEWCLIENT, excluded_kinds: ["topup"], metadata: { first_paid_order_only: true } };
   assert.deepEqual(evaluateCoupon(firstOrder, ctx({ netHalalas: 30000 })), { ok: true, discountHalalas: 7500 });
   const later = evaluateCoupon(firstOrder, ctx({ netHalalas: 30000, hasEarlierPaidOrder: true }));
   assert.deepEqual(later, { ok: false, reason: "invalid" });

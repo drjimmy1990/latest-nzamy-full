@@ -355,6 +355,8 @@ export async function priceWithCoupon(admin: SupabaseClient, input: CouponPricin
     alreadyUsed: used,
     itemDiscounted: itemIsDiscounted(input.item.id, input.billing, input.now, input.book),
     hasEarlierPaidOrder: earlier,
+    // S6-T10: metadata.excluded_items is matched against the item's price-book id
+    itemId: input.item.id,
     now: input.now,
   });
   if (!decision.ok) return { ok: false, status: 400, error: couponRefusalAr(decision, formatHalalas) };
