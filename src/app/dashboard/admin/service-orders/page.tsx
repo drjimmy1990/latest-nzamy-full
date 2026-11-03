@@ -10,6 +10,7 @@ import { buildOrderPrompt } from "@/lib/services/orderPrompt";
 import { ReceiptPanel } from "./_components/ReceiptPanel";
 import { uploadErrorMessage } from "./_errorCopy";
 import { orderReference, matchesOrderReference } from "@/lib/services/orderReference";
+import { estimateLineAr } from "@/lib/services/estimateLine";
 
 interface AdminOrder {
   id: string; title: string; description: string; status: string;
@@ -1210,6 +1211,19 @@ export default function AdminServiceOrdersPage() {
                       🏢 {realName || "المنشأة"}
                       {cr ? ` · س.ت ${cr}` : ""}
                       {rep ? ` · الممثل: ${rep}${capacity ? ` (${capacity})` : ""}` : ""}
+                    </p>
+                  );
+                })()}
+                {/* S6 (q327): the server-stamped estimate and whose price it
+                    is (أعمال / أفراد), so a company is quoted the business
+                    price. An estimate only — ReceiptPanel below is unchanged
+                    and the team still types the amount it received. */}
+                {(() => {
+                  const estimate = estimateLineAr(o.metadata);
+                  if (!estimate) return null;
+                  return (
+                    <p className={`text-[11px] font-semibold ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>
+                      {estimate}
                     </p>
                   );
                 })()}
