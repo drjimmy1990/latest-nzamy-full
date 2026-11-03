@@ -418,3 +418,31 @@ test('numbers still expand both ways next to an «ال» word', () => {
   assert.ok(tsquery.includes("'12'"), tsquery);
   assert.ok(tsquery.includes("'١٢'"), tsquery);
 });
+
+test('review I-1: the word after a particle keeps its spellings, unquoted and in a phrase', () => {
+  for (const q of ['لا اثر', '"لا اثر"']) {
+    const { tsquery } = parseSearchQuery(q);
+    assert.ok(tsquery.includes("'أثر'"), `${q}: ${tsquery}`);
+    assert.ok(tsquery.includes("'لااثر'"), `${q}: ${tsquery}`);
+    assert.match(tsquery, /'لا' <-> \('اثر' \| 'أثر'/, `${q}: adjacent pair`);
+  }
+  for (const q of ['ما اذا', '"ما اذا"']) {
+    assert.ok(parseSearchQuery(q).tsquery.includes("'إذا'"), q);
+  }
+  // A typed «ال…» word keeps its alef spellings too (no bare or re-prefixed form).
+  const ithbat = parseSearchQuery('ما الاثبات').tsquery;
+  assert.ok(ithbat.includes("'الإثبات'"), ithbat);
+  assert.doesNotMatch(ithbat, /'اثبات'|'بالاثبات'/);
+  // Words with no spellings stay byte-exact.
+  assert.equal(parseSearchQuery('لا يكون').tsquery, "(('لا' <-> 'يكون') | 'لايكون')");
+  // The budget still bounds the pair: one MAX_WORD_LEXEMES group at most.
+  const lexemes = (parseSearchQuery('لا اثر').tsquery.match(/'[^']+'/g) ?? []).length;
+  assert.ok(lexemes <= MAX_WORD_LEXEMES + 1, String(lexemes));
+});
+
+test('review M-2: autocomplete counts a voweled word through its stripped form too', () => {
+  const { tsquery } = parseAutocompleteQuery('القَرَارُ');
+  assert.ok(tsquery.includes("'القَرَارُ'"), tsquery);
+  assert.ok(tsquery.includes("'القرار'"), tsquery);
+  assert.equal(parseAutocompleteQuery('قرار').tsquery, "'قرار'");
+});

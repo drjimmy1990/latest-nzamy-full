@@ -36,5 +36,9 @@ test("the ⓘ is mounted in the scoped panel and the /laws main bar, with onPick
   const help = readFileSync(new URL("./SearchSyntaxHelp.tsx", import.meta.url), "utf8");
   assert.match(help, /aria-label="شرح معادلات البحث"/);
   assert.match(help, /"Escape"/);
+  // A disclosure (review M-8): aria-expanded / aria-controls, no dialog role.
+  assert.match(help, /aria-expanded=\{open\}/);
+  assert.match(help, /aria-controls=/);
+  assert.doesNotMatch(help, /role="dialog"/);
   assert.doesNotMatch(help, /text-gray-(?:100|200)\b/);
 });

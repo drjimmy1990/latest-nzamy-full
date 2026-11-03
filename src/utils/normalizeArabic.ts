@@ -432,15 +432,27 @@ export function parseSearchQuery(query: string): ParsedSearchQuery {
   };
   // A particle and the word after it, typed apart: one operand that matches
   // them adjacent or fused — «لا يكون» → (('لا' <-> 'يكون') | 'لايكون').
+  // The word keeps its Rule 2 spellings — typed, stripped, then the alef /
+  // final-letter / numeral variants («لا اثر» finds «لا أثر», «ما اذا» finds
+  // «ما إذا»; T28-11) — but no article forms: after لا / ما / مما / فيما the
+  // word is not «ال…» («لا أثر», never «لا الأثر»), and a typed «ال…» word is
+  // kept as typed and in its own spellings. The fused forms follow the same
+  // spellings, last (cut first).
   const particlePairTsquery = (particle: string, word: string, prefix: boolean): string => {
     const suffix = prefix ? ':*' : '';
-    const forms = (w: string) => [...new Set([w, stripTashkeel(w)])].filter(Boolean);
-    const particleForms = forms(particle).map(quoteTsqueryLexeme);
-    const wordForms = forms(word).map((w) => `${quoteTsqueryLexeme(w)}${suffix}`);
-    const fusedForms = [...new Set([particle + word, stripTashkeel(particle) + stripTashkeel(word)])]
+    const unique = (list: string[]) => [...new Set(list)].filter(Boolean);
+    const strippedParticle = stripTashkeel(particle);
+    const strippedWord = stripTashkeel(word);
+    const particleForms = unique([particle, strippedParticle]).map(quoteTsqueryLexeme);
+    const wordSpellings = unique([word, strippedWord, ...arabicSpellingVariants(strippedWord)]);
+    const wordForms = wordSpellings.map((w) => `${quoteTsqueryLexeme(w)}${suffix}`);
+    const fusedForms = unique([particle + word, ...wordSpellings.map((w) => strippedParticle + w)])
       .map((w) => `${quoteTsqueryLexeme(w)}${suffix}`);
     // The pair is two words; everything past one lexeme each is an extra.
-    const extras = takeBudget(['', ...particleForms.slice(1), ...wordForms.slice(1), ...fusedForms]).slice(1);
+    // Order: the particle's stripped form, the word's spellings, the plain
+    // fused form, then the fused spellings.
+    const [fusedFirst, ...fusedRest] = fusedForms;
+    const extras = takeBudget(['', ...particleForms.slice(1), ...wordForms.slice(1), fusedFirst, ...fusedRest]).slice(1);
     const adjacent = `${group([particleForms[0], ...extras.filter((e) => particleForms.includes(e))])} <-> ${group([wordForms[0], ...extras.filter((e) => wordForms.includes(e))])}`;
     const fusedKept = extras.filter((e) => fusedForms.includes(e));
     return fusedKept.length ? `((${adjacent}) | ${fusedKept.join(' | ')})` : `(${adjacent})`;
@@ -704,8 +716,12 @@ function prefixStemLength(stem: string): number {
  *     AUTOCOMPLETE_MAX_TERM_LENGTH long, within MAX_QUERY_SPELLING_VARIANTS.
  * Every lexeme is quoted (quoteTsqueryLexeme). `plainTerms` lists the kept
  * words only, so a negated word reaches no title lookup either.
- * Its counts can differ from the full search's for a query with `/`, `-` or a
- * phrase — the full search applies the operators.
+ * Each word is sent as typed, without tashkeel, and in its alef / final-letter
+ * spellings — but not in its article forms (ال/وال/بال/لل), its fused-particle
+ * split or a «لا X» pair. So its counts can differ from the full search's: for
+ * a query with `/`, `-` or a phrase (the full search applies the operators),
+ * and for a word the full search also finds with an article or a particle
+ * («قرار» → «بالقرار»), where these counts are lower.
  */
 export function parseAutocompleteQuery(query: string): ParsedSearchQuery {
   const raw = query.trim();
@@ -760,8 +776,13 @@ export function parseAutocompleteQuery(query: string): ParsedSearchQuery {
   let variantBudget = MAX_QUERY_SPELLING_VARIANTS;
   const groups = words.slice(0, AUTOCOMPLETE_MAX_TERMS).map(({ word, prefix }) => {
     const suffix = prefix ? ':*' : '';
-    let spellings = arabicSpellingVariants(word);
-    if (spellings.length - 1 > variantBudget) spellings = [word];
+    // As typed, then without tashkeel and its spellings: the index folds
+    // tashkeel once 20261103_14 runs, so a voweled word must still count.
+    // The ال/وال/بال/لل forms are not sent here (the counts stay a cheap,
+    // bounded estimate); the full search sends them.
+    const stripped = stripTashkeel(word);
+    let spellings = [...new Set([word, ...arabicSpellingVariants(stripped)])];
+    if (spellings.length - 1 > variantBudget) spellings = variantBudget > 0 ? [...new Set([word, stripped])] : [word];
     variantBudget -= spellings.length - 1;
     if (spellings.length === 1) return `${quoteTsqueryLexeme(word)}${suffix}`;
     return `(${spellings.map((s) => `${quoteTsqueryLexeme(s)}${suffix}`).join(' | ')})`;

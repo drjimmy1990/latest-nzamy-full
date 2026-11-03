@@ -6,6 +6,8 @@
  * (SEARCH_SYNTAX_EXAMPLES — every one parsed by the real engine in its test).
  * Clicking an example puts it in the bar (onPick). Escape or a click outside
  * closes the panel, and focus returns to the ⓘ.
+ * A disclosure, not a dialog: the ⓘ carries aria-expanded / aria-controls,
+ * focus stays on it, and Tab reaches the examples next (they follow it in the DOM).
  */
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
@@ -78,8 +80,6 @@ export default function SearchSyntaxHelp({
       {open && (
         <div
           id={panelId}
-          role="dialog"
-          aria-label="معادلات البحث"
           dir="rtl"
           className={`absolute top-full mt-2 ${panelPosition} z-50 w-[min(22rem,calc(100vw-2rem))] rounded-2xl border p-3 shadow-xl text-right ${panel}`}
         >

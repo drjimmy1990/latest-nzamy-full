@@ -159,3 +159,25 @@ test("article forms: «قرار» finds «بالقرار»; «القرار» als
   assert.deepEqual(marked("للائحة واللائحة", "اللائحة"), [["للائحة", 0], ["اللائحة", 0]]);
   assert.equal(compileQueryMatcher(parseHighlightQuery("القرار"))(["قرار إداري"]), false);
 });
+
+test("review I-1: «لا اثر» colours «لا أثر» — the highlight agrees with the server's spellings", () => {
+  assert.deepEqual(marked("وهذا لا أثر له", "لا اثر"), [["لا أثر", 0]]);
+  assert.deepEqual(marked("وهذا لا أثر له", '"لا اثر"'), [["لا أثر", 0]]);
+  assert.deepEqual(marked("ما إذا كان", "ما اذا"), [["ما إذا", 0]]);
+});
+
+test("review M-1: a particle pairs with a wildcard word, as on the server", () => {
+  const p = parseHighlightQuery("لا يكون*");
+  assert.deepEqual(p.terms.map((t) => [t.label, t.kind]), [["لا يكون", "prefix"]]);
+  assert.deepEqual(marked("فلا يكونان ملزمين ولائحة", "لا يكون*"), [["لا يكونان", 0]]);
+  const match = compileQueryMatcher(p);
+  assert.equal(match(["لايكونون"]), true);
+  // «لا» and «يكون…» apart (not adjacent) is not the pair.
+  assert.equal(match(["لا شيء مما يكون"]), false);
+});
+
+test("review M-3: an escaped quote inside a phrase does not close it (parentheses stay literal)", () => {
+  const p = parseHighlightQuery('"a \\" (b)" c');
+  assert.deepEqual(p.terms.map((t) => [t.label, t.kind]), [['a " (b)', "phrase"], ["c", "word"]]);
+  assert.deepEqual(parseHighlightQuery("(c)").terms.map((t) => t.label), ["c"]);
+});

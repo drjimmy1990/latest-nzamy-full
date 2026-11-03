@@ -97,13 +97,41 @@ function isLiteralSlash(input: string, index: number, termStart: number): boolea
 
 const isParticle = (word: string) => (NEGATION_PARTICLES as readonly string[]).includes(stripTashkeel(word));
 
-/** `(` and `)` outside quotes become spaces, as in the server parser. */
+/**
+ * `(` and `)` outside quotes become spaces, as in the server parser: inside a
+ * phrase a backslash escapes the next character, so `\"` does not close it.
+ */
 function blankParentheses(text: string): string {
+  let out = "";
   let inPhrase = false;
-  return Array.from(text, (ch) => {
-    if (ch === '"') inPhrase = !inPhrase;
-    return !inPhrase && (ch === "(" || ch === ")") ? " " : ch;
-  }).join("");
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (inPhrase) {
+      if (ch === "\\" && i + 1 < text.length) {
+        out += ch + text[i + 1];
+        i += 1;
+        continue;
+      }
+      if (ch === '"') inPhrase = false;
+      out += ch;
+      continue;
+    }
+    if (ch === '"') inPhrase = true;
+    out += ch === "(" || ch === ")" ? " " : ch;
+  }
+  return out;
+}
+
+/** The index of the quote that closes a phrase opened at `open`, skipping `\"`; -1 when unclosed. */
+function phraseClose(text: string, open: number): number {
+  for (let i = open + 1; i < text.length; i += 1) {
+    if (text[i] === "\\") {
+      i += 1;
+      continue;
+    }
+    if (text[i] === '"') return i;
+  }
+  return -1;
 }
 
 /** Parse a search box's text into coloured terms. Never throws. */
@@ -156,7 +184,7 @@ export function parseHighlightQuery(query: string | null | undefined): ParsedHig
       if (i >= raw.length) break;
     }
     if (raw[i] === '"') {
-      const close = raw.indexOf('"', i + 1);
+      const close = phraseClose(raw, i);
       const end = close === -1 ? raw.length : close;
       const phrase = raw.slice(i + 1, end).replace(/\\(["\\])/g, "$1").replace(/\s+/g, " ");
       push(phrase, phrase.includes(" ") ? "phrase" : "word", negated);
@@ -180,7 +208,8 @@ export function parseHighlightQuery(query: string | null | undefined): ParsedHig
       return { word: word.replace(/\*/g, ""), kind };
     };
     const { word, kind } = readWord();
-    // «لا يكون» typed apart: one phrase term, as the server makes it one operand.
+    // «لا يكون» typed apart: one phrase term, as the server makes it one
+    // operand — a prefix phrase when the word ends in * («لا يكون*»).
     if (!negated && kind === "word" && isParticle(word)) {
       let next = i;
       while (next < raw.length && /\s/.test(raw[next])) next += 1;
@@ -188,8 +217,8 @@ export function parseHighlightQuery(query: string | null | undefined): ParsedHig
         const resume = i;
         i = next;
         const after = readWord();
-        if (after.kind === "word" && after.word && !isParticle(after.word)) {
-          push(`${word} ${after.word}`, "phrase", false);
+        if (after.word && !isParticle(after.word)) {
+          push(`${word} ${after.word}`, after.kind === "prefix" ? "prefix" : "phrase", false);
           continue;
         }
         i = resume;

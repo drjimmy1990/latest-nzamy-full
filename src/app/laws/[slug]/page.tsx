@@ -634,7 +634,8 @@ function LawSystemPageContent() {
 
   const sectionColors = SECTION_COLORS[lawMeta.section_code ?? "00"];
 
-  const allArticles  = law?.chapters.flatMap(ch => ch.articles) ?? [];
+  // Memoised on the law, so jumpArticles below recomputes only on a new law or query.
+  const allArticles  = useMemo(() => law?.chapters.flatMap(ch => ch.articles) ?? [], [law]);
   const activeArticle = allArticles.find(a => a.id === activeId) ?? null;
   const cartMap      = new Map(cart.map(e => [e.articleId, e]));
 
