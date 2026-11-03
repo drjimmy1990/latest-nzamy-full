@@ -44,7 +44,7 @@ export default function SecurityPage() {
     <div className="max-w-6xl mx-auto space-y-5" dir="rtl">
       <motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}}>
         <h1 className={`text-xl font-bold mb-1 ${isDark?"text-white":"text-slate-800"}`}>الأمان والحماية</h1>
-        <p className={`text-[12px] ${isDark?"text-zinc-500":"text-slate-400"}`}>كشف التهديدات، الحسابات المكررة، وحماية المنصة من الهجمات</p>
+        <p className={`text-[12px] ${isDark?"text-zinc-500":"text-slate-400"}`}>نشاط المكتبة وأقفالها؛ بقية الأقسام قريباً</p>
       </motion.div>
 
       {/* Tabs */}

@@ -18,6 +18,9 @@ test("S6: no invented security data", () => {
   assert.ok(src.includes("قريباً — لا يجمع النظام هذه البيانات بعد"));
   assert.ok(src.includes("LibraryActivityPanel"));
   assert.ok(src.includes("LibraryLocksPanel"));
+  // Review M3: the subtitle promises only what the page has.
+  assert.ok(src.includes("نشاط المكتبة وأقفالها؛ بقية الأقسام قريباً"));
+  assert.ok(!src.includes("كشف التهديدات"));
 });
 
 test("the real tabs stay, the library activity tab stays the default, and the four unbuilt tabs keep their place", () => {

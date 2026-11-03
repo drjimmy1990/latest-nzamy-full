@@ -53,19 +53,20 @@ export type AdminSwitchOption = {
 };
 
 /** The 14 «عرض كـ» entries, in display order. */
+/** Labels match the screen each entry lands on (getRoleLabel, ROLE_META, FIRM_ROLES) — review M4. */
 export const ADMIN_SWITCH_OPTIONS: ReadonlyArray<AdminSwitchOption> = [
-  { id: "lawyer-advocate",       group: "المهنيون", label: "محامٍ",                 sim: { view: "lawyer", practiceKind: "advocate" },        href: "/dashboard/lawyer" },
+  { id: "lawyer-advocate",       group: "المهنيون", label: "محامٍ (مرافع)",         sim: { view: "lawyer", practiceKind: "advocate" },        href: "/dashboard/lawyer" },
   { id: "lawyer-consultant",     group: "المهنيون", label: "مستشار (م ١٨)",          sim: { view: "lawyer", practiceKind: "consultant" },      href: "/dashboard/lawyer" },
   { id: "firm-managing-partner", group: "المهنيون", label: "مكتب — الشريك المدير",   sim: { view: "firm", affiliationRole: "managing_partner" }, href: "/dashboard/firm" },
   { id: "firm-member",           group: "المهنيون", label: "مكتب — محامٍ عضو",       sim: { view: "firm", affiliationRole: "lawyer" },         href: "/dashboard/firm" },
   { id: "provider",              group: "المهنيون", label: "مزوّد خدمة",             sim: { view: "provider" },                                href: "/dashboard/provider" },
-  { id: "individual",            group: "العملاء",  label: "فرد",                    sim: { view: "individual" },                              href: "/dashboard/client" },
+  { id: "individual",            group: "العملاء",  label: "عميل",                   sim: { view: "individual" },                              href: "/dashboard/client" },
   { id: "corporate",             group: "العملاء",  label: "شركة",                   sim: { view: "corporate" },                               href: "/dashboard/business" },
-  { id: "micro",                 group: "العملاء",  label: "منشأة صغيرة",            sim: { view: "micro" },                                   href: "/dashboard/micro" },
+  { id: "micro",                 group: "العملاء",  label: "منشأة",                  sim: { view: "micro" },                                   href: "/dashboard/micro" },
   { id: "gov-judge",             group: "الجهات",   label: "قاضٍ",                   sim: { view: "government", governmentRole: "judge" },      href: "/dashboard/government" },
-  { id: "gov-prosecutor",        group: "الجهات",   label: "عضو نيابة",              sim: { view: "government", governmentRole: "prosecutor" }, href: "/dashboard/government" },
+  { id: "gov-prosecutor",        group: "الجهات",   label: "عضو نيابة عامة",         sim: { view: "government", governmentRole: "prosecutor" }, href: "/dashboard/government" },
   { id: "gov-officer",           group: "الجهات",   label: "ضابط",                   sim: { view: "government", governmentRole: "officer" },    href: "/dashboard/government" },
-  { id: "gov-counsel",           group: "الجهات",   label: "مستشار قانوني حكومي",    sim: { view: "government", governmentRole: "gov_counsel" }, href: "/dashboard/government" },
+  { id: "gov-counsel",           group: "الجهات",   label: "مستشار حكومي",           sim: { view: "government", governmentRole: "gov_counsel" }, href: "/dashboard/government" },
   { id: "ngo",                   group: "الجهات",   label: "جمعية خيرية",            sim: { view: "ngo" },                                     href: "/dashboard/ngo" },
   { id: "admin",                 group: "الإدارة",  label: "لوحة الإدارة",           sim: { view: "admin" },                                   href: "/dashboard/admin" },
 ];
@@ -204,9 +205,14 @@ export function adminBypassesUiGates(realUserType: UserType, sim: AdminSimulatio
   return realUserType === "admin" && sim?.mode !== "simulate";
 }
 
-/** An admin simulating «مستشار (م ١٨)» with restrictions on: ConsultantGate shows its lock. */
-export function adminSimulatesConsultant(realUserType: UserType, sim: AdminSimulation | null): boolean {
-  return realUserType === "admin" && sim?.mode === "simulate" && sim.practiceKind === "consultant";
+/**
+ * An admin simulating «مستشار (م ١٨)» with restrictions on, while the LAWYER
+ * workspace is drawn: ConsultantGate shows its lock. Review M1: under another
+ * dashboard's shell (the admin followed a link to /dashboard/business, then
+ * opened /ai/wargaming) a stale consultant sim must not lock the page.
+ */
+export function adminSimulatesConsultant(realUserType: UserType, sim: AdminSimulation | null, navView: UserType): boolean {
+  return realUserType === "admin" && navView === "lawyer" && sim?.mode === "simulate" && sim.practiceKind === "consultant";
 }
 
 /**
