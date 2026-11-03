@@ -313,6 +313,8 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   // P3 Task 10: «حملة المؤسس» — pause / resume and capacity (R2), and the R24 retry
   { file: "founder/sale/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
   { file: "founder/orders/[id]/activate/route.ts", method: "POST", action: "settings.write", logs: 1 },
+  // S6-T7 (R18): an admin edits one client-catalogue price row (one audited update)
+  { file: "pricing-catalog/[serviceId]/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
 ];
 
 for (const { file, method, action, logs } of GATES) {
@@ -351,6 +353,38 @@ test("founder/overview GET: any staff role may read, gated before the first quer
   for (const write of [".insert(", ".update(", ".delete(", ".upsert("]) {
     assert.equal(body.includes(write), false, `the overview only reads (found ${write})`);
   }
+});
+
+test("pricing-catalog GET (S6-T7): any staff role may read, gated before the first query, never writes", () => {
+  const body = handler("pricing-catalog/route.ts", "GET");
+  const gateAt = body.indexOf('await requireStaff("read")');
+  assert.ok(gateAt > -1, 'await requireStaff("read") is missing');
+  const firstQuery = body.indexOf(".from(");
+  assert.ok(firstQuery > -1 && gateAt < firstQuery, "the staff gate must run before the first query");
+  assert.equal(body.includes("requireAdmin("), false);
+  assert.equal(body.includes("auth.getUser("), false);
+  for (const write of [".insert(", ".update(", ".delete(", ".upsert(", ".rpc("]) {
+    assert.equal(body.includes(write), false, `the price list only reads (found ${write})`);
+  }
+  assert.ok(body.includes('"تعذّر تحميل قائمة الأسعار."'), "a failed read is the 500 copy, never an empty list");
+  assert.equal(/data:\s*\[\]/.test(body), false, "a failed read must not answer { data: [] }");
+  const code = routeCode("pricing-catalog/route.ts");
+  assert.equal(/export (?:async function|const) (POST|PUT|PATCH|DELETE)\b/.test(code), false, "no create/delete: rows come from migrations");
+});
+
+test("pricing-catalog PATCH (S6-T7): reads the row, decides via catalogRowUpdate, conditional on updated_at", () => {
+  const body = handler("pricing-catalog/[serviceId]/route.ts", "PATCH");
+  const gateAt = body.indexOf('await requireStaff("settings.write")');
+  const readAt = body.indexOf('.from("admin_pricing_catalog")');
+  const decideAt = body.indexOf("catalogRowUpdate(row, body)");
+  const writeAt = body.indexOf(".update(");
+  assert.ok(gateAt > -1 && gateAt < readAt, "the gate runs before the first query");
+  assert.ok(readAt < decideAt && decideAt < writeAt, "read the current row, decide, then write");
+  assert.ok(body.includes('.eq("updated_at", row.updated_at)'), "the write is conditional on the row that was read");
+  assert.ok(body.includes("status: 409"), "a concurrent edit is a 409");
+  assert.ok(body.includes('action: "pricing_catalog_updated"'));
+  assert.ok(body.includes('targetType: "pricing_catalog"'));
+  assert.equal(body.includes("metadata: {}"), false, "the row's metadata is never blindly replaced");
 });
 
 /** Every POST/PUT/PATCH/DELETE handler under /api/v1/admin, as "file METHOD" → its code. */
