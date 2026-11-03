@@ -106,7 +106,7 @@ const TRACKING_UNLOCK_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 100
 // and a wider ceiling per proxy-resolved IP (an office behind one address).
 const ATTACHMENTS_ZIP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 20 };
 const ATTACHMENTS_ZIP_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 200 };
-// Owner note ١٣ C03 — every library, library-invitation and library-AI route
+// Owner note ١٣ C03 — every library and library-invitation route
 // (src/lib/rateLimitRoutes.ts libraryBudgetBuckets). Per visitor (Cloudflare's
 // CF-Connecting-IP, as library-read) and a ten-times-wider ceiling per
 // proxy-resolved IP (an office, or a shared edge, behind one address). Human
@@ -117,14 +117,12 @@ const ATTACHMENTS_ZIP_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 100
 //   library-doc   120 / min    — opening documents; a collection loads in up
 //                                to 24 windows, a book one section at a time
 //   library-init   60 / 10 min — catalogue pages of up to 200 rows
-//   library-ai     40 / 10 min — anything under /api/ai/ (no route there
-//                                today; the library AI is /api/v1/ai/runs)
+// (The library AI is POST /api/v1/ai/runs, in the general bucket.)
 // The durable per-USER daily quota is separate (applyLibraryReadQuota below).
 const LIBRARY_BUDGETS: Readonly<Record<LibraryBudgetBucket, { visitor: RateLimitPolicy; ip: RateLimitPolicy }>> = {
   "library-any": { visitor: { windowMs: 60 * 1000, max: 300 }, ip: { windowMs: 60 * 1000, max: 3000 } },
   "library-doc": { visitor: { windowMs: 60 * 1000, max: 120 }, ip: { windowMs: 60 * 1000, max: 1200 } },
   "library-init": { visitor: { windowMs: 10 * 60 * 1000, max: 60 }, ip: { windowMs: 10 * 60 * 1000, max: 600 } },
-  "library-ai": { visitor: { windowMs: 10 * 60 * 1000, max: 40 }, ip: { windowMs: 10 * 60 * 1000, max: 400 } },
 };
 
 // The actual route tables (which paths/methods match which bucket) live in
@@ -308,7 +306,7 @@ async function applyLibraryReadQuota(req: NextRequest, pathname: string): Promis
 
     // Every request of a signed-in reader is tallied (refused ones too); the
     // tally never waits and never fails the request.
-    recordLibraryActivity(user.id, libraryActivityKind(target, pathname));
+    recordLibraryActivity(user.id, libraryActivityKind(target));
 
     const row = await libraryReadQuotaHit(
       user.id,

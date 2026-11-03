@@ -63,7 +63,7 @@ test("every note-١٣ bucket is checked per visitor AND per proxy-resolved IP", 
   assert.match(SRC, /const libraryBuckets = libraryBudgetBuckets\(method, pathname\);/);
   assert.match(SRC, /rateLimiter\.check\(`\$\{bucket\}-ip`, ip, policy\.ip\)/);
   assert.match(SRC, /rateLimiter\.check\(bucket, key, policy\.visitor\)/);
-  for (const bucket of ["library-any", "library-doc", "library-init", "library-ai"]) {
+  for (const bucket of ["library-any", "library-doc", "library-init"]) {
     assert.match(SRC, new RegExp(`"${bucket}": \\{ visitor: \\{`), bucket);
   }
 });

@@ -229,11 +229,10 @@ function routesUnder(dir: string): Array<{ url: string; methods: string[] }> {
   return out;
 }
 
-test("note ١٣ C03: EVERY route under /api/library, /api/v1/library and /api/ai has a budget, for every method it exports", () => {
+test("note ١٣ C03: EVERY route under /api/library and /api/v1/library has a budget, for every method it exports", () => {
   const routes = [
     ...routesUnder(path.join(API_DIR, "library")),
     ...routesUnder(path.join(API_DIR, "v1", "library")),
-    ...routesUnder(path.join(API_DIR, "ai")),
   ];
   assert.ok(routes.length >= 20, `only ${routes.length} routes found — is the walk looking in the right place?`);
   for (const { url, methods } of routes) {
@@ -249,8 +248,6 @@ test("libraryBudgetBuckets: documents, catalogue and AI get their own tighter bu
     assert.deepEqual(libraryBudgetBuckets("GET", p), ["library-any", "library-doc"], p);
   }
   assert.deepEqual(libraryBudgetBuckets("GET", "/api/library/init"), ["library-any", "library-init"]);
-  // Any route added under /api/ai/ later is in the AI bucket (none exists today).
-  assert.deepEqual(libraryBudgetBuckets("POST", "/api/ai/anything"), ["library-ai"]);
   // Routes that only exist on the open library branch are covered already.
   assert.deepEqual(libraryBudgetBuckets("GET", "/api/library/search/suggest"), ["library-any"]);
   assert.deepEqual(libraryBudgetBuckets("GET", "/api/v1/library/my-grant"), ["library-any"]);
@@ -259,11 +256,14 @@ test("libraryBudgetBuckets: documents, catalogue and AI get their own tighter bu
   assert.equal(isStrictRateLimitedRoute("POST", "/api/v1/library/invitations/redeem"), true);
 });
 
+test("task 2 review M8: no route is left under /api/ai/ — the dead library-ai bucket is gone; a new route there needs a budget first", () => {
+  assert.deepEqual(routesUnder(path.join(API_DIR, "ai")), [], "a route under /api/ai/ has no rate-limit bucket: add one in rateLimitRoutes.ts");
+});
+
 test("libraryBudgetBuckets: percent-encoding a static segment does not dodge a bucket", () => {
   assert.deepEqual(libraryBudgetBuckets("GET", "/api/librar%79/laws/x"), ["library-any", "library-doc"]);
   assert.deepEqual(libraryBudgetBuckets("GET", "/api/library/law%73/x"), ["library-any", "library-doc"]);
   assert.deepEqual(libraryBudgetBuckets("GET", "/api/library/ini%74"), ["library-any", "library-init"]);
-  assert.deepEqual(libraryBudgetBuckets("POST", "/api/a%69/anything"), ["library-ai"]);
   assert.equal(canonicalApiPath("/api/library/laws%2Fx"), "/api/library/laws%2Fx");
   assert.equal(canonicalApiPath("/api/library/%E0%A4%A"), "/api/library/%E0%A4%A");
 });
@@ -272,6 +272,7 @@ test("libraryBudgetBuckets: neighbours are not swept in", () => {
   assert.deepEqual(libraryBudgetBuckets("GET", "/api/librarything"), []);
   assert.deepEqual(libraryBudgetBuckets("GET", "/api/v1/libraryx/status"), []);
   assert.deepEqual(libraryBudgetBuckets("GET", "/api/aim"), []);
+  assert.deepEqual(libraryBudgetBuckets("POST", "/api/ai/anything"), []);
   assert.deepEqual(libraryBudgetBuckets("GET", "/laws/labor-law"), []);
   assert.deepEqual(libraryBudgetBuckets("POST", "/api/v1/ai/runs"), []);
   // A document sub-path or a write is not a document read.

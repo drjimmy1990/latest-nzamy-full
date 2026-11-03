@@ -68,9 +68,9 @@ export function isLibraryReadRateLimitedRoute(method: string, pathname: string):
   return LIBRARY_READ_RATE_LIMITED_ROUTES.some((r) => r.method === method && r.re.test(pathname));
 }
 
-// Owner note ١٣ C03: EVERY library route, the library invitations and the
-// library AI are under a per-visitor budget — not only the four article-text
-// routes above. Four extra buckets, each paired in src/proxy.ts with a wider
+// Owner note ١٣ C03: EVERY library route and the library invitations are
+// under a per-visitor budget — not only the four article-text routes above.
+// Three extra buckets, each paired in src/proxy.ts with a wider
 // ceiling on the proxy-resolved IP (CF-Connecting-IP alone is forgeable by
 // anyone reaching the origin directly):
 //   library-any   every method under /api/library/ and /api/v1/library/ — a
@@ -83,11 +83,13 @@ export function isLibraryReadRateLimitedRoute(method: string, pathname: string):
 //                 durable per-user quota, src/lib/library/readQuota.ts, is
 //                 counted on the same four)
 //   library-init  GET /api/library/init — the catalogue, up to 200 rows a page
-//   library-ai    every /api/ai/* route (none today: the free explain-article
-//                 and library-chat routes are deleted; the library AI is
-//                 /api/v1/ai/runs, limited per tool per day in ai_start_run)
 // /api/v1/library/invitations/redeem keeps the strict bucket as well.
-export type LibraryBudgetBucket = "library-any" | "library-doc" | "library-init" | "library-ai";
+// The library AI is POST /api/v1/ai/runs: the general bucket here, and a
+// per-tool daily limit in ai_start_run. The old "library-ai" bucket covered
+// /api/ai/*, where no route is left since the free explain-article and
+// library-chat routes were deleted (Wave 1 task 2 review M8);
+// rateLimitRoutes.test.ts fails if a route appears there again.
+export type LibraryBudgetBucket = "library-any" | "library-doc" | "library-init";
 
 /**
  * The pathname with each segment percent-decoded once, so `/api/librar%79/…`
@@ -114,7 +116,6 @@ export function canonicalApiPath(pathname: string): string {
 export const LIBRARY_ANY_RE = /^\/api\/(?:v1\/)?library(?:\/|$)/;
 export const LIBRARY_DOC_RE = /^\/api\/library\/(?:laws|books|precedents|decrees)\/[^/]+$/;
 export const LIBRARY_INIT_RE = /^\/api\/library\/init$/;
-export const LIBRARY_AI_RE = /^\/api\/ai(?:\/|$)/;
 
 /** The note-١٣ buckets this request counts against (empty: none). Every method. */
 export function libraryBudgetBuckets(method: string, rawPathname: string): LibraryBudgetBucket[] {
@@ -124,7 +125,6 @@ export function libraryBudgetBuckets(method: string, rawPathname: string): Libra
   if (LIBRARY_ANY_RE.test(pathname)) out.push("library-any");
   if ((m === "GET" || m === "HEAD") && LIBRARY_DOC_RE.test(pathname)) out.push("library-doc");
   if ((m === "GET" || m === "HEAD") && LIBRARY_INIT_RE.test(pathname)) out.push("library-init");
-  if (LIBRARY_AI_RE.test(pathname)) out.push("library-ai");
   return out;
 }
 

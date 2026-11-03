@@ -7,13 +7,9 @@ import { ActivityMeter, hourStartIso, libraryActivityKind } from "./activityMete
 
 const T0 = Date.parse("2026-10-31T09:59:58.000Z");
 
-test("the kind of a quota target: a document, a search, a library-AI call", () => {
-  assert.equal(libraryActivityKind({ kind: "doc", docKey: "law:x" }, "/api/library/laws/x"), "doc");
-  assert.equal(libraryActivityKind({ kind: "lock-only" }, "/api/library/search"), "search");
-  assert.equal(libraryActivityKind({ kind: "lock-only" }, "/api/library/scoped-search"), "search");
-  // Outside /api/library/ a lock-only target would be library AI; none is one
-  // today (the run route tallies "ai" itself: recordLibraryActivity).
-  assert.equal(libraryActivityKind({ kind: "lock-only" }, "/api/ai/x"), "ai");
+test("the kind of a proxy quota target: a document or a search (library AI is tallied by the run route)", () => {
+  assert.equal(libraryActivityKind({ kind: "doc", docKey: "law:x" }), "doc");
+  assert.equal(libraryActivityKind({ kind: "lock-only" }), "search");
 });
 
 test("one row per reader per clock hour; every kind is a request", () => {
