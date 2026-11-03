@@ -4,11 +4,8 @@ import { motion } from "framer-motion";
 import { CheckCircle, ShieldCheck, Seal, Star, Clock, Sparkle } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { resolveAdvisoryHandoff } from "@/components/ai/advisoryHandoff";
+import { useClientPricingCatalog } from "@/hooks/useClientPricingCatalog";
 import { Mode } from "./contractTypes";
-
-// The human review this step sells, in the catalog's own route and price
-// (the old «٩٩ ر.س» and `consultations/new` link matched neither).
-const REVIEW = resolveAdvisoryHandoff("contract-review");
 
 interface Props {
   mode: Mode;
@@ -19,6 +16,13 @@ interface Props {
 
 export default function StepLawyerCTA({ mode, onRestart }: Props) {
   const { theme, lang } = useTheme();
+  // The human review this step sells, in the catalog's own route and price
+  // (the old «٩٩ ر.س» and `consultations/new` link matched neither) — the
+  // fetched catalogue (admin edits apply) and the viewer's audience (S6: a
+  // company sees «يبدأ من ٨٠٠ ر.س»). "contract-review" here is the HUMAN
+  // catalogue service, not the AI tool of the same name (R19).
+  const { catalog, audience } = useClientPricingCatalog();
+  const REVIEW = resolveAdvisoryHandoff("contract-review", catalog, audience);
   const isDark = theme === "dark";
   const isRTL = lang === "ar";
 

@@ -27,7 +27,7 @@ const PAYMENT_METHODS = [
 export default function StepPayment({ step, isDark, history, selections, onNavigate, onSelect, onPaymentComplete }: Props) {
   // P7: the price line is the catalogue's (admin_pricing_catalog merged —
   // the same source as the service pages), never a literal (waChatPrices.ts).
-  const { catalog } = useClientPricingCatalog();
+  const { catalog, audience } = useClientPricingCatalog();
 
   // ── payment-summary ──
   if (step === "payment-summary") {
@@ -39,7 +39,7 @@ export default function StepPayment({ step, isDark, history, selections, onNavig
       return "خدمة قانونية";
     })();
 
-    const priced = waPrice(catalog, waServiceId(selections));
+    const priced = waPrice(catalog, waServiceId(selections), { audience });
     const price = priced.text;
     // The catalogue decides whether this is a paid service, not the wording
     // of the price line (a free AI question no longer goes to «طريقة الدفع»).

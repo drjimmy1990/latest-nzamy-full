@@ -31,12 +31,12 @@
  * Pure: relative imports only, so `node --test` loads it.
  */
 
-import type { ClientServiceCatalogItem } from "../../constants/clientServiceCatalog.ts";
+import type { ClientPricingAudience, ClientServiceCatalogItem } from "../../constants/clientServiceCatalog.ts";
 import {
   formatClientServicePrice,
-  getClientServiceById,
   getConsultationModeServiceId,
 } from "../../lib/pricingRepository.ts";
+import { resolveClientService } from "../../lib/pricing/clientPricingAudience.ts";
 import { VAT_NOTICE } from "../../lib/pricing/vatNotice.ts";
 import { COMING_SOON_BADGE_AR, isTerminalToolHref } from "../../constants/betaGatedRoutes.ts";
 
@@ -88,10 +88,12 @@ const AMOUNT_MODES = new Set(["fixed", "starting_from", "per_page"]);
 export function waPrice(
   catalog: ClientServiceCatalogItem[],
   serviceId: string | null,
-  opts: { viewerIncluded?: boolean } = {},
+  // S6 (q327): `audience` — the viewer's (useClientPricingCatalog); a company
+  // sees the business price (lawyer contract review «يبدأ من ٨٠٠ ر.س»).
+  opts: { viewerIncluded?: boolean; audience?: ClientPricingAudience } = {},
 ): WaPrice {
   if (!serviceId) return UNSET;
-  const service = getClientServiceById(serviceId, catalog);
+  const service = resolveClientService(serviceId, opts.audience ?? "individual", catalog);
   if (service.serviceId !== serviceId) return UNSET;
   // Wave 1 task 6, fix round 1 (I3): a service whose route is a beta-gated
   // tool (/ai/consult, /ai/analyze …) cannot be ordered, so the chat says

@@ -94,7 +94,7 @@ test("ai:consult is «قريباً» on the hub, not «بيتا مجاني»", a
 
 test("services cards: no typed price; contracts and case study read the catalogue, the rest name no number", async () => {
   const { CLIENT_SERVICE_CATALOG } = await import("../../constants/clientServiceCatalog.ts");
-  const { catalogPriceLabel } = await import("../pricing/catalogPriceLabel.ts");
+  const { catalogPriceLabel, dualAudiencePriceLabel } = await import("../pricing/catalogPriceLabel.ts");
   const code = src("constants/servicesData.ts").replace(/^\s*\/\/.*$/gm, "");
   // Charged by nothing: the retired card prices.
   assert.doesNotMatch(code, /٢٤٩|١٩٩|١٤٩|٤٩٩|\b249\b|\b199\b|\b149\b|\b499\b/);
@@ -102,9 +102,12 @@ test("services cards: no typed price; contracts and case study read the catalogu
   assert.equal((code.match(/price: catalogPrice\("contract-review", "(ar|en)"\)/g) ?? []).length, 2);
   assert.equal((code.match(/price: catalogPrice\("case-study", "(ar|en)"\)/g) ?? []).length, 2);
   assert.equal((code.match(/price: AFTER_ASSESSMENT\.(ar|en)/g) ?? []).length, 4, "notary + tracking, both languages");
-  // What those calls render is the catalogue row the request form charges from.
-  assert.equal(catalogPriceLabel("contract-review", CLIENT_SERVICE_CATALOG, "ar"), "يبدأ من ٦٠٠ ر.س");
-  assert.equal(catalogPriceLabel("contract-review", CLIENT_SERVICE_CATALOG, "en"), "From 600 SAR");
+  // What those calls render is the catalogue row the request form charges from
+  // — for contract review both audiences' (S6, q327: 600 individuals / 800 business).
+  assert.match(src("constants/servicesData.ts"), /dualAudiencePriceLabel\(serviceId, CLIENT_SERVICE_CATALOG, lang\)/);
+  assert.equal(dualAudiencePriceLabel("contract-review", CLIENT_SERVICE_CATALOG, "ar"), "يبدأ من ٦٠٠ ر.س للأفراد · يبدأ من ٨٠٠ ر.س للأعمال");
+  assert.equal(dualAudiencePriceLabel("contract-review", CLIENT_SERVICE_CATALOG, "en"), "From 600 SAR (individuals) · From 800 SAR (business)");
+  assert.equal(dualAudiencePriceLabel("case-study", CLIENT_SERVICE_CATALOG, "ar"), "يبدأ من ١٬٦٠٠ ر.س");
   assert.equal(catalogPriceLabel("case-study", CLIENT_SERVICE_CATALOG, "ar"), "يبدأ من ١٬٦٠٠ ر.س");
   assert.equal(catalogPriceLabel("case-study", CLIENT_SERVICE_CATALOG, "en"), "From 1,600 SAR");
   // No catalogue row → null (the card's own "after assessment"), never «طلب عام»'s price.
@@ -176,15 +179,15 @@ test("shield lock copy: SubscriptionGuard and the sidebar badge name no unsold p
 
 test("I1: /services/contracts and /services/tracking name no price nothing charges, and agree with their cards", async () => {
   const { CLIENT_SERVICE_CATALOG } = await import("../../constants/clientServiceCatalog.ts");
-  const { catalogPriceLabel } = await import("../pricing/catalogPriceLabel.ts");
+  const { dualAudiencePriceLabel } = await import("../pricing/catalogPriceLabel.ts");
   const contracts = src("app/services/contracts/page.tsx").replace(/^\s*\/\/.*$/gm, "");
   const tiers = contracts.split("const pricingTiers")[1].split("const faqs")[0];
   assert.doesNotMatch(tiers, /٢٤٩|٤٩٩|"249"|"499"/);
   assert.doesNotMatch(tiers, /بالذكاء الاصطناعي|AI-powered/);
   assert.equal((tiers.match(/price: reviewPrice\("(ar|en)"\)/g) ?? []).length, 2);
-  assert.match(contracts, /catalogPriceLabel\("contract-review", CLIENT_SERVICE_CATALOG, lang\)/);
-  // The card on /services/individuals reads the same row.
-  assert.equal(catalogPriceLabel("contract-review", CLIENT_SERVICE_CATALOG, "ar"), "يبدأ من ٦٠٠ ر.س");
+  assert.match(contracts, /dualAudiencePriceLabel\("contract-review", CLIENT_SERVICE_CATALOG, lang\)/);
+  // The card on /services/individuals reads the same rows (S6: both audiences).
+  assert.equal(dualAudiencePriceLabel("contract-review", CLIENT_SERVICE_CATALOG, "ar"), "يبدأ من ٦٠٠ ر.س للأفراد · يبدأ من ٨٠٠ ر.س للأعمال");
 
   const tracking = src("components/tracking/constants.ts").replace(/^\s*\/\/.*$/gm, "");
   const trackTiers = tracking.split("export const pricingTiers")[1];

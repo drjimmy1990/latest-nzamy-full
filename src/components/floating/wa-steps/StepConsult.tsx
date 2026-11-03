@@ -76,7 +76,7 @@ export default function StepConsult({
   // five months the hard-coded April table was out by.
   const calendarDays = useMemo(() => buildConsultationDays(new Date()), []);
   // P7: the provider prices are the catalogue's (admin_pricing_catalog merged), never literals.
-  const { catalog } = useClientPricingCatalog();
+  const { catalog, audience } = useClientPricingCatalog();
 
   // ── consult-timing ──
   if (step === "consult-timing") {
@@ -164,8 +164,8 @@ export default function StepConsult({
   if (step === "consult-instant-provider") {
     const isTextMode = selections.modality === "text";
     // P7: both price lines are the catalogue's (waChatPrices.ts), never literals.
-    const aiPrice = waPrice(catalog, consultServiceId("ai", selections.modality));
-    const lawyerPrice = waPrice(catalog, consultServiceId("lawyer", selections.modality));
+    const aiPrice = waPrice(catalog, consultServiceId("ai", selections.modality), { audience });
+    const lawyerPrice = waPrice(catalog, consultServiceId("lawyer", selections.modality), { audience });
     const providers = [
       ...(isTextMode ? [{
         icon: <Robot size={20} weight="fill" />, label: "ذكاء نظامي",

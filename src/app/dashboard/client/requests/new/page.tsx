@@ -14,7 +14,8 @@ import { useTheme } from "@/components/ThemeProvider";
 import { useOrderAttachments } from "@/hooks/useOrderAttachments";
 import { VaultAttachPicker } from "@/components/documents/VaultAttachPicker";
 import { createWorkflowId, createWorkflowRequest } from "@/lib/clientWorkflowRepository";
-import { getClientServiceById, formatClientServicePrice } from "@/lib/pricingRepository";
+import { formatClientServicePrice } from "@/lib/pricingRepository";
+import { resolveClientService } from "@/lib/pricing/clientPricingAudience";
 
 /**
  * NewRequestWizard — the client's «طلب خدمة جديدة» form.
@@ -76,14 +77,17 @@ export default function NewRequestWizard() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const { catalog, source: pricingSource } = useClientPricingCatalog();
+  const { catalog, source: pricingSource, audience } = useClientPricingCatalog();
   // Real uploads, identical to the four lawyer wizards. `attachments` holds
   // OrderAttachment[] — a documentId that exists server-side — not File
   // objects that never left the browser.
   const { isDark } = useTheme();
   const { attachments, uploading, attachError, attachFiles, attachFromVault, removeAttachment } = useOrderAttachments();
 
-  const serviceInfo = getClientServiceById(typeParam, catalog);
+  // S6 (q327): the price for the viewer's audience — a company sees the
+  // business variant (contract review «يبدأ من ٨٠٠ ر.س»). serviceId stays the
+  // base id; the server re-prices the stored estimate itself (S6-T5).
+  const serviceInfo = resolveClientService(typeParam, audience, catalog);
   const price = serviceInfo.requiresPayment ? serviceInfo.basePrice : 0;
   const serviceLabel = serviceInfo.label;
   const estimateLabel = formatClientServicePrice(serviceInfo);

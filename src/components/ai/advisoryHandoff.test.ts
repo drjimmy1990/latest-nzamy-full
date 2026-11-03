@@ -42,3 +42,15 @@ test("P1: the handoff reads the catalogue it is given — an admin_pricing_catal
   assert.equal(out.serviceLabel, "رأي قانوني مكتوب (معدّل)");
   assert.match(out.priceLabel, /٩٠٠/);
 });
+
+test("S6: a company's hand-off shows 800", async () => {
+  const { CLIENT_SERVICE_CATALOG } = await import("../../constants/clientServiceCatalog.ts");
+  assert.equal(resolveAdvisoryHandoff("contract-review", CLIENT_SERVICE_CATALOG, "corporate").priceLabel, "يبدأ من ٨٠٠ ر.س");
+  assert.equal(resolveAdvisoryHandoff("contract-review").priceLabel, "يبدأ من ٦٠٠ ر.س");
+  assert.equal(resolveAdvisoryHandoff("contract-review", CLIENT_SERVICE_CATALOG).priceLabel, "يبدأ من ٦٠٠ ر.س");
+  // Same route either way: the base service's form.
+  assert.equal(
+    resolveAdvisoryHandoff("contract-review", CLIENT_SERVICE_CATALOG, "corporate").href,
+    resolveAdvisoryHandoff("contract-review").href,
+  );
+});

@@ -16,6 +16,15 @@
  */
 import type { ClientServiceCatalogItem } from "../../constants/clientServiceCatalog.ts";
 import { formatClientServicePrice, getClientServiceById } from "../pricingRepository.ts";
+import { resolveClientService } from "./clientPricingAudience.ts";
+
+function priceLabelOf(service: ClientServiceCatalogItem, lang: "ar" | "en"): string | null {
+  if (!(service.basePrice > 0)) return null;
+  if (service.priceMode !== "fixed" && service.priceMode !== "starting_from") return null;
+  if (lang === "ar") return formatClientServicePrice(service);
+  const amount = `${service.basePrice.toLocaleString("en-US")} SAR`;
+  return service.priceMode === "fixed" ? amount : `From ${amount}`;
+}
 
 export function catalogPriceLabel(
   serviceId: string,
@@ -23,9 +32,29 @@ export function catalogPriceLabel(
   lang: "ar" | "en",
 ): string | null {
   const service = getClientServiceById(serviceId, catalog);
-  if (service.serviceId !== serviceId || !(service.basePrice > 0)) return null;
-  if (service.priceMode !== "fixed" && service.priceMode !== "starting_from") return null;
-  if (lang === "ar") return formatClientServicePrice(service);
-  const amount = `${service.basePrice.toLocaleString("en-US")} SAR`;
-  return service.priceMode === "fixed" ? amount : `From ${amount}`;
+  if (service.serviceId !== serviceId) return null;
+  return priceLabelOf(service, lang);
+}
+
+/**
+ * S6 (q327): a PUBLIC page's price for a service that has a business variant
+ * — every visitor sees both, since a guest has no audience:
+ * «يبدأ من ٦٠٠ ر.س للأفراد · يبدأ من ٨٠٠ ر.س للأعمال». A service with no
+ * enabled corporate variant, or one at the same price, reads exactly as
+ * catalogPriceLabel. Null under the same rules as catalogPriceLabel.
+ */
+export function dualAudiencePriceLabel(
+  serviceId: string,
+  catalog: ClientServiceCatalogItem[],
+  lang: "ar" | "en",
+): string | null {
+  const individual = catalogPriceLabel(serviceId, catalog, lang);
+  if (individual === null) return null;
+  const corporate = resolveClientService(serviceId, "corporate", catalog);
+  if (corporate.priceAudience !== "corporate") return individual;
+  const business = priceLabelOf(corporate, lang);
+  if (business === null || business === individual) return individual;
+  return lang === "ar"
+    ? `${individual} للأفراد · ${business} للأعمال`
+    : `${individual} (individuals) · ${business} (business)`;
 }
