@@ -194,3 +194,17 @@ select has_table_privilege('anon', 'library.invitations', 'SELECT') as anon_read
 Both columns should then read `f`.
 
 <!-- <<< S1 Task 16: 20261103_11 -->
+
+<!-- >>> S1 Task 18: 20261103_12 (BEFORE the deploy) -->
+
+## BEFORE the deploy: `20261103_12_library_eligibility_verifications.sql`
+
+**What it does:** it creates a NEW table, `public.library_eligibility_verifications`, where staff record that a micro business, an NGO or a service provider is eligible for the library (owner q375): it has a legal department, or it works with a lawyer on the platform. Only the server writes and reads it: RLS is on, there are no policies, and anon / authenticated hold no privilege. No existing table changes.
+
+The file is in two places:
+- On your PC, after `git pull` on main: `D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\supabase\migrations\20261103_12_library_eligibility_verifications.sql`
+- On the server: `/www/wwwroot/nzamy/latest-nzamy-full/supabase/migrations/20261103_12_library_eligibility_verifications.sql`
+
+Run it in the SQL Editor as postgres (paste the whole file). **Expected result on the screen** (it is not a file): one row with `table_exists = t`, `rls_on = t`, `users_cannot_write = t`, `users_cannot_read = t`, `verified_accounts = 0` on the first run, and `ok = t`. A second run gives the same row.
+
+<!-- <<< S1 Task 18: 20261103_12 -->

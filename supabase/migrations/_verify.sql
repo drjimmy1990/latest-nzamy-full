@@ -5592,3 +5592,38 @@ begin
   raise notice '_verify: 20261103_11 OK — % of % invite code(s) carry their own number of days; the rest give 30', n_own, n_all;
 end $$;
 -- <<< verify:library_invitation_grant_days
+-- >>> verify:library_eligibility_verifications
+-- 2026-11-03 — 20261103_12_library_eligibility_verifications.sql (owner-free
+-- wave, S1-T18; owner q375): the staff-verified library eligibility table.
+-- Read-only, safe to repeat: SELECTs and RAISE.
+-- RAISES (naming the file to run) when the table is missing, when RLS is off,
+-- when it has a policy, or when anon / authenticated hold any privilege on it
+-- (users must never read or write their own eligibility). Its base schema is
+-- auth.users, present on every Supabase database: no NOTICE-only case.
+-- Docker: supabase/tests/rls/library_eligibility_verifications.test.sql runs
+-- this block (its header has the chain, the negative controls and the sed line).
+do $$
+declare t constant text := 'public.library_eligibility_verifications'; n_active int; n_revoked int;
+begin
+  if to_regclass('auth.users') is null then
+    raise notice '_verify: 20261103_12 — auth.users is missing (not a Supabase database): nothing to check'; return;
+  end if;
+  if to_regclass(t) is null then
+    raise exception '_verify: 20261103_12 — % is missing: no account can be verified as eligible for the library. Run 20261103_12_library_eligibility_verifications.sql (BEFORE the deploy)', t;
+  end if;
+  if not (select c.relrowsecurity from pg_class c where c.oid = to_regclass(t)) then
+    raise exception '_verify: 20261103_12 — RLS is off on %. Run 20261103_12_library_eligibility_verifications.sql again (BEFORE the deploy)', t;
+  end if;
+  if exists (select 1 from pg_policies p where p.schemaname = 'public' and p.tablename = 'library_eligibility_verifications') then
+    raise exception '_verify: 20261103_12 — % has a policy; it must have none (service role only). Drop it, then run 20261103_12 again (BEFORE the deploy)', t;
+  end if;
+  if has_table_privilege('anon', t, 'SELECT') or has_table_privilege('authenticated', t, 'SELECT')
+     or has_table_privilege('anon', t, 'INSERT') or has_table_privilege('authenticated', t, 'INSERT')
+     or has_table_privilege('authenticated', t, 'UPDATE') or has_table_privilege('authenticated', t, 'DELETE') then
+    raise exception '_verify: 20261103_12 — a session role (anon or authenticated) holds a privilege on %: a user could read or set his own eligibility. Run 20261103_12_library_eligibility_verifications.sql again (BEFORE the deploy)', t;
+  end if;
+  execute format('select count(*) filter (where revoked_at is null), count(*) filter (where revoked_at is not null) from %s', t)
+    into n_active, n_revoked;
+  raise notice '_verify: 20261103_12 OK — library eligibility is staff-only (% verified, % revoked)', n_active, n_revoked;
+end $$;
+-- <<< verify:library_eligibility_verifications
