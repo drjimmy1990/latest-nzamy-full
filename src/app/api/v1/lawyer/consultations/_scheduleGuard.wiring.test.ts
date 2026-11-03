@@ -74,3 +74,59 @@ test("the other consultation screens format in Riyadh time", () => {
     assert.match(src, /RIYADH_ZONE_LABEL_AR/, rel);
   }
 });
+
+test("q357: the guard reads the lawyer's scheduled timed hearings too, and keeps the consultation 409 code", () => {
+  const src = read("./_scheduleGuard.ts");
+  assert.match(src, /\.from\("hearings"\)[\s\S]*?\.eq\("owner_user_id", args\.lawyerUserId\)[\s\S]*?\.eq\("status", "scheduled"\)[\s\S]*?\.neq\("kind", DEADLINE_HEARING_KIND\)/);
+  assert.match(src, /findScheduleClashes\(args\.startMs, args\.durationMinutes, items, exclude\)/);
+  // review I2: one refusal, the code a parameter
+  assert.match(src, /\{ error: clashMessageAr\(read\.conflicts\), code, conflicts: read\.conflicts \}/);
+  assert.match(src, /export async function overlapRefusal\([\s\S]*?return scheduleRefusal\(supabase, args, CONSULTATION_OVERLAP_CODE\);/);
+  assert.match(src, /export async function hearingOverlapRefusal\([\s\S]*?return scheduleRefusal\(supabase, args, HEARING_OVERLAP_CODE\);/);
+});
+
+test("final review M1: both overlap reads are cut to the slot's window and keep the LATEST rows under the limit", () => {
+  const src = read("./_scheduleGuard.ts").replace(/\r\n/g, "\n");
+  // hearings: the minute filter on top of the day bounds, latest first
+  assert.match(src, /const minuteFilter = hearingQueryMinuteFilter\(args\.startMs, args\.durationMinutes\);/);
+  assert.match(src, /if \(minuteFilter\) hearingsQuery = hearingsQuery\.or\(minuteFilter\);/);
+  assert.match(src, /hearingsQuery\s*\.order\("hearing_date", \{ ascending: false \}\)\s*\.order\("hearing_time", \{ ascending: false \}\)\s*\.limit\(50\)/);
+  // consultations: already cut to the instant window; latest first
+  assert.match(src, /\.lt\("scheduled_at", toIso\)\s*\.order\("scheduled_at", \{ ascending: false \}\)\s*\.limit\(50\)/);
+  // no read is limited without an order
+  assert.equal((src.match(/\.limit\(50\)/g) ?? []).length, 2);
+});
+
+test("q357: POST and PATCH /api/v1/lawyer/hearings check the slot before writing, warn-then-confirm", () => {
+  const post = read("../hearings/route.ts");
+  const guard = post.indexOf("hearingOverlapRefusal(supabase");
+  const insert = post.search(/\.from\("hearings"\)\s*\.insert\(/);
+  assert.ok(guard > 0 && insert > guard, "POST: guard before the insert");
+  assert.match(post, /confirmOverlap: confirmOverlap === true/);
+  assert.match(post, /typeToKind\(type as UiHearingType\) === DEADLINE_HEARING_KIND \? null/);
+  const patch = read("../hearings/[id]/route.ts");
+  const pGuard = patch.indexOf("hearingOverlapRefusal(supabase");
+  const update = patch.search(/\.from\("hearings"\)\s*\.update\(/);
+  assert.ok(pGuard > 0 && update > pGuard, "PATCH: guard before the update");
+  assert.match(patch, /excludeHearingId: current\.id/);
+  assert.match(patch, /nextStatus === "scheduled" && slotChanged && nextKind !== DEADLINE_HEARING_KIND/);
+});
+
+test("q357: the hearing screens tell the overlap 409 apart by code and offer «حفظ رغم التعارض»", () => {
+  // review I2: one client helper, the code a parameter
+  const api = read("../../../../../lib/services/api.ts");
+  assert.match(api, /response\.status === 409 && errorBody\?\.code === overlapCode/);
+  const svc = read("../../../../../lib/services/lawyerHearingsService.ts");
+  assert.match(svc, /mutateWithOverlapCode<T>\(url, method, body, "hearing_overlap"/);
+  const consult = read("../../../../../lib/services/lawyerConsultationsService.ts");
+  assert.match(consult, /mutateWithOverlapCode<T>\(url, method, body, "consultation_overlap"/);
+  for (const rel of [
+    "../../../../dashboard/lawyer/_components/AddHearingModal.tsx",
+    "../../../../dashboard/lawyer/hearings/_HearingActionDialog.tsx",
+  ]) {
+    const src = read(rel);
+    assert.match(src, /instanceof HearingOverlapError/, rel);
+    assert.match(src, /حفظ رغم التعارض/, rel);
+    assert.match(src, /confirmOverlap/, rel);
+  }
+});

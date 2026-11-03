@@ -6,8 +6,12 @@ import { callN8n } from "@/lib/ai/n8nClient";
 import { retrieveLibrary } from "@/lib/ai/retrieval";
 import { resolveAiFiles } from "@/lib/ai/aiFiles";
 import { startRunWith, type RouteReply, type RunActor } from "@/lib/ai/runCore";
+import { runForViewer, viewerIsAdmin } from "@/lib/ai/runVisibility";
 import { libraryGate } from "@/lib/library-gate";
 import { libraryAiAccess } from "@/app/api/ai/_libraryAiAccess";
+import { libraryRunAccess, libraryRunCreated } from "@/lib/ai/libraryRunAccess";
+import { libraryReadQuotaHit } from "@/lib/library/readQuotaServer";
+import { recordLibraryActivity } from "@/lib/library/activityMeterServer";
 
 /**
  * /api/v1/ai/runs — the AI tools (docs/plans/2026-10-26-ai-services-n8n-plan.md
@@ -22,7 +26,9 @@ import { libraryAiAccess } from "@/app/api/ai/_libraryAiAccess";
  * GET   the user's last 50 runs (?tool= to filter), own rows through RLS.
  *
  * /api/v1/ai/* is not in PROTECTED_API_PREFIXES, so the proxy adds no 401 or
- * freeze check: both happen here.
+ * freeze check: both happen here. Nor does the proxy's library lock reach
+ * this path (one path, every tool): a run of the library's own AI checks the
+ * lock here, before the charge (libraryAccessFor).
  */
 
 export const dynamic = "force-dynamic";
@@ -34,13 +40,33 @@ const SIGN_IN = { error: "سجّل الدخول لاستخدام أدوات ال
 /**
  * A library tool's gate: the library's closed switch (admins pass), then the
  * assistant's rule, Pro or higher or a platform admin (owner ٢٠٦ / ٢٠٧ / ٢٠٩),
- * the same two checks as /api/ai/library-chat.
+ * the same two checks the deleted free route /api/ai/library-chat made.
  */
 async function libraryAccess(): Promise<RouteReply | null> {
   const refused = (await libraryGate()) ?? (await libraryAiAccess());
   if (!refused) return null;
   const body = (await refused.json().catch(() => ({}))) as Record<string, unknown>;
   return { status: refused.status, body: { ...body, code: body.libraryClosed ? "library_closed" : "library_tier" } };
+}
+
+/**
+ * The gate above, then, for the library's own AI (readQuota.isLibraryAiTool),
+ * what the proxy does on the library's other reads: a reader under a library
+ * lock gets the lock's 423 and its message (readQuota.quotaRefusal),
+ * uncharged. The lock check fails open and exempts admins, as in the proxy
+ * (readQuotaServer.ts). The branches are src/lib/ai/libraryRunAccess.ts.
+ */
+function libraryAccessFor(userId: string) {
+  return libraryRunAccess({
+    gate: libraryAccess,
+    lockRow: () => libraryReadQuotaHit(userId, null, { memoLockCheck: true }),
+    now: () => Date.now(),
+  });
+}
+
+/** «نشاط المكتبة»: a library-AI call is tallied once its run is created (task 2 review M1). */
+function libraryRunCreatedFor(userId: string) {
+  return libraryRunCreated(() => recordLibraryActivity(userId, "ai"));
 }
 
 function callbackUrl(): string {
@@ -89,7 +115,8 @@ export async function POST(request: NextRequest) {
       {
         callbackUrl: callbackUrl(),
         n8n: (call) => callN8n({ ...call, baseUrl: process.env.N8N_AI_BASE_URL, key: process.env.NZAMY_AI_KEY }),
-        libraryAccess,
+        libraryAccess: libraryAccessFor(user.id),
+        onRunCreated: libraryRunCreatedFor(user.id),
         retrieve: (queries, limits, pin) => retrieveLibrary(admin, queries, limits, pin),
         resolveFiles: (userId, fileIds, rules) => resolveAiFiles(admin, userId, fileIds, rules),
       },
@@ -125,8 +152,12 @@ export async function GET(request: NextRequest) {
       console.error("[ai/runs] GET failed:", error.code, error.message);
       return NextResponse.json({ error: "تعذّر تحميل السجل" }, { status: 503, headers: NO_STORE });
     }
-    // A review run's draft is for staff until it is approved.
-    const runs = (data ?? []).map((r) => (r.status === "review" ? { ...r, output: null, citations: [] } : r));
+    // A stored review run's output (review mode is retired; Wave 3 releases
+    // or refunds those rows) is held from its owner, never from an admin. The
+    // profile is read only when such a row is there, and fails closed.
+    const rows = data ?? [];
+    const isAdmin = rows.some((r) => r.status === "review") && (await viewerIsAdmin(supabase, auth.user.id));
+    const runs = rows.map((r) => runForViewer(r, isAdmin));
     return NextResponse.json({ runs }, { headers: NO_STORE });
   } catch (err) {
     console.error("[ai/runs] GET threw:", err);

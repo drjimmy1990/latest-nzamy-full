@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { UserFocus } from "@phosphor-icons/react";
 import { VoiceInput } from "@/components/ui/VoiceInput";
+import { RequiredMark } from "@/components/ui/RequiredMark";
 
 interface StepRIdentityProps {
   isDark: boolean;
@@ -29,9 +30,9 @@ export function StepRIdentity({ isDark, rPartyFocus, setRPartyFocus, rFears, set
 
         <div className="space-y-4">
           <div>
-            <label className={`block text-[12px] font-bold mb-2 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>أنت تمثل أي طرف في العقد؟</label>
+            <label htmlFor="contracts-r-party" className={`block text-[12px] font-bold mb-2 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>أنت تمثل أي طرف في العقد؟<RequiredMark /></label>
             <div className="relative">
-              <textarea value={rPartyFocus} onChange={e => setRPartyFocus(e.target.value)} placeholder="مثال: أنا أمثل الشركة المطورة (الطرف الأول)..." rows={2} className={`${inputCls} resize-none pe-12`} />
+              <textarea id="contracts-r-party" aria-required="true" value={rPartyFocus} onChange={e => setRPartyFocus(e.target.value)} placeholder="مثال: أنا أمثل الشركة المطورة (الطرف الأول)..." rows={2} className={`${inputCls} resize-none pe-12`} />
               <div className="absolute top-2.5 end-2"><VoiceInput onTranscript={t => setRPartyFocus(rPartyFocus ? `${rPartyFocus} ${t}` : t)} compact /></div>
             </div>
           </div>

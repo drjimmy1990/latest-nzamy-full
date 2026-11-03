@@ -33,15 +33,19 @@ import type { WorkflowRequest, WorkflowRequestStatus } from "@/lib/workflowStore
 import { listOk, listFailed, listViewState, itemsOf, type ListRead } from "@/lib/services/listRead";
 import { orderReference } from "@/lib/services/orderReference";
 import { toArabicDigits } from "@/lib/services/arabicCount";
+import { COMING_SOON_BADGE_AR, isTerminalToolHref } from "@/constants/betaGatedRoutes";
 
 // ─── New-request catalogue (real destinations, not order data) ────────────────
 
+// Wave 1 task 6, fix round 1 (I4): «من ٢٠٠ / ٢٥٠ / ١٥٠ ر.س» are gone — no
+// catalogue row backs them and nothing charges them — and a row that opens a
+// beta-gated tool (registry: src/constants/betaGatedRoutes.ts) says «قريباً».
 const SERVICE_TYPES = [
-  { id: "consult", label: "استشارة قانونية", desc: "رأي متخصص في مسألتك", icon: Headset, price: "من ٢٠٠ ر.س", href: "/ai/consult" },
-  { id: "contract", label: "صياغة أو مراجعة عقد", desc: "عقد مخصص لنشاطك", icon: FileText, price: "من ٢٥٠ ر.س", href: "/ai/corp/contracts" },
+  { id: "consult", label: "استشارة قانونية", desc: "رأي متخصص في مسألتك", icon: Headset, price: "", href: "/ai/consult" },
+  { id: "contract", label: "صياغة أو مراجعة عقد", desc: "عقد مخصص لنشاطك", icon: FileText, price: "", href: "/ai/corp/contracts" },
   { id: "case", label: "تمثيل قانوني", desc: "محامٍ يمثلك رسمياً", icon: Gavel, price: "حسب القضية", href: "/dashboard/micro/find-lawyer" },
-  { id: "notice", label: "إشعار قانوني", desc: "إشعار رسمي لطرف ثالث", icon: Warning, price: "من ١٥٠ ر.س", href: "/ai/consult" },
-];
+  { id: "notice", label: "إشعار قانوني", desc: "إشعار رسمي لطرف ثالث", icon: Warning, price: "", href: "/ai/consult" },
+].map((s) => ({ ...s, price: isTerminalToolHref(s.href) ? COMING_SOON_BADGE_AR : s.price }));
 
 // ─── Status / type vocabulary ──────────────────────────────────────────────────
 // Same values `service_requests_type_check` and the status column allow —
@@ -437,7 +441,7 @@ export default function MicroRequestsPage() {
                         </div>
                         <p className={`text-[13px] font-bold mb-0.5 ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>{svc.label}</p>
                         <p className={`text-[11px] mb-2 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{svc.desc}</p>
-                        <span className="text-[10px] font-bold text-[#C8A762]">{svc.price}</span>
+                        {svc.price && <span className="text-[10px] font-bold text-[#C8A762]">{svc.price}</span>}
                       </motion.div>
                     </Link>
                   );

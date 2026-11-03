@@ -48,6 +48,7 @@ import {
   IS_BETA,
 } from "@/constants/clientConsultationData";
 import { StepBar } from "@/components/consultation/ClientConsultationComponents";
+import { COMING_SOON_BADGE_AR, isTerminalToolHref } from "@/constants/betaGatedRoutes";
 
 // ─── Attachment failure reporting ─────────────────────────────────────────────
 
@@ -174,6 +175,10 @@ export default function NewConsultationPage() {
   // service this wizard bills nothing for. formatClientServicePrice() is the one
   // function that reads priceMode, and its `priceNote` is where the ٤٩ belongs.
   const aiConsultService = getClientServiceById("ai-consult", catalog);
+  // Wave 1 task 6, fix round 1 (I3): the AI path ends at /ai/consult, which is
+  // beta-gated, so the card says «قريباً» — not «مجانا» and not the catalogue
+  // note «… أو 49 ر.س إضافي»: nothing charges 49.
+  const aiConsultSoon = isTerminalToolHref(aiConsultService.route);
 
   const [step, setStep] = useState(1);
   const [path, setPath] = useState<ConsultPath | null>(null);
@@ -313,6 +318,8 @@ export default function NewConsultationPage() {
   const canGoStep3 = specialty !== null && activeTopic.trim().length > 5;
   const serviceId = path === "ai" ? "ai-consult" : getConsultationModeServiceId(mode);
   const service = getClientServiceById(serviceId, catalog);
+  // The AI path's tool is gated (see aiConsultSoon): no «مجانا», no 49 note.
+  const aiPathSoon = path === "ai" && aiConsultSoon;
   // `requiresPayment`, not the raw basePrice — the same rule the requests wizard applies at
   // requests/new/page.tsx. Reading basePrice raw priced the free daily AI
   // question at ٤٩ and put it behind the disabled payment gate, which is how the
@@ -744,9 +751,9 @@ export default function NewConsultationPage() {
                   <div className="text-right w-full">
                     <p className={`text-[14px] font-black ${isDark ? "text-white" : "text-zinc-900"}`}>ذكاء نظامي</p>
                     <p className={`text-[11px] mt-0.5 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
-                      استشارة فورية · {servicePriceLabel(aiConsultService)}
+                      {aiConsultSoon ? COMING_SOON_BADGE_AR : `استشارة فورية · ${servicePriceLabel(aiConsultService)}`}
                     </p>
-                    {aiConsultService.priceNote && (
+                    {!aiConsultSoon && aiConsultService.priceNote && (
                       <p className={`text-[10px] mt-0.5 leading-relaxed ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
                         {aiConsultService.priceNote}
                       </p>
@@ -1049,7 +1056,7 @@ export default function NewConsultationPage() {
                   <p className="font-bold mb-0.5">إرسال الطلب مجاني ومتاح بدون سداد فوري في هذه الخطوة</p>
                   <p className={`text-[11px] font-normal ${isDark ? "text-emerald-300/80" : "text-emerald-700"}`}>
                     {path === "ai"
-                      ? "استشارة ذكاء نظامي مشمولة مجاناً للاستفسار اليومي الأول."
+                      ? (aiPathSoon ? "استشارة ذكاء نظامي: قريباً. لا يُخصم أي مبلغ." : "استشارة ذكاء نظامي مشمولة مجاناً للاستفسار اليومي الأول.")
                       : `السعر التقديري لـ (${MODE_COPY[mode].label}): ${servicePriceLabel(service)} — لا يُخصم أي مبلغ الآن، ويتواصل معك فريق نظامي لتأكيد الموعد والتفاصيل.`}
                   </p>
                 </div>
@@ -1108,9 +1115,9 @@ export default function NewConsultationPage() {
                     <span className={`text-[13px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>
                       {estimate > 0 ? "السعر التقديري" : "سعر الخدمة"}
                     </span>
-                    <span className="text-[18px] font-black text-[#C8A762]">{servicePriceLabel(service)}</span>
+                    <span className="text-[18px] font-black text-[#C8A762]">{aiPathSoon ? COMING_SOON_BADGE_AR : servicePriceLabel(service)}</span>
                   </div>
-                  {service.priceNote && priceNoteDescribesSelection && (
+                  {!aiPathSoon && service.priceNote && priceNoteDescribesSelection && (
                     <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
                       {service.priceNote}
                     </p>

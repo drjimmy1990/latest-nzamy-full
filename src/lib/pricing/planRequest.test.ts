@@ -97,10 +97,10 @@ test("every client-registration CTA carries its own plan id in ?plan=", () => {
       seen++;
     }
   }
-  // individuals 3 plans + the 100 / 250 top-ups (owner ٣٠٢) × 2 languages
-  // (the 699 family plan merged into «التأمين القانوني», owner ٢١٣/١٧٦),
+  // individuals: ind-ai + the 100 / 250 top-ups (owner ٣٠٢) × 2 languages
+  // (ind-preventive and ind-litigation are retired, q329 — no card),
   // micro 1 × 2, ngo 2 × 2
-  assert.equal(seen, 16);
+  assert.equal(seen, 12);
 });
 
 // ── N5 (fix plan 2026-10-16): the library checkout path ─────────────────────

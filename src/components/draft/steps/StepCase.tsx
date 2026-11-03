@@ -6,9 +6,10 @@ import { CloudArrowUp, PaperclipHorizontal, BookOpen, UploadSimple, FileArrowUp,
 import { AnimatePresence } from "framer-motion";
 import { VoiceInput } from "@/components/ui/VoiceInput";
 import { DraftPartyForm } from "@/components/draft/DraftPartyForm";
+import { RequiredMark } from "@/components/ui/RequiredMark";
 import { JudgmentHeader } from "@/components/draft/JudgmentHeader";
 import { COMMITTEE_BRANCH_IDS, PartyData, SupportDoc, REQUIRES_JUDGMENT_HEADER } from "@/components/draft/draftConstants";
-import type { OrderAttachment } from "@/lib/services/orderIntake";
+import { draftPartiesShown, type OrderAttachment } from "@/lib/services/orderIntake";
 
 interface StepCaseProps {
   isDark: boolean;
@@ -70,6 +71,9 @@ export function StepCase({
   const card = isDark ? "bg-zinc-900 border border-white/[0.06] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
   const isCommittee  = COMMITTEE_BRANCH_IDS.has(legalBranch);
   const isDraftType  = memoType === "case";
+  // Which party forms show: the same rule the case step's gate and
+  // validateDraftIntake apply, so a hidden form's values never count.
+  const partiesShown = draftPartiesShown(memoType, legalBranch);
   const needsJudgment = REQUIRES_JUDGMENT_HEADER.has(memoType);
 
   const [showFirmModal, setShowFirmModal] = useState(false);
@@ -126,7 +130,7 @@ export function StepCase({
 
 
       {/* بيانات الأطراف */}
-      {isDraftType ? (
+      {partiesShown.one ? (
         <div className={`${card} p-5 shadow-sm`}>
           <div className="flex items-center gap-2 mb-4">
             <p className={`text-[13px] font-bold ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>بيانات الأطراف</p>
@@ -140,7 +144,7 @@ export function StepCase({
           <p className={`text-[11px] font-bold uppercase tracking-wider mb-2 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
             {clientRole === "plaintiff" ? "المدعى عليه (الطرف الثاني)" : "المدعي (الطرف الثاني)"}
           </p>
-          {isCommittee ? (
+          {!partiesShown.two ? (
             <div className={`rounded-xl p-3 ${isDark ? "bg-zinc-800/50 text-zinc-400" : "bg-zinc-50 text-zinc-500"} text-[12px]`}>
               🏛️ المستأنف ضدها: <strong>هيئة الزكاة والضريبة والجمارك</strong> (ثابت)
             </div>
@@ -184,7 +188,7 @@ export function StepCase({
       <div className={`${card} p-5 shadow-sm`}>
         <div className="flex items-center gap-2 mb-1">
           <p className={`text-[13px] font-bold ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>
-            {isDraftType ? "المستند الأساسي / المرفقات" : "ملفات القضية الكاملة (مطلوب)"}
+            {isDraftType ? "المستند الأساسي / المرفقات" : "ملفات القضية الكاملة"}<RequiredMark announce />
           </p>
           {!isDraftType && (
             <span className={`text-[10px] px-2 py-0.5 rounded-full border ${isDark ? "border-orange-500/30 bg-orange-900/15 text-orange-400" : "border-orange-300 bg-orange-50 text-orange-700"}`}>
@@ -225,8 +229,12 @@ export function StepCase({
           )}
         </div>
         <p className={`text-center text-[11px] my-3 ${isDark ? "text-zinc-700" : "text-zinc-300"}`}>أو</p>
+        {/* Either one is required (validateDraftIntake): the facts typed, or a file. */}
+        <p id="draft-case-facts-hint" className={`text-[11px] mb-2 ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>
+          مطلوب أحدهما: أرفق مستنداً، أو اكتب الوقائع (٣٠ حرفاً على الأقل)
+        </p>
         <div className="relative">
-          <textarea value={caseText} onChange={e => setCaseText(e.target.value)}
+          <textarea aria-label="وقائع القضية" aria-describedby="draft-case-facts-hint" value={caseText} onChange={e => setCaseText(e.target.value)}
             placeholder={caseFile ? "أضف ملاحظات إضافية على الملف (اختياري)..." : "اكتب ملخص القضية: الأطراف · الواقعة · التسلسل الزمني · الأدلة..."}
             rows={5}
             className={`w-full resize-none rounded-xl border p-4 pe-14 text-[13px] outline-none leading-relaxed ${isDark ? "border-white/[0.07] bg-zinc-800/50 text-zinc-200 placeholder:text-zinc-600 focus:border-[#C8A762]/40" : "border-zinc-200 bg-zinc-50 text-zinc-800 placeholder:text-zinc-400 focus:border-[#0B3D2E]/40"}`} />

@@ -51,17 +51,6 @@
       "sourceUrl": "https://my.gov.sa/ar/agencies/17570",
       "checkedAt": "2026-10-28",
       "verified": false
-    },
-    {
-      "id": "pp-mygov-email",
-      "kind": "email",
-      "label": "البريد المنشور في دليل الجهات",
-      "value": "info@bip.gov.sa",
-      "ownerText": "`bip.gov.sa` بلا سجل بريد (MX) في فحصي، بينما `pp.gov.sa` له سجل بريد (`mail.pp.gov.sa`). فالبريد المنشور في `my.gov.sa` يبدو قديماً (اسم النطاق القديم للهيئة). فحص أولي من الخارج وقد يخطئ، فيُؤكَّد بإرسال تجريبي أو اتصال",
-      "source": "my.gov.sa (دليل الجهات)، وفحص المالك في ملاحظة ١٩ §٤",
-      "sourceUrl": "https://my.gov.sa/ar/agencies/17570",
-      "checkedAt": "2026-10-28",
-      "verified": false
     }
   ]
 }

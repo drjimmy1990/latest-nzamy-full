@@ -13,6 +13,13 @@ import { articleStatusNotice, isRepealedArticleStatus, type LawArticle, type Jud
 import { buildCitation } from "./_citation";
 import { splitAmendedLabelLine, splitAmendedMarker } from "./_amended-marker";
 import { splitNumberedItem } from "./_numbered-item";
+import {
+  AMENDMENT_DETAILS_FALLBACK_SUMMARY,
+  GENERAL_DETAILS_FALLBACK_SUMMARY,
+  cleanDetailsSummary,
+  isAmendmentDetails,
+  splitDetailsMarkup,
+} from "./_details-block";
 import { READER_SCROLL_MARGIN_TOP } from "./_reader-anchors";
 import { visibleAmendments } from "./_previous-versions";
 import { OfficialMetaLockedRow } from "../components/OfficialMetaLockedRow";
@@ -53,7 +60,7 @@ export function AmendedBadge({
  * Collapsible toggle details for amended articles showing amendment notice/history (Rule 5).
  */
 export function AmendedToggleDetails({
-  summary = "📜 النص قبل التعديل وتفاصيل قرار/مرسوم التعديل",
+  summary = AMENDMENT_DETAILS_FALLBACK_SUMMARY,
   children,
   decreeRef,
   isDark = false,
@@ -96,6 +103,45 @@ export function AmendedToggleDetails({
   );
 }
 
+/**
+ * A collapsible block of known CURRENT content — the preamble's موجز and info
+ * cards, a hand-verified live annex, an English courtesy translation
+ * (BUG-LIB-05): neutral, and no «سابق» badge. Everything else stays the amber
+ * AmendedToggleDetails, as the parser treats it (isAmendmentDetails,
+ * _details-block.ts): superseded text never looks current.
+ */
+function GeneralToggleDetails({
+  summary,
+  children,
+  isDark = false,
+  defaultOpen = false,
+}: {
+  summary: string;
+  children: React.ReactNode;
+  isDark?: boolean;
+  defaultOpen?: boolean;
+}) {
+  return (
+    <details
+      open={defaultOpen}
+      className={`my-3 rounded-xl border overflow-hidden ${
+        isDark ? "border-zinc-700/60 bg-zinc-900/40 text-zinc-300" : "border-slate-200 bg-slate-50/60 text-slate-800"
+      }`}
+    >
+      <summary className={`px-4 py-2.5 font-bold cursor-pointer text-xs select-none transition-colors ${
+        isDark ? "text-zinc-300 hover:bg-zinc-800/50" : "text-slate-700 hover:bg-slate-100/70"
+      }`}>
+        {summary}
+      </summary>
+      <div className={`px-4 py-3 border-t border-dashed text-[11.5px] leading-relaxed space-y-2 ${
+        isDark ? "border-zinc-700/60 bg-zinc-900/60" : "border-slate-200 bg-white/60"
+      }`}>
+        {children}
+      </div>
+    </details>
+  );
+}
+
 // ك-13: نفس دمج regulations[]→{ref,text} المستعمل بـpage.tsx/_sidebar.tsx.
 function getMergedReg(a: LawArticle): { ref: string; text: string } | null {
   if (!a.regulations || a.regulations.length === 0) return null;
@@ -117,7 +163,9 @@ interface ParseBlock {
 
 function parseMarkdownContent(text: string): ParseBlock[] {
   const blocks: ParseBlock[] = [];
-  const lines = text.split("\n");
+  // BUG-LIB-05: each <details> / <summary>…</summary> / </details> on its own
+  // line — a one-line «<details open><summary>…» used to lose its summary.
+  const lines = splitDetailsMarkup(text);
   
   let inDetails = false;
   let currentSummary = "";
@@ -131,7 +179,7 @@ function parseMarkdownContent(text: string): ParseBlock[] {
       if (inDetails) {
         blocks.push({
           type: "details",
-          summary: currentSummary || "📜 النص قبل التعديل وتفاصيل قرار/مرسوم التعديل",
+          summary: currentSummary,
           content: currentContentLines.join("\n"),
         });
       }
@@ -146,7 +194,7 @@ function parseMarkdownContent(text: string): ParseBlock[] {
         inDetails = false;
         blocks.push({
           type: "details",
-          summary: currentSummary || "📜 النص قبل التعديل وتفاصيل قرار/مرسوم التعديل",
+          summary: currentSummary,
           content: currentContentLines.join("\n")
         });
         continue;
@@ -231,7 +279,7 @@ function parseMarkdownContent(text: string): ParseBlock[] {
   if (inDetails && currentContentLines.length > 0) {
     blocks.push({
       type: "details",
-      summary: currentSummary || "📜 النص قبل التعديل وتفاصيل قرار/مرسوم التعديل",
+      summary: currentSummary,
       content: currentContentLines.join("\n"),
     });
   }
@@ -293,16 +341,25 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]", high
     <div className="space-y-1.5 w-full">
       {blocks.map((block, index) => {
         if (block.type === "details") {
+          // BUG-LIB-05: known current content (the موجز, an info card, a live
+          // annex) folds neutrally; anything else is the amber «سابق» toggle.
+          // The summary is plain text (no leftover tags or ** marks), rendered
+          // as text.
+          const summaryText = cleanDetailsSummary(block.summary);
+          const body = <MD text={block.content || ""} isDark={isDark} isRTL={isRTL} fontClass={fontClass} highlight={highlight} />;
+          // A match inside the folded text opens it.
+          const open = textHasHighlight(block.content, hlTerms);
+          if (isAmendmentDetails(summaryText, block.content)) {
+            return (
+              <AmendedToggleDetails key={index} summary={summaryText || AMENDMENT_DETAILS_FALLBACK_SUMMARY} isDark={isDark} defaultOpen={open}>
+                {body}
+              </AmendedToggleDetails>
+            );
+          }
           return (
-            <AmendedToggleDetails
-              key={index}
-              summary={block.summary}
-              isDark={isDark}
-              // A match inside the folded pre-amendment text opens it.
-              defaultOpen={textHasHighlight(block.content, hlTerms)}
-            >
-              <MD text={block.content || ""} isDark={isDark} isRTL={isRTL} fontClass={fontClass} highlight={highlight} />
-            </AmendedToggleDetails>
+            <GeneralToggleDetails key={index} summary={summaryText || GENERAL_DETAILS_FALLBACK_SUMMARY} isDark={isDark} defaultOpen={open}>
+              {body}
+            </GeneralToggleDetails>
           );
         }
 

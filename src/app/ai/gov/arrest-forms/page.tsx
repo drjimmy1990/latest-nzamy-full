@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { LockKey, Robot, Copy, DownloadSimple, Warning, ArrowLeft, ArrowRight } from "@phosphor-icons/react";
@@ -7,7 +8,7 @@ import AiResultActions from "@/components/AiResultActions";
 import BetaReviewGate from "@/components/BetaReviewGate";
 type Step = "input" | "generating" | "result";
 const TYPES = ["أمر قبض","أمر تفتيش شخصي","أمر تفتيش مسكن","أمر ضبط وإحضار"];
-export default function ArrestFormsPage() {
+function ArrestFormsInner() {
   const { isDark, isRTL } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [step, setStep] = useState<Step>("input");
@@ -69,5 +70,14 @@ export default function ArrestFormsPage() {
         </AnimatePresence>
       </div>
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function ArrestFormsPage() {
+  return (
+    <GatedToolScreen toolId="gov.arrest-forms" toolName="نماذج القبض والتفتيش">
+      <ArrestFormsInner />
+    </GatedToolScreen>
   );
 }

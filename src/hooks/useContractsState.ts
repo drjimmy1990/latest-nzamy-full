@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { STEPS_DRAFT, STEPS_DRAFT_SIMPLE, STEPS_REVIEW, StepKey, PartyData, EMPTY_PARTY } from "@/components/contracts/types";
 import { INITIAL_CLAUSES, CONTRACT_TYPES } from "@/components/contracts/constants";
 import { validateContractsIntake, partyIsNamed } from "@/lib/services/orderIntake.contracts";
+import { representativeIdOk } from "@/lib/services/orderIntake";
 import { createServiceOrder } from "@/lib/services/serviceOrders";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
 import { useOrderAttachments } from "@/hooks/useOrderAttachments";
@@ -180,7 +181,11 @@ export function useContractsState(linkedContract?: { id: string; title: string }
     // types.ts) must be named; a stricter wizard than validator would block
     // legitimate company/government orders, a laxer one would reproduce the
     // dead-end this task fixes.
-    if (step === "parties") return partyIsNamed(party1Data) && partyIsNamed(party2Data);
+    // A typed representative ID must be one (§3.5-3b) — the same check the
+    // intake and the AI run make, so nobody is stopped after the form.
+    if (step === "parties") {
+      return partyIsNamed(party1Data) && partyIsNamed(party2Data) && representativeIdOk(party1Data) && representativeIdOk(party2Data);
+    }
     // contractDesc is the brief the admin drafts from when no document is
     // uploaded (draft mode never collects one) — match
     // validateContractsIntake's MIN_CONTRACT_DESC (20 chars) so the client

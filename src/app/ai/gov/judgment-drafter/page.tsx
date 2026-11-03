@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { PencilSimple, Robot, Copy, DownloadSimple, Warning, ArrowLeft, ArrowRight, Sparkle } from "@phosphor-icons/react";
@@ -8,7 +9,7 @@ import { createWorkflowId, saveWorkflowRequest } from "@/lib/workflowStore";
 import AiResultActions from "@/components/AiResultActions";
 import BetaReviewGate from "@/components/BetaReviewGate";
 type Step = "input" | "drafting" | "result";
-export default function JudgmentDrafterPage() {
+function JudgmentDrafterInner() {
   const { isDark, isRTL } = useTheme();
   const user = useUser();
   const [mounted, setMounted] = useState(false);
@@ -143,5 +144,14 @@ export default function JudgmentDrafterPage() {
         </AnimatePresence>
       </div>
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function JudgmentDrafterPage() {
+  return (
+    <GatedToolScreen toolId="gov.judgment-drafter" toolName="مسودة الحكم القضائي">
+      <JudgmentDrafterInner />
+    </GatedToolScreen>
   );
 }

@@ -9,7 +9,7 @@ import { buildWebhookPayload } from "@/lib/n8n/payload";
 import { recordNotification } from "@/lib/notify";
 import { stripInternalNotes } from "@/lib/services/internalNotes";
 import { isKnownReceiver, ownRequestsOrFilter } from "@/lib/services/ownRequestsFilter";
-import { checkOrderIntake, intakeErrorMessageAr } from "@/lib/services/intakeGuard";
+import { checkOrderIntake, intakeErrorMessageAr, persistedRequestMetadata } from "@/lib/services/intakeGuard";
 import { isPleadingDraftIntake } from "@/lib/services/orderIntake";
 import { assertCourtPractice } from "@/lib/auth/assertCourtPractice";
 import { validateServiceRequestCreate } from "@/lib/services/serviceRequestIntake";
@@ -536,7 +536,9 @@ export async function POST(request: NextRequest) {
         receiver: shape.value.receiver,
         requester: shape.value.requester,
         payment: persistedPayment,
-        metadata: requestData.metadata ?? {},
+        // The validated intake and an allow-listed courtClass, not the raw
+        // body (intakeGuard.persistedRequestMetadata).
+        metadata: persistedRequestMetadata(requestData.metadata),
         // Phase 2 columns, sent ONLY when they carry a value. Both exist on
         // production only after migration 20260903_phase2 has been run; a solo
         // lawyer or a request with no picked client inserts exactly the column

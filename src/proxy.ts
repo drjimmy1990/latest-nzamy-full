@@ -34,6 +34,7 @@ import {
   isCouponValidateRoute,
   isTrackingUnlockRoute,
   isAttachmentsZipRoute,
+  isPointsStandingRoute,
   libraryReadClientKey,
   libraryBudgetBuckets,
   type LibraryBudgetBucket,
@@ -105,7 +106,7 @@ const TRACKING_UNLOCK_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 100
 // and a wider ceiling per proxy-resolved IP (an office behind one address).
 const ATTACHMENTS_ZIP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 20 };
 const ATTACHMENTS_ZIP_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 200 };
-// Owner note ١٣ C03 — every library, library-invitation and library-AI route
+// Owner note ١٣ C03 — every library and library-invitation route
 // (src/lib/rateLimitRoutes.ts libraryBudgetBuckets). Per visitor (Cloudflare's
 // CF-Connecting-IP, as library-read) and a ten-times-wider ceiling per
 // proxy-resolved IP (an office, or a shared edge, behind one address). Human
@@ -116,14 +117,12 @@ const ATTACHMENTS_ZIP_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 100
 //   library-doc   120 / min    — opening documents; a collection loads in up
 //                                to 24 windows, a book one section at a time
 //   library-init   60 / 10 min — catalogue pages of up to 200 rows
-//   library-ai     40 / 10 min — library AI answers (the routes keep their
-//                                own 20 / min per IP as well)
+// (The library AI is POST /api/v1/ai/runs, in the general bucket.)
 // The durable per-USER daily quota is separate (applyLibraryReadQuota below).
 const LIBRARY_BUDGETS: Readonly<Record<LibraryBudgetBucket, { visitor: RateLimitPolicy; ip: RateLimitPolicy }>> = {
   "library-any": { visitor: { windowMs: 60 * 1000, max: 300 }, ip: { windowMs: 60 * 1000, max: 3000 } },
   "library-doc": { visitor: { windowMs: 60 * 1000, max: 120 }, ip: { windowMs: 60 * 1000, max: 1200 } },
   "library-init": { visitor: { windowMs: 10 * 60 * 1000, max: 60 }, ip: { windowMs: 10 * 60 * 1000, max: 600 } },
-  "library-ai": { visitor: { windowMs: 10 * 60 * 1000, max: 40 }, ip: { windowMs: 10 * 60 * 1000, max: 400 } },
 };
 
 // The actual route tables (which paths/methods match which bucket) live in
@@ -160,12 +159,13 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
     const isCouponMatch = isCouponValidateRoute(method, pathname);
     const isTrackingUnlockMatch = isTrackingUnlockRoute(method, pathname);
     const isAttachmentsZipMatch = isAttachmentsZipRoute(method, pathname);
+    const isPointsStandingMatch = isPointsStandingRoute(method, pathname);
     const libraryBuckets = libraryBudgetBuckets(method, pathname);
 
     if (
       !isStrictMatch && !isGeneralMatch && !isLibraryReadMatch && !isTrackingMatch &&
       !isTrackingUnlockMatch && !isAttachmentsZipMatch && !isCouponMatch &&
-      libraryBuckets.length === 0
+      !isPointsStandingMatch && libraryBuckets.length === 0
     ) return null;
 
     const ip = resolveClientIp((name) => req.headers.get(name));
@@ -177,6 +177,12 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
 
     if (isGeneralMatch) {
       const decision = rateLimiter.check("general", ip, GENERAL_RATE_LIMIT);
+      if (!decision.allowed) return rateLimitResponse(decision);
+    }
+
+    // The banner's GET: the general policy, its own bucket (rateLimitRoutes.ts).
+    if (isPointsStandingMatch) {
+      const decision = rateLimiter.check("points-standing", ip, GENERAL_RATE_LIMIT);
       if (!decision.allowed) return rateLimitResponse(decision);
     }
 
@@ -239,8 +245,9 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
 // process and treat an office NAT as one person. This step is the durable,
 // per-USER layer: on the four document reads it counts the DISTINCT document
 // (law / book / precedent collection / decree) once per Riyadh day in
-// Postgres (src/lib/library/readQuota.ts for the numbers), and on search, the
-// in-document search and the library AI it checks only the library lock.
+// Postgres (src/lib/library/readQuota.ts for the numbers), and on search and
+// the in-document search it checks only the library lock. The library AI
+// (/api/v1/ai/runs) checks the lock in its own route (isLibraryAiTool).
 //
 // Who the user is comes from a verified getUser() - never from decoding the
 // cookie's JWT, which would let a forged `sub` spend (and lock) someone else's
@@ -263,7 +270,7 @@ async function applyLibraryReadQuota(req: NextRequest, pathname: string): Promis
   const target = libraryQuotaTarget(req.method, pathname);
   if (!target) return null;
   // Not for a path the rest of proxy() treats specially (none today: the
-  // targets live under /api/library and /api/ai).
+  // targets live under /api/library).
   if (REDIRECTS[pathname] || isProtectedApiPath(pathname)) return null;
   try {
     const authHeader = req.headers.get("authorization");
@@ -299,7 +306,7 @@ async function applyLibraryReadQuota(req: NextRequest, pathname: string): Promis
 
     // Every request of a signed-in reader is tallied (refused ones too); the
     // tally never waits and never fails the request.
-    recordLibraryActivity(user.id, libraryActivityKind(target, pathname));
+    recordLibraryActivity(user.id, libraryActivityKind(target));
 
     const row = await libraryReadQuotaHit(
       user.id,

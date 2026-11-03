@@ -2,7 +2,6 @@
 
 import { ArrowSquareOut, ShieldWarning, CheckCircle, Warning } from "@phosphor-icons/react";
 import data from "@/data/public-prosecution-channels.json";
-import { CircuitEmail } from "./_data";
 
 /**
  * «النيابة العامة» — its own category beside the Ministry of Justice
@@ -12,15 +11,16 @@ import { CircuitEmail } from "./_data";
  *
  * Only what the owner documented with a source and a check date
  * (src/data/public-prosecution-channels.json): the sectors form, the site,
- * the lawyers' platform, and the phone and e-mail my.gov.sa publishes — the
- * e-mail shown as text only, with his finding that its domain has no mail
- * record. No address is guessed: none is published for an investigation
- * circuit, and the card says so.
+ * the lawyers' platform, and the phone my.gov.sa publishes. No e-mail: the
+ * one my.gov.sa lists has a domain with no mail record (MX) in
+ * the owner's check, and q386 publishes no unverified prosecution address.
+ * No address is guessed: none is published for an investigation circuit,
+ * and the card says so.
  */
 
 interface Channel {
   id: string;
-  kind: "portal" | "website" | "note" | "phone" | "email";
+  kind: "portal" | "website" | "note" | "phone";
   label: string;
   value: string;
   source: string;
@@ -85,14 +85,6 @@ export function ProsecutionChannels({ isDark, lead }: { isDark: boolean; lead?: 
             )}
             {c.kind === "phone" && (
               <p dir="ltr" className={`mt-1 text-start font-mono text-[12px] select-all ${strong}`}>{c.value}</p>
-            )}
-            {c.kind === "email" && (
-              <div className="mt-1 space-y-1">
-                <CircuitEmail email={c.value} isDark={isDark} verified={false} />
-                <p className={`text-[11px] leading-relaxed ${isDark ? "text-amber-400" : "text-amber-700"}`}>
-                  يبدو قديماً: نطاق bip.gov.sa بلا سجل بريد (MX) في فحص المالك، بينما pp.gov.sa له سجل بريد. فحص أولي من الخارج وقد يخطئ — لا تعتمده قبل التأكد بإرسال تجريبي أو اتصال.
-                </p>
-              </div>
             )}
 
             <p className={`text-[10px] mt-1.5 ${muted}`}>

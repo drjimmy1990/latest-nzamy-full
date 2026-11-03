@@ -62,6 +62,26 @@ export const TRIGGER_EVENT_LABEL_AR: Record<StageTriggerEvent, string> = {
   notified: "تاريخ التبليغ بالحكم",
 };
 
+/**
+ * The start event the outcome form opens on (owner q347): «تسلّم صورة الحكم»
+ * for a degree whose outcome has never been recorded, since that is the event
+ * the seeded rules count from; one click switches it to «صدور الحكم».
+ *
+ * Only when the degree HAS an automatic rule — without one the event choice
+ * is not shown, and a default that needs its own date would block the save
+ * with no field to fill. A stored event is kept, and so is the lawyer's
+ * earlier «لم يُحدَّد بعد» on a degree already closed (closedOn set).
+ */
+export function defaultStageTriggerEvent(stage: {
+  triggerEvent?: StageTriggerEvent | null;
+  closedOn?: string | null;
+  hasAutoRule: boolean;
+}): StageTriggerEvent | "" {
+  if (stage.triggerEvent) return stage.triggerEvent;
+  if (stage.closedOn) return "";
+  return stage.hasAutoRule ? "copy_received" : "";
+}
+
 export interface StageTrigger {
   event: StageTriggerEvent;
   /** Own date for copy_received / notified; null for judgment_date (= closed_on). */

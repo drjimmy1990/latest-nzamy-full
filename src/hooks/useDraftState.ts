@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import {
   CLIENT_VISIBLE_STEPS, StepKey, VisibleStepKey, PartyData, EMPTY_PARTY, SupportDoc, MEMO_MAIN_TYPES,
 } from "@/components/draft/draftConstants";
-import { validateDraftIntake } from "@/lib/services/orderIntake";
+import { validateDraftIntake, representativeIdErrors, draftPartiesShown } from "@/lib/services/orderIntake";
 import { createServiceOrder } from "@/lib/services/serviceOrders";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
 import { useOrderAttachments } from "@/hooks/useOrderAttachments";
@@ -202,7 +202,13 @@ export function useDraftState(initialMode = "") {
       return !!(clientRole && memoType && legalBranch && memoSubType);
     }
     // The facts typed (as validateDraftIntake asks) or in an attached file.
-    if (step === "case")     return caseText.trim().length >= 30 || uploadedAttachments.length > 0;
+    // A typed representative ID must be one (§3.5-3b), as validateDraftIntake
+    // asks — and only in a party form StepCase shows for this memo type and
+    // branch: a value left in a hidden form must not lock the step.
+    if (step === "case") {
+      const idsOk = representativeIdErrors({ one: partyOne, two: partyTwo }, draftPartiesShown(memoType, legalBranch)).length === 0;
+      return (caseText.trim().length >= 30 || uploadedAttachments.length > 0) && idsOk;
+    }
     return true;
   }
 

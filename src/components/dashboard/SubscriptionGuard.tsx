@@ -6,6 +6,8 @@ import Link from "next/link";
 import { LockKey, ArrowLeft, Star } from "@phosphor-icons/react";
 import { motion } from "framer-motion";
 import UpgradeModal from "@/components/UpgradeModal";
+import { UNSOLD_TIERS, LOCKED_NOT_IN_PLAN_AR } from "@/hooks/featureAccess";
+import type { UserTier } from "@/hooks/useUser";
 
 export function SubscriptionGuard({
   featureKey,
@@ -30,20 +32,26 @@ export function SubscriptionGuard({
     // Map tier string to a friendly arabic label
     const TIER_LABELS: Record<string, string> = {
       free: "المجانية",
-      shield: "التأمين القانوني",
+      // No shield: no plan on sale grants it (Wave 1 task 6, H) — see tierName.
       ai: "ذكاء نظامي",
       pro: "الاحترافية",
       max: "الاحترافية", // no «الماكس» plan (owner, Q163) — same name as pro; see TIER_LABELS_AR
       corp: "حوكمة الشركات",
       enterprise: "الشركات المتكاملة",
     };
+    // A tier nothing sells gets no plan name and no upgrade dialog: the copy
+    // says the feature is not in the current plan and links to /pricing.
+    // Fix round 1 (M2): so does "free" — can() only says no to a free-gated
+    // feature when an admin switched it off, and «ترقية باقتك إلى المجانية»
+    // would be false. The gate itself (can / requiredTier) is unchanged.
+    const tierName = UNSOLD_TIERS.has(minTier as UserTier) || minTier === "free" ? null : TIER_LABELS[minTier] || minTier;
 
     return (
       <div className="flex flex-col items-center justify-center min-h-[70vh] px-4">
         <UpgradeModal 
           open={upgradeOpen} 
           onClose={() => setUpgradeOpen(false)} 
-          featureBlocked={TIER_LABELS[minTier] || minTier} 
+          featureBlocked={tierName ?? undefined} 
         />
         <motion.div 
           initial={{ opacity: 0, y: 10 }}
@@ -58,17 +66,30 @@ export function SubscriptionGuard({
           </div>
           
           <h2 className="text-2xl font-bold text-white mb-3">هذه الميزة مقفلة في باقتك الحالية</h2>
-          <p className="text-zinc-400 mb-8 leading-relaxed">
-            للوصول إلى هذه الأداة المتقدمة، يجب ترقية باقتك إلى <strong className="text-amber-500 px-1">{TIER_LABELS[minTier] || minTier}</strong> أو أعلى. استثمر في تطوير منظومتك القانونية اليوم.
-          </p>
+          {tierName ? (
+            <p className="text-zinc-400 mb-8 leading-relaxed">
+              للوصول إلى هذه الأداة المتقدمة، يجب ترقية باقتك إلى <strong className="text-amber-500 px-1">{tierName}</strong> أو أعلى. استثمر في تطوير منظومتك القانونية اليوم.
+            </p>
+          ) : (
+            <p className="text-zinc-400 mb-8 leading-relaxed">{LOCKED_NOT_IN_PLAN_AR}. اطّلع على الباقات المتاحة.</p>
+          )}
           
           <div className="flex flex-col sm:flex-row items-center gap-4 w-full">
-            <button 
-              onClick={() => setUpgradeOpen(true)}
-              className="w-full sm:w-auto flex-1 flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 px-6 rounded-xl transition-colors cursor-pointer"
-            >
-              الترقية الآن
-            </button>
+            {tierName ? (
+              <button 
+                onClick={() => setUpgradeOpen(true)}
+                className="w-full sm:w-auto flex-1 flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 px-6 rounded-xl transition-colors cursor-pointer"
+              >
+                الترقية الآن
+              </button>
+            ) : (
+              <Link
+                href="/pricing"
+                className="w-full sm:w-auto flex-1 flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 px-6 rounded-xl transition-colors"
+              >
+                عرض الباقات
+              </Link>
+            )}
             <Link 
               href="/dashboard/business" 
               className="w-full sm:w-auto flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 text-white font-medium py-3 px-6 rounded-xl transition-colors"

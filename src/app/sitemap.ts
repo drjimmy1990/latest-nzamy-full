@@ -74,14 +74,13 @@ const publicRoutes: SitemapRoute[] = [
   { url: "/services/tracking", priority: 0.8, changeFrequency: "monthly" },
   { url: "/terms", priority: 0.5, changeFrequency: "yearly" },
   { url: "/ai", priority: 0.9, changeFrequency: "monthly" },
-  { url: "/ai/analyze", priority: 0.8, changeFrequency: "monthly" },
+  // No tool that opens to the beta gate or «قريباً» (TERMINAL_TOOL_ROUTES in
+  // src/constants/betaGatedRoutes.ts; sitemap-tools.test.ts holds it).
   { url: "/ai/analyze-strength", priority: 0.8, changeFrequency: "monthly" },
   { url: "/ai/assistant", priority: 0.85, changeFrequency: "monthly" },
   { url: "/ai/case-brief", priority: 0.75, changeFrequency: "monthly" },
   { url: "/ai/collector", priority: 0.7, changeFrequency: "monthly" },
   { url: "/ai/communicate", priority: 0.7, changeFrequency: "monthly" },
-  { url: "/ai/compare", priority: 0.75, changeFrequency: "monthly" },
-  { url: "/ai/consult", priority: 0.8, changeFrequency: "monthly" },
   { url: "/ai/contract-drafter", priority: 0.85, changeFrequency: "monthly" },
   { url: "/ai/contracts", priority: 0.85, changeFrequency: "monthly" },
   { url: "/ai/direction-support", priority: 0.8, changeFrequency: "monthly" },
@@ -89,16 +88,12 @@ const publicRoutes: SitemapRoute[] = [
   { url: "/ai/fee-calculator", priority: 0.7, changeFrequency: "monthly" },
   { url: "/ai/legal-opinion", priority: 0.8, changeFrequency: "monthly" },
   { url: "/ai/legal-translate", priority: 0.75, changeFrequency: "monthly" },
-  { url: "/ai/micro", priority: 0.7, changeFrequency: "monthly" },
   { url: "/ai/monitor", priority: 0.7, changeFrequency: "monthly" },
   { url: "/ai/najiz-optimizer", priority: 0.7, changeFrequency: "monthly" },
   { url: "/ai/procedures", priority: 0.7, changeFrequency: "monthly" },
   { url: "/ai/quick-answer", priority: 0.75, changeFrequency: "monthly" },
-  { url: "/ai/report-generator", priority: 0.7, changeFrequency: "monthly" },
   { url: "/ai/secretary", priority: 0.7, changeFrequency: "monthly" },
-  { url: "/ai/smart-inspector", priority: 0.85, changeFrequency: "monthly" },
   { url: "/ai/templates", priority: 0.75, changeFrequency: "monthly" },
-  { url: "/ai/transcriber", priority: 0.75, changeFrequency: "monthly" },
   { url: "/ai/wargaming", priority: 0.75, changeFrequency: "monthly" },
 ];
 

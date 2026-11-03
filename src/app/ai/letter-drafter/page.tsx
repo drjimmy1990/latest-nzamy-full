@@ -4,14 +4,10 @@ import { useTheme } from "@/components/ThemeProvider";
 import { ClientLetterWorkflow } from "@/app/dashboard/client/_components/ClientLetterWorkflow";
 import { Envelope, ArrowRight } from "@phosphor-icons/react";
 import Link from "next/link";
-import { useUser } from "@/hooks/useUser";
-import { CreditsBanner } from "@/components/PaywallGate";
 
 export default function LetterDrafterPage() {
   const { theme } = useTheme();
   const isDark = theme === "dark";
-  const user = useUser();
-  const isExhausted = user.credits <= 0;
 
   const card = isDark
     ? "bg-zinc-900/50 border border-white/10 rounded-[2rem] backdrop-blur-xl"
@@ -50,8 +46,11 @@ export default function LetterDrafterPage() {
           <span className="rounded-full bg-blue-500/10 border border-blue-500/30 px-3 py-1 text-[11px] font-black text-blue-500 ms-auto shadow-[0_0_15px_rgba(59,130,246,0.15)]">قالب استرشادي</span>
         </div>
 
-        {/* Credits exhausted banner */}
-        {isExhausted && <CreditsBanner isDark={isDark} />}
+        {/* No «انتهى رصيدك» banner (owner package LIVE-06). It read
+            user_metadata.credit_balance, which nothing writes, so it showed
+            to everyone, admins included; and ClientLetterWorkflow is a
+            template composer that runs no AI tool and spends no points, so
+            there is no shortfall to warn about here at all. */}
 
         {/* Notice */}
         <div className={`mb-8 px-6 py-4 rounded-[1.5rem] border text-[13px] leading-relaxed font-medium flex items-start gap-3 ${

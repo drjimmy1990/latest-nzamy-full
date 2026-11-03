@@ -27,6 +27,7 @@ import { ClampedSummary } from "./ClampedSummary";
 import { lawCardSummaryText } from "./summaryClamp";
 import { lawCardDates, mergedFileBadge } from "../catalogueCardLabels";
 import { withSearchQuery } from "@/lib/search/multiColorSearch";
+import { apiSlug } from "@/utils/apiSlug";
 import { Hl } from "@/components/search/MultiColorHighlight";
 import { deepHitHref, resultHref, groupFeqhSearchCards, groupPrincipleSearchCards, type FeqhHitLike, type PrincipleHitLike } from "../searchHitGroups";
 import { SearchHitGroupCard } from "./SearchHitGroupCard";
@@ -360,10 +361,29 @@ export function LawsTabContent({
                     ⛔ ملغى وغير سارٍ
                   </span>
                 );
+                // §2.4-1 (owner package 2026-11-02): the law that replaced a
+                // repealed one, linked next to «ملغى» — only when the data names
+                // it (/api/library/init `replaced_by`, from supersedes_law_slug).
+                const successor: { slug: string; title: string } | null =
+                  isRepealedLaw && sys.replacedBy && typeof sys.replacedBy.slug === "string" && sys.replacedBy.slug ? sys.replacedBy : null;
+                const successorLink = successor ? (
+                  <Link
+                    href={`/laws/${apiSlug(successor.slug)}`}
+                    onClick={(e) => e.stopPropagation()}
+                    data-testid="law-successor-link"
+                    title={successor.title || successor.slug}
+                    className={`inline-flex items-center gap-1 max-w-[16rem] px-2 py-0.5 text-[10px] font-bold rounded-lg border underline-offset-2 hover:underline ${
+                      isDark ? "bg-white/5 border-white/10 text-[#C8A762]" : "bg-white border-gray-200 text-[#0B3D2E]"
+                    }`}
+                  >
+                    <span className="shrink-0">{isRTL ? "النظام البديل:" : "Replaced by:"}</span>
+                    <span className="truncate">{successor.title || successor.slug}</span>
+                  </Link>
+                ) : null;
                 // Owner note ١٢-٤: the merged file is said once, prominently,
                 // in place of the faint «لائحة تنفيذية» chip; a repealed law
                 // keeps its red frame and badge, so the merged badge goes muted.
-                const mergedLabel = mergedFileBadge(sys.hasMerged === true || (sys.sub_types ?? []).includes("لائحة تنفيذية"), null, sys.title);
+                const mergedLabel = mergedFileBadge(sys.hasMerged === true || (sys.sub_types ?? []).includes("لائحة تنفيذية"));
                 const mergedBadge = mergedLabel ? (
                   <span
                     role="link"
@@ -475,7 +495,12 @@ export function LawsTabContent({
                     <div className="h-full flex flex-col items-center text-center">
                       {/* Owner note ١٢-٤: no fixed «مُحدّث» badge — every card said it. */}
                       <div className="flex items-center justify-between w-full mb-3 text-xs gap-2">
-                        {isRepealedLaw ? repealedBadge : <span />}
+                        {isRepealedLaw ? (
+                          <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                            {repealedBadge}
+                            {successorLink}
+                          </div>
+                        ) : <span />}
                         <div className="flex items-center gap-1.5">
                         {isUnlocked ? (
                           <span className="px-2 py-0.5 text-[9px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
@@ -597,6 +622,7 @@ export function LawsTabContent({
                             </span>
                           ) : freePreviewHint}
                           {isRepealedLaw && repealedBadge}
+                          {successorLink}
                           {mergedBadge}
                           {saveButton}
                         </div>

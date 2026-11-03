@@ -17,10 +17,14 @@ import type { QuotaTarget } from "./readQuota.ts";
 
 export type LibraryActivityKind = "doc" | "search" | "ai";
 
-/** What a quota target is, for the tally: a document read, a search, or a library-AI call. */
-export function libraryActivityKind(target: QuotaTarget, pathname: string): LibraryActivityKind {
-  if (target.kind === "doc") return "doc";
-  return pathname.startsWith("/api/library/") ? "search" : "ai";
+/**
+ * What a proxy quota target is, for the tally: a document read or a search.
+ * Every lock-only target is a library search; a library-AI call ("ai") is
+ * tallied by the run route once its run is created (libraryRunAccess.ts), not
+ * here — the proxy's old /api/ai/* branch had no route left (task 2 review M8).
+ */
+export function libraryActivityKind(target: QuotaTarget): LibraryActivityKind {
+  return target.kind === "doc" ? "doc" : "search";
 }
 
 /** One row of the batch, in the shape library_activity_bump reads. */

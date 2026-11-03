@@ -8,6 +8,9 @@ import { Plan, ComparisonCategory } from "./pricing.types";
 // نحن لا نبيع له باقة — نبيع له "ضامن قانوني طول السنة".
 // سعر واحد. قيمة واضحة. بلا تعقيد.
 //
+// Wave 1 task 6: the micro AI tools (/ai/consult, /ai/analyze, /ai/micro)
+// end at the beta gate's "not available" card (src/constants/
+// betaGatedRoutes.ts), so no plan sells them or a quota of them.
 export const plansMicro: { ar: Plan[]; en: Plan[] } = {
   ar: [
     {
@@ -20,7 +23,7 @@ export const plansMicro: { ar: Plan[]; en: Plan[] } = {
       ctaHref: "/register/client?type=micro",
       highlighted: false, color: "border-slate-200/50",
       features: {
-        ai:       ["المستشار AI: ١ استفسار / يوم", "مراقبة الرخصة التجارية والسجل", null, null],
+        ai:       ["أدوات الذكاء الاصطناعي: قريباً", "مراقبة الرخصة التجارية والسجل", null, null],
         platform: ["تنبيه قبل ٣٠ يوماً من انتهاء أي رخصة", "ملف منشأة أساسي", null, null],
         support:  ["دعم بريد إلكتروني", null],
       },
@@ -38,9 +41,7 @@ export const plansMicro: { ar: Plan[]; en: Plan[] } = {
       highlighted: true, color: "border-royal/20",
       features: {
         ai: [
-          "المستشار AI: ٣٠ استفساراً / شهر",
-          "فحص عقد AI: ٣ عقود / شهر",
-          "مساعد المنشآت الصغيرة AI (عمل، إيجار، مخالفات)",
+          "أدوات الذكاء الاصطناعي: قريباً",
           "قوالب عقود متقدمة (عمل، خدمات، إيجار، توريد)",
         ],
         platform: [
@@ -63,7 +64,7 @@ export const plansMicro: { ar: Plan[]; en: Plan[] } = {
       ctaHref: "/register/client?type=micro",
       highlighted: false, color: "border-slate-200/50",
       features: {
-        ai:       ["AI Consultant: 1 query / day", "Commercial license & records monitoring", null, null],
+        ai:       ["AI tools: coming soon", "Commercial license & records monitoring", null, null],
         platform: ["30-day alert before any license expires", "Basic business profile", null, null],
         support:  ["Email support", null],
       },
@@ -80,9 +81,7 @@ export const plansMicro: { ar: Plan[]; en: Plan[] } = {
       highlighted: true, color: "border-royal/20",
       features: {
         ai: [
-          "AI Consultant: 30 queries / month",
-          "AI Contract Review: 3 contracts / month",
-          "Small Business AI Assistant (labor, lease, violations)",
+          "AI tools: coming soon",
           "Advanced contract templates (labor, services, lease, supply)",
         ],
         platform: [
@@ -101,10 +100,9 @@ export const plansMicro: { ar: Plan[]; en: Plan[] } = {
 export const comparisonMicro: { ar: ComparisonCategory[]; en: ComparisonCategory[] } = {
   ar: [
     { category: "الذكاء الاصطناعي", icon: Brain, rows: [
-      { feature: "استفسارات AI/شهر",            "micro-free": "١/يوم",   "micro-shield": "٣٠/شهر" },
-      { feature: "فحص عقد AI",                  "micro-free": false,     "micro-shield": "٣ عقود/شهر" },
+      { feature: "استفسارات AI وفحص العقود",     "micro-free": "قريباً",  "micro-shield": "قريباً" },
       { feature: "قوالب عقود جاهزة",             "micro-free": false,     "micro-shield": "متقدمة (عمل، إيجار، توريد)" },
-      { feature: "مساعد المنشآت الصغيرة AI",     "micro-free": false,     "micro-shield": true },
+      { feature: "مساعد المنشآت الصغيرة AI",     "micro-free": false,     "micro-shield": "قريباً" },
     ]},
     { category: "المراقبة والحماية", icon: ShieldCheck, rows: [
       { feature: "مراقبة الرخصة والسجل",         "micro-free": true,      "micro-shield": true },
@@ -124,10 +122,9 @@ export const comparisonMicro: { ar: ComparisonCategory[]; en: ComparisonCategory
   ],
   en: [
     { category: "AI Assistance", icon: Brain, rows: [
-      { feature: "AI queries / month",            "micro-free": "1/day",   "micro-shield": "30/month" },
-      { feature: "AI contract review",            "micro-free": false,     "micro-shield": "3/month" },
+      { feature: "AI queries and contract review", "micro-free": "Soon",   "micro-shield": "Soon" },
       { feature: "Contract templates",            "micro-free": false,     "micro-shield": "Advanced (labor, lease, supply)" },
-      { feature: "Small Business AI Assistant",   "micro-free": false,     "micro-shield": true },
+      { feature: "Small Business AI Assistant",   "micro-free": false,     "micro-shield": "Soon" },
     ]},
     { category: "Monitoring & Protection", icon: ShieldCheck, rows: [
       { feature: "License & record monitoring",   "micro-free": true,      "micro-shield": true },

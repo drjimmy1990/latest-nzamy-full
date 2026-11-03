@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ShieldCheck, CheckCircle, Warning, XCircle, Robot, ArrowLeft, ArrowRight } from "@phosphor-icons/react";
@@ -7,7 +8,7 @@ import AiResultActions from "@/components/AiResultActions";
 import BetaReviewGate from "@/components/BetaReviewGate";
 type Step = "input" | "checking" | "result";
 const GUARANTEES = ["المادة الثانية والثلاثون — حق الاستعانة بمحامٍ","المادة الثالثة والثلاثون — إبلاغ ذوي الموقوف","المادة الثامنة والثلاثون — الحق في التفتيش القضائي","المادة الخامسة والأربعون — حق الصمت","المادة الخمسون — مدة التوقيف الإجرائية"];
-export default function GuaranteesCheckerPage() {
+function GuaranteesCheckerInner() {
   const { isDark, isRTL } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [step, setStep] = useState<Step>("input");
@@ -85,5 +86,14 @@ export default function GuaranteesCheckerPage() {
         </AnimatePresence>
       </div>
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function GuaranteesCheckerPage() {
+  return (
+    <GatedToolScreen toolId="gov.guarantees-checker" toolName="مراجعة الضمانات الإجرائية">
+      <GuaranteesCheckerInner />
+    </GatedToolScreen>
   );
 }

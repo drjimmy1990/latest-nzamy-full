@@ -42,6 +42,18 @@ export function isValidNationalId(input: string): boolean {
   return /^[12]\d{9}$/.test(n);
 }
 
+/**
+ * A typed ID / iqama number taken as typed: Arabic-Indic digits converted and
+ * surrounding spaces trimmed, nothing else stripped — so «ID 1023456789» or
+ * «1023-456789» is refused, not silently reduced to its digits. The 10 ASCII
+ * digits, or null. (isValidNationalId above strips separators on purpose, for
+ * the client card's uniqueness index; a representative's ID is not that.)
+ */
+export function strictNationalId(input: string): string | null {
+  const n = normalizeDigits(input.trim());
+  return /^[12]\d{9}$/.test(n) ? n : null;
+}
+
 /** Commercial register: 10 digits (SR) — normalised the same way. */
 export function normalizeCommercialRegister(input: string): string {
   return normalizeDigits(input).replace(/\D/g, "");

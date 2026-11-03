@@ -9,6 +9,8 @@ import {
 } from "@/lib/services/hearingVocabulary";
 import { HEARINGS_SELECT, resolveOwnCase, toDto, type HearingRow } from "./_shared";
 import { validateHearingDuration } from "@/lib/services/item59Labels";
+import { DEADLINE_HEARING_KIND, hearingDurationMinutes, hearingStartMs } from "@/lib/services/scheduleClash";
+import { hearingOverlapRefusal } from "@/app/api/v1/lawyer/consultations/_scheduleGuard";
 
 /**
  * /api/v1/lawyer/hearings — Phase 1 (خطة_البناء_الكاملة §5).
@@ -97,7 +99,11 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/v1/lawyer/hearings
- * Body: { type, date, time?, caseName?, caseRequestId?, urgency?, location?, notes?, title, durationMinutes? }
+ * Body: { type, date, time?, caseName?, caseRequestId?, urgency?, location?, notes?, title, durationMinutes?, confirmOverlap? }
+ *
+ * Owner q357: a hearing with an hour is checked against the lawyer's
+ * scheduled consultations and other timed hearings — 409 `hearing_overlap`
+ * with the conflicts until the same body is sent with `confirmOverlap: true`.
  *
  * `durationMinutes` («مدة الجلسة», owner item 59): a whole number of minutes
  * from 5 to 1440, or null/absent for "not set" — see `validateHearingDuration`.
@@ -119,11 +125,11 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const {
-      type, date, time, caseName, caseRequestId, urgency, location, notes, title, durationMinutes,
+      type, date, time, caseName, caseRequestId, urgency, location, notes, title, durationMinutes, confirmOverlap,
     } = body as {
       type?: string; date?: string; time?: string; caseName?: string;
       caseRequestId?: string; urgency?: string; location?: string; notes?: string; title?: string;
-      durationMinutes?: unknown;
+      durationMinutes?: unknown; confirmOverlap?: unknown;
     };
 
     if (!type || !(VALID_TYPES as Set<string>).has(type)) {
@@ -142,6 +148,20 @@ export async function POST(request: NextRequest) {
     const parsedDuration = validateHearingDuration(durationMinutes);
     if (!parsedDuration.ok) {
       return NextResponse.json({ error: parsedDuration.error }, { status: 400 });
+    }
+
+    // q357: warn-then-confirm on a clash with the lawyer's own diary. A hearing
+    // with no hour holds a day, not a slot, and a «موعد طعن / نهائي» marks a
+    // day to act by — neither is checked.
+    const startMs = typeToKind(type as UiHearingType) === DEADLINE_HEARING_KIND ? null : hearingStartMs(date, time);
+    if (startMs !== null) {
+      const refusal = await hearingOverlapRefusal(supabase, {
+        lawyerUserId: user.id,
+        startMs,
+        durationMinutes: hearingDurationMinutes(parsedDuration.value),
+        confirmOverlap: confirmOverlap === true,
+      });
+      if (refusal) return refusal;
     }
 
     // Solo lawyer → no firm row → firm_id stays null, exactly what

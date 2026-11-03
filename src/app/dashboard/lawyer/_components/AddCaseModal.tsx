@@ -9,7 +9,8 @@ import { apiMutate, isSupabaseMode } from "@/lib/services/api";
 import { createWorkflowId, type WorkflowRequest } from "@/lib/workflowStore";
 import { createLawyerClient, getLawyerClients, type ClientType, type LawyerClient } from "@/lib/services/lawyerClientsService";
 import type { UserType, UserTier } from "@/hooks/useUser";
-import { COURT_CHOICES, COURT_OTHER, COURT_OTHER_LABEL, resolveCourt } from "./courtTypes";
+import { courtClassOf, resolveCourt } from "./courtTypes";
+import CourtPicker from "./CourtPicker";
 import { caseSavedStatusLine, cardNamed, isAddCaseDirty } from "./addCaseForm";
 
 interface Props {
@@ -49,6 +50,11 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
   // «المحكمة التجارية», so an untouched field filed every case as commercial.
   const [courtChoice, setCourtChoice] = useState("");
   const [courtOther, setCourtOther] = useState("");
+  // q351 / review I1: set only by a pick from the MoJ directory — its
+  // classification, or null when the directory cannot class it. `undefined`
+  // means the court is a classification, a typed «أخرى» name, or none. It
+  // lives here, not in the picker, so the chip survives the picker remounting.
+  const [courtClass, setCourtClass] = useState<string | null | undefined>(undefined);
   const [priority, setPriority] = useState<Priority>("normal");
   const [description, setDescription] = useState("");
 
@@ -110,6 +116,9 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
   }
 
   const courtResolved = resolveCourt(courtChoice, courtOther);
+  // Saved beside the name as metadata.courtClass (a jsonb key, no column), so
+  // the board files a directory court under its class — see courtClassOf.
+  const savedCourtClass = courtResolved.ok && courtResolved.court ? courtClassOf(courtResolved.court, courtClass) : null;
   const matchingCard = selectedClientId ? null : cardNamed(clientCards, clientName);
   const dirty = !done && isAddCaseDirty({
     selectedClientId, clientName, title, courtChoice, courtOther, priority, description,
@@ -223,7 +232,11 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
         // CODE-F19: no `assignee` — the «فريق العمل» choice it carried was read
         // by nothing; the case is the current user's (`assignedTo` below).
         // CODE-F30: no court chosen = no court saved, not a guessed one.
-        metadata: { ...(courtResolved.court ? { court: courtResolved.court } : {}), priority },
+        metadata: {
+          ...(courtResolved.court ? { court: courtResolved.court } : {}),
+          ...(savedCourtClass ? { courtClass: savedCourtClass } : {}),
+          priority,
+        },
         assignedTo: user.userId,
         ...(lawyerClientId ? { lawyerClientId } : {}),
       };
@@ -380,24 +393,20 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
                 </div>
                 <div>
                   <label htmlFor={`${fieldId}-court`} className={labelCls}>المحكمة المختصة</label>
-                  <select id={`${fieldId}-court`} value={courtChoice} onChange={e => setCourtChoice(e.target.value)} className={inputCls}>
-                    <option value="">— لم تُحدَّد بعد —</option>
-                    {COURT_CHOICES.map(c => <option key={c} value={c}>{c}</option>)}
-                    <option value={COURT_OTHER}>{COURT_OTHER_LABEL}</option>
-                  </select>
-                  {courtChoice === COURT_OTHER && (
-                    <input
-                      type="text"
-                      aria-label="اسم المحكمة أو الجهة"
-                      value={courtOther}
-                      onChange={e => setCourtOther(e.target.value)}
-                      placeholder="اكتب اسم المحكمة أو الجهة..."
-                      className={`${inputCls} mt-2`}
-                    />
-                  )}
-                  {!courtChoice && (
-                    <p className={hintCls}>يمكن تركها الآن؛ تظهر القضية «بانتظار تحديد الجهة» حتى تُحدَّد.</p>
-                  )}
+                  {/* q351: search over the 14 classifications and the MoJ
+                      directory of courts, plus «أخرى» — same two values,
+                      same resolveCourt, same saved string, plus the
+                      directory court's class. */}
+                  <CourtPicker
+                    id={`${fieldId}-court`}
+                    isDark={isDark}
+                    choice={courtChoice}
+                    other={courtOther}
+                    directoryClass={courtClass}
+                    onChange={(choice, other, cls) => { setCourtChoice(choice); setCourtOther(other); setCourtClass(cls); }}
+                    inputCls={inputCls}
+                    hintCls={hintCls}
+                  />
                 </div>
                 {/*
                   UAT-LIVE-CASE-001 — a REAL `disabled`, not only the disabled

@@ -51,6 +51,7 @@ import {
   TYPE_LABELS,
 } from "@/constants/lawyerCasesData";
 import { toArabicDigits } from "@/lib/services/arabicCount";
+import { courtClassOf } from "../_components/courtTypes";
 
 /*
  * NUMERALS. Every count on this screen goes through `toArabicDigits`.
@@ -415,7 +416,8 @@ export default function CasesPage() {
       if (statusFilter !== "all" && c.status !== statusFilter) return false;
       if (typeFilter !== "all" && c.type !== typeFilter) return false;
       if (degreeFilter !== "all" && c.degree !== degreeFilter) return false;
-      if (courtFilter !== "all" && c.court !== courtFilter) return false;
+      // q351 / review I1: by classification, so a directory court counts under its class.
+      if (courtFilter !== "all" && courtClassOf(c.court, c.courtClass) !== courtFilter) return false;
       if (teamFilter !== "all" && !c.team.includes(teamFilter)) return false;
       if (priorityFilter !== "all" && c.priority !== priorityFilter) return false;
       // شروط "today"/"week"/"month" حُذفت مع أزرارها: كانت تقرأ `c.nextDateSort`،

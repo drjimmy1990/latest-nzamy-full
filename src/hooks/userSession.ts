@@ -337,6 +337,7 @@ export function mapSupabaseUser(
     membershipState,
     subRole,
     name:          meta.display_name ?? meta.full_name ?? user.email ?? "",
+    fullName:      typeof meta.full_name === "string" ? meta.full_name : undefined,
     avatar:        meta.avatar_url,
     tier,
     credits:       meta.credit_balance ?? 0,

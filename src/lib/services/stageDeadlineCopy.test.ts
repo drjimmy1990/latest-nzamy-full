@@ -77,3 +77,9 @@ test("CODE-F03/F06: the outcome modal has no default date and refreshes the pare
   // «قيد النظر» sends no closing date and no trigger
   assert.match(src, /: \{ id: stage\.id, outcome, closedOn: null, notes, triggerEvent: null \}/);
 });
+
+test("review M6: a missing trigger date is said in red under the picker, so the disabled save is never silent", () => {
+  const src = read("app/dashboard/lawyer/_components/RecordStageOutcomeModal.tsx");
+  assert.match(src, /\{triggerDateMissing && \(\s*<p className="[^"]*text-red-500[^"]*">/);
+  assert.match(src, /const blocked = [^;]*triggerDateMissing/);
+});

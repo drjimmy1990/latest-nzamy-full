@@ -37,6 +37,10 @@
  *
  * • Anything not recognised is QUARANTINED VERBATIM and counted — never
  *   dropped, never guessed at (rules ق-2 and ق-3).
+ *
+ * • The label lists and summary patterns below are exported for the reader
+ *   (src/app/laws/[slug]/_details-block.ts), so the site folds a `<details>`
+ *   by the same wording this parser reads — one source.
  */
 
 /** One recovered historical version of an article. */
@@ -101,7 +105,7 @@ export interface HistoryResult {
  * as its specificity — do not loosen to a substring/keyword test without
  * re-running the corpus scan to prove zero false positives (Codex review).
  */
-const LIVE_ANNEX_SUMMARY_ALLOWLIST = new Set<string>([
+export const LIVE_ANNEX_SUMMARY_ALLOWLIST: ReadonlySet<string> = new Set<string>([
   "🎨 الملحق الفني التفصيلي لشهادات المنح وتقارير التفتيش (4-1 من الدليل)",
   "📄 البنود التفصيلية للاستعانة بجهات خارجية (2-2 من الدليل)",
   "📊 الجدول الأول: المواد المخدرة",
@@ -121,7 +125,7 @@ const LIVE_ANNEX_SUMMARY_ALLOWLIST = new Set<string>([
 
 // ── Labels whose following content IS the superseded statutory text ──────────
 // Ordered longest-first so a specific label wins over a shorter prefix of it.
-const BEFORE_TEXT_LABELS = [
+export const BEFORE_TEXT_LABELS = [
   "النص قبل الإلغاء (نص صفحة هيئة الخبراء)",
   "نص صفحة هيئة الخبراء (قبل آخر تعديل)",
   "نص المادة قبل الإلغاء",
@@ -165,7 +169,7 @@ const BEFORE_TEXT_LABELS = [
 // ── Labels whose following content is a citation or change description ──────
 // Recognised so they are NOT mistaken for statutory text, and so a block made
 // up only of these is "understood but carries no text" rather than unparsed.
-const REFERENCE_LABELS = [
+export const REFERENCE_LABELS = [
   "عُدّلت هذه المادة بموجب (الأحدث أولاً)",
   "أُضيفت هذه المادة بموجب",
   "عُدّلت هذه المادة بموجب",
@@ -210,15 +214,15 @@ const foldForMatch = (s: string): string => stripTashkeel(normalizeLabel(s));
  * The superseded text follows on the next line(s). Requires the trailing colon
  * so a passing mention inside prose is not mistaken for a heading.
  */
-const UNBOLDED_BEFORE_RE =
+export const UNBOLDED_BEFORE_RE =
   /^[ \t>]*((?:[^\n:]{0,120})?(?:قبل\s+التعديل|قبل\s+الإلغاء|النص\s+السابق)(?:[^\n:]{0,120})?):[ \t]*$/m;
 
 /**
  * A sentence that merely RECORDS a change (added/amended/repealed by decree X)
  * rather than quoting the prior wording. Diacritic-folded before testing.
  */
-const REFERENCE_NOTICE_RE =
-  /^(اضيفت|عدلت|الغيت|حذفت|اضيف|عدل|الغي|استبدلت|نقلت)\b/;
+export const REFERENCE_NOTICE_VERBS = ["اضيفت", "عدلت", "الغيت", "حذفت", "اضيف", "عدل", "الغي", "استبدلت", "نقلت"] as const;
+const REFERENCE_NOTICE_RE = new RegExp(`^(${REFERENCE_NOTICE_VERBS.join("|")})\\b`);
 
 /**
  * Summary wording that marks the block as holding a previous/historic version.
@@ -227,7 +231,7 @@ const REFERENCE_NOTICE_RE =
  * used "📜 حاشية المادة"/"📜 حواشي المادة" or a close variant as their summary —
  * real footnote/annotation content, quarantined for want of this one phrase.
  */
-const HISTORIC_SUMMARY_RE =
+export const HISTORIC_SUMMARY_RE =
   /الإصدارات\s+السابقة|التعديلات\s+والإلغاءات|نص\s+تاريخي|قبل\s+الإلغاء|قبل\s+التعديل|النص\s+السابق|حاشي[ةه]|حواشي/;
 
 /**
@@ -239,10 +243,10 @@ const HISTORIC_SUMMARY_RE =
  * beyond a hand-verified list without the false-positive risk that made an
  * allowlist necessary there (council review: Codex + Antigravity).
  */
-const ENGLISH_TEXT_SUMMARY_RE = /english\s*text/i;
+export const ENGLISH_TEXT_SUMMARY_RE = /english\s*text/i;
 
 /** True when >70% of the letters (Latin or Arabic) in `s` are Latin. */
-function isPredominantlyLatin(s: string): boolean {
+export function isPredominantlyLatin(s: string): boolean {
   const letters = s.match(/[A-Za-z؀-ۿ]/g);
   if (!letters || letters.length === 0) return false;
   const latin = letters.filter((c) => /[A-Za-z]/.test(c)).length;

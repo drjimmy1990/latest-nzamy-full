@@ -5,6 +5,8 @@ import { recordActivity, RequestEvent } from "@/lib/events";
 import { appendHearingHistory, planHearingChange } from "@/lib/services/hearingChange";
 import { riyadhToday } from "@/lib/riyadhDay";
 import { HEARINGS_SELECT, resolveOwnCase, toDto, type HearingRow } from "../_shared";
+import { DEADLINE_HEARING_KIND, hearingDurationMinutes, hearingStartMs } from "@/lib/services/scheduleClash";
+import { hearingOverlapRefusal } from "@/app/api/v1/lawyer/consultations/_scheduleGuard";
 
 /**
  * PATCH /api/v1/lawyer/hearings/[id] — CODE-F18.
@@ -26,6 +28,12 @@ import { HEARINGS_SELECT, resolveOwnCase, toDto, type HearingRow } from "../_sha
  * (src/lib/hearingReminders.ts). Nothing to write to notification_outbox here.
  *
  * Own diary only, like GET: the row must carry owner_user_id = caller.
+ *
+ * Owner q357: when the row will be a timed, scheduled hearing and its day,
+ * hour or duration changes (edit, postpone, reopen), it is checked against
+ * the lawyer's consultations and other hearings — 409 `hearing_overlap`
+ * (told apart from this route's other 409s by `code`) until the same body is
+ * sent with `confirmOverlap: true`.
  */
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
@@ -55,6 +63,35 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     const planned = planHearingChange(body, current, riyadhToday());
     if (!planned.ok) return NextResponse.json({ error: planned.error }, { status: planned.status ?? 400 });
     const { change } = planned;
+
+    // q357: overlap check on the row as it will be after this change.
+    {
+      const u = change.update;
+      const nextDate = typeof u.hearing_date === "string" ? u.hearing_date : current.hearing_date;
+      const nextTime = "hearing_time" in u ? (u.hearing_time as string | null) : current.hearing_time;
+      const nextDuration = "duration_minutes" in u ? (u.duration_minutes as number | null) : current.duration_minutes;
+      const nextStatus = typeof u.status === "string" ? u.status : current.status;
+      const nextKind = typeof u.kind === "string" ? u.kind : current.kind;
+      const slotChanged = nextDate !== current.hearing_date
+        || (nextTime ?? "").slice(0, 5) !== (current.hearing_time ?? "").slice(0, 5)
+        || nextDuration !== current.duration_minutes
+        || nextStatus !== current.status
+        || nextKind !== current.kind;
+      // A «موعد طعن / نهائي» (kind deadline) marks a day, it holds no hour: not checked.
+      const startMs = nextStatus === "scheduled" && slotChanged && nextKind !== DEADLINE_HEARING_KIND
+        ? hearingStartMs(nextDate, nextTime)
+        : null;
+      if (startMs !== null) {
+        const refusal = await hearingOverlapRefusal(supabase, {
+          lawyerUserId: user.id,
+          startMs,
+          durationMinutes: hearingDurationMinutes(nextDuration),
+          excludeHearingId: current.id,
+          confirmOverlap: (body as { confirmOverlap?: unknown } | null)?.confirmOverlap === true,
+        });
+        if (refusal) return refusal;
+      }
+    }
 
     let metadata: Record<string, unknown> = { ...(current.metadata ?? {}) };
     if (change.caseRequestId !== undefined) {

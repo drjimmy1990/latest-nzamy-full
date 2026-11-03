@@ -7,16 +7,19 @@
  * Google Calendar imports the event but drops them and applies the
  * calendar's own default notifications, which the button's tooltip says.
  *
- * ── Floating time, on purpose ────────────────────────────────────────────
- * DTSTART/DTEND carry no `Z` and no TZID: a hearing row stores a wall-clock
- * date and time and records no zone, and the hearings page's Google link
- * (googleCalUrl) already hands Google a floating stamp for the same reason.
- * The calendar app reads it in its own zone, which is the zone the lawyer
- * typed the hour in.
+ * ── Riyadh time (owner q352) ─────────────────────────────────────────────
+ * A hearing row stores a wall-clock date and time with no zone, and that
+ * wall clock is the Kingdom's: the court sits at 09:00 Riyadh time. So
+ * DTSTART/DTEND are written `DTSTART;TZID=Asia/Riyadh:…`, and the file
+ * carries the matching VTIMEZONE (UTC+3 all year, no daylight saving). The
+ * file used to be "floating" (no Z, no TZID), which a calendar reads in the
+ * DEVICE's zone — a lawyer travelling, or a laptop set to another zone, saw
+ * the sitting at the wrong hour. The Google link (googleCalendarLink.ts)
+ * carries `ctz=Asia/Riyadh` for the same reason.
  *
  * ── Relative alarms ──────────────────────────────────────────────────────
- * An absolute TRIGGER must be UTC (RFC 5545 §3.8.6.3), which would assert a
- * zone the row does not have. Each VALARM therefore carries a RELATIVE
+ * An absolute TRIGGER must be UTC (RFC 5545 §3.8.6.3); a relative one needs
+ * no conversion at all. Each VALARM therefore carries a RELATIVE
  * trigger: the wall-clock distance from the reminder to the hearing's start,
  * computed in hearingReminderStages.ts. For a 09:00 hearing that is −P7D,
  * −P3D, −PT13H (20:00 the day before) and −PT2H (07:00). In a zone with
@@ -51,6 +54,25 @@ export interface HearingIcsInput {
 
 const CRLF = "\r\n";
 const DEFAULT_BLOCK_MINUTES = 60;
+
+/** The zone every timed DTSTART/DTEND names. */
+export const HEARING_TZID = "Asia/Riyadh";
+
+/**
+ * Asia/Riyadh as RFC 5545 §3.6.5 wants it: one STANDARD observance at +03:00,
+ * no DAYLIGHT (the Kingdom keeps no DST), so every year resolves the same.
+ */
+export const RIYADH_VTIMEZONE: readonly string[] = [
+  "BEGIN:VTIMEZONE",
+  `TZID:${HEARING_TZID}`,
+  "BEGIN:STANDARD",
+  "DTSTART:19700101T000000",
+  "TZOFFSETFROM:+0300",
+  "TZOFFSETTO:+0300",
+  "TZNAME:+03",
+  "END:STANDARD",
+  "END:VTIMEZONE",
+];
 
 /** TEXT escaping (RFC 5545 §3.3.11): backslash, semicolon, comma, newline. */
 export function escapeIcsText(s: string): string {
@@ -130,6 +152,7 @@ export function buildHearingIcs(input: HearingIcsInput): string | null {
     "PRODID:-//Nezamy//Hearings//AR",
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
+    ...RIYADH_VTIMEZONE,
     "BEGIN:VEVENT",
     `UID:${input.uid}@nezamy.sa`,
     `DTSTAMP:${utcStamp(input.now ?? new Date())}`,
@@ -142,7 +165,10 @@ export function buildHearingIcs(input: HearingIcsInput): string | null {
       : DEFAULT_BLOCK_MINUTES;
     const s = minutesToWallClock(start);
     const e = minutesToWallClock(start + block);
-    out.push(`DTSTART:${compactStamp(s.date, s.time)}`, `DTEND:${compactStamp(e.date, e.time)}`);
+    out.push(
+      `DTSTART;TZID=${HEARING_TZID}:${compactStamp(s.date, s.time)}`,
+      `DTEND;TZID=${HEARING_TZID}:${compactStamp(e.date, e.time)}`,
+    );
   } else {
     out.push(
       `DTSTART;VALUE=DATE:${compactDate(input.date)}`,

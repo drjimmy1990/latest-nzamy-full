@@ -17,11 +17,13 @@ import {
 
 // ─── DATA ─────────────────────────────────────────────────────────────────────
 
+// Wave 1 task 6: «قريباً» for a tool that ends at the beta gate
+// (betaGatedRoutes.ts) — no description of what it would do.
 const AI_TOOLS = [
-  { label: "صائغ عقود التطوع",    sub: "عقود مخصصة لكل متطوع ومهمة",               href: "/ai/ngo/volunteer-contract", Icon: Handshake },
+  { label: "صائغ عقود التطوع",    sub: "قريباً", href: "/ai/ngo/volunteer-contract", Icon: Handshake },
   { label: "مدقق الحوكمة",        sub: "فحص مبدئي — حساب مؤقت لا يُحفظ",         href: "/ai/ngo/governance-checker", Icon: ShieldCheck },
-  { label: "محلل التبرعات",       sub: "تصنيف + قيود + استحقاق + تقارير",          href: "/ai/ngo/donation-analyzer",  Icon: Brain },
-  { label: "المستشار الذكي",      sub: "استشارة قانونية سريعة بالذكاء الاصطناعي", href: "/ai/consult",                Icon: Robot },
+  { label: "محلل التبرعات",       sub: "قريباً", href: "/ai/ngo/donation-analyzer",  Icon: Brain },
+  { label: "المستشار الذكي",      sub: "قريباً", href: "/ai/consult",                Icon: Robot },
 ];
 
 const COMPLIANCE_LOG = [

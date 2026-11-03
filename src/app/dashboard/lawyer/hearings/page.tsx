@@ -94,8 +94,9 @@ import type { WorkflowRequest } from "@/lib/workflowStore";
 import { useUser } from "@/hooks/useUser";
 import AddHearingModal from "../_components/AddHearingModal";
 import ConsultantGate from "@/components/dashboard/ConsultantGate";
-import { formatTimeOfDayAr, parseTimeOfDay } from "./_timeOfDay";
+import { formatTimeOfDayAr } from "./_timeOfDay";
 import { buildHearingIcs, hearingIcsFilename } from "@/lib/calendar/hearingIcs";
+import { googleCalendarUrl } from "@/lib/calendar/googleCalendarLink";
 import { formatDurationAr, HEARING_DURATION_LABEL_AR } from "@/lib/services/item59Labels";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -391,10 +392,6 @@ function formatEventDateAr(dateStr: string): string {
   return `${toArabicDigits(d.getDate())} ${month} ${toArabicDigits(d.getFullYear())}`;
 }
 
-const pad2 = (n:number) => String(n).padStart(2,"0");
-const gcalDay = (d:Date) => `${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}`;
-const gcalStamp = (d:Date) => `${gcalDay(d)}T${pad2(d.getHours())}${pad2(d.getMinutes())}00`;
-
 function googleCalUrl(ev: CalEvent): string | null {
   // The event's own stored day, not «today + dateSort». The old form handed
   // Google the WRONG DAY on any tab that had crossed midnight since the fetch —
@@ -408,45 +405,33 @@ function googleCalUrl(ev: CalEvent): string | null {
   // A day that will not parse yields NO link rather than a link to a guess;
   // `workflowToHearing` has already proved this string parseable, so that branch
   // is unreachable in practice.
-  const start = eventDayDate(ev.date);
-  if (!start) return null;
+  //
   // `dates` used to carry YYYYMMDD only, so the hour the lawyer typed was
   // dropped and every hearing reached Google as an ALL-DAY event — no reminder
   // at the hour of the sitting. `ev.time` was in hand the whole time; the card
   // that renders this link prints it two lines above.
   //
-  // The stamp is written with no `Z` and no `ctz` on purpose: a floating local
-  // time is the one Google reads in the viewer's own calendar zone, and that is
-  // exactly the zone the lawyer typed the hour in. Stamping a zone would mean
-  // asserting one — the row records none — so the meaning is left where it
-  // already is rather than pinned to a guess.
-  //
-  // The block's length is the row's own `duration_minutes` («مدة الجلسة»,
-  // owner item 59) when one is recorded. Without one, one hour is the
-  // TEMPLATE's default block, not a claim about the sitting — Google's compose
-  // screen opens with the end time editable before anything is saved. A row
-  // with no readable time keeps the old all-day form rather than inventing an
-  // hour for it.
-  const at = parseTimeOfDay(ev.time);
-  let dates: string;
-  if (at) {
-    start.setHours(at.h, at.m, 0, 0);
-    const minutes = typeof ev.durationMinutes === "number" && ev.durationMinutes > 0 ? ev.durationMinutes : 60;
-    const end = new Date(start.getTime() + minutes*60*1000);
-    dates = `${gcalStamp(start)}/${gcalStamp(end)}`;
-  } else {
-    const day = gcalDay(start);
-    dates = `${day}/${day}`;
-  }
+  // Owner q352: the link now carries `ctz=Asia/Riyadh` with Riyadh wall-clock
+  // stamps. It used to be a floating time, which Google reads in the viewer's
+  // own calendar zone — wrong for any lawyer whose calendar is set elsewhere.
+  // The stamps, the one-hour default block and the all-day fallback live in
+  // src/lib/calendar/googleCalendarLink.ts (pure, tested).
   const details = [ev.notes||"", ev.client?`الموكل: ${ev.client}`:"", ev.caseName?`القضية: ${ev.caseName}`:"", "منصة نظامي القانونية"].filter(Boolean).join("\n");
-  const p = new URLSearchParams({action:"TEMPLATE",text:ev.title,dates,details,location:ev.location||""});
-  return `https://calendar.google.com/calendar/render?${p.toString()}`;
+  return googleCalendarUrl({
+    title: ev.title,
+    date: ev.date,
+    time: ev.time ?? null,
+    durationMinutes: ev.durationMinutes ?? null,
+    details,
+    location: ev.location ?? "",
+  });
 }
 
 /**
  * «تنزيل ملف التقويم (.ics)» — the same event the Google link describes, as an
  * RFC 5545 file with the four reminders of hearingReminderStages.ts (owner ٤٦
- * part ٢). Floating time like the Google link; see src/lib/calendar/hearingIcs.ts.
+ * part ٢). Asia/Riyadh time (TZID) like the Google link's ctz (owner q352);
+ * see src/lib/calendar/hearingIcs.ts.
  * Built in the browser from the row already on screen: nothing is fetched and
  * nothing is stored. A day that does not parse yields no file.
  */

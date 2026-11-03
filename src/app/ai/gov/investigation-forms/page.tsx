@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ClipboardText, Robot, Copy, DownloadSimple, Warning, ArrowLeft, ArrowRight } from "@phosphor-icons/react";
@@ -7,7 +8,7 @@ import AiResultActions from "@/components/AiResultActions";
 import BetaReviewGate from "@/components/BetaReviewGate";
 type Step = "input" | "generating" | "result";
 const TEMPLATES = ["محضر إفادة شاهد","محضر استجواب متهم","طلب تفتيش","أمر ضبط وإحضار","طلب الاستعانة بخبير"];
-export default function InvestigationFormsPage() {
+function InvestigationFormsInner() {
   const { isDark, isRTL } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [step, setStep] = useState<Step>("input");
@@ -75,5 +76,14 @@ export default function InvestigationFormsPage() {
         </AnimatePresence>
       </div>
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function InvestigationFormsPage() {
+  return (
+    <GatedToolScreen toolId="gov.investigation-forms" toolName="نموذج التحقيق">
+      <InvestigationFormsInner />
+    </GatedToolScreen>
   );
 }

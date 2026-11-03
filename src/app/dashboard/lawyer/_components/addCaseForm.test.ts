@@ -74,7 +74,9 @@ test("AddCaseModal wiring: shell with busy/dirty, no team choice, no court defau
   // CODE-F30
   assert.doesNotMatch(src, /useState\("المحكمة التجارية"\)/);
   assert.match(src, /useState\(""\);\n\s*const \[courtOther/);
-  assert.match(src, /COURT_OTHER/);
+  // q351: the field is CourtPicker, which still offers «أخرى» (COURT_OTHER).
+  assert.match(src, /<CourtPicker[\s\S]*?choice=\{courtChoice\}[\s\S]*?other=\{courtOther\}/);
+  assert.match(read("./CourtPicker.tsx"), /onChange\(COURT_OTHER, ""\)/);
   assert.match(src, /readOnly=\{Boolean\(selectedClientId\)\}/);
   assert.doesNotMatch(src, /if \(selectedClientId\) setSelectedClientId\(""\)/);
   assert.match(src, /clientsUnreadable \?[\s\S]*?loadClients\(\)[\s\S]*?إعادة المحاولة/);

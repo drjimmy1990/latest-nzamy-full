@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -26,7 +27,7 @@ const WEIGH_OPTIONS = [
 
 type Step = "input" | "weighing" | "drafting" | "result";
 
-export default function VerdictDrafterPage() {
+function VerdictDrafterInner() {
   const [step, setStep] = useState<Step>("input");
   const [verdictType, setVerdictType] = useState<VerdictType | "">("");
   const [branch, setBranch] = useState<LegalBranch | "">("");
@@ -378,5 +379,14 @@ ${weighingReason ? `أسباب الترجيح:\n${weighingReason}` : ""}
 
       </AnimatePresence>
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function VerdictDrafterPage() {
+  return (
+    <GatedToolScreen toolId="gov.verdict-drafter" toolName="مسودة الحكم القضائي">
+      <VerdictDrafterInner />
+    </GatedToolScreen>
   );
 }

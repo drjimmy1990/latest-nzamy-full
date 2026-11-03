@@ -437,6 +437,7 @@ const FAB_MOBILE_SUPPRESSED_PREFIXES = [
   "/login",
   "/register",
   "/forgot-password",
+  "/reset-password",
   "/auth",
 ] as const;
 

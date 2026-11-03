@@ -28,7 +28,8 @@ import { formatLibraryCount } from "@/lib/library/libraryStats";
 import { useLibraryStats } from "@/lib/library/useLibraryStats";
 import Link from "next/link";
 import { useUser, UserPermission } from "@/hooks/useUser";
-import { LAWYER_AI_TOOLS, getLawyerAiBadge, type LawyerAiTool } from "@/constants/lawyerAiCatalog";
+import { LAWYER_AI_TOOLS, type LawyerAiTool } from "@/constants/lawyerAiCatalog";
+import { getLawyerAiBadge } from "@/constants/lawyerAiBadges";
 import { isConsultantBlockedPath } from "@/lib/auth/practiceKind";
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
@@ -555,8 +556,10 @@ const LEGACY_AI_TOOLS: AiToolCard[] = [
   { id: "ai:case-brief", href: "/ai/case-brief", titleAr: "الموجز القضائي", titleEn: "ParaLegal Briefing", icon: Robot, descAr: "المساعد الذكي لقراءة أوراق القضية واستخراج الإحاطة القانونية (الخطوة صفر)", descEn: "Upload case files — get full briefing, risk flags & next steps", badge: "جديد" },
   { id: "ai:quick-answer", href: "/ai/quick-answer", titleAr: "المجيب القانوني السريع", titleEn: "Quick Legal Responder", icon: ChatCircleDots, descAr: "سؤال محدد ← إجابة فورية مستندة للنظام السعودي", descEn: "One question → instant answer grounded in Saudi law", badge: "جديد" },
   { id: "ai:memo-studio", href: "/ai/wargaming", titleAr: "المحاكي الشامل للقضايا", titleEn: "Litigation Studio", icon: Scales, descAr: "دمج الذكاء الاصطناعي (قوة الموقف، الخصوم، الجلسات، والمذكرات)", descEn: "Integrated AI for position strength, opponents, hearings & memos", badge: "مُدمَج" },
-  { id: "ai:consult", href: "/ai/consult", titleAr: "المستشار الذكي", titleEn: "AI Advisor", icon: ChatCircleDots, descAr: "إجابات فورية لاستفساراتك القانونية", descEn: "Instant answers to your questions" },
-  { id: "ai:analyze", href: "/ai/analyze", titleAr: "فاحص المستندات والقضايا", titleEn: "Case & Doc Analyzer", icon: MagnifyingGlass, descAr: "تقييم قضيتك أو فحص وثيقتك مع توصية فورية", descEn: "Evaluate your case or check your document with instant recommendation" },
+  { id: "ai:consult", href: "/ai/consult", titleAr: "المستشار الذكي", titleEn: "AI Advisor", icon: ChatCircleDots, descAr: "غير متاحة حالياً — قيد الإعداد.", descEn: "Not available yet — in preparation.", badgeAr: "قريباً", badgeEn: "Soon" },
+  // Wave 1 task 6: the client analyzer ends at the beta gate's "not
+  // available" card (betaGatedRoutes.ts), so its card promises nothing live.
+  { id: "ai:analyze", href: "/ai/analyze", titleAr: "فاحص المستندات والقضايا", titleEn: "Case & Doc Analyzer", icon: MagnifyingGlass, descAr: "غير متاحة حالياً — قيد الإعداد.", descEn: "Not available yet — in preparation.", badgeAr: "قريباً", badgeEn: "Soon" },
   { id: "ai:legal-opinion", href: "/ai/legal-opinion", titleAr: "الرأي الفصل", titleEn: "Al-Ra'y Al-Fasl", icon: Brain, descAr: "رأي · دراسة · بحث قانوني · عناية واجبة — متعدد الوكلاء", descEn: "Opinion · Study · Research · Due Diligence — Multi-Agent", badge: "PRO" },
   { id: "ai:brief-check", href: "/ai/brief-check", titleAr: "مراجعة وتدقيق مذكرة", titleEn: "Brief Review", icon: FileMagnifyingGlass, descAr: "ارفع مذكرتك ويراجعها فريق نظامي: تقرير بالثغرات أو تنقيح كامل", descEn: "Upload your brief for review by the Nezamy team: a gaps report or a full revision" },
   { id: "ai:procedures", href: "/ai/procedures", titleAr: "المرشد القضائي", titleEn: "Court Guide", icon: UserCheck, descAr: "توجيهك للإجراءات الصحيحة أمام المحاكم", descEn: "Guide to court procedures" },
@@ -606,7 +609,8 @@ const AI_TOOLS: AiToolCard[] = [
       : tool.betaStatus === "beta-free"
         ? "Official lawyer beta tool, free until admin pricing is approved."
         : "Official lawyer tool connected to the credit catalog.",
-    // No badge for a priced tool the price list does not list (owner ٢١٦).
+    // The registry's charge (lawyerAiBadges.ts); no badge for a tool the
+    // registry does not price.
     badgeAr: getLawyerAiBadge(tool, "ar") ?? undefined,
     badgeEn: getLawyerAiBadge(tool, "en") ?? undefined,
   })),

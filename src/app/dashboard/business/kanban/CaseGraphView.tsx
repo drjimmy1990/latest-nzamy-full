@@ -24,6 +24,7 @@ import { getCaseGraph, saveCaseGraph } from "@/lib/services/caseGraphService";
 import { GraphAutosave, canonicalJson, type AutosaveStatus } from "@/lib/services/caseGraphAutosave";
 import { useUser } from "@/hooks/useUser";
 import { toArabicDigits } from "@/lib/services/arabicCount";
+import { aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
 
 // NOTE-08 item 03: the groups (name, colour, lock, cards) ride in the viewport
 // jsonb as `viewport.groups` — saved, restored, reset with the board, no SQL.
@@ -511,7 +512,7 @@ export default function CaseGraphView({
                   disabled={aiCard.busy}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition-colors text-[12px] border disabled:opacity-40 ${isDark ? "border-[#C8A762]/30 text-[#C8A762] hover:bg-[#C8A762]/10" : "border-[#C8A762]/50 text-amber-700 hover:bg-amber-50"}`}
                   title={selectedNodeIds.size > 0
-                    ? "يبحث في مكتبة الأنظمة عن مواد تتصل بالبطاقات المختارة ويضيفها بطاقات (١٠ نقاط)"
+                    ? `يبحث في مكتبة الأنظمة عن مواد تتصل بالبطاقات المختارة ويضيفها بطاقات (${aiToolPriceText("canvas-card", "ar")})`
                     : "اختر بطاقة أو أكثر أولاً"}
                 >
                   {aiCard.busy ? <CircleNotch size={13} className="animate-spin" /> : <Scales size={13} />}

@@ -10,6 +10,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import { asCitations, CitedText, SourceList, stripCitationMarkers } from "@/components/ai/CitedAnswer";
 import { useAiRun } from "@/hooks/useAiRun";
 import { QUICK_ANSWER_QUESTION_MAX } from "@/lib/ai/tools";
+import { aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
 
 /**
  * سؤال قانوني سريع (plan §5 L3): one question → a short answer written only
@@ -86,7 +87,7 @@ export default function QuickAnswerPage() {
         />
         <div className="flex flex-wrap items-center justify-between gap-3">
           <span className={`text-[11px] ${muted}`}>
-            {question.length.toLocaleString("ar-SA")} / {QUICK_ANSWER_QUESTION_MAX.toLocaleString("ar-SA")} · ٢٠ نقطة للسؤال
+            {question.length.toLocaleString("ar-SA")} / {QUICK_ANSWER_QUESTION_MAX.toLocaleString("ar-SA")} · {aiToolPriceText("quick-answer", "ar")} للسؤال
           </span>
           <motion.button
             whileHover={{ scale: 1.03 }}

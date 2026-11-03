@@ -11,6 +11,7 @@ import {
   LIBRARY_READ_QUOTA,
   TtlMemo,
   hasSupabaseAuthCookie,
+  isLibraryAiTool,
   libraryQuotaTarget,
   normalizeDocSegment,
   parseQuotaRow,
@@ -19,6 +20,7 @@ import {
   secondsUntil,
   type QuotaRow,
 } from "./readQuota.ts";
+import { AI_TOOLS } from "../ai/tools.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const API = path.resolve(HERE, "..", "..", "app", "api");
@@ -47,9 +49,11 @@ test("libraryQuotaTarget: once- and twice-encoded Arabic slugs are the same docu
   assert.deepEqual(b, a);
 });
 
-test("libraryQuotaTarget: search and library AI check the lock only", () => {
-  for (const p of ["/api/library/search", "/api/ai/explain-article", "/api/ai/library-chat"]) {
-    assert.deepEqual(libraryQuotaTarget("POST", p), { kind: "lock-only" }, p);
+test("libraryQuotaTarget: search checks the lock only; the deleted free AI routes are not targets", () => {
+  assert.deepEqual(libraryQuotaTarget("POST", "/api/library/search"), { kind: "lock-only" });
+  // The library AI checks the lock inside /api/v1/ai/runs (isLibraryAiTool).
+  for (const p of ["/api/ai/explain-article", "/api/ai/library-chat", "/api/v1/ai/runs"]) {
+    assert.equal(libraryQuotaTarget("POST", p), null, p);
   }
   // Scoped search spends its document inside the route (scopedSearchDocKey).
   assert.equal(libraryQuotaTarget("POST", "/api/library/scoped-search"), null);
@@ -79,6 +83,62 @@ test("the scoped-search route spends the scope's document after it knows the use
   assert.ok(user > 0 && spend > user && read > spend, "user → spend → read the text");
   assert.match(src, /if \(userId\) \{/);
   assert.match(src, /quotaRefusal\(await libraryReadQuotaHit\(userId, docKey\), Date\.now\(\)\)/);
+});
+
+test("isLibraryAiTool: the library's own assistant (chat and «اشرح لي») is library reading", () => {
+  assert.equal(isLibraryAiTool("library-assistant"), true);
+  // It is a real registry tool that goes through the library gate (spec.retrieval),
+  // where runCore hands the id to the route's lock check; a rename would drop the lock.
+  assert.ok(AI_TOOLS["library-assistant"]?.retrieval, "library-assistant must stay a retrieval tool");
+});
+
+test("isLibraryAiTool: no other AI tool is locked — contract tools, L9–L11 and the lawyers' library-backed tools", () => {
+  for (const id of [
+    "contract-drafter", // L11
+    "contracts-pro", // L13
+    "wargaming", // L9
+    "analyze-strength", // L10
+    "legal-drafter",
+    "quick-answer",
+    "assistant",
+    "canvas-card",
+    "legal-opinion-consult",
+    "legal-opinion-letter",
+    "communicate",
+    "najiz-optimizer",
+    "case-brief",
+    "brief-check",
+  ]) {
+    assert.ok(id in AI_TOOLS, `${id} is not a registry tool any more`);
+    assert.equal(isLibraryAiTool(id), false, id);
+  }
+  const locked = Object.keys(AI_TOOLS).filter((id) => isLibraryAiTool(id));
+  assert.deepEqual(locked, ["library-assistant"]);
+});
+
+test("isLibraryAiTool: only an exact string id", () => {
+  for (const v of ["Library-Assistant", " library-assistant", "library-assistant ", "", "constructor", "__proto__", null, undefined, 5, {}, ["library-assistant"]]) {
+    assert.equal(isLibraryAiTool(v), false, JSON.stringify(v));
+  }
+});
+
+test("the free legacy library AI routes are deleted (q374 / q379: points only)", () => {
+  for (const name of ["library-chat", "explain-article"]) {
+    assert.equal(fs.existsSync(path.join(API, "ai", name, "route.ts")), false, `/api/ai/${name} must stay deleted`);
+  }
+});
+
+test("the AI run route binds the library gate, the lock read and the created-run tally (branches: src/lib/ai/libraryRunAccess.test.ts)", () => {
+  const src = fs.readFileSync(path.join(API, "v1", "ai", "runs", "route.ts"), "utf8").replace(/\r\n/g, "\n");
+  assert.match(src, /import \{ libraryRunAccess, libraryRunCreated \} from "@\/lib\/ai\/libraryRunAccess";/);
+  assert.match(src, /import \{ libraryReadQuotaHit \} from "@\/lib\/library\/readQuotaServer";/);
+  assert.match(src, /import \{ recordLibraryActivity \} from "@\/lib\/library\/activityMeterServer";/);
+  assert.match(src, /gate: libraryAccess,\n\s*lockRow: \(\) => libraryReadQuotaHit\(userId, null, \{ memoLockCheck: true \}\),/);
+  assert.match(src, /return libraryRunCreated\(\(\) => recordLibraryActivity\(userId, "ai"\)\);/);
+  assert.match(src, /libraryAccess: libraryAccessFor\(user\.id\),\n\s*onRunCreated: libraryRunCreatedFor\(user\.id\),/);
+  // Task 2 review M1: the tally is no longer inside the gate (it ran for refused and duplicate runs).
+  assert.equal((src.match(/recordLibraryActivity\(/g) ?? []).length, 1);
+  assert.doesNotMatch(src, /أُوقفت القراءة/);
 });
 
 test("libraryQuotaTarget: everything else is not counted (catalogue, facets, folders, writes, sub-paths)", () => {

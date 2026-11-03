@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkOrderIntake, intakeErrorMessageAr } from "./intakeGuard.ts";
+import { readFileSync } from "node:fs";
+import { checkOrderIntake, intakeErrorMessageAr, persistedRequestMetadata } from "./intakeGuard.ts";
 import { validateDraftIntake } from "./orderIntake.ts";
 import { validateContractsIntake } from "./orderIntake.contracts.ts";
 import { validateWargamingIntake, WARGAMING_CRITIQUE_TARGET } from "./orderIntake.wargaming.ts";
@@ -233,6 +234,99 @@ test("intake.service decides when the two disagree", () => {
   if (!check.ok) return;
   const r = checkOrderIntake({ service: "contracts", intake: check.value });
   assert.deepEqual(r, { kind: "ok", service: "wargaming" });
+});
+
+// ─── What the route stores (task 8 / task 10 re-reviews) ─────────────────────
+
+const WIZARD_FIXTURES: Array<[string, (input: unknown) => { ok: boolean; value?: unknown }, Record<string, unknown>]> = [
+  ["draft", validateDraftIntake, draftRaw],
+  ["contracts", validateContractsIntake, contractsDraftRaw],
+  ["contracts", validateContractsIntake, contractsReviewRaw],
+  ["wargaming", validateWargamingIntake, wargamingRaw],
+  ["wargaming", validateWargamingIntake, {
+    ...wargamingRaw,
+    targets: ["opponent", WARGAMING_CRITIQUE_TARGET],
+    memoAttachmentIds: [4212],
+    attachments: [{ documentId: 4212, name: "المذكرة.pdf", size: 30720 }],
+  }],
+  ["legal_opinion", validateLegalOpinionIntake, legalOpinionRaw],
+  ["legal_opinion", validateLegalOpinionIntake, legalOpinionLetterRaw],
+];
+
+test("every validator returns its own output unchanged — so storing the validated intake changes nothing a wizard sends", () => {
+  for (const [service, validate, raw] of WIZARD_FIXTURES) {
+    const once = validate(raw);
+    assert.equal(once.ok, true, service);
+    const twice = validate(once.value);
+    assert.equal(twice.ok, true, service);
+    assert.deepEqual(twice.value, once.value, `${service}: validate(validate(x).value).value deep-equals validate(x).value`);
+    // What a wizard posts (the validator's value) is stored exactly as posted.
+    const metadata = { service, intake: once.value, attachments: [] };
+    assert.deepEqual(persistedRequestMetadata(metadata), metadata, service);
+  }
+  // Attachment ids survive the round trip (as strings: bigserial may arrive as a number).
+  const review = validateContractsIntake(contractsReviewRaw);
+  assert.ok(review.ok);
+  if (review.ok) assert.deepEqual(review.value.attachments.map((a) => a.documentId), ["4211"]);
+});
+
+test("task 8 re-review: a direct POST stores the validated intake — a non-company party's leftover representative fields are dropped", () => {
+  const raw = {
+    ...contractsDraftRaw,
+    parties: {
+      one: { type: "company", companyName: "شركة", representativeRole: "مدير", representativeRoleOther: "قديم", representativeId: "1023456789" },
+      two: { type: "individual", fullName: "خالد", representativeId: "3000000000", representativeRoleOther: "قديم" },
+    },
+  };
+  const metadata = { service: "contracts", serviceTitleAr: "خدمة", intake: raw, attachments: [], note: "كما أُرسل" };
+  assert.equal(checkOrderIntake(metadata).kind, "ok");
+  const stored = persistedRequestMetadata(metadata) as Record<string, unknown>;
+  const parties = (stored.intake as { parties: Record<string, unknown> }).parties;
+  assert.deepEqual(parties.one, { type: "company", companyName: "شركة", representativeRole: "مدير", representativeId: "1023456789" });
+  assert.deepEqual(parties.two, { type: "individual", fullName: "خالد" });
+  // Every other key is kept as sent, and the caller's object is not mutated.
+  assert.equal(stored.note, "كما أُرسل");
+  assert.equal(stored.serviceTitleAr, "خدمة");
+  assert.equal((metadata.intake.parties.two as Record<string, unknown>).representativeId, "3000000000");
+});
+
+test("the keys محترف العقود adds after validating (contractId / contractTitle) are stored, not dropped", () => {
+  const check = validateContractsIntake(contractsDraftRaw);
+  assert.ok(check.ok);
+  if (!check.ok) return;
+  // Exactly what useContractsState.ts submits for a linked contract.
+  const intake = { ...(check.value as unknown as Record<string, unknown>), contractId: "c-77", contractTitle: "عقد توريد" };
+  const metadata = { service: "contracts", intake, attachments: [] };
+  assert.equal(checkOrderIntake(metadata).kind, "ok");
+  assert.deepEqual(persistedRequestMetadata(metadata), metadata);
+});
+
+test("task 10 re-review: metadata.courtClass is kept only when it is one of the 14 classifications", () => {
+  const caseMeta = { court: "المحكمة العامة بالرياض", caseNumber: "1" };
+  assert.deepEqual(persistedRequestMetadata({ ...caseMeta, courtClass: "المحكمة العامة" }), { ...caseMeta, courtClass: "المحكمة العامة" });
+  for (const junk of ["محكمة وهمية", "", " المحكمة العامة", 5, null, { x: 1 }, ["المحكمة العامة"]]) {
+    assert.deepEqual(persistedRequestMetadata({ ...caseMeta, courtClass: junk }), caseMeta, JSON.stringify(junk));
+  }
+  assert.deepEqual(persistedRequestMetadata(caseMeta), caseMeta, "no courtClass: nothing added");
+});
+
+test("POST /api/v1/service-requests inserts persistedRequestMetadata, after the intake check, never the raw metadata", () => {
+  const src = readFileSync(new URL("../../app/api/v1/service-requests/route.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const check = src.indexOf("const intakeCheck = checkOrderIntake(requestData.metadata);");
+  const insert = src.search(/\.from\("service_requests"\)\s*\.insert\(/);
+  const stored = src.indexOf("metadata: persistedRequestMetadata(requestData.metadata),");
+  assert.ok(check > 0 && insert > check && stored > insert, "check → insert(persistedRequestMetadata)");
+  assert.doesNotMatch(src, /metadata: requestData\.metadata \?\? \{\}/);
+});
+
+test("persistedRequestMetadata: no metadata → {}, a non-object as sent, a memo-review order and an unknown intake as sent", () => {
+  assert.deepEqual(persistedRequestMetadata(undefined), {});
+  assert.deepEqual(persistedRequestMetadata(null), {});
+  assert.equal(persistedRequestMetadata("x"), "x");
+  const brief = { service: "brief_review", intake: { service: "brief_review", extra: "kept" } };
+  assert.deepEqual(persistedRequestMetadata(brief), brief);
+  const unknown = { intake: { service: "case_brief", note: "x" } };
+  assert.deepEqual(persistedRequestMetadata(unknown), unknown);
 });
 
 // ─── Message ─────────────────────────────────────────────────────────────────

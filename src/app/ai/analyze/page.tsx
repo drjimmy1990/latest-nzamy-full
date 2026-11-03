@@ -7,6 +7,7 @@ import AttachmentSqueezer from "./_components/AttachmentSqueezer";
 import SmartAnalyzer from "./_components/SmartAnalyzer";
 import { useUser } from "@/hooks/useUser";
 import AdvisoryTemplateNotice from "@/components/ai/AdvisoryTemplateNotice";
+import GatedToolScreen from "@/components/GatedToolScreen";
 
 /**
  * T28-14:
@@ -45,7 +46,11 @@ function AnalyzePageInner() {
         ) : user.userType === "lawyer" || user.userType === "firm" ? (
           <AttachmentSqueezer />
         ) : (
-          <SmartAnalyzer isDark={isDark} isRTL={isRTL} />
+          // Wave 1 task 6: the client analyzer's every result is gated, so
+          // the gate comes first — no form or timer before it.
+          <GatedToolScreen toolId="analyze.smart.result" toolName="تحليل قوة الموقف القانوني">
+            <SmartAnalyzer isDark={isDark} isRTL={isRTL} />
+          </GatedToolScreen>
         )}
       </div>
     </div>

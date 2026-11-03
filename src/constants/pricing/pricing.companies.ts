@@ -7,20 +7,26 @@ import { Plan, ComparisonCategory } from "./pricing.types";
 //          + استشارات + ترافع (بخصم وسقف مطالبة) + HR عقود موظفين
 // ملاحظة: الترافع يعمل بنظام "خصم على الأتعاب + سقف مطالبة" وليس "قضايا مجانية"
 //          لأن قضية تجارية واحدة قد تكلف ٥٠-٢٠٠ ألف ر.س
+// Wave 1 task 6, fix round 1 (I6): CorpMind, Deal Intelligence, the
+// compliance radar, the document and risk analysers, LegalMail, the HR
+// advisor and the 360° health check are all beta-gated or «قريباً» pages
+// (src/constants/betaGatedRoutes.ts, DashboardComingSoon), so no plan sells
+// them or a quota of them: one «قريباً» line, as in pricing.ngo.ts. A
+// contract-review quota keeps only its lawyer part.
 export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
   ar: [
     // ── شركة صغيرة (٦-٤٩) ─────────────────────────────
     { id: "biz-sm-basic", name: "أساسية", badge: "~٨٣٣ ر.س/شهر",
       priceMonthly: "٩,٩٨٨", priceYearly: "٩,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
-      desc: "أدوات AI + مراجعة عقود + مكتبة قانونية — بدون ترافع أو استشارات", target: "شركات صغيرة", cta: "اشترك سنوياً",
+      desc: "مكتبة قانونية + طلبات قانونية + تنبيهات العقود — بدون ترافع أو استشارات", target: "شركات صغيرة", cta: "اشترك سنوياً",
       ctaHref: "/register/client?type=company", highlighted: false, color: "border-slate-200/50",
       companySize: "small", forLegalDept: false,
       features: {
         ai: [
-          "AI قانوني (CorpMind): ٢٠ استفساراً/شهر",
-          "مراجعة عقود AI: ٣ عقود/شهر",
+          "أدوات الذكاء الاصطناعي: قريباً",
           "المكتبة القانونية الكاملة ✅",
           "تنبيهات انتهاء العقود ✅",
+          null,
         ],
         platform: [
           "٣ مستخدمين",
@@ -36,15 +42,15 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     },
     { id: "biz-sm-pro", name: "احترافية", badge: null,
       priceMonthly: "٢٤,٩٨٨", priceYearly: "٢٤,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
-      desc: "استشارات شهرية + ترافع بسقف + AI متقدم + Kanban", target: "شركات صغيرة", cta: "اشترك سنوياً",
+      desc: "استشارات شهرية + ترافع بسقف + مراجعة عقود + Kanban", target: "شركات صغيرة", cta: "اشترك سنوياً",
       ctaHref: "/register/client?type=company", highlighted: true, color: "border-royal/20",
       companySize: "small", forLegalDept: false,
       features: {
         ai: [
-          "AI قانوني (CorpMind): ٥٠ استفساراً/شهر",
-          "مراجعة عقود: ٥ (٣AI + ٢ محامٍ)/شهر",
-          "LegalMail + مساعد HR ✅",
-          "لوحة مخاطر قانونية ✅",
+          "أدوات الذكاء الاصطناعي: قريباً",
+          "مراجعة عقود محامٍ: ٢/شهر",
+          null,
+          null,
         ],
         platform: [
           "٥ مستخدمين",
@@ -60,15 +66,15 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     },
     { id: "biz-sm-full", name: "متكاملة", badge: "~٣,٧٤٩ ر.س/شهر",
       priceMonthly: "٤٤,٩٨٨", priceYearly: "٤٤,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
-      desc: "فريق قانوني كامل عن بُعد — استشارات + ترافع + AI + حوكمة", target: "شركات صغيرة", cta: "اشترك سنوياً",
+      desc: "فريق قانوني كامل عن بُعد — استشارات + ترافع + مراجعة عقود + حوكمة", target: "شركات صغيرة", cta: "اشترك سنوياً",
       ctaHref: "/register/client?type=company", highlighted: false, color: "border-emerald-200/50 dark:border-emerald-500/20",
       companySize: "small", forLegalDept: false,
       features: {
         ai: [
-          "AI قانوني (CorpMind): ١٠٠ استفساراً/شهر",
-          "مراجعة عقود: ١٠ (٥AI + ٥ محامٍ)/شهر",
-          "Deal Intelligence + رادار امتثال ✅",
-          "تحليل مستندات AI ✅",
+          "أدوات الذكاء الاصطناعي: قريباً",
+          "مراجعة عقود محامٍ: ٥/شهر",
+          null,
+          null,
         ],
         platform: [
           "١٠ مستخدمين",
@@ -85,15 +91,15 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     // ── شركة متوسطة (٥٠-٢٤٩) ──────────────────────────
     { id: "biz-md-basic", name: "أساسية", badge: "~٢,٤٩٩ ر.س/شهر",
       priceMonthly: "٢٩,٩٨٨", priceYearly: "٢٩,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
-      desc: "استشارات أساسية + أدوات AI + HR — بدون ترافع مشمول", target: "شركات متوسطة", cta: "اشترك سنوياً",
+      desc: "استشارات أساسية + مكتبة قانونية + HR — بدون ترافع مشمول", target: "شركات متوسطة", cta: "اشترك سنوياً",
       ctaHref: "/register/client?type=company", highlighted: false, color: "border-slate-200/50",
       companySize: "medium", forLegalDept: false,
       features: {
         ai: [
-          "AI قانوني (CorpMind): ٣٠ استفساراً/شهر",
-          "مراجعة عقود AI: ٥ عقود/شهر",
-          "LegalMail + رادار امتثال أساسي",
+          "أدوات الذكاء الاصطناعي: قريباً",
           "المكتبة القانونية الكاملة ✅",
+          null,
+          null,
         ],
         platform: [
           "٥ مستخدمين",
@@ -109,15 +115,15 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     },
     { id: "biz-md-pro", name: "احترافية", badge: null,
       priceMonthly: "٥٩,٩٨٨", priceYearly: "٥٩,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
-      desc: "ترافع بسقف + استشارات مكثفة + حوكمة + AI كامل", target: "شركات متوسطة", cta: "اشترك سنوياً",
+      desc: "ترافع بسقف + استشارات مكثفة + حوكمة + مراجعة عقود", target: "شركات متوسطة", cta: "اشترك سنوياً",
       ctaHref: "/register/client?type=company", highlighted: true, color: "border-royal/20",
       companySize: "medium", forLegalDept: false,
       features: {
         ai: [
-          "AI قانوني (CorpMind): ١٠٠ استفساراً/شهر",
-          "مراجعة عقود: ١٠ (٥AI + ٥ محامٍ)/شهر",
-          "Deal Intelligence + رادار امتثال كامل ✅",
-          "تحليل مستندات + تقييم مخاطر ✅",
+          "أدوات الذكاء الاصطناعي: قريباً",
+          "مراجعة عقود محامٍ: ٥/شهر",
+          null,
+          null,
         ],
         platform: [
           "١٥ مستخدماً",
@@ -138,10 +144,10 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
       companySize: "medium", forLegalDept: false,
       features: {
         ai: [
-          "AI قانوني (CorpMind): ٢٠٠ استفساراً/شهر",
-          "مراجعة عقود: ١٥ (٥AI + ١٠ محامٍ)/شهر",
-          "حزمة AI كاملة + رادار امتثال متقدم",
-          "فحص صحة ٣٦٠° ✅",
+          "أدوات الذكاء الاصطناعي: قريباً",
+          "مراجعة عقود محامٍ: ١٠/شهر",
+          null,
+          null,
         ],
         platform: [
           "٢٥ مستخدماً",
@@ -158,15 +164,15 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     // ── مؤسسة كبيرة (٢٥٠+) ─────────────────────────────
     { id: "biz-lg-basic", name: "أساسية", badge: "~٤,٩٩٩ ر.س/شهر",
       priceMonthly: "٥٩,٩٨٨", priceYearly: "٥٩,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
-      desc: "دعم مؤسسي أساسي + ترافع بسقف + AI + حوكمة", target: "مؤسسات كبيرة", cta: "تواصل معنا",
+      desc: "دعم مؤسسي أساسي + ترافع بسقف + استشارات + حوكمة", target: "مؤسسات كبيرة", cta: "تواصل معنا",
       ctaHref: "/contact", highlighted: false, color: "border-slate-200/50",
       companySize: "large", forLegalDept: false,
       features: {
         ai: [
-          "AI قانوني (CorpMind): ٥٠ استفساراً/شهر",
-          "مراجعة عقود AI: ٨ عقود/شهر",
-          "LegalMail + رادار امتثال أساسي",
+          "أدوات الذكاء الاصطناعي: قريباً",
           "المكتبة القانونية الكاملة ✅",
+          null,
+          null,
         ],
         platform: [
           "١٠ مستخدمين",
@@ -182,15 +188,15 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     },
     { id: "biz-lg-pro", name: "احترافية", badge: null,
       priceMonthly: "١١٩,٩٨٨", priceYearly: "١١٩,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
-      desc: "ترافع + حوكمة كاملة + انتداب + AI شامل — للمؤسسات الكبرى", target: "مؤسسات كبيرة", cta: "تواصل معنا",
+      desc: "ترافع + حوكمة كاملة + انتداب + مراجعة عقود — للمؤسسات الكبرى", target: "مؤسسات كبيرة", cta: "تواصل معنا",
       ctaHref: "/contact", highlighted: true, color: "border-royal/20",
       companySize: "large", forLegalDept: false,
       features: {
         ai: [
-          "AI قانوني (CorpMind): ٢٠٠ استفساراً/شهر",
-          "مراجعة عقود: ٢٠ (١٠AI + ١٠ محامٍ)/شهر",
-          "حزمة AI كاملة + فحص صحة ٣٦٠°",
-          "رادار امتثال متقدم + تقييم مخاطر ✅",
+          "أدوات الذكاء الاصطناعي: قريباً",
+          "مراجعة عقود محامٍ: ١٠/شهر",
+          null,
+          null,
         ],
         platform: [
           "٣٠ مستخدماً",
@@ -211,10 +217,10 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
       companySize: "large", forLegalDept: false,
       features: {
         ai: [
-          "حصة AI مخصصة حسب العقد",
+          "أدوات الذكاء الاصطناعي: قريباً",
           "مراجعة عقود + صياغة: حسب العقد",
-          "جميع أدوات AI مفتوحة",
-          "رادار امتثال + تقارير مخصصة",
+          null,
+          null,
         ],
         platform: [
           "عدد مستخدمين حسب العقد",
@@ -233,33 +239,33 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     // ── Small (6-49) EN ─────────────────────────────────
     { id: "biz-sm-basic", name: "Basic", badge: "~833 SAR/mo",
       priceMonthly: "9,988", priceYearly: "9,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
-      desc: "AI tools + contract review + legal library — no litigation or consultations", target: "Small Companies", cta: "Subscribe Yearly",
+      desc: "Legal library + legal requests + contract alerts — no litigation or consultations", target: "Small Companies", cta: "Subscribe Yearly",
       ctaHref: "/register/client?type=company", highlighted: false, color: "border-slate-200/50",
       companySize: "small", forLegalDept: false,
       features: {
-        ai: ["Legal AI (CorpMind): 20 queries/mo", "AI Contract Review: 3/mo", "Full Legal Library ✅", "Contract expiry alerts ✅"],
+        ai: ["AI tools: coming soon", "Full Legal Library ✅", "Contract expiry alerts ✅", null],
         platform: ["3 users", "Legal requests: 5/mo", "Professional Marketplace ✅", "Employee contracts (HR): basic"],
         support: ["Lawyer consultation: ❌", "Litigation: 10% fee discount when needed"],
       },
     },
     { id: "biz-sm-pro", name: "Professional", badge: null,
       priceMonthly: "24,988", priceYearly: "24,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
-      desc: "Monthly consultations + capped litigation + advanced AI + Kanban", target: "Small Companies", cta: "Subscribe Yearly",
+      desc: "Monthly consultations + capped litigation + contract review + Kanban", target: "Small Companies", cta: "Subscribe Yearly",
       ctaHref: "/register/client?type=company", highlighted: true, color: "border-royal/20",
       companySize: "small", forLegalDept: false,
       features: {
-        ai: ["Legal AI (CorpMind): 50 queries/mo", "Contract review: 5 (3AI + 2 lawyer)/mo", "LegalMail + HR Advisor ✅", "Risk dashboard ✅"],
+        ai: ["AI tools: coming soon", "Lawyer contract review: 2/mo", null, null],
         platform: ["5 users", "Lawyer consultations: 2 hrs/mo", "Kanban: 15 tasks · Requests: 10/mo", "Marketplace + Employee contracts ✅"],
         support: ["Litigation: 1 case/yr (claim cap 50K SAR)", "15% off additional litigation"],
       },
     },
     { id: "biz-sm-full", name: "Full Service", badge: "~3,749 SAR/mo",
       priceMonthly: "44,988", priceYearly: "44,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
-      desc: "Complete remote legal team — consultations + capped litigation + full AI", target: "Small Companies", cta: "Subscribe Yearly",
+      desc: "Complete remote legal team — consultations + capped litigation + contract review", target: "Small Companies", cta: "Subscribe Yearly",
       ctaHref: "/register/client?type=company", highlighted: false, color: "border-emerald-200/50 dark:border-emerald-500/20",
       companySize: "small", forLegalDept: false,
       features: {
-        ai: ["Legal AI (CorpMind): 100 queries/mo", "Contract review: 10 (5AI + 5 lawyer)/mo", "Deal Intelligence + Compliance ✅", "Doc Analyzer AI ✅"],
+        ai: ["AI tools: coming soon", "Lawyer contract review: 5/mo", null, null],
         platform: ["10 users", "Lawyer consultations: 5 hrs/mo", "Kanban: 30 tasks · Requests: 20/mo", "Marketplace + HR + Reports ✅"],
         support: ["Litigation: 2 cases/yr (claim cap 100K SAR)", "20% off additional · WhatsApp support"],
       },
@@ -267,22 +273,22 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     // ── Medium (50-249) EN ───────────────────────────────
     { id: "biz-md-basic", name: "Basic", badge: "~2,499 SAR/mo",
       priceMonthly: "29,988", priceYearly: "29,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
-      desc: "Core consultations + AI tools + HR — no included litigation", target: "Medium Companies", cta: "Subscribe Yearly",
+      desc: "Core consultations + legal library + HR — no included litigation", target: "Medium Companies", cta: "Subscribe Yearly",
       ctaHref: "/register/client?type=company", highlighted: false, color: "border-slate-200/50",
       companySize: "medium", forLegalDept: false,
       features: {
-        ai: ["Legal AI (CorpMind): 30 queries/mo", "AI Contract Review: 5/mo", "LegalMail + basic compliance", "Full Legal Library ✅"],
+        ai: ["AI tools: coming soon", "Full Legal Library ✅", null, null],
         platform: ["5 users", "Lawyer consultations: 2 hrs/mo", "Kanban: 20 tasks · Requests: 10/mo", "Marketplace + Employee contracts ✅"],
         support: ["Litigation: 15% fee discount (no cases included)", "Email support"],
       },
     },
     { id: "biz-md-pro", name: "Professional", badge: null,
       priceMonthly: "59,988", priceYearly: "59,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
-      desc: "Capped litigation + governance + intensive consultations + full AI", target: "Medium Companies", cta: "Subscribe Yearly",
+      desc: "Capped litigation + governance + intensive consultations + contract review", target: "Medium Companies", cta: "Subscribe Yearly",
       ctaHref: "/register/client?type=company", highlighted: true, color: "border-royal/20",
       companySize: "medium", forLegalDept: false,
       features: {
-        ai: ["Legal AI (CorpMind): 100 queries/mo", "Contract review: 10 (5AI + 5 lawyer)/mo", "Deal Intel + full compliance ✅", "Doc Analyzer + Risk Assessment ✅"],
+        ai: ["AI tools: coming soon", "Lawyer contract review: 5/mo", null, null],
         platform: ["15 users", "Lawyer consultations: 5 hrs/mo", "Kanban: 40 tasks · Requests: 20/mo", "Governance + Finance reports + Marketplace ✅"],
         support: ["Litigation: 2 cases/yr (claim cap 150K SAR)", "20% off additional · WhatsApp support"],
       },
@@ -293,7 +299,7 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
       ctaHref: "/contact", highlighted: false, color: "border-emerald-200/50 dark:border-emerald-500/20",
       companySize: "medium", forLegalDept: false,
       features: {
-        ai: ["Legal AI (CorpMind): 200 queries/mo", "Contract review: 15 (5AI + 10 lawyer)/mo", "Full AI suite + advanced compliance", "Health Check 360° ✅"],
+        ai: ["AI tools: coming soon", "Lawyer contract review: 10/mo", null, null],
         platform: ["25 users", "Lawyer consultations: 10 hrs/mo", "Kanban: 80 tasks · Requests: 40/mo", "Full governance + secondment + reports ✅"],
         support: ["Litigation: 3 cases/yr (claim cap 300K SAR)", "25% off additional · Account manager"],
       },
@@ -301,22 +307,22 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     // ── Large (250+) EN ─────────────────────────────────
     { id: "biz-lg-basic", name: "Basic", badge: "~4,999 SAR/mo",
       priceMonthly: "59,988", priceYearly: "59,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
-      desc: "Enterprise base + capped litigation + AI + governance", target: "Large Enterprises", cta: "Contact Us",
+      desc: "Enterprise base + capped litigation + consultations + governance", target: "Large Enterprises", cta: "Contact Us",
       ctaHref: "/contact", highlighted: false, color: "border-slate-200/50",
       companySize: "large", forLegalDept: false,
       features: {
-        ai: ["Legal AI (CorpMind): 50 queries/mo", "AI Contract Review: 8/mo", "LegalMail + basic compliance", "Full Legal Library ✅"],
+        ai: ["AI tools: coming soon", "Full Legal Library ✅", null, null],
         platform: ["10 users", "Lawyer consultations: 3 hrs/mo", "Kanban: 30 tasks · Requests: 15/mo", "Basic governance + Employee contracts ✅"],
         support: ["Litigation: 1 case/yr (claim cap 150K SAR)", "15% off additional · WhatsApp"],
       },
     },
     { id: "biz-lg-pro", name: "Professional", badge: null,
       priceMonthly: "119,988", priceYearly: "119,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
-      desc: "Full enterprise support — litigation + governance + secondment + AI", target: "Large Enterprises", cta: "Contact Us",
+      desc: "Full enterprise support — litigation + governance + secondment + contract review", target: "Large Enterprises", cta: "Contact Us",
       ctaHref: "/contact", highlighted: true, color: "border-royal/20",
       companySize: "large", forLegalDept: false,
       features: {
-        ai: ["Legal AI (CorpMind): 200 queries/mo", "Contract review: 20 (10AI + 10 lawyer)/mo", "Full AI suite + Health Check 360°", "Advanced compliance + Risk Assessment ✅"],
+        ai: ["AI tools: coming soon", "Lawyer contract review: 10/mo", null, null],
         platform: ["30 users", "Lawyer consultations: 10 hrs/mo", "Kanban: 100 tasks · Requests: 50/mo", "Full governance + secondment + reports ✅"],
         support: ["Litigation: 3 cases/yr (claim cap 300K SAR)", "25% off additional · Account manager"],
       },
@@ -327,7 +333,7 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
       ctaHref: "/contact", highlighted: false, color: "border-emerald-200/50 dark:border-emerald-500/20",
       companySize: "large", forLegalDept: false,
       features: {
-        ai: ["Custom AI quota", "Contract review + drafting: per contract", "All AI tools unlocked", "Compliance radar + custom reports"],
+        ai: ["AI tools: coming soon", "Contract review + drafting: per contract", null, null],
         platform: ["Users: per contract", "Consultations: per contract", "Kanban + SSO + API", "Full governance + secondment + community ✅"],
         support: ["Litigation: per contract (agreed claim cap)", "Dedicated account manager + SLA"],
       },

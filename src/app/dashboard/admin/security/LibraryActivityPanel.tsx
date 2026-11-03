@@ -11,6 +11,8 @@ import {
   type MonitorSettings,
   type SettingsGroup,
 } from "@/lib/library/monitorSettings";
+import { useUser } from "@/hooks/useUser";
+import { staffMaySee } from "@/lib/auth/adminNavAccess";
 
 /**
  * «نشاط المكتبة» (20261031_10) — who reads the legal library how much, which
@@ -24,6 +26,10 @@ import {
  *   DELETE /api/v1/admin/library-monitor/user-limits/[userId]
  *   GET|PUT /api/v1/admin/library-monitor/settings
  *   POST /api/v1/admin/library-security-locks               { userId, note } (the lock itself)
+ * Every write here is settings.write (super admin). Operations reach this page
+ * to lift locks (library.lock_lift, the «قفل المكتبة» tab), so the write
+ * controls show only to a role that holds settings.write; the server decides
+ * either way (requireStaff).
  */
 
 type Props = { isDark: boolean; card: string };
@@ -73,6 +79,8 @@ const json = (method: string, body: unknown): RequestInit => ({
 });
 
 export default function LibraryActivityPanel({ isDark, card }: Props) {
+  const { staffRole } = useUser();
+  const canWrite = staffMaySee(staffRole, "settings.write");
   const [notice, setNotice] = useState<{ ok: boolean; msg: string } | null>(null);
   const [missing, setMissing] = useState<string | null>(null);
 
@@ -318,7 +326,7 @@ export default function LibraryActivityPanel({ isDark, card }: Props) {
                       </div>
                     </td>
                     <td className="px-2 py-2">
-                      {r.userType !== "admin" && (
+                      {canWrite && r.userType !== "admin" && (
                         <div className="flex flex-col gap-1">
                           <button
                             onClick={() => setLimitForm({ ...limitForm, email: r.user.email ?? "" })}
@@ -400,7 +408,7 @@ export default function LibraryActivityPanel({ isDark, card }: Props) {
                     <span>أُغلقت: {fmt(f.clearedAt)}{f.clearedBy ? ` — ${f.clearedBy.name || f.clearedBy.email || "مسؤول"}` : ""}{f.clearNote ? ` — ${f.clearNote}` : ""}</span>
                   )}
                 </div>
-                {f.open && (
+                {f.open && canWrite && (
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <input
                       type="text"
@@ -435,33 +443,35 @@ export default function LibraryActivityPanel({ isDark, card }: Props) {
       <div className={`${card} p-5 space-y-3`}>
         <p className={`text-[12px] font-bold ${tp}`}>حدود خاصة لحسابات بعينها</p>
         <p className={`text-[11px] ${ts}`}>تتقدّم على الحدود العامة لهذا الحساب وحده: اخفضها لحساب مشبوه، أو ارفعها لمكتب يحتاج أكثر.</p>
-        <form onSubmit={setLimit} className="grid gap-3 md:grid-cols-6">
-          <div className="md:col-span-2">
-            <label className={`mb-1 block text-[11px] ${ts}`}>بريد المستخدم</label>
-            <input type="email" required dir="ltr" value={limitForm.email} onChange={(e) => setLimitForm({ ...limitForm, email: e.target.value })} className={input} />
-          </div>
-          <div>
-            <label className={`mb-1 block text-[11px] ${ts}`}>وثائق/يوم</label>
-            <input type="number" min={1} max={100000} value={limitForm.dailyDocs} onChange={(e) => setLimitForm({ ...limitForm, dailyDocs: e.target.value })} className={input} />
-          </div>
-          <div>
-            <label className={`mb-1 block text-[11px] ${ts}`}>وثائق/ساعة</label>
-            <input type="number" min={1} max={100000} value={limitForm.hourlyDocs} onChange={(e) => setLimitForm({ ...limitForm, hourlyDocs: e.target.value })} className={input} />
-          </div>
-          <div className="md:col-span-2">
-            <label className={`mb-1 block text-[11px] ${ts}`}>ينتهي في (اختياري)</label>
-            <input type="datetime-local" value={limitForm.until} onChange={(e) => setLimitForm({ ...limitForm, until: e.target.value })} className={input} />
-          </div>
-          <div className="md:col-span-5">
-            <label className={`mb-1 block text-[11px] ${ts}`}>السبب (للسجل)</label>
-            <input type="text" required maxLength={1000} value={limitForm.note} onChange={(e) => setLimitForm({ ...limitForm, note: e.target.value })} className={input} />
-          </div>
-          <div className="flex items-end">
-            <button type="submit" disabled={busy === "limit"} className="w-full rounded-lg bg-blue-600 px-3 py-2 text-[12px] font-bold text-white hover:bg-blue-500 disabled:opacity-50">
-              حفظ الحد
-            </button>
-          </div>
-        </form>
+        {canWrite && (
+          <form onSubmit={setLimit} className="grid gap-3 md:grid-cols-6">
+            <div className="md:col-span-2">
+              <label className={`mb-1 block text-[11px] ${ts}`}>بريد المستخدم</label>
+              <input type="email" required dir="ltr" value={limitForm.email} onChange={(e) => setLimitForm({ ...limitForm, email: e.target.value })} className={input} />
+            </div>
+            <div>
+              <label className={`mb-1 block text-[11px] ${ts}`}>وثائق/يوم</label>
+              <input type="number" min={1} max={100000} value={limitForm.dailyDocs} onChange={(e) => setLimitForm({ ...limitForm, dailyDocs: e.target.value })} className={input} />
+            </div>
+            <div>
+              <label className={`mb-1 block text-[11px] ${ts}`}>وثائق/ساعة</label>
+              <input type="number" min={1} max={100000} value={limitForm.hourlyDocs} onChange={(e) => setLimitForm({ ...limitForm, hourlyDocs: e.target.value })} className={input} />
+            </div>
+            <div className="md:col-span-2">
+              <label className={`mb-1 block text-[11px] ${ts}`}>ينتهي في (اختياري)</label>
+              <input type="datetime-local" value={limitForm.until} onChange={(e) => setLimitForm({ ...limitForm, until: e.target.value })} className={input} />
+            </div>
+            <div className="md:col-span-5">
+              <label className={`mb-1 block text-[11px] ${ts}`}>السبب (للسجل)</label>
+              <input type="text" required maxLength={1000} value={limitForm.note} onChange={(e) => setLimitForm({ ...limitForm, note: e.target.value })} className={input} />
+            </div>
+            <div className="flex items-end">
+              <button type="submit" disabled={busy === "limit"} className="w-full rounded-lg bg-blue-600 px-3 py-2 text-[12px] font-bold text-white hover:bg-blue-500 disabled:opacity-50">
+                حفظ الحد
+              </button>
+            </div>
+          </form>
+        )}
         {limits.length > 0 && (
           <div className="space-y-1.5">
             {limits.map((l) => (
@@ -470,6 +480,7 @@ export default function LibraryActivityPanel({ isDark, card }: Props) {
                   <span className={`font-bold ${tp}`}>{who(l.user, l.userId)}</span> — {l.dailyDocs ?? "—"} وثيقة/يوم · {l.hourlyDocs ?? "—"}/ساعة ·{" "}
                   {l.sourceAr} · {l.until ? `حتى ${fmt(l.until)}` : "حتى يُزال"}{!l.active ? " (انتهى)" : ""}{l.note ? ` — ${l.note}` : ""}
                 </div>
+                {canWrite && (
                 <button
                   onClick={() => removeLimit(l)}
                   disabled={busy === `limit:${l.userId}`}
@@ -477,6 +488,7 @@ export default function LibraryActivityPanel({ isDark, card }: Props) {
                 >
                   <Trash size={12} /> إزالة
                 </button>
+                )}
               </div>
             ))}
           </div>
@@ -490,6 +502,7 @@ export default function LibraryActivityPanel({ isDark, card }: Props) {
             <p className={`text-[12px] font-bold ${tp}`}>الإعدادات — كل أرقام حماية المكتبة</p>
             <p className={`text-[10px] ${ts}`}>آخر تعديل: {fmt(updatedAt)}. التغيير يسري على القرّاء خلال دقيقة.</p>
           </div>
+          {canWrite && (
           <div className="flex items-center gap-2">
             {changed.length > 0 && (
               <button onClick={() => setDraft({ ...saved })} className={`text-[11px] ${ts}`}>تراجع</button>
@@ -502,8 +515,11 @@ export default function LibraryActivityPanel({ isDark, card }: Props) {
               <FloppyDisk size={13} /> حفظ {changed.length > 0 ? `(${changed.length})` : ""}
             </button>
           </div>
+          )}
         </div>
 
+        {!canWrite && <p className={`text-[11px] ${ts}`}>للاطلاع فقط: تعديل هذه الأرقام للمشرف الرئيسي.</p>}
+        <fieldset disabled={!canWrite} className="space-y-4">
         {(["caps", "rules", "action", "alerts"] as SettingsGroup[]).map((g) => (
           <div key={g} className={`rounded-xl border p-4 ${line}`}>
             <p className={`mb-3 text-[12px] font-bold ${tp}`}>{GROUP_TITLE[g]}</p>
@@ -564,6 +580,7 @@ export default function LibraryActivityPanel({ isDark, card }: Props) {
             </div>
           </div>
         ))}
+        </fieldset>
         <p className={`text-[10px] leading-relaxed ${ts}`}>
           غير مبني: قاعدة «يقرأ الوثائق بترتيب الفهرس» (لا تُكشف بدقة دون خطأ يطال القارئ العادي). الزوار غير المسجّلين
           يحكمهم حد الطلبات لكل عنوان IP فقط.

@@ -18,6 +18,7 @@ const EVERY_ACTION: Record<StaffAction, true> = {
   "staff.manage": true,
   "settings.write": true,
   "library.delete": true,
+  "library.lock_lift": true,
   "content.delete": true,
   "coupons.delete": true,
   "subscriptions.write": true,
@@ -41,6 +42,7 @@ const OPERATIONS_ROW: StaffAction[] = [
   "community.moderate",
   "tickets.manage",
   "entitlements.decide",
+  "library.lock_lift",
   "read",
   "payments.read",
 ];
@@ -50,7 +52,7 @@ const ROLES: StaffRole[] = ["super_admin", "operations", "auditor"];
 const sorted = (row: Iterable<string>) => [...row].sort();
 
 test("the staff matrix includes the two payment actions", () => {
-  assert.equal(ACTIONS.length, 20);
+  assert.equal(ACTIONS.length, 21);
 });
 test("only the super admin can refund; all staff roles may read payments", () => {
   for (const role of ROLES) {
@@ -95,6 +97,15 @@ test("operations cannot delete, change settings, manage staff, grant or adjust c
   ] as const) {
     assert.equal(staffCan("operations", action), false, action);
   }
+});
+
+test("q372: super admin and operations may lift a library lock; the auditor may not", () => {
+  assert.equal(staffCan("super_admin", "library.lock_lift"), true);
+  assert.equal(staffCan("operations", "library.lock_lift"), true);
+  assert.equal(staffCan("auditor", "library.lock_lift"), false);
+  assert.equal(staffCan(null, "library.lock_lift"), false);
+  // Lifting is not opening a lock or changing the monitor: those stay settings.write.
+  assert.equal(staffCan("operations", "settings.write"), false);
 });
 
 test("operations may decide an entitlement request but not grant one", () => {

@@ -12,7 +12,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { fakeDb, type FakeQuery } from "../payments/fakeDb.test-helper.ts";
 import { callbackWith, startRunWith, type RunActor, type StartRunDeps } from "./runCore.ts";
-import { AI_TOOLS, CONTRACTS_PRO_DESC_MAX, CONTRACTS_PRO_PRICE, CONTRACTS_PRO_TYPES } from "./tools.ts";
+import { AI_TOOLS, CONTRACTS_PRO_DESC_MAX, CONTRACTS_PRO_PRICE, CONTRACTS_PRO_REP_ID_LABEL, CONTRACTS_PRO_TYPES } from "./tools.ts";
 import { AI_WORKFLOWS, toWorkflow } from "../../../n8n/ai/workflows.mjs";
 import { CONTRACT_TYPES } from "../../components/contracts/constants.ts";
 import {
@@ -457,3 +457,47 @@ test("clause caps: the input refuses more requested clauses than an outline can 
   const prompt = run(def.build, simple)[0].json.content as string;
   assert.match(prompt, /من 4 إلى 16 بنداً/);
 });
+
+test("parties (§3.5-3b): the representative's ID is optional, validated when typed; «أخرى» sends the typed capacity", () => {
+  const v = AI_TOOLS["contracts-pro"].validateInput;
+  const company = (fields: Array<{ label: string; value: string }>) => ({ ...input, parties: [{ kind: "company", fields }, input.parties[1]] });
+  const name = { label: "اسم الشركة", value: "شركة الأفق" };
+  const ok = checked(company([name, { label: CONTRACTS_PRO_REP_ID_LABEL, value: "١٠٢٣٤٥٦٧٨٩" }])) as { parties: Array<{ fields: Array<{ label: string; value: string }> }> };
+  assert.deepEqual(ok.parties[0].fields[1], { label: CONTRACTS_PRO_REP_ID_LABEL, value: "1023456789" }, "Arabic-Indic digits normalised");
+  assert.ok(v(company([name, { label: CONTRACTS_PRO_REP_ID_LABEL, value: "2023456789" }])).ok, "an iqama starts with 2");
+  // Taken as typed: a letter, a separator or a prefix is refused, never stripped down to ten digits.
+  for (const bad of ["3023456789", "102345678", "10234567890", "1O234567890", "ID 1023456789", "1023-456789", "1023 456789"]) {
+    const r = v(company([name, { label: CONTRACTS_PRO_REP_ID_LABEL, value: bad }]));
+    assert.match(!r.ok ? r.error : "", /عشرة أرقام تبدأ بـ ١ أو ٢/, bad);
+  }
+  assert.ok(v(company([name])).ok, "no ID at all is fine");
+  const padded = checked(company([name, { label: CONTRACTS_PRO_REP_ID_LABEL, value: "  2023456789 " }])) as { parties: Array<{ fields: Array<{ label: string; value: string }> }> };
+  assert.equal(padded.parties[0].fields[1].value, "2023456789", "surrounding spaces are trimmed");
+
+  // The wizard: a fully filled company with «أخرى» stays one «صفة الممثل» field, 7 in all, and passes.
+  const sent = contractsProInput({
+    complexity: "simple", contractType: "", language: "ar", customLanguageName: "", customLanguageLayout: "dual", customLanguageBase: "ar",
+    party1: {
+      ...EMPTY_PARTY, type: "company", companyName: "شركة الأفق", commercialReg: "1010101010", unifiedNum: "7001234567",
+      representative: "سعد", representativeRole: "أخرى", representativeRoleOther: " وكيل شرعي ", representativeId: "1023456789", address: "الرياض",
+    },
+    party2: { ...EMPTY_PARTY, fullName: "خالد" },
+    contractDesc: input.description, courtType: "", selectedClauses: [], additionalClauses: [],
+  });
+  const fields = sent.parties[0].fields;
+  assert.equal(fields.length, 7);
+  assert.deepEqual(fields.find((f) => f.label === "صفة الممثل"), { label: "صفة الممثل", value: "وكيل شرعي" });
+  assert.deepEqual(fields.find((f) => f.label === CONTRACTS_PRO_REP_ID_LABEL), { label: CONTRACTS_PRO_REP_ID_LABEL, value: "1023456789" });
+  assert.ok(v(sent).ok, "the page's input passes the run's own check");
+  // «أخرى» with nothing typed sends no capacity, rather than the word «أخرى».
+  const blank = contractsProInput({ ...sentWizard(), party1: { ...EMPTY_PARTY, type: "company", companyName: "ش", representativeRole: "أخرى" } });
+  assert.equal(blank.parties[0].fields.some((f) => f.label === "صفة الممثل"), false);
+});
+
+function sentWizard() {
+  return {
+    complexity: "simple" as const, contractType: "", language: "ar" as const, customLanguageName: "", customLanguageLayout: "dual" as const, customLanguageBase: "ar" as const,
+    party1: { ...EMPTY_PARTY, fullName: "أ" }, party2: { ...EMPTY_PARTY, fullName: "ب" },
+    contractDesc: input.description, courtType: "", selectedClauses: [], additionalClauses: [],
+  };
+}

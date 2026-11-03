@@ -5,6 +5,7 @@ import { Robot, Gavel, Paperclip } from "@phosphor-icons/react";
 import { Chip, staggerListVariants, staggerItemVariants } from "./WaShared";
 import type { WaStep, UserCategory } from "../types";
 import type { FloatingActorContext } from "../roleContext";
+import { COMING_SOON_BADGE_AR } from "@/constants/betaGatedRoutes";
 
 interface Props {
   step: WaStep;
@@ -57,7 +58,9 @@ function getContractTypes(category?: UserCategory | null, actorContext?: Floatin
 // number this flow has none of.
 const NO_FIXED_PRICE_NOTE = "تقدير غير مُلزِم — يؤكد الفريق الأتعاب قبل البدء";
 const CONTRACT_SERVICES = [
-  { icon: <Robot size={20} weight="fill" />, label: "مراجعة AI", desc: "تقرير فوري + تحديد البنود الغامضة", price: NO_FIXED_PRICE_NOTE, val: "ai-review", colorClass: "border-emerald-400 dark:border-emerald-500", iconColor: "text-emerald-600 dark:text-emerald-400" },
+  // Wave 1 task 6, fix round 1 (I3): the AI review is the beta-gated
+  // /ai/analyze?mode=doc — «قريباً», no «تقرير فوري».
+  { icon: <Robot size={20} weight="fill" />, label: "مراجعة AI", desc: "قيد الإعداد", price: COMING_SOON_BADGE_AR, val: "ai-review", colorClass: "border-emerald-400 dark:border-emerald-500", iconColor: "text-emerald-600 dark:text-emerald-400" },
   { icon: <Gavel size={20} weight="fill" />, label: "محامي متخصص", desc: "مراجعة كاملة + تقرير مخاطر مفصّل", price: NO_FIXED_PRICE_NOTE, val: "lawyer-review", colorClass: "border-[#C8A762]", iconColor: "text-[#C8A762]" },
 ];
 

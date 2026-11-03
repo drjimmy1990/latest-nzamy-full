@@ -530,6 +530,10 @@ export const INTAKE_LABELS: Record<string, string> = {
   unifiedNum: "الرقم الموحّد",
   representative: "الممثل",
   representativeRole: "صفة الممثل",
+  // Owner package §3.5-3b: the representative's ID, and the capacity typed
+  // when «صفة الممثل» is «أخرى».
+  representativeId: "رقم هوية الممثل / الإقامة",
+  representativeRoleOther: "صفة الممثل (أخرى)",
   address: "العنوان",
   fullName: "الاسم الكامل",
   idNumber: "رقم الهوية",

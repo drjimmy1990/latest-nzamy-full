@@ -28,6 +28,7 @@ import {
 import { STAFF_MATRIX, type StaffRole } from "../../lib/auth/staffRoles.ts";
 import { ADMIN_SIDEBAR, adminSidebarForRole } from "../../constants/navigation.sidebars.primary.ts";
 import { getSidebarByUserType } from "../../constants/navigation.sidebars.ts";
+import { readFileSync } from "node:fs";
 
 type Group = { items: ReadonlyArray<{ href: string }> };
 
@@ -90,6 +91,39 @@ test("operations keeps its own day-to-day tools and the read pages", () => {
   ]) {
     assert.ok(seen.includes(href), href);
   }
+});
+
+test("q372: the security page (its «قفل المكتبة» tab) is offered to operations to lift locks, not to the auditor", () => {
+  assert.equal(ADMIN_PAGE_ACTION["/dashboard/admin/security"], "library.lock_lift");
+  for (const nav of [hrefsOf(adminNavForRole("operations")), hrefsOf(adminSidebarForRole("operations"))]) {
+    assert.ok(nav.includes("/dashboard/admin/security"), "operations");
+  }
+  assert.ok(hrefsOf(adminNavForRole("super_admin")).includes("/dashboard/admin/security"), "super_admin");
+  for (const nav of [hrefsOf(adminNavForRole("auditor")), hrefsOf(adminSidebarForRole("auditor"))]) {
+    assert.equal(nav.includes("/dashboard/admin/security"), false, "auditor");
+  }
+});
+
+test("q372: on the security page operations is offered lifting only — every settings.write control is hidden from it", () => {
+  const read = (f: string) => readFileSync(new URL(`../../app/dashboard/admin/security/${f}`, import.meta.url), "utf8");
+  const locks = read("LibraryLocksPanel.tsx");
+  assert.ok(locks.includes('const canLift = staffMaySee(staffRole, "library.lock_lift");'));
+  assert.ok(locks.includes('const canCreate = staffMaySee(staffRole, "settings.write");'));
+  assert.ok(locks.includes("{canCreate && ("), "the open-a-lock form");
+  assert.ok(locks.includes("{r.active && canLift && ("), "the lift controls");
+  const activity = read("LibraryActivityPanel.tsx");
+  assert.ok(activity.includes('const canWrite = staffMaySee(staffRole, "settings.write");'));
+  for (const gate of [
+    'canWrite && r.userType !== "admin" && (', // special limit / lock this reader
+    "f.open && canWrite && (", // close a review flag
+    "<fieldset disabled={!canWrite}", // the monitor's numbers
+  ]) {
+    assert.ok(activity.includes(gate), gate);
+  }
+  // The limit form, removing a limit and saving the settings: each behind canWrite.
+  assert.ok((activity.match(/\{canWrite && \(/g) ?? []).length >= 3);
+  assert.equal(staffMaySee("operations", "settings.write"), false);
+  assert.equal(staffMaySee("operations", "library.lock_lift"), true);
 });
 
 test("auditor sees no write pages: only the read items", () => {

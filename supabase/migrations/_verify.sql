@@ -5262,3 +5262,66 @@ begin
   raise notice '_verify: 20261101_10 OK — founder seats / credits / credit uses with RLS; one overload each of ai_start_run / ai_fail_run / ai_start_run_with_credit; ai_fail_run restores a credit once; kind membership allowed; capacity %; founder functions service role only', cap;
 end $$;
 -- <<< verify:founder_membership
+-- >>> verify:wave1_pricing_rows
+-- 2026-11-02 — 20261102_10_retire_cancelled_prices.sql and
+-- 20261102_11_contract_draft_points_price.sql (Wave 1 safety: the two contract
+-- rows of admin_pricing_catalog). Read-only, safe to repeat: SELECTs and RAISE.
+-- Both files only UPDATE two rows and leave no schema marker, so "not run yet"
+-- and "undone by a later re-run" (of the 20260518 seed, which puts 99 / 800
+-- and «مشمول» back, or of 20261102_10, which puts «أو ٥٠٠ نقطة للعقد» back)
+-- look the same: every wrong state RAISES and names the file(s) to re-run.
+-- A missing row passes (the code catalogue then serves the same values), and
+-- so does a contract-review row for another audience (GET /api/client-pricing
+-- serves audience 'individual' only). The Arabic literals are the migrations'
+-- own, byte for byte.
+-- Docker, from the repo root in Git Bash (R, M and "$F" as in the header of
+-- supabase/tests/rls/contract_draft_points_price.test.sql):
+--   B=$(mktemp -d)/verify_wave1_pricing_rows.sql
+--   sed -n '/^-- >>> verify:wave1_pricing_rows/,/^-- <<< verify:wave1_pricing_rows/p' $M/_verify.sql > "$B"
+--   PASS: bash $R/run.sh "$F" $M/20261102_10_retire_cancelled_prices.sql \
+--           $M/20261102_11_contract_draft_points_price.sql "$B"
+--   FAIL (each must raise): "$F" "$B" (seed 800); "$F" _10 "$B" (_11 not run);
+--         "$F" _10 _11 "$S" "$B" (seed re-run; S = only the seed's
+--         "insert into public.admin_pricing_catalog … updated_at = now();");
+--         "$F" _10 _11 _10 "$B" (_10 re-run). All checked 2026-11-02, plus
+--         _10 _11 _10 _11 (passes) and no table at all (two NOTICEs, passes).
+do $$
+declare r record;
+begin
+  if to_regclass('public.admin_pricing_catalog') is null then
+    raise notice '_verify: 20261102_10 — public.admin_pricing_catalog is missing (20260518 not applied): the code catalogue serves the contract prices; nothing to check'; return;
+  end if;
+  select base_price, metadata into r from public.admin_pricing_catalog
+   where service_id = 'contract-review' and audience = 'individual';
+  if found and (r.base_price is distinct from 600
+                or r.metadata->>'priceNote' is distinct from 'سعر الأفراد؛ يُؤكَّد بعد الاطلاع على العقد') then
+    raise exception '_verify: 20261102_10 — contract-review shows % with the note «%», not 600 (q327): run 20261102_10, then 20261102_11 (not run yet, or the 20260518 seed was re-run after it)',
+      r.base_price, coalesce(r.metadata->>'priceNote', 'null');
+  end if;
+  select base_price, metadata into r from public.admin_pricing_catalog
+   where service_id = 'contract-draft';
+  if found and (r.base_price is distinct from 0
+                or coalesce(r.metadata ? 'tag', false)
+                or coalesce(r.metadata->>'priceNote', '') not in ('أو ٥٠٠ نقطة للعقد', '٥٠٠ نقطة للعقد')) then
+    raise exception '_verify: 20261102_10 — contract-draft shows % with the note «%» and the tag «%», not 0 with no tag: run 20261102_10, then 20261102_11 (not run yet, or the 20260518 seed was re-run after it)',
+      r.base_price, coalesce(r.metadata->>'priceNote', 'null'), coalesce(r.metadata->>'tag', 'none');
+  end if;
+  raise notice '_verify: 20261102_10 OK — contract review 600 for individuals; contract drafting 0 SAR with no «الأكثر طلبا» tag (a missing row reads as the code catalogue)';
+end $$;
+do $$
+declare r record;
+begin
+  if to_regclass('public.admin_pricing_catalog') is null then
+    raise notice '_verify: 20261102_11 — public.admin_pricing_catalog is missing (20260518 not applied): nothing to check'; return;
+  end if;
+  select price_mode, metadata into r from public.admin_pricing_catalog
+   where service_id = 'contract-draft';
+  if found and (r.price_mode is distinct from 'points'
+                or r.metadata->>'priceNote' is distinct from '٥٠٠ نقطة للعقد'
+                or coalesce(r.metadata ? 'includedByPlan', false)) then
+    raise exception '_verify: 20261102_11 — contract-draft is price_mode % with the note «%» and includedByPlan %, not points / «٥٠٠ نقطة للعقد»: the card still says «مشمول في الباقة» or «أو …». Run 20261102_11 (AFTER the deploy and after 20261102_10; again after any re-run of 20261102_10 or the 20260518 seed)',
+      r.price_mode, coalesce(r.metadata->>'priceNote', 'null'), coalesce(r.metadata->>'includedByPlan', 'none');
+  end if;
+  raise notice '_verify: 20261102_11 OK — contract drafting is priced in points («٥٠٠ نقطة للعقد»), not «مشمول في الباقة» (a missing row reads as the code catalogue)';
+end $$;
+-- <<< verify:wave1_pricing_rows

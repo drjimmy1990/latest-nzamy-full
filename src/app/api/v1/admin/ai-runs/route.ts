@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/access-control";
 import { AI_TOOLS } from "@/lib/ai/tools";
+import { registryPointsLabel } from "@/lib/ai/toolPointsDisplay";
 import { resolveToolRuntime } from "@/lib/ai/aiToolsConfig";
 
 /**
@@ -10,7 +11,9 @@ import { resolveToolRuntime } from "@/lib/ai/aiToolsConfig";
  *   tools   every registered tool with its runtime mode and daily limit
  *           (platform_settings.ai_tools over the registry default) — the
  *           switches themselves are written through PATCH /api/v1/admin/settings
- *           (key ai_tools, settings.write);
+ *           (key ai_tools, settings.write). A stored "review" (retired) reads
+ *           as mode "staff", the mode it now runs as, with legacyMode "review"
+ *           so the page can say so;
  *   runs    the last 100 runs (?tool=, ?status= to filter) with who ran them,
  *           what was charged or refunded, the error code, tokens and time;
  *   charging  platform_settings.points_enforcement.
@@ -42,8 +45,11 @@ export async function GET(request: NextRequest) {
         id: spec.id,
         class: spec.class,
         tier: spec.tier,
-        price: spec.price({}, { pages: null }),
+        // The range a run can be charged (the drafter per kind, case-brief by
+        // pages), not price({}): that read 0 for the drafter and 30 for case-brief.
+        priceLabel: registryPointsLabel(spec.id, "en") ?? "—",
         mode: rt.mode,
+        ...(rt.legacyMode ? { legacyMode: rt.legacyMode } : {}),
         dailyLimit: rt.dailyLimit,
         defaultMode: spec.defaultMode,
         defaultDailyLimit: spec.dailyLimit,

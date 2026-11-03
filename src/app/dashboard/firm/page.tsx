@@ -8,7 +8,7 @@ import {
   Gavel, UsersThree, ChartBar, Money,
   CalendarCheck, ArrowUpRight, WarningCircle,
   ClockCounterClockwise, FileText,
-  CheckCircle, Buildings, ChartLine,
+  CheckCircle, Buildings,
   Lock, Plus, ArrowLeft,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
@@ -316,8 +316,9 @@ export default function FirmDashboardPage() {
           {[
             { href: "/ai/draft",            labelAr: "صياغة مذكرة",     labelEn: "Draft Memo",      icon: FileText,   color: "text-royal"         },
             { href: "/ai/wargaming",        labelAr: "محاكي الخصم",     labelEn: "Case Simulator",  icon: Gavel,       color: "text-purple-500"    },
-            { href: "/ai/report-generator", labelAr: "توليد تقرير",     labelEn: "Generate Report", icon: ChartLine,   color: "text-emerald-500"   },
             // No secretary tile (owner ١١٥): it is «قريباً», like the lawyer tile.
+            // No report-generator tile (Wave 1 task 6): it ends at the beta
+            // gate (betaGatedRoutes.ts); the firm sidebar row says «قريباً».
           ].map((action) => {
             const Icon = action.icon;
             return (

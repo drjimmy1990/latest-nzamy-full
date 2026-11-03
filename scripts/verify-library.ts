@@ -165,7 +165,6 @@ async function main() {
   await checkAPI('/api/library/laws/companies-law');
   await checkAPI('/api/library/decrees/test-id');
   await checkAPI('/api/library/books/rawd-al-murbi');
-  await checkAPI('/api/ai/explain-article', 'POST', { articleId: 'art-1', lawSlug: 'companies-law' });
   await checkAPI('/api/library/folders');
   await checkAPI('/api/library/reports', 'POST', { entityType: 'article', entityId: 'test', reportType: 'error', description: 'test' });
 

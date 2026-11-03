@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 import { useState, useEffect } from "react";
 import { useTheme } from "@/components/ThemeProvider";
 import { ListBullets, ArrowLeft, ArrowRight, MagnifyingGlass } from "@phosphor-icons/react";
@@ -11,7 +12,7 @@ const PROCEDURES = [
   { id: 3, title: "إجراءات تفتيش المسكن", category: "تفتيش", steps: ["الحصول على إذن نيابي مسبق","التحقق من صحة العنوان","الدخول بحضور مالك المسكن أو شاهدين","توثيق كل ما يُضبط","تحرير محضر تفصيلي"] },
   { id: 4, title: "التعامل مع حوادث السير الجسيمة", category: "حوادث", steps: ["تأمين مكان الحادث","الإسعاف الفوري للمصابين","إبلاغ المرور والمدني","تصوير المشهد قبل تحريكه","استيفاء شهادات الشهود","إعداد تقرير الحادث"] },
 ];
-export default function ProcedureGuidePage() {
+function ProcedureGuideInner() {
   const { isDark } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [search, setSearch] = useState("");
@@ -82,5 +83,14 @@ export default function ProcedureGuidePage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function ProcedureGuidePage() {
+  return (
+    <GatedToolScreen toolId="gov.procedure-guide" toolName="دليل الإجراءات الأمنية">
+      <ProcedureGuideInner />
+    </GatedToolScreen>
   );
 }

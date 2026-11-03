@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { fakeDb, type FakeQuery } from "../payments/fakeDb.test-helper.ts";
 import { AI_COPY, callbackWith, mapCitations, startRunWith, type RunActor, type StartRunDeps } from "./runCore.ts";
 import type { N8nOutcome } from "./n8nClient.ts";
-import { resolveToolRuntime, aiToolsSettingIssue } from "./aiToolsConfig.ts";
+import { resolveToolRuntime, aiToolsSettingIssue, effectiveToolMode, REVIEW_MODE_REFUSED_AR } from "./aiToolsConfig.ts";
 import { AI_TOOLS, LIB_QUERIES_PATH } from "./tools.ts";
 import type { Retrieved } from "./retrieval.ts";
 
@@ -119,6 +119,29 @@ test("the money refusals map to 402 / 429 / 503 / 409", async () => {
     assert.equal(r.body.code, code);
     assert.equal(seen.length, 0, `${code}: n8n was not called`);
   }
+});
+
+test("task 2 review M1: onRunCreated fires once for a created run — never for a refusal or a duplicate", async () => {
+  const cases: Array<[{ data?: unknown; error?: { code?: string; message?: string } } | undefined, string[]]> = [
+    [undefined, ["echo-fast"]],
+    [{ data: [{ run_id: RUN, created: false, status: "succeeded", charged: true, charged_points: 1 }] }, []],
+    [{ error: { code: "P0001", message: "insufficient_points" } }, []],
+    [{ error: { code: "P0001", message: "daily_limit" } }, []],
+  ];
+  for (const [start, expected] of cases) {
+    const { client } = db(start ? { start } : {});
+    const created: string[] = [];
+    await startRunWith(client as never, { ...deps(okReply()), onRunCreated: (t) => created.push(t) }, LAWYER, body());
+    assert.deepEqual(created, expected, JSON.stringify(start ?? "created"));
+  }
+  // A refusal before the charge (bad input) never reaches it either.
+  const { client } = db();
+  const created: string[] = [];
+  await startRunWith(client as never, { ...deps(okReply()), onRunCreated: (t) => created.push(t) }, LAWYER, body({ input: { text: "" } }));
+  assert.deepEqual(created, []);
+  // A throwing tally does not fail the run.
+  const r = await startRunWith(db().client as never, { ...deps(okReply()), onRunCreated: () => { throw new Error("tally"); } }, LAWYER, body());
+  assert.equal(r.status, 200);
 });
 
 test("a fast reply is stored once and returned; only status running is updated", async () => {
@@ -347,6 +370,78 @@ test("staff mode runs the tool for an admin and refuses everyone else before any
     assert.equal(r.status, 200);
   }
   assert.equal(aiToolsSettingIssue({ communicate: { mode: "staff" } }, Object.keys(AI_TOOLS)), null);
+});
+
+// ── "review" retired (Wave 1 Task 3; slice C §3.1-3, R4) ─────────────────────
+// It charged, hid the result, and nothing released or refunded it. A stored
+// "review" now runs as "staff"; the admin write refuses it.
+
+test("review retired: a stored review resolves to staff; every other mode is unchanged", () => {
+  assert.equal(effectiveToolMode("review"), "staff");
+  for (const m of ["off", "staff", "live"] as const) assert.equal(effectiveToolMode(m), m);
+  const spec = AI_TOOLS["communicate"];
+  assert.deepEqual(resolveToolRuntime(spec, { communicate: { mode: "review", daily_limit: 4 } }), {
+    mode: "staff",
+    dailyLimit: 4,
+    legacyMode: "review",
+  });
+  assert.deepEqual(resolveToolRuntime(spec, { communicate: { mode: "staff" } }), { mode: "staff", dailyLimit: spec.dailyLimit });
+  // A registry default of "review" would be mapped the same way.
+  assert.deepEqual(resolveToolRuntime({ ...spec, defaultMode: "review" }, null), {
+    mode: "staff",
+    dailyLimit: spec.dailyLimit,
+    legacyMode: "review",
+  });
+});
+
+test("review retired: the admin write refuses review with the Arabic message; off / staff / live still pass", () => {
+  const known = Object.keys(AI_TOOLS);
+  const issue = aiToolsSettingIssue({ communicate: { mode: "review" } }, known);
+  assert.ok(issue && issue.startsWith(REVIEW_MODE_REFUSED_AR), String(issue));
+  assert.ok(issue!.includes("communicate"));
+  for (const mode of ["off", "staff", "live"]) {
+    assert.equal(aiToolsSettingIssue({ communicate: { mode } }, known), null, mode);
+  }
+  // The other messages no longer offer review either.
+  assert.doesNotMatch(String(aiToolsSettingIssue([], known)), /review/);
+  assert.doesNotMatch(String(aiToolsSettingIssue({ communicate: { mode: "on" } }, known)), /review/);
+});
+
+test("review retired: a non-admin on a stored-review tool gets the staff refusal before any charge", async () => {
+  const input = { type: "letter", tone: "رسمي", body: "نص" };
+  const results: Array<{ status: number; body: Record<string, unknown> }> = [];
+  for (const setting of [{ communicate: { mode: "review" } }, { communicate: { mode: "staff" } }]) {
+    const { client, log } = db({ setting });
+    const seen: unknown[] = [];
+    const r = await startRunWith(client as never, deps(okReply({ text: "x" }), seen), LAWYER, body({ tool: "communicate", input }));
+    assert.deepEqual(rpcs(log), [], "ai_start_run never ran");
+    assert.equal(seen.length, 0, "n8n was not called");
+    results.push(r);
+  }
+  assert.deepEqual(results[0], results[1], "stored review answers exactly as staff");
+  assert.equal(results[0].status, 423);
+  assert.equal(results[0].body.code, "tool_off");
+  assert.equal(results[0].body.error, AI_COPY.off);
+});
+
+test("review retired: an admin on a stored-review tool gets the output, stored as succeeded", async () => {
+  const input = { type: "letter", tone: "رسمي", body: "نص" };
+  const { client, log } = db({ setting: { communicate: { mode: "review" } } });
+  const r = await startRunWith(client as never, deps(okReply({ text: "x" })), { ...LAWYER, userType: "admin" }, body({ tool: "communicate", input }));
+  assert.equal(r.status, 200);
+  assert.equal(r.body.status, "succeeded");
+  assert.deepEqual(r.body.output, { text: "x" });
+  const upd = log.find((q) => q.table === "ai_runs" && q.op === "update")!;
+  assert.equal((upd.payload as Record<string, unknown>).status, "succeeded");
+});
+
+test("review retired: a job callback for a stored-review tool settles as succeeded, never held", async () => {
+  const running = { id: RUN, tool: "echo-job", status: "running", class: "job", source_ids: {} };
+  const { client, log } = db({ run: running, setting: { "echo-job": { mode: "review" } } });
+  const r = await callbackWith(client as never, { run_id: RUN, status: "succeeded", output: { echo: "x" }, citations: [] });
+  assert.equal(r.body.final, "succeeded");
+  const upd = log.find((q) => q.table === "ai_runs" && q.op === "update")!;
+  assert.equal((upd.payload as Record<string, unknown>).status, "succeeded");
 });
 
 // ── founder credits (P3 Task 6) ──────────────────────────────────────────────

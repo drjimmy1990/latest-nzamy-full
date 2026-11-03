@@ -20,8 +20,11 @@ interface ToolRow {
   id: string;
   class: "fast" | "job";
   tier: string;
-  price: number;
-  mode: "off" | "staff" | "review" | "live";
+  /** "250", "500–1,500": every price one run can be charged (toolPointsDisplay.ts). */
+  priceLabel: string;
+  mode: "off" | "staff" | "live";
+  /** The stored mode was the retired "review"; it runs as "staff" now. */
+  legacyMode?: "review";
   dailyLimit: number;
   defaultMode: string;
   defaultDailyLimit: number;
@@ -43,7 +46,11 @@ interface RunRow {
   duration_ms: number | null;
 }
 
-const MODE_LABEL: Record<string, string> = { off: "متوقفة", staff: "للمشرفين فقط", review: "بمراجعة", live: "مفعّلة" };
+// "review" (charge, then hide until released) is not offered: nothing releases
+// or refunds such a run yet (Wave 3). A tool still stored as review runs as
+// staff, and its row says so until the next save writes "staff".
+const MODE_LABEL: Record<string, string> = { off: "متوقفة", staff: "للمشرفين فقط", live: "مفعّلة" };
+const LEGACY_REVIEW_LABEL = "للمشرفين فقط (كان: بمراجعة)";
 const STATUS_LABEL: Record<string, string> = { running: "قيد التنفيذ", review: "بانتظار المراجعة", succeeded: "نجح", failed: "فشل" };
 const STATUS_TONE: Record<string, string> = {
   running: "text-amber-300",
@@ -165,12 +172,19 @@ export default function AdminAIUsagePage() {
                 <tr key={t.id} className="border-t border-zinc-800/70">
                   <td className="py-2 font-mono">{t.id}</td>
                   <td>{t.class === "fast" ? "فوري" : "مهمة"}</td>
-                  <td>{t.price} نقطة</td>
+                  <td>{t.priceLabel} نقطة</td>
                   <td>
                     <select value={t.mode} onChange={(e) => update(t.id, { mode: e.target.value as ToolRow["mode"] })}
                       className="rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-100">
-                      {(["off", "staff", "review", "live"] as const).map((m) => <option key={m} value={m}>{MODE_LABEL[m]}</option>)}
+                      {(["off", "staff", "live"] as const).map((m) => (
+                        <option key={m} value={m}>{m === "staff" && t.legacyMode === "review" ? LEGACY_REVIEW_LABEL : MODE_LABEL[m]}</option>
+                      ))}
                     </select>
+                    {t.legacyMode === "review" && (
+                      <p className="mt-1 text-[11px] text-amber-300">
+                        وضع «بمراجعة» موقوف، فتعمل الأداة الآن للمشرفين فقط. الحفظ يثبّت ذلك.
+                      </p>
+                    )}
                   </td>
                   <td>
                     <input type="number" min={0} max={1000} value={t.dailyLimit}
@@ -243,7 +257,16 @@ export default function AdminAIUsagePage() {
                     <td className="py-2 whitespace-nowrap">{new Date(r.created_at).toLocaleString("ar-SA-u-nu-latn")}</td>
                     <td>{r.user_name}</td>
                     <td className="font-mono">{r.tool}</td>
-                    <td className={STATUS_TONE[r.status] ?? ""}>{STATUS_LABEL[r.status] ?? r.status}</td>
+                    <td className={STATUS_TONE[r.status] ?? ""}>
+                      {STATUS_LABEL[r.status] ?? r.status}
+                      {/* A row left from the retired review mode: charged, hidden from its
+                          owner. The output is for judging a manual refund (super admin only;
+                          the route answers 403 to any other role). */}
+                      {r.status === "review" && (
+                        <a href={`/api/v1/admin/ai-runs/${r.id}`} target="_blank" rel="noopener noreferrer"
+                          className="ms-2 text-[11px] text-[#C8A762] underline">عرض الناتج</a>
+                      )}
+                    </td>
                     <td>
                       {r.charged ? `${r.charged_points}${r.refunded_at ? " (أُعيدت)" : ""}` : `— (${r.price_points})`}
                     </td>

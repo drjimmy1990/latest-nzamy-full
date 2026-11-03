@@ -7,7 +7,7 @@
  *     otherwise null, and the button keeps today's request flow (owner ٢٤٦).
  *   - what the screen says about an item: the VAT sentence, the points and
  *     their validity for a top-up, the library's access length, and the
- *     ind-litigation coverage sentence. Firm plans promise no seats.
+ *     founder membership's grants. Firm plans promise no seats.
  *   - moyasarInitConfig: the Moyasar.init config. The intent is created by
  *     POST /api/v1/payments/checkout (src/lib/payments/checkoutCore.ts);
  *     on_initiating hands Moyasar that intent AND the order id as the
@@ -122,13 +122,6 @@ export function parseCheckoutQuery(
 
 // ── what the screen says ────────────────────────────────────────────────────
 
-/**
- * ind-litigation covers the main subscriber only. No family sentence: the
- * dependants are withdrawn from every price surface at launch (conflict ١٠,
- * owner package of 30 Oct 2026; LIVE-F11).
- */
-export const LITIGATION_COVERAGE_AR = "تغطية المشترك الرئيسي";
-
 const ARABIC_DIGITS = "٠١٢٣٤٥٦٧٨٩";
 
 /** 1500 → «١٬٥٠٠» */
@@ -164,7 +157,6 @@ function pointsAr(n: number): string {
  * and nothing more. Firm plans get no line — their seats are not sold here.
  */
 export function checkoutItemNotes(item: PayableItem): string[] {
-  if (item.id === "ind-litigation") return [LITIGATION_COVERAGE_AR];
   if (item.kind === "topup") {
     const notes: string[] = [];
     // The label already names the points («شحن ٢٥٠ (٣٠٠ نقطة)»): no second line.

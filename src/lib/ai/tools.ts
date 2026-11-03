@@ -8,9 +8,11 @@
  * Runtime overrides (mode, daily limit) live in platform_settings.ai_tools
  * (aiToolsConfig.ts) and are editable from admin without a deploy.
  *
- * Pure: no imports outside src/lib/ai, so `node --test` runs it.
+ * Pure: no imports outside src/lib/ai except the pure national-ID rule
+ * (services/clientIdentityRules.ts, itself import-free), so `node --test` runs it.
  */
 import { extractLegalRefs, missingLegalRefs } from "./legalRefs.ts";
+import { strictNationalId } from "../services/clientIdentityRules.ts";
 import { DRAFT_KINDS, draftKindPrice, isDraftKind } from "./draftKinds.ts";
 import type { RetrievalLimits } from "./retrieval.ts";
 import type { FileRules } from "./aiFiles.ts";
@@ -155,8 +157,11 @@ function communicateOutput(raw: unknown): Record<string, unknown> | null {
   return text ? { text } : null;
 }
 
-/** Najiz's memo field: the hard limit, and the length R5 shortens to. */
-export const NAJIZ_MAX_CHARS = 10_000;
+/**
+ * The one Najiz limit the platform states and enforces: R5 refuses a memo
+ * within it and returns one no longer than it; /ai/najiz-optimizer shows it.
+ * (A 10,000 figure for Najiz's own field is unverified and is not used.)
+ */
 export const NAJIZ_TARGET_CHARS = 9_000;
 /** The longest cleaned memo R5 accepts. */
 export const NAJIZ_INPUT_MAX = 40_000;
@@ -789,8 +794,8 @@ export const CONTRACTS_PRO_TYPES: Readonly<Record<string, string>> = {
   franchise: "عقد امتياز تجاري",
   other: "عقد",
 };
-// Plan §5: 1,000 points. The /pricing label («ai:contracts» ١٠ نقاط) disagrees;
-// the tool stays off until the owner's pricing settles which is right.
+// Plan §5: 1,000 points. /pricing, the hub and the plan cards read it through
+// toolPointsDisplay.ts (Wave 1 task 4); the owner's repricing is Wave 2.
 export const CONTRACTS_PRO_PRICE = 1000;
 export const CONTRACTS_PRO_DESC_MIN = 20;
 export const CONTRACTS_PRO_DESC_MAX = 4000;
@@ -801,6 +806,12 @@ const CONTRACTS_PRO_CLAUSES_MAX = 34;
 const PARTY_FIELDS_MAX = 8;
 const PARTY_FIELD_MAX = 300;
 const PARTY_KIND: Readonly<Record<string, string>> = { company: "شركة أو منشأة", individual: "شخص طبيعي", government: "جهة حكومية" };
+/**
+ * The label of the representative's ID / iqama field (owner package §3.5-3b).
+ * The parties arrive as labelled fields, so this label is how the check below
+ * finds it; the wizard (contractsProRun.ts) sends it under this constant.
+ */
+export const CONTRACTS_PRO_REP_ID_LABEL = "رقم هوية الممثل / الإقامة";
 const LANGUAGE_NAME: Readonly<Record<string, string>> = { ar: "العربية", en: "الإنجليزية" };
 // A custom language is a name the user typed: letters, spaces and hyphens only.
 const CUSTOM_LANGUAGE = /^\p{L}[\p{L} -]{1,39}$/u;
@@ -853,6 +864,13 @@ function contractsProInput(raw: unknown): InputCheck {
       if (!label) return { ok: false, error: `بيانات ${role} غير صالحة` };
       const value = boundedText(f.value, PARTY_FIELD_MAX);
       if (!value) return { ok: false, error: `«${label}» (${role}) أطول من ${PARTY_FIELD_MAX.toLocaleString("ar-SA")} حرف` };
+      if (label === CONTRACTS_PRO_REP_ID_LABEL) {
+        // Optional, but typed it is a Saudi ID / iqama: 10 digits, 1 or 2 first.
+        const id = strictNationalId(value);
+        if (!id) return { ok: false, error: `«${label}» (${role}) عشرة أرقام تبدأ بـ ١ أو ٢` };
+        fields.push({ label, value: id });
+        continue;
+      }
       fields.push({ label, value });
     }
     if (fields.length === 0) return { ok: false, error: `أدخل اسم ${role}` };
@@ -1175,7 +1193,8 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     roles: ["lawyer", "firm"],
     // CONSULTANT_BLOCKED_PREFIXES has /ai/najiz-optimizer (Art. 18).
     consultantBlocked: true,
-    // The pricing table's «منقح ناجز» row (owner ٢١٦: ٥–٨); the plan's 15 is older.
+    // Owner ٢١٦ gave «٥–٨»; 5 is charged, and every label reads it from here
+    // (toolPointsDisplay.ts). The plan's 15 is older.
     price: () => 5,
     dailyLimit: 20,
     defaultMode: "off",

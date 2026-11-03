@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -18,7 +19,7 @@ const MOCK_PRINCIPLES = [
   { number: "٣", court: "محكمة الاستئناف التجارية", date: "١٤٤٤/٠٨/٢٢", text: "عقد الإذعان لا يُعدّ باطلاً في مجمله بل تقع الشروط التعسفية فيه وحدها دون سواها." },
 ];
 
-export default function JudicialSearchPage() {
+function JudicialSearchInner() {
   const { isDark, isRTL } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [step, setStep] = useState<Step>("input");
@@ -144,5 +145,14 @@ export default function JudicialSearchPage() {
         </AnimatePresence>
       </div>
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function JudicialSearchPage() {
+  return (
+    <GatedToolScreen toolId="gov.judicial-search" toolName="بحث المبادئ القضائية">
+      <JudicialSearchInner />
+    </GatedToolScreen>
   );
 }

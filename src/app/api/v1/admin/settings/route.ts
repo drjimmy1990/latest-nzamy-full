@@ -41,7 +41,8 @@ const ALLOWED_SETTINGS_KEYS = [
   // Moyasar B1: boolean switch for points enforcement.
   "points_enforcement",
   // AI wave 0 (20261027_10): per-tool runtime switches —
-  // {"<tool>": {"mode": "off"|"review"|"live", "daily_limit": int}}.
+  // {"<tool>": {"mode": "off"|"staff"|"live", "daily_limit": int}}.
+  // "review" is refused (aiToolsSettingIssue) until Wave 3's money-safe gate.
   // A tool not named keeps its default in src/lib/ai/tools.ts ("off").
   "ai_tools",
 ] as const;

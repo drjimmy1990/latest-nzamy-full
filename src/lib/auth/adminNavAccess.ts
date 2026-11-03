@@ -58,6 +58,10 @@ export const ADMIN_PAGE_ACTION: Readonly<Record<string, StaffAction>> = Object.f
   "/dashboard/admin/tickets": "tickets.manage",
   "/dashboard/admin/feature-requests": "tickets.manage",
   "/dashboard/admin/library-issue-reports": "tickets.manage",
+  // q372: operations lift library locks («قفل المكتبة» tab). The page's other
+  // writes (opening a lock, the monitor's numbers) stay settings.write on the
+  // server, and the locks panel hides the lock form from operations.
+  "/dashboard/admin/security": "library.lock_lift",
   "/dashboard/admin/community/moderation": "community.moderate",
   "/dashboard/admin/community/reports": "community.moderate",
 
@@ -68,7 +72,6 @@ export const ADMIN_PAGE_ACTION: Readonly<Record<string, StaffAction>> = Object.f
   "/dashboard/admin/settings": "settings.write",
   "/dashboard/admin/pricing": "settings.write",
   "/dashboard/admin/features": "settings.write",
-  "/dashboard/admin/security": "settings.write",
   "/dashboard/admin/system": "settings.write",
   "/dashboard/admin/system/backup": "settings.write",
   "/dashboard/admin/sector-profiles": "settings.write",

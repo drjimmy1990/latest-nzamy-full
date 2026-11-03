@@ -1,8 +1,14 @@
 /**
  * readQuotaServer.ts — the I/O half of owner note ١٣ C07 / C09: one call to
  * public.library_read_quota_hit (20261030_80) as the service role, with the
- * in-process memo in front of it. Used by src/proxy.ts (Node runtime in
- * Next 16) on the heavy library reads, and by GET /api/v1/library/status.
+ * in-process memo in front of it. Callers of libraryReadQuotaHit:
+ *   - src/proxy.ts (Node runtime in Next 16): the heavy library reads, and
+ *     the lock-only check on POST /api/library/search;
+ *   - POST /api/library/scoped-search: the document an in-document search
+ *     spends;
+ *   - POST /api/v1/ai/runs: the lock check for the library's own AI
+ *     (src/lib/ai/libraryRunAccess.ts, `lockRow`);
+ *   - GET /api/v1/library/status: the reader's state, never memoised.
  *
  * FAILS OPEN, ALWAYS. A missing function (PGRST202 / 42883 — the migration not
  * applied yet), a missing service key, a timeout (1.5 s) or any other error

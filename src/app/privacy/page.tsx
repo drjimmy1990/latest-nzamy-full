@@ -31,7 +31,7 @@ const sections = {
         "تحسين أداء المنصة وتخصيص تجربة المستخدم بناءً على الاستخدام الفعلي.",
         "إرسال إشعارات الخدمة (مواعيد، جلسات، مدفوعات) والرسائل التسويقية المأذون بها.",
         "الامتثال للالتزامات القانونية والتنظيمية المفروضة بموجب الأنظمة السعودية.",
-        "تدريب نماذج الذكاء الاصطناعي على بيانات مُجهَّلة لتحسين جودة الخدمات.",
+        "**حظر تدريب النماذج على بياناتك**: لا نستخدم ملفات القضايا أو الضبوط أو المستندات القانونية الخاصة بمستخدمينا لتدريب أي نماذج ذكاء اصطناعي تحت أي ظرف.",
       ],
     },
     {
@@ -126,7 +126,7 @@ const sections = {
         "Improving platform performance and personalizing user experience based on actual usage.",
         "Sending service notifications (appointments, hearings, payments) and authorized marketing messages.",
         "Complying with legal and regulatory obligations imposed under Saudi regulations.",
-        "Training AI models on anonymized data to improve service quality.",
+        "**Zero AI Training on Your Case Files**: We never use your case files, hearing minutes, or legal documents to train any AI models under any circumstances.",
       ],
     },
     {

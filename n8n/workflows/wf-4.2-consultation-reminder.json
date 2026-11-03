@@ -158,6 +158,6 @@
     "WhatsApp 1h Urgent": { "main": [[{ "node": "Mark 1h Sent", "type": "main", "index": 0 }]] }
   },
   "active": false,
-  "settings": { "executionOrder": "v1" },
+  "settings": { "executionOrder": "v1", "saveDataSuccessExecution": "none" },
   "pinData": {}
 }

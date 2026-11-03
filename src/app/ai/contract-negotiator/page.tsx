@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -102,7 +103,7 @@ function StepBar({ current, isDark }: { current: Step; isDark: boolean }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function ContractNegotiatorPage() {
+function ContractNegotiatorInner() {
   const { isDark } = useTheme();
   const [step, setStep] = useState<Step>("identify");
   const [contractType, setContractType] = useState<ContractType | "">("");
@@ -392,5 +393,14 @@ export default function ContractNegotiatorPage() {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function ContractNegotiatorPage() {
+  return (
+    <GatedToolScreen toolId="contract-negotiator.result" toolName="استراتيجية تفاوض العقد">
+      <ContractNegotiatorInner />
+    </GatedToolScreen>
   );
 }

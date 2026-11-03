@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   resolveStagePatch, planStageDeadlineSync, readStageTrigger, inferLegacyTrigger,
-  effectiveTriggerDate, recomputedMetadata, syncCancelledMetadata, isFinalOutcome,
+  effectiveTriggerDate, recomputedMetadata, syncCancelledMetadata, isFinalOutcome, defaultStageTriggerEvent,
   type ExistingAutoDeadline,
 } from "./stageDeadlineSync.ts";
 
@@ -200,4 +200,24 @@ test("CODE-F04: a recompute keeps the old values in a bounded history", () => {
   const cancelled = syncCancelledMetadata({ a: 1 }, "outcome_pending", "now", "u1");
   assert.equal(cancelled.cancelled_by, "stage_sync");
   assert.equal(cancelled.a, 1);
+});
+
+// ── q347: the outcome form opens on «تسلّم صورة الحكم» ─────────────────────────
+
+test("q347: a degree never recorded, with an automatic rule, defaults to copy_received", () => {
+  assert.equal(defaultStageTriggerEvent({ triggerEvent: null, closedOn: null, hasAutoRule: true }), "copy_received");
+  assert.equal(defaultStageTriggerEvent({ hasAutoRule: true }), "copy_received");
+});
+
+test("q347: no automatic rule → no default (the event choice is hidden and would block the save)", () => {
+  assert.equal(defaultStageTriggerEvent({ triggerEvent: null, closedOn: null, hasAutoRule: false }), "");
+});
+
+test("q347: a degree already closed with «لم يُحدَّد بعد» keeps it", () => {
+  assert.equal(defaultStageTriggerEvent({ triggerEvent: null, closedOn: "2026-10-01", hasAutoRule: true }), "");
+});
+
+test("q347: a stored event is kept, the pronouncement date included", () => {
+  assert.equal(defaultStageTriggerEvent({ triggerEvent: "judgment_date", closedOn: "2026-10-01", hasAutoRule: true }), "judgment_date");
+  assert.equal(defaultStageTriggerEvent({ triggerEvent: "notified", closedOn: null, hasAutoRule: true }), "notified");
 });

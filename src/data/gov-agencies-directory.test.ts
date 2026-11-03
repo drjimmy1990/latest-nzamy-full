@@ -79,7 +79,7 @@ test("contacts are well formed: no internal-network links, no invisible characte
   }
   const malformed = agencies.flatMap((a) => a.emails).filter((e) => !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(e));
   assert.deepEqual(malformed, ["info@@pep.gov.sa"]);
-  assert.equal(agencies.filter((a) => a.emails.length).length, 339);
+  assert.equal(agencies.filter((a) => a.emails.length).length, 338);
   assert.equal(agencies.filter((a) => a.phones.length).length, 344);
 });
 
@@ -88,8 +88,19 @@ test("النيابة العامة (17570) and ديوان المظالم (17486) 
   assert.ok(pp);
   assert.equal(pp.name, "النيابة العامة");
   assert.deepEqual(pp.phones, ["00966118400000"]);
-  assert.deepEqual(pp.emails, ["info@bip.gov.sa"]);
+  // q386: the my.gov.sa address (info@bip.gov.sa, no MX record) is withheld
+  // by the parser (WITHHELD_EMAILS) — no unverified prosecution e-mail.
+  assert.deepEqual(pp.emails, []);
   const bog = agencies.find((a) => a.id === "17486");
   assert.ok(bog);
   assert.equal(bog.shortName, "BOG");
+});
+
+test("q386: no prosecution channel publishes an e-mail address", () => {
+  const pp = JSON.parse(fs.readFileSync(path.resolve(here, "public-prosecution-channels.json"), "utf8")) as {
+    channels: Array<{ kind: string; value: string }>;
+  };
+  assert.ok(pp.channels.length > 0);
+  assert.equal(pp.channels.some((c) => c.kind === "email" || c.value.includes("@")), false);
+  assert.equal(agencies.some((a) => a.emails.some((e) => /@bip\.gov\.sa$/i.test(e))), false);
 });

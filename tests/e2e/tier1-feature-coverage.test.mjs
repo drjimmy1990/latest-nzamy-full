@@ -511,14 +511,16 @@ describe("Tier 1.5 — AI Intake Wizards Schemas", () => {
     assert.deepEqual(guarded, { kind: "ok", service: "draft" });
   });
 
-  test("T1.INTAKE.9: Live RAG Legal Chat endpoint route exists", () => {
+  // Owner q374 / q379: the library AI is for points only, through
+  // POST /api/v1/ai/runs (tool library-assistant). The old free routes are gone.
+  test("T1.INTAKE.9: the free legacy library chat route stays deleted", () => {
     const chatPath = path.join(REPO_ROOT, "src", "app", "api", "ai", "library-chat", "route.ts");
-    assert.ok(fs.existsSync(chatPath), "AI Library Chat route must exist");
+    assert.equal(fs.existsSync(chatPath), false, "/api/ai/library-chat must not exist");
   });
 
-  test("T1.INTAKE.10: Article AI Explanation endpoint route exists", () => {
+  test("T1.INTAKE.10: the free legacy explain-article route stays deleted", () => {
     const explainPath = path.join(REPO_ROOT, "src", "app", "api", "ai", "explain-article", "route.ts");
-    assert.ok(fs.existsSync(explainPath), "AI Explain Article route must exist");
+    assert.equal(fs.existsSync(explainPath), false, "/api/ai/explain-article must not exist");
   });
 
   test("T1.INTAKE.11: intakeErrorMessageAr translates validation errors to professional Arabic", () => {

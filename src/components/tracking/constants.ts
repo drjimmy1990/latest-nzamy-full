@@ -107,15 +107,22 @@ export const govEntities: GovEntity[] = [
   { ar: "هيئة الاستثمار", en: "SAGIA", short: "SAG" },
 ];
 
+// Wave 1 task 6, fix round 1 (I1): the tiers sold «٩٩ / ٢٤٩ / ٤٩٩ ر.س
+// / خدمة». Nothing charges them and the client service catalogue has no
+// government follow-up row, so — like the card on /services/individuals —
+// no tier names a number.
+const AFTER_ASSESSMENT_AR = "يُحدَّد بعد التقييم";
+const AFTER_ASSESSMENT_EN = "Determined after assessment";
+
 export const pricingTiers: PricingTier[] = [
   {
     name_ar: "أساسي",
     name_en: "Basic",
-    price: "٩٩",
-    price_num: "99",
-    currency: "ر.س",
-    period_ar: "/ خدمة",
-    period_en: "/ service",
+    price: AFTER_ASSESSMENT_AR,
+    price_num: AFTER_ASSESSMENT_EN,
+    currency: "",
+    period_ar: "",
+    period_en: "",
     features_ar: [
       "متابعة معاملة واحدة",
       "تقارير أسبوعية",
@@ -135,11 +142,11 @@ export const pricingTiers: PricingTier[] = [
   {
     name_ar: "قياسي",
     name_en: "Standard",
-    price: "٢٤٩",
-    price_num: "249",
-    currency: "ر.س",
-    period_ar: "/ خدمة",
-    period_en: "/ service",
+    price: AFTER_ASSESSMENT_AR,
+    price_num: AFTER_ASSESSMENT_EN,
+    currency: "",
+    period_ar: "",
+    period_en: "",
     features_ar: [
       "حتى ٣ معاملات",
       "تقارير يومية",
@@ -161,11 +168,11 @@ export const pricingTiers: PricingTier[] = [
   {
     name_ar: "سريع",
     name_en: "Express",
-    price: "٤٩٩",
-    price_num: "499",
-    currency: "ر.س",
-    period_ar: "/ خدمة",
-    period_en: "/ service",
+    price: AFTER_ASSESSMENT_AR,
+    price_num: AFTER_ASSESSMENT_EN,
+    currency: "",
+    period_ar: "",
+    period_en: "",
     features_ar: [
       "معاملات غير محدودة",
       "تقارير فورية",

@@ -95,9 +95,9 @@ export const INDIVIDUAL_SIDEBAR: SidebarGroup[] = [
     collapsible: true,
     defaultOpen: false,
     items: [
-      { label: "المستشار الذكي",       labelEn: "AI Consultant",      href: "/ai/consult",               icon: "Brain" },
+      { label: "المستشار الذكي",       labelEn: "AI Consultant",      href: "/ai/consult",               icon: "Brain", badge: "قريباً" },
       { label: "محترف العقود المختصر",   labelEn: "Contract Drafter",   href: "/ai/contract-drafter",     icon: "FileText" },
-      { label: "الفاحص الذكي",        labelEn: "Doc Analyzer",       href: "/ai/analyze",              icon: "Scan" },
+      { label: "الفاحص الذكي",        labelEn: "Doc Analyzer",       href: "/ai/analyze",              icon: "Scan", badge: "قريباً" },
       { label: "صائغ الخطابات",       labelEn: "Letter Drafter",     href: "/dashboard/client/letters", icon: "PencilLine" },
     ],
   },

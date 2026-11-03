@@ -31,9 +31,10 @@ export interface LawyerAiTool {
   href: string;
   titleAr: string;
   titleEn: string;
-  // No point cost here (owner answer ٢١٦, 2026-10-18): a tool's price is the
-  // services price list's, read through TOOL_POINT_LABELS below. The old
-  // `pointCost` figures (500 / 300 / 100 … points) contradicted that list.
+  // No point cost here (owner answer ٢١٦, 2026-10-18): a tool's price is what
+  // the AI registry charges, read through TOOL_POINT_SOURCES
+  // (lawyerAiBadges.ts). The old `pointCost` figures (500 / 300 / 100 …
+  // points) contradicted the server.
   betaStatus: LawyerAiBetaStatus;
   sidebarPlacement: LawyerAiSidebarPlacement;
   adminPricingKey: string;
@@ -58,6 +59,10 @@ export const LAWYER_AI_TOOLS: readonly LawyerAiTool[] = [
     betaStatus: "beta-free",
     sidebarPlacement: "hub-only",
     adminPricingKey: "lawyer.ai.consult",
+    // Wave 1 task 6: /ai/consult starts no AI run — every answer ends at the
+    // beta gate's "not available" card (betaGatedRoutes.ts). So no «بيتا
+    // مجاني»: a free tool that answers nothing is «قريباً».
+    comingSoon: true,
   },
   {
     permission: "ai:quick-answer",
@@ -95,7 +100,9 @@ export const LAWYER_AI_TOOLS: readonly LawyerAiTool[] = [
     // decision Q77), under the owner's own name for the service.
     titleAr: "مراجعة وتدقيق مذكرة",
     titleEn: "Brief Review",
-    betaStatus: "beta-free",
+    // The registry charges every run (src/lib/ai/tools.ts), so the hub shows
+    // that price, not «بيتا مجاني» (Wave 1 task 4).
+    betaStatus: "priced",
     sidebarPlacement: "hub-only",
     adminPricingKey: "lawyer.ai.brief_check",
   },
@@ -122,7 +129,9 @@ export const LAWYER_AI_TOOLS: readonly LawyerAiTool[] = [
     href: "/ai/contract-drafter",
     titleAr: "محترف العقود المختصر",
     titleEn: "Contract Drafter Lite",
-    betaStatus: "beta-free",
+    // The registry charges every run (src/lib/ai/tools.ts), so the hub shows
+    // that price, not «بيتا مجاني» (Wave 1 task 4).
+    betaStatus: "priced",
     sidebarPlacement: "hub-only",
     adminPricingKey: "lawyer.ai.contract_drafter_lite",
   },
@@ -140,8 +149,8 @@ export const LAWYER_AI_TOOLS: readonly LawyerAiTool[] = [
     href: "/ai/analyze-strength",
     titleAr: "محلل قوة الموقف",
     titleEn: "Position Strength Analyzer",
-    // Wave 4: a real 250-point job now (owner's 25-Oct price list), so it is
-    // no longer described as free; no badge until the price list carries it.
+    // Wave 4: a real points job now (owner's 25-Oct price list), so it is
+    // no longer described as free; its badge reads the registry's price.
     betaStatus: "priced",
     sidebarPlacement: "hub-only",
     adminPricingKey: "lawyer.ai.analyze_strength",
@@ -234,7 +243,8 @@ export const LAWYER_AI_TOOLS: readonly LawyerAiTool[] = [
     adminPricingKey: "lawyer.ai.transcriber",
     // Owner answer ١١٥ — both modes printed a fixed transcript of a hearing
     // nobody uploaded; the page renders DashboardComingSoon now, so it is
-    // unpriced (the owner's ٥ is recorded above TOOL_POINT_LABELS).
+    // unpriced (the owner's ٥ is recorded above TOOL_POINT_SOURCES in
+    // lawyerAiBadges.ts).
     comingSoon: true,
   },
   {
@@ -279,7 +289,9 @@ export const LAWYER_AI_TOOLS: readonly LawyerAiTool[] = [
     href: "/ai/communicate",
     titleAr: "المتحدث الذكي",
     titleEn: "Smart Communicator",
-    betaStatus: "beta-free",
+    // The registry charges every run (src/lib/ai/tools.ts), so the hub shows
+    // that price, not «بيتا مجاني» (Wave 1 task 4).
+    betaStatus: "priced",
     sidebarPlacement: "hub-only",
     adminPricingKey: "lawyer.ai.communicate",
   },
@@ -288,7 +300,9 @@ export const LAWYER_AI_TOOLS: readonly LawyerAiTool[] = [
     href: "/ai/assistant",
     titleAr: "المساعد المتقدم",
     titleEn: "Advanced Assistant",
-    betaStatus: "beta-free",
+    // The registry charges every run (src/lib/ai/tools.ts), so the hub shows
+    // that price, not «بيتا مجاني» (Wave 1 task 4).
+    betaStatus: "priced",
     sidebarPlacement: "hub-only",
     adminPricingKey: "lawyer.ai.assistant",
   },
@@ -300,64 +314,6 @@ export const LAWYER_AI_TOOL_BY_PERMISSION = Object.fromEntries(
   LAWYER_AI_TOOLS.map((tool) => [tool.permission, tool]),
 ) as Record<LawyerAiPermission, LawyerAiTool>;
 
-/**
- * A priced tool's cost on the hub, keyed by catalog id (owner answers ١٧٨ and
- * ٢١٦). These are the labels of the rows of `lawyerServicesTable`
- * (src/constants/pricing/pricing.lawyers.ts) that carry the same id in their
- * `tools` — the price list under the lawyer cards on /pricing.
- * pricingApprovals.test.ts holds the two equal both ways round. The map lives
- * here, not there, because this file must stay loadable by `node --test` and
- * pricing.lawyers.ts imports React icons.
- *
- * A priced tool with no entry gets no badge: a missing price is better than a
- * guessed one. That is quick-answer and case-brief (the owner has not priced
- * them), and compare and legal-translate (both returned canned output and are
- * «قريباً» now, owner ١١٥ — the owner's ٢١٦ range is not shown until they
- * work). A `comingSoon` tool shows «قريباً» whatever this map holds.
- *
- * UNPRICED UNTIL THEY WORK (owner ١١٥, fix round 1). These tools are
- * `comingSoon`, so neither this map nor lawyerServicesTable sells them. The
- * owner's approved prices, to restore (here AND as a table row with the same
- * `tools` ids) once each page really answers:
- *   - "ai:analyze": "٨" — row «عصارة المرفقات وتلخيص ملف القضية واستخلاص
- *     النزاع», points 8; the lawyer card also listed «عصارة المرفقات وتلخيص
- *     ملف القضية: ٨ نقاط» / "Attachment digest and case summary: 8 points".
- *   - "ai:transcriber": "٥" and "ai:secretary": "٥" — one shared row,
- *     «التفريغ الصوتي الذكي وأوامر السكرتير», points 5.
- */
-export const TOOL_POINT_LABELS: Record<string, string> = {
-  "ai:draft": "١٥",
-  "ai:contracts": "١٠",
-  "ai:najiz-optimizer": "٥–٨",
-  "ai:wargaming": "١٥–٢٠",
-  "ai:legal-opinion": "١٥–٢٠",
-};
-
-const AR_DIGITS = "٠١٢٣٤٥٦٧٨٩";
-
-/** «١٥–٢٠» → "15–20". */
-function latinDigits(label: string): string {
-  return label.replace(/[٠-٩]/g, (d) => String(AR_DIGITS.indexOf(d)));
-}
-
-/**
- * The noun after a points label: «نقاط» after 3–10 («٨ نقاط», «٥–٨ نقاط»),
- * «نقطة» otherwise («١٥ نقطة», «١٥–٢٠ نقطة»). A range agrees with its upper
- * bound, the number read last.
- */
-function pointsNounAr(label: string): string {
-  const numbers = latinDigits(label).match(/\d+/g) ?? [];
-  const last = Number(numbers[numbers.length - 1]);
-  return last >= 3 && last <= 10 ? "نقاط" : "نقطة";
-}
-
-export function getLawyerAiBadge(tool: LawyerAiTool, lang: "ar" | "en"): string | null {
-  // Checked FIRST, before any price: a tool with no working page is not
-  // "100 points", it is not available. See `comingSoon` on LawyerAiTool.
-  if (tool.comingSoon) return lang === "ar" ? "قريباً" : "Coming soon";
-  if (tool.betaStatus === "beta-free") return lang === "ar" ? "بيتا مجاني" : "Beta free";
-  if (tool.betaStatus === "free") return lang === "ar" ? "مجاني" : "Free";
-  const label = TOOL_POINT_LABELS[tool.permission];
-  if (!label) return null;
-  return lang === "ar" ? `${label} ${pointsNounAr(label)}` : `${latinDigits(label)} pts`;
-}
+// The hub's point badges (TOOL_POINT_SOURCES, TOOL_POINT_LABELS,
+// getLawyerAiBadge) live in lawyerAiBadges.ts: they read the AI registry, and
+// this file stays free of it because useUser loads it on every page.

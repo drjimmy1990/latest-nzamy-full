@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Microphone, PencilLine, CheckCircle, X } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { PartyData } from "./types";
+import { RepresentativeFields } from "@/components/parties/RepresentativeFields";
+import { RequiredMark } from "@/components/ui/RequiredMark";
 
 // ─── Voice Button ─────────────────────────────────────────────────────────────
 export function VoiceBtn({ label = "صوت" }: { label?: string }) {
@@ -39,6 +41,9 @@ export function PartyForm({ data, onChange, isDark }: {
       : "border-zinc-200 bg-zinc-50 text-zinc-800 placeholder:text-zinc-400 focus:border-[#0B3D2E]/40"
   }`;
   const lbl = `block text-[10px] font-semibold mb-1 ${isDark ? "text-zinc-500" : "text-zinc-500"}`;
+  // The name is the one field the order and the AI run need (partyIsNamed):
+  // marked, and tied to its label — the form is on the page twice.
+  const nameId = useId();
   return (
     <div className="space-y-3 mt-4">
       <div className="flex gap-2">
@@ -53,33 +58,25 @@ export function PartyForm({ data, onChange, isDark }: {
       </div>
       {data.type === "company" && (
         <div className="grid grid-cols-2 gap-3">
-          <div><label className={lbl}>اسم الشركة</label><input className={inp} value={data.companyName} onChange={e => onChange("companyName", e.target.value)} placeholder="الاسم التجاري" /></div>
+          <div><label htmlFor={nameId} className={lbl}>اسم الشركة<RequiredMark /></label><input id={nameId} aria-required="true" className={inp} value={data.companyName} onChange={e => onChange("companyName", e.target.value)} placeholder="الاسم التجاري" /></div>
           <div><label className={lbl}>السجل التجاري</label><input className={inp} value={data.commercialReg} onChange={e => onChange("commercialReg", e.target.value)} placeholder="10 أرقام" /></div>
           <div><label className={lbl}>الرقم الموحد (700)</label><input className={inp} value={data.unifiedNum} onChange={e => onChange("unifiedNum", e.target.value)} placeholder="700XXXXXXX" /></div>
           <div><label className={lbl}>الممثل النظامي</label><input className={inp} value={data.representative} onChange={e => onChange("representative", e.target.value)} placeholder="الاسم الكامل" /></div>
-          <div>
-            <label className={lbl}>صفة الممثل</label>
-            <select className={inp} value={data.representativeRole} onChange={e => onChange("representativeRole", e.target.value)}>
-              <option value="">اختر الصفة</option>
-              <option value="مدير عام">مدير عام</option>
-              <option value="عضو مجلس إدارة">عضو مجلس إدارة</option>
-              <option value="مفوض بالتوقيع">مفوض بالتوقيع</option>
-              <option value="مدير">مدير</option>
-            </select>
-          </div>
+          <RepresentativeFields role={data.representativeRole} roleOther={data.representativeRoleOther} repId={data.representativeId}
+            onChange={onChange} inp={inp} lbl={lbl} isDark={isDark} />
           <div className="col-span-2"><label className={lbl}>العنوان</label><input className={inp} value={data.address} onChange={e => onChange("address", e.target.value)} placeholder="المدينة — الحي — الشارع" /></div>
         </div>
       )}
       {data.type === "individual" && (
         <div className="grid grid-cols-2 gap-3">
-          <div><label className={lbl}>الاسم الكامل</label><input className={inp} value={data.fullName} onChange={e => onChange("fullName", e.target.value)} placeholder="الاسم الرباعي" /></div>
+          <div><label htmlFor={nameId} className={lbl}>الاسم الكامل<RequiredMark /></label><input id={nameId} aria-required="true" className={inp} value={data.fullName} onChange={e => onChange("fullName", e.target.value)} placeholder="الاسم الرباعي" /></div>
           <div><label className={lbl}>رقم الهوية / الإقامة</label><input className={inp} value={data.idNumber} onChange={e => onChange("idNumber", e.target.value)} placeholder="10 أرقام" /></div>
           <div><label className={lbl}>الجنسية</label><input className={inp} value={data.nationality} onChange={e => onChange("nationality", e.target.value)} placeholder="سعودي / غير ذلك" /></div>
         </div>
       )}
       {data.type === "government" && (
         <div className="grid grid-cols-2 gap-3">
-          <div><label className={lbl}>اسم الجهة</label><input className={inp} value={data.entityName} onChange={e => onChange("entityName", e.target.value)} placeholder="اسم الجهة الحكومية" /></div>
+          <div><label htmlFor={nameId} className={lbl}>اسم الجهة<RequiredMark /></label><input id={nameId} aria-required="true" className={inp} value={data.entityName} onChange={e => onChange("entityName", e.target.value)} placeholder="اسم الجهة الحكومية" /></div>
           <div><label className={lbl}>الرقم الموحد</label><input className={inp} value={data.unifiedNumGov} onChange={e => onChange("unifiedNumGov", e.target.value)} placeholder="الرقم الموحد" /></div>
           <div><label className={lbl}>المسؤول / جهة التواصل</label><input className={inp} value={data.contactPerson} onChange={e => onChange("contactPerson", e.target.value)} placeholder="الجهة المختصة" /></div>
         </div>

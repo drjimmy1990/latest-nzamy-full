@@ -25,8 +25,27 @@ import { useTheme } from "@/components/ThemeProvider";
 import { services, faqs } from "@/constants/servicesData";
 import { ServiceCard, FAQItem } from "@/components/services/ServiceComponents";
 import { INDIVIDUALS_PYRAMID_PLANS } from "@/lib/pricing/plans";
+import { bookEntry, offeredSar } from "@/lib/pricing/priceBook";
 import { VAT_NOTICE } from "@/lib/pricing/vatNotice";
-import { Warning, UsersThree, Sparkle } from "@phosphor-icons/react";
+import { UsersThree, Sparkle } from "@phosphor-icons/react";
+
+type PyramidCycle = "monthly" | "yearly";
+const PYRAMID_CYCLES: readonly PyramidCycle[] = ["monthly", "yearly"];
+
+/**
+ * A pyramid plan's price in a cycle, read from the price book: null when the
+ * book does not sell it in that cycle (owner package of 1 Nov 2026, q329:
+ * individuals buy yearly only). A card never shows a cycle checkout refuses.
+ */
+function pyramidPrice(id: string, cycle: PyramidCycle): number | null {
+  const entry = bookEntry(id);
+  return entry ? offeredSar(entry, cycle) : null;
+}
+
+/** The cycles at least one pyramid plan is sold in; the toggle shows only with two. */
+const PYRAMID_SELLING_CYCLES = PYRAMID_CYCLES.filter((c) =>
+  Object.values(INDIVIDUALS_PYRAMID_PLANS).some((plan) => pyramidPrice(plan.id, c) !== null),
+);
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -34,7 +53,11 @@ export default function IndividualsPage() {
   const { lang } = useTheme();
   const isAr = lang === "ar";
   const [selectedService, setSelectedService] = useState<string | null>(null);
-  const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
+  const [billingCycle, setBillingCycle] = useState<PyramidCycle>("yearly");
+  const shownCycle: PyramidCycle = PYRAMID_SELLING_CYCLES.includes(billingCycle)
+    ? billingCycle
+    : (PYRAMID_SELLING_CYCLES[0] ?? "yearly");
+  const pyramidPlans = Object.values(INDIVIDUALS_PYRAMID_PLANS).filter((plan) => pyramidPrice(plan.id, shownCycle) !== null);
   const serviceList = isAr ? services.ar : services.en;
   // The number of cards below, counted — never a literal (it said «٦» while
   // being typed by hand).
@@ -260,7 +283,7 @@ export default function IndividualsPage() {
                       </div>
                       <div className="flex flex-col gap-4">
                         <div className="rounded-2xl border border-slate-100 bg-surface p-6 dark:border-white/10 dark:bg-dark-bg">
-                          <div className="text-xs text-ink-faint dark:text-gray-500">{isAr ? "السعر يبدأ من" : "Starting price"}</div>
+                          <div className="text-xs text-ink-faint dark:text-gray-500">{isAr ? "السعر" : "Price"}</div>
                           <div className="font-brand mt-1 text-2xl font-bold text-royal dark:text-gold">{selected.price}</div>
                           <div className="mt-1 text-xs text-ink-muted dark:text-gray-400">{isAr ? "مدة الخدمة:" : "Service duration:"} {selected.duration}</div>
                         </div>
@@ -306,17 +329,18 @@ export default function IndividualsPage() {
               </h2>
               <p className="mx-auto mt-3 max-w-[65ch] text-sm text-ink-muted dark:text-gray-400">
                 {isAr
-                  ? "اختر المستوى المناسب لاحتياجك من الاستشارة الذكية حتى التمثيل القضائي المتكامل أمام المحاكم."
-                  : "Choose the level that suits your needs from AI advisory to full court litigation representation."}
+                  ? "اشتراك سنوي في الباقة الذكية، وكل خدمة أخرى تُطلب وحدها دون اشتراك."
+                  : "A yearly subscription to the Smart AI plan; every other service is ordered on its own, with no subscription."}
               </p>
 
-              {/* Billing Toggle */}
+              {/* Billing Toggle — only while plans are sold in two cycles */}
+              {PYRAMID_SELLING_CYCLES.length >= 2 && (
               <div className="mt-8 inline-flex items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1.5 dark:border-white/10 dark:bg-dark-card shadow-sm">
                 <button
                   type="button"
                   onClick={() => setBillingCycle("monthly")}
                   className={`px-5 py-2 rounded-xl text-xs font-bold transition-all ${
-                    billingCycle === "monthly"
+                    shownCycle === "monthly"
                       ? "bg-royal text-white shadow-sm"
                       : "text-ink-muted hover:text-ink dark:text-gray-400"
                   }`}
@@ -327,7 +351,7 @@ export default function IndividualsPage() {
                   type="button"
                   onClick={() => setBillingCycle("yearly")}
                   className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold transition-all ${
-                    billingCycle === "yearly"
+                    shownCycle === "yearly"
                       ? "bg-royal text-white shadow-sm"
                       : "text-ink-muted hover:text-ink dark:text-gray-400"
                   }`}
@@ -338,13 +362,14 @@ export default function IndividualsPage() {
                   </span>
                 </button>
               </div>
+              )}
             </motion.div>
 
             {/* Pyramid Grid */}
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {Object.values(INDIVIDUALS_PYRAMID_PLANS).map((plan, idx) => {
-                const isYearly = billingCycle === "yearly";
-                const price = isYearly ? plan.priceYearly : plan.priceMonthly;
+              {pyramidPlans.map((plan, idx) => {
+                const isYearly = shownCycle === "yearly";
+                const price = pyramidPrice(plan.id, shownCycle) ?? 0;
                 const period = isYearly
                   ? isAr ? plan.periodYearlyAr : plan.periodYearlyEn
                   : isAr ? plan.periodMonthlyAr : plan.periodMonthlyEn;
@@ -367,13 +392,10 @@ export default function IndividualsPage() {
                       {plan.badgeAr && (
                         <div className="mb-4">
                           <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-bold border ${
-                            plan.requiresUnderwriting
-                              ? "bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-400"
-                              : plan.highlighted
+                            plan.highlighted
                               ? "bg-royal/10 border-royal/30 text-royal dark:text-gold"
                               : "bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-700 dark:text-zinc-300"
                           }`}>
-                            {plan.requiresUnderwriting && <Warning size={12} weight="fill" />}
                             {isAr ? plan.badgeAr : plan.badgeEn}
                           </span>
                         </div>
@@ -397,16 +419,6 @@ export default function IndividualsPage() {
                           </span>
                         </div>
                       </div>
-
-                      {/* Underwriting Alert for Litigation */}
-                      {plan.requiresUnderwriting && (
-                        <div className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/5 p-2.5 text-[11px] text-amber-700 dark:text-amber-400 leading-relaxed">
-                          <strong>{isAr ? "تنبيه اكتتاب:" : "Underwriting Notice:"}</strong>{" "}
-                          {isAr
-                            ? "تخضع القضايا للتحقق المهني ودراسة الأهلية وخلو النزاع من التعارض قبل التفعيل."
-                            : "Cases undergo strict intake qualification and conflict checks before activation."}
-                        </div>
-                      )}
 
                       {/* Features */}
                       <ul className="space-y-2.5 mb-6 text-xs text-ink-muted dark:text-gray-300">

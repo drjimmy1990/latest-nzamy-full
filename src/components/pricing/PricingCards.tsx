@@ -9,6 +9,7 @@ import {
 } from "@phosphor-icons/react";
 import type { Plan, AudienceTab, Billing } from "@/constants/pricingData";
 import { lawyerServicesTable, LAWYER_ARCHIVE_NOTE } from "@/constants/pricing/pricing.lawyers";
+import { aiToolPointsLabel, aiToolPriceUnit } from "@/lib/ai/toolPointsDisplay";
 import { useUser } from "@/hooks/useUser";
 import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
 import { buyButtonAction } from "@/lib/payments/checkoutView";
@@ -428,12 +429,18 @@ function LawyerServicesTable({ isAr }: { isAr: boolean }) {
             <div className="mb-6 rounded-2xl border border-amber-200/60 bg-amber-50/60 px-5 py-3.5 text-[12px] text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/5 dark:text-amber-300 flex items-start gap-3" dir={isAr ? "rtl" : "ltr"}>
               <span className="text-xl">💡</span>
               <p className="leading-relaxed">
-                {/* Owner answer ٢١٦ and gate G4: nothing is deducted yet, so the
-                    table is a price list, not a running meter. */}
+                {/* Wave 1 task 6. Whether a run debits points is a runtime
+                    switch — platform_settings.points_enforcement, read by
+                    ai_start_run (20261027_10) — not the e-payment launch, and
+                    this page cannot see it. So the copy is true in both states:
+                    it states the price, never when deduction starts. Nor does
+                    it say an unlisted tool has no price: quick-answer,
+                    case-brief, analyze-strength, contract-drafter, communicate
+                    and canvas-card are charged and are not rows here. */}
                 <span className="font-bold">{isAr ? "كيف تقرأ الجدول؟" : "How to read this table"}</span><br/>
                 {isAr
-                  ? "هذا الجدول قائمة أسعار الأدوات بالنقاط، ويبدأ الخصم الآلي من رصيدك مع إطلاق الدفع الإلكتروني. والأدوات غير المذكورة فيه لم تُحدَّد تكلفتها بعد."
-                  : "This table is the tools' price list in points; automatic deduction from your balance starts with electronic payment. Tools not listed have no price yet."}
+                  ? "هذا الجدول قائمة أسعار أدوات المحامي بالنقاط: تكلفة كل تشغيل للأداة."
+                  : "This table is the lawyer tools' price list in points: the cost of one run of each tool."}
               </p>
             </div>
 
@@ -454,22 +461,32 @@ function LawyerServicesTable({ isAr }: { isAr: boolean }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {cat.items.map((item, ii) => (
+                      {cat.items.map((item, ii) => {
+                        // An AI row prints what the registry charges (Wave 1
+                        // task 4); a row with no backend says «قريباً», no number.
+                        const aiTool = typeof item.price === "object" ? item.price.aiTool : null;
+                        const note = [item.note, aiTool && aiToolPriceUnit(aiTool, "ar")].filter(Boolean).join(" · ");
+                        return (
                         <tr key={ii} className={`border-b border-slate-50 dark:border-white/5 ${
-                          item.points === 0 ? "bg-emerald-50/40 dark:bg-emerald-500/5" :
+                          item.price === "free" ? "bg-emerald-50/40 dark:bg-emerald-500/5" :
                           ii % 2 ? "bg-slate-50/40 dark:bg-white/[0.015]" : ""
                         }`}>
                           <td className="px-5 py-2.5 text-right text-[12px] text-ink" dir="rtl">
                             {item.name}
-                            {item.note && (
-                              <span className="mr-1.5 block md:inline-block text-[10px] font-semibold text-amber-600 dark:text-amber-400">{item.note}</span>
+                            {note && (
+                              <span className="mr-1.5 block md:inline-block text-[10px] font-semibold text-amber-600 dark:text-amber-400">{note}</span>
                             )}
                           </td>
-                          <td className="px-3 py-2.5 text-center font-mono text-[12px] font-bold text-royal">
-                            {item.points === 0 ? "—" : (item.pointsLabel ?? item.points.toLocaleString("ar-SA"))}
-                          </td>
+                          {item.price === "soon" ? (
+                            <td className="px-3 py-2.5 text-center text-[11px] font-semibold text-ink-faint">قريباً</td>
+                          ) : (
+                            <td className="px-3 py-2.5 text-center font-mono text-[12px] font-bold text-royal">
+                              {aiTool ? aiToolPointsLabel(aiTool, "ar") : "—"}
+                            </td>
+                          )}
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

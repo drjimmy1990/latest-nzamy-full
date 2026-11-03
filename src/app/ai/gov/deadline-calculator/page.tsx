@@ -1,4 +1,5 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
@@ -66,7 +67,7 @@ function reasonAr(reason: "weekend" | "holiday", titleAr?: string): string {
   return reason === "weekend" ? "عطلة نهاية الأسبوع" : titleAr || "عطلة رسمية";
 }
 
-export default function DeadlineCalculatorPage() {
+function DeadlineCalculatorInner() {
   const { isDark } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [deadlines, setDeadlines] = useState<DeadlineItem[]>([]);
@@ -315,5 +316,14 @@ export default function DeadlineCalculatorPage() {
         )}
       </div>
     </div>
+  );
+}
+
+// Wave 1 task 6: the beta gate first — no form or timer before it.
+export default function DeadlineCalculatorPage() {
+  return (
+    <GatedToolScreen toolId="gov.deadline-calculator" toolName="حساب المواعيد الإجرائية">
+      <DeadlineCalculatorInner />
+    </GatedToolScreen>
   );
 }

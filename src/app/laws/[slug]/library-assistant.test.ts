@@ -7,6 +7,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { askLibrary, LIBRARY_AI_SOON, lawSlugFromPath } from "./_library-assistant.ts";
+import { libraryLockMessageAr, LIBRARY_LOCK_SUPPORT_PATH } from "../../../lib/library/readQuota.ts";
 
 function reply(status: number, body: unknown) {
   const sent: Array<Record<string, unknown>> = [];
@@ -53,6 +54,19 @@ test("a tool that is off reads «قيد التفعيل»; the server's own refus
   assert.equal((await askLibrary({ message: "س" }, "/", reply(423, { error: "off", code: "tool_off" }).fetchImpl)).text, LIBRARY_AI_SOON);
   const none = await askLibrary({ message: "س" }, "/", reply(422, { error: "لم أجد في مكتبة الأنظمة…", code: "no_sources" }).fetchImpl);
   assert.deepEqual(none, { text: "لم أجد في مكتبة الأنظمة…", citations: [] });
+});
+
+test("a library lock (423 library_security_lock) shows the lock's own message and the support link, not «قيد التفعيل»", async () => {
+  const error = libraryLockMessageAr("SEC-AB12");
+  const out = await askLibrary(
+    { message: "س" },
+    "/laws/a",
+    reply(423, { error, code: "library_security_lock", reference: "SEC-AB12", support: LIBRARY_LOCK_SUPPORT_PATH }).fetchImpl,
+  );
+  assert.equal(out.text, error);
+  assert.notEqual(out.text, LIBRARY_AI_SOON);
+  assert.deepEqual(out.action, { label: "تواصل معنا", href: LIBRARY_LOCK_SUPPORT_PATH });
+  assert.deepEqual(out.citations, []);
 });
 
 test("a network failure is a plain error, never an invented reply", async () => {

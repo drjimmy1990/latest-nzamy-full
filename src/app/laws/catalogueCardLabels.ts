@@ -15,22 +15,14 @@ function text(v: unknown): string {
   return typeof v === "string" ? v.replace(/\s+/g, " ").trim() : "";
 }
 
-/** The title already names its regulation(s): the badge does not say it again. */
-const TITLE_NAMES_REGULATION = /و(?:لائحته|لوائحه|قواعده|ضوابطه)(?:\s+التنفيذية)?/;
-
 /**
- * ١٢-٤ — the merged-file badge, or "" for a law with nothing merged.
- *   `count` = how many subsidiary instruments are merged, when the data says
- *   (library.laws carries only the `has_merged_regulation` flag today, so the
- *   catalogue passes null and the badge names «اللائحة التنفيذية»).
+ * ١٢-٤ / BUG-LIB-07 (owner q382) — the merged-file badge: the one word
+ * «مدمج», or "" for a law with nothing merged. The subsidiary names that
+ * would follow it (mergedFileName below) are not in the database yet —
+ * library.laws carries only the `has_merged_regulation` flag (BUG-LIB-06).
  */
-export function mergedFileBadge(hasMerged: unknown, count: number | null = null, title: unknown = ""): string {
-  if (hasMerged !== true) return "";
-  if (typeof count === "number" && Number.isFinite(count) && count >= 2) {
-    return `📚 ملف مدمج · شامل ${count} ${count <= 10 ? "لوائح وقواعد" : "لائحة وقاعدة"}`;
-  }
-  if (TITLE_NAMES_REGULATION.test(text(title))) return "📚 ملف مدمج";
-  return "📚 ملف مدمج · شامل اللائحة التنفيذية";
+export function mergedFileBadge(hasMerged: unknown): string {
+  return hasMerged === true ? "مدمج" : "";
 }
 
 /**

@@ -23,8 +23,8 @@ function resolvePath(event: string, status: string | undefined): string | null {
  * break the parent write (same contract as recordEvent in src/lib/events.ts).
  * Returns { delivered: false } and makes NO network call when
  * N8N_WEBHOOK_BASE_URL is unset (the default), so this is inert until n8n is
- * actually wired. Mirrors the live outbound pattern in
- * src/app/api/ai/library-chat/route.ts (fetch + X-Webhook-Secret).
+ * actually wired. Mirrors the outbound pattern (fetch + X-Webhook-Secret) of
+ * the since-deleted src/app/api/ai/library-chat/route.ts.
  */
 export async function dispatchToN8n(
   event: string,

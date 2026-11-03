@@ -4,9 +4,11 @@ import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Broom, X, Copy, Check, DownloadSimple, Warning, CheckCircle, XCircle, MathOperations, Eraser, ListNumbers, Sparkle, TextT, ArrowSquareOut } from "@phosphor-icons/react";
 import AiResultActions from "@/components/AiResultActions";
+import { arabicPoints } from "@/lib/ai/toolPointsDisplay";
+import { NAJIZ_TARGET_CHARS } from "@/lib/ai/tools";
 
-const MAX_CHARS = 10_000;
-const TARGET_CHARS = 9_000;
+// The server's one limit (tools.ts), as on /ai/najiz-optimizer — never 10,000.
+const MAX_CHARS = NAJIZ_TARGET_CHARS;
 
 interface OptimizationReport {
   originalLength: number;
@@ -52,13 +54,13 @@ function runNajizOptimizer(text: string): { result: string; report: Optimization
 
 function CharBar({ count, isDark }: { count: number; isDark: boolean }) {
   const pct = Math.min((count / MAX_CHARS) * 100, 100);
-  const color = count > MAX_CHARS ? "bg-red-500" : count > TARGET_CHARS ? "bg-amber-500" : "bg-emerald-500";
-  const label = count > MAX_CHARS ? "text-red-500" : count > TARGET_CHARS ? "text-amber-500" : "text-emerald-500";
+  const color = count > MAX_CHARS ? "bg-red-500" : "bg-emerald-500";
+  const label = count > MAX_CHARS ? "text-red-500" : "text-emerald-500";
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between text-[11px] font-bold">
-        <span className={label}>{count.toLocaleString()} حرف</span>
-        <span className={isDark ? "text-zinc-500" : "text-slate-400"}>الحد الأقصى: {MAX_CHARS.toLocaleString()}</span>
+        <span className={label}>{arabicPoints(count)} حرف</span>
+        <span className={isDark ? "text-zinc-500" : "text-slate-400"}>الحد الأقصى: {arabicPoints(MAX_CHARS)}</span>
       </div>
       <div className={`h-1.5 rounded-full overflow-hidden ${isDark ? "bg-zinc-800" : "bg-slate-100"}`}>
         <motion.div initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ duration: 0.4 }} className={`h-full rounded-full ${color}`} />

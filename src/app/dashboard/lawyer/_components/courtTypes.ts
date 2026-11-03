@@ -30,6 +30,27 @@ export const COURT_CHOICES = [
   "محكمة الأسرة",
 ] as const;
 
+/**
+ * The classification a saved court belongs to — one of COURT_CHOICES — or
+ * null when there is none (owner q351, review I1). The ONE function every
+ * screen uses when a court decides something: the case card's degree badge,
+ * the degree kanban and filter (through `courtToDegree`), and the court filter.
+ *
+ *   1. a name that IS one of the 14 classifications → itself (unchanged);
+ *   2. otherwise the class saved beside the name (`metadata.courtClass`),
+ *      written when the court was picked from the MoJ directory
+ *      (courtSearch.ts `directoryCourtClass`) — a jsonb key, no new column;
+ *   3. otherwise null: a typed «أخرى» name, «بانتظار تحديد الجهة», nothing —
+ *      exactly today's reading (degree «ابتدائي», outside every court filter).
+ */
+export function courtClassOf(name: string | null | undefined, savedClass?: unknown): string | null {
+  const choices = COURT_CHOICES as readonly string[];
+  const n = name ?? ""; // exact, as the board always matched
+  if (choices.includes(n)) return n;
+  if (typeof savedClass === "string" && choices.includes(savedClass)) return savedClass;
+  return null;
+}
+
 /** The «أخرى» choice — the court is then whatever the lawyer types. */
 export const COURT_OTHER = "__other__";
 export const COURT_OTHER_LABEL = "أخرى";
