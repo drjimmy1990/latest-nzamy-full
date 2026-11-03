@@ -133,8 +133,7 @@ export function GlobalSearch() {
   // null for every non-admin session, which keeps its own values.
   const adminSim = useAdminSimulation(!userLoading && sessionUserType === "admin");
   const simId = simulatedNavIdentity(sessionUserType, adminSim, userType);
-  const groups = getSidebarByUserType(
-    userType, "full", subRole, active_roles ?? [],
+  const groups = getSidebarByUserType(userType, "full", subRole, active_roles ?? [],
     simId ? simId.governmentRole : governmentRole, businessRole,
     simId ? simId.affiliationRole : affiliation?.role, isDemoBypass, country,
     simId ? simId.practiceKind : practiceKind, staffRole,
