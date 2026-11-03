@@ -753,7 +753,8 @@ export default function SidebarPanel({
     <div className="space-y-3">
       {/* ── فهرس المواد + Quick Jump ── */}
       <div className={`${card} ${border} p-3`}>
-        {/* خانة البحث السريع */}
+        {/* «انتقل إلى مادة» — navigation only (BUG-LIB-04): number, locator or
+            title via matchArticleJump; the reader's one search is ScopedSearchPanel. */}
         <div className={`flex items-center gap-1.5 mb-2.5 px-2 py-1.5 rounded-xl border transition ${isDark ? "bg-zinc-800/60 border-white/[0.06] focus-within:border-[#C8A762]/30" : "bg-slate-50 border-slate-200 focus-within:border-[#0B3D2E]/30"}`}>
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={muted}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input
@@ -767,7 +768,8 @@ export default function SidebarPanel({
                 setJumpQuery("");
               }
             }}
-            placeholder={isRTL ? "انتقل لمادة... (١، ثامنة، ...)" : "Jump to article..."}
+            placeholder={isRTL ? "انتقل إلى مادة… (١٢، الثامنة، عنوانها)" : "Go to article…"}
+            aria-label={isRTL ? "انتقل إلى مادة: رقمها أو موضعها أو عنوانها — للبحث في النصوص استخدم خانة البحث في هذا النظام" : "Go to an article by number, locator or title"}
             dir={isRTL ? "rtl" : "ltr"}
             className={`flex-1 bg-transparent text-[11px] outline-none placeholder:text-[10px] ${isDark ? "text-zinc-300 placeholder:text-zinc-600" : "text-zinc-700 placeholder:text-slate-400"}`}
           />

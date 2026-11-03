@@ -15,20 +15,25 @@ const diffView = read("./_word-diff.tsx");
 
 test("the reader reads ?q= and wraps the article list in one HighlightProvider", () => {
   assert.match(page, /const arrivalQuery = searchParams\?\.get\("q"\) \?\? "";/);
-  assert.match(page, /const highlightQuery = jumpQuery\.trim\(\) \? jumpQuery : arrivalQuery;/);
+  // BUG-LIB-04 (S1 Task 11): the colours come from ?q= only, never the jump box.
+  assert.match(page, /const highlightQuery = arrivalQuery;/);
   assert.equal((page.match(/<HighlightProvider query=/g) ?? []).length, 1);
   assert.match(page, /<HighlightProvider query=\{highlightQuery\}>/);
   assert.match(page, /<SearchLegendBar\s+onClear=\{clearHighlight\}/);
 });
 
-test("?q= only colours: it never reaches the article filter", () => {
-  const start = page.indexOf("const filteredArticles = (() => {");
-  const end = page.indexOf("})();", start);
+test("?q= only colours: it never reaches the jump box, and the jump box never filters the page", () => {
+  const start = page.indexOf("const jumpArticles = useMemo(() => {");
+  const end = page.indexOf("}, [jumpQuery, allArticles]);", start);
   assert.ok(start > 0 && end > start);
-  const filter = page.slice(start, end);
-  assert.match(filter, /jumpQuery\.trim\(\)/);
-  assert.doesNotMatch(filter, /arrivalQuery|highlightQuery|searchParams/);
+  const jump = page.slice(start, end);
+  assert.match(jump, /jumpQuery\.trim\(\)/);
+  assert.match(jump, /matchArticleJump\(jumpQuery, allArticles\)/);
+  assert.doesNotMatch(jump, /arrivalQuery|highlightQuery|searchParams/);
   assert.doesNotMatch(page, /setJumpQuery\(\s*(?:arrivalQuery|searchParams)/);
+  // BUG-LIB-04: the body never filters — the jump list feeds the sidebars only.
+  assert.doesNotMatch(page, /filteredArticles\s*\?/);
+  assert.doesNotMatch(page, /const filteredArticles\b/);
 });
 
 test("✕ drops ?q= without a scroll jump and keeps the hash", () => {

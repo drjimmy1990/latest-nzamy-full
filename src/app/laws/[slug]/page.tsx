@@ -44,6 +44,7 @@ import { READER_SCROLL_MARGIN_TOP, buildRegulationAnchors, regulationCardId } fr
 import { ResearchWorkspace } from "@/components/ResearchWorkspace";
 import { apiSlug } from '@/utils/apiSlug';
 import ScopedSearchPanel from "@/components/library/ScopedSearchPanel";
+import { matchArticleJump } from "./articleJump";
 import { HighlightProvider, SearchLegendBar, useHighlight } from "@/components/search/MultiColorHighlight";
 
 /**
@@ -175,16 +176,17 @@ function LawSystemPageContent() {
   
   const searchParams = useSearchParams();
   // Owner note ٠٦: the search the reader arrived with (/laws result → ?q=).
-  // It COLOURS the matches only — it never feeds jumpQuery / filteredArticles,
+  // It COLOURS the matches only — it never feeds jumpQuery / jumpArticles,
   // so every other article stays on the page (read in full context).
   const arrivalQuery = searchParams?.get("q") ?? "";
-  // The in-page box wins while it has text: its filter and its colours agree.
-  const highlightQuery = jumpQuery.trim() ? jumpQuery : arrivalQuery;
+  // BUG-LIB-04 (S1 Task 11): the colours come from ?q= only. The sidebar box
+  // is «انتقل إلى مادة» — navigation, not a second search bar; the reader's
+  // one search is ScopedSearchPanel.
+  const highlightQuery = arrivalQuery;
   const router = useRouter();
   const pathname = usePathname();
   // «✕ مسح الألوان»: empty the box and drop ?q= (other params and the #hash kept, no scroll jump).
   const clearHighlight = useCallback(() => {
-    setJumpQuery("");
     if (!searchParams?.get("q")) return;
     const next = new URLSearchParams(searchParams.toString());
     next.delete("q");
@@ -636,32 +638,15 @@ function LawSystemPageContent() {
   const activeArticle = allArticles.find(a => a.id === activeId) ?? null;
   const cartMap      = new Map(cart.map(e => [e.articleId, e]));
 
-  // فلترة البحث الشاملة — رقم المادة + عنوانها + نص المادة + اللائحة التنفيذية
-  const filteredArticles = (() => {
-    const q = jumpQuery.trim();
-    if (!q) return null; // null = no filter, show full chapter tree
-    const normalize = (s: string) =>
-      s
-        .replace(/[أإآا]/g, "ا")
-        .replace(/[ةه]/g, "ه")
-        .replace(/[يى]/g, "ي")
-        .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
-        .replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
-        .toLowerCase();
-    const nq = normalize(q);
-    return allArticles.filter(a => {
-      const mergedReg = getMergedReg(a);
-      const haystack = normalize([
-        a.num,
-        a.title ?? "",
-        a.text,
-        mergedReg?.text ?? "",
-        mergedReg?.ref  ?? "",
-        a.id,
-      ].join(" "));
-      return haystack.includes(nq);
-    });
-  })();
+  // «انتقل إلى مادة» (BUG-LIB-04): the articles the sidebar box names by
+  // number, locator or title — never by text (articleJump.ts). null = the box
+  // is empty and the sidebar shows the chapter tree. The page body never
+  // filters: every article stays on the page.
+  const jumpArticles = useMemo(() => {
+    if (!jumpQuery.trim()) return null;
+    const ids = new Set(matchArticleJump(jumpQuery, allArticles));
+    return allArticles.filter((a) => ids.has(a.id));
+  }, [jumpQuery, allArticles]);
 
   const getOrCreateEntry = useCallback((a: LawArticle): CartEntry => {
     const mergedReg = getMergedReg(a);
@@ -985,7 +970,7 @@ function LawSystemPageContent() {
                 setActiveId={setActiveId}
                 jumpQuery={jumpQuery}
                 setJumpQuery={setJumpQuery}
-                filteredArticles={filteredArticles}
+                filteredArticles={jumpArticles}
                 cartMap={cartMap}
                 isScrolling={isScrolling}
                 setShowFolderModal={setShowFolderModal}
@@ -1006,7 +991,7 @@ function LawSystemPageContent() {
                 setActiveId={setActiveId}
                 jumpQuery={jumpQuery}
                 setJumpQuery={setJumpQuery}
-                filteredArticles={filteredArticles}
+                filteredArticles={jumpArticles}
                 cartMap={cartMap}
                 isScrolling={isScrolling}
                 setShowFolderModal={setShowFolderModal}
@@ -1106,8 +1091,8 @@ function LawSystemPageContent() {
             <div className="space-y-4">
             <SearchLegendBar
               onClear={clearHighlight}
-              // Counts are of what is on the page: the box's filter, or locked articles' withheld text.
-              partial={!!filteredArticles || (!viewerHasFullAccess && allArticles.some(a => !a.free))}
+              // Counts are of what is on the page: locked articles' text is withheld.
+              partial={!viewerHasFullAccess && allArticles.some(a => !a.free)}
               className="sticky top-28 z-20 print:hidden"
             />
             <ReaderArrivalScroll query={arrivalQuery} deps={[law, viewMode]} />
@@ -1438,11 +1423,7 @@ function LawSystemPageContent() {
                     // ── ترتيب تسلسلي
                     .sort((a, b) => extractRegNum(a) - extractRegNum(b));
 
-                  const visibleRegArts = filteredArticles
-                    ? regArticles.filter(a => filteredArticles.some(f => f.id === a.id))
-                    : regArticles;
-
-                  return visibleRegArts.map(article => (
+                  return regArticles.map(article => (
                     <ArticleBlock
                       key={article.id}
                       article={article}
@@ -1469,9 +1450,7 @@ function LawSystemPageContent() {
               </div>
             ) : (
               (() => {
-                const visibleArticlesOf = (ch: LawChapter) => filteredArticles
-                  ? ch.articles.filter(a => filteredArticles.some(f => f.id === a.id))
-                  : ch.articles;
+                const visibleArticlesOf = (ch: LawChapter) => ch.articles;
                 const renderArticle = (article: LawArticle) => (
                   <ArticleBlock
                     key={article.id}
@@ -1513,7 +1492,7 @@ function LawSystemPageContent() {
                     if (displayedArts.length === 0) return null;
                     return (
                       <div key={node.index} className="space-y-3">
-                        {!filteredArticles && chapterPill(ch.title)}
+                        {chapterPill(ch.title)}
                         {displayedArts.map(renderArticle)}
                       </div>
                     );
@@ -1527,18 +1506,16 @@ function LawSystemPageContent() {
                   if (ownArts.length === 0 && children.every((child) => child.arts.length === 0)) return null;
                   return (
                     <div key={node.index} className="space-y-3">
-                      {!filteredArticles && (
-                        <div className="flex items-center gap-3 pt-3 pb-1">
-                          <span className={`text-[12px] font-black px-3.5 py-1.5 rounded-xl border ${isDark ? "border-[#C8A762]/25 text-[#C8A762] bg-[#0B3D2E]/40" : "border-[#0B3D2E]/15 text-[#0B3D2E] bg-[#0B3D2E]/5"}`}>
-                            {node.chapter.title}
-                          </span>
-                          <div className={`h-px flex-1 ${isDark ? "bg-[#C8A762]/15" : "bg-[#0B3D2E]/15"}`} />
-                        </div>
-                      )}
+                      <div className="flex items-center gap-3 pt-3 pb-1">
+                        <span className={`text-[12px] font-black px-3.5 py-1.5 rounded-xl border ${isDark ? "border-[#C8A762]/25 text-[#C8A762] bg-[#0B3D2E]/40" : "border-[#0B3D2E]/15 text-[#0B3D2E] bg-[#0B3D2E]/5"}`}>
+                          {node.chapter.title}
+                        </span>
+                        <div className={`h-px flex-1 ${isDark ? "bg-[#C8A762]/15" : "bg-[#0B3D2E]/15"}`} />
+                      </div>
                       {ownArts.map(renderArticle)}
                       {children.map((child) => child.arts.length === 0 ? null : (
                         <div key={child.index} className="space-y-3">
-                          {!filteredArticles && chapterPill(child.chapter.title)}
+                          {chapterPill(child.chapter.title)}
                           {child.arts.map(renderArticle)}
                         </div>
                       ))}
@@ -1699,7 +1676,7 @@ function LawSystemPageContent() {
                   isDark={isDark} isRTL={isRTL} law={law} lawMeta={lawMeta}
                   sectionColors={sectionColors} activeId={activeId} setActiveId={setActiveId}
                   jumpQuery={jumpQuery} setJumpQuery={setJumpQuery}
-                  filteredArticles={filteredArticles} cartMap={cartMap} isScrolling={isScrolling}
+                  filteredArticles={jumpArticles} cartMap={cartMap} isScrolling={isScrolling}
                   setShowFolderModal={setShowFolderModal} setShowPaywall={setShowPaywall}
                   userType={userType} mode="identity" viewMode={viewMode as any}
                   officialMeta={officialMeta}
@@ -1708,7 +1685,7 @@ function LawSystemPageContent() {
                   isDark={isDark} isRTL={isRTL} law={law} lawMeta={lawMeta}
                   sectionColors={sectionColors} activeId={activeId} setActiveId={setActiveId}
                   jumpQuery={jumpQuery} setJumpQuery={setJumpQuery}
-                  filteredArticles={filteredArticles} cartMap={cartMap} isScrolling={isScrolling}
+                  filteredArticles={jumpArticles} cartMap={cartMap} isScrolling={isScrolling}
                   setShowFolderModal={setShowFolderModal} setShowPaywall={setShowPaywall}
                   userType={userType} mode="index" viewMode={viewMode as any}
                   regulationAnchorFor={flatRegulationView ? regulationAnchorFor : undefined}

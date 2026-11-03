@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  fromApiBook, fromNestedBook, filterToc, findBlock, loadedBlocks, linkRun, emptyLinks,
+  fromApiBook, fromNestedBook, findBlock, loadedBlocks, linkRun, emptyLinks,
   mergeSectionBlocks, neighbour, normalizeBlock, orderedSectionIds, chapterOfSection,
   parseSeries, runFromCursorResponse, type BlocksBySection, type BookLinks, type CompleteSections,
 } from "./_reader-model.ts";
@@ -196,15 +196,6 @@ test("linkRun: a section spanning two windows completes once both are linked", (
   assert.deepEqual(Object.keys(second.complete).sort(), ["sa", "sx"]); // sb may continue
 });
 
-test("TOC filter: chapter titles, section titles and loaded block text", () => {
-  const st = fromApiBook(api);
-  assert.deepEqual(filterToc(st.book.chapters, st.blocksBySection, "الزكاه").map((c) => c.id), ["c3"]); // ة/ه folded
-  const byBlock = filterToc(st.book.chapters, st.blocksBySection, "ماء");
-  assert.deepEqual(byBlock.map((c) => c.id), ["c1"]);
-  assert.deepEqual(byBlock[0].sections.map((s) => s.id), ["s2"]);
-  assert.equal(filterToc(st.book.chapters, st.blocksBySection, "").length, 3);
-});
-
 test("the legacy nested shape (demo / JSON fallback) still reads", () => {
   const st = fromNestedBook({
     id: "rawd", title: "الروض", author: "", school: "", investigator: "", publisher: "دار", totalVolumes: 1,
@@ -292,12 +283,6 @@ test("N2.3: the reader page draws its buttons from READER_LAYERS and its parts f
   }
   assert.match(block, /emptyLayerNote\(block, viewLayer, isRTL\)/);
   assert.match(page, /aria-pressed=\{viewLayer === layer\.id\}/);
-});
-
-test("TOC filter matches Arabic-Indic and Western digits bidirectionally", () => {
-  const st = fromApiBook(sentinelBook);
-  assert.deepEqual(filterToc(st.book.chapters, st.blocksBySection, "461").map((c) => c.id), ["c461"]);
-  assert.deepEqual(filterToc(st.book.chapters, st.blocksBySection, "٤").map((c) => c.id), ["c0", "c461"]);
 });
 
 // ── Owner note ٠٢: the continuous stream ─────────────────────────────────────
@@ -439,14 +424,6 @@ test("note ٠٢: «انتقال للصفحة» parses page / volume, folds digit
   assert.deepEqual(parseJumpQuery("3/"), { vol: "3", page: null, server: null });
 });
 
-test("note ٠٦: the index filter speaks the search grammar (AND, exclusion) like the highlight", () => {
-  const st = fromApiBook(api);
-  // «ماء + شرح»: both words in b2 (section s2) → kept; «ماء -شرح» excludes it.
-  assert.deepEqual(filterToc(st.book.chapters, st.blocksBySection, "ماء + شرح").map((c) => c.id), ["c1"]);
-  assert.deepEqual(filterToc(st.book.chapters, st.blocksBySection, "ماء -شرح"), []);
-  assert.equal(filterToc(st.book.chapters, st.blocksBySection, "  ").length, 3);
-});
-
 // ── Source contract: the single-block reader is gone ─────────────────────────
 test("note ٠٢: the page renders the stream, with per-block actions, and no single-block navigation", () => {
   const here = path.dirname(fileURLToPath(import.meta.url));
@@ -465,7 +442,7 @@ test("note ٠٢: the page renders the stream, with per-block actions, and no sin
   assert.match(block, /نسخ بالتوثيق/);
   assert.match(block, /إضافة للمسودة/);
   assert.match(block, /\{!block\.locked && \(/);
-  // Note ٠٦: ?q= and the in-page box colour the text through the shared engine.
+  // Note ٠٦: ?q= colours the text through the shared engine.
   assert.match(page, /<HighlightProvider query=\{highlightQuery\}>/);
   assert.match(page, /<SearchLegendBar[^>]*partial/);
   for (const part of ["block.topic", "block.matn", "para", "h"]) {
@@ -474,7 +451,7 @@ test("note ٠٢: the page renders the stream, with per-block actions, and no sin
   assert.doesNotMatch(block, /dangerouslySetInnerHTML/);
   // The index follows the stream in a bounded slice, scrolling its own list.
   const sidebar = readFileSync(path.join(here, "_sidebar.tsx"), "utf8");
-  assert.match(sidebar, /tocWindow\(filteredChapters\.length, activeChapterIndex/);
-  assert.doesNotMatch(sidebar, /filteredChapters\.slice\(0,/);
+  assert.match(sidebar, /tocWindow\(chapters\.length, activeChapterIndex/);
+  assert.doesNotMatch(sidebar, /chapters\.slice\(0,/);
   assert.doesNotMatch(sidebar, /scrollIntoView/);
 });

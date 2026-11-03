@@ -57,7 +57,7 @@ function escapeHtml(s: string): string {
 import { apiSlug } from '@/utils/apiSlug';
 import { volumeSubtitle, volumesCountLabel } from "@/lib/library/bookVolumes";
 import {
-  emptyLinks, emptyStream, extendStream, filterToc, firstStreamBlockOfSection, fromApiBook,
+  emptyLinks, emptyStream, extendStream, firstStreamBlockOfSection, fromApiBook,
   linkRun, mergeSectionBlocks, normalizeBlock, parseJumpQuery, planBlockJump,
   runFromCursorResponse, streamCursor, streamFromFirstPage, streamFromRun, topmostVisible,
   type BlocksBySection, type BookLinks, type CompleteSections, type OrderedRun, type ReaderBlock,
@@ -156,18 +156,17 @@ export default function FeqhBookPage() {
 
   // Folder & Search states
   const [showFolderModal, setShowFolderModal] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
   const [quickJumpQuery, setQuickJumpQuery] = useState("");
   const [jumpError, setJumpError] = useState(false);
 
   // Owner note ٠٦: arriving from a search (/book/…?q=) colours its terms
-  // through the whole stream — nothing is hidden. The index's own box, when
-  // typed in, takes over; ✕ «مسح الألوان» clears both and drops ?q=.
+  // through the whole stream — nothing is hidden; ✕ «مسح الألوان» drops ?q=.
+  // BUG-LIB-04 (S1 Task 11): ?q= is the only highlight. The index has no text
+  // filter of its own; the reader's one search bar is ScopedSearchPanel.
   // Read from the address bar when the book loads (loadBookData below).
   const [urlQuery, setUrlQuery] = useState("");
-  const highlightQuery = searchQuery.trim() ? searchQuery : urlQuery;
+  const highlightQuery = urlQuery;
   const clearHighlight = useCallback(() => {
-    setSearchQuery("");
     setUrlQuery("");
     try {
       const url = new URL(window.location.href);
@@ -195,10 +194,7 @@ export default function FeqhBookPage() {
     return () => window.removeEventListener("nzamy-open-folder-modal", handleOpenFolder);
   }, []);
 
-  const filteredChapters = useMemo(() => {
-    if (!book) return [];
-    return filterToc(book.chapters, blocksBySection, searchQuery);
-  }, [book, blocksBySection, searchQuery]);
+  const tocChapters = useMemo(() => book?.chapters ?? [], [book]);
 
   const commitReaderState = useCallback((map: BlocksBySection, complete: CompleteSections) => {
     blocksRef.current = map;
@@ -975,13 +971,11 @@ export default function FeqhBookPage() {
               <SidebarPanel
                 isDark={isDark}
                 isRTL={isRTL}
-                searchQuery={searchQuery}
-                setSearchQuery={setSearchQuery}
                 quickJumpQuery={quickJumpQuery}
                 setQuickJumpQuery={setQuickJumpQuery}
                 handleQuickJump={(q) => { void handleQuickJump(q); }}
                 jumpError={jumpError}
-                filteredChapters={filteredChapters}
+                chapters={tocChapters}
                 blocksBySection={blocksBySection}
                 completeSections={completeSections}
                 loadingSectionId={loadingSectionId}
@@ -1006,7 +1000,7 @@ export default function FeqhBookPage() {
                 <SearchLegendBar partial={!(stream.startsBook && stream.endsBook)} onClear={clearHighlight} />
               </div>
             )}
-            <ScrollToFirstMark enabled={arrival && urlQuery !== "" && !searchQuery.trim()} loaded={stream.blocks.length} />
+            <ScrollToFirstMark enabled={arrival && urlQuery !== ""} loaded={stream.blocks.length} />
 
             {jumping && (
               <div role="status" className="flex items-center justify-center gap-2 text-xs font-bold text-slate-500 dark:text-zinc-400 print:hidden">
