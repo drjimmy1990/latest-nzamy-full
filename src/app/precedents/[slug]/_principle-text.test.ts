@@ -137,3 +137,29 @@ test("empty, blank or non-string input gives nothing", () => {
   assert.deepEqual(principleParagraphs("**"), []);
   assert.deepEqual(principleParagraphs(null), []);
 });
+
+// M-4 (Task 2 review, owned by S1 Task 10): the legend counts what the block colours.
+test("legend texts: the built reference is counted, the «المرجع:» label is not", async () => {
+  const { principleHighlightTexts, principleReferenceLine } = await import("./_principle-text.ts");
+  const { countTermMatches, parseHighlightQuery } = await import("../../../lib/search/multiColorSearch.ts");
+  const p = {
+    id: "p1", number: "7", issuing_body: "المحكمة العليا", session_date: "", decision_number: "",
+    reference: "", classification_keywords: [], text: "نص المبدأ في الوكالة", details: {},
+  };
+  // No reference line in the source: the page builds one, and the footer colours it.
+  const built = () => "مبدأ رقم (7)، صادر عن (المحكمة العليا) - المنشور في (مجموعة التمييز)";
+  const count = (texts: string[], q: string) => countTermMatches(texts, parseHighlightQuery(q).terms)[0];
+  assert.equal(count(principleHighlightTexts(p as never, true, built), "التمييز"), 1);
+  // A source reference line: its «المرجع:» label is printed outside the highlight.
+  const sourced = { ...p, text: "نص المبدأ في الوكالة\n**المرجع:** قرار 12" };
+  const fromLine = () => "المرجع: قرار 12";
+  assert.equal(principleReferenceLine(fromLine()), "قرار 12");
+  assert.equal(count(principleHighlightTexts(sourced as never, true, fromLine), "المرجع"), 0);
+  assert.equal(count(principleHighlightTexts(sourced as never, true, fromLine), "قرار"), 1);
+  // The block and the page read the same two functions.
+  const block = readFileSync(new URL("./_principle-block.tsx", import.meta.url), "utf8");
+  const page = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+  assert.match(block, /const cleanRef = principleReferenceLine\(rawRef\);/);
+  assert.match(page, /principleHighlightTexts\(p, isRTL, getReferenceForPrinciple\)/);
+  assert.doesNotMatch(page, /^const isReferenceText/m);
+});

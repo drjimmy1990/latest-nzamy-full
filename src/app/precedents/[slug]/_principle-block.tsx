@@ -3,7 +3,7 @@
 import { memo, useEffect, useMemo, useRef } from "react";
 import { FileText, Copy, Check, Plus, Minus, Lock } from "@phosphor-icons/react";
 import { JudicialPrincipleItem } from "@/app/laws/data";
-import { cleanPrincipleText, principleParagraphs } from "./_principle-text";
+import { cleanPrincipleText, principleParagraphs, principleReferenceLine } from "./_principle-text";
 import { HighlightScope, Hl, useTextHasHighlight } from "@/components/search/MultiColorHighlight";
 import { useNearViewport } from "@/hooks/useNearViewport";
 
@@ -214,7 +214,8 @@ export default function PrincipleBlock({
       {(() => {
         const rawRef = getReferenceForPrinciple(p);
         if (!rawRef) return null;
-        const cleanRef = cleanPrincipleText(rawRef.replace(/^\*\*?المرجع:\*\*?\s*/, "").replace(/^المرجع:\s*/, ""));
+        // The same line the legend counts (principleHighlightTexts, M-4).
+        const cleanRef = principleReferenceLine(rawRef);
         if (!cleanRef) return null;
         return (
           <div className="mt-4 pt-3 border-t border-dashed border-slate-100 dark:border-white/[0.05]">

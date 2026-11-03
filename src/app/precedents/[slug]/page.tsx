@@ -16,7 +16,7 @@ import IdentityPanel from "./_identity-panel";
 import VolumeSelector from "./_volume-selector";
 import ScopedSearchPanel from "@/components/library/ScopedSearchPanel";
 import type { CartEntry } from "@/components/laws/DraftDrawer";
-import { cleanPrincipleText, principleParagraphs } from "./_principle-text";
+import { cleanPrincipleText, cleanTextOfRef, isReferenceText, principleHighlightTexts } from "./_principle-text";
 import { PrintWatermark } from "@/app/laws/components/PrintWatermark";
 import { HighlightProvider, SearchLegendBar } from "@/components/search/MultiColorHighlight";
 import { stepPrincipleIndex } from "@/components/search/highlightScope";
@@ -68,35 +68,6 @@ const WINDOW_LIMIT = 50;
 type WindowResult = "more" | "done" | "error";
 
 const EMPTY_RUN: CollectionRun = { start: 0, items: [] };
-
-const isReferenceText = (txt: string) => txt.includes("الجهة:") || txt.includes("المرجع:") || txt.startsWith("**الجهة:**");
-
-const cleanTextOfRef = (text: string) => text ? text.split("\n").filter(line => !isReferenceText(line)).join("\n").trim() : "";
-/**
- * BUG-LIB-01: the strings a PrincipleBlock passes to <Hl> (header labels,
- * body paragraphs, the source's reference, the details), so the legend can
- * count a principle's matches without rendering its marks. The reference
- * built from the collection when the source has none is not counted.
- */
-function principleHighlightTexts(p: JudicialPrincipleItem, isRTL: boolean): string[] {
-  const texts: string[] = [isRTL ? `مبدأ رقم (${p.number})` : `Principle #${p.number}`];
-  if (p.decision_number) texts.push(isRTL ? `قرار رقم (${p.decision_number})` : `Decision #${p.decision_number}`);
-  texts.push(p.issuing_body);
-  if (p.session_date) texts.push(p.session_date);
-  const paras = (p.paragraphs ?? []).filter((para) => cleanPrincipleText(para.text) !== "" && !isReferenceText(para.text));
-  if (paras.length > 0) for (const para of paras) texts.push(...principleParagraphs(para.text));
-  else texts.push(...principleParagraphs(cleanTextOfRef(p.text)));
-  const ref = p.paragraphs?.find((para) => isReferenceText(para.text))?.text
-    ?? p.text?.split("\n").find((line) => isReferenceText(line))
-    ?? p.reference;
-  if (ref) texts.push(cleanPrincipleText(ref));
-  const details = (p.details ?? {}) as Record<string, unknown>;
-  for (const key of ["ruling_basis", "الحيثيات_والقرار", "facts", "reasons", "ruling"]) {
-    const value = details[key];
-    if (typeof value === "string") texts.push(...principleParagraphs(value));
-  }
-  return texts;
-}
 
 /** The `?target=` window: the one 50-principle window that holds that principle. */
 const targetWindowUrl = (slug: string, target: string) =>
@@ -189,11 +160,11 @@ export default function JudicialPrinciplesPage() {
   // The collection TITLE is deliberately no longer used as a court fallback: a
   // title such as "مجموعة الأحكام القضائية لعام 1434هـ" is a publication, not
   // an issuing authority, and citing it as one is a fabricated attribution.
-  const getCourtOrIssuer = (p: JudicialPrincipleItem | null) => {
+  const getCourtOrIssuer = useCallback((p: JudicialPrincipleItem | null) => {
     if (p?.issuing_body && p.issuing_body !== "جهة غير محددة") return p.issuing_body;
     if (collection?.court && collection.court !== "جهة غير محددة") return collection.court;
     return isRTL ? "جهة غير محددة" : "Unspecified Authority";
-  };
+  }, [collection, isRTL]);
 
   /** True when a real issuing body was found, rather than the fallback label. */
   const isCourtKnown = (p: JudicialPrincipleItem | null) =>
@@ -202,7 +173,8 @@ export default function JudicialPrinciplesPage() {
         (collection?.court && collection.court !== "جهة غير محددة"),
     );
 
-  const getReferenceForPrinciple = (p: JudicialPrincipleItem) => {
+  // Stable (useCallback): the legend's per-principle counts read it too (M-4).
+  const getReferenceForPrinciple = useCallback((p: JudicialPrincipleItem) => {
     if (!p) return "";
     // Found on the raw text («**المرجع:**»), returned without the marks.
     const refPara = p.paragraphs?.find(para => isReferenceText(para.text));
@@ -212,7 +184,7 @@ export default function JudicialPrinciplesPage() {
     if (p.reference) return cleanPrincipleText(p.reference);
     const court = getCourtOrIssuer(p);
     return `${isRTL ? "مبدأ رقم" : "Principle #"} (${p.number})، صادر عن (${court})${p.decision_number ? ` ذي الرقم (${p.decision_number})` : ""}${p.session_date ? ` بتاريخ ${p.session_date}` : ""}${collection?.title ? ` - المنشور في (${collection.title})` : ""}${collection?.part ? `، الجزء (${collection.part})` : ""}`;
-  };
+  }, [collection, getCourtOrIssuer, isRTL]);
 
   // Global cart states
   const { cart, setCart } = useDraftCart();
@@ -645,11 +617,25 @@ export default function JudicialPrinciplesPage() {
   // every loaded principle here (not the rendered marks) and ↑/↓ step from
   // one matching principle to the next; its marks render once it is near.
   const parsedHighlight = useMemo(() => parseHighlightQuery(highlightQuery), [highlightQuery]);
+  // M-5: one count per principle object and query. Appending a window counts
+  // only the new principles; a new query (or language) starts a fresh cache.
+  const countCache = useMemo(
+    () => new WeakMap<JudicialPrincipleItem, number[]>(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the cache is keyed on these on purpose
+    [parsedHighlight, isRTL, getReferenceForPrinciple],
+  );
   const matchCounts = useMemo(
     () => (parsedHighlight.terms.length === 0
       ? []
-      : shownPrinciples.map((p) => countTermMatches(principleHighlightTexts(p, isRTL), parsedHighlight.terms))),
-    [shownPrinciples, parsedHighlight, isRTL],
+      : shownPrinciples.map((p) => {
+        let counts = countCache.get(p);
+        if (!counts) {
+          counts = countTermMatches(principleHighlightTexts(p, isRTL, getReferenceForPrinciple), parsedHighlight.terms);
+          countCache.set(p, counts);
+        }
+        return counts;
+      })),
+    [shownPrinciples, parsedHighlight, isRTL, getReferenceForPrinciple, countCache],
   );
   const legendCounts = useMemo(
     () => parsedHighlight.terms.map((_, t) => matchCounts.reduce((sum, c) => sum + (c[t] ?? 0), 0)),

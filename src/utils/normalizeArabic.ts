@@ -301,6 +301,20 @@ export function splitFusedParticle(word: string): { particle: string; rest: stri
 }
 
 /**
+ * «القرار» → {ال, قرار}: the article prefix a word opens with and its base, or
+ * null — for a word under 3 letters, a non-Arabic word, a particle, a word with
+ * no prefix, or a base under 2 letters («الا», «والي», «بالغ»). The highlight
+ * (multiColorSearch) reads it to colour what the server's prefixForms find.
+ */
+export function splitArticlePrefix(word: string): { prefix: string; base: string } | null {
+  if (!ARABIC_WORD.test(word) || Array.from(word).length < 3 || isParticle(word)) return null;
+  const prefix = ARTICLE_PREFIXES.find((p) => word.startsWith(p));
+  if (!prefix) return null;
+  const base = word.slice(prefix.length);
+  return Array.from(base).length >= 2 ? { prefix, base } : null;
+}
+
+/**
  * The article forms of one word, the word as given first. «قرار» →
  * [قرار, القرار, والقرار, بالقرار, للقرار]; «القرار» (base «قرار») → [القرار,
  * والقرار, بالقرار, للقرار] — never the bare base, which would widen a typed
@@ -311,14 +325,10 @@ export function splitFusedParticle(word: string): { particle: string; rest: stri
  */
 export function prefixForms(word: string): string[] {
   if (!ARABIC_WORD.test(word) || Array.from(word).length < 3 || isParticle(word)) return [word];
-  let base = word;
-  for (const prefix of ARTICLE_PREFIXES) {
-    if (word.startsWith(prefix)) {
-      base = word.slice(prefix.length);
-      if (Array.from(base).length < 2) return [word];
-      break;
-    }
-  }
+  const opening = ARTICLE_PREFIXES.find((prefix) => word.startsWith(prefix));
+  const split = splitArticlePrefix(word);
+  if (opening && !split) return [word];
+  const base = split ? split.base : word;
   const forms = [word];
   for (const form of [`ال${base}`, `وال${base}`, `بال${base}`, base.startsWith('ل') ? `ل${base}` : `لل${base}`]) {
     if (!forms.includes(form)) forms.push(form);

@@ -2,10 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  compileQueryMatcher,
   countTermMatches,
   highlightMultiColorSegments,
   matchesQuery,
   parseHighlightQuery,
+  termPatternSource,
   withSearchQuery,
 } from "./multiColorSearch.ts";
 
@@ -81,7 +83,9 @@ test("the segments always join back to the input exactly", () => {
 
 test("regex metacharacters in the query stay literal", () => {
   assert.deepEqual(marked("a.b axb (c) [d]", "a.b"), [["a.b", 0]]);
-  assert.deepEqual(marked("a.b axb (c) [d]", "(c)"), [["(c)", 0]]);
+  // Unquoted ( ) are grouping marks now (S1 Task 10); quoted they stay literal.
+  assert.deepEqual(marked("a.b axb (c) [d]", '"(c)"'), [["(c)", 0]]);
+  assert.deepEqual(marked("a.b axb (c) [d]", "(c)"), [["c", 0]]);
 });
 
 test("half-typed queries never throw and still highlight", () => {
@@ -115,4 +119,43 @@ test("withSearchQuery adds ?q= before the hash and replaces an old one", () => {
   assert.equal(withSearchQuery("/laws/a?q=old&x=1", "new"), "/laws/a?q=new&x=1");
   assert.equal(withSearchQuery("/laws/a#m3", "  "), "/laws/a#m3");
   assert.equal(withSearchQuery("/book/b", '"a b"'), "/book/b?q=%22a+b%22");
+});
+
+// ── S1 Task 10 (BUG-LIB-02/03): the colours mirror the server grammar ──
+test("parentheses group nothing: «(عدم نفاذ) + قرار» colours three words", () => {
+  assert.deepEqual(parseHighlightQuery("(عدم نفاذ) + قرار").terms.map((t) => t.label), ["عدم", "نفاذ", "قرار"]);
+  assert.deepEqual(parseHighlightQuery("عدم نفاذ (+) قرار").terms.map((t) => t.label), ["عدم", "نفاذ", "قرار"]);
+  assert.deepEqual(parseHighlightQuery('"(تحكيم)"').terms.map((t) => t.label), ["(تحكيم)"]);
+});
+
+test("«لا يكون» typed apart is one phrase term matching «لايكون» and «لا يكون»", () => {
+  const p = parseHighlightQuery("لا يكون");
+  assert.deepEqual(p.terms.map((t) => [t.label, t.kind]), [["لا يكون", "phrase"]]);
+  const phrase = new RegExp(termPatternSource({ label: "لا يكون", kind: "phrase" }), "u");
+  assert.equal(phrase.test("وهذا لايكون"), true);
+  assert.equal(phrase.test("وهذا لا يكون"), true);
+  const fused = new RegExp(termPatternSource({ label: "لايكون", kind: "word" }), "u");
+  assert.equal(fused.test("وهذا لا يكون"), true);
+  assert.equal(fused.test("وهذا لايكون"), true);
+  // «ألا» splits before folding (folded it would be «الا», not a particle).
+  assert.equal(new RegExp(termPatternSource({ label: "ألايكون", kind: "word" }), "u").test("ألا يكون"), true);
+  // An operator or a negation in between keeps two terms.
+  assert.deepEqual(parseHighlightQuery("لا + يكون").terms.map((t) => t.label), ["لا", "يكون"]);
+  assert.deepEqual(parseHighlightQuery("-لا يكون").terms.map((t) => t.label), ["يكون"]);
+  assert.deepEqual(marked("قال لا يكون ذلك", "لا يكون"), [["لا يكون", 0]]);
+});
+
+test("«الاداري» stays one word: ال + alef is never a particle", () => {
+  const p = parseHighlightQuery("الاداري");
+  assert.deepEqual(p.terms.map((t) => [t.label, t.kind]), [["الاداري", "word"]]);
+  const re = new RegExp(termPatternSource(p.terms[0]), "u");
+  assert.equal(re.test("الا داري"), false);
+  assert.equal(re.test("القرار الإداري"), true);
+});
+
+test("article forms: «قرار» finds «بالقرار»; «القرار» also colours «للقرار», never bare «قرار»", () => {
+  assert.equal(compileQueryMatcher(parseHighlightQuery("قرار"))(["بالقرار"]), true);
+  assert.deepEqual(marked("للقرار وبالقرار والقرار وقرار", "القرار"), [["للقرار", 0], ["القرار", 0], ["القرار", 0]]);
+  assert.deepEqual(marked("للائحة واللائحة", "اللائحة"), [["للائحة", 0], ["اللائحة", 0]]);
+  assert.equal(compileQueryMatcher(parseHighlightQuery("القرار"))(["قرار إداري"]), false);
 });
