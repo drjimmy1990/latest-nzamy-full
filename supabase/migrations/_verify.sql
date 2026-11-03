@@ -5446,3 +5446,72 @@ begin
   raise notice '_verify: 20261103_22 OK — no coupon targets ''business''; company coupons target ''corporate''';
 end $$;
 -- <<< verify:s6_coupon_business_role
+-- >>> verify:library_fts_tashkeel_fold
+-- 2026-11-03 — 20261103_14_library_fts_tashkeel_fold.sql (owner-free wave,
+-- S1-T13, BUG-LIB-03): the fts of library.articles, library.principles and
+-- library.feqh_blocks is built over library.fold_tashkeel(...). Read-only,
+-- safe to repeat: SELECTs and RAISE.
+-- THE ONE EXCEPTION to the RAISE-when-missing convention (preflight R14):
+-- _14 is a STOP-POINT the user runs AFTER the deploy at a quiet hour, and
+-- _verify may run days before that window. So:
+--   * no fold_tashkeel function and no folded column → NOTICE «not applied
+--     yet» and pass (search sends both forms meanwhile, S1-T9);
+--   * the function without all three folded columns, a wrong grant, a missing
+--     or API-readable matview, or a tashkeel probe that misses → RAISE;
+--   * all three folded, the grants right and the probe hits → OK.
+-- No library tables at all: one NOTICE, passes.
+-- Docker: supabase/tests/rls/library_fts_tashkeel_fold.test.sql runs this
+-- block before and after _14 (its header has the chain and the sed line).
+do $$
+declare
+  t        text;
+  def      text;
+  folded   text := '';
+  unfolded text := '';
+  has_fn   boolean := to_regprocedure('library.fold_tashkeel(text)') is not null;
+begin
+  if to_regclass('library.articles') is null or to_regclass('library.principles') is null
+     or to_regclass('library.feqh_blocks') is null then
+    raise notice '_verify: 20261103_14 — the library tables are missing (20260626 not applied): nothing to check'; return;
+  end if;
+  foreach t in array array['library.articles', 'library.principles', 'library.feqh_blocks'] loop
+    select pg_get_expr(d.adbin, d.adrelid) into def
+      from pg_attribute a
+      join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
+     where a.attrelid = to_regclass(t) and a.attname = 'fts' and not a.attisdropped;
+    if def is not null and position('fold_tashkeel' in def) > 0 then
+      folded := folded || ' ' || t;
+    else
+      unfolded := unfolded || ' ' || t;
+    end if;
+  end loop;
+  if not has_fn and folded = '' then
+    raise notice '_verify: 20261103_14 not applied yet — fts keeps tashkeel; the query sends the typed and the stripped form meanwhile. Run 20261103_14_library_fts_tashkeel_fold.sql AFTER the deploy, at a quiet hour (STOP-POINT, S1_RUN_NOTES.md)';
+    return;
+  end if;
+  if not has_fn or unfolded <> '' then
+    raise exception '_verify: 20261103_14 — partly applied (fold_tashkeel function: %, folded:%, not folded:%): run 20261103_14_library_fts_tashkeel_fold.sql again (AFTER the deploy, at a quiet hour)',
+      has_fn, coalesce(nullif(folded, ''), ' none'), coalesce(nullif(unfolded, ''), ' none');
+  end if;
+  if not has_function_privilege('service_role', 'library.fold_tashkeel(text)', 'EXECUTE') then
+    raise exception '_verify: 20261103_14 — service_role cannot EXECUTE library.fold_tashkeel(text): every insert into articles / principles / fiqh blocks (the owner''s loader) fails with 42501. Run 20261103_14 again (AFTER the deploy)';
+  end if;
+  if has_function_privilege('anon', 'library.fold_tashkeel(text)', 'EXECUTE')
+     or has_function_privilege('authenticated', 'library.fold_tashkeel(text)', 'EXECUTE') then
+    raise exception '_verify: 20261103_14 — anon or authenticated can EXECUTE library.fold_tashkeel(text): run 20261103_14 again (AFTER the deploy)';
+  end if;
+  if to_regclass('library.cross_section_search') is null then
+    raise exception '_verify: 20261103_14 — library.cross_section_search is missing (dropped and not recreated): run 20261103_14 again (AFTER the deploy)';
+  end if;
+  if has_table_privilege('anon', 'library.cross_section_search', 'SELECT')
+     or has_table_privilege('authenticated', 'library.cross_section_search', 'SELECT') then
+    raise exception '_verify: 20261103_14 — library.cross_section_search is readable by anon or authenticated (it carries article snippets): run 20261103_14 again (AFTER the deploy)';
+  end if;
+  -- The probe: a voweled text must be found by the stripped word.
+  if not (pg_catalog.to_tsvector('library.arabic', library.fold_tashkeel('القَرَارُ نافِذٌ'))
+          @@ pg_catalog.to_tsquery('simple', '''القرار''')) then
+    raise exception '_verify: 20261103_14 — the tashkeel probe missed: «القَرَارُ» folded is not found by ''القرار'' (library.fold_tashkeel or library.arabic changed). Run 20261103_14 again (AFTER the deploy)';
+  end if;
+  raise notice '_verify: 20261103_14 OK — articles, principles and fiqh blocks index text without tashkeel; fold_tashkeel is service_role only; the cross-section matview stays off the API';
+end $$;
+-- <<< verify:library_fts_tashkeel_fold
